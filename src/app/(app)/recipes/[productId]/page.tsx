@@ -18,7 +18,11 @@ export default async function RecipePage({ params }: { params: Promise<{ product
 
   return (
     <div>
-      <PageHeader title={`Retsept: ${p.name}`} subtitle={active ? `Faol versiya v${active.version} · ${date(active.createdAt)}` : "Hali retsept yo'q"} />
+      <PageHeader
+        back={{ href: "/recipes", label: "Retseptlar" }}
+        title={`Retsept: ${p.name}`}
+        subtitle={active ? `Faol versiya v${active.version} · ${date(active.createdAt)}` : "Hali retsept yo'q"}
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>

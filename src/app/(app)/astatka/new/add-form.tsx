@@ -15,7 +15,7 @@ export function AddForm({ products, warehouses }: { products: (Opt & { unit: str
       <Field label="Mahsulot *">
         <Select name="productId" defaultValue={products[0]?.id}>{products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>)}</Select>
       </Field>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Miqdor *"><Input name="qty" type="number" step="1" min="1" placeholder="10" required autoFocus /></Field>
         <Field label="Sklad *"><Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
       </div>

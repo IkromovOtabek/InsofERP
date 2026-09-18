@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, ClipboardList, Users, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Car, Settings, LogOut, Menu, X, Globe, Boxes, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Car, Settings, LogOut, Menu, X, BookOpen, Boxes, Clock, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -73,12 +73,36 @@ function SidebarInner({ items, user, brand, onNavigate }: { items: NavItem[]; us
   );
 }
 
+function HeaderClock() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const hh = now ? String(now.getHours()).padStart(2, "0") : "--";
+  const mm = now ? String(now.getMinutes()).padStart(2, "0") : "--";
+  const ss = now ? String(now.getSeconds()).padStart(2, "0") : "--";
+  const blink = now && now.getSeconds() % 2 === 0;
+
+  return (
+    <div className="hidden items-center gap-2 rounded-xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50 px-3 py-1.5 shadow-xs sm:flex">
+      <Clock size={15} className="text-brand-500" />
+      <div className="flex items-baseline font-semibold tabular-nums tracking-tight text-slate-900">
+        <span className="text-[15px] leading-none">{hh}</span>
+        <span className={cn("px-[1px] text-[15px] leading-none transition-opacity duration-200", blink ? "opacity-100" : "opacity-25")}>:</span>
+        <span className="text-[15px] leading-none">{mm}</span>
+        <span className="ml-1 text-[11px] font-medium leading-none text-slate-400">{ss}</span>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({ items, user, brand, children }: { items: NavItem[]; user: User; brand: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   useEffect(() => { setOpen(false); }, [path]);
-  const today = new Date();
-  const dateLabel = `${String(today.getDate()).padStart(2, "0")}.${String(today.getMonth() + 1).padStart(2, "0")}.${today.getFullYear()}`;
 
   return (
     <div className="flex min-h-screen">
@@ -101,15 +125,14 @@ export function AppShell({ items, user, brand, children }: { items: NavItem[]; u
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur lg:px-6">
           <div className="flex items-center gap-3">
             <button onClick={() => setOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Menyu"><Menu size={20} /></button>
-            <span className="hidden text-sm text-slate-500 sm:block">{dateLabel}</span>
+            <HeaderClock />
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/" className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 sm:inline-flex"><Globe size={15} /> Sayt</Link>
+            <Link href="/qollanma" className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 sm:inline-flex"><BookOpen size={15} /> Yordam</Link>
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
               <Avatar name={user.fullName} className="h-8 w-8 text-xs" />
               <div className="hidden leading-tight sm:block">
                 <div className="text-[13px] font-medium text-slate-900">{user.fullName}</div>
-                <div className="text-[11px] text-slate-500">{user.roleLabel}</div>
               </div>
             </div>
           </div>

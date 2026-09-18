@@ -29,7 +29,7 @@ export function InvoiceForm({ orders, preselect }: { orders: Order[]; preselect?
           <div className="flex justify-between"><span>Zayavka jami</span><b>{fmt(o.totalSum)} so'm</b></div>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Summa (so'm) *" hint="Yetkazilgan hajm bo'yicha taklif qilinadi"><Input name="amount" type="number" step="1" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} required /></Field>
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
       </div>

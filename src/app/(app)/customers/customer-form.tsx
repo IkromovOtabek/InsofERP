@@ -12,7 +12,7 @@ export function CustomerForm({ customer, canEditLimit }: { customer: C; canEditL
     <form action={action} className="max-w-xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
       <Field label="Nomi *"><Input name="name" defaultValue={customer?.name} required /></Field>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="INN"><Input name="inn" defaultValue={customer?.inn ?? ""} /></Field>
         <Field label="Telefon"><Input name="phone" defaultValue={customer?.phone ?? ""} /></Field>
       </div>

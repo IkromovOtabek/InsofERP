@@ -38,14 +38,18 @@ export function ReceiptForm({ suppliers, warehouses, materials }: { suppliers: O
           {rows.map((r) => {
             const unit = materials.find((m) => m.id === r.materialId)?.unit ?? "";
             return (
-              <div key={r.key} className="grid grid-cols-[1fr_140px_50px_160px_40px] items-center gap-2">
+              <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:grid sm:grid-cols-[1fr_140px_50px_160px_40px] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:p-0">
                 <Select name="materialId[]" value={r.materialId} onChange={(e) => update(r.key, { materialId: e.target.value })}>
                   {materials.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </Select>
-                <Input name="qty[]" type="number" step="0.001" min="0" placeholder="Miqdor" value={r.qty} onChange={(e) => update(r.key, { qty: e.target.value })} required />
-                <span className="text-sm text-slate-500">{unit}</span>
-                <Input name="price[]" type="number" step="0.01" min="0" placeholder={`Narx / ${unit}`} value={r.price} onChange={(e) => update(r.key, { price: e.target.value })} required />
-                <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="text-slate-400 hover:text-red-600"><X size={16} /></button>
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:contents">
+                  <Input name="qty[]" type="number" step="0.001" min="0" placeholder="Miqdor" value={r.qty} onChange={(e) => update(r.key, { qty: e.target.value })} required />
+                  <span className="text-sm text-slate-500">{unit}</span>
+                </div>
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:contents">
+                  <Input name="price[]" type="number" step="0.01" min="0" placeholder={`Narx / ${unit}`} value={r.price} onChange={(e) => update(r.key, { price: e.target.value })} required />
+                  <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto"><X size={16} /></button>
+                </div>
               </div>
             );
           })}

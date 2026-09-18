@@ -3,6 +3,8 @@ import type { LucideIcon } from "lucide-react";
 import { Inbox, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export { PasswordInput } from "./password-input";
+
 /* ═══════════════════════ Layout ═══════════════════════ */
 
 export function PageHeader({ title, subtitle, eyebrow, action, back }: {
@@ -72,7 +74,7 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "default", hre
     <div className={cn("flex items-start justify-between gap-3 rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition", tone === "danger" ? "border-red-200" : "border-slate-200/80", href && "hover:border-slate-300 hover:shadow-md")}>
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-slate-500">{label}</div>
-        <div className={cn("mt-1.5 truncate text-[22px] font-semibold tracking-tight tabular", t.value)}>{value}</div>
+        <div className={cn("mt-1.5 break-words text-lg leading-tight font-semibold tracking-tight tabular sm:text-[22px]", t.value)}>{value}</div>
         {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
       </div>
       {Icon && <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={19} /></div>}
@@ -120,7 +122,7 @@ export function Field({ label, children, hint, error, className }: { label: stri
   );
 }
 
-const inputCls = "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-3 focus:ring-slate-900/8 disabled:bg-slate-50 disabled:text-slate-500 read-only:bg-slate-50";
+export const inputCls = "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-3 focus:ring-slate-900/8 disabled:bg-slate-50 disabled:text-slate-500 read-only:bg-slate-50";
 
 export function Input({ className, ...p }: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(inputCls, className)} {...p} />;

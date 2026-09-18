@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createEmployee, grantLogin } from "./actions";
-import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, Input, PasswordInput, Select } from "@/components/ui";
 
 type Pos = { label: string; role: string | null };
 
@@ -31,7 +31,7 @@ export function EmployeeForm({ positions, canGrant }: { positions: Pos[]; canGra
       {needsLogin && (
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:grid-cols-[1fr_1fr_2fr]">
           <Field label="Login *"><Input name="login" autoComplete="off" required /></Field>
-          <Field label="Parol *"><Input name="password" type="password" autoComplete="new-password" required /></Field>
+          <Field label="Parol *"><PasswordInput name="password" autoComplete="new-password" required /></Field>
           <p className="self-end text-xs text-blue-800">
             Bu lavozim egasi tizimga kirib, faqat o'z bo'limi sahifalarini ko'radi.{!canGrant && " Login berish uchun Otdel kadr yoki direktor kerak."}
           </p>
@@ -48,7 +48,7 @@ export function GrantLoginForm({ employeeId }: { employeeId: string }) {
   return (
     <form action={action} className="flex flex-wrap items-center gap-1">
       <Input name="login" placeholder="login" className="w-28 px-2 py-1 text-xs" autoComplete="off" required />
-      <Input name="password" type="password" placeholder="parol" className="w-28 px-2 py-1 text-xs" autoComplete="new-password" required />
+      <PasswordInput name="password" placeholder="parol" className="w-28 px-2 py-1 text-xs" autoComplete="new-password" required />
       <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending}>Login berish</Button>
       {state?.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
     </form>

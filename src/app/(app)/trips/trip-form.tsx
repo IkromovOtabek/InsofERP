@@ -31,7 +31,7 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
         </Select>
       </Field>
       {order && <p className="text-sm text-slate-600">Manzil: {order.address}</p>}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Mikser *">
           <Select name="vehicleId" value={vehicleId} onChange={(e) => { setVehicleId(e.target.value); suggest(order, vehicles.find((v) => v.id === e.target.value)); }}>
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate}{v.capacityM3 ? ` (${v.capacityM3} m³)` : ""}</option>)}

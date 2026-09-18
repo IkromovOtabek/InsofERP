@@ -42,13 +42,15 @@ export function OrderForm({ customers, products }: { customers: Customer[]; prod
         <div className="mb-2 text-sm font-medium text-slate-700">Mahsulotlar *</div>
         <div className="space-y-2">
           {rows.map((r) => (
-            <div key={r.key} className="grid grid-cols-[1fr_120px_160px_40px] items-center gap-2">
+            <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:grid sm:grid-cols-[1fr_120px_160px_40px] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:p-0">
               <Select name="productId[]" value={r.productId} onChange={(e) => onProduct(r.key, e.target.value)}>
                 {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
-              <Input name="qtyM3[]" type="number" step={products.find((p) => p.id === r.productId)?.unit === "m³" ? "0.5" : "1"} min="0.5" placeholder={products.find((p) => p.id === r.productId)?.unit ?? "m³"} value={r.qtyM3} onChange={(e) => update(r.key, { qtyM3: e.target.value })} required />
-              <Input name="price[]" type="number" step="1" min="0" placeholder={`Narx / ${products.find((p) => p.id === r.productId)?.unit ?? "m³"}`} value={r.price} onChange={(e) => update(r.key, { price: e.target.value })} required />
-              <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="text-slate-400 hover:text-red-600" aria-label="O'chirish"><X size={16} /></button>
+              <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 sm:contents">
+                <Input name="qtyM3[]" type="number" step={products.find((p) => p.id === r.productId)?.unit === "m³" ? "0.5" : "1"} min="0.5" placeholder={products.find((p) => p.id === r.productId)?.unit ?? "m³"} value={r.qtyM3} onChange={(e) => update(r.key, { qtyM3: e.target.value })} required />
+                <Input name="price[]" type="number" step="1" min="0" placeholder={`Narx / ${products.find((p) => p.id === r.productId)?.unit ?? "m³"}`} value={r.price} onChange={(e) => update(r.key, { price: e.target.value })} required />
+                <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto" aria-label="O'chirish"><X size={16} /></button>
+              </div>
             </div>
           ))}
         </div>

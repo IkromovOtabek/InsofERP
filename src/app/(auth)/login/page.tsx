@@ -1,10 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
-import Link from "next/link";
-import { Factory, ArrowLeft, LogIn, ShieldCheck, Truck, FlaskConical } from "lucide-react";
+import { Factory, LogIn, ShieldCheck, Truck, FlaskConical } from "lucide-react";
 import { loginAction } from "./actions";
-import { Button, Field, FormError, Input } from "@/components/ui";
+import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
 
 export default function LoginPage() {
   const [state, action, pending] = useActionState(loginAction, undefined);
@@ -33,7 +32,6 @@ export default function LoginPage() {
       {/* Forma */}
       <section className="flex items-center justify-center bg-(--background) p-6">
         <div className="w-full max-w-sm animate-fade-up">
-          <Link href="/" className="mb-8 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900"><ArrowLeft size={15} /> Saytga qaytish</Link>
           <div className="mb-6 flex items-center gap-2.5 lg:hidden">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-slate-950"><Factory size={20} /></div>
             <div className="font-semibold">Insof ERP</div>
@@ -43,7 +41,7 @@ export default function LoginPage() {
           <form action={action} className="mt-8 space-y-4">
             <FormError error={state?.error} />
             <Field label="Login"><Input name="login" autoComplete="username" autoFocus placeholder="masalan: sotuv1" /></Field>
-            <Field label="Parol"><Input name="password" type="password" autoComplete="current-password" placeholder="••••••••" /></Field>
+            <Field label="Parol"><PasswordInput name="password" autoComplete="current-password" placeholder="••••••••" /></Field>
             <Button size="lg" className="w-full" disabled={pending}><LogIn size={17} /> {pending ? "Kirilmoqda…" : "Kirish"}</Button>
           </form>
         </div>
