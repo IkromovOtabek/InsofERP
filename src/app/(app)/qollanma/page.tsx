@@ -159,7 +159,7 @@ export default function QollanmaPage() {
           </div>
           <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
             <Shot title="Chap panel">
-              <div className="overflow-hidden rounded-lg bg-ink-950 text-slate-200">
+              <div className="on-dark overflow-hidden rounded-lg bg-ink-950 text-slate-200">
                 <div className="flex items-center gap-2 px-3 pb-2.5 pt-3">
                   <div className="flex h-6 w-6 items-center justify-center rounded bg-brand-500 text-[11px] font-bold text-slate-950">I</div>
                   <div className="text-[12px] font-semibold text-white">Insof ERP</div>

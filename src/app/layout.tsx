@@ -12,9 +12,16 @@ export const metadata: Metadata = {
   description: "Beton zavodi boshqaruv tizimi",
 };
 
+// localStorage'dagi tanlov, bo'lmasa tizim sozlamasi
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("insof-theme");if(t!=="dark"&&t!=="light"){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}if(t==="dark")document.documentElement.classList.add("dark")}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uz" className={`${jakarta.variable} ${inter.variable}`}>
+    <html lang="uz" className={`${jakarta.variable} ${inter.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Rejimni birinchi bo'yoqdan oldin qo'llash — oq "flash" bo'lmasligi uchun */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-screen antialiased">{children}</body>
     </html>
   );

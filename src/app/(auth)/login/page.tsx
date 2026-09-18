@@ -1,21 +1,21 @@
 "use client";
 
 import { useActionState } from "react";
-import { Factory, LogIn, ShieldCheck, Truck, FlaskConical } from "lucide-react";
+import { LogIn, ShieldCheck, Truck, FlaskConical } from "lucide-react";
 import { loginAction } from "./actions";
 import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
+import { Logo } from "@/components/logo";
 
 export default function LoginPage() {
   const [state, action, pending] = useActionState(loginAction, undefined);
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       {/* Brend paneli */}
-      <section className="relative hidden overflow-hidden bg-ink-950 text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
+      <section className="on-dark relative hidden overflow-hidden bg-ink-950 text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
         <div className="bg-grid absolute inset-0" />
         <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-brand-500/20 blur-3xl" />
-        <div className="relative flex items-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-slate-950"><Factory size={20} /></div>
-          <div><div className="font-semibold">Insof ERP</div><div className="text-xs text-slate-400">Beton zavodi boshqaruv tizimi</div></div>
+        <div className="relative">
+          <Logo className="h-14" />
         </div>
         <div className="relative max-w-md">
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">Zayavkadan to'lovgacha — bitta tizimda</h1>
@@ -32,9 +32,8 @@ export default function LoginPage() {
       {/* Forma */}
       <section className="flex items-center justify-center bg-(--background) p-6">
         <div className="w-full max-w-sm animate-fade-up">
-          <div className="mb-6 flex items-center gap-2.5 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-slate-950"><Factory size={20} /></div>
-            <div className="font-semibold">Insof ERP</div>
+          <div className="mb-6 lg:hidden">
+            <Logo className="h-12" />
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">Tizimga kirish</h2>
           <p className="mt-1 text-sm text-slate-500">Xodimlar uchun. Login va parolni Otdel kadr beradi.</p>

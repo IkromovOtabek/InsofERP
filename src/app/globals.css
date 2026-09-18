@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Dark rejim — <html class="dark"> orqali */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ───────── Dizayn tokenlari ───────── */
 @theme {
   --font-sans: var(--font-jakarta), var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -26,6 +29,105 @@
 :root {
   --background: #f5f6f8;
   --foreground: #0f172a;
+  --logo-blue: #4f6ebe;
+}
+
+/* Qorong'i fonda logotip ko'ki yorqinroq bo'lishi kerak */
+.dark, .on-dark { --logo-blue: #7091e2; }
+
+/* ───────── Dark rejim (Team24 BI uslubi: #0f172a fon, #1e293b karta, #334155 chegara) ─────────
+   Butun kod slate/white tokenlaridan foydalanadi, shuning uchun tokenlarning o'zini
+   qayta belgilash bilan barcha sahifalar avtomatik qorong'i bo'ladi. */
+.dark {
+  color-scheme: dark;
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+
+  --color-white: #1e293b;        /* kartalar, header, inputlar */
+  --color-slate-50: #243044;     /* hover qatorlar, jadval sarlavhasi */
+  --color-slate-100: #2c3a50;    /* hover fon, ikonka chiplari */
+  --color-slate-200: #334155;    /* chegaralar */
+  --color-slate-300: #42536c;    /* kuchliroq chegaralar */
+  --color-slate-400: #8794a9;    /* xira matn, ikonkalar */
+  --color-slate-500: #94a3b8;    /* ikkilamchi matn */
+  --color-slate-600: #b1bdcd;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;    /* sarlavhalar, asosiy matn */
+  --color-slate-950: #f8fafc;
+
+  /* Rangli tuslar: ochiq tint → shaffof, quyuq matn → ochiq matn */
+  --color-red-50: color-mix(in srgb, #ef4444 12%, transparent);
+  --color-red-100: color-mix(in srgb, #ef4444 20%, transparent);
+  --color-red-200: color-mix(in srgb, #ef4444 35%, transparent);
+  --color-red-300: color-mix(in srgb, #ef4444 50%, transparent);
+  --color-red-600: #f87171; --color-red-700: #fca5a5; --color-red-800: #fecaca; --color-red-900: #fee2e2;
+
+  --color-emerald-50: color-mix(in srgb, #10b981 12%, transparent);
+  --color-emerald-100: color-mix(in srgb, #10b981 20%, transparent);
+  --color-emerald-200: color-mix(in srgb, #10b981 35%, transparent);
+  --color-emerald-300: color-mix(in srgb, #10b981 50%, transparent);
+  --color-emerald-600: #34d399; --color-emerald-700: #6ee7b7; --color-emerald-800: #a7f3d0; --color-emerald-900: #d1fae5;
+
+  --color-amber-50: color-mix(in srgb, #f59e0b 12%, transparent);
+  --color-amber-100: color-mix(in srgb, #f59e0b 20%, transparent);
+  --color-amber-200: color-mix(in srgb, #f59e0b 35%, transparent);
+  --color-amber-300: color-mix(in srgb, #f59e0b 50%, transparent);
+  --color-amber-600: #fbbf24; --color-amber-700: #fcd34d; --color-amber-800: #fde68a; --color-amber-900: #fef3c7;
+
+  --color-blue-50: color-mix(in srgb, #3b82f6 12%, transparent);
+  --color-blue-100: color-mix(in srgb, #3b82f6 20%, transparent);
+  --color-blue-200: color-mix(in srgb, #3b82f6 35%, transparent);
+  --color-blue-300: color-mix(in srgb, #3b82f6 50%, transparent);
+  --color-blue-600: #60a5fa; --color-blue-700: #93c5fd; --color-blue-800: #bfdbfe; --color-blue-900: #dbeafe;
+
+  --color-violet-50: color-mix(in srgb, #8b5cf6 12%, transparent);
+  --color-violet-100: color-mix(in srgb, #8b5cf6 20%, transparent);
+  --color-violet-200: color-mix(in srgb, #8b5cf6 35%, transparent);
+  --color-violet-300: color-mix(in srgb, #8b5cf6 50%, transparent);
+  --color-violet-600: #a78bfa; --color-violet-700: #c4b5fd; --color-violet-800: #ddd6fe; --color-violet-900: #ede9fe;
+
+  --color-sky-50: color-mix(in srgb, #0ea5e9 12%, transparent);
+  --color-sky-100: color-mix(in srgb, #0ea5e9 20%, transparent);
+  --color-sky-200: color-mix(in srgb, #0ea5e9 35%, transparent);
+  --color-sky-600: #38bdf8; --color-sky-700: #7dd3fc; --color-sky-800: #bae6fd;
+
+  --color-orange-50: color-mix(in srgb, #f97316 12%, transparent);
+  --color-orange-100: color-mix(in srgb, #f97316 20%, transparent);
+  --color-orange-200: color-mix(in srgb, #f97316 35%, transparent);
+  --color-orange-600: #fb923c; --color-orange-700: #fdba74; --color-orange-800: #fed7aa;
+
+  --color-brand-50: color-mix(in srgb, #f59e0b 10%, transparent);
+  --color-brand-100: color-mix(in srgb, #f59e0b 18%, transparent);
+  --color-brand-700: #fcd34d;
+
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.25), 0 1px 3px 0 rgb(0 0 0 / 0.3);
+  --shadow-pop: 0 10px 30px -12px rgb(0 0 0 / 0.6);
+
+  scrollbar-color: #3b4a60 transparent;
+}
+.dark *::-webkit-scrollbar-thumb { background: #3b4a60; }
+
+/* Tokenlar teskari bo'lganda ham to'g'ri ko'rinishi kerak bo'lgan holatlar */
+.dark .text-white { color: #fff; }                                    /* rangli fonlardagi oq matn */
+.dark .text-slate-950 { color: #0f172a; }                             /* brend (amber) tugma/avatar matni */
+.dark .bg-slate-900.text-white,
+.dark .bg-slate-800.text-white,
+.dark .hover\:bg-slate-800:hover.text-white { color: #0f172a; }       /* primary tugma: ochiq fon + qora matn */
+.dark .bg-red-600 { background-color: #dc2626; }
+.dark .bg-emerald-600 { background-color: #059669; }
+.dark .bg-amber-600 { background-color: #d97706; }
+.dark .bg-blue-600 { background-color: #2563eb; }
+.dark .bg-violet-600 { background-color: #7c3aed; }
+.dark .hover\:bg-red-700:hover { background-color: #b91c1c; }
+.dark .hover\:bg-emerald-700:hover { background-color: #047857; }
+
+/* Doim qorong'i bloklar (sidebar, login paneli, hero) — asl tokenlarni saqlaydi */
+.on-dark {
+  --color-white: #fff;
+  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+  --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
 }
 
 html { scroll-behavior: smooth; }
@@ -66,5 +168,13 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 
 @media print {
   body { background: #fff; }
+  /* Chop etishda doim ochiq rejim */
+  .dark {
+    color-scheme: light; --background: #fff; --foreground: #0f172a;
+    --color-white: #fff;
+    --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+    --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+    --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
+  }
   aside, nav, .print\:hidden { display: none !important; }
 }

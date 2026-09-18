@@ -42,6 +42,7 @@ model User {
   stockMoves   StockMove[]       @relation("MoveCreatedBy")
   auditLogs    AuditLog[]
   employee     Employee?
+  marketing    MarketingEntry[]  @relation("MarketingCreatedBy")
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -422,4 +423,51 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id])
 
   @@index([entity, entityId])
+}
+
+// ───────────────────────── BI: reja va marketing ─────────────────────────
+
+/// Oylik sotuv rejasi. sellerId = null — butun zavod rejasi; sellerId — sotuvchi (User) rejasi.
+model SalesPlan {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int
+  sellerId  String?
+  amount    Decimal  @db.Decimal(18, 2)
+  volumeM3  Decimal? @db.Decimal(18, 3)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month, sellerId])
+  @@index([year, month])
+}
+
+enum MarketingEntryKind {
+  BUDGET // ajratilgan pul
+  PLAN   // natija maqsadlari
+  FACT   // to'langan xarajat va natija
+}
+
+/// Marketing ma'lumotlari: oy × kanal × tur (byudjet / reja / fakt).
+model MarketingEntry {
+  id          String             @id @default(cuid())
+  year        Int
+  month       Int
+  kind        MarketingEntryKind
+  channel     String
+  amount      Decimal            @db.Decimal(18, 2)
+  leads       Int?
+  customers   Int?
+  revenue     Decimal?           @db.Decimal(18, 2)
+  impressions Int?
+  clicks      Int?
+  note        String?
+  createdById String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  createdBy User @relation("MarketingCreatedBy", fields: [createdById], references: [id])
+
+  @@index([year, month])
 }
