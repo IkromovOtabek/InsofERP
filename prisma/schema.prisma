@@ -1,0 +1,425 @@
+// Insof ERP — beton zavodi (tayyor beton / BSG)
+// Asosiy prinsip: StockMove — yagona o'zgarmas harakat jurnali.
+// Qoldiq hech qayerda saqlanmaydi, har doim yig'indi sifatida hisoblanadi.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Foydalanuvchilar / rollar ─────────────────────────
+
+enum Role {
+  DIRECTOR     // to'liq huquq: hammasini ko'radi, sozlamalar, bloklarni ochadi
+  SALES        // sotuv
+  PRODUCTION   // ishlab chiqarish
+  LOGISTICS    // logistika
+  WAREHOUSE    // sklad
+  PROCUREMENT  // snabjeniye
+  ACCOUNTING   // buxgalteriya
+  FINANCE      // finance
+  HR           // otdel kadr
+  CASHIER      // kassa / bank
+}
+
+model User {
+  id           String   @id @default(cuid())
+  login        String   @unique
+  passwordHash String
+  fullName     String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders       Order[]           @relation("OrderCreatedBy")
+  batches      ProductionBatch[] @relation("BatchCreatedBy")
+  stockMoves   StockMove[]       @relation("MoveCreatedBy")
+  auditLogs    AuditLog[]
+  employee     Employee?
+}
+
+// ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
+
+model CompanySettings {
+  id           String   @id @default("main")
+  name         String   @default("Insof beton zavodi")
+  legalName    String?  // yuridik nomi (MChJ)
+  inn          String?
+  address      String?
+  phone        String?
+  phone2       String?
+  email        String?
+  bankName     String?
+  bankAccount  String?
+  mfo          String?
+  directorName String?
+  about        String?  // landing uchun qisqa matn
+  workingHours String?  @default("Dush–Shan 08:00–18:00")
+  foundedYear  Int?
+  updatedAt    DateTime @updatedAt
+}
+
+// ───────────────────────── Spravochniklar ─────────────────────────
+
+model Customer {
+  id          String   @id @default(cuid())
+  name        String
+  inn         String?  @unique
+  phone       String?
+  address     String?
+  creditLimit Decimal  @default(0) @db.Decimal(18, 2) // 0 = faqat oldindan to'lov
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders   Order[]
+  invoices Invoice[]
+  payments Payment[]
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  inn       String?  @unique
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  receipts GoodsReceipt[]
+}
+
+/// Xomashyo: sement, qum, shag'al (fraksiya bo'yicha), plastifikator, suv
+model Material {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  unit      String   // kg, t, l, m3
+  minStock  Decimal  @default(0) @db.Decimal(18, 3) // shu miqdordan kam qolsa — signal
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  recipeItems  RecipeItem[]
+  stockMoves   StockMove[]
+  receiptItems GoodsReceiptItem[]
+}
+
+/// Tayyor mahsulot: beton markasi (M300 / B22.5)
+model Product {
+  id        String   @id @default(cuid())
+  code      String   @unique // M300
+  name      String          // Beton M300 (B22.5) P3
+  strengthClass String?     // B22.5
+  unit      String   @default("m3")
+  price     Decimal  @default(0) @db.Decimal(18, 2) // bazaviy narx (1 m3)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  recipes    Recipe[]
+  orderItems OrderItem[]
+  batches    ProductionBatch[]
+  stockMoves StockMove[]
+}
+
+/// Retsept — 1 m3 uchun norma. Versiyalanadi, eski versiya o'chirilmaydi.
+model Recipe {
+  id        String   @id @default(cuid())
+  productId String
+  version   Int      @default(1)
+  isActive  Boolean  @default(true)
+  note      String?
+  createdAt DateTime @default(now())
+
+  product Product         @relation(fields: [productId], references: [id])
+  items   RecipeItem[]
+  batches ProductionBatch[]
+
+  @@unique([productId, version])
+}
+
+model RecipeItem {
+  id         String  @id @default(cuid())
+  recipeId   String
+  materialId String
+  qtyPerM3   Decimal @db.Decimal(18, 3)
+
+  recipe   Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  material Material @relation(fields: [materialId], references: [id])
+
+  @@unique([recipeId, materialId])
+}
+
+model Warehouse {
+  id       String  @id @default(cuid())
+  name     String
+  isActive Boolean @default(true)
+
+  stockMoves StockMove[]
+  receipts   GoodsReceipt[]
+}
+
+enum VehicleType {
+  MIXER
+  PUMP
+  TRUCK
+}
+
+model Vehicle {
+  id         String      @id @default(cuid())
+  plate      String      @unique
+  type       VehicleType
+  capacityM3 Decimal?    @db.Decimal(8, 2)
+  isActive   Boolean     @default(true)
+
+  trips Trip[]
+}
+
+model Employee {
+  id        String   @id @default(cuid())
+  fullName  String
+  position  String   // bo'lim lavozimi (Sotuv, Sklad...) yoki ishchi lavozim (Haydovchi, Operator...)
+  phone     String?
+  isActive  Boolean  @default(true)
+  userId    String?  @unique // tizimga kiradigan xodim uchun login
+  createdAt DateTime @default(now())
+
+  user  User?  @relation(fields: [userId], references: [id])
+  trips Trip[] @relation("TripDriver")
+}
+
+// ───────────────────────── Sklad: yagona harakat jurnali ─────────────────────────
+
+enum StockMoveType {
+  RECEIPT             // yetkazuvchidan kirim
+  PRODUCTION_CONSUME  // zames uchun xomashyo chiqimi
+  PRODUCTION_OUTPUT   // tayyor beton kirimi
+  SHIPMENT            // mijozga jo'natish
+  ADJUSTMENT          // inventarizatsiya farqi
+  WRITE_OFF           // brak / yo'qotish
+}
+
+/// Har bir qator o'zgarmas. qty ishorali: kirim (+), chiqim (−).
+/// Yo materialId, yo productId to'ldiriladi — ikkalasi emas.
+model StockMove {
+  id          String        @id @default(cuid())
+  date        DateTime      @default(now())
+  type        StockMoveType
+  warehouseId String
+  materialId  String?
+  productId   String?
+  qty         Decimal       @db.Decimal(18, 3)
+  unitCost    Decimal?      @db.Decimal(18, 2) // kirimda — tannarx hisobi uchun
+  refType     String?       // "GoodsReceipt" | "ProductionBatch" | "Trip"
+  refId       String?
+  note        String?
+  createdById String
+  createdAt   DateTime      @default(now())
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  material  Material? @relation(fields: [materialId], references: [id])
+  product   Product?  @relation(fields: [productId], references: [id])
+  createdBy User      @relation("MoveCreatedBy", fields: [createdById], references: [id])
+
+  @@index([warehouseId, materialId, date])
+  @@index([warehouseId, productId, date])
+  @@index([refType, refId])
+}
+
+// ───────────────────────── Snabjeniye: kirim ─────────────────────────
+
+model GoodsReceipt {
+  id          String   @id @default(cuid())
+  docNo       String   @unique
+  date        DateTime @default(now())
+  supplierId  String
+  warehouseId String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  supplier  Supplier           @relation(fields: [supplierId], references: [id])
+  warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
+  items     GoodsReceiptItem[]
+}
+
+model GoodsReceiptItem {
+  id         String  @id @default(cuid())
+  receiptId  String
+  materialId String
+  qty        Decimal @db.Decimal(18, 3)
+  price      Decimal @db.Decimal(18, 2) // birlik narxi
+
+  receipt  GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  material Material     @relation(fields: [materialId], references: [id])
+}
+
+// ───────────────────────── Sotuv: zayavka ─────────────────────────
+
+enum OrderStatus {
+  DRAFT          // sotuvchi kiritdi
+  BLOCKED        // kredit limit oshgan — direktor ochishi kerak
+  CONFIRMED      // ishlab chiqarishga tushdi
+  IN_PRODUCTION
+  DELIVERED
+  CLOSED         // to'lov yopildi
+  CANCELLED
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNo         String      @unique
+  date            DateTime    @default(now())
+  customerId      String
+  status          OrderStatus @default(DRAFT)
+  deliveryDate    DateTime
+  deliveryAddress String
+  needsPump       Boolean     @default(false)
+  note            String?
+  createdById     String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  customer  Customer          @relation(fields: [customerId], references: [id])
+  createdBy User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  items     OrderItem[]
+  batches   ProductionBatch[]
+  trips     Trip[]
+  invoices  Invoice[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  qtyM3     Decimal @db.Decimal(18, 3)
+  price     Decimal @db.Decimal(18, 2) // kelishilgan narx (1 m3)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+
+// ───────────────────────── Ishlab chiqarish: zames ─────────────────────────
+
+/// Bitta zames (partiya). Saqlanganda retsept bo'yicha xomashyo
+/// PRODUCTION_CONSUME sifatida StockMove'ga yoziladi.
+model ProductionBatch {
+  id          String   @id @default(cuid())
+  batchNo     String   @unique
+  date        DateTime @default(now())
+  shift       Int      @default(1)
+  orderId     String?
+  productId   String
+  recipeId    String
+  qtyM3       Decimal  @db.Decimal(18, 3)
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  order     Order?  @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+  recipe    Recipe  @relation(fields: [recipeId], references: [id])
+  createdBy User    @relation("BatchCreatedBy", fields: [createdById], references: [id])
+}
+
+// ───────────────────────── Logistika: reys / nakladnoy ─────────────────────────
+
+enum TripStatus {
+  PLANNED
+  LOADED
+  ON_ROAD
+  DELIVERED
+  CANCELLED
+}
+
+model Trip {
+  id             String     @id @default(cuid())
+  deliveryNoteNo String     @unique // nakladnoy raqami (QR shu bo'yicha)
+  orderId        String
+  vehicleId      String
+  driverId       String
+  qtyM3          Decimal    @db.Decimal(18, 3)
+  status         TripStatus @default(PLANNED)
+  loadedAt       DateTime?
+  deliveredAt    DateTime?
+  receiverName   String?    // obyektda kim qabul qildi
+  note           String?
+  createdAt      DateTime   @default(now())
+
+  order   Order    @relation(fields: [orderId], references: [id])
+  vehicle Vehicle  @relation(fields: [vehicleId], references: [id])
+  driver  Employee @relation("TripDriver", fields: [driverId], references: [id])
+}
+
+// ───────────────────────── Moliya: schyot / to'lov / kassa ─────────────────────────
+
+enum InvoiceStatus {
+  OPEN
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+model Invoice {
+  id         String        @id @default(cuid())
+  invoiceNo  String        @unique
+  date       DateTime      @default(now())
+  customerId String
+  orderId    String?
+  amount     Decimal       @db.Decimal(18, 2)
+  status     InvoiceStatus @default(OPEN)
+  createdAt  DateTime      @default(now())
+
+  customer Customer  @relation(fields: [customerId], references: [id])
+  order    Order?    @relation(fields: [orderId], references: [id])
+  payments Payment[]
+}
+
+enum CashAccountType {
+  CASH
+  BANK
+}
+
+model CashAccount {
+  id       String          @id @default(cuid())
+  name     String
+  type     CashAccountType
+  isActive Boolean         @default(true)
+
+  payments Payment[]
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  date          DateTime @default(now())
+  customerId    String
+  invoiceId     String?
+  cashAccountId String
+  amount        Decimal  @db.Decimal(18, 2)
+  note          String?
+  createdAt     DateTime @default(now())
+
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  invoice     Invoice?    @relation(fields: [invoiceId], references: [id])
+  cashAccount CashAccount @relation(fields: [cashAccountId], references: [id])
+}
+
+// ───────────────────────── Audit ─────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   // CREATE | UPDATE | DELETE | STATUS_CHANGE
+  entity    String   // "Order", "StockMove" ...
+  entityId  String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+}
