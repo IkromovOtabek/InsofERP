@@ -1,5 +1,6 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
+import { customerMarks, markedName } from "@/lib/finance";
+import { CustomerName } from "@/components/customer-name";
 import { money, date } from "@/lib/format";
 import { Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { PaymentForm } from "./payment-form";
@@ -11,6 +12,9 @@ export default async function PaymentsPage() {
     db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, include: { payments: true } }),
   ]);
+  const marks = await customerMarks([...customers.map((c) => c.id), ...payments.map((p) => p.customerId)]);
+  // Qora ro'yxatdagilar tanlovda ham belgili — kassir to'lovni qaysi mijozga yozayotganini biladi
+  const custOpts = customers.map((c) => ({ id: c.id, name: markedName(c.name, c.id, marks) }));
   const invOpts = openInvoices.map((i) => ({ id: i.id, invoiceNo: i.invoiceNo, customerId: i.customerId, remaining: Number(i.amount) - i.payments.reduce((s, p) => s + Number(p.amount), 0) }));
 
   return (
@@ -21,7 +25,7 @@ export default async function PaymentsPage() {
           <Card key={a.id}><div className="text-sm text-slate-500">{a.name} <span className="text-xs">({a.type === "CASH" ? "naqd" : "bank"})</span></div><div className="mt-1 text-xl font-semibold">{money(a.payments.reduce((s, p) => s + Number(p.amount), 0))}</div><div className="text-xs text-slate-500">kirimlar jami</div></Card>
         ))}
       </div>
-      <Card className="mb-6"><h2 className="mb-3 font-semibold">Yangi to'lov (kirim)</h2><PaymentForm customers={customers} invoices={invOpts} accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} /></Card>
+      <Card className="mb-6"><h2 className="mb-3 font-semibold">Yangi to'lov (kirim)</h2><PaymentForm customers={custOpts} invoices={invOpts} accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} /></Card>
       <h2 className="mb-3 font-semibold">So'nggi to'lovlar</h2>
       <Table>
         <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Schyot</Th><Th>Kassa/hisob</Th><Th right>Summa</Th><Th>Izoh</Th></tr></thead>
@@ -30,7 +34,7 @@ export default async function PaymentsPage() {
           {payments.map((p) => (
             <Tr key={p.id}>
               <Td>{date(p.date)}</Td>
-              <Td><Link href={`/customers/${p.customerId}`} className="hover:underline">{p.customer.name}</Link></Td>
+              <Td><CustomerName name={p.customer.name} blacklisted={marks.black.has(p.customerId)} contracted={marks.contract.has(p.customerId)} href={`/customers/${p.customerId}`} /></Td>
               <Td>{p.invoice?.invoiceNo ?? <span className="text-slate-400">avans</span>}</Td>
               <Td>{p.cashAccount.name}</Td><Td right className="font-medium text-emerald-700">+{money(p.amount)}</Td><Td className="text-slate-500">{p.note ?? ""}</Td>
             </Tr>

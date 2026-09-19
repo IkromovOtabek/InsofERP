@@ -5,8 +5,9 @@ import type { Role } from "@/generated/prisma";
 
 const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret");
 
-/** Login talab qilmaydigan yo'llar: login, QR tekshiruv. */
-const isPublic = (p: string) => p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public");
+/** Login talab qilmaydigan yo'llar: login, QR tekshiruv, Telegram va Insof ECO webhook'lari (maxfiy token/imzo bilan himoyalangan). */
+const isPublic = (p: string) =>
+  p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco");
 
 /** Sahifa darajasidagi ruxsat: yo'l NAV'dagi qaysi bo'limga tegishli bo'lsa, shu rollar kiradi. */
 function allowed(pathname: string, role: Role) {

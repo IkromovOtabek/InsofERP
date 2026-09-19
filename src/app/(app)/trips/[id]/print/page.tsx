@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { qty, date, money } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 import { getCompany } from "@/lib/company";
+import { publicOrigin } from "@/lib/public-url";
 
 /** Chop etish uchun nakladnoy (A5 landshaft / A4 yarim). Brauzerda Ctrl+P → PDF. */
 export default async function PrintPage({ params }: { params: Promise<{ id: string }> }) {
@@ -12,16 +12,22 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
   const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
   if (!t) notFound();
   const company = await getCompany();
-  const h = await headers();
-  const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-  const verifyUrl = `${origin}/verify/${t.deliveryNoteNo}`;
-  const qr = await QRCode.toString(verifyUrl, { type: "svg", margin: 0, width: 120 });
+  const { origin, fromEnv } = await publicOrigin();
+  const verifyUrl = `${origin}/verify/${encodeURIComponent(t.deliveryNoteNo)}`;
+  // Skaner ishlashi uchun QR atrofida "tinch zona" (margin) bo'lishi shart; M darajali xato tuzatish
+  // qog'oz g'ijimlansa ham o'qishga yordam beradi. Ranglar qat'iy qora/oq — dark rejimga bog'liq emas.
+  const qr = await QRCode.toString(verifyUrl, { type: "svg", margin: 2, width: 128, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });
   const item = t.order.items[0];
   const sum = item ? Number(t.qtyM3) * Number(item.price) : 0;
 
   return (
-    <div className="mx-auto max-w-3xl bg-white p-8 text-[13px] text-black print:p-4">
+    <div className="paper mx-auto max-w-3xl rounded-sm bg-white p-8 text-[13px] text-black print:max-w-none print:rounded-none print:p-4 print:shadow-none">
       <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav { display: none } body { background: #fff } }`}</style>
+      {!fromEnv && (
+        <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">
+          QR havolasi <b>{origin}</b> ga ishora qiladi — telefon bu manzilni ocha olmasligi mumkin. <code>.env</code> da <code>APP_URL</code> ni serverning tashqi manzili (masalan, <code>http://192.168.1.10:3000</code> yoki domen) qilib bering.
+        </div>
+      )}
       <div className="flex items-start justify-between border-b-2 border-black pb-3">
         <div>
           <div className="text-xl font-bold">TOVAR-TRANSPORT NAKLADNOYI</div>
@@ -29,8 +35,9 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
           <div className="mt-1">Sana: {date(t.loadedAt ?? t.createdAt)} · Zayavka {t.order.orderNo}</div>
         </div>
         <div className="flex flex-col items-center">
-          <div dangerouslySetInnerHTML={{ __html: qr }} />
+          <div className="bg-white" dangerouslySetInnerHTML={{ __html: qr }} />
           <div className="mt-1 text-[10px] text-slate-600">Tekshirish uchun skanerlang</div>
+          <div className="text-[9px] text-slate-500">{verifyUrl.replace(/^https?:\/\//, "")}</div>
         </div>
       </div>
 

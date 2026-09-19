@@ -215,8 +215,12 @@ export function matchQuestion(q: string): string | null {
 }
 
 export async function aiAnswer(question: string, sp: Record<string, string | undefined> = {}): Promise<Answer> {
-  const range = parseRange(sp); const ctx = makeCtx(range);
-  const key = matchQuestion(question);
+  return answerFor(makeCtx(parseRange(sp)), matchQuestion(question));
+}
+
+/** Bitta kalit uchun javob. ctx ulashilsa (aiSnapshot) baza so'rovlari qayta bajarilmaydi. */
+async function answerFor(ctx: AiCtx, key: string | null): Promise<Answer> {
+  const range = ctx.range;
   const L = (label: string, href: string) => ({ label, href });
   switch (key) {
     case "health": { const o = await ctx.overview(); return { key, text: `Biznes salomatligi ${o.health}/100 — ${o.healthLabel}. Xavf ostidagi pul ${M(o.riskTotal)}, kuniga ${M(o.loss.totalPerDay)} yo'qotilmoqda.`, bullets: o.components.map((c) => `${c.label}: ${c.score}/20 — ${c.text}`), href: L("Rahbar markazi", "/bi-tahlil") }; }
@@ -250,4 +254,44 @@ export async function aiAnswer(question: string, sp: Record<string, string | und
     case "fcdef": return { key, text: "Bashorat: 60 kunlik kunlik sotuv (m³) qatoridan hafta kuni indeksi olinadi, mavsumiylikdan tozalangan qatorga chiziqli trend o'tkaziladi; kelajak kun = trend × shu kunning indeksi. Aniqlik oxirgi 14 kun backtest bilan (MAE, WAPE, bias) o'lchanadi. Xomashyo ehtiyoji = 14 kunlik bashorat × marka aralashmasi × retsept.", href: L("Bashorat", "/bi-tahlil/ml") };
     default: return { key: "none", text: "Bu savolga hozircha javob bera olmayman. Men dashboard ma'lumotlari asosida javob beraman — sotuv, reja, ombor, moliya, mijozlar, sotuvchilar, prognoz va marketing bo'yicha. Quyidagi tayyor savollardan birini tanlang yoki savolni boshqacha yozing (masalan: «qaysi xomashyo tugayapti», «reja necha foiz», «kim sekinlashdi»)." };
   }
+}
+
+/* ───────────── Butun biznes kesimi (til modeli konteksti) ───────────── */
+
+/** Kesimga kirmaydigan kalitlar: ta'rif va meta savollar — ular raqam bermaydi. */
+const SNAPSHOT_SKIP = new Set(["fresh", "about", "healthdef", "fcdef"]);
+
+/**
+ * Katalogdagi barcha hisob-kitoblarni bitta ulashilgan ctx bilan hisoblaydi va
+ * til modeli uchun matn qilib yig'adi. Shu tufayli model katalogdan tashqari
+ * savolga ham javob bera oladi — kerakli raqam kontekstda allaqachon turadi.
+ */
+export async function aiSnapshot(sp: Record<string, string | undefined> = {}): Promise<string> {
+  const range = parseRange(sp);
+  const ctx = makeCtx(range);
+  const items = CATALOG.flatMap((c) => c.items).filter((i) => !SNAPSHOT_SKIP.has(i.key));
+
+  // Ketma-ket: ctx keshi tufayli har bir og'ir yuklovchi (overview, sales, ...) bir marta
+  // ishlaydi, qolgani keshdan keladi. Parallel qilinsa Postgres ulanishlari tugaydi.
+  // Bir nechta savol bitta hisob-kitobga tushadi (stockout/order/draft) — takrorlamaymiz.
+  const seen = new Set<string>();
+  const uniq: string[] = [];
+  for (const i of items) {
+    try {
+      const a = await answerFor(ctx, i.key);
+      if (a.key === "none" || seen.has(a.key)) continue;
+      seen.add(a.key);
+      const bullets = a.bullets?.length ? "\n" + a.bullets.map((b) => `  - ${b}`).join("\n") : "";
+      uniq.push(`## ${i.q}\n${a.text}${bullets}`);
+    } catch (e) {
+      console.error("[aiSnapshot]", i.key, e instanceof Error ? e.message.split("\n")[0] : e);
+    }
+  }
+
+  const now = new Date();
+  return [
+    `Davr: ${range.label} (oldingi davr: ${range.prevLabel})`,
+    `Hozir: ${fmtDate(now)} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
+    ...uniq,
+  ].join("\n\n");
 }

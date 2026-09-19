@@ -28,9 +28,18 @@ export async function createInvoice(_prev: ActionState, fd: FormData): Promise<A
   const id = await db.$transaction(async (tx) => {
     const inv = await tx.invoice.create({ data: { invoiceNo: await nextNo(tx, "invoice", "S"), date: new Date(d.date), customerId: o.customerId, orderId: o.id, amount: d.amount } });
     await audit(tx, s.userId, "CREATE", "Invoice", inv.id, undefined, inv);
+    // Zayavka ochilganda olingan oldindan to'lov (avans) shu schyotga bog'lanadi
+    const advances = await tx.payment.findMany({ where: { orderId: o.id, invoiceId: null } });
+    if (advances.length) {
+      await tx.payment.updateMany({ where: { id: { in: advances.map((a) => a.id) } }, data: { invoiceId: inv.id } });
+      const paid = advances.reduce((x, a) => x + Number(a.amount), 0);
+      const status = paid >= d.amount - 0.005 ? "PAID" : paid > 0 ? "PARTIAL" : "OPEN";
+      if (status !== "OPEN") await tx.invoice.update({ where: { id: inv.id }, data: { status } });
+      await audit(tx, s.userId, "UPDATE", "Invoice", inv.id, { status: "OPEN" }, { status, advances: paid });
+    }
     return inv.id;
   });
-  revalidatePath("/invoices"); revalidatePath(`/orders/${o.id}`); revalidatePath("/");
+  revalidatePath("/invoices"); revalidatePath("/payments"); revalidatePath(`/orders/${o.id}`); revalidatePath("/");
   redirect(`/invoices?created=${id}`);
 }
 

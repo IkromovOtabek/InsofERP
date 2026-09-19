@@ -8,14 +8,14 @@ export { PasswordInput } from "./password-input";
 /* ═══════════════════════ Layout ═══════════════════════ */
 
 export function PageHeader({ title, subtitle, eyebrow, action, back }: {
-  title: string; subtitle?: string; eyebrow?: string; action?: React.ReactNode; back?: { href: string; label: string };
+  title: React.ReactNode; subtitle?: React.ReactNode; eyebrow?: string; action?: React.ReactNode; back?: { href: string; label: string };
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4 animate-fade-up">
       <div className="min-w-0">
         {back && <Link href={back.href} className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">← {back.label}</Link>}
         {eyebrow && !back && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
-        <h1 className="truncate text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}

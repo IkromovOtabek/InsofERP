@@ -30,3 +30,6 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export const date = (d: Date) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 export const dateTime = (d: Date) => `${date(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 export const isoDate = (d: Date = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/** Yetkazish sanasi + soati: "18/09/2026 · 14:00" (soat kiritilmagan bo'lsa faqat sana). */
+export const deliveryAt = (d: Date, t?: string | null) => (t ? `${date(d)} · ${t}` : date(d));

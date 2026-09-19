@@ -12,7 +12,9 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "bot": "tsx scripts/telegram-bot.ts",
+    "bot:webhook": "tsx scripts/telegram-webhook.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
@@ -27,6 +29,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwind-merge": "^3.3.1",
+    "xlsx": "^0.18.5",
     "zod": "^4.1.0"
   },
   "devDependencies": {

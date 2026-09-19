@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { CATALOG, aiAnswer, aiDirector, matchQuestion, type Answer } from "@/lib/bi/ai";
+import { CATALOG, aiAnswer } from "@/lib/bi/ai";
 import { parseRange } from "@/lib/bi/core";
-import { askClaude, llmEnabled, type LlmTurn } from "@/lib/ai/claude";
+import { llmEnabled, type LlmTurn } from "@/lib/ai/llm";
+import { askInsofAi } from "@/lib/bi/answer";
 
 const AI_ROLES = new Set(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
 type Body = { mode: "quick" | "chat"; key?: string; question?: string; history?: LlmTurn[]; sp?: Record<string, string | undefined> };
@@ -39,23 +40,8 @@ export async function POST(req: Request) {
 
     const question = (body.question ?? "").trim().slice(0, 1000);
     if (!question) return NextResponse.json({ error: "EMPTY" }, { status: 400 });
-    const key = matchQuestion(question);
-    const rule = await aiAnswer(question, sp);
-
-    // Kalit yo'q → qoida asosidagi javob (mos kelsa hisob-kitob, bo'lmasa "javob bera olmayman")
-    if (!llmEnabled()) return NextResponse.json({ answer: rule, level: 0, period: range.label, latency: Date.now() - t0 });
-
-    // Claude: kontekst = rahbar xulosasi + mos kelgan qoida javobi
-    const d = await aiDirector(range);
-    const ctx = [
-      `Davr: ${range.label}`,
-      ...d.summary,
-      d.risks.length ? "Xavflar:\n" + d.risks.map((r) => `- ${r.title}: ${r.money}. ${r.text} Harakat: ${r.action}`).join("\n") : "Shoshilinch xavf yo'q.",
-      key ? `Savolga mos hisob-kitob (${rule.key}): ${rule.text}${rule.bullets?.length ? "\n" + rule.bullets.map((b) => `- ${b}`).join("\n") : ""}` : "",
-    ].filter(Boolean).join("\n");
-    const llm = await askClaude(question, ctx, body.history ?? []);
-    const answer: Answer = { key: rule.key, text: llm.text, href: rule.href };
-    return NextResponse.json({ answer, level: 2, model: llm.model, period: range.label, latency: Date.now() - t0 });
+    const r = await askInsofAi(question, { sp, history: body.history ?? [] });
+    return NextResponse.json({ answer: r.answer, level: r.level, model: r.model, period: r.period, latency: Date.now() - t0 });
   } catch (e) {
     console.error("[ai]", e);
     return NextResponse.json({ error: "SERVER" }, { status: 500 });

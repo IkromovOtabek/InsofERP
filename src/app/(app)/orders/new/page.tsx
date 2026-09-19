@@ -1,19 +1,48 @@
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { customersCredit, customersHistory, contractedIds } from "@/lib/finance";
+import { stockSnapshot } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
-import { OrderForm } from "../order-form";
+import { StockSnapshotCard } from "@/components/stock-snapshot";
+import { OrderForm, type CustomerOpt, type ProductStock } from "../order-form";
 import { unitLabel } from "@/lib/unit";
+import { CONTRACT_ACCEPT } from "@/lib/uploads";
 
-export default async function NewOrder() {
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
   await requireSession(["SALES"]);
-  const [customers, products] = await Promise.all([
-    db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  const { customer } = await searchParams;
+  const credit = await customersCredit();
+  const [customers, products, history, stock, cashAccounts, contracted] = await Promise.all([
+    db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true, inn: true, address: true, createdAt: true } }),
     db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" } }),
+    customersHistory(undefined, credit),
+    stockSnapshot(),
+    db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], distinct: ["name"], select: { id: true, name: true, type: true } }),
+    contractedIds(),
   ]);
+  const opts: CustomerOpt[] = customers.map((c) => {
+    const cr = credit.get(c.id);
+    const h = history.get(c.id);
+    return {
+      id: c.id, name: c.name, phone: c.phone, inn: c.inn, address: c.address, since: c.createdAt.getTime(),
+      limit: cr?.limit ?? 0, used: cr?.used ?? 0, free: cr?.free ?? 0, debt: cr?.debt ?? 0, blacklisted: cr?.blacklisted ?? false, contracted: contracted.has(c.id),
+      bought: h?.bought ?? 0, orders: h?.orders ?? 0, paid: h?.paid ?? 0, lastOrderAt: h?.lastOrderAt?.getTime() ?? null,
+      stars: h?.stars ?? 0, label: h?.label ?? "Yangi mijoz",
+    };
+  });
+  const productStock: ProductStock = Object.fromEntries(stock.pieces.map((p) => [p.id, { free: p.free, total: p.total, by: p.last?.by ?? null }]));
+
   return (
     <div>
-      <PageHeader title="Yangi zayavka" subtitle="Saqlangandan keyin tasdiqlash tugmasi orqali ishlab chiqarishga yuboriladi" />
-      <OrderForm customers={customers} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, price: p.price.toString(), unit: unitLabel(p.unit) }))} />
+      <PageHeader title="Yangi zayavka" subtitle="Saqlangandan keyin “Qabul qilish” tugmasi orqali Sotuv bo'limiga o'tadi va ishlab chiqarishga tushadi" />
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
+        <div className="xl:col-span-3">
+          <OrderForm customers={opts} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, price: p.price.toString(), unit: unitLabel(p.unit) }))} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} />
+        </div>
+        <div className="xl:col-span-2">
+          <StockSnapshotCard compact />
+        </div>
+      </div>
     </div>
   );
 }

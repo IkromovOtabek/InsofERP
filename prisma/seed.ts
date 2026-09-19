@@ -178,15 +178,21 @@ async function main() {
 
   // ── Mijozlar ──
   const [c1, c2, c3, c4, c5, c6, c7, c8] = await Promise.all([
-    db.customer.create({ data: { name: "Toshkent Qurilish Konsalting MChJ", inn: "301234561", phone: "+998 71 200 10 01", address: "Toshkent sh., Mirzo Ulug'bek t.", creditLimit: 50_000_000 } }),
-    db.customer.create({ data: { name: "Toshkent Uy-Joy Qurilish", inn: "301234562", phone: "+998 71 200 10 02", address: "Toshkent sh., Yashnobod t.", creditLimit: 30_000_000 } }),
-    db.customer.create({ data: { name: "AVJ Solutions MChJ", inn: "301234563", phone: "+998 71 200 10 03", address: "Toshkent sh., Chilonzor t.", creditLimit: 20_000_000 } }),
-    db.customer.create({ data: { name: "Chilonzor Invest", inn: "301234564", phone: "+998 71 200 10 04", address: "Toshkent sh., Chilonzor t., 19-kvartal", creditLimit: 0 } }),
-    db.customer.create({ data: { name: "Bunyodkor Qurilish", inn: "301234565", phone: "+998 71 200 10 05", address: "Toshkent sh., Yakkasaroy t.", creditLimit: 40_000_000 } }),
-    db.customer.create({ data: { name: "Aziz Rahimov", phone: "+998 90 123 45 67", address: "Toshkent sh., Sergeli t., shaxsiy uy", creditLimit: 5_000_000 } }),
-    db.customer.create({ data: { name: "Yunusobod Mega Qurilish", inn: "301234567", phone: "+998 71 200 10 07", address: "Toshkent sh., Yunusobod t.", creditLimit: 40_000_000 } }),
-    db.customer.create({ data: { name: "Green House Construction", inn: "301234568", phone: "+998 71 200 10 08", address: "Toshkent viloyati, Qibray t.", creditLimit: 15_000_000 } }),
+    db.customer.create({ data: { name: "Toshkent Qurilish Konsalting MChJ", inn: "301234561", phone: "+998 71 200 10 01", address: "Toshkent sh., Mirzo Ulug'bek t." } }),
+    db.customer.create({ data: { name: "Toshkent Uy-Joy Qurilish", inn: "301234562", phone: "+998 71 200 10 02", address: "Toshkent sh., Yashnobod t." } }),
+    db.customer.create({ data: { name: "AVJ Solutions MChJ", inn: "301234563", phone: "+998 71 200 10 03", address: "Toshkent sh., Chilonzor t." } }),
+    db.customer.create({ data: { name: "Chilonzor Invest", inn: "301234564", phone: "+998 71 200 10 04", address: "Toshkent sh., Chilonzor t., 19-kvartal" } }),
+    db.customer.create({ data: { name: "Bunyodkor Qurilish", inn: "301234565", phone: "+998 71 200 10 05", address: "Toshkent sh., Yakkasaroy t." } }),
+    db.customer.create({ data: { name: "Aziz Rahimov", phone: "+998 90 123 45 67", address: "Toshkent sh., Sergeli t., shaxsiy uy" } }),
+    db.customer.create({ data: { name: "Yunusobod Mega Qurilish", inn: "301234567", phone: "+998 71 200 10 07", address: "Toshkent sh., Yunusobod t." } }),
+    db.customer.create({ data: { name: "Green House Construction", inn: "301234568", phone: "+998 71 200 10 08", address: "Toshkent viloyati, Qibray t." } }),
   ]);
+
+  // ── Brigadalar ──
+  const brigadir1 = await db.employee.create({ data: { fullName: "Rustam Xolmatov", position: "Master", phone: "+998 90 111 22 33" } });
+  const brigadir2 = await db.employee.create({ data: { fullName: "Sherzod Mirzayev", position: "Master", phone: "+998 90 444 55 66" } });
+  await db.brigade.create({ data: { name: "1-brigada (ustun, blok)", leaderId: brigadir1.id, phone: brigadir1.phone } });
+  await db.brigade.create({ data: { name: "2-brigada (beton)", leaderId: brigadir2.id, phone: brigadir2.phone } });
 
   // ── Yetkazuvchilar ──
   const [supCem, supKar, supChem] = await Promise.all([

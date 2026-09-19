@@ -3,11 +3,15 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
+import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
+import { ecoEnabled } from "@/lib/eco/client";
 
 const schema = z.object({
   orderId: zStr("Zayavka tanlanmagan"),
@@ -16,6 +20,10 @@ const schema = z.object({
   qtyM3: z.coerce.number().positive("miqdor 0 dan katta bo'lsin"),
   note: zOpt,
 });
+
+function refresh(id: string, orderId: string) {
+  revalidatePath(`/trips/${id}`); revalidatePath("/trips"); revalidatePath(`/orders/${orderId}`); revalidatePath("/drivers");
+}
 
 export async function createTrip(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
@@ -38,6 +46,9 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
     await audit(tx, s.userId, "CREATE", "Trip", t.id, undefined, t);
     return t.id;
   });
+  // Haydovchi ilovasiga yuborish — reys sahifasi ochilganda ECO holati darhol ko'rinishi uchun kutamiz
+  // (klientda 10 s timeout; xato bo'lsa reys baribir yaratiladi, xabar reys sahifasida chiqadi)
+  if (ecoEnabled()) await pushTripToEco(id);
   revalidatePath("/trips"); revalidatePath(`/orders/${d.orderId}`);
   redirect(`/trips/${id}`);
 }
@@ -45,27 +56,16 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
 /** PLANNED → LOADED: tayyor beton skladdan chiqadi (SHIPMENT). */
 export async function markLoaded(id: string) {
   const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
-  const t = await db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true } } } });
-  if (t.status !== "PLANNED") return;
-  const productId = t.order.items[0]?.productId;
-  const wh = await db.warehouse.findFirstOrThrow({ where: { isActive: true } });
-  await db.$transaction(async (tx) => {
-    await tx.trip.update({ where: { id }, data: { status: "LOADED", loadedAt: new Date() } });
-    if (productId) {
-      await tx.stockMove.create({ data: { type: "SHIPMENT", warehouseId: wh.id, productId, qty: -Number(t.qtyM3), refType: "Trip", refId: id, createdById: s.userId } });
-    }
-    await audit(tx, s.userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED" });
-  });
-  revalidatePath(`/trips/${id}`); revalidatePath("/trips"); revalidatePath("/stock");
+  const r = await tripLoaded(id, s.userId);
+  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "LOADING"));
+  refresh(id, r.orderId); revalidatePath("/stock");
 }
 
 export async function markOnRoad(id: string) {
   const s = await requireSession(["LOGISTICS"]);
-  const t = await db.trip.findUniqueOrThrow({ where: { id } });
-  if (t.status !== "LOADED") return;
-  await db.trip.update({ where: { id }, data: { status: "ON_ROAD" } });
-  await audit(db, s.userId, "STATUS_CHANGE", "Trip", id, { status: "LOADED" }, { status: "ON_ROAD" });
-  revalidatePath(`/trips/${id}`); revalidatePath("/trips");
+  const r = await tripOnRoad(id, s.userId);
+  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "EN_ROUTE"));
+  refresh(id, r.orderId);
 }
 
 /** → DELIVERED. Zayavkaning hamma hajmi yetkazilgan bo'lsa — zayavka DELIVERED. */
@@ -73,26 +73,26 @@ export async function markDelivered(id: string, _prev: ActionState, fd: FormData
   const s = await requireSession(["LOGISTICS"]);
   const receiverName = String(fd.get("receiverName") ?? "").trim();
   if (!receiverName) return { error: "Qabul qilgan shaxsni kiriting" };
-  const t = await db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true, trips: true } } } });
-  if (!["LOADED", "ON_ROAD"].includes(t.status)) return { error: "Holat mos emas" };
-
-  const total = t.order.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-  const delivered = t.order.trips.filter((x) => x.status === "DELIVERED" || x.id === id).reduce((s, x) => s + Number(x.qtyM3), 0);
-
-  await db.$transaction(async (tx) => {
-    await tx.trip.update({ where: { id }, data: { status: "DELIVERED", deliveredAt: new Date(), receiverName } });
-    if (delivered >= total - 0.001) await tx.order.update({ where: { id: t.orderId }, data: { status: "DELIVERED" } });
-    await audit(tx, s.userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName });
-  });
-  revalidatePath(`/trips/${id}`); revalidatePath("/trips"); revalidatePath(`/orders/${t.orderId}`);
+  const r = await tripDelivered(id, s.userId, receiverName);
+  if (r.error) return { error: r.error };
+  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${receiverName}` }));
+  refresh(id, r.orderId);
   return { ok: true };
 }
 
 export async function cancelTrip(id: string) {
   const s = await requireSession(["LOGISTICS"]);
-  const t = await db.trip.findUniqueOrThrow({ where: { id } });
-  if (t.status !== "PLANNED") return;
-  await db.trip.update({ where: { id }, data: { status: "CANCELLED" } });
-  await audit(db, s.userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "CANCELLED" });
-  revalidatePath(`/trips/${id}`); revalidatePath("/trips");
+  const r = await tripCancelled(id, s.userId);
+  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "CANCELLED"));
+  refresh(id, r.orderId);
+}
+
+/** Reys sahifasidagi "ECO'ga yuborish / yangilash" tugmasi. */
+export async function syncTripWithEco(id: string, mode: "push" | "pull"): Promise<ActionState> {
+  await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const t = await db.trip.findUniqueOrThrow({ where: { id }, select: { orderId: true } });
+  const r = mode === "push" ? await pushTripToEco(id) : await pullTripFromEco(id);
+  refresh(id, t.orderId); revalidatePath("/stock");
+  if (r.skipped) return { error: "ECO ulanmagan — .env da ECO_API_URL va ECO_API_KEY ni bering" };
+  return r.ok ? { ok: true } : { error: r.error };
 }

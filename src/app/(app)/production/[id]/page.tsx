@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { customerMarks } from "@/lib/finance";
+import { CustomerName } from "@/components/customer-name";
 import { date, qty } from "@/lib/format";
 import { Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 
@@ -11,6 +13,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
     include: { product: true, recipe: { include: { items: { include: { material: true } } } }, order: { include: { customer: true } }, createdBy: true },
   });
   if (!b) notFound();
+  const marks = await customerMarks(b.order ? [b.order.customerId] : []);
   const moves = await db.stockMove.findMany({ where: { refType: "ProductionBatch", refId: id }, include: { material: true, product: true, warehouse: true } });
 
   return (
@@ -19,7 +22,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card><div className="text-sm text-slate-500">Marka</div><div className="mt-1 text-lg font-semibold">{b.product.name}</div><div className="text-xs text-slate-500">retsept v{b.recipe.version}</div></Card>
         <Card><div className="text-sm text-slate-500">Miqdor</div><div className="mt-1 text-lg font-semibold">{qty(b.qtyM3)} m³</div></Card>
-        <Card><div className="text-sm text-slate-500">Zayavka</div><div className="mt-1 text-lg font-semibold">{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo}</Link> : "—"}</div>{b.order && <div className="text-xs text-slate-500">{b.order.customer.name}</div>}</Card>
+        <Card><div className="text-sm text-slate-500">Zayavka</div><div className="mt-1 text-lg font-semibold">{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo}</Link> : "—"}</div>{b.order && <div className="text-xs text-slate-500"><CustomerName name={b.order.customer.name} blacklisted={marks.black.has(b.order.customerId)} contracted={marks.contract.has(b.order.customerId)} /></div>}</Card>
       </div>
       <h2 className="mb-3 font-semibold">Sklad harakati</h2>
       <Table>

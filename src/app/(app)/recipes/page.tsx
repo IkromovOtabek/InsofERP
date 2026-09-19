@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { qty } from "@/lib/format";
-import { Badge, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { FileSpreadsheet } from "lucide-react";
+import { Badge, Callout, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 
-export default async function RecipesPage() {
+export default async function RecipesPage({ searchParams }: { searchParams: Promise<{ imported?: string }> }) {
+  const { imported } = await searchParams;
   const products = await db.product.findMany({
     where: { isActive: true },
     orderBy: { code: "asc" },
@@ -11,7 +13,8 @@ export default async function RecipesPage() {
   });
   return (
     <div>
-      <PageHeader title="Retseptlar" subtitle="Har bir mahsulot uchun 1 birlikka (m³ yoki dona) xomashyo normasi. Yangi versiya yaratiladi, eskisi tarixda qoladi." />
+      <PageHeader title="Retseptlar" subtitle="Har bir mahsulot uchun 1 birlikka (m³ yoki dona) xomashyo normasi. Yangi versiya yaratiladi, eskisi tarixda qoladi." action={<LinkButton href="/recipes/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>} />
+      {imported && <Callout tone="success" title="Excel import bajarildi">{imported} ta mahsulot uchun yangi retsept versiyasi saqlandi.</Callout>}
       <Table>
         <thead><tr><Th>Mahsulot</Th><Th>Versiya</Th><Th>Tarkib (1 birlik)</Th><Th></Th></tr></thead>
         <tbody>

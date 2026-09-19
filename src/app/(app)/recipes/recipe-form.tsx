@@ -9,7 +9,7 @@ import { Button, Field, FormError, Input, Select, Textarea } from "@/components/
 type Material = { id: string; name: string; unit: string };
 type Row = { key: number; materialId: string; qtyPerM3: string };
 
-export function RecipeForm({ productId, materials, initial, unit = "m³" }: { productId: string; materials: Material[]; initial: { materialId: string; qtyPerM3: string }[]; unit?: string }) {
+export function RecipeForm({ productId, materials, initial, unit = "m³", returnTo }: { productId: string; materials: Material[]; initial: { materialId: string; qtyPerM3: string }[]; unit?: string; returnTo?: string }) {
   const [state, action, pending] = useActionState(createRecipeVersion.bind(null, productId), undefined);
   const [rows, setRows] = useState<Row[]>(
     initial.length ? initial.map((i, k) => ({ key: k + 1, ...i })) : [{ key: 1, materialId: materials[0]?.id ?? "", qtyPerM3: "" }],
@@ -19,6 +19,7 @@ export function RecipeForm({ productId, materials, initial, unit = "m³" }: { pr
   return (
     <form action={action} className="space-y-4">
       <FormError error={state?.error} />
+      {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
       <div className="space-y-2">
         {rows.map((r) => {
           const munit = materials.find((m) => m.id === r.materialId)?.unit ?? "";

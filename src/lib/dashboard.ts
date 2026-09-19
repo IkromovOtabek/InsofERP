@@ -63,7 +63,7 @@ export async function mixerStatus() {
     const todayTrips = v.trips.filter((t) => t.createdAt >= today && t.status !== "CANCELLED");
     return {
       id: v.id, plate: v.plate, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null,
-      active: active ? { id: active.id, noteNo: active.deliveryNoteNo, status: active.status, customer: active.order.customer.name, driver: active.driver.fullName, qtyM3: Number(active.qtyM3) } : null,
+      active: active ? { id: active.id, noteNo: active.deliveryNoteNo, status: active.status, customerId: active.order.customerId, customer: active.order.customer.name, driver: active.driver.fullName, qtyM3: Number(active.qtyM3) } : null,
       todayCount: todayTrips.length,
       todayM3: todayTrips.reduce((s, t) => s + Number(t.qtyM3), 0),
     };

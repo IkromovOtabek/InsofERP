@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, ClipboardList, Users, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Car, Settings, LogOut, Menu, X, BookOpen, Boxes, Clock, BarChart3, ChevronDown, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Car, Settings, LogOut, Menu, X, BookOpen, Boxes, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -12,13 +12,15 @@ import { LogoMark } from "@/components/logo";
 import { AiPanel, AiTrigger } from "@/components/ai-panel";
 
 const ICONS: Record<string, LucideIcon> = {
-  "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/customers": Users, "/production": Factory, "/recipes": FlaskConical,
+  "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/production": Factory, "/recipes": FlaskConical,
   "/trips": Truck, "/stock": Warehouse, "/astatka": Boxes, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
-  "/payments": Landmark, "/employees": Contact, "/vehicles": Car, "/bi-tahlil": BarChart3, "/settings": Settings,
+  "/payments": Landmark, "/cashflow": ArrowLeftRight, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/vehicles": Car, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings,
   "/bi-tahlil/sotuvlar": TrendingUp, "/bi-tahlil/agentlar": UserRoundCheck, "/bi-tahlil/mijozlar": Users, "/bi-tahlil/ombor": Warehouse, "/bi-tahlil/mahsulotlar": Package, "/bi-tahlil/ishlab-chiqarish": Factory,
   "/bi-tahlil/marketing": Megaphone, "/bi-tahlil/reja": Target, "/bi-tahlil/moliya": Landmark, "/bi-tahlil/ml": BrainCircuit, "/bi-tahlil/ai": Sparkles,
 };
-const GROUP_ORDER = ["Asosiy", "Sotuv", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Tahlil", "Boshqaruv"];
+// Tartib: Bosh sahifa → Tahlil (BI) → operatsion modullar (Sotuv … Moliya) → Boshqaruv (Xodimlar, Sozlamalar).
+// Operatsion bandlar Sozlamalar bo'limining bevosita tepasida turadi.
+const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Boshqaruv"];
 
 type User = { fullName: string; roleLabel: string };
 
@@ -33,47 +35,68 @@ function bestMatch(path: string, items: NavItem[]) {
   return best;
 }
 
-function NavList({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
+function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
   const path = usePathname();
   const active = bestMatch(path, items);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  // Guruhlar akkordeon: bir vaqtda faqat bittasi ochiq. Sarlavha bosilsa o'sha guruh ochiladi, oldingisi yopiladi.
+  // Sukut bo'yicha (null) joriy sahifa turgan guruh ochiq.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const groups = GROUP_ORDER.map((g) => ({ g, items: items.filter((i) => i.group === g) })).filter((x) => x.items.length);
+  // Har bir yozuv (guruh sarlavhasi, band, ichki band) ketma-ket paydo bo'ladi — --i tartib raqami CSS'da kechikishga aylanadi
+  let seq = 0;
+  const stagger = (j: number) => ({ "--i": seq++, "--j": j } as React.CSSProperties);
   return (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
-      {groups.map(({ g, items }) => (
-        <div key={g}>
-          {g !== "Asosiy" && <div className="mb-1 px-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">{g}</div>}
-          <div className="space-y-0.5">
-            {items.map((i) => {
+    <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-2">
+      {groups.map(({ g, items }) => {
+        const hasHeader = g !== "Asosiy";
+        const groupActive = items.some((i) => active === i.href || (i.children ?? []).some((c) => active === c.href));
+        const groupOpen = !hasHeader || (openGroup === null ? groupActive : openGroup === g);
+        return (
+          <div key={g}>
+            {hasHeader && (
+              <button type="button" style={stagger(0)} aria-expanded={groupOpen}
+                onClick={() => setOpenGroup(groupOpen ? "" : g)}
+                className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-slate-50 hover:text-slate-700",
+                  groupActive ? "text-slate-600" : "text-slate-400")}>
+                <span>{g}</span>
+                <ChevronDown size={13} className={cn("sb-gcaret transition-transform duration-300", groupOpen ? "rotate-180" : "")} />
+              </button>
+            )}
+            <div className="sb-gbody" data-open={groupOpen}>
+              <div className="min-h-0 overflow-hidden">
+                <div className="space-y-0.5">
+            {items.map((i, j) => {
               const Icon = ICONS[i.href];
               const isActive = active === i.href;
               const childActive = (i.children ?? []).some((c) => active === c.href);
               const expanded = open[i.href] ?? (isActive || childActive);
               return (
-                <div key={i.href}>
+                <div key={i.href} style={stagger(j)} className="sb-item">
                   <div className="relative flex items-center">
-                    <Link href={i.href} onClick={onNavigate}
-                      className={cn("group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] transition-colors",
+                    {/* Yig'ilganda yozuv ko'rinmaydi, shuning uchun nomni sichqoncha ostida ko'rsatamiz */}
+                    <Link href={i.href} onClick={onNavigate} title={collapsed ? i.label : undefined}
+                      className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px]",
                         isActive ? "bg-slate-100 font-medium text-slate-900" : childActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
-                      {isActive && <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
-                      {Icon && <Icon size={17} className={cn("shrink-0", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
-                      <span className="truncate">{i.label}</span>
+                      {isActive && <span className="sb-active absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
+                      {Icon && <Icon size={17} className={cn("sb-icon shrink-0", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
+                      <span className="sb-fade truncate">{i.label}</span>
                     </Link>
                     {i.children && (
                       <button type="button" aria-label={expanded ? "Yopish" : "Ochish"} onClick={() => setOpen((o) => ({ ...o, [i.href]: !expanded }))}
-                        className="absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900">
+                        className="sb-caret absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900">
                         <ChevronDown size={15} className={cn("transition-transform", expanded ? "rotate-180" : "")} />
                       </button>
                     )}
                   </div>
                   {i.children && expanded && (
-                    <div className="ml-[22px] mt-0.5 space-y-0.5 border-l border-slate-200 pl-3">
-                      {i.children.map((c) => {
+                    <div className="sb-sub animate-fade-up ml-[22px] mt-0.5 space-y-0.5 border-l border-slate-200 pl-3">
+                      {i.children.map((c, ci) => {
                         const ca = active === c.href;
                         return (
-                          <Link key={c.href} href={c.href} onClick={onNavigate}
-                            className={cn("flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] transition-colors", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
-                            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300")} />
+                          <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
+                            className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
+                            <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />
                             <span className="truncate">{c.label}</span>
                           </Link>
                         );
@@ -83,28 +106,40 @@ function NavList({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => v
                 </div>
               );
             })}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </nav>
   );
 }
 
-function SidebarInner({ items, user, brand, onNavigate }: { items: NavItem[]; user: User; brand: string; onNavigate?: () => void }) {
+function SidebarInner({ items, user, brand, onNavigate, collapsed, onToggle }:
+  { items: NavItem[]; user: User; brand: string; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
-    <div className="flex h-full flex-col border-r border-slate-200/80 bg-white text-slate-700 dark:bg-[#0b1120]">
-      <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
+    <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-white text-slate-700 dark:bg-[#0b1120]">
+      {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
+      {onToggle && (
+        <button type="button" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? "Menyuni yoyish" : "Menyuni yig'ish"}
+          title={collapsed ? "Menyuni yoyish" : "Menyuni yig'ish"}
+          className="sb-toggle absolute -right-3 top-7 z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-(--shadow-card) transition hover:border-brand-500 hover:text-slate-900 lg:flex">
+          <ChevronLeft size={14} />
+        </button>
+      )}
+      <div className="sb-row flex items-center gap-2.5 px-5 pb-4 pt-5">
         <LogoMark className="h-9 w-9 shrink-0" />
-        <div className="min-w-0">
+        <div className="sb-fade min-w-0">
           <div className="truncate text-[15px] font-semibold text-slate-900">Insof ERP</div>
           <div className="truncate text-[11px] text-slate-500">{brand}</div>
         </div>
       </div>
-      <NavList items={items} onNavigate={onNavigate} />
+      <NavList items={items} onNavigate={onNavigate} collapsed={collapsed} />
       <div className="border-t border-slate-200/80 p-3">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <Avatar name={user.fullName} className="h-8 w-8 text-xs" />
-          <div className="min-w-0 flex-1">
+        <div className="sb-user flex items-center gap-3 rounded-lg px-2 py-2">
+          <Avatar name={user.fullName} className="h-8 w-8 shrink-0 text-xs" />
+          <div className="sb-fade min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium text-slate-900">{user.fullName}</div>
             <div className="truncate text-[11px] text-slate-500">{user.roleLabel}</div>
           </div>
@@ -145,13 +180,25 @@ function HeaderClock() {
 
 export function AppShell({ items, user, brand, ai = false, children }: { items: NavItem[]; user: User; brand: string; ai?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
   useEffect(() => { setOpen(false); }, [path]);
+  // Holatni <html> dagi klassdan o'qiymiz — uni layout.tsx skripti sahifa chizilishidan oldin qo'ygan
+  useEffect(() => { setCollapsed(document.documentElement.classList.contains("sb-collapsed")); }, []);
+
+  const toggleSidebar = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    document.documentElement.classList.toggle("sb-collapsed", next);
+    try { localStorage.setItem("insof-sidebar", next ? "1" : "0"); } catch { /* shaxsiy rejimda localStorage yopiq bo'lishi mumkin */ }
+  };
 
   return (
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block"><SidebarInner items={items} user={user} brand={brand} /></aside>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sb-w)] transition-[width] duration-200 lg:block">
+        <SidebarInner items={items} user={user} brand={brand} collapsed={collapsed} onToggle={toggleSidebar} />
+      </aside>
 
       {/* Mobile drawer */}
       {open && (
@@ -164,7 +211,7 @@ export function AppShell({ items, user, brand, ai = false, children }: { items: 
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
+      <div className="flex min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:pl-[var(--sb-w)]">
         {/* Topbar */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur lg:px-6">
           <div className="flex items-center gap-3">

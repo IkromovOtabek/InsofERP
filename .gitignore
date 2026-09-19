@@ -6,3 +6,9 @@ out
 *.log
 .DS_Store
 src/generated
+
+# ERP → ECO baza dump (shaxsiy ma'lumotlar, repoga kirmasin)
+scripts/erp-to-eco-db.sql
+
+# Yuklangan fayllar (imzolangan shartnomalar) — repoga kirmasin
+uploads/

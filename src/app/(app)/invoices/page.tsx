@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Plus, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
+import { customerMarks } from "@/lib/finance";
+import { CustomerName } from "@/components/customer-name";
 import { getSession } from "@/lib/auth";
 import { money, date } from "@/lib/format";
 import { Button, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
@@ -16,6 +18,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
     orderBy: { date: "desc" }, take: 300,
     include: { customer: true, order: true, payments: true },
   });
+  const marks = await customerMarks(invoices.map((i) => i.customerId));
   const open = invoices.filter((i) => ["OPEN", "PARTIAL"].includes(i.status));
   const receivable = open.reduce((s, i) => s + Number(i.amount) - i.payments.reduce((p, x) => p + Number(x.amount), 0), 0);
   const tabs: Array<[string, string]> = [["", "Hammasi"], ...Object.entries(INVOICE_STATUS).map(([k, v]) => [k, v.label] as [string, string])];
@@ -35,7 +38,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
             return (
               <Tr key={i.id}>
                 <Td className="font-medium">{i.invoiceNo}</Td><Td>{date(i.date)}</Td>
-                <Td><Link href={`/customers/${i.customerId}`} className="hover:underline">{i.customer.name}</Link></Td>
+                <Td><CustomerName name={i.customer.name} blacklisted={marks.black.has(i.customerId)} contracted={marks.contract.has(i.customerId)} href={`/customers/${i.customerId}`} /></Td>
                 <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{i.order.orderNo}</Link> : "—"}</Td>
                 <Td right>{money(i.amount)}</Td><Td right>{money(paid)}</Td>
                 <Td right className={Number(i.amount) - paid > 0 && i.status !== "CANCELLED" ? "text-red-600" : ""}>{i.status === "CANCELLED" ? "—" : money(Number(i.amount) - paid)}</Td>

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { customerDebt } from "@/lib/finance";
+import { customerDebt, customerMarks } from "@/lib/finance";
+import { CustomerName } from "@/components/customer-name";
 import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
 import { money, qty, fmtNum } from "@/lib/format";
 import { Badge, Callout, Card, Empty, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -29,6 +30,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: true } }, batches: true, trips: true }, orderBy: { deliveryDate: "asc" }, take: 8 }),
   ]);
   const debts = (await Promise.all(receivableRows.map(async (c) => ({ ...c, debt: await customerDebt(c.id) })))).filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt);
+  const marks = await customerMarks([...debts.map((c) => c.id), ...trips.map((t) => t.order.customerId), ...upcoming.map((o) => o.customerId), ...mixers.map((m) => m.active?.customerId).filter((x): x is string => !!x)]);
   const receivable = debts.reduce((x, c) => x + c.debt, 0);
   const todayM3 = ordersToday.reduce((x, o) => x + o.items.reduce((y, i) => y + Number(i.qtyM3), 0), 0);
   const deliveredToday = trips.filter((t) => t.status === "DELIVERED" && t.deliveredAt && t.deliveredAt >= today).reduce((x, t) => x + Number(t.qtyM3), 0);
@@ -64,7 +66,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 {m.active ? (
                   <div className="mt-3 text-sm">
                     <Link href={`/trips/${m.active.id}`} className="font-medium hover:underline">{m.active.noteNo}</Link> · {m.active.qtyM3} m³
-                    <div className="mt-0.5 truncate text-slate-500">{m.active.customer}</div>
+                    <div className="mt-0.5 truncate text-slate-500"><CustomerName name={m.active.customer} blacklisted={marks.black.has(m.active.customerId)} contracted={marks.contract.has(m.active.customerId)} short /></div>
                     <div className="truncate text-slate-500">{m.active.driver}</div>
                   </div>
                 ) : <div className="mt-3 text-sm text-slate-500">Sig'imi {m.capacityM3 ? `${m.capacityM3} m³` : "—"}</div>}
@@ -84,7 +86,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               {trips.map((t) => (
                 <Tr key={t.id}>
                   <Td><Link href={`/trips/${t.id}`} className="hover:underline">{t.deliveryNoteNo}</Link></Td>
-                  <Td>{t.order.customer.name}</Td><Td className="tabular">{t.vehicle.plate}</Td><Td right>{qty(t.qtyM3)}</Td><Td><TripStatusBadge status={t.status} /></Td>
+                  <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} short /></Td><Td className="tabular">{t.vehicle.plate}</Td><Td right>{qty(t.qtyM3)}</Td><Td><TripStatusBadge status={t.status} /></Td>
                 </Tr>
               ))}
             </tbody>
@@ -103,7 +105,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 return (
                   <Tr key={o.id}>
                     <Td><Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link></Td>
-                    <Td>{o.customer.name}</Td><Td>{o.items.map((i) => i.product.code).join(", ")}</Td>
+                    <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td><Td>{o.items.map((i) => i.product.code).join(", ")}</Td>
                     <Td>
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{qty(done)}/{qty(total)}</span></div><Progress value={done} max={total} tone="default" />
@@ -158,7 +160,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Section title="Qarzdor mijozlar">
           <Table>
             <thead><tr><Th>Mijoz</Th><Th right>Qarz</Th></tr></thead>
-            <tbody>{debts.map((c) => <Tr key={c.id}><Td><Link href={`/customers/${c.id}`} className="hover:underline">{c.name}</Link></Td><Td right className="font-semibold text-red-600">{money(c.debt)}</Td></Tr>)}</tbody>
+            <tbody>{debts.map((c) => <Tr key={c.id}><Td><CustomerName name={c.name} blacklisted={marks.black.has(c.id)} contracted={marks.contract.has(c.id)} href={`/customers/${c.id}`} /></Td><Td right className="font-semibold text-red-600">{money(c.debt)}</Td></Tr>)}</tbody>
           </Table>
         </Section>
       )}
