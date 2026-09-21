@@ -10,7 +10,7 @@ import { MaterialsForm } from "../materials-form";
 import { cn } from "@/lib/utils";
 
 const MODES = [
-  { key: "excel", label: "Excel orqali", icon: FileSpreadsheet, text: "Xomashyo ro'yxati fayldan: nomi, kodi, birlik, qoldiq, narx, minimal. Yuzlab qator bir vaqtda." },
+  { key: "excel", label: "Excel orqali", icon: FileSpreadsheet, text: "8 ta ustun: nomi, kodi, birlik, qoldiq, narx, minimal, NDS, summa. NDS va summa faylda bo'lmasa o'zi hisoblanadi." },
   { key: "manual", label: "Qo'lda kiritish", icon: PencilLine, text: "Bir nechta qatorni jadvalga yozib saqlaysiz." },
 ] as const;
 
@@ -48,7 +48,8 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
             action={importMaterials}
             submitLabel="Xomashyolarni qo'shish"
             templateName="xomashyo-namuna"
-            example={{ name: "Sement M400", code: "CEM400", unit: "kg", qty: 20000, price: 1200, minStock: 5000 }}
+            example={{ name: "Sement M400", code: "CEM400", unit: "kg", qty: 20000, price: 1200, minStock: 5000, nds: 2880000, sum: 24000000 }}
+            amountCols={{ qtyKey: "qty", priceKey: "price", sumKey: "sum", ndsKey: "nds", rate: 0.12, fill: true }}
             fields={[
               { key: "name", label: "Nomi", required: true, synonyms: FIELD_SYNONYMS.material },
               { key: "code", label: "Kodi", hint: "bo'sh bo'lsa nomdan yasaladi", synonyms: ["kod", "code", "код", "artikul", "артикул"] },
@@ -56,6 +57,8 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
               { key: "qty", label: "Qoldiq", hint: "boshlang'ich qoldiq (ixtiyoriy)", synonyms: ["qoldiq", "остаток", ...FIELD_SYNONYMS.qty] },
               { key: "price", label: "Narx (birlik)", synonyms: FIELD_SYNONYMS.price },
               { key: "minStock", label: "Minimal qoldiq", hint: "kam qolsa signal", synonyms: ["minimal", "min", "минимал", "мин"] },
+              { key: "nds", label: "NDS", hint: "faylda bo'lmasa 12% hisoblanadi", synonyms: FIELD_SYNONYMS.nds },
+              { key: "sum", label: "Summa", hint: "faylda bo'lmasa qoldiq × narx", synonyms: FIELD_SYNONYMS.sum },
             ]}
           >
             {whSelect}

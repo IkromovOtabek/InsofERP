@@ -184,6 +184,8 @@ model Vehicle {
   capacityM3 Decimal?    @db.Decimal(8, 2)
   isActive   Boolean     @default(true)
   ecoVehicleId String?   @unique // Insof ECO Vehicle.id
+  ecoSyncedAt  DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
+  ecoError     String? // oxirgi sinxron xatosi
 
   trips Trip[]
 }
@@ -196,6 +198,9 @@ model Employee {
   isActive  Boolean  @default(true)
   userId    String?  @unique // tizimga kiradigan xodim uchun login
   ecoUserId String?  @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
+  ecoActive Boolean? // ECO a'zoligi tasdiqlanganmi (null — ulanmagan)
+  ecoSyncedAt DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
+  ecoError  String? // oxirgi sinxron xatosi
   createdAt DateTime @default(now())
 
   user     User?     @relation(fields: [userId], references: [id])

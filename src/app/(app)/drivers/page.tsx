@@ -8,7 +8,7 @@ import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelive
 import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncVehiclesButton } from "./buttons";
+import { ApproveDriverButton, ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncAllButton, SyncVehiclesButton } from "./buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,7 @@ export default async function DriversPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Haydovchilar (Insof ECO)</h1>
           <p className="mt-1 text-sm text-slate-500">Nakladnoy yaratilganda haydovchi telefoniga tushadi; u qabul qiladi, yo'lda GPS yuboradi, obyektda mijoz imzolaydi — holat ERP'ga qaytadi.</p>
         </div>
-        {enabled && canManage && <div className="flex flex-wrap gap-2"><SyncVehiclesButton /><ResendTripsButton /></div>}
+        {enabled && canManage && <div className="flex flex-wrap gap-2"><SyncAllButton /><SyncVehiclesButton /><ResendTripsButton /></div>}
       </div>
 
       {!enabled ? (
@@ -96,10 +96,14 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
                       : d ? (d.isActive ? <Badge color="green">Ulangan</Badge> : <Badge color="amber">Tasdiq kutilmoqda</Badge>)
                       : e.ecoUserId ? <Badge color="amber">ECO'da topilmadi</Badge>
                       : <Badge>Ulanmagan</Badge>}
+                    {e.ecoError && <div className="mt-0.5 max-w-xs text-xs text-red-600">{e.ecoError}</div>}
                   </Td>
                   <Td>{act ? <span className="text-sm"><Badge color={st!.color}>{st!.label}</Badge> {act.externalRef && <Link href={`/trips?q=${act.externalRef}`} className="text-xs text-slate-500 hover:underline">{act.externalRef}</Link>}</span> : d ? <span className="text-xs text-slate-500">{d.isAvailable ? "bo'sh" : "band"}</span> : "—"}</Td>
                   <Td right>{e._count.trips}</Td>
-                  <Td>{enabled && canManage && e.isActive && (!d || !e.ecoUserId) && <LinkDriverButton employeeId={e.id} relink={!!e.ecoUserId} />}</Td>
+                  <Td>
+                    {enabled && canManage && e.isActive && (!d || !e.ecoUserId) && <LinkDriverButton employeeId={e.id} relink={!!e.ecoUserId} />}
+                    {enabled && canManage && e.isActive && d && !d.isActive && e.ecoUserId && <ApproveDriverButton employeeId={e.id} />}
+                  </Td>
                 </Tr>
               );
             })}
@@ -109,7 +113,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
 
       {enabled && unknownEco.length > 0 && (
         <Card className="mt-5" padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="ECO'da ro'yxatdan o'tgan, ERP'da yo'q" description="Haydovchi ilovada zavodni tanlab ro'yxatdan o'tgan. Xodim qilib qo'shsangiz reys berish mumkin bo'ladi." icon={Users} /></div>
+          <div className="px-5 pt-5"><CardHeader title="ECO'da ro'yxatdan o'tgan, ERP'da yo'q" description="Haydovchi ilovada zavodni tanlab ro'yxatdan o'tgan. Qo'shsangiz xodimlar ro'yxatiga tushadi va reys berish mumkin bo'ladi. Odatda bu avtomatik bo'ladi — bu yerda faqat webhook yetib bormaganlari qoladi." icon={Users} /></div>
           <Table>
             <thead><tr><Th>F.I.O.</Th><Th>Telefon</Th><Th>ECO holati</Th><Th></Th></tr></thead>
             <tbody>
@@ -117,7 +121,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
                 <Tr key={d.userId}>
                   <Td className="font-medium">{d.fullName ?? "—"}</Td><Td>{d.phone}</Td>
                   <Td>{d.isActive ? <Badge color="green">Tasdiqlangan</Badge> : <Badge color="amber">Tadbirkor tasdig'i kutilmoqda (ECO ilovasida)</Badge>}</Td>
-                  <Td>{canManage && <ImportDriverButton userId={d.userId} fullName={d.fullName ?? ""} phone={d.phone} />}</Td>
+                  <Td>{canManage && <ImportDriverButton userId={d.userId} fullName={d.fullName ?? ""} phone={d.phone} isActive={d.isActive} />}</Td>
                 </Tr>
               ))}
             </tbody>
@@ -134,7 +138,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
               {vehicles.length === 0 && <Empty text="Texnika yo'q" />}
               {vehicles.map((v) => (
                 <Tr key={v.id}><Td className="font-medium">{v.plate}</Td><Td right>{v.capacityM3 ? `${qty(v.capacityM3)} m³` : "—"}</Td>
-                  <Td>{!enabled ? "—" : ecoPlates.has(v.plate) || v.ecoVehicleId ? <Badge color="green">Bor</Badge> : <Badge>Yo'q</Badge>}</Td></Tr>
+                  <Td>{!enabled ? "—" : ecoPlates.has(v.plate) || v.ecoVehicleId ? <Badge color="green">Bor</Badge> : <Badge>Yo'q</Badge>}{v.ecoError && <div className="max-w-[12rem] text-xs text-red-600">{v.ecoError}</div>}</Td></Tr>
               ))}
             </tbody>
           </Table>

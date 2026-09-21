@@ -8,6 +8,7 @@ import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@
 import { TRIP_STATUS, TripStatusBadge } from "./status";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
+import { LiveDrivers } from "./live-drivers";
 import type { TripStatus } from "@/generated/prisma";
 
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
@@ -26,6 +27,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
   return (
     <div>
       <PageHeader title="Reyslar / nakladnoy" action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
+      {eco && <LiveDrivers />}
       <Tabs current={status ?? ""} items={tabs.map(([k, l]) => ({ key: k, label: l, href: k ? `/trips?status=${k}` : "/trips" }))} />
       <Table>
         <thead><tr><Th>Nakladnoy</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>m³</Th><Th>Holat</Th>{eco && <Th>ECO</Th>}</tr></thead>

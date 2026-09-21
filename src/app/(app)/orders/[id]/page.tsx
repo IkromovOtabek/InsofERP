@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, FileText, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, FileText, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { customerCredit } from "@/lib/finance";
+import { stockSnapshot } from "@/lib/stock";
 import { money, date, qty, deliveryAt } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Progress, StatCard, StatusSteps, Td, Th, Tr } from "@/components/ui";
 import { TaskStatusBadge } from "../../tasks/status";
@@ -48,7 +49,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   for (const x of o.payments) paidMap.set(x.id, Number(x.amount));
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
-  const [credit, contractedSet] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId])]);
+  const [credit, contractedSet, snapshot] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot()]);
+  // Zayavkani qabul qilishdan oldin: har mahsulot bo'yicha tayyor qoldiq va xomashyodan yana qancha chiqishi
+  const stockByProduct = new Map([...snapshot.pieces, ...snapshot.concrete].map((x) => [x.id, x]));
   const contracted = contractedSet.has(o.customerId); // mijozning boshqa shartnomali zayavkasi ham bo'lishi mumkin
   const hasContract = !!o.contractNo && o.contractAmount != null;
   const contractAmount = hasContract ? Number(o.contractAmount) : 0;
@@ -139,6 +142,45 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {isSales && <form action={toggleGuarantee.bind(null, id)}><Button variant={o.guaranteeAt ? "ghost" : "secondary"} className="h-8 text-xs">{o.guaranteeAt ? "Belgini olib tashlash" : "Imzolangan xat qabul qilindi"}</Button></form>}
           </div>
         </Callout>
+      )}
+
+      {["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (
+        <Card className="mb-5" padded={false}>
+          <div className="px-5 pt-5">
+            <CardHeader
+              title="Mahsulot yetarliligi"
+              icon={Boxes}
+              description="Qabul qilishdan oldin: skladda tayyor qancha bor va xomashyodan yana qancha ishlab chiqarish mumkin"
+              action={<Link href="/stock?tab=capacity" className="text-sm text-slate-500 hover:text-slate-900">Ishlab chiqarish imkoni</Link>}
+            />
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr><Th>Mahsulot</Th><Th right>Kerak</Th><Th right>Tayyor (sklad)</Th><Th right>Xomashyodan yana</Th><Th>Holat</Th></tr></thead>
+            <tbody>
+              {o.items.map((i) => {
+                const st = stockByProduct.get(i.productId);
+                const need = Number(i.qtyM3);
+                const ready = st?.free ?? 0;
+                const canMake = st?.make?.canMake ?? null;
+                const short = Math.max(0, need - ready);
+                const enough = short === 0 || (canMake != null && canMake >= short);
+                const u = unitLabel(i.product.unit);
+                return (
+                  <Tr key={i.id}>
+                    <Td className="font-medium">{i.product.name}</Td>
+                    <Td right>{qty(need)} {u}</Td>
+                    <Td right className={ready > 0 ? "font-semibold text-emerald-700" : "text-slate-400"}>{qty(ready)} {u}</Td>
+                    <Td right>{canMake == null ? <span className="text-slate-300" title="Retsept kiritilmagan">—</span> : <span className={canMake > 0 ? "" : "text-red-600"}>{qty(canMake)} {u}</span>}</Td>
+                    <Td>{short === 0 ? <Badge color="green">Skladda bor</Badge> : enough ? <Badge color="amber">{qty(short)} {u} ishlab chiqariladi</Badge> : <Badge color="red">{qty(short - (canMake ?? 0))} {u} ga xomashyo yetmaydi</Badge>}</Td>
+                  </Tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+            Dona mahsulot qoldig&apos;i — <Link href="/astatka" className="underline">Astatka</Link>, xomashyo — <Link href="/stock" className="underline">Sklad</Link> bo&apos;limidan olinadi.
+          </p>
+        </Card>
       )}
 
       <Card className="mb-5">

@@ -13,8 +13,10 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "bot": "tsx scripts/telegram-bot.ts",
-    "bot:webhook": "tsx scripts/telegram-webhook.ts"
+    "bot": "tsx watch --clear-screen=false scripts/telegram-bot.ts",
+    "ai": "tsx scripts/ai-ask.ts",
+    "bot:webhook": "tsx scripts/telegram-webhook.ts",
+    "eco:sync": "tsx scripts/eco-sync.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

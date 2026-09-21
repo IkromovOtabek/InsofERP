@@ -148,17 +148,17 @@ export async function aiReport(type: ReportType): Promise<Report> {
 export type QA = { key: string; q: string; kw: string[] };
 export const CATALOG: { group: string; icon: string; items: QA[] }[] = [
   { group: "Umumiy holat", icon: "dashboard", items: [
-    { key: "health", q: "Biznes holati qanday?", kw: ["holat", "salomat", "health", "qanday", "ahvol"] },
+    { key: "health", q: "Biznes holati qanday?", kw: ["holat", "salomat", "health", "ahvol"] },
     { key: "attention", q: "Nimaga e'tibor berishim kerak?", kw: ["e'tibor", "etibor", "diqqat", "muhim"] },
     { key: "todo", q: "Hozir nima qilishim kerak?", kw: ["nima qil", "vazifa", "qilish kerak"] },
-    { key: "fresh", q: "Ma'lumot qachon yangilangan?", kw: ["yangilan", "qachon", "sana"] },
+    { key: "fresh", q: "Ma'lumot qachon yangilangan?", kw: ["qachon yangilan", "yangilangan", "ma'lumot qachon"] },
   ] },
   { group: "Sotuv", icon: "payments", items: [
     { key: "today", q: "Bugungi sotuv qancha?", kw: ["bugun", "bugungi"] },
-    { key: "month", q: "Bu oyda qancha sotdik?", kw: ["oy", "oyda", "oylik"] },
+    { key: "month", q: "Bu oyda qancha sotdik?", kw: ["bu oy", "oyda", "oylik", "oy boshidan"] },
     { key: "period", q: "Tanlangan davrda sotuv holati", kw: ["davr", "sotuv holati"] },
     { key: "why", q: "Nega sotuv o'zgardi? (sabab tahlili)", kw: ["nega", "sabab", "o'zgar", "tush", "kamay", "o'sdi"] },
-    { key: "top", q: "Top mahsulotlar qaysi?", kw: ["top", "eng ko'p", "yaxshi mahsulot", "marka"] },
+    { key: "top", q: "Top mahsulotlar qaysi?", kw: ["top mahsulot", "top marka", "eng ko'p sotil", "yaxshi mahsulot"] },
     { key: "weak", q: "Eng zaif mahsulotlar qaysi?", kw: ["zaif", "kam sotil", "yomon"] },
   ] },
   { group: "Reja", icon: "track_changes", items: [
@@ -169,8 +169,8 @@ export const CATALOG: { group: string; icon: string; items: QA[] }[] = [
   { group: "Ombor", icon: "inventory_2", items: [
     { key: "stockout", q: "Qaysi xomashyo tugayapti?", kw: ["tugay", "tugadi", "yetmay", "xomashyo"] },
     { key: "stock", q: "Ombor holati qanday?", kw: ["ombor", "sklad", "zaxira"] },
-    { key: "order", q: "Bugun nima buyurtma qilishim kerak?", kw: ["buyurtma", "zakaz", "sotib ol"] },
-    { key: "draft", q: "Buyurtma loyihasini tayyorla", kw: ["loyiha", "ro'yxat", "tayyorla"] },
+    { key: "order", q: "Bugun nima buyurtma qilishim kerak?", kw: ["nima buyurtma qil", "buyurtma qilish kerak", "zakaz", "sotib ol"] },
+    { key: "draft", q: "Buyurtma loyihasini tayyorla", kw: ["buyurtma loyiha", "buyurtma ro'yxat"] },
   ] },
   { group: "Moliya", icon: "account_balance", items: [
     { key: "profit", q: "Foyda va marja qanday?", kw: ["foyda", "marja", "rentabel"] },
@@ -180,7 +180,7 @@ export const CATALOG: { group: string; icon: string; items: QA[] }[] = [
   ] },
   { group: "Mijozlar", icon: "groups", items: [
     { key: "segments", q: "Mijozlar qanday taqsimlangan?", kw: ["segment", "taqsim", "rfm", "mijozlar qanday"] },
-    { key: "churn", q: "Qaysi mijoz ketishi mumkin?", kw: ["ket", "churn", "yo'qol", "at risk"] },
+    { key: "churn", q: "Qaysi mijoz ketishi mumkin?", kw: ["ketish", "ketyap", "churn", "yo'qol", "at risk"] },
     { key: "active", q: "Faol mijozlar soni nega o'zgardi?", kw: ["faol mijoz", "aktiv"] },
   ] },
   { group: "Agentlar", icon: "badge", items: [
@@ -195,7 +195,7 @@ export const CATALOG: { group: string; icon: string; items: QA[] }[] = [
     { key: "marketing", q: "Marketing pul qayerga ketyapti?", kw: ["marketing", "reklama", "roas", "kanal"] },
   ] },
   { group: "Tizim haqida", icon: "help_outline", items: [
-    { key: "about", q: "Bu tizimda nima bor? Metrikalar ta'rifi", kw: ["tizim", "metrika", "ta'rif", "nima bor"] },
+    { key: "about", q: "Bu tizimda nima bor? Metrikalar ta'rifi", kw: ["tizimda nima bor", "metrika", "ta'rif", "qanday bo'limlar"] },
     { key: "healthdef", q: "Health Score qanday hisoblanadi?", kw: ["health score", "ball", "hisoblan"] },
     { key: "fcdef", q: "Prognoz qanday hisoblanadi?", kw: ["prognoz qanday", "model"] },
   ] },
@@ -211,7 +211,8 @@ export function matchQuestion(q: string): string | null {
     const score = it.kw.reduce((n, k) => n + (s.includes(k) ? k.length : 0), 0);
     if (score > 0 && (!best || score > best.score)) best = { key: it.key, score };
   }
-  return best?.key ?? null;
+  // Juda qisqa/umumiy mosliklar (masalan 3 harfli so'z) qoida javobini noto'g'ri yoqmasin
+  return best && best.score >= 4 ? best.key : null;
 }
 
 export async function aiAnswer(question: string, sp: Record<string, string | undefined> = {}): Promise<Answer> {

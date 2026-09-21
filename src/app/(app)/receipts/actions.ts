@@ -55,7 +55,7 @@ const importSchema = z.object({
   rows: z.string(),
   createMissing: z.string().optional().transform((v) => v === "on"),
 });
-type ImportRow = { material?: unknown; qty?: unknown; price?: unknown; unit?: unknown };
+type ImportRow = { material?: unknown; code?: unknown; qty?: unknown; price?: unknown; unit?: unknown; nds?: unknown; sum?: unknown; note?: unknown };
 
 /**
  * Excel'dan kirim: zavod va texnikaga kerakli mahsulotlar ro'yxati (nomi, miqdor, narx, birlik) bitta kirim hujjati bo'lib tushadi.
@@ -76,7 +76,7 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
   }
 
   const out = await db.$transaction(async (tx) => {
-    const { result, missing, created } = await resolveMaterials(tx, rows.map((x) => ({ name: str(x.material), unit: str(x.unit) })), d.createMissing);
+    const { result, missing, created } = await resolveMaterials(tx, rows.map((x) => ({ name: str(x.material), unit: str(x.unit), code: str(x.code) })), d.createMissing);
     if (missing.length) throw new Error(`Bunday mahsulot/xomashyo yo'q: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "…" : ""}. "Yo'q mahsulotlarni yaratish" ni belgilang.`);
     const items = rows.map((x) => ({ materialId: result.get(str(x.material).toLowerCase().trim())!.id, qty: num(x.qty), price: str(x.price) === "" ? 0 : num(x.price) }));
     const rec = await tx.goodsReceipt.create({

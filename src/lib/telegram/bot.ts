@@ -40,12 +40,32 @@ const appUrl = () => (process.env.APP_URL ?? "").replace(/\/+$/, "");
  * til modeli esa odatdagi Markdown'da yozadi. Sarlavha belgilarini ham olib tashlaymiz.
  */
 function toTelegramMarkdown(text: string) {
-  return text
+  return tablesToLines(text)
+    .replace(/`(https?:\/\/[^`\s]+)`/g, "$1") // havola kod ichida bo'lsa bosib bo'lmaydi
     .replace(/\*\*(.+?)\*\*/gs, "*$1*")
     .replace(/__(.+?)__/gs, "*$1*")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Markdown jadval Telegramda ko'rinmaydi (ko'rsatma bo'lsa ham model ba'zan jadval chizadi).
+ * Har qatorni "• birinchi ustun — Sarlavha: qiymat · Sarlavha: qiymat" ko'rinishiga o'tkazamiz.
+ */
+function tablesToLines(text: string) {
+  const out: string[] = [];
+  let header: string[] | null = null;
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!(t.startsWith("|") && t.endsWith("|"))) { header = null; out.push(line); continue; }
+    const cells = t.slice(1, -1).split("|").map((c) => c.trim());
+    if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue; // ajratgich |---|---|
+    if (!header) { header = cells; continue; }
+    const [first, ...rest] = cells;
+    out.push(`• ${first}${rest.length ? " — " + rest.map((c, i) => (header![i + 1] ? `${header![i + 1]}: ${c}` : c)).join(" · ") : ""}`);
+  }
+  return out.join("\n");
 }
 
 /** Answer → Telegram matni (Markdown). */
@@ -156,6 +176,7 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   try {
     const history = await historyFor(account.id);
     const r = await askInsofAi(question.slice(0, 1000), { history });
+    console.log(`[telegram] ${r.level ? r.model : "qoida"} · asboblar: ${r.tools?.length ? r.tools.join(", ") : "—"} · ${Date.now() - t0} ms`);
     const out = render(r.answer, transcript);
     await sendMessage(chatId, out, { replyTo: msg.message_id });
     await db.telegramMessage.create({
@@ -198,7 +219,7 @@ async function historyFor(accountId: string): Promise<LlmTurn[]> {
   const rows = await db.telegramMessage.findMany({
     where: { accountId },
     orderBy: { createdAt: "desc" },
-    take: 2,
+    take: 3,
     select: { question: true, answer: true },
   });
   return rows.reverse().flatMap((r): LlmTurn[] => [

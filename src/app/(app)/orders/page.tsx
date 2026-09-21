@@ -5,6 +5,7 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { money, date, qty, deliveryAt } from "@/lib/format";
 import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { ORDER_STATUS, OrderStatusBadge, PENDING_STATUSES as PENDING } from "./status";
 import type { OrderStatus } from "@/generated/prisma";
 
@@ -27,6 +28,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         subtitle="Yangi kiritilgan va qabul qilinmagan zayavkalar. Qabul qilingach zayavka Sotuv bo'limiga o'tadi."
         action={<div className="flex flex-wrap gap-2"><LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton><LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton></div>}
       />
+      {/* Zayavka qabul qilayotgan xodim korxonada nima borligini shu yerda ko'radi:
+          Astatkadagi dona mahsulot, tayyor beton va Skladdagi xomashyo. */}
+      <div className="mb-5">
+        <StockSnapshotCard layout="grid" title="Korxona qoldig'i — zayavka qabul qilishdan oldin" />
+      </div>
       <Tabs current={st ?? ""} items={tabs} />
       <Table>
         <thead><tr><Th>№</Th><Th>Kiritildi</Th><Th>Yetkazish</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>

@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { ostatkaSummary } from "./ostatka";
+import { productionCapacity } from "./production-capacity";
 
 /** Har bir xomashyo bo'yicha joriy qoldiq (barcha skladlar). */
 export async function materialBalances() {
@@ -40,27 +41,50 @@ export async function lastInboundMoves(): Promise<{ materials: Map<string, LastM
   return { materials, products };
 }
 
+export type MakeInfo = {
+  canMake: number; // hozirgi xomashyo qoldig'i bilan qancha ishlab chiqarish mumkin
+  limiting: { name: string; unit: string; balance: number; perUnit: number } | null; // avval tugaydigan xomashyo
+} | null;
+
+export type SnapshotProduct = {
+  id: string; code: string; name: string; unit: string;
+  total: number; // skladdagi jami qoldiq
+  free: number; // zayavkalarga band qilinmagan qismi
+  owned: number; // band qilingan
+  make: MakeInfo; // retsept bo'yicha xomashyodan qancha chiqadi
+  last: LastMove | null;
+};
+
 export type StockSnapshot = {
   materials: Array<{ id: string; name: string; unit: string; balance: number; minStock: number; low: boolean; last: LastMove | null }>;
-  pieces: Array<{ id: string; code: string; name: string; unit: string; total: number; free: number; owned: number; last: LastMove | null }>;
-  concrete: Array<{ id: string; code: string; name: string; balance: number; last: LastMove | null }>;
+  pieces: SnapshotProduct[]; // Astatka: hovlida turadigan dona mahsulotlar
+  concrete: SnapshotProduct[]; // tayyor beton (m3) — zames qilingan, hali jo'natilmagan
   asOf: Date;
 };
 
-/** Sotuv bo'limi uchun sklad surati: xomashyo, dona mahsulot (erkin/band), tayyor beton — va har birini kim kiritgani. */
+/**
+ * Zayavka/sotuv bo'limi uchun korxonaning butun qoldig'i: Skladdagi xomashyo,
+ * Astatkadagi dona mahsulot (erkin/band), tayyor beton — har birini kim kiritgani va
+ * xomashyo qoldig'i bilan yana qancha ishlab chiqarish mumkinligi bilan.
+ */
 export async function stockSnapshot(): Promise<StockSnapshot> {
-  const [mats, pieces, concreteProducts, pSums, last] = await Promise.all([
+  const [mats, pieces, concreteProducts, pSums, last, capacity] = await Promise.all([
     materialBalances(),
     ostatkaSummary(),
     db.product.findMany({ where: { isActive: true, unit: "m3" }, orderBy: { code: "asc" } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
     lastInboundMoves(),
+    productionCapacity(),
   ]);
   const pb = new Map(pSums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
+  const make = new Map<string, MakeInfo>(capacity.map((c) => [c.productId, { canMake: c.canMake, limiting: c.limiting }]));
   return {
     materials: mats.map((m) => ({ id: m.id, name: m.name, unit: m.unit, balance: m.balance, minStock: Number(m.minStock), low: m.low, last: last.materials.get(m.id) ?? null })),
-    pieces: pieces.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: p.unit, total: p.total, free: p.free, owned: p.owned, last: last.products.get(p.id) ?? null })),
-    concrete: concreteProducts.map((p) => ({ id: p.id, code: p.code, name: p.name, balance: pb.get(p.id) ?? 0, last: last.products.get(p.id) ?? null })),
+    pieces: pieces.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: p.unit, total: p.total, free: p.free, owned: p.owned, make: make.get(p.id) ?? null, last: last.products.get(p.id) ?? null })),
+    concrete: concreteProducts.map((p) => {
+      const total = pb.get(p.id) ?? 0;
+      return { id: p.id, code: p.code, name: p.name, unit: p.unit, total, free: total, owned: 0, make: make.get(p.id) ?? null, last: last.products.get(p.id) ?? null };
+    }),
     asOf: new Date(),
   };
 }

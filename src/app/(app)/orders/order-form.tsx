@@ -20,8 +20,12 @@ export type CustomerOpt = {
   stars: 0 | 1 | 2 | 3 | 4 | 5; // ishonch reytingi, 0 — yangi mijoz
   label: string;
 };
-/** Dona mahsulotlar uchun skladdagi erkin qoldiq (sklad xodimi ma'lumoti). */
-export type ProductStock = Record<string, { free: number; total: number; by: string | null }>;
+/**
+ * Har bir mahsulot bo'yicha joriy qoldiq (sklad xodimi ma'lumoti):
+ * kind="piece" — Astatkadagi dona mahsulot (erkin/band), kind="concrete" — tayyor beton.
+ * canMake — hozirgi xomashyo qoldig'i bilan retsept bo'yicha yana qancha ishlab chiqarish mumkin.
+ */
+export type ProductStock = Record<string, { free: number; total: number; owned: number; canMake: number | null; by: string | null; kind: "piece" | "concrete" }>;
 type Row = { key: number; productId: string; qtyM3: string; price: string };
 export type CashAccountOpt = { id: string; name: string; type: "CASH" | "BANK" };
 
@@ -316,7 +320,12 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
               <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0">
                 <div className="space-y-2 sm:grid sm:grid-cols-[1fr_120px_160px_40px] sm:items-center sm:gap-2 sm:space-y-0">
                   <Select name="productId[]" value={r.productId} onChange={(e) => onProduct(r.key, e.target.value)}>
-                    {products.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                    {products.map((x) => {
+                      const s = stock[x.id];
+                      const have = s ? (s.kind === "piece" ? `erkin ${fmtNum(s.free)}` : `tayyor ${fmtNum(s.free)}`) : null;
+                      const more = s && s.canMake != null ? `, yana ${fmtNum(s.canMake)}` : "";
+                      return <option key={x.id} value={x.id}>{x.name}{have ? ` — ${have}${more} ${x.unit}` : ""}</option>;
+                    })}
                   </Select>
                   <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 sm:contents">
                     <Input name="qtyM3[]" type="number" step={p?.unit === "m³" ? "0.5" : "1"} min={p?.unit === "m³" ? "0.5" : "1"} placeholder={p?.unit ?? "m³"} value={r.qtyM3} onChange={(e) => update(r.key, { qtyM3: e.target.value })} required />
@@ -325,13 +334,26 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
                   </div>
                 </div>
 
-                {st && (
-                  <div className={cn("text-xs", need > st.free ? "text-amber-700" : "text-slate-500")}>
-                    Skladda erkin: <b>{fmtNum(st.free)} {p?.unit}</b> (jami {fmtNum(st.total)}){st.by && <span className="text-slate-400"> · kiritgan: {st.by}</span>}
-                    {need > st.free && <span> — {fmtNum(need - st.free)} {p?.unit} yetishmaydi, ishlab chiqarish kerak</span>}
-                  </div>
-                )}
-                {!st && p?.unit === "m³" && <div className="text-xs text-slate-400">Tayyor beton zayavka bo&apos;yicha zames qilinadi — xomashyo yetarliligini o&apos;ng paneldan tekshiring.</div>}
+                {st && (() => {
+                  const short = Math.max(0, need - st.free); // tayyor qoldiqdan yetishmaydigan qism
+                  const canMake = st.canMake ?? 0;
+                  const enough = short === 0 || (st.canMake != null && canMake >= short);
+                  return (
+                    <div className={cn("text-xs", short > 0 && !enough ? "text-red-600" : short > 0 ? "text-amber-700" : "text-slate-500")}>
+                      {st.kind === "piece"
+                        ? <>Astatkada erkin: <b>{fmtNum(st.free)} {p?.unit}</b> (jami {fmtNum(st.total)}, band {fmtNum(st.owned)})</>
+                        : <>Skladda tayyor: <b>{fmtNum(st.free)} {p?.unit}</b></>}
+                      {st.canMake != null && <span> · xomashyodan yana <b>{fmtNum(canMake)} {p?.unit}</b> ishlab chiqarish mumkin</span>}
+                      {st.by && <span className="text-slate-400"> · kiritgan: {st.by}</span>}
+                      {short > 0 && (st.canMake == null
+                        ? <span> — tayyoridan {fmtNum(short)} {p?.unit} yetishmaydi, ishlab chiqarish kerak (retsept kiritilmagan)</span>
+                        : enough
+                          ? <span> — {fmtNum(short)} {p?.unit} ishlab chiqariladi, xomashyo yetadi</span>
+                          : <span> — xomashyo yetmaydi: {fmtNum(short - canMake)} {p?.unit} ga xomashyo kerak</span>)}
+                    </div>
+                  );
+                })()}
+                {!st && <div className="text-xs text-slate-400">Bu mahsulot bo&apos;yicha sklad ma&apos;lumoti yo&apos;q — o&apos;ng paneldagi qoldiqdan tekshiring.</div>}
               </div>
             );
           })}

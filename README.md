@@ -258,11 +258,54 @@ ko'rinadi, "ECO'ga yuborish" tugmasi bilan qayta yuboriladi. Audit jurnalida hay
 ```
 src/lib/eco/client.ts       ECO API klienti (X-Api-Key, fetch), telefon normalizatsiyasi
 src/lib/eco/sync.ts         reysni yuborish / holat yuborish / ECO'dan olish / webhook holatini qo'llash
+src/lib/eco/master.ts       spravochniklarni ECO'ga yuborish (mijoz, marka, xomashyo, zayavka, schyot, to'lov)
 src/lib/eco/labels.ts       ECO holatlari o'zbekcha
 src/lib/trips.ts            reys holat o'tishlari (action va webhook uchun umumiy)
 src/app/api/eco/webhook     ECO → ERP webhook
+src/app/api/eco/positions   yo'ldagi reyslarning joylashuvi (xarita shu yerdan o'qiydi)
+src/app/api/eco/sync        spravochnik sinxronini ishga tushirish (faqat direktor)
 src/app/(app)/drivers       Haydovchilar (ECO) sahifasi
+src/app/(app)/trips/live-drivers.tsx   "Yo'lga chiqqan haydovchilar" bloki va xarita
+scripts/eco-sync.ts         `npm run eco:sync` — spravochniklarni ECO'ga yuborish
 ```
+
+### Spravochniklar: ERP — manba, ECO — ko'zgu
+
+ERP ma'lumotlari ECO'ga bir tomonlama oqadi. ECO'dan ERP'ga faqat haydovchi harakati qaytadi.
+
+| ERP | ECO | Kalit |
+|---|---|---|
+| Mijoz + kredit limiti | `Organization` (CONTRACTOR) + `CreditLimit` | ERP mijoz id → `externalRef` |
+| Mahsulot (beton markasi) | `ConcreteMix` | marka kodi (M300) |
+| Xomashyo | `Material` | ERP xomashyo id → `externalRef` |
+| Zayavka + qatorlar | `Order` + `OrderItem` | zayavka raqami → `externalRef` |
+| Schyot | `Invoice` | zayavka (ECO'da schyot buyurtmaga tegishli) |
+| To'lov | `Payment` | ERP to'lov id → `externalId` |
+
+```bash
+npm run eco:sync                # oxirgi 90 kunlik zayavka / schyot / to'lov
+npm run eco:sync -- --days=0    # hamma vaqt (birinchi to'liq yuklash)
+```
+
+Hammasi idempotent: qayta yuborilsa dublikat yaratilmaydi, mavjud yozuv yangilanadi. Hech narsa o'chirilmaydi —
+ERP'da arxivlangan mijoz ECO'da yashiriladi (`deletedAt`), qayta faollashtirilsa tiklanadi.
+ERP'dan kelgan zayavka `erpManaged` bo'lib belgilanadi: hajm va summa ERP'niki, reys qo'shilganda ECO uni
+qayta hisoblamaydi.
+
+### Yo'lga chiqqan haydovchilar (xarita)
+
+**Logistika → Reyslar / nakladnoy** sahifasi tepasida yo'ldagi mikserlar ro'yxati va xaritasi turadi
+(OpenStreetMap, 15 soniyada yangilanadi). Har bir qatorda davlat raqami, haydovchi, mijoz, manzil,
+oxirgi GPS vaqti, tezlik va yetib borishgacha qolgan daqiqa ko'rinadi. Qator bosilsa telefon raqami va
+Yandex xaritada ochish havolasi chiqadi.
+
+GPS haydovchi ilovasidan keladi: reys boshlanganda fon kuzatuvi yoqiladi, nuqtalar ECO'ga yuboriladi,
+ERP ularni `GET /v1/erp/positions` orqali o'qiydi. Haydovchi ilovani yopsa yoki ruxsat bermasa, qator
+"GPS yo'q" deb turadi — reys baribir ro'yxatda qoladi.
+
+> Zayavka manzilining koordinatasi ERP'da saqlanmaydi, shuning uchun obyekt nuqtasi ECO'ga bormaydi.
+> Shu sababli yetib borish vaqti taxminiy va obyektga yaqinlashganda holat avtomatik o'zgarmaydi.
+> Buning uchun zayavka formasiga xaritadan nuqta tanlash qo'shish kerak.
 
 Nakladnoy QR: `APP_URL` telefon ocha oladigan manzil bo'lishi shart (LAN IP yoki domen) — aks holda QR `localhost`ga ishora qiladi.
 ECO tomonidagi tavsif: `InsofECO/docs/06-erp-integratsiya.md`.

@@ -10,8 +10,10 @@ export const FIELD_SYNONYMS = {
   product: ["mahsulot", "marka", "product", "товар", "марка", "beton", "продукт"],
   material: ["xomashyo", "material", "материал", "сырь", "nomi", "name", "наимен", "tovar", "mahsulot"],
   qty: ["miqdor", "qty", "norma", "колич", "кол-во", "soni", "hajm", "quantity", "amount"],
-  price: ["narx", "price", "цена", "summa"],
+  price: ["narx", "price", "цена"],
   unit: ["birlik", "unit", "ед.", "ед ", "o'lchov", "olchov", "измер"],
+  nds: ["nds", "ндс", "qqs", "soliq", "vat", "tax", "налог"],
+  sum: ["summa", "сумма", "jami", "itogo", "итого", "total", "stoimost", "стоимость"],
 } as const;
 
 /** Sarlavhalar orasidan maydonga mos ustunni topadi (kichik harf, qism mosligi). */

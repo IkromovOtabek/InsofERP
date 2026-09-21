@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
+import { pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -20,11 +21,12 @@ export async function createVehicle(_prev: ActionState, fd: FormData): Promise<A
   try {
     const v = await db.vehicle.create({ data: { ...r.data, capacityM3: r.data.capacityM3 || null } });
     await audit(db, s.userId, "CREATE", "Vehicle", v.id, undefined, v);
+    pushVehicleSilently(v.id); // haydovchi ilovasida ham shu mashina bo'lsin
   } catch (e) {
     if (String(e).includes("Unique constraint")) return { error: "Bu raqamli texnika allaqachon bor" };
     throw e;
   }
-  revalidatePath("/vehicles");
+  revalidatePath("/vehicles"); revalidatePath("/drivers");
   return { ok: true };
 }
 
@@ -33,5 +35,6 @@ export async function toggleVehicle(id: string) {
   const cur = await db.vehicle.findUniqueOrThrow({ where: { id } });
   await db.vehicle.update({ where: { id }, data: { isActive: !cur.isActive } });
   await audit(db, s.userId, "UPDATE", "Vehicle", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
-  revalidatePath("/vehicles");
+  pushVehicleSilently(id);
+  revalidatePath("/vehicles"); revalidatePath("/drivers");
 }

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireSession, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { roleForPosition } from "@/lib/positions";
+import { pushEmployeeSilently, isDriverPosition } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import type { Prisma } from "@/generated/prisma";
 
@@ -35,10 +36,12 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   if (role && (!d.login || !d.password)) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
 
+  let createdId: string | null = null;
   try {
     await db.$transaction(async (tx) => {
       const user = role ? await createLoginFor(tx, d.fullName, d.position, d.login!, d.password!) : null;
       const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, userId: user?.id } });
+      createdId = e.id;
       await audit(tx, s.userId, "CREATE", "Employee", e.id, undefined, { ...e, login: user?.login, role });
     });
   } catch (e) {
@@ -47,7 +50,9 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     if (e instanceof Error && !m.includes("prisma")) return { error: e.message };
     throw e;
   }
-  revalidatePath("/employees"); revalidatePath("/settings");
+  // Haydovchi — haydovchi ilovasida ham paydo bo'lsin (ECO o'chiq bo'lsa jim o'tadi)
+  if (createdId && isDriverPosition(d.position)) pushEmployeeSilently(createdId);
+  revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers");
   return { ok: true };
 }
 
@@ -83,5 +88,7 @@ export async function toggleEmployee(id: string) {
     if (cur.userId) await tx.user.update({ where: { id: cur.userId }, data: { isActive: !cur.isActive } });
     await audit(tx, s.userId, "UPDATE", "Employee", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
   });
-  revalidatePath("/employees"); revalidatePath("/settings");
+  // O'chirilgan haydovchi ilovaga ham kira olmasin; qayta yoqilsa a'zoligi tiklanadi
+  if (isDriverPosition(cur.position)) pushEmployeeSilently(id);
+  revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers");
 }

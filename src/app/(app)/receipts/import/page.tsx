@@ -15,18 +15,23 @@ export default async function ReceiptImport() {
   ]);
   return (
     <div>
-      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Excel orqali kirim" subtitle="Zavod va texnikaga kerakli mahsulotlar ro'yxatini Excel'dan yuklang — har qator sklad qoldig'iga tushadi." />
-      <Card className="max-w-4xl">
+      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Excel orqali kirim" subtitle="Zavod va texnikaga kerakli mahsulotlar ro'yxatini Excel'dan yuklang — har qator sklad qoldig'iga tushadi. 8 ta ustun fayldan o'qiladi." />
+      <Card className="max-w-6xl">
         <ExcelImport
           action={importReceiptFromExcel}
           submitLabel="Kirimni qayd etish"
           templateName="kirim-namuna"
-          example={{ material: "Dizel yoqilg'isi", qty: 500, price: 12000, unit: "l" }}
+          example={{ material: "Dizel yoqilg'isi", code: "DIZEL", unit: "l", qty: 500, price: 12000, nds: 720000, sum: 6000000, note: "Nakladnoy 123" }}
+          amountCols={{ qtyKey: "qty", priceKey: "price", sumKey: "sum", ndsKey: "nds" }}
           fields={[
             { key: "material", label: "Mahsulot / xomashyo", required: true, hint: "nomi yoki kodi", synonyms: FIELD_SYNONYMS.material },
+            { key: "code", label: "Kodi", hint: "bo'lsa shu kod bo'yicha topiladi", synonyms: ["kod", "code", "код", "artikul", "артикул"] },
+            { key: "unit", label: "Birlik", hint: "yangi mahsulot uchun (kg, l, dona)", synonyms: FIELD_SYNONYMS.unit },
             { key: "qty", label: "Miqdor", required: true, synonyms: FIELD_SYNONYMS.qty },
             { key: "price", label: "Narx (birlik)", hint: "bo'sh bo'lsa 0", synonyms: FIELD_SYNONYMS.price },
-            { key: "unit", label: "Birlik", hint: "yangi mahsulot uchun (kg, l, dona)", synonyms: FIELD_SYNONYMS.unit },
+            { key: "nds", label: "NDS", hint: "fayldan olinadi", synonyms: FIELD_SYNONYMS.nds },
+            { key: "sum", label: "Summa", hint: "fayldan olinadi", synonyms: FIELD_SYNONYMS.sum },
+            { key: "note", label: "Izoh", hint: "qator izohi", synonyms: ["izoh", "note", "примеч", "коммент", "tavsif"] },
           ]}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
