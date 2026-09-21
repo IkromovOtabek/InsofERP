@@ -21,6 +21,7 @@ export default async function RecipeImport() {
           submitLabel="Retseptlarni import qilish"
           templateName="retsept-namuna"
           example={{ product: products[0]?.code ?? "M300", material: materials[0]?.name ?? "Sement M400", qty: 380, unit: materials[0]?.unit ?? "kg" }}
+          merge={{ sum: ["qty"], unitKeys: ["unit"] }}
           fields={[
             { key: "product", label: "Mahsulot", required: true, hint: "kodi (M300) yoki nomi", synonyms: FIELD_SYNONYMS.product },
             { key: "material", label: "Xomashyo", required: true, hint: "nomi yoki kodi", synonyms: FIELD_SYNONYMS.material.filter((x) => x !== "mahsulot") },

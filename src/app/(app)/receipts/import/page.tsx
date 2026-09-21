@@ -4,6 +4,7 @@ import { isoDate } from "@/lib/format";
 import { Card, Checkbox, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
+import { visionEnabled } from "@/lib/ai/vision";
 import { importReceiptFromExcel } from "../actions";
 
 /** Kirim → Excel orqali: zavod va texnikaga kerakli mahsulotlar ro'yxati bitta kirim hujjati sifatida, ko'p qator birdan. */
@@ -15,7 +16,7 @@ export default async function ReceiptImport() {
   ]);
   return (
     <div>
-      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Excel orqali kirim" subtitle="Zavod va texnikaga kerakli mahsulotlar ro'yxatini Excel'dan yuklang — har qator sklad qoldig'iga tushadi. 8 ta ustun fayldan o'qiladi." />
+      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Excel yoki kamera orqali kirim" subtitle="Nakladnoyni kamera bilan suratga oling yoki Excel faylni yuklang — qatorlar jadvalga o'zi tushadi, tekshirib tasdiqlaysiz. Har qator sklad qoldig'iga qo'shiladi." />
       <Card className="max-w-6xl">
         <ExcelImport
           action={importReceiptFromExcel}
@@ -23,6 +24,8 @@ export default async function ReceiptImport() {
           templateName="kirim-namuna"
           example={{ material: "Dizel yoqilg'isi", code: "DIZEL", unit: "l", qty: 500, price: 12000, nds: 720000, sum: 6000000, note: "Nakladnoy 123" }}
           amountCols={{ qtyKey: "qty", priceKey: "price", sumKey: "sum", ndsKey: "nds" }}
+          merge={{ sum: ["qty", "nds", "sum"], unitKeys: ["unit"] }}
+          scan={{ endpoint: "/api/scan/receipt", enabled: visionEnabled(), label: "Nakladnoyni skaner qilish", meta: { supplier: "supplierId", date: "date", docNo: "note" } }}
           fields={[
             { key: "material", label: "Mahsulot / xomashyo", required: true, hint: "nomi yoki kodi", synonyms: FIELD_SYNONYMS.material },
             { key: "code", label: "Kodi", hint: "bo'lsa shu kod bo'yicha topiladi", synonyms: ["kod", "code", "код", "artikul", "артикул"] },

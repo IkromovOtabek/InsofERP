@@ -8,7 +8,7 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, type ActionState } from "@/lib/action";
 import { num, str, codeFromName } from "@/lib/excel";
-import { MATERIAL_UNITS } from "@/lib/unit";
+import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
 
 
 const schema = z.object({
@@ -17,11 +17,18 @@ const schema = z.object({
 });
 type Row = { name?: unknown; code?: unknown; unit?: unknown; qty?: unknown; price?: unknown; minStock?: unknown };
 
+/** Excel'dan kelgan manfiy bo'lmagan raqam; bo'sh yoki xato bo'lsa `null` (qator baribir qo'shiladi). */
+const dec = (v: unknown) => { const n = num(v); return Number.isFinite(n) && n >= 0 ? n : null; };
+
 /**
  * Sklad → Xomashyo qo'shish (Excel yoki qo'lda, ko'p qator birdan).
  * Har qator: nomi (majburiy), kodi (bo'sh bo'lsa nomdan), birlik, boshlang'ich qoldiq, narx, minimal qoldiq.
  * Nomi/kodi bo'yicha mavjud xomashyo topilsa — yangilanadi (birlik o'zgarmaydi), qoldiq ustiga qo'shiladi.
+ * Faylda bir nom bir necha marta kelsa (turli narx yoki partiya) — xomashyo bitta yaratiladi, har qator alohida
+ * qoldiq harakati bo'lib yoziladi; bir xil qatorlarni oldindan ko'rishda birlashtirib yuborsa ham bo'ladi.
  * Boshlang'ich qoldiq StockMove ADJUSTMENT ("Qo'lda") bo'lib yoziladi — Harakat jurnalida ko'rinadi.
+ * Fayl qancha qator bo'lsa ham to'xtatmaydi: birlik tanilmasa (`letr`, `тн`, `pachka`… tarjima qilinadi, baribir
+ * tanilmasa "dona"), raqam xato bo'lsa 0/bo'sh olinadi — faqat nomi bo'sh qatorlar tashlanadi.
  */
 export async function importMaterials(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
@@ -31,14 +38,6 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
   try { rows = JSON.parse(r.data.rows); } catch { return { error: "Ma'lumotlar o'qilmadi" }; }
   rows = rows.filter((x) => str(x.name));
   if (!rows.length) return { error: "Kamida bitta xomashyo nomi kerak" };
-  for (const [i, x] of rows.entries()) {
-    const q = str(x.qty) === "" ? 0 : num(x.qty);
-    if (!(q >= 0)) return { error: `${i + 1}-qator (${str(x.name)}): qoldiq raqam bo'lsin` };
-    if (str(x.price) !== "" && !(num(x.price) >= 0)) return { error: `${i + 1}-qator (${str(x.name)}): narx noto'g'ri` };
-    if (str(x.minStock) !== "" && !(num(x.minStock) >= 0)) return { error: `${i + 1}-qator (${str(x.name)}): minimal qoldiq noto'g'ri` };
-    const u = str(x.unit).toLowerCase();
-    if (u && !(MATERIAL_UNITS as readonly string[]).includes(u)) return { error: `${i + 1}-qator (${str(x.name)}): birlik "${str(x.unit)}" noma'lum (${MATERIAL_UNITS.join(", ")})` };
-  }
   const wh = await db.warehouse.findUnique({ where: { id: r.data.warehouseId } });
   if (!wh) return { error: "Sklad topilmadi" };
 
@@ -46,21 +45,21 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
     const all = await tx.material.findMany();
     const byKey = new Map<string, (typeof all)[number]>();
     for (const m of all) { byKey.set(m.code.toLowerCase(), m); byKey.set(m.name.toLowerCase().trim(), m); }
-    let created = 0, updated = 0, moved = 0;
-    const seen = new Set<string>();
+    let created = 0, updated = 0, moved = 0, guessed = 0;
     for (const x of rows) {
       const name = str(x.name);
       const key = name.toLowerCase();
-      if (seen.has(key)) continue; // faylda takror — birinchisi
-      seen.add(key);
-      const qty = str(x.qty) === "" ? 0 : num(x.qty);
-      const price = str(x.price) === "" ? null : num(x.price);
-      const minStock = str(x.minStock) === "" ? null : num(x.minStock);
-      const unit = str(x.unit).toLowerCase() || "kg";
+      const qty = dec(x.qty) ?? 0;
+      const price = dec(x.price);
+      const minStock = dec(x.minStock);
+      const u = normalizeUnit(x.unit);
+      const unit = u ?? UNIT_FALLBACK;
+      // Bir nom bir marta yaratiladi; shu nomdagi qolgan qatorlar (boshqa narx/partiya) qoldiq bo'lib qo'shiladi
       let m = byKey.get(str(x.code).toLowerCase()) ?? byKey.get(key);
       if (m) {
         if (minStock != null && Number(m.minStock) !== minStock) { m = await tx.material.update({ where: { id: m.id }, data: { minStock, isActive: true } }); updated++; }
       } else {
+        if (!u && str(x.unit) !== "") guessed++; // birlik tanilmadi — "dona" qo'yiladi
         let code = str(x.code).toUpperCase() || codeFromName(name);
         for (let n = 2; all.some((a) => a.code === code); n++) code = `${(str(x.code).toUpperCase() || codeFromName(name)).slice(0, 13)}-${n}`;
         m = await tx.material.create({ data: { code, name, unit, minStock: minStock ?? 0, isActive: true } });
@@ -73,8 +72,8 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
         moved++;
       }
     }
-    return { created, updated, moved };
-  });
+    return { created, updated, moved, guessed };
+  }, { timeout: 120_000, maxWait: 20_000 });
   revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/receipts/new"); revalidatePath("/recipes"); revalidatePath("/dashboard");
-  redirect(`/stock?tab=balance&added=${out.created}&updated=${out.updated}&moved=${out.moved}`);
+  redirect(`/stock?tab=balance&added=${out.created}&updated=${out.updated}&moved=${out.moved}&guessed=${out.guessed}`);
 }

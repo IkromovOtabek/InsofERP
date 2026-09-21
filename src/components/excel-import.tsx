@@ -2,16 +2,21 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X } from "lucide-react";
+import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine } from "lucide-react";
 import { Button, FormError, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { DocScan, type ScanResult } from "@/components/doc-scan";
 import { guessColumn, num, str, type ImportField } from "@/lib/excel";
+import { normalizeUnit } from "@/lib/unit";
 import { fmtNum, money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
 import { cn } from "@/lib/utils";
 
 type Row = Record<string, unknown>;
-/** Bitta qator + undagi muammoli katak kalitlari (`bad` bo'sh bo'lsa qator joyida). */
-type Flagged = { i: number; r: Row; bad: string[] };
+/**
+ * Ko'rsatiladigan/yuboriladigan bitta qator: `i` — fayldagi tartib (tahrir shu bo'yicha saqlanadi),
+ * `no` — jadvaldagi raqami, `n` — shu qatorga nechta fayl qatori birlashgani, `bad` — muammoli kataklar.
+ */
+type Flagged = { i: number; no: number; n: number; r: Row; bad: string[]; a?: Amount };
 /** Qator bo'yicha pul: summa/NDS fayldan kelgan yoki hisoblangan. */
 type Amount = { sum: number; nds: number; total: number; sumCalc: boolean; ndsCalc: boolean; mismatch: boolean };
 
@@ -22,14 +27,64 @@ type Amount = { sum: number; nds: number; total: number; sumCalc: boolean; ndsCa
  */
 type AmountCols = { qtyKey: string; priceKey: string; sumKey: string; ndsKey?: string; rate?: number; fill?: boolean };
 
+/**
+ * Takroriy qatorlarni birlashtirish. `sum` — qo'shiladigan ustunlar (miqdor, summa, NDS);
+ * qolgan hamma ustun "shaxsiy belgi": ularning birortasi boshqacha bo'lsa (masalan narxi yoki birligi)
+ * qator birlashmaydi, alohida qoladi. `unitKeys` — birlik ustunlari: "letr" va "litir" bir xil deb qaraladi.
+ */
+type MergeCols = { sum: string[]; unitKeys?: string[] };
+
+/**
+ * Kamera bilan skaner: `endpoint` — rasmni o'qiydigan API, `enabled` — AI kaliti bormi (serverda tekshiriladi),
+ * `meta` — hujjat sarlavhasidagi ma'lumot qaysi form maydoniga qo'yilishi ("supplier" → "supplierId").
+ */
+type ScanCols = { endpoint: string; enabled: boolean; meta?: Record<string, string>; label?: string };
+
+/** Nomlarni taqqoslash uchun soddalashtirish: «"BODOMZOR SEMENT" MCHJ» → bodomzorsementmchj */
+const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёўқғҳ]+/gi, "");
+
 const PREVIEW = 15; // sahifada shuncha qator; qolgani "Batafsil ko'rish" modalida
+
+/** Excel formulasining xatosi ("#VALUE!", "#N/A"…) — ma'lumot emas, bo'sh katak deb olinadi. */
+const XL_ERR = /^#(value|ref|div\/0|n\/a|name|null|num|spill|calc|getting_data)[!?]?$/i;
+const cell = (v: unknown) => (typeof v === "string" && XL_ERR.test(v.trim()) ? "" : v ?? "");
+
+/**
+ * Bir xil qatorlarni bitta qilib, `sumKeys` ustunlarini qo'shib chiqadi.
+ * Tenglik `sumKeys`dan tashqari hamma maydon bo'yicha tekshiriladi — bitta ustunda farq bo'lsa, alohida qator.
+ */
+function mergeRows(rows: { r: Row; i: number }[], keys: string[], { sum: sumKeys, unitKeys = [] }: MergeCols) {
+  const idKeys = keys.filter((k) => !sumKeys.includes(k));
+  // Taqqoslash uchun qiymat: birlik — kanonik ko'rinishda, raqam — soni bo'yicha ("9,818" = 9818), matn — kichik harfda
+  const idOf = (r: Row, k: string) => {
+    const v = str(r[k]);
+    if (unitKeys.includes(k)) return normalizeUnit(v) ?? v.toLowerCase();
+    const n = num(v);
+    return v !== "" && Number.isFinite(n) ? String(n) : v.toLowerCase();
+  };
+  const out: { r: Row; i: number; n: number }[] = [];
+  const at = new Map<string, number>();
+  for (const { r, i } of rows) {
+    const id = idKeys.map((k) => idOf(r, k)).join("|\u0000|");
+    const j = at.get(id);
+    if (j === undefined) { at.set(id, out.length); out.push({ r: { ...r }, i, n: 1 }); continue; }
+    const g = out[j];
+    g.n++;
+    for (const k of sumKeys) {
+      if (str(g.r[k]) === "" && str(r[k]) === "") continue; // ikkalasi ham bo'sh — bo'sh qoladi
+      const a = num(g.r[k]), b = num(r[k]);
+      g.r[k] = (Number.isFinite(a) ? a : 0) + (Number.isFinite(b) ? b : 0);
+    }
+  }
+  return out;
+}
 
 /**
  * Umumiy Excel import: fayl → brauzerda o'qiladi (SheetJS) → ustunlar maydonlarga moslanadi → oldindan ko'rish → server action.
  * Server action `rows` (JSON, maydon kalitlari bo'yicha) va `children` ichidagi qo'shimcha maydonlarni oladi.
  * Ko'p qator bir vaqtda yuboriladi — bitta hujjat / bitta import.
  */
-export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols }: {
+export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan }: {
   fields: ImportField[];
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: React.ReactNode;
@@ -37,6 +92,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   templateName?: string;
   example?: Record<string, string | number>;
   amountCols?: AmountCols;
+  merge?: MergeCols;
+  scan?: ScanCols;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [fileName, setFileName] = useState("");
@@ -49,10 +106,12 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [edits, setEdits] = useState<Record<string, string>>({}); // "qator:maydon" → yangi qiymat
   const [onlyBad, setOnlyBad] = useState(false); // faqat muammoli qatorlarni ko'rsatish
   const [skipBad, setSkipBad] = useState(false); // muammoli qatorlarni o'tkazib yuborib import qilish
+  const [mergeOn, setMergeOn] = useState(true); // takroriy qatorlarni birlashtirib, miqdorlarni qo'shish
+  const [scanNote, setScanNote] = useState(""); // skanerdan nima o'qilgani haqida qisqa xabar
   const formRef = useRef<HTMLFormElement>(null);
 
   const onFile = async (f: File | undefined) => {
-    setParseErr(""); setRows([]); setHeaders([]); setMap({});
+    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote("");
     setModal(false); setEditing(false); setEdits({}); setOnlyBad(false); setSkipBad(false);
     if (!f) return;
     setFileName(f.name);
@@ -68,12 +127,50 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       const hi = aoa.findIndex((r) => r.some((c) => str(c) !== ""));
       if (hi < 0) { setParseErr("Fayl bo'sh"); return; }
       const hdr = aoa[hi].map((c, i) => str(c) || `Ustun ${i + 1}`);
-      const data = aoa.slice(hi + 1).filter((r) => r.some((c) => str(c) !== "")).map((r) => Object.fromEntries(hdr.map((h, i) => [h, r[i] ?? ""])));
+      const data = aoa.slice(hi + 1).filter((r) => r.some((c) => str(c) !== "")).map((r) => Object.fromEntries(hdr.map((h, i) => [h, cell(r[i])])));
       setHeaders(hdr); setRows(data);
       const taken = new Set<string>(); const m: Record<string, string> = {};
       for (const fl of fields) { const g = guessColumn(hdr, fl.synonyms, taken); if (g) { m[fl.key] = g; taken.add(g); } }
       setMap(m);
     } catch (e) { setParseErr(`Faylni o'qib bo'lmadi: ${e instanceof Error ? e.message : String(e)}`); }
+  };
+
+  /**
+   * Skaner natijasi: qatorlar xuddi Excel'dan kelgandek jadvalga tushadi (ustunlar to'g'ridan-to'g'ri mos),
+   * hujjat sarlavhasi (yetkazuvchi, sana, raqam) esa formadagi tegishli maydonlarga qo'yiladi.
+   */
+  const onScan = (r: ScanResult) => {
+    const hdr = fields.map((f) => f.label);
+    setFileName(`Skaner${r.doc.docNo ? ` · № ${r.doc.docNo}` : ""}`);
+    setParseErr("");
+    setHeaders(hdr);
+    setRows(r.rows.map((row) => Object.fromEntries(fields.map((f) => [f.label, row[f.key] ?? ""]))));
+    setMap(Object.fromEntries(fields.map((f) => [f.key, f.label])));
+    setEdits({}); setOnlyBad(false); setSkipBad(false); setModal(false); setEditing(false);
+    setScanNote([`${r.rows.length} ta qator o'qildi`, ...applyMeta(r.doc)].join(" · "));
+  };
+
+  /** Hujjat sarlavhasini formaga qo'yadi; nima qo'yilgani (yoki topilmagani) haqida qisqa izohlar qaytaradi. */
+  const applyMeta = (doc: ScanResult["doc"]): string[] => {
+    const form = formRef.current;
+    if (!form || !scan?.meta) return [];
+    const out: string[] = [];
+    for (const [key, name] of Object.entries(scan.meta)) {
+      const v = (doc as Record<string, string>)[key]?.trim();
+      if (!v) continue;
+      const el = form.elements.namedItem(name);
+      if (el instanceof HTMLSelectElement) {
+        const want = flat(v);
+        const opt = [...el.options].find((o) => o.value && flat(o.text) && (flat(o.text) === want || flat(o.text).includes(want) || want.includes(flat(o.text))));
+        if (opt) { el.value = opt.value; out.push(`yetkazuvchi: ${opt.text}`); }
+        else out.push(`«${v}» ro'yxatda topilmadi — qo'lda tanlang`);
+      } else if (el instanceof HTMLInputElement && el.type === "date") {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { el.value = v; out.push(`sana: ${v}`); }
+      } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        if (!el.value.trim()) { el.value = key === "docNo" ? `Nakladnoy № ${v}` : v; out.push(`№ ${v}`); }
+      }
+    }
+    return out;
   };
 
   const downloadTemplate = async () => {
@@ -90,26 +187,21 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   }))), [rows, map, fields, edits]);
   const missingRequired = fields.filter((f) => f.required && !map[f.key]);
   const numericKeys = fields.filter((f) => /qty|price|amount|sum|nds/.test(f.key)).map((f) => f.key);
-  // Har qator uchun muammoli katak kalitlari: majburiy maydon bo'sh yoki raqam noto'g'ri
-  const flagged: Flagged[] = mapped.map((r, i) => ({
-    i, r,
-    bad: [
-      ...fields.filter((f) => f.required && str(r[f.key]) === "").map((f) => f.key),
-      ...numericKeys.filter((k) => str(r[k]) !== "" && Number.isNaN(num(r[k]))),
-    ],
-  }));
-  const badList = flagged.filter((x) => x.bad.length > 0);
-  const validRows = flagged.filter((x) => x.bad.length === 0).map((x) => x.r);
-  const emptyCells = badList.reduce((n, x) => n + x.bad.length, 0);
-  const editCount = Object.keys(edits).length;
-  const ready = rows.length > 0 && missingRequired.length === 0 && badList.length === 0;
-  // Muammolilarini tashlab, qolganini qo'shish mumkin bo'lgan holat
-  const canSkip = rows.length > 0 && missingRequired.length === 0 && badList.length > 0 && validRows.length > 0;
-  const submitValid = () => { flushSync(() => setSkipBad(true)); formRef.current?.requestSubmit(); };
+  const requiredKeys = fields.filter((f) => f.required).map((f) => f.key);
+  // Majburiy maydonlari butunlay bo'sh qator — faylning ortiqcha satri (izoh, "jami", bo'sh qator):
+  // muammo emas, shunchaki import qilinmaydi — aks holda katta fayl bitta tugmani ham bloklab qo'yadi
+  const isBlank = (r: Row) => requiredKeys.length > 0 && requiredKeys.every((k) => str(r[k]) === "");
+  // Fayldagi tartib (`i`) saqlanadi — tahrirlar shu raqam bo'yicha yoziladi
+  const dataRows = mapped.map((r, i) => ({ r, i })).filter((x) => !isBlank(x.r));
+  const blankCount = mapped.length - dataRows.length;
+  // Takroriy qatorlar bitta qatorga yig'iladi (miqdorlar qo'shiladi); bitta ustunda farq bo'lsa — alohida qator
+  const view = merge && mergeOn ? mergeRows(dataRows, fields.map((f) => f.key), merge) : dataRows.map((x) => ({ ...x, n: 1 }));
+  const mergedAway = dataRows.length - view.length;
 
   // Summa/NDS: fayldagi qiymat ustun, bo'lmasa (fill bo'lsa) miqdor × narxdan hisoblanadi
   const ac = amountCols;
-  const amounts: Amount[] | null = !ac ? null : mapped.map((r) => {
+  const amount = (r: Row): Amount | undefined => {
+    if (!ac) return undefined;
     const calc = num(r[ac.qtyKey]) * num(r[ac.priceKey]);
     const base = Number.isFinite(calc) ? calc : 0;
     const fs = str(r[ac.sumKey]) === "" ? NaN : num(r[ac.sumKey]);
@@ -123,11 +215,30 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       ndsCalc: !hasFn && !!ac.fill && !!ac.rate && sum > 0,
       mismatch: hasFs && base > 0 && Math.abs(fs - base) > 0.5,
     };
-  });
-  const mismatches = amounts?.filter((a) => a.mismatch).length ?? 0;
+  };
+
+  // Har qator uchun muammoli katak kalitlari: majburiy maydon bo'sh yoki raqam noto'g'ri
+  const flagged: Flagged[] = view.map((g, pos) => ({
+    i: g.i, no: pos + 1, n: g.n, r: g.r,
+    a: amount(g.r),
+    bad: [
+      ...fields.filter((f) => f.required && str(g.r[f.key]) === "").map((f) => f.key),
+      ...numericKeys.filter((k) => str(g.r[k]) !== "" && Number.isNaN(num(g.r[k]))),
+    ],
+  }));
+  const badList = flagged.filter((x) => x.bad.length > 0);
+  const allRows = flagged.map((x) => x.r);
+  const validRows = flagged.filter((x) => x.bad.length === 0).map((x) => x.r);
+  const emptyCells = badList.reduce((n, x) => n + x.bad.length, 0);
+  const editCount = Object.keys(edits).length;
+  const ready = allRows.length > 0 && missingRequired.length === 0 && badList.length === 0;
+  // Muammolilarini tashlab, qolganini qo'shish mumkin bo'lgan holat
+  const canSkip = allRows.length > 0 && missingRequired.length === 0 && badList.length > 0 && validRows.length > 0;
+  const submitValid = () => { flushSync(() => setSkipBad(true)); formRef.current?.requestSubmit(); };
+  const mismatches = flagged.filter((x) => x.a?.mismatch).length;
 
   const source = onlyBad ? badList : flagged;
-  const totals = source.reduce((a, x) => { const m = amounts?.[x.i]; return m ? { sum: a.sum + m.sum, nds: a.nds + m.nds, total: a.total + m.total } : a; }, { sum: 0, nds: 0, total: 0 });
+  const totals = source.reduce((a, x) => (x.a ? { sum: a.sum + x.a.sum, nds: a.nds + x.a.nds, total: a.total + x.a.total } : a), { sum: 0, nds: 0, total: 0 });
 
   // Oyna ochiq ekan: Esc bilan yopiladi, orqa fon skroll qilinmaydi
   useEffect(() => {
@@ -148,12 +259,17 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
   /** Bitta qator: `canEdit` bo'lsa kataklar input bo'lib chiqadi. */
   const renderRow = (x: Flagged, canEdit: boolean) => {
-    const a = amounts?.[x.i];
+    const a = x.a;
     return (
-      <Tr key={x.i} className={x.bad.length ? "bg-red-50/60" : undefined}>
-        <Td className="text-slate-400">{x.i + 1}</Td>
+      <Tr key={x.no} className={x.bad.length ? "bg-red-50/60" : undefined}>
+        <Td className="whitespace-nowrap text-slate-400">
+          {x.no}
+          {x.n > 1 && <span className="ml-1 rounded bg-sky-100 px-1 text-[10px] font-medium text-sky-700" title={`Faylda ${x.n} ta bir xil qator edi — miqdorlari qo'shildi`}>×{x.n}</span>}
+        </Td>
         {fields.map((f) => {
           const v = str(x.r[f.key]);
+          // Birlashtirilgan (qo'shilgan) raqam — mingliklar bilan ko'rsatiladi; serverga baribir to'liq qiymat ketadi
+          const shown = typeof x.r[f.key] === "number" ? fmtNum(x.r[f.key] as number, 3) : v;
           const isBad = x.bad.includes(f.key);
           const edited = edits[`${x.i}:${f.key}`] !== undefined;
           const right = numericKeys.includes(f.key);
@@ -177,7 +293,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           if (a?.mismatch && ac?.sumKey === f.key) {
             return <Td key={f.key} right className="bg-amber-100/70 font-medium text-amber-800"><span title={`Miqdor × narx = ${fmtNum(num(x.r[ac.qtyKey]) * num(x.r[ac.priceKey]))}`}>{v}</span></Td>;
           }
-          return <Td key={f.key} right={right} className={edited ? "font-medium text-emerald-700" : undefined}>{v || <span className="text-slate-300">—</span>}</Td>;
+          return <Td key={f.key} right={right} className={edited ? "font-medium text-emerald-700" : undefined}>{shown || <span className="text-slate-300">—</span>}</Td>;
         })}
       </Tr>
     );
@@ -185,7 +301,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
   const emptyRow = <Tr><Td colSpan={colCount} className="py-6 text-center text-slate-500">Muammoli qator yo&apos;q</Td></Tr>;
 
-  const totalsRow = amounts && totals.total > 0 && (
+  const totalsRow = ac && totals.total > 0 && (
     <tfoot>
       <tr className="bg-slate-50">
         <Td colSpan={colCount} right className="text-slate-600">
@@ -193,6 +309,17 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         </Td>
       </tr>
     </tfoot>
+  );
+
+  /** Takroriy qatorlarni birlashtirish tugmasi (sahifada ham, oynada ham bitta holat). */
+  const mergeToggle = merge && rows.length > 0 && (
+    <label className={cn("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+      mergeOn ? "border-sky-300 bg-sky-50 text-sky-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50")}>
+      <input type="checkbox" checked={mergeOn} className="h-3.5 w-3.5 rounded border-slate-300"
+        onChange={(e) => { setSkipBad(false); setEditing(false); setMergeOn(e.target.checked); }} />
+      Bir xil qatorlarni birlashtirish
+      {mergeOn && mergedAway > 0 && <span className="font-normal">· {dataRows.length} → {view.length} ta qator</span>}
+    </label>
   );
 
   /** Muammoli qatorlar filtri — sahifada ham, oynada ham bir xil holatni boshqaradi. */
@@ -207,26 +334,38 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   return (
     <form ref={formRef} action={formAction} className="space-y-5">
       <FormError error={state?.error} />
-      <input type="hidden" name="rows" value={JSON.stringify(skipBad ? validRows : mapped)} />
+      <input type="hidden" name="rows" value={JSON.stringify(skipBad ? validRows : allRows)} />
       {children}
 
       <div className="rounded-lg border-2 border-dashed border-slate-300 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700"><FileSpreadsheet size={14} /> Excel faylni tanlash</span>
-            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
-            <span className="text-slate-500">{fileName || ".xlsx, .xls yoki .csv"}</span>
-          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-700"><FileSpreadsheet size={14} /> Excel faylni tanlash</span>
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+            </label>
+            {scan?.enabled && <DocScan endpoint={scan.endpoint} label={scan.label} onResult={onScan} />}
+            <span className="text-sm text-slate-500">{fileName || ".xlsx, .xls yoki .csv"}</span>
+          </div>
           <button type="button" onClick={downloadTemplate} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:underline"><Download size={13} /> Namuna faylni yuklab olish</button>
         </div>
-        <p className="mt-2 text-xs text-slate-500">Birinchi qator — ustun sarlavhalari. Ustunlar tartibi muhim emas: quyida har bir maydon qaysi ustundan olinishini tanlaysiz.</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Birinchi qator — ustun sarlavhalari. Ustunlar tartibi muhim emas: quyida har bir maydon qaysi ustundan olinishini tanlaysiz.
+          {scan?.enabled && " Nakladnoy qog'ozda bo'lsa — kamera bilan suratga oling, qatorlar o'zi to'ldiriladi."}
+        </p>
+        {scan && !scan.enabled && <p className="mt-1 text-xs text-slate-400">Kamera bilan o&apos;qish uchun AI kaliti sozlanmagan (.env → ANTHROPIC_API_KEY yoki GROQ_API_KEY).</p>}
+        {scanNote && (
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1.5 text-xs text-sky-800">
+            <ScanLine size={13} /> Skanerdan: {scanNote}. Saqlashdan oldin qatorlarni tekshiring.
+          </p>
+        )}
         {parseErr && <p className="mt-2 text-sm text-red-600">{parseErr}</p>}
       </div>
 
       {headers.length > 0 && (
         <>
           <div>
-            <div className="mb-2 text-sm font-medium text-slate-700">Ustunlarni moslash <span className="font-normal text-slate-500">· {fields.length} ta ustun · {rows.length} ta qator topildi</span></div>
+            <div className="mb-2 text-sm font-medium text-slate-700">Ustunlarni moslash <span className="font-normal text-slate-500">· {fields.length} ta ustun · {rows.length} ta qator topildi{blankCount > 0 && ` (${blankCount} tasi bo'sh — o'tkazib yuboriladi)`}</span></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {fields.map((f) => (
                 <label key={f.key} className="text-sm">
@@ -250,11 +389,21 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
             <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
               <span className="font-medium text-slate-700">Oldindan ko&apos;rish</span>
               {ready
-                ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><CheckCircle2 size={13} /> Hammasi joyida — {rows.length} ta qator import qilinadi</span>
+                ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><CheckCircle2 size={13} /> Hammasi joyida — {allRows.length} ta qator import qilinadi</span>
                 : <span className="inline-flex items-center gap-1 text-xs text-amber-700"><AlertTriangle size={13} /> {missingRequired.length ? `Majburiy maydon moslanmagan: ${missingRequired.map((f) => f.label).join(", ")}` : `${badList.length} ta qatorda ${emptyCells} ta katak bo'sh yoki noto'g'ri`}</span>}
               {mismatches > 0 && <span className="inline-flex items-center gap-1 text-xs text-amber-700"><AlertTriangle size={13} /> {mismatches} ta qatorda summa miqdor × narxga to&apos;g&apos;ri kelmadi</span>}
               {editCount > 0 && <span className="text-xs text-emerald-700">{editCount} ta katak qo&apos;lda tahrirlandi</span>}
             </div>
+            {merge && (
+              <div className="mb-2 flex flex-wrap items-center gap-3">
+                {mergeToggle}
+                <span className="text-xs text-slate-500">
+                  {mergeOn
+                    ? `Nomi va boshqa ustunlari bir xil qatorlar bitta bo'ldi — ${merge.sum.length > 1 ? "miqdor va summalar" : "miqdorlar"} qo'shildi. Bironta ustunda farq bo'lsa (masalan narxi), qator alohida qoladi.`
+                    : "Har bir fayl qatori alohida yuboriladi."}
+                </span>
+              </div>
+            )}
             <Table>
               <thead>{headRow}</thead>
               <tbody>
@@ -277,7 +426,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button disabled={pending || !ready}><Upload size={15} /> {pending ? "Import qilinmoqda…" : `${submitLabel}${rows.length ? ` (${rows.length})` : ""}`}</Button>
+        <Button disabled={pending || !ready}><Upload size={15} /> {pending ? "Import qilinmoqda…" : `${submitLabel}${allRows.length ? ` (${allRows.length})` : ""}`}</Button>
         {canSkip && (
           <>
             <Button type="button" variant="secondary" disabled={pending} onClick={submitValid}>
@@ -294,11 +443,16 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           <div className="flex max-h-full w-full max-w-[96rem] flex-col overflow-hidden rounded-(--radius-card) border border-slate-200 bg-white shadow-2xl">
             <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
               <span className="font-semibold text-slate-900">{fileName || "Import"} <span className="font-normal text-slate-500">· {source.length} ta qator · {fields.length} ta ustun</span></span>
-              <button type="button" onClick={() => setEditing((v) => !v)}
-                className={cn("inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
-                  editing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50")}>
-                {editing ? <><Check size={13} /> Tahrirni tugatish</> : <><PencilLine size={13} /> Tahrirlash</>}
-              </button>
+              {merge && mergeOn
+                ? <span className="text-xs text-slate-500">Tahrirlash uchun &ldquo;Bir xil qatorlarni birlashtirish&rdquo;ni o&apos;chiring</span>
+                : (
+                  <button type="button" onClick={() => setEditing((v) => !v)}
+                    className={cn("inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+                      editing ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50")}>
+                    {editing ? <><Check size={13} /> Tahrirni tugatish</> : <><PencilLine size={13} /> Tahrirlash</>}
+                  </button>
+                )}
+              {mergeToggle}
               {badFilterBtn}
               {editCount > 0 && <span className="text-xs text-emerald-700">{editCount} ta katak tahrirlandi</span>}
               {badList.length > 0 && <span className="text-xs text-amber-700">{badList.length} ta qatorda {emptyCells} ta katak bo&apos;sh yoki noto&apos;g&apos;ri</span>}
@@ -317,7 +471,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
             </div>
 
             <footer className="flex flex-wrap items-center gap-3 border-t border-slate-200 px-4 py-3">
-              {amounts && totals.total > 0 && (
+              {ac && totals.total > 0 && (
                 <span className="text-xs text-slate-500">{source.length} ta qator · summa {money(totals.sum)} · NDS {money(totals.nds)} · jami <span className="font-semibold text-slate-800">{money(totals.total)}</span></span>
               )}
               <div className="ml-auto flex flex-wrap items-center gap-2">

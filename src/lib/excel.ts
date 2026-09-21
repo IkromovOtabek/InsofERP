@@ -9,9 +9,9 @@ export type ImportField = { key: string; label: string; required?: boolean; hint
 export const FIELD_SYNONYMS = {
   product: ["mahsulot", "marka", "product", "товар", "марка", "beton", "продукт"],
   material: ["xomashyo", "material", "материал", "сырь", "nomi", "name", "наимен", "tovar", "mahsulot"],
-  qty: ["miqdor", "qty", "norma", "колич", "кол-во", "soni", "hajm", "quantity", "amount"],
+  qty: ["miqdor", "qty", "norma", "колич", "кол-во", "к-во", "кво", "soni", "hajm", "quantity", "amount"],
   price: ["narx", "price", "цена"],
-  unit: ["birlik", "unit", "ед.", "ед ", "o'lchov", "olchov", "измер"],
+  unit: ["birlik", "unit", "ед.", "ед ", "ед изм", "изм", "o'lchov", "olchov", "o‘lchov", "измер"],
   nds: ["nds", "ндс", "qqs", "soliq", "vat", "tax", "налог"],
   sum: ["summa", "сумма", "jami", "itogo", "итого", "total", "stoimost", "стоимость"],
 } as const;
@@ -26,11 +26,28 @@ export function guessColumn(headers: string[], synonyms: readonly string[], take
   return "";
 }
 
-/** "1 200,5" → 1200.5; bo'sh/xato → NaN. */
+/**
+ * "1 200,5" → 1200.5; "48,109,286" → 48109286; "1.200.000" → 1200000; bo'sh/xato → NaN.
+ * Vergul/nuqta uch xonali guruhlarni ajratsa — mingliklar ajratkichi, aks holda kasr nuqtasi.
+ */
 export function num(v: unknown): number {
   if (typeof v === "number") return v;
   if (v == null) return NaN;
-  const s = String(v).replace(/\s+/g, "").replace(",", ".");
+  let s = String(v).replace(/[\s\u00a0'`]+/g, "");
+  if (s === "") return NaN;
+  const hasComma = s.includes(","), hasDot = s.includes(".");
+  if (hasComma && hasDot) {
+    // oxirgisi kasr ajratkichi: "1.200,50" → 1200.50, "1,200.50" → 1200.50
+    const dec = s.lastIndexOf(",") > s.lastIndexOf(".") ? "," : ".";
+    s = s.split(dec === "," ? "." : ",").join("");
+    s = s.replace(",", ".");
+  } else if (hasComma) {
+    // "9,818" → 9818 (minglik), lekin "2,5" va "0,500" → kasr
+    s = /^-?[1-9]\d{0,2}(,\d{3})+$/.test(s) ? s.split(",").join("") : s.replace(",", ".");
+  } else if (hasDot) {
+    // faqat "1.200.000" kabi ikki va undan ko'p guruh minglik; "1.778" — kasr
+    if (/^-?\d{1,3}(\.\d{3}){2,}$/.test(s)) s = s.split(".").join("");
+  }
   return s === "" ? NaN : Number(s);
 }
 
