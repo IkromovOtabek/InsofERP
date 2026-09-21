@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { scanInvoice, visionEnabled, visionProvider, visionModel, type ScanImage } from "@/lib/ai/vision";
 
-/** Kamera bilan kirim: hujjat rasmini faqat sklad/snabjeniye xodimi yuboradi. */
+/** Kamera bilan kirim: hujjat rasmini faqat sklad xodimi yuboradi. */
 const ROLES = new Set(["PROCUREMENT", "WAREHOUSE", "DIRECTOR"]);
 const MAX_IMAGES = 4;
 const MAX_BYTES = 6_000_000; // bitta rasm uchun (~6 MB) — brauzer o'zi kichraytirib yuboradi

@@ -11,7 +11,7 @@ export default async function ReceiptsPage() {
   const receipts = await db.goodsReceipt.findMany({ orderBy: { date: "desc" }, take: 200, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
   return (
     <div>
-      <PageHeader title="Kirim (snabjeniye)" subtitle={canCreate ? undefined : "Sklad xodimlari kiritgan kirimlar — kim, nima, qancha. Faqat ko'rish."} action={canCreate ? <div className="flex flex-wrap gap-2"><LinkButton href="/receipts/import" variant="secondary"><ScanLine size={16} /> Nakladnoy skaneri / Excel</LinkButton><LinkButton href="/receipts/new"><Plus size={16} /> Kirim</LinkButton></div> : undefined} />
+      <PageHeader title="Kirim" subtitle={canCreate ? undefined : "Sklad xodimlari kiritgan kirimlar — kim, nima, qancha. Faqat ko'rish."} action={canCreate ? <div className="flex flex-wrap gap-2"><LinkButton href="/receipts/import" variant="secondary"><ScanLine size={16} /> Nakladnoy skaneri / Excel</LinkButton><LinkButton href="/receipts/new"><Plus size={16} /> Kirim</LinkButton></div> : undefined} />
       <Table>
         <thead><tr><Th>№</Th><Th>Sana</Th><Th>Yetkazuvchi</Th><Th>Sklad</Th><Th>Tarkib</Th><Th right>Summa</Th><Th>Kim kiritdi</Th></tr></thead>
         <tbody>

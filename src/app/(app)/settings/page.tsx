@@ -25,7 +25,7 @@ const ENTITY_LABEL: Record<string, string> = {
   Customer: "Mijoz", Supplier: "Yetkazuvchi", Order: "Zayavka", ProductionBatch: "Zames", Recipe: "Retsept", GoodsReceipt: "Kirim",
   Trip: "Reys", Invoice: "Schyot", Payment: "To'lov", Employee: "Xodim", Vehicle: "Texnika", User: "Foydalanuvchi",
   Product: "Beton markasi", Material: "Xomashyo", Warehouse: "Sklad", CashAccount: "Kassa/hisob", CompanySettings: "Rekvizitlar", StockMove: "Sklad harakati",
-  Brigade: "Brigada", BrigadeTask: "Topshiriq", TaskProgress: "Bajarilganlik", CashTransaction: "Kirim-chiqim",
+  Brigade: "Brigada", BrigadeTask: "Topshiriq", TaskProgress: "Bajarilganlik", CashTransaction: "Kirim-chiqim", WorkPosition: "Ishchi lavozim", EmployeeDocument: "Xodim hujjati",
 };
 const UNITS: [string, string][] = [["kg", "kg"], ["t", "t"], ["l", "l"], ["m3", "m³"], ["dona", "dona"]];
 const PRODUCT_UNITS: [string, string][] = [["m3", "m³ — tayyor beton"], ["dona", "dona — ustun, blok, bordyur"], ["m2", "m² — plitka"], ["m", "m — pogon"], ["t", "t"]];

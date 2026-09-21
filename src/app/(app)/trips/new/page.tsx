@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { driverPositionNames } from "@/lib/positions";
 import { customerMarks, markedName } from "@/lib/finance";
 import { requireSession } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
@@ -11,8 +12,9 @@ export default async function NewTrip() {
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, orderBy: { plate: "asc" } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),
   ]);
-  // Haydovchilar birinchi; agar lavozimda "haydovchi" bo'lganlar bo'lsa — faqat ular
-  const driversOnly = drivers.filter((d) => /haydovchi|driver|водитель/i.test(d.position));
+  // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar; birorta ham bo'lmasa — hamma xodim
+  const driverNames = (await driverPositionNames()).map((n) => n.toLowerCase());
+  const driversOnly = drivers.filter((d) => driverNames.includes(d.position.trim().toLowerCase()));
   const driverOpts = driversOnly.length ? driversOnly : drivers;
   const marks = await customerMarks(orders.map((o) => o.customerId));
   const opts = orders.map((o) => {

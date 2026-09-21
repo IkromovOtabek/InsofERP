@@ -10,7 +10,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 const schema = z.object({ name: zStr("Nomi kerak"), inn: zOpt, phone: zOpt });
 
 export async function createSupplier(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PROCUREMENT", "ACCOUNTING"]);
+  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"]);
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   try {
@@ -25,7 +25,7 @@ export async function createSupplier(_prev: ActionState, fd: FormData): Promise<
 }
 
 export async function toggleSupplier(id: string) {
-  const s = await requireSession(["PROCUREMENT"]);
+  const s = await requireSession(["WAREHOUSE", "PROCUREMENT"]);
   const cur = await db.supplier.findUniqueOrThrow({ where: { id } });
   await db.supplier.update({ where: { id }, data: { isActive: !cur.isActive } });
   await audit(db, s.userId, "UPDATE", "Supplier", id, { isActive: cur.isActive }, { isActive: !cur.isActive });

@@ -130,10 +130,9 @@ async function main() {
   const roleUsersDef = [
     { login: "prod1",  fullName: "Bahrom Qodirov",     position: "Ishlab chiqarish" },
     { login: "log1",   fullName: "Sardor Aliyev",      position: "Logistika" },
-    { login: "sklad1", fullName: "Gulnora Tosheva",    position: "Sklad" },
-    { login: "snab1",  fullName: "Jasur Ergashev",     position: "Snabjeniye" },
+    { login: "sklad1", fullName: "Gulnora Tosheva",    position: "Sklad" }, // kirim va yetkazuvchilar ham shu bo'limda
+    { login: "prorab1", fullName: "Sanjar Ergashev",   position: "Ish boshqaruvchi" },
     { login: "buh1",   fullName: "Nodira Karimova",    position: "Buxgalteriya" },
-    { login: "fin1",   fullName: "Otabek Nazarov",     position: "Finance" },
     { login: "hr1",    fullName: "Madina Tursunova",   position: "Otdel kadr" },
     { login: "kassa1", fullName: "Shahnoza Rustamova", position: "Kassa / bank" },
   ];
@@ -149,7 +148,7 @@ async function main() {
     await db.employee.create({ data: { fullName: u.fullName, position: u.position, userId: user.id } });
     roleUsers[u.login] = { userId: user.id };
   }
-  const salesId = salesUser.id, prodId = roleUsers.prod1.userId, logId = roleUsers.log1.userId, snabId = roleUsers.snab1.userId;
+  const salesId = salesUser.id, prodId = roleUsers.prod1.userId, logId = roleUsers.log1.userId, skladId = roleUsers.sklad1.userId;
 
   // Login'siz ishchi xodimlar — mavjud haydovchilar bilan birga ishlatiladi
   const existingDrivers = await db.employee.findMany({ where: { position: "Haydovchi" } });
@@ -214,10 +213,10 @@ async function main() {
     await db.stockMove.createMany({
       data: await Promise.all(items.map(async (i) => ({
         type: "RECEIPT" as const, date, warehouseId: wh.id, materialId: await byCode(i.code),
-        qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: snabId,
+        qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: skladId,
       }))),
     });
-    await audit(db, snabId, "CREATE", "GoodsReceipt", rec.id, undefined, rec);
+    await audit(db, skladId, "CREATE", "GoodsReceipt", rec.id, undefined, rec);
     return rec;
   }
   await makeReceipt(supCem.id, daysAgo(12), [{ code: "CEM", qty: 55000, price: 950 }]);

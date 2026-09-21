@@ -14,7 +14,7 @@ import type { TaskStatus } from "@/generated/prisma";
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ status?: string; brigade?: string }> }) {
   const { status, brigade } = await searchParams;
-  const s = await requireSession(["PRODUCTION", "SALES", "LOGISTICS"]);
+  const s = await requireSession(["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"]);
   const canProgress = ["PRODUCTION", "LOGISTICS", "DIRECTOR"].includes(s.role);
   const canCancel = ["PRODUCTION", "SALES", "DIRECTOR"].includes(s.role);
   const st = status && status in TASK_STATUS ? (status as TaskStatus) : undefined;

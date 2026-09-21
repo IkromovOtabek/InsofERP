@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { driverPositionNames, isDriverPosition } from "@/lib/positions";
 import { eco, ecoEnabled, EcoError, normalizePhone, type EcoDriver, type EcoVehicle } from "./client";
 import { ecoSystemUserId } from "./system-user";
 import type { VehicleType } from "@/generated/prisma";
@@ -14,8 +15,7 @@ import type { VehicleType } from "@/generated/prisma";
 export type SyncResult = { ok: boolean; skipped?: boolean; error?: string };
 
 const errMsg = (e: unknown) => (e instanceof EcoError ? `${e.message} [${e.code}]` : String((e as Error)?.message ?? e));
-const DRIVER_POSITION = "Haydovchi";
-export const isDriverPosition = (p: string) => p.trim().toLowerCase() === DRIVER_POSITION.toLowerCase();
+export { isDriverPosition } from "@/lib/positions";
 
 /** ECO'dagi ism ERP kartasini bosib ketmasligi uchun: "ism yo'q" hisoblanadigan qiymatlar. */
 const isPlaceholderName = (name: string, phone: string | null) =>
@@ -33,7 +33,7 @@ const toErpType = (t: string): VehicleType => (t === "MIXER" || t === "PUMP" ? t
 export async function pushEmployeeToEco(employeeId: string): Promise<SyncResult> {
   if (!ecoEnabled()) return { ok: false, skipped: true };
   const e = await db.employee.findUnique({ where: { id: employeeId } });
-  if (!e || !isDriverPosition(e.position)) return { ok: false, skipped: true };
+  if (!e || !(await isDriverPosition(e.position))) return { ok: false, skipped: true };
 
   // ERP'da o'chirilgan xodim — ECO'da ham ilovaga kira olmasin
   if (!e.isActive) {
@@ -130,7 +130,7 @@ export async function applyEcoDriver(e: EcoDriverEvent): Promise<{ applied: bool
     const created = await db.employee.create({
       data: {
         fullName: e.fullName?.trim() || phone,
-        position: DRIVER_POSITION,
+        position: (await driverPositionNames())[0],
         phone,
         ecoUserId: e.userId,
         ecoActive: e.isActive,
@@ -226,7 +226,7 @@ export async function syncDirectories(): Promise<DirectorySync> {
 
   // ERP → ECO
   const known = new Set(ecoDrivers.map((d) => d.userId));
-  const employees = await db.employee.findMany({ where: { position: { equals: DRIVER_POSITION, mode: "insensitive" } } });
+  const employees = await db.employee.findMany({ where: { position: { in: await driverPositionNames() } } });
   for (const e of employees) {
     const inEco = e.ecoUserId && known.has(e.ecoUserId);
     if (inEco && e.isActive) continue; // allaqachon mos — yuqorida ECO'dan yangilandi

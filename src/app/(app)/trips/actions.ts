@@ -6,10 +6,8 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { audit } from "@/lib/audit";
-import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
+import { createTrip as createTripDomain, tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 
@@ -31,26 +29,19 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   if ("error" in r) return { error: r.error };
   const d = r.data;
 
-  const o = await db.order.findUnique({ where: { id: d.orderId }, include: { items: true, trips: true } });
-  if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return { error: "Zayavka tasdiqlanmagan yoki yopilgan" };
-  const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-  const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
-  if (d.qtyM3 > total - shipped + 0.001) return { error: `Zayavkada faqat ${total - shipped} m³ qoldi` };
-  const v = await db.vehicle.findUniqueOrThrow({ where: { id: d.vehicleId } });
-  if (v.capacityM3 && d.qtyM3 > Number(v.capacityM3)) return { error: `Mikser sig'imi ${v.capacityM3} m³` };
+  let created;
+  try {
+    // Qoida `lib/trips.ts` da — mobil ilovadagi "Yangi reys" ham shuni chaqiradi
+    created = await createTripDomain({ orderId: d.orderId, vehicleId: d.vehicleId, driverId: d.driverId, qtyM3: d.qtyM3, note: d.note }, s.userId);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 
-  const id = await db.$transaction(async (tx) => {
-    const t = await tx.trip.create({
-      data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: d.orderId, vehicleId: d.vehicleId, driverId: d.driverId, qtyM3: d.qtyM3, note: d.note },
-    });
-    await audit(tx, s.userId, "CREATE", "Trip", t.id, undefined, t);
-    return t.id;
-  });
   // Haydovchi ilovasiga yuborish — reys sahifasi ochilganda ECO holati darhol ko'rinishi uchun kutamiz
   // (klientda 10 s timeout; xato bo'lsa reys baribir yaratiladi, xabar reys sahifasida chiqadi)
-  if (ecoEnabled()) await pushTripToEco(id);
+  if (ecoEnabled()) await pushTripToEco(created.id);
   revalidatePath("/trips"); revalidatePath(`/orders/${d.orderId}`);
-  redirect(`/trips/${id}`);
+  redirect(`/trips/${created.id}`);
 }
 
 /** PLANNED → LOADED: tayyor beton skladdan chiqadi (SHIPMENT). */

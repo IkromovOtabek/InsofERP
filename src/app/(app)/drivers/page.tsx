@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { driverPositionNames } from "@/lib/positions";
 import { Smartphone, Plug, Users, Truck, Route, AlertTriangle } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
@@ -22,7 +23,7 @@ export default async function DriversPage() {
   const enabled = ecoEnabled();
 
   const [employees, vehicles, trips] = await Promise.all([
-    db.employee.findMany({ where: { position: { equals: "Haydovchi", mode: "insensitive" } }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { _count: { select: { trips: true } } } }),
+    db.employee.findMany({ where: { position: { in: await driverPositionNames() } }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { _count: { select: { trips: true } } } }),
     db.vehicle.findMany({ where: { isActive: true }, orderBy: { plate: "asc" } }),
     db.trip.findMany({ where: { status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, include: { driver: true, order: { include: { customer: true } } } }),
   ]);

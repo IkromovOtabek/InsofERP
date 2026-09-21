@@ -8,7 +8,7 @@ import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
 
 export default async function BrigadesPage() {
-  const s = await requireSession(["PRODUCTION", "HR", "SALES"]);
+  const s = await requireSession(["SUPERVISOR", "PRODUCTION", "HR", "SALES"]);
   const canEdit = ["PRODUCTION", "HR", "DIRECTOR"].includes(s.role);
   const [brigades, employees] = await Promise.all([
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: true, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),

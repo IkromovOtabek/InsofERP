@@ -18,6 +18,7 @@ enum Role {
   DIRECTOR // to'liq huquq: hammasini ko'radi, sozlamalar, bloklarni ochadi
   SALES // sotuv
   PRODUCTION // ishlab chiqarish
+  SUPERVISOR // ish boshqaruvchi: brigadalar, topshiriqlar, zameslar, reyslar
   LOGISTICS // logistika
   WAREHOUSE // sklad
   PROCUREMENT // snabjeniye
@@ -195,7 +196,20 @@ model Employee {
   fullName  String
   position  String // bo'lim lavozimi (Sotuv, Sklad...) yoki ishchi lavozim (Haydovchi, Operator...)
   phone     String?
+  hiredAt   DateTime? // ishga kirgan sana — otdel kadr yuritadi
+  birthDate DateTime? // tug'ilgan sana
+  note      String? // otdel kadr izohi (smena, manzil, hujjat holati...)
   isActive  Boolean  @default(true)
+
+  // ── Kadr kartasi (otdel kadr to'ldiradi; shaxsiy varaqa va hujjat nusxalari) ──
+  photo            String? // 3x4 surat — uploads/employees/ ichidagi nom
+  passportSeries   String? // passport seriya va raqam, masalan AA 1234567
+  pinfl            String? // JSHSHIR (14 raqam)
+  passportIssuedBy String? // kim bergan (IIB)
+  passportIssuedAt DateTime? // berilgan sana
+  address          String? // yashash manzili
+  education        String? // ma'lumoti
+  maritalStatus    String? // oilaviy holati
   userId    String?  @unique // tizimga kiradigan xodim uchun login
   ecoUserId String?  @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
   ecoActive Boolean? // ECO a'zoligi tasdiqlanganmi (null — ulanmagan)
@@ -203,9 +217,39 @@ model Employee {
   ecoError  String? // oxirgi sinxron xatosi
   createdAt DateTime @default(now())
 
-  user     User?     @relation(fields: [userId], references: [id])
-  trips    Trip[]    @relation("TripDriver")
-  brigades Brigade[] @relation("BrigadeLeader")
+  user      User?              @relation(fields: [userId], references: [id])
+  trips     Trip[]             @relation("TripDriver")
+  brigades  Brigade[]          @relation("BrigadeLeader")
+  documents EmployeeDocument[]
+}
+
+/// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
+/// Fayl `uploads/employees/` da, bazada faqat nomi — `public/` ga qo'yilmaydi.
+model EmployeeDocument {
+  id         String   @id @default(cuid())
+  employeeId String
+  kind       String // hujjat turi: Passport, Diplom, Tibbiy ma'lumotnoma, Haydovchilik guvohnomasi...
+  file       String // uploads/employees/ ichidagi nom
+  fileName   String // foydalanuvchi yuklagan asl nom
+  fileType   String // MIME turi
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+}
+
+/// Ishchi lavozim (login bermaydi) — otdel kadr o'zi qo'shadi/o'chiradi.
+/// Bo'lim lavozimlari (rolli) kodda: `lib/positions.ts`.
+model WorkPosition {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  note      String? // vazifasi / talab
+  isDriver  Boolean  @default(false) // haydovchi ilovasiga chiqadimi
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ───────────────────────── Sklad: yagona harakat jurnali ─────────────────────────

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { nextNo } from "@/lib/numbering";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -59,4 +60,39 @@ export async function tripCancelled(id: string, userId: string, note?: string): 
   await db.trip.update({ where: { id }, data: { status: "CANCELLED" } });
   await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "CANCELLED", note });
   return { changed: true, orderId: t.orderId };
+}
+
+// ───────────────────────── Yangi reys ─────────────────────────
+
+export type NewTripInput = { orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null };
+
+/**
+ * Reys (nakladnoy) ochish — veb "Yangi reys" formasi ham, mobil ilova ham shu yerdan.
+ * Tekshiruvlar: zayavka tasdiqlanganmi, qoldiq yetadimi, mikser sig'imi oshmaydimi.
+ * ECO'ga yuborish chaqiruvchida (u yerda kutish/kutmaslik farq qiladi).
+ */
+export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string }> {
+  if (!(input.qtyM3 > 0)) throw new Error("Miqdor 0 dan katta bo'lsin");
+  const o = await db.order.findUnique({ where: { id: input.orderId }, include: { items: true, trips: true } });
+  if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Zayavka tasdiqlanmagan yoki yopilgan");
+
+  const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+  const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
+  const left = total - shipped;
+  if (input.qtyM3 > left + 0.001) throw new Error(`Zayavkada faqat ${left} m³ qoldi`);
+
+  const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
+  if (!v || !v.isActive) throw new Error("Mikser topilmadi yoki nofaol");
+  if (v.capacityM3 && input.qtyM3 > Number(v.capacityM3)) throw new Error(`Mikser sig'imi ${v.capacityM3} m³`);
+
+  const d = await db.employee.findUnique({ where: { id: input.driverId } });
+  if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
+
+  return db.$transaction(async (tx) => {
+    const t = await tx.trip.create({
+      data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined },
+    });
+    await audit(tx, userId, "CREATE", "Trip", t.id, undefined, t);
+    return { id: t.id, deliveryNoteNo: t.deliveryNoteNo };
+  });
 }

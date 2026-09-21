@@ -68,7 +68,7 @@ function ProductRows({ rows, compact, freeLabelAsTotal }: { rows: SnapshotProduc
 
 /**
  * Sotuv va zayavka bo'limi uchun korxonaning butun qoldig'i: hovlidagi dona mahsulot,
- * beton (zakaz olingach tayyorlanadi — xomashyodan qancha chiqishi) va Skladdagi xomashyo. Raqamlar sklad/snabjeniye xodimlari kiritgan
+ * beton (zakaz olingach tayyorlanadi — xomashyodan qancha chiqishi) va Skladdagi xomashyo. Raqamlar sklad xodimlari kiritgan
  * kirimlardan (StockMove) olinadi — har qatorda oxirgi kirimni kim va qachon kiritgani
  * ko'rinadi, shunda zayavka qabul qilayotgan xodim kimning ma'lumotiga tayanayotganini biladi.
  *
@@ -175,7 +175,7 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
 
       <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
         «Yana chiqadi» — hozirgi xomashyo qoldig&apos;i bilan retsept bo&apos;yicha ishlab chiqarish mumkin bo&apos;lgan miqdor.
-        Kirim hujjatlari va ularni kim kiritgani — <Link href="/receipts" className="underline">Kirim (snabjeniye)</Link> bo&apos;limida.
+        Kirim hujjatlari va ularni kim kiritgani — <Link href="/receipts" className="underline">Kirim</Link> bo&apos;limida.
       </p>
     </Card>
   );

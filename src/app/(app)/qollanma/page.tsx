@@ -280,7 +280,7 @@ export default function QollanmaPage() {
       <div id="sklad" className="mt-10 scroll-mt-20">
           <div className="mb-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-brand-600">Sklad</div>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">Qoldiqlar va kirim (snabjeniye)</h2>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900">Qoldiqlar va kirim</h2>
           </div>
           <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
             <div className="space-y-5">
@@ -444,7 +444,7 @@ export default function QollanmaPage() {
               <thead><tr><Th>Login</Th><Th>Parol</Th><Th>Rol / kimga kerak</Th></tr></thead>
               <tbody>
                 <Tr><Td className="font-medium">admin</Td><Td>admin123</Td><Td>Direktor — hammasini ko'radi va har qanday amalni bajaradi</Td></Tr>
-                <Tr><Td className="font-medium">snab1</Td><Td>parol123</Td><Td>Snabjeniye — xomashyo kirimi</Td></Tr>
+                <Tr><Td className="font-medium">sklad1</Td><Td>parol123</Td><Td>Sklad — xomashyo kirimi va qoldiq</Td></Tr>
                 <Tr><Td className="font-medium">sotuv1</Td><Td>parol123</Td><Td>Sotuv — zayavka va tasdiqlash</Td></Tr>
                 <Tr><Td className="font-medium">prod1</Td><Td>parol123</Td><Td>Ishlab chiqarish — zames</Td></Tr>
                 <Tr><Td className="font-medium">log1</Td><Td>parol123</Td><Td>Logistika — reys</Td></Tr>
@@ -458,11 +458,11 @@ export default function QollanmaPage() {
             </p>
           </Card>
 
-          <Flow steps={["Kirim (Snabjeniye)", "Zayavka (Sotuv)", "Tasdiqlash", "Zames", "Reys → Yetkazildi", "Schyot", "To'lov", "Yopilgan"]} />
+          <Flow steps={["Kirim (Sklad)", "Zayavka (Sotuv)", "Tasdiqlash", "Zames", "Reys → Yetkazildi", "Schyot", "To'lov", "Yopilgan"]} />
 
           <div className="mt-5 space-y-3">
-            <TestStep n={1} role="Snabjeniye" title="Xomashyo kirimi"
-              page="Kirim (snabjeniye) → Yangi kirim"
+            <TestStep n={1} role="Sklad" title="Xomashyo kirimi"
+              page="Kirim → Yangi kirim"
               action="Yetkazuvchi va Asosiy sklad tanlang; Sement 20000 kg, Qum 30000 kg, Shag'al 40000 kg, Suv 5000 l, Plastifikator 200 l qatorlarini narxi bilan kiritib saqlang."
               result={<>Hujjat <b>K-0001</b> yaratiladi; <b>Sklad</b> sahifasida barcha qoldiqlar oshadi.</>}
               warn="Bu qadam shart: zames uchun xomashyo yetarli bo'lmasa, keyingi qadam saqlanmaydi."

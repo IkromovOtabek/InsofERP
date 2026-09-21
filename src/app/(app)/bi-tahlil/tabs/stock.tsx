@@ -25,7 +25,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
             <tbody>{d.queue.map((m, i) => <Tr key={m.id}><Td className="text-slate-400">{i + 1}</Td><Td>{m.name}{m.short && <span className="ml-1.5 text-[10px] font-semibold uppercase text-red-600">zayavkaga yetmaydi</span>}</Td><Td><Tag>{m.zone}</Tag></Td><Td right>{qty(m.balance)} {m.unit}</Td><Td right>{fmtNum(m.perDay, 1)}</Td><Td right className={m.days !== null && m.days < 7 ? "font-semibold text-red-600" : ""}>{m.days === null ? "—" : `${fmtNum(m.days, 1)} kun`}</Td><Td right>{m.planned ? qty(m.planned) : "—"}</Td><Td right className="font-semibold">{qty(m.suggestQty)} {m.unit}</Td><Td right className="font-semibold">{moneyShort(m.suggestCost)}</Td></Tr>)}</tbody>
           </Table>
         )}
-        <div className="border-t border-slate-100 px-5 py-3"><Action href="/receipts/new">Jami {moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik buyurtma loyihasi — snabjeniye tasdiqlasin</Action></div>
+        <div className="border-t border-slate-100 px-5 py-3"><Action href="/receipts/new">Jami {moneyShort(d.queue.reduce((s, m) => s + m.suggestCost, 0))} so'mlik buyurtma loyihasi — sklad tasdiqlasin</Action></div>
       </Panel>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">

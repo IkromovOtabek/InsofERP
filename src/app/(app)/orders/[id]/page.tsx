@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, FileText, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { customerCredit } from "@/lib/finance";
@@ -63,7 +63,6 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
 
   const isSales = ["SALES", "DIRECTOR"].includes(s.role);
   const isDirector = s.role === "DIRECTOR";
-  const canInvoice = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s.role) && ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"].includes(o.status) && o.invoices.length === 0;
   const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && isSales && o.batches.length === 0 && o.trips.length === 0;
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
   const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
@@ -82,7 +81,6 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
-            {canInvoice && <LinkButton href={`/invoices/new?orderId=${id}`} variant="secondary"><FileText size={16} /> Schyot yozish</LinkButton>}
             {canCancel && <form action={cancelOrder.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor qilish</Button></form>}
           </>
         }

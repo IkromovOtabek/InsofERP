@@ -1,27 +1,30 @@
 import type { Role } from "@/generated/prisma";
 
 export type NavChild = { href: string; label: string };
-export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[] };
+/** `hidden` — menyuda ko'rinmaydi, lekin middleware ruxsatni shu yerdan tekshiradi (havola bo'yicha ochiladi). */
+export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean };
 
 const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
 
 export const NAV: NavItem[] = [
   { href: "/dashboard",   label: "Bosh sahifa",        roles: "all", group: "Asosiy" },
-  { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
+  { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
-  { href: "/production",  label: "Ishlab chiqarish",   roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
+  { href: "/production",  label: "Ishlab chiqarish",   roles: ["PRODUCTION", "SUPERVISOR"], group: "Ishlab chiqarish" },
   { href: "/recipes",     label: "Retseptlar",         roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
-  { href: "/tasks",       label: "Topshiriqlar",       roles: ["PRODUCTION", "SALES", "LOGISTICS"], group: "Ishlab chiqarish" },
-  { href: "/brigades",    label: "Brigadalar",         roles: ["PRODUCTION", "HR", "SALES"], group: "Ishlab chiqarish" },
-  { href: "/trips",       label: "Reyslar / nakladnoy", roles: ["LOGISTICS", "PRODUCTION"], group: "Logistika" },
+  { href: "/tasks",       label: "Topshiriqlar",       roles: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"], group: "Ishlab chiqarish" },
+  { href: "/brigades",    label: "Brigadalar",         roles: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"], group: "Ishlab chiqarish" },
+  { href: "/trips",       label: "Reyslar / nakladnoy", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"], group: "Sklad" },
-  { href: "/receipts",    label: "Kirim (snabjeniye)", roles: ["PROCUREMENT", "WAREHOUSE", "SALES"], group: "Sklad" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)
-  { href: "/suppliers",   label: "Yetkazuvchilar",     roles: ["PROCUREMENT", "ACCOUNTING"], group: "Sklad" },
-  { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv" },
+  { href: "/receipts",    label: "Kirim",              roles: ["WAREHOUSE", "PROCUREMENT", "SALES"], group: "Sklad" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)
+  { href: "/suppliers",   label: "Yetkazuvchilar",     roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], group: "Sklad" },
+  // Schyotlar menyudan olib tashlandi — sahifa va eski schyotlar joyida (to'lovlar shularga bog'langan)
+  { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
+  { href: "/otdel-kadr",  label: "Otdel kadr",         roles: ["HR"], group: "Boshqaruv", children: [{ href: "/otdel-kadr?tab=xodimlar", label: "Xodimlar ro'yxati" }, { href: "/otdel-kadr?tab=lavozimlar", label: "Ishchi lavozimlar" }, { href: "/otdel-kadr?tab=bolimlar", label: "Bo'limlar" }] },
   { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
   { href: "/vehicles",    label: "Texnika",            roles: ["LOGISTICS"], group: "Logistika" },
   { href: "/drivers",     label: "Haydovchilar (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika" },
@@ -45,17 +48,18 @@ export const ROLE_LABELS: Record<Role, string> = {
   DIRECTOR: "Direktor",
   SALES: "Sotuv",
   PRODUCTION: "Ishlab chiqarish",
+  SUPERVISOR: "Ish boshqaruvchi",
   LOGISTICS: "Logistika",
   WAREHOUSE: "Sklad",
-  PROCUREMENT: "Snabjeniye",
+  PROCUREMENT: "Snabjeniye (eski — Sklad bilan qo'shildi)",
   ACCOUNTING: "Buxgalteriya",
-  FINANCE: "Finance",
+  FINANCE: "Finance (eski bo'lim)",
   HR: "Otdel kadr",
   CASHIER: "Kassa / bank",
 };
 
 export function navFor(role: Role) {
   return NAV.filter(
-    (i) => i.roles === "all" || role === "DIRECTOR" || i.roles.includes(role),
+    (i) => !i.hidden && (i.roles === "all" || role === "DIRECTOR" || i.roles.includes(role)),
   );
 }

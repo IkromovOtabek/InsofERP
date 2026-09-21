@@ -15,7 +15,7 @@ const schema = z.object({
 });
 
 export async function saveBrigade(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION", "HR"]);
+  const s = await requireSession(["SUPERVISOR", "PRODUCTION", "HR"]);
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -34,7 +34,7 @@ export async function saveBrigade(id: string | null, _prev: ActionState, fd: For
 }
 
 export async function toggleBrigade(id: string) {
-  const s = await requireSession(["PRODUCTION", "HR"]);
+  const s = await requireSession(["SUPERVISOR", "PRODUCTION", "HR"]);
   const b = await db.brigade.findUniqueOrThrow({ where: { id } });
   await db.$transaction(async (tx) => {
     await tx.brigade.update({ where: { id }, data: { isActive: !b.isActive } });

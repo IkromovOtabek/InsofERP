@@ -7,8 +7,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
-import { customerCredit, DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
-import { money } from "@/lib/format";
+import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { saveContractFile, removeContractFile } from "@/lib/uploads";
 
@@ -42,83 +41,44 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
-  const items = d.productId
-    .map((productId, i) => ({ productId, qtyM3: d.qtyM3[i], price: d.price[i] }))
-    .filter((i) => i.productId);
-  if (items.length === 0) return { error: "Kamida bitta mahsulot qatori kerak" };
-  const onCredit = d.payment === "credit";
-  const total = items.reduce((sum, i) => sum + i.qtyM3 * i.price, 0);
 
-  // ── Shartnoma ──
   if (d.hasContract && d.contractAmount <= 0) return { error: "Shartnoma summasini kiriting" };
-  const contractAmount = d.hasContract ? d.contractAmount : null;
-  // Didox'da imzolangan shartnoma fayli (ixtiyoriy — keyin zayavka sahifasida ham yuklash mumkin). Tranzaksiyadan oldin saqlanadi.
+  const contractAmount = d.hasContract ? d.contractAmount : undefined;
+
+  // Didox'da imzolangan shartnoma fayli zayavka id'si bo'yicha saqlanadi — shuning uchun id oldindan beriladi
   const orderId = crypto.randomUUID();
   const saved = contractAmount != null ? await saveContractFile(orderId, fd.get("contractFile")) : null;
   if (saved && "error" in saved) return { error: saved.error };
 
-  // ── Oldindan to'lov ──
-  const prepay = !onCredit && d.prepayAmount > 0 ? d.prepayAmount : 0;
-  if (prepay > 0) {
-    if (!d.prepayAccountId) return { error: "Oldindan to'lov qayerga tushganini tanlang (kassa yoki bank)" };
-    if (prepay > total + 0.005) return { error: `Oldindan to'lov ${money(prepay)} zayavka summasidan ${money(total)} katta` };
-    const acc = await db.cashAccount.findUnique({ where: { id: d.prepayAccountId } });
-    if (!acc || !acc.isActive) return { error: "Kassa/hisob topilmadi" };
-  }
-
-  // ── Mijoz ──
-  if (d.customerMode === "new") {
-    if (!d.newName) return { error: "Yangi mijoz nomi to'ldirilishi shart" };
-    if (d.newInn) {
-      const dup = await db.customer.findUnique({ where: { inn: d.newInn } });
-      if (dup) return { error: `Bu INN bilan mijoz allaqachon bor: ${dup.name}. Uni ro'yxatdan tanlang.` };
-    }
-  } else {
-    if (!d.customerId) return { error: "Mijoz tanlanmagan" };
-    const c = await db.customer.findUnique({ where: { id: d.customerId } });
-    if (!c || !c.isActive) return { error: "Mijoz topilmadi yoki nofaol" };
-    const credit = await customerCredit(c.id);
-    if (credit.blacklisted) {
-      return { error: `${c.name} qora ro'yxatda: limit ${money(credit.limit)} to'liq ishlatilgan (qarz ${money(credit.debt)}, ochiq zayavkalar ${money(credit.open)}). Qarz to'langach zayavka ochish mumkin.` };
-    }
-  }
-
-  const id = await db.$transaction(async (tx) => {
-    let customerId = d.customerId!;
-    if (d.customerMode === "new") {
-      const c = await tx.customer.create({ data: { name: d.newName!, phone: d.newPhone, inn: d.newInn, address: d.newAddress, creditLimit: DEFAULT_CREDIT_LIMIT } });
-      await audit(tx, s.userId, "CREATE", "Customer", c.id, undefined, { ...c, via: "order-form" });
-      customerId = c.id;
-    }
-    const o = await tx.order.create({
-      data: {
-        id: orderId,
-        orderNo: await nextNo(tx, "order", "Z"),
-        customerId,
+  let res;
+  try {
+    // Qoida `lib/orders.ts` da — mobil ilovadagi "Yangi zayavka" ham shuni chaqiradi
+    res = await createOrderDomain(
+      {
+        customerId: d.customerMode === "existing" ? d.customerId : undefined,
+        newCustomer: d.customerMode === "new" ? { name: d.newName ?? "", phone: d.newPhone, inn: d.newInn, address: d.newAddress } : undefined,
         deliveryDate: new Date(d.deliveryDate),
         deliveryTime: d.deliveryTime,
         deliveryAddress: d.deliveryAddress,
+        items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qtyM3[i]!, price: d.price[i]! })).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,
         isUrgent: d.isUrgent,
-        onCredit,
+        onCredit: d.payment === "credit",
+        prepay: d.prepayAmount > 0 ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
+        contractAmount,
         note: d.note,
-        createdById: s.userId,
-        items: { create: items },
-        ...(contractAmount != null ? { contractAmount, contractAt: new Date(), contractNo: await nextNo(tx, "contract", "SH") } : {}),
-        ...(saved ? { contractFile: saved.stored, contractFileName: saved.name, contractFileType: saved.type, contractFileAt: new Date() } : {}),
       },
-    });
-    await audit(tx, s.userId, "CREATE", "Order", o.id, undefined, { ...o, items, prepay, contractAmount });
-    if (prepay > 0) {
-      const p = await tx.payment.create({ data: { customerId, orderId: o.id, cashAccountId: d.prepayAccountId!, amount: prepay, note: `Oldindan to'lov · ${o.orderNo}` } });
-      await audit(tx, s.userId, "CREATE", "Payment", p.id, undefined, { ...p, via: "order-form" });
-    }
-    return o.id;
-  });
+      s.userId,
+      { id: orderId, contractFile: saved ?? undefined },
+    );
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
   revalidatePath("/orders"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/payments"); revalidatePath("/cashflow");
-  const q = [onCredit && "guarantee=1", contractAmount != null && "contract=1"].filter(Boolean).join("&");
-  redirect(q ? `/orders/${id}?${q}` : `/orders/${id}`);
+  const q = [res.onCredit && "guarantee=1", res.contractNo && "contract=1"].filter(Boolean).join("&");
+  redirect(q ? `/orders/${res.id}?${q}` : `/orders/${res.id}`);
 }
 
 /**
@@ -127,18 +87,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
  */
 export async function confirmOrder(id: string) {
   const s = await requireSession(["SALES"]);
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: true, customer: true } });
-  if (o.status !== "DRAFT") return;
-
-  const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
-  const credit = await customerCredit(o.customerId);
-  const exceeds = credit.used + total > credit.limit;
-  const status = exceeds ? "BLOCKED" : "CONFIRMED";
-
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { status } });
-    await audit(tx, s.userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit });
-  });
+  await orderConfirm(id, s.userId); // qoida `lib/orders.ts` da — mobil ilova ham shuni chaqiradi
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production");
 }
@@ -146,26 +95,15 @@ export async function confirmOrder(id: string) {
 /** BLOCKED → CONFIRMED. Faqat direktor. */
 export async function unblockOrder(id: string) {
   const s = await requireSession(["DIRECTOR"]);
-  const o = await db.order.findUniqueOrThrow({ where: { id } });
-  if (o.status !== "BLOCKED") return;
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { status: "CONFIRMED" } });
-    await audit(tx, s.userId, "STATUS_CHANGE", "Order", id, { status: "BLOCKED" }, { status: "CONFIRMED", by: "director" });
-  });
+  await orderUnblock(id, s.userId);
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
 }
 
 export async function cancelOrder(id: string) {
   const s = await requireSession(["SALES"]);
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: true, trips: true } });
-  if (o.batches.length || o.trips.length) throw new Error("Zames yoki reys bor — bekor qilib bo'lmaydi");
-  if (!["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status)) return;
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { status: "CANCELLED" } });
-    await tx.brigadeTask.updateMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, data: { status: "CANCELLED" } });
-    await audit(tx, s.userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CANCELLED" });
-  });
+  const r = await orderCancel(id, s.userId);
+  if (r.error) throw new Error(r.error);
   revalidatePath(`/orders/${id}`); revalidatePath("/tasks"); revalidatePath("/brigades");
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
 }

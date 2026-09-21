@@ -1,4 +1,5 @@
 "use server";
+import { driverPositionNames } from "@/lib/positions";
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -65,7 +66,7 @@ export async function adoptEcoDriver(userId: string, fullName: string, phone: st
 export async function linkAllDrivers(): Promise<ActionState> {
   await requireSession(["LOGISTICS", "HR"]);
   const off = guard(); if (off) return off;
-  const list = await db.employee.findMany({ where: { position: { equals: "Haydovchi", mode: "insensitive" }, isActive: true, ecoUserId: null } });
+  const list = await db.employee.findMany({ where: { position: { in: await driverPositionNames() }, isActive: true, ecoUserId: null } });
   let ok = 0; const bad: string[] = [];
   for (const e of list) {
     const r = await linkDriver(e.id);

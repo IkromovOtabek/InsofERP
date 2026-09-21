@@ -7,7 +7,7 @@ import { requireSession, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, type ActionState } from "@/lib/action";
 
-const ROLES = ["DIRECTOR", "SALES", "PRODUCTION", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER"] as const;
+const ROLES = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
 const uniq = (e: unknown, msg: string) => (String(e).includes("Unique constraint") ? { error: msg } : null);
 
