@@ -70,15 +70,16 @@ Sotuvchi mijoz bilan gaplashganda sklad xodimi kiritgan raqamlarga tayanadi: `/s
 **Sklad holati** paneli (dona mahsulot erkin/band, tayyor beton, xomashyo) va har qatorda oxirgi kirimni **kim, qachon** kiritgani.
 SALES roli `/stock` va `/receipts` ni faqat ko'radi; `GoodsReceipt.createdById` — kirimni kiritgan xodim.
 
-## Mahsulot birligi va Astatka
+## Mahsulot birligi va qoldiq
 
-`Product.unit` — `m3` bo'lsa tayyor beton (saqlanmaydi, zames → mikser → obyekt). `dona`/`m2`/`m` bo'lsa hovlida turadigan tayyor mahsulot (ustun, FBS blok, bordyur, plitka). Retsept va zames miqdori shu birlikka nisbatan (`qtyM3` maydoni dona mahsulotda "dona"ni bildiradi — nomi tarixiy).
+`Product.unit` — `m3` bo'lsa beton. **Beton oldindan tayyorlanmaydi**: zakaz olingandan keyin ishlab chiqariladi (zames → mikser → obyekt), shuning uchun sotuvda "tayyor qoldiq" emas, **retsept bo'yicha xomashyo yetishi** ko'rsatiladi (`productionCapacity()` — `src/lib/production-capacity.ts`). `dona`/`m2`/`m` bo'lsa hovlida turadigan tayyor mahsulot (ustun, FBS blok, bordyur, plitka). Retsept va zames miqdori shu birlikka nisbatan (`qtyM3` maydoni dona mahsulotda "dona"ni bildiradi — nomi tarixiy).
 
-**Astatka** (`/astatka`, `src/lib/ostatka.ts`): dona mahsulotlar qoldig'i.
+**Dona mahsulot qoldig'i** (`/stock?tab=capacity`, `src/lib/ostatka.ts` — ilgari alohida "Astatka" sahifasi edi):
 - Jami = `StockMove` (PRODUCTION_OUTPUT − SHIPMENT)
-- Egasi bor = tasdiqlangan (`CONFIRMED`/`IN_PRODUCTION`) zayavkalardagi hali jo'natilmagan miqdor
-- Egasi yo'q = jami − egasi bor; Yetishmaydi = band > jami
-- Mahsulot sahifasi: kimga band (zayavka, mijoz, telefon, sana), partiyalar, harakat tarixi
+- Band = tasdiqlangan (`CONFIRMED`/`IN_PRODUCTION`) zayavkalardagi hali jo'natilmagan miqdor
+- Erkin = jami − band; Yetishmaydi = band > jami
+- Mahsulot sahifasi (`/stock/products/[id]`): kimga band (zayavka, mijoz, telefon, sana), partiyalar, harakat tarixi
+- Qo'lda kirim: `/stock/products/new`
 
 ## Rollar va xodimlar
 
@@ -145,6 +146,38 @@ src/components/app-shell.tsx ilova qobig'i (sidebar, mobil drawer, topbar)
 src/app/(app)/<modul>/      page.tsx + actions.ts + *-form.tsx
 src/app/verify/[noteNo]     ommaviy QR tekshiruv sahifasi (login shart emas)
 ```
+
+## Serverga o'rnatish (VPS)
+
+Yangi Ubuntu 22/24 serverga bitta buyruq bilan — Node, PostgreSQL, Nginx, SSL, systemd xizmati va kunlik nusxa:
+
+```bash
+ssh root@<VPS-IP> 'bash -s' < scripts/deploy-vps.sh erp.domen.uz siz@pochta.uz
+```
+
+Domen bermasangiz IP bo'yicha 80-portda ishlaydi (SSL o'rnatilmaydi):
+`ssh root@<VPS-IP> 'bash -s' < scripts/deploy-vps.sh`
+
+Skript nima qiladi: Node 22 · PostgreSQL bazasi va roli (parol o'zi yaratiladi) · `/var/www/insof-erp` ga klon · `.env` (DATABASE_URL + AUTH_SECRET o'zi) · `npm ci && prisma migrate deploy && npm run build` · `insof-erp.service` · Nginx (proxy, `client_max_body_size 20m`) · `certbot` · `ufw` · kunlik `pg_dump` (soat 03:00, 14 kun saqlanadi).
+
+Sozlamalar: `REPO=… BRANCH=… APP_DIR=… PORT=… SEED=1` (buyruq oldiga yoziladi). `.env` bor bo'lsa tegilmaydi — AI/Telegram/ECO kalitlarini o'sha faylga qo'shib, `systemctl restart insof-erp`.
+
+**Keyingi deploylar:**
+
+```bash
+ssh root@<VPS-IP> 'bash /var/www/insof-erp/scripts/update.sh'
+```
+
+`git pull → npm ci → prisma migrate deploy → npm run build → systemctl restart`. Build yiqilsa eski versiya ishlayveradi (xizmat faqat build o'tgach qayta yuklanadi).
+
+| Ish | Buyruq |
+| --- | --- |
+| Loglar | `journalctl -u insof-erp -f` |
+| Qayta yuklash | `systemctl restart insof-erp` |
+| Baza nusxasi (qo'lda) | `APP_DIR=/var/www/insof-erp /usr/local/bin/erp-backup` |
+| Nusxadan tiklash | `pg_restore -d "$DATABASE_URL" --clean --no-owner nusxa.dump` |
+
+`uploads/` (imzolangan shartnomalar) `APP_DIR` ichida qoladi va yangilanishda o'chmaydi — nusxasini alohida oling.
 
 ## Telegram bot (ovozli savol → AI javob)
 
