@@ -83,7 +83,7 @@ export async function syncVehicles(): Promise<ActionState> {
   const list = await db.vehicle.findMany();
   const bad: string[] = [];
   for (const v of list) { const r = await pushVehicleToEco(v.id); if (!r.ok && r.error) bad.push(`${v.plate}: ${r.error}`); }
-  revalidatePath("/drivers"); revalidatePath("/vehicles");
+  revalidatePath("/drivers");
   return bad.length ? { error: bad.join("; ") } : { ok: true };
 }
 
@@ -95,7 +95,7 @@ export async function syncAll(): Promise<ActionState> {
   await requireSession(["LOGISTICS", "HR"]);
   const off = guard(); if (off) return off;
   const r = await syncDirectories();
-  revalidatePath("/drivers"); revalidatePath("/employees"); revalidatePath("/vehicles");
+  revalidatePath("/drivers"); revalidatePath("/employees");
   const failed = [...r.drivers.failed, ...r.vehicles.failed];
   if (failed.length) return { error: `Qisman: ${failed.join("; ")}` };
   return { ok: true };

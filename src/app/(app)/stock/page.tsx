@@ -15,10 +15,10 @@ const TYPE_LABEL: Record<string, string> = {
   SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish",
 };
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
-const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda" };
+const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string }> }) {
-  const { tab = "balance", added, updated, moved, guessed } = await searchParams;
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string }> }) {
+  const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
   const s = await getSession();
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   const [materials, mSums, last] = await Promise.all([
@@ -32,8 +32,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const costs = await db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _sum: { qty: true }, _avg: { unitCost: true } });
   const avgCost = new Map(costs.map((c) => [c.materialId, Number(c._avg.unitCost ?? 0)]));
 
+  // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi)
   const moves = tab === "moves"
-    ? await db.stockMove.findMany({ orderBy: { createdAt: "desc" }, take: 300, include: { material: true, product: true, warehouse: true, createdBy: true } })
+    ? await db.stockMove.findMany({ where: ref ? { refId: ref } : undefined, orderBy: { createdAt: "desc" }, take: ref ? 500 : 300, include: { material: true, product: true, warehouse: true, createdBy: true } })
     : [];
   // Ishlab chiqarish imkoni: hozirgi xomashyo qoldig'i bilan har mahsulotdan qancha chiqadi;
   // shu yerda hovlida turgan dona mahsulot (erkin/band) va tayyor beton qoldig'i ham ko'rsatiladi
@@ -183,6 +184,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
+      {tab === "moves" && ref && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
+          <span className="text-slate-600">Bitta hujjat bo&apos;yicha: <b className="text-slate-900">{moves.length} qator</b>, jami <b className="text-slate-900">{money(moves.reduce((x, m) => x + Number(m.qty) * Number(m.unitCost ?? 0), 0))}</b></span>
+          <Link href="/stock?tab=moves" className="font-medium text-slate-600 hover:text-slate-900 hover:underline">Barcha harakatlar →</Link>
+        </div>
+      )}
       {tab === "moves" && (
         <Table>
           <thead><tr><Th>Sana</Th><Th>Turi</Th><Th>Nomi</Th><Th right>Miqdor</Th><Th>Sklad</Th><Th>Hujjat</Th><Th>Kim</Th></tr></thead>
@@ -191,11 +198,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {moves.map((m) => (
               <Tr key={m.id}>
                 <Td>{dateTime(m.date)}</Td>
-                <Td>{m.refType === "Manual" && m.note?.startsWith("Boshlang'ich") ? "Boshlang'ich qoldiq" : TYPE_LABEL[m.type]}</Td>
+                <Td>{(m.refType === "Manual" || m.refType === "StockIn") && m.note?.startsWith("Boshlang'ich") ? "Boshlang'ich qoldiq" : TYPE_LABEL[m.type]}</Td>
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>
-                <Td>{m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
+                <Td>{m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
                 <Td>{m.createdBy.fullName}</Td>
               </Tr>
             ))}

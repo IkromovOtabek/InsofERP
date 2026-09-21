@@ -1,25 +1,29 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText, Paperclip, User } from "lucide-react";
+import { FileText, KeyRound, Paperclip, User } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { POSITIONS, workPositions } from "@/lib/positions";
+import { POSITIONS, driverPositionNames, workPositions } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT } from "@/lib/uploads";
-import { date, dateTime, isoDate } from "@/lib/format";
+import { date, dateTime, isoDate, qty } from "@/lib/format";
+import { licenseDaysLeft } from "@/lib/kadr";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeCardForm } from "../employee-form";
+import { ChangeLoginForm, ResetPasswordForm, ToggleLoginButton } from "../login-forms";
 import { DeleteDocument, DocumentForms } from "./document-forms";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireSession(["HR"]);
+  const s = await requireSession(["HR"]);
   const { id } = await params;
-  const [e, work] = await Promise.all([
+  const [e, work, drivers, vehicles] = await Promise.all([
     db.employee.findUnique({
       where: { id },
-      include: { user: true, documents: { orderBy: { createdAt: "asc" } }, _count: { select: { trips: true, brigades: true } } },
+      include: { user: true, vehicle: true, documents: { orderBy: { createdAt: "asc" } }, _count: { select: { trips: true, brigades: true } } },
     }),
     workPositions(),
+    driverPositionNames(),
+    db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
   ]);
   if (!e) notFound();
 
@@ -58,9 +62,15 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
                   passportSeries: e.passportSeries, pinfl: e.pinfl, passportIssuedBy: e.passportIssuedBy,
                   passportIssuedAt: e.passportIssuedAt ? isoDate(e.passportIssuedAt) : null,
                   address: e.address, education: e.education, maritalStatus: e.maritalStatus,
+                  plate: e.vehicle?.plate ?? null, vehicleType: e.vehicle?.type ?? null,
+                  capacityM3: e.vehicle?.capacityM3 ? String(e.vehicle.capacityM3) : null,
+                  licenseNo: e.licenseNo, licenseCategory: e.licenseCategory,
+                  licenseExpiry: e.licenseExpiry ? isoDate(e.licenseExpiry) : null,
                 }}
                 departments={POSITIONS}
-                work={work.map((w) => w.name)}
+                work={[...new Set([...drivers, ...work.map((w) => w.name)])]}
+                drivers={drivers}
+                vehicles={vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null }))}
                 hasLogin={!!e.userId}
               />
             </div>
@@ -70,8 +80,11 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
         <Card>
           <CardHeader title="Tizim va faoliyat" />
           <DL items={[
-            { k: "Login", v: e.user ? <><code className="rounded bg-slate-100 px-1.5 py-0.5">{e.user.login}</code> · {ROLE_LABELS[e.user.role]}{!e.user.isActive && <> <Badge>bloklangan</Badge></>}</> : <span className="text-slate-400">yo&apos;q</span> },
-            { k: "Reyslar", v: e._count.trips },
+            { k: "Login", v: e.user ? <><code className="rounded bg-slate-100 px-1.5 py-0.5">{e.user.login}</code> · {ROLE_LABELS[e.user.role]}{!e.user.isActive && <> <Badge color="red">bloklangan</Badge></>}</> : <span className="text-slate-400">yo&apos;q</span> },
+            { k: "Reyslar", v: e._count.trips > 0 ? <Link href={`/trips?status=tarix&driver=${e.id}`} className="font-medium text-slate-700 hover:underline">{e._count.trips} ta — tarixi</Link> : 0 },
+            ...(e.vehicle ? [{ k: "Texnikasi", v: <>{e.vehicle.plate}{e.vehicle.capacityM3 ? ` · ${qty(e.vehicle.capacityM3)} m³` : ""}</> }] : []),
+            ...(e.licenseNo || e.licenseCategory ? [{ k: "Guvohnoma", v: `${e.licenseNo ?? "—"}${e.licenseCategory ? ` · ${e.licenseCategory}` : ""}` }] : []),
+            ...(e.licenseExpiry ? [{ k: "Guvohnoma muddati", v: licenseDaysLeft(e.licenseExpiry) < 30 ? <span className="text-red-600">{date(e.licenseExpiry)}</span> : date(e.licenseExpiry) }] : []),
             { k: "Brigada boshlig'i", v: e._count.brigades },
             { k: "Kartaga kiritilgan", v: dateTime(e.createdAt) },
             { k: "Ishga kirgan", v: e.hiredAt ? date(e.hiredAt) : "—" },
@@ -80,6 +93,29 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             ...(e.ecoError ? [{ k: "ECO xatosi", v: <span className="text-red-600">{e.ecoError}</span> }] : []),
           ]} />
         </Card>
+
+        {e.user && (
+          <Card className="lg:col-span-2">
+            <CardHeader
+              title="Tizimga kirish"
+              description={!e.isActive
+                ? "Xodim nofaol — logini ham bloklangan. Qaytarish uchun Xodimlar ro'yxatida \"Yoqish\" tugmasini bosing."
+                : e.user.isActive
+                  ? "Loginni yoki parolni almashtirish, kerak bo'lsa kirishni vaqtincha bloklash"
+                  : "Bu login bloklangan — xodim ERP'ga kira olmaydi"}
+              icon={KeyRound}
+              action={e.userId === s.userId || !e.isActive ? undefined : <ToggleLoginButton employeeId={e.id} blocked={!e.user.isActive} />}
+            />
+            {e.userId === s.userId ? (
+              <p className="text-sm text-slate-500">Bu sizning loginingiz — uni bu yerdan o&apos;zgartirib bo&apos;lmaydi.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <ChangeLoginForm employeeId={e.id} currentLogin={e.user.login} />
+                <ResetPasswordForm employeeId={e.id} />
+              </div>
+            )}
+          </Card>
+        )}
 
         <Card className="lg:col-span-2" padded={false}>
           <div className="border-b border-slate-100 px-5 pt-5">

@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { requireSession, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { roleForPosition, isDriverPosition } from "@/lib/positions";
-import { pushEmployeeSilently } from "@/lib/eco/people";
+import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import type { Prisma } from "@/generated/prisma";
 
@@ -21,7 +21,53 @@ const schema = z.object({
   note: zOpt,
   login: zOpt,
   password: zOpt,
+  // Haydovchi tanlanganda ochiladigan maydonlar (boshqa lavozimda formada yo'q)
+  plate: zOpt,
+  vehicleType: zOpt,
+  capacityM3: zOpt,
+  licenseNo: zOpt,
+  licenseCategory: zOpt,
+  licenseExpiry: zDate,
 });
+
+type DriverInput = {
+  plate: string | null; vehicleType: string | null; capacityM3: string | null;
+  licenseNo: string | null; licenseCategory: string | null; licenseExpiry: Date | null;
+};
+
+const normPlate = (v: string) => v.toUpperCase().replace(/\s+/g, "");
+
+/**
+ * Haydovchi texnikasi: davlat raqami bo'yicha mavjudi topiladi, bo'lmasa yangisi ochiladi.
+ * Texnika alohida sahifada emas — mashina shu yerda ro'yxatga tushadi.
+ */
+async function driverVehicleId(tx: Prisma.TransactionClient, userId: string, d: DriverInput): Promise<string | null | undefined> {
+  if (!d.plate) return null; // raqam tozalangan bo'lsa biriktirish uziladi
+  const plate = normPlate(d.plate);
+  const type = (["MIXER", "PUMP", "TRUCK"].includes(d.vehicleType ?? "") ? d.vehicleType : "MIXER") as "MIXER" | "PUMP" | "TRUCK";
+  const capacityM3 = d.capacityM3 && Number(d.capacityM3) > 0 ? Number(d.capacityM3) : null;
+
+  const cur = await tx.vehicle.findUnique({ where: { plate } });
+  if (!cur) {
+    const v = await tx.vehicle.create({ data: { plate, type, capacityM3 } });
+    await audit(tx, userId, "CREATE", "Vehicle", v.id, undefined, v);
+    return v.id;
+  }
+  // Mavjud texnikaning turi/sig'imi tuzatilgan bo'lsa yangilanadi, nofaoli qayta yoqiladi
+  if (cur.type !== type || String(cur.capacityM3 ?? "") !== String(capacityM3 ?? "") || !cur.isActive) {
+    const v = await tx.vehicle.update({ where: { id: cur.id }, data: { type, capacityM3, isActive: true } });
+    await audit(tx, userId, "UPDATE", "Vehicle", v.id, cur, v);
+  }
+  return cur.id;
+}
+
+/** Formadagi haydovchi maydonlari → Employee ustunlari (texnika ham ochiladi). */
+async function driverData(tx: Prisma.TransactionClient, userId: string, d: DriverInput) {
+  return {
+    vehicleId: await driverVehicleId(tx, userId, d),
+    licenseNo: d.licenseNo, licenseCategory: d.licenseCategory, licenseExpiry: d.licenseExpiry,
+  };
+}
 
 /** Karta tahriri — tezkor formada yo'q, otdel kadr to'ldiradigan qo'shimcha maydonlar. */
 const cardSchema = schema.omit({ login: true, password: true }).extend({
@@ -52,12 +98,17 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   if (role && (!d.login || !d.password)) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
 
+  const driver = await isDriverPosition(d.position);
   let createdId: string | null = null;
+  let vehicleId: string | null = null;
   try {
     await db.$transaction(async (tx) => {
       const user = role ? await createLoginFor(tx, d.fullName, d.position, d.login!, d.password!) : null;
-      const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note, userId: user?.id } });
+      // Haydovchi bo'lsa texnikasi ham shu yerda ochiladi/biriktiriladi
+      const extra = driver ? await driverData(tx, s.userId, d) : {};
+      const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note, userId: user?.id, ...extra } });
       createdId = e.id;
+      vehicleId = e.vehicleId;
       await audit(tx, s.userId, "CREATE", "Employee", e.id, undefined, { ...e, login: user?.login, role });
     });
   } catch (e) {
@@ -67,8 +118,9 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     throw e;
   }
   // Haydovchi — haydovchi ilovasida ham paydo bo'lsin (ECO o'chiq bo'lsa jim o'tadi)
-  if (createdId && (await isDriverPosition(d.position))) pushEmployeeSilently(createdId);
-  revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers");
+  if (createdId && driver) pushEmployeeSilently(createdId);
+  if (vehicleId) pushVehicleSilently(vehicleId);
+  revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
   return { ok: true };
 }
 
@@ -126,13 +178,17 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
     return { error: `"${d.position}" tizimga kiradigan bo'lim — bu yerdan emas, "Login berish" orqali tayinlanadi` };
   }
 
+  // Haydovchi maydonlari faqat haydovchi lavozimida keladi — boshqa lavozimda tegmaymiz
+  const driver = await isDriverPosition(d.position);
   const after = await db.$transaction(async (tx) => {
+    const extra = driver ? await driverData(tx, s.userId, d) : {};
     const e = await tx.employee.update({
       where: { id },
       data: {
         fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note,
         passportSeries: d.passportSeries, pinfl: d.pinfl, passportIssuedBy: d.passportIssuedBy, passportIssuedAt: d.passportIssuedAt,
         address: d.address, education: d.education, maritalStatus: d.maritalStatus,
+        ...extra,
       },
     });
     if (before.userId && before.fullName !== d.fullName) await tx.user.update({ where: { id: before.userId }, data: { fullName: d.fullName } });
@@ -141,7 +197,71 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   });
 
   // Haydovchi bo'lsa ECO kartasi ham yangilansin (telefon — yagona kalit)
-  if ((await isDriverPosition(after.position)) || (await isDriverPosition(before.position))) pushEmployeeSilently(id);
-  revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/drivers");
+  if (driver || (await isDriverPosition(before.position))) pushEmployeeSilently(id);
+  if (after.vehicleId && after.vehicleId !== before.vehicleId) pushVehicleSilently(after.vehicleId);
+  revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/drivers"); revalidatePath("/trips");
   return { ok: true };
+}
+
+/* ───────── Login boshqaruvi (otdel kadr) ───────── */
+
+/** Xodim kartasidagi loginni topadi va o'z akkauntiga tegishni taqiqlaydi. */
+async function loginTarget(employeeId: string, sessionUserId: string) {
+  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, include: { user: true } });
+  if (!e.user) return { error: "Bu xodimda login yo'q" as const };
+  if (e.user.id === sessionUserId) return { error: "O'z loginingizni bu yerdan o'zgartirib bo'lmaydi" as const };
+  return { employee: e, user: e.user };
+}
+
+/** Login nomini almashtirish. */
+export async function changeLogin(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["HR"]);
+  const t = await loginTarget(employeeId, s.userId);
+  if ("error" in t) return { error: t.error };
+  const login = String(fd.get("login") ?? "").trim().toLowerCase();
+  if (login.length < 3) return { error: "Login kamida 3 belgi" };
+  if (login === t.user.login) return { ok: true };
+  try {
+    await db.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: t.user.id }, data: { login } });
+      await audit(tx, s.userId, "UPDATE", "User", t.user.id, { login: t.user.login }, { login });
+    });
+  } catch (e) {
+    if (String(e).includes("Unique constraint")) return { error: "Bu login band" };
+    throw e;
+  }
+  revalidatePath(`/employees/${employeeId}`); revalidatePath("/employees"); revalidatePath("/settings");
+}
+
+/** Parolni almashtirish — eski parol so'ralmaydi, otdel kadr yangisini beradi. */
+export async function resetEmployeePassword(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["HR"]);
+  const t = await loginTarget(employeeId, s.userId);
+  if ("error" in t) return { error: t.error };
+  const password = String(fd.get("password") ?? "");
+  if (password.length < 6) return { error: "Parol kamida 6 belgi" };
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: t.user.id }, data: { passwordHash: await hashPassword(password) } });
+    await audit(tx, s.userId, "UPDATE", "User", t.user.id, undefined, { passwordReset: true });
+  });
+  revalidatePath(`/employees/${employeeId}`); revalidatePath("/settings");
+  return { ok: true };
+}
+
+/**
+ * Tizimga kirishni bloklash / ochish. Xodimning o'zi faol qoladi —
+ * ishdan bo'shatish uchun xodim qatoridagi "O'chirish" ishlatiladi.
+ */
+export async function toggleEmployeeLogin(employeeId: string) {
+  const s = await requireSession(["HR"]);
+  const t = await loginTarget(employeeId, s.userId);
+  if ("error" in t) throw new Error(t.error); // UI bunday holatda tugmani ko'rsatmaydi
+  // Ishdan bo'shatilgan xodimning logini shu yerdan ochilmaydi — avval xodimning o'zi yoqiladi
+  if (!t.employee.isActive) throw new Error("Xodim nofaol — avval uni \"Yoqish\" tugmasi bilan faollashtiring");
+  const isActive = !t.user.isActive;
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: t.user.id }, data: { isActive } });
+    await audit(tx, s.userId, "UPDATE", "User", t.user.id, { isActive: t.user.isActive }, { isActive });
+  });
+  revalidatePath(`/employees/${employeeId}`); revalidatePath("/employees"); revalidatePath("/settings");
 }

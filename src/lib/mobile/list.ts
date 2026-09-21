@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ecoLabel } from "@/lib/eco/labels";
+import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import type { MobileUser } from "./auth";
 import type { HomeRow, Tone } from "./home";
 import type { Role } from "@/generated/prisma";
@@ -8,7 +9,9 @@ import type { Role } from "@/generated/prisma";
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
  * Ruxsat veb ERP'dagi bilan bir xil mantiqda: rol ro'yxatda bo'lsa yoki DIRECTOR bo'lsa.
  */
-export type MobileList = { key: string; title: string; rows: HomeRow[] };
+/** Ro'yxat ustidagi filtr chipi — `count` ilovada chip ichida ko'rsatiladi. */
+export type ListFilter = { key: string; label: string; count: number; active: boolean };
+export type MobileList = { key: string; title: string; rows: HomeRow[]; filters?: ListFilter[] };
 
 const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   orders: { title: "Zayavkalar", roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
@@ -22,8 +25,16 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   invoices: { title: "Schyotlar", roles: ["ACCOUNTING", "FINANCE", "SALES", "CASHIER"] },
   cashflow: { title: "Kirim-chiqim", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   payments: { title: "To'lovlar", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
-  employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS"] },
+  // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
+  employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
 };
+
+/** Shu rol kira oladigan barcha ro'yxatlar — bosh ekrandagi tezkor amallar uchun. */
+export function listsFor(role: Role) {
+  return Object.entries(ACCESS)
+    .filter(([, m]) => role === "DIRECTOR" || m.roles.includes(role))
+    .map(([key, m]) => ({ key, title: m.title }));
+}
 
 export class ListError extends Error {
   constructor(readonly code: string, message: string, readonly status: number) { super(message); }
@@ -38,13 +49,52 @@ const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON
 
 const TAKE = 60;
 
-export async function mobileList(user: MobileUser, key: string, q?: string): Promise<MobileList> {
+/** Zayavkalar ro'yxati ishlab chiqarish ko'rinishida chiqadigan rollar (veb "/production" bilan bir xil). */
+const PROD_VIEW: Role[] = ["PRODUCTION", "SUPERVISOR"];
+
+export async function mobileList(user: MobileUser, key: string, q?: string, filter?: string): Promise<MobileList> {
   const meta = ACCESS[key];
   if (!meta) throw new ListError("UNKNOWN_LIST", "Bunday ro'yxat yo'q", 404);
   if (user.role !== "DIRECTOR" && !meta.roles.includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   const s = q?.trim() || undefined;
+  // Ishlab chiqarish uchun zayavkalar veb "/production" oynasidagidek: filtrlar va brigada holati bilan
+  if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);
   const rows = await build(key, s);
   return { key, title: meta.title, rows };
+}
+
+/**
+ * "Zayavkalar" — ishlab chiqarish ko'rinishi: filtr chiplari (Ochiq, Bugungilar, Muddati yaqin,
+ * Brigada kutayotgan, Zarur, Tugallanganlar, Hammasi) va har qatorda brigada holati.
+ * Sanoq qoidalari `lib/production.ts` da — veb sahifadagi raqamlar bilan bir xil chiqadi.
+ */
+async function productionOrders(title: string, q?: string, filter?: string): Promise<MobileList> {
+  const all = await db.order.findMany({
+    where: {
+      status: { not: "CANCELLED" },
+      ...(q ? { OR: [{ orderNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }, { deliveryAddress: { contains: q, mode: "insensitive" } }] } : {}),
+    },
+    orderBy: { deliveryDate: "asc" }, take: 400,
+    include: { customer: true, items: { include: { product: true, brigade: true, task: true } } },
+  });
+  const f = prodFilter(filter);
+  const rows = prodSort(all.filter(f.test)).slice(0, TAKE).map((o) => {
+    const ok = assigned(o);
+    const done = isDone(o);
+    const brigades = [...new Set(o.items.map((i) => i.brigade?.name).filter(Boolean))].join(", ");
+    return {
+      id: o.id,
+      title: `${o.orderNo} · ${o.customer.name}${o.isUrgent ? " ⚡" : ""}`,
+      subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${isOpen(o) ? dueLabel(o.deliveryDate) : o.deliveryAddress}${brigades ? ` · ${brigades}` : ""}`,
+      right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)),
+      status: done ? "Tugallandi" : ok ? "Brigada tayinlangan" : partlyAssigned(o) ? "Qisman tayinlangan" : "Brigada kutmoqda",
+      tone: (done ? "success" : isSoon(o) ? "danger" : ok ? "brand" : "warning") as Tone,
+    };
+  });
+  return {
+    key: "orders", title, rows,
+    filters: PRODUCTION_FILTERS.map((x) => ({ key: x.key, label: x.label, count: all.filter(x.test).length, active: x.key === f.key })),
+  };
 }
 
 async function build(key: string, q?: string): Promise<HomeRow[]> {
@@ -130,10 +180,21 @@ async function build(key: string, q?: string): Promise<HomeRow[]> {
     }
     case "employees": {
       const list = await db.employee.findMany({
-        where: q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { position: { contains: q, mode: "insensitive" } }] } : undefined,
+        where: q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { position: { contains: q, mode: "insensitive" } }, { brigades: { some: { name: { contains: q, mode: "insensitive" } } } }] } : undefined,
         orderBy: [{ isActive: "desc" }, { fullName: "asc" }], take: TAKE,
+        include: { brigades: { where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true } } },
       });
-      return list.map((e) => ({ id: e.id, title: e.fullName, subtitle: `${e.position}${e.phone ? ` · ${e.phone}` : ""}`, status: e.isActive ? "Faol" : "Nofaol", tone: e.isActive ? "success" : "danger" }));
+      return list.map((e) => {
+        const led = e.brigades.map((b) => b.name).join(", ");
+        return {
+          id: e.id,
+          title: e.fullName,
+          subtitle: `${e.position}${led ? ` · ${led} brigadiri` : ""}${e.phone ? ` · ${e.phone}` : ""}`,
+          right: led ? "Brigadir" : undefined,
+          status: e.isActive ? "Faol" : "Nofaol",
+          tone: e.isActive ? "success" : "danger",
+        };
+      });
     }
     default:
       return [];

@@ -17,3 +17,16 @@ export const MARITAL: string[] = ["Uylanmagan / turmushga chiqmagan", "Oilali", 
 /** Forma maydoni nomi ↔ hujjat turi. */
 export const docField = (kind: string) => `doc:${kind}`;
 export const kindFromField = (name: string) => (name.startsWith("doc:") ? name.slice(4) : null);
+
+/** Haydovchilik guvohnomasi toifalari — kartada taklif sifatida chiqadi. */
+export const LICENSE_CATEGORIES: string[] = ["B", "BC", "C", "CE", "D", "DE", "B, C", "B, C, E"];
+
+/** Texnika turlari — Vehicle.type bilan bir xil (xodim kartasida ham shu ro'yxat). */
+export const VEHICLE_TYPES: { value: string; label: string }[] = [
+  { value: "MIXER", label: "Mikser" },
+  { value: "PUMP", label: "Nasos" },
+  { value: "TRUCK", label: "Yuk mashina" },
+];
+
+/** Guvohnoma muddati tugashiga necha kun qolganini qaytaradi (o'tib ketgan bo'lsa manfiy). */
+export const licenseDaysLeft = (expiry: Date) => Math.ceil((expiry.getTime() - Date.now()) / 86_400_000);

@@ -74,7 +74,7 @@ export async function overviewTab(r: Range) {
   const atRisk = customers.filter((c) => c.segment === "At Risk").sort((a, b) => b.avgMonthly - a.avgMonthly);
   if (atRisk.length) tasks.push({ n: 0, money: sum(atRisk.map((c) => c.avgMonthly)), title: `${atRisk.length} ta mijoz ketish arafasida`, text: `45+ kun buyurtma yo'q: ${atRisk.slice(0, 3).map((c) => c.name).join(", ")} — oyiga ${Math.round(sum(atRisk.map((c) => c.avgMonthly)) / 1e6)} mln so'm keltirardi.`, href: "/bi-tahlil/mijozlar?segment=At+Risk", tone: "warning" });
   const idle = mixers.filter((m) => m.trips.length === 0);
-  if (idle.length) tasks.push({ n: 0, money: 0, title: `${idle.length} ta mikser 7 kundan beri bo'sh`, text: idle.map((m) => m.plate).join(", "), href: "/vehicles", tone: "info" });
+  if (idle.length) tasks.push({ n: 0, money: 0, title: `${idle.length} ta mikser 7 kundan beri bo'sh`, text: idle.map((m) => m.plate).join(", "), href: "/drivers", tone: "info" });
   if (loss.deadCount) tasks.push({ n: 0, money: loss.deadValue, title: `${loss.deadCount} ta muzlagan xomashyoni harakatga keltiring`, text: "90 kundan beri retseptga kirmagan — qaytaring yoki soting.", href: "/stock", tone: "info" });
   if (margin < 15 && revenue > 0) tasks.push({ n: 0, money: revenue * ((15 - margin) / 100), title: `Marja past: ${margin.toFixed(1)}%`, text: `Har 100 so'm sotuvdan ${margin.toFixed(1)} so'm qolyapti — narx siyosati yoki retsept tannarxini ko'ring.`, href: "/bi-tahlil/mahsulotlar", tone: "warning" });
   const topTasks = tasks.sort((a, b) => b.money - a.money).slice(0, 5).map((t, i) => ({ ...t, n: i + 1 }));

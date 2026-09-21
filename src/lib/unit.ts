@@ -2,6 +2,15 @@
 export const unitLabel = (u: string) => (u === "m3" ? "m³" : u);
 export const isStocked = (u: string) => u !== "m3";
 
+/** Mahsulot birliklari (Sozlamalar → Beton markalari, zayavkadagi mahsulot tanlagichi). */
+export const PRODUCT_UNITS: [string, string][] = [
+  ["m3", "m³ — tayyor beton"],
+  ["dona", "dona — ustun, blok, bordyur"],
+  ["m2", "m² — plitka"],
+  ["m", "m — pogon"],
+  ["t", "t"],
+];
+
 /** Xomashyo birliklari (Sklad → Xomashyo qo'shish, Sozlamalar). */
 export const MATERIAL_UNITS = ["kg", "t", "l", "m3", "dona", "m", "m2"] as const;
 

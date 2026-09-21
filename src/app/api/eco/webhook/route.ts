@@ -82,7 +82,7 @@ async function onVehicle(p: EcoPayload) {
     vehicleId: p.vehicleId, plateNumber: p.plateNumber, capacityM3: Number(p.capacityM3 ?? 0), type: p.type ?? "MIXER",
     isActive: p.isActive, byIntegration: !!p.byIntegration,
   });
-  if (r.applied) { revalidatePath("/drivers"); revalidatePath("/vehicles"); }
+  if (r.applied) revalidatePath("/drivers");
   return NextResponse.json({ ok: true, applied: r.applied, created: !!r.created });
 }
 

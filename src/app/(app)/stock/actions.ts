@@ -6,13 +6,14 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { parseForm, zStr, type ActionState } from "@/lib/action";
+import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { num, str, codeFromName } from "@/lib/excel";
 import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
 
 
 const schema = z.object({
   warehouseId: zStr("Sklad tanlanmagan"),
+  cashAccountId: zOpt, // qaysi hisobdan to'landi (bo'sh — chiqim yozilmaydi)
   rows: z.string(),
 });
 type Row = { name?: unknown; code?: unknown; unit?: unknown; qty?: unknown; price?: unknown; minStock?: unknown };
@@ -45,7 +46,9 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
     const all = await tx.material.findMany();
     const byKey = new Map<string, (typeof all)[number]>();
     for (const m of all) { byKey.set(m.code.toLowerCase(), m); byKey.set(m.name.toLowerCase().trim(), m); }
-    let created = 0, updated = 0, moved = 0, guessed = 0;
+    let created = 0, updated = 0, moved = 0, guessed = 0, cost = 0;
+    // Bitta qo'shish seansi — bitta hujjat: Kirim-Chiqimdan shu partiyaga o'tiladi
+    const batchId = crypto.randomUUID();
     for (const x of rows) {
       const name = str(x.name);
       const key = name.toLowerCase();
@@ -68,12 +71,25 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
         created++;
       }
       if (qty > 0) {
-        await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, materialId: m.id, qty, unitCost: price, refType: "Manual", note: "Boshlang'ich qoldiq (Sklad → Xomashyo qo'shish)", createdById: s.userId } });
+        await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, materialId: m.id, qty, unitCost: price, refType: "StockIn", refId: batchId, note: "Boshlang'ich qoldiq (Sklad → Xomashyo qo'shish)", createdById: s.userId } });
         moved++;
+        cost += qty * (price ?? 0);
       }
+    }
+
+    // Qo'shilgan xomashyo summasi — hisobdan chiqim bo'lib Kirim-Chiqimga tushadi
+    if (cost > 0 && r.data.cashAccountId) {
+      const ct = await tx.cashTransaction.create({
+        data: {
+          type: "EXPENSE", cashAccountId: r.data.cashAccountId, amount: cost, category: "Xomashyo",
+          counterparty: wh.name, note: `Sklad → Xomashyo qo'shish · ${moved} qator`,
+          refType: "StockIn", refId: batchId, createdById: s.userId,
+        },
+      });
+      await audit(tx, s.userId, "CREATE", "CashTransaction", ct.id, undefined, ct);
     }
     return { created, updated, moved, guessed };
   }, { timeout: 120_000, maxWait: 20_000 });
-  revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/receipts/new"); revalidatePath("/recipes"); revalidatePath("/dashboard");
+  revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/receipts/new"); revalidatePath("/recipes"); revalidatePath("/cashflow"); revalidatePath("/dashboard");
   redirect(`/stock?tab=balance&added=${out.created}&updated=${out.updated}&moved=${out.moved}&guessed=${out.guessed}`);
 }

@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { ROLE_LABELS } from "@/lib/nav";
 import { dateTime } from "@/lib/format";
+import { PRODUCT_UNITS } from "@/lib/unit";
 import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { UserForm, ResetPasswordForm } from "./user-forms";
@@ -28,7 +29,6 @@ const ENTITY_LABEL: Record<string, string> = {
   Brigade: "Brigada", BrigadeTask: "Topshiriq", TaskProgress: "Bajarilganlik", CashTransaction: "Kirim-chiqim", WorkPosition: "Ishchi lavozim", EmployeeDocument: "Xodim hujjati",
 };
 const UNITS: [string, string][] = [["kg", "kg"], ["t", "t"], ["l", "l"], ["m3", "m³"], ["dona", "dona"]];
-const PRODUCT_UNITS: [string, string][] = [["m3", "m³ — tayyor beton"], ["dona", "dona — ustun, blok, bordyur"], ["m2", "m² — plitka"], ["m", "m — pogon"], ["t", "t"]];
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const s = await requireSession(["DIRECTOR"]);

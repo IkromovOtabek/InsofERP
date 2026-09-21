@@ -6,13 +6,9 @@ import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer
 import { date, qty, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import type { OrderStatus } from "@/generated/prisma";
 import { cn } from "@/lib/utils";
-
-const OPEN: OrderStatus[] = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"];
-const DAY = 86400000;
-/** Yetkazish kuniga necha kun qoldi (bugun = 0, o'tgan = manfiy). */
-const daysLeft = (d: Date) => { const t = new Date(); t.setHours(0, 0, 0, 0); const x = new Date(d); x.setHours(0, 0, 0, 0); return Math.round((x.getTime() - t.getTime()) / DAY); };
+// Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
+import { PRODUCTION_FILTERS, assigned, dueLabel, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import { OrderStatusBadge } from "../orders/status";
 import { AssignForm } from "./assign-form";
 
@@ -36,25 +32,9 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const marks = await customerMarks([...allOrders.map((o) => o.customerId), ...batches.map((b) => b.order?.customerId).filter((x): x is string => !!x)]);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayM3 = batches.filter((b) => b.date >= today && b.product.unit === "m3").reduce((s, b) => s + Number(b.qtyM3), 0);
-  type O = (typeof allOrders)[number];
-  const assigned = (o: O) => o.items.length > 0 && o.items.every((i) => !!i.task);
-  const isOpen = (o: O) => OPEN.includes(o.status);
-  const isDone = (o: O) => o.status === "DELIVERED" || o.status === "CLOSED" || (assigned(o) && o.items.every((i) => i.task?.status === "DONE"));
-  const isSoon = (o: O) => isOpen(o) && daysLeft(o.deliveryDate) <= 2;
-
-  const FILTERS: { key: string; label: string; icon: typeof Layers; test: (o: O) => boolean }[] = [
-    { key: "open", label: "Ochiq", icon: ListTodo, test: (o) => isOpen(o) && !isDone(o) },
-    { key: "today", label: "Bugungilar", icon: CalendarDays, test: (o) => daysLeft(o.deliveryDate) === 0 },
-    { key: "soon", label: "Muddati yaqin", icon: AlarmClock, test: isSoon },
-    { key: "unassigned", label: "Brigada kutayotgan", icon: HardHat, test: (o) => isOpen(o) && !assigned(o) },
-    { key: "urgent", label: "Zarur", icon: Zap, test: (o) => isOpen(o) && o.isUrgent },
-    { key: "done", label: "Tugallanganlar", icon: CheckCheck, test: isDone },
-    { key: "all", label: "Hammasi", icon: Layers, test: () => true },
-  ];
-  const filter = FILTERS.find((f) => f.key === tab) ?? FILTERS[0];
-  // Muddati yaqinlar (≤ 2 kun) eng tepada, keyin zarurlar, keyin yetkazish sanasi bo'yicha
-  const rank = (o: O) => (isSoon(o) ? 0 : 1) * 10 + (o.isUrgent ? 0 : 1);
-  const orders = allOrders.filter(filter.test).sort((a, b) => rank(a) - rank(b) || a.deliveryDate.getTime() - b.deliveryDate.getTime());
+  const FILTER_ICON: Record<string, typeof Layers> = { open: ListTodo, today: CalendarDays, soon: AlarmClock, unassigned: HardHat, urgent: Zap, done: CheckCheck, all: Layers };
+  const filter = prodFilter(tab);
+  const orders = prodSort(allOrders.filter(filter.test));
   const unassignedCount = allOrders.filter((o) => isOpen(o) && !assigned(o)).length;
   const soonCount = allOrders.filter(isSoon).length;
   const selected = selectedId ? allOrders.find((o) => o.id === selectedId) : undefined;
@@ -80,22 +60,21 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       )}
 
       <h2 className="mb-3 inline-flex items-center gap-2 font-semibold"><ClipboardList size={16} className="text-slate-400" /> Zayavkalar</h2>
-      <Tabs current={filter.key} items={FILTERS.map((f) => ({ key: f.key, label: f.label, icon: f.icon, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />
+      <Tabs current={filter.key} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />
       <Table className="mb-8">
         <thead><tr><Th>№</Th><Th>Yetkazish</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Holat</Th><Th>Brigada</Th><Th></Th></tr></thead>
         <tbody>
           {orders.length === 0 && <Empty text={`"${filter.label}" bo'yicha zayavka yo'q`} icon={ClipboardList} />}
           {orders.map((o) => {
             const ok = assigned(o);
-            const partial = !ok && o.items.some((i) => !!i.task);
+            const partial = partlyAssigned(o);
             const isSel = o.id === selectedId;
-            const left = daysLeft(o.deliveryDate);
             const soon = isSoon(o);
-            const dueLabel = left < 0 ? `${-left} kun kechikdi` : left === 0 ? "Bugun" : left === 1 ? "Ertaga" : `${left} kun qoldi`;
+            const due = dueLabel(o.deliveryDate);
             return (
               <Tr key={o.id} className={cn(soon && "bg-red-50/70 [&>td]:text-red-900", isSel && !soon && "bg-brand-50/60")}>
                 <Td><Link href={`/orders/${o.id}`} className={cn("font-medium hover:underline", soon && "text-red-700")}>{o.orderNo}</Link>{o.isUrgent && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}</Td>
-                <Td><span className={soon ? "font-semibold text-red-700" : ""}>{date(o.deliveryDate)}</span>{o.deliveryTime && <span className={cn("ml-1.5 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums", soon ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700")}>{o.deliveryTime}</span>}{isOpen(o) && (soon ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {dueLabel}</div> : <div className="mt-0.5 text-[11px] text-slate-500">{dueLabel}</div>)}</Td>
+                <Td><span className={soon ? "font-semibold text-red-700" : ""}>{date(o.deliveryDate)}</span>{o.deliveryTime && <span className={cn("ml-1.5 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums", soon ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700")}>{o.deliveryTime}</span>}{isOpen(o) && (soon ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {due}</div> : <div className="mt-0.5 text-[11px] text-slate-500">{due}</div>)}</Td>
                 <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} /></Td>
                 <Td className="text-slate-600">{o.items.map((i) => i.product.code).join(", ")}{!o.needsDelivery && " · o'zi oladi"}</Td>
                 <Td right>{qty(o.items.reduce((s, i) => s + Number(i.qtyM3), 0))}</Td>

@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { pushEmployeeSilently } from "@/lib/eco/people";
+import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
 import { saveEmployeeFile, removeEmployeeFile } from "@/lib/uploads";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
@@ -18,6 +19,8 @@ const hr = () => requireSession(["HR"]);
 const schema = z.object({
   name: zStr("Lavozim nomi kerak"),
   note: zOpt,
+  // Tuzilma diagrammasida qaysi bo'lim tagida turadi. Bo'sh bo'lsa kod nom bo'yicha taxmin qiladi.
+  department: z.string().trim().optional().transform((v) => (v && isAssignableDept(v) ? v : null)),
   isDriver: z.string().optional().transform((v) => v === "on"),
   sortOrder: z.coerce.number().int().min(0).default(0),
 });

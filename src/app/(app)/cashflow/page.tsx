@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Wallet, Landmark, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
@@ -39,7 +40,16 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
   const rows: Row[] = [
     ...payments.map((p): Row => ({ id: p.id, date: p.date, kind: "INCOME", account: p.cashAccount.name, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: p.note, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
-    ...txs.map((t): Row => ({ id: t.id, date: t.date, kind: t.type, account: t.cashAccount.name, category: t.category, who: t.supplier?.name ?? t.counterparty ?? "—", note: t.note, amount: Number(t.amount), deletable: true })),
+    // Hujjatdan avtomatik yozilgan chiqim (kirim hujjati / sklad kirimi) — ustiga bosilsa batafsili ochiladi
+    ...txs.map((t): Row => ({
+      id: t.id, date: t.date, kind: t.type, account: t.cashAccount.name,
+      category: t.refType ? `Kirim · ${t.category}` : t.category,
+      who: t.supplier?.name ?? t.counterparty ?? "—", note: t.note, amount: Number(t.amount),
+      href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
+        : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
+        : undefined,
+      deletable: !t.refType, // hujjatga bog'langanini bu yerdan o'chirib bo'lmaydi — hujjatning o'zidan tuzatiladi
+    })),
   ].filter((r) => tab === "all" || r.kind === tab).sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const inc = rows.filter((r) => r.kind === "INCOME").reduce((x, r) => x + r.amount, 0);
@@ -94,7 +104,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
             <Tr key={r.id}>
               <Td>{date(r.date)}</Td>
               <Td>{r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
-              <Td>{r.category}</Td>
+              <Td>{r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.category} →</Link> : r.category}</Td>
               <Td><CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.href} /></Td>
               <Td className="text-slate-500">{r.account}</Td>
               <Td right className={r.kind === "INCOME" ? "font-medium text-emerald-700" : "font-medium text-red-600"}>{r.kind === "INCOME" ? "+" : "−"}{money(r.amount)}</Td>

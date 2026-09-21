@@ -5,10 +5,11 @@ import { orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
 import { tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
 import { addPayment } from "@/lib/payments";
 import { taskCancel, taskProgress } from "@/lib/tasks";
+import { clearBrigadeLeader, setBrigadeLeader } from "@/lib/brigades";
 import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
-import { ACTION_ROLES, can } from "./detail";
+import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
 import { ListError } from "./list";
 
 /**
@@ -29,6 +30,13 @@ const Pay = z.object({
   amount: z.coerce.number().positive("Summa 0 dan katta bo'lsin"),
   cashAccountId: z.string().trim().min(1, "Kassa/hisob tanlanmagan"),
   note: z.string().trim().optional(),
+});
+
+const Leader = z.object({
+  brigadeId: z.string().trim().min(1, "Brigada tanlanmagan"),
+  newName: z.string().trim().optional(),
+  newPhone: z.string().trim().optional(),
+  newNote: z.string().trim().optional(),
 });
 
 const fail = (m: string, status = 400) => { throw new ListError("ACTION_FAILED", m, status); };
@@ -104,6 +112,31 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
       const r = await taskCancel(id, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: "Topshiriq bekor qilindi" };
+    }
+
+    // ── Brigadir (Xodimlar kartochkasi) ──
+    case "employee.brigade": {
+      const p = Leader.safeParse(payload);
+      if (!p.success) fail(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const isNew = p.data!.brigadeId === NEW_BRIGADE;
+      if (isNew && !p.data!.newName) fail("Yangi brigada nomini yozing");
+      const r = await setBrigadeLeader({
+        employeeId: id,
+        brigadeId: isNew ? undefined : p.data!.brigadeId,
+        newBrigade: isNew ? { name: p.data!.newName!, phone: p.data!.newPhone, note: p.data!.newNote } : undefined,
+      }, user.id);
+      if (r.error) fail(r.error);
+      const extra = [
+        r.created ? "brigada ochildi" : null,
+        r.replaced ? `eski brigadir ${r.replaced} olindi` : null,
+        r.freed ? `${r.freed} brigadirsiz qoldi` : null,
+      ].filter(Boolean).join(", ");
+      return { ok: true, message: `${r.brigadeName} brigadiri qilib biriktirildi${extra ? ` — ${extra}` : ""}` };
+    }
+    case "employee.brigade.clear": {
+      const r = await clearBrigadeLeader(id, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: `Brigadirlikdan olindi — ${r.freed} brigadirsiz qoldi` };
     }
 
     // ── Schyot ──

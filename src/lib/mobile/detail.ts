@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { customerCredit } from "@/lib/finance";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
+import { activeBrigades } from "@/lib/brigades";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
 import { ListError } from "./list";
@@ -63,6 +64,8 @@ const m3 = (n: number) => `${sum(n).toFixed(sum(n) % 1 ? 1 : 0)} m³`;
 const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const dt = (d: Date) => `${day(d)} ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
+/** Brigadir formasidagi "yangi brigada" tanlovi — `lib/mobile/actions.ts` da ham shu kalit. */
+export const NEW_BRIGADE = "__new__";
 
 /** Amalga kim haqli — veb ERP'dagi `requireSession([...])` bilan bir xil ro'yxat. */
 export const ACTION_ROLES: Record<string, Role[]> = {
@@ -77,6 +80,9 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "invoice.pay": ["CASHIER", "ACCOUNTING"],
   "task.progress": ["SUPERVISOR", "PRODUCTION", "LOGISTICS"],
   "task.cancel": ["SUPERVISOR", "PRODUCTION", "SALES"],
+  // Brigadir — veb "Brigadalar" sahifasidagi bilan bir xil ruxsat
+  "employee.brigade": ["HR", "PRODUCTION", "SUPERVISOR"],
+  "employee.brigade.clear": ["HR", "PRODUCTION", "SUPERVISOR"],
 };
 
 export const can = (user: MobileUser, action: string) =>
@@ -93,7 +99,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "tasks": return taskDetail(user, id);
     case "production": return batchDetail(id);
     case "stock": return materialDetail(id);
-    case "employees": return employeeDetail(id);
+    case "employees": return employeeDetail(user, id);
     case "cashflow": return cashflowDetail(id);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   }
@@ -353,22 +359,71 @@ async function materialDetail(id: string): Promise<MobileDetail> {
   };
 }
 
-async function employeeDetail(id: string): Promise<MobileDetail> {
-  const e = await db.employee.findUnique({ where: { id }, include: { user: true, trips: { orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true } } } } } });
+async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const e = await db.employee.findUnique({
+    where: { id },
+    include: {
+      user: true,
+      brigades: { orderBy: { name: "asc" }, include: { tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, include: { order: { include: { customer: true } } } } } },
+      trips: { orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true } } } },
+    },
+  });
   if (!e) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
+  const led = e.brigades.filter((b) => b.isActive);
+  const tasks = led.flatMap((b) => b.tasks.map((t) => ({ ...t, brigadeName: b.name })));
+
+  // Brigadir biriktirish: mavjud brigada tanlanadi yoki shu yerda yangisi ochiladi
+  const actions: DetailAction[] = [];
+  if (e.isActive && can(user, "employee.brigade")) {
+    const brigades = await activeBrigades();
+    actions.push({
+      id: "employee.brigade",
+      label: led.length ? "Brigadani almashtirish" : "Brigadir qilib biriktirish",
+      tone: "brand",
+      form: [
+        {
+          name: "brigadeId", label: "Brigada", type: "select", required: true, value: led[0]?.id,
+          options: [
+            { value: NEW_BRIGADE, label: "➕ Yangi brigada" },
+            ...brigades.map((b) => ({
+              value: b.id,
+              label: `${b.name} · ${b.leaderId === e.id ? "hozirgi brigadiri" : b.leader ? `brigadiri ${b.leader.fullName}` : "brigadirsiz"}`,
+            })),
+          ],
+          hint: led.length ? `Hozir: ${led.map((b) => b.name).join(", ")}` : "Bitta xodim bitta brigadaga brigadir bo'ladi",
+        },
+        { name: "newName", label: "Yangi brigada nomi", type: "text", required: true, placeholder: "1-brigada", showIf: { field: "brigadeId", equals: NEW_BRIGADE } },
+        { name: "newPhone", label: "Brigada telefoni", type: "text", placeholder: e.phone ?? "+998 90 123 45 67", showIf: { field: "brigadeId", equals: NEW_BRIGADE } },
+        { name: "newNote", label: "Izoh", type: "text", showIf: { field: "brigadeId", equals: NEW_BRIGADE } },
+      ],
+    });
+  }
+  if (led.length && can(user, "employee.brigade.clear")) {
+    actions.push({ id: "employee.brigade.clear", label: "Brigadirlikdan olish", tone: "danger", confirm: `${e.fullName} ${led.map((b) => b.name).join(", ")} brigadirligidan olinsinmi? Brigada o'chmaydi, brigadirsiz qoladi.` });
+  }
+
   return {
     key: "employees", id: e.id, title: e.fullName, subtitle: e.position, status: e.isActive ? "Faol" : "Nofaol",
     fields: [
       { label: "Telefon", value: e.phone ?? "—" },
+      { label: "Brigada", value: led.length ? `${led.map((b) => b.name).join(", ")} brigadiri` : "—", tone: led.length ? "success" : undefined },
       { label: "Tizim logini", value: e.user ? e.user.login : "yo'q" },
       { label: "Haydovchi ilovasi", value: e.ecoUserId ? (e.ecoActive ? "Ulangan" : "Nofaol") : "Ulanmagan", tone: e.ecoUserId && e.ecoActive ? "success" : e.ecoError ? "danger" : "info" },
       ...(e.ecoError ? [{ label: "ECO xatosi", value: e.ecoError, tone: "danger" as Tone }] : []),
       { label: "Ishga olingan", value: day(e.createdAt) },
     ],
-    sections: e.trips.length
-      ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: day(t.createdAt), right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) }]
-      : [],
-    actions: [],
+    sections: [
+      ...(tasks.length
+        ? [{
+            title: "Brigada topshiriqlari", empty: "Ochiq topshiriq yo'q", target: "tasks",
+            rows: tasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigadeName}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${sum(t.qty)} m³`, status: t.status, tone: (t.dueDate < new Date() ? "danger" : "warning") as Tone })),
+          }]
+        : []),
+      ...(e.trips.length
+        ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: day(t.createdAt), right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) }]
+        : []),
+    ],
+    actions,
   };
 }
 

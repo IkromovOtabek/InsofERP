@@ -3,6 +3,8 @@ import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
 import { CREATE_ROLES, canCreate } from "./create";
+import { listsFor } from "./list";
+import { prodFilter } from "@/lib/production";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
 
@@ -15,6 +17,8 @@ export type Tone = "brand" | "success" | "warning" | "danger" | "info";
 export type HomeCard = { key: string; label: string; value: string; hint?: string; tone?: Tone; icon?: string };
 export type HomeRow = { id: string; title: string; subtitle?: string; right?: string; status?: string; tone?: Tone };
 /** `target` — qator bosilganda ochiladigan kartochka turi (`/api/mobile/detail?key=...`). Bo'lmasa qator bosilmaydi. */
+/** `kind: "list"` — ro'yxatni ochadi, `kind: "new"` — yangi hujjat formasini. */
+export type QuickAction = { key: string; label: string; icon: string; kind: "list" | "new" };
 export type HomeSection = { title: string; empty: string; rows: HomeRow[]; target?: string };
 export type MobileHome = {
   role: Role;
@@ -24,6 +28,8 @@ export type MobileHome = {
   list: { key: string; title: string };
   /** Shu rol yangi hujjat ocha olsa — "+" tugmasi uchun; aks holda null. */
   create: { key: string; label: string } | null;
+  /** "Tezkor amallar" katakchalari — rol kira oladigan ro'yxatlar va yangi hujjat. */
+  quick: QuickAction[];
   cards: HomeCard[];
   sections: HomeSection[];
 };
@@ -41,6 +47,12 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   FINANCE: { key: "cashflow", title: "Kirim-chiqim" },
   HR: { key: "employees", title: "Xodimlar" },
   CASHIER: { key: "payments", title: "To'lovlar" },
+};
+
+/** Tezkor amal katakchasi ikonlari. */
+const LIST_ICON: Record<string, string> = {
+  orders: "document-text", trips: "bus", tasks: "checkbox", production: "cube", stock: "layers",
+  receipts: "download", invoices: "receipt", cashflow: "swap-vertical", payments: "cash", employees: "people",
 };
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -70,9 +82,14 @@ async function cashBalance() {
 export async function mobileHome(user: MobileUser): Promise<MobileHome> {
   const list = ROLE_LIST[user.role];
   const creatable = Object.keys(CREATE_ROLES).find((k) => canCreate(user, k) && (k === list.key || user.role === "DIRECTOR"));
+  const quick: QuickAction[] = [
+    ...(creatable ? [{ key: creatable, label: CREATE_ROLES[creatable].label, icon: "add", kind: "new" as const }] : []),
+    ...listsFor(user.role).filter((l) => l.key !== list.key).map((l) => ({ key: l.key, label: l.title, icon: LIST_ICON[l.key] ?? "folder", kind: "list" as const })),
+  ].slice(0, 6);
   const base = {
     role: user.role, roleLabel: ROLE_LABELS[user.role], fullName: user.fullName, list,
     create: creatable ? { key: creatable, label: CREATE_ROLES[creatable].label } : null,
+    quick,
   };
   const cards: HomeCard[] = [];
   const sections: HomeSection[] = [];
@@ -120,14 +137,21 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
     }
 
     case "PRODUCTION": {
-      const [batches, inProd, tasks, openTasks] = await Promise.all([
+      const [batches, inProd, tasks, openTasks, prodOrders] = await Promise.all([
         db.productionBatch.findMany({ where: { date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
         db.order.count({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } } }),
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
         db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } } } }),
+        // "Zayavkalar" ro'yxatidagi filtrlar bilan bir xil sanoq — `lib/production.ts`
+        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { deliveryDate: "asc" }, take: 400, select: { status: true, deliveryDate: true, isUrgent: true, items: { select: { task: { select: { status: true } } } } } }),
       ]);
+      const count = (key: string) => prodOrders.filter(prodFilter(key).test).length;
+      const waiting = count("unassigned");
+      const soon = count("soon");
       cards.push(
         { key: "today", label: "Bugungi zames", value: m3(batches.reduce((s, b) => s + sum(b.qtyM3), 0)), hint: `${batches.length} partiya`, tone: "brand", icon: "today" },
+        { key: "unassigned", label: "Brigada kutayotgan", value: String(waiting), hint: "zayavka", tone: waiting ? "warning" : "success", icon: "hammer" },
+        { key: "soon", label: "Muddati yaqin", value: String(soon), hint: "≤ 2 kun", tone: soon ? "danger" : "success", icon: "alarm" },
         { key: "inprod", label: "Ishlab chiqarishda", value: String(inProd), hint: "zayavka", tone: "warning", icon: "construct" },
         { key: "tasks", label: "Ochiq topshiriq", value: String(tasks), tone: tasks ? "info" : "success", icon: "list" },
       );
@@ -245,18 +269,25 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
     }
 
     case "HR": {
-      const [active, inactive, drivers, recent] = await Promise.all([
+      const [active, inactive, drivers, brigades, recent] = await Promise.all([
         db.employee.count({ where: { isActive: true } }),
         db.employee.count({ where: { isActive: false } }),
         db.employee.count({ where: { isActive: true, position: { in: await driverPositionNames() } } }),
-        db.employee.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
+        db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { id: true } } } }),
+        db.employee.findMany({ orderBy: { createdAt: "desc" }, take: 12, include: { brigades: { where: { isActive: true }, select: { name: true } } } }),
       ]);
+      // Brigadirsiz brigada — topshiriqni kim boshqarishi noma'lum, shuning uchun ogohlantiriladi
+      const headless = brigades.filter((b) => !b.leaderId).length;
       cards.push(
         { key: "active", label: "Faol xodim", value: String(active), tone: "success", icon: "people" },
         { key: "drivers", label: "Haydovchi", value: String(drivers), tone: "brand", icon: "car" },
+        { key: "brigadiers", label: "Brigadir", value: String(brigades.length - headless), hint: headless ? `${headless} brigada brigadirsiz` : `${brigades.length} brigada`, tone: headless ? "warning" : "success", icon: "construct" },
         { key: "inactive", label: "Nofaol", value: String(inactive), tone: inactive ? "warning" : "info", icon: "person-remove" },
       );
-      sections.push({ title: "So'nggi xodimlar", empty: "Xodim yo'q", target: "employees", rows: recent.map((e) => ({ id: e.id, title: e.fullName, subtitle: `${e.position}${e.phone ? ` · ${e.phone}` : ""}`, status: e.isActive ? "Faol" : "Nofaol", tone: e.isActive ? "success" : "danger" })) });
+      sections.push(
+        { title: "Brigadalar", empty: "Brigada yo'q", rows: brigades.map((b) => ({ id: b.id, title: b.name, subtitle: b.leader ? `Brigadir: ${b.leader.fullName}${b.leader.phone ? ` · ${b.leader.phone}` : ""}` : "Brigadir biriktirilmagan — Xodimlar kartochkasidan tanlang", right: `${b.tasks.length} topshiriq`, tone: b.leader ? "success" : "warning" })) },
+        { title: "So'nggi xodimlar", empty: "Xodim yo'q", target: "employees", rows: recent.map((e) => { const led = e.brigades.map((b) => b.name).join(", "); return { id: e.id, title: e.fullName, subtitle: `${e.position}${led ? ` · ${led} brigadiri` : ""}${e.phone ? ` · ${e.phone}` : ""}`, status: e.isActive ? "Faol" : "Nofaol", tone: e.isActive ? "success" : "danger" }; }) },
+      );
       break;
     }
 

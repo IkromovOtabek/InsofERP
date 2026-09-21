@@ -80,7 +80,7 @@ export async function operationsTab(r: Range, gran: Gran) {
   const signals: { level: "danger" | "warning" | "info"; title: string; text: string; href?: string }[] = [];
   if (overdue.length) signals.push({ level: "danger", title: `${overdue.length} ta zayavka muddati o'tgan`, text: overdue.slice(0, 3).map((o) => `${o.orderNo} (${o.customer})`).join(", "), href: "/orders" });
   const idleMixers = mixers.filter((m) => m.idle);
-  if (idleMixers.length) signals.push({ level: "warning", title: `${idleMixers.length} ta mikser 7 kundan beri reys qilmagan`, text: idleMixers.map((m) => m.plate).join(", "), href: "/vehicles" });
+  if (idleMixers.length) signals.push({ level: "warning", title: `${idleMixers.length} ta mikser 7 kundan beri reys qilmagan`, text: idleMixers.map((m) => m.plate).join(", "), href: "/drivers" });
   if (late.length) signals.push({ level: "warning", title: `${late.length} ta reys kechikib yetkazilgan`, text: "Yetkazish sanasidan keyin topshirilgan", href: "/trips" });
   if (noOrder.length) signals.push({ level: "info", title: `${noOrder.length} ta zames zayavkasiz`, text: `${sum(noOrder.map((b) => Number(b.qtyM3))).toFixed(1)} m³ — omborga`, href: "/production" });
   const weakDrivers = scored.filter((d) => d.tier === "PAST");

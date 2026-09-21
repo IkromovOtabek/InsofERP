@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { Plus, X, PackagePlus, MoreHorizontal } from "lucide-react";
 import { importMaterials } from "../actions";
 import { Button, FormError, Input, Select } from "@/components/ui";
+import { MaterialPicker } from "@/components/material-picker";
 import { fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,8 @@ function NamePicker({ row, options, onPick, onText }: {
   row: Row; options: MaterialOpt[]; onPick: (m: MaterialOpt) => void; onText: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [all, setAll] = useState(false); // «…» bosilgan — filtrsiz butun ro'yxat
+  const [modal, setModal] = useState(false); // «…» bosilgan — to'liq spravochnik oynasi
+  const [all, setAll] = useState(false);
   const list = useMemo(() => {
     const t = row.name.trim().toLowerCase();
     if (all || !t) return options.slice(0, 60);
@@ -47,12 +49,20 @@ function NamePicker({ row, options, onPick, onText }: {
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(close, 150)}
         onKeyDown={(e) => { if (e.key === "Escape") close(); }} />
-      <button type="button" aria-label="Mavjud xomashyolar" title="Mavjud xomashyolar ro'yxati"
+      <button type="button" aria-label="Mavjud xomashyolar" title="Xomashyo spravochnigi"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => { if (open && all) { close(); } else { setAll(true); setOpen(true); } }}
+        onClick={() => { close(); setModal(true); }}
         className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
         <MoreHorizontal size={16} />
       </button>
+      <MaterialPicker
+        open={modal}
+        materials={options}
+        initialQuery={row.name}
+        onPick={(m) => onPick(options.find((o) => o.id === m.id) ?? (m as MaterialOpt))}
+        onCreate={(name) => onText(name)}
+        onClose={() => setModal(false)}
+      />
       {open && (
         <div className="absolute z-30 mt-1 max-h-72 w-full min-w-[280px] overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
           {options.length === 0 ? (

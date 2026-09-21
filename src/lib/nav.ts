@@ -24,9 +24,13 @@ export const NAV: NavItem[] = [
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
-  { href: "/otdel-kadr",  label: "Otdel kadr",         roles: ["HR"], group: "Boshqaruv", children: [{ href: "/otdel-kadr?tab=xodimlar", label: "Xodimlar ro'yxati" }, { href: "/otdel-kadr?tab=lavozimlar", label: "Ishchi lavozimlar" }, { href: "/otdel-kadr?tab=bolimlar", label: "Bo'limlar" }] },
+  // Otdel kadr bo'limi: sahifaning tablari bevosita menyuda turadi — ichida yana "Otdel kadr" bandi bo'lmaydi.
+  // Birinchisi sahifaning o'zi (`?tab` siz ochilganda xodimlar ro'yxati chiqadi) — middleware ruxsatni shu yo'ldan tekshiradi.
+  { href: "/otdel-kadr",                label: "Xodimlar ro'yxati", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=lavozimlar", label: "Ishchi lavozimlar", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=bolimlar",   label: "Bo'limlar",         roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=taqvim",     label: "Kadr taqvimi",      roles: ["HR"], group: "Otdel kadr" },
   { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
-  { href: "/vehicles",    label: "Texnika",            roles: ["LOGISTICS"], group: "Logistika" },
   { href: "/drivers",     label: "Haydovchilar (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika" },
   // ── Tahlil (Team24 BI tuzilmasi) ──
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil" },

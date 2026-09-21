@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { History, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -9,11 +9,39 @@ import { TRIP_STATUS, TripStatusBadge } from "./status";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { LiveDrivers } from "./live-drivers";
+import { DriverList, DriverTrips } from "./driver-history";
 import type { TripStatus } from "@/generated/prisma";
 
-export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
-  const { status, q } = await searchParams;
+export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; driver?: string }> }) {
+  const { status, q, driver } = await searchParams;
   const eco = ecoEnabled();
+  // "Tarix" — holat emas, alohida ko'rinish: haydovchilar ro'yxati va ularning butun tarixi
+  const history = status === "tarix";
+  const tabItems = [
+    { key: "", label: "Hammasi", href: "/trips" },
+    ...Object.entries(TRIP_STATUS).map(([k, v]) => ({ key: k, label: v.label, href: `/trips?status=${k}` })),
+    { key: "tarix", label: "Tarix", href: "/trips?status=tarix", icon: History },
+  ];
+
+  if (history) {
+    return (
+      <div>
+        <PageHeader
+          title="Reyslar / nakladnoy"
+          subtitle={driver ? undefined : "Haydovchilar kesimida butun tarix"}
+          action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>}
+        />
+        <Tabs current="tarix" items={tabItems} />
+        {driver ? (
+          <>
+            <Link href="/trips?status=tarix" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">← Haydovchilar ro&apos;yxati</Link>
+            <DriverTrips driverId={driver} />
+          </>
+        ) : <DriverList />}
+      </div>
+    );
+  }
+
   const trips = await db.trip.findMany({
     where: {
       ...(status && status in TRIP_STATUS ? { status: status as TripStatus } : {}),
@@ -23,12 +51,11 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
     include: { order: { include: { customer: true } }, vehicle: true, driver: true },
   });
   const marks = await customerMarks(trips.map((t) => t.order.customerId));
-  const tabs: Array<[string, string]> = [["", "Hammasi"], ...Object.entries(TRIP_STATUS).map(([k, v]) => [k, v.label] as [string, string])];
   return (
     <div>
       <PageHeader title="Reyslar / nakladnoy" action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
       {eco && <LiveDrivers />}
-      <Tabs current={status ?? ""} items={tabs.map(([k, l]) => ({ key: k, label: l, href: k ? `/trips?status=${k}` : "/trips" }))} />
+      <Tabs current={status ?? ""} items={tabItems} />
       <Table>
         <thead><tr><Th>Nakladnoy</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>m³</Th><Th>Holat</Th>{eco && <Th>ECO</Th>}</tr></thead>
         <tbody>

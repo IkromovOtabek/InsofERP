@@ -18,19 +18,29 @@ const MODES = [
 export default async function StockMaterialsNew({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
   await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
   const { mode } = await searchParams;
-  const [warehouses, materials, costs] = await Promise.all([
+  const [warehouses, materials, costs, accounts] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true } }),
     // Oxirgi narx sifatida kirim/boshlang'ich qoldiqlarning o'rtacha birlik narxi olinadi
     db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _avg: { unitCost: true } }),
+    db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
   ]);
   const avg = new Map(costs.map((c) => [c.materialId, Number(c._avg.unitCost ?? 0)]));
   const existing: MaterialOpt[] = materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, price: avg.get(m.id) ?? 0, minStock: Number(m.minStock) }));
   const current = MODES.find((m) => m.key === mode)?.key;
   const whSelect = (
-    <Field label="Qoldiq qaysi skladga yoziladi *" className="max-w-xs">
-      <Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
-    </Field>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Field label="Qoldiq qaysi skladga yoziladi *">
+        <Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
+      </Field>
+      {/* Qo'shilgan xomashyo summasi shu hisobdan chiqim bo'lib Kirim-Chiqimga tushadi */}
+      <Field label="Qaysi hisobdan to'landi" hint="Jami summa shu hisobdan chiqim bo'lib yoziladi. Xomashyo allaqachon to'langan bo'lsa — «Hisobga olinmasin»">
+        <Select name="cashAccountId" defaultValue={accounts.find((a) => a.type === "CASH")?.id ?? ""}>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
+          <option value="">Hisobga olinmasin</option>
+        </Select>
+      </Field>
+    </div>
   );
 
   return (

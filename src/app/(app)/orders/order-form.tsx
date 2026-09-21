@@ -4,10 +4,13 @@ import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignatu
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState } from "react";
 import { createOrder } from "./actions";
-import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Select, Textarea, FormActions, Checkbox } from "@/components/ui";
+import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions, Checkbox } from "@/components/ui";
+import { ProductPicker, type CatalogGroup, type CatalogProduct } from "./product-picker";
+import { ProductField } from "./product-field";
+import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 
-type Product = { id: string; code: string; name: string; price: string; unit: string };
+type Product = CatalogProduct;
 export type CustomerOpt = {
   id: string; name: string; phone: string | null; inn: string | null; address: string | null;
   since: number; // mijoz ro'yxatga olingan vaqt (ms)
@@ -115,16 +118,29 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
   );
 }
 
-export function OrderForm({ customers, products, stock, cashAccounts, preselectCustomer, contractAccept }: { customers: CustomerOpt[]; products: Product[]; stock: ProductStock; cashAccounts: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, cashAccounts, preselectCustomer, contractAccept }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [customer, setCustomer] = useState<CustomerOpt | null>(customers.find((c) => c.id === preselectCustomer) ?? null);
   const [payment, setPayment] = useState<"prepay" | "credit">("prepay");
   const [prepay, setPrepay] = useState("");
-  const [prepayAcc, setPrepayAcc] = useState(cashAccounts[0]?.id ?? "");
+  // Bosh to'lov: null — hali so'ralmagan, false — yo'q, true — bor
+  const [hasDeposit, setHasDeposit] = useState<boolean | null>(null);
+  // Bosh to'lov naqd olinadi — shuning uchun kassaga tushadi
+  const cashAcc = cashAccounts.find((a) => a.type === "CASH") ?? cashAccounts[0] ?? null;
   const [contract, setContract] = useState(false); // "Shartnoma qilish" belgilanganmi
   const [contractAmount, setContractAmount] = useState("");
   const [rows, setRows] = useState<Row[]>([{ key: 1, productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0" }]);
+  const [pickFor, setPickFor] = useState<number | null>(null); // qaysi qator uchun spravochnik ochiq
+
+  // Mahsulot yonidagi qoldiq izohi: beton — xomashyodan qancha chiqadi, dona mahsulot — hovlidagi erkin qoldiq
+  const stockHint = (x: Product) => {
+    const st = stock[x.id];
+    if (!st) return null;
+    return st.kind === "piece"
+      ? `erkin ${fmtNum(st.free)}${st.canMake != null ? `, yana ${fmtNum(st.canMake)}` : ""} ${x.unit}`
+      : st.canMake != null ? `xomashyodan ${fmtNum(st.canMake)} ${x.unit}` : null;
+  };
 
   const update = (key: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -221,8 +237,8 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
         {contract && (
           <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Shartnoma summasi (so'm) *" hint="Shartnomada ko'rsatilgan umumiy summa">
-                <Input name="contractAmount" type="number" step="1" min="1" placeholder="0" value={contractAmount} onChange={(e) => setContractAmount(e.target.value)} required={contract} />
+              <Field label="Shartnoma summasi *" hint="Shartnomada ko'rsatilgan umumiy summa">
+                <MoneyInput name="contractAmount" value={contractAmount} onChange={setContractAmount} required={contract} />
               </Field>
               <div className="flex flex-col justify-end gap-1 pb-1 text-xs">
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Shartnoma summasi</span><b className="text-slate-900">{money(contractN)}</b></div>
@@ -248,7 +264,7 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
       <div>
         <div className="mb-2 text-[13px] font-medium text-slate-700">To&apos;lov *</div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {([["prepay", "Oldindan to'lov", "Mahsulot to'lovdan keyin beriladi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
+          {([["prepay", "Naqd to'lov", "Pul naqd olinadi — kassaga tushadi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
             <label key={v} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm transition", payment === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300")}>
               <input type="radio" name="payment" value={v} checked={payment === v} onChange={() => setPayment(v)} className="mt-0.5 accent-slate-900" />
               <span><span className="font-medium text-slate-900">{l}</span><span className="block text-xs text-slate-500">{h}</span></span>
@@ -260,34 +276,57 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
         )}
         {payment === "prepay" && (
           <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr]">
-              <Field label="Olingan summa (so'm)" hint="Mijozdan hozir necha pul olindi. 0 — hali olinmagan">
-                <Input name="prepayAmount" type="number" step="1000" min="0" placeholder="0" value={prepay} onChange={(e) => setPrepay(e.target.value)} />
-              </Field>
-              <Field label="Qayerga tushdi" hint="Naqd — kassa, o'tkazma — bank">
-                <Select name="prepayAccountId" value={prepayAcc} onChange={(e) => setPrepayAcc(e.target.value)} disabled={prepayN <= 0}>
-                  {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-              <span className="inline-flex items-center gap-1 text-slate-500"><Wallet size={13} /> Zayavka: <b className="text-slate-900">{money(total)}</b></span>
-              {prepayN > 0 && (
-                <>
-                  <span className="text-emerald-700">Olindi: <b>{money(prepayN)}</b>{total > 0 && ` (${fmtNum(Math.min(100, (prepayN / total) * 100), 0)}%)`}</span>
-                  <span className={cn(remaining > 0 ? "text-amber-700" : "text-emerald-700")}>{remaining > 0 ? <>Qoldiq: <b>{money(remaining)}</b></> : "To'liq to'langan"}</span>
-                  {total > 0 && prepayN > total + 0.005 && <span className="text-red-600">Summa zayavkadan katta!</span>}
-                </>
-              )}
-              {prepayN <= 0 && <span className="text-slate-400">Pul hali olinmagan — keyin Kassa bo&apos;limi to&apos;lovni kiritadi</span>}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {[25, 50, 100].map((pc) => (
-                <button key={pc} type="button" disabled={total <= 0} onClick={() => setPrepay(String(Math.round((total * pc) / 100)))}
-                  className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40">{pc}%</button>
+            {/* Avval so'raymiz: bosh to'lov bormi? */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[13px] font-medium text-slate-700">Bosh to&apos;lov bormi?</span>
+              {([[false, "Yo'q"], [true, "Bor"]] as const).map(([v, l]) => (
+                <button
+                  key={l}
+                  type="button"
+                  aria-pressed={hasDeposit === v}
+                  onClick={() => { setHasDeposit(v); if (!v) setPrepay(""); }}
+                  className={cn("rounded-lg border px-3 py-1.5 text-sm font-medium transition",
+                    hasDeposit === v ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50")}
+                >
+                  {l}
+                </button>
               ))}
-              {prepayN > 0 && <button type="button" onClick={() => setPrepay("")} className="px-2 py-0.5 text-[11px] text-slate-500 hover:underline">tozalash</button>}
             </div>
+
+            {hasDeposit === false && (
+              <p className="mt-2 text-xs text-slate-500">Bosh to&apos;lov olinmadi — pul keyin Kassa bo&apos;limi orqali kiritiladi.</p>
+            )}
+
+            {hasDeposit === true && (
+              <>
+                <input type="hidden" name="prepayAccountId" value={cashAcc?.id ?? ""} />
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr]">
+                  <Field label="Bosh to'lov summasi" hint="Mijozdan hozir necha pul olindi">
+                    <MoneyInput name="prepayAmount" value={prepay} onChange={setPrepay} />
+                  </Field>
+                  <div className="flex flex-col justify-end gap-1 pb-1 text-xs">
+                    <div className="flex justify-between gap-3"><span className="text-slate-500">Zayavka summasi</span><b className="text-slate-900">{money(total)}</b></div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-500">Bosh to&apos;lov</span>
+                      <b className="text-emerald-700">{money(prepayN)}{total > 0 && prepayN > 0 && ` · ${fmtNum(Math.min(100, (prepayN / total) * 100), 1)}%`}</b>
+                    </div>
+                    <div className={cn("flex justify-between gap-3 border-t border-slate-200 pt-1", remaining > 0 ? "text-amber-700" : "text-emerald-700")}>
+                      <span>{remaining > 0 ? "Qoldiq" : "To'liq to'langan"}</span>
+                      <b>{money(Math.max(0, remaining))}{total > 0 && remaining > 0 && ` · ${fmtNum((remaining / total) * 100, 1)}%`}</b>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {[25, 50, 100].map((pc) => (
+                    <button key={pc} type="button" disabled={total <= 0} onClick={() => setPrepay(String(Math.round((total * pc) / 100)))}
+                      className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40">{pc}%</button>
+                  ))}
+                  {prepayN > 0 && <button type="button" onClick={() => setPrepay("")} className="px-2 py-0.5 text-[11px] text-slate-500 hover:underline">tozalash</button>}
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Wallet size={13} /> {cashAcc ? <>Pul <b className="text-slate-700">{cashAcc.name}</b> (naqd) ga tushadi</> : <span className="text-red-600">Naqd kassa ochilmagan — Sozlamalardan qo&apos;shing</span>}</span>
+                </div>
+                {total > 0 && prepayN > total + 0.005 && <p className="mt-1 text-xs text-red-600">Bosh to&apos;lov zayavka summasidan katta!</p>}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -320,20 +359,20 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
             return (
               <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0">
                 <div className="space-y-2 sm:grid sm:grid-cols-[1fr_120px_160px_40px] sm:items-center sm:gap-2 sm:space-y-0">
-                  <Select name="productId[]" value={r.productId} onChange={(e) => onProduct(r.key, e.target.value)}>
-                    {products.map((x) => {
-                      const s = stock[x.id];
-                      // Beton oldindan tayyorlanmaydi — zakaz olingach ishlab chiqariladi, shuning uchun
-                      // markalar yonida xomashyodan qancha chiqishi ko'rsatiladi; dona mahsulotda — hovlidagi erkin qoldiq.
-                      const have = !s ? null
-                        : s.kind === "piece" ? `erkin ${fmtNum(s.free)}${s.canMake != null ? `, yana ${fmtNum(s.canMake)}` : ""}`
-                        : s.canMake != null ? `xomashyodan ${fmtNum(s.canMake)}` : null;
-                      return <option key={x.id} value={x.id}>{x.name}{have ? ` — ${have} ${x.unit}` : ""}</option>;
-                    })}
-                  </Select>
+                  {/* Yozilgan harflar bo'yicha qidiradi; "…" tugmasi papkali spravochnikni ochadi */}
+                  <div>
+                    <input type="hidden" name="productId[]" value={r.productId} />
+                    <ProductField
+                      products={products}
+                      value={r.productId}
+                      onPick={(id) => onProduct(r.key, id)}
+                      onOpenPicker={() => setPickFor(r.key)}
+                      hint={stockHint}
+                    />
+                  </div>
                   <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 sm:contents">
                     <Input name="qtyM3[]" type="number" step={p?.unit === "m³" ? "0.5" : "1"} min={p?.unit === "m³" ? "0.5" : "1"} placeholder={p?.unit ?? "m³"} value={r.qtyM3} onChange={(e) => update(r.key, { qtyM3: e.target.value })} required />
-                    <Input name="price[]" type="number" step="1" min="0" placeholder={`Narx / ${p?.unit ?? "m³"}`} value={r.price} onChange={(e) => update(r.key, { price: e.target.value })} required />
+                    <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${p?.unit ?? "m³"}`} suffix={null} required />
                     <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto" aria-label="O'chirish"><X size={16} /></button>
                   </div>
                 </div>
@@ -381,6 +420,16 @@ export function OrderForm({ customers, products, stock, cashAccounts, preselectC
           <span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo&apos;shish</span>
         </button>
         <div className="mt-3 text-right text-base font-semibold">Jami: {fmtNum(total)} so&apos;m</div>
+
+        <ProductPicker
+          open={pickFor !== null}
+          products={products}
+          groups={groups}
+          canCreate={canCreateProduct}
+          onClose={() => setPickFor(null)}
+          onPick={(id) => { if (pickFor !== null) onProduct(pickFor, id); }}
+          hint={stockHint}
+        />
       </div>
 
       <Checkbox name="needsPump" label="Nasos kerak" />

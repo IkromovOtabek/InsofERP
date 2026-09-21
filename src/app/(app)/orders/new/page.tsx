@@ -9,12 +9,13 @@ import { unitLabel } from "@/lib/unit";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 
 export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
-  await requireSession(["SALES"]);
+  const s = await requireSession(["SALES"]);
   const { customer } = await searchParams;
   const credit = await customersCredit();
-  const [customers, products, history, stock, cashAccounts, contracted] = await Promise.all([
+  const [customers, products, groups, history, stock, cashAccounts, contracted] = await Promise.all([
     db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true, inn: true, address: true, createdAt: true } }),
-    db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" } }),
+    db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.productGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     customersHistory(undefined, credit),
     stockSnapshot(),
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], distinct: ["name"], select: { id: true, name: true, type: true } }),
@@ -42,7 +43,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <PageHeader title="Yangi zayavka" subtitle="Saqlangandan keyin “Qabul qilish” tugmasi orqali Sotuv bo'limiga o'tadi va ishlab chiqarishga tushadi" />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3">
-          <OrderForm customers={opts} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, price: p.price.toString(), unit: unitLabel(p.unit) }))} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} />
+          <OrderForm customers={opts} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId, price: p.price.toString(), unit: unitLabel(p.unit) }))} groups={groups} canCreateProduct={["SALES", "PRODUCTION", "DIRECTOR"].includes(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} />
         </div>
         <div className="xl:col-span-2">
           <StockSnapshotCard compact />

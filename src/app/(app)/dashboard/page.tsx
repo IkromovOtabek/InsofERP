@@ -52,9 +52,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <StatCard label="Bloklangan" value={String(blocked)} hint="kredit limit" icon={ShieldAlert} tone={blocked > 0 ? "danger" : "default"} href="/orders?status=BLOCKED" />
       </div>
 
-      <Section title="Mikserlar" action={<Link href="/vehicles" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Texnika <ArrowRight size={14} /></Link>}>
+      <Section title="Mikserlar" action={<Link href="/drivers" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Haydovchilar <ArrowRight size={14} /></Link>}>
         {mixers.length === 0 ? (
-          <Card className="text-sm text-slate-500">Texnika kiritilmagan — Texnika sahifasida mikser qo'shing.</Card>
+          <Card className="text-sm text-slate-500">Texnika kiritilmagan — Xodimlar sahifasida haydovchi qo'shsangiz, mikser ham shu yerda ochiladi.</Card>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {mixers.map((m) => (

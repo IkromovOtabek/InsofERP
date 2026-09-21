@@ -119,6 +119,24 @@ model Material {
 }
 
 /// Tayyor mahsulot: beton markasi (M300 / B22.5)
+/// Mahsulot papkasi (1C dagi guruh): Plita > Gladki 12 > ... Ichma-ich bo'ladi.
+/// Alohida jadval — mahsulot so'rovlari (sklad, retsept, BI) papkalarni ko'rmaydi.
+model ProductGroup {
+  id        String   @id @default(cuid())
+  code      String   @unique // ro'yxatdagi "Kod" ustuni
+  name      String
+  parentId  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  parent   ProductGroup?  @relation("GroupTree", fields: [parentId], references: [id])
+  children ProductGroup[] @relation("GroupTree")
+  products Product[]
+
+  @@index([parentId])
+}
+
 model Product {
   id            String   @id @default(cuid())
   code          String   @unique // M300
@@ -126,13 +144,19 @@ model Product {
   strengthClass String? // B22.5
   unit          String   @default("m3")
   price         Decimal  @default(0) @db.Decimal(18, 2) // bazaviy narx (1 m3)
+  kind          String? // "Tovar turi": Tayyor mahsulot, Tovar, Yarim tayyor...
+  groupId       String? // papka; bo'sh bo'lsa ro'yxat ildizida turadi
+  note          String?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 
+  group      ProductGroup?     @relation(fields: [groupId], references: [id])
   recipes    Recipe[]
   orderItems OrderItem[]
   batches    ProductionBatch[]
   stockMoves StockMove[]
+
+  @@index([groupId])
 }
 
 /// Retsept — 1 m3 uchun norma. Versiyalanadi, eski versiya o'chirilmaydi.
@@ -188,7 +212,8 @@ model Vehicle {
   ecoSyncedAt  DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
   ecoError     String? // oxirgi sinxron xatosi
 
-  trips Trip[]
+  trips   Trip[]
+  drivers Employee[] @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar
 }
 
 model Employee {
@@ -210,6 +235,12 @@ model Employee {
   address          String? // yashash manzili
   education        String? // ma'lumoti
   maritalStatus    String? // oilaviy holati
+  // ── Haydovchi kartasi (lavozimi haydovchi bo'lganda to'ldiriladi) ──
+  licenseNo       String? // haydovchilik guvohnomasi raqami
+  licenseCategory String? // guvohnoma toifalari, masalan "B, C, CE"
+  licenseExpiry   DateTime? // guvohnoma amal qilish muddati
+  vehicleId       String? // biriktirilgan texnika (mikser/nasos)
+
   userId    String?  @unique // tizimga kiradigan xodim uchun login
   ecoUserId String?  @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
   ecoActive Boolean? // ECO a'zoligi tasdiqlanganmi (null — ulanmagan)
@@ -218,6 +249,7 @@ model Employee {
   createdAt DateTime @default(now())
 
   user      User?              @relation(fields: [userId], references: [id])
+  vehicle   Vehicle?           @relation("DriverVehicle", fields: [vehicleId], references: [id])
   trips     Trip[]             @relation("TripDriver")
   brigades  Brigade[]          @relation("BrigadeLeader")
   documents EmployeeDocument[]
@@ -242,10 +274,11 @@ model EmployeeDocument {
 /// Ishchi lavozim (login bermaydi) — otdel kadr o'zi qo'shadi/o'chiradi.
 /// Bo'lim lavozimlari (rolli) kodda: `lib/positions.ts`.
 model WorkPosition {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  note      String? // vazifasi / talab
-  isDriver  Boolean  @default(false) // haydovchi ilovasiga chiqadimi
+  id         String  @id @default(cuid())
+  name       String  @unique
+  note       String? // vazifasi / talab
+  department String? // qaysi bo'lim tarkibida turadi (Role kaliti: PRODUCTION, LOGISTICS...) — tashkiliy tuzilma diagrammasi shu bo'yicha chiziladi
+  isDriver   Boolean @default(false) // haydovchi ilovasiga chiqadimi
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -538,6 +571,9 @@ model CashAccount {
 
   payments     Payment[]
   transactions CashTransaction[]
+
+  // Bir xil nomli hisob ikki marta ochilmasin (seed qayta ishga tushsa ham)
+  @@unique([name, type])
 }
 
 enum CashTxType {
@@ -556,6 +592,8 @@ model CashTransaction {
   counterparty  String? // kimga / kimdan
   supplierId    String?
   note          String?
+  refType       String? // qaysi hujjatdan avtomatik yozilgan: "GoodsReceipt" | "StockIn"
+  refId         String? // shu hujjat id'si — Kirim-Chiqimdan batafsilga o'tish uchun
   createdById   String
   createdAt     DateTime   @default(now())
 

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, ClipboardList, Users, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Car, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, type LucideIcon } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -14,13 +14,14 @@ import { AiPanel, AiTrigger } from "@/components/ai-panel";
 const ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/production": Factory, "/recipes": FlaskConical,
   "/trips": Truck, "/stock": Warehouse, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
-  "/payments": Landmark, "/cashflow": ArrowLeftRight, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/vehicles": Car, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings,
+  "/payments": Landmark, "/cashflow": ArrowLeftRight, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings,
+  "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=taqvim": CakeSlice,
   "/bi-tahlil/sotuvlar": TrendingUp, "/bi-tahlil/agentlar": UserRoundCheck, "/bi-tahlil/mijozlar": Users, "/bi-tahlil/ombor": Warehouse, "/bi-tahlil/mahsulotlar": Package, "/bi-tahlil/ishlab-chiqarish": Factory,
   "/bi-tahlil/marketing": Megaphone, "/bi-tahlil/reja": Target, "/bi-tahlil/moliya": Landmark, "/bi-tahlil/ml": BrainCircuit, "/bi-tahlil/ai": Sparkles,
 };
-// Tartib: Bosh sahifa → Tahlil (BI) → operatsion modullar (Sotuv … Moliya) → Boshqaruv (Xodimlar, Sozlamalar).
-// Operatsion bandlar Sozlamalar bo'limining bevosita tepasida turadi.
-const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Boshqaruv"];
+// Tartib: Bosh sahifa → Tahlil (BI) → operatsion modullar (Sotuv … Moliya) → Otdel kadr → Boshqaruv (Xodimlar, Sozlamalar).
+// Otdel kadr alohida bo'lim: kadr ishlari boshqaruv bandlari bilan aralashib ketmasin.
+const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Otdel kadr", "Boshqaruv"];
 
 type User = { fullName: string; roleLabel: string };
 
@@ -37,7 +38,11 @@ function bestMatch(path: string, items: NavItem[]) {
 
 function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
   const path = usePathname();
-  const active = bestMatch(path, items);
+  // Ba'zi bandlar bitta sahifaning tablari (`/otdel-kadr?tab=…`) — avval so'rov satri bilan qidiriladi,
+  // topilmasa oddiy yo'l bo'yicha (masalan /tasks?brigade=… da "Topshiriqlar" yonib tursin).
+  const search = useSearchParams().toString();
+  const current = search ? `${path}?${search}` : path;
+  const active = bestMatch(current, items) || bestMatch(path, items);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   // Guruhlar akkordeon: bir vaqtda faqat bittasi ochiq. Sarlavha bosilsa o'sha guruh ochiladi, oldingisi yopiladi.
   // Sukut bo'yicha (null) joriy sahifa turgan guruh ochiq.

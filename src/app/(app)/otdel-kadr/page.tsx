@@ -2,11 +2,11 @@ import Link from "next/link";
 import { BriefcaseBusiness, CakeSlice, Building2, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { POSITIONS, workPositions } from "@/lib/positions";
-import { ROLE_LABELS } from "@/lib/nav";
+import { workPositions } from "@/lib/positions";
 import { date } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { NewPositionForm, PositionRow } from "./position-forms";
+import { OrgChart, type OrgEmployee } from "./org-chart";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -28,9 +28,11 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
   await requireSession(["HR"]);
   const { tab = "xodimlar" } = await searchParams;
 
-  const [employees, positions] = await Promise.all([
+  const [employees, positions, orderStages, tripStages] = await Promise.all([
     db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: { select: { role: true, isActive: true } }, _count: { select: { documents: true } } } }),
     workPositions({ all: true }),
+    tab === "bolimlar" ? db.order.groupBy({ by: ["status"], _count: true }) : [],
+    tab === "bolimlar" ? db.trip.groupBy({ by: ["status"], _count: true }) : [],
   ]);
 
   const active = employees.filter((e) => e.isActive);
@@ -39,6 +41,29 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
   const newHires = employees.filter((e) => e.hiredAt && e.hiredAt >= monthAgo).length;
   const countByPosition = new Map<string, number>();
   for (const e of employees) countByPosition.set(e.position, (countByPosition.get(e.position) ?? 0) + 1);
+
+  // ── Bo'limlar tabi: tuzilma diagrammasi uchun sodda ma'lumot + etaplardagi jonli sanoq ──
+  const orgEmployees: OrgEmployee[] = employees.map((e) => ({
+    id: e.id, fullName: e.fullName, position: e.position, phone: e.phone,
+    hiredAt: e.hiredAt ? date(e.hiredAt) : null, photo: !!e.photo,
+    isActive: e.isActive, login: !!e.userId, docs: e._count.documents,
+  }));
+  // Yashirilgan lavozim ham xodimi bo'lsa chizmada qoladi — aks holda odam ko'rinmay qoladi
+  const orgPositions = positions
+    .filter((p) => p.isActive || (countByPosition.get(p.name) ?? 0) > 0)
+    .map((p) => ({ id: p.id, name: p.name, note: p.note, department: p.department, isDriver: p.isDriver }));
+
+  const oc = new Map(orderStages.map((r) => [String(r.status), Number(r._count)]));
+  const tc = new Map(tripStages.map((r) => [String(r.status), Number(r._count)]));
+  const nOf = (m: Map<string, number>, ...keys: string[]) => keys.reduce((n, k) => n + (m.get(k) ?? 0), 0);
+  const stageCounts = {
+    zayavka: nOf(oc, "DRAFT"),
+    tasdiq: nOf(oc, "BLOCKED"),
+    ishlab: nOf(oc, "CONFIRMED", "IN_PRODUCTION"),
+    yuklash: nOf(tc, "PLANNED", "LOADED"),
+    reys: nOf(tc, "ON_ROAD"),
+    tolov: nOf(oc, "DELIVERED"),
+  };
 
   return (
     <div>
@@ -110,29 +135,13 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
       )}
 
       {tab === "bolimlar" && (
-        <Card padded={false}>
-          <div className="border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-semibold">Bo&apos;lim lavozimlari</h2>
-            <p className="text-xs text-slate-500">Bu lavozim egasi login oladi va faqat o&apos;z bo&apos;limi sahifalarini ko&apos;radi. Ro&apos;yxat tizim rollariga bog&apos;langan — o&apos;zgartirish uchun dasturchi kerak.</p>
-          </div>
-          <Table>
-            <thead><tr><Th>Bo&apos;lim</Th><Th>Tizim roli</Th><Th right>Xodim</Th><Th right>Login</Th><Th>Holat</Th></tr></thead>
-            <tbody>
-              {POSITIONS.map((p) => {
-                const list = employees.filter((e) => e.position === p.label);
-                return (
-                  <Tr key={p.label}>
-                    <Td className="font-medium">{p.label}</Td>
-                    <Td><code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{p.role}</code> <span className="text-slate-500">· {ROLE_LABELS[p.role]}</span></Td>
-                    <Td right>{list.length}</Td>
-                    <Td right>{list.filter((e) => e.userId).length}</Td>
-                    <Td>{list.some((e) => e.isActive) ? <Badge color="green">Band</Badge> : <Badge color="amber">Bo&apos;sh</Badge>}</Td>
-                  </Tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        </Card>
+        <div className="space-y-3">
+          <OrgChart employees={orgEmployees} positions={orgPositions} stageCounts={stageCounts} />
+          <p className="px-1 text-xs text-slate-500">
+            Bo&apos;limlar tizim rollariga bog&apos;langan — qo&apos;shish yoki olib tashlash uchun dasturchi kerak.
+            Ishchi lavozimni boshqa bo&apos;lim tagiga ko&apos;chirish uchun <span className="font-medium text-slate-700">Ishchi lavozimlar</span> bo&apos;limidagi <span className="font-medium text-slate-700">Bo&apos;lim</span> ustunidan tanlang.
+          </p>
+        </div>
       )}
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}

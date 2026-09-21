@@ -14,6 +14,7 @@ import { resolveMaterials } from "@/lib/import-materials";
 const schema = z.object({
   supplierId: zStr("Yetkazuvchi tanlanmagan"),
   warehouseId: zStr("Sklad tanlanmagan"),
+  cashAccountId: zStr("To'lov hisobi tanlanmagan"),
   date: zStr("Sana kerak"),
   note: zOpt,
   materialId: z.array(z.string()).min(1, "Kamida bitta qator"),
@@ -40,10 +41,24 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
         qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
       })),
     });
+    // Kirim summasi — hisobdan chiqim: Kirim-Chiqim jurnalida ko'rinadi va qoldiqni kamaytiradi
+    const total = items.reduce((x, i) => x + i.qty * i.price, 0);
+    if (total > 0) {
+      const sup = await tx.supplier.findUnique({ where: { id: d.supplierId }, select: { name: true } });
+      const cashTx = await tx.cashTransaction.create({
+        data: {
+          type: "EXPENSE", date: new Date(d.date), cashAccountId: d.cashAccountId, amount: total,
+          category: "Xomashyo", supplierId: d.supplierId, counterparty: sup?.name,
+          note: `Kirim ${rec.docNo} · ${items.length} qator`,
+          refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
+        },
+      });
+      await audit(tx, s.userId, "CREATE", "CashTransaction", cashTx.id, undefined, cashTx);
+    }
     await audit(tx, s.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items });
     return rec.id;
   });
-  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/");
+  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/");
   redirect(`/receipts/${id}`);
 }
 
