@@ -5,11 +5,11 @@ import { ostatkaDetail } from "@/lib/ostatka";
 import { qty, date, dateTime } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
-import { OrderStatusBadge } from "../../orders/status";
+import { OrderStatusBadge } from "../../../orders/status";
 
 const MOVE: Record<string, string> = { PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Jo'natildi", ADJUSTMENT: "Qo'lda qo'shildi", WRITE_OFF: "Hisobdan chiqarildi" };
 
-export default async function AstatkaDetail({ params }: { params: Promise<{ productId: string }> }) {
+export default async function StockProductDetail({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   const d = await ostatkaDetail(productId);
   if (!d) notFound();
@@ -17,7 +17,7 @@ export default async function AstatkaDetail({ params }: { params: Promise<{ prod
 
   return (
     <div>
-      <PageHeader back={{ href: "/astatka", label: "Astatka" }} title={d.product.name} subtitle={`${d.product.code} · birlik: ${u}`} />
+      <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title={d.product.name} subtitle={`${d.product.code} · birlik: ${u}`} />
       {d.shortage > 0 && <Callout tone="danger" title="Zayavkalarga tayyor mahsulot yetishmaydi">Band qilingan miqdor qoldiqdan {qty(d.shortage)} {u} ko'p — ishlab chiqarish rejalashtiring.</Callout>}
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">

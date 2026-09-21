@@ -3,11 +3,12 @@ import { db } from "@/lib/db";
 import { qty, money, dateTime } from "@/lib/format";
 import { lastInboundMoves } from "@/lib/stock";
 import { productionCapacity } from "@/lib/production-capacity";
+import { ostatkaSummary } from "@/lib/ostatka";
 import { unitLabel } from "@/lib/unit";
 import { getSession } from "@/lib/auth";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, History, Factory, PackagePlus } from "lucide-react";
+import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight } from "lucide-react";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Tayyor beton",
@@ -16,19 +17,16 @@ const TYPE_LABEL: Record<string, string> = {
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string }> }) {
-  const { tab = "balance", added, updated, moved } = await searchParams;
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string }> }) {
+  const { tab = "balance", added, updated, moved, guessed } = await searchParams;
   const s = await getSession();
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
-  const [materials, products, mSums, pSums, last] = await Promise.all([
+  const [materials, mSums, last] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.product.findMany({ where: { isActive: true, unit: "m3" }, orderBy: { code: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
     lastInboundMoves(),
   ]);
   const mb = new Map(mSums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
-  const pb = new Map(pSums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
 
   // O'rtacha tannarx: kirimlar va narxli boshlang'ich qoldiqlar bo'yicha
   const costs = await db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _sum: { qty: true }, _avg: { unitCost: true } });
@@ -37,16 +35,32 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const moves = tab === "moves"
     ? await db.stockMove.findMany({ orderBy: { createdAt: "desc" }, take: 300, include: { material: true, product: true, warehouse: true, createdBy: true } })
     : [];
-  // Ishlab chiqarish imkoni: hozirgi xomashyo qoldig'i bilan har mahsulotdan qancha chiqadi
-  const capacity = tab === "capacity" ? await productionCapacity() : [];
+  // Ishlab chiqarish imkoni: hozirgi xomashyo qoldig'i bilan har mahsulotdan qancha chiqadi;
+  // shu yerda hovlida turgan dona mahsulot (erkin/band) va tayyor beton qoldig'i ham ko'rsatiladi
+  const [capacity, pieces, concrete, cSums] = tab === "capacity"
+    ? await Promise.all([
+        productionCapacity(),
+        ostatkaSummary(),
+        db.product.findMany({ where: { isActive: true, unit: "m3" }, orderBy: { code: "asc" } }),
+        db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
+      ])
+    : [[], [], [], []] as [Awaited<ReturnType<typeof productionCapacity>>, Awaited<ReturnType<typeof ostatkaSummary>>, [], []];
+  const cb = new Map(cSums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
+  const canMakeBy = new Map(capacity.map((c) => [c.productId, c]));
+  const pieceTotals = pieces.reduce((a, r) => ({ total: a.total + r.total, free: a.free + r.free, owned: a.owned + r.owned }), { total: 0, free: 0, owned: 0 });
 
   return (
     <div>
       <PageHeader title="Sklad" subtitle="Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."
-        action={canAdd ? <LinkButton href="/stock/materials/new"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton> : undefined} />
+        action={canAdd ? (
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href="/stock/products/new" variant="secondary"><Plus size={16} /> Tayyor mahsulot qo&apos;shish</LinkButton>
+            <LinkButton href="/stock/materials/new"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
+          </div>
+        ) : undefined} />
       <Tabs current={tab} items={[{ key: "balance", label: "Qoldiqlar", href: "/stock?tab=balance", icon: Boxes }, { key: "capacity", label: "Ishlab chiqarish imkoni", href: "/stock?tab=capacity", icon: Factory }, { key: "moves", label: "Harakat jurnali", href: "/stock?tab=moves", icon: History }]} />
       {added != null && (
-        <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta. <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkonini ko&apos;rish</Link></Callout>
+        <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`} <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkonini ko&apos;rish</Link></Callout>
       )}
 
       {tab === "capacity" && (
@@ -70,6 +84,60 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               })}
             </tbody>
           </Table>
+          <div>
+            <h2 className="mb-2 font-semibold">Dona mahsulotlar (hovlida)</h2>
+            <Table>
+              <thead><tr><Th>Mahsulot</Th><Th>Kod</Th><Th>Birlik</Th><Th right>Jami</Th><Th right>Erkin</Th><Th right>Band</Th><Th>Holat</Th><Th></Th></tr></thead>
+              <tbody>
+                {pieces.length === 0 && <Empty text={"Dona mahsulot yo'q — Sozlamalar → Beton markalari bo'limida birligi \"dona\" bo'lgan mahsulot (ustun, blok, bordyur…) qo'shing"} icon={Boxes} />}
+                {pieces.map((r) => (
+                  <Tr key={r.id} className="[&>td]:py-4 [&>td]:text-[15px]">
+                    <Td><Link href={`/stock/products/${r.id}`} className="hover:underline">{r.name}</Link></Td>
+                    <Td className="text-slate-500">{r.code}</Td>
+                    <Td className="text-slate-500">{unitLabel(r.unit)}</Td>
+                    <Td right className="font-semibold">{qty(r.total)}</Td>
+                    <Td right className="text-lg font-semibold text-emerald-600">{qty(r.free)}</Td>
+                    <Td right className="text-lg font-semibold text-blue-600">{qty(r.owned)}</Td>
+                    <Td>{r.shortage > 0 ? <Badge color="red">{qty(r.shortage)} yetishmaydi</Badge> : r.free > 0 ? <Badge color="green">Erkin bor</Badge> : r.total > 0 ? <Badge color="blue">Hammasi band</Badge> : <Badge>Bo&apos;sh</Badge>}</Td>
+                    <Td><Link href={`/stock/products/${r.id}`} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Ochish <ChevronRight size={14} /></Link></Td>
+                  </Tr>
+                ))}
+                {pieces.length > 0 && (
+                  <tr className="bg-slate-50/80 [&>td]:py-4 [&>td]:text-[15px]">
+                    <Td className="font-semibold">Jami mahsulot</Td><Td /><Td />
+                    <Td right className="font-semibold">{qty(pieceTotals.total)}</Td>
+                    <Td right className="text-lg font-semibold text-emerald-600">{qty(pieceTotals.free)} ta</Td>
+                    <Td right className="text-lg font-semibold text-blue-600">{qty(pieceTotals.owned)} ta</Td>
+                    <Td colSpan={2} className="text-sm text-slate-500">erkin / band</Td>
+                  </tr>
+                )}
+              </tbody>
+            </Table>
+            <p className="mt-2 text-xs text-slate-500">Hovlida tayyor turgan dona mahsulotlar (ustun, blok, bordyur…). Qatorni bosib, kimga band qilinganini ko&apos;rasiz. Qo&apos;lda kirim qilish — yuqoridagi «Tayyor mahsulot qo&apos;shish».</p>
+          </div>
+
+          <div>
+            <h2 className="mb-2 font-semibold">Tayyor beton (ishlab chiqarilgan − jo&apos;natilgan)</h2>
+            <Table>
+              <thead><tr><Th>Marka</Th><Th right>Qoldiq</Th><Th right>Xomashyodan chiqadi</Th><Th>Cheklovchi xomashyo</Th></tr></thead>
+              <tbody>
+                {concrete.length === 0 && <Empty text="Beton markasi kiritilmagan — Sozlamalar → Beton markalari" icon={Factory} />}
+                {concrete.map((p) => {
+                  const c = canMakeBy.get(p.id);
+                  return (
+                    <Tr key={p.id} className="[&>td]:py-4 [&>td]:text-[15px]">
+                      <Td className="font-medium">{p.name}</Td>
+                      <Td right>{qty(cb.get(p.id) ?? 0)} m³</Td>
+                      <Td right className={c ? (c.canMake > 0 ? "font-semibold text-emerald-700" : "font-semibold text-red-600") : "text-slate-400"}>{c ? `${qty(c.canMake)} m³` : "retsept yo'q"}</Td>
+                      <Td className="text-slate-600">{c?.limiting ? <>{c.limiting.name} <span className="text-slate-400">· qoldiq {qty(c.limiting.balance)} {c.limiting.unit}</span></> : "—"}</Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+            <p className="mt-2 text-xs text-slate-500">Beton oldindan tayyorlanmaydi — zakaz olingandan keyin ishlab chiqariladi. Shuning uchun &quot;Qoldiq&quot; zames qilingan, lekin hali nakladnoy yozilmagan hajm (nolga yaqin bo&apos;lishi kerak); asosiy ko&apos;rsatkich — xomashyodan retsept bo&apos;yicha qancha chiqishi.</p>
+          </div>
+
           {capacity.some((c) => c.items.some((i) => i.short > 0)) && (
             <div>
               <h2 className="mb-2 font-semibold">Zayavkalar uchun yetishmaydigan xomashyo</h2>
@@ -88,37 +156,30 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       )}
 
       {tab === "balance" && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <div>
-            <h2 className="mb-3 font-semibold">Xomashyo</h2>
-            <Table>
-              <thead><tr><Th>Nomi</Th><Th right>Qoldiq</Th><Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
-              <tbody>
-                {materials.map((m) => {
-                  const b = mb.get(m.id) ?? 0, c = avgCost.get(m.id) ?? 0, l = last.materials.get(m.id);
-                  return (
-                    <Tr key={m.id}>
-                      <Td className="font-medium">{m.name}</Td>
-                      <Td right className={b < 0 ? "text-red-600" : ""}>{qty(b)} {m.unit}</Td>
-                      <Td right className="text-slate-500">{qty(m.minStock)}</Td>
-                      <Td right>{c ? money(c) : "—"}</Td>
-                      <Td right>{money(b * c)}</Td>
-                      <Td>{b < Number(m.minStock) ? <Badge color="red">Kam qoldi</Badge> : <Badge color="green">Yetarli</Badge>}</Td>
-                      <Td className="text-slate-600">{l ? <><span className="font-medium text-slate-800">{l.by}</span><span className="text-slate-400"> · {dateTime(l.date)}</span></> : "—"}</Td>
-                    </Tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </div>
-          <div>
-            <h2 className="mb-3 font-semibold">Tayyor beton (ishlab chiqarilgan − jo'natilgan)</h2>
-            <Table>
-              <thead><tr><Th>Marka</Th><Th right>Qoldiq</Th></tr></thead>
-              <tbody>{products.map((p) => <Tr key={p.id}><Td className="font-medium">{p.name}</Td><Td right>{qty(pb.get(p.id) ?? 0)} m³</Td></Tr>)}</tbody>
-            </Table>
-            <p className="mt-2 text-xs text-slate-500">Tayyor beton saqlanmaydi — bu raqam zames qilingan, lekin hali nakladnoy yozilmagan hajmni ko'rsatadi. Nolga yaqin bo'lishi kerak. Dona mahsulotlar (ustun, blok) qoldig'i — <Link href="/astatka" className="underline">Astatka</Link> sahifasida.</p>
-          </div>
+        <div>
+          <h2 className="mb-3 font-semibold">Xomashyo</h2>
+          <Table>
+            <thead><tr><Th>Nomi</Th><Th>Kodi</Th><Th right>Qoldiq</Th><Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
+            <tbody>
+              {materials.length === 0 && <Empty text="Xomashyo kiritilmagan — «Xomashyo qo'shish» tugmasi orqali kiriting" icon={Boxes} />}
+              {materials.map((m) => {
+                const b = mb.get(m.id) ?? 0, c = avgCost.get(m.id) ?? 0, l = last.materials.get(m.id);
+                return (
+                  <Tr key={m.id} className="[&>td]:py-4 [&>td]:text-[15px]">
+                    <Td className="font-medium">{m.name}</Td>
+                    <Td className="text-slate-500">{m.code}</Td>
+                    <Td right className={cn("font-semibold", b < 0 && "text-red-600")}>{qty(b)} {m.unit}</Td>
+                    <Td right className="text-slate-500">{qty(m.minStock)}</Td>
+                    <Td right>{c ? money(c) : "—"}</Td>
+                    <Td right>{money(b * c)}</Td>
+                    <Td>{b < Number(m.minStock) ? <Badge color="red">Kam qoldi</Badge> : <Badge color="green">Yetarli</Badge>}</Td>
+                    <Td className="text-slate-600">{l ? <><span className="font-medium text-slate-800">{l.by}</span><span className="text-slate-400"> · {dateTime(l.date)}</span></> : "—"}</Td>
+                  </Tr>
+                );
+              })}
+            </tbody>
+          </Table>
+          <p className="mt-2 text-xs text-slate-500">Beton oldindan tayyorlanmaydi — zakaz olingandan keyin ishlab chiqariladi, shuning uchun bu yerda xomashyo qoldig&apos;i asosiy. Retsept bo&apos;yicha qaysi betondan qancha chiqishini <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkoni</Link> ko&apos;rsatadi. Hovlida turgan dona mahsulot va tayyor beton qoldig&apos;i — <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkoni</Link> bo&apos;limida.</p>
         </div>
       )}
 

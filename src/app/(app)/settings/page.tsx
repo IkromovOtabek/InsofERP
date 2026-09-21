@@ -88,7 +88,7 @@ async function ProductsTab() {
   ];
   return (
     <div className="space-y-4">
-      <Card><h2 className="mb-1 font-semibold">Yangi mahsulot</h2><p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Astatka sahifasida hisoblanadi.</p><RowForm action={saveProduct.bind(null, null)} mode="create" cols={6} fields={fields()} /></Card>
+      <Card><h2 className="mb-1 font-semibold">Yangi mahsulot</h2><p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo'limida hisoblanadi.</p><RowForm action={saveProduct.bind(null, null)} mode="create" cols={6} fields={fields()} /></Card>
       <Card>
         <h2 className="mb-3 font-semibold">Mahsulotlar</h2>
         <div className="divide-y divide-slate-100">

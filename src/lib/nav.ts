@@ -15,8 +15,8 @@ export const NAV: NavItem[] = [
   { href: "/tasks",       label: "Topshiriqlar",       roles: ["PRODUCTION", "SALES", "LOGISTICS"], group: "Ishlab chiqarish" },
   { href: "/brigades",    label: "Brigadalar",         roles: ["PRODUCTION", "HR", "SALES"], group: "Ishlab chiqarish" },
   { href: "/trips",       label: "Reyslar / nakladnoy", roles: ["LOGISTICS", "PRODUCTION"], group: "Logistika" },
-  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES"], group: "Sklad" },
-  { href: "/astatka",     label: "Astatka",            roles: ["WAREHOUSE", "PRODUCTION", "SALES", "LOGISTICS", "ACCOUNTING"], group: "Sklad" },
+  // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
+  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"], group: "Sklad" },
   { href: "/receipts",    label: "Kirim (snabjeniye)", roles: ["PROCUREMENT", "WAREHOUSE", "SALES"], group: "Sklad" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)
   { href: "/suppliers",   label: "Yetkazuvchilar",     roles: ["PROCUREMENT", "ACCOUNTING"], group: "Sklad" },
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv" },

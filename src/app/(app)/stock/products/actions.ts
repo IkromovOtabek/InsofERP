@@ -27,6 +27,6 @@ export async function addStock(_prev: ActionState, fd: FormData): Promise<Action
     const m = await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: d.warehouseId, productId: d.productId, qty: d.qty, note: d.note ?? "Qo'lda qo'shildi", refType: "Manual", createdById: s.userId } });
     await audit(tx, s.userId, "CREATE", "StockMove", m.id, undefined, { product: p.code, qty: d.qty, note: d.note });
   });
-  revalidatePath("/astatka"); revalidatePath(`/astatka/${d.productId}`); revalidatePath("/stock");
-  redirect("/astatka");
+  revalidatePath("/stock"); revalidatePath(`/stock/products/${d.productId}`);
+  redirect("/stock?tab=capacity");
 }

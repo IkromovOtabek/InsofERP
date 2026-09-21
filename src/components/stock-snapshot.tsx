@@ -52,7 +52,7 @@ function ProductRows({ rows, compact, freeLabelAsTotal }: { rows: SnapshotProduc
           <Td>
             {freeLabelAsTotal
               ? <span className="font-medium">{p.name}</span>
-              : <Link href={`/astatka/${p.id}`} className="font-medium hover:underline">{p.name}</Link>}{" "}
+              : <Link href={`/stock/products/${p.id}`} className="font-medium hover:underline">{p.name}</Link>}{" "}
             <span className="text-slate-400">{unitLabel(p.unit)}</span>
           </Td>
           <Td right className={p.free > 0 ? "font-semibold text-emerald-600" : "text-slate-400"}>{qty(p.free)}</Td>
@@ -67,8 +67,8 @@ function ProductRows({ rows, compact, freeLabelAsTotal }: { rows: SnapshotProduc
 }
 
 /**
- * Sotuv va zayavka bo'limi uchun korxonaning butun qoldig'i: Astatkadagi dona mahsulot,
- * tayyor beton va Skladdagi xomashyo. Raqamlar sklad/snabjeniye xodimlari kiritgan
+ * Sotuv va zayavka bo'limi uchun korxonaning butun qoldig'i: hovlidagi dona mahsulot,
+ * beton (zakaz olingach tayyorlanadi — xomashyodan qancha chiqishi) va Skladdagi xomashyo. Raqamlar sklad/snabjeniye xodimlari kiritgan
  * kirimlardan (StockMove) olinadi — har qatorda oxirgi kirimni kim va qachon kiritgani
  * ko'rinadi, shunda zayavka qabul qilayotgan xodim kimning ma'lumotiga tayanayotganini biladi.
  *
@@ -84,9 +84,9 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
 
   const piecesBlock = (
     <div className={cn(!grid && "border-t border-slate-100")}>
-      <SectionTitle title="Dona mahsulotlar (Astatka — hovlida)" hint="erkin = zayavkalarga band qilinmagani" />
+      <SectionTitle title="Dona mahsulotlar (hovlida)" hint="erkin = zayavkalarga band qilinmagani" />
       {s.pieces.length === 0 ? (
-        <NoRows text="Dona mahsulot yo'q." href="/astatka/new" action="Astatkaga qo'shish" />
+        <NoRows text="Dona mahsulot yo'q." href="/stock/products/new" action="Skladga qo'shish" />
       ) : (
         <table className="w-full text-sm">
           <thead><tr><Th>Mahsulot</Th><Th right>Erkin</Th><Th right>Band</Th><Th right>Jami</Th><Th right>Yana chiqadi</Th>{!cols && <Th>Oxirgi kirim (kim)</Th>}</tr></thead>
@@ -98,13 +98,21 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
 
   const concreteBlock = (
     <div className={cn(!grid && "border-t border-slate-100")}>
-      <SectionTitle title="Tayyor beton (m³)" hint="zames qilingan, hali jo'natilmagan · «yana chiqadi» — xomashyodan" />
+      <SectionTitle title="Beton (m³)" hint="zakaz olingach tayyorlanadi · raqam — xomashyodan retsept bo'yicha qancha chiqishi" />
       {s.concrete.length === 0 ? (
         <NoRows text="Beton markasi kiritilmagan." href="/settings?tab=products" action="Mahsulot qo'shish" />
       ) : (
         <table className="w-full text-sm">
-          <thead><tr><Th>Marka</Th><Th right>Tayyor</Th><Th right>Yana chiqadi</Th>{!cols && <Th>Oxirgi zames (kim)</Th>}</tr></thead>
-          <tbody><ProductRows rows={s.concrete} compact={cols} freeLabelAsTotal /></tbody>
+          <thead><tr><Th>Marka</Th><Th right>Xomashyodan chiqadi</Th>{!cols && <Th>Cheklovchi xomashyo</Th>}</tr></thead>
+          <tbody>
+            {s.concrete.map((p) => (
+              <Tr key={p.id}>
+                <Td><span className="font-medium">{p.name}</span> <span className="text-slate-400">{unitLabel(p.unit)}</span></Td>
+                <Td right><Make make={p.make} unit={p.unit} /></Td>
+                {!cols && <Td className="text-slate-600">{p.make?.limiting ? <>{p.make.limiting.name} <span className="text-slate-400">· qoldiq {qty(p.make.limiting.balance)} {p.make.limiting.unit}</span></> : <span className="text-slate-400">—</span>}</Td>}
+              </Tr>
+            ))}
+          </tbody>
         </table>
       )}
     </div>
@@ -142,7 +150,7 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
           description={`Sklad xodimlari kiritgan ma'lumot · ${dateTime(s.asOf)}`}
           action={
             <div className="flex flex-wrap items-center gap-3 text-sm">
-              <Link href="/astatka" className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900"><Boxes size={14} /> Astatka</Link>
+              <Link href="/stock?tab=capacity" className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900"><Boxes size={14} /> Hovlidagi mahsulot</Link>
               <Link href="/stock?tab=capacity" className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900"><Factory size={14} /> Imkoniyat</Link>
               <Link href="/stock" className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900">Sklad <ArrowRight size={14} /></Link>
             </div>

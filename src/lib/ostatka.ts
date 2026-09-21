@@ -1,7 +1,8 @@
 import { db } from "./db";
 
 /**
- * Tayyor mahsulot qoldig'i (dona mahsulotlar).
+ * Hovlida turgan tayyor mahsulot qoldig'i (dona mahsulotlar) — Sklad → "Ishlab chiqarish imkoni"
+ * bo'limida va sotuv/zayavka panelida ko'rsatiladi (ilgari alohida "Astatka" sahifasi edi).
  * jami = StockMove (PRODUCTION_OUTPUT + / SHIPMENT −)
  * egasi bor = tasdiqlangan zayavkalarda band qilingan, hali jo'natilmagan
  * egasi yo'q = jami − egasi bor

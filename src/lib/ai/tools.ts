@@ -342,7 +342,7 @@ const stockStatus: Tool = {
       ...list.map((m) => `${m.name} (${m.code}): qoldiq ${fmtNum(m.balance, 1)} ${m.unit} · kuniga ${fmtNum(m.perDay, 1)} ${m.unit} · ${m.days === null ? "sarf yo'q" : `${fmtNum(m.days, 0)} kunga yetadi`} · ${m.zone}${m.short ? " · tasdiqlangan zayavkalarga YETMAYDI" : ""}${m.dead ? " · muzlagan (90 kun ishlatilmagan)" : ""} · 30 kunda kirim ${fmtNum(m.received30, 0)}, sarf ${fmtNum(m.consumed30, 0)} · qiymati ${M(m.value)}${m.suggestQty > 0 ? ` · buyurtma taklifi ${fmtNum(m.suggestQty, 0)} ${m.unit} (${M(m.suggestCost)})` : ""}`),
     ];
     const ps = prod.map((x) => ({ p: products.find((y) => y.id === x.productId), qty: Number(x._sum.qty ?? 0) })).filter((x) => x.p && x.qty !== 0);
-    if (ps.length) out.push("Tayyor mahsulot qoldig'i (astatka): " + ps.map((x) => `${x.p!.code} ${fmtNum(x.qty, 1)} ${x.p!.unit}`).join(", "));
+    if (ps.length) out.push("Hovlidagi tayyor mahsulot qoldig'i: " + ps.map((x) => `${x.p!.code} ${fmtNum(x.qty, 1)} ${x.p!.unit}`).join(", "));
     return out.join("\n");
   },
 };
@@ -371,7 +371,7 @@ const productionSummary: Tool = {
       ...(batches.length ? ["Mahsulot bo'yicha:", ...agg((b) => b.product.code)] : []),
       ...(batches.length && p.days <= 31 ? ["Kun bo'yicha:", ...agg((b) => fmtDate(b.date))] : []),
       ...(batches.length ? ["Smena bo'yicha:", ...agg((b) => `${b.shift}-smena`)] : []),
-      ...(batches.length ? ["Zayavkalar bo'yicha:", ...agg((b) => b.order ? `${b.order.orderNo} (${b.order.customer.name})` : "zayavkasiz (astatka)").slice(0, 15)] : []),
+      ...(batches.length ? ["Zayavkalar bo'yicha:", ...agg((b) => b.order ? `${b.order.orderNo} (${b.order.customer.name})` : "zayavkasiz (skladga)").slice(0, 15)] : []),
       `Ochiq topshiriqlar: ${tasks.length} ta, qoldiq ${m3(sum(tasks.map((t) => Number(t.qty) - Number(t.doneQty))))}`,
       ...tasks.slice(0, 15).map((t) => `  ${t.taskNo} · ${t.brigade.name} · ${t.order.orderNo} (${t.order.customer.name}) · ${t.orderItem.product.code} ${fmtNum(Number(t.doneQty), 1)}/${fmtNum(Number(t.qty), 1)} m³ · muddat ${fmtDate(t.dueDate)} · ${t.status === "NEW" ? "yangi" : "bajarilmoqda"}`),
     ];

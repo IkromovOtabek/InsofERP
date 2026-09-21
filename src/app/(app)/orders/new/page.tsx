@@ -31,7 +31,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
     };
   });
   // Zayavka qabul qilayotgan xodim har mahsulot bo'yicha nima borligini ko'rishi uchun:
-  // dona mahsulot (Astatka) va tayyor beton — ikkalasi ham, xomashyodan yana qancha chiqishi bilan.
+  // hovlidagi dona mahsulot va beton — ikkalasi ham, xomashyodan yana qancha chiqishi bilan.
   const productStock: ProductStock = Object.fromEntries([
     ...stock.pieces.map((p) => [p.id, { free: p.free, total: p.total, owned: p.owned, canMake: p.make?.canMake ?? null, by: p.last?.by ?? null, kind: "piece" as const }] as const),
     ...stock.concrete.map((p) => [p.id, { free: p.free, total: p.total, owned: 0, canMake: p.make?.canMake ?? null, by: p.last?.by ?? null, kind: "concrete" as const }] as const),

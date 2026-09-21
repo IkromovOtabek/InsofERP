@@ -21,7 +21,7 @@ export async function ProductsTab({ range }: { range: Range }) {
         <Kpi label="AX-sinf" value={String(c.aaa)} icon={Award} tone="brand" hint="yuqori tushum + barqaror talab" />
         <Kpi label="O'rt. marja" value={`${fmtNum(c.avgMargin, 1)}%`} icon={Percent} tone={c.avgMargin >= 20 ? "success" : c.avgMargin >= 10 ? "warning" : "danger"} hint={`${c.lowMargin} ta marka <10%`} />
         <Kpi label="Retseptsiz" value={String(c.noRecipe)} icon={FlaskConical} tone={c.noRecipe ? "warning" : "default"} hint="tannarx hisoblanmaydi" href="/recipes" />
-        <Kpi label="Muzlagan mablag'" value={moneyShort(c.frozen)} icon={Snowflake} tone={c.frozen ? "info" : "default"} hint="tayyor mahsulot (dona) qoldig'i" href="/astatka" />
+        <Kpi label="Muzlagan mablag'" value={moneyShort(c.frozen)} icon={Snowflake} tone={c.frozen ? "info" : "default"} hint="tayyor mahsulot (dona) qoldig'i" href="/stock?tab=capacity" />
         <Kpi label="O'sish trendida" value={String(c.growing)} icon={TrendingUp} tone="success" hint="oxirgi 3 oy vs oldingi 3 oy" />
       </div>
 

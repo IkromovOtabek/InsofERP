@@ -29,7 +29,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         action={<div className="flex flex-wrap gap-2"><LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton><LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton></div>}
       />
       {/* Zayavka qabul qilayotgan xodim korxonada nima borligini shu yerda ko'radi:
-          Astatkadagi dona mahsulot, tayyor beton va Skladdagi xomashyo. */}
+          Hovlidagi dona mahsulot, beton va Skladdagi xomashyo. */}
       <div className="mb-5">
         <StockSnapshotCard layout="grid" title="Korxona qoldig'i — zayavka qabul qilishdan oldin" />
       </div>

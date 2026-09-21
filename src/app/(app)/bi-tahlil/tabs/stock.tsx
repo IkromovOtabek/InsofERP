@@ -88,7 +88,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
             {d.finished.map((f) => <div key={f.id} className="flex justify-between"><span>{f.code} <span className="text-xs text-slate-400">{qty(f.qty)} dona · tayyor</span></span><span className="tabular">{moneyShort(f.value)}</span></div>)}
             {!d.dead.length && !d.finished.length && <Note>Muzlagan zaxira yo'q.</Note>}
           </div>
-          {(d.dead.length > 0 || d.finished.length > 0) && <div className="mt-3"><Action href="/astatka">Aksiya yoki qaytarish orqali aylantiring — bu pul o'zi harakatga kelmaydi</Action></div>}
+          {(d.dead.length > 0 || d.finished.length > 0) && <div className="mt-3"><Action href="/stock?tab=capacity">Aksiya yoki qaytarish orqali aylantiring — bu pul o'zi harakatga kelmaydi</Action></div>}
         </Panel>
         <Panel title="Yetkazuvchilar — Top 5" info="Davr ichidagi kirim summasi bo'yicha.">
           {d.suppliers.length ? <HBarList data={d.suppliers.map((s) => ({ label: s.name, value: s.value, hint: `${s.docs} hujjat` }))} formatValue={moneyShort} tone="info" /> : <Note>Davrda kirim yo'q.</Note>}

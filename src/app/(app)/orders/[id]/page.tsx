@@ -178,7 +178,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </tbody>
           </table>
           <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-            Dona mahsulot qoldig&apos;i — <Link href="/astatka" className="underline">Astatka</Link>, xomashyo — <Link href="/stock" className="underline">Sklad</Link> bo&apos;limidan olinadi.
+            Dona mahsulot qoldig&apos;i — <Link href="/stock?tab=capacity" className="underline">Sklad → Ishlab chiqarish imkoni</Link>, xomashyo — <Link href="/stock" className="underline">Sklad</Link> bo&apos;limidan olinadi.
           </p>
         </Card>
       )}

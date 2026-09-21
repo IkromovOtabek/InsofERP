@@ -22,7 +22,7 @@ export function AddForm({ products, warehouses }: { products: (Opt & { unit: str
       <Field label="Izoh" hint="Masalan: 17.09 smena, qolipdan chiqarildi"><Textarea name="note" /></Field>
       <FormActions>
         <Button disabled={pending || !products.length}><Plus size={16} /> {pending ? "Yozilmoqda…" : "Qo'shish"}</Button>
-        <LinkButton href="/astatka" variant="secondary">Bekor</LinkButton>
+        <LinkButton href="/stock?tab=capacity" variant="secondary">Bekor</LinkButton>
       </FormActions>
     </form>
   );

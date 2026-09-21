@@ -57,14 +57,14 @@ export type SnapshotProduct = {
 
 export type StockSnapshot = {
   materials: Array<{ id: string; name: string; unit: string; balance: number; minStock: number; low: boolean; last: LastMove | null }>;
-  pieces: SnapshotProduct[]; // Astatka: hovlida turadigan dona mahsulotlar
+  pieces: SnapshotProduct[]; // hovlida turadigan dona mahsulotlar (Sklad → Ishlab chiqarish imkoni)
   concrete: SnapshotProduct[]; // tayyor beton (m3) — zames qilingan, hali jo'natilmagan
   asOf: Date;
 };
 
 /**
  * Zayavka/sotuv bo'limi uchun korxonaning butun qoldig'i: Skladdagi xomashyo,
- * Astatkadagi dona mahsulot (erkin/band), tayyor beton — har birini kim kiritgani va
+ * hovlidagi dona mahsulot (erkin/band), beton — har birini kim kiritgani va
  * xomashyo qoldig'i bilan yana qancha ishlab chiqarish mumkinligi bilan.
  */
 export async function stockSnapshot(): Promise<StockSnapshot> {
