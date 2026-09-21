@@ -149,35 +149,98 @@ src/app/verify/[noteNo]     ommaviy QR tekshiruv sahifasi (login shart emas)
 
 ## Serverga o'rnatish (VPS)
 
-Yangi Ubuntu 22/24 serverga bitta buyruq bilan — Node, PostgreSQL, Nginx, SSL, systemd xizmati va kunlik nusxa:
+Ubuntu 22/24, `root` bilan. Har bir blokni ketma-ket qo'yib chiqasiz.
 
 ```bash
-ssh root@<VPS-IP> 'bash -s' < scripts/deploy-vps.sh erp.domen.uz siz@pochta.uz
+# 1. Tizim + Node 22 + PostgreSQL + Nginx
+apt update && apt install -y curl git build-essential postgresql nginx ufw
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs
+
+# 2. Baza (PAROL o'rniga o'zingiznikini yozing)
+sudo -u postgres psql -c "CREATE ROLE insof LOGIN PASSWORD 'PAROL';"
+sudo -u postgres createdb -O insof insof_erp
+
+# 3. Kod
+git clone https://github.com/IkromovOtabek/InsofERP.git /var/www/insof-erp
+cd /var/www/insof-erp
+
+# 4. .env
+cat > .env <<EOF
+DATABASE_URL="postgresql://insof:PAROL@localhost:5432/insof_erp?schema=public"
+AUTH_SECRET="$(openssl rand -hex 32)"
+APP_URL="https://erp.domen.uz"
+EOF
+chmod 600 .env
+
+# 5. Build (1 GB RAM da avval swap: fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile)
+npm ci && npx prisma migrate deploy && npm run build
+npm run db:seed        # ixtiyoriy: admin/admin123 + namuna ma'lumot
+
+# 6. systemd xizmati
+cat > /etc/systemd/system/insof-erp.service <<'EOF'
+[Unit]
+Description=Insof ERP
+After=network.target postgresql.service
+
+[Service]
+WorkingDirectory=/var/www/insof-erp
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/usr/bin/npm run start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now insof-erp
+
+# 7. Nginx
+cat > /etc/nginx/sites-available/insof-erp <<'EOF'
+server {
+    listen 80;
+    server_name erp.domen.uz;
+    client_max_body_size 20m;          # imzolangan shartnoma 15 MB gacha
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
+EOF
+ln -sf /etc/nginx/sites-available/insof-erp /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+
+# 8. SSL + firewall (domen A-yozuvi shu serverga qaragan bo'lsin)
+apt install -y certbot python3-certbot-nginx && certbot --nginx -d erp.domen.uz
+ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw --force enable
 ```
 
-Domen bermasangiz IP bo'yicha 80-portda ishlaydi (SSL o'rnatilmaydi):
-`ssh root@<VPS-IP> 'bash -s' < scripts/deploy-vps.sh`
-
-Skript nima qiladi: Node 22 · PostgreSQL bazasi va roli (parol o'zi yaratiladi) · `/var/www/insof-erp` ga klon · `.env` (DATABASE_URL + AUTH_SECRET o'zi) · `npm ci && prisma migrate deploy && npm run build` · `insof-erp.service` · Nginx (proxy, `client_max_body_size 20m`) · `certbot` · `ufw` · kunlik `pg_dump` (soat 03:00, 14 kun saqlanadi).
-
-Sozlamalar: `REPO=… BRANCH=… APP_DIR=… PORT=… SEED=1` (buyruq oldiga yoziladi). `.env` bor bo'lsa tegilmaydi — AI/Telegram/ECO kalitlarini o'sha faylga qo'shib, `systemctl restart insof-erp`.
-
-**Keyingi deploylar:**
+**Keyingi deploylar** — bitta qator:
 
 ```bash
-ssh root@<VPS-IP> 'bash /var/www/insof-erp/scripts/update.sh'
+cd /var/www/insof-erp && git pull && npm ci && npx prisma migrate deploy && npm run build && systemctl restart insof-erp
 ```
 
-`git pull → npm ci → prisma migrate deploy → npm run build → systemctl restart`. Build yiqilsa eski versiya ishlayveradi (xizmat faqat build o'tgach qayta yuklanadi).
+**Kunlik baza nusxasi** (`scripts/server-backup.sh` repoda bor):
+
+```bash
+install -m 755 /var/www/insof-erp/scripts/server-backup.sh /usr/local/bin/erp-backup
+crontab -e   # 0 3 * * * APP_DIR=/var/www/insof-erp /usr/local/bin/erp-backup >> /var/log/erp-backup.log 2>&1
+```
 
 | Ish | Buyruq |
 | --- | --- |
 | Loglar | `journalctl -u insof-erp -f` |
 | Qayta yuklash | `systemctl restart insof-erp` |
-| Baza nusxasi (qo'lda) | `APP_DIR=/var/www/insof-erp /usr/local/bin/erp-backup` |
-| Nusxadan tiklash | `pg_restore -d "$DATABASE_URL" --clean --no-owner nusxa.dump` |
+| Tiklash | `pg_restore -d "$DATABASE_URL" --clean --no-owner nusxa.dump` |
 
-`uploads/` (imzolangan shartnomalar) `APP_DIR` ichida qoladi va yangilanishda o'chmaydi — nusxasini alohida oling.
+AI/Telegram/ECO kalitlarini `.env` ga qo'shgach `systemctl restart insof-erp`. `uploads/` (shartnoma fayllari) `/var/www/insof-erp/uploads` da — `pg_dump` uni olmaydi, alohida nusxa oling.
 
 ## Telegram bot (ovozli savol → AI javob)
 
