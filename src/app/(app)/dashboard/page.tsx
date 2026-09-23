@@ -8,6 +8,8 @@ import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
 import { money, qty, fmtNum } from "@/lib/format";
 import { Badge, Callout, Card, Empty, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
+import { LiveDrivers } from "../trips/live-drivers";
+import { ecoEnabled } from "@/lib/eco/client";
 import { OrderStatusBadge } from "../orders/status";
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
@@ -51,6 +53,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <StatCard label="Debitorka" value={money(receivable)} hint={debts.length ? `${debts.length} ta qarzdor` : "qarz yo'q"} icon={Wallet} tone={receivable > 0 ? "warning" : "default"} href="/invoices" />
         <StatCard label="Bloklangan" value={String(blocked)} hint="kredit limit" icon={ShieldAlert} tone={blocked > 0 ? "danger" : "default"} href="/orders?status=BLOCKED" />
       </div>
+
+      {/* Yo'ldagi mashinalar — bir qarashda. Ruxsatni server hal qiladi: sotuvchiga faqat
+          o'zi ochgan zayavkalarning reyslari ko'rinadi, yo'lda hech kim bo'lmasa blok chiqmaydi. */}
+      {ecoEnabled() && <LiveDrivers title="Hozir yo'lda" compact />}
 
       <Section title="Mikserlar" action={<Link href="/drivers" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Haydovchilar <ArrowRight size={14} /></Link>}>
         {mixers.length === 0 ? (

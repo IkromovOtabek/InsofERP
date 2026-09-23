@@ -32,7 +32,8 @@ export function ResetPasswordForm({ employeeId }: { employeeId: string }) {
         <Button variant="secondary" disabled={pending}><KeyRound size={15} /> Parolni almashtirish</Button>
       </div>
       <FormError error={state?.error} />
-      {state?.ok && <p className="text-xs text-emerald-700">Parol almashtirildi — xodimga yangi parolni bering</p>}
+      {state?.ok && <p className="text-xs text-emerald-700">Parol almashtirildi</p>}
+      {state?.note && <p className="text-xs text-slate-600">{state.note}</p>}
     </form>
   );
 }

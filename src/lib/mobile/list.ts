@@ -15,7 +15,7 @@ export type MobileList = { key: string; title: string; rows: HomeRow[]; filters?
 
 const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   orders: { title: "Zayavkalar", roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
-  trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
+  trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER"] },
   production: { title: "Zameslar", roles: ["PRODUCTION", "SUPERVISOR"] },
   tasks: { title: "Topshiriqlar", roles: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"] },
   stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"] },
@@ -59,8 +59,10 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   const s = q?.trim() || undefined;
   // Ishlab chiqarish uchun zayavkalar veb "/production" oynasidagidek: filtrlar va brigada holati bilan
   if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);
-  const rows = await build(key, s);
-  return { key, title: meta.title, rows };
+  // Haydovchi faqat o'ziga biriktirilgan reyslarni ko'radi
+  const driverId = user.role === "DRIVER" ? await driverEmployeeId(user.id) : undefined;
+  const rows = await build(key, s, driverId);
+  return { key, title: user.role === "DRIVER" && key === "trips" ? "Mening reyslarim" : meta.title, rows };
 }
 
 /**
@@ -97,7 +99,14 @@ async function productionOrders(title: string, q?: string, filter?: string): Pro
   };
 }
 
-async function build(key: string, q?: string): Promise<HomeRow[]> {
+/** Login qilgan haydovchining xodim kartasi — reyslar shu id bo'yicha filtrlanadi. */
+export async function driverEmployeeId(userId: string): Promise<string> {
+  const e = await db.employee.findFirst({ where: { userId }, select: { id: true } });
+  if (!e) throw new ListError("NO_EMPLOYEE", "Bu login xodim kartasiga bog'lanmagan — Otdel kadrga ayting", 403);
+  return e.id;
+}
+
+async function build(key: string, q?: string, driverId?: string): Promise<HomeRow[]> {
   switch (key) {
     case "orders": {
       const list = await db.order.findMany({
@@ -108,7 +117,10 @@ async function build(key: string, q?: string): Promise<HomeRow[]> {
     }
     case "trips": {
       const list = await db.trip.findMany({
-        where: q ? { OR: [{ deliveryNoteNo: { contains: q, mode: "insensitive" } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : undefined,
+        where: {
+          ...(driverId ? { driverId } : {}),
+          ...(q ? { OR: [{ deliveryNoteNo: { contains: q, mode: "insensitive" } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : {}),
+        },
         orderBy: { createdAt: "desc" }, take: TAKE, include: { order: { include: { customer: true } }, driver: true, vehicle: true },
       });
       return list.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}${t.ecoStatus ? ` · ${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}` : ""}`, right: m3(sum(t.qtyM3)), status: t.status, tone: t.ecoError ? "danger" : TRIP_TONE[t.status] }));

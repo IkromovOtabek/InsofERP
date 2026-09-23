@@ -78,7 +78,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         <tbody>
           {employees.length === 0 && <Empty text={filtering ? "Shu shartga mos xodim yo'q" : "Xodimlar yo'q"} />}
           {employees.map((e) => {
-            const role = roleForPosition(e.position);
+            // Bo'lim lavozimi — roli bor; haydovchi ham login olishi mumkin (DRIVER roli bilan)
+            const role = roleForPosition(e.position) ?? (drivers.includes(e.position) ? "DRIVER" : null);
             return (
               <Tr key={e.id}>
                 <Td className="font-medium">

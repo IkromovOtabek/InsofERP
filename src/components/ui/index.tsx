@@ -179,7 +179,7 @@ export function Badge({ color = "slate", children, dot = true }: { color?: Badge
 
 /* ═══════════════════════ Tabs (URL-based) ═══════════════════════ */
 
-export function Tabs({ items, current, className }: { items: { key: string; label: string; href: string; count?: number; icon?: LucideIcon }[]; current: string; className?: string }) {
+export function Tabs({ items, current, className }: { items: { key: string; label: React.ReactNode; href: string; count?: number; icon?: LucideIcon }[]; current: string; className?: string }) {
   return (
     <div className={cn("mb-4 flex gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white p-1 shadow-(--shadow-card)", className)}>
       {items.map((t) => {

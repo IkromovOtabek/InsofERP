@@ -6,6 +6,7 @@ import { CustomerName } from "@/components/customer-name";
 import { requireSession } from "@/lib/auth";
 import { money, date, isoDate } from "@/lib/format";
 import { Badge, Button, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
+import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
 import { deleteCashTx } from "./actions";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./categories";
@@ -67,6 +68,9 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         <StatCard label="Sof oqim" value={money(inc - exp)} icon={Wallet} tone={inc - exp >= 0 ? "success" : "danger"} />
         <StatCard label="Hisoblar qoldig'i" value={money([...balance.values()].reduce((a, b) => a + b, 0))} icon={Landmark} hint={accounts.map((a) => `${a.name}: ${money(balance.get(a.id) ?? 0)}`).join(" · ")} />
       </div>
+
+      {/* Moliya tasdig'i: Sotuv bo'limi tasdiqlagan ta'minot zayavkalari — soat ikonkasi bilan */}
+      <SupplyApprovals mode="finance" />
 
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">

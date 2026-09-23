@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { normalizePhone } from "@/lib/eco/client";
 import { driverPositionNames } from "@/lib/positions";
 import { customerMarks, markedName } from "@/lib/finance";
 import { requireSession } from "@/lib/auth";
@@ -17,6 +18,8 @@ export default async function NewTrip() {
   const driversOnly = drivers.filter((d) => driverNames.includes(d.position.trim().toLowerCase()));
   const driverOpts = driversOnly.length ? driversOnly : drivers;
   const marks = await customerMarks(orders.map((o) => o.customerId));
+  // Haydovchi ilovasiga reys telefon raqami bo'yicha boradi — raqamsiz xodim ECO'da topilmaydi
+  const driverList = driverOpts.map((d) => ({ id: d.id, fullName: d.fullName, vehicleId: d.vehicleId, phoneOk: !!normalizePhone(d.phone) }));
   const opts = orders.map((o) => {
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
@@ -25,7 +28,7 @@ export default async function NewTrip() {
   return (
     <div>
       <PageHeader title="Yangi reys" subtitle="Nakladnoy raqami avtomatik beriladi" />
-      <TripForm orders={opts} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null }))} drivers={driverOpts.map((d) => ({ id: d.id, fullName: d.fullName }))} />
+      <TripForm orders={opts} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null }))} drivers={driverList} />
     </div>
   );
 }

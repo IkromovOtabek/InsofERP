@@ -89,6 +89,8 @@ export function EmployeeForm({ departments, drivers, vehicles, canGrant }: {
   const [position, setPosition] = useState(departments[0]?.label ?? "");
   const needsLogin = !!departments.find((p) => p.label === position)?.role;
   const isDriver = drivers.includes(position);
+  // Haydovchiga login ixtiyoriy: ECO ilovasiga telefon bilan kiradi, ERP ilovasiga esa login/parol bilan
+  const showLogin = needsLogin || isDriver;
   useEffect(() => { if (state?.ok) { ref.current?.reset(); setPosition(departments[0]?.label ?? ""); } }, [state, departments]);
 
   return (
@@ -101,12 +103,15 @@ export function EmployeeForm({ departments, drivers, vehicles, canGrant }: {
         <Button disabled={pending || (needsLogin && !canGrant)}><Plus size={16} /> Qo&apos;shish</Button>
       </div>
       {isDriver && <DriverFields vehicles={vehicles} />}
-      {needsLogin && (
+      {showLogin && (
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:grid-cols-[1fr_1fr_2fr]">
-          <Field label="Login *"><Input name="login" autoComplete="off" required /></Field>
-          <Field label="Parol *"><PasswordInput name="password" autoComplete="new-password" required /></Field>
+          <Field label={needsLogin ? "Login *" : "Login"}><Input name="login" autoComplete="off" required={needsLogin} /></Field>
+          <Field label={needsLogin ? "Parol *" : "Parol"}><PasswordInput name="password" autoComplete="new-password" required={needsLogin} /></Field>
           <p className="self-end text-xs text-blue-800">
-            Bu lavozim egasi tizimga kirib, faqat o&apos;z bo&apos;limi sahifalarini ko&apos;radi.{!canGrant && " Login berish uchun Otdel kadr yoki direktor kerak."}
+            {needsLogin
+              ? "Bu lavozim egasi tizimga kirib, faqat o'z bo'limi sahifalarini ko'radi."
+              : "Ixtiyoriy: haydovchi ERP ilovasiga shu login/parol bilan kiradi va faqat o'z reyslarini ko'radi. Bo'sh qoldirsangiz — ECO ilovasiga telefon raqami bilan kiraveradi."}
+            {!canGrant && " Login berish uchun Otdel kadr yoki direktor kerak."}
           </p>
         </div>
       )}
@@ -175,6 +180,7 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
         <Button disabled={pending}>Saqlash</Button>
         {state?.ok && <span className="text-sm text-emerald-700">Saqlandi</span>}
       </div>
+      {state?.note && <p className="text-xs text-slate-600">{state.note}</p>}
       <FormError error={state?.error} />
     </form>
   );
@@ -188,6 +194,7 @@ export function GrantLoginForm({ employeeId }: { employeeId: string }) {
       <PasswordInput name="password" placeholder="parol" className="w-28 px-2 py-1 text-xs" autoComplete="new-password" required />
       <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending}>Login berish</Button>
       {state?.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
+      {state?.note && <span className="w-full text-xs text-slate-600">{state.note}</span>}
     </form>
   );
 }

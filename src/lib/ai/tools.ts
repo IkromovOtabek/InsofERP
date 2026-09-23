@@ -87,11 +87,11 @@ function salesAgg(rows: SaleRow[]) {
 const dayKey = (d: Date) => fmtDate(d);
 
 /** Nomlarni taqqoslash uchun soddalashtirish: kichik harf, w→v, x→h kabi eshitilishi bir xil harflar, belgilarsiz. */
-function normalize(s: string) {
+export function normalize(s: string) {
   return s.toLowerCase().replace(/['ʻʼ`’]/g, "").replace(/w/g, "v").replace(/x/g, "h").replace(/q/g, "k").replace(/[^a-z0-9а-яё ]+/g, " ").replace(/\s+/g, " ").trim();
 }
 /** Levenshtein masofasi — qisqa nomlar uchun yetarli. */
-function dist(a: string, b: string) {
+export function dist(a: string, b: string) {
   if (a === b) return 0;
   const m = a.length, n = b.length;
   let prev = Array.from({ length: n + 1 }, (_, j) => j);

@@ -3,6 +3,7 @@ import { audit } from "@/lib/audit";
 import { customerCredit, DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
 import { money } from "@/lib/format";
+import { routeDistance, type Distance } from "@/lib/geo";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -66,6 +67,9 @@ export type NewOrderInput = {
   deliveryDate: Date;
   deliveryTime: string;
   deliveryAddress: string;
+  /** Obyekt nuqtasi — forma xaritadan beradi. Bo'lmasa zayavka baribir saqlanadi. */
+  lat?: number | null;
+  lng?: number | null;
   items: NewOrderItem[];
   needsPump?: boolean;
   needsDelivery?: boolean;
@@ -95,6 +99,15 @@ export async function createOrder(
   if (items.length === 0) throw new Error("Kamida bitta mahsulot qatori kerak");
   if (items.some((i) => i.price < 0)) throw new Error("Narx manfiy bo'lmasin");
   if (!input.deliveryAddress.trim()) throw new Error("Obyekt manzili kerak");
+
+  // Zavoddan obyektgacha yo'l — nuqta berilgan va zavod joyi sozlangan bo'lsa
+  let dist: Distance | null = null;
+  if (input.lat != null && input.lng != null) {
+    const plant = await db.companySettings.findUnique({ where: { id: "main" }, select: { lat: true, lng: true } });
+    if (plant?.lat != null && plant?.lng != null) {
+      dist = await routeDistance({ lat: plant.lat, lng: plant.lng }, { lat: input.lat, lng: input.lng });
+    }
+  }
   if (!/^\d{2}:\d{2}$/.test(input.deliveryTime)) throw new Error("Yetkazish soati kerak (masalan 09:30)");
 
   const total = items.reduce((s, i) => s + i.qtyM3 * i.price, 0);
@@ -145,6 +158,10 @@ export async function createOrder(
         deliveryDate: input.deliveryDate,
         deliveryTime: input.deliveryTime,
         deliveryAddress: input.deliveryAddress,
+        lat: input.lat ?? null,
+        lng: input.lng ?? null,
+        // Masofa har doim serverda hisoblanadi — brauzerdan kelgan raqamga ishonmaymiz
+        ...(dist ? { distanceKm: dist.km, distanceSource: dist.source } : {}),
         needsPump: !!input.needsPump,
         needsDelivery: input.needsDelivery ?? true,
         isUrgent: !!input.isUrgent,

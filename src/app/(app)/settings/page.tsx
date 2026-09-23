@@ -8,6 +8,7 @@ import { dateTime } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
+import { PlantLocation } from "./plant-location";
 import { UserForm, ResetPasswordForm } from "./user-forms";
 import { toggleUser, saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 
@@ -53,7 +54,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 async function CompanyTab() {
   const c = await getCompany();
   return (
-    <Card>
+    <div className="space-y-4">
+      <Card>
       <h2 className="mb-1 font-semibold">Zavod rekvizitlari</h2>
       <p className="mb-4 text-sm text-slate-500">Nakladnoy, schyot va mijozlar sahifasida ishlatiladi.</p>
       <RowForm action={saveCompany} cols={3} submit="Saqlash" fields={[
@@ -66,13 +68,16 @@ async function CompanyTab() {
         { name: "email", label: "E-mail", defaultValue: c.email },
         { name: "workingHours", label: "Ish vaqti", defaultValue: c.workingHours },
         { name: "foundedYear", label: "Tashkil topgan yil", type: "number", defaultValue: c.foundedYear },
+        { name: "dailyCapacityM3", label: "Kunlik quvvat (m³)", type: "number", step: "1", defaultValue: c.dailyCapacityM3 ? Number(c.dailyCapacityM3) : "", placeholder: "200" },
         { name: "address", label: "Manzil", defaultValue: c.address, className: "sm:col-span-3" },
         { name: "bankName", label: "Bank", defaultValue: c.bankName },
         { name: "bankAccount", label: "Hisob raqam", defaultValue: c.bankAccount },
         { name: "mfo", label: "MFO", defaultValue: c.mfo },
         { name: "about", label: "Zavod haqida (mijozlar sahifasida ko'rinadi)", type: "textarea", defaultValue: c.about, className: "sm:col-span-3" },
       ]} />
-    </Card>
+      </Card>
+      <PlantLocation lat={c.lat} lng={c.lng} />
+    </div>
   );
 }
 

@@ -8,6 +8,7 @@ import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
+import { eco, ecoEnabled } from "@/lib/eco/client";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeCardForm } from "../employee-form";
 import { ChangeLoginForm, ResetPasswordForm, ToggleLoginButton } from "../login-forms";
@@ -26,6 +27,16 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
   ]);
   if (!e) notFound();
+
+  // Haydovchi bo'lsa — GPS izidan hisoblangan shu oylik yo'l (yoqilg'i va ish haqi uchun asos)
+  let mileage: { meters: number; trips: number } | null = null;
+  if (ecoEnabled() && e.ecoUserId) {
+    try {
+      const m = await eco.mileage();
+      mileage = m.drivers.find((d) => d.userId === e.ecoUserId) ?? { meters: 0, trips: 0 };
+    } catch { /* ECO o'chiq bo'lsa kartochka baribir ochiladi */ }
+  }
+  const km = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 
   return (
     <div>
@@ -82,6 +93,9 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
           <DL items={[
             { k: "Login", v: e.user ? <><code className="rounded bg-slate-100 px-1.5 py-0.5">{e.user.login}</code> · {ROLE_LABELS[e.user.role]}{!e.user.isActive && <> <Badge color="red">bloklangan</Badge></>}</> : <span className="text-slate-400">yo&apos;q</span> },
             { k: "Reyslar", v: e._count.trips > 0 ? <Link href={`/trips?status=tarix&driver=${e.id}`} className="font-medium text-slate-700 hover:underline">{e._count.trips} ta — tarixi</Link> : 0 },
+            ...(mileage ? [{ k: "Shu oyda yurgan", v: mileage.meters > 0
+              ? <><span className="font-medium text-slate-900">{km(mileage.meters)}</span> <span className="text-slate-500">· {mileage.trips} reys</span></>
+              : <span className="text-slate-400">GPS yozuvi yo&apos;q</span> }] : []),
             ...(e.vehicle ? [{ k: "Texnikasi", v: <>{e.vehicle.plate}{e.vehicle.capacityM3 ? ` · ${qty(e.vehicle.capacityM3)} m³` : ""}</> }] : []),
             ...(e.licenseNo || e.licenseCategory ? [{ k: "Guvohnoma", v: `${e.licenseNo ?? "—"}${e.licenseCategory ? ` · ${e.licenseCategory}` : ""}` }] : []),
             ...(e.licenseExpiry ? [{ k: "Guvohnoma muddati", v: licenseDaysLeft(e.licenseExpiry) < 30 ? <span className="text-red-600">{date(e.licenseExpiry)}</span> : date(e.licenseExpiry) }] : []),

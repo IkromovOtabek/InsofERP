@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-export type ActionState = { error?: string; ok?: boolean } | undefined;
+/** `note` — amal bajarildi, lekin yonidagi ish haqida aytadigan gap bor
+ *  (masalan: parol almashdi, ammo SMS ketmadi — telefon yo'q). */
+export type ActionState = { error?: string; ok?: boolean; note?: string } | undefined;
 
 /** FormData → zod. Xatoni o'zbekcha bitta satrda qaytaradi. */
 export function parseForm<T extends z.ZodTypeAny>(schema: T, fd: FormData): { data: z.infer<T> } | { error: string } {

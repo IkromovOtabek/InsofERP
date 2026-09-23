@@ -8,14 +8,18 @@ import { unitLabel } from "@/lib/unit";
 import { getSession } from "@/lib/auth";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight } from "lucide-react";
+import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight, ClipboardList, HardHat, ShoppingBasket } from "lucide-react";
+import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
+import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
+import { Card, CardHeader } from "@/components/ui";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Tayyor beton",
   SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish",
+  BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi",
 };
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
-const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi" };
+const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada" };
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string }> }) {
   const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
@@ -47,6 +51,22 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       ])
     : [[], [], [], []] as [Awaited<ReturnType<typeof productionCapacity>>, Awaited<ReturnType<typeof ostatkaSummary>>, [], []];
   const cb = new Map(cSums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
+  // Yangi kelgan ta'minot (oxirgi 7 kun): "yangi mahsulotlar keldi" belgisi va brigadaga taqsimlash taklifi
+  // Kelgan, lekin hali brigadalarga berilmagan mahsulotlar — "Brigadalar" yozuvi oldidagi raqam
+  const undistributed = await undistributedMaterials();
+  const arrivals = await db.supplyRequest.findMany({
+    where: { status: "RECEIVED", updatedAt: { gte: new Date(Date.now() - 7 * 864e5) } },
+    orderBy: { updatedAt: "desc" }, take: 5,
+    include: { items: true, receipt: { select: { id: true, docNo: true } } },
+  });
+  // Brigadalar tabi: qoldiq, ishlab chiqarish imkoni va taqsimlash formasi
+  const [brigStocks, warehouses] = tab === "brigades"
+    ? await Promise.all([
+        brigadeStocks(),
+        db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      ])
+    : [[], []] as [Awaited<ReturnType<typeof brigadeStocks>>, { id: string; name: string }[]];
+
   const canMakeBy = new Map(capacity.map((c) => [c.productId, c]));
   const pieceTotals = pieces.reduce((a, r) => ({ total: a.total + r.total, free: a.free + r.free, owned: a.owned + r.owned }), { total: 0, free: 0, owned: 0 });
 
@@ -55,13 +75,107 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       <PageHeader title="Sklad" subtitle="Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."
         action={canAdd ? (
           <div className="flex flex-wrap gap-2">
+            <LinkButton href="/snabjeniye" variant="ghost"><ShoppingBasket size={16} /> Snabjeniye oynasi</LinkButton>
             <LinkButton href="/stock/products/new" variant="secondary"><Plus size={16} /> Tayyor mahsulot qo&apos;shish</LinkButton>
-            <LinkButton href="/stock/materials/new"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
+            <LinkButton href="/stock/materials/new" variant="secondary"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
+            {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}
+            <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Kerakli mahsulotlar</LinkButton>
           </div>
         ) : undefined} />
-      <Tabs current={tab} items={[{ key: "balance", label: "Qoldiqlar", href: "/stock?tab=balance", icon: Boxes }, { key: "capacity", label: "Ishlab chiqarish imkoni", href: "/stock?tab=capacity", icon: Factory }, { key: "moves", label: "Harakat jurnali", href: "/stock?tab=moves", icon: History }]} />
+      <Tabs current={tab} items={[{ key: "balance", label: "Qoldiqlar", href: "/stock?tab=balance", icon: Boxes }, { key: "capacity", label: "Ishlab chiqarish imkoni", href: "/stock?tab=capacity", icon: Factory }, { key: "brigades", href: "/stock?tab=brigades", icon: HardHat,
+          label: undistributed.count > 0
+            ? <>Brigadalar <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">{undistributed.count}</span></>
+            : "Brigadalar" }, { key: "moves", label: "Harakat jurnali", href: "/stock?tab=moves", icon: History }]} />
       {added != null && (
         <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`} <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkonini ko&apos;rish</Link></Callout>
+      )}
+
+      {arrivals.length > 0 && (tab === "balance" || tab === "brigades") && (
+        <Callout tone="success" title={`Yangi mahsulotlar keldi — ${arrivals.length} ta ta'minot qabul qilindi`}>
+          <ul className="space-y-0.5">
+            {arrivals.map((a) => (
+              <li key={a.id}>
+                <Link href={`/taminot/${a.id}`} className="font-medium underline">{a.docNo}</Link>
+                {" · "}{a.items.length} qator{a.receipt ? <> · kirim <Link href={`/receipts/${a.receipt.id}`} className="underline">{a.receipt.docNo}</Link></> : null}
+                {" · "}{money(a.items.reduce((x, i) => x + Number(i.factQty ?? i.qty) * Number(i.factPrice ?? i.price), 0))}
+              </li>
+            ))}
+          </ul>
+          {tab !== "brigades" && <Link href="/stock?tab=brigades" className="mt-1 inline-block font-medium underline">Brigadalarga taqsimlash →</Link>}
+        </Callout>
+      )}
+
+      {tab === "brigades" && (
+        <div className="space-y-5">
+          <Card padded={false}>
+            <div className="p-5">
+              <CardHeader icon={HardHat}
+                title={undistributed.count > 0 ? `Brigadaga xomashyo berish · ${undistributed.count} ta mahsulot hali berilmagan` : "Brigadaga xomashyo berish"}
+                description={undistributed.count > 0
+                  ? `Taqsimlanmagan: ${undistributed.names.slice(0, 6).join(", ")}${undistributed.names.length > 6 ? ` va yana ${undistributed.names.length - 6} ta` : ""}. Berilgani sklad qoldig'idan chiqadi, brigada qoldig'iga o'tadi.`
+                  : "Kelgan mahsulotlarni brigadalarga taqsimlaysiz: berilgani sklad qoldig'idan chiqadi, brigada qoldig'iga o'tadi. Topshiriq bajarilganda retsept bo'yicha o'zi kamayadi."} />
+            </div>
+            <div className="px-5 pb-5">
+              {brigStocks.length === 0 ? (
+                <p className="text-sm text-slate-500">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> bo&apos;limida qo&apos;shing.</p>
+              ) : (
+                <BrigadeDistributeForm
+                  brigades={brigStocks.map((b) => ({ id: b.id, name: b.name, leader: b.leader }))}
+                  warehouses={warehouses}
+                  materials={materials.filter((m) => (mb.get(m.id) ?? 0) > 0.0005).map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, balance: mb.get(m.id) ?? 0 }))}
+                />
+              )}
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {brigStocks.map((b) => {
+              const makes = b.makes.filter((m) => m.canMake > 0).sort((x, y) => y.canMake - x.canMake).slice(0, 6);
+              return (
+                <Card key={b.id} padded={false}>
+                  <div className="p-5">
+                    <CardHeader icon={HardHat} title={b.name}
+                      description={`${b.leader ?? "brigadirsiz"} · ochiq topshiriq qoldig'i ${qty(b.openQty)}`}
+                      action={<Badge color={b.value > 0 ? "green" : "slate"}>{money(b.value)}</Badge>} />
+                    {b.materials.length === 0 ? (
+                      <p className="text-sm text-slate-500">Qo&apos;lida xomashyo yo&apos;q — yuqoridagi forma orqali bering.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead><tr className="text-left text-xs text-slate-500"><th className="py-1">Xomashyo</th><th className="py-1 text-right">Qoldiq</th><th className="py-1 text-right">Qiymati</th></tr></thead>
+                        <tbody>
+                          {b.materials.map((m) => (
+                            <tr key={m.materialId} className="border-t border-slate-100">
+                              <td className="py-1.5">{m.name}</td>
+                              <td className={cn("py-1.5 text-right tabular", m.qty < 0 && "font-medium text-red-600")}>{qty(m.qty)} {unitLabel(m.unit)}</td>
+                              <td className="py-1.5 text-right tabular text-slate-500">{money(m.cost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {b.materials.length > 0 && warehouses[0] && (
+                      <BrigadeReturnForm brigadeId={b.id} warehouseId={warehouses[0].id} materials={b.materials.map((m) => ({ materialId: m.materialId, name: m.name, unit: m.unit, qty: m.qty }))} />
+                    )}
+                    <h3 className="mt-4 mb-1.5 text-[13px] font-semibold text-slate-700">Shu xomashyo bilan ishlab chiqara oladi</h3>
+                    {makes.length === 0 ? (
+                      <p className="text-sm text-slate-500">Hech narsa — retsept xomashyosi yetishmaydi.</p>
+                    ) : (
+                      <ul className="space-y-1 text-sm">
+                        {makes.map((m) => (
+                          <li key={m.productId} className="flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate text-slate-700">{m.product}</span>
+                            <span className="shrink-0 font-semibold text-emerald-700 tabular">{qty(m.canMake)} {unitLabel(m.unit)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-500">Brigada qoldig&apos;i manfiy chiqsa — topshiriq skladdan xomashyo olmasdan bajarilgan (qarzga yozilgan): shu miqdorni brigadaga bersangiz nolga tushadi.</p>
+        </div>
       )}
 
       {tab === "capacity" && (
@@ -202,7 +316,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>
-                <Td>{m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
+                <Td>{m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
                 <Td>{m.createdBy.fullName}</Td>
               </Tr>
             ))}

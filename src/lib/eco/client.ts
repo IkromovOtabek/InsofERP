@@ -83,6 +83,15 @@ export type EcoPaymentPayload = {
 /** Haydovchining oxirgi ma'lum nuqtasi. etaMin — yetib borishgacha taxminiy daqiqa (faqat yo'lda bo'lsa). */
 export type EcoPosition = { deliveryId: string; lat: number; lng: number; speedKmh?: number; heading?: number; at: string; etaMin: number | null };
 
+/** GPS izi bo'yicha bosib o'tilgan yo'l va tezlik — masofa to'g'ri chiziq emas, haqiqiy yurilgan yo'l. */
+export type EcoOdometer = {
+  meters: number;
+  points: number;
+  movingMinutes: number;
+  avgSpeedKmh: number | null;
+  maxSpeedKmh: number | null;
+};
+
 /** Yo'ldagi bitta reys — ERP xaritasidagi bitta belgi. */
 export type EcoLiveTrip = {
   ref: string;
@@ -102,9 +111,24 @@ export type EcoLiveTrip = {
   slaBreached: boolean;
   /** null — haydovchi hali GPS yubormagan (ilova yopiq yoki ruxsat berilmagan) */
   position: EcoPosition | null;
+  /** Reys boshidan beri yurilgan yo'l. GPS bo'lmasa meters = 0 */
+  odometer: EcoOdometer;
 };
 
-export type EcoTrack = { ref: string; deliveryId: string; status: EcoStatus; points: { lat: number; lng: number; at: string; speedKmh: number | null }[] };
+/** Haydovchi kesimida bosib o'tilgan yo'l (davr bo'yicha). */
+export type EcoMileage = {
+  from: string;
+  to: string;
+  drivers: { driverId: string; userId: string; fullName: string; phone: string; trips: number; meters: number }[];
+};
+
+export type EcoTrack = {
+  ref: string;
+  deliveryId: string;
+  status: EcoStatus;
+  points: { lat: number; lng: number; at: string; speedKmh: number | null }[];
+  odometer: EcoOdometer;
+};
 
 export class EcoError extends Error {
   constructor(readonly code: string, message: string, readonly status: number, readonly details?: unknown) { super(message); }
@@ -171,6 +195,12 @@ export const eco = {
   positions: () => call<EcoLiveTrip[]>("GET", "/positions"),
   /** Bitta reysning to'liq izi. */
   track: (ref: string) => call<EcoTrack>("GET", `/trips/${encodeURIComponent(ref)}/track`),
+  /** Haydovchilar kesimida km. Davr berilmasa — joriy oy boshidan. */
+  mileage: (from?: Date, to?: Date) =>
+    call<EcoMileage>(
+      "GET",
+      `/mileage${from || to ? `?${new URLSearchParams({ ...(from ? { from: from.toISOString() } : {}), ...(to ? { to: to.toISOString() } : {}) })}` : ""}`,
+    ),
 };
 
 /** ERP'dagi erkin formatdagi telefon → ECO talab qiladigan +998XXXXXXXXX. Mos kelmasa null. */

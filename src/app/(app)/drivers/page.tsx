@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requireSession } from "@/lib/auth";
-import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelivery, type EcoVehicle } from "@/lib/eco/client";
+import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelivery, type EcoVehicle, type EcoMileage } from "@/lib/eco/client";
 import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -31,10 +31,15 @@ export default async function DriversPage() {
   const marks = await customerMarks(trips.map((t) => t.order.customerId));
   // ECO'dan jonli ma'lumot — server o'chiq bo'lsa sahifa baribir ochiladi
   let ping: Awaited<ReturnType<typeof eco.ping>> | null = null, ecoDrivers: EcoDriver[] = [], ecoVehicles: EcoVehicle[] = [], ecoTrips: EcoDelivery[] = [], ecoErr: string | null = null;
+  // Shu oyda bosib o'tilgan yo'l — GPS izidan hisoblanadi (yoqilg'i va ish haqi uchun asos)
+  let mileage: EcoMileage | null = null;
   if (enabled) {
     try { [ping, ecoDrivers, ecoVehicles, ecoTrips] = await Promise.all([eco.ping(), eco.drivers(), eco.vehicles(), eco.trips()]); }
     catch (e) { ecoErr = (e as Error).message; }
+    try { mileage = await eco.mileage(); } catch { /* km bo'lmasa sahifa baribir ochiladi */ }
   }
+  const kmByUser = new Map((mileage?.drivers ?? []).map((d) => [d.userId, d]));
+  const km = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
   const byUser = new Map(ecoDrivers.map((d) => [d.userId, d]));
   const byPhone = new Map(ecoDrivers.map((d) => [d.phone, d]));
   const linkedIds = new Set(employees.map((e) => e.ecoUserId).filter(Boolean));
@@ -80,7 +85,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
           {enabled && canManage && employees.some((e) => e.isActive && !e.ecoUserId) && <LinkAllButton />}
         </div>
         <Table>
-          <thead><tr><Th>F.I.O.</Th><Th>Telefon</Th><Th>ECO holati</Th><Th>Hozir</Th><Th right>Reyslar</Th><Th></Th></tr></thead>
+          <thead><tr><Th>F.I.O.</Th><Th>Telefon</Th><Th>ECO holati</Th><Th>Hozir</Th><Th right>Shu oyda</Th><Th right>Reyslar</Th><Th></Th></tr></thead>
           <tbody>
             {employees.length === 0 && <Empty text="Haydovchi lavozimli xodim yo'q — Xodimlar sahifasidan qo'shing" />}
             {employees.map((e) => {
@@ -100,6 +105,18 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
                     {e.ecoError && <div className="mt-0.5 max-w-xs text-xs text-red-600">{e.ecoError}</div>}
                   </Td>
                   <Td>{act ? <span className="text-sm"><Badge color={st!.color}>{st!.label}</Badge> {act.externalRef && <Link href={`/trips?q=${act.externalRef}`} className="text-xs text-slate-500 hover:underline">{act.externalRef}</Link>}</span> : d ? <span className="text-xs text-slate-500">{d.isAvailable ? "bo'sh" : "band"}</span> : "—"}</Td>
+                  <Td right>
+                    {(() => {
+                      const mi = d ? kmByUser.get(d.userId) : null;
+                      if (!mi || mi.meters === 0) return <span className="text-slate-400">—</span>;
+                      return (
+                        <span className="tabular">
+                          <span className="font-medium text-slate-900">{km(mi.meters)}</span>
+                          <span className="block text-xs text-slate-500">{mi.trips} reys</span>
+                        </span>
+                      );
+                    })()}
+                  </Td>
                   <Td right>{e._count.trips}</Td>
                   <Td>
                     {enabled && canManage && e.isActive && (!d || !e.ecoUserId) && <LinkDriverButton employeeId={e.id} relink={!!e.ecoUserId} />}

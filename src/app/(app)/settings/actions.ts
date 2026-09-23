@@ -21,13 +21,15 @@ const companySchema = z.object({
   name: zStr("Nomi kerak"), legalName: zOpt, inn: zOpt, address: zOpt, phone: zOpt, phone2: zOpt, email: zOpt,
   bankName: zOpt, bankAccount: zOpt, mfo: zOpt, directorName: zOpt, about: zOpt, workingHours: zOpt,
   foundedYear: z.coerce.number().int().min(1900).max(2100).optional().or(z.literal("").transform(() => undefined)),
+  // Kunlik ishlab chiqarish quvvati — Zayavkalar taqvimi shu chegaraga qarab rang beradi
+  dailyCapacityM3: z.coerce.number().min(1).max(100000).optional().or(z.literal("").transform(() => undefined)),
 });
 
 export async function saveCompany(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(companySchema, fd);
   if ("error" in r) return { error: r.error };
-  const data = { ...r.data, foundedYear: r.data.foundedYear ?? null };
+  const data = { ...r.data, foundedYear: r.data.foundedYear ?? null, dailyCapacityM3: r.data.dailyCapacityM3 ?? null };
   const before = await db.companySettings.findUnique({ where: { id: "main" } });
   const after = await db.companySettings.upsert({ where: { id: "main" }, update: data, create: { id: "main", ...data } });
   await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before, after);
@@ -161,4 +163,16 @@ export async function resetPassword(id: string, _prev: ActionState, fd: FormData
   await audit(db, s.userId, "UPDATE", "User", id, undefined, { passwordReset: true });
   refresh();
   return { ok: true };
+}
+
+/** Zavod nuqtasi — Sozlamalardagi xaritadan belgilanadi; masofalar shundan hisoblanadi. */
+export async function savePlantLocation(lat: number, lng: number) {
+  await requireSession(["DIRECTOR"]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error("Nuqta noto'g'ri");
+  await db.companySettings.upsert({
+    where: { id: "main" },
+    update: { lat, lng },
+    create: { id: "main", lat, lng },
+  });
+  revalidatePath("/settings");
 }

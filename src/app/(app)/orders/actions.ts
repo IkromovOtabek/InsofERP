@@ -22,6 +22,9 @@ const schema = z.object({
   deliveryDate: zStr("Yetkazish sanasi kerak"),
   deliveryTime: z.string().trim().regex(/^\d{2}:\d{2}$/, "Yetkazish soati kerak (masalan 09:30)"),
   deliveryAddress: zStr("Obyekt manzili kerak"),
+  // Xaritadan belgilangan nuqta; bo'sh bo'lishi mumkin. Masofa serverda hisoblanadi.
+  lat: z.coerce.number().optional().catch(undefined),
+  lng: z.coerce.number().optional().catch(undefined),
   needsPump: z.string().optional().transform((v) => v === "on"),
   needsDelivery: z.string().optional().transform((v) => v === "on"),
   isUrgent: z.string().optional().transform((v) => v === "on"),
@@ -60,6 +63,8 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         deliveryDate: new Date(d.deliveryDate),
         deliveryTime: d.deliveryTime,
         deliveryAddress: d.deliveryAddress,
+        lat: Number.isFinite(d.lat) ? d.lat : null,
+        lng: Number.isFinite(d.lng) ? d.lng : null,
         items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qtyM3[i]!, price: d.price[i]! })).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,

@@ -20,8 +20,9 @@ export async function addProgress(taskId: string, _prev: ActionState, fd: FormDa
   // Qoida `lib/tasks.ts` da — mobil ilova ham shuni chaqiradi
   const res = await taskProgress(taskId, d.qty, s.userId, d.note);
   if (res.error) return { error: res.error };
-  revalidatePath("/tasks"); revalidatePath("/brigades"); revalidatePath(`/orders/${res.orderId}`);
-  return { ok: true };
+  // Bajarilgan miqdor brigada xomashyosini kamaytiradi — sklad va brigada sahifalari ham yangilanadi
+  revalidatePath("/tasks"); revalidatePath("/brigades"); revalidatePath("/stock"); revalidatePath("/production"); revalidatePath(`/orders/${res.orderId}`);
+  return { ok: true, note: res.note };
 }
 
 export async function cancelTask(taskId: string) {

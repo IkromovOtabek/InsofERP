@@ -6,8 +6,11 @@ import { db } from "@/lib/db";
 import { requireSession, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { roleForPosition, isDriverPosition } from "@/lib/positions";
+import type { Role } from "@/generated/prisma";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { sendSms, smsNote } from "@/lib/sms";
+import { publicOrigin } from "@/lib/public-url";
 import type { Prisma } from "@/generated/prisma";
 
 const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
@@ -80,9 +83,23 @@ const cardSchema = schema.omit({ login: true, password: true }).extend({
   maritalStatus: zOpt,
 });
 
-/** Rolli lavozim uchun User yaratadi (tranzaksiya ichida). */
-async function createLoginFor(tx: Prisma.TransactionClient, fullName: string, position: string, login: string, password: string) {
-  const role = roleForPosition(position);
+/**
+ * Kirish ma'lumotlarini xodimga SMS bilan yuborish (login berildi / parol almashdi).
+ * Parolni ERP hech qayerda ochiq saqlamaydi, shuning uchun uni faqat SHU paytda —
+ * kadr kiritgan zahoti — yuborish mumkin. `SmsLog` ga maskalangan holda tushadi.
+ */
+async function loginSms(template: "login_granted" | "password_changed", phone: string | null, login: string, password: string) {
+  const { origin } = await publicOrigin();
+  return template === "login_granted"
+    ? sendSms("login_granted", phone, { login, password, url: `${origin}/login` })
+    : sendSms("password_changed", phone, { login, password });
+}
+
+/**
+ * Login yaratadi (tranzaksiya ichida). Rol: bo'lim lavozimi bo'lsa o'sha bo'limning roli,
+ * haydovchi lavozimi bo'lsa DRIVER — haydovchi ilovada faqat o'z reyslarini ko'radi.
+ */
+async function createLoginFor(tx: Prisma.TransactionClient, fullName: string, role: Role | null, login: string, password: string) {
   if (!role) throw new Error("Bu lavozim uchun tizim roli yo'q");
   if (login.length < 3) throw new Error("Login kamida 3 belgi");
   if (password.length < 6) throw new Error("Parol kamida 6 belgi");
@@ -94,16 +111,18 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
-  const role = roleForPosition(d.position);
-  if (role && (!d.login || !d.password)) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
+  const deptRole = roleForPosition(d.position);
+  const driver = await isDriverPosition(d.position);
+  // Bo'lim lavozimi — login majburiy; haydovchi — ixtiyoriy (kiritilsa DRIVER roli bilan ochiladi)
+  const role: Role | null = deptRole ?? (driver && d.login && d.password ? "DRIVER" : null);
+  if (deptRole && (!d.login || !d.password)) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
 
-  const driver = await isDriverPosition(d.position);
   let createdId: string | null = null;
   let vehicleId: string | null = null;
   try {
     await db.$transaction(async (tx) => {
-      const user = role ? await createLoginFor(tx, d.fullName, d.position, d.login!, d.password!) : null;
+      const user = role ? await createLoginFor(tx, d.fullName, role, d.login!, d.password!) : null;
       // Haydovchi bo'lsa texnikasi ham shu yerda ochiladi/biriktiriladi
       const extra = driver ? await driverData(tx, s.userId, d) : {};
       const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note, userId: user?.id, ...extra } });
@@ -121,7 +140,11 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   if (createdId && driver) pushEmployeeSilently(createdId);
   if (vehicleId) pushVehicleSilently(vehicleId);
   revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
-  return { ok: true };
+
+  // Tizimga kiradigan xodim bo'lsa — login va parol SMS bilan. Ketmasa ham xodim yaratilgan:
+  // natija `note` da qaytadi, kadr parolni o'zi aytishi kerakligini ko'radi.
+  if (!role) return { ok: true };
+  return { ok: true, note: smsNote(await loginSms("login_granted", d.phone, d.login!, d.password!)) };
 }
 
 /** Mavjud xodimga login berish. */
@@ -131,9 +154,11 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
   const password = String(fd.get("password") ?? "");
   const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
   if (e.userId) return { error: "Bu xodimda login bor" };
+  const role: Role | null = roleForPosition(e.position) ?? ((await isDriverPosition(e.position)) ? "DRIVER" : null);
+  if (!role) return { error: `"${e.position}" lavozimi tizimga kirmaydi — Otdel kadrda lavozimni "haydovchi ilovasiga chiqadi" deb belgilang yoki bo'lim lavozimini tanlang` };
   try {
     await db.$transaction(async (tx) => {
-      const u = await createLoginFor(tx, e.fullName, e.position, login, password);
+      const u = await createLoginFor(tx, e.fullName, role, login, password);
       await tx.employee.update({ where: { id: employeeId }, data: { userId: u.id } });
       await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, { login: u.login, role: u.role });
     });
@@ -144,7 +169,7 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
     throw err;
   }
   revalidatePath("/employees"); revalidatePath("/settings");
-  return { ok: true };
+  return { ok: true, note: smsNote(await loginSms("login_granted", e.phone, login, password)) };
 }
 
 /** Xodimni o'chirish/yoqish — bog'langan login ham birga bloklanadi/ochiladi. */
@@ -245,7 +270,7 @@ export async function resetEmployeePassword(employeeId: string, _prev: ActionSta
     await audit(tx, s.userId, "UPDATE", "User", t.user.id, undefined, { passwordReset: true });
   });
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/settings");
-  return { ok: true };
+  return { ok: true, note: smsNote(await loginSms("password_changed", t.employee.phone, t.user.login, password)) };
 }
 
 /**

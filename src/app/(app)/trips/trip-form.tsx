@@ -6,20 +6,35 @@ import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActi
 
 type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number };
 type Vehicle = { id: string; plate: string; capacityM3: number | null };
-type Driver = { id: string; fullName: string };
+/** vehicleId — xodim kartasida biriktirilgan mikser; phoneOk — ECO topa oladigan +998… raqami bormi. */
+type Driver = { id: string; fullName: string; vehicleId: string | null; phoneOk: boolean };
 
 export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehicles: Vehicle[]; drivers: Driver[] }) {
   const [state, action, pending] = useActionState(createTrip, undefined);
   const [orderId, setOrderId] = useState(orders[0]?.id ?? "");
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? "");
+  // Mikserga biriktirilgan haydovchi — Xodimlar kartasidagi "biriktirilgan texnika"
+  const driverOfVehicle = (vid: string) => drivers.find((d) => d.vehicleId === vid);
+  const [driverId, setDriverId] = useState(driverOfVehicle(vehicles[0]?.id ?? "")?.id ?? drivers[0]?.id ?? "");
   const order = orders.find((o) => o.id === orderId);
   const vehicle = vehicles.find((v) => v.id === vehicleId);
+  const driver = drivers.find((d) => d.id === driverId);
+  // Biriktirilgani ro'yxat boshida tursin
+  const driverList = [...drivers].sort((a, b) => Number(b.vehicleId === vehicleId) - Number(a.vehicleId === vehicleId));
   const [qty, setQty] = useState(order ? String(Math.min(vehicle?.capacityM3 ?? order.remainingM3, order.remainingM3)) : "");
 
   const suggest = (o?: Order, v?: Vehicle) => {
     if (!o) return;
     const cap = v?.capacityM3 ?? o.remainingM3;
     setQty(String(Math.min(cap, o.remainingM3)));
+  };
+
+  // Mikser almashtirilsa — o'sha mashinaning haydovchisiga o'tamiz (biriktirilmagan bo'lsa tanlov qoladi)
+  const pickVehicle = (vid: string) => {
+    setVehicleId(vid);
+    const d = driverOfVehicle(vid);
+    if (d) setDriverId(d.id);
+    suggest(order, vehicles.find((v) => v.id === vid));
   };
 
   return (
@@ -33,12 +48,24 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
       {order && <p className="text-sm text-slate-600">Manzil: {order.address}</p>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Mikser *">
-          <Select name="vehicleId" value={vehicleId} onChange={(e) => { setVehicleId(e.target.value); suggest(order, vehicles.find((v) => v.id === e.target.value)); }}>
+          <Select name="vehicleId" value={vehicleId} onChange={(e) => pickVehicle(e.target.value)}>
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate}{v.capacityM3 ? ` (${v.capacityM3} m³)` : ""}</option>)}
           </Select>
         </Field>
-        <Field label="Haydovchi *">
-          <Select name="driverId" defaultValue={drivers[0]?.id}>{drivers.map((d) => <option key={d.id} value={d.id}>{d.fullName}</option>)}</Select>
+        <Field
+          label="Haydovchi *"
+          hint={driverOfVehicle(vehicleId) ? "Mikserga biriktirilgan haydovchi — kerak bo'lsa almashtiring" : "Bu mikserga haydovchi biriktirilmagan (Xodimlar kartasida biriktiriladi)"}
+          error={driver && !driver.phoneOk ? "Telefon raqami yo'q — reys haydovchi ilovasiga bormaydi. Xodimlar sahifasida +998… formatida kiriting." : undefined}
+        >
+          <Select name="driverId" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
+            {driverList.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.fullName}
+                {d.vehicleId === vehicleId ? " · shu mikser" : ""}
+                {d.phoneOk ? "" : " · telefon yo'q"}
+              </option>
+            ))}
+          </Select>
         </Field>
       </div>
       <Field label="Miqdor, m³ *" hint="Mikser sig'imi va zayavka qoldig'idan kichigi taklif qilinadi">

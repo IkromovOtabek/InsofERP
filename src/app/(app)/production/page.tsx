@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 // Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
 import { PRODUCTION_FILTERS, assigned, dueLabel, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import { OrderStatusBadge } from "../orders/status";
-import { AssignForm } from "./assign-form";
+import { AssignForm, type Capacity } from "./assign-form";
+import { brigadeStocks } from "@/lib/brigade-stock";
 
 /**
  * Ishlab chiqarish oynasi: saqlangan zayavkalar (qoralama, tasdiqlangan, ishlab chiqarilmoqda) shu yerga tushadi.
@@ -39,6 +40,19 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const soonCount = allOrders.filter(isSoon).length;
   const selected = selectedId ? allOrders.find((o) => o.id === selectedId) : undefined;
   const bOpts = brigades.map((b) => ({ id: b.id, name: b.name, leader: b.leader?.fullName ?? null }));
+  // Brigada tayinlashda kerak: qaysi brigada qo'lidagi xomashyo bilan qanchasini chiqara oladi
+  const capacity: Capacity = {};
+  if (selected) {
+    for (const b of await brigadeStocks()) {
+      for (const m of b.makes) {
+        (capacity[m.productId] ??= {})[b.id] = {
+          canMake: m.canMake,
+          limiting: m.limiting ? `${m.limiting.name} — brigadada ${qty(m.limiting.balance)} ${m.limiting.unit}, normasi ${qty(m.limiting.perUnit)}` : null,
+          items: m.items.map((x) => ({ name: x.name, unit: x.unit, perUnit: x.perUnit, have: x.balance })),
+        };
+      }
+    }
+  }
 
   return (
     <div>
@@ -55,7 +69,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
             />
           </div>
           {brigades.length === 0 && <p className="px-5 pb-3 text-sm text-red-600">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> sahifasida qo&apos;shing.</p>}
-          <AssignForm orderId={selected.id} brigades={bOpts} items={selected.items.map((i) => ({ id: i.id, product: i.product.name, qty: qty(i.qtyM3), unit: unitLabel(i.product.unit), taskNo: i.task?.taskNo ?? null, brigade: i.brigade?.name ?? null }))} />
+          <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
+            items={selected.items.map((i) => ({ id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit), taskNo: i.task?.taskNo ?? null, brigade: i.brigade?.name ?? null }))} />
         </Card>
       )}
 

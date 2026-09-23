@@ -1,6 +1,7 @@
 "use client";
 
 import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload } from "lucide-react";
+import { AddressPicker } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState } from "react";
 import { createOrder } from "./actions";
@@ -118,7 +119,7 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
   );
 }
 
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, cashAccounts, preselectCustomer, contractAccept }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, cashAccounts, preselectCustomer, contractAccept, geoSearch }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [customer, setCustomer] = useState<CustomerOpt | null>(customers.find((c) => c.id === preselectCustomer) ?? null);
@@ -334,7 +335,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Field label="Yetkazish sanasi *"><Input name="deliveryDate" type="date" defaultValue={tomorrow} required /></Field>
         <Field label="Soat *" hint="Obyektga necha da yetkazish"><Input name="deliveryTime" type="time" defaultValue="09:00" step="900" required /></Field>
-        <Field label="Obyekt manzili *" className="col-span-2"><Input name="deliveryAddress" placeholder="Ko'cha, mo'ljal, obyekt nomi" required /></Field>
+        <AddressPicker searchEnabled={geoSearch} required />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

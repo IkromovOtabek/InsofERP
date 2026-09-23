@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { customerCredit } from "@/lib/finance";
@@ -11,6 +11,8 @@ import { TaskStatusBadge } from "../../tasks/status";
 import { unitLabel } from "@/lib/unit";
 import { OrderStatusBadge, SALES_STATUSES } from "../status";
 import { TripStatusBadge } from "../../trips/status";
+import { LiveDrivers } from "../../trips/live-drivers";
+import { ecoEnabled } from "@/lib/eco/client";
 import { InvoiceStatusBadge } from "../../invoices/status";
 import { confirmOrder, unblockOrder, cancelOrder, toggleGuarantee } from "../actions";
 import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
@@ -202,7 +204,42 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             { k: "Mijoz", v: <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} href={`/customers/${o.customerId}`} /> },
             { k: "Telefon", v: o.customer.phone },
             { k: "Yetkazish", v: <span className="font-medium">{deliveryAt(o.deliveryDate, o.deliveryTime)}</span> },
-            { k: "Manzil", v: o.deliveryAddress },
+            {
+              k: "Manzil",
+              v: (
+                <span>
+                  {o.deliveryAddress}
+                  {o.lat != null && o.lng != null ? (
+                    <a
+                      href={`https://yandex.uz/maps/?pt=${o.lng},${o.lat}&z=17&l=map`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 inline-flex items-center gap-1 text-xs text-slate-500 underline hover:text-slate-900"
+                    >
+                      <MapPin size={11} /> xaritada
+                    </a>
+                  ) : (
+                    // Nuqtasiz zayavkada haydovchida navigatsiya ishlamaydi — sotuvchi buni ko'rsin
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-700">
+                      <TriangleAlert size={11} /> xaritada belgilanmagan
+                    </span>
+                  )}
+                </span>
+              ),
+            },
+            ...(o.distanceKm != null
+              ? [{
+                  k: "Zavoddan masofa",
+                  v: (
+                    <span>
+                      <span className="font-medium">{Number(o.distanceKm)} km</span>
+                      <span className="ml-1 text-xs text-slate-400">
+                        {o.distanceSource === "ROUTE" ? "(yo'l bo'yicha)" : "(to'g'ri chiziq)"}
+                      </span>
+                    </span>
+                  ),
+                }]
+              : []),
             { k: "Nasos", v: o.needsPump ? "Kerak" : "Yo'q" },
             { k: "Dastavka", v: o.needsDelivery ? "Kerak" : "Mijoz o'zi olib ketadi" },
             { k: "Ustuvorlik", v: o.isUrgent ? <Badge color="red"><Zap size={11} /> Zarur</Badge> : "Oddiy" },
@@ -255,6 +292,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </Card>
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Reyslar" icon={Truck} /></div>
+          {/* Yo'ldagi mashina — sotuvchi mijozga "qayerda?" degan savolga o'zi javob bersin.
+              Faol reys bo'lmasa blok o'zini ko'rsatmaydi. */}
+          {ecoEnabled() && (
+            <div className="px-5">
+              <LiveDrivers orderRef={o.orderNo} title="Shu zayavka bo'yicha yo'lda" compact />
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead><tr><Th>Nakladnoy</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>m³</Th><Th>Holat</Th></tr></thead>
             <tbody>

@@ -101,6 +101,9 @@ export async function pushOrder(orderId: string): Promise<PushResult> {
       },
       status: o.status,
       address: o.deliveryAddress,
+      // Obyekt nuqtasi — haydovchi ilovasidagi navigatsiya, ETA va "yetib bordi"
+      // avtomatikasi shu koordinataga tayanadi
+      ...(o.lat != null && o.lng != null ? { location: { lat: o.lat, lng: o.lng } } : {}),
       scheduledAt: o.deliveryDate.toISOString(),
       needsPump: o.needsPump,
       note: o.note ?? undefined,

@@ -24,6 +24,44 @@
   --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
   --shadow-pop: 0 10px 30px -12px rgb(15 23 42 / 0.25);
   --radius-card: 14px;
+
+  /* ───────── Ommaviy sayt paletasi ─────────
+     Ranglar materialning o'zidan olingan: qurigan beton salqin-neytral kulrang
+     (ozgina yashil tusda — sof kulrang "tanlanmagan" bo'lib ko'rinadi), quyma
+     qorong'i va zavod pultidagi signal sarig'i. ERP slate shkalasidan alohida,
+     shuning uchun dark rejim uni ag'darmaydi. */
+  --color-beton-50: #f2f1ee;
+  --color-beton-100: #e5e4e0;
+  --color-beton-200: #d8d7d2;
+  --color-beton-300: #c4c3bd;
+  --color-beton-400: #a3a29a;
+  --color-beton-500: #7d7d75;
+  --color-beton-600: #5e5f59;
+  --color-beton-700: #45474a;
+  --color-beton-800: #24272a;
+  --color-beton-900: #191c1e;
+  --color-beton-950: #101214;
+  /* Brend ko'ki — logotipdagi plitka rangi va uning quyuq tuslari */
+  --color-insof-400: #7091e2;
+  --color-insof-500: #4f6ebe;
+  --color-insof-600: #3f5aa3;
+  --color-insof-700: #2f4680;
+  --color-insof-900: #17233d;   /* tepa qatori, poydevor */
+
+  /* Harakat rangi — qurilish to'q sarig'i. Faqat tugma va urg'uda. */
+  --color-signal: #ef7a1a;
+  --color-signal-600: #d9660c;
+  --color-signal-dim: #b85708;  /* ochiq fonda matn uchun — kontrast yetarli bo'lsin */
+
+  /* Sayt shriftlari — sanoat/muhandislik ohangida, logotipdagi kvadratsimon
+     grotesk bilan bir oilada turadi:
+       · Saira — sarlavha, keng va burchakli harflar (logotipga eng yaqini);
+       · IBM Plex Sans — matn, texnik hujjat shrifti;
+       · IBM Plex Mono — kod, marka, raqam (nakladnoy yozuvi).
+     var() ichidagi zaxira qiymat majburiy: shriftlar faqat sayt qobig'ida
+     ulanadi, ERP sahifalarida bu o'zgaruvchilar yo'q. */
+  --font-display: var(--font-saira, ui-sans-serif), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
 }
 
 :root {
@@ -144,6 +182,49 @@
 }
 .dark .paper .bg-slate-900.text-white { color: #fff; }   /* qog'ozdagi "Chop etish" tugmasi */
 .dark .paper { box-shadow: 0 0 0 1px #334155, var(--shadow-pop); }
+
+/* ───────── Ommaviy sayt qobig'i ─────────
+   Sayt xodimning ERP rejimidan qat'i nazar bir xil ko'rinadi: `.site` slate
+   tokenlarini asl (ochiq) qiymatiga qaytaradi — `.paper` bilan bir xil usul. */
+.site {
+  color-scheme: light;
+  --color-white: #fff;
+  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+  --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
+  --logo-blue: #4f6ebe;
+
+  /* Shrift o'zgaruvchilari shu yerda qayta belgilanadi.
+     Sabab: `@theme` dagi --font-display/--font-mono `:root` da hisoblanadi, sayt
+     shriftlari esa faqat shu elementda (next/font sinflari bilan) mavjud —
+     ya'ni `:root` da var(--font-saira) bo'sh chiqib, zaxiraga tushib ketardi. */
+  --font-display: var(--font-saira), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), SFMono-Regular, Menlo, monospace;
+
+  /* Sayt matni ERP'dagi Jakarta emas — muhandislik ohangi uchun Plex Sans */
+  font-family: var(--font-plex-sans), system-ui, sans-serif;
+}
+.site .text-white { color: #fff; }
+
+/* Beton yuzasi — juda nozik don. Tekis rang plastmassaday ko'rinadi,
+   don esa panelga material hissini beradi. */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .45;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E");
+}
+.grain-light::after { mix-blend-mode: overlay; opacity: .3; }
+
+/* Marka lentasi — mahsulot kodlari sekin suriladi. Ro'yxat ikki marta
+   chiziladi, shuning uchun -50% da takrorlanish ko'zga tashlanmaydi. */
+@keyframes marka-run { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marka-run { animation: marka-run 48s linear infinite; }
+.marka:hover .marka-run { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .marka-run { animation: none; } }
 
 html { scroll-behavior: smooth; }
 

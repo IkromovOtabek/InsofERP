@@ -16,7 +16,8 @@
     "bot": "tsx watch --clear-screen=false scripts/telegram-bot.ts",
     "ai": "tsx scripts/ai-ask.ts",
     "bot:webhook": "tsx scripts/telegram-webhook.ts",
-    "eco:sync": "tsx scripts/eco-sync.ts"
+    "eco:sync": "tsx scripts/eco-sync.ts",
+    "sms": "tsx scripts/sms.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

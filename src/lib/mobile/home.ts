@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
+import { eco, ecoEnabled } from "@/lib/eco/client";
+import { visibleTrips } from "@/lib/eco/visibility";
 import { CREATE_ROLES, canCreate } from "./create";
 import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
@@ -32,6 +34,27 @@ export type MobileHome = {
   quick: QuickAction[];
   cards: HomeCard[];
   sections: HomeSection[];
+  /**
+   * Yo'ldagi mashinalar — ilova bosh ekranda xaritada ko'rsatadi.
+   * Kim nimani ko'rishi serverda hal bo'ladi (`lib/eco/visibility.ts`): sotuvchiga faqat
+   * o'zi ochgan zayavkalarning reyslari. Bo'sh bo'lsa ilova xaritani chizmaydi.
+   */
+  live: LiveTruck[];
+};
+
+/** Xaritadagi bitta mashina. `km` — reys boshidan beri GPS izi bo'yicha yurilgan yo'l. */
+export type LiveTruck = {
+  ref: string;
+  /** ERP reysining id'si — qator bosilganda kartochka shu bo'yicha ochiladi. Topilmasa null. */
+  tripId: string | null;
+  lat: number;
+  lng: number;
+  plate: string;
+  driver: string;
+  customer: string;
+  status: string;
+  km: number;
+  etaMin: number | null;
 };
 
 /** Har bir rolning "ishchi" ro'yxati — `lib/mobile/list.ts` dagi kalit. */
@@ -47,6 +70,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   FINANCE: { key: "cashflow", title: "Kirim-chiqim" },
   HR: { key: "employees", title: "Xodimlar" },
   CASHIER: { key: "payments", title: "To'lovlar" },
+  DRIVER: { key: "trips", title: "Mening reyslarim" },
 };
 
 /** Tezkor amal katakchasi ikonlari. */
@@ -311,7 +335,60 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
       );
       break;
     }
+
+    // Haydovchi: faqat o'ziga biriktirilgan reyslar. Login xodim kartasiga bog'langan bo'lishi shart.
+    case "DRIVER": {
+      const me = await db.employee.findFirst({ where: { userId: user.id }, select: { id: true, vehicle: { select: { plate: true } } } });
+      if (!me) {
+        cards.push({ key: "nolink", label: "Xodim kartasi yo'q", value: "—", hint: "Otdel kadrga ayting", tone: "danger", icon: "alert-circle" });
+        break;
+      }
+      const [todayTrips, active, doneToday, upcoming] = await Promise.all([
+        db.trip.findMany({ where: { driverId: me.id, createdAt: { gte: today } }, select: { qtyM3: true, status: true } }),
+        db.trip.findMany({ where: { driverId: me.id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true } }, vehicle: true } }),
+        db.trip.aggregate({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: today } }, _sum: { qtyM3: true }, _count: true }),
+        db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED" }, orderBy: { deliveredAt: "desc" }, take: 8, include: { order: { include: { customer: true } }, vehicle: true } }),
+      ]);
+      cards.push(
+        { key: "active", label: "Ochiq reys", value: String(active.length), hint: me.vehicle?.plate ?? "mashina biriktirilmagan", tone: active.length ? "brand" : "success", icon: "bus" },
+        { key: "todayM3", label: "Bugun yetkazdim", value: m3(sum(doneToday._sum.qtyM3)), hint: `${doneToday._count} reys`, tone: "success", icon: "checkmark-done" },
+        { key: "todayAll", label: "Bugungi reyslar", value: String(todayTrips.length), tone: "info", icon: "today" },
+      );
+      sections.push(
+        { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) },
+        { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? day(t.deliveredAt) : ""} · ${t.vehicle.plate}`, right: m3(sum(t.qtyM3)), status: t.status, tone: "success" })) },
+      );
+      break;
+    }
   }
 
-  return { ...base, cards, sections };
+  return { ...base, cards, sections, live: await liveTrucks(user) };
+}
+
+/** Yo'ldagi mashinalar — ECO o'chiq yoki yetib bormasa bo'sh ro'yxat (bosh ekran buzilmaydi). */
+async function liveTrucks(user: MobileUser): Promise<LiveTruck[]> {
+  if (!ecoEnabled()) return [];
+  try {
+    const trips = (await visibleTrips({ userId: user.id, role: user.role }, await eco.positions())).filter((t) => t.position);
+    // ECO `ref` = ERP nakladnoy raqami; kartochka esa Trip.id bo'yicha ochiladi
+    const ids = new Map(
+      (await db.trip.findMany({ where: { deliveryNoteNo: { in: trips.map((t) => t.ref) } }, select: { id: true, deliveryNoteNo: true } }))
+        .map((t) => [t.deliveryNoteNo, t.id]),
+    );
+    return trips
+      .map((t) => ({
+        ref: t.ref,
+        tripId: ids.get(t.ref) ?? null,
+        lat: t.position!.lat,
+        lng: t.position!.lng,
+        plate: t.plate ?? "—",
+        driver: t.driver ?? "haydovchi yo'q",
+        customer: t.customer,
+        status: ecoLabel(t.status)?.label ?? t.status,
+        km: Math.round(t.odometer.meters / 100) / 10,
+        etaMin: t.position!.etaMin,
+      }));
+  } catch {
+    return [];
+  }
 }

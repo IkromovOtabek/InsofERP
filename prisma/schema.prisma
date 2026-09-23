@@ -26,6 +26,7 @@ enum Role {
   FINANCE // finance
   HR // otdel kadr
   CASHIER // kassa / bank
+  DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
 }
 
 model User {
@@ -38,39 +39,50 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  orders        Order[]            @relation("OrderCreatedBy")
-  batches       ProductionBatch[]  @relation("BatchCreatedBy")
-  stockMoves    StockMove[]        @relation("MoveCreatedBy")
-  receipts      GoodsReceipt[]     @relation("ReceiptCreatedBy")
-  tasks         BrigadeTask[]      @relation("TaskCreatedBy")
-  taskProgress  TaskProgress[]     @relation("ProgressCreatedBy")
-  cashTx        CashTransaction[]  @relation("CashTxCreatedBy")
+  orders        Order[]             @relation("OrderCreatedBy")
+  batches       ProductionBatch[]   @relation("BatchCreatedBy")
+  stockMoves    StockMove[]         @relation("MoveCreatedBy")
+  receipts      GoodsReceipt[]      @relation("ReceiptCreatedBy")
+  tasks         BrigadeTask[]       @relation("TaskCreatedBy")
+  taskProgress  TaskProgress[]      @relation("ProgressCreatedBy")
+  cashTx        CashTransaction[]   @relation("CashTxCreatedBy")
   auditLogs     AuditLog[]
   employee      Employee?
-  marketing     MarketingEntry[]   @relation("MarketingCreatedBy")
+  marketing     MarketingEntry[]    @relation("MarketingCreatedBy")
   telegram      TelegramAccount[]
+  aiActions     AiAction[]
   telegramCodes TelegramLinkCode[]
+  resetCodes    PasswordResetCode[]
+  supplyReqs    SupplyRequest[]     @relation("SupplyCreatedBy")
+  supplyEvents  SupplyEvent[]       @relation("SupplyEventBy")
+  brigadeMoves  BrigadeMove[]       @relation("BrigadeMoveBy")
+  leads         Lead[]              @relation("LeadHandledBy")
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
 
 model CompanySettings {
-  id           String   @id @default("main")
-  name         String   @default("Insof beton zavodi")
-  legalName    String? // yuridik nomi (MChJ)
-  inn          String?
-  address      String?
-  phone        String?
-  phone2       String?
-  email        String?
-  bankName     String?
-  bankAccount  String?
-  mfo          String?
-  directorName String?
-  about        String? // landing uchun qisqa matn
-  workingHours String?  @default("Dush–Shan 08:00–18:00")
-  foundedYear  Int?
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default("main")
+  name            String   @default("Insof beton zavodi")
+  legalName       String? // yuridik nomi (MChJ)
+  inn             String?
+  address         String?
+  // Zavod joyi — barcha masofa shu nuqtadan hisoblanadi (Sozlamalar sahifasida xaritadan belgilanadi)
+  lat             Float?
+  lng             Float?
+  phone           String?
+  phone2          String?
+  email           String?
+  bankName        String?
+  bankAccount     String?
+  mfo             String?
+  directorName    String?
+  about           String? // landing uchun qisqa matn
+  workingHours    String?  @default("Dush–Shan 08:00–18:00")
+  /// Kunlik ishlab chiqarish quvvati, m³ — Zayavkalar taqvimi shu chegaraga qarab rang beradi
+  dailyCapacityM3 Decimal? @default(200) @db.Decimal(10, 2)
+  foundedYear     Int?
+  updatedAt       DateTime @updatedAt
 }
 
 // ───────────────────────── Spravochniklar ─────────────────────────
@@ -89,6 +101,7 @@ model Customer {
   orders   Order[]
   invoices Invoice[]
   payments Payment[]
+  leads    Lead[]
 }
 
 model Supplier {
@@ -99,8 +112,9 @@ model Supplier {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  receipts     GoodsReceipt[]
-  transactions CashTransaction[]
+  receipts       GoodsReceipt[]
+  transactions   CashTransaction[]
+  supplyRequests SupplyRequest[]
 }
 
 /// Xomashyo: sement, qum, shag'al (fraksiya bo'yicha), plastifikator, suv
@@ -116,6 +130,8 @@ model Material {
   recipeItems  RecipeItem[]
   stockMoves   StockMove[]
   receiptItems GoodsReceiptItem[]
+  supplyItems  SupplyRequestItem[]
+  brigadeMoves BrigadeMove[]
 }
 
 /// Tayyor mahsulot: beton markasi (M300 / B22.5)
@@ -155,6 +171,7 @@ model Product {
   orderItems OrderItem[]
   batches    ProductionBatch[]
   stockMoves StockMove[]
+  leads      Lead[]
 
   @@index([groupId])
 }
@@ -192,8 +209,9 @@ model Warehouse {
   name     String
   isActive Boolean @default(true)
 
-  stockMoves StockMove[]
-  receipts   GoodsReceipt[]
+  stockMoves     StockMove[]
+  receipts       GoodsReceipt[]
+  supplyRequests SupplyRequest[]
 }
 
 enum VehicleType {
@@ -203,12 +221,12 @@ enum VehicleType {
 }
 
 model Vehicle {
-  id         String      @id @default(cuid())
-  plate      String      @unique
-  type       VehicleType
-  capacityM3 Decimal?    @db.Decimal(8, 2)
-  isActive   Boolean     @default(true)
-  ecoVehicleId String?   @unique // Insof ECO Vehicle.id
+  id           String      @id @default(cuid())
+  plate        String      @unique
+  type         VehicleType
+  capacityM3   Decimal?    @db.Decimal(8, 2)
+  isActive     Boolean     @default(true)
+  ecoVehicleId String?     @unique // Insof ECO Vehicle.id
   ecoSyncedAt  DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
   ecoError     String? // oxirgi sinxron xatosi
 
@@ -217,14 +235,14 @@ model Vehicle {
 }
 
 model Employee {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   fullName  String
   position  String // bo'lim lavozimi (Sotuv, Sklad...) yoki ishchi lavozim (Haydovchi, Operator...)
   phone     String?
   hiredAt   DateTime? // ishga kirgan sana — otdel kadr yuritadi
   birthDate DateTime? // tug'ilgan sana
   note      String? // otdel kadr izohi (smena, manzil, hujjat holati...)
-  isActive  Boolean  @default(true)
+  isActive  Boolean   @default(true)
 
   // ── Kadr kartasi (otdel kadr to'ldiradi; shaxsiy varaqa va hujjat nusxalari) ──
   photo            String? // 3x4 surat — uploads/employees/ ichidagi nom
@@ -236,17 +254,17 @@ model Employee {
   education        String? // ma'lumoti
   maritalStatus    String? // oilaviy holati
   // ── Haydovchi kartasi (lavozimi haydovchi bo'lganda to'ldiriladi) ──
-  licenseNo       String? // haydovchilik guvohnomasi raqami
-  licenseCategory String? // guvohnoma toifalari, masalan "B, C, CE"
-  licenseExpiry   DateTime? // guvohnoma amal qilish muddati
-  vehicleId       String? // biriktirilgan texnika (mikser/nasos)
+  licenseNo        String? // haydovchilik guvohnomasi raqami
+  licenseCategory  String? // guvohnoma toifalari, masalan "B, C, CE"
+  licenseExpiry    DateTime? // guvohnoma amal qilish muddati
+  vehicleId        String? // biriktirilgan texnika (mikser/nasos)
 
-  userId    String?  @unique // tizimga kiradigan xodim uchun login
-  ecoUserId String?  @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
-  ecoActive Boolean? // ECO a'zoligi tasdiqlanganmi (null — ulanmagan)
+  userId      String?   @unique // tizimga kiradigan xodim uchun login
+  ecoUserId   String?   @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
+  ecoActive   Boolean? // ECO a'zoligi tasdiqlanganmi (null — ulanmagan)
   ecoSyncedAt DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
-  ecoError  String? // oxirgi sinxron xatosi
-  createdAt DateTime @default(now())
+  ecoError    String? // oxirgi sinxron xatosi
+  createdAt   DateTime  @default(now())
 
   user      User?              @relation(fields: [userId], references: [id])
   vehicle   Vehicle?           @relation("DriverVehicle", fields: [vehicleId], references: [id])
@@ -274,15 +292,15 @@ model EmployeeDocument {
 /// Ishchi lavozim (login bermaydi) — otdel kadr o'zi qo'shadi/o'chiradi.
 /// Bo'lim lavozimlari (rolli) kodda: `lib/positions.ts`.
 model WorkPosition {
-  id         String  @id @default(cuid())
-  name       String  @unique
+  id         String   @id @default(cuid())
+  name       String   @unique
   note       String? // vazifasi / talab
   department String? // qaysi bo'lim tarkibida turadi (Role kaliti: PRODUCTION, LOGISTICS...) — tashkiliy tuzilma diagrammasi shu bo'yicha chiziladi
-  isDriver   Boolean @default(false) // haydovchi ilovasiga chiqadimi
-  sortOrder Int      @default(0)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isDriver   Boolean  @default(false) // haydovchi ilovasiga chiqadimi
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // ───────────────────────── Sklad: yagona harakat jurnali ─────────────────────────
@@ -294,6 +312,8 @@ enum StockMoveType {
   SHIPMENT // mijozga jo'natish
   ADJUSTMENT // inventarizatsiya farqi
   WRITE_OFF // brak / yo'qotish
+  BRIGADE_ISSUE // brigadaga berildi (skladdan chiqdi, brigada qoldig'iga o'tdi)
+  BRIGADE_RETURN // brigadadan qaytdi
 }
 
 /// Har bir qator o'zgarmas. qty ishorali: kirim (+), chiqim (−).
@@ -305,6 +325,7 @@ model StockMove {
   warehouseId String
   materialId  String?
   productId   String?
+  brigadeId   String? // BRIGADE_ISSUE / BRIGADE_RETURN — qaysi brigada bilan harakat
   qty         Decimal       @db.Decimal(18, 3)
   unitCost    Decimal?      @db.Decimal(18, 2) // kirimda — tannarx hisobi uchun
   refType     String? // "GoodsReceipt" | "ProductionBatch" | "Trip"
@@ -316,6 +337,7 @@ model StockMove {
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
   material  Material? @relation(fields: [materialId], references: [id])
   product   Product?  @relation(fields: [productId], references: [id])
+  brigade   Brigade?  @relation(fields: [brigadeId], references: [id])
   createdBy User      @relation("MoveCreatedBy", fields: [createdById], references: [id])
 
   @@index([warehouseId, materialId, date])
@@ -339,6 +361,7 @@ model GoodsReceipt {
   warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
   createdBy User?              @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
   items     GoodsReceiptItem[]
+  supply    SupplyRequest? // shu kirim ta'minot zayavkasidan tug'ilgan bo'lsa
 }
 
 model GoodsReceiptItem {
@@ -350,6 +373,127 @@ model GoodsReceiptItem {
 
   receipt  GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   material Material     @relation(fields: [materialId], references: [id])
+}
+
+// ───────────────────────── Ta'minot zayavkasi (sklad → snabjeniye → tasdiq → moliya → kirim) ─────────────────────────
+
+/// Ta'minot zayavkasining bosqichlari. Har bosqichni boshqa bo'lim bajaradi —
+/// kim, qachon va nima izoh bilan o'tkazgani `SupplyEvent` da qoladi.
+enum SupplyStatus {
+  NEW // Sklad kerakli mahsulotlar jadvalini tuzdi — snabjeniyeda narx kutilmoqda
+  PRICED // Snabjeniye narx qo'ydi — Ta'minot zayavkalarida ma'sul xodim tasdig'i kutilmoqda
+  APPROVED // Ma'sul xodim tasdiqladi — Moliya (Kirim-Chiqim) tasdig'i kutilmoqda (soat ikonkasi)
+  FUNDED // Moliya tasdiqladi, reja summa chiqim bo'lib yozildi — snabjeniye sotib oladi
+  RECEIVED // Snabjeniye mollarni tekshirib qabul qildi — sklad kirimi bo'ldi
+  REJECTED // Bekor qilindi (qaysi bosqichda va nega — `SupplyEvent` da)
+}
+
+/// Skladga kerak bo'lgan mahsulotlar jadvali. Bitta hujjat butun zanjirdan o'tadi:
+/// miqdor (sklad) → narx (snabjeniye) → tasdiq (ma'sul xodim) → pul (moliya) → fakt qabul (snabjeniye).
+/// Reja summasi = Σ qty×price, fakt summasi = Σ factQty×factPrice.
+model SupplyRequest {
+  id               String       @id @default(cuid())
+  docNo            String       @unique // TZ-YYYY-00001
+  date             DateTime     @default(now())
+  status           SupplyStatus @default(NEW)
+  warehouseId      String
+  needBy           DateTime? // qachongacha kerak
+  note             String?
+  supplierId       String? // snabjeniye belgilagan yetkazuvchi
+  // ── Dostavka xizmati: molni kim va qancha pulga olib keladi ──
+  deliveryKind     String? // "Yetkazuvchi yetkazadi" | "O'zimiz olib kelamiz" | "Transport xizmati"
+  deliveryProvider String? // transport firma / haydovchi / mashina
+  deliveryCost     Decimal      @default(0) @db.Decimal(18, 2) // kelishilgan dostavka narxi (jami summaga qo'shiladi)
+  deliveryFactCost Decimal?     @db.Decimal(18, 2) // qabulda haqiqatda to'langan dostavka
+  deliveryNote     String?
+  /// Qabulda narx o'zgargani uchun necha marta qayta tasdiqqa qaytgani
+  recheck          Int          @default(0)
+  cashAccountId    String? // moliya qaysi hisobdan to'ladi
+  cashTxId         String? // Kirim-Chiqimdagi yozuv (moliya tasdiqlaganda yaraladi, qabulda fakt summaga tuzatiladi)
+  receiptId        String?      @unique // qabul qilinganda yaralgan kirim hujjati
+  createdById      String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  warehouse   Warehouse           @relation(fields: [warehouseId], references: [id])
+  supplier    Supplier?           @relation(fields: [supplierId], references: [id])
+  cashAccount CashAccount?        @relation(fields: [cashAccountId], references: [id])
+  receipt     GoodsReceipt?       @relation(fields: [receiptId], references: [id])
+  createdBy   User                @relation("SupplyCreatedBy", fields: [createdById], references: [id])
+  items       SupplyRequestItem[]
+  events      SupplyEvent[]
+
+  @@index([status, date])
+}
+
+/// Jadval qatori. Spravochnikda yo'q mahsulot ham yoziladi (`materialId` bo'sh, `name` bor) —
+/// qabul qilinganda shu nom bilan xomashyo ochiladi.
+model SupplyRequestItem {
+  id         String   @id @default(cuid())
+  requestId  String
+  materialId String?
+  name       String // yozilgan nom (spravochnikdagi nom yoki yangi nom)
+  unit       String
+  qty        Decimal  @db.Decimal(18, 3) // sklad so'ragan miqdor
+  price      Decimal  @default(0) @db.Decimal(18, 2) // snabjeniye qo'ygan narx
+  factQty    Decimal? @db.Decimal(18, 3) // qabulda haqiqatda kelgan miqdor
+  factPrice  Decimal? @db.Decimal(18, 2) // qabulda haqiqatda kelgan narx
+  prevPrice  Decimal? @db.Decimal(18, 2) // qayta tasdiqdan oldingi narx — tasdiqlovchi farqni ko'rsin
+  note       String?
+  sortOrder  Int      @default(0)
+
+  request  SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  material Material?     @relation(fields: [materialId], references: [id])
+
+  @@index([requestId])
+}
+
+/// Zanjirdagi har bir harakat: kim, qachon, qaysi bosqichga o'tkazdi, nima dedi.
+model SupplyEvent {
+  id        String       @id @default(cuid())
+  requestId String
+  stage     SupplyStatus // shu harakatdan keyingi holat
+  note      String?
+  userId    String
+  createdAt DateTime     @default(now())
+
+  request SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User          @relation("SupplyEventBy", fields: [userId], references: [id])
+
+  @@index([requestId, createdAt])
+}
+
+// ───────────────────────── Brigada qoldig'i ─────────────────────────
+
+enum BrigadeMoveType {
+  ISSUE // skladdan brigadaga berildi (+)
+  RETURN // brigadadan skladga qaytdi (−)
+  CONSUME // topshiriq bajarilganda retsept bo'yicha sarflandi (−)
+  WRITE_OFF // brak / yo'qotish (−)
+}
+
+/// Brigada qo'lidagi xomashyo — StockMove kabi o'zgarmas jurnal.
+/// Qoldiq saqlanmaydi: brigada qoldig'i = Σ qty (ISSUE +, qolganlari −).
+model BrigadeMove {
+  id          String          @id @default(cuid())
+  date        DateTime        @default(now())
+  type        BrigadeMoveType
+  brigadeId   String
+  materialId  String
+  qty         Decimal         @db.Decimal(18, 3) // ishorali: berildi (+), sarf/qaytdi (−)
+  unitCost    Decimal?        @db.Decimal(18, 2)
+  refType     String? // "StockMove" | "BrigadeTask"
+  refId       String?
+  note        String?
+  createdById String
+  createdAt   DateTime        @default(now())
+
+  brigade   Brigade  @relation(fields: [brigadeId], references: [id])
+  material  Material @relation(fields: [materialId], references: [id])
+  createdBy User     @relation("BrigadeMoveBy", fields: [createdById], references: [id])
+
+  @@index([brigadeId, materialId, date])
+  @@index([refType, refId])
 }
 
 // ───────────────────────── Sotuv: zayavka ─────────────────────────
@@ -365,30 +509,38 @@ enum OrderStatus {
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  orderNo         String      @unique
-  date            DateTime    @default(now())
-  customerId      String
-  status          OrderStatus @default(DRAFT)
-  deliveryDate    DateTime
-  deliveryTime    String? // "HH:MM" — soat nechida yetkazish kerak (zayavka kirituvchi kiritadi)
-  deliveryAddress String
-  needsPump       Boolean     @default(false)
-  needsDelivery   Boolean     @default(true) // dastavka kerakmi (yo'q bo'lsa mijoz o'zi olib ketadi)
-  isUrgent        Boolean     @default(false) // zarur / shoshilinch
-  onCredit        Boolean     @default(false) // qarzga — kafolat xati talab qilinadi
-  guaranteeAt     DateTime? // mijoz imzolagan kafolat xati qabul qilingan sana
-  contractNo      String?     @unique // shartnoma raqami (SH-YYYY-00001) — "Shartnoma qilish" belgilanganda
-  contractAmount  Decimal?    @db.Decimal(18, 2) // shartnoma summasi; mahsulot summasi shundan ayiriladi (qoldiq)
-  contractAt      DateTime? // shartnoma tuzilgan sana
-  contractFile    String? // Didox'da imzolangan shartnoma fayli — uploads/contracts/ ichidagi nomi (isbot uchun tizimga yuklanadi)
+  id               String      @id @default(cuid())
+  orderNo          String      @unique
+  date             DateTime    @default(now())
+  customerId       String
+  status           OrderStatus @default(DRAFT)
+  deliveryDate     DateTime
+  deliveryTime     String? // "HH:MM" — soat nechida yetkazish kerak (zayavka kirituvchi kiritadi)
+  deliveryAddress  String
+  // Obyekt nuqtasi — zayavka formasida xaritadan/qidiruvdan belgilanadi.
+  // Bo'lmasa: haydovchida navigatsiya ishlamaydi, ETA taxminiy, "yetib bordi" avtomatik belgilanmaydi.
+  lat              Float?
+  lng              Float?
+  /// Zavoddan obyektgacha masofa, km — yo'l bo'yicha (OSRM); OSRM javob bermasa to'g'ri chiziq
+  distanceKm       Decimal?    @db.Decimal(8, 2)
+  /// Masofa qanday olingan: ROUTE — yo'l bo'yicha, LINE — to'g'ri chiziq
+  distanceSource   String?
+  needsPump        Boolean     @default(false)
+  needsDelivery    Boolean     @default(true) // dastavka kerakmi (yo'q bo'lsa mijoz o'zi olib ketadi)
+  isUrgent         Boolean     @default(false) // zarur / shoshilinch
+  onCredit         Boolean     @default(false) // qarzga — kafolat xati talab qilinadi
+  guaranteeAt      DateTime? // mijoz imzolagan kafolat xati qabul qilingan sana
+  contractNo       String?     @unique // shartnoma raqami (SH-YYYY-00001) — "Shartnoma qilish" belgilanganda
+  contractAmount   Decimal?    @db.Decimal(18, 2) // shartnoma summasi; mahsulot summasi shundan ayiriladi (qoldiq)
+  contractAt       DateTime? // shartnoma tuzilgan sana
+  contractFile     String? // Didox'da imzolangan shartnoma fayli — uploads/contracts/ ichidagi nomi (isbot uchun tizimga yuklanadi)
   contractFileName String? // foydalanuvchi yuklagan asl fayl nomi
   contractFileType String? // MIME turi (application/pdf, image/jpeg ...)
-  contractFileAt  DateTime? // fayl yuklangan vaqt
-  note            String?
-  createdById     String
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  contractFileAt   DateTime? // fayl yuklangan vaqt
+  note             String?
+  createdById      String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   customer  Customer          @relation(fields: [customerId], references: [id])
   createdBy User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
@@ -425,9 +577,11 @@ model Brigade {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  leader Employee?     @relation("BrigadeLeader", fields: [leaderId], references: [id])
-  items  OrderItem[]
-  tasks  BrigadeTask[]
+  leader     Employee?     @relation("BrigadeLeader", fields: [leaderId], references: [id])
+  items      OrderItem[]
+  tasks      BrigadeTask[]
+  moves      BrigadeMove[]
+  stockMoves StockMove[]
 }
 
 enum TaskStatus {
@@ -524,10 +678,10 @@ model Trip {
   createdAt      DateTime   @default(now())
 
   // ── Insof ECO (haydovchi ilovasi) bilan sinxron ──
-  ecoDeliveryId  String?    @unique // ECO Delivery.id
-  ecoStatus      String? // ECO holati: ASSIGNED, ACCEPTED, LOADING, EN_ROUTE, ARRIVED, UNLOADING, COMPLETED, DECLINED, FAILED, DISPUTED, CANCELLED
-  ecoSyncedAt    DateTime? // oxirgi muvaffaqiyatli yuborish/qabul
-  ecoError       String? // oxirgi xato (ko'rsatiladi, keyingi muvaffaqiyatda tozalanadi)
+  ecoDeliveryId String?   @unique // ECO Delivery.id
+  ecoStatus     String? // ECO holati: ASSIGNED, ACCEPTED, LOADING, EN_ROUTE, ARRIVED, UNLOADING, COMPLETED, DECLINED, FAILED, DISPUTED, CANCELLED
+  ecoSyncedAt   DateTime? // oxirgi muvaffaqiyatli yuborish/qabul
+  ecoError      String? // oxirgi xato (ko'rsatiladi, keyingi muvaffaqiyatda tozalanadi)
 
   order   Order    @relation(fields: [orderId], references: [id])
   vehicle Vehicle  @relation(fields: [vehicleId], references: [id])
@@ -569,8 +723,9 @@ model CashAccount {
   type     CashAccountType
   isActive Boolean         @default(true)
 
-  payments     Payment[]
-  transactions CashTransaction[]
+  payments       Payment[]
+  transactions   CashTransaction[]
+  supplyRequests SupplyRequest[]
 
   // Bir xil nomli hisob ikki marta ochilmasin (seed qayta ishga tushsa ham)
   @@unique([name, type])
@@ -734,4 +889,99 @@ model TelegramMessage {
   account TelegramAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, createdAt])
+}
+
+/// AI agent tayyorlagan amal (zayavka ochish, to'lov qabul qilish…) — bazaga yozishdan
+/// oldin foydalanuvchi tasdig'ini kutadi. Tasdiqlangach `actions.ts` uni bajaradi.
+/// Argumentlar tayyorlash bosqichida tekshirilgan va id'larga keltirilgan holda saqlanadi.
+model AiAction {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String // order_create, payment_add, …
+  args      Json // tekshirilgan, id'larga keltirilgan argumentlar
+  summary   String // foydalanuvchiga ko'rsatiladigan tasdiq matni
+  warnings  String? // ogohlantirishlar (qatorma-qator)
+  status    String    @default("PENDING") // PENDING | DONE | CANCELLED | FAILED
+  source    String // telegram | panel
+  chatId    String? // Telegram chat (tugma bosilganda kimga javob berish)
+  result    String? // bajarilgandan keyingi natija yoki xato matni
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  doneAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+// ───────────────────────── SMS (Eskiz) ─────────────────────────
+
+/// Yuborilgan har bir SMS. Ikki vazifasi bor: xarajat nazorati (oyiga nechta ketdi)
+/// va "yubordikmi?" savoliga javob. `text` da parol/kod MASKALANGAN holda yoziladi —
+/// jurnalni ko'rgan odam begona parolni o'qiy olmasin.
+model SmsLog {
+  id        String   @id @default(cuid())
+  phone     String // +998XXXXXXXXX ko'rinishida normallashtirilgan
+  template  String // shablon kaliti: login_granted, password_changed, reset_code
+  text      String // yuborilgan matn, maxfiy qismi ••• bilan almashtirilgan
+  status    String // SENT | FAILED | SKIPPED
+  provider  String // eskiz | fake
+  error     String? // FAILED bo'lsa sabab
+  userId    String? // kimga tegishli (bo'lsa)
+  createdAt DateTime @default(now())
+
+  @@index([phone, createdAt])
+  @@index([createdAt])
+}
+
+/// Parolni tiklash uchun bir martalik SMS kodi (`/login/reset`).
+/// Kodning o'zi saqlanmaydi — faqat bcrypt xeshi. Muddati va urinishlar soni cheklangan.
+model PasswordResetCode {
+  id        String    @id @default(cuid())
+  userId    String
+  phone     String // kod yuborilgan raqam (normallashtirilgan)
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([phone, createdAt])
+}
+
+enum LeadStatus {
+  NEW // hali hech kim ko'tarmagan
+  IN_PROGRESS // sotuv bog'landi, kelishilmoqda
+  CONVERTED // mijozga aylandi
+  REJECTED // bekor — qiziqmadi, mos kelmadi
+}
+
+/// Saytdagi "Ariza qoldirish" formasidan tushgan so'rov (`/` landing sahifasi).
+/// Mijoz bazasiga darhol yozilmaydi: sotuv bo'limi bog'lanib, kerak bo'lsa
+/// `/leads` sahifasidan bitta tugma bilan `Customer` ga aylantiradi.
+model Lead {
+  id         String     @id @default(cuid())
+  name       String
+  phone      String // normallashtirilgan: +998XXXXXXXXX
+  productId  String? // saytdagi ro'yxatdan tanlangan mahsulot
+  qty        Decimal?   @db.Decimal(18, 3) // taxminiy hajm (mahsulot birligida)
+  address    String? // obyekt manzili
+  message    String?
+  source     String     @default("landing") // keyinchalik: telegram, instagram…
+  status     LeadStatus @default(NEW)
+  note       String? // sotuvchining ichki izohi
+  customerId String? // CONVERTED bo'lganda — yaratilgan/topilgan mijoz
+  handledById String?
+  handledAt  DateTime?
+  createdAt  DateTime   @default(now())
+
+  product   Product?  @relation(fields: [productId], references: [id])
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  handledBy User?     @relation("LeadHandledBy", fields: [handledById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([phone])
 }

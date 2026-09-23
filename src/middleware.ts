@@ -29,14 +29,23 @@ export async function middleware(req: NextRequest) {
   }
   const { pathname } = req.nextUrl;
 
-  if (pathname === "/") return NextResponse.redirect(new URL(role ? "/dashboard" : "/login", req.url));
+  // "/" — ommaviy sayt (landing). Xodim tizimga kirgan bo'lsa ham shu yerda qoladi:
+  // kabinetga o'tish uchun sahifada alohida havola bor.
+  if (pathname === "/") return NextResponse.next();
   if (role && pathname.startsWith("/login")) return NextResponse.redirect(new URL("/dashboard", req.url));
   if (isPublic(pathname)) return NextResponse.next();
   if (!role) return NextResponse.redirect(new URL("/login", req.url));
+  // Haydovchi vebda faqat o'z reyslarini ko'radi (asosiy ish joyi — ilova)
+  if (role === "DRIVER" && !pathname.startsWith("/mening-reyslarim") && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
+    return NextResponse.redirect(new URL("/mening-reyslarim", req.url));
+  }
   if (!allowed(pathname, role)) return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg).*)"],
+  // `media` — ommaviy saytdagi surat va videolar (`public/media`). Ular tekshiruvdan
+  // o'tsa, tizimga kirmagan mehmon uchun /login ga yo'naltiriladi va banner ochilmaydi.
+  // `uploads` bu ro'yxatda yo'q: u hujjatlar uchun, himoyada qoladi.
+  matcher: ["/((?!_next/static|_next/image|media/|favicon.ico|icon.svg).*)"],
 };

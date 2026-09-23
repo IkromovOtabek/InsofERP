@@ -5,6 +5,7 @@ import { stockSnapshot } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { OrderForm, type CustomerOpt, type ProductStock } from "../order-form";
+import { geoSearchEnabled } from "@/lib/geo";
 import { unitLabel } from "@/lib/unit";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 
@@ -43,7 +44,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <PageHeader title="Yangi zayavka" subtitle="Saqlangandan keyin “Qabul qilish” tugmasi orqali Sotuv bo'limiga o'tadi va ishlab chiqarishga tushadi" />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3">
-          <OrderForm customers={opts} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId, price: p.price.toString(), unit: unitLabel(p.unit) }))} groups={groups} canCreateProduct={["SALES", "PRODUCTION", "DIRECTOR"].includes(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} />
+          <OrderForm customers={opts} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId, price: p.price.toString(), unit: unitLabel(p.unit) }))} groups={groups} canCreateProduct={["SALES", "PRODUCTION", "DIRECTOR"].includes(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
         </div>
         <div className="xl:col-span-2">
           <StockSnapshotCard compact />
