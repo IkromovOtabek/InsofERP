@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2 } from "lucide-react";
+import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDownRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -30,6 +30,20 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     take: 200,
   });
   const marks = await customerMarks(orders.map((o) => o.customerId));
+  // Bir xil mijoz + obyekt bo'yicha zayavkalar jadvalda yonma-yon tursin: aks holda
+  // bitta obyektning bir necha zayavkasi ro'yxat bo'ylab sochilib ketadi va xodim
+  // "shu obyektga yana nima olingan" deb qidirib chiqadi. Guruh ichida — yetkazish
+  // sanasi bo'yicha (avval yaqini), guruhlar esa oxirgi kiritilgani tepada.
+  const groupKey = (o: (typeof orders)[number]) => `${o.customerId}|${o.deliveryAddress.trim().toLowerCase().replace(/\s+/g, " ")}`;
+  const groupMap = new Map<string, typeof orders>();
+  for (const o of orders) {
+    const g = groupMap.get(groupKey(o));
+    if (g) g.push(o);
+    else groupMap.set(groupKey(o), [o]);
+  }
+  const groups = [...groupMap.values()]
+    .map((g) => [...g].sort((a, b) => a.deliveryDate.getTime() - b.deliveryDate.getTime()))
+    .sort((a, b) => Math.max(...b.map((o) => o.createdAt.getTime())) - Math.max(...a.map((o) => o.createdAt.getTime())));
   const tabs = [{ key: "", label: "Hammasi", href: "/orders" }, ...PENDING.map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: `/orders?status=${k}` }))];
 
   return (
@@ -62,18 +76,33 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         <Tabs current={st ?? ""} items={tabs} />
       )}
       <Table>
-        <thead><tr><Th>№</Th><Th>Kiritildi</Th><Th>Yetkazish</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>№</Th><Th>Kiritildi</Th><Th>Yetkazish</Th><Th>Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {orders.length === 0 && <Empty text="Kutayotgan zayavkalar yo'q" />}
-          {orders.map((o) => {
+          {groups.flatMap((g) => g.map((o, idx) => {
             const m3 = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
             const sum = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+            // Guruhning birinchi qatori — mijoz nomi, obyekt manzili va nechta zayavka ekani;
+            // qolganlari o'sha guruhga tegishli ekani ko'rinib tursin deb ichkariroq chiziladi.
+            const first = idx === 0;
             return (
-              <Tr key={o.id}>
+              <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
                 <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td>
                 <Td>{date(o.date)}</Td>
                 <Td>{deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
-                <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} href={`/customers/${o.customerId}`} /></Td>
+                <Td>
+                  {first ? (
+                    <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} href={`/customers/${o.customerId}`} />
+                        {g.length > 1 && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">{g.length} ta zayavka · {qty(g.reduce((s, x) => s + x.items.reduce((y, i) => y + Number(i.qtyM3), 0), 0))} m³</span>}
+                      </div>
+                      <div className="mt-0.5 text-xs font-normal text-slate-500">{o.deliveryAddress}</div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 pl-3 text-slate-400"><CornerDownRight size={14} className="shrink-0" /><span className="text-xs font-normal">{o.customer.name}</span></div>
+                  )}
+                </Td>
                 <Td>{o.items.map((i) => i.product.code).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}{o.onCredit && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">qarzga</span>}</Td>
                 <Td right>{qty(m3)}</Td>
                 <Td right>{money(sum)}</Td>
@@ -81,7 +110,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <Td><OrderStatusBadge status={o.status} /></Td>
               </Tr>
             );
-          })}
+          }))}
         </tbody>
       </Table>
     </div>
