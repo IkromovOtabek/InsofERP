@@ -3,9 +3,10 @@ import { customerCredit } from "@/lib/finance";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { activeBrigades } from "@/lib/brigades";
+import { tripSteps } from "@/lib/trips";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
-import { ListError } from "./list";
+import { driverEmployeeId, ListError } from "./list";
 import type { Role } from "@/generated/prisma";
 
 /**
@@ -38,6 +39,19 @@ export type FormField = {
   showIf?: { field: string; equals: string };
   columns?: FormField[];
 };
+/**
+ * Amal muvaffaqiyatli bajarilgandan KEYIN ilova nima qilishi.
+ *
+ * Ilova o'zi qaror qilmaydi — "yo'lga chiqdi" nima degani va undan keyin nima bo'lishi
+ * server tomonda turadi. Shu sababli qoidani o'zgartirish uchun ilovani qayta chiqarish
+ * shart emas (kartochkaning qolgan qismi ham shu tamoyilda).
+ */
+export type ActionEffect = {
+  /** Fon GPS kuzatuvi: reys boshlanganda "start", yopilganda "stop". */
+  track?: "start" | "stop";
+  /** Navigatsiya ilovasini shu nuqtaga ochish (koordinata bo'lmasa — yo'q). */
+  navigate?: { lat: number; lng: number; label: string };
+};
 export type DetailAction = {
   id: string;
   label: string;
@@ -46,6 +60,8 @@ export type DetailAction = {
   confirm?: string;
   /** Bo'lsa — avval shu maydonlar so'raladi. */
   form?: FormField[];
+  /** Bajarilgandan keyingi ish (kuzatuv, navigatsiya). */
+  effect?: ActionEffect;
 };
 export type MobileDetail = {
   key: string;
@@ -64,17 +80,36 @@ const m3 = (n: number) => `${sum(n).toFixed(sum(n) % 1 ? 1 : 0)} m³`;
 const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const dt = (d: Date) => `${day(d)} ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
+/** Tarixdagi vaqt — o'ng ustunga sig'ishi uchun qisqa: `23.09 14:05`. */
+const shortDt = (d: Date) => `${d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
+
+/** "Bosqichlar" bo'limi — tarix `lib/trips.ts` dan, bu yerda faqat ilova uchun ko'rinishga o'giriladi. */
+async function stepsSection(id: string): Promise<HomeSection> {
+  const steps = await tripSteps(id);
+  return {
+    title: "Bosqichlar",
+    empty: "Hali bosqich yozilmagan",
+    rows: steps.map((x) => ({ id: x.id, title: x.label, subtitle: x.by, right: shortDt(x.at), tone: TRIP_TONE[x.status] })),
+  };
+}
 /** Brigadir formasidagi "yangi brigada" tanlovi — `lib/mobile/actions.ts` da ham shu kalit. */
 export const NEW_BRIGADE = "__new__";
+/** "Yetkazildi" tugmasi so'raydigan maydonlar — haydovchi ham, logist ham bir xil to'ldiradi. */
+const RECEIVER_FORM: FormField[] = [
+  { name: "receiverName", label: "Obyektda kim qabul qildi", type: "text", required: true, placeholder: "F.I.Sh." },
+  { name: "note", label: "Izoh", type: "text" },
+];
 
 /** Amalga kim haqli — veb ERP'dagi `requireSession([...])` bilan bir xil ro'yxat. */
 export const ACTION_ROLES: Record<string, Role[]> = {
   "order.confirm": ["SALES"],
   "order.unblock": ["DIRECTOR"],
   "order.cancel": ["SALES"],
-  "trip.loaded": ["LOGISTICS", "PRODUCTION"],
-  "trip.onroad": ["LOGISTICS", "PRODUCTION"],
-  "trip.delivered": ["LOGISTICS", "PRODUCTION"],
+  // Haydovchi reysni ilovadan o'zi harakatlantiradi — lekin faqat o'ziga biriktirilganini
+  // (`assertOwnTrip`, `lib/mobile/actions.ts`). Rol ro'yxati "kim", egalik "qaysi reysni" deydi.
+  "trip.loaded": ["LOGISTICS", "PRODUCTION", "DRIVER"],
+  "trip.onroad": ["LOGISTICS", "PRODUCTION", "DRIVER"],
+  "trip.delivered": ["LOGISTICS", "PRODUCTION", "DRIVER"],
   "trip.cancel": ["LOGISTICS"],
   "trip.eco": ["LOGISTICS"],
   "invoice.pay": ["CASHIER", "ACCOUNTING"],
@@ -156,12 +191,32 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
 async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true } }, driver: true, vehicle: true } });
   if (!t) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
+  // Ro'yxatda haydovchiga faqat o'z reyslari chiqadi (`lib/mobile/list.ts`), lekin kartochka
+  // id bo'yicha ochiladi — begona id qo'lda yuborilsa shu yerda to'xtaydi. "Topilmadi" deymiz:
+  // "ruxsat yo'q" desak, boshqa reys mavjudligini tasdiqlagan bo'lardik.
+  const isDriver = user.role === "DRIVER";
+  if (isDriver && t.driverId !== (await driverEmployeeId(user.id))) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
 
   const actions: DetailAction[] = [];
-  if (t.status === "PLANNED" && can(user, "trip.loaded")) actions.push({ id: "trip.loaded", label: "Yuklandi", tone: "brand", confirm: "Beton yuklandi deb belgilansinmi? Skladdan chiqim yoziladi." });
-  if (["PLANNED", "LOADED"].includes(t.status) && can(user, "trip.onroad")) actions.push({ id: "trip.onroad", label: "Yo'lga chiqdi", tone: "brand" });
-  if (["PLANNED", "LOADED", "ON_ROAD"].includes(t.status) && can(user, "trip.delivered")) {
-    actions.push({ id: "trip.delivered", label: "Yetkazildi", tone: "success", form: [{ name: "receiverName", label: "Obyektda kim qabul qildi", type: "text", required: true, placeholder: "F.I.Sh." }, { name: "note", label: "Izoh", type: "text" }] });
+  if (isDriver) {
+    // Haydovchiga qadamma-qadam: har holatda faqat KEYINGI qadam ko'rinadi — uchta tugma
+    // bir vaqtda turgani chalkashtiradi va tasodifan bosilishi mumkin.
+    if (t.status === "PLANNED") actions.push({ id: "trip.loaded", label: "Yukladim", tone: "brand", confirm: "Beton yuklandi deb belgilansinmi?" });
+    // Yo'lga chiqilganda: fon kuzatuvi boshlanadi va navigatsiya obyektga yo'l ko'rsatadi.
+    // Koordinata zayavkada bo'lmasa navigatsiya ochilmaydi — kuzatuv baribir ishlaydi.
+    const dest = t.order.lat != null && t.order.lng != null
+      ? { lat: t.order.lat, lng: t.order.lng, label: t.order.deliveryAddress }
+      : undefined;
+    if (t.status === "LOADED") actions.push({ id: "trip.onroad", label: "Yo'lga chiqdim", tone: "brand", effect: { track: "start", navigate: dest } });
+    if (t.status === "ON_ROAD") actions.push({ id: "trip.delivered", label: "Yetkazdim", tone: "success", form: RECEIVER_FORM, effect: { track: "stop" } });
+  } else {
+    // Logist/ishlab chiqarish: qadam o'tkazib yuborilgan reysni bir marta yopa olishi kerak,
+    // shuning uchun ularda bir nechta tugma bir vaqtda ochiq turadi.
+    if (t.status === "PLANNED" && can(user, "trip.loaded")) actions.push({ id: "trip.loaded", label: "Yuklandi", tone: "brand", confirm: "Beton yuklandi deb belgilansinmi? Skladdan chiqim yoziladi." });
+    if (["PLANNED", "LOADED"].includes(t.status) && can(user, "trip.onroad")) actions.push({ id: "trip.onroad", label: "Yo'lga chiqdi", tone: "brand" });
+    if (["PLANNED", "LOADED", "ON_ROAD"].includes(t.status) && can(user, "trip.delivered")) {
+      actions.push({ id: "trip.delivered", label: "Yetkazildi", tone: "success", form: RECEIVER_FORM });
+    }
   }
   if (t.status === "PLANNED" && can(user, "trip.cancel")) actions.push({ id: "trip.cancel", label: "Bekor qilish", tone: "danger", confirm: "Reys bekor qilinsinmi?" });
   if (ecoEnabled() && can(user, "trip.eco")) actions.push({ id: "trip.eco", label: t.ecoDeliveryId ? "ECO'ga qayta yuborish" : "ECO'ga yuborish", tone: "warning" });
@@ -183,7 +238,7 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       ...(t.ecoError ? [{ label: "ECO xatosi", value: t.ecoError, tone: "danger" as Tone }] : []),
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
     ],
-    sections: [],
+    sections: [await stepsSection(t.id)],
     actions,
   };
 }

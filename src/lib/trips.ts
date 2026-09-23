@@ -9,6 +9,33 @@ import { nextNo } from "@/lib/numbering";
  */
 export type TripResult = { changed: boolean; error?: string; orderId: string };
 
+/** Bosqichlarning o'zbekcha nomi — veb ham, ilova ham shu ro'yxatdan oladi. */
+export const TRIP_STEP: Record<string, string> = {
+  PLANNED: "Rejalashtirildi", LOADED: "Yuklandi", ON_ROAD: "Yo'lga chiqdi", DELIVERED: "Yetkazildi", CANCELLED: "Bekor qilindi",
+};
+export type TripStep = { id: string; status: string; label: string; by: string; at: Date };
+
+/**
+ * Reys bosqichlari tarixi: qaysi holat, qachon va KIM tomonidan belgilangani.
+ *
+ * Manba — audit jurnali: holat o'zgarishi allaqachon shu yerga yoziladi (yuqoridagi
+ * `audit(...)` chaqiruvlari), ya'ni haydovchi ilovadan bosgani ham, logist vebdan
+ * bosgani ham, ECO webhook'i keltirgani ham bir xil joyda. Alohida ustun qo'shish
+ * o'sha ma'lumotni ikkinchi marta saqlash bo'lardi.
+ */
+export async function tripSteps(id: string): Promise<TripStep[]> {
+  const log = await db.auditLog.findMany({
+    where: { entity: "Trip", entityId: id, action: { in: ["CREATE", "STATUS_CHANGE"] } },
+    orderBy: { createdAt: "asc" },
+    include: { user: { select: { fullName: true } } },
+  });
+  return log.map((l) => {
+    // CREATE — reys ochilgan payt: holat o'shanda PLANNED bo'ladi
+    const status = l.action === "CREATE" ? "PLANNED" : String((l.after as { status?: string } | null)?.status ?? "");
+    return { id: l.id, status, label: TRIP_STEP[status] ?? status, by: l.user.fullName, at: l.createdAt };
+  });
+}
+
 const tripWithOrder = (id: string) => db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true, trips: true } } } });
 
 /** PLANNED → LOADED: tayyor beton skladdan chiqadi (SHIPMENT). */
@@ -60,6 +87,35 @@ export async function tripCancelled(id: string, userId: string, note?: string): 
   await db.trip.update({ where: { id }, data: { status: "CANCELLED" } });
   await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "CANCELLED", note });
   return { changed: true, orderId: t.orderId };
+}
+
+// ───────────────────────── Yo'l izi (GPS) ─────────────────────────
+
+export type TrackPoint = { lat: number; lng: number; at: Date };
+
+/**
+ * Reysning bosib o'tgan yo'li — vaqt bo'yicha tartiblangan nuqtalar.
+ *
+ * Bu faqat ZAVOD haydovchilarining izi (ular ERP logini bilan kiradi). Tashqi pudratchi
+ * haydovchilar Insof ECO ilovasidan yuradi va ularning izi ECO'da qoladi — xarita
+ * ikkala manbani qo'shib ko'rsatadi (`lib/eco/client.ts`).
+ */
+export async function tripTrack(tripId: string): Promise<TrackPoint[]> {
+  return db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true } });
+}
+
+/** Bir nechta reysning OXIRGI nuqtasi — xaritadagi mashina belgilari uchun. */
+export async function lastTripPositions(tripIds: string[]): Promise<Map<string, TrackPoint>> {
+  if (tripIds.length === 0) return new Map();
+  // Har reys uchun alohida so'rov o'rniga bittasi: nuqtalar ko'p emas (reysiga bir necha yuz)
+  const rows = await db.tripPosition.findMany({
+    where: { tripId: { in: tripIds } },
+    orderBy: { at: "desc" },
+    select: { tripId: true, lat: true, lng: true, at: true },
+  });
+  const last = new Map<string, TrackPoint>();
+  for (const r of rows) if (!last.has(r.tripId)) last.set(r.tripId, { lat: r.lat, lng: r.lng, at: r.at });
+  return last;
 }
 
 // ───────────────────────── Yangi reys ─────────────────────────

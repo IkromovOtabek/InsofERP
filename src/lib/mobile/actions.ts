@@ -10,7 +10,7 @@ import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
-import { ListError } from "./list";
+import { driverEmployeeId, ListError } from "./list";
 
 /**
  * Mobil ilovadagi tugmalarning ijrosi.
@@ -41,10 +41,24 @@ const Leader = z.object({
 
 const fail = (m: string, status = 400) => { throw new ListError("ACTION_FAILED", m, status); };
 
+/**
+ * Haydovchi faqat O'ZIGA biriktirilgan reysni harakatlantiradi.
+ *
+ * `can()` faqat rolni tekshiradi — "haydovchilar reys bosqichini belgilay oladi" deydi,
+ * "qaysi reysni" demaydi. Amal id bo'yicha chaqirilgani uchun, bu tekshiruvsiz
+ * begona nakladnoyning raqamini yuborib, boshqa haydovchining reysini yopib qo'yish mumkin edi.
+ */
+async function assertOwnTrip(user: MobileUser, tripId: string) {
+  if (user.role !== "DRIVER") return;
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: { driverId: true } });
+  if (!t || t.driverId !== (await driverEmployeeId(user.id))) fail("Bu reys sizga biriktirilmagan", 403);
+}
+
 export async function runMobileAction(user: MobileUser, action: string, id: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
   if (!id) fail("id yo'q");
   if (!(action in ACTION_ROLES)) fail("Bunday amal yo'q", 404); // noma'lum amal — ruxsat xatosi bilan chalkashmasin
   if (!can(user, action)) fail("Bu amalga ruxsatingiz yo'q", 403);
+  if (action.startsWith("trip.")) await assertOwnTrip(user, id);
 
   switch (action) {
     // ── Zayavka ──

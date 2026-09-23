@@ -683,9 +683,31 @@ model Trip {
   ecoSyncedAt   DateTime? // oxirgi muvaffaqiyatli yuborish/qabul
   ecoError      String? // oxirgi xato (ko'rsatiladi, keyingi muvaffaqiyatda tozalanadi)
 
-  order   Order    @relation(fields: [orderId], references: [id])
-  vehicle Vehicle  @relation(fields: [vehicleId], references: [id])
-  driver  Employee @relation("TripDriver", fields: [driverId], references: [id])
+  order     Order          @relation(fields: [orderId], references: [id])
+  vehicle   Vehicle        @relation(fields: [vehicleId], references: [id])
+  driver    Employee       @relation("TripDriver", fields: [driverId], references: [id])
+  positions TripPosition[]
+}
+
+/// Reys davomida haydovchi ilovasidan kelgan GPS nuqtalari.
+///
+/// Nega ECO'da emas: ECO'ning izi `tracking/gps` orqali ECO foydalanuvchisiga bog'lanadi,
+/// zavod haydovchisi esa ERP logini bilan kiradi va ECO hisobiga ega emas. Tashqi
+/// pudratchi haydovchilarining izi avvalgidek ECO'da qoladi — xarita ikkalasini qo'shib ko'rsatadi.
+model TripPosition {
+  id        String   @id @default(cuid())
+  tripId    String
+  lat       Float
+  lng       Float
+  speedKmh  Float?
+  heading   Float?
+  /// Qurilmadagi vaqt — nuqtalar aloqa uzilganda buferda turib, keyin to'p-to'p keladi
+  at        DateTime
+  createdAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, at])
 }
 
 // ───────────────────────── Moliya: schyot / to'lov / kassa ─────────────────────────

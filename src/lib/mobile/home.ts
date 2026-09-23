@@ -2,8 +2,7 @@ import { db } from "@/lib/db";
 import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
-import { eco, ecoEnabled } from "@/lib/eco/client";
-import { visibleTrips } from "@/lib/eco/visibility";
+import { liveTrips } from "@/lib/live";
 import { CREATE_ROLES, canCreate } from "./create";
 import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
@@ -365,11 +364,14 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
   return { ...base, cards, sections, live: await liveTrucks(user) };
 }
 
-/** Yo'ldagi mashinalar — ECO o'chiq yoki yetib bormasa bo'sh ro'yxat (bosh ekran buzilmaydi). */
+/**
+ * Yo'ldagi mashinalar. Manba ikkita — ECO (pudratchi haydovchilar) va ERP'ning o'z izi
+ * (zavod haydovchilari); `lib/live.ts` ularni qo'shadi. Xato bo'lsa bo'sh ro'yxat qaytadi,
+ * bosh ekran buzilmaydi.
+ */
 async function liveTrucks(user: MobileUser): Promise<LiveTruck[]> {
-  if (!ecoEnabled()) return [];
   try {
-    const trips = (await visibleTrips({ userId: user.id, role: user.role }, await eco.positions())).filter((t) => t.position);
+    const trips = (await liveTrips({ userId: user.id, role: user.role })).trips.filter((t) => t.position);
     // ECO `ref` = ERP nakladnoy raqami; kartochka esa Trip.id bo'yicha ochiladi
     const ids = new Map(
       (await db.trip.findMany({ where: { deliveryNoteNo: { in: trips.map((t) => t.ref) } }, select: { id: true, deliveryNoteNo: true } }))

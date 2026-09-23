@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, Smartphone } from "lucide-react";
+import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, Smartphone, History } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -9,6 +9,7 @@ import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { TripStatusBadge } from "../status";
 import { markLoaded, markOnRoad, cancelTrip } from "../actions";
+import { tripSteps } from "@/lib/trips";
 import { DeliverForm } from "./deliver-form";
 import { EcoSyncButtons } from "./eco-sync";
 import { ecoEnabled } from "@/lib/eco/client";
@@ -23,6 +24,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
   if (!t || !s) notFound();
   const marks = await customerMarks([t.order.customerId]);
+  const steps = await tripSteps(id);
   const blacklisted = marks.black.has(t.order.customerId);
   const canLog = ["LOGISTICS", "DIRECTOR"].includes(s.role);
   const canLoad = canLog || s.role === "PRODUCTION";
@@ -90,6 +92,26 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           ...(t.receiverName ? [{ k: "Qabul qildi", v: t.receiverName }] : []),
           ...(t.note ? [{ k: "Izoh", v: t.note }] : []),
         ]} />
+      </Card>
+
+      {/* Yuqoridagi StatusSteps qayerda turganini ko'rsatadi; bu yerda esa har bosqichni
+          KIM va QACHON belgilagani — haydovchi ilovadan bosgani ham shu ro'yxatga tushadi. */}
+      <Card className="mt-5">
+        <CardHeader title="Bosqichlar" description="Har bir holatni kim va qachon belgilagan" icon={History} />
+        {steps.length === 0 ? (
+          <p className="text-sm text-slate-500">Hali bosqich yozilmagan.</p>
+        ) : (
+          <ol className="space-y-3">
+            {steps.map((x) => (
+              <li key={x.id} className="flex items-baseline gap-3 text-sm">
+                <span className={`mt-1.5 size-2 shrink-0 rounded-full ${x.status === "DELIVERED" ? "bg-emerald-500" : x.status === "CANCELLED" ? "bg-red-500" : "bg-slate-300"}`} />
+                <span className="w-32 shrink-0 font-medium text-slate-900">{x.label}</span>
+                <span className="flex-1 text-slate-500">{x.by}</span>
+                <span className="tabular text-slate-500">{dateTime(x.at)}</span>
+              </li>
+            ))}
+          </ol>
+        )}
       </Card>
     </div>
   );
