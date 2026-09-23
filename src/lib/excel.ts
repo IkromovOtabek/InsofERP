@@ -158,7 +158,7 @@ const isNum = (v: unknown) => str(v) !== "" && Number.isFinite(num(v));
 export function matrixColumns(aoa: unknown[][], p: Omit<MatrixPick, "use">): MatrixCol[] {
   const hdr = aoa[p.headerRow] ?? [];
   const dates = p.dateRow >= 0 ? aoa[p.dateRow] ?? [] : [];
-  const width = Math.max(hdr.length, ...aoa.slice(p.headerRow + 1).map((r) => r?.length ?? 0));
+  const width = maxLen(aoa.slice(p.headerRow + 1), hdr.length);
   const out: MatrixCol[] = [];
   for (let i = 0; i < width; i++) {
     if (i === p.nameCol || i === p.unitCol) continue;
@@ -195,7 +195,7 @@ export function guessMatrix(aoa: unknown[][]): MatrixGuess {
   if (nameCol < 0) {
     // Sarlavhasi tanish bo'lmasa — kataklari matn bo'lgan birinchi ustun
     const body = aoa.slice(headerRow + 1, headerRow + 40);
-    const width = Math.max(...body.map((r) => r?.length ?? 0), hdr.length);
+    const width = maxLen(body, hdr.length);
     for (let i = 0; i < width; i++) {
       const filled = body.filter((r) => str(r?.[i]) !== "");
       if (filled.length >= 2 && filled.filter((r) => !isNum(r[i])).length / filled.length > 0.7) { nameCol = i; break; }
@@ -273,4 +273,22 @@ export function parseDate(v: unknown, monthFirst = false, minYear = 1990): Date 
   // 12 dan katta raqam faqat kun bo'la oladi — tartib shu bo'yicha aniqlanadi, aks holda `monthFirst`
   const [day, mon] = a > 12 ? [a, b] : b > 12 ? [b, a] : monthFirst ? [b, a] : [a, b];
   return mk(y, mon, day);
+}
+
+/**
+ * Qatorlar ichidagi eng uzun qatorning uzunligi. `Math.max(...rows.map(…))` ishlatilmaydi:
+ * Excel'da formatlangan bo'sh qatorlar tufayli varaq yuz minglab qator bo'lishi mumkin va
+ * bunchalik argumentni yoyish "Maximum call stack size exceeded" beradi.
+ */
+export function maxLen(rows: readonly (readonly unknown[] | undefined)[], min = 0): number {
+  let w = min;
+  for (const r of rows) if (r && r.length > w) w = r.length;
+  return w;
+}
+
+/** Oxiridagi butunlay bo'sh qatorlarni kesadi — Excel varag'i ko'pincha million qatorgacha cho'ziladi. */
+export function trimEmptyRows(aoa: unknown[][]): unknown[][] {
+  let end = aoa.length;
+  while (end > 0 && !(aoa[end - 1] ?? []).some((c) => str(c) !== "")) end--;
+  return end === aoa.length ? aoa : aoa.slice(0, end);
 }

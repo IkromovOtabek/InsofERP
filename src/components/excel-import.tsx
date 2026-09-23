@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List } from "lucide-react";
 import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
-import { flatName, guessColumn, guessMatrix, headerRowIndex, matrixColumns, num, str, unpivotMatrix, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick } from "@/lib/excel";
+import { flatName, guessColumn, guessMatrix, headerRowIndex, matrixColumns, maxLen, num, str, trimEmptyRows, unpivotMatrix, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
 import { fmtNum, money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -151,7 +151,10 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       const isText = /\.(csv|txt)$/i.test(f.name) || f.type.startsWith("text/");
       const wb = isText ? XLSX.read(await f.text(), { type: "string", raw: true }) : XLSX.read(await f.arrayBuffer(), { type: "array", raw: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", raw: true });
+      // Excel varag'ining "ishlatilgan sohasi" ko'pincha jadval tugagach ham davom etadi (formatlangan
+      // bo'sh qatorlar) — ularni kesmasak jadval yuz minglab bo'sh qator bo'lib ko'rinadi
+      const aoa = trimEmptyRows(XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", raw: true }));
+      if (!aoa.length) { setParseErr("Fayl bo'sh"); return; }
       setSheet(aoa);
       // Kesishma jadval bo'lsa o'zi matritsa rejimida ochiladi; aks holda oddiy ro'yxat
       const g = matrix ? guessMatrix(aoa) : null;
@@ -418,7 +421,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   );
 
   // ── Matritsa rejimi: qator/ustun tanlovi va mijoz ustunlari ──
-  const mxWidth = sheet ? Math.max(0, ...sheet.map((r) => r?.length ?? 0)) : 0;
+  const mxWidth = sheet ? maxLen(sheet) : 0;
   /** Qator tanlash uchun ko'rinish: "2-qator: № · Махсулот номи · Улчов бирлиги". */
   const mxRowLabel = (i: number) => {
     const cells = (sheet?.[i] ?? []).map((c) => str(c)).filter((v) => v !== "").slice(0, 4);
