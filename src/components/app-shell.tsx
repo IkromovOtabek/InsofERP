@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -121,8 +121,8 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
   );
 }
 
-function SidebarInner({ items, user, brand, onNavigate, collapsed, onToggle }:
-  { items: NavItem[]; user: User; brand: string; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
+function SidebarInner({ items, user, brand, apk, onNavigate, collapsed, onToggle }:
+  { items: NavItem[]; user: User; brand: string; apk?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
     <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-white text-slate-700 dark:bg-[#0b1120]">
       {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
@@ -142,6 +142,23 @@ function SidebarInner({ items, user, brand, onNavigate, collapsed, onToggle }:
       </div>
       <NavList items={items} onNavigate={onNavigate} collapsed={collapsed} />
       <div className="border-t border-slate-200/80 p-3">
+        {/* Mobil ilova — hamma rol uchun, haydovchi ham shu yerdan yuklab oladi.
+            Fayl serverda bo'lmasa tugma umuman ko'rinmaydi (`lib/apk.ts`). */}
+        {apk != null && (
+          <a
+            href="/api/app/android"
+            download
+            onClick={onNavigate}
+            title={`Mobil ilova (Android, ${apk})`}
+            className="mb-1 flex items-center gap-3 rounded-lg px-2 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Download size={15} /></span>
+            <span className="sb-fade min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium">Mobil ilova</span>
+              <span className="block truncate text-[11px] text-slate-500">Android · {apk}</span>
+            </span>
+          </a>
+        )}
         <div className="sb-user flex items-center gap-3 rounded-lg px-2 py-2">
           <Avatar name={user.fullName} className="h-8 w-8 shrink-0 text-xs" />
           <div className="sb-fade min-w-0 flex-1">
@@ -183,7 +200,7 @@ function HeaderClock() {
   );
 }
 
-export function AppShell({ items, user, brand, ai = false, children }: { items: NavItem[]; user: User; brand: string; ai?: boolean; children: React.ReactNode }) {
+export function AppShell({ items, user, brand, ai = false, apk = null, children }: { items: NavItem[]; user: User; brand: string; ai?: boolean; apk?: string | null; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
@@ -202,7 +219,7 @@ export function AppShell({ items, user, brand, ai = false, children }: { items: 
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sb-w)] transition-[width] duration-200 lg:block">
-        <SidebarInner items={items} user={user} brand={brand} collapsed={collapsed} onToggle={toggleSidebar} />
+        <SidebarInner items={items} user={user} brand={brand} apk={apk} collapsed={collapsed} onToggle={toggleSidebar} />
       </aside>
 
       {/* Mobile drawer */}
@@ -210,7 +227,7 @@ export function AppShell({ items, user, brand, ai = false, children }: { items: 
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-72 shadow-(--shadow-pop) animate-fade-up">
-            <SidebarInner items={items} user={user} brand={brand} onNavigate={() => setOpen(false)} />
+            <SidebarInner items={items} user={user} brand={brand} apk={apk} onNavigate={() => setOpen(false)} />
             <button onClick={() => setOpen(false)} className="absolute right-3 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
           </aside>
         </div>
