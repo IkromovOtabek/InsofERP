@@ -84,7 +84,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Mijoz oqimi" info="Oy bo'yicha: birinchi buyurtma bergan yangi mijozlar va 90 kun jim qolib Lost bo'lganlar.">
-          <LineChart labels={d.flow.map((f) => f.label)} series={[{ name: "Yangi", values: d.flow.map((f) => f.newC), color: "#10b981" }, { name: "Yo'qotilgan", values: d.flow.map((f) => f.lost), color: "#ef4444" }]} formatValue={(v) => `${v} ta`} height={160} />
+          <LineChart labels={d.flow.map((f) => f.label)} series={[{ name: "Yangi", values: d.flow.map((f) => f.newC), color: "#00cb80" }, { name: "Yo'qotilgan", values: d.flow.map((f) => f.lost), color: "#fa1636" }]} formatValue={(v) => `${v} ta`} height={160} />
         </Panel>
         <Panel title="Churn tahlili" info="Xavf bali: recency (60 ballgacha) + qarz (15) + muddati o'tgan qarz (15) + chastota pasayishi (10). Kutilayotgan yo'qotish = o'rtacha oylik × 12 × bal/100.">
           <div className="grid grid-cols-2 gap-3 text-[13px]">

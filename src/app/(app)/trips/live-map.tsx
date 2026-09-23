@@ -14,8 +14,8 @@ export type MapTrip = {
   popup: string;
 };
 
-const TRACK_COLOR = "#0ea5e9";
-const START_COLOR = "#16a34a";
+const TRACK_COLOR = "#009ef5";
+const START_COLOR = "#00b34d";
 
 /** Yo'ldagi mashinalar va tanlangan reysning izi. Tayl manbai `lib/leaflet.ts` da. */
 export function LiveMap({ trips, track }: { trips: MapTrip[]; track: [number, number][] | null }) {

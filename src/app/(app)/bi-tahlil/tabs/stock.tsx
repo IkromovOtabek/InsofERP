@@ -57,7 +57,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Zaxira trendi — 180 kun" info="Ombor qiymati haftalik — joriy qoldiqdan orqaga hisoblab, bugungi o'rtacha narx asosida taxminiy.">
-          <LineChart labels={d.trend.map((t) => t.label)} series={[{ name: "Ombor qiymati", values: d.trend.map((t) => t.value), color: "#f59e0b" }]} formatValue={moneyShort} labelEvery={4} height={170} />
+          <LineChart labels={d.trend.map((t) => t.label)} series={[{ name: "Ombor qiymati", values: d.trend.map((t) => t.value), color: "#ffa800" }]} formatValue={moneyShort} labelEvery={4} height={170} />
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
             <div><div className="text-slate-400">Hozirgi qiymat</div><div className="font-semibold tabular">{moneyShort(c.value)}</div></div>
             <div><div className="text-slate-400">180 kunlik o'zgarish</div><div className={`font-semibold tabular ${c.value - (d.trend[0]?.value ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>{moneyShort(c.value - (d.trend[0]?.value ?? 0))}</div></div>
@@ -66,7 +66,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
           </div>
         </Panel>
         <Panel title="Kirim / chiqim balansi" info="Kirim — yetkazuvchidan (RECEIPT), chiqim — ishlab chiqarish sarfi + brak. Qiymatda." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "stock", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
-          <LineChart labels={d.inflow.map((x) => x.label)} series={[{ name: "Kirim", values: d.inflow.map((x) => x.value), color: "#10b981" }, { name: "Chiqim", values: d.outflow.map((x) => x.value), color: "#ef4444" }]} formatValue={moneyShort} labelEvery={Math.max(1, Math.ceil(d.inflow.length / 10))} height={170} />
+          <LineChart labels={d.inflow.map((x) => x.label)} series={[{ name: "Kirim", values: d.inflow.map((x) => x.value), color: "#00cb80" }, { name: "Chiqim", values: d.outflow.map((x) => x.value), color: "#fa1636" }]} formatValue={moneyShort} labelEvery={Math.max(1, Math.ceil(d.inflow.length / 10))} height={170} />
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
             <div><div className="text-slate-400">Jami kirim</div><div className="font-semibold tabular text-emerald-600">{moneyShort(d.totalIn)}</div></div>
             <div><div className="text-slate-400">Jami chiqim</div><div className="font-semibold tabular text-red-600">{moneyShort(d.totalOut)}</div></div>

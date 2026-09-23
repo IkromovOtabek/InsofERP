@@ -65,7 +65,8 @@ export type NewOrderInput = {
   customerId?: string;
   newCustomer?: { name: string; phone?: string | null; inn?: string | null; address?: string | null };
   deliveryDate: Date;
-  deliveryTime: string;
+  /** Soat ("HH:MM") — endi formada so'ralmaydi, eski importlar uchun ixtiyoriy qolgan. */
+  deliveryTime?: string | null;
   deliveryAddress: string;
   /** Obyekt nuqtasi — forma xaritadan beradi. Bo'lmasa zayavka baribir saqlanadi. */
   lat?: number | null;
@@ -74,7 +75,7 @@ export type NewOrderInput = {
   needsPump?: boolean;
   needsDelivery?: boolean;
   isUrgent?: boolean;
-  /** Qarzga — kafolat xati talab qilinadi; bunda oldindan to'lov olinmaydi. */
+  /** Qarzga — kafolat xati talab qilinadi. Bosh to'lov bunda ham bo'lishi mumkin. */
   onCredit?: boolean;
   prepay?: { amount: number; cashAccountId: string };
   contractAmount?: number;
@@ -108,7 +109,8 @@ export async function createOrder(
       dist = await routeDistance({ lat: plant.lat, lng: plant.lng }, { lat: input.lat, lng: input.lng });
     }
   }
-  if (!/^\d{2}:\d{2}$/.test(input.deliveryTime)) throw new Error("Yetkazish soati kerak (masalan 09:30)");
+  // Soat majburiy emas — berilgan bo'lsa formati tekshiriladi
+  if (input.deliveryTime && !/^\d{2}:\d{2}$/.test(input.deliveryTime)) throw new Error("Yetkazish soati formati: 09:30");
 
   const total = items.reduce((s, i) => s + i.qtyM3 * i.price, 0);
   const onCredit = !!input.onCredit;
@@ -116,8 +118,9 @@ export async function createOrder(
   // ── Shartnoma ──
   const contractAmount = input.contractAmount && input.contractAmount > 0 ? input.contractAmount : null;
 
-  // ── Oldindan to'lov (qarzga bo'lmasa) ──
-  const prepay = !onCredit && input.prepay && input.prepay.amount > 0 ? input.prepay : null;
+  // ── Bosh to'lov ──
+  // Qarzga olinganda ham bo'lishi mumkin: bir qismi naqd, qolgani kredit limitidan.
+  const prepay = input.prepay && input.prepay.amount > 0 ? input.prepay : null;
   if (prepay) {
     if (prepay.amount > total + 0.005) throw new Error(`Oldindan to'lov ${money(prepay.amount)} zayavka summasidan ${money(total)} katta`);
     const acc = await db.cashAccount.findUnique({ where: { id: prepay.cashAccountId } });
@@ -156,7 +159,7 @@ export async function createOrder(
         orderNo: await nextNo(tx, "order", "Z"),
         customerId,
         deliveryDate: input.deliveryDate,
-        deliveryTime: input.deliveryTime,
+        deliveryTime: input.deliveryTime ?? null,
         deliveryAddress: input.deliveryAddress,
         lat: input.lat ?? null,
         lng: input.lng ?? null,

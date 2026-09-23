@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
 import type { Role } from "@/generated/prisma";
+import { TOUR_COOKIE } from "./tour";
 
 const COOKIE = "insof_session";
 const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret");
@@ -31,11 +32,16 @@ export async function login(loginName: string, password: string): Promise<Sessio
     path: "/",
     maxAge: 60 * 60 * 12,
   });
+  // Instruksiya har kirishda boshidan ko'rsatiladi: oldingi sessiyada "o'tkazib yuborildi"
+  // deb belgilangan bo'lsa ham, yangi kirishda belgi o'chadi.
+  (await cookies()).delete(TOUR_COOKIE);
   return session;
 }
 
 export async function logout() {
-  (await cookies()).delete(COOKIE);
+  const c = await cookies();
+  c.delete(COOKIE);
+  c.delete(TOUR_COOKIE);
 }
 
 export async function getSession(): Promise<Session | null> {

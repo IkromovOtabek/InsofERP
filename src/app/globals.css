@@ -7,15 +7,124 @@
 @theme {
   --font-sans: var(--font-jakarta), var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  /* Brend: beton/sanoat — neytral slate + issiq amber aksent */
-  --color-brand-50: #fffbeb;
-  --color-brand-100: #fef3c7;
-  --color-brand-200: #fde68a;
-  --color-brand-300: #fcd34d;
-  --color-brand-400: #fbbf24;
-  --color-brand-500: #f59e0b;
-  --color-brand-600: #d97706;
-  --color-brand-700: #b45309;
+  /* Brend: beton/sanoat — neytral slate + yorqin amber aksent */
+  --color-brand-50: #fff8e0;
+  --color-brand-100: #ffefb8;
+  --color-brand-200: #ffe17a;
+  --color-brand-300: #ffd042;
+  --color-brand-400: #ffbb0f;
+  --color-brand-500: #ffa300;
+  --color-brand-600: #f08a00;
+  --color-brand-700: #c26d00;
+
+  /* ───────── Yorqin palitra ─────────
+     Tailwind'ning standart shkalalari o'rniga to'yingan variantlari. Kod hamma
+     yerda odatdagi `bg-emerald-50`, `text-red-700` sinflarini ishlatadi —
+     tokenning o'zi almashtirilgani uchun butun ERP bir joydan yorqinlashadi.
+     Qoida: matn bosqichlari (600–900) asl to'qligida qoladi, faqat rang
+     to'yinganligi oshadi — kontrast tushmaydi; fon va to'ldirish bosqichlari
+     (50–500) esa ochiqroq va jonliroq bo'ladi. */
+  --color-red-50: #fff0f2;
+  --color-red-100: #ffdde1;
+  --color-red-200: #ffbcc4;
+  --color-red-300: #ff8c99;
+  --color-red-400: #ff4d63;
+  --color-red-500: #fa1636;
+  --color-red-600: #e60d28;
+  --color-red-700: #c0001c;
+  --color-red-800: #9b0719;
+  --color-red-900: #800f1c;
+  --color-red-950: #46000c;
+
+  --color-orange-50: #fff4ec;
+  --color-orange-100: #ffe5d2;
+  --color-orange-200: #ffc7a3;
+  --color-orange-300: #ffa066;
+  --color-orange-400: #ff7a2b;
+  --color-orange-500: #ff5c00;
+  --color-orange-600: #eb4d00;
+  --color-orange-700: #bd3c00;
+  --color-orange-800: #963200;
+  --color-orange-900: #7a2c04;
+  --color-orange-950: #431500;
+
+  --color-amber-50: #fff9e0;
+  --color-amber-100: #fff1bd;
+  --color-amber-200: #ffe388;
+  --color-amber-300: #ffd24d;
+  --color-amber-400: #ffbe1a;
+  --color-amber-500: #ffa800;
+  --color-amber-600: #ef8c00;
+  --color-amber-700: #b25c00;
+  --color-amber-800: #8f4a05;
+  --color-amber-900: #763e0b;
+  --color-amber-950: #451f00;
+
+  --color-lime-50: #f4ffdb;
+  --color-lime-100: #e6ffb3;
+  --color-lime-200: #d0ff7a;
+  --color-lime-300: #b5f53d;
+  --color-lime-400: #9ee610;
+  --color-lime-500: #82cc00;
+  --color-lime-600: #66a300;
+  --color-lime-700: #4d7a00;
+  --color-lime-800: #3f6106;
+  --color-lime-900: #35520c;
+
+  --color-emerald-50: #e4fff4;
+  --color-emerald-100: #bcffe6;
+  --color-emerald-200: #84fbd0;
+  --color-emerald-300: #42f2b3;
+  --color-emerald-400: #0fe296;
+  --color-emerald-500: #00cb80;
+  --color-emerald-600: #009b61;
+  --color-emerald-700: #00794b;
+  --color-emerald-800: #00603d;
+  --color-emerald-900: #045034;
+  --color-emerald-950: #002c1d;
+
+  --color-sky-50: #e6f8ff;
+  --color-sky-100: #ccf0ff;
+  --color-sky-200: #99e1ff;
+  --color-sky-300: #5ccdff;
+  --color-sky-400: #1fb5ff;
+  --color-sky-500: #009ef5;
+  --color-sky-600: #0082d6;
+  --color-sky-700: #0068ad;
+  --color-sky-800: #00568f;
+  --color-sky-900: #064a75;
+  --color-sky-950: #032f4d;
+
+  --color-blue-50: #ebf4ff;
+  --color-blue-100: #d6e9ff;
+  --color-blue-200: #add3ff;
+  --color-blue-300: #7ab7ff;
+  --color-blue-400: #3d96ff;
+  --color-blue-500: #0d78ff;
+  --color-blue-600: #0062f0;
+  --color-blue-700: #0a4fc4;
+  --color-blue-800: #0e429c;
+  --color-blue-900: #12397d;
+  --color-blue-950: #0b2250;
+
+  --color-violet-50: #f5f0ff;
+  --color-violet-100: #ebe0ff;
+  --color-violet-200: #d9c4ff;
+  --color-violet-300: #bf9bff;
+  --color-violet-400: #a066ff;
+  --color-violet-500: #8b2fff;
+  --color-violet-600: #7a12f5;
+  --color-violet-700: #6310cc;
+  --color-violet-800: #5312a6;
+  --color-violet-900: #451486;
+  --color-violet-950: #2a0a56;
+
+  /* Neytral shkala — matn to'qligi saqlanadi, ochiq bosqichlar salqinroq va
+     tozaroq bo'ladi: kulrang fon "iflos" emas, yorug' ko'rinadi. */
+  --color-slate-50: #f6f9fe;
+  --color-slate-100: #eef3fa;
+  --color-slate-200: #dfe7f2;
+  --color-slate-300: #c6d3e6;
 
   --color-ink-950: #0b1220;
   --color-ink-900: #0f172a;
@@ -30,28 +139,28 @@
      (ozgina yashil tusda — sof kulrang "tanlanmagan" bo'lib ko'rinadi), quyma
      qorong'i va zavod pultidagi signal sarig'i. ERP slate shkalasidan alohida,
      shuning uchun dark rejim uni ag'darmaydi. */
-  --color-beton-50: #f2f1ee;
-  --color-beton-100: #e5e4e0;
-  --color-beton-200: #d8d7d2;
-  --color-beton-300: #c4c3bd;
-  --color-beton-400: #a3a29a;
-  --color-beton-500: #7d7d75;
-  --color-beton-600: #5e5f59;
-  --color-beton-700: #45474a;
-  --color-beton-800: #24272a;
-  --color-beton-900: #191c1e;
-  --color-beton-950: #101214;
+  --color-beton-50: #f7f6f3;
+  --color-beton-100: #edece8;
+  --color-beton-200: #e1e0da;
+  --color-beton-300: #cecdc6;
+  --color-beton-400: #adaca3;
+  --color-beton-500: #87877e;
+  --color-beton-600: #666761;
+  --color-beton-700: #4b4d51;
+  --color-beton-800: #282c30;
+  --color-beton-900: #1c2023;
+  --color-beton-950: #121518;
   /* Brend ko'ki — logotipdagi plitka rangi va uning quyuq tuslari */
-  --color-insof-400: #7091e2;
-  --color-insof-500: #4f6ebe;
-  --color-insof-600: #3f5aa3;
-  --color-insof-700: #2f4680;
-  --color-insof-900: #17233d;   /* tepa qatori, poydevor */
+  --color-insof-400: #8aacf7;
+  --color-insof-500: #5b81dd;
+  --color-insof-600: #4667bf;
+  --color-insof-700: #35509c;
+  --color-insof-900: #1b2a4c;   /* tepa qatori, poydevor */
 
   /* Harakat rangi — qurilish to'q sarig'i. Faqat tugma va urg'uda. */
-  --color-signal: #ef7a1a;
-  --color-signal-600: #d9660c;
-  --color-signal-dim: #b85708;  /* ochiq fonda matn uchun — kontrast yetarli bo'lsin */
+  --color-signal: #ff8a1f;
+  --color-signal-600: #f06f00;
+  --color-signal-dim: #c75f00;  /* ochiq fonda matn uchun — kontrast yetarli bo'lsin */
 
   /* Sayt shriftlari — sanoat/muhandislik ohangida, logotipdagi kvadratsimon
      grotesk bilan bir oilada turadi:
@@ -65,105 +174,105 @@
 }
 
 :root {
-  --background: #f5f6f8;
+  --background: #f4f7fd;
   --foreground: #0f172a;
-  --logo-blue: #4f6ebe;
+  --logo-blue: #5b81dd;
 }
 
 /* Qorong'i fonda logotip ko'ki yorqinroq bo'lishi kerak */
-.dark, .on-dark { --logo-blue: #7091e2; }
+.dark, .on-dark { --logo-blue: #8aacf7; }
 
-/* ───────── Dark rejim (Team24 BI uslubi: #0f172a fon, #1e293b karta, #334155 chegara) ─────────
+/* ───────── Dark rejim (Team24 BI uslubi, yorqinlashtirilgan: #101c33 fon, #1d2c49 karta, #394d70 chegara) ─────────
    Butun kod slate/white tokenlaridan foydalanadi, shuning uchun tokenlarning o'zini
    qayta belgilash bilan barcha sahifalar avtomatik qorong'i bo'ladi. */
 .dark {
   color-scheme: dark;
-  --background: #0f172a;
-  --foreground: #f1f5f9;
+  --background: #101c33;
+  --foreground: #f2f6fc;
 
-  --color-white: #1e293b;        /* kartalar, header, inputlar */
-  --color-slate-50: #243044;     /* hover qatorlar, jadval sarlavhasi */
-  --color-slate-100: #2c3a50;    /* hover fon, ikonka chiplari */
-  --color-slate-200: #334155;    /* chegaralar */
-  --color-slate-300: #42536c;    /* kuchliroq chegaralar */
-  --color-slate-400: #8794a9;    /* xira matn, ikonkalar */
-  --color-slate-500: #94a3b8;    /* ikkilamchi matn */
-  --color-slate-600: #b1bdcd;
-  --color-slate-700: #cbd5e1;
-  --color-slate-800: #e2e8f0;
-  --color-slate-900: #f1f5f9;    /* sarlavhalar, asosiy matn */
-  --color-slate-950: #f8fafc;
+  --color-white: #1d2c49;        /* kartalar, header, inputlar */
+  --color-slate-50: #263756;     /* hover qatorlar, jadval sarlavhasi */
+  --color-slate-100: #2f4263;    /* hover fon, ikonka chiplari */
+  --color-slate-200: #394d70;    /* chegaralar */
+  --color-slate-300: #4a6088;    /* kuchliroq chegaralar */
+  --color-slate-400: #93a3bd;    /* xira matn, ikonkalar */
+  --color-slate-500: #a5b4cb;    /* ikkilamchi matn */
+  --color-slate-600: #becadb;
+  --color-slate-700: #d4dded;
+  --color-slate-800: #e6ecf7;
+  --color-slate-900: #f2f6fc;    /* sarlavhalar, asosiy matn */
+  --color-slate-950: #fafcff;
 
   /* Rangli tuslar: ochiq tint → shaffof, quyuq matn → ochiq matn */
-  --color-red-50: color-mix(in srgb, #ef4444 12%, transparent);
-  --color-red-100: color-mix(in srgb, #ef4444 20%, transparent);
-  --color-red-200: color-mix(in srgb, #ef4444 35%, transparent);
-  --color-red-300: color-mix(in srgb, #ef4444 50%, transparent);
-  --color-red-600: #f87171; --color-red-700: #fca5a5; --color-red-800: #fecaca; --color-red-900: #fee2e2;
+  --color-red-50: color-mix(in srgb, #ef4444 20%, transparent);
+  --color-red-100: color-mix(in srgb, #ef4444 30%, transparent);
+  --color-red-200: color-mix(in srgb, #ef4444 46%, transparent);
+  --color-red-300: color-mix(in srgb, #ef4444 62%, transparent);
+  --color-red-600: #ff7b88; --color-red-700: #ffafb8; --color-red-800: #ffd0d6; --color-red-900: #ffe8eb;
 
-  --color-emerald-50: color-mix(in srgb, #10b981 12%, transparent);
-  --color-emerald-100: color-mix(in srgb, #10b981 20%, transparent);
-  --color-emerald-200: color-mix(in srgb, #10b981 35%, transparent);
-  --color-emerald-300: color-mix(in srgb, #10b981 50%, transparent);
-  --color-emerald-600: #34d399; --color-emerald-700: #6ee7b7; --color-emerald-800: #a7f3d0; --color-emerald-900: #d1fae5;
+  --color-emerald-50: color-mix(in srgb, #10b981 20%, transparent);
+  --color-emerald-100: color-mix(in srgb, #10b981 30%, transparent);
+  --color-emerald-200: color-mix(in srgb, #10b981 46%, transparent);
+  --color-emerald-300: color-mix(in srgb, #10b981 62%, transparent);
+  --color-emerald-600: #2ee39b; --color-emerald-700: #74f5c3; --color-emerald-800: #aefadd; --color-emerald-900: #d9fdf0;
 
-  --color-amber-50: color-mix(in srgb, #f59e0b 12%, transparent);
-  --color-amber-100: color-mix(in srgb, #f59e0b 20%, transparent);
-  --color-amber-200: color-mix(in srgb, #f59e0b 35%, transparent);
-  --color-amber-300: color-mix(in srgb, #f59e0b 50%, transparent);
-  --color-amber-600: #fbbf24; --color-amber-700: #fcd34d; --color-amber-800: #fde68a; --color-amber-900: #fef3c7;
+  --color-amber-50: color-mix(in srgb, #f59e0b 20%, transparent);
+  --color-amber-100: color-mix(in srgb, #f59e0b 30%, transparent);
+  --color-amber-200: color-mix(in srgb, #f59e0b 46%, transparent);
+  --color-amber-300: color-mix(in srgb, #f59e0b 62%, transparent);
+  --color-amber-600: #ffc233; --color-amber-700: #ffd76b; --color-amber-800: #ffe8a3; --color-amber-900: #fff5d6;
 
-  --color-blue-50: color-mix(in srgb, #3b82f6 12%, transparent);
-  --color-blue-100: color-mix(in srgb, #3b82f6 20%, transparent);
-  --color-blue-200: color-mix(in srgb, #3b82f6 35%, transparent);
-  --color-blue-300: color-mix(in srgb, #3b82f6 50%, transparent);
-  --color-blue-600: #60a5fa; --color-blue-700: #93c5fd; --color-blue-800: #bfdbfe; --color-blue-900: #dbeafe;
+  --color-blue-50: color-mix(in srgb, #3b82f6 20%, transparent);
+  --color-blue-100: color-mix(in srgb, #3b82f6 30%, transparent);
+  --color-blue-200: color-mix(in srgb, #3b82f6 46%, transparent);
+  --color-blue-300: color-mix(in srgb, #3b82f6 62%, transparent);
+  --color-blue-600: #5fa8ff; --color-blue-700: #96c6ff; --color-blue-800: #c2ddff; --color-blue-900: #e3efff;
 
-  --color-violet-50: color-mix(in srgb, #8b5cf6 12%, transparent);
-  --color-violet-100: color-mix(in srgb, #8b5cf6 20%, transparent);
-  --color-violet-200: color-mix(in srgb, #8b5cf6 35%, transparent);
-  --color-violet-300: color-mix(in srgb, #8b5cf6 50%, transparent);
-  --color-violet-600: #a78bfa; --color-violet-700: #c4b5fd; --color-violet-800: #ddd6fe; --color-violet-900: #ede9fe;
+  --color-violet-50: color-mix(in srgb, #8b5cf6 20%, transparent);
+  --color-violet-100: color-mix(in srgb, #8b5cf6 30%, transparent);
+  --color-violet-200: color-mix(in srgb, #8b5cf6 46%, transparent);
+  --color-violet-300: color-mix(in srgb, #8b5cf6 62%, transparent);
+  --color-violet-600: #b083ff; --color-violet-700: #ccb0ff; --color-violet-800: #e1d2ff; --color-violet-900: #f1e9ff;
 
-  --color-sky-50: color-mix(in srgb, #0ea5e9 12%, transparent);
-  --color-sky-100: color-mix(in srgb, #0ea5e9 20%, transparent);
-  --color-sky-200: color-mix(in srgb, #0ea5e9 35%, transparent);
-  --color-sky-600: #38bdf8; --color-sky-700: #7dd3fc; --color-sky-800: #bae6fd;
+  --color-sky-50: color-mix(in srgb, #0ea5e9 20%, transparent);
+  --color-sky-100: color-mix(in srgb, #0ea5e9 30%, transparent);
+  --color-sky-200: color-mix(in srgb, #0ea5e9 46%, transparent);
+  --color-sky-600: #3ac6ff; --color-sky-700: #86dcff; --color-sky-800: #c2ecff;
 
-  --color-orange-50: color-mix(in srgb, #f97316 12%, transparent);
-  --color-orange-100: color-mix(in srgb, #f97316 20%, transparent);
-  --color-orange-200: color-mix(in srgb, #f97316 35%, transparent);
-  --color-orange-600: #fb923c; --color-orange-700: #fdba74; --color-orange-800: #fed7aa;
+  --color-orange-50: color-mix(in srgb, #f97316 20%, transparent);
+  --color-orange-100: color-mix(in srgb, #f97316 30%, transparent);
+  --color-orange-200: color-mix(in srgb, #f97316 46%, transparent);
+  --color-orange-600: #ff9a47; --color-orange-700: #ffc084; --color-orange-800: #ffdcb8;
 
-  --color-brand-50: color-mix(in srgb, #f59e0b 10%, transparent);
-  --color-brand-100: color-mix(in srgb, #f59e0b 18%, transparent);
-  --color-brand-700: #fcd34d;
+  --color-brand-50: color-mix(in srgb, #ffa800 18%, transparent);
+  --color-brand-100: color-mix(in srgb, #ffa800 28%, transparent);
+  --color-brand-700: #ffd24d;
 
   --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.25), 0 1px 3px 0 rgb(0 0 0 / 0.3);
   --shadow-pop: 0 10px 30px -12px rgb(0 0 0 / 0.6);
 
-  scrollbar-color: #3b4a60 transparent;
+  scrollbar-color: #4a6088 transparent;
 }
-.dark *::-webkit-scrollbar-thumb { background: #3b4a60; }
+.dark *::-webkit-scrollbar-thumb { background: #4a6088; }
 
 /* Tokenlar teskari bo'lganda ham to'g'ri ko'rinishi kerak bo'lgan holatlar */
 .dark .text-white { color: #fff; }                                    /* rangli fonlardagi oq matn */
-.dark .text-slate-950 { color: #0f172a; }                             /* brend (amber) tugma/avatar matni */
+.dark .text-slate-950 { color: #101c33; }                             /* brend (amber) tugma/avatar matni */
 .dark .bg-slate-900.text-white,
 .dark .bg-slate-800.text-white,
-.dark .hover\:bg-slate-800:hover.text-white { color: #0f172a; }       /* primary tugma: ochiq fon + qora matn */
-.dark .bg-red-600 { background-color: #dc2626; }
-.dark .bg-emerald-600 { background-color: #059669; }
-.dark .bg-amber-600 { background-color: #d97706; }
-.dark .bg-blue-600 { background-color: #2563eb; }
-.dark .bg-violet-600 { background-color: #7c3aed; }
-.dark .hover\:bg-red-700:hover { background-color: #b91c1c; }
-.dark .hover\:bg-emerald-700:hover { background-color: #047857; }
+.dark .hover\:bg-slate-800:hover.text-white { color: #101c33; }       /* primary tugma: ochiq fon + qora matn */
+.dark .bg-red-600 { background-color: #f01a33; }
+.dark .bg-emerald-600 { background-color: #00b573; }
+.dark .bg-amber-600 { background-color: #f59500; }
+.dark .bg-blue-600 { background-color: #0d6efd; }
+.dark .bg-violet-600 { background-color: #8828ff; }
+.dark .hover\:bg-red-700:hover { background-color: #d00a24; }
+.dark .hover\:bg-emerald-700:hover { background-color: #008f59; }
 
 /* Doim qorong'i bloklar (sidebar, login paneli, hero) — asl tokenlarni saqlaydi */
 .on-dark {
   --color-white: #fff;
-  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+  --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
   --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
 }
@@ -176,12 +285,12 @@
   color: #000;
   --color-white: #fff;
   --color-black: #000;
-  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+  --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
   --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
 }
 .dark .paper .bg-slate-900.text-white { color: #fff; }   /* qog'ozdagi "Chop etish" tugmasi */
-.dark .paper { box-shadow: 0 0 0 1px #334155, var(--shadow-pop); }
+.dark .paper { box-shadow: 0 0 0 1px #394d70, var(--shadow-pop); }
 
 /* ───────── Ommaviy sayt qobig'i ─────────
    Sayt xodimning ERP rejimidan qat'i nazar bir xil ko'rinadi: `.site` slate
@@ -189,10 +298,10 @@
 .site {
   color-scheme: light;
   --color-white: #fff;
-  --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+  --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
   --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
-  --logo-blue: #4f6ebe;
+  --logo-blue: #5b81dd;
 
   /* Shrift o'zgaruvchilari shu yerda qayta belgilanadi.
      Sabab: `@theme` dagi --font-display/--font-mono `:root` da hisoblanadi, sayt
@@ -242,9 +351,9 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 .tabular { font-variant-numeric: tabular-nums; }
 
 /* Nozik scrollbar */
-* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+* { scrollbar-width: thin; scrollbar-color: #c6d3e6 transparent; }
 *::-webkit-scrollbar { height: 8px; width: 8px; }
-*::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: #c6d3e6; border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* Fokus — klaviatura uchun aniq, sichqoncha uchun tinch */
@@ -322,13 +431,54 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   .sb-collapsed .sb-toggle svg { transform: rotate(180deg); }
 }
 
+/* ───────── Instruksiya (onboarding) ─────────
+   Ekran qorayadi, ko'rsatilayotgan element atrofida amber halqa "nafas oladi",
+   kartochkadagi strelka esa nishon tomon sakrab turadi — qayerni bosish kerakligi
+   bir qarashda ko'rinadi. Ranglar qat'iy yozilgan: qatlam ikkala rejimda ham bir xil. */
+@keyframes tour-ring {
+  0%, 100% { box-shadow: 0 0 0 2px #ffa300, 0 0 0 5px rgb(255 163 0 / .32); }
+  50%      { box-shadow: 0 0 0 2px #ffa300, 0 0 0 15px rgb(255 163 0 / 0); }
+}
+.tour-ring { animation: tour-ring 1.8s cubic-bezier(.4, 0, .6, 1) infinite; }
+
+@keyframes tour-pop { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: none; } }
+.tour-card { animation: tour-pop .28s cubic-bezier(.22, .8, .36, 1) both; }
+
+@keyframes tour-fade { from { opacity: 0; } to { opacity: 1; } }
+.tour-fade { animation: tour-fade .3s ease-out both; }
+
+/* Strelka nishon tomonga qarab sakraydi */
+@keyframes tour-ax-l { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-7px); } }
+@keyframes tour-ax-r { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(7px); } }
+@keyframes tour-ay-u { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes tour-ay-d { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(7px); } }
+.tour-arrow-l { animation: tour-ax-l 1.1s ease-in-out infinite; }
+.tour-arrow-r { animation: tour-ax-r 1.1s ease-in-out infinite; }
+.tour-arrow-u { animation: tour-ay-u 1.1s ease-in-out infinite; }
+.tour-arrow-d { animation: tour-ay-d 1.1s ease-in-out infinite; }
+
+/* "Bosing" belgisi va yozuvi */
+@keyframes tour-tap {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgb(255 163 0 / .55); }
+  50%      { transform: scale(1.14); box-shadow: 0 0 0 11px rgb(255 163 0 / 0); }
+}
+.tour-tap { animation: tour-tap 1.3s ease-out infinite; }
+@keyframes tour-blink { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.tour-blink { animation: tour-blink 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring, .tour-card, .tour-fade, .tour-tap, .tour-blink,
+  .tour-arrow-l, .tour-arrow-r, .tour-arrow-u, .tour-arrow-d { animation: none; }
+  .tour-ring { box-shadow: 0 0 0 2px #ffa300, 0 0 0 6px rgb(255 163 0 / .3); }
+}
+
 @media print {
   body { background: #fff; }
   /* Chop etishda doim ochiq rejim */
   .dark {
     color-scheme: light; --background: #fff; --foreground: #0f172a;
     --color-white: #fff;
-    --color-slate-50: #f8fafc; --color-slate-100: #f1f5f9; --color-slate-200: #e2e8f0; --color-slate-300: #cbd5e1;
+    --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
     --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
     --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
   }

@@ -22,7 +22,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const eff = (c: typeof cl[number]) => (c.count ? safeDiv(c.share, (c.count / Math.max(1, sold.length)) * 100) * 100 : 0);
   const most = [...cl].filter((c) => c.key !== "Sotilmagan").sort((a, b) => b.revenue - a.revenue)[0];
   const fastest = [...cl].filter((c) => c.key !== "Sotilmagan").sort((a, b) => eff(b) - eff(a))[0];
-  const scatter = sold.map((x) => ({ x: x.revenue, y: x.trend, r: Math.max(2, Math.min(14, x.qty / 20)), label: `${x.code} — ${x.cluster}`, color: d.clusters.find((c) => c.key === x.cluster)?.color ?? "#94a3b8" }));
+  const scatter = sold.map((x) => ({ x: x.revenue, y: x.trend, r: Math.max(2, Math.min(14, x.qty / 20)), label: `${x.code} — ${x.cluster}`, color: d.clusters.find((c) => c.key === x.cluster)?.color ?? "#93a3bd" }));
   // Klaster × birlik (m3 / dona) — kategoriya analogi
   const units = [...new Set(d.rows.map((x) => x.unit))];
   const matrix = cl.map((c) => ({ key: c.key, cells: units.map((u) => sum(d.rows.filter((x) => x.cluster === c.key && x.unit === u).map((x) => x.revenue))) }));

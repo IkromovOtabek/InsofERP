@@ -4,7 +4,7 @@ import { type Range, addDays, startOfDay, sum, safeDiv, ACTIVE_ORDER, abc, bucke
 export type Segment = "VIP" | "Loyal" | "Regular" | "New" | "At Risk" | "Lost" | "Yangi (xaridsiz)";
 export type Risk = "Kritik" | "Yuqori" | "O'rta" | "Past" | "Xavfsiz";
 export const SEGMENT_ORDER: Segment[] = ["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Yangi (xaridsiz)"];
-export const SEGMENT_COLOR: Record<Segment, string> = { VIP: "#f59e0b", Loyal: "#10b981", Regular: "#3b82f6", New: "#8b5cf6", "At Risk": "#f97316", Lost: "#ef4444", "Yangi (xaridsiz)": "#94a3b8" };
+export const SEGMENT_COLOR: Record<Segment, string> = { VIP: "#ffa800", Loyal: "#00cb80", Regular: "#0d78ff", New: "#8b2fff", "At Risk": "#ff5c00", Lost: "#fa1636", "Yangi (xaridsiz)": "#93a3bd" };
 
 export type CustomerRow = {
   id: string; name: string; phone: string | null; creditLimit: number; createdAt: Date;

@@ -42,7 +42,7 @@ export type LMarker = {
   setLatLng: (c: [number, number]) => LMarker;
   on: (ev: string, fn: () => void) => LMarker;
 };
-export type LLayer = { addTo: (m: LMap) => LLayer };
+export type LLayer = { addTo: (m: LMap) => LLayer; on: (ev: string, fn: () => void) => LLayer; bindTooltip: (html: string, o?: unknown) => LLayer };
 export type LTileLayer = { addTo: (m: LMap) => LTileLayer; on: (ev: string, fn: () => void) => LTileLayer };
 export type Leaflet = {
   map: (el: HTMLElement, o?: unknown) => LMap;

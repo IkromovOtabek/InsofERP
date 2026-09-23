@@ -85,7 +85,7 @@ function MapBox({ lat, lng, onPick }: { lat: number; lng: number; onPick: () => 
         const marker = L.marker([lat, lng], {
           icon: L.divIcon({
             className: "",
-            html: `<span style="display:block;width:22px;height:22px;border-radius:9999px;background:#ef7a1a;border:4px solid #fff;box-shadow:0 2px 10px rgba(23,35,61,.45)"></span>`,
+            html: `<span style="display:block;width:22px;height:22px;border-radius:9999px;background:#ff8a1f;border:4px solid #fff;box-shadow:0 2px 10px rgba(23,35,61,.45)"></span>`,
             iconSize: [22, 22],
             iconAnchor: [11, 11],
           }),

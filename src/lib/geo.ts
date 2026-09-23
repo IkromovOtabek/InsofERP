@@ -40,11 +40,14 @@ type DgisItem = {
  */
 export async function searchPlaces(query: string, signal?: AbortSignal): Promise<Place[]> {
   const q = query.trim();
-  if (!DGIS_KEY || q.length < 3) return [];
+  // Bitta harfdan boshlab qidiramiz — zayavka formasi yozgan sayin so'raydi.
+  if (!DGIS_KEY || q.length < 1) return [];
   const url = new URL("https://catalog.api.2gis.com/3.0/items/geocode");
   url.searchParams.set("q", q);
   url.searchParams.set("fields", "items.point,items.address,items.full_name");
   url.searchParams.set("location", CITY.join(","));
+  // Manzillar o'zbekcha lotinda qaytsin ("Toshkent, Bunyodkor prospekt"), sukut bo'yicha rus tilida keladi
+  url.searchParams.set("locale", "uz_UZ");
   url.searchParams.set("page_size", "8");
   url.searchParams.set("key", DGIS_KEY);
   try {

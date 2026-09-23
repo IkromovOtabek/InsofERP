@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, ArrowRight, History, X } from "lucide-react";
+import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -12,8 +12,8 @@ import { requireSession } from "@/lib/auth";
 import { ORDER_STATUS, OrderStatusBadge, PENDING_STATUSES as PENDING } from "./status";
 import type { OrderStatus } from "@/generated/prisma";
 
-export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string }> }) {
-  const { status, customer, kun } = await searchParams;
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string }> }) {
+  const { status, customer, kun, imported } = await searchParams;
   const s = await requireSession();
   // Ta'minot zayavkasini tasdiqlash shu oynada: narx qo'yilgach ma'sul (sotuv) xodim ko'radi
   const canApproveSupply = ["SALES", "DIRECTOR"].includes(s.role);
@@ -37,8 +37,14 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Zayavkalar"
         subtitle="Yangi kiritilgan va qabul qilinmagan zayavkalar. Qabul qilingach zayavka Sotuv bo'limiga o'tadi."
-        action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton><LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton><LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton></div>}
+        action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton><LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton><LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton><LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton></div>}
       />
+      {/* Excel importidan keyin: nechta zayavka ochilgani — hammasi qoralama, quyidagi ro'yxatda turadi */}
+      {imported && /^\d+$/.test(imported) && (
+        <div className="mb-4 inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          <CheckCircle2 size={16} /> Excel&apos;dan <b>{imported} ta</b> qoralama zayavka ochildi — tekshirib qabul qilasiz.
+        </div>
+      )}
       {/* Zayavka qabul qilayotgan xodim korxonada nima borligini shu yerda ko'radi:
           Hovlidagi dona mahsulot, beton va Skladdagi xomashyo. */}
       <div className="mb-5">

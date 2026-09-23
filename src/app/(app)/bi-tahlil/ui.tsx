@@ -120,7 +120,7 @@ export function Note({ children }: { children: React.ReactNode }) {
 
 export function ScoreRing({ score, size = 120, label }: { score: number; size?: number; label?: string }) {
   const r = 44, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, score));
-  const color = p >= 75 ? "#10b981" : p >= 50 ? "#f59e0b" : "#ef4444";
+  const color = p >= 75 ? "#00cb80" : p >= 50 ? "#ffa800" : "#fa1636";
   return (
     <div className="flex flex-col items-center">
       <svg viewBox="0 0 100 100" style={{ width: size, height: size }}>

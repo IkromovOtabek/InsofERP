@@ -37,7 +37,7 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2" title="Ishlab chiqarish va yetkazish dinamikasi" info="Zames hajmi (m³) va yetkazilgan hajm — davr bo'yicha." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "operations", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
-          <LineChart labels={d.prodDyn.map((x) => x.label)} series={[{ name: "Ishlab chiqarildi", values: d.prodDyn.map((x) => x.value), color: "#f59e0b" }, { name: "Yetkazildi", values: d.shipDyn.map((x) => x.value), color: "#10b981" }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={Math.max(1, Math.ceil(d.prodDyn.length / 12))} height={200} />
+          <LineChart labels={d.prodDyn.map((x) => x.label)} series={[{ name: "Ishlab chiqarildi", values: d.prodDyn.map((x) => x.value), color: "#ffa800" }, { name: "Yetkazildi", values: d.shipDyn.map((x) => x.value), color: "#00cb80" }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={Math.max(1, Math.ceil(d.prodDyn.length / 12))} height={200} />
         </Panel>
         <Panel title="Smena va marka bo'yicha" info="Zames hajmi taqsimoti.">
           {d.byShift.length ? <DonutChart data={d.byShift} formatValue={(v) => `${qty(v)} m³`} size={110} /> : <Note>Zames yo'q.</Note>}

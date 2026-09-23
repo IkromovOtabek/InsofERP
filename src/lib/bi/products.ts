@@ -39,7 +39,7 @@ export async function productsTab(r: Range) {
   const medRev = median(sold.map((x) => x.revenue)), medMargin = median(sold.map((x) => x.margin));
   const quadrant = (x: { revenue: number; margin: number }): Quadrant => x.revenue >= medRev ? (x.margin >= medMargin ? "Yulduzlar" : "Barqaror daromad") : x.margin >= medMargin ? "Ixtisoslashgan" : "Kam samarali";
   const quadrants = withAbc.map((x) => ({ ...x, quadrant: x.revenue > 0 ? quadrant(x) : null }));
-  const scatter = sold.map((x) => ({ x: x.revenue, y: x.margin, r: x.qty, label: `${x.code} — ${x.name}`, color: { Yulduzlar: "#f59e0b", "Barqaror daromad": "#3b82f6", Ixtisoslashgan: "#10b981", "Kam samarali": "#ef4444" }[quadrant(x)] }));
+  const scatter = sold.map((x) => ({ x: x.revenue, y: x.margin, r: x.qty, label: `${x.code} — ${x.name}`, color: { Yulduzlar: "#ffa800", "Barqaror daromad": "#0d78ff", Ixtisoslashgan: "#00cb80", "Kam samarali": "#fa1636" }[quadrant(x)] }));
 
   // Klasterlar (tezlik × barqarorlik) — qoida asosida
   const clusterOf = (x: typeof withAbc[number]) => {
@@ -51,12 +51,12 @@ export async function productsTab(r: Range) {
     return "Dogs";
   };
   const CLUSTER_META: Record<string, { title: string; sub: string; advice: string; color: string }> = {
-    Stars: { title: "Stars", sub: "TEZ + O'SUVCHI", advice: "Xomashyo zaxirasini oldindan oshiring — tugab qolish eng qimmatga tushadigan guruh.", color: "#f59e0b" },
-    "Cash Cows": { title: "Cash Cows", sub: "TEZ + BARQAROR", advice: "Pul oqimi shu yerda. Chegirma bermang — u savdoni oshirmaydi, faqat marjani yeydi.", color: "#10b981" },
-    Rising: { title: "Rising", sub: "O'RTA + O'SUVCHI", advice: "O'sish bor, hajm kichik. To'g'ri qo'llab-quvvatlansa Stars ga o'tadi.", color: "#3b82f6" },
-    Niche: { title: "Niche", sub: "SEKIN + BARQAROR", advice: "Doimiy, lekin kichik talab. Buyurtma bo'yicha ishlab chiqaring, katta zaxira qilmang.", color: "#8b5cf6" },
-    Dogs: { title: "Dogs", sub: "SEKIN + PAST", advice: "Assortimentdan chiqarish nomzodlari — avval «yo'lakay» sotilishini tekshiring.", color: "#ef4444" },
-    Sotilmagan: { title: "Sotilmagan", sub: "DAVRDA SOTUV YO'Q", advice: "Narx yoki talabni qayta ko'rib chiqing.", color: "#94a3b8" },
+    Stars: { title: "Stars", sub: "TEZ + O'SUVCHI", advice: "Xomashyo zaxirasini oldindan oshiring — tugab qolish eng qimmatga tushadigan guruh.", color: "#ffa800" },
+    "Cash Cows": { title: "Cash Cows", sub: "TEZ + BARQAROR", advice: "Pul oqimi shu yerda. Chegirma bermang — u savdoni oshirmaydi, faqat marjani yeydi.", color: "#00cb80" },
+    Rising: { title: "Rising", sub: "O'RTA + O'SUVCHI", advice: "O'sish bor, hajm kichik. To'g'ri qo'llab-quvvatlansa Stars ga o'tadi.", color: "#0d78ff" },
+    Niche: { title: "Niche", sub: "SEKIN + BARQAROR", advice: "Doimiy, lekin kichik talab. Buyurtma bo'yicha ishlab chiqaring, katta zaxira qilmang.", color: "#8b2fff" },
+    Dogs: { title: "Dogs", sub: "SEKIN + PAST", advice: "Assortimentdan chiqarish nomzodlari — avval «yo'lakay» sotilishini tekshiring.", color: "#fa1636" },
+    Sotilmagan: { title: "Sotilmagan", sub: "DAVRDA SOTUV YO'Q", advice: "Narx yoki talabni qayta ko'rib chiqing.", color: "#93a3bd" },
   };
   const clusters = Object.keys(CLUSTER_META).map((k) => { const list = withAbc.filter((x) => clusterOf(x) === k); return { key: k, ...CLUSTER_META[k], count: list.length, revenue: sum(list.map((x) => x.revenue)), share: safeDiv(sum(list.map((x) => x.revenue)), totalRevenue) * 100, margin: safeDiv(sum(list.map((x) => x.gross)), sum(list.map((x) => x.revenue))) * 100, products: list.map((x) => x.code) }; }).filter((c) => c.count);
 

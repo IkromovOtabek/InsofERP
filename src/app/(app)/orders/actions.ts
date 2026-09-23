@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
+import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { saveContractFile, removeContractFile } from "@/lib/uploads";
 
@@ -20,7 +21,6 @@ const schema = z.object({
   newInn: zOpt,
   newAddress: zOpt,
   deliveryDate: zStr("Yetkazish sanasi kerak"),
-  deliveryTime: z.string().trim().regex(/^\d{2}:\d{2}$/, "Yetkazish soati kerak (masalan 09:30)"),
   deliveryAddress: zStr("Obyekt manzili kerak"),
   // Xaritadan belgilangan nuqta; bo'sh bo'lishi mumkin. Masofa serverda hisoblanadi.
   lat: z.coerce.number().optional().catch(undefined),
@@ -61,7 +61,6 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         customerId: d.customerMode === "existing" ? d.customerId : undefined,
         newCustomer: d.customerMode === "new" ? { name: d.newName ?? "", phone: d.newPhone, inn: d.newInn, address: d.newAddress } : undefined,
         deliveryDate: new Date(d.deliveryDate),
-        deliveryTime: d.deliveryTime,
         deliveryAddress: d.deliveryAddress,
         lat: Number.isFinite(d.lat) ? d.lat : null,
         lng: Number.isFinite(d.lng) ? d.lng : null,
@@ -150,4 +149,52 @@ export async function setContract(id: string, _prev: ActionState, fd: FormData):
   if (saved && o.contractFile && o.contractFile !== saved.stored) await removeContractFile(o.contractFile); // almashtirilgan eski fayl
   revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
   return { ok: true };
+}
+
+const importSchema = z.object({
+  rows: z.string().min(1, "Excel ma'lumotlari yo'q"),
+  defaultDate: zStr("Standart yetkazish sanasi kerak"),
+  createCustomers: z.string().optional().transform((v) => v === "on"),
+  onCredit: z.string().optional().transform((v) => v === "on"),
+  note: zOpt,
+});
+
+/**
+ * Excel orqali ko'p zayavka (kesishma jadval brauzerda qatorlarga yoyiladi).
+ * Mijoz + yetkazish sanasi bo'yicha guruhlanib, har guruh bitta qoralama zayavka bo'ladi.
+ * Hammasi o'tsa /orders ga qaytadi; bir qismi o'tmasa (limit, qora ro'yxat) sahifada qolib, sababi yoziladi.
+ */
+export async function importOrdersFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["SALES"]);
+  const r = parseForm(importSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  let rows: ImportOrderRow[];
+  try { rows = JSON.parse(d.rows); } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
+  if (!Array.isArray(rows)) return { error: "Excel ma'lumotlari o'qilmadi" };
+
+  let res;
+  try {
+    res = await importOrders(
+      { rows, defaultDate: d.defaultDate, createCustomers: d.createCustomers, onCredit: d.onCredit, note: d.note },
+      s.userId,
+    );
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
+  revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/cashflow");
+  if (!res.failed.length && !res.noPrice.length && !res.duplicates.length) redirect(`/orders?imported=${res.orders.length}`);
+  // Diqqat qilinadigan joyi bor — sahifada qoladi va nimaga e'tibor berish kerakligi yoziladi
+  const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n ? "…" : ""}`;
+  return {
+    ok: true,
+    note: [
+      `${res.orders.length} ta zayavka ochildi (${res.lines} ta qator)`,
+      res.createdCustomers.length ? `yangi mijoz: ${list(res.createdCustomers)}` : "",
+      res.noPrice.length ? `narxi 0 bo'lgan mahsulot: ${list(res.noPrice)} — zayavkada narxni to'g'rilang` : "",
+      res.duplicates.length ? `${res.duplicates.length} tasi avval import qilingan — takror ochilmadi: ${list(res.duplicates.map((d) => `${d.customer} (${d.date})`), 3)}` : "",
+      res.failed.length ? `${res.failed.length} ta zayavka ochilmadi: ${res.failed.slice(0, 3).map((f) => `${f.customer} (${f.date}) — ${f.error}`).join("; ")}` : "",
+    ].filter(Boolean).join(" · "),
+  };
 }

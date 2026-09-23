@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/auth";
 import { POSITIONS, driverPositionNames, workPositions } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT } from "@/lib/uploads";
-import { date, dateTime, isoDate, qty } from "@/lib/format";
+import { date, dateTime, isoDate, money, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
@@ -68,7 +68,10 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
               <EmployeeCardForm
                 employee={{
                   id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, note: e.note,
+                  tabelNo: e.tabelNo, subdivision: e.subdivision,
+                  tariffRate: e.tariffRate ? String(e.tariffRate) : null,
                   hiredAt: e.hiredAt ? isoDate(e.hiredAt) : null,
+                  firedAt: e.firedAt ? isoDate(e.firedAt) : null,
                   birthDate: e.birthDate ? isoDate(e.birthDate) : null,
                   passportSeries: e.passportSeries, pinfl: e.pinfl, passportIssuedBy: e.passportIssuedBy,
                   passportIssuedAt: e.passportIssuedAt ? isoDate(e.passportIssuedAt) : null,
@@ -101,7 +104,11 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             ...(e.licenseExpiry ? [{ k: "Guvohnoma muddati", v: licenseDaysLeft(e.licenseExpiry) < 30 ? <span className="text-red-600">{date(e.licenseExpiry)}</span> : date(e.licenseExpiry) }] : []),
             { k: "Brigada boshlig'i", v: e._count.brigades },
             { k: "Kartaga kiritilgan", v: dateTime(e.createdAt) },
+            ...(e.tabelNo ? [{ k: "Tabel №", v: e.tabelNo }] : []),
+            ...(e.subdivision ? [{ k: "Bo'lim / brigada", v: e.subdivision }] : []),
+            ...(e.tariffRate ? [{ k: "Tarif stavka", v: money(e.tariffRate) }] : []),
             { k: "Ishga kirgan", v: e.hiredAt ? date(e.hiredAt) : "—" },
+            ...(e.firedAt ? [{ k: "Ishdan bo'shagan", v: date(e.firedAt) }] : []),
             { k: "Tug'ilgan", v: e.birthDate ? date(e.birthDate) : "—" },
             { k: "Haydovchi ilovasi (ECO)", v: e.ecoUserId ? (e.ecoActive ? <Badge color="green">ulangan</Badge> : <Badge color="amber">tasdiqlanmagan</Badge>) : "—" },
             ...(e.ecoError ? [{ k: "ECO xatosi", v: <span className="text-red-600">{e.ecoError}</span> }] : []),

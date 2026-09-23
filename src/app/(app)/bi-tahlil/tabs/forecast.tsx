@@ -32,7 +32,7 @@ export async function ForecastTab({ sp }: { sp: SP }) {
       {f.wape >= 50 && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900"><b>Bashoratni ehtiyot bilan o'qing.</b> Model xatoligi WAPE = {fmtNum(f.wape, 1)}% (MAE {fmtNum(f.mae, 1)} m³), bias {fmtNum(f.bias, 0)}% — ya'ni bashorat haqiqiy sotuvdan tizimli ravishda {f.bias < 0 ? "PAST" : "YUQORI"}. Bu raqamlarni yo'nalish sifatida ishlating; buyurtma hajmini to'g'ridan-to'g'ri ularga bog'lamang — kritik xomashyo uchun qoldiq + haqiqiy sarf tezligiga tayaning.</div>}
 
       <Panel title="Bashorat vs haqiqiy sotuv" info="Kunlik sotuv, m³. Uzluksiz — tarix (30 kun), uzuq — bashorat (14 kun). Model: chiziqli trend × hafta kuni indeksi, 60 kun tarixda o'qitilgan, oxirgi 14 kunda tekshirilgan.">
-        <LineChart labels={f.labels} series={[{ name: "Haqiqiy", values: f.histVals, color: "#f59e0b" }, { name: "Bashorat", values: f.fcVals, color: "#3b82f6", dashed: true }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={4} height={220} />
+        <LineChart labels={f.labels} series={[{ name: "Haqiqiy", values: f.histVals, color: "#ffa800" }, { name: "Bashorat", values: f.fcVals, color: "#0d78ff", dashed: true }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={4} height={220} />
         <Why label="Model qanday ishlaydi?"><p>1. Har hafta kuni uchun mavsumiylik indeksi hisoblanadi (masalan, dushanba o'rtachadan {fmtNum(f.weekday[1].value, 0)}%).</p><p>2. Mavsumiylikdan tozalangan qatorga chiziqli trend o'tkaziladi.</p><p>3. Kelajak kun = trend × shu kunning indeksi.</p><p>Aniqlik: WAPE = Σ|xato| / Σ haqiqiy. Bias manfiy bo'lsa model kam baholaydi.</p></Why>
       </Panel>
 

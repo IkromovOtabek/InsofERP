@@ -73,7 +73,6 @@ async function orderForm(): Promise<CreateForm> {
       { name: "newPhone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "newInn", label: "INN", type: "text", placeholder: "9 raqam", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: ymd(tomorrow) },
-      { name: "deliveryTime", label: "Soat", type: "time", required: true, value: "09:00" },
       { name: "deliveryAddress", label: "Obyekt manzili", type: "text", required: true, placeholder: "Tuman, ko'cha, mo'ljal" },
       {
         name: "items", label: "Mahsulot", type: "items", required: true,
@@ -140,7 +139,6 @@ const OrderBody = z.object({
   newPhone: z.string().trim().optional(),
   newInn: z.string().trim().optional(),
   deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Yetkazish sanasi kerak"),
-  deliveryTime: z.string().regex(/^\d{2}:\d{2}$/, "Yetkazish soati kerak"),
   deliveryAddress: z.string().trim().min(1, "Obyekt manzili kerak"),
   items: z.array(z.object({
     productId: z.string().trim().min(1, "Marka tanlanmagan"),
@@ -179,13 +177,12 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         customerId: isNew ? undefined : d.customerId,
         newCustomer: isNew ? { name: d.newName ?? "", phone: d.newPhone || undefined, inn: d.newInn || undefined } : undefined,
         deliveryDate: new Date(`${d.deliveryDate}T00:00:00`),
-        deliveryTime: d.deliveryTime,
         deliveryAddress: d.deliveryAddress,
         items: d.items,
         needsPump: d.needsPump,
         isUrgent: d.isUrgent,
         onCredit: d.onCredit,
-        prepay: !d.onCredit && d.prepayAmount ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
+        prepay: d.prepayAmount ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
         note: d.note,
       }, user.id);
       return { key: "orders", id: r.id, message: `${r.orderNo} ochildi — qoralama holatida, qabul qilishni unutmang` };

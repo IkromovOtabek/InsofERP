@@ -65,7 +65,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
             <div><div className="text-xs text-slate-400">Kutilayotgan tushum</div><div className="text-lg font-bold tabular">+{moneyShort(cf.expectedIn)}</div></div>
             <div><div className="text-xs text-slate-400">Xavf holati</div><div className={cn("text-lg font-bold", cf.risk === "Yuqori" ? "text-red-600" : cf.risk === "O'rta" ? "text-amber-600" : "text-emerald-600")}>{cf.risk}</div></div>
           </div>
-          <div className="mt-3"><LineChart labels={cf.rows.map((r) => r.label)} series={[{ name: "Kutilayotgan", values: cf.rows.map((r) => cf.start + r.base), color: "#3b82f6" }, { name: "Yomon", values: cf.rows.map((r) => cf.start + r.low), color: "#ef4444", dashed: true }, { name: "Yaxshi", values: cf.rows.map((r) => cf.start + r.high), color: "#10b981", dashed: true }]} formatValue={moneyShort} height={150} area={false} /></div>
+          <div className="mt-3"><LineChart labels={cf.rows.map((r) => r.label)} series={[{ name: "Kutilayotgan", values: cf.rows.map((r) => cf.start + r.base), color: "#0d78ff" }, { name: "Yomon", values: cf.rows.map((r) => cf.start + r.low), color: "#fa1636", dashed: true }, { name: "Yaxshi", values: cf.rows.map((r) => cf.start + r.high), color: "#00cb80", dashed: true }]} formatValue={moneyShort} height={150} area={false} /></div>
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900"><b>Agar hech narsa qilmasangiz:</b> kunlik o'rtacha tushum {moneyShort(cf.perDay)} so'm (σ = {moneyShort(cf.sigma)}). Ochiq debitorka {moneyShort(cf.receivable)} so'm — shu tempda {cf.coverDays === null ? "—" : `${fmtNum(cf.coverDays, 0)} kunda`} undiriladi. {cf.risk === "Yuqori" ? "Tushum juda notekis — yirik chiqimni kutilayotgan to'lov kelgandan keyin rejalashtiring." : "Zaxira barqaror."}</div>
           <Why label="Prognoz qanday hisoblangan (3 ta taxmin)"><p>1. Kelajak tushum — so'nggi 30 kun o'rtachasi bilan bir xil.</p><p>2. Tushum ochiq debitorkadan oshmaydi.</p><p>3. Tarqoqlik (σ) tarixiy kunlik tushumlardan olingan.</p></Why>
         </Panel>
@@ -92,13 +92,13 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
         <Panel className="xl:col-span-2" title="CashFlow trendi" info="Kassa/bank tushumlari va kumulyativ." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "finance", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
           <BarChart data={d.flow.map((f) => ({ label: f.label, value: f.value }))} tone="success" formatValue={moneyShort} labelEvery={Math.max(1, Math.ceil(d.flow.length / 12))} height={120} />
-          <div className="mt-3"><LineChart labels={d.flow.map((f) => f.label)} series={[{ name: "Kumulyativ tushum", values: d.cumulative, color: "#3b82f6" }]} formatValue={moneyShort} labelEvery={Math.max(1, Math.ceil(d.flow.length / 12))} height={110} /></div>
+          <div className="mt-3"><LineChart labels={d.flow.map((f) => f.label)} series={[{ name: "Kumulyativ tushum", values: d.cumulative, color: "#0d78ff" }]} formatValue={moneyShort} labelEvery={Math.max(1, Math.ceil(d.flow.length / 12))} height={110} /></div>
         </Panel>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel title="Daromad vs Xarajat — 6 oy" info="Sotuv tushumi, xomashyo xaridi va kassa tushumi oylar bo'yicha.">
-          <LineChart labels={d.months.labels} series={[{ name: "Sotuv", values: d.months.revenue, color: "#f59e0b" }, { name: "Xarid", values: d.months.purchases, color: "#ef4444" }, { name: "Kassa", values: d.months.cash, color: "#10b981" }]} formatValue={moneyShort} height={160} area={false} />
+          <LineChart labels={d.months.labels} series={[{ name: "Sotuv", values: d.months.revenue, color: "#ffa800" }, { name: "Xarid", values: d.months.purchases, color: "#fa1636" }, { name: "Kassa", values: d.months.cash, color: "#00cb80" }]} formatValue={moneyShort} height={160} area={false} />
         </Panel>
         <Panel title="AKB dinamikasi — 6 oy" info="Oyda kamida bitta zayavka bergan mijozlar soni.">
           <BarChart data={d.months.labels.map((l, i) => ({ label: l, value: d.months.active[i] }))} tone="violet" formatValue={(v) => `${v} ta`} height={160} />

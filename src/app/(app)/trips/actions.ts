@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { createTrip as createTripDomain, tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
+import { createTrip as createTripDomain, tripCancelled, tripDelivered, tripLoaded, tripOnRoad, tripPickup } from "@/lib/trips";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 
@@ -50,6 +50,29 @@ export async function markLoaded(id: string) {
   const r = await tripLoaded(id, s.userId);
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "LOADING"));
   refresh(id, r.orderId); revalidatePath("/stock");
+}
+
+const pickupSchema = z.object({
+  pickupAddress: zStr("Yuk olingan joy manzilini yozing"),
+  // Xaritadan belgilangan nuqta — bo'sh bo'lishi mumkin, manzil matni baribir saqlanadi
+  pickupLat: z.coerce.number().optional().catch(undefined),
+  pickupLng: z.coerce.number().optional().catch(undefined),
+});
+
+/** "Yuklandi" bosqichidagi "Yukni olgani joyi" formasi. */
+export async function saveTripPickup(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const r = parseForm(pickupSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  const res = await tripPickup(id, s.userId, {
+    address: d.pickupAddress,
+    lat: Number.isFinite(d.pickupLat) ? d.pickupLat : null,
+    lng: Number.isFinite(d.pickupLng) ? d.pickupLng : null,
+  });
+  if (res.error) return { error: res.error };
+  refresh(id, res.orderId);
+  return { ok: true };
 }
 
 export async function markOnRoad(id: string) {

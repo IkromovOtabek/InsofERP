@@ -9,6 +9,7 @@ import { roleForPosition, isDriverPosition } from "@/lib/positions";
 import type { Role } from "@/generated/prisma";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { num } from "@/lib/excel";
 import { sendSms, smsNote } from "@/lib/sms";
 import { publicOrigin } from "@/lib/public-url";
 import type { Prisma } from "@/generated/prisma";
@@ -72,8 +73,19 @@ async function driverData(tx: Prisma.TransactionClient, userId: string, d: Drive
   };
 }
 
+/** Bo'sh — `null`; raqam bo'lmasa ham `null` (qiymat o'chadi, saqlash to'xtamaydi). */
+const zMoney = z.string().trim().optional().transform((v) => {
+  if (!v) return null;
+  const n = num(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+});
+
 /** Karta tahriri — tezkor formada yo'q, otdel kadr to'ldiradigan qo'shimcha maydonlar. */
 const cardSchema = schema.omit({ login: true, password: true }).extend({
+  tabelNo: zOpt,
+  subdivision: zOpt,
+  tariffRate: zMoney,
+  firedAt: zDate,
   passportSeries: zOpt,
   pinfl: zOpt,
   passportIssuedBy: zOpt,
@@ -205,18 +217,22 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
 
   // Haydovchi maydonlari faqat haydovchi lavozimida keladi — boshqa lavozimda tegmaymiz
   const driver = await isDriverPosition(d.position);
+  // Ishdan bo'shagan sana qo'yilsa xodim nofaol bo'ladi, tozalansa — qaytadi (Excel importdagi qoida bilan bir xil)
+  const isActive = d.firedAt ? false : before.firedAt ? true : before.isActive;
   const after = await db.$transaction(async (tx) => {
     const extra = driver ? await driverData(tx, s.userId, d) : {};
     const e = await tx.employee.update({
       where: { id },
       data: {
         fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note,
+        tabelNo: d.tabelNo, subdivision: d.subdivision, tariffRate: d.tariffRate, firedAt: d.firedAt, isActive,
         passportSeries: d.passportSeries, pinfl: d.pinfl, passportIssuedBy: d.passportIssuedBy, passportIssuedAt: d.passportIssuedAt,
         address: d.address, education: d.education, maritalStatus: d.maritalStatus,
         ...extra,
       },
     });
     if (before.userId && before.fullName !== d.fullName) await tx.user.update({ where: { id: before.userId }, data: { fullName: d.fullName } });
+    if (before.userId && before.isActive !== isActive) await tx.user.update({ where: { id: before.userId }, data: { isActive } });
     await audit(tx, s.userId, "UPDATE", "Employee", id, before, e);
     return e;
   });

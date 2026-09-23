@@ -275,8 +275,9 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         {payment === "credit" && (
           <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-700"><FileSignature size={14} /> Saqlangach “Kafolat xati” ochiladi: mijoz rekvizitlari, summa va muddat kataklarini mijoz to&apos;ldirib, imzo va muhr qo&apos;yadi.</p>
         )}
-        {payment === "prepay" && (
-          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+        {/* Bosh to'lov ikkala to'lov turida ham bo'lishi mumkin: qarzga olganda ham
+            mijoz bir qismini naqd berishi mumkin — qolgani kredit limitidan yoziladi. */}
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
             {/* Avval so'raymiz: bosh to'lov bormi? */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[13px] font-medium text-slate-700">Bosh to&apos;lov bormi?</span>
@@ -295,7 +296,11 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             </div>
 
             {hasDeposit === false && (
-              <p className="mt-2 text-xs text-slate-500">Bosh to&apos;lov olinmadi — pul keyin Kassa bo&apos;limi orqali kiritiladi.</p>
+              <p className="mt-2 text-xs text-slate-500">
+                {payment === "credit"
+                  ? "Bosh to'lov olinmadi — zayavka summasi to'liq qarzga yoziladi."
+                  : "Bosh to'lov olinmadi — pul keyin Kassa bo'limi orqali kiritiladi."}
+              </p>
             )}
 
             {hasDeposit === true && (
@@ -312,7 +317,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       <b className="text-emerald-700">{money(prepayN)}{total > 0 && prepayN > 0 && ` · ${fmtNum(Math.min(100, (prepayN / total) * 100), 1)}%`}</b>
                     </div>
                     <div className={cn("flex justify-between gap-3 border-t border-slate-200 pt-1", remaining > 0 ? "text-amber-700" : "text-emerald-700")}>
-                      <span>{remaining > 0 ? "Qoldiq" : "To'liq to'langan"}</span>
+                      <span>{remaining > 0 ? (payment === "credit" ? "Qarzga qoladi" : "Qoldiq") : "To'liq to'langan"}</span>
                       <b>{money(Math.max(0, remaining))}{total > 0 && remaining > 0 && ` · ${fmtNum((remaining / total) * 100, 1)}%`}</b>
                     </div>
                   </div>
@@ -328,13 +333,11 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                 {total > 0 && prepayN > total + 0.005 && <p className="mt-1 text-xs text-red-600">Bosh to&apos;lov zayavka summasidan katta!</p>}
               </>
             )}
-          </div>
-        )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Yetkazish sanasi *"><Input name="deliveryDate" type="date" defaultValue={tomorrow} required /></Field>
-        <Field label="Soat *" hint="Obyektga necha da yetkazish"><Input name="deliveryTime" type="time" defaultValue="09:00" step="900" required /></Field>
         <AddressPicker searchEnabled={geoSearch} required />
       </div>
 

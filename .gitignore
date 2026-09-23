@@ -14,3 +14,6 @@ scripts/erp-to-eco-db.sql
 
 # Yuklangan fayllar (imzolangan shartnomalar) — repoga kirmasin
 uploads/
+
+# Vaqtinchalik GPS kuzatuv skripti
+.tmp-watch/

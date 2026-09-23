@@ -46,7 +46,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       </div>
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard label="Bugungi zayavkalar" value={`${ordersToday.length}`} hint={`${qty(todayM3)} m³ rejada`} icon={ClipboardList} tone="info" href="/orders" />
         <StatCard label="Ishlab chiqarildi" value={`${qty(producedToday._sum.qtyM3 ?? 0)} m³`} hint="bugun" icon={Factory} tone="brand" href="/production" />
         <StatCard label="Yetkazildi" value={`${qty(deliveredToday)} m³`} hint={`${busyMixers} / ${mixers.length} mikser yo'lda`} icon={Truck} tone="success" href="/trips" />

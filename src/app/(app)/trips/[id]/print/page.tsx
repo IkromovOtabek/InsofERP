@@ -44,8 +44,9 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
       <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1">
         <div><span className="text-slate-600">Yuk jo'natuvchi:</span> <b>{company.legalName ?? company.name}</b>{company.inn && ` (INN ${company.inn})`}{company.phone && ` · ${company.phone}`}</div>
         <div><span className="text-slate-600">Yuk oluvchi:</span> <b>{t.order.customer.name}</b>{t.order.customer.inn && ` (INN ${t.order.customer.inn})`}</div>
-        <div><span className="text-slate-600">Transport:</span> {t.vehicle.plate}</div>
+        <div><span className="text-slate-600">Yukni olgani joyi:</span> {t.pickupAddress ?? company.address ?? "—"}</div>
         <div><span className="text-slate-600">Yetkazish manzili:</span> {t.order.deliveryAddress}</div>
+        <div><span className="text-slate-600">Transport:</span> {t.vehicle.plate}</div>
         <div><span className="text-slate-600">Haydovchi:</span> {t.driver.fullName}</div>
         <div><span className="text-slate-600">Mijoz tel:</span> {t.order.customer.phone ?? "—"}</div>
       </div>

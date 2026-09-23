@@ -36,7 +36,7 @@ export async function AnomaliesTab({ sp }: { sp: SP }) {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Panel className="xl:col-span-2" title="Daraja bo'yicha trend" info="Kunlik anomaliyalar soni; qizil — High.">
-          <LineChart labels={a.trend.map((t) => t.label)} series={[{ name: "Jami", values: a.trend.map((t) => t.value), color: "#64748b" }, { name: "High", values: a.trendHigh.map((t) => t.value), color: "#ef4444" }]} formatValue={(v) => `${v} ta`} labelEvery={Math.max(1, Math.ceil(a.trend.length / 10))} height={150} />
+          <LineChart labels={a.trend.map((t) => t.label)} series={[{ name: "Jami", values: a.trend.map((t) => t.value), color: "#6b7f9e" }, { name: "High", values: a.trendHigh.map((t) => t.value), color: "#fa1636" }]} formatValue={(v) => `${v} ta`} labelEvery={Math.max(1, Math.ceil(a.trend.length / 10))} height={150} />
         </Panel>
         <Panel title="Kim bilan bog'liq" info="Xodim kesimida — kim ko'p anomal yozuv kiritgan.">{a.who.length ? <HBarList data={a.who.map((w) => ({ label: w.label, value: w.value, hint: w.high ? `${w.high} high` : undefined, tone: w.high ? ("danger" as const) : ("slate" as const) }))} formatValue={(v) => `${v} ta`} /> : <Note>—</Note>}</Panel>
       </div>

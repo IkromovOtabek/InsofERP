@@ -80,6 +80,28 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
   return { changed: true, orderId: t.orderId };
 }
 
+/**
+ * Yukni olgan joyi — "Yuklandi" bosqichida logist belgilaydi.
+ *
+ * Nega alohida: mikser betonni doim zavoddan olmaydi (ikkinchi maydon, boshqa sklad,
+ * pudratchi tuguni). Nuqta haydovchi ilovasida marshrutning boshlanishi bo'lib xizmat
+ * qiladi va nakladnoyda "qayerdan chiqdi" savoliga javob bo'ladi.
+ */
+export async function tripPickup(
+  id: string,
+  userId: string,
+  pickup: { address: string; lat?: number | null; lng?: number | null },
+): Promise<TripResult> {
+  const address = pickup.address.trim();
+  if (!address) return { changed: false, orderId: "", error: "Yuk olingan joy manzilini yozing" };
+  const t = await db.trip.findUniqueOrThrow({ where: { id } });
+  if (t.status === "CANCELLED") return { changed: false, orderId: t.orderId, error: "Reys bekor qilingan" };
+  const data = { pickupAddress: address, pickupLat: pickup.lat ?? null, pickupLng: pickup.lng ?? null };
+  await db.trip.update({ where: { id }, data });
+  await audit(db, userId, "UPDATE", "Trip", id, { pickupAddress: t.pickupAddress, pickupLat: t.pickupLat, pickupLng: t.pickupLng }, data);
+  return { changed: true, orderId: t.orderId };
+}
+
 /** PLANNED → CANCELLED. */
 export async function tripCancelled(id: string, userId: string, note?: string): Promise<TripResult> {
   const t = await db.trip.findUniqueOrThrow({ where: { id } });

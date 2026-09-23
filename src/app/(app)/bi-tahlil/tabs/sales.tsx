@@ -77,7 +77,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
 
       <Panel title="Pareto tahlili (80/20)" info="Kumulyativ tushum ulushi — nechta marka 80% tushumni beradi.">
         {d.pareto.length ? <>
-          <LineChart labels={d.pareto.map((p) => p.label)} series={[{ name: "Kumulyativ ulush, %", values: d.pareto.map((p) => p.value), color: "#f59e0b" }]} formatValue={(v) => `${fmtNum(v, 0)}%`} height={160} />
+          <LineChart labels={d.pareto.map((p) => p.label)} series={[{ name: "Kumulyativ ulush, %", values: d.pareto.map((p) => p.value), color: "#ffa800" }]} formatValue={(v) => `${fmtNum(v, 0)}%`} height={160} />
           <Insight>{d.paretoCount} ta marka ({fmtNum((d.paretoCount / d.pareto.length) * 100, 0)}% assortiment) tushumning 80%ini beradi. {d.pareto.length - d.paretoCount} ta marka qolgan 20% uchun — ularni assortimentda saqlash tannarxini tekshiring.</Insight>
         </> : <Note>Ma'lumot yo'q.</Note>}
       </Panel>

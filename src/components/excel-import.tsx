@@ -2,10 +2,10 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine } from "lucide-react";
-import { Button, FormError, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List } from "lucide-react";
+import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
-import { guessColumn, num, str, type ImportField } from "@/lib/excel";
+import { flatName, guessColumn, guessMatrix, headerRowIndex, matrixColumns, num, str, unpivotMatrix, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
 import { fmtNum, money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -40,8 +40,15 @@ type MergeCols = { sum: string[]; unitKeys?: string[] };
  */
 type ScanCols = { endpoint: string; enabled: boolean; meta?: Record<string, string>; label?: string };
 
-/** Nomlarni taqqoslash uchun soddalashtirish: «"BODOMZOR SEMENT" MCHJ» → bodomzorsementmchj */
-const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёўқғҳ]+/gi, "");
+/**
+ * Kesishma (pivot) jadval rejimi: ustunlar — mijoz/obyekt, qatorlar — mahsulot, katak — miqdor.
+ * Berilsa fayl turi o'qilganda aniqlanadi va har to'ldirilgan katak bitta qatorga yoyiladi
+ * (qiymatlar shu maydonlarga tushadi). Foydalanuvchi qator/ustun tanlovini to'g'rilashi mumkin.
+ */
+type MatrixCols = { colKey: string; rowKey: string; qtyKey: string; unitKey?: string; dateKey?: string };
+
+/** Matritsa qanday o'qilayotgani: qator/ustun tanlovi, ustunlar ro'yxati va ustun bo'yicha yetkazish sanasi. */
+type MxState = MatrixPick & { cols: MatrixCol[]; dates: Record<number, string> };
 
 const PREVIEW = 15; // sahifada shuncha qator; qolgani "Batafsil ko'rish" modalida
 
@@ -84,7 +91,7 @@ function mergeRows(rows: { r: Row; i: number }[], keys: string[], { sum: sumKeys
  * Server action `rows` (JSON, maydon kalitlari bo'yicha) va `children` ichidagi qo'shimcha maydonlarni oladi.
  * Ko'p qator bir vaqtda yuboriladi — bitta hujjat / bitta import.
  */
-export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan }: {
+export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, allowExtra }: {
   fields: ImportField[];
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: React.ReactNode;
@@ -94,6 +101,10 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   amountCols?: AmountCols;
   merge?: MergeCols;
   scan?: ScanCols;
+  /** Kesishma jadvalni ham qabul qilish (ustunlar — mijoz, qatorlar — mahsulot). */
+  matrix?: MatrixCols;
+  /** «+ Ustun qo'shish» tugmasi: foydalanuvchi o'zi nom beradigan qo'shimcha ustunlar (jadvalda ko'rinadi, namuna faylga tushadi). */
+  allowExtra?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [fileName, setFileName] = useState("");
@@ -108,10 +119,28 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [skipBad, setSkipBad] = useState(false); // muammoli qatorlarni o'tkazib yuborib import qilish
   const [mergeOn, setMergeOn] = useState(true); // takroriy qatorlarni birlashtirib, miqdorlarni qo'shish
   const [scanNote, setScanNote] = useState(""); // skanerdan nima o'qilgani haqida qisqa xabar
+  const [extra, setExtra] = useState<{ key: string; label: string }[]>([]); // «+» bilan qo'shilgan ustunlar
+  const [sheet, setSheet] = useState<unknown[][] | null>(null); // xom varaq — matritsani qayta yoyish uchun saqlanadi
+  const [mx, setMx] = useState<MxState | null>(null); // matritsa rejimi tanlovi; null — oddiy ro'yxat
   const formRef = useRef<HTMLFormElement>(null);
+  const extraSeq = useRef(0);
+
+  // Asosiy maydonlar + qo'shilgan ustunlar: moslash, jadval va namuna fayl shu ro'yxat bo'yicha ishlaydi
+  const allFields: ImportField[] = useMemo(
+    () => [...fields, ...extra.map((e) => ({ key: e.key, label: e.label.trim() || "Nomsiz ustun", synonyms: [] as string[] }))],
+    [fields, extra],
+  );
+
+  const addExtra = () => { extraSeq.current += 1; setExtra((l) => [...l, { key: `extra${extraSeq.current}`, label: "" }]); };
+  const removeExtra = (key: string) => {
+    setSkipBad(false);
+    setExtra((l) => l.filter((e) => e.key !== key));
+    setMap((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== key)));
+    setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.endsWith(`:${key}`))));
+  };
 
   const onFile = async (f: File | undefined) => {
-    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote("");
+    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote(""); setSheet(null); setMx(null);
     setModal(false); setEditing(false); setEdits({}); setOnlyBad(false); setSkipBad(false);
     if (!f) return;
     setFileName(f.name);
@@ -123,17 +152,66 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       const wb = isText ? XLSX.read(await f.text(), { type: "string", raw: true }) : XLSX.read(await f.arrayBuffer(), { type: "array", raw: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", raw: true });
-      // Birinchi bo'sh bo'lmagan qator — sarlavha; qolganlari ma'lumot
-      const hi = aoa.findIndex((r) => r.some((c) => str(c) !== ""));
-      if (hi < 0) { setParseErr("Fayl bo'sh"); return; }
-      const hdr = aoa[hi].map((c, i) => str(c) || `Ustun ${i + 1}`);
-      const data = aoa.slice(hi + 1).filter((r) => r.some((c) => str(c) !== "")).map((r) => Object.fromEntries(hdr.map((h, i) => [h, cell(r[i])])));
-      setHeaders(hdr); setRows(data);
-      const taken = new Set<string>(); const m: Record<string, string> = {};
-      for (const fl of fields) { const g = guessColumn(hdr, fl.synonyms, taken); if (g) { m[fl.key] = g; taken.add(g); } }
-      setMap(m);
+      setSheet(aoa);
+      // Kesishma jadval bo'lsa o'zi matritsa rejimida ochiladi; aks holda oddiy ro'yxat
+      const g = matrix ? guessMatrix(aoa) : null;
+      if (g?.ok) applyMatrix(aoa, mxFromGuess(g));
+      else applyList(aoa);
     } catch (e) { setParseErr(`Faylni o'qib bo'lmadi: ${e instanceof Error ? e.message : String(e)}`); }
   };
+
+  /** Oddiy ro'yxat: sarlavha qatori (tepadagi nom qatori o'tkazib yuboriladi), qolganlari ma'lumot; ustunlar maydonlarga taxminan moslanadi. */
+  const applyList = (aoa: unknown[][]) => {
+    const hi = headerRowIndex(aoa);
+    if (hi < 0) { setParseErr("Fayl bo'sh"); return; }
+    const hdr = aoa[hi].map((c, i) => str(c) || `Ustun ${i + 1}`);
+    const data = aoa.slice(hi + 1).filter((r) => r.some((c) => str(c) !== "")).map((r) => Object.fromEntries(hdr.map((h, i) => [h, cell(r[i])])));
+    setMx(null); setHeaders(hdr); setRows(data);
+    setEdits({}); setSkipBad(false); setOnlyBad(false);
+    const taken = new Set<string>(); const m: Record<string, string> = {};
+    for (const fl of fields) { const g = guessColumn(hdr, fl.synonyms, taken); if (g) { m[fl.key] = g; taken.add(g); } }
+    // Qo'shilgan ustun o'z nomi bo'yicha izlanadi ("Partiya" → fayldagi "Partiya raqami")
+    for (const e of extra) { const n = e.label.trim().toLowerCase(); if (!n) continue; const g = guessColumn(hdr, [n], taken); if (g) { m[e.key] = g; taken.add(g); } }
+    setMap(m);
+  };
+
+  const labelOf = (key: string) => allFields.find((f) => f.key === key)?.label ?? key;
+  /** Yoyilgan jadval ustunlari shu tartibda chiqadi. */
+  const mxKeys = matrix ? ([matrix.colKey, matrix.rowKey, matrix.unitKey, matrix.qtyKey, matrix.dateKey].filter(Boolean) as string[]) : [];
+  const mxFromGuess = (g: MatrixGuess): MxState => ({
+    headerRow: g.headerRow, dateRow: g.dateRow, nameCol: g.nameCol, unitCol: g.unitCol, use: g.use, cols: g.cols,
+    dates: Object.fromEntries(g.cols.map((c) => [c.i, c.date])),
+  });
+
+  /**
+   * Matritsani qatorlarga yoyadi: har to'ldirilgan katak — bitta qator (mijoz, mahsulot, miqdor, sana).
+   * Natija xuddi oddiy fayldan kelgandek jadvalga tushadi — tekshirish/tahrirlash o'zgarmaydi.
+   */
+  const applyMatrix = (aoa: unknown[][], m: MxState) => {
+    if (!matrix) return;
+    const out = unpivotMatrix(aoa, m, m.dates);
+    setMx(m);
+    setHeaders(mxKeys.map(labelOf));
+    setRows(out.map((o) => Object.fromEntries(mxKeys.map((k) => [labelOf(k),
+      k === matrix.colKey ? o.col : k === matrix.rowKey ? o.name : k === matrix.qtyKey ? o.qty : k === matrix.unitKey ? o.unit : o.date]))));
+    setMap(Object.fromEntries(mxKeys.map((k) => [k, labelOf(k)])));
+    setEdits({}); setSkipBad(false); setOnlyBad(false); setEditing(false);
+  };
+
+  /** Qator/ustun tanlovi o'zgardi — ustunlar ro'yxati va sanalar qaytadan aniqlanadi. */
+  const setPick = (patch: Partial<Omit<MatrixPick, "use">>) => {
+    if (!sheet || !mx) return;
+    const base = { headerRow: mx.headerRow, dateRow: mx.dateRow, nameCol: mx.nameCol, unitCol: mx.unitCol, ...patch };
+    const cols = matrixColumns(sheet, base);
+    applyMatrix(sheet, {
+      ...base, cols,
+      dates: Object.fromEntries(cols.map((c) => [c.i, mx.dates[c.i] ?? c.date])),
+      use: cols.filter((c) => !c.skip && c.n > 0).map((c) => c.i),
+    });
+  };
+  const toggleCol = (i: number) => sheet && mx && applyMatrix(sheet, { ...mx, use: mx.use.includes(i) ? mx.use.filter((x) => x !== i) : [...mx.use, i].sort((a, b) => a - b) });
+  const setColDate = (i: number, v: string) => sheet && mx && applyMatrix(sheet, { ...mx, dates: { ...mx.dates, [i]: v } });
+  const toMatrix = () => sheet && applyMatrix(sheet, mxFromGuess(guessMatrix(sheet)));
 
   /**
    * Skaner natijasi: qatorlar xuddi Excel'dan kelgandek jadvalga tushadi (ustunlar to'g'ridan-to'g'ri mos),
@@ -146,6 +224,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     setHeaders(hdr);
     setRows(r.rows.map((row) => Object.fromEntries(fields.map((f) => [f.label, row[f.key] ?? ""]))));
     setMap(Object.fromEntries(fields.map((f) => [f.key, f.label])));
+    setSheet(null); setMx(null);
     setEdits({}); setOnlyBad(false); setSkipBad(false); setModal(false); setEditing(false);
     setScanNote([`${r.rows.length} ta qator o'qildi`, ...applyMeta(r.doc)].join(" · "));
   };
@@ -160,8 +239,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       if (!v) continue;
       const el = form.elements.namedItem(name);
       if (el instanceof HTMLSelectElement) {
-        const want = flat(v);
-        const opt = [...el.options].find((o) => o.value && flat(o.text) && (flat(o.text) === want || flat(o.text).includes(want) || want.includes(flat(o.text))));
+        const want = flatName(v);
+        const opt = [...el.options].find((o) => o.value && flatName(o.text) && (flatName(o.text) === want || flatName(o.text).includes(want) || want.includes(flatName(o.text))));
         if (opt) { el.value = opt.value; out.push(`yetkazuvchi: ${opt.text}`); }
         else out.push(`«${v}» ro'yxatda topilmadi — qo'lda tanlang`);
       } else if (el instanceof HTMLInputElement && el.type === "date") {
@@ -175,16 +254,16 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
   const downloadTemplate = async () => {
     const XLSX = await import("xlsx");
-    const ws = XLSX.utils.json_to_sheet([Object.fromEntries(fields.map((f) => [f.label, example?.[f.key] ?? ""]))]);
+    const ws = XLSX.utils.json_to_sheet([Object.fromEntries(allFields.map((f) => [f.label, example?.[f.key] ?? ""]))]);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Import");
     XLSX.writeFile(wb, `${templateName}.xlsx`);
   };
 
   // Moslangan qatorlar — server shu JSON ni oladi. Oynada tahrirlangan katak fayldagi qiymatdan ustun turadi.
-  const mapped = useMemo(() => rows.map((r, i) => Object.fromEntries(fields.map((f) => {
+  const mapped = useMemo(() => rows.map((r, i) => Object.fromEntries(allFields.map((f) => {
     const e = edits[`${i}:${f.key}`];
     return [f.key, e !== undefined ? e : map[f.key] ? r[map[f.key]] : ""];
-  }))), [rows, map, fields, edits]);
+  }))), [rows, map, allFields, edits]);
   const missingRequired = fields.filter((f) => f.required && !map[f.key]);
   const numericKeys = fields.filter((f) => /qty|price|amount|sum|nds/.test(f.key)).map((f) => f.key);
   const requiredKeys = fields.filter((f) => f.required).map((f) => f.key);
@@ -195,7 +274,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const dataRows = mapped.map((r, i) => ({ r, i })).filter((x) => !isBlank(x.r));
   const blankCount = mapped.length - dataRows.length;
   // Takroriy qatorlar bitta qatorga yig'iladi (miqdorlar qo'shiladi); bitta ustunda farq bo'lsa — alohida qator
-  const view = merge && mergeOn ? mergeRows(dataRows, fields.map((f) => f.key), merge) : dataRows.map((x) => ({ ...x, n: 1 }));
+  const view = merge && mergeOn ? mergeRows(dataRows, allFields.map((f) => f.key), merge) : dataRows.map((x) => ({ ...x, n: 1 }));
   const mergedAway = dataRows.length - view.length;
 
   // Summa/NDS: fayldagi qiymat ustun, bo'lmasa (fill bo'lsa) miqdor × narxdan hisoblanadi
@@ -251,10 +330,37 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   }, [modal]);
 
   const setCell = (i: number, key: string, v: string) => { setSkipBad(false); setEdits((e) => ({ ...e, [`${i}:${key}`]: v })); };
-  const colCount = 1 + fields.length;
+
+  /** Maydonga ustun tanlash; ustun almashtirilganda shu maydon bo'yicha qo'lda tahrirlar bekor qilinadi. */
+  const pickColumn = (key: string, col: string) => {
+    setSkipBad(false);
+    setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.endsWith(`:${key}`))));
+    setMap((m) => ({ ...m, [key]: col }));
+  };
+
+  /** Qo'shilgan ustunning nomi: shu nom jadval sarlavhasi bo'ladi va namuna faylga tushadi. */
+  const extraName = (e: { key: string; label: string }) => (
+    <div className="flex items-center gap-1">
+      <input value={e.label} autoFocus={e.label === ""} placeholder="Ustun nomi" aria-label="Ustun nomi"
+        onChange={(ev) => setExtra((l) => l.map((x) => (x.key === e.key ? { ...x, label: ev.target.value } : x)))}
+        onKeyDown={(ev) => { if (ev.key === "Enter") ev.preventDefault(); }}
+        className={cn("min-w-0 flex-1 rounded-md border bg-white px-2 py-1 text-xs font-medium text-slate-900 outline-none focus:border-slate-900",
+          e.label.trim() ? "border-slate-200" : "border-amber-300 placeholder:text-amber-500")} />
+      <button type="button" onClick={() => removeExtra(e.key)} aria-label="Ustunni olib tashlash"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-red-600"><X size={13} /></button>
+    </div>
+  );
+
+  const addExtraBtn = (
+    <button type="button" onClick={addExtra}
+      className="inline-flex items-center gap-1.5 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-500 hover:bg-slate-50">
+      <Plus size={14} /> Ustun qo&apos;shish
+    </button>
+  );
+  const colCount = 1 + allFields.length;
 
   const headRow = (
-    <tr><Th>#</Th>{fields.map((f) => <Th key={f.key} right={numericKeys.includes(f.key)}>{f.label}{f.required && " *"}</Th>)}</tr>
+    <tr><Th>#</Th>{allFields.map((f) => <Th key={f.key} right={numericKeys.includes(f.key)}>{f.label}{f.required && " *"}</Th>)}</tr>
   );
 
   /** Bitta qator: `canEdit` bo'lsa kataklar input bo'lib chiqadi. */
@@ -266,7 +372,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           {x.no}
           {x.n > 1 && <span className="ml-1 rounded bg-sky-100 px-1 text-[10px] font-medium text-sky-700" title={`Faylda ${x.n} ta bir xil qator edi — miqdorlari qo'shildi`}>×{x.n}</span>}
         </Td>
-        {fields.map((f) => {
+        {allFields.map((f) => {
           const v = str(x.r[f.key]);
           // Birlashtirilgan (qo'shilgan) raqam — mingliklar bilan ko'rsatiladi; serverga baribir to'liq qiymat ketadi
           const shown = typeof x.r[f.key] === "number" ? fmtNum(x.r[f.key] as number, 3) : v;
@@ -311,6 +417,97 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     </tfoot>
   );
 
+  // ── Matritsa rejimi: qator/ustun tanlovi va mijoz ustunlari ──
+  const mxWidth = sheet ? Math.max(0, ...sheet.map((r) => r?.length ?? 0)) : 0;
+  /** Qator tanlash uchun ko'rinish: "2-qator: № · Махсулот номи · Улчов бирлиги". */
+  const mxRowLabel = (i: number) => {
+    const cells = (sheet?.[i] ?? []).map((c) => str(c)).filter((v) => v !== "").slice(0, 4);
+    return `${i + 1}-qator${cells.length ? `: ${cells.join(" · ").slice(0, 56)}` : " (bo'sh)"}`;
+  };
+  const mxRowOpts = sheet ? sheet.slice(0, 20).map((_, i) => <option key={i} value={i}>{mxRowLabel(i)}</option>) : null;
+  const mxColOpts = mx && sheet
+    ? Array.from({ length: mxWidth }, (_, i) => <option key={i} value={i}>{str(sheet[mx.headerRow]?.[i]) || `Ustun ${i + 1}`}</option>)
+    : null;
+  const mxNoDate = mx ? mx.use.filter((i) => !mx.dates[i]).length : 0;
+  const mxSkipped = mx ? mx.cols.filter((c) => c.skip) : [];
+
+  /** Fayl turi: oddiy ro'yxat yoki kesishma jadval (matritsa). */
+  const modeToggle = matrix && sheet && (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-medium">
+      <button type="button" onClick={() => applyList(sheet)}
+        className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 transition", !mx ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50")}>
+        <List size={13} /> Ro&apos;yxat
+      </button>
+      <button type="button" onClick={toMatrix}
+        className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 transition", mx ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50")}>
+        <Grid3x3 size={13} /> Matritsa
+      </button>
+    </div>
+  );
+
+  const matrixPanel = matrix && sheet && mx && (
+    <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-4">
+      <div className="mb-3 text-sm">
+        <span className="font-medium text-slate-800">Kesishma jadvalni yoyish</span>
+        <span className="ml-2 text-xs text-slate-600">
+          Ustunlar — mijoz/obyekt, qatorlar — mahsulot, katak — miqdor. Har to&apos;ldirilgan katak bitta zayavka qatoriga aylanadi:
+          hozir <b>{mx.use.length}</b> ta ustundan <b>{rows.length}</b> ta qator.
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Mijozlar qatori</span>
+          <Select value={String(mx.headerRow)} onChange={(e) => setPick({ headerRow: +e.target.value })}>{mxRowOpts}</Select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Sanalar qatori</span>
+          <Select value={String(mx.dateRow)} onChange={(e) => setPick({ dateRow: +e.target.value })}>
+            <option value="-1">— yo&apos;q —</option>
+            {mxRowOpts}
+          </Select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Mahsulot ustuni</span>
+          <Select value={String(mx.nameCol)} onChange={(e) => setPick({ nameCol: +e.target.value })}>{mxColOpts}</Select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Birlik ustuni</span>
+          <Select value={String(mx.unitCol)} onChange={(e) => setPick({ unitCol: +e.target.value })}>
+            <option value="-1">— yo&apos;q —</option>
+            {mxColOpts}
+          </Select>
+        </label>
+      </div>
+      <div className="mt-3">
+        <div className="mb-1.5 text-xs text-slate-600">
+          Mijoz / obyekt ustunlari — belgilangani import qilinadi, yonidagi sana o&apos;sha ustundagi zayavkalarning yetkazish sanasi bo&apos;ladi:
+        </div>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {mx.cols.map((c) => {
+            const on = mx.use.includes(c.i);
+            return (
+              <label key={c.i} className={cn("flex flex-col gap-1 rounded-lg border px-2 py-1.5 text-xs", on ? "border-sky-300 bg-white" : "border-slate-200 bg-slate-50 text-slate-500")}>
+                <span className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={on} onChange={() => toggleCol(c.i)} className="h-3.5 w-3.5 shrink-0 rounded border-slate-300" />
+                  <span className="min-w-0 flex-1 truncate font-medium" title={c.skip ? `${c.label} — ${c.skip}` : c.label}>{c.label}</span>
+                  <span className="shrink-0 text-slate-400">{c.n} ta</span>
+                </span>
+                <input type="date" value={mx.dates[c.i] ?? ""} onChange={(e) => setColDate(c.i, e.target.value)} disabled={!on} aria-label={`${c.label} — yetkazish sanasi`}
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-1.5 text-[11px] text-slate-900 outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+              </label>
+            );
+          })}
+        </div>
+        {mxNoDate > 0 && <p className="mt-1.5 text-[11px] text-amber-700">{mxNoDate} ta ustunga sana qo&apos;yilmagan — ularga quyidagi standart sana ishlatiladi.</p>}
+        {mxSkipped.length > 0 && (
+          <p className="mt-1 text-[11px] text-slate-500">
+            Chetlangan ustunlar: {mxSkipped.slice(0, 8).map((c) => `${c.label} (${c.skip})`).join(", ")}{mxSkipped.length > 8 ? "…" : ""}. Kerak bo'lsa belgilab qo&apos;yish mumkin.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
   /** Takroriy qatorlarni birlashtirish tugmasi (sahifada ham, oynada ham bitta holat). */
   const mergeToggle = merge && rows.length > 0 && (
     <label className={cn("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
@@ -334,6 +531,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   return (
     <form ref={formRef} action={formAction} className="space-y-5">
       <FormError error={state?.error} />
+      <FormSuccess text={state?.note} />
       <input type="hidden" name="rows" value={JSON.stringify(skipBad ? validRows : allRows)} />
       {children}
 
@@ -360,28 +558,62 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           </p>
         )}
         {parseErr && <p className="mt-2 text-sm text-red-600">{parseErr}</p>}
+        {/* Fayl tanlanmagan bo'lsa ham ustun qo'shish mumkin — qo'shilgan ustunlar namuna faylga tushadi */}
+        {allowExtra && headers.length === 0 && (
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <div className="flex flex-wrap items-end gap-2">
+              {extra.map((e) => <div key={e.key} className="w-44">{extraName(e)}</div>)}
+              {addExtraBtn}
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Faylingizda qo&apos;shimcha ustun bo&apos;lsa — shu yerga nomini yozib qo&apos;shasiz; namuna faylga ham tushadi, fayl tanlangach qaysi ustundan olinishini belgilaysiz.
+            </p>
+          </div>
+        )}
       </div>
 
       {headers.length > 0 && (
         <>
-          <div>
-            <div className="mb-2 text-sm font-medium text-slate-700">Ustunlarni moslash <span className="font-normal text-slate-500">· {fields.length} ta ustun · {rows.length} ta qator topildi{blankCount > 0 && ` (${blankCount} tasi bo'sh — o'tkazib yuboriladi)`}</span></div>
+          {modeToggle && (
+            <div className="flex flex-wrap items-center gap-3">
+              {modeToggle}
+              <span className="text-xs text-slate-500">
+                {mx
+                  ? "Faylda har mijoz alohida ustun bo'lsa — matritsa. Pastda qaysi qator/ustun nima ekanini to'g'rilaysiz."
+                  : "Har qator bitta yozuv bo'lsa — ro'yxat. Ustunlar mijozlar bo'lsa \u00abMatritsa\u00bb ni tanlang."}
+              </span>
+            </div>
+          )}
+          {matrixPanel}
+          <div className={cn(mx && "hidden")}>
+            <div className="mb-2 text-sm font-medium text-slate-700">Ustunlarni moslash <span className="font-normal text-slate-500">· {allFields.length} ta ustun · {rows.length} ta qator topildi{blankCount > 0 && ` (${blankCount} tasi bo'sh — o'tkazib yuboriladi)`}</span></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {fields.map((f) => (
                 <label key={f.key} className="text-sm">
                   <span className="mb-1 block text-xs text-slate-500">{f.label}{f.required && " *"}</span>
-                  <Select value={map[f.key] ?? ""} onChange={(e) => {
-                    setSkipBad(false);
-                    // ustun almashtirilganda shu maydon bo'yicha qo'lda tahrirlar bekor qilinadi
-                    setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.endsWith(`:${f.key}`))));
-                    setMap((m) => ({ ...m, [f.key]: e.target.value }));
-                  }} className={cn(f.required && !map[f.key] && "border-red-300")}>
+                  <Select value={map[f.key] ?? ""} onChange={(e) => pickColumn(f.key, e.target.value)} className={cn(f.required && !map[f.key] && "border-red-300")}>
                     <option value="">— olinmaydi —</option>
                     {headers.map((h) => <option key={h} value={h}>{h}</option>)}
                   </Select>
                   {f.hint && <span className="mt-0.5 block text-[11px] text-slate-400">{f.hint}</span>}
                 </label>
               ))}
+              {/* «+» bilan qo'shilgan ustun: nomini o'zi yozadi, keyin fayldagi qaysi ustundan olinishini tanlaydi */}
+              {extra.map((e) => (
+                <div key={e.key} className="text-sm">
+                  <div className="mb-1">{extraName(e)}</div>
+                  <Select value={map[e.key] ?? ""} onChange={(ev) => {
+                    pickColumn(e.key, ev.target.value);
+                    // nomi hali yozilmagan bo'lsa — fayldagi sarlavha nom bo'lib qoladi
+                    if (ev.target.value && !e.label.trim()) setExtra((l) => l.map((x) => (x.key === e.key ? { ...x, label: ev.target.value } : x)));
+                  }}>
+                    <option value="">— olinmaydi —</option>
+                    {headers.map((h) => <option key={h} value={h}>{h}</option>)}
+                  </Select>
+                  <span className="mt-0.5 block text-[11px] text-slate-400">{e.label.trim() ? "Qo'shilgan ustun" : "Nomini yozing yoki ustunni tanlang"}</span>
+                </div>
+              ))}
+              {allowExtra && <div className="flex items-end">{addExtraBtn}</div>}
             </div>
           </div>
 
@@ -442,7 +674,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           onMouseDown={(e) => { if (e.target === e.currentTarget) setModal(false); }}>
           <div className="flex max-h-full w-full max-w-[96rem] flex-col overflow-hidden rounded-(--radius-card) border border-slate-200 bg-white shadow-2xl">
             <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
-              <span className="font-semibold text-slate-900">{fileName || "Import"} <span className="font-normal text-slate-500">· {source.length} ta qator · {fields.length} ta ustun</span></span>
+              <span className="font-semibold text-slate-900">{fileName || "Import"} <span className="font-normal text-slate-500">· {source.length} ta qator · {allFields.length} ta ustun</span></span>
               {merge && mergeOn
                 ? <span className="text-xs text-slate-500">Tahrirlash uchun &ldquo;Bir xil qatorlarni birlashtirish&rdquo;ni o&apos;chiring</span>
                 : (

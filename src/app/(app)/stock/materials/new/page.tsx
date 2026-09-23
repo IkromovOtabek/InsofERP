@@ -10,7 +10,7 @@ import { MaterialsForm, type MaterialOpt } from "../materials-form";
 import { cn } from "@/lib/utils";
 
 const MODES = [
-  { key: "excel", label: "Excel orqali", icon: FileSpreadsheet, text: "8 ta ustun: nomi, kodi, birlik, qoldiq, narx, minimal, NDS, summa. Bir xil qatorlar birlashtirilib miqdorlari qo'shiladi; NDS va summa faylda bo'lmasa o'zi hisoblanadi." },
+  { key: "excel", label: "Excel orqali", icon: FileSpreadsheet, text: "8 ta ustun: nomi, kodi, birlik, qoldiq, narx, minimal, NDS, summa. Faylingizda boshqa ustun bo'lsa — «+ Ustun qo'shish» bilan nomini yozib qo'shasiz. Bir xil qatorlar birlashtirilib miqdorlari qo'shiladi; NDS va summa faylda bo'lmasa o'zi hisoblanadi." },
   { key: "manual", label: "Qo'lda kiritish", icon: PencilLine, text: "Nomini yozganda mavjud xomashyolar chiqadi (yoki «…» tugmasi orqali tanlaysiz) — kodi, birligi va narxi o'zi to'ladi. Pastdan qator qo'shasiz." },
 ] as const;
 
@@ -68,6 +68,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
             example={{ name: "Sement M400", code: "CEM400", unit: "kg", qty: 20000, price: 1200, minStock: 5000, nds: 2880000, sum: 24000000 }}
             amountCols={{ qtyKey: "qty", priceKey: "price", sumKey: "sum", ndsKey: "nds", rate: 0.12, fill: true }}
             merge={{ sum: ["qty", "nds", "sum"], unitKeys: ["unit"] }}
+            allowExtra
             fields={[
               { key: "name", label: "Nomi", required: true, synonyms: FIELD_SYNONYMS.material },
               { key: "code", label: "Kodi", hint: "bo'sh bo'lsa nomdan yasaladi", synonyms: ["kod", "code", "код", "artikul", "артикул"] },

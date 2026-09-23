@@ -15,10 +15,11 @@ export function PageHeader({ title, subtitle, eyebrow, action, back }: {
       <div className="min-w-0">
         {back && <Link href={back.href} className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">← {back.label}</Link>}
         {eyebrow && !back && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
-      {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
+      {/* `data-tour` — instruksiya (onboarding) shu belgilarga strelka qo'yadi */}
+      {action && <div data-tour="page-action" className="flex flex-wrap items-center gap-2">{action}</div>}
     </div>
   );
 }
@@ -29,10 +30,12 @@ export function Card({ children, className, padded = true }: { children: React.R
 
 export function CardHeader({ title, description, action, icon: Icon }: { title: string; description?: string; action?: React.ReactNode; icon?: LucideIcon }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div className="flex items-start gap-2.5">
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+      {/* basis-64: sarlavha uchun mo'ljallangan en. Amal tugmalari shu enga sig'masa
+          butun blok keyingi qatorga tushadi — tor ekranda ikkisi bir-birini siqmaydi. */}
+      <div className="flex min-w-0 flex-1 basis-64 items-start gap-2.5">
         {Icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon size={16} /></div>}
-        <div>
+        <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
         </div>
@@ -45,8 +48,8 @@ export function CardHeader({ title, description, action, icon: Icon }: { title: 
 export function Section({ title, action, children, className }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <section className={cn("mt-8", className)}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <h2 className="min-w-0 text-base font-semibold text-slate-900">{title}</h2>
         {action}
       </div>
       {children}

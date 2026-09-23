@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
 
 const barTone = { brand: "bg-brand-500", success: "bg-emerald-500", info: "bg-blue-500", warning: "bg-amber-500", danger: "bg-red-500", slate: "bg-slate-700", violet: "bg-violet-500" };
-const hexTone = { brand: "#f59e0b", success: "#10b981", info: "#3b82f6", warning: "#f59e0b", danger: "#ef4444", slate: "var(--color-slate-700)", violet: "#8b5cf6", muted: "var(--color-slate-300)" };
+const hexTone = { brand: "#ffa800", success: "#00cb80", info: "#0d78ff", warning: "#ffa800", danger: "#fa1636", slate: "var(--color-slate-700)", violet: "#8b2fff", muted: "var(--color-slate-300)" };
 export type ChartTone = keyof typeof barTone;
-export const PALETTE = ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444", "#0ea5e9", "#f97316", "#14b8a6", "#64748b", "#a855f7"];
+export const PALETTE = ["#ffa800", "#0d78ff", "#00cb80", "#8b2fff", "#fa1636", "#009ef5", "#ff5c00", "#00d6c0", "#6b7f9e", "#b433ff"];
 
 /** Vertikal ustunli grafik — kunlik/oylik dinamika. `compare` — oldingi davr (och rang). */
 export function BarChart({ data, tone = "brand", height = 160, formatValue = String, labelEvery = 1, compare }: {
@@ -156,7 +156,7 @@ export function Heatmap({ rows, cols, cells, formatValue = String, tone = "brand
   formatValue?: (v: number) => string; tone?: "brand" | "info" | "danger" | "success"; rowLabel?: string; colLabel?: string;
 }) {
   const max = Math.max(1, ...cells.flat());
-  const base = { brand: "245,158,11", info: "59,130,246", danger: "239,68,68", success: "16,185,129" }[tone];
+  const base = { brand: "255,168,0", info: "13,120,255", danger: "250,22,54", success: "0,203,128" }[tone];
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-separate border-spacing-1 text-xs">
@@ -178,7 +178,7 @@ export function Heatmap({ rows, cols, cells, formatValue = String, tone = "brand
 }
 
 /** Kichik sparkline (KPI kartalar uchun). */
-export function Sparkline({ values, color = "#f59e0b", height = 28 }: { values: number[]; color?: string; height?: number }) {
+export function Sparkline({ values, color = "#ffa800", height = 28 }: { values: number[]; color?: string; height?: number }) {
   const W = 100, H = 30, n = values.length;
   const max = Math.max(1, ...values), min = Math.min(0, ...values);
   const pts = values.map((v, i) => `${(n <= 1 ? 0 : (i / (n - 1)) * W).toFixed(1)},${(2 + (1 - (v - min) / (max - min)) * (H - 4)).toFixed(1)}`).join(" ");

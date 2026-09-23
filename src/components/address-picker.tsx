@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, MapPin, Route, Search, TriangleAlert } from "lucide-react";
 import { inputCls } from "@/components/ui";
-import { addTiles, loadLeaflet, TASHKENT, type LMap, type LMarker } from "@/lib/leaflet";
+import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap, type LMarker } from "@/lib/leaflet";
 
 /**
  * Obyekt manzili — yozilganda qidiradi, xaritada nuqta qo'yadi, masofani hisoblaydi.
@@ -14,6 +14,9 @@ import { addTiles, loadLeaflet, TASHKENT, type LMap, type LMarker } from "@/lib/
  *
  * Forma bilan faqat lat/lng ketadi — masofani server qayta hisoblaydi, chunki brauzerdan
  * kelgan raqamni o'zgartirib yuborish mumkin (dastavka narxi shunga bog'lanishi mumkin).
+ *
+ * Bir xil forma reysdagi "Yukni olgani joyi" uchun ham ishlatiladi — shuning uchun maydon
+ * nomi, sarlavha va masofa ko'rsatish sozlanadi.
  */
 
 type Place = { name: string; address: string; lat: number; lng: number };
@@ -26,6 +29,13 @@ export function AddressPicker({
   defaultLng,
   searchEnabled,
   required,
+  name = "deliveryAddress",
+  latName = "lat",
+  lngName = "lng",
+  label = "Obyekt manzili",
+  placeholder,
+  showDistance = true,
+  className = "col-span-2",
 }: {
   defaultAddress?: string;
   defaultLat?: number | null;
@@ -33,6 +43,14 @@ export function AddressPicker({
   /** 2GIS kaliti sozlanganmi — yo'q bo'lsa faqat xaritadan belgilash qoladi. */
   searchEnabled: boolean;
   required?: boolean;
+  name?: string;
+  latName?: string;
+  lngName?: string;
+  label?: string;
+  placeholder?: string;
+  /** Zavoddan masofa — zayavkada kerak, yuk olgan joyda kerak emas. */
+  showDistance?: boolean;
+  className?: string;
 }) {
   const [address, setAddress] = useState(defaultAddress);
   const [point, setPoint] = useState<Point | null>(
@@ -47,29 +65,42 @@ export function AddressPicker({
   const el = useRef<HTMLDivElement | null>(null);
   const map = useRef<LMap | null>(null);
   const marker = useRef<LMarker | null>(null);
+  /** Qidiruv natijalarining xaritadagi belgilari — yozgan sayin yangilanadi. */
+  const hints = useRef<LLayer[]>([]);
   /** Taklif tanlangach qidiruv qayta ishga tushmasin. */
   const skipSearch = useRef(false);
 
-  // ── manzil bo'yicha qidiruv (yozishdan keyin biroz kutib) ──
+  const choose = (p: Place) => {
+    skipSearch.current = true;
+    setAddress(p.address);
+    setPoint({ lat: p.lat, lng: p.lng });
+    setOpen(false);
+  };
+
+  // ── manzil bo'yicha qidiruv ──
+  // Har bir harfdan keyin qidiradi: birinchi harfdanoq ro'yxat va xarita yangilanadi.
+  // Qisqa kutish (150 ms) tez yozayotganda ortiqcha so'rovni kesadi, lekin harf o'tkazib
+  // yubormaydi — oxirgi holat baribir so'raladi.
   useEffect(() => {
     if (!searchEnabled) return;
     if (skipSearch.current) { skipSearch.current = false; return; }
     const q = address.trim();
-    if (q.length < 3) { setPlaces([]); return; }
+    if (q.length < 1) { setPlaces([]); setOpen(false); return; }
     setSearching(true);
+    const ctrl = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/geo/search?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+        const res = await fetch(`/api/geo/search?q=${encodeURIComponent(q)}`, { cache: "no-store", signal: ctrl.signal });
         const j = (await res.json()) as { places: Place[] };
         setPlaces(j.places ?? []);
         setOpen((j.places ?? []).length > 0);
       } catch {
-        setPlaces([]);
+        if (!ctrl.signal.aborted) setPlaces([]);
       } finally {
-        setSearching(false);
+        if (!ctrl.signal.aborted) setSearching(false);
       }
-    }, 350);
-    return () => { clearTimeout(timer); setSearching(false); };
+    }, 150);
+    return () => { clearTimeout(timer); ctrl.abort(); setSearching(false); };
   }, [address, searchEnabled]);
 
   // ── xarita ──
@@ -87,6 +118,26 @@ export function AddressPicker({
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── topilganlar xaritada: yozgan sayin ko'rinadi, bosilsa tanlanadi ──
+  useEffect(() => {
+    const m = map.current, L = typeof window !== "undefined" ? window.L : null;
+    if (!m || !L) return;
+    for (const h of hints.current) m.removeLayer(h);
+    hints.current = [];
+    if (places.length === 0) return;
+    for (const p of places) {
+      const h = L.circleMarker([p.lat, p.lng], { radius: 6, color: "#0f172a", weight: 2, fillColor: "#38bdf8", fillOpacity: 0.9 })
+        .addTo(m)
+        .bindTooltip(p.name);
+      h.on("click", () => choose(p));
+      hints.current.push(h);
+    }
+    // Nuqta allaqachon qo'yilgan bo'lsa xarita joyidan qimirlamaydi — foydalanuvchi tanlovi ustun
+    if (point) return;
+    const first = places[0]!;
+    m.setView([first.lat, first.lng], places.length === 1 ? 16 : 13);
+  }, [places, point]);
+
   // ── nuqta o'zgarsa: belgi, ko'rinish va masofa ──
   useEffect(() => {
     const m = map.current, L = typeof window !== "undefined" ? window.L : null;
@@ -97,6 +148,7 @@ export function AddressPicker({
       m.setView(pos, 16);
     }
     if (!point) { setDistance(null); return; }
+    if (!showDistance) return;
     let alive = true;
     void (async () => {
       try {
@@ -110,27 +162,23 @@ export function AddressPicker({
       }
     })();
     return () => { alive = false; };
-  }, [point]);
-
-  const choose = (p: Place) => {
-    skipSearch.current = true;
-    setAddress(p.address);
-    setPoint({ lat: p.lat, lng: p.lng });
-    setOpen(false);
-  };
+  }, [point, showDistance]);
 
   return (
-    <div className="col-span-2">
-      <span className="mb-1.5 block text-[13px] font-medium text-slate-700">Obyekt manzili {required && "*"}</span>
+    <div className={className}>
+      <span className="mb-1.5 block text-[13px] font-medium text-slate-700">{label} {required && "*"}</span>
 
-      <div className="relative">
+      {/* z-[1100]: Leaflet o'z qatlamlariga 400, boshqaruv tugmalariga esa 1000 gacha
+          z-index beradi — takliflar ro'yxati xarita ostida qolib ketmasligi uchun
+          input o'rami hammasidan yuqori turadi. */}
+      <div className="relative z-[1100]">
         <input
-          name="deliveryAddress"
+          name={name}
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           onFocus={() => places.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder={searchEnabled ? "Ko'cha, mo'ljal yoki obyekt nomini yozing…" : "Ko'cha, mo'ljal, obyekt nomi"}
+          placeholder={placeholder ?? (searchEnabled ? "Ko'cha, mo'ljal yoki obyekt nomini yozing…" : "Ko'cha, mo'ljal, obyekt nomi")}
           required={required}
           autoComplete="off"
           className={`${inputCls} pr-9`}
@@ -162,8 +210,8 @@ export function AddressPicker({
       </div>
 
       {/* Nuqta forma bilan ketadi; masofani server o'zi qayta hisoblaydi (bu yerdagisi ko'rsatish uchun) */}
-      <input type="hidden" name="lat" value={point?.lat ?? ""} />
-      <input type="hidden" name="lng" value={point?.lng ?? ""} />
+      <input type="hidden" name={latName} value={point?.lat ?? ""} />
+      <input type="hidden" name={lngName} value={point?.lng ?? ""} />
 
       <div className="mt-2 overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[220px] w-full bg-slate-50" />
@@ -175,7 +223,7 @@ export function AddressPicker({
             <span className="inline-flex items-center gap-1 text-emerald-700">
               <MapPin size={12} /> Nuqta belgilandi
             </span>
-            {distance ? (
+            {showDistance && (distance ? (
               <span className="inline-flex items-center gap-1 font-medium text-slate-700">
                 <Route size={12} /> Zavoddan {distance.km} km
                 <span className="font-normal text-slate-400">
@@ -188,15 +236,15 @@ export function AddressPicker({
               </span>
             ) : (
               <span className="text-slate-400">masofa hisoblanmoqda…</span>
-            )}
+            ))}
             <button type="button" onClick={() => setPoint(null)} className="text-slate-500 underline hover:text-slate-900">
               nuqtani olib tashlash
             </button>
           </>
         ) : (
           <span className="text-slate-500">
-            {searchEnabled ? "Manzilni yozib ro'yxatdan tanlang " : "Xaritadan obyekt joyini bosib belgilang "}
-            — nuqta belgilansa haydovchida navigatsiya ishlaydi va masofa hisoblanadi.
+            {searchEnabled ? "Yozgan sayin xaritada qidiriladi — ro'yxatdan yoki xaritadagi nuqtadan tanlang " : "Xaritadan obyekt joyini bosib belgilang "}
+            — nuqta belgilansa haydovchida navigatsiya ishlaydi{showDistance && " va masofa hisoblanadi"}.
           </span>
         )}
       </div>

@@ -33,8 +33,14 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
       </div>
 
       <div className="flex items-end justify-center gap-1.5">
-        {cells.map((c) => {
+        {cells.map((c, i) => {
           const active = openKey === c.key;
+          // Tooltip ustun markaziga tayanadi. Chetdagi ikki ustunda markazlash uni
+          // kartadan tashqariga — chapda yon menyu ustiga, o'ngda ekrandan tashqariga —
+          // chiqarib yuboradi, shuning uchun u o'z ustunining chetiga tiraladi.
+          const tipAlign = i <= 1 ? "left-0 translate-x-0"
+            : i >= cells.length - 2 ? "right-0 left-auto translate-x-0"
+            : "left-1/2 -translate-x-1/2";
           return (
             <div key={c.key} className="group relative flex-1 basis-0">
               <button type="button" onClick={() => setOpenKey(active ? null : c.key)}
@@ -44,7 +50,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                 <div className={cn("relative flex h-40 w-full max-w-[46px] items-end overflow-hidden rounded-lg border-2 bg-slate-50",
                   c.state === "full" ? "border-red-300" : c.state === "busy" ? "border-amber-300" : "border-emerald-300")}>
                   <div className="w-full transition-[height] duration-700"
-                    style={{ height: `${Math.max(c.count > 0 ? 8 : 0, c.pct)}%`, background: "linear-gradient(to top, #10b981 0%, #84cc16 40%, #f59e0b 75%, #ef4444 100%)" }} />
+                    style={{ height: `${Math.max(c.count > 0 ? 8 : 0, c.pct)}%`, background: "linear-gradient(to top, #00cb80 0%, #9ee610 40%, #ffa800 75%, #fa1636 100%)" }} />
                   <span className="absolute inset-x-0 top-1.5 px-0.5 text-center text-[10px] leading-tight font-semibold text-slate-700">
                     {c.count > 0 ? <>{q(c.m3)}<br />m³</> : "bo'sh"}
                   </span>
@@ -59,7 +65,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
 
               {/* Sichqoncha olib borilganda — qisqa ro'yxat */}
               {!active && (
-                <div className="pointer-events-none absolute top-full left-1/2 z-40 mt-1 hidden w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-(--shadow-pop) group-hover:block">
+                <div className={cn("pointer-events-none absolute top-full z-40 mt-1 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-(--shadow-pop) md:group-hover:block", tipAlign)}>
                   <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
                     <span className="text-[13px] font-semibold text-slate-900">{c.isToday ? "Bugun" : `${c.weekday} · ${c.label}`}</span>
                     <span className={cn("text-[11px] font-medium", c.state === "full" ? "text-red-600" : c.state === "busy" ? "text-amber-700" : "text-emerald-700")}>

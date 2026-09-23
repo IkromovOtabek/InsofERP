@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { workPositions } from "@/lib/positions";
 import { date } from "@/lib/format";
-import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { NewPositionForm, PositionRow } from "./position-forms";
 import { OrgChart, type OrgEmployee } from "./org-chart";
 
@@ -24,9 +24,9 @@ function daysToAnniversary(d: Date) {
 }
 const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} kundan keyin`);
 
-export default async function OtdelKadrPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function OtdelKadrPage({ searchParams }: { searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string }> }) {
   await requireSession(["HR"]);
-  const { tab = "xodimlar" } = await searchParams;
+  const { tab = "xodimlar", qoshildi, yangilandi } = await searchParams;
 
   const [employees, positions, orderStages, tripStages] = await Promise.all([
     db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: { select: { role: true, isActive: true } }, _count: { select: { documents: true } } } }),
@@ -69,6 +69,12 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
     <div>
       <PageHeader title="Otdel kadr" subtitle="Lavozimlar ro'yxati, bo'limlar va kadr taqvimi shu yerda. Xodim kartasi — Xodimlar sahifasida." />
 
+      {(qoshildi || yangilandi) && (
+        <Callout tone="success" title="Excel import bajarildi">
+          {Number(qoshildi) || 0} ta yangi xodim qo&apos;shildi, {Number(yangilandi) || 0} tasining kartasi yangilandi — surat va hujjat nusxalarini kartadan yuklaysiz.
+        </Callout>
+      )}
+
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Jami xodim" value={employees.length} hint={`${active.length} faol`} icon={Users} tone="brand" />
         <StatCard label="Tizimga kiradi" value={withLogin} hint="login berilgan" icon={IdCard} tone="info" href="/employees" />
@@ -85,7 +91,10 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
               <h2 className="text-sm font-semibold">Xodimlar ro&apos;yxati</h2>
               <p className="text-xs text-slate-500">Yangi xodim ma&apos;lumotlari va hujjat nusxalari bilan kiritiladi; saqlangach shaxsiy varaqa chop etiladi.</p>
             </div>
-            <LinkButton href="/otdel-kadr/yangi"><Plus size={16} /> Xodim qo&apos;shish</LinkButton>
+            <div className="flex flex-wrap gap-2">
+              <LinkButton href="/otdel-kadr/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali qo&apos;shish</LinkButton>
+              <LinkButton href="/otdel-kadr/yangi"><Plus size={16} /> Xodim qo&apos;shish</LinkButton>
+            </div>
           </div>
           <Table>
             <thead><tr><Th>Surat</Th><Th>F.I.O.</Th><Th>Lavozim</Th><Th>Telefon</Th><Th>Ishga kirgan</Th><Th right>Hujjat</Th><Th>Holat</Th><Th></Th></tr></thead>
@@ -99,8 +108,14 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
                       {e.photo ? <img src={`/employees/${e.id}/surat`} alt="" className="h-full w-full object-cover" /> : <User size={14} />}
                     </span>
                   </Td>
-                  <Td className="font-medium"><Link href={`/employees/${e.id}`} className="hover:underline">{e.fullName}</Link></Td>
-                  <Td>{e.position}</Td>
+                  <Td className="font-medium">
+                    <Link href={`/employees/${e.id}`} className="hover:underline">{e.fullName}</Link>
+                    {e.tabelNo && <div className="text-xs font-normal text-slate-500">Tabel № {e.tabelNo}</div>}
+                  </Td>
+                  <Td>
+                    {e.position}
+                    {e.subdivision && <div className="text-xs text-slate-500">{e.subdivision}</div>}
+                  </Td>
                   <Td>{e.phone ?? "—"}</Td>
                   <Td>{e.hiredAt ? date(e.hiredAt) : <span className="text-slate-400">—</span>}</Td>
                   <Td right>{e._count.documents > 0 ? <span className="inline-flex items-center gap-1 text-slate-600"><Paperclip size={13} />{e._count.documents}</span> : <span className="text-slate-400">—</span>}</Td>

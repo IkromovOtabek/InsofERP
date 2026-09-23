@@ -10,6 +10,7 @@ import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { pushEmployeeSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
+import { importEmployees, type ImportEmployeeRow } from "@/lib/import-employees";
 import { saveEmployeeFile, removeEmployeeFile } from "@/lib/uploads";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
@@ -212,4 +213,63 @@ export async function deleteEmployeeDocument(docId: string) {
   });
   await removeEmployeeFile(doc.file);
   revalidatePath(`/employees/${doc.employeeId}`);
+}
+
+
+// ───────────────────────── Excel'dan xodimlar ro'yxati ─────────────────────────
+
+const importSchema = z.object({
+  rows: z.string(),
+  defaultPosition: zOpt,
+  groupRows: z.string().optional().transform((v) => v === "on"),
+  createPositions: z.string().optional().transform((v) => v === "on"),
+  updateExisting: z.string().optional().transform((v) => v === "on"),
+});
+
+/**
+ * Otdel kadr → Xodimlar ro'yxati → "Excel orqali qo'shish": buxgalteriya tabeli jadvali
+ * (Сотрудник, Табельный номер, Должность, Тарифная ставка, Дата приема/увольнения, Дата рождения)
+ * kartalarga tushadi. Bo'lim sarlavhalari ("Бригада 1") xodim emas — keyingi qatorlarning bo'limi bo'ladi.
+ */
+export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await hr();
+  const r = parseForm(importSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  let rows: ImportEmployeeRow[];
+  try { rows = JSON.parse(d.rows); } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
+  if (!Array.isArray(rows) || !rows.length) return { error: "Faylda qator yo'q" };
+
+  let res;
+  try {
+    res = await importEmployees({
+      rows,
+      groupRows: d.groupRows,
+      defaultPosition: d.defaultPosition,
+      createPositions: d.createPositions,
+      updateExisting: d.updateExisting,
+    }, s.userId);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
+  // Haydovchi lavozimidagilar haydovchi ilovasida ham ko'rinsin (ECO o'chiq bo'lsa jim o'tadi)
+  for (const id of res.driverIds) pushEmployeeSilently(id);
+  refresh();
+  revalidatePath("/drivers");
+
+  // E'tibor beriladigan joyi bo'lmasa — ro'yxatga qaytadi; bo'lsa sahifada qolib tushuntiradi
+  if (!res.createdPositions.length && !res.skipped) {
+    redirect(`/otdel-kadr?tab=xodimlar&qoshildi=${res.created}&yangilandi=${res.updated}`);
+  }
+  const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n ? "…" : ""}`;
+  return {
+    ok: true,
+    note: [
+      `${res.created} ta xodim qo'shildi, ${res.updated} tasi yangilandi`,
+      res.createdPositions.length ? `yangi lavozim ochildi: ${list(res.createdPositions)}` : "",
+      res.skipped ? `${res.skipped} ta qator o'tkazib yuborildi — bunday xodim bazada bor ("mavjud xodimlar yangilansin"ni belgilang)` : "",
+      res.fired ? `${res.fired} tasi nofaol qilindi (ishdan bo'shagan sanasi bor)` : "",
+    ].filter(Boolean).join(" · "),
+  };
 }

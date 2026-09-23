@@ -57,6 +57,7 @@ model User {
   supplyEvents  SupplyEvent[]       @relation("SupplyEventBy")
   brigadeMoves  BrigadeMove[]       @relation("BrigadeMoveBy")
   leads         Lead[]              @relation("LeadHandledBy")
+  salesRegister SalesRegister[]     @relation("SalesRegisterCreatedBy")
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -102,6 +103,7 @@ model Customer {
   invoices Invoice[]
   payments Payment[]
   leads    Lead[]
+  register SalesRegister[]
 }
 
 model Supplier {
@@ -235,14 +237,18 @@ model Vehicle {
 }
 
 model Employee {
-  id        String    @id @default(cuid())
-  fullName  String
-  position  String // bo'lim lavozimi (Sotuv, Sklad...) yoki ishchi lavozim (Haydovchi, Operator...)
-  phone     String?
-  hiredAt   DateTime? // ishga kirgan sana — otdel kadr yuritadi
-  birthDate DateTime? // tug'ilgan sana
-  note      String? // otdel kadr izohi (smena, manzil, hujjat holati...)
-  isActive  Boolean   @default(true)
+  id          String    @id @default(cuid())
+  fullName    String
+  position    String // bo'lim lavozimi (Sotuv, Sklad...) yoki ishchi lavozim (Haydovchi, Operator...)
+  tabelNo     String? // табельный номер — buxgalteriya tabelidagi raqam
+  subdivision String? // подразделение — brigada / uchastka nomi
+  tariffRate  Decimal?  @db.Decimal(18, 2) // тарифная ставка — kelishilgan tarif stavkasi
+  phone       String?
+  hiredAt     DateTime? // ishga kirgan sana — otdel kadr yuritadi
+  firedAt     DateTime? // ishdan bo'shagan sana (to'ldirilsa xodim nofaol bo'ladi)
+  birthDate   DateTime? // tug'ilgan sana
+  note        String? // otdel kadr izohi (smena, manzil, hujjat holati...)
+  isActive    Boolean   @default(true)
 
   // ── Kadr kartasi (otdel kadr to'ldiradi; shaxsiy varaqa va hujjat nusxalari) ──
   photo            String? // 3x4 surat — uploads/employees/ ichidagi nom
@@ -677,6 +683,11 @@ model Trip {
   note           String?
   createdAt      DateTime   @default(now())
 
+  // ── Yukni olgan joyi (zavod/sklad) — logistika "Yuklandi" bosqichida belgilaydi ──
+  pickupAddress String? // yuk olingan joy manzili
+  pickupLat     Float? // xaritadagi nuqta — haydovchi ilovasida marshrut shu yerdan boshlanadi
+  pickupLng     Float?
+
   // ── Insof ECO (haydovchi ilovasi) bilan sinxron ──
   ecoDeliveryId String?   @unique // ECO Delivery.id
   ecoStatus     String? // ECO holati: ASSIGNED, ACCEPTED, LOADING, EN_ROUTE, ARRIVED, UNLOADING, COMPLETED, DECLINED, FAILED, DISPUTED, CANCELLED
@@ -748,6 +759,7 @@ model CashAccount {
   payments       Payment[]
   transactions   CashTransaction[]
   supplyRequests SupplyRequest[]
+  register       SalesRegister[]
 
   // Bir xil nomli hisob ikki marta ochilmasin (seed qayta ishga tushsa ham)
   @@unique([name, type])
@@ -792,12 +804,55 @@ model Payment {
   note          String?
   createdAt     DateTime @default(now())
 
-  customer    Customer    @relation(fields: [customerId], references: [id])
-  invoice     Invoice?    @relation(fields: [invoiceId], references: [id])
-  order       Order?      @relation(fields: [orderId], references: [id])
-  cashAccount CashAccount @relation(fields: [cashAccountId], references: [id])
+  customer    Customer       @relation(fields: [customerId], references: [id])
+  invoice     Invoice?       @relation(fields: [invoiceId], references: [id])
+  order       Order?         @relation(fields: [orderId], references: [id])
+  cashAccount CashAccount    @relation(fields: [cashAccountId], references: [id])
+  register    SalesRegister?
 
   @@index([orderId])
+}
+
+/// Realizatsiya jurnali — buxgalteriya Excel'da yuritadigan kunlik jo'natma jadvali
+/// (Число, № маш, Наименование, ТТН, К-во, Кому, Цена, НДС, Итого Сумма...).
+/// Kassa/bank sahifasiga Excel orqali yuklanadi: har qator o'z holicha saqlanadi va
+/// "Деньги" ustuniga qarab pul naqd kassaga (н-к) yoki bank hisobiga (п-р) Payment sifatida tushadi.
+/// Mijoz bo'yicha ko'rish: /payments/mijoz/<customerId>.
+model SalesRegister {
+  id            String   @id @default(cuid())
+  date          DateTime // "Число"
+  customerId    String // "Кому"
+  vehicleNo     String? // "№ маш" — mashina raqami (matn; texnika ro'yxatiga bog'lanmaydi)
+  ttn           String? // "ТТН" — nakladnoy raqami
+  productName   String // "Наименование": Beton M250, PK 61-10-8 ...
+  unit          String   @default("m3") // "Ед Изм"
+  qty           Decimal  @db.Decimal(18, 3) // "К-во"
+  fromWho       String? // "От Кого" — ИНСОФ
+  payType       String? // "Деньги": п-р (o'tkazma) | н-к (naqd)
+  deliveryFee   Decimal  @default(0) @db.Decimal(18, 2) // "Доставка"
+  price         Decimal  @default(0) @db.Decimal(18, 2) // "Цена"
+  sum           Decimal  @default(0) @db.Decimal(18, 2) // "Общие Сумма"
+  nds           Decimal  @default(0) @db.Decimal(18, 2) // "НДС 12%"
+  total         Decimal  @default(0) @db.Decimal(18, 2) // "Итого Сумма" — kassaga tushadigan summa
+  address       String? // "Адрес"
+  contractNo    String? // "Договор Номер"
+  invoiceNo     String? // "Счёт Фактура"
+  monthNo       String? // "Ой"
+  note          String? // "Изох"
+  cashAccountId String? // qaysi kassa/hisobga yozildi
+  paymentId     String?  @unique // shu qatordan yozilgan kassa kirimi (o'chirilsa birga o'chadi)
+  batch         String // bitta import partiyasi — jurnalda guruhlanadi va butunlay o'chiriladi
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  customer    Customer     @relation(fields: [customerId], references: [id])
+  cashAccount CashAccount? @relation(fields: [cashAccountId], references: [id])
+  payment     Payment?     @relation(fields: [paymentId], references: [id])
+  createdBy   User         @relation("SalesRegisterCreatedBy", fields: [createdById], references: [id])
+
+  @@index([customerId])
+  @@index([date])
+  @@index([batch])
 }
 
 // ───────────────────────── Audit ─────────────────────────
@@ -985,20 +1040,20 @@ enum LeadStatus {
 /// Mijoz bazasiga darhol yozilmaydi: sotuv bo'limi bog'lanib, kerak bo'lsa
 /// `/leads` sahifasidan bitta tugma bilan `Customer` ga aylantiradi.
 model Lead {
-  id         String     @id @default(cuid())
-  name       String
-  phone      String // normallashtirilgan: +998XXXXXXXXX
-  productId  String? // saytdagi ro'yxatdan tanlangan mahsulot
-  qty        Decimal?   @db.Decimal(18, 3) // taxminiy hajm (mahsulot birligida)
-  address    String? // obyekt manzili
-  message    String?
-  source     String     @default("landing") // keyinchalik: telegram, instagram…
-  status     LeadStatus @default(NEW)
-  note       String? // sotuvchining ichki izohi
-  customerId String? // CONVERTED bo'lganda — yaratilgan/topilgan mijoz
+  id          String     @id @default(cuid())
+  name        String
+  phone       String // normallashtirilgan: +998XXXXXXXXX
+  productId   String? // saytdagi ro'yxatdan tanlangan mahsulot
+  qty         Decimal?   @db.Decimal(18, 3) // taxminiy hajm (mahsulot birligida)
+  address     String? // obyekt manzili
+  message     String?
+  source      String     @default("landing") // keyinchalik: telegram, instagram…
+  status      LeadStatus @default(NEW)
+  note        String? // sotuvchining ichki izohi
+  customerId  String? // CONVERTED bo'lganda — yaratilgan/topilgan mijoz
   handledById String?
-  handledAt  DateTime?
-  createdAt  DateTime   @default(now())
+  handledAt   DateTime?
+  createdAt   DateTime   @default(now())
 
   product   Product?  @relation(fields: [productId], references: [id])
   customer  Customer? @relation(fields: [customerId], references: [id])
