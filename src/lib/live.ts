@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { eco, ecoEnabled, type EcoLiveTrip, type EcoOdometer, type EcoStatus, type EcoTrack } from "@/lib/eco/client";
 import { visibleTrips, type Viewer } from "@/lib/eco/visibility";
 import { haversineMeters } from "@/lib/geo";
-import { lastTripPositions, tripTrack, type TrackPoint } from "@/lib/trips";
+import { tripTrack, tripTrackStats, type TrackPoint } from "@/lib/trips";
 
 /**
  * Xaritadagi mashinalar — IKKI manbadan.
@@ -42,11 +42,12 @@ async function erpLive(): Promise<EcoLiveTrip[]> {
     take: 200,
   });
   if (trips.length === 0) return [];
-  const last = await lastTripPositions(trips.map((t) => t.id));
+  const stats = await tripTrackStats(trips.map((t) => t.id));
   return trips
-    .filter((t) => last.has(t.id))
+    .filter((t) => stats.has(t.id))
     .map((t) => {
-      const p = last.get(t.id)!;
+      const st = stats.get(t.id)!;
+      const p = st.last;
       return {
         ref: t.deliveryNoteNo,
         deliveryId: t.ecoDeliveryId ?? t.id,
@@ -64,8 +65,14 @@ async function erpLive(): Promise<EcoLiveTrip[]> {
         departedAt: t.loadedAt?.toISOString() ?? null,
         slaBreached: false,
         position: { deliveryId: t.ecoDeliveryId ?? t.id, lat: p.lat, lng: p.lng, at: p.at.toISOString(), etaMin: null },
-        // Ro'yxatdagi "necha km yurdi" uchun oxirgi nuqtaga qadar hisob — to'liq iz tanlanganda olinadi
-        odometer: { meters: 0, points: 0, movingMinutes: 0, avgSpeedKmh: null, maxSpeedKmh: null },
+        // Yurilgan yo'l shu yerda hisoblanadi: ro'yxatda ham, kartochkada ham bir xil raqam
+        odometer: {
+          meters: Math.round(st.meters),
+          points: st.points,
+          movingMinutes: st.minutes,
+          avgSpeedKmh: st.minutes > 0 ? Math.round((st.meters / 1000) / (st.minutes / 60)) : null,
+          maxSpeedKmh: null,
+        },
       } satisfies EcoLiveTrip;
     });
 }

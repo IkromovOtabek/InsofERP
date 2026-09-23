@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
+import { haversineMeters } from "@/lib/geo";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -126,19 +127,45 @@ export async function tripTrack(tripId: string): Promise<TrackPoint[]> {
   return db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true } });
 }
 
-/** Bir nechta reysning OXIRGI nuqtasi — xaritadagi mashina belgilari uchun. */
-export async function lastTripPositions(tripIds: string[]): Promise<Map<string, TrackPoint>> {
+/** Bitta reys bo'yicha iz xulosasi — oxirgi joylashuv va bosib o'tilgan yo'l. */
+export type TripTrackStat = { last: TrackPoint; meters: number; points: number; minutes: number };
+
+/**
+ * Bir nechta reysning oxirgi nuqtasi VA yurilgan masofasi.
+ *
+ * Masofa to'g'ri chiziq emas — nuqtadan nuqtaga qo'shib boriladi, ya'ni haqiqiy yo'l.
+ * Hisob bu yerda, bitta so'rovda: xaritadagi ro'yxat ham, reys kartochkasi ham, haydovchining
+ * o'z ekrani ham bir xil raqamni ko'rsatishi kerak — ikki joyda hisoblansa ular ajralib ketardi.
+ */
+export async function tripTrackStats(tripIds: string[]): Promise<Map<string, TripTrackStat>> {
   if (tripIds.length === 0) return new Map();
-  // Har reys uchun alohida so'rov o'rniga bittasi: nuqtalar ko'p emas (reysiga bir necha yuz)
   const rows = await db.tripPosition.findMany({
     where: { tripId: { in: tripIds } },
-    orderBy: { at: "desc" },
+    orderBy: { at: "asc" },
     select: { tripId: true, lat: true, lng: true, at: true },
   });
-  const last = new Map<string, TrackPoint>();
-  for (const r of rows) if (!last.has(r.tripId)) last.set(r.tripId, { lat: r.lat, lng: r.lng, at: r.at });
-  return last;
+  const out = new Map<string, TripTrackStat>();
+  const prev = new Map<string, TrackPoint>();
+  const first = new Map<string, Date>();
+  for (const r of rows) {
+    const p: TrackPoint = { lat: r.lat, lng: r.lng, at: r.at };
+    const before = prev.get(r.tripId);
+    const cur = out.get(r.tripId);
+    const meters = (cur?.meters ?? 0) + (before ? haversineMeters(before.lat, before.lng, p.lat, p.lng) : 0);
+    if (!first.has(r.tripId)) first.set(r.tripId, r.at);
+    out.set(r.tripId, {
+      last: p,
+      meters,
+      points: (cur?.points ?? 0) + 1,
+      minutes: Math.max(0, Math.round((r.at.getTime() - first.get(r.tripId)!.getTime()) / 60000)),
+    });
+    prev.set(r.tripId, p);
+  }
+  return out;
 }
+
+/** `12437` → `12.4 km`, `840` → `840 m`. Ro'yxatda ham, kartochkada ham bir xil ko'rinsin. */
+export const distanceLabel = (meters: number) => (meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`);
 
 // ───────────────────────── Yangi reys ─────────────────────────
 

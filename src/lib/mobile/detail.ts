@@ -3,7 +3,7 @@ import { customerCredit } from "@/lib/finance";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { activeBrigades } from "@/lib/brigades";
-import { tripSteps } from "@/lib/trips";
+import { distanceLabel, tripSteps, tripTrackStats } from "@/lib/trips";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
 import { driverEmployeeId, ListError } from "./list";
@@ -197,6 +197,10 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const isDriver = user.role === "DRIVER";
   if (isDriver && t.driverId !== (await driverEmployeeId(user.id))) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
 
+  // Yurilgan yo'l — haydovchi ham, logistika ham shu bitta raqamni ko'radi.
+  // Ilova kartochkani davriy yangilaydi, ya'ni reys davomida raqam o'sib boradi.
+  const track = (await tripTrackStats([t.id])).get(t.id);
+
   const actions: DetailAction[] = [];
   if (isDriver) {
     // Haydovchiga qadamma-qadam: har holatda faqat KEYINGI qadam ko'rinadi — uchta tugma
@@ -230,6 +234,7 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Hajm", value: m3(sum(t.qtyM3)) },
       { label: "Manzil", value: t.order.deliveryAddress },
       { label: "Zayavka", value: t.order.orderNo },
+      ...(track ? [{ label: "Yurilgan yo'l", value: `${distanceLabel(track.meters)}${track.minutes > 0 ? ` · ${track.minutes} daq` : ""}`, tone: "brand" as Tone }] : []),
       ...(t.loadedAt ? [{ label: "Yuklandi", value: dt(t.loadedAt) }] : []),
       ...(t.deliveredAt ? [{ label: "Yetkazildi", value: dt(t.deliveredAt) }] : []),
       ...(t.receiverName ? [{ label: "Qabul qildi", value: t.receiverName }] : []),
