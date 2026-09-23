@@ -91,7 +91,7 @@ function mergeRows(rows: { r: Row; i: number }[], keys: string[], { sum: sumKeys
  * Server action `rows` (JSON, maydon kalitlari bo'yicha) va `children` ichidagi qo'shimcha maydonlarni oladi.
  * Ko'p qator bir vaqtda yuboriladi — bitta hujjat / bitta import.
  */
-export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, allowExtra }: {
+export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, allowExtra, onSuccess }: {
   fields: ImportField[];
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: React.ReactNode;
@@ -105,6 +105,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   matrix?: MatrixCols;
   /** «+ Ustun qo'shish» tugmasi: foydalanuvchi o'zi nom beradigan qo'shimcha ustunlar (jadvalda ko'rinadi, namuna faylga tushadi). */
   allowExtra?: boolean;
+  /** Server action sahifani almashtirmay `ok` qaytarsa chaqiriladi (oyna ichidagi import — ro'yxatni yangilash uchun). */
+  onSuccess?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [fileName, setFileName] = useState("");
@@ -321,6 +323,11 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
   const source = onlyBad ? badList : flagged;
   const totals = source.reduce((a, x) => (x.a ? { sum: a.sum + x.a.sum, nds: a.nds + x.a.nds, total: a.total + x.a.total } : a), { sum: 0, nds: 0, total: 0 });
+
+  // Import sahifani almashtirmay tugasa — chaqiruvchiga xabar (ro'yxat yangilanadi)
+  const doneRef = useRef(onSuccess);
+  doneRef.current = onSuccess;
+  useEffect(() => { if (state?.ok) doneRef.current?.(); }, [state]);
 
   // Oyna ochiq ekan: Esc bilan yopiladi, orqa fon skroll qilinmaydi
   useEffect(() => {
