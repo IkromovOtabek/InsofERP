@@ -186,7 +186,10 @@ After=network.target postgresql.service
 WorkingDirectory=/var/www/insof-erp
 Environment=NODE_ENV=production
 Environment=PORT=3000
-ExecStart=/usr/bin/npm run start
+# `npm run start` EMAS: npm bola jarayon ochadi va signallarni unga uzatmaydi —
+# systemd npm'ni o'ldiradi, next-server esa yetim bo'lib qolib 3000-portni
+# ushlab turaveradi va keyingi restart EADDRINUSE bilan yiqiladi.
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start
 Restart=always
 
 [Install]
