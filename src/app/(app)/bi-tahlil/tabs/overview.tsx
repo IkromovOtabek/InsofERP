@@ -31,6 +31,16 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
       {/* Davr filtri — salomlashuvdan keyin (qobiqda emas: BiPage'ga period={false} berilgan) */}
       <PeriodBar range={range} tab="overview" className="mb-0" />
 
+      {/* KPI */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Kpi label="Bugungi sotuv" value={moneyShort(d.todayRevenue)} delta={d.todayDelta} deltaLabel="kechaga" icon={TrendingUp} tone="brand" hint={`O'tgan oy o'rtachasi: ${moneyShort(d.month.planPerDay)}/kun`} spark={d.spark} />
+        <Kpi label="Oylik sotuv" value={moneyShort(d.month.revenue)} delta={d.month.delta} deltaLabel="o'tgan oyga" icon={CalendarRange} tone="info" hint={<>Prognoz: <b>{moneyShort(d.month.forecast)}</b> · {d.month.daysLeft} kun qoldi</>} />
+        <Kpi label="Yalpi foyda" value={moneyShort(d.kpis.gross.cur)} delta={d.kpis.gross.delta} icon={Wallet} tone={d.kpis.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(d.kpis.margin.cur, 1)}% (${d.kpis.margin.delta === null ? "—" : (d.kpis.margin.cur - d.kpis.margin.prev >= 0 ? "▲" : "▼") + fmtNum(Math.abs(d.kpis.margin.cur - d.kpis.margin.prev), 1) + " p.p."})`} />
+        <Kpi label="Kassa tushumi" value={moneyShort(d.kpis.cashIn.cur)} delta={d.kpis.cashIn.delta} icon={Landmark} tone="success" hint={range.label} />
+        <Kpi label="Debitorka" value={moneyShort(d.kpis.receivable)} icon={Percent} tone={d.kpis.receivable > 0 ? "warning" : "default"} hint={`${d.kpis.debtors} ta qarzdor mijoz`} href={tabHref(range, "customers", { debt: "yes" })} />
+        <Kpi label="Faol mijozlar" value={`${d.kpis.active} / ${d.kpis.total}`} icon={Users} tone="violet" hint={`Faollik ${fmtNum(d.kpis.activeRate, 0)}% · Lost: ${d.kpis.lost}`} href={tabHref(range, "customers")} />
+      </div>
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* Biznes salomatligi */}
         <Panel title="Biznes salomatligi" eyebrow={range.label} info="5 ta ko'rsatkich × 20 ball: debitorka nazorati, xomashyo zaxirasi, marja, sotuv o'sishi, zayavka oqimi. Ma'lumoti yo'q ko'rsatkich ballanmaydi — ball qolganlari bo'yicha 100 ballik shkalaga keltiriladi.">
@@ -93,16 +103,6 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
           </ol>
         )}
       </Panel>
-
-      {/* KPI */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Bugungi sotuv" value={moneyShort(d.todayRevenue)} delta={d.todayDelta} deltaLabel="kechaga" icon={TrendingUp} tone="brand" hint={`O'tgan oy o'rtachasi: ${moneyShort(d.month.planPerDay)}/kun`} spark={d.spark} />
-        <Kpi label="Oylik sotuv" value={moneyShort(d.month.revenue)} delta={d.month.delta} deltaLabel="o'tgan oyga" icon={CalendarRange} tone="info" hint={<>Prognoz: <b>{moneyShort(d.month.forecast)}</b> · {d.month.daysLeft} kun qoldi</>} />
-        <Kpi label="Yalpi foyda" value={moneyShort(d.kpis.gross.cur)} delta={d.kpis.gross.delta} icon={Wallet} tone={d.kpis.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(d.kpis.margin.cur, 1)}% (${d.kpis.margin.delta === null ? "—" : (d.kpis.margin.cur - d.kpis.margin.prev >= 0 ? "▲" : "▼") + fmtNum(Math.abs(d.kpis.margin.cur - d.kpis.margin.prev), 1) + " p.p."})`} />
-        <Kpi label="Kassa tushumi" value={moneyShort(d.kpis.cashIn.cur)} delta={d.kpis.cashIn.delta} icon={Landmark} tone="success" hint={range.label} />
-        <Kpi label="Debitorka" value={moneyShort(d.kpis.receivable)} icon={Percent} tone={d.kpis.receivable > 0 ? "warning" : "default"} hint={`${d.kpis.debtors} ta qarzdor mijoz`} href={tabHref(range, "customers", { debt: "yes" })} />
-        <Kpi label="Faol mijozlar" value={`${d.kpis.active} / ${d.kpis.total}`} icon={Users} tone="violet" hint={`Faollik ${fmtNum(d.kpis.activeRate, 0)}% · Lost: ${d.kpis.lost}`} href={tabHref(range, "customers")} />
-      </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Yo'qotishlar — kanal bo'yicha" info="Kuniga qancha pul ketyapti; kattadan kichikka." action={<Link href={tabHref(range, "finance")} className="font-medium text-blue-600 hover:underline">Moliya →</Link>}>
