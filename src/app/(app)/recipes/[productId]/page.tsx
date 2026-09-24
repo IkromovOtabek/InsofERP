@@ -1,16 +1,17 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { qty, date } from "@/lib/format";
-import { Badge, Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { qty, date, money } from "@/lib/format";
+import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { RecipeForm } from "../recipe-form";
 import { unitLabel } from "@/lib/unit";
+import { Pencil } from "lucide-react";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   const s = await requireSession(["PRODUCTION"]);
   const [p, materials, groups] = await Promise.all([
-    db.product.findUnique({ where: { id: productId }, include: { recipes: { orderBy: { version: "desc" }, include: { items: { include: { material: true } } } } } }),
+    db.product.findUnique({ where: { id: productId }, include: { group: true, recipes: { orderBy: { version: "desc" }, include: { items: { include: { material: true } } } } } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
   ]);
@@ -25,10 +26,26 @@ export default async function RecipePage({ params }: { params: Promise<{ product
         subtitle={active ? `Faol versiya v${active.version} · ${date(active.createdAt)}` : "Hali retsept yo'q"}
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>
-          <RecipeForm productId={productId} unit={unitLabel(p.unit)} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId }))} groups={groups} canCreate={["PRODUCTION", "DIRECTOR"].includes(s.role)} initial={active ? active.items.map((i) => ({ materialId: i.materialId, qtyPerM3: i.qtyPerM3.toString() })) : []} />
-        </Card>
+        <div className="space-y-4">
+          {/* Mahsulotning o'z ma'lumotlari — 1C dagi tovar kartasi tepasidagi kabi; tahrirlash Sozlamalarda */}
+          <Card>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="font-semibold">Mahsulot</h2>
+              <LinkButton href="/settings?tab=products" variant="ghost" size="sm"><Pencil size={13} /> Tahrirlash</LinkButton>
+            </div>
+            <DL items={[
+              { k: "Kod", v: p.code },
+              { k: "Tovar turi", v: p.kind ?? "—" },
+              { k: "Bo'lim", v: p.group?.name ?? "Ro'yxat ildizi" },
+              { k: "O'lchov birligi", v: unitLabel(p.unit) },
+              { k: "Sotuv narxi", v: money(p.price) },
+            ]} />
+          </Card>
+          <Card>
+            <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>
+            <RecipeForm productId={productId} unit={unitLabel(p.unit)} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId }))} groups={groups} canCreate={["PRODUCTION", "DIRECTOR"].includes(s.role)} initial={active ? active.items.map((i) => ({ materialId: i.materialId, qtyPerM3: i.qtyPerM3.toString() })) : []} />
+          </Card>
+        </div>
         <div>
           <h2 className="mb-3 font-semibold">Versiyalar tarixi</h2>
           <div className="space-y-3">
