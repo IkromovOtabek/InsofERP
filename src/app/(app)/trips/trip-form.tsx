@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import { createTrip } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
 
-type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number };
+/** unit — zayavkadagi mahsulot birligi ("m³", "dona"…); aralash birlikda m³ olinadi. */
+type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number; unit: string };
 type Vehicle = { id: string; plate: string; capacityM3: number | null };
 /** vehicleId — xodim kartasida biriktirilgan mikser; phoneOk — ECO topa oladigan +998… raqami bormi. */
 type Driver = { id: string; fullName: string; vehicleId: string | null; phoneOk: boolean };
@@ -42,7 +43,7 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
       <FormError error={state?.error} />
       <Field label="Zayavka *">
         <Select name="orderId" value={orderId} onChange={(e) => { setOrderId(e.target.value); suggest(orders.find((o) => o.id === e.target.value), vehicle); }}>
-          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · qoldi {o.remainingM3} m³</option>)}
+          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · qoldi {o.remainingM3} {o.unit}</option>)}
         </Select>
       </Field>
       {order && <p className="text-sm text-slate-600">Manzil: {order.address}</p>}
@@ -68,7 +69,7 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
           </Select>
         </Field>
       </div>
-      <Field label="Miqdor, m³ *" hint="Mikser sig'imi va zayavka qoldig'idan kichigi taklif qilinadi">
+      <Field label={`Miqdor, ${order?.unit ?? "m³"} *`} hint="Mikser sig'imi va zayavka qoldig'idan kichigi taklif qilinadi">
         <Input name="qtyM3" type="number" step="0.5" min="0.5" value={qty} onChange={(e) => setQty(e.target.value)} onFocus={() => !qty && suggest(order, vehicle)} required />
       </Field>
       <Field label="Izoh"><Textarea name="note" /></Field>

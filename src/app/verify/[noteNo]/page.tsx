@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { qty, date } from "@/lib/format";
 import { getCompany } from "@/lib/company";
+import { unitLabel, soleUnit } from "@/lib/unit";
 
 const LABEL: Record<string, string> = { PLANNED: "Rejalashtirilgan", LOADED: "Yuklangan", ON_ROAD: "Yo'lda", DELIVERED: "Yetkazilgan", CANCELLED: "BEKOR QILINGAN" };
 
@@ -22,7 +23,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ noteNo:
             <dl className="mt-4 space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-slate-500">Mijoz</dt><dd className="font-medium">{t.order.customer.name}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Mahsulot</dt><dd>{t.order.items[0]?.product.name}</dd></div>
-              <div className="flex justify-between"><dt className="text-slate-500">Hajm</dt><dd>{qty(t.qtyM3)} m³</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Hajm</dt><dd>{qty(t.qtyM3)} {unitLabel(soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? t.order.items[0]?.product.unit ?? "m3")}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Transport</dt><dd>{t.vehicle.plate}</dd></div>
               <div className="flex justify-between"><dt className="text-slate-500">Sana</dt><dd>{date(t.loadedAt ?? t.createdAt)}</dd></div>
             </dl>

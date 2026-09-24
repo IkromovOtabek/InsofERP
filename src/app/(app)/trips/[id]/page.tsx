@@ -10,6 +10,7 @@ import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, S
 import { TripStatusBadge } from "../status";
 import { markLoaded, markOnRoad, cancelTrip } from "../actions";
 import { tripSteps } from "@/lib/trips";
+import { unitLabel, soleUnit } from "@/lib/unit";
 import { DeliverButton } from "./deliver-form";
 import { PickupForm } from "./pickup-form";
 import { EcoSyncButtons } from "./eco-sync";
@@ -32,6 +33,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const blacklisted = marks.black.has(t.order.customerId);
   const canLog = ["LOGISTICS", "DIRECTOR"].includes(s.role);
   const canLoad = canLog || s.role === "PRODUCTION";
+  // Reys miqdori zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, dona mahsulot dona)
+  const tripUnit = soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
 
   return (
     <div>
@@ -61,7 +64,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       </Card>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Hajm" value={`${qty(t.qtyM3)} m³`} hint={t.order.items[0]?.product.name} icon={Package} tone="brand" />
+        <StatCard label="Hajm" value={tripUnit ? `${qty(t.qtyM3)} ${unitLabel(tripUnit)}` : qty(t.qtyM3)} hint={t.order.items[0]?.product.name} icon={Package} tone="brand" />
         <StatCard label="Mikser" value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} />
         <StatCard label="Yuklandi" value={<span className="text-base">{dt(t.loadedAt)}</span>} icon={Clock} />
         <StatCard label="Yetkazildi" value={<span className="text-base">{dt(t.deliveredAt)}</span>} hint={t.receiverName ? `qabul qildi: ${t.receiverName}` : undefined} icon={Clock} tone={t.deliveredAt ? "success" : "default"} />

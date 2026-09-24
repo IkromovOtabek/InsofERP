@@ -9,6 +9,7 @@ import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
 import type { FormField, FormOption } from "./detail";
 import { ListError } from "./list";
+import { unitLabel, soleUnit } from "@/lib/unit";
 import type { Role } from "@/generated/prisma";
 
 /**
@@ -77,9 +78,10 @@ async function orderForm(): Promise<CreateForm> {
       {
         name: "items", label: "Mahsulot", type: "items", required: true,
         columns: [
-          { name: "productId", label: "Marka", type: "select", required: true, options: products.map((p) => ({ value: p.id, label: p.name, extra: { price: String(Math.round(Number(p.price))) } })) },
-          { name: "qtyM3", label: "Hajm (m³)", type: "number", required: true, placeholder: "0" },
-          { name: "price", label: "Narx (1 m³)", type: "number", required: true, placeholder: "0" },
+          // Birlik mahsulot nomi yonida turadi: hajm va narx shu birlikda kiritiladi (beton m³, ustun/blok dona)
+          { name: "productId", label: "Marka", type: "select", required: true, options: products.map((p) => ({ value: p.id, label: `${p.name} · ${unitLabel(p.unit)}`, extra: { price: String(Math.round(Number(p.price))) } })) },
+          { name: "qtyM3", label: "Hajmi (mahsulot birligida)", type: "number", required: true, placeholder: "0" },
+          { name: "price", label: "Narx (1 birlik)", type: "number", required: true, placeholder: "0" },
         ],
       },
       { name: "needsPump", label: "Nasos kerak", type: "switch", value: "false" },
@@ -94,7 +96,7 @@ async function orderForm(): Promise<CreateForm> {
 
 async function tripForm(): Promise<CreateForm> {
   const [orders, vehicles, drivers] = await Promise.all([
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: true, trips: true } }),
+    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, orderBy: { plate: "asc" } }),
     db.employee.findMany({ where: { isActive: true, position: { in: await driverPositionNames() } }, orderBy: { fullName: "asc" } }),
   ]);
@@ -104,7 +106,8 @@ async function tripForm(): Promise<CreateForm> {
     .map((o) => {
       const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
       const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
-      return { o, left: total - shipped };
+      // Qoldiq zayavkadagi mahsulot birligida ko'rsatiladi (aralash birlikda birliksiz)
+      return { o, left: total - shipped, unit: soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) };
     })
     .filter((x) => x.left > 0.001);
 
@@ -113,7 +116,7 @@ async function tripForm(): Promise<CreateForm> {
     fields: [
       {
         name: "orderId", label: "Zayavka", type: "select", required: true,
-        options: open.map(({ o, left }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · qoldiq ${left} m³`, extra: { qtyM3: String(left) } })),
+        options: open.map(({ o, left, unit }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · qoldiq ${left}${unit ? ` ${unitLabel(unit)}` : ""}`, extra: { qtyM3: String(left) } })),
         hint: open.length ? undefined : "Qoldig'i bor tasdiqlangan zayavka yo'q",
       },
       {
@@ -125,7 +128,7 @@ async function tripForm(): Promise<CreateForm> {
         options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${normalizePhone(d.phone) ? "" : " · ⚠️ telefonsiz"}` })),
         hint: "Telefoni yo'q haydovchi ilovada reysni ko'rmaydi",
       },
-      { name: "qtyM3", label: "Hajm (m³)", type: "number", required: true, placeholder: "0" },
+      { name: "qtyM3", label: "Hajmi (zayavka birligida)", type: "number", required: true, placeholder: "0" },
       { name: "note", label: "Izoh", type: "text" },
     ],
   };

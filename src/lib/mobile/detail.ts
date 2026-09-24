@@ -7,6 +7,7 @@ import { distanceLabel, tripSteps, tripTrackStats } from "@/lib/trips";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
 import { driverEmployeeId, ListError } from "./list";
+import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import type { Role } from "@/generated/prisma";
 
 /**
@@ -76,7 +77,14 @@ export type MobileDetail = {
 
 const sum = (n: unknown) => Number(n ?? 0);
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
-const m3 = (n: number) => `${sum(n).toFixed(sum(n) % 1 ? 1 : 0)} m³`;
+/** Miqdor mahsulotning o'z birligida: beton m³, ustun/blok dona. */
+const num = (n: number) => sum(n).toFixed(sum(n) % 1 ? 1 : 0);
+const inUnit = (n: number, unit: string | null) => (unit ? `${num(n)} ${unitLabel(unit)}` : num(n));
+/** Aralash birlikli zayavka hajmi: "12 m³ · 500 dona" — m³ bilan dona qo'shilmaydi. */
+const totalsText = (rows: UnitRow[]) => {
+  const t = unitTotals(rows);
+  return t.length ? t.map((x) => inUnit(x.qty, x.unit)).join(" · ") : "0";
+};
 const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
 const dt = (d: Date) => `${day(d)} ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
@@ -150,8 +158,12 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   if (!o) throw new ListError("NOT_FOUND", "Zayavka topilmadi", 404);
   const credit = await customerCredit(o.customerId);
   const total = o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0);
+  // Hajm mahsulot birligida — vebdagi zayavka kartochkasi bilan bir xil
+  const itemRows = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
+  const batchRows = o.batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }));
+  const orderUnit = soleUnit(itemRows); // aralash birlikda — null
   const volume = o.items.reduce((s, i) => s + sum(i.qtyM3), 0);
-  const produced = o.batches.reduce((s, b) => s + sum(b.qtyM3), 0);
+  const producedPct = donePercent(batchRows, itemRows);
   const delivered = o.trips.filter((t) => t.status === "DELIVERED").reduce((s, t) => s + sum(t.qtyM3), 0);
 
   const actions: DetailAction[] = [];
@@ -164,10 +176,10 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     fields: [
       { label: "Yetkazish", value: `${day(o.deliveryDate)}${o.deliveryTime ? ` · ${o.deliveryTime}` : ""}` },
       { label: "Manzil", value: o.deliveryAddress },
-      { label: "Hajm", value: m3(volume) },
+      { label: "Hajm", value: totalsText(itemRows) },
       { label: "Summa", value: money(total) },
-      { label: "Ishlab chiqarildi", value: `${m3(produced)} / ${m3(volume)}`, tone: produced >= volume ? "success" : "warning" },
-      { label: "Yetkazildi", value: `${m3(delivered)} / ${m3(volume)}`, tone: delivered >= volume ? "success" : "info" },
+      { label: "Ishlab chiqarildi", value: `${totalsText(batchRows)} / ${totalsText(itemRows)}`, tone: producedPct >= 100 ? "success" : "warning" },
+      { label: "Yetkazildi", value: `${inUnit(delivered, orderUnit)} / ${totalsText(itemRows)}`, tone: delivered >= volume ? "success" : "info" },
       { label: "Mijoz limiti", value: `${money(credit.used)} / ${money(credit.limit)}`, tone: credit.used >= credit.limit ? "danger" : "success" },
       ...(o.needsPump ? [{ label: "Nasos", value: "Kerak", tone: "warning" as Tone }] : []),
       ...(o.isUrgent ? [{ label: "Shoshilinch", value: "Ha", tone: "danger" as Tone }] : []),
@@ -177,9 +189,9 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       ...(o.note ? [{ label: "Izoh", value: o.note }] : []),
     ],
     sections: [
-      { title: "Mahsulotlar", empty: "Qator yo'q", rows: o.items.map((i) => ({ id: i.id, title: i.product.name, subtitle: `${money(sum(i.price))} / m³`, right: m3(sum(i.qtyM3)) })) },
-      { title: "Reyslar", empty: "Reys yo'q", target: "trips", rows: o.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: t.driver.fullName, right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) },
-      { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: day(b.date), right: m3(sum(b.qtyM3)) })) },
+      { title: "Mahsulotlar", empty: "Qator yo'q", rows: o.items.map((i) => ({ id: i.id, title: i.product.name, subtitle: `${money(sum(i.price))} / ${unitLabel(i.product.unit)}`, right: inUnit(sum(i.qtyM3), i.product.unit) })) },
+      { title: "Reyslar", empty: "Reys yo'q", target: "trips", rows: o.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: t.driver.fullName, right: inUnit(sum(t.qtyM3), orderUnit), status: t.status, tone: TRIP_TONE[t.status] })) },
+      { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: day(b.date), right: inUnit(sum(b.qtyM3), b.product.unit) })) },
       { title: "Schyotlar", empty: "Schyot yo'q", target: "invoices", rows: o.invoices.map((i) => ({ id: i.id, title: i.invoiceNo, subtitle: day(i.date), right: money(sum(i.amount)), status: i.status })) },
     ].filter((s) => s.rows.length > 0 || s.title === "Mahsulotlar"),
     actions,
@@ -189,7 +201,7 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
 // ───────────────────────── Reys / nakladnoy ─────────────────────────
 
 async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
-  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true } }, driver: true, vehicle: true } });
+  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } });
   if (!t) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
   // Ro'yxatda haydovchiga faqat o'z reyslari chiqadi (`lib/mobile/list.ts`), lekin kartochka
   // id bo'yicha ochiladi — begona id qo'lda yuborilsa shu yerda to'xtaydi. "Topilmadi" deymiz:
@@ -231,7 +243,8 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Haydovchi", value: t.driver.fullName },
       { label: "Telefon", value: t.driver.phone ?? "—", tone: t.driver.phone ? undefined : "danger" },
       { label: "Mashina", value: t.vehicle.plate },
-      { label: "Hajm", value: m3(sum(t.qtyM3)) },
+      // Reys miqdori zayavkadagi mahsulot birligida
+      { label: "Hajm", value: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))) },
       { label: "Manzil", value: t.order.deliveryAddress },
       { label: "Zayavka", value: t.order.orderNo },
       ...(track ? [{ label: "Yurilgan yo'l", value: `${distanceLabel(track.meters)}${track.minutes > 0 ? ` · ${track.minutes} daq` : ""}`, tone: "brand" as Tone }] : []),
@@ -348,7 +361,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     actions.push({
       id: "task.progress", label: "Bajarilgan miqdorni qayd qilish", tone: "success",
       form: [
-        { name: "qty", label: `Miqdor (m³) — qoldiq ${left.toFixed(1)}`, type: "number", required: true, value: String(left) },
+        { name: "qty", label: `Miqdor (${unitLabel(t.orderItem.product.unit)}) — qoldiq ${left.toFixed(1)}`, type: "number", required: true, value: String(left) },
         { name: "note", label: "Izoh", type: "text" },
       ],
     });
@@ -359,16 +372,16 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     key: "tasks", id: t.id, title: t.taskNo, subtitle: `${t.brigade.name} · ${t.order.customer.name}`, status: t.status,
     fields: [
       { label: "Mahsulot", value: t.orderItem.product.name },
-      { label: "Topshiriq", value: m3(sum(t.qty)) },
-      { label: "Bajarildi", value: `${m3(sum(t.doneQty))} / ${m3(sum(t.qty))}`, tone: left <= 0 ? "success" : "warning" },
-      { label: "Qoldiq", value: m3(left), tone: left > 0 ? "warning" : "success" },
+      { label: "Topshiriq", value: inUnit(sum(t.qty), t.orderItem.product.unit) },
+      { label: "Bajarildi", value: `${inUnit(sum(t.doneQty), t.orderItem.product.unit)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, tone: left <= 0 ? "success" : "warning" },
+      { label: "Qoldiq", value: inUnit(left, t.orderItem.product.unit), tone: left > 0 ? "warning" : "success" },
       { label: "Muddat", value: day(t.dueDate), tone: open && t.dueDate < new Date() ? "danger" : undefined },
       { label: "Zayavka", value: t.order.orderNo },
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
     ],
     sections: [{
       title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q",
-      rows: t.progress.map((p) => ({ id: p.id, title: m3(sum(p.qty)), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
+      rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
     }],
     actions,
   };
@@ -382,14 +395,14 @@ async function batchDetail(id: string): Promise<MobileDetail> {
     fields: [
       { label: "Sana", value: dt(b.date) },
       { label: "Smena", value: `${b.shift}-smena` },
-      { label: "Hajm", value: m3(sum(b.qtyM3)) },
+      { label: "Hajm", value: inUnit(sum(b.qtyM3), b.product.unit) },
       { label: "Zayavka", value: b.order ? `${b.order.orderNo} · ${b.order.customer.name}` : "Omborga" },
       { label: "Retsept", value: `${b.product.name} · v${b.recipe.version}` },
       { label: "Kim kiritdi", value: b.createdBy.fullName },
     ],
     sections: [{
       title: "Sarflangan xomashyo", empty: "Retsept bo'sh",
-      rows: b.recipe.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${sum(i.qtyPerM3)} ${i.material.unit} / m³`, right: `${(sum(i.qtyPerM3) * sum(b.qtyM3)).toFixed(1)} ${i.material.unit}` })),
+      rows: b.recipe.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${sum(i.qtyPerM3)} ${i.material.unit} / ${unitLabel(b.product.unit)}`, right: `${(sum(i.qtyPerM3) * sum(b.qtyM3)).toFixed(1)} ${i.material.unit}` })),
     }],
     actions: [],
   };
@@ -424,8 +437,8 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
     where: { id },
     include: {
       user: true,
-      brigades: { orderBy: { name: "asc" }, include: { tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, include: { order: { include: { customer: true } } } } } },
-      trips: { orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true } } } },
+      brigades: { orderBy: { name: "asc" }, include: { tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, include: { order: { include: { customer: true } }, orderItem: { include: { product: true } } } } } },
+      trips: { orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } },
     },
   });
   if (!e) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
@@ -476,11 +489,11 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
       ...(tasks.length
         ? [{
             title: "Brigada topshiriqlari", empty: "Ochiq topshiriq yo'q", target: "tasks",
-            rows: tasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigadeName}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${sum(t.qty)} m³`, status: t.status, tone: (t.dueDate < new Date() ? "danger" : "warning") as Tone })),
+            rows: tasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigadeName}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, status: t.status, tone: (t.dueDate < new Date() ? "danger" : "warning") as Tone })),
           }]
         : []),
       ...(e.trips.length
-        ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: day(t.createdAt), right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) }]
+        ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: day(t.createdAt), right: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))), status: t.status, tone: TRIP_TONE[t.status] })) }]
         : []),
     ],
     actions,

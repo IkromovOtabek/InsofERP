@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { isoDate } from "@/lib/format";
 import { ORDER_STATUS } from "./status";
 import { CalendarView, type DayCell } from "./calendar-view";
+import { fmtUnitTotals } from "@/lib/unit";
 
 /**
  * 10 kunlik ish tartibi uchun ma'lumot: qaysi kunga qancha hajm olingan va qanday zayavkalar bor.
@@ -34,7 +35,10 @@ export async function OrderLoadCalendar({ days = 10 }: { days?: number }) {
     byDay.set(key, [...(byDay.get(key) ?? []), {
       id: o.id, orderNo: o.orderNo, customer: o.customer.name, time: o.deliveryTime,
       status: o.status, statusLabel: ORDER_STATUS[o.status].label, urgent: o.isUrgent,
+      // m3 — faqat beton: ustun balandligi kunlik beton quvvatiga nisbatan o'lchanadi
       m3: o.items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0),
+      // vol — zayavkaning to'liq hajmi mahsulot birligida ("12 m³ · 500 dona")
+      vol: fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))),
       sum: o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0),
     }]);
   }

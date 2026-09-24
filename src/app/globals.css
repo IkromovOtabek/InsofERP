@@ -484,3 +484,37 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   }
   aside, nav, .print\:hidden { display: none !important; }
 }
+
+/* ───────── Taqdimot (/taqdimot) ─────────
+   Slayd almashganda React uni qaytadan yaratadi, shuning uchun quyidagi
+   animatsiyalar har safar boshidan o'ynaydi — PPT dagi "ketma-ket chiqish"
+   tartibi. Kechikish (`animation-delay`) slayd ichida inline beriladi. */
+@keyframes deck-up    { from { opacity: 0; transform: translate3d(0, 24px, 0); } to { opacity: 1; transform: none; } }
+@keyframes deck-right { from { opacity: 0; transform: translate3d(-28px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes deck-pop   { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes deck-line  { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes deck-kadr  { from { transform: scale(1.12); } to { transform: scale(1); } }
+@keyframes deck-fade  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes deck-swap-next { from { opacity: 0; transform: translate3d(42px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes deck-swap-prev { from { opacity: 0; transform: translate3d(-42px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes deck-note  { from { opacity: 0; transform: translate3d(0, 16px, 0); } to { opacity: 1; transform: none; } }
+
+.deck-up    { animation: deck-up    .6s cubic-bezier(.22,.7,.28,1) both; }
+.deck-right { animation: deck-right .55s cubic-bezier(.22,.7,.28,1) both; }
+.deck-pop   { animation: deck-pop   .5s cubic-bezier(.2,.8,.3,1.2) both; }
+.deck-line  { transform-origin: left; animation: deck-line .65s cubic-bezier(.22,.7,.28,1) both; }
+.deck-fade  { animation: deck-fade  .3s ease-out both; }
+.deck-note  { animation: deck-note  .32s cubic-bezier(.22,.7,.28,1) both; }
+/* Surat sekin yaqinlashadi — kadr "nafas oladi", slayd qotib qolmaydi */
+.deck-kadr  { animation: deck-kadr 16s cubic-bezier(.2,.6,.3,1) both; }
+.deck-swap-next { animation: deck-swap-next .42s cubic-bezier(.22,.7,.28,1) both; }
+.deck-swap-prev { animation: deck-swap-prev .42s cubic-bezier(.22,.7,.28,1) both; }
+
+/* Harakatni kamaytirish yoqilgan bo'lsa — hamma narsa joyida, faqat paydo bo'ladi */
+@media (prefers-reduced-motion: reduce) {
+  .deck-up, .deck-right, .deck-pop, .deck-line, .deck-kadr,
+  .deck-swap-next, .deck-swap-prev, .deck-note, .deck-fade {
+    animation: deck-fade .2s ease-out both !important;
+    transform: none !important;
+  }
+}

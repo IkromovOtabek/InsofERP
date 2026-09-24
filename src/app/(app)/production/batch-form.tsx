@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import { createBatch } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
 
-type Order = { id: string; orderNo: string; customer: string; productId: string; remainingM3: number };
+/** unit — zayavkadagi mahsulot birligi ("m³", "dona"…). */
+type Order = { id: string; orderNo: string; customer: string; productId: string; remainingM3: number; unit: string };
 type Product = { id: string; name: string; hasRecipe: boolean; unit: string };
 type Wh = { id: string; name: string };
 
@@ -28,7 +29,7 @@ export function BatchForm({ orders, products, warehouses }: { orders: Order[]; p
       <Field label="Zayavka" hint="Ixtiyoriy — zayavkasiz zames (sklad uchun) ham bo'ladi">
         <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)}>
           <option value="">— zayavkasiz —</option>
-          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · qoldi {o.remainingM3} m³</option>)}
+          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · qoldi {o.remainingM3} {o.unit}</option>)}
         </Select>
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

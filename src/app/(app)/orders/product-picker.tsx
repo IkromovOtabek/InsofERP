@@ -16,8 +16,8 @@ export type CatalogProduct = { id: string; code: string; name: string; kind: str
 export type CatalogGroup = { id: string; code: string; name: string; parentId: string | null };
 
 type RowItem =
-  | { type: "group"; id: string; name: string; kind: string; code: string }
-  | { type: "product"; id: string; name: string; kind: string; code: string };
+  | { type: "group"; id: string; name: string; kind: string; unit: string; code: string }
+  | { type: "product"; id: string; name: string; kind: string; unit: string; code: string };
 
 /**
  * Mahsulot spravochnigi — 1C dagi "TOVARLAR" oynasiga o'xshash tanlagich.
@@ -62,14 +62,14 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
       // Qidiruvda papkalar bo'ylab yurilmaydi — butun ro'yxatdan mos kelganlari chiqadi
       return products
         .filter((p) => p.name.toLowerCase().includes(term) || p.code.toLowerCase().includes(term))
-        .map((p) => ({ type: "product" as const, id: p.id, name: p.name, kind: p.kind ?? "", code: p.code }));
+        .map((p) => ({ type: "product" as const, id: p.id, name: p.name, kind: p.kind ?? "", unit: p.unit, code: p.code }));
     }
     const gs = groups
       .filter((g) => g.parentId === currentId)
-      .map((g) => ({ type: "group" as const, id: g.id, name: g.name, kind: "", code: g.code }));
+      .map((g) => ({ type: "group" as const, id: g.id, name: g.name, kind: "", unit: "", code: g.code }));
     const ps = products
       .filter((p) => (p.groupId ?? null) === currentId)
-      .map((p) => ({ type: "product" as const, id: p.id, name: p.name, kind: p.kind ?? "", code: p.code }));
+      .map((p) => ({ type: "product" as const, id: p.id, name: p.name, kind: p.kind ?? "", unit: p.unit, code: p.code }));
     return [...gs, ...ps];
   }, [q, currentId, groups, products]);
 
@@ -158,17 +158,18 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
               <tr>
                 <th className="px-4 py-2">Mahsulot nomi</th>
                 <th className="px-4 py-2">Turi</th>
+                <th className="w-20 px-4 py-2">Birlik</th>
                 <th className="w-24 px-4 py-2 text-right">Kod</th>
               </tr>
             </thead>
             <tbody>
               {!q && path.length > 0 && (
                 <tr className="cursor-pointer border-b border-slate-100 text-slate-500 hover:bg-slate-50" onClick={() => { setPath((p) => p.slice(0, -1)); setSel(null); }}>
-                  <td className="px-4 py-1.5" colSpan={3}><span className="inline-flex items-center gap-2"><CornerLeftUp size={14} /> Yuqoriga</span></td>
+                  <td className="px-4 py-1.5" colSpan={4}><span className="inline-flex items-center gap-2"><CornerLeftUp size={14} /> Yuqoriga</span></td>
                 </tr>
               )}
               {rows.length === 0 && (
-                <tr><td colSpan={3} className="px-4 py-8 text-center text-slate-500">{q ? "Mos mahsulot topilmadi" : "Bu papka bo'sh"}</td></tr>
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">{q ? "Mos mahsulot topilmadi" : "Bu papka bo'sh"}</td></tr>
               )}
               {rows.map((r) => {
                 const active = sel?.type === r.type && sel.id === r.id;
@@ -191,6 +192,8 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
                       </span>
                     </td>
                     <td className={cn("px-4 py-1.5", active ? "text-slate-200" : "text-slate-600")}>{r.kind || "—"}</td>
+                    {/* Birlik shu yerda ko'rinsin — zayavkadagi "Hajmi" maydoni aynan shu birlikda to'ldiriladi */}
+                    <td className={cn("px-4 py-1.5", active ? "text-slate-200" : "text-slate-600")}>{r.unit || "—"}</td>
                     <td className={cn("px-4 py-1.5 text-right tabular", active ? "text-slate-200" : "text-slate-500")}>{r.code}</td>
                   </tr>
                 );

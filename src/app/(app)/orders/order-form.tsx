@@ -359,6 +359,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           {rows.map((r) => {
             const p = products.find((x) => x.id === r.productId);
             const st = stock[r.productId];
+            const unit = p?.unit ?? "m³"; // mahsulotning o'z birligi: beton m³, ustun/blok dona
             const need = Number(r.qtyM3) || 0;
             return (
               <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0">
@@ -375,8 +376,14 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                     />
                   </div>
                   <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 sm:contents">
-                    <Input name="qtyM3[]" type="number" step={p?.unit === "m³" ? "0.5" : "1"} min={p?.unit === "m³" ? "0.5" : "1"} placeholder={p?.unit ?? "m³"} value={r.qtyM3} onChange={(e) => update(r.key, { qtyM3: e.target.value })} required />
-                    <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${p?.unit ?? "m³"}`} suffix={null} required />
+                    {/* Hajmi mahsulotning birligida kiritiladi — birlik yozilganda ham o'ng tomonda ko'rinib turadi */}
+                    <span className="relative block">
+                      <Input name="qtyM3[]" type="number" step={unit === "m³" ? "0.5" : "1"} min={unit === "m³" ? "0.5" : "1"} placeholder="Hajmi"
+                        value={r.qtyM3} onChange={(e) => update(r.key, { qtyM3: e.target.value })} required
+                        className="pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                      <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-400">{unit}</span>
+                    </span>
+                    <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${unit}`} suffix={null} required />
                     <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto" aria-label="O'chirish"><X size={16} /></button>
                   </div>
                 </div>
@@ -390,10 +397,10 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                     <div className={cn("text-xs", enough === false ? "text-red-600" : "text-slate-500")}>
                       {canMake == null
                         ? <>Retsept kiritilmagan — xomashyo yetishini hisoblab bo&apos;lmaydi. <b>Retseptlar</b> bo&apos;limidan kiriting.</>
-                        : <>Retsept bo&apos;yicha xomashyodan <b>{fmtNum(canMake)} {p?.unit}</b> ishlab chiqarish mumkin
+                        : <>Retsept bo&apos;yicha xomashyodan <b>{fmtNum(canMake)} {unit}</b> ishlab chiqarish mumkin
                             {need > 0 && (enough
-                              ? <span> — so&apos;ralgan {fmtNum(need)} {p?.unit} ga xomashyo yetadi</span>
-                              : <span> — so&apos;ralgan {fmtNum(need)} {p?.unit} ga xomashyo yetmaydi: yana {fmtNum(need - canMake)} {p?.unit} lik xomashyo kerak</span>)}</>}
+                              ? <span> — so&apos;ralgan {fmtNum(need)} {unit} ga xomashyo yetadi</span>
+                              : <span> — so&apos;ralgan {fmtNum(need)} {unit} ga xomashyo yetmaydi: yana {fmtNum(need - canMake)} {unit} lik xomashyo kerak</span>)}</>}
                       {st.by && <span className="text-slate-400"> · xomashyoni kiritgan: {st.by}</span>}
                     </div>
                   );
@@ -404,14 +411,14 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                   const enough = short === 0 || (st.canMake != null && canMake >= short);
                   return (
                     <div className={cn("text-xs", short > 0 && !enough ? "text-red-600" : short > 0 ? "text-amber-700" : "text-slate-500")}>
-                      <>Hovlida erkin: <b>{fmtNum(st.free)} {p?.unit}</b> (jami {fmtNum(st.total)}, band {fmtNum(st.owned)})</>
-                      {st.canMake != null && <span> · xomashyodan yana <b>{fmtNum(canMake)} {p?.unit}</b> ishlab chiqarish mumkin</span>}
+                      <>Hovlida erkin: <b>{fmtNum(st.free)} {unit}</b> (jami {fmtNum(st.total)}, band {fmtNum(st.owned)})</>
+                      {st.canMake != null && <span> · xomashyodan yana <b>{fmtNum(canMake)} {unit}</b> ishlab chiqarish mumkin</span>}
                       {st.by && <span className="text-slate-400"> · kiritgan: {st.by}</span>}
                       {short > 0 && (st.canMake == null
-                        ? <span> — tayyoridan {fmtNum(short)} {p?.unit} yetishmaydi, ishlab chiqarish kerak (retsept kiritilmagan)</span>
+                        ? <span> — tayyoridan {fmtNum(short)} {unit} yetishmaydi, ishlab chiqarish kerak (retsept kiritilmagan)</span>
                         : enough
-                          ? <span> — {fmtNum(short)} {p?.unit} ishlab chiqariladi, xomashyo yetadi</span>
-                          : <span> — xomashyo yetmaydi: {fmtNum(short - canMake)} {p?.unit} ga xomashyo kerak</span>)}
+                          ? <span> — {fmtNum(short)} {unit} ishlab chiqariladi, xomashyo yetadi</span>
+                          : <span> — xomashyo yetmaydi: {fmtNum(short - canMake)} {unit} ga xomashyo kerak</span>)}
                     </div>
                   );
                 })()}

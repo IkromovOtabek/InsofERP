@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
 import { date, qty, deliveryAt } from "@/lib/format";
-import { unitLabel } from "@/lib/unit";
+import { unitLabel, fmtUnitTotals } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 // Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
@@ -92,7 +92,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
                 <Td><span className={soon ? "font-semibold text-red-700" : ""}>{date(o.deliveryDate)}</span>{o.deliveryTime && <span className={cn("ml-1.5 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums", soon ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700")}>{o.deliveryTime}</span>}{isOpen(o) && (soon ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {due}</div> : <div className="mt-0.5 text-[11px] text-slate-500">{due}</div>)}</Td>
                 <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} /></Td>
                 <Td className="text-slate-600">{o.items.map((i) => i.product.code).join(", ")}{!o.needsDelivery && " · o'zi oladi"}</Td>
-                <Td right>{qty(o.items.reduce((s, i) => s + Number(i.qtyM3), 0))}</Td>
+                <Td right className="whitespace-nowrap">{fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))}</Td>
                 <Td><OrderStatusBadge status={o.status} /></Td>
                 <Td>
                   {ok ? (

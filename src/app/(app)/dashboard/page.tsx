@@ -5,7 +5,8 @@ import { getSession } from "@/lib/auth";
 import { customerDebt, customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
-import { money, qty, fmtNum } from "@/lib/format";
+import { money, qty, fmtNum, pct } from "@/lib/format";
+import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
 import { Badge, Callout, Card, Empty, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
 import { LiveDrivers } from "../trips/live-drivers";
@@ -22,19 +23,20 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const today = startOfToday(), tomorrow = endOfToday();
 
   const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming] = await Promise.all([
-    db.order.findMany({ where: { deliveryDate: { gte: today, lt: tomorrow }, status: { notIn: ["CANCELLED", "DRAFT"] } }, include: { items: true } }),
+    db.order.findMany({ where: { deliveryDate: { gte: today, lt: tomorrow }, status: { notIn: ["CANCELLED", "DRAFT"] } }, include: { items: { include: { product: true } } } }),
     db.productionBatch.aggregate({ where: { date: { gte: today }, product: { unit: "m3" } }, _sum: { qtyM3: true } }),
     db.customer.findMany({ where: { invoices: { some: { status: { in: ["OPEN", "PARTIAL"] } } } }, select: { id: true, name: true } }),
     db.order.count({ where: { status: "BLOCKED" } }),
     materialOutlook(),
     mixerStatus(),
     todayTrips(),
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: true } }, batches: true, trips: true }, orderBy: { deliveryDate: "asc" }, take: 8 }),
+    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: true } }, batches: { include: { product: true } }, trips: true }, orderBy: { deliveryDate: "asc" }, take: 8 }),
   ]);
   const debts = (await Promise.all(receivableRows.map(async (c) => ({ ...c, debt: await customerDebt(c.id) })))).filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt);
   const marks = await customerMarks([...debts.map((c) => c.id), ...trips.map((t) => t.order.customerId), ...upcoming.map((o) => o.customerId), ...mixers.map((m) => m.active?.customerId).filter((x): x is string => !!x)]);
   const receivable = debts.reduce((x, c) => x + c.debt, 0);
-  const todayM3 = ordersToday.reduce((x, o) => x + o.items.reduce((y, i) => y + Number(i.qtyM3), 0), 0);
+  // Reja mahsulot birligida: beton m³, dona mahsulot dona — bitta songa qo'shilmaydi
+  const todayPlan = fmtUnitTotals(ordersToday.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))));
   const deliveredToday = trips.filter((t) => t.status === "DELIVERED" && t.deliveredAt && t.deliveredAt >= today).reduce((x, t) => x + Number(t.qtyM3), 0);
   const busyMixers = mixers.filter((m) => m.active).length;
 
@@ -47,7 +49,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
 
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-        <StatCard label="Bugungi zayavkalar" value={`${ordersToday.length}`} hint={`${qty(todayM3)} m³ rejada`} icon={ClipboardList} tone="info" href="/orders" />
+        <StatCard label="Bugungi zayavkalar" value={`${ordersToday.length}`} hint={`${todayPlan} rejada`} icon={ClipboardList} tone="info" href="/orders" />
         <StatCard label="Ishlab chiqarildi" value={`${qty(producedToday._sum.qtyM3 ?? 0)} m³`} hint="bugun" icon={Factory} tone="brand" href="/production" />
         <StatCard label="Yetkazildi" value={`${qty(deliveredToday)} m³`} hint={`${busyMixers} / ${mixers.length} mikser yo'lda`} icon={Truck} tone="success" href="/trips" />
         <StatCard label="Debitorka" value={money(receivable)} hint={debts.length ? `${debts.length} ta qarzdor` : "qarz yo'q"} icon={Wallet} tone={receivable > 0 ? "warning" : "default"} href="/invoices" />
@@ -86,7 +88,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Section title="Bugungi reyslar" className="mt-0" action={<Link href="/trips" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Hammasi <ArrowRight size={14} /></Link>}>
           <Table>
-            <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Mikser</Th><Th right>m³</Th><Th>Holat</Th></tr></thead>
+            <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Mikser</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {trips.length === 0 && <Empty text="Bugun reys yo'q" icon={Truck} />}
               {trips.map((t) => (
@@ -105,17 +107,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <tbody>
               {upcoming.length === 0 && <Empty text="Tasdiqlangan zayavka yo'q" icon={ClipboardList} />}
               {upcoming.map((o) => {
-                const total = o.items.reduce((x, i) => x + Number(i.qtyM3), 0);
-                const done = o.batches.reduce((x, b) => x + Number(b.qtyM3), 0);
+                const need = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
+                const made = o.batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }));
+                const u = soleUnit(need); // aralash birlikli zayavkada son emas, foiz ko'rsatiladi
+                const needQty = need.reduce((x, r) => x + Number(r.qty), 0);
+                const madeQty = made.reduce((x, r) => x + Number(r.qty), 0);
                 const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((x, t) => x + Number(t.qtyM3), 0);
+                const madePct = donePercent(made, need);
+                const shipPct = needQty > 0 ? Math.min(100, (shipped / needQty) * 100) : 0;
                 return (
                   <Tr key={o.id}>
                     <Td><Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link></Td>
                     <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td><Td>{o.items.map((i) => i.product.code).join(", ")}</Td>
                     <Td>
                       <div className="space-y-1.5">
-                        <div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{qty(done)}/{qty(total)}</span></div><Progress value={done} max={total} tone="default" />
-                        <div className="flex justify-between text-[11px] text-slate-500"><span>Jo'natildi</span><span className="tabular">{qty(shipped)}/{qty(total)}</span></div><Progress value={shipped} max={total} tone="success" />
+                        <div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{u ? `${qty(madeQty)}/${qty(needQty)} ${unitLabel(u)}` : pct(madePct, 0)}</span></div><Progress value={madePct} max={100} tone="default" />
+                        <div className="flex justify-between text-[11px] text-slate-500"><span>Jo'natildi</span><span className="tabular">{u ? `${qty(shipped)}/${qty(needQty)} ${unitLabel(u)}` : pct(shipPct, 0)}</span></div><Progress value={shipPct} max={100} tone="success" />
                       </div>
                     </Td>
                     <Td><OrderStatusBadge status={o.status} /></Td>

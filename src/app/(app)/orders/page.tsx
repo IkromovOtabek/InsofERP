@@ -3,7 +3,8 @@ import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDown
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { money, date, qty, deliveryAt } from "@/lib/format";
+import { money, date, deliveryAt } from "@/lib/format";
+import { fmtUnitTotals } from "@/lib/unit";
 import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { OrderLoadCalendar } from "./load-calendar";
@@ -69,7 +70,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <OrderLoadCalendar />
       {day ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
-          <span className="text-slate-600">{date(day)} kuniga yetkazish: <b className="text-slate-900">{orders.length} ta zayavka</b> · {qty(orders.reduce((s, o) => s + o.items.reduce((x, i) => x + Number(i.qtyM3), 0), 0))} m³</span>
+          <span className="text-slate-600">{date(day)} kuniga yetkazish: <b className="text-slate-900">{orders.length} ta zayavka</b> · {fmtUnitTotals(orders.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))))}</span>
           <Link href="/orders" className="inline-flex items-center gap-1 font-medium text-slate-600 hover:text-slate-900 hover:underline"><X size={14} /> Kun filtrini olib tashlash</Link>
         </div>
       ) : (
@@ -80,7 +81,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         <tbody>
           {orders.length === 0 && <Empty text="Kutayotgan zayavkalar yo'q" />}
           {groups.flatMap((g) => g.map((o, idx) => {
-            const m3 = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+            // Hajm mahsulot birligida: beton m³, ustun/blok dona — aralashtirib qo'shilmaydi
+            const vol = fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
             const sum = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
             // Guruhning birinchi qatori — mijoz nomi, obyekt manzili va nechta zayavka ekani;
             // qolganlari o'sha guruhga tegishli ekani ko'rinib tursin deb ichkariroq chiziladi.
@@ -95,7 +97,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                     <div>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} href={`/customers/${o.customerId}`} />
-                        {g.length > 1 && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">{g.length} ta zayavka · {qty(g.reduce((s, x) => s + x.items.reduce((y, i) => y + Number(i.qtyM3), 0), 0))} m³</span>}
+                        {g.length > 1 && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">{g.length} ta zayavka · {fmtUnitTotals(g.flatMap((x) => x.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))))}</span>}
                       </div>
                       <div className="mt-0.5 text-xs font-normal text-slate-500">{o.deliveryAddress}</div>
                     </div>
@@ -104,7 +106,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   )}
                 </Td>
                 <Td>{o.items.map((i) => i.product.code).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}{o.onCredit && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">qarzga</span>}</Td>
-                <Td right>{qty(m3)}</Td>
+                <Td right className="whitespace-nowrap">{vol}</Td>
                 <Td right>{money(sum)}</Td>
                 <Td className="text-slate-500">{o.createdBy.fullName}</Td>
                 <Td><OrderStatusBadge status={o.status} /></Td>

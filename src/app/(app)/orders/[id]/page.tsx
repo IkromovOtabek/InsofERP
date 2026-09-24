@@ -8,7 +8,7 @@ import { stockSnapshot } from "@/lib/stock";
 import { money, date, qty, deliveryAt } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Progress, StatCard, StatusSteps, Td, Th, Tr } from "@/components/ui";
 import { TaskStatusBadge } from "../../tasks/status";
-import { unitLabel } from "@/lib/unit";
+import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
 import { OrderStatusBadge, SALES_STATUSES } from "../status";
 import { TripStatusBadge } from "../../trips/status";
 import { LiveDrivers } from "../../trips/live-drivers";
@@ -34,7 +34,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     include: {
       customer: true, createdBy: true,
       items: { include: { product: true, brigade: true, task: true } },
-      batches: { orderBy: { date: "desc" } },
+      batches: { include: { product: true }, orderBy: { date: "desc" } },
       trips: { include: { vehicle: true, driver: true }, orderBy: { createdAt: "desc" } },
       invoices: { where: { status: { not: "CANCELLED" } }, include: { payments: true } },
       payments: { include: { cashAccount: true }, orderBy: { date: "asc" } },
@@ -42,9 +42,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   });
   if (!o || !s) notFound();
   const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
-  const totalM3 = o.items.reduce((sum, i) => sum + Number(i.qtyM3), 0);
-  const producedM3 = o.batches.reduce((sum, b) => sum + Number(b.qtyM3), 0);
+  // Hajm har doim mahsulot birligida: beton m³, ustun/blok dona. Turli birlik bitta
+  // songa qo'shilmaydi — 12 m³ + 500 dona "512 m³" emas.
+  const itemRows = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
+  const batchRows = o.batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }));
+  const orderUnit = soleUnit(itemRows); // aralash birlikli zayavkada — null
+  const totalQty = itemRows.reduce((sum, r) => sum + Number(r.qty), 0);
   const shippedM3 = o.trips.filter((t) => t.status !== "CANCELLED").reduce((sum, t) => sum + Number(t.qtyM3), 0);
+  const producedPct = donePercent(batchRows, itemRows);
+  const shippedPct = totalQty > 0 ? Math.min(100, (shippedM3 / totalQty) * 100) : 0;
   // To'langan: schyot to'lovlari + zayavkaga bog'langan avans (bir to'lov ikkala joyda bo'lishi mumkin — id bo'yicha bir marta)
   const paidMap = new Map<string, number>();
   for (const i of o.invoices) for (const x of i.payments) paidMap.set(x.id, Number(x.amount));
@@ -192,9 +198,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Summa" value={money(total)} icon={Wallet} hint={paid > 0 ? `to'landi ${money(paid)}` : undefined} />
-        <StatCard label="Hajm" value={`${qty(totalM3)} m³`} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} />
-        <StatCard label="Ishlab chiqarildi" value={`${qty(producedM3)} m³`} icon={Factory} tone={producedM3 >= totalM3 && totalM3 > 0 ? "success" : "default"} hint={<Progress value={producedM3} max={totalM3} />} />
-        <StatCard label="Jo'natildi" value={`${qty(shippedM3)} m³`} icon={Truck} tone={shippedM3 >= totalM3 && totalM3 > 0 ? "success" : "default"} hint={<Progress value={shippedM3} max={totalM3} tone="success" />} />
+        <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} />
+        <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(batchRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
+        <StatCard label="Jo'natildi" value={orderUnit ? `${qty(shippedM3)} ${unitLabel(orderUnit)}` : qty(shippedM3)} icon={Truck} tone={shippedPct >= 100 ? "success" : "default"} hint={<Progress value={shippedPct} max={100} tone="success" />} />
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-5">
@@ -273,7 +279,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                   </Tr>
                 );
               })}
-              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold">{qty(totalM3)}</Td><Td /><Td right className="font-semibold">{money(total)}</Td><Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
+              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td><Td /><Td right className="font-semibold">{money(total)}</Td><Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
             </tbody>
           </table>
         </Card>
@@ -283,10 +289,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Zameslar" icon={Factory} /></div>
           <table className="w-full text-sm">
-            <thead><tr><Th>№</Th><Th>Sana</Th><Th>Smena</Th><Th right>m³</Th></tr></thead>
+            <thead><tr><Th>№</Th><Th>Sana</Th><Th>Smena</Th><Th right>Miqdor</Th></tr></thead>
             <tbody>
               {o.batches.length === 0 && <Empty text="Hali zames yo'q" icon={Factory} />}
-              {o.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td right>{qty(b.qtyM3)}</Td></Tr>)}
+              {o.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td right className="whitespace-nowrap">{qty(b.qtyM3)} {unitLabel(b.product.unit)}</Td></Tr>)}
             </tbody>
           </table>
         </Card>
@@ -300,10 +306,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </div>
           )}
           <table className="w-full text-sm">
-            <thead><tr><Th>Nakladnoy</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>m³</Th><Th>Holat</Th></tr></thead>
+            <thead><tr><Th>Nakladnoy</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {o.trips.length === 0 && <Empty text="Hali reys yo'q" icon={Truck} />}
-              {o.trips.map((t) => <Tr key={t.id}><Td><Link href={`/trips/${t.id}`} className="hover:underline">{t.deliveryNoteNo}</Link></Td><Td className="tabular">{t.vehicle.plate}</Td><Td>{t.driver.fullName}</Td><Td right>{qty(t.qtyM3)}</Td><Td><TripStatusBadge status={t.status} /></Td></Tr>)}
+              {o.trips.map((t) => <Tr key={t.id}><Td><Link href={`/trips/${t.id}`} className="hover:underline">{t.deliveryNoteNo}</Link></Td><Td className="tabular">{t.vehicle.plate}</Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{qty(t.qtyM3)}{orderUnit ? ` ${unitLabel(orderUnit)}` : ""}</Td><Td><TripStatusBadge status={t.status} /></Td></Tr>)}
             </tbody>
           </table>
         </Card>

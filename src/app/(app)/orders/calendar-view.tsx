@@ -6,7 +6,8 @@ import { CalendarRange, Clock, X, Zap } from "lucide-react";
 import { qty as q, fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export type DayOrder = { id: string; orderNo: string; customer: string; time: string | null; m3: number; sum: number; status: string; statusLabel: string; urgent: boolean };
+/** m3 — beton hajmi (kunlik quvvat uchun); vol — zayavkaning to'liq hajmi birligi bilan. */
+export type DayOrder = { id: string; orderNo: string; customer: string; time: string | null; m3: number; vol: string; sum: number; status: string; statusLabel: string; urgent: boolean };
 export type DayCell = { key: string; label: string; weekday: string; list: DayOrder[]; m3: number; pct: number; count: number; urgent: number; state: "free" | "busy" | "full"; isToday: boolean };
 
 /**
@@ -83,7 +84,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                             <span className="block text-[11px] text-slate-500">{o.orderNo}{o.time && <><Clock size={9} className="mx-1 inline" />{o.time}</>} · {o.statusLabel}</span>
                           </span>
                           <span className="shrink-0 text-right">
-                            <span className="block font-semibold tabular text-slate-800">{q(o.m3)} m³</span>
+                            <span className="block font-semibold tabular text-slate-800">{o.vol}</span>
                             <span className="block text-[11px] tabular text-slate-500">{money(o.sum)}</span>
                           </span>
                         </li>
@@ -130,7 +131,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                       <td className="px-2 py-1.5"><Link href={`/orders/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.orderNo}</Link></td>
                       <td className="px-2 py-1.5">{o.urgent && <Zap size={11} className="mr-1 inline text-red-600" />}{o.customer}</td>
                       <td className="px-2 py-1.5 text-slate-600">{o.time ?? "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular whitespace-nowrap">{q(o.m3)} m³</td>
+                      <td className="px-2 py-1.5 text-right tabular whitespace-nowrap">{o.vol}</td>
                       <td className="px-2 py-1.5 text-right tabular whitespace-nowrap">{money(o.sum)}</td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">{o.statusLabel}</td>
                     </tr>

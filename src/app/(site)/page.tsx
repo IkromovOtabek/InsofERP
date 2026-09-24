@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
-  Mail, MapPin, Phone, QrCode, Truck, Wallet,
+  Mail, MapPin, Phone, Presentation, QrCode, Truck, Wallet,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
@@ -149,6 +149,10 @@ export default async function LandingPage() {
               <a href="#mahsulotlar" className="inline-flex h-13 items-center rounded-md border border-white/30 px-7 text-base font-semibold text-white transition-colors hover:bg-white/10 sm:h-14 sm:px-8">
                 Mahsulotlar ro&apos;yxati
               </a>
+              {/* Taqdimot — PPT ning veb ko'rinishi (23 slayd, animatsiya bilan) */}
+              <Link href="/taqdimot" className="inline-flex h-13 items-center gap-2.5 rounded-md border border-white/30 px-7 text-base font-semibold text-white transition-colors hover:border-signal hover:bg-signal sm:h-14 sm:px-8">
+                <Presentation size={18} /> Taqdimot
+              </Link>
             </div>
           </div>
         </div>

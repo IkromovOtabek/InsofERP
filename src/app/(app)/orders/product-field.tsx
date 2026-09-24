@@ -83,6 +83,8 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
                 <Minus size={14} className="shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
                 {extra && <span className="shrink-0 text-xs text-slate-500">{extra}</span>}
+                {/* Birlik: "Hajmi" maydoni shu birlikda to'ldiriladi */}
+                <span className="shrink-0 text-xs text-slate-400">{p.unit}</span>
                 <span className="shrink-0 text-xs text-slate-400 tabular">{p.code}</span>
               </button>
             );

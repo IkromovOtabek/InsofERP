@@ -6,6 +6,7 @@ import { qty as q, date, dateTime, deliveryAt } from "@/lib/format";
 import { ecoLabel } from "@/lib/eco/labels";
 import { Card, CardHeader, Empty, EmptyState, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
+import { fmtUnitTotals, soleUnit, unitLabel } from "@/lib/unit";
 
 /**
  * Haydovchining o'z sahifasi. ERP'da haydovchi boshqa bo'limlarni ko'rmaydi (middleware shu sahifaga yo'naltiradi):
@@ -33,15 +34,25 @@ export default async function MyTripsPage() {
     db.trip.findMany({
       where: { driverId: me.id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } },
       orderBy: { createdAt: "asc" },
-      include: { order: { include: { customer: true } }, vehicle: true },
+      include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true },
     }),
     db.trip.findMany({
       where: { driverId: me.id, status: { in: ["DELIVERED", "CANCELLED"] } },
       orderBy: { createdAt: "desc" }, take: 50,
-      include: { order: { include: { customer: true } }, vehicle: true },
+      include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true },
     }),
-    db.trip.aggregate({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: today } }, _sum: { qtyM3: true }, _count: true }),
+    db.trip.findMany({
+      where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: today } },
+      select: { qtyM3: true, order: { select: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } },
+    }),
   ]);
+  // Reys miqdori zayavkadagi mahsulot birligida: beton m³, ustun/blok dona
+  const tripUnit = (t: { order: { items: { qtyM3: unknown; product: { unit: string } }[] } }) =>
+    soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: String(i.qtyM3) })));
+  const tripQty = (t: { qtyM3: unknown; order: { items: { qtyM3: unknown; product: { unit: string } }[] } }) => {
+    const u = tripUnit(t);
+    return u ? `${q(String(t.qtyM3))} ${unitLabel(u)}` : q(String(t.qtyM3));
+  };
 
   return (
     <div>
@@ -50,7 +61,7 @@ export default async function MyTripsPage() {
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Ochiq reyslar" value={`${open.length} ta`} icon={Bus} tone={open.length ? "brand" : "success"} />
-        <StatCard label="Bugun yetkazdim" value={`${q(todayAgg._sum.qtyM3 ?? 0)} m³`} hint={`${todayAgg._count} reys`} icon={CheckCheck} tone="success" />
+        <StatCard label="Bugun yetkazdim" value={fmtUnitTotals(todayAgg.map((t) => ({ unit: tripUnit(t) ?? "m3", qty: String(t.qtyM3) })))} hint={`${todayAgg.length} reys`} icon={CheckCheck} tone="success" />
         <StatCard label="Mashina" value={me.vehicle?.plate ?? "—"} hint={me.vehicle?.capacityM3 ? `${q(me.vehicle.capacityM3)} m³` : undefined} icon={Truck} />
         <StatCard label="Telefon" value={me.phone ?? "—"} hint="ilovaga kirish kaliti" icon={Phone} />
       </div>
@@ -58,7 +69,7 @@ export default async function MyTripsPage() {
       <Card className="mb-5" padded={false}>
         <div className="p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Yuklash va yetkazish shu ro'yxat bo'yicha" /></div>
         <Table>
-          <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Manzil</Th><Th>Yetkazish</Th><Th right>m³</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Manzil</Th><Th>Yetkazish</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {open.length === 0 && <Empty text="Ochiq reys yo'q — yangi reys berilsa shu yerda chiqadi" icon={Bus} />}
             {open.map((t) => (
@@ -67,7 +78,7 @@ export default async function MyTripsPage() {
                 <Td>{t.order.customer.name}</Td>
                 <Td className="text-slate-600"><span className="inline-flex items-start gap-1"><MapPin size={13} className="mt-0.5 shrink-0 text-slate-400" />{t.order.deliveryAddress}</span></Td>
                 <Td>{deliveryAt(t.order.deliveryDate, t.order.deliveryTime)}</Td>
-                <Td right>{q(t.qtyM3)}</Td>
+                <Td right className="whitespace-nowrap">{tripQty(t)}</Td>
                 <Td>
                   <TripStatusBadge status={t.status} />
                   {t.ecoStatus && <div className="mt-0.5 text-xs text-slate-500">{ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}</div>}
@@ -80,7 +91,7 @@ export default async function MyTripsPage() {
 
       <h2 className="mb-3 font-semibold">Tarix</h2>
       <Table>
-        <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Sana</Th><Th>Yetkazildi</Th><Th right>m³</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Sana</Th><Th>Yetkazildi</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {done.length === 0 && <Empty text="Hali yakunlangan reys yo'q" />}
           {done.map((t) => (
@@ -89,7 +100,7 @@ export default async function MyTripsPage() {
               <Td>{t.order.customer.name}</Td>
               <Td>{date(t.createdAt)}</Td>
               <Td className="text-slate-600">{t.deliveredAt ? dateTime(t.deliveredAt) : "—"}{t.receiverName && <div className="text-xs text-slate-500">qabul qildi: {t.receiverName}</div>}</Td>
-              <Td right>{q(t.qtyM3)}</Td>
+              <Td right className="whitespace-nowrap">{tripQty(t)}</Td>
               <Td><TripStatusBadge status={t.status} /></Td>
             </Tr>
           ))}

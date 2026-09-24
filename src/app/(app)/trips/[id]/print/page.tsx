@@ -5,6 +5,7 @@ import { qty, date, money } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
+import { unitLabel } from "@/lib/unit";
 
 /** Chop etish uchun nakladnoy (A5 landshaft / A4 yarim). Brauzerda Ctrl+P → PDF. */
 export default async function PrintPage({ params }: { params: Promise<{ id: string }> }) {
@@ -56,7 +57,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
           <th className="border border-black px-2 py-1 text-left">№</th>
           <th className="border border-black px-2 py-1 text-left">Mahsulot</th>
           <th className="border border-black px-2 py-1 text-left">Klass</th>
-          <th className="border border-black px-2 py-1 text-right">Miqdor, m³</th>
+          <th className="border border-black px-2 py-1 text-right">Miqdor, {unitLabel(item?.product.unit ?? "m3")}</th>
           <th className="border border-black px-2 py-1 text-right">Narx</th>
           <th className="border border-black px-2 py-1 text-right">Summa</th>
         </tr></thead>

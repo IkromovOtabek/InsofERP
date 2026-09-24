@@ -6,6 +6,7 @@ import { liveTrips } from "@/lib/live";
 import { CREATE_ROLES, canCreate } from "./create";
 import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
+import { unitLabel, unitTotals, soleUnit, type UnitRow } from "@/lib/unit";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
 
@@ -84,7 +85,17 @@ const sum = (n: unknown) => Number(n ?? 0);
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
 const short = (n: number) =>
   n >= 1_000_000_000 ? `${(n / 1_000_000_000).toFixed(1)} mlrd` : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n >= 100_000_000 ? 0 : 1)} mln` : n >= 1_000 ? `${Math.round(n / 1_000)} ming` : String(Math.round(n));
-const m3 = (n: number) => `${n.toFixed(n % 1 ? 1 : 0)} m³`;
+/** Miqdor mahsulotning o'z birligida: beton m³, ustun/blok dona. */
+const num = (n: number) => n.toFixed(n % 1 ? 1 : 0);
+const inUnit = (n: number, unit: string | null) => (unit ? `${num(n)} ${unitLabel(unit)}` : num(n));
+/** Aralash birlikli hajm: "12 m³ · 500 dona" — m³ bilan dona qo'shilmaydi. */
+const totalsText = (rows: UnitRow[]) => {
+  const t = unitTotals(rows);
+  return t.length ? t.map((x) => inUnit(x.qty, x.unit)).join(" · ") : "0";
+};
+/** Reys miqdori zayavkadagi mahsulot birligida (aralash bo'lsa — birliksiz son). */
+const tripQty = (t: { qtyM3: unknown; order: { items: { qtyM3: UnitRow["qty"]; product: { unit: string } }[] } }) =>
+  inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))));
 const time = (d: Date) => d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 
@@ -125,8 +136,8 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
         db.order.count({ where: { status: "BLOCKED" } }),
         db.trip.count({ where: { status: { in: ["LOADED", "ON_ROAD"] } } }),
         db.orderItem.findMany({ where: { order: { date: { gte: startOfMonth() }, status: { not: "CANCELLED" } } }, select: { qtyM3: true, price: true } }),
-        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { date: "desc" }, take: 8, include: { customer: true, items: true } }),
-        db.trip.findMany({ where: { status: { in: ["LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { order: { include: { customer: true } }, driver: true, vehicle: true } }),
+        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { date: "desc" }, take: 8, include: { customer: true, items: { include: { product: true } } } }),
+        db.trip.findMany({ where: { status: { in: ["LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } }),
       ]);
       const revenue = monthItems.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0);
       cards.push(
@@ -136,8 +147,8 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
         { key: "blocked", label: "Bloklangan", value: String(blocked), hint: blocked ? "ochish kerak" : undefined, tone: blocked ? "danger" : "success", icon: "lock-closed" },
       );
       sections.push(
-        { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
-        { title: "Yo'ldagi reyslar", empty: "Yo'lda reys yo'q", target: "trips", rows: trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}`, right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) },
+        { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) },
+        { title: "Yo'ldagi reyslar", empty: "Yo'lda reys yo'q", target: "trips", rows: trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
       );
       break;
     }
@@ -146,16 +157,16 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
       const [mine, blocked, monthItems, recent] = await Promise.all([
         db.order.count({ where: { createdById: user.id, date: { gte: today }, status: { not: "CANCELLED" } } }),
         db.order.count({ where: { status: "BLOCKED" } }),
-        db.orderItem.findMany({ where: { order: { createdById: user.id, date: { gte: startOfMonth() }, status: { not: "CANCELLED" } } }, select: { qtyM3: true, price: true } }),
-        db.order.findMany({ where: { createdById: user.id }, orderBy: { date: "desc" }, take: 10, include: { customer: true, items: true } }),
+        db.orderItem.findMany({ where: { order: { createdById: user.id, date: { gte: startOfMonth() }, status: { not: "CANCELLED" } } }, select: { qtyM3: true, price: true, product: { select: { unit: true } } } }),
+        db.order.findMany({ where: { createdById: user.id }, orderBy: { date: "desc" }, take: 10, include: { customer: true, items: { include: { product: true } } } }),
       ]);
       cards.push(
         { key: "mine", label: "Bugungi zayavkam", value: String(mine), tone: "brand", icon: "document-text" },
-        { key: "m3", label: "Oylik hajm", value: m3(monthItems.reduce((s, i) => s + sum(i.qtyM3), 0)), tone: "info", icon: "cube" },
+        { key: "m3", label: "Oylik hajm", value: totalsText(monthItems.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), tone: "info", icon: "cube" },
         { key: "sum", label: "Oylik summa", value: short(monthItems.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0)), hint: "so'm", tone: "success", icon: "cash" },
         { key: "blocked", label: "Bloklangan", value: String(blocked), tone: blocked ? "danger" : "success", icon: "lock-closed" },
       );
-      sections.push({ title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress}`, right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)), status: o.status, tone: ORDER_TONE[o.status] })) });
+      sections.push({ title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) });
       break;
     }
 
@@ -164,7 +175,7 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
         db.productionBatch.findMany({ where: { date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
         db.order.count({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } } }),
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
-        db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } } } }),
+        db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         // "Zayavkalar" ro'yxatidagi filtrlar bilan bir xil sanoq — `lib/production.ts`
         db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { deliveryDate: "asc" }, take: 400, select: { status: true, deliveryDate: true, isUrgent: true, items: { select: { task: { select: { status: true } } } } } }),
       ]);
@@ -172,43 +183,43 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
       const waiting = count("unassigned");
       const soon = count("soon");
       cards.push(
-        { key: "today", label: "Bugungi zames", value: m3(batches.reduce((s, b) => s + sum(b.qtyM3), 0)), hint: `${batches.length} partiya`, tone: "brand", icon: "today" },
+        { key: "today", label: "Bugungi zames", value: totalsText(batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }))), hint: `${batches.length} partiya`, tone: "brand", icon: "today" },
         { key: "unassigned", label: "Brigada kutayotgan", value: String(waiting), hint: "zayavka", tone: waiting ? "warning" : "success", icon: "hammer" },
         { key: "soon", label: "Muddati yaqin", value: String(soon), hint: "≤ 2 kun", tone: soon ? "danger" : "success", icon: "alarm" },
         { key: "inprod", label: "Ishlab chiqarishda", value: String(inProd), hint: "zayavka", tone: "warning", icon: "construct" },
         { key: "tasks", label: "Ochiq topshiriq", value: String(tasks), tone: tasks ? "info" : "success", icon: "list" },
       );
       sections.push(
-        { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: m3(sum(t.qty) - sum(t.doneQty)), status: t.status, tone: t.status === "NEW" ? "info" : "warning" })) },
-        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: m3(sum(b.qtyM3)), status: `${b.shift}-smena` })) },
+        { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.status === "NEW" ? "info" : "warning" })) },
+        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
       );
       break;
     }
 
     case "SUPERVISOR": {
       const [openTasks, overdue, todayProgress, batches] = await Promise.all([
-        db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 20, include: { brigade: true, order: { include: { customer: true } } } }),
+        db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 20, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: today } } }),
-        db.taskProgress.findMany({ where: { date: { gte: today } }, select: { qty: true } }),
+        db.taskProgress.findMany({ where: { date: { gte: today } }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
         db.productionBatch.findMany({ where: { date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
       ]);
-      const left = openTasks.reduce((s, t) => s + (sum(t.qty) - sum(t.doneQty)), 0);
+      const leftRows = openTasks.map((t) => ({ unit: t.orderItem.product.unit, qty: sum(t.qty) - sum(t.doneQty) }));
       cards.push(
         { key: "tasks", label: "Ochiq topshiriq", value: String(openTasks.length), icon: "list", tone: openTasks.length ? "brand" : "success" },
-        { key: "left", label: "Qolgan hajm", value: m3(left), icon: "cube", tone: "info" },
+        { key: "left", label: "Qolgan hajm", value: totalsText(leftRows), icon: "cube", tone: "info" },
         { key: "overdue", label: "Kechikkan", value: String(overdue), hint: overdue ? "muddati o'tgan" : undefined, icon: "alarm", tone: overdue ? "danger" : "success" },
-        { key: "today", label: "Bugun bajarildi", value: m3(todayProgress.reduce((s, p) => s + sum(p.qty), 0)), icon: "checkmark-done", tone: "success" },
+        { key: "today", label: "Bugun bajarildi", value: totalsText(todayProgress.map((p) => ({ unit: p.task.orderItem.product.unit, qty: p.qty }))), icon: "checkmark-done", tone: "success" },
       );
       sections.push(
-        { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: m3(sum(t.qty) - sum(t.doneQty)), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
-        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: m3(sum(b.qtyM3)), status: `${b.shift}-smena` })) },
+        { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
+        { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
       );
       break;
     }
 
     case "LOGISTICS": {
       const [todayTrips, onRoad, planned, ecoErrors] = await Promise.all([
-        db.trip.findMany({ where: { OR: [{ createdAt: { gte: today } }, { status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }] }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20, include: { order: { include: { customer: true } }, driver: true, vehicle: true } }),
+        db.trip.findMany({ where: { OR: [{ createdAt: { gte: today } }, { status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }] }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } }),
         db.trip.count({ where: { status: { in: ["LOADED", "ON_ROAD"] } } }),
         db.trip.count({ where: { status: "PLANNED" } }),
         db.trip.count({ where: { ecoError: { not: null } } }),
@@ -219,7 +230,7 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
         { key: "planned", label: "Rejada", value: String(planned), tone: "warning", icon: "calendar" },
         { key: "eco", label: "ECO xatosi", value: String(ecoErrors), hint: ecoErrors ? "tekshiring" : undefined, tone: ecoErrors ? "danger" : "success", icon: "phone-portrait" },
       );
-      sections.push({ title: "Bugungi reyslar", empty: "Reys yo'q", target: "trips", rows: todayTrips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}${t.ecoStatus ? ` · ${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}` : ""}`, right: m3(sum(t.qtyM3)), status: t.status, tone: t.ecoError ? "danger" : TRIP_TONE[t.status] })) });
+      sections.push({ title: "Bugungi reyslar", empty: "Reys yo'q", target: "trips", rows: todayTrips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}${t.ecoStatus ? ` · ${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}` : ""}`, right: tripQty(t), status: t.status, tone: t.ecoError ? "danger" : TRIP_TONE[t.status] })) });
       break;
     }
 
@@ -344,18 +355,18 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
       }
       const [todayTrips, active, doneToday, upcoming] = await Promise.all([
         db.trip.findMany({ where: { driverId: me.id, createdAt: { gte: today } }, select: { qtyM3: true, status: true } }),
-        db.trip.findMany({ where: { driverId: me.id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true } }, vehicle: true } }),
-        db.trip.aggregate({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: today } }, _sum: { qtyM3: true }, _count: true }),
-        db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED" }, orderBy: { deliveredAt: "desc" }, take: 8, include: { order: { include: { customer: true } }, vehicle: true } }),
+        db.trip.findMany({ where: { driverId: me.id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 10, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true } }),
+        db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: today } }, select: { qtyM3: true, order: { select: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
+        db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED" }, orderBy: { deliveredAt: "desc" }, take: 8, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true } }),
       ]);
       cards.push(
         { key: "active", label: "Ochiq reys", value: String(active.length), hint: me.vehicle?.plate ?? "mashina biriktirilmagan", tone: active.length ? "brand" : "success", icon: "bus" },
-        { key: "todayM3", label: "Bugun yetkazdim", value: m3(sum(doneToday._sum.qtyM3)), hint: `${doneToday._count} reys`, tone: "success", icon: "checkmark-done" },
+        { key: "todayM3", label: "Bugun yetkazdim", value: totalsText(doneToday.map((t) => ({ unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", qty: t.qtyM3 }))), hint: `${doneToday.length} reys`, tone: "success", icon: "checkmark-done" },
         { key: "todayAll", label: "Bugungi reyslar", value: String(todayTrips.length), tone: "info", icon: "today" },
       );
       sections.push(
-        { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: m3(sum(t.qtyM3)), status: t.status, tone: TRIP_TONE[t.status] })) },
-        { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? day(t.deliveredAt) : ""} · ${t.vehicle.plate}`, right: m3(sum(t.qtyM3)), status: t.status, tone: "success" })) },
+        { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
+        { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? day(t.deliveredAt) : ""} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: "success" })) },
       );
       break;
     }

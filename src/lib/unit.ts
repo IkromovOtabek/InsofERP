@@ -1,3 +1,5 @@
+import { qty } from "@/lib/format";
+
 /** Mahsulot birligi: "m3" — tayyor beton (saqlanmaydi), boshqasi (dona, m2…) — hovlida turadigan tayyor mahsulot. */
 export const unitLabel = (u: string) => (u === "m3" ? "m³" : u);
 export const isStocked = (u: string) => u !== "m3";
@@ -50,3 +52,53 @@ export function normalizeUnit(v: unknown): MaterialUnit | null {
 
 /** Birlik tanilmaganda import to'xtamasin — shu birlik qo'yiladi (keyin Sozlamalardan tuzatiladi). */
 export const UNIT_FALLBACK: MaterialUnit = "dona";
+
+// ───────────────────────── Zayavka hajmi: birlik bo'yicha ─────────────────────────
+
+export type UnitTotal = { unit: string; qty: number };
+/** Hajm hisoblanadigan qator: mahsulot birligi + miqdor (Decimal ham bo'ladi). */
+export type UnitRow = { unit: string; qty: number | string | { toString(): string } };
+
+/**
+ * Zayavka qatorlarini o'lchov birligi bo'yicha yig'adi.
+ *
+ * Beton m³ va dona mahsulot bitta songa qo'shilmaydi: 12 m³ beton + 500 dona
+ * bordyur — bu "512 m³" emas. Hajm ko'rsatiladigan hamma joy shu funksiyadan
+ * o'tadi, shunda zayavka ro'yxatida, kartochkasida va sotuvda bir xil chiqadi.
+ */
+export function unitTotals(rows: UnitRow[]): UnitTotal[] {
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const u = r.unit || "m3";
+    m.set(u, (m.get(u) ?? 0) + Number(r.qty));
+  }
+  // Beton (m³) birinchi, qolganlari alifbo bo'yicha — tartib qatordan qatorga o'zgarmasin
+  return [...m]
+    .map(([unit, qty]) => ({ unit, qty }))
+    .sort((a, b) => (a.unit === "m3" ? -1 : b.unit === "m3" ? 1 : a.unit.localeCompare(b.unit)));
+}
+
+/** Hamma qator bitta birlikda bo'lsa — o'sha birlik, aralash bo'lsa `null`. */
+export function soleUnit(rows: UnitRow[]): string | null {
+  const t = unitTotals(rows);
+  return t.length === 1 ? t[0]!.unit : null;
+}
+
+/** "12,5 m³ · 500 dona" — zayavka hajmi birligi bilan; qator bo'lmasa "0". */
+export function fmtUnitTotals(rows: UnitRow[]): string {
+  const t = unitTotals(rows);
+  if (t.length === 0) return "0";
+  return t.map((x) => `${qty(x.qty)} ${unitLabel(x.unit)}`).join(" · ");
+}
+
+/**
+ * Bajarilish ulushi (%) — har birlik alohida hisoblanadi, m³ bilan dona
+ * qo'shilmaydi. Aralash zayavkada birliklar o'rtachasi olinadi.
+ */
+export function donePercent(done: UnitRow[], need: UnitRow[]): number {
+  const needT = unitTotals(need);
+  if (needT.length === 0) return 0;
+  const doneMap = new Map(unitTotals(done).map((d) => [d.unit, d.qty]));
+  const sum = needT.reduce((s, n) => s + (n.qty > 0 ? Math.min(1, (doneMap.get(n.unit) ?? 0) / n.qty) : 1), 0);
+  return (sum / needT.length) * 100;
+}

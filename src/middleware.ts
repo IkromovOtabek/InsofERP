@@ -6,12 +6,12 @@ import type { Role } from "@/generated/prisma";
 const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret");
 
 /**
- * Login talab qilmaydigan yo'llar: login, QR tekshiruv, Telegram va Insof ECO webhook'lari
+ * Login talab qilmaydigan yo'llar: ommaviy taqdimot, login, QR tekshiruv, Telegram va Insof ECO webhook'lari
  * (maxfiy token/imzo bilan himoyalangan) va mobil ilova API'si (o'z Bearer tokeni bilan himoyalangan —
  * `lib/mobile/auth.ts`; cookie sessiyasiga tayanmaydi).
  */
 const isPublic = (p: string) =>
-  p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile");
+  p.startsWith("/taqdimot") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile");
 
 /** Sahifa darajasidagi ruxsat: yo'l NAV'dagi qaysi bo'limga tegishli bo'lsa, shu rollar kiradi. */
 function allowed(pathname: string, role: Role) {
@@ -44,8 +44,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // `media` — ommaviy saytdagi surat va videolar (`public/media`). Ular tekshiruvdan
+  // `media` va `taqdimot` — ommaviy saytdagi surat va videolar (`public/…`). Ular tekshiruvdan
   // o'tsa, tizimga kirmagan mehmon uchun /login ga yo'naltiriladi va banner ochilmaydi.
   // `uploads` bu ro'yxatda yo'q: u hujjatlar uchun, himoyada qoladi.
-  matcher: ["/((?!_next/static|_next/image|media/|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!_next/static|_next/image|media/|taqdimot/|favicon.ico|icon.svg).*)"],
 };

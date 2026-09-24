@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { LogIn, Mail, Menu, Phone, X } from "lucide-react";
+import { LogIn, Mail, Menu, Phone, Presentation, X } from "lucide-react";
 
 const LINKS = [
   ["mahsulotlar", "Mahsulotlar"],
@@ -98,6 +98,14 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
                 <span className={`absolute -bottom-px left-0 h-0.5 bg-signal transition-all duration-300 ${active === id ? "w-full" : "w-0"}`} />
               </a>
             ))}
+
+            {/* Taqdimot — PPT ning veb ko'rinishi, alohida sahifa */}
+            <Link
+              href="/taqdimot"
+              className="inline-flex items-center gap-1.5 py-2 text-[15px] font-medium whitespace-nowrap text-beton-700 transition-colors hover:text-insof-600"
+            >
+              <Presentation size={15} className="text-signal-dim" /> Taqdimot
+            </Link>
           </nav>
 
           <div className="ml-auto flex items-center gap-3 lg:ml-0">
@@ -146,6 +154,13 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
               {label}
             </a>
           ))}
+          <Link
+            href="/taqdimot"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 border-b border-beton-200 py-4 text-lg font-semibold text-beton-900"
+          >
+            <Presentation size={18} className="text-signal-dim" /> Taqdimot (PPT)
+          </Link>
           <a
             href="#ariza"
             onClick={() => setOpen(false)}
