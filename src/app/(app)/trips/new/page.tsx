@@ -11,7 +11,8 @@ export default async function NewTrip() {
   await requireSession(["LOGISTICS", "PRODUCTION"]);
   const [orders, vehicles, drivers] = await Promise.all([
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
-    db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, orderBy: { plate: "asc" } }),
+    // Mikser ham, yuk mashina ham — dona mahsulot (plita, blok) mikserda ketmaydi; nasos yuk tashimaydi
+    db.vehicle.findMany({ where: { isActive: true, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }] }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),
   ]);
   // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar; birorta ham bo'lmasa — hamma xodim
@@ -31,7 +32,7 @@ export default async function NewTrip() {
   return (
     <div>
       <PageHeader title="Yangi reys" subtitle="Nakladnoy raqami avtomatik beriladi" />
-      <TripForm orders={opts} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null }))} drivers={driverList} />
+      <TripForm orders={opts} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null }))} drivers={driverList} />
     </div>
   );
 }

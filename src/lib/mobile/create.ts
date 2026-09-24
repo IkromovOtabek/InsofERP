@@ -97,8 +97,9 @@ async function orderForm(): Promise<CreateForm> {
 async function tripForm(): Promise<CreateForm> {
   const [orders, vehicles, drivers] = await Promise.all([
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
-    db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, orderBy: { plate: "asc" } }),
-    db.employee.findMany({ where: { isActive: true, position: { in: await driverPositionNames() } }, orderBy: { fullName: "asc" } }),
+    // Veb formasi bilan bir xil: mikser ham, yuk mashina ham (nasos yuk tashimaydi)
+    db.vehicle.findMany({ where: { isActive: true, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }] }),
+    db.employee.findMany({ where: { isActive: true, position: { in: await driverPositionNames() } }, orderBy: { fullName: "asc" }, include: { vehicle: { select: { plate: true } } } }),
   ]);
 
   // Faqat qoldig'i bor zayavkalar — reys ochib bo'lmaydiganlari ro'yxatda turmasin
@@ -120,13 +121,14 @@ async function tripForm(): Promise<CreateForm> {
         hint: open.length ? undefined : "Qoldig'i bor tasdiqlangan zayavka yo'q",
       },
       {
-        name: "vehicleId", label: "Mikser", type: "select", required: true,
-        options: vehicles.map((v) => ({ value: v.id, label: `${v.plate}${v.capacityM3 ? ` · ${v.capacityM3} m³` : ""}` })),
+        name: "vehicleId", label: "Texnika", type: "select", required: true,
+        options: vehicles.map((v) => ({ value: v.id, label: `${v.plate} · ${v.type === "MIXER" ? "mikser" : "yuk mashina"}${v.capacityM3 ? ` · ${v.capacityM3} m³` : ""}` })),
+        hint: "Beton — mikser, dona mahsulot (plita, blok) — yuk mashina",
       },
       {
         name: "driverId", label: "Haydovchi", type: "select", required: true,
-        options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${normalizePhone(d.phone) ? "" : " · ⚠️ telefonsiz"}` })),
-        hint: "Telefoni yo'q haydovchi ilovada reysni ko'rmaydi",
+        options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${d.vehicle ? ` · ${d.vehicle.plate}` : " · texnikasiz"}${normalizePhone(d.phone) ? "" : " · ⚠️ telefonsiz"}`, extra: d.vehicleId ? { vehicleId: d.vehicleId } : undefined })),
+        hint: "Haydovchining biriktirilgan texnikasi yonida ko'rsatiladi; telefoni yo'q haydovchi ilovada reysni ko'rmaydi",
       },
       { name: "qtyM3", label: "Hajmi (zayavka birligida)", type: "number", required: true, placeholder: "0" },
       { name: "note", label: "Izoh", type: "text" },

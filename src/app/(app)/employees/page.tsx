@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { POSITIONS, positionCatalog, roleForPosition } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
-import { date, qty } from "@/lib/format";
+import { date, isoDate, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
 import { Badge, Button, Card, Empty, Input, PageHeader, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeForm, GrantLoginForm } from "./employee-form";
@@ -30,16 +30,21 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     db.workPosition.findMany({ select: { name: true, department: true } }),
     // Formadagi F.I.O. maydoni uchun: ro'yxatdagi xodimlar (Otdel kadr yoki Excel orqali kelganlar ham).
     // Nofaoli ham chiqadi — tanlansa qayta faollashtiriladi, aks holda odam topilmay qoladi.
-    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true } }),
-    db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
+    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true, vehicle: true, licenseNo: true, licenseCategory: true, licenseExpiry: true } }),
+    // Texnikaga hozir kim biriktirilgani — formada "band" degan ogohlantirish uchun
+    db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true, drivers: { where: { isActive: true }, select: { fullName: true }, take: 1 } } }),
   ]);
   const { work: workNames, drivers, strays } = catalog;
   // Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi ilovasi
   const LOGIN_ROLE_OPTS = [...POSITIONS.map((p) => ({ value: p.role as string, label: p.label })), { value: "DRIVER", label: "Haydovchi (ilova)" }];
   // Ishchi lavozimga Otdel kadrda belgilangan bo'lim — login berishda taxmin bo'lib turadi
   const deptOf = new Map(workRows.filter((w) => w.department).map((w) => [w.name.trim().toLowerCase(), w.department as string]));
-  const staffOpts = staff.map((e) => ({ id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, hasLogin: !!e.userId, isActive: e.isActive }));
-  const vehicleOpts = vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null }));
+  const staffOpts = staff.map((e) => ({
+    id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, hasLogin: !!e.userId, isActive: e.isActive,
+    plate: e.vehicle?.plate ?? null, vehicleType: e.vehicle?.type ?? null, capacityM3: e.vehicle?.capacityM3 ? String(e.vehicle.capacityM3) : null,
+    licenseNo: e.licenseNo, licenseCategory: e.licenseCategory, licenseExpiry: e.licenseExpiry ? isoDate(e.licenseExpiry) : null,
+  }));
+  const vehicleOpts = vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null, driver: v.drivers[0]?.fullName ?? null }));
   const filtering = !!(q || pos || holat);
 
   return (

@@ -187,8 +187,15 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (input.qtyM3 > left + 0.001) throw new Error(`Zayavkada faqat ${left} m³ qoldi`);
 
   const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
-  if (!v || !v.isActive) throw new Error("Mikser topilmadi yoki nofaol");
-  if (v.capacityM3 && input.qtyM3 > Number(v.capacityM3)) throw new Error(`Mikser sig'imi ${v.capacityM3} m³`);
+  if (!v || !v.isActive) throw new Error("Texnika topilmadi yoki nofaol");
+  if (v.type === "PUMP") throw new Error("Nasos yuk tashimaydi — mikser yoki yuk mashina tanlang");
+  // Beton faqat mikserda ketadi; dona mahsulot (plita, blok) — yuk mashinada. Sig'im (m³) faqat mikserga tegishli.
+  const items = await db.orderItem.findMany({ where: { orderId: o.id }, include: { product: { select: { unit: true } } } });
+  const concrete = items.some((i) => i.product.unit === "m3");
+  const piece = items.some((i) => i.product.unit !== "m3");
+  if (concrete && !piece && v.type !== "MIXER") throw new Error("Beton zayavkasi — mikser tanlang");
+  if (piece && !concrete && v.type !== "TRUCK") throw new Error("Dona mahsulot (plita, blok) mikserda ketmaydi — yuk mashina tanlang");
+  if (v.type === "MIXER" && v.capacityM3 && input.qtyM3 > Number(v.capacityM3)) throw new Error(`Mikser sig'imi ${v.capacityM3} m³`);
 
   const d = await db.employee.findUnique({ where: { id: input.driverId } });
   if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");

@@ -31,7 +31,12 @@ export function PositionSelect({ departments, work, workLabel = "Ishchi lavoziml
 }
 
 /** Ro'yxatda turgan faol xodim — lavozim tanlanganda F.I.O. maydonida taklif bo'lib chiqadi. */
-export type StaffOpt = { id: string; fullName: string; position: string; phone: string | null; hasLogin: boolean; isActive: boolean };
+export type StaffOpt = {
+  id: string; fullName: string; position: string; phone: string | null; hasLogin: boolean; isActive: boolean;
+  // Haydovchi bo'lsa — biriktirilgan texnikasi va guvohnomasi (formada o'zi to'ladi, saqlashda yo'qolmaydi)
+  plate: string | null; vehicleType: string | null; capacityM3: string | null;
+  licenseNo: string | null; licenseCategory: string | null; licenseExpiry: string | null;
+};
 
 /**
  * F.I.O. maydoni: tanlangan lavozimdagi **faol** xodimlar ro'yxat bo'lib chiqadi
@@ -98,15 +103,17 @@ function FioField({ staff, position, value, onChange, picked, onPick }: {
 }
 
 /** Texnika ro'yxati — raqam yozilganda turi va sig'imi o'zi to'ladi. */
-export type VehicleOpt = { plate: string; type: string; capacityM3: string | null };
+export type VehicleOpt = { plate: string; type: string; capacityM3: string | null; driver?: string | null };
 
 /**
  * Haydovchi tanlanganda ochiladigan qo'shimcha maydonlar: texnikasi va guvohnomasi.
  * Davlat raqami bazadagi texnika bilan moslanadi — yangi raqam yozilsa texnika ham ochiladi.
  */
-export function DriverFields({ vehicles, defaults }: {
+export function DriverFields({ vehicles, defaults, requirePlate = false }: {
   vehicles: VehicleOpt[];
   defaults?: { plate: string; vehicleType: string; capacityM3: string; licenseNo: string; licenseCategory: string; licenseExpiry: string };
+  /** Yangi haydovchi qo'shilganda mashina raqami so'raladi — raqamsiz haydovchi reysga chiqa olmaydi */
+  requirePlate?: boolean;
 }) {
   const [plate, setPlate] = useState(defaults?.plate ?? "");
   const [type, setType] = useState(defaults?.vehicleType ?? "MIXER");
@@ -124,8 +131,13 @@ export function DriverFields({ vehicles, defaults }: {
     <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
       <div className="flex items-center gap-2 text-[13px] font-medium text-amber-900"><Truck size={15} /> Haydovchi ma&apos;lumotlari</div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Davlat raqami" hint={known ? "Bazadagi texnika biriktiriladi" : plate ? "Yangi texnika ochiladi" : "Mikser/nasos raqami"}>
-          <Input name="plate" value={plate} onChange={(e) => onPlate(e.target.value)} list="driver-plates" placeholder="01 A 123 BC" autoComplete="off" />
+        <Field
+          label={requirePlate ? "Davlat raqami *" : "Davlat raqami"}
+          hint={known
+            ? (known.driver && known.driver !== defaults?.plate ? `Bazadagi texnika — hozir ${known.driver} ga biriktirilgan, saqlansa shu xodimga o'tadi` : "Bazadagi texnika biriktiriladi")
+            : plate ? "Yangi texnika ochiladi" : "Mikser / yuk mashina raqami — reys shu texnika bilan ochiladi"}
+        >
+          <Input name="plate" value={plate} onChange={(e) => onPlate(e.target.value)} list="driver-plates" placeholder="01 A 123 BC" autoComplete="off" required={requirePlate} />
           <datalist id="driver-plates">{vehicles.map((v) => <option key={v.plate} value={v.plate} />)}</datalist>
         </Field>
         <Field label="Turi">
@@ -220,7 +232,19 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
       )}
       {/* Tanlangan bo'lim serverga shu maydon bilan ketadi */}
       {!!loginRole && <input type="hidden" name="role" value={loginRole} />}
-      {isDriver && <DriverFields vehicles={vehicles} />}
+      {/* Haydovchi: texnika va guvohnoma shu yerda so'raladi. Ro'yxatdan tanlangan haydovchining
+          mavjud texnikasi o'zi to'ladi (key — tanlov almashganda maydonlar qayta chiziladi) */}
+      {isDriver && (
+        <DriverFields
+          key={picked?.id ?? "new"}
+          vehicles={vehicles}
+          requirePlate={!picked}
+          defaults={picked ? {
+            plate: picked.plate ?? "", vehicleType: picked.vehicleType ?? "MIXER", capacityM3: picked.capacityM3 ?? "",
+            licenseNo: picked.licenseNo ?? "", licenseCategory: picked.licenseCategory ?? "", licenseExpiry: picked.licenseExpiry ?? "",
+          } : undefined}
+        />
+      )}
       {showLogin && (
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:grid-cols-[1fr_1fr_2fr]">
           <Field label={needsLogin ? "Login *" : "Login"}><Input name="login" autoComplete="off" required={needsLogin} /></Field>

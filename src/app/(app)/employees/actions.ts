@@ -151,7 +151,8 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     try {
       await db.$transaction(async (tx) => {
         const user = role && d.login && d.password ? await createLoginFor(tx, d.fullName, role, d.login, d.password) : null;
-        const extra = driver ? await driverData(tx, s.userId, d) : {};
+        // Texnika faqat raqam yozilgan bo'lsa yangilanadi — bo'sh forma mavjud biriktirishni uzmasin
+        const extra = driver && d.plate ? await driverData(tx, s.userId, d) : {};
         const e = await tx.employee.update({
           where: { id: cur.id },
           data: {
@@ -179,6 +180,8 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     if (!role || !d.login) return { ok: true, note: `${d.fullName} — lavozimi «${d.position}» qilib belgilandi.` };
     return { ok: true, note: smsNote(await loginSms("login_granted", d.phone ?? cur.phone, d.login, d.password!)) };
   }
+
+  if (driver && !d.plate) return { error: "Haydovchi uchun mashina davlat raqamini kiriting — reys shu texnika bilan ochiladi" };
 
   let createdId: string | null = null;
   let vehicleId: string | null = null;
@@ -287,6 +290,9 @@ export async function dismissEmployee(id: string, _prev: ActionState, fd: FormDa
   const before = await db.employee.findUniqueOrThrow({ where: { id } });
   if (before.userId === s.userId) return { error: "O'zingizni ishdan bo'shata olmaysiz" };
   if (before.firedAt) return { error: "Bu xodim allaqachon ishdan bo'shatilgan" };
+  // Yo'ldagi reys egasiz qolmasin: avval reys yakunlanadi yoki bekor qilinadi
+  const open = await db.trip.findMany({ where: { driverId: id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
+  if (open.length) return { error: `Haydovchida ochiq reys bor: ${open.map((t) => t.deliveryNoteNo).join(", ")} — avval yakunlang yoki bekor qiling` };
   if (before.hiredAt && firedAt < before.hiredAt) return { error: "Bo'shatilgan sana ishga kirgan sanadan oldin bo'lishi mumkin emas" };
 
   const after = await db.$transaction(async (tx) => {
