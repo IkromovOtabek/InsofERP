@@ -22,12 +22,14 @@ export type RowField = {
  * Bitta qatorli/gridli forma: sozlamalar sahifasidagi spravochniklar uchun.
  * `mode="create"` bo'lsa muvaffaqiyatdan keyin tozalanadi.
  */
-export function RowForm({ action, fields, submit, mode = "edit", cols = 6 }: {
+export function RowForm({ action, fields, submit, mode = "edit", cols = 6, extra }: {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   fields: RowField[];
   submit?: string;
   mode?: "create" | "edit";
   cols?: number;
+  /** Saqlash yonidagi qo'shimcha amal — masalan qatorni o'chirish tugmasi. */
+  extra?: React.ReactNode;
 }) {
   const [state, act, pending] = useActionState(action, undefined);
   const ref = useRef<HTMLFormElement>(null);
@@ -58,6 +60,7 @@ export function RowForm({ action, fields, submit, mode = "edit", cols = 6 }: {
           {submit ?? (mode === "create" ? "Qo'shish" : "Saqlash")}
         </Button>
         {state?.ok && mode === "edit" && <span className="text-xs text-emerald-700">Saqlandi</span>}
+        {extra}
       </div>
       {state?.error && <div className="sm:col-span-full"><FormError error={state.error} /></div>}
     </form>

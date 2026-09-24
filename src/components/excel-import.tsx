@@ -122,18 +122,39 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [mergeOn, setMergeOn] = useState(true); // takroriy qatorlarni birlashtirib, miqdorlarni qo'shish
   const [scanNote, setScanNote] = useState(""); // skanerdan nima o'qilgani haqida qisqa xabar
   const [extra, setExtra] = useState<{ key: string; label: string }[]>([]); // «+» bilan qo'shilgan ustunlar
+  const [hidden, setHidden] = useState<Set<string>>(new Set()); // «×» bilan olib tashlangan tayyor ustunlar
   const [sheet, setSheet] = useState<unknown[][] | null>(null); // xom varaq — matritsani qayta yoyish uchun saqlanadi
   const [mx, setMx] = useState<MxState | null>(null); // matritsa rejimi tanlovi; null — oddiy ro'yxat
   const formRef = useRef<HTMLFormElement>(null);
   const extraSeq = useRef(0);
 
-  // Asosiy maydonlar + qo'shilgan ustunlar: moslash, jadval va namuna fayl shu ro'yxat bo'yicha ishlaydi
+  // Olib tashlanmagan tayyor ustunlar (majburiysi olib tashlanmaydi)
+  const shownFields = useMemo(() => fields.filter((f) => f.required || !hidden.has(f.key)), [fields, hidden]);
+  const hiddenFields = useMemo(() => fields.filter((f) => !f.required && hidden.has(f.key)), [fields, hidden]);
+
+  // Tayyor ustunlar + qo'shilgan ustunlar: moslash, jadval va namuna fayl shu ro'yxat bo'yicha ishlaydi
   const allFields: ImportField[] = useMemo(
-    () => [...fields, ...extra.map((e) => ({ key: e.key, label: e.label.trim() || "Nomsiz ustun", synonyms: [] as string[] }))],
-    [fields, extra],
+    () => [...shownFields, ...extra.map((e) => ({ key: e.key, label: e.label.trim() || "Nomsiz ustun", synonyms: [] as string[] }))],
+    [shownFields, extra],
   );
 
   const addExtra = () => { extraSeq.current += 1; setExtra((l) => [...l, { key: `extra${extraSeq.current}`, label: "" }]); };
+  /** Tayyor ustunni jadvaldan va namuna fayldan olib tashlash (majburiy ustun olib tashlanmaydi). */
+  const removeField = (key: string) => {
+    setSkipBad(false);
+    setHidden((h) => new Set(h).add(key));
+    setMap((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== key)));
+    setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.endsWith(`:${key}`))));
+  };
+  /** Olib tashlangan ustunni qaytarish; fayl tanlangan bo'lsa mos ustun yana o'zi topiladi. */
+  const restoreField = (key: string) => {
+    setHidden((h) => { const n = new Set(h); n.delete(key); return n; });
+    const fl = fields.find((f) => f.key === key);
+    if (!fl || headers.length === 0) return;
+    const taken = new Set(Object.values(map));
+    const g = guessColumn(headers, fl.synonyms, taken);
+    if (g) setMap((m) => ({ ...m, [key]: g }));
+  };
   const removeExtra = (key: string) => {
     setSkipBad(false);
     setExtra((l) => l.filter((e) => e.key !== key));
@@ -174,7 +195,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     setMx(null); setHeaders(hdr); setRows(data);
     setEdits({}); setSkipBad(false); setOnlyBad(false);
     const taken = new Set<string>(); const m: Record<string, string> = {};
-    for (const fl of fields) { const g = guessColumn(hdr, fl.synonyms, taken); if (g) { m[fl.key] = g; taken.add(g); } }
+    for (const fl of fields) { if (!fl.required && hidden.has(fl.key)) continue; const g = guessColumn(hdr, fl.synonyms, taken); if (g) { m[fl.key] = g; taken.add(g); } }
     // Qo'shilgan ustun o'z nomi bo'yicha izlanadi ("Partiya" → fayldagi "Partiya raqami")
     for (const e of extra) { const n = e.label.trim().toLowerCase(); if (!n) continue; const g = guessColumn(hdr, [n], taken); if (g) { m[e.key] = g; taken.add(g); } }
     setMap(m);
@@ -358,6 +379,36 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           e.label.trim() ? "border-slate-200" : "border-amber-300 placeholder:text-amber-500")} />
       <button type="button" onClick={() => removeExtra(e.key)} aria-label="Ustunni olib tashlash"
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-red-600"><X size={13} /></button>
+    </div>
+  );
+
+  /** Olib tashlangan ustunlar: bosilsa qaytadi. */
+  const restoreRow = hiddenFields.length > 0 && (
+    <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+      Olib tashlangan ustunlar:
+      {hiddenFields.map((f) => (
+        <button key={f.key} type="button" onClick={() => restoreField(f.key)} title="Ustunni qaytarish"
+          className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-1.5 py-0.5 font-medium text-slate-500 transition hover:border-slate-500 hover:text-slate-800">
+          <Plus size={11} /> {f.label}
+        </button>
+      ))}
+      <span className="text-slate-400">— bosilsa qaytadi</span>
+    </p>
+  );
+
+  /** Fayl tanlanmagan holat: tayyor ustunlar chiplari, keraksizini «×» bilan olib tashlash. */
+  const fieldChips = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] font-medium text-slate-500">Ustunlar:</span>
+      {shownFields.map((f) => (
+        <span key={f.key} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">
+          {f.label}{f.required && <span className="text-slate-400"> *</span>}
+          {!f.required && (
+            <button type="button" onClick={() => removeField(f.key)} aria-label={`${f.label} ustunini olib tashlash`} title="Ustunni olib tashlash"
+              className="inline-flex h-4 w-4 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-red-600"><X size={11} /></button>
+          )}
+        </span>
+      ))}
     </div>
   );
 
@@ -571,13 +622,17 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         {/* Fayl tanlanmagan bo'lsa ham ustun qo'shish mumkin — qo'shilgan ustunlar namuna faylga tushadi */}
         {allowExtra && headers.length === 0 && (
           <div className="mt-3 border-t border-slate-200 pt-3">
+            {/* Namuna fayl va jadval shu ustunlar bo'yicha: keraksizini «×» bilan olib tashlaysiz */}
+            <div className="mb-2">{fieldChips}</div>
             <div className="flex flex-wrap items-end gap-2">
               {extra.map((e) => <div key={e.key} className="w-44">{extraName(e)}</div>)}
               {addExtraBtn}
             </div>
             <p className="mt-1.5 text-[11px] text-slate-400">
               Faylingizda qo&apos;shimcha ustun bo&apos;lsa — shu yerga nomini yozib qo&apos;shasiz; namuna faylga ham tushadi, fayl tanlangach qaysi ustundan olinishini belgilaysiz.
+              Keraksiz ustunni «×» bilan olib tashlasangiz — namuna faylda ham, jadvalda ham chiqmaydi.
             </p>
+            {restoreRow}
           </div>
         )}
       </div>
@@ -598,15 +653,22 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           <div className={cn(mx && "hidden")}>
             <div className="mb-2 text-sm font-medium text-slate-700">Ustunlarni moslash <span className="font-normal text-slate-500">· {allFields.length} ta ustun · {rows.length} ta qator topildi{blankCount > 0 && ` (${blankCount} tasi bo'sh — o'tkazib yuboriladi)`}</span></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {fields.map((f) => (
-                <label key={f.key} className="text-sm">
-                  <span className="mb-1 block text-xs text-slate-500">{f.label}{f.required && " *"}</span>
+              {shownFields.map((f) => (
+                <div key={f.key} className="text-sm">
+                  <div className="mb-1 flex items-center justify-between gap-1">
+                    <span className="text-xs text-slate-500">{f.label}{f.required && " *"}</span>
+                    {/* Kerak bo'lmagan tayyor ustunni butunlay olib tashlash (majburiysi qoladi) */}
+                    {allowExtra && !f.required && (
+                      <button type="button" onClick={() => removeField(f.key)} aria-label={`${f.label} ustunini olib tashlash`} title="Ustunni olib tashlash"
+                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-red-600"><X size={12} /></button>
+                    )}
+                  </div>
                   <Select value={map[f.key] ?? ""} onChange={(e) => pickColumn(f.key, e.target.value)} className={cn(f.required && !map[f.key] && "border-red-300")}>
                     <option value="">— olinmaydi —</option>
                     {headers.map((h) => <option key={h} value={h}>{h}</option>)}
                   </Select>
                   {f.hint && <span className="mt-0.5 block text-[11px] text-slate-400">{f.hint}</span>}
-                </label>
+                </div>
               ))}
               {/* «+» bilan qo'shilgan ustun: nomini o'zi yozadi, keyin fayldagi qaysi ustundan olinishini tanlaydi */}
               {extra.map((e) => (
@@ -625,6 +687,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
               ))}
               {allowExtra && <div className="flex items-end">{addExtraBtn}</div>}
             </div>
+            {restoreRow}
           </div>
 
           <div>

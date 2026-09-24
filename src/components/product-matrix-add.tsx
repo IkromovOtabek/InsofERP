@@ -50,6 +50,16 @@ export function ProductMatrixAdd({ groupId, groupName, onDone, onCancel }: {
   const [off, setOff] = useState<Set<string>>(new Set()); // belgisi olib tashlangan kataklar
   const [cellPrice, setCellPrice] = useState<Record<string, string>>({});
 
+  /** Matritsa ustuni/qatori ro'yxatdan olib tashlanadi (matn maydonidagi shu satr o'chadi). */
+  const dropValue = (text: string, value: string) => lines(text).filter((x) => x !== value).join("\n");
+  /** Yangi ustun/qator: nomi keyin matn maydonida tahrirlanadi. */
+  const addValue = (text: string, prefix: string) => {
+    const list = lines(text);
+    let n = list.length + 1;
+    while (list.includes(`${prefix} ${n}`)) n++;
+    return [...list, `${prefix} ${n}`].join("\n");
+  };
+
   const rows = useMemo(() => lines(rowsText), [rowsText]);
   const cols = useMemo(() => lines(colsText), [colsText]);
   // Ustun berilmasa — bitta bo'sh ustun: shunda oddiy nomlar ro'yxati bo'lib qo'shiladi
@@ -107,10 +117,10 @@ export function ProductMatrixAdd({ groupId, groupName, onDone, onCancel }: {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Qatorlar" hint="har satrda bittasi — masalan marka">
+        <Field label="Qatorlar" hint="har satrda bittasi — masalan marka; jadvaldagi «×» bilan ham o'chiriladi">
           <Textarea rows={4} value={rowsText} onChange={(e) => setRowsText(e.target.value)} placeholder={PLACEHOLDER_ROWS} />
         </Field>
-        <Field label="Ustunlar" hint="har satrda bittasi — masalan o'lchov; bo'sh qoldirsangiz faqat qatorlar qo'shiladi">
+        <Field label="Ustunlar" hint="har satrda bittasi — masalan o'lchov; bo'sh qoldirsangiz faqat qatorlar qo'shiladi. Jadvaldagi «+ Ustun» va «×» bilan ham boshqariladi">
           <Textarea rows={4} value={colsText} onChange={(e) => setColsText(e.target.value)} placeholder={PLACEHOLDER_COLS} />
         </Field>
       </div>
@@ -138,20 +148,43 @@ export function ProductMatrixAdd({ groupId, groupName, onDone, onCancel }: {
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white/60 px-3 py-6 text-center text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white/60 px-3 py-6 text-center text-sm text-slate-500">
           Qatorlarni kiriting — matritsa shu yerda chiziladi.
-        </p>
+          <div className="mt-2 flex justify-center gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setRowsText((t) => addValue(t, "Qator"))}><Plus size={14} /> Qator qo&apos;shish</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setColsText((t) => addValue(t, "Ustun"))}><Plus size={14} /> Ustun qo&apos;shish</Button>
+          </div>
+        </div>
       ) : (
         <div className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white">
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500">
               <tr>
-                <th className="border-b border-slate-200 px-3 py-2 text-left font-medium">Qator / Ustun</th>
+                <th className="border-b border-slate-200 px-3 py-2 text-left font-medium">
+                  <span className="flex items-center gap-2">
+                    Qator / Ustun
+                    <button type="button" onClick={() => setColsText((t) => addValue(t, "Ustun"))} title="Yangi ustun qo'shish"
+                      className="inline-flex items-center gap-0.5 rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:border-slate-500 hover:text-slate-800">
+                      <Plus size={11} /> Ustun
+                    </button>
+                    <button type="button" onClick={() => setRowsText((t) => addValue(t, "Qator"))} title="Yangi qator qo'shish"
+                      className="inline-flex items-center gap-0.5 rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:border-slate-500 hover:text-slate-800">
+                      <Plus size={11} /> Qator
+                    </button>
+                  </span>
+                </th>
                 {colList.map((c) => (
                   <th key={c} className="border-b border-l border-slate-200 px-2 py-2 text-left font-medium">
-                    <button type="button" onClick={() => toggleMany(rows.map((r) => [r, c] as [string, string]))} className="hover:underline" title="Ustunni belgilash yoki bekor qilish">
-                      {c || "—"}
-                    </button>
+                    <span className="flex items-center justify-between gap-1">
+                      <button type="button" onClick={() => toggleMany(rows.map((r) => [r, c] as [string, string]))} className="hover:underline" title="Ustunni belgilash yoki bekor qilish">
+                        {c || "—"}
+                      </button>
+                      {/* Ustunni butunlay olib tashlash — «Ustunlar» ro'yxatidan ham o'chadi */}
+                      {c && (
+                        <button type="button" onClick={() => setColsText((t) => dropValue(t, c))} aria-label={`${c} ustunini o'chirish`} title="Ustunni o'chirish"
+                          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-red-600"><X size={11} /></button>
+                      )}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -160,9 +193,13 @@ export function ProductMatrixAdd({ groupId, groupName, onDone, onCancel }: {
               {rows.map((r) => (
                 <tr key={r}>
                   <th className="border-b border-slate-100 bg-slate-50/60 px-3 py-1.5 text-left font-medium whitespace-nowrap">
-                    <button type="button" onClick={() => toggleMany(colList.map((c) => [r, c] as [string, string]))} className="hover:underline" title="Qatorni belgilash yoki bekor qilish">
-                      {r}
-                    </button>
+                    <span className="flex items-center justify-between gap-1">
+                      <button type="button" onClick={() => toggleMany(colList.map((c) => [r, c] as [string, string]))} className="hover:underline" title="Qatorni belgilash yoki bekor qilish">
+                        {r}
+                      </button>
+                      <button type="button" onClick={() => setRowsText((t) => dropValue(t, r))} aria-label={`${r} qatorini o'chirish`} title="Qatorni o'chirish"
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-red-600"><X size={11} /></button>
+                    </span>
                   </th>
                   {colList.map((c) => {
                     const on = isOn(r, c);

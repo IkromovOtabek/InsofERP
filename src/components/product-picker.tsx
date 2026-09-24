@@ -3,11 +3,12 @@
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, FolderPlus, Grid3x3, Plus } from "lucide-react";
-import { createCatalogProduct, createProductGroup } from "@/lib/catalog-actions";
+import { createCatalogProduct, createProductGroup, deleteCatalogProduct, deleteProductGroup } from "@/lib/catalog-actions";
 import { FolderPicker, type PickerCtx } from "@/components/folder-picker";
 import { ProductExcelImport } from "@/components/product-excel-import";
 import { ProductMatrixAdd } from "@/components/product-matrix-add";
 import { ProductDuplicates } from "@/components/product-duplicates";
+import { DeleteButton } from "@/components/delete-button";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { PRODUCT_KINDS } from "@/lib/catalog";
 import { MoneyInput } from "@/components/money-input";
@@ -63,6 +64,15 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
       noMatchText="Mos mahsulot topilmadi"
       onPick={onPick}
       onClose={onClose}
+      /* O'chirish: hujjatlarda ishlatilmagan mahsulot butunlay o'chadi, ishlatilgani arxivga olinadi */
+      rowAction={canCreate ? (row) => (
+        <DeleteButton
+          action={row.kind === "group" ? deleteProductGroup : deleteCatalogProduct}
+          id={row.id}
+          name={row.name}
+          title={row.kind === "group" ? "Papkani o'chirish" : "Mahsulotni o'chirish"}
+        />
+      ) : undefined}
       tools={() => canCreate ? (
         <>
           <Button type="button" size="sm" variant="secondary" onClick={() => toggle("product")}>

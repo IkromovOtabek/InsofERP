@@ -367,6 +367,73 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
   return { ok: true, note: `${out.merged} ta ortiqcha yozuv birlashtirildi, ${out.moved} ta hujjat qatori ko'chirildi.` };
 }
 
+
+/* ───────── Ro'yxatdan o'chirish ───────── */
+
+/**
+ * Mahsulotni ro'yxatdan o'chirish.
+ * Hujjatlarda ishlatilmagan bo'lsa butunlay o'chadi; zayavka, zames, sklad harakati,
+ * retsept yoki saytdan kelgan so'rovda uchrasa — o'chirilmaydi, arxivga olinadi
+ * (`isActive = false`): ro'yxatlarda ko'rinmaydi, eski hujjatlar esa joyida qoladi.
+ */
+export async function deleteCatalogProduct(id: string): Promise<ActionState> {
+  const s = await requireSession([...CATALOG_ROLES]);
+  const p = await db.product.findUnique({ where: { id } });
+  if (!p) return { error: "Mahsulot topilmadi" };
+
+  const [items, batches, moves, leads, recipes] = await Promise.all([
+    db.orderItem.count({ where: { productId: id } }),
+    db.productionBatch.count({ where: { productId: id } }),
+    db.stockMove.count({ where: { productId: id } }),
+    db.lead.count({ where: { productId: id } }),
+    db.recipe.count({ where: { productId: id } }),
+  ]);
+  const used = items + batches + moves + leads;
+
+  if (used === 0) {
+    await db.$transaction(async (tx) => {
+      // Retsept faqat shu mahsulotga tegishli — hujjat emas, mahsulot bilan birga ketadi
+      const recs = await tx.recipe.findMany({ where: { productId: id }, select: { id: true } });
+      if (recs.length) {
+        await tx.recipeItem.deleteMany({ where: { recipeId: { in: recs.map((r) => r.id) } } });
+        await tx.recipe.deleteMany({ where: { productId: id } });
+      }
+      await tx.product.delete({ where: { id } });
+      await audit(tx, s.userId, "DELETE", "Product", id, p, { recipes: recs.length });
+    });
+    refresh();
+    return { ok: true, note: `«${p.name}» o'chirildi${recipes ? ` (retsepti bilan)` : ""}.` };
+  }
+
+  if (!p.isActive) return { error: `«${p.name}» hujjatlarda ishlatilgan (${used} ta) — butunlay o'chirilmaydi, u allaqachon arxivda` };
+  await db.$transaction(async (tx) => {
+    const after = await tx.product.update({ where: { id }, data: { isActive: false } });
+    await audit(tx, s.userId, "UPDATE", "Product", id, p, { ...after, reason: "ro'yxatdan olib tashlandi (arxiv)" });
+  });
+  refresh();
+  return { ok: true, note: `«${p.name}» ${used} ta hujjatda ishlatilgan — o'chirilmadi, ro'yxatdan olib tashlandi (hujjatlar joyida).` };
+}
+
+/** Papkani o'chirish — faqat bo'sh papka (ichida papka ham, mahsulot ham bo'lmasa). */
+export async function deleteProductGroup(id: string): Promise<ActionState> {
+  const s = await requireSession([...CATALOG_ROLES]);
+  const g = await db.productGroup.findUnique({ where: { id } });
+  if (!g) return { error: "Papka topilmadi" };
+  const [children, products] = await Promise.all([
+    db.productGroup.count({ where: { parentId: id } }),
+    db.product.count({ where: { groupId: id } }),
+  ]);
+  if (children || products) {
+    return { error: `«${g.name}» bo'sh emas: ${products} mahsulot, ${children} papka. Avval ichidagini boshqa papkaga o'tkazing.` };
+  }
+  await db.$transaction(async (tx) => {
+    await tx.productGroup.delete({ where: { id } });
+    await audit(tx, s.userId, "DELETE", "ProductGroup", id, g, undefined);
+  });
+  refresh();
+  return { ok: true, note: `«${g.name}» papkasi o'chirildi.` };
+}
+
 /** Spravochnik o'zgargach mahsulot ro'yxati ko'rinadigan hamma sahifa yangilanadi. */
 function refresh() {
   revalidatePath("/orders/new");

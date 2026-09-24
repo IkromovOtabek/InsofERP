@@ -3,8 +3,9 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderPlus, Minus, Plus } from "lucide-react";
-import { createCatalogMaterial, createMaterialGroup } from "@/lib/material-actions";
+import { createCatalogMaterial, createMaterialGroup, deleteCatalogMaterial, deleteMaterialGroup } from "@/lib/material-actions";
 import { FolderPicker, type PickerCtx, type PickerGroup } from "@/components/folder-picker";
+import { DeleteButton } from "@/components/delete-button";
 import { fmtNum } from "@/lib/format";
 import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
 import { Button, Field, FormError, FormSuccess, Input, inputCls, Select } from "@/components/ui";
@@ -71,6 +72,15 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
       footerHint="Papkani ochish yoki xomashyoni tanlash — ikki marta bosing"
       onPick={(id) => { const m = materials.find((x) => x.id === id); if (m) onPick(m); }}
       onClose={onClose}
+      /* O'chirish: hujjatlarda ishlatilmagan xomashyo butunlay o'chadi, ishlatilgani arxivga olinadi */
+      rowAction={canCreate ? (row) => (
+        <DeleteButton
+          action={row.kind === "group" ? deleteMaterialGroup : deleteCatalogMaterial}
+          id={row.id}
+          name={row.name}
+          title={row.kind === "group" ? "Papkani o'chirish" : "Xomashyoni o'chirish"}
+        />
+      ) : undefined}
       tools={(ctx) => (
         <>
           {canCreate && (

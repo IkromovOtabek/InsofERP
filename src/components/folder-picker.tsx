@@ -40,7 +40,7 @@ type Sel = { type: "group" | "item"; id: string };
 export function FolderPicker({
   open, title, ariaLabel, nameLabel = "Nomi", cols, items, groups, initialQuery,
   emptyText = "Bu papka bo'sh", noMatchText = "Mos yozuv topilmadi", footerHint,
-  onPick, onClose, tools, panel,
+  onPick, onClose, tools, panel, rowAction,
 }: {
   open: boolean;
   title: string;
@@ -57,6 +57,8 @@ export function FolderPicker({
   onClose: () => void;
   tools?: (ctx: PickerCtx) => React.ReactNode;
   panel?: (ctx: PickerCtx) => React.ReactNode;
+  /** Qator oxiridagi amal (masalan o'chirish tugmasi); berilmasa ustun ham chizilmaydi. */
+  rowAction?: (row: { id: string; name: string; kind: "group" | "item" }) => React.ReactNode;
 }) {
   const [path, setPath] = useState<PickerGroup[]>([]); // ochilgan papkalar zanjiri
   const [q, setQ] = useState(initialQuery ?? "");
@@ -97,7 +99,7 @@ export function FolderPicker({
 
   if (!open || !mounted) return null;
 
-  const span = cols.length + 1;
+  const span = cols.length + (rowAction ? 2 : 1);
   const ctx: PickerCtx = { groupId: currentId, groupName: current?.name ?? null, query: q.trim() };
   const openGroup = (id: string) => {
     const g = groups.find((x) => x.id === id);
@@ -163,6 +165,7 @@ export function FolderPicker({
               <tr>
                 <th className="px-4 py-2">{nameLabel}</th>
                 {cols.map((c) => <th key={c.label} className={cn("px-4 py-2", c.className, c.right && "text-right")}>{c.label}</th>)}
+                {rowAction && <th className="w-10 px-2 py-2" />}
               </tr>
             </thead>
             <tbody>
@@ -191,6 +194,11 @@ export function FolderPicker({
                         {i === cols.length - 1 ? g.code : ""}
                       </td>
                     ))}
+                    {rowAction && (
+                      <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                        {rowAction({ id: g.id, name: g.name, kind: "group" })}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -211,6 +219,11 @@ export function FolderPicker({
                         {x.cells[i] ?? ""}
                       </td>
                     ))}
+                    {rowAction && (
+                      <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                        {rowAction({ id: x.id, name: x.name, kind: "item" })}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

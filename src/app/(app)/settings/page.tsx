@@ -10,6 +10,9 @@ import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr, Tabs } from "@/comp
 import { RowForm } from "@/components/row-form";
 import { ProductExcelPanel } from "@/components/product-excel-import";
 import { ProductMatrixPanel } from "@/components/product-matrix-add";
+import { DeleteButton } from "@/components/delete-button";
+import { deleteCatalogProduct } from "@/lib/catalog-actions";
+import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
 import { UserForm, ResetPasswordForm } from "./user-forms";
 import { toggleUser, saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
@@ -113,7 +116,7 @@ async function ProductsTab() {
                 {p.recipes[0] ? <Badge color="green">retsept v{p.recipes[0].version}</Badge> : <Badge color="red">retsept yo'q</Badge>}
                 <Link href={`/recipes/${p.id}`} className="hover:underline">Retseptga o'tish</Link>
               </div>
-              <RowForm action={saveProduct.bind(null, p.id)} cols={6} fields={fields(p)} />
+              <RowForm action={saveProduct.bind(null, p.id)} cols={6} fields={fields(p)} extra={<DeleteButton action={deleteCatalogProduct} id={p.id} name={p.name} title="Mahsulotni o'chirish" />} />
             </div>
           ))}
         </div>
@@ -137,7 +140,7 @@ async function MaterialsTab() {
       <Card>
         <h2 className="mb-1 font-semibold">Xomashyo ro'yxati</h2>
         <p className="mb-3 text-xs text-slate-500">Minimal qoldiqdan kam qolsa bosh sahifada "Kam qoldi" signali chiqadi.</p>
-        <div className="divide-y divide-slate-100">{materials.map((m) => <div key={m.id} className="py-3"><RowForm action={saveMaterial.bind(null, m.id)} cols={6} fields={fields(m)} /></div>)}</div>
+        <div className="divide-y divide-slate-100">{materials.map((m) => <div key={m.id} className="py-3"><RowForm action={saveMaterial.bind(null, m.id)} cols={6} fields={fields(m)} extra={<DeleteButton action={deleteCatalogMaterial} id={m.id} name={m.name} title="Xomashyoni o'chirish" />} /></div>)}</div>
       </Card>
     </div>
   );

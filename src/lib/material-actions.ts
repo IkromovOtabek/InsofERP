@@ -91,6 +91,66 @@ export async function createCatalogMaterial(_prev: ActionState, fd: FormData): P
     : { ok: true };
 }
 
+
+/* ───────── Ro'yxatdan o'chirish ───────── */
+
+/**
+ * Xomashyoni ro'yxatdan o'chirish. Retsept, sklad harakati, kirim, ta'minot jadvali yoki
+ * brigada harakatida uchrasa — o'chirilmaydi, arxivga olinadi (`isActive = false`):
+ * ro'yxatlarda ko'rinmaydi, eski hujjatlar buzilmaydi.
+ */
+export async function deleteCatalogMaterial(id: string): Promise<ActionState> {
+  const s = await requireSession([...MATERIAL_ROLES]);
+  const m = await db.material.findUnique({ where: { id } });
+  if (!m) return { error: "Xomashyo topilmadi" };
+
+  const [recipeItems, moves, receipts, supply, brigade] = await Promise.all([
+    db.recipeItem.count({ where: { materialId: id } }),
+    db.stockMove.count({ where: { materialId: id } }),
+    db.goodsReceiptItem.count({ where: { materialId: id } }),
+    db.supplyRequestItem.count({ where: { materialId: id } }),
+    db.brigadeMove.count({ where: { materialId: id } }),
+  ]);
+  const used = recipeItems + moves + receipts + supply + brigade;
+
+  if (used === 0) {
+    await db.$transaction(async (tx) => {
+      await tx.material.delete({ where: { id } });
+      await audit(tx, s.userId, "DELETE", "Material", id, m, undefined);
+    });
+    refresh();
+    return { ok: true, note: `«${m.name}» o'chirildi.` };
+  }
+
+  if (!m.isActive) return { error: `«${m.name}» hujjatlarda ishlatilgan (${used} ta) — butunlay o'chirilmaydi, u allaqachon arxivda` };
+  await db.$transaction(async (tx) => {
+    const after = await tx.material.update({ where: { id }, data: { isActive: false } });
+    await audit(tx, s.userId, "UPDATE", "Material", id, m, { ...after, reason: "ro'yxatdan olib tashlandi (arxiv)" });
+  });
+  refresh();
+  return { ok: true, note: `«${m.name}» ${used} ta hujjatda ishlatilgan — o'chirilmadi, ro'yxatdan olib tashlandi (hujjatlar joyida).` };
+}
+
+/** Papkani o'chirish — faqat bo'sh papka (ichida papka ham, xomashyo ham bo'lmasa). */
+export async function deleteMaterialGroup(id: string): Promise<ActionState> {
+  const s = await requireSession([...MATERIAL_ROLES]);
+  const g = await db.materialGroup.findUnique({ where: { id } });
+  if (!g) return { error: "Papka topilmadi" };
+  const [children, materials] = await Promise.all([
+    db.materialGroup.count({ where: { parentId: id } }),
+    db.material.count({ where: { groupId: id } }),
+  ]);
+  if (children || materials) {
+    return { error: `«${g.name}» bo'sh emas: ${materials} xomashyo, ${children} papka. Avval ichidagini boshqa papkaga o'tkazing.` };
+  }
+  await db.$transaction(async (tx) => {
+    await tx.materialGroup.delete({ where: { id } });
+    await audit(tx, s.userId, "DELETE", "MaterialGroup", id, g, undefined);
+  });
+  refresh();
+  return { ok: true, note: `«${g.name}» papkasi o'chirildi.` };
+}
+
 /** Xomashyo ro'yxati ko'rinadigan sahifalar. */
 function refresh() {
   revalidatePath("/stock");
