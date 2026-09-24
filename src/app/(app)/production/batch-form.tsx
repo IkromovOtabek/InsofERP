@@ -3,19 +3,24 @@
 import { useActionState, useState } from "react";
 import { createBatch } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
+import { ProductSelect } from "@/components/product-select";
+import type { CatalogGroup, CatalogProduct } from "@/components/product-picker";
 
 /** unit — zayavkadagi mahsulot birligi ("m³", "dona"…). */
 type Order = { id: string; orderNo: string; customer: string; productId: string; remainingM3: number; unit: string };
-type Product = { id: string; name: string; hasRecipe: boolean; unit: string };
+/** Spravochnikdagi mahsulot + retsepti bormi (retseptsiz zames yozib bo'lmaydi). */
+type Product = CatalogProduct & { hasRecipe: boolean };
 type Wh = { id: string; name: string };
 
-export function BatchForm({ orders, products, warehouses }: { orders: Order[]; products: Product[]; warehouses: Wh[] }) {
+export function BatchForm({ orders, products, groups, canCreateProduct, warehouses }: { orders: Order[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; warehouses: Wh[] }) {
   const [state, action, pending] = useActionState(createBatch, undefined);
   const [orderId, setOrderId] = useState("");
   const [productId, setProductId] = useState(products[0]?.id ?? "");
   const [qty, setQty] = useState("");
   const order = orders.find((o) => o.id === orderId);
-  const unit = products.find((p) => p.id === productId)?.unit ?? "m³";
+  const picked = products.find((p) => p.id === productId);
+  const unit = picked?.unit ?? "m³";
+  const noRecipe = !!picked && !picked.hasRecipe; // retseptsiz mahsulotga zames yozilmaydi
 
   const pickOrder = (id: string) => {
     setOrderId(id);
@@ -33,11 +38,18 @@ export function BatchForm({ orders, products, warehouses }: { orders: Order[]; p
         </Select>
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Marka *">
-          <Select name="productId" value={productId} onChange={(e) => setProductId(e.target.value)} disabled={!!order}>
-            {products.map((p) => <option key={p.id} value={p.id} disabled={!p.hasRecipe}>{p.name}{!p.hasRecipe ? " (retsept yo'q)" : ""}</option>)}
-          </Select>
-          {order && <input type="hidden" name="productId" value={productId} />}
+        {/* Zayavkadagi bilan bir xil spravochnik: nom terib ham, «…» orqali papkalardan ham tanlanadi */}
+        <Field label="Marka *" hint="Nomini yozing yoki «…» tugmasidan ro'yxatdan tanlang" error={noRecipe ? "Bu mahsulotga retsept kiritilmagan — avval Retseptlar bo'limidan kiriting" : undefined}>
+          <ProductSelect
+            name="productId"
+            products={products}
+            groups={groups}
+            canCreate={canCreateProduct}
+            value={productId}
+            onChange={setProductId}
+            disabled={!!order}
+            hint={(p) => ((p as Product).hasRecipe ? null : "retsept yo'q")}
+          />
         </Field>
         <Field label={`Miqdor, ${unit} *`}><Input name="qtyM3" type="number" step={unit === "m³" ? "0.5" : "1"} min={unit === "m³" ? "0.5" : "1"} value={qty} onChange={(e) => setQty(e.target.value)} required /></Field>
       </div>
@@ -47,7 +59,7 @@ export function BatchForm({ orders, products, warehouses }: { orders: Order[]; p
       </div>
       <Field label="Izoh"><Textarea name="note" /></Field>
       <FormActions>
-        <Button disabled={pending}>{pending ? "Yozilmoqda…" : "Zamesni qayd etish"}</Button>
+        <Button disabled={pending || !productId || noRecipe}>{pending ? "Yozilmoqda…" : "Zamesni qayd etish"}</Button>
         <LinkButton href="/production" variant="secondary">Bekor</LinkButton>
       </FormActions>
     </form>

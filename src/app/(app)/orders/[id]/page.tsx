@@ -18,6 +18,7 @@ import { confirmOrder, unblockOrder, cancelOrder, toggleGuarantee } from "../act
 import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
 import { ContractForm } from "./contract-form";
 import { contractedIds } from "@/lib/finance";
+import { NDS_LABEL, ndsPart } from "@/lib/nds";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 
 const STEPS = [
@@ -42,6 +43,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   });
   if (!o || !s) notFound();
   const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
+  // "NDS 12%" belgilangan qatorlarda narx soliq bilan saqlanadi — jamida shundan qanchasi soliq ekani ko'rsatiladi
+  const ndsTotal = o.items.reduce((sum, i) => sum + (i.nds ? Number(i.qtyM3) * ndsPart(Number(i.price)) : 0), 0);
   // Hajm har doim mahsulot birligida: beton m³, ustun/blok dona. Turli birlik bitta
   // songa qo'shilmaydi — 12 m³ + 500 dona "512 m³" emas.
   const itemRows = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
@@ -273,13 +276,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                 const t = i.task, tq = t ? Number(t.qty) : 0, td = t ? Number(t.doneQty) : 0;
                 return (
                   <Tr key={i.id}>
-                    <Td>{i.product.name}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td><Td right>{money(i.price)}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td>
+                    <Td>{i.product.name}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td><Td right>{money(i.price)}{i.nds && <span className="ml-1 text-[11px] font-medium text-slate-500">{NDS_LABEL}</span>}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td>
                     <Td>{i.brigade?.name ?? <span className="text-slate-400">—</span>}{t && <div className="mt-0.5"><TaskStatusBadge status={t.status} /></div>}</Td>
                     <Td right>{t ? <><span className="text-emerald-700">{qty(td)}</span> / <span className={tq - td > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(Math.max(0, tq - td))}</span><div className="mt-1 ml-auto w-20"><Progress value={td} max={tq} tone={td >= tq ? "success" : "default"} /></div></> : <span className="text-slate-400">—</span>}</Td>
                   </Tr>
                 );
               })}
-              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td><Td /><Td right className="font-semibold">{money(total)}</Td><Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
+              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td><Td /><Td right className="font-semibold">{money(total)}{ndsTotal > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500 whitespace-nowrap">shundan {NDS_LABEL}: {money(ndsTotal)}</div>}</Td><Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
             </tbody>
           </table>
         </Card>

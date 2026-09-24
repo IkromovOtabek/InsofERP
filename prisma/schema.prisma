@@ -126,14 +126,37 @@ model Material {
   name      String
   unit      String // kg, t, l, m3
   minStock  Decimal  @default(0) @db.Decimal(18, 3) // shu miqdordan kam qolsa — signal
+  groupId   String? // papka; bo'sh bo'lsa ro'yxat ildizida turadi
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  group        MaterialGroup?      @relation(fields: [groupId], references: [id])
   recipeItems  RecipeItem[]
   stockMoves   StockMove[]
   receiptItems GoodsReceiptItem[]
   supplyItems  SupplyRequestItem[]
   brigadeMoves BrigadeMove[]
+
+  @@index([groupId])
+}
+
+/// Xomashyo papkasi (mahsulot papkasining aynan o'zi, faqat xomashyo uchun):
+/// Sement > Toshkent, Inertlar > Qum ... Ichma-ich bo'ladi.
+/// Xomashyo so'rovlari (retsept, sklad, ta'minot) papkalarni ko'rmaydi — ro'yxat ko'rinishi uchun.
+model MaterialGroup {
+  id        String   @id @default(cuid())
+  code      String   @unique // ro'yxatdagi "Kod" ustuni
+  name      String
+  parentId  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  parent    MaterialGroup?  @relation("MaterialGroupTree", fields: [parentId], references: [id])
+  children  MaterialGroup[] @relation("MaterialGroupTree")
+  materials Material[]
+
+  @@index([parentId])
 }
 
 /// Tayyor mahsulot: beton markasi (M300 / B22.5)
@@ -563,7 +586,8 @@ model OrderItem {
   orderId   String
   productId String
   qtyM3     Decimal @db.Decimal(18, 3)
-  price     Decimal @db.Decimal(18, 2) // kelishilgan narx (1 m3)
+  price     Decimal @db.Decimal(18, 2) // kelishilgan narx (1 m3) — NDS belgilangan bo'lsa soliq qo'shilgan holda
+  nds       Boolean @default(false) // narxga "NDS 12%" qo'shilgan (hujjatda alohida qator bo'lib ko'rinadi)
   brigadeId String? // ishlab chiqarish bo'limida tayinlanadi; tasdiqlanganda topshiriq yaratiladi
 
   order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)

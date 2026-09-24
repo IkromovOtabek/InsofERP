@@ -6,9 +6,10 @@ import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState } from "react";
 import { createOrder } from "./actions";
 import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions, Checkbox } from "@/components/ui";
-import { ProductPicker, type CatalogGroup, type CatalogProduct } from "./product-picker";
-import { ProductField } from "./product-field";
+import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
+import { ProductField } from "@/components/product-field";
 import { MoneyInput } from "@/components/money-input";
+import { NDS_LABEL, ndsOf, withNds } from "@/lib/nds";
 import { cn } from "@/lib/utils";
 
 type Product = CatalogProduct;
@@ -31,7 +32,8 @@ export type CustomerOpt = {
  * canMake — hozirgi xomashyo qoldig'i bilan retsept bo'yicha yana qancha ishlab chiqarish mumkin.
  */
 export type ProductStock = Record<string, { free: number; total: number; owned: number; canMake: number | null; by: string | null; kind: "piece" | "concrete" }>;
-type Row = { key: number; productId: string; qtyM3: string; price: string };
+/** `price` — kelishilgan narx (NDS'siz); `nds` — shu narxga NDS 12% qo'shilsinmi. */
+type Row = { key: number; productId: string; qtyM3: string; price: string; nds: boolean };
 export type CashAccountOpt = { id: string; name: string; type: "CASH" | "BANK" };
 
 const money = (n: number) => `${fmtNum(n)} so'm`;
@@ -131,7 +133,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const cashAcc = cashAccounts.find((a) => a.type === "CASH") ?? cashAccounts[0] ?? null;
   const [contract, setContract] = useState(false); // "Shartnoma qilish" belgilanganmi
   const [contractAmount, setContractAmount] = useState("");
-  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0" }]);
+  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: false }]);
   const [pickFor, setPickFor] = useState<number | null>(null); // qaysi qator uchun spravochnik ochiq
 
   // Mahsulot yonidagi qoldiq izohi: beton — xomashyodan qancha chiqadi, dona mahsulot — hovlidagi erkin qoldiq
@@ -148,7 +150,10 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const onProduct = (key: number, productId: string) =>
     update(key, { productId, price: products.find((p) => p.id === productId)?.price ?? "0" });
 
-  const total = rows.reduce((s, r) => s + (Number(r.qtyM3) || 0) * (Number(r.price) || 0), 0);
+  // Narx katagida NDS'siz narx turadi; "NDS 12%" belgilangan qatorda soliq ustiga qo'shiladi
+  const sumNoNds = rows.reduce((s, r) => s + (Number(r.qtyM3) || 0) * (Number(r.price) || 0), 0);
+  const ndsSum = rows.reduce((s, r) => s + (r.nds ? (Number(r.qtyM3) || 0) * ndsOf(Number(r.price) || 0) : 0), 0);
+  const total = sumNoNds + ndsSum; // mijoz to'laydigan summa — limit, bosh to'lov va shartnoma shu bo'yicha
   const tomorrow = isoDate(new Date(Date.now() + 86400000));
   const prepayN = Number(prepay) || 0;
   const remaining = Math.max(0, total - prepayN);
@@ -363,7 +368,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             const need = Number(r.qtyM3) || 0;
             return (
               <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:border-0 sm:p-0">
-                <div className="space-y-2 sm:grid sm:grid-cols-[1fr_120px_160px_40px] sm:items-center sm:gap-2 sm:space-y-0">
+                <div className="space-y-2 sm:grid sm:grid-cols-[1fr_110px_150px_auto_40px] sm:items-center sm:gap-2 sm:space-y-0">
                   {/* Yozilgan harflar bo'yicha qidiradi; "…" tugmasi papkali spravochnikni ochadi */}
                   <div>
                     <input type="hidden" name="productId[]" value={r.productId} />
@@ -375,7 +380,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       hint={stockHint}
                     />
                   </div>
-                  <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 sm:contents">
+                  <div className="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-2 sm:contents">
                     {/* Hajmi mahsulotning birligida kiritiladi — birlik yozilganda ham o'ng tomonda ko'rinib turadi */}
                     <span className="relative block">
                       <Input name="qtyM3[]" type="number" step={unit === "m³" ? "0.5" : "1"} min={unit === "m³" ? "0.5" : "1"} placeholder="Hajmi"
@@ -384,9 +389,30 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-400">{unit}</span>
                     </span>
                     <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${unit}`} suffix={null} required />
+                    {/* Narx katagining o'ng tomonidagi tugma: bosilsa shu qator narxiga NDS 12% qo'shiladi */}
+                    <input type="hidden" name="nds[]" value={r.nds ? "1" : "0"} />
+                    <button
+                      type="button"
+                      onClick={() => update(r.key, { nds: !r.nds })}
+                      aria-pressed={r.nds}
+                      title={r.nds ? "NDS 12% qo'shilgan — bekor qilish" : "Narxga NDS 12% qo'shish"}
+                      className={cn("h-10 shrink-0 rounded-lg border px-2.5 text-xs font-semibold whitespace-nowrap transition",
+                        r.nds ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-900")}
+                    >
+                      {NDS_LABEL}
+                    </button>
                     <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto" aria-label="O'chirish"><X size={16} /></button>
                   </div>
                 </div>
+
+                {/* NDS belgilangan qatorda: soliq bilan narx va qator summasi ko'rinib turadi */}
+                {r.nds && Number(r.price) > 0 && (
+                  <div className="text-xs text-slate-600">
+                    {NDS_LABEL} qo&apos;shildi: narx <b>{money(withNds(Number(r.price)))}</b> / {unit}
+                    <span className="text-slate-500"> (NDS {money(ndsOf(Number(r.price)))})</span>
+                    {need > 0 && <span> · qator summasi <b>{money(need * withNds(Number(r.price)))}</b></span>}
+                  </div>
+                )}
 
                 {st && st.kind === "concrete" && (() => {
                   // Beton zakaz olingandan keyin tayyorlanadi — tayyor qoldiq muhim emas,
@@ -427,10 +453,19 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             );
           })}
         </div>
-        <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0" }])} className="mt-2 text-sm font-medium text-slate-700 hover:underline">
+        <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: false }])} className="mt-2 text-sm font-medium text-slate-700 hover:underline">
           <span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo&apos;shish</span>
         </button>
-        <div className="mt-3 text-right text-base font-semibold">Jami: {fmtNum(total)} so&apos;m</div>
+        {/* Jami: NDS belgilangan qator bo'lsa soliq alohida qator bo'lib ko'rinadi */}
+        {ndsSum > 0 ? (
+          <div className="mt-3 ml-auto w-full max-w-xs space-y-1 text-sm">
+            <div className="flex justify-between gap-3"><span className="text-slate-500">Summa (NDS&apos;siz)</span><b className="text-slate-900">{money(sumNoNds)}</b></div>
+            <div className="flex justify-between gap-3"><span className="text-slate-500">{NDS_LABEL}</span><b className="text-slate-900">{money(ndsSum)}</b></div>
+            <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 text-base font-semibold"><span>Jami ({NDS_LABEL} bilan)</span><span className="whitespace-nowrap">{fmtNum(total)} so&apos;m</span></div>
+          </div>
+        ) : (
+          <div className="mt-3 text-right text-base font-semibold">Jami: {fmtNum(total)} so&apos;m</div>
+        )}
 
         <ProductPicker
           open={pickFor !== null}

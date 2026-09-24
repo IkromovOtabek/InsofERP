@@ -7,7 +7,7 @@ import { fmtNum, isoDate } from "@/lib/format";
 import { useActionState, useState } from "react";
 import { createReceipt } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
-import { MaterialField, type MaterialRow } from "@/components/material-picker";
+import { MaterialField, type MaterialGroup, type MaterialRow } from "@/components/material-picker";
 import { MoneyInput } from "@/components/money-input";
 
 type Opt = { id: string; name: string };
@@ -16,7 +16,7 @@ type Row = { key: number; materialId: string; qty: string; price: string };
 
 type Account = Opt & { type: "CASH" | "BANK" };
 
-export function ReceiptForm({ suppliers, warehouses, materials, accounts }: { suppliers: Opt[]; warehouses: Opt[]; materials: Material[]; accounts: Account[] }) {
+export function ReceiptForm({ suppliers, warehouses, materials, groups = [], canCreate = false, accounts }: { suppliers: Opt[]; warehouses: Opt[]; materials: Material[]; groups?: MaterialGroup[]; canCreate?: boolean; accounts: Account[] }) {
   const [state, action, pending] = useActionState(createReceipt, undefined);
   const [rows, setRows] = useState<Row[]>([{ key: 1, materialId: "", qty: "", price: "" }]);
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -56,6 +56,8 @@ export function ReceiptForm({ suppliers, warehouses, materials, accounts }: { su
                   <input type="hidden" name="materialId[]" value={r.materialId} />
                   <MaterialField
                     materials={materials}
+                    groups={groups}
+                    canCreate={canCreate}
                     value={r.materialId}
                     onPick={(m) => update(r.key, { materialId: m.id, price: r.price || (m.price ? String(Math.round(m.price)) : "") })}
                   />

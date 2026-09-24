@@ -11,6 +11,7 @@ import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblo
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { saveContractFile, removeContractFile } from "@/lib/uploads";
+import { withNds } from "@/lib/nds";
 
 const schema = z.object({
   // Mijoz: mavjudini tanlash ("existing") yoki shu yerning o'zida yangi ochish ("new")
@@ -37,6 +38,8 @@ const schema = z.object({
   productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
   qtyM3: z.array(z.coerce.number().positive("miqdor 0 dan katta bo'lsin")),
   price: z.array(z.coerce.number().min(0)),
+  // Qator narxiga "NDS 12%" tugmasi bilan soliq qo'shilganmi ("1" / "0")
+  nds: z.array(z.string()).optional(),
 });
 
 export async function createOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -64,7 +67,13 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         deliveryAddress: d.deliveryAddress,
         lat: Number.isFinite(d.lat) ? d.lat : null,
         lng: Number.isFinite(d.lng) ? d.lng : null,
-        items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qtyM3[i]!, price: d.price[i]! })).filter((i) => i.productId),
+        // Narx NDS'siz kiritiladi; "NDS 12%" belgilangan qatorda soliq qo'shib saqlanadi
+        // (shunda limit, bosh to'lov, schyot va qarz mijoz to'laydigan summa bo'yicha ishlaydi).
+        items: d.productId.map((productId, i) => {
+          const nds = d.nds?.[i] === "1";
+          const price = d.price[i]!;
+          return { productId, qtyM3: d.qtyM3[i]!, price: nds ? withNds(price) : price, nds };
+        }).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,
         isUrgent: d.isUrgent,

@@ -59,7 +59,8 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
 
 // ───────────────────────── Yangi zayavka ─────────────────────────
 
-export type NewOrderItem = { productId: string; qtyM3: number; price: number };
+/** `price` — NDS qo'shilgan holdagi kelishilgan narx; `nds` — soliq qo'shilganini eslatib turadi. */
+export type NewOrderItem = { productId: string; qtyM3: number; price: number; nds?: boolean };
 export type NewOrderInput = {
   /** Mavjud mijoz; `newCustomer` berilsa bo'sh qoldiriladi. */
   customerId?: string;

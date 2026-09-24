@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, X } from "lucide-react";
 import { ExcelImport } from "@/components/excel-import";
-import { importCatalogProducts } from "@/app/(app)/orders/catalog-actions";
+import { importCatalogProducts } from "@/lib/catalog-actions";
 import { Button } from "@/components/ui";
 import { FIELD_SYNONYMS } from "@/lib/excel";
 import { PRODUCT_KINDS } from "@/lib/catalog";

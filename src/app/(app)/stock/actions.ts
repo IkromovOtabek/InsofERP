@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { num, str, codeFromName } from "@/lib/excel";
 import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
+import { ensureMaterialGroup } from "@/lib/material-groups";
 
 
 const schema = z.object({
@@ -16,7 +17,7 @@ const schema = z.object({
   cashAccountId: zOpt, // qaysi hisobdan to'landi (bo'sh — chiqim yozilmaydi)
   rows: z.string(),
 });
-type Row = { name?: unknown; code?: unknown; unit?: unknown; qty?: unknown; price?: unknown; minStock?: unknown };
+type Row = { name?: unknown; code?: unknown; unit?: unknown; qty?: unknown; price?: unknown; minStock?: unknown; group?: unknown };
 
 /** Excel'dan kelgan manfiy bo'lmagan raqam; bo'sh yoki xato bo'lsa `null` (qator baribir qo'shiladi). */
 const dec = (v: unknown) => { const n = num(v); return Number.isFinite(n) && n >= 0 ? n : null; };
@@ -58,14 +59,21 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
       const u = normalizeUnit(x.unit);
       const unit = u ?? UNIT_FALLBACK;
       // Bir nom bir marta yaratiladi; shu nomdagi qolgan qatorlar (boshqa narx/partiya) qoldiq bo'lib qo'shiladi
+      // "Papka" ustuni to'ldirilgan bo'lsa xomashyo shu papkaga tushadi (papka yo'q bo'lsa yaratiladi)
+      const folder = str(x.group);
+      const groupId = folder ? await ensureMaterialGroup(tx, folder) : null;
       let m = byKey.get(str(x.code).toLowerCase()) ?? byKey.get(key);
       if (m) {
-        if (minStock != null && Number(m.minStock) !== minStock) { m = await tx.material.update({ where: { id: m.id }, data: { minStock, isActive: true } }); updated++; }
+        const patch = {
+          ...(minStock != null && Number(m.minStock) !== minStock ? { minStock } : {}),
+          ...(groupId && m.groupId !== groupId ? { groupId } : {}),
+        };
+        if (Object.keys(patch).length) { m = await tx.material.update({ where: { id: m.id }, data: { ...patch, isActive: true } }); updated++; }
       } else {
         if (!u && str(x.unit) !== "") guessed++; // birlik tanilmadi — "dona" qo'yiladi
         let code = str(x.code).toUpperCase() || codeFromName(name);
         for (let n = 2; all.some((a) => a.code === code); n++) code = `${(str(x.code).toUpperCase() || codeFromName(name)).slice(0, 13)}-${n}`;
-        m = await tx.material.create({ data: { code, name, unit, minStock: minStock ?? 0, isActive: true } });
+        m = await tx.material.create({ data: { code, name, unit, minStock: minStock ?? 0, groupId, isActive: true } });
         all.push(m); byKey.set(code.toLowerCase(), m); byKey.set(key, m);
         await audit(tx, s.userId, "CREATE", "Material", m.id, undefined, { ...m, via: "stock-add" });
         created++;

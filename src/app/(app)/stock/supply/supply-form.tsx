@@ -4,13 +4,13 @@ import { useActionState, useMemo, useState } from "react";
 import { ClipboardList, MoreHorizontal, Plus, TriangleAlert, X } from "lucide-react";
 import { createRequest } from "@/lib/supply-actions";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
-import { MaterialPicker } from "@/components/material-picker";
+import { MaterialPicker, type MaterialGroup } from "@/components/material-picker";
 import { fmtNum } from "@/lib/format";
 import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 
 /** Spravochnikdagi xomashyo — qoldig'i va minimal chegarasi bilan (nima kamayganini shu yerda ko'rish uchun). */
-export type SupplyOpt = { id: string; name: string; code: string; unit: string; balance: number; minStock: number };
+export type SupplyOpt = { id: string; name: string; code: string; unit: string; balance: number; minStock: number; groupId?: string | null };
 
 type Row = { key: number; materialId: string | null; name: string; unit: string; qty: string; note: string };
 
@@ -18,8 +18,8 @@ const blank = (key: number): Row => ({ key, materialId: null, name: "", unit: "k
 const GRID = "lg:grid-cols-[minmax(220px,2fr)_110px_120px_minmax(160px,1fr)_32px]";
 
 /** Nomi katagi: terilganda spravochnik chiqadi; ro'yxatda yo'q nom ham yoziladi (qabulda shu nom bilan ochiladi). */
-function NameCell({ row, options, onPick, onText }: {
-  row: Row; options: SupplyOpt[]; onPick: (m: SupplyOpt) => void; onText: (v: string) => void;
+function NameCell({ row, options, groups, canCreate, onPick, onText }: {
+  row: Row; options: SupplyOpt[]; groups: MaterialGroup[]; canCreate: boolean; onPick: (m: SupplyOpt) => void; onText: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState(false);
@@ -43,7 +43,7 @@ function NameCell({ row, options, onPick, onText }: {
         className="absolute top-1/2 right-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
         <MoreHorizontal size={16} />
       </button>
-      <MaterialPicker open={modal} materials={options} initialQuery={row.name}
+      <MaterialPicker open={modal} materials={options} groups={groups} canCreate={canCreate} initialQuery={row.name}
         onPick={(m) => { const o = options.find((x) => x.id === m.id); if (o) onPick(o); }}
         onCreate={(name) => onText(name)} onClose={() => setModal(false)} />
       {open && list.length > 0 && (
@@ -70,9 +70,11 @@ function NameCell({ row, options, onPick, onText }: {
  * Sklad → «Kerakli mahsulotlar jadvali». Jadval snabjeniyega narx qo'yish uchun ketadi;
  * miqdorni sklad belgilaydi, narxni bu yerda umuman so'ramaymiz.
  */
-export function SupplyForm({ options, low, warehouses }: {
+export function SupplyForm({ options, low, groups = [], canCreate = false, warehouses }: {
   options: SupplyOpt[];
   low: SupplyOpt[]; // minimal chegaradan kam qolganlar — bitta bosishda jadvalga tushadi
+  groups?: MaterialGroup[];
+  canCreate?: boolean;
   warehouses: { id: string; name: string }[];
 }) {
   const [state, action, pending] = useActionState(createRequest, undefined);
@@ -122,7 +124,7 @@ export function SupplyForm({ options, low, warehouses }: {
             return (
               <div key={r.key} className={cn("grid grid-cols-1 items-start gap-2", GRID)}>
                 <div>
-                  <NameCell row={r} options={options}
+                  <NameCell row={r} options={options} groups={groups} canCreate={canCreate}
                     onPick={(m) => set(r.key, { materialId: m.id, name: m.name, unit: m.unit })}
                     onText={(v) => set(r.key, { name: v, materialId: null })} />
                   {picked ? (

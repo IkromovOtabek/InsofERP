@@ -4,12 +4,13 @@ import { X, Plus } from "lucide-react";
 
 import { useActionState, useState } from "react";
 import { createRecipeVersion } from "./actions";
-import { Button, Field, FormError, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
+import { MaterialField, type MaterialGroup } from "@/components/material-picker";
 
-type Material = { id: string; name: string; unit: string };
+type Material = { id: string; name: string; code: string; unit: string; groupId?: string | null };
 type Row = { key: number; materialId: string; qtyPerM3: string };
 
-export function RecipeForm({ productId, materials, initial, unit = "m³", returnTo }: { productId: string; materials: Material[]; initial: { materialId: string; qtyPerM3: string }[]; unit?: string; returnTo?: string }) {
+export function RecipeForm({ productId, materials, groups = [], canCreate = false, initial, unit = "m³", returnTo }: { productId: string; materials: Material[]; groups?: MaterialGroup[]; canCreate?: boolean; initial: { materialId: string; qtyPerM3: string }[]; unit?: string; returnTo?: string }) {
   const [state, action, pending] = useActionState(createRecipeVersion.bind(null, productId), undefined);
   const [rows, setRows] = useState<Row[]>(
     initial.length ? initial.map((i, k) => ({ key: k + 1, ...i })) : [{ key: 1, materialId: materials[0]?.id ?? "", qtyPerM3: "" }],
@@ -25,9 +26,11 @@ export function RecipeForm({ productId, materials, initial, unit = "m³", return
           const munit = materials.find((m) => m.id === r.materialId)?.unit ?? "";
           return (
             <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 xl:grid xl:grid-cols-[1fr_140px_50px_40px] xl:items-center xl:gap-2 xl:space-y-0 xl:border-0 xl:p-0">
-              <Select name="materialId[]" value={r.materialId} onChange={(e) => update(r.key, { materialId: e.target.value })}>
-                {materials.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </Select>
+              {/* Xomashyo skladdagi bilan bir xil 1C ro'yxatidan tanlanadi: nom terib ham, «…» orqali papkalardan ham */}
+              <div>
+                <input type="hidden" name="materialId[]" value={r.materialId} />
+                <MaterialField materials={materials} groups={groups} canCreate={canCreate} value={r.materialId} onPick={(m) => update(r.key, { materialId: m.id })} />
+              </div>
               <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2 xl:contents">
                 <Input name="qtyPerM3[]" type="number" step="0.001" min="0" value={r.qtyPerM3} onChange={(e) => update(r.key, { qtyPerM3: e.target.value })} required />
                 <span className="text-sm text-slate-500">{munit}/{unit}</span>

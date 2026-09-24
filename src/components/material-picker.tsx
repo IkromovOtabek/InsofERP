@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Minus, MousePointerClick, Search, X } from "lucide-react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FolderPlus, Minus, Plus } from "lucide-react";
+import { createCatalogMaterial, createMaterialGroup } from "@/lib/material-actions";
+import { FolderPicker, type PickerCtx, type PickerGroup } from "@/components/folder-picker";
 import { fmtNum } from "@/lib/format";
-import { unitLabel } from "@/lib/unit";
-import { Button, inputCls } from "@/components/ui";
+import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
+import { Button, Field, FormError, FormSuccess, Input, inputCls, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-export type MaterialRow = { id: string; name: string; code: string; unit: string; price?: number; balance?: number };
+export type MaterialRow = { id: string; name: string; code: string; unit: string; price?: number; balance?: number; groupId?: string | null };
+export type MaterialGroup = PickerGroup;
 
 /** Nom yoki kod bo'yicha filtr: avval nomi shu harflar bilan boshlanadiganlar. */
 function filterMaterials(list: MaterialRow[], term: string) {
@@ -19,112 +22,137 @@ function filterMaterials(list: MaterialRow[], term: string) {
   return [...starts, ...rest];
 }
 
+type Panel = "material" | "group" | null;
+
 /**
- * Xomashyo spravochnigi — 1C dagi oynaga o'xshash: qidiruv, ro'yxat, "Tanlash".
- * Yozilgan nom ro'yxatda bo'lmasa — shu nom bilan yangi xomashyo ochish taklif qilinadi.
+ * Xomashyo spravochnigi — mahsulot spravochnigi bilan bir xil 1C uslubidagi oyna
+ * (umumiy `FolderPicker`): papkalar, qidiruv, "Tanlash".
+ * `canCreate` bo'lsa shu oynadan yangi xomashyo va papka qo'shiladi.
+ * Yozilgan nom ro'yxatda bo'lmasa — shu nom bilan qatorga yozish taklif qilinadi (`onCreate`).
  */
-export function MaterialPicker({ open, materials, initialQuery, onPick, onCreate, onClose }: {
+export function MaterialPicker({ open, materials, groups = [], canCreate = false, initialQuery, onPick, onCreate, onClose }: {
   open: boolean;
   materials: MaterialRow[];
+  groups?: MaterialGroup[];
+  canCreate?: boolean;
   initialQuery?: string;
   onPick: (m: MaterialRow) => void;
   onCreate?: (name: string) => void;
   onClose: () => void;
 }) {
-  const [q, setQ] = useState(initialQuery ?? "");
-  const [sel, setSel] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const [panel, setPanel] = useState<Panel>(null);
+  useEffect(() => { if (!open) setPanel(null); }, [open]);
 
-  useEffect(() => setMounted(true), []);
-  useEffect(() => {
-    if (!open) return;
-    setQ(initialQuery ?? "");
-    setSel(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    searchRef.current?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, initialQuery, onClose]);
+  const toggle = (p: Panel) => setPanel((cur) => (cur === p ? null : p));
+  const afterCreate = () => { setPanel(null); router.refresh(); };
+  /** Qidiruvga yozilgan nom ro'yxatda bormi — bo'lmasa "«X» ni yangi qo'shish" taklif qilinadi. */
+  const isNew = (name: string) => !!name && !materials.some((m) => m.name.trim().toLowerCase() === name.toLowerCase());
 
-  const rows = useMemo(() => filterMaterials(materials, q).slice(0, 200), [materials, q]);
-  if (!open || !mounted) return null;
-
-  const pick = (m: MaterialRow) => { onPick(m); onClose(); };
-  const newName = q.trim();
-  const exact = materials.some((m) => m.name.trim().toLowerCase() === newName.toLowerCase());
-
-  return createPortal((
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onMouseDown={onClose}>
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-(--radius-card) border border-slate-200 bg-white shadow-(--shadow-pop)"
-        onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Xomashyo tanlash">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-          <h2 className="text-base font-semibold tracking-tight">XOMASHYO</h2>
-          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" aria-label="Yopish"><X size={18} /></button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-          <Button type="button" size="sm" disabled={!sel} onClick={() => { const m = materials.find((x) => x.id === sel); if (m) pick(m); }}>
-            <MousePointerClick size={15} /> Tanlash
-          </Button>
-          {onCreate && newName && !exact && (
-            <Button type="button" size="sm" variant="secondary" onClick={() => { onCreate(newName); onClose(); }}>
-              «{newName}» ni yangi qo&apos;shish
+  return (
+    <FolderPicker
+      open={open}
+      title="XOMASHYO"
+      ariaLabel="Xomashyo tanlash"
+      nameLabel="Nomi"
+      cols={[
+        { label: "Birlik", className: "w-24" },
+        { label: "Qoldiq", className: "w-32", right: true },
+        { label: "Kod", className: "w-32", right: true },
+      ]}
+      items={materials.map((m) => ({
+        id: m.id, name: m.name, code: m.code, groupId: m.groupId ?? null,
+        cells: [unitLabel(m.unit), m.balance != null ? fmtNum(m.balance, 3) : "—", m.code],
+      }))}
+      groups={groups}
+      initialQuery={initialQuery}
+      emptyText={materials.length === 0 ? "Skladda hali xomashyo yo'q" : "Bu papka bo'sh"}
+      noMatchText="Mos xomashyo topilmadi"
+      footerHint="Papkani ochish yoki xomashyoni tanlash — ikki marta bosing"
+      onPick={(id) => { const m = materials.find((x) => x.id === id); if (m) onPick(m); }}
+      onClose={onClose}
+      tools={(ctx) => (
+        <>
+          {canCreate && (
+            <>
+              <Button type="button" size="sm" variant="secondary" onClick={() => toggle("material")}>
+                <Plus size={15} /> Yangi
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => toggle("group")} title="Yangi papka">
+                <FolderPlus size={15} /> Papka
+              </Button>
+            </>
+          )}
+          {/* Qatorga yozilgan nom ro'yxatda yo'q — shu nom bilan davom etish (qo'shilishi saqlashda bo'ladi) */}
+          {onCreate && isNew(ctx.query) && (
+            <Button type="button" size="sm" variant="ghost" onClick={() => { onCreate(ctx.query); onClose(); }}>
+              «{ctx.query}» ni yangi qo&apos;shish
             </Button>
           )}
-          <div className="relative min-w-52 flex-1">
-            <Search size={15} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-400" />
-            <input ref={searchRef} value={q} onChange={(e) => { setQ(e.target.value); setSel(null); }} placeholder="Qidirish (nomi yoki kodi)" className={cn(inputCls, "pr-8 pl-8")} />
-            {q && <button type="button" onClick={() => setQ("")} className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-700" aria-label="Tozalash"><X size={15} /></button>}
-          </div>
-        </div>
+        </>
+      )}
+      panel={(ctx) => {
+        if (!canCreate || !panel) return null;
+        return panel === "group"
+          ? <NewGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />
+          : <NewMaterialForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+      }}
+    />
+  );
+}
 
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase">
-              <tr>
-                <th className="px-4 py-2">Nomi</th>
-                <th className="w-24 px-4 py-2">Birlik</th>
-                <th className="w-32 px-4 py-2 text-right">Qoldiq</th>
-                <th className="w-32 px-4 py-2 text-right">Kod</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                  {materials.length === 0 ? "Skladda hali xomashyo yo'q" : "Mos xomashyo topilmadi"}
-                </td></tr>
-              )}
-              {rows.map((m) => (
-                <tr key={m.id} onClick={() => setSel(m.id)} onDoubleClick={() => pick(m)}
-                  className={cn("cursor-pointer border-b border-slate-100", sel === m.id ? "bg-slate-900 text-white" : "hover:bg-slate-50")}>
-                  <td className="px-4 py-1.5">
-                    <span className="inline-flex items-center gap-2"><Minus size={15} className={sel === m.id ? "text-slate-300" : "text-slate-400"} />{m.name}</span>
-                  </td>
-                  <td className={cn("px-4 py-1.5", sel === m.id ? "text-slate-200" : "text-slate-600")}>{unitLabel(m.unit)}</td>
-                  <td className={cn("px-4 py-1.5 text-right tabular", sel === m.id ? "text-slate-200" : "text-slate-600")}>{m.balance != null ? fmtNum(m.balance, 3) : "—"}</td>
-                  <td className={cn("px-4 py-1.5 text-right tabular", sel === m.id ? "text-slate-200" : "text-slate-500")}>{m.code}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-2.5 text-xs text-slate-500">
-          <span>Tanlash uchun qatorga ikki marta bosing</span>
-          <Button type="button" size="sm" variant="secondary" onClick={onClose}>Yopish</Button>
-        </div>
+function NewGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
+  const [state, action, pending] = useActionState(createMaterialGroup, undefined);
+  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
+  return (
+    <form action={action} className="space-y-2">
+      <input type="hidden" name="parentId" value={ctx.groupId ?? ""} />
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Papka nomi *" className="min-w-52 flex-1"><Input name="name" required autoComplete="off" placeholder="Masalan: Inertlar" /></Field>
+        <Field label="Kod" hint="bo'sh qoldirsangiz — avtomatik" className="w-28"><Input name="code" autoComplete="off" /></Field>
+        <Button size="sm" disabled={pending}><FolderPlus size={15} /> Qo&apos;shish</Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
       </div>
-    </div>
-  ), document.body);
+      <p className="text-xs text-slate-600">Joylashuvi: <b>{ctx.groupName ?? "Ro'yxat ildizi"}</b></p>
+      <FormError error={state?.error} />
+    </form>
+  );
+}
+
+function NewMaterialForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
+  const [state, action, pending] = useActionState(createCatalogMaterial, undefined);
+  useEffect(() => { if (state?.ok && !state.note) onDone(); }, [state, onDone]);
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="groupId" value={ctx.groupId ?? ""} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <Field label="Kod" hint="bo'sh bo'lsa nomdan"><Input name="code" autoComplete="off" placeholder="CEM400" /></Field>
+        <Field label="Xomashyo nomi *" className="sm:col-span-3"><Input name="name" required autoComplete="off" placeholder="Masalan: Sement M400" /></Field>
+        <Field label="O'lchov birligi *">
+          <Select name="unit" defaultValue="kg">{MATERIAL_UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}</Select>
+        </Field>
+        <Field label="Minimal qoldiq" hint="kam qolsa signal"><Input name="minStock" type="number" step="0.001" min="0" placeholder="0" /></Field>
+        <Field label="Papka" className="sm:col-span-2"><Input value={ctx.groupName ?? "Ro'yxat ildizi"} readOnly /></Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={pending}><Plus size={15} /> Saqlash</Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
+        <span className="text-xs text-slate-600">Qoldiqni <b>Xomashyo qo&apos;shish</b> jadvalidan kiritasiz.</span>
+      </div>
+      <FormError error={state?.error} />
+      <FormSuccess text={state?.ok ? state.note : undefined} />
+    </form>
+  );
 }
 
 /**
  * Xomashyo maydoni: yozilgan har bir harf bo'yicha ro'yxat qisqaradi,
- * oxiridagi "…" tugmasi to'liq spravochnikni ochadi.
+ * oxiridagi "…" tugmasi to'liq spravochnikni (papkalari bilan) ochadi.
  */
-export function MaterialField({ materials, value, onPick, placeholder }: {
+export function MaterialField({ materials, groups, canCreate, value, onPick, placeholder }: {
   materials: MaterialRow[];
+  groups?: MaterialGroup[];
+  canCreate?: boolean;
   value: string; // tanlangan xomashyo id'si
   onPick: (m: MaterialRow) => void;
   placeholder?: string;
@@ -182,7 +210,7 @@ export function MaterialField({ materials, value, onPick, placeholder }: {
         </div>
       )}
 
-      <MaterialPicker open={modal} materials={materials} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />
+      <MaterialPicker open={modal} materials={materials} groups={groups} canCreate={canCreate} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Minus } from "lucide-react";
-import type { CatalogProduct } from "./product-picker";
+import type { CatalogProduct } from "@/components/product-picker";
 import { inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
 

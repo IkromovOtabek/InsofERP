@@ -10,23 +10,24 @@ import { MaterialsForm, type MaterialOpt } from "../materials-form";
 import { cn } from "@/lib/utils";
 
 const MODES = [
-  { key: "excel", label: "Excel orqali", icon: FileSpreadsheet, text: "8 ta ustun: nomi, kodi, birlik, qoldiq, narx, minimal, NDS, summa. Faylingizda boshqa ustun bo'lsa — «+ Ustun qo'shish» bilan nomini yozib qo'shasiz. Bir xil qatorlar birlashtirilib miqdorlari qo'shiladi; NDS va summa faylda bo'lmasa o'zi hisoblanadi." },
+  { key: "excel", label: "Excel orqali", icon: FileSpreadsheet, text: "9 ta ustun: nomi, kodi, birlik, qoldiq, narx, minimal, papka, NDS, summa. Faylingizda boshqa ustun bo'lsa — «+ Ustun qo'shish» bilan nomini yozib qo'shasiz. Bir xil qatorlar birlashtirilib miqdorlari qo'shiladi; NDS va summa faylda bo'lmasa o'zi hisoblanadi." },
   { key: "manual", label: "Qo'lda kiritish", icon: PencilLine, text: "Nomini yozganda mavjud xomashyolar chiqadi (yoki «…» tugmasi orqali tanlaysiz) — kodi, birligi va narxi o'zi to'ladi. Pastdan qator qo'shasiz." },
 ] as const;
 
 /** Sklad → Xomashyo qo'shish: Excel yoki qo'lda. Xomashyo ro'yxati + boshlang'ich qoldiq; retseptlar shu xomashyolarga tayanadi. */
 export default async function StockMaterialsNew({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
-  await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
   const { mode } = await searchParams;
-  const [warehouses, materials, costs, accounts] = await Promise.all([
+  const [warehouses, materials, groups, costs, accounts] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true } }),
-    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true } }),
+    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true, groupId: true } }),
+    db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     // Oxirgi narx sifatida kirim/boshlang'ich qoldiqlarning o'rtacha birlik narxi olinadi
     db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _avg: { unitCost: true } }),
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
   ]);
   const avg = new Map(costs.map((c) => [c.materialId, Number(c._avg.unitCost ?? 0)]));
-  const existing: MaterialOpt[] = materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, price: avg.get(m.id) ?? 0, minStock: Number(m.minStock) }));
+  const existing: MaterialOpt[] = materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, price: avg.get(m.id) ?? 0, minStock: Number(m.minStock), groupId: m.groupId }));
   const current = MODES.find((m) => m.key === mode)?.key;
   const whSelect = (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -65,7 +66,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
             action={importMaterials}
             submitLabel="Xomashyolarni qo'shish"
             templateName="xomashyo-namuna"
-            example={{ name: "Sement M400", code: "CEM400", unit: "kg", qty: 20000, price: 1200, minStock: 5000, nds: 2880000, sum: 24000000 }}
+            example={{ name: "Sement M400", code: "CEM400", unit: "kg", qty: 20000, price: 1200, minStock: 5000, group: "Sement", nds: 2880000, sum: 24000000 }}
             amountCols={{ qtyKey: "qty", priceKey: "price", sumKey: "sum", ndsKey: "nds", rate: 0.12, fill: true }}
             merge={{ sum: ["qty", "nds", "sum"], unitKeys: ["unit"] }}
             allowExtra
@@ -76,6 +77,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
               { key: "qty", label: "Qoldiq", hint: "boshlang'ich qoldiq (ixtiyoriy)", synonyms: ["qoldiq", "остаток", ...FIELD_SYNONYMS.qty] },
               { key: "price", label: "Narx (birlik)", synonyms: FIELD_SYNONYMS.price },
               { key: "minStock", label: "Minimal qoldiq", hint: "kam qolsa signal", synonyms: ["minimal", "min", "минимал", "мин"] },
+              { key: "group", label: "Papka", hint: "bo'sh bo'lsa — ro'yxat ildizida; «Inertlar / Qum» — papka ichida papka", synonyms: ["papka", "guruh", "group", "папка", "группа", "kategoriya", "категор", "razdel", "раздел", "bo'lim"] },
               { key: "nds", label: "NDS", hint: "faylda bo'lmasa 12% hisoblanadi", synonyms: FIELD_SYNONYMS.nds },
               { key: "sum", label: "Summa", hint: "faylda bo'lmasa qoldiq × narx", synonyms: FIELD_SYNONYMS.sum },
             ]}
@@ -85,7 +87,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
         </Card>
       )}
 
-      {current === "manual" && <Card><MaterialsForm existing={existing}>{whSelect}</MaterialsForm></Card>}
+      {current === "manual" && <Card><MaterialsForm existing={existing} groups={groups} canCreate={["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(s.role)}>{whSelect}</MaterialsForm></Card>}
     </div>
   );
 }

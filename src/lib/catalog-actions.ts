@@ -12,11 +12,12 @@ import { PRODUCT_KINDS } from "@/lib/catalog";
 import type { Prisma } from "@/generated/prisma";
 
 /**
- * Mahsulot spravochnigi — zayavka ochayotganda "..." tugmasidan ochiladigan tanlagich.
- * Papka va mahsulot shu yerdan qo'shiladi, shuning uchun sotuvchiga ham ruxsat bor
- * (Sozlamalardagi "Beton markalari" avvalgidek faqat direktorda).
+ * Mahsulot spravochnigi — zayavkada, skladda va ishlab chiqarishda "..." tugmasidan
+ * ochiladigan bir xil tanlagich. Papka va mahsulot shu yerdan qo'shiladi, shuning uchun
+ * sotuvchi va sklad xodimiga ham ruxsat bor (Sozlamalardagi "Beton markalari" —
+ * avvalgidek faqat direktorda).
  */
-const CATALOG_ROLES = ["SALES", "PRODUCTION", "DIRECTOR"] as const;
+const CATALOG_ROLES = ["SALES", "PRODUCTION", "WAREHOUSE", "DIRECTOR"] as const;
 
 /** Kod berilmasa — ro'yxatdagi eng katta raqamli koddan keyingisi (1C dagidek). */
 async function nextCatalogCode(tx: Prisma.TransactionClient): Promise<string> {
@@ -68,28 +69,30 @@ const productSchema = z.object({
   note: zOpt,
 });
 
-/** Yangi mahsulot — tanlagichdagi "Yangi" tugmasi. Ochiq papka ichiga tushadi. */
+/**
+ * Yangi mahsulot — tanlagichdagi "Yangi" tugmasi. Ochiq papka ichiga tushadi.
+ * Shu nomli (yoki kodli) mahsulot allaqachon bo'lsa dublikat ochilmaydi — mavjudi yangilanadi.
+ */
 export async function createCatalogProduct(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession([...CATALOG_ROLES]);
   const r = parseForm(productSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
+  let merged = false;
   try {
     await db.$transaction(async (tx) => {
-      const p = await tx.product.create({
-        data: {
-          name: d.name, kind: d.kind, unit: d.unit, price: d.price, groupId: d.groupId, note: d.note,
-          code: (d.code ?? (await nextCatalogCode(tx))).toUpperCase(),
-        },
-      });
-      await audit(tx, s.userId, "CREATE", "Product", p.id, undefined, p);
+      const w = await catalogWriter(tx, s.userId, d.groupId);
+      const res = await w.put({ name: d.name, code: d.code ?? undefined, kind: d.kind, unit: d.unit, price: d.price, note: d.note, groupId: d.groupId });
+      merged = res === "updated";
     });
   } catch (e) {
     if (String(e).includes("Unique constraint")) return { error: "Bu kod bilan mahsulot bor" };
     throw e;
   }
   refresh();
-  return { ok: true };
+  return merged
+    ? { ok: true, note: `«${d.name}» ro'yxatda bor edi — yangisi ochilmadi, mavjudi yangilandi.` }
+    : { ok: true };
 }
 
 /* ───────── Ko'p mahsulotni birdan yozish (Excel va matritsa uchun umumiy) ───────── */
@@ -298,9 +301,78 @@ export async function createProductMatrix(_prev: ActionState, fd: FormData): Pro
   return { ok: true, note: doneNote(out.created, out.updated, out.newGroups) };
 }
 
+
+/* ───────── Bir xil nomli mahsulotlarni birlashtirish ───────── */
+
+const mergeSchema = z.object({ pairs: z.string() });
+type MergePair = { keepId?: unknown; dropIds?: unknown };
+
+/**
+ * Dublikatlarni bitta mahsulotga yig'adi: qaysi yozuv qoladi — foydalanuvchi tanlaydi
+ * ("Dublikat" panelidagi nuqta). Qolgan yozuvlardagi hujjatlar (zayavka qatorlari, zameslar,
+ * sklad harakatlari, retseptlar, saytdan kelgan so'rovlar) qoladigan mahsulotga ko'chiriladi,
+ * keyin ortiqcha yozuvlar o'chiriladi — shuning uchun qaysi birini qoldirsa ham hech narsa yo'qolmaydi.
+ * Ko'chirilgan retseptlar arxiv bo'lib qoladi (faol retsept bittaligi buzilmasin).
+ */
+export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...CATALOG_ROLES]);
+  const r = parseForm(mergeSchema, fd);
+  if ("error" in r) return { error: r.error };
+  let pairs: MergePair[];
+  try { pairs = JSON.parse(r.data.pairs); } catch { return { error: "Tanlov o'qilmadi" }; }
+
+  const jobs = pairs
+    .map((p) => ({ keepId: str(p.keepId), dropIds: Array.isArray(p.dropIds) ? p.dropIds.map((x) => str(x)).filter(Boolean) : [] }))
+    .filter((p) => p.keepId && p.dropIds.length && !p.dropIds.includes(p.keepId));
+  if (!jobs.length) return { error: "Birlashtirish uchun mahsulot tanlanmadi" };
+
+  const out = await db.$transaction(async (tx) => {
+    let merged = 0, moved = 0;
+    for (const job of jobs) {
+      const keep = await tx.product.findUnique({ where: { id: job.keepId } });
+      if (!keep) continue;
+      for (const dropId of job.dropIds) {
+        const drop = await tx.product.findUnique({ where: { id: dropId } });
+        if (!drop || drop.id === keep.id) continue;
+
+        const [items, batches, moves, leads, recipes, keepRecipes] = await Promise.all([
+          tx.orderItem.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
+          tx.productionBatch.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
+          tx.stockMove.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
+          tx.lead.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
+          tx.recipe.findMany({ where: { productId: dropId }, orderBy: { version: "asc" } }),
+          tx.recipe.findMany({ where: { productId: keep.id }, select: { version: true, isActive: true } }),
+        ]);
+        // Retsept versiyasi mahsulot bo'yicha yagona — ko'chirishda keyingi raqam beriladi
+        let version = keepRecipes.reduce((a, b) => Math.max(a, b.version), 0);
+        let hasActive = keepRecipes.some((x) => x.isActive);
+        for (const rec of recipes) {
+          version++;
+          const keepActive = rec.isActive && !hasActive; // qoladigan mahsulotda faol retsept bo'lmasa — birinchisi faol qoladi
+          if (keepActive) hasActive = true;
+          await tx.recipe.update({ where: { id: rec.id }, data: { productId: keep.id, version, isActive: keepActive } });
+        }
+        await tx.product.delete({ where: { id: dropId } });
+        await audit(tx, s.userId, "DELETE", "Product", dropId, drop, { mergedInto: keep.id, keepName: keep.name });
+        merged++;
+        moved += items.count + batches.count + moves.count + leads.count + recipes.length;
+      }
+      await audit(tx, s.userId, "UPDATE", "Product", keep.id, undefined, { mergedFrom: job.dropIds });
+    }
+    return { merged, moved };
+  }, { timeout: 120_000, maxWait: 20_000 });
+
+  if (!out.merged) return { error: "Birlashtiriladigan mahsulot topilmadi (ehtimol allaqachon birlashtirilgan)" };
+  refresh();
+  return { ok: true, note: `${out.merged} ta ortiqcha yozuv birlashtirildi, ${out.moved} ta hujjat qatori ko'chirildi.` };
+}
+
+/** Spravochnik o'zgargach mahsulot ro'yxati ko'rinadigan hamma sahifa yangilanadi. */
 function refresh() {
   revalidatePath("/orders/new");
   revalidatePath("/settings");
   revalidatePath("/stock");
+  revalidatePath("/stock/products/new");
+  revalidatePath("/production/new");
   revalidatePath("/recipes");
 }

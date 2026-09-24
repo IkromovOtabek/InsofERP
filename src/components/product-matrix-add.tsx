@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Grid3x3, Plus, X } from "lucide-react";
-import { createProductMatrix } from "@/app/(app)/orders/catalog-actions";
+import { createProductMatrix } from "@/lib/catalog-actions";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { PRODUCT_KINDS } from "@/lib/catalog";
 import { MoneyInput } from "@/components/money-input";
@@ -23,7 +23,7 @@ const buildName = (tpl: string, row: string, col: string) =>
 
 const PLACEHOLDER_ROWS = "M200\nM250\nM300";
 const PLACEHOLDER_COLS = "1,5 m\n2 m\n3 m";
-const SEP = ""; // qator/ustun kalitini ajratish uchun (nomlarda uchramaydi)
+const SEP = "\u0001"; // qator/ustun kalitini ajratish uchun (nomlarda uchramaydi)
 const MAX = 500; // serverdagi cheklov bilan bir xil: bir urinishda shuncha mahsulot
 
 /**

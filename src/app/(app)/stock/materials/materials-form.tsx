@@ -4,12 +4,12 @@ import { useActionState, useMemo, useState } from "react";
 import { Plus, X, PackagePlus, MoreHorizontal } from "lucide-react";
 import { importMaterials } from "../actions";
 import { Button, FormError, Input, Select } from "@/components/ui";
-import { MaterialPicker } from "@/components/material-picker";
+import { MaterialPicker, type MaterialGroup } from "@/components/material-picker";
 import { fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Skladda mavjud xomashyo — nomi terilganda taklif qilinadi, tanlansa kodi, birligi va narxi o'zi to'ladi. */
-export type MaterialOpt = { id: string; name: string; code: string; unit: string; price: number; minStock: number };
+export type MaterialOpt = { id: string; name: string; code: string; unit: string; price: number; minStock: number; groupId?: string | null };
 
 type Row = { key: number; name: string; code: string; unit: string; qty: string; price: string; minStock: string; matId: string | null };
 const UNITS: [string, string][] = [["kg", "kg"], ["t", "t"], ["l", "l"], ["m3", "m³"], ["dona", "dona"], ["m", "m"], ["m2", "m²"]];
@@ -27,8 +27,8 @@ const amount = (r: Row) => {
  * Nomi katagi: bosh harf terilganda mavjud xomashyolar chiqadi, o'ng chetidagi «…» tugmasi
  * butun ro'yxatni ochadi. Tanlangan xomashyoning kodi, birligi va oxirgi narxi qatorga o'zi yoziladi.
  */
-function NamePicker({ row, options, onPick, onText }: {
-  row: Row; options: MaterialOpt[]; onPick: (m: MaterialOpt) => void; onText: (v: string) => void;
+function NamePicker({ row, options, groups, canCreate, onPick, onText }: {
+  row: Row; options: MaterialOpt[]; groups: MaterialGroup[]; canCreate: boolean; onPick: (m: MaterialOpt) => void; onText: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState(false); // «…» bosilgan — to'liq spravochnik oynasi
@@ -58,6 +58,8 @@ function NamePicker({ row, options, onPick, onText }: {
       <MaterialPicker
         open={modal}
         materials={options}
+        groups={groups}
+        canCreate={canCreate}
         initialQuery={row.name}
         onPick={(m) => onPick(options.find((o) => o.id === m.id) ?? (m as MaterialOpt))}
         onCreate={(name) => onText(name)}
@@ -97,7 +99,7 @@ function CalcCell({ label, value, strong }: { label: string; value: number; stro
 }
 
 /** Qo'lda xomashyo qo'shish: bir nechta qator birdan, saqlanganda ro'yxatga tushadi va boshlang'ich qoldiq yoziladi. */
-export function MaterialsForm({ children, existing = [] }: { children?: React.ReactNode; existing?: MaterialOpt[] }) {
+export function MaterialsForm({ children, existing = [], groups = [], canCreate = false }: { children?: React.ReactNode; existing?: MaterialOpt[]; groups?: MaterialGroup[]; canCreate?: boolean }) {
   const [state, action, pending] = useActionState(importMaterials, undefined);
   const [rows, setRows] = useState<Row[]>([blank(1)]);
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -123,7 +125,7 @@ export function MaterialsForm({ children, existing = [] }: { children?: React.Re
           const a = amount(r);
           return (
           <div key={r.key} className={cn("grid grid-cols-2 gap-2 rounded-lg border border-slate-100 p-2 xl:items-center xl:border-0 xl:p-0", GRID)}>
-            <NamePicker row={r} options={existing} onPick={(m) => pick(r.key, m)} onText={(v) => update(r.key, { name: v, matId: null })} />
+            <NamePicker row={r} options={existing} groups={groups} canCreate={canCreate} onPick={(m) => pick(r.key, m)} onText={(v) => update(r.key, { name: v, matId: null })} />
             <Input placeholder="avto" value={r.code} onChange={(e) => update(r.key, { code: e.target.value, matId: null })} />
             <Select value={r.unit} onChange={(e) => update(r.key, { unit: e.target.value })}>{UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
             <Input type="number" step="0.001" min="0" placeholder="0" value={r.qty} onChange={(e) => update(r.key, { qty: e.target.value })} />

@@ -8,10 +8,11 @@ import { unitLabel } from "@/lib/unit";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  await requireSession(["PRODUCTION"]);
-  const [p, materials] = await Promise.all([
+  const s = await requireSession(["PRODUCTION"]);
+  const [p, materials, groups] = await Promise.all([
     db.product.findUnique({ where: { id: productId }, include: { recipes: { orderBy: { version: "desc" }, include: { items: { include: { material: true } } } } } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
   ]);
   if (!p) notFound();
   const active = p.recipes.find((r) => r.isActive);
@@ -26,7 +27,7 @@ export default async function RecipePage({ params }: { params: Promise<{ product
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>
-          <RecipeForm productId={productId} unit={unitLabel(p.unit)} materials={materials.map((m) => ({ id: m.id, name: m.name, unit: m.unit }))} initial={active ? active.items.map((i) => ({ materialId: i.materialId, qtyPerM3: i.qtyPerM3.toString() })) : []} />
+          <RecipeForm productId={productId} unit={unitLabel(p.unit)} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId }))} groups={groups} canCreate={["PRODUCTION", "DIRECTOR"].includes(s.role)} initial={active ? active.items.map((i) => ({ materialId: i.materialId, qtyPerM3: i.qtyPerM3.toString() })) : []} />
         </Card>
         <div>
           <h2 className="mb-3 font-semibold">Versiyalar tarixi</h2>
