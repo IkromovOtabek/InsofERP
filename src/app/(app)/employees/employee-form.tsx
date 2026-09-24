@@ -167,11 +167,10 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
   const reset = () => { ref.current?.reset(); setPosition(departments[0]?.label ?? ""); setFullName(""); setPicked(null); };
   useEffect(() => { if (state?.ok) reset(); }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Lavozimi boshqa xodim tanlansa — lavozim shu xodimning lavozimiga tenglashadi (ro'yxat bir xil bo'lsin)
-  const pick = (x: StaffOpt | null) => {
-    setPicked(x);
-    if (x && x.position.trim().toLowerCase() !== position.trim().toLowerCase()) setPosition(x.position);
-  };
+  // Xodim tanlanganda tanlangan lavozim o'zgarmaydi: aynan shu lavozim beriladi
+  // (aks holda login beradigan bo'lim ishchi lavozimga almashib, login katagi yopilib qolardi).
+  // Xodimning eski lavozimi faqat izohda ko'rsatiladi.
+  const pick = (x: StaffOpt | null) => setPicked(x);
 
   return (
     <form ref={ref} action={action} className="space-y-3">
@@ -184,12 +183,19 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
         <Field label="Lavozim *"><PositionSelect departments={departments} work={[...new Set([...work, ...drivers])]} value={position} onChange={setPosition} /></Field>
         <Field label="Telefon" hint={isDriver ? "Ilovaga kirish kaliti" : undefined}><Input name="phone" placeholder="+998 90 123 45 67" defaultValue={picked?.phone ?? ""} key={picked?.id ?? "new"} /></Field>
         <Field label="Ishga kirgan sana"><Input name="hiredAt" type="date" /></Field>
-        <Button disabled={pending || (needsLogin && !canGrant)}><Plus size={16} /> {picked ? "Login berish" : "Qo'shish"}</Button>
+        <Button disabled={pending || (needsLogin && !canGrant)}>
+          <Plus size={16} /> {picked ? (showLogin ? "Login berish" : "Lavozimni belgilash") : "Qo'shish"}
+        </Button>
       </div>
       {picked && (
         <p className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          <b>{picked.fullName}</b> ro&apos;yxatda bor ({picked.position}) — yangi karta ochilmaydi, shu xodimga login beriladi
-          {picked.position.trim().toLowerCase() !== position.trim().toLowerCase() && <> va lavozimi «{position}» ga o&apos;zgaradi</>}.
+          <b>{picked.fullName}</b> ro&apos;yxatda bor — yangi karta ochilmaydi.
+          {picked.position.trim().toLowerCase() !== position.trim().toLowerCase()
+            ? <> Lavozimi: «{picked.position}» → <b>«{position}»</b>.</>
+            : <> Lavozimi: <b>«{position}»</b>.</>}
+          {showLogin
+            ? " Pastdagi login va parol shu xodimga beriladi."
+            : " Bu lavozim tizimga kirmaydi — login berish uchun bo'lim lavozimini tanlang (yoki Otdel kadrda lavozimni «haydovchi ilovasiga chiqadi» deb belgilang)."}
           <button type="button" onClick={() => { setPicked(null); setFullName(""); }} className="font-medium underline">bekor qilish</button>
         </p>
       )}
