@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Saira, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Saira, Exo_2, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { getCompany } from "@/lib/company";
 
 /**
@@ -19,8 +19,11 @@ import { getCompany } from "@/lib/company";
  */
 
 const saira = Saira({ subsets: ["latin", "latin-ext"], variable: "--font-saira", display: "swap" });
-const plexSans = IBM_Plex_Sans({ subsets: ["latin", "latin-ext"], weight: ["400", "500", "600"], variable: "--font-plex-sans", display: "swap" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin", "latin-ext"], weight: ["400", "500", "600"], variable: "--font-plex-mono", display: "swap" });
+// Saira'da kirill yo'q — ruscha taqdimot sarlavhalari uchun o'xshash texnik shrift (Exo 2)
+const exo2 = Exo_2({ subsets: ["latin", "cyrillic"], variable: "--font-exo2", display: "swap" });
+// Plex'da kirill bor — taqdimot ruscha ochilganda matn va raqamlar shu shriftda qoladi
+const plexSans = IBM_Plex_Sans({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-plex-sans", display: "swap" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-plex-mono", display: "swap" });
 
 export async function generateMetadata(): Promise<Metadata> {
   const c = await getCompany();
@@ -35,7 +38,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`site ${saira.variable} ${plexSans.variable} ${plexMono.variable} min-h-screen bg-beton-100 text-beton-900`}>
+    <div className={`site ${saira.variable} ${exo2.variable} ${plexSans.variable} ${plexMono.variable} min-h-screen bg-beton-100 text-beton-900`}>
       {children}
     </div>
   );

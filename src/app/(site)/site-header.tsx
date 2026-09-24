@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { AnimatePresence, motion } from "framer-motion";
 import { LogIn, Mail, Menu, Phone, Presentation, X } from "lucide-react";
 
 const LINKS = [
@@ -95,7 +96,13 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
                 className={`relative py-2 text-[15px] font-medium whitespace-nowrap transition-colors ${active === id ? "text-insof-700" : "text-beton-700 hover:text-insof-600"}`}
               >
                 {label}
-                <span className={`absolute -bottom-px left-0 h-0.5 bg-signal transition-all duration-300 ${active === id ? "w-full" : "w-0"}`} />
+                {active === id && (
+                  <motion.span
+                    layoutId="nav-underline"
+                    className="absolute -bottom-px left-0 h-0.5 w-full bg-signal"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  />
+                )}
               </a>
             ))}
 
@@ -142,41 +149,51 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
         </div>
       </div>
 
-      {open && (
-        <nav className="border-b border-beton-200 bg-white px-4 pt-2 pb-8 sm:px-6 lg:hidden">
-          {LINKS.map(([id, label]) => (
-            <a
-              key={id}
-              href={`#${id}`}
-              onClick={() => setOpen(false)}
-              className="block border-b border-beton-200 py-4 text-lg font-semibold text-beton-900"
-            >
-              {label}
-            </a>
-          ))}
-          <Link
-            href="/taqdimot"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 border-b border-beton-200 py-4 text-lg font-semibold text-beton-900"
+      <AnimatePresence>
+        {open && (
+          <motion.nav
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden border-b border-beton-200 bg-white lg:hidden"
           >
-            <Presentation size={18} className="text-signal-dim" /> Taqdimot (PPT)
-          </Link>
-          <a
-            href="#ariza"
-            onClick={() => setOpen(false)}
-            className="mt-6 flex h-12 items-center justify-center rounded-md bg-signal text-sm font-semibold text-white"
-          >
-            Narx so&apos;rash
-          </a>
-          <Link
-            href="/login"
-            onClick={() => setOpen(false)}
-            className="mt-3 flex h-12 items-center justify-center gap-2 rounded-md border border-beton-300 text-sm font-semibold text-beton-800"
-          >
-            <LogIn size={16} /> Kirish
-          </Link>
-        </nav>
-      )}
+            <div className="px-4 pt-2 pb-8 sm:px-6">
+              {LINKS.map(([id, label]) => (
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  onClick={() => setOpen(false)}
+                  className="block border-b border-beton-200 py-4 text-lg font-semibold text-beton-900"
+                >
+                  {label}
+                </a>
+              ))}
+              <Link
+                href="/taqdimot"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2 border-b border-beton-200 py-4 text-lg font-semibold text-beton-900"
+              >
+                <Presentation size={18} className="text-signal-dim" /> Taqdimot (PPT)
+              </Link>
+              <a
+                href="#ariza"
+                onClick={() => setOpen(false)}
+                className="mt-6 flex h-12 items-center justify-center rounded-md bg-signal text-sm font-semibold text-white"
+              >
+                Narx so&apos;rash
+              </a>
+              <Link
+                href="/login"
+                onClick={() => setOpen(false)}
+                className="mt-3 flex h-12 items-center justify-center gap-2 rounded-md border border-beton-300 text-sm font-semibold text-beton-800"
+              >
+                <LogIn size={16} /> Kirish
+              </Link>
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

@@ -8,6 +8,7 @@ import {
   Pause, Play, StickyNote, X,
 } from "lucide-react";
 import { buildSlides, type DeckCompany } from "./slides";
+import { DEFAULT_LANG, LANGS, MATN, isLang, type Lang } from "./matn";
 
 /**
  * Taqdimot ko'rgichi — PPT ning veb ko'rinishi.
@@ -19,12 +20,18 @@ import { buildSlides, type DeckCompany } from "./slides";
  *    O — slaydlar ro'yxati, N — ma'ruzachi izohi, F — to'liq ekran,
  *    P — avtomatik o'ynatish, Home/End — boshi va oxiri.
  *  · Manzilda `#slayd-7` turadi: havolani ochgan odam o'sha slayddan boshlaydi.
+ *  · Til: tepa paneldagi UZ / RU / EN (yoki L tugmasi). Manzilda `?lang=ru`
+ *    turadi — havola qaysi tilda ulashilsa, shu tilda ochiladi. Tanlov
+ *    brauzerda eslab qolinadi; manzilda til yo'q bo'lsa, oxirgi tanlov qaytadi.
  */
 
 const AUTOPLAY_MS = 14000;
+const LANG_KEY = "insof-taqdimot-til";
 
-export function Deck({ company }: { company: DeckCompany }) {
-  const slides = useMemo(() => buildSlides(company), [company]);
+export function Deck({ company, initialLang }: { company: DeckCompany; initialLang: Lang | null }) {
+  const [lang, setLang] = useState<Lang>(initialLang ?? DEFAULT_LANG);
+  const ui = MATN[lang].ui;
+  const slides = useMemo(() => buildSlides(company, lang), [company, lang]);
   const last = slides.length - 1;
 
   const [i, setI] = useState(0);
@@ -59,9 +66,30 @@ export function Deck({ company }: { company: DeckCompany }) {
   }, [last]);
 
   useEffect(() => {
-    history.replaceState(null, "", `#slayd-${i + 1}`);
+    const q = lang === DEFAULT_LANG ? "" : `?lang=${lang}`;
+    history.replaceState(null, "", `${window.location.pathname}${q}#slayd-${i + 1}`);
     stage.current?.scrollTo({ top: 0 });
-  }, [i]);
+  }, [i, lang]);
+
+  /* Til: manzilda ko'rsatilmagan bo'lsa — oxirgi tanlovni qaytaramiz; tanlov saqlanadi */
+  useEffect(() => {
+    if (initialLang) return;
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (isLang(saved) && saved !== DEFAULT_LANG) setLang(saved);
+    } catch { /* xotira yopiq bo'lsa — standart til */ }
+  }, [initialLang]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LANG_KEY, lang); } catch { /* jim */ }
+    const prev = document.documentElement.lang;
+    document.documentElement.lang = lang;
+    return () => { document.documentElement.lang = prev; };
+  }, [lang]);
+
+  const cycleLang = useCallback(() => {
+    setLang((cur) => LANGS[(LANGS.findIndex((l) => l.code === cur) + 1) % LANGS.length].code);
+  }, []);
 
   /* Klaviatura */
   useEffect(() => {
@@ -77,11 +105,12 @@ export function Deck({ company }: { company: DeckCompany }) {
         case "n": case "N": setNotes((v) => !v); break;
         case "p": case "P": setAuto((v) => !v); break;
         case "f": case "F": void toggleFull(); break;
+        case "l": case "L": cycleLang(); break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [next, prev, go, last]);
+  }, [next, prev, go, last, cycleLang]);
 
   /* Avtomatik o'ynatish — oxirgi slaydda o'zi to'xtaydi */
   useEffect(() => {
@@ -140,12 +169,17 @@ export function Deck({ company }: { company: DeckCompany }) {
   const dark = s.tone === "dark";
 
   return (
-    <div className={`flex h-[100svh] flex-col overflow-hidden ${dark ? "bg-insof-900" : "bg-beton-100"}`}>
+    <div
+      className={`flex h-[100svh] flex-col overflow-hidden ${dark ? "bg-insof-900" : "bg-beton-100"}`}
+      lang={lang}
+      // Saira shriftida kirill harflari yo'q — ruscha sarlavhalar Exo 2 bilan chiziladi
+      style={lang === "ru" ? ({ "--font-display": "var(--font-exo2), system-ui, sans-serif" } as React.CSSProperties) : undefined}
+    >
       {/* ───────── Tepa panel ───────── */}
       <header className="relative z-30 flex h-14 shrink-0 items-center gap-2 border-b border-white/10 bg-beton-950 px-3 text-white sm:gap-3 sm:px-5">
-        <Link href="/" className="inline-flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white" aria-label="Bosh sahifaga qaytish">
+        <Link href="/" className="inline-flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white" aria-label={ui.homeAria}>
           <Home size={16} />
-          <span className="hidden sm:inline">Bosh sahifa</span>
+          <span className="hidden sm:inline">{ui.home}</span>
         </Link>
 
         <span className="hidden h-5 w-px bg-white/15 sm:block" />
@@ -154,16 +188,34 @@ export function Deck({ company }: { company: DeckCompany }) {
         <Image src="/media/logo-light.png" alt="INSOF" width={470} height={86} className="hidden h-5 w-auto sm:block sm:h-6" priority />
 
         <span className="ml-auto flex items-center gap-1 sm:gap-1.5">
-          <Btn onClick={() => setAuto((v) => !v)} active={auto} label={auto ? "Avtomatik o'ynatishni to'xtatish" : "Avtomatik o'ynatish"}>
+          {/* Til tanlovi — UZ / RU / EN */}
+          <div role="group" aria-label={ui.lang} className="mr-1 inline-flex h-8 items-center rounded-md bg-white/[0.07] p-0.5 ring-1 ring-white/10 sm:mr-2">
+            {LANGS.map((l) => (
+              <button
+                key={l.code}
+                type="button"
+                lang={l.code}
+                title={l.name}
+                aria-pressed={l.code === lang}
+                onClick={() => setLang(l.code)}
+                className={`h-7 rounded px-2 font-mono text-[11px] font-semibold tracking-wide transition-colors sm:px-2.5 ${
+                  l.code === lang ? "bg-signal text-white" : "text-white/55 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+          <Btn onClick={() => setAuto((v) => !v)} active={auto} label={auto ? ui.autoOff : ui.autoOn}>
             {auto ? <Pause size={16} /> : <Play size={16} />}
           </Btn>
-          <Btn onClick={() => setNotes((v) => !v)} active={notes} label="Ma'ruzachi izohi">
+          <Btn onClick={() => setNotes((v) => !v)} active={notes} label={ui.notes}>
             <StickyNote size={16} />
           </Btn>
-          <Btn onClick={() => setOverview(true)} label="Barcha slaydlar">
+          <Btn onClick={() => setOverview(true)} label={ui.all}>
             <LayoutGrid size={16} />
           </Btn>
-          <Btn onClick={() => void toggleFull()} label={full ? "To'liq ekrandan chiqish" : "To'liq ekran"}>
+          <Btn onClick={() => void toggleFull()} label={full ? ui.fullOff : ui.fullOn}>
             {full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </Btn>
           <span className="ml-1.5 font-mono text-[12px] whitespace-nowrap tabular-nums text-white/50 sm:ml-2.5 sm:text-[13px]">
@@ -221,8 +273,8 @@ export function Deck({ company }: { company: DeckCompany }) {
         </article>
 
         {/* Yon tugmalar — keng ekranda */}
-        <NavBtn side="left" onClick={prev} disabled={i === 0} />
-        <NavBtn side="right" onClick={next} disabled={i === last} />
+        <NavBtn side="left" onClick={prev} disabled={i === 0} label={ui.prevSlide} />
+        <NavBtn side="right" onClick={next} disabled={i === last} label={ui.nextSlide} />
 
         {/* Ma'ruzachi izohi */}
         {notes && (
@@ -230,7 +282,7 @@ export function Deck({ company }: { company: DeckCompany }) {
             <div className="mx-auto flex max-w-[1240px] items-start gap-3">
               <StickyNote size={15} className="mt-0.5 shrink-0 text-signal" />
               <p className="text-[13px] leading-relaxed text-white/75 sm:text-sm">{s.notes}</p>
-              <button type="button" onClick={() => setNotes(false)} className="ml-auto shrink-0 rounded p-1 text-white/40 hover:text-white" aria-label="Izohni yopish">
+              <button type="button" onClick={() => setNotes(false)} className="ml-auto shrink-0 rounded p-1 text-white/40 hover:text-white" aria-label={ui.closeNote}>
                 <X size={15} />
               </button>
             </div>
@@ -246,7 +298,7 @@ export function Deck({ company }: { company: DeckCompany }) {
           disabled={i === 0}
           className="inline-flex h-9 items-center gap-1.5 rounded-md border border-white/15 px-3 text-[13px] font-medium transition-colors hover:bg-white/10 disabled:opacity-30 sm:px-4"
         >
-          <ChevronLeft size={16} /> <span className="hidden sm:inline">Orqaga</span>
+          <ChevronLeft size={16} /> <span className="hidden sm:inline">{ui.back}</span>
         </button>
 
         {/* Nuqtalar — bosib o'tish mumkin */}
@@ -256,7 +308,7 @@ export function Deck({ company }: { company: DeckCompany }) {
               key={sl.n}
               type="button"
               onClick={() => go(k, k > i ? 1 : -1)}
-              aria-label={`${sl.n}-slayd: ${sl.title}`}
+              aria-label={ui.slideN(sl.n, sl.title)}
               aria-current={k === i}
               className={`h-1.5 rounded-full transition-all duration-300 ${k === i ? "w-7 bg-signal" : "w-1.5 bg-white/25 hover:bg-white/50"}`}
             />
@@ -271,7 +323,7 @@ export function Deck({ company }: { company: DeckCompany }) {
           disabled={i === last}
           className="inline-flex h-9 items-center gap-1.5 rounded-md bg-signal px-3 text-[13px] font-semibold text-white transition-colors hover:bg-signal-600 disabled:opacity-30 sm:px-4"
         >
-          <span className="hidden sm:inline">Keyingi</span> <ChevronRight size={16} />
+          <span className="hidden sm:inline">{ui.next}</span> <ChevronRight size={16} />
         </button>
       </footer>
 
@@ -280,9 +332,9 @@ export function Deck({ company }: { company: DeckCompany }) {
         <div className="deck-fade fixed inset-0 z-50 overflow-y-auto bg-beton-950/97 p-4 backdrop-blur-sm sm:p-8">
           <div className="mx-auto max-w-[1240px]">
             <div className="mb-6 flex items-center gap-3">
-              <h3 className="font-display text-lg font-bold text-white sm:text-2xl">Slaydlar</h3>
-              <span className="font-mono text-[12px] text-white/40">{slides.length} ta</span>
-              <button type="button" onClick={() => setOverview(false)} className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/15 text-white/70 hover:bg-white/10 hover:text-white" aria-label="Yopish">
+              <h3 className="font-display text-lg font-bold text-white sm:text-2xl">{ui.slides}</h3>
+              <span className="font-mono text-[12px] text-white/40">{ui.count(slides.length)}</span>
+              <button type="button" onClick={() => setOverview(false)} className="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/15 text-white/70 hover:bg-white/10 hover:text-white" aria-label={ui.close}>
                 <X size={18} />
               </button>
             </div>
@@ -322,13 +374,13 @@ function Btn({ children, onClick, label, active }: { children: React.ReactNode; 
   );
 }
 
-function NavBtn({ side, onClick, disabled }: { side: "left" | "right"; onClick: () => void; disabled: boolean }) {
+function NavBtn({ side, onClick, disabled, label }: { side: "left" | "right"; onClick: () => void; disabled: boolean; label: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label={side === "left" ? "Oldingi slayd" : "Keyingi slayd"}
+      aria-label={label}
       className={`absolute top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-beton-950/35 text-white/80 backdrop-blur-xs transition-all hover:bg-signal hover:text-white disabled:pointer-events-none disabled:opacity-0 lg:inline-flex ${side === "left" ? "left-3" : "right-3"}`}
     >
       {side === "left" ? <ChevronLeft size={22} /> : <ChevronRight size={22} />}
