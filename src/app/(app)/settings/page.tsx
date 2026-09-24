@@ -9,6 +9,7 @@ import { PRODUCT_UNITS } from "@/lib/unit";
 import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { ProductExcelPanel } from "@/components/product-excel-import";
+import { ProductMatrixPanel } from "@/components/product-matrix-add";
 import { PlantLocation } from "./plant-location";
 import { UserForm, ResetPasswordForm } from "./user-forms";
 import { toggleUser, saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
@@ -97,8 +98,8 @@ async function ProductsTab() {
       <Card>
         <div className="mb-1 flex flex-wrap items-start justify-between gap-2">
           <h2 className="font-semibold">Yangi mahsulot</h2>
-          {/* Ko'p mahsulotni bittalab yozmay, tayyor Excel ro'yxatdan qo'shish */}
-          <ProductExcelPanel />
+          {/* Ko'p mahsulotni bittalab yozmay: tayyor Excel ro'yxatdan yoki qator × ustun matritsasidan */}
+          <div className="flex flex-wrap items-center gap-2"><ProductExcelPanel /><ProductMatrixPanel /></div>
         </div>
         <p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo'limida hisoblanadi.</p>
         <RowForm action={saveProduct.bind(null, null)} mode="create" cols={6} fields={fields()} />

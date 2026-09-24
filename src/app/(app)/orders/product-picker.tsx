@@ -3,9 +3,10 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { ChevronRight, CornerLeftUp, FileSpreadsheet, Folder, FolderPlus, Minus, MousePointerClick, Plus, Search, X } from "lucide-react";
+import { ChevronRight, CornerLeftUp, FileSpreadsheet, Folder, FolderPlus, Grid3x3, Minus, MousePointerClick, Plus, Search, X } from "lucide-react";
 import { createCatalogProduct, createProductGroup } from "./catalog-actions";
 import { ProductExcelImport } from "@/components/product-excel-import";
+import { ProductMatrixAdd } from "@/components/product-matrix-add";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { PRODUCT_KINDS } from "@/lib/catalog";
 import { MoneyInput } from "@/components/money-input";
@@ -37,7 +38,7 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
   const [path, setPath] = useState<CatalogGroup[]>([]); // ochilgan papkalar zanjiri
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<RowItem | null>(null);
-  const [creating, setCreating] = useState<"product" | "group" | "excel" | null>(null);
+  const [creating, setCreating] = useState<"product" | "group" | "excel" | "matrix" | null>(null);
   const [mounted, setMounted] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -117,8 +118,12 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
                 <FolderPlus size={15} /> Papka
               </Button>
               {/* Ko'p mahsulotni bittalab emas, tayyor Excel ro'yxatdan qo'shish */}
-              <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(creating === "excel" ? null : "excel")} title="Excel fayldan ko'p mahsulotni birdan qo'shish">
+              <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(creating === "excel" ? null : "excel")} title="Ochiq papkaga Excel fayldan ko'p mahsulotni birdan qo'shish">
                 <FileSpreadsheet size={15} /> Excel orqali qo&apos;shish
+              </Button>
+              {/* Marka × o'lchov kesishmasi: bir necha o'nlab nomni qo'lda yozmaslik uchun */}
+              <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(creating === "matrix" ? null : "matrix")} title="Qator × ustun matritsasi bilan ko'p mahsulotni birdan qo'shish">
+                <Grid3x3 size={15} /> Matritsa
               </Button>
             </>
           )}
@@ -135,7 +140,9 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
               ? <NewGroupForm parentId={currentId} parentName={current?.name ?? null} onDone={afterCreate} onCancel={() => setCreating(null)} />
               : creating === "excel"
                 ? <ProductExcelImport groupId={currentId} groupName={current?.name ?? null} onDone={afterCreate} onCancel={() => setCreating(null)} />
-                : <NewProductForm groupId={currentId} groupName={current?.name ?? null} onDone={afterCreate} onCancel={() => setCreating(null)} />}
+                : creating === "matrix"
+                  ? <ProductMatrixAdd groupId={currentId} groupName={current?.name ?? null} onDone={afterCreate} onCancel={() => setCreating(null)} />
+                  : <NewProductForm groupId={currentId} groupName={current?.name ?? null} onDone={afterCreate} onCancel={() => setCreating(null)} />}
           </div>
         )}
 
