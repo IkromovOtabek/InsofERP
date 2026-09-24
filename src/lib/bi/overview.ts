@@ -45,15 +45,28 @@ export async function overviewTab(r: Range) {
   const delivered = tripsToday.filter((t) => t.status === "DELIVERED").length;
   const growth = safeDiv(revenue - prevRevenue, prevRevenue || revenue || 1);
   const blockedShare = safeDiv(blockedCount, Math.max(1, new Set(cur.map((x) => x.orderId)).size + blockedCount));
-  const components = [
-    { label: "Debitorka nazorati", score: Math.round(20 * Math.max(0, 1 - Math.min(1, debtRatio))), text: `Muddati o'tgan qarz oylik sotuvning ${Math.round(debtRatio * 100)}%i` },
-    { label: "Xomashyo zaxirasi", score: Math.round(20 * stockOk), text: `${materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length} ta xomashyo xavf zonasida` },
-    { label: "Marja", score: Math.round(20 * Math.min(1, Math.max(0, margin / 25))), text: `Yalpi marja ${margin.toFixed(1)}% (maqsad ≥25%)` },
-    { label: "Sotuv o'sishi", score: Math.round(20 * Math.min(1, Math.max(0, 0.5 + growth))), text: `Oldingi davrga nisbatan ${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth * 100).toFixed(1)}%` },
-    { label: "Zayavka oqimi", score: Math.round(20 * (1 - Math.min(1, blockedShare * 3)) * (overdueOrders.length ? 0.6 : 1)), text: `${blockedCount} ta bloklangan, ${overdueOrders.length} ta muddati o'tgan zayavka` },
+  // Ma'lumoti yo'q ko'rsatkich ballanmaydi (`null`) — aks holda bo'sh baza "yaxshi" ko'rinadi:
+  // qarz yo'q = 20 ball, bloklangan zayavka yo'q = 20 ball → jami 50/100 "E'tibor talab".
+  const ordersInRange = new Set(cur.map((x) => x.orderId)).size;
+  const components: { label: string; score: number | null; text: string }[] = [
+    { label: "Debitorka nazorati", score: customers.length ? Math.round(20 * Math.max(0, 1 - Math.min(1, debtRatio))) : null,
+      text: customers.length ? `Muddati o'tgan qarz oylik sotuvning ${Math.round(debtRatio * 100)}%i` : "Mijoz bazasi bo'sh" },
+    { label: "Xomashyo zaxirasi", score: materials.length ? Math.round(20 * stockOk) : null,
+      text: materials.length ? `${materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length} ta xomashyo xavf zonasida` : "Xomashyo spravochnigi bo'sh" },
+    { label: "Marja", score: revenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, margin / 25))) : null,
+      text: revenue > 0 ? `Yalpi marja ${margin.toFixed(1)}% (maqsad ≥25%)` : "Davr ichida sotuv yo'q" },
+    { label: "Sotuv o'sishi", score: revenue > 0 || prevRevenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, 0.5 + growth))) : null,
+      text: revenue > 0 || prevRevenue > 0 ? `Oldingi davrga nisbatan ${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth * 100).toFixed(1)}%` : "Taqqoslash uchun sotuv yo'q" },
+    { label: "Zayavka oqimi", score: ordersInRange + blockedCount + overdueOrders.length > 0 ? Math.round(20 * (1 - Math.min(1, blockedShare * 3)) * (overdueOrders.length ? 0.6 : 1)) : null,
+      text: ordersInRange + blockedCount + overdueOrders.length > 0 ? `${blockedCount} ta bloklangan, ${overdueOrders.length} ta muddati o'tgan zayavka` : "Davr ichida zayavka yo'q" },
   ];
-  const health = sum(components.map((c) => c.score));
-  const healthLabel = health >= 75 ? "Sog'lom" : health >= 50 ? "E'tibor talab" : "Xavfli";
+  // Ball mavjud ko'rsatkichlar bo'yicha normallashtiriladi (3 tasi bo'lsa — 60 balldan emas, 100 balldan).
+  // 3 tadan kam bo'lsa umuman ko'rsatilmaydi: "qarz yo'q + xomashyo ogohlantirishi yo'q" ham
+  // 100 ball berardi, holbuki bu shunchaki hali ish boshlanmagani.
+  const MIN_COMPONENTS = 3;
+  const scored = components.filter((c): c is { label: string; score: number; text: string } => c.score !== null);
+  const health = scored.length >= MIN_COMPONENTS ? Math.round(safeDiv(sum(scored.map((c) => c.score)), 20 * scored.length) * 100) : null;
+  const healthLabel = health !== null ? (health >= 75 ? "Sog'lom" : health >= 50 ? "E'tibor talab" : "Xavfli") : scored.length ? "Ma'lumot yetarli emas" : "Ma'lumot yo'q";
 
   // Xavf ostidagi pul
   const risk = {
@@ -89,6 +102,6 @@ export async function overviewTab(r: Range) {
     todayRevenue, yestRevenue, todayDelta: delta(todayRevenue, yestRevenue), todayM3: sum(todayS.filter((x) => x.unit === "m3").map((x) => x.qty)), delivered, tripsToday: tripsToday.filter((t) => t.status !== "CANCELLED").length,
     month: { revenue: monthRevenue, prev: prevMonthRevenue, forecast: monthForecast, planPerDay, perDay: monthRevenue / daysPassed, daysPassed, daysLeft: daysInMonth - daysPassed, delta: delta(monthRevenue, prevMonthRevenue) },
     kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: kpi(margin, prevMargin), cashIn: kpi(cashIn, prevCashIn), receivable, debtors: customers.filter((c) => c.debt > 0).length, active, total: customers.length, lost: lostCount, activeRate: safeDiv(active, customers.length) * 100 },
-    spark, health, healthLabel, components, risk, riskTotal, capitalCost30: riskTotal * CAPITAL_RATE_DAY * 30, loss, tasks: topTasks, goodNews, topProduct, materialsAtRisk: materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length,
+    spark, health, healthLabel, healthBasis: scored.length, components, risk, riskTotal, capitalCost30: riskTotal * CAPITAL_RATE_DAY * 30, loss, tasks: topTasks, goodNews, topProduct, materialsAtRisk: materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length,
   };
 }

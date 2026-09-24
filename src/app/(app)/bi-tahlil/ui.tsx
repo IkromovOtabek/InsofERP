@@ -20,7 +20,7 @@ export const routeOf = (tab: string) => (ROUTES as Record<string, string>)[tab] 
 
 /* ───────────── Davr paneli ───────────── */
 
-export function PeriodBar({ range, tab, keep }: { range: Range; tab: string; keep?: Record<string, string | undefined> }) {
+export function PeriodBar({ range, tab, keep, className }: { range: Range; tab: string; keep?: Record<string, string | undefined>; className?: string }) {
   const path = routeOf(tab);
   const extra = Object.entries(keep ?? {}).filter((kv): kv is [string, string] => !!kv[1]);
   const q = (p: Record<string, string>) => { const u = new URLSearchParams([...extra, ...Object.entries(p)]); return `${path}?${u}`; };
@@ -28,7 +28,7 @@ export function PeriodBar({ range, tab, keep }: { range: Range; tab: string; kee
     <Link href={q({ period: p })} className={cn("rounded-lg px-3 py-1.5 text-[13px] font-medium transition", range.period === p ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100")}>{label}</Link>
   );
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2 shadow-(--shadow-card)">
+    <div className={cn("mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2 shadow-(--shadow-card)", className)}>
       <div className="flex gap-1">{btn("day", "Kunlik")}{btn("month", "Oylik")}{btn("year", "Yillik")}</div>
       <form method="get" action={path} className="flex flex-wrap items-center gap-1.5 text-[13px]">
         {extra.map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
@@ -118,15 +118,16 @@ export function Note({ children }: { children: React.ReactNode }) {
 
 /* ───────────── Ballar / teglar ───────────── */
 
-export function ScoreRing({ score, size = 120, label }: { score: number; size?: number; label?: string }) {
-  const r = 44, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, score));
-  const color = p >= 75 ? "#00cb80" : p >= 50 ? "#ffa800" : "#fa1636";
+export function ScoreRing({ score, size = 120, label }: { score: number | null; size?: number; label?: string }) {
+  const r = 44, c = 2 * Math.PI * r, p = score === null ? 0 : Math.max(0, Math.min(100, score));
+  // Ball hisoblab bo'lmasa (baza bo'sh) — kulrang halqa va "—": nol ball bilan adashtirmaslik uchun.
+  const color = score === null ? "#94a3b8" : p >= 75 ? "#00cb80" : p >= 50 ? "#ffa800" : "#fa1636";
   return (
     <div className="flex flex-col items-center">
       <svg viewBox="0 0 100 100" style={{ width: size, height: size }}>
         <circle cx={50} cy={50} r={r} fill="none" className="stroke-slate-200" strokeWidth={8} />
         <circle cx={50} cy={50} r={r} fill="none" stroke={color} strokeWidth={8} strokeLinecap="round" strokeDasharray={`${(p / 100) * c} ${c}`} transform="rotate(-90 50 50)" />
-        <text x={50} y={54} textAnchor="middle" fontSize={26} fontWeight={700} className="fill-slate-900">{Math.round(p)}</text>
+        <text x={50} y={54} textAnchor="middle" fontSize={26} fontWeight={700} className="fill-slate-900">{score === null ? "—" : Math.round(p)}</text>
         <text x={50} y={68} textAnchor="middle" fontSize={9} className="fill-slate-500">/ 100</text>
       </svg>
       {label && <div className="mt-1 text-sm font-semibold" style={{ color }}>{label}</div>}

@@ -3,7 +3,7 @@ import { TrendingUp, CalendarRange, Wallet, Landmark, Percent, Users, Truck, Ale
 import { overviewTab } from "@/lib/bi/overview";
 import { type Range, WEEKDAYS_FULL } from "@/lib/bi/core";
 import { money, moneyShort, fmtNum, qty, date as fmtDate } from "@/lib/format";
-import { Kpi, Delta, Panel, Why, Insight, Action, ScoreRing, Note, tabHref } from "../ui";
+import { Kpi, Delta, Panel, Why, Insight, Action, ScoreRing, Note, PeriodBar, tabHref } from "../ui";
 import { HBarList } from "@/components/ui/charts";
 import { cn } from "@/lib/utils";
 
@@ -28,20 +28,23 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
         <p className="mt-1 text-[14px] text-slate-300">Bugun <span className="font-medium text-white">{WEEKDAYS_FULL[today.getDay()]}, {fmtDate(today)}</span>. Bugungi sotuv <span className="font-semibold text-white">{moneyShort(d.todayRevenue)}</span> (<Delta value={d.todayDelta} label="kechagi kunga nisbatan" />) · {qty(d.todayM3)} m³ zayavka · {d.delivered}/{d.tripsToday} reys yetkazildi</p>
       </div>
 
+      {/* Davr filtri — salomlashuvdan keyin (qobiqda emas: BiPage'ga period={false} berilgan) */}
+      <PeriodBar range={range} tab="overview" className="mb-0" />
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* Biznes salomatligi */}
-        <Panel title="Biznes salomatligi" eyebrow={range.label} info="5 ta ko'rsatkich × 20 ball: debitorka nazorati, xomashyo zaxirasi, marja, sotuv o'sishi, zayavka oqimi.">
+        <Panel title="Biznes salomatligi" eyebrow={range.label} info="5 ta ko'rsatkich × 20 ball: debitorka nazorati, xomashyo zaxirasi, marja, sotuv o'sishi, zayavka oqimi. Ma'lumoti yo'q ko'rsatkich ballanmaydi — ball qolganlari bo'yicha 100 ballik shkalaga keltiriladi.">
           <div className="flex flex-col items-center">
             <ScoreRing score={d.health} label={d.healthLabel} />
             <div className="mt-3 w-full space-y-2">
               {d.components.map((c) => (
                 <div key={c.label}>
-                  <div className="flex justify-between text-xs"><span className="text-slate-600">{c.label}</span><span className="tabular font-medium text-slate-800">{c.score}/20</span></div>
-                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={cn("h-full rounded-full", c.score >= 15 ? "bg-emerald-500" : c.score >= 10 ? "bg-amber-500" : "bg-red-500")} style={{ width: `${(c.score / 20) * 100}%` }} /></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-600">{c.label}</span><span className={cn("tabular font-medium", c.score === null ? "text-slate-400" : "text-slate-800")}>{c.score === null ? "—" : `${c.score}/20`}</span></div>
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">{c.score !== null && <div className={cn("h-full rounded-full", c.score >= 15 ? "bg-emerald-500" : c.score >= 10 ? "bg-amber-500" : "bg-red-500")} style={{ width: `${(c.score / 20) * 100}%` }} />}</div>
                 </div>
               ))}
             </div>
-            <Why>{d.components.map((c) => <p key={c.label}><b>{c.label}:</b> {c.text}.</p>)}<p className="text-slate-500">Ball ≥75 — sog'lom, 50–74 — e'tibor talab, &lt;50 — xavfli.</p></Why>
+            <Why>{d.components.map((c) => <p key={c.label}><b>{c.label}:</b> {c.text}.</p>)}<p className="text-slate-500">Ball ≥75 — sog'lom, 50–74 — e'tibor talab, &lt;50 — xavfli. {d.health === null ? `Ball hisoblanmadi: ${d.healthBasis} ta ko'rsatkichda ma'lumot bor, kamida 3 tasi kerak.` : `Hisobga olingan ko'rsatkich: ${d.healthBasis} / ${d.components.length}.`}</p></Why>
           </div>
         </Panel>
 

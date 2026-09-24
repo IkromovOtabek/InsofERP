@@ -61,7 +61,7 @@ export async function aiDirector(range: Range) {
   const summary = [
     `Oy boshidan ${M(o.month.revenue)} sotildi${pl.companyPlan ? ` — rejaning ${pct(pl.pct)} i` : " (reja kiritilmagan)"}.`,
     `Hozirgi temp bilan oy oxirida ${M(o.month.forecast)} — o'tgan oyga nisbatan ${pct(o.month.delta)}.`,
-    `Biznes salomatligi ${o.health}/100 (${o.healthLabel}). Xavf ostidagi pul: ${M(o.riskTotal)}.`,
+    `Biznes salomatligi ${o.health === null ? "hisoblanmadi (ma'lumot yo'q)" : `${o.health}/100`} (${o.healthLabel}). Xavf ostidagi pul: ${M(o.riskTotal)}.`,
     `${atRisk} ta mijoz xavf ostida, ${o.kpis.debtors} ta qarzdor (${M(o.kpis.receivable)}).`,
   ];
   return { risks: risks.slice(0, 5), good: good.slice(0, 4), summary, tasks: o.tasks, health: o.health, healthLabel: o.healthLabel, generatedAt: new Date() };
@@ -133,7 +133,7 @@ export async function aiReport(type: ReportType): Promise<Report> {
     ], hrefs: [{ label: "Reja nazorati", href: "/bi-tahlil/reja" }, { label: "Moliya", href: "/bi-tahlil/moliya" }],
   };
   return {
-    title: "Executive brief", sub: `${fmtDate(today)} · biznes salomatligi ${o.health}/100 (${o.healthLabel})`,
+    title: "Executive brief", sub: `${fmtDate(today)} · biznes salomatligi ${o.health === null ? "—" : `${o.health}/100`} (${o.healthLabel})`,
     sections: [
       { title: "Bitta jumla", lines: [`Oy boshidan ${M(o.month.revenue)} sotildi${pl.companyPlan ? ` (reja ${pct(pl.pct)})` : ""}, xavf ostida ${M(o.riskTotal)}, kuniga ${M(loss.totalPerDay)} yo'qotilmoqda.`] },
       { title: "Salomatlik komponentlari", lines: o.components.map((c) => `${c.label}: ${c.score}/20 — ${c.text}.`) },
