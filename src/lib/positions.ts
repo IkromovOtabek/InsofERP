@@ -26,6 +26,44 @@ export const roleForPosition = (position: string): Role | null => {
   return POSITIONS.find((p) => p.label.toLowerCase() === key)?.role ?? LEGACY[key] ?? null;
 };
 
+
+/**
+ * Lavozimlarning yagona ro'yxati — hamma sahifa (Boshqaruv → Xodimlar, Otdel kadr,
+ * filtrlar, formalar) shu bittasidan oladi, shuning uchun ro'yxat hamma joyda bir xil.
+ *
+ * `departments` — tizimga kiradigan bo'lim lavozimlari (login beradi),
+ * `work` — Otdel kadr yuritadigan ishchi lavozimlar (`WorkPosition`),
+ * `drivers` — haydovchi ilovasiga chiqadiganlar,
+ * `strays` — xodimlarda yozilgan, lekin ro'yxatga tushmagan lavozimlar (masalan Excel importdan
+ *   qolgan eski yozuv): ular ham tanlovda ko'rinadi, aks holda o'sha xodimlar filtrda topilmaydi.
+ */
+export async function positionCatalog(): Promise<{
+  departments: { label: string; role: Role }[];
+  work: string[];
+  drivers: string[];
+  strays: string[];
+}> {
+  const [work, used] = await Promise.all([
+    db.workPosition.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { name: true, isDriver: true } }),
+    db.employee.groupBy({ by: ["position"] }),
+  ]);
+  const known = new Set<string>([
+    ...POSITIONS.map((p) => p.label.trim().toLowerCase()),
+    ...work.map((w) => w.name.trim().toLowerCase()),
+  ]);
+  const strays = used
+    .map((u) => u.position.trim())
+    .filter((n) => n && !known.has(n.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b));
+  const drivers = work.filter((w) => w.isDriver).map((w) => w.name);
+  return {
+    departments: POSITIONS,
+    work: work.map((w) => w.name),
+    drivers: drivers.length ? drivers : ["Haydovchi"],
+    strays: [...new Set(strays)],
+  };
+}
+
 /** Otdel kadr yuritadigan ishchi lavozimlar (login bermaydi). */
 export const workPositions = (opts?: { all?: boolean }) =>
   db.workPosition.findMany({

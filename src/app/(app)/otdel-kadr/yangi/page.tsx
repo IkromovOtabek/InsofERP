@@ -1,12 +1,13 @@
 import { requireSession } from "@/lib/auth";
-import { workPositions } from "@/lib/positions";
+import { positionCatalog } from "@/lib/positions";
 import { EMPLOYEE_ACCEPT, EMPLOYEE_MAX_MB, PHOTO_ACCEPT } from "@/lib/uploads";
 import { PageHeader } from "@/components/ui";
 import { EmployeeCardForm } from "./employee-card-form";
 
 export default async function NewEmployeeCardPage() {
   await requireSession(["HR"]);
-  const positions = await workPositions();
+  // Ro'yxat Xodimlar sahifasidagi bilan bir xil (Excel'dan qolgan lavozimlar ham ko'rinadi)
+  const { work, strays } = await positionCatalog();
   return (
     <div>
       <PageHeader
@@ -16,7 +17,7 @@ export default async function NewEmployeeCardPage() {
         back={{ href: "/otdel-kadr?tab=xodimlar", label: "Xodimlar ro'yxati" }}
       />
       <EmployeeCardForm
-        positions={positions.map((p) => p.name)}
+        positions={[...work, ...strays]}
         docAccept={EMPLOYEE_ACCEPT}
         photoAccept={PHOTO_ACCEPT}
         maxMb={EMPLOYEE_MAX_MB}

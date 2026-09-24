@@ -17,6 +17,8 @@ import type { Prisma } from "@/generated/prisma";
 const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
 
 const schema = z.object({
+  // Ro'yxatdan tanlangan mavjud xodim — yangi karta ochilmaydi, shu kartaga login beriladi
+  employeeId: zOpt,
   fullName: zStr("F.I.O. kerak"),
   position: zStr("Lavozim kerak"),
   phone: zOpt,
@@ -129,6 +131,45 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   const role: Role | null = deptRole ?? (driver && d.login && d.password ? "DRIVER" : null);
   if (deptRole && (!d.login || !d.password)) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
+
+  // Ro'yxatdan tanlangan xodim: dublikat karta ochilmaydi — login beriladi, lavozim/telefon yangilanadi
+  if (d.employeeId) {
+    const cur = await db.employee.findUnique({ where: { id: d.employeeId } });
+    if (!cur) return { error: "Tanlangan xodim topilmadi" };
+    if (cur.userId) return { error: `${cur.fullName} — bu xodimda login bor` };
+    if (!role && (d.login || d.password)) return { error: `"${d.position}" lavozimi tizimga kirmaydi — login berilmaydi` };
+    let attachedVehicleId: string | null = null;
+    try {
+      await db.$transaction(async (tx) => {
+        const user = role && d.login && d.password ? await createLoginFor(tx, d.fullName, role, d.login, d.password) : null;
+        const extra = driver ? await driverData(tx, s.userId, d) : {};
+        const e = await tx.employee.update({
+          where: { id: cur.id },
+          data: {
+            fullName: d.fullName, position: d.position, isActive: true,
+            ...(d.phone ? { phone: d.phone } : {}),
+            ...(d.hiredAt ? { hiredAt: d.hiredAt } : {}),
+            ...(d.birthDate ? { birthDate: d.birthDate } : {}),
+            ...(d.note ? { note: d.note } : {}),
+            ...(user ? { userId: user.id } : {}),
+            ...extra,
+          },
+        });
+        attachedVehicleId = e.vehicleId;
+        await audit(tx, s.userId, "UPDATE", "Employee", e.id, cur, { ...e, login: user?.login, role, via: "xodimlar-formasi" });
+      });
+    } catch (e) {
+      const m = String(e);
+      if (m.includes("Unique constraint")) return { error: "Bu login band" };
+      if (e instanceof Error && !m.includes("prisma")) return { error: e.message };
+      throw e;
+    }
+    if (driver) pushEmployeeSilently(cur.id);
+    if (attachedVehicleId) pushVehicleSilently(attachedVehicleId);
+    revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
+    if (!role || !d.login) return { ok: true, note: `${d.fullName} — lavozimi «${d.position}» qilib belgilandi.` };
+    return { ok: true, note: smsNote(await loginSms("login_granted", d.phone ?? cur.phone, d.login, d.password!)) };
+  }
 
   let createdId: string | null = null;
   let vehicleId: string | null = null;

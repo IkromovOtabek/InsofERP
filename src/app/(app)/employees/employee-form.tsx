@@ -14,7 +14,9 @@ export function PositionSelect({ departments, work, workLabel = "Ishchi lavoziml
   departments: Pos[]; work: string[]; workLabel?: string | null; value: string; onChange: (v: string) => void;
 }) {
   const opt = (v: string) => <option key={v} value={v}>{v}</option>;
-  const workOptions = work.map((w) => opt(w));
+  // Tanlangan lavozim ro'yxatda bo'lmasa ham tanlov sifatida qoladi (saqlashda almashib ketmasin)
+  const list = value && !work.includes(value) && !departments.some((d) => d.label === value) ? [value, ...work] : work;
+  const workOptions = list.map((w) => opt(w));
   return (
     <Select name="position" value={value} onChange={(e) => onChange(e.target.value)} required>
       {/* workLabel null — hamma lavozim bitta ro'yxatda, bir xil qatorda turadi */}
@@ -25,6 +27,71 @@ export function PositionSelect({ departments, work, workLabel = "Ishchi lavoziml
             {work.length > 0 && <optgroup label={workLabel}>{workOptions}</optgroup>}
           </>}
     </Select>
+  );
+}
+
+/** Ro'yxatda turgan faol xodim — lavozim tanlanganda F.I.O. maydonida taklif bo'lib chiqadi. */
+export type StaffOpt = { id: string; fullName: string; position: string; phone: string | null; hasLogin: boolean };
+
+/**
+ * F.I.O. maydoni: tanlangan lavozimdagi **faol** xodimlar ro'yxat bo'lib chiqadi
+ * (Otdel kadrda ochilgan yoki Excel'dan kelgan xodimlar shu yerda ko'rinadi).
+ * Ro'yxatdan tanlansa yangi karta ochilmaydi — o'sha xodimga login beriladi;
+ * yozib kiritilsa yangi xodim bo'lib qo'shiladi.
+ */
+function FioField({ staff, position, value, onChange, picked, onPick }: {
+  staff: StaffOpt[];
+  position: string;
+  value: string;
+  onChange: (v: string) => void;
+  picked: StaffOpt | null;
+  onPick: (s: StaffOpt | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (!boxRef.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  });
+
+  const term = value.trim().toLowerCase();
+  // Avval shu lavozimdagilar, keyin qolganlari; logini bor xodim taklif qilinmaydi
+  const free = staff.filter((x) => !x.hasLogin);
+  const samePos = free.filter((x) => x.position.trim().toLowerCase() === position.trim().toLowerCase());
+  const others = free.filter((x) => !samePos.includes(x));
+  const match = (l: StaffOpt[]) => (term ? l.filter((x) => x.fullName.toLowerCase().includes(term)) : l);
+  const list = [...match(samePos), ...match(others)].slice(0, 30);
+
+  return (
+    <div ref={boxRef} className="relative">
+      <Input
+        name="fullName"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); onPick(null); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Familiya Ism Otasining ismi"
+        autoComplete="off"
+        required
+        className={picked ? "border-emerald-400 bg-emerald-50/50" : undefined}
+      />
+      {open && list.length > 0 && (
+        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 min-w-[280px] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
+          <div className="px-3 py-1 text-[11px] text-slate-400">
+            {samePos.length > 0 ? `«${position}» lavozimidagi faol xodimlar — tanlasangiz yangi karta ochilmaydi` : "Ro'yxatdagi faol xodimlar (logini yo'q)"}
+          </div>
+          {list.map((x) => (
+            <button key={x.id} type="button" onClick={() => { onPick(x); onChange(x.fullName); setOpen(false); }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50">
+              <span className="min-w-0 flex-1 truncate">{x.fullName}</span>
+              <span className="shrink-0 text-xs text-slate-500">{x.position}</span>
+              {x.phone && <span className="shrink-0 text-xs text-slate-400">{x.phone}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -80,28 +147,52 @@ export function DriverFields({ vehicles, defaults }: {
   );
 }
 
-/** Tezkor forma: bo'lim xodimi + login yoki haydovchi (texnikasi bilan). */
-export function EmployeeForm({ departments, drivers, vehicles, canGrant }: {
-  departments: Pos[]; drivers: string[]; vehicles: VehicleOpt[]; canGrant: boolean;
+/**
+ * Tezkor forma: lavozim tanlanadi → F.I.O. maydonida o'sha lavozimdagi faol xodimlar chiqadi.
+ * Ro'yxatdan tanlansa mavjud xodimga login beriladi (dublikat karta ochilmaydi),
+ * yangi ism yozilsa yangi xodim qo'shiladi. Lavozimlar ro'yxati Otdel kadrdagi bilan bir xil.
+ */
+export function EmployeeForm({ departments, work, drivers, staff, vehicles, canGrant }: {
+  departments: Pos[]; work: string[]; drivers: string[]; staff: StaffOpt[]; vehicles: VehicleOpt[]; canGrant: boolean;
 }) {
   const [state, action, pending] = useActionState(createEmployee, undefined);
   const ref = useRef<HTMLFormElement>(null);
   const [position, setPosition] = useState(departments[0]?.label ?? "");
+  const [fullName, setFullName] = useState("");
+  const [picked, setPicked] = useState<StaffOpt | null>(null);
   const needsLogin = !!departments.find((p) => p.label === position)?.role;
   const isDriver = drivers.includes(position);
   // Haydovchiga login ixtiyoriy: ECO ilovasiga telefon bilan kiradi, ERP ilovasiga esa login/parol bilan
   const showLogin = needsLogin || isDriver;
-  useEffect(() => { if (state?.ok) { ref.current?.reset(); setPosition(departments[0]?.label ?? ""); } }, [state, departments]);
+  const reset = () => { ref.current?.reset(); setPosition(departments[0]?.label ?? ""); setFullName(""); setPicked(null); };
+  useEffect(() => { if (state?.ok) reset(); }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lavozimi boshqa xodim tanlansa — lavozim shu xodimning lavozimiga tenglashadi (ro'yxat bir xil bo'lsin)
+  const pick = (x: StaffOpt | null) => {
+    setPicked(x);
+    if (x && x.position.trim().toLowerCase() !== position.trim().toLowerCase()) setPosition(x.position);
+  };
 
   return (
     <form ref={ref} action={action} className="space-y-3">
+      {/* Ro'yxatdan tanlangan xodim — yangi karta emas, shu kartaga login beriladi */}
+      <input type="hidden" name="employeeId" value={picked?.id ?? ""} />
       <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1.4fr_200px_170px_160px_auto]">
-        <Field label="F.I.O. *"><Input name="fullName" required /></Field>
-        <Field label="Bo'lim lavozimi *"><PositionSelect departments={departments} work={drivers} workLabel={null} value={position} onChange={setPosition} /></Field>
-        <Field label="Telefon" hint={isDriver ? "Ilovaga kirish kaliti" : undefined}><Input name="phone" placeholder="+998 90 123 45 67" /></Field>
+        <Field label="F.I.O. *" hint={picked ? undefined : "Lavozimni tanlasangiz mavjud xodimlar chiqadi"}>
+          <FioField staff={staff} position={position} value={fullName} onChange={setFullName} picked={picked} onPick={pick} />
+        </Field>
+        <Field label="Lavozim *"><PositionSelect departments={departments} work={[...new Set([...work, ...drivers])]} value={position} onChange={setPosition} /></Field>
+        <Field label="Telefon" hint={isDriver ? "Ilovaga kirish kaliti" : undefined}><Input name="phone" placeholder="+998 90 123 45 67" defaultValue={picked?.phone ?? ""} key={picked?.id ?? "new"} /></Field>
         <Field label="Ishga kirgan sana"><Input name="hiredAt" type="date" /></Field>
-        <Button disabled={pending || (needsLogin && !canGrant)}><Plus size={16} /> Qo&apos;shish</Button>
+        <Button disabled={pending || (needsLogin && !canGrant)}><Plus size={16} /> {picked ? "Login berish" : "Qo'shish"}</Button>
       </div>
+      {picked && (
+        <p className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+          <b>{picked.fullName}</b> ro&apos;yxatda bor ({picked.position}) — yangi karta ochilmaydi, shu xodimga login beriladi
+          {picked.position.trim().toLowerCase() !== position.trim().toLowerCase() && <> va lavozimi «{position}» ga o&apos;zgaradi</>}.
+          <button type="button" onClick={() => { setPicked(null); setFullName(""); }} className="font-medium underline">bekor qilish</button>
+        </p>
+      )}
       {isDriver && <DriverFields vehicles={vehicles} />}
       {showLogin && (
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:grid-cols-[1fr_1fr_2fr]">

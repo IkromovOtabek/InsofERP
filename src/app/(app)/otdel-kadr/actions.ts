@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
+import { flatName } from "@/lib/excel";
+import { guessDepartment } from "@/lib/orgchart";
 import { pushEmployeeSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
@@ -25,6 +27,99 @@ const schema = z.object({
   isDriver: z.string().optional().transform((v) => v === "on"),
   sortOrder: z.coerce.number().int().min(0).default(0),
 });
+
+
+/* ───────── Lavozimlarni tartibga solish ───────── */
+
+/** "FORMOVSHIK" → "Formovshik", "formovshik" → "Formovshik". Aralash yozilgan nom tegilmaydi. */
+function prettyPosition(name: string) {
+  const t = name.trim().replace(/\s+/g, " ");
+  if (!t) return t;
+  const body = t === t.toUpperCase() && t.length > 3 ? t.toLowerCase() : t;
+  return body.charAt(0).toUpperCase() + body.slice(1);
+}
+
+/**
+ * Xodimlarda yozilgan lavozimlarni ro'yxat bilan moslaydi — Excel importdan keyin ishlatiladi.
+ *
+ * Nom harf-raqamlargacha solishtiriladi (bo'sh joy, tire, katta-kichik harf farqi hisobga olinmaydi):
+ *  · "sotuv", "SOTUV" → bo'lim lavozimi «Sotuv» (login beradigan);
+ *  · ro'yxatdagi lavozimning boshqa yozilishi → ro'yxatdagi yozilishiga keltiriladi;
+ *  · ro'yxatda umuman yo'q lavozim → yangi ishchi lavozim bo'lib ochiladi (nomi tartibga solinadi,
+ *    bo'limi nomdan taxmin qilinadi).
+ * Natijada bir ish bitta nom bilan yuradi va hamma sahifada (Xodimlar, Otdel kadr, filtrlar,
+ * tuzilma diagrammasi) bir xil ko'rinadi.
+ */
+export async function syncEmployeePositions(): Promise<ActionState> {
+  const s = await hr();
+  const [used, work] = await Promise.all([
+    db.employee.groupBy({ by: ["position"], _count: { _all: true } }),
+    db.workPosition.findMany({ select: { id: true, name: true, isActive: true } }),
+  ]);
+
+  // Kanonik nom: bo'lim lavozimi > ro'yxatdagi lavozim > xodimlarda eng ko'p uchragan yozilish
+  const canon = new Map<string, string>();
+  for (const p of POSITIONS) canon.set(flatName(p.label), p.label);
+  for (const w of work) if (!canon.has(flatName(w.name))) canon.set(flatName(w.name), w.name);
+
+  // Bir lavozimning hamma yozilishi: `raw` — bazadagi aynan qiymat (yangilashda shu bo'yicha topiladi)
+  const byKey = new Map<string, { raw: string; count: number }[]>();
+  for (const u of used) {
+    const name = u.position.trim();
+    if (!name) continue;
+    // "Snabjeniye", "Finance" kabi eski bo'lim nomlari ishchi lavozim emas — tegilmaydi
+    if (!canon.has(flatName(name)) && roleForPosition(name)) continue;
+    const k = flatName(name);
+    byKey.set(k, [...(byKey.get(k) ?? []), { raw: u.position, count: u._count._all }]);
+  }
+
+  let renamed = 0, movedEmployees = 0;
+  const created: string[] = [];
+  await db.$transaction(async (tx) => {
+    const last = await tx.workPosition.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+    let order = (last?.sortOrder ?? 0) + 10;
+
+    for (const [key, spellings] of byKey) {
+      let target = canon.get(key);
+      if (!target) {
+        // Eng ko'p uchragan yozilish olinadi va chiroyli ko'rinishga keltiriladi
+        const top = [...spellings].sort((a, b) => b.count - a.count)[0].raw;
+        target = prettyPosition(top);
+        const wp = await tx.workPosition.create({
+          data: { name: target, sortOrder: order, department: guessDepartment(target), note: "Xodimlar ro'yxatidan olindi" },
+        });
+        await audit(tx, s.userId, "CREATE", "WorkPosition", wp.id, undefined, wp);
+        created.push(target);
+        canon.set(key, target);
+        order += 10;
+      }
+      // Turli yozilishlarni kanonik nomga keltiramiz (bazadagi aynan qiymat bo'yicha)
+      for (const sp of spellings) {
+        if (sp.raw === target) continue;
+        const res = await tx.employee.updateMany({ where: { position: sp.raw }, data: { position: target } });
+        movedEmployees += res.count;
+        renamed++;
+      }
+    }
+
+    // Bir xil lavozimning ikkita yozuvi qolgan bo'lsa — kanonik bo'lmaganini yashiramiz
+    for (const w of work) {
+      const target = canon.get(flatName(w.name));
+      if (target && target !== w.name && w.isActive) {
+        const after = await tx.workPosition.update({ where: { id: w.id }, data: { isActive: false, note: `«${target}» bilan bir xil — yashirildi` } });
+        await audit(tx, s.userId, "UPDATE", "WorkPosition", w.id, w, after);
+      }
+    }
+  }, { timeout: 120_000, maxWait: 20_000 });
+
+  refresh();
+  revalidatePath("/employees");
+  const parts = [
+    created.length ? `${created.length} ta yangi lavozim ro'yxatga olindi (${created.slice(0, 6).join(", ")}${created.length > 6 ? "…" : ""})` : "",
+    renamed ? `${renamed} xil yozilish birlashtirildi, ${movedEmployees} xodim kartasi yangilandi` : "",
+  ].filter(Boolean);
+  return { ok: true, note: parts.length ? `${parts.join("; ")}.` : "Hammasi joyida — lavozimlar allaqachon bir xil." };
+}
 
 function refresh() {
   revalidatePath("/otdel-kadr");

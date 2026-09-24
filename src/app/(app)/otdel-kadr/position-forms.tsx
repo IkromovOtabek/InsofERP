@@ -1,9 +1,12 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Check, Plus, Trash2 } from "lucide-react";
-import { deleteWorkPosition, saveWorkPosition, toggleWorkPosition } from "./actions";
-import { Button, Checkbox, Field, FormError, Input, Select } from "@/components/ui";
+import { Check, Plus, Trash2, Wand2 } from "lucide-react";
+import { deleteWorkPosition, saveWorkPosition, syncEmployeePositions, toggleWorkPosition } from "./actions";
+import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import type { ActionState } from "@/lib/action";
 import { ASSIGNABLE_DEPTS, deptByRole, guessDepartment } from "@/lib/orgchart";
 
 type Pos = { id: string; name: string; note: string | null; department: string | null; isDriver: boolean; sortOrder: number; isActive: boolean };
@@ -20,6 +23,39 @@ function DeptSelect({ value, posName, className }: { value?: string | null; posN
       <option value="">{guess ? `Avtomatik · ${guess.label}` : "Bo'lim tanlanmagan"}</option>
       {ASSIGNABLE_DEPTS.map((d) => <option key={d.role} value={d.role}>{d.label}</option>)}
     </Select>
+  );
+}
+
+
+/**
+ * «Lavozimlarni tartibga solish» — Excel importdan keyin xodimlarda qolgan yozuvlarni
+ * ro'yxat bilan moslaydi: bir xil ishning turli yozilishi bitta nomga keltiriladi,
+ * ro'yxatda yo'q lavozim ro'yxatga olinadi. Shundan keyin lavozim hamma joyda bir xil ko'rinadi.
+ */
+export function SyncPositionsButton({ strays }: { strays: string[] }) {
+  const router = useRouter();
+  const [state, setState] = useState<ActionState>(undefined);
+  const [pending, start] = useTransition();
+  const run = () => start(async () => {
+    const res = await syncEmployeePositions();
+    setState(res);
+    if (res?.ok) router.refresh();
+  });
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="secondary" onClick={run} disabled={pending}>
+          <Wand2 size={15} /> {pending ? "Tartibga solinmoqda…" : "Lavozimlarni tartibga solish"}
+        </Button>
+        {strays.length > 0 && (
+          <span className="text-xs text-amber-700">
+            Ro&apos;yxatda yo&apos;q {strays.length} ta lavozim xodimlarda yozilgan: {strays.slice(0, 5).join(", ")}{strays.length > 5 ? "…" : ""}
+          </span>
+        )}
+      </div>
+      <FormError error={state?.error} />
+      <FormSuccess text={state?.ok ? state.note : undefined} />
+    </div>
   );
 }
 

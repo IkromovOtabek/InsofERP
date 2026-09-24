@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, Search, Truck } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { POSITIONS, driverPositionNames, roleForPosition, workPositions } from "@/lib/positions";
+import { POSITIONS, positionCatalog, roleForPosition } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { date, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
@@ -19,17 +19,20 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
 
   const where: Prisma.EmployeeWhereInput = {
     ...(q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }] } : {}),
-    ...(pos ? { position: pos } : {}),
+    // Lavozim katta-kichik harf va ortiqcha bo'shliqqa qaramay topilsin (Excel'dan kelgan yozuvlar uchun)
+    ...(pos ? { position: { equals: pos, mode: "insensitive" } } : {}),
     ...(holat === "faol" ? { isActive: true } : holat === "nofaol" ? { isActive: false } : {}),
   };
 
-  const [employees, work, drivers, vehicles] = await Promise.all([
+  const [employees, catalog, staff, vehicles] = await Promise.all([
     db.employee.findMany({ where, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: true, vehicle: true, _count: { select: { trips: true } } } }),
-    workPositions(),
-    driverPositionNames(),
+    positionCatalog(),
+    // Formadagi F.I.O. maydoni uchun: faol xodimlar (Otdel kadr yoki Excel orqali kelganlar ham)
+    db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, phone: true, userId: true } }),
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
   ]);
-  const workNames = work.map((w) => w.name);
+  const { work: workNames, drivers, strays } = catalog;
+  const staffOpts = staff.map((e) => ({ id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, hasLogin: !!e.userId }));
   const vehicleOpts = vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null }));
   const filtering = !!(q || pos || holat);
 
@@ -44,10 +47,11 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       {isHR && (
         <Card className="mb-4">
           <p className="mb-3 text-xs text-slate-500">
-            Bu yerda faqat bo&apos;lim xodimi (login beriladigan) ochiladi. Ishchi lavozimdagi xodim —{" "}
-            <Link href="/otdel-kadr?tab=xodimlar" className="font-medium text-slate-700 underline">Otdel kadr → Xodimlar ro&apos;yxati</Link> da, hujjatlari bilan.
+            Lavozimni tanlang — F.I.O. maydonida o&apos;sha lavozimdagi faol xodimlar chiqadi (Otdel kadrda yoki Excel orqali kelganlar ham).
+            Ro&apos;yxatdan tanlasangiz yangi karta ochilmaydi, shu xodimga login beriladi. To&apos;liq karta (hujjatlar, tabel, tarif) —{" "}
+            <Link href="/otdel-kadr?tab=xodimlar" className="font-medium text-slate-700 underline">Otdel kadr → Xodimlar ro&apos;yxati</Link> da.
           </p>
-          <EmployeeForm departments={POSITIONS} drivers={drivers} vehicles={vehicleOpts} canGrant={isHR} />
+          <EmployeeForm departments={POSITIONS} work={[...workNames, ...strays]} drivers={drivers} staff={staffOpts} vehicles={vehicleOpts} canGrant={isHR} />
         </Card>
       )}
 
@@ -62,7 +66,9 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
           <Select name="pos" defaultValue={pos}>
             <option value="">Hammasi</option>
             <optgroup label="Bo'limlar">{POSITIONS.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}</optgroup>
-            <optgroup label="Ishchi lavozimlar">{[...new Set([...drivers, ...workNames])].map((w) => <option key={w} value={w}>{w}</option>)}</optgroup>
+            <optgroup label="Ishchi lavozimlar">{[...new Set([...workNames, ...drivers])].map((w) => <option key={w} value={w}>{w}</option>)}</optgroup>
+            {/* Xodimlarda bor, lekin ro'yxatga tushmagan lavozimlar — aks holda ular filtrda topilmaydi */}
+            {strays.length > 0 && <optgroup label="Ro'yxatda yo'q (Excel'dan)">{strays.map((w) => <option key={w} value={w}>{w}</option>)}</optgroup>}
           </Select>
         </label>
         <label className="block">

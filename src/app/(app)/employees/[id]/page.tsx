@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FileText, KeyRound, Paperclip, User } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { POSITIONS, driverPositionNames, workPositions } from "@/lib/positions";
+import { POSITIONS, positionCatalog } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, money, qty } from "@/lib/format";
@@ -18,16 +18,18 @@ import { DeleteDocument, DocumentForms } from "./document-forms";
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
   const s = await requireSession(["HR"]);
   const { id } = await params;
-  const [e, work, drivers, vehicles] = await Promise.all([
+  const [e, catalog, vehicles] = await Promise.all([
     db.employee.findUnique({
       where: { id },
       include: { user: true, vehicle: true, documents: { orderBy: { createdAt: "asc" } }, _count: { select: { trips: true, brigades: true } } },
     }),
-    workPositions(),
-    driverPositionNames(),
+    positionCatalog(),
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
   ]);
   if (!e) notFound();
+  // Lavozim ro'yxati hamma joyda bir xil: bo'limlar + ishchi lavozimlar + Excel'dan qolganlar
+  const work = [...catalog.work, ...catalog.strays];
+  const drivers = catalog.drivers;
 
   // Haydovchi bo'lsa — GPS izidan hisoblangan shu oylik yo'l (yoqilg'i va ish haqi uchun asos)
   let mileage: { meters: number; trips: number } | null = null;
@@ -86,7 +88,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
                   licenseExpiry: e.licenseExpiry ? isoDate(e.licenseExpiry) : null,
                 }}
                 departments={POSITIONS}
-                work={[...new Set([...drivers, ...work.map((w) => w.name)])]}
+                work={[...new Set([...work, ...drivers])]}
                 drivers={drivers}
                 vehicles={vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null }))}
                 hasLogin={!!e.userId}

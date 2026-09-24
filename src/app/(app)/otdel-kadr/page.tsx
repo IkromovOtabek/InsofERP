@@ -2,13 +2,13 @@ import Link from "next/link";
 import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { workPositions } from "@/lib/positions";
+import { positionCatalog, workPositions } from "@/lib/positions";
 import { date } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import {
   dayUtc, isoDay, monthDays, monthOf, today, validDay, validMonth, workedMinutes,
 } from "@/lib/davomat";
-import { NewPositionForm, PositionRow } from "./position-forms";
+import { NewPositionForm, PositionRow, SyncPositionsButton } from "./position-forms";
 import { OrgChart, type OrgEmployee } from "./org-chart";
 import { DavomatKun, type KunRow } from "./davomat-kun";
 import { DavomatOy, type OyRow } from "./davomat-oy";
@@ -43,13 +43,15 @@ export default async function OtdelKadrPage({ searchParams }: {
   const oyIso = oyParam ?? monthOf(kunIso);
   const davomat = tab === "davomat";
 
-  const [employees, positions, orderStages, tripStages] = await Promise.all([
+  const [employees, positions, catalog, orderStages, tripStages] = await Promise.all([
     db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: { select: { role: true, isActive: true } }, _count: { select: { documents: true } } } }),
     workPositions({ all: true }),
+    positionCatalog(), // ro'yxatda yo'q (Excel'dan qolgan) lavozimlarni ko'rsatish uchun
     tab === "bolimlar" ? db.order.groupBy({ by: ["status"], _count: true }) : [],
     tab === "bolimlar" ? db.trip.groupBy({ by: ["status"], _count: true }) : [],
   ]);
 
+  const { strays } = catalog;
   const active = employees.filter((e) => e.isActive);
   const withLogin = employees.filter((e) => e.userId).length;
   const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
@@ -203,6 +205,10 @@ export default async function OtdelKadrPage({ searchParams }: {
           <Card>
             <CardHeader title="Yangi ishchi lavozim" description="Login bermaydigan lavozimlar. Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi." icon={BriefcaseBusiness} />
             <NewPositionForm nextOrder={(positions.at(-1)?.sortOrder ?? 0) + 10} />
+          </Card>
+          <Card>
+            <CardHeader title="Lavozimlarni tartibga solish" description="Excel orqali kelgan xodimlarning lavozimini ro'yxat bilan moslaydi: bir xil ishning turli yozilishi bitta nomga keltiriladi, ro'yxatda yo'q lavozim ro'yxatga olinadi — shundan keyin lavozim Xodimlar sahifasida, filtrlarda va tuzilma diagrammasida bir xil ko'rinadi." icon={BriefcaseBusiness} />
+            <SyncPositionsButton strays={strays} />
           </Card>
           <Card padded={false}>
             <div className="border-b border-slate-100 px-3 py-2.5">
