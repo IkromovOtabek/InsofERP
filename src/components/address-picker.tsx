@@ -168,10 +168,10 @@ export function AddressPicker({
     <div className={className}>
       <span className="mb-1.5 block text-[13px] font-medium text-slate-700">{label} {required && "*"}</span>
 
-      {/* z-[1100]: Leaflet o'z qatlamlariga 400, boshqaruv tugmalariga esa 1000 gacha
-          z-index beradi — takliflar ro'yxati xarita ostida qolib ketmasligi uchun
-          input o'rami hammasidan yuqori turadi. */}
-      <div className="relative z-[1100]">
+      {/* Takliflar ro'yxati xarita ustida turishi kerak. Xarita o'rami `isolate`
+          bilan alohida kontekstga olingani uchun (pastga qarang) bu yerda kichik
+          z-index yetarli — modal oynalar (z-50) ustiga chiqib ketmaydi. */}
+      <div className="relative z-10">
         <input
           name={name}
           value={address}
@@ -213,7 +213,10 @@ export function AddressPicker({
       <input type="hidden" name={latName} value={point?.lat ?? ""} />
       <input type="hidden" name={lngName} value={point?.lng ?? ""} />
 
-      <div className="mt-2 overflow-hidden rounded-lg border border-slate-200">
+      {/* isolate: Leaflet o'z qatlamlariga 400, boshqaruv tugmalariga 1000 z-index
+          beradi. Alohida stacking kontekst bo'lmasa bu raqamlar sahifa ildizida
+          hisoblanib, xarita modal oynalar (z-50) ustidan chiqib ketadi. */}
+      <div className="isolate mt-2 overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[220px] w-full bg-slate-50" />
       </div>
 

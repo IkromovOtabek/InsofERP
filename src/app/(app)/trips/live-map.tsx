@@ -79,5 +79,5 @@ export function LiveMap({ trips, track }: { trips: MapTrip[]; track: [number, nu
     m.fitBounds(L.latLngBounds(track), { padding: [40, 40] });
   }, [track]);
 
-  return <div ref={el} className="h-full min-h-[260px] w-full" />;
+  return <div ref={el} className="isolate h-full min-h-[260px] w-full" />;
 }

@@ -58,7 +58,7 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
         Xaritadan zavod turgan joyni bosib belgilang. Zayavkadagi &quot;zavoddan necha km&quot; va
         haydovchining marshruti shu nuqtadan hisoblanadi.
       </p>
-      <div className="overflow-hidden rounded-lg border border-slate-200">
+      <div className="isolate overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[260px] w-full bg-slate-50" />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
