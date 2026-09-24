@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { roleForPosition, isDriverPosition } from "@/lib/positions";
+import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import type { Role } from "@/generated/prisma";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
@@ -16,9 +16,14 @@ import type { Prisma } from "@/generated/prisma";
 
 const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
 
+/** Login berishda tanlanadigan bo'limlar: bo'lim lavozimlari + haydovchi ilovasi. */
+const LOGIN_ROLES: Role[] = [...POSITIONS.map((p) => p.role), "DRIVER"];
+
 const schema = z.object({
   // Ro'yxatdan tanlangan mavjud xodim — yangi karta ochilmaydi, shu kartaga login beriladi
   employeeId: zOpt,
+  // Ishchi lavozimda login qaysi bo'lim huquqi bilan ochilishi (bo'lim lavozimida kerak emas)
+  role: zOpt,
   fullName: zStr("F.I.O. kerak"),
   position: zStr("Lavozim kerak"),
   phone: zOpt,
@@ -127,9 +132,13 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   const d = r.data;
   const deptRole = roleForPosition(d.position);
   const driver = await isDriverPosition(d.position);
-  // Bo'lim lavozimi — login majburiy; haydovchi — ixtiyoriy (kiritilsa DRIVER roli bilan ochiladi)
-  const role: Role | null = deptRole ?? (driver && d.login && d.password ? "DRIVER" : null);
-  if (deptRole && (!d.login || !d.password)) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
+  const hasCreds = !!(d.login && d.password);
+  // Ishchi lavozimda kadr qaysi bo'lim huquqini tanlagan bo'lsa — login shu rol bilan ochiladi
+  const chosen = (LOGIN_ROLES as string[]).includes(d.role ?? "") ? (d.role as Role) : null;
+  // Bo'lim lavozimi — login majburiy; haydovchi va tanlangan bo'lim — ixtiyoriy (login yozilsa ochiladi)
+  const role: Role | null = deptRole ?? (hasCreds ? (chosen ?? (driver ? "DRIVER" : null)) : null);
+  if (deptRole && !hasCreds) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
+  if (chosen && !hasCreds) return { error: "Login va parol kiriting yoki bo'limni «login kerak emas» qilib qo'ying" };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
 
   // Ro'yxatdan tanlangan xodim: dublikat karta ochilmaydi — login beriladi, lavozim/telefon yangilanadi
@@ -137,7 +146,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     const cur = await db.employee.findUnique({ where: { id: d.employeeId } });
     if (!cur) return { error: "Tanlangan xodim topilmadi" };
     if (cur.userId) return { error: `${cur.fullName} — bu xodimda login bor` };
-    if (!role && (d.login || d.password)) return { error: `"${d.position}" lavozimi tizimga kirmaydi — login berilmaydi` };
+    if (!role && (d.login || d.password)) return { error: `"${d.position}" lavozimi tizimga kirmaydi — login uchun bo'limni tanlang` };
     let attachedVehicleId: string | null = null;
     try {
       await db.$transaction(async (tx) => {
@@ -200,15 +209,23 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   return { ok: true, note: smsNote(await loginSms("login_granted", d.phone, d.login!, d.password!)) };
 }
 
-/** Mavjud xodimga login berish. */
+/**
+ * Mavjud xodimga login berish.
+ * Bo'lim (rol) formada tanlanadi — shuning uchun ishchi lavozimdagi xodim ham
+ * (masalan "Skladchi") kerakli bo'lim bilan tizimga kira oladi; kadr lavozimi o'zgarmaydi.
+ * Tanlanmagan bo'lsa rol lavozimdan olinadi (bo'lim lavozimi yoki haydovchi).
+ */
 export async function grantLogin(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["HR"]);
   const login = String(fd.get("login") ?? "").trim();
   const password = String(fd.get("password") ?? "");
+  const wanted = String(fd.get("role") ?? "").trim();
   const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
   if (e.userId) return { error: "Bu xodimda login bor" };
-  const role: Role | null = roleForPosition(e.position) ?? ((await isDriverPosition(e.position)) ? "DRIVER" : null);
-  if (!role) return { error: `"${e.position}" lavozimi tizimga kirmaydi — Otdel kadrda lavozimni "haydovchi ilovasiga chiqadi" deb belgilang yoki bo'lim lavozimini tanlang` };
+  if (!e.isActive) return { error: `${e.fullName} nofaol — avval "Yoqish" tugmasi bilan ro'yxatga qaytaring` };
+  const chosen = (LOGIN_ROLES as string[]).includes(wanted) ? (wanted as Role) : null;
+  const role: Role | null = chosen ?? roleForPosition(e.position) ?? ((await isDriverPosition(e.position)) ? "DRIVER" : null);
+  if (!role) return { error: `"${e.position}" lavozimi tizimga kirmaydi — qaysi bo'lim uchun login kerakligini tanlang` };
   try {
     await db.$transaction(async (tx) => {
       const u = await createLoginFor(tx, e.fullName, role, login, password);

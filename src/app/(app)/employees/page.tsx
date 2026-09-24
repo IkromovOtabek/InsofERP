@@ -24,15 +24,21 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     ...(holat === "faol" ? { isActive: true } : holat === "nofaol" ? { isActive: false } : {}),
   };
 
-  const [employees, catalog, staff, vehicles] = await Promise.all([
+  const [employees, catalog, workRows, staff, vehicles] = await Promise.all([
     db.employee.findMany({ where, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: true, vehicle: true, _count: { select: { trips: true } } } }),
     positionCatalog(),
-    // Formadagi F.I.O. maydoni uchun: faol xodimlar (Otdel kadr yoki Excel orqali kelganlar ham)
-    db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, phone: true, userId: true } }),
+    db.workPosition.findMany({ select: { name: true, department: true } }),
+    // Formadagi F.I.O. maydoni uchun: ro'yxatdagi xodimlar (Otdel kadr yoki Excel orqali kelganlar ham).
+    // Nofaoli ham chiqadi — tanlansa qayta faollashtiriladi, aks holda odam topilmay qoladi.
+    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true } }),
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
   ]);
   const { work: workNames, drivers, strays } = catalog;
-  const staffOpts = staff.map((e) => ({ id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, hasLogin: !!e.userId }));
+  // Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi ilovasi
+  const LOGIN_ROLE_OPTS = [...POSITIONS.map((p) => ({ value: p.role as string, label: p.label })), { value: "DRIVER", label: "Haydovchi (ilova)" }];
+  // Ishchi lavozimga Otdel kadrda belgilangan bo'lim — login berishda taxmin bo'lib turadi
+  const deptOf = new Map(workRows.filter((w) => w.department).map((w) => [w.name.trim().toLowerCase(), w.department as string]));
+  const staffOpts = staff.map((e) => ({ id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, hasLogin: !!e.userId, isActive: e.isActive }));
   const vehicleOpts = vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null }));
   const filtering = !!(q || pos || holat);
 
@@ -114,7 +120,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
                         {isHR && e.isActive && e.userId !== s.userId && <ToggleLoginButton employeeId={e.id} blocked={!e.user.isActive} compact />}
                       </span>
                     )
-                    : role && isHR && e.isActive ? <GrantLoginForm employeeId={e.id} />
+                    /* Ishchi lavozimdagi xodim ham login olsin — qaysi bo'lim uchun ekanini kadr tanlaydi */
+                    : isHR && e.isActive ? <GrantLoginForm employeeId={e.id} roles={LOGIN_ROLE_OPTS} defaultRole={role ?? deptOf.get(e.position.trim().toLowerCase()) ?? null} />
                     : <span className="text-slate-400">—</span>}
                 </Td>
                 <Td right>{e._count.trips}</Td>

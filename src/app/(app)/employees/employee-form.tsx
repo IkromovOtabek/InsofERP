@@ -31,7 +31,7 @@ export function PositionSelect({ departments, work, workLabel = "Ishchi lavoziml
 }
 
 /** Ro'yxatda turgan faol xodim — lavozim tanlanganda F.I.O. maydonida taklif bo'lib chiqadi. */
-export type StaffOpt = { id: string; fullName: string; position: string; phone: string | null; hasLogin: boolean };
+export type StaffOpt = { id: string; fullName: string; position: string; phone: string | null; hasLogin: boolean; isActive: boolean };
 
 /**
  * F.I.O. maydoni: tanlangan lavozimdagi **faol** xodimlar ro'yxat bo'lib chiqadi
@@ -79,12 +79,14 @@ function FioField({ staff, position, value, onChange, picked, onPick }: {
       {open && list.length > 0 && (
         <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 min-w-[280px] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
           <div className="px-3 py-1 text-[11px] text-slate-400">
-            {samePos.length > 0 ? `«${position}» lavozimidagi faol xodimlar — tanlasangiz yangi karta ochilmaydi` : "Ro'yxatdagi faol xodimlar (logini yo'q)"}
+            {samePos.length > 0 ? `«${position}» lavozimidagi xodimlar — tanlasangiz yangi karta ochilmaydi` : "Ro'yxatdagi xodimlar (logini yo'q)"}
           </div>
           {list.map((x) => (
             <button key={x.id} type="button" onClick={() => { onPick(x); onChange(x.fullName); setOpen(false); }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50">
               <span className="min-w-0 flex-1 truncate">{x.fullName}</span>
+              {/* Nofaol xodim ham chiqadi: tanlansa ro'yxatga qaytariladi */}
+              {!x.isActive && <span className="shrink-0 rounded bg-amber-100 px-1.5 text-[11px] text-amber-800">nofaol</span>}
               <span className="shrink-0 text-xs text-slate-500">{x.position}</span>
               {x.phone && <span className="shrink-0 text-xs text-slate-400">{x.phone}</span>}
             </button>
@@ -160,17 +162,22 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
   const [position, setPosition] = useState(departments[0]?.label ?? "");
   const [fullName, setFullName] = useState("");
   const [picked, setPicked] = useState<StaffOpt | null>(null);
+  // Ishchi lavozimda (Laborant, Skladchi...) login qaysi bo'lim uchun ochilishi — kadr tanlaydi
+  const [loginRole, setLoginRole] = useState("");
   const needsLogin = !!departments.find((p) => p.label === position)?.role;
   const isDriver = drivers.includes(position);
   // Haydovchiga login ixtiyoriy: ECO ilovasiga telefon bilan kiradi, ERP ilovasiga esa login/parol bilan
-  const showLogin = needsLogin || isDriver;
-  const reset = () => { ref.current?.reset(); setPosition(departments[0]?.label ?? ""); setFullName(""); setPicked(null); };
+  const showLogin = needsLogin || isDriver || !!loginRole;
+  const reset = () => { ref.current?.reset(); setPosition(departments[0]?.label ?? ""); setFullName(""); setPicked(null); setLoginRole(""); };
   useEffect(() => { if (state?.ok) reset(); }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Xodim tanlanganda tanlangan lavozim o'zgarmaydi: aynan shu lavozim beriladi
   // (aks holda login beradigan bo'lim ishchi lavozimga almashib, login katagi yopilib qolardi).
   // Xodimning eski lavozimi faqat izohda ko'rsatiladi.
   const pick = (x: StaffOpt | null) => setPicked(x);
+
+  /** Lavozim almashganda "login uchun bo'lim" tanlovi eskirmasin. */
+  const changePosition = (v: string) => { setPosition(v); setLoginRole(""); };
 
   return (
     <form ref={ref} action={action} className="space-y-3">
@@ -180,7 +187,7 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
         <Field label="F.I.O. *" hint={picked ? undefined : "Lavozimni tanlasangiz mavjud xodimlar chiqadi"}>
           <FioField staff={staff} position={position} value={fullName} onChange={setFullName} picked={picked} onPick={pick} />
         </Field>
-        <Field label="Lavozim *"><PositionSelect departments={departments} work={[...new Set([...work, ...drivers])]} value={position} onChange={setPosition} /></Field>
+        <Field label="Lavozim *"><PositionSelect departments={departments} work={[...new Set([...work, ...drivers])]} value={position} onChange={changePosition} /></Field>
         <Field label="Telefon" hint={isDriver ? "Ilovaga kirish kaliti" : undefined}><Input name="phone" placeholder="+998 90 123 45 67" defaultValue={picked?.phone ?? ""} key={picked?.id ?? "new"} /></Field>
         <Field label="Ishga kirgan sana"><Input name="hiredAt" type="date" /></Field>
         <Button disabled={pending || (needsLogin && !canGrant)}>
@@ -193,12 +200,26 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
           {picked.position.trim().toLowerCase() !== position.trim().toLowerCase()
             ? <> Lavozimi: «{picked.position}» → <b>«{position}»</b>.</>
             : <> Lavozimi: <b>«{position}»</b>.</>}
-          {showLogin
-            ? " Pastdagi login va parol shu xodimga beriladi."
-            : " Bu lavozim tizimga kirmaydi — login berish uchun bo'lim lavozimini tanlang (yoki Otdel kadrda lavozimni «haydovchi ilovasiga chiqadi» deb belgilang)."}
+          {!picked.isActive && " Xodim nofaol edi — ro'yxatga qaytariladi."}
+          {showLogin ? " Pastdagi login va parol shu xodimga beriladi." : " Login kerak bo'lsa pastdan bo'limni tanlang."}
           <button type="button" onClick={() => { setPicked(null); setFullName(""); }} className="font-medium underline">bekor qilish</button>
         </p>
       )}
+      {/* Ishchi lavozim (Laborant, Skladchi...) — o'zi tizimga kirmaydi, lekin kerak bo'lsa
+          qaysi bo'lim huquqi bilan kirishini shu yerda tanlanadi; kadr lavozimi o'zgarmaydi */}
+      {!needsLogin && !isDriver && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <span>«{position}» o&apos;zi tizimga kirmaydi. Tizimga kirsin desangiz — qaysi bo&apos;lim huquqi bilan:</span>
+          <Select value={loginRole} onChange={(e) => setLoginRole(e.target.value)} className="w-40 px-2 py-1 text-xs">
+            <option value="">— login kerak emas —</option>
+            {departments.filter((p) => p.role).map((p) => <option key={p.label} value={p.role!}>{p.label}</option>)}
+            <option value="DRIVER">Haydovchi (ilova)</option>
+          </Select>
+          <span className="text-slate-500">Kadr lavozimi «{position}» bo&apos;lib qoladi.</span>
+        </div>
+      )}
+      {/* Tanlangan bo'lim serverga shu maydon bilan ketadi */}
+      {!!loginRole && <input type="hidden" name="role" value={loginRole} />}
       {isDriver && <DriverFields vehicles={vehicles} />}
       {showLogin && (
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:grid-cols-[1fr_1fr_2fr]">
@@ -207,7 +228,9 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
           <p className="self-end text-xs text-blue-800">
             {needsLogin
               ? "Bu lavozim egasi tizimga kirib, faqat o'z bo'limi sahifalarini ko'radi."
-              : "Ixtiyoriy: haydovchi ERP ilovasiga shu login/parol bilan kiradi va faqat o'z reyslarini ko'radi. Bo'sh qoldirsangiz — ECO ilovasiga telefon raqami bilan kiraveradi."}
+              : loginRole
+                ? `Login «${departments.find((p) => p.role === loginRole)?.label ?? "Haydovchi (ilova)"}» huquqi bilan ochiladi — xodim faqat shu bo'lim sahifalarini ko'radi.`
+                : "Ixtiyoriy: haydovchi ERP ilovasiga shu login/parol bilan kiradi va faqat o'z reyslarini ko'radi. Bo'sh qoldirsangiz — ECO ilovasiga telefon raqami bilan kiraveradi."}
             {!canGrant && " Login berish uchun Otdel kadr yoki direktor kerak."}
           </p>
         </div>
@@ -288,10 +311,23 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
   );
 }
 
-export function GrantLoginForm({ employeeId }: { employeeId: string }) {
+/**
+ * Ro'yxat qatoridan login berish. `roles` — qaysi bo'lim uchun login ochilishi
+ * (ishchi lavozimdagi xodim ham kerakli bo'lim bilan tizimga kira oladi; kadr lavozimi o'zgarmaydi).
+ * `defaultRole` — lavozimdan kelib chiqqan taxmin; bo'lmasa kadr o'zi tanlaydi.
+ */
+export function GrantLoginForm({ employeeId, roles, defaultRole }: {
+  employeeId: string;
+  roles: { value: string; label: string }[];
+  defaultRole?: string | null;
+}) {
   const [state, action, pending] = useActionState(grantLogin.bind(null, employeeId), undefined);
   return (
     <form action={action} className="flex flex-wrap items-center gap-1">
+      <Select name="role" defaultValue={defaultRole ?? ""} className="w-32 px-2 py-1 text-xs" required>
+        <option value="">Bo&apos;lim…</option>
+        {roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+      </Select>
       <Input name="login" placeholder="login" className="w-28 px-2 py-1 text-xs" autoComplete="off" required />
       <PasswordInput name="password" placeholder="parol" className="w-28 px-2 py-1 text-xs" autoComplete="new-password" required />
       <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending}>Login berish</Button>
