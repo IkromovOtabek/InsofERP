@@ -131,7 +131,9 @@ export function Input({ className, ...p }: React.InputHTMLAttributes<HTMLInputEl
   return <input className={cn(inputCls, className)} {...p} />;
 }
 export function Select({ className, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cn(inputCls, "appearance-none bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><path d=%22m6 9 6 6 6-6%22/></svg>')] bg-[length:16px] bg-[right_10px_center] bg-no-repeat pr-9", className)} {...p} />;
+  // Strelka `.select-caret` (globals.css) orqali — data-URI dagi bo'shliqlar Tailwind klassini buzadi
+  // `read-only:` CSS'da <select> ga doim tegadi — inputCls dagi kulrang fonni qaytarib olamiz
+  return <select className={cn(inputCls, "select-caret appearance-none pr-9 read-only:bg-white", className)} {...p} />;
 }
 export function Textarea({ className, ...p }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cn(inputCls, "h-auto min-h-20 py-2", className)} {...p} />;
