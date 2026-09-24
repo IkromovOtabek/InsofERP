@@ -12,6 +12,7 @@ import { eco, ecoEnabled } from "@/lib/eco/client";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeCardForm } from "../employee-form";
 import { ChangeLoginForm, ResetPasswordForm, ToggleLoginButton } from "../login-forms";
+import { DismissButton, RestoreButton } from "../dismiss-form";
 import { DeleteDocument, DocumentForms } from "./document-forms";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
@@ -46,9 +47,12 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
         subtitle={e.position}
         back={{ href: "/otdel-kadr?tab=xodimlar", label: "Xodimlar ro'yxati" }}
         action={
-          <div className="flex items-center gap-3">
-            {e.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}
+          <div className="flex flex-wrap items-center gap-3">
+            {e.firedAt ? <Badge color="red">Ishdan bo&apos;shatilgan</Badge> : e.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}
             <LinkButton href={`/employees/${e.id}/varaqa`} variant="secondary"><FileText size={16} /> Shaxsiy varaqa</LinkButton>
+            {e.userId !== s.userId && (e.firedAt
+              ? <RestoreButton employeeId={e.id} />
+              : <DismissButton employeeId={e.id} fullName={e.fullName} />)}
           </div>
         }
       />
@@ -108,7 +112,8 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             ...(e.subdivision ? [{ k: "Bo'lim / brigada", v: e.subdivision }] : []),
             ...(e.tariffRate ? [{ k: "Tarif stavka", v: money(e.tariffRate) }] : []),
             { k: "Ishga kirgan", v: e.hiredAt ? date(e.hiredAt) : "—" },
-            ...(e.firedAt ? [{ k: "Ishdan bo'shagan", v: date(e.firedAt) }] : []),
+            ...(e.firedAt ? [{ k: "Ishdan bo'shagan", v: <span className="text-red-600">{date(e.firedAt)}</span> }] : []),
+            ...(e.firedReason ? [{ k: "Bo'shatish sababi", v: e.firedReason }] : []),
             { k: "Tug'ilgan", v: e.birthDate ? date(e.birthDate) : "—" },
             { k: "Haydovchi ilovasi (ECO)", v: e.ecoUserId ? (e.ecoActive ? <Badge color="green">ulangan</Badge> : <Badge color="amber">tasdiqlanmagan</Badge>) : "—" },
             ...(e.ecoError ? [{ k: "ECO xatosi", v: <span className="text-red-600">{e.ecoError}</span> }] : []),

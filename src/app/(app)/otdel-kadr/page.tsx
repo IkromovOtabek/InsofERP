@@ -1,17 +1,24 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { workPositions } from "@/lib/positions";
 import { date } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import {
+  dayUtc, isoDay, monthDays, monthOf, today, validDay, validMonth, workedMinutes,
+} from "@/lib/davomat";
 import { NewPositionForm, PositionRow } from "./position-forms";
 import { OrgChart, type OrgEmployee } from "./org-chart";
+import { DavomatKun, type KunRow } from "./davomat-kun";
+import { DavomatOy, type OyRow } from "./davomat-oy";
+import { DismissButton, RestoreButton } from "../employees/dismiss-form";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
   ["lavozimlar", "Ishchi lavozimlar", BriefcaseBusiness],
   ["bolimlar", "Bo'limlar", Building2],
+  ["davomat", "Davomat", CalendarCheck],
   ["taqvim", "Kadr taqvimi", CakeSlice],
 ] as const;
 
@@ -24,9 +31,17 @@ function daysToAnniversary(d: Date) {
 }
 const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} kundan keyin`);
 
-export default async function OtdelKadrPage({ searchParams }: { searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string }> }) {
-  await requireSession(["HR"]);
-  const { tab = "xodimlar", qoshildi, yangilandi } = await searchParams;
+export default async function OtdelKadrPage({ searchParams }: {
+  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string }>;
+}) {
+  const s = await requireSession(["HR"]);
+  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy } = await searchParams;
+
+  // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi
+  const oyParam = validMonth(oy);
+  const kunIso = validDay(kun) ?? today();
+  const oyIso = oyParam ?? monthOf(kunIso);
+  const davomat = tab === "davomat";
 
   const [employees, positions, orderStages, tripStages] = await Promise.all([
     db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: { select: { role: true, isActive: true } }, _count: { select: { documents: true } } } }),
@@ -52,6 +67,51 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
   const orgPositions = positions
     .filter((p) => p.isActive || (countByPosition.get(p.name) ?? 0) > 0)
     .map((p) => ({ id: p.id, name: p.name, note: p.note, department: p.department, isDriver: p.isDriver }));
+
+  // ── Davomat: kunlik ro'yxat yoki oylik tabel ──
+  // Tabelda xodim ishga kirgan kundan bo'shagan kunigacha turadi; shu oyning eski
+  // kunlarini to'g'rilash uchun bo'shatilganlar ham oynadan tushib qolmaydi.
+  const inWindow = (from: Date, to: Date) => ({
+    AND: [
+      { OR: [{ hiredAt: null }, { hiredAt: { lte: to } }] },
+      { OR: [{ firedAt: null }, { firedAt: { gte: from } }] },
+      { OR: [{ isActive: true }, { firedAt: { not: null } }] },
+    ],
+  });
+  const tabelOrder = [{ position: "asc" as const }, { fullName: "asc" as const }];
+
+  let kunRows: KunRow[] = [];
+  let oyRows: OyRow[] = [];
+  if (davomat && oyParam) {
+    const days = monthDays(oyIso);
+    const from = dayUtc(days[0].iso);
+    const to = dayUtc(days[days.length - 1].iso);
+    const [list, marks] = await Promise.all([
+      db.employee.findMany({ where: inWindow(from, to), orderBy: tabelOrder, select: { id: true, fullName: true, position: true } }),
+      db.attendance.findMany({ where: { date: { gte: from, lte: to } } }),
+    ]);
+    const byEmp = new Map<string, OyRow["cells"]>();
+    for (const m of marks) {
+      const cells = byEmp.get(m.employeeId) ?? {};
+      cells[isoDay(m.date)] = { status: m.status, min: workedMinutes(m.checkIn, m.checkOut), note: m.note };
+      byEmp.set(m.employeeId, cells);
+    }
+    oyRows = list.map((e) => ({ ...e, cells: byEmp.get(e.id) ?? {} }));
+  } else if (davomat) {
+    const day = dayUtc(kunIso);
+    const [list, marks] = await Promise.all([
+      db.employee.findMany({ where: inWindow(day, day), orderBy: tabelOrder, select: { id: true, fullName: true, position: true, photo: true } }),
+      db.attendance.findMany({ where: { date: day } }),
+    ]);
+    const byEmp = new Map(marks.map((m) => [m.employeeId, m]));
+    kunRows = list.map((e) => {
+      const m = byEmp.get(e.id);
+      return {
+        id: e.id, fullName: e.fullName, position: e.position, photo: !!e.photo,
+        status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
+      } satisfies KunRow;
+    });
+  }
 
   const oc = new Map(orderStages.map((r) => [String(r.status), Number(r._count)]));
   const tc = new Map(tripStages.map((r) => [String(r.status), Number(r._count)]));
@@ -119,8 +179,18 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
                   <Td>{e.phone ?? "—"}</Td>
                   <Td>{e.hiredAt ? date(e.hiredAt) : <span className="text-slate-400">—</span>}</Td>
                   <Td right>{e._count.documents > 0 ? <span className="inline-flex items-center gap-1 text-slate-600"><Paperclip size={13} />{e._count.documents}</span> : <span className="text-slate-400">—</span>}</Td>
-                  <Td>{e.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</Td>
-                  <Td><Link href={`/employees/${e.id}/varaqa`} className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"><FileText size={14} /> Varaqa</Link></Td>
+                  <Td>
+                    {e.firedAt ? <Badge color="red">Bo&apos;shatilgan</Badge> : e.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}
+                    {e.firedAt && <div className="mt-0.5 text-xs font-normal text-slate-500">{date(e.firedAt)}{e.firedReason ? ` · ${e.firedReason}` : ""}</div>}
+                  </Td>
+                  <Td>
+                    <span className="flex items-center justify-end gap-2">
+                      <Link href={`/employees/${e.id}/varaqa`} className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"><FileText size={14} /> Varaqa</Link>
+                      {e.userId !== s.userId && (e.firedAt
+                        ? <RestoreButton employeeId={e.id} compact />
+                        : <DismissButton employeeId={e.id} fullName={e.fullName} compact />)}
+                    </span>
+                  </Td>
                 </Tr>
               ))}
             </tbody>
@@ -158,6 +228,10 @@ export default async function OtdelKadrPage({ searchParams }: { searchParams: Pr
           </p>
         </div>
       )}
+
+      {davomat && (oyParam
+        ? <DavomatOy ym={oyIso} rows={oyRows} />
+        : <DavomatKun key={kunIso} iso={kunIso} rows={kunRows} />)}
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
     </div>

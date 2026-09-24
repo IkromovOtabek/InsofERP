@@ -195,6 +195,7 @@ const HR_STEPS: TourStep[] = [
   openPage("/otdel-kadr", "Xodimlar ro'yxati", "Kadr bo'limining asosiy oynasi: yangi xodim hujjatlari bilan kiritiladi, shaxsiy varaqa chop etiladi."),
   openPage("/otdel-kadr?tab=lavozimlar", "Ishchi lavozimlar", "Tizimga login bermaydigan lavozimlar shu yerda ochiladi va darhol xodimlar ro'yxatiga tushadi."),
   openPage("/otdel-kadr?tab=bolimlar", "Bo'limlar", "Korxona tuzilmasi — qaysi xodim qaysi bo'limga tegishli."),
+  openPage("/otdel-kadr?tab=davomat", "Davomat", "Kunlik tabel: har xodimga belgi va kelgan/ketgan vaqt qo'yiladi, soat o'zi hisoblanadi. Oylik tabel shu yerdan ochiladi."),
   openPage("/otdel-kadr?tab=taqvim", "Kadr taqvimi", "Tug'ilgan kunlar, mehnat shartnomasi muddatlari va boshqa kadr sanalari."),
   openGroup("Boshqaruv"),
   openPage("/employees", "Xodimlar", "Tizimga kiradigan xodimlar: login, rol va parolni shu yerdan berasiz."),

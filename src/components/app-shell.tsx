@@ -32,7 +32,8 @@ function bestMatch(path: string, items: NavItem[]) {
   let best = "";
   for (const i of items) {
     for (const h of [i.href, ...(i.children ?? []).map((c) => c.href)]) {
-      if ((path === h || path.startsWith(h + "/")) && h.length > best.length) best = h;
+      // `h + "&"` — tab bandiga qo'shimcha so'rov qo'shilgan hol: /otdel-kadr?tab=davomat&kun=…
+      if ((path === h || path.startsWith(h + "/") || path.startsWith(h + "&")) && h.length > best.length) best = h;
     }
   }
   return best;

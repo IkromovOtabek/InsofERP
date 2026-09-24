@@ -198,6 +198,72 @@ export async function toggleEmployee(id: string) {
   revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers");
 }
 
+/* ───────── Ishdan bo'shatish ───────── */
+
+const dismissSchema = z.object({
+  firedAt: zStr("Bo'shatilgan sana kerak").transform((v) => new Date(v)),
+  // Tayyor sabab tanlanadi; "Boshqa sabab" bo'lsa matn maydoni ochiladi va shu ustun turadi
+  reason: zOpt,
+  reasonText: zOpt,
+});
+
+function dismissPaths() {
+  revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings");
+  revalidatePath("/drivers"); revalidatePath("/trips");
+}
+
+/**
+ * Xodimni ishdan bo'shatish: sana va sabab kartaga yoziladi, xodim nofaol bo'ladi,
+ * logini bloklanadi va biriktirilgan texnikasi bo'shaydi (boshqa haydovchiga beriladi).
+ * Reyslar tarixi va hujjatlari joyida qoladi — karta o'chmaydi.
+ */
+export async function dismissEmployee(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["HR"]);
+  const r = parseForm(dismissSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const firedAt = r.data.firedAt;
+  if (Number.isNaN(firedAt.getTime())) return { error: "Bo'shatilgan sana noto'g'ri" };
+  const reason = r.data.reasonText ?? r.data.reason;
+  if (!reason) return { error: "Bo'shatish sababini tanlang yoki yozing" };
+
+  const before = await db.employee.findUniqueOrThrow({ where: { id } });
+  if (before.userId === s.userId) return { error: "O'zingizni ishdan bo'shata olmaysiz" };
+  if (before.firedAt) return { error: "Bu xodim allaqachon ishdan bo'shatilgan" };
+  if (before.hiredAt && firedAt < before.hiredAt) return { error: "Bo'shatilgan sana ishga kirgan sanadan oldin bo'lishi mumkin emas" };
+
+  const after = await db.$transaction(async (tx) => {
+    const e = await tx.employee.update({
+      where: { id },
+      data: { firedAt, firedReason: reason, isActive: false, vehicleId: null },
+    });
+    if (before.userId) await tx.user.update({ where: { id: before.userId }, data: { isActive: false } });
+    await audit(tx, s.userId, "UPDATE", "Employee", id, before, e);
+    return e;
+  });
+
+  // Haydovchi bo'lsa ilovaga ham kira olmasin; texnikasi bo'shagani ECO'da ham ko'rinsin
+  if (await isDriverPosition(before.position)) pushEmployeeSilently(id);
+  if (before.vehicleId) pushVehicleSilently(before.vehicleId);
+  dismissPaths();
+  return { ok: true, note: `${after.fullName} ishdan bo'shatildi — ${reason}` };
+}
+
+/** Bo'shatishni bekor qilish: sana va sabab tozalanadi, xodim va logini qaytadi. */
+export async function restoreEmployee(id: string): Promise<ActionState> {
+  const s = await requireSession(["HR"]);
+  const before = await db.employee.findUniqueOrThrow({ where: { id } });
+  if (!before.firedAt) return { error: "Bu xodim ishdan bo'shatilmagan" };
+  await db.$transaction(async (tx) => {
+    const e = await tx.employee.update({ where: { id }, data: { firedAt: null, firedReason: null, isActive: true } });
+    if (before.userId) await tx.user.update({ where: { id: before.userId }, data: { isActive: true } });
+    await audit(tx, s.userId, "UPDATE", "Employee", id, before, e);
+  });
+  if (await isDriverPosition(before.position)) pushEmployeeSilently(id);
+  dismissPaths();
+  // Texnika qaytarilmaydi — bo'shagan mikser boshqa haydovchiga berilgan bo'lishi mumkin
+  return { ok: true, note: "Xodim ishga qaytarildi — texnikasini kartadan qayta biriktiring" };
+}
+
 /** Xodim kartasi: otdel kadr F.I.O., lavozim, telefon va sanalarni tuzatadi. */
 export async function updateEmployee(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["HR"]);

@@ -269,6 +269,7 @@ model Employee {
   phone       String?
   hiredAt     DateTime? // ishga kirgan sana — otdel kadr yuritadi
   firedAt     DateTime? // ishdan bo'shagan sana (to'ldirilsa xodim nofaol bo'ladi)
+  firedReason String? // bo'shatish sababi — "Ishdan bo'shatish" tugmasi yozadi
   birthDate   DateTime? // tug'ilgan sana
   note        String? // otdel kadr izohi (smena, manzil, hujjat holati...)
   isActive    Boolean   @default(true)
@@ -295,11 +296,12 @@ model Employee {
   ecoError    String? // oxirgi sinxron xatosi
   createdAt   DateTime  @default(now())
 
-  user      User?              @relation(fields: [userId], references: [id])
-  vehicle   Vehicle?           @relation("DriverVehicle", fields: [vehicleId], references: [id])
-  trips     Trip[]             @relation("TripDriver")
-  brigades  Brigade[]          @relation("BrigadeLeader")
-  documents EmployeeDocument[]
+  user       User?              @relation(fields: [userId], references: [id])
+  vehicle    Vehicle?           @relation("DriverVehicle", fields: [vehicleId], references: [id])
+  trips      Trip[]             @relation("TripDriver")
+  brigades   Brigade[]          @relation("BrigadeLeader")
+  documents  EmployeeDocument[]
+  attendance Attendance[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -316,6 +318,35 @@ model EmployeeDocument {
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
+}
+
+/// Bir xodimning bir kunlik davomati — otdel kadr "Davomat" tabidan belgilaydi.
+/// Yozuv yo'q kun = belgilanmagan (tabelda bo'sh katak).
+model Attendance {
+  id         String           @id @default(cuid())
+  employeeId String
+  date       DateTime         @db.Date // kun, soatsiz
+  status     AttendanceStatus @default(PRESENT)
+  checkIn    String? // keldi, "HH:MM" — faqat ishga chiqqan kun uchun
+  checkOut   String? // ketdi, "HH:MM"; kelishdan oldin bo'lsa tungi smena deb hisoblanadi
+  note       String?
+  markedById String? // kim belgilagani (User.id) — auditda ham qoladi
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+/// Tabeldagi belgilar. `PRESENT` dan boshqasida soat yozilmaydi.
+enum AttendanceStatus {
+  PRESENT // keldi
+  ABSENT // kelmadi (sababsiz)
+  LEAVE // ta'til
+  SICK // kasal
+  DAYOFF // dam olish / bayram
 }
 
 /// Ishchi lavozim (login bermaydi) — otdel kadr o'zi qo'shadi/o'chiradi.
