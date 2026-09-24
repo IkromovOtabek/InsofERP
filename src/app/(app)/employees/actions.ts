@@ -89,6 +89,7 @@ const zMoney = z.string().trim().optional().transform((v) => {
 
 /** Karta tahriri — tezkor formada yo'q, otdel kadr to'ldiradigan qo'shimcha maydonlar. */
 const cardSchema = schema.omit({ login: true, password: true }).extend({
+  driverFields: zOpt, // "1" — kartada texnika bo'limi ochiq edi, maydonlari saqlansin
   tabelNo: zOpt,
   subdivision: zOpt,
   tariffRate: zMoney,
@@ -345,12 +346,14 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
     return { error: `"${d.position}" tizimga kiradigan bo'lim — bu yerdan emas, "Login berish" orqali tayinlanadi` };
   }
 
-  // Haydovchi maydonlari faqat haydovchi lavozimida keladi — boshqa lavozimda tegmaymiz
+  // Texnika/guvohnoma maydonlari kartada ochiq bo'lsa (haydovchi lavozimi yoki "Texnika biriktirish"
+  // bosilgan) saqlanadi; bo'lim yopiq bo'lsa mavjud biriktirish tegilmaydi
   const driver = await isDriverPosition(d.position);
+  const vehicleSent = driver || d.driverFields === "1";
   // Ishdan bo'shagan sana qo'yilsa xodim nofaol bo'ladi, tozalansa — qaytadi (Excel importdagi qoida bilan bir xil)
   const isActive = d.firedAt ? false : before.firedAt ? true : before.isActive;
   const after = await db.$transaction(async (tx) => {
-    const extra = driver ? await driverData(tx, s.userId, d) : {};
+    const extra = vehicleSent ? await driverData(tx, s.userId, d) : {};
     const e = await tx.employee.update({
       where: { id },
       data: {

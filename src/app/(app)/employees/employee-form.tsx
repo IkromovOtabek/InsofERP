@@ -286,6 +286,8 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
 }) {
   const [state, action, pending] = useActionState(updateEmployee.bind(null, employee.id), undefined);
   const [position, setPosition] = useState(employee.position);
+  // Texnika bo'limi: haydovchi lavozimida yoki texnikasi bo'lganda o'zi ochiq, boshqalarda tugma bilan ochiladi
+  const [showVehicle, setShowVehicle] = useState(drivers.includes(employee.position) || !!employee.plate);
   // Ro'yxatdan chiqarilgan eski lavozim ham tanlov sifatida qolsin, aks holda saqlashda almashib ketadi
   const workList = work.includes(employee.position) || departments.some((d) => d.label === employee.position) ? work : [employee.position, ...work];
 
@@ -316,14 +318,23 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
         <Field label="Berilgan sana"><Input name="passportIssuedAt" type="date" defaultValue={employee.passportIssuedAt ?? ""} /></Field>
         <Field label="Izoh" className="sm:col-span-3"><Textarea name="note" defaultValue={employee.note ?? ""} rows={2} placeholder="Smena, manzil, hujjat holati..." /></Field>
       </div>
-      {drivers.includes(position) && (
-        <DriverFields
-          vehicles={vehicles}
-          defaults={{
-            plate: employee.plate ?? "", vehicleType: employee.vehicleType ?? "MIXER", capacityM3: employee.capacityM3 ?? "",
-            licenseNo: employee.licenseNo ?? "", licenseCategory: employee.licenseCategory ?? "", licenseExpiry: employee.licenseExpiry ?? "",
-          }}
-        />
+      {/* Texnika va guvohnoma — lavozimidan qat'i nazar shu kartadan biriktiriladi.
+          `driverFields` bayrog'i serverga "maydonlar yuborildi" deb aytadi (aks holda tegilmaydi) */}
+      {(showVehicle || drivers.includes(position)) ? (
+        <>
+          <input type="hidden" name="driverFields" value="1" />
+          <DriverFields
+            vehicles={vehicles}
+            defaults={{
+              plate: employee.plate ?? "", vehicleType: employee.vehicleType ?? "MIXER", capacityM3: employee.capacityM3 ?? "",
+              licenseNo: employee.licenseNo ?? "", licenseCategory: employee.licenseCategory ?? "", licenseExpiry: employee.licenseExpiry ?? "",
+            }}
+          />
+        </>
+      ) : (
+        <button type="button" onClick={() => setShowVehicle(true)} className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:underline">
+          <Truck size={15} /> Texnika biriktirish (mashina raqami, guvohnoma)
+        </button>
       )}
       <div className="flex items-center gap-3">
         <Button disabled={pending}>Saqlash</Button>
