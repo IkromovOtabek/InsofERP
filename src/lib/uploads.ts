@@ -64,6 +64,23 @@ export async function saveEmployeeFile(employeeId: string, file: FormDataEntryVa
   return { stored, name: file.name || `hujjat.${ext}`, type: file.type };
 }
 
+/**
+ * Surat maydoni: odatda oddiy fayl, ammo kamerada olingan kadr brauzer fayl maydonini
+ * to'ldirishga ruxsat bermagan holatda `<name>Data` yashirin maydonida data-URL bo'lib keladi.
+ * Ikkalasi ham shu yerda bitta `File` ga keltiriladi — chaqiruvchi farqini bilmaydi.
+ */
+export function photoEntry(fd: FormData, name = "photo"): File | null {
+  const f = fd.get(name);
+  if (f instanceof File && f.size > 0) return f;
+  const data = fd.get(`${name}Data`);
+  if (typeof data !== "string") return null;
+  const m = /^data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=]+)$/.exec(data.trim());
+  if (!m) return null;
+  const buf = Buffer.from(m[2], "base64");
+  if (!buf.length) return null;
+  return new File([new Uint8Array(buf)], `surat.${m[1] === "image/png" ? "png" : m[1] === "image/webp" ? "webp" : "jpg"}`, { type: m[1] });
+}
+
 /** Saqlangan nomdan diskdagi to'liq yo'l — faqat bizning nomlash sxemamiz (yo'l bo'ylab yurish yo'q). */
 export function employeeFilePath(stored: string) {
   if (!/^[\w-]+\.(pdf|jpg|png|webp|heic)$/.test(stored)) return null;

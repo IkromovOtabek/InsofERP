@@ -1,8 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
-  ArrowRight, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
-  Mail, MapPin, Phone, Presentation, QrCode, Truck, Wallet,
+  ArrowRight, Boxes, Calculator, CalendarClock, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
+  Mail, MapPin, Phone, Presentation, QrCode, Ruler, ShieldCheck, Timer, Truck, Wallet,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
@@ -13,6 +13,9 @@ import { Showreel, type Clip } from "./showreel";
 import { Catalog, type CatalogGroup, type CatalogProduct } from "./catalog";
 import { PlantLocation } from "./plant-map";
 import { GrowLine, Lift, Reveal, StatValue } from "./motion";
+import { AggregateIcon, IconTile, MixerIcon, SlabIcon } from "./icons";
+import { VolumeCalculator } from "./calculator";
+import { MobileBar } from "./mobile-bar";
 
 /** Narxlar saytda ko'rsatilmaydi — mijoz hajm va manzilga qarab narx so'raydi.
  *  Ko'rsatish kerak bo'lsa shu yerni `true` qilish kifoya. */
@@ -29,9 +32,9 @@ const CLIPS: Clip[] = [
 ];
 
 const DIRECTIONS = [
-  { img: "/media/zavod.jpg", tag: "Tayyor beton", title: "Mikserlarda obyektga", text: "Turli markadagi beton. Hajm va soat oldindan kelishiladi, quyish uzilmaydi." },
-  { img: "/media/maydon.jpg", tag: "Temir-beton", title: "Yig'ma konstruksiyalar", text: "Plita, ustun, rigel va boshqalar — kran bilan yuklab beriladi." },
-  { img: "/media/xomashyo.jpg", tag: "Xomashyo", title: "Qum va shag'al", text: "Baza o'zimizda, yuk transporti ham o'zimizniki — muddat cho'zilmaydi." },
+  { img: "/media/zavod.jpg", icon: MixerIcon, tag: "Tayyor beton", title: "Mikserlarda obyektga", text: "Turli markadagi beton. Hajm va soat oldindan kelishiladi, quyish uzilmaydi." },
+  { img: "/media/maydon.jpg", icon: SlabIcon, tag: "Temir-beton", title: "Yig'ma konstruksiyalar", text: "Plita, ustun, rigel va boshqalar — kran bilan yuklab beriladi." },
+  { img: "/media/xomashyo.jpg", icon: AggregateIcon, tag: "Xomashyo", title: "Qum va shag'al", text: "Baza o'zimizda, yuk transporti ham o'zimizniki — muddat cho'zilmaydi." },
 ];
 
 const ADVANTAGES = [
@@ -44,10 +47,10 @@ const ADVANTAGES = [
 ];
 
 const STEPS = [
-  { title: "Ariza", text: "Telefon yoki saytdagi forma orqali hajm, marka va manzilni aytasiz." },
-  { title: "Hisob-kitob", text: "Narx, muddat va yetkazib berish sharti kelishiladi, shartnoma rasmiylashtiriladi." },
-  { title: "Ishlab chiqarish", text: "Partiya rejaga qo'yiladi, xomashyo ajratiladi va sifat nazoratidan o'tadi." },
-  { title: "Yetkazib berish", text: "Belgilangan vaqtda obyektga chiqamiz, QR-nakladnoy bilan topshiramiz." },
+  { icon: ClipboardList, title: "Ariza", text: "Telefon yoki saytdagi forma orqali hajm, marka va manzilni aytasiz." },
+  { icon: Ruler, title: "Hisob-kitob", text: "Narx, muddat va yetkazib berish sharti kelishiladi, shartnoma rasmiylashtiriladi." },
+  { icon: Factory, title: "Ishlab chiqarish", text: "Partiya rejaga qo'yiladi, xomashyo ajratiladi va sifat nazoratidan o'tadi." },
+  { icon: Truck, title: "Yetkazib berish", text: "Belgilangan vaqtda obyektga chiqamiz, QR-nakladnoy bilan topshiramiz." },
 ];
 
 export default async function LandingPage() {
@@ -67,10 +70,21 @@ export default async function LandingPage() {
   const years = company.foundedYear ? new Date().getFullYear() - company.foundedYear : null;
   const capacity = company.dailyCapacityM3 ? fmtNum(company.dailyCapacityM3) : null;
 
-  // Hero lentasidagi markalar — tayyor beton (m³) kodlari; bo'lmasa umumiy ro'yxat
+  // Hero markalari — tayyor beton (m³) kodlari; bo'lmasa umumiy ro'yxat
   const markalar = (products.filter((p) => p.unit === "m3").length > 0 ? products.filter((p) => p.unit === "m3") : products)
     .map((p) => p.code)
     .slice(0, 5);
+
+  // Yugurma lenta: marka + guruh nomlari + asosiy va'dalar
+  const ticker = [
+    ...markalar.map((m) => `Beton ${m}`),
+    ...groups.map((g) => g.name),
+    capacity ? `Kunlik ${capacity} m³` : "Katta hajm",
+    "QR-nakladnoy",
+    "O'z mikser parki",
+    "Laboratoriya nazorati",
+    "Rasmiy shartnoma",
+  ];
 
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
   const catalogProducts: CatalogProduct[] = products.map((p) => ({
@@ -95,75 +109,73 @@ export default async function LandingPage() {
       {/* ───────── Hero banneri ───────── */}
       {/* Balandlik: ekran bo'yi minus sarlavha (xizmat qatori 2.5rem + panel 5rem).
           `svh` — telefon brauzerining pastki paneli hisobga olinadi. */}
-      <section className="relative isolate flex min-h-[calc(100svh-7.5rem)] items-center overflow-hidden bg-insof-900">
-        {/* Surat markazidagi INSOF logotipi sarlavha bilan ustma-ust tushmasin uchun
-           kadr chapdan boshlanadi (`object-left`). Sifat 100 — manba allaqachon
-           cho'zilgan, Next uni qayta siqib yana yumshatmasin. */}
-        <Image src={HERO_IMAGE} alt="" fill priority quality={100} sizes="100vw" className="-z-20 object-cover object-left" />
-        {/* Soya faqat matn ostida quyuq: chapda sarlavha o'qilsin, o'rtadan o'ngga
-           qarab tezda so'nadi — banner va mikserlar tiniq ko'rinib tursin. */}
-        <div className="absolute inset-0 -z-10 bg-linear-to-r from-insof-900/95 via-insof-900/35 via-45% to-transparent to-75%" />
-        <div className="absolute inset-0 -z-10 bg-linear-to-t from-insof-900/45 via-transparent to-transparent" />
+      <section id="hero" className="relative isolate flex min-h-[calc(100svh-7.5rem)] items-center overflow-hidden bg-insof-900">
+        {/* Surat butun bannerni to'ldiradi. Telefonda kadr o'ngroqdan olinadi —
+           tor ekranda kran va ishchi ko'rinib tursin. Sifat 100 — Next uni
+           qayta siqib yumshatmasin. */}
+        <Image src={HERO_IMAGE} alt="" fill priority quality={100} sizes="100vw" className="-z-20 object-cover object-[78%_center] sm:object-center" />
+        {/* Soya faqat matn ortida — o'rtadan o'ngga qarab butunlay so'nadi. */}
+        <div className="absolute inset-0 -z-10 bg-linear-to-r from-insof-900/85 via-insof-900/25 via-45% to-transparent to-70%" />
+        <div className="absolute inset-0 -z-10 bg-linear-to-t from-insof-900/70 via-insof-900/10 via-45% to-transparent to-60%" />
 
-        <div className="mx-auto w-full max-w-[1440px] px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-20">
-          <div className="max-w-2xl">
-            <Reveal mode="mount" y={14}>
-              <p className="flex items-center gap-3 font-mono text-[11px] tracking-[0.18em] text-white/60 uppercase">
-                <span className="h-px w-8 bg-signal" />
-                {company.legalName ?? company.name}
-              </p>
+        <div className="mx-auto w-full max-w-[1680px] px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-20">
+          <div className="max-w-3xl [text-shadow:0_2px_16px_rgba(6,18,42,0.7)]">
+            {/* Holat tasmasi — "jonli" nuqta bilan: zavod ishlayotganini bildiradi */}
+            <Reveal mode="mount" y={12}>
+              <div className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full glass-dark px-4 py-2 text-[13px] text-white/85 [text-shadow:none]">
+                <span className="live-dot relative inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                <span>{hours ? `Ish vaqti: ${hours}` : "Zavod ishlayapti"}</span>
+                <span className="hidden text-white/35 sm:inline">·</span>
+                <span className="hidden sm:inline">Yangiyo&apos;l, Toshkent viloyati</span>
+              </div>
             </Reveal>
 
-            <Reveal mode="mount" delay={0.08} y={18}>
-              <h1 className="mt-4 font-display text-[2rem] leading-[1.06] font-extrabold text-white sm:mt-5 sm:text-5xl lg:text-[3.5rem]">
+            <Reveal mode="mount" y={18} delay={0.06}>
+              <h1 className="mt-6 font-display text-[1.9rem] leading-[1.1] font-bold text-balance text-white sm:text-[2.75rem] lg:text-[3.4rem]">
                 Tayyor beton va temir-beton mahsulotlari
               </h1>
             </Reveal>
 
-            {/* Marka lentasi — mijoz birinchi bo'lib shuni qidiradi */}
+            {/* Markalar — mijoz birinchi bo'lib shuni qidiradi: shisha chiplar */}
             {markalar.length > 0 && (
               <Reveal mode="mount" delay={0.16}>
-                <div className="mt-5 inline-flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-signal px-4 py-2 sm:mt-6 sm:px-5 sm:py-2.5">
-                  {markalar.map((m, i) => (
-                    <span key={m} className="flex items-center gap-2 sm:gap-4">
-                      {/* Ajratgich faqat keng ekranda: telefonda qator ko'chganda
-                          "|" belgisi satr boshida osilib qolardi */}
-                      {i > 0 && <span className="hidden text-white/45 sm:inline">|</span>}
-                      <span className="font-display text-lg font-bold text-white sm:text-xl">{m}</span>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {markalar.map((m) => (
+                    <span key={m} className="inline-flex h-9 items-center rounded-full glass-dark px-4 font-mono text-[15px] font-semibold text-white [text-shadow:none]">
+                      {m}
                     </span>
                   ))}
+                  {capacity && (
+                    <span className="inline-flex h-9 items-center gap-2 rounded-full bg-signal px-4 font-mono text-[15px] font-semibold text-white [text-shadow:none]">
+                      {capacity} m³<span className="text-white/70">/kun</span>
+                    </span>
+                  )}
                 </div>
               </Reveal>
             )}
 
             <Reveal mode="mount" delay={0.22}>
-              <p className="mt-4 text-base text-white/85 sm:mt-5 sm:text-lg lg:text-xl">
-                {capacity && <>Kunlik quvvat: <span className="font-semibold text-white tabular-nums">{capacity} m³</span> <span className="mx-2 text-white/35">|</span></>}
-                Yetkazish: <span className="font-semibold text-white">o&apos;z mikserlarimizda</span>
-              </p>
-            </Reveal>
-
-            <div className="mt-5 h-px w-64 max-w-full bg-signal sm:mt-6" />
-
-            <Reveal mode="mount" delay={0.28}>
-              <ul className="mt-5 space-y-3 sm:mt-6 sm:space-y-3.5">
-                <HeroPoint icon={FileCheck2} text="Rasmiy shartnoma, schyot-faktura va bank orqali hisob-kitob" />
+              <ul className="mt-7 space-y-3">
+                <HeroPoint icon={ShieldCheck} text="Rasmiy shartnoma, schyot-faktura va bank orqali hisob-kitob" />
                 <HeroPoint icon={QrCode} text="Har bir yukda QR-nakladnoy — hajm va markani telefondan tekshirasiz" />
                 <HeroPoint icon={FlaskConical} text="Har partiya tasdiqlangan retsept bo'yicha, laboratoriya nazorati bilan" />
               </ul>
             </Reveal>
 
-            <Reveal mode="mount" delay={0.36}>
-              <div className="mt-7 flex flex-wrap gap-3 sm:mt-9">
-                <a href="#ariza" className="inline-flex h-13 items-center gap-3 rounded-md bg-signal px-7 text-base font-semibold text-white transition-[color,background-color,transform] duration-200 hover:scale-[1.03] hover:bg-signal-600 active:scale-[0.98] sm:h-14 sm:px-8">
-                  Narx-taklif olish <ArrowRight size={18} />
+            <Reveal mode="mount" delay={0.32}>
+              <div className="mt-8 flex flex-wrap gap-3 sm:mt-10">
+                <a href="#ariza" className="group inline-flex h-13 items-center gap-3 rounded-full bg-signal pr-2 pl-7 text-base font-semibold text-white transition-[background-color,transform] duration-200 hover:bg-signal-600 active:scale-[0.98] sm:h-14">
+                  Narx-taklif olish
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/20 transition-transform duration-200 group-hover:translate-x-0.5">
+                    <ArrowRight size={18} />
+                  </span>
                 </a>
-                <a href="#mahsulotlar" className="inline-flex h-13 items-center rounded-md border border-white/30 px-7 text-base font-semibold text-white transition-[color,background-color,transform] duration-200 hover:scale-[1.03] hover:bg-white/10 active:scale-[0.98] sm:h-14 sm:px-8">
-                  Mahsulotlar ro&apos;yxati
+                <a href="#kalkulyator" className="inline-flex h-13 items-center gap-2.5 rounded-full glass-dark px-7 text-base font-semibold text-white transition-colors duration-200 hover:bg-white/15 sm:h-14">
+                  <Calculator size={18} strokeWidth={1.75} /> Hajmni hisoblash
                 </a>
                 {/* Taqdimot — PPT ning veb ko'rinishi (23 slayd, animatsiya bilan) */}
-                <Link href="/taqdimot" className="inline-flex h-13 items-center gap-2.5 rounded-md border border-white/30 px-7 text-base font-semibold text-white transition-[color,background-color,transform] duration-200 hover:scale-[1.03] hover:border-signal hover:bg-signal active:scale-[0.98] sm:h-14 sm:px-8">
-                  <Presentation size={18} /> Taqdimot
+                <Link href="/taqdimot" className="inline-flex h-13 items-center gap-2.5 rounded-full glass-dark px-7 text-base font-semibold text-white transition-colors duration-200 hover:bg-white/15 sm:h-14">
+                  <Presentation size={18} strokeWidth={1.75} /> Taqdimot
                 </Link>
               </div>
             </Reveal>
@@ -171,29 +183,48 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* ───────── Raqamlar ───────── */}
-      <section className="border-b border-beton-200 bg-white">
-        <dl className="mx-auto grid max-w-[1440px] grid-cols-2 divide-beton-200 px-4 sm:px-6 lg:grid-cols-4 lg:divide-x lg:px-8">
-          <Stat value={company.dailyCapacityM3 ? Number(company.dailyCapacityM3) : null} suffix=" m³" fallback="Katta hajm" label="Kunlik ishlab chiqarish quvvati" delay={0} />
-          <Stat value={years && years > 0 ? years : null} suffix=" yil" fallback="Tajriba" label={company.foundedYear ? `${company.foundedYear} yildan beri ishlaymiz` : "Sanoat qurilishi tajribasi"} delay={0.08} />
-          <Stat value={products.length} fallback="" label="Marka va mahsulot turi" delay={0.16} />
-          <Stat value={null} fallback="QR" label="Har bir nakladnoyni tekshirish mumkin" delay={0.24} />
-        </dl>
+      {/* ───────── Yugurma lenta ───────── */}
+      <div className="marka overflow-hidden border-y border-white/10 bg-insof-900 py-3.5" aria-hidden>
+        <div className="marka-run flex w-max whitespace-nowrap font-mono text-[12px] tracking-[0.16em] text-white/55 uppercase">
+          {[...ticker, ...ticker].map((t, i) => (
+            <span key={i} className="flex items-center">
+              <span className="px-6">{t}</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-signal" />
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ───────── Raqamlar — bento plitkalar ───────── */}
+      <section className="relative bg-white">
+        <div className="mx-auto max-w-[1680px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat accent icon={Factory} value={company.dailyCapacityM3 ? Number(company.dailyCapacityM3) : null} suffix=" m³" fallback="Katta hajm" label="Kunlik ishlab chiqarish quvvati" delay={0} />
+            <Stat icon={CalendarClock} value={years && years > 0 ? years : null} suffix=" yil" fallback="Tajriba" label={company.foundedYear ? `${company.foundedYear} yildan beri ishlaymiz` : "Sanoat qurilishi tajribasi"} delay={0.08} />
+            <Stat icon={Boxes} value={products.length} fallback="" label="Marka va mahsulot turi" delay={0.16} />
+            <Stat icon={QrCode} value={null} fallback="QR" label="Har bir nakladnoyni tekshirish mumkin" delay={0.24} />
+          </dl>
+        </div>
       </section>
 
       {/* ───────── Yo'nalishlar ───────── */}
-      <Section id="mahsulotlar" eyebrow="Nima ishlab chiqaramiz" title="Uch yo'nalish — bitta zavod">
+      <Section id="mahsulotlar" eyebrow="Nima ishlab chiqaramiz" title="Uch yo'nalish — bitta zavod" grid>
         <div className="grid gap-5 lg:grid-cols-3">
           {DIRECTIONS.map((d, i) => (
             <Reveal key={d.tag} delay={i * 0.12}>
               <Lift>
-                <article className="group relative isolate min-h-72 overflow-hidden rounded-lg bg-insof-900">
+                <article className="group relative isolate min-h-80 overflow-hidden rounded-3xl bg-insof-900 ring-1 ring-black/5">
                   <Image src={d.img} alt="" fill sizes="(min-width: 1024px) 33vw, 100vw" className="-z-20 object-cover transition-transform duration-700 group-hover:scale-105" />
-                  <div className="absolute inset-0 -z-10 bg-linear-to-t from-insof-900 via-insof-900/70 to-insof-900/10" />
-                  <div className="flex h-full flex-col justify-end p-6">
-                    <span className="font-mono text-[11px] tracking-[0.16em] text-signal uppercase">{d.tag}</span>
-                    <h3 className="mt-2 font-display text-2xl font-bold text-white">{d.title}</h3>
-                    <p className="mt-2 text-[15px] leading-relaxed text-white/70">{d.text}</p>
+                  <div className="absolute inset-0 -z-10 bg-linear-to-t from-insof-900 via-insof-900/65 to-insof-900/5" />
+                  <div className="flex h-full flex-col justify-between p-6">
+                    <IconTile tone="glass" size="lg"><d.icon size={26} /></IconTile>
+                    <div>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 font-mono text-[11px] tracking-[0.14em] text-white/85 uppercase ring-1 ring-white/15">
+                        <span className="h-1.5 w-1.5 rounded-full bg-signal" />{d.tag}
+                      </span>
+                      <h3 className="mt-3 font-display text-xl font-semibold text-white sm:text-2xl">{d.title}</h3>
+                      <p className="mt-2 text-[15px] leading-relaxed text-white/70">{d.text}</p>
+                    </div>
                   </div>
                 </article>
               </Lift>
@@ -203,15 +234,17 @@ export default async function LandingPage() {
 
         {catalogProducts.length > 0 && (
           <div className="mt-14">
-            <h3 className="mb-6 font-display text-xl font-bold text-beton-900">Mahsulotlar ro&apos;yxati</h3>
+            <h3 className="mb-6 font-display text-xl font-semibold text-beton-900">Mahsulotlar ro&apos;yxati</h3>
             <Catalog products={catalogProducts} groups={catalogGroups} showPrices={SHOW_PRICES} />
           </div>
         )}
       </Section>
 
       {/* ───────── Zavod videolari ───────── */}
-      <section id="zavod" className="scroll-mt-24 bg-insof-900 py-20 lg:py-24">
-        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      <section id="zavod" className="grain relative isolate scroll-mt-24 overflow-hidden bg-insof-900 py-20 lg:py-24">
+        <div className="blueprint-dark absolute inset-0 -z-10" aria-hidden />
+        <div className="absolute -top-40 left-1/2 -z-10 h-[32rem] w-[48rem] -translate-x-1/2 rounded-full bg-insof-500/25 blur-3xl" aria-hidden />
+        <div className="relative z-10 mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
           <Heading
             eyebrow="Zavod"
             title="Ishimizni o'z ko'zingiz bilan ko'ring"
@@ -225,26 +258,23 @@ export default async function LandingPage() {
       </section>
 
       {/* ───────── Nega biz ───────── */}
-      <Section id="nega-biz" eyebrow="Nega Insof" title="Qurilishchi nimaga e'tibor beradi — shuning ustida ishlaymiz" tone="white">
-        <div className="grid gap-x-12 gap-y-10 lg:grid-cols-2">
+      <Section id="nega-biz" eyebrow="Nega Insof" title="Qurilishchi nimaga e'tibor beradi — shuning ustida ishlaymiz" grid>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {ADVANTAGES.map((a, i) => (
-            <Reveal key={a.title} delay={(i % 2) * 0.1 + Math.floor(i / 2) * 0.06} y={16}>
-              <div className="flex gap-5 border-b border-beton-200 pb-8">
-                <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-insof-900 text-signal">
-                  <a.icon size={20} />
-                </span>
-                <div>
-                  <h3 className="font-display text-lg font-bold text-beton-900">{a.title}</h3>
-                  <p className="mt-1.5 text-[15px] leading-relaxed text-beton-600">{a.text}</p>
-                </div>
+            <Reveal key={a.title} delay={(i % 3) * 0.08 + Math.floor(i / 3) * 0.06} y={16}>
+              <div className="group relative h-full overflow-hidden rounded-2xl bg-white p-6 ring-1 ring-beton-200 transition-shadow duration-300 hover:shadow-[0_24px_48px_-24px_rgba(27,42,76,0.35)]">
+                <span className="absolute inset-x-0 top-0 h-0.5 origin-left scale-x-0 bg-signal transition-transform duration-500 group-hover:scale-x-100" />
+                <IconTile tone="solid"><a.icon size={22} strokeWidth={1.5} /></IconTile>
+                <h3 className="mt-5 font-display text-[15px] font-semibold text-beton-900">{a.title}</h3>
+                <p className="mt-2 text-[15px] leading-relaxed text-beton-600">{a.text}</p>
               </div>
             </Reveal>
           ))}
         </div>
 
-        <Reveal delay={0.15} className="mt-10">
-          <div className="flex flex-col gap-5 rounded-lg border-l-4 border-signal bg-beton-100 p-6 sm:flex-row sm:items-center">
-            <QrCode size={28} className="shrink-0 text-insof-700" />
+        <Reveal delay={0.15} className="mt-6">
+          <div className="flex flex-col gap-5 rounded-2xl border border-dashed border-insof-500/40 bg-white p-6 sm:flex-row sm:items-center">
+            <IconTile tone="soft" size="lg" dot><QrCode size={26} strokeWidth={1.5} /></IconTile>
             <p className="text-[15px] leading-relaxed text-beton-700">
               <span className="font-semibold text-beton-900">Hujjatni tekshirib ko&apos;ring.</span> Bizdan mahsulot olgan bo&apos;lsangiz,
               nakladnoydagi QR kodni telefon kamerasida oching — hajm, marka va sana bevosita zavod tizimidan chiqadi.
@@ -254,33 +284,56 @@ export default async function LandingPage() {
       </Section>
 
       {/* ───────── Ish tartibi ───────── */}
-      <Section id="jarayon" eyebrow="Ish tartibi" title="Arizadan yetkazib berishgacha — to'rt qadam">
-        <ol className="relative grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+      <Section id="jarayon" eyebrow="Ish tartibi" title="Arizadan yetkazib berishgacha — to'rt qadam" tone="white">
+        <ol className="relative grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {/* Qadamlarni bog'lovchi chiziq — faqat keng ekranda, ko'rinishga kirganda chapdan o'ngga chiziladi */}
-          <GrowLine className="absolute top-7 right-0 left-0 hidden h-px bg-beton-300 lg:block" />
+          <GrowLine className="absolute top-12 right-8 left-8 hidden h-px bg-beton-300 lg:block" />
           {STEPS.map((s, i) => (
             <Reveal key={s.title} as="li" delay={i * 0.12} y={16} className="relative">
-              <span className="relative z-10 inline-flex h-14 w-14 items-center justify-center rounded-full bg-insof-900 font-display text-lg font-bold text-white ring-8 ring-beton-100">
-                {i + 1}
-              </span>
-              <h3 className="mt-5 font-display text-lg font-bold text-beton-900">{s.title}</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-beton-600">{s.text}</p>
+              <div className="h-full rounded-2xl bg-beton-50 p-6 ring-1 ring-beton-200">
+                <div className="flex items-start justify-between">
+                  <IconTile tone="solid"><s.icon size={22} strokeWidth={1.5} /></IconTile>
+                  <span className="text-outline font-display text-5xl font-bold text-insof-700/50 tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+                </div>
+                <h3 className="mt-6 font-display text-[15px] font-semibold text-beton-900">{s.title}</h3>
+                <p className="mt-2 text-[15px] leading-relaxed text-beton-600">{s.text}</p>
+              </div>
             </Reveal>
           ))}
         </ol>
       </Section>
 
+      {/* ───────── Kalkulyator ───────── */}
+      <section id="kalkulyator" className="relative scroll-mt-24 overflow-hidden bg-beton-100 py-20 lg:py-24">
+        <div className="blueprint absolute inset-0" aria-hidden />
+        <div className="relative mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center lg:gap-16">
+            <div>
+              <Heading eyebrow="Kalkulyator" title="Qancha beton kerak?" text="Bir daqiqada hisoblang: o'lchamlarni metrda kiriting — hajm kub metrda chiqadi, ustiga 5 % zaxira qo'shiladi. Natijani bir bosishda arizaga uzatasiz." />
+              <ul className="mt-8 space-y-4">
+                <Tip icon={Ruler} title="Aniq o'lchamlar" text="Poydevor, pol yoki plita — tayyor shablonlardan boshlang, kerak bo'lsa o'zgartiring." />
+                <Tip icon={Timer} title="Mikser soatini rejalashtirish" text="Hajm ma'lum bo'lsa, sotuv bo'limi nechta reys va qaysi soatda kelishini darrov aytadi." />
+                <Tip icon={ShieldCheck} title="Zaxira hisobga olingan" text="Notekis asos va to'kilish uchun 5 % — quyish o'rtasida beton yetmay qolmaydi." />
+              </ul>
+            </div>
+            <Reveal delay={0.1}>
+              <VolumeCalculator />
+            </Reveal>
+          </div>
+        </div>
+      </section>
+
       {/* ───────── Aloqa va ariza ───────── */}
       <section id="aloqa" className="scroll-mt-24 bg-white py-20 lg:py-24">
-        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
           <Heading eyebrow="Aloqa" title="Hajmni ayting — narx va muddatni aytamiz" text="Ish vaqtida qo'ng'iroq qiling yoki formani to'ldiring. Sotuv bo'limi bog'lanib, hisob-kitobni tayyorlaydi." />
 
-          <div className="mt-12 grid gap-10 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
+          <div className="mt-12 grid gap-8 lg:grid-cols-[1fr_1.15fr] lg:gap-14">
             <Reveal>
-              <dl className="divide-y divide-beton-200 border-y border-beton-200">
+              <dl className="space-y-2 rounded-3xl bg-beton-50 p-2 ring-1 ring-beton-200">
                 {phone && (
                   <Contact icon={Phone} label="Telefon">
-                    <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="font-display text-2xl font-bold text-beton-900 tabular-nums hover:text-insof-600">{phone}</a>
+                    <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="font-display text-xl font-semibold text-beton-900 tabular-nums hover:text-insof-600 sm:text-2xl">{phone}</a>
                     {company.phone2 && (
                       <a href={`tel:${company.phone2.replace(/[^\d+]/g, "")}`} className="mt-1 block text-beton-500 tabular-nums hover:text-insof-600">{company.phone2}</a>
                     )}
@@ -296,7 +349,7 @@ export default async function LandingPage() {
                     <span className="text-lg text-beton-900">{company.address}</span>
                   </Contact>
                 )}
-                {hours && <Contact icon={ClipboardList} label="Ish vaqti"><span className="text-lg text-beton-900">{hours}</span></Contact>}
+                {hours && <Contact icon={CalendarClock} label="Ish vaqti"><span className="text-lg text-beton-900">{hours}</span></Contact>}
                 {company.legalName && (
                   <Contact icon={FileCheck2} label="Rekvizitlar">
                     <span className="text-beton-900">{company.legalName}</span>
@@ -307,8 +360,8 @@ export default async function LandingPage() {
             </Reveal>
 
             <Reveal delay={0.1}>
-              <div id="ariza" className="scroll-mt-28 rounded-lg border border-beton-200 bg-beton-50 p-6 sm:p-8">
-                <h3 className="font-display text-2xl font-bold text-beton-900">Ariza qoldirish</h3>
+              <div id="ariza" className="scroll-mt-28 rounded-3xl bg-white p-6 ring-1 ring-beton-200 shadow-[0_24px_60px_-30px_rgba(27,42,76,0.35)] sm:p-8">
+                <h3 className="font-display text-xl font-semibold text-beton-900 sm:text-2xl">Ariza qoldirish</h3>
                 <p className="mt-1 mb-8 text-[15px] text-beton-500">Yulduzcha bilan belgilangan maydonlar to&apos;ldirilishi shart.</p>
                 <LeadForm products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit }))} />
               </div>
@@ -318,8 +371,9 @@ export default async function LandingPage() {
       </section>
 
       {/* ───────── Joylashuv ───────── */}
-      <section className="border-t border-beton-200 bg-beton-100 py-20 lg:py-24">
-        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden border-t border-beton-200 bg-beton-100 py-20 lg:py-24">
+        <div className="blueprint absolute inset-0" aria-hidden />
+        <div className="relative mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
           <Heading eyebrow="Joylashuv" title="Zavodimiz shu yerda" text="Mahsulotni o'zingiz olib ketmoqchi bo'lsangiz manzil shu — yetkazib berish masofasi ham shu nuqtadan hisoblanadi." />
           <Reveal delay={0.1} className="mt-12">
             <PlantLocation
@@ -335,8 +389,9 @@ export default async function LandingPage() {
       </section>
 
       {/* ───────── Poydevor ───────── */}
-      <footer className="bg-insof-900 pt-14 pb-10 text-white/60">
-        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      <footer className="relative overflow-hidden bg-insof-900 pt-14 pb-10 text-white/60">
+        <div className="blueprint-dark absolute inset-0" aria-hidden />
+        <div className="relative mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-10 border-b border-white/10 pb-10 lg:flex-row lg:justify-between">
             <div>
               <Image src="/media/logo-light.png" alt="INSOF JBI — temir beton mahsulotlari" width={940} height={172} className="h-14 w-auto" />
@@ -352,6 +407,7 @@ export default async function LandingPage() {
                   <a href="#mahsulotlar" className="block transition-colors hover:text-white">Mahsulotlar</a>
                   <a href="#zavod" className="block transition-colors hover:text-white">Zavod</a>
                   <a href="#jarayon" className="block transition-colors hover:text-white">Ish tartibi</a>
+                  <a href="#kalkulyator" className="block transition-colors hover:text-white">Kalkulyator</a>
                   <a href="#aloqa" className="block transition-colors hover:text-white">Aloqa</a>
                 </div>
               </div>
@@ -374,6 +430,8 @@ export default async function LandingPage() {
           </p>
         </div>
       </footer>
+
+      <MobileBar phone={phone} />
     </>
   );
 }
@@ -382,45 +440,64 @@ export default async function LandingPage() {
 
 function HeroPoint({ icon: Icon, text }: { icon: typeof QrCode; text: string }) {
   return (
-    <li className="flex gap-3.5 text-[15px] leading-relaxed text-white/85 sm:text-base">
-      <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-white/10 text-signal">
-        <Icon size={14} />
-      </span>
+    <li className="flex items-center gap-3.5 text-[15px] leading-snug text-white sm:text-base">
+      <IconTile tone="glass" size="sm" className="[text-shadow:none]"><Icon size={16} strokeWidth={1.75} /></IconTile>
       {text}
     </li>
   );
 }
 
-function Stat({ value, suffix = "", fallback, label, delay = 0 }: { value: number | null; suffix?: string; fallback: string; label: string; delay?: number }) {
+function Stat({ icon: Icon, value, suffix = "", fallback, label, delay = 0, accent = false }: {
+  icon: typeof Factory; value: number | null; suffix?: string; fallback: string; label: string; delay?: number; accent?: boolean;
+}) {
   return (
-    <Reveal delay={delay} y={14} className="border-b border-beton-200 px-2 py-7 last:border-b-0 sm:px-6 lg:border-b-0">
-      <dt className="font-display text-3xl font-extrabold text-beton-900 tabular-nums sm:text-4xl">
-        {value !== null ? <StatValue value={value} suffix={suffix} /> : fallback}
-      </dt>
-      <dd className="mt-1.5 text-sm leading-snug text-beton-500">{label}</dd>
+    <Reveal delay={delay} y={14} className={`relative overflow-hidden rounded-2xl p-6 ring-1 ${accent ? "bg-insof-900 text-white ring-insof-900" : "bg-beton-50 ring-beton-200"}`}>
+      {accent && <div className="blueprint-dark absolute inset-0" aria-hidden />}
+      <div className="relative flex items-start justify-between gap-4">
+        <div>
+          <dt className={`font-display text-3xl font-bold whitespace-nowrap tabular-nums ${accent ? "text-signal" : "text-beton-900"}`}>
+            {value !== null ? <StatValue value={value} suffix={suffix} /> : fallback}
+          </dt>
+          <dd className={`mt-2 text-sm leading-snug ${accent ? "text-white/65" : "text-beton-500"}`}>{label}</dd>
+        </div>
+        <IconTile tone={accent ? "glass" : "soft"} size="sm"><Icon size={18} strokeWidth={1.5} /></IconTile>
+      </div>
     </Reveal>
+  );
+}
+
+function Tip({ icon: Icon, title, text }: { icon: typeof Ruler; title: string; text: string }) {
+  return (
+    <li className="flex gap-4">
+      <IconTile tone="soft"><Icon size={20} strokeWidth={1.5} /></IconTile>
+      <div>
+        <div className="font-display text-[15px] font-semibold text-beton-900">{title}</div>
+        <p className="mt-1 text-[15px] leading-relaxed text-beton-600">{text}</p>
+      </div>
+    </li>
   );
 }
 
 function Heading({ eyebrow, title, text, dark = false }: { eyebrow: string; title: string; text?: string; dark?: boolean }) {
   return (
     <Reveal className="max-w-3xl">
-      <p className={`flex items-center gap-3 font-mono text-[11px] tracking-[0.18em] uppercase ${dark ? "text-white/55" : "text-signal-dim"}`}>
-        <span className="h-px w-8 bg-signal" />
+      <p className={`inline-flex items-center gap-2 rounded-full px-3 py-1 font-mono text-[11px] tracking-[0.16em] uppercase ring-1 ${dark ? "bg-white/10 text-white/75 ring-white/15" : "bg-white text-insof-700 ring-beton-200"}`}>
+        <span className="h-1.5 w-1.5 rounded-full bg-signal" />
         {eyebrow}
       </p>
-      <h2 className={`mt-4 font-display text-3xl leading-tight font-extrabold sm:text-4xl ${dark ? "text-white" : "text-beton-900"}`}>{title}</h2>
+      <h2 className={`mt-5 font-display text-[1.6rem] leading-[1.15] font-bold text-balance sm:text-3xl lg:text-[2.4rem] ${dark ? "text-white" : "text-beton-900"}`}>{title}</h2>
       {text && <p className={`mt-4 text-lg ${dark ? "text-white/60" : "text-beton-600"}`}>{text}</p>}
     </Reveal>
   );
 }
 
-function Section({ id, eyebrow, title, text, children, tone = "light" }: {
-  id: string; eyebrow: string; title: string; text?: string; children: React.ReactNode; tone?: "light" | "white";
+function Section({ id, eyebrow, title, text, children, tone = "light", grid = false }: {
+  id: string; eyebrow: string; title: string; text?: string; children: React.ReactNode; tone?: "light" | "white"; grid?: boolean;
 }) {
   return (
-    <section id={id} className={`scroll-mt-24 py-20 lg:py-24 ${tone === "white" ? "bg-white" : "bg-beton-100"}`}>
-      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
+    <section id={id} className={`relative scroll-mt-24 overflow-hidden py-20 lg:py-24 ${tone === "white" ? "bg-white" : "bg-beton-100"}`}>
+      {grid && <div className="blueprint absolute inset-0" aria-hidden />}
+      <div className="relative mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
         <Heading eyebrow={eyebrow} title={title} text={text} />
         <div className="mt-12">{children}</div>
       </div>
@@ -430,13 +507,11 @@ function Section({ id, eyebrow, title, text, children, tone = "light" }: {
 
 function Contact({ icon: Icon, label, children }: { icon: typeof Phone; label: string; children: React.ReactNode }) {
   return (
-    <div className="flex gap-5 py-6">
-      <span className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-beton-100 text-insof-700">
-        <Icon size={18} />
-      </span>
+    <div className="flex gap-4 rounded-2xl px-4 py-4 transition-colors hover:bg-white">
+      <IconTile tone="soft" size="sm" className="mt-0.5"><Icon size={17} strokeWidth={1.5} /></IconTile>
       <div className="min-w-0">
         <dt className="font-mono text-[10px] tracking-[0.16em] text-beton-500 uppercase">{label}</dt>
-        <dd className="mt-1.5">{children}</dd>
+        <dd className="mt-1">{children}</dd>
       </div>
     </div>
   );

@@ -3,7 +3,8 @@ import { ROLE_LABELS } from "@/lib/nav";
 import { CATALOG, type Answer } from "@/lib/bi/ai";
 import { askInsofAi } from "@/lib/bi/answer";
 import type { LlmTurn } from "@/lib/ai/llm";
-import { sendChatAction, sendMessage, downloadFile, type TgMessage, type TgUpdate, type TgVoice } from "./api";
+import { AMBIGUOUS_PHONE_ERROR, staffByPhone } from "@/lib/phone-lookup";
+import { sendChatAction, sendMessage, downloadFile, type TgContact, type TgMessage, type TgUpdate, type TgVoice } from "./api";
 import { transcribe, sttEnabled, SttError } from "./stt";
 
 /** Tahlil ma'lumotlari — /api/ai bilan bir xil rollar. */
@@ -20,6 +21,8 @@ const HELP = [
   "• «Qaysi mijozda qarz ko'p?»",
   "• «Qaysi xomashyo tugayapti?»",
   "• «Reja necha foiz bajarildi?»",
+  "",
+  "🔐 Parolni unutsangiz — ERP «Parolni tiklash» bo'limidan kod so'rang, kod SMS o'rniga shu yerga keladi.",
   "",
   "Buyruqlar: /savollar — tayyor savollar, /uzish — hisobni uzish, /yordam — shu matn.",
 ].join("\n");
@@ -102,20 +105,22 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
     include: { user: true },
   });
 
+  // "Telefon raqamimni yuborish" tugmasi — hisobni raqam bo'yicha ulash (kontakt xabarida matn yo'q)
+  if (msg.contact) { await linkByPhone(account.id, chatId, msg.contact, msg.from?.id); return; }
+
   const text = (msg.text ?? msg.caption ?? "").trim();
   const cmd = text.startsWith("/") ? text.slice(1).split(/[\s@]/)[0].toLowerCase() : null;
 
   if (cmd === "start") {
-    await sendMessage(chatId, account.userId
-      ? `Assalomu alaykum, ${account.user?.fullName ?? ""}! Hisobingiz ulangan.\n\n${HELP}`
-      : startText());
+    if (account.userId) { await sendMessage(chatId, `Assalomu alaykum, ${account.user?.fullName ?? ""}! Hisobingiz ulangan.\n\n${HELP}`, { keyboard: "remove" }); return; }
+    await sendMessage(chatId, startText(), { keyboard: "contact" });
     return;
   }
   if (cmd === "yordam" || cmd === "help") { await sendMessage(chatId, HELP); return; }
   if (cmd === "uzish") {
     if (!account.userId) { await sendMessage(chatId, "Hisob ulanmagan."); return; }
     await db.telegramAccount.update({ where: { id: account.id }, data: { userId: null, linkedAt: null } });
-    await sendMessage(chatId, "Hisob uzildi. Qayta ulash uchun *Tahlil → Insof AI → Telegram bot* bo'limidan yangi kod oling.");
+    await sendMessage(chatId, "Hisob uzildi. Endi parolni tiklash kodi ham bu yerga kelmaydi.\n\nQayta ulash: /start bosib telefon raqamingizni yuboring yoki *Tahlil → Insof AI → Telegram bot* bo'limidan kod oling.", { keyboard: "contact" });
     return;
   }
   if (cmd === "savollar") {
@@ -128,7 +133,7 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   if (!account.userId) {
     const code = text.replace(/\s|-/g, "");
     if (/^\d{6}$/.test(code)) { await link(account.id, chatId, code); return; }
-    await sendMessage(chatId, startText());
+    await sendMessage(chatId, startText(), { keyboard: "contact" });
     return;
   }
 
@@ -199,15 +204,48 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
 
 function startText() {
   return [
-    "*Insof ERP — AI yordamchi*",
+    "*Insof ERP boti*",
     "",
-    "Botdan foydalanish uchun avval ERP hisobingizni ulang:",
-    "1. ERP → *Tahlil → Insof AI → Telegram bot* bo'limini oching",
-    "2. «Ulash kodi olish» tugmasini bosing",
-    "3. 6 xonali kodni shu yerga yuboring",
+    "Hisobingizni ulang — shundan keyin parolni tiklash kodi SMS o'rniga shu yerga keladi.",
     "",
-    "Kod 15 daqiqa amal qiladi.",
+    "📱 *Eng osoni:* pastdagi «Telefon raqamimni yuborish» tugmasini bosing. Raqam Otdel kadrdagi kartangizdagi raqam bilan bir xil bo'lsa, hisob darhol ulanadi.",
+    "",
+    "Yoki ERP'ga kira olsangiz: *Tahlil → Insof AI → Telegram bot* → «Ulash kodi olish» → 6 xonali kodni shu yerga yuboring (kod 15 daqiqa amal qiladi).",
   ].join("\n");
+}
+
+/**
+ * Raqam bo'yicha ulash. Telegram kontaktni o'zi tasdiqlaydi (raqam shu hisobniki),
+ * shuning uchun bu SMS kodidan kam emas — lekin faqat FOYDALANUVCHINING O'Z raqami
+ * qabul qilinadi: begona kontaktni uzatib yuborish mumkin, uni olsak boshqa odamning
+ * hisobiga kod yuboradigan chat ochilib qolardi.
+ */
+async function linkByPhone(accountId: string, chatId: number, contact: TgContact, fromId?: number) {
+  if (!contact.user_id || contact.user_id !== fromId) {
+    await sendMessage(chatId, "Bu kontakt sizniki emas. Tugma orqali *o'z* raqamingizni yuboring.", { keyboard: "contact" });
+    return;
+  }
+  const found = await staffByPhone(contact.phone_number);
+  if (found.kind === "ambiguous") { await sendMessage(chatId, AMBIGUOUS_PHONE_ERROR, { keyboard: "remove" }); return; }
+  if (found.kind === "none") {
+    await sendMessage(chatId, [
+      "Bu raqam bo'yicha ERP hisobi topilmadi.",
+      "",
+      "Sabablari: raqam Otdel kadrdagi kartangizda boshqacha yozilgan, kartangizga login berilmagan yoki hisob bloklangan. Otdel kadrga murojaat qiling.",
+    ].join("\n"), { keyboard: "remove" });
+    return;
+  }
+
+  await db.$transaction([
+    // Shu xodimning eski chati uziladi: kod faqat oxirgi ulangan telefonga borsin
+    db.telegramAccount.updateMany({ where: { userId: found.user.id, id: { not: accountId } }, data: { userId: null, linkedAt: null } }),
+    db.telegramAccount.update({ where: { id: accountId }, data: { userId: found.user.id, linkedAt: new Date(), isBlocked: false } }),
+  ]);
+
+  const tail = AI_ROLES.has(found.user.role)
+    ? HELP
+    : `Parolni tiklash kodi endi shu yerga keladi (ERP → «Parolni tiklash»).\nTahlil savollari sizning rolingizda (${ROLE_LABELS[found.user.role]}) yopiq.`;
+  await sendMessage(chatId, `✅ Ulandi: *${found.fullName}* (${ROLE_LABELS[found.user.role]})\n\n${tail}`, { keyboard: "remove" });
 }
 
 /**

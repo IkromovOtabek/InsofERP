@@ -11,6 +11,24 @@ export type DayOrder = { id: string; orderNo: string; customer: string; time: st
 export type DayCell = { key: string; label: string; weekday: string; list: DayOrder[]; m3: number; pct: number; count: number; urgent: number; state: "free" | "busy" | "full"; isToday: boolean };
 
 /**
+ * Kun ustuni (shamcha) telefon quvvati kabi o'lchanadi: bo'sh kun — qizil,
+ * quvvat to'lgani sari sariqdan yashilga o'tadi. Ichki to'ldirish, ramka, «N ta»
+ * nishoni va tepadagi izoh — hammasi shu bitta jadvaldan rang oladi, shuning uchun
+ * ular hech qachon bir-biriga zid tushmaydi. To'ldirish gradienti ikki bosqichli
+ * (pastda to'qroq, tepada och) — ustun tekis rangdan jonliroq ko'rinadi.
+ */
+const CANDLE_LEVELS = [
+  { upto: 25, label: "Bo'sh — joy ko'p", fill: "linear-gradient(to top, var(--color-red-600), var(--color-red-500))", border: "border-red-300", badge: "bg-red-100 text-red-700", text: "text-red-600", dot: "bg-red-500" },
+  { upto: 50, label: "Yarmigacha to'ldi", fill: "linear-gradient(to top, var(--color-amber-600), var(--color-amber-500))", border: "border-amber-300", badge: "bg-amber-100 text-amber-800", text: "text-amber-700", dot: "bg-amber-500" },
+  { upto: 75, label: "To'lib bormoqda", fill: "linear-gradient(to top, var(--color-lime-500), var(--color-lime-400))", border: "border-lime-300", badge: "bg-lime-100 text-lime-800", text: "text-lime-700", dot: "bg-lime-500" },
+  { upto: Infinity, label: "To'ldi — joy yo'q", fill: "linear-gradient(to top, var(--color-emerald-600), var(--color-emerald-500))", border: "border-emerald-300", badge: "bg-emerald-100 text-emerald-700", text: "text-emerald-700", dot: "bg-emerald-500" },
+];
+
+function candle(pct: number) {
+  return CANDLE_LEVELS.find((l) => pct < l.upto) ?? CANDLE_LEVELS[CANDLE_LEVELS.length - 1];
+}
+
+/**
  * Taqvim ustunlari. Kun tanlanganda sahifa yangilanmaydi va tepaga ko'tarilmaydi —
  * o'sha kundagi zayavkalar shu yerning o'zida, taqvim ostida ochiladi (ma'lumot allaqachon serverdan kelgan).
  */
@@ -24,18 +42,19 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="inline-flex items-center gap-2 text-[15px] font-semibold text-slate-900"><CalendarRange size={16} className="text-slate-400" /> 10 kunlik ish tartibi</h2>
-          <p className="text-xs text-slate-500">Kunlik quvvat {fmtNum(capacity)} m³ · ustun to&apos;lgani — shu kunga olingan hajm. Kunni bosing — zayavkalar shu yerda ochiladi (sahifa yangilanmaydi).</p>
+          <p className="text-xs text-slate-500">Kunlik quvvat {fmtNum(capacity)} m³ · ustun to&apos;lgani — shu kunga olingan hajm (telefon quvvati kabi: kam — qizil, to&apos;lsa — yashil). Kunni bosing — zayavkalar shu yerda ochiladi (sahifa yangilanmaydi).</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Bo&apos;sh — zayavka yo&apos;q</span>
-          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Zayavka bor</span>
-          <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-red-500" /> Joy yo&apos;q</span>
+          {CANDLE_LEVELS.map((l) => (
+            <span key={l.label} className="inline-flex items-center gap-1"><i className={cn("h-2.5 w-2.5 rounded-full", l.dot)} /> {l.label}</span>
+          ))}
         </div>
       </div>
 
       <div className="flex items-end justify-center gap-1.5">
         {cells.map((c, i) => {
           const active = openKey === c.key;
+          const lvl = candle(c.pct);
           // Tooltip ustun markaziga tayanadi. Chetdagi ikki ustunda markazlash uni
           // kartadan tashqariga — chapda yon menyu ustiga, o'ngda ekrandan tashqariga —
           // chiqarib yuboradi, shuning uchun u o'z ustunining chetiga tiraladi.
@@ -47,19 +66,17 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
               <button type="button" onClick={() => setOpenKey(active ? null : c.key)}
                 className={cn("flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-1.5 transition", active ? "bg-slate-900/5 ring-2 ring-slate-900" : "hover:bg-slate-50")}>
                 <span className={cn("text-[10.5px] font-medium", c.isToday ? "text-slate-900" : "text-slate-400")}>{c.weekday}</span>
-                {/* Ustun: cho'zinchoq va tor — pastdan to'ladi, rang yashildan qizilga ko'tariladi */}
-                <div className={cn("relative flex h-40 w-full max-w-[46px] items-end overflow-hidden rounded-lg border-2 bg-slate-50",
-                  c.state === "full" ? "border-red-300" : c.state === "busy" ? "border-amber-300" : "border-emerald-300")}>
+                {/* Ustun: cho'zinchoq va tor — pastdan to'ladi, rangi telefon quvvati kabi qizildan yashilga o'tadi */}
+                <div className={cn("relative flex h-40 w-full max-w-[46px] items-end overflow-hidden rounded-lg border-2 bg-slate-50", lvl.border)}>
                   <div className="w-full transition-[height] duration-700"
-                    style={{ height: `${Math.max(c.count > 0 ? 8 : 0, c.pct)}%`, background: "linear-gradient(to top, #00cb80 0%, #9ee610 40%, #ffa800 75%, #fa1636 100%)" }} />
+                    style={{ height: `${Math.max(c.count > 0 ? 8 : 0, c.pct)}%`, background: lvl.fill }} />
                   <span className="absolute inset-x-0 top-1.5 px-0.5 text-center text-[10px] leading-tight font-semibold text-slate-700">
                     {c.count > 0 ? <>{q(c.m3)}<br />m³</> : "bo'sh"}
                   </span>
                   {c.urgent > 0 && <span className="absolute top-0.5 right-0.5 rounded bg-red-600 px-1 text-[8px] font-bold text-white">!</span>}
                 </div>
                 <span className={cn("text-[10.5px] tabular", c.isToday ? "font-semibold text-slate-900" : "text-slate-500")}>{c.label}</span>
-                <span className={cn("rounded-full px-1.5 text-[10px] font-medium tabular",
-                  c.state === "full" ? "bg-red-100 text-red-700" : c.state === "busy" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700")}>
+                <span className={cn("rounded-full px-1.5 text-[10px] font-medium tabular", lvl.badge)}>
                   {c.count} ta
                 </span>
               </button>
@@ -69,7 +86,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                 <div className={cn("pointer-events-none absolute top-full z-40 mt-1 hidden w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-(--shadow-pop) md:group-hover:block", tipAlign)}>
                   <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
                     <span className="text-[13px] font-semibold text-slate-900">{c.isToday ? "Bugun" : `${c.weekday} · ${c.label}`}</span>
-                    <span className={cn("text-[11px] font-medium", c.state === "full" ? "text-red-600" : c.state === "busy" ? "text-amber-700" : "text-emerald-700")}>
+                    <span className={cn("text-[11px] font-medium", lvl.text)}>
                       {q(c.m3)} m³ · quvvatning {fmtNum(c.pct, 0)}%
                     </span>
                   </div>
@@ -106,7 +123,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-semibold text-slate-900">
               {open.isToday ? "Bugun" : `${open.weekday} · ${open.label}`} — {open.count} ta zayavka · {q(open.m3)} m³
-              <span className={cn("ml-2 text-xs font-medium", open.state === "full" ? "text-red-600" : open.state === "busy" ? "text-amber-700" : "text-emerald-700")}>
+              <span className={cn("ml-2 text-xs font-medium", candle(open.pct).text)}>
                 quvvatning {fmtNum(open.pct, 0)}%
               </span>
             </span>
@@ -146,7 +163,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
       {busiest.count > 0 && (
         <p className="mt-2 text-xs text-slate-500">
           Eng band kun: <b className="text-slate-700">{busiest.isToday ? "bugun" : busiest.label}</b> — {q(busiest.m3)} m³ ({fmtNum(busiest.pct, 0)}%).
-          {cells.some((c) => c.state === "full") && " Qizil kunlarga yangi zayavka olishdan oldin ishlab chiqarish bilan kelishing."}
+          {cells.some((c) => c.state === "full") && " Yashil kunlarda quvvat to'lgan — yangi zayavka olishdan oldin ishlab chiqarish bilan kelishing."}
         </p>
       )}
     </div>

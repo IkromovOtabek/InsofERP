@@ -2,7 +2,7 @@ import { z } from "zod";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import { orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
-import { tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
+import { tripArrival, tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
 import { addPayment } from "@/lib/payments";
 import { taskCancel, taskProgress } from "@/lib/tasks";
 import { clearBrigadeLeader, setBrigadeLeader } from "@/lib/brigades";
@@ -10,7 +10,7 @@ import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
-import { driverEmployeeId, ListError } from "./list";
+import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
 /**
  * Mobil ilovadagi tugmalarning ijrosi.
@@ -54,11 +54,19 @@ async function assertOwnTrip(user: MobileUser, tripId: string) {
   if (!t || t.driverId !== (await driverEmployeeId(user.id))) fail("Bu reys sizga biriktirilmagan", 403);
 }
 
+/** Brigadir faqat O'Z brigadasiga tayinlangan topshiriqni qayd qiladi — reysdagi qoidaning aynan o'zi. */
+async function assertOwnTask(user: MobileUser, taskId: string) {
+  if (user.role !== "BRIGADIER") return;
+  const t = await db.brigadeTask.findUnique({ where: { id: taskId }, select: { brigadeId: true } });
+  if (!t || !(await myBrigadeIds(user.id)).includes(t.brigadeId)) fail("Bu topshiriq sizning brigadangizga tayinlanmagan", 403);
+}
+
 export async function runMobileAction(user: MobileUser, action: string, id: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
   if (!id) fail("id yo'q");
   if (!(action in ACTION_ROLES)) fail("Bunday amal yo'q", 404); // noma'lum amal — ruxsat xatosi bilan chalkashmasin
   if (!can(user, action)) fail("Bu amalga ruxsatingiz yo'q", 403);
   if (action.startsWith("trip.")) await assertOwnTrip(user, id);
+  if (action.startsWith("task.")) await assertOwnTask(user, id);
 
   switch (action) {
     // ── Zayavka ──
@@ -95,12 +103,23 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
     case "trip.delivered": {
       const p = Receiver.safeParse(payload);
       if (!p.success) fail(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      // Haydovchi reysni faqat obyektda yopadi. Tugma ilovada ham yopiq turadi, lekin
+      // qoida shu yerda ham tekshiriladi: so'rov ilovadan tashqari ham yuborilishi mumkin.
+      // Logist/ishlab chiqarish bunga tushmaydi — GPS ishlamay qolgan reysni ular yopadi.
+      if (user.role === "DRIVER") {
+        const near = await tripArrival(id);
+        if (!near.near) fail(near.reason ?? "Obyektga yetib borilmagan");
+      }
       const r = await tripDelivered(id, user.id, p.data!.receiverName, p.data!.note);
       if (r.error) fail(r.error);
       if (!r.changed) fail("Holat mos emas");
       if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${p.data!.receiverName}` }));
       return { ok: true, message: "Yetkazildi deb belgilandi" };
     }
+    // Marshrut ekrani — ilova ichidagi ish. Yangi ilova buni serverga umuman yubormaydi
+    // (`local: true`), lekin eski ilova yuboradi: holat o'zgarmaydi, xato ham chiqmaydi.
+    case "trip.route":
+      return { ok: true, message: "Marshrut" };
     case "trip.cancel": {
       const r = await tripCancelled(id, user.id);
       if (r.error) fail(r.error);

@@ -50,6 +50,8 @@ export type Leaflet = {
   marker: (c: [number, number], o?: unknown) => LMarker;
   polyline: (cs: [number, number][], o?: unknown) => LLayer;
   circleMarker: (c: [number, number], o?: unknown) => LLayer;
+  /** Radiusi metrda — joriy joylashuvning aniqlik doirasi shu bilan chiziladi */
+  circle: (c: [number, number], o?: unknown) => LLayer;
   divIcon: (o: unknown) => unknown;
   latLngBounds: (cs: [number, number][]) => unknown;
 };

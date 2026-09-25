@@ -13,7 +13,7 @@ import { pushEmployeeSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
 import { importEmployees, type ImportEmployeeRow } from "@/lib/import-employees";
-import { saveEmployeeFile, removeEmployeeFile } from "@/lib/uploads";
+import { saveEmployeeFile, removeEmployeeFile, photoEntry } from "@/lib/uploads";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
 /** Ishchi lavozimlarni faqat otdel kadr (va direktor) yuritadi. */
@@ -247,7 +247,7 @@ export async function createEmployeeCard(_prev: ActionState, fd: FormData): Prom
 
   // Fayllar xodim id'si bo'yicha nomlanadi — shuning uchun id oldindan beriladi
   const id = crypto.randomUUID();
-  const photo = await saveEmployeeFile(id, fd.get("photo"), { imageOnly: true });
+  const photo = await saveEmployeeFile(id, photoEntry(fd), { imageOnly: true });
   if (photo && "error" in photo) return { error: photo.error };
   const docs = await saveDocuments(id, documentEntries(fd));
   if ("error" in docs) {
@@ -296,6 +296,47 @@ export async function addEmployeeDocument(employeeId: string, _prev: ActionState
   });
   revalidatePath(`/employees/${employeeId}`);
   return { ok: true };
+}
+
+/**
+ * Kartadagi 3x4 suratni yuklash yoki almashtirish — fayldan ham, kamerada olingan
+ * kadrdan ham keladi (`photoEntry` ikkalasini birdek qabul qiladi). Eski surat diskdan ketadi.
+ */
+export async function updateEmployeePhoto(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await hr();
+  const file = photoEntry(fd);
+  if (!file) return { error: "Surat tanlanmagan" };
+  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { photo: true } });
+  const saved = await saveEmployeeFile(employeeId, file, { imageOnly: true });
+  if (!saved) return { error: "Surat tanlanmagan" };
+  if ("error" in saved) return { error: saved.error };
+  try {
+    await db.$transaction(async (tx) => {
+      await tx.employee.update({ where: { id: employeeId }, data: { photo: saved.stored } });
+      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, { photo: e.photo }, { photo: saved.stored });
+    });
+  } catch (err) {
+    await removeEmployeeFile(saved.stored);
+    throw err;
+  }
+  await removeEmployeeFile(e.photo);
+  refresh();
+  revalidatePath(`/employees/${employeeId}`);
+  return { ok: true };
+}
+
+/** Suratni kartadan olib tashlash — fayl ham diskdan ketadi. */
+export async function deleteEmployeePhoto(employeeId: string): Promise<void> {
+  const s = await hr();
+  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { photo: true } });
+  if (!e.photo) return;
+  await db.$transaction(async (tx) => {
+    await tx.employee.update({ where: { id: employeeId }, data: { photo: null } });
+    await audit(tx, s.userId, "DELETE", "Employee", employeeId, { photo: e.photo }, undefined);
+  });
+  await removeEmployeeFile(e.photo);
+  refresh();
+  revalidatePath(`/employees/${employeeId}`);
 }
 
 /** Hujjat nusxasini o'chirish — fayl ham diskdan ketadi. */

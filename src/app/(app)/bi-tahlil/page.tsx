@@ -16,7 +16,7 @@ export default async function BiTahlil({ searchParams }: { searchParams: Promise
     redirect(`${routeOf(LEGACY[sp.tab])}${q.size ? `?${q}` : ""}`);
   }
   return (
-    <BiPage title="Rahbar markazi" subtitle="Moliyaviy nazorat tizimi — bugun qancha pul yo'qotilyapti, qayerda xavf bor va nima qilish kerak. Barcha raqamlar joriy holatdan hisoblanadi." eyebrow="BI tahlil · Moliyaviy nazorat" tab="overview" range={range} period={false}>
+    <BiPage tab="overview" range={range} period={false}>
       <OverviewTab range={range} name={s.fullName} />
     </BiPage>
   );

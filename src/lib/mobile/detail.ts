@@ -3,10 +3,10 @@ import { customerCredit } from "@/lib/finance";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { activeBrigades } from "@/lib/brigades";
-import { distanceLabel, tripSteps, tripTrackStats } from "@/lib/trips";
+import { distanceLabel, tripArrival, tripSteps, tripTrackStats } from "@/lib/trips";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
-import { driverEmployeeId, ListError } from "./list";
+import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
 import type { Role } from "@/generated/prisma";
@@ -51,6 +51,12 @@ export type FormField = {
 export type ActionEffect = {
   /** Fon GPS kuzatuvi: reys boshlanganda "start", yopilganda "stop". */
   track?: "start" | "stop";
+  /**
+   * Ilova ichidagi marshrut ekranini ochish — xarita, tezlik, qolgan masofa.
+   * Eski ilovalar buni tushunmaydi, shuning uchun `navigate` ham birga yuboriladi:
+   * yangi ilova `route` ni afzal biladi, eskisi avvalgidek tashqi navigatorni ochadi.
+   */
+  route?: boolean;
   /** Navigatsiya ilovasini shu nuqtaga ochish (koordinata bo'lmasa — yo'q). */
   navigate?: { lat: number; lng: number; label: string };
 };
@@ -62,8 +68,16 @@ export type DetailAction = {
   confirm?: string;
   /** Bo'lsa — avval shu maydonlar so'raladi. */
   form?: FormField[];
-  /** Bajarilgandan keyingi ish (kuzatuv, navigatsiya). */
+  /** Bajarilgandan keyingi ish (kuzatuv, marshrut, navigatsiya). */
   effect?: ActionEffect;
+  /**
+   * Tugma ko'rinadi, lekin bosilmaydi — sababi `hint` da.
+   * Yashirmaymiz: haydovchi "Yetkazdim qani?" deb izlamasin, nega ochilmaganini o'qisin.
+   */
+  disabled?: boolean;
+  hint?: string;
+  /** Serverga so'rov yubormaydigan tugma — faqat `effect` bajariladi (masalan marshrutni ochish). */
+  local?: boolean;
 };
 export type MobileDetail = {
   key: string;
@@ -103,8 +117,12 @@ async function stepsSection(id: string): Promise<HomeSection> {
 }
 /** Brigadir formasidagi "yangi brigada" tanlovi — `lib/mobile/actions.ts` da ham shu kalit. */
 export const NEW_BRIGADE = "__new__";
-/** "Yetkazildi" tugmasi so'raydigan maydonlar — haydovchi ham, logist ham bir xil to'ldiradi. */
-const RECEIVER_FORM: FormField[] = [
+/**
+ * "Yetkazildi" tugmasi so'raydigan maydonlar — haydovchi ham, logist ham bir xil to'ldiradi.
+ * Marshrut ekrani ham shu ro'yxatni oladi (`lib/mobile/route.ts`): ikkita forma ikki tomonga
+ * o'sib ketmasin.
+ */
+export const RECEIVER_FORM: FormField[] = [
   { name: "receiverName", label: "Obyektda kim qabul qildi", type: "text", required: true, placeholder: "F.I.Sh." },
   { name: "note", label: "Izoh", type: "text" },
 ];
@@ -119,10 +137,15 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "trip.loaded": ["LOGISTICS", "PRODUCTION", "DRIVER"],
   "trip.onroad": ["LOGISTICS", "PRODUCTION", "DRIVER"],
   "trip.delivered": ["LOGISTICS", "PRODUCTION", "DRIVER"],
+  // Marshrutni ochish — ilova ichidagi ish, holatni o'zgartirmaydi. Ro'yxatda turishi
+  // shuning uchun: `local` ni tushunmaydigan eski ilova baribir serverga murojaat qiladi,
+  // va "Bunday amal yo'q" degan xato o'rniga bo'sh javob olsin.
+  "trip.route": ["LOGISTICS", "DRIVER"],
   "trip.cancel": ["LOGISTICS"],
   "trip.eco": ["LOGISTICS"],
   "invoice.pay": ["CASHIER", "ACCOUNTING"],
-  "task.progress": ["SUPERVISOR", "PRODUCTION", "LOGISTICS"],
+  // Brigadir o'z brigadasining topshirig'ini ilovada qayd qiladi (`assertOwnTask` — qaysi topshiriqni)
+  "task.progress": ["SUPERVISOR", "PRODUCTION", "LOGISTICS", "BRIGADIER"],
   "task.cancel": ["SUPERVISOR", "PRODUCTION", "SALES"],
   // Brigadir — veb "Brigadalar" sahifasidagi bilan bir xil ruxsat
   "employee.brigade": ["HR", "PRODUCTION", "SUPERVISOR"],
@@ -134,6 +157,9 @@ export const can = (user: MobileUser, action: string) =>
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
+  // Brigadir ilovada faqat topshiriq kartochkasini ochadi: zayavka, schyot va boshqa
+  // hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
+  if (user.role === "BRIGADIER" && key !== "tasks") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   switch (key) {
     case "orders": return orderDetail(user, id);
     case "trips": return tripDetail(user, id);
@@ -213,6 +239,9 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   // Yurilgan yo'l — haydovchi ham, logistika ham shu bitta raqamni ko'radi.
   // Ilova kartochkani davriy yangilaydi, ya'ni reys davomida raqam o'sib boradi.
   const track = (await tripTrackStats([t.id])).get(t.id);
+  // Obyektgacha qolgan masofa — yo'ldagi reysda ham kartochkada ko'rinadi, ham
+  // "Yetkazdim" tugmasini ochadi/yopadi (`lib/trips.ts` dagi bitta qoida bo'yicha).
+  const arrival = t.status === "ON_ROAD" ? await tripArrival(t.id) : null;
 
   const actions: DetailAction[] = [];
   if (isDriver) {
@@ -224,8 +253,17 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     const dest = t.order.lat != null && t.order.lng != null
       ? { lat: t.order.lat, lng: t.order.lng, label: t.order.deliveryAddress }
       : undefined;
-    if (t.status === "LOADED") actions.push({ id: "trip.onroad", label: "Yo'lga chiqdim", tone: "brand", effect: { track: "start", navigate: dest } });
-    if (t.status === "ON_ROAD") actions.push({ id: "trip.delivered", label: "Yetkazdim", tone: "success", form: RECEIVER_FORM, effect: { track: "stop" } });
+    if (t.status === "LOADED") actions.push({ id: "trip.onroad", label: "Yo'lga chiqdim", tone: "brand", effect: { track: "start", route: true, navigate: dest } });
+    if (t.status === "ON_ROAD") {
+      // Marshrut ekrani reys davomida qayta ochilishi kerak: haydovchi ilovadan chiqib
+      // ketsa yoki telefon qulflansa, xaritaga qaytish uchun boshqa yo'l qolmaydi.
+      if (dest) actions.push({ id: "trip.route", label: "Marshrutni ochish", tone: "brand", local: true, effect: { route: true } });
+      // "Yetkazdim" obyektga yaqinlashguncha yopiq turadi — sabab tugma ostida yoziladi.
+      actions.push({
+        id: "trip.delivered", label: "Yetkazdim", tone: "success", form: RECEIVER_FORM, effect: { track: "stop" },
+        disabled: arrival ? !arrival.near : false, hint: arrival?.reason ?? undefined,
+      });
+    }
   } else {
     // Logist/ishlab chiqarish: qadam o'tkazib yuborilgan reysni bir marta yopa olishi kerak,
     // shuning uchun ularda bir nechta tugma bir vaqtda ochiq turadi.
@@ -249,6 +287,7 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Manzil", value: t.order.deliveryAddress },
       { label: "Zayavka", value: t.order.orderNo },
       ...(track ? [{ label: "Yurilgan yo'l", value: `${distanceLabel(track.meters)}${track.minutes > 0 ? ` · ${track.minutes} daq` : ""}`, tone: "brand" as Tone }] : []),
+      ...(arrival?.remainingM != null ? [{ label: "Obyektgacha", value: distanceLabel(arrival.remainingM), tone: (arrival.near ? "success" : "info") as Tone }] : []),
       ...(t.loadedAt ? [{ label: "Yuklandi", value: dt(t.loadedAt) }] : []),
       ...(t.deliveredAt ? [{ label: "Yetkazildi", value: dt(t.deliveredAt) }] : []),
       ...(t.receiverName ? [{ label: "Qabul qildi", value: t.receiverName }] : []),
@@ -354,6 +393,11 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } }, progress: { orderBy: { date: "desc" }, include: { createdBy: true } } },
   });
   if (!t) throw new ListError("NOT_FOUND", "Topshiriq topilmadi", 404);
+  // Brigadirga faqat o'z brigadasining topshirig'i. Reysdagidek "topilmadi" deymiz:
+  // "ruxsat yo'q" desak, begona topshiriq mavjudligini tasdiqlagan bo'lardik.
+  if (user.role === "BRIGADIER" && !(await myBrigadeIds(user.id)).includes(t.brigadeId)) {
+    throw new ListError("NOT_FOUND", "Topshiriq topilmadi", 404);
+  }
   const left = sum(t.qty) - sum(t.doneQty);
   const open = !["DONE", "CANCELLED"].includes(t.status);
 

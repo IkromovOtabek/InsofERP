@@ -6,6 +6,7 @@ import { liveTrips } from "@/lib/live";
 import { CREATE_ROLES, canCreate } from "./create";
 import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
+import { myBrigades } from "@/lib/brigades";
 import { unitLabel, unitTotals, soleUnit, type UnitRow } from "@/lib/unit";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
@@ -71,6 +72,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   HR: { key: "employees", title: "Xodimlar" },
   CASHIER: { key: "payments", title: "To'lovlar" },
   DRIVER: { key: "trips", title: "Mening reyslarim" },
+  BRIGADIER: { key: "tasks", title: "Topshiriqlarim" },
 };
 
 /** Tezkor amal katakchasi ikonlari. */
@@ -367,6 +369,37 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
       sections.push(
         { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
         { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? day(t.deliveredAt) : ""} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: "success" })) },
+      );
+      break;
+    }
+
+    // Brigadir: faqat O'Z brigadasiga tayinlangan topshiriqlar. Ishlab chiqarish zayavka
+    // qatoriga brigada tayinlagan zahoti topshiriq shu yerda paydo bo'ladi.
+    case "BRIGADIER": {
+      const mine = await myBrigades(user.id);
+      if (mine.length === 0) {
+        cards.push({ key: "nobrigade", label: "Brigada biriktirilmagan", value: "—", hint: "Ishlab chiqarish yoki Otdel kadrga ayting", tone: "danger", icon: "alert-circle" });
+        break;
+      }
+      const ids = mine.map((b) => b.id);
+      const [openTasks, overdue, todayProgress, recent] = await Promise.all([
+        db.brigadeTask.findMany({ where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 20, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
+        db.brigadeTask.count({ where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: today } } }),
+        db.taskProgress.findMany({ where: { date: { gte: today }, task: { brigadeId: { in: ids } } }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
+        db.brigadeTask.findMany({ where: { brigadeId: { in: ids }, status: "DONE" }, orderBy: { updatedAt: "desc" }, take: 8, include: { order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
+      ]);
+      const leftRows = openTasks.map((t) => ({ unit: t.orderItem.product.unit, qty: sum(t.qty) - sum(t.doneQty) }));
+      // Hali ochilmagan (NEW) topshiriq — "yangi kelgani": brigadir avval shularni ko'rsin
+      const fresh = openTasks.filter((t) => t.status === "NEW").length;
+      cards.push(
+        { key: "tasks", label: "Ochiq topshiriq", value: String(openTasks.length), hint: fresh ? `${fresh} tasi yangi` : mine.map((b) => b.name).join(", "), icon: "list", tone: openTasks.length ? "brand" : "success" },
+        { key: "left", label: "Qolgan hajm", value: totalsText(leftRows), icon: "cube", tone: "info" },
+        { key: "overdue", label: "Kechikkan", value: String(overdue), hint: overdue ? "muddati o'tgan" : undefined, icon: "alarm", tone: overdue ? "danger" : "success" },
+        { key: "today", label: "Bugun bajardim", value: totalsText(todayProgress.map((p) => ({ unit: p.task.orderItem.product.unit, qty: p.qty }))), hint: `${todayProgress.length} qayd`, icon: "checkmark-done", tone: "success" },
+      );
+      sections.push(
+        { title: "Topshiriqlarim", empty: "Ochiq topshiriq yo'q — brigadangizga tayinlansa shu yerda chiqadi", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}${mine.length > 1 ? ` · ${t.brigade.name}` : ""}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
+        { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: recent.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${day(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), status: t.status, tone: "success" as Tone })) },
       );
       break;
     }

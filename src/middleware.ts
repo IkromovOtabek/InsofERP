@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { pathAllowed } from "@/lib/nav";
+import { OWN_PAGE_ONLY, pathAllowed } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 
@@ -28,9 +28,10 @@ export async function middleware(req: NextRequest) {
   if (role && pathname.startsWith("/login")) return NextResponse.redirect(new URL("/dashboard", req.url));
   if (isPublic(pathname)) return NextResponse.next();
   if (!role) return NextResponse.redirect(new URL("/login", req.url));
-  // Haydovchi vebda faqat o'z reyslarini ko'radi (asosiy ish joyi — ilova)
-  if (role === "DRIVER" && !pathname.startsWith("/mening-reyslarim") && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
-    return NextResponse.redirect(new URL("/mening-reyslarim", req.url));
+  // Haydovchi va brigadir vebda faqat o'z sahifasini ko'radi (asosiy ish joyi — ilova)
+  const ownPage = OWN_PAGE_ONLY[role];
+  if (ownPage && !pathname.startsWith(ownPage) && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
+    return NextResponse.redirect(new URL(ownPage, req.url));
   }
   if (!pathAllowed(pathname, role)) return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
   return NextResponse.next();

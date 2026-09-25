@@ -97,3 +97,59 @@ export async function routeDistance(from: { lat: number; lng: number }, to: { la
     return line;
   }
 }
+
+/** Marshrut: xaritada chiziladigan chiziq + yo'l uzunligi va taxminiy vaqti. */
+export type RouteLine = {
+  /** Chiziq nuqtalari — kamida ikkita (boshi va oxiri). */
+  points: { lat: number; lng: number }[];
+  meters: number;
+  seconds: number;
+  source: "ROUTE" | "LINE";
+};
+
+/** Yo'l topilmaganda to'g'ri chiziq necha km/soat deb hisoblanadi — shahar ichi o'rtachasi. */
+const LINE_KMH = 30;
+
+/**
+ * Ikki nuqta orasidagi marshrut — haydovchi ilovasidagi xarita shuni chizadi.
+ *
+ * `routeDistance` dan farqi: bu yerda chiziqning O'ZI kerak, chunki ilova qolgan masofani
+ * shu chiziq bo'ylab hisoblaydi (har soniyada serverga murojaat qilmaslik uchun).
+ *
+ * Geometriya `full` — haqiqiy ko'chalar bo'ylab. `simplified` da 27 km yo'l 17 ta
+ * nuqtaga siqiladi va xaritada kvartallarni kesib o'tadigan siniq chiziq chiqadi,
+ * haydovchi esa "yo'l noto'g'ri" deb o'ylaydi. To'liq geometriya taxminan 17 KB —
+ * ilova uni har safar emas, faqat marshrut o'zgarganda so'raydi (`lib/mobile/route.ts`).
+ *
+ * OSRM javob bermasa to'g'ri chiziq qaytadi va `source` shuni aytadi: ilova
+ * "taxminiy" deb ko'rsatadi, lekin xarita baribir bo'sh qolmaydi.
+ */
+export async function routeLine(from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<RouteLine> {
+  const straight = haversineMeters(from.lat, from.lng, to.lat, to.lng);
+  const line: RouteLine = {
+    points: [{ lat: from.lat, lng: from.lng }, { lat: to.lat, lng: to.lng }],
+    meters: Math.round(straight),
+    seconds: Math.round((straight / 1000 / LINE_KMH) * 3600),
+    source: "LINE",
+  };
+  try {
+    const url = `${OSRM_URL}/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return line;
+    const j = (await res.json()) as {
+      code?: string;
+      routes?: { distance: number; duration: number; geometry?: { coordinates?: [number, number][] } }[];
+    };
+    const r = j.code === "Ok" ? j.routes?.[0] : undefined;
+    const coords = r?.geometry?.coordinates ?? [];
+    if (!r || coords.length < 2) return line;
+    return {
+      points: coords.map(([lng, lat]) => ({ lat, lng })),
+      meters: Math.round(r.distance),
+      seconds: Math.round(r.duration),
+      source: "ROUTE",
+    };
+  } catch {
+    return line;
+  }
+}

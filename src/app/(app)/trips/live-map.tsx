@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap, type LMarker } from "@/lib/leaflet";
+import { MapLocateButton } from "@/components/map-locate-button";
 
 /** Xaritadagi bitta mashina. */
 export type MapTrip = {
@@ -79,5 +80,13 @@ export function LiveMap({ trips, track }: { trips: MapTrip[]; track: [number, nu
     m.fitBounds(L.latLngBounds(track), { padding: [40, 40] });
   }, [track]);
 
-  return <div ref={el} className="isolate h-full min-h-[260px] w-full" />;
+  return (
+    // Balandlik o'rovchida (`min-h`): ichki xarita `absolute inset-0` bilan uni
+    // to'ldiradi — `h-full` bo'lsa ota-element balandligi "auto" bo'lgani uchun
+    // xarita nol balandlikka tushib qolardi.
+    <div className="relative isolate h-full min-h-[260px] w-full">
+      <div ref={el} className="absolute inset-0" />
+      <MapLocateButton getMap={() => map.current} />
+    </div>
+  );
 }

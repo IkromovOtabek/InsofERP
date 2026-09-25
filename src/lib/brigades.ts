@@ -102,3 +102,15 @@ export async function clearBrigadeLeader(employeeId: string, userId: string, bri
 /** Brigadir tanlash ro'yxati uchun — faol brigadalar, brigadiri bilan. */
 export const activeBrigades = () =>
   db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true } });
+
+/**
+ * Login qilgan brigadirning brigadalari. Zanjir: User → Employee (`userId`) → Brigade (`leaderId`).
+ * Ishlab chiqarish brigada tayinlaganda topshiriq shu brigadaga yoziladi — brigadir ilovada
+ * (va vebdagi "Mening topshiriqlarim" sahifasida) aynan shu ro'yxat bo'yicha ko'radi.
+ */
+export const myBrigades = (userId: string) =>
+  db.brigade.findMany({ where: { isActive: true, leader: { userId } }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+
+/** Xodim hozir biror faol brigadaning brigadiri bo'lsa — login berishda rol shundan taxmin qilinadi. */
+export const isBrigadeLeader = async (employeeId: string) =>
+  !!(await db.brigade.findFirst({ where: { leaderId: employeeId, isActive: true }, select: { id: true } }));

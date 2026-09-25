@@ -7,6 +7,7 @@ import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
+import { isBrigadeLeader } from "@/lib/brigades";
 import type { Role } from "@/generated/prisma";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
@@ -17,8 +18,8 @@ import type { Prisma } from "@/generated/prisma";
 
 const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
 
-/** Login berishda tanlanadigan bo'limlar: bo'lim lavozimlari + haydovchi ilovasi. */
-const LOGIN_ROLES: Role[] = [...POSITIONS.map((p) => p.role), "DRIVER"];
+/** Login berishda tanlanadigan bo'limlar: bo'lim lavozimlari + haydovchi va brigadir ilovasi. */
+const LOGIN_ROLES: Role[] = [...POSITIONS.map((p) => p.role), "DRIVER", "BRIGADIER"];
 
 const schema = z.object({
   // Ro'yxatdan tanlangan mavjud xodim — yangi karta ochilmaydi, shu kartaga login beriladi
@@ -138,8 +139,10 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   const hasCreds = !!(d.login && d.password);
   // Ishchi lavozimda kadr qaysi bo'lim huquqini tanlagan bo'lsa — login shu rol bilan ochiladi
   const chosen = (LOGIN_ROLES as string[]).includes(d.role ?? "") ? (d.role as Role) : null;
-  // Bo'lim lavozimi — login majburiy; haydovchi va tanlangan bo'lim — ixtiyoriy (login yozilsa ochiladi)
-  const role: Role | null = deptRole ?? (hasCreds ? (chosen ?? (driver ? "DRIVER" : null)) : null);
+  // Ro'yxatdan tanlangan xodim allaqachon brigadir bo'lsa — bo'lim tanlanmasa ham BRIGADIER
+  const leader = d.employeeId ? await isBrigadeLeader(d.employeeId) : false;
+  // Bo'lim lavozimi — login majburiy; haydovchi, brigadir va tanlangan bo'lim — ixtiyoriy (login yozilsa ochiladi)
+  const role: Role | null = deptRole ?? (hasCreds ? (chosen ?? (driver ? "DRIVER" : leader ? "BRIGADIER" : null)) : null);
   if (deptRole && !hasCreds) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (chosen && !hasCreds) return { error: "Login va parol kiriting yoki bo'limni «login kerak emas» qilib qo'ying" };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
@@ -230,7 +233,9 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
   if (e.userId) return { error: "Bu xodimda login bor" };
   if (!e.isActive) return { error: `${e.fullName} nofaol — avval "Yoqish" tugmasi bilan ro'yxatga qaytaring` };
   const chosen = (LOGIN_ROLES as string[]).includes(wanted) ? (wanted as Role) : null;
-  const role: Role | null = chosen ?? roleForPosition(e.position) ?? ((await isDriverPosition(e.position)) ? "DRIVER" : null);
+  const role: Role | null = chosen
+    ?? roleForPosition(e.position)
+    ?? ((await isDriverPosition(e.position)) ? "DRIVER" : (await isBrigadeLeader(employeeId)) ? "BRIGADIER" : null);
   if (!role) return { error: `"${e.position}" lavozimi tizimga kirmaydi — qaysi bo'lim uchun login kerakligini tanlang` };
   try {
     await db.$transaction(async (tx) => {

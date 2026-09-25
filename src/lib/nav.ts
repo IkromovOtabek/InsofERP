@@ -42,6 +42,8 @@ export const NAV: NavItem[] = [
   { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika" },
+  // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar
+  { href: "/mening-topshiriqlarim", label: "Mening topshiriqlarim", roles: ["BRIGADIER"], group: "Ishlab chiqarish" },
   { href: "/drivers",     label: "Haydovchilar (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika" },
   // ── Tahlil (Team24 BI tuzilmasi) ──
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil" },
@@ -59,6 +61,15 @@ export const NAV: NavItem[] = [
   { href: "/settings",    label: "Sozlamalar",         roles: ["DIRECTOR"], group: "Boshqaruv" },
 ];
 
+/**
+ * Vebda faqat bitta sahifasi bor rollar — asosiy ish joyi Insof ECO ilovasi.
+ * Middleware shu jadval bo'yicha yo'naltiradi, menyu esa umumiy bandlarni olib tashlaydi.
+ */
+export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
+  DRIVER: "/mening-reyslarim",
+  BRIGADIER: "/mening-topshiriqlarim",
+};
+
 export const ROLE_LABELS: Record<Role, string> = {
   DIRECTOR: "Direktor",
   SALES: "Sotuv",
@@ -72,6 +83,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   HR: "Otdel kadr",
   CASHIER: "Kassa / bank",
   DRIVER: "Haydovchi",
+  BRIGADIER: "Brigadir",
 };
 
 /**
@@ -90,6 +102,6 @@ export function navFor(role: Role) {
   const items = NAV.filter(
     (i) => !i.hidden && (i.roles === "all" || role === "DIRECTOR" || i.roles.includes(role)),
   );
-  // Haydovchi vebda faqat o'z reyslarini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
-  return role === "DRIVER" ? items.filter((i) => i.roles !== "all") : items;
+  // Haydovchi va brigadir vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
+  return OWN_PAGE_ONLY[role] ? items.filter((i) => i.roles !== "all") : items;
 }

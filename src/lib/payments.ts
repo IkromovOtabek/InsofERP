@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { money } from "@/lib/format";
+import { notifyAfter, notifyRoles } from "@/lib/notify";
 
 /**
  * To'lov qabul qilish — yagona joy (veb kassa sahifasi ham, mobil ilova ham shu yerdan).
@@ -15,7 +17,7 @@ export type PaymentInput = {
 };
 
 export async function addPayment(input: PaymentInput, userId: string): Promise<{ id: string; invoiceStatus?: string }> {
-  return db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
     const p = await tx.payment.create({
       data: {
         customerId: input.customerId,
@@ -40,4 +42,17 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
     }
     return { id: p.id, invoiceStatus: status };
   });
+
+  // To'lov mijozning limitini bo'shatadi — sotuv va buxgalteriya buni kutib turadi
+  notifyAfter(async () => {
+    const c = await db.customer.findUnique({ where: { id: input.customerId }, select: { name: true } });
+    await notifyRoles(["SALES", "ACCOUNTING", "DIRECTOR"], {
+      type: "PAYMENT_RECEIVED",
+      title: `To'lov: ${money(input.amount)}`,
+      body: `${c?.name ?? "Mijoz"}${res.invoiceStatus === "PAID" ? " · schyot yopildi" : ""}`,
+      link: input.invoiceId ? { key: "invoices", id: input.invoiceId } : undefined,
+      channel: "oddiy",
+    }, { except: userId });
+  });
+  return res;
 }

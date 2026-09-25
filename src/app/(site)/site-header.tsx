@@ -58,7 +58,7 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
     <header className="sticky top-0 z-50">
       {/* Xizmat qatori — siljiganda yig'iladi, shunda ekranda mahsulot qoladi */}
       <div className={`overflow-hidden bg-insof-900 transition-[height] duration-300 ${scrolled ? "h-0" : "h-10"}`}>
-        <div className="mx-auto flex h-10 max-w-[1440px] items-center gap-6 px-4 text-[13px] text-white/65 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-10 max-w-[1680px] items-center gap-6 px-4 text-[13px] text-white/65 sm:px-6 lg:px-8">
           {tel && (
             <a href={tel} className="inline-flex items-center gap-2 transition-colors hover:text-white">
               <Phone size={13} className="text-signal" />
@@ -75,8 +75,9 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
         </div>
       </div>
 
-      <div className={`border-b border-beton-200 bg-white transition-shadow ${scrolled ? "shadow-[0_1px_16px_rgba(23,35,61,0.10)]" : ""}`}>
-        <div className={`mx-auto flex max-w-[1440px] items-center gap-4 px-4 transition-all duration-300 sm:px-6 lg:gap-6 lg:px-8 ${scrolled ? "h-16" : "h-20"}`}>
+      {/* Siljiganda panel shishaga aylanadi — orqadagi surat xira ko'rinib turadi */}
+      <div className={`border-b transition-[background-color,box-shadow,border-color] duration-300 ${scrolled ? "border-white/60 bg-white/80 shadow-[0_8px_32px_-12px_rgba(27,42,76,0.25)] backdrop-blur-xl" : "border-beton-200 bg-white"}`}>
+        <div className={`mx-auto flex max-w-[1680px] items-center gap-4 px-4 transition-all duration-300 sm:px-6 lg:gap-6 lg:px-8 ${scrolled ? "h-16" : "h-20"}`}>
           <Link href="/" className="shrink-0" aria-label="INSOF JBI — bosh sahifa">
             <Image
               src="/media/logo.png"
@@ -88,18 +89,20 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
             />
           </Link>
 
-          <nav className="ml-auto hidden items-center gap-6 lg:flex xl:gap-8">
+          <nav className="ml-auto hidden items-center gap-1 lg:flex xl:gap-2">
             {LINKS.map(([id, label]) => (
               <a
                 key={id}
                 href={`#${id}`}
-                className={`relative py-2 text-[15px] font-medium whitespace-nowrap transition-colors ${active === id ? "text-insof-700" : "text-beton-700 hover:text-insof-600"}`}
+                className={`relative isolate rounded-full px-3.5 py-2 text-[15px] font-medium whitespace-nowrap transition-colors ${active === id ? "text-insof-700" : "text-beton-700 hover:text-insof-600"}`}
               >
                 {label}
+                {/* Faol band ortidagi yumshoq plitka — bandlar orasida sirg'alib o'tadi.
+                    `isolate` shart: aks holda -z-10 panelning oq foni ostiga tushib ketadi. */}
                 {active === id && (
                   <motion.span
-                    layoutId="nav-underline"
-                    className="absolute -bottom-px left-0 h-0.5 w-full bg-signal"
+                    layoutId="nav-pill"
+                    className="absolute inset-0 -z-10 rounded-full bg-insof-900/6"
                     transition={{ type: "spring", stiffness: 420, damping: 34 }}
                   />
                 )}
@@ -109,9 +112,9 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
             {/* Taqdimot — PPT ning veb ko'rinishi, alohida sahifa */}
             <Link
               href="/taqdimot"
-              className="inline-flex items-center gap-1.5 py-2 text-[15px] font-medium whitespace-nowrap text-beton-700 transition-colors hover:text-insof-600"
+              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[15px] font-medium whitespace-nowrap text-beton-700 transition-colors hover:text-insof-600"
             >
-              <Presentation size={15} className="text-signal-dim" /> Taqdimot
+              <Presentation size={15} strokeWidth={1.75} className="text-signal-dim" /> Taqdimot
             </Link>
           </nav>
 
@@ -120,26 +123,26 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
               <a href={tel} className="hidden text-[15px] font-semibold whitespace-nowrap text-beton-900 tabular-nums xl:inline-flex">{phone}</a>
             )}
             {tel && (
-              <a href={tel} aria-label={`Qo'ng'iroq: ${phone}`} className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-insof-900 text-white xl:hidden">
+              <a href={tel} aria-label={`Qo'ng'iroq: ${phone}`} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-insof-900 text-white xl:hidden">
                 <Phone size={16} />
               </a>
             )}
             <Link
               href="/login"
-              className="hidden h-11 items-center gap-2 rounded-md border border-beton-300 px-5 text-sm font-semibold whitespace-nowrap text-beton-800 transition-colors hover:border-insof-500 hover:text-insof-700 lg:inline-flex"
+              className="hidden h-11 items-center gap-2 rounded-full border border-beton-300 px-5 text-sm font-semibold whitespace-nowrap text-beton-800 transition-colors hover:border-insof-500 hover:text-insof-700 lg:inline-flex"
             >
               <LogIn size={16} /> Kirish
             </Link>
             <a
               href="#ariza"
-              className="hidden h-11 items-center rounded-md bg-signal px-5 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-signal-600 sm:inline-flex xl:px-6"
+              className="hidden h-11 items-center rounded-full bg-signal px-5 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-signal-600 sm:inline-flex xl:px-6"
             >
               Narx so&apos;rash
             </a>
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-beton-300 text-beton-800 lg:hidden"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-beton-300 text-beton-800 lg:hidden"
               aria-label={open ? "Menyuni yopish" : "Menyu"}
               aria-expanded={open}
             >
@@ -156,7 +159,7 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-b border-beton-200 bg-white lg:hidden"
+            className="overflow-hidden border-b border-beton-200 bg-white/90 backdrop-blur-xl lg:hidden"
           >
             <div className="px-4 pt-2 pb-8 sm:px-6">
               {LINKS.map(([id, label]) => (
@@ -179,14 +182,14 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
               <a
                 href="#ariza"
                 onClick={() => setOpen(false)}
-                className="mt-6 flex h-12 items-center justify-center rounded-md bg-signal text-sm font-semibold text-white"
+                className="mt-6 flex h-12 items-center justify-center rounded-full bg-signal text-sm font-semibold text-white"
               >
                 Narx so&apos;rash
               </a>
               <Link
                 href="/login"
                 onClick={() => setOpen(false)}
-                className="mt-3 flex h-12 items-center justify-center gap-2 rounded-md border border-beton-300 text-sm font-semibold text-beton-800"
+                className="mt-3 flex h-12 items-center justify-center gap-2 rounded-full border border-beton-300 text-sm font-semibold text-beton-800"
               >
                 <LogIn size={16} /> Kirish
               </Link>

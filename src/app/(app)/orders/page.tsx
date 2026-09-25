@@ -76,14 +76,14 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <CheckCircle2 size={16} /> Excel&apos;dan <b>{imported} ta</b> qoralama zayavka ochildi — tekshirib qabul qilasiz.
         </div>
       )}
+      {/* 10 kunlik ish tartibi: qaysi kunga zayavka ko'p, qaysi kun bo'sh */}
+      <OrderLoadCalendar />
       {/* Zayavka qabul qilayotgan xodim korxonada nima borligini shu yerda ko'radi:
           Hovlidagi dona mahsulot, beton va Skladdagi xomashyo. */}
       <div className="mb-5">
         <StockSnapshotCard layout="grid" title="Korxona qoldig'i — zayavka qabul qilishdan oldin" />
       </div>
       {canApproveSupply && <SupplyApprovals mode="sales" />}
-      {/* 10 kunlik ish tartibi: qaysi kunga zayavka ko'p, qaysi kun bo'sh */}
-      <OrderLoadCalendar />
       {day ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
           <span className="text-slate-600">{date(day)} kuniga yetkazish: <b className="text-slate-900">{orders.length} ta zayavka</b> · {fmtUnitTotals(orders.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))))}</span>

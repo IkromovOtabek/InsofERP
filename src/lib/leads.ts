@@ -2,6 +2,7 @@ import { db } from "./db";
 import { formatPhone, normalizePhone } from "./sms/phone";
 import { botEnabled, sendMessage } from "./telegram/api";
 import { unitLabel } from "./unit";
+import { notifyAfter, notifyRoles } from "@/lib/notify";
 
 /**
  * Saytdan tushgan ariza (`Lead`). Qoida shu yerda — server action ham,
@@ -46,7 +47,14 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
     include: { product: { select: { name: true, unit: true } } },
   });
 
+  // Telegram — botga ulangan xodimlarga; push — ilovadagi hammaga. Ikkalasi bir-birini
+  // takrorlamaydi: sotuvchi qaysi biri qo'lida bo'lsa, o'shanda ko'radi.
   await notifySales({ ...lead, qty: lead.qty ? Number(lead.qty) : null });
+  notifyAfter(() => notifyRoles(["SALES", "DIRECTOR"], {
+    type: "LEAD_NEW",
+    title: "Saytdan yangi so'rov",
+    body: `${lead.name} · ${lead.phone}${lead.product ? ` · ${lead.product.name}` : ""}`,
+  }));
   return { ok: true };
 }
 

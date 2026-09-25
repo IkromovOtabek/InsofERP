@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Saira, Exo_2, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Unbounded, Onest, JetBrains_Mono } from "next/font/google";
 import { getCompany } from "@/lib/company";
 
 /**
@@ -10,20 +10,19 @@ import { getCompany } from "@/lib/company";
  * qilmaydi. Fon — beton kulrangi; qorong'i faqat hero, zavod lentasi va
  * poydevorda ishlatiladi, ya'ni sahifa ritmida.
  *
- * Shriftlar shu yerda ulanadi (butun ERP'ga emas) va soha ohangida tanlangan:
- *  · Saira — sarlavhalar. Kvadratsimon, keng grotesk: logotipdagi "INSOF"
- *    harflariga eng yaqin shakl;
- *  · IBM Plex Sans — matn. Muhandislik hujjatlari uchun chizilgan, quruq va
- *    aniq — beton zavodiga startap shriftidan ko'ra mosroq;
- *  · IBM Plex Mono — marka, kod, raqam: nakladnoy va pult yozuvi.
+ * Shriftlar shu yerda ulanadi (butun ERP'ga emas):
+ *  · Unbounded — sarlavhalar. Keng, geometrik grotesk — logotipdagi
+ *    kvadratsimon "INSOF" harflariga eng yaqin shakl. O'zgaruvchan shrift,
+ *    og'irlik alohida yuklanmaydi;
+ *  · Onest — matn. Zamonaviy neytral sans, ekranda tekis o'qiladi;
+ *  · JetBrains Mono — marka, raqam, teg: nakladnoy va pult yozuvi.
+ * Uchalasi ham kirillni qo'llab-quvvatlaydi — ruscha taqdimot uchun alohida
+ * shrift kerak emas.
  */
 
-const saira = Saira({ subsets: ["latin", "latin-ext"], variable: "--font-saira", display: "swap" });
-// Saira'da kirill yo'q — ruscha taqdimot sarlavhalari uchun o'xshash texnik shrift (Exo 2)
-const exo2 = Exo_2({ subsets: ["latin", "cyrillic"], variable: "--font-exo2", display: "swap" });
-// Plex'da kirill bor — taqdimot ruscha ochilganda matn va raqamlar shu shriftda qoladi
-const plexSans = IBM_Plex_Sans({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-plex-sans", display: "swap" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-plex-mono", display: "swap" });
+const unbounded = Unbounded({ subsets: ["latin", "latin-ext", "cyrillic", "cyrillic-ext"], variable: "--font-unbounded", display: "swap" });
+const onest = Onest({ subsets: ["latin", "latin-ext", "cyrillic"], variable: "--font-onest", display: "swap" });
+const jetMono = JetBrains_Mono({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-jet-mono", display: "swap" });
 
 export async function generateMetadata(): Promise<Metadata> {
   const c = await getCompany();
@@ -38,7 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`site ${saira.variable} ${exo2.variable} ${plexSans.variable} ${plexMono.variable} min-h-screen bg-beton-100 text-beton-900`}>
+    <div className={`site ${unbounded.variable} ${onest.variable} ${jetMono.variable} min-h-screen bg-beton-100 text-beton-900`}>
       {children}
     </div>
   );

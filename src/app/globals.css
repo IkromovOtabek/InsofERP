@@ -162,15 +162,15 @@
   --color-signal-600: #f06f00;
   --color-signal-dim: #c75f00;  /* ochiq fonda matn uchun — kontrast yetarli bo'lsin */
 
-  /* Sayt shriftlari — sanoat/muhandislik ohangida, logotipdagi kvadratsimon
-     grotesk bilan bir oilada turadi:
-       · Saira — sarlavha, keng va burchakli harflar (logotipga eng yaqini);
-       · IBM Plex Sans — matn, texnik hujjat shrifti;
-       · IBM Plex Mono — kod, marka, raqam (nakladnoy yozuvi).
+  /* Sayt shriftlari:
+       · Unbounded — sarlavha. Keng, geometrik grotesk: logotipdagi kvadratsimon
+         "INSOF" harflariga eng yaqin shakl, kirilli bor;
+       · Onest — matn. Zamonaviy neytral sans, kirill bilan;
+       · JetBrains Mono — marka, raqam, teg (nakladnoy va pult yozuvi).
      var() ichidagi zaxira qiymat majburiy: shriftlar faqat sayt qobig'ida
      ulanadi, ERP sahifalarida bu o'zgaruvchilar yo'q. */
-  --font-display: var(--font-saira, ui-sans-serif), system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
+  --font-display: var(--font-unbounded, ui-sans-serif), system-ui, sans-serif;
+  --font-mono: var(--font-jet-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
 }
 
 :root {
@@ -323,14 +323,81 @@
   /* Shrift o'zgaruvchilari shu yerda qayta belgilanadi.
      Sabab: `@theme` dagi --font-display/--font-mono `:root` da hisoblanadi, sayt
      shriftlari esa faqat shu elementda (next/font sinflari bilan) mavjud —
-     ya'ni `:root` da var(--font-saira) bo'sh chiqib, zaxiraga tushib ketardi. */
-  --font-display: var(--font-saira), system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), SFMono-Regular, Menlo, monospace;
+     ya'ni `:root` da var(--font-manrope) bo'sh chiqib, zaxiraga tushib ketardi. */
+  --font-display: var(--font-unbounded), system-ui, sans-serif;
+  --font-mono: var(--font-jet-mono), SFMono-Regular, Menlo, monospace;
 
-  /* Sayt matni ERP'dagi Jakarta emas — muhandislik ohangi uchun Plex Sans */
-  font-family: var(--font-plex-sans), system-ui, sans-serif;
+  /* Sayt matni ERP'dagi Jakarta emas — Onest (sayt qobig'ida ulanadi). */
+  font-family: var(--font-onest), var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 .site .text-white { color: #fff; }
+/* Unbounded keng shrift — katta sarlavhada harflar ozgina siqiladi, aks holda
+   so'zlar "sochilib" ketadi. Kichik o'lchamda (h3) tegilmaydi. */
+.site .font-display { letter-spacing: -0.02em; }
+.site .font-display.text-lg, .site .font-display.text-base, .site .font-display.text-\[15px\] { letter-spacing: -0.005em; }
+
+/* ───────── Sayt materiallari ─────────
+   Tekis rang o'rniga uch xil "yuza": chizma qog'ozi, shisha va don. */
+
+/* Muhandislik chizmasi katagi — ochiq fonda ko'k, qorong'ida oq chiziqlar.
+   Chekkalari radial niqob bilan so'nadi, shunda katak bo'limni "qafas"ga
+   solmaydi, faqat orqa fonda sezilib turadi. */
+.blueprint {
+  background-image:
+    linear-gradient(to right, rgb(27 42 76 / .07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(27 42 76 / .07) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 100%);
+}
+.blueprint-dark {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / .06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / .06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 20%, transparent 100%);
+}
+
+/* Shisha panel — surat yoki qorong'i fon ustida turadigan yarim shaffof karta. */
+.glass {
+  background: rgb(255 255 255 / .78);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgb(255 255 255 / .7);
+  box-shadow: 0 1px 0 rgb(255 255 255 / .9) inset, 0 24px 48px -24px rgb(27 42 76 / .35);
+}
+.glass-dark {
+  background: rgb(27 42 76 / .42);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid rgb(255 255 255 / .16);
+  box-shadow: 0 1px 0 rgb(255 255 255 / .12) inset;
+}
+
+/* Konturli katta raqam — qadamlar va bo'lim tartib raqami uchun. */
+.text-outline {
+  /* `color` tegilmaydi — Tailwind `text-*` sinfi rangni beradi, kontur undan oladi */
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 1.5px currentColor;
+}
+
+/* Ikonka plitkasi — brend ko'k gradient, ichki yorug' chekka, to'q sariq nuqta. */
+.icon-tile {
+  background: linear-gradient(145deg, var(--color-insof-600) 0%, var(--color-insof-900) 100%);
+  box-shadow: 0 1px 0 rgb(255 255 255 / .18) inset, 0 12px 24px -12px rgb(27 42 76 / .6);
+}
+.icon-tile-soft {
+  background: linear-gradient(145deg, #eef3fe 0%, #dde6f9 100%);
+  box-shadow: 0 1px 0 #fff inset, 0 1px 2px rgb(27 42 76 / .08);
+}
+
+/* "Jonli" nuqta — ish vaqti ko'rsatkichi. */
+@keyframes live-ping { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(2.4); opacity: 0; } }
+.live-dot::before {
+  content: ""; position: absolute; inset: 0; border-radius: 9999px;
+  background: inherit; animation: live-ping 1.8s cubic-bezier(0, 0, .2, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) { .live-dot::before { animation: none; } }
 
 /* Beton yuzasi — juda nozik don. Tekis rang plastmassaday ko'rinadi,
    don esa panelga material hissini beradi. */

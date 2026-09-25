@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { FileText, IdCard, Save, User } from "lucide-react";
 import { createEmployeeCard } from "../actions";
 import { DOC_KINDS, docField, EDUCATION, MARITAL, OTHER_DOC_KIND } from "@/lib/kadr";
 import { Button, Card, CardHeader, Field, FormError, Input, Select, Textarea } from "@/components/ui";
+import { PhotoPicker } from "@/components/photo-picker";
 
 const fileCls =
   "block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-slate-700";
@@ -20,7 +21,6 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
   maxMb: number;
 }) {
   const [state, action, pending] = useActionState(createEmployeeCard, undefined);
-  const [preview, setPreview] = useState<string | null>(null);
 
   return (
     <form action={action} className="space-y-4">
@@ -29,19 +29,7 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[150px_1fr]">
           <div>
             <span className="mb-1 block text-xs font-medium text-slate-600">3x4 surat</span>
-            <div className="mb-2 flex h-[150px] w-[120px] items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400">
-              {preview
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={preview} alt="Tanlangan surat" className="h-full w-full object-cover" />
-                : <User size={28} />}
-            </div>
-            <input
-              name="photo" type="file" accept={photoAccept} className={fileCls}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                setPreview(f ? URL.createObjectURL(f) : null);
-              }}
-            />
+            <PhotoPicker accept={photoAccept} hint="Kamerada olsangiz ham, fayldan tanlasangiz ham bo'ladi" />
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

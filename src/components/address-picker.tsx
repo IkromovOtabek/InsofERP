@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, MapPin, Route, Search, TriangleAlert } from "lucide-react";
 import { inputCls } from "@/components/ui";
+import { MapLocateButton } from "@/components/map-locate-button";
 import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap, type LMarker } from "@/lib/leaflet";
 
 /**
@@ -216,8 +217,9 @@ export function AddressPicker({
       {/* isolate: Leaflet o'z qatlamlariga 400, boshqaruv tugmalariga 1000 z-index
           beradi. Alohida stacking kontekst bo'lmasa bu raqamlar sahifa ildizida
           hisoblanib, xarita modal oynalar (z-50) ustidan chiqib ketadi. */}
-      <div className="isolate mt-2 overflow-hidden rounded-lg border border-slate-200">
+      <div className="relative isolate mt-2 overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[220px] w-full bg-slate-50" />
+        <MapLocateButton getMap={() => map.current} />
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">

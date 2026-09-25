@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, MapPin } from "lucide-react";
 import { Button, Card } from "@/components/ui";
+import { MapLocateButton } from "@/components/map-locate-button";
 import { addTiles, loadLeaflet, TASHKENT, type LMap, type LMarker } from "@/lib/leaflet";
 import { savePlantLocation } from "./actions";
 
@@ -58,8 +59,9 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
         Xaritadan zavod turgan joyni bosib belgilang. Zayavkadagi &quot;zavoddan necha km&quot; va
         haydovchining marshruti shu nuqtadan hisoblanadi.
       </p>
-      <div className="isolate overflow-hidden rounded-lg border border-slate-200">
+      <div className="relative isolate overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[260px] w-full bg-slate-50" />
+        <MapLocateButton getMap={() => map.current} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
         {point ? (

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MapPin, Navigation, Phone, Smartphone, X } from "lucide-react";
-import { addTiles, loadLeaflet } from "@/lib/leaflet";
+import { addTiles, loadLeaflet, type LMap } from "@/lib/leaflet";
+import { MapLocateButton } from "@/components/map-locate-button";
 
 /**
  * "Joylashuv" bo'limi: xarita + manzil kartasi.
@@ -30,16 +31,18 @@ export function PlantLocation({
         <MapMissing address={label} />
       )}
 
-      <div className="flex flex-col justify-center rounded-lg bg-insof-900 p-8">
+      <div className="relative flex flex-col justify-center overflow-hidden rounded-3xl bg-insof-900 p-8">
+        <div className="blueprint-dark absolute inset-0" aria-hidden />
+        <div className="relative">
         <span className="font-mono text-[11px] tracking-[0.16em] text-signal uppercase">Manzil</span>
-        <p className="mt-3 font-display text-2xl font-bold text-white">{label}</p>
+        <p className="mt-3 text-xl leading-snug font-semibold text-white">{label}</p>
         {hours && <p className="mt-4 text-white/60">{hours}</p>}
         <div className="mt-8 flex flex-col gap-3">
           {hasPoint && (
             <button
               type="button"
               onClick={() => setPicker(true)}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-signal px-6 text-sm font-semibold text-white transition-colors hover:bg-signal-600"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-signal px-6 text-sm font-semibold text-white transition-colors hover:bg-signal-600"
             >
               <Navigation size={16} /> Yo&apos;l ko&apos;rsatish
             </button>
@@ -47,11 +50,12 @@ export function PlantLocation({
           {phone && (
             <a
               href={`tel:${phone.replace(/[^\d+]/g, "")}`}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-white/25 px-6 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-white/25 px-6 text-sm font-semibold text-white transition-colors hover:bg-white/10"
             >
               <Phone size={16} /> {phone}
             </a>
           )}
+        </div>
         </div>
       </div>
 
@@ -64,6 +68,8 @@ export function PlantLocation({
 
 function MapBox({ lat, lng, onPick }: { lat: number; lng: number; onPick: () => void }) {
   const box = useRef<HTMLDivElement | null>(null);
+  /** "Men qayerdaman" tugmasi shu xaritaga ishlaydi */
+  const mapRef = useRef<LMap | null>(null);
   const [ready, setReady] = useState(false);
   // Leaflet hodisasi eski `onPick` ni ushlab qolmasligi uchun ref orqali chaqiramiz
   const pick = useRef(onPick);
@@ -98,6 +104,7 @@ function MapBox({ lat, lng, onPick }: { lat: number; lng: number; onPick: () => 
         marker.on("click", () => pick.current());
 
         map = m as unknown as { remove?: () => void };
+        mapRef.current = m;
         setReady(true);
       });
     };
@@ -108,11 +115,11 @@ function MapBox({ lat, lng, onPick }: { lat: number; lng: number; onPick: () => 
     }, { rootMargin: "300px" });
     io.observe(el);
 
-    return () => { cancelled = true; io.disconnect(); map?.remove?.(); };
+    return () => { cancelled = true; io.disconnect(); map?.remove?.(); mapRef.current = null; };
   }, [lat, lng]);
 
   return (
-    <div className="relative h-full min-h-[380px] w-full overflow-hidden rounded-lg border border-beton-200 bg-beton-100">
+    <div className="relative h-full min-h-[380px] w-full overflow-hidden rounded-3xl border border-beton-200 bg-beton-100">
       <div ref={box} className="absolute inset-0 z-0 cursor-pointer" />
       {!ready ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-beton-500">Xarita yuklanmoqda…</div>
@@ -120,11 +127,12 @@ function MapBox({ lat, lng, onPick }: { lat: number; lng: number; onPick: () => 
         <button
           type="button"
           onClick={onPick}
-          className="absolute top-4 right-4 z-10 inline-flex items-center gap-2 rounded-md bg-white/95 px-3.5 py-2 text-xs font-semibold text-beton-800 shadow-[0_2px_12px_rgba(23,35,61,0.18)] backdrop-blur-xs transition-colors hover:bg-white"
+          className="absolute top-4 right-4 z-10 inline-flex items-center gap-2 rounded-full bg-white/95 px-3.5 py-2 text-xs font-semibold text-beton-800 shadow-[0_2px_12px_rgba(23,35,61,0.18)] backdrop-blur-xs transition-colors hover:bg-white"
         >
           <Smartphone size={14} className="text-signal-dim" /> Xarita ilovasida ochish
         </button>
       )}
+      {ready && <MapLocateButton getMap={() => mapRef.current} className="absolute top-16 right-4 z-10" />}
     </div>
   );
 }
@@ -132,11 +140,11 @@ function MapBox({ lat, lng, onPick }: { lat: number; lng: number; onPick: () => 
 /** Nuqta belgilanmagan holat — mehmonga ERP ko'rsatmasi ko'rsatilmaydi. */
 function MapMissing({ address }: { address: string }) {
   return (
-    <div className="flex h-full min-h-[380px] flex-col items-center justify-center rounded-lg border border-beton-200 bg-beton-50 p-10 text-center">
+    <div className="flex h-full min-h-[380px] flex-col items-center justify-center rounded-3xl border border-beton-200 bg-beton-50 p-10 text-center">
       <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-insof-900 text-signal">
         <MapPin size={24} />
       </span>
-      <p className="mt-6 max-w-sm font-display text-xl font-bold text-beton-900">{address}</p>
+      <p className="mt-6 max-w-sm text-lg font-semibold text-beton-900">{address}</p>
       <p className="mt-2 max-w-sm text-[15px] leading-relaxed text-beton-500">
         Zavodga kelishdan oldin qo&apos;ng&apos;iroq qilib oling — yuk olib ketish tartibi va navbat aytiladi.
       </p>
@@ -144,7 +152,7 @@ function MapMissing({ address }: { address: string }) {
         href={`https://yandex.uz/maps/?text=${encodeURIComponent(address)}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-6 inline-flex h-11 items-center gap-2 rounded-md bg-insof-900 px-6 text-sm font-semibold text-white transition-colors hover:bg-insof-700"
+        className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-insof-900 px-6 text-sm font-semibold text-white transition-colors hover:bg-insof-700"
       >
         <MapPin size={16} /> Xaritada ochish
       </a>
@@ -233,14 +241,14 @@ function AppPicker({ lat, lng, label, onClose }: { lat: number; lng: number; lab
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="font-display text-xl font-bold text-beton-900">Qayerda ochamiz?</h3>
+            <h3 className="font-display text-lg font-semibold text-beton-900">Qayerda ochamiz?</h3>
             <p className="mt-1 text-sm text-beton-500">{label}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Yopish"
-            className="-mt-1 -mr-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-beton-500 transition-colors hover:bg-beton-100 hover:text-beton-900"
+            className="-mt-1 -mr-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-beton-500 transition-colors hover:bg-beton-100 hover:text-beton-900"
           >
             <X size={18} />
           </button>
@@ -253,9 +261,9 @@ function AppPicker({ lat, lng, label, onClose }: { lat: number; lng: number; lab
               href={a.href}
               {...(a.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               onClick={onClose}
-              className="flex items-center gap-4 rounded-md border border-beton-200 px-4 py-3.5 transition-colors hover:border-insof-500 hover:bg-beton-50"
+              className="flex items-center gap-4 rounded-2xl border border-beton-200 px-4 py-3.5 transition-colors hover:border-insof-500 hover:bg-beton-50"
             >
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-insof-900 text-signal">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl icon-tile text-white">
                 {a.id === "device" ? <Smartphone size={18} /> : <Navigation size={18} />}
               </span>
               <span className="min-w-0">

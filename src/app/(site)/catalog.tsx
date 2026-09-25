@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
-import { pickProduct } from "./lead-bus";
+import { pickProduct, scrollToForm } from "./lead-bus";
 
 export type CatalogProduct = {
   id: string;
@@ -33,7 +33,7 @@ export function Catalog({ products, groups, showPrices }: { products: CatalogPro
 
   const request = (id: string) => {
     pickProduct(id);
-    document.getElementById("ariza")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollToForm();
   };
 
   return (
@@ -47,7 +47,7 @@ export function Catalog({ products, groups, showPrices }: { products: CatalogPro
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-beton-200 bg-white">
+      <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-beton-200">
         {/* Jadval sarlavhasi — faqat ish stolida; telefonda qator o'zi ikki satrga bo'linadi */}
         <div className="hidden grid-cols-[7rem_minmax(0,1fr)_6rem_4.5rem_10rem] gap-4 border-b border-beton-200 bg-beton-100 px-6 py-3 font-mono text-[10px] tracking-[0.16em] text-beton-600 uppercase lg:grid">
           <span>Kod</span>
@@ -92,7 +92,7 @@ export function Catalog({ products, groups, showPrices }: { products: CatalogPro
                   <button
                     type="button"
                     onClick={() => request(p.id)}
-                    className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-insof-600 transition-colors hover:text-signal-dim"
+                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-insof-900/5 px-3 text-[13px] font-semibold text-insof-700 transition-colors hover:bg-signal hover:text-white"
                   >
                     So&apos;rash <ArrowUpRight size={13} className="transition-transform duration-200 group-hover:-translate-y-px group-hover:translate-x-px" />
                   </button>
@@ -116,7 +116,7 @@ function Chip({ label, count, active, onClick }: { label: string; count: number;
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-baseline gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-colors ${
+      className={`inline-flex items-baseline gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
         active ? "bg-insof-900 text-white" : "bg-white text-beton-600 ring-1 ring-beton-200 hover:text-beton-900"
       }`}
     >

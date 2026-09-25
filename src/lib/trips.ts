@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { haversineMeters } from "@/lib/geo";
+import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
+import { soleUnit, unitLabel } from "@/lib/unit";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -77,6 +79,24 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
     await tx.trip.update({ where: { id }, data: { status: "DELIVERED", deliveredAt: new Date(), receiverName } });
     if (delivered >= total - 0.001) await tx.order.update({ where: { id: t.orderId }, data: { status: "DELIVERED" } });
     await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName, note });
+  });
+
+  // Zayavkani kiritgan sotuvchi mijozga javob beradi; logistika keyingi reysni rejalashtiradi
+  const done = delivered >= total - 0.001;
+  notifyAfter(async () => {
+    await notifyUsers([t.order.createdById], {
+      type: done ? "ORDER_DELIVERED" : "TRIP_DELIVERED",
+      title: done ? `Zayavka yopildi — ${t.order.orderNo}` : `Reys yetkazildi — ${t.deliveryNoteNo}`,
+      body: `Qabul qildi: ${receiverName}`,
+      link: { key: done ? "orders" : "trips", id: done ? t.orderId : id },
+    });
+    await notifyRoles(["LOGISTICS"], {
+      type: "TRIP_DELIVERED",
+      title: `Reys yetkazildi — ${t.deliveryNoteNo}`,
+      body: `${t.order.orderNo} · qabul qildi: ${receiverName}`,
+      link: { key: "trips", id },
+      channel: "oddiy",
+    }, { except: userId });
   });
   return { changed: true, orderId: t.orderId };
 }
@@ -167,6 +187,63 @@ export async function tripTrackStats(tripIds: string[]): Promise<Map<string, Tri
 /** `12437` → `12.4 km`, `840` → `840 m`. Ro'yxatda ham, kartochkada ham bir xil ko'rinsin. */
 export const distanceLabel = (meters: number) => (meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`);
 
+// ───────────────────────── Obyektga yetib kelish ─────────────────────────
+
+/**
+ * "Yetkazdim" shu radius ichida ochiladi.
+ *
+ * Nega kerak: nakladnoy yo'lda turib yopilsa, hujjatdagi yetkazilgan vaqt ham, obyektdagi
+ * qabul qilgan kishi ham haqiqatga to'g'ri kelmaydi. 1 km — obyekt hovlisiga kirishdan
+ * oldingi masofa: mashina yetib kelgan, lekin GPS xatosi tugmani bloklab qo'ymaydi.
+ */
+export const ARRIVE_RADIUS_M = 1000;
+
+/**
+ * Joylashuv shuncha vaqtdan eski bo'lsa "hozir shu yerda" deb bo'lmaydi.
+ * Ilova nuqtalarni 30 soniyada bir yuboradi, aloqasiz joyda buferda saqlaydi —
+ * shuning uchun bir necha daqiqalik kechikish odatiy hol, 15 daqiqalik esa emas.
+ */
+const FIX_MAX_AGE_MS = 15 * 60_000;
+
+/**
+ * Mashina obyektga yetib keldimi — "Yetkazdim" tugmasi shu javobga qarab ochiladi.
+ *
+ * Masofa to'g'ri chiziq bo'yicha (yo'l bo'yicha emas): "obyektdan 1 km narida" degani
+ * fizik yaqinlik, u OSRM ishlayotgan-ishlamaganiga bog'liq bo'lmasligi kerak.
+ *
+ * Zayavkada koordinata bo'lmasa tekshiradigan narsa yo'q — tugma ochiq qoladi
+ * (aks holda nuqtasi qo'yilmagan eski zayavkalarning reysi yopilmay qolardi).
+ */
+export type TripArrival = {
+  destination: { lat: number; lng: number } | null;
+  last: (TrackPoint & { ageMs: number }) | null;
+  /** Obyektgacha to'g'ri chiziq, metr. Koordinata yoki joylashuv bo'lmasa — null. */
+  remainingM: number | null;
+  near: boolean;
+  /** `near` false bo'lsa — haydovchiga ko'rsatiladigan sabab. */
+  reason: string | null;
+};
+
+export async function tripArrival(tripId: string): Promise<TripArrival> {
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: { order: { select: { lat: true, lng: true } } } });
+  const dest = t?.order.lat != null && t.order.lng != null ? { lat: t.order.lat, lng: t.order.lng } : null;
+  if (!dest) return { destination: null, last: null, remainingM: null, near: true, reason: null };
+
+  const p = await db.tripPosition.findFirst({ where: { tripId }, orderBy: { at: "desc" }, select: { lat: true, lng: true, at: true } });
+  if (!p) return { destination: dest, last: null, remainingM: null, near: false, reason: "Joylashuv aniqlanmadi — GPS yoqilganini tekshiring" };
+
+  const ageMs = Date.now() - p.at.getTime();
+  const last = { lat: p.lat, lng: p.lng, at: p.at, ageMs };
+  if (ageMs > FIX_MAX_AGE_MS) {
+    return { destination: dest, last, remainingM: null, near: false, reason: "Joylashuv eskirgan — GPS yoqilganini tekshiring" };
+  }
+  const remainingM = Math.round(haversineMeters(p.lat, p.lng, dest.lat, dest.lng));
+  if (remainingM > ARRIVE_RADIUS_M) {
+    return { destination: dest, last, remainingM, near: false, reason: `Obyektgacha ${distanceLabel(remainingM)} — 1 km qolganda ochiladi` };
+  }
+  return { destination: dest, last, remainingM, near: true, reason: null };
+}
+
 // ───────────────────────── Yangi reys ─────────────────────────
 
 export type NewTripInput = { orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null };
@@ -200,11 +277,22 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   const d = await db.employee.findUnique({ where: { id: input.driverId } });
   if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
 
-  return db.$transaction(async (tx) => {
+  const created = await db.$transaction(async (tx) => {
     const t = await tx.trip.create({
       data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined },
     });
     await audit(tx, userId, "CREATE", "Trip", t.id, undefined, t);
     return { id: t.id, deliveryNoteNo: t.deliveryNoteNo };
   });
+
+  // Haydovchi reys biriktirilganini BILISHI kerak — u ro'yxatni kutib o'tirmaydi,
+  // mashinada yoki hovlida bo'ladi. Shu sababli bu eng muhim bildirishnoma.
+  const unit = soleUnit(items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
+  notifyAfter(() => notifyEmployees([input.driverId], {
+    type: "TRIP_ASSIGNED",
+    title: `Yangi reys — ${created.deliveryNoteNo}`,
+    body: `${input.qtyM3}${unit ? ` ${unitLabel(unit)}` : ""} · ${v.plate} · ${o.deliveryAddress}`,
+    link: { key: "trips", id: created.id },
+  }));
+  return created;
 }

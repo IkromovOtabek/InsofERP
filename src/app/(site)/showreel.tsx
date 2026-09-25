@@ -48,7 +48,7 @@ function ClipCard({ clip, index }: { clip: Clip; index: number }) {
   };
 
   return (
-    <figure className="group overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10" onMouseEnter={hoverPlay} onMouseLeave={hoverStop}>
+    <figure className="group overflow-hidden rounded-3xl bg-white/5 ring-1 ring-white/10 transition-shadow duration-300 hover:shadow-[0_32px_64px_-32px_rgba(0,0,0,0.6)]" onMouseEnter={hoverPlay} onMouseLeave={hoverStop}>
       <div className="relative overflow-hidden">
         <video
           ref={ref}
@@ -69,7 +69,7 @@ function ClipCard({ clip, index }: { clip: Clip; index: number }) {
             className="absolute inset-0 flex items-end bg-insof-900/25 p-5 transition-colors hover:bg-insof-900/10"
             aria-label={`${clip.title} — videoni ko'rish`}
           >
-            <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-signal text-white transition-transform duration-300 group-hover:scale-105">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-signal text-white ring-8 ring-white/10 transition-transform duration-300 group-hover:scale-105">
               <Play size={18} fill="currentColor" />
             </span>
           </button>
@@ -90,7 +90,7 @@ function ClipCard({ clip, index }: { clip: Clip; index: number }) {
       <figcaption className="flex gap-4 px-5 py-5">
         <span className="pt-1 font-mono text-[11px] text-signal tabular-nums">{String(index).padStart(2, "0")}</span>
         <div>
-          <div className="font-display text-lg font-bold text-white">{clip.title}</div>
+          <div className="font-display text-[15px] font-semibold text-white">{clip.title}</div>
           <div className="mt-1 text-sm leading-relaxed text-white/50">{clip.text}</div>
           <div className="mt-3 font-mono text-[10px] tracking-[0.14em] text-white/30 uppercase">{clip.meta}</div>
         </div>

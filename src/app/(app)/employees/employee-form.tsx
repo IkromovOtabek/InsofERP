@@ -227,6 +227,7 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
             <option value="">— login kerak emas —</option>
             {departments.filter((p) => p.role).map((p) => <option key={p.label} value={p.role!}>{p.label}</option>)}
             <option value="DRIVER">Haydovchi (ilova)</option>
+            <option value="BRIGADIER">Brigadir (ilova)</option>
           </Select>
           <span className="text-slate-500">Kadr lavozimi «{position}» bo&apos;lib qoladi.</span>
         </div>

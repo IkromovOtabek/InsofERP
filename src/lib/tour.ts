@@ -1,5 +1,5 @@
 import type { Role } from "@/generated/prisma";
-import { ROLE_LABELS } from "./nav";
+import { OWN_PAGE_ONLY, ROLE_LABELS } from "./nav";
 
 /**
  * Tizimga kirgan har bir xodim uchun bosqichma-bosqich instruksiya.
@@ -244,6 +244,24 @@ const DRIVER_STEPS: TourStep[] = [
   },
 ];
 
+const BRIGADIER_STEPS: TourStep[] = [
+  openGroup("Ishlab chiqarish"),
+  openPage("/mening-topshiriqlarim", "Mening topshiriqlarim", "Veb-saytda sizga faqat shu sahifa ochiq — brigadangizga tayinlangan topshiriqlar va ularning qoldig'i."),
+  onPage(
+    "brigadier-tasks",
+    "/mening-topshiriqlarim",
+    "Topshiriq qayerdan keladi",
+    "Ishlab chiqarish zayavka qatoriga brigadangizni tayinlagach, topshiriq shu ro'yxatda va Insof ECO ilovasida paydo bo'ladi. Bajarilgan miqdorni ilovada qayd qilasiz — qoldiq shu yerda o'zgaradi.",
+    '[data-tour="page-title"]',
+  ),
+  {
+    id: "brigadier-apk",
+    title: "Mobil ilova",
+    text: "Android ilovasini shu havoladan yuklab oling. Topshiriqlar va bajarilganlik qaydlari ilovada ancha qulay.",
+    target: '[data-tour="apk"]',
+  },
+];
+
 const BY_ROLE: Record<Role, TourStep[]> = {
   DIRECTOR: DIRECTOR_STEPS,
   SALES: SALES_STEPS,
@@ -257,12 +275,13 @@ const BY_ROLE: Record<Role, TourStep[]> = {
   HR: HR_STEPS,
   CASHIER: CASHIER_STEPS,
   DRIVER: DRIVER_STEPS,
+  BRIGADIER: BRIGADIER_STEPS,
 };
 
 /** Rolga mos to'liq instruksiya: kirish → qobiq → rol bo'limlari → yakun. */
 export function tourFor(role: Role): TourStep[] {
-  // Haydovchi vebda faqat bitta sahifani ko'radi — bosh sahifa bosqichi unga tegishli emas
-  const base = role === "DRIVER" ? [] : DASHBOARD;
+  // Haydovchi va brigadir vebda faqat bitta sahifani ko'radi — bosh sahifa bosqichi ularga tegishli emas
+  const base = OWN_PAGE_ONLY[role] ? [] : DASHBOARD;
   return [intro(role), ...SHELL_START, ...base, ...BY_ROLE[role], ...SHELL_END];
 }
 

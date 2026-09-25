@@ -58,6 +58,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 <li>2. Quyidagi tugma bilan 6 xonali kod oling</li>
                 <li>3. Kodni botga yuboring — shundan keyin ovozli savol berishingiz mumkin</li>
               </ol>
+              <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12.5px] text-sky-900">
+                Xodimlar botga <b>o'zlari</b> ham ulanadi: <code className="rounded bg-white/70 px-1">/start</code> → «Telefon raqamimni yuborish».
+                Raqam Otdel kadrdagi karta bilan mos kelsa hisob ulanadi va <b>parolni tiklash kodi SMS o'rniga botga</b> boradi.
+              </p>
               <LinkCodeForm botUsername={bot.username} />
             </>
           ) : (

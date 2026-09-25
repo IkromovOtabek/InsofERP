@@ -35,8 +35,12 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true, drivers: { where: { isActive: true }, select: { fullName: true }, take: 1 } } }),
   ]);
   const { work: workNames, drivers, strays } = catalog;
-  // Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi ilovasi
-  const LOGIN_ROLE_OPTS = [...POSITIONS.map((p) => ({ value: p.role as string, label: p.label })), { value: "DRIVER", label: "Haydovchi (ilova)" }];
+  // Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi va brigadir ilovasi
+  const LOGIN_ROLE_OPTS = [
+    ...POSITIONS.map((p) => ({ value: p.role as string, label: p.label })),
+    { value: "DRIVER", label: "Haydovchi (ilova)" },
+    { value: "BRIGADIER", label: "Brigadir (ilova)" },
+  ];
   // Ishchi lavozimga Otdel kadrda belgilangan bo'lim — login berishda taxmin bo'lib turadi
   const deptOf = new Map(workRows.filter((w) => w.department).map((w) => [w.name.trim().toLowerCase(), w.department as string]));
   const staffOpts = staff.map((e) => ({

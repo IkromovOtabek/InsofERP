@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/auth";
 import { qty, money } from "@/lib/format";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { unitLabel } from "@/lib/unit";
+import { ROLE_LABELS } from "@/lib/nav";
 import { Badge, Button, Card, Empty, LinkButton, PageHeader, Progress, Table, Td, Th, Tr } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
@@ -13,7 +14,8 @@ export default async function BrigadesPage() {
   const s = await requireSession(["SUPERVISOR", "PRODUCTION", "HR", "SALES"]);
   const canEdit = ["PRODUCTION", "HR", "DIRECTOR"].includes(s.role);
   const [brigades, employees, stocks, undistributed] = await Promise.all([
-    db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: true, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),
+    // Brigadirning login roli ham kerak: topshiriq ECO ilovasiga faqat BRIGADIER logini bor brigadirga tushadi
+    db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: { include: { user: { select: { role: true, isActive: true } } } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
     // Brigada qo'lidagi xomashyo va shu xomashyo bilan qancha chiqara olishi
     brigadeStocks({ includeInactive: true }),
@@ -50,7 +52,14 @@ export default async function BrigadesPage() {
             return (
               <Tr key={b.id}>
                 <Td className="font-medium">{b.name}{b.note && <div className="text-xs text-slate-500">{b.note}</div>}</Td>
-                <Td>{b.leader?.fullName ?? "—"}</Td>
+                <Td>
+                  {b.leader?.fullName ?? "—"}
+                  {b.leader && <div className="mt-0.5 text-xs">{
+                    !b.leader.user ? <span className="text-amber-700">Ilovaga kirmaydi — Xodimlar bo&apos;limidan login bering</span>
+                    : b.leader.user.role === "BRIGADIER" ? <span className="text-emerald-700">Insof ECO ilovasiga kiradi</span>
+                    : <span className="text-slate-500">Login bor · {ROLE_LABELS[b.leader.user.role]}</span>
+                  }</div>}
+                </Td>
                 <Td>{b.phone ?? b.leader?.phone ?? "—"}</Td>
                 <Td><Link href={`/tasks?brigade=${b.id}`} className="inline-flex items-center gap-1 hover:underline">{b.tasks.length} ta <ArrowRight size={13} /></Link></Td>
                 <Td className="min-w-40"><div className="text-xs text-slate-500">{qty(done)} / {qty(total)} · qoldiq {qty(total - done)}</div><Progress value={done} max={total || 1} tone={done >= total && total > 0 ? "success" : "default"} /></Td>

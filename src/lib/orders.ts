@@ -4,6 +4,7 @@ import { customerCredit, DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
 import { money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
+import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -39,6 +40,24 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     await tx.order.update({ where: { id }, data: { status } });
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit });
   });
+
+  // Bloklangan zayavkani faqat direktor ocha oladi — u bilmasa zayavka turib qoladi.
+  // Tasdiqlangani esa ishlab chiqarish va logistikaning ishi: ular kun bo'yi ro'yxatni
+  // qayta-qayta ochib ko'rmasin.
+  const link = { key: "orders", id };
+  notifyAfter(() => status === "BLOCKED"
+    ? notifyRoles(["DIRECTOR"], {
+        type: "ORDER_BLOCKED",
+        title: `Limit oshdi — ${o.orderNo}`,
+        body: `${o.customer.name} · ${money(total)}. Blokni oching yoki to'lov kutiladi`,
+        link,
+      })
+    : notifyRoles(["PRODUCTION", "LOGISTICS"], {
+        type: "ORDER_CONFIRMED",
+        title: `Yangi zayavka — ${o.orderNo}`,
+        body: `${o.customer.name} · ${o.deliveryAddress}`,
+        link,
+      }, { except: userId }));
   return { changed: true, status };
 }
 
@@ -49,6 +68,11 @@ export async function orderUnblock(id: string, userId: string): Promise<OrderRes
   await db.$transaction(async (tx) => {
     await tx.order.update({ where: { id }, data: { status: "CONFIRMED" } });
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: "BLOCKED" }, { status: "CONFIRMED", by: "director" });
+  });
+  // Zayavkani kiritgan sotuvchi kutib turibdi — javobni o'zi so'ramasin
+  notifyAfter(async () => {
+    await notifyUsers([o.createdById], { type: "ORDER_UNBLOCKED", title: `Blok ochildi — ${o.orderNo}`, body: "Direktor zayavkani tasdiqladi", link: { key: "orders", id } });
+    await notifyRoles(["PRODUCTION", "LOGISTICS"], { type: "ORDER_CONFIRMED", title: `Yangi zayavka — ${o.orderNo}`, body: "Blok ochildi, ishga tushiring", link: { key: "orders", id } });
   });
   return { changed: true, status: "CONFIRMED" };
 }

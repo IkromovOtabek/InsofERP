@@ -27,19 +27,20 @@ enum Role {
   HR // otdel kadr
   CASHIER // kassa / bank
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
+  BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
 }
 
 model User {
-  id           String   @id @default(cuid())
-  login        String   @unique
-  passwordHash String
-  fullName     String
-  role         Role
-  isActive     Boolean  @default(true)
+  id             String   @id @default(cuid())
+  login          String   @unique
+  passwordHash   String
+  fullName       String
+  role           Role
+  isActive       Boolean  @default(true)
   /// Har oshirilganda shu hisobning barcha veb/mobil tokenlari kuyadi (parol almashdi, hisob yopildi)
-  sessionVersion Int    @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  sessionVersion Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   orders        Order[]             @relation("OrderCreatedBy")
   batches       ProductionBatch[]   @relation("BatchCreatedBy")
@@ -60,6 +61,8 @@ model User {
   brigadeMoves  BrigadeMove[]       @relation("BrigadeMoveBy")
   leads         Lead[]              @relation("LeadHandledBy")
   salesRegister SalesRegister[]     @relation("SalesRegisterCreatedBy")
+  devices       MobileDevice[]
+  notifications Notification[]
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -196,13 +199,13 @@ model Product {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 
-  group        ProductGroup?     @relation(fields: [groupId], references: [id])
-  recipes      Recipe[]
-  recipeItems  RecipeItem[]      @relation("RecipeIngredientProduct")
-  orderItems   OrderItem[]
-  batches      ProductionBatch[]
-  stockMoves   StockMove[]
-  leads        Lead[]
+  group       ProductGroup?     @relation(fields: [groupId], references: [id])
+  recipes     Recipe[]
+  recipeItems RecipeItem[]      @relation("RecipeIngredientProduct")
+  orderItems  OrderItem[]
+  batches     ProductionBatch[]
+  stockMoves  StockMove[]
+  leads       Lead[]
 
   @@index([groupId])
 }
@@ -1180,4 +1183,49 @@ model Lead {
 
   @@index([status, createdAt])
   @@index([phone])
+}
+
+// ───────────────────────── Bildirishnomalar ─────────────────────────
+
+/// Xodimning mobil qurilmasi — push xabar shu manzilga boradi.
+///
+/// Bitta xodimda bir nechta qurilma bo'lishi mumkin (telefon + planshet), shuning uchun
+/// yozuv `deviceId` bo'yicha yangilanadi: ilova qayta o'rnatilganda Expo tokeni almashadi,
+/// qurilma esa o'sha-o'sha — aks holda har o'rnatishda yangi qator qo'shilib, bitta
+/// telefonga bir nechta nusxa yuborilardi.
+model MobileDevice {
+  id            String   @id @default(cuid())
+  userId        String
+  deviceId      String /// ilova bergan barqaror qurilma id
+  expoPushToken String
+  platform      String? /// ios / android
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+}
+
+/// Ilovadagi bildirishnoma ro'yxati.
+///
+/// Push yetib bormasligi mumkin (telefon o'chiq, ruxsat berilmagan, Expo xizmati javob
+/// bermadi) — xabar shu yerda qoladi va xodim ilovani ochganda ko'radi. Ya'ni push
+/// "darhol xabar berish" vositasi, manba esa shu jadval.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String /// TRIP_ASSIGNED, ORDER_BLOCKED… — ikonka va guruhlash uchun
+  title     String
+  body      String
+  /// Bosilganda ochiladigan kartochka: {"key":"trips","id":"..."}
+  link      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }

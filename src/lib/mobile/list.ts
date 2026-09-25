@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { ecoLabel } from "@/lib/eco/labels";
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
+import { myBrigades } from "@/lib/brigades";
+import { unitLabel } from "@/lib/unit";
 import type { MobileUser } from "./auth";
 import type { HomeRow, Tone } from "./home";
 import type { Role } from "@/generated/prisma";
@@ -17,7 +19,8 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   orders: { title: "Zayavkalar", roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
   trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER"] },
   production: { title: "Zameslar", roles: ["PRODUCTION", "SUPERVISOR"] },
-  tasks: { title: "Topshiriqlar", roles: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"] },
+  // BRIGADIER — faqat o'z brigadasiga tayinlanganlar (`myBrigadeIds`)
+  tasks: { title: "Topshiriqlar", roles: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS", "BRIGADIER"] },
   stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"] },
   receipts: { title: "Kirimlar", roles: ["PROCUREMENT", "WAREHOUSE", "SALES"] },
   // CASHIER veb ERP'da schyotlar sahifasiga kirmaydi, lekin to'lov aynan schyot ustida olinadi —
@@ -61,8 +64,13 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);
   // Haydovchi faqat o'ziga biriktirilgan reyslarni ko'radi
   const driverId = user.role === "DRIVER" ? await driverEmployeeId(user.id) : undefined;
-  const rows = await build(key, s, driverId);
-  return { key, title: user.role === "DRIVER" && key === "trips" ? "Mening reyslarim" : meta.title, rows };
+  // Brigadir faqat o'z brigadasiga tayinlangan topshiriqlarni ko'radi
+  const brigadeIds = user.role === "BRIGADIER" ? await myBrigadeIds(user.id) : undefined;
+  const rows = await build(key, s, driverId, brigadeIds);
+  const title = user.role === "DRIVER" && key === "trips" ? "Mening reyslarim"
+    : user.role === "BRIGADIER" && key === "tasks" ? "Topshiriqlarim"
+    : meta.title;
+  return { key, title, rows };
 }
 
 /**
@@ -106,7 +114,17 @@ export async function driverEmployeeId(userId: string): Promise<string> {
   return e.id;
 }
 
-async function build(key: string, q?: string, driverId?: string): Promise<HomeRow[]> {
+/**
+ * Login qilgan brigadirning brigadalari. Brigadir bo'lmasa ro'yxat ochilmaydi —
+ * "hammaning topshirig'i" ko'rinib qolgandan ko'ra tushunarli xato yaxshiroq.
+ */
+export async function myBrigadeIds(userId: string): Promise<string[]> {
+  const list = await myBrigades(userId);
+  if (list.length === 0) throw new ListError("NO_BRIGADE", "Siz hali brigadaga brigadir qilib biriktirilmagansiz — ishlab chiqarishga ayting", 403);
+  return list.map((b) => b.id);
+}
+
+async function build(key: string, q?: string, driverId?: string, brigadeIds?: string[]): Promise<HomeRow[]> {
   switch (key) {
     case "orders": {
       const list = await db.order.findMany({
@@ -127,18 +145,26 @@ async function build(key: string, q?: string, driverId?: string): Promise<HomeRo
     }
     case "tasks": {
       const list = await db.brigadeTask.findMany({
-        where: q ? { OR: [{ taskNo: { contains: q, mode: "insensitive" } }, { brigade: { name: { contains: q, mode: "insensitive" } } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : undefined,
-        orderBy: [{ status: "asc" }, { dueDate: "asc" }], take: TAKE, include: { brigade: true, order: { include: { customer: true } } },
+        where: {
+          ...(brigadeIds ? { brigadeId: { in: brigadeIds } } : {}),
+          ...(q ? { OR: [{ taskNo: { contains: q, mode: "insensitive" } }, { brigade: { name: { contains: q, mode: "insensitive" } } }, { order: { customer: { name: { contains: q, mode: "insensitive" } } } }] } : {}),
+        },
+        orderBy: [{ status: "asc" }, { dueDate: "asc" }], take: TAKE,
+        include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } },
       });
       const now = new Date(); now.setHours(0, 0, 0, 0);
-      return list.map((t) => ({
+      return list.map((t) => {
+        const unit = unitLabel(t.orderItem.product.unit);
+        return {
         id: t.id,
-        title: `${t.taskNo} · ${t.brigade.name}`,
+        // Brigadirga o'z brigadasining nomi har qatorda takrorlanmaydi — mahsulot muhimroq
+        title: brigadeIds ? `${t.taskNo} · ${t.orderItem.product.name}` : `${t.taskNo} · ${t.brigade.name}`,
         subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`,
-        right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${sum(t.qty)} m³`,
+        right: `${(sum(t.qty) - sum(t.doneQty)).toFixed(1)} / ${sum(t.qty)} ${unit}`,
         status: t.status,
         tone: t.status === "DONE" ? ("success" as Tone) : t.status === "CANCELLED" ? ("info" as Tone) : t.dueDate < now ? ("danger" as Tone) : ("warning" as Tone),
-      }));
+        };
+      });
     }
     case "production": {
       const list = await db.productionBatch.findMany({

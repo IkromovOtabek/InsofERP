@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileSignature, FileText, KeyRound, Paperclip, User } from "lucide-react";
+import { FileSignature, FileText, KeyRound, Paperclip } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { POSITIONS, positionCatalog } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
-import { EMPLOYEE_ACCEPT } from "@/lib/uploads";
+import { EMPLOYEE_ACCEPT, PHOTO_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, money, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
 import { HR_DOCS, nextOrderNo } from "@/lib/hr-docs";
@@ -16,6 +16,7 @@ import { ChangeLoginForm, ResetPasswordForm, ToggleLoginButton } from "../login-
 import { DismissButton, RestoreButton } from "../dismiss-form";
 import { DeleteDocument, DocumentForms } from "./document-forms";
 import { HrDocsPanel, type HrDocRow } from "./hr-doc-forms";
+import { EmployeePhotoForm } from "./photo-form";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
   const s = await requireSession(["HR"]);
@@ -97,11 +98,13 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
           <CardHeader title="Ma'lumotlari" description="Otdel kadr yuritadi" />
           <div className="flex flex-col gap-4 sm:flex-row">
             <div className="shrink-0">
-              <div className="flex h-[150px] w-[120px] items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-slate-400">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {e.photo ? <img src={`/employees/${e.id}/surat`} alt={e.fullName} className="h-full w-full object-cover" /> : <User size={28} />}
-              </div>
-              <p className="mt-1 w-[120px] text-[11px] text-slate-500">{e.photo ? "3x4 surat" : "Surat yuklanmagan"}</p>
+              <EmployeePhotoForm
+                employeeId={e.id}
+                accept={PHOTO_ACCEPT}
+                hasPhoto={!!e.photo}
+                // Surat almashganda brauzer eskisini keshdan olmasin (fayl nomi har safar yangi)
+                src={`/employees/${e.id}/surat?v=${e.photo ?? ""}`}
+              />
             </div>
             <div className="min-w-0 flex-1">
               <EmployeeCardForm

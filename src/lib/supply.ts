@@ -3,6 +3,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { nextNo } from "./numbering";
 import { resolveMaterials } from "./import-materials";
+import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 
 /**
  * Ta'minot zayavkasi — bitta hujjat besh bo'limdan o'tadi:
@@ -138,6 +139,12 @@ export async function createSupplyRequest(
     await audit(tx, userId, "CREATE", "SupplyRequest", r.id, undefined, r);
     return r;
   });
+  // Zanjirning har qadamida KEYINGI xodim kutib qoladi — xabar o'sha "navbat"ni uzatadi
+  notifyAfter(() => notifyRoles(["PROCUREMENT"], {
+    type: "SUPPLY_NEW",
+    title: `Yangi ta'minot so'rovi — ${req.docNo}`,
+    body: `${wh.name} · ${items.length} ta mahsulot — narx qo'ying`,
+  }, { except: userId }));
   return { id: req.id, docNo: req.docNo };
 }
 
@@ -201,6 +208,11 @@ export async function priceSupplyRequest(
     await event(tx, id, "PRICED", userId, `Jami ${ROUND(total)} so'm${delivery > 0 ? ` (dostavka ${ROUND(delivery)})` : ""}${input.note ? ` · ${input.note}` : ""}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "PRICED", total });
   });
+  notifyAfter(() => notifyRoles(["SALES", "DIRECTOR"], {
+    type: "SUPPLY_PRICED",
+    title: `Ta'minot narxlandi — ${req.docNo}`,
+    body: `Jami ${ROUND(total)} so'm — tasdiq kutilmoqda`,
+  }, { except: userId }));
   return { id, docNo: req.docNo, note: `Jami summa: ${ROUND(total)}` };
 }
 
@@ -216,6 +228,11 @@ export async function approveSupplyRequest(id: string, userId: string, note?: st
     await event(tx, id, "APPROVED", userId, note);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "APPROVED" });
   });
+  notifyAfter(() => notifyRoles(["FINANCE", "ACCOUNTING", "CASHIER"], {
+    type: "SUPPLY_APPROVED",
+    title: `Ta'minot tasdiqlandi — ${req.docNo}`,
+    body: "Pul ajratish kutilmoqda",
+  }, { except: userId }));
   return { id, docNo: req.docNo, note: "Moliya bo'limiga yuborildi" };
 }
 
@@ -250,6 +267,11 @@ export async function fundSupplyRequest(
     await event(tx, id, "FUNDED", userId, `${acc.name} · ${ROUND(total)} so'm${input.note ? ` · ${input.note}` : ""}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "FUNDED", cashTxId: ct.id, total });
   });
+  notifyAfter(() => notifyRoles(["PROCUREMENT", "WAREHOUSE"], {
+    type: "SUPPLY_FUNDED",
+    title: `Pul ajratildi — ${req.docNo}`,
+    body: `${acc.name} · sotib olish mumkin`,
+  }, { except: userId }));
   return { id, docNo: req.docNo, note: "Snabjeniye sotib olishi mumkin" };
 }
 
@@ -414,6 +436,12 @@ export async function rejectSupplyRequest(id: string, userId: string, reason: st
     await event(tx, id, "REJECTED", userId, `${SUPPLY_LABEL[req.status]} bosqichida: ${reason.trim()}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "REJECTED", reason });
   });
+  // So'rovni kiritgan sklad/snabjeniye xodimi nega to'xtaganini bilsin
+  notifyAfter(() => notifyUsers([req.createdById], {
+    type: "SUPPLY_REJECTED",
+    title: `Ta'minot bekor qilindi — ${req.docNo}`,
+    body: reason.trim(),
+  }));
   return { id, docNo: req.docNo, note: "Zayavka bekor qilindi" };
 }
 

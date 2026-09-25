@@ -6,13 +6,20 @@ import { hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { sendSms } from "@/lib/sms";
 import { normalizePhone } from "@/lib/sms/phone";
+import { AMBIGUOUS_PHONE_ERROR, staffByPhone } from "@/lib/phone-lookup";
+import { sendResetCodeToBot } from "@/lib/telegram/notify";
 
 /**
- * Parolni xodimning o'zi tiklashi (`/login/reset`) — SMS kodi orqali.
+ * Parolni xodimning o'zi tiklashi (`/login/reset`) — bir martalik kod orqali.
  *
- * Nega telefon `Employee` dan olinadi: `User` da telefon maydoni yo'q va qo'shilsa ham
- * ikki joyda ikki xil raqam bo'lib qolardi. Otdel kadr xodim kartasidagi raqamni
- * yangilasa — tiklash ham o'sha zahoti yangi raqamga ishlaydi.
+ * Kod QAYERGA boradi: avval Telegram botiga (xodimning hisobi botga ulangan bo'lsa) —
+ * bepul, bir zumda va operatorga bog'liq emas; ulanmagan bo'lsa SMS bilan. Botga ulash
+ * uchun parol kerak emas: botda «Telefon raqamimni yuborish» tugmasi bor
+ * (`lib/telegram/bot.ts`), ya'ni parolni unutgan odam ham ulay oladi.
+ *
+ * Telefon `Employee` dan olinadi (`lib/phone-lookup.ts`) — `User` da telefon maydoni yo'q
+ * va qo'shilsa ham ikki joyda ikki xil raqam bo'lib qolardi. Otdel kadr kartadagi raqamni
+ * yangilasa — tiklash ham o'sha zahoti yangi raqam bilan ishlaydi.
  *
  * Xavfsizlik qoidalari:
  *  · kodning o'zi saqlanmaydi — faqat bcrypt xeshi;
@@ -25,46 +32,21 @@ const CODE_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_HOUR = 3;
 
-/** `devCode` — faqat dev'da (SMS_PROVIDER ESKIZ emas): kodni ekranda ko'rsatish uchun. */
-export type ResetRequest = { ok: true; sent: boolean; devCode?: string } | { ok: false; error: string };
-export type ResetConfirm = { ok: true; login: string } | { ok: false; error: string };
-
-type PhoneLookup =
-  | { kind: "found"; employeeId: string; fullName: string; user: { id: string; login: string } }
-  | { kind: "none" }
-  /** Bitta raqam bir nechta faol loginga tegishli — kimning paroli ekanini bilib bo'lmaydi. */
-  | { kind: "ambiguous" };
-
 /**
- * Normallashtirilgan raqam bo'yicha tizimga kiradigan xodimni topish.
- * Raqamlar bazada qo'lda kiritilgan ("90 123 45 67", "+998901234567"…) — SQL'da
- * solishtirib bo'lmaydi, shuning uchun ro'yxat olinib JS'da normallashtiriladi.
- * Zavod xodimlari soni kichik, bu arzon.
- *
- * `Employee.phone` noyob emas: amalda bitta raqam ikki kartaga yozilib qolishi mumkin.
- * Bunday holda tasodifiy birovning parolini almashtirib yuborish mumkin emas — to'xtaymiz.
+ * `via` — kod qayerga ketdi: ilova sahifada aynan shuni yozadi ("Telegram botga yuborildi").
+ * `devCode` — faqat dev'da (SMS_PROVIDER ESKIZ emas): kodni ekranda ko'rsatish uchun.
  */
-async function employeeByPhone(phone: string): Promise<PhoneLookup> {
-  const rows = await db.employee.findMany({
-    where: { isActive: true, userId: { not: null }, phone: { not: null } },
-    select: { id: true, phone: true, fullName: true, user: { select: { id: true, login: true, isActive: true } } },
-  });
-  const hits = rows.filter((e) => normalizePhone(e.phone) === phone && e.user?.isActive);
-  if (hits.length === 0) return { kind: "none" };
-  if (hits.length > 1) return { kind: "ambiguous" };
-  const hit = hits[0];
-  return { kind: "found", employeeId: hit.id, fullName: hit.fullName, user: { id: hit.user!.id, login: hit.user!.login } };
-}
-
-const AMBIGUOUS_ERROR = "Bu raqam bir nechta xodim kartasida yozilgan — parolni Otdel kadr almashtirib beradi.";
+export type ResetVia = "telegram" | "sms";
+export type ResetRequest = { ok: true; sent: boolean; via?: ResetVia; devCode?: string } | { ok: false; error: string };
+export type ResetConfirm = { ok: true; login: string } | { ok: false; error: string };
 
 /** 1-qadam: raqamga kod yuborish. */
 export async function requestPasswordReset(rawPhone: string): Promise<ResetRequest> {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { ok: false, error: "Telefon raqami noto'g'ri. Masalan: 90 123 45 67" };
 
-  const found = await employeeByPhone(phone);
-  if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_ERROR };
+  const found = await staffByPhone(phone);
+  if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_PHONE_ERROR };
   // Raqam tizimda yo'q — baribir "yuborildi" deymiz, lekin hech narsa yubormaymiz
   if (found.kind === "none") return { ok: true, sent: false };
 
@@ -85,23 +67,30 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
     },
   });
 
+  // 1) Telegram bot — hisobi ulangan bo'lsa kod shu yerga boradi
+  const bot = await sendResetCodeToBot(found.user.id, code);
+  if (bot.ok) return { ok: true, sent: true, via: "telegram" };
+
+  // 2) Bot ulanmagan (yoki yubora olmadi) — eski yo'l: SMS
   const sms = await sendSms("reset_code", phone, { code }, { userId: found.user.id, maxPerHour: MAX_CODES_PER_HOUR });
 
   // Dev: Eskiz ulanmagan bo'lsa oqim to'xtamasin — kod ekranda va terminalda ko'rinadi.
   // Prodda bu yo'l yopiq: SMS_PROVIDER noto'g'ri sozlansa "kod yuborildi" deb aldab qo'ymaymiz.
   if (!sms.ok && sms.reason === "DISABLED" && process.env.NODE_ENV !== "production") {
-    return { ok: true, sent: true, devCode: code };
+    return { ok: true, sent: true, via: "sms", devCode: code };
   }
 
   if (!sms.ok) {
-    // Bu yerda jim turish mumkin emas: odam kodni kutib o'tiraveradi
+    // Bu yerda jim turish mumkin emas: odam kodni kutib o'tiraveradi.
+    // Botga ulash parolsiz ham mumkin, shuning uchun chiqish yo'li sifatida taklif qilinadi.
+    const useBot = " Yoki Insof ERP Telegram botini ochib, «Telefon raqamimni yuborish» tugmasini bosing — keyingi kod botga keladi.";
     const error =
-      sms.reason === "DISABLED" ? "SMS xizmati hali yoqilmagan. Otdel kadrga murojaat qiling."
+      sms.reason === "DISABLED" ? `SMS xizmati hali yoqilmagan.${useBot}`
       : sms.reason === "RATE_LIMIT" ? "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring."
-      : "SMS yuborilmadi. Birozdan keyin qayta urining yoki Otdel kadrga murojaat qiling.";
+      : `SMS yuborilmadi. Birozdan keyin qayta urining yoki Otdel kadrga murojaat qiling.${useBot}`;
     return { ok: false, error };
   }
-  return { ok: true, sent: true };
+  return { ok: true, sent: true, via: "sms" };
 }
 
 /** 2-qadam: kod + yangi parol. */
@@ -111,8 +100,8 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
   const problem = passwordProblem(newPassword);
   if (problem) return { ok: false, error: problem };
 
-  const found = await employeeByPhone(phone);
-  if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_ERROR };
+  const found = await staffByPhone(phone);
+  if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_PHONE_ERROR };
   // Noto'g'ri kod bilan bir xil xabar — raqam bor-yo'qligi bilinmasin
   const wrong = { ok: false as const, error: "Kod noto'g'ri yoki muddati tugagan" };
   if (found.kind === "none") return wrong;
@@ -137,7 +126,7 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
     await tx.passwordResetCode.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
     // Qolgan ochiq kodlar ham kuyadi — bittasi ishlatildi, boshqasi kerak emas
     await tx.passwordResetCode.updateMany({ where: { userId: found.user.id, usedAt: null }, data: { usedAt: new Date() } });
-    await audit(tx, found.user.id, "UPDATE", "User", found.user.id, undefined, { passwordReset: "self-sms", phone });
+    await audit(tx, found.user.id, "UPDATE", "User", found.user.id, undefined, { passwordReset: "self-code", phone });
   });
 
   return { ok: true, login: found.user.login };

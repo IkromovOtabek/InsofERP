@@ -3,6 +3,7 @@ import { audit } from "@/lib/audit";
 import { consumeForTask } from "@/lib/brigade-stock";
 import { qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
+import { notifyAfter, notifyRoles } from "@/lib/notify";
 
 /**
  * Brigada topshiriqlari — yagona joy (veb "Topshiriqlar" sahifasi ham, mobil ilova ham).
@@ -73,6 +74,15 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     res.closed ? "Zaxira to'liq tayyor — zayavka yopildi" : null,
     res.used.deficit.length ? `Brigadada xomashyo yetmadi (qarzga yozildi): ${res.used.deficit.join(", ")} — skladdan bering` : null,
   ].filter(Boolean);
+  // Topshiriq bajarilgani — keyingi qadamni (qabul qilish, yuklash) boshlaydigan xabar
+  if (status === "DONE") {
+    notifyAfter(() => notifyRoles(["PRODUCTION", "SUPERVISOR"], {
+      type: "TASK_DONE",
+      title: `Topshiriq bajarildi — ${t.taskNo}`,
+      body: `${fq(Number(t.qty))} ${unitLabel(product.unit)} ${product.name}${res.closed ? " · zaxira zayavkasi yopildi" : ""}`,
+      link: { key: "tasks", id: taskId },
+    }, { except: userId }));
+  }
   return { changed: true, orderId: t.orderId, status, note: hints.length ? hints.join(" · ") : undefined };
 }
 
