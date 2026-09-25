@@ -11,7 +11,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const b = await db.productionBatch.findUnique({
     where: { id },
-    include: { product: true, recipe: { include: { items: { include: { material: true } } } }, order: { include: { customer: true } }, createdBy: true },
+    include: { product: true, recipe: { include: { items: { include: { material: true, product: true } } } }, order: { include: { customer: true } }, createdBy: true },
   });
   if (!b) notFound();
   const marks = await customerMarks(b.order ? [b.order.customerId] : []);
@@ -30,13 +30,15 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
         <thead><tr><Th>Turi</Th><Th>Nomi</Th><Th right>Norma (1 {unitLabel(b.product.unit)})</Th><Th right>Miqdor</Th><Th>Sklad</Th></tr></thead>
         <tbody>
           {moves.map((m) => {
-            const norm = b.recipe.items.find((i) => i.materialId === m.materialId);
+            // Ingredient xomashyo yoki mahsulot bo'lishi mumkin — harakat ham shunga qarab material yoki productId bilan yozilgan
+            const norm = b.recipe.items.find((i) => (m.materialId && i.materialId === m.materialId) || (m.productId && i.productId === m.productId));
+            const unit = m.material?.unit ?? m.product?.unit;
             return (
               <Tr key={m.id}>
                 <Td>{m.type === "PRODUCTION_CONSUME" ? "Chiqim" : "Kirim"}</Td>
                 <Td>{m.material?.name ?? m.product?.name}</Td>
-                <Td right>{norm ? `${qty(norm.qtyPerM3)} ${m.material?.unit}` : "—"}</Td>
-                <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
+                <Td right>{norm ? `${qty(norm.qtyPerM3)} ${unit}` : "—"}</Td>
+                <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{qty(m.qty)} {unit}</Td>
                 <Td>{m.warehouse.name}</Td>
               </Tr>
             );

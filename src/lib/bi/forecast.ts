@@ -49,7 +49,8 @@ export async function forecastTab() {
   const mix = new Map<string, number>(); for (const s of shares) mix.set(s.productId, (mix.get(s.productId) ?? 0) + Number(s.qtyM3) / totalShare);
   const need14 = new Map<string, number>();
   const fc14 = sum(fc.future.slice(0, 14).map((f) => f.value));
-  for (const p of products) { const sh = mix.get(p.id) ?? 0; if (!sh) continue; for (const ri of p.recipes[0]?.items ?? []) need14.set(ri.materialId, (need14.get(ri.materialId) ?? 0) + fc14 * sh * Number(ri.qtyPerM3)); }
+  // Xomashyo bashoratida faqat xomashyo-ingredientlar hisoblanadi — mahsulot-ingredient o'tkazib yuboriladi
+  for (const p of products) { const sh = mix.get(p.id) ?? 0; if (!sh) continue; for (const ri of p.recipes[0]?.items ?? []) { if (!ri.materialId) continue; need14.set(ri.materialId, (need14.get(ri.materialId) ?? 0) + fc14 * sh * Number(ri.qtyPerM3)); } }
   const matForecast = materials.map((m) => { const need = need14.get(m.id) ?? 0; const perDay = need / 14 || m.perDay; const daysLeft = perDay > 0 ? m.balance / perDay : null; return { ...m, need14, need, perDayFc: perDay, daysLeft, runsOut: daysLeft !== null ? addDays(today, Math.floor(daysLeft)) : null, orderQty: Math.max(0, need + m.minStock - m.balance) }; }).sort((a, b) => (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999));
 
   // Ishlab chiqarish quvvati: o'rtacha kunlik va eng yuqori kun

@@ -26,7 +26,8 @@ export async function materialOverview(): Promise<MaterialRow[]> {
   for (const o of orders) {
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0), done = o.batches.reduce((s, b) => s + Number(b.qtyM3), 0);
     const remaining = Math.max(0, total - done); if (!remaining) continue;
-    for (const i of o.items) { const share = remaining * (Number(i.qtyM3) / total); for (const ri of i.product.recipes[0]?.items ?? []) need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3)); }
+    // Xomashyo hisobotida faqat xomashyo-ingredientlar hisoblanadi — mahsulot-ingredient (masalan FBS blok) o'tkazib yuboriladi
+    for (const i of o.items) { const share = remaining * (Number(i.qtyM3) / total); for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3)); } }
   }
   const pre = materials.map((m) => {
     const balance = bal.get(m.id) ?? 0, perDay = (cons.get(m.id) ?? 0) / 30, planned = need.get(m.id) ?? 0, avgCost = costs.get(m.id) ?? 0;

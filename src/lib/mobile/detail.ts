@@ -8,6 +8,7 @@ import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
 import { driverEmployeeId, ListError } from "./list";
 import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
+import { ingredientOf } from "@/lib/recipe";
 import type { Role } from "@/generated/prisma";
 
 /**
@@ -388,7 +389,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
 }
 
 async function batchDetail(id: string): Promise<MobileDetail> {
-  const b = await db.productionBatch.findUnique({ where: { id }, include: { product: true, recipe: { include: { items: { include: { material: true } } } }, order: { include: { customer: true } }, createdBy: true } });
+  const b = await db.productionBatch.findUnique({ where: { id }, include: { product: true, recipe: { include: { items: { include: { material: true, product: true } } } }, order: { include: { customer: true } }, createdBy: true } });
   if (!b) throw new ListError("NOT_FOUND", "Zames topilmadi", 404);
   return {
     key: "production", id: b.id, title: b.batchNo, subtitle: b.product.name,
@@ -401,8 +402,8 @@ async function batchDetail(id: string): Promise<MobileDetail> {
       { label: "Kim kiritdi", value: b.createdBy.fullName },
     ],
     sections: [{
-      title: "Sarflangan xomashyo", empty: "Retsept bo'sh",
-      rows: b.recipe.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${sum(i.qtyPerM3)} ${i.material.unit} / ${unitLabel(b.product.unit)}`, right: `${(sum(i.qtyPerM3) * sum(b.qtyM3)).toFixed(1)} ${i.material.unit}` })),
+      title: "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh",
+      rows: b.recipe.items.map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: `${sum(ing.qtyPerM3)} ${ing.unit} / ${unitLabel(b.product.unit)}`, right: `${(ing.qtyPerM3 * sum(b.qtyM3)).toFixed(1)} ${ing.unit}` }; }),
     }],
     actions: [],
   };

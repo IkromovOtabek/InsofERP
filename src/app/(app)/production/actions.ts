@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { qty as fq } from "@/lib/format";
+import { ingredientOf, balanceOf } from "@/lib/recipe";
 
 const schema = z.object({
   orderId: zOpt,
@@ -21,10 +22,10 @@ const schema = z.object({
 
 /**
  * Zames qaydi. Bitta tranzaksiyada:
- *  1) faol retsept bo'yicha har bir xomashyo uchun PRODUCTION_CONSUME (−)
- *  2) tayyor beton uchun PRODUCTION_OUTPUT (+)
+ *  1) faol retsept bo'yicha har bir ingredient (xomashyo yoki boshqa mahsulot) uchun PRODUCTION_CONSUME (−)
+ *  2) tayyor mahsulot uchun PRODUCTION_OUTPUT (+)
  *  3) zayavka → IN_PRODUCTION
- * Xomashyo yetmasa — xato, hech narsa yozilmaydi.
+ * Xomashyo yoki mahsulot yetmasa — xato, hech narsa yozilmaydi.
  */
 export async function createBatch(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["PRODUCTION"]);
@@ -32,21 +33,24 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
   if ("error" in r) return { error: r.error };
   const d = r.data;
 
-  const recipe = await db.recipe.findFirst({ where: { productId: d.productId, isActive: true }, include: { items: { include: { material: true } } } });
+  const recipe = await db.recipe.findFirst({ where: { productId: d.productId, isActive: true }, include: { items: { include: { material: true, product: true } } } });
   if (!recipe) return { error: "Bu marka uchun faol retsept yo'q. Avval retsept kiriting." };
 
-  // Qoldiq tekshiruvi (sklad bo'yicha)
-  const sums = await db.stockMove.groupBy({
-    by: ["materialId"],
-    where: { warehouseId: d.warehouseId, materialId: { in: recipe.items.map((i) => i.materialId) } },
-    _sum: { qty: true },
-  });
-  const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
+  // Qoldiq tekshiruvi (sklad bo'yicha) — retsept qatori xomashyo yoki boshqa mahsulot bo'lishi mumkin
+  // (masalan katta konstruksiyaga tayyor FBS blok kiradi), shuning uchun ikkalasining ham qoldig'i tekshiriladi
+  const materialIds = recipe.items.filter((i) => i.materialId).map((i) => i.materialId!);
+  const productIds = recipe.items.filter((i) => i.productId).map((i) => i.productId!);
+  const [matSums, prodSums] = await Promise.all([
+    materialIds.length ? db.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: d.warehouseId, materialId: { in: materialIds } }, _sum: { qty: true } }) : [],
+    productIds.length ? db.stockMove.groupBy({ by: ["productId"], where: { warehouseId: d.warehouseId, productId: { in: productIds } }, _sum: { qty: true } }) : [],
+  ]);
+  const matBal = new Map(matSums.map((x) => [x.materialId!, Number(x._sum.qty ?? 0)]));
+  const prodBal = new Map(prodSums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
   const lacking = recipe.items
-    .map((i) => ({ i, need: Number(i.qtyPerM3) * d.qtyM3, have: bal.get(i.materialId) ?? 0 }))
+    .map((i) => { const ing = ingredientOf(i); return { ing, need: ing.qtyPerM3 * d.qtyM3, have: balanceOf(ing, matBal, prodBal) }; })
     .filter((x) => x.have < x.need);
   if (lacking.length) {
-    return { error: "Xomashyo yetarli emas: " + lacking.map((x) => `${x.i.material.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.i.material.unit})`).join("; ") };
+    return { error: "Yetarli emas: " + lacking.map((x) => `${x.ing.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.ing.unit})`).join("; ") };
   }
 
   if (d.orderId) {
@@ -64,10 +68,16 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
     });
     await tx.stockMove.createMany({
       data: [
-        ...recipe.items.map((i) => ({
-          type: "PRODUCTION_CONSUME" as const, warehouseId: d.warehouseId, materialId: i.materialId,
-          qty: -(Number(i.qtyPerM3) * d.qtyM3), refType: "ProductionBatch", refId: b.id, createdById: s.userId,
-        })),
+        // Ingredient xomashyo bo'lsa materialId, mahsulot bo'lsa productId to'ldiriladi (ikkalasi emas)
+        ...recipe.items.map((i) => {
+          const ing = ingredientOf(i);
+          return {
+            type: "PRODUCTION_CONSUME" as const, warehouseId: d.warehouseId,
+            materialId: ing.kind === "material" ? ing.key : null,
+            productId: ing.kind === "product" ? ing.key : null,
+            qty: -(ing.qtyPerM3 * d.qtyM3), refType: "ProductionBatch", refId: b.id, createdById: s.userId,
+          };
+        }),
         { type: "PRODUCTION_OUTPUT" as const, warehouseId: d.warehouseId, productId: d.productId, qty: d.qtyM3, refType: "ProductionBatch", refId: b.id, createdById: s.userId },
       ],
     });

@@ -381,14 +381,17 @@ export async function deleteCatalogProduct(id: string): Promise<ActionState> {
   const p = await db.product.findUnique({ where: { id } });
   if (!p) return { error: "Mahsulot topilmadi" };
 
-  const [items, batches, moves, leads, recipes] = await Promise.all([
+  const [items, batches, moves, leads, recipes, asIngredient] = await Promise.all([
     db.orderItem.count({ where: { productId: id } }),
     db.productionBatch.count({ where: { productId: id } }),
     db.stockMove.count({ where: { productId: id } }),
     db.lead.count({ where: { productId: id } }),
     db.recipe.count({ where: { productId: id } }),
+    // Boshqa mahsulotning retseptiga ingredient bo'lib kirgan bo'lishi mumkin (masalan FBS blok) —
+    // shuni hisobga olmasak, o'chirilganda o'sha retsept qatori egasiz (materialId ham, productId ham bo'sh) qolib ketadi
+    db.recipeItem.count({ where: { productId: id } }),
   ]);
-  const used = items + batches + moves + leads;
+  const used = items + batches + moves + leads + asIngredient;
 
   if (used === 0) {
     await db.$transaction(async (tx) => {

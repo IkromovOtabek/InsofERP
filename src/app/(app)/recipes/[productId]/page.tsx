@@ -5,18 +5,40 @@ import { qty, date, money } from "@/lib/format";
 import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { RecipeForm } from "../recipe-form";
 import { unitLabel } from "@/lib/unit";
+import { ingredientOf } from "@/lib/recipe";
+import type { IngredientRow } from "@/components/ingredient-picker";
 import { Pencil } from "lucide-react";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const s = await requireSession(["PRODUCTION"]);
-  const [p, materials, groups] = await Promise.all([
-    db.product.findUnique({ where: { id: productId }, include: { group: true, recipes: { orderBy: { version: "desc" }, include: { items: { include: { material: true } } } } } }),
+  await requireSession(["PRODUCTION"]);
+  const [p, materials, materialGroups, products, productGroups] = await Promise.all([
+    db.product.findUnique({
+      where: { id: productId },
+      include: { group: true, recipes: { orderBy: { version: "desc" }, include: { items: { include: { material: true, product: true } } } } },
+    }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
+    // O'zi ham retseptga ingredient bo'lishi mumkin (ko'p bosqichli tayyorlov) — o'zini o'ziga
+    // qo'shib qo'ymaslik uchun joriy mahsulot chiqarib tashlanadi
+    db.product.findMany({ where: { isActive: true, id: { not: productId } }, orderBy: { code: "asc" } }),
+    db.productGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
   ]);
   if (!p) notFound();
   const active = p.recipes.find((r) => r.isActive);
+
+  // Xomashyo + mahsulot spravochnigi bitta ro'yxatda — retsept qatoriga shu yerdan tanlanadi
+  const ingredients: IngredientRow[] = [
+    ...materials.map((m) => ({ id: m.id, kind: "material" as const, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId })),
+    ...products.map((x) => ({ id: x.id, kind: "product" as const, name: x.name, code: x.code, unit: x.unit, groupId: x.groupId })),
+  ];
+  const groups = [...materialGroups, ...productGroups];
+  const initial = active
+    ? active.items.map((i) => {
+        const ing = ingredientOf(i);
+        return { ing: { id: ing.key, kind: ing.kind, name: ing.name, code: (i.material ?? i.product)!.code, unit: ing.unit, groupId: (i.material ?? i.product)!.groupId }, qtyPerM3: ing.qtyPerM3.toString() };
+      })
+    : [];
 
   return (
     <div>
@@ -43,7 +65,7 @@ export default async function RecipePage({ params }: { params: Promise<{ product
           </Card>
           <Card>
             <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>
-            <RecipeForm productId={productId} unit={unitLabel(p.unit)} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId }))} groups={groups} canCreate={["PRODUCTION", "DIRECTOR"].includes(s.role)} initial={active ? active.items.map((i) => ({ materialId: i.materialId, qtyPerM3: i.qtyPerM3.toString() })) : []} />
+            <RecipeForm productId={productId} unit={unitLabel(p.unit)} ingredients={ingredients} groups={groups} initial={initial} />
           </Card>
         </div>
         <div>
@@ -57,8 +79,13 @@ export default async function RecipePage({ params }: { params: Promise<{ product
                 </div>
                 {r.note && <p className="mb-2 text-sm text-slate-600">{r.note}</p>}
                 <Table>
-                  <thead><tr><Th>Xomashyo</Th><Th right>1 {unitLabel(p.unit)} ga</Th></tr></thead>
-                  <tbody>{r.items.map((i) => <Tr key={i.id}><Td>{i.material.name}</Td><Td right>{qty(i.qtyPerM3)} {i.material.unit}</Td></Tr>)}</tbody>
+                  <thead><tr><Th>Xomashyo / mahsulot</Th><Th right>1 {unitLabel(p.unit)} ga</Th></tr></thead>
+                  <tbody>{r.items.map((i) => { const ing = ingredientOf(i); return (
+                    <Tr key={i.id}>
+                      <Td>{ing.name}{ing.kind === "product" && <Badge color="blue" dot={false}>Mahsulot</Badge>}</Td>
+                      <Td right>{qty(ing.qtyPerM3)} {ing.unit}</Td>
+                    </Tr>
+                  ); })}</tbody>
                 </Table>
               </Card>
             ))}

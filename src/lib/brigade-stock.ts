@@ -68,7 +68,12 @@ export async function brigadeStocks(opts?: { productId?: string; includeInactive
     m.set(s.materialId, q);
     byBrigade.set(s.brigadeId, m);
   }
-  const withRecipe = products.filter((p) => p.recipes[0]?.items.length);
+  // Brigada qo'lida faqat xomashyo saqlanadi (BrigadeMove hali mahsulotni qo'llamaydi) — retseptida
+  // boshqa mahsulot (masalan FBS blok) bo'lgan mahsulotlar bu ro'yxatda "chiqara oladi" deb ko'rsatilmaydi
+  const withRecipe = products.filter((p) => {
+    const items = p.recipes[0]?.items ?? [];
+    return items.length > 0 && items.every((i) => i.materialId != null);
+  });
 
   return brigades.map((b) => {
     const bal = byBrigade.get(b.id) ?? new Map<string, number>();
@@ -77,8 +82,8 @@ export async function brigadeStocks(opts?: { productId?: string; includeInactive
       .sort((x, y) => x.name.localeCompare(y.name));
     const makes: BrigadeMake[] = withRecipe.map((p) => {
       const items: MakeItem[] = p.recipes[0].items.map((i) => {
-        const perUnit = Number(i.qtyPerM3), balance = bal.get(i.materialId) ?? 0;
-        return { materialId: i.materialId, name: i.material.name, unit: i.material.unit, perUnit, balance, enoughFor: perUnit > 0 ? balance / perUnit : Infinity };
+        const perUnit = Number(i.qtyPerM3), balance = bal.get(i.materialId!) ?? 0;
+        return { materialId: i.materialId!, name: i.material!.name, unit: i.material!.unit, perUnit, balance, enoughFor: perUnit > 0 ? balance / perUnit : Infinity };
       });
       const lim = items.reduce<(typeof items)[number] | null>((m, x) => (m == null || x.enoughFor < m.enoughFor ? x : m), null);
       const canMake = Math.max(0, Math.floor((lim?.enoughFor ?? 0) * 100) / 100);
@@ -224,27 +229,31 @@ export async function consumeForTask(
     include: { items: { include: { material: { select: { name: true, unit: true } } } } },
   });
   if (!recipe?.items.length) return { rows: 0, deficit: [] };
+  // Brigada qo'lida faqat xomashyo saqlanadi — retseptdagi mahsulot-ingredient (masalan FBS blok)
+  // bu yerda hisobga olinmaydi (BrigadeMove hali mahsulotni qo'llamaydi, sklad → zames orqali hisoblanadi)
+  const items = recipe.items.filter((i) => i.materialId);
+  if (!items.length) return { rows: 0, deficit: [] };
 
   const sums = await tx.brigadeMove.groupBy({
     by: ["materialId"],
-    where: { brigadeId: task.brigadeId, materialId: { in: recipe.items.map((i) => i.materialId) } },
+    where: { brigadeId: task.brigadeId, materialId: { in: items.map((i) => i.materialId!) } },
     _sum: { qty: true },
   });
   const bal = new Map(sums.map((s) => [s.materialId, Number(s._sum.qty ?? 0)]));
   const deficit: string[] = [];
-  for (const i of recipe.items) {
+  for (const i of items) {
     const need = Number(i.qtyPerM3) * doneQty;
     if (need <= 0) continue;
-    const have = bal.get(i.materialId) ?? 0;
-    if (have < need - 0.0005) deficit.push(`${i.material.name}: ${Math.round((need - have) * 1000) / 1000} ${i.material.unit}`);
+    const have = bal.get(i.materialId!) ?? 0;
+    if (have < need - 0.0005) deficit.push(`${i.material!.name}: ${Math.round((need - have) * 1000) / 1000} ${i.material!.unit}`);
     await tx.brigadeMove.create({
       data: {
-        type: "CONSUME", brigadeId: task.brigadeId, materialId: i.materialId, qty: -need,
+        type: "CONSUME", brigadeId: task.brigadeId, materialId: i.materialId!, qty: -need,
         refType: "BrigadeTask", refId: task.id, note: `Bajarilgan ${doneQty} × norma ${Number(i.qtyPerM3)}`, createdById: userId,
       },
     });
   }
-  return { rows: recipe.items.length, deficit };
+  return { rows: items.length, deficit };
 }
 
 /**

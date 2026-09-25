@@ -1,24 +1,28 @@
 import { db } from "./db";
+import { ingredientOf, balanceOf } from "./recipe";
 
 export type Capacity = {
   productId: string; product: string; unit: string; version: number;
-  canMake: number; // hozirgi xomashyo qoldig'i bilan necha birlik ishlab chiqarish mumkin
-  limiting: { name: string; unit: string; balance: number; perUnit: number } | null; // eng avval tugaydigan xomashyo
+  canMake: number; // hozirgi xomashyo/mahsulot qoldig'i bilan necha birlik ishlab chiqarish mumkin
+  limiting: { name: string; unit: string; balance: number; perUnit: number } | null; // eng avval tugaydigan ingredient
   remaining: number; // qabul qilingan zayavkalarda hali ishlab chiqarilmagan hajm
   items: { name: string; unit: string; perUnit: number; balance: number; enoughFor: number; short: number }[]; // short — zayavkalar uchun yetishmaydigan miqdor
 };
 
 /**
- * Xomashyoga qarab ishlab chiqarish imkoni: har mahsulot (faol retsepti bor) uchun
- * canMake = min(qoldiq_i / norma_i). Zayavkalar ehtiyoji bilan solishtiriladi — qaysi xomashyo qancha yetishmasligi ko'rinadi.
+ * Ingredientga (xomashyo yoki boshqa mahsulot — masalan FBS blok) qarab ishlab chiqarish imkoni:
+ * har mahsulot (faol retsepti bor) uchun canMake = min(qoldiq_i / norma_i).
+ * Zayavkalar ehtiyoji bilan solishtiriladi — qaysi ingredient qancha yetishmasligi ko'rinadi.
  */
 export async function productionCapacity(): Promise<Capacity[]> {
-  const [products, sums, orders] = await Promise.all([
-    db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, include: { recipes: { where: { isActive: true }, include: { items: { include: { material: true } } } } } }),
+  const [products, matSums, prodSums, orders] = await Promise.all([
+    db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, include: { recipes: { where: { isActive: true }, include: { items: { include: { material: true, product: true } } } } } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
+    db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: true, batches: true } }),
   ]);
-  const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
+  const matBal = new Map(matSums.map((x) => [x.materialId!, Number(x._sum.qty ?? 0)]));
+  const prodBal = new Map(prodSums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
   // Mahsulot bo'yicha ishlab chiqarilmagan qoldiq (zayavka ulushi bo'yicha)
   const remaining = new Map<string, number>();
   for (const o of orders) {
@@ -32,8 +36,9 @@ export async function productionCapacity(): Promise<Capacity[]> {
     const r = p.recipes[0];
     const need = remaining.get(p.id) ?? 0;
     const items = r.items.map((i) => {
-      const perUnit = Number(i.qtyPerM3), balance = bal.get(i.materialId) ?? 0;
-      return { name: i.material.name, unit: i.material.unit, perUnit, balance, enoughFor: perUnit > 0 ? balance / perUnit : Infinity, short: Math.max(0, need * perUnit - balance) };
+      const ing = ingredientOf(i);
+      const balance = balanceOf(ing, matBal, prodBal);
+      return { name: ing.name, unit: ing.unit, perUnit: ing.qtyPerM3, balance, enoughFor: ing.qtyPerM3 > 0 ? balance / ing.qtyPerM3 : Infinity, short: Math.max(0, need * ing.qtyPerM3 - balance) };
     });
     const lim = items.reduce<(typeof items)[number] | null>((m, x) => (m == null || x.enoughFor < m.enoughFor ? x : m), null);
     return {

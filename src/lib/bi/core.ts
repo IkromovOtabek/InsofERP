@@ -101,16 +101,23 @@ export async function materialCosts() {
   return new Map(rows.map((r) => [r.materialId as string, Number(r._avg.unitCost ?? 0)]));
 }
 
-/** Har mahsulot uchun 1 birlik tannarx (faol retsept × xomashyo o'rtacha narxi). Retsept yo'q → null. */
+/**
+ * Har mahsulot uchun 1 birlik tannarx (faol retsept × xomashyo o'rtacha narxi). Retsept yo'q → null.
+ * Retsept qatorida boshqa mahsulot bo'lsa (masalan FBS blok) — ko'p bosqichli (rekursiv) tannarx
+ * hisoblanmaydi, o'sha mahsulotning o'z sotuv narxi taxminiy tannarx sifatida olinadi.
+ */
 export async function productCosts() {
   const [products, costs] = await Promise.all([
     db.product.findMany({ include: { recipes: { where: { isActive: true }, orderBy: { version: "desc" }, take: 1, include: { items: true } } } }),
     materialCosts(),
   ]);
+  const priceOf = new Map(products.map((p) => [p.id, Number(p.price)]));
   const out = new Map<string, { cost: number | null; price: number; name: string; code: string; unit: string; isActive: boolean }>();
   for (const p of products) {
     const items = p.recipes[0]?.items ?? [];
-    const cost = items.length ? sum(items.map((i) => Number(i.qtyPerM3) * (costs.get(i.materialId) ?? 0))) : null;
+    const cost = items.length
+      ? sum(items.map((i) => Number(i.qtyPerM3) * (i.materialId ? (costs.get(i.materialId) ?? 0) : (priceOf.get(i.productId!) ?? 0))))
+      : null;
     out.set(p.id, { cost, price: Number(p.price), name: p.name, code: p.code, unit: p.unit, isActive: p.isActive });
   }
   return out;

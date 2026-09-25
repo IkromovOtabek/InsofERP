@@ -16,7 +16,9 @@ const RECIPE_ROLES = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] as const;
 const schema = z.object({
   note: zOpt,
   returnTo: zOpt, // saqlangach qaytish manzili (Sklad bo'limidan kelganda /stock?tab=recipes)
-  materialId: z.array(z.string()).min(1, "Kamida bitta xomashyo"),
+  // Har qator xomashyo YOKI boshqa mahsulot bo'lishi mumkin: kind — "material"/"product", refId — o'sha id
+  kind: z.array(z.string()),
+  refId: z.array(z.string()),
   qtyPerM3: z.array(z.coerce.number().min(0)),
 });
 
@@ -25,9 +27,19 @@ export async function createRecipeVersion(productId: string, _prev: ActionState,
   const s = await requireSession([...RECIPE_ROLES]);
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const items = r.data.materialId.map((materialId, i) => ({ materialId, qtyPerM3: r.data.qtyPerM3[i] })).filter((i) => i.materialId && i.qtyPerM3 > 0);
-  if (items.length === 0) return { error: "Kamida bitta xomashyo 0 dan katta bo'lsin" };
-  if (new Set(items.map((i) => i.materialId)).size !== items.length) return { error: "Bir xomashyo ikki marta kiritilgan" };
+  const items = r.data.kind
+    .map((kind, i) => ({ kind, refId: r.data.refId[i], qtyPerM3: r.data.qtyPerM3[i] }))
+    .filter((x) => x.refId && x.qtyPerM3 > 0)
+    .map((x) => ({
+      materialId: x.kind === "material" ? x.refId : null,
+      productId: x.kind === "product" ? x.refId : null,
+      qtyPerM3: x.qtyPerM3,
+    }));
+  if (items.length === 0) return { error: "Kamida bitta xomashyo yoki mahsulot 0 dan katta miqdorda bo'lsin" };
+  // Bitta ingredient (xomashyo yoki mahsulot) retseptda faqat bir marta bo'lsin
+  const keys = items.map((i) => i.materialId ?? i.productId);
+  if (new Set(keys).size !== keys.length) return { error: "Bitta xomashyo/mahsulot ikki marta kiritilgan" };
+  if (items.some((i) => i.productId === productId)) return { error: "Mahsulot o'zining retseptiga ingredient bo'la olmaydi" };
 
   await db.$transaction(async (tx) => {
     const last = await tx.recipe.findFirst({ where: { productId }, orderBy: { version: "desc" } });
@@ -37,7 +49,7 @@ export async function createRecipeVersion(productId: string, _prev: ActionState,
     });
     await audit(tx, s.userId, "CREATE", "Recipe", rec.id, undefined, { ...rec, items });
   });
-  revalidatePath(`/recipes/${productId}`); revalidatePath("/recipes"); revalidatePath("/stock");
+  revalidatePath(`/recipes/${productId}`); revalidatePath("/recipes"); revalidatePath("/stock"); revalidatePath("/production");
   redirect(r.data.returnTo?.startsWith("/") ? r.data.returnTo : `/recipes/${productId}`);
 }
 

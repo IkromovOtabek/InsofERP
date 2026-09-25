@@ -193,12 +193,13 @@ model Product {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 
-  group      ProductGroup?     @relation(fields: [groupId], references: [id])
-  recipes    Recipe[]
-  orderItems OrderItem[]
-  batches    ProductionBatch[]
-  stockMoves StockMove[]
-  leads      Lead[]
+  group        ProductGroup?     @relation(fields: [groupId], references: [id])
+  recipes      Recipe[]
+  recipeItems  RecipeItem[]      @relation("RecipeIngredientProduct")
+  orderItems   OrderItem[]
+  batches      ProductionBatch[]
+  stockMoves   StockMove[]
+  leads        Lead[]
 
   @@index([groupId])
 }
@@ -219,16 +220,22 @@ model Recipe {
   @@unique([productId, version])
 }
 
+/// Retsept qatori: yo xomashyo (materialId), yo boshqa mahsulot (productId) — ikkalasi emas.
+/// Mahsulotga ruxsat berilgani ko'p bosqichli tayyorlov uchun: masalan katta konstruksiyaga
+/// tayyor FBS blok kabi boshqa mahsulot ham kirishi mumkin (StockMove dagi bilan bir xil qoida).
 model RecipeItem {
   id         String  @id @default(cuid())
   recipeId   String
-  materialId String
+  materialId String?
+  productId  String?
   qtyPerM3   Decimal @db.Decimal(18, 3)
 
-  recipe   Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  material Material @relation(fields: [materialId], references: [id])
+  recipe   Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  material Material? @relation(fields: [materialId], references: [id])
+  product  Product?  @relation("RecipeIngredientProduct", fields: [productId], references: [id])
 
   @@unique([recipeId, materialId])
+  @@unique([recipeId, productId])
 }
 
 model Warehouse {

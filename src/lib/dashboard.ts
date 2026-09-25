@@ -29,7 +29,8 @@ export async function materialOutlook() {
     if (!remaining) continue;
     for (const i of o.items) {
       const share = remaining * (Number(i.qtyM3) / total);
-      for (const ri of i.product.recipes[0]?.items ?? []) need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3));
+      // Xomashyo dashboardida faqat xomashyo-ingredientlar hisoblanadi — mahsulot-ingredient o'tkazib yuboriladi
+      for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3)); }
     }
   }
 

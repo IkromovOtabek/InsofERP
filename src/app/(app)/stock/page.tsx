@@ -181,7 +181,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {tab === "capacity" && (
         <div className="space-y-4">
           <Table>
-            <thead><tr><Th>Mahsulot</Th><Th>Retsept</Th><Th right>Hozir ishlab chiqarish mumkin</Th><Th right>Zayavkalar ehtiyoji</Th><Th>Cheklovchi xomashyo</Th><Th>Holat</Th></tr></thead>
+            <thead><tr><Th>Mahsulot</Th><Th>Retsept</Th><Th right>Hozir ishlab chiqarish mumkin</Th><Th right>Zayavkalar ehtiyoji</Th><Th>Cheklovchi ingredient</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {capacity.length === 0 && <Empty text="Faol retseptli mahsulot yo'q — avval Retseptlar bo'limida retsept kiriting" icon={Factory} />}
               {capacity.map((c) => {
@@ -255,9 +255,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
 
           {capacity.some((c) => c.items.some((i) => i.short > 0)) && (
             <div>
-              <h2 className="mb-2 font-semibold">Zayavkalar uchun yetishmaydigan xomashyo</h2>
+              <h2 className="mb-2 font-semibold">Zayavkalar uchun yetishmaydigan xomashyo / mahsulot</h2>
               <Table>
-                <thead><tr><Th>Mahsulot</Th><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>Kerak</Th><Th right>Yetishmaydi</Th></tr></thead>
+                <thead><tr><Th>Mahsulot</Th><Th>Ingredient</Th><Th right>Qoldiq</Th><Th right>Kerak</Th><Th right>Yetishmaydi</Th></tr></thead>
                 <tbody>
                   {capacity.flatMap((c) => c.items.filter((i) => i.short > 0).map((i) => (
                     <Tr key={`${c.productId}-${i.name}`}><Td>{c.product}</Td><Td className="font-medium">{i.name}</Td><Td right>{qty(i.balance)} {i.unit}</Td><Td right>{qty(c.remaining * i.perUnit)} {i.unit}</Td><Td right className="font-semibold text-red-600">{qty(i.short)} {i.unit}</Td></Tr>

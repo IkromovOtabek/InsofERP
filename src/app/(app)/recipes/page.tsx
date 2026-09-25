@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { qty } from "@/lib/format";
+import { ingredientOf } from "@/lib/recipe";
 import { FileSpreadsheet } from "lucide-react";
 import { Callout, LinkButton, PageHeader } from "@/components/ui";
 import { getSession } from "@/lib/auth";
@@ -13,7 +14,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
   const products = await db.product.findMany({
     where: { isActive: true },
     orderBy: { code: "asc" },
-    include: { recipes: { where: { isActive: true }, include: { items: { include: { material: true } } } } },
+    include: { recipes: { where: { isActive: true }, include: { items: { include: { material: true, product: true } } } } },
   });
   const rows = products.map((p) => {
     const r = p.recipes[0];
@@ -21,7 +22,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
       id: p.id,
       name: p.name,
       version: r?.version ?? null,
-      summary: r ? r.items.map((i) => `${i.material.name} ${qty(i.qtyPerM3)} ${i.material.unit}`).join(" · ") : "",
+      summary: r ? r.items.map((i) => { const ing = ingredientOf(i); return `${ing.name} ${qty(ing.qtyPerM3)} ${ing.unit}`; }).join(" · ") : "",
     };
   });
 
