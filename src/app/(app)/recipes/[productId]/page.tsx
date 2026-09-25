@@ -69,7 +69,7 @@ export default async function RecipePage({ params }: { params: Promise<{ product
           </Card>
           <Card>
             <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>
-            <RecipeForm productId={productId} unit={unitLabel(p.unit)} ingredients={ingredients} groups={groups} canCreateMaterial={canEditMaterials(s.role)} canCreateProduct={canEditProducts(s.role)} initial={initial} />
+            <RecipeForm productId={productId} unit={unitLabel(p.unit)} ingredients={ingredients} groups={groups} products={catalog.products} canCreateMaterial={canEditMaterials(s.role)} canCreateProduct={canEditProducts(s.role)} initial={initial} />
           </Card>
         </div>
         <div>

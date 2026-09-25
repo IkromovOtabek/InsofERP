@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderPlus, Minus, Plus } from "lucide-react";
+import { Minus } from "lucide-react";
 import { FolderPicker, type PickerGroup } from "@/components/folder-picker";
-import { NewProductForm, NewProductGroupForm } from "@/components/product-picker";
-import { NewMaterialForm, NewMaterialGroupForm } from "@/components/material-picker";
+import { MaterialPanelBody, MaterialTools, ProductPanelBody, ProductTools, duplicateNames, type MaterialPanel, type ProductPanel } from "@/components/catalog-tools";
+import { DeleteButton } from "@/components/delete-button";
+import { deleteCatalogProduct, deleteProductGroup } from "@/lib/catalog-actions";
+import { deleteCatalogMaterial, deleteMaterialGroup } from "@/lib/material-actions";
+import type { CatalogProduct } from "@/components/product-picker";
 import { unitLabel } from "@/lib/unit";
-import { Badge, Button, inputCls } from "@/components/ui";
+import { Badge, inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /** Retsept ingrediyenti — xomashyo yoki boshqa mahsulot (masalan FBS blok) bo'lishi mumkin. */
@@ -16,7 +19,6 @@ export type IngredientRow = { id: string; kind: "material" | "product"; name: st
 /** Papka qaysi ro'yxatdan ekani — ochiq papkaga to'g'ri turdagi yozuv qo'shish uchun. */
 export type IngredientGroup = PickerGroup & { kind: "material" | "product" };
 
-type Panel = "material" | "product" | "materialGroup" | "productGroup" | null;
 
 /** Nom yoki kod bo'yicha filtr: avval nomi shu harflar bilan boshlanadiganlar. */
 function filterIngredients(list: IngredientRow[], term: string) {
@@ -33,10 +35,12 @@ function filterIngredients(list: IngredientRow[], term: string) {
  * ekani ("Xomashyo" / "Mahsulot") ko'rinadi. Bu yerdan yangi yozuv qo'shilmaydi —
  * kerak bo'lsa Sklad → Xomashyo qo'shish yoki mahsulot spravochnigidan kiritiladi.
  */
-export function IngredientPicker({ open, ingredients, groups, canCreateMaterial = false, canCreateProduct = false, initialQuery, onPick, onClose }: {
+export function IngredientPicker({ open, ingredients, groups, products = [], canCreateMaterial = false, canCreateProduct = false, initialQuery, onPick, onClose }: {
   open: boolean;
   ingredients: IngredientRow[];
   groups: IngredientGroup[];
+  /** Mahsulot ro'yxati — dublikatlarni topish uchun (mahsulot tanlagichdagi bilan bir xil). */
+  products?: CatalogProduct[];
   canCreateMaterial?: boolean;
   canCreateProduct?: boolean;
   initialQuery?: string;
@@ -44,10 +48,13 @@ export function IngredientPicker({ open, ingredients, groups, canCreateMaterial 
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [panel, setPanel] = useState<Panel>(null);
-  useEffect(() => { if (!open) setPanel(null); }, [open]);
-  const toggle = (p: Panel) => setPanel((cur) => (cur === p ? null : p));
-  const afterCreate = () => { setPanel(null); router.refresh(); };
+  const [mPanel, setMPanel] = useState<MaterialPanel>(null);
+  const [pPanel, setPPanel] = useState<ProductPanel>(null);
+  useEffect(() => { if (!open) { setMPanel(null); setPPanel(null); } }, [open]);
+  const toggleM = (p: MaterialPanel) => { setPPanel(null); setMPanel((cur) => (cur === p ? null : p)); };
+  const toggleP = (p: ProductPanel) => { setMPanel(null); setPPanel((cur) => (cur === p ? null : p)); };
+  const afterCreate = () => { setMPanel(null); setPPanel(null); router.refresh(); };
+  const dupes = duplicateNames(products);
   /** Ochiq papka xomashyoniki yoki mahsulotniki — ildizda (papkasiz) ikkalasi ham taklif qilinadi. */
   const folderKind = (groupId: string | null) => (groupId ? groups.find((g) => g.id === groupId)?.kind ?? null : null);
 
@@ -58,7 +65,7 @@ export function IngredientPicker({ open, ingredients, groups, canCreateMaterial 
       ariaLabel="Retsept ingredienti tanlash"
       nameLabel="Nomi"
       cols={[
-        { label: "Turi", className: "w-28" },
+        { label: "Ro'yxat", className: "w-28" },
         { label: "Birlik", className: "w-20" },
         { label: "Kod", className: "w-28", right: true },
       ]}
@@ -73,44 +80,36 @@ export function IngredientPicker({ open, ingredients, groups, canCreateMaterial 
       footerHint="Papkani ochish yoki tanlash — ikki marta bosing"
       onPick={(id) => { const x = ingredients.find((r) => r.id === id); if (x) onPick(x); }}
       onClose={onClose}
-      /* Yangi yozuv shu yerdan ham qo'shiladi — Sklad yoki zayavkaga o'tish shart emas.
-         Ochiq papka xomashyoniki bo'lsa xomashyo, mahsulotniki bo'lsa mahsulot taklif qilinadi. */
+      /* Asboblar mahsulot va xomashyo tanlagichlaridagi bilan aynan bir xil (umumiy komponentlar):
+         ochiq papka qaysi ro'yxatniki bo'lsa, o'sha ro'yxatning asboblari chiqadi; ildizda ikkalasi ham. */
       tools={(ctx) => {
         const kind = folderKind(ctx.groupId);
         const showMaterial = canCreateMaterial && kind !== "product";
         const showProduct = canCreateProduct && kind !== "material";
+        const mixed = showMaterial && showProduct;
         return (
           <>
-            {showMaterial && (
-              <Button type="button" size="sm" variant="secondary" onClick={() => toggle("material")}>
-                <Plus size={15} /> Yangi xomashyo
-              </Button>
-            )}
-            {showProduct && (
-              <Button type="button" size="sm" variant="secondary" onClick={() => toggle("product")}>
-                <Plus size={15} /> Yangi mahsulot
-              </Button>
-            )}
-            {kind === "material" && canCreateMaterial && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => toggle("materialGroup")} title="Xomashyo papkasi">
-                <FolderPlus size={15} /> Papka
-              </Button>
-            )}
-            {kind === "product" && canCreateProduct && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => toggle("productGroup")} title="Mahsulot papkasi">
-                <FolderPlus size={15} /> Papka
-              </Button>
-            )}
+            {showMaterial && <MaterialTools toggle={toggleM} mixed={mixed} />}
+            {showProduct && <ProductTools toggle={toggleP} dupes={dupes} mixed={mixed} />}
           </>
         );
       }}
       panel={(ctx) => {
-        if (!panel) return null;
-        if (panel === "material") return <NewMaterialForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
-        if (panel === "product") return <NewProductForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
-        if (panel === "materialGroup") return <NewMaterialGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
-        return <NewProductGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+        if (mPanel) return <MaterialPanelBody panel={mPanel} ctx={ctx} onDone={afterCreate} onCancel={() => setMPanel(null)} />;
+        if (pPanel) return <ProductPanelBody panel={pPanel} ctx={ctx} dupes={dupes} onDone={afterCreate} onCancel={() => setPPanel(null)} />;
+        return null;
       }}
+      /* Qatordan o'chirish ham boshqa oynalardagidek: hujjatlarda ishlatilmagani butunlay o'chadi, ishlatilgani arxivga */
+      rowAction={canCreateMaterial || canCreateProduct ? (row) => {
+        if (row.kind === "group") {
+          const g = groups.find((x) => x.id === row.id);
+          if (!g || (g.kind === "material" ? !canCreateMaterial : !canCreateProduct)) return null;
+          return <DeleteButton action={g.kind === "material" ? deleteMaterialGroup : deleteProductGroup} id={row.id} name={row.name} title="Papkani o'chirish" />;
+        }
+        const x = ingredients.find((i) => i.id === row.id);
+        if (!x || (x.kind === "material" ? !canCreateMaterial : !canCreateProduct)) return null;
+        return <DeleteButton action={x.kind === "material" ? deleteCatalogMaterial : deleteCatalogProduct} id={row.id} name={row.name} title={x.kind === "material" ? "Xomashyoni o'chirish" : "Mahsulotni o'chirish"} />;
+      } : undefined}
     />
   );
 }
@@ -120,9 +119,10 @@ export function IngredientPicker({ open, ingredients, groups, canCreateMaterial 
  * (xomashyo va mahsulot bir ro'yxatda, mahsulotlar "mahsulot" belgisi bilan ajratiladi),
  * oxiridagi "…" tugmasi to'liq spravochnikni (papkalari bilan) ochadi.
  */
-export function IngredientField({ ingredients, groups, canCreateMaterial, canCreateProduct, value, onPick }: {
+export function IngredientField({ ingredients, groups, products, canCreateMaterial, canCreateProduct, value, onPick }: {
   ingredients: IngredientRow[];
   groups: IngredientGroup[];
+  products?: CatalogProduct[];
   canCreateMaterial?: boolean;
   canCreateProduct?: boolean;
   value: string;
@@ -182,7 +182,7 @@ export function IngredientField({ ingredients, groups, canCreateMaterial, canCre
         </div>
       )}
 
-      <IngredientPicker open={modal} ingredients={ingredients} groups={groups} canCreateMaterial={canCreateMaterial} canCreateProduct={canCreateProduct} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />
+      <IngredientPicker open={modal} ingredients={ingredients} groups={groups} products={products} canCreateMaterial={canCreateMaterial} canCreateProduct={canCreateProduct} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />
     </div>
   );
 }

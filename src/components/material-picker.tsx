@@ -1,14 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderPlus, Minus, Plus } from "lucide-react";
-import { createCatalogMaterial, createMaterialGroup, deleteCatalogMaterial, deleteMaterialGroup } from "@/lib/material-actions";
-import { FolderPicker, type PickerCtx, type PickerGroup } from "@/components/folder-picker";
+import { Minus } from "lucide-react";
+import { deleteCatalogMaterial, deleteMaterialGroup } from "@/lib/material-actions";
+import { FolderPicker, type PickerGroup } from "@/components/folder-picker";
 import { DeleteButton } from "@/components/delete-button";
+import { MaterialPanelBody, MaterialTools, type MaterialPanel } from "@/components/catalog-tools";
 import { fmtNum } from "@/lib/format";
-import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
-import { Button, Field, FormError, FormSuccess, Input, inputCls, Select } from "@/components/ui";
+import { unitLabel } from "@/lib/unit";
+import { Button, inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export type MaterialRow = { id: string; name: string; code: string; unit: string; price?: number; balance?: number; groupId?: string | null };
@@ -22,8 +23,6 @@ function filterMaterials(list: MaterialRow[], term: string) {
   const rest = list.filter((m) => !m.name.toLowerCase().startsWith(t) && (m.name.toLowerCase().includes(t) || m.code.toLowerCase().includes(t)));
   return [...starts, ...rest];
 }
-
-type Panel = "material" | "group" | null;
 
 /**
  * Xomashyo spravochnigi — mahsulot spravochnigi bilan bir xil 1C uslubidagi oyna
@@ -42,10 +41,10 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
   onClose: () => void;
 }) {
   const router = useRouter();
-  const [panel, setPanel] = useState<Panel>(null);
+  const [panel, setPanel] = useState<MaterialPanel>(null);
   useEffect(() => { if (!open) setPanel(null); }, [open]);
 
-  const toggle = (p: Panel) => setPanel((cur) => (cur === p ? null : p));
+  const toggle = (p: MaterialPanel) => setPanel((cur) => (cur === p ? null : p));
   const afterCreate = () => { setPanel(null); router.refresh(); };
   /** Qidiruvga yozilgan nom ro'yxatda bormi — bo'lmasa "«X» ni yangi qo'shish" taklif qilinadi. */
   const isNew = (name: string) => !!name && !materials.some((m) => m.name.trim().toLowerCase() === name.toLowerCase());
@@ -83,16 +82,7 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
       ) : undefined}
       tools={(ctx) => (
         <>
-          {canCreate && (
-            <>
-              <Button type="button" size="sm" variant="secondary" onClick={() => toggle("material")}>
-                <Plus size={15} /> Yangi
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => toggle("group")} title="Yangi papka">
-                <FolderPlus size={15} /> Papka
-              </Button>
-            </>
-          )}
+          {canCreate && <MaterialTools toggle={toggle} />}
           {/* Qatorga yozilgan nom ro'yxatda yo'q — shu nom bilan davom etish (qo'shilishi saqlashda bo'ladi) */}
           {onCreate && isNew(ctx.query) && (
             <Button type="button" size="sm" variant="ghost" onClick={() => { onCreate(ctx.query); onClose(); }}>
@@ -101,59 +91,8 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
           )}
         </>
       )}
-      panel={(ctx) => {
-        if (!canCreate || !panel) return null;
-        return panel === "group"
-          ? <NewMaterialGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />
-          : <NewMaterialForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
-      }}
+      panel={(ctx) => (canCreate ? <MaterialPanelBody panel={panel} ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} /> : null)}
     />
-  );
-}
-
-/** Yangi xomashyo papkasi — ingredient tanlagichda ham ishlatiladi. */
-export function NewMaterialGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
-  const [state, action, pending] = useActionState(createMaterialGroup, undefined);
-  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
-  return (
-    <form action={action} className="space-y-2">
-      <input type="hidden" name="parentId" value={ctx.groupId ?? ""} />
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label="Papka nomi *" className="min-w-52 flex-1"><Input name="name" required autoComplete="off" placeholder="Masalan: Inertlar" /></Field>
-        <Field label="Kod" hint="bo'sh qoldirsangiz — avtomatik" className="w-28"><Input name="code" autoComplete="off" /></Field>
-        <Button size="sm" disabled={pending}><FolderPlus size={15} /> Qo&apos;shish</Button>
-        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
-      </div>
-      <p className="text-xs text-slate-600">Joylashuvi: <b>{ctx.groupName ?? "Ro'yxat ildizi"}</b></p>
-      <FormError error={state?.error} />
-    </form>
-  );
-}
-
-/** Yangi xomashyo — ingredient tanlagichda ham ishlatiladi. */
-export function NewMaterialForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
-  const [state, action, pending] = useActionState(createCatalogMaterial, undefined);
-  useEffect(() => { if (state?.ok && !state.note) onDone(); }, [state, onDone]);
-  return (
-    <form action={action} className="space-y-3">
-      <input type="hidden" name="groupId" value={ctx.groupId ?? ""} />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <Field label="Kod" hint="bo'sh bo'lsa nomdan"><Input name="code" autoComplete="off" placeholder="CEM400" /></Field>
-        <Field label="Xomashyo nomi *" className="sm:col-span-3"><Input name="name" required autoComplete="off" placeholder="Masalan: Sement M400" /></Field>
-        <Field label="O'lchov birligi *">
-          <Select name="unit" defaultValue="kg">{MATERIAL_UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}</Select>
-        </Field>
-        <Field label="Minimal qoldiq" hint="kam qolsa signal"><Input name="minStock" type="number" step="0.001" min="0" placeholder="0" /></Field>
-        <Field label="Papka" className="sm:col-span-2"><Input value={ctx.groupName ?? "Ro'yxat ildizi"} readOnly /></Field>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={pending}><Plus size={15} /> Saqlash</Button>
-        <Button size="sm" variant="ghost" type="button" onClick={onCancel}>Bekor</Button>
-        <span className="text-xs text-slate-600">Qoldiqni <b>Xomashyo qo&apos;shish</b> jadvalidan kiritasiz.</span>
-      </div>
-      <FormError error={state?.error} />
-      <FormSuccess text={state?.ok ? state.note : undefined} />
-    </form>
   );
 }
 
