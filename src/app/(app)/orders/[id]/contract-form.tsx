@@ -3,7 +3,8 @@
 import { useActionState } from "react";
 import { FileText, Upload } from "lucide-react";
 import { setContract } from "../actions";
-import { Button, FormError, Input } from "@/components/ui";
+import { Button, FormError } from "@/components/ui";
+import { MoneyInput } from "@/components/money-input";
 
 /**
  * Zayavka sahifasidagi shartnoma formasi:
@@ -19,8 +20,8 @@ export function ContractForm({ orderId, current, hasFile, accept }: { orderId: s
       {state?.ok && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Saqlandi</div>}
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
-          <span className="mb-1 block text-xs text-slate-500">Shartnoma summasi (so&apos;m) *</span>
-          <Input name="contractAmount" type="number" step="1" min="1" defaultValue={current ?? ""} placeholder="0" required className="w-52" />
+          <span className="mb-1 block text-xs text-slate-500">Shartnoma summasi *</span>
+          <MoneyInput name="contractAmount" defaultValue={current != null ? String(current) : ""} required className="w-52" />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-xs text-slate-500">{hasFile ? "Faylni almashtirish (Didox'dan)" : "Imzolangan shartnoma fayli (Didox'dan)"}{exists && !hasFile ? " *" : ""}</span>

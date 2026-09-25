@@ -6,6 +6,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { createEmployee, grantLogin, updateEmployee } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select, Textarea } from "@/components/ui";
 import { EDUCATION, LICENSE_CATEGORIES, MARITAL, VEHICLE_TYPES } from "@/lib/kadr";
+import { MoneyInput } from "@/components/money-input";
 
 export type Pos = { label: string; role: string | null };
 
@@ -303,7 +304,7 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
         <Field label="Tug'ilgan sana"><Input name="birthDate" type="date" defaultValue={employee.birthDate ?? ""} /></Field>
         <Field label="Tabel №" hint="Buxgalteriya tabelidagi raqam"><Input name="tabelNo" defaultValue={employee.tabelNo ?? ""} placeholder="00401" autoComplete="off" /></Field>
         <Field label="Bo'lim / brigada"><Input name="subdivision" defaultValue={employee.subdivision ?? ""} placeholder="Brigada 1" autoComplete="off" /></Field>
-        <Field label="Tarif stavka, so'm"><Input name="tariffRate" defaultValue={employee.tariffRate ?? ""} inputMode="numeric" placeholder="2500000" autoComplete="off" /></Field>
+        <Field label="Tarif stavka"><MoneyInput name="tariffRate" defaultValue={employee.tariffRate ?? ""} placeholder="2 500 000" /></Field>
         <Field label="Ishdan bo'shagan sana" hint="To'ldirilsa xodim nofaol bo'ladi"><Input name="firedAt" type="date" defaultValue={employee.firedAt ?? ""} /></Field>
         <Field label="Ma'lumoti">
           <Select name="education" defaultValue={employee.education ?? ""}><option value="">—</option>{EDUCATION.map((e) => <option key={e} value={e}>{e}</option>)}</Select>

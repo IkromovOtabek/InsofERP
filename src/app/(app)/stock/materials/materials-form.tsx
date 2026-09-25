@@ -5,6 +5,7 @@ import { Plus, X, PackagePlus, MoreHorizontal } from "lucide-react";
 import { importMaterials } from "../actions";
 import { Button, FormError, Input, Select } from "@/components/ui";
 import { MaterialPicker, type MaterialGroup } from "@/components/material-picker";
+import { MoneyInput } from "@/components/money-input";
 import { fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -129,7 +130,7 @@ export function MaterialsForm({ children, existing = [], groups = [], canCreate 
             <Input placeholder="avto" value={r.code} onChange={(e) => update(r.key, { code: e.target.value, matId: null })} />
             <Select value={r.unit} onChange={(e) => update(r.key, { unit: e.target.value })}>{UNITS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
             <Input type="number" step="0.001" min="0" placeholder="0" value={r.qty} onChange={(e) => update(r.key, { qty: e.target.value })} />
-            <Input type="number" step="0.01" min="0" placeholder="0" value={r.price} onChange={(e) => update(r.key, { price: e.target.value })} />
+            <MoneyInput value={r.price} onChange={(v) => update(r.key, { price: v })} decimals={2} suffix={null} />
             <Input type="number" step="0.001" min="0" placeholder="0" value={r.minStock} onChange={(e) => update(r.key, { minStock: e.target.value })} />
             <CalcCell label={`NDS ${fmtNum(VAT * 100)}%`} value={a.nds} />
             <CalcCell label="Jami summa" value={a.total} strong />

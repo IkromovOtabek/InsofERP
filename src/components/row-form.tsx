@@ -3,13 +3,15 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Check, Plus } from "lucide-react";
 import { Button, FormError, Input, Select, Textarea } from "@/components/ui";
+import { MoneyInput } from "@/components/money-input";
 import type { ActionState } from "@/lib/action";
 import { cn } from "@/lib/utils";
 
 export type RowField = {
   name: string;
   label: string;
-  type?: "text" | "number" | "password" | "select" | "checkbox" | "textarea";
+  /** "money" — summa/narx maydoni: ekranda 100 000 ko'rinishida, formaga toza raqam ketadi. */
+  type?: "text" | "number" | "password" | "select" | "checkbox" | "textarea" | "money";
   defaultValue?: string | number | boolean | null;
   options?: [string, string][];
   step?: string;
@@ -45,6 +47,8 @@ export function RowForm({ action, fields, submit, mode = "edit", cols = 6, extra
             <Select name={f.name} defaultValue={String(f.defaultValue ?? "")} className="py-2 text-sm">
               {f.options?.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </Select>
+          ) : f.type === "money" ? (
+            <MoneyInput name={f.name} defaultValue={f.defaultValue == null ? "" : String(f.defaultValue)} placeholder={f.placeholder} required={f.required} suffix={null} className="py-2 text-sm" />
           ) : f.type === "checkbox" ? (
             <div className="flex h-9 items-center"><input type="checkbox" name={f.name} defaultChecked={!!f.defaultValue} /></div>
           ) : f.type === "textarea" ? (

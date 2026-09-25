@@ -93,7 +93,7 @@ async function ProductsTab() {
     { name: "name", label: "Nomi", defaultValue: p?.name, placeholder: "Beton M300 (B22.5)", required: true, className: "sm:col-span-2" },
     { name: "strengthClass", label: "Klass", defaultValue: p?.strengthClass, placeholder: "B22.5" },
     { name: "unit", label: "Birlik", type: "select" as const, defaultValue: p?.unit ?? "m3", options: PRODUCT_UNITS },
-    { name: "price", label: "Narx, so'm/birlik", type: "number" as const, step: "1", defaultValue: p ? Number(p.price) : "" },
+    { name: "price", label: "Narx, so'm/birlik", type: "money" as const, defaultValue: p ? Number(p.price) : "" },
     ...(p ? [{ name: "isActive", label: "Faol", type: "checkbox" as const, defaultValue: p.isActive }] : []),
   ];
   return (

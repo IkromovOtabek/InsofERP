@@ -7,6 +7,7 @@ import { Button, Field, FormError, FormSuccess, Input, Select, Table, Td, Th, Tr
 import { money, fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { DELIVERY_KINDS, DELIVERY_OWN } from "@/lib/supply-const";
+import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 
 export type PanelItem = {
@@ -79,8 +80,8 @@ export function PricePanel({ id, items, suppliers, supplierId, delivery: deliver
               <Td className="text-slate-500">{unitLabel(r.unit)}</Td>
               <Td right className="w-32"><Input name={`qty_${r.id}`} value={r.qty} type="number" step="0.001" min="0" className="h-9 text-right"
                 onChange={(e) => setRows((xs) => xs.map((x) => (x.id === r.id ? { ...x, qty: e.target.value } : x)))} /></Td>
-              <Td right className="w-40"><Input name={`price_${r.id}`} value={r.price} type="number" step="0.01" min="0" placeholder="0" className="h-9 text-right"
-                onChange={(e) => setRows((xs) => xs.map((x) => (x.id === r.id ? { ...x, price: e.target.value } : x)))} /></Td>
+              <Td right className="w-40"><MoneyInput name={`price_${r.id}`} value={r.price} decimals={2} suffix={null} className="h-9 text-right"
+                onChange={(v) => setRows((xs) => xs.map((x) => (x.id === r.id ? { ...x, price: v } : x)))} /></Td>
               <Td right className="w-40 font-medium tabular">{money(n(r.qty) * n(r.price))}</Td>
             </Tr>
           ))}
@@ -127,7 +128,7 @@ export function PricePanel({ id, items, suppliers, supplierId, delivery: deliver
             )}
           </Field>
           <Field label="Dostavka narxi">
-            <Input name="deliveryCost" value={delivery.cost} onChange={(e) => setDelivery((d) => ({ ...d, cost: e.target.value }))} type="number" step="0.01" min="0" placeholder="0" className="text-right" />
+            <MoneyInput name="deliveryCost" value={delivery.cost} onChange={(v) => setDelivery((d) => ({ ...d, cost: v }))} decimals={2} className="text-right" />
           </Field>
           <Field label="Izoh"><Input name="deliveryNote" defaultValue={deliveryInit.note} placeholder="Muddat, shart…" autoComplete="off" /></Field>
         </div>
@@ -182,8 +183,8 @@ export function ReceivePanel({ id, items, suppliers, supplierId, delivery: deliv
                 <Td right className="w-32"><Input name={`factQty_${r.id}`} value={r.fq} type="number" step="0.001" min="0" className={cn("h-9 text-right", dq < -0.0005 && "border-red-300 text-red-700")}
                   onChange={(e) => setRows((xs) => xs.map((x) => (x.id === r.id ? { ...x, fq: e.target.value } : x)))} /></Td>
                 <Td right className="text-slate-500">{money(r.price)}</Td>
-                <Td right className="w-36"><Input name={`factPrice_${r.id}`} value={r.fp} type="number" step="0.01" min="0" className={cn("h-9 text-right", dp > 0.0005 && "border-amber-300 text-amber-700")}
-                  onChange={(e) => setRows((xs) => xs.map((x) => (x.id === r.id ? { ...x, fp: e.target.value } : x)))} /></Td>
+                <Td right className="w-36"><MoneyInput name={`factPrice_${r.id}`} value={r.fp} decimals={2} suffix={null} className={cn("h-9 text-right", dp > 0.0005 && "border-amber-300 text-amber-700")}
+                  onChange={(v) => setRows((xs) => xs.map((x) => (x.id === r.id ? { ...x, fp: v } : x)))} /></Td>
                 <Td right className="font-medium tabular">{money(n(r.fq) * n(r.fp))}</Td>
                 <Td className="text-xs">
                   {Math.abs(dq) > 0.0005 && <div className={dq < 0 ? "text-red-600" : "text-emerald-700"}>{dq < 0 ? `${fmtNum(-dq, 3)} kam keldi` : `${fmtNum(dq, 3)} ortiq`}</div>}
@@ -196,7 +197,7 @@ export function ReceivePanel({ id, items, suppliers, supplierId, delivery: deliv
           <Tr>
             <Td colSpan={4} className="text-slate-700"><span className="inline-flex items-center gap-1.5"><Truck size={13} className="text-slate-400" /> Dostavka xizmati{deliveryInit.kind ? ` · ${deliveryInit.kind}` : ""} · reja {money(deliveryInit.cost)}</span></Td>
             <Td right className="w-36">
-              <Input name="deliveryFactCost" value={deliveryFact} onChange={(e) => setDeliveryFact(e.target.value)} type="number" step="0.01" min="0"
+              <MoneyInput name="deliveryFactCost" value={deliveryFact} onChange={setDeliveryFact} decimals={2} suffix={null}
                 className={cn("h-9 text-right", deliveryMoved && "border-amber-300 text-amber-700")} />
             </Td>
             <Td right className="font-medium tabular">{money(n(deliveryFact))}</Td>

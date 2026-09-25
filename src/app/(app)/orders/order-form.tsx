@@ -147,6 +147,19 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
   const update = (key: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+
+  /**
+   * To'lov turi tanlanishi: naqd to'lovda NDS hisoblanmaydi — belgilangan qatorlardan
+   * soliq olib tashlanadi. Bu majburiy emas: kerak bo'lsa qatordagi "NDS 12%" tugmasi
+   * yoki pastdagi "Hammasiga NDS 12%" belgisi bilan qo'lda qaytarib yoqiladi.
+   */
+  const pickPayment = (v: "prepay" | "credit") => {
+    setPayment(v);
+    if (v === "prepay") setRows((rs) => (rs.some((r) => r.nds) ? rs.map((r) => ({ ...r, nds: false })) : rs));
+  };
+  /** Hamma qatorga birdan NDS qo'yish/olib tashlash. */
+  const allNds = rows.length > 0 && rows.every((r) => r.nds);
+  const setAllNds = (on: boolean) => setRows((rs) => rs.map((r) => ({ ...r, nds: on })));
   const onProduct = (key: number, productId: string) =>
     update(key, { productId, price: products.find((p) => p.id === productId)?.price ?? "0" });
 
@@ -272,11 +285,16 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {([["prepay", "Naqd to'lov", "Pul naqd olinadi — kassaga tushadi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
             <label key={v} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm transition", payment === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300")}>
-              <input type="radio" name="payment" value={v} checked={payment === v} onChange={() => setPayment(v)} className="mt-0.5 accent-slate-900" />
+              <input type="radio" name="payment" value={v} checked={payment === v} onChange={() => pickPayment(v)} className="mt-0.5 accent-slate-900" />
               <span><span className="font-medium text-slate-900">{l}</span><span className="block text-xs text-slate-500">{h}</span></span>
             </label>
           ))}
         </div>
+        {payment === "prepay" && (
+          <p className="mt-2 text-xs text-slate-500">
+            Naqd to&apos;lovda {NDS_LABEL} hisoblanmaydi. Kerak bo&apos;lsa mahsulot qatoridagi «{NDS_LABEL}» tugmasi yoki jami ostidagi belgi bilan o&apos;zingiz yoqasiz.
+          </p>
+        )}
         {payment === "credit" && (
           <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-700"><FileSignature size={14} /> Saqlangach “Kafolat xati” ochiladi: mijoz rekvizitlari, summa va muddat kataklarini mijoz to&apos;ldirib, imzo va muhr qo&apos;yadi.</p>
         )}
@@ -456,6 +474,13 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: false }])} className="mt-2 text-sm font-medium text-slate-700 hover:underline">
           <span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo&apos;shish</span>
         </button>
+        {/* NDS ixtiyoriy: naqd to'lovda o'zi o'chadi, lekin shu belgidan (yoki qator tugmasidan) qaytarib yoqiladi */}
+        <label className="mt-3 flex cursor-pointer items-center justify-end gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={allNds} onChange={(e) => setAllNds(e.target.checked)} className="h-4 w-4 rounded border-slate-300 accent-slate-900" />
+          Hamma qatorga {NDS_LABEL}
+          {payment === "prepay" && ndsSum > 0 && <span className="text-xs text-amber-700">· naqd to&apos;lovda odatda hisoblanmaydi</span>}
+        </label>
+
         {/* Jami: NDS belgilangan qator bo'lsa soliq alohida qator bo'lib ko'rinadi */}
         {ndsSum > 0 ? (
           <div className="mt-3 ml-auto w-full max-w-xs space-y-1 text-sm">

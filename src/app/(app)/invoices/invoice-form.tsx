@@ -5,6 +5,7 @@ import { fmtNum, isoDate } from "@/lib/format";
 import { useActionState, useState } from "react";
 import { createInvoice } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Select, FormActions } from "@/components/ui";
+import { MoneyInput } from "@/components/money-input";
 
 /** unit — zayavkadagi mahsulot birligi ("m³", "dona"…); aralash birlikda m³ olinadi. */
 type Order = { id: string; orderNo: string; customer: string; deliveredM3: number; totalM3: number; deliveredSum: number; totalSum: number; unit: string };
@@ -31,7 +32,7 @@ export function InvoiceForm({ orders, preselect }: { orders: Order[]; preselect?
         </div>
       )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Summa (so'm) *" hint="Yetkazilgan hajm bo'yicha taklif qilinadi"><Input name="amount" type="number" step="1" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} required /></Field>
+        <Field label="Summa *" hint="Yetkazilgan hajm bo'yicha taklif qilinadi"><MoneyInput name="amount" value={amount} onChange={setAmount} required /></Field>
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
       </div>
       <FormActions>

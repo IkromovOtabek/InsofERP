@@ -5,6 +5,7 @@ import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { isoDate } from "@/lib/format";
 import { createCashTx } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, Select, FormActions } from "@/components/ui";
+import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 
 type Opt = { id: string; name: string };
@@ -28,7 +29,7 @@ export function TxForm({ accounts, suppliers, incomeCats, expenseCats }: { accou
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
         <Field label="Kassa / hisob *"><Select name="cashAccountId" defaultValue={accounts[0]?.id ?? ""} required>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select></Field>
-        <Field label="Summa (so'm) *"><Input name="amount" type="number" step="1" min="1" required /></Field>
+        <Field label="Summa *"><MoneyInput name="amount" required /></Field>
         <Field label="Kategoriya *"><Select name="category" defaultValue={cats[0]} key={type}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</Select></Field>
         {type === "EXPENSE" ? (
           <Field label="Yetkazuvchi" hint="Xomashyo uchun"><Select name="supplierId" defaultValue=""><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
