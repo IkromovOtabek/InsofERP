@@ -6,17 +6,17 @@ import { PageHeader } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { OrderForm, type CustomerOpt, type ProductStock } from "../order-form";
 import { geoSearchEnabled } from "@/lib/geo";
-import { unitLabel } from "@/lib/unit";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
+import { productCatalog } from "@/lib/product-catalog";
 
 export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
   const s = await requireSession(["SALES"]);
   const { customer } = await searchParams;
   const credit = await customersCredit();
-  const [customers, products, groups, history, stock, cashAccounts, contracted] = await Promise.all([
+  const [customers, catalog, history, stock, cashAccounts, contracted] = await Promise.all([
     db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true, inn: true, address: true, createdAt: true } }),
-    db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.productGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
+    productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
+
     customersHistory(undefined, credit),
     stockSnapshot(),
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], distinct: ["name"], select: { id: true, name: true, type: true } }),
@@ -44,7 +44,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <PageHeader title="Yangi zayavka" subtitle="Saqlangandan keyin “Qabul qilish” tugmasi orqali Sotuv bo'limiga o'tadi va ishlab chiqarishga tushadi" />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3">
-          <OrderForm customers={opts} products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId, price: p.price.toString(), unit: unitLabel(p.unit) }))} groups={groups} canCreateProduct={["SALES", "PRODUCTION", "DIRECTOR"].includes(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
+          <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={["SALES", "PRODUCTION", "DIRECTOR"].includes(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
         </div>
         <div className="xl:col-span-2">
           <StockSnapshotCard compact />

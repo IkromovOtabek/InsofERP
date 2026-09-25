@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { driverPositionNames } from "@/lib/positions";
 import { db } from "@/lib/db";
+import { productCatalog, groupPath } from "@/lib/product-catalog";
 import { createOrder } from "@/lib/orders";
 import { createTrip } from "@/lib/trips";
 import { customersCredit, blacklistedIds } from "@/lib/finance";
@@ -43,9 +44,9 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
 }
 
 async function orderForm(): Promise<CreateForm> {
-  const [customers, products, accounts] = await Promise.all([
+  const [customers, catalog, accounts] = await Promise.all([
     db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    productCatalog(), // veb bilan bir xil mahsulot ro'yxati (papka yo'li nom yonida)
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
   // Qora ro'yxatdagi mijoz tanlanmasin — ro'yxatdan chiqarilmaydi, lekin belgilanadi
@@ -79,7 +80,7 @@ async function orderForm(): Promise<CreateForm> {
         name: "items", label: "Mahsulot", type: "items", required: true,
         columns: [
           // Birlik mahsulot nomi yonida turadi: hajm va narx shu birlikda kiritiladi (beton m³, ustun/blok dona)
-          { name: "productId", label: "Marka", type: "select", required: true, options: products.map((p) => ({ value: p.id, label: `${p.name} · ${unitLabel(p.unit)}`, extra: { price: String(Math.round(Number(p.price))) } })) },
+          { name: "productId", label: "Mahsulot", type: "select", required: true, options: catalog.products.map((p) => { const path = groupPath(catalog.groups, p.groupId); return { value: p.id, label: `${path ? `${path} › ` : ""}${p.name} · ${p.unit}`, extra: { price: String(Math.round(Number(p.price))) } }; }) },
           { name: "qtyM3", label: "Hajmi (mahsulot birligida)", type: "number", required: true, placeholder: "0" },
           { name: "price", label: "Narx (1 birlik)", type: "number", required: true, placeholder: "0" },
         ],

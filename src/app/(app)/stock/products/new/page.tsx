@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
+import { productCatalog } from "@/lib/product-catalog";
 import { requireSession } from "@/lib/auth";
-import { unitLabel } from "@/lib/unit";
 import { PageHeader } from "@/components/ui";
 import { AddForm } from "./add-form";
 
@@ -12,17 +12,16 @@ import { AddForm } from "./add-form";
  */
 export default async function AddStockPage() {
   const s = await requireSession(["WAREHOUSE", "PRODUCTION"]);
-  const [products, groups, warehouses] = await Promise.all([
-    db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, orderBy: { code: "asc" } }),
-    db.productGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
+  const [catalog, warehouses] = await Promise.all([
+    productCatalog({ pieceOnly: true }), // hamma joyda bir xil ro'yxat; beton (m³) hovlida saqlanmaydi
     db.warehouse.findMany({ where: { isActive: true } }),
   ]);
   return (
     <div>
       <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title="Tayyor mahsulot qo'shish" subtitle="Hovliga chiqarilgan dona mahsulotni qo'lda kirim qilish. Qoldiq Sklad → Ishlab chiqarish imkoni bo'limida ko'rinadi; retsept bo'yicha zames qilmoqchi bo'lsangiz — Ishlab chiqarish sahifasi." />
       <AddForm
-        products={products.map((p) => ({ id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId, price: p.price.toString(), unit: unitLabel(p.unit) }))}
-        groups={groups}
+        products={catalog.products}
+        groups={catalog.groups}
         canCreateProduct={["WAREHOUSE", "PRODUCTION", "DIRECTOR"].includes(s.role)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))}
       />

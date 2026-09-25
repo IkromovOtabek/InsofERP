@@ -6,23 +6,22 @@ import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/co
 import { RecipeForm } from "../recipe-form";
 import { unitLabel } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
+import { productCatalog } from "@/lib/product-catalog";
 import type { IngredientRow } from "@/components/ingredient-picker";
 import { Pencil } from "lucide-react";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
   await requireSession(["PRODUCTION"]);
-  const [p, materials, materialGroups, products, productGroups] = await Promise.all([
+  const [p, materials, materialGroups, catalog] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },
       include: { group: true, recipes: { orderBy: { version: "desc" }, include: { items: { include: { material: true, product: true } } } } },
     }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
-    // O'zi ham retseptga ingredient bo'lishi mumkin (ko'p bosqichli tayyorlov) — o'zini o'ziga
-    // qo'shib qo'ymaslik uchun joriy mahsulot chiqarib tashlanadi
-    db.product.findMany({ where: { isActive: true, id: { not: productId } }, orderBy: { code: "asc" } }),
-    db.productGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
+    // Mahsulot ro'yxati hamma joydagi bilan bir xil; o'zini o'ziga ingredient qilmaslik uchun joriy mahsulot chiqariladi
+    productCatalog({ exclude: productId }),
   ]);
   if (!p) notFound();
   const active = p.recipes.find((r) => r.isActive);
@@ -30,9 +29,9 @@ export default async function RecipePage({ params }: { params: Promise<{ product
   // Xomashyo + mahsulot spravochnigi bitta ro'yxatda — retsept qatoriga shu yerdan tanlanadi
   const ingredients: IngredientRow[] = [
     ...materials.map((m) => ({ id: m.id, kind: "material" as const, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId })),
-    ...products.map((x) => ({ id: x.id, kind: "product" as const, name: x.name, code: x.code, unit: x.unit, groupId: x.groupId })),
+    ...catalog.products.map((x) => ({ id: x.id, kind: "product" as const, name: x.name, code: x.code, unit: x.rawUnit, groupId: x.groupId })),
   ];
-  const groups = [...materialGroups, ...productGroups];
+  const groups = [...materialGroups, ...catalog.groups];
   const initial = active
     ? active.items.map((i) => {
         const ing = ingredientOf(i);

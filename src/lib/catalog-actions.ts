@@ -444,5 +444,5 @@ function refresh() {
   revalidatePath("/stock");
   revalidatePath("/stock/products/new");
   revalidatePath("/production/new");
-  revalidatePath("/recipes");
+  revalidatePath("/recipes", "layout"); // ro'yxat ham, har mahsulot retsepti ham
 }
