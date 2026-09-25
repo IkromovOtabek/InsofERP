@@ -8,6 +8,7 @@ import { OrderForm, type CustomerOpt, type ProductStock } from "../order-form";
 import { geoSearchEnabled } from "@/lib/geo";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { productCatalog } from "@/lib/product-catalog";
+import { canEditProducts } from "@/lib/catalog";
 
 export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
   const s = await requireSession(["SALES"]);
@@ -44,7 +45,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <PageHeader title="Yangi zayavka" subtitle="Saqlangandan keyin “Qabul qilish” tugmasi orqali Sotuv bo'limiga o'tadi va ishlab chiqarishga tushadi" />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3">
-          <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={["SALES", "PRODUCTION", "DIRECTOR"].includes(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
+          <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
         </div>
         <div className="xl:col-span-2">
           <StockSnapshotCard compact />

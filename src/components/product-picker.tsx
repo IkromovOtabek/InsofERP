@@ -98,7 +98,7 @@ export function ProductPicker({ open, products, groups, onPick, onClose, canCrea
       ) : null}
       panel={(ctx) => {
         if (!canCreate || !panel) return null;
-        if (panel === "group") return <NewGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+        if (panel === "group") return <NewProductGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
         if (panel === "excel") return <ProductExcelImport groupId={ctx.groupId} groupName={ctx.groupName} onDone={afterCreate} onCancel={() => setPanel(null)} />;
         if (panel === "matrix") return <ProductMatrixAdd groupId={ctx.groupId} groupName={ctx.groupName} onDone={afterCreate} onCancel={() => setPanel(null)} />;
         if (panel === "dupes") return <ProductDuplicates groups={dupes} onDone={afterCreate} onCancel={() => setPanel(null)} />;
@@ -123,7 +123,8 @@ export function duplicateNames(products: CatalogProduct[]) {
   return [...by.values()].filter((l) => l.length > 1);
 }
 
-function NewGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
+/** Yangi mahsulot papkasi — ingredient tanlagichda ham ishlatiladi. */
+export function NewProductGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
   const [state, action, pending] = useActionState(createProductGroup, undefined);
   useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
   return (
@@ -141,7 +142,8 @@ function NewGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () =>
   );
 }
 
-function NewProductForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
+/** Yangi mahsulot — ingredient tanlagichda ham ishlatiladi. */
+export function NewProductForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
   const [state, action, pending] = useActionState(createCatalogProduct, undefined);
   // Mavjud nom kiritilgan bo'lsa server yangisini ochmaydi, mavjudini yangilaydi va shuni aytadi
   useEffect(() => { if (state?.ok && !state.note) onDone(); }, [state, onDone]);

@@ -7,12 +7,13 @@ import { RecipeForm } from "../recipe-form";
 import { unitLabel } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
 import { productCatalog } from "@/lib/product-catalog";
-import type { IngredientRow } from "@/components/ingredient-picker";
+import { canEditMaterials, canEditProducts } from "@/lib/catalog";
+import type { IngredientGroup, IngredientRow } from "@/components/ingredient-picker";
 import { Pencil } from "lucide-react";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  await requireSession(["PRODUCTION"]);
+  const s = await requireSession(["PRODUCTION"]);
   const [p, materials, materialGroups, catalog] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },
@@ -31,7 +32,11 @@ export default async function RecipePage({ params }: { params: Promise<{ product
     ...materials.map((m) => ({ id: m.id, kind: "material" as const, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId })),
     ...catalog.products.map((x) => ({ id: x.id, kind: "product" as const, name: x.name, code: x.code, unit: x.rawUnit, groupId: x.groupId })),
   ];
-  const groups = [...materialGroups, ...catalog.groups];
+  // Papka qaysi ro'yxatdan ekani belgilanadi — ochiq papkaga to'g'ri turdagi yozuv qo'shish uchun
+  const groups: IngredientGroup[] = [
+    ...materialGroups.map((g) => ({ ...g, kind: "material" as const })),
+    ...catalog.groups.map((g) => ({ ...g, kind: "product" as const })),
+  ];
   const initial = active
     ? active.items.map((i) => {
         const ing = ingredientOf(i);
@@ -64,7 +69,7 @@ export default async function RecipePage({ params }: { params: Promise<{ product
           </Card>
           <Card>
             <h2 className="mb-3 font-semibold">{active ? "Yangi versiya" : "Birinchi versiya"}</h2>
-            <RecipeForm productId={productId} unit={unitLabel(p.unit)} ingredients={ingredients} groups={groups} initial={initial} />
+            <RecipeForm productId={productId} unit={unitLabel(p.unit)} ingredients={ingredients} groups={groups} canCreateMaterial={canEditMaterials(s.role)} canCreateProduct={canEditProducts(s.role)} initial={initial} />
           </Card>
         </div>
         <div>

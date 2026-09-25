@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { productCatalog } from "@/lib/product-catalog";
+import { canEditProducts } from "@/lib/catalog";
 import { requireSession } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import { AddForm } from "./add-form";
@@ -22,7 +23,7 @@ export default async function AddStockPage() {
       <AddForm
         products={catalog.products}
         groups={catalog.groups}
-        canCreateProduct={["WAREHOUSE", "PRODUCTION", "DIRECTOR"].includes(s.role)}
+        canCreateProduct={canEditProducts(s.role)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))}
       />
     </div>

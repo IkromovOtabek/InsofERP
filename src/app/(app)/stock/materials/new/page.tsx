@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/auth";
 import { Card, Field, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
+import { canEditMaterials } from "@/lib/catalog";
 import { importMaterials } from "../../actions";
 import { MaterialsForm, type MaterialOpt } from "../materials-form";
 import { cn } from "@/lib/utils";
@@ -87,7 +88,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
         </Card>
       )}
 
-      {current === "manual" && <Card><MaterialsForm existing={existing} groups={groups} canCreate={["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(s.role)}>{whSelect}</MaterialsForm></Card>}
+      {current === "manual" && <Card><MaterialsForm existing={existing} groups={groups} canCreate={canEditMaterials(s.role)}>{whSelect}</MaterialsForm></Card>}
     </div>
   );
 }

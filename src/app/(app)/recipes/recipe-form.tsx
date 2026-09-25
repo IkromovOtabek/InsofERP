@@ -5,8 +5,7 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useActionState, useState } from "react";
 import { createRecipeVersion } from "./actions";
 import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
-import { IngredientField, type IngredientRow } from "@/components/ingredient-picker";
-import type { PickerGroup } from "@/components/folder-picker";
+import { IngredientField, type IngredientGroup, type IngredientRow } from "@/components/ingredient-picker";
 import { cn } from "@/lib/utils";
 
 type Row = { key: number; ing: IngredientRow | null; qtyPerM3: string };
@@ -19,10 +18,12 @@ type Row = { key: number; ing: IngredientRow | null; qtyPerM3: string };
  * zames qilinganda ikkalasining ham sklad qoldig'i shunga qarab kamayadi.
  * Har saqlashda yangi versiya ochiladi, eskisi tarixda qoladi.
  */
-export function RecipeForm({ productId, ingredients, groups, initial, unit = "m³", returnTo }: {
+export function RecipeForm({ productId, ingredients, groups, canCreateMaterial, canCreateProduct, initial, unit = "m³", returnTo }: {
   productId: string;
   ingredients: IngredientRow[];
-  groups: PickerGroup[];
+  groups: IngredientGroup[];
+  canCreateMaterial?: boolean;
+  canCreateProduct?: boolean;
   initial: { ing: IngredientRow; qtyPerM3: string }[];
   unit?: string;
   returnTo?: string;
@@ -68,7 +69,7 @@ export function RecipeForm({ productId, ingredients, groups, initial, unit = "m�
                 <td className="px-2 py-1.5">
                   <input type="hidden" name="kind[]" value={r.ing?.kind ?? ""} />
                   <input type="hidden" name="refId[]" value={r.ing?.id ?? ""} />
-                  <IngredientField ingredients={ingredients} groups={groups} value={r.ing?.id ?? ""} onPick={(ing) => update(r.key, { ing })} />
+                  <IngredientField ingredients={ingredients} groups={groups} canCreateMaterial={canCreateMaterial} canCreateProduct={canCreateProduct} value={r.ing?.id ?? ""} onPick={(ing) => update(r.key, { ing })} />
                 </td>
                 <td className="px-2 py-1.5 pt-3.5 text-slate-500">{r.ing?.unit || "—"}</td>
                 <td className="px-2 py-1.5">

@@ -9,6 +9,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { codeFromName, flatName } from "@/lib/excel";
 import { nextMaterialGroupCode } from "@/lib/material-groups";
 import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
+import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -16,7 +17,7 @@ import type { Prisma } from "@/generated/prisma";
  * ro'yxat oynasi (mahsulot spravochnigining aynan o'zi, faqat xomashyo uchun).
  * Papka va xomashyo shu oynadan qo'shiladi.
  */
-const MATERIAL_ROLES = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"] as const;
+const MATERIAL_ROLES = MATERIAL_CATALOG_ROLES;
 
 /** Xomashyo kodi nomdan yasaladi; band bo'lsa oxiriga raqam qo'shiladi. */
 async function freeCode(tx: Prisma.TransactionClient, want: string, name: string): Promise<string> {
@@ -157,6 +158,6 @@ function refresh() {
   revalidatePath("/stock/materials/new");
   revalidatePath("/stock/supply/new");
   revalidatePath("/receipts/new");
-  revalidatePath("/recipes");
+  revalidatePath("/recipes", "layout"); // ro'yxat ham, har mahsulot retsepti ham (ingredient tanlagich)
   revalidatePath("/settings");
 }

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { canEditMaterials } from "@/lib/catalog";
 import { requireSession } from "@/lib/auth";
 import { Card, PageHeader } from "@/components/ui";
 import { SupplyForm, type SupplyOpt } from "../supply-form";
@@ -26,7 +27,7 @@ export default async function NewSupplyRequestPage() {
     <div>
       <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Kerakli mahsulotlar jadvali"
         subtitle="Skladga nima kerakligini yozasiz — jadval snabjeniyega ketadi, u narx qo'yadi va jami summa chiqadi." />
-      <Card><SupplyForm options={options} low={low} groups={groups} canCreate={["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(s.role)} warehouses={warehouses} /></Card>
+      <Card><SupplyForm options={options} low={low} groups={groups} canCreate={canEditMaterials(s.role)} warehouses={warehouses} /></Card>
     </div>
   );
 }

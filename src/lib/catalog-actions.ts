@@ -8,7 +8,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { flatName, num, str } from "@/lib/excel";
 import { normalizeUnit, PRODUCT_UNITS } from "@/lib/unit";
-import { PRODUCT_KINDS } from "@/lib/catalog";
+import { PRODUCT_KINDS, PRODUCT_CATALOG_ROLES } from "@/lib/catalog";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -17,7 +17,7 @@ import type { Prisma } from "@/generated/prisma";
  * sotuvchi va sklad xodimiga ham ruxsat bor (Sozlamalardagi "Beton markalari" —
  * avvalgidek faqat direktorda).
  */
-const CATALOG_ROLES = ["SALES", "PRODUCTION", "WAREHOUSE", "DIRECTOR"] as const;
+const CATALOG_ROLES = PRODUCT_CATALOG_ROLES;
 
 /** Kod berilmasa — ro'yxatdagi eng katta raqamli koddan keyingisi (1C dagidek). */
 async function nextCatalogCode(tx: Prisma.TransactionClient): Promise<string> {

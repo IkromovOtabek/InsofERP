@@ -1,14 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Minus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FolderPlus, Minus, Plus } from "lucide-react";
 import { FolderPicker, type PickerGroup } from "@/components/folder-picker";
+import { NewProductForm, NewProductGroupForm } from "@/components/product-picker";
+import { NewMaterialForm, NewMaterialGroupForm } from "@/components/material-picker";
 import { unitLabel } from "@/lib/unit";
-import { Badge, inputCls } from "@/components/ui";
+import { Badge, Button, inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /** Retsept ingrediyenti — xomashyo yoki boshqa mahsulot (masalan FBS blok) bo'lishi mumkin. */
 export type IngredientRow = { id: string; kind: "material" | "product"; name: string; code: string; unit: string; groupId: string | null };
+
+/** Papka qaysi ro'yxatdan ekani — ochiq papkaga to'g'ri turdagi yozuv qo'shish uchun. */
+export type IngredientGroup = PickerGroup & { kind: "material" | "product" };
+
+type Panel = "material" | "product" | "materialGroup" | "productGroup" | null;
 
 /** Nom yoki kod bo'yicha filtr: avval nomi shu harflar bilan boshlanadiganlar. */
 function filterIngredients(list: IngredientRow[], term: string) {
@@ -25,14 +33,24 @@ function filterIngredients(list: IngredientRow[], term: string) {
  * ekani ("Xomashyo" / "Mahsulot") ko'rinadi. Bu yerdan yangi yozuv qo'shilmaydi —
  * kerak bo'lsa Sklad → Xomashyo qo'shish yoki mahsulot spravochnigidan kiritiladi.
  */
-export function IngredientPicker({ open, ingredients, groups, initialQuery, onPick, onClose }: {
+export function IngredientPicker({ open, ingredients, groups, canCreateMaterial = false, canCreateProduct = false, initialQuery, onPick, onClose }: {
   open: boolean;
   ingredients: IngredientRow[];
-  groups: PickerGroup[];
+  groups: IngredientGroup[];
+  canCreateMaterial?: boolean;
+  canCreateProduct?: boolean;
   initialQuery?: string;
   onPick: (row: IngredientRow) => void;
   onClose: () => void;
 }) {
+  const router = useRouter();
+  const [panel, setPanel] = useState<Panel>(null);
+  useEffect(() => { if (!open) setPanel(null); }, [open]);
+  const toggle = (p: Panel) => setPanel((cur) => (cur === p ? null : p));
+  const afterCreate = () => { setPanel(null); router.refresh(); };
+  /** Ochiq papka xomashyoniki yoki mahsulotniki — ildizda (papkasiz) ikkalasi ham taklif qilinadi. */
+  const folderKind = (groupId: string | null) => (groupId ? groups.find((g) => g.id === groupId)?.kind ?? null : null);
+
   return (
     <FolderPicker
       open={open}
@@ -55,6 +73,44 @@ export function IngredientPicker({ open, ingredients, groups, initialQuery, onPi
       footerHint="Papkani ochish yoki tanlash — ikki marta bosing"
       onPick={(id) => { const x = ingredients.find((r) => r.id === id); if (x) onPick(x); }}
       onClose={onClose}
+      /* Yangi yozuv shu yerdan ham qo'shiladi — Sklad yoki zayavkaga o'tish shart emas.
+         Ochiq papka xomashyoniki bo'lsa xomashyo, mahsulotniki bo'lsa mahsulot taklif qilinadi. */
+      tools={(ctx) => {
+        const kind = folderKind(ctx.groupId);
+        const showMaterial = canCreateMaterial && kind !== "product";
+        const showProduct = canCreateProduct && kind !== "material";
+        return (
+          <>
+            {showMaterial && (
+              <Button type="button" size="sm" variant="secondary" onClick={() => toggle("material")}>
+                <Plus size={15} /> Yangi xomashyo
+              </Button>
+            )}
+            {showProduct && (
+              <Button type="button" size="sm" variant="secondary" onClick={() => toggle("product")}>
+                <Plus size={15} /> Yangi mahsulot
+              </Button>
+            )}
+            {kind === "material" && canCreateMaterial && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => toggle("materialGroup")} title="Xomashyo papkasi">
+                <FolderPlus size={15} /> Papka
+              </Button>
+            )}
+            {kind === "product" && canCreateProduct && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => toggle("productGroup")} title="Mahsulot papkasi">
+                <FolderPlus size={15} /> Papka
+              </Button>
+            )}
+          </>
+        );
+      }}
+      panel={(ctx) => {
+        if (!panel) return null;
+        if (panel === "material") return <NewMaterialForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+        if (panel === "product") return <NewProductForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+        if (panel === "materialGroup") return <NewMaterialGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+        return <NewProductGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
+      }}
     />
   );
 }
@@ -64,9 +120,11 @@ export function IngredientPicker({ open, ingredients, groups, initialQuery, onPi
  * (xomashyo va mahsulot bir ro'yxatda, mahsulotlar "mahsulot" belgisi bilan ajratiladi),
  * oxiridagi "…" tugmasi to'liq spravochnikni (papkalari bilan) ochadi.
  */
-export function IngredientField({ ingredients, groups, value, onPick }: {
+export function IngredientField({ ingredients, groups, canCreateMaterial, canCreateProduct, value, onPick }: {
   ingredients: IngredientRow[];
-  groups: PickerGroup[];
+  groups: IngredientGroup[];
+  canCreateMaterial?: boolean;
+  canCreateProduct?: boolean;
   value: string;
   onPick: (row: IngredientRow) => void;
 }) {
@@ -124,7 +182,7 @@ export function IngredientField({ ingredients, groups, value, onPick }: {
         </div>
       )}
 
-      <IngredientPicker open={modal} ingredients={ingredients} groups={groups} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />
+      <IngredientPicker open={modal} ingredients={ingredients} groups={groups} canCreateMaterial={canCreateMaterial} canCreateProduct={canCreateProduct} initialQuery={q ?? ""} onPick={choose} onClose={() => setModal(false)} />
     </div>
   );
 }

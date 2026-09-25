@@ -3,6 +3,7 @@ import { customerMarks, markedName } from "@/lib/finance";
 import { requireSession } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import { productCatalog } from "@/lib/product-catalog";
+import { canEditProducts } from "@/lib/catalog";
 import { BatchForm } from "../batch-form";
 import { unitLabel, soleUnit } from "@/lib/unit";
 
@@ -32,7 +33,7 @@ export default async function NewBatch() {
         orders={orderOpts}
         products={catalog.products}
         groups={catalog.groups}
-        canCreateProduct={["PRODUCTION", "DIRECTOR"].includes(s.role)}
+        canCreateProduct={canEditProducts(s.role)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))}
       />
     </div>

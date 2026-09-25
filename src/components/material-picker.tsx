@@ -104,14 +104,15 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
       panel={(ctx) => {
         if (!canCreate || !panel) return null;
         return panel === "group"
-          ? <NewGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />
+          ? <NewMaterialGroupForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />
           : <NewMaterialForm ctx={ctx} onDone={afterCreate} onCancel={() => setPanel(null)} />;
       }}
     />
   );
 }
 
-function NewGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
+/** Yangi xomashyo papkasi — ingredient tanlagichda ham ishlatiladi. */
+export function NewMaterialGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
   const [state, action, pending] = useActionState(createMaterialGroup, undefined);
   useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
   return (
@@ -129,7 +130,8 @@ function NewGroupForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () =>
   );
 }
 
-function NewMaterialForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
+/** Yangi xomashyo — ingredient tanlagichda ham ishlatiladi. */
+export function NewMaterialForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onDone: () => void; onCancel: () => void }) {
   const [state, action, pending] = useActionState(createCatalogMaterial, undefined);
   useEffect(() => { if (state?.ok && !state.note) onDone(); }, [state, onDone]);
   return (
