@@ -2,11 +2,16 @@ import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { employeeFilePath } from "@/lib/uploads";
+import { getSession } from "@/lib/auth";
+import { pathAllowed } from "@/lib/nav";
 
 export const dynamic = "force-dynamic";
 
 /** GET /employees/[id]/surat — xodimning 3x4 surati. Login middleware'da tekshiriladi. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  // Ikkinchi qulf: xodim hujjatlari faqat /employees ga kirish huquqi borlarga
+  const s = await getSession();
+  if (!s || !pathAllowed("/employees", s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id } = await params;
   const e = await db.employee.findUnique({ where: { id }, select: { photo: true } });
   const p = e?.photo ? employeeFilePath(e.photo) : null;

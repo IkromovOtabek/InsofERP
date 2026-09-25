@@ -15,8 +15,10 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   if (!botEnabled()) return NextResponse.json({ error: "BOT_DISABLED" }, { status: 503 });
 
+  // Sir sozlanmagan bo'lsa endpoint ishlamaydi: aks holda istalgan kishi botga soxta update yuborardi
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret && req.headers.get("x-telegram-bot-api-secret-token") !== secret) {
+  if (!secret) return NextResponse.json({ error: "TELEGRAM_WEBHOOK_SECRET sozlanmagan" }, { status: 503 });
+  if (req.headers.get("x-telegram-bot-api-secret-token") !== secret) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -31,5 +33,5 @@ export async function POST(req: Request) {
 
 /** Tirikligini tekshirish uchun. */
 export function GET() {
-  return NextResponse.json({ ok: true, bot: botEnabled() });
+  return NextResponse.json({ ok: true, bot: botEnabled(), configured: !!process.env.TELEGRAM_WEBHOOK_SECRET });
 }

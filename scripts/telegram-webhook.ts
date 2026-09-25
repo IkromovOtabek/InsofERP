@@ -29,7 +29,7 @@ async function main() {
   if (!base.startsWith("https://")) { console.error("Telegram faqat HTTPS manzilni qabul qiladi."); process.exit(1); }
   const url = `${base}/api/telegram/webhook`;
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!secret) console.warn("Ogohlantirish: TELEGRAM_WEBHOOK_SECRET yo'q — endpoint himoyalanmagan bo'ladi.");
+  if (!secret) { console.error("TELEGRAM_WEBHOOK_SECRET yo'q (.env) — webhook endpoint sirsiz ishlamaydi. Yarating: openssl rand -hex 24"); process.exit(1); }
 
   await setWebhook(url, secret);
   await setMyCommands(BOT_COMMANDS);

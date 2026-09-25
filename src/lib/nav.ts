@@ -74,6 +74,18 @@ export const ROLE_LABELS: Record<Role, string> = {
   DRIVER: "Haydovchi",
 };
 
+/**
+ * Yo'l darajasidagi ruxsat: yo'l NAV'dagi qaysi bo'limga tegishli bo'lsa, shu rollar kiradi.
+ * Middleware (sahifa) ham, fayl beruvchi marshrutlar ham shu qoidadan foydalanadi —
+ * ikki joyda ikki xil ro'yxat bo'lib qolmasin.
+ */
+export function pathAllowed(pathname: string, role: Role) {
+  if (role === "DIRECTOR") return true;
+  const item = NAV.filter((i) => pathname.startsWith(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
+  if (!item) return true;
+  return item.roles === "all" || item.roles.includes(role);
+}
+
 export function navFor(role: Role) {
   const items = NAV.filter(
     (i) => !i.hidden && (i.roles === "all" || role === "DIRECTOR" || i.roles.includes(role)),

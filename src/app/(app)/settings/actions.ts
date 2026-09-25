@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession, hashPassword } from "@/lib/auth";
+import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
+import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, type ActionState } from "@/lib/action";
 
@@ -130,7 +131,7 @@ export async function saveCashAccount(id: string | null, _prev: ActionState, fd:
 const userSchema = z.object({
   login: zStr("Login kerak").transform((v) => v.toLowerCase()),
   fullName: zStr("F.I.O. kerak"),
-  password: z.string().min(6, "Parol kamida 6 belgi"),
+  password: z.string().superRefine((v, ctx) => { const problem = passwordProblem(v); if (problem) ctx.addIssue({ code: "custom", message: problem }); }),
   role: z.enum(ROLES),
 });
 
@@ -151,6 +152,8 @@ export async function toggleUser(id: string) {
   if (s.userId === id) return;
   const u = await db.user.findUniqueOrThrow({ where: { id } });
   await db.user.update({ where: { id }, data: { isActive: !u.isActive } });
+  // Hisob yopilganda uning ochiq veb/mobil sessiyalari ham shu zahoti tugaydi
+  if (u.isActive) await revokeSessions(db, id);
   await audit(db, s.userId, "UPDATE", "User", id, { isActive: u.isActive }, { isActive: !u.isActive });
   refresh();
 }
@@ -158,8 +161,11 @@ export async function toggleUser(id: string) {
 export async function resetPassword(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const pw = String(fd.get("password") ?? "");
-  if (pw.length < 6) return { error: "Parol kamida 6 belgi" };
+  const problem = passwordProblem(pw);
+  if (problem) return { error: problem };
   await db.user.update({ where: { id }, data: { passwordHash: await hashPassword(pw) } });
+  // Eski sessiyalar kuyadi; direktor o'z parolini almashtirgan bo'lsa unga yangi cookie beriladi
+  await revokeSessions(db, id, { keepCurrent: s.userId === id });
   await audit(db, s.userId, "UPDATE", "User", id, undefined, { passwordReset: true });
   refresh();
   return { ok: true };

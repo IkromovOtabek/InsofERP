@@ -2,7 +2,8 @@ import { randomInt } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, revokeSessions } from "@/lib/auth";
+import { passwordProblem } from "@/lib/password-policy";
 import { sendSms } from "@/lib/sms";
 import { normalizePhone } from "@/lib/sms/phone";
 
@@ -23,7 +24,6 @@ import { normalizePhone } from "@/lib/sms/phone";
 const CODE_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_HOUR = 3;
-export const MIN_PASSWORD = 6;
 
 /** `devCode` — faqat dev'da (SMS_PROVIDER ESKIZ emas): kodni ekranda ko'rsatish uchun. */
 export type ResetRequest = { ok: true; sent: boolean; devCode?: string } | { ok: false; error: string };
@@ -108,7 +108,8 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
 export async function confirmPasswordReset(rawPhone: string, code: string, newPassword: string): Promise<ResetConfirm> {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { ok: false, error: "Telefon raqami noto'g'ri" };
-  if (newPassword.length < MIN_PASSWORD) return { ok: false, error: `Parol kamida ${MIN_PASSWORD} belgi bo'lsin` };
+  const problem = passwordProblem(newPassword);
+  if (problem) return { ok: false, error: problem };
 
   const found = await employeeByPhone(phone);
   if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_ERROR };
@@ -132,6 +133,7 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
 
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: found.user.id }, data: { passwordHash: await hashPassword(newPassword) } });
+    await revokeSessions(tx, found.user.id); // parol almashdi — eski sessiyalar (telefonini yo'qotgan bo'lsa ham) kuyadi
     await tx.passwordResetCode.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
     // Qolgan ochiq kodlar ham kuyadi — bittasi ishlatildi, boshqasi kerak emas
     await tx.passwordResetCode.updateMany({ where: { userId: found.user.id, usedAt: null }, data: { usedAt: new Date() } });

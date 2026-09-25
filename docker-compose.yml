@@ -4,10 +4,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Faqat lokal ishlab chiqish uchun. Serverda bo'sh qoldirilmasin: POSTGRES_PASSWORD=... bilan ishga tushiriladi.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: insof_erp
     ports:
-      - "5432:5432"
+      # Faqat shu kompyuterdan ulanish mumkin — tashqi tarmoqqa port ochilmaydi
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 volumes:

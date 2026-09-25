@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { PASSWORD_HINT } from "@/lib/password-policy";
 import Link from "next/link";
 import { ArrowLeft, KeyRound, MessageSquare, ShieldCheck } from "lucide-react";
 import { confirmResetAction, requestCodeAction } from "./actions";
@@ -57,7 +58,7 @@ export default function ResetPage() {
                 <Field label="SMS'dagi kod">
                   <Input name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus placeholder="000000" className="tracking-[0.5em]" />
                 </Field>
-                <Field label="Yangi parol" hint="Kamida 6 belgi">
+                <Field label="Yangi parol" hint={PASSWORD_HINT}>
                   <PasswordInput name="password" autoComplete="new-password" placeholder="••••••••" />
                 </Field>
                 <Field label="Yangi parolni takrorlang">

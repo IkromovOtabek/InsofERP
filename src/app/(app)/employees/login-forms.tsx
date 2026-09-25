@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { PASSWORD_HINT } from "@/lib/password-policy";
 import { KeyRound, Lock, LockOpen, UserPen } from "lucide-react";
 import { changeLogin, resetEmployeePassword, toggleEmployeeLogin } from "./actions";
 import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
@@ -26,7 +27,7 @@ export function ResetPasswordForm({ employeeId }: { employeeId: string }) {
   return (
     <form action={action} className="space-y-2">
       <div className="flex flex-wrap items-end gap-2">
-        <Field label="Yangi parol" hint="Kamida 6 belgi" className="min-w-40 flex-1">
+        <Field label="Yangi parol" hint={PASSWORD_HINT} className="min-w-40 flex-1">
           <PasswordInput name="password" autoComplete="new-password" required minLength={6} placeholder="••••••••" />
         </Field>
         <Button variant="secondary" disabled={pending}><KeyRound size={15} /> Parolni almashtirish</Button>

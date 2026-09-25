@@ -10,7 +10,11 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86400000);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000);
 
 async function main() {
-  const pw = await bcrypt.hash("admin123", 10);
+  // Production'da standart parol bilan seed qilinmaydi — SEED_ADMIN_PASSWORD beriladi
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? (process.env.NODE_ENV === "production" ? "" : "admin123");
+  if (!adminPassword) throw new Error("SEED_ADMIN_PASSWORD kerak (production'da admin123 ishlatilmaydi)");
+  const staffPassword = process.env.SEED_STAFF_PASSWORD ?? "parol123";
+  const pw = await bcrypt.hash(adminPassword, 10);
   await db.user.upsert({
     where: { login: "admin" },
     update: {},
@@ -137,10 +141,10 @@ async function main() {
     { login: "kassa1", fullName: "Shahnoza Rustamova", position: "Kassa / bank" },
   ];
   if (!salesUser) {
-    salesUser = await db.user.create({ data: { login: "sotuv1", passwordHash: await bcrypt.hash("parol123", 10), fullName: "Dilnoza Yusupova", role: "SALES" } });
+    salesUser = await db.user.create({ data: { login: "sotuv1", passwordHash: await bcrypt.hash(staffPassword, 10), fullName: "Dilnoza Yusupova", role: "SALES" } });
     await db.employee.create({ data: { fullName: salesUser.fullName, position: "Sotuv", userId: salesUser.id } });
   }
-  const staffPw = await bcrypt.hash("parol123", 10);
+  const staffPw = await bcrypt.hash(staffPassword, 10);
   const roleUsers: Record<string, { userId: string }> = {};
   for (const u of roleUsersDef) {
     const role = roleForPosition(u.position)!;

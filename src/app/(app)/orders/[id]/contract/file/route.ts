@@ -2,11 +2,16 @@ import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { contractFilePath } from "@/lib/uploads";
+import { getSession } from "@/lib/auth";
+import { pathAllowed } from "@/lib/nav";
 
 export const dynamic = "force-dynamic";
 
 /** GET /orders/[id]/contract/file — tizimga yuklangan (Didox'da imzolangan) shartnoma faylini ko'rsatadi. Login middleware'da tekshiriladi. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  // Ikkinchi qulf: middleware'dan tashqari marshrutning o'zi ham sessiya va rolni tekshiradi
+  const s = await getSession();
+  if (!s || !pathAllowed("/orders", s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id } = await params;
   const o = await db.order.findUnique({ where: { id }, select: { contractNo: true, contractFile: true, contractFileName: true, contractFileType: true } });
   const p = o?.contractFile ? contractFilePath(o.contractFile) : null;

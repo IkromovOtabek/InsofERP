@@ -1,9 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { NAV } from "@/lib/nav";
+import { pathAllowed } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
-
-const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret");
+import { authSecret, JWT_ALGS } from "@/lib/secret";
 
 /**
  * Login talab qilmaydigan yo'llar: ommaviy taqdimot, login, QR tekshiruv, Telegram va Insof ECO webhook'lari
@@ -13,19 +12,13 @@ const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-se
 const isPublic = (p: string) =>
   p.startsWith("/taqdimot") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile");
 
-/** Sahifa darajasidagi ruxsat: yo'l NAV'dagi qaysi bo'limga tegishli bo'lsa, shu rollar kiradi. */
-function allowed(pathname: string, role: Role) {
-  if (role === "DIRECTOR") return true;
-  const item = NAV.filter((i) => pathname.startsWith(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
-  if (!item) return true;
-  return item.roles === "all" || item.roles.includes(role);
-}
-
 export async function middleware(req: NextRequest) {
   const token = req.cookies.get("insof_session")?.value;
   let role: Role | null = null;
   if (token) {
-    try { role = (await jwtVerify(token, secret())).payload.role as Role; } catch { role = null; }
+    // Bu yerda faqat imzo va muddat (Edge'da baza yo'q); hisob faolligi va sessionVersion
+    // sahifa/action ichida `getSession` da bazadan tekshiriladi.
+    try { role = (await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS })).payload.role as Role; } catch { role = null; }
   }
   const { pathname } = req.nextUrl;
 
@@ -39,7 +32,7 @@ export async function middleware(req: NextRequest) {
   if (role === "DRIVER" && !pathname.startsWith("/mening-reyslarim") && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/mening-reyslarim", req.url));
   }
-  if (!allowed(pathname, role)) return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
+  if (!pathAllowed(pathname, role)) return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
   return NextResponse.next();
 }
 

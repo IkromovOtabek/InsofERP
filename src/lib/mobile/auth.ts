@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
+import { authSecret, JWT_ALGS } from "@/lib/secret";
 
 /**
  * Mobil ilova (Insof ECO) uchun autentifikatsiya — ERP login/paroli bo'yicha.
@@ -14,9 +15,9 @@ import type { Role } from "@/generated/prisma";
  * Refresh token bazada saqlanmaydi (ERP'da Session jadvali yo'q): u ham JWT,
  * lekin uzoq muddatli va faqat yangi juftlik olish uchun. Xodim `isActive`
  * bo'lmay qolsa — yangilashda ham, har so'rovda ham darhol rad etiladi.
+ * Tokenda `sv` (User.sessionVersion) bor: parol almashsa yoki hisob yopilsa
+ * eski access va refresh tokenlar birdaniga kuyadi — 30 kun kutilmaydi.
  */
-
-const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret");
 
 const ACCESS_TTL = "12h";
 const REFRESH_TTL = "30d";
@@ -32,15 +33,17 @@ const toUser = (u: { id: string; login: string; fullName: string; role: Role }):
   id: u.id, login: u.login, fullName: u.fullName, role: u.role, roleLabel: ROLE_LABELS[u.role],
 });
 
-async function sign(user: { id: string; login: string; role: Role }, typ: "access" | "refresh") {
-  return new SignJWT({ sub: user.id, login: user.login, role: user.role, typ })
+type DbUser = { id: string; login: string; fullName: string; role: Role; sessionVersion: number };
+
+async function sign(user: DbUser, typ: "access" | "refresh") {
+  return new SignJWT({ sub: user.id, login: user.login, role: user.role, typ, sv: user.sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(typ === "access" ? ACCESS_TTL : REFRESH_TTL)
-    .sign(secret());
+    .sign(authSecret());
 }
 
-async function issue(u: { id: string; login: string; fullName: string; role: Role }): Promise<MobileTokens & { user: MobileUser }> {
+async function issue(u: DbUser): Promise<MobileTokens & { user: MobileUser }> {
   const [accessToken, refreshToken] = await Promise.all([sign(u, "access"), sign(u, "refresh")]);
   return { accessToken, refreshToken, user: toUser(u) };
 }
@@ -59,14 +62,15 @@ export async function mobileRefresh(refreshToken: string) {
   const payload = await verify(refreshToken, "refresh");
   const user = await db.user.findUnique({ where: { id: payload.sub } });
   if (!user || !user.isActive) throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
+  if ((payload.sv ?? 0) !== user.sessionVersion) throw new MobileAuthError("TOKEN_INVALID", "Qayta kiring");
   return issue(user);
 }
 
 async function verify(token: string, typ: "access" | "refresh") {
   try {
-    const { payload } = await jwtVerify(token, secret());
+    const { payload } = await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS });
     if (payload.typ !== typ) throw new Error("wrong typ");
-    return payload as unknown as { sub: string; login: string; role: Role; typ: string };
+    return payload as unknown as { sub: string; login: string; role: Role; typ: string; sv?: number };
   } catch {
     throw new MobileAuthError("TOKEN_INVALID", typ === "refresh" ? "Qayta kiring" : "Sessiya muddati tugagan");
   }
@@ -80,5 +84,6 @@ export async function requireMobileUser(req: Request): Promise<MobileUser> {
   const payload = await verify(token, "access");
   const user = await db.user.findUnique({ where: { id: payload.sub } });
   if (!user || !user.isActive) throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
+  if ((payload.sv ?? 0) !== user.sessionVersion) throw new MobileAuthError("TOKEN_INVALID", "Sessiya muddati tugagan");
   return toUser(user);
 }

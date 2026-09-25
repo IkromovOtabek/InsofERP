@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession, hashPassword } from "@/lib/auth";
+import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
+import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import type { Role } from "@/generated/prisma";
@@ -122,7 +123,8 @@ async function loginSms(template: "login_granted" | "password_changed", phone: s
 async function createLoginFor(tx: Prisma.TransactionClient, fullName: string, role: Role | null, login: string, password: string) {
   if (!role) throw new Error("Bu lavozim uchun tizim roli yo'q");
   if (login.length < 3) throw new Error("Login kamida 3 belgi");
-  if (password.length < 6) throw new Error("Parol kamida 6 belgi");
+  const problem = passwordProblem(password);
+  if (problem) throw new Error(problem);
   return tx.user.create({ data: { login: login.toLowerCase(), fullName, role, passwordHash: await hashPassword(password) } });
 }
 
@@ -413,9 +415,11 @@ export async function resetEmployeePassword(employeeId: string, _prev: ActionSta
   const t = await loginTarget(employeeId, s.userId);
   if ("error" in t) return { error: t.error };
   const password = String(fd.get("password") ?? "");
-  if (password.length < 6) return { error: "Parol kamida 6 belgi" };
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem };
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: t.user.id }, data: { passwordHash: await hashPassword(password) } });
+    await revokeSessions(tx, t.user.id); // xodimning eski veb/mobil sessiyalari tugaydi
     await audit(tx, s.userId, "UPDATE", "User", t.user.id, undefined, { passwordReset: true });
   });
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/settings");
