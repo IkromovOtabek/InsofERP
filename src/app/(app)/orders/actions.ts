@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
+import { createStockOrder as createStockOrderDomain, STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { saveContractFile, removeContractFile } from "@/lib/uploads";
@@ -94,15 +95,54 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
   redirect(q ? `/orders/${res.id}?${q}` : `/orders/${res.id}`);
 }
 
+const stockSchema = z.object({
+  dueDate: zStr("Tayyor bo'lish muddati kerak"),
+  isUrgent: z.string().optional().transform((v) => v === "on"),
+  note: zOpt,
+  productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
+  qty: z.array(z.coerce.number().positive("miqdor 0 dan katta bo'lsin")),
+});
+
+/**
+ * Sklad zayavkasi (zaxiraga ishlab chiqarish): mijozsiz, narxsiz.
+ * Qoida `lib/stock-orders.ts` da.
+ */
+export async function createStockOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...STOCK_ORDER_ROLES]);
+  const r = parseForm(stockSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+
+  let res;
+  try {
+    res = await createStockOrderDomain(
+      {
+        dueDate: new Date(d.dueDate),
+        items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qty[i]! })).filter((i) => i.productId && i.qtyM3 > 0),
+        isUrgent: d.isUrgent,
+        note: d.note,
+      },
+      s.userId,
+    );
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
+  revalidatePath("/orders"); revalidatePath("/production"); revalidatePath("/stock");
+  redirect(`/orders/${res.id}`);
+}
+
 /**
  * Qabul qilish: DRAFT → CONFIRMED (Sotuv bo'limiga o'tadi) yoki BLOCKED (limit yetmaydi — direktor ochadi).
  * Limit tekshiruvi: qarz + ochiq zayavkalar + shu zayavka ≤ limit.
  */
 export async function confirmOrder(id: string) {
-  const s = await requireSession(["SALES"]);
+  // Sklad zayavkasini sotuvdan tashqari ishlab chiqarish/sklad xodimi ham qabul qiladi
+  const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
+  const s = await requireSession(kind === "STOCK" ? [...STOCK_ORDER_ROLES] : ["SALES"]);
   await orderConfirm(id, s.userId); // qoida `lib/orders.ts` da — mobil ilova ham shuni chaqiradi
   revalidatePath(`/orders/${id}`);
-  revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production");
+  revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/stock");
 }
 
 /** BLOCKED → CONFIRMED. Faqat direktor. */
@@ -114,11 +154,28 @@ export async function unblockOrder(id: string) {
 }
 
 export async function cancelOrder(id: string) {
-  const s = await requireSession(["SALES"]);
+  const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
+  const s = await requireSession(kind === "STOCK" ? [...STOCK_ORDER_ROLES] : ["SALES"]);
   const r = await orderCancel(id, s.userId);
   if (r.error) throw new Error(r.error);
   revalidatePath(`/orders/${id}`); revalidatePath("/tasks"); revalidatePath("/brigades");
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
+}
+
+/**
+ * Sklad zayavkasini yopish: so'ralgan zaxira hovliga chiqarib qo'yilgan.
+ * Mijoz zayavkasi bunday yopilmaydi — u schyot/to'lov bo'yicha yopiladi.
+ */
+export async function closeStockOrder(id: string) {
+  const s = await requireSession([...STOCK_ORDER_ROLES]);
+  const o = await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true, status: true } });
+  if (o.kind !== "STOCK") throw new Error("Bu tugma faqat sklad zayavkasi uchun");
+  if (!["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Faqat qabul qilingan sklad zayavkasi yopiladi");
+  await db.$transaction(async (tx) => {
+    await tx.order.update({ where: { id }, data: { status: "CLOSED" } });
+    await audit(tx, s.userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CLOSED", kind: "STOCK" });
+  });
+  revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/production"); revalidatePath("/stock");
 }
 
 /** Mijoz imzolagan kafolat xati qabul qilindi / qaytarildi. */

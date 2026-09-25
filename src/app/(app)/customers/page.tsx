@@ -10,7 +10,8 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const { q, tab = "all" } = await searchParams;
   const [customers, credit, contracted] = await Promise.all([
     db.customer.findMany({
-      where: q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { inn: { contains: q } }, { phone: { contains: q } }] } : undefined,
+      // Ichki "Sklad" kartochkasi mijoz emas — ro'yxatda ko'rinmaydi
+      where: { isInternal: false, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { inn: { contains: q } }, { phone: { contains: q } }] } : {}) },
       orderBy: { name: "asc" },
     }),
     customersCredit(),

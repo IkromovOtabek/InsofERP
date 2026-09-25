@@ -72,7 +72,7 @@ async function PaymentsTab() {
   const [payments, accounts, customers, openInvoices] = await Promise.all([
     db.payment.findMany({ orderBy: { date: "desc" }, take: 200, include: { customer: true, invoice: true, cashAccount: true } }),
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
-    db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, include: { payments: true } }),
   ]);
   const marks = await customerMarks([...customers.map((c) => c.id), ...payments.map((p) => p.customerId)]);

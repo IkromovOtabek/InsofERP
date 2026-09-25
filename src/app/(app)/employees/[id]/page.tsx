@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText, KeyRound, Paperclip, User } from "lucide-react";
+import { FileSignature, FileText, KeyRound, Paperclip, User } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { POSITIONS, positionCatalog } from "@/lib/positions";
@@ -8,25 +8,58 @@ import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, money, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
+import { HR_DOCS, nextOrderNo } from "@/lib/hr-docs";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeCardForm } from "../employee-form";
 import { ChangeLoginForm, ResetPasswordForm, ToggleLoginButton } from "../login-forms";
 import { DismissButton, RestoreButton } from "../dismiss-form";
 import { DeleteDocument, DocumentForms } from "./document-forms";
+import { HrDocsPanel, type HrDocRow } from "./hr-doc-forms";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
   const s = await requireSession(["HR"]);
   const { id } = await params;
-  const [e, catalog, vehicles] = await Promise.all([
+  const [e, catalog, vehicles, orderNos] = await Promise.all([
     db.employee.findUnique({
       where: { id },
-      include: { user: true, vehicle: true, documents: { orderBy: { createdAt: "asc" } }, _count: { select: { trips: true, brigades: true } } },
+      include: {
+        user: true, vehicle: true,
+        documents: { orderBy: { createdAt: "asc" } },
+        hrDocs: { orderBy: { docDate: "desc" } },
+        _count: { select: { trips: true, brigades: true } },
+      },
     }),
     positionCatalog(),
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
+    // Buyruq raqami korxona bo'yicha ketma-ket yuradi — shu yildagilardan keyingisi taklif qilinadi
+    db.hrDocument.findMany({
+      where: { kind: "BUYRUQ", docDate: { gte: new Date(new Date().getFullYear(), 0, 1) } },
+      select: { no: true },
+    }),
   ]);
   if (!e) notFound();
+
+  // Har bir hujjat turi bo'yicha eng oxirgi yozuv — qatorlar shundan tuziladi
+  const lastDoc = new Map<string, (typeof e.hrDocs)[number]>();
+  for (const d of e.hrDocs) if (!lastDoc.has(d.kind)) lastDoc.set(d.kind, d);
+  const hrRows: HrDocRow[] = HR_DOCS.map((spec) => {
+    const d = lastDoc.get(spec.kind) ?? null;
+    return {
+      slug: spec.slug, kind: spec.kind, label: spec.label, hint: spec.hint, fields: spec.fields,
+      id: d?.id ?? null,
+      docDate: d ? isoDate(d.docDate) : null,
+      effectiveAt: d?.effectiveAt ? isoDate(d.effectiveAt) : null,
+      position: d?.position ?? null,
+      salary: d?.salary ? String(d.salary) : null,
+      fixedTerm: d?.fixedTerm ?? false,
+      termUntil: d?.termUntil ? isoDate(d.termUntil) : null,
+      no: d?.no ?? null,
+      reason: d?.reason ?? null,
+      fileName: d?.fileName ?? null,
+      signedAt: d?.signedAt ? dateTime(d.signedAt) : null,
+    };
+  });
   // Lavozim ro'yxati hamma joyda bir xil: bo'limlar + ishchi lavozimlar + Excel'dan qolganlar
   const work = [...catalog.work, ...catalog.strays];
   const drivers = catalog.drivers;
@@ -144,6 +177,29 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             )}
           </Card>
         )}
+
+        <Card className="lg:col-span-2" padded={false}>
+          <div className="border-b border-slate-100 px-5 pt-5">
+            <CardHeader
+              title="Kadr hujjatlari"
+              description="Ariza, anketa, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq va bo'shatish arizasi — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
+              icon={FileSignature}
+            />
+          </div>
+          <HrDocsPanel
+            employeeId={e.id}
+            rows={hrRows}
+            defaults={{
+              today: isoDate(),
+              hiredAt: e.hiredAt ? isoDate(e.hiredAt) : null,
+              firedAt: e.firedAt ? isoDate(e.firedAt) : null,
+              position: e.position,
+              nextNo: nextOrderNo(orderNos.map((x) => x.no)),
+            }}
+            positions={[...new Set([...work, ...drivers])]}
+            accept={EMPLOYEE_ACCEPT}
+          />
+        </Card>
 
         <Card className="lg:col-span-2" padded={false}>
           <div className="border-b border-slate-100 px-5 pt-5">

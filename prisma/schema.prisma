@@ -97,6 +97,9 @@ model Customer {
   phone       String?
   address     String?
   creditLimit Decimal  @default(100000000) @db.Decimal(18, 2) // standart 100 mln; ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
+  /// Ichki "mijoz" — haqiqiy mijoz emas, tizimning o'zi ishlatadi (sklad zaxirasi zayavkasi shu nomga ochiladi).
+  /// Mijozlar ro'yxati, limit, reyting va ECO sinxronidan chiqarib tashlanadi.
+  isInternal  Boolean  @default(false)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -310,6 +313,7 @@ model Employee {
   trips      Trip[]             @relation("TripDriver")
   brigades   Brigade[]          @relation("BrigadeLeader")
   documents  EmployeeDocument[]
+  hrDocs     HrDocument[]
   attendance Attendance[]
 }
 
@@ -327,6 +331,48 @@ model EmployeeDocument {
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
+}
+
+/// Otdel kadr shakllari — tizimda to'ldirilib chop etiladigan hujjatlar
+/// (ariza, anketa, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq, bo'shatish arizasi).
+/// Matni kodda (`lib/hr-docs.ts`), bu yerda faqat to'ldiriladigan maydonlar va imzolangan nusxa.
+enum HrDocKind {
+  ARIZA // ishga qabul qilish arizasi
+  ANKETA // Insof anketasi — shaxsiy varaqa
+  SHARTNOMA // mehnat shartnomasi
+  TILXAT // xodimning majburiyatlari tilxati
+  JAVOBGARLIK // to'liq moddiy javobgarlik shartnomasi
+  BUYRUQ // ishga qabul qilish buyrug'i
+  BOSHATISH // ishdan bo'shatish (o'z xohishi bilan) arizasi
+}
+
+model HrDocument {
+  id          String    @id @default(cuid())
+  employeeId  String
+  kind        HrDocKind
+  no          String? // hujjat raqami — buyruqda «216 K» ko'rinishida
+  docDate     DateTime  @db.Date // hujjat tuzilgan sana
+  effectiveAt DateTime? @db.Date // kuchga kirish sanasi: ishga qabul / bo'shatish sanasi
+  position    String? // hujjatda yozilgan lavozim — keyin karta o'zgarsa ham hujjat o'zgarmaydi
+  salary      Decimal?  @db.Decimal(18, 2) // shartnomadagi oylik ish haqi
+  fixedTerm   Boolean   @default(false) // muddatli shartnomami (false — muddatsiz)
+  termUntil   DateTime? @db.Date // muddatli bo'lsa — qaysi sanagacha
+  reason      String? // bo'shatish sababi yoki izoh
+
+  // Imzolangan nusxa — skanerdan/telefondan yuklanadi, `uploads/employees/` da saqlanadi
+  file     String?
+  fileName String?
+  fileType String?
+  signedAt DateTime? // imzolangan nusxa yuklangan vaqt
+
+  createdById String? // kim tayyorlagani (User.id)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([kind, docDate])
 }
 
 /// Bir xodimning bir kunlik davomati — otdel kadr "Davomat" tabidan belgilaydi.
@@ -567,6 +613,12 @@ model BrigadeMove {
 
 // ───────────────────────── Sotuv: zayavka ─────────────────────────
 
+/// Zayavka kimga: mijozga sotish yoki o'z skladimizga zaxira qilib ishlab chiqarish.
+enum OrderKind {
+  SALE // mijozga sotish — narx, limit, dastavka, schyot bor
+  STOCK // sklad zaxirasi — mijoz yo'q, narx yo'q; tayyor mahsulot hovlida erkin qoldiq bo'lib turadi
+}
+
 enum OrderStatus {
   DRAFT // sotuvchi kiritdi
   BLOCKED // kredit limit oshgan — direktor ochishi kerak
@@ -582,6 +634,9 @@ model Order {
   orderNo          String      @unique
   date             DateTime    @default(now())
   customerId       String
+  /// SALE — oddiy mijoz zayavkasi; STOCK — sklad zaxirasiga ishlab chiqarish (mijozi — ichki "Sklad" kartochkasi).
+  /// STOCK zayavka hech kimga band qilinmaydi: ishlab chiqarilgani hovlida erkin qoldiq bo'ladi.
+  kind             OrderKind   @default(SALE)
   status           OrderStatus @default(DRAFT)
   deliveryDate     DateTime
   deliveryTime     String? // "HH:MM" — soat nechida yetkazish kerak (zayavka kirituvchi kiritadi)

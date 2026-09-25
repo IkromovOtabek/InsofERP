@@ -18,12 +18,12 @@ export async function agentsTab(r: Range) {
   const today = startOfDay(new Date()), tomorrow = addDays(today, 1);
   const [cur, prev, allCreated, last35, users, plans, ops, tomorrowOrders, vehicles] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
-    db.order.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, items: { select: { qtyM3: true, price: true } } } }),
+    db.order.findMany({ where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, items: { select: { qtyM3: true, price: true } } } }),
     loadSales(addDays(today, -35), tomorrow),
     db.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true } }),
     db.salesPlan.findMany({ where: { year: today.getFullYear(), month: today.getMonth() + 1 } }),
     operationsTab(r, "day"),
-    db.order.findMany({ where: { deliveryDate: { gte: tomorrow, lt: addDays(tomorrow, 1) }, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: { select: { name: true } }, items: { select: { qtyM3: true } }, trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } } }, orderBy: { deliveryAddress: "asc" } }),
+    db.order.findMany({ where: { kind: "SALE", deliveryDate: { gte: tomorrow, lt: addDays(tomorrow, 1) }, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: { select: { name: true } }, items: { select: { qtyM3: true } }, trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } } }, orderBy: { deliveryAddress: "asc" } }),
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, select: { capacityM3: true } }),
   ]);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);

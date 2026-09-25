@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { customerCredit } from "@/lib/finance";
@@ -14,7 +14,8 @@ import { TripStatusBadge } from "../../trips/status";
 import { LiveDrivers } from "../../trips/live-drivers";
 import { ecoEnabled } from "@/lib/eco/client";
 import { InvoiceStatusBadge } from "../../invoices/status";
-import { confirmOrder, unblockOrder, cancelOrder, toggleGuarantee } from "../actions";
+import { confirmOrder, unblockOrder, cancelOrder, toggleGuarantee, closeStockOrder } from "../actions";
+import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
 import { ContractForm } from "./contract-form";
 import { contractedIds } from "@/lib/finance";
@@ -24,6 +25,11 @@ import { CONTRACT_ACCEPT } from "@/lib/uploads";
 const STEPS = [
   { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
   { key: "DELIVERED", label: "Yetkazildi" }, { key: "CLOSED", label: "Yopildi" },
+];
+/** Sklad zaxirasi hech qayerga yetkazilmaydi — "Yetkazildi" qadami bo'lmaydi. */
+const STOCK_STEPS = [
+  { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
+  { key: "CLOSED", label: "Zaxira tayyor" },
 ];
 
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ guarantee?: string; contract?: string }> }) {
@@ -48,16 +54,25 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   // Hajm har doim mahsulot birligida: beton m³, ustun/blok dona. Turli birlik bitta
   // songa qo'shilmaydi — 12 m³ + 500 dona "512 m³" emas.
   const itemRows = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
-  const batchRows = o.batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }));
+  // Ishlab chiqarilgani: dona mahsulotni brigada chiqaradi (topshiriq qaydi — o'shanda hovliga kirim
+  // bo'ladi), betonni esa zames. Shuning uchun ikki manba aralashtirilmaydi.
+  const producedRows = [
+    ...o.items.filter((i) => i.product.unit !== "m3" && i.task).map((i) => ({ unit: i.product.unit, qty: Number(i.task!.doneQty) })),
+    ...o.batches.filter((b) => b.product.unit === "m3").map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })),
+  ];
   const orderUnit = soleUnit(itemRows); // aralash birlikli zayavkada — null
   const totalQty = itemRows.reduce((sum, r) => sum + Number(r.qty), 0);
   const shippedM3 = o.trips.filter((t) => t.status !== "CANCELLED").reduce((sum, t) => sum + Number(t.qtyM3), 0);
-  const producedPct = donePercent(batchRows, itemRows);
+  const producedPct = donePercent(producedRows, itemRows);
   const shippedPct = totalQty > 0 ? Math.min(100, (shippedM3 / totalQty) * 100) : 0;
   // To'langan: schyot to'lovlari + zayavkaga bog'langan avans (bir to'lov ikkala joyda bo'lishi mumkin — id bo'yicha bir marta)
   const paidMap = new Map<string, number>();
   for (const i of o.invoices) for (const x of i.payments) paidMap.set(x.id, Number(x.amount));
   for (const x of o.payments) paidMap.set(x.id, Number(x.amount));
+  // Sklad zaxirasi zayavkasi: mijoz, narx, schyot, reys — hech biri yo'q
+  const isStock = o.kind === "STOCK";
+  const canStock = ([...STOCK_ORDER_ROLES] as string[]).includes(s.role) || s.role === "DIRECTOR";
+  const canClose = isStock && ["CONFIRMED", "IN_PRODUCTION"].includes(o.status) && canStock;
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
   const [credit, contractedSet, snapshot] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot()]);
@@ -67,14 +82,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const hasContract = !!o.contractNo && o.contractAmount != null;
   const contractAmount = hasContract ? Number(o.contractAmount) : 0;
   const contractLeft = contractAmount - total; // shartnoma summasidan mahsulot summasi ayirilgan qoldiq
-  const canContract = ["SALES", "ACCOUNTING", "DIRECTOR"].includes(s.role) && o.status !== "CANCELLED";
+  const canContract = !isStock && ["SALES", "ACCOUNTING", "DIRECTOR"].includes(s.role) && o.status !== "CANCELLED";
   const hasFile = !!o.contractFile;
   const fileHref = `/orders/${id}/contract/file`;
   const accepted = SALES_STATUSES.includes(o.status);
 
   const isSales = ["SALES", "DIRECTOR"].includes(s.role);
   const isDirector = s.role === "DIRECTOR";
-  const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && isSales && o.batches.length === 0 && o.trips.length === 0;
+  const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (o.kind === "STOCK" ? canStock : isSales) && o.batches.length === 0 && o.trips.length === 0;
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
   const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
   const needsAssign = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
@@ -82,12 +97,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   return (
     <div>
       <PageHeader
-        back={accepted ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
-        title={`Zayavka ${o.orderNo}`}
-        subtitle={<>{date(o.date)} · {o.createdBy.fullName} · <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} /></>}
+        back={isStock ? { href: "/orders?tur=sklad", label: "Zayavkalar" } : accepted ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
+        title={`${isStock ? "Sklad zayavkasi" : "Zayavka"} ${o.orderNo}`}
+        subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
         action={
           <>
-            {o.status === "DRAFT" && isSales && <form action={confirmOrder.bind(null, id)}><Button variant="success"><CheckCircle2 size={16} /> Qabul qilish</Button></form>}
+            {o.status === "DRAFT" && (isStock ? canStock : isSales) && <form action={confirmOrder.bind(null, id)}><Button variant="success"><CheckCircle2 size={16} /> Qabul qilish</Button></form>}
+            {canClose && <form action={closeStockOrder.bind(null, id)}><Button variant="success"><Boxes size={16} /> Zaxira tayyor — yopish</Button></form>}
             {o.status === "BLOCKED" && isDirector && <form action={unblockOrder.bind(null, id)}><Button variant="success"><Unlock size={16} /> Blokdan chiqarish</Button></form>}
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
@@ -102,7 +118,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           Limit {money(credit.limit)}, ishlatilgan {money(credit.used)} (qarz {money(credit.debt)} + ochiq zayavkalar {money(credit.open)}), bu zayavka {money(total)}. Faqat direktor blokdan chiqara oladi.
         </Callout>
       )}
-      {credit.blacklisted && (
+      {!isStock && credit.blacklisted && (
         <Callout tone="danger" title="Mijoz qora ro'yxatda">
           Limit {money(credit.limit)} to'liq ishlatilgan (qarz {money(credit.debt)}, ochiq zayavkalar {money(credit.open)}).{" "}
           {o.status === "DRAFT" ? "Qabul qilinsa zayavka bloklanadi — avval qarz to'lansin yoki direktor limitni oshirsin." : "Bu mijozga yangi zayavka ochilmaydi; jo'natish va schyot yozishda ehtiyot bo'ling — qarz to'langach belgi avtomatik olinadi."}{" "}
@@ -111,9 +127,12 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       )}
       {o.status === "CONFIRMED" && (
         <Callout tone="success" title="Zayavka qabul qilindi">
-          Zayavka Sotuv bo'limiga o'tdi va ishlab chiqarishga tushdi. Sotuv ro'yxati: <Link href="/sales" className="underline">Sotuv</Link>.
+          {isStock
+            ? <>Zaxira zayavkasi ishlab chiqarishga tushdi. Tayyor bo&apos;lgan mahsulot hovlida <b>erkin qoldiq</b> bo&apos;lib turadi — hech kimga band qilinmaydi. <Link href="/production" className="underline">Ishlab chiqarish</Link>.</>
+            : <>Zayavka Sotuv bo&apos;limiga o&apos;tdi va ishlab chiqarishga tushdi. Sotuv ro&apos;yxati: <Link href="/sales" className="underline">Sotuv</Link>.</>}
         </Callout>
       )}
+      {isStock && o.status === "CLOSED" && <Callout tone="success" title="Zaxira tayyor">So&apos;ralgan mahsulot hovliga chiqarib qo&apos;yilgan — <Link href="/stock?tab=capacity" className="underline">Sklad qoldig&apos;i</Link>.</Callout>}
       {o.status === "CANCELLED" && <Callout tone="warning">Bu zayavka bekor qilingan.</Callout>}
       {hasContract && (
         <Callout tone={hasFile ? (justContracted ? "success" : "info") : "warning"} title={hasFile ? `Shartnoma ${o.contractNo} · ${date(o.contractAt ?? o.createdAt)}` : `Shartnoma ${o.contractNo} saqlandi — Didox'da imzolangan faylni tizimga yuklang`}>
@@ -194,19 +213,46 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
 
       <Card className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <StatusSteps steps={STEPS} current={stepKey} failed={o.status === "BLOCKED"} />
+          <StatusSteps steps={isStock ? STOCK_STEPS : STEPS} current={stepKey} failed={o.status === "BLOCKED"} />
           <OrderStatusBadge status={o.status} />
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Summa" value={money(total)} icon={Wallet} hint={paid > 0 ? `to'landi ${money(paid)}` : undefined} />
-        <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} />
-        <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(batchRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
-        <StatCard label="Jo'natildi" value={orderUnit ? `${qty(shippedM3)} ${unitLabel(orderUnit)}` : qty(shippedM3)} icon={Truck} tone={shippedPct >= 100 ? "success" : "default"} hint={<Progress value={shippedPct} max={100} tone="success" />} />
+      <div className={`grid grid-cols-2 gap-3 ${isStock ? "xl:grid-cols-3" : "xl:grid-cols-4"}`}>
+        {isStock ? (
+          <>
+            {/* Sklad zayavkasida summa yo'q — o'rniga muddat va zaxira holati */}
+            <StatCard label="So'ralgan zaxira" value={fmtUnitTotals(itemRows)} icon={Boxes} hint={o.items.map((i) => i.product.code).join(", ")} />
+            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
+            <StatCard label="Tayyor bo'lish muddati" value={date(o.deliveryDate)} icon={CalendarDays} hint={o.isUrgent ? "zarur — birinchi navbatda" : undefined} />
+          </>
+        ) : (
+          <>
+            <StatCard label="Summa" value={money(total)} icon={Wallet} hint={paid > 0 ? `to'landi ${money(paid)}` : undefined} />
+            <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} />
+            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
+            <StatCard label="Jo'natildi" value={orderUnit ? `${qty(shippedM3)} ${unitLabel(orderUnit)}` : qty(shippedM3)} icon={Truck} tone={shippedPct >= 100 ? "success" : "default"} hint={<Progress value={shippedPct} max={100} tone="success" />} />
+          </>
+        )}
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-5">
+        {isStock ? (
+          <Card className="lg:col-span-2">
+            <CardHeader title="Sklad zayavkasi" icon={Boxes} description="Mijozsiz — zaxiraga ishlab chiqarish" />
+            <DL items={[
+              { k: "Tayyor bo'lish muddati", v: <span className="font-medium">{date(o.deliveryDate)}</span> },
+              { k: "Ustuvorlik", v: o.isUrgent ? <Badge color="red"><Zap size={11} /> Zarur</Badge> : "Oddiy" },
+              { k: "Qayerda qoladi", v: o.deliveryAddress },
+              { k: "Kim ochdi", v: o.createdBy.fullName },
+              ...(o.note ? [{ k: "Izoh", v: o.note }] : []),
+            ]} />
+            <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+              Tayyor bo&apos;lgan mahsulot hech kimga band qilinmaydi: hovlida <b>erkin qoldiq</b> bo&apos;lib turadi va birinchi kelgan mijozga beriladi.
+              Narx, schyot va reys — sotuv zayavkasi ochilganda yoziladi.
+            </p>
+          </Card>
+        ) : (
         <Card className="lg:col-span-2">
           <CardHeader title="Mijoz va yetkazish" />
           <DL items={[
@@ -267,30 +313,34 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             ...o.invoices.map((inv) => ({ k: `Schyot ${inv.invoiceNo}`, v: <span className="inline-flex flex-wrap items-center justify-end gap-2"><span className="whitespace-nowrap">{money(inv.amount)}</span><InvoiceStatusBadge status={inv.status} /></span> })),
           ]} />
         </Card>
+        )}
         <Card padded={false} className="lg:col-span-3">
-          <div className="px-5 pt-5"><CardHeader title="Mahsulotlar" /></div>
+          <div className="px-5 pt-5"><CardHeader title={isStock ? "Ishlab chiqariladi" : "Mahsulotlar"} /></div>
           <table className="w-full text-sm">
-            <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th>Brigada</Th><Th right>Bajarildi / qoldiq</Th></tr></thead>
+            {/* Sklad zayavkasida narx yo'q — narx/summa ustunlari ham chiqmaydi */}
+            <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th>{!isStock && <><Th right>Narx</Th><Th right>Summa</Th></>}<Th>Brigada</Th><Th right>Bajarildi / qoldiq</Th></tr></thead>
             <tbody>
               {o.items.map((i) => {
                 const t = i.task, tq = t ? Number(t.qty) : 0, td = t ? Number(t.doneQty) : 0;
                 return (
                   <Tr key={i.id}>
-                    <Td>{i.product.name}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td><Td right>{money(i.price)}{i.nds && <span className="ml-1 text-[11px] font-medium text-slate-500">{NDS_LABEL}</span>}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td>
+                    <Td>{i.product.name}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td>
+                    {!isStock && <><Td right>{money(i.price)}{i.nds && <span className="ml-1 text-[11px] font-medium text-slate-500">{NDS_LABEL}</span>}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td></>}
                     <Td>{i.brigade?.name ?? <span className="text-slate-400">—</span>}{t && <div className="mt-0.5"><TaskStatusBadge status={t.status} /></div>}</Td>
                     <Td right>{t ? <><span className="text-emerald-700">{qty(td)}</span> / <span className={tq - td > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(Math.max(0, tq - td))}</span><div className="mt-1 ml-auto w-20"><Progress value={td} max={tq} tone={td >= tq ? "success" : "default"} /></div></> : <span className="text-slate-400">—</span>}</Td>
                   </Tr>
                 );
               })}
-              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td><Td /><Td right className="font-semibold">{money(total)}{ndsTotal > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500 whitespace-nowrap">shundan {NDS_LABEL}: {money(ndsTotal)}</div>}</Td><Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
+              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td>{!isStock && <><Td /><Td right className="font-semibold">{money(total)}{ndsTotal > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500 whitespace-nowrap">shundan {NDS_LABEL}: {money(ndsTotal)}</div>}</Td></>}<Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
             </tbody>
           </table>
         </Card>
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className={`mt-5 grid grid-cols-1 gap-5 ${isStock ? "" : "lg:grid-cols-2"}`}>
+        {(!isStock || o.batches.length > 0) && (
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Zameslar" icon={Factory} /></div>
+          <div className="px-5 pt-5"><CardHeader title="Zameslar" icon={Factory} description={isStock ? "Zaxiraga qilingan zameslar — har biri hovlidagi erkin qoldiqni oshiradi" : undefined} /></div>
           <table className="w-full text-sm">
             <thead><tr><Th>№</Th><Th>Sana</Th><Th>Smena</Th><Th right>Miqdor</Th></tr></thead>
             <tbody>
@@ -299,6 +349,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </tbody>
           </table>
         </Card>
+        )}
+        {!isStock && (
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Reyslar" icon={Truck} /></div>
           {/* Yo'ldagi mashina — sotuvchi mijozga "qayerda?" degan savolga o'zi javob bersin.
@@ -316,6 +368,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </tbody>
           </table>
         </Card>
+        )}
       </div>
     </div>
   );

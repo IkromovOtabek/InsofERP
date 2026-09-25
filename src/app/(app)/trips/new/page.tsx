@@ -10,7 +10,7 @@ import { unitLabel, soleUnit } from "@/lib/unit";
 export default async function NewTrip() {
   await requireSession(["LOGISTICS", "PRODUCTION"]);
   const [orders, vehicles, drivers] = await Promise.all([
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
     // Mikser ham, yuk mashina ham — dona mahsulot (plita, blok) mikserda ketmaydi; nasos yuk tashimaydi
     db.vehicle.findMany({ where: { isActive: true, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }] }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),

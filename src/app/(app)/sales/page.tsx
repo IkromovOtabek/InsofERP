@@ -16,7 +16,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const s = await getSession();
   const st = status && SALES_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
   const orders = await db.order.findMany({
-    where: { status: st ?? { in: SALES_STATUSES }, ...(customer ? { customerId: customer } : {}) },
+    where: { kind: "SALE", status: st ?? { in: SALES_STATUSES }, ...(customer ? { customerId: customer } : {}) },
     orderBy: [{ updatedAt: "desc" }],
     include: { customer: true, items: { include: { product: true } }, invoices: { where: { status: { not: "CANCELLED" } }, include: { payments: true } } },
     take: 200,

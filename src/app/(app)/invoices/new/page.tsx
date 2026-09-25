@@ -9,7 +9,7 @@ export default async function NewInvoice({ searchParams }: { searchParams: Promi
   await requireSession(["ACCOUNTING", "SALES"]);
   const { orderId } = await searchParams;
   const orders = await db.order.findMany({
-    where: { status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: { status: { not: "CANCELLED" } } } },
+    where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: { status: { not: "CANCELLED" } } } },
     orderBy: { deliveryDate: "desc" },
     include: { customer: true, items: { include: { product: true } }, trips: { where: { status: "DELIVERED" } } },
   });

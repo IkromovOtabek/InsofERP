@@ -18,7 +18,7 @@ const DAY = 86400000;
 export async function customerBase(): Promise<CustomerRow[]> {
   const today = startOfDay(new Date()), since180 = addDays(today, -180);
   const [customers, items, invoices] = await Promise.all([
-    db.customer.findMany({ select: { id: true, name: true, phone: true, creditLimit: true, createdAt: true, isActive: true } }),
+    db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, phone: true, creditLimit: true, createdAt: true, isActive: true } }),
     db.orderItem.findMany({ where: { order: { status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, order: { select: { id: true, date: true, customerId: true } } } }),
     db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { id: true, customerId: true, amount: true, date: true, payments: { select: { amount: true } } } }),
   ]);

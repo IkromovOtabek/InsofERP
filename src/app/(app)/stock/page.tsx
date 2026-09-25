@@ -76,6 +76,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         action={canAdd ? (
           <div className="flex flex-wrap gap-2">
             <LinkButton href="/snabjeniye" variant="ghost"><ShoppingBasket size={16} /> Snabjeniye oynasi</LinkButton>
+            {/* Zaxiraga ishlab chiqarish: mijozsiz zayavka — tayyor mahsulot hovlida erkin qoldiq bo'lib turadi */}
+            <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
             <LinkButton href="/stock/products/new" variant="secondary"><Plus size={16} /> Tayyor mahsulot qo&apos;shish</LinkButton>
             <LinkButton href="/stock/materials/new" variant="secondary"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
             {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}

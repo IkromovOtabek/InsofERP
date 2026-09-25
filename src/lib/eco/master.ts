@@ -206,7 +206,7 @@ export async function syncAllToEco(opts: { sinceDays?: number } = {}): Promise<S
   since.setDate(since.getDate() - (opts.sinceDays ?? 90));
 
   const [customers, products, materials, orders, invoices, payments] = await Promise.all([
-    db.customer.findMany({ select: { id: true, name: true } }),
+    db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true } }),
     db.product.findMany({ select: { id: true, code: true } }),
     db.material.findMany({ select: { id: true, code: true } }),
     db.order.findMany({ where: { date: { gte: since } }, select: { id: true, orderNo: true }, orderBy: { date: "asc" } }),

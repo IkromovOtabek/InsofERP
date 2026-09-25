@@ -67,7 +67,7 @@ export async function importOrders(input: ImportOrdersInput, userId: string): Pr
   if (unknownProducts.length) throw new Error(`Bunday mahsulot ro'yxatda yo'q: ${cut(unknownProducts)}. Avval Mahsulotlar bo'limiga qo'shing (yoki fayldagi nomini to'g'rilang).`);
 
   // ── Mijozlar: nomi bo'yicha (tinish belgilari va harf katta-kichikligi hisobga olinmaydi)
-  const customers = await db.customer.findMany({ where: { isActive: true }, select: { id: true, name: true, address: true } });
+  const customers = await db.customer.findMany({ where: { isActive: true, isInternal: false }, select: { id: true, name: true, address: true } });
   const byCustomer = new Map<string, (typeof customers)[number]>();
   for (const c of customers) byCustomer.set(flatName(c.name), c);
   const unknownCustomers = [...new Set(rows.filter((r) => !byCustomer.get(flatName(r.customer))).map((r) => r.customer))];

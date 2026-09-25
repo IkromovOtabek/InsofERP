@@ -120,7 +120,9 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
       if (!p.success) fail(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const r = await taskProgress(id, p.data!.qty, user.id, p.data!.note);
       if (r.error) fail(r.error);
-      return { ok: true, message: r.status === "DONE" ? "Qayd qilindi — topshiriq bajarildi" : "Qayd qilindi" };
+      // `note` — hovliga nechta kirim bo'lgani, zayavka yopilgani, xomashyo yetmagani
+      const base = r.status === "DONE" ? "Qayd qilindi — topshiriq bajarildi" : "Qayd qilindi";
+      return { ok: true, message: r.note ? `${base}. ${r.note}` : base };
     }
     case "task.cancel": {
       const r = await taskCancel(id, user.id);

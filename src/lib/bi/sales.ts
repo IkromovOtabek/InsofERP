@@ -99,6 +99,6 @@ export async function salesExport(r: Range) {
 }
 
 export async function orderStatusMix(r: Range) {
-  const rows = await db.order.groupBy({ by: ["status"], where: { date: { gte: r.from, lt: r.to } }, _count: true });
+  const rows = await db.order.groupBy({ by: ["status"], where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, _count: true });
   return rows.map((x) => ({ status: x.status, count: x._count }));
 }

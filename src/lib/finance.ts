@@ -15,7 +15,8 @@ export async function customerDebt(customerId: string) {
 
 /** Tasdiqlangan, lekin hali schyot yozilmagan zayavkalar summasi (limitga kiradi). */
 export async function customerOpenOrdersTotal(customerId: string, excludeOrderId?: string) {
-  const orderWhere: Prisma.OrderWhereInput = { customerId, status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: {} }, ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}) };
+  // Sklad zaxirasi zayavkasi (kind = STOCK) limitga kirmaydi — unda mijoz ham, summa ham yo'q
+  const orderWhere: Prisma.OrderWhereInput = { customerId, kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: {} }, ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}) };
   const [items, adv] = await Promise.all([
     db.orderItem.findMany({ where: { order: orderWhere }, select: { qtyM3: true, price: true } }),
     // zayavka ochilganda olingan avans ochiq summani kamaytiradi
@@ -54,8 +55,9 @@ export async function customerCredit(customerId: string): Promise<CustomerCredit
 
 /** Barcha (yoki berilgan) mijozlar uchun limit holati — ro'yxat va tanlov oynalari uchun bitta so'rovda. */
 export async function customersCredit(ids?: string[]): Promise<Map<string, CustomerCredit>> {
-  const where = ids ? { id: { in: ids } } : {};
-  const openOrderWhere: Prisma.OrderWhereInput = { status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: {} }, ...(ids ? { customerId: { in: ids } } : {}) };
+  // Ichki "Sklad" kartochkasi mijoz emas — limit ham, reyting ham hisoblanmaydi
+  const where: Prisma.CustomerWhereInput = { isInternal: false, ...(ids ? { id: { in: ids } } : {}) };
+  const openOrderWhere: Prisma.OrderWhereInput = { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: {} }, ...(ids ? { customerId: { in: ids } } : {}) };
   const [customers, inv, pay, items, adv] = await Promise.all([
     db.customer.findMany({ where, select: { id: true, creditLimit: true } }),
     db.invoice.groupBy({ by: ["customerId"], where: { status: { in: ["OPEN", "PARTIAL"] }, ...(ids ? { customerId: { in: ids } } : {}) }, _sum: { amount: true } }),
@@ -119,7 +121,7 @@ export async function customersHistory(ids?: string[], creditMap?: Map<string, C
   const byId = ids ? { customerId: { in: ids } } : {};
   const [credit, orders, pay, inv] = await Promise.all([
     creditMap ?? customersCredit(ids),
-    db.order.findMany({ where: { status: { in: [...BOUGHT_STATUSES] }, ...byId }, select: { customerId: true, date: true, items: { select: { qtyM3: true, price: true } } } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: [...BOUGHT_STATUSES] }, ...byId }, select: { customerId: true, date: true, items: { select: { qtyM3: true, price: true } } } }),
     db.payment.groupBy({ by: ["customerId"], where: byId, _sum: { amount: true } }),
     db.invoice.groupBy({ by: ["customerId"], where: { status: { not: "CANCELLED" }, ...byId }, _sum: { amount: true } }),
   ]);

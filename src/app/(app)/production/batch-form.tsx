@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createBatch } from "./actions";
-import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
+import { Button, Callout, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
 import { ProductSelect } from "@/components/product-select";
 import type { CatalogGroup, CatalogProduct } from "@/components/product-picker";
 
@@ -11,8 +11,14 @@ type Order = { id: string; orderNo: string; customer: string; productId: string;
 /** Spravochnikdagi mahsulot + retsepti bormi (retseptsiz zames yozib bo'lmaydi). */
 type Product = CatalogProduct & { hasRecipe: boolean };
 type Wh = { id: string; name: string };
+/**
+ * Shu mahsulot bo'yicha ochiq brigada topshirig'i: brigada "Bajarildi" deb qayd qilganda
+ * tayyor mahsulot hovliga o'zi kirim bo'ladi. Shu ustiga zames ham yozilsa, bitta ish
+ * ikki marta hisoblanadi — shuning uchun mahsulot tanlanganda ogohlantirish chiqadi.
+ */
+export type OpenTask = { taskNo: string; brigade: string; orderNo: string; qty: number; doneQty: number; unit: string };
 
-export function BatchForm({ orders, products, groups, canCreateProduct, warehouses }: { orders: Order[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; warehouses: Wh[] }) {
+export function BatchForm({ orders, products, groups, canCreateProduct, warehouses, openTasks = {} }: { orders: Order[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; warehouses: Wh[]; openTasks?: Record<string, OpenTask[]> }) {
   const [state, action, pending] = useActionState(createBatch, undefined);
   const [orderId, setOrderId] = useState("");
   const [productId, setProductId] = useState(products[0]?.id ?? "");
@@ -21,6 +27,7 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
   const picked = products.find((p) => p.id === productId);
   const unit = picked?.unit ?? "m³";
   const noRecipe = !!picked && !picked.hasRecipe; // retseptsiz mahsulotga zames yozilmaydi
+  const brigadeTasks = openTasks[productId] ?? []; // shu mahsulotni brigada ham chiqarayaptimi
 
   const pickOrder = (id: string) => {
     setOrderId(id);
@@ -57,6 +64,21 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
         <Field label="Smena"><Select name="shift" defaultValue="1"><option value="1">1-smena</option><option value="2">2-smena</option><option value="3">3-smena</option></Select></Field>
         <Field label="Sklad *"><Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
       </div>
+      {brigadeTasks.length > 0 && (
+        <Callout tone="warning" title="Bu mahsulotni brigada ham chiqaryapti">
+          <ul className="ml-4 list-disc space-y-0.5">
+            {brigadeTasks.map((t) => (
+              <li key={t.taskNo}>
+                <b>{t.brigade}</b> · topshiriq {t.taskNo} ({t.orderNo}) — {t.qty} {t.unit} dan <b>{t.doneQty}</b> tasi bajarilgan
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5">
+            Brigada &quot;Bajarildi&quot; deb qayd qilganda tayyor mahsulot hovliga <b>o&apos;zi kirim bo&apos;ladi</b>. Shu ishga zames ham
+            yozsangiz, bitta mahsulot <b>ikki marta</b> hisoblanadi. Zames faqat brigadasiz, alohida qilingan ish uchun yoziladi.
+          </p>
+        </Callout>
+      )}
       <Field label="Izoh"><Textarea name="note" /></Field>
       <FormActions>
         <Button disabled={pending || !productId || noRecipe}>{pending ? "Yozilmoqda…" : "Zamesni qayd etish"}</Button>

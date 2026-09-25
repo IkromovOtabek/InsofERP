@@ -45,7 +45,7 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
 
 async function orderForm(): Promise<CreateForm> {
   const [customers, catalog, accounts] = await Promise.all([
-    db.customer.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" } }),
     productCatalog(), // veb bilan bir xil mahsulot ro'yxati (papka yo'li nom yonida)
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
@@ -97,7 +97,7 @@ async function orderForm(): Promise<CreateForm> {
 
 async function tripForm(): Promise<CreateForm> {
   const [orders, vehicles, drivers] = await Promise.all([
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
     // Veb formasi bilan bir xil: mikser ham, yuk mashina ham (nasos yuk tashimaydi)
     db.vehicle.findMany({ where: { isActive: true, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }] }),
     db.employee.findMany({ where: { isActive: true, position: { in: await driverPositionNames() } }, orderBy: { fullName: "asc" }, include: { vehicle: { select: { plate: true } } } }),

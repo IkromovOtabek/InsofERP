@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { consumeForTask } from "@/lib/brigade-stock";
+import { qty as fq } from "@/lib/format";
+import { unitLabel } from "@/lib/unit";
 
 /**
  * Brigada topshiriqlari — yagona joy (veb "Topshiriqlar" sahifasi ham, mobil ilova ham).
@@ -8,28 +10,70 @@ import { consumeForTask } from "@/lib/brigade-stock";
  */
 export type TaskResult = { changed: boolean; orderId: string; status?: string; error?: string; /** Xomashyo bilan bog'liq ogohlantirish (brigadada yetmadi). */ note?: string };
 
-/** Brigada bajargan miqdorni qayd qilish. doneQty oshadi; to'liq bo'lsa DONE. */
+/**
+ * Brigada bajargan miqdorni qayd qilish. doneQty oshadi; to'liq bo'lsa DONE.
+ *
+ * Bir qaydda uch ish bajariladi:
+ *  1) brigada qo'lidagi xomashyo retsept normasi bo'yicha kamayadi;
+ *  2) tayyor DONA mahsulot hovliga kirim bo'ladi (PRODUCTION_OUTPUT) — brigada chiqargani
+ *     shu zahoti sklad qoldig'ida ko'rinadi. Beton (m³) bunga kirmaydi: u zames orqali
+ *     kirim qilinadi, aks holda bir hajm ikki marta hisoblanib ketadi;
+ *  3) zayavka holati suriladi: birinchi qayddan keyin "Ishlab chiqarilmoqda", sklad
+ *     zaxirasi zayavkasining hamma topshirig'i bajarilsa — "Zaxira tayyor" (CLOSED).
+ */
 export async function taskProgress(taskId: string, qty: number, userId: string, note?: string | null): Promise<TaskResult> {
-  const t = await db.brigadeTask.findUniqueOrThrow({ where: { id: taskId } });
+  const t = await db.brigadeTask.findUniqueOrThrow({
+    where: { id: taskId },
+    include: { orderItem: { include: { product: { select: { id: true, name: true, unit: true } } } }, order: { select: { kind: true, status: true } } },
+  });
   if (["DONE", "CANCELLED"].includes(t.status)) return { changed: false, orderId: t.orderId, error: "Topshiriq yopilgan" };
   const remaining = Number(t.qty) - Number(t.doneQty);
   if (qty > remaining + 0.0005) return { changed: false, orderId: t.orderId, error: `Qoldiqdan ko'p: qoldiq ${remaining}` };
 
   const done = Number(t.doneQty) + qty;
   const status = done >= Number(t.qty) - 0.0005 ? "DONE" : "IN_PROGRESS";
-  // Bajarilgan miqdor brigada qo'lidagi xomashyoni retsept normasi bo'yicha kamaytiradi —
-  // "brigada yana qancha chiqara oladi" raqami shu bilan o'zi to'g'ri qoladi.
-  const spent = await db.$transaction(async (tx) => {
+  const product = t.orderItem.product;
+  const toYard = product.unit !== "m3"; // dona mahsulot hovliga qo'yiladi
+  const wh = toYard ? await db.warehouse.findFirst({ where: { isActive: true }, select: { id: true } }) : null;
+
+  const res = await db.$transaction(async (tx) => {
     await tx.taskProgress.create({ data: { taskId, qty, note: note ?? undefined, createdById: userId } });
     await tx.brigadeTask.update({ where: { id: taskId }, data: { doneQty: done, status } });
     const used = await consumeForTask(tx, { id: t.id, brigadeId: t.brigadeId, orderItemId: t.orderItemId }, qty, userId);
-    await audit(tx, userId, "UPDATE", "BrigadeTask", taskId, { doneQty: t.doneQty, status: t.status }, { doneQty: done, status, added: qty, consumed: used.rows });
-    return used;
+
+    // ── Tayyor mahsulot hovliga ──
+    if (toYard && wh) {
+      await tx.stockMove.create({
+        data: {
+          type: "PRODUCTION_OUTPUT", warehouseId: wh.id, productId: product.id, brigadeId: t.brigadeId, qty,
+          refType: "BrigadeTask", refId: taskId, note: `Brigada chiqardi · ${t.taskNo}`, createdById: userId,
+        },
+      });
+    }
+
+    // ── Zayavka holati ──
+    // Ish boshlandi: qabul qilingan zayavka "Ishlab chiqarilmoqda" ga o'tadi (zames qilgani kabi)
+    if (t.order.status === "CONFIRMED") await tx.order.update({ where: { id: t.orderId }, data: { status: "IN_PRODUCTION" } });
+    // Sklad zaxirasi: hamma qatorga topshiriq berilgan va hammasi bajarilgan bo'lsa — zayavka yopiladi
+    let closed = false;
+    if (t.order.kind === "STOCK" && status === "DONE") {
+      const items = await tx.orderItem.findMany({ where: { orderId: t.orderId }, select: { task: { select: { status: true } } } });
+      if (items.length > 0 && items.every((i) => i.task?.status === "DONE")) {
+        await tx.order.update({ where: { id: t.orderId }, data: { status: "CLOSED" } });
+        closed = true;
+      }
+    }
+    await audit(tx, userId, "UPDATE", "BrigadeTask", taskId, { doneQty: t.doneQty, status: t.status }, { doneQty: done, status, added: qty, consumed: used.rows, output: toYard ? qty : 0, orderClosed: closed });
+    return { used, closed };
   });
-  return {
-    changed: true, orderId: t.orderId, status,
-    note: spent.deficit.length ? `Brigadada xomashyo yetmadi (qarzga yozildi): ${spent.deficit.join(", ")} — skladdan bering` : undefined,
-  };
+
+  const hints = [
+    toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} hovliga kirim qilindi (erkin qoldiq)` : null,
+    toYard && !wh ? "Sklad ochilmagan — tayyor mahsulot kirim qilinmadi" : null,
+    res.closed ? "Zaxira to'liq tayyor — zayavka yopildi" : null,
+    res.used.deficit.length ? `Brigadada xomashyo yetmadi (qarzga yozildi): ${res.used.deficit.join(", ")} — skladdan bering` : null,
+  ].filter(Boolean);
+  return { changed: true, orderId: t.orderId, status, note: hints.length ? hints.join(" · ") : undefined };
 }
 
 export async function taskCancel(taskId: string, userId: string): Promise<TaskResult> {

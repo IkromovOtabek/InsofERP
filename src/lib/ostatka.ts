@@ -4,14 +4,17 @@ import { db } from "./db";
  * Hovlida turgan tayyor mahsulot qoldig'i (dona mahsulotlar) — Sklad → "Ishlab chiqarish imkoni"
  * bo'limida va sotuv/zayavka panelida ko'rsatiladi (ilgari alohida "Astatka" sahifasi edi).
  * jami = StockMove (PRODUCTION_OUTPUT + / SHIPMENT −)
- * egasi bor = tasdiqlangan zayavkalarda band qilingan, hali jo'natilmagan
+ * egasi bor = tasdiqlangan mijoz zayavkalarida band qilingan, hali jo'natilmagan
  * egasi yo'q = jami − egasi bor
+ *
+ * Sklad zayavkasi (kind = STOCK) band qilmaydi: u zaxira uchun ochilgan, ishlab
+ * chiqarilgani hovlida erkin turishi kerak.
  */
 export async function ostatkaSummary() {
   const [products, sums, orders] = await Promise.all([
     db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, orderBy: { code: "asc" } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: true, trips: { where: { status: { not: "CANCELLED" } } } } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: true, trips: { where: { status: { not: "CANCELLED" } } } } }),
   ]);
   const bal = new Map(sums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
   const reserved = new Map<string, number>();
@@ -32,7 +35,7 @@ export async function ostatkaDetail(productId: string) {
     db.product.findUnique({ where: { id: productId } }),
     db.stockMove.aggregate({ where: { productId }, _sum: { qty: true } }),
     db.order.findMany({
-      where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, items: { some: { productId } } },
+      where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, items: { some: { productId } } },
       include: { customer: true, items: { where: { productId } }, trips: { where: { status: { not: "CANCELLED" } } } },
       orderBy: { deliveryDate: "asc" },
     }),

@@ -14,7 +14,7 @@ export async function overviewTab(r: Range) {
     loadSales(today, tomorrow), loadSales(yesterday, today), loadSales(monthStart, tomorrow), loadSales(prevMonthStart, monthStart), loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
     lossChannels(r), customerBase(), materialOverview(),
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, deliveryDate: { lt: today } }, include: { customer: true, items: true, trips: { where: { status: { not: "CANCELLED" } } } } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, deliveryDate: { lt: today } }, include: { customer: true, items: true, trips: { where: { status: { not: "CANCELLED" } } } } }),
     db.order.count({ where: { status: "BLOCKED" } }),
     loadSales(addDays(today, -29), tomorrow),
     db.payment.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),

@@ -22,6 +22,15 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: true, customer: true } });
   if (o.status !== "DRAFT") return { changed: false, error: "Faqat qoralama zayavka qabul qilinadi" };
 
+  // Sklad zaxirasi zayavkasida mijoz ham, narx ham yo'q — kredit limiti tekshirilmaydi
+  if (o.kind === "STOCK") {
+    await db.$transaction(async (tx) => {
+      await tx.order.update({ where: { id }, data: { status: "CONFIRMED" } });
+      await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CONFIRMED", kind: "STOCK" });
+    });
+    return { changed: true, status: "CONFIRMED" };
+  }
+
   const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
   const credit = await customerCredit(o.customerId);
   const status = credit.used + total > credit.limit ? "BLOCKED" : "CONFIRMED";

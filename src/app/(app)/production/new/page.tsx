@@ -4,12 +4,12 @@ import { requireSession } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
-import { BatchForm } from "../batch-form";
+import { BatchForm, type OpenTask } from "../batch-form";
 import { unitLabel, soleUnit } from "@/lib/unit";
 
 export default async function NewBatch() {
   const s = await requireSession(["PRODUCTION"]);
-  const [orders, catalog, warehouses] = await Promise.all([
+  const [orders, catalog, warehouses, tasks] = await Promise.all([
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
       orderBy: { deliveryDate: "asc" },
@@ -17,7 +17,22 @@ export default async function NewBatch() {
     }),
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     db.warehouse.findMany({ where: { isActive: true } }),
+    // Ochiq brigada topshiriqlari — faqat DONA mahsulot bo'yicha: brigada qayd qilganda
+    // shunday mahsulot hovliga o'zi kirim bo'ladi, ustiga zames yozilsa ikki marta hisoblanadi.
+    // Beton (m³) bunga kirmaydi — uning yagona kirim yo'li shu zames.
+    db.brigadeTask.findMany({
+      where: { status: { in: ["NEW", "IN_PROGRESS"] }, orderItem: { product: { unit: { not: "m3" } } } },
+      include: { brigade: { select: { name: true } }, order: { select: { orderNo: true } }, orderItem: { select: { productId: true, product: { select: { unit: true } } } } },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
+  const openTasks: Record<string, OpenTask[]> = {};
+  for (const t of tasks) {
+    (openTasks[t.orderItem.productId] ??= []).push({
+      taskNo: t.taskNo, brigade: t.brigade.name, orderNo: t.order.orderNo,
+      qty: Number(t.qty), doneQty: Number(t.doneQty), unit: unitLabel(t.orderItem.product.unit),
+    });
+  }
   const marks = await customerMarks(orders.map((o) => o.customerId));
   // Sodda holat: zayavkada bitta marka deb olamiz (ko'p markali zayavka bo'lsa — birinchisi)
   const orderOpts = orders.map((o) => {
@@ -35,6 +50,7 @@ export default async function NewBatch() {
         groups={catalog.groups}
         canCreateProduct={canEditProducts(s.role)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name }))}
+        openTasks={openTasks}
       />
     </div>
   );

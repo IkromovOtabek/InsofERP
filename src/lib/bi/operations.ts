@@ -10,7 +10,7 @@ export async function operationsTab(r: Range, gran: Gran) {
     db.trip.findMany({ where: { createdAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, status: true, loadedAt: true, deliveredAt: true } }),
     db.vehicle.findMany({ where: { isActive: true }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
     db.employee.findMany({ where: { isActive: true, trips: { some: {} } }, select: { id: true, fullName: true } }),
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: true, batches: true, trips: { where: { status: { not: "CANCELLED" } } } }, orderBy: { deliveryDate: "asc" } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: true, batches: true, trips: { where: { status: { not: "CANCELLED" } } } }, orderBy: { deliveryDate: "asc" } }),
   ]);
 
   const produced = sum(batches.map((b) => Number(b.qtyM3))), prevProduced = sum(prevBatches.map((b) => Number(b.qtyM3)));

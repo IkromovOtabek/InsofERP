@@ -4,6 +4,7 @@ import { stockSnapshot, type LastMove, type MakeInfo, type SnapshotProduct } fro
 import { qty, dateTime } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Th, Td, Tr } from "@/components/ui";
+import { Fold } from "@/components/fold";
 import { cn } from "@/lib/utils";
 
 function Who({ last }: { last: LastMove | null }) {
@@ -74,71 +75,98 @@ function ProductRows({ rows, compact, freeLabelAsTotal }: { rows: SnapshotProduc
  *
  * compact — yon panel uchun (kim kiritgani ustuni yashiriladi).
  * layout="grid" — sahifa eni bo'ylab uchta ustun (zayavkalar ro'yxati sahifasi).
+ * collapsible — har bo'lim yig'iladi: forma yonida turganda uzun jadval joyni egallamaydi,
+ *   sarlavhada esa nechta nom borligi ko'rinib turadi (tanlov brauzerda eslab qolinadi).
  */
-export async function StockSnapshotCard({ compact = false, layout = "column", title = "Sklad holati" }: { compact?: boolean; layout?: "column" | "grid"; title?: string }) {
+export async function StockSnapshotCard({ compact = false, layout = "column", title = "Sklad holati", collapsible = false }: { compact?: boolean; layout?: "column" | "grid"; title?: string; collapsible?: boolean }) {
   const s = await stockSnapshot();
   const grid = layout === "grid";
   const cols = grid || compact; // ikkalasida ham "kim kiritgani" ustuni ko'rsatilmaydi
+  const fold = collapsible && !grid; // grid'da uchtasi yonma-yon turadi — yig'ishning hojati yo'q
   const freeTotal = s.pieces.reduce((a, p) => a + p.free, 0);
   const lowCount = s.materials.filter((m) => m.low).length;
 
-  const piecesBlock = (
-    <div className={cn(!grid && "border-t border-slate-100")}>
-      <SectionTitle title="Dona mahsulotlar (hovlida)" hint="erkin = zayavkalarga band qilinmagani" />
-      {s.pieces.length === 0 ? (
-        <NoRows text="Dona mahsulot yo'q." href="/stock/products/new" action="Skladga qo'shish" />
-      ) : (
-        <table className="w-full text-sm">
-          <thead><tr><Th>Mahsulot</Th><Th right>Erkin</Th><Th right>Band</Th><Th right>Jami</Th><Th right>Yana chiqadi</Th>{!cols && <Th>Oxirgi kirim (kim)</Th>}</tr></thead>
-          <tbody><ProductRows rows={s.pieces} compact={cols} /></tbody>
-        </table>
-      )}
-    </div>
+  const piecesBody = s.pieces.length === 0 ? (
+    <NoRows text="Dona mahsulot yo'q." href="/stock/products/new" action="Skladga qo'shish" />
+  ) : (
+    <table className="w-full text-sm">
+      <thead><tr><Th>Mahsulot</Th><Th right>Erkin</Th><Th right>Band</Th><Th right>Jami</Th><Th right>Yana chiqadi</Th>{!cols && <Th>Oxirgi kirim (kim)</Th>}</tr></thead>
+      <tbody><ProductRows rows={s.pieces} compact={cols} /></tbody>
+    </table>
   );
 
-  const concreteBlock = (
-    <div className={cn(!grid && "border-t border-slate-100")}>
-      <SectionTitle title="Beton (m³)" hint="zakaz olingach tayyorlanadi · raqam — xomashyodan retsept bo'yicha qancha chiqishi" />
-      {s.concrete.length === 0 ? (
-        <NoRows text="Beton markasi kiritilmagan." href="/settings?tab=products" action="Mahsulot qo'shish" />
-      ) : (
-        <table className="w-full text-sm">
-          <thead><tr><Th>Marka</Th><Th right>Xomashyodan chiqadi</Th>{!cols && <Th>Cheklovchi xomashyo</Th>}</tr></thead>
-          <tbody>
-            {s.concrete.map((p) => (
-              <Tr key={p.id}>
-                <Td><span className="font-medium">{p.name}</span> <span className="text-slate-400">{unitLabel(p.unit)}</span></Td>
-                <Td right><Make make={p.make} unit={p.unit} /></Td>
-                {!cols && <Td className="text-slate-600">{p.make?.limiting ? <>{p.make.limiting.name} <span className="text-slate-400">· qoldiq {qty(p.make.limiting.balance)} {p.make.limiting.unit}</span></> : <span className="text-slate-400">—</span>}</Td>}
-              </Tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+  const concreteBody = s.concrete.length === 0 ? (
+    <NoRows text="Beton markasi kiritilmagan." href="/settings?tab=products" action="Mahsulot qo'shish" />
+  ) : (
+    <table className="w-full text-sm">
+      <thead><tr><Th>Marka</Th><Th right>Xomashyodan chiqadi</Th>{!cols && <Th>Cheklovchi xomashyo</Th>}</tr></thead>
+      <tbody>
+        {s.concrete.map((p) => (
+          <Tr key={p.id}>
+            <Td><span className="font-medium">{p.name}</span> <span className="text-slate-400">{unitLabel(p.unit)}</span></Td>
+            <Td right><Make make={p.make} unit={p.unit} /></Td>
+            {!cols && <Td className="text-slate-600">{p.make?.limiting ? <>{p.make.limiting.name} <span className="text-slate-400">· qoldiq {qty(p.make.limiting.balance)} {p.make.limiting.unit}</span></> : <span className="text-slate-400">—</span>}</Td>}
+          </Tr>
+        ))}
+      </tbody>
+    </table>
   );
 
-  const materialsBlock = (
-    <div className={cn(!grid && "border-t border-slate-100")}>
-      <SectionTitle title="Xomashyo (Sklad)" hint="ishlab chiqarishning asosi" />
-      {s.materials.length === 0 ? (
-        <NoRows text="Xomashyo kiritilmagan." href="/stock/materials/new" action="Xomashyo qo'shish" />
-      ) : (
-        <table className="w-full text-sm">
-          <thead><tr><Th>Nomi</Th><Th right>Qoldiq</Th><Th>Holat</Th>{!cols && <Th>Oxirgi kirim (kim)</Th>}</tr></thead>
-          <tbody>
-            {s.materials.map((m) => (
-              <Tr key={m.id}>
-                <Td className="font-medium">{m.name}</Td>
-                <Td right className={m.balance < 0 ? "text-red-600" : ""}>{qty(m.balance)} {m.unit}</Td>
-                <Td>{m.low ? <Badge color="red">Kam qoldi</Badge> : <Badge color="green">Yetarli</Badge>}</Td>
-                {!cols && <Td><Who last={m.last} /></Td>}
-              </Tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+  const materialsBody = s.materials.length === 0 ? (
+    <NoRows text="Xomashyo kiritilmagan." href="/stock/materials/new" action="Xomashyo qo'shish" />
+  ) : (
+    <table className="w-full text-sm">
+      <thead><tr><Th>Nomi</Th><Th right>Qoldiq</Th><Th>Holat</Th>{!cols && <Th>Oxirgi kirim (kim)</Th>}</tr></thead>
+      <tbody>
+        {s.materials.map((m) => (
+          <Tr key={m.id}>
+            <Td className="font-medium">{m.name}</Td>
+            <Td right className={m.balance < 0 ? "text-red-600" : ""}>{qty(m.balance)} {m.unit}</Td>
+            <Td>{m.low ? <Badge color="red">Kam qoldi</Badge> : <Badge color="green">Yetarli</Badge>}</Td>
+            {!cols && <Td><Who last={m.last} /></Td>}
+          </Tr>
+        ))}
+      </tbody>
+    </table>
+  );
+
+  // Yopiq holatda sarlavhada turadigan qisqa raqamlar.
+  const sections = [
+    {
+      key: "pieces",
+      title: "Dona mahsulotlar (hovlida)",
+      hint: "erkin = zayavkalarga band qilinmagani",
+      meta: <>{s.pieces.length} nom · erkin <b className="text-emerald-700">{qty(freeTotal)}</b></>,
+      body: piecesBody,
+    },
+    {
+      key: "concrete",
+      title: "Beton (m³)",
+      hint: "zakaz olingach tayyorlanadi · raqam — xomashyodan retsept bo'yicha qancha chiqishi",
+      meta: <>{s.concrete.length} marka</>,
+      body: concreteBody,
+    },
+    {
+      key: "materials",
+      title: "Xomashyo (Sklad)",
+      hint: "ishlab chiqarishning asosi",
+      meta: lowCount > 0 ? <>{s.materials.length} nom · <b className="text-red-600">{lowCount} kam</b></> : <>{s.materials.length} nom</>,
+      body: materialsBody,
+    },
+  ];
+
+  const blocks = sections.map((sec) =>
+    fold ? (
+      // Birinchi bo'lim ochiq turadi, qolgani yig'ilgan — kartani qisqa tutadi.
+      <Fold key={sec.key} title={sec.title} hint={sec.hint} meta={sec.meta} defaultOpen={sec.key === "pieces"} storageKey={`stock-snapshot:${sec.key}`} className="border-t border-slate-100">
+        {sec.body}
+      </Fold>
+    ) : (
+      <div key={sec.key} className={cn(!grid && "border-t border-slate-100")}>
+        <SectionTitle title={sec.title} hint={sec.hint} />
+        {sec.body}
+      </div>
+    ),
   );
 
   return (
@@ -156,21 +184,23 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
             </div>
           }
         />
-        <div className="flex flex-wrap gap-x-4 gap-y-1 pb-1 text-xs text-slate-500">
-          <span>Dona mahsulot: <b className="text-slate-900">{s.pieces.length}</b> nom · erkin <b className="text-emerald-700">{qty(freeTotal)}</b></span>
-          <span>Beton markasi: <b className="text-slate-900">{s.concrete.length}</b></span>
-          <span>Xomashyo: <b className="text-slate-900">{s.materials.length}</b> nom{lowCount > 0 && <span className="text-red-600"> · {lowCount} tasi kam qoldi</span>}</span>
-        </div>
+        {!fold && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 pb-1 text-xs text-slate-500">
+            <span>Dona mahsulot: <b className="text-slate-900">{s.pieces.length}</b> nom · erkin <b className="text-emerald-700">{qty(freeTotal)}</b></span>
+            <span>Beton markasi: <b className="text-slate-900">{s.concrete.length}</b></span>
+            <span>Xomashyo: <b className="text-slate-900">{s.materials.length}</b> nom{lowCount > 0 && <span className="text-red-600"> · {lowCount} tasi kam qoldi</span>}</span>
+          </div>
+        )}
       </div>
 
       {grid ? (
         <div className="grid grid-cols-1 gap-x-4 border-t border-slate-100 pt-1 xl:grid-cols-3 xl:divide-x xl:divide-slate-100">
-          {[piecesBlock, concreteBlock, materialsBlock].map((block, i) => (
+          {blocks.map((block, i) => (
             <div key={i} className="max-h-80 overflow-y-auto">{block}</div>
           ))}
         </div>
       ) : (
-        <>{piecesBlock}{concreteBlock}{materialsBlock}</>
+        <>{blocks}</>
       )}
 
       <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
