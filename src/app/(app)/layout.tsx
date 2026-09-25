@@ -5,6 +5,7 @@ import { getCompany } from "@/lib/company";
 import { apkInfo, apkSize } from "@/lib/apk";
 import { navFor, ROLE_LABELS } from "@/lib/nav";
 import { AppShell } from "@/components/app-shell";
+import { LiveRefresh } from "@/components/live-refresh";
 import { tourFor, TOUR_COOKIE } from "@/lib/tour";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const tourStart = tourRaw ? decodeURIComponent(tourRaw) : null;
   return (
     <AppShell items={navFor(s.role)} user={{ fullName: s.fullName, roleLabel: ROLE_LABELS[s.role] }} brand={company.name} ai={["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} apk={apk.exists ? apkSize(apk.size) : null} tour={{ steps: tourFor(s.role), start: tourStart }}>
+      {/* Ma'lumot o'zi yangilanib turadi — sahifani qo'lda yangilash shart emas */}
+      <LiveRefresh />
       {children}
     </AppShell>
   );
