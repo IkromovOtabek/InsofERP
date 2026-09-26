@@ -72,15 +72,24 @@ sleep 3
 say "Tekshiruv — zavoddan Chilonzorgacha"
 if curl -sf -m 10 "http://127.0.0.1:$PORT/route/v1/driving/69.049319,41.089974;69.2039,41.2755?overview=false" \
    | python3 -c "import json,sys; r=json.load(sys.stdin)['routes'][0]; print(f\"  {r['distance']/1000:.1f} km · {r['duration']/60:.0f} daqiqa\")"; then
-  cat <<TXT
-
-Tayyor. Endi ERP'ga aytish qoldi:
-
-  cd /var/www/insof-erp
-  echo "OSRM_URL=http://127.0.0.1:$PORT" >> .env
-  sudo systemctl restart insof-erp
-
-TXT
+  # `.env` ga O'ZIMIZ yozamiz. Ilgari bu yerda faqat ko'rsatma chiqardi va o'sha qadam
+  # tushib qolgandi: OSRM ko'tarilgan, lekin ERP undan bexabar — masofa hamon jamoat
+  # serveridan (ishonchsiz) olinardi va buni faqat ekrandagi "taxminan" yozuvidan bilish mumkin edi.
+  ERP_DIR="${ERP_DIR:-/var/www/insof-erp}"
+  URL="http://127.0.0.1:$PORT"
+  if [ -f "$ERP_DIR/.env" ]; then
+    if grep -q "^OSRM_URL=" "$ERP_DIR/.env"; then
+      sed -i "s|^OSRM_URL=.*|OSRM_URL=$URL|" "$ERP_DIR/.env"
+      say "ERP sozlamasi yangilandi: OSRM_URL=$URL"
+    else
+      printf '\nOSRM_URL=%s\n' "$URL" >> "$ERP_DIR/.env"
+      say "ERP sozlamasiga qo'shildi: OSRM_URL=$URL"
+    fi
+    echo "  Qoldi: sudo systemctl restart insof-erp"
+  else
+    say "$ERP_DIR/.env topilmadi — qo'lda qo'shing:"
+    echo "  echo \"OSRM_URL=$URL\" >> <erp>/.env && sudo systemctl restart insof-erp"
+  fi
 else
   echo "  Xizmat javob bermadi. Jurnal: docker logs insof-osrm --tail 40"
   exit 1
