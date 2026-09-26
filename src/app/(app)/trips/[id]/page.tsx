@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History } from "lucide-react";
+import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History, Route } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -9,7 +9,8 @@ import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { TripStatusBadge } from "../status";
 import { markLoaded, markOnRoad, cancelTrip } from "../actions";
-import { tripSteps } from "@/lib/trips";
+import { distanceLabel, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
+import { TripTrackMap } from "./track-map";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { DeliverButton } from "./deliver-form";
 import { PickupForm } from "./pickup-form";
@@ -21,6 +22,9 @@ import { geoSearchEnabled } from "@/lib/geo";
 const STEPS = [{ key: "PLANNED", label: "Rejalashtirildi" }, { key: "LOADED", label: "Yuklandi" }, { key: "ON_ROAD", label: "Yo'lda" }, { key: "DELIVERED", label: "Yetkazildi" }];
 const dt = (d: Date | null) => d ? dateTime(d) : "—";
 
+/** `104` → `1 soat 44 daq` — yo'lda o'tgan vaqt. */
+const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} soat ${m % 60} daq` : `${m} daq`);
+
 export default async function TripPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const s = await getSession();
@@ -28,6 +32,9 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   if (!t || !s) notFound();
   const marks = await customerMarks([t.order.customerId]);
   const steps = await tripSteps(id);
+  // Haydovchi ilovasidan kelgan GPS izi — qaysi yo'ldan yurgani va necha km bosgani
+  const track = await tripTrack(id);
+  const trackStat = (await tripTrackStats([id])).get(id);
   // Yuk olgan joyi hali belgilanmagan bo'lsa zavod ko'rsatiladi — reyslarning ko'pchiligi zavoddan chiqadi
   const plant = await db.companySettings.findUnique({ where: { id: "main" }, select: { name: true, address: true, lat: true, lng: true } });
   const blacklisted = marks.black.has(t.order.customerId);
@@ -79,6 +86,27 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             address={t.pickupAddress ?? plant?.address ?? plant?.name ?? ""}
             lat={t.pickupLat ?? plant?.lat ?? null}
             lng={t.pickupLng ?? plant?.lng ?? null}
+          />
+        </Card>
+      )}
+
+      {track.length > 1 && (
+        <Card className="mt-5">
+          <CardHeader
+            title="Yurgan yo'li"
+            description="Haydovchi ilovasidan kelgan GPS izi — 🚩 qayerdan qo'zg'algan, 🏁 obyekt manzili"
+            icon={Route}
+          />
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Badge color="blue">{distanceLabel(trackStat?.meters ?? 0)} yurilgan</Badge>
+            {trackStat?.minutes ? <Badge>{hm(trackStat.minutes)} yo'lda</Badge> : null}
+            {trackStat?.minutes ? <Badge>o'rtacha {Math.round((trackStat.meters / 1000) / (trackStat.minutes / 60))} km/soat</Badge> : null}
+            <Badge>{track.length} nuqta</Badge>
+          </div>
+          <TripTrackMap
+            track={track.map((p) => [p.lat, p.lng] as [number, number])}
+            start={t.pickupLat != null && t.pickupLng != null ? [t.pickupLat, t.pickupLng] : plant?.lat != null && plant?.lng != null ? [plant.lat, plant.lng] : null}
+            finish={t.order.lat != null && t.order.lng != null ? [t.order.lat, t.order.lng] : null}
           />
         </Card>
       )}

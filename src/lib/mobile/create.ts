@@ -3,14 +3,14 @@ import { driverPositionNames } from "@/lib/positions";
 import { db } from "@/lib/db";
 import { productCatalog, groupPath } from "@/lib/product-catalog";
 import { createOrder } from "@/lib/orders";
-import { createTrip } from "@/lib/trips";
+import { createTrip, READINESS_INCLUDE, orderReadiness } from "@/lib/trips";
 import { customersCredit, blacklistedIds } from "@/lib/finance";
 import { pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
 import type { FormField, FormOption } from "./detail";
 import { ListError } from "./list";
-import { unitLabel, soleUnit } from "@/lib/unit";
+import { unitLabel } from "@/lib/unit";
 import type { Role } from "@/generated/prisma";
 
 /**
@@ -97,20 +97,16 @@ async function orderForm(): Promise<CreateForm> {
 
 async function tripForm(): Promise<CreateForm> {
   const [orders, vehicles, drivers] = await Promise.all([
-    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, items: { include: { product: true } }, trips: true } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, ...READINESS_INCLUDE } }),
     // Veb formasi bilan bir xil: mikser ham, yuk mashina ham (nasos yuk tashimaydi)
     db.vehicle.findMany({ where: { isActive: true, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }] }),
     db.employee.findMany({ where: { isActive: true, position: { in: await driverPositionNames() } }, orderBy: { fullName: "asc" }, include: { vehicle: { select: { plate: true } } } }),
   ]);
 
-  // Faqat qoldig'i bor zayavkalar — reys ochib bo'lmaydiganlari ro'yxatda turmasin
+  // Faqat brigada tayyorlab bergan (hali jo'natilmagan) miqdori bor zayavkalar — qolgani sexda,
+  // reys ochib bo'lmaydi. Qoldiq zayavkadagi mahsulot birligida (aralash birlikda birliksiz).
   const open = orders
-    .map((o) => {
-      const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-      const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
-      // Qoldiq zayavkadagi mahsulot birligida ko'rsatiladi (aralash birlikda birliksiz)
-      return { o, left: total - shipped, unit: soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) };
-    })
+    .map((o) => { const rd = orderReadiness(o); return { o, left: rd.available, sexda: rd.inProduction, unit: rd.unit }; })
     .filter((x) => x.left > 0.001);
 
   return {
@@ -118,8 +114,8 @@ async function tripForm(): Promise<CreateForm> {
     fields: [
       {
         name: "orderId", label: "Zayavka", type: "select", required: true,
-        options: open.map(({ o, left, unit }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · qoldiq ${left}${unit ? ` ${unitLabel(unit)}` : ""}`, extra: { qtyM3: String(left) } })),
-        hint: open.length ? undefined : "Qoldig'i bor tasdiqlangan zayavka yo'q",
+        options: open.map(({ o, left, sexda, unit }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · tayyor ${left}${unit ? ` ${unitLabel(unit)}` : ""}${sexda > 0 ? ` · sexda ${sexda}` : ""}`, extra: { qtyM3: String(left) } })),
+        hint: open.length ? "Faqat brigada tayyorlab bergan miqdor reysga beriladi; sexdagisi brigada tasdiqidan keyin" : "Brigada tayyorlagan mahsuloti bor zayavka yo'q — brigada tasdiqini kuting",
       },
       {
         name: "vehicleId", label: "Texnika", type: "select", required: true,

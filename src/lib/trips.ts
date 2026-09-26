@@ -151,6 +151,40 @@ export async function tripTrack(tripId: string): Promise<TrackPoint[]> {
 export type TripTrackStat = { last: TrackPoint; meters: number; points: number; minutes: number };
 
 /**
+ * GPS "titrashi": turgan mashina ham nuqtadan nuqtaga 2-10 metr sakrab turadi.
+ * Shundan kichik siljishni yo'lga qo'shsak, hovlida tunagan mikser ertalabgacha
+ * "10 km yurgan" bo'lib chiqardi.
+ */
+const JITTER_M = 12;
+/**
+ * Ikki nuqta orasidagi tanaffus shundan uzun bo'lsa — mashina yurmagan, shunchaki
+ * ilova yopilgan yoki telefon o'chgan. Bunday tanaffus "yo'lda o'tgan vaqt" ga
+ * qo'shilmaydi: aks holda tunab qolgan reys "17 soat yurgan" bo'lib ko'rinardi.
+ */
+const GAP_MS = 5 * 60_000;
+
+/**
+ * Nuqtalar ketma-ketligidan yo'l va harakat vaqti.
+ *
+ * Bitta joyda: ilovadagi raqam ham, vebdagi raqam ham shu yerdan chiqadi
+ * (`lib/live.ts` ham shuni chaqiradi) — ikki joyda ikki xil hisoblansa ajralib ketardi.
+ */
+export function trackStats(points: TrackPoint[]): { meters: number; movingMs: number } {
+  let meters = 0, movingMs = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    if (!a || !b) continue;
+    const d = haversineMeters(a.lat, a.lng, b.lat, b.lng);
+    if (d < JITTER_M) continue;
+    const dt = b.at.getTime() - a.at.getTime();
+    if (dt > GAP_MS) continue; // tanaffus — na yo'l, na vaqt
+    meters += d;
+    movingMs += Math.max(0, dt);
+  }
+  return { meters: Math.round(meters), movingMs };
+}
+
+/**
  * Bir nechta reysning oxirgi nuqtasi VA yurilgan masofasi.
  *
  * Masofa to'g'ri chiziq emas — nuqtadan nuqtaga qo'shib boriladi, ya'ni haqiqiy yo'l.
@@ -164,22 +198,15 @@ export async function tripTrackStats(tripIds: string[]): Promise<Map<string, Tri
     orderBy: { at: "asc" },
     select: { tripId: true, lat: true, lng: true, at: true },
   });
+  const byTrip = new Map<string, TrackPoint[]>();
+  for (const r of rows) byTrip.set(r.tripId, [...(byTrip.get(r.tripId) ?? []), { lat: r.lat, lng: r.lng, at: r.at }]);
+
   const out = new Map<string, TripTrackStat>();
-  const prev = new Map<string, TrackPoint>();
-  const first = new Map<string, Date>();
-  for (const r of rows) {
-    const p: TrackPoint = { lat: r.lat, lng: r.lng, at: r.at };
-    const before = prev.get(r.tripId);
-    const cur = out.get(r.tripId);
-    const meters = (cur?.meters ?? 0) + (before ? haversineMeters(before.lat, before.lng, p.lat, p.lng) : 0);
-    if (!first.has(r.tripId)) first.set(r.tripId, r.at);
-    out.set(r.tripId, {
-      last: p,
-      meters,
-      points: (cur?.points ?? 0) + 1,
-      minutes: Math.max(0, Math.round((r.at.getTime() - first.get(r.tripId)!.getTime()) / 60000)),
-    });
-    prev.set(r.tripId, p);
+  for (const [tripId, pts] of byTrip) {
+    const last = pts[pts.length - 1];
+    if (!last) continue;
+    const { meters, movingMs } = trackStats(pts);
+    out.set(tripId, { last, meters, points: pts.length, minutes: Math.round(movingMs / 60000) });
   }
   return out;
 }
@@ -244,6 +271,79 @@ export async function tripArrival(tripId: string): Promise<TripArrival> {
   return { destination: dest, last, remainingM, near: true, reason: null };
 }
 
+// ───────────────────────── Tayyorlik: nima jo'natish mumkin ─────────────────────────
+
+/**
+ * Reys faqat brigada tayyorlab bergan miqdorga ochiladi.
+ *
+ * Nega: zayavkada 20 dona bo'lsa-yu brigada 10 tasini tayyorlagan bo'lsa, haydovchiga
+ * 10 ta beriladi; qolgan 10 tasi hali sexda — nakladnoyga yozib bo'lmaydi. Ilgari qoldiq
+ * "zayavka − jo'natilgan" edi va hali chiqmagan mahsulotga reys ochilib ketardi.
+ *
+ * Qator tayyorligi: brigada topshirig'i bo'lsa — brigadir tasdiqlagan `doneQty`;
+ * beton (m³) uchun zames orqali quyilgani ham hisobga olinadi (u brigadaga bermay
+ * to'g'ridan-to'g'ri zavodda quyilishi mumkin); topshiriqsiz dona mahsulot — hali 0.
+ */
+export type OrderReadiness = {
+  /** Zayavkadagi jami miqdor */ total: number;
+  /** Ishlab chiqarilgani (brigada tasdiqlagan yoki zames) — jamidan oshmaydi */ ready: number;
+  /** Bekor qilinmagan reyslarga yozilgani */ shipped: number;
+  /** Hozir reysga berish mumkin: tayyor − jo'natilgan */ available: number;
+  /** Hali sexda: jami − tayyor */ inProduction: number;
+  /** Birorta qatorga brigada tayinlanganmi */ hasTasks: boolean;
+  /** Zayavka birligi ("m3", "dona"…); aralash bo'lsa null */ unit: string | null;
+};
+
+/** `orderReadiness` uchun kerakli include — veb forma, mobil forma va `createTrip` bir xil yuklaydi. */
+export const READINESS_INCLUDE = {
+  items: { include: { product: { select: { unit: true } }, task: { select: { doneQty: true, status: true } } } },
+  trips: { select: { status: true, qtyM3: true } },
+  batches: { select: { productId: true, qtyM3: true } },
+} as const;
+
+type ReadinessOrder = {
+  items: { productId: string; qtyM3: unknown; product: { unit: string }; task: { doneQty: unknown; status: string } | null }[];
+  trips: { status: string; qtyM3: unknown }[];
+  batches: { productId: string; qtyM3: unknown }[];
+};
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+export function orderReadiness(o: ReadinessOrder): OrderReadiness {
+  let total = 0, ready = 0, hasTasks = false;
+  for (const i of o.items) {
+    const q = Number(i.qtyM3);
+    total += q;
+    let r = 0;
+    if (i.task) { hasTasks = true; r = i.task.status === "CANCELLED" ? 0 : Number(i.task.doneQty); }
+    // Beton uchun zames ham ishlab chiqarish tasdig'i — brigada qayd qilmagan bo'lsa ham quyilgani jo'natiladi
+    if (i.product.unit === "m3") r = Math.max(r, o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0));
+    ready += Math.min(q, r);
+  }
+  const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
+  const unit = soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 as number })));
+  return { total: r3(total), ready: r3(ready), shipped: r3(shipped), available: r3(Math.max(0, ready - shipped)), inProduction: r3(Math.max(0, total - ready)), hasTasks, unit };
+}
+
+/**
+ * So'ralgan miqdor tayyor qoldiqdan ko'p bo'lsa — logistga tushunarli sabab.
+ * Veb forma (klientda, yozayotganda) ham, `createTrip` (serverda) ham shu matnni ko'rsatadi.
+ */
+export function readinessError(rd: OrderReadiness, qty: number): string | null {
+  if (qty <= rd.available + 0.001) return null;
+  const u = rd.unit ? ` ${unitLabel(rd.unit)}` : "";
+  if (rd.total - rd.shipped <= 0.001) return "Zayavka to'liq jo'natilgan";
+  if (rd.ready <= 0.001) {
+    return rd.hasTasks
+      ? `Hali tayyor mahsulot yo'q — ${rd.inProduction}${u} ishlab chiqarilmoqda, brigada tasdiqini kuting`
+      : `Zayavkaga brigada tayinlanmagan — avval Ishlab chiqarish bo'limida tayinlang`;
+  }
+  // Hammasi tayyor, faqat qolgani allaqachon jo'natilgan — sexda kutish gapi o'rinsiz
+  if (rd.inProduction <= 0.001) return `Zayavkada faqat ${rd.available}${u} qoldi`;
+  const head = rd.available > 0.001 ? `Faqat ${rd.available}${u} tayyor` : `Tayyor bo'lgani jo'natilgan`;
+  return `${head}. Qolgan ${rd.inProduction}${u} ishlab chiqarilmoqda — brigada tasdiqini kuting`;
+}
+
 // ───────────────────────── Yangi reys ─────────────────────────
 
 export type NewTripInput = { orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null };
@@ -255,19 +355,19 @@ export type NewTripInput = { orderId: string; vehicleId: string; driverId: strin
  */
 export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string }> {
   if (!(input.qtyM3 > 0)) throw new Error("Miqdor 0 dan katta bo'lsin");
-  const o = await db.order.findUnique({ where: { id: input.orderId }, include: { items: true, trips: true } });
+  const o = await db.order.findUnique({ where: { id: input.orderId }, include: READINESS_INCLUDE });
   if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Zayavka tasdiqlanmagan yoki yopilgan");
 
-  const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-  const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
-  const left = total - shipped;
-  if (input.qtyM3 > left + 0.001) throw new Error(`Zayavkada faqat ${left} m³ qoldi`);
+  // Faqat brigada tayyorlab bergani jo'natiladi — qolgani hali sexda
+  const rd = orderReadiness(o);
+  const notReady = readinessError(rd, input.qtyM3);
+  if (notReady) throw new Error(notReady);
 
   const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!v || !v.isActive) throw new Error("Texnika topilmadi yoki nofaol");
   if (v.type === "PUMP") throw new Error("Nasos yuk tashimaydi — mikser yoki yuk mashina tanlang");
   // Beton faqat mikserda ketadi; dona mahsulot (plita, blok) — yuk mashinada. Sig'im (m³) faqat mikserga tegishli.
-  const items = await db.orderItem.findMany({ where: { orderId: o.id }, include: { product: { select: { unit: true } } } });
+  const items = o.items;
   const concrete = items.some((i) => i.product.unit === "m3");
   const piece = items.some((i) => i.product.unit !== "m3");
   if (concrete && !piece && v.type !== "MIXER") throw new Error("Beton zayavkasi — mikser tanlang");

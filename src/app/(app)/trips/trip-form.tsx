@@ -4,15 +4,22 @@ import { useActionState, useState } from "react";
 import { createTrip } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Select, Textarea, FormActions } from "@/components/ui";
 
-/** unit — zayavkadagi mahsulot birligi ("m³", "dona"…); aralash birlikda m³ olinadi. */
-type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number; unit: string };
+import Link from "next/link";
+
+/**
+ * remainingM3 — hozir reysga berish mumkin bo'lgan miqdor: brigada tayyorlagani − jo'natilgani.
+ * inProduction — hali sexda (brigada tasdiqlamagan). unit — zayavkadagi mahsulot birligi ("m³", "dona"…).
+ */
+type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number; inProduction: number; unit: string };
+/** Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavka — ro'yxatga kirmaydi, sababi ko'rsatiladi. */
+type Waiting = { id: string; orderNo: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
 /** type — MIXER (beton) yoki TRUCK (dona mahsulot: plita, blok). */
 type Vehicle = { id: string; plate: string; type: string; capacityM3: number | null };
 const TYPE_LABEL: Record<string, string> = { MIXER: "mikser", TRUCK: "yuk mashina", PUMP: "nasos" };
 /** vehicleId — xodim kartasida biriktirilgan mikser; phoneOk — ECO topa oladigan +998… raqami bormi. */
 type Driver = { id: string; fullName: string; vehicleId: string | null; phoneOk: boolean };
 
-export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehicles: Vehicle[]; drivers: Driver[] }) {
+export function TripForm({ orders, waiting = [], vehicles, drivers }: { orders: Order[]; waiting?: Waiting[]; vehicles: Vehicle[]; drivers: Driver[] }) {
   const [state, action, pending] = useActionState(createTrip, undefined);
   const [orderId, setOrderId] = useState(orders[0]?.id ?? "");
   // Zayavka birligiga mos texnika: beton (m³) — mikser, dona mahsulot — yuk mashina
@@ -29,6 +36,13 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
   // Biriktirilgani ro'yxat boshida tursin
   const driverList = [...drivers].sort((a, b) => Number(b.vehicleId === vehicleId) - Number(a.vehicleId === vehicleId));
   const [qty, setQty] = useState(order ? String(Math.min(vehicle?.capacityM3 ?? order.remainingM3, order.remainingM3)) : "");
+  // Tayyor qoldiqdan ko'p yozilsa — serverdagi bilan bir xil sabab, yuborishdan oldin
+  const qtyNum = Number(qty);
+  const overReady = !order || qtyNum <= order.remainingM3 + 0.001
+    ? undefined
+    : order.inProduction > 0
+      ? `Faqat ${order.remainingM3} ${order.unit} tayyor. Qolgan ${order.inProduction} ${order.unit} ishlab chiqarilmoqda — brigada tasdiqini kuting`
+      : `Zayavkada faqat ${order.remainingM3} ${order.unit} qoldi`;
 
   const suggest = (o?: Order, v?: Vehicle) => {
     if (!o) return;
@@ -64,10 +78,18 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
       <FormError error={state?.error} />
       <Field label="Zayavka *">
         <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)}>
-          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · qoldi {o.remainingM3} {o.unit}</option>)}
+          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · tayyor {o.remainingM3} {o.unit}{o.inProduction > 0 ? ` · sexda ${o.inProduction}` : ""}</option>)}
         </Select>
       </Field>
-      {order && <p className="text-sm text-slate-600">Manzil: {order.address}</p>}
+      {order && (
+        <div className="space-y-1 text-sm text-slate-600">
+          <p>Manzil: {order.address}</p>
+          <p>
+            Brigada tayyorlagan: <b className="text-slate-900">{order.remainingM3} {order.unit}</b> reysga berish mumkin
+            {order.inProduction > 0 && <>, <b className="text-amber-700">{order.inProduction} {order.unit}</b> hali ishlab chiqarilmoqda — brigada tasdiqini kuting</>}
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field
           label="Texnika *"
@@ -95,15 +117,28 @@ export function TripForm({ orders, vehicles, drivers }: { orders: Order[]; vehic
           </Select>
         </Field>
       </div>
-      <Field label={`Miqdor, ${order?.unit ?? "m³"} *`} hint="Texnika sig'imi va zayavka qoldig'idan kichigi taklif qilinadi">
-        <Input name="qtyM3" type="number" step="0.5" min="0.5" value={qty} onChange={(e) => setQty(e.target.value)} onFocus={() => !qty && suggest(order, vehicle)} required />
+      <Field label={`Miqdor, ${order?.unit ?? "m³"} *`} hint={overReady ? undefined : "Texnika sig'imi va tayyor qoldiqdan kichigi taklif qilinadi"} error={overReady}>
+        <Input name="qtyM3" type="number" step="0.5" min="0.5" max={order?.remainingM3} value={qty} onChange={(e) => setQty(e.target.value)} onFocus={() => !qty && suggest(order, vehicle)} required />
       </Field>
       <Field label="Izoh"><Textarea name="note" /></Field>
       <FormActions>
-        <Button disabled={pending || orders.length === 0}>{pending ? "Yaratilmoqda…" : "Reys yaratish"}</Button>
+        <Button disabled={pending || orders.length === 0 || !!overReady}>{pending ? "Yaratilmoqda…" : "Reys yaratish"}</Button>
         <LinkButton href="/trips" variant="secondary">Bekor</LinkButton>
       </FormActions>
-      {orders.length === 0 && <p className="text-sm text-amber-700">Jo'natishga tayyor zayavka yo'q (tasdiqlangan va hajmi qolgan zayavka kerak).</p>}
+      {orders.length === 0 && <p className="text-sm text-amber-700">Jo'natishga tayyor zayavka yo'q — brigada tasdiqlagan mahsulot bo'lishi kerak.</p>}
+      {waiting.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <p className="font-medium">Brigada tasdiqini kutayotgan zayavkalar (reysga hali berilmaydi):</p>
+          <ul className="mt-1 space-y-0.5">
+            {waiting.map((w) => (
+              <li key={w.id}>
+                <Link href={`/orders/${w.id}`} className="font-medium hover:underline">{w.orderNo}</Link> · {w.customer} —{" "}
+                {w.hasTasks ? `${w.inProduction} ${w.unit} ishlab chiqarilmoqda` : "brigada tayinlanmagan"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </form>
   );
 }

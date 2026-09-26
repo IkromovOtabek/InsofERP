@@ -1,8 +1,7 @@
 import { db } from "@/lib/db";
 import { eco, ecoEnabled, type EcoLiveTrip, type EcoOdometer, type EcoStatus, type EcoTrack } from "@/lib/eco/client";
 import { visibleTrips, type Viewer } from "@/lib/eco/visibility";
-import { haversineMeters } from "@/lib/geo";
-import { tripTrack, tripTrackStats, type TrackPoint } from "@/lib/trips";
+import { trackStats, tripTrack, tripTrackStats, type TrackPoint } from "@/lib/trips";
 
 /**
  * Xaritadagi mashinalar — IKKI manbadan.
@@ -18,15 +17,12 @@ import { tripTrack, tripTrackStats, type TrackPoint } from "@/lib/trips";
 /** ERP holatini ECO tilidagi holatga o'girish — xaritadagi rang va yozuv shu bo'yicha. */
 const TO_ECO_STATUS: Record<string, EcoStatus> = { LOADED: "LOADING", ON_ROAD: "EN_ROUTE", DELIVERED: "COMPLETED" };
 
-/** Iz bo'yicha haqiqiy yurilgan yo'l (to'g'ri chiziq emas — nuqtadan nuqtaga). */
+/** Iz bo'yicha haqiqiy yurilgan yo'l. Hisob `lib/trips.ts` da — ikki joyda ikki xil bo'lmasin. */
 function odometer(points: TrackPoint[]): EcoOdometer {
-  let meters = 0;
-  for (let i = 1; i < points.length; i++) {
-    meters += haversineMeters(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
-  }
-  const minutes = points.length > 1 ? Math.max(0, Math.round((points[points.length - 1].at.getTime() - points[0].at.getTime()) / 60000)) : 0;
+  const { meters, movingMs } = trackStats(points);
+  const minutes = Math.round(movingMs / 60000);
   return {
-    meters: Math.round(meters),
+    meters,
     points: points.length,
     movingMinutes: minutes,
     avgSpeedKmh: minutes > 0 ? Math.round((meters / 1000) / (minutes / 60)) : null,
