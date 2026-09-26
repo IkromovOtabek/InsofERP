@@ -144,6 +144,7 @@ export async function createSupplyRequest(
     type: "SUPPLY_NEW",
     title: `Yangi ta'minot so'rovi — ${req.docNo}`,
     body: `${wh.name} · ${items.length} ta mahsulot — narx qo'ying`,
+    link: { key: "supply", id: req.id },
   }, { except: userId }));
   return { id: req.id, docNo: req.docNo };
 }
@@ -212,6 +213,7 @@ export async function priceSupplyRequest(
     type: "SUPPLY_PRICED",
     title: `Ta'minot narxlandi — ${req.docNo}`,
     body: `Jami ${ROUND(total)} so'm — tasdiq kutilmoqda`,
+    link: { key: "supply", id },
   }, { except: userId }));
   return { id, docNo: req.docNo, note: `Jami summa: ${ROUND(total)}` };
 }
@@ -232,6 +234,7 @@ export async function approveSupplyRequest(id: string, userId: string, note?: st
     type: "SUPPLY_APPROVED",
     title: `Ta'minot tasdiqlandi — ${req.docNo}`,
     body: "Pul ajratish kutilmoqda",
+    link: { key: "supply", id },
   }, { except: userId }));
   return { id, docNo: req.docNo, note: "Moliya bo'limiga yuborildi" };
 }
@@ -271,6 +274,7 @@ export async function fundSupplyRequest(
     type: "SUPPLY_FUNDED",
     title: `Pul ajratildi — ${req.docNo}`,
     body: `${acc.name} · sotib olish mumkin`,
+    link: { key: "supply", id },
   }, { except: userId }));
   return { id, docNo: req.docNo, note: "Snabjeniye sotib olishi mumkin" };
 }
@@ -441,6 +445,7 @@ export async function rejectSupplyRequest(id: string, userId: string, reason: st
     type: "SUPPLY_REJECTED",
     title: `Ta'minot bekor qilindi — ${req.docNo}`,
     body: reason.trim(),
+    link: { key: "supply", id },
   }));
   return { id, docNo: req.docNo, note: "Zayavka bekor qilindi" };
 }

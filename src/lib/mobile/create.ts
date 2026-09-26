@@ -7,6 +7,8 @@ import { createTrip, READINESS_INCLUDE, orderReadiness } from "@/lib/trips";
 import { customersCredit, blacklistedIds } from "@/lib/finance";
 import { pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
+import { audit } from "@/lib/audit";
+import { createSupplyRequest } from "@/lib/supply";
 import type { MobileUser } from "./auth";
 import type { FormField, FormOption } from "./detail";
 import { ListError } from "./list";
@@ -26,6 +28,11 @@ export type CreateForm = { key: string; title: string; submitLabel: string; fiel
 export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label: string }> = {
   orders: { roles: ["SALES"], title: "Yangi zayavka", label: "Zayavka ochish" },
   trips: { roles: ["LOGISTICS", "PRODUCTION"], title: "Yangi reys", label: "Reys ochish" },
+  // Ta'minot so'rovi — sklad kerakli mahsulotlar jadvalini tuzadi (veb `/stock/supply/new`)
+  supply: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Ta'minot so'rovi", label: "Ta'minot so'rash" },
+  customers: { roles: ["SALES", "ACCOUNTING", "FINANCE"], title: "Yangi mijoz", label: "Mijoz qo'shish" },
+  suppliers: { roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], title: "Yangi yetkazuvchi", label: "Yetkazuvchi qo'shish" },
+  brigades: { roles: ["SUPERVISOR", "PRODUCTION", "HR"], title: "Yangi brigada", label: "Brigada ochish" },
 };
 
 export const canCreate = (user: MobileUser, key: string) =>
@@ -40,7 +47,77 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 export async function mobileForm(user: MobileUser, key: string): Promise<CreateForm> {
   if (!CREATE_ROLES[key]) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
-  return key === "orders" ? orderForm() : tripForm();
+  switch (key) {
+    case "orders": return orderForm();
+    case "trips": return tripForm();
+    case "supply": return supplyForm();
+    case "customers": return customerForm();
+    case "suppliers": return supplierForm();
+    default: return brigadeForm();
+  }
+}
+
+/** Ta'minot so'rovi: sklad + qachongacha + mahsulotlar jadvali (spravochnikdagi xomashyo, miqdor, izoh). */
+async function supplyForm(): Promise<CreateForm> {
+  const [warehouses, materials, balances] = await Promise.all([
+    db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
+  ]);
+  const bal = new Map(balances.map((b) => [b.materialId, Number(b._sum.qty ?? 0)]));
+  return {
+    key: "supply", title: "Ta'minot so'rovi", submitLabel: "Snabjeniyega yuborish",
+    fields: [
+      { name: "warehouseId", label: "Sklad", type: "select", required: true, value: warehouses[0]?.id, options: warehouses.map((w) => ({ value: w.id, label: w.name })) },
+      { name: "needBy", label: "Qachongacha kerak", type: "date" },
+      {
+        name: "items", label: "Kerakli mahsulotlar", type: "items", required: true,
+        columns: [
+          // Qoldiq nom yonida — kam qolganini ko'rib so'raydi. Birlik xomashyodan olinadi (`extra`).
+          { name: "materialId", label: "Xomashyo", type: "select", required: true, options: materials.map((m) => ({ value: m.id, label: `${m.name} · qoldiq ${(bal.get(m.id) ?? 0).toFixed(1)} ${m.unit}${(bal.get(m.id) ?? 0) < Number(m.minStock) ? " · kam qolgan" : ""}`, extra: { unit: m.unit } })) },
+          { name: "qty", label: "Miqdor", type: "number", required: true, placeholder: "0" },
+          { name: "note", label: "Izoh (marka, o'lcham…)", type: "text" },
+        ],
+      },
+      { name: "note", label: "Izoh", type: "text", hint: "Spravochnikda yo'q mahsulotni vebdagi Sklad bo'limidan so'rang" },
+    ],
+  };
+}
+
+async function customerForm(): Promise<CreateForm> {
+  return {
+    key: "customers", title: "Yangi mijoz", submitLabel: "Mijozni saqlash",
+    fields: [
+      { name: "name", label: "Nomi", type: "text", required: true, placeholder: "MChJ yoki F.I.Sh." },
+      { name: "phone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67" },
+      { name: "inn", label: "INN", type: "text", placeholder: "9 raqam" },
+      { name: "address", label: "Manzil", type: "text" },
+    ],
+  };
+}
+
+async function supplierForm(): Promise<CreateForm> {
+  return {
+    key: "suppliers", title: "Yangi yetkazuvchi", submitLabel: "Saqlash",
+    fields: [
+      { name: "name", label: "Nomi", type: "text", required: true },
+      { name: "phone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67" },
+      { name: "inn", label: "INN", type: "text", placeholder: "9 raqam" },
+    ],
+  };
+}
+
+async function brigadeForm(): Promise<CreateForm> {
+  const leaders = await db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } });
+  return {
+    key: "brigades", title: "Yangi brigada", submitLabel: "Brigadani ochish",
+    fields: [
+      { name: "name", label: "Brigada nomi", type: "text", required: true, placeholder: "1-brigada" },
+      { name: "leaderId", label: "Brigadir", type: "select", options: leaders.map((e) => ({ value: e.id, label: `${e.fullName} · ${e.position}` })), hint: "Keyin Xodimlar kartochkasidan ham biriktirish mumkin" },
+      { name: "phone", label: "Telefon", type: "text" },
+      { name: "note", label: "Izoh", type: "text" },
+    ],
+  };
 }
 
 async function orderForm(): Promise<CreateForm> {
@@ -54,13 +131,13 @@ async function orderForm(): Promise<CreateForm> {
   const credit = await customersCredit(customers.map((c) => c.id));
 
   const customerOptions: FormOption[] = [
-    { value: NEW_CUSTOMER, label: "➕ Yangi mijoz" },
+    { value: NEW_CUSTOMER, label: "+ Yangi mijoz" },
     ...customers.map((c) => {
       const cr = credit.get(c.id);
       const left = cr ? cr.limit - cr.used : null;
       return {
         value: c.id,
-        label: black.has(c.id) ? `⛔ ${c.name} — qora ro'yxat` : `${c.name}${left != null ? ` · limitda ${money(Math.max(0, left))}` : ""}`,
+        label: black.has(c.id) ? `${c.name} — QORA RO'YXAT` : `${c.name}${left != null ? ` · limitda ${money(Math.max(0, left))}` : ""}`,
       };
     }),
   ];
@@ -124,7 +201,7 @@ async function tripForm(): Promise<CreateForm> {
       },
       {
         name: "driverId", label: "Haydovchi", type: "select", required: true,
-        options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${d.vehicle ? ` · ${d.vehicle.plate}` : " · texnikasiz"}${normalizePhone(d.phone) ? "" : " · ⚠️ telefonsiz"}`, extra: d.vehicleId ? { vehicleId: d.vehicleId } : undefined })),
+        options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${d.vehicle ? ` · ${d.vehicle.plate}` : " · texnikasiz"}${normalizePhone(d.phone) ? "" : " · telefonsiz"}`, extra: d.vehicleId ? { vehicleId: d.vehicleId } : undefined })),
         hint: "Haydovchining biriktirilgan texnikasi yonida ko'rsatiladi; telefoni yo'q haydovchi ilovada reysni ko'rmaydi",
       },
       { name: "qtyM3", label: "Hajmi (zayavka birligida)", type: "number", required: true, placeholder: "0" },
@@ -163,6 +240,20 @@ const TripBody = z.object({
   note: z.string().trim().optional(),
 });
 
+const SupplyBody = z.object({
+  warehouseId: z.string().trim().min(1, "Sklad tanlanmagan"),
+  needBy: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+  items: z.array(z.object({
+    materialId: z.string().trim().min(1, "Xomashyo tanlanmagan"),
+    qty: z.coerce.number().positive("Miqdor 0 dan katta bo'lsin"),
+    note: z.string().trim().optional(),
+  })).min(1, "Kamida bitta qator kerak"),
+});
+const CustomerBody = z.object({ name: z.string().trim().min(2, "Mijoz nomi kerak"), phone: z.string().trim().optional(), inn: z.string().trim().optional(), address: z.string().trim().optional() });
+const SupplierBody = z.object({ name: z.string().trim().min(2, "Yetkazuvchi nomi kerak"), phone: z.string().trim().optional(), inn: z.string().trim().optional() });
+const BrigadeBody = z.object({ name: z.string().trim().min(1, "Brigada nomi kerak"), leaderId: z.string().trim().optional(), phone: z.string().trim().optional(), note: z.string().trim().optional() });
+
 export type CreateResult = { key: string; id: string; message: string };
 
 export async function mobileCreate(user: MobileUser, key: string, payload: unknown): Promise<CreateResult> {
@@ -188,6 +279,45 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         note: d.note,
       }, user.id);
       return { key: "orders", id: r.id, message: `${r.orderNo} ochildi — qoralama holatida, qabul qilishni unutmang` };
+    }
+
+    if (key === "supply") {
+      const p = SupplyBody.safeParse(payload);
+      if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const mats = await db.material.findMany({ where: { id: { in: p.data.items.map((i) => i.materialId) } }, select: { id: true, name: true, unit: true } });
+      const byId = new Map(mats.map((m) => [m.id, m]));
+      const r = await createSupplyRequest({
+        warehouseId: p.data.warehouseId, needBy: p.data.needBy || null, note: p.data.note || null,
+        items: p.data.items.map((i) => { const m = byId.get(i.materialId); return { materialId: m?.id ?? null, name: m?.name ?? "", unit: m?.unit ?? "dona", qty: i.qty, note: i.note || null }; }),
+      }, user.id);
+      if (r.error || !r.id) throw new Error(r.error ?? "Saqlanmadi");
+      return { key: "supply", id: r.id, message: `${r.docNo} ochildi — snabjeniye narx qo'yadi` };
+    }
+    if (key === "customers") {
+      const p = CustomerBody.safeParse(payload);
+      if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const d = p.data;
+      if (d.inn && (await db.customer.findUnique({ where: { inn: d.inn } }))) throw new Error("Bu INN bilan mijoz allaqachon bor");
+      const c = await db.customer.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null, address: d.address || null } });
+      await audit(db, user.id, "CREATE", "Customer", c.id, undefined, c);
+      return { key: "customers", id: c.id, message: `${c.name} qo'shildi` };
+    }
+    if (key === "suppliers") {
+      const p = SupplierBody.safeParse(payload);
+      if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const d = p.data;
+      if (d.inn && (await db.supplier.findUnique({ where: { inn: d.inn } }))) throw new Error("Bu INN bilan yetkazuvchi bor");
+      const sup = await db.supplier.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null } });
+      await audit(db, user.id, "CREATE", "Supplier", sup.id, undefined, sup);
+      return { key: "suppliers", id: sup.id, message: `${sup.name} qo'shildi` };
+    }
+    if (key === "brigades") {
+      const p = BrigadeBody.safeParse(payload);
+      if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const d = p.data;
+      const b = await db.brigade.create({ data: { name: d.name, leaderId: d.leaderId || null, phone: d.phone || null, note: d.note || null } });
+      await audit(db, user.id, "CREATE", "Brigade", b.id, undefined, b);
+      return { key: "brigades", id: b.id, message: `${b.name} ochildi` };
     }
 
     const p = TripBody.safeParse(payload);

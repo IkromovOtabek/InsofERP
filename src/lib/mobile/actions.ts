@@ -6,6 +6,13 @@ import { tripArrival, tripCancelled, tripDelivered, tripLoaded, tripOnRoad } fro
 import { addPayment } from "@/lib/payments";
 import { taskCancel, taskProgress } from "@/lib/tasks";
 import { clearBrigadeLeader, setBrigadeLeader } from "@/lib/brigades";
+import { audit } from "@/lib/audit";
+import { createInvoice } from "@/lib/invoices";
+import { convertLead, saveLeadNote, setLeadStatus } from "@/lib/leads";
+import {
+  approveSupplyRequest, editSupplyItems, fundSupplyRequest, priceSupplyRequest, receiveSupplyRequest,
+  rejectSupplyRequest, saveSupplyFact, type FactRow,
+} from "@/lib/supply";
 import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
@@ -40,6 +47,18 @@ const Leader = z.object({
 });
 
 const fail = (m: string, status = 400) => { throw new ListError("ACTION_FAILED", m, status); };
+
+// Forma maydonlari ilovadan satr bo'lib keladi ("12 500", "12,5") — vebdagi `num()` bilan bir xil o'qiladi
+const textOf = (p: Record<string, unknown>, key: string) => String(p[key] ?? "").trim();
+const numOf = (p: Record<string, unknown>, key: string) => {
+  const n = Number(textOf(p, key).replace(/\s+/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+};
+/** `prefix_<itemId>` maydonlaridan qator id'lari — ta'minot jadvali uchun. */
+const itemIds = (p: Record<string, unknown>, prefix: string) =>
+  Object.keys(p).filter((k) => k.startsWith(`${prefix}_`)).map((k) => k.slice(prefix.length + 1));
+const factRows = (p: Record<string, unknown>): FactRow[] =>
+  itemIds(p, "factQty").map((itemId) => ({ itemId, factQty: numOf(p, `factQty_${itemId}`), factPrice: numOf(p, `factPrice_${itemId}`) }));
 
 /**
  * Haydovchi faqat O'ZIGA biriktirilgan reysni harakatlantiradi.
@@ -172,6 +191,97 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
       const r = await clearBrigadeLeader(id, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: `Brigadirlikdan olindi — ${r.freed} brigadirsiz qoldi` };
+    }
+
+    // ── Ta'minot zanjiri — qoida `lib/supply.ts` da, veb bilan bir xil ──
+    case "supply.items": {
+      const rows = itemIds(payload, "qty").map((itemId) => ({ itemId, qty: numOf(payload, `qty_${itemId}`), note: null }));
+      const r = await editSupplyItems(id, rows, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: "Jadval saqlandi" };
+    }
+    case "supply.price": {
+      const rows = itemIds(payload, "price").map((itemId) => ({ itemId, price: numOf(payload, `price_${itemId}`), qty: numOf(payload, `qty_${itemId}`) }));
+      const r = await priceSupplyRequest(id, {
+        supplierId: textOf(payload, "supplierId") || null, note: textOf(payload, "note") || null, rows,
+        delivery: { kind: textOf(payload, "deliveryKind") || null, provider: textOf(payload, "deliveryProvider") || null, cost: numOf(payload, "deliveryCost"), note: textOf(payload, "deliveryNote") || null },
+      }, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: `Tasdiqlashga yuborildi${r.note ? ` — ${r.note}` : ""}` };
+    }
+    case "supply.approve": {
+      const r = await approveSupplyRequest(id, user.id, textOf(payload, "note") || null);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Tasdiqlandi — Moliya bo'limiga yuborildi" };
+    }
+    case "supply.fund": {
+      const r = await fundSupplyRequest(id, { cashAccountId: textOf(payload, "cashAccountId"), note: textOf(payload, "note") || null }, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Pul ajratildi — snabjeniye sotib olishi mumkin" };
+    }
+    case "supply.fact": {
+      const r = await saveSupplyFact(id, factRows(payload), user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Tuzatishlar saqlandi" };
+    }
+    case "supply.receive": {
+      const r = await receiveSupplyRequest(id, {
+        supplierId: textOf(payload, "supplierId") || null, rows: factRows(payload), note: textOf(payload, "note") || null,
+        deliveryFactCost: "deliveryFactCost" in payload ? numOf(payload, "deliveryFactCost") : null,
+      }, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Qabul qilindi — skladga kirim yozildi" };
+    }
+    case "supply.reject": {
+      const r = await rejectSupplyRequest(id, user.id, textOf(payload, "reason"));
+      if (r.error) fail(r.error);
+      return { ok: true, message: "Ta'minot zayavkasi bekor qilindi" };
+    }
+
+    // ── Sayt arizalari — qoida `lib/leads.ts` da ──
+    case "lead.progress":
+    case "lead.reopen":
+    case "lead.reject": {
+      const status = action === "lead.progress" ? "IN_PROGRESS" : action === "lead.reject" ? "REJECTED" : "NEW";
+      const r = await setLeadStatus(id, status, user.id);
+      if (!r.ok) fail(r.error);
+      return { ok: true, message: status === "IN_PROGRESS" ? "Bog'lanildi deb belgilandi" : status === "REJECTED" ? "Ariza bekor qilindi" : "Ariza yana yangi holatda" };
+    }
+    case "lead.convert": {
+      const r = await convertLead(id, { name: textOf(payload, "name"), inn: textOf(payload, "inn") || null }, user.id);
+      if (!r.ok) throw new ListError("ACTION_FAILED", r.error, 400);
+      return { ok: true, message: r.note ?? "Mijoz yaratildi" };
+    }
+    case "lead.note": {
+      const r = await saveLeadNote(id, textOf(payload, "note") || null);
+      if (!r.ok) fail(r.error);
+      return { ok: true, message: "Izoh saqlandi" };
+    }
+
+    // ── Spravochniklar: yopish/ochish (veb sahifadagi tugma bilan bir xil) ──
+    case "brigade.toggle": {
+      const b = await db.brigade.findUnique({ where: { id } });
+      if (!b) fail("Brigada topilmadi", 404);
+      await db.$transaction(async (tx) => {
+        await tx.brigade.update({ where: { id }, data: { isActive: !b!.isActive } });
+        await audit(tx, user.id, "UPDATE", "Brigade", id, { isActive: b!.isActive }, { isActive: !b!.isActive });
+      });
+      return { ok: true, message: b!.isActive ? "Brigada yopildi" : "Brigada qayta ochildi" };
+    }
+    case "supplier.toggle": {
+      const cur = await db.supplier.findUnique({ where: { id } });
+      if (!cur) fail("Yetkazuvchi topilmadi", 404);
+      await db.supplier.update({ where: { id }, data: { isActive: !cur!.isActive } });
+      await audit(db, user.id, "UPDATE", "Supplier", id, { isActive: cur!.isActive }, { isActive: !cur!.isActive });
+      return { ok: true, message: cur!.isActive ? "Yetkazuvchi yopildi" : "Yetkazuvchi qayta ochildi" };
+    }
+
+    // ── Schyot yozish — qoida `lib/invoices.ts` da ──
+    case "order.invoice": {
+      const date = textOf(payload, "date");
+      const r = await createInvoice({ orderId: id, amount: numOf(payload, "amount"), date: date ? new Date(`${date}T00:00:00`) : new Date() }, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.status === "PAID" ? `${r.invoiceNo} yozildi — avans bilan to'liq yopildi` : r.status === "PARTIAL" ? `${r.invoiceNo} yozildi — avans bog'landi` : `${r.invoiceNo} yozildi` };
     }
 
     // ── Schyot ──

@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { audit } from "./audit";
 import { formatPhone, normalizePhone } from "./sms/phone";
 import { botEnabled, sendMessage } from "./telegram/api";
 import { unitLabel } from "./unit";
@@ -54,6 +55,7 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
     type: "LEAD_NEW",
     title: "Saytdan yangi so'rov",
     body: `${lead.name} · ${lead.phone}${lead.product ? ` · ${lead.product.name}` : ""}`,
+    link: { key: "leads", id: lead.id },
   }));
   return { ok: true };
 }
@@ -71,7 +73,7 @@ async function notifySales(lead: {
     });
     if (chats.length === 0) return;
     const text = [
-      "🔔 *Saytdan yangi ariza*",
+      "*Saytdan yangi ariza*",
       `Ism: ${lead.name}`,
       `Telefon: ${formatPhone(lead.phone)}`,
       lead.product ? `Mahsulot: ${lead.product.name}${lead.qty ? ` — ${lead.qty} ${unitLabel(lead.product.unit)}` : ""}` : null,
@@ -82,4 +84,59 @@ async function notifySales(lead: {
   } catch {
     // Xabar ketmasa ham ariza bazada qoldi — sotuv uni `/leads` sahifasida ko'radi.
   }
+}
+
+// ───────────────────────── Sotuvchining ishlovi ─────────────────────────
+// Veb (`app/(app)/leads/actions.ts`) ham, mobil ilova (`lib/mobile/actions.ts`) ham shu
+// funksiyalarni chaqiradi — holat o'tishi va mijozga aylantirish qoidasi bitta joyda.
+
+export type LeadActionResult = { ok: true; note?: string } | { ok: false; error: string };
+
+/** Holatni almashtirish (bog'landim / bekor / yana yangi). Kim ko'targani ham yoziladi. */
+export async function setLeadStatus(leadId: string, status: "NEW" | "IN_PROGRESS" | "REJECTED", userId: string): Promise<LeadActionResult> {
+  const before = await db.lead.findUnique({ where: { id: leadId } });
+  if (!before) return { ok: false, error: "Ariza topilmadi" };
+  if (before.status === "CONVERTED") return { ok: false, error: "Bu ariza mijozga aylantirilgan — holati o'zgarmaydi" };
+  const after = await db.lead.update({ where: { id: leadId }, data: { status, handledById: userId, handledAt: new Date() } });
+  await audit(db, userId, "STATUS_CHANGE", "Lead", leadId, before, after);
+  return { ok: true };
+}
+
+/** Sotuvchining ichki izohi. */
+export async function saveLeadNote(leadId: string, note: string | null): Promise<LeadActionResult> {
+  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { id: true } });
+  if (!lead) return { ok: false, error: "Ariza topilmadi" };
+  await db.lead.update({ where: { id: leadId }, data: { note: note?.trim() || null } });
+  return { ok: true };
+}
+
+/**
+ * Arizani mijozga aylantirish. Shu raqamli mijoz allaqachon bo'lsa — yangisini
+ * yaratmaymiz, borini bog'laymiz (bir mijoz ikki marta ariza qoldirishi normal).
+ */
+export async function convertLead(leadId: string, input: { name: string; inn?: string | null }, userId: string): Promise<LeadActionResult> {
+  const name = input.name.trim();
+  if (name.length < 2) return { ok: false, error: "Mijoz nomi to'liq yozilsin" };
+  const inn = input.inn?.trim() || null;
+  const lead = await db.lead.findUnique({ where: { id: leadId } });
+  if (!lead) return { ok: false, error: "Ariza topilmadi" };
+  if (lead.status === "CONVERTED") return { ok: false, error: "Bu ariza allaqachon mijozga aylantirilgan" };
+
+  if (inn) {
+    const busy = await db.customer.findUnique({ where: { inn } });
+    if (busy && busy.name !== name) return { ok: false, error: `Bu INN allaqachon "${busy.name}" mijozida` };
+  }
+
+  const existing = await db.customer.findFirst({ where: { phone: lead.phone } });
+  const customer = existing
+    ? existing
+    : await db.customer.create({ data: { name, phone: lead.phone, inn, address: lead.address } });
+
+  const after = await db.lead.update({
+    where: { id: leadId },
+    data: { status: "CONVERTED", customerId: customer.id, handledById: userId, handledAt: new Date() },
+  });
+  await audit(db, userId, "STATUS_CHANGE", "Lead", leadId, lead, after);
+  if (!existing) await audit(db, userId, "CREATE", "Customer", customer.id, undefined, customer);
+  return { ok: true, note: existing ? `Mavjud mijozga bog'landi: ${existing.name} (${formatPhone(lead.phone)})` : "Mijoz yaratildi" };
 }

@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { nextNo } from "@/lib/numbering";
+import { createInvoice as create } from "@/lib/invoices";
 import { parseForm, zStr, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -20,27 +20,11 @@ export async function createInvoice(_prev: ActionState, fd: FormData): Promise<A
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
-  const o = await db.order.findUnique({ where: { id: d.orderId }, include: { invoices: { where: { status: { not: "CANCELLED" } } } } });
-  if (!o) return { error: "Zayavka topilmadi" };
-  if (["DRAFT", "BLOCKED", "CANCELLED"].includes(o.status)) return { error: "Tasdiqlanmagan zayavkaga schyot yozib bo'lmaydi" };
-  if (o.invoices.length) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
-
-  const id = await db.$transaction(async (tx) => {
-    const inv = await tx.invoice.create({ data: { invoiceNo: await nextNo(tx, "invoice", "S"), date: new Date(d.date), customerId: o.customerId, orderId: o.id, amount: d.amount } });
-    await audit(tx, s.userId, "CREATE", "Invoice", inv.id, undefined, inv);
-    // Zayavka ochilganda olingan oldindan to'lov (avans) shu schyotga bog'lanadi
-    const advances = await tx.payment.findMany({ where: { orderId: o.id, invoiceId: null } });
-    if (advances.length) {
-      await tx.payment.updateMany({ where: { id: { in: advances.map((a) => a.id) } }, data: { invoiceId: inv.id } });
-      const paid = advances.reduce((x, a) => x + Number(a.amount), 0);
-      const status = paid >= d.amount - 0.005 ? "PAID" : paid > 0 ? "PARTIAL" : "OPEN";
-      if (status !== "OPEN") await tx.invoice.update({ where: { id: inv.id }, data: { status } });
-      await audit(tx, s.userId, "UPDATE", "Invoice", inv.id, { status: "OPEN" }, { status, advances: paid });
-    }
-    return inv.id;
-  });
-  revalidatePath("/invoices"); revalidatePath("/payments"); revalidatePath(`/orders/${o.id}`); revalidatePath("/");
-  redirect(`/invoices?created=${id}`);
+  // Qoida `lib/invoices.ts` da — mobil ilova ham shu funksiyani chaqiradi
+  const res = await create({ orderId: d.orderId, amount: d.amount, date: new Date(d.date) }, s.userId);
+  if (res.error) return { error: res.error };
+  revalidatePath("/invoices"); revalidatePath("/payments"); revalidatePath(`/orders/${d.orderId}`); revalidatePath("/");
+  redirect(`/invoices?created=${res.id}`);
 }
 
 export async function cancelInvoice(id: string) {
