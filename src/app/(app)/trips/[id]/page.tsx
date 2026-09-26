@@ -94,7 +94,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         <Card className="mt-5">
           <CardHeader
             title="Yurgan yo'li"
-            description="Haydovchi ilovasidan kelgan GPS izi — 🚩 qayerdan qo'zg'algan, 🏁 obyekt manzili"
+            description="Haydovchi ilovasidan kelgan GPS izi — yashil bayroq qayerdan qo'zg'algan, qora belgi obyekt manzili"
             icon={Route}
           />
           <div className="mb-4 flex flex-wrap gap-2">

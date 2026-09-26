@@ -37,7 +37,7 @@ PY
 fi
 
 if psql "$DST" -Atc "select 1 from pg_namespace where nspname='erp'" | grep -q 1; then
-  echo "✗ ECO bazasida 'erp' sxemasi allaqachon bor — yuklash to'xtatildi (mavjud ma'lumot buzilmasin)."
+  echo "[XATO] ECO bazasida 'erp' sxemasi allaqachon bor — yuklash to'xtatildi (mavjud ma'lumot buzilmasin)."
   echo "  Qayta yuklash kerak bo'lsa avval erp sxemasini qo'lda o'chiring, keyin skriptni qayta ishga tushiring."
   exit 1
 fi
@@ -59,4 +59,4 @@ echo "→ .env yangilandi: DATABASE_URL=$NEW_URL"
 
 npx prisma generate >/dev/null
 npx prisma migrate status
-echo "✓ Tayyor. Dev-serverni qayta ishga tushiring:  npm run dev"
+echo "[OK] Tayyor. Dev-serverni qayta ishga tushiring:  npm run dev"

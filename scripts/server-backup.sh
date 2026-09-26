@@ -11,12 +11,12 @@ KEEP_DAYS="${KEEP_DAYS:-14}"               # necha kunlik nusxa saqlansin
 
 # DATABASE_URL ni ilovaning .env faylidan o'qiydi (parol logga tushmaydi)
 if [ ! -f "$APP_DIR/.env" ]; then
-  echo "✗ $APP_DIR/.env topilmadi — APP_DIR ni to'g'rilang" >&2
+  echo "[XATO] $APP_DIR/.env topilmadi — APP_DIR ni to'g'rilang" >&2
   exit 1
 fi
 DB_URL="$(grep -m1 '^DATABASE_URL=' "$APP_DIR/.env" | cut -d= -f2- | tr -d '"'"'"'')"
 if [ -z "$DB_URL" ]; then
-  echo "✗ .env da DATABASE_URL yo'q" >&2
+  echo "[XATO] .env da DATABASE_URL yo'q" >&2
   exit 1
 fi
 
@@ -40,7 +40,7 @@ pg_dump "$DB_URL" ${DUMP_ARGS[@]+"${DUMP_ARGS[@]}"} -Fc --no-owner --no-acl -f "
 mv "$FILE.tmp" "$FILE"   # to'liq yozilgandan keyingina nomini beradi
 
 SIZE="$(du -h "$FILE" | cut -f1)"
-echo "✓ tayyor: $FILE ($SIZE)"
+echo "[OK] tayyor: $FILE ($SIZE)"
 
 # Eskilarini o'chirish — faqat muvaffaqiyatli nusxadan keyin
 find "$OUT_DIR" -name 'insof-erp_*.dump' -mtime "+$KEEP_DAYS" -delete

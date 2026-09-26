@@ -41,7 +41,7 @@ async function send(userId: string, text: string): Promise<BotDelivery> {
 /** Parolni tiklash kodi — xodimning o'z chatiga. */
 export const sendResetCodeToBot = (userId: string, code: string) =>
   send(userId, [
-    "🔐 *Insof ERP — parolni tiklash*",
+    "*Insof ERP — parolni tiklash*",
     "",
     `Kod: \`${code}\``,
     "",

@@ -55,9 +55,9 @@ async function checkUsers() {
 async function main() {
   checkEnv();
   await checkUsers();
-  for (const w of warnings) console.log(`⚠  ${w}`);
-  for (const p of problems) console.log(`✗  ${p}`);
-  if (problems.length === 0) console.log("✓  Jiddiy muammo topilmadi.");
+  for (const w of warnings) console.log(`[!]  ${w}`);
+  for (const p of problems) console.log(`[XATO]  ${p}`);
+  if (problems.length === 0) console.log("[OK]  Jiddiy muammo topilmadi.");
   await db.$disconnect();
   process.exit(problems.length ? 1 : 0);
 }

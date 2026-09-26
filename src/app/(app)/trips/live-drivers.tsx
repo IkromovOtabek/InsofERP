@@ -96,7 +96,7 @@ export function LiveDrivers({ orderRef, title, compact }: LiveDriversProps = {})
         ref: t.ref,
         lat: t.position!.lat,
         lng: t.position!.lng,
-        label: t.plate ?? "🚚",
+        label: t.plate ?? "—",
         popup: `<b>${t.plate ?? "—"}</b><br>${t.driver ?? "haydovchi yo'q"}<br>${t.customer}<br>${km(t.odometer.meters)} yurdi${
           t.position!.etaMin != null ? ` · ~${t.position!.etaMin} daq qoldi` : ""
         }`,

@@ -48,7 +48,7 @@ export async function askInsofAi(
     console.error("[askInsofAi] LLM:", e instanceof Error ? e.message.split("\n")[0] : e);
     const limited = /\b429\b|rate[ _-]?limit/i.test(String(e instanceof Error ? e.message : e));
     // Tayyor hisob-kitob bo'lsa — beramiz, lekin bu AI javobi emasligini va davri joriy ekanini aniq aytamiz
-    if (rule.key !== "none") return { answer: { ...rule, text: `⚠️ AI ${limited ? "daqiqalik limitga tiqildi" : "javob bermadi"}. ${range.label} davri bo'yicha tayyor hisob-kitob:\n\n${rule.text}` }, level: 0, period: range.label };
+    if (rule.key !== "none") return { answer: { ...rule, text: `AI ${limited ? "daqiqalik limitga tiqildi" : "javob bermadi"}. ${range.label} davri bo'yicha tayyor hisob-kitob:\n\n${rule.text}` }, level: 0, period: range.label };
     return {
       answer: {
         key: "none",

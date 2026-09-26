@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Sparkles, X, Maximize2, Trash2, Send, ChevronDown, Zap, Bot, ExternalLink, LayoutDashboard, Wallet, Target, Boxes, Landmark, Users, BadgeCheck, TrendingUp, Megaphone, HelpCircle, type LucideIcon } from "lucide-react";
+import { Sparkles, X, Maximize2, Trash2, Send, ChevronDown, Zap, Bot, ExternalLink, LayoutDashboard, Wallet, Target, Boxes, Landmark, Users, BadgeCheck, TrendingUp, Megaphone, HelpCircle, ChartColumn, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* Team24 AI panelining Insof ERP uchun nusxasi:
@@ -179,7 +179,7 @@ export function AiPanel({ period }: { period?: string }) {
                   {m.level === 2
                     ? <span className="inline-flex items-center gap-1 rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-violet-700"><Bot size={11} /> Claude</span>
                     : <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-700" title="Tayyor javob — AI tokeni sarflanmadi"><Zap size={11} /> Tezkor</span>}
-                  {m.answer && m.answer.key !== "none" && <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">📊 Manba: dashboard ({m.answer.key})</span>}
+                  {m.answer && m.answer.key !== "none" && <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5"><ChartColumn size={11} /> Manba: dashboard ({m.answer.key})</span>}
                   {m.latency !== undefined && <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">{m.latency} ms</span>}
                 </div>
               )}

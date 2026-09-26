@@ -18,7 +18,7 @@ async function main() {
   const r = await askInsofAi(q);
   console.log(r.answer.text);
   if (r.answer.bullets?.length) console.log(r.answer.bullets.map((b) => `• ${b}`).join("\n"));
-  if (r.answer.href) console.log(`🔗 ${r.answer.href.label} — ${r.answer.href.href}`);
+  if (r.answer.href) console.log(`Havola: ${r.answer.href.label} — ${r.answer.href.href}`);
   console.log(`\n— ${r.level ? r.model : "qoida (0 token)"} · asboblar: ${r.tools?.length ? r.tools.join(", ") : "—"} · ${Date.now() - t0} ms`);
 }
 

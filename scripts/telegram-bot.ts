@@ -37,7 +37,7 @@ async function main() {
       for (const u of updates) {
         offset = u.update_id + 1;
         const from = u.message?.from;
-        const kind = u.message?.voice ? "🎙 ovoz" : "💬 matn";
+        const kind = u.message?.voice ? "ovoz" : "matn";
         console.log(`${new Date().toLocaleTimeString()} ${kind} · @${from?.username ?? from?.id ?? "?"}`);
         handleUpdate(u).catch((e) => console.error("[handleUpdate]", e));
       }

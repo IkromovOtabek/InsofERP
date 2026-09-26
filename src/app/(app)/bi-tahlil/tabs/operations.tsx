@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Factory, Layers, Truck, PackageCheck, Timer, Target, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Factory, Layers, Truck, PackageCheck, Timer, Target, CheckCircle2, AlertTriangle, Medal, Trophy } from "lucide-react";
 import { operationsTab } from "@/lib/bi/operations";
 import { type Range, type Gran, autoGran } from "@/lib/bi/core";
 import { fmtNum, qty, date as fmtDate } from "@/lib/format";
@@ -15,7 +15,9 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
   const d = await operationsTab(range, gran);
   const k = d.kpis;
   const top5 = d.drivers.slice(0, 5), bottom5 = d.drivers.length > 5 ? [...d.drivers].reverse().slice(0, 5) : d.drivers.filter((x) => x.tier === "PAST" || x.tier === "O'RTA").reverse();
-  const medal = ["🥇", "🥈", "🥉", "4.", "5."];
+  // Birinchi uchtasi — oltin, kumush, bronza medal ikonkasi; qolgani tartib raqami
+  const MEDAL = ["text-amber-500", "text-slate-400", "text-orange-700"];
+  const medal = (i: number) => (i < 3 ? <Medal size={16} className={MEDAL[i]} /> : `${i + 1}.`);
 
   return (
     <div className="space-y-6">
@@ -61,8 +63,8 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
           </Table>
         </Panel>
         <div className="space-y-6">
-          <Panel title="🏆 Top 5 haydovchi">{top5.length ? <ul className="space-y-2 text-[13px]">{top5.map((x, i) => <li key={x.id} className="flex items-center gap-2"><span className="w-6 text-center">{medal[i]}</span><span className="flex-1 truncate">{x.name}<span className="ml-1 text-xs text-slate-400">{qty(x.m3)} m³</span></span><span className="font-semibold tabular">{x.score}</span><span className="w-10 text-right text-xs text-slate-500">{fmtNum(x.rate, 0)}%</span></li>)}</ul> : <Note>—</Note>}</Panel>
-          <Panel title="⚠️ Bottom 5 haydovchi">{bottom5.length ? <ul className="space-y-2 text-[13px]">{bottom5.map((x, i) => <li key={x.id} className="flex items-center gap-2"><span className="w-6 text-center text-slate-400">{bottom5.length - i}.</span><span className="flex-1 truncate">{x.name}<span className="ml-1 text-xs text-slate-400">{qty(x.m3)} m³</span></span><span className="font-semibold tabular">{x.score}</span><span className="w-10 text-right text-xs text-slate-500">{fmtNum(x.rate, 0)}%</span></li>)}</ul> : <Note>—</Note>}</Panel>
+          <Panel title={<><Trophy size={15} className="text-amber-500" /> Top 5 haydovchi</>}>{top5.length ? <ul className="space-y-2 text-[13px]">{top5.map((x, i) => <li key={x.id} className="flex items-center gap-2"><span className="inline-flex w-6 justify-center">{medal(i)}</span><span className="flex-1 truncate">{x.name}<span className="ml-1 text-xs text-slate-400">{qty(x.m3)} m³</span></span><span className="font-semibold tabular">{x.score}</span><span className="w-10 text-right text-xs text-slate-500">{fmtNum(x.rate, 0)}%</span></li>)}</ul> : <Note>—</Note>}</Panel>
+          <Panel title={<><AlertTriangle size={15} className="text-amber-600" /> Bottom 5 haydovchi</>}>{bottom5.length ? <ul className="space-y-2 text-[13px]">{bottom5.map((x, i) => <li key={x.id} className="flex items-center gap-2"><span className="w-6 text-center text-slate-400">{bottom5.length - i}.</span><span className="flex-1 truncate">{x.name}<span className="ml-1 text-xs text-slate-400">{qty(x.m3)} m³</span></span><span className="font-semibold tabular">{x.score}</span><span className="w-10 text-right text-xs text-slate-500">{fmtNum(x.rate, 0)}%</span></li>)}</ul> : <Note>—</Note>}</Panel>
         </div>
       </div>
 

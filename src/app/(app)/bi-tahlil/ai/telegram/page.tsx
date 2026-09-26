@@ -139,7 +139,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 <Tr key={m.id}>
                   <Td className="whitespace-nowrap">{dateTime(m.createdAt)}</Td>
                   {isDirector && <Td>{m.account.user?.fullName ?? "—"}</Td>}
-                  <Td>{m.kind === "voice" ? <Badge color="violet">🎙 ovoz</Badge> : <Badge>matn</Badge>}</Td>
+                  <Td>{m.kind === "voice" ? <Badge color="violet"><Mic size={11} className="mr-1 inline" />ovoz</Badge> : <Badge>matn</Badge>}</Td>
                   <Td className="max-w-xs truncate">{m.question}</Td>
                   <Td className="max-w-md truncate text-slate-500">{m.answer}</Td>
                 </Tr>

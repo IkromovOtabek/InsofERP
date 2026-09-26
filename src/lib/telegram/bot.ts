@@ -13,8 +13,8 @@ const AI_ROLES = new Set(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
 const HELP = [
   "*Insof AI — Telegram bot*",
   "",
-  "🎙 *Ovozli xabar yuboring* — savolingizni o'zbekcha ayting, tizim raqamlar bilan javob beradi.",
-  "⌨️ Matn bilan ham yozish mumkin.",
+  "*Ovozli xabar yuboring* — savolingizni o'zbekcha ayting, tizim raqamlar bilan javob beradi.",
+  "Matn bilan ham yozish mumkin.",
   "",
   "Masalan:",
   "• «Bugun qancha sotildi?»",
@@ -22,7 +22,7 @@ const HELP = [
   "• «Qaysi xomashyo tugayapti?»",
   "• «Reja necha foiz bajarildi?»",
   "",
-  "🔐 Parolni unutsangiz — ERP «Parolni tiklash» bo'limidan kod so'rang, kod SMS o'rniga shu yerga keladi.",
+  "Parolni unutsangiz — ERP «Parolni tiklash» bo'limidan kod so'rang, kod SMS o'rniga shu yerga keladi.",
   "",
   "Buyruqlar: /savollar — tayyor savollar, /uzish — hisobni uzish, /yordam — shu matn.",
 ].join("\n");
@@ -74,12 +74,12 @@ function tablesToLines(text: string) {
 /** Answer → Telegram matni (Markdown). */
 function render(a: Answer, transcript?: string) {
   const parts: string[] = [];
-  if (transcript) parts.push(`🎙 _${transcript.replace(/[_*[\]`]/g, "")}_\n`);
+  if (transcript) parts.push(`_${transcript.replace(/[_*[\]`]/g, "")}_\n`);
   parts.push(toTelegramMarkdown(a.text));
   if (a.bullets?.length) parts.push(a.bullets.map((b) => `• ${b}`).join("\n"));
   if (a.href) {
     const base = appUrl();
-    parts.push(base ? `🔗 [${a.href.label}](${base}${a.href.href})` : `🔗 ${a.href.label} — ${a.href.href}`);
+    parts.push(base ? `Havola: [${a.href.label}](${base}${a.href.href})` : `Havola: ${a.href.label} — ${a.href.href}`);
   }
   return parts.join("\n\n");
 }
@@ -197,7 +197,7 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   } catch (e) {
     console.error("[telegram][answer]", e);
     await sendMessage(chatId, transcript
-      ? `🎙 «${transcript}»\n\nJavob tayyorlashda xato bo'ldi — birozdan keyin qayta urinib ko'ring.`
+      ? `«${transcript}»\n\nJavob tayyorlashda xato bo'ldi — birozdan keyin qayta urinib ko'ring.`
       : "Javob tayyorlashda xato bo'ldi — birozdan keyin qayta urinib ko'ring.");
   }
 }
@@ -208,7 +208,7 @@ function startText() {
     "",
     "Hisobingizni ulang — shundan keyin parolni tiklash kodi SMS o'rniga shu yerga keladi.",
     "",
-    "📱 *Eng osoni:* pastdagi «Telefon raqamimni yuborish» tugmasini bosing. Raqam Otdel kadrdagi kartangizdagi raqam bilan bir xil bo'lsa, hisob darhol ulanadi.",
+    "*Eng osoni:* pastdagi «Telefon raqamimni yuborish» tugmasini bosing. Raqam Otdel kadrdagi kartangizdagi raqam bilan bir xil bo'lsa, hisob darhol ulanadi.",
     "",
     "Yoki ERP'ga kira olsangiz: *Tahlil → Insof AI → Telegram bot* → «Ulash kodi olish» → 6 xonali kodni shu yerga yuboring (kod 15 daqiqa amal qiladi).",
   ].join("\n");
@@ -245,7 +245,7 @@ async function linkByPhone(accountId: string, chatId: number, contact: TgContact
   const tail = AI_ROLES.has(found.user.role)
     ? HELP
     : `Parolni tiklash kodi endi shu yerga keladi (ERP → «Parolni tiklash»).\nTahlil savollari sizning rolingizda (${ROLE_LABELS[found.user.role]}) yopiq.`;
-  await sendMessage(chatId, `✅ Ulandi: *${found.fullName}* (${ROLE_LABELS[found.user.role]})\n\n${tail}`, { keyboard: "remove" });
+  await sendMessage(chatId, `*Ulandi:* ${found.fullName} (${ROLE_LABELS[found.user.role]})\n\n${tail}`, { keyboard: "remove" });
 }
 
 /**
@@ -279,5 +279,5 @@ async function link(accountId: string, chatId: number, code: string) {
     db.telegramLinkCode.update({ where: { code }, data: { usedAt: new Date() } }),
     db.telegramAccount.update({ where: { id: accountId }, data: { userId: row.userId, linkedAt: new Date(), isBlocked: false } }),
   ]);
-  await sendMessage(chatId, `✅ Ulandi: *${row.user.fullName}* (${ROLE_LABELS[row.user.role]})\n\n${HELP}`);
+  await sendMessage(chatId, `*Ulandi:* ${row.user.fullName} (${ROLE_LABELS[row.user.role]})\n\n${HELP}`);
 }

@@ -73,7 +73,7 @@ function chunks(text: string, size = 3800): string[] {
  */
 const replyMarkup = (k: "contact" | "remove" | undefined) =>
   k === "contact"
-    ? { keyboard: [[{ text: "📱 Telefon raqamimni yuborish", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true }
+    ? { keyboard: [[{ text: "Telefon raqamimni yuborish", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true }
     : k === "remove"
       ? { remove_keyboard: true }
       : undefined;

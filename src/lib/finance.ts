@@ -158,8 +158,8 @@ export async function blacklistedIds(ids?: string[]): Promise<Set<string>> {
 }
 
 /** Tanlov ro'yxatlari (<option>) uchun matnli belgi — JSX ishlatib bo'lmaydigan joylarda. */
-export const BLACKLIST_TEXT = "⛔ QORA RO'YXAT";
-export const CONTRACT_TEXT = "📄 SHARTNOMA";
+export const BLACKLIST_TEXT = "QORA RO'YXAT";
+export const CONTRACT_TEXT = "SHARTNOMA";
 
 /**
  * Shartnoma tuzgan mijozlar ID to'plami: bekor qilinmagan, shartnomali zayavkasi bor mijozlar.
@@ -183,7 +183,7 @@ export async function customerMarks(ids?: string[]): Promise<CustomerMarks> {
   return { black, contract };
 }
 
-/** <option> matni: belgilar prefiks sifatida — "⛔ QORA RO'YXAT · 📄 SHARTNOMA · Nomi". */
+/** <option> matni: belgilar prefiks sifatida — "QORA RO'YXAT · SHARTNOMA · Nomi". */
 export function markedName(name: string, id: string, m: CustomerMarks) {
   return [m.black.has(id) && BLACKLIST_TEXT, m.contract.has(id) && CONTRACT_TEXT, name].filter(Boolean).join(" · ");
 }

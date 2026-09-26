@@ -21,9 +21,9 @@ const API = "https://notify.eskiz.uz/api";
 const STATUS: Record<string, string> = {
   moderation: "moderatsiyada",
   inproccess: "jarayonda",
-  service: "✅ servis (tasdiqlangan)",
+  service: "servis (tasdiqlangan)",
   reklama: "reklama",
-  rejected: "❌ rad etilgan",
+  rejected: "rad etilgan",
 };
 
 async function get(path: string, token: string) {
@@ -64,7 +64,7 @@ async function main() {
     console.error("Eng ko'p uchraydigan sabab: kabinet paroli ishlatilgan. Kerak bo'lgani — 'Sozlamalar → API' dagi parol.");
     process.exit(1);
   }
-  console.log("✓ Token olindi\n");
+  console.log("[OK] Token olindi\n");
 
   // ── Hisob ──
   const user = (await get("/auth/user", token)) as { data?: { name?: string; email?: string; status?: string; balance?: number } };
@@ -85,7 +85,7 @@ async function main() {
       }
       const r = await postForm("/user/template", token, { template: t.text });
       if (!r.ok) failed++;
-      console.log(`${r.ok ? "✓" : "✗"} ${t.key}: ${r.ok ? "moderatsiyaga yuborildi" : `${r.status} ${r.body.slice(0, 200)}`}`);
+      console.log(`${r.ok ? "[OK]" : "[XATO]"} ${t.key}: ${r.ok ? "moderatsiyaga yuborildi" : `${r.status} ${r.body.slice(0, 200)}`}`);
     }
     if (failed) {
       // API hamma hisobda ochiq emas (masalan nickname tasdiqlanmaganda "User not found" qaytaradi).
@@ -112,7 +112,7 @@ async function main() {
       : usingTestSender() ? "Bu Eskiz dan test" : "Insof ERP: sinov xabari.";
     if (real && usingTestSender()) console.log("Sinov nomi (4546) bilan HAQIQIY matn yuborilyapti — Eskiz rad etsa, javobi quyida ko'rinadi.");
     const r = await postForm("/message/sms/send", token, { mobile_phone: toEskiz(phone), message: text, from: smsSender() });
-    console.log(`${r.ok ? "✓" : "✗"} ${phone} ← "${text}"`);
+    console.log(`${r.ok ? "[OK]" : "[XATO]"} ${phone} ← "${text}"`);
     console.log(`   ${r.body.slice(0, 300)}\n`);
   }
 

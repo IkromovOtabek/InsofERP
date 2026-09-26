@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Flag, LocateFixed, MapPin } from "lucide-react";
 import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap } from "@/lib/leaflet";
 
 /**
@@ -38,22 +40,22 @@ export function TripTrackMap({ track, start, finish }: {
         layers.push(L.polyline(track, { color: TRACK, weight: 4, opacity: 0.95 }).addTo(m));
       }
 
-      /** Belgi — emoji doira ichida. Rasm fayli kerak emas, har qanday zichlikda aniq chiqadi. */
-      const pin = (at: [number, number], emoji: string, title: string, ring: string) =>
+      /** Belgi — lucide ikonkasi doira ichida (SVG matnga aylantiriladi). Rasm fayli kerak emas, har qanday zichlikda aniq chiqadi. */
+      const pin = (at: [number, number], icon: React.ReactElement, title: string, ring: string) =>
         L.marker(at, {
           icon: L.divIcon({
             className: "",
-            html: `<div style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:#fff;border:2px solid ${ring};box-shadow:0 1px 4px rgba(0,0,0,.3);font-size:17px;line-height:1">${emoji}</div>`,
+            html: `<div style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:#fff;border:2px solid ${ring};box-shadow:0 1px 4px rgba(0,0,0,.3);color:${ring}">${renderToStaticMarkup(icon)}</div>`,
             iconSize: [34, 34],
             iconAnchor: [17, 17],
           }),
         }).addTo(m).bindPopup(title);
 
       const from = start ?? (track.length ? track[0]! : null);
-      if (from) pin(from, "🚩", "Qo'zg'algan joy", "#00b34d");
-      if (finish) pin(finish, "🏁", "Obyekt", "#1f2937");
+      if (from) pin(from, <Flag size={18} />, "Qo'zg'algan joy", "#00b34d");
+      if (finish) pin(finish, <MapPin size={18} />, "Obyekt", "#1f2937");
       // Iz tugagan, lekin obyekt nuqtasi yo'q bo'lsa — oxirgi joylashuvni ko'rsatamiz
-      if (!finish && track.length > 1) pin(track[track.length - 1]!, "📍", "Oxirgi joylashuv", "#009ef5");
+      if (!finish && track.length > 1) pin(track[track.length - 1]!, <LocateFixed size={18} />, "Oxirgi joylashuv", "#009ef5");
 
       const all = [...track, ...(from ? [from] : []), ...(finish ? [finish] : [])];
       if (all.length > 1) m.fitBounds(L.latLngBounds(all), { padding: [40, 40] });

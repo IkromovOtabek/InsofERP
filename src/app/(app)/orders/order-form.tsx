@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload } from "lucide-react";
+import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload, Check } from "lucide-react";
 import { AddressPicker } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState } from "react";
@@ -250,7 +250,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           <span className="text-[13px] font-medium text-slate-700">Shartnoma</span>
           <button type="button" onClick={() => setContract((v) => !v)} aria-pressed={contract}
             className={cn("inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition", contract ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50")}>
-            <FileText size={15} /> {contract ? "Shartnoma qilinadi ✓" : "Shartnoma qilish"}
+            {contract ? <Check size={15} /> : <FileText size={15} />} {contract ? "Shartnoma qilinadi" : "Shartnoma qilish"}
           </button>
         </div>
         {contract && (

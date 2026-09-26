@@ -208,7 +208,7 @@ const customerFind: Tool = {
       return [
         `${c.name}${c.isActive ? "" : " (nofaol)"} · INN ${c.inn ?? "—"} · tel ${c.phone ?? "—"} · manzil ${c.address ?? "—"} · ro'yxatga olingan ${fmtDate(c.createdAt)}`,
         b ? `  Holat: ${b.segment} · xavf ${b.risk} · ${b.orders} ta buyurtma · oxirgisi ${b.lastOrder ? `${fmtDate(b.lastOrder)} (${b.recency} kun oldin)` : "hali yo'q"} · jami xarid ${M(b.lifetime)} · oyiga o'rtacha ${M(b.avgMonthly)}` : "",
-        cr ? `  Qarz: ${M(cr.debt)}${b?.overdueDebt ? ` (muddati o'tgan ${M(b.overdueDebt)}, eng eskisi ${b.oldestDebtDays} kun)` : ""} · schyotsiz ochiq zayavkalar ${M(cr.open)} · limit ${M(cr.limit)}, ishlatilgan ${M(cr.used)}, bo'sh ${M(cr.free)}${cr.blacklisted ? " · ⛔ QORA RO'YXAT (limit to'liq ishlatilgan)" : ""}` : "",
+        cr ? `  Qarz: ${M(cr.debt)}${b?.overdueDebt ? ` (muddati o'tgan ${M(b.overdueDebt)}, eng eskisi ${b.oldestDebtDays} kun)` : ""} · schyotsiz ochiq zayavkalar ${M(cr.open)} · limit ${M(cr.limit)}, ishlatilgan ${M(cr.used)}, bo'sh ${M(cr.free)}${cr.blacklisted ? " · QORA RO'YXAT (limit to'liq ishlatilgan)" : ""}` : "",
         b ? `  Tavsiya: ${b.action}` : "",
         `  Sahifa: ${link(`/customers/${c.id}`)}`,
       ].filter(Boolean).join("\n");
@@ -238,7 +238,7 @@ const customersList: Tool = {
     const shown = list.slice(0, take);
     const head = `Jami ${base.length} mijoz · filtr «${f}»: ${list.length} ta (ko'rsatildi ${shown.length}) · ro'yxatdagilar qarzi ${M(sum(list.map((c) => c.debt)))}`;
     if (!shown.length) return head + "\nBu filtrga mos mijoz yo'q.";
-    return [head, ...shown.map((c, i) => `${i + 1}. ${c.name} · tel ${c.phone ?? "—"} · ${c.segment} · xarid ${M(c.lifetime)} (${c.orders} buyurtma) · qarz ${M(c.debt)}${c.overdueDebt ? ` (muddati o'tgan ${M(c.overdueDebt)})` : ""} · oxirgi buyurtma ${c.lastOrder ? `${fmtDate(c.lastOrder)}` : "yo'q"}${credit.get(c.id)?.blacklisted ? " · ⛔ QORA RO'YXAT" : ""}`)].join("\n");
+    return [head, ...shown.map((c, i) => `${i + 1}. ${c.name} · tel ${c.phone ?? "—"} · ${c.segment} · xarid ${M(c.lifetime)} (${c.orders} buyurtma) · qarz ${M(c.debt)}${c.overdueDebt ? ` (muddati o'tgan ${M(c.overdueDebt)})` : ""} · oxirgi buyurtma ${c.lastOrder ? `${fmtDate(c.lastOrder)}` : "yo'q"}${credit.get(c.id)?.blacklisted ? " · QORA RO'YXAT" : ""}`)].join("\n");
   },
 };
 
