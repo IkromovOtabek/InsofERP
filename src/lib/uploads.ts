@@ -96,9 +96,8 @@ export async function removeEmployeeFile(stored: string | null | undefined) {
 
 // ───────────────────────── E-commerce (do'kon) suratlari ─────────────────────────
 
-const SHOP_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-export const SHOP_PHOTO_ACCEPT = Object.keys(SHOP_TYPES).join(",");
-export const SHOP_PHOTO_MAX_MB = 5;
+import { SHOP_TYPES, SHOP_PHOTO_MAX_MB } from "./shop-upload";
+export { SHOP_PHOTO_ACCEPT, SHOP_PHOTO_MAX_MB } from "./shop-upload";
 
 /**
  * Do'kon vitrinasidagi mahsulot surati. `uploads/shop/` ga yoziladi va OMMAVIY marshrut

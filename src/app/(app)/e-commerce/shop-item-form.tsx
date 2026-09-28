@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { Check, Eye, EyeOff, ImageIcon, Trash2 } from "lucide-react";
 import { Badge, Button, Checkbox, Field, FormError, FormSuccess, Input, Textarea } from "@/components/ui";
-import { SHOP_PHOTO_ACCEPT } from "@/lib/uploads";
+import { SHOP_PHOTO_ACCEPT } from "@/lib/shop-upload";
 import { deleteShopPhoto, saveShopItem, toggleShopItem } from "./actions";
 
 export type ShopRowProduct = {
