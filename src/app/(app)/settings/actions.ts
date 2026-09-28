@@ -7,6 +7,7 @@ import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, type ActionState } from "@/lib/action";
+import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 
 const ROLES = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
@@ -181,4 +182,23 @@ export async function savePlantLocation(lat: number, lng: number) {
     create: { id: "main", lat, lng },
   });
   revalidatePath("/settings");
+}
+
+/* ───────── Hisobni o'chirish so'rovlari (do'kon talabi) ───────── */
+
+export async function approveDeletion(id: string): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = await approveRequest(id, s.userId);
+  if (!r.ok) return { error: r.error };
+  revalidatePath("/settings"); revalidatePath("/employees");
+  return { ok: true };
+}
+
+export async function rejectDeletion(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const reason = String(fd.get("reason") ?? "").trim().slice(0, 300) || null;
+  const r = await rejectRequest(id, s.userId, reason);
+  if (!r.ok) return { error: r.error };
+  revalidatePath("/settings");
+  return { ok: true };
 }

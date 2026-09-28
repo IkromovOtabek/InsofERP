@@ -5,6 +5,7 @@ import { nextNo } from "@/lib/numbering";
 import { money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
+import { syncCustomerLater } from "@/lib/eco/customers";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -115,7 +116,7 @@ export type NewOrderInput = {
   contractAmount?: number;
   note?: string | null;
 };
-export type NewOrderResult = { id: string; orderNo: string; onCredit: boolean; contractNo: string | null };
+export type NewOrderResult = { id: string; orderNo: string; customerId: string; onCredit: boolean; contractNo: string | null };
 
 /**
  * Zayavka ochish — veb "Yangi zayavka" formasi ham, mobil ilova ham shu yerdan.
@@ -178,7 +179,7 @@ export async function createOrder(
     }
   }
 
-  return db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
     let customerId = input.customerId!;
     if (input.newCustomer) {
       const c = await tx.customer.create({
@@ -215,6 +216,9 @@ export async function createOrder(
       const p = await tx.payment.create({ data: { customerId, orderId: o.id, cashAccountId: prepay.cashAccountId, amount: prepay.amount, note: `Oldindan to'lov · ${o.orderNo}` } });
       await audit(tx, userId, "CREATE", "Payment", p.id, undefined, { ...p, via: "order-form" });
     }
-    return { id: o.id, orderNo: o.orderNo, onCredit, contractNo: o.contractNo };
+    return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo };
   });
+  // Yangi mijoz ilovaga ham yetsin — telefoni ilovada ro'yxatdan o'tgan bo'lsa hisobi o'sha yerda ulanadi
+  if (input.newCustomer) syncCustomerLater(res.customerId);
+  return res;
 }

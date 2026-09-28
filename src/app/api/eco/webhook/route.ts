@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { revalidatePath } from "next/cache";
 import { applyEcoStatus } from "@/lib/eco/sync";
 import { applyEcoDriver, applyEcoVehicle } from "@/lib/eco/people";
+import { applyEcoCustomerRegistered } from "@/lib/eco/customers";
+import { requestFromEco } from "@/lib/account-deletion";
 import { ECO_STATUSES, type EcoStatus } from "@/lib/eco/client";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +14,9 @@ export const runtime = "nodejs";
  * Insof ECO → ERP webhook. Uchta hodisa:
  *   delivery.status_changed — haydovchi ilovada reys holatini o'zgartirdi;
  *   driver.changed — haydovchi ilovada ro'yxatdan o'tdi / tasdiqlandi / ismini o'zgartirdi (ERP xodimi avtomatik yaratiladi);
- *   vehicle.changed — Tadbirkor ilovada mashina qo'shdi/o'zgartirdi.
+ *   vehicle.changed — Tadbirkor ilovada mashina qo'shdi/o'zgartirdi;
+ *   customer.registered — ERP'dan taklif qilingan mijoz ilovada ro'yxatdan o'tdi (sotuvchiga bildirishnoma);
+ *   driver.delete_requested — haydovchi ilovada hisobini o'chirishni so'radi (direktorga so'rov, Sozlamalar).
  * Himoya: `X-Eco-Signature: sha256=HMAC_SHA256(ECO_WEBHOOK_SECRET, "<X-Eco-Timestamp>.<body>")`,
  * 5 daqiqadan eski so'rov rad etiladi (replay). Login'dan ozod (middleware'da /api/eco ochiq).
  * Xatoda 5xx qaytariladi — ECO 3 marta qayta uradi; baribir yetib bormasa reys sahifasidagi "ECO'dan yangilash" bor.
@@ -35,6 +39,8 @@ export async function POST(req: Request) {
     if (p.event === "delivery.status_changed") return await onDelivery(p);
     if (p.event === "driver.changed") return await onDriver(p);
     if (p.event === "vehicle.changed") return await onVehicle(p);
+    if (p.event === "customer.registered") return await onCustomer(p);
+    if (p.event === "driver.delete_requested") return await onDeleteRequest(p);
     return NextResponse.json({ ok: true, ignored: true });
   } catch (e) {
     console.error("[eco][webhook]", p.event, e);
@@ -84,6 +90,21 @@ async function onVehicle(p: EcoPayload) {
   });
   if (r.applied) revalidatePath("/drivers");
   return NextResponse.json({ ok: true, applied: r.applied, created: !!r.created });
+}
+
+/** ERP mijozi ilovada hisob ochdi → sotuvchilarga xabar; mijoz kartasida "Ilova hisobi" yangilanadi. */
+async function onCustomer(p: EcoPayload) {
+  if (!p.externalRef || !p.phone) return NextResponse.json({ ok: true, ignored: true });
+  const r = await applyEcoCustomerRegistered({ externalRef: p.externalRef, phone: p.phone, fullName: p.fullName ?? null });
+  return NextResponse.json({ ok: true, applied: r.applied });
+}
+
+/** Haydovchi ilovada "Hisobni o'chirish" bosdi → direktorga so'rov; tasdiqlangach ERP ECO'da a'zolikni o'chiradi, ECO anonimlashtiradi. */
+async function onDeleteRequest(p: EcoPayload) {
+  if (!p.userId || !p.phone) return NextResponse.json({ ok: true, ignored: true });
+  const r = await requestFromEco({ userId: p.userId, fullName: p.fullName ?? null, phone: p.phone });
+  if (r.applied) revalidatePath("/settings");
+  return NextResponse.json({ ok: true, applied: r.applied });
 }
 
 /** Tirikligini tekshirish. */

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Wallet, ClipboardList, CreditCard, ArrowRight, Plus } from "lucide-react";
+import { Wallet, ClipboardList, CreditCard, ArrowRight, Plus, Smartphone } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { customerCredit, contractedIds } from "@/lib/finance";
@@ -9,13 +9,15 @@ import { Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Td,
 import { CustomerForm } from "../customer-form";
 import { BlacklistMark, ContractMark } from "@/components/customer-name";
 import { OrderStatusBadge } from "../../orders/status";
+import { customerAppStatus } from "@/lib/eco/customers";
+import { AppAccount } from "../app-account";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const s = await requireSession(["SALES", "ACCOUNTING", "FINANCE"]);
   const c = await db.customer.findUnique({ where: { id }, include: { orders: { orderBy: { date: "desc" }, take: 10, include: { items: true } } } });
   if (!c) notFound();
-  const [{ limit, debt, open, used, free, blacklisted }, contracted] = await Promise.all([customerCredit(id), contractedIds([id])]);
+  const [{ limit, debt, open, used, free, blacklisted }, contracted, appStatus] = await Promise.all([customerCredit(id), contractedIds([id]), c.isInternal ? null : customerAppStatus(id)]);
   const canOrder = ["SALES", "DIRECTOR"].includes(s.role) && c.isActive && !blacklisted;
 
   return (
@@ -37,6 +39,13 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           <CardHeader title="Ma'lumotlar" />
           <CustomerForm customer={{ ...c, creditLimit: c.creditLimit.toString() }} canEditLimit={["FINANCE", "DIRECTOR"].includes(s.role)} />
         </Card>
+        <div className="space-y-5">
+        {appStatus && (
+          <Card>
+            <CardHeader title="Ilova hisobi" icon={Smartphone} description="Mijoz Insof ECO ilovasida zayavkalarini va reyslarini kuzatishi uchun" />
+            <AppAccount customerId={id} phone={c.phone} initial={appStatus} canLink={["SALES", "DIRECTOR"].includes(s.role)} />
+          </Card>
+        )}
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="So'nggi zayavkalar" action={<span className="inline-flex items-center gap-3 text-sm"><Link href={`/orders?customer=${id}`} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900">Kutayotgan</Link><Link href={`/sales?customer=${id}`} className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-900">Sotuvlar <ArrowRight size={14} /></Link></span>} /></div>
           <table className="w-full text-sm">
@@ -54,6 +63,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             </tbody>
           </table>
         </Card>
+        </div>
       </div>
     </div>
   );

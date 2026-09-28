@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, type ActionState } from "@/lib/action";
+import { syncCustomerLater } from "@/lib/eco/customers";
 
 const schema = z.object({
   name: zStr("Nomi to'ldirilishi shart"),
@@ -29,6 +30,7 @@ export async function saveCustomer(id: string | null, _prev: ActionState, fd: Fo
     if (Number(cur.creditLimit) !== d.creditLimit) return { error: "Kredit limitni faqat Finance yoki Direktor o'zgartira oladi" };
   }
 
+  let savedId = id;
   try {
     await db.$transaction(async (tx) => {
       if (id) {
@@ -38,12 +40,15 @@ export async function saveCustomer(id: string | null, _prev: ActionState, fd: Fo
       } else {
         const c = await tx.customer.create({ data: d });
         await audit(tx, s.userId, "CREATE", "Customer", c.id, undefined, c);
+        savedId = c.id;
       }
     });
   } catch (e) {
     if (String(e).includes("Unique constraint")) return { error: "Bu INN bilan mijoz allaqachon bor" };
     throw e;
   }
+  // Ilovaga ham yetsin (nom/telefon/limit) — telefoni ilovada bo'lsa hisobi o'sha yerda ulanadi
+  if (savedId) syncCustomerLater(savedId);
   revalidatePath("/customers");
   redirect("/customers");
 }

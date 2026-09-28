@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Unbounded, Onest, JetBrains_Mono } from "next/font/google";
 import { getCompany } from "@/lib/company";
+import { SITE_URL } from "@/lib/site";
 
 /**
  * Ommaviy sayt (landing) qobig'i.
@@ -24,14 +25,50 @@ const unbounded = Unbounded({ subsets: ["latin", "latin-ext", "cyrillic", "cyril
 const onest = Onest({ subsets: ["latin", "latin-ext", "cyrillic"], variable: "--font-onest", display: "swap" });
 const jetMono = JetBrains_Mono({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-jet-mono", display: "swap" });
 
+// Qidiruvda "Insof JBI", "Insof beton", "Yangiyo'l beton zavodi" kabi so'rovlar bo'yicha
+// topilishi uchun — kompaniya nomi DB'dan dinamik, qolgani mijoz qanday qidirishini hisobga oladi.
+const KEYWORDS = [
+  "Insof JBI",
+  "Insof beton zavodi",
+  "Insof Beton",
+  "Yangiyo'l beton zavodi",
+  "beton zavodi Yangiyo'l",
+  "Toshkent viloyati beton zavodi",
+  "tayyor beton",
+  "tayyor beton narxi",
+  "temir beton mahsulotlari",
+  "temir beton buyumlari",
+  "beton yetkazib berish",
+  "mikser beton",
+  "beton plita",
+];
+
 export async function generateMetadata(): Promise<Metadata> {
   const c = await getCompany();
   const title = `${c.name} — temir beton mahsulotlari`;
   const description = c.about ?? "Tayyor beton va temir-beton mahsulotlari ishlab chiqarish. Obyektga o'z transportimizda yetkazib beramiz.";
   return {
+    metadataBase: new URL(SITE_URL),
     title: { absolute: title },
     description,
-    openGraph: { title, description, type: "website", images: ["/media/zavod.jpg"], locale: "uz_UZ" },
+    keywords: KEYWORDS,
+    alternates: { canonical: "/" },
+    robots: { index: true, follow: true },
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      images: ["/media/zavod.jpg"],
+      locale: "uz_UZ",
+      url: "/",
+      siteName: c.name,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ["/media/zavod.jpg"],
+    },
   };
 }
 

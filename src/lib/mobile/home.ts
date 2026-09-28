@@ -23,7 +23,8 @@ export type HomeRow = { id: string; title: string; subtitle?: string; right?: st
 /** `target` — qator bosilganda ochiladigan kartochka turi (`/api/mobile/detail?key=...`). Bo'lmasa qator bosilmaydi. */
 /** `kind: "list"` — ro'yxatni ochadi, `kind: "new"` — yangi hujjat formasini. */
 export type QuickAction = { key: string; label: string; icon: string; kind: "list" | "new" };
-export type HomeSection = { title: string; empty: string; rows: HomeRow[]; target?: string };
+/** `icon` — `target` yo'q (hech qayerga o'tmaydigan) bo'limlar uchun ma'noli belgi; bo'lmasa doira. */
+export type HomeSection = { title: string; empty: string; rows: HomeRow[]; target?: string; icon?: string };
 export type MobileHome = {
   role: Role;
   roleLabel: string;

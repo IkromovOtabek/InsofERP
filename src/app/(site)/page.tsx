@@ -7,6 +7,7 @@ import {
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { fmtNum } from "@/lib/format";
+import { SITE_URL } from "@/lib/site";
 import { SiteHeader } from "./site-header";
 import { LeadForm } from "./lead-form";
 import { Showreel, type Clip } from "./showreel";
@@ -102,8 +103,34 @@ export default async function LandingPage() {
     { id: "root", name: "Boshqa mahsulotlar", count: catalogProducts.filter((p) => p.groupId === "root").length },
   ].filter((g) => g.count > 0);
 
+  // Google'da "Insof JBI", "beton zavodi Yangiyo'l" kabi so'rovlarga mahalliy korxona
+  // sifatida chiqishi uchun — LocalBusiness sxemasi.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    name: company.name,
+    legalName: company.legalName || undefined,
+    description: company.about || "Tayyor beton va temir-beton mahsulotlari ishlab chiqarish.",
+    image: `${SITE_URL}/media/zavod.jpg`,
+    url: SITE_URL,
+    telephone: phone || undefined,
+    email: email || undefined,
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: company.address || "Yangiyo'l",
+      addressLocality: "Yangiyo'l",
+      addressRegion: "Toshkent viloyati",
+      addressCountry: "UZ",
+    },
+    ...(company.lat && company.lng
+      ? { geo: { "@type": "GeoCoordinates", latitude: company.lat, longitude: company.lng } }
+      : {}),
+    openingHours: hours || undefined,
+  };
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <SiteHeader phone={phone} email={email} hours={hours} />
 
       {/* ───────── Hero banneri ───────── */}

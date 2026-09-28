@@ -93,3 +93,37 @@ export async function removeEmployeeFile(stored: string | null | undefined) {
   if (!p) return;
   try { await unlink(p); } catch { /* fayl allaqachon yo'q */ }
 }
+
+// ───────────────────────── E-commerce (do'kon) suratlari ─────────────────────────
+
+const SHOP_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+export const SHOP_PHOTO_ACCEPT = Object.keys(SHOP_TYPES).join(",");
+export const SHOP_PHOTO_MAX_MB = 5;
+
+/**
+ * Do'kon vitrinasidagi mahsulot surati. `uploads/shop/` ga yoziladi va OMMAVIY marshrut
+ * (`/api/public/shop/photo/<stored>`) orqali beriladi — ilova login talab qilmaydi.
+ * Shuning uchun faqat rasm (PDF emas) va kichik hajm.
+ */
+export async function saveShopPhoto(productId: string, file: FormDataEntryValue | null): Promise<SavedFile | null | { error: string }> {
+  if (!(file instanceof File) || file.size === 0) return null;
+  const ext = SHOP_TYPES[file.type];
+  if (!ext) return { error: "Surat JPG, PNG yoki WEBP bo'lishi kerak" };
+  if (file.size > SHOP_PHOTO_MAX_MB * 1024 * 1024) return { error: `Surat ${SHOP_PHOTO_MAX_MB} MB dan katta` };
+  const dir = path.join(UPLOADS_DIR, "shop");
+  await mkdir(dir, { recursive: true });
+  const stored = `${productId}-${Date.now()}.${ext}`;
+  await writeFile(path.join(dir, stored), Buffer.from(await file.arrayBuffer()));
+  return { stored, name: file.name || `mahsulot.${ext}`, type: file.type };
+}
+
+export function shopPhotoPath(stored: string) {
+  if (!/^[\w-]+\.(jpg|png|webp)$/.test(stored)) return null;
+  return path.join(UPLOADS_DIR, "shop", stored);
+}
+
+export async function removeShopPhoto(stored: string | null | undefined) {
+  const p = stored ? shopPhotoPath(stored) : null;
+  if (!p) return;
+  try { await unlink(p); } catch { /* fayl allaqachon yo'q */ }
+}

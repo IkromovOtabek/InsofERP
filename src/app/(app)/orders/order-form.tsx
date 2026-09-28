@@ -1,10 +1,11 @@
 "use client";
 
-import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload, Check } from "lucide-react";
+import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload, Check, Smartphone } from "lucide-react";
 import { AddressPicker } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState } from "react";
 import { createOrder } from "./actions";
+import { lookupAppByPhone } from "../customers/app-actions";
 import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions, Checkbox } from "@/components/ui";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
 import { ProductField } from "@/components/product-field";
@@ -124,6 +125,13 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
 export function OrderForm({ customers, products, groups, canCreateProduct, stock, cashAccounts, preselectCustomer, contractAccept, geoSearch }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
+  // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi
+  const [appHint, setAppHint] = useState<{ fullName: string | null; orgName: string; registered: boolean } | null>(null);
+  const checkApp = (phone: string) => {
+    setAppHint(null);
+    if (phone.replace(/\D/g, "").length < 9) return;
+    void lookupAppByPhone(phone).then((r) => setAppHint(r && r.registered ? r : null)).catch(() => setAppHint(null));
+  };
   const [customer, setCustomer] = useState<CustomerOpt | null>(customers.find((c) => c.id === preselectCustomer) ?? null);
   const [payment, setPayment] = useState<"prepay" | "credit">("prepay");
   const [prepay, setPrepay] = useState("");
@@ -234,11 +242,17 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           <div className="space-y-3 rounded-lg border border-dashed border-slate-300 p-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Nomi *"><Input name="newName" placeholder="Firma yoki shaxs nomi" required={mode === "new"} /></Field>
-              <Field label="Telefon"><Input name="newPhone" placeholder="+998 __ ___ __ __" /></Field>
+              <Field label="Telefon"><Input name="newPhone" placeholder="+998 __ ___ __ __" onBlur={(e) => checkApp(e.target.value)} /></Field>
               <Field label="INN"><Input name="newInn" /></Field>
               <Field label="Manzil"><Input name="newAddress" /></Field>
             </div>
             <p className="text-xs text-slate-500">Yangi mijozga avtomatik <b>100 000 000 so&apos;m</b> kredit limit ajratiladi. Mijoz zayavka bilan birga saqlanadi.</p>
+            {appHint && (
+              <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-xs text-emerald-800">
+                <Smartphone size={14} className="mt-0.5 shrink-0" />
+                <span>Bu raqam ilovada ro&apos;yxatdan o&apos;tgan: <b>{appHint.fullName ?? appHint.orgName}</b>{appHint.fullName && appHint.orgName !== appHint.fullName ? ` (${appHint.orgName})` : ""}. Zayavka saqlangach mijoz o&apos;sha hisobga ulanadi va zayavkani ilovada kuzatadi.</span>
+              </div>
+            )}
           </div>
         )}
       </div>

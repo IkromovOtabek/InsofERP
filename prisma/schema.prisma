@@ -63,6 +63,8 @@ model User {
   salesRegister SalesRegister[]     @relation("SalesRegisterCreatedBy")
   devices       MobileDevice[]
   notifications Notification[]
+  deletionRequests AccountDeletionRequest[] @relation("DeletionRequestUser")
+  deletionHandled  AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -206,8 +208,29 @@ model Product {
   batches     ProductionBatch[]
   stockMoves  StockMove[]
   leads       Lead[]
+  shopItem    ShopItem?
 
   @@index([groupId])
+}
+
+/// E-commerce vitrinasi (Insof ECO ilovasidagi do'kon): qaysi mahsulot ko'rinadi, surati,
+/// tavsifi va do'kon narxi. Mahsulotning o'zi (`Product`) o'zgarmaydi — bu faqat ko'rinish qatlami.
+/// Bo'sh `title`/`price` — mahsulotning o'z nomi/narxi olinadi.
+model ShopItem {
+  id          String   @id @default(cuid())
+  productId   String   @unique
+  isPublished Boolean  @default(false)
+  title       String?
+  description String?
+  photo       String? // uploads/shop/<stored>
+  price       Decimal? @db.Decimal(18, 2)
+  minQty      Decimal? @db.Decimal(18, 3) // eng kam buyurtma (mahsulot birligida)
+  badge       String? // "Yangi", "Chegirma", "Top"
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 /// Retsept — 1 m3 uchun norma. Versiyalanadi, eski versiya o'chirilmaydi.
@@ -318,6 +341,7 @@ model Employee {
   documents  EmployeeDocument[]
   hrDocs     HrDocument[]
   attendance Attendance[]
+  deletionRequests AccountDeletionRequest[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -1180,6 +1204,45 @@ model Lead {
   product   Product?  @relation(fields: [productId], references: [id])
   customer  Customer? @relation(fields: [customerId], references: [id])
   handledBy User?     @relation("LeadHandledBy", fields: [handledById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([phone])
+}
+
+enum DeletionRequestSource {
+  APP // ERP logini bilan kirgan xodim ilovadan so'radi
+  ECO // ECO haydovchisi ilovadan so'radi (webhook `driver.delete_requested`)
+  WEB // saytdagi /maxfiylik/hisobni-ochirish formasi (ilovasiz)
+}
+
+enum DeletionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Hisobni o'chirish so'rovi (App Store / Google Play talabi). Mijoz ilovada o'zi darhol
+/// o'chiradi (ECO tomonida); zavod xodimi so'rov qoldiradi — direktor Sozlamalar sahifasida
+/// tasdiqlaydi: ERP logini yopiladi, sessiyalar kuyadi, qurilma/bildirishnoma yozuvlari
+/// o'chadi, ECO haydovchisi bo'lsa ECO ham anonimlashtiradi. Xodim kartasi (HR) qoladi.
+model AccountDeletionRequest {
+  id         String                @id @default(cuid())
+  source     DeletionRequestSource
+  status     DeletionRequestStatus @default(PENDING)
+  userId     String? // ERP foydalanuvchisi (APP yoki telefon bo'yicha topilgan)
+  employeeId String? // bog'liq xodim kartasi
+  ecoUserId  String? // ECO foydalanuvchi id (ECO manbasi)
+  fullName   String
+  phone      String? // normallashtirilgan
+  note       String?
+  handledById String?
+  handledAt  DateTime?
+  result     String? // tasdiqda nima qilindi (ERP logini yopildi, ECO anonim...)
+  createdAt  DateTime              @default(now())
+
+  user      User?     @relation("DeletionRequestUser", fields: [userId], references: [id])
+  employee  Employee? @relation(fields: [employeeId], references: [id])
+  handledBy User?     @relation("DeletionRequestHandledBy", fields: [handledById], references: [id])
 
   @@index([status, createdAt])
   @@index([phone])

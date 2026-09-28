@@ -5,12 +5,12 @@ import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 
 /**
- * Login talab qilmaydigan yo'llar: ommaviy taqdimot, login, QR tekshiruv, Telegram va Insof ECO webhook'lari
+ * Login talab qilmaydigan yo'llar: ommaviy taqdimot, maxfiylik siyosati (do'konlar uchun), login, QR tekshiruv, Telegram va Insof ECO webhook'lari
  * (maxfiy token/imzo bilan himoyalangan) va mobil ilova API'si (o'z Bearer tokeni bilan himoyalangan —
  * `lib/mobile/auth.ts`; cookie sessiyasiga tayanmaydi).
  */
 const isPublic = (p: string) =>
-  p.startsWith("/taqdimot") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile");
+  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile");
 
 export async function middleware(req: NextRequest) {
   const token = req.cookies.get("insof_session")?.value;
@@ -40,6 +40,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // `media` va `taqdimot` — ommaviy saytdagi surat va videolar (`public/…`). Ular tekshiruvdan
   // o'tsa, tizimga kirmagan mehmon uchun /login ga yo'naltiriladi va banner ochilmaydi.
+  // `robots.txt`/`sitemap.xml` — Google shu yo'llarni mehmon sifatida o'qiydi.
   // `uploads` bu ro'yxatda yo'q: u hujjatlar uchun, himoyada qoladi.
-  matcher: ["/((?!_next/static|_next/image|media/|taqdimot/|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!_next/static|_next/image|media/|taqdimot/|favicon.ico|icon.svg|robots.txt|sitemap.xml).*)"],
 };

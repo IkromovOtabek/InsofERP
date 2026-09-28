@@ -46,7 +46,11 @@ export type FormField = {
   /** Shart: boshqa maydon shu qiymatda bo'lsagina ko'rinadi. */
   showIf?: { field: string; equals: string };
   columns?: FormField[];
+  /** `date` maydoni uchun — veb "10 kunlik ish tartibi" bilan bir xil kunlik yuklama (`lib/mobile/create.ts` `dayCells`). */
+  cells?: DayCell[];
 };
+/** Bitta kun — sana tanlovida kunlik quvvat rangi va hajmi (veb `orders/load-calendar.tsx` bilan bir xil hisob). */
+export type DayCell = { key: string; label: string; weekday: string; m3: number; pct: number; count: number; isToday: boolean };
 /**
  * Amal muvaffaqiyatli bajarilgandan KEYIN ilova nima qilishi.
  *
@@ -119,6 +123,7 @@ async function stepsSection(id: string): Promise<HomeSection> {
   return {
     title: "Bosqichlar",
     empty: "Hali bosqich yozilmagan",
+    icon: "clock",
     rows: steps.map((x) => ({ id: x.id, title: x.label, subtitle: x.by, right: shortDt(x.at), tone: TRIP_TONE[x.status] })),
   };
 }
@@ -263,7 +268,7 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       ...(o.note ? [{ label: "Izoh", value: o.note }] : []),
     ],
     sections: [
-      { title: "Mahsulotlar", empty: "Qator yo'q", rows: o.items.map((i) => ({ id: i.id, title: i.product.name, subtitle: `${money(sum(i.price))} / ${unitLabel(i.product.unit)}`, right: inUnit(sum(i.qtyM3), i.product.unit) })) },
+      { title: "Mahsulotlar", empty: "Qator yo'q", icon: "package", rows: o.items.map((i) => ({ id: i.id, title: i.product.name, subtitle: `${money(sum(i.price))} / ${unitLabel(i.product.unit)}`, right: inUnit(sum(i.qtyM3), i.product.unit) })) },
       { title: "Reyslar", empty: "Reys yo'q", target: "trips", rows: o.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: t.driver.fullName, right: inUnit(sum(t.qtyM3), orderUnit), status: t.status, tone: TRIP_TONE[t.status] })) },
       { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: day(b.date), right: inUnit(sum(b.qtyM3), b.product.unit) })) },
       { title: "Schyotlar", empty: "Schyot yo'q", target: "invoices", rows: o.invoices.map((i) => ({ id: i.id, title: i.invoiceNo, subtitle: day(i.date), right: money(sum(i.amount)), status: i.status })) },
@@ -429,7 +434,7 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
       ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
       ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
     ],
-    sections: [{ title: "Qatorlar", empty: "Qator yo'q", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
+    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [],
   };
 }
@@ -472,7 +477,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
     ],
     sections: [{
-      title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q",
+      title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q", icon: "square-check",
       rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
     }],
     actions,
@@ -493,7 +498,7 @@ async function batchDetail(id: string): Promise<MobileDetail> {
       { label: "Kim kiritdi", value: b.createdBy.fullName },
     ],
     sections: [{
-      title: "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh",
+      title: "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh", icon: "layers",
       rows: b.recipe.items.map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: `${sum(ing.qtyPerM3)} ${ing.unit} / ${unitLabel(b.product.unit)}`, right: `${(ing.qtyPerM3 * sum(b.qtyM3)).toFixed(1)} ${ing.unit}` }; }),
     }],
     actions: [],
@@ -747,8 +752,8 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
       ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
     ],
     sections: [
-      { title: "Mahsulotlar", empty: "Qator yo'q", rows: items },
-      { title: "Bosqichlar", empty: "Hali bosqich yozilmagan", rows: r.events.map((e) => ({ id: e.id, title: STAGE_LABEL[e.stage] ?? SUPPLY_LABEL[e.stage], subtitle: `${e.user.fullName}${e.note ? ` · ${e.note}` : ""}`, right: shortDt(e.createdAt), tone: SUPPLY_TONE[e.stage] })) },
+      { title: "Mahsulotlar", empty: "Qator yo'q", icon: "package", rows: items },
+      { title: "Bosqichlar", empty: "Hali bosqich yozilmagan", icon: "clock", rows: r.events.map((e) => ({ id: e.id, title: STAGE_LABEL[e.stage] ?? SUPPLY_LABEL[e.stage], subtitle: `${e.user.fullName}${e.note ? ` · ${e.note}` : ""}`, right: shortDt(e.createdAt), tone: SUPPLY_TONE[e.stage] })) },
       ...(r.receipt ? [{ title: "Kirim hujjati", empty: "", target: "receipts", rows: [{ id: r.receipt.id, title: r.receipt.docNo, subtitle: "Skladga kirim", tone: "success" as Tone }] }] : []),
     ],
     actions,
@@ -931,8 +936,8 @@ async function recipeDetail(id: string): Promise<MobileDetail> {
       ...(active?.note ? [{ label: "Izoh", value: active.note }] : []),
     ],
     sections: [
-      { title: `Tarkib — 1 ${unit} uchun`, empty: "Retsept bo'sh", rows: (active?.items ?? []).map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: ing.kind === "product" ? "yarim tayyor mahsulot" : "xomashyo", right: `${ing.qtyPerM3} ${ing.unit}` }; }) },
-      ...(p.recipes.length > 1 ? [{ title: "Versiyalar tarixi", empty: "", rows: p.recipes.map((r) => ({ id: r.id, title: `v${r.version}`, subtitle: `${day(r.createdAt)} · ${r.items.length} tarkib · ${r._count.batches} zames`, status: r.isActive ? "Amalda" : "Eski", tone: (r.isActive ? "success" : "info") as Tone })) }] : []),
+      { title: `Tarkib — 1 ${unit} uchun`, empty: "Retsept bo'sh", icon: "layers", rows: (active?.items ?? []).map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: ing.kind === "product" ? "yarim tayyor mahsulot" : "xomashyo", right: `${ing.qtyPerM3} ${ing.unit}` }; }) },
+      ...(p.recipes.length > 1 ? [{ title: "Versiyalar tarixi", empty: "", icon: "clock", rows: p.recipes.map((r) => ({ id: r.id, title: `v${r.version}`, subtitle: `${day(r.createdAt)} · ${r.items.length} tarkib · ${r._count.batches} zames`, status: r.isActive ? "Amalda" : "Eski", tone: (r.isActive ? "success" : "info") as Tone })) }] : []),
     ],
     actions: [],
   };

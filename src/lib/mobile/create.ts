@@ -7,13 +7,52 @@ import { createTrip, READINESS_INCLUDE, orderReadiness } from "@/lib/trips";
 import { customersCredit, blacklistedIds } from "@/lib/finance";
 import { pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
+import { syncCustomerLater } from "@/lib/eco/customers";
 import { audit } from "@/lib/audit";
 import { createSupplyRequest } from "@/lib/supply";
 import type { MobileUser } from "./auth";
-import type { FormField, FormOption } from "./detail";
+import type { DayCell, FormField, FormOption } from "./detail";
 import { ListError } from "./list";
 import { unitLabel } from "@/lib/unit";
 import type { Role } from "@/generated/prisma";
+
+const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
+const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * 10 kunlik ish tartibi — veb `orders/load-calendar.tsx` bilan bir xil hisob, faqat
+ * ro'yxatsiz (mobilda kartochka ochilmaydi, faqat rang va hajm — sana tanlashda yo'l ko'rsatadi).
+ * Kunlik quvvat: Sozlamalar → «Kunlik quvvat (m³)» (sukut 200).
+ */
+async function dayCells(days = 10): Promise<DayCell[]> {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const until = new Date(today); until.setDate(until.getDate() + days);
+  const [orders, settings] = await Promise.all([
+    db.order.findMany({
+      where: { status: { not: "CANCELLED" }, deliveryDate: { gte: today, lt: until } },
+      select: { deliveryDate: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } },
+    }),
+    db.companySettings.findUnique({ where: { id: "main" }, select: { dailyCapacityM3: true } }),
+  ]);
+  const capacity = Math.max(1, Number(settings?.dailyCapacityM3 ?? 200));
+  const byDay = new Map<string, { m3: number; count: number }>();
+  for (const o of orders) {
+    const key = isoDate(o.deliveryDate);
+    // Faqat beton (m³) — ustun/donali mahsulot kunlik ishlab chiqarish quvvatini band qilmaydi
+    const m3 = o.items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0);
+    const cur = byDay.get(key) ?? { m3: 0, count: 0 };
+    byDay.set(key, { m3: cur.m3 + m3, count: cur.count + 1 });
+  }
+  return Array.from({ length: days }, (_, n) => {
+    const d = new Date(today); d.setDate(d.getDate() + n);
+    const key = isoDate(d);
+    const day = byDay.get(key) ?? { m3: 0, count: 0 };
+    return {
+      key, label: n === 0 ? "Bugun" : n === 1 ? "Ertaga" : `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}`,
+      weekday: WEEKDAYS[d.getDay()], m3: day.m3, pct: Math.min(100, (day.m3 / capacity) * 100), count: day.count, isToday: n === 0,
+    };
+  });
+}
 
 /**
  * Mobil ilovada yangi hujjat ochish: forma tavsifi serverdan keladi, ilova uni chizadi.
@@ -121,10 +160,11 @@ async function brigadeForm(): Promise<CreateForm> {
 }
 
 async function orderForm(): Promise<CreateForm> {
-  const [customers, catalog, accounts] = await Promise.all([
+  const [customers, catalog, accounts, cells] = await Promise.all([
     db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" } }),
     productCatalog(), // veb bilan bir xil mahsulot ro'yxati (papka yo'li nom yonida)
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    dayCells(),
   ]);
   // Qora ro'yxatdagi mijoz tanlanmasin — ro'yxatdan chiqarilmaydi, lekin belgilanadi
   const black = await blacklistedIds(customers.map((c) => c.id));
@@ -151,7 +191,7 @@ async function orderForm(): Promise<CreateForm> {
       { name: "newName", label: "Yangi mijoz nomi", type: "text", required: true, showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "newPhone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "newInn", label: "INN", type: "text", placeholder: "9 raqam", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
-      { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: ymd(tomorrow) },
+      { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: ymd(tomorrow), cells, hint: "Ustun rangi shu kunga qancha beton olinganini ko'rsatadi" },
       { name: "deliveryAddress", label: "Obyekt manzili", type: "text", required: true, placeholder: "Tuman, ko'cha, mo'ljal" },
       {
         name: "items", label: "Mahsulot", type: "items", required: true,
@@ -300,6 +340,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       if (d.inn && (await db.customer.findUnique({ where: { inn: d.inn } }))) throw new Error("Bu INN bilan mijoz allaqachon bor");
       const c = await db.customer.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null, address: d.address || null } });
       await audit(db, user.id, "CREATE", "Customer", c.id, undefined, c);
+      syncCustomerLater(c.id);
       return { key: "customers", id: c.id, message: `${c.name} qo'shildi` };
     }
     if (key === "suppliers") {

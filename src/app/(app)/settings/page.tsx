@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText } from "lucide-react";
+import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { ROLE_LABELS } from "@/lib/nav";
 import { dateTime } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
-import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { Badge, Button, Card, Empty, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { ProductExcelPanel } from "@/components/product-excel-import";
 import { ProductMatrixPanel } from "@/components/product-matrix-add";
@@ -15,6 +15,8 @@ import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
 import { UserForm, ResetPasswordForm } from "./user-forms";
+import { DeletionRow } from "./deletion-forms";
+import { SOURCE_LABEL } from "@/lib/account-deletion";
 import { toggleUser, saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 
 const TABS = [
@@ -24,6 +26,7 @@ const TABS = [
   ["warehouses", "Skladlar", Warehouse],
   ["accounts", "Kassa / hisoblar", Landmark],
   ["users", "Foydalanuvchilar", Users],
+  ["deletions", "Hisob so'rovlari", UserX],
   ["audit", "Audit jurnali", ScrollText],
 ] as const;
 
@@ -39,11 +42,12 @@ const UNITS: [string, string][] = [["kg", "kg"], ["t", "t"], ["l", "l"], ["m3", 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const s = await requireSession(["DIRECTOR"]);
   const { tab = "company" } = await searchParams;
+  const pendingDeletions = await db.accountDeletionRequest.count({ where: { status: "PENDING" } });
 
   return (
     <div>
       <PageHeader title="Sozlamalar" subtitle="Faqat direktor uchun. Har bir o'zgarish audit jurnaliga tushadi." />
-      <Tabs current={tab} className="mb-6" items={TABS.map(([k, label, Icon]) => ({ key: k, label, href: `/settings?tab=${k}`, icon: Icon }))} />
+      <Tabs current={tab} className="mb-6" items={TABS.map(([k, label, Icon]) => ({ key: k, label, href: `/settings?tab=${k}`, icon: Icon, count: k === "deletions" && pendingDeletions ? pendingDeletions : undefined }))} />
 
       {tab === "company" && <CompanyTab />}
       {tab === "products" && <ProductsTab />}
@@ -51,6 +55,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "warehouses" && <WarehousesTab />}
       {tab === "accounts" && <AccountsTab />}
       {tab === "users" && <UsersTab me={s.userId} />}
+      {tab === "deletions" && <DeletionsTab />}
       {tab === "audit" && <AuditTab />}
     </div>
   );
@@ -201,6 +206,58 @@ async function UsersTab({ me }: { me: string }) {
           ))}
         </tbody>
       </Table>
+    </div>
+  );
+}
+
+/** Hisobni o'chirish so'rovlari — App Store / Google Play talabi: xodim ilovadan so'raydi, direktor shu yerda hal qiladi. */
+async function DeletionsTab() {
+  const list = await db.accountDeletionRequest.findMany({ orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 100, include: { employee: { select: { id: true, position: true } }, user: { select: { login: true, role: true } }, handledBy: { select: { fullName: true } } } });
+  const pending = list.filter((r) => r.status === "PENDING");
+  const done = list.filter((r) => r.status !== "PENDING");
+  return (
+    <div className="space-y-4">
+      <Card>
+        <h2 className="mb-1 font-semibold">Hisobni o'chirish so'rovlari</h2>
+        <p className="text-xs text-slate-500">
+          Mijozlar (quruvchi, tadbirkor) ilovada hisobini o'zi darhol o'chiradi. Zavod xodimi so'rov qoldiradi — tasdiqlansa ERP logini yopiladi,
+          sessiyalar tugaydi, ilova hisobi (ECO) anonimlashtiriladi. Xodim kartasi (HR, tabel) o'chirilmaydi. Saytdan kelgan so'rovda odam tekshirilmagan — avval telefon qiling.
+        </p>
+      </Card>
+      {pending.length === 0 ? <Card><Empty text="Ochiq so'rov yo'q" /></Card> : (
+        <Table>
+          <thead><tr><Th>Kim</Th><Th>Qayerdan</Th><Th>Telefon</Th><Th>ERP login</Th><Th>Izoh</Th><Th>Vaqt</Th><Th></Th></tr></thead>
+          <tbody>
+            {pending.map((r) => (
+              <Tr key={r.id}>
+                <Td className="font-medium">{r.employee ? <Link className="underline" href={`/employees/${r.employee.id}`}>{r.fullName}</Link> : r.fullName}{r.employee?.position && <span className="block text-xs text-slate-500">{r.employee.position}</span>}</Td>
+                <Td>{SOURCE_LABEL[r.source]}</Td>
+                <Td>{r.phone ?? "—"}</Td>
+                <Td>{r.user ? <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{r.user.login}</code> : <span className="text-slate-400">yo'q</span>}</Td>
+                <Td className="max-w-xs text-xs text-slate-500">{r.note ?? "—"}</Td>
+                <Td className="text-slate-500">{dateTime(r.createdAt)}</Td>
+                <Td><DeletionRow id={r.id} name={r.fullName} /></Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {done.length > 0 && (
+        <Table>
+          <thead><tr><Th>Kim</Th><Th>Qayerdan</Th><Th>Holat</Th><Th>Natija</Th><Th>Kim hal qildi</Th><Th>Vaqt</Th></tr></thead>
+          <tbody>
+            {done.map((r) => (
+              <Tr key={r.id}>
+                <Td>{r.fullName}</Td><Td>{SOURCE_LABEL[r.source]}</Td>
+                <Td>{r.status === "APPROVED" ? <Badge color="green">O'chirildi</Badge> : <Badge>Rad etildi</Badge>}</Td>
+                <Td className="max-w-md text-xs text-slate-500">{r.result ?? "—"}</Td>
+                <Td className="text-slate-500">{r.handledBy?.fullName ?? "—"}</Td>
+                <Td className="text-slate-500">{r.handledAt ? dateTime(r.handledAt) : "—"}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
     </div>
   );
 }

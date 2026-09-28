@@ -52,6 +52,17 @@ export type EcoCustomerPayload = {
   creditLimit?: number;
   isActive?: boolean;
 };
+/** Mijozning ilovadagi hisobi — ECO CONTRACTOR tashkiloti va uning QURUVCHI a'zolari. */
+export type EcoAppMember = {
+  userId: string; phone: string; fullName: string | null;
+  /** parol o'rnatgan — ilovaga kira oladi; false — faqat telefon bo'yicha taklif qilingan */
+  registered: boolean; invitedByPhone: boolean; isActive: boolean; lastLoginAt: string | null;
+};
+export type EcoAppOrg = { id: string; name: string; inn: string | null; externalRef: string | null; createdAt: string };
+export type EcoCustomerApp = { linked: boolean; org: EcoAppOrg | null; members: EcoAppMember[] };
+/** Ilovada o'zi ro'yxatdan o'tgan, hali ERP mijoziga ulanmagan tashkilot. */
+export type EcoUnlinkedCustomer = EcoAppOrg & { members: EcoAppMember[]; ordersHere: number };
+
 export type EcoMixPayload = { grade: string; name: string; slump?: string; unitPrice: number; isActive?: boolean };
 export type EcoMaterialPayload = { externalRef: string; name: string; unit: string; category?: string; price?: number; minStock?: number };
 export type EcoOrderPayload = {
@@ -173,6 +184,10 @@ export const eco = {
   approveDriver: (userId: string) => call<EcoDriverResult>("POST", `/drivers/${encodeURIComponent(userId)}/approve`),
   /** ERP'da xodim o'chirildi → ilovaga kira olmaydi. */
   deactivateDriver: (userId: string) => call<EcoDriverResult>("POST", `/drivers/${encodeURIComponent(userId)}/deactivate`),
+  /** Hisobni o'chirish so'rovi tasdiqlandi (sayt) — telefon bo'yicha ECO hisobini anonimlashtirish. */
+  deleteUser: (phone: string) => call<{ status: "deleted" | "not_found" }>("POST", "/users/delete", { phone }),
+  /** Haydovchi so'rovi rad etildi — ECO'dagi "o'chirish so'ralgan" belgisi olib tashlanadi. */
+  cancelDeletion: (userId: string) => call<{ ok: true }>("POST", `/drivers/${encodeURIComponent(userId)}/deletion-cancel`),
   vehicles: () => call<EcoVehicle[]>("GET", "/vehicles"),
   upsertVehicle: (plateNumber: string, capacityM3: number, type?: "MIXER" | "PUMP" | "TRUCK", isActive?: boolean) =>
     call<EcoVehicle>("PUT", "/vehicles", { plateNumber, capacityM3, type, isActive }),
@@ -184,6 +199,12 @@ export const eco = {
 
   // ── spravochniklar: ERP — manba, ECO — ko'zgu ──
   upsertCustomer: (p: EcoCustomerPayload) => call<{ id: string; externalRef: string | null; name: string; inn: string | null; isActive: boolean }>("PUT", "/customers", p),
+  /** Mijoz kartasi ilovada kimga ulangan. */
+  customerApp: (externalRef: string) => call<EcoCustomerApp>("GET", `/customers/${encodeURIComponent(externalRef)}/app`),
+  /** Ilovada o'zi ro'yxatdan o'tgan, ulanmagan mijozlar — nom / telefon / INN bo'yicha. */
+  unlinkedCustomers: (q?: string) => call<EcoUnlinkedCustomer[]>("GET", `/customers/unlinked${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  /** ERP mijozini ilova tashkilotiga ulash (ECO'da ikkitasi bo'lsa — birlashtiradi). */
+  linkCustomer: (externalRef: string, orgId: string) => call<EcoCustomerApp>("POST", `/customers/${encodeURIComponent(externalRef)}/link`, { orgId }),
   upsertMix: (p: EcoMixPayload) => call<{ id: string; grade: string; name: string; unitPrice: string; isActive: boolean }>("PUT", "/mixes", p),
   upsertMaterial: (p: EcoMaterialPayload) => call<{ id: string; externalRef: string | null; name: string; unit: string; price: string }>("PUT", "/materials", p),
   upsertOrder: (ref: string, p: EcoOrderPayload) => call<{ created: boolean; order: { id: string; number: number } }>("PUT", `/orders/${encodeURIComponent(ref)}`, p),
