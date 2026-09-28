@@ -21,10 +21,10 @@ export default function LoginPage() {
             <Logo className="h-12" />
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">Tizimga kirish</h2>
-          <p className="mt-1 text-sm text-slate-500">Xodimlar uchun. Login va parolni Otdel kadr beradi.</p>
+          <p className="mt-1 text-sm text-slate-500">Xodimlar — Otdel kadr bergan login bilan. Insof ECO ilovasida ro'yxatdan o'tganlar — telefon raqami va ilovadagi parol bilan (direktor ruxsati kerak).</p>
           <form action={action} className="mt-8 space-y-4">
             <FormError error={state?.error} />
-            <Field label="Login"><Input name="login" autoComplete="username" autoFocus placeholder="masalan: sotuv1" /></Field>
+            <Field label="Login yoki telefon"><Input name="login" autoComplete="username" autoFocus placeholder="sotuv1 yoki +998 90 123 45 67" /></Field>
             <Field label="Parol"><PasswordInput name="password" autoComplete="current-password" placeholder="••••••••" /></Field>
             <Button size="lg" className="w-full" disabled={pending}><LogIn size={17} /> {pending ? "Kirilmoqda…" : "Kirish"}</Button>
           </form>

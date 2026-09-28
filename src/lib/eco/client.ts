@@ -63,6 +63,20 @@ export type EcoCustomerApp = { linked: boolean; org: EcoAppOrg | null; members: 
 /** Ilovada o'zi ro'yxatdan o'tgan, hali ERP mijoziga ulanmagan tashkilot. */
 export type EcoUnlinkedCustomer = EcoAppOrg & { members: EcoAppMember[]; ordersHere: number };
 
+/** Ilovada ro'yxatdan o'tgan foydalanuvchi (direktor kabinetidagi umumiy ro'yxat). */
+export type EcoAppRole = "TADBIRKOR" | "QURUVCHI" | "HAYDOVCHI";
+export type EcoAppUser = {
+  userId: string; phone: string; fullName: string | null;
+  registeredAt: string; deleteRequestedAt: string | null; lastLoginAt: string | null;
+  device: { platform: string; model: string | null; appVersion: string | null; lastSeenAt: string } | null;
+  memberships: {
+    role: EcoAppRole; isActive: boolean; since: string;
+    /** true — shu zavodning o'zi (haydovchi zavodga a'zo) */
+    ownPlant: boolean;
+    org: { id: string; name: string; type: "PLANT" | "CONTRACTOR"; inn: string | null; externalRef: string | null };
+  }[];
+};
+
 export type EcoMixPayload = { grade: string; name: string; slump?: string; unitPrice: number; isActive?: boolean };
 export type EcoMaterialPayload = { externalRef: string; name: string; unit: string; category?: string; price?: number; minStock?: number };
 export type EcoOrderPayload = {
@@ -186,6 +200,11 @@ export const eco = {
   deactivateDriver: (userId: string) => call<EcoDriverResult>("POST", `/drivers/${encodeURIComponent(userId)}/deactivate`),
   /** Hisobni o'chirish so'rovi tasdiqlandi (sayt) — telefon bo'yicha ECO hisobini anonimlashtirish. */
   deleteUser: (phone: string) => call<{ status: "deleted" | "not_found" }>("POST", "/users/delete", { phone }),
+  /** Ilovaga Telegram orqali kirish: botda `/start eco_<nonce>` bosildi. */
+  telegramLoginBind: (nonce: string, chatId: string) => call<{ ok: boolean }>("POST", "/telegram-login/bind", { nonce, chatId }),
+  /** Botga O'Z raqami keldi. `matched: false` — bu chat ilovadan kirishda emas (xodim ulash oqimi davom etadi). */
+  telegramLoginContact: (chatId: string, phone: string, name?: string) =>
+    call<{ matched: boolean; ok?: boolean; reason?: "expired" | "phone" }>("POST", "/telegram-login/contact", { chatId, phone, name }),
   /** Haydovchi so'rovi rad etildi — ECO'dagi "o'chirish so'ralgan" belgisi olib tashlanadi. */
   cancelDeletion: (userId: string) => call<{ ok: true }>("POST", `/drivers/${encodeURIComponent(userId)}/deletion-cancel`),
   vehicles: () => call<EcoVehicle[]>("GET", "/vehicles"),
@@ -205,6 +224,10 @@ export const eco = {
   unlinkedCustomers: (q?: string) => call<EcoUnlinkedCustomer[]>("GET", `/customers/unlinked${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   /** ERP mijozini ilova tashkilotiga ulash (ECO'da ikkitasi bo'lsa — birlashtiradi). */
   linkCustomer: (externalRef: string, orgId: string) => call<EcoCustomerApp>("POST", `/customers/${encodeURIComponent(externalRef)}/link`, { orgId }),
+  /** ERP login: ilovadagi telefon + parol. Noto'g'ri bo'lsa EcoError status 401. */
+  verifyCredentials: (phone: string, password: string) => call<{ userId: string; phone: string; fullName: string | null }>("POST", "/auth/verify", { phone, password }),
+  /** Ilovada ro'yxatdan o'tgan barcha foydalanuvchilar — ism / telefon / tashkilot bo'yicha izlash. */
+  appUsers: (q?: string) => call<EcoAppUser[]>("GET", `/app-users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   upsertMix: (p: EcoMixPayload) => call<{ id: string; grade: string; name: string; unitPrice: string; isActive: boolean }>("PUT", "/mixes", p),
   upsertMaterial: (p: EcoMaterialPayload) => call<{ id: string; externalRef: string | null; name: string; unit: string; price: string }>("PUT", "/materials", p),
   upsertOrder: (ref: string, p: EcoOrderPayload) => call<{ created: boolean; order: { id: string; number: number } }>("PUT", `/orders/${encodeURIComponent(ref)}`, p),

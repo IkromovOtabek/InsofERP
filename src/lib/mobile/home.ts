@@ -11,6 +11,8 @@ import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { unitLabel, unitTotals, soleUnit, type UnitRow } from "@/lib/unit";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
+import { overviewTab } from "@/lib/bi/overview";
+import { parseRange } from "@/lib/bi/core";
 
 /**
  * Mobil ilova bosh ekrani — rolga qarab. Server nimani ko'rsatishni hal qiladi,
@@ -19,7 +21,8 @@ import type { Role } from "@/generated/prisma";
 export type Tone = "brand" | "success" | "warning" | "danger" | "info";
 /** `icon` — Ionicons nomi; ilova kartaning yuqorisida chizadi. */
 export type HomeCard = { key: string; label: string; value: string; hint?: string; tone?: Tone; icon?: string };
-export type HomeRow = { id: string; title: string; subtitle?: string; right?: string; status?: string; tone?: Tone };
+/** `open` — bosilganda ochiladigan ro'yxat kaliti (kartochka emas): bo'lim `target` siz bo'lganda ishlatiladi. */
+export type HomeRow = { id: string; title: string; subtitle?: string; right?: string; status?: string; tone?: Tone; open?: string };
 /** `target` — qator bosilganda ochiladigan kartochka turi (`/api/mobile/detail?key=...`). Bo'lmasa qator bosilmaydi. */
 /** `kind: "list"` — ro'yxatni ochadi, `kind: "new"` — yangi hujjat formasini. */
 export type QuickAction = { key: string; label: string; icon: string; kind: "list" | "new" };
@@ -124,6 +127,32 @@ const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: 
 const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CONFIRMED: "brand", IN_PRODUCTION: "warning", DELIVERED: "success", CLOSED: "success", CANCELLED: "danger" };
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
+/**
+ * Direktor uchun "Tahlil → Umumiy" hisob-kitobi. Og'ir (o'nlab so'rov), ilova esa bosh ekranni
+ * 30 s da yangilaydi — shuning uchun bir daqiqa keshda turadi (hamma direktorlar uchun bitta).
+ */
+let overviewCache: { at: number; data: Promise<Awaited<ReturnType<typeof overviewTab>>> } | null = null;
+function directorOverview() {
+  if (!overviewCache || Date.now() - overviewCache.at > 60_000) {
+    const data = overviewTab(parseRange({ period: "month" }));
+    overviewCache = { at: Date.now(), data };
+    data.catch(() => { overviewCache = null; });
+  }
+  return overviewCache.data;
+}
+
+/** Vebdagi vazifa havolasi → ilovadagi ro'yxat. Mos ro'yxat bo'lmasa qator bosilmaydi. */
+function taskList(href: string): string | undefined {
+  const path = href.split("?")[0];
+  if (path.startsWith("/receipts")) return "receipts";
+  if (path.startsWith("/invoices")) return "invoices";
+  if (path.startsWith("/orders")) return "orders";
+  if (path.startsWith("/drivers")) return "drivers";
+  if (path.startsWith("/stock")) return "stock";
+  if (path.includes("mijozlar")) return "customers";
+  return undefined;
+}
+
 /** Kassa va bank hisoblarining hozirgi qoldig'i. */
 async function cashBalance() {
   const [pay, tx] = await Promise.all([
@@ -156,24 +185,36 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
 
   switch (user.role) {
     case "DIRECTOR": {
-      const [todayOrders, blocked, onRoad, monthItems, recent, trips] = await Promise.all([
+      // Kunlik raqamlar "Tahlil → Umumiy" bilan bitta manbadan (`lib/bi/overview.ts`) — vebdagi bilan farq qilmasin
+      const [bi, todayOrders, blocked, onRoad, recent, trips] = await Promise.all([
+        directorOverview(),
         db.order.count({ where: { date: { gte: today }, status: { not: "CANCELLED" } } }),
         db.order.count({ where: { status: "BLOCKED" } }),
         db.trip.count({ where: { status: { in: ["LOADED", "ON_ROAD"] } } }),
-        db.orderItem.findMany({ where: { order: { date: { gte: startOfMonth() }, status: { not: "CANCELLED" } } }, select: { qtyM3: true, price: true } }),
         db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { date: "desc" }, take: 8, include: { customer: true, items: { include: { product: true } } } }),
         db.trip.findMany({ where: { status: { in: ["LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } }),
       ]);
-      const revenue = monthItems.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0);
       const supplyOpen = await db.supplyRequest.count({ where: { status: { in: ["PRICED", "APPROVED"] } } });
+      const m = bi.month;
+      const vsYesterday = !bi.todayRevenue && !bi.yestRevenue ? "kecha ham sotuv bo'lmagan" : bi.todayDelta === null ? "kecha sotuv yo'q edi" : `kechagidan ${bi.todayDelta >= 0 ? "▲" : "▼"} ${Math.abs(bi.todayDelta).toFixed(0)}%`;
       cards.push(
-        { key: "revenue", label: "Oylik tushum", value: short(revenue), hint: "so'm", tone: "success", icon: "trending-up" },
+        { key: "todayRevenue", label: "Bugungi sotuv", value: short(bi.todayRevenue), hint: `so'm · ${vsYesterday}`, tone: bi.todayDelta !== null && bi.todayDelta < 0 ? "warning" : "success", icon: "trending-up" },
+        { key: "month", label: "Oy tushumi", value: short(m.revenue), hint: `prognoz ${short(m.forecast)}`, tone: m.prev > 0 && m.forecast < m.prev ? "warning" : "success", icon: "chart-column" },
+        { key: "cash", label: "Kassaga tushdi", value: short(bi.kpis.cashIn.cur), hint: "shu oy, so'm", tone: "brand", icon: "wallet" },
+        { key: "debt", label: "Debitorka", value: short(bi.kpis.receivable), hint: `${bi.kpis.debtors} ta qarzdor`, tone: bi.risk.debt > 0 ? "warning" : "success", icon: "receipt" },
+        { key: "health", label: "Biznes holati", value: bi.health === null ? "—" : `${bi.health}/100`, hint: bi.healthLabel, tone: bi.health === null ? "info" : bi.health >= 75 ? "success" : bi.health >= 50 ? "warning" : "danger", icon: "heart-pulse" },
+        { key: "risk", label: "Xavf ostidagi pul", value: short(bi.riskTotal), hint: "qarz · yo'qotish · muzlagan", tone: bi.riskTotal > 0 ? "danger" : "success", icon: "triangle-alert" },
+        { key: "onroad", label: "Yo'ldagi reys", value: String(onRoad), hint: bi.tripsToday ? `bugun ${bi.delivered}/${bi.tripsToday} yetkazildi` : "bugun reys ochilmagan", tone: "info", icon: "truck" },
+        { key: "today", label: "Bugungi zayavka", value: String(todayOrders), hint: bi.todayM3 ? `${num(bi.todayM3)} m³ sotildi` : undefined, tone: "brand", icon: "file-text" },
         ...(supplyOpen ? [{ key: "supply", label: "Ta'minot tasdig'i", value: String(supplyOpen), hint: "kutmoqda", tone: "warning" as Tone, icon: "clipboard-list" }] : []),
-        { key: "today", label: "Bugungi zayavka", value: String(todayOrders), tone: "brand", icon: "today" },
-        { key: "onroad", label: "Yo'ldagi reys", value: String(onRoad), tone: "info", icon: "navigate" },
-        { key: "blocked", label: "Bloklangan", value: String(blocked), hint: blocked ? "ochish kerak" : undefined, tone: blocked ? "danger" : "success", icon: "lock-closed" },
+        ...(blocked ? [{ key: "blocked", label: "Bloklangan", value: String(blocked), hint: "ochish kerak", tone: "danger" as Tone, icon: "lock" }] : []),
       );
       sections.push(
+        {
+          title: "Bugun nima qilish kerak", empty: "Shoshilinch ish yo'q — hammasi joyida", icon: "square-check",
+          rows: bi.tasks.map((t) => ({ id: `task-${t.n}`, title: t.title, subtitle: t.text, right: t.money > 0 ? short(t.money) : undefined, tone: t.tone, open: taskList(t.href) })),
+        },
+        ...(bi.goodNews.length ? [{ title: "Yaxshi xabarlar", empty: "", icon: "trending-up", rows: bi.goodNews.map((g, i) => ({ id: `good-${i}`, title: g, tone: "success" as Tone })) }] : []),
         { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) },
         { title: "Yo'ldagi reyslar", empty: "Yo'lda reys yo'q", target: "trips", rows: trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
       );

@@ -6,6 +6,7 @@ import type { LlmTurn } from "@/lib/ai/llm";
 import { AMBIGUOUS_PHONE_ERROR, staffByPhone } from "@/lib/phone-lookup";
 import { sendChatAction, sendMessage, downloadFile, type TgContact, type TgMessage, type TgUpdate, type TgVoice } from "./api";
 import { transcribe, sttEnabled, SttError } from "./stt";
+import { eco, ecoEnabled } from "@/lib/eco/client";
 
 /** Tahlil ma'lumotlari — /api/ai bilan bir xil rollar. */
 const AI_ROLES = new Set(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
@@ -97,6 +98,9 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
     await sendMessage(chatId, "Bot faqat shaxsiy yozishmada ishlaydi — menga to'g'ridan-to'g'ri yozing.");
     return;
   }
+
+  // Insof ECO ilovasiga kirish — xodim oqimidan OLDIN va TelegramAccount yaratmasdan (mijoz xodim emas)
+  if (await ecoLogin(msg, chatId)) return;
 
   const account = await db.telegramAccount.upsert({
     where: { chatId: String(chatId) },
@@ -200,6 +204,39 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
       ? `«${transcript}»\n\nJavob tayyorlashda xato bo'ldi — birozdan keyin qayta urinib ko'ring.`
       : "Javob tayyorlashda xato bo'ldi — birozdan keyin qayta urinib ko'ring.");
   }
+}
+
+/**
+ * ECO ilovasidagi «Telegram orqali kirish». Ilova `t.me/<bot>?start=eco_<nonce>` ni ochadi,
+ * holat ECO'da (Redis) — bu yerda faqat Start va kontaktni uzatamiz. `true` — xabar shu oqimga
+ * tegishli edi va javob berildi. ECO ishlamasa kontakt odatdagi xodim ulash oqimiga o'tadi.
+ */
+async function ecoLogin(msg: TgMessage, chatId: number): Promise<boolean> {
+  if (!ecoEnabled()) return false;
+
+  const start = msg.text?.trim().match(/^\/start\s+eco_([A-Za-z0-9_-]{16,64})$/);
+  if (start) {
+    const r = await eco.telegramLoginBind(start[1], String(chatId)).catch(() => null);
+    if (!r?.ok) {
+      await sendMessage(chatId, "Kirish havolasining muddati o'tgan. Ilovada «Telegram orqali kirish» ni qayta bosing.", { keyboard: "remove" });
+      return true;
+    }
+    await sendMessage(chatId, "*Insof ECO ilovasiga kirish*\n\nPastdagi «Telefon raqamimni yuborish» tugmasini bosing — raqamingiz tasdiqlanadi va ilovaga o'zi kirasiz.", { keyboard: "contact" });
+    return true;
+  }
+
+  // Faqat o'z raqami: begona kontakt bilan birovning hisobiga kirib bo'lmasin (xodim oqimi o'zi rad etadi)
+  const c = msg.contact;
+  if (!c?.user_id || c.user_id !== msg.from?.id) return false;
+  const r = await eco.telegramLoginContact(String(chatId), c.phone_number, c.first_name ?? msg.from?.first_name).catch(() => null);
+  if (!r?.matched) return false;
+  const text = r.ok
+    ? "✅ Raqam tasdiqlandi. Ilovaga qayting — kirish avtomatik bo'ladi."
+    : r.reason === "phone"
+      ? "Hozircha faqat O'zbekiston raqamlari (+998) bilan kirish mumkin."
+      : "Kirish muddati tugadi. Ilovada «Telegram orqali kirish» ni qayta bosing.";
+  await sendMessage(chatId, text, { keyboard: "remove" });
+  return true;
 }
 
 function startText() {

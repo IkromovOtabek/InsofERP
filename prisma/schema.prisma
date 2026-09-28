@@ -39,6 +39,9 @@ model User {
   isActive       Boolean  @default(true)
   /// Har oshirilganda shu hisobning barcha veb/mobil tokenlari kuyadi (parol almashdi, hisob yopildi)
   sessionVersion Int      @default(0)
+  /// Insof ECO ilovasi hisobi: direktor ruxsat bergan bo'lsa, ERP'ga ilovadagi telefon + parol bilan kiradi
+  /// (parolni ECO tekshiradi). Bunday hisobning `passwordHash` i tasodifiy — login/parol bilan kirib bo'lmaydi.
+  ecoUserId      String?  @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
