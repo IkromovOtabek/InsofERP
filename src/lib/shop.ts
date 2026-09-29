@@ -33,7 +33,7 @@ export type ShopCatalogItem = {
 };
 
 export type ShopCatalog = {
-  company: { name: string; phone: string | null };
+  company: { name: string; phone: string | null; address: string | null };
   items: ShopCatalogItem[];
 };
 
@@ -48,7 +48,7 @@ export async function shopCatalog(): Promise<ShopCatalog> {
     }),
   ]);
   return {
-    company: { name: company.name, phone: company.phone?.trim() || null },
+    company: { name: company.name, phone: company.phone?.trim() || null, address: company.address?.trim() || null },
     items: rows.map((r) => ({
       id: r.productId,
       code: r.product.code,
@@ -102,4 +102,23 @@ export async function createShopOrder(raw: unknown): Promise<ShopOrderResult> {
       ? "Buyurtmangiz allaqachon qabul qilingan — sotuv bo'limi tez orada bog'lanadi."
       : "Buyurtma qabul qilindi. Sotuv bo'limi siz bilan bog'lanadi.",
   };
+}
+
+const callbackSchema = z.object({
+  name: z.string().trim().min(2, "ism to'liq yozilsin").max(80),
+  phone: z.string().trim().min(1, "telefon raqami kerak"),
+  message: z.string().trim().max(1000).optional().transform((v) => (v ? v : null)),
+});
+
+/**
+ * Ilovaning "Aloqa" bo'limidan "Menga qo'ng'iroq qiling" so'rovi — mahsulotsiz ariza.
+ * Mijoz hali nima kerakligini bilmasa ham raqamini qoldiradi; sotuvchi qo'ng'iroq qiladi.
+ */
+export async function createShopCallback(raw: unknown): Promise<ShopOrderResult> {
+  const parsed = callbackSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Ma'lumot noto'g'ri" };
+  const d = parsed.data;
+  const res = await createLead({ name: d.name, phone: d.phone, message: d.message ?? "Ilovadan: qayta qo'ng'iroq so'rovi", source: SHOP_SOURCE });
+  if (!res.ok) return res;
+  return { ok: true, message: res.duplicate ? "So'rovingiz allaqachon qabul qilingan — tez orada qo'ng'iroq qilamiz." : "Rahmat! Ish vaqtida sizga qo'ng'iroq qilamiz." };
 }
