@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Warehouse, ArrowRight, Boxes, Factory, PackagePlus } from "lucide-react";
 import { stockSnapshot, type LastMove, type MakeInfo, type SnapshotProduct } from "@/lib/stock";
 import { qty, dateTime } from "@/lib/format";
@@ -77,8 +78,10 @@ function ProductRows({ rows, compact, freeLabelAsTotal }: { rows: SnapshotProduc
  * layout="grid" — sahifa eni bo'ylab uchta ustun (zayavkalar ro'yxati sahifasi).
  * collapsible — har bo'lim yig'iladi: forma yonida turganda uzun jadval joyni egallamaydi,
  *   sarlavhada esa nechta nom borligi ko'rinib turadi (tanlov brauzerda eslab qolinadi).
+ * show — qaysi bo'limlar chiqadi (standart: hammasi).
  */
-export async function StockSnapshotCard({ compact = false, layout = "column", title = "Sklad holati", collapsible = false }: { compact?: boolean; layout?: "column" | "grid"; title?: string; collapsible?: boolean }) {
+type SectionKey = "pieces" | "concrete" | "materials";
+export async function StockSnapshotCard({ compact = false, layout = "column", title = "Sklad holati", collapsible = false, show = ["pieces", "concrete", "materials"] }: { compact?: boolean; layout?: "column" | "grid"; title?: string; collapsible?: boolean; show?: SectionKey[] }) {
   const s = await stockSnapshot();
   const grid = layout === "grid";
   const cols = grid || compact; // ikkalasida ham "kim kiritgani" ustuni ko'rsatilmaydi
@@ -131,7 +134,7 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
   );
 
   // Yopiq holatda sarlavhada turadigan qisqa raqamlar.
-  const sections = [
+  const sections: { key: SectionKey; title: string; hint: string; meta: ReactNode; body: ReactNode }[] = [
     {
       key: "pieces",
       title: "Dona mahsulotlar (hovlida)",
@@ -155,7 +158,7 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
     },
   ];
 
-  const blocks = sections.map((sec) =>
+  const blocks = sections.filter((sec) => show.includes(sec.key)).map((sec) =>
     fold ? (
       // Birinchi bo'lim ochiq turadi, qolgani yig'ilgan — kartani qisqa tutadi.
       <Fold key={sec.key} title={sec.title} hint={sec.hint} meta={sec.meta} defaultOpen={sec.key === "pieces"} storageKey={`stock-snapshot:${sec.key}`} className="border-t border-slate-100">
@@ -186,9 +189,9 @@ export async function StockSnapshotCard({ compact = false, layout = "column", ti
         />
         {!fold && (
           <div className="flex flex-wrap gap-x-4 gap-y-1 pb-1 text-xs text-slate-500">
-            <span>Dona mahsulot: <b className="text-slate-900">{s.pieces.length}</b> nom · erkin <b className="text-emerald-700">{qty(freeTotal)}</b></span>
-            <span>Beton markasi: <b className="text-slate-900">{s.concrete.length}</b></span>
-            <span>Xomashyo: <b className="text-slate-900">{s.materials.length}</b> nom{lowCount > 0 && <span className="text-red-600"> · {lowCount} tasi kam qoldi</span>}</span>
+            {show.includes("pieces") && <span>Dona mahsulot: <b className="text-slate-900">{s.pieces.length}</b> nom · erkin <b className="text-emerald-700">{qty(freeTotal)}</b></span>}
+            {show.includes("concrete") && <span>Beton markasi: <b className="text-slate-900">{s.concrete.length}</b></span>}
+            {show.includes("materials") && <span>Xomashyo: <b className="text-slate-900">{s.materials.length}</b> nom{lowCount > 0 && <span className="text-red-600"> · {lowCount} tasi kam qoldi</span>}</span>}
           </div>
         )}
       </div>

@@ -18,6 +18,13 @@ export const POSITIONS: { label: string; role: Role }[] = [
   { label: "Direktor", role: "DIRECTOR" },
 ];
 
+/** Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi va brigadir ilovasi. */
+export const LOGIN_ROLE_OPTIONS: { value: Role; label: string }[] = [
+  ...POSITIONS.map((p) => ({ value: p.role, label: p.label })),
+  { value: "DRIVER", label: "Haydovchi (ilova)" },
+  { value: "BRIGADIER", label: "Brigadir (ilova)" },
+];
+
 /** Ro'yxatdan chiqarilgan, lekin bazada xodimi qolgan bo'lishi mumkin bo'lgan eski nomlar. */
 const LEGACY: Record<string, Role> = { finance: "FINANCE", snabjeniye: "PROCUREMENT" };
 

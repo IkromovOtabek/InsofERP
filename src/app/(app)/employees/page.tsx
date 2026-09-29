@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, Search, Truck } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { POSITIONS, positionCatalog, roleForPosition } from "@/lib/positions";
+import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog, roleForPosition } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { date, isoDate, qty } from "@/lib/format";
 import { licenseDaysLeft } from "@/lib/kadr";
@@ -36,11 +36,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   ]);
   const { work: workNames, drivers, strays } = catalog;
   // Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi va brigadir ilovasi
-  const LOGIN_ROLE_OPTS = [
-    ...POSITIONS.map((p) => ({ value: p.role as string, label: p.label })),
-    { value: "DRIVER", label: "Haydovchi (ilova)" },
-    { value: "BRIGADIER", label: "Brigadir (ilova)" },
-  ];
+  const LOGIN_ROLE_OPTS = LOGIN_ROLE_OPTIONS;
   // Ishchi lavozimga Otdel kadrda belgilangan bo'lim — login berishda taxmin bo'lib turadi
   const deptOf = new Map(workRows.filter((w) => w.department).map((w) => [w.name.trim().toLowerCase(), w.department as string]));
   const staffOpts = staff.map((e) => ({

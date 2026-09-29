@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FileSignature, FileText, KeyRound, Paperclip } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { POSITIONS, positionCatalog } from "@/lib/positions";
+import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT, PHOTO_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, money, qty } from "@/lib/format";
@@ -12,7 +12,7 @@ import { HR_DOCS, nextOrderNo } from "@/lib/hr-docs";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeCardForm } from "../employee-form";
-import { ChangeLoginForm, ResetPasswordForm, ToggleLoginButton } from "../login-forms";
+import { ChangeLoginForm, ChangeRoleForm, ResetPasswordForm, ToggleLoginButton } from "../login-forms";
 import { DismissButton, RestoreButton } from "../dismiss-form";
 import { DeleteDocument, DocumentForms } from "./document-forms";
 import { HrDocsPanel, type HrDocRow } from "./hr-doc-forms";
@@ -165,7 +165,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
               description={!e.isActive
                 ? "Xodim nofaol — logini ham bloklangan. Qaytarish uchun Xodimlar ro'yxatida \"Yoqish\" tugmasini bosing."
                 : e.user.isActive
-                  ? "Loginni yoki parolni almashtirish, kerak bo'lsa kirishni vaqtincha bloklash"
+                  ? "Bo'limni, loginni yoki parolni almashtirish, kerak bo'lsa kirishni vaqtincha bloklash"
                   : "Bu login bloklangan — xodim ERP'ga kira olmaydi"}
               icon={KeyRound}
               action={e.userId === s.userId || !e.isActive ? undefined : <ToggleLoginButton employeeId={e.id} blocked={!e.user.isActive} />}
@@ -173,7 +173,8 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             {e.userId === s.userId ? (
               <p className="text-sm text-slate-500">Bu sizning loginingiz — uni bu yerdan o&apos;zgartirib bo&apos;lmaydi.</p>
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <ChangeRoleForm employeeId={e.id} currentRole={e.user.role} roles={LOGIN_ROLE_OPTIONS.filter((o) => o.value !== "DIRECTOR" || s.role === "DIRECTOR" || e.user!.role === "DIRECTOR")} />
                 <ChangeLoginForm employeeId={e.id} currentLogin={e.user.login} />
                 <ResetPasswordForm employeeId={e.id} />
               </div>

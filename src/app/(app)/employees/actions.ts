@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
-import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
+import { POSITIONS, LOGIN_ROLE_OPTIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { isBrigadeLeader } from "@/lib/brigades";
 import type { Role } from "@/generated/prisma";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
@@ -19,7 +19,7 @@ import type { Prisma } from "@/generated/prisma";
 const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
 
 /** Login berishda tanlanadigan bo'limlar: bo'lim lavozimlari + haydovchi va brigadir ilovasi. */
-const LOGIN_ROLES: Role[] = [...POSITIONS.map((p) => p.role), "DRIVER", "BRIGADIER"];
+const LOGIN_ROLES: Role[] = LOGIN_ROLE_OPTIONS.map((o) => o.value);
 
 const schema = z.object({
   // Ro'yxatdan tanlangan mavjud xodim — yangi karta ochilmaydi, shu kartaga login beriladi
@@ -347,7 +347,7 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   // Lavozim o'zgarishi rolni o'zgartirmaydi: login berilgan xodimning roli o'z joyida qoladi
   const newRole = roleForPosition(d.position);
   if (before.userId && newRole !== roleForPosition(before.position)) {
-    return { error: "Login berilgan xodimning bo'limini o'zgartirib bo'lmaydi — eski loginni bloklab, yangi karta oching" };
+    return { error: "Login berilgan xodimning bo'limi pastdagi \"Tizimga kirish → Bo'limni almashtirish\" orqali o'zgartiriladi" };
   }
   if (!before.userId && newRole) {
     return { error: `"${d.position}" tizimga kiradigan bo'lim — bu yerdan emas, "Login berish" orqali tayinlanadi` };
@@ -412,6 +412,41 @@ export async function changeLogin(employeeId: string, _prev: ActionState, fd: Fo
     throw e;
   }
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/employees"); revalidatePath("/settings");
+}
+
+/**
+ * Login berishda bo'lim (rol) noto'g'ri tanlangan bo'lsa — almashtirish.
+ * Kadr lavozimi bo'lim lavozimi bo'lsa (Sotuv, Sklad...) u ham yangi bo'lim nomiga o'tadi;
+ * ishchi lavozim (masalan "Skladchi") o'zgarmaydi — faqat qaysi bo'lim huquqi bilan kirishi.
+ * Xodimning ochiq sessiyalari (veb va ilova) tugaydi — qayta kirganda yangi bo'limni ko'radi.
+ */
+export async function changeEmployeeRole(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["HR"]);
+  const t = await loginTarget(employeeId, s.userId);
+  if ("error" in t) return { error: t.error };
+  const wanted = String(fd.get("role") ?? "").trim();
+  if (!(LOGIN_ROLES as string[]).includes(wanted)) return { error: "Bo'limni tanlang" };
+  const role = wanted as Role;
+  if (role === t.user.role) return { ok: true, note: "Bo'lim o'zgarmadi" };
+  // Direktor huquqini faqat direktor beradi yoki oladi
+  if ((role === "DIRECTOR" || t.user.role === "DIRECTOR") && s.role !== "DIRECTOR") {
+    return { error: "Direktor huquqini faqat direktor bera oladi yoki olib tashlaydi" };
+  }
+  const dept = POSITIONS.find((p) => p.role === role);
+  const oldIsDept = roleForPosition(t.employee.position) !== null;
+  const position = dept && oldIsDept ? dept.label : t.employee.position;
+
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: t.user.id }, data: { role } });
+    if (position !== t.employee.position) await tx.employee.update({ where: { id: employeeId }, data: { position } });
+    await revokeSessions(tx, t.user.id);
+    await audit(tx, s.userId, "UPDATE", "User", t.user.id, { role: t.user.role, position: t.employee.position }, { role, position });
+  });
+  const wasDriver = await isDriverPosition(t.employee.position);
+  if (wasDriver || (await isDriverPosition(position))) pushEmployeeSilently(employeeId);
+  revalidatePath(`/employees/${employeeId}`); revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings");
+  const label = LOGIN_ROLE_OPTIONS.find((o) => o.value === role)?.label ?? role;
+  return { ok: true, note: `Bo'lim «${label}» ga almashtirildi${position !== t.employee.position ? `, lavozim ham «${position}»` : ""}. Xodim tizimga qayta kiradi.` };
 }
 
 /** Parolni almashtirish — eski parol so'ralmaydi, otdel kadr yangisini beradi. */

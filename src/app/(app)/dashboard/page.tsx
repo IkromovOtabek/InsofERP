@@ -7,19 +7,40 @@ import { CustomerName } from "@/components/customer-name";
 import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
 import { money, qty, fmtNum, pct } from "@/lib/format";
 import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
-import { Badge, Callout, Card, Empty, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, Empty, Progress, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
 import { LiveDrivers } from "../trips/live-drivers";
 import { ecoEnabled } from "@/lib/eco/client";
 import { OrderStatusBadge } from "../orders/status";
+import { PRODUCTION_HOME_ROLES } from "@/lib/production-day";
+import { ProductionHome } from "./production-home";
+import { OwnerHome } from "./owner-home";
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Xayrli tong" : h < 18 ? "Xayrli kun" : "Xayrli kech"; };
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
-  const { denied } = await searchParams;
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string }> }) {
+  const { denied, view } = await searchParams;
   const s = await getSession();
+  // Ishlab chiqarish bo'limi bosh sahifada o'z ko'rinishini ko'radi; direktor ikkalasi orasida almashadi
+  const isDirector = s?.role === "DIRECTOR";
+  const productionView = !!s && ((PRODUCTION_HOME_ROLES as readonly string[]).includes(s.role) || (isDirector && view === "production"));
+  // Direktor (egasi) uchun bosh sahifa — Owner Dashboard (TZ v2.0); eski operatsion ko'rinish alohida tabda
+  const ownerView = isDirector && !productionView && view !== "operations";
+  const tabKey = productionView ? "production" : ownerView ? "" : "operations";
+  const header = (
+    <>
+      <div className="mb-6 animate-fade-up">
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
+      </div>
+      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
+    </>
+  );
+  if (productionView && s) return <div>{header}<ProductionHome s={s} /></div>;
+  if (ownerView) return <div>{header}<OwnerHome /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 
   const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming] = await Promise.all([
@@ -42,11 +63,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <div className="mb-6 animate-fade-up">
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Bosh sahifa</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
-      </div>
-      {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
+      {header}
 
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard label="Bugungi zayavkalar" value={`${ordersToday.length}`} hint={`${todayPlan} rejada`} icon={ClipboardList} tone="info" href="/orders" />

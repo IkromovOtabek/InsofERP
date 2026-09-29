@@ -68,7 +68,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       </Table>
 
       <div className="mt-6">
-        <StockSnapshotCard />
+        <StockSnapshotCard show={["pieces"]} />
       </div>
     </div>
   );

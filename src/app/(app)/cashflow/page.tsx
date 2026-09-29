@@ -14,7 +14,7 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./categories";
 type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE"; account: string; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean };
 
 /** Kirim-Chiqim: mijoz to'lovlari (Payment) + boshqa kirimlar va barcha chiqimlar (CashTransaction) bitta jurnalda. */
-export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string }> }) {
+export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string; category?: string }> }) {
   const s = await requireSession(["CASHIER", "ACCOUNTING", "FINANCE"]);
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
   const sp = await searchParams;
@@ -23,6 +23,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const from = new Date(sp.from ?? isoDate(new Date(now.getFullYear(), now.getMonth(), 1)));
   const to = new Date(sp.to ?? isoDate(now)); to.setHours(23, 59, 59, 999);
   const acc = sp.account || undefined;
+  const cat = sp.category || undefined; // egasi dashbordidan "kategoriya → detalizatsiya" havolasi
 
   const [accounts, suppliers, payments, txs, allPay, allTx] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -51,17 +52,17 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         : undefined,
       deletable: !t.refType, // hujjatga bog'langanini bu yerdan o'chirib bo'lmaydi — hujjatning o'zidan tuzatiladi
     })),
-  ].filter((r) => tab === "all" || r.kind === tab).sort((a, b) => b.date.getTime() - a.date.getTime());
+  ].filter((r) => (tab === "all" || r.kind === tab) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`))).sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const inc = rows.filter((r) => r.kind === "INCOME").reduce((x, r) => x + r.amount, 0);
   const exp = rows.filter((r) => r.kind === "EXPENSE").reduce((x, r) => x + r.amount, 0);
   const byCat = new Map<string, number>();
   for (const r of rows.filter((r) => r.kind === "EXPENSE")) byCat.set(r.category, (byCat.get(r.category) ?? 0) + r.amount);
-  const qs = (t: string) => `/cashflow?tab=${t}&from=${isoDate(from)}&to=${isoDate(to)}${acc ? `&account=${acc}` : ""}`;
+  const qs = (t: string) => `/cashflow?tab=${t}&from=${isoDate(from)}&to=${isoDate(to)}${acc ? `&account=${acc}` : ""}${cat ? `&category=${encodeURIComponent(cat)}` : ""}`;
 
   return (
     <div>
-      <PageHeader title="Kirim-Chiqim" subtitle="Pul oqimi jurnali: mijoz to'lovlari (Kassa/bank'dan avtomatik), boshqa kirimlar va barcha chiqimlar." />
+      <PageHeader title="Kirim-Chiqim" subtitle={cat ? `Detalizatsiya: «${cat}» — sana, summa, kontragent, hisob, kim kiritgan. ` : "Pul oqimi jurnali: mijoz to'lovlari (Kassa/bank'dan avtomatik), boshqa kirimlar va barcha chiqimlar."} action={cat ? <Link href={`/cashflow?tab=${tab}&from=${isoDate(from)}&to=${isoDate(to)}`} className="text-sm text-slate-500 hover:text-slate-900">✕ Filtrni olib tashlash</Link> : undefined} />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Kirim (davr)" value={money(inc)} icon={ArrowDownLeft} tone="success" />
         <StatCard label="Chiqim (davr)" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} />
@@ -93,6 +94,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         <Tabs current={tab} className="mb-0" items={[{ key: "all", label: "Hammasi", href: qs("all") }, { key: "INCOME", label: "Kirim", href: qs("INCOME") }, { key: "EXPENSE", label: "Chiqim", href: qs("EXPENSE") }]} />
         <form className="flex flex-wrap items-center gap-2 text-sm">
           <input type="hidden" name="tab" value={tab} />
+          {cat && <input type="hidden" name="category" value={cat} />}
           <Input name="from" type="date" defaultValue={isoDate(from)} className="h-9 w-40" />
           <span className="text-slate-400">—</span>
           <Input name="to" type="date" defaultValue={isoDate(to)} className="h-9 w-40" />

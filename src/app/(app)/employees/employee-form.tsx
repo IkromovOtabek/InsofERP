@@ -297,7 +297,7 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
     <form action={action} className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="F.I.O. *"><Input name="fullName" defaultValue={employee.fullName} required /></Field>
-        <Field label="Lavozim *" hint={hasLogin ? "Login berilgan xodimning bo'limi o'zgarmaydi" : undefined}>
+        <Field label="Lavozim *" hint={hasLogin ? "Bo'limni almashtirish — pastdagi «Tizimga kirish» kartasida" : undefined}>
           <PositionSelect departments={departments} work={workList} value={position} onChange={setPosition} />
         </Field>
         <Field label="Telefon" hint="Haydovchi uchun ilovaga kirish kaliti"><Input name="phone" defaultValue={employee.phone ?? ""} /></Field>

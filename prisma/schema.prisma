@@ -45,29 +45,32 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  orders        Order[]             @relation("OrderCreatedBy")
-  batches       ProductionBatch[]   @relation("BatchCreatedBy")
-  stockMoves    StockMove[]         @relation("MoveCreatedBy")
-  receipts      GoodsReceipt[]      @relation("ReceiptCreatedBy")
-  tasks         BrigadeTask[]       @relation("TaskCreatedBy")
-  taskProgress  TaskProgress[]      @relation("ProgressCreatedBy")
-  cashTx        CashTransaction[]   @relation("CashTxCreatedBy")
-  auditLogs     AuditLog[]
-  employee      Employee?
-  marketing     MarketingEntry[]    @relation("MarketingCreatedBy")
-  telegram      TelegramAccount[]
-  aiActions     AiAction[]
-  telegramCodes TelegramLinkCode[]
-  resetCodes    PasswordResetCode[]
-  supplyReqs    SupplyRequest[]     @relation("SupplyCreatedBy")
-  supplyEvents  SupplyEvent[]       @relation("SupplyEventBy")
-  brigadeMoves  BrigadeMove[]       @relation("BrigadeMoveBy")
-  leads         Lead[]              @relation("LeadHandledBy")
-  salesRegister SalesRegister[]     @relation("SalesRegisterCreatedBy")
-  devices       MobileDevice[]
-  notifications Notification[]
+  orders           Order[]                  @relation("OrderCreatedBy")
+  batches          ProductionBatch[]        @relation("BatchCreatedBy")
+  stockMoves       StockMove[]              @relation("MoveCreatedBy")
+  receipts         GoodsReceipt[]           @relation("ReceiptCreatedBy")
+  tasks            BrigadeTask[]            @relation("TaskCreatedBy")
+  taskProgress     TaskProgress[]           @relation("ProgressCreatedBy")
+  cashTx           CashTransaction[]        @relation("CashTxCreatedBy")
+  auditLogs        AuditLog[]
+  employee         Employee?
+  marketing        MarketingEntry[]         @relation("MarketingCreatedBy")
+  telegram         TelegramAccount[]
+  aiActions        AiAction[]
+  telegramCodes    TelegramLinkCode[]
+  resetCodes       PasswordResetCode[]
+  supplyReqs       SupplyRequest[]          @relation("SupplyCreatedBy")
+  supplyEvents     SupplyEvent[]            @relation("SupplyEventBy")
+  brigadeMoves     BrigadeMove[]            @relation("BrigadeMoveBy")
+  leads            Lead[]                   @relation("LeadHandledBy")
+  salesRegister    SalesRegister[]          @relation("SalesRegisterCreatedBy")
+  devices          MobileDevice[]
+  notifications    Notification[]
   deletionRequests AccountDeletionRequest[] @relation("DeletionRequestUser")
   deletionHandled  AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
+  productionPlans  ProductionPlan[]         @relation("PlanSetBy")
+  expenseBudgets   ExpenseBudget[]          @relation("BudgetSetBy")
+  defects          ProductDefect[]          @relation("DefectCreatedBy")
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -93,6 +96,12 @@ model CompanySettings {
   /// Kunlik ishlab chiqarish quvvati, m³ — Zayavkalar taqvimi shu chegaraga qarab rang beradi
   dailyCapacityM3 Decimal? @default(200) @db.Decimal(10, 2)
   foundedYear     Int?
+  // ── Egasi dashbordi chegaralari (norma / e'tibor / kritik) — direktor Byudjet sahifasida sozlaydi ──
+  alertWarnPct    Int      @default(90) // byudjetning shu foizidan oshsa — e'tibor
+  alertCritPct    Int      @default(100) // shu foizdan oshsa — kritik
+  stockWarnDays   Int      @default(7) // xomashyo shu kundan kamga yetsa — e'tibor
+  stockCritDays   Int      @default(3) // shu kundan kamga yetsa — kritik (ishlab chiqarish to'xtash xavfi)
+  overdueDays     Int      @default(30) // schyot shu kundan eski bo'lsa — muddati o'tgan debitorka
   updatedAt       DateTime @updatedAt
 }
 
@@ -212,6 +221,8 @@ model Product {
   stockMoves  StockMove[]
   leads       Lead[]
   shopItem    ShopItem?
+  plans       ProductionPlan[]
+  defects     ProductDefect[]
 
   @@index([groupId])
 }
@@ -286,13 +297,24 @@ enum VehicleType {
   TRUCK
 }
 
+/// Texnika holati — egasi dashbordidagi "Transport" bloki uchun. Ishda/bo'sh reyslardan bilinadi,
+/// ta'mir va bekor turishni logistika qo'lda belgilaydi (Haydovchilar sahifasi).
+enum VehicleStatus {
+  ACTIVE // saflda — reysga chiqadi
+  REPAIR // ta'mirda
+  IDLE // bekor turibdi (haydovchi yo'q, buyurtma yo'q, hujjat...)
+}
+
 model Vehicle {
-  id           String      @id @default(cuid())
-  plate        String      @unique
+  id           String        @id @default(cuid())
+  plate        String        @unique
   type         VehicleType
-  capacityM3   Decimal?    @db.Decimal(8, 2)
-  isActive     Boolean     @default(true)
-  ecoVehicleId String?     @unique // Insof ECO Vehicle.id
+  capacityM3   Decimal?      @db.Decimal(8, 2)
+  isActive     Boolean       @default(true)
+  status       VehicleStatus @default(ACTIVE)
+  statusNote   String? // ta'mir sababi / bekor turish sababi
+  statusSince  DateTime? // holat qachondan — bekor turish narxi shu sanadan hisoblanadi
+  ecoVehicleId String?       @unique // Insof ECO Vehicle.id
   ecoSyncedAt  DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
   ecoError     String? // oxirgi sinxron xatosi
 
@@ -337,13 +359,13 @@ model Employee {
   ecoError    String? // oxirgi sinxron xatosi
   createdAt   DateTime  @default(now())
 
-  user       User?              @relation(fields: [userId], references: [id])
-  vehicle    Vehicle?           @relation("DriverVehicle", fields: [vehicleId], references: [id])
-  trips      Trip[]             @relation("TripDriver")
-  brigades   Brigade[]          @relation("BrigadeLeader")
-  documents  EmployeeDocument[]
-  hrDocs     HrDocument[]
-  attendance Attendance[]
+  user             User?                    @relation(fields: [userId], references: [id])
+  vehicle          Vehicle?                 @relation("DriverVehicle", fields: [vehicleId], references: [id])
+  trips            Trip[]                   @relation("TripDriver")
+  brigades         Brigade[]                @relation("BrigadeLeader")
+  documents        EmployeeDocument[]
+  hrDocs           HrDocument[]
+  attendance       Attendance[]
   deletionRequests AccountDeletionRequest[]
 }
 
@@ -732,11 +754,12 @@ model Brigade {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  leader     Employee?     @relation("BrigadeLeader", fields: [leaderId], references: [id])
+  leader     Employee?       @relation("BrigadeLeader", fields: [leaderId], references: [id])
   items      OrderItem[]
   tasks      BrigadeTask[]
   moves      BrigadeMove[]
   stockMoves StockMove[]
+  defects    ProductDefect[]
 }
 
 enum TaskStatus {
@@ -806,6 +829,66 @@ model ProductionBatch {
   product   Product @relation(fields: [productId], references: [id])
   recipe    Recipe  @relation(fields: [recipeId], references: [id])
   createdBy User    @relation("BatchCreatedBy", fields: [createdById], references: [id])
+}
+
+/// Ishlab chiqarish plani — direktor mahsulot bo'yicha oyga belgilaydi (plita, ustun, beton...).
+/// Kunlik plan bo'sh bo'lsa oylik plan ish kunlariga (yakshanbasiz) bo'linadi.
+/// Fakt saqlanmaydi: PRODUCTION_OUTPUT (StockMove) yig'indisidan hisoblanadi.
+model ProductionPlan {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int
+  productId String
+  monthQty  Decimal  @db.Decimal(18, 3)
+  dayQty    Decimal? @db.Decimal(18, 3)
+  note      String?
+  setById   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+  setBy   User    @relation("PlanSetBy", fields: [setById], references: [id])
+
+  @@unique([year, month, productId])
+}
+
+/// Xarajat byudjeti — direktor har kategoriya (Kirim-Chiqim kategoriyalari) uchun oyga belgilaydi.
+/// Fakt saqlanmaydi: CashTransaction EXPENSE yig'indisi. Limit bo'sh bo'lsa byudjetning o'zi limit.
+model ExpenseBudget {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int
+  category  String
+  amount    Decimal  @db.Decimal(18, 2)
+  limit     Decimal? @db.Decimal(18, 2) // shu summadan oshsa — kritik (bo'sh: amount × kritik foiz)
+  note      String?
+  setById   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  setBy User @relation("BudgetSetBy", fields: [setById], references: [id])
+
+  @@unique([year, month, category])
+}
+
+/// Tayyor mahsulot braki. Saqlanganda hovli qoldig'idan WRITE_OFF (StockMove, refType "ProductDefect")
+/// bilan ayriladi — o'chirilsa o'sha harakat ham o'chadi.
+model ProductDefect {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  productId   String
+  brigadeId   String?
+  qty         Decimal  @db.Decimal(18, 3)
+  reason      String
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  product   Product  @relation(fields: [productId], references: [id])
+  brigade   Brigade? @relation(fields: [brigadeId], references: [id])
+  createdBy User     @relation("DefectCreatedBy", fields: [createdById], references: [id])
+
+  @@index([date])
 }
 
 // ───────────────────────── Logistika: reys / nakladnoy ─────────────────────────
@@ -1229,19 +1312,19 @@ enum DeletionRequestStatus {
 /// tasdiqlaydi: ERP logini yopiladi, sessiyalar kuyadi, qurilma/bildirishnoma yozuvlari
 /// o'chadi, ECO haydovchisi bo'lsa ECO ham anonimlashtiradi. Xodim kartasi (HR) qoladi.
 model AccountDeletionRequest {
-  id         String                @id @default(cuid())
-  source     DeletionRequestSource
-  status     DeletionRequestStatus @default(PENDING)
-  userId     String? // ERP foydalanuvchisi (APP yoki telefon bo'yicha topilgan)
-  employeeId String? // bog'liq xodim kartasi
-  ecoUserId  String? // ECO foydalanuvchi id (ECO manbasi)
-  fullName   String
-  phone      String? // normallashtirilgan
-  note       String?
+  id          String                @id @default(cuid())
+  source      DeletionRequestSource
+  status      DeletionRequestStatus @default(PENDING)
+  userId      String? // ERP foydalanuvchisi (APP yoki telefon bo'yicha topilgan)
+  employeeId  String? // bog'liq xodim kartasi
+  ecoUserId   String? // ECO foydalanuvchi id (ECO manbasi)
+  fullName    String
+  phone       String? // normallashtirilgan
+  note        String?
   handledById String?
-  handledAt  DateTime?
-  result     String? // tasdiqda nima qilindi (ERP logini yopildi, ECO anonim...)
-  createdAt  DateTime              @default(now())
+  handledAt   DateTime?
+  result      String? // tasdiqda nima qilindi (ERP logini yopildi, ECO anonim...)
+  createdAt   DateTime              @default(now())
 
   user      User?     @relation("DeletionRequestUser", fields: [userId], references: [id])
   employee  Employee? @relation(fields: [employeeId], references: [id])

@@ -10,6 +10,7 @@ import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ApproveDriverButton, ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncAllButton, SyncVehiclesButton } from "./buttons";
+import { VehicleStatusBadge, VehicleStatusForm } from "./vehicle-status-form";
 
 export const dynamic = "force-dynamic";
 
@@ -151,11 +152,13 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Texnika" description="Davlat raqami bo'yicha moslanadi. Reys yuborilganda mashina ECO'da avtomatik yaratiladi." icon={Truck} /></div>
           <Table>
-            <thead><tr><Th>Raqam</Th><Th right>Sig'im</Th><Th>ECO</Th></tr></thead>
+            <thead><tr><Th>Raqam</Th><Th right>Sig'im</Th><Th>Holat</Th><Th>ECO</Th></tr></thead>
             <tbody>
               {vehicles.length === 0 && <Empty text="Texnika yo'q" />}
               {vehicles.map((v) => (
                 <Tr key={v.id}><Td className="font-medium">{v.plate}</Td><Td right>{v.capacityM3 ? `${qty(v.capacityM3)} m³` : "—"}</Td>
+                  {/* Ta'mir / bekor turish — egasi dashbordidagi Transport bloki shu holatdan o'qiydi */}
+                  <Td>{canManage ? <VehicleStatusForm vehicleId={v.id} status={v.status} note={v.statusNote} /> : <VehicleStatusBadge status={v.status} note={v.statusNote} />}</Td>
                   <Td>{!enabled ? "—" : ecoPlates.has(v.plate) || v.ecoVehicleId ? <Badge color="green">Bor</Badge> : <Badge>Yo'q</Badge>}{v.ecoError && <div className="max-w-[12rem] text-xs text-red-600">{v.ecoError}</div>}</Td></Tr>
               ))}
             </tbody>

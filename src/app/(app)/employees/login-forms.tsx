@@ -2,9 +2,9 @@
 
 import { useActionState } from "react";
 import { PASSWORD_HINT } from "@/lib/password-policy";
-import { KeyRound, Lock, LockOpen, UserPen } from "lucide-react";
-import { changeLogin, resetEmployeePassword, toggleEmployeeLogin } from "./actions";
-import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
+import { KeyRound, Lock, LockOpen, Repeat, UserPen } from "lucide-react";
+import { changeEmployeeRole, changeLogin, resetEmployeePassword, toggleEmployeeLogin } from "./actions";
+import { Button, Field, FormError, Input, PasswordInput, Select } from "@/components/ui";
 
 /** Login nomini almashtirish. */
 export function ChangeLoginForm({ employeeId, currentLogin }: { employeeId: string; currentLogin: string }) {
@@ -17,6 +17,26 @@ export function ChangeLoginForm({ employeeId, currentLogin }: { employeeId: stri
       </div>
       <FormError error={state?.error} />
       {state?.ok && <p className="text-xs text-emerald-700">Login saqlandi</p>}
+    </form>
+  );
+}
+
+/** Login berishda bo'lim noto'g'ri tanlangan bo'lsa — almashtirish. */
+export function ChangeRoleForm({ employeeId, currentRole, roles }: { employeeId: string; currentRole: string; roles: { value: string; label: string }[] }) {
+  const [state, action, pending] = useActionState(changeEmployeeRole.bind(null, employeeId), undefined);
+  return (
+    <form action={action} onSubmit={(e) => { if (!confirm("Bo'lim almashtirilsinmi? Xodim tizimdan chiqariladi va qayta kirganda yangi bo'limni ko'radi.")) e.preventDefault(); }} className="space-y-2">
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Bo'lim (tizim huquqi)" className="min-w-40 flex-1">
+          <Select name="role" defaultValue={currentRole} required>
+            {!roles.some((r) => r.value === currentRole) && <option value={currentRole}>{currentRole} (eski)</option>}
+            {roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </Select>
+        </Field>
+        <Button variant="secondary" disabled={pending}><Repeat size={15} /> Almashtirish</Button>
+      </div>
+      <FormError error={state?.error} />
+      {state?.note && <p className={state.ok ? "text-xs text-emerald-700" : "text-xs text-slate-600"}>{state.note}</p>}
     </form>
   );
 }
