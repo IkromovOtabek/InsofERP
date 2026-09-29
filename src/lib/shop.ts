@@ -30,25 +30,57 @@ export type ShopCatalogItem = {
   badge: string | null;
   minQty: number | null;
   group: string | null;
+  /** Mahsulot kimniki — ilovada kartada ko'rinadi, bosilsa zavod profili ochiladi. */
+  sellerId: string;
 };
+
+/** Sotuvchi (zavod) profili — hozir bitta zavod; SaaS'da har nusxa o'z zavodini beradi. */
+export type ShopSeller = {
+  id: string; name: string; legalName: string | null; about: string | null; address: string | null;
+  phone: string | null; phone2: string | null; email: string | null; workingHours: string | null;
+  foundedYear: number | null; location: { lat: number; lng: number } | null;
+};
+
+/** Bosh sahifa swiper'idagi reklama. */
+export type ShopBannerItem = { id: string; title: string; subtitle: string | null; image: string | null; productId: string | null; buttonText: string | null };
 
 export type ShopCatalog = {
   company: { name: string; phone: string | null; address: string | null };
+  seller: ShopSeller;
+  banners: ShopBannerItem[];
   items: ShopCatalogItem[];
 };
 
+/** Zavodning ommaviy identifikatori — hozircha bitta; ko'p zavodli bo'lsa CompanySettings.id. */
+export const SELLER_ID = "main";
+
 /** Ilovaga beriladigan vitrina — faqat chiqarilgan va faol mahsulotlar. */
 export async function shopCatalog(): Promise<ShopCatalog> {
-  const [company, rows] = await Promise.all([
+  const now = new Date();
+  const [company, rows, banners] = await Promise.all([
     getCompany(),
     db.shopItem.findMany({
       where: { isPublished: true, product: { isActive: true } },
       orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
       include: { product: { include: { group: { select: { name: true } } } } },
     }),
+    db.shopBanner.findMany({
+      where: {
+        isActive: true,
+        AND: [{ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gt: now } }] }],
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+    }),
   ]);
+  const t = (v: string | null | undefined) => v?.trim() || null;
   return {
-    company: { name: company.name, phone: company.phone?.trim() || null, address: company.address?.trim() || null },
+    company: { name: company.name, phone: t(company.phone), address: t(company.address) },
+    seller: {
+      id: SELLER_ID, name: company.name, legalName: t(company.legalName), about: t(company.about), address: t(company.address),
+      phone: t(company.phone), phone2: t(company.phone2), email: t(company.email), workingHours: t(company.workingHours),
+      foundedYear: company.foundedYear, location: company.lat != null && company.lng != null ? { lat: company.lat, lng: company.lng } : null,
+    },
+    banners: banners.map((b) => ({ id: b.id, title: b.title, subtitle: t(b.subtitle), image: b.image ? shopPhotoUrl(b.image) : null, productId: b.productId, buttonText: t(b.buttonText) })),
     items: rows.map((r) => ({
       id: r.productId,
       code: r.product.code,
@@ -62,6 +94,7 @@ export async function shopCatalog(): Promise<ShopCatalog> {
       badge: r.badge?.trim() || null,
       minQty: r.minQty ? Number(r.minQty) : null,
       group: r.product.group?.name ?? null,
+      sellerId: SELLER_ID,
     })),
   };
 }

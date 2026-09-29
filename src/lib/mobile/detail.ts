@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { activityDetail, splitRef } from "./director";
 import { customerCredit } from "@/lib/finance";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
@@ -230,6 +231,13 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   if (user.role === "BRIGADIER" && key !== "tasks") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Haydovchi ilovada faqat reys kartochkasini ochadi — vebda ham unga faqat "Mening reyslarim" ochiq
   if (user.role === "DRIVER" && key !== "trips") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  // Aralash ro'yxatlar (direktor "Tasdiqlar") qator id'sida kartochka kalitini olib keladi: `orders:<id>`
+  const [refKey, refId] = splitRef(id);
+  if (refKey) return mobileDetail(user, refKey, refId);
+  if (key === "activity") {
+    if (user.role !== "DIRECTOR") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+    return activityDetail(id);
+  }
   switch (DETAIL_KEY[key] ?? key) {
     case "orders": return orderDetail(user, id);
     case "trips": return tripDetail(user, id);

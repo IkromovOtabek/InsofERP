@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { splitRef } from "./director";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import { orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
@@ -9,6 +10,7 @@ import { addPayment } from "@/lib/payments";
 import { taskCancel, taskProgress } from "@/lib/tasks";
 import { clearBrigadeLeader, setBrigadeLeader } from "@/lib/brigades";
 import { audit } from "@/lib/audit";
+import { deliveryAt, fmtNum, money } from "@/lib/format";
 import { createInvoice } from "@/lib/invoices";
 import { convertLead, saveLeadNote, setLeadStatus } from "@/lib/leads";
 import {
@@ -28,7 +30,19 @@ import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
  * chaqiriladi, ya'ni veb ERP'dagi tugma bilan bir xil natija beradi (audit ham yoziladi).
  * Bu yerda faqat: ruxsat, kirish ma'lumotini tekshirish va ECO'ga xabar berish.
  */
-export type ActionResult = { ok: true; message: string };
+export type ActionResult = { ok: true; message: string; receipt?: Receipt };
+
+/**
+ * Muhim amal (masalan zayavka qabul qilinishi) natijasining "chek"i — ilova uni oddiy
+ * "Bajarildi" oynasi o'rniga katta modalda ko'rsatadi: bosh summa, holat, asosiy qatorlar.
+ * Matnlar serverda tayyorlanadi, ilova faqat chizadi (yangi maydon — ilovani yangilamasdan).
+ */
+export type Receipt = {
+  headline: string;
+  caption?: string;
+  status: { label: string; tone: "success" | "warning"; at: string };
+  rows: { label: string; value: string; copy?: boolean }[];
+};
 
 const Receiver = z.object({ receiverName: z.string().trim().min(2, "Qabul qilgan kishini yozing"), note: z.string().trim().optional() });
 const Progress = z.object({
@@ -84,8 +98,10 @@ async function assertOwnTask(user: MobileUser, taskId: string) {
   if (!t || !(await myBrigadeIds(user.id)).includes(t.brigadeId)) fail("Bu topshiriq sizning brigadangizga tayinlanmagan", 403);
 }
 
-export async function runMobileAction(user: MobileUser, action: string, id: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
-  if (!id) fail("id yo'q");
+export async function runMobileAction(user: MobileUser, action: string, rawId: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
+  if (!rawId) fail("id yo'q");
+  // Aralash ro'yxatdan ochilgan kartochka (`orders:<id>`) — amal haqiqiy id bilan bajariladi
+  const id = splitRef(rawId)[1];
   if (!(action in ACTION_ROLES)) fail("Bunday amal yo'q", 404); // noma'lum amal — ruxsat xatosi bilan chalkashmasin
   if (!can(user, action)) fail("Bu amalga ruxsatingiz yo'q", 403);
   if (action.startsWith("trip.")) await assertOwnTrip(user, id);
@@ -96,7 +112,12 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
     case "order.confirm": {
       const r = await orderConfirm(id, user.id);
       if (r.error) fail(r.error);
-      return { ok: true, message: r.status === "BLOCKED" ? "Limit oshgan — zayavka bloklandi, direktor ochadi" : "Zayavka qabul qilindi" };
+      const blocked = r.status === "BLOCKED";
+      return {
+        ok: true,
+        message: blocked ? "Limit oshgan — zayavka bloklandi, direktor ochadi" : "Zayavka qabul qilindi",
+        receipt: await orderReceipt(id, blocked),
+      };
     }
     case "order.unblock": {
       const r = await orderUnblock(id, user.id);
@@ -359,4 +380,31 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
     default:
       return fail("Bunday amal yo'q", 404) as never;
   }
+}
+
+/** Qabul qilingan zayavka cheki: summa, hajm, mijoz, yetkazish va to'lov sharti. */
+export async function orderReceipt(id: string, blocked: boolean): Promise<Receipt> {
+  const o = await db.order.findUniqueOrThrow({
+    where: { id },
+    include: { customer: { select: { name: true } }, items: { include: { product: { select: { code: true, name: true } } } } },
+  });
+  const volume = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+  const total = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+  const stock = o.kind === "STOCK";
+  const extras = [o.needsDelivery ? "dastavka" : "o'zi olib ketadi", o.needsPump ? "nasos" : null, o.isUrgent ? "shoshilinch" : null].filter(Boolean).join(" · ");
+  const rows: Receipt["rows"] = [
+    { label: "Zayavka", value: o.orderNo, copy: true },
+    ...(stock ? [] : [{ label: "Mijoz", value: o.customer.name }]),
+    { label: "Mahsulot", value: o.items.map((i) => `${i.product.code} · ${fmtNum(Number(i.qtyM3), 1)} m³`).join(", ") || "—" },
+    { label: "Yetkazish", value: deliveryAt(o.deliveryDate, o.deliveryTime) },
+    { label: "Manzil", value: o.deliveryAddress },
+    { label: "Shart", value: extras },
+    ...(stock ? [] : [{ label: "To'lov", value: o.onCredit ? "qarzga (kafolat xati)" : "oldindan / naqd" }]),
+  ];
+  return {
+    headline: stock ? `${fmtNum(volume, 1)} m³` : money(total),
+    caption: stock ? "Sklad zaxirasiga ishlab chiqarish" : `${fmtNum(volume, 1)} m³ beton`,
+    status: { label: blocked ? "Bloklandi — limit oshgan" : "Qabul qilindi", tone: blocked ? "warning" : "success", at: new Date().toISOString() },
+    rows,
+  };
 }

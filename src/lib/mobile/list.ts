@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { activityList, approvalsList } from "./director";
 import { ecoLabel } from "@/lib/eco/labels";
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import { myBrigades } from "@/lib/brigades";
@@ -58,6 +59,11 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   // ── Boshqaruv ──
   // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
   employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
+  // ── Faqat direktor (roles bo'sh — DIRECTOR har doim o'tadi) ──
+  // Tasdiqlar: bloklangan zayavka, ta'minot tasdig'i/to'lovi — ilovadagi ikkinchi tab
+  approvals: { title: "Tasdiqlar", roles: [] },
+  // Bugun kim nima qildi — bosh sahifadagi "Bugungi holat" dan ochiladi
+  activity: { title: "Xodimlar faoliyati", roles: [] },
 };
 
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
@@ -106,6 +112,8 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   const s = q?.trim() || undefined;
   // Ishlab chiqarish uchun zayavkalar veb "/production" oynasidagidek: filtrlar va brigada holati bilan
   if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);
+  if (key === "approvals") return approvalsList(meta.title, s, filter);
+  if (key === "activity") return activityList(meta.title, s);
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "snabjeniye") return snabjeniye(meta.title, s, filter);

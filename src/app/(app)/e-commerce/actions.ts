@@ -79,3 +79,52 @@ export async function deleteShopPhoto(productId: string) {
   await removeShopPhoto(item.photo);
   revalidatePath("/e-commerce");
 }
+
+// ───────────────────────── Reklama (ADS) — ilova bosh sahifasi swiper'i ─────────────────────────
+
+const bannerSchema = z.object({
+  title: z.string().trim().min(2, "sarlavha kerak").max(80),
+  subtitle: zOpt,
+  buttonText: zOpt,
+  productId: zOpt,
+  isActive: z.string().optional().transform((v) => v === "on"),
+  sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
+  startsAt: z.string().trim().optional().transform((v) => (v ? new Date(`${v}T00:00:00`) : null)),
+  endsAt: z.string().trim().optional().transform((v) => (v ? new Date(`${v}T23:59:59`) : null)),
+});
+
+/** Banner saqlash (id bo'lmasa — yangi). Surat ixtiyoriy: bo'lmasa ilovada brend rangli fon. */
+export async function saveBanner(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...ROLES]);
+  const parsed = parseForm(bannerSchema, fd);
+  if ("error" in parsed) return { error: parsed.error };
+  const d = parsed.data;
+  if (d.startsAt && d.endsAt && d.endsAt < d.startsAt) return { error: "Tugash sanasi boshlanishdan oldin" };
+  const saved = await saveShopPhoto(`banner-${id ?? "new"}`, fd.get("image"));
+  if (saved && "error" in saved) return { error: saved.error };
+  const prev = id ? await db.shopBanner.findUnique({ where: { id } }) : null;
+  const data = { ...d, ...(saved ? { image: saved.stored } : {}) };
+  const b = id ? await db.shopBanner.update({ where: { id }, data }) : await db.shopBanner.create({ data });
+  if (saved && prev?.image) await removeShopPhoto(prev.image);
+  await audit(db, s.userId, prev ? "UPDATE" : "CREATE", "ShopBanner", b.id, prev, data);
+  revalidatePath("/e-commerce");
+  return { ok: true };
+}
+
+export async function toggleBanner(id: string, on: boolean) {
+  const s = await requireSession([...ROLES]);
+  await db.shopBanner.update({ where: { id }, data: { isActive: on } });
+  await audit(db, s.userId, "STATUS_CHANGE", "ShopBanner", id, { isActive: !on }, { isActive: on });
+  revalidatePath("/e-commerce");
+}
+
+export async function deleteBanner(id: string): Promise<ActionState> {
+  const s = await requireSession([...ROLES]);
+  const b = await db.shopBanner.findUnique({ where: { id } });
+  if (!b) return { error: "Topilmadi" };
+  await db.shopBanner.delete({ where: { id } });
+  if (b.image) await removeShopPhoto(b.image);
+  await audit(db, s.userId, "DELETE", "ShopBanner", id, b, undefined);
+  revalidatePath("/e-commerce");
+  return { ok: true };
+}

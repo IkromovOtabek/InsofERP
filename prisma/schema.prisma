@@ -231,6 +231,7 @@ model Product {
   stockMoves  StockMove[]
   leads       Lead[]
   shopItem    ShopItem?
+  banners     ShopBanner[]
   plans       ProductionPlan[]
   defects     ProductDefect[]
 
@@ -255,6 +256,25 @@ model ShopItem {
   updatedAt   DateTime @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+/// Do'kon reklamasi (ADS) — ilova bosh sahifasidagi swiper'da ko'rinadigan banner.
+/// Boshqaruv: ERP `/e-commerce?tab=reklama`. Muddati bo'lsa faqat shu oraliqda ko'rinadi.
+model ShopBanner {
+  id         String    @id @default(cuid())
+  title      String
+  subtitle   String?
+  image      String? // uploads/shop/<stored> — bo'lmasa rangli fon + matn
+  productId  String? // bosilganda shu mahsulot ochiladi (bo'lmasa katalog)
+  buttonText String? // "Batafsil", "Buyurtma berish"
+  isActive   Boolean   @default(true)
+  sortOrder  Int       @default(0)
+  startsAt   DateTime?
+  endsAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 }
 
 /// Retsept — 1 m3 uchun norma. Versiyalanadi, eski versiya o'chirilmaydi.

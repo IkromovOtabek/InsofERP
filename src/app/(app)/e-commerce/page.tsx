@@ -8,6 +8,8 @@ import { unitLabel } from "@/lib/unit";
 import { SHOP_SOURCE } from "@/lib/shop";
 import { Badge, Callout, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ShopItemForm, type ShopRowProduct } from "./shop-item-form";
+import { BannerForm } from "./banner-form";
+import { isoDate } from "@/lib/format";
 
 const LEAD_STATUS = {
   NEW: { label: "Yangi", color: "amber" },
@@ -28,7 +30,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
   await requireSession(["SALES", "DIRECTOR"]);
   const { tab = "vitrina" } = await searchParams;
 
-  const [products, leads] = await Promise.all([
+  const [products, leads, banners] = await Promise.all([
     db.product.findMany({
       where: { isActive: true },
       orderBy: [{ shopItem: { sortOrder: "asc" } }, { code: "asc" }],
@@ -40,6 +42,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
       take: 200,
       include: { product: { select: { name: true, unit: true } }, customer: { select: { id: true, name: true } } },
     }),
+    db.shopBanner.findMany({ orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { createdAt: "desc" }] }),
   ]);
 
   const rows: ShopRowProduct[] = products.map((p) => ({
@@ -87,11 +90,24 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
 
       <Tabs current={tab} className="mb-6" items={[
         { key: "vitrina", label: "Vitrina", href: "/e-commerce?tab=vitrina", count: published.length },
+        { key: "reklama", label: "Reklama", href: "/e-commerce?tab=reklama", count: banners.filter((b) => b.isActive).length },
         { key: "buyurtmalar", label: "Buyurtmalar", href: "/e-commerce?tab=buyurtmalar", count: newLeads },
       ]} />
 
       {tab === "buyurtmalar" ? (
         <OrdersTab leads={leads} />
+      ) : tab === "reklama" ? (
+        <Card>
+          <h2 className="mb-1 font-semibold">Reklama (ADS)</h2>
+          <p className="mb-2 text-xs text-slate-500">Ilova bosh sahifasidagi swiper'da asosiy taklif, buyurtma qadamlari va "Nega biz" slaydlari bilan birga aylanadi. Muddat berilsa faqat shu kunlarda ko'rinadi.</p>
+          <div className="divide-y divide-slate-100">
+            {banners.map((b) => (
+              <BannerForm key={b.id} products={products.map((p) => ({ id: p.id, name: p.name }))}
+                b={{ id: b.id, title: b.title, subtitle: b.subtitle, image: b.image, productId: b.productId, buttonText: b.buttonText, isActive: b.isActive, sortOrder: b.sortOrder, startsAt: b.startsAt ? isoDate(b.startsAt) : "", endsAt: b.endsAt ? isoDate(b.endsAt) : "" }} />
+            ))}
+            <BannerForm products={products.map((p) => ({ id: p.id, name: p.name }))} />
+          </div>
+        </Card>
       ) : (
         <div className="space-y-4">
           {published.length === 0 && (

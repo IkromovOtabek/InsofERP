@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { loadSales } from "@/lib/bi/core";
+import { ownerDashboard } from "@/lib/owner-dashboard";
 import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
@@ -11,8 +13,6 @@ import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { unitLabel, unitTotals, soleUnit, type UnitRow } from "@/lib/unit";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
-import { overviewTab } from "@/lib/bi/overview";
-import { parseRange } from "@/lib/bi/core";
 
 /**
  * Mobil ilova bosh ekrani — rolga qarab. Server nimani ko'rsatishni hal qiladi,
@@ -20,14 +20,63 @@ import { parseRange } from "@/lib/bi/core";
  */
 export type Tone = "brand" | "success" | "warning" | "danger" | "info";
 /** `icon` — Ionicons nomi; ilova kartaning yuqorisida chizadi. */
-export type HomeCard = { key: string; label: string; value: string; hint?: string; tone?: Tone; icon?: string };
+/**
+ * `filters` — karta ostidagi davr tugmalari (masalan Tushum: bugun / hafta / oy / yil).
+ * Bosilganda ilova bosh sahifani `?<param>=<key>` bilan qayta so'raydi; raqamni server hisoblaydi.
+ */
+export type CardFilter = { key: string; label: string; active: boolean };
+export type HomeCard = { key: string; label: string; value: string; hint?: string; tone?: Tone; icon?: string; filterParam?: string; filters?: CardFilter[];
+  /** Kalendardan tanlangan oraliq ("custom" filtr) — ilova kalendarini shu kunlar bilan ochadi. `YYYY-MM-DD`. */
+  range?: { from: string; to: string } | null };
+/** Bosh sahifa so'rovidagi ixtiyoriy parametrlar (karta filtrlari). */
+export type HomeOpts = { revenue?: string; from?: string; to?: string };
+
+/** Direktor "Tushum" kartasi davrlari. */
+const REVENUE_PERIODS = [
+  { key: "day", label: "Bugun" }, { key: "week", label: "Hafta" }, { key: "month", label: "Oy" }, { key: "year", label: "Yil" },
+] as const;
+type RevenuePeriod = (typeof REVENUE_PERIODS)[number]["key"] | "custom";
+
+const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+const parseYmd = (v?: string) => (v && ymdRe.test(v) ? new Date(`${v}T00:00:00`) : null);
+const fmtYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+/** Davr va undan oldingi teng davr (taqqoslash uchun). Hafta dushanbadan. */
+function revenueRange(p: RevenuePeriod) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const to = new Date(t); to.setDate(to.getDate() + 1);
+  let from: Date, prevFrom: Date, prevTo: Date;
+  if (p === "day") { from = t; prevTo = t; prevFrom = new Date(t); prevFrom.setDate(t.getDate() - 1); }
+  else if (p === "week") {
+    from = new Date(t); from.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+    prevFrom = new Date(from); prevFrom.setDate(from.getDate() - 7);
+    prevTo = new Date(prevFrom); prevTo.setDate(prevFrom.getDate() + (to.getTime() - from.getTime()) / 86400000);
+  } else if (p === "year") {
+    from = new Date(t.getFullYear(), 0, 1); prevFrom = new Date(t.getFullYear() - 1, 0, 1);
+    prevTo = new Date(t.getFullYear() - 1, t.getMonth(), t.getDate() + 1);
+  } else {
+    from = new Date(t.getFullYear(), t.getMonth(), 1); prevFrom = new Date(t.getFullYear(), t.getMonth() - 1, 1);
+    prevTo = new Date(t.getFullYear(), t.getMonth() - 1, t.getDate() + 1);
+  }
+  return { from, to, prevFrom, prevTo };
+}
 /** `open` — bosilganda ochiladigan ro'yxat kaliti (kartochka emas): bo'lim `target` siz bo'lganda ishlatiladi. */
 export type HomeRow = { id: string; title: string; subtitle?: string; right?: string; status?: string; tone?: Tone; open?: string };
 /** `target` — qator bosilganda ochiladigan kartochka turi (`/api/mobile/detail?key=...`). Bo'lmasa qator bosilmaydi. */
 /** `kind: "list"` — ro'yxatni ochadi, `kind: "new"` — yangi hujjat formasini. */
 export type QuickAction = { key: string; label: string; icon: string; kind: "list" | "new" };
 /** `icon` — `target` yo'q (hech qayerga o'tmaydigan) bo'limlar uchun ma'noli belgi; bo'lmasa doira. */
-export type HomeSection = { title: string; empty: string; rows: HomeRow[]; target?: string; icon?: string };
+/**
+ * Bo'lim diagrammasi (ixtiyoriy) — ilova qatorlar o'rniga/ustiga chizadi:
+ *   · `progress` — har ko'rsatkich uchun plan/fakt chizig'i va raqamlari (Direktor nazorati);
+ *   · `columns` — oylar bo'yicha guruhli ustunlar (tushum / foyda / xarajat).
+ * Eski ilova `chart` ni bilmaydi va oddiy `rows` ni chizaveradi — shuning uchun rows ham to'ldiriladi.
+ */
+export type SectionChart =
+  | { kind: "progress"; items: { label: string; pct: number | null; fact: string; plan: string | null; tone: Tone; invert?: boolean; open?: string }[] }
+  | { kind: "columns"; series: { key: string; label: string; tone: Tone }[]; groups: { label: string; values: number[]; texts: string[] }[] };
+export type HomeSection = { title: string; empty: string; rows: HomeRow[]; target?: string; icon?: string; chart?: SectionChart };
 export type MobileHome = {
   role: Role;
   roleLabel: string;
@@ -65,7 +114,7 @@ export type LiveTruck = {
 
 /** Har bir rolning "ishchi" ro'yxati — `lib/mobile/list.ts` dagi kalit. */
 export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
-  DIRECTOR: { key: "orders", title: "Zayavkalar" },
+  DIRECTOR: { key: "approvals", title: "Tasdiqlar" },
   SALES: { key: "orders", title: "Zayavkalar" },
   PRODUCTION: { key: "production", title: "Zameslar" },
   SUPERVISOR: { key: "tasks", title: "Topshiriqlar" },
@@ -87,6 +136,7 @@ const LIST_ICON: Record<string, string> = {
   trips: "bus", drivers: "id-card",
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
+  approvals: "circle-check", activity: "activity",
 };
 const SUPPLY_TONE: Record<string, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
 
@@ -128,17 +178,17 @@ const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CON
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
 /**
- * Direktor uchun "Tahlil → Umumiy" hisob-kitobi. Og'ir (o'nlab so'rov), ilova esa bosh ekranni
- * 30 s da yangilaydi — shuning uchun bir daqiqa keshda turadi (hamma direktorlar uchun bitta).
+ * Direktor bosh sahifasi — vebdagi Egasi dashbordi (`ownerDashboard()`). Og'ir (o'nlab so'rov), ilova
+ * esa bosh ekranni 30 s da yangilaydi — shuning uchun bir daqiqa keshda turadi (hamma direktorlar uchun bitta).
  */
-let overviewCache: { at: number; data: Promise<Awaited<ReturnType<typeof overviewTab>>> } | null = null;
-function directorOverview() {
-  if (!overviewCache || Date.now() - overviewCache.at > 60_000) {
-    const data = overviewTab(parseRange({ period: "month" }));
-    overviewCache = { at: Date.now(), data };
-    data.catch(() => { overviewCache = null; });
+let ownerCache: { at: number; data: Promise<Awaited<ReturnType<typeof ownerDashboard>>> } | null = null;
+function ownerCached() {
+  if (!ownerCache || Date.now() - ownerCache.at > 60_000) {
+    const data = ownerDashboard();
+    ownerCache = { at: Date.now(), data };
+    data.catch(() => { ownerCache = null; });
   }
-  return overviewCache.data;
+  return ownerCache.data;
 }
 
 /** Vebdagi vazifa havolasi → ilovadagi ro'yxat. Mos ro'yxat bo'lmasa qator bosilmaydi. */
@@ -164,7 +214,7 @@ async function cashBalance() {
   return sum(pay._sum.amount) + sum(income) - sum(expense);
 }
 
-export async function mobileHome(user: MobileUser): Promise<MobileHome> {
+export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise<MobileHome> {
   const list = ROLE_LIST[user.role];
   // "+" tugmasi — rolning asosiy hujjati; qolgan formalar va ro'yxatlar "Tezkor amallar" to'rida.
   // To'r cheklanmaydi: vebda ko'ringan har bir bo'lim ilovada ham turadi (`lib/mobile/list.ts` — `ACCESS`).
@@ -185,37 +235,99 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
 
   switch (user.role) {
     case "DIRECTOR": {
-      // Kunlik raqamlar "Tahlil → Umumiy" bilan bitta manbadan (`lib/bi/overview.ts`) — vebdagi bilan farq qilmasin
-      const [bi, todayOrders, blocked, onRoad, recent, trips] = await Promise.all([
-        directorOverview(),
-        db.order.count({ where: { date: { gte: today }, status: { not: "CANCELLED" } } }),
-        db.order.count({ where: { status: "BLOCKED" } }),
-        db.trip.count({ where: { status: { in: ["LOADED", "ON_ROAD"] } } }),
-        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { date: "desc" }, take: 8, include: { customer: true, items: { include: { product: true } } } }),
+      // Vebdagi direktor bosh sahifasi (Egasi dashbordi, TZ v2.0) bilan bitta manba — `ownerDashboard()`.
+      // Ilova raqamni o'zi hisoblamaydi: vebda nima bo'lsa, telefonda ham shu.
+      const [d, trips] = await Promise.all([
+        ownerCached(),
         db.trip.findMany({ where: { status: { in: ["LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } }),
       ]);
-      const supplyOpen = await db.supplyRequest.count({ where: { status: { in: ["PRICED", "APPROVED"] } } });
-      const m = bi.month;
-      const vsYesterday = !bi.todayRevenue && !bi.yestRevenue ? "kecha ham sotuv bo'lmagan" : bi.todayDelta === null ? "kecha sotuv yo'q edi" : `kechagidan ${bi.todayDelta >= 0 ? "▲" : "▼"} ${Math.abs(bi.todayDelta).toFixed(0)}%`;
+      const S = d.summary, L = d.levels;
+      const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
+      const pctTxt = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? "—" : `${Math.round(v)}%`);
+      // Tushum — tanlangan davr bo'yicha (oy — egasi dashbordidagi raqam, plan bilan)
+      // Kalendardan oraliq: ?revenue=custom&from=YYYY-MM-DD&to=YYYY-MM-DD (to — shu kun ham kiradi, 400 kungacha)
+      const cFrom = parseYmd(opts.from), cToIn = parseYmd(opts.to);
+      const customOk = opts.revenue === "custom" && cFrom && cToIn && cToIn >= cFrom && (cToIn.getTime() - cFrom.getTime()) / 86400000 <= 400;
+      const period: RevenuePeriod = customOk ? "custom" : ((REVENUE_PERIODS.some((p) => p.key === opts.revenue) ? opts.revenue : "month") as RevenuePeriod);
+      const periodLabel = period === "custom" ? `${dm(cFrom!)} — ${dm(cToIn!)}` : REVENUE_PERIODS.find((p) => p.key === period)!.label.toLowerCase();
+      let revenueCard: HomeCard;
+      if (period === "custom") {
+        const to = new Date(cToIn!); to.setDate(to.getDate() + 1);
+        const days = Math.round((to.getTime() - cFrom!.getTime()) / 86400000);
+        const prevFrom = new Date(cFrom!); prevFrom.setDate(prevFrom.getDate() - days);
+        const [cur, prev] = await Promise.all([loadSales(cFrom!, to), loadSales(prevFrom, cFrom!)]);
+        const a = cur.reduce((x, y) => x + y.revenue, 0), b = prev.reduce((x, y) => x + y.revenue, 0);
+        const delta = b > 0 ? ((a - b) / b) * 100 : null;
+        revenueCard = {
+          key: "revenue", label: `Tushum (${periodLabel})`, value: short(a),
+          hint: `${new Set(cur.map((x) => x.orderId)).size} ta zayavka · ${days} kun${delta == null ? "" : ` · oldingi ${days} kundan ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(0)}%`}`,
+          tone: delta != null && delta < 0 ? "warning" : "success", icon: "trending-up",
+        };
+      } else if (period === "month") {
+        revenueCard = { key: "revenue", label: "Tushum (oy)", value: short(S.revenue.month), hint: `bugun ${short(S.revenue.today)}${S.revenue.plan ? ` · plan ${pctTxt(S.revenue.pct)}` : ""}`, tone: tone(L.revenue), icon: "trending-up" };
+      } else {
+        const r = revenueRange(period);
+        const [cur, prev] = await Promise.all([loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo)]);
+        const a = cur.reduce((x, y) => x + y.revenue, 0), b = prev.reduce((x, y) => x + y.revenue, 0);
+        const delta = b > 0 ? ((a - b) / b) * 100 : null;
+        const prevName = period === "day" ? "kechagidan" : period === "week" ? "o'tgan haftadan" : "o'tgan yildan";
+        revenueCard = {
+          key: "revenue", label: `Tushum (${periodLabel})`, value: short(a),
+          hint: delta == null ? `${new Set(cur.map((x) => x.orderId)).size} ta zayavka` : `${prevName} ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(0)}%`,
+          tone: delta != null && delta < 0 ? "warning" : "success", icon: "trending-up",
+        };
+      }
+      revenueCard.filterParam = "revenue";
+      revenueCard.filters = [
+        ...REVENUE_PERIODS.map((p) => ({ key: p.key, label: p.label, active: p.key === period })),
+        // Kalendar — ilova oraliq tanlaydi; tanlangan bo'lsa yozuvi oraliqning o'zi
+        { key: "custom", label: period === "custom" ? periodLabel : "Kalendar", active: period === "custom" },
+      ];
+      revenueCard.range = period === "custom" ? { from: fmtYmd(cFrom!), to: fmtYmd(cToIn!) } : null;
       cards.push(
-        { key: "todayRevenue", label: "Bugungi sotuv", value: short(bi.todayRevenue), hint: `so'm · ${vsYesterday}`, tone: bi.todayDelta !== null && bi.todayDelta < 0 ? "warning" : "success", icon: "trending-up" },
-        { key: "month", label: "Oy tushumi", value: short(m.revenue), hint: `prognoz ${short(m.forecast)}`, tone: m.prev > 0 && m.forecast < m.prev ? "warning" : "success", icon: "chart-column" },
-        { key: "cash", label: "Kassaga tushdi", value: short(bi.kpis.cashIn.cur), hint: "shu oy, so'm", tone: "brand", icon: "wallet" },
-        { key: "debt", label: "Debitorka", value: short(bi.kpis.receivable), hint: `${bi.kpis.debtors} ta qarzdor`, tone: bi.risk.debt > 0 ? "warning" : "success", icon: "receipt" },
-        { key: "health", label: "Biznes holati", value: bi.health === null ? "—" : `${bi.health}/100`, hint: bi.healthLabel, tone: bi.health === null ? "info" : bi.health >= 75 ? "success" : bi.health >= 50 ? "warning" : "danger", icon: "heart-pulse" },
-        { key: "risk", label: "Xavf ostidagi pul", value: short(bi.riskTotal), hint: "qarz · yo'qotish · muzlagan", tone: bi.riskTotal > 0 ? "danger" : "success", icon: "triangle-alert" },
-        { key: "onroad", label: "Yo'ldagi reys", value: String(onRoad), hint: bi.tripsToday ? `bugun ${bi.delivered}/${bi.tripsToday} yetkazildi` : "bugun reys ochilmagan", tone: "info", icon: "truck" },
-        { key: "today", label: "Bugungi zayavka", value: String(todayOrders), hint: bi.todayM3 ? `${num(bi.todayM3)} m³ sotildi` : undefined, tone: "brand", icon: "file-text" },
-        ...(supplyOpen ? [{ key: "supply", label: "Ta'minot tasdig'i", value: String(supplyOpen), hint: "kutmoqda", tone: "warning" as Tone, icon: "clipboard-list" }] : []),
-        ...(blocked ? [{ key: "blocked", label: "Bloklangan", value: String(blocked), hint: "ochish kerak", tone: "danger" as Tone, icon: "lock" }] : []),
+        revenueCard,
+        { key: "profit", label: "Sof foyda", value: short(S.profit.month), hint: `prognoz ${short(S.profit.forecast)}`, tone: tone(L.profit), icon: "banknote" },
+        { key: "expenses", label: "Xarajatlar", value: short(S.expenses.month), hint: S.expenses.plan ? `byudjet ${short(S.expenses.plan)}` : `tushumning ${pctTxt(S.expenses.ratio)}`, tone: tone(L.expenses), icon: "wallet" },
+        { key: "cash", label: "Pul", value: short(S.cash.total), hint: `kassa ${short(S.cash.cash)} · bank ${short(S.cash.bank)}`, tone: tone(L.cash), icon: "landmark" },
+        { key: "receivable", label: "Debitorka", value: short(S.receivable.total), hint: S.receivable.overdue ? `muddati o'tgan ${short(S.receivable.overdue)}` : `${S.receivable.debtors} ta qarzdor`, tone: tone(L.receivable), icon: "receipt" },
+        { key: "problems", label: "Muammolar", value: String(d.problems.length), hint: d.problems.length ? "qaror kerak" : "hammasi joyida", tone: d.problems.length ? (d.problems.some((p) => p.level === "crit") ? "danger" : "warning") : "success", icon: "triangle-alert" },
+        { key: "production", label: "Ishlab chiqarish", value: `${num(S.production.concreteMonth)} m³`, hint: S.production.concretePlan ? `plan ${num(S.production.concretePlan)} m³ · bugun ${num(S.production.concreteToday)}` : `bugun ${num(S.production.concreteToday)} m³`, tone: tone(L.production), icon: "factory" },
+        { key: "shipment", label: "Otgruzka", value: `${num(S.shipment.month)} m³`, hint: `bugun ${num(S.shipment.today)} m³ · ${S.shipment.tripsToday} reys`, tone: tone(L.transport), icon: "truck" },
       );
+      const decisionsSection: HomeSection = {
+        title: "Egasi qarori kerak", empty: "Qaror talab qiladigan masala yo'q", icon: "triangle-alert",
+        rows: d.decisions.slice(0, 8).map((x) => ({ id: `dec-${x.key}`, title: x.problem, subtitle: `${x.decision} · ${x.owner} · ${x.due}`, right: x.amount ? short(Math.abs(x.amount)) : undefined, tone: tone(x.level), open: taskList(x.href) })),
+      };
+      const val = (v: number, unit: string) => (unit === "so'm" ? short(v) : `${num(v)} ${unit}`);
       sections.push(
+        // Direktor nazorati — diagramma (plan/fakt chizig'i) va raqamlar; pastida egasi qarori
         {
-          title: "Bugun nima qilish kerak", empty: "Shoshilinch ish yo'q — hammasi joyida", icon: "square-check",
-          rows: bi.tasks.map((t) => ({ id: `task-${t.n}`, title: t.title, subtitle: t.text, right: t.money > 0 ? short(t.money) : undefined, tone: t.tone, open: taskList(t.href) })),
+          title: "Direktor nazorati — plan / fakt", empty: "", icon: "square-check",
+          rows: d.directorControl.map((r, i) => ({
+            id: `ctl-${i}`, title: r.label,
+            subtitle: `plan ${r.plan == null ? "—" : val(r.plan, r.unit)} · fakt ${val(r.fact, r.unit)}`,
+            right: r.pct == null ? undefined : pctTxt(r.pct), tone: tone(r.level), open: taskList(r.href),
+          })),
+          chart: {
+            kind: "progress",
+            items: d.directorControl.map((r) => ({
+              label: r.label, pct: r.pct == null ? null : Math.round(r.pct), fact: val(r.fact, r.unit), plan: r.plan == null ? null : val(r.plan, r.unit),
+              tone: tone(r.level), invert: !!(r as { invert?: boolean }).invert, open: taskList(r.href),
+            })),
+          },
         },
-        ...(bi.goodNews.length ? [{ title: "Yaxshi xabarlar", empty: "", icon: "trending-up", rows: bi.goodNews.map((g, i) => ({ id: `good-${i}`, title: g, tone: "success" as Tone })) }] : []),
-        { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) },
+        decisionsSection,
+        {
+          title: "Dinamika — 3 oy", empty: "", icon: "chart-column",
+          rows: d.trend.map((t) => ({ id: `tr-${t.key}`, title: t.label, subtitle: `tushum ${short(t.revenue)} · foyda ${short(t.profit)} · xarajat ${short(t.expenses)}` })),
+          chart: {
+            kind: "columns",
+            series: [{ key: "revenue", label: "Tushum", tone: "brand" }, { key: "profit", label: "Foyda", tone: "success" }, { key: "expenses", label: "Xarajat", tone: "danger" }],
+            groups: d.trend.map((t) => ({ label: t.label, values: [t.revenue, Math.max(0, t.profit), t.expenses], texts: [short(t.revenue), short(t.profit), short(t.expenses)] })),
+          },
+        },
+        // "Bugungi holat" bosilsa — barcha xodimlarning bugungi ishlari (`activity` ro'yxati)
+        { title: "Kunlik hisobot", empty: "", icon: "file-text", rows: [{ id: "report", title: "Bugungi holat", subtitle: d.reportText, open: "activity" }] },
         { title: "Yo'ldagi reyslar", empty: "Yo'lda reys yo'q", target: "trips", rows: trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
       );
       break;
