@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>INSOF.JBI — Kompaniya bukleti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* ───────── Brend tokenlari (ERP sayti bilan bir xil) ───────── */
+  :root{
+    --ink:#17233d;        /* insof-900 */
+    --ink-2:#1f2f52;
+    --blue:#4f6ebe;       /* logotip plitkasi */
+    --blue-soft:#e8eef9;
+    --signal:#ef7a1a;     /* qurilish to'q sarig'i — faqat urg'u uchun */
+    --beton-50:#f6f7f8;
+    --beton-100:#eef0f2;
+    --beton-200:#dfe3e7;
+    --beton-400:#9aa3ad;
+    --beton-600:#5b6570;
+    --beton-800:#2c333b;
+    --white:#fff;
+  }
+  @page{ size:A4; margin:0; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:var(--white); color:var(--beton-800); font-family:"Onest",system-ui,sans-serif; font-size:10.5pt; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .page{ position:relative; width:210mm; height:297mm; overflow:hidden; page-break-after:always; padding:18mm 16mm 16mm; background:var(--white); }
+  .page:last-child{ page-break-after:auto; }
+  .page.dark{ background:var(--ink); color:var(--white); }
+  .page.tint{ background:var(--beton-50); }
+
+  h1,h2,h3,.display{ font-family:"Unbounded",sans-serif; letter-spacing:-0.02em; color:var(--ink); line-height:1.12; }
+  .dark h1,.dark h2,.dark h3,.dark .display{ color:var(--white); }
+  h2{ font-size:22pt; font-weight:700; margin-bottom:3mm; }
+  h3{ font-size:11.5pt; font-weight:600; margin-bottom:1.5mm; }
+  p{ margin-bottom:3mm; }
+  .lead{ font-size:12pt; line-height:1.55; color:var(--beton-800); }
+  .dark .lead{ color:rgba(255,255,255,.85); }
+  .muted{ color:var(--beton-600); }
+  .dark .muted{ color:rgba(255,255,255,.62); }
+  .mono{ font-family:"JetBrains Mono",monospace; font-weight:600; letter-spacing:.06em; text-transform:uppercase; font-size:8pt; }
+
+  /* Sarlavha bloki: kichik raqam + bo'lim nomi */
+  .kicker{ display:flex; align-items:center; gap:3mm; margin-bottom:6mm; }
+  .kicker .n{ font-family:"Unbounded",sans-serif; font-weight:800; font-size:9pt; color:var(--white); background:var(--signal); border-radius:2mm; padding:1mm 2.2mm; }
+  .kicker .t{ font-family:"JetBrains Mono",monospace; font-size:8pt; letter-spacing:.12em; text-transform:uppercase; color:var(--blue); font-weight:600; }
+  .dark .kicker .t{ color:#9db3ea; }
+  .sub{ font-size:12.5pt; color:var(--beton-600); margin-bottom:6mm; font-weight:500; }
+  .dark .sub{ color:rgba(255,255,255,.7); }
+
+  /* Pastki kolontitul */
+  .foot{ position:absolute; left:16mm; right:16mm; bottom:9mm; display:flex; justify-content:space-between; align-items:center; font-family:"JetBrains Mono",monospace; font-size:7.5pt; letter-spacing:.1em; text-transform:uppercase; color:var(--beton-400); border-top:.4mm solid var(--beton-200); padding-top:3mm; }
+  .dark .foot{ color:rgba(255,255,255,.45); border-color:rgba(255,255,255,.15); }
+  .foot b{ color:var(--ink); font-weight:600; }
+  .dark .foot b{ color:var(--white); }
+
+  /* Umumiy bloklar */
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:5mm; }
+  .grid3{ display:grid; grid-template-columns:repeat(3,1fr); gap:5mm; }
+  .grid4{ display:grid; grid-template-columns:repeat(4,1fr); gap:4mm; }
+  .card{ background:var(--white); border:.35mm solid var(--beton-200); border-radius:3mm; padding:5mm; }
+  .dark .card{ background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.14); }
+  .card h3{ margin-bottom:2mm; }
+  .card p{ margin:0; font-size:9.6pt; color:var(--beton-600); line-height:1.5; }
+  .dark .card p{ color:rgba(255,255,255,.72); }
+  .card .ic{ width:9mm; height:9mm; border-radius:2.2mm; background:var(--blue-soft); color:var(--blue); display:flex; align-items:center; justify-content:center; margin-bottom:3.5mm; font-family:"Unbounded",sans-serif; font-weight:700; font-size:10pt; }
+  .dark .card .ic{ background:rgba(255,255,255,.1); color:#fff; }
+  .card .ic.s{ background:var(--signal); color:#fff; }
+
+  .img{ border-radius:3mm; overflow:hidden; background:var(--beton-100); }
+  .img img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .cap{ font-size:8.5pt; color:var(--beton-600); margin-top:2mm; }
+
+  .stat{ padding:5mm 5mm 4.5mm; border-radius:3mm; background:var(--white); border:.35mm solid var(--beton-200); }
+  .dark .stat{ background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.14); }
+  .stat .v{ font-family:"Unbounded",sans-serif; font-weight:800; font-size:24pt; line-height:1; color:var(--ink); letter-spacing:-.03em; }
+  .dark .stat .v{ color:#fff; }
+  .stat .v small{ font-size:11pt; font-weight:600; margin-left:1mm; color:var(--blue); }
+  .dark .stat .v small{ color:#9db3ea; }
+  .stat .v.accent{ color:var(--signal); }
+  .stat .l{ font-size:9pt; color:var(--beton-600); margin-top:2mm; line-height:1.4; }
+  .dark .stat .l{ color:rgba(255,255,255,.7); }
+
+  .chip{ display:inline-block; font-size:8.5pt; font-weight:600; padding:1.4mm 3mm; border-radius:10mm; background:var(--blue-soft); color:var(--ink); margin:0 1.5mm 1.5mm 0; }
+  .dark .chip{ background:rgba(255,255,255,.12); color:#fff; }
+
+  table{ width:100%; border-collapse:collapse; font-size:9.5pt; }
+  th{ text-align:left; font-family:"JetBrains Mono",monospace; font-size:7.5pt; letter-spacing:.1em; text-transform:uppercase; color:var(--beton-600); padding:2.5mm 3mm; border-bottom:.5mm solid var(--ink); }
+  td{ padding:2.8mm 3mm; border-bottom:.3mm solid var(--beton-200); vertical-align:top; }
+  tr:nth-child(even) td{ background:var(--beton-50); }
+  td.k{ font-family:"Unbounded",sans-serif; font-weight:600; color:var(--ink); font-size:9pt; white-space:nowrap; }
+
+  .step{ display:grid; grid-template-columns:14mm 1fr; gap:4mm; align-items:start; padding:4.5mm 0; border-top:.3mm solid var(--beton-200); }
+  .step:first-child{ border-top:0; }
+  .step .n{ font-family:"Unbounded",sans-serif; font-weight:800; font-size:18pt; color:var(--signal); line-height:1; }
+  .step p{ margin:0; color:var(--beton-600); font-size:9.8pt; }
+
+  .callout{ border-left:1.2mm solid var(--signal); background:var(--beton-50); padding:4mm 5mm; border-radius:0 3mm 3mm 0; font-size:10pt; }
+  .dark .callout{ background:rgba(255,255,255,.06); }
+
+  .rule{ height:.4mm; background:var(--beton-200); margin:5mm 0; }
+  .band{ position:absolute; left:0; right:0; }
+
+  /* Muqova geometriyasi */
+  .cover-bg{ position:absolute; inset:0; }
+  .cover-bg img{ width:100%; height:100%; object-fit:cover; }
+  .cover-shade{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(23,35,61,.35) 0%, rgba(23,35,61,.15) 35%, rgba(23,35,61,.92) 72%, #17233d 100%); }
+  .cover-stripe{ position:absolute; right:-40mm; top:-30mm; width:120mm; height:120mm; background:linear-gradient(135deg, rgba(79,110,190,.55), rgba(79,110,190,0)); transform:rotate(20deg); }
+</style>
+</head>
+<body>
+
+<!-- ═════════════ 1. MUQOVA ═════════════ -->
+<section class="page dark" style="padding:0">
+  <div class="cover-bg"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/hero.jpg" alt=""></div>
+  <div class="cover-shade"></div>
+  <div style="position:absolute; left:16mm; top:16mm;">
+    <img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/logo-light.png" style="height:14mm" alt="INSOF">
+  </div>
+  <div style="position:absolute; left:16mm; right:16mm; bottom:30mm;">
+    <div class="mono" style="color:#ffb27a; margin-bottom:5mm;">Kompaniya bukleti · 2026</div>
+    <h1 class="display" style="font-size:36pt; font-weight:800; color:#fff; margin-bottom:6mm; max-width:160mm;">Temir beton mahsulotlari — O'zbekiston qurilishining mustahkam poydevori</h1>
+    <p class="lead" style="max-width:150mm; color:rgba(255,255,255,.82); font-size:12.5pt;">26 yillik tajriba, 4 ta zavod, o'z laboratoriyamiz va transport parkimiz. Davlat loyihalari va yirik qurilish uchun ishonchli hamkor.</p>
+    <div style="display:flex; gap:8mm; margin-top:10mm; font-family:'JetBrains Mono',monospace; font-size:8pt; letter-spacing:.1em; text-transform:uppercase; color:rgba(255,255,255,.7);">
+      <span>Toshkent</span><span>·</span><span>Toshkent viloyati</span><span>·</span><span>Sirdaryo</span><span>·</span><span>Jizzax</span>
+    </div>
+  </div>
+  <div style="position:absolute; left:16mm; right:16mm; bottom:12mm; display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:7.5pt; letter-spacing:.1em; text-transform:uppercase; color:rgba(255,255,255,.5); border-top:.3mm solid rgba(255,255,255,.2); padding-top:3mm;">
+    <span>INSOF TEMIR BETON MChJ</span><span>insof-erp.uz · +998 33 000 14 18</span>
+  </div>
+</section>
+
+<!-- ═════════════ 2. MUNDARIJA + MISSIYA ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">02</span><span class="t">Mundarija</span></div>
+  <h2>Bu bukletda</h2>
+  <p class="sub">Zavodimiz, mahsulotlar, sifat tizimi va hamkorlik shartlari — bir joyda.</p>
+  <div class="grid2" style="margin-top:6mm;">
+    <div>
+      <table style="font-size:10pt">
+        <tr><td class="k">03</td><td>Kompaniya haqida</td></tr>
+        <tr><td class="k">04</td><td>Raqamlarda INSOF</td></tr>
+        <tr><td class="k">05</td><td>Nega INSOF — to'rtta kafolat</td></tr>
+        <tr><td class="k">06</td><td>Ishlab chiqarish bazasi</td></tr>
+        <tr><td class="k">07</td><td>Zavod va quvvat</td></tr>
+        <tr><td class="k">08</td><td>Tovar beton: markalar</td></tr>
+        <tr><td class="k">09</td><td>Mahsulotlar katalogi</td></tr>
+        <tr><td class="k">10</td><td>Texnik xususiyatlar</td></tr>
+        <tr><td class="k">11</td><td>Opora SV 110-3,5</td></tr>
+      </table>
+    </div>
+    <div>
+      <table style="font-size:10pt">
+        <tr><td class="k">12</td><td>Inert materiallar</td></tr>
+        <tr><td class="k">13</td><td>Ishlab chiqarish jarayoni</td></tr>
+        <tr><td class="k">14</td><td>Sifat nazorati</td></tr>
+        <tr><td class="k">15</td><td>Logistika</td></tr>
+        <tr><td class="k">16</td><td>Hamkorga nima beradi</td></tr>
+        <tr><td class="k">17</td><td>Kimlar uchun · hamkorlik shakllari</td></tr>
+        <tr><td class="k">18</td><td>Hamkorlik qanday boshlanadi</td></tr>
+        <tr><td class="k">19</td><td>Missiya, vizyon, hamkorlar</td></tr>
+        <tr><td class="k">20</td><td>Aloqa</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div style="position:absolute; left:16mm; right:16mm; bottom:24mm;">
+    <div class="img" style="height:78mm; margin-bottom:6mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/muqova.jpg" alt=""></div>
+    <div class="callout" style="font-size:11pt; line-height:1.55;">
+      <span class="mono" style="color:var(--signal); display:block; margin-bottom:2mm;">Missiyamiz</span>
+      «Ekologik toza va energiya tejamkor muhandislik yechimlarini qo'llagan holda, O'zbekistonning jadal urbanizatsiyasi va infratuzilmasi uchun eng mustahkam poydevorni ta'minlash.»
+    </div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Kompaniya bukleti</span><span>02</span></div>
+</section>
+
+<!-- ═════════════ 3. KOMPANIYA HAQIDA ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">03</span><span class="t">Kompaniya haqida</span></div>
+  <h2>Ishonch, sifat va mustahkamlik timsoli</h2>
+  <p class="sub">2000-yildan buyon temir-beton buyumlari va tovar beton</p>
+  <div class="grid2" style="gap:8mm; align-items:start;">
+    <div>
+      <p class="lead">«INSOF TEMIR BETON» MChJ — 2000-yildan buyon temir-beton buyumlari va tovar beton ishlab chiqarish sohasida faoliyat yuritib kelayotgan ishonchli korxona.</p>
+      <p>Korxonamiz nafaqat Toshkent viloyatida, balki Toshkent shahrida ham zamonaviy beton ishlab chiqarish zavodlariga ega.</p>
+      <p>Biz FBS bloklari, PK va PB trosli plitalar, temir-beton konstruksiyalari hamda tovar beton ishlab chiqaramiz va mahsulotlarni Toshkent shahri, Toshkent viloyati, Sirdaryo hamda Jizzax viloyatlariga tezkor yetkazib beramiz.</p>
+      <div class="rule"></div>
+      <table>
+        <tr><td class="k">Tashkil etilgan</td><td>2000-yil</td></tr>
+        <tr><td class="k">Zavodlar</td><td>4 ta zavod — 2 ta beton · 1 ta JBI · 1 ta beton va PB plita</td></tr>
+        <tr><td class="k">Tayyor beton</td><td>M100 dan M600 gacha</td></tr>
+        <tr><td class="k">Asosiy tamoyil</td><td>100% halollik va aniq hajm</td></tr>
+        <tr><td class="k">Kafolat</td><td>Davlat standarti va akkreditatsiyalangan laboratoriya</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="img" style="height:118mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/ombor.jpg" alt=""></div>
+      <div class="cap">Tayyor mahsulot ombori — kran maydoni, Yangiyo'l</div>
+      <div class="img" style="height:60mm; margin-top:5mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-1.jpg" alt=""></div>
+      <div class="cap">Bo'shliqli qavat plitalari yuklashga tayyor</div>
+    </div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Kompaniya haqida</span><span>03</span></div>
+</section>
+
+<!-- ═════════════ 4. RAQAMLARDA ═════════════ -->
+<section class="page dark">
+  <div class="kicker"><span class="n">04</span><span class="t">Raqamlarda INSOF</span></div>
+  <h2>Salohiyat va ko'lam</h2>
+  <p class="sub">4 ta zavod · 5 ta sanoat hududi · 2000-yildan buyon uzluksiz ishlab chiqarish</p>
+  <div class="grid3" style="margin-top:8mm;">
+    <div class="stat"><div class="v">26<small>yil</small></div><div class="l">tajriba — 2000-yildan buyon</div></div>
+    <div class="stat"><div class="v">12<small>ga+</small></div><div class="l">kengaytirilgan sanoat hududi</div></div>
+    <div class="stat"><div class="v">9<small>ball</small></div><div class="l">seysmik bardoshlilik darajasi</div></div>
+    <div class="stat"><div class="v" style="font-size:17pt; padding-top:2mm;">M100–M600</div><div class="l">beton markalari qamrovi</div></div>
+    <div class="stat"><div class="v">4<small>hudud</small></div><div class="l">Toshkent sh., Toshkent v., Sirdaryo, Jizzax</div></div>
+    <div class="stat"><div class="v">18<small>soat</small></div><div class="l">ichida 75% loyihaviy mustahkamlik</div></div>
+  </div>
+  <div class="rule" style="background:rgba(255,255,255,.15); margin:9mm 0 6mm;"></div>
+  <div class="mono" style="color:#ffb27a; margin-bottom:4mm;">Ishlab chiqarish quvvati</div>
+  <div class="grid3">
+    <div class="stat"><div class="v">70</div><div class="l">m³/soat — tayyor beton quvvati</div></div>
+    <div class="stat"><div class="v" style="font-size:19pt; padding-top:1.5mm;">1000–1500</div><div class="l">m³/kun — tayyor beton</div></div>
+    <div class="stat"><div class="v accent">45 000</div><div class="l">m³/oy — tayyor beton</div></div>
+    <div class="stat"><div class="v">150</div><div class="l">dona/kun — har bir turdagi temir-beton buyum</div></div>
+    <div class="stat"><div class="v">4 650</div><div class="l">dona/oy — har bir turdagi temir-beton buyum</div></div>
+    <div class="stat"><div class="v">120</div><div class="l">nafar xodim zavodda ishlaydi</div></div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Raqamlarda</span><span>04</span></div>
+</section>
+
+<!-- ═════════════ 5. NEGA INSOF ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">05</span><span class="t">Nega INSOF</span></div>
+  <h2>Davlat va yirik loyihalar uchun to'rtta kafolat</h2>
+  <p class="sub">Xavfsizlik, standart, muddat, ekologiya — buyurtmachi uchun eng muhim to'rt mezon</p>
+  <div class="grid2" style="margin-top:4mm;">
+    <div class="card"><div class="ic">01</div><h3>Seysmik xavfsizlik</h3><p>Markaziy Osiyo iqlimi va faol seysmik hududlar uchun 9+ ballgacha bardoshli muhandislik yechimlari.</p></div>
+    <div class="card"><div class="ic">02</div><h3>GOST standartlari</h3><p>Davlat va xalqaro sifat standartlariga to'liq muvofiqlik hamda qat'iy laboratoriya nazorati.</p></div>
+    <div class="card"><div class="ic">03</div><h3>Aniq yetkazib berish</h3><p>Shaxsiy og'ir yuk tashish parki qurilish jarayonlarini to'xtatmasdan o'z vaqtida yetkazishni ta'minlaydi.</p></div>
+    <div class="card"><div class="ic">04</div><h3>Ekologik yechim</h3><p>Suvni qayta ishlash tizimi va CO₂ chiqindilarini kamaytiruvchi bug'lash kameralari.</p></div>
+  </div>
+  <div class="img" style="height:98mm; margin-top:7mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/hero.jpg" alt=""></div>
+  <div class="cap">Tayyor mahsulot maydoni: kran bilan yuklash, sifat nazoratchisi har partiyani qabul qiladi</div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Nega INSOF</span><span>05</span></div>
+</section>
+
+<!-- ═════════════ 6. ISHLAB CHIQARISH BAZASI ═════════════ -->
+<section class="page tint">
+  <div class="kicker"><span class="n">06</span><span class="t">Ishlab chiqarish bazasi</span></div>
+  <h2>Yangiyo'l ishlab chiqarish markazi</h2>
+  <p class="sub">Sanoat, logistika va ishlab chiqarish — bitta hududda</p>
+  <div class="grid2" style="gap:7mm; align-items:start;">
+    <div>
+      <p class="lead">Asosiy sanoat, logistika va ishlab chiqarish bazamiz Toshkent viloyati, Yangiyo'l tumanining eng qulay sanoat zonasida joylashgan.</p>
+      <p>Keng maydon va avtomobil logistikasiga mo'ljallangan infratuzilma mahsulotlarni tezkor qabul qilish, saqlash va yetkazib berish imkonini yaratadi.</p>
+      <div style="margin-top:5mm;">
+        <span class="chip">12 gektardan ortiq sanoat hududi</span>
+        <span class="chip">Avtomatlashtirilgan xomashyo qabuli</span>
+        <span class="chip">Iqlim nazoratidagi yopiq sexlar</span>
+        <span class="chip">Zamonaviy avtomobil logistikasi</span>
+      </div>
+      <div class="callout" style="margin-top:7mm;">Mahsulotlar maxsus kranlar yordamida tartibli saqlanadi va yuk avtomobillariga xavfsiz yuklanadi.</div>
+    </div>
+    <div class="img" style="height:120mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/maydon.jpg" alt=""></div>
+  </div>
+  <div class="grid3" style="margin-top:6mm;">
+    <div><div class="img" style="height:52mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/zavod.jpg" alt=""></div><div class="cap">Tugun · mikser parki</div></div>
+    <div><div class="img" style="height:52mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/liniya.jpg" alt=""></div><div class="cap">Ishlab chiqarish liniyasi</div></div>
+    <div><div class="img" style="height:52mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/xomashyo.jpg" alt=""></div><div class="cap">Qum · shag'al · sement</div></div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Ishlab chiqarish bazasi</span><span>06</span></div>
+</section>
+
+<!-- ═════════════ 7. ZAVOD VA QUVVAT ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">07</span><span class="t">Zavod va quvvat</span></div>
+  <h2>Ishlab chiqarish salohiyatimiz</h2>
+  <p class="sub">To'rt zavod bitta tizimda: tovar beton, JBI, PB plita</p>
+  <div class="img" style="height:96mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/muqova.jpg" alt=""></div>
+  <div class="grid2" style="margin-top:7mm; gap:7mm; align-items:start;">
+    <div>
+      <h3>To'rt zavod, bitta nomenklatura</h3>
+      <table>
+        <tr><td class="k">Beton zavodi №1</td><td>Tovar beton, M100–M600</td></tr>
+        <tr><td class="k">Beton zavodi №2</td><td>Tovar beton, mikser parki</td></tr>
+        <tr><td class="k">JBI zavodi</td><td>FBS, ustunlar, lotoklar, halqalar, bordyur</td></tr>
+        <tr><td class="k">Beton va PB plita</td><td>Trosli (prednapryajenniy) plitalar</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Nima uchun bu muhim</h3>
+      <p>Oyiga <b>45 000 m³</b> tayyor beton — bu yirik turar-joy majmuasi yoki magistral yo'l uchun uzluksiz ta'minot degani. Buyurtmachi bir nechta yetkazib beruvchi o'rtasida grafik kelishmaydi.</p>
+      <p>Har bir turdagi temir-beton buyumdan <b>kuniga 150 dona</b> — obyekt kutmaydi, ombor oldindan to'ldiriladi.</p>
+      <div class="callout"><b>120 nafar</b> xodim zavodda ishlaydi — mahalliy ish o'rinlari va doimiy malakali jamoa.</div>
+    </div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Zavod va quvvat</span><span>07</span></div>
+</section>
+
+<!-- ═════════════ 8. TOVAR BETON ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">08</span><span class="t">Tovar beton</span></div>
+  <h2>Qaysi marka qayerda ishlatiladi</h2>
+  <p class="sub">Zavod liniyasi M100 dan M600 gacha markalarni qamrab oladi</p>
+  <div class="grid2" style="gap:7mm; align-items:start;">
+    <div>
+      <table>
+        <tr><th>Marka</th><th>Qo'llanish sohasi</th></tr>
+        <tr><td class="k">M100</td><td>Tayyorgarlik qatlami, podbeton</td></tr>
+        <tr><td class="k">M150</td><td>Yo'lka va maydonchalar</td></tr>
+        <tr><td class="k">M200</td><td>Poydevor va pol qoplamalari</td></tr>
+        <tr><td class="k">M250</td><td>Monolit plitalar, zinapoyalar</td></tr>
+        <tr><td class="k">M300</td><td>Ko'p qavatli bino qismlari</td></tr>
+        <tr><td class="k">M350</td><td>Kolonna, rigel, yuk ko'taruvchi</td></tr>
+        <tr><td class="k">M400</td><td>Temir-beton buyum, tayanch ustun</td></tr>
+        <tr><td class="k">M450–M600</td><td>Maxsus zo'riqishli konstruksiya</td></tr>
+      </table>
+      <div class="callout" style="margin-top:6mm;">Aniq marka loyiha hisobiga ko'ra tanlanadi — laboratoriyamiz maslahat beradi.</div>
+    </div>
+    <div>
+      <div class="img" style="height:128mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/avtopark.jpg" alt=""></div>
+      <div class="cap">Tovar beton avtoparki: beton tuguni va mikserlar</div>
+    </div>
+  </div>
+  <div class="grid3" style="margin-top:6mm;">
+    <div class="stat"><div class="v">70</div><div class="l">m³/soat — tugun quvvati</div></div>
+    <div class="stat"><div class="v">18<small>soat</small></div><div class="l">bug'lash kamerasida 75% mustahkamlik</div></div>
+    <div class="stat"><div class="v">F · W</div><div class="l">sovuqqa chidamlilik va suv o'tkazmaslik nazorati</div></div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Tovar beton</span><span>08</span></div>
+</section>
+
+<!-- ═════════════ 9. KATALOG ═════════════ -->
+<section class="page tint">
+  <div class="kicker"><span class="n">09</span><span class="t">Mahsulotlar katalogi</span></div>
+  <h2>Bitta zavod — to'liq nomenklatura</h2>
+  <p class="sub">Sakkiz asosiy yo'nalish; texnik pasport har pozitsiya bo'yicha taqdim etiladi</p>
+  <div class="grid2" style="gap:5mm;">
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-1.jpg" alt=""></div><div class="cap"><b>01</b> Bo'shliqli qavat plitalari</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-2.jpg" alt=""></div><div class="cap"><b>02</b> Elektr tayanch ustunlari</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-3.jpg" alt=""></div><div class="cap"><b>03</b> Suv o'tkazgich lotoklari</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-4.jpg" alt=""></div><div class="cap"><b>04</b> Poydevor bloklari (FBS)</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-5.jpg" alt=""></div><div class="cap"><b>05</b> Yo'l bordyurlari</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-6.jpg" alt=""></div><div class="cap"><b>06</b> Quduq halqalari va qopqoqlari</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-7.jpg" alt=""></div><div class="cap"><b>07</b> Devor bloklari</div></div>
+    <div><div class="img" style="height:50mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-8.jpg" alt=""></div><div class="cap"><b>08</b> Zinapoya marshlari</div></div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Katalog</span><span>09</span></div>
+</section>
+
+<!-- ═════════════ 10. TEXNIK XUSUSIYATLAR ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">10</span><span class="t">Texnik xususiyatlar</span></div>
+  <h2>Mahsulot klasslari va o'lchamlari</h2>
+  <p class="sub">Asosiy pozitsiyalar; to'liq texnik pasport va sertifikatlar so'rov bo'yicha</p>
+  <table>
+    <tr><th>Mahsulot</th><th>Klass / marka</th><th>O'lcham</th><th>Og'irlik</th></tr>
+    <tr><td class="k">PK qavat plitalari</td><td>PK 59-12-8</td><td class="muted">loyiha bo'yicha</td><td class="muted">—</td></tr>
+    <tr><td class="k">PB trosli plitalar</td><td>M450–M500, zo'riqtirilgan armatura</td><td class="muted">loyiha bo'yicha</td><td class="muted">—</td></tr>
+    <tr><td class="k">Opora SV 110-3,5</td><td>M400</td><td>uzunligi 11 000 mm</td><td>1 125 kg</td></tr>
+    <tr><td class="k">FBS poydevor bloklari</td><td>24-4-6 / 12-4-6 / 09-4-6</td><td class="muted">GOST bo'yicha</td><td class="muted">—</td></tr>
+    <tr><td class="k">Lotok</td><td>L-5</td><td class="muted">—</td><td class="muted">—</td></tr>
+    <tr><td class="k">Bordyur</td><td>30×18×30</td><td class="muted">—</td><td class="muted">—</td></tr>
+    <tr><td class="k">Quduq halqasi (koltso)</td><td>KS 1,5</td><td>diametri 1,5 m</td><td class="muted">—</td></tr>
+    <tr><td class="k">Quduq qopqog'i (krishka)</td><td>1,5</td><td>diametri 1,5 m</td><td class="muted">—</td></tr>
+    <tr><td class="k">Zinapoya marshi</td><td>2 LM 57-12-17</td><td class="muted">—</td><td class="muted">—</td></tr>
+    <tr><td class="k">Gazoblok</td><td class="muted">yangi yo'nalish</td><td class="muted">—</td><td class="muted">—</td></tr>
+  </table>
+  <div class="grid2" style="margin-top:8mm; gap:6mm;">
+    <div class="img" style="height:62mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-4.jpg" alt=""></div>
+    <div class="img" style="height:62mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-6.jpg" alt=""></div>
+  </div>
+  <div class="callout" style="margin-top:6mm;">Maxsus plitalar eng yuqori navli M450–M500 beton turlari va zo'riqtirilgan (prednapryajenniy) metall armaturalar yordamida quyiladi. Tayanch ustunlari M400 og'ir beton sinfidan tayyorlanadi.</div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Texnik xususiyatlar</span><span>10</span></div>
+</section>
+
+<!-- ═════════════ 11. OPORA ═════════════ -->
+<section class="page dark">
+  <div class="kicker"><span class="n">11</span><span class="t">Texnik tahlil</span></div>
+  <h2>Opora SV 110-3,5</h2>
+  <p class="sub">Elektr tayanch ustuni — muhandislik ko'rsatkichlari</p>
+  <div class="img" style="height:100mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-2.jpg" alt=""></div>
+  <div class="grid4" style="margin-top:7mm;">
+    <div class="stat"><div class="v">11<small>m</small></div><div class="l">uzunligi</div></div>
+    <div class="stat"><div class="v">35<small>kNm</small></div><div class="l">hisobiy eguvchi moment (3,5 t·m)</div></div>
+    <div class="stat"><div class="v">1125<small>kg</small></div><div class="l">og'irligi</div></div>
+    <div class="stat"><div class="v accent">9<small>ball</small></div><div class="l">seysmik barqarorlik darajasi</div></div>
+  </div>
+  <p class="lead" style="margin-top:8mm;">Tayanch ustunlari M400 og'ir beton sinfidan, zo'riqtirilgan po'lat armatura bilan tayyorlanadi. Elektr tarmoqlari, yoritish va aloqa liniyalari uchun mo'ljallangan; faol seysmik hududlarda ishlatishga yaroqli.</p>
+  <div class="foot"><span><b>INSOF.JBI</b> · Opora SV 110-3,5</span><span>11</span></div>
+</section>
+
+<!-- ═════════════ 12. INERT ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">12</span><span class="t">Inert materiallar</span></div>
+  <h2>Tosh va qum turlari</h2>
+  <p class="sub">Beton uchun xomashyo — o'z bazamizdan, aniq hajmda</p>
+  <div class="img" style="height:92mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/inert.jpg" alt="" style="object-position:50% 100%"></div>
+  <div class="grid2" style="margin-top:7mm;">
+    <div class="card"><div class="ic">▲</div><h3>Klinets va shcheben</h3><p>Beton mustahkamligini oshiruvchi granulalangan tosh to'ldiruvchilar. Sement sarfini tejaydi va bosimga chidamlilikni 2 barobar oshiradi.</p></div>
+    <div class="card"><div class="ic">≈</div><h3>Finskiy va oddiy qum</h3><p>Tarkibida loy aralashmalari bo'lmagan, maxsus tebranuvchi elaklardan o'tkazilgan toza qum. Sifatli suvoq va pishiq qorishmalar uchun zarur.</p></div>
+  </div>
+  <div class="callout" style="margin-top:7mm;">Katta logistik yuk mashinalari orqali inert mahsulotlar obyektga o'z vaqtida, belgilangan hajmdan kamaytirmasdan yetkaziladi. <b>Aniq hajm</b> — asosiy tamoyilimiz.</div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Inert materiallar</span><span>12</span></div>
+</section>
+
+<!-- ═════════════ 13. JARAYON ═════════════ -->
+<section class="page tint">
+  <div class="kicker"><span class="n">13</span><span class="t">Ishlab chiqarish jarayoni</span></div>
+  <h2>To'rt bosqichli texnologik sikl</h2>
+  <p class="sub">Armaturadan bug'lash kamerasigacha — har bosqich kompyuter nazorati ostida</p>
+  <div class="grid2" style="gap:8mm; align-items:start;">
+    <div>
+      <div class="step"><div class="n">01</div><div><h3>Armaturalash</h3><p>Yuqori mustahkamlikka ega sovuq cho'zilgan po'lat simlar yordamida kuchaytirilgan karkas tayyorlash.</p></div></div>
+      <div class="step"><div class="n">02</div><div><h3>Aralashma tayyorlash</h3><p>Kompyuter nazorati ostida qum, shag'al, sement va maxsus kimyoviy qo'shimchalarni o'lchash.</p></div></div>
+      <div class="step"><div class="n">03</div><div><h3>Qoliplash va zichlash</h3><p>Yuqori chastotali tebranish stollari yordamida aralashmadagi havo pufakchalarini to'liq yo'qotish.</p></div></div>
+      <div class="step"><div class="n">04</div><div><h3>Issiqlik bilan ishlov</h3><p>Maxsus bug'lash kameralarida 18 soat ichida betonning 75% loyihaviy mustahkamligiga erishish.</p></div></div>
+    </div>
+    <div>
+      <div class="img" style="height:124mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/liniya.jpg" alt=""></div>
+      <div class="cap">Ishlab chiqarish liniyasi: inert material, qoliplash</div>
+      <div class="stat" style="margin-top:5mm;"><div class="v accent">35<small>% gacha</small></div><div class="l">obyektni barpo etish davrini qisqartirish — zamonaviy texnologiya hisobiga</div></div>
+    </div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Ishlab chiqarish jarayoni</span><span>13</span></div>
+</section>
+
+<!-- ═════════════ 14. SIFAT ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">14</span><span class="t">Sifat nazorati</span></div>
+  <h2>Mutlaqo benuqson nazorat tizimi</h2>
+  <p class="sub">Davlat akkreditatsiyasidan o'tgan o'z laboratoriyamiz</p>
+  <p class="lead">«INSOF» zavodi qoshida eng zamonaviy sinov uskunalariga ega bo'lgan, davlat akkreditatsiyasidan o'tgan maxsus laboratoriya faoliyat ko'rsatadi. Har bir partiya betonning siqilishga va egilishga chidamliligi gidravlik press yordamida sinovdan o'tkaziladi.</p>
+  <div class="grid3" style="margin-top:6mm;">
+    <div class="card"><div class="ic s">P</div><h3>Gidravlik press</h3><p>Beton namunalarini press ostida sindirish sinovlari — siqilish va egilishga chidamlilik.</p></div>
+    <div class="card"><div class="ic s">U</div><h3>Ultratovush</h3><p>Beton ichki qatlamlaridagi bo'shliqlarni buzmasdan aniqlash.</p></div>
+    <div class="card"><div class="ic s">FW</div><h3>F va W darajasi</h3><p>Sovuqqa chidamlilik (F) va suv o'tkazmaslik (W) o'lchovlari.</p></div>
+  </div>
+  <div class="img" style="height:86mm; margin-top:7mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-8.jpg" alt=""></div>
+  <div class="grid2" style="margin-top:6mm; gap:5mm;">
+    <div class="callout">Har bir partiya bo'yicha sinov natijasi buyurtmachiga <b>hujjat bilan</b> taqdim etiladi — sifat so'z emas, dalil.</div>
+    <div class="callout">GOST va davlat standartlariga muvofiqlik sertifikatlari har pozitsiya bo'yicha mavjud.</div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Sifat nazorati</span><span>14</span></div>
+</section>
+
+<!-- ═════════════ 15. LOGISTIKA ═════════════ -->
+<section class="page dark">
+  <div class="kicker"><span class="n">15</span><span class="t">Logistika</span></div>
+  <h2>Yetkazib berish geografiyasi</h2>
+  <p class="sub">O'z transport parki — yetkazish uchinchi tomonga bog'liq emas</p>
+  <div class="grid4" style="margin-top:4mm;">
+    <div class="stat"><div class="v" style="font-size:13pt; padding-top:2mm;">Toshkent</div><div class="l">shahri</div></div>
+    <div class="stat"><div class="v" style="font-size:13pt; padding-top:2mm;">Toshkent</div><div class="l">viloyati</div></div>
+    <div class="stat"><div class="v" style="font-size:13pt; padding-top:2mm;">Sirdaryo</div><div class="l">viloyati</div></div>
+    <div class="stat"><div class="v" style="font-size:13pt; padding-top:2mm;">Jizzax</div><div class="l">viloyati</div></div>
+  </div>
+  <div class="img" style="height:104mm; margin-top:7mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/avtopark.jpg" alt=""></div>
+  <div class="grid3" style="margin-top:7mm;">
+    <div class="card"><div class="ic">01</div><h3>Og'ir yuk parki</h3><p>Shaxsiy og'ir yuk tashish va samosval parki — grafik buzilmaydi.</p></div>
+    <div class="card"><div class="ic">02</div><h3>Xavfsiz yuklash</h3><p>Mahsulotlar maxsus kranlar bilan tartibli saqlanadi va yuklanadi.</p></div>
+    <div class="card"><div class="ic">03</div><h3>Aniq hajm, aniq vaqt</h3><p>Belgilangan hajmda va kelishilgan vaqtda — kamaytirmasdan.</p></div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Logistika</span><span>15</span></div>
+</section>
+
+<!-- ═════════════ 16. HAMKORGA NIMA BERADI ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">16</span><span class="t">Hamkorga nima beradi</span></div>
+  <h2>Nega aynan INSOF bilan hamkorlik qilish kerak</h2>
+  <p class="sub">Har bir blok buyurtmachining bitta og'rig'ini yopadi</p>
+  <div class="grid2" style="margin-top:4mm;">
+    <div class="card"><div class="ic">01</div><h3>Bitta manbadan ta'minot</h3><p>Tayyor beton, temir-beton buyumlar va inert materiallar — bitta yetkazib beruvchidan.</p></div>
+    <div class="card"><div class="ic">02</div><h3>O'z laboratoriyamiz</h3><p>Har bir partiya davlat standarti bo'yicha sinovdan o'tadi — sifat dalil bilan.</p></div>
+    <div class="card"><div class="ic">03</div><h3>O'z transport parki</h3><p>Yetkazish uchinchi tomonga bog'liq emas — grafik buzilmaydi.</p></div>
+    <div class="card"><div class="ic">04</div><h3>Aniq hajm, halol o'lchov</h3><p>Belgilangan hajmdan kamaytirmasdan yetkaziladi — asosiy tamoyilimiz.</p></div>
+    <div class="card"><div class="ic">05</div><h3>Muddatni qisqartirish</h3><p>Zamonaviy texnologiyalar obyekt qurilish davrini 35% gacha qisqartiradi.</p></div>
+    <div class="card"><div class="ic">06</div><h3>26 yillik tajriba</h3><p>2000-yildan buyon yirik qurilish loyihalarida sinalgan hamkor.</p></div>
+  </div>
+  <div class="img" style="height:72mm; margin-top:7mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-3.jpg" alt=""></div>
+  <div class="cap">Suv o'tkazgich lotoklari — tayyor mahsulot maydoni</div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Hamkorga nima beradi</span><span>16</span></div>
+</section>
+
+<!-- ═════════════ 17. KIMLAR UCHUN + SHAKLLAR ═════════════ -->
+<section class="page tint">
+  <div class="kicker"><span class="n">17</span><span class="t">Kimlar uchun</span></div>
+  <h2>Davlat loyihalari va yirik qurilish uchun hamkor</h2>
+  <p class="sub">Kim bilan va qanday shartlarda ishlashga tayyormiz</p>
+  <div class="grid2">
+    <div class="card"><h3>Davlat va hokimlik loyihalari</h3><p>Ijtimoiy obyektlar, yo'l va muhandislik infratuzilmasi uchun davlat standartlari bo'yicha sinovdan o'tgan temir-beton.</p></div>
+    <div class="card"><h3>Quruvchi kompaniyalar</h3><p>Turar-joy va tijorat majmualari uchun uzluksiz hajm hamda grafik bo'yicha yetkazib berish.</p></div>
+    <div class="card"><h3>Sanoat buyurtmachilari</h3><p>Maxsus konstruksiyalar, tayanch ustunlari va yuqori markali tayyor beton bo'yicha buyurtmalar.</p></div>
+    <div class="card"><h3>Laboratoriya kafolati</h3><p>Har bir mahsulot davlat standartlari asosida sinovdan o'tkaziladi — hajm va sifat tasdiqlanadi.</p></div>
+  </div>
+  <div class="rule" style="margin:8mm 0 6mm;"></div>
+  <div class="kicker" style="margin-bottom:3mm;"><span class="t">Hamkorlik shakllari</span></div>
+  <h2 style="font-size:17pt;">To'rt shakldan birini tanlang</h2>
+  <div class="grid2" style="margin-top:4mm;">
+    <div class="card"><div class="ic">A</div><h3>Uzoq muddatli shartnoma</h3><p>Obyekt davomiyligiga mo'ljallangan grafik va barqaror hajm.</p></div>
+    <div class="card"><div class="ic">B</div><h3>Bir martalik yirik buyurtma</h3><p>Aniq obyekt uchun hisob-kitob va bir martalik ta'minot.</p></div>
+    <div class="card"><div class="ic">C</div><h3>Kompleks ta'minot</h3><p>Beton, temir-beton buyum va inert material bitta paketda.</p></div>
+    <div class="card"><div class="ic">D</div><h3>Maxsus buyurtma</h3><p>Loyiha talabiga ko'ra o'lcham va marka bo'yicha ishlab chiqarish.</p></div>
+  </div>
+  <div class="callout" style="margin-top:6mm;">Hajm, muddat va to'lov shartlari har bir loyiha bo'yicha alohida kelishiladi. Doimiy mijozlarga kelishilgan limit va to'lov muddati beriladi.</div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Kimlar uchun</span><span>17</span></div>
+</section>
+
+<!-- ═════════════ 18. JARAYON ═════════════ -->
+<section class="page">
+  <div class="kicker"><span class="n">18</span><span class="t">Jarayon</span></div>
+  <h2>Hamkorlik qanday boshlanadi</h2>
+  <p class="sub">So'rovdan yetkazib berishgacha — besh qadam</p>
+  <div class="grid2" style="gap:8mm; align-items:start;">
+    <div>
+      <div class="step"><div class="n">01</div><div><h3>So'rov</h3><p>Obyekt, hajm va muddat haqida ma'lumot yuborasiz — telefon, sayt yoki elektron pochta orqali.</p></div></div>
+      <div class="step"><div class="n">02</div><div><h3>Texnik hisob</h3><p>Muhandislar marka va nomenklaturani aniqlaydi, laboratoriya maslahat beradi.</p></div></div>
+      <div class="step"><div class="n">03</div><div><h3>Tijorat taklifi</h3><p>Hajm, grafik va shartlar bo'yicha rasmiy taklif beriladi.</p></div></div>
+      <div class="step"><div class="n">04</div><div><h3>Shartnoma</h3><p>Shartlar kelishilgach shartnoma imzolanadi — schyot-faktura, bank orqali hisob-kitob.</p></div></div>
+      <div class="step"><div class="n">05</div><div><h3>Yetkazib berish</h3><p>Grafik bo'yicha yetkazish va har partiyaga sifat hujjatlari. Har yukda QR-nakladnoy.</p></div></div>
+    </div>
+    <div>
+      <div class="img" style="height:110mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/mahsulot-5.jpg" alt=""></div>
+      <div class="cap">Yo'l bordyurlari — yuklashga tayyor partiya</div>
+      <div class="card" style="margin-top:6mm; background:var(--ink); border-color:var(--ink); color:#fff;">
+        <div class="mono" style="color:#ffb27a; margin-bottom:2mm;">Birinchi qadam</div>
+        <div class="display" style="color:#fff; font-size:13pt; font-weight:700; margin-bottom:2mm;">Obyektingiz bo'yicha so'rov yuboring</div>
+        <p style="color:rgba(255,255,255,.75);">+998 33 000 14 18<br>grppuzbekistan@gmail.com</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Jarayon</span><span>18</span></div>
+</section>
+
+<!-- ═════════════ 19. MISSIYA, VIZYON, HAMKORLAR ═════════════ -->
+<section class="page dark">
+  <div class="kicker"><span class="n">19</span><span class="t">Missiya va vizyon</span></div>
+  <h2>Nimaga intilamiz</h2>
+  <p class="sub">Ekologik toza, raqamlashtirilgan, mustahkam</p>
+  <div class="grid2" style="gap:6mm;">
+    <div class="card"><div class="mono" style="color:#ffb27a; margin-bottom:2mm;">Missiyamiz</div><p style="font-size:10.5pt; color:rgba(255,255,255,.88); line-height:1.55;">«Ekologik toza va energiya tejamkor muhandislik yechimlarini qo'llagan holda, O'zbekistonning jadal urbanizatsiyasi va infratuzilmasi uchun eng mustahkam poydevorni ta'minlash.»</p></div>
+    <div class="card"><div class="mono" style="color:#ffb27a; margin-bottom:2mm;">Vizyonimiz</div><p style="font-size:10.5pt; color:rgba(255,255,255,.88); line-height:1.55;">Markaziy Osiyoda raqamlashtirilgan va to'liq avtomatlashtirilgan eng yirik temir-beton ishlab chiqaruvchisiga aylanish.</p></div>
+  </div>
+  <div class="grid3" style="margin-top:6mm;">
+    <div class="stat"><div class="v accent">2 000</div><div class="l">m³/kun — rejalashtirilgan beton quvvati</div></div>
+    <div class="stat"><div class="v">200</div><div class="l">dona/kun — har bir turdagi JBI mahsuloti</div></div>
+    <div class="stat"><div class="v">170</div><div class="l">nafar xodim — 50 ta yangi ish o'rni</div></div>
+  </div>
+  <div class="rule" style="background:rgba(255,255,255,.15); margin:8mm 0 5mm;"></div>
+  <div class="kicker" style="margin-bottom:3mm;"><span class="t">Hamkorlarimiz</span></div>
+  <h2 style="font-size:17pt;">Biz bilan ishlagan tashkilotlar</h2>
+  <p class="muted" style="margin-bottom:5mm;">Yirik shahar qurilish loyihalari va ixtisoslashgan qurilish tashkilotlari bilan ishlaymiz. To'liq ro'yxat, bajarilgan ishlar hajmi va tavsiyanomalar so'rov bo'yicha taqdim etiladi.</p>
+  <div class="grid3">
+    <div style="background:#fff; border-radius:3mm; height:34mm; display:flex; align-items:center; justify-content:center; padding:4mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/hamkor-yangiyol.jpg" style="max-width:100%; max-height:100%; object-fit:contain;" alt=""></div>
+    <div style="background:#fff; border-radius:3mm; height:34mm; display:flex; align-items:center; justify-content:center; padding:4mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/hamkor-mbg.jpg" style="max-width:100%; max-height:100%; object-fit:contain;" alt=""></div>
+    <div style="background:#fff; border-radius:3mm; height:34mm; display:flex; align-items:center; justify-content:center; padding:4mm;"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/hamkor-sergeli.jpg" style="max-width:100%; max-height:100%; object-fit:contain;" alt=""></div>
+  </div>
+  <div class="foot"><span><b>INSOF.JBI</b> · Missiya va hamkorlar</span><span>19</span></div>
+</section>
+
+<!-- ═════════════ 20. ORQA MUQOVA / ALOQA ═════════════ -->
+<section class="page dark" style="padding:0">
+  <div class="cover-bg"><img src="file:///Users/otabek/Desktop/Insof%20ERP/public/taqdimot/muqova.jpg" alt="" style="object-position:right center;"></div>
+  <div class="cover-shade" style="background:linear-gradient(180deg, rgba(23,35,61,.55) 0%, rgba(23,35,61,.85) 40%, #17233d 70%);"></div>
+  <div style="position:absolute; left:16mm; right:16mm; top:118mm;">
+    <div class="mono" style="color:#ffb27a; margin-bottom:4mm;">Aloqa</div>
+    <h2 class="display" style="font-size:28pt; font-weight:800; color:#fff; margin-bottom:4mm;">Obyektingiz bo'yicha hisob-kitobni bugun boshlaymiz</h2>
+    <p class="lead" style="color:rgba(255,255,255,.8); max-width:150mm;">Narx-taklif, mahsulotlar ro'yxati, zavodga tashrif yoki sinov partiyasi — birinchi qadam sizdan, qolgani bizdan.</p>
+    <div class="grid3" style="margin-top:10mm;">
+      <div><div class="mono" style="color:rgba(255,255,255,.5); margin-bottom:1.5mm;">Telefon</div><div class="display" style="color:#fff; font-size:13pt; font-weight:700;">+998 33 000 14 18</div></div>
+      <div><div class="mono" style="color:rgba(255,255,255,.5); margin-bottom:1.5mm;">Elektron pochta</div><div style="color:#fff; font-size:11pt; font-weight:600;">grppuzbekistan@gmail.com</div></div>
+      <div><div class="mono" style="color:rgba(255,255,255,.5); margin-bottom:1.5mm;">Sayt</div><div style="color:#fff; font-size:11pt; font-weight:600;">insof-erp.uz</div></div>
+    </div>
+    <div style="margin-top:8mm;"><div class="mono" style="color:rgba(255,255,255,.5); margin-bottom:1.5mm;">Manzil</div><div style="color:#fff; font-size:11pt;">Toshkent viloyati, Yangiyo'l shahri, «Qirsadiq» MFY, Zimina ko'chasi 52</div><div style="color:rgba(255,255,255,.6); font-size:9.5pt; margin-top:1mm;">Ish vaqti: Dushanba–Shanba, 08:00–18:00</div></div>
+  </div>
+  <div style="position:absolute; left:16mm; right:16mm; bottom:14mm; display:flex; justify-content:space-between; align-items:flex-end; border-top:.3mm solid rgba(255,255,255,.2); padding-top:5mm;">
+    <img src="file:///Users/otabek/Desktop/Insof%20ERP/public/media/logo-light.png" style="height:11mm" alt="INSOF">
+    <div style="text-align:right; font-family:'JetBrains Mono',monospace; font-size:7.5pt; letter-spacing:.1em; text-transform:uppercase; color:rgba(255,255,255,.55); line-height:1.7;">INSOF TEMIR BETON MChJ<br>Sifatli qurilish uchun ishonchli hamkoringiz</div>
+  </div>
+</section>
+
+</body>
+</html>

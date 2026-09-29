@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { eco, ecoEnabled, EcoError, normalizePhone, type EcoDelivery, type EcoStatus } from "./client";
 import { ecoSystemUserId } from "./system-user";
-import { tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
+import { reportTripIssue, tripArrived, tripCancelled, tripDelivered, tripLoaded, tripOnRoad, tripUnloading } from "@/lib/trips";
+import type { TripIssueKind } from "@/generated/prisma";
 
 /**
  * ERP ↔ ECO sinxron. ERP — nakladnoy manbai (yaratadi, bekor qiladi, sklad chiqimi);
@@ -28,10 +29,13 @@ async function remember(tripId: string, d: EcoDelivery | null, error: string | n
   if (d.vehicle && t) await db.vehicle.updateMany({ where: { id: t.vehicleId, ecoVehicleId: null }, data: { ecoVehicleId: d.vehicle.id } }).catch(() => undefined);
 }
 
+const siteNote = (x: { contactName: string | null; contactPhone: string | null; deliveryHours: string | null; instructions: string | null } | null) =>
+  x ? [x.contactName || x.contactPhone ? `Obyektda: ${[x.contactName, x.contactPhone].filter(Boolean).join(", ")}` : null, x.deliveryHours ? `Qabul: ${x.deliveryHours}` : null, x.instructions].filter(Boolean).join(" · ") : null;
+
 /** Reysni ECO'ga yuborish (yaratish/yangilash). Haydovchi ilovasida darhol ko'rinadi. */
 export async function pushTripToEco(tripId: string): Promise<SyncResult> {
   if (!ecoEnabled()) return { ok: false, skipped: true };
-  const t = await db.trip.findUnique({ where: { id: tripId }, include: { order: { include: { customer: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
+  const t = await db.trip.findUnique({ where: { id: tripId }, include: { order: { include: { customer: true, site: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
   if (!t || t.status === "CANCELLED") return { ok: false, skipped: true };
   const item = t.order.items[0];
   const driverPhone = normalizePhone(t.driver.phone);
@@ -41,14 +45,17 @@ export async function pushTripToEco(tripId: string): Promise<SyncResult> {
       orderRef: t.order.orderNo,
       customer: { name: t.order.customer.name, inn: /^\d{9}$/.test(t.order.customer.inn ?? "") ? t.order.customer.inn! : undefined, phone: normalizePhone(t.order.customer.phone) ?? undefined },
       address: t.order.deliveryAddress,
-      scheduledAt: t.order.deliveryDate.toISOString(),
+      // Nuqta bo'lsa ECO'da navigatsiya, ETA va geofence ("obyektga keldi") ishlaydi
+      ...(t.order.lat != null && t.order.lng != null ? { location: { lat: t.order.lat, lng: t.order.lng } } : {}),
+      scheduledAt: (t.plannedAt ?? t.order.deliveryDate).toISOString(),
       product: { grade: item?.product.code ?? "BETON", name: item?.product.name ?? "Beton", unitPrice: Number(item?.price ?? 0) },
       plannedM3: Number(t.qtyM3),
       driverPhone: driverPhone ?? undefined,
       driverName: t.driver.fullName,
       vehiclePlate: t.vehicle.plate,
       vehicleCapacityM3: t.vehicle.capacityM3 ? Number(t.vehicle.capacityM3) : undefined,
-      note: t.note ?? undefined,
+      // Obyekt kartasidagi kontakt va ko'rsatma haydovchiga reys izohida boradi (ECO'da alohida maydon yo'q)
+      note: [t.note, siteNote(t.order.site)].filter(Boolean).join(" · ").slice(0, 500) || undefined,
     });
     await remember(tripId, r.delivery, warn);
     return { ok: true, error: warn ?? undefined };
@@ -59,7 +66,7 @@ export async function pushTripToEco(tripId: string): Promise<SyncResult> {
 }
 
 /** ERP'da logist tugma bosdi → ECO'dagi reys ham shu bosqichga o'tadi (oraliq bosqichlar ECO'da avtomatik). */
-export async function pushTripStatus(tripId: string, to: "LOADING" | "EN_ROUTE" | "COMPLETED" | "CANCELLED", extra?: { note?: string; acceptedM3?: number }): Promise<SyncResult> {
+export async function pushTripStatus(tripId: string, to: "LOADING" | "EN_ROUTE" | "ARRIVED" | "UNLOADING" | "COMPLETED" | "CANCELLED", extra?: { note?: string; acceptedM3?: number }): Promise<SyncResult> {
   if (!ecoEnabled()) return { ok: false, skipped: true };
   const t = await db.trip.findUnique({ where: { id: tripId }, select: { deliveryNoteNo: true, ecoDeliveryId: true, ecoStatus: true, qtyM3: true } });
   if (!t) return { ok: false, skipped: true };
@@ -122,8 +129,22 @@ export async function applyEcoStatus(e: EcoEvent): Promise<{ applied: boolean; t
   if (!e.byIntegration) {
     if (e.to === "LOADING") await tripLoaded(t.id, userId, note);
     else if (e.to === "EN_ROUTE") await tripOnRoad(t.id, userId, note);
-    else if (e.to === "COMPLETED") await tripDelivered(t.id, userId, e.note?.trim() || "Haydovchi ilovasi (mijoz imzosi)", note);
+    // Obyektga keldi (geofence yoki haydovchi) / tushirish boshlandi — reys bosqich vaqtlari
+    else if (e.to === "ARRIVED") await tripArrived(t.id, userId, note);
+    else if (e.to === "UNLOADING") await tripUnloading(t.id, userId, note);
+    else if (e.to === "COMPLETED") {
+      // Mijoz imzolagan hajm — kam bo'lsa farqi "qabul qilinmagan" bo'lib yetkazish hisobotida chiqadi
+      const accepted = e.acceptedM3 != null && e.acceptedM3 > 0 ? Math.min(e.acceptedM3, Number(t.qtyM3)) : null;
+      await tripDelivered(t.id, userId, e.note?.trim() || "Haydovchi ilovasi (mijoz imzosi)", note, accepted != null ? { acceptedQty: accepted } : undefined);
+    }
     else if (e.to === "CANCELLED") await tripCancelled(t.id, userId, note);
+
+    // Rad etish / muvaffaqiyatsiz / e'tiroz — logistika "Muammolar" ro'yxatiga tushadi (bir marta)
+    const issueKind: TripIssueKind | null = e.to === "DECLINED" ? "DECLINED" : e.to === "DISPUTED" ? "QUALITY" : e.to === "FAILED" ? (/yo'l|yopiq|tirband/i.test(e.note ?? "") ? "TRAFFIC" : /nosoz|buzil/i.test(e.note ?? "") ? "BREAKDOWN" : "OTHER") : null;
+    if (issueKind) {
+      const dup = await db.tripIssue.findFirst({ where: { tripId: t.id, kind: issueKind, source: "ECO", resolvedAt: null } });
+      if (!dup) await reportTripIssue(t.id, userId, { kind: issueKind, note: `${who}${e.note ? `: ${e.note}` : ""}`, source: "ECO" }).catch(() => undefined);
+    }
   }
   const problem = e.to === "DECLINED" ? `Haydovchi reysni rad etdi${e.note ? `: ${e.note}` : ""} — boshqa haydovchi bering`
     : e.to === "FAILED" ? `Reys muvaffaqiyatsiz${e.note ? `: ${e.note}` : ""}`

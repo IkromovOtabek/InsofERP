@@ -13,7 +13,7 @@ import { Button, FormError, Input } from "@/components/ui";
  * chalg'itardi — nakladnoy yopilishi bitta, qaytarib bo'lmaydigan qadam. Endi qadam
  * ataylab bosiladi va obyektda qabul qilgan shaxs F.I.O. o'sha yerda so'raladi.
  */
-export function DeliverButton({ tripId }: { tripId: string }) {
+export function DeliverButton({ tripId, loaded }: { tripId: string; loaded?: number }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [state, action, pending] = useActionState(markDelivered.bind(null, tripId), undefined);
@@ -46,6 +46,21 @@ export function DeliverButton({ tripId }: { tripId: string }) {
               <div>
                 <label className="mb-1 block text-xs text-slate-500">Obyektda qabul qildi (F.I.O.)</label>
                 <Input name="receiverName" autoFocus required />
+              </div>
+              {/* Yetkazib berish miqdorlari (TZ 11) — bo'sh qolsa qabul = yuklangan */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Qabul qilindi{loaded != null ? ` (yuklangan ${loaded})` : ""}</label>
+                  <Input name="acceptedQty" inputMode="decimal" placeholder={loaded != null ? String(loaded) : ""} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Qaytarildi</label>
+                  <Input name="returnedQty" inputMode="decimal" placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Izoh (farq sababi, sifat…)</label>
+                <Input name="comment" />
               </div>
               <FormError error={state?.error} />
               <div className="flex justify-end gap-2">

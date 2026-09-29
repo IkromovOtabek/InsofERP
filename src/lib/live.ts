@@ -57,8 +57,8 @@ async function erpLive(): Promise<EcoLiveTrip[]> {
         plate: t.vehicle.plate,
         plannedM3: String(t.qtyM3),
         loadedM3: t.status === "PLANNED" ? null : String(t.qtyM3),
-        plannedAt: t.order.deliveryDate.toISOString(),
-        departedAt: t.loadedAt?.toISOString() ?? null,
+        plannedAt: (t.plannedAt ?? t.order.deliveryDate).toISOString(),
+        departedAt: (t.departedAt ?? t.loadedAt)?.toISOString() ?? null,
         slaBreached: false,
         position: { deliveryId: t.ecoDeliveryId ?? t.id, lat: p.lat, lng: p.lng, at: p.at.toISOString(), etaMin: null },
         // Yurilgan yo'l shu yerda hisoblanadi: ro'yxatda ham, kartochkada ham bir xil raqam

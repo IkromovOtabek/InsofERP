@@ -15,31 +15,41 @@ import { OrderStatusBadge } from "../orders/status";
 import { PRODUCTION_HOME_ROLES } from "@/lib/production-day";
 import { ProductionHome } from "./production-home";
 import { OwnerHome } from "./owner-home";
+import { PROCUREMENT_HOME_ROLES } from "@/lib/procurement-home";
+import { ProcurementHome } from "./procurement-home";
+import { LogisticsHome } from "./logistics-home";
+import { parseDay } from "@/lib/logistics";
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Xayrli tong" : h < 18 ? "Xayrli kun" : "Xayrli kech"; };
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string }> }) {
-  const { denied, view } = await searchParams;
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string; date?: string }> }) {
+  const { denied, view, date: dayParam } = await searchParams;
   const s = await getSession();
   // Ishlab chiqarish bo'limi bosh sahifada o'z ko'rinishini ko'radi; direktor ikkalasi orasida almashadi
   const isDirector = s?.role === "DIRECTOR";
   const productionView = !!s && ((PRODUCTION_HOME_ROLES as readonly string[]).includes(s.role) || (isDirector && view === "production"));
+  // Snabjeniye bo'limi — o'z kabineti (ta'minot holati, shoshilinch xarid, kechikish, kritik qoldiq)
+  const procurementView = !!s && ((PROCUREMENT_HOME_ROLES as readonly string[]).includes(s.role) || (isDirector && view === "procurement"));
+  // Logistika bo'limi (Biton Logistika TZ): bosh sahifa — dispetcher paneli; direktor tabda ko'radi
+  const logisticsView = !!s && (s.role === "LOGISTICS" || (isDirector && view === "logistics"));
   // Direktor (egasi) uchun bosh sahifa — Owner Dashboard (TZ v2.0); eski operatsion ko'rinish alohida tabda
-  const ownerView = isDirector && !productionView && view !== "operations";
-  const tabKey = productionView ? "production" : ownerView ? "" : "operations";
+  const ownerView = isDirector && !productionView && !procurementView && !logisticsView && view !== "operations";
+  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : ownerView ? "" : "operations";
   const header = (
     <>
       <div className="mb-6 animate-fade-up">
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
       </div>
-      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
     </>
   );
   if (productionView && s) return <div>{header}<ProductionHome s={s} /></div>;
+  if (procurementView) return <div>{header}<ProcurementHome /></div>;
+  if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 

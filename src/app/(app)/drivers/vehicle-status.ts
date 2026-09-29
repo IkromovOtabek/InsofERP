@@ -21,6 +21,6 @@ export async function setVehicleStatus(vehicleId: string, _prev: ActionState, fd
     data: { status: status as VehicleStatus, statusNote: status === "ACTIVE" ? null : note, statusSince: status === before.status ? before.statusSince : new Date() },
   });
   await audit(db, s.userId, "UPDATE", "Vehicle", vehicleId, { status: before.status, note: before.statusNote }, { status: after.status, note: after.statusNote });
-  revalidatePath("/drivers"); revalidatePath("/dashboard");
+  revalidatePath("/drivers"); revalidatePath("/dashboard"); revalidatePath("/logistika", "layout");
   return { ok: true };
 }

@@ -28,6 +28,7 @@ export const ORG_TREE: OrgDept[] = [
   { role: "SUPERVISOR", label: "Ish boshqaruvchi", parent: "DIRECTOR",   tone: "violet",  icon: "compass",  duty: "Kunlik ishni taqsimlaydi, nazorat qiladi" },
   { role: "PRODUCTION", label: "Ishlab chiqarish", parent: "SUPERVISOR", tone: "amber",   icon: "factory",  duty: "Zames, dona mahsulot, retsept", assignable: true },
   { role: "WAREHOUSE",  label: "Sklad",            parent: "SUPERVISOR", tone: "orange",  icon: "package",  duty: "Xomashyo kirimi, qoldiq, yuklash", assignable: true },
+  { role: "PROCUREMENT", label: "Snabjeniye",      parent: "DIRECTOR",   tone: "orange",  icon: "package",  duty: "Xarid, yetkazuvchi, ta'minot zanjiri", assignable: true },
   { role: "LOGISTICS",  label: "Logistika",        parent: "SUPERVISOR", tone: "blue",    icon: "truck",    duty: "Reys, nakladnoy, texnika", assignable: true },
   { role: "SALES",      label: "Sotuv",            parent: "DIRECTOR",   tone: "emerald", icon: "handshake",duty: "Mijoz, zayavka, shartnoma", assignable: true },
   { role: "ACCOUNTING", label: "Buxgalteriya",     parent: "DIRECTOR",   tone: "sky",     icon: "calculator", duty: "Schyot, hisob-kitob, hisobot" },
@@ -62,6 +63,7 @@ export function chainTo(role: Role): OrgDept[] {
 /** Nomiga qarab taxmin — faqat otdel kadr bo'limni belgilamagan lavozimlar uchun. */
 const GUESS: { re: RegExp; dept: Role }[] = [
   { re: /haydovch|mexanik|slesar|ta'?mirchi|shofyor/i, dept: "LOGISTICS" },
+  { re: /snabjen|ta'?minot|xarid|zakupsh/i, dept: "PROCUREMENT" },
   { re: /sklad|ombor|yuk ortuvchi|pogruzchik|ekskavator/i, dept: "WAREHOUSE" },
   { re: /operator|laborant|master|prorab|betonchi|armatura|qolipchi|payvandchi|elektrik|kran|brigadir|ishchi/i, dept: "PRODUCTION" },
   { re: /qo'?riqchi|farrosh|oshpaz|kotib|kadr|xo'?jalik/i, dept: "HR" },

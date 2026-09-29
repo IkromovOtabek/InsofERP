@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Logistika Dashboard — arxitektura</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  :root { --blue:#1d4ed8; --blue-d:#0f2a6b; --orange:#f97316; --ink:#0f172a; --mut:#64748b; --line:#e2e8f0; --bg:#f8fafc;
+          --ok:#16a34a; --warn:#d97706; --crit:#dc2626; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 26pt; margin: 0 0 6px; color: var(--blue-d); letter-spacing: -0.5px; }
+  h2 { font-size: 15pt; color: var(--blue-d); margin: 22px 0 8px; padding-bottom: 5px; border-bottom: 2px solid var(--orange); break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14px 0 5px; color: var(--ink); break-after: avoid; }
+  p { margin: 4px 0 8px; }
+  code { font-family: Menlo, monospace; font-size: 8.8pt; background: #eef2ff; color: var(--blue-d); padding: 1px 4px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 9.3pt; break-inside: auto; }
+  tr { break-inside: avoid; }
+  th { background: var(--blue-d); color: #fff; text-align: left; padding: 6px 7px; font-weight: 600; }
+  td { padding: 5px 7px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg); }
+  ul { margin: 4px 0 10px; padding-left: 18px; } li { margin: 2px 0; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: space-between; break-after: page; }
+  .cover .band { background: var(--blue-d); color: #fff; padding: 36px 32px; border-radius: 10px; border-left: 10px solid var(--orange); }
+  .cover .band h1 { color: #fff; font-size: 30pt; }
+  .cover .kicker { font-size: 10pt; letter-spacing: 3px; text-transform: uppercase; color: #fdba74; margin-bottom: 14px; }
+  .cover .sub { font-size: 13pt; opacity: .9; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .meta div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .meta b { display: block; font-size: 8.5pt; color: var(--mut); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  .note { background: #fff7ed; border-left: 4px solid var(--orange); padding: 8px 12px; border-radius: 4px; margin: 8px 0 12px; font-size: 9.6pt; }
+  .info { background: #eff6ff; border-left: 4px solid var(--blue); padding: 8px 12px; border-radius: 4px; margin: 8px 0 12px; font-size: 9.6pt; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 8.5pt; font-weight: 600; color: #fff; }
+  .ok { background: var(--ok); } .warn { background: var(--warn); } .crit { background: var(--crit); }
+  .toc { columns: 2; font-size: 10pt; } .toc div { padding: 2px 0; }
+  .pb { break-before: page; }
+  .avoid { break-inside: avoid; }
+  svg text { font-family: "Helvetica Neue", Arial, sans-serif; }
+  .foot { color: var(--mut); font-size: 8.5pt; text-align: center; margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── MUQOVA ───────────── -->
+<section class="cover">
+  <div>
+    <div class="band">
+      <div class="kicker">Insof ERP · Texnik hujjat</div>
+      <h1>Logistika Dashboard</h1>
+      <div class="sub">Arxitektura, ko'rsatkichlar, ma'lumot oqimi va bosqichma-bosqich joriy etish rejasi</div>
+    </div>
+    <div style="margin-top:28px">
+      <h3>Mundarija</h3>
+      <div class="toc">
+        <div>1. Maqsad va foydalanuvchilar</div>
+        <div>2. Joylashuv va navigatsiya</div>
+        <div>3. Ekran tuzilmasi (maket)</div>
+        <div>4. Bloklar tavsifi</div>
+        <div>5. Ko'rsatkichlar va formulalar</div>
+        <div>6. Holat chegaralari (norma / e'tibor / kritik)</div>
+        <div>7. Ma'lumot oqimi</div>
+        <div>8. Ma'lumotlar modeli va kerakli o'zgarishlar</div>
+        <div>9. Fayl tuzilmasi va kod qoidalari</div>
+        <div>10. Ruxsatlar</div>
+        <div>11. Yangilanish va unumdorlik</div>
+        <div>12. Joriy etish bosqichlari</div>
+      </div>
+    </div>
+  </div>
+  <div class="meta">
+    <div><b>Loyiha</b>Insof ERP — beton zavodi</div>
+    <div><b>Bo'lim</b>Logistika (rol: LOGISTICS)</div>
+    <div><b>Sana</b>29.09.2026</div>
+    <div><b>Versiya</b>1.0 — loyiha (arxitektura taklifi)</div>
+  </div>
+</section>
+
+<!-- ───────────── 1 ───────────── -->
+<h2>1. Maqsad va foydalanuvchilar</h2>
+<p>Logistika dashboardi — dispetcherning <b>bitta ekrandagi ish joyi</b>. U bugun qaysi obyektga qancha beton ketishi kerakligini, qaysi mikser qayerdaligini, qaysi reys kechikayotganini va qaysi texnika bo'sh turganini bir qarashda ko'rsatadi hamda "keyingi qadam"ga (reys ochish, texnika holatini o'zgartirish) bir bosishda olib boradi.</p>
+<table>
+  <tr><th style="width:24%">Foydalanuvchi</th><th style="width:22%">Rol</th><th>Nima uchun kerak</th></tr>
+  <tr><td>Logistika dispetcheri</td><td><code>LOGISTICS</code></td><td>Asosiy foydalanuvchi: kunlik jadval, reys biriktirish, kechikishlarni boshqarish, texnika holati.</td></tr>
+  <tr><td>Direktor</td><td><code>DIRECTOR</code></td><td>Egasi dashbordidagi "Logistika" tabi orqali nazorat: bajarilish, kechikish, texnika bandligi.</td></tr>
+  <tr><td>Ishlab chiqarish / smena boshlig'i</td><td><code>PRODUCTION</code>, <code>SUPERVISOR</code></td><td>Faqat o'qish: qaysi soatga qancha m³ tayyor bo'lishi kerak (zavod yuklamasi).</td></tr>
+  <tr><td>Haydovchi</td><td><code>DRIVER</code></td><td>Dashboard ko'rinmaydi — o'z reyslari <code>/mening-reyslarim</code> va ECO ilovada.</td></tr>
+</table>
+<div class="info"><b>Asosiy savollar</b>, ekran javob berishi kerak: (1) Bugungi reja bajarilyaptimi? (2) Hozir qaysi reys muammoli? (3) Qaysi zayavkaga hali mashina biriktirilmagan? (4) Nechta texnika ishda, nechtasi bo'sh yoki ta'mirda? (5) Haydovchilar qanchalik samarali ishlayapti?</div>
+
+<!-- ───────────── 2 ───────────── -->
+<h2>2. Joylashuv va navigatsiya</h2>
+<ul>
+  <li><b>Manzil:</b> <code>/dashboard?view=logistics</code> — mavjud dashboard sahifasining yangi tabi (Egasi / Ishlab chiqarish / <b>Logistika</b> / Operatsion).</li>
+  <li><b>Standart ko'rinish:</b> <code>LOGISTICS</code> roli <code>/dashboard</code> ga kirganda to'g'ridan-to'g'ri shu tab ochiladi (ishlab chiqarish rollari uchun <code>production</code> qanday bo'lsa, xuddi shunday).</li>
+  <li><b>Sidebar:</b> "Logistika" guruhida birinchi element — <i>Logistika paneli</i>, undan keyin mavjud <i>Reyslar / nakladnoy</i> (<code>/trips</code>) va <i>Haydovchilar (ECO)</i> (<code>/drivers</code>).</li>
+  <li><b>Sana tanlash:</b> <code>?view=logistics&amp;date=2026-09-29</code> — o'tgan kunni ko'rish (hisobot rejimi, jonli bloklar o'chadi).</li>
+  <li><b>Detalizatsiya:</b> har bir KPI va ogohlantirish mavjud sahifaga filtr bilan olib boradi: <code>/trips?status=ON_ROAD</code>, <code>/orders/[id]</code>, <code>/drivers</code>, <code>/trips?status=tarix&amp;driver=…</code>.</li>
+</ul>
+
+<!-- ───────────── 3 ───────────── -->
+<h2 class="pb">3. Ekran tuzilmasi (maket)</h2>
+<p>Desktop uchun 12 ustunli to'r. Yuqoridan pastga — "hozir nima bo'lyapti"dan "umumiy tendensiya"ga. Mobil (&lt;768px) ekranda bloklar bitta ustunga tushadi, xarita KPI dan keyin turadi.</p>
+<div class="avoid">
+<svg viewBox="0 0 720 640" width="100%">
+  <rect x="0" y="0" width="720" height="640" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <!-- header -->
+  <rect x="14" y="12" width="692" height="34" rx="6" fill="#0f2a6b"/>
+  <text x="28" y="34" fill="#fff" font-size="13" font-weight="700">Logistika paneli</text>
+  <text x="430" y="34" fill="#fdba74" font-size="11">◀ 29.09.2026 ▶   ·   Yangilandi 14:32   ⟳</text>
+  <!-- tabs -->
+  <text x="18" y="64" fill="#64748b" font-size="10">Egasi   Ishlab chiqarish   </text>
+  <text x="150" y="64" fill="#1d4ed8" font-size="10" font-weight="700">Logistika</text>
+  <text x="206" y="64" fill="#64748b" font-size="10">   Operatsion</text>
+  <line x1="150" y1="68" x2="200" y2="68" stroke="#f97316" stroke-width="2"/>
+  <!-- KPI row -->
+  <g font-size="9.5">
+    <rect x="14" y="78" width="108" height="64" rx="6" fill="#fff" stroke="#e2e8f0"/><text x="22" y="95" fill="#64748b">Reja / fakt, m³</text><text x="22" y="120" font-size="16" font-weight="700" fill="#0f172a">312 / 186</text><rect x="22" y="128" width="92" height="5" rx="2" fill="#e2e8f0"/><rect x="22" y="128" width="55" height="5" rx="2" fill="#16a34a"/>
+    <rect x="130" y="78" width="108" height="64" rx="6" fill="#fff" stroke="#e2e8f0"/><text x="138" y="95" fill="#64748b">Reyslar</text><text x="138" y="120" font-size="16" font-weight="700">41</text><text x="138" y="135" fill="#64748b" font-size="8.5">29 yetkazildi · 6 yo'lda</text>
+    <rect x="246" y="78" width="108" height="64" rx="6" fill="#fff" stroke="#d97706"/><text x="254" y="95" fill="#64748b">Kechikayotgan</text><text x="254" y="120" font-size="16" font-weight="700" fill="#d97706">3</text><text x="254" y="135" fill="#64748b" font-size="8.5">o'rtacha +22 daq</text>
+    <rect x="362" y="78" width="108" height="64" rx="6" fill="#fff" stroke="#dc2626"/><text x="370" y="95" fill="#64748b">Biriktirilmagan</text><text x="370" y="120" font-size="16" font-weight="700" fill="#dc2626">2</text><text x="370" y="135" fill="#64748b" font-size="8.5">zayavka · 48 m³</text>
+    <rect x="478" y="78" width="108" height="64" rx="6" fill="#fff" stroke="#e2e8f0"/><text x="486" y="95" fill="#64748b">Texnika bandligi</text><text x="486" y="120" font-size="16" font-weight="700">11 / 14</text><text x="486" y="135" fill="#64748b" font-size="8.5">1 ta'mirda · 2 bo'sh</text>
+    <rect x="594" y="78" width="112" height="64" rx="6" fill="#fff" stroke="#e2e8f0"/><text x="602" y="95" fill="#64748b">O'rt. aylanish</text><text x="602" y="120" font-size="16" font-weight="700">1 s 48 d</text><text x="602" y="135" fill="#64748b" font-size="8.5">o'rt. 14,2 km</text>
+  </g>
+  <!-- map + alerts -->
+  <rect x="14" y="152" width="440" height="230" rx="6" fill="#fff" stroke="#e2e8f0"/>
+  <text x="24" y="170" font-size="11" font-weight="700">B · Jonli xarita</text>
+  <rect x="24" y="178" width="420" height="194" rx="4" fill="#e0ecff"/>
+  <path d="M60 330 C120 280 180 300 240 240 S360 210 410 200" stroke="#94a3b8" stroke-width="3" fill="none" stroke-dasharray="6 4"/>
+  <circle cx="60" cy="330" r="8" fill="#0f2a6b"/><text x="72" y="334" font-size="9" fill="#0f2a6b">Zavod</text>
+  <circle cx="170" cy="292" r="6" fill="#16a34a"/><circle cx="260" cy="236" r="6" fill="#d97706"/><circle cx="330" cy="212" r="6" fill="#16a34a"/>
+  <rect x="402" y="192" width="14" height="14" fill="#f97316"/><text x="352" y="222" font-size="8.5" fill="#334155">obyekt</text>
+  <rect x="462" y="152" width="244" height="230" rx="6" fill="#fff" stroke="#e2e8f0"/>
+  <text x="472" y="170" font-size="11" font-weight="700">E · Ogohlantirishlar</text>
+  <g font-size="9">
+    <rect x="472" y="180" width="224" height="32" rx="4" fill="#fef2f2"/><text x="480" y="194" fill="#dc2626" font-weight="700">Kritik</text><text x="480" y="206" fill="#334155">Z-1043: 14:00 ga, mashina yo'q</text>
+    <rect x="472" y="218" width="224" height="32" rx="4" fill="#fef2f2"/><text x="480" y="232" fill="#dc2626" font-weight="700">Kritik</text><text x="480" y="244" fill="#334155">01 A 123 BC · GPS 18 daq jim</text>
+    <rect x="472" y="256" width="224" height="32" rx="4" fill="#fffbeb"/><text x="480" y="270" fill="#d97706" font-weight="700">E'tibor</text><text x="480" y="282" fill="#334155">N-2291 yuklangan, 40 daq chiqmadi</text>
+    <rect x="472" y="294" width="224" height="32" rx="4" fill="#fffbeb"/><text x="480" y="308" fill="#d97706" font-weight="700">E'tibor</text><text x="480" y="320" fill="#334155">Z-1047: obyekt nuqtasi yo'q</text>
+    <text x="480" y="352" fill="#1d4ed8">Hammasi (7) →</text>
+  </g>
+  <!-- timeline -->
+  <rect x="14" y="392" width="692" height="118" rx="6" fill="#fff" stroke="#e2e8f0"/>
+  <text x="24" y="410" font-size="11" font-weight="700">A · Bugungi jadval (soatlar kesimida)</text>
+  <g font-size="8.5" fill="#64748b">
+    <text x="130" y="424">08</text><text x="200" y="424">10</text><text x="270" y="424">12</text><text x="340" y="424">14</text><text x="410" y="424">16</text><text x="480" y="424">18</text><text x="550" y="424">20</text>
+    <text x="24" y="444">Z-1039 · Chilonzor</text><text x="24" y="466">Z-1041 · Sergeli</text><text x="24" y="488">Z-1043 · Yunusobod</text>
+  </g>
+  <rect x="140" y="436" width="90" height="12" rx="3" fill="#16a34a"/><rect x="232" y="436" width="40" height="12" rx="3" fill="#86efac"/>
+  <rect x="210" y="458" width="120" height="12" rx="3" fill="#1d4ed8"/><rect x="332" y="458" width="30" height="12" rx="3" fill="#d97706"/>
+  <rect x="345" y="480" width="110" height="12" rx="3" fill="none" stroke="#dc2626" stroke-dasharray="4 3"/>
+  <line x1="318" y1="428" x2="318" y2="500" stroke="#f97316" stroke-width="1.5"/><text x="306" y="506" font-size="8" fill="#f97316">hozir</text>
+  <!-- fleet + drivers -->
+  <rect x="14" y="520" width="340" height="108" rx="6" fill="#fff" stroke="#e2e8f0"/>
+  <text x="24" y="538" font-size="11" font-weight="700">C · Texnika holati</text>
+  <g font-size="9">
+    <text x="24" y="560">Mikser</text><rect x="90" y="551" width="150" height="11" fill="#16a34a"/><rect x="240" y="551" width="40" height="11" fill="#94a3b8"/><rect x="280" y="551" width="20" height="11" fill="#dc2626"/>
+    <text x="24" y="584">Nasos</text><rect x="90" y="575" width="70" height="11" fill="#16a34a"/><rect x="160" y="575" width="35" height="11" fill="#94a3b8"/>
+    <text x="24" y="608">Samosval</text><rect x="90" y="599" width="35" height="11" fill="#16a34a"/><rect x="125" y="599" width="35" height="11" fill="#d97706"/>
+  </g>
+  <rect x="362" y="520" width="344" height="108" rx="6" fill="#fff" stroke="#e2e8f0"/>
+  <text x="372" y="538" font-size="11" font-weight="700">D · Haydovchilar (bugun)</text>
+  <g font-size="9" fill="#334155">
+    <text x="372" y="558" fill="#64748b">Haydovchi</text><text x="520" y="558" fill="#64748b">Reys</text><text x="560" y="558" fill="#64748b">m³</text><text x="600" y="558" fill="#64748b">Kechikish</text>
+    <text x="372" y="578">Karimov A.</text><text x="520" y="578">6</text><text x="560" y="578">48</text><text x="600" y="578">0</text>
+    <text x="372" y="596">Tursunov B.</text><text x="520" y="596">5</text><text x="560" y="596">40</text><text x="600" y="596" fill="#d97706">1</text>
+    <text x="372" y="614">Rahimov S.</text><text x="520" y="614">4</text><text x="560" y="614">32</text><text x="600" y="614">0</text>
+  </g>
+</svg>
+</div>
+<p style="font-size:9pt;color:var(--mut)">Maket: F bloki (haftalik trend va nasos jadvali) sahifaning eng pastida, ekranda aylantirib ko'riladi. Raqamlar — namunaviy.</p>
+
+<!-- ───────────── 4 ───────────── -->
+<h2 class="pb">4. Bloklar tavsifi</h2>
+
+<h3>KPI qatori — 6 ta karta</h3>
+<p>Har bir karta: sarlavha, asosiy raqam, izoh qatori, holat rangi (<span class="pill ok">norma</span> <span class="pill warn">e'tibor</span> <span class="pill crit">kritik</span>) va bosilganda detalizatsiya havolasi. Formulalar 5-bo'limda.</p>
+
+<h3>A · Bugungi jadval (Gantt-timeline)</h3>
+<ul>
+  <li>Qatorlar — bugungi <code>deliveryDate</code> ga ega, dastavkali (<code>needsDelivery = true</code>) zayavkalar, <code>deliveryTime</code> bo'yicha tartiblangan; shoshilinch (<code>isUrgent</code>) belgisi bilan.</li>
+  <li>Har bir qatorda: rejadagi vaqt oynasi (ramka), reyslar — rangli bo'laklar: <i>PLANNED</i> kulrang, <i>LOADED</i> ko'k, <i>ON_ROAD</i> to'q sariq, <i>DELIVERED</i> yashil. Reyssiz qolgan zayavka — qizil punktir ramka.</li>
+  <li>O'ng tomonda: buyurtma m³ / yetkazilgan m³, qoldiq; "+ Reys" tugmasi <code>/trips/new?orderId=…</code> ga olib boradi.</li>
+  <li>"Hozir" chizig'i — joriy vaqt. Nasos kerak bo'lgan zayavkalarda nasos belgisi.</li>
+</ul>
+
+<h3>B · Jonli xarita</h3>
+<ul>
+  <li>Mavjud <code>trips/live-map.tsx</code> komponenti qayta ishlatiladi (Leaflet + Yandex Tiles, OSM zaxira).</li>
+  <li>Nuqtalar: zavod (<code>CompanySettings.lat/lng</code>), yo'ldagi mashinalar (oxirgi <code>TripPosition</code> yoki ECO GPS), bugungi obyektlar (<code>Order.lat/lng</code>).</li>
+  <li>Marker rangi — reys holati; kechikayotgani to'q sariq, GPS jim qolgani kulrang + ogohlantirish belgisi. Bosilganda: nakladnoy, haydovchi, ETA, "Reysni ochish".</li>
+</ul>
+
+<h3>C · Texnika holati</h3>
+<ul>
+  <li>Turi (<code>MIXER</code> / <code>PUMP</code> / <code>TRUCK</code>) × holat: <b>Reysda</b> (faol reysi bor), <b>Bo'sh</b> (<code>ACTIVE</code>, lekin reysi yo'q), <b>Ta'mirda</b> (<code>REPAIR</code>), <b>Turib qolgan</b> (<code>IDLE</code>).</li>
+  <li>Ta'mir/bekor turgan texnika ro'yxati: sabab (<code>statusNote</code>) va qancha vaqtdan beri (<code>statusSince</code>). Holatni o'zgartirish — mavjud <code>/drivers</code> dagi forma.</li>
+  <li>Bugungi bandlik foizi: reysda o'tgan vaqt / ish smenasi (08:00–20:00, sozlamadan).</li>
+</ul>
+
+<h3>D · Haydovchilar reytingi</h3>
+<ul>
+  <li>Bugun (yoki tanlangan davr) bo'yicha: reyslar soni, yetkazilgan m³, o'rtacha aylanish vaqti, kechikishlar soni, bekor qilingan reyslar.</li>
+  <li>Qator bosilganda — <code>/trips?status=tarix&amp;driver=…</code> (mavjud tarix sahifasi).</li>
+</ul>
+
+<h3>E · Ogohlantirishlar markazi</h3>
+<table>
+  <tr><th style="width:36%">Holat</th><th style="width:14%">Daraja</th><th>Aniqlash qoidasi</th></tr>
+  <tr><td>Zayavkaga mashina biriktirilmagan</td><td><span class="pill crit">kritik</span></td><td>Yetkazish vaqtiga ≤ 60 daq qoldi, reyslar hajmi &lt; buyurtma hajmi (60–120 daq — e'tibor)</td></tr>
+  <tr><td>Reys kechikyapti</td><td><span class="pill warn">e'tibor</span> / <span class="pill crit">kritik</span></td><td>ETA yoki hozirgi vaqt &gt; rejadagi vaqt + chegara (6-bo'lim)</td></tr>
+  <tr><td>GPS jim</td><td><span class="pill crit">kritik</span></td><td><code>ON_ROAD</code> reysning oxirgi nuqtasi 15 daqiqadan eski</td></tr>
+  <tr><td>Yuklangan, lekin chiqmagan</td><td><span class="pill warn">e'tibor</span></td><td><code>LOADED</code> holatida 30 daqiqadan ko'p (beton qotish xavfi — 90 daq kritik)</td></tr>
+  <tr><td>Obyekt nuqtasi yo'q</td><td><span class="pill warn">e'tibor</span></td><td>Bugungi zayavkada <code>lat/lng</code> bo'sh — navigatsiya va ETA ishlamaydi</td></tr>
+  <tr><td>ECO sinxron xatosi</td><td><span class="pill warn">e'tibor</span></td><td><code>Trip.ecoError</code> yoki <code>Vehicle.ecoError</code> to'ldirilgan</td></tr>
+  <tr><td>Haydovchi reysni rad etdi</td><td><span class="pill crit">kritik</span></td><td><code>ecoStatus</code> ∈ {DECLINED, FAILED, DISPUTED}</td></tr>
+  <tr><td>Texnika uzoq ta'mirda</td><td><span class="pill warn">e'tibor</span></td><td><code>REPAIR</code> va <code>statusSince</code> &gt; 3 kun</td></tr>
+</table>
+
+<h3>F · Tendensiya va nasos jadvali</h3>
+<ul>
+  <li>So'nggi 14 kun: kunlik yetkazilgan m³ (ustun) + o'z vaqtida yetkazish foizi (chiziq).</li>
+  <li>Nasos jadvali: bugungi <code>needsPump</code> zayavkalar va biriktirilgan nasoslar (<code>VehicleType.PUMP</code> reyslari) — nasos taqchilligi alohida ko'rinadi.</li>
+</ul>
+
+<!-- ───────────── 5 ───────────── -->
+<h2>5. Ko'rsatkichlar va formulalar</h2>
+<p>Barcha raqamlar bitta server funksiyasi — <code>logisticsDashboard(date)</code> — ichida hisoblanadi; UI hech narsani o'zi hisoblamaydi (egasi dashbordidagi <code>ownerDashboard()</code> qoidasi bilan bir xil).</p>
+<table>
+  <tr><th style="width:22%">Ko'rsatkich</th><th style="width:48%">Formula</th><th>Manba</th></tr>
+  <tr><td>Bugungi reja, m³</td><td>Σ <code>OrderItem.qtyM3</code>, bunda <code>Order.deliveryDate</code> = sana, <code>needsDelivery</code>, holat ≠ CANCELLED/DRAFT, <code>kind = SALE</code></td><td>Order, OrderItem</td></tr>
+  <tr><td>Yetkazilgan, m³</td><td>Σ <code>Trip.qtyM3</code>, <code>status = DELIVERED</code>, <code>deliveredAt</code> = sana</td><td>Trip</td></tr>
+  <tr><td>Bajarilish, %</td><td>Yetkazilgan / Reja × 100</td><td>—</td></tr>
+  <tr><td>Reyslar holati</td><td><code>Trip</code> soni <code>status</code> bo'yicha guruhlangan (bugun yaratilgan yoki bugungi zayavkaga tegishli)</td><td>Trip</td></tr>
+  <tr><td>Biriktirilmagan</td><td>Bugungi zayavkalar, bunda Σ faol reys hajmi &lt; buyurtma hajmi; qoldiq m³ bilan</td><td>Order, Trip</td></tr>
+  <tr><td>Kechikayotgan reys</td><td>Rejadagi vaqt = <code>deliveryDate + deliveryTime</code>. Yetkazilgan: <code>deliveredAt − reja</code> &gt; chegara. Yo'lda: <code>ETA − reja</code> &gt; chegara</td><td>Order, Trip, ETA</td></tr>
+  <tr><td>ETA</td><td>Hozir + (oxirgi GPS nuqtadan obyektgacha OSRM masofa / o'rtacha tezlik); OSRM yo'q bo'lsa — to'g'ri chiziq × 1,3</td><td>TripPosition, OSRM kesh</td></tr>
+  <tr><td>O'z vaqtida yetkazish, %</td><td>Kechikmagan DELIVERED reyslar / barcha DELIVERED × 100 (zayavkaning birinchi reysi bo'yicha)</td><td>Trip</td></tr>
+  <tr><td>Aylanish vaqti</td><td><code>returnedAt − loadedAt</code> (yangi maydon, 8-bo'lim); vaqtincha: <code>deliveredAt − loadedAt</code> × 2 taxmini</td><td>Trip</td></tr>
+  <tr><td>O'rtacha masofa</td><td>AVG(<code>Order.distanceKm</code>) bugungi reyslar bo'yicha</td><td>Order</td></tr>
+  <tr><td>Texnika bandligi</td><td>Faol reysi bor (<code>LOADED</code>/<code>ON_ROAD</code>) texnika / <code>isActive</code> texnika</td><td>Vehicle, Trip</td></tr>
+  <tr><td>Bekor turish narxi</td><td>Kunlar(<code>statusSince</code> → bugun) × kunlik stavka (sozlamadan) — <code>IDLE</code>/<code>REPAIR</code> uchun</td><td>Vehicle, CompanySettings</td></tr>
+  <tr><td>Haydovchi samaradorligi</td><td>Reyslar, Σ m³, AVG aylanish, kechikishlar soni — <code>driverId</code> bo'yicha</td><td>Trip, Employee</td></tr>
+</table>
+
+<!-- ───────────── 6 ───────────── -->
+<h2>6. Holat chegaralari</h2>
+<p>Ranglar mavjud <code>Level = "ok" | "warn" | "crit"</code> turi va <code>LEVEL_LABEL</code> orqali beriladi. Chegaralar kodda qattiq yozilmaydi — <code>CompanySettings</code> ga yangi maydonlar sifatida qo'shiladi va <code>/dashboard/byudjet</code> sahifasidagi "Chegaralar" bo'limida tahrirlanadi (SaaS rejasi: hardkod qo'shmaslik).</p>
+<table>
+  <tr><th>Sozlama (yangi maydon)</th><th>Standart</th><th>Ma'nosi</th></tr>
+  <tr><td><code>lateWarnMin</code></td><td>15</td><td>Shuncha daqiqa kechikish — e'tibor</td></tr>
+  <tr><td><code>lateCritMin</code></td><td>45</td><td>Shuncha daqiqa kechikish — kritik</td></tr>
+  <tr><td><code>gpsSilentMin</code></td><td>15</td><td>Yo'ldagi mashinadan GPS shuncha daqiqa kelmasa — kritik</td></tr>
+  <tr><td><code>loadedWarnMin</code> / <code>loadedCritMin</code></td><td>30 / 90</td><td>Yuklangan beton zavoddan chiqmay turgan vaqt</td></tr>
+  <tr><td><code>assignLeadMin</code></td><td>60</td><td>Yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik</td></tr>
+  <tr><td><code>shiftStart</code> / <code>shiftEnd</code></td><td>08:00 / 20:00</td><td>Texnika bandligi foizi uchun smena</td></tr>
+  <tr><td><code>idleDayCost</code></td><td>—</td><td>Bekor turgan texnikaning 1 kunlik narxi, so'm</td></tr>
+  <tr><td><code>onTimeWarnPct</code> / <code>onTimeCritPct</code></td><td>90 / 75</td><td>O'z vaqtida yetkazish foizi shundan past — e'tibor / kritik</td></tr>
+</table>
+
+<!-- ───────────── 7 ───────────── -->
+<h2>7. Ma'lumot oqimi</h2>
+<div class="avoid">
+<svg viewBox="0 0 720 380" width="100%">
+  <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#475569"/></marker></defs>
+  <g font-size="10">
+    <!-- sources -->
+    <text x="14" y="18" font-weight="700" fill="#64748b" font-size="9">MANBALAR</text>
+    <rect x="14" y="28" width="170" height="44" rx="6" fill="#eff6ff" stroke="#1d4ed8"/><text x="24" y="46" font-weight="700">Zayavka (Order)</text><text x="24" y="62" fill="#475569" font-size="9">sotuv / sayt / ECO do'kon</text>
+    <rect x="14" y="84" width="170" height="44" rx="6" fill="#eff6ff" stroke="#1d4ed8"/><text x="24" y="102" font-weight="700">Reys (Trip)</text><text x="24" y="118" fill="#475569" font-size="9">logistika ochadi, holat o'zgaradi</text>
+    <rect x="14" y="140" width="170" height="44" rx="6" fill="#eff6ff" stroke="#1d4ed8"/><text x="24" y="158" font-weight="700">Haydovchi ilovasi</text><text x="24" y="174" fill="#475569" font-size="9">GPS → TripPosition, "Yetkazdim"</text>
+    <rect x="14" y="196" width="170" height="44" rx="6" fill="#eff6ff" stroke="#1d4ed8"/><text x="24" y="214" font-weight="700">Insof ECO webhook</text><text x="24" y="230" fill="#475569" font-size="9">ecoStatus, pudratchi GPS</text>
+    <rect x="14" y="252" width="170" height="44" rx="6" fill="#eff6ff" stroke="#1d4ed8"/><text x="24" y="270" font-weight="700">Texnika (Vehicle)</text><text x="24" y="286" fill="#475569" font-size="9">status, statusSince</text>
+    <rect x="14" y="308" width="170" height="44" rx="6" fill="#eff6ff" stroke="#1d4ed8"/><text x="24" y="326" font-weight="700">CompanySettings</text><text x="24" y="342" fill="#475569" font-size="9">zavod nuqtasi, chegaralar</text>
+    <!-- db -->
+    <rect x="230" y="120" width="120" height="120" rx="10" fill="#fff" stroke="#0f2a6b" stroke-width="1.5"/>
+    <text x="252" y="170" font-weight="700" font-size="12">PostgreSQL</text><text x="258" y="188" fill="#475569" font-size="9">Prisma ORM</text>
+    <path d="M184 50 L230 140" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M184 106 L230 160" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M184 162 L230 175" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M184 218 L230 195" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M184 274 L230 212" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M184 330 L230 230" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <!-- service -->
+    <text x="396" y="18" font-weight="700" fill="#64748b" font-size="9">HISOB QATLAMI</text>
+    <rect x="396" y="100" width="150" height="80" rx="8" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+    <text x="406" y="122" font-weight="700" font-size="10">logisticsDashboard(date)</text>
+    <text x="406" y="140" fill="#475569" font-size="9">src/lib/logistics-dashboard.ts</text>
+    <text x="406" y="156" fill="#475569" font-size="9">KPI · jadval · texnika ·</text>
+    <text x="406" y="170" fill="#475569" font-size="9">haydovchilar · ogohlantirish</text>
+    <rect x="396" y="200" width="150" height="54" rx="8" fill="#fff7ed" stroke="#f97316"/>
+    <text x="406" y="220" font-weight="700" font-size="10">liveFleet()</text>
+    <text x="406" y="236" fill="#475569" font-size="9">oxirgi GPS + ETA (OSRM kesh)</text>
+    <text x="406" y="248" fill="#475569" font-size="9">+ ECO GPS birlashmasi</text>
+    <path d="M350 160 L396 140" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M350 200 L396 225" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <!-- UI -->
+    <text x="590" y="18" font-weight="700" fill="#64748b" font-size="9">KO'RINISH</text>
+    <rect x="590" y="100" width="118" height="80" rx="8" fill="#0f2a6b"/>
+    <text x="600" y="122" fill="#fff" font-weight="700" font-size="10">logistics-home.tsx</text>
+    <text x="600" y="140" fill="#cbd5e1" font-size="9">Server Component</text>
+    <text x="600" y="156" fill="#cbd5e1" font-size="9">KPI, A, C, D, E, F</text>
+    <rect x="590" y="200" width="118" height="54" rx="8" fill="#1d4ed8"/>
+    <text x="600" y="220" fill="#fff" font-weight="700" font-size="10">LiveMap (client)</text>
+    <text x="600" y="236" fill="#dbeafe" font-size="9">har 20 s so'rov</text>
+    <path d="M546 140 L590 140" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <path d="M546 227 L590 227" stroke="#475569" marker-end="url(#a)" fill="none"/>
+    <rect x="590" y="280" width="118" height="54" rx="8" fill="#fff" stroke="#1d4ed8"/>
+    <text x="600" y="300" font-weight="700" font-size="10">Server actions</text>
+    <text x="600" y="316" fill="#475569" font-size="9">reys ochish, holat,</text>
+    <text x="600" y="328" fill="#475569" font-size="9">texnika statusi</text>
+    <path d="M590 307 C480 330 400 300 350 225" stroke="#f97316" stroke-dasharray="5 3" marker-end="url(#a)" fill="none"/>
+    <text x="440" y="336" fill="#f97316" font-size="9">yozish → revalidatePath</text>
+  </g>
+</svg>
+</div>
+<ol>
+  <li><b>Yozish:</b> zayavka, reys va texnika holati mavjud server action'lar orqali o'zgaradi (<code>trips/actions.ts</code>, <code>drivers/actions.ts</code>). Har biri <code>revalidatePath("/dashboard")</code> ni chaqiradi.</li>
+  <li><b>Jonli ma'lumot:</b> haydovchi ilovasi GPS nuqtalarini <code>/api/mobile</code> orqali yuboradi → <code>TripPosition</code>. Pudratchi haydovchilar izi ECO'da qoladi va <code>liveFleet()</code> ichida birlashtiriladi.</li>
+  <li><b>Hisob:</b> <code>logisticsDashboard(date)</code> parallel so'rovlar (<code>Promise.all</code>) bilan barcha bloklar uchun bitta obyekt qaytaradi.</li>
+  <li><b>Ko'rsatish:</b> server komponent statik qismni chizadi; xarita va "yo'ldagi reyslar" client komponent bo'lib, har 20 soniyada yengil endpointdan yangilanadi.</li>
+</ol>
+
+<!-- ───────────── 8 ───────────── -->
+<h2>8. Ma'lumotlar modeli va kerakli o'zgarishlar</h2>
+<h3>Mavjud (o'zgarishsiz ishlatiladi)</h3>
+<table>
+  <tr><th style="width:20%">Model</th><th>Dashboard uchun kerakli maydonlar</th></tr>
+  <tr><td><code>Order</code></td><td>deliveryDate, deliveryTime, deliveryAddress, lat/lng, distanceKm, needsPump, needsDelivery, isUrgent, status, kind, items[].qtyM3</td></tr>
+  <tr><td><code>Trip</code></td><td>status (PLANNED → LOADED → ON_ROAD → DELIVERED / CANCELLED), qtyM3, loadedAt, deliveredAt, vehicleId, driverId, ecoStatus, ecoError, pickupLat/Lng</td></tr>
+  <tr><td><code>TripPosition</code></td><td>tripId, lat, lng, speedKmh, at — indeks <code>[tripId, at]</code> mavjud</td></tr>
+  <tr><td><code>Vehicle</code></td><td>plate, type (MIXER/PUMP/TRUCK), capacityM3, isActive, status (ACTIVE/REPAIR/IDLE), statusNote, statusSince, ecoError</td></tr>
+  <tr><td><code>Employee</code></td><td>fullName, phone, isActive — "TripDriver" munosabati orqali</td></tr>
+  <tr><td><code>CompanySettings</code></td><td>lat/lng (zavod nuqtasi) + mavjud chegaralar</td></tr>
+</table>
+
+<h3>Qo'shilishi kerak (migratsiya)</h3>
+<table>
+  <tr><th style="width:30%">O'zgarish</th><th>Sabab</th></tr>
+  <tr><td><code>Trip.departedAt DateTime?</code></td><td>ON_ROAD ga o'tgan vaqt. Hozir faqat loadedAt/deliveredAt bor — "yuklangan, lekin chiqmagan" va yo'l vaqtini aniq hisoblash uchun.</td></tr>
+  <tr><td><code>Trip.arrivedAt DateTime?</code></td><td>Obyektga yetib kelgan vaqt (ECO <code>ARRIVED</code> yoki 1 km qoidasi). Tushirish vaqti = deliveredAt − arrivedAt.</td></tr>
+  <tr><td><code>Trip.returnedAt DateTime?</code></td><td>Zavodga qaytgan vaqt (GPS zavod radiusiga kirganda avtomatik). Aylanish vaqti va bandlik uchun.</td></tr>
+  <tr><td><code>Trip.plannedAt DateTime?</code></td><td>Reys bo'yicha rejadagi yetkazish vaqti (bir zayavkada bir necha reys bo'lsa har biri alohida vaqtga ega).</td></tr>
+  <tr><td>Indeks <code>Trip @@index([status, createdAt])</code>, <code>Order @@index([deliveryDate])</code></td><td>Kunlik so'rovlar tezligi.</td></tr>
+  <tr><td><code>CompanySettings</code> chegara maydonlari</td><td>6-bo'limdagi jadval.</td></tr>
+</table>
+<div class="note"><b>Muhim:</b> <code>prisma generate</code> dan keyin ishlab turgan dev-serverlarni qayta ishga tushirish kerak, aks holda yangi maydonlar bo'yicha <code>findMany</code> xato beradi. Tekshirish uchun <code>next build</code> emas, <code>tsc</code> + <code>eslint</code> ishlatiladi.</div>
+
+<h3>Hozircha qamrab olinmaydi</h3>
+<ul>
+  <li><b>Yoqilg'i sarfi</b> — tizimda yoqilg'i hisobi yo'q. Keyingi bosqichda <code>FuelLog</code> (vehicleId, litr, summa, odometr) yoki kassa xarajatining "Yoqilg'i" kategoriyasi orqali "1 m³ ga yoqilg'i" ko'rsatkichi qo'shiladi.</li>
+  <li><b>Texnik xizmat jadvali</b> (moy almashtirish, sug'urta, texosmotr muddati) — alohida modul sifatida.</li>
+</ul>
+
+<!-- ───────────── 9 ───────────── -->
+<h2>9. Fayl tuzilmasi va kod qoidalari</h2>
+<table>
+  <tr><th style="width:44%">Fayl</th><th>Vazifasi</th></tr>
+  <tr><td><code>src/lib/logistics-dashboard.ts</code></td><td>Yagona hisob funksiyasi <code>logisticsDashboard(date)</code>; turlar (<code>LogisticsDashboard</code>), <code>Level</code> hisoblash</td></tr>
+  <tr><td><code>src/lib/logistics-eta.ts</code></td><td>ETA va kechikish: oxirgi GPS + OSRM kesh (mavjud marshrut keshi qayta ishlatiladi)</td></tr>
+  <tr><td><code>src/app/(app)/dashboard/logistics-home.tsx</code></td><td>Server komponent — KPI qatori va bloklar</td></tr>
+  <tr><td><code>src/app/(app)/dashboard/logistics/timeline.tsx</code></td><td>A — Gantt jadval</td></tr>
+  <tr><td><code>src/app/(app)/dashboard/logistics/fleet.tsx</code></td><td>C — texnika holati</td></tr>
+  <tr><td><code>src/app/(app)/dashboard/logistics/alerts.tsx</code></td><td>E — ogohlantirishlar</td></tr>
+  <tr><td><code>src/app/(app)/trips/live-map.tsx</code></td><td>B — mavjud, qayta ishlatiladi</td></tr>
+  <tr><td><code>src/app/api/mobile/…/live</code> yoki server action</td><td>Jonli qism uchun yengil JSON (faqat faol reyslar)</td></tr>
+  <tr><td><code>src/app/(app)/dashboard/page.tsx</code></td><td>Yangi tab: <code>{ key: "logistics", label: "Logistika" }</code>; LOGISTICS uchun standart</td></tr>
+  <tr><td><code>src/lib/nav.ts</code></td><td>"Logistika paneli" havolasi, rollar: LOGISTICS, DIRECTOR, SUPERVISOR</td></tr>
+</table>
+<ul>
+  <li>Yangi ko'rsatkich faqat <code>logistics-dashboard.ts</code> ga qo'shiladi — UI raqam hisoblamaydi.</li>
+  <li>Holat ranglari faqat <code>Level</code> orqali; chegaralar faqat <code>CompanySettings</code> dan.</li>
+  <li>Sana va vaqt Toshkent vaqt zonasida (UTC+5) — "bugun" chegarasi server tomonda hisoblanadi.</li>
+  <li>Birliklar: hajm m³ (dona mahsulotlar — <code>unitLabel</code> orqali), masofa km, vaqt "1 s 48 d" formatida.</li>
+</ul>
+
+<!-- ───────────── 10 ───────────── -->
+<h2>10. Ruxsatlar</h2>
+<table>
+  <tr><th>Rol</th><th>Ko'rish</th><th>Amallar</th></tr>
+  <tr><td><code>LOGISTICS</code></td><td>To'liq (standart tab)</td><td>Reys ochish, holatni o'zgartirish, texnika statusi</td></tr>
+  <tr><td><code>DIRECTOR</code></td><td>To'liq ("Logistika" tabi)</td><td>Barchasi + chegaralarni sozlash</td></tr>
+  <tr><td><code>SUPERVISOR</code>, <code>PRODUCTION</code></td><td>KPI, jadval (A), xarita</td><td>Yo'q (faqat o'qish)</td></tr>
+  <tr><td><code>SALES</code></td><td>—</td><td>O'z zayavkasining reys holatini <code>/orders/[id]</code> da ko'radi</td></tr>
+  <tr><td><code>DRIVER</code>, <code>BRIGADIER</code></td><td>—</td><td>—</td></tr>
+</table>
+<p>Tekshiruv server tomonda: sahifa va har bir server action rolni qayta tekshiradi (<code>sessionVersion</code> bilan). Mobil ilovada logistika uchun alohida bo'lim keyingi bosqichda — shu <code>logisticsDashboard()</code> ni <code>/api/mobile</code> orqali ishlatadi.</p>
+
+<!-- ───────────── 11 ───────────── -->
+<h2>11. Yangilanish va unumdorlik</h2>
+<table>
+  <tr><th style="width:28%">Qism</th><th style="width:22%">Yangilanish</th><th>Usul</th></tr>
+  <tr><td>KPI, jadval, texnika, haydovchilar</td><td>Sahifa ochilganda + har 60 s</td><td>Server komponent; client'da <code>router.refresh()</code> taymeri</td></tr>
+  <tr><td>Xarita, yo'ldagi reyslar</td><td>Har 20 s</td><td>Yengil JSON: faqat LOADED/ON_ROAD reyslar va oxirgi nuqta</td></tr>
+  <tr><td>Ogohlantirishlar</td><td>Har 60 s</td><td>Kritik yangi ogohlantirish — push bildirishnoma (mavjud kanal)</td></tr>
+  <tr><td>Tendensiya (F)</td><td>Sahifa ochilganda</td><td>Kunlik agregat; tarixiy kunlar o'zgarmaydi</td></tr>
+</table>
+<ul>
+  <li>Oxirgi GPS nuqta: <code>DISTINCT ON (tripId)</code> so'rovi yoki <code>Trip.lastLat/lastLng/lastAt</code> denormalizatsiyasi (nuqtalar ko'payganda).</li>
+  <li>OSRM chaqiruvlari keshlanadi; ETA har bir so'rovda emas, GPS nuqta kelganda qayta hisoblanadi.</li>
+  <li>Maqsad: to'liq sahifa &lt; 400 ms, jonli endpoint &lt; 100 ms (50 ta faol reysgacha).</li>
+</ul>
+
+<!-- ───────────── 12 ───────────── -->
+<h2>12. Joriy etish bosqichlari</h2>
+<table>
+  <tr><th style="width:16%">Bosqich</th><th style="width:48%">Tarkibi</th><th>Natija</th></tr>
+  <tr><td><b>1 · MVP</b></td><td>Tab va navigatsiya; <code>logisticsDashboard()</code>; KPI qatori; A — jadval; C — texnika; E — asosiy ogohlantirishlar (biriktirilmagan, obyekt nuqtasi yo'q, ECO xato, uzoq ta'mir)</td><td>Dispetcher kunni bitta ekranda boshqaradi</td></tr>
+  <tr><td><b>2 · Jonli</b></td><td>Migratsiya (departedAt, arrivedAt, returnedAt, plannedAt); B — xarita dashboardda; ETA va kechikish; GPS jim ogohlantirishi; chegaralar sozlamada</td><td>Kechikish oldindan ko'rinadi</td></tr>
+  <tr><td><b>3 · Tahlil</b></td><td>D — haydovchilar reytingi; F — tendensiya va nasos jadvali; aylanish vaqti; kritik ogohlantirishlar push orqali; sana tanlash (hisobot rejimi)</td><td>Samaradorlik va texnika bandligi o'lchanadi</td></tr>
+  <tr><td><b>4 · Kengaytma</b></td><td>Yoqilg'i hisobi (<code>FuelLog</code>), texnik xizmat muddatlari, mobil ilovada logistika bo'limi, avtomatik reys taklifi (bo'sh mikser + yaqin zayavka)</td><td>Xarajat va rejalashtirish avtomatlashadi</td></tr>
+</table>
+
+<h3>Qabul qilish mezonlari (MVP)</h3>
+<ul>
+  <li>LOGISTICS roli <code>/dashboard</code> ga kirganda Logistika tabi ochiladi; boshqa rollar uchun eski ko'rinish o'zgarmaydi.</li>
+  <li>Bugungi reja m³ va yetkazilgan m³ <code>/orders</code> va <code>/trips</code> dagi qo'lda hisob bilan mos keladi.</li>
+  <li>Reyssiz zayavka ogohlantirishi reys ochilgach 60 soniya ichida yo'qoladi.</li>
+  <li>Texnika holati <code>/drivers</code> da o'zgartirilgach dashboardda darhol aks etadi.</li>
+  <li>Ekran 375 px kenglikda gorizontal aylantirishsiz ishlaydi.</li>
+</ul>
+
+<div class="foot">Insof ERP · Logistika Dashboard arxitekturasi · v1.0 · 29.09.2026</div>
+</body>
+</html>

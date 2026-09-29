@@ -12,8 +12,9 @@ export const POSITIONS: { label: string; role: Role }[] = [
   { label: "Logistika", role: "LOGISTICS" },
   { label: "Buxgalteriya", role: "ACCOUNTING" },
   { label: "Otdel kadr", role: "HR" },
-  // Snabjeniye Sklad bilan bitta bo'lim: kirim, yetkazuvchilar va qoldiq — hammasi Sklad qo'lida
   { label: "Sklad", role: "WAREHOUSE" },
+  // Snabjeniye — ta'minot (xarid): narx, yetkazuvchi, sotib olish va qabul; bosh sahifasi — ta'minot kabineti
+  { label: "Snabjeniye", role: "PROCUREMENT" },
   { label: "Kassa / bank", role: "CASHIER" },
   { label: "Direktor", role: "DIRECTOR" },
 ];
@@ -26,7 +27,7 @@ export const LOGIN_ROLE_OPTIONS: { value: Role; label: string }[] = [
 ];
 
 /** Ro'yxatdan chiqarilgan, lekin bazada xodimi qolgan bo'lishi mumkin bo'lgan eski nomlar. */
-const LEGACY: Record<string, Role> = { finance: "FINANCE", snabjeniye: "PROCUREMENT" };
+const LEGACY: Record<string, Role> = { finance: "FINANCE", snabjenie: "PROCUREMENT", "ta'minot": "PROCUREMENT" };
 
 export const roleForPosition = (position: string): Role | null => {
   const key = position.trim().toLowerCase();

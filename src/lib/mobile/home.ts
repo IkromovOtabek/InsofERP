@@ -296,19 +296,34 @@ export async function mobileHome(user: MobileUser): Promise<MobileHome> {
     }
 
     case "LOGISTICS": {
-      const [todayTrips, onRoad, planned, ecoErrors] = await Promise.all([
-        db.trip.findMany({ where: { OR: [{ createdAt: { gte: today } }, { status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }] }, orderBy: [{ status: "asc" }, { createdAt: "desc" }], take: 20, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } }),
-        db.trip.count({ where: { status: { in: ["LOADED", "ON_ROAD"] } } }),
-        db.trip.count({ where: { status: "PLANNED" } }),
-        db.trip.count({ where: { ecoError: { not: null } } }),
-      ]);
+      // Vebdagi logistika paneli bilan bir xil raqamlar — bitta `logisticsDashboard()` dan (TZ 3-bo'lim)
+      const { logisticsDashboard } = await import("@/lib/logistics-dashboard");
+      const { TRIP_PHASE, minutesLabel } = await import("@/lib/logistics");
+      const d = await logisticsDashboard();
+      const k = d.kpi;
       cards.push(
-        { key: "today", label: "Bugungi reys", value: String(todayTrips.filter((t) => t.createdAt >= today).length), tone: "brand", icon: "today" },
-        { key: "onroad", label: "Yo'lda", value: String(onRoad), tone: "info", icon: "navigate" },
-        { key: "planned", label: "Rejada", value: String(planned), tone: "warning", icon: "calendar" },
-        { key: "eco", label: "ECO xatosi", value: String(ecoErrors), hint: ecoErrors ? "tekshiring" : undefined, tone: ecoErrors ? "danger" : "success", icon: "phone-portrait" },
+        { key: "today", label: "Bugungi reyslar", value: String(k.trips), hint: `${k.done} yakunlandi`, tone: "brand", icon: "today" },
+        { key: "onroad", label: "Yo'ldagi transport", value: String(k.onRoad), hint: `${k.freeVehicles} bo'sh / ${k.totalVehicles}`, tone: "info", icon: "navigate" },
+        { key: "waiting", label: "Kutayotgan buyurtma", value: String(k.waitingOrders), hint: k.waitingQty ? `${k.waitingQty} biriktirilmagan` : undefined, tone: k.waitingOrders ? "warning" : "success", icon: "calendar" },
+        { key: "late", label: "Kechikmoqda", value: String(k.late), tone: k.late ? "danger" : "success", icon: "alarm" },
+        { key: "m3", label: "Bugungi beton", value: `${k.concreteM3} m³`, hint: `o'rt. ${minutesLabel(k.avgDeliveryMin)}`, tone: "success", icon: "cube" },
+        { key: "cost", label: "Transport xarajati", value: money(k.cost), tone: "info", icon: "wallet" },
       );
-      sections.push({ title: "Bugungi reyslar", empty: "Reys yo'q", target: "trips", rows: todayTrips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}${t.ecoStatus ? ` · ${ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus}` : ""}`, right: tripQty(t), status: t.status, tone: t.ecoError ? "danger" : TRIP_TONE[t.status] })) });
+      if (d.alerts.length) {
+        sections.push({ title: "Ogohlantirishlar", empty: "", icon: "alert-circle", rows: d.alerts.slice(0, 8).map((a, i) => {
+          const tripId = a.href.startsWith("/trips/") && !a.href.includes("new") ? a.href.slice(7) : null;
+          return { id: tripId ?? `a${i}`, title: a.title, subtitle: a.text, tone: a.level === "crit" ? "danger" as Tone : "warning" as Tone, ...(tripId ? {} : { open: a.href.includes("orderId") || a.href.startsWith("/orders") ? "orders" : "trips" }) };
+        }) });
+      }
+      const active = d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status));
+      sections.push({ title: "Faol reyslar", empty: "Faol reys yo'q", target: "trips", rows: active.map((t) => ({
+        id: t.id, title: `${t.noteNo} · ${t.customer}`,
+        subtitle: `${t.driver} · ${t.plate}${t.fix?.etaMin != null && t.phase === "ON_ROAD" ? ` · ETA ${t.fix.etaMin} daq` : ""}${t.delayMin && t.delayMin > 0 ? ` · +${t.delayMin} daq` : ""}`,
+        right: `${t.qty} ${t.unit === "m3" ? "m³" : t.unit}`, status: TRIP_PHASE[t.phase].label,
+        tone: t.openIssues ? "danger" as Tone : t.level === "crit" ? "danger" as Tone : t.level === "warn" ? "warning" as Tone : TRIP_TONE[t.status],
+      })) });
+      const waiting = d.orders.filter((o) => o.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(o.status));
+      if (waiting.length) sections.push({ title: "Transport kutayotgan buyurtmalar", empty: "", target: "orders", rows: waiting.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.deliveryTime ?? "soatsiz"} · ${o.address}`, right: `${o.remaining} ${o.unit === "m3" ? "m³" : o.unit}`, tone: o.late ? "danger" as Tone : "warning" as Tone })) });
       break;
     }
 

@@ -4,6 +4,8 @@ import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { activeBrigades } from "@/lib/brigades";
 import { distanceLabel, tripArrival, tripSteps, tripTrackStats } from "@/lib/trips";
+import { ISSUE_KIND, TRIP_PHASE, tripPhase, tripPlannedAt } from "@/lib/logistics";
+import { lastFuelPrice } from "@/lib/logistics-costs";
 import { customersHistory, STAR_LABELS } from "@/lib/finance";
 import {
   DELIVERY_KINDS, SUPPLY_LABEL, SUPPLY_OWNER, SUPPLY_STEPS, hasFact, lastPurchasePrices, plannedSum, priceDelta, priceKey,
@@ -136,6 +138,30 @@ export const NEW_BRIGADE = "__new__";
  */
 export const RECEIVER_FORM: FormField[] = [
   { name: "receiverName", label: "Obyektda kim qabul qildi", type: "text", required: true, placeholder: "F.I.Sh." },
+  // Yetkazib berish miqdorlari (Logistika TZ 11) — bo'sh qolsa qabul = yuklangan
+  { name: "acceptedQty", label: "Qabul qilingan miqdor", type: "number", hint: "Bo'sh qoldirsangiz — hammasi qabul qilingan" },
+  { name: "returnedQty", label: "Qaytarilgan miqdor", type: "number" },
+  { name: "note", label: "Izoh", type: "text" },
+];
+
+/** Haydovchi / dispetcher "Muammo" formasi — turlari `lib/logistics.ts` dagi ro'yxat. */
+export const ISSUE_FORM: FormField[] = [
+  { name: "kind", label: "Nima bo'ldi", type: "select", required: true, value: "TRAFFIC", options: Object.entries(ISSUE_KIND).filter(([k]) => k !== "DECLINED").map(([value, label]) => ({ value, label })) },
+  { name: "note", label: "Tafsilot", type: "text", placeholder: "Qayerda, qancha kutish kerak…" },
+];
+
+/** Zapravka formasi — transport va haydovchi reysdan olinadi. */
+export const fuelForm = (price: number | null): FormField[] => [
+  { name: "liters", label: "Necha litr", type: "number", required: true },
+  { name: "pricePerL", label: "1 litr narxi, so'm", type: "number", required: true, value: price ? String(price) : undefined },
+  { name: "odometerKm", label: "Probeg (spidometr), km", type: "number" },
+  { name: "station", label: "Zapravka", type: "text" },
+];
+
+/** Reysni yopish — qabul qilingan / qaytarilgan miqdor tasdiqlanadi. */
+export const closeForm = (loaded: number, accepted: number | null, returned: number | null): FormField[] => [
+  { name: "acceptedQty", label: "Qabul qilingan", type: "number", value: String(accepted ?? loaded) },
+  { name: "returnedQty", label: "Qaytarilgan", type: "number", value: returned != null ? String(returned) : undefined },
   { name: "note", label: "Izoh", type: "text" },
 ];
 
@@ -155,6 +181,15 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "trip.route": ["LOGISTICS", "DRIVER"],
   "trip.cancel": ["LOGISTICS"],
   "trip.eco": ["LOGISTICS"],
+  // Logistika TZ: obyektga keldi → tushirilmoqda → yetkazildi → zavodga qaytdi → yopildi; muammo; yoqilg'i
+  "trip.arrived": ["LOGISTICS", "DRIVER"],
+  "trip.unloading": ["LOGISTICS", "DRIVER"],
+  "trip.returned": ["LOGISTICS", "DRIVER"],
+  "trip.problem": ["LOGISTICS", "PRODUCTION", "DRIVER"],
+  "trip.fuel": ["LOGISTICS", "DRIVER"],
+  "trip.close": ["LOGISTICS"],
+  // Reysdagi ochiq muammolarni hal qilindi deb yopish (id — reys)
+  "trip.resolve": ["LOGISTICS"],
   "invoice.pay": ["CASHIER", "ACCOUNTING"],
   // Schyot yozish — veb `/invoices/new` bilan bir xil
   "order.invoice": ["SALES", "ACCOUNTING"],
@@ -280,8 +315,13 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
 // ───────────────────────── Reys / nakladnoy ─────────────────────────
 
 async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
-  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } });
+  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, site: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true, issues: { orderBy: { createdAt: "desc" } } } });
   if (!t) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
+  const phase = tripPhase(t);
+  const planned = tripPlannedAt(t, t.order);
+  const openIssues = t.issues.filter((i) => !i.resolvedAt);
+  const recent = t.status === "DELIVERED" && t.deliveredAt && Date.now() - t.deliveredAt.getTime() < 12 * 3600_000;
+  const fuel = fuelForm(await lastFuelPrice(t.vehicle.fuelType));
   // Ro'yxatda haydovchiga faqat o'z reyslari chiqadi (`lib/mobile/list.ts`), lekin kartochka
   // id bo'yicha ochiladi — begona id qo'lda yuborilsa shu yerda to'xtaydi. "Topilmadi" deymiz:
   // "ruxsat yo'q" desak, boshqa reys mavjudligini tasdiqlagan bo'lardik.
@@ -309,21 +349,38 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     if (t.status === "ON_ROAD") {
       // Marshrut ekrani reys davomida qayta ochilishi kerak: haydovchi ilovadan chiqib
       // ketsa yoki telefon qulflansa, xaritaga qaytish uchun boshqa yo'l qolmaydi.
-      if (dest) actions.push({ id: "trip.route", label: "Marshrutni ochish", tone: "brand", local: true, effect: { route: true } });
+      if (dest && !t.arrivedAt) actions.push({ id: "trip.route", label: "Marshrutni ochish", tone: "brand", local: true, effect: { route: true } });
+      // TZ: "Yetib keldim" → "Tushirishni boshladim" → "Yetkazdim". Obyektga yaqinlashguncha yopiq (1 km qoidasi).
+      if (!t.arrivedAt) {
+        actions.push({ id: "trip.arrived", label: "Yetib keldim", tone: "brand", disabled: arrival ? !arrival.near : false, hint: arrival?.reason ?? undefined });
+      } else if (!t.unloadingAt) {
+        actions.push({ id: "trip.unloading", label: "Tushirishni boshladim", tone: "brand" });
+      }
       // "Yetkazdim" obyektga yaqinlashguncha yopiq turadi — sabab tugma ostida yoziladi.
       actions.push({
         id: "trip.delivered", label: "Yetkazdim", tone: "success", form: RECEIVER_FORM, effect: { track: "stop" },
         disabled: arrival ? !arrival.near : false, hint: arrival?.reason ?? undefined,
       });
     }
+    if (recent && !t.returnedAt) actions.push({ id: "trip.returned", label: "Zavodga qaytdim", tone: "brand", confirm: "Zavodga qaytdingizmi? Mashina bo'sh deb belgilanadi." });
+    // Muammo — yo'lda ham, obyektda ham; dispetcher darhol bildirishnoma oladi
+    if (["LOADED", "ON_ROAD"].includes(t.status)) actions.push({ id: "trip.problem", label: "Muammo", tone: "danger", form: ISSUE_FORM });
+    if (["PLANNED", "LOADED", "ON_ROAD"].includes(t.status) || recent) actions.push({ id: "trip.fuel", label: "Yoqilg'i quydim", tone: "warning", form: fuel });
   } else {
     // Logist/ishlab chiqarish: qadam o'tkazib yuborilgan reysni bir marta yopa olishi kerak,
     // shuning uchun ularda bir nechta tugma bir vaqtda ochiq turadi.
     if (t.status === "PLANNED" && can(user, "trip.loaded")) actions.push({ id: "trip.loaded", label: "Yuklandi", tone: "brand", confirm: "Beton yuklandi deb belgilansinmi? Skladdan chiqim yoziladi." });
     if (["PLANNED", "LOADED"].includes(t.status) && can(user, "trip.onroad")) actions.push({ id: "trip.onroad", label: "Yo'lga chiqdi", tone: "brand" });
+    if (t.status === "ON_ROAD" && !t.arrivedAt && can(user, "trip.arrived")) actions.push({ id: "trip.arrived", label: "Obyektga keldi", tone: "brand" });
+    if (t.status === "ON_ROAD" && t.arrivedAt && !t.unloadingAt && can(user, "trip.unloading")) actions.push({ id: "trip.unloading", label: "Tushirilmoqda", tone: "brand" });
     if (["PLANNED", "LOADED", "ON_ROAD"].includes(t.status) && can(user, "trip.delivered")) {
       actions.push({ id: "trip.delivered", label: "Yetkazildi", tone: "success", form: RECEIVER_FORM });
     }
+    if (t.status === "DELIVERED" && !t.returnedAt && can(user, "trip.returned")) actions.push({ id: "trip.returned", label: "Zavodga qaytdi", tone: "brand" });
+    if (t.status === "DELIVERED" && !t.closedAt && can(user, "trip.close")) {
+      actions.push({ id: "trip.close", label: "Reysni yopish", tone: "success", form: closeForm(Number(t.qtyM3), t.acceptedQty != null ? Number(t.acceptedQty) : null, t.returnedQty != null ? Number(t.returnedQty) : null), disabled: openIssues.length > 0, hint: openIssues.length ? "Avval ochiq muammoni hal qiling" : undefined });
+    }
+    if (t.status !== "CANCELLED" && can(user, "trip.problem")) actions.push({ id: "trip.problem", label: "Muammo qayd etish", tone: "danger", form: ISSUE_FORM });
   }
   if (t.status === "PLANNED" && can(user, "trip.cancel")) actions.push({ id: "trip.cancel", label: "Bekor qilish", tone: "danger", confirm: "Reys bekor qilinsinmi?" });
   if (ecoEnabled() && can(user, "trip.eco")) actions.push({ id: "trip.eco", label: t.ecoDeliveryId ? "ECO'ga qayta yuborish" : "ECO'ga yuborish", tone: "warning" });
@@ -336,20 +393,42 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Mashina", value: t.vehicle.plate },
       // Reys miqdori zayavkadagi mahsulot birligida
       { label: "Hajm", value: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))) },
+      { label: "Bosqich", value: TRIP_PHASE[phase].label, tone: (phase === "CLOSED" || phase === "DELIVERED" ? "success" : "info") as Tone },
       { label: "Manzil", value: t.order.deliveryAddress },
+      // Obyekt kartasidagi kontakt va ko'rsatma — haydovchi obyektda kimga qo'ng'iroq qilishini bilsin
+      ...(t.order.site?.contactName || t.order.site?.contactPhone ? [{ label: "Obyektda kontakt", value: [t.order.site.contactName, t.order.site.contactPhone].filter(Boolean).join(", ") }] : []),
+      ...(t.order.site?.deliveryHours ? [{ label: "Qabul vaqti", value: t.order.site.deliveryHours }] : []),
+      ...(t.order.site?.instructions ? [{ label: "Ko'rsatma", value: t.order.site.instructions, tone: "warning" as Tone }] : []),
+      ...(planned ? [{ label: "Reja", value: dt(planned) }] : []),
       { label: "Zayavka", value: t.order.orderNo },
       ...(track ? [{ label: "Yurilgan yo'l", value: `${distanceLabel(track.meters)}${track.minutes > 0 ? ` · ${track.minutes} daq` : ""}`, tone: "brand" as Tone }] : []),
       ...(arrival?.remainingM != null ? [{ label: "Obyektgacha", value: distanceLabel(arrival.remainingM), tone: (arrival.near ? "success" : "info") as Tone }] : []),
       ...(t.loadedAt ? [{ label: "Yuklandi", value: dt(t.loadedAt) }] : []),
+      ...(t.departedAt ? [{ label: "Yo'lga chiqdi", value: dt(t.departedAt) }] : []),
+      ...(t.arrivedAt ? [{ label: "Obyektga keldi", value: dt(t.arrivedAt) }] : []),
       ...(t.deliveredAt ? [{ label: "Yetkazildi", value: dt(t.deliveredAt) }] : []),
+      ...(t.acceptedQty != null ? [{ label: "Qabul qilindi", value: String(Number(t.acceptedQty)) }] : []),
+      ...(t.returnedQty != null && Number(t.returnedQty) > 0 ? [{ label: "Qaytarildi", value: String(Number(t.returnedQty)), tone: "warning" as Tone }] : []),
+      ...(t.returnedAt ? [{ label: "Zavodga qaytdi", value: dt(t.returnedAt) }] : []),
+      ...(openIssues.length ? [{ label: "Ochiq muammo", value: openIssues.map((i) => ISSUE_KIND[i.kind]).join(", "), tone: "danger" as Tone }] : []),
       ...(t.receiverName ? [{ label: "Qabul qildi", value: t.receiverName }] : []),
       ...(t.ecoStatus ? [{ label: "Haydovchi ilovasi", value: ecoLabel(t.ecoStatus)?.label ?? t.ecoStatus, tone: "info" as Tone }] : []),
       ...(t.ecoSyncedAt ? [{ label: "ECO sinxron", value: dt(t.ecoSyncedAt) }] : []),
       ...(t.ecoError ? [{ label: "ECO xatosi", value: t.ecoError, tone: "danger" as Tone }] : []),
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
     ],
-    sections: [await stepsSection(t.id)],
-    actions,
+    sections: [
+      await stepsSection(t.id),
+      ...(t.issues.length ? [{
+        title: "Muammolar", empty: "", icon: "alert-triangle",
+        rows: t.issues.map((i) => ({ id: i.id, title: ISSUE_KIND[i.kind], subtitle: i.resolvedAt ? `Hal qilindi: ${i.resolution ?? ""}` : (i.note ?? "ochiq"), right: shortDt(i.createdAt), tone: (i.resolvedAt ? "success" : "danger") as Tone })),
+      }] : []),
+    ],
+    actions: [
+      ...actions,
+      // Ochiq muammolarni ilovadan hal qilish (logistika)
+      ...(!isDriver && openIssues.length && can(user, "trip.resolve") ? [{ id: "trip.resolve", label: `Muammoni hal qilish (${openIssues.length})`, tone: "success" as const, form: [{ name: "resolution", label: "Qanday hal qilindi", type: "text" as const, required: true }] }] : []),
+    ],
   };
 }
 

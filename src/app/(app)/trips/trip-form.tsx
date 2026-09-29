@@ -10,18 +10,20 @@ import Link from "next/link";
  * remainingM3 — hozir reysga berish mumkin bo'lgan miqdor: brigada tayyorlagani − jo'natilgani.
  * inProduction — hali sexda (brigada tasdiqlamagan). unit — zayavkadagi mahsulot birligi ("m³", "dona"…).
  */
-type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number; inProduction: number; unit: string };
+type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number; inProduction: number; unit: string; plannedAt: string };
 /** Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavka — ro'yxatga kirmaydi, sababi ko'rsatiladi. */
 type Waiting = { id: string; orderNo: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
 /** type — MIXER (beton) yoki TRUCK (dona mahsulot: plita, blok). */
-type Vehicle = { id: string; plate: string; type: string; capacityM3: number | null };
+type Vehicle = { id: string; plate: string; type: string; capacityM3: number | null; state?: string };
 const TYPE_LABEL: Record<string, string> = { MIXER: "mikser", TRUCK: "yuk mashina", PUMP: "nasos" };
 /** vehicleId — xodim kartasida biriktirilgan mikser; phoneOk — ECO topa oladigan +998… raqami bormi. */
 type Driver = { id: string; fullName: string; vehicleId: string | null; phoneOk: boolean };
 
-export function TripForm({ orders, waiting = [], vehicles, drivers }: { orders: Order[]; waiting?: Waiting[]; vehicles: Vehicle[]; drivers: Driver[] }) {
+export function TripForm({ orders, waiting = [], vehicles, drivers, initialOrderId }: { orders: Order[]; waiting?: Waiting[]; vehicles: Vehicle[]; drivers: Driver[]; initialOrderId?: string }) {
   const [state, action, pending] = useActionState(createTrip, undefined);
-  const [orderId, setOrderId] = useState(orders[0]?.id ?? "");
+  const [orderId, setOrderId] = useState(orders.find((o) => o.id === initialOrderId)?.id ?? orders[0]?.id ?? "");
+  // Rejadagi yetkazish vaqti — zayavkadan olinadi, dispetcher o'zgartira oladi (kalendar va kechikish shunga qaraydi)
+  const [plannedAt, setPlannedAt] = useState(orders.find((o) => o.id === orderId)?.plannedAt ?? "");
   // Zayavka birligiga mos texnika: beton (m³) — mikser, dona mahsulot — yuk mashina
   const wantType = (o?: Order) => (o && o.unit !== "m³" ? "TRUCK" : "MIXER");
   const firstOfType = (t: string) => vehicles.find((v) => v.type === t) ?? vehicles[0];
@@ -68,6 +70,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers }: { orders: 
   const pickOrder = (oid: string) => {
     setOrderId(oid);
     const o = orders.find((x) => x.id === oid);
+    setPlannedAt(o?.plannedAt ?? "");
     let v = vehicle;
     if (o && vehicle && vehicle.type !== wantType(o)) { v = firstOfType(wantType(o)); if (v) pickVehicle(v.id); }
     suggest(o, v);
@@ -97,7 +100,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers }: { orders: 
           error={typeMismatch ? `Zayavka ${order?.unit} da — ${TYPE_LABEL[wantType(order)]} kerak, tanlangani ${TYPE_LABEL[vehicle?.type ?? ""] ?? vehicle?.type}` : undefined}
         >
           <Select name="vehicleId" value={vehicleId} onChange={(e) => pickVehicle(e.target.value)}>
-            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} · {TYPE_LABEL[v.type] ?? v.type}{v.capacityM3 ? ` (${v.capacityM3} m³)` : ""}</option>)}
+            {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plate} · {TYPE_LABEL[v.type] ?? v.type}{v.capacityM3 ? ` (${v.capacityM3} m³)` : ""}{v.state ? ` · ${v.state}` : ""}</option>)}
           </Select>
         </Field>
         <Field
@@ -119,6 +122,9 @@ export function TripForm({ orders, waiting = [], vehicles, drivers }: { orders: 
       </div>
       <Field label={`Miqdor, ${order?.unit ?? "m³"} *`} hint={overReady ? undefined : "Texnika sig'imi va tayyor qoldiqdan kichigi taklif qilinadi"} error={overReady}>
         <Input name="qtyM3" type="number" step="0.5" min="0.5" max={order?.remainingM3} value={qty} onChange={(e) => setQty(e.target.value)} onFocus={() => !qty && suggest(order, vehicle)} required />
+      </Field>
+      <Field label="Rejadagi yetkazish vaqti" hint="Zayavkadan olinadi. Dispetcher kalendari va kechikish hisobi shu vaqtga qaraydi">
+        <Input name="plannedAt" type="datetime-local" value={plannedAt} onChange={(e) => setPlannedAt(e.target.value)} />
       </Field>
       <Field label="Izoh"><Textarea name="note" /></Field>
       <FormActions>

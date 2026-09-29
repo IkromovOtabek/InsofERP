@@ -7,13 +7,20 @@ import { PageHeader } from "@/components/ui";
 import { TripForm } from "../trip-form";
 import { unitLabel } from "@/lib/unit";
 import { READINESS_INCLUDE, orderReadiness } from "@/lib/trips";
+import { ACTIVE_TRIP, VEHICLE_LIVE, orderPlannedAt, vehicleLive } from "@/lib/logistics";
 
-export default async function NewTrip() {
+const pad = (n: number) => String(n).padStart(2, "0");
+/** Date → `<input type="datetime-local">` qiymati (mahalliy vaqt). */
+const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+export default async function NewTrip({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
   await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const { orderId } = await searchParams;
   const [orders, vehicles, drivers] = await Promise.all([
     db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, ...READINESS_INCLUDE } }),
     // Mikser ham, yuk mashina ham — dona mahsulot (plita, blok) mikserda ketmaydi; nasos yuk tashimaydi
-    db.vehicle.findMany({ where: { isActive: true, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }] }),
+    // Ta'mirdagi texnika reysga berilmaydi; band bo'lgani ro'yxatda qoladi, lekin holati yoziladi
+    db.vehicle.findMany({ where: { isActive: true, status: { not: "REPAIR" }, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }], include: { trips: { where: { status: { in: ACTIVE_TRIP } }, select: { status: true } } } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),
   ]);
   // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar; birorta ham bo'lmasa — hamma xodim
@@ -27,7 +34,8 @@ export default async function NewTrip() {
   // qoldiq zayavkadagi mahsulot birligida (beton m³, ustun/blok dona)
   const all = orders.map((o) => {
     const rd = orderReadiness(o);
-    return { id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress, remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks, unit: unitLabel(rd.unit ?? "m3") };
+    const plan = orderPlannedAt(o);
+    return { plannedAt: plan ? localInput(plan) : "", id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress, remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks, unit: unitLabel(rd.unit ?? "m3") };
   });
   const opts = all.filter((o) => o.remainingM3 > 0);
   // Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavkalar — logist nima uchun ro'yxatda yo'qligini bilsin
@@ -35,7 +43,7 @@ export default async function NewTrip() {
   return (
     <div>
       <PageHeader title="Yangi reys" subtitle="Faqat brigada tayyorlab bergan miqdor reysga beriladi · nakladnoy raqami avtomatik" />
-      <TripForm orders={opts} waiting={waiting.map((o) => ({ id: o.id, orderNo: o.orderNo, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null }))} drivers={driverList} />
+      <TripForm orders={opts} waiting={waiting.map((o) => ({ id: o.id, orderNo: o.orderNo, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? Number(v.capacityM3) : null, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))} drivers={driverList} initialOrderId={orderId} />
     </div>
   );
 }

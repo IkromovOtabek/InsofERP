@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { ensureSite } from "@/lib/logistics";
 import { audit } from "@/lib/audit";
 import { customerCredit, DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
@@ -188,11 +189,14 @@ export async function createOrder(
       await audit(tx, userId, "CREATE", "Customer", c.id, undefined, { ...c, via: "order-form" });
       customerId = c.id;
     }
+    // Obyekt kartasi (Logistika → Obyektlar): mijozning shu manzili — bor bo'lsa o'sha, yo'q bo'lsa yangisi
+    const siteId = await ensureSite(tx, customerId, input.deliveryAddress, { lat: input.lat, lng: input.lng });
     const o = await tx.order.create({
       data: {
         ...(opts?.id ? { id: opts.id } : {}),
         orderNo: await nextNo(tx, "order", "Z"),
         customerId,
+        siteId,
         deliveryDate: input.deliveryDate,
         deliveryTime: input.deliveryTime ?? null,
         deliveryAddress: input.deliveryAddress,

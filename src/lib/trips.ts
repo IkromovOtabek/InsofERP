@@ -1,9 +1,11 @@
 import { db } from "@/lib/db";
+import type { Prisma, TripIssueKind } from "@/generated/prisma";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { haversineMeters } from "@/lib/geo";
 import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
 import { soleUnit, unitLabel } from "@/lib/unit";
+import { ISSUE_KIND } from "@/lib/logistics";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -62,23 +64,65 @@ export async function tripOnRoad(id: string, userId: string, note?: string): Pro
   let t = await db.trip.findUniqueOrThrow({ where: { id } });
   if (t.status === "PLANNED") { await tripLoaded(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
   if (t.status !== "LOADED") return { changed: false, orderId: t.orderId };
-  await db.trip.update({ where: { id }, data: { status: "ON_ROAD" } });
+  await db.trip.update({ where: { id }, data: { status: "ON_ROAD", departedAt: new Date() } });
   await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "LOADED" }, { status: "ON_ROAD", note });
   return { changed: true, orderId: t.orderId };
 }
 
+/**
+ * Yetkazib berish miqdorlari (TZ "Yetkazib berish moduli"): yuklangan = `qtyM3`,
+ * qabul qilingan va qaytarilgan — obyektda aniqlanadi. Berilmasa qabul = yuklangan.
+ */
+export type DeliveryQty = { acceptedQty?: number | null; returnedQty?: number | null; comment?: string | null };
+
+function checkQty(loaded: number, q?: DeliveryQty): string | null {
+  if (!q) return null;
+  const a = q.acceptedQty, r = q.returnedQty;
+  if (a != null && (a < 0 || a > loaded + 0.001)) return `Qabul qilingan miqdor 0 … ${loaded} oralig'ida bo'lsin`;
+  if (r != null && (r < 0 || r > loaded + 0.001)) return `Qaytarilgan miqdor 0 … ${loaded} oralig'ida bo'lsin`;
+  if (a != null && r != null && a + r > loaded + 0.001) return `Qabul (${a}) + qaytgan (${r}) yuklangandan (${loaded}) ko'p`;
+  return null;
+}
+
+/**
+ * Qaytgan dona mahsulot (plita, blok) skladga qaytadi. Beton qaytmaydi — u chiqindi,
+ * shuning uchun faqat miqdor sifatida yoziladi (hisobotda "qaytarilgan").
+ */
+async function returnToStock(tx: Prisma.TransactionClient, t: { id: string; order: { items: { productId: string }[] } }, returned: number, userId: string) {
+  if (!(returned > 0)) return;
+  const productId = t.order.items[0]?.productId;
+  if (!productId) return;
+  const p = await tx.product.findUnique({ where: { id: productId }, select: { unit: true } });
+  if (!p || p.unit === "m3") return;
+  const wh = await tx.warehouse.findFirstOrThrow({ where: { isActive: true } });
+  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, productId, qty: returned, refType: "Trip", refId: t.id, note: "Obyektdan qaytdi", createdById: userId } });
+}
+
 /** → DELIVERED. Zayavkaning hamma hajmi yetkazilgan bo'lsa — zayavka DELIVERED. */
-export async function tripDelivered(id: string, userId: string, receiverName: string, note?: string): Promise<TripResult> {
+export async function tripDelivered(id: string, userId: string, receiverName: string, note?: string, q?: DeliveryQty): Promise<TripResult> {
   let t = await tripWithOrder(id);
   if (t.status === "PLANNED") { await tripLoaded(id, userId, note); t = await tripWithOrder(id); }
   if (!["LOADED", "ON_ROAD"].includes(t.status)) return { changed: false, orderId: t.orderId, error: t.status === "DELIVERED" ? undefined : "Holat mos emas" };
+  const bad = checkQty(Number(t.qtyM3), q);
+  if (bad) return { changed: false, orderId: t.orderId, error: bad };
 
   const total = t.order.items.reduce((s, i) => s + Number(i.qtyM3), 0);
   const delivered = t.order.trips.filter((x) => x.status === "DELIVERED" || x.id === id).reduce((s, x) => s + Number(x.qtyM3), 0);
+  const now = new Date();
   await db.$transaction(async (tx) => {
-    await tx.trip.update({ where: { id }, data: { status: "DELIVERED", deliveredAt: new Date(), receiverName } });
+    await tx.trip.update({
+      where: { id },
+      data: {
+        status: "DELIVERED", deliveredAt: now, receiverName,
+        // Yo'l bosqichlari o'tkazib yuborilgan bo'lsa (logist bir bosishda yopdi) — bo'sh qoladi, uydirilmaydi
+        ...(q?.acceptedQty != null ? { acceptedQty: q.acceptedQty } : {}),
+        ...(q?.returnedQty != null ? { returnedQty: q.returnedQty } : {}),
+        ...(q?.comment ? { deliveryComment: q.comment } : {}),
+      },
+    });
     if (delivered >= total - 0.001) await tx.order.update({ where: { id: t.orderId }, data: { status: "DELIVERED" } });
-    await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName, note });
+    await returnToStock(tx, t, q?.returnedQty ?? 0, userId);
+    await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName, note, ...q });
   });
 
   // Zayavkani kiritgan sotuvchi mijozga javob beradi; logistika keyingi reysni rejalashtiradi
@@ -121,6 +165,100 @@ export async function tripPickup(
   await db.trip.update({ where: { id }, data });
   await audit(db, userId, "UPDATE", "Trip", id, { pickupAddress: t.pickupAddress, pickupLat: t.pickupLat, pickupLng: t.pickupLng }, data);
   return { changed: true, orderId: t.orderId };
+}
+
+// ───────────────────────── Yo'l bosqichlari (TZ) ─────────────────────────
+
+/** ON_ROAD ichida: obyektga yetib keldi. LOADED bo'lsa avval yo'lga chiqariladi. */
+export async function tripArrived(id: string, userId: string, note?: string): Promise<TripResult> {
+  let t = await db.trip.findUniqueOrThrow({ where: { id } });
+  if (t.status === "PLANNED" || t.status === "LOADED") { await tripOnRoad(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
+  if (t.status !== "ON_ROAD") return { changed: false, orderId: t.orderId, error: "Reys yo'lda emas" };
+  if (t.arrivedAt) return { changed: false, orderId: t.orderId };
+  await db.trip.update({ where: { id }, data: { arrivedAt: new Date() } });
+  await audit(db, userId, "UPDATE", "Trip", id, { phase: "ON_ROAD" }, { phase: "ARRIVED", note });
+  return { changed: true, orderId: t.orderId };
+}
+
+/** ON_ROAD ichida: yuk tushirish boshlandi (yetib kelgani belgilanmagan bo'lsa — shu payt). */
+export async function tripUnloading(id: string, userId: string, note?: string): Promise<TripResult> {
+  let t = await db.trip.findUniqueOrThrow({ where: { id } });
+  if (!t.arrivedAt) { await tripArrived(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
+  if (t.status !== "ON_ROAD") return { changed: false, orderId: t.orderId, error: "Reys yo'lda emas" };
+  if (t.unloadingAt) return { changed: false, orderId: t.orderId };
+  await db.trip.update({ where: { id }, data: { unloadingAt: new Date() } });
+  await audit(db, userId, "UPDATE", "Trip", id, { phase: "ARRIVED" }, { phase: "UNLOADING", note });
+  return { changed: true, orderId: t.orderId };
+}
+
+/** Yetkazilgan reysdan keyin mashina zavodga qaytdi — aylanish vaqti yopiladi, mashina bo'shaydi. */
+export async function tripReturned(id: string, userId: string): Promise<TripResult> {
+  const t = await db.trip.findUniqueOrThrow({ where: { id } });
+  if (t.status !== "DELIVERED") return { changed: false, orderId: t.orderId, error: "Avval yetkazildi deb belgilang" };
+  if (t.returnedAt) return { changed: false, orderId: t.orderId };
+  await db.trip.update({ where: { id }, data: { returnedAt: new Date() } });
+  await audit(db, userId, "UPDATE", "Trip", id, { returnedAt: null }, { returnedAt: new Date() });
+  return { changed: true, orderId: t.orderId };
+}
+
+/**
+ * Reysni yopish — TZ oxirgi qadami: qabul tasdiqlandi, miqdorlar aniqlandi.
+ * Ochiq muammo bo'lsa yopilmaydi: avval hal qilinadi (aks holda e'tiroz "yo'qolib" qoladi).
+ */
+export async function tripClosed(id: string, userId: string, q?: DeliveryQty): Promise<TripResult> {
+  const t = await db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true } }, issues: { where: { resolvedAt: null }, select: { id: true } } } });
+  if (t.status !== "DELIVERED") return { changed: false, orderId: t.orderId, error: "Faqat yetkazilgan reys yopiladi" };
+  if (t.closedAt) return { changed: false, orderId: t.orderId };
+  if (t.issues.length) return { changed: false, orderId: t.orderId, error: `Ochiq muammo bor (${t.issues.length}) — avval hal qiling` };
+  const bad = checkQty(Number(t.qtyM3), q);
+  if (bad) return { changed: false, orderId: t.orderId, error: bad };
+  // Qaytgan miqdor yetkazishda allaqachon skladga yozilgan bo'lishi mumkin — faqat farqi
+  const extraReturn = q?.returnedQty != null ? q.returnedQty - Number(t.returnedQty ?? 0) : 0;
+  await db.$transaction(async (tx) => {
+    await tx.trip.update({
+      where: { id },
+      data: {
+        closedAt: new Date(), closedById: userId,
+        acceptedQty: q?.acceptedQty ?? t.acceptedQty ?? t.qtyM3,
+        ...(q?.returnedQty != null ? { returnedQty: q.returnedQty } : {}),
+        ...(q?.comment ? { deliveryComment: q.comment } : {}),
+      },
+    });
+    await returnToStock(tx, t, extraReturn, userId);
+    await audit(tx, userId, "UPDATE", "Trip", id, { closedAt: null }, { closedAt: new Date(), ...q });
+  });
+  return { changed: true, orderId: t.orderId };
+}
+
+// ───────────────────────── Muammo ─────────────────────────
+
+export async function reportTripIssue(
+  tripId: string, userId: string,
+  input: { kind: TripIssueKind; note?: string | null; source?: "DRIVER" | "LOGISTICS" | "ECO" },
+): Promise<{ id: string }> {
+  const t = await db.trip.findUniqueOrThrow({ where: { id: tripId }, include: { driver: true, vehicle: true } });
+  if (t.status === "CANCELLED") throw new Error("Reys bekor qilingan");
+  const note = input.note?.trim() || null;
+  const issue = await db.tripIssue.create({ data: { tripId, kind: input.kind, note, source: input.source ?? "LOGISTICS", createdById: userId } });
+  await audit(db, userId, "CREATE", "TripIssue", issue.id, undefined, issue);
+  // Dispetcher darhol bilishi kerak — mashina yo'lda turib qolgan bo'lishi mumkin
+  notifyAfter(() => notifyRoles(["LOGISTICS"], {
+    type: "TRIP_ISSUE",
+    title: `Muammo — ${t.deliveryNoteNo}: ${ISSUE_KIND[input.kind]}`,
+    body: `${t.driver.fullName} · ${t.vehicle.plate}${note ? ` · ${note}` : ""}`,
+    link: { key: "trips", id: tripId },
+  }, { except: userId }));
+  return { id: issue.id };
+}
+
+export async function resolveTripIssue(issueId: string, userId: string, resolution: string): Promise<{ tripId: string }> {
+  const r = resolution.trim();
+  if (!r) throw new Error("Qanday hal qilinganini yozing");
+  const i = await db.tripIssue.findUniqueOrThrow({ where: { id: issueId } });
+  if (i.resolvedAt) return { tripId: i.tripId };
+  await db.tripIssue.update({ where: { id: issueId }, data: { resolvedAt: new Date(), resolvedById: userId, resolution: r } });
+  await audit(db, userId, "UPDATE", "TripIssue", issueId, { resolvedAt: null }, { resolvedAt: new Date(), resolution: r });
+  return { tripId: i.tripId };
 }
 
 /** PLANNED → CANCELLED. */
@@ -346,7 +484,7 @@ export function readinessError(rd: OrderReadiness, qty: number): string | null {
 
 // ───────────────────────── Yangi reys ─────────────────────────
 
-export type NewTripInput = { orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null };
+export type NewTripInput = { orderId: string; vehicleId: string; driverId: string; qtyM3: number; note?: string | null; plannedAt?: Date | null };
 
 /**
  * Reys (nakladnoy) ochish — veb "Yangi reys" formasi ham, mobil ilova ham shu yerdan.
@@ -365,6 +503,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
 
   const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!v || !v.isActive) throw new Error("Texnika topilmadi yoki nofaol");
+  if (v.status === "REPAIR") throw new Error(`${v.plate} ta'mirda — boshqa transport tanlang`);
   if (v.type === "PUMP") throw new Error("Nasos yuk tashimaydi — mikser yoki yuk mashina tanlang");
   // Beton faqat mikserda ketadi; dona mahsulot (plita, blok) — yuk mashinada. Sig'im (m³) faqat mikserga tegishli.
   const items = o.items;
@@ -379,7 +518,7 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
 
   const created = await db.$transaction(async (tx) => {
     const t = await tx.trip.create({
-      data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined },
+      data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined },
     });
     await audit(tx, userId, "CREATE", "Trip", t.id, undefined, t);
     return { id: t.id, deliveryNoteNo: t.deliveryNoteNo };

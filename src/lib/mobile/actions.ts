@@ -2,7 +2,9 @@ import { z } from "zod";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import { orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
-import { tripArrival, tripCancelled, tripDelivered, tripLoaded, tripOnRoad } from "@/lib/trips";
+import { reportTripIssue, resolveTripIssue, tripArrival, tripArrived, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripReturned, tripUnloading } from "@/lib/trips";
+import { addFuelLog } from "@/lib/logistics-costs";
+import type { TripIssueKind } from "@/generated/prisma";
 import { addPayment } from "@/lib/payments";
 import { taskCancel, taskProgress } from "@/lib/tasks";
 import { clearBrigadeLeader, setBrigadeLeader } from "@/lib/brigades";
@@ -54,6 +56,8 @@ const numOf = (p: Record<string, unknown>, key: string) => {
   const n = Number(textOf(p, key).replace(/\s+/g, "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 };
+/** Bo'sh maydon — "berilmagan" (null), 0 emas: qabul miqdori bo'sh bo'lsa hammasi qabul qilingan. */
+const optNum = (p: Record<string, unknown>, key: string) => (textOf(p, key) === "" ? null : numOf(p, key));
 /** `prefix_<itemId>` maydonlaridan qator id'lari — ta'minot jadvali uchun. */
 const itemIds = (p: Record<string, unknown>, prefix: string) =>
   Object.keys(p).filter((k) => k.startsWith(`${prefix}_`)).map((k) => k.slice(prefix.length + 1));
@@ -129,10 +133,11 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
         const near = await tripArrival(id);
         if (!near.near) fail(near.reason ?? "Obyektga yetib borilmagan");
       }
-      const r = await tripDelivered(id, user.id, p.data!.receiverName, p.data!.note);
+      const q = { acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: p.data!.note || null };
+      const r = await tripDelivered(id, user.id, p.data!.receiverName, p.data!.note, q);
       if (r.error) fail(r.error);
       if (!r.changed) fail("Holat mos emas");
-      if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${p.data!.receiverName}` }));
+      if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${p.data!.receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));
       return { ok: true, message: "Yetkazildi deb belgilandi" };
     }
     // Marshrut ekrani — ilova ichidagi ish. Yangi ilova buni serverga umuman yubormaydi
@@ -144,6 +149,57 @@ export async function runMobileAction(user: MobileUser, action: string, id: stri
       if (r.error) fail(r.error);
       if (ecoEnabled()) after(() => pushTripStatus(id, "CANCELLED"));
       return { ok: true, message: "Reys bekor qilindi" };
+    }
+    // ── Logistika TZ: obyekt bosqichlari, muammo, yoqilg'i, yopish ──
+    case "trip.arrived": {
+      if (user.role === "DRIVER") {
+        const near = await tripArrival(id);
+        if (!near.near) fail(near.reason ?? "Obyektga yetib borilmagan");
+      }
+      const r = await tripArrived(id, user.id, user.role === "DRIVER" ? "Haydovchi ilovasi" : "Dispetcher (ilova)");
+      if (r.error) fail(r.error);
+      if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "ARRIVED"));
+      return { ok: true, message: "Obyektga yetib keldi" };
+    }
+    case "trip.unloading": {
+      const r = await tripUnloading(id, user.id);
+      if (r.error) fail(r.error);
+      if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "UNLOADING"));
+      return { ok: true, message: "Tushirish boshlandi" };
+    }
+    case "trip.returned": {
+      const r = await tripReturned(id, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: "Zavodga qaytdi — mashina bo'sh" };
+    }
+    case "trip.problem": {
+      const kind = textOf(payload, "kind") as TripIssueKind;
+      if (!["BREAKDOWN", "TRAFFIC", "SITE_NOT_READY", "QUALITY", "ACCIDENT", "OTHER"].includes(kind)) fail("Muammo turini tanlang");
+      await reportTripIssue(id, user.id, { kind, note: textOf(payload, "note"), source: user.role === "DRIVER" ? "DRIVER" : "LOGISTICS" }).catch((e) => fail((e as Error).message));
+      return { ok: true, message: "Muammo dispetcherga yuborildi" };
+    }
+    case "trip.resolve": {
+      const resolution = textOf(payload, "resolution");
+      if (!resolution) fail("Qanday hal qilinganini yozing");
+      const open = await db.tripIssue.findMany({ where: { tripId: id, resolvedAt: null }, select: { id: true } });
+      for (const i of open) await resolveTripIssue(i.id, user.id, resolution);
+      return { ok: true, message: `${open.length} ta muammo yopildi` };
+    }
+    case "trip.fuel": {
+      const t = await db.trip.findUniqueOrThrow({ where: { id }, select: { vehicleId: true, driverId: true } });
+      try {
+        await addFuelLog({
+          vehicleId: t.vehicleId, driverId: t.driverId, tripId: id,
+          liters: numOf(payload, "liters"), pricePerL: numOf(payload, "pricePerL"),
+          odometerKm: optNum(payload, "odometerKm") != null ? Math.round(optNum(payload, "odometerKm")!) : null, station: textOf(payload, "station"),
+        }, user.id);
+      } catch (e) { fail((e as Error).message); }
+      return { ok: true, message: "Zapravka yozildi" };
+    }
+    case "trip.close": {
+      const r = await tripClosed(id, user.id, { acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: textOf(payload, "note") || null });
+      if (r.error) fail(r.error);
+      return { ok: true, message: "Reys yopildi" };
     }
     case "trip.eco": {
       if (!ecoEnabled()) fail("ECO ulanmagan");

@@ -5,6 +5,8 @@ export type NavChild = { href: string; label: string };
 export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean };
 
 const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
+/** Logistika rahbari va dispetcher — bizda bitta LOGISTICS roli (TZ 15: Logistics Director + Dispatcher). */
+const LOGI: Role[] = ["LOGISTICS"];
 
 export const NAV: NavItem[] = [
   { href: "/dashboard",   label: "Bosh sahifa",        roles: "all", group: "Asosiy" },
@@ -19,7 +21,22 @@ export const NAV: NavItem[] = [
   { href: "/recipes",     label: "Retseptlar",         roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
   { href: "/tasks",       label: "Topshiriqlar",       roles: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"], group: "Ishlab chiqarish" },
   { href: "/brigades",    label: "Brigadalar",         roles: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"], group: "Ishlab chiqarish" },
-  { href: "/trips",       label: "Reyslar / nakladnoy", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
+  // ── Logistika kabineti (Biton Logistika TZ, 2-bo'lim). Bosh sahifa — /dashboard (LOGISTICS uchun logistika paneli) ──
+  { href: "/logistika/buyurtmalar", label: "Buyurtmalar",        roles: LOGI, group: "Logistika" },
+  { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
+  { href: "/logistika/kalendar",    label: "Dispetcher kalendari", roles: LOGI, group: "Logistika" },
+  { href: "/logistika/transport",   label: "Transport",          roles: LOGI, group: "Logistika" },
+  { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: LOGI, group: "Logistika" },
+  { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika" },
+  { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
+  { href: "/logistika/nakladnoylar", label: "Nakladnoylar",      roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/yetkazish",   label: "Yetkazib berish",    roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  // Logistika buxgalteri (TZ 15) — bizda Buxgalteriya roli: yoqilg'i, xarajat, hisobot
+  { href: "/logistika/yoqilgi",     label: "Yoqilg'i",           roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/xarajatlar",  label: "Transport xarajatlari", roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/hisobotlar",  label: "Hisobotlar",         roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"], group: "Sklad" },
   // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi
@@ -46,7 +63,7 @@ export const NAV: NavItem[] = [
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika" },
   // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar
   { href: "/mening-topshiriqlarim", label: "Mening topshiriqlarim", roles: ["BRIGADIER"], group: "Ishlab chiqarish" },
-  { href: "/drivers",     label: "Haydovchilar (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika" },
+  { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika" },
   // ── Tahlil (Team24 BI tuzilmasi) ──
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
@@ -81,7 +98,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   SUPERVISOR: "Ish boshqaruvchi",
   LOGISTICS: "Logistika",
   WAREHOUSE: "Sklad",
-  PROCUREMENT: "Snabjeniye (eski — Sklad bilan qo'shildi)",
+  PROCUREMENT: "Snabjeniye",
   ACCOUNTING: "Buxgalteriya",
   FINANCE: "Finance (eski bo'lim)",
   HR: "Otdel kadr",

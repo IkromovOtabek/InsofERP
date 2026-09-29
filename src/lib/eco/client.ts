@@ -213,7 +213,7 @@ export const eco = {
   trips: (date?: string) => call<EcoDelivery[]>("GET", `/trips${date ? `?date=${date}` : ""}`),
   trip: (ref: string) => call<EcoDelivery>("GET", `/trips/${encodeURIComponent(ref)}`),
   upsertTrip: (ref: string, p: EcoTripPayload) => call<{ created: boolean; changed: boolean; delivery: EcoDelivery }>("PUT", `/trips/${encodeURIComponent(ref)}`, p),
-  setStatus: (ref: string, to: "ACCEPTED" | "LOADING" | "EN_ROUTE" | "COMPLETED" | "CANCELLED", extra?: { at?: Date; note?: string; loadedM3?: number; acceptedM3?: number }) =>
+  setStatus: (ref: string, to: "ACCEPTED" | "LOADING" | "EN_ROUTE" | "ARRIVED" | "UNLOADING" | "COMPLETED" | "CANCELLED", extra?: { at?: Date; note?: string; loadedM3?: number; acceptedM3?: number }) =>
     call<EcoDelivery>("POST", `/trips/${encodeURIComponent(ref)}/status`, { to, ...extra, at: extra?.at?.toISOString() }),
 
   // ── spravochniklar: ERP — manba, ECO — ko'zgu ──

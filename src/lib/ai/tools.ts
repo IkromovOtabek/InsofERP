@@ -496,6 +496,40 @@ const vehiclesList: Tool = {
   },
 };
 
+const logisticsStatus: Tool = {
+  name: "logistics_status",
+  description: "Logistika: hozir yo'ldagi mashinalar, kechikayotgan reyslar, bugun/davrda yetkazilgan beton, eng ko'p ishlagan transport, logistika (yoqilg'i+transport) xarajati, obyektga yuborilgan hajm. site — obyekt/mijoz/manzil qidiruvi.",
+  parameters: { type: "object", properties: {
+    from: { type: "string", description: "YYYY-MM-DD, standart — bugun" }, to: { type: "string", description: "YYYY-MM-DD" },
+    site: { type: "string", description: "obyekt, mijoz yoki manzil (ixtiyoriy)" },
+  } },
+  run: async (a) => {
+    const { logisticsDashboard } = await import("@/lib/logistics-dashboard");
+    const { logisticsReport, avgMin, onTimePct, cost } = await import("@/lib/logistics-report");
+    const p = period(a, "today")!;
+    const d = await logisticsDashboard();
+    const r = await logisticsReport(p.from, p.to);
+    const t = r.total;
+    const late = d.trips.filter((x) => ["LOADED", "ON_ROAD"].includes(x.status) && x.level !== "ok");
+    const out = [
+      `HOZIR: yo'lda ${d.kpi.onRoad} mashina, bo'sh ${d.kpi.freeVehicles}/${d.kpi.totalVehicles}, transport kutayotgan zayavka ${d.kpi.waitingOrders}, kechikayotgan ${late.length}.`,
+      ...late.map((x) => `  kechikmoqda: ${x.noteNo} ${x.plate} ${x.driver} → ${x.customer}, +${x.delayMin} daq`),
+      `DAVR ${p.label}: ${t.trips} reys, yetkazildi ${t.delivered} (${m3(t.m3)}${t.pieces ? ` + ${fmtNum(t.pieces)} dona` : ""}), bekor ${t.cancelled}, o'z vaqtida ${pct(onTimePct(t), 0)}, o'rtacha yetkazish ${avgMin(t) ?? "—"} daq.`,
+      `Xarajat: yoqilg'i ${M(t.fuel)}, boshqa ${M(t.other)}, jami ${M(cost(t))}${t.m3 ? `, 1 m³ ga ${M(cost(t) / t.m3)}` : ""}.`,
+      `Eng ko'p ishlagan transport: ${r.byVehicle.filter((v) => v.trips).slice(0, 3).map((v) => `${v.plate} (${v.trips} reys, ${m3(v.m3)}, band ${v.utilization}%)`).join("; ") || "—"}.`,
+      `Haydovchilar: ${r.byDriver.slice(0, 3).map((x) => `${x.name} ${x.delivered} reys ${m3(x.m3)}`).join("; ") || "—"}.`,
+    ];
+    const q = str(a.site);
+    if (q) {
+      const n = normalize(q);
+      const hits = r.bySite.filter((s) => normalize(`${s.name} ${s.customer}`).includes(n));
+      out.push(hits.length ? `Obyekt «${q}»: ${hits.slice(0, 5).map((s) => `${s.name} (${s.customer}) — ${s.delivered} reys, ${m3(s.m3)}${s.pieces ? ` + ${fmtNum(s.pieces)} dona` : ""}`).join("; ")}` : `Obyekt «${q}» bu davrda topilmadi.`);
+    }
+    out.push(`Batafsil: ${link("/dashboard?view=logistics")}`);
+    return out.join("\n");
+  },
+};
+
 const dashboardSnapshot: Tool = {
   name: "dashboard_snapshot",
   description: "Umumiy holat: health score, xavflar, bugungi vazifalar, oylik sotuv, reja, ombor, qarz, segmentlar, sotuvchilar, prognoz, marketing. Faqat umumiy «holat qanday / nimaga e'tibor / nima qilay» savollari uchun (natija katta).",
@@ -503,7 +537,7 @@ const dashboardSnapshot: Tool = {
   run: () => aiSnapshot(),
 };
 
-export const TOOLS: Tool[] = [salesSummary, ordersList, customerFind, customersList, invoicesList, cashSummary, stockStatus, productionSummary, tripsList, receiptsList, planStatus, employeesList, vehiclesList, dashboardSnapshot];
+export const TOOLS: Tool[] = [salesSummary, ordersList, customerFind, customersList, invoicesList, cashSummary, stockStatus, productionSummary, tripsList, receiptsList, planStatus, employeesList, vehiclesList, logisticsStatus, dashboardSnapshot];
 
 /** Asbob natijasi juda uzun bo'lsa — kontekstni to'ldirmaslik uchun kesiladi. */
 const MAX_RESULT = 12000;

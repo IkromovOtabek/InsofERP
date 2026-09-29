@@ -1,14 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History, Route } from "lucide-react";
+import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History, Route, AlertTriangle, Coins, Flag, Undo2, Timer } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { getSession } from "@/lib/auth";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
-import { TripStatusBadge } from "../status";
-import { markLoaded, markOnRoad, cancelTrip } from "../actions";
+import { markLoaded, markOnRoad, cancelTrip, markArrived, markUnloading, markReturned } from "../actions";
+import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, PHASE_STEPS, TRIP_PHASE, tripPhase, tripPlannedAt, tripDelayMin, delayLevel, logisticsSettings, minutesLabel } from "@/lib/logistics";
+import { lastFuelPrice } from "@/lib/logistics-costs";
+import { money } from "@/lib/format";
+import { CloseTripForm, ReportIssueForm, ResolveIssueForm, TripCostForm } from "./trip-extras";
+import { DelayText, PhaseBadge } from "../../logistika/ui";
 import { distanceLabel, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
 import { TripTrackMap } from "./track-map";
 import { unitLabel, soleUnit } from "@/lib/unit";
@@ -19,7 +23,8 @@ import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { geoSearchEnabled } from "@/lib/geo";
 
-const STEPS = [{ key: "PLANNED", label: "Rejalashtirildi" }, { key: "LOADED", label: "Yuklandi" }, { key: "ON_ROAD", label: "Yo'lda" }, { key: "DELIVERED", label: "Yetkazildi" }];
+// TZ reys bosqichlari: yuklash kutilmoqda → … → yetkazildi → yopildi (oraliqlari vaqt belgilaridan)
+const STEPS = PHASE_STEPS.map((k) => ({ key: k, label: TRIP_PHASE[k].label }));
 const dt = (d: Date | null) => d ? dateTime(d) : "—";
 
 /** `104` → `1 soat 44 daq` — yo'lda o'tgan vaqt. */
@@ -28,7 +33,14 @@ const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} soat ${m % 60} daq` 
 export default async function TripPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const s = await getSession();
-  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
+  const t = await db.trip.findUnique({
+    where: { id },
+    include: {
+      order: { include: { customer: true, site: true, items: { include: { product: true } } } }, vehicle: true, driver: true,
+      issues: { orderBy: { createdAt: "desc" } },
+      fuelLogs: { orderBy: { date: "desc" } }, expenses: { orderBy: { date: "desc" } },
+    },
+  });
   if (!t || !s) notFound();
   const marks = await customerMarks([t.order.customerId]);
   const steps = await tripSteps(id);
@@ -42,6 +54,16 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const canLoad = canLog || s.role === "PRODUCTION";
   // Reys miqdori zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, dona mahsulot dona)
   const tripUnit = soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
+  const phase = tripPhase(t);
+  const settings = await logisticsSettings();
+  const planned = tripPlannedAt(t, t.order);
+  const delay = tripDelayMin(t, t.order);
+  const openIssues = t.issues.filter((i) => !i.resolvedAt);
+  const costs = [...t.fuelLogs.map((f) => ({ id: f.id, date: f.date, label: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${Number(f.liters)} l`, note: f.note, amount: Number(f.amount) })),
+    ...t.expenses.map((e) => ({ id: e.id, date: e.date, label: EXPENSE_KIND[e.kind], note: e.note, amount: Number(e.amount) }))].sort((a, b) => b.date.getTime() - a.date.getTime());
+  const costSum = costs.reduce((a, c) => a + c.amount, 0);
+  const price = await lastFuelPrice(t.vehicle.fuelType);
+  const mins = (a: Date | null, b: Date | null) => (a && b ? Math.round((b.getTime() - a.getTime()) / 60000) : null);
 
   return (
     <div>
@@ -54,7 +76,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             <LinkButton href={`/trips/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish</LinkButton>
             {t.status === "PLANNED" && canLoad && <form action={markLoaded.bind(null, id)}><Button><PackageCheck size={16} /> Yuklandi</Button></form>}
             {t.status === "LOADED" && canLog && <form action={markOnRoad.bind(null, id)}><Button><Navigation size={16} /> Yo'lga chiqdi</Button></form>}
-            {["LOADED", "ON_ROAD"].includes(t.status) && canLog && <DeliverButton tripId={id} />}
+            {t.status === "ON_ROAD" && !t.arrivedAt && canLog && <form action={markArrived.bind(null, id)}><Button variant="secondary"><Flag size={16} /> Obyektga keldi</Button></form>}
+            {t.status === "ON_ROAD" && !t.unloadingAt && canLog && <form action={markUnloading.bind(null, id)}><Button variant="secondary"><Timer size={16} /> Tushirilmoqda</Button></form>}
+            {["LOADED", "ON_ROAD"].includes(t.status) && canLog && <DeliverButton tripId={id} loaded={Number(t.qtyM3)} />}
+            {t.status === "DELIVERED" && !t.returnedAt && canLog && <form action={markReturned.bind(null, id)}><Button variant="secondary"><Undo2 size={16} /> Zavodga qaytdi</Button></form>}
             {t.status === "PLANNED" && canLog && <form action={cancelTrip.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor</Button></form>}
           </>
         }
@@ -65,8 +90,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       )}
       <Card className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <StatusSteps steps={STEPS} current={t.status === "CANCELLED" ? "PLANNED" : t.status} failed={t.status === "CANCELLED"} />
-          <TripStatusBadge status={t.status} />
+          <StatusSteps steps={STEPS} current={phase === "CANCELLED" ? "ASSIGNED" : phase} failed={phase === "CANCELLED"} />
+          <div className="flex items-center gap-2"><PhaseBadge phase={phase} />{openIssues.length > 0 && <span className="text-xs font-medium text-red-700">{openIssues.length} ochiq muammo</span>}</div>
         </div>
       </Card>
 
@@ -87,6 +112,73 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             lat={t.pickupLat ?? plant?.lat ?? null}
             lng={t.pickupLng ?? plant?.lng ?? null}
           />
+        </Card>
+      )}
+
+      {/* ── Vaqtlar (TZ: yuklash / jo'nash / yetib borish / topshirish) ── */}
+      <Card className="mt-5">
+        <CardHeader title="Reys vaqtlari" description={planned ? `Reja: ${dateTime(planned)}` : "Rejadagi vaqt yo'q (zayavkada soat ko'rsatilmagan)"} icon={Clock}
+          action={t.status !== "CANCELLED" && planned ? <span className="text-sm">Kechikish: <DelayText min={delay} level={delayLevel(delay, settings)} /></span> : undefined} />
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-6">
+          {[
+            ["Yuklandi", t.loadedAt], ["Yo'lga chiqdi", t.departedAt], ["Obyektga keldi", t.arrivedAt],
+            ["Tushirish boshlandi", t.unloadingAt], ["Yetkazildi", t.deliveredAt], ["Zavodga qaytdi", t.returnedAt],
+          ].map(([k, v]) => <div key={k as string}><div className="text-xs text-slate-500">{k as string}</div><div className="font-medium tabular">{dt(v as Date | null)}</div></div>)}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {mins(t.loadedAt, t.deliveredAt) != null && <Badge>yuklash → topshirish {minutesLabel(mins(t.loadedAt, t.deliveredAt))}</Badge>}
+          {mins(t.departedAt, t.arrivedAt) != null && <Badge>yo'l {minutesLabel(mins(t.departedAt, t.arrivedAt))}</Badge>}
+          {mins(t.arrivedAt, t.deliveredAt) != null && <Badge>obyektda {minutesLabel(mins(t.arrivedAt, t.deliveredAt))}</Badge>}
+          {mins(t.loadedAt, t.returnedAt) != null && <Badge color="blue">aylanish {minutesLabel(mins(t.loadedAt, t.returnedAt))}</Badge>}
+        </div>
+      </Card>
+
+      {/* ── Muammolar ── */}
+      {t.status !== "CANCELLED" && (
+        <Card className={`mt-5 ${openIssues.length ? "border-red-200" : ""}`}>
+          <CardHeader title="Muammolar" description="Haydovchi ilovadan, dispetcher shu yerdan, ECO (rad etish / e'tiroz) avtomatik yozadi" icon={AlertTriangle} />
+          {t.issues.length > 0 && (
+            <ul className="mb-4 space-y-2">
+              {t.issues.map((i) => (
+                <li key={i.id} className={`rounded-lg border px-3 py-2 text-sm ${i.resolvedAt ? "border-slate-200" : "border-red-200 bg-red-50"}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{ISSUE_KIND[i.kind]}{i.note ? <span className="font-normal text-slate-600"> — {i.note}</span> : null}</span>
+                    <span className="text-xs text-slate-500 tabular">{dateTime(i.createdAt)} · {i.source === "DRIVER" ? "haydovchi" : i.source === "ECO" ? "ECO" : "dispetcher"}</span>
+                  </div>
+                  {i.resolvedAt ? <div className="mt-1 text-xs text-emerald-700">Hal qilindi {dateTime(i.resolvedAt)}: {i.resolution}</div> : canLog && <ResolveIssueForm issueId={i.id} />}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canLoad && <ReportIssueForm tripId={id} />}
+        </Card>
+      )}
+
+      {/* ── Yetkazib berish va yopish ── */}
+      {t.status === "DELIVERED" && (
+        <Card className="mt-5">
+          <CardHeader title={t.closedAt ? "Reys yopilgan" : "Qabulni tasdiqlash va reysni yopish"} icon={PackageCheck}
+            description={t.closedAt ? `${dateTime(t.closedAt)}` : "Qabul qilingan va qaytarilgan miqdorni tekshiring — keyin reys yopiladi"} />
+          <div className="mb-3 grid grid-cols-3 gap-3 text-sm">
+            <div><div className="text-xs text-slate-500">Yuklangan</div><div className="font-medium tabular">{qty(t.qtyM3)}</div></div>
+            <div><div className="text-xs text-slate-500">Qabul qilingan</div><div className="font-medium tabular">{t.acceptedQty != null ? qty(t.acceptedQty) : "—"}</div></div>
+            <div><div className="text-xs text-slate-500">Qaytarilgan</div><div className="font-medium tabular">{t.returnedQty != null ? qty(t.returnedQty) : "—"}</div></div>
+          </div>
+          {t.deliveryComment && <p className="mb-3 text-sm text-slate-600">{t.deliveryComment}</p>}
+          {!t.closedAt && canLog && <CloseTripForm tripId={id} loaded={Number(t.qtyM3)} accepted={t.acceptedQty != null ? Number(t.acceptedQty) : null} returned={t.returnedQty != null ? Number(t.returnedQty) : null} />}
+        </Card>
+      )}
+
+      {/* ── Reys xarajatlari (TZ 12: reysning jami logistika tannarxi) ── */}
+      {t.status !== "CANCELLED" && (
+        <Card className="mt-5">
+          <CardHeader title="Reys xarajatlari" description={costSum ? `Jami: ${money(costSum)}${Number(t.qtyM3) ? ` · 1 birlikka ${money(costSum / Number(t.qtyM3))}` : ""}` : "Yoqilg'i, haydovchi haqi, yo'l to'lovi…"} icon={Coins} />
+          {costs.length > 0 && (
+            <ul className="mb-3 divide-y divide-slate-100 text-sm">
+              {costs.map((c) => <li key={c.id} className="flex justify-between py-1.5"><span>{c.label}{c.note ? <span className="text-slate-500"> · {c.note}</span> : null}<span className="ml-2 text-xs text-slate-400">{date(c.date)}</span></span><span className="tabular">{money(c.amount)}</span></li>)}
+            </ul>
+          )}
+          {(canLog || s.role === "ACCOUNTING") && <TripCostForm tripId={id} lastPrice={price} />}
         </Card>
       )}
 
@@ -135,6 +227,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           { k: "Manzil", v: t.order.deliveryAddress },
           { k: "Sana", v: date(t.order.deliveryDate) },
           { k: "Mijoz telefoni", v: t.order.customer.phone },
+          ...(t.order.site ? [{ k: "Obyekt", v: <Link href={`/logistika/obyektlar/${t.order.site.id}`} className="hover:underline">{t.order.site.name}</Link> }] : []),
+          ...(t.order.site?.contactName || t.order.site?.contactPhone ? [{ k: "Obyektda kontakt", v: [t.order.site.contactName, t.order.site.contactPhone].filter(Boolean).join(", ") }] : []),
+          ...(t.order.site?.deliveryHours ? [{ k: "Qabul vaqti", v: t.order.site.deliveryHours }] : []),
+          ...(t.order.site?.instructions ? [{ k: "Ko'rsatma", v: t.order.site.instructions }] : []),
           ...(t.receiverName ? [{ k: "Qabul qildi", v: t.receiverName }] : []),
           ...(t.note ? [{ k: "Izoh", v: t.note }] : []),
         ]} />

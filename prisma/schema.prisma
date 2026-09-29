@@ -102,6 +102,15 @@ model CompanySettings {
   stockWarnDays   Int      @default(7) // xomashyo shu kundan kamga yetsa — e'tibor
   stockCritDays   Int      @default(3) // shu kundan kamga yetsa — kritik (ishlab chiqarish to'xtash xavfi)
   overdueDays     Int      @default(30) // schyot shu kundan eski bo'lsa — muddati o'tgan debitorka
+  // ── Logistika chegaralari — /logistika/sozlamalar da logistika rahbari sozlaydi ──
+  lateWarnMin     Int      @default(15) // reys rejadagi vaqtdan shuncha daqiqa kechiksa — e'tibor
+  lateCritMin     Int      @default(45) // shuncha daqiqa — kritik
+  gpsSilentMin    Int      @default(15) // yo'ldagi mashinadan GPS shuncha daqiqa kelmasa — ogohlantirish
+  loadedWarnMin   Int      @default(30) // yuklangan beton zavoddan shuncha daqiqa chiqmasa — ogohlantirish (qotish xavfi)
+  assignLeadMin   Int      @default(60) // yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik
+  shiftStartHour  Int      @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
+  shiftEndHour    Int      @default(20) // smena tugashi
+  avgSpeedKmh     Int      @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
   updatedAt       DateTime @updatedAt
 }
 
@@ -120,6 +129,7 @@ model Customer {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  sites       Site[]
 
   orders   Order[]
   invoices Invoice[]
@@ -318,8 +328,31 @@ model Vehicle {
   ecoSyncedAt  DateTime? // oxirgi muvaffaqiyatli sinxron (ikki tomonga)
   ecoError     String? // oxirgi sinxron xatosi
 
-  trips   Trip[]
-  drivers Employee[] @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar
+  // ── Transport kartasi (Logistika → Transport) ──
+  brand            String? // marka: Howo, Shacman, Kamaz...
+  model            String? // modeli
+  year             Int? // ishlab chiqarilgan yili
+  fuelType         FuelType? // yoqilg'i turi
+  fuelNormL100     Decimal?  @db.Decimal(6, 2) // yoqilg'i normasi, l / 100 km — sarf nazorati uchun
+  odometerKm       Int? // oxirgi ma'lum probeg (zapravkada yoziladi)
+  hasGps           Boolean   @default(false) // doimiy GPS-treker o'rnatilgan (telefon GPS'idan tashqari)
+  inspectionUntil  DateTime? // texnik ko'rik muddati
+  insuranceCompany String? // sug'urta kompaniyasi
+  insurancePolicy  String? // polis raqami
+  insuranceUntil   DateTime? // sug'urta muddati
+  note             String?
+
+  trips    Trip[]
+  drivers  Employee[]         @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar
+  fuelLogs FuelLog[]
+  expenses TransportExpense[]
+}
+
+enum FuelType {
+  DIESEL // dizel
+  PETROL // benzin
+  METHANE // metan
+  PROPANE // propan
 }
 
 model Employee {
@@ -351,6 +384,7 @@ model Employee {
   licenseCategory  String? // guvohnoma toifalari, masalan "B, C, CE"
   licenseExpiry    DateTime? // guvohnoma amal qilish muddati
   vehicleId        String? // biriktirilgan texnika (mikser/nasos)
+  workSchedule     String? // ish grafigi: "08:00–20:00, 2/2", "Tungi smena" — dispetcher uchun
 
   userId      String?   @unique // tizimga kiradigan xodim uchun login
   ecoUserId   String?   @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
@@ -367,6 +401,8 @@ model Employee {
   hrDocs           HrDocument[]
   attendance       Attendance[]
   deletionRequests AccountDeletionRequest[]
+  fuelLogs         FuelLog[]
+  transportCosts   TransportExpense[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -697,6 +733,8 @@ model Order {
   // Bo'lmasa: haydovchida navigatsiya ishlamaydi, ETA taxminiy, "yetib bordi" avtomatik belgilanmaydi.
   lat              Float?
   lng              Float?
+  /// Obyekt kartasi (Logistika → Obyektlar) — zayavka ochilganda mijoz + manzil bo'yicha topiladi yoki yaratiladi
+  siteId           String?
   /// Zavoddan obyektgacha masofa, km — yo'l bo'yicha (OSRM); OSRM javob bermasa to'g'ri chiziq
   distanceKm       Decimal?    @db.Decimal(8, 2)
   /// Masofa qanday olingan: ROUTE — yo'l bo'yicha, LINE — to'g'ri chiziq
@@ -719,6 +757,7 @@ model Order {
   updatedAt        DateTime    @updatedAt
 
   customer  Customer          @relation(fields: [customerId], references: [id])
+  site      Site?             @relation(fields: [siteId], references: [id])
   createdBy User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
   items     OrderItem[]
   batches   ProductionBatch[]
@@ -726,6 +765,9 @@ model Order {
   invoices  Invoice[]
   tasks     BrigadeTask[]
   payments  Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
+
+  @@index([deliveryDate])
+  @@index([siteId])
 }
 
 model OrderItem {
@@ -926,10 +968,141 @@ model Trip {
   ecoSyncedAt   DateTime? // oxirgi muvaffaqiyatli yuborish/qabul
   ecoError      String? // oxirgi xato (ko'rsatiladi, keyingi muvaffaqiyatda tozalanadi)
 
-  order     Order          @relation(fields: [orderId], references: [id])
-  vehicle   Vehicle        @relation(fields: [vehicleId], references: [id])
-  driver    Employee       @relation("TripDriver", fields: [driverId], references: [id])
+  // ── Reys bosqichlari vaqti (Logistika TZ) ──
+  // Holat (status) o'zgarmaydi: "Obyektga keldi", "Tushirilmoqda", "Yopildi" — ON_ROAD/DELIVERED
+  // ichidagi bosqichlar, ular shu vaqtlardan chiqariladi (`tripPhase`, lib/logistics.ts).
+  plannedAt   DateTime? // rejadagi yetkazish vaqti (dispetcher kalendari; bo'lmasa zayavka sanasi+soati)
+  departedAt  DateTime? // yo'lga chiqdi
+  arrivedAt   DateTime? // obyektga yetib keldi
+  unloadingAt DateTime? // tushirish boshlandi
+  returnedAt  DateTime? // zavodga qaytdi — aylanish vaqti shu bilan yopiladi
+  closedAt    DateTime? // reys yopildi (qabul tasdiqlandi, xarajatlar kiritildi)
+  closedById  String?
+
+  // ── Yetkazib berish (Delivery) ──
+  acceptedQty     Decimal? @db.Decimal(18, 3) // mijoz qabul qilgan miqdor (bo'lmasa = qtyM3)
+  returnedQty     Decimal? @db.Decimal(18, 3) // qaytarilgan miqdor (ortiqcha / sifat)
+  deliveryComment String? // yetkazishdagi izoh
+
+  order     Order              @relation(fields: [orderId], references: [id])
+  vehicle   Vehicle            @relation(fields: [vehicleId], references: [id])
+  driver    Employee           @relation("TripDriver", fields: [driverId], references: [id])
   positions TripPosition[]
+  issues    TripIssue[]
+  fuelLogs  FuelLog[]
+  expenses  TransportExpense[]
+
+  @@index([status, createdAt])
+}
+
+/// Reysdagi muammo — haydovchi ilovadan, dispetcher vebdan yoki ECO (rad etish, e'tiroz) yozadi.
+/// Ochiq muammo bo'lsa zayavka logistikada "Muammo mavjud" bo'lib ko'rinadi.
+model TripIssue {
+  id           String        @id @default(cuid())
+  tripId       String
+  kind         TripIssueKind
+  note         String?
+  source       String        @default("LOGISTICS") // DRIVER | LOGISTICS | ECO
+  createdById  String
+  createdAt    DateTime      @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolution   String? // qanday hal qilindi
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId])
+  @@index([resolvedAt])
+}
+
+enum TripIssueKind {
+  BREAKDOWN // mashina buzildi
+  TRAFFIC // tirbandlik / yo'l yopiq
+  SITE_NOT_READY // obyekt tayyor emas (qabul qiluvchi yo'q, joy yo'q)
+  QUALITY // sifat / hajm bo'yicha e'tiroz
+  ACCIDENT // YTH
+  DECLINED // haydovchi reysni rad etdi
+  OTHER
+}
+
+/// Obyekt — mijozning qurilish maydoni. Bir mijozda bir nechta obyekt bo'ladi.
+/// Kontakt, qabul vaqti va maxsus ko'rsatma haydovchiga reys kartasida ko'rinadi.
+model Site {
+  id            String   @id @default(cuid())
+  customerId    String
+  name          String
+  address       String
+  lat           Float?
+  lng           Float?
+  contactName   String?
+  contactPhone  String?
+  deliveryHours String? // qabul qilish vaqti: "08:00–18:00"
+  instructions  String? // maxsus ko'rsatma: kirish darvozasi, nasos joyi, yo'l cheklovi...
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  orders   Order[]
+
+  @@index([customerId])
+}
+
+/// Zapravka — yoqilg'i quyilgani. Haydovchi ilovadan yoki logistika vebdan kiritadi.
+model FuelLog {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  vehicleId   String
+  driverId    String?
+  tripId      String?
+  fuelType    FuelType
+  liters      Decimal  @db.Decimal(10, 2)
+  pricePerL   Decimal  @db.Decimal(12, 2)
+  amount      Decimal  @db.Decimal(18, 2) // liters × pricePerL
+  odometerKm  Int?
+  station     String? // zapravka nomi
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  vehicle Vehicle   @relation(fields: [vehicleId], references: [id])
+  driver  Employee? @relation(fields: [driverId], references: [id])
+  trip    Trip?     @relation(fields: [tripId], references: [id])
+
+  @@index([date])
+  @@index([vehicleId, date])
+}
+
+/// Transport xarajati (yoqilg'idan tashqari): haydovchi haqi, yo'l, ta'mir, jarima...
+/// Pul harakati emas — logistika tannarxi. Kassadan to'lov Kirim-Chiqimda alohida yuritiladi.
+model TransportExpense {
+  id          String               @id @default(cuid())
+  date        DateTime             @default(now())
+  kind        TransportExpenseKind
+  vehicleId   String?
+  driverId    String?
+  tripId      String?
+  amount      Decimal              @db.Decimal(18, 2)
+  note        String?
+  createdById String
+  createdAt   DateTime             @default(now())
+
+  vehicle Vehicle?  @relation(fields: [vehicleId], references: [id])
+  driver  Employee? @relation(fields: [driverId], references: [id])
+  trip    Trip?     @relation(fields: [tripId], references: [id])
+
+  @@index([date])
+}
+
+enum TransportExpenseKind {
+  DRIVER_PAY // haydovchi haqi (reys uchun)
+  ROAD // yo'l, ko'prik, kirish to'lovi
+  REPAIR // ta'mirlash
+  PARTS // ehtiyot qism, shina, moy
+  PARKING // turargoh
+  FINE // jarima
+  WASH // yuvish
+  OTHER
 }
 
 /// Reys davomida haydovchi ilovasidan kelgan GPS nuqtalari.
