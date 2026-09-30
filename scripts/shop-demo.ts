@@ -28,6 +28,17 @@ const NEW_PRODUCTS: [string, string, string, number, string, string | null][] = 
   ["KS10", "Quduq halqasi KS 10-9", "dona", 420000, "SHOP-JBI", null],
   ["KB600", "Gazoblok 600x300x200 (D500)", "dona", 16000, "SHOP-BLOK", null],
   ["SV6", "Svaya S 60.30", "dona", 1350000, "SHOP-JBI", null],
+  ["M100", "Beton M100 (B7.5)", "m3", 450000, "SHOP-BETON", "B7.5"],
+  ["RM100", "Qurilish qorishmasi M100", "m3", 420000, "SHOP-BETON", null],
+  ["PK60", "Kovak plita PK 60.12", "dona", 2100000, "SHOP-JBI", null],
+  ["2PB17", "Peremichka 2PB 17-2", "dona", 65000, "SHOP-JBI", null],
+  ["1PP10", "Quduq qopqog'i 1PP 10-1", "dona", 280000, "SHOP-JBI", null],
+  ["BR80", "Bog' bordyuri BR 100.20.8", "dona", 28000, "SHOP-OBOD", null],
+  ["TP6", "Brusschatka 6 sm", "m2", 82000, "SHOP-OBOD", null],
+  ["LT50", "Suv lotogi 500x160", "dona", 38000, "SHOP-OBOD", null],
+  ["FBS12", "FBS blok 12.4.6", "dona", 140000, "SHOP-BLOK", null],
+  ["BB390", "Beton blok 390x190x188 (kovak)", "dona", 6500, "SHOP-BLOK", null],
+  ["KZ390", "Keramzitoblok 390x190x188", "dona", 7500, "SHOP-BLOK", null],
 ];
 const EXISTING_GROUP: Record<string, string> = { M200: "SHOP-BETON", M250: "SHOP-BETON", M300: "SHOP-BETON", M350: "SHOP-BETON", USTUN: "SHOP-JBI", FBS24: "SHOP-BLOK", "085": "SHOP-JBI" };
 
@@ -46,6 +57,17 @@ const SHOP: Record<string, { d: string; badge?: string; min?: number; sort: numb
   KS10: { sort: 22, min: 2, d: "Quduq va kanalizatsiya uchun KS 10-9 halqasi, ichki diametri 1 m. Qopqoq alohida buyuriladi." },
   SV6: { sort: 23, min: 4, d: "Qoziq (svaya) poydevori uchun S 60.30 — zaif gruntlarda ishonchli asos." },
   BR100: { sort: 30, badge: "Top", min: 50, d: "Yo'l va yo'lka chetiga BR 100.30.15 bordyuri. Vibropresslangan, ayozga chidamli." },
+  M100: { sort: 7, min: 2, d: "Tayyorlov (podbetonka) qatlami va yuk tushmaydigan joylar uchun eng arzon beton." },
+  RM100: { sort: 8, min: 1, d: "G'isht va blok terish, suvoq uchun tayyor qorishma. Mikserda yetkaziladi, 2 soat ichida ishlatish tavsiya etiladi." },
+  FBS12: { sort: 12, min: 10, d: "FBS 12.4.6 — yarim o'lchamli poydevor bloki: burchak va to'ldirish qatorlari uchun." },
+  BB390: { sort: 13, badge: "Top", min: 500, d: "Kovak beton blok 390x190x188: devor, to'siq va xo'jalik binolari uchun arzon yechim." },
+  KZ390: { sort: 14, min: 500, d: "Keramzitoblok — yengil, issiqlikni yaxshi saqlaydi. Uy va dala hovli devorlari uchun." },
+  PK60: { sort: 24, min: 2, d: "PK 60.12 kovak yopma plitasi (6 m). Kran bilan tushirish va montaj xizmati bor." },
+  "2PB17": { sort: 25, min: 10, d: "2PB 17-2 peremichka — eshik va deraza o'rinlari ustiga. Armaturali, yuk ko'taruvchi." },
+  "1PP10": { sort: 26, badge: "Yangi", min: 1, d: "KS 10 halqasi uchun 1PP 10-1 qopqoq plitasi, lyuk teshigi bilan." },
+  BR80: { sort: 32, min: 50, d: "Bog' bordyuri BR 100.20.8: gulzor, yo'lak va maysazor chetlari uchun." },
+  TP6: { sort: 33, badge: "Yangi", min: 20, d: "6 sm brusschatka: piyoda yo'laklari va hovlilar uchun. Kulrang, qizil, jigarrang." },
+  LT50: { sort: 34, min: 20, d: "Yomg'ir suvi uchun beton lotok 500x160: hovli, yo'l va avtoturargoh chetlariga." },
   TP8: { sort: 31, min: 20, price: 89000, badge: "Chegirma", d: "8 sm qalinlikdagi trotuar plitkasi: hovli, avtoturargoh va yo'laklar uchun. Kulrang va qizil rang." },
 };
 
