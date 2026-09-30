@@ -112,7 +112,19 @@ export type RegisterImportResult = {
   payments: number;
   amount: number;
   unknownPayType: number;
+  /** Jurnalda allaqachon bor qatorlar — qayta yozilmadi (fayl ikkinchi marta yuklangan). */
+  skipped: number;
 };
+
+/**
+ * Qatorning "barmoq izi": bir xil kun, mijoz, nakladnoy (bo'lmasa mashina), mahsulot, miqdor va summa.
+ * Shu kalit jurnalda bo'lsa qator qayta yozilmaydi — aks holda kassa kirimi ikki barobar bo'lardi.
+ */
+function rowKey(x: { date: Date; customerId: string; ttn?: string | null; vehicleNo?: string | null; productName: string; qty: number; total: number }) {
+  const day = x.date.toISOString().slice(0, 10);
+  const doc = (x.ttn?.trim() || `mash:${x.vehicleNo?.trim() ?? ""}`).toLowerCase();
+  return [day, x.customerId, doc, x.productName.trim().toLowerCase(), x.qty.toFixed(3), Math.round(x.total)].join("|");
+}
 
 /**
  * Import: har qator jurnalga tushadi, `toCash` bo'lsa yana kassa kirimi (Payment) yoziladi.
@@ -127,10 +139,28 @@ export async function importSalesRegister(input: RegisterImportInput, userId: st
       throw new Error(`Bunday mijoz yo'q: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "…" : ""}. "Ro'yxatda yo'q mijozlarni yaratish" ni belgilang.`);
     }
 
-    let payments = 0, amount = 0, unknownPayType = 0;
+    // Jurnalda bor qatorlar (shu mijozlar, shu kunlar oralig'ida) — dublikat tekshiruvi uchun
+    const dates = input.rows.map((r) => r.date.getTime()).filter(Number.isFinite);
+    const seen = new Set<string>();
+    if (dates.length) {
+      const existing = await tx.salesRegister.findMany({
+        where: {
+          customerId: { in: [...new Set([...result.values()].map((c) => c.id))] },
+          date: { gte: new Date(Math.min(...dates) - 86_400_000), lte: new Date(Math.max(...dates) + 86_400_000) },
+        },
+        select: { date: true, customerId: true, ttn: true, vehicleNo: true, productName: true, qty: true, total: true },
+      });
+      for (const e of existing) seen.add(rowKey({ ...e, qty: Number(e.qty), total: Number(e.total) }));
+    }
+
+    let payments = 0, amount = 0, unknownPayType = 0, skipped = 0, written = 0;
     for (const r of input.rows) {
       const customer = result.get(flat(r.customer))!;
       const a = rowAmounts(r);
+      const key = rowKey({ date: r.date, customerId: customer.id, ttn: r.ttn, vehicleNo: r.vehicleNo, productName: r.productName, qty: a.qty, total: a.total });
+      if (seen.has(key)) { skipped++; continue; }
+      seen.add(key);
+      written++;
       const kind = payKind(r.payType ?? "");
       if (!kind) unknownPayType++;
       const accountId = kind === "BANK" ? input.bankAccountId : input.cashAccountId;
@@ -162,12 +192,14 @@ export async function importSalesRegister(input: RegisterImportInput, userId: st
       });
     }
 
+    if (!written) throw new Error(`Bu fayldagi ${skipped} ta qatorning hammasi jurnalda allaqachon bor — fayl oldin yuklangan`);
+
     // Har qator uchun emas — butun partiya uchun bitta audit yozuvi
     await audit(tx, userId, "CREATE", "SalesRegister", batch, undefined, {
-      rows: input.rows.length, customers: result.size, createdCustomers: created, payments, amount, toCash: input.toCash,
+      rows: written, skipped, customers: result.size, createdCustomers: created, payments, amount, toCash: input.toCash,
     });
 
-    return { batch, rows: input.rows.length, customers: result.size, createdCustomers: created, payments, amount, unknownPayType };
+    return { batch, rows: written, customers: result.size, createdCustomers: created, payments, amount, unknownPayType, skipped };
   }, { timeout: 120_000, maxWait: 15_000 });
 }
 

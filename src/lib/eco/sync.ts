@@ -126,18 +126,22 @@ export async function applyEcoStatus(e: EcoEvent): Promise<{ applied: boolean; t
   const who = e.driver?.fullName ?? t.driver.fullName;
   const note = `ECO: ${who}${e.note ? ` — ${e.note}` : ""}`;
 
+  // ERP bu o'tishni qabul qilmasa (reys bekor qilingan, holat mos emas) — xato yashirilmasin:
+  // dispetcher ECO'dagi holat bilan ERP farq qilayotganini ko'rsin
+  let applyError: string | null = null;
+  const take = (r: { error?: string } | void) => { if (r && r.error) applyError = r.error; };
   if (!e.byIntegration) {
-    if (e.to === "LOADING") await tripLoaded(t.id, userId, note);
-    else if (e.to === "EN_ROUTE") await tripOnRoad(t.id, userId, note);
+    if (e.to === "LOADING") take(await tripLoaded(t.id, userId, note));
+    else if (e.to === "EN_ROUTE") take(await tripOnRoad(t.id, userId, note));
     // Obyektga keldi (geofence yoki haydovchi) / tushirish boshlandi — reys bosqich vaqtlari
-    else if (e.to === "ARRIVED") await tripArrived(t.id, userId, note);
-    else if (e.to === "UNLOADING") await tripUnloading(t.id, userId, note);
+    else if (e.to === "ARRIVED") take(await tripArrived(t.id, userId, note));
+    else if (e.to === "UNLOADING") take(await tripUnloading(t.id, userId, note));
     else if (e.to === "COMPLETED") {
       // Mijoz imzolagan hajm — kam bo'lsa farqi "qabul qilinmagan" bo'lib yetkazish hisobotida chiqadi
       const accepted = e.acceptedM3 != null && e.acceptedM3 > 0 ? Math.min(e.acceptedM3, Number(t.qtyM3)) : null;
-      await tripDelivered(t.id, userId, e.note?.trim() || "Haydovchi ilovasi (mijoz imzosi)", note, accepted != null ? { acceptedQty: accepted } : undefined);
+      take(await tripDelivered(t.id, userId, e.note?.trim() || "Haydovchi ilovasi (mijoz imzosi)", note, accepted != null ? { acceptedQty: accepted } : undefined));
     }
-    else if (e.to === "CANCELLED") await tripCancelled(t.id, userId, note);
+    else if (e.to === "CANCELLED") take(await tripCancelled(t.id, userId, note));
 
     // Rad etish / muvaffaqiyatsiz / e'tiroz — logistika "Muammolar" ro'yxatiga tushadi (bir marta)
     const issueKind: TripIssueKind | null = e.to === "DECLINED" ? "DECLINED" : e.to === "DISPUTED" ? "QUALITY" : e.to === "FAILED" ? (/yo'l|yopiq|tirband/i.test(e.note ?? "") ? "TRAFFIC" : /nosoz|buzil/i.test(e.note ?? "") ? "BREAKDOWN" : "OTHER") : null;
@@ -149,6 +153,7 @@ export async function applyEcoStatus(e: EcoEvent): Promise<{ applied: boolean; t
   const problem = e.to === "DECLINED" ? `Haydovchi reysni rad etdi${e.note ? `: ${e.note}` : ""} — boshqa haydovchi bering`
     : e.to === "FAILED" ? `Reys muvaffaqiyatsiz${e.note ? `: ${e.note}` : ""}`
     : e.to === "DISPUTED" ? `Mijoz e'tiroz bildirdi${e.note ? `: ${e.note}` : ""}`
+    : applyError ? `ECO'da «${e.to}», ERP qabul qilmadi: ${applyError}`
     : null;
   await db.trip.update({ where: { id: t.id }, data: { ecoDeliveryId: e.deliveryId, ecoStatus: e.to, ecoSyncedAt: new Date(), ecoError: problem } });
   return { applied: true, trip: t.id };

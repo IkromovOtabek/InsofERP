@@ -314,6 +314,8 @@ type MergePair = { keepId?: unknown; dropIds?: unknown };
  * keyin ortiqcha yozuvlar o'chiriladi — shuning uchun qaysi birini qoldirsa ham hech narsa yo'qolmaydi.
  * Ko'chirilgan retseptlar arxiv bo'lib qoladi (faol retsept bittaligi buzilmasin).
  */
+class MergeError extends Error {}
+
 export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession([...CATALOG_ROLES]);
   const r = parseForm(mergeSchema, fd);
@@ -334,6 +336,8 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
       for (const dropId of job.dropIds) {
         const drop = await tx.product.findUnique({ where: { id: dropId } });
         if (!drop || drop.id === keep.id) continue;
+        // m³ beton bilan dona mahsulotni birlashtirsa qoldiqlar bir-biriga qo'shilib ketardi
+        if (drop.unit !== keep.unit) throw new MergeError(`«${drop.name}» (${drop.unit}) va «${keep.name}» (${keep.unit}) birligi har xil — birlashtirib bo'lmaydi`);
 
         const [items, batches, moves, leads, recipes, keepRecipes] = await Promise.all([
           tx.orderItem.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
@@ -360,7 +364,8 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
       await audit(tx, s.userId, "UPDATE", "Product", keep.id, undefined, { mergedFrom: job.dropIds });
     }
     return { merged, moved };
-  }, { timeout: 120_000, maxWait: 20_000 });
+  }, { timeout: 120_000, maxWait: 20_000 }).catch((e: Error) => { if (e instanceof MergeError) return { error: e.message }; throw e; });
+  if ("error" in out) return { error: out.error };
 
   if (!out.merged) return { error: "Birlashtiriladigan mahsulot topilmadi (ehtimol allaqachon birlashtirilgan)" };
   refresh();

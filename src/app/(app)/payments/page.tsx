@@ -16,7 +16,7 @@ import { deleteImportBatch } from "./actions";
  *  · To'lovlar — qo'lda qayd etilgan mijoz to'lovlari;
  *  · Realizatsiya jurnali — Excel'dan yuklangan kunlik jo'natma jadvali (mijoz nomi bosilsa uning sahifasi).
  */
-export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string }> }) {
+export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string; skipped?: string }> }) {
   const sp = await searchParams;
   const s = await getSession();
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s?.role ?? "");
@@ -59,7 +59,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       ]} />
 
       {tab === "tolovlar" ? <PaymentsTab /> : (
-        <JurnalTab where={regWhere} batch={batch} canDelete={canDelete} from={from} to={to}
+        <JurnalTab where={regWhere} batch={batch} skipped={Number(sp.skipped) || 0} canDelete={canDelete} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}
     </div>
@@ -104,8 +104,8 @@ async function PaymentsTab() {
 
 /* ───────── Realizatsiya jurnali ───────── */
 
-async function JurnalTab({ where, batch, canDelete, from, to, totals }: {
-  where: Prisma.SalesRegisterWhereInput; batch?: string; canDelete: boolean; from?: Date; to?: Date;
+async function JurnalTab({ where, batch, skipped = 0, canDelete, from, to, totals }: {
+  where: Prisma.SalesRegisterWhereInput; batch?: string; skipped?: number; canDelete: boolean; from?: Date; to?: Date;
   totals: { rows: number; qty: number; sum: number; nds: number; total: number };
 }) {
   const [rows, byCustomer, imports] = await Promise.all([
@@ -124,6 +124,7 @@ async function JurnalTab({ where, batch, canDelete, from, to, totals }: {
       {batch && (
         <Callout tone="success" title="Excel importi">
           Shu partiyadagi {totals.rows} ta qator ko&apos;rsatilmoqda.{" "}
+          {skipped > 0 && <>{skipped} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.{" "}</>}
           <Link href="/payments?tab=jurnal" className="font-medium underline">Butun jurnalni ko&apos;rish</Link>
           {canDelete && (
             <form action={deleteImportBatch.bind(null, batch)} className="mt-2">

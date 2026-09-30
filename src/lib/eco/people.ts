@@ -101,7 +101,9 @@ async function rememberEmployee(id: string, data: { ecoUserId?: string; ecoActiv
 
 /** ERP'da telefon erkin formatda saqlanadi (998…, +998…, 90 123 45 67) — solishtirish normalizatsiyadan keyin. */
 async function findByPhone(phone: string) {
-  const list = await db.employee.findMany({ where: { ecoUserId: null, phone: { not: null } }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }] });
+  // Ishdan bo'shaganlar hisobga olinmaydi: SIM-karta boshqa odamga o'tgan bo'lsa, yangi odam
+  // eski xodimning kartasi (va reyslar tarixi) bilan bog'lanib qolardi
+  const list = await db.employee.findMany({ where: { ecoUserId: null, phone: { not: null }, firedAt: null }, orderBy: [{ isActive: "desc" }, { createdAt: "asc" }] });
   return list.find((x) => normalizePhone(x.phone) === phone) ?? null;
 }
 
@@ -134,6 +136,9 @@ export async function applyEcoDriver(e: EcoDriverEvent): Promise<{ applied: bool
         phone,
         ecoUserId: e.userId,
         ecoActive: e.isActive,
+        // Ilovada o'zi yozilgan, zavod hali tasdiqlamagan odam ERP'da faol haydovchi bo'lmaydi —
+        // aks holda reys formasida chiqib, unga reys biriktirib yuborilishi mumkin edi
+        isActive: e.isActive,
         ecoSyncedAt: new Date(),
       },
     });
@@ -150,6 +155,8 @@ export async function applyEcoDriver(e: EcoDriverEvent): Promise<{ applied: bool
     ecoError: null,
     ...(takeName ? { fullName: e.fullName!.trim() } : {}),
     ...(existing.phone ? {} : { phone }),
+    // Zavod ilovada tasdiqladi — tasdiqlanmagani uchun nofaol turgan karta ochiladi (ishdan bo'shagan emas)
+    ...(e.reason === "approved" && e.isActive && !existing.isActive && !existing.firedAt ? { isActive: true } : {}),
   };
   const updated = await db.employee.update({ where: { id: existing.id }, data });
   if (takeName || existing.ecoUserId !== e.userId || existing.ecoActive !== e.isActive) {
@@ -173,6 +180,13 @@ export async function applyEcoVehicle(e: EcoVehicleEvent): Promise<{ applied: bo
     });
     await audit(db, userId, "CREATE", "Vehicle", created.id, undefined, { ...created, source: "eco" });
     return { applied: true, vehicleId: created.id, created: true };
+  }
+  // ERP'dagi tahrir ECO'ga yetib bormagan bo'lsa (`ecoError`) — ERP qiymati ustun: avval uni qayta
+  // yuboramiz. Aks holda to'liq sinxron ERP'da o'zgartirilgan sig'imni yoki o'chirilgan mashinani
+  // ECO'dagi eski qiymat bilan qaytarib yozardi (o'chirilgan mikser yana faol bo'lib qolardi)
+  if (existing.ecoError) {
+    await pushVehicleToEco(existing.id); // yana yiqilsa ham ERP qiymati o'zgarmaydi — keyingi sinxronda qayta uriniladi
+    return { applied: false, vehicleId: existing.id };
   }
   const updated = await db.vehicle.update({
     where: { id: existing.id },

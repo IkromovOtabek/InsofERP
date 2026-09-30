@@ -9,8 +9,19 @@ import { returnsTab } from "@/lib/bi/returns";
 import { agentsTab } from "@/lib/bi/agents";
 import { dateTime, date as fmtDate } from "@/lib/format";
 
+/**
+ * Matn katak `=`, `+`, `-`, `@` bilan boshlansa Excel uni formula deb bajaradi. Mijoz nomi saytdagi
+ * ariza orqali tashqaridan kelishi mumkin (`=HYPERLINK(...)`) — oldiga `'` qo'yib, oddiy matn qilinadi.
+ * Raqamlar (manfiy ham) tegilmaydi.
+ */
+const cell = (c: string | number | null | undefined) => {
+  if (c === null || c === undefined) return "";
+  let s = String(c);
+  if (typeof c === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 const csv = (rows: (string | number | null | undefined)[][]) =>
-  "﻿" + rows.map((r) => r.map((c) => { const s = c === null || c === undefined ? "" : String(c); return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(";")).join("\r\n");
+  "﻿" + rows.map((r) => r.map(cell).join(";")).join("\r\n");
 
 export async function GET(req: NextRequest) {
   const s = await getSession();

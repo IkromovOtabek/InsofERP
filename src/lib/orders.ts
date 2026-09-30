@@ -35,13 +35,19 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   }
 
   const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
-  const credit = await customerCredit(o.customerId);
-  const status = credit.used + total > credit.limit ? "BLOCKED" : "CONFIRMED";
-
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { status } });
+  // Mijoz bo'yicha navbat: bir vaqtda qabul qilingan ikki zayavka limitni birga oshirib yubormasin.
+  // Shu zayavkaga olingan avans (u hali DRAFT) mijozning umumiy to'lovi sifatida `used` dan ayirilgan.
+  const res = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"credit:" + o.customerId}))`;
+    const credit = await customerCredit(o.customerId);
+    const status = credit.used + total > credit.limit ? "BLOCKED" : "CONFIRMED";
+    const r = await tx.order.updateMany({ where: { id, status: "DRAFT" }, data: { status } });
+    if (r.count !== 1) return null;
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit });
+    return status;
   });
+  if (!res) return { changed: false, error: "Zayavka shu payt boshqa joyda qabul qilindi" };
+  const status = res;
 
   // Bloklangan zayavkani faqat direktor ocha oladi — u bilmasa zayavka turib qoladi.
   // Tasdiqlangani esa ishlab chiqarish va logistikaning ishi: ular kun bo'yi ro'yxatni
@@ -81,14 +87,20 @@ export async function orderUnblock(id: string, userId: string): Promise<OrderRes
 
 /** Bekor qilish. Zames yoki reys boshlangan bo'lsa — mumkin emas. */
 export async function orderCancel(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: true, trips: true } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: true, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } } } });
   if (o.batches.length || o.trips.length) return { changed: false, error: "Zames yoki reys bor — bekor qilib bo'lmaydi" };
   if (!["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status)) return { changed: false, error: "Bu holatdagi zayavka bekor qilinmaydi" };
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { status: "CANCELLED" } });
+  // Schyot qolib ketsa mijoz yetkazilmagan mahsulot uchun qarzdor bo'lib turardi — avval schyot bekor qilinadi.
+  // Avans esa yo'qolmaydi: bekor qilingan zayavkadagi to'lov mijozning ortiqcha to'lovi bo'lib qarz/limitni kamaytiradi.
+  if (o.invoices.length) return { changed: false, error: `Schyot bor (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — avval uni bekor qiling` };
+  const done = await db.$transaction(async (tx) => {
+    const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: {} }, trips: { none: {} } }, data: { status: "CANCELLED" } });
+    if (r.count !== 1) return false;
     await tx.brigadeTask.updateMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, data: { status: "CANCELLED" } });
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CANCELLED" });
+    return true;
   });
+  if (!done) return { changed: false, error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
   return { changed: true, status: "CANCELLED" };
 }
 

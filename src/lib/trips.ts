@@ -105,13 +105,14 @@ function checkQty(loaded: number, q?: DeliveryQty): string | null {
  * shuning uchun faqat miqdor sifatida yoziladi (hisobotda "qaytarilgan").
  */
 async function returnToStock(tx: Prisma.TransactionClient, t: { id: string; order: { items: { productId: string }[] } }, returned: number, userId: string) {
-  if (!(returned > 0)) return;
+  // Manfiy — yopishda qaytgan miqdor kamaytirildi (5 → 2): ortiqcha kirim qilingan 3 dona skladdan qaytariladi
+  if (!Number.isFinite(returned) || Math.abs(returned) < 0.0005) return;
   const productId = t.order.items[0]?.productId;
   if (!productId) return;
   const p = await tx.product.findUnique({ where: { id: productId }, select: { unit: true } });
   if (!p || p.unit === "m3") return;
   const wh = await tx.warehouse.findFirstOrThrow({ where: { isActive: true } });
-  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, productId, qty: returned, refType: "Trip", refId: t.id, note: "Obyektdan qaytdi", createdById: userId } });
+  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, productId, qty: returned, refType: "Trip", refId: t.id, note: returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)", createdById: userId } });
 }
 
 /** → DELIVERED. Zayavkaning hamma hajmi yetkazilgan bo'lsa — zayavka DELIVERED. */
@@ -137,9 +138,15 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
         ...(q?.comment ? { deliveryComment: q.comment } : {}),
       },
     }));
-    const sum = await tx.trip.aggregate({ where: { orderId: t.orderId, status: "DELIVERED" }, _sum: { qtyM3: true } });
-    const d = Number(sum._sum.qtyM3 ?? 0);
-    if (d >= total - 0.001) await tx.order.update({ where: { id: t.orderId }, data: { status: "DELIVERED" } });
+    const doneTrips = await tx.trip.findMany({ where: { orderId: t.orderId, status: "DELIVERED" }, select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } });
+    const d = doneTrips.reduce((s, x) => s + tripCoveredQty(x), 0);
+    if (d >= total - 0.001) {
+      // Schyotlari allaqachon to'liq to'langan (masalan avans bilan) zayavka darhol yopiladi —
+      // to'lov oqimi faqat DELIVERED holatini yopadi, keyin to'lov kelmasa u abadiy "Yetkazildi"da qolardi
+      const inv = await tx.invoice.findMany({ where: { orderId: t.orderId, status: { not: "CANCELLED" } }, select: { status: true } });
+      const paid = inv.length > 0 && inv.every((i) => i.status === "PAID");
+      await tx.order.update({ where: { id: t.orderId }, data: { status: paid ? "CLOSED" : "DELIVERED" } });
+    }
     await returnToStock(tx, t, q?.returnedQty ?? 0, userId);
     await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName, note, ...q });
     return d;
@@ -470,13 +477,26 @@ export type OrderReadiness = {
 /** `orderReadiness` uchun kerakli include — veb forma, mobil forma va `createTrip` bir xil yuklaydi. */
 export const READINESS_INCLUDE = {
   items: { include: { product: { select: { unit: true } }, task: { select: { doneQty: true, status: true } } } },
-  trips: { select: { status: true, qtyM3: true } },
+  trips: { select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } },
   batches: { select: { productId: true, qtyM3: true } },
 } as const;
 
+/**
+ * Reys zayavkaning qancha qismini yopadi: yetkazilgan bo'lsa — mijoz qabul qilgani (qaytarilgani ayirilib),
+ * yo'lda/rejada bo'lsa — yuklangan hajm. Ilgari yuk to'liq qaytarilsa ham zayavka "Yetkazildi" bo'lib,
+ * o'rniga yangi reys ochib bo'lmay qolardi.
+ */
+export function tripCoveredQty(t: { status: string; qtyM3: unknown; acceptedQty?: unknown; returnedQty?: unknown }): number {
+  if (t.status === "CANCELLED") return 0;
+  const loaded = Number(t.qtyM3);
+  if (t.status !== "DELIVERED") return loaded;
+  if (t.acceptedQty != null) return Math.min(loaded, Number(t.acceptedQty));
+  return Math.max(0, loaded - Number(t.returnedQty ?? 0));
+}
+
 type ReadinessOrder = {
   items: { productId: string; qtyM3: unknown; product: { unit: string }; task: { doneQty: unknown; status: string } | null }[];
-  trips: { status: string; qtyM3: unknown }[];
+  trips: { status: string; qtyM3: unknown; acceptedQty?: unknown; returnedQty?: unknown }[];
   batches: { productId: string; qtyM3: unknown }[];
 };
 
@@ -493,7 +513,7 @@ export function orderReadiness(o: ReadinessOrder): OrderReadiness {
     if (i.product.unit === "m3") r = Math.max(r, o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0));
     ready += Math.min(q, r);
   }
-  const shipped = o.trips.filter((t) => t.status !== "CANCELLED").reduce((s, t) => s + Number(t.qtyM3), 0);
+  const shipped = o.trips.reduce((s, t) => s + tripCoveredQty(t), 0);
   const unit = soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 as number })));
   return { total: r3(total), ready: r3(ready), shipped: r3(shipped), available: r3(Math.max(0, ready - shipped)), inProduction: r3(Math.max(0, total - ready)), hasTasks, unit };
 }
@@ -552,6 +572,11 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
 
   const created = await db.$transaction(async (tx) => {
+    // Qoldiq qulf ostida qayta tekshiriladi: ikki dispetcher bir vaqtda oxirgi 8 m³ ga reys ochsa, ikkinchisi to'xtaydi
+    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
+    const fresh = await tx.order.findUniqueOrThrow({ where: { id: input.orderId }, include: READINESS_INCLUDE });
+    const again = readinessError(orderReadiness(fresh), input.qtyM3);
+    if (again) throw new Error(again);
     const t = await tx.trip.create({
       data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined },
     });

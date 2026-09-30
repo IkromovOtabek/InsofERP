@@ -30,6 +30,10 @@ rm -rf .next/cache/images
 npm run build
 step "ERP: qayta ishga tushirish"
 sudo systemctl restart insof-erp
+# Vaqt zonasi: ilova o'zi Asia/Tashkent o'rnatadi (src/instrumentation.ts), lekin server soati ham shunday bo'lsin
+if [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "Asia/Tashkent" ]; then
+  echo "⚠ Server vaqt zonasi: $(timedatectl show -p Timezone --value 2>/dev/null || echo aniqlanmadi). Tavsiya: sudo timedatectl set-timezone Asia/Tashkent" >&2
+fi
 
 # ───────────── Insof ECO API ─────────────
 if [ "${SKIP_ECO:-0}" != "1" ] && [ -d "$ECO_DIR" ]; then

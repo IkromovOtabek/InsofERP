@@ -140,7 +140,8 @@ export async function confirmOrder(id: string) {
   // Sklad zayavkasini sotuvdan tashqari ishlab chiqarish/sklad xodimi ham qabul qiladi
   const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
   const s = await requireSession(kind === "STOCK" ? [...STOCK_ORDER_ROLES] : ["SALES"]);
-  await orderConfirm(id, s.userId); // qoida `lib/orders.ts` da — mobil ilova ham shuni chaqiradi
+  const r = await orderConfirm(id, s.userId); // qoida `lib/orders.ts` da — mobil ilova ham shuni chaqiradi
+  if (r.error) throw new Error(r.error); // ilgari xato yutilib, "qabul qilindi" ko'rinardi
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/stock");
 }

@@ -80,8 +80,12 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const receivable = sum(openInv.map((i) => Math.max(0, Number(i.amount) - sum(i.payments.map((p) => Number(p.amount))))));
   const debtors = cust.filter((c) => c.debt > 0).length;
 
-  // Kassa balanslari (barcha vaqt tushumlari)
+  // Kassa balanslari: mijoz to'lovlari + boshqa kirimlar − chiqimlar (Kirim-Chiqim va direktor paneli bilan bir xil).
+  // Ilgari faqat to'lovlar yig'ilardi — qoldiq va 7 kunlik prognoz chiqimlarsiz shishib chiqardi.
   const balBy = new Map(allPay.map((a) => [a.cashAccountId, Number(a._sum.amount ?? 0)]));
+  for (const t of await db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } })) {
+    balBy.set(t.cashAccountId, (balBy.get(t.cashAccountId) ?? 0) + (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0));
+  }
   const accountRows = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, total: balBy.get(a.id) ?? 0, period: sum(payments.filter((p) => p.cashAccountId === a.id).map((p) => Number(p.amount))) }));
   const cashTotal = sum(accountRows.map((a) => a.total));
 

@@ -3,6 +3,8 @@ import { audit } from "./audit";
 import { formatPhone, normalizePhone } from "./sms/phone";
 import { botEnabled, sendMessage } from "./telegram/api";
 import { unitLabel } from "./unit";
+import { phoneTail, samePhone } from "./phone-lookup";
+import { syncCustomerLater } from "./eco/customers";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 
 /**
@@ -51,7 +53,9 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
   // Telegram — botga ulangan sotuvchilarga; push — ilovadagi sotuvchilarga. Ikkalasi bir-birini
   // takrorlamaydi: sotuvchi qaysi biri qo'lida bo'lsa, o'shanda ko'radi.
   // Direktorga ketmaydi: ariza bilan bog'lanish sotuvning ishi, direktor natijani hisobotda ko'radi.
-  await notifySales({ ...lead, qty: lead.qty ? Number(lead.qty) : null });
+  // Javobdan keyin: Telegram sekin bo'lsa mehmonning formasi kutib qolmasin (u qayta yuborib dublikat qilardi)
+  const forSales = { ...lead, qty: lead.qty ? Number(lead.qty) : null };
+  notifyAfter(() => notifySales(forSales));
   notifyAfter(() => notifyRoles(["SALES"], {
     type: "LEAD_NEW",
     title: "Saytdan yangi so'rov",
@@ -73,13 +77,16 @@ async function notifySales(lead: {
       select: { chatId: true },
     });
     if (chats.length === 0) return;
+    // Mehmon yozgan matn Markdown sifatida o'qilmasin: `[bosing](http://…)` xodim chatida
+    // haqiqiy havola bo'lib chiqardi (fishing). Belgilar olib tashlanadi, matn o'zi qoladi.
+    const plain = (v: string) => v.replace(/[_*[\]()`~>#|]/g, " ").replace(/\s{2,}/g, " ").trim();
     const text = [
       "*Saytdan yangi ariza*",
-      `Ism: ${lead.name}`,
+      `Ism: ${plain(lead.name)}`,
       `Telefon: ${formatPhone(lead.phone)}`,
       lead.product ? `Mahsulot: ${lead.product.name}${lead.qty ? ` — ${lead.qty} ${unitLabel(lead.product.unit)}` : ""}` : null,
-      lead.address ? `Manzil: ${lead.address}` : null,
-      lead.message ? `Izoh: ${lead.message}` : null,
+      lead.address ? `Manzil: ${plain(lead.address)}` : null,
+      lead.message ? `Izoh: ${plain(lead.message)}` : null,
     ].filter(Boolean).join("\n");
     await Promise.all(chats.map((c) => sendMessage(c.chatId, text, { markdown: true })));
   } catch {
@@ -123,21 +130,31 @@ export async function convertLead(leadId: string, input: { name: string; inn?: s
   if (!lead) return { ok: false, error: "Ariza topilmadi" };
   if (lead.status === "CONVERTED") return { ok: false, error: "Bu ariza allaqachon mijozga aylantirilgan" };
 
-  if (inn) {
-    const busy = await db.customer.findUnique({ where: { inn } });
-    if (busy && busy.name !== name) return { ok: false, error: `Bu INN allaqachon "${busy.name}" mijozida` };
-  }
+  // INN bo'yicha mavjud mijoz: nomi boshqa bo'lsa — xato; bir xil bo'lsa — o'shanga bog'lanadi
+  // (ilgari davom etib, create unique-INN xatosi bilan yiqilardi)
+  const byInn = inn ? await db.customer.findUnique({ where: { inn } }) : null;
+  if (byInn && byInn.name !== name) return { ok: false, error: `Bu INN allaqachon "${byInn.name}" mijozida` };
 
-  const existing = await db.customer.findFirst({ where: { phone: lead.phone } });
-  const customer = existing
-    ? existing
-    : await db.customer.create({ data: { name, phone: lead.phone, inn, address: lead.address } });
-
-  const after = await db.lead.update({
-    where: { id: leadId },
-    data: { status: "CONVERTED", customerId: customer.id, handledById: userId, handledAt: new Date() },
+  // Telefon bazada erkin ko'rinishda — normallashtirib solishtiriladi (qaytgan mijoz dublikat bo'lmasin)
+  const candidates = byInn ? [] : await db.customer.findMany({
+    where: { isInternal: false, phone: { contains: phoneTail(lead.phone) } },
+    orderBy: { createdAt: "asc" },
   });
-  await audit(db, userId, "STATUS_CHANGE", "Lead", leadId, lead, after);
-  if (!existing) await audit(db, userId, "CREATE", "Customer", customer.id, undefined, customer);
-  return { ok: true, note: existing ? `Mavjud mijozga bog'landi: ${existing.name} (${formatPhone(lead.phone)})` : "Mijoz yaratildi" };
+  const byPhone = candidates.find((c) => samePhone(c.phone, lead.phone)) ?? null;
+
+  const res = await db.$transaction(async (tx) => {
+    // Ikki marta bosilsa ikkinchisi hech narsa qilmaydi
+    const claimed = await tx.lead.updateMany({ where: { id: leadId, status: { not: "CONVERTED" } }, data: { status: "CONVERTED", handledById: userId, handledAt: new Date() } });
+    if (claimed.count !== 1) return null;
+    const existing = byInn ?? byPhone;
+    const customer = existing ?? await tx.customer.create({ data: { name, phone: lead.phone, inn, address: lead.address } });
+    const after = await tx.lead.update({ where: { id: leadId }, data: { customerId: customer.id } });
+    await audit(tx, userId, "STATUS_CHANGE", "Lead", leadId, lead, after);
+    if (!existing) await audit(tx, userId, "CREATE", "Customer", customer.id, undefined, customer);
+    return { customer, existing };
+  });
+  if (!res) return { ok: false, error: "Bu ariza allaqachon mijozga aylantirilgan" };
+  // Yangi mijoz ilovaga ham ketsin — telefoni ECO'da bo'lsa hisobi avtomatik ulanadi
+  if (!res.existing) syncCustomerLater(res.customer.id);
+  return { ok: true, note: res.existing ? `Mavjud mijozga bog'landi: ${res.existing.name} (${formatPhone(lead.phone)})` : "Mijoz yaratildi" };
 }

@@ -8,7 +8,7 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { num, str, codeFromName } from "@/lib/excel";
-import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
+import { normalizeUnit, UNIT_FALLBACK, toMaterialUnit } from "@/lib/unit";
 import { ensureMaterialGroup } from "@/lib/material-groups";
 
 
@@ -79,9 +79,13 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
         created++;
       }
       if (qty > 0) {
-        await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, materialId: m.id, qty, unitCost: price, refType: "StockIn", refId: batchId, note: "Boshlang'ich qoldiq (Sklad → Xomashyo qo'shish)", createdById: s.userId } });
+        // Mavjud xomashyoga boshqa birlikda (t ↔ kg) kelgan miqdor o'giriladi; o'girib bo'lmasa — to'xtaymiz,
+        // aks holda "5 t" kg'dagi sementga 5 bo'lib qo'shilardi
+        const conv = toMaterialUnit(qty, price ?? 0, u ?? undefined, m.unit);
+        if (!conv) throw new Error(`"${m.name}": faylda birlik «${str(x.unit)}», spravochnikda «${m.unit}» — o'girib bo'lmaydi. Faylni tuzating`);
+        await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, materialId: m.id, qty: conv.qty, unitCost: price == null ? null : conv.price, refType: "StockIn", refId: batchId, note: "Boshlang'ich qoldiq (Sklad → Xomashyo qo'shish)", createdById: s.userId } });
         moved++;
-        cost += qty * (price ?? 0);
+        cost += conv.qty * (price == null ? 0 : conv.price);
       }
     }
 
@@ -98,7 +102,8 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
       await audit(tx, s.userId, "CREATE", "CashTransaction", ct.id, undefined, ct);
     }
     return { created, updated, moved, guessed };
-  }, { timeout: 120_000, maxWait: 20_000 });
+  }, { timeout: 120_000, maxWait: 20_000 }).catch((e: Error) => ({ error: e.message }));
+  if ("error" in out) return { error: out.error };
   revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/receipts/new"); revalidatePath("/recipes"); revalidatePath("/cashflow"); revalidatePath("/dashboard");
   redirect(`/stock?tab=balance&added=${out.created}&updated=${out.updated}&moved=${out.moved}&guessed=${out.guessed}`);
 }

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse, after } from "next/server";
 import { handleUpdate } from "@/lib/telegram/bot";
 import { botEnabled, type TgUpdate } from "@/lib/telegram/api";
@@ -18,7 +19,10 @@ export async function POST(req: Request) {
   // Sir sozlanmagan bo'lsa endpoint ishlamaydi: aks holda istalgan kishi botga soxta update yuborardi
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!secret) return NextResponse.json({ error: "TELEGRAM_WEBHOOK_SECRET sozlanmagan" }, { status: 503 });
-  if (req.headers.get("x-telegram-bot-api-secret-token") !== secret) {
+  // Doimiy vaqtli solishtirish — javob vaqtidan sirni belgima-belgi taxmin qilib bo'lmasin
+  const got = Buffer.from(req.headers.get("x-telegram-bot-api-secret-token") ?? "");
+  const want = Buffer.from(secret);
+  if (got.length !== want.length || !timingSafeEqual(got, want)) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 

@@ -96,7 +96,8 @@ export default async function LandingPage() {
     name: p.name,
     unit: p.unit,
     strengthClass: p.strengthClass,
-    price: String(p.price),
+    // Narx yashirin bo'lsa brauzerga umuman yuborilmaydi (klient komponent props'i sahifa kodida ochiq ko'rinadi)
+    price: SHOW_PRICES ? String(p.price) : "0",
     groupId: p.groupId ?? "root",
     groupName: (p.groupId && groupName.get(p.groupId)) || "Boshqa mahsulotlar",
   }));

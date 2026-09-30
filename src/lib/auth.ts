@@ -96,6 +96,8 @@ export async function revokeSessions(tx: Prisma.TransactionClient | typeof db, u
     data: { sessionVersion: { increment: 1 } },
     select: { id: true, login: true, fullName: true, role: true, sessionVersion: true },
   });
+  // Eski telefonlar push olishda davom etmasin — ilova qayta kirganda qurilmani yana ro'yxatdan o'tkazadi
+  await tx.mobileDevice.deleteMany({ where: { userId } });
   if (opts?.keepCurrent) await issueSession(u);
 }
 

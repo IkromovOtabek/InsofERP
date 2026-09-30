@@ -77,10 +77,17 @@ export function recordSuccess(login: string) {
 export const failDelay = () => new Promise((r) => setTimeout(r, FAIL_DELAY_MS));
 
 /** Mijoz IP manzili — nginx/PM2 orqasida `x-forwarded-for` dagi birinchi manzil. */
+/**
+ * Mijoz IP'si. Birinchi o'rinda `X-Real-IP` (nginx `$remote_addr` bilan o'zi yozadi, mijoz soxtalay olmaydi).
+ * Bo'lmasa `X-Forwarded-For` ning OXIRGI qiymati — uni bizning proksi qo'shadi; birinchisini esa mijoz
+ * o'zi yuborishi mumkin edi va har urinishda boshqa IP ko'rsatib qulfni aylanib o'tardi.
+ */
 export function ipFromHeaders(h: Headers): string {
+  const real = h.get("x-real-ip")?.trim();
+  if (real) return real;
   const xff = h.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim() || "unknown";
-  return h.get("x-real-ip") ?? "unknown";
+  if (xff) return xff.split(",").map((x) => x.trim()).filter(Boolean).pop() ?? "unknown";
+  return "unknown";
 }
 
 /** Server action ichida (so'rov obyekti yo'q). */

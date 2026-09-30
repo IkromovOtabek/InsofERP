@@ -6,7 +6,7 @@ import { hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { sendSms } from "@/lib/sms";
 import { normalizePhone } from "@/lib/sms/phone";
-import { AMBIGUOUS_PHONE_ERROR, staffByPhone } from "@/lib/phone-lookup";
+import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId, sendResetCodeToBot } from "@/lib/telegram/notify";
 import { botEnabled } from "@/lib/telegram/api";
 
@@ -51,17 +51,17 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   const phone = normalizePhone(rawPhone);
   if (!phone) return { ok: false, error: "Telefon raqami noto'g'ri. Masalan: 90 123 45 67" };
 
+  // Raqam yo'q / bir nechta kartada / bot ulanmagan — javob bir xil ("yuborildi"): aks holda begona
+  // odam istalgan raqam xodimniki ekanini (va Telegram ulanganini) sinab bilib olardi. Nima qilish
+  // kerakligi sahifada har doim yozilgan (raqamni tekshirish, botga ulanish, Otdel kadr).
+  const silent: ResetRequest = { ok: true, sent: false, via: SMS_FALLBACK ? undefined : "telegram" };
   const found = await staffByPhone(phone);
-  if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_PHONE_ERROR };
-  // Raqam tizimda yo'q — baribir "yuborildi" deymiz, lekin hech narsa yubormaymiz
-  if (found.kind === "none") return { ok: true, sent: false };
+  if (found.kind === "ambiguous" || found.kind === "none") return silent;
 
   // Hozircha kod faqat Telegram botga boradi: bot ulanmagan bo'lsa kod yaratmaymiz
   // (soatiga 3 ta limit behuda yeyilmasin) va qanday ulashni aytamiz.
   const botReady = botEnabled();
-  if (!SMS_FALLBACK && botReady && !(await linkedChatId(found.user.id))) {
-    return { ok: false, error: NOT_LINKED_ERROR };
-  }
+  if (!SMS_FALLBACK && botReady && !(await linkedChatId(found.user.id))) return silent;
 
   const recent = await db.passwordResetCode.count({
     where: { phone, createdAt: { gt: new Date(Date.now() - 3600_000) } },
@@ -125,10 +125,9 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
   if (problem) return { ok: false, error: problem };
 
   const found = await staffByPhone(phone);
-  if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_PHONE_ERROR };
-  // Noto'g'ri kod bilan bir xil xabar — raqam bor-yo'qligi bilinmasin
+  // Noto'g'ri kod bilan bir xil xabar — raqam bor-yo'qligi (yoki bir nechta kartada ekani) bilinmasin
   const wrong = { ok: false as const, error: "Kod noto'g'ri yoki muddati tugagan" };
-  if (found.kind === "none") return wrong;
+  if (found.kind !== "found") return wrong;
 
   const rec = await db.passwordResetCode.findFirst({
     where: { userId: found.user.id, phone, usedAt: null },

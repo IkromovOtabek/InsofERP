@@ -123,11 +123,15 @@ export async function productCosts() {
   return out;
 }
 
-/** Sotuv qatorlari (zayavka pozitsiyalari) — davr bo'yicha, bekor/qoralama tashqari. */
+/**
+ * Sotuv qatorlari (zayavka pozitsiyalari) — davr bo'yicha, bekor/qoralama tashqari.
+ * Faqat SALE: sklad zaxirasi zayavkasi (STOCK, narxi 0) sotuv emas — u tushumni, tannarxni,
+ * "chegirma"ni va otgruzka rejasini buzardi.
+ */
 export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIVE_ORDER): Promise<SaleRow[]> {
   const [items, costs] = await Promise.all([
     db.orderItem.findMany({
-      where: { order: { date: { gte: from, lt: to }, status: { in: statuses as never } } },
+      where: { order: { kind: "SALE", date: { gte: from, lt: to }, status: { in: statuses as never } } },
       include: { order: { select: { id: true, orderNo: true, date: true, status: true, customerId: true, customer: { select: { name: true } }, createdById: true, createdBy: { select: { fullName: true } } } }, product: { select: { name: true, code: true, unit: true, price: true } } },
     }),
     productCosts(),

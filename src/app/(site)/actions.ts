@@ -4,6 +4,7 @@ import { z } from "zod";
 import { parseForm, type ActionState } from "@/lib/action";
 import { createLead } from "@/lib/leads";
 import { requestFromWeb } from "@/lib/account-deletion";
+import { publicLeadAllowedFromAction, RATE_LIMITED } from "@/lib/rate-limit";
 
 /**
  * Saytdagi "Ariza qoldirish" formasi — login talab qilmaydi, shuning uchun
@@ -33,6 +34,7 @@ export async function submitLead(_prev: ActionState, fd: FormData): Promise<Acti
 
   // Bot to'ldirgan forma — "qabul qilindi" deb ko'rsatamiz, lekin hech narsa yozilmaydi.
   if (d.website) return { ok: true };
+  if (!(await publicLeadAllowedFromAction())) return { error: RATE_LIMITED };
 
   const res = await createLead(d);
   if (!res.ok) return { error: res.error };
@@ -56,6 +58,7 @@ export async function submitDeletionRequest(_prev: ActionState, fd: FormData): P
   if ("error" in parsed) return { error: parsed.error };
   const d = parsed.data;
   if (d.website) return { ok: true };
+  if (!(await publicLeadAllowedFromAction())) return { error: RATE_LIMITED };
   const res = await requestFromWeb({ name: d.name, phone: d.phone, note: d.note });
   if (!res.ok) return { error: res.error };
   return res.duplicate ? { ok: true, note: "Bu raqam bo'yicha so'rov allaqachon qabul qilingan." } : { ok: true };

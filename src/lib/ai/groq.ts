@@ -49,6 +49,7 @@ async function post(body: Record<string, unknown>): Promise<GroqResponse> {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY!}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
     });
     const raw = await res.text();
     let json: GroqResponse;

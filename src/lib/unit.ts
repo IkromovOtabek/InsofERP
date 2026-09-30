@@ -102,3 +102,22 @@ export function donePercent(done: UnitRow[], need: UnitRow[]): number {
   const sum = needT.reduce((s, n) => s + (n.qty > 0 ? Math.min(1, (doneMap.get(n.unit) ?? 0) / n.qty) : 1), 0);
   return (sum / needT.length) * 100;
 }
+
+// ───────────────────────── Kirim miqdorini xomashyo birligiga keltirish ─────────────────────────
+
+const TO_KG: Partial<Record<MaterialUnit, number>> = { kg: 1, t: 1000 };
+
+/**
+ * Fayl yoki ta'minot qatoridagi birlik xomashyoning spravochnikdagi birligidan farq qilsa —
+ * miqdor va narx o'giriladi (faqat kg ↔ t). Boshqa juftlikda o'girib bo'lmaydi — `null`.
+ * Ilgari "5 t" sement spravochnikdagi kg ga 5 bo'lib qo'shilardi (1000 barobar xato).
+ * Birlik bo'sh yoki tanilmasa — xomashyo birligida deb olinadi (eski xatti-harakat).
+ */
+export function toMaterialUnit(qty: number, price: number, fromRaw: unknown, materialUnit: string): { qty: number; price: number } | null {
+  const from = normalizeUnit(fromRaw);
+  const to = normalizeUnit(materialUnit) ?? (materialUnit as MaterialUnit);
+  if (!from || from === to) return { qty, price };
+  const a = TO_KG[from], b = TO_KG[to];
+  if (a && b) { const k = a / b; return { qty: qty * k, price: price / k }; }
+  return null;
+}

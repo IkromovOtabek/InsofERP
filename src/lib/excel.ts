@@ -51,6 +51,19 @@ export function num(v: unknown): number {
   return s === "" ? NaN : Number(s);
 }
 
+/**
+ * Pul ustuni: so'mda tiyin yo'q, shuning uchun matn ko'rinishidagi "450.000" — bu 450 000 (minglik nuqta),
+ * 450 emas. `num` esa miqdor uchun "1.778" ni kasr deb o'qiydi — ikkalasi bir funksiyada bo'lolmaydi.
+ * Haqiqiy raqamli katak (number) o'zgarmaydi.
+ */
+export function numMoney(v: unknown): number {
+  if (typeof v === "string") {
+    const t = v.replace(/[\s\u00a0]+/g, "").replace(/so'?m|сум|uzs/gi, "");
+    if (/^-?\d{1,3}\.\d{3}$/.test(t)) return Number(t.replace(".", ""));
+  }
+  return num(v);
+}
+
 export const str = (v: unknown) => (v == null ? "" : String(v).trim());
 
 /**

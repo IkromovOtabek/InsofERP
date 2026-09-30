@@ -19,10 +19,15 @@ export async function savePlan(_prev: ActionState, fd: FormData): Promise<Action
   if ("error" in r) return { error: r.error };
   const { year, month, sellerId, amount, volumeM3, note } = r.data;
   const where = { year, month, sellerId };
-  const before = await db.salesPlan.findFirst({ where });
   const data = { amount, volumeM3: volumeM3 ?? null, note };
-  const after = before ? await db.salesPlan.update({ where: { id: before.id }, data }) : await db.salesPlan.create({ data: { ...where, ...data } });
-  await audit(db, s.userId, before ? "UPDATE" : "CREATE", "SalesPlan", after.id, before, after);
+  // Kompaniya rejasida sellerId = NULL — Postgres unique uni tekshirmaydi, ikki bosishda ikkita reja
+  // yozilib, dashboard birinchisini olardi. Qulf ostida topib-yozamiz.
+  await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${year}:${month}:${sellerId ?? "all"}`}))`;
+    const before = await tx.salesPlan.findFirst({ where, orderBy: { createdAt: "asc" } });
+    const after = before ? await tx.salesPlan.update({ where: { id: before.id }, data }) : await tx.salesPlan.create({ data: { ...where, ...data } });
+    await audit(tx, s.userId, before ? "UPDATE" : "CREATE", "SalesPlan", after.id, before, after);
+  });
   revalidatePath("/bi-tahlil/reja"); revalidatePath("/bi-tahlil/agentlar"); revalidatePath("/bi-tahlil");
   return { ok: true };
 }

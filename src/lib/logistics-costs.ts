@@ -16,12 +16,28 @@ export type FuelInput = {
   odometerKm?: number | null; station?: string | null; note?: string | null;
 };
 
+const MAX_LITERS = 1000;
+const MAX_KM_JUMP = 3000;
+
 export async function addFuelLog(input: FuelInput, userId: string): Promise<{ id: string }> {
   if (!(input.liters > 0)) throw new Error("Litr 0 dan katta bo'lsin");
   if (!(input.pricePerL > 0)) throw new Error("1 litr narxini kiriting");
   const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!v) throw new Error("Transport topilmadi");
   const fuelType = input.fuelType ?? v.fuelType ?? "DIESEL";
+  // Bitta yozuvda aql bovar qilmaydigan raqam (1 000 000 km yoki 5000 l) keyingi hamma yozuvlarni
+  // to'sib qo'yardi (probeg orqaga ketmaydi) — chegara qo'yamiz, katta bo'lsa texnika kartasida tuzatiladi
+  if (input.liters > MAX_LITERS) throw new Error(`Bir yozuvda ${MAX_LITERS} litrdan ko'p bo'lmaydi — raqamni tekshiring`);
+  if (input.odometerKm != null && (input.odometerKm < 0 || input.odometerKm > 3_000_000)) throw new Error("Probeg noto'g'ri");
+  if (input.odometerKm != null && v.odometerKm != null && input.odometerKm - v.odometerKm > MAX_KM_JUMP) {
+    throw new Error(`Probeg oxirgi yozuvdan ${MAX_KM_JUMP} km dan ko'p oshmaydi (oxirgi: ${v.odometerKm} km) — raqamni tekshiring`);
+  }
+  if (input.tripId) {
+    const t = await db.trip.findUnique({ where: { id: input.tripId }, select: { status: true, vehicleId: true } });
+    if (!t) throw new Error("Reys topilmadi");
+    if (t.status === "CANCELLED") throw new Error("Bekor qilingan reysga yoqilg'i yozilmaydi");
+    if (t.vehicleId !== v.id) throw new Error("Reys boshqa texnikaga biriktirilgan");
+  }
   // Probeg orqaga ketmaydi — xato raqam yozilsa sarf hisobi buziladi
   if (input.odometerKm != null && v.odometerKm != null && input.odometerKm < v.odometerKm) {
     throw new Error(`Probeg ${v.odometerKm} km dan kam bo'lmasin (oxirgi yozilgan)`);

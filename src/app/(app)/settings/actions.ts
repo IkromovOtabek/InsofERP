@@ -84,6 +84,15 @@ export async function saveMaterial(id: string | null, _prev: ActionState, fd: Fo
   try {
     if (id) {
       const before = await db.material.findUniqueOrThrow({ where: { id } });
+      // Harakati yoki retsepti bor xomashyoning birligi almashsa butun tarix va normalar
+      // boshqa birlikda o'qilib ketadi (kg → t: 1000 barobar) — shuning uchun taqiqlanadi
+      if (before.unit !== r.data.unit) {
+        const [moves, recipes] = await Promise.all([
+          db.stockMove.count({ where: { materialId: id } }),
+          db.recipeItem.count({ where: { materialId: id } }),
+        ]);
+        if (moves || recipes) return { error: `Birlikni o'zgartirib bo'lmaydi: ${moves} ta sklad harakati va ${recipes} ta retsept qatori «${before.unit}» da. Yangi birlik bilan alohida xomashyo oching` };
+      }
       const after = await db.material.update({ where: { id }, data: r.data });
       await audit(db, s.userId, "UPDATE", "Material", id, before, after);
     } else {

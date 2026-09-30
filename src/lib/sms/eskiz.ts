@@ -47,7 +47,7 @@ async function getToken(force = false): Promise<string> {
   const form = new FormData();
   form.set("email", email);
   form.set("password", password);
-  const r = await fetch(AUTH_URL, { method: "POST", body: form });
+  const r = await fetch(AUTH_URL, { method: "POST", body: form, signal: AbortSignal.timeout(15_000) });
   const body = await r.text();
   if (!r.ok) throw new SmsError(`Eskiz token olinmadi (${r.status}): ${body.slice(0, 200)}`, r.status);
 
@@ -72,7 +72,7 @@ async function post(text: string, phone: string, authToken: string) {
   form.set("mobile_phone", toEskiz(phone));
   form.set("message", text);
   form.set("from", smsSender());
-  return fetch(SEND_URL, { method: "POST", headers: { authorization: `Bearer ${authToken}` }, body: form });
+  return fetch(SEND_URL, { method: "POST", headers: { authorization: `Bearer ${authToken}` }, body: form, signal: AbortSignal.timeout(15_000) });
 }
 
 /**

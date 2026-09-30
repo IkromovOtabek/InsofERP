@@ -915,6 +915,10 @@ model Order {
 
   @@index([deliveryDate])
   @@index([siteId])
+
+  // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
+  @@index([customerId])
+  @@index([status, date])
 }
 
 model OrderItem {
@@ -930,6 +934,9 @@ model OrderItem {
   product Product      @relation(fields: [productId], references: [id])
   brigade Brigade?     @relation(fields: [brigadeId], references: [id])
   task    BrigadeTask?
+
+  // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
+  @@index([orderId])
 }
 
 // ───────────────────────── Brigadalar va topshiriqlar ─────────────────────────
@@ -1223,6 +1230,9 @@ model Trip {
   expenses  TransportExpense[]
 
   @@index([status, createdAt])
+
+  // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
+  @@index([orderId])
 }
 
 /// Reysdagi muammo — haydovchi ilovadan, dispetcher vebdan yoki ECO (rad etish, e'tiroz) yozadi.
@@ -1378,6 +1388,10 @@ model Invoice {
   customer Customer  @relation(fields: [customerId], references: [id])
   order    Order?    @relation(fields: [orderId], references: [id])
   payments Payment[]
+
+  // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
+  @@index([customerId, status])
+  @@index([orderId])
 }
 
 enum CashAccountType {
@@ -1426,6 +1440,10 @@ model CashTransaction {
   createdBy   User        @relation("CashTxCreatedBy", fields: [createdById], references: [id])
 
   @@index([date, type])
+
+  // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
+  @@index([cashAccountId])
+  @@index([refType, refId])
 }
 
 model Payment {
@@ -1446,6 +1464,12 @@ model Payment {
   register    SalesRegister?
 
   @@index([orderId])
+
+  // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([date])
+  @@index([cashAccountId])
 }
 
 /// Realizatsiya jurnali — buxgalteriya Excel'da yuritadigan kunlik jo'natma jadvali

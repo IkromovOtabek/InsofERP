@@ -150,7 +150,12 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
     for (const r of rows) {
       const position = known.get(r.position.toLowerCase()) ?? r.position;
       const isActive = !r.firedAt;
-      const cur = (r.tabelNo ? byTabel.get(tabelKey(r.tabelNo)) : undefined) ?? byName.get(flatName(r.fullName));
+      // Tabel raqami bo'lsa — faqat u bo'yicha. Ism bo'yicha zaxira faqat tabelsiz kartaga: aks holda
+      // yangi "Karimov Anvar" (tabel 402) mavjud "Karimov Anvar" (tabel 401) ustidan yozilib ketardi
+      const namesake = byName.get(flatName(r.fullName));
+      const cur = r.tabelNo
+        ? byTabel.get(tabelKey(r.tabelNo)) ?? (namesake && !namesake.tabelNo ? namesake : undefined)
+        : namesake;
 
       if (cur) {
         if (!input.updateExisting) { skipped++; continue; }

@@ -22,6 +22,8 @@ async function call<T>(method: string, body?: unknown): Promise<T> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
     cache: "no-store",
+    // Telegram osilib qolsa so'rov (masalan saytdagi ariza) ham osilmasin. getUpdates uzun so'rov — o'z kutish vaqti + zaxira
+    signal: AbortSignal.timeout(method === "getUpdates" ? 90_000 : 15_000),
   });
   const json = (await res.json()) as { ok: boolean; result?: T; error_code?: number; description?: string };
   if (!json.ok) throw new TelegramError(method, json.error_code ?? res.status, json.description ?? "noma'lum xato");
@@ -111,7 +113,7 @@ export async function sendChatAction(chatId: number | string, action: "typing" |
 export async function downloadFile(fileId: string): Promise<{ bytes: Uint8Array; path: string }> {
   const f = await call<{ file_path?: string; file_size?: number }>("getFile", { file_id: fileId });
   if (!f.file_path) throw new Error("Fayl yo'li olinmadi");
-  const res = await fetch(`${API}/file/bot${botToken()}/${f.file_path}`, { cache: "no-store" });
+  const res = await fetch(`${API}/file/bot${botToken()}/${f.file_path}`, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
   if (!res.ok) throw new Error(`Fayl yuklanmadi: ${res.status}`);
   return { bytes: new Uint8Array(await res.arrayBuffer()), path: f.file_path };
 }

@@ -1,4 +1,5 @@
 import type { Prisma, SupplyStatus } from "@/generated/prisma";
+import { toMaterialUnit } from "./unit";
 import { db } from "./db";
 import { audit } from "./audit";
 import { nextNo } from "./numbering";
@@ -433,17 +434,25 @@ export async function receiveSupplyRequest(
     }));
     const lost = withMat.find((l) => !l.materialId);
     if (lost) throw new Error(`"${lost.item.name}" uchun xomashyo ochilmadi`);
+    // Qator birligi (masalan "t") xomashyo birligidan ("kg") farq qilsa — skladga o'girib yoziladi.
+    // Summa o'zgarmaydi (miqdor × narx bir xil), faqat birlik to'g'rilanadi.
+    const units = new Map((await tx.material.findMany({ where: { id: { in: withMat.map((l) => l.materialId!) } }, select: { id: true, unit: true } })).map((m) => [m.id, m.unit]));
+    const stockLines = withMat.map((l) => {
+      const conv = toMaterialUnit(l.qty, l.price, l.item.unit, units.get(l.materialId!) ?? l.item.unit);
+      if (!conv) throw new Error(`"${l.item.name}": zayavkada birlik «${l.item.unit}», xomashyo spravochnikda «${units.get(l.materialId!)}» — o'girib bo'lmaydi`);
+      return { ...l, qty: conv.qty, price: conv.price };
+    });
 
     const rec = await tx.goodsReceipt.create({
       data: {
         docNo: await nextNo(tx, "goodsReceipt", "K"),
         date: new Date(), supplierId, warehouseId: req.warehouseId, createdById: userId,
         note: `Ta'minot ${req.docNo}${input.note ? ` · ${input.note}` : ""}`,
-        items: { create: withMat.map((l) => ({ materialId: l.materialId!, qty: l.qty, price: l.price })) },
+        items: { create: stockLines.map((l) => ({ materialId: l.materialId!, qty: l.qty, price: l.price })) },
       },
     });
     await tx.stockMove.createMany({
-      data: withMat.map((l) => ({
+      data: stockLines.map((l) => ({
         type: "RECEIPT" as const, warehouseId: req.warehouseId, materialId: l.materialId!,
         qty: l.qty, unitCost: l.price, refType: "GoodsReceipt", refId: rec.id, createdById: userId,
       })),

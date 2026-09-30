@@ -75,6 +75,7 @@ async function viaMohir(blob: Blob, name: string): Promise<string> {
     method: "POST",
     headers: { Authorization: process.env.MOHIR_API_KEY! },
     body: fd,
+    signal: AbortSignal.timeout(60_000),
   });
   const raw = await res.text();
   if (!res.ok) throw new SttError(`UzbekVoiceAI xatosi (${res.status}): ${raw.slice(0, 200)}`);
@@ -132,6 +133,7 @@ async function viaWhisper(provider: "groq" | "openai", blob: Blob, name: string)
     method: "POST",
     headers: { Authorization: `Bearer ${process.env[c.keyEnv]!}` },
     body: fd,
+    signal: AbortSignal.timeout(60_000),
   });
   const raw = await res.text();
   if (!res.ok) throw new SttError(`${provider === "groq" ? "Groq" : "OpenAI"} STT xatosi (${res.status}): ${raw.slice(0, 200)}`);

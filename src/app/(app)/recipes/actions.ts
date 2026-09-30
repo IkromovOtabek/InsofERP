@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import { num, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
+import { toMaterialUnit } from "@/lib/unit";
 
 /** Retsept kiritish huquqi: ishlab chiqarish va sklad (Sklad bo'limidan ham qo'shiladi). */
 const RECIPE_ROLES = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] as const;
@@ -50,7 +51,9 @@ export async function createRecipeVersion(productId: string, _prev: ActionState,
     await audit(tx, s.userId, "CREATE", "Recipe", rec.id, undefined, { ...rec, items });
   });
   revalidatePath(`/recipes/${productId}`); revalidatePath("/recipes"); revalidatePath("/stock"); revalidatePath("/production");
-  redirect(r.data.returnTo?.startsWith("/") ? r.data.returnTo : `/recipes/${productId}`);
+  // Faqat ichki yo'l: "//evil.uz" yoki "/\evil.uz" brauzerda tashqi saytga olib chiqadi
+  const back = r.data.returnTo;
+  redirect(back && /^\/(?![\/\\])/.test(back) ? back : `/recipes/${productId}`);
 }
 
 const importSchema = z.object({
@@ -90,9 +93,13 @@ export async function importRecipesFromExcel(_prev: ActionState, fd: FormData): 
     const byProduct = new Map<string, Map<string, number>>();
     for (const x of rows) {
       const pid = pKey.get(str(x.product).toLowerCase())!;
-      const mid = result.get(str(x.material).toLowerCase().trim())!.id;
+      const mat = result.get(str(x.material).toLowerCase().trim())!;
+      // Fayldagi birlik (masalan "t") spravochnikdagidan ("kg") farq qilsa — norma o'giriladi:
+      // aks holda 0.35 t sement 0.35 kg bo'lib, sarf va imkoniyat 1000 barobar xato chiqardi
+      const conv = toMaterialUnit(num(x.qty), 0, x.unit, mat.unit);
+      if (!conv) throw new Error(`"${mat.name}": faylda birlik «${str(x.unit)}», spravochnikda «${mat.unit}» — o'girib bo'lmaydi`);
       const m = byProduct.get(pid) ?? new Map<string, number>();
-      m.set(mid, (m.get(mid) ?? 0) + num(x.qty));
+      m.set(mat.id, (m.get(mat.id) ?? 0) + conv.qty);
       byProduct.set(pid, m);
     }
     for (const [productId, items] of byProduct) {

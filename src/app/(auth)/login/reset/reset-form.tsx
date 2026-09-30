@@ -76,9 +76,10 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
               <p className="mt-4 text-xs text-slate-500">
                 Kod kelmadimi? Kiritgan raqamingiz Otdel kadrdagi raqam bilan bir xilligini tekshiring —
                 boshqa raqamga kod yuborilmaydi.
-                {req?.via !== "telegram" && botUsername && (
-                  <> Kod Telegramga kelishini istasangiz, <BotLink username={botUsername} /> botini ochib «Telefon raqamimni yuborish» tugmasini bosing.</>
+                {botUsername && (
+                  <> Telegram botga hali ulanmagan bo&apos;lsangiz: <BotLink username={botUsername} /> botini oching → /start → «Telefon raqamimni yuborish», so&apos;ng qaytadan kod so&apos;rang.</>
                 )}
+                {" "}Baribir kelmasa — Otdel kadrga murojaat qiling.
               </p>
             </>
           ) : (

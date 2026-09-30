@@ -158,6 +158,9 @@ async function main() {
   const existingDrivers = await db.employee.findMany({ where: { position: "Haydovchi" } });
   const workers = [
     { fullName: "Anvar Xolmatov",   position: "Haydovchi", phone: "+998 91 333 44 55" },
+    // Toza bazada ham reyslar uchun uchta haydovchi bo'lsin (pastdagi makeTrip driverIds[0..2] ni oladi)
+    { fullName: "Jasur Tursunov",   position: "Haydovchi", phone: "+998 91 777 88 99" },
+    { fullName: "Otabek Raximov",   position: "Haydovchi", phone: "+998 91 888 99 00" },
     { fullName: "Bekzod Ismoilov",  position: "Operator",  phone: "+998 91 444 55 66" },
     { fullName: "Farrux Saidov",    position: "Laborant",  phone: "+998 91 555 66 77" },
     { fullName: "Ulug'bek Nematov", position: "Skladchi",  phone: "+998 91 666 77 88" },

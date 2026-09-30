@@ -4,19 +4,37 @@ import type { Prisma } from "@/generated/prisma";
 /** Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm). */
 export const DEFAULT_CREDIT_LIMIT = 100_000_000;
 
-/** Mijozning joriy qarzi: ochiq schyotlar − ularga to'langan summa. */
+/**
+ * Qarz va limit — hisob qoidasi (bitta joyda):
+ *
+ *   yozilgan  = bekor qilinmagan barcha schyotlar (OPEN, PARTIAL, PAID)
+ *   avans     = schyoti hali yo'q ochiq zayavkaga olingan to'lov (invoiceId bo'sh, orderId ochiq zayavka)
+ *   qarz      = yozilgan − (mijozning BARCHA to'lovlari − avans)
+ *   ochiq     = schyot yozilmagan tasdiqlangan zayavkalar − avans
+ *
+ * Ilgari qarzdan faqat ochiq schyotga bog'langan to'lov ayirilardi: schyotsiz to'lov (kassa sahifasi,
+ * Realizatsiya importi) qarzni kamaytirmas, to'lagan mijoz qora ro'yxatda qolib ketardi. Endi har qanday
+ * to'lov hisobga tushadi; ortiqcha to'lov (avans) ochiq zayavkalarni qoplaydi. Istisno — Realizatsiya
+ * jurnali to'lovlari: ular jurnaldagi sotuvning o'zini yopadi, ERP schyotlariga tegmaydi.
+ */
+
+/** Ochiq (schyot yozilmagan) zayavka: bekor qilingan schyot "yozilmagan" hisoblanadi. */
+const openOrderWhere = (extra: Prisma.OrderWhereInput = {}): Prisma.OrderWhereInput => ({
+  kind: "SALE",
+  status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] },
+  invoices: { none: { status: { not: "CANCELLED" } } },
+  ...extra,
+});
+
+/** Mijozning joriy qarzi (manfiy emas; ortiqcha to'lov `customerCredit` da ochiq zayavkani qoplaydi). */
 export async function customerDebt(customerId: string) {
-  const [inv, pay] = await Promise.all([
-    db.invoice.aggregate({ where: { customerId, status: { in: ["OPEN", "PARTIAL"] } }, _sum: { amount: true } }),
-    db.payment.aggregate({ where: { customerId, invoice: { status: { in: ["OPEN", "PARTIAL"] } } }, _sum: { amount: true } }),
-  ]);
-  return Number(inv._sum.amount ?? 0) - Number(pay._sum.amount ?? 0);
+  return Math.max(0, (await customerCredit(customerId)).debt);
 }
 
 /** Tasdiqlangan, lekin hali schyot yozilmagan zayavkalar summasi (limitga kiradi). */
 export async function customerOpenOrdersTotal(customerId: string, excludeOrderId?: string) {
   // Sklad zaxirasi zayavkasi (kind = STOCK) limitga kirmaydi — unda mijoz ham, summa ham yo'q
-  const orderWhere: Prisma.OrderWhereInput = { customerId, kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: {} }, ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}) };
+  const orderWhere = openOrderWhere({ customerId, ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}) });
   const [items, adv] = await Promise.all([
     db.orderItem.findMany({ where: { order: orderWhere }, select: { qtyM3: true, price: true } }),
     // zayavka ochilganda olingan avans ochiq summani kamaytiradi
@@ -27,14 +45,20 @@ export async function customerOpenOrdersTotal(customerId: string, excludeOrderId
 
 export type CustomerCredit = {
   limit: number;
-  debt: number; // ochiq schyotlar bo'yicha qarz
-  open: number; // schyot yozilmagan tasdiqlangan zayavkalar
+  debt: number; // schyotlar bo'yicha qarz (to'lovlar ayirilgan)
+  open: number; // schyot yozilmagan tasdiqlangan zayavkalar (avanslar ayirilgan)
   used: number; // debt + open — limitdan ayiriladi
   free: number; // limit − used
   blacklisted: boolean; // limit to'liq ishlatilgan (free ≤ 0)
 };
 
-function creditOf(limit: number, debt: number, open: number): CustomerCredit {
+/**
+ * Ortiqcha to'lov bir tomonda manfiy chiqsa, ikkinchisini qoplaydi: schyotlardan ortgan pul ochiq
+ * zayavkani, zayavkadan ortgan avans esa schyot qarzini kamaytiradi.
+ */
+function creditOf(limit: number, rawDebt: number, rawOpen: number): CustomerCredit {
+  const debt = Math.max(0, rawDebt + Math.min(0, rawOpen));
+  const open = Math.max(0, rawOpen + Math.min(0, rawDebt));
   const used = debt + open;
   const free = limit - used;
   return { limit, debt, open, used, free, blacklisted: free <= 0 };
@@ -45,33 +69,37 @@ function creditOf(limit: number, debt: number, open: number): CustomerCredit {
  * qarz to'lansa mijoz avtomatik ro'yxatdan chiqadi.
  */
 export async function customerCredit(customerId: string): Promise<CustomerCredit> {
-  const [c, debt, open] = await Promise.all([
-    db.customer.findUniqueOrThrow({ where: { id: customerId }, select: { creditLimit: true } }),
-    customerDebt(customerId),
-    customerOpenOrdersTotal(customerId),
-  ]);
-  return creditOf(Number(c.creditLimit), debt, open);
+  const m = await customersCredit([customerId], { includeInternal: true });
+  const c = m.get(customerId);
+  if (!c) throw new Error("Mijoz topilmadi");
+  return c;
 }
 
 /** Barcha (yoki berilgan) mijozlar uchun limit holati — ro'yxat va tanlov oynalari uchun bitta so'rovda. */
-export async function customersCredit(ids?: string[]): Promise<Map<string, CustomerCredit>> {
+export async function customersCredit(ids?: string[], opts?: { includeInternal?: boolean }): Promise<Map<string, CustomerCredit>> {
   // Ichki "Sklad" kartochkasi mijoz emas — limit ham, reyting ham hisoblanmaydi
-  const where: Prisma.CustomerWhereInput = { isInternal: false, ...(ids ? { id: { in: ids } } : {}) };
-  const openOrderWhere: Prisma.OrderWhereInput = { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: {} }, ...(ids ? { customerId: { in: ids } } : {}) };
+  const where: Prisma.CustomerWhereInput = { ...(opts?.includeInternal ? {} : { isInternal: false }), ...(ids ? { id: { in: ids } } : {}) };
+  const byCustomer = ids ? { customerId: { in: ids } } : {};
+  const open = openOrderWhere(byCustomer);
   const [customers, inv, pay, items, adv] = await Promise.all([
     db.customer.findMany({ where, select: { id: true, creditLimit: true } }),
-    db.invoice.groupBy({ by: ["customerId"], where: { status: { in: ["OPEN", "PARTIAL"] }, ...(ids ? { customerId: { in: ids } } : {}) }, _sum: { amount: true } }),
-    db.payment.groupBy({ by: ["customerId"], where: { invoice: { status: { in: ["OPEN", "PARTIAL"] } }, ...(ids ? { customerId: { in: ids } } : {}) }, _sum: { amount: true } }),
-    db.orderItem.findMany({ where: { order: openOrderWhere }, select: { qtyM3: true, price: true, order: { select: { customerId: true } } } }),
-    db.payment.groupBy({ by: ["customerId"], where: { invoiceId: null, order: openOrderWhere }, _sum: { amount: true } }),
+    db.invoice.groupBy({ by: ["customerId"], where: { status: { not: "CANCELLED" }, ...byCustomer }, _sum: { amount: true } }),
+    // Realizatsiya jurnalidan yozilgan to'lov — o'sha qatordagi sotuvning puli (sotuv va to'lov birga,
+    // schyotsiz). U ERP qarzini kamaytirmaydi: aks holda eski sotuvlar summasi "avans" bo'lib qolardi.
+    db.payment.groupBy({ by: ["customerId"], where: { ...byCustomer, register: { is: null } }, _sum: { amount: true } }),
+    db.orderItem.findMany({ where: { order: open }, select: { qtyM3: true, price: true, order: { select: { customerId: true } } } }),
+    db.payment.groupBy({ by: ["customerId"], where: { invoiceId: null, order: open }, _sum: { amount: true } }),
   ]);
+  const num = (x: { _sum: { amount: unknown } }) => Number(x._sum.amount ?? 0);
+  const advance = new Map(adv.map((x) => [x.customerId, num(x)]));
   const debt = new Map<string, number>();
-  for (const x of inv) debt.set(x.customerId, (debt.get(x.customerId) ?? 0) + Number(x._sum.amount ?? 0));
-  for (const x of pay) debt.set(x.customerId, (debt.get(x.customerId) ?? 0) - Number(x._sum.amount ?? 0));
-  const open = new Map<string, number>();
-  for (const i of items) open.set(i.order.customerId, (open.get(i.order.customerId) ?? 0) + Number(i.qtyM3) * Number(i.price));
-  for (const a of adv) open.set(a.customerId, Math.max(0, (open.get(a.customerId) ?? 0) - Number(a._sum?.amount ?? 0)));
-  return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), debt.get(c.id) ?? 0, open.get(c.id) ?? 0)]));
+  for (const x of inv) debt.set(x.customerId, (debt.get(x.customerId) ?? 0) + num(x));
+  // Avans ochiq zayavkaniki — qarzdan emas, ochiq summadan ayiriladi
+  for (const x of pay) debt.set(x.customerId, (debt.get(x.customerId) ?? 0) - (num(x) - (advance.get(x.customerId) ?? 0)));
+  const openSum = new Map<string, number>();
+  for (const i of items) openSum.set(i.order.customerId, (openSum.get(i.order.customerId) ?? 0) + Number(i.qtyM3) * Number(i.price));
+  for (const [cid, a] of advance) openSum.set(cid, (openSum.get(cid) ?? 0) - a);
+  return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), debt.get(c.id) ?? 0, openSum.get(c.id) ?? 0)]));
 }
 
 // ───────────────────────── Mijoz tarixi va ishonch reytingi ─────────────────────────

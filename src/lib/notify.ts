@@ -58,7 +58,8 @@ export async function notifyUsers(userIds: (string | null | undefined)[], n: Not
     })),
   });
 
-  const devices = await db.mobileDevice.findMany({ where: { userId: { in: ids } }, select: { userId: true, expoPushToken: true } });
+  // Bloklangan hisob telefoniga push ketmaydi (zayavka, mijoz ma'lumoti bor)
+  const devices = await db.mobileDevice.findMany({ where: { userId: { in: ids }, user: { isActive: true } }, select: { userId: true, expoPushToken: true } });
   if (devices.length === 0) return;
 
   // Ikonkadagi raqam har xodimda o'ziniki — o'qilmaganlar soni bitta so'rovda olinadi

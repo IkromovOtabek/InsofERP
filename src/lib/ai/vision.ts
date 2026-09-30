@@ -111,6 +111,7 @@ async function askOpenAiVision(images: ScanImage[], model: string, provider: "op
   const url = provider === "groq" ? "https://api.groq.com/openai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
   const res = await fetch(url, {
     method: "POST",
+    signal: AbortSignal.timeout(90_000),
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env[KEY_ENV[provider]]}` },
     body: JSON.stringify({
       model,

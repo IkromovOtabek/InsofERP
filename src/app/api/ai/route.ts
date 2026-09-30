@@ -40,7 +40,11 @@ export async function POST(req: Request) {
 
     const question = (body.question ?? "").trim().slice(0, 1000);
     if (!question) return NextResponse.json({ error: "EMPTY" }, { status: 400 });
-    const r = await askInsofAi(question, { sp, history: body.history ?? [] });
+    // Mobil yo'l bilan bir xil cheklov: cheksiz tarix LLM tokenlarini (va pulini) yeb qo'yardi
+    const history = (Array.isArray(body.history) ? body.history : []).slice(-6)
+      .filter((t) => t && (t.role === "user" || t.role === "assistant"))
+      .map((t) => ({ role: t.role, text: String(t.text ?? "").slice(0, 2000) }));
+    const r = await askInsofAi(question, { sp, history });
     return NextResponse.json({ answer: r.answer, level: r.level, model: r.model, period: r.period, latency: Date.now() - t0 });
   } catch (e) {
     console.error("[ai]", e);

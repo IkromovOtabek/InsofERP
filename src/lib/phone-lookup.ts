@@ -48,3 +48,18 @@ export async function staffByPhone(rawPhone: string | null | undefined): Promise
     user: { id: hit.user!.id, login: hit.user!.login, role: hit.user!.role },
   };
 }
+
+/**
+ * Qo'lda yozilgan raqamlar orasidan normallashtirilgani mos kelganlarini ajratadi.
+ * Mijoz/xodim telefoni bazada erkin ko'rinishda saqlanadi ("90 123 45 67"), shuning uchun
+ * `where: { phone }` bilan solishtirish qaytgan mijozni topa olmay dublikat ochardi.
+ * Oxirgi 2 raqam bo'yicha SQL'da oldindan toraytiriladi (hammasini yuklamaslik uchun). Ko'proq olinmaydi:
+ * "45 67" kabi bo'shliqli yozuvda "4567" topilmaydi.
+ */
+export function phoneTail(phone: string) {
+  return phone.replace(/\D+/g, "").slice(-2);
+}
+export function samePhone(a: string | null | undefined, b: string | null | undefined) {
+  const x = normalizePhone(a), y = normalizePhone(b);
+  return !!x && x === y;
+}

@@ -8,8 +8,9 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { num, str } from "@/lib/excel";
+import { num, numMoney, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
+import { toMaterialUnit } from "@/lib/unit";
 
 const schema = z.object({
   supplierId: zStr("Yetkazuvchi tanlanmagan"),
@@ -90,13 +91,18 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
   if (!rows.length) return { error: "Faylda qator yo'q" };
   for (const [i, x] of rows.entries()) {
     const q = num(x.qty); if (!(q > 0)) return { error: `${i + 1}-qator (${str(x.material)}): miqdor 0 dan katta raqam bo'lsin` };
-    const pr = str(x.price) === "" ? 0 : num(x.price); if (!(pr >= 0)) return { error: `${i + 1}-qator (${str(x.material)}): narx noto'g'ri` };
+    const pr = str(x.price) === "" ? 0 : numMoney(x.price); if (!(pr >= 0)) return { error: `${i + 1}-qator (${str(x.material)}): narx noto'g'ri` };
   }
 
   const out = await db.$transaction(async (tx) => {
     const { result, missing, created } = await resolveMaterials(tx, rows.map((x) => ({ name: str(x.material), unit: str(x.unit), code: str(x.code) })), d.createMissing);
     if (missing.length) throw new Error(`Bunday mahsulot/xomashyo yo'q: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "…" : ""}. "Yo'q mahsulotlarni yaratish" ni belgilang.`);
-    const items = rows.map((x) => ({ materialId: result.get(str(x.material).toLowerCase().trim())!.id, qty: num(x.qty), price: str(x.price) === "" ? 0 : num(x.price) }));
+    const items = rows.map((x) => {
+      const m = result.get(str(x.material).toLowerCase().trim())!;
+      const conv = toMaterialUnit(num(x.qty), str(x.price) === "" ? 0 : numMoney(x.price), x.unit, m.unit);
+      if (!conv) throw new Error(`"${m.name}": faylda birlik «${str(x.unit)}», spravochnikda «${m.unit}» — o'girib bo'lmaydi. Faylni tuzating`);
+      return { materialId: m.id, qty: conv.qty, price: conv.price };
+    });
     const rec = await tx.goodsReceipt.create({
       data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date: new Date(d.date), supplierId: d.supplierId, warehouseId: d.warehouseId, note: d.note ?? "Excel'dan import", createdById: s.userId, items: { create: items } },
     });

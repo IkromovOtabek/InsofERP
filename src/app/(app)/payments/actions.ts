@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { addPayment } from "@/lib/payments";
-import { num, parseDate, str } from "@/lib/excel";
+import { num, numMoney, parseDate, str } from "@/lib/excel";
 import { deleteRegisterBatch, importSalesRegister, type RegisterRow } from "@/lib/sales-register";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
@@ -77,7 +77,7 @@ export async function importSalesRegisterFromExcel(_prev: ActionState, fd: FormD
     const money: Record<string, number | undefined> = {};
     for (const k of ["price", "sum", "nds", "totalSum", "deliverySum"]) {
       if (str(x[k]) === "") continue;
-      const v = num(x[k]);
+      const v = numMoney(x[k]);
       if (!Number.isFinite(v)) return { error: `${no}-qator (${customer}): "${k}" ustunida raqam emas ("${str(x[k])}")` };
       money[k] = v;
     }
@@ -99,7 +99,7 @@ export async function importSalesRegisterFromExcel(_prev: ActionState, fd: FormD
   if ("error" in out) return out;
 
   revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/customers"); revalidatePath("/");
-  redirect(`/payments?tab=jurnal&batch=${out.batch}`);
+  redirect(`/payments?tab=jurnal&batch=${out.batch}${out.skipped ? `&skipped=${out.skipped}` : ""}`);
 }
 
 /** Noto'g'ri yuklangan partiyani qaytarish: qatorlar va ular yozgan kirimlar o'chadi. */

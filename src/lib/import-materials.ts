@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { codeFromName } from "./excel";
+import { normalizeUnit, UNIT_FALLBACK } from "./unit";
 
 type Tx = Prisma.TransactionClient;
 type Mat = { id: string; code: string; name: string; unit: string };
@@ -26,7 +27,8 @@ export async function resolveMaterials(tx: Tx, names: { name: string; unit?: str
     const wanted = fileCode?.trim() ? fileCode.trim().toUpperCase() : codeFromName(name);
     let code = wanted;
     for (let n = 2; all.some((m) => m.code === code); n++) code = `${wanted.slice(0, 13)}-${n}`;
-    const m = await tx.material.create({ data: { code, name: name.trim(), unit: unit?.trim() || "dona", isActive: true }, select: { id: true, code: true, name: true, unit: true } });
+    // Birlik kanonik ko'rinishda saqlanadi ("тн" → "t"), aks holda keyingi o'girishlar ishlamaydi
+    const m = await tx.material.create({ data: { code, name: name.trim(), unit: normalizeUnit(unit) ?? UNIT_FALLBACK, isActive: true }, select: { id: true, code: true, name: true, unit: true } });
     all.push(m); byKey.set(code.toLowerCase(), m); byKey.set(key, m); result.set(key, m); created.push(m);
   }
   return { result, missing: [...new Set(missing)], created };

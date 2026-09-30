@@ -1,3 +1,4 @@
+import { phoneTail, samePhone } from "./phone-lookup";
 import { db } from "@/lib/db";
 import { revokeSessions, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
@@ -52,7 +53,8 @@ export async function requestFromEco(input: { userId: string; fullName: string |
   const open = await db.accountDeletionRequest.findFirst({ where: { ecoUserId: input.userId, status: "PENDING" }, select: { id: true } });
   if (open) return { applied: false };
   const phone = normalizePhone(input.phone) ?? input.phone;
-  const emp = await db.employee.findFirst({ where: { OR: [{ ecoUserId: input.userId }, { phone }] }, select: { id: true, fullName: true, userId: true } });
+  const emp = (await db.employee.findFirst({ where: { ecoUserId: input.userId }, select: { id: true, fullName: true, userId: true } }))
+    ?? await employeeByPhone(phone);
   const fullName = input.fullName?.trim() || emp?.fullName || phone;
   const r = await db.accountDeletionRequest.create({
     data: { source: "ECO", ecoUserId: input.userId, employeeId: emp?.id ?? null, userId: emp?.userId ?? null, fullName, phone },
@@ -67,12 +69,26 @@ export async function requestFromWeb(input: { name: string; phone: string; note:
   if (!phone) return { ok: false, error: "Telefon raqami noto'g'ri. Masalan: 90 123 45 67" };
   const recent = await db.accountDeletionRequest.findFirst({ where: { phone, createdAt: { gt: new Date(Date.now() - THROTTLE_MS) } }, select: { id: true } });
   if (recent) return { ok: true, duplicate: true };
-  const emp = await db.employee.findFirst({ where: { phone }, select: { id: true, userId: true } });
+  const emp = await employeeByPhone(phone);
   const r = await db.accountDeletionRequest.create({
     data: { source: "WEB", fullName: input.name, phone, note: input.note, employeeId: emp?.id ?? null, userId: emp?.userId ?? null },
   });
   notifyDirector(r.id, input.name, "saytdan", emp?.id ?? null);
   return { ok: true };
+}
+
+/**
+ * Xodim kartasidagi raqam erkin ko'rinishda ("90 123 45 67") — normallashtirib solishtiriladi.
+ * Ilgari `where: { phone }` topolmay, direktor tasdiqlagan so'rov ERP loginini yopmay qolardi.
+ */
+async function employeeByPhone(phone: string) {
+  const rows = await db.employee.findMany({
+    where: { phone: { contains: phoneTail(phone) } },
+    orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+    select: { id: true, fullName: true, userId: true, phone: true },
+  });
+  const hit = rows.find((e) => samePhone(e.phone, phone));
+  return hit ? { id: hit.id, fullName: hit.fullName, userId: hit.userId } : null;
 }
 
 function notifyDirector(requestId: string, fullName: string, via: string, employeeId: string | null) {

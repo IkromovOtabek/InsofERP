@@ -129,8 +129,9 @@ export async function createShopOrder(raw: unknown): Promise<ShopOrderResult> {
   const parsed = orderSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Ma'lumot noto'g'ri" };
   const d = parsed.data;
-  const item = await db.shopItem.findUnique({ where: { productId: d.productId, isPublished: true }, include: { product: { select: { name: true, unit: true } } } });
-  if (!item) return { ok: false, error: "Bu mahsulot hozir do'konda yo'q" };
+  const item = await db.shopItem.findUnique({ where: { productId: d.productId, isPublished: true }, include: { product: { select: { name: true, unit: true, isActive: true } } } });
+  // Spravochnikda yopilgan mahsulot vitrinada qolib ketgan bo'lsa ham buyurtma olinmaydi
+  if (!item || !item.product.isActive) return { ok: false, error: "Bu mahsulot hozir do'konda yo'q" };
   if (item.minQty && d.qty < Number(item.minQty)) return { ok: false, error: `Eng kam buyurtma: ${Number(item.minQty)} ${unitLabel(item.product.unit)}` };
 
   const res = await createLead({
