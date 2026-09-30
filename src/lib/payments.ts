@@ -16,8 +16,36 @@ export type PaymentInput = {
   note?: string | null;
 };
 
-export async function addPayment(input: PaymentInput, userId: string): Promise<{ id: string; invoiceStatus?: string }> {
+class PaymentError extends Error {}
+
+/** Bir xil to'lov shu oraliqda qayta kelsa — ikki marta bosilgan deb hisoblanadi. */
+const DUPLICATE_WINDOW_MS = 60_000;
+
+export async function addPayment(input: PaymentInput, userId: string): Promise<{ id?: string; invoiceStatus?: string; error?: string }> {
+  if (!(input.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
   const res = await db.$transaction(async (tx) => {
+    // Mijoz bo'yicha navbat: bir vaqtdagi ikki to'lov qoldiqni ham, dublikatni ham to'g'ri ko'rsin
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.customerId}))`;
+    const acc = await tx.cashAccount.findUnique({ where: { id: input.cashAccountId }, select: { isActive: true } });
+    if (!acc?.isActive) throw new PaymentError("Kassa/hisob topilmadi yoki yopilgan");
+    if (input.invoiceId) {
+      // Schyot shu mijozniki, ochiq va summa qoldiqdan oshmasin (mobil ilovadagi qoida bilan bir xil).
+      // Aks holda A mijozning puli B ning schyotini yopishi yoki bekor qilingan schyot qayta "to'landi" bo'lishi mumkin edi.
+      const inv = await tx.invoice.findUnique({ where: { id: input.invoiceId }, include: { payments: { select: { amount: true } } } });
+      if (!inv) throw new PaymentError("Schyot topilmadi");
+      if (inv.customerId !== input.customerId) throw new PaymentError("Schyot boshqa mijozniki");
+      if (!["OPEN", "PARTIAL"].includes(inv.status)) throw new PaymentError("Bu schyot yopilgan yoki bekor qilingan");
+      const left = Number(inv.amount) - inv.payments.reduce((x, y) => x + Number(y.amount), 0);
+      if (input.amount > left + 0.005) throw new PaymentError(`Qoldiqdan ko'p: ${money(left)}`);
+    }
+    const dup = await tx.payment.findFirst({
+      where: {
+        customerId: input.customerId, invoiceId: input.invoiceId ?? null, cashAccountId: input.cashAccountId,
+        amount: input.amount, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+      },
+      select: { id: true },
+    });
+    if (dup) throw new PaymentError("Aynan shu to'lov hozirgina yozildi — ikki marta bosilgan bo'lishi mumkin. Rostdan ikkinchi to'lov bo'lsa, bir daqiqadan keyin qayta kiriting");
     const p = await tx.payment.create({
       data: {
         customerId: input.customerId,
@@ -41,7 +69,8 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
       if (others === 0) await tx.order.updateMany({ where: { id: inv.orderId, status: "DELIVERED" }, data: { status: "CLOSED" } });
     }
     return { id: p.id, invoiceStatus: status };
-  });
+  }).catch((e: Error) => { if (e instanceof PaymentError) return { error: e.message }; throw e; });
+  if ("error" in res) return res;
 
   // To'lov mijozning limitini bo'shatadi — sotuv va buxgalteriya buni kutib turadi
   notifyAfter(async () => {

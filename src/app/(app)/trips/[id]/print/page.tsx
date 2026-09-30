@@ -6,9 +6,11 @@ import { PrintButton } from "@/components/print-button";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
 import { unitLabel } from "@/lib/unit";
+import { requirePage } from "@/lib/page-guard";
 
 /** Chop etish uchun nakladnoy (A5 landshaft / A4 yarim). Brauzerda Ctrl+P → PDF. */
 export default async function PrintPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePage("/trips");
   const { id } = await params;
   const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, items: { include: { product: true } } } }, vehicle: true, driver: true } });
   if (!t) notFound();

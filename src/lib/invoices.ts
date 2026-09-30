@@ -17,6 +17,10 @@ export async function createInvoice(input: { orderId: string; amount: number; da
   if (o.invoices.length) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
 
   return db.$transaction(async (tx) => {
+    // Zayavka qulflanadi va tekshiruv qaytariladi: ikki marta bosish (yoki veb + ilova) ikkita schyot ochmasin
+    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${o.id} FOR UPDATE`;
+    const already = await tx.invoice.count({ where: { orderId: o.id, status: { not: "CANCELLED" } } });
+    if (already) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
     const inv = await tx.invoice.create({ data: { invoiceNo: await nextNo(tx, "invoice", "S"), date: input.date, customerId: o.customerId, orderId: o.id, amount: input.amount } });
     await audit(tx, userId, "CREATE", "Invoice", inv.id, undefined, inv);
     // Zayavka ochilganda olingan oldindan to'lov (avans) shu schyotga bog'lanadi

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { dayUtc, monthDays } from "@/lib/davomat";
+import { monthDays } from "@/lib/davomat";
 import { fmtUnitTotals } from "@/lib/unit";
-import type { AttendanceStatus } from "@/generated/prisma";
+import { productionStaff } from "@/lib/production-staff";
 
 /**
  * Ishlab chiqarish bosh sahifasi va direktorga kunlik hisobot — bitta kun bo'yicha hamma raqamlar.
@@ -36,9 +36,8 @@ export async function productionDay(iso: string) {
   const ym = iso.slice(0, 7);
   const [year, month] = ym.split("-").map(Number);
 
-  const [employees, attendance, brigades, progressToday, progressMonth, openTasks, loadOrders, outputs, plans, defects, products] = await Promise.all([
-    db.employee.findMany({ where: { isActive: true, firedAt: null }, select: { id: true, fullName: true, position: true }, orderBy: { fullName: "asc" } }),
-    db.attendance.findMany({ where: { date: dayUtc(iso) }, select: { employeeId: true, status: true, checkIn: true, checkOut: true } }),
+  const [staff, brigades, progressToday, progressMonth, openTasks, loadOrders, outputs, plans, defects, products] = await Promise.all([
+    productionStaff(iso),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     db.taskProgress.findMany({
       where: { date: { gte: from, lt: to } },
@@ -68,19 +67,14 @@ export async function productionDay(iso: string) {
   ]);
   const productById = new Map(products.map((p) => [p.id, p]));
 
-  // ── 1–2. Xodimlar va davomat ──
+  // ── 1–2. Sex xodimlari va davomat (faqat ishlab chiqarish tarkibi — `production-staff.ts`) ──
   const byPosition = new Map<string, number>();
-  for (const e of employees) add(byPosition, e.position || "—", 1);
-  const attByEmp = new Map(attendance.map((a) => [a.employeeId, a]));
-  const count = (st: AttendanceStatus) => attendance.filter((a) => a.status === st && employees.some((e) => e.id === a.employeeId)).length;
-  const present = employees
-    .filter((e) => attByEmp.get(e.id)?.status === "PRESENT")
-    .map((e) => ({ ...e, checkIn: attByEmp.get(e.id)!.checkIn, checkOut: attByEmp.get(e.id)!.checkOut }))
+  for (const e of staff.members) add(byPosition, e.position || "—", 1);
+  const present = staff.members
+    .filter((e) => e.status === "PRESENT")
     .sort((a, b) => (a.checkIn ?? "99").localeCompare(b.checkIn ?? "99"));
-  const away = employees
-    .filter((e) => { const st = attByEmp.get(e.id)?.status; return st && st !== "PRESENT"; })
-    .map((e) => ({ ...e, status: attByEmp.get(e.id)!.status }));
-  const notMarked = employees.filter((e) => !attByEmp.has(e.id));
+  const away = staff.members.filter((e) => e.status && e.status !== "PRESENT").map((e) => ({ ...e, status: e.status! }));
+  const notMarked = staff.members.filter((e) => !e.status);
 
   // ── 4. Brigadalar ishi ──
   const brigadeRows = brigades.map((b) => {
@@ -160,8 +154,8 @@ export async function productionDay(iso: string) {
 
   return {
     iso, ym, from,
-    staff: { total: employees.length, byPosition: [...byPosition].sort((a, b) => b[1] - a[1]) },
-    attendance: { present, away, notMarked, absent: count("ABSENT"), leave: count("LEAVE"), sick: count("SICK"), dayoff: count("DAYOFF") },
+    staff: { total: staff.total, byPosition: [...byPosition].sort((a, b) => b[1] - a[1]), groups: staff.groups, unassigned: staff.unassigned, members: staff.members },
+    attendance: { present, away, notMarked, absent: staff.absent, leave: staff.leave, sick: staff.sick, dayoff: staff.dayoff },
     brigades: brigadeRows,
     load: { products: [...loadByProduct.values()].sort((a, b) => b.need - a.need), orders: loadOrderRows },
     plan: { rows: planRows, workDays: wd.length, elapsed },

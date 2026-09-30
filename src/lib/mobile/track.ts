@@ -27,6 +27,8 @@ export type TrackResult = { ok: true; accepted: number };
 
 /** Kuzatuv boshlangan va tugaydigan holatlar. PLANNED — hali yuklanmagan, CANCELLED — reys yo'q. */
 const TRACKABLE = ["LOADED", "ON_ROAD", "DELIVERED"];
+/** Telefon soati server soatidan shuncha oldinda bo'lishi mumkin. */
+export const CLOCK_SKEW_MS = 2 * 60_000;
 
 /**
  * Nuqtalarni qabul qilish.
@@ -41,15 +43,20 @@ export async function recordTrack(user: MobileUser, body: unknown): Promise<Trac
 
   const trip = await db.trip.findUnique({ where: { id: tripId }, select: { driverId: true, status: true } });
   if (!trip) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
-  // Haydovchi faqat o'z reysining izini yubora oladi (`lib/mobile/actions.ts` dagi qoida bilan bir xil)
-  if (user.role === "DRIVER" && trip.driverId !== (await driverEmployeeId(user.id))) {
+  // Izni faqat reysga biriktirilgan haydovchi yuboradi: boshqa rol (yoki boshqa haydovchi) nuqta
+  // qo'shsa, "Yetkazdim" 1 km qoidasini haydovchi uchun soxta joylashuv bilan ochib qo'yishi mumkin edi
+  if (user.role !== "DRIVER" || trip.driverId !== (await driverEmployeeId(user.id))) {
     throw new ListError("FORBIDDEN", "Bu reys sizga biriktirilmagan", 403);
   }
   if (!TRACKABLE.includes(trip.status)) return { ok: true, accepted: 0 }; // kech kelgan nuqta — xato emas, shunchaki kerak emas
 
+  // Qurilma vaqti kelajakda bo'lolmaydi: kelajak sanali nuqta doim "eng yangi" bo'lib qolib,
+  // 1 km tekshiruvini abadiy ochib qo'yardi. Soat farqi uchun ozgina zaxira qoldiriladi.
+  const now = Date.now();
   const rows = points.map((x) => {
     const at = new Date(x.at);
-    return { tripId, lat: x.lat, lng: x.lng, speedKmh: x.speedKmh, heading: x.heading, at: isNaN(at.getTime()) ? new Date() : at };
+    const t = isNaN(at.getTime()) ? now : Math.min(at.getTime(), now + CLOCK_SKEW_MS);
+    return { tripId, lat: x.lat, lng: x.lng, speedKmh: x.speedKmh, heading: x.heading, at: new Date(t) };
   });
   await db.tripPosition.createMany({ data: rows });
   return { ok: true, accepted: rows.length };

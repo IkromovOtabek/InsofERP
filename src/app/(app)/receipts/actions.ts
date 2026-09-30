@@ -14,7 +14,8 @@ import { resolveMaterials } from "@/lib/import-materials";
 const schema = z.object({
   supplierId: zStr("Yetkazuvchi tanlanmagan"),
   warehouseId: zStr("Sklad tanlanmagan"),
-  cashAccountId: zStr("To'lov hisobi tanlanmagan"),
+  // Faqat direktor kirim bilan birga to'lovni ham yoza oladi; boshqalarda to'lov moliyaga qoladi
+  cashAccountId: zOpt,
   date: zStr("Sana kerak"),
   note: zOpt,
   materialId: z.array(z.string()).min(1, "Kamida bitta qator"),
@@ -41,9 +42,11 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
         qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
       })),
     });
-    // Kirim summasi — hisobdan chiqim: Kirim-Chiqim jurnalida ko'rinadi va qoldiqni kamaytiradi
+    // Kirim summasi — hisobdan chiqim. Sklad/snabjeniye kassadan pul chiqara olmaydi: bunday kirim
+    // Kirim-Chiqimda "To'lanmagan kirimlar" ro'yxatiga tushadi va moliya to'laydi (`payReceipt`).
+    // Direktor esa hisobni tanlab, shu zahoti to'langan deb yozishi mumkin.
     const total = items.reduce((x, i) => x + i.qty * i.price, 0);
-    if (total > 0) {
+    if (total > 0 && s.role === "DIRECTOR" && d.cashAccountId) {
       const sup = await tx.supplier.findUnique({ where: { id: d.supplierId }, select: { name: true } });
       const cashTx = await tx.cashTransaction.create({
         data: {

@@ -262,6 +262,14 @@ const BRIGADIER_STEPS: TourStep[] = [
   },
 ];
 
+const MECHANIC_STEPS: TourStep[] = [
+  openGroup("Sklad"),
+  openPage("/stock", "Sklad", "Xomashyo qoldig'i va hovlidagi tayyor mahsulot — bosh sahifadagi «Skladda» ustuni shu yerdan olinadi."),
+  openGroup("Logistika"),
+  openPage("/trips", "Reyslar", "Jo'natilgan va yo'ldagi reyslar. Bosh sahifadagi «Jo'natilgan» raqami shu reyslardan hisoblanadi."),
+  openPage("/logistika/transport", "Transport", "Texnika ro'yxati va holati (saflda / ta'mirda / bekor turibdi) — ertangi transport ehtiyoji shu mashinalar bilan solishtiriladi."),
+];
+
 const BY_ROLE: Record<Role, TourStep[]> = {
   DIRECTOR: DIRECTOR_STEPS,
   SALES: SALES_STEPS,
@@ -274,6 +282,7 @@ const BY_ROLE: Record<Role, TourStep[]> = {
   FINANCE: FINANCE_STEPS,
   HR: HR_STEPS,
   CASHIER: CASHIER_STEPS,
+  MECHANIC: MECHANIC_STEPS,
   DRIVER: DRIVER_STEPS,
   BRIGADIER: BRIGADIER_STEPS,
 };

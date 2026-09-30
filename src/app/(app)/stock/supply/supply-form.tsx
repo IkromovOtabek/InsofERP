@@ -8,6 +8,7 @@ import { MaterialPicker, type MaterialGroup } from "@/components/material-picker
 import { fmtNum } from "@/lib/format";
 import { MATERIAL_UNITS, unitLabel } from "@/lib/unit";
 import { cn } from "@/lib/utils";
+import { DEPARTMENTS, PRIORITIES, PRIORITY_LABEL } from "@/lib/procurement-const";
 
 /** Spravochnikdagi xomashyo — qoldig'i va minimal chegarasi bilan (nima kamayganini shu yerda ko'rish uchun). */
 export type SupplyOpt = { id: string; name: string; code: string; unit: string; balance: number; minStock: number; groupId?: string | null };
@@ -70,12 +71,14 @@ function NameCell({ row, options, groups, canCreate, onPick, onText }: {
  * Sklad → «Kerakli mahsulotlar jadvali». Jadval snabjeniyega narx qo'yish uchun ketadi;
  * miqdorni sklad belgilaydi, narxni bu yerda umuman so'ramaymiz.
  */
-export function SupplyForm({ options, low, groups = [], canCreate = false, warehouses }: {
+export function SupplyForm({ options, low, groups = [], canCreate = false, warehouses, department }: {
   options: SupplyOpt[];
   low: SupplyOpt[]; // minimal chegaradan kam qolganlar — bitta bosishda jadvalga tushadi
   groups?: MaterialGroup[];
   canCreate?: boolean;
   warehouses: { id: string; name: string }[];
+  /** Bo'lim sukut bo'yicha — so'rovchining lavozimidan (ishlab chiqarish / sklad) */
+  department?: string;
 }) {
   const [state, action, pending] = useActionState(createRequest, undefined);
   const [rows, setRows] = useState<Row[]>([blank(1)]);
@@ -101,10 +104,20 @@ export function SupplyForm({ options, low, groups = [], canCreate = false, wareh
   return (
     <form action={action} className="space-y-5">
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Qaysi skladga kerak *">
           <Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
         </Field>
+        <Field label="Bo'lim (kim so'rayapti)">
+          <Select name="department" defaultValue={department ?? ""}>
+            <option value="">— tanlanmagan —</option>
+            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </Select>
+        </Field>
+        <Field label="Ustuvorlik">
+          <Select name="priority" defaultValue="NORMAL">{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</Select>
+        </Field>
+        <Field label="Qachongacha kerak"><Input type="date" name="needBy" /></Field>
       </div>
 
       {low.length > 0 && (

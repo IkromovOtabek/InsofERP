@@ -16,6 +16,8 @@ export const POSITIONS: { label: string; role: Role }[] = [
   // Snabjeniye — ta'minot (xarid): narx, yetkazuvchi, sotib olish va qabul; bosh sahifasi — ta'minot kabineti
   { label: "Snabjeniye", role: "PROCUREMENT" },
   { label: "Kassa / bank", role: "CASHIER" },
+  // Mexanik — bosh sahifasi "Sklad & Logistika" nazorati (bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport)
+  { label: "Mexanik", role: "MECHANIC" },
   { label: "Direktor", role: "DIRECTOR" },
 ];
 

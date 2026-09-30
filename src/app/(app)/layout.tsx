@@ -10,7 +10,7 @@ import { tourFor, TOUR_COOKIE } from "@/lib/tour";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await getSession();
-  if (!s) redirect("/login");
+  if (!s) redirect("/api/logout");
   const company = await getCompany();
   const apk = await apkInfo();
   // Instruksiyaning joriy bosqichi (yoki "done") — cookie sessiya bilan birga o'chadi

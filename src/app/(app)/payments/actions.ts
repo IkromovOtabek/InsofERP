@@ -26,7 +26,8 @@ export async function createPayment(_prev: ActionState, fd: FormData): Promise<A
   const d = r.data;
 
   // Qoida `lib/payments.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
-  await addPayment({ customerId: d.customerId, invoiceId: d.invoiceId, cashAccountId: d.cashAccountId, amount: d.amount, date: new Date(d.date), note: d.note }, s.userId);
+  const res = await addPayment({ customerId: d.customerId, invoiceId: d.invoiceId, cashAccountId: d.cashAccountId, amount: d.amount, date: new Date(d.date), note: d.note }, s.userId);
+  if (res.error) return { error: res.error };
   revalidatePath("/payments"); revalidatePath("/invoices"); revalidatePath("/orders"); revalidatePath("/");
   return { ok: true };
 }

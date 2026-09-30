@@ -2,8 +2,10 @@ import { db } from "@/lib/db";
 import { Badge, Button, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { SupplierForm } from "./supplier-form";
 import { toggleSupplier } from "./actions";
+import { requirePage } from "@/lib/page-guard";
 
 export default async function SuppliersPage() {
+  await requirePage("/suppliers");
   const suppliers = await db.supplier.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { receipts: true } } } });
   return (
     <div>

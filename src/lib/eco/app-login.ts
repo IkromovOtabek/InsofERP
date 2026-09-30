@@ -23,7 +23,7 @@ import { eco, ecoEnabled, EcoError, normalizePhone } from "./client";
  * Direktor bera oladigan rollar. Direktor roli ilova orqali berilmaydi; eski (qo'shilib ketgan) rollar ham.
  * Haydovchi/brigadir ham yo'q: ularning sahifasi xodim kartasiga bog'langan — ular Otdel kadr orqali.
  */
-export const APP_GRANTABLE_ROLES: Role[] = ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "HR", "CASHIER"];
+export const APP_GRANTABLE_ROLES: Role[] = ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "HR", "CASHIER", "MECHANIC"];
 
 /** Login maydoniga telefon yozilganmi (harfsiz, 9+ raqam). Harfli bo'lsa — oddiy ERP login. */
 export function looksLikePhone(input: string): string | null {

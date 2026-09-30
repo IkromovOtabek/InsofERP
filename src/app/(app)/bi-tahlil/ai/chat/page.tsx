@@ -3,10 +3,12 @@ import { BarChart3, ChevronRight } from "lucide-react";
 import { biContext, BiPage } from "../../shell";
 import { CATALOG } from "@/lib/bi/ai";
 import { Chat } from "./chat";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/ai/chat");
   const { s, sp, range } = await biContext(searchParams);
   return (
     <BiPage title="AI Chat" subtitle="Javoblar dashboard ma'lumotlariga asoslanadi — tanlangan davr (yuqorida) savollarga qo'llanadi." eyebrow="Insof AI" tab="chat" range={range}>

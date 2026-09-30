@@ -77,6 +77,7 @@ const ThresholdSchema = z.object({
   stockWarnDays: z.coerce.number().int().min(1).max(365),
   stockCritDays: z.coerce.number().int().min(0).max(365),
   overdueDays: z.coerce.number().int().min(1).max(365),
+  supplyDirectorLimit: z.coerce.number().min(0).max(1e13),
 });
 
 /** Norma / e'tibor / kritik chegaralari — TZ §16: administrator sozlaydi. */

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { loadSales } from "@/lib/bi/core";
 import { ownerDashboard } from "@/lib/owner-dashboard";
+import { reportHistory } from "@/lib/production-report";
 import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
@@ -8,11 +9,11 @@ import { liveTrips } from "@/lib/live";
 import { CREATE_ROLES, canCreate } from "./create";
 import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
-import { myBrigades } from "@/lib/brigades";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { soleUnit } from "@/lib/unit";
 import { day, inUnit, money, num, short, sum, time, totalsText, tripQty } from "./fmt";
 import { dashRange, roleDashboard } from "./dashboard";
+import { brigadierHome } from "./brigadier";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
 
@@ -28,6 +29,11 @@ export type Tone = "brand" | "success" | "warning" | "danger" | "info";
  */
 export type CardFilter = { key: string; label: string; active: boolean };
 export type HomeCard = { key: string; label: string; value: string; hint?: string; tone?: Tone; icon?: string; filterParam?: string; filters?: CardFilter[];
+  /**
+   * Karta bosilganda ochiladigan joy: `id` bilan — batafsil kartochka (`/erp/<key>/<id>`),
+   * `id` siz — ro'yxat (`/erp/list/<key>`). Eski ilova bilmaydi — karta oddiy turaveradi.
+   */
+  open?: { key: string; id?: string };
   /** Kalendardan tanlangan oraliq ("custom" filtr) — ilova kalendarini shu kunlar bilan ochadi. `YYYY-MM-DD`. */
   range?: { from: string; to: string } | null };
 /** Bosh sahifa so'rovidagi ixtiyoriy parametrlar (karta filtrlari). */
@@ -160,6 +166,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   FINANCE: { key: "cashflow", title: "Kirim-chiqim" },
   HR: { key: "employees", title: "Xodimlar" },
   CASHIER: { key: "payments", title: "To'lovlar" },
+  MECHANIC: { key: "trips", title: "Reyslar" },
   DRIVER: { key: "trips", title: "Mening reyslarim" },
   BRIGADIER: { key: "tasks", title: "Topshiriqlarim" },
 };
@@ -167,7 +174,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
 /** Tezkor amal katakchasi ikonlari (ilovadagi `design/icons.tsx` nomlari). */
 const LIST_ICON: Record<string, string> = {
   orders: "document-text", sales: "trending-up", customers: "users", leads: "inbox", invoices: "receipt",
-  production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat",
+  production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check",
   trips: "bus", drivers: "id-card",
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
@@ -236,10 +243,9 @@ async function cashBalance() {
 const DASH_COVERS: Partial<Record<Role, string[]>> = {
   SALES: ["m3", "sum"],
   SUPERVISOR: ["tasks", "left", "overdue", "today"],
-  BRIGADIER: ["tasks", "left", "overdue", "today"],
   LOGISTICS: ["cost"],
   WAREHOUSE: ["low"],
-  PROCUREMENT: ["month", "docs", "suppliers"],
+  PROCUREMENT: ["month", "docs", "suppliers", "supply"],
   ACCOUNTING: ["debt", "open"],
   FINANCE: ["balance"],
   CASHIER: ["balance"],
@@ -272,9 +278,10 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     case "DIRECTOR": {
       // Vebdagi direktor bosh sahifasi (Egasi dashbordi, TZ v2.0) bilan bitta manba — `ownerDashboard()`.
       // Ilova raqamni o'zi hisoblamaydi: vebda nima bo'lsa, telefonda ham shu.
-      const [d, trips] = await Promise.all([
+      const [d, trips, prodReports] = await Promise.all([
         ownerCached(),
         db.trip.findMany({ where: { status: { in: ["LOADED", "ON_ROAD"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true } }),
+        reportHistory(5),
       ]);
       const S = d.summary, L = d.levels;
       const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
@@ -363,6 +370,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         },
         // "Bugungi holat" bosilsa — barcha xodimlarning bugungi ishlari (`activity` ro'yxati)
         { title: "Kunlik hisobot", empty: "", icon: "file-text", rows: [{ id: "report", title: "Bugungi holat", subtitle: d.reportText, open: "activity" }] },
+        // Ishlab chiqarish (sex) "Qayd etish" bosgan kunlik hisobotlar — ochilsa "ko'rildi" belgilanadi
+        {
+          title: `Ishlab chiqarish hisobotlari${prodReports.some((r) => !r.seenAt) ? ` · ${prodReports.filter((r) => !r.seenAt).length} yangi` : ""}`,
+          empty: "Hali hisobot qayd etilmagan", target: "prod-report", icon: "file-text",
+          rows: prodReports.map((r) => ({ id: r.id, title: `${r.iso.split("-").reverse().join(".")}${r.latest ? "" : " (avvalgi nusxa)"}`, subtitle: `${r.summary} · ${r.by}`, right: r.seenAt ? "ko'rildi" : "yangi", tone: r.seenAt ? "success" : "warning" })),
+        },
         { title: "Yo'ldagi reyslar", empty: "Yo'lda reys yo'q", target: "trips", rows: trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
       );
       break;
@@ -408,14 +421,14 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const waiting = count("unassigned");
       const soon = count("soon");
       cards.push(
-        { key: "today", label: "Bugungi zames", value: totalsText(batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }))), hint: `${batches.length} partiya`, tone: "brand", icon: "today" },
-        { key: "unassigned", label: "Brigada kutayotgan", value: String(waiting), hint: "zayavka", tone: waiting ? "warning" : "success", icon: "hammer" },
-        { key: "soon", label: "Muddati yaqin", value: String(soon), hint: "≤ 2 kun", tone: soon ? "danger" : "success", icon: "alarm" },
-        { key: "inprod", label: "Ishlab chiqarishda", value: String(inProd), hint: "zayavka", tone: "warning", icon: "construct" },
-        { key: "tasks", label: "Ochiq topshiriq", value: String(tasks), tone: tasks ? "info" : "success", icon: "list" },
+        { key: "today", label: "Bugungi zames", value: totalsText(batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }))), hint: `${batches.length} partiya`, tone: "brand", icon: "today", open: { key: "sex", id: "produced.day" } },
+        { key: "unassigned", label: "Brigada kutayotgan", value: String(waiting), hint: "zayavka", tone: waiting ? "warning" : "success", icon: "hammer", open: { key: "orders" } },
+        { key: "soon", label: "Muddati yaqin", value: String(soon), hint: "≤ 2 kun", tone: soon ? "danger" : "success", icon: "alarm", open: { key: "orders" } },
+        { key: "inprod", label: "Ishlab chiqarishda", value: String(inProd), hint: "zayavka", tone: "warning", icon: "construct", open: { key: "orders" } },
+        { key: "tasks", label: "Ochiq topshiriq", value: String(tasks), tone: tasks ? "info" : "success", icon: "list", open: { key: "tasks" } },
       );
       sections.push(
-        { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.status === "NEW" ? "info" : "warning" })) },
+        { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.status === "NEW" ? "info" : "warning" })) },
         { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
       );
       break;
@@ -647,34 +660,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       break;
     }
 
-    // Brigadir: faqat O'Z brigadasiga tayinlangan topshiriqlar. Ishlab chiqarish zayavka
-    // qatoriga brigada tayinlagan zahoti topshiriq shu yerda paydo bo'ladi.
+    // Brigadir: smena holati, ogohlantirishlar, brigada xodimlari, faol topshiriqlar, uskunalar,
+    // smena hisobotlari — faqat O'Z brigadasi (`./brigadier.ts`). KPI va grafiklar — `dashboard.ts`.
     case "BRIGADIER": {
-      const mine = await myBrigades(user.id);
-      if (mine.length === 0) {
-        cards.push({ key: "nobrigade", label: "Brigada biriktirilmagan", value: "—", hint: "Ishlab chiqarish yoki Otdel kadrga ayting", tone: "danger", icon: "alert-circle" });
-        break;
-      }
-      const ids = mine.map((b) => b.id);
-      const [openTasks, overdue, todayProgress, recent] = await Promise.all([
-        db.brigadeTask.findMany({ where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 20, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
-        db.brigadeTask.count({ where: { brigadeId: { in: ids }, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: today } } }),
-        db.taskProgress.findMany({ where: { date: { gte: today }, task: { brigadeId: { in: ids } } }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
-        db.brigadeTask.findMany({ where: { brigadeId: { in: ids }, status: "DONE" }, orderBy: { updatedAt: "desc" }, take: 8, include: { order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
-      ]);
-      const leftRows = openTasks.map((t) => ({ unit: t.orderItem.product.unit, qty: sum(t.qty) - sum(t.doneQty) }));
-      // Hali ochilmagan (NEW) topshiriq — "yangi kelgani": brigadir avval shularni ko'rsin
-      const fresh = openTasks.filter((t) => t.status === "NEW").length;
-      cards.push(
-        { key: "tasks", label: "Ochiq topshiriq", value: String(openTasks.length), hint: fresh ? `${fresh} tasi yangi` : mine.map((b) => b.name).join(", "), icon: "list", tone: openTasks.length ? "brand" : "success" },
-        { key: "left", label: "Qolgan hajm", value: totalsText(leftRows), icon: "cube", tone: "info" },
-        { key: "overdue", label: "Kechikkan", value: String(overdue), hint: overdue ? "muddati o'tgan" : undefined, icon: "alarm", tone: overdue ? "danger" : "success" },
-        { key: "today", label: "Bugun bajardim", value: totalsText(todayProgress.map((p) => ({ unit: p.task.orderItem.product.unit, qty: p.qty }))), hint: `${todayProgress.length} qayd`, icon: "checkmark-done", tone: "success" },
-      );
-      sections.push(
-        { title: "Topshiriqlarim", empty: "Ochiq topshiriq yo'q — brigadangizga tayinlansa shu yerda chiqadi", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}${mine.length > 1 ? ` · ${t.brigade.name}` : ""}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
-        { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: recent.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${day(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), status: t.status, tone: "success" as Tone })) },
-      );
+      const b = await brigadierHome(user);
+      cards.push(...b.cards);
+      sections.push(...b.sections);
       break;
     }
   }
@@ -686,7 +677,9 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     if (dash) {
       const drop = new Set(DASH_COVERS[user.role] ?? []);
       cards = [dash.hero, ...dash.tiles, ...cards.filter((c) => !drop.has(c.key))];
-      sections.unshift(...dash.charts);
+      // Brigadir: hujjatdagi tartib — ogohlantirishlar va brigada tarkibi grafiklardan oldin
+      if (user.role === "BRIGADIER") sections.splice(2, 0, ...dash.charts);
+      else sections.unshift(...dash.charts);
     }
   }
   return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(fleet ? { fleet } : {}) };

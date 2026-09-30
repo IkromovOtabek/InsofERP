@@ -14,8 +14,10 @@ import { ecoLabel } from "@/lib/eco/labels";
 import { LiveDrivers } from "./live-drivers";
 import { DriverList, DriverTrips } from "./driver-history";
 import type { TripStatus } from "@/generated/prisma";
+import { requirePage } from "@/lib/page-guard";
 
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; driver?: string }> }) {
+  await requirePage("/trips");
   const { status, q, driver } = await searchParams;
   const eco = ecoEnabled();
   // "Tarix" — holat emas, alohida ko'rinish: haydovchilar ro'yxati va ularning butun tarixi

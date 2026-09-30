@@ -7,10 +7,12 @@ import { money, moneyShort, fmtNum, qty, dateTime } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select } from "@/components/ui";
 import { BarChart, DonutChart, HBarList } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Pager, Chip, ExportLink, ROUTES, tabHref } from "../../ui";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/sotuvlar/bekor");
   const { sp, range } = await biContext(searchParams);
   const gran: Gran = sp.gran === "day" || sp.gran === "week" || sp.gran === "month" ? sp.gran : autoGran(range.days);
   const page = Math.max(1, Number(sp.page) || 1), size = [25, 50, 100].includes(Number(sp.size)) ? Number(sp.size) : 25;

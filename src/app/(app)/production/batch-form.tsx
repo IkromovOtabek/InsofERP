@@ -64,7 +64,8 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
         <Field label="Smena"><Select name="shift" defaultValue="1"><option value="1">1-smena</option><option value="2">2-smena</option><option value="3">3-smena</option></Select></Field>
         <Field label="Sklad *"><Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
       </div>
-      {brigadeTasks.length > 0 && (
+      {/* Beton (m³) sarfi faqat zamesda yoziladi — ogohlantirish dona mahsulot uchun */}
+      {brigadeTasks.length > 0 && unit !== "m³" && (
         <Callout tone="warning" title="Bu mahsulotni brigada ham chiqaryapti">
           <ul className="ml-4 list-disc space-y-0.5">
             {brigadeTasks.map((t) => (

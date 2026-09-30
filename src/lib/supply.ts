@@ -4,6 +4,7 @@ import { audit } from "./audit";
 import { nextNo } from "./numbering";
 import { resolveMaterials } from "./import-materials";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
+import { getCompany } from "./company";
 
 /**
  * Ta'minot zayavkasi — bitta hujjat besh bo'limdan o'tadi:
@@ -82,6 +83,10 @@ const full = {
   createdBy: { select: { fullName: true } },
   events: { orderBy: { createdAt: "asc" }, include: { user: { select: { fullName: true, role: true } } } },
   receipt: { select: { id: true, docNo: true } },
+  responsible: { select: { id: true, fullName: true } },
+  quotes: { orderBy: { createdAt: "asc" }, include: { createdBy: { select: { fullName: true } } } },
+  incidents: { orderBy: { createdAt: "desc" }, include: { createdBy: { select: { fullName: true } } } },
+  documents: { orderBy: { createdAt: "desc" }, include: { createdBy: { select: { fullName: true } } } },
 } satisfies Prisma.SupplyRequestInclude;
 
 export type SupplyFull = Prisma.SupplyRequestGetPayload<{ include: typeof full }>;
@@ -96,6 +101,23 @@ function guard(req: { status: SupplyStatus } | null, expect: SupplyStatus[]): st
 }
 
 type Tx = Prisma.TransactionClient;
+
+/**
+ * Bosqich o'tishi tranzaksiya ichida shartli: zayavka hali `from` bosqichida bo'lsagina o'zgaradi.
+ * Ikki marta bosish, veb va ilovadan bir vaqtda yuborish — ikkinchisi hech narsa yozmaydi
+ * (aks holda kirim ikki marta skladga tushar, chiqim ikki marta kassaga yozilardi).
+ */
+const QTY_TOLERANCE = 1.02;
+const STALE = "Zayavka boshqa joyda o'zgartirildi — sahifani yangilang";
+async function claim(tx: Tx, id: string, from: SupplyStatus[], data: Prisma.SupplyRequestUncheckedUpdateManyInput) {
+  const r = await tx.supplyRequest.updateMany({ where: { id, status: { in: from } }, data });
+  if (r.count !== 1) throw new Error(STALE);
+}
+/** Formadan kelgan qator id'lari shu zayavkaniki ekanini tekshiradi (boshqa zayavka qatoriga tegilmasin). */
+function foreignRow(req: { items: { id: string }[] }, ids: string[]): boolean {
+  const own = new Set(req.items.map((i) => i.id));
+  return ids.some((i) => !own.has(i));
+}
 const event = (tx: Tx, requestId: string, stage: SupplyStatus, userId: string, note?: string | null) =>
   tx.supplyEvent.create({ data: { requestId, stage, userId, note: note ?? undefined } });
 
@@ -104,7 +126,11 @@ const event = (tx: Tx, requestId: string, stage: SupplyStatus, userId: string, n
 export type NewItem = { materialId?: string | null; name: string; unit: string; qty: number; note?: string | null };
 
 export async function createSupplyRequest(
-  input: { warehouseId: string; needBy?: string | null; note?: string | null; items: NewItem[] },
+  input: {
+    warehouseId: string; needBy?: string | null; note?: string | null; items: NewItem[];
+    /** Snabjeniye TZ: qaysi bo'lim so'rayapti va qanchalik shoshilinch */
+    department?: string | null; priority?: "NORMAL" | "HIGH" | "CRITICAL" | null;
+  },
   userId: string,
 ): Promise<SupplyResult> {
   const items = input.items.filter((i) => i.name.trim());
@@ -121,6 +147,8 @@ export async function createSupplyRequest(
         warehouseId: input.warehouseId,
         needBy: input.needBy ? new Date(input.needBy) : null,
         note: input.note ?? null,
+        department: input.department || null,
+        priority: input.priority ?? "NORMAL",
         createdById: userId,
         items: {
           create: items.map((i, n) => ({
@@ -143,7 +171,7 @@ export async function createSupplyRequest(
   notifyAfter(() => notifyRoles(["PROCUREMENT"], {
     type: "SUPPLY_NEW",
     title: `Yangi ta'minot so'rovi — ${req.docNo}`,
-    body: `${wh.name} · ${items.length} ta mahsulot — narx qo'ying`,
+    body: `${input.department || wh.name} · ${items.length} ta mahsulot${input.priority === "CRITICAL" ? " · KRITIK" : input.priority === "HIGH" ? " · shoshilinch" : ""} — narx qo'ying`,
     link: { key: "supply", id: req.id },
   }, { except: userId }));
   return { id: req.id, docNo: req.docNo };
@@ -160,14 +188,17 @@ export async function editSupplyItems(
   if (err || !req) return { error: err ?? "Topilmadi" };
   const bad = rows.find((r) => !(r.qty >= 0));
   if (bad) return { error: "Miqdor manfiy bo'lmasin" };
+  if (foreignRow(req, rows.map((r) => r.itemId))) return { error: "Jadval o'zgargan — sahifani yangilang" };
 
-  await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    await claim(tx, id, ["NEW"], { updatedAt: new Date() });
     for (const r of rows) {
-      if (r.qty === 0) { await tx.supplyRequestItem.delete({ where: { id: r.itemId } }); continue; }
-      await tx.supplyRequestItem.update({ where: { id: r.itemId }, data: { qty: r.qty, note: r.note ?? null } });
+      if (r.qty === 0) { await tx.supplyRequestItem.deleteMany({ where: { id: r.itemId, requestId: id } }); continue; }
+      await tx.supplyRequestItem.updateMany({ where: { id: r.itemId, requestId: id }, data: { qty: r.qty, note: r.note ?? null } });
     }
     await audit(tx, userId, "UPDATE", "SupplyRequest", id, { items: req.items }, { rows });
-  });
+  }).catch((e: Error) => ({ error: e.message }));
+  if (res && "error" in res) return { error: res.error };
   const left = await db.supplyRequestItem.count({ where: { requestId: id } });
   if (!left) return { error: "Jadvalda qator qolmadi — zayavkani bekor qiling" };
   return { id, docNo: req.docNo };
@@ -196,19 +227,31 @@ export async function priceSupplyRequest(
   const total = rows.reduce((s, r) => s + r.qty * r.price, 0) + delivery;
   if (total <= 0) return { error: "Jami summa 0 — kamida bitta qatorga narx qo'ying" };
 
-  await db.$transaction(async (tx) => {
-    for (const r of rows) await tx.supplyRequestItem.update({ where: { id: r.itemId }, data: { qty: r.qty, price: r.price } });
-    await tx.supplyRequest.update({
-      where: { id },
-      data: {
-        status: "PRICED", supplierId: input.supplierId || null,
-        deliveryKind: input.delivery?.kind || null, deliveryProvider: input.delivery?.provider || null,
-        deliveryCost: delivery, deliveryNote: input.delivery?.note || null,
-      },
+  const res = await db.$transaction(async (tx) => {
+    // Narx faqat hali tasdiqlanmagan zayavkaga qo'yiladi — tasdiq bilan bir vaqtda kelsa, tasdiq ustun
+    await claim(tx, id, ["NEW", "PRICED"], {
+      status: "PRICED", supplierId: input.supplierId || null,
+      deliveryKind: input.delivery?.kind || null, deliveryProvider: input.delivery?.provider || null,
+      deliveryCost: delivery, deliveryNote: input.delivery?.note || null,
+      // Summa o'zgargan bo'lishi mumkin — direktorning oldingi tasdig'i kuchini yo'qotadi
+      directorOkAt: null, directorOkById: null,
     });
+    for (const r of rows) await tx.supplyRequestItem.update({ where: { id: r.itemId }, data: { qty: r.qty, price: r.price } });
     await event(tx, id, "PRICED", userId, `Jami ${ROUND(total)} so'm${delivery > 0 ? ` (dostavka ${ROUND(delivery)})` : ""}${input.note ? ` · ${input.note}` : ""}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "PRICED", total });
-  });
+  }).catch((e: Error) => ({ error: e.message }));
+  if (res && "error" in res) return { error: res.error };
+  // Katta xarid (Sozlamalardagi chegaradan oshsa) — avval direktor tasdiqlaydi, sotuv keyin
+  const limit = Number((await getCompany()).supplyDirectorLimit);
+  if (limit > 0 && total >= limit) {
+    notifyAfter(() => notifyRoles(["DIRECTOR"], {
+      type: "SUPPLY_DIRECTOR",
+      title: `Katta xarid tasdig'i — ${req.docNo}`,
+      body: `Jami ${ROUND(total)} so'm — chegara ${ROUND(limit)} dan oshdi`,
+      link: { key: "supply", id },
+    }, { except: userId }));
+    return { id, docNo: req.docNo, note: `Jami summa: ${ROUND(total)} — chegaradan katta, avval direktor tasdiqlaydi` };
+  }
   // Tasdiq — sotuv (ma'sul xodim) ishi; direktorga bu bosqich haqida xabar ketmaydi
   notifyAfter(() => notifyRoles(["SALES"], {
     type: "SUPPLY_PRICED",
@@ -225,12 +268,19 @@ export async function approveSupplyRequest(id: string, userId: string, note?: st
   const req = await db.supplyRequest.findUnique({ where: { id }, include: { items: true } });
   const err = guard(req, ["PRICED"]);
   if (err || !req) return { error: err ?? "Topilmadi" };
+  const limit = Number((await getCompany()).supplyDirectorLimit);
+  if (limit > 0 && totalPlanned(req) >= limit && !req.directorOkAt) {
+    return { error: `Jami summa ${ROUND(totalPlanned(req))} so'm — ${ROUND(limit)} dan katta xarid avval direktor tasdig'idan o'tadi` };
+  }
 
-  await db.$transaction(async (tx) => {
-    await tx.supplyRequest.update({ where: { id }, data: { status: "APPROVED" } });
+  const res = await db.$transaction(async (tx) => {
+    // `updatedAt` ham mos kelishi shart: o'qigandan keyin narx qayta qo'yilgan bo'lsa, eski summa tasdiqlanmasin
+    const r = await tx.supplyRequest.updateMany({ where: { id, status: "PRICED", updatedAt: req.updatedAt }, data: { status: "APPROVED" } });
+    if (r.count !== 1) throw new Error(STALE);
     await event(tx, id, "APPROVED", userId, note);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "APPROVED" });
-  });
+  }).catch((e: Error) => ({ error: e.message }));
+  if (res && "error" in res) return { error: res.error };
   notifyAfter(() => notifyRoles(["FINANCE", "ACCOUNTING", "CASHIER"], {
     type: "SUPPLY_APPROVED",
     title: `Ta'minot tasdiqlandi — ${req.docNo}`,
@@ -258,7 +308,9 @@ export async function fundSupplyRequest(
   if (!acc || !acc.isActive) return { error: "To'lov hisobi tanlanmagan" };
   const total = totalPlanned(req);
 
-  await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    // Avval bosqich egallanadi — ikkinchi bosish chiqimni ikki marta yozmasin
+    await claim(tx, id, ["APPROVED"], { status: "FUNDED", cashAccountId: acc.id, deliveryStatus: "PLANNED" });
     const ct = await tx.cashTransaction.create({
       data: {
         type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: total, category: "Xomashyo",
@@ -267,10 +319,11 @@ export async function fundSupplyRequest(
         refType: "SupplyRequest", refId: id, createdById: userId,
       },
     });
-    await tx.supplyRequest.update({ where: { id }, data: { status: "FUNDED", cashAccountId: acc.id, cashTxId: ct.id } });
+    await tx.supplyRequest.update({ where: { id }, data: { cashTxId: ct.id } });
     await event(tx, id, "FUNDED", userId, `${acc.name} · ${ROUND(total)} so'm${input.note ? ` · ${input.note}` : ""}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "FUNDED", cashTxId: ct.id, total });
-  });
+  }).catch((e: Error) => ({ error: e.message }));
+  if (res && "error" in res) return { error: res.error };
   notifyAfter(() => notifyRoles(["PROCUREMENT", "WAREHOUSE"], {
     type: "SUPPLY_FUNDED",
     title: `Pul ajratildi — ${req.docNo}`,
@@ -291,9 +344,10 @@ export async function saveSupplyFact(id: string, rows: FactRow[], userId: string
   if (err || !req) return { error: err ?? "Topilmadi" };
   const bad = rows.find((r) => !(r.factQty >= 0) || !(r.factPrice >= 0));
   if (bad) return { error: "Kelgan miqdor va narx manfiy bo'lmasin" };
+  if (foreignRow(req, rows.map((r) => r.itemId))) return { error: "Jadval o'zgargan — sahifani yangilang" };
 
   await db.$transaction(async (tx) => {
-    for (const r of rows) await tx.supplyRequestItem.update({ where: { id: r.itemId }, data: { factQty: r.factQty, factPrice: r.factPrice } });
+    for (const r of rows) await tx.supplyRequestItem.updateMany({ where: { id: r.itemId, requestId: id }, data: { factQty: r.factQty, factPrice: r.factPrice } });
     await audit(tx, userId, "UPDATE", "SupplyRequest", id, { items: req.items }, { fact: rows });
   });
   return { id, docNo: req.docNo, note: "Tuzatishlar saqlandi" };
@@ -330,9 +384,13 @@ export async function receiveSupplyRequest(
   // ── Narx o'zgargan bo'lsa qabul qilinmaydi: zayavka Sotuv va Moliya tasdig'iga qaytadi ──
   // (miqdor kam kelishi tasdiqni talab qilmaydi — pul baribir fakt bo'yicha tuzatiladi)
   const priceMoved = lines.filter((l) => Math.abs(l.price - Number(l.item.price)) > 0.5 && l.qty > 0);
+  // Miqdor tasdiqlangandan sezilarli ko'p kelsa ham summa oshadi — bu ham qayta tasdiqsiz o'tmasin
+  // (2% — tarozi farqi uchun zaxira)
+  const qtyGrew = lines.filter((l) => l.qty > Number(l.item.qty) * QTY_TOLERANCE + 0.001);
   const deliveryMoved = Math.abs(deliveryFact - Number(req.deliveryCost)) > 0.5;
-  if (priceMoved.length || deliveryMoved) {
-    await db.$transaction(async (tx) => {
+  if (priceMoved.length || qtyGrew.length || deliveryMoved) {
+    const res = await db.$transaction(async (tx) => {
+      await claim(tx, id, ["FUNDED"], { updatedAt: new Date() });
       for (const l of lines) {
         await tx.supplyRequestItem.update({
           where: { id: l.item.id },
@@ -346,22 +404,26 @@ export async function receiveSupplyRequest(
       }
       await tx.supplyRequest.update({
         where: { id },
-        data: { status: "PRICED", cashTxId: null, recheck: { increment: 1 }, supplierId, deliveryCost: deliveryFact, deliveryFactCost: deliveryFact },
+        data: { status: "PRICED", cashTxId: null, recheck: { increment: 1 }, supplierId, deliveryCost: deliveryFact, deliveryFactCost: deliveryFact, directorOkAt: null, directorOkById: null },
       });
       const what = [
         ...priceMoved.map((l) => `${l.item.name}: ${ROUND(Number(l.item.price))} → ${ROUND(l.price)}`),
+        ...qtyGrew.filter((l) => !priceMoved.includes(l)).map((l) => `${l.item.name}: miqdor ${Number(l.item.qty)} → ${l.qty}`),
         ...(deliveryMoved ? [`dostavka: ${ROUND(Number(req.deliveryCost))} → ${ROUND(deliveryFact)}`] : []),
       ];
-      await event(tx, id, "PRICED", userId, `Narx o'zgardi (${what.join("; ")}) — qayta tasdiq so'raldi. Yangi jami ${ROUND(factTotal)} so'm`);
-      await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status, planTotal }, { status: "PRICED", reason: "price-changed", factTotal });
-    });
+      await event(tx, id, "PRICED", userId, `Summa o'zgardi (${what.join("; ")}) — qayta tasdiq so'raldi. Yangi jami ${ROUND(factTotal)} so'm`);
+      await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status, planTotal }, { status: "PRICED", reason: qtyGrew.length && !priceMoved.length ? "qty-grew" : "price-changed", factTotal });
+    }).catch((e: Error) => ({ error: e.message }));
+    if (res && "error" in res) return { error: res.error };
     return {
       id, docNo: req.docNo,
-      note: `Narx o'zgardi — zayavka Sotuv va Moliya tasdig'iga qaytdi (yangi jami ${ROUND(factTotal)} so'm). Tasdiqlangach qabul qilasiz.`,
+      note: `${priceMoved.length || deliveryMoved ? "Narx" : "Miqdor"} o'zgardi — zayavka Sotuv va Moliya tasdig'iga qaytdi (yangi jami ${ROUND(factTotal)} so'm). Tasdiqlangach qabul qilasiz.`,
     };
   }
 
   const out = await db.$transaction(async (tx) => {
+    // Qabul bir marta: ikkinchi bosish (yoki veb + ilova) kirimni ikki marta yozmasin
+    await claim(tx, id, ["FUNDED"], { status: "RECEIVED" });
     // Spravochnikda yo'q qatorlar uchun xomashyo ochiladi (nomi va birligi bo'yicha)
     const need = arrived.filter((l) => !l.item.materialId).map((l) => ({ name: l.item.name, unit: l.item.unit }));
     const { result } = need.length ? await resolveMaterials(tx, need, true) : { result: new Map() };
@@ -403,7 +465,7 @@ export async function receiveSupplyRequest(
         await audit(tx, userId, "UPDATE", "CashTransaction", after.id, before, after);
       }
     }
-    await tx.supplyRequest.update({ where: { id }, data: { status: "RECEIVED", supplierId, receiptId: rec.id } });
+    await tx.supplyRequest.update({ where: { id }, data: { supplierId, receiptId: rec.id, deliveryStatus: "RECEIVED", arrivedAt: req.arrivedAt ?? new Date() } });
     const missing = lines.filter((l) => l.qty <= 0).length;
     const diff = ROUND(factTotal - planTotal);
     await event(tx, id, "RECEIVED", userId, `Kirim ${rec.docNo} · fakt ${ROUND(factTotal)} so'm${diff ? ` (rejadan ${diff > 0 ? "+" : ""}${diff})` : ""}${missing ? ` · ${missing} qator kelmadi` : ""}`);
@@ -412,6 +474,16 @@ export async function receiveSupplyRequest(
   }).catch((e: Error) => ({ error: e.message }));
 
   if ("error" in out) return { error: out.error };
+  // Qabul qilingan miqdor buyurtmadan farq qilsa — snabjeniye va sklad bilsin (2% tarozi zaxirasi)
+  const short = lines.filter((l) => l.qty < Number(l.item.qty) / QTY_TOLERANCE - 0.001);
+  if (short.length) {
+    notifyAfter(() => notifyRoles(["PROCUREMENT", "WAREHOUSE"], {
+      type: "SUPPLY_QTY_DIFF",
+      title: `Miqdor farq qildi — ${req.docNo}`,
+      body: short.slice(0, 3).map((l) => `${l.item.name}: ${Number(l.item.qty)} → ${l.qty} ${l.item.unit}`).join("; "),
+      link: { key: "supply", id },
+    }, { except: userId }));
+  }
   return {
     id, docNo: req.docNo,
     note: `Kirim ${out.docNo} yozildi — sklad qoldig'i oshdi${out.diff ? `, chiqim ${out.diff > 0 ? "oshdi" : "kamaydi"}` : ""}${out.missing ? `, ${out.missing} qator kelmadi` : ""}`,
@@ -429,7 +501,9 @@ export async function rejectSupplyRequest(id: string, userId: string, reason: st
   if (err || !req) return { error: err ?? "Topilmadi" };
   if (!reason.trim()) return { error: "Bekor qilish sababini yozing" };
 
-  await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    // Qabul bilan bir vaqtda bekor qilinmasin — kirim yozilgan zayavkaning chiqimi o'chib ketardi
+    await claim(tx, id, ["NEW", "PRICED", "APPROVED", "FUNDED"], { status: "REJECTED", cashTxId: null });
     if (req.cashTxId) {
       const ct = await tx.cashTransaction.findUnique({ where: { id: req.cashTxId } });
       if (ct) {
@@ -437,10 +511,10 @@ export async function rejectSupplyRequest(id: string, userId: string, reason: st
         await audit(tx, userId, "DELETE", "CashTransaction", ct.id, ct, undefined);
       }
     }
-    await tx.supplyRequest.update({ where: { id }, data: { status: "REJECTED", cashTxId: null } });
     await event(tx, id, "REJECTED", userId, `${SUPPLY_LABEL[req.status]} bosqichida: ${reason.trim()}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "REJECTED", reason });
-  });
+  }).catch((e: Error) => ({ error: e.message }));
+  if (res && "error" in res) return { error: res.error };
   // So'rovni kiritgan sklad/snabjeniye xodimi nega to'xtaganini bilsin
   notifyAfter(() => notifyUsers([req.createdById], {
     type: "SUPPLY_REJECTED",

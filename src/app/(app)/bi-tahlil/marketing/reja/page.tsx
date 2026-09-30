@@ -8,12 +8,14 @@ import { Table, Th, Td, Tr, Empty } from "@/components/ui";
 import { BarChart } from "@/components/ui/charts";
 import { Panel, Note, ProgressBar, Chip, Action } from "../../ui";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 const pct = (v: number | null) => (v === null ? "—" : `${fmtNum(v, 0)}%`);
 const tone = (v: number | null) => (v === null ? "slate" : v >= 100 ? "success" : v >= 70 ? "warning" : "danger") as "slate" | "success" | "warning" | "danger";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/marketing/reja");
   const { sp, range } = await biContext(searchParams);
   const now = new Date();
   const year = Number(sp.year) || now.getFullYear(); const month = sp.month === undefined ? now.getMonth() + 1 : Math.min(12, Math.max(0, Number(sp.month) || 0));

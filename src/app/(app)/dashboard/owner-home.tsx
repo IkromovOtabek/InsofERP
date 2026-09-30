@@ -7,6 +7,8 @@ import { Badge, Card, Progress, Td, Th, Tr } from "@/components/ui";
 import { Panel } from "../bi-tahlil/ui";
 import { HBarList, LineChart } from "@/components/ui/charts";
 import { cn } from "@/lib/utils";
+import { reportHistory } from "@/lib/production-report";
+import { ReportHistory } from "./hisobot/history";
 
 /* ───────────────────────── Holat ranglari (norma / e'tibor / kritik) ───────────────────────── */
 const LV: Record<Level, { dot: string; text: string; bg: string; badge: "green" | "amber" | "red" }> = {
@@ -41,7 +43,8 @@ function Top({ label, value, sub, level, href, icon: Icon }: { label: string; va
  * Reyslar, nakladnoylar, sklad qatorlari bu yerda ko'rsatilmaydi (TZ §22) — har blokdan tegishli bo'limga havola.
  */
 export async function OwnerHome() {
-  const d = await ownerDashboard();
+  const [d, prodReports] = await Promise.all([ownerDashboard(), reportHistory(7)]);
+  const unseenReports = prodReports.filter((r) => !r.seenAt).length;
   const S = d.summary, L = d.levels;
   const worstProblem = d.problems[0];
   const problemLevel: Level = d.problems.some((p) => p.level === "crit") ? "crit" : d.problems.length ? "warn" : "ok";
@@ -98,6 +101,9 @@ export async function OwnerHome() {
           </div>
         </div>
       </Card>
+
+      {/* ── Ishlab chiqarishning qayd etilgan kunlik hisobotlari (sex "Qayd etish" bosganda tushadi) ── */}
+      <ReportHistory rows={prodReports} current={null} title={`Ishlab chiqarish — kunlik hisobotlar${unseenReports ? ` · ${unseenReports} ta yangi` : ""}`} />
 
       {/* ── 15. Plan / fakt / prognoz + trend ── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">

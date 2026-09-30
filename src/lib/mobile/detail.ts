@@ -13,11 +13,18 @@ import {
   supplyRequest, totalFact, totalPlanned, isOpenSupply,
 } from "@/lib/supply";
 import { DELIVERY_OWN } from "@/lib/supply-const";
+import { directorLimit, needsDirector, responsibleOptions } from "@/lib/procurement";
+import {
+  DELIVERY_LABEL, DELIVERY_MANUAL, DEPARTMENTS, DOC_KINDS, INCIDENT_KINDS, INCIDENT_LABEL, PAYMENT_TERMS, PRIORITIES, PRIORITY_LABEL, REQUIRED_DOCS,
+} from "@/lib/procurement-const";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
 import { DETAIL_KEY, driverEmployeeId, myBrigadeIds, ListError } from "./list";
 import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
+import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
+import { brigIssueDetail, brigShiftDetail, defectAction, issueActions } from "./brigadier";
+import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
 import type { Role, SupplyStatus } from "@/generated/prisma";
 
 /**
@@ -37,8 +44,12 @@ export type FormOption = {
 export type FormField = {
   name: string;
   label: string;
-  /** `items` — takrorlanuvchi qatorlar (zayavka mahsulotlari); ustunlari `columns` da. */
-  type: "text" | "number" | "date" | "time" | "select" | "switch" | "items";
+  /**
+   * `items` — takrorlanuvchi qatorlar (zayavka mahsulotlari); ustunlari `columns` da.
+   * `photo` — kamera yoki galereyadan rasm; ilova `data:image/jpeg;base64,...` qilib yuboradi.
+   * Eski ilova `photo` ni bilmaydi — maydon chizilmaydi, server "surat yo'q" deb javob beradi.
+   */
+  type: "text" | "number" | "date" | "time" | "select" | "switch" | "items" | "photo";
   required?: boolean;
   placeholder?: string;
   /** Boshlang'ich qiymat. Switch uchun "true"/"false". */
@@ -198,6 +209,20 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "order.invoice": ["SALES", "ACCOUNTING"],
   // Brigadir o'z brigadasining topshirig'ini ilovada qayd qiladi (`assertOwnTask` — qaysi topshiriqni)
   "task.progress": ["SUPERVISOR", "PRODUCTION", "LOGISTICS", "BRIGADIER"],
+  // Brigadir ish kuni (`lib/brigade-shift.ts`): ishni boshlash, yakunlash, muammo va brak — o'z topshirig'ida
+  "task.start": ["BRIGADIER"],
+  "task.finish": ["SUPERVISOR", "PRODUCTION", "LOGISTICS", "BRIGADIER"],
+  "task.defect": ["BRIGADIER"],
+  // Smena kartochkasi (id — `b~<brigadeId>`) va topshiriq kartasi (id — topshiriq): smena, muammolar, brak
+  "shift.open": ["BRIGADIER"],
+  "shift.close": ["BRIGADIER"],
+  "shift.defect": ["BRIGADIER"],
+  "issue.equipment": ["BRIGADIER"],
+  "issue.material": ["BRIGADIER"],
+  "issue.staff": ["BRIGADIER"],
+  "issue.other": ["BRIGADIER"],
+  // Muammoni mas'ul bo'lim yopadi; qaysi tur kimniki — `canResolveIssue` (brigadir o'zinikini ham)
+  "issue.resolve": ["BRIGADIER", ...ISSUE_RESOLVERS],
   "task.cancel": ["SUPERVISOR", "PRODUCTION", "SALES"],
   // Brigadir — veb "Brigadalar" sahifasidagi bilan bir xil ruxsat
   "employee.brigade": ["HR", "PRODUCTION", "SUPERVISOR"],
@@ -213,6 +238,16 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supply.fact": ["PROCUREMENT", "WAREHOUSE"],
   "supply.receive": ["PROCUREMENT", "WAREHOUSE"],
   "supply.reject": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"],
+  // Snabjeniye TZ (`lib/procurement.ts`): rekvizit, taklif, yetkazish — snabjeniye; katta xarid — direktor;
+  // muammoni so'rovchi bo'lim ham yozadi; hujjatni buxgalteriya/moliya ham biriktiradi
+  "supply.meta": ["PROCUREMENT", "WAREHOUSE"],
+  "supply.quote": ["PROCUREMENT", "WAREHOUSE"],
+  "supply.quote.choose": ["PROCUREMENT", "WAREHOUSE"],
+  "supply.director": ["DIRECTOR"],
+  "supply.delivery": ["PROCUREMENT", "WAREHOUSE"],
+  "supply.incident": ["PROCUREMENT", "WAREHOUSE", "PRODUCTION"],
+  "supply.incident.resolve": ["PROCUREMENT", "WAREHOUSE"],
+  "supply.doc": ["PROCUREMENT", "WAREHOUSE", "ACCOUNTING", "FINANCE"],
   // Sayt arizalari — veb `/leads` bilan bir xil (SALES; direktor har doim)
   "lead.progress": ["SALES"],
   "lead.reopen": ["SALES"],
@@ -221,6 +256,17 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "lead.note": ["SALES"],
   // Yetkazuvchini yopish/ochish — veb `/suppliers`
   "supplier.toggle": ["WAREHOUSE", "PROCUREMENT"],
+  // Sex (mobil ishlab chiqarish bosh ekrani): davomatni sex boshlig'i belgilaydi (`lib/production-staff.ts`),
+  // kunlik hisobotni u qayd etadi; xodimni brigadaga direktor taqsimlaydi
+  // Brigadir smena boshida faqat O'Z brigadasi a'zolarini belgilaydi (`assertOwnMember`)
+  "att.present": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  "att.checkout": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  "att.absent": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  "att.status": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  "att.all": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  "att.form": ["PRODUCTION", "SUPERVISOR"],
+  "report.submit": ["PRODUCTION", "SUPERVISOR"],
+  "sex.assign": ["DIRECTOR"],
 };
 
 /**
@@ -230,16 +276,43 @@ export const ACTION_ROLES: Record<string, Role[]> = {
  */
 export const can = (user: MobileUser, action: string) => (ACTION_ROLES[action] ?? []).includes(user.role);
 
+/**
+ * Maxfiy kartochkalar — id bilan to'g'ridan-to'g'ri so'ralsa ham faqat shu rollar ochadi
+ * (ro'yxatdagi ACCESS bilan bir xil, qo'shimcha: boshqa kartadan havola orqali ochadiganlar).
+ * Operatsion hujjatlar (zayavka, reys, zames...) ochiq qoladi — ular kartalar orasida bog'langan.
+ */
+const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
+  cashflow: ["CASHIER", "ACCOUNTING", "FINANCE"],
+  // Sotuvchi schyot kartasidan to'lovni ochadi
+  payments: ["CASHIER", "ACCOUNTING", "FINANCE", "SALES"],
+  // Kassir to'lovni mijoz ustida oladi
+  customers: ["SALES", "ACCOUNTING", "FINANCE", "CASHIER"],
+  // Brigada kartasidan brigadirni ochadiganlar (SALES) ham
+  employees: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR", "SALES"],
+  // Sex statistikasi, sex xodimi va kunlik hisobot (`./sex.ts`)
+  sex: ["PRODUCTION", "SUPERVISOR"],
+  "sex-emp": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  // Brigadir smenasi va muammolari (`./brigadier.ts`) — brigadirga faqat o'z brigadasiniki
+  "brig-shift": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  "brig-issue": ["BRIGADIER", ...ISSUE_RESOLVERS],
+  "prod-report": ["PRODUCTION", "SUPERVISOR"],
+};
+
+const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp"];
+
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
-  // Brigadir ilovada faqat topshiriq kartochkasini ochadi: zayavka, schyot va boshqa
-  // hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
-  if (user.role === "BRIGADIER" && key !== "tasks") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  // Brigadir ilovada faqat o'z ish joyi kartochkalarini ochadi (topshiriq, smena, muammo, brigada a'zosi):
+  // zayavka, schyot va boshqa hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
+  if (user.role === "BRIGADIER" && !BRIGADIER_CARDS.includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Haydovchi ilovada faqat reys kartochkasini ochadi — vebda ham unga faqat "Mening reyslarim" ochiq
   if (user.role === "DRIVER" && key !== "trips") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Aralash ro'yxatlar (direktor "Tasdiqlar") qator id'sida kartochka kalitini olib keladi: `orders:<id>`
   const [refKey, refId] = splitRef(id);
   if (refKey) return mobileDetail(user, refKey, refId);
+  const card = DETAIL_KEY[key] ?? key;
+  const allowed = DETAIL_ROLES[card];
+  if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   if (key === "activity") {
     if (user.role !== "DIRECTOR") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
     return activityDetail(id);
@@ -261,6 +334,11 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "brigades": return brigadeDetail(user, id);
     case "suppliers": return supplierDetail(user, id);
     case "recipes": return recipeDetail(id);
+    case "sex": return sexDetail(user, id);
+    case "sex-emp": return sexEmployeeDetail(user, id);
+    case "prod-report": return savedReportDetail(user, id);
+    case "brig-shift": return brigShiftDetail(user, id);
+    case "brig-issue": return brigIssueDetail(user, id);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   }
 }
@@ -531,7 +609,11 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
 async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const t = await db.brigadeTask.findUnique({
     where: { id },
-    include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } }, progress: { orderBy: { date: "desc" }, include: { createdBy: true } } },
+    include: {
+      brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } },
+      progress: { orderBy: { date: "desc" }, include: { createdBy: true } },
+      issues: { orderBy: { createdAt: "desc" }, select: { id: true, kind: true, note: true, equipment: true, createdAt: true, resolvedAt: true } },
+    },
   });
   if (!t) throw new ListError("NOT_FOUND", "Topshiriq topilmadi", 404);
   // Brigadirga faqat o'z brigadasining topshirig'i. Reysdagidek "topilmadi" deymiz:
@@ -541,34 +623,59 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   }
   const left = sum(t.qty) - sum(t.doneQty);
   const open = !["DONE", "CANCELLED"].includes(t.status);
+  const unit = unitLabel(t.orderItem.product.unit);
+  const ph = taskPhase(t, t.issues.filter((i) => !i.resolvedAt).map((i) => i.kind));
 
+  // Hujjatdagi tartib: Ishni boshlash → fakt (qisman) → yakunlash; yon tomonda muammo va brak
   const actions: DetailAction[] = [];
+  if (open && !t.startedAt && t.status === "NEW" && can(user, "task.start")) {
+    actions.push({ id: "task.start", label: "Ishni boshlash", tone: "brand", confirm: `${t.taskNo} — ish boshlandi deb belgilansinmi? Smena ochilmagan bo'lsa, u ham ochiladi.` });
+  }
   if (open && can(user, "task.progress")) {
     actions.push({
-      id: "task.progress", label: "Bajarilgan miqdorni qayd qilish", tone: "success",
+      id: "task.progress", label: "Fakt kiritish (qisman bajarildi)", tone: "success",
       form: [
-        { name: "qty", label: `Miqdor (${unitLabel(t.orderItem.product.unit)}) — qoldiq ${left.toFixed(1)}`, type: "number", required: true, value: String(left) },
+        { name: "qty", label: `Bajarilgan miqdor (${unit}) — qoldiq ${num(left)}`, type: "number", required: true, value: String(left) },
         { name: "note", label: "Izoh", type: "text" },
       ],
     });
   }
+  if (open && left > 0 && can(user, "task.finish")) {
+    actions.push({
+      id: "task.finish", label: `Ishni yakunlash — ${num(left)} ${unit}`, tone: "success",
+      confirm: `Qolgan ${num(left)} ${unit} bajarildi va topshiriq yopilsinmi?`,
+      form: [{ name: "note", label: "Yakuniy izoh", type: "text", placeholder: "ixtiyoriy" }],
+    });
+  }
+  // Muammo tugmalari smena kartasidagi bilan bir xil (`issue.*`) — id topshiriq bo'lgani uchun muammo shunga bog'lanadi
+  if (open && can(user, "issue.material")) actions.push(...issueActions(null));
+  if (can(user, "task.defect") && sum(t.doneQty) > 0) actions.push(defectAction("task.defect", [t.orderItem.product]));
   if (open && can(user, "task.cancel")) actions.push({ id: "task.cancel", label: "Bekor qilish", tone: "danger", confirm: "Topshiriq bekor qilinsinmi?" });
 
   return {
-    key: "tasks", id: t.id, title: t.taskNo, subtitle: `${t.brigade.name} · ${t.order.customer.name}`, status: t.status,
+    key: "tasks", id: t.id, title: t.taskNo, subtitle: `${t.brigade.name} · ${t.order.customer.name}`, status: ph.label,
     fields: [
+      { label: "Holat", value: ph.label, tone: ph.tone === "brand" || ph.tone === "info" ? undefined : ph.tone },
       { label: "Mahsulot", value: t.orderItem.product.name },
       { label: "Topshiriq", value: inUnit(sum(t.qty), t.orderItem.product.unit) },
-      { label: "Bajarildi", value: `${inUnit(sum(t.doneQty), t.orderItem.product.unit)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)}`, tone: left <= 0 ? "success" : "warning" },
+      { label: "Bajarildi", value: `${inUnit(sum(t.doneQty), t.orderItem.product.unit)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)} · ${Math.round((sum(t.doneQty) / (sum(t.qty) || 1)) * 100)}%`, tone: left <= 0 ? "success" : "warning" },
       { label: "Qoldiq", value: inUnit(left, t.orderItem.product.unit), tone: left > 0 ? "warning" : "success" },
-      { label: "Muddat", value: day(t.dueDate), tone: open && t.dueDate < new Date() ? "danger" : undefined },
+      { label: "Muddat", value: day(t.dueDate), tone: ph.late ? "danger" : undefined },
+      ...(t.startedAt ? [{ label: "Boshlandi", value: dt(t.startedAt) }] : []),
+      ...(t.order.isUrgent ? [{ label: "Shoshilinch", value: "ha", tone: "danger" as Tone }] : []),
       { label: "Zayavka", value: t.order.orderNo },
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
     ],
-    sections: [{
-      title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q", icon: "square-check",
-      rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
-    }],
+    sections: [
+      {
+        title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q", icon: "square-check",
+        rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
+      },
+      ...(t.issues.length ? [{
+        title: "Muammolar", empty: "Muammo yo'q", target: "brig-issue",
+        rows: t.issues.map((i) => ({ id: i.id, title: BRIGADE_ISSUE[i.kind].label, subtitle: [i.equipment, i.note].filter(Boolean).join(" · "), right: day(i.createdAt), status: i.resolvedAt ? "Hal qilindi" : "Ochiq", tone: (i.resolvedAt ? "success" : "danger") as Tone })),
+      }] : []),
+    ],
     actions,
   };
 }
@@ -816,9 +923,99 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
     if (can(user, "supply.fact")) actions.push({ id: "supply.fact", label: "Faktni saqlash (hali qabul emas)", tone: "brand", form: factForm });
   }
   // Bekor qilish — har bosqichda, zanjirdagi o'z bo'limi
+  // ── Snabjeniye TZ ──
+  const limit = await directorLimit();
+  const big = needsDirector(planned, limit);
+  const waitDirector = st === "PRICED" && big && !r.directorOkAt;
+  // Katta xarid direktor tasdig'ini kutsa — sotuvchining "Tasdiqlash" tugmasi ko'rinadi, lekin yopiq (nega — hint'da)
+  const ap = actions.find((a) => a.id === "supply.approve");
+  if (ap && waitDirector) { ap.disabled = true; ap.hint = `${money(planned)} — ${money(limit)} dan katta xarid: avval direktor tasdiqlaydi`; }
+  if (waitDirector && can(user, "supply.director")) {
+    actions.unshift({ id: "supply.director", label: "Katta xaridni tasdiqlash", tone: "success",
+      form: [{ name: "note", label: "Izoh", type: "text", hint: `Jami ${money(planned)} — chegara ${money(limit)}. Tasdiqlasangiz ma'sul xodim tasdig'iga o'tadi` }] });
+  }
+  if (st === "FUNDED" && can(user, "supply.delivery")) {
+    actions.unshift({
+      id: "supply.delivery", label: "Yetkazish holati", tone: "brand",
+      form: [
+        { name: "deliveryStatus", label: "Holat", type: "select", required: true, options: DELIVERY_MANUAL.map((d) => ({ value: d, label: DELIVERY_LABEL[d] })), value: r.deliveryStatus && r.deliveryStatus !== "RECEIVED" ? r.deliveryStatus : "PLANNED", hint: "\"Zavodga keldi\" — skladga qabul xabari ketadi" },
+        { name: "deliveryProvider", label: "Transport / haydovchi", type: "text", value: r.deliveryProvider ?? undefined, placeholder: "01 A 123 BC · haydovchi" },
+        { name: "shippedAt", label: "Jo'natilgan sana", type: "date", value: r.shippedAt ? ymd(r.shippedAt) : undefined },
+        { name: "eta", label: "Kutilayotgan sana (ETA)", type: "date", value: r.eta ? ymd(r.eta) : undefined },
+        { name: "note", label: "Izoh (Muammo bo'lsa — majburiy)", type: "text" },
+      ],
+    });
+  }
+  const quotable = st === "NEW" || st === "PRICED";
+  if (quotable && can(user, "supply.quote")) {
+    const suppliers = await supplierOptions(r.supplierId);
+    actions.push({
+      id: "supply.quote", label: "Tijorat taklifi qo'shish", tone: "brand",
+      form: [
+        { name: "supplierId", label: "Yetkazuvchi", type: "select", options: suppliers, hint: "Spravochnikda bo'lmasa — pastda nomini yozing" },
+        { name: "supplierName", label: "Yangi yetkazuvchi nomi", type: "text" },
+        { name: "amount", label: "Jami taklif summasi (so'm)", type: "number", required: true },
+        { name: "deliveryDays", label: "Necha kunda yetkazadi", type: "number" },
+        { name: "paymentTerms", label: "To'lov sharti", type: "select", options: PAYMENT_TERMS.map((t) => ({ value: t, label: t })) },
+        { name: "validUntil", label: "Taklif amal qiladi", type: "date" },
+        { name: "note", label: "Izoh", type: "text" },
+      ],
+    });
+    const choosable = r.quotes.filter((q) => !q.chosen);
+    if (choosable.length && can(user, "supply.quote.choose")) {
+      actions.push({ id: "supply.quote.choose", label: "Taklifni tanlash", tone: "success",
+        form: [{ name: "quoteId", label: "Taklif", type: "select", required: true, options: choosable.map((q) => ({ value: q.id, label: `${q.supplierName} · ${money(sum(q.amount))}${q.deliveryDays != null ? ` · ${q.deliveryDays} kun` : ""}` })) }] });
+    }
+  }
+  if (isOpenSupply(st) && can(user, "supply.meta")) {
+    const people = await responsibleOptions();
+    actions.push({
+      id: "supply.meta", label: "Rekvizitlar (bo'lim, ustuvorlik, mas'ul)", tone: "brand",
+      form: [
+        { name: "department", label: "Bo'lim", type: "select", options: DEPARTMENTS.map((d) => ({ value: d, label: d })), value: r.department ?? undefined },
+        { name: "priority", label: "Ustuvorlik", type: "select", required: true, options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] })), value: r.priority },
+        { name: "responsibleId", label: "Mas'ul xodim", type: "select", options: people.map((p) => ({ value: p.id, label: p.fullName })), value: r.responsibleId ?? undefined },
+        { name: "needBy", label: "Qachongacha kerak", type: "date", value: r.needBy ? ymd(r.needBy) : undefined },
+        { name: "contractNo", label: "Shartnoma raqami", type: "text", value: r.contractNo ?? undefined },
+      ],
+    });
+  }
+  const openInc = r.incidents.filter((x) => !x.resolvedAt);
+  if (st !== "REJECTED" && can(user, "supply.incident")) {
+    actions.push({ id: "supply.incident", label: "Muammo qayd qilish", tone: "warning",
+      form: [
+        { name: "kind", label: "Turi", type: "select", required: true, options: INCIDENT_KINDS.map((k) => ({ value: k, label: INCIDENT_LABEL[k] })), value: "SHORTAGE" },
+        { name: "note", label: "Nima bo'ldi", type: "text", required: true, placeholder: "Masalan: sement 2 t kam keldi" },
+      ] });
+  }
+  if (openInc.length && can(user, "supply.incident.resolve")) {
+    actions.push({ id: "supply.incident.resolve", label: "Muammoni yopish", tone: "success",
+      form: [
+        { name: "incidentId", label: "Muammo", type: "select", required: true, options: openInc.map((x) => ({ value: x.id, label: `${INCIDENT_LABEL[x.kind]}: ${x.note.slice(0, 40)}` })), value: openInc[0].id },
+        { name: "resolution", label: "Qanday hal qilindi", type: "text", required: true },
+      ] });
+  }
+  if (can(user, "supply.doc")) {
+    const missing = REQUIRED_DOCS.filter((k) => !r.documents.some((d) => d.kind === k));
+    actions.push({ id: "supply.doc", label: "Hujjat biriktirish", tone: "brand",
+      form: [
+        { name: "kind", label: "Hujjat turi", type: "select", required: true, options: DOC_KINDS.map((k) => ({ value: k, label: k })), value: (st === "FUNDED" || st === "RECEIVED") && missing[0] ? missing[0] : DOC_KINDS[0] },
+        { name: "photo", label: "Surat (kamera yoki galereya)", type: "photo", required: true, hint: "PDF bo'lsa — vebdan biriktiring" },
+      ] });
+  }
   if (isOpenSupply(st) && can(user, "supply.reject")) {
     actions.push({ id: "supply.reject", label: "Bekor qilish", tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" }] });
   }
+
+  // Ombor qoldig'i — omborda bor bo'lsa xaridni kamaytirish uchun (TZ 4.3)
+  const matIds = r.items.map((i) => i.materialId).filter((x): x is string => !!x);
+  const balances = isOpenSupply(st) && matIds.length ? await db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { in: matIds } }, _sum: { qty: true } }) : [];
+  const bal = new Map(balances.map((b) => [b.materialId, sum(b._sum.qty)]));
+  const stockRows = r.items.filter((i) => i.materialId && isOpenSupply(st)).map((i) => {
+    const b = bal.get(i.materialId!) ?? 0;
+    return { id: `stock:${i.id}`, title: i.name, subtitle: b >= sum(i.qty) ? "Omborda yetarli — xarid shart emasligini tekshiring" : "Omborda yetmaydi", right: `${num(b)} / ${num(sum(i.qty))} ${i.unit}`, tone: (b >= sum(i.qty) ? "success" : undefined) as Tone | undefined };
+  });
+  const docsMissing = st === "FUNDED" || st === "RECEIVED" ? REQUIRED_DOCS.filter((k) => !r.documents.some((d) => d.kind === k)) : [];
 
   const STAGE_LABEL = Object.fromEntries(SUPPLY_STEPS.map((s) => [s.key, s.label])) as Record<string, string>;
   const delivery = r.deliveryKind ? `${r.deliveryKind}${r.deliveryProvider ? ` · ${r.deliveryProvider}` : ""}${sum(r.deliveryCost) ? ` · ${money(sum(r.deliveryCost))}` : ""}` : null;
@@ -826,8 +1023,17 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
   return {
     key: "supply", id: r.id, title: r.docNo, subtitle: r.warehouse.name, status: SUPPLY_LABEL[st],
     fields: [
-      { label: "Bosqich", value: SUPPLY_OWNER[st], tone: SUPPLY_TONE[st] },
+      { label: "Bosqich", value: waitDirector ? "Katta xarid — avval direktor tasdiqlaydi" : SUPPLY_OWNER[st], tone: SUPPLY_TONE[st] },
       { label: "Sana", value: day(r.date) },
+      ...(r.department ? [{ label: "Bo'lim", value: r.department }] : []),
+      { label: "Ustuvorlik", value: PRIORITY_LABEL[r.priority], tone: (r.priority === "CRITICAL" ? "danger" : r.priority === "HIGH" ? "warning" : undefined) as Tone | undefined },
+      ...(r.responsible ? [{ label: "Mas'ul", value: r.responsible.fullName }] : []),
+      ...(r.contractNo ? [{ label: "Shartnoma", value: r.contractNo }] : []),
+      ...(big && (st === "PRICED" || r.directorOkAt) ? [{ label: "Direktor tasdig'i", value: r.directorOkAt ? `Tasdiqlangan · ${day(r.directorOkAt)}` : "Kutilmoqda", tone: (r.directorOkAt ? "success" : "warning") as Tone }] : []),
+      ...(r.deliveryStatus ? [{ label: "Yetkazish", value: `${DELIVERY_LABEL[r.deliveryStatus]}${r.shippedAt ? ` · jo'natildi ${day(r.shippedAt)}` : ""}`, tone: (r.deliveryStatus === "PROBLEM" ? "danger" : r.deliveryStatus === "RECEIVED" ? "success" : "brand") as Tone }] : []),
+      ...(r.eta ? [{ label: "Kutilayotgan sana (ETA)", value: day(r.eta), tone: (isOpenSupply(st) && r.eta < new Date(new Date().setHours(0, 0, 0, 0)) ? "danger" : undefined) as Tone | undefined }] : []),
+      ...(openInc.length ? [{ label: "Ochiq muammo", value: `${openInc.length} ta`, tone: "danger" as Tone }] : []),
+      ...(docsMissing.length ? [{ label: "Hujjat yetishmaydi", value: docsMissing.join(", "), tone: "warning" as Tone }] : []),
       ...(r.needBy ? [{ label: "Qachongacha kerak", value: day(r.needBy), tone: (isOpenSupply(st) && r.needBy < new Date() ? "danger" : undefined) as Tone | undefined }] : []),
       ...(r.supplier ? [{ label: "Yetkazuvchi", value: r.supplier.name }] : []),
       ...(delivery ? [{ label: "Dostavka", value: delivery }] : []),
@@ -842,6 +1048,17 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
     ],
     sections: [
       { title: "Mahsulotlar", empty: "Qator yo'q", icon: "package", rows: items },
+      ...(stockRows.length ? [{ title: "Ombor qoldig'i", empty: "", icon: "layers", rows: stockRows }] : []),
+      ...(r.quotes.length ? [{ title: "Tijorat takliflari", empty: "", icon: "banknote", rows: r.quotes.map((q) => ({
+        id: q.id, title: q.supplierName,
+        subtitle: [q.deliveryDays != null ? `${q.deliveryDays} kunda` : null, q.paymentTerms, q.validUntil ? `${day(q.validUntil)} gacha` : null, q.note].filter(Boolean).join(" · ") || undefined,
+        right: money(sum(q.amount)), status: q.chosen ? "Tanlangan" : undefined, tone: (q.chosen ? "success" : undefined) as Tone | undefined,
+      })) }] : []),
+      ...(r.incidents.length ? [{ title: "Muammolar", empty: "", icon: "warning", rows: r.incidents.map((x) => ({
+        id: x.id, title: INCIDENT_LABEL[x.kind], subtitle: `${x.note}${x.resolution ? ` → ${x.resolution}` : ""} · ${x.createdBy.fullName}`,
+        right: shortDt(x.createdAt), status: x.resolvedAt ? "Hal qilindi" : "Ochiq", tone: (x.resolvedAt ? "success" : "danger") as Tone,
+      })) }] : []),
+      ...(r.documents.length ? [{ title: "Hujjatlar", empty: "", icon: "file-text", rows: r.documents.map((d) => ({ id: d.id, title: d.kind, subtitle: `${d.fileName} · ${d.createdBy.fullName}`, right: shortDt(d.createdAt) })) }] : []),
       { title: "Bosqichlar", empty: "Hali bosqich yozilmagan", icon: "clock", rows: r.events.map((e) => ({ id: e.id, title: STAGE_LABEL[e.stage] ?? SUPPLY_LABEL[e.stage], subtitle: `${e.user.fullName}${e.note ? ` · ${e.note}` : ""}`, right: shortDt(e.createdAt), tone: SUPPLY_TONE[e.stage] })) },
       ...(r.receipt ? [{ title: "Kirim hujjati", empty: "", target: "receipts", rows: [{ id: r.receipt.id, title: r.receipt.docNo, subtitle: "Skladga kirim", tone: "success" as Tone }] }] : []),
     ],

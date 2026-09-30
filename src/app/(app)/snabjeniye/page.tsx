@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ClipboardList, Clock, PackageCheck, ShoppingCart, Truck } from "lucide-react";
+import { ClipboardList, Clock, FileBarChart, PackageCheck, ShoppingCart, Truck } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { supplyList, supplyTab, supplyCounts, SUPPLY_TABS, plannedSum } from "@/lib/supply";
 import { money } from "@/lib/format";
-import { Callout, PageHeader, StatCard, Tabs } from "@/components/ui";
+import { Callout, LinkButton, PageHeader, StatCard, Tabs } from "@/components/ui";
 import { SupplyTable } from "../taminot/supply-table";
 
 /**
@@ -19,7 +19,8 @@ export default async function SnabjeniyePage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <PageHeader title="Snabjeniye" subtitle="Skladdan kelgan kerakli mahsulotlar jadvaliga narx qo'yasiz, tasdiqdan o'tganini sotib olasiz va kelgan molni tekshirib qabul qilasiz." />
+      <PageHeader title="Snabjeniye" subtitle="Skladdan kelgan kerakli mahsulotlar jadvaliga narx qo'yasiz, tasdiqdan o'tganini sotib olasiz va kelgan molni tekshirib qabul qilasiz."
+        action={<LinkButton href="/snabjeniye/hisobot" variant="secondary"><FileBarChart size={16} /> Hisobot</LinkButton>} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Narx kutmoqda" value={`${counts.NEW} ta`} hint="Skladdan kelgan yangi so'rov" icon={ClipboardList} tone={counts.NEW ? "warning" : "default"} href="/snabjeniye?tab=NEW" />

@@ -9,7 +9,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, type ActionState } from "@/lib/action";
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 
-const ROLES = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER"] as const;
+const ROLES = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
 const uniq = (e: unknown, msg: string) => (String(e).includes("Unique constraint") ? { error: msg } : null);
 

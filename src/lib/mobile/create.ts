@@ -10,6 +10,7 @@ import { ecoEnabled, normalizePhone } from "@/lib/eco/client";
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { audit } from "@/lib/audit";
 import { createSupplyRequest } from "@/lib/supply";
+import { DEPARTMENTS, PRIORITIES, PRIORITY_LABEL } from "@/lib/procurement-const";
 import type { MobileUser } from "./auth";
 import type { DayCell, FormField, FormOption } from "./detail";
 import { ListError } from "./list";
@@ -90,7 +91,7 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
   switch (key) {
     case "orders": return orderForm();
     case "trips": return tripForm();
-    case "supply": return supplyForm();
+    case "supply": return supplyForm(user);
     case "customers": return customerForm();
     case "suppliers": return supplierForm();
     default: return brigadeForm();
@@ -98,7 +99,7 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
 }
 
 /** Ta'minot so'rovi: sklad + qachongacha + mahsulotlar jadvali (spravochnikdagi xomashyo, miqdor, izoh). */
-async function supplyForm(): Promise<CreateForm> {
+async function supplyForm(user: MobileUser): Promise<CreateForm> {
   const [warehouses, materials, balances] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -109,6 +110,8 @@ async function supplyForm(): Promise<CreateForm> {
     key: "supply", title: "Ta'minot so'rovi", submitLabel: "Snabjeniyega yuborish",
     fields: [
       { name: "warehouseId", label: "Sklad", type: "select", required: true, value: warehouses[0]?.id, options: warehouses.map((w) => ({ value: w.id, label: w.name })) },
+      { name: "department", label: "Bo'lim (kim so'rayapti)", type: "select", options: DEPARTMENTS.map((d) => ({ value: d, label: d })), value: user.role === "PRODUCTION" ? "Ishlab chiqarish" : user.role === "WAREHOUSE" ? "Sklad" : undefined },
+      { name: "priority", label: "Ustuvorlik", type: "select", required: true, value: "NORMAL", options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] })), hint: "Kritik — ishlab chiqarish to'xtab qolishi mumkin" },
       { name: "needBy", label: "Qachongacha kerak", type: "date" },
       {
         name: "items", label: "Kerakli mahsulotlar", type: "items", required: true,
@@ -285,6 +288,8 @@ const SupplyBody = z.object({
   warehouseId: z.string().trim().min(1, "Sklad tanlanmagan"),
   needBy: z.string().trim().optional(),
   note: z.string().trim().optional(),
+  department: z.string().trim().optional(),
+  priority: z.enum(["NORMAL", "HIGH", "CRITICAL"]).optional(),
   items: z.array(z.object({
     materialId: z.string().trim().min(1, "Xomashyo tanlanmagan"),
     qty: z.coerce.number().positive("Miqdor 0 dan katta bo'lsin"),
@@ -329,6 +334,8 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const byId = new Map(mats.map((m) => [m.id, m]));
       const r = await createSupplyRequest({
         warehouseId: p.data.warehouseId, needBy: p.data.needBy || null, note: p.data.note || null,
+        department: p.data.department && (DEPARTMENTS as readonly string[]).includes(p.data.department) ? p.data.department : null,
+        priority: p.data.priority ?? "NORMAL",
         items: p.data.items.map((i) => { const m = byId.get(i.materialId); return { materialId: m?.id ?? null, name: m?.name ?? "", unit: m?.unit ?? "dona", qty: i.qty, note: i.note || null }; }),
       }, user.id);
       if (r.error || !r.id) throw new Error(r.error ?? "Saqlanmadi");

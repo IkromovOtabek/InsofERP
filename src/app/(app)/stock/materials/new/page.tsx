@@ -35,13 +35,13 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
       <Field label="Qoldiq qaysi skladga yoziladi *">
         <Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
       </Field>
-      {/* Qo'shilgan xomashyo summasi shu hisobdan chiqim bo'lib Kirim-Chiqimga tushadi */}
-      <Field label="Qaysi hisobdan to'landi" hint="Jami summa shu hisobdan chiqim bo'lib yoziladi. Xomashyo allaqachon to'langan bo'lsa — «Hisobga olinmasin»">
+      {/* Qo'shilgan xomashyo summasi shu hisobdan chiqim bo'lib Kirim-Chiqimga tushadi — faqat direktor */}
+      {s.role === "DIRECTOR" && <Field label="Qaysi hisobdan to'landi" hint="Jami summa shu hisobdan chiqim bo'lib yoziladi. Xomashyo allaqachon to'langan bo'lsa — «Hisobga olinmasin»">
         <Select name="cashAccountId" defaultValue={accounts.find((a) => a.type === "CASH")?.id ?? ""}>
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
           <option value="">Hisobga olinmasin</option>
         </Select>
-      </Field>
+      </Field>}
     </div>
   );
 

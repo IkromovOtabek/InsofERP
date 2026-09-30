@@ -9,8 +9,11 @@ import { ingredientOf } from "@/lib/recipe";
 import { SUPPLY_LABEL, SUPPLY_TABS, totalPlanned } from "@/lib/supply";
 import { unitLabel } from "@/lib/unit";
 import type { MobileUser } from "./auth";
+import { reportRows } from "./sex";
+import { brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
 import type { HomeRow, Tone } from "./home";
-import type { LeadStatus, OrderStatus, Role, SupplyStatus } from "@/generated/prisma";
+import type { LeadStatus, OrderStatus, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
+import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -40,11 +43,17 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   // BRIGADIER — faqat o'z brigadasiga tayinlanganlar (`myBrigadeIds`)
   tasks: { title: "Topshiriqlar", roles: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS", "BRIGADIER"] },
   brigades: { title: "Brigadalar", roles: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"] },
+  // Qayd etilgan kunlik hisobotlar — sex yozadi, direktor o'qiydi (`./sex.ts`)
+  "prod-report": { title: "Ishlab chiqarish hisobotlari", roles: ["PRODUCTION", "SUPERVISOR"] },
+  // Brigadir bildirgan muammolar — har bo'lim o'zi mas'ul turlarni ko'radi (`lib/brigade-shift.ts` BRIGADE_ISSUE)
+  "brig-issues": { title: "Brigada muammolari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "WAREHOUSE", "PROCUREMENT", "HR"] },
+  // Brigadir yopgan smena hisobotlari (`./brigadier.ts`)
+  "brig-shifts": { title: "Smena hisobotlari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR"] },
   // ── Logistika ──
-  trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER"] },
+  trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC"] },
   drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR"] },
   // ── Sklad ──
-  stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"] },
+  stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"] },
   // Snabjeniye oynasi: narx kutayotgan va qabul kutayotgan so'rovlar (vebdagi `/snabjeniye`)
   snabjeniye: { title: "Snabjeniye", roles: ["WAREHOUSE", "PROCUREMENT"] },
   // Ta'minot zayavkalari: vebda ro'yxat sklad/snabjeniye/ishlab chiqarishga, hujjatning o'zi esa
@@ -114,11 +123,15 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);
   if (key === "approvals") return approvalsList(meta.title, s, filter);
   if (key === "activity") return activityList(meta.title, s);
+  if (key === "prod-report") return { key, title: meta.title, rows: await reportRows() };
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "snabjeniye") return snabjeniye(meta.title, s, filter);
   if (key === "leads") return leads(meta.title, s, filter);
   if (key === "sales") return salesOrders(meta.title, s, filter);
+  if (key === "brig-issues") return brigIssuesList(user, meta.title, s, filter);
+  if (key === "brig-shifts") return brigShiftsList(user, meta.title, s);
+  if (key === "tasks" && user.role === "BRIGADIER") return brigTasksList("Topshiriqlarim", await myBrigadeIds(user.id), s, filter);
   // Haydovchi faqat o'ziga biriktirilgan reyslarni ko'radi
   const driverId = user.role === "DRIVER" ? await driverEmployeeId(user.id) : undefined;
   // Brigadir faqat o'z brigadasiga tayinlangan topshiriqlarni ko'radi
@@ -165,17 +178,27 @@ async function productionOrders(title: string, q?: string, filter?: string): Pro
 }
 
 const supplyInclude = { items: true, warehouse: true, supplier: true, createdBy: { select: { fullName: true } } } as const;
-type SupplyRow = { id: string; docNo: string; status: SupplyStatus; date: Date; needBy: Date | null; recheck: number; deliveryCost: unknown; warehouse: { name: string }; supplier: { name: string } | null; items: { qty: unknown; price: unknown; factQty?: unknown; factPrice?: unknown }[] };
+type SupplyRow = {
+  id: string; docNo: string; status: SupplyStatus; date: Date; needBy: Date | null; recheck: number; deliveryCost: unknown;
+  warehouse: { name: string }; supplier: { name: string } | null; items: { qty: unknown; price: unknown; factQty?: unknown; factPrice?: unknown }[];
+  department?: string | null; priority?: SupplyPriority; deliveryStatus?: SupplyDelivery | null; eta?: Date | null;
+};
 
-/** Ta'minot zayavkasi qatori — hamma ro'yxatda bir xil ko'rinadi. */
-const supplyRow = (r: SupplyRow): HomeRow => ({
-  id: r.id,
-  title: `${r.docNo} · ${r.warehouse.name}${r.recheck ? " · qayta tasdiq" : ""}`,
-  subtitle: `${day(r.date)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}${r.needBy ? ` · kerak ${day(r.needBy)}` : ""}`,
-  right: r.status === "NEW" ? `${r.items.length} nom` : money(totalPlanned({ items: r.items as { qty: number; price: number }[], deliveryCost: r.deliveryCost as number })),
-  status: SUPPLY_LABEL[r.status],
-  tone: SUPPLY_TONE[r.status],
-});
+/** Ta'minot zayavkasi qatori — hamma ro'yxatda bir xil ko'rinadi. Pul ajratilgandan keyin holat = yetkazish holati. */
+const supplyRow = (r: SupplyRow): HomeRow => {
+  const due = r.status === "FUNDED" && r.eta ? r.eta : r.needBy;
+  const late = !!due && due < startOfToday() && r.status !== "RECEIVED" && r.status !== "REJECTED";
+  const delivery = r.status === "FUNDED" && r.deliveryStatus ? r.deliveryStatus : null;
+  return {
+    id: r.id,
+    title: `${r.docNo} · ${r.department ?? r.warehouse.name}${r.priority && r.priority !== "NORMAL" ? ` · ${PRIORITY_LABEL[r.priority].toLowerCase()}` : ""}${r.recheck ? " · qayta tasdiq" : ""}`,
+    subtitle: `${day(r.date)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}${due ? ` · ${r.status === "FUNDED" && r.eta ? "ETA" : "kerak"} ${day(due)}` : ""}${late ? " · kechikdi" : ""}`,
+    right: r.status === "NEW" ? `${r.items.length} nom` : money(totalPlanned({ items: r.items as { qty: number; price: number }[], deliveryCost: r.deliveryCost as number })),
+    status: delivery ? DELIVERY_LABEL[delivery] : SUPPLY_LABEL[r.status],
+    tone: late || delivery === "PROBLEM" ? "danger" : r.priority === "CRITICAL" ? "danger" : SUPPLY_TONE[r.status],
+  };
+};
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
 const supplyWhere = (q?: string) => (q ? { OR: [{ docNo: { contains: q, mode: "insensitive" as const } }, { items: { some: { name: { contains: q, mode: "insensitive" as const } } } }, { supplier: { name: { contains: q, mode: "insensitive" as const } } }] } : {});
 
@@ -196,20 +219,29 @@ async function supplyRequests(title: string, q?: string, filter?: string): Promi
   };
 }
 
-/** Snabjeniye: narx qo'yiladigan (NEW/PRICED) va qabul qilinadigan (FUNDED) so'rovlar — vebdagi `/snabjeniye`. */
+/**
+ * Snabjeniye: narx qo'yiladigan (NEW/PRICED) va qabul qilinadigan (FUNDED) so'rovlar — vebdagi `/snabjeniye`,
+ * ustiga TZ filtrlari: shoshilinch, tasdiqda, yo'lda, kechikkan, muammoli.
+ */
 async function snabjeniye(title: string, q?: string, filter?: string): Promise<MobileList> {
-  const tabs: { key: string; label: string; status: SupplyStatus[] }[] = [
-    { key: "price", label: "Narx qo'yish", status: ["NEW", "PRICED"] },
-    { key: "receive", label: "Qabul qilish", status: ["FUNDED"] },
-    { key: "done", label: "Qabul qilingan", status: ["RECEIVED"] },
+  const OPEN_S: SupplyStatus[] = ["NEW", "PRICED", "APPROVED", "FUNDED"];
+  const today = startOfToday();
+  const tabs: { key: string; label: string; where: Prisma.SupplyRequestWhereInput }[] = [
+    { key: "price", label: "Narx qo'yish", where: { status: { in: ["NEW", "PRICED"] } } },
+    { key: "urgent", label: "Shoshilinch", where: { status: { in: OPEN_S }, OR: [{ priority: { in: ["HIGH", "CRITICAL"] } }, { needBy: { lt: new Date(today.getTime() + 3 * 86400000) } }] } },
+    { key: "approve", label: "Tasdiqda", where: { status: { in: ["PRICED", "APPROVED"] } } },
+    { key: "receive", label: "Buyurtmalar", where: { status: "FUNDED" } },
+    { key: "transit", label: "Yo'lda", where: { status: "FUNDED", deliveryStatus: "IN_TRANSIT" } },
+    { key: "late", label: "Kechikkan", where: { status: { in: OPEN_S }, OR: [{ status: "FUNDED", eta: { lt: today } }, { eta: null, needBy: { lt: today } }, { status: { not: "FUNDED" }, needBy: { lt: today } }] } },
+    { key: "problem", label: "Muammo", where: { status: { not: "REJECTED" }, incidents: { some: { resolvedAt: null } } } },
+    { key: "done", label: "Qabul qilingan", where: { status: "RECEIVED" } },
   ];
   const tab = tabs.find((t) => t.key === filter) ?? tabs[0];
   const [rows, counts] = await Promise.all([
-    db.supplyRequest.findMany({ where: { status: { in: tab.status }, ...supplyWhere(q) }, orderBy: { date: "desc" }, take: TAKE, include: supplyInclude }),
-    db.supplyRequest.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.supplyRequest.findMany({ where: { AND: [tab.where, supplyWhere(q)] }, orderBy: [{ priority: "desc" }, { date: "desc" }], take: TAKE, include: supplyInclude }),
+    Promise.all(tabs.map((t) => db.supplyRequest.count({ where: t.where }))),
   ]);
-  const by = (s: SupplyStatus[]) => counts.filter((c) => s.includes(c.status)).reduce((n, c) => n + c._count._all, 0);
-  return { key: "snabjeniye", title, rows: rows.map(supplyRow), filters: tabs.map((t) => ({ key: t.key, label: t.label, count: by(t.status), active: t.key === tab.key })) };
+  return { key: "snabjeniye", title, rows: rows.map(supplyRow), filters: tabs.map((t, i) => ({ key: t.key, label: t.label, count: counts[i], active: t.key === tab.key })) };
 }
 
 /** Sayt arizalari — holat bo'yicha tablar (vebdagi `/leads`). Yangi arizalar birinchi. */

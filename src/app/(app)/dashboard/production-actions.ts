@@ -6,9 +6,10 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
-import { validMonth } from "@/lib/davomat";
-import { qty as fq } from "@/lib/format";
-import { unitLabel } from "@/lib/unit";
+import { today, validDay, validMonth } from "@/lib/davomat";
+import { assignEmployeeBrigade, markAllPresent, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
+import { submitReport } from "@/lib/production-report";
+import { addProductDefect } from "@/lib/defects";
 
 const done = () => { revalidatePath("/dashboard"); return { ok: true } as const; };
 
@@ -64,37 +65,13 @@ const DefectSchema = z.object({
   note: zOpt,
 });
 
-/**
- * Brak yozuvi. Mahsulot hovli qoldig'idan WRITE_OFF bilan ayriladi — shuning uchun
- * qoldiqdan ko'p brak yozib bo'lmaydi (u holda mahsulot hali kirim qilinmagan bo'ladi).
- */
+/** Brak yozuvi — qoida `lib/defects.ts` da (brigadir ilovasi ham shuni chaqiradi). */
 export async function addDefect(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
   const r = parseForm(DefectSchema, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
-  const product = await db.product.findUnique({ where: { id: d.productId }, select: { id: true, name: true, unit: true } });
-  if (!product) return { error: "Mahsulot topilmadi" };
-  const wh = await db.warehouse.findFirst({ where: { isActive: true }, select: { id: true } });
-  if (!wh) return { error: "Sklad ochilmagan" };
-  const bal = await db.stockMove.aggregate({ where: { productId: product.id }, _sum: { qty: true } });
-  const balance = Number(bal._sum.qty ?? 0);
-  if (d.qty > balance + 0.0005) {
-    return { error: `Hovlida ${product.name} faqat ${fq(Math.max(0, balance))} ${unitLabel(product.unit)} — brak undan ko'p bo'lolmaydi. Avval ishlab chiqarilgani qayd qilinsin.` };
-  }
-
-  await db.$transaction(async (tx) => {
-    const def = await tx.productDefect.create({
-      data: { productId: product.id, qty: d.qty, reason: d.reason, brigadeId: d.brigadeId, note: d.note, createdById: s.userId },
-    });
-    await tx.stockMove.create({
-      data: {
-        type: "WRITE_OFF", warehouseId: wh.id, productId: product.id, brigadeId: d.brigadeId, qty: -d.qty,
-        refType: "ProductDefect", refId: def.id, note: `Brak: ${d.reason}${d.note ? ` · ${d.note}` : ""}`, createdById: s.userId,
-      },
-    });
-    await audit(tx, s.userId, "CREATE", "ProductDefect", def.id, undefined, def);
-  });
+  const res = await addProductDefect(r.data, s.userId);
+  if ("error" in res) return { error: res.error };
   revalidatePath("/stock");
   return done();
 }
@@ -124,4 +101,58 @@ export async function deleteDefect(id: string): Promise<ActionState> {
   });
   revalidatePath("/stock");
   return done();
+}
+
+/* ───────────────────────── Sex davomati (ishlab chiqarish boshlig'i) ───────────────────────── */
+
+const MarkSchema = z.object({
+  employeeId: zStr("xodim tanlanmagan"),
+  status: z.enum(["PRESENT", "ABSENT", "LEAVE", "SICK", "DAYOFF", "CHECKOUT"]),
+  checkIn: zOpt,
+  note: zOpt,
+});
+
+/** Bitta sex xodimining bugungi davomati. `CHECKOUT` — ketgan vaqtini hozir qilib qo'yadi. */
+export async function markStaff(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const r = parseForm(MarkSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  const res = d.status === "CHECKOUT"
+    ? await markProductionCheckout(s.userId, d.employeeId)
+    : await markProductionAttendance(s.userId, d.employeeId, { status: d.status, checkIn: d.checkIn, note: d.note });
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/otdel-kadr");
+  return done();
+}
+
+/** Belgilanmagan hamma sex xodimi — "Keldi". */
+export async function markAllStaff(): Promise<ActionState> {
+  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const r = await markAllPresent(s.userId);
+  revalidatePath("/otdel-kadr");
+  revalidatePath("/dashboard");
+  return { ok: true, note: r.count ? `${r.count} kishi "Keldi" deb belgilandi` : "Hamma belgilangan" };
+}
+
+/* ───────────────────────── Xodimlarni taqsimlash (faqat direktor) ───────────────────────── */
+
+export async function assignStaff(employeeId: string, brigadeId: string): Promise<ActionState> {
+  const s = await requireSession([]);
+  const r = await assignEmployeeBrigade(s.userId, employeeId, brigadeId || null);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/dashboard/xodimlar");
+  return done();
+}
+
+/* ───────────────────────── Kunlik hisobot: "Qayd etish" ───────────────────────── */
+
+export async function saveReport(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const iso = validDay(String(fd.get("iso") ?? "")) ?? today();
+  const note = String(fd.get("note") ?? "").trim() || null;
+  const r = await submitReport(s.userId, iso, note);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/dashboard/hisobot");
+  return { ok: true, note: "Hisobot saqlandi va direktorga yuborildi" };
 }

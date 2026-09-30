@@ -6,10 +6,12 @@ import { qty, date, dateTime } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Td, Th, Tr } from "@/components/ui";
 import { OrderStatusBadge } from "../../../orders/status";
+import { requirePage } from "@/lib/page-guard";
 
 const MOVE: Record<string, string> = { PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Jo'natildi", ADJUSTMENT: "Qo'lda qo'shildi", WRITE_OFF: "Hisobdan chiqarildi" };
 
 export default async function StockProductDetail({ params }: { params: Promise<{ productId: string }> }) {
+  await requirePage("/stock/products");
   const { productId } = await params;
   const d = await ostatkaDetail(productId);
   if (!d) notFound();

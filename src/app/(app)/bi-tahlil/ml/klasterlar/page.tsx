@@ -8,11 +8,13 @@ import { Table, Th, Td, Tr, Empty, Input } from "@/components/ui";
 import { Scatter, HBarList } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Tag, Chip } from "../../ui";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 const ICON: Record<string, typeof Star> = { Stars: Star, "Cash Cows": PiggyBank, Rising: TrendingUp, Niche: Gem, Dogs: CircleOff, Sotilmagan: Package };
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/ml/klasterlar");
   const { sp, range } = await biContext(searchParams);
   const d = await productsTab(range);
   const href = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ cluster: sp.cluster, abc: sp.abc, q: sp.q, ...extra })) if (v) p.set(k, v); return `/bi-tahlil/ml/klasterlar?${p ? p : ""}`; };

@@ -23,9 +23,9 @@ export const NAV: NavItem[] = [
   { href: "/brigades",    label: "Brigadalar",         roles: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"], group: "Ishlab chiqarish" },
   // ── Logistika kabineti (Biton Logistika TZ, 2-bo'lim). Bosh sahifa — /dashboard (LOGISTICS uchun logistika paneli) ──
   { href: "/logistika/buyurtmalar", label: "Buyurtmalar",        roles: LOGI, group: "Logistika" },
-  { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
+  { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "MECHANIC"], group: "Logistika" },
   { href: "/logistika/kalendar",    label: "Dispetcher kalendari", roles: LOGI, group: "Logistika" },
-  { href: "/logistika/transport",   label: "Transport",          roles: LOGI, group: "Logistika" },
+  { href: "/logistika/transport",   label: "Transport",          roles: [...LOGI, "MECHANIC"], group: "Logistika" },
   { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: LOGI, group: "Logistika" },
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika" },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
@@ -38,7 +38,7 @@ export const NAV: NavItem[] = [
   { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
-  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS"], group: "Sklad" },
+  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"], group: "Sklad" },
   // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi
   { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad" },
   // Ta'minot zayavkalari — ma'sul (zayavka) xodim tasdiqlaydi; zanjirdagi boshqa bo'limlar holatini ko'radi
@@ -103,6 +103,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   FINANCE: "Finance (eski bo'lim)",
   HR: "Otdel kadr",
   CASHIER: "Kassa / bank",
+  MECHANIC: "Mexanik",
   DRIVER: "Haydovchi",
   BRIGADIER: "Brigadir",
 };

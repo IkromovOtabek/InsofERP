@@ -40,3 +40,32 @@ export async function deleteCashTx(id: string) {
   });
   revalidatePath("/cashflow"); revalidatePath("/payments");
 }
+
+/**
+ * To'lanmagan kirimni to'lash: moliya hisobni tanlaydi, kirim summasi chiqim bo'lib yoziladi.
+ * Kirim bo'yicha qulf — ikki marta bosilsa ikkinchi chiqim yozilmaydi.
+ */
+export async function payReceipt(receiptId: string, fd: FormData) {
+  const s = await requireSession(["FINANCE", "ACCOUNTING"]);
+  const cashAccountId = String(fd.get("cashAccountId") ?? "");
+  const acc = await db.cashAccount.findFirst({ where: { id: cashAccountId, isActive: true } });
+  if (!acc) throw new Error("Kassa/hisob tanlanmagan");
+  await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${receiptId}))`;
+    const already = await tx.cashTransaction.count({ where: { refType: "GoodsReceipt", refId: receiptId } });
+    if (already) return;
+    const rec = await tx.goodsReceipt.findUniqueOrThrow({ where: { id: receiptId }, include: { supplier: true, items: true } });
+    const total = rec.items.reduce((x, i) => x + Number(i.qty) * Number(i.price), 0);
+    if (!(total > 0)) return;
+    const t = await tx.cashTransaction.create({
+      data: {
+        type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: total, category: "Xomashyo",
+        supplierId: rec.supplierId, counterparty: rec.supplier.name,
+        note: `Kirim ${rec.docNo} · ${rec.items.length} qator (moliya to'ladi)`,
+        refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
+      },
+    });
+    await audit(tx, s.userId, "CREATE", "CashTransaction", t.id, undefined, t);
+  });
+  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath(`/receipts/${receiptId}`); revalidatePath("/");
+}

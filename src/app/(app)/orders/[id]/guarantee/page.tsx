@@ -5,6 +5,7 @@ import { customerCredit } from "@/lib/finance";
 import { money, qty, date, fmtNum, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { PrintButton } from "@/components/print-button";
+import { requirePage } from "@/lib/page-guard";
 
 /** Bo'sh katak — mijoz qo'lda to'ldiradi. Qiymat bo'lsa chiziq ustida ko'rsatiladi. */
 function Blank({ value, w = "w-56" }: { value?: string | null; w?: string }) {
@@ -16,6 +17,7 @@ function Blank({ value, w = "w-56" }: { value?: string | null; w?: string }) {
  * Mijoz rekvizitlari bazadan to'ldiriladi, qolgan kataklarni mijoz qo'lda yozib, imzo va muhr qo'yadi.
  */
 export default async function GuaranteePage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePage("/orders");
   const { id } = await params;
   const o = await db.order.findUnique({ where: { id }, include: { customer: true, items: { include: { product: true } } } });
   if (!o) notFound();

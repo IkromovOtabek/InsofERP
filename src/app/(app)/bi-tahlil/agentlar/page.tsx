@@ -7,12 +7,14 @@ import { Table, Th, Td, Tr, Empty } from "@/components/ui";
 import { Heatmap } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Tag, ProgressBar, ExportLink } from "../ui";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
 const pct = (v: number | null | undefined, f = 0) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${fmtNum(v, f)}%`);
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/agentlar");
   const { range } = await biContext(searchParams);
   const d = await agentsTab(range);
   const k = d.kpis;

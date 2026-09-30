@@ -60,7 +60,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader title="Holat chegaralari" description="Norma / e'tibor / kritik qoidalari — dashborddagi ranglar shu qiymatlardan hisoblanadi (TZ §16)." icon={SlidersHorizontal} />
-          <ThresholdForm t={{ alertWarnPct: company.alertWarnPct, alertCritPct: company.alertCritPct, stockWarnDays: company.stockWarnDays, stockCritDays: company.stockCritDays, overdueDays: company.overdueDays }} />
+          <ThresholdForm t={{ alertWarnPct: company.alertWarnPct, alertCritPct: company.alertCritPct, stockWarnDays: company.stockWarnDays, stockCritDays: company.stockCritDays, overdueDays: company.overdueDays, supplyDirectorLimit: Number(company.supplyDirectorLimit) }} />
         </Card>
         <Card>
           <CardHeader title="O'zgarishlar tarixi" description="Shu oy byudjetini kim va qachon o'zgartirgani" icon={History} />

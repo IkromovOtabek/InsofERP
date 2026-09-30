@@ -18,7 +18,11 @@ export async function middleware(req: NextRequest) {
   if (token) {
     // Bu yerda faqat imzo va muddat (Edge'da baza yo'q); hisob faolligi va sessionVersion
     // sahifa/action ichida `getSession` da bazadan tekshiriladi.
-    try { role = (await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS })).payload.role as Role; } catch { role = null; }
+    // Mobil ilova tokenlari (`typ`: access/refresh, 30 kungacha) veb cookie sifatida o'tmaydi
+    try {
+      const { payload } = await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS });
+      role = payload.typ === undefined && typeof payload.userId === "string" ? (payload.role as Role) : null;
+    } catch { role = null; }
   }
   const { pathname } = req.nextUrl;
 

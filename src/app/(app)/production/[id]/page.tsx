@@ -6,8 +6,10 @@ import { CustomerName } from "@/components/customer-name";
 import { date, qty } from "@/lib/format";
 import { Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { unitLabel } from "@/lib/unit";
+import { requirePage } from "@/lib/page-guard";
 
 export default async function BatchPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePage("/production");
   const { id } = await params;
   const b = await db.productionBatch.findUnique({
     where: { id },

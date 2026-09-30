@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { biContext, BiPage } from "./shell";
 import { routeOf } from "./ui";
 import { OverviewTab } from "./tabs/overview";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 export type { SP } from "./shell";
@@ -10,6 +11,7 @@ export type { SP } from "./shell";
 const LEGACY: Record<string, string> = { sales: "sales", customers: "customers", products: "products", stock: "stock", operations: "operations", finance: "finance", forecast: "forecast" };
 
 export default async function BiTahlil({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil");
   const { s, sp, range } = await biContext(searchParams);
   if (sp.tab && LEGACY[sp.tab]) {
     const q = new URLSearchParams(Object.entries(sp).filter((kv): kv is [string, string] => kv[0] !== "tab" && !!kv[1]));

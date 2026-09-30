@@ -86,7 +86,8 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
     }
 
     // Qo'shilgan xomashyo summasi — hisobdan chiqim bo'lib Kirim-Chiqimga tushadi
-    if (cost > 0 && r.data.cashAccountId) {
+    // Kassadan chiqimni faqat direktor shu yerdan yozadi (boshqalarga hisob tanlash berilmaydi)
+    if (cost > 0 && r.data.cashAccountId && s.role === "DIRECTOR") {
       const ct = await tx.cashTransaction.create({
         data: {
           type: "EXPENSE", cashAccountId: r.data.cashAccountId, amount: cost, category: "Xomashyo",

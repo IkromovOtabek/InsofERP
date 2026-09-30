@@ -74,6 +74,8 @@ export const getSession = cache(async (): Promise<Session | null> => {
   } catch {
     return null;
   }
+  // Mobil token (`typ` bor, `userId` yo'q) veb sessiya emas
+  if ((claims as { typ?: unknown }).typ !== undefined || typeof claims.userId !== "string") return null;
   const user = await db.user.findUnique({
     where: { id: claims.userId },
     select: { id: true, login: true, fullName: true, role: true, isActive: true, sessionVersion: true },

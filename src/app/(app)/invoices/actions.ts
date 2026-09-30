@@ -32,7 +32,9 @@ export async function cancelInvoice(id: string) {
   const inv = await db.invoice.findUniqueOrThrow({ where: { id }, include: { payments: true } });
   if (inv.payments.length) throw new Error("To'lov bor — bekor qilib bo'lmaydi");
   if (inv.status !== "OPEN") return;
-  await db.invoice.update({ where: { id }, data: { status: "CANCELLED" } });
+  // Shart bilan: tekshiruvdan keyin to'lov kelib qolgan bo'lsa bekor qilinmaydi
+  const r = await db.invoice.updateMany({ where: { id, status: "OPEN", payments: { none: {} } }, data: { status: "CANCELLED" } });
+  if (!r.count) throw new Error("Schyotga hozirgina to'lov tushdi — bekor qilib bo'lmaydi");
   await audit(db, s.userId, "STATUS_CHANGE", "Invoice", id, { status: "OPEN" }, { status: "CANCELLED" });
   revalidatePath("/invoices"); revalidatePath("/");
 }

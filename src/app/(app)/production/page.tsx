@@ -12,6 +12,7 @@ import { PRODUCTION_FILTERS, assigned, dueLabel, isOpen, isSoon, partlyAssigned,
 import { OrderStatusBadge } from "../orders/status";
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
+import { requirePage } from "@/lib/page-guard";
 
 /**
  * Ishlab chiqarish oynasi: saqlangan zayavkalar (qoralama, tasdiqlangan, ishlab chiqarilmoqda) shu yerga tushadi.
@@ -19,6 +20,7 @@ import { brigadeStocks } from "@/lib/brigade-stock";
  * Tayinlash formasi shu oynaning o'zida ochiladi; "Tasdiqlash" bosilganda topshiriq brigadaga yuboriladi.
  */
 export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string }> }) {
+  await requirePage("/production");
   const { order: selectedId, tab = "open" } = await searchParams;
   const [allOrders, brigades, batches] = await Promise.all([
     db.order.findMany({

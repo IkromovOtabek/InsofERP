@@ -7,6 +7,7 @@ import { Table, Th, Td, Tr, Badge, type BadgeColor } from "@/components/ui";
 import { BarChart, HBarList, LineChart } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, ProgressBar } from "../ui";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ const x = (v: number | null) => (v === null ? "—" : `${fmtNum(v, 2)}x`);
 const V: Record<Verdict, { color: BadgeColor; icon: typeof Ban }> = { "TO'XTATING": { color: "red", icon: Ban }, KAMAYTIRING: { color: "amber", icon: TrendingDown }, SAQLANG: { color: "blue", icon: CheckCircle2 }, "KO'PAYTIRING": { color: "green", icon: ArrowUpRight }, "MA'LUMOT KAM": { color: "slate", icon: CheckCircle2 } };
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/marketing");
   const { range } = await biContext(searchParams);
   const d = await marketingTab(range);
   const t = d.t;

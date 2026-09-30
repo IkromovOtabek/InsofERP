@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
-import { Plus, Trash2 } from "lucide-react";
-import { addDefect, deleteDefect, deletePlan, savePlan } from "./production-actions";
+import { CheckCheck, ClipboardCheck, Plus, Trash2 } from "lucide-react";
+import { addDefect, assignStaff, deleteDefect, deletePlan, markAllStaff, markStaff, saveReport, savePlan } from "./production-actions";
+import { cn } from "@/lib/utils";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
 
 type Product = { id: string; code: string; name: string; unit: string };
@@ -92,5 +93,81 @@ export function DeleteDefectButton({ id }: { id: string }) {
       className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
       <Trash2 size={14} />
     </button>
+  );
+}
+
+/* ───────────────────────── Sex davomati ───────────────────────── */
+
+const MARK_BTNS = [
+  { v: "PRESENT", label: "Keldi", cls: "hover:bg-emerald-50 hover:text-emerald-700 data-[on=true]:bg-emerald-100 data-[on=true]:text-emerald-800" },
+  { v: "ABSENT", label: "Kelmadi", cls: "hover:bg-red-50 hover:text-red-700 data-[on=true]:bg-red-100 data-[on=true]:text-red-700" },
+  { v: "SICK", label: "Kasal", cls: "hover:bg-amber-50 hover:text-amber-700 data-[on=true]:bg-amber-100 data-[on=true]:text-amber-800" },
+  { v: "LEAVE", label: "Ta'til", cls: "hover:bg-sky-50 hover:text-sky-700 data-[on=true]:bg-sky-100 data-[on=true]:text-sky-800" },
+] as const;
+
+/** Qatordagi tezkor belgilar: Keldi (hozirgi soat) / Kelmadi / Kasal / Ta'til, kelgan bo'lsa — Ketdi. */
+export function StaffMark({ employeeId, status, checkedOut }: { employeeId: string; status: string | null; checkedOut: boolean }) {
+  const [pending, start] = useTransition();
+  const send = (st: string) => start(async () => {
+    const fd = new FormData();
+    fd.set("employeeId", employeeId); fd.set("status", st);
+    const r = await markStaff(undefined, fd);
+    if (r?.error) alert(r.error);
+  });
+  return (
+    <div className={cn("inline-flex flex-wrap justify-end gap-1", pending && "opacity-50")}>
+      {MARK_BTNS.map((b) => (
+        <button key={b.v} type="button" disabled={pending} data-on={status === b.v} onClick={() => send(b.v)}
+          className={cn("rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-600 transition", b.cls)}>{b.label}</button>
+      ))}
+      {status === "PRESENT" && !checkedOut && (
+        <button type="button" disabled={pending} onClick={() => send("CHECKOUT")} className="rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100">Ketdi</button>
+      )}
+    </div>
+  );
+}
+
+export function MarkAllButton({ left }: { left: number }) {
+  const [pending, start] = useTransition();
+  const [note, setNote] = useState<string | null>(null);
+  if (!left && !note) return null;
+  return (
+    <span className="inline-flex items-center gap-2">
+      {note && <span className="text-xs text-emerald-700">{note}</span>}
+      {left > 0 && (
+        <Button type="button" variant="secondary" disabled={pending} onClick={() => confirm(`Belgilanmagan ${left} kishi "Keldi" deb belgilansinmi?`) && start(async () => { const r = await markAllStaff(); setNote(r?.note ?? null); })}>
+          <CheckCheck size={15} /> {pending ? "Belgilanmoqda…" : `Hammasi keldi (${left})`}
+        </Button>
+      )}
+    </span>
+  );
+}
+
+/* ───────────────────────── Taqsimlash (direktor) ───────────────────────── */
+
+export function AssignSelect({ employeeId, brigadeId, brigades }: { employeeId: string; brigadeId: string | null; brigades: { id: string; name: string }[] }) {
+  const [pending, start] = useTransition();
+  const [val, setVal] = useState(brigadeId ?? "");
+  return (
+    <Select value={val} disabled={pending} className={cn("min-w-48", !val && "text-slate-400", pending && "opacity-60")}
+      onChange={(e) => { const v = e.target.value; const prev = val; setVal(v); start(async () => { const r = await assignStaff(employeeId, v); if (r?.error) { alert(r.error); setVal(prev); } }); }}>
+      <option value="">— sexda emas / taqsimlanmagan —</option>
+      {brigades.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+    </Select>
+  );
+}
+
+/* ───────────────────────── Kunlik hisobot: "Qayd etish" ───────────────────────── */
+
+export function SaveReportForm({ iso, compact = false }: { iso: string; compact?: boolean }) {
+  const [state, action, pending] = useActionState(saveReport, undefined);
+  return (
+    <form action={action} className={cn("flex flex-wrap items-center gap-2", compact ? "" : "w-full")}>
+      <input type="hidden" name="iso" value={iso} />
+      {!compact && <Input name="note" placeholder="Izoh (ixtiyoriy): smena, to'xtash sababi…" className="min-w-64 flex-1" />}
+      <Button type="submit" disabled={pending}><ClipboardCheck size={15} /> {pending ? "Saqlanmoqda…" : "Qayd etish"}</Button>
+      {state?.ok && <span className="text-sm text-emerald-700">{state.note}</span>}
+      <FormError error={state?.error} />
+    </form>
   );
 }

@@ -8,7 +8,8 @@ import { money, date, isoDate } from "@/lib/format";
 import { Badge, Button, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
-import { deleteCashTx } from "./actions";
+import { deleteCashTx, payReceipt } from "./actions";
+import { unpaidReceipts } from "@/lib/receipt-payables";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./categories";
 
 type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE"; account: string; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean };
@@ -34,7 +35,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
   ]);
 
-  const marks = await customerMarks(payments.map((p) => p.customerId));
+  const canPay = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
+  const [marks, unpaid] = await Promise.all([customerMarks(payments.map((p) => p.customerId)), unpaidReceipts()]);
   // Hisob qoldiqlari (butun davr): mijoz to'lovlari + kirim − chiqim
   const balance = new Map<string, number>();
   for (const p of allPay) balance.set(p.cashAccountId, (balance.get(p.cashAccountId) ?? 0) + Number(p._sum.amount ?? 0));
@@ -72,6 +74,38 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
       {/* Moliya tasdig'i: Sotuv bo'limi tasdiqlagan ta'minot zayavkalari — soat ikonkasi bilan */}
       <SupplyApprovals mode="finance" />
+
+      {/* Sklad/snabjeniye yozgan kirimlar — pulini moliya to'laydi */}
+      {unpaid.length > 0 && (
+        <Card className="mb-6">
+          <h2 className="mb-1 font-semibold">To&apos;lanmagan kirimlar <Badge color="amber">{unpaid.length}</Badge></h2>
+          <p className="mb-3 text-sm text-slate-500">Xomashyo skladga kirim qilingan, yetkazuvchiga hali pul to&apos;lanmagan. Jami {money(unpaid.reduce((x, r) => x + r.total, 0))}.</p>
+          <Table>
+            <thead><tr><Th>Sana</Th><Th>Kirim</Th><Th>Yetkazuvchi</Th><Th right>Summa</Th><Th></Th></tr></thead>
+            <tbody>
+              {unpaid.map((r) => (
+                <Tr key={r.id}>
+                  <Td>{date(r.date)}</Td>
+                  <Td><Link href={`/receipts/${r.id}`} className="font-medium text-slate-800 hover:underline">{r.docNo} →</Link> <span className="text-xs text-slate-500">{r.lines} qator</span></Td>
+                  <Td>{r.supplier}</Td>
+                  <Td right className="font-medium">{money(r.total)}</Td>
+                  <Td>
+                    {canPay ? (
+                      <form action={payReceipt.bind(null, r.id)} className="flex items-center justify-end gap-2">
+                        <select name="cashAccountId" required defaultValue="" className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+                          <option value="" disabled>Hisob…</option>
+                          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                        <Button className="h-8 text-sm">To&apos;lash</Button>
+                      </form>
+                    ) : <span className="text-xs text-slate-500">Moliya to&apos;laydi</span>}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">

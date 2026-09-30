@@ -8,10 +8,12 @@ import { Table, Th, Td, Tr, Empty, Badge, Select } from "@/components/ui";
 import { Kpi, Panel, Note, Why } from "../../ui";
 import { RowForm } from "@/components/row-form";
 import { saveEntry, deleteEntry } from "../actions";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/marketing/malumotlar");
   const { sp, range } = await biContext(searchParams);
   const now = new Date();
   const year = sp.year === "" ? undefined : Number(sp.year) || now.getFullYear();

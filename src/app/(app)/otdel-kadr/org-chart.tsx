@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Calculator, ChevronRight, Compass, Crown, Factory, Handshake, IdCard, Maximize2, Minus, Package,
+  Calculator, ChevronRight, Compass, Crown, Factory, Handshake, HardHat, IdCard, Maximize2, Minus, Package,
   Phone, Plus, ShieldCheck, Truck, User, Users, Wallet, X, Eye, EyeOff, FileText, CircleSlash,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -42,7 +42,7 @@ const TONES: Record<OrgTone, { card: string; icon: string; ring: string; chip: s
 
 const ICONS: Record<string, LucideIcon> = {
   crown: Crown, compass: Compass, factory: Factory, package: Package, truck: Truck,
-  handshake: Handshake, calculator: Calculator, wallet: Wallet, users: Users, shieldCheck: ShieldCheck,
+  handshake: Handshake, calculator: Calculator, wallet: Wallet, users: Users, shieldCheck: ShieldCheck, hardHat: HardHat,
 };
 
 /* ═══════════════════════ Tuzilmani yig'ish ═══════════════════════ */
@@ -101,7 +101,13 @@ function buildTree(employees: OrgEmployee[], positions: OrgPosition[], showEmpty
   return { root, orphanPositions, strayGroups };
 }
 
-/** Kenglik → joylashuv: har tugun bolalari ustida markazlashadi. */
+/** Tugun tagidagi ishchi lavozimlar ustunining balandligi. */
+const stackH = (n: Node) => (n.positions.length ? STACK_TOP + n.positions.length * CHIP_H + (n.positions.length - 1) * CHIP_GAP : 0);
+
+/**
+ * Kenglik → joylashuv: har tugun bolalari ustida markazlashadi. Lavozimlari ham, ichki bo'limi ham
+ * bor tugunda (Ishlab chiqarish › Brigadir) bolalar lavozimlar ustunidan pastga tushadi — ustma-ust chiqmasin.
+ */
 function layout(root: Node) {
   const widths = new Map<Node, number>();
   const measure = (n: Node): number => {
@@ -115,19 +121,18 @@ function layout(root: Node) {
   measure(root);
 
   const all: Node[] = [];
-  const place = (n: Node, left: number, depth: number) => {
+  const place = (n: Node, left: number, y: number) => {
     all.push(n);
-    n.y = PAD_TOP + depth * LEVEL_H;
+    n.y = y;
     const w = widths.get(n)!;
     if (n.children.length === 0) { n.x = left + w / 2; return; }
     const kids = n.children.reduce((s, c) => s + widths.get(c)!, 0) + (n.children.length - 1) * GAP_X;
     let cur = left + (w - kids) / 2;
-    for (const c of n.children) { place(c, cur, depth + 1); cur += widths.get(c)! + GAP_X; }
+    for (const c of n.children) { place(c, cur, n.y + LEVEL_H + stackH(n)); cur += widths.get(c)! + GAP_X; }
     n.x = (n.children[0].x + n.children[n.children.length - 1].x) / 2;
   };
-  place(root, PAD_X, 0);
+  place(root, PAD_X, PAD_TOP);
 
-  const stackH = (n: Node) => (n.positions.length ? STACK_TOP + n.positions.length * CHIP_H + (n.positions.length - 1) * CHIP_GAP : 0);
   const width = widths.get(root)! + PAD_X * 2;
   const height = Math.max(...all.map((n) => n.y + CARD_H + stackH(n))) + PAD_BOTTOM;
   return { nodes: all, width, height };
@@ -214,7 +219,11 @@ export function OrgChart({ employees, positions, stageCounts }: {
             <div style={{ width, height, transform: `scale(${z})` }} className="absolute left-0 top-0 origin-top-left">
               <svg width={width} height={height} className="absolute inset-0" fill="none" strokeLinecap="round">
                 {nodes.map((n) => n.children.map((c) => (
-                  <path key={`${n.dept.role}-${c.dept.role}`} d={elbow(n.x, n.y + CARD_H, c.x, c.y)}
+                  // Lavozim ustuni bor bo'lsa chiziq chiplarni kesmaydi — ustun "umurtqasi" bo'ylab pastga tushadi
+                  <path key={`${n.dept.role}-${c.dept.role}`}
+                    d={n.positions.length
+                      ? `M${n.x + SPINE_DX},${n.y + CARD_H + STACK_TOP} V${n.y + CARD_H + stackH(n) + 12} ` + elbow(n.x + SPINE_DX, n.y + CARD_H + stackH(n) + 12, c.x, c.y).replace(/^M[^ V]+/, "")
+                      : elbow(n.x, n.y + CARD_H, c.x, c.y)}
                     className={cn("transition-colors", lit(n.dept.role) && lit(c.dept.role) ? "stroke-slate-400" : "stroke-slate-200")} strokeWidth={1.75} />
                 )))}
                 {nodes.filter((n) => n.positions.length > 0).map((n) => {

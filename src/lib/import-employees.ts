@@ -155,25 +155,29 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
       if (cur) {
         if (!input.updateExisting) { skipped++; continue; }
         const before = await tx.employee.findUniqueOrThrow({ where: { id: cur.id } });
-        // Fayldagi bo'sh katak kartadagi qiymatni o'chirmaydi
+        // Direktor kartasi importdan o'zgarmaydi — uning holati faqat direktorning o'zi tomonidan
+        const targetRole = cur.userId ? (await tx.user.findUnique({ where: { id: cur.userId }, select: { role: true } }))?.role : null;
+        if (targetRole === "DIRECTOR") { skipped++; continue; }
+        // Fayldagi bo'sh katak kartadagi qiymatni o'chirmaydi — bo'shatish sanasi ham:
+        // bo'sh katak ishdan bo'shagan xodimni (va logini) qayta yoqib yubormasin
+        const firedPatch = r.firedAt ? { firedAt: r.firedAt, isActive: false } : {};
         const e = await tx.employee.update({
           where: { id: cur.id },
           data: {
-            position, isActive,
+            position, ...firedPatch,
             ...(r.tabelNo ? { tabelNo: r.tabelNo } : {}),
             ...(r.subdivision ? { subdivision: r.subdivision } : {}),
             ...(r.tariffRate != null ? { tariffRate: r.tariffRate } : {}),
             ...(r.phone ? { phone: r.phone } : {}),
             ...(r.hiredAt ? { hiredAt: r.hiredAt } : {}),
             ...(r.birthDate ? { birthDate: r.birthDate } : {}),
-            firedAt: r.firedAt,
           },
         });
-        // Nofaol xodim tizimga ham kira olmasin (qayta ishga olinsa — ochiladi)
-        if (cur.userId && cur.isActive !== isActive) await tx.user.update({ where: { id: cur.userId }, data: { isActive } });
+        // Nofaol xodim tizimga ham kira olmasin (qayta ishga olish — kartadagi "Ishga qaytarish" orqali)
+        if (cur.userId && r.firedAt && cur.isActive) await tx.user.update({ where: { id: cur.userId }, data: { isActive: false } });
         await audit(tx, userId, "UPDATE", "Employee", e.id, before, { ...e, via: "excel" });
         updated++;
-        if (!isActive) fired++;
+        if (r.firedAt) fired++;
         if (drivers.has(position.toLowerCase())) driverIds.push(e.id);
         const rec: Found = { id: e.id, fullName: e.fullName, tabelNo: e.tabelNo, isActive: e.isActive, userId: e.userId };
         if (e.tabelNo) byTabel.set(tabelKey(e.tabelNo), rec);

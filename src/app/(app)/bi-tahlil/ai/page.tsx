@@ -5,10 +5,12 @@ import { aiDirector, aiReport, REPORTS, type ReportType } from "@/lib/bi/ai";
 import { moneyShort, dateTime, date as fmtDate } from "@/lib/format";
 import { Panel, Note, ScoreRing, Chip } from "../ui";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/ai");
   const { sp, range } = await biContext(searchParams);
   const type: ReportType = (REPORTS.some((r) => r.key === sp.report) ? sp.report : "executive") as ReportType;
   const [d, rep] = await Promise.all([aiDirector(range), aiReport(type)]);

@@ -36,13 +36,17 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
       </div>
 
-      {/* Kirim uchun pul qaysi hisobdan chiqdi — Kirim-Chiqim jurnaliga chiqim bo'lib tushadi */}
-      <Field label="Qaysi hisobdan to'landi *" hint="Kirim summasi shu hisobdan chiqim bo'lib yoziladi va qoldiq kamayadi">
-        <Select name="cashAccountId" defaultValue={accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id ?? ""} required>
-          {accounts.length === 0 && <option value="">Hisob ochilmagan</option>}
-          {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
-        </Select>
-      </Field>
+      {/* Hisob faqat direktorga beriladi. Boshqalarda to'lovni moliya Kirim-Chiqimdan tasdiqlaydi */}
+      {accounts.length > 0 ? (
+        <Field label="Qaysi hisobdan to'landi" hint="Tanlansa — shu zahoti chiqim bo'lib yoziladi. «Moliya to'laydi» — Kirim-Chiqimdagi to'lanmagan kirimlarga tushadi">
+          <Select name="cashAccountId" defaultValue="">
+            <option value="">Moliya to&apos;laydi</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === "CASH" ? " (naqd)" : " (o'tkazma)"}</option>)}
+          </Select>
+        </Field>
+      ) : (
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">To&apos;lov moliya bo&apos;limi tomonidan qilinadi — kirim saqlangach Kirim-Chiqimdagi «To&apos;lanmagan kirimlar» ro&apos;yxatiga tushadi.</p>
+      )}
 
       <div>
         <div className="mb-2 text-sm font-medium text-slate-700">Xomashyo *</div>

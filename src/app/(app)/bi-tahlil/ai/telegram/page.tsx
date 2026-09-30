@@ -10,12 +10,14 @@ import { botEnabled, getMe } from "@/lib/telegram/api";
 import { sttProvider } from "@/lib/telegram/stt";
 import { LinkCodeForm } from "./link-form";
 import { unlinkAccount, toggleBlock } from "./actions";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
 const STT_LABEL: Record<string, string> = { mohir: "uzbekvoice.ai (o'zbek tili)", groq: "Groq · Whisper large-v3 (bepul tarif)", openai: "OpenAI Whisper" };
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/ai/telegram");
   const { s, range } = await biContext(searchParams);
   const isDirector = s.role === "DIRECTOR";
 
@@ -55,7 +57,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             <>
               <ol className="mb-4 space-y-1.5 text-[13px] text-slate-700">
                 <li>1. Telegramda <b>@{bot.username}</b> botini oching va <code className="rounded bg-slate-100 px-1">/start</code> bosing</li>
-                <li>2. Quyidagi tugma bilan 6 xonali kod oling</li>
+                <li>2. Quyidagi tugma bilan 8 xonali kod oling</li>
                 <li>3. Kodni botga yuboring — shundan keyin ovozli savol berishingiz mumkin</li>
               </ol>
               <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12.5px] text-sky-900">

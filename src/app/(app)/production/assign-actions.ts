@@ -46,7 +46,7 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
       if (!b?.leaderId) continue;
       await notifyEmployees([b.leaderId], {
         type: "TASK_ASSIGNED",
-        title: `Yangi topshiriq — ${r.taskNo}`,
+        title: `${o.isUrgent ? "Shoshilinch topshiriq" : "Yangi topshiriq"} — ${r.taskNo}`,
         body: `${b.name} · ${r.qty} · muddat ${o.deliveryDate.toLocaleDateString("ru-RU")}`,
         link: { key: "tasks", id: r.taskId },
       });

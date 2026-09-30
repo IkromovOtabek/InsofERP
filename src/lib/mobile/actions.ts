@@ -17,9 +17,23 @@ import {
   approveSupplyRequest, editSupplyItems, fundSupplyRequest, priceSupplyRequest, receiveSupplyRequest,
   rejectSupplyRequest, saveSupplyFact, type FactRow,
 } from "@/lib/supply";
+import {
+  addSupplyDocument, addSupplyQuote, chooseSupplyQuote, createSupplyIncident, dataUrlFile, directorApproveSupply,
+  resolveSupplyIncident, updateSupplyDelivery, updateSupplyMeta,
+} from "@/lib/procurement";
 import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
+import type { AttendanceStatus } from "@/generated/prisma";
+import { isAttendanceStatus, today } from "@/lib/davomat";
+import { assignEmployeeBrigade, markAllPresent, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
+import { submitReport } from "@/lib/production-report";
+import { addProductDefect } from "@/lib/defects";
+import { closeShift, isIssueKind, openShift, reportBrigadeIssue, resolveBrigadeIssue, canResolveIssue, startTask } from "@/lib/brigade-shift";
+import { productionStaff } from "@/lib/production-staff";
+import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { TODAY_PREFIX } from "./brigadier";
+import { clearDashCache } from "./dashboard";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
@@ -106,6 +120,29 @@ async function assertOwnTask(user: MobileUser, taskId: string) {
   if (!t || !(await myBrigadeIds(user.id)).includes(t.brigadeId)) fail("Bu topshiriq sizning brigadangizga tayinlanmagan", 403);
 }
 
+/** Brigadir davomatni faqat O'Z brigadasi a'zosiga belgilaydi (sex boshlig'i — hammaga). */
+async function assertOwnMember(user: MobileUser, employeeId: string) {
+  if (user.role !== "BRIGADIER") return;
+  const m = (await productionStaff()).members.find((x) => x.id === employeeId);
+  if (!m?.brigadeId || !(await myBrigadeIds(user.id)).includes(m.brigadeId)) fail("Bu xodim sizning brigadangizda emas", 403);
+}
+
+/**
+ * Smena/muammo amallari ikki kartadan chaqiriladi: smena kartasi (id — `b~<brigadeId>`) va
+ * topshiriq kartasi (id — topshiriq). Brigada va topshiriq shu yerda aniqlanadi, egalik tekshiriladi.
+ */
+async function brigadeOf(user: MobileUser, id: string): Promise<{ brigadeId: string; taskId: string | null }> {
+  let brigadeId: string, taskId: string | null = null;
+  if (id.startsWith(TODAY_PREFIX)) brigadeId = id.slice(TODAY_PREFIX.length);
+  else {
+    const t = await db.brigadeTask.findUnique({ where: { id }, select: { brigadeId: true } });
+    if (!t) return fail("Topshiriq topilmadi", 404) as never;
+    brigadeId = t.brigadeId; taskId = id;
+  }
+  if (user.role === "BRIGADIER" && !(await myBrigadeIds(user.id)).includes(brigadeId)) fail("Bu brigada sizga biriktirilmagan", 403);
+  return { brigadeId, taskId };
+}
+
 export async function runMobileAction(user: MobileUser, action: string, rawId: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
   if (!rawId) fail("id yo'q");
   // Aralash ro'yxatdan ochilgan kartochka (`orders:<id>`) — amal haqiqiy id bilan bajariladi
@@ -114,6 +151,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (!can(user, action)) fail("Bu amalga ruxsatingiz yo'q", 403);
   if (action.startsWith("trip.")) await assertOwnTrip(user, id);
   if (action.startsWith("task.")) await assertOwnTask(user, id);
+  if (["att.present", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
   switch (action) {
     // ── Zayavka ──
@@ -190,6 +228,16 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: "Obyektga yetib keldi" };
     }
     case "trip.unloading": {
+      // "Yetib keldim" bosilmagan bo'lsa tushirish uni ham belgilaydi — 1 km qoidasi shu yerda ham
+      const cur = await db.trip.findUnique({ where: { id }, select: { arrivedAt: true } });
+      if (cur && !cur.arrivedAt) {
+        const gps = await tripArrival(id);
+        if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
+        const a = await tripArrived(id, user.id, gps.unknown ? "Haydovchi ilovasi (GPS'siz)" : "Haydovchi ilovasi");
+        if (a.error) fail(a.error);
+        if (a.changed && gps.unknown) await gpsIssue(id, user.id, "Yetib keldim");
+        if (a.changed && ecoEnabled()) after(() => pushTripStatus(id, "ARRIVED"));
+      }
       const r = await tripUnloading(id, user.id);
       if (r.error) fail(r.error);
       if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "UNLOADING"));
@@ -245,6 +293,78 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       // `note` — hovliga nechta kirim bo'lgani, zayavka yopilgani, xomashyo yetmagani
       const base = r.status === "DONE" ? "Qayd qilindi — topshiriq bajarildi" : "Qayd qilindi";
       return { ok: true, message: r.note ? `${base}. ${r.note}` : base };
+    }
+    case "task.start": {
+      // Smena ochilmagan bo'lsa — ish boshlanishi smenani ham ochadi (brigadir unutib qo'ymasin)
+      const { brigadeId } = await brigadeOf(user, id);
+      const sh = user.role === "BRIGADIER" ? await openShift(brigadeId, user.id) : null;
+      const r = await startTask(id, user.id);
+      if ("error" in r) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: sh && "created" in sh && sh.created ? "Ish boshlandi — bugungi smena ham ochildi" : "Ish boshlandi" };
+    }
+    case "task.finish": {
+      const t = await db.brigadeTask.findUniqueOrThrow({ where: { id }, select: { qty: true, doneQty: true } });
+      const left = Number(t.qty) - Number(t.doneQty);
+      if (left <= 0) fail("Qoldiq yo'q — topshiriq bajarilgan");
+      const r = await taskProgress(id, left, user.id, textOf(payload, "note") || "Yakunlandi");
+      if (r.error) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: r.note ? `Topshiriq yakunlandi. ${r.note}` : "Topshiriq yakunlandi" };
+    }
+    case "task.defect":
+    case "shift.defect": {
+      const { brigadeId } = await brigadeOf(user, id);
+      const r = await addProductDefect({ productId: textOf(payload, "productId"), qty: numOf(payload, "qty"), reason: textOf(payload, "reason"), brigadeId, note: textOf(payload, "note") || null }, user.id);
+      if ("error" in r) fail(r.error);
+      const text = (r as { text: string }).text;
+      // Sifat — ishlab chiqarishning nazorati: brigadir yozgan brak ularga ham ko'rinsin
+      notifyAfter(() => notifyRoles(["PRODUCTION", "SUPERVISOR"], { type: "DEFECT", title: "Brak qayd qilindi", body: text, channel: "oddiy" }, { except: user.id }));
+      clearDashCache();
+      return { ok: true, message: `Brak qayd qilindi — ${text}` };
+    }
+
+    // ── Brigadir smenasi va muammolari — qoida `lib/brigade-shift.ts` da ──
+    case "shift.open": {
+      const { brigadeId } = await brigadeOf(user, id);
+      const r = await openShift(brigadeId, user.id);
+      if ("error" in r) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: (r as { created: boolean }).created ? "Smena boshlandi — brigada tarkibini belgilang" : "Smena allaqachon ochiq" };
+    }
+    case "shift.close": {
+      const { brigadeId } = await brigadeOf(user, id);
+      const r = await closeShift(brigadeId, user.id, textOf(payload, "note") || null);
+      if ("error" in r) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: `Smena yopildi, hisobot ishlab chiqarishga yuborildi. ${(r as { summary: string }).summary}` };
+    }
+    case "issue.equipment":
+    case "issue.material":
+    case "issue.staff":
+    case "issue.other": {
+      const { brigadeId, taskId } = await brigadeOf(user, id);
+      const kind = action === "issue.other" ? textOf(payload, "kind") : action.slice(6).toUpperCase();
+      if (!isIssueKind(kind)) fail("Muammo turini tanlang");
+      const r = await reportBrigadeIssue({
+        brigadeId, taskId: taskId ?? (textOf(payload, "taskId") || null), kind: kind as never,
+        equipment: textOf(payload, "equipment") || null, qty: optNum(payload, "qty"),
+        downtimeMin: optNum(payload, "downtimeMin") != null ? Math.round(optNum(payload, "downtimeMin")!) : null, note: textOf(payload, "note"),
+      }, user.id);
+      if ("error" in r) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: (r as { text: string }).text };
+    }
+    case "issue.resolve": {
+      const i = await db.brigadeIssue.findUnique({ where: { id }, select: { kind: true, brigadeId: true } });
+      if (!i) fail("Muammo topilmadi", 404);
+      if (!canResolveIssue(user.role, i!.kind)) fail("Bu muammo sizning bo'limingizga tegishli emas", 403);
+      if (user.role === "BRIGADIER" && !(await myBrigadeIds(user.id)).includes(i!.brigadeId)) fail("Bu brigada sizga biriktirilmagan", 403);
+      const dm = optNum(payload, "downtimeMin");
+      const r = await resolveBrigadeIssue(id, user.id, textOf(payload, "resolution"), dm != null ? Math.max(0, Math.round(dm)) : null);
+      if ("error" in r) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: "Muammo hal qilindi" };
     }
     case "task.cancel": {
       const r = await taskCancel(id, user.id);
@@ -321,6 +441,71 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       if (r.error) fail(r.error);
       return { ok: true, message: "Ta'minot zayavkasi bekor qilindi" };
     }
+    // ── Snabjeniye TZ: rekvizitlar, takliflar, direktor, yetkazish, muammo, hujjat — qoida `lib/procurement.ts` da ──
+    case "supply.meta": {
+      const r = await updateSupplyMeta(id, {
+        department: textOf(payload, "department") || null, priority: textOf(payload, "priority") || null,
+        responsibleId: textOf(payload, "responsibleId") || null, needBy: textOf(payload, "needBy") || null, contractNo: textOf(payload, "contractNo") || null,
+      }, user.id);
+      if (r.error) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: r.note ?? "Saqlandi" };
+    }
+    case "supply.quote": {
+      const r = await addSupplyQuote(id, {
+        supplierId: textOf(payload, "supplierId") || null, supplierName: textOf(payload, "supplierName") || null, amount: numOf(payload, "amount"),
+        deliveryDays: textOf(payload, "deliveryDays") ? numOf(payload, "deliveryDays") : null, paymentTerms: textOf(payload, "paymentTerms") || null,
+        validUntil: textOf(payload, "validUntil") || null, note: textOf(payload, "note") || null,
+      }, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Taklif qo'shildi" };
+    }
+    case "supply.quote.choose": {
+      const quoteId = textOf(payload, "quoteId");
+      const q = await db.supplyQuote.findUnique({ where: { id: quoteId }, select: { requestId: true } });
+      if (!q || q.requestId !== id) fail("Taklifni tanlang");
+      const r = await chooseSupplyQuote(quoteId, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Taklif tanlandi" };
+    }
+    case "supply.director": {
+      const r = await directorApproveSupply(id, user.id, textOf(payload, "note") || null);
+      if (r.error) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: r.note ?? "Tasdiqlandi" };
+    }
+    case "supply.delivery": {
+      const r = await updateSupplyDelivery(id, {
+        status: textOf(payload, "deliveryStatus"), shippedAt: textOf(payload, "shippedAt") || null, eta: textOf(payload, "eta") || null,
+        provider: textOf(payload, "deliveryProvider") || null, note: textOf(payload, "note") || null,
+      }, user.id);
+      if (r.error) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: r.note ?? "Holat yangilandi" };
+    }
+    case "supply.incident": {
+      const r = await createSupplyIncident(id, { kind: textOf(payload, "kind"), note: textOf(payload, "note") }, user.id);
+      if (r.error) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: r.note ?? "Muammo qayd qilindi" };
+    }
+    case "supply.incident.resolve": {
+      const incidentId = textOf(payload, "incidentId");
+      const inc = await db.supplyIncident.findUnique({ where: { id: incidentId }, select: { requestId: true } });
+      if (!inc || inc.requestId !== id) fail("Muammoni tanlang");
+      const r = await resolveSupplyIncident(incidentId, textOf(payload, "resolution"), user.id);
+      if (r.error) fail(r.error);
+      clearDashCache();
+      return { ok: true, message: r.note ?? "Muammo yopildi" };
+    }
+    case "supply.doc": {
+      // Ilova rasmni data-URL qilib yuboradi (kamera / galereya) — `photo` maydoni
+      const file = dataUrlFile(textOf(payload, "photo"), textOf(payload, "kind") || "hujjat");
+      if (!file) fail("Hujjat suratini oling yoki tanlang");
+      const r = await addSupplyDocument(id, textOf(payload, "kind"), file, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Hujjat biriktirildi" };
+    }
 
     // ── Sayt arizalari — qoida `lib/leads.ts` da ──
     case "lead.progress":
@@ -381,7 +566,55 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const account = await db.cashAccount.findFirst({ where: { id: p.data!.cashAccountId, isActive: true } });
       if (!account) fail("Kassa/hisob topilmadi");
       const r = await addPayment({ customerId: inv!.customerId, invoiceId: inv!.id, cashAccountId: account!.id, amount: p.data!.amount, date: new Date(), note: p.data!.note }, user.id);
+      if (r.error) fail(r.error);
       return { ok: true, message: r.invoiceStatus === "PAID" ? "To'lov qabul qilindi — schyot yopildi" : "To'lov qabul qilindi" };
+    }
+
+    // ── Sex: davomat, kunlik hisobot, taqsimlash — qoidalar `lib/production-staff.ts` / `production-report.ts` da ──
+    case "att.present":
+    case "att.absent":
+    case "att.status":
+    case "att.form": {
+      const employeeId = action === "att.form" ? textOf(payload, "employeeId") : id;
+      const status = action === "att.present" ? "PRESENT" : action === "att.absent" ? "ABSENT" : textOf(payload, "status");
+      if (!employeeId) fail("Xodim tanlanmagan");
+      if (!isAttendanceStatus(status)) fail("Holatni tanlang");
+      const withForm = action === "att.status" || action === "att.form";
+      const r = await markProductionAttendance(user.id, employeeId, {
+        status: status as AttendanceStatus,
+        checkIn: withForm ? textOf(payload, "checkIn") || null : undefined,
+        checkOut: withForm ? textOf(payload, "checkOut") || null : undefined,
+        note: withForm ? textOf(payload, "note") || null : undefined,
+      });
+      if ("error" in r) fail(r.error!);
+      clearDashCache();
+      return { ok: true, message: (r as { text: string }).text };
+    }
+    case "att.checkout": {
+      const r = await markProductionCheckout(user.id, id);
+      if ("error" in r) fail(r.error!);
+      clearDashCache();
+      return { ok: true, message: (r as { text: string }).text };
+    }
+    case "att.all": {
+      // Brigadir — faqat o'z brigadasi (smena kartasidan, id `b~<brigadeId>`)
+      const only = user.role === "BRIGADIER" ? [(await brigadeOf(user, id)).brigadeId] : undefined;
+      const r = await markAllPresent(user.id, today(), only);
+      clearDashCache();
+      return { ok: true, message: r.count ? `${r.count} kishi "Keldi" deb belgilandi` : "Hamma allaqachon belgilangan" };
+    }
+    case "report.submit": {
+      const r = await submitReport(user.id, today(), textOf(payload, "note") || null);
+      if ("error" in r) fail(r.error!);
+      clearDashCache(); // bosh ekrandagi "Kunlik hisobot" kartasi darhol "Qayd etildi" bo'lsin
+      return { ok: true, message: "Hisobot saqlandi va direktorga yuborildi" };
+    }
+    case "sex.assign": {
+      const brigadeId = textOf(payload, "brigadeId") || null;
+      const r = await assignEmployeeBrigade(user.id, id, brigadeId);
+      if ("error" in r) fail(r.error!);
+      clearDashCache();
+      return { ok: true, message: brigadeId ? "Xodim brigadaga biriktirildi" : "Xodim brigadadan chiqarildi" };
     }
 
     default:

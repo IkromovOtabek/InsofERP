@@ -35,6 +35,8 @@ export const BOT_COMMANDS = [
   { command: "uzish", description: "Hisobni botdan uzish" },
 ];
 
+const BLOCKED_TEXT = "Bu chat direktor tomonidan bloklangan.";
+
 /* ───────────── Yordamchilar ───────────── */
 
 const appUrl = () => (process.env.APP_URL ?? "").replace(/\/+$/, "");
@@ -110,7 +112,11 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   });
 
   // "Telefon raqamimni yuborish" tugmasi — hisobni raqam bo'yicha ulash (kontakt xabarida matn yo'q)
-  if (msg.contact) { await linkByPhone(account.id, chatId, msg.contact, msg.from?.id); return; }
+  if (msg.contact) {
+    if (account.isBlocked) { await sendMessage(chatId, BLOCKED_TEXT, { keyboard: "remove" }); return; }
+    await linkByPhone(account.id, chatId, msg.contact, msg.from?.id);
+    return;
+  }
 
   const text = (msg.text ?? msg.caption ?? "").trim();
   const cmd = text.startsWith("/") ? text.slice(1).split(/[\s@]/)[0].toLowerCase() : null;
@@ -136,13 +142,18 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   /* ── Ulanmagan chat: faqat kod qabul qilamiz ── */
   if (!account.userId) {
     const code = text.replace(/\s|-/g, "");
-    if (/^\d{6}$/.test(code)) { await link(account.id, chatId, code); return; }
+    if (/^\d{6,8}$/.test(code)) {
+      // Bloklangan chat qayta ulanib o'zini blokdan chiqara olmasin
+      if (account.isBlocked) { await sendMessage(chatId, BLOCKED_TEXT); return; }
+      await link(account.id, chatId, code);
+      return;
+    }
     await sendMessage(chatId, startText(), { keyboard: "contact" });
     return;
   }
 
   /* ── Ruxsat tekshiruvi ── */
-  if (account.isBlocked) { await sendMessage(chatId, "Bu chat direktor tomonidan bloklangan."); return; }
+  if (account.isBlocked) { await sendMessage(chatId, BLOCKED_TEXT); return; }
   const user = account.user!;
   if (!user.isActive) { await sendMessage(chatId, "Sizning ERP hisobingiz bloklangan — botdan foydalana olmaysiz."); return; }
   if (!AI_ROLES.has(user.role)) {
@@ -247,7 +258,7 @@ function startText() {
     "",
     "*Eng osoni:* pastdagi «Telefon raqamimni yuborish» tugmasini bosing. Raqam Otdel kadrdagi kartangizdagi raqam bilan bir xil bo'lsa, hisob darhol ulanadi.",
     "",
-    "Yoki ERP'ga kira olsangiz: *Tahlil → Insof AI → Telegram bot* → «Ulash kodi olish» → 6 xonali kodni shu yerga yuboring (kod 15 daqiqa amal qiladi).",
+    "Yoki ERP'ga kira olsangiz: *Tahlil → Insof AI → Telegram bot* → «Ulash kodi olish» → 8 xonali kodni shu yerga yuboring (kod 15 daqiqa amal qiladi).",
   ].join("\n");
 }
 
@@ -276,7 +287,7 @@ async function linkByPhone(accountId: string, chatId: number, contact: TgContact
   await db.$transaction([
     // Shu xodimning eski chati uziladi: kod faqat oxirgi ulangan telefonga borsin
     db.telegramAccount.updateMany({ where: { userId: found.user.id, id: { not: accountId } }, data: { userId: null, linkedAt: null } }),
-    db.telegramAccount.update({ where: { id: accountId }, data: { userId: found.user.id, linkedAt: new Date(), isBlocked: false } }),
+    db.telegramAccount.update({ where: { id: accountId }, data: { userId: found.user.id, linkedAt: new Date() } }),
   ]);
 
   const tail = AI_ROLES.has(found.user.role)
@@ -303,18 +314,56 @@ async function historyFor(accountId: string): Promise<LlmTurn[]> {
   ]);
 }
 
+/**
+ * Kodni taxmin qilishga qarshi: bir chatga soatiga 5 ta noto'g'ri urinish, butun botga
+ * 15 daqiqada 30 ta. Kod topilsa direktor hisobiga parol tiklash kodi boradigan chat
+ * ochilib qolardi — shuning uchun cheklov qat'iy. Hisoblagich jarayon xotirasida.
+ */
+const LINK_FAILS_PER_CHAT = 5;
+const LINK_FAILS_GLOBAL = 30;
+const chatFails = new Map<string, { n: number; until: number }>();
+let globalFails = { n: 0, until: 0 };
+
+function linkLocked(chatId: number): boolean {
+  const now = Date.now();
+  const c = chatFails.get(String(chatId));
+  if (c && c.until > now && c.n >= LINK_FAILS_PER_CHAT) return true;
+  return globalFails.until > now && globalFails.n >= LINK_FAILS_GLOBAL;
+}
+
+function linkFailed(chatId: number) {
+  const now = Date.now();
+  const key = String(chatId);
+  const c = chatFails.get(key);
+  chatFails.set(key, c && c.until > now ? { n: c.n + 1, until: c.until } : { n: 1, until: now + 60 * 60_000 });
+  globalFails = globalFails.until > now ? { n: globalFails.n + 1, until: globalFails.until } : { n: 1, until: now + 15 * 60_000 };
+  if (chatFails.size > 5000) for (const [k, v] of chatFails) if (v.until <= now) chatFails.delete(k);
+}
+
 /** Bir martalik kod bo'yicha chatni ERP foydalanuvchisiga bog'lash. */
 async function link(accountId: string, chatId: number, code: string) {
+  if (linkLocked(chatId)) {
+    await sendMessage(chatId, "Urinishlar ko'p bo'ldi. Keyinroq qayta urining yoki telefon raqamingiz bilan ulaning (/start).", { keyboard: "contact" });
+    return;
+  }
   const row = await db.telegramLinkCode.findUnique({ where: { code }, include: { user: true } });
   if (!row || row.usedAt || row.expiresAt < new Date()) {
+    linkFailed(chatId);
     await sendMessage(chatId, "Kod noto'g'ri yoki muddati o'tgan. *Tahlil → Insof AI → Telegram bot* bo'limidan yangi kod oling.");
     return;
   }
   if (!row.user.isActive) { await sendMessage(chatId, "Bu foydalanuvchi bloklangan."); return; }
 
+  // Shu foydalanuvchining eski chatlari uziladi — kod faqat oxirgi ulangan chatga borsin (linkByPhone bilan bir xil)
+  const old = await db.telegramAccount.findMany({ where: { userId: row.userId, id: { not: accountId } }, select: { chatId: true } });
   await db.$transaction([
     db.telegramLinkCode.update({ where: { code }, data: { usedAt: new Date() } }),
-    db.telegramAccount.update({ where: { id: accountId }, data: { userId: row.userId, linkedAt: new Date(), isBlocked: false } }),
+    db.telegramAccount.updateMany({ where: { userId: row.userId, id: { not: accountId } }, data: { userId: null, linkedAt: null } }),
+    db.telegramAccount.update({ where: { id: accountId }, data: { userId: row.userId, linkedAt: new Date() } }),
   ]);
   await sendMessage(chatId, `*Ulandi:* ${row.user.fullName} (${ROLE_LABELS[row.user.role]})\n\n${HELP}`);
+  // Eski chat egasi xabardor bo'lsin: agar bu u bo'lmasa — darhol payqaydi
+  for (const o of old) {
+    await sendMessage(Number(o.chatId), "Hisobingiz boshqa Telegram chatga ulandi, bu chat uzildi. Agar bu siz bo'lmasangiz — darhol parolni almashtiring va direktorga xabar bering.").catch(() => {});
+  }
 }

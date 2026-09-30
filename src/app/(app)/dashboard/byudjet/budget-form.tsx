@@ -47,18 +47,19 @@ export function BudgetForm({ month, rows, prevMonth }: { month: string; rows: Bu
   );
 }
 
-export function ThresholdForm({ t }: { t: { alertWarnPct: number; alertCritPct: number; stockWarnDays: number; stockCritDays: number; overdueDays: number } }) {
+export function ThresholdForm({ t }: { t: { alertWarnPct: number; alertCritPct: number; stockWarnDays: number; stockCritDays: number; overdueDays: number; supplyDirectorLimit: number } }) {
   const [state, action, pending] = useActionState(saveThresholds, undefined);
   const F = ({ name, label, value, hint }: { name: string; label: string; value: number; hint: string }) => (
     <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">{label}</span><Input name={name} type="number" defaultValue={value} className="py-1.5 text-sm" required /><span className="mt-0.5 block text-[11px] text-slate-400">{hint}</span></label>
   );
   return (
-    <form action={action} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3 xl:grid-cols-6">
+    <form action={action} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3 xl:grid-cols-7">
       <F name="alertWarnPct" label="E'tibor, % byudjetdan" value={t.alertWarnPct} hint="sariq holat" />
       <F name="alertCritPct" label="Kritik, % byudjetdan" value={t.alertCritPct} hint="qizil holat" />
       <F name="stockWarnDays" label="Xomashyo e'tibor, kun" value={t.stockWarnDays} hint="shuncha kunga yetsa — sariq" />
       <F name="stockCritDays" label="Xomashyo kritik, kun" value={t.stockCritDays} hint="to'xtash xavfi — qizil" />
       <F name="overdueDays" label="Muddati o'tgan qarz, kun" value={t.overdueDays} hint="schyot shundan eski bo'lsa" />
+      <F name="supplyDirectorLimit" label="Katta xarid, so'm" value={t.supplyDirectorLimit} hint="shundan katta xaridni direktor tasdiqlaydi; 0 — yo'q" />
       <div className="flex h-full flex-col justify-end gap-1"><Button type="submit" disabled={pending}>Saqlash</Button>{state?.ok && <span className="text-xs text-emerald-700">Saqlandi</span>}<FormError error={state?.error} /></div>
     </form>
   );

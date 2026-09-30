@@ -117,12 +117,25 @@ async function loginSms(template: "login_granted" | "password_changed", phone: s
     : sendSms("password_changed", phone, { login, password });
 }
 
+const DIRECTOR_ONLY = "Direktor hisobini faqat direktor boshqaradi";
+
+/**
+ * Xodimga bog'langan login direktorniki bo'lsa — faqat direktor tegina oladi.
+ * Aks holda otdel kadr direktor parolini almashtirib, uning hisobini egallab olishi mumkin edi.
+ */
+async function directorGuard(userId: string | null, callerRole: Role): Promise<string | null> {
+  if (!userId || callerRole === "DIRECTOR") return null;
+  const u = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
+  return u?.role === "DIRECTOR" ? DIRECTOR_ONLY : null;
+}
+
 /**
  * Login yaratadi (tranzaksiya ichida). Rol: bo'lim lavozimi bo'lsa o'sha bo'limning roli,
  * haydovchi lavozimi bo'lsa DRIVER — haydovchi ilovada faqat o'z reyslarini ko'radi.
  */
-async function createLoginFor(tx: Prisma.TransactionClient, fullName: string, role: Role | null, login: string, password: string) {
+async function createLoginFor(tx: Prisma.TransactionClient, callerRole: Role, fullName: string, role: Role | null, login: string, password: string) {
   if (!role) throw new Error("Bu lavozim uchun tizim roli yo'q");
+  if (role === "DIRECTOR" && callerRole !== "DIRECTOR") throw new Error(DIRECTOR_ONLY);
   if (login.length < 3) throw new Error("Login kamida 3 belgi");
   const problem = passwordProblem(password);
   if (problem) throw new Error(problem);
@@ -146,6 +159,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   if (deptRole && !hasCreds) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (chosen && !hasCreds) return { error: "Login va parol kiriting yoki bo'limni «login kerak emas» qilib qo'ying" };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
+  if (role === "DIRECTOR" && s.role !== "DIRECTOR") return { error: DIRECTOR_ONLY };
 
   // Ro'yxatdan tanlangan xodim: dublikat karta ochilmaydi — login beriladi, lavozim/telefon yangilanadi
   if (d.employeeId) {
@@ -156,7 +170,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     let attachedVehicleId: string | null = null;
     try {
       await db.$transaction(async (tx) => {
-        const user = role && d.login && d.password ? await createLoginFor(tx, d.fullName, role, d.login, d.password) : null;
+        const user = role && d.login && d.password ? await createLoginFor(tx, s.role, d.fullName, role, d.login, d.password) : null;
         // Texnika faqat raqam yozilgan bo'lsa yangilanadi — bo'sh forma mavjud biriktirishni uzmasin
         const extra = driver && d.plate ? await driverData(tx, s.userId, d) : {};
         const e = await tx.employee.update({
@@ -193,7 +207,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   let vehicleId: string | null = null;
   try {
     await db.$transaction(async (tx) => {
-      const user = role ? await createLoginFor(tx, d.fullName, role, d.login!, d.password!) : null;
+      const user = role ? await createLoginFor(tx, s.role, d.fullName, role, d.login!, d.password!) : null;
       // Haydovchi bo'lsa texnikasi ham shu yerda ochiladi/biriktiriladi
       const extra = driver ? await driverData(tx, s.userId, d) : {};
       const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note, userId: user?.id, ...extra } });
@@ -237,9 +251,10 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
     ?? roleForPosition(e.position)
     ?? ((await isDriverPosition(e.position)) ? "DRIVER" : (await isBrigadeLeader(employeeId)) ? "BRIGADIER" : null);
   if (!role) return { error: `"${e.position}" lavozimi tizimga kirmaydi — qaysi bo'lim uchun login kerakligini tanlang` };
+  if (role === "DIRECTOR" && s.role !== "DIRECTOR") return { error: DIRECTOR_ONLY };
   try {
     await db.$transaction(async (tx) => {
-      const u = await createLoginFor(tx, e.fullName, role, login, password);
+      const u = await createLoginFor(tx, s.role, e.fullName, role, login, password);
       await tx.employee.update({ where: { id: employeeId }, data: { userId: u.id } });
       await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, { login: u.login, role: u.role });
     });
@@ -257,6 +272,8 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
 export async function toggleEmployee(id: string) {
   const s = await requireSession(["HR"]);
   const cur = await db.employee.findUniqueOrThrow({ where: { id } });
+  const denied = await directorGuard(cur.userId, s.role);
+  if (denied) throw new Error(denied);
   await db.$transaction(async (tx) => {
     await tx.employee.update({ where: { id }, data: { isActive: !cur.isActive } });
     if (cur.userId) await tx.user.update({ where: { id: cur.userId }, data: { isActive: !cur.isActive } });
@@ -297,6 +314,8 @@ export async function dismissEmployee(id: string, _prev: ActionState, fd: FormDa
 
   const before = await db.employee.findUniqueOrThrow({ where: { id } });
   if (before.userId === s.userId) return { error: "O'zingizni ishdan bo'shata olmaysiz" };
+  const denied = await directorGuard(before.userId, s.role);
+  if (denied) return { error: denied };
   if (before.firedAt) return { error: "Bu xodim allaqachon ishdan bo'shatilgan" };
   // Yo'ldagi reys egasiz qolmasin: avval reys yakunlanadi yoki bekor qilinadi
   const open = await db.trip.findMany({ where: { driverId: id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
@@ -325,6 +344,8 @@ export async function restoreEmployee(id: string): Promise<ActionState> {
   const s = await requireSession(["HR"]);
   const before = await db.employee.findUniqueOrThrow({ where: { id } });
   if (!before.firedAt) return { error: "Bu xodim ishdan bo'shatilmagan" };
+  const denied = await directorGuard(before.userId, s.role);
+  if (denied) return { error: denied };
   await db.$transaction(async (tx) => {
     const e = await tx.employee.update({ where: { id }, data: { firedAt: null, firedReason: null, isActive: true } });
     if (before.userId) await tx.user.update({ where: { id: before.userId }, data: { isActive: true } });
@@ -343,6 +364,8 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   if ("error" in r) return { error: r.error };
   const d = r.data;
   const before = await db.employee.findUniqueOrThrow({ where: { id } });
+  const denied = await directorGuard(before.userId, s.role);
+  if (denied) return { error: denied };
 
   // Lavozim o'zgarishi rolni o'zgartirmaydi: login berilgan xodimning roli o'z joyida qoladi
   const newRole = roleForPosition(d.position);
@@ -387,17 +410,18 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
 /* ───────── Login boshqaruvi (otdel kadr) ───────── */
 
 /** Xodim kartasidagi loginni topadi va o'z akkauntiga tegishni taqiqlaydi. */
-async function loginTarget(employeeId: string, sessionUserId: string) {
+async function loginTarget(employeeId: string, session: { userId: string; role: Role }) {
   const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, include: { user: true } });
   if (!e.user) return { error: "Bu xodimda login yo'q" as const };
-  if (e.user.id === sessionUserId) return { error: "O'z loginingizni bu yerdan o'zgartirib bo'lmaydi" as const };
+  if (e.user.id === session.userId) return { error: "O'z loginingizni bu yerdan o'zgartirib bo'lmaydi" as const };
+  if (e.user.role === "DIRECTOR" && session.role !== "DIRECTOR") return { error: DIRECTOR_ONLY };
   return { employee: e, user: e.user };
 }
 
 /** Login nomini almashtirish. */
 export async function changeLogin(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["HR"]);
-  const t = await loginTarget(employeeId, s.userId);
+  const t = await loginTarget(employeeId, s);
   if ("error" in t) return { error: t.error };
   const login = String(fd.get("login") ?? "").trim().toLowerCase();
   if (login.length < 3) return { error: "Login kamida 3 belgi" };
@@ -422,7 +446,7 @@ export async function changeLogin(employeeId: string, _prev: ActionState, fd: Fo
  */
 export async function changeEmployeeRole(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["HR"]);
-  const t = await loginTarget(employeeId, s.userId);
+  const t = await loginTarget(employeeId, s);
   if ("error" in t) return { error: t.error };
   const wanted = String(fd.get("role") ?? "").trim();
   if (!(LOGIN_ROLES as string[]).includes(wanted)) return { error: "Bo'limni tanlang" };
@@ -452,7 +476,7 @@ export async function changeEmployeeRole(employeeId: string, _prev: ActionState,
 /** Parolni almashtirish — eski parol so'ralmaydi, otdel kadr yangisini beradi. */
 export async function resetEmployeePassword(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["HR"]);
-  const t = await loginTarget(employeeId, s.userId);
+  const t = await loginTarget(employeeId, s);
   if ("error" in t) return { error: t.error };
   const password = String(fd.get("password") ?? "");
   const problem = passwordProblem(password);
@@ -472,7 +496,7 @@ export async function resetEmployeePassword(employeeId: string, _prev: ActionSta
  */
 export async function toggleEmployeeLogin(employeeId: string) {
   const s = await requireSession(["HR"]);
-  const t = await loginTarget(employeeId, s.userId);
+  const t = await loginTarget(employeeId, s);
   if ("error" in t) throw new Error(t.error); // UI bunday holatda tugmani ko'rsatmaydi
   // Ishdan bo'shatilgan xodimning logini shu yerdan ochilmaydi — avval xodimning o'zi yoqiladi
   if (!t.employee.isActive) throw new Error("Xodim nofaol — avval uni \"Yoqish\" tugmasi bilan faollashtiring");

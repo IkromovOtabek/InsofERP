@@ -5,8 +5,10 @@ import { customersCredit, contractedIds } from "@/lib/finance";
 import { ContractMark } from "@/components/customer-name";
 import { money } from "@/lib/format";
 import { Badge, Callout, Empty, Input, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { requirePage } from "@/lib/page-guard";
 
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string }> }) {
+  await requirePage("/customers");
   const { q, tab = "all" } = await searchParams;
   const [customers, credit, contracted] = await Promise.all([
     db.customer.findMany({

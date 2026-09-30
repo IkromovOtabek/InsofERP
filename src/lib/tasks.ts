@@ -22,6 +22,8 @@ export type TaskResult = { changed: boolean; orderId: string; status?: string; e
  *  3) zayavka holati suriladi: birinchi qayddan keyin "Ishlab chiqarilmoqda", sklad
  *     zaxirasi zayavkasining hamma topshirig'i bajarilsa — "Zaxira tayyor" (CLOSED).
  */
+const TASK_STALE = "Topshiriq shu payt boshqa joyda yangilandi — sahifani yangilab, qoldiqni qayta tekshiring";
+
 export async function taskProgress(taskId: string, qty: number, userId: string, note?: string | null): Promise<TaskResult> {
   const t = await db.brigadeTask.findUniqueOrThrow({
     where: { id: taskId },
@@ -38,9 +40,19 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
   const wh = toYard ? await db.warehouse.findFirst({ where: { isActive: true }, select: { id: true } }) : null;
 
   const res = await db.$transaction(async (tx) => {
+    // O'qilgan doneQty hali o'zgarmagan bo'lsagina yoziladi: ikki marta bosilsa (yoki brigadir va
+    // ishlab chiqarish bir vaqtda qayd qilsa) ikkinchisi xomashyo va hovli kirimini qayta yozmaydi
+    const claimed = await tx.brigadeTask.updateMany({
+      where: { id: taskId, doneQty: t.doneQty, status: { notIn: ["DONE", "CANCELLED"] } },
+      data: { doneQty: done, status },
+    });
+    if (claimed.count !== 1) throw new Error(TASK_STALE);
     await tx.taskProgress.create({ data: { taskId, qty, note: note ?? undefined, createdById: userId } });
-    await tx.brigadeTask.update({ where: { id: taskId }, data: { doneQty: done, status } });
-    const used = await consumeForTask(tx, { id: t.id, brigadeId: t.brigadeId, orderItemId: t.orderItemId }, qty, userId);
+    // Beton (m³) xomashyosi faqat zamesda yechiladi (skladdan) — bu yerda ham yechilsa bir hajm
+    // uchun sement ikki marta hisobdan chiqardi. Dona mahsulot esa brigada qo'lidagidan sarflanadi.
+    const used = toYard
+      ? await consumeForTask(tx, { id: t.id, brigadeId: t.brigadeId, orderItemId: t.orderItemId }, qty, userId)
+      : { rows: 0, deficit: [] as string[] };
 
     // ── Tayyor mahsulot hovliga ──
     if (toYard && wh) {
@@ -66,7 +78,8 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     }
     await audit(tx, userId, "UPDATE", "BrigadeTask", taskId, { doneQty: t.doneQty, status: t.status }, { doneQty: done, status, added: qty, consumed: used.rows, output: toYard ? qty : 0, orderClosed: closed });
     return { used, closed };
-  });
+  }).catch((e: Error) => { if (e.message === TASK_STALE) return null; throw e; });
+  if (!res) return { changed: false, orderId: t.orderId, error: TASK_STALE };
 
   const hints = [
     toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} hovliga kirim qilindi (erkin qoldiq)` : null,
@@ -90,7 +103,8 @@ export async function taskCancel(taskId: string, userId: string): Promise<TaskRe
   const t = await db.brigadeTask.findUniqueOrThrow({ where: { id: taskId } });
   if (t.status === "DONE" || t.status === "CANCELLED") return { changed: false, orderId: t.orderId, error: "Topshiriq allaqachon yopilgan" };
   await db.$transaction(async (tx) => {
-    await tx.brigadeTask.update({ where: { id: taskId }, data: { status: "CANCELLED" } });
+    const r = await tx.brigadeTask.updateMany({ where: { id: taskId, status: { notIn: ["DONE", "CANCELLED"] } }, data: { status: "CANCELLED" } });
+    if (r.count !== 1) return;
     await audit(tx, userId, "STATUS_CHANGE", "BrigadeTask", taskId, { status: t.status }, { status: "CANCELLED" });
   });
   return { changed: true, orderId: t.orderId, status: "CANCELLED" };

@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { date, money, qty } from "@/lib/format";
 import { Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { requirePage } from "@/lib/page-guard";
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePage("/receipts");
   const { id } = await params;
   const r = await db.goodsReceipt.findUnique({ where: { id }, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
   if (!r) notFound();

@@ -1,5 +1,6 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
@@ -10,7 +11,7 @@ const CODE_TTL_MIN = 15;
 
 export type CodeState = { error?: string; code?: string; expiresAt?: string } | undefined;
 
-/** Bir martalik 6 xonali kod — foydalanuvchi uni botga yuboradi. */
+/** Bir martalik 8 xonali kod (kriptografik tasodifiy) — foydalanuvchi uni botga yuboradi. */
 export async function createLinkCode(): Promise<CodeState> {
   const s = await requireSession([...BI_ROLES]);
   const expiresAt = new Date(Date.now() + CODE_TTL_MIN * 60_000);
@@ -19,7 +20,7 @@ export async function createLinkCode(): Promise<CodeState> {
   await db.telegramLinkCode.deleteMany({ where: { userId: s.userId, usedAt: null } });
 
   for (let i = 0; i < 5; i++) {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(randomInt(10_000_000, 100_000_000));
     try {
       await db.telegramLinkCode.create({ data: { code, userId: s.userId, expiresAt } });
       revalidatePath(PATH);

@@ -10,6 +10,9 @@ import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { qty as fq } from "@/lib/format";
 import { ingredientOf, balanceOf } from "@/lib/recipe";
+import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+
+class ShortError extends Error {}
 
 const schema = z.object({
   orderId: zOpt,
@@ -36,29 +39,31 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
   const recipe = await db.recipe.findFirst({ where: { productId: d.productId, isActive: true }, include: { items: { include: { material: true, product: true } } } });
   if (!recipe) return { error: "Bu marka uchun faol retsept yo'q. Avval retsept kiriting." };
 
-  // Qoldiq tekshiruvi (sklad bo'yicha) — retsept qatori xomashyo yoki boshqa mahsulot bo'lishi mumkin
-  // (masalan katta konstruksiyaga tayyor FBS blok kiradi), shuning uchun ikkalasining ham qoldig'i tekshiriladi
-  const materialIds = recipe.items.filter((i) => i.materialId).map((i) => i.materialId!);
-  const productIds = recipe.items.filter((i) => i.productId).map((i) => i.productId!);
-  const [matSums, prodSums] = await Promise.all([
-    materialIds.length ? db.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: d.warehouseId, materialId: { in: materialIds } }, _sum: { qty: true } }) : [],
-    productIds.length ? db.stockMove.groupBy({ by: ["productId"], where: { warehouseId: d.warehouseId, productId: { in: productIds } }, _sum: { qty: true } }) : [],
-  ]);
-  const matBal = new Map(matSums.map((x) => [x.materialId!, Number(x._sum.qty ?? 0)]));
-  const prodBal = new Map(prodSums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
-  const lacking = recipe.items
-    .map((i) => { const ing = ingredientOf(i); return { ing, need: ing.qtyPerM3 * d.qtyM3, have: balanceOf(ing, matBal, prodBal) }; })
-    .filter((x) => x.have < x.need);
-  if (lacking.length) {
-    return { error: "Yetarli emas: " + lacking.map((x) => `${x.ing.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.ing.unit})`).join("; ") };
-  }
-
   if (d.orderId) {
     const o = await db.order.findUnique({ where: { id: d.orderId } });
     if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return { error: "Zayavka tasdiqlanmagan yoki yopilgan" };
   }
 
   const id = await db.$transaction(async (tx) => {
+    // Qoldiq tekshiruvi qulf ostida: bir vaqtdagi ikki zames bitta qoldiqni ikki marta ishlatmasin
+    await lockStock(tx);
+    // Qoldiq tekshiruvi (sklad bo'yicha) — retsept qatori xomashyo yoki boshqa mahsulot bo'lishi mumkin
+    // (masalan katta konstruksiyaga tayyor FBS blok kiradi), shuning uchun ikkalasining ham qoldig'i tekshiriladi
+    const materialIds = recipe.items.filter((i) => i.materialId).map((i) => i.materialId!);
+    const productIds = recipe.items.filter((i) => i.productId).map((i) => i.productId!);
+    const [matSums, prodSums] = await Promise.all([
+      materialIds.length ? tx.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: d.warehouseId, materialId: { in: materialIds } }, _sum: { qty: true } }) : [],
+      productIds.length ? tx.stockMove.groupBy({ by: ["productId"], where: { warehouseId: d.warehouseId, productId: { in: productIds } }, _sum: { qty: true } }) : [],
+    ]);
+    const matBal = new Map(matSums.map((x) => [x.materialId!, Number(x._sum.qty ?? 0)]));
+    const prodBal = new Map(prodSums.map((x) => [x.productId!, Number(x._sum.qty ?? 0)]));
+    const lacking = recipe.items
+      .map((i) => { const ing = ingredientOf(i); return { ing, need: ing.qtyPerM3 * d.qtyM3, have: balanceOf(ing, matBal, prodBal) }; })
+      .filter((x) => x.have < x.need - STOCK_EPS);
+    if (lacking.length) {
+      throw new ShortError("Yetarli emas: " + lacking.map((x) => `${x.ing.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.ing.unit})`).join("; "));
+    }
+
     const b = await tx.productionBatch.create({
       data: {
         batchNo: await nextNo(tx, "productionBatch", "ZM"),
@@ -84,7 +89,8 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
     if (d.orderId) await tx.order.updateMany({ where: { id: d.orderId, status: "CONFIRMED" }, data: { status: "IN_PRODUCTION" } });
     await audit(tx, s.userId, "CREATE", "ProductionBatch", b.id, undefined, b);
     return b.id;
-  });
+  }).catch((e: Error) => { if (e instanceof ShortError) return { error: e.message }; throw e; });
+  if (typeof id !== "string") return id;
   revalidatePath("/production"); revalidatePath("/orders"); revalidatePath("/");
   redirect(`/production/${id}`);
 }

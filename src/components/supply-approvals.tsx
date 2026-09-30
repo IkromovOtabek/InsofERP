@@ -7,6 +7,7 @@ import { unitLabel } from "@/lib/unit";
 import { Card, CardHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ApprovePanel, FundPanel } from "@/components/supply-panels";
+import { directorLimit, needsDirector } from "@/lib/procurement";
 
 /**
  * Ta'minot zayavkasini tasdiqlash kartasi. Ikki joyda turadi:
@@ -22,6 +23,7 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
     : [];
   // "O'tgan safar necha edi" — aynan shu mahsulotning oxirgi xarid narxi (boshqa mahsulot bilan taqqoslanmaydi)
   const last = await lastPurchasePrices(rows.flatMap((r) => r.items.map((i) => ({ materialId: i.materialId, name: i.name }))));
+  const limit = mode === "sales" ? await directorLimit() : 0;
 
   return (
     <Card className={cn("mb-6", mode === "finance" ? "border-amber-200" : "border-brand-500/40")}>
@@ -35,6 +37,8 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
         {rows.map((r) => {
           const goods = plannedSum(r.items);
           const total = totalPlanned(r);
+          // Katta xarid: direktor tasdiqlamaguncha sotuv tugmasi yopiq
+          const waitDirector = mode === "sales" && needsDirector(total, limit) && !r.directorOkAt;
           const dearer = r.items.filter((i) => {
             const l = last.get(priceKey(i));
             return l && Number(i.price) > l.price + 0.5;
@@ -46,6 +50,11 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
                   {mode === "finance" && <Clock size={14} className="shrink-0" />}
                   {r.docNo} · {r.warehouse.name} · {r.items.length} qator
                   <span className="text-xs font-normal text-slate-500">{r.createdBy.fullName} so&apos;ragan{r.supplier ? ` · ${r.supplier.name}` : ""}</span>
+                  {waitDirector && (
+                    <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                      <Clock size={11} /> Direktor tasdig&apos;i kutilmoqda
+                    </span>
+                  )}
                   {r.recheck > 0 && (
                     <span className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">
                       <RefreshCw size={11} /> Narx o&apos;zgardi — qayta tasdiq
@@ -115,7 +124,9 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
                 </table>
 
                 {mode === "sales"
-                  ? <ApprovePanel id={r.id} total={total} compact />
+                  ? waitDirector
+                    ? <p className="text-sm text-amber-800">Jami {money(total)} — {money(limit)} dan katta xarid. Direktor tasdiqlagach shu yerda tasdiqlaysiz.</p>
+                    : <ApprovePanel id={r.id} total={total} compact />
                   : <FundPanel id={r.id} total={total} accounts={accounts} compact />}
                 <Link href={`/taminot/${r.id}`} className="inline-block text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline">To&apos;liq hujjatni ochish →</Link>
               </div>

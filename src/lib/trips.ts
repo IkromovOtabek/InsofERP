@@ -41,6 +41,18 @@ export async function tripSteps(id: string): Promise<TripStep[]> {
   });
 }
 
+/**
+ * Holat o'tishi bir vaqtda ikki joydan kelishi mumkin (haydovchi ilovasi, logist tugmasi,
+ * ECO webhook'i, qayta yuborilgan so'rov). Shuning uchun o'tish tranzaksiya ichida shartli
+ * `updateMany` bilan qilinadi: holat allaqachon o'zgargan bo'lsa (count = 0) — hech narsa
+ * yozilmaydi, sklad harakati ikki marta tushmaydi.
+ */
+class AlreadyChanged extends Error {}
+async function once<T>(fn: () => Promise<T>): Promise<T | null> {
+  try { return await fn(); } catch (e) { if (e instanceof AlreadyChanged) return null; throw e; }
+}
+function claimed(r: { count: number }) { if (r.count !== 1) throw new AlreadyChanged(); }
+
 const tripWithOrder = (id: string) => db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true, trips: true } } } });
 
 /** PLANNED → LOADED: tayyor beton skladdan chiqadi (SHIPMENT). */
@@ -49,14 +61,15 @@ export async function tripLoaded(id: string, userId: string, note?: string): Pro
   if (t.status !== "PLANNED") return { changed: false, orderId: t.orderId, error: t.status === "CANCELLED" ? "Reys bekor qilingan" : undefined };
   const productId = t.order.items[0]?.productId;
   const wh = await db.warehouse.findFirstOrThrow({ where: { isActive: true } });
-  await db.$transaction(async (tx) => {
-    await tx.trip.update({ where: { id }, data: { status: "LOADED", loadedAt: new Date() } });
+  const ok = await once(() => db.$transaction(async (tx) => {
+    claimed(await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "LOADED", loadedAt: new Date() } }));
     if (productId) {
       await tx.stockMove.create({ data: { type: "SHIPMENT", warehouseId: wh.id, productId, qty: -Number(t.qtyM3), refType: "Trip", refId: id, note, createdById: userId } });
     }
     await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
-  });
-  return { changed: true, orderId: t.orderId };
+    return true;
+  }));
+  return { changed: !!ok, orderId: t.orderId };
 }
 
 /** LOADED → ON_ROAD. PLANNED bo'lsa avval yuklanadi (ECO'dan "yo'lda" kelganda). */
@@ -64,9 +77,12 @@ export async function tripOnRoad(id: string, userId: string, note?: string): Pro
   let t = await db.trip.findUniqueOrThrow({ where: { id } });
   if (t.status === "PLANNED") { await tripLoaded(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
   if (t.status !== "LOADED") return { changed: false, orderId: t.orderId };
-  await db.trip.update({ where: { id }, data: { status: "ON_ROAD", departedAt: new Date() } });
-  await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "LOADED" }, { status: "ON_ROAD", note });
-  return { changed: true, orderId: t.orderId };
+  const ok = await once(() => db.$transaction(async (tx) => {
+    claimed(await tx.trip.updateMany({ where: { id, status: "LOADED" }, data: { status: "ON_ROAD", departedAt: new Date() } }));
+    await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "LOADED" }, { status: "ON_ROAD", note });
+    return true;
+  }));
+  return { changed: !!ok, orderId: t.orderId };
 }
 
 /**
@@ -107,11 +123,12 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
   if (bad) return { changed: false, orderId: t.orderId, error: bad };
 
   const total = t.order.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-  const delivered = t.order.trips.filter((x) => x.status === "DELIVERED" || x.id === id).reduce((s, x) => s + Number(x.qtyM3), 0);
   const now = new Date();
-  await db.$transaction(async (tx) => {
-    await tx.trip.update({
-      where: { id },
+  const delivered = await once(() => db.$transaction(async (tx) => {
+    // Zayavka qatori qulflanadi: oxirgi ikki reys bir vaqtda yetkazilsa ham yig'indini biri to'liq ko'radi
+    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${t.orderId} FOR UPDATE`;
+    claimed(await tx.trip.updateMany({
+      where: { id, status: { in: ["LOADED", "ON_ROAD"] } },
       data: {
         status: "DELIVERED", deliveredAt: now, receiverName,
         // Yo'l bosqichlari o'tkazib yuborilgan bo'lsa (logist bir bosishda yopdi) — bo'sh qoladi, uydirilmaydi
@@ -119,11 +136,15 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
         ...(q?.returnedQty != null ? { returnedQty: q.returnedQty } : {}),
         ...(q?.comment ? { deliveryComment: q.comment } : {}),
       },
-    });
-    if (delivered >= total - 0.001) await tx.order.update({ where: { id: t.orderId }, data: { status: "DELIVERED" } });
+    }));
+    const sum = await tx.trip.aggregate({ where: { orderId: t.orderId, status: "DELIVERED" }, _sum: { qtyM3: true } });
+    const d = Number(sum._sum.qtyM3 ?? 0);
+    if (d >= total - 0.001) await tx.order.update({ where: { id: t.orderId }, data: { status: "DELIVERED" } });
     await returnToStock(tx, t, q?.returnedQty ?? 0, userId);
     await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName, note, ...q });
-  });
+    return d;
+  }));
+  if (delivered === null) return { changed: false, orderId: t.orderId };
 
   // Zayavkani kiritgan sotuvchi mijozga javob beradi; logistika keyingi reysni rejalashtiradi
   const done = delivered >= total - 0.001;
@@ -175,7 +196,8 @@ export async function tripArrived(id: string, userId: string, note?: string): Pr
   if (t.status === "PLANNED" || t.status === "LOADED") { await tripOnRoad(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
   if (t.status !== "ON_ROAD") return { changed: false, orderId: t.orderId, error: "Reys yo'lda emas" };
   if (t.arrivedAt) return { changed: false, orderId: t.orderId };
-  await db.trip.update({ where: { id }, data: { arrivedAt: new Date() } });
+  const r = await db.trip.updateMany({ where: { id, status: "ON_ROAD", arrivedAt: null }, data: { arrivedAt: new Date() } });
+  if (!r.count) return { changed: false, orderId: t.orderId };
   await audit(db, userId, "UPDATE", "Trip", id, { phase: "ON_ROAD" }, { phase: "ARRIVED", note });
   return { changed: true, orderId: t.orderId };
 }
@@ -186,7 +208,8 @@ export async function tripUnloading(id: string, userId: string, note?: string): 
   if (!t.arrivedAt) { await tripArrived(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
   if (t.status !== "ON_ROAD") return { changed: false, orderId: t.orderId, error: "Reys yo'lda emas" };
   if (t.unloadingAt) return { changed: false, orderId: t.orderId };
-  await db.trip.update({ where: { id }, data: { unloadingAt: new Date() } });
+  const r = await db.trip.updateMany({ where: { id, status: "ON_ROAD", unloadingAt: null }, data: { unloadingAt: new Date() } });
+  if (!r.count) return { changed: false, orderId: t.orderId };
   await audit(db, userId, "UPDATE", "Trip", id, { phase: "ARRIVED" }, { phase: "UNLOADING", note });
   return { changed: true, orderId: t.orderId };
 }
@@ -196,7 +219,8 @@ export async function tripReturned(id: string, userId: string): Promise<TripResu
   const t = await db.trip.findUniqueOrThrow({ where: { id } });
   if (t.status !== "DELIVERED") return { changed: false, orderId: t.orderId, error: "Avval yetkazildi deb belgilang" };
   if (t.returnedAt) return { changed: false, orderId: t.orderId };
-  await db.trip.update({ where: { id }, data: { returnedAt: new Date() } });
+  const r = await db.trip.updateMany({ where: { id, status: "DELIVERED", returnedAt: null }, data: { returnedAt: new Date() } });
+  if (!r.count) return { changed: false, orderId: t.orderId };
   await audit(db, userId, "UPDATE", "Trip", id, { returnedAt: null }, { returnedAt: new Date() });
   return { changed: true, orderId: t.orderId };
 }
@@ -214,20 +238,21 @@ export async function tripClosed(id: string, userId: string, q?: DeliveryQty): P
   if (bad) return { changed: false, orderId: t.orderId, error: bad };
   // Qaytgan miqdor yetkazishda allaqachon skladga yozilgan bo'lishi mumkin — faqat farqi
   const extraReturn = q?.returnedQty != null ? q.returnedQty - Number(t.returnedQty ?? 0) : 0;
-  await db.$transaction(async (tx) => {
-    await tx.trip.update({
-      where: { id },
+  const ok = await once(() => db.$transaction(async (tx) => {
+    claimed(await tx.trip.updateMany({
+      where: { id, status: "DELIVERED", closedAt: null },
       data: {
         closedAt: new Date(), closedById: userId,
         acceptedQty: q?.acceptedQty ?? t.acceptedQty ?? t.qtyM3,
         ...(q?.returnedQty != null ? { returnedQty: q.returnedQty } : {}),
         ...(q?.comment ? { deliveryComment: q.comment } : {}),
       },
-    });
+    }));
     await returnToStock(tx, t, extraReturn, userId);
     await audit(tx, userId, "UPDATE", "Trip", id, { closedAt: null }, { closedAt: new Date(), ...q });
-  });
-  return { changed: true, orderId: t.orderId };
+    return true;
+  }));
+  return { changed: !!ok, orderId: t.orderId };
 }
 
 // ───────────────────────── Muammo ─────────────────────────
@@ -265,7 +290,9 @@ export async function resolveTripIssue(issueId: string, userId: string, resoluti
 export async function tripCancelled(id: string, userId: string, note?: string): Promise<TripResult> {
   const t = await db.trip.findUniqueOrThrow({ where: { id } });
   if (t.status !== "PLANNED") return { changed: false, orderId: t.orderId, error: "Faqat rejalashtirilgan reys bekor qilinadi" };
-  await db.trip.update({ where: { id }, data: { status: "CANCELLED" } });
+  // Shu payt boshqa joydan "Yuklandi" bosilgan bo'lsa bekor qilinmaydi (sklad chiqimi yozilgan bo'ladi)
+  const r = await db.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "CANCELLED" } });
+  if (!r.count) return { changed: false, orderId: t.orderId, error: "Faqat rejalashtirilgan reys bekor qilinadi" };
   await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "CANCELLED", note });
   return { changed: true, orderId: t.orderId };
 }
@@ -401,7 +428,8 @@ export async function tripArrival(tripId: string): Promise<TripArrival> {
   const dest = t?.order.lat != null && t.order.lng != null ? { lat: t.order.lat, lng: t.order.lng } : null;
   if (!dest) return { destination: null, last: null, remainingM: null, near: true, unknown: false, reason: null };
 
-  const p = await db.tripPosition.findFirst({ where: { tripId }, orderBy: { at: "desc" }, select: { lat: true, lng: true, at: true } });
+  // Kelajak sanali nuqtalar (eski ilova yoki soxta so'rov) hisobga olinmaydi — `recordTrack` endi ularni kesadi
+  const p = await db.tripPosition.findFirst({ where: { tripId, at: { lte: new Date(Date.now() + 2 * 60_000) } }, orderBy: { at: "desc" }, select: { lat: true, lng: true, at: true } });
   if (!p) return { destination: dest, last: null, remainingM: null, near: false, unknown: true, reason: "Joylashuv aniqlanmadi — GPS yoqilganini tekshiring. Belgilasangiz dispetcherga muammo sifatida tushadi" };
 
   const ageMs = Date.now() - p.at.getTime();

@@ -1,3 +1,4 @@
+import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
 import type { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { audit } from "./audit";
@@ -132,22 +133,24 @@ export async function issueToBrigade(
   if (!wh) return { error: "Sklad tanlanmagan" };
 
   const ids = [...new Set(rows.map((r) => r.materialId))];
-  const [sums, materials, costs] = await Promise.all([
-    db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { in: ids } }, _sum: { qty: true } }),
+  const [materials, costs] = await Promise.all([
     db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } }),
     avgCosts(),
   ]);
-  const bal = new Map(sums.map((s) => [s.materialId!, Number(s._sum.qty ?? 0)]));
   const meta = new Map(materials.map((m) => [m.id, m]));
   // Bir xomashyo bir necha qatorda bo'lsa yig'indisi tekshiriladi — 2 t qoldiqdan 4 t berilmaydi
   const wanted = new Map<string, number>();
   for (const r of rows) wanted.set(r.materialId, (wanted.get(r.materialId) ?? 0) + r.qty);
-  const short = [...wanted.entries()]
-    .filter(([id, q]) => (bal.get(id) ?? 0) < q - 0.0005)
-    .map(([id, q]) => `${meta.get(id)?.name ?? "?"} (skladda ${fmt(bal.get(id) ?? 0)}, so'ralgan ${fmt(q)} ${meta.get(id)?.unit ?? ""})`);
-  if (short.length) return { error: `Skladda yetmaydi: ${short.join(", ")}` };
 
-  await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    // Qoldiq qulf ostida va AYNAN tanlangan sklad bo'yicha tekshiriladi (chiqim ham shu skladdan)
+    await lockStock(tx);
+    const sums = await tx.stockMove.groupBy({ by: ["materialId"], where: { warehouseId: wh.id, materialId: { in: ids } }, _sum: { qty: true } });
+    const bal = new Map(sums.map((s) => [s.materialId!, Number(s._sum.qty ?? 0)]));
+    const short = [...wanted.entries()]
+      .filter(([id, q]) => (bal.get(id) ?? 0) < q - STOCK_EPS)
+      .map(([id, q]) => `${meta.get(id)?.name ?? "?"} (${wh.name}da ${fmt(bal.get(id) ?? 0)}, so'ralgan ${fmt(q)} ${meta.get(id)?.unit ?? ""})`);
+    if (short.length) return { error: `Skladda yetmaydi: ${short.join(", ")}` };
     for (const r of rows) {
       const cost = costs.get(r.materialId) ?? null;
       const move = await tx.stockMove.create({
@@ -165,7 +168,9 @@ export async function issueToBrigade(
       });
     }
     await audit(tx, userId, "CREATE", "BrigadeMove", brigade.id, undefined, { brigade: brigade.name, rows, warehouse: wh.name });
+    return null;
   });
+  if (res) return res;
   return { ok: true, note: `${brigade.name}: ${rows.length} ta xomashyo berildi` };
 }
 

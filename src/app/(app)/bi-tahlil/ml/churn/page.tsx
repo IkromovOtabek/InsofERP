@@ -8,11 +8,13 @@ import { Table, Th, Td, Tr, Empty, Select, Input, Badge } from "@/components/ui"
 import { BarChart, HBarList, Scatter } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Tag, Chip, Pager } from "../../ui";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 const ZONES: Risk[] = ["Kritik", "Yuqori", "O'rta", "Past", "Xavfsiz"];
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/ml/churn");
   const { sp, range } = await biContext(searchParams);
   const base = (await customerBase()).filter((c) => c.segment !== "Yangi (xaridsiz)");
   const today = startOfDay(new Date());

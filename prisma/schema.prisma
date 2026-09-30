@@ -26,6 +26,7 @@ enum Role {
   FINANCE // finance
   HR // otdel kadr
   CASHIER // kassa / bank
+  MECHANIC // mexanik — bosh sahifasi "Sklad & Logistika" nazorati: bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
   BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
 }
@@ -45,79 +46,90 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  orders           Order[]                  @relation("OrderCreatedBy")
-  batches          ProductionBatch[]        @relation("BatchCreatedBy")
-  stockMoves       StockMove[]              @relation("MoveCreatedBy")
-  receipts         GoodsReceipt[]           @relation("ReceiptCreatedBy")
-  tasks            BrigadeTask[]            @relation("TaskCreatedBy")
-  taskProgress     TaskProgress[]           @relation("ProgressCreatedBy")
-  cashTx           CashTransaction[]        @relation("CashTxCreatedBy")
-  auditLogs        AuditLog[]
-  employee         Employee?
-  marketing        MarketingEntry[]         @relation("MarketingCreatedBy")
-  telegram         TelegramAccount[]
-  aiActions        AiAction[]
-  telegramCodes    TelegramLinkCode[]
-  resetCodes       PasswordResetCode[]
-  supplyReqs       SupplyRequest[]          @relation("SupplyCreatedBy")
-  supplyEvents     SupplyEvent[]            @relation("SupplyEventBy")
-  brigadeMoves     BrigadeMove[]            @relation("BrigadeMoveBy")
-  leads            Lead[]                   @relation("LeadHandledBy")
-  salesRegister    SalesRegister[]          @relation("SalesRegisterCreatedBy")
-  devices          MobileDevice[]
-  notifications    Notification[]
-  deletionRequests AccountDeletionRequest[] @relation("DeletionRequestUser")
-  deletionHandled  AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
-  productionPlans  ProductionPlan[]         @relation("PlanSetBy")
-  expenseBudgets   ExpenseBudget[]          @relation("BudgetSetBy")
-  defects          ProductDefect[]          @relation("DefectCreatedBy")
+  orders            Order[]                  @relation("OrderCreatedBy")
+  batches           ProductionBatch[]        @relation("BatchCreatedBy")
+  stockMoves        StockMove[]              @relation("MoveCreatedBy")
+  receipts          GoodsReceipt[]           @relation("ReceiptCreatedBy")
+  tasks             BrigadeTask[]            @relation("TaskCreatedBy")
+  taskProgress      TaskProgress[]           @relation("ProgressCreatedBy")
+  cashTx            CashTransaction[]        @relation("CashTxCreatedBy")
+  auditLogs         AuditLog[]
+  employee          Employee?
+  marketing         MarketingEntry[]         @relation("MarketingCreatedBy")
+  telegram          TelegramAccount[]
+  aiActions         AiAction[]
+  telegramCodes     TelegramLinkCode[]
+  resetCodes        PasswordResetCode[]
+  supplyReqs        SupplyRequest[]          @relation("SupplyCreatedBy")
+  supplyEvents      SupplyEvent[]            @relation("SupplyEventBy")
+  supplyResponsible SupplyRequest[]          @relation("SupplyResponsible")
+  supplyQuotes      SupplyQuote[]            @relation("SupplyQuoteBy")
+  supplyIncidents   SupplyIncident[]         @relation("SupplyIncidentBy")
+  supplyDocuments   SupplyDocument[]         @relation("SupplyDocBy")
+  brigadeMoves      BrigadeMove[]            @relation("BrigadeMoveBy")
+  leads             Lead[]                   @relation("LeadHandledBy")
+  salesRegister     SalesRegister[]          @relation("SalesRegisterCreatedBy")
+  devices           MobileDevice[]
+  notifications     Notification[]
+  deletionRequests  AccountDeletionRequest[] @relation("DeletionRequestUser")
+  deletionHandled   AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
+  productionPlans   ProductionPlan[]         @relation("PlanSetBy")
+  expenseBudgets    ExpenseBudget[]          @relation("BudgetSetBy")
+  defects           ProductDefect[]          @relation("DefectCreatedBy")
+  productionReports ProductionReport[]       @relation("ProdReportBy")
+  shiftsOpened      BrigadeShift[]           @relation("ShiftOpenedBy")
+  shiftsClosed      BrigadeShift[]           @relation("ShiftClosedBy")
+  brigadeIssues     BrigadeIssue[]           @relation("BrigadeIssueBy")
+  brigadeIssuesDone BrigadeIssue[]           @relation("BrigadeIssueResolvedBy")
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
 
 model CompanySettings {
-  id              String   @id @default("main")
-  name            String   @default("Insof beton zavodi")
-  legalName       String? // yuridik nomi (MChJ)
-  inn             String?
-  address         String?
+  id                  String   @id @default("main")
+  name                String   @default("Insof beton zavodi")
+  legalName           String? // yuridik nomi (MChJ)
+  inn                 String?
+  address             String?
   // Zavod joyi — barcha masofa shu nuqtadan hisoblanadi (Sozlamalar sahifasida xaritadan belgilanadi)
-  lat             Float?
-  lng             Float?
-  phone           String?
-  phone2          String?
-  email           String?
-  bankName        String?
-  bankAccount     String?
-  mfo             String?
-  directorName    String?
-  about           String? // landing uchun qisqa matn
-  workingHours    String?  @default("Dush–Shan 08:00–18:00")
+  lat                 Float?
+  lng                 Float?
+  phone               String?
+  phone2              String?
+  email               String?
+  bankName            String?
+  bankAccount         String?
+  mfo                 String?
+  directorName        String?
+  about               String? // landing uchun qisqa matn
+  workingHours        String?  @default("Dush–Shan 08:00–18:00")
   // ── Mijoz ilovasi (do'kon) "bugungi holat" — ish vaqti matni (workingHours) ko'rsatish uchun, bular hisob uchun ──
-  openHour          Int     @default(8) // qabul boshlanadi (Toshkent vaqti)
-  closeHour         Int     @default(18) // qabul tugaydi
-  workSunday        Boolean @default(false) // yakshanba ham ishlaydimi
-  sameDayCutoffHour Int     @default(14) // shu soatgacha buyurtma — shu kuni yetkaziladi
-  telegram          String? // mijozlar yozadigan Telegram (@username yoki t.me havola)
+  openHour            Int      @default(8) // qabul boshlanadi (Toshkent vaqti)
+  closeHour           Int      @default(18) // qabul tugaydi
+  workSunday          Boolean  @default(false) // yakshanba ham ishlaydimi
+  sameDayCutoffHour   Int      @default(14) // shu soatgacha buyurtma — shu kuni yetkaziladi
+  telegram            String? // mijozlar yozadigan Telegram (@username yoki t.me havola)
   /// Kunlik ishlab chiqarish quvvati, m³ — Zayavkalar taqvimi shu chegaraga qarab rang beradi
-  dailyCapacityM3 Decimal? @default(200) @db.Decimal(10, 2)
-  foundedYear     Int?
+  dailyCapacityM3     Decimal? @default(200) @db.Decimal(10, 2)
+  foundedYear         Int?
   // ── Egasi dashbordi chegaralari (norma / e'tibor / kritik) — direktor Byudjet sahifasida sozlaydi ──
-  alertWarnPct    Int      @default(90) // byudjetning shu foizidan oshsa — e'tibor
-  alertCritPct    Int      @default(100) // shu foizdan oshsa — kritik
-  stockWarnDays   Int      @default(7) // xomashyo shu kundan kamga yetsa — e'tibor
-  stockCritDays   Int      @default(3) // shu kundan kamga yetsa — kritik (ishlab chiqarish to'xtash xavfi)
-  overdueDays     Int      @default(30) // schyot shu kundan eski bo'lsa — muddati o'tgan debitorka
+  alertWarnPct        Int      @default(90) // byudjetning shu foizidan oshsa — e'tibor
+  alertCritPct        Int      @default(100) // shu foizdan oshsa — kritik
+  stockWarnDays       Int      @default(7) // xomashyo shu kundan kamga yetsa — e'tibor
+  stockCritDays       Int      @default(3) // shu kundan kamga yetsa — kritik (ishlab chiqarish to'xtash xavfi)
+  overdueDays         Int      @default(30) // schyot shu kundan eski bo'lsa — muddati o'tgan debitorka
   // ── Logistika chegaralari — /logistika/sozlamalar da logistika rahbari sozlaydi ──
-  lateWarnMin     Int      @default(15) // reys rejadagi vaqtdan shuncha daqiqa kechiksa — e'tibor
-  lateCritMin     Int      @default(45) // shuncha daqiqa — kritik
-  gpsSilentMin    Int      @default(15) // yo'ldagi mashinadan GPS shuncha daqiqa kelmasa — ogohlantirish
-  loadedWarnMin   Int      @default(30) // yuklangan beton zavoddan shuncha daqiqa chiqmasa — ogohlantirish (qotish xavfi)
-  assignLeadMin   Int      @default(60) // yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik
-  shiftStartHour  Int      @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
-  shiftEndHour    Int      @default(20) // smena tugashi
-  avgSpeedKmh     Int      @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
-  updatedAt       DateTime @updatedAt
+  lateWarnMin         Int      @default(15) // reys rejadagi vaqtdan shuncha daqiqa kechiksa — e'tibor
+  lateCritMin         Int      @default(45) // shuncha daqiqa — kritik
+  gpsSilentMin        Int      @default(15) // yo'ldagi mashinadan GPS shuncha daqiqa kelmasa — ogohlantirish
+  loadedWarnMin       Int      @default(30) // yuklangan beton zavoddan shuncha daqiqa chiqmasa — ogohlantirish (qotish xavfi)
+  assignLeadMin       Int      @default(60) // yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik
+  shiftStartHour      Int      @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
+  shiftEndHour        Int      @default(20) // smena tugashi
+  avgSpeedKmh         Int      @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
+  // ── Snabjeniye: shu summadan (so'm) katta xarid avval direktor tasdig'idan o'tadi; 0 — cheklov yo'q ──
+  supplyDirectorLimit Decimal  @default(50000000) @db.Decimal(18, 2)
+  updatedAt           DateTime @updatedAt
 }
 
 // ───────────────────────── Spravochniklar ─────────────────────────
@@ -155,6 +167,7 @@ model Supplier {
   receipts       GoodsReceipt[]
   transactions   CashTransaction[]
   supplyRequests SupplyRequest[]
+  supplyQuotes   SupplyQuote[]
 }
 
 /// Xomashyo: sement, qum, shag'al (fraksiya bo'yicha), plastifikator, suv
@@ -411,6 +424,9 @@ model Employee {
   licenseExpiry    DateTime? // guvohnoma amal qilish muddati
   vehicleId        String? // biriktirilgan texnika (mikser/nasos)
   workSchedule     String? // ish grafigi: "08:00–20:00, 2/2", "Tungi smena" — dispetcher uchun
+  /// Ishlab chiqarishdagi brigadasi — direktor taqsimlaydi (Bosh sahifa → Ishlab chiqarish → Xodimlarni taqsimlash).
+  /// Brigadaga biriktirilgan xodim sex tarkibida sanaladi (lavozimi boshqa bo'lim bo'lsa ham).
+  brigadeId        String?
 
   userId      String?   @unique // tizimga kiradigan xodim uchun login
   ecoUserId   String?   @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
@@ -421,6 +437,7 @@ model Employee {
 
   user             User?                    @relation(fields: [userId], references: [id])
   vehicle          Vehicle?                 @relation("DriverVehicle", fields: [vehicleId], references: [id])
+  brigade          Brigade?                 @relation("BrigadeMembers", fields: [brigadeId], references: [id], onDelete: SetNull)
   trips            Trip[]                   @relation("TripDriver")
   brigades         Brigade[]                @relation("BrigadeLeader")
   documents        EmployeeDocument[]
@@ -621,10 +638,10 @@ enum SupplyStatus {
 /// miqdor (sklad) → narx (snabjeniye) → tasdiq (ma'sul xodim) → pul (moliya) → fakt qabul (snabjeniye).
 /// Reja summasi = Σ qty×price, fakt summasi = Σ factQty×factPrice.
 model SupplyRequest {
-  id               String       @id @default(cuid())
-  docNo            String       @unique // TZ-YYYY-00001
-  date             DateTime     @default(now())
-  status           SupplyStatus @default(NEW)
+  id               String          @id @default(cuid())
+  docNo            String          @unique // TZ-YYYY-00001
+  date             DateTime        @default(now())
+  status           SupplyStatus    @default(NEW)
   warehouseId      String
   needBy           DateTime? // qachongacha kerak
   note             String?
@@ -632,25 +649,42 @@ model SupplyRequest {
   // ── Dostavka xizmati: molni kim va qancha pulga olib keladi ──
   deliveryKind     String? // "Yetkazuvchi yetkazadi" | "O'zimiz olib kelamiz" | "Transport xizmati"
   deliveryProvider String? // transport firma / haydovchi / mashina
-  deliveryCost     Decimal      @default(0) @db.Decimal(18, 2) // kelishilgan dostavka narxi (jami summaga qo'shiladi)
-  deliveryFactCost Decimal?     @db.Decimal(18, 2) // qabulda haqiqatda to'langan dostavka
+  deliveryCost     Decimal         @default(0) @db.Decimal(18, 2) // kelishilgan dostavka narxi (jami summaga qo'shiladi)
+  deliveryFactCost Decimal?        @db.Decimal(18, 2) // qabulda haqiqatda to'langan dostavka
   deliveryNote     String?
   /// Qabulda narx o'zgargani uchun necha marta qayta tasdiqqa qaytgani
-  recheck          Int          @default(0)
+  recheck          Int             @default(0)
   cashAccountId    String? // moliya qaysi hisobdan to'ladi
   cashTxId         String? // Kirim-Chiqimdagi yozuv (moliya tasdiqlaganda yaraladi, qabulda fakt summaga tuzatiladi)
-  receiptId        String?      @unique // qabul qilinganda yaralgan kirim hujjati
+  receiptId        String?         @unique // qabul qilinganda yaralgan kirim hujjati
+  // ── Talabnoma rekvizitlari (Snabjeniye TZ): qaysi bo'lim so'radi, qanchalik shoshilinch, kim javob beradi ──
+  department       String? // Ishlab chiqarish | Sklad | Texnika | ... (`lib/procurement.ts` DEPARTMENTS)
+  priority         SupplyPriority  @default(NORMAL)
+  responsibleId    String? // mas'ul snabjeniye xodimi
+  contractNo       String? // yetkazuvchi bilan shartnoma raqami
+  // ── Katta xarid: `supplyDirectorLimit` dan oshsa, sotuv tasdig'idan oldin direktor tasdiqlaydi ──
+  directorOkAt     DateTime?
+  directorOkById   String?
+  // ── Yetkazib berish monitoringi (pul ajratilgandan keyin snabjeniye yuritadi) ──
+  deliveryStatus   SupplyDelivery?
+  shippedAt        DateTime? // yetkazuvchi jo'natgan sana
+  eta              DateTime? // kutilayotgan sana
+  arrivedAt        DateTime? // zavodga yetib kelgan vaqt
   createdById      String
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   warehouse   Warehouse           @relation(fields: [warehouseId], references: [id])
   supplier    Supplier?           @relation(fields: [supplierId], references: [id])
   cashAccount CashAccount?        @relation(fields: [cashAccountId], references: [id])
   receipt     GoodsReceipt?       @relation(fields: [receiptId], references: [id])
   createdBy   User                @relation("SupplyCreatedBy", fields: [createdById], references: [id])
+  responsible User?               @relation("SupplyResponsible", fields: [responsibleId], references: [id])
   items       SupplyRequestItem[]
   events      SupplyEvent[]
+  quotes      SupplyQuote[]
+  incidents   SupplyIncident[]
+  documents   SupplyDocument[]
 
   @@index([status, date])
 }
@@ -690,6 +724,93 @@ model SupplyEvent {
   user    User          @relation("SupplyEventBy", fields: [userId], references: [id])
 
   @@index([requestId, createdAt])
+}
+
+/// Talabnoma ustuvorligi — so'rovchi yoki snabjeniye belgilaydi. Kritik xomashyo va kechikish
+/// hisobda baribir ko'tariladi (`lib/procurement-home.ts`), bu maydon — qo'lda qo'yilgan daraja.
+enum SupplyPriority {
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+/// Yetkazib berish holati — pul ajratilgandan (FUNDED) keyin snabjeniye yangilab boradi.
+/// Zanjir bosqichi (SupplyStatus) bilan aralashmaydi: RECEIVED qabul bilan avtomatik qo'yiladi.
+enum SupplyDelivery {
+  PLANNED // buyurtma berildi, jo'natilmagan
+  IN_TRANSIT // yo'lda
+  ARRIVED // zavodga yetib keldi
+  RECEIVING // sklad qabul qilmoqda
+  RECEIVED // qabul qilindi
+  PROBLEM // muammo (kechikish, kam miqdor, sifat) — SupplyIncident da tafsiloti
+}
+
+enum SupplyIncidentKind {
+  SHORTAGE // kam miqdor
+  QUALITY // sifatsiz mahsulot
+  DELAY // kechikish
+  DOCS // hujjat yetishmaydi
+  OTHER
+}
+
+/// Tijorat taklifi — bitta talabnoma bo'yicha bir nechta yetkazuvchidan narx olinadi,
+/// bittasi tanlanadi (tanlangani zayavkaning yetkazuvchisi bo'ladi).
+model SupplyQuote {
+  id           String    @id @default(cuid())
+  requestId    String
+  supplierId   String?
+  supplierName String // spravochnikda yo'q yetkazuvchi ham yoziladi
+  amount       Decimal   @db.Decimal(18, 2) // jami taklif summasi
+  deliveryDays Int? // necha kunda yetkazadi
+  paymentTerms String? // "100% oldindan", "50/50", "kechiktirilgan 15 kun"
+  validUntil   DateTime?
+  note         String?
+  chosen       Boolean   @default(false)
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  request   SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  supplier  Supplier?     @relation(fields: [supplierId], references: [id])
+  createdBy User          @relation("SupplyQuoteBy", fields: [createdById], references: [id])
+
+  @@index([requestId])
+}
+
+/// Xarid bo'yicha muammo: kam miqdor, sifat, kechikish, hujjat. Hal qilinmaguncha dashboardda alert.
+model SupplyIncident {
+  id           String             @id @default(cuid())
+  requestId    String
+  kind         SupplyIncidentKind
+  note         String
+  createdById  String
+  createdAt    DateTime           @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolution   String?
+
+  request   SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  createdBy User          @relation("SupplyIncidentBy", fields: [createdById], references: [id])
+
+  @@index([requestId])
+  @@index([resolvedAt])
+}
+
+/// Xaridga biriktirilgan fayl: shartnoma, hisob-faktura, nakladnoy, sertifikat.
+/// Fayl `uploads/supply/` da, faqat login talab qiladigan marshrut orqali beriladi.
+model SupplyDocument {
+  id          String   @id @default(cuid())
+  requestId   String
+  kind        String // Shartnoma | Hisob-faktura | Nakladnoy | Sertifikat | Boshqa
+  file        String
+  fileName    String
+  fileType    String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  request   SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  createdBy User          @relation("SupplyDocBy", fields: [createdById], references: [id])
+
+  @@index([requestId])
 }
 
 // ───────────────────────── Brigada qoldig'i ─────────────────────────
@@ -823,11 +944,14 @@ model Brigade {
   createdAt DateTime @default(now())
 
   leader     Employee?       @relation("BrigadeLeader", fields: [leaderId], references: [id])
+  members    Employee[]      @relation("BrigadeMembers")
   items      OrderItem[]
   tasks      BrigadeTask[]
   moves      BrigadeMove[]
   stockMoves StockMove[]
   defects    ProductDefect[]
+  shifts     BrigadeShift[]
+  issues     BrigadeIssue[]
 }
 
 enum TaskStatus {
@@ -849,6 +973,8 @@ model BrigadeTask {
   status      TaskStatus @default(NEW)
   dueDate     DateTime
   note        String?
+  /// Brigadir "Ishni boshlash" bosgan vaqt — NEW holatda "Jarayonda" ni "Brigadaga berildi" dan ajratadi.
+  startedAt   DateTime?
   createdById String
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -858,8 +984,67 @@ model BrigadeTask {
   brigade   Brigade        @relation(fields: [brigadeId], references: [id])
   createdBy User           @relation("TaskCreatedBy", fields: [createdById], references: [id])
   progress  TaskProgress[]
+  issues    BrigadeIssue[]
 
   @@index([brigadeId, status])
+}
+
+/// Brigada smenasi — brigadir ilovada ochadi va yopadi (kuniga bitta). Yopilganda yakuniy hisobot
+/// muzlatiladi (`report` — `lib/brigade-shift.ts` ShiftReport) va ishlab chiqarishga yuboriladi.
+model BrigadeShift {
+  id         String    @id @default(cuid())
+  brigadeId  String
+  date       DateTime  @db.Date
+  openedAt   DateTime  @default(now())
+  openedById String
+  closedAt   DateTime?
+  closedById String?
+  report     Json?
+  summary    String? // bir qatorli xulosa — ro'yxat va bildirishnoma uchun
+  note       String? // brigadir izohi
+  seenAt     DateTime? // ishlab chiqarish birinchi ochgan vaqt
+
+  brigade  Brigade @relation(fields: [brigadeId], references: [id])
+  openedBy User    @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy User?   @relation("ShiftClosedBy", fields: [closedById], references: [id])
+
+  @@unique([brigadeId, date])
+  @@index([date])
+}
+
+enum BrigadeIssueKind {
+  DELAY // kechikish
+  EQUIPMENT // uskuna nosozligi
+  MATERIAL // material yetishmasligi
+  STAFF // xodim yetishmasligi / qo'shimcha ishchi
+  QUALITY // sifat muammosi
+  OTHER
+}
+
+/// Brigadir bildirgan muammo. Mas'ul bo'lim (`ISSUE_OWNER`) hal qiladi; ochiq MATERIAL/EQUIPMENT/QUALITY
+/// muammosi topshiriqqa bog'langan bo'lsa, topshiriq holati "Material yetishmaydi" kabi ko'rinadi.
+model BrigadeIssue {
+  id           String           @id @default(cuid())
+  brigadeId    String
+  taskId       String?
+  kind         BrigadeIssueKind
+  equipment    String? // uskuna nomi (EQUIPMENT)
+  qty          Decimal?         @db.Decimal(18, 3) // kerakli ishchi soni (STAFF) yoki material miqdori
+  downtimeMin  Int? // to'xtab qolgan vaqt, daqiqa
+  note         String
+  createdById  String
+  createdAt    DateTime         @default(now())
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolution   String?
+
+  brigade    Brigade      @relation(fields: [brigadeId], references: [id])
+  task       BrigadeTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  createdBy  User         @relation("BrigadeIssueBy", fields: [createdById], references: [id])
+  resolvedBy User?        @relation("BrigadeIssueResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([brigadeId, createdAt])
+  @@index([resolvedAt])
 }
 
 /// Bajarilganlik qaydi: kim, qachon, qancha.
@@ -955,6 +1140,25 @@ model ProductDefect {
   product   Product  @relation(fields: [productId], references: [id])
   brigade   Brigade? @relation(fields: [brigadeId], references: [id])
   createdBy User     @relation("DefectCreatedBy", fields: [createdById], references: [id])
+
+  @@index([date])
+}
+
+/// Ishlab chiqarishning kunlik hisoboti — sex "Qayd etish" bosganda o'sha paytdagi raqamlar
+/// muzlatib saqlanadi (`data` — `lib/production-report.ts` ReportSnapshot). Yozuv o'zgartirilmaydi:
+/// kun ichida qayta qayd etilsa yangi nusxa qo'shiladi, hammasi tarixda qoladi. Direktor kabinetida ko'rinadi.
+model ProductionReport {
+  id          String    @id @default(cuid())
+  date        DateTime  @db.Date // hisobot kuni
+  data        Json
+  summary     String // bir qatorli xulosa — ro'yxat va bildirishnoma uchun
+  note        String? // sex boshlig'i izohi
+  createdById String
+  createdAt   DateTime  @default(now())
+  seenAt      DateTime? // direktor birinchi marta ochgan vaqt
+  seenById    String?
+
+  createdBy User @relation("ProdReportBy", fields: [createdById], references: [id])
 
   @@index([date])
 }

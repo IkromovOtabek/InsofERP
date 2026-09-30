@@ -9,6 +9,7 @@ import { Kpi, Panel, Why, Insight, Action, ProgressBar } from "../ui";
 import { RowForm } from "@/components/row-form";
 import { savePlan, deletePlan } from "./actions";
 import { cn } from "@/lib/utils";
+import { requirePage } from "@/lib/page-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ const pct = (v: number | null | undefined, f = 0) => (v === null || v === undefi
 const SIG: Record<Signal, BadgeColor> = { BONUS: "green", NORMAL: "blue", OGOHLANTIRISH: "amber", XAVF: "red", "REJA YO'Q": "slate" };
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePage("/bi-tahlil/reja");
   const { s, sp, range } = await biContext(searchParams);
   const now = new Date();
   const year = Number(sp.year) || now.getFullYear(), month = Math.min(12, Math.max(1, Number(sp.month) || now.getMonth() + 1));

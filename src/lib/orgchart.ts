@@ -27,9 +27,12 @@ export const ORG_TREE: OrgDept[] = [
   { role: "DIRECTOR",   label: "Direktor",         parent: null,         tone: "slate",   icon: "crown",    duty: "Zavod rahbari, yakuniy qaror" },
   { role: "SUPERVISOR", label: "Ish boshqaruvchi", parent: "DIRECTOR",   tone: "violet",  icon: "compass",  duty: "Kunlik ishni taqsimlaydi, nazorat qiladi" },
   { role: "PRODUCTION", label: "Ishlab chiqarish", parent: "SUPERVISOR", tone: "amber",   icon: "factory",  duty: "Zames, dona mahsulot, retsept", assignable: true },
+  // Brigadir — sexdagi brigada boshlig'i: brigada ishchilari (betonchi, armaturachi...) shu tagiga osiladi
+  { role: "BRIGADIER",  label: "Brigadir",         parent: "PRODUCTION", tone: "amber",   icon: "hardHat",  duty: "Brigada, smena, topshiriq bajarilishi", assignable: true },
   { role: "WAREHOUSE",  label: "Sklad",            parent: "SUPERVISOR", tone: "orange",  icon: "package",  duty: "Xomashyo kirimi, qoldiq, yuklash", assignable: true },
   { role: "PROCUREMENT", label: "Snabjeniye",      parent: "DIRECTOR",   tone: "orange",  icon: "package",  duty: "Xarid, yetkazuvchi, ta'minot zanjiri", assignable: true },
   { role: "LOGISTICS",  label: "Logistika",        parent: "SUPERVISOR", tone: "blue",    icon: "truck",    duty: "Reys, nakladnoy, texnika", assignable: true },
+  { role: "MECHANIC",   label: "Mexanik",          parent: "LOGISTICS",  tone: "blue",    icon: "truck",    duty: "Texnika, sklad va jo'natish nazorati", assignable: true },
   { role: "SALES",      label: "Sotuv",            parent: "DIRECTOR",   tone: "emerald", icon: "handshake",duty: "Mijoz, zayavka, shartnoma", assignable: true },
   { role: "ACCOUNTING", label: "Buxgalteriya",     parent: "DIRECTOR",   tone: "sky",     icon: "calculator", duty: "Schyot, hisob-kitob, hisobot" },
   { role: "CASHIER",    label: "Kassa / bank",     parent: "ACCOUNTING", tone: "sky",     icon: "wallet",   duty: "Pul kirimi va chiqimi", assignable: true },
@@ -62,7 +65,8 @@ export function chainTo(role: Role): OrgDept[] {
 
 /** Nomiga qarab taxmin — faqat otdel kadr bo'limni belgilamagan lavozimlar uchun. */
 const GUESS: { re: RegExp; dept: Role }[] = [
-  { re: /haydovch|mexanik|slesar|ta'?mirchi|shofyor/i, dept: "LOGISTICS" },
+  { re: /mexanik|slesar|ta'?mirchi/i, dept: "MECHANIC" },
+  { re: /haydovch|shofyor/i, dept: "LOGISTICS" },
   { re: /snabjen|ta'?minot|xarid|zakupsh/i, dept: "PROCUREMENT" },
   { re: /sklad|ombor|yuk ortuvchi|pogruzchik|ekskavator/i, dept: "WAREHOUSE" },
   { re: /operator|laborant|master|prorab|betonchi|armatura|qolipchi|payvandchi|elektrik|kran|brigadir|ishchi/i, dept: "PRODUCTION" },
@@ -88,7 +92,7 @@ export type OrgStage = { key: string; label: string; hint: string; roles: Role[]
 export const ORG_STAGES: OrgStage[] = [
   { key: "zayavka",  label: "Zayavka",          hint: "Sotuv mijozdan buyurtma oladi",            roles: ["SALES"],                    icon: "handshake" },
   { key: "tasdiq",   label: "Tasdiq / limit",   hint: "Limit oshsa direktor ochib beradi",        roles: ["DIRECTOR", "ACCOUNTING"],   icon: "shieldCheck" },
-  { key: "ishlab",   label: "Ishlab chiqarish", hint: "Zames beriladi, dona mahsulot quyiladi",   roles: ["SUPERVISOR", "PRODUCTION"], icon: "factory" },
+  { key: "ishlab",   label: "Ishlab chiqarish", hint: "Zames beriladi, dona mahsulot quyiladi",   roles: ["SUPERVISOR", "PRODUCTION", "BRIGADIER"], icon: "factory" },
   { key: "yuklash",  label: "Yuklash",          hint: "Sklad xomashyo beradi, mikser ortiladi",   roles: ["WAREHOUSE"],                icon: "package" },
   { key: "reys",     label: "Reys",             hint: "Haydovchi nakladnoy bilan obyektga boradi", roles: ["LOGISTICS"],               icon: "truck" },
   { key: "tolov",    label: "To'lov / yopish",  hint: "Kassa pulni oladi, buxgalteriya yopadi",   roles: ["CASHIER", "ACCOUNTING"],    icon: "wallet" },

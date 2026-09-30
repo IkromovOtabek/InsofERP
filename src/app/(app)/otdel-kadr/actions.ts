@@ -8,7 +8,7 @@ import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { flatName } from "@/lib/excel";
-import { guessDepartment } from "@/lib/orgchart";
+import { deptByLabel, guessDepartment } from "@/lib/orgchart";
 import { pushEmployeeSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
@@ -128,7 +128,8 @@ function refresh() {
 
 /** Bo'lim lavozimi bilan bir xil nom ishchi lavozimga berilmasin — aks holda login mantig'i chalkashadi. */
 function clashesWithDepartment(name: string) {
-  return POSITIONS.some((p) => p.label.toLowerCase() === name.trim().toLowerCase());
+  // Tuzilmadagi bo'lim tuguni (masalan "Brigadir") ham — aks holda xodim diagrammada ikki joyda chiqadi
+  return POSITIONS.some((p) => p.label.toLowerCase() === name.trim().toLowerCase()) || !!deptByLabel(name);
 }
 
 export async function saveWorkPosition(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {

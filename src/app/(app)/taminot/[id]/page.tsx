@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Clock, HardHat, PackageCheck, ReceiptText, ShoppingCart, Truck, XCircle } from "lucide-react";
+import { AlertTriangle, BadgeCheck, ClipboardList, Clock, FileText, HardHat, Layers, PackageCheck, ReceiptText, Scale, ShoppingCart, Truck, XCircle } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { supplyRequest, SUPPLY_LABEL, SUPPLY_COLOR, SUPPLY_OWNER, SUPPLY_STEPS, plannedSum, hasFact, totalPlanned, totalFact } from "@/lib/supply";
@@ -9,6 +9,10 @@ import { unitLabel } from "@/lib/unit";
 import { ROLE_LABELS } from "@/lib/nav";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
 import { EditItemsPanel, PricePanel, ReceivePanel, type PanelItem } from "../panels";
+import { DeliveryPanel, DirectorPanel, DocsPanel, IncidentsPanel, MetaPanel, QuotesPanel } from "../procurement-panels";
+import { directorLimit, needsDirector, responsibleOptions, SUPPLY_DOC_ACCEPT } from "@/lib/procurement";
+import { DELIVERY_COLOR, DELIVERY_LABEL, PRIORITY_COLOR, PRIORITY_LABEL, REQUIRED_DOCS } from "@/lib/procurement-const";
+import { isoDate } from "@/lib/format";
 
 /**
  * Bitta ta'minot zayavkasi — zanjirdagi barcha bo'lim shu sahifani ochadi,
@@ -36,6 +40,14 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
       select: { id: true, fullName: true, vehicle: { select: { plate: true } } },
     }),
   ]);
+  // Snabjeniye TZ: mas'ul tanlovi, katta xarid chegarasi, har qator bo'yicha ombor qoldig'i
+  const matIds = r.items.map((i) => i.materialId).filter((x): x is string => !!x);
+  const [people, limit, balances] = await Promise.all([
+    responsibleOptions(),
+    directorLimit(),
+    matIds.length ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { in: matIds } }, _sum: { qty: true } }) : Promise.resolve([]),
+  ]);
+  const balance = new Map(balances.map((b) => [b.materialId, Number(b._sum.qty ?? 0)]));
   const driverOpts = drivers.map((d) => ({ id: d.id, label: d.vehicle ? `${d.fullName} · ${d.vehicle.plate}` : d.fullName }));
 
   const items: PanelItem[] = r.items.map((i) => ({
@@ -50,6 +62,11 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
   const delivery = Number(r.deliveryCost);
   const deliveryFact = Number(r.deliveryFactCost ?? r.deliveryCost);
   const showFact = hasFact(r.items) || r.status === "RECEIVED";
+  const bigPurchase = needsDirector(plan, limit);
+  const waitDirector = r.status === "PRICED" && bigPurchase && !r.directorOkAt;
+  const open = !["RECEIVED", "REJECTED"].includes(r.status);
+  const openIncidents = r.incidents.filter((x) => !x.resolvedAt).length;
+  const missingDocs = r.status === "FUNDED" || r.status === "RECEIVED" ? REQUIRED_DOCS.filter((k) => !r.documents.some((d) => d.kind === k)) : [];
 
   const role = s.role;
   // Direktor zanjirni ko'radi, lekin bosqichlar mas'ul bo'limlarda: narx — snabjeniye, tasdiq — sotuv, pul — moliya
@@ -165,6 +182,43 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
               <div className="px-5 pb-5"><ReceivePanel id={r.id} items={items} suppliers={suppliers} supplierId={r.supplierId} delivery={{ kind: r.deliveryKind ?? "", cost: delivery, fact: deliveryFact }} /></div>
             </Card>
           )}
+
+          {/* ── Snabjeniye TZ: yetkazish, takliflar, rekvizitlar, muammolar, hujjatlar ── */}
+          {r.status === "FUNDED" && (
+            <Card>
+              <CardHeader icon={Truck} title="Yetkazib berish monitoringi"
+                description={r.deliveryStatus ? `Hozir: ${DELIVERY_LABEL[r.deliveryStatus]}${r.shippedAt ? ` · jo'natilgan ${date(r.shippedAt)}` : ""}${r.eta ? ` · ETA ${date(r.eta)}` : ""}${r.arrivedAt ? ` · keldi ${dateTime(r.arrivedAt)}` : ""}` : "Buyurtma berilgach holatni yangilab boring"} />
+              {canProcure
+                ? <DeliveryPanel id={r.id} value={{ status: r.deliveryStatus, shippedAt: r.shippedAt ? isoDate(r.shippedAt) : "", eta: r.eta ? isoDate(r.eta) : "", provider: r.deliveryProvider ?? "" }} />
+                : <p className="text-sm text-slate-500">{r.deliveryProvider ?? "Transport ko'rsatilmagan"}</p>}
+            </Card>
+          )}
+          {(r.quotes.length > 0 || ((r.status === "NEW" || r.status === "PRICED") && canProcure)) && (
+            <Card>
+              <CardHeader icon={Scale} title="Tijorat takliflari" description="Narx, muddat va to'lov sharti bo'yicha taqqoslang — tanlangani yetkazuvchi bo'ladi" />
+              <QuotesPanel id={r.id} suppliers={suppliers} editable={canProcure && (r.status === "NEW" || r.status === "PRICED")}
+                quotes={r.quotes.map((x) => ({ id: x.id, supplierName: x.supplierName, supplierId: x.supplierId, amount: Number(x.amount), deliveryDays: x.deliveryDays, paymentTerms: x.paymentTerms, validUntil: x.validUntil ? date(x.validUntil) : null, note: x.note, chosen: x.chosen, by: `${x.createdBy.fullName} · ${dateTime(x.createdAt)}` }))} />
+            </Card>
+          )}
+          {open && canProcure && (
+            <Card>
+              <CardHeader icon={ClipboardList} title="Talabnoma rekvizitlari" description="Bo'lim, ustuvorlik, mas'ul xodim va muddat — dashboard shular bo'yicha saralaydi" />
+              <MetaPanel id={r.id} people={people.map((p) => ({ id: p.id, name: `${p.fullName} · ${ROLE_LABELS[p.role]}` }))}
+                value={{ department: r.department ?? "", priority: r.priority, responsibleId: r.responsibleId ?? "", needBy: r.needBy ? isoDate(r.needBy) : "", contractNo: r.contractNo ?? "" }} />
+            </Card>
+          )}
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <Card>
+              <CardHeader icon={AlertTriangle} title="Muammolar" description={openIncidents ? `${openIncidents} ta ochiq` : "Kam miqdor, sifat, kechikish, hujjat"} />
+              <IncidentsPanel id={r.id} canAdd={r.status !== "REJECTED" && (canProcure || role === "PRODUCTION")} canResolve={canProcure}
+                incidents={r.incidents.map((x) => ({ id: x.id, kind: x.kind, note: x.note, by: x.createdBy.fullName, at: dateTime(x.createdAt), resolvedAt: x.resolvedAt ? dateTime(x.resolvedAt) : null, resolution: x.resolution }))} />
+            </Card>
+            <Card>
+              <CardHeader icon={FileText} title="Hujjatlar" description="Shartnoma, hisob-faktura, nakladnoy, sertifikat" />
+              <DocsPanel id={r.id} accept={SUPPLY_DOC_ACCEPT} missing={[...missingDocs]} canEdit={canProcure || ["ACCOUNTING", "FINANCE"].includes(role)}
+                docs={r.documents.map((d) => ({ id: d.id, kind: d.kind, fileName: d.fileName, by: d.createdBy.fullName, at: dateTime(d.createdAt) }))} />
+            </Card>
+          </div>
         </div>
 
         <div className="space-y-5">
@@ -173,11 +227,19 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
               <div className="flex items-start gap-3 text-sm text-slate-600">
                 <Clock size={18} className="mt-0.5 shrink-0 text-amber-600" />
                 <span>
-                  Ma&apos;sul xodim tasdig&apos;i kutilmoqda — <b>{money(plan)}</b>.
-                  {canApprove ? <> Tasdiqlash <Link href="/orders" className="font-medium underline">Zayavkalar</Link> oynasida.</> : " Tasdiq Zayavkalar oynasida beriladi."}
+                  {waitDirector
+                    ? <>Katta xarid — <b>{money(plan)}</b> (chegara {money(limit)}). Avval <b>direktor</b> tasdiqlaydi, keyin ma&apos;sul xodim.</>
+                    : <>Ma&apos;sul xodim tasdig&apos;i kutilmoqda — <b>{money(plan)}</b>.{r.directorOkAt && " Direktor tasdiqlagan."}</>}
+                  {!waitDirector && (canApprove ? <> Tasdiqlash <Link href="/orders" className="font-medium underline">Zayavkalar</Link> oynasida.</> : " Tasdiq Zayavkalar oynasida beriladi.")}
                   {r.recheck > 0 && <span className="mt-1 block font-medium text-red-600">Narx o&apos;zgargani uchun qayta tasdiqqa qaytdi ({r.recheck}-marta).</span>}
                 </span>
               </div>
+            </Card>
+          )}
+          {waitDirector && role === "DIRECTOR" && (
+            <Card>
+              <CardHeader icon={BadgeCheck} title="Direktor tasdig'i" description={`Jami ${money(plan)} — chegaradan (${money(limit)}) katta xarid`} />
+              <DirectorPanel id={r.id} />
             </Card>
           )}
           {r.status === "APPROVED" && (
@@ -196,7 +258,14 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
             <CardHeader title="Hujjat" />
             <DL items={[
               { k: "Sklad", v: r.warehouse.name },
+              { k: "Bo'lim", v: r.department ?? "—" },
+              { k: "Ustuvorlik", v: <Badge color={PRIORITY_COLOR[r.priority]}>{PRIORITY_LABEL[r.priority]}</Badge> },
+              { k: "Mas'ul", v: r.responsible?.fullName ?? "—" },
               { k: "So'ragan", v: r.createdBy.fullName },
+              { k: "Shartnoma", v: r.contractNo ?? "—" },
+              ...(bigPurchase ? [{ k: "Direktor tasdig'i", v: r.directorOkAt ? `Tasdiqlangan · ${dateTime(r.directorOkAt)}` : r.status === "PRICED" ? "Kutilmoqda" : "—" }] : []),
+              ...(r.deliveryStatus ? [{ k: "Yetkazish", v: <Badge color={DELIVERY_COLOR[r.deliveryStatus]}>{DELIVERY_LABEL[r.deliveryStatus]}</Badge> }] : []),
+              ...(r.eta ? [{ k: "Kutilayotgan sana (ETA)", v: <span className={open && r.eta < new Date(new Date().setHours(0, 0, 0, 0)) ? "font-semibold text-red-600" : ""}>{date(r.eta)}</span> }] : []),
               { k: "Kerak bo'lgan sana", v: r.needBy ? date(r.needBy) : "—" },
               { k: "Yetkazuvchi", v: r.supplier?.name ?? "—" },
               { k: "Dostavka", v: delivery > 0 || r.deliveryKind ? `${r.deliveryKind ?? "Xizmat"} · ${money(delivery)}${r.deliveryProvider ? ` · ${r.deliveryProvider}` : ""}` : "—" },
@@ -207,6 +276,27 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
               { k: "Izoh", v: r.note ?? "—" },
             ]} />
           </Card>
+
+          {open && matIds.length > 0 && (
+            <Card>
+              <CardHeader icon={Layers} title="Ombor qoldig'i" description="Omborda bor bo'lsa — xaridni kamaytiring" />
+              <ul className="space-y-2 text-sm">
+                {r.items.filter((i) => i.materialId).map((i) => {
+                  const b = balance.get(i.materialId!) ?? 0;
+                  const covers = b >= Number(i.qty);
+                  return (
+                    <li key={i.id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-slate-700">{i.name}</span>
+                      <span className={`shrink-0 tabular ${covers ? "font-semibold text-emerald-700" : "text-slate-500"}`}>{q(b)} / {q(i.qty)} {unitLabel(i.unit)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {r.items.some((i) => i.materialId && (balance.get(i.materialId) ?? 0) >= Number(i.qty)) && (
+                <p className="mt-2 text-xs text-emerald-700">Yashil qatorlar omborda yetarli — xarid shart emasligini tekshiring.</p>
+              )}
+            </Card>
+          )}
 
           <Card>
             <CardHeader title="Harakatlar tarixi" description="Kim, qachon, nima qildi" />

@@ -9,6 +9,10 @@ import {
   fundSupplyRequest, saveSupplyFact, receiveSupplyRequest, rejectSupplyRequest,
   type FactRow, type NewItem,
 } from "@/lib/supply";
+import {
+  addSupplyDocument, addSupplyQuote, chooseSupplyQuote, createSupplyIncident, deleteSupplyQuote, directorApproveSupply,
+  removeSupplyDocument, resolveSupplyIncident, updateSupplyDelivery, updateSupplyMeta,
+} from "@/lib/procurement";
 
 /**
  * Ta'minot zanjirining server amallari. `lib` da turadi, chunki ularni ham route sahifalari,
@@ -46,8 +50,12 @@ export async function createRequest(_prev: ActionState, fd: FormData): Promise<A
   const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
   let items: NewItem[];
   try { items = JSON.parse(String(fd.get("rows") ?? "[]")); } catch { return { error: "Jadval o'qilmadi" }; }
+  const pr = text(fd, "priority");
   const r = await createSupplyRequest(
-    { warehouseId: text(fd, "warehouseId"), needBy: text(fd, "needBy") || null, note: text(fd, "note") || null, items },
+    {
+      warehouseId: text(fd, "warehouseId"), needBy: text(fd, "needBy") || null, note: text(fd, "note") || null, items,
+      department: text(fd, "department") || null, priority: pr === "HIGH" || pr === "CRITICAL" ? pr : "NORMAL",
+    },
     s.userId,
   );
   if (r.error) return { error: r.error };
@@ -147,5 +155,101 @@ export async function reject(id: string, _prev: ActionState, fd: FormData): Prom
   const r = await rejectSupplyRequest(id, s.userId, text(fd, "reason"));
   if (r.error) return { error: r.error };
   refresh(id);
+  return { ok: true, note: r.note };
+}
+
+// ───────────── Snabjeniye TZ: rekvizitlar, takliflar, direktor, yetkazish, muammo, hujjat ─────────────
+// Qoida `lib/procurement.ts` da — mobil ilova ham o'shani chaqiradi.
+
+export async function saveMeta(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...PROCUREMENT]);
+  const r = await updateSupplyMeta(id, {
+    department: text(fd, "department") || null, priority: text(fd, "priority") || null,
+    responsibleId: text(fd, "responsibleId") || null, needBy: text(fd, "needBy") || null, contractNo: text(fd, "contractNo") || null,
+  }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+export async function addQuote(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...PROCUREMENT]);
+  const r = await addSupplyQuote(id, {
+    supplierId: text(fd, "supplierId") || null, supplierName: text(fd, "supplierName") || null, amount: num(fd, "amount"),
+    deliveryDays: text(fd, "deliveryDays") ? num(fd, "deliveryDays") : null, paymentTerms: text(fd, "paymentTerms") || null,
+    validUntil: text(fd, "validUntil") || null, note: text(fd, "note") || null,
+  }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+export async function chooseQuote(quoteId: string): Promise<ActionState> {
+  const s = await requireSession([...PROCUREMENT]);
+  const r = await chooseSupplyQuote(quoteId, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(r.id);
+  return { ok: true, note: r.note };
+}
+
+export async function dropQuote(quoteId: string): Promise<ActionState> {
+  const s = await requireSession([...PROCUREMENT]);
+  const r = await deleteSupplyQuote(quoteId, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(r.id);
+  return { ok: true, note: r.note };
+}
+
+/** Katta xarid — faqat direktor (requireSession DIRECTOR'ni har doim o'tkazadi). */
+export async function directorApprove(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([]);
+  if (s.role !== "DIRECTOR") return { error: "Katta xaridni faqat direktor tasdiqlaydi" };
+  const r = await directorApproveSupply(id, s.userId, text(fd, "note") || null);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+export async function saveDelivery(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...PROCUREMENT]);
+  const r = await updateSupplyDelivery(id, {
+    status: text(fd, "deliveryStatus"), shippedAt: text(fd, "shippedAt") || null, eta: text(fd, "eta") || null,
+    provider: text(fd, "deliveryProvider") || null, note: text(fd, "note") || null,
+  }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+export async function addIncident(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["PROCUREMENT", "WAREHOUSE", "PRODUCTION"]);
+  const r = await createSupplyIncident(id, { kind: text(fd, "kind"), note: text(fd, "note") }, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+export async function closeIncident(incidentId: string, requestId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([...PROCUREMENT]);
+  const r = await resolveSupplyIncident(incidentId, text(fd, "resolution"), s.userId);
+  if (r.error) return { error: r.error };
+  refresh(requestId);
+  return { ok: true, note: r.note };
+}
+
+export async function attachDoc(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["PROCUREMENT", "WAREHOUSE", "ACCOUNTING", "FINANCE"]);
+  const f = fd.get("file");
+  const r = await addSupplyDocument(id, text(fd, "kind"), f instanceof File ? f : null, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: r.note };
+}
+
+export async function dropDoc(docId: string): Promise<ActionState> {
+  const s = await requireSession(["PROCUREMENT", "WAREHOUSE", "ACCOUNTING", "FINANCE"]);
+  const r = await removeSupplyDocument(docId, s.userId);
+  if (r.error) return { error: r.error };
+  refresh(r.id);
   return { ok: true, note: r.note };
 }

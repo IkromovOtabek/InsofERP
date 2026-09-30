@@ -30,6 +30,7 @@ const USERS: { login: string; role: Role; fullName: string; position: string }[]
   { login: "test.kassa",     role: "CASHIER",     fullName: "Test Kassir",           position: "Kassa / bank" },
   { login: "test.haydovchi", role: "DRIVER",      fullName: "Test Haydovchi",        position: "Haydovchi" },
   { login: "test.brigadir",  role: "BRIGADIER",   fullName: "Test Brigadir",         position: "Brigadir" },
+  { login: "test.mexanik",   role: "MECHANIC",    fullName: "Test Mexanik",          position: "Mexanik" },
 ];
 
 const phoneOf = (i: number) => `+9989090000${String(i + 1).padStart(2, "0")}`;
