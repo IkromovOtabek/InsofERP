@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Printer, PackageCheck, Navigation, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History, Route, AlertTriangle, Coins, Flag, Undo2, Timer } from "lucide-react";
+import { Printer, PackageCheck, XCircle, Truck, Package, Clock, MapPin, MapPinned, Smartphone, History, Route, AlertTriangle, Coins } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { getSession } from "@/lib/auth";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
-import { markLoaded, markOnRoad, cancelTrip, markArrived, markUnloading, markReturned } from "../actions";
+import { markLoaded, cancelTrip } from "../actions";
 import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, PHASE_STEPS, TRIP_PHASE, tripPhase, tripPlannedAt, tripDelayMin, delayLevel, logisticsSettings, minutesLabel } from "@/lib/logistics";
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { money } from "@/lib/format";
@@ -16,7 +16,6 @@ import { DelayText, PhaseBadge } from "../../logistika/ui";
 import { distanceLabel, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
 import { TripTrackMap } from "./track-map";
 import { unitLabel, soleUnit } from "@/lib/unit";
-import { DeliverButton } from "./deliver-form";
 import { PickupForm } from "./pickup-form";
 import { EcoSyncButtons } from "./eco-sync";
 import { ecoEnabled } from "@/lib/eco/client";
@@ -50,8 +49,15 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   // Yuk olgan joyi hali belgilanmagan bo'lsa zavod ko'rsatiladi — reyslarning ko'pchiligi zavoddan chiqadi
   const plant = await db.companySettings.findUnique({ where: { id: "main" }, select: { name: true, address: true, lat: true, lng: true } });
   const blacklisted = marks.black.has(t.order.customerId);
-  const canLog = ["LOGISTICS", "DIRECTOR"].includes(s.role);
-  const canLoad = canLog || s.role === "PRODUCTION";
+  // Kim nima qiladi (har kim o'z ishiga javob beradi):
+  //  • dispetcher (LOGISTICS) — reysni ochadi/bekor qiladi, ECO'ga yuboradi, muammoni hal qiladi, reysni yopadi;
+  //  • ishlab chiqarish — "Yuklandi" (mikser zavodda yuklandi, skladdan chiqim);
+  //  • haydovchi — yo'l bosqichlari (yo'lga chiqdi, obyektga keldi, tushirilmoqda, yetkazildi, qaytdi) o'z ilovasidan;
+  //  • direktor — faqat ko'radi.
+  const canLog = s.role === "LOGISTICS";
+  const canLoad = s.role === "PRODUCTION";
+  const canPlan = canLog || canLoad;
+  const driverPhase = ["LOADED", "ON_ROAD"].includes(t.status) || (t.status === "DELIVERED" && !t.returnedAt);
   // Reys miqdori zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, dona mahsulot dona)
   const tripUnit = soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
   const phase = tripPhase(t);
@@ -75,11 +81,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           <>
             <LinkButton href={`/trips/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish</LinkButton>
             {t.status === "PLANNED" && canLoad && <form action={markLoaded.bind(null, id)}><Button><PackageCheck size={16} /> Yuklandi</Button></form>}
-            {t.status === "LOADED" && canLog && <form action={markOnRoad.bind(null, id)}><Button><Navigation size={16} /> Yo'lga chiqdi</Button></form>}
-            {t.status === "ON_ROAD" && !t.arrivedAt && canLog && <form action={markArrived.bind(null, id)}><Button variant="secondary"><Flag size={16} /> Obyektga keldi</Button></form>}
-            {t.status === "ON_ROAD" && !t.unloadingAt && canLog && <form action={markUnloading.bind(null, id)}><Button variant="secondary"><Timer size={16} /> Tushirilmoqda</Button></form>}
-            {["LOADED", "ON_ROAD"].includes(t.status) && canLog && <DeliverButton tripId={id} loaded={Number(t.qtyM3)} />}
-            {t.status === "DELIVERED" && !t.returnedAt && canLog && <form action={markReturned.bind(null, id)}><Button variant="secondary"><Undo2 size={16} /> Zavodga qaytdi</Button></form>}
+            {driverPhase && canPlan && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
             {t.status === "PLANNED" && canLog && <form action={cancelTrip.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor</Button></form>}
           </>
         }
@@ -102,7 +104,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         <StatCard label="Yetkazildi" value={<span className="text-base">{dt(t.deliveredAt)}</span>} hint={t.receiverName ? `qabul qildi: ${t.receiverName}` : undefined} icon={Clock} tone={t.deliveredAt ? "success" : "default"} />
       </div>
 
-      {t.status === "LOADED" && canLoad && (
+      {t.status === "LOADED" && canPlan && (
         <Card className="mt-5">
           <CardHeader title="Yukni olgani joyi" description="Mikser yukni qayerdan olgani — haydovchi ilovasida marshrut shu nuqtadan boshlanadi" icon={MapPinned} />
           <PickupForm
@@ -150,7 +152,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
               ))}
             </ul>
           )}
-          {canLoad && <ReportIssueForm tripId={id} />}
+          {canPlan && <ReportIssueForm tripId={id} />}
         </Card>
       )}
 
@@ -209,7 +211,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           <Card className={`mt-5 ${t.ecoError ? "border-red-200" : ""}`}>
             <CardHeader title="Haydovchi ilovasi (Insof ECO)" icon={Smartphone}
               description={st ? st.hint : "Reys haydovchi telefoniga hali yuborilmagan"}
-              action={canLoad ? <EcoSyncButtons tripId={id} hasEco={!!t.ecoDeliveryId} /> : undefined} />
+              action={canPlan ? <EcoSyncButtons tripId={id} hasEco={!!t.ecoDeliveryId} /> : undefined} />
             <div className="flex flex-wrap items-center gap-3 text-sm">
               {st ? <Badge color={st.color}>{st.label}</Badge> : <Badge>Yuborilmagan</Badge>}
               {t.ecoSyncedAt && <span className="text-slate-500">sinxron: {dateTime(t.ecoSyncedAt)}</span>}

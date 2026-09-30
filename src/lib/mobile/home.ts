@@ -10,7 +10,9 @@ import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
 import { myBrigades } from "@/lib/brigades";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
-import { unitLabel, unitTotals, soleUnit, type UnitRow } from "@/lib/unit";
+import { soleUnit } from "@/lib/unit";
+import { day, inUnit, money, num, short, sum, time, totalsText, tripQty } from "./fmt";
+import { dashRange, roleDashboard } from "./dashboard";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
 
@@ -29,7 +31,9 @@ export type HomeCard = { key: string; label: string; value: string; hint?: strin
   /** Kalendardan tanlangan oraliq ("custom" filtr) — ilova kalendarini shu kunlar bilan ochadi. `YYYY-MM-DD`. */
   range?: { from: string; to: string } | null };
 /** Bosh sahifa so'rovidagi ixtiyoriy parametrlar (karta filtrlari). */
-export type HomeOpts = { revenue?: string; from?: string; to?: string };
+export type HomeOpts = { revenue?: string; from?: string; to?: string;
+  /** Rol dashboardi davri (`lib/mobile/dashboard.ts`): day | week | month | year | custom. */
+  period?: string };
 
 /** Direktor "Tushum" kartasi davrlari. */
 const REVENUE_PERIODS = [
@@ -70,12 +74,16 @@ export type QuickAction = { key: string; label: string; icon: string; kind: "lis
 /**
  * Bo'lim diagrammasi (ixtiyoriy) — ilova qatorlar o'rniga/ustiga chizadi:
  *   · `progress` — har ko'rsatkich uchun plan/fakt chizig'i va raqamlari (Direktor nazorati);
- *   · `columns` — oylar bo'yicha guruhli ustunlar (tushum / foyda / xarajat).
+ *   · `columns` — oylar bo'yicha guruhli ustunlar (tushum / foyda / xarajat);
+ *   · `bars` — tanlangan davr savatlari (soat / kun / hafta / oy) bo'yicha ustunlar, bosilsa raqami chiqadi;
+ *   · `donut` — ulushlar halqasi (mahsulot, mijoz, kategoriya…), markazda jami.
  * Eski ilova `chart` ni bilmaydi va oddiy `rows` ni chizaveradi — shuning uchun rows ham to'ldiriladi.
  */
 export type SectionChart =
   | { kind: "progress"; items: { label: string; pct: number | null; fact: string; plan: string | null; tone: Tone; invert?: boolean; open?: string }[] }
-  | { kind: "columns"; series: { key: string; label: string; tone: Tone }[]; groups: { label: string; values: number[]; texts: string[] }[] };
+  | { kind: "columns"; series: { key: string; label: string; tone: Tone }[]; groups: { label: string; values: number[]; texts: string[] }[] }
+  | { kind: "bars"; series: { key: string; label: string }[]; points: { label: string; values: number[]; texts: string[] }[]; total?: string }
+  | { kind: "donut"; items: { label: string; value: number; text: string }[]; total: string; totalLabel?: string };
 export type HomeSection = { title: string; empty: string; rows: HomeRow[]; target?: string; icon?: string; chart?: SectionChart };
 export type MobileHome = {
   role: Role;
@@ -95,6 +103,33 @@ export type MobileHome = {
    * o'zi ochgan zayavkalarning reyslari. Bo'sh bo'lsa ilova xaritani chizmaydi.
    */
   live: LiveTruck[];
+  /**
+   * Logistika: BARCHA faol reyslar — GPS'i yo'qlari ham. Ilova xarita + ro'yxat qilib chizadi,
+   * qator bosilganda xarita shu mashinaga yaqinlashadi. Bo'lsa ilova `live` o'rniga shuni ko'rsatadi.
+   */
+  fleet?: FleetTruck[];
+};
+
+/** Logistika xaritasidagi bitta reys — GPS bo'lmasa `gps` null, lekin qator ro'yxatda turadi. */
+export type FleetTruck = {
+  tripId: string;
+  /** Nakladnoy raqami (ECO `ref` ham shu) */
+  ref: string;
+  plate: string;
+  driver: string;
+  driverPhone: string | null;
+  customer: string;
+  address: string;
+  /** Bosqich nomi va rangi — TRIP_PHASE dan */
+  phase: string;
+  tone: Tone;
+  /** Rejadagi soat "HH:MM" yoki null */
+  plannedAt: string | null;
+  /** "+25 daq" / "o'z vaqtida" / null */
+  delay: string | null;
+  delayTone: Tone | null;
+  openIssues: number;
+  gps: { lat: number; lng: number; at: string; etaMin: number | null; km: number | null } | null;
 };
 
 /** Xaritadagi bitta mashina. `km` — reys boshidan beri GPS izi bo'yicha yurilgan yo'l. */
@@ -156,23 +191,6 @@ async function supplySection(title: string, empty: string, status: ("NEW" | "PRI
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const startOfMonth = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; };
-const sum = (n: unknown) => Number(n ?? 0);
-const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
-const short = (n: number) =>
-  n >= 1_000_000_000 ? `${(n / 1_000_000_000).toFixed(1)} mlrd` : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n >= 100_000_000 ? 0 : 1)} mln` : n >= 1_000 ? `${Math.round(n / 1_000)} ming` : String(Math.round(n));
-/** Miqdor mahsulotning o'z birligida: beton m³, ustun/blok dona. */
-const num = (n: number) => n.toFixed(n % 1 ? 1 : 0);
-const inUnit = (n: number, unit: string | null) => (unit ? `${num(n)} ${unitLabel(unit)}` : num(n));
-/** Aralash birlikli hajm: "12 m³ · 500 dona" — m³ bilan dona qo'shilmaydi. */
-const totalsText = (rows: UnitRow[]) => {
-  const t = unitTotals(rows);
-  return t.length ? t.map((x) => inUnit(x.qty, x.unit)).join(" · ") : "0";
-};
-/** Reys miqdori zayavkadagi mahsulot birligida (aralash bo'lsa — birliksiz son). */
-const tripQty = (t: { qtyM3: unknown; order: { items: { qtyM3: UnitRow["qty"]; product: { unit: string } }[] } }) =>
-  inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))));
-const time = (d: Date) => d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 
 const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CONFIRMED: "brand", IN_PRODUCTION: "warning", DELIVERED: "success", CLOSED: "success", CANCELLED: "danger" };
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
@@ -214,6 +232,20 @@ async function cashBalance() {
   return sum(pay._sum.amount) + sum(income) - sum(expense);
 }
 
+/** Dashboard qoplab olgan eski "hozirgi holat" kartalari — ikki marta chiqmasin (kalitlar shu fayldagi `cards.push` lardan). */
+const DASH_COVERS: Partial<Record<Role, string[]>> = {
+  SALES: ["m3", "sum"],
+  SUPERVISOR: ["tasks", "left", "overdue", "today"],
+  BRIGADIER: ["tasks", "left", "overdue", "today"],
+  LOGISTICS: ["cost"],
+  WAREHOUSE: ["low"],
+  PROCUREMENT: ["month", "docs", "suppliers"],
+  ACCOUNTING: ["debt", "open"],
+  FINANCE: ["balance"],
+  CASHIER: ["balance"],
+  HR: ["active"],
+};
+
 export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise<MobileHome> {
   const list = ROLE_LIST[user.role];
   // "+" tugmasi — rolning asosiy hujjati; qolgan formalar va ro'yxatlar "Tezkor amallar" to'rida.
@@ -229,9 +261,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     create: creatable ? { key: creatable, label: CREATE_ROLES[creatable].label } : null,
     quick,
   };
-  const cards: HomeCard[] = [];
+  let cards: HomeCard[] = [];
   const sections: HomeSection[] = [];
   const today = startOfToday();
+  // Logistika xaritasi: `live` bir marta olinadi va fleet bilan bo'lishiladi
+  let live: LiveTruck[] | null = null;
+  let fleet: FleetTruck[] | undefined;
 
   switch (user.role) {
     case "DIRECTOR": {
@@ -427,13 +462,27 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
           return { id: tripId ?? `a${i}`, title: a.title, subtitle: a.text, tone: a.level === "crit" ? "danger" as Tone : "warning" as Tone, ...(tripId ? {} : { open: a.href.includes("orderId") || a.href.startsWith("/orders") ? "orders" : "trips" }) };
         }) });
       }
+      // Faol reyslar — ro'yxat emas, xarita: ilova `fleet` ni xarita + mashinalar ro'yxati qilib chizadi
+      // (vebdagi logistika paneli bilan bir xil). GPS'siz reys ham ro'yxatda turadi — "GPS yo'q" belgisi bilan.
+      live = await liveTrucks(user);
+      const byRef = new Map(live.map((l) => [l.ref, l]));
       const active = d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status));
-      sections.push({ title: "Faol reyslar", empty: "Faol reys yo'q", target: "trips", rows: active.map((t) => ({
-        id: t.id, title: `${t.noteNo} · ${t.customer}`,
-        subtitle: `${t.driver} · ${t.plate}${t.fix?.etaMin != null && t.phase === "ON_ROAD" ? ` · ETA ${t.fix.etaMin} daq` : ""}${t.delayMin && t.delayMin > 0 ? ` · +${t.delayMin} daq` : ""}`,
-        right: `${t.qty} ${t.unit === "m3" ? "m³" : t.unit}`, status: TRIP_PHASE[t.phase].label,
-        tone: t.openIssues ? "danger" as Tone : t.level === "crit" ? "danger" as Tone : t.level === "warn" ? "warning" as Tone : TRIP_TONE[t.status],
-      })) });
+      fleet = active.map((t) => {
+        const l = byRef.get(t.noteNo);
+        const gps = l ? { lat: l.lat, lng: l.lng, at: new Date().toISOString(), etaMin: l.etaMin, km: l.km }
+          : t.fix ? { lat: t.fix.lat, lng: t.fix.lng, at: t.fix.at.toISOString(), etaMin: t.fix.etaMin, km: null } : null;
+        const ph = TRIP_PHASE[t.phase];
+        return {
+          tripId: t.id, ref: t.noteNo, plate: t.plate, driver: t.driver, driverPhone: t.driverPhone,
+          customer: t.customer, address: t.address,
+          phase: ph.label, tone: t.openIssues ? "danger" as Tone : TRIP_TONE[t.status] ?? "info",
+          plannedAt: t.plannedAt ? time(t.plannedAt) : null,
+          delay: t.delayMin == null ? null : t.delayMin <= 0 ? "o'z vaqtida" : `+${minutesLabel(t.delayMin)}`,
+          delayTone: t.delayMin == null || t.delayMin <= 0 ? null : t.level === "crit" ? "danger" : t.level === "warn" ? "warning" : "info",
+          openIssues: t.openIssues,
+          gps,
+        };
+      });
       const waiting = d.orders.filter((o) => o.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(o.status));
       if (waiting.length) sections.push({ title: "Transport kutayotgan buyurtmalar", empty: "", target: "orders", rows: waiting.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.deliveryTime ?? "soatsiz"} · ${o.address}`, right: `${o.remaining} ${o.unit === "m3" ? "m³" : o.unit}`, tone: o.late ? "danger" as Tone : "warning" as Tone })) });
       break;
@@ -630,7 +679,17 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     }
   }
 
-  return { ...base, cards, sections, live: await liveTrucks(user) };
+  // Rol dashboardi (davr filtri, KPI, diagrammalar) — direktordan tashqari hammaga; bosh ko'rsatkich
+  // dashboardniki, hozirgi holat kartalari va ro'yxatlar undan keyin turadi (`lib/mobile/dashboard.ts`).
+  if (user.role !== "DIRECTOR") {
+    const dash = await roleDashboard(user, dashRange(opts));
+    if (dash) {
+      const drop = new Set(DASH_COVERS[user.role] ?? []);
+      cards = [dash.hero, ...dash.tiles, ...cards.filter((c) => !drop.has(c.key))];
+      sections.unshift(...dash.charts);
+    }
+  }
+  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(fleet ? { fleet } : {}) };
 }
 
 /**

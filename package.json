@@ -13,6 +13,7 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "tsx scripts/reset-data.ts",
+    "db:test-users": "tsx scripts/test-users.ts",
     "db:studio": "prisma studio",
     "bot": "tsx watch --clear-screen=false scripts/telegram-bot.ts",
     "ai": "tsx scripts/ai-ask.ts",

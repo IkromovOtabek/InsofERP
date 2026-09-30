@@ -385,6 +385,13 @@ export type TripArrival = {
   /** Obyektgacha to'g'ri chiziq, metr. Koordinata yoki joylashuv bo'lmasa — null. */
   remainingM: number | null;
   near: boolean;
+  /**
+   * Joylashuv umuman yo'q yoki eskirgan — masofani bilib bo'lmaydi.
+   * Bosqichni haydovchidan boshqa hech kim belgilamaydi, shuning uchun bunday holatda
+   * tugma yopilmaydi: haydovchi belgilaydi, reysga esa "GPS'siz belgilandi" degan muammo
+   * yoziladi — dispetcher ko'rib, hal qilmaguncha reys yopilmaydi.
+   */
+  unknown: boolean;
   /** `near` false bo'lsa — haydovchiga ko'rsatiladigan sabab. */
   reason: string | null;
 };
@@ -392,21 +399,21 @@ export type TripArrival = {
 export async function tripArrival(tripId: string): Promise<TripArrival> {
   const t = await db.trip.findUnique({ where: { id: tripId }, select: { order: { select: { lat: true, lng: true } } } });
   const dest = t?.order.lat != null && t.order.lng != null ? { lat: t.order.lat, lng: t.order.lng } : null;
-  if (!dest) return { destination: null, last: null, remainingM: null, near: true, reason: null };
+  if (!dest) return { destination: null, last: null, remainingM: null, near: true, unknown: false, reason: null };
 
   const p = await db.tripPosition.findFirst({ where: { tripId }, orderBy: { at: "desc" }, select: { lat: true, lng: true, at: true } });
-  if (!p) return { destination: dest, last: null, remainingM: null, near: false, reason: "Joylashuv aniqlanmadi — GPS yoqilganini tekshiring" };
+  if (!p) return { destination: dest, last: null, remainingM: null, near: false, unknown: true, reason: "Joylashuv aniqlanmadi — GPS yoqilganini tekshiring. Belgilasangiz dispetcherga muammo sifatida tushadi" };
 
   const ageMs = Date.now() - p.at.getTime();
   const last = { lat: p.lat, lng: p.lng, at: p.at, ageMs };
   if (ageMs > FIX_MAX_AGE_MS) {
-    return { destination: dest, last, remainingM: null, near: false, reason: "Joylashuv eskirgan — GPS yoqilganini tekshiring" };
+    return { destination: dest, last, remainingM: null, near: false, unknown: true, reason: "Joylashuv eskirgan — GPS yoqilganini tekshiring. Belgilasangiz dispetcherga muammo sifatida tushadi" };
   }
   const remainingM = Math.round(haversineMeters(p.lat, p.lng, dest.lat, dest.lng));
   if (remainingM > ARRIVE_RADIUS_M) {
-    return { destination: dest, last, remainingM, near: false, reason: `Obyektgacha ${distanceLabel(remainingM)} — 1 km qolganda ochiladi` };
+    return { destination: dest, last, remainingM, near: false, unknown: false, reason: `Obyektgacha ${distanceLabel(remainingM)} — 1 km qolganda ochiladi` };
   }
-  return { destination: dest, last, remainingM, near: true, reason: null };
+  return { destination: dest, last, remainingM, near: true, unknown: false, reason: null };
 }
 
 // ───────────────────────── Tayyorlik: nima jo'natish mumkin ─────────────────────────

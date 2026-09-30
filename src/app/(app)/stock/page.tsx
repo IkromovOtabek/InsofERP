@@ -24,7 +24,7 @@ const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBat
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string }> }) {
   const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
   const s = await getSession();
-  const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
+  const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"].includes(s?.role ?? "");
   const [materials, mSums, last] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),

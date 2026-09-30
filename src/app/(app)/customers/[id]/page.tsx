@@ -18,7 +18,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const c = await db.customer.findUnique({ where: { id }, include: { orders: { orderBy: { date: "desc" }, take: 10, include: { items: true } } } });
   if (!c) notFound();
   const [{ limit, debt, open, used, free, blacklisted }, contracted, appStatus] = await Promise.all([customerCredit(id), contractedIds([id]), c.isInternal ? null : customerAppStatus(id)]);
-  const canOrder = ["SALES", "DIRECTOR"].includes(s.role) && c.isActive && !blacklisted;
+  const canOrder = s.role === "SALES" && c.isActive && !blacklisted;
 
   return (
     <div>
@@ -43,7 +43,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         {appStatus && (
           <Card>
             <CardHeader title="Ilova hisobi" icon={Smartphone} description="Mijoz Insof ECO ilovasida zayavkalarini va reyslarini kuzatishi uchun" />
-            <AppAccount customerId={id} phone={c.phone} initial={appStatus} canLink={["SALES", "DIRECTOR"].includes(s.role)} />
+            <AppAccount customerId={id} phone={c.phone} initial={appStatus} canLink={s.role === "SALES"} />
           </Card>
         )}
         <Card padded={false}>

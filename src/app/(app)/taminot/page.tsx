@@ -15,7 +15,7 @@ export default async function TaminotPage({ searchParams }: { searchParams: Prom
   const t = supplyTab(tab);
   const [rows, counts] = await Promise.all([supplyList(t.status), supplyCounts()]);
   const waiting = rows.filter((r) => r.status === "PRICED");
-  const canAsk = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(s.role);
+  const canAsk = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"].includes(s.role);
 
   return (
     <div>

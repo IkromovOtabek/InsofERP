@@ -171,23 +171,25 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "order.confirm": ["SALES"],
   "order.unblock": ["DIRECTOR"],
   "order.cancel": ["SALES"],
-  // Haydovchi reysni ilovadan o'zi harakatlantiradi — lekin faqat o'ziga biriktirilganini
-  // (`assertOwnTrip`, `lib/mobile/actions.ts`). Rol ro'yxati "kim", egalik "qaysi reysni" deydi.
-  "trip.loaded": ["LOGISTICS", "PRODUCTION", "DRIVER"],
-  "trip.onroad": ["LOGISTICS", "PRODUCTION", "DRIVER"],
-  "trip.delivered": ["LOGISTICS", "PRODUCTION", "DRIVER"],
+  // Reys bosqichlarini HAYDOVCHI belgilaydi — o'z ilovasidan, faqat o'ziga biriktirilgan reysda
+  // (`assertOwnTrip`, `lib/mobile/actions.ts`). Dispetcher haydovchi o'rniga bosmaydi: har kim
+  // o'z ishiga javob beradi. "Yuklandi" — zavod tomonidagi tasdiq, shuning uchun ishlab chiqarish ham.
+  "trip.loaded": ["PRODUCTION", "DRIVER"],
+  "trip.onroad": ["DRIVER"],
+  "trip.delivered": ["DRIVER"],
   // Marshrutni ochish — ilova ichidagi ish, holatni o'zgartirmaydi. Ro'yxatda turishi
   // shuning uchun: `local` ni tushunmaydigan eski ilova baribir serverga murojaat qiladi,
   // va "Bunday amal yo'q" degan xato o'rniga bo'sh javob olsin.
-  "trip.route": ["LOGISTICS", "DRIVER"],
+  "trip.route": ["DRIVER"],
+  // Dispetcherning o'z ishi: reysni ochish/bekor qilish, ECO'ga yuborish, muammoni hal qilish, yopish
   "trip.cancel": ["LOGISTICS"],
   "trip.eco": ["LOGISTICS"],
-  // Logistika TZ: obyektga keldi → tushirilmoqda → yetkazildi → zavodga qaytdi → yopildi; muammo; yoqilg'i
-  "trip.arrived": ["LOGISTICS", "DRIVER"],
-  "trip.unloading": ["LOGISTICS", "DRIVER"],
-  "trip.returned": ["LOGISTICS", "DRIVER"],
+  // Logistika TZ: obyektga keldi → tushirilmoqda → yetkazildi → zavodga qaytdi (haydovchi) → yopildi (dispetcher)
+  "trip.arrived": ["DRIVER"],
+  "trip.unloading": ["DRIVER"],
+  "trip.returned": ["DRIVER"],
   "trip.problem": ["LOGISTICS", "PRODUCTION", "DRIVER"],
-  "trip.fuel": ["LOGISTICS", "DRIVER"],
+  "trip.fuel": ["DRIVER"],
   "trip.close": ["LOGISTICS"],
   // Reysdagi ochiq muammolarni hal qilindi deb yopish (id — reys)
   "trip.resolve": ["LOGISTICS"],
@@ -221,8 +223,12 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supplier.toggle": ["WAREHOUSE", "PROCUREMENT"],
 };
 
-export const can = (user: MobileUser, action: string) =>
-  user.role === "DIRECTOR" || (ACTION_ROLES[action] ?? []).includes(user.role);
+/**
+ * Direktor bu yerda istisno EMAS: u hamma hujjatni ko'radi, lekin tugma faqat ro'yxatda
+ * DIRECTOR yozilgan amallarda chiqadi (blokdan chiqarish kabi). Aks holda direktor ilovasida
+ * "Bog'landim", "Yetkazildi" kabi xodimning ishi turib qoladi va kim javobgar — chalkashadi.
+ */
+export const can = (user: MobileUser, action: string) => (ACTION_ROLES[action] ?? []).includes(user.role);
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
@@ -360,14 +366,16 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       if (dest && !t.arrivedAt) actions.push({ id: "trip.route", label: "Marshrutni ochish", tone: "brand", local: true, effect: { route: true } });
       // TZ: "Yetib keldim" → "Tushirishni boshladim" → "Yetkazdim". Obyektga yaqinlashguncha yopiq (1 km qoidasi).
       if (!t.arrivedAt) {
-        actions.push({ id: "trip.arrived", label: "Yetib keldim", tone: "brand", disabled: arrival ? !arrival.near : false, hint: arrival?.reason ?? undefined });
+        actions.push({ id: "trip.arrived", label: "Yetib keldim", tone: "brand", disabled: arrival ? !arrival.near && !arrival.unknown : false, hint: arrival?.reason ?? undefined });
       } else if (!t.unloadingAt) {
         actions.push({ id: "trip.unloading", label: "Tushirishni boshladim", tone: "brand" });
       }
       // "Yetkazdim" obyektga yaqinlashguncha yopiq turadi — sabab tugma ostida yoziladi.
+      // GPS umuman yo'q bo'lsa (`unknown`) tugma ochiq qoladi: bosqichni boshqa hech kim
+      // belgilamaydi, reysga esa muammo yoziladi — dispetcher tekshiradi.
       actions.push({
         id: "trip.delivered", label: "Yetkazdim", tone: "success", form: RECEIVER_FORM, effect: { track: "stop" },
-        disabled: arrival ? !arrival.near : false, hint: arrival?.reason ?? undefined,
+        disabled: arrival ? !arrival.near && !arrival.unknown : false, hint: arrival?.reason ?? undefined,
       });
     }
     if (recent && !t.returnedAt) actions.push({ id: "trip.returned", label: "Zavodga qaytdim", tone: "brand", confirm: "Zavodga qaytdingizmi? Mashina bo'sh deb belgilanadi." });
@@ -375,16 +383,10 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     if (["LOADED", "ON_ROAD"].includes(t.status)) actions.push({ id: "trip.problem", label: "Muammo", tone: "danger", form: ISSUE_FORM });
     if (["PLANNED", "LOADED", "ON_ROAD"].includes(t.status) || recent) actions.push({ id: "trip.fuel", label: "Yoqilg'i quydim", tone: "warning", form: fuel });
   } else {
-    // Logist/ishlab chiqarish: qadam o'tkazib yuborilgan reysni bir marta yopa olishi kerak,
-    // shuning uchun ularda bir nechta tugma bir vaqtda ochiq turadi.
+    // Zavod tomoni: "Yuklandi" — ishlab chiqarish mikserni yuklab, skladdan chiqimni tasdiqlaydi.
+    // Yo'l bosqichlari (yo'lga chiqdi, obyektga keldi, tushirilmoqda, yetkazildi, qaytdi) bu yerda
+    // YO'Q — ularni haydovchi o'z ilovasidan belgilaydi. Dispetcher esa muammoni hal qiladi va reysni yopadi.
     if (t.status === "PLANNED" && can(user, "trip.loaded")) actions.push({ id: "trip.loaded", label: "Yuklandi", tone: "brand", confirm: "Beton yuklandi deb belgilansinmi? Skladdan chiqim yoziladi." });
-    if (["PLANNED", "LOADED"].includes(t.status) && can(user, "trip.onroad")) actions.push({ id: "trip.onroad", label: "Yo'lga chiqdi", tone: "brand" });
-    if (t.status === "ON_ROAD" && !t.arrivedAt && can(user, "trip.arrived")) actions.push({ id: "trip.arrived", label: "Obyektga keldi", tone: "brand" });
-    if (t.status === "ON_ROAD" && t.arrivedAt && !t.unloadingAt && can(user, "trip.unloading")) actions.push({ id: "trip.unloading", label: "Tushirilmoqda", tone: "brand" });
-    if (["PLANNED", "LOADED", "ON_ROAD"].includes(t.status) && can(user, "trip.delivered")) {
-      actions.push({ id: "trip.delivered", label: "Yetkazildi", tone: "success", form: RECEIVER_FORM });
-    }
-    if (t.status === "DELIVERED" && !t.returnedAt && can(user, "trip.returned")) actions.push({ id: "trip.returned", label: "Zavodga qaytdi", tone: "brand" });
     if (t.status === "DELIVERED" && !t.closedAt && can(user, "trip.close")) {
       actions.push({ id: "trip.close", label: "Reysni yopish", tone: "success", form: closeForm(Number(t.qtyM3), t.acceptedQty != null ? Number(t.acceptedQty) : null, t.returnedQty != null ? Number(t.returnedQty) : null), disabled: openIssues.length > 0, hint: openIssues.length ? "Avval ochiq muammoni hal qiling" : undefined });
     }

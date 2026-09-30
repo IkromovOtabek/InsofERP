@@ -209,7 +209,8 @@ export async function priceSupplyRequest(
     await event(tx, id, "PRICED", userId, `Jami ${ROUND(total)} so'm${delivery > 0 ? ` (dostavka ${ROUND(delivery)})` : ""}${input.note ? ` · ${input.note}` : ""}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "PRICED", total });
   });
-  notifyAfter(() => notifyRoles(["SALES", "DIRECTOR"], {
+  // Tasdiq — sotuv (ma'sul xodim) ishi; direktorga bu bosqich haqida xabar ketmaydi
+  notifyAfter(() => notifyRoles(["SALES"], {
     type: "SUPPLY_PRICED",
     title: `Ta'minot narxlandi — ${req.docNo}`,
     body: `Jami ${ROUND(total)} so'm — tasdiq kutilmoqda`,

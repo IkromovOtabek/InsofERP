@@ -74,8 +74,9 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   brigades: { roles: ["SUPERVISOR", "PRODUCTION", "HR"], title: "Yangi brigada", label: "Brigada ochish" },
 };
 
+// Direktor hujjat ochmaydi — zayavka sotuvchining, reys dispetcherning ishi; u nazorat qiladi.
 export const canCreate = (user: MobileUser, key: string) =>
-  !!CREATE_ROLES[key] && (user.role === "DIRECTOR" || CREATE_ROLES[key].roles.includes(user.role));
+  !!CREATE_ROLES[key] && CREATE_ROLES[key].roles.includes(user.role);
 
 const NEW_CUSTOMER = "__new__";
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;

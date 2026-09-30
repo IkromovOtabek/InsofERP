@@ -40,6 +40,8 @@ export type LMarker = {
   addTo: (m: LMap) => LMarker;
   bindPopup: (html: string) => LMarker;
   setLatLng: (c: [number, number]) => LMarker;
+  getLatLng: () => { lat: number; lng: number };
+  openPopup: () => LMarker;
   on: (ev: string, fn: () => void) => LMarker;
 };
 export type LLayer = { addTo: (m: LMap) => LLayer; on: (ev: string, fn: () => void) => LLayer; bindTooltip: (html: string, o?: unknown) => LLayer };

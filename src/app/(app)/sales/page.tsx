@@ -34,7 +34,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const paid = rows.reduce((a, r) => a + r.paid, 0);
   const receivable = rows.reduce((a, r) => a + Math.max(0, r.invoiced - r.paid), 0);
   const noInvoice = rows.filter((r) => r.o.invoices.length === 0 && r.o.status !== "CLOSED").length;
-  const canInvoice = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s?.role ?? "");
+  const canInvoice = ["ACCOUNTING", "SALES"].includes(s?.role ?? "");
 
   const tabs = [{ key: "", label: "Hammasi", href: "/sales" }, ...SALES_STATUSES.map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: `/sales?status=${k}` }))];
 

@@ -2,12 +2,12 @@ import Link from "next/link";
 import {
   AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Coins, Gauge, Layers, Route, Timer, Truck, Wrench,
 } from "lucide-react";
-import { logisticsDashboard, type DashOrder } from "@/lib/logistics-dashboard";
-import { minutesLabel, VEHICLE_TYPE } from "@/lib/logistics";
+import { logisticsDashboard, type DashOrder, type DashTrip } from "@/lib/logistics-dashboard";
+import { minutesLabel, TRIP_PHASE, VEHICLE_TYPE } from "@/lib/logistics";
 import { date, fmtNum, isoDate, money, moneyShort, qty } from "@/lib/format";
-import { Badge, Card, CardHeader, Empty, LinkButton, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { LiveDrivers } from "../trips/live-drivers";
-import { DelayText, LevelDot, OrderLogiBadge, PhaseBadge, TripLink, unitShort, VehicleLiveBadge } from "../logistika/ui";
+import { Badge, Card, CardHeader, Empty, LinkButton, Progress, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { FleetMap, type FleetTrip } from "./fleet-map";
+import { LevelDot, OrderLogiBadge, TripLink, unitShort, VehicleLiveBadge } from "../logistika/ui";
 
 /**
  * Logistika bosh sahifasi (Biton Logistika TZ, 3-bo'lim) — dispetcher va logistika rahbarining
@@ -15,7 +15,19 @@ import { DelayText, LevelDot, OrderLogiBadge, PhaseBadge, TripLink, unitShort, V
  * Raqamlar — `logisticsDashboard()` dan; bu fayl faqat chizadi.
  */
 
-const hm = (d: Date | null) => (d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "—");
+/** Faol reys → xarita komponentiga (client) beriladigan tayyor satr: sanalar ISO, bosqich va kechikish matn. */
+function toFleetTrip(t: DashTrip): FleetTrip {
+  const ph = TRIP_PHASE[t.phase];
+  return {
+    id: t.id, noteNo: t.noteNo, plate: t.plate, driver: t.driver, driverPhone: t.driverPhone,
+    customer: t.customer, address: t.address,
+    phase: { label: ph.label, color: ph.color }, onRoad: t.status === "ON_ROAD" && !t.arrivedAt,
+    plannedAt: t.plannedAt ? t.plannedAt.toISOString() : null,
+    delay: t.delayMin == null ? { text: "—", level: null } : t.delayMin <= 0 ? { text: "o'z vaqtida", level: null } : { text: `+${minutesLabel(t.delayMin)}`, level: t.level },
+    openIssues: t.openIssues,
+    fix: t.fix ? { lat: t.fix.lat, lng: t.fix.lng, at: t.fix.at.toISOString(), etaMin: t.fix.etaMin, remainingKm: t.fix.remainingKm } : null,
+  };
+}
 
 /** Kun jadvali (TZ 13): soat o'qi 06:00–22:00, har zayavka — qator, reyslar — bo'laklar. */
 function Timeline({ orders, now, isToday }: { orders: DashOrder[]; now: Date; isToday: boolean }) {
@@ -97,6 +109,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
   const onTripOrLoading = d.vehicles.filter((v) => ["ON_TRIP", "LOADING", "ASSIGNED", "RETURNING"].includes(v.live)).length;
   const maxWeek = Math.max(1, ...d.week.map((w) => w.m3));
   const pumpFleet = d.vehicles.filter((v) => v.type === "PUMP" && v.live !== "INACTIVE");
+  const activeTrips = d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status)).map(toFleetTrip);
 
   return (
     <div className="space-y-5">
@@ -127,14 +140,16 @@ export async function LogisticsHome({ day }: { day?: Date }) {
         <StatCard label="O'rtacha yetkazish" value={minutesLabel(k.avgDeliveryMin)} hint="yuklashdan topshirishgacha" icon={Timer} href="/logistika/analitika" />
       </div>
 
-      {/* ── Ogohlantirishlar + jonli xarita ── */}
-      <div className="grid gap-5 xl:grid-cols-5">
-        <Card className="xl:col-span-2">
+      {/* ── Faol reyslar: xarita + o'ng tomonda reysdagi mashinalar (bosilsa xaritada ko'rsatadi) ── */}
+      <FleetMap trips={activeTrips} isToday={d.isToday} gpsError={d.gpsError} />
+
+      {/* ── Ogohlantirishlar ── */}
+      <Card>
           <CardHeader title="Ogohlantirishlar" description={d.alerts.length ? `${d.alerts.length} ta — kritiklar yuqorida` : "Hammasi joyida"} icon={AlertTriangle} />
           {d.alerts.length === 0 ? (
             <p className="text-sm text-emerald-700">Kechikish, reyssiz zayavka yoki muammo yo'q.</p>
           ) : (
-            <ul className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            <ul className="grid max-h-[320px] gap-2 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
               {d.alerts.slice(0, 30).map((a, i) => (
                 <li key={i}>
                   <Link href={a.href} className={`block rounded-lg border px-3 py-2 text-sm hover:shadow-sm ${a.level === "crit" ? "border-red-200 bg-red-50" : a.level === "warn" ? "border-amber-200 bg-amber-50" : "border-slate-200"}`}>
@@ -145,12 +160,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
               ))}
             </ul>
           )}
-        </Card>
-        <div className="xl:col-span-3">
-          {d.isToday ? <LiveDrivers title="Jonli xarita" /> : <Card><p className="text-sm text-slate-500">Jonli xarita faqat bugungi kunda. O'tgan kun izi — reys kartasida.</p></Card>}
-          {d.gpsError && <p className="mt-2 text-xs text-amber-700">ECO GPS: {d.gpsError}</p>}
-        </div>
-      </div>
+      </Card>
 
       {/* ── Kun jadvali ── */}
       <Card>
@@ -158,29 +168,6 @@ export async function LogisticsHome({ day }: { day?: Date }) {
           action={<Link href="/logistika/kalendar" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Kalendar <ArrowRight size={14} /></Link>} />
         <Timeline orders={d.orders} now={now} isToday={d.isToday} />
       </Card>
-
-      {/* ── Yo'ldagi reyslar ── */}
-      <Section title="Faol reyslar" action={<Link href="/trips" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Hammasi <ArrowRight size={14} /></Link>}>
-        <Card padded={false}>
-          <Table>
-            <thead><tr><Th>Nakladnoy</Th><Th>Mijoz / obyekt</Th><Th>Transport</Th><Th>Bosqich</Th><Th>Reja</Th><Th>ETA</Th><Th>Kechikish</Th></tr></thead>
-            <tbody>
-              {d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status)).length === 0 && <Empty text="Faol reys yo'q" />}
-              {d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status)).map((t) => (
-                <Tr key={t.id}>
-                  <Td><TripLink id={t.id} noteNo={t.noteNo} />{t.openIssues > 0 && <div><Badge color="red">muammo</Badge></div>}</Td>
-                  <Td><div className="font-medium">{t.customer}</div><div className="max-w-[16rem] truncate text-xs text-slate-500">{t.address}</div></Td>
-                  <Td><div className="tabular">{t.plate}</div><div className="text-xs text-slate-500">{t.driver}</div></Td>
-                  <Td><PhaseBadge phase={t.phase} /></Td>
-                  <Td className="tabular">{hm(t.plannedAt)}</Td>
-                  <Td className="tabular">{t.fix?.etaMin != null && t.phase === "ON_ROAD" ? `${t.fix.etaMin} daq` : "—"}{t.fix?.remainingKm != null && t.phase === "ON_ROAD" ? <div className="text-xs text-slate-500">{t.fix.remainingKm.toFixed(1)} km</div> : null}</Td>
-                  <Td><DelayText min={t.delayMin} level={t.level} /></Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
-        </Card>
-      </Section>
 
       {/* ── Transport + haydovchilar ── */}
       <div className="grid gap-5 xl:grid-cols-2">

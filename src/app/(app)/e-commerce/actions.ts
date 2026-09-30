@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import { removeShopPhoto, saveShopPhoto } from "@/lib/uploads";
 import { audit } from "@/lib/audit";
+import { shopDiff, shopItemSnapshot } from "@/lib/shop-history";
 
 const ROLES = ["SALES", "DIRECTOR"] as const;
 
@@ -57,7 +58,12 @@ export async function saveShopItem(productId: string, _prev: ActionState, fd: Fo
   const item = await db.shopItem.upsert({ where: { productId }, create: { productId, ...data }, update: data });
   if (saved && prev?.photo) await removeShopPhoto(prev.photo);
 
-  await audit(db, s.userId, prev ? "UPDATE" : "CREATE", "ShopItem", item.id, prev, { product: product.name, ...data });
+  // Tarix: faqat haqiqatan o'zgargan saqlash yoziladi (bo'sh "Saqlash" bosish shovqin qilmaydi)
+  const before = shopItemSnapshot(prev);
+  const after = { ...data, price: d.price, minQty: d.minQty };
+  if (!prev || shopDiff("ShopItem", before, after).length) {
+    await audit(db, s.userId, prev ? "UPDATE" : "CREATE", "ShopItem", item.id, before && { product: product.name, ...before }, { product: product.name, ...after });
+  }
   revalidatePath("/e-commerce");
   return { ok: true };
 }
@@ -65,18 +71,21 @@ export async function saveShopItem(productId: string, _prev: ActionState, fd: Fo
 /** Bitta tugma bilan chiqarish/yashirish — ro'yxatda tez ishlash uchun. */
 export async function toggleShopItem(productId: string, on: boolean) {
   const s = await requireSession([...ROLES]);
-  const item = await db.shopItem.upsert({ where: { productId }, create: { productId, isPublished: on }, update: { isPublished: on } });
-  await audit(db, s.userId, "STATUS_CHANGE", "ShopItem", item.id, { isPublished: !on }, { isPublished: on });
+  const prev = await db.shopItem.findUnique({ where: { productId }, select: { isPublished: true, product: { select: { name: true } } } });
+  if (prev?.isPublished === on) return;
+  const item = await db.shopItem.upsert({ where: { productId }, create: { productId, isPublished: on }, update: { isPublished: on }, include: { product: { select: { name: true } } } });
+  await audit(db, s.userId, "STATUS_CHANGE", "ShopItem", item.id, { product: item.product.name, isPublished: prev?.isPublished ?? false }, { product: item.product.name, isPublished: on });
   revalidatePath("/e-commerce");
 }
 
 /** Suratni olib tashlash — ilovada ikonka ko'rinadi. */
 export async function deleteShopPhoto(productId: string) {
-  await requireSession([...ROLES]);
-  const item = await db.shopItem.findUnique({ where: { productId }, select: { photo: true } });
+  const s = await requireSession([...ROLES]);
+  const item = await db.shopItem.findUnique({ where: { productId }, select: { id: true, photo: true, product: { select: { name: true } } } });
   if (!item?.photo) return;
   await db.shopItem.update({ where: { productId }, data: { photo: null } });
   await removeShopPhoto(item.photo);
+  await audit(db, s.userId, "UPDATE", "ShopItem", item.id, { product: item.product.name, photo: item.photo }, { product: item.product.name, photo: null });
   revalidatePath("/e-commerce");
 }
 
@@ -106,15 +115,15 @@ export async function saveBanner(id: string | null, _prev: ActionState, fd: Form
   const data = { ...d, ...(saved ? { image: saved.stored } : {}) };
   const b = id ? await db.shopBanner.update({ where: { id }, data }) : await db.shopBanner.create({ data });
   if (saved && prev?.image) await removeShopPhoto(prev.image);
-  await audit(db, s.userId, prev ? "UPDATE" : "CREATE", "ShopBanner", b.id, prev, data);
+  if (!prev || shopDiff("ShopBanner", prev, data).length) await audit(db, s.userId, prev ? "UPDATE" : "CREATE", "ShopBanner", b.id, prev, data);
   revalidatePath("/e-commerce");
   return { ok: true };
 }
 
 export async function toggleBanner(id: string, on: boolean) {
   const s = await requireSession([...ROLES]);
-  await db.shopBanner.update({ where: { id }, data: { isActive: on } });
-  await audit(db, s.userId, "STATUS_CHANGE", "ShopBanner", id, { isActive: !on }, { isActive: on });
+  const b = await db.shopBanner.update({ where: { id }, data: { isActive: on } });
+  await audit(db, s.userId, "STATUS_CHANGE", "ShopBanner", id, { title: b.title, isActive: !on }, { title: b.title, isActive: on });
   revalidatePath("/e-commerce");
 }
 

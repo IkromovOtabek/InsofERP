@@ -18,8 +18,12 @@ export type MapTrip = {
 const TRACK_COLOR = "#009ef5";
 const START_COLOR = "#00b34d";
 
-/** Yo'ldagi mashinalar va tanlangan reysning izi. Tayl manbai `lib/leaflet.ts` da. */
-export function LiveMap({ trips, track }: { trips: MapTrip[]; track: [number, number][] | null }) {
+/**
+ * Yo'ldagi mashinalar va tanlangan reysning izi. Tayl manbai `lib/leaflet.ts` da.
+ * `focus` — ro'yxatdan tanlangan mashina (`ref`): xarita unga yaqinlashadi va oynasini ochadi.
+ * `onSelect` — xaritadagi belgini bosganda ro'yxatga xabar.
+ */
+export function LiveMap({ trips, track, focus, onSelect }: { trips: MapTrip[]; track: [number, number][] | null; focus?: string | null; onSelect?: (ref: string) => void }) {
   const el = useRef<HTMLDivElement | null>(null);
   const map = useRef<LMap | null>(null);
   const marks = useRef<Map<string, LMarker>>(new Map());
@@ -52,17 +56,30 @@ export function LiveMap({ trips, track }: { trips: MapTrip[]; track: [number, nu
         iconSize: [0, 0],
         iconAnchor: [20, 10],
       });
-      marks.current.set(t.ref, L.marker(pos, { icon }).addTo(m).bindPopup(t.popup));
+      const mk = L.marker(pos, { icon }).addTo(m).bindPopup(t.popup);
+      if (onSelect) mk.on("click", () => onSelect(t.ref));
+      marks.current.set(t.ref, mk);
     }
     // Yo'lda qolmagan reyslarning belgisi olib tashlanadi
     for (const [ref, mk] of marks.current) {
       if (!seen.has(ref)) { m.removeLayer(mk); marks.current.delete(ref); }
     }
-    if (track) return; // iz ochiq — ko'rinishni surmaymiz
+    if (track || focus) return; // iz ochiq yoki mashina tanlangan — ko'rinishni surmaymiz
     const pts = trips.map((t) => [t.lat, t.lng] as [number, number]);
     if (pts.length === 1) m.setView(pts[0], 13);
     else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
-  }, [trips, track]);
+  }, [trips, track, focus, onSelect]);
+
+  // ── tanlangan mashinaga yaqinlashish ──
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !focus) return;
+    const mk = marks.current.get(focus);
+    if (!mk) return;
+    const c = mk.getLatLng();
+    m.setView([c.lat, c.lng], 15);
+    mk.openPopup();
+  }, [focus, trips]);
 
   // ── yo'l chizig'i ──
   useEffect(() => {

@@ -91,6 +91,14 @@ async function assertOwnTrip(user: MobileUser, tripId: string) {
   if (!t || t.driverId !== (await driverEmployeeId(user.id))) fail("Bu reys sizga biriktirilmagan", 403);
 }
 
+/**
+ * Haydovchi bosqichni GPS'siz belgiladi — reysga ochiq muammo yoziladi. Dispetcher uni hal
+ * qilmaguncha reys yopilmaydi (`tripClosed` qoidasi), ya'ni tekshiruv dispetcherda qoladi.
+ */
+async function gpsIssue(tripId: string, userId: string, step: string) {
+  await reportTripIssue(tripId, userId, { kind: "OTHER", note: `"${step}" GPS'siz belgilandi — joylashuv aniqlanmagan, tekshiring`, source: "DRIVER" }).catch(() => undefined);
+}
+
 /** Brigadir faqat O'Z brigadasiga tayinlangan topshiriqni qayd qiladi — reysdagi qoidaning aynan o'zi. */
 async function assertOwnTask(user: MobileUser, taskId: string) {
   if (user.role !== "BRIGADIER") return;
@@ -149,17 +157,17 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       if (!p.success) fail(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       // Haydovchi reysni faqat obyektda yopadi. Tugma ilovada ham yopiq turadi, lekin
       // qoida shu yerda ham tekshiriladi: so'rov ilovadan tashqari ham yuborilishi mumkin.
-      // Logist/ishlab chiqarish bunga tushmaydi — GPS ishlamay qolgan reysni ular yopadi.
-      if (user.role === "DRIVER") {
-        const near = await tripArrival(id);
-        if (!near.near) fail(near.reason ?? "Obyektga yetib borilmagan");
-      }
+      // GPS umuman yo'q bo'lsa (`unknown`) — belgilashga ruxsat, lekin reysga muammo yoziladi:
+      // bosqichni haydovchidan boshqa hech kim belgilamaydi, dispetcher esa tekshirib yopadi.
+      const gps = await tripArrival(id);
+      if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
       const q = { acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: p.data!.note || null };
       const r = await tripDelivered(id, user.id, p.data!.receiverName, p.data!.note, q);
       if (r.error) fail(r.error);
       if (!r.changed) fail("Holat mos emas");
+      if (gps.unknown) await gpsIssue(id, user.id, "Yetkazdim");
       if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${p.data!.receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));
-      return { ok: true, message: "Yetkazildi deb belgilandi" };
+      return { ok: true, message: gps.unknown ? "Yetkazildi deb belgilandi — GPS bo'lmagani dispetcherga muammo sifatida yuborildi" : "Yetkazildi deb belgilandi" };
     }
     // Marshrut ekrani — ilova ichidagi ish. Yangi ilova buni serverga umuman yubormaydi
     // (`local: true`), lekin eski ilova yuboradi: holat o'zgarmaydi, xato ham chiqmaydi.
@@ -173,12 +181,11 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     }
     // ── Logistika TZ: obyekt bosqichlari, muammo, yoqilg'i, yopish ──
     case "trip.arrived": {
-      if (user.role === "DRIVER") {
-        const near = await tripArrival(id);
-        if (!near.near) fail(near.reason ?? "Obyektga yetib borilmagan");
-      }
-      const r = await tripArrived(id, user.id, user.role === "DRIVER" ? "Haydovchi ilovasi" : "Dispetcher (ilova)");
+      const gps = await tripArrival(id);
+      if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
+      const r = await tripArrived(id, user.id, gps.unknown ? "Haydovchi ilovasi (GPS'siz)" : "Haydovchi ilovasi");
       if (r.error) fail(r.error);
+      if (r.changed && gps.unknown) await gpsIssue(id, user.id, "Yetib keldim");
       if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "ARRIVED"));
       return { ok: true, message: "Obyektga yetib keldi" };
     }

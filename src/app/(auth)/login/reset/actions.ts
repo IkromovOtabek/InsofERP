@@ -6,7 +6,7 @@ import { confirmPasswordReset, requestPasswordReset, type ResetVia } from "@/lib
 export type RequestState = { error?: string; sent?: boolean; via?: ResetVia; devCode?: string } | undefined;
 export type ConfirmState = { error?: string; login?: string } | undefined;
 
-/** 1-qadam: telefon → kod (Telegram bot, ulanmagan bo'lsa SMS). */
+/** 1-qadam: telefon → kod (Telegram bot; SMS zaxirasi RESET_SMS_FALLBACK=1 bilan). */
 export async function requestCodeAction(_prev: RequestState, fd: FormData): Promise<RequestState> {
   const phone = String(fd.get("phone") ?? "");
   if (!phone.trim()) return { error: "Telefon raqamini kiriting" };

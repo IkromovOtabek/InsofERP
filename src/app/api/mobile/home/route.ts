@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   // Karta filtrlari (masalan `?revenue=week`) — ilova karta ostidagi tugma bosilganda yuboradi
   const sp = new URL(req.url).searchParams;
   const opt = (k: string) => sp.get(k) ?? undefined;
-  return handle(async () => mobileHome(await requireMobileUser(req), { revenue: opt("revenue"), from: opt("from"), to: opt("to") }));
+  return handle(async () => mobileHome(await requireMobileUser(req), { revenue: opt("revenue"), period: opt("period"), from: opt("from"), to: opt("to") }));
 }
 
 export const OPTIONS = preflight;

@@ -17,14 +17,16 @@ import { GrowLine, Lift, Reveal, StatValue } from "./motion";
 import { AggregateIcon, IconTile, MixerIcon, SlabIcon } from "./icons";
 import { VolumeCalculator } from "./calculator";
 import { MobileBar } from "./mobile-bar";
+import HERO_IMAGE from "../../../public/media/hero.jpg";
 
 /** Narxlar saytda ko'rsatilmaydi — mijoz hajm va manzilga qarab narx so'raydi.
  *  Ko'rsatish kerak bo'lsa shu yerni `true` qilish kifoya. */
 const SHOW_PRICES = false;
 
-/** Hero banneri. Suratni almashtirish uchun shu fayl ustiga yozish kifoya —
- *  kodga tegilmaydi: `public/media/hero.jpg`. */
-const HERO_IMAGE = "/media/hero.jpg";
+/* Hero banneri (`public/media/hero.jpg`) yuqorida statik import qilingan: surat
+ * almashsa URL'dagi hash ham almashadi va `/_next/image` keshi eski suratni bermaydi
+ * (oddiy "/media/hero.jpg" yo'lida kesh kaliti o'zgarmay, serverda eski rasm qolib ketgan).
+ * Almashtirish uchun shu fayl ustiga yozib, qayta build qilish kifoya. */
 
 const CLIPS: Clip[] = [
   { src: "/media/zavod.mp4", poster: "/media/zavod.jpg", title: "Zavod va mikser parki", text: "Avtomatlashtirilgan tugun, o'z transportimiz", meta: "Tugun · mikser parki" },

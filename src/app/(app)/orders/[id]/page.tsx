@@ -71,7 +71,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   for (const x of o.payments) paidMap.set(x.id, Number(x.amount));
   // Sklad zaxirasi zayavkasi: mijoz, narx, schyot, reys — hech biri yo'q
   const isStock = o.kind === "STOCK";
-  const canStock = ([...STOCK_ORDER_ROLES] as string[]).includes(s.role) || s.role === "DIRECTOR";
+  const canStock = ([...STOCK_ORDER_ROLES] as string[]).includes(s.role);
   const canClose = isStock && ["CONFIRMED", "IN_PRODUCTION"].includes(o.status) && canStock;
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
@@ -82,16 +82,17 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const hasContract = !!o.contractNo && o.contractAmount != null;
   const contractAmount = hasContract ? Number(o.contractAmount) : 0;
   const contractLeft = contractAmount - total; // shartnoma summasidan mahsulot summasi ayirilgan qoldiq
-  const canContract = !isStock && ["SALES", "ACCOUNTING", "DIRECTOR"].includes(s.role) && o.status !== "CANCELLED";
+  const canContract = !isStock && ["SALES", "ACCOUNTING"].includes(s.role) && o.status !== "CANCELLED";
   const hasFile = !!o.contractFile;
   const fileHref = `/orders/${id}/contract/file`;
   const accepted = SALES_STATUSES.includes(o.status);
 
-  const isSales = ["SALES", "DIRECTOR"].includes(s.role);
+  // Direktor zayavkani qabul qilmaydi va brigada tayinlamaydi — u faqat blokdan chiqaradi (limit qarori)
+  const isSales = s.role === "SALES";
   const isDirector = s.role === "DIRECTOR";
   const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (o.kind === "STOCK" ? canStock : isSales) && o.batches.length === 0 && o.trips.length === 0;
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
-  const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
+  const isProduction = s.role === "PRODUCTION";
   const needsAssign = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
 
   return (

@@ -25,6 +25,8 @@ step "ERP: bazaga migratsiya"
 npx prisma migrate deploy
 npx prisma generate
 step "ERP: build"
+# /_next/image keshi: public/ dagi surat almashsa ham eski optimallashtirilgan nusxa qolib ketadi.
+rm -rf .next/cache/images
 npm run build
 step "ERP: qayta ishga tushirish"
 sudo systemctl restart insof-erp

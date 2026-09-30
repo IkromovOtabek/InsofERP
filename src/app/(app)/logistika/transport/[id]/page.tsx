@@ -44,7 +44,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
   const monthQty = monthTrips.reduce((a, t) => a + Number(t.qtyM3), 0);
   const monthCost = monthFuel.reduce((a, f) => a + Number(f.amount), 0) + monthExp.reduce((a, e) => a + Number(e.amount), 0);
   const current = v.trips.find((t) => ACTIVE_TRIP.includes(t.status));
-  const canEdit = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  const canEdit = s.role === "LOGISTICS";
 
   return (
     <div>

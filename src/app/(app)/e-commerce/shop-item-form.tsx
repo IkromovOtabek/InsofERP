@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { Check, Eye, EyeOff, ImageIcon, Trash2 } from "lucide-react";
+import { Check, Eye, EyeOff, History, ImageIcon, Trash2 } from "lucide-react";
 import { Badge, Button, Checkbox, Field, FormError, FormSuccess, Input, Textarea } from "@/components/ui";
 import { SHOP_PHOTO_ACCEPT } from "@/lib/shop-upload";
 import { deleteShopPhoto, saveShopItem, toggleShopItem } from "./actions";
@@ -14,6 +15,8 @@ export type ShopRowProduct = {
   strengthClass: string | null;
   price: number;
   group: string | null;
+  /** Oxirgi tahrir (tarixdan) — kim va qachon; havola shu mahsulot tarixiga olib boradi. */
+  lastChange: { itemId: string; user: string; at: string } | null;
   item: {
     isPublished: boolean;
     title: string | null;
@@ -60,6 +63,11 @@ export function ShopItemForm({ p }: { p: ShopRowProduct }) {
             {p.group && <span className="ml-2 text-xs text-slate-400">· {p.group}</span>}
           </div>
           {it?.description && <p className="mt-1 line-clamp-2 text-xs text-slate-500">{it.description}</p>}
+          {p.lastChange && (
+            <Link href={`/e-commerce?tab=tarix&p=${p.lastChange.itemId}`} className="mt-1 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 hover:underline">
+              <History size={12} /> {p.lastChange.user}, {p.lastChange.at} · tarix
+            </Link>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button

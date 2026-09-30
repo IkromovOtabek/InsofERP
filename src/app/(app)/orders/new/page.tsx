@@ -24,7 +24,7 @@ import { canEditProducts } from "@/lib/catalog";
 export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string }> }) {
   const s = await requireSession([...STOCK_ORDER_ROLES]);
   const { customer, tur } = await searchParams;
-  const canSale = ["SALES", "DIRECTOR"].includes(s.role);
+  const canSale = s.role === "SALES";
 
   const [catalog, stock, cashAccounts] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati

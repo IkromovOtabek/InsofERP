@@ -39,7 +39,7 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
   const count = (l: VehicleLive[]) => rows.filter((r) => l.includes(r.live)).length;
   const shown = state ? rows.filter((r) => r.live === state) : rows;
   const docsBad = rows.filter((r) => r.v.isActive && [expiryLevel(r.v.inspectionUntil), expiryLevel(r.v.insuranceUntil)].some((l) => l === "crit" || l === "warn")).length;
-  const canManage = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  const canManage = s.role === "LOGISTICS";
 
   return (
     <div>

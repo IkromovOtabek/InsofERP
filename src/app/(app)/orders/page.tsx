@@ -17,7 +17,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const { status, customer, kun, imported, tur } = await searchParams;
   const s = await requireSession();
   // Ta'minot zayavkasini tasdiqlash shu oynada: narx qo'yilgach ma'sul (sotuv) xodim ko'radi
-  const canApproveSupply = ["SALES", "DIRECTOR"].includes(s.role);
+  const canApproveSupply = s.role === "SALES"; // ta'minot tasdig'i — ma'sul (sotuv) xodimda
   const st = status && PENDING.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
   // Taqvimdan kun tanlansa — o'sha kunga yetkazilishi kerak bo'lgan barcha zayavkalar (holatidan qat'i nazar)
   const day = kun && /^\d{4}-\d{2}-\d{2}$/.test(kun) ? new Date(`${kun}T00:00:00`) : null;

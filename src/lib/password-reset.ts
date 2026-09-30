@@ -7,13 +7,15 @@ import { passwordProblem } from "@/lib/password-policy";
 import { sendSms } from "@/lib/sms";
 import { normalizePhone } from "@/lib/sms/phone";
 import { AMBIGUOUS_PHONE_ERROR, staffByPhone } from "@/lib/phone-lookup";
-import { sendResetCodeToBot } from "@/lib/telegram/notify";
+import { linkedChatId, sendResetCodeToBot } from "@/lib/telegram/notify";
+import { botEnabled } from "@/lib/telegram/api";
 
 /**
  * Parolni xodimning o'zi tiklashi (`/login/reset`) — bir martalik kod orqali.
  *
- * Kod QAYERGA boradi: avval Telegram botiga (xodimning hisobi botga ulangan bo'lsa) —
- * bepul, bir zumda va operatorga bog'liq emas; ulanmagan bo'lsa SMS bilan. Botga ulash
+ * Kod QAYERGA boradi: Telegram botiga (xodimning hisobi botga ulangan bo'lsa) —
+ * bepul, bir zumda va operatorga bog'liq emas. SMS zaxirasi hozircha o'chiq
+ * (`RESET_SMS_FALLBACK=1` bilan qaytadi): bot ulanmagan bo'lsa xodimga qanday ulash aytiladi. Botga ulash
  * uchun parol kerak emas: botda «Telefon raqamimni yuborish» tugmasi bor
  * (`lib/telegram/bot.ts`), ya'ni parolni unutgan odam ham ulay oladi.
  *
@@ -31,6 +33,10 @@ import { sendResetCodeToBot } from "@/lib/telegram/notify";
 const CODE_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_HOUR = 3;
+/** SMS zaxirasi — hozircha o'chiq, kod faqat Telegram botga boradi. */
+const SMS_FALLBACK = process.env.RESET_SMS_FALLBACK === "1";
+const NOT_LINKED_ERROR =
+  "Telegram botga hali ulanmagansiz. Insof ERP botini oching → /start → «Telefon raqamimni yuborish» tugmasini bosing, so'ng shu yerda qayta «Kodni Telegramga yuborish»ni bosing.";
 
 /**
  * `via` — kod qayerga ketdi: ilova sahifada aynan shuni yozadi ("Telegram botga yuborildi").
@@ -49,6 +55,13 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   if (found.kind === "ambiguous") return { ok: false, error: AMBIGUOUS_PHONE_ERROR };
   // Raqam tizimda yo'q — baribir "yuborildi" deymiz, lekin hech narsa yubormaymiz
   if (found.kind === "none") return { ok: true, sent: false };
+
+  // Hozircha kod faqat Telegram botga boradi: bot ulanmagan bo'lsa kod yaratmaymiz
+  // (soatiga 3 ta limit behuda yeyilmasin) va qanday ulashni aytamiz.
+  const botReady = botEnabled();
+  if (!SMS_FALLBACK && botReady && !(await linkedChatId(found.user.id))) {
+    return { ok: false, error: NOT_LINKED_ERROR };
+  }
 
   const recent = await db.passwordResetCode.count({
     where: { phone, createdAt: { gt: new Date(Date.now() - 3600_000) } },
@@ -71,7 +84,18 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   const bot = await sendResetCodeToBot(found.user.id, code);
   if (bot.ok) return { ok: true, sent: true, via: "telegram" };
 
-  // 2) Bot ulanmagan (yoki yubora olmadi) — eski yo'l: SMS
+  if (!SMS_FALLBACK) {
+    // Dev: bot tokeni sozlanmagan bo'lsa oqim to'xtamasin — kod ekranda ko'rinadi. Prodda yopiq.
+    if (!botReady && process.env.NODE_ENV !== "production") return { ok: true, sent: true, via: "telegram", devCode: code };
+    return {
+      ok: false,
+      error: bot.reason === "NOT_LINKED" ? NOT_LINKED_ERROR
+        : bot.reason === "NO_BOT" ? "Telegram bot sozlanmagan — parolni tiklash uchun Otdel kadrga murojaat qiling."
+        : "Kod Telegramga yuborilmadi. Birozdan keyin qayta urining yoki Otdel kadrga murojaat qiling.",
+    };
+  }
+
+  // 2) Bot ulanmagan (yoki yubora olmadi) — eski yo'l: SMS (RESET_SMS_FALLBACK=1 bo'lsagina)
   const sms = await sendSms("reset_code", phone, { code }, { userId: found.user.id, maxPerHour: MAX_CODES_PER_HOUR });
 
   // Dev: Eskiz ulanmagan bo'lsa oqim to'xtamasin — kod ekranda va terminalda ko'rinadi.

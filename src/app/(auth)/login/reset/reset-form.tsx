@@ -54,7 +54,7 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
               </p>
               {req?.devCode && (
                 <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Dev rejimi (SMS ulanmagan) — kod: <b className="tracking-widest">{req.devCode}</b>
+                  Dev rejimi ({req.via === "telegram" ? "bot sozlanmagan" : "SMS ulanmagan"}) — kod: <b className="tracking-widest">{req.devCode}</b>
                 </p>
               )}
               <form action={confirmAction} className="mt-8 space-y-4">
@@ -85,13 +85,13 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
             <>
               <h2 className="text-2xl font-semibold tracking-tight">Parolni tiklash</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Otdel kadrdagi telefon raqamingizni kiriting — kodni Telegram botingizga yuboramiz.
-                Bot ulanmagan bo'lsa kod SMS bilan keladi.
+                Xodimlar bo'limidagi telefon raqamingizni kiriting — tiklash kodi Insof ERP Telegram
+                botiga keladi.
               </p>
               {botUsername && (
                 <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                  Botni hali ulamagan bo'lsangiz: <BotLink username={botUsername} /> → <b>«Telefon raqamimni yuborish»</b>.
-                  Buning uchun parol kerak emas.
+                  Avval botga ulaning: <BotLink username={botUsername} /> → <b>/start</b> → <b>«Telefon raqamimni yuborish»</b>.
+                  Bot raqamingizni Xodimlar bo'limidagi raqam bilan solishtiradi — parol kerak emas.
                 </p>
               )}
               <form action={requestAction} className="mt-8 space-y-4">
@@ -100,7 +100,7 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
                   <Input name="phone" type="tel" inputMode="tel" autoComplete="tel" autoFocus placeholder="90 123 45 67" value={phone} onChange={(e) => setPhone(e.target.value)} />
                 </Field>
                 <Button size="lg" className="w-full" disabled={requesting}>
-                  <MessageSquare size={17} /> {requesting ? "Yuborilmoqda…" : "Kod yuborish"}
+                  <Send size={17} /> {requesting ? "Yuborilmoqda…" : "Kodni Telegramga yuborish"}
                 </Button>
               </form>
             </>

@@ -25,7 +25,13 @@ const companySchema = z.object({
   foundedYear: z.coerce.number().int().min(1900).max(2100).optional().or(z.literal("").transform(() => undefined)),
   // Kunlik ishlab chiqarish quvvati — Zayavkalar taqvimi shu chegaraga qarab rang beradi
   dailyCapacityM3: z.coerce.number().min(1).max(100000).optional().or(z.literal("").transform(() => undefined)),
-});
+  // Mijoz ilovasi "bugungi holat": ochiqmi, bugun yetkaziladimi
+  openHour: z.coerce.number().int().min(0).max(23),
+  closeHour: z.coerce.number().int().min(1).max(24),
+  sameDayCutoffHour: z.coerce.number().int().min(0).max(24),
+  workSunday: zBool,
+  telegram: zOpt,
+}).refine((v) => v.closeHour > v.openHour, { message: "Yopilish soati ochilishdan keyin bo'lsin", path: ["closeHour"] });
 
 export async function saveCompany(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);

@@ -84,6 +84,12 @@ async function CompanyTab() {
         { name: "bankAccount", label: "Hisob raqam", defaultValue: c.bankAccount },
         { name: "mfo", label: "MFO", defaultValue: c.mfo },
         { name: "about", label: "Zavod haqida (mijozlar sahifasida ko'rinadi)", type: "textarea", defaultValue: c.about, className: "sm:col-span-3" },
+        // Mijoz ilovasi bosh sahifasidagi "Hozir ochiq · Bugun yetkazamiz" belgisi shulardan hisoblanadi (Toshkent vaqti)
+        { name: "openHour", label: "Qabul boshlanadi (soat)", type: "number", step: "1", defaultValue: c.openHour, required: true },
+        { name: "closeHour", label: "Qabul tugaydi (soat)", type: "number", step: "1", defaultValue: c.closeHour, required: true },
+        { name: "sameDayCutoffHour", label: "Bugun yetkazish uchun oxirgi soat", type: "number", step: "1", defaultValue: c.sameDayCutoffHour, required: true },
+        { name: "telegram", label: "Telegram (mijozlar uchun)", defaultValue: c.telegram, placeholder: "@insof_beton" },
+        { name: "workSunday", label: "Yakshanba ham ishlaymiz", type: "checkbox", defaultValue: c.workSunday },
       ]} />
       </Card>
       <PlantLocation lat={c.lat} lng={c.lng} />

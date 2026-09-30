@@ -39,6 +39,10 @@ export type ShopSeller = {
   id: string; name: string; legalName: string | null; about: string | null; address: string | null;
   phone: string | null; phone2: string | null; email: string | null; workingHours: string | null;
   foundedYear: number | null; location: { lat: number; lng: number } | null;
+  /** "Bugungi holat" uchun — ilova o'zi Toshkent vaqti bilan hisoblaydi (katalog keshlanadi, holat eskirmasin). */
+  hours: { open: number; close: number; sunday: boolean; sameDayCutoff: number };
+  /** Telegram: `@username` → `https://t.me/username` ga aylantirilgan havola. */
+  telegram: string | null;
 };
 
 /** Bosh sahifa swiper'idagi reklama. */
@@ -50,6 +54,14 @@ export type ShopCatalog = {
   banners: ShopBannerItem[];
   items: ShopCatalogItem[];
 };
+
+/** `@insof_beton`, `insof_beton`, `t.me/x`, `https://t.me/x` → `https://t.me/x`. */
+function telegramUrl(v: string | null | undefined): string | null {
+  const s = v?.trim();
+  if (!s) return null;
+  const m = s.match(/^(?:https?:\/\/)?(?:t\.me|telegram\.me)\/([A-Za-z0-9_+]{3,})\/?$/) ?? s.match(/^@?([A-Za-z0-9_]{4,32})$/);
+  return m ? `https://t.me/${m[1]}` : null;
+}
 
 /** Zavodning ommaviy identifikatori — hozircha bitta; ko'p zavodli bo'lsa CompanySettings.id. */
 export const SELLER_ID = "main";
@@ -79,6 +91,8 @@ export async function shopCatalog(): Promise<ShopCatalog> {
       id: SELLER_ID, name: company.name, legalName: t(company.legalName), about: t(company.about), address: t(company.address),
       phone: t(company.phone), phone2: t(company.phone2), email: t(company.email), workingHours: t(company.workingHours),
       foundedYear: company.foundedYear, location: company.lat != null && company.lng != null ? { lat: company.lat, lng: company.lng } : null,
+      hours: { open: company.openHour, close: company.closeHour, sunday: company.workSunday, sameDayCutoff: company.sameDayCutoffHour },
+      telegram: telegramUrl(company.telegram),
     },
     banners: banners.map((b) => ({ id: b.id, title: b.title, subtitle: t(b.subtitle), image: b.image ? shopPhotoUrl(b.image) : null, productId: b.productId, buttonText: t(b.buttonText) })),
     items: rows.map((r) => ({

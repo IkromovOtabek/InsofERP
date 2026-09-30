@@ -12,7 +12,7 @@ import { saveBrigade, toggleBrigade } from "./actions";
 
 export default async function BrigadesPage() {
   const s = await requireSession(["SUPERVISOR", "PRODUCTION", "HR", "SALES"]);
-  const canEdit = ["PRODUCTION", "HR", "DIRECTOR"].includes(s.role);
+  const canEdit = ["PRODUCTION", "HR"].includes(s.role);
   const [brigades, employees, stocks, undistributed] = await Promise.all([
     // Brigadirning login roli ham kerak: topshiriq ECO ilovasiga faqat BRIGADIER logini bor brigadirga tushadi
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: { include: { user: { select: { role: true, isActive: true } } } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),

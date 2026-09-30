@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Smartphone, ShoppingBag, Store, Inbox, ExternalLink } from "lucide-react";
+import { Smartphone, ShoppingBag, Store, Inbox, ExternalLink, History } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { dateTime, fmtNum } from "@/lib/format";
@@ -9,6 +9,8 @@ import { SHOP_SOURCE } from "@/lib/shop";
 import { Badge, Callout, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ShopItemForm, type ShopRowProduct } from "./shop-item-form";
 import { BannerForm } from "./banner-form";
+import { ShopHistoryList } from "./history";
+import { shopHistory } from "@/lib/shop-history";
 import { isoDate } from "@/lib/format";
 
 const LEAD_STATUS = {
@@ -26,9 +28,9 @@ const LEAD_STATUS = {
  * "Buyurtmalar" tabi: ilovadan tushgan buyurtmalar (Lead, source = eco-shop) — ishlov
  * "Sayt arizalari" sahifasidagi bilan bir xil (bog'lanish, mijozga aylantirish).
  */
-export default async function EcommercePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function EcommercePage({ searchParams }: { searchParams: Promise<{ tab?: string; p?: string }> }) {
   await requireSession(["SALES", "DIRECTOR"]);
-  const { tab = "vitrina" } = await searchParams;
+  const { tab = "vitrina", p: historyFor } = await searchParams;
 
   const [products, leads, banners] = await Promise.all([
     db.product.findMany({
@@ -45,6 +47,14 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
     db.shopBanner.findMany({ orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { createdAt: "desc" }] }),
   ]);
 
+  // Tarix uchun nomlar: ShopItem id va Product id → mahsulot nomi (reklama mahsuloti ham shu yerdan)
+  const names = new Map<string, string>();
+  for (const p of products) { names.set(p.id, p.name); if (p.shopItem) names.set(p.shopItem.id, p.shopItem.title?.trim() || p.name); }
+  const history = await shopHistory({ names, entityIds: tab === "tarix" && historyFor ? [historyFor] : undefined });
+  // Har vitrina qatoriga oxirgi o'zgarish (kim, qachon) — tarix yangidan eskiga tartiblangan
+  const lastChange = new Map<string, { user: string; at: Date }>();
+  for (const h of history) if (h.entity === "ShopItem" && !lastChange.has(h.entityId)) lastChange.set(h.entityId, { user: h.user, at: h.at });
+
   const rows: ShopRowProduct[] = products.map((p) => ({
     id: p.id,
     code: p.code,
@@ -53,6 +63,9 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
     strengthClass: p.strengthClass,
     price: Number(p.price),
     group: p.group?.name ?? null,
+    lastChange: p.shopItem && lastChange.has(p.shopItem.id)
+      ? { itemId: p.shopItem.id, user: lastChange.get(p.shopItem.id)!.user, at: dateTime(lastChange.get(p.shopItem.id)!.at) }
+      : null,
     item: p.shopItem
       ? {
           isPublished: p.shopItem.isPublished,
@@ -92,9 +105,12 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
         { key: "vitrina", label: "Vitrina", href: "/e-commerce?tab=vitrina", count: published.length },
         { key: "reklama", label: "Reklama", href: "/e-commerce?tab=reklama", count: banners.filter((b) => b.isActive).length },
         { key: "buyurtmalar", label: "Buyurtmalar", href: "/e-commerce?tab=buyurtmalar", count: newLeads },
+        { key: "tarix", label: "Tarix", href: "/e-commerce?tab=tarix", icon: History },
       ]} />
 
-      {tab === "buyurtmalar" ? (
+      {tab === "tarix" ? (
+        <ShopHistoryList entries={history} filter={historyFor ? { subject: names.get(historyFor) ?? "Mahsulot" } : undefined} />
+      ) : tab === "buyurtmalar" ? (
         <OrdersTab leads={leads} />
       ) : tab === "reklama" ? (
         <Card>

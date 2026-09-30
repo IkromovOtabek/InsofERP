@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripArrived, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripPickup, tripReturned, tripUnloading, type DeliveryQty } from "@/lib/trips";
+import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
 import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
 import type { FuelType, TransportExpenseKind, TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
@@ -61,9 +61,12 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   redirect(`/trips/${created.id}`);
 }
 
-/** PLANNED → LOADED: tayyor beton skladdan chiqadi (SHIPMENT). */
+// Yo'l bosqichlari (yo'lga chiqdi, obyektga keldi, tushirilmoqda, yetkazildi, qaytdi) vebda YO'Q —
+// ularni haydovchi o'z ilovasidan belgilaydi (`lib/mobile/actions.ts`), ECO webhook'i ham shu yo'ldan keladi.
+
+/** PLANNED → LOADED: mikser zavodda yuklandi, tayyor beton skladdan chiqadi (SHIPMENT). Ishlab chiqarish tasdiqlaydi. */
 export async function markLoaded(id: string) {
-  const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const s = await requireSession(["PRODUCTION"]);
   const r = await tripLoaded(id, s.userId);
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "LOADING"));
   refresh(id, r.orderId); revalidatePath("/stock");
@@ -92,25 +95,7 @@ export async function saveTripPickup(id: string, _prev: ActionState, fd: FormDat
   return { ok: true };
 }
 
-export async function markOnRoad(id: string) {
-  const s = await requireSession(["LOGISTICS"]);
-  const r = await tripOnRoad(id, s.userId);
-  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "EN_ROUTE"));
-  refresh(id, r.orderId);
-}
 
-/** → DELIVERED. Zayavkaning hamma hajmi yetkazilgan bo'lsa — zayavka DELIVERED. */
-export async function markDelivered(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
-  const receiverName = String(fd.get("receiverName") ?? "").trim();
-  if (!receiverName) return { error: "Qabul qilgan shaxsni kiriting" };
-  const q = qtyFrom(fd);
-  const r = await tripDelivered(id, s.userId, receiverName, undefined, q);
-  if (r.error) return { error: r.error };
-  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));
-  refresh(id, r.orderId);
-  return { ok: true };
-}
 
 export async function cancelTrip(id: string) {
   const s = await requireSession(["LOGISTICS"]);
@@ -129,27 +114,8 @@ export async function syncTripWithEco(id: string, mode: "push" | "pull"): Promis
   return r.ok ? { ok: true } : { error: r.error };
 }
 
-// ───────────────────────── Yo'l bosqichlari (Logistika TZ) ─────────────────────────
 
-export async function markArrived(id: string) {
-  const s = await requireSession(["LOGISTICS"]);
-  const r = await tripArrived(id, s.userId, "Dispetcher belgiladi");
-  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "ARRIVED"));
-  refresh(id, r.orderId);
-}
 
-export async function markUnloading(id: string) {
-  const s = await requireSession(["LOGISTICS"]);
-  const r = await tripUnloading(id, s.userId, "Dispetcher belgiladi");
-  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "UNLOADING"));
-  refresh(id, r.orderId);
-}
-
-export async function markReturned(id: string) {
-  const s = await requireSession(["LOGISTICS"]);
-  const r = await tripReturned(id, s.userId);
-  refresh(id, r.orderId);
-}
 
 /** Reysni yopish: qabul qilingan / qaytarilgan miqdor tasdiqlanadi. */
 export async function closeTrip(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {

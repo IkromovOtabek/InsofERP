@@ -52,12 +52,12 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
   const showFact = hasFact(r.items) || r.status === "RECEIVED";
 
   const role = s.role;
-  const isDir = role === "DIRECTOR";
-  const canProcure = isDir || ["PROCUREMENT", "WAREHOUSE"].includes(role);
-  const canEditItems = isDir || ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"].includes(role);
+  // Direktor zanjirni ko'radi, lekin bosqichlar mas'ul bo'limlarda: narx — snabjeniye, tasdiq — sotuv, pul — moliya
+  const canProcure = ["PROCUREMENT", "WAREHOUSE"].includes(role);
+  const canEditItems = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"].includes(role);
   // Tasdiqlash tugmalari bu sahifada yo'q: Sotuv bo'limi — Zayavkalar oynasida, moliya — Kirim-Chiqimda tasdiqlaydi
-  const canApprove = isDir || role === "SALES";
-  const canFund = isDir || ["FINANCE", "ACCOUNTING", "CASHIER"].includes(role);
+  const canApprove = role === "SALES";
+  const canFund = ["FINANCE", "ACCOUNTING", "CASHIER"].includes(role);
   // Tahrirlanadigan jadval ko'rsatilsa — tepadagi faqat ko'rish uchun jadval takrorlanmaydi
   const editing =
     (r.status === "NEW" && (canProcure || canEditItems)) ||

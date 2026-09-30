@@ -48,10 +48,11 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
     include: { product: { select: { name: true, unit: true } } },
   });
 
-  // Telegram — botga ulangan xodimlarga; push — ilovadagi hammaga. Ikkalasi bir-birini
+  // Telegram — botga ulangan sotuvchilarga; push — ilovadagi sotuvchilarga. Ikkalasi bir-birini
   // takrorlamaydi: sotuvchi qaysi biri qo'lida bo'lsa, o'shanda ko'radi.
+  // Direktorga ketmaydi: ariza bilan bog'lanish sotuvning ishi, direktor natijani hisobotda ko'radi.
   await notifySales({ ...lead, qty: lead.qty ? Number(lead.qty) : null });
-  notifyAfter(() => notifyRoles(["SALES", "DIRECTOR"], {
+  notifyAfter(() => notifyRoles(["SALES"], {
     type: "LEAD_NEW",
     title: "Saytdan yangi so'rov",
     body: `${lead.name} · ${lead.phone}${lead.product ? ` · ${lead.product.name}` : ""}`,
@@ -60,7 +61,7 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
   return { ok: true };
 }
 
-/** Yangi ariza haqida sotuv bo'limi va direktorga Telegram xabari — bot ulangan bo'lsa. */
+/** Yangi ariza haqida sotuv bo'limiga Telegram xabari — bot ulangan bo'lsa. */
 async function notifySales(lead: {
   name: string; phone: string; qty: number | null; address: string | null; message: string | null;
   product: { name: string; unit: string } | null;
@@ -68,7 +69,7 @@ async function notifySales(lead: {
   if (!botEnabled()) return;
   try {
     const chats = await db.telegramAccount.findMany({
-      where: { isBlocked: false, userId: { not: null }, user: { isActive: true, role: { in: ["SALES", "DIRECTOR"] } } },
+      where: { isBlocked: false, userId: { not: null }, user: { isActive: true, role: "SALES" } },
       select: { chatId: true },
     });
     if (chats.length === 0) return;

@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function DriversPage() {
   const s = await requireSession(["LOGISTICS", "HR"]);
-  const canManage = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  const canManage = s.role === "LOGISTICS";
   const enabled = ecoEnabled();
 
   const [employees, vehicles, trips] = await Promise.all([

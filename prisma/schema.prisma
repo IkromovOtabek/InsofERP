@@ -93,6 +93,12 @@ model CompanySettings {
   directorName    String?
   about           String? // landing uchun qisqa matn
   workingHours    String?  @default("Dush–Shan 08:00–18:00")
+  // ── Mijoz ilovasi (do'kon) "bugungi holat" — ish vaqti matni (workingHours) ko'rsatish uchun, bular hisob uchun ──
+  openHour          Int     @default(8) // qabul boshlanadi (Toshkent vaqti)
+  closeHour         Int     @default(18) // qabul tugaydi
+  workSunday        Boolean @default(false) // yakshanba ham ishlaydimi
+  sameDayCutoffHour Int     @default(14) // shu soatgacha buyurtma — shu kuni yetkaziladi
+  telegram          String? // mijozlar yozadigan Telegram (@username yoki t.me havola)
   /// Kunlik ishlab chiqarish quvvati, m³ — Zayavkalar taqvimi shu chegaraga qarab rang beradi
   dailyCapacityM3 Decimal? @default(200) @db.Decimal(10, 2)
   foundedYear     Int?

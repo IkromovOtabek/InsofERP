@@ -20,7 +20,9 @@ const STATUS = {
  * va kerak bo'lsa arizani mijozga aylantiradi — shundan keyingina `Customer` yaratiladi.
  */
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  await requireSession(["SALES", "DIRECTOR"]);
+  const s = await requireSession(["SALES"]);
+  // Direktor arizalarni ko'radi, lekin bog'lanish/izoh — sotuvchining ishi: tugmalar faqat unda
+  const canAct = s.role === "SALES";
   const { tab = "new" } = await searchParams;
 
   const leads = await db.lead.findMany({
@@ -105,13 +107,17 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                   )}
                 </dl>
 
-                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <LeadStatusButtons leadId={l.id} status={l.status} />
-                    {l.status !== "CONVERTED" && <ConvertLead leadId={l.id} defaultName={l.name} />}
+                {canAct ? (
+                  <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <LeadStatusButtons leadId={l.id} status={l.status} />
+                      {l.status !== "CONVERTED" && <ConvertLead leadId={l.id} defaultName={l.name} />}
+                    </div>
+                    <LeadNote leadId={l.id} note={l.note} />
                   </div>
-                  <LeadNote leadId={l.id} note={l.note} />
-                </div>
+                ) : l.note ? (
+                  <p className="mt-4 border-t border-slate-100 pt-4 text-sm text-slate-600"><span className="text-slate-500">Sotuvchi izohi:</span> {l.note}</p>
+                ) : null}
               </Card>
             );
           })}

@@ -46,7 +46,7 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
   // To'lov mijozning limitini bo'shatadi — sotuv va buxgalteriya buni kutib turadi
   notifyAfter(async () => {
     const c = await db.customer.findUnique({ where: { id: input.customerId }, select: { name: true } });
-    await notifyRoles(["SALES", "ACCOUNTING", "DIRECTOR"], {
+    await notifyRoles(["SALES", "ACCOUNTING"], {
       type: "PAYMENT_RECEIVED",
       title: `To'lov: ${money(input.amount)}`,
       body: `${c?.name ?? "Mijoz"}${res.invoiceStatus === "PAID" ? " · schyot yopildi" : ""}`,
