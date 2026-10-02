@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Smartphone, ShoppingBag, Store, Inbox, ExternalLink, History } from "lucide-react";
+import { Smartphone, ShoppingBag, Store, Inbox, ExternalLink, History, type LucideIcon } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/sms/phone";
 import { unitLabel } from "@/lib/unit";
@@ -29,7 +29,7 @@ const LEAD_STATUS = {
  * "Sayt arizalari" sahifasidagi bilan bir xil (bog'lanish, mijozga aylantirish).
  */
 export default async function EcommercePage({ searchParams }: { searchParams: Promise<{ tab?: string; p?: string }> }) {
-  await requireSession(["SALES", "DIRECTOR"]);
+  await requireRoles(["SALES", "DIRECTOR"]);
   const { tab = "vitrina", p: historyFor } = await searchParams;
 
   const [products, leads, banners] = await Promise.all([
@@ -136,7 +136,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
             <h2 className="mb-1 font-semibold">Do'kondagi mahsulotlar</h2>
             <p className="mb-2 text-xs text-slate-500">Ilovada shu tartibda ko'rinadi. Nom va narx bo'sh qoldirilsa Sozlamalar → Beton markalaridagi qiymat olinadi.</p>
             <div className="divide-y divide-slate-100">
-              {published.length === 0 && <Empty text="Chiqarilgan mahsulot yo'q" icon={Store} />}
+              {published.length === 0 && <EmptyNote text="Chiqarilgan mahsulot yo'q" icon={Store} />}
               {published.map((p) => <ShopItemForm key={p.id} p={p} />)}
             </div>
           </Card>
@@ -144,12 +144,22 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
             <h2 className="mb-1 font-semibold">Yashirin mahsulotlar</h2>
             <p className="mb-2 text-xs text-slate-500">Faol mahsulotlar, lekin do'konda ko'rinmaydi. Yangi mahsulot Sozlamalar → Beton markalarida ochiladi.</p>
             <div className="divide-y divide-slate-100">
-              {hidden.length === 0 && <Empty text="Hamma mahsulot do'konda" icon={ShoppingBag} />}
+              {hidden.length === 0 && <EmptyNote text="Hamma mahsulot do'konda" icon={ShoppingBag} />}
               {hidden.map((p) => <ShopItemForm key={p.id} p={p} />)}
             </div>
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Jadvaldan tashqaridagi bo'sh holat: `Empty` `<tr>` qaytaradi — `<div>` ichida gidratsiya xatosi beradi. */
+function EmptyNote({ text, icon: Icon }: { text: string; icon: LucideIcon }) {
+  return (
+    <div className="px-4 py-10 text-center">
+      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400"><Icon size={18} /></div>
+      <div className="text-sm text-slate-500">{text}</div>
     </div>
   );
 }

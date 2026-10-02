@@ -1,6 +1,42 @@
+import { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { ostatkaSummary } from "./ostatka";
 import { productionCapacity } from "./production-capacity";
+
+/**
+ * Xomashyoning o'rtacha tannarxi — MIQDORGA TORTILGAN: Σ(qty × unitCost) / Σ(qty).
+ * (Oddiy `_avg(unitCost)` 1 kg lik qimmat partiyani 100 t lik arzon partiya bilan teng sanardi.)
+ *
+ * Manba — narxi bor kirim (RECEIPT) harakatlari. Kirimi umuman bo'lmagan xomashyo uchun (faqat
+ * qo'lda kiritilgan narxli boshlang'ich qoldig'i bor) — narxli musbat ADJUSTMENT'lar bo'yicha.
+ * Sklad, brigada qoldig'i qiymati, kirim/qo'lda kiritish formalari — hammasi shu bitta funksiyadan oladi.
+ *
+ * `client` — tranzaksiya ichida chaqirilsa `tx` beriladi.
+ */
+export async function avgUnitCosts(
+  materialIds?: string[],
+  client: Pick<Prisma.TransactionClient, "$queryRaw"> = db,
+): Promise<Map<string, number>> {
+  if (materialIds && !materialIds.length) return new Map();
+  // Filtr oddiy parametr (`Prisma.sql` bo'lagi emas): dev'da HMR dan keyin globalThis'dagi eski client
+  // yangi moduldagi bo'lakni tanimay `$1` qilib yuborardi — "syntax error at or near $1"
+  const ids = materialIds ?? null;
+  const rows = await client.$queryRaw<{ materialId: string; type: string; cost: Prisma.Decimal | number | null }[]>`
+    SELECT "materialId", "type"::text AS "type", SUM("qty" * "unitCost") / NULLIF(SUM("qty"), 0) AS "cost"
+    FROM "StockMove"
+    WHERE "materialId" IS NOT NULL AND "unitCost" IS NOT NULL AND "qty" > 0
+      AND "type" IN ('RECEIPT', 'ADJUSTMENT')
+      AND (${ids}::text[] IS NULL OR "materialId" = ANY(${ids}::text[]))
+    GROUP BY "materialId", "type"`;
+  const receipt = new Map<string, number>();
+  const opening = new Map<string, number>();
+  for (const r of rows) {
+    if (r.cost == null) continue;
+    (r.type === "RECEIPT" ? receipt : opening).set(r.materialId, Number(r.cost));
+  }
+  for (const [id, c] of opening) if (!receipt.has(id)) receipt.set(id, c);
+  return receipt;
+}
 
 /** Har bir xomashyo bo'yicha joriy qoldiq (barcha skladlar). */
 export async function materialBalances() {

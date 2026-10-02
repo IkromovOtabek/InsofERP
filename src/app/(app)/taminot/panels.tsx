@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { PackageCheck, Save, Send, Trash2, Truck } from "lucide-react";
-import { checkIn, editItems, setPrices } from "@/lib/supply-actions";
-import { Button, Field, FormError, FormSuccess, Input, Select, Table, Td, Th, Tr } from "@/components/ui";
+import { PackageCheck, Save, Send, Trash2, Truck, XCircle } from "lucide-react";
+import { checkIn, editItems, reject, setPrices } from "@/lib/supply-actions";
+import { Button, Field, FormError, FormSuccess, Input, Select, Table, Td, Th, Tr, Textarea } from "@/components/ui";
 import { money, fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { DELIVERY_KINDS, DELIVERY_OWN } from "@/lib/supply-const";
@@ -241,6 +241,36 @@ export function ReceivePanel({ id, items, suppliers, supplierId, delivery: deliv
         <Button name="mode" value="receive" type="submit" variant={needsRecheck ? "primary" : "success"} disabled={pending || fact <= 0}>
           <PackageCheck size={16} /> {pending ? "Yozilmoqda…" : needsRecheck ? "Qayta tasdiqqa yuborish" : "Qabul qildim — skladga kirim"}
         </Button>
+      </div>
+    </form>
+  );
+}
+
+/* ═══════════ Bekor qilish (sabab bilan) ═══════════ */
+
+/**
+ * Zayavkani bekor qilish. Kim bosishi mumkinligini sahifa `canRejectSupply` bilan hal qiladi (server ham
+ * qayta tekshiradi). `refund` — pul ajratilgan: chiqim o'chmaydi, "qaytarilishi kerak" bo'lib qoladi.
+ */
+export function RejectPanel({ id, refund }: { id: string; refund?: number | null }) {
+  const [state, action, pending] = useActionState(reject.bind(null, id), undefined);
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return <Button type="button" variant="secondary" className="w-full text-red-700" onClick={() => setOpen(true)}><XCircle size={16} /> Zayavkani bekor qilish</Button>;
+  }
+  return (
+    <form action={action} className="space-y-3">
+      <Field label="Bekor qilish sababi *"><Textarea name="reason" rows={2} placeholder="Nega bekor qilinmoqda" required /></Field>
+      {refund != null && refund > 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Pul ajratilgan: <b>{money(refund)}</b> chiqim o&apos;chirilmaydi — &laquo;yetkazuvchidan qaytarilishi kerak&raquo; belgisi bilan qoladi, moliyaga xabar ketadi.
+        </p>
+      )}
+      <FormError error={state?.error} />
+      {state?.ok && <FormSuccess text={state.note ?? "Bekor qilindi"} />}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Qaytish</Button>
+        <Button variant="danger" disabled={pending}><XCircle size={16} /> {pending ? "Bekor qilinmoqda…" : "Bekor qilish"}</Button>
       </div>
     </form>
   );

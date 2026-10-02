@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, IdCard, Package, Route, Timer } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { delayLevel, ISSUE_KIND, logisticsSettings, minutesLabel, tripDelayMin, tripPhase } from "@/lib/logistics";
 import { date, dateTime, isoDate, qty } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -12,7 +12,7 @@ import { DelayText, PhaseBadge, TripLink } from "../../ui";
 export const dynamic = "force-dynamic";
 
 export default async function DriverPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireSession(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"]);
   const { id } = await params;
   const settings = await logisticsSettings();
   const d = await db.employee.findUnique({
@@ -38,13 +38,13 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
     <div>
       <PageHeader back={{ href: "/logistika/haydovchilar", label: "Haydovchilar" }} title={d.fullName}
         subtitle={<>{d.position}{d.phone ? ` · ${d.phone}` : ""}{d.vehicle ? <> · <Link href={`/logistika/transport/${d.vehicle.id}`} className="hover:underline">{d.vehicle.plate}</Link></> : ""}{!d.isActive && " · ishdan ketgan"}</>} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Reyslar (oxirgi 60)" value={total.length} hint={`${done.length} yetkazilgan`} icon={Route} tone="brand" />
         <StatCard label="Yetkazilgan hajm" value={qty(done.reduce((a, t) => a + Number(t.qtyM3), 0))} icon={Package} tone="success" />
         <StatCard label="O'rtacha yetkazish" value={minutesLabel(durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : null)} icon={Timer} />
         <StatCard label="Kechikish / muammo" value={`${late} / ${issues.length}`} hint={delays.length ? `o'z vaqtida ${Math.round(((delays.length - late) / delays.length) * 100)}%` : undefined} icon={AlertTriangle} tone={late || issues.length ? "warning" : "default"} />
       </div>
-      <div className="grid gap-5 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card className="xl:col-span-2">
           <CardHeader title="Haydovchi kartasi" description="F.I.O., telefon, passport — Otdel kadrda" icon={IdCard} />
           <DriverCardForm id={d.id} vehicles={vehicles} v={{ workSchedule: d.workSchedule, licenseNo: d.licenseNo, licenseCategory: d.licenseCategory, licenseExpiry: d.licenseExpiry ? isoDate(d.licenseExpiry) : "", vehicleId: d.vehicleId }} />

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
 import { date } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -34,7 +34,7 @@ const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} ku
 export default async function OtdelKadrPage({ searchParams }: {
   searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string }>;
 }) {
-  const s = await requireSession(["HR"]);
+  const s = await requireRoles(["HR"]);
   const { tab = "xodimlar", qoshildi, yangilandi, kun, oy } = await searchParams;
 
   // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi
@@ -111,6 +111,7 @@ export default async function OtdelKadrPage({ searchParams }: {
       return {
         id: e.id, fullName: e.fullName, position: e.position, photo: !!e.photo,
         status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
+        ver: m?.updatedAt.toISOString() ?? "",
       } satisfies KunRow;
     });
   }

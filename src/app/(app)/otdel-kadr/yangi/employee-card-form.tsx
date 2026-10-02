@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { FileText, IdCard, Save, User } from "lucide-react";
 import { createEmployeeCard } from "../actions";
-import { DOC_KINDS, docField, EDUCATION, MARITAL, OTHER_DOC_KIND } from "@/lib/kadr";
+import { DOC_KINDS, docField, EDUCATION, MARITAL, OTHER_DOC_KIND, oversizeFiles } from "@/lib/kadr";
 import { Button, Card, CardHeader, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { PhotoPicker } from "@/components/photo-picker";
 
@@ -21,9 +21,10 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
   maxMb: number;
 }) {
   const [state, action, pending] = useActionState(createEmployeeCard, undefined);
+  const [tooBig, setTooBig] = useState<string | null>(null); // 10 MB dan katta fayl — yuborilmaydi
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} onSubmit={(e) => { const p = oversizeFiles(e.currentTarget); setTooBig(p); if (p) e.preventDefault(); }} className="space-y-4">
       <Card>
         <CardHeader title="Shaxsiy ma'lumotlar" description="Yulduzchali maydonlar shart" icon={User} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[150px_1fr]">
@@ -82,7 +83,7 @@ export function EmployeeCardForm({ positions, docAccept, photoAccept, maxMb }: {
         </div>
       </Card>
 
-      <FormError error={state?.error} />
+      <FormError error={tooBig ?? state?.error} />
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={pending}><Save size={16} /> {pending ? "Saqlanmoqda…" : "Saqlash va varaqani chop etish"}</Button>
         <span className="text-xs text-slate-500">Saqlangach shaxsiy varaqa ochiladi va chop etish oynasi o&apos;zi chiqadi (PDF sifatida ham saqlash mumkin).</span>

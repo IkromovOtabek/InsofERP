@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
 import { pushVehicleSilently } from "@/lib/eco/people";
 import type { FuelType, TransportExpenseKind, VehicleType } from "@/generated/prisma";
@@ -18,11 +18,11 @@ import type { FuelType, TransportExpenseKind, VehicleType } from "@/generated/pr
 
 const refresh = () => { revalidatePath("/logistika", "layout"); revalidatePath("/dashboard"); };
 
-/** Forma raqami: "12 500", "12,5" yoki bo'sh (null). */
-const num = z.preprocess((v) => {
+/** Forma raqami: "12 500", "12,5" yoki bo'sh (null) — oraliq bilan (probeg, sig'im, summa manfiy bo'lmaydi). */
+const numIn = (min: number, max: number) => z.preprocess((v) => {
   const t = String(v ?? "").replace(/\s+/g, "").replace(",", ".");
   return t === "" ? null : Number(t);
-}, z.number({ message: "raqam bo'lishi kerak" }).nullable());
+}, z.number({ message: "raqam bo'lishi kerak" }).min(min, `kamida ${min}`).max(max, `ko'pi bilan ${max}`).nullable());
 const day = z.preprocess((v) => (v ? new Date(`${String(v)}T00:00:00`) : null), z.date().nullable());
 const bool = z.preprocess((v) => v === "on" || v === "true" || v === "1", z.boolean());
 
@@ -31,9 +31,11 @@ const bool = z.preprocess((v) => v === "on" || v === "true" || v === "1", z.bool
 const vehicleSchema = z.object({
   plate: zStr("Davlat raqamini kiriting").transform((v) => v.toUpperCase().replace(/\s+/g, " ").trim()),
   type: z.enum(["MIXER", "PUMP", "TRUCK"], { message: "Turini tanlang" }),
-  brand: zOpt, model: zOpt, year: num, capacityM3: num,
+  brand: zOpt, model: zOpt, year: numIn(1970, new Date().getFullYear() + 1), capacityM3: numIn(0, 100),
   fuelType: z.enum(["DIESEL", "PETROL", "METHANE", "PROPANE"]).optional().or(z.literal("").transform(() => undefined)),
-  fuelNormL100: num, odometerKm: num, hasGps: bool,
+  fuelNormL100: numIn(0, 300), odometerKm: numIn(0, 3_000_000), hasGps: bool,
+  // Probeg kamaytirilsa (xato kiritilgan raqamni tuzatish) — sabab majburiy, auditga yoziladi
+  odometerReason: zOpt,
   inspectionUntil: day, insuranceCompany: zOpt, insurancePolicy: zOpt, insuranceUntil: day,
   isActive: bool, note: zOpt, driverId: zOpt,
 });
@@ -44,6 +46,16 @@ export async function saveVehicle(id: string | null, _prev: ActionState, fd: For
   if ("error" in r) return { error: r.error };
   const d = r.data;
   if (d.type === "MIXER" && !(d.capacityM3 && d.capacityM3 > 0)) return { error: "Mikser sig'imini (m³) kiriting" };
+  // Probeg orqaga ketmaydi: kamaytirish faqat xato tuzatish sifatida, sababi bilan (yoqilg'i sarfi va xizmat muddati shunga tayanadi)
+  let odoFix: { from: number; to: number | null; reason: string } | null = null;
+  if (id) {
+    const cur = await db.vehicle.findUnique({ where: { id }, select: { odometerKm: true } });
+    const next = d.odometerKm != null ? Math.round(d.odometerKm) : null;
+    if (cur?.odometerKm != null && (next == null || next < cur.odometerKm)) {
+      if (!d.odometerReason) return { error: `Probeg ${cur.odometerKm} km dan kam bo'lolmaydi. Xato raqamni tuzatayotgan bo'lsangiz — "Probegni kamaytirish sababi"ni yozing` };
+      odoFix = { from: cur.odometerKm, to: next, reason: d.odometerReason };
+    }
+  }
   const data = {
     plate: d.plate, type: d.type as VehicleType, brand: d.brand, model: d.model, year: d.year ? Math.round(d.year) : null,
     capacityM3: d.capacityM3, fuelType: (d.fuelType ?? null) as FuelType | null, fuelNormL100: d.fuelNormL100,
@@ -56,7 +68,7 @@ export async function saveVehicle(id: string | null, _prev: ActionState, fd: For
     if (id) {
       const before = await db.vehicle.findUniqueOrThrow({ where: { id } });
       const after = await db.vehicle.update({ where: { id }, data });
-      await audit(db, s.userId, "UPDATE", "Vehicle", id, before, after);
+      await audit(db, s.userId, "UPDATE", "Vehicle", id, before, odoFix ? { ...after, odometerFix: odoFix } : after);
     } else {
       const v = await db.vehicle.create({ data });
       await audit(db, s.userId, "CREATE", "Vehicle", v.id, undefined, v);
@@ -81,7 +93,7 @@ export async function saveVehicle(id: string | null, _prev: ActionState, fd: For
 
 const siteSchema = z.object({
   customerId: zStr("Mijozni tanlang"), name: zStr("Obyekt nomini kiriting"), address: zStr("Manzilni kiriting"),
-  lat: num, lng: num, contactName: zOpt, contactPhone: zOpt, deliveryHours: zOpt, instructions: zOpt, isActive: bool,
+  lat: numIn(-90, 90), lng: numIn(-180, 180), contactName: zOpt, contactPhone: zOpt, deliveryHours: zOpt, instructions: zOpt, isActive: bool,
 });
 
 export async function saveSite(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -132,7 +144,7 @@ export async function saveDriverCard(employeeId: string, _prev: ActionState, fd:
 const fuelSchema = z.object({
   vehicleId: zStr("Transportni tanlang"), driverId: zOpt, tripId: zOpt, date: day,
   fuelType: z.enum(["DIESEL", "PETROL", "METHANE", "PROPANE"]).optional().or(z.literal("").transform(() => undefined)),
-  liters: num, pricePerL: num, odometerKm: num, station: zOpt, note: zOpt,
+  liters: numIn(0, 1000), pricePerL: numIn(0, MAX_AMOUNT), odometerKm: numIn(0, 3_000_000), station: zOpt, note: zOpt,
 });
 
 export async function addFuel(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -152,18 +164,27 @@ export async function addFuel(_prev: ActionState, fd: FormData): Promise<ActionS
 
 const expenseSchema = z.object({
   kind: z.enum(["DRIVER_PAY", "ROAD", "REPAIR", "PARTS", "PARKING", "FINE", "WASH", "OTHER"], { message: "Xarajat turini tanlang" }),
-  amount: num, date: day, vehicleId: zOpt, driverId: zOpt, tripId: zOpt, note: zOpt,
+  amount: numIn(0, MAX_AMOUNT), date: day, vehicleId: zOpt, driverId: zOpt, tripId: zOpt, note: zOpt,
 });
 
+/** Mexanik faqat texnikaga oid xarajatni yozadi: ta'mir, ehtiyot qism / moy, yuvish. */
+const MECHANIC_EXPENSE_KINDS = ["REPAIR", "PARTS", "WASH"] as const;
+
 export async function addExpense(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  const s = await requireSession(["LOGISTICS", "ACCOUNTING", "MECHANIC"]);
   const r = parseForm(expenseSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
+  if (s.role === "MECHANIC") {
+    if (!(MECHANIC_EXPENSE_KINDS as readonly string[]).includes(d.kind)) return { error: "Mexanik faqat ta'mir, ehtiyot qism / moy va yuvish xarajatini yozadi" };
+    if (!d.vehicleId) return { error: "Transportni tanlang" };
+    if (d.tripId || d.driverId) return { error: "Mexanik xarajati transportga yoziladi (reys/haydovchisiz)" };
+  }
   try {
     await addTransportExpense({ kind: d.kind as TransportExpenseKind, amount: d.amount ?? 0, date: d.date, vehicleId: d.vehicleId, driverId: d.driverId, tripId: d.tripId, note: d.note }, s.userId);
   } catch (e) { return { error: (e as Error).message }; }
   refresh();
+  if (d.vehicleId) revalidatePath(`/logistika/transport/${d.vehicleId}`);
   return { ok: true };
 }
 
@@ -185,6 +206,54 @@ export async function deleteExpense(id: string): Promise<ActionState> {
   await db.transportExpense.delete({ where: { id } });
   await audit(db, s.userId, "DELETE", "TransportExpense", id, e, undefined);
   refresh();
+  return { ok: true };
+}
+
+// ───────────────────────── Texnik xizmat jurnali (mexanik) ─────────────────────────
+
+const serviceSchema = z.object({
+  kind: zStr("Xizmat turini tanlang").pipe(z.string().max(80, "ko'pi bilan 80 belgi")),
+  date: day, odometerKm: numIn(0, 3_000_000), cost: numIn(0, MAX_AMOUNT), note: zOpt,
+  nextDueAt: day, nextDueKm: numIn(0, 3_000_000),
+});
+
+/**
+ * Xizmat yozuvi: moy almashtirish, ta'mir, shina, ko'rik — keyingi xizmat sanasi/probegi bilan.
+ * Probeg transport kartasidagidan katta bo'lsa — karta ham yangilanadi (probeg orqaga ketmaydi).
+ * Narx bu yerda faqat jurnal uchun: pul xarajati "Boshqa xarajatlar"ga alohida yoziladi (ikki marta sanalmasin).
+ */
+export async function addVehicleService(vehicleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["MECHANIC", "LOGISTICS"]);
+  const r = parseForm(serviceSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  const v = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, odometerKm: true } });
+  if (!v) return { error: "Transport topilmadi" };
+  const date = d.date ?? new Date();
+  if (date.getTime() > Date.now() + 86_400_000) return { error: "Xizmat sanasi kelajakda bo'lolmaydi" };
+  if (d.nextDueAt && d.nextDueAt <= date) return { error: "Keyingi xizmat sanasi xizmat sanasidan keyin bo'lsin" };
+  const odo = d.odometerKm != null ? Math.round(d.odometerKm) : null;
+  const nextKm = d.nextDueKm != null ? Math.round(d.nextDueKm) : null;
+  if (nextKm != null && nextKm <= (odo ?? v.odometerKm ?? 0)) return { error: "Keyingi xizmat probegi hozirgisidan katta bo'lsin" };
+  const row = await db.$transaction(async (tx) => {
+    const x = await tx.vehicleService.create({
+      data: { vehicleId, kind: d.kind, date, odometerKm: odo, cost: d.cost ?? null, note: d.note, nextDueAt: d.nextDueAt, nextDueKm: nextKm, createdById: s.userId },
+    });
+    if (odo != null && (v.odometerKm == null || odo > v.odometerKm)) await tx.vehicle.update({ where: { id: vehicleId }, data: { odometerKm: odo } });
+    await audit(tx, s.userId, "CREATE", "VehicleService", x.id, undefined, x);
+    return x;
+  });
+  refresh(); revalidatePath(`/logistika/transport/${vehicleId}`);
+  return row ? { ok: true } : { error: "Saqlanmadi" };
+}
+
+export async function deleteVehicleService(id: string): Promise<ActionState> {
+  const s = await requireSession(["MECHANIC", "LOGISTICS"]);
+  const x = await db.vehicleService.findUnique({ where: { id } });
+  if (!x) return { error: "Topilmadi" };
+  await db.vehicleService.delete({ where: { id } });
+  await audit(db, s.userId, "DELETE", "VehicleService", id, x, undefined);
+  refresh(); revalidatePath(`/logistika/transport/${x.vehicleId}`);
   return { ok: true };
 }
 

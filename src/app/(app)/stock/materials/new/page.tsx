@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { FileSpreadsheet, PencilLine, ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
-import { Card, Field, PageHeader, Select } from "@/components/ui";
+import { requireRoles } from "@/lib/page-guard";
+import { Callout, Card, Field, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
 import { canEditMaterials } from "@/lib/catalog";
+import { avgUnitCosts } from "@/lib/stock";
 import { importMaterials } from "../../actions";
 import { MaterialsForm, type MaterialOpt } from "../materials-form";
 import { cn } from "@/lib/utils";
@@ -17,17 +18,17 @@ const MODES = [
 
 /** Sklad → Xomashyo qo'shish: Excel yoki qo'lda. Xomashyo ro'yxati + boshlang'ich qoldiq; retseptlar shu xomashyolarga tayanadi. */
 export default async function StockMaterialsNew({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
   const { mode } = await searchParams;
   const [warehouses, materials, groups, costs, accounts] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true, groupId: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
-    // Oxirgi narx sifatida kirim/boshlang'ich qoldiqlarning o'rtacha birlik narxi olinadi
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _avg: { unitCost: true } }),
+    // Narx sifatida miqdorga tortilgan o'rtacha tannarx olinadi (umumiy qoida — `lib/stock.ts`)
+    avgUnitCosts(),
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
   ]);
-  const avg = new Map(costs.map((c) => [c.materialId, Number(c._avg.unitCost ?? 0)]));
+  const avg = costs;
   const existing: MaterialOpt[] = materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, price: avg.get(m.id) ?? 0, minStock: Number(m.minStock), groupId: m.groupId }));
   const current = MODES.find((m) => m.key === mode)?.key;
   const whSelect = (
@@ -58,6 +59,15 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
           </Link>
         ))}
       </div>
+
+      {s.role !== "DIRECTOR" && (
+        <Callout tone="info" title="Boshlang'ich qoldiq — faqat yangi xomashyoga">
+          Skladda harakati bor xomashyoga bu yerdan qoldiq qo&apos;shilmaydi (spravochnik — nomi, papkasi, minimal qoldig&apos;i — yangilanaveradi).
+          Mavjud xomashyo qoldig&apos;i <Link href="/receipts/new" className="underline">Kirim</Link>,{" "}
+          <Link href="/stock/inventarizatsiya" className="underline">Inventarizatsiya</Link> yoki{" "}
+          <Link href="/stock/spisanie" className="underline">Hisobdan chiqarish</Link> orqali o&apos;zgaradi.
+        </Callout>
+      )}
 
       {!current && <p className="text-sm text-slate-500"><ArrowLeft size={14} className="inline" /> Yuqoridan usulni tanlang.</p>}
 

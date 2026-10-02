@@ -20,7 +20,7 @@ export function BiPage({ title, subtitle, eyebrow = "Tahlil", tab, range, keep, 
   subtabs?: { key: string; label: string; href: string; icon?: LucideIcon }[]; current?: string; children: React.ReactNode;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       {title && <PageHeader eyebrow={eyebrow} title={title} subtitle={subtitle} />}
       {period && <PeriodBar range={range} tab={tab} keep={keep} />}
       {subtabs && <Tabs current={current ?? subtabs[0].key} className="mb-6" items={subtabs} />}

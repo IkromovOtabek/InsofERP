@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { canEditMaterials } from "@/lib/catalog";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { Card, PageHeader } from "@/components/ui";
 import { SupplyForm, type SupplyOpt } from "../supply-form";
 
@@ -9,7 +9,7 @@ import { SupplyForm, type SupplyOpt } from "../supply-form";
  * snabjeniye narx qo'yadi → ma'sul xodim tasdiqlaydi → moliya pul ajratadi → mol kelgach sklad kirimi.
  */
 export default async function NewSupplyRequestPage() {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
   const [warehouses, materials, groups, sums] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true, groupId: true } }),

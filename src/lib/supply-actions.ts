@@ -80,7 +80,7 @@ export async function setPrices(id: string, _prev: ActionState, fd: FormData): P
   const r = await priceSupplyRequest(id, {
     supplierId: text(fd, "supplierId") || null, note: text(fd, "note") || null, rows,
     delivery: { kind: text(fd, "deliveryKind") || null, provider: text(fd, "deliveryProvider") || null, cost: num(fd, "deliveryCost"), note: text(fd, "deliveryNote") || null },
-  }, s.userId);
+  }, s.userId, s.role);
   if (r.error) return { error: r.error };
   refresh(id);
   return { ok: true, note: "Zayavka tasdiqlashga yuborildi" };
@@ -149,10 +149,11 @@ export async function financeDecide(id: string, prev: ActionState, fd: FormData)
 }
 
 // ───────────── Bekor qilish (har bosqichda, o'z bo'limi) ─────────────
+// Kim qaysi bosqichda bekor qila olishi — `canRejectSupply` (lib/supply.ts): pul bosqichida faqat moliya/direktor.
 
 export async function reject(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", ...APPROVERS, ...FINANCE]);
-  const r = await rejectSupplyRequest(id, s.userId, text(fd, "reason"));
+  const r = await rejectSupplyRequest(id, { id: s.userId, role: s.role }, text(fd, "reason"));
   if (r.error) return { error: r.error };
   refresh(id);
   return { ok: true, note: r.note };
@@ -210,6 +211,23 @@ export async function directorApprove(id: string, _prev: ActionState, fd: FormDa
   return { ok: true, note: r.note };
 }
 
+/** Katta xaridni direktor rad etadi (sabab majburiy) — zayavka bekor qilinadi. */
+export async function directorReject(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession([]);
+  if (s.role !== "DIRECTOR") return { error: "Katta xaridni faqat direktor rad etadi" };
+  const reason = text(fd, "reason");
+  if (!reason) return { error: "Rad etish sababini yozing" };
+  const r = await rejectSupplyRequest(id, { id: s.userId, role: s.role }, `Direktor rad etdi: ${reason}`);
+  if (r.error) return { error: r.error };
+  refresh(id);
+  return { ok: true, note: "Katta xarid rad etildi — zayavka bekor qilindi" };
+}
+
+/** Direktor paneli: tasdiqlash yoki rad etish (bosilgan tugmaning `mode` qiymati). */
+export async function directorDecide(id: string, prev: ActionState, fd: FormData): Promise<ActionState> {
+  return String(fd.get("mode")) === "reject" ? directorReject(id, prev, fd) : directorApprove(id, prev, fd);
+}
+
 export async function saveDelivery(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession([...PROCUREMENT]);
   const r = await updateSupplyDelivery(id, {
@@ -248,7 +266,7 @@ export async function attachDoc(id: string, _prev: ActionState, fd: FormData): P
 
 export async function dropDoc(docId: string): Promise<ActionState> {
   const s = await requireSession(["PROCUREMENT", "WAREHOUSE", "ACCOUNTING", "FINANCE"]);
-  const r = await removeSupplyDocument(docId, s.userId);
+  const r = await removeSupplyDocument(docId, s.userId, s.role);
   if (r.error) return { error: r.error };
   refresh(r.id);
   return { ok: true, note: r.note };

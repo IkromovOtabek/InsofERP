@@ -34,7 +34,7 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
       {/* KPI */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Bugungi sotuv" value={moneyShort(d.todayRevenue)} delta={d.todayDelta} deltaLabel="kechaga" icon={TrendingUp} tone="brand" hint={`O'tgan oy o'rtachasi: ${moneyShort(d.month.planPerDay)}/kun`} spark={d.spark} />
-        <Kpi label="Oylik sotuv" value={moneyShort(d.month.revenue)} delta={d.month.delta} deltaLabel="o'tgan oyga" icon={CalendarRange} tone="info" hint={<>Prognoz: <b>{moneyShort(d.month.forecast)}</b> · {d.month.daysLeft} kun qoldi</>} />
+        <Kpi label="Oylik sotuv" value={moneyShort(d.month.revenue)} delta={d.month.delta} deltaLabel="o'tgan oyning shu kunlariga" icon={CalendarRange} tone="info" hint={<>Prognoz: <b>{moneyShort(d.month.forecast)}</b> · {d.month.daysLeft} kun qoldi</>} />
         <Kpi label="Yalpi foyda" value={moneyShort(d.kpis.gross.cur)} delta={d.kpis.gross.delta} icon={Wallet} tone={d.kpis.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(d.kpis.margin.cur, 1)}% (${d.kpis.margin.delta === null ? "—" : (d.kpis.margin.cur - d.kpis.margin.prev >= 0 ? "▲" : "▼") + fmtNum(Math.abs(d.kpis.margin.cur - d.kpis.margin.prev), 1) + " p.p."})`} />
         <Kpi label="Kassa tushumi" value={moneyShort(d.kpis.cashIn.cur)} delta={d.kpis.cashIn.delta} icon={Landmark} tone="success" hint={range.label} />
         <Kpi label="Debitorka" value={moneyShort(d.kpis.receivable)} icon={Percent} tone={d.kpis.receivable > 0 ? "warning" : "default"} hint={`${d.kpis.debtors} ta qarzdor mijoz`} href={tabHref(range, "customers", { debt: "yes" })} />
@@ -106,7 +106,7 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Yo'qotishlar — kanal bo'yicha" info="Kuniga qancha pul ketyapti; kattadan kichikka." action={<Link href={tabHref(range, "finance")} className="font-medium text-blue-600 hover:underline">Moliya →</Link>}>
-          <div className="mb-3 text-[13px] text-slate-600">Jami <b className="text-red-600">{moneyShort(d.loss.totalPerDay)} so'm/kun</b> · oyiga ≈ {moneyShort(d.loss.totalPerDay * 30)} so'm. Eng katta teshik — <b>{d.loss.biggest.title}</b>.</div>
+          <div className="mb-3 text-[13px] text-slate-600">Jami <b className="text-red-600">{moneyShort(d.loss.totalPerDay)} so'm/kun</b> · oyiga ≈ {moneyShort(d.loss.totalPerDay * 30)} so'm. {d.loss.biggest ? <>Eng katta teshik — <b>{d.loss.biggest.title}</b>.</> : "Aniqlangan yo'qotish yo'q."}</div>
           <HBarList data={d.loss.channels.filter((c) => c.perDay > 0).map((c) => ({ label: c.title, value: c.perDay, hint: "/kun", tone: "danger" as const }))} formatValue={(v) => moneyShort(v)} />
           {d.loss.channels.every((c) => c.perDay <= 0) && <Note>Yo'qotish kanallari bo'sh — ajoyib.</Note>}
         </Panel>
@@ -118,7 +118,7 @@ export async function OverviewTab({ range, name }: { range: Range; name: string 
             </ul>
           )}
           <div className="mt-4 border-t border-slate-100 pt-3">
-            <Insight title="QISQACHA">Oy boshidan {moneyShort(d.month.revenue)} so'm sotildi — o'tgan oyning {d.month.prev > 0 ? fmtNum((d.month.revenue / d.month.prev) * 100, 0) : "—"}%i. Hozirgi temp bilan oy oxirida {moneyShort(d.month.forecast)} so'm bo'ladi. {d.kpis.lost} ta mijoz xaridni to'xtatgan ({fmtNum(100 - d.kpis.activeRate, 0)}% baza). {d.materialsAtRisk} ta xomashyo xavf zonasida.</Insight>
+            <Insight title="QISQACHA">Oy boshidan {moneyShort(d.month.revenue)} so'm sotildi — o'tgan oyning shu kunlaridagining {d.month.prev > 0 ? fmtNum((d.month.revenue / d.month.prev) * 100, 0) : "—"}%i (o'tgan oy jami {moneyShort(d.month.prevFull)}). Hozirgi temp bilan oy oxirida {moneyShort(d.month.forecast)} so'm bo'ladi. {d.kpis.lost} ta mijoz xaridni to'xtatgan ({fmtNum(100 - d.kpis.activeRate, 0)}% baza). {d.materialsAtRisk} ta xomashyo xavf zonasida.</Insight>
           </div>
           <div className="mt-3"><Action href={tabHref(range, "forecast")}>Bashorat va anomaliyalarni ko'rish</Action></div>
         </Panel>

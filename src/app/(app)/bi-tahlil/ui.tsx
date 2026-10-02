@@ -80,15 +80,15 @@ export function Kpi({ label, value, delta, deltaLabel, invert, hint, icon: Icon,
 
 export function Panel({ title, info, action, children, className, padded = true, eyebrow }: { title: React.ReactNode; info?: string; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean; eyebrow?: string }) {
   return (
-    <section className={cn("rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", className)}>
-      <div className={cn("flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-5 py-3", !padded && "")}>
+    <section className={cn("min-w-0 rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", className)}>
+      <div className={cn("flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5", !padded && "")}>
         <div className="min-w-0">
           {eyebrow && <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">{eyebrow}</div>}
           <h2 className="flex items-center gap-1.5 text-[14.5px] font-semibold text-slate-900">{title}{info && <span title={info} className="inline-flex cursor-help text-slate-400"><Info size={13} /></span>}</h2>
         </div>
-        {action && <div className="flex items-center gap-2 text-xs text-slate-500">{action}</div>}
+        {action && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">{action}</div>}
       </div>
-      <div className={cn(padded && "p-5")}>{children}</div>
+      <div className={cn(padded && "p-4 sm:p-5")}>{children}</div>
     </section>
   );
 }

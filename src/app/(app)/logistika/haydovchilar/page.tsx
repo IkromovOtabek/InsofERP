@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Users } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { ACTIVE_TRIP, dayRange, delayLevel, driverEmployees, expiryLevel, logisticsSettings, tripDelayMin } from "@/lib/logistics";
 import { date, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
@@ -13,7 +13,7 @@ const ATT: Record<string, string> = { ABSENT: "Kelmadi", LEAVE: "Ta'tilda", SICK
 
 /** Haydovchilar moduli (TZ 7): guvohnoma, transport, grafik, mavjudlik, reyslar, kechikish va muammolar. */
 export default async function DriversPage() {
-  await requireSession(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"]);
   const settings = await logisticsSettings();
   const drivers = await driverEmployees();
   const ids = drivers.map((d) => d.id);

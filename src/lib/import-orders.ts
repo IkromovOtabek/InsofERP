@@ -132,6 +132,7 @@ export async function importOrders(input: ImportOrdersInput, userId: string): Pr
           note: [input.note?.trim(), "Excel'dan import"].filter(Boolean).join(" · "),
         },
         userId,
+        { allowPastDate: true },
       );
       orders.push({ id: res.id, orderNo: res.orderNo, customer: g.customer.name, date: g.date, lines: items.length });
     } catch (e) {

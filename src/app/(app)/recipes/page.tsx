@@ -10,7 +10,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
   const { imported } = await searchParams;
   // Sahifa ruxsati avvalgidek (middleware); o'chirish esa faqat ishlab chiqarish va direktorda
   const session = await getSession();
-  const canDelete = !!session && session.role === "PRODUCTION";
+  const canDelete = !!session && ["PRODUCTION", "DIRECTOR"].includes(session.role);
   const products = await db.product.findMany({
     where: { isActive: true },
     orderBy: { code: "asc" },

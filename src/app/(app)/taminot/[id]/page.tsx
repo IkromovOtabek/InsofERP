@@ -2,15 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, BadgeCheck, ClipboardList, Clock, FileText, HardHat, Layers, PackageCheck, ReceiptText, Scale, ShoppingCart, Truck, XCircle } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
-import { supplyRequest, SUPPLY_LABEL, SUPPLY_COLOR, SUPPLY_OWNER, SUPPLY_STEPS, plannedSum, hasFact, totalPlanned, totalFact } from "@/lib/supply";
+import { requireRoles } from "@/lib/page-guard";
+import { supplyRequest, SUPPLY_LABEL, SUPPLY_COLOR, SUPPLY_OWNER, SUPPLY_STEPS, plannedSum, hasFact, totalPlanned, totalFact, canRejectSupply } from "@/lib/supply";
 import { money, qty as q, date, dateTime } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { ROLE_LABELS } from "@/lib/nav";
 import { Badge, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatusSteps, Table, Td, Th, Tr } from "@/components/ui";
-import { EditItemsPanel, PricePanel, ReceivePanel, type PanelItem } from "../panels";
+import { EditItemsPanel, PricePanel, ReceivePanel, RejectPanel, type PanelItem } from "../panels";
 import { DeliveryPanel, DirectorPanel, DocsPanel, IncidentsPanel, MetaPanel, QuotesPanel } from "../procurement-panels";
-import { directorLimit, needsDirector, responsibleOptions, SUPPLY_DOC_ACCEPT } from "@/lib/procurement";
+import { canRemoveSupplyDoc, directorLimit, needsDirector, responsibleOptions, SUPPLY_DOC_ACCEPT } from "@/lib/procurement";
 import { DELIVERY_COLOR, DELIVERY_LABEL, PRIORITY_COLOR, PRIORITY_LABEL, REQUIRED_DOCS } from "@/lib/procurement-const";
 import { isoDate } from "@/lib/format";
 
@@ -20,7 +20,7 @@ import { isoDate } from "@/lib/format";
  */
 export default async function SupplyRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"]);
+  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"]);
   const r = await supplyRequest(id);
   if (!r) notFound();
   // "O'zimiz" bo'lsa — o'z haydovchimiz va mashinasi tanlanadi (haydovchi lavozimlari otdel kadrdan)
@@ -69,13 +69,16 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
   const missingDocs = r.status === "FUNDED" || r.status === "RECEIVED" ? REQUIRED_DOCS.filter((k) => !r.documents.some((d) => d.kind === k)) : [];
 
   const role = s.role;
-  // Direktor zanjirni ko'radi, lekin bosqichlar mas'ul bo'limlarda: narx — snabjeniye, tasdiq — sotuv, pul — moliya
-  const canProcure = ["PROCUREMENT", "WAREHOUSE"].includes(role);
-  const canEditItems = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"].includes(role);
+  // Bosqichlar mas'ul bo'limlarda (narx — snabjeniye, tasdiq — sotuv, pul — moliya); direktor hammasini qila oladi
+  const canProcure = ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"].includes(role);
+  const canEditItems = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(role);
   // Tasdiqlash tugmalari bu sahifada yo'q: Sotuv bo'limi — Zayavkalar oynasida, moliya — Kirim-Chiqimda tasdiqlaydi
-  const canApprove = role === "SALES";
-  const canFund = ["FINANCE", "ACCOUNTING", "CASHIER"].includes(role);
+  const canApprove = ["SALES", "DIRECTOR"].includes(role);
+  const canFund = ["FINANCE", "ACCOUNTING", "CASHIER", "DIRECTOR"].includes(role);
   // Tahrirlanadigan jadval ko'rsatilsa — tepadagi faqat ko'rish uchun jadval takrorlanmaydi
+  // Bekor qilish: NEW/PRICED — yaratuvchi/snabjeniye; pul bosqichida — faqat moliya/direktor (`canRejectSupply`)
+  const canReject = canRejectSupply(r, { id: s.userId, role });
+  const refund = r.cashTxId ? (await db.cashTransaction.findUnique({ where: { id: r.cashTxId }, select: { amount: true } }))?.amount : null;
   const editing =
     (r.status === "NEW" && (canProcure || canEditItems)) ||
     (r.status === "PRICED" && canProcure) ||
@@ -101,6 +104,9 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
       {r.status === "REJECTED" && (
         <Callout tone="danger" title="Zayavka bekor qilingan">
           {r.events.filter((e) => e.stage === "REJECTED").map((e) => <div key={e.id}>{e.note} · {e.user.fullName} · {dateTime(e.createdAt)}</div>)}
+          {refund != null && Number(refund) > 0 && (
+            <div className="mt-1 font-semibold">Ajratilgan {money(Number(refund))} chiqim Kirim-Chiqimda qoldi — yetkazuvchidan qaytarilishi kerak.</div>
+          )}
         </Callout>
       )}
       {r.status === "RECEIVED" && (
@@ -216,6 +222,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
             <Card>
               <CardHeader icon={FileText} title="Hujjatlar" description="Shartnoma, hisob-faktura, nakladnoy, sertifikat" />
               <DocsPanel id={r.id} accept={SUPPLY_DOC_ACCEPT} missing={[...missingDocs]} canEdit={canProcure || ["ACCOUNTING", "FINANCE"].includes(role)}
+                canDelete={(canProcure || ["ACCOUNTING", "FINANCE"].includes(role)) && canRemoveSupplyDoc(r.status, role)}
                 docs={r.documents.map((d) => ({ id: d.id, kind: d.kind, fileName: d.fileName, by: d.createdBy.fullName, at: dateTime(d.createdAt) }))} />
             </Card>
           </div>
@@ -251,6 +258,14 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
                   {canFund ? <> Pul ajratish <Link href="/cashflow" className="font-medium underline">Kirim-Chiqim</Link> bo&apos;limida.</> : " Tasdiqlangach snabjeniye sotib oladi."}
                 </span>
               </div>
+            </Card>
+          )}
+
+          {canReject && (
+            <Card>
+              <CardHeader icon={XCircle} title="Bekor qilish"
+                description={r.cashTxId || r.status === "APPROVED" || r.status === "FUNDED" ? "Moliya bosqichi — chiqim o'chirilmaydi, qaytarilishi kerak bo'lib qoladi" : "Sabab bilan — so'rovni kiritgan xodimga xabar ketadi"} />
+              <RejectPanel id={r.id} refund={refund == null ? null : Number(refund)} />
             </Card>
           )}
 

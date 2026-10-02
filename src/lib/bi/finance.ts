@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { type Range, type Gran, loadSales, materialCosts, sum, safeDiv, kpi, series, addDays, startOfDay, std, mean, CAPITAL_RATE_DAY } from "./core";
+import { type Range, type Gran, loadSales, loadRevenue, materialCosts, sum, safeDiv, kpi, series, addDays, startOfDay, std, mean, CAPITAL_RATE_DAY } from "./core";
 import { materialOverview } from "./stock";
 import { customerBase } from "./customers";
 
@@ -9,16 +9,19 @@ export type LossChannel = { key: string; title: string; sub: string; perDay: num
 export async function lossChannels(r: Range) {
   const today = startOfDay(new Date());
   const [materials, customers, blocked, cancelled, cur, writeOffs] = await Promise.all([
-    materialOverview(), customerBase(), loadSales(addDays(today, -365), addDays(today, 1), ["BLOCKED"]), loadSales(r.from, r.to, ["CANCELLED"]), loadSales(r.from, r.to),
+    materialOverview(), customerBase(), loadSales(addDays(today, -365), addDays(today, 1), ["BLOCKED"]), loadSales(r.from, r.to, ["CANCELLED"]), loadRevenue(r.from, r.to),
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: r.from, lt: r.to } }, select: { qty: true, materialId: true } }),
   ]);
   const costOf = new Map(materials.map((m) => [m.id, m.avgCost]));
-  const marginRate = safeDiv(sum(cur.map((x) => x.revenue - x.cost)), sum(cur.map((x) => x.revenue))) || 0.15;
+  // Marja stavkasi yo'qotilgan foydani baholash uchun: manfiy bo'lsa "yo'qotish" ham manfiy chiqib,
+  // jami yo'qotishni kamaytirardi. Shuning uchun [0; 1] oralig'ida; sotuv yo'q bo'lsa — 15% taxmin.
+  const curRevenue = sum(cur.map((x) => x.revenue));
+  const marginRate = curRevenue > 0 ? Math.min(1, Math.max(0, safeDiv(sum(cur.map((x) => x.revenue - x.cost)), curRevenue))) : 0.15;
 
   // 1. Stockout: xomashyo yetmasligi sabab ishlab chiqarilmaydigan zayavkalar (rejadagi ehtiyoj > qoldiq)
   const shortMats = materials.filter((m) => m.short);
   const shortValue = sum(shortMats.map((m) => (m.planned - m.balance) * m.avgCost));
-  const stockoutPerDay = shortMats.length ? (shortValue / Math.max(1, marginRate)) * marginRate / 7 : 0;
+  const stockoutPerDay = shortMats.length ? Math.max(0, shortValue) * marginRate / 7 : 0;
   // 2. Debitorka: xarid to'xtatgan mijozlardagi qarz (At Risk / Lost)
   const riskyDebtors = customers.filter((c) => c.debt > 0 && (c.segment === "At Risk" || c.segment === "Lost"));
   const riskyDebt = sum(riskyDebtors.map((c) => c.debt));
@@ -43,16 +46,22 @@ export async function lossChannels(r: Range) {
     { key: "cancelled", title: "Bekor qilingan zayavkalar", sub: "Rasmiylashtirilib bekor qilingan", perDay: cancelledRevenue * marginRate / r.days, periodTotal: cancelledRevenue * marginRate, kind: "ANIQ", flow: "OQIM", count: `${cancelledOrders} ta zayavka`, text: `Davr ichida ${cancelledOrders} ta zayavka (${Math.round(cancelledRevenue).toLocaleString("ru")} so'm) bekor qilindi — yo'qolgan foyda ${Math.round(cancelledRevenue * marginRate).toLocaleString("ru")} so'm.`, action: "Bekor qilish sabablarini toifalab chiqing: narx, muddat, sifat yoki logistika.", href: "/orders?status=CANCELLED" },
     { key: "discount", title: "Chegirma", sub: "Bazaviy narxdan arzon sotilgan", perDay: discount / r.days, periodTotal: discount, kind: "QISMAN", flow: "OQIM", count: `${discountRows.length} ta pozitsiya`, text: `Bazaviy narxdan (marka narxi) past sotilgan pozitsiyalarda qo'ldan ketgan tushum — ${Math.round(discount).toLocaleString("ru")} so'm.`, action: "Chegirma berish qoidasini belgilang: o'lchanmagan chegirma — nazorat qilinmaydigan foyda teshigi." },
     { key: "writeoff", title: "Brak / Write-off", sub: "Hisobdan chiqarilgan xomashyo", perDay: woValue / r.days, periodTotal: woValue, kind: "ANIQ", flow: "OQIM", count: `${writeOffs.length} ta yozuv`, text: `Davr ichida ${writeOffs.length} ta hisobdan chiqarish — tannarxda ${Math.round(woValue).toLocaleString("ru")} so'm. Bu to'liq yo'qotish.`, action: "Sabablarini toifalang: saqlash sharti, muddat yoki ortiqcha buyurtma.", href: "/stock" },
-  ] satisfies LossChannel[]).sort((a, b) => b.perDay - a.perDay) as LossChannel[];
+  ] satisfies LossChannel[])
+    // Har kanal kunlik qiymati ≥ 0: manfiy "yo'qotish" jami summani yolg'on kamaytirmasin
+    .map((c) => ({ ...c, perDay: Math.max(0, c.perDay), periodTotal: Math.max(0, c.periodTotal) }))
+    .sort((a, b) => b.perDay - a.perDay) as LossChannel[];
   const totalPerDay = sum(channels.map((c) => c.perDay));
+  // Eng katta teshik — faqat haqiqatan pul ketayotgan kanal; hammasi 0 bo'lsa null
+  const biggest: LossChannel | null = channels[0] && channels[0].perDay > 0 ? channels[0] : null;
   const frozen = riskyDebt + deadValue;
-  return { channels, totalPerDay, frozen, marginRate, biggest: channels[0], stockout: { count: shortMats.length, value: shortValue, items: shortMats }, riskyDebt, riskyDebtors: riskyDebtors.length, overdueDebt, deadValue, deadCount: dead.length, blockedRevenue, blockedOrders };
+  return { channels, totalPerDay, frozen, marginRate, biggest, stockout: { count: shortMats.length, value: shortValue, items: shortMats }, riskyDebt, riskyDebtors: riskyDebtors.length, overdueDebt, deadValue, deadCount: dead.length, blockedRevenue, blockedOrders };
 }
 
 export async function financeTab(r: Range, gran: Gran, page: number, size: number, account?: string) {
   const today = startOfDay(new Date());
   const [loss, cur, prev, payments, prevPayments, accounts, allPay, openInv, receipts, prevReceipts, cust, wo, batches, prevBatches, tripsCur, tripsPrev] = await Promise.all([
-    lossChannels(r), loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
+    // Tushum va tannarx — yetkazilgan reyslar bo'yicha (realizatsiya), zayavka sanasi bo'yicha emas
+    lossChannels(r), loadRevenue(r.from, r.to), loadRevenue(r.prevFrom, r.prevTo),
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, include: { customer: { select: { name: true } }, cashAccount: true, invoice: { select: { invoiceNo: true } } }, orderBy: { date: "desc" } }),
     db.payment.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, select: { amount: true } }),
     db.cashAccount.findMany({ where: { isActive: true } }),
@@ -64,8 +73,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: r.from, lt: r.to } }, select: { qty: true, materialId: true } }),
     db.productionBatch.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { qtyM3: true } }),
     db.productionBatch.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { qtyM3: true } }),
-    db.trip.findMany({ where: { createdAt: { gte: r.from, lt: r.to }, status: "DELIVERED" }, select: { qtyM3: true } }),
-    db.trip.findMany({ where: { createdAt: { gte: r.prevFrom, lt: r.prevTo }, status: "DELIVERED" }, select: { qtyM3: true } }),
+    db.trip.findMany({ where: { deliveredAt: { gte: r.from, lt: r.to }, status: "DELIVERED" }, select: { qtyM3: true } }),
+    db.trip.findMany({ where: { deliveredAt: { gte: r.prevFrom, lt: r.prevTo }, status: "DELIVERED" }, select: { qtyM3: true } }),
   ]);
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
   const cogs = sum(cur.map((x) => x.cost)), prevCogs = sum(prev.map((x) => x.cost));
@@ -103,7 +112,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   // Daromad vs xarajat — oxirgi 6 oy
   const from6 = new Date(today.getFullYear(), today.getMonth() - 5, 1);
   const [sales6, rec6, pay6] = await Promise.all([
-    loadSales(from6, addDays(today, 1)),
+    loadRevenue(from6, addDays(today, 1)),
     db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: from6 } } }, select: { qty: true, price: true, receipt: { select: { date: true } } } }),
     db.payment.findMany({ where: { date: { gte: from6 } }, select: { date: true, amount: true } }),
   ]);
@@ -136,7 +145,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     { label: "Marja", unit: "%", ...kpi(safeDiv(gross, revenue) * 100, safeDiv(prevGross, prevRevenue) * 100) },
     { label: "Kassa tushumi", unit: "so'm", ...kpi(cashIn, prevCashIn) },
     { label: "Xomashyo xaridi", unit: "so'm", ...kpi(purchases, prevPurchases) },
-    { label: "Zayavkalar", unit: "ta", ...kpi(orders, prevOrders) },
+    { label: "Yetkazilgan zayavkalar", unit: "ta", ...kpi(orders, prevOrders) },
     { label: "O'rtacha chek", unit: "so'm", ...kpi(safeDiv(revenue, orders), safeDiv(prevRevenue, prevOrders)) },
     { label: "Ishlab chiqarish", unit: "m³", ...kpi(produced, prevProduced) },
     { label: "Yetkazildi", unit: "m³", ...kpi(shipped, prevShipped) },

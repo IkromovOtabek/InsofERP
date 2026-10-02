@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { isoDate } from "@/lib/format";
+import { avgUnitCosts } from "@/lib/stock";
 
 /* ───────────── Davr ───────────── */
 
@@ -95,10 +96,14 @@ export type SaleRow = {
   productId: string; product: string; code: string; unit: string; qty: number; price: number; basePrice: number; revenue: number; cost: number;
 };
 
-/** Xomashyo o'rtacha kirim narxi (RECEIPT). */
+/**
+ * Xomashyo o'rtacha kirim narxi — miqdorga tortilgan Σ(qty × unitCost) / Σqty. Bitta manba: `avgUnitCosts`
+ * (`lib/stock.ts` — sklad, brigada qoldig'i va kirim formalari ham shundan oladi). Ilgari bu yerda oddiy
+ * `AVG(unitCost)` olinardi: 1 kg lik namunaviy kirim 30 t lik partiya bilan bir xil og'irlikda hisoblanib,
+ * tannarxni (masalan suvda ~28%) buzardi.
+ */
 export async function materialCosts() {
-  const rows = await db.stockMove.groupBy({ by: ["materialId"], where: { type: "RECEIPT", materialId: { not: null } }, _avg: { unitCost: true } });
-  return new Map(rows.map((r) => [r.materialId as string, Number(r._avg.unitCost ?? 0)]));
+  return avgUnitCosts();
 }
 
 /**
@@ -143,6 +148,62 @@ export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIV
       productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * c,
     };
   });
+}
+
+/**
+ * Tushum (realizatsiya) qatorlari — YETKAZILGAN reyslar bo'yicha, `deliveredAt` sanasida.
+ * Zayavka qabul qilingani hali tushum emas: pul va tannarx mahsulot mijozga topshirilganda yuzaga keladi.
+ *
+ *   miqdor = mijoz qabul qilgani (acceptedQty; bo'lmasa yuklangan − qaytarilgan)
+ *   narx   = zayavka pozitsiyalari narxi; reys pozitsiyaga bog'lanmagan — zayavka tarkibi ulushida taqsimlanadi
+ *
+ * Reyssiz yopilgan zayavka (o'zi olib ketish, ЖБИ hovlidan) — DELIVERED/CLOSED va birorta yetkazilgan reysi
+ * yo'q bo'lsa, to'liq summasi yetkazish sanasida (deliveryDate) tushum bo'ladi.
+ * Qaytadigan qator `SaleRow` bilan bir xil — marja, mahsulot kesimi va trend shu funksiyadan.
+ */
+export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
+  const orderSelect = {
+    id: true, orderNo: true, date: true, deliveryDate: true, status: true, customerId: true, customer: { select: { name: true } }, createdById: true, createdBy: { select: { fullName: true } },
+    items: { select: { productId: true, qtyM3: true, price: true, product: { select: { name: true, code: true, unit: true, price: true } } } },
+  } as const;
+  const [trips, noTrip, costs] = await Promise.all([
+    db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, order: { kind: "SALE" } }, select: { deliveredAt: true, qtyM3: true, acceptedQty: true, returnedQty: true, order: { select: orderSelect } } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["DELIVERED", "CLOSED"] }, deliveryDate: { gte: from, lt: to }, trips: { none: { status: "DELIVERED" } } }, select: orderSelect }),
+    productCosts(),
+  ]);
+  type O = (typeof noTrip)[number];
+  const rowsOf = (o: O, date: Date, share: number): SaleRow[] => o.items.map((i) => {
+    const qty = Number(i.qtyM3) * share, price = Number(i.price), c = costs.get(i.productId)?.cost ?? 0;
+    return {
+      date, orderId: o.id, orderNo: o.orderNo, status: o.status, customerId: o.customerId, customer: o.customer.name, sellerId: o.createdById, seller: o.createdBy.fullName,
+      productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * c,
+    };
+  });
+  const out: SaleRow[] = [];
+  for (const t of trips) {
+    const total = sum(t.order.items.map((i) => Number(i.qtyM3)));
+    if (total <= 0) continue;
+    const loaded = Number(t.qtyM3);
+    const accepted = t.acceptedQty != null ? Math.min(loaded, Number(t.acceptedQty)) : Math.max(0, loaded - Number(t.returnedQty ?? 0));
+    out.push(...rowsOf(t.order, t.deliveredAt!, accepted / total));
+  }
+  for (const o of noTrip) out.push(...rowsOf(o, o.deliveryDate, 1));
+  return out;
+}
+
+/* ───────────── Oy prognozi (bitta formula: Owner dashboard, BI, AI chat) ───────────── */
+
+/** Ish kunlari — Dushanba–Shanba (zavod jadvali). */
+export function workingDays(from: Date, to: Date) { let n = 0; for (let d = new Date(from); d < to; d = addDays(d, 1)) if (d.getDay() !== 0) n++; return n; }
+
+/**
+ * Joriy oy oxirigacha prognoz: shu kungacha bo'lgan fakt / o'tgan ish kunlari × oydagi ish kunlari.
+ * `today` — hisob kuni (bugun kiradi). O'tgan oy uchun fakt o'zi qaytadi.
+ */
+export function monthForecast(fact: number, today: Date = startOfDay(new Date())) {
+  const mStart = new Date(today.getFullYear(), today.getMonth(), 1), mEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const wdTotal = workingDays(mStart, mEnd), wdPassed = workingDays(mStart, addDays(startOfDay(today), 1));
+  return wdPassed > 0 ? (fact / wdPassed) * wdTotal : 0;
 }
 
 export type Kpi = { cur: number; prev: number; delta: number | null };

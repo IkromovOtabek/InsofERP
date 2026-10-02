@@ -7,13 +7,13 @@ import { CustomerName } from "@/components/customer-name";
 import { getSession } from "@/lib/auth";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
-import { markLoaded, cancelTrip } from "../actions";
-import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, PHASE_STEPS, TRIP_PHASE, tripPhase, tripPlannedAt, tripDelayMin, delayLevel, logisticsSettings, minutesLabel } from "@/lib/logistics";
+import { cancelTrip } from "../actions";
+import { ISSUE_KIND, EXPENSE_KIND, FUEL_TYPE, VEHICLE_TYPE, DRUM_MAX_MIN, isConcreteTrip, PHASE_STEPS, TRIP_PHASE, tripPhase, tripPlannedAt, tripDelayMin, delayLevel, logisticsSettings, minutesLabel } from "@/lib/logistics";
 import { lastFuelPrice } from "@/lib/logistics-costs";
 import { money } from "@/lib/format";
-import { CloseTripForm, ReportIssueForm, ResolveIssueForm, TripCostForm } from "./trip-extras";
+import { CloseTripForm, DispatchDeliverForm, LoadButton, OnRoadButton, ReportIssueForm, ResolveIssueForm, TripCostForm } from "./trip-extras";
 import { DelayText, PhaseBadge } from "../../logistika/ui";
-import { distanceLabel, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
+import { distanceLabel, tripLine, tripSteps, tripTrack, tripTrackStats } from "@/lib/trips";
 import { TripTrackMap } from "./track-map";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { PickupForm } from "./pickup-form";
@@ -53,13 +53,17 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   //  • dispetcher (LOGISTICS) — reysni ochadi/bekor qiladi, ECO'ga yuboradi, muammoni hal qiladi, reysni yopadi;
   //  • ishlab chiqarish — "Yuklandi" (mikser zavodda yuklandi, skladdan chiqim);
   //  • haydovchi — yo'l bosqichlari (yo'lga chiqdi, obyektga keldi, tushirilmoqda, yetkazildi, qaytdi) o'z ilovasidan;
-  //  • direktor — faqat ko'radi.
-  const canLog = s.role === "LOGISTICS";
-  const canLoad = s.role === "PRODUCTION";
+  //    ilova ishlamasa dispetcher vebdan "Yo'lga chiqdi" / "Yetkazildi (dispetcher)" ni belgilaydi (auditda va muammo sifatida);
+  //  • direktor — dispetcher va ishlab chiqarish tugmalarini ham ko'radi.
+  const canLog = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  const canLoad = ["PRODUCTION", "DIRECTOR"].includes(s.role);
   const canPlan = canLog || canLoad;
   const driverPhase = ["LOADED", "ON_ROAD"].includes(t.status) || (t.status === "DELIVERED" && !t.returnedAt);
   // Reys miqdori zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, dona mahsulot dona)
-  const tripUnit = soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
+  // Aralash zayavkada reysning qatori texnika turidan aniqlanadi (beton — mikser, dona — yuk mashina)
+  const line = tripLine(t.order.items, t.vehicle.type);
+  const tripUnit = "error" in line ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) : line.unit;
+  const tripProduct = "error" in line ? t.order.items[0]?.product.name : t.order.items.find((i) => i.productId === line.productId)?.product.name;
   const phase = tripPhase(t);
   const settings = await logisticsSettings();
   const planned = tripPlannedAt(t, t.order);
@@ -70,6 +74,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const costSum = costs.reduce((a, c) => a + c.amount, 0);
   const price = await lastFuelPrice(t.vehicle.fuelType);
   const mins = (a: Date | null, b: Date | null) => (a && b ? Math.round((b.getTime() - a.getTime()) / 60000) : null);
+  // Baraban vaqti: yuklangan beton yetkazilmasdan qancha turibdi (faqat mikserdagi beton)
+  const drumMin = isConcreteTrip(t) && ["LOADED", "ON_ROAD"].includes(t.status) ? mins(t.loadedAt, new Date()) : null;
 
   return (
     <div>
@@ -80,7 +86,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         action={
           <>
             <LinkButton href={`/trips/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish</LinkButton>
-            {t.status === "PLANNED" && canLoad && <form action={markLoaded.bind(null, id)}><Button><PackageCheck size={16} /> Yuklandi</Button></form>}
+            {t.status === "PLANNED" && canLoad && <LoadButton tripId={id} />}
+            {t.status === "LOADED" && canLog && <OnRoadButton tripId={id} />}
             {driverPhase && canPlan && <span className="self-center text-xs text-slate-500">Yo&apos;l bosqichlarini haydovchi o&apos;z ilovasidan belgilaydi</span>}
             {t.status === "PLANNED" && canLog && <form action={cancelTrip.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor</Button></form>}
           </>
@@ -90,6 +97,11 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       {blacklisted && t.status !== "CANCELLED" && t.status !== "DELIVERED" && (
         <Callout tone="danger" title="Mijoz qora ro'yxatda">Kredit limiti to'liq ishlatilgan. Jo'natishdan oldin sotuv bo'limi yoki direktor bilan kelishing. <Link href={`/customers/${t.order.customerId}`} className="underline">Mijoz kartasi</Link></Callout>
       )}
+      {drumMin != null && drumMin >= DRUM_MAX_MIN * 0.8 && (
+        <Callout tone={drumMin >= DRUM_MAX_MIN ? "danger" : "warning"} title={drumMin >= DRUM_MAX_MIN ? "Baraban vaqti oshdi — beton qotish xavfi" : "Baraban vaqti tugayapti"}>
+          Beton yuklanganiga {minutesLabel(drumMin)} bo&apos;ldi (chegara {DRUM_MAX_MIN} daq). Obyekt bilan bog&apos;laning; kerak bo&apos;lsa laborant sifatini tekshirsin.
+        </Callout>
+      )}
       <Card className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <StatusSteps steps={STEPS} current={phase === "CANCELLED" ? "ASSIGNED" : phase} failed={phase === "CANCELLED"} />
@@ -97,9 +109,9 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Hajm" value={tripUnit ? `${qty(t.qtyM3)} ${unitLabel(tripUnit)}` : qty(t.qtyM3)} hint={t.order.items[0]?.product.name} icon={Package} tone="brand" />
-        <StatCard label="Mikser" value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
+        <StatCard label="Hajm" value={tripUnit ? `${qty(t.qtyM3)} ${unitLabel(tripUnit)}` : qty(t.qtyM3)} hint={tripProduct} icon={Package} tone="brand" />
+        <StatCard label={VEHICLE_TYPE[t.vehicle.type] ?? "Transport"} value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} />
         <StatCard label="Yuklandi" value={<span className="text-base">{dt(t.loadedAt)}</span>} icon={Clock} />
         <StatCard label="Yetkazildi" value={<span className="text-base">{dt(t.deliveredAt)}</span>} hint={t.receiverName ? `qabul qildi: ${t.receiverName}` : undefined} icon={Clock} tone={t.deliveredAt ? "success" : "default"} />
       </div>
@@ -114,6 +126,14 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             lat={t.pickupLat ?? plant?.lat ?? null}
             lng={t.pickupLng ?? plant?.lng ?? null}
           />
+        </Card>
+      )}
+
+      {["LOADED", "ON_ROAD"].includes(t.status) && canLog && (
+        <Card className="mt-5">
+          <CardHeader title="Yetkazildi (dispetcher)" icon={PackageCheck}
+            description="Haydovchi ilovadan belgilay olmasa (telefon o'chgan, pudratchi). GPS tasdig'isiz — reysga muammo yoziladi va yopishdan oldin ko'rib chiqiladi" />
+          <DispatchDeliverForm tripId={id} loaded={Number(t.qtyM3)} unit={tripUnit ? unitLabel(tripUnit) : ""} />
         </Card>
       )}
 

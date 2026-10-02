@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { HardHat, ArrowRight, Boxes } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { qty, money } from "@/lib/format";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { unitLabel } from "@/lib/unit";
+import { canTask } from "@/lib/tasks";
 import { ROLE_LABELS } from "@/lib/nav";
 import { Badge, Button, Card, Empty, LinkButton, PageHeader, Progress, Table, Td, Th, Tr } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
 
 export default async function BrigadesPage() {
-  const s = await requireSession(["SUPERVISOR", "PRODUCTION", "HR", "SALES"]);
-  const canEdit = ["PRODUCTION", "HR"].includes(s.role);
+  const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "HR", "SALES"]);
+  const canEdit = canTask(s.role, "brigadeEdit"); // rol matritsasi — `lib/tasks.ts`
   const [brigades, employees, stocks, undistributed] = await Promise.all([
     // Brigadirning login roli ham kerak: topshiriq ECO ilovasiga faqat BRIGADIER logini bor brigadirga tushadi
     db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], include: { leader: { include: { user: { select: { role: true, isActive: true } } } }, tasks: { where: { status: { in: ["NEW", "IN_PROGRESS"] } } } } }),

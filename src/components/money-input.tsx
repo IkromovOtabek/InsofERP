@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { fmtNum } from "@/lib/format";
 import { inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,11 @@ const show = (raw: string) => {
  * `value`/`onChange` berilsa boshqariladigan, bo'lmasa o'z holatini yuritadi.
  * `name` berilmasa yashirin maydon chizilmaydi (qiymat `onChange` orqali olinadi).
  * `decimals` — tiyin kerak bo'lsa (masalan xomashyo birlik narxi) 2 qilib beriladi.
+ *
+ * Forma tozalanganda (`form.reset()`, shuningdek React 19 server action muvaffaqiyatli
+ * tugagach formani o'zi tozalaganda) maydon ham `defaultValue` ga qaytadi. Ilgari ichki
+ * holat qolib ketardi: ekranda ham, yashirin maydonda ham eski summa turar va keyingi
+ * saqlashda ikkinchi marta yozilardi.
  */
 export function MoneyInput({ name, value, onChange, defaultValue, className, placeholder, required, disabled, readOnly, decimals = 0, suffix = "so'm" }: {
   name?: string;
@@ -50,18 +55,40 @@ export function MoneyInput({ name, value, onChange, defaultValue, className, pla
   suffix?: string | null;
 }) {
   const [inner, setInner] = useState(parse(defaultValue ?? "", decimals));
-  const raw = value !== undefined ? parse(value, decimals) : inner;
+  const controlled = value !== undefined;
+  const raw = controlled ? parse(value, decimals) : inner;
   const set = (v: string) => {
     const d = parse(v, decimals);
-    if (onChange) onChange(d);
-    else setInner(d);
+    // Boshqarilmaydigan rejimda ichki holat doim yangilanadi — `onChange` faqat xabar beradi
+    // (avval `onChange` berilib `value` berilmasa, maydonga umuman yozib bo'lmasdi)
+    if (!controlled) setInner(d);
+    onChange?.(d);
   };
   const id = useId();
+  const ref = useRef<HTMLInputElement>(null);
+
+  // Eng so'nggi qiymatlar — reset tinglovchisi har renderda qayta ulanmasligi uchun
+  const latest = useRef({ defaultValue, decimals, controlled, onChange });
+  latest.current = { defaultValue, decimals, controlled, onChange };
+
+  useEffect(() => {
+    const form = ref.current?.form;
+    if (!form) return;
+    const onReset = () => {
+      const l = latest.current;
+      const d = parse(l.defaultValue ?? "", l.decimals);
+      if (!l.controlled) setInner(d);
+      l.onChange?.(d);
+    };
+    form.addEventListener("reset", onReset);
+    return () => form.removeEventListener("reset", onReset);
+  }, []);
 
   return (
     <span className="relative block">
       {name && <input type="hidden" name={name} value={raw} />}
       <input
+        ref={ref}
         id={id}
         inputMode={decimals > 0 ? "decimal" : "numeric"}
         autoComplete="off"
@@ -73,7 +100,7 @@ export function MoneyInput({ name, value, onChange, defaultValue, className, pla
         readOnly={readOnly}
         className={cn(inputCls, "tabular", suffix && "pr-12", className)}
       />
-      {suffix && <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-400">{suffix}</span>}
+      {suffix && <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-500">{suffix}</span>}
     </span>
   );
 }

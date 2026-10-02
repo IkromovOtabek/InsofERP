@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Clock, Coins, Gauge, Timer, Truck } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { avgMin, cost, logisticsReport, onTimePct } from "@/lib/logistics-report";
 import { delayLevel, ISSUE_KIND, minutesLabel, tripDelayMin, VEHICLE_TYPE } from "@/lib/logistics";
 import { money, moneyShort, qty } from "@/lib/format";
@@ -31,7 +31,7 @@ function Bars({ rows, fmt = (n: number) => String(n), tone = "bg-slate-800" }: {
  * haydovchilar reytingi, kechikish taqsimoti, muammo turlari, eng band soatlar.
  */
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string }> }) {
-  await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rep, delivered, issues] = await Promise.all([
@@ -65,7 +65,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Logistika analitikasi" subtitle={r.label} />
       <PeriodTabs base="/logistika/analitika" current={r.period} />
       <RangeForm base="/logistika/analitika" from={r.from} to={r.to} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-6">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-6 [&>*]:min-w-0">
         <StatCard label="O'z vaqtida" value={onTimePct(t) != null ? `${onTimePct(t)}%` : "—"} hint={`${t.judged} ta baholandi`} icon={Clock} tone={(onTimePct(t) ?? 100) < 80 ? "warning" : "success"} />
         <StatCard label="O'rt. yetkazish" value={minutesLabel(avgMin(t))} hint="yuklash → topshirish" icon={Timer} />
         <StatCard label="Transportdan foydalanish" value={avgUtil != null ? `${avgUtil}%` : "—"} hint="o'rtacha, nasossiz" icon={Gauge} />
@@ -74,7 +74,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         <StatCard label="Muammolar" value={t.issues} icon={AlertTriangle} tone={t.issues ? "warning" : "default"} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <CardHeader title="Transportdan foydalanish" description="Band vaqt / ish vaqti" icon={Gauge} />
           <Bars rows={util.slice().sort((a, b) => b.utilization - a.utilization).map((v) => ({ label: <Link href={`/logistika/transport/${v.id}`} className="tabular hover:underline">{v.plate} <span className="text-xs text-slate-500">{VEHICLE_TYPE[v.type]}</span></Link>, value: v.utilization, hint: `${v.trips} reys, ${qty(v.m3)} m³` }))} fmt={(n) => `${n}%`} />

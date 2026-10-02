@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PackageCheck, PackageX, Scale, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { ISSUE_KIND, tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * muammo va qabul qiluvchi tasdig'i. "Yopilmagan" — yetkazilgan, lekin qabul hali tasdiqlanmagan reyslar.
  */
 export default async function DeliveriesPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; tab?: string }> }) {
-  await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
   const sp = await searchParams;
   const r = periodRange(sp, "week");
   const tab = sp.tab ?? "";
@@ -40,7 +40,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
       <PageHeader title="Yetkazib berish" subtitle={`${r.label}: yuklangan va qabul qilingan miqdor, qaytgan beton, muammolar`} />
       <PeriodTabs base="/logistika/yetkazish" current={r.period} />
       <RangeForm base="/logistika/yetkazish" from={r.from} to={r.to} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Yuklangan" value={qty(loaded)} hint={`${trips.length} reys`} icon={PackageCheck} tone="brand" />
         <StatCard label="Qabul qilingan" value={qty(acc)} hint={loaded ? `${((acc / loaded) * 100).toFixed(1)}%` : undefined} icon={Scale} tone="success" />
         <StatCard label="Qaytarilgan" value={qty(ret)} hint={`${diff.length} reysda farq`} icon={Undo2} tone={ret ? "warning" : "default"} />

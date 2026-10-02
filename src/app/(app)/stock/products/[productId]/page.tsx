@@ -31,7 +31,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
 
       <Card padded={false} className="mt-5">
         <div className="px-5 pt-5"><CardHeader title="Kimniki" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — egasi yo'q (erkin) qoldiq." icon={UserCheck} /></div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
           <thead><tr><Th>Egasi</Th><Th>Zayavka</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.owners.map((o) => (
@@ -53,29 +53,29 @@ export default async function StockProductDetail({ params }: { params: Promise<{
               <Td right className="whitespace-nowrap font-semibold">{qty(d.total)} {u}</Td><Td />
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </Card>
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Ishlab chiqarilgan partiyalar" icon={Factory} /></div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
             <thead><tr><Th>№</Th><Th>Sana</Th><Th right>Miqdor</Th><Th>Zayavka</Th><Th>Kim</Th></tr></thead>
             <tbody>
               {d.batches.length === 0 && <Empty text="Hali ishlab chiqarilmagan" icon={Factory} />}
               {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td>{date(b.date)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
             </tbody>
-          </table>
+          </table></div>
         </Card>
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Harakat tarixi" icon={History} /></div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
             <thead><tr><Th>Vaqt</Th><Th>Turi</Th><Th right>Miqdor</Th><Th>Kim</Th></tr></thead>
             <tbody>
               {d.moves.length === 0 && <Empty text="Harakat yo'q" icon={History} />}
               {d.moves.map((m) => <Tr key={m.id}><Td className="whitespace-nowrap font-normal">{dateTime(m.createdAt)}</Td><Td>{MOVE[m.type] ?? m.type}</Td><Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)}</Td><Td>{m.createdBy.fullName}</Td></Tr>)}
             </tbody>
-          </table>
+          </table></div>
         </Card>
       </div>
     </div>

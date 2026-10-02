@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,16 @@ const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-inter", 
 export const metadata: Metadata = {
   title: { default: "Insof ERP", template: "%s · Insof ERP" },
   description: "Beton zavodi boshqaruv tizimi",
+};
+
+// Telefon brauzerining manzil satri sahifa foni bilan bir xil rangda bo'ladi
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f2f4f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#111418" },
+  ],
 };
 
 // localStorage'dagi tanlov, bo'lmasa tizim sozlamasi. Sidebar holati ham shu yerda —

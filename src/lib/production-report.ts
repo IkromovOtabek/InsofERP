@@ -5,6 +5,7 @@ import { productionDay } from "@/lib/production-day";
 import { dayUtc, isoDay, markOf, today } from "@/lib/davomat";
 import { fmtUnitTotals, unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { hourlyReport, minText, type HourlyReport } from "@/lib/production-hourly";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -23,18 +24,20 @@ export type ReportSnapshot = {
   staff: {
     total: number; present: number; absent: number; sick: number; leave: number; dayoff: number; notMarked: number; unassigned: number;
     groups: { name: string; total: number; present: number }[];
-    away: { name: string; status: string }[];
+    away: { id?: string; name: string; status: string }[];
     presentList: { name: string; brigade: string | null; checkIn: string | null; checkOut: string | null }[];
   };
   plan: {
     workDays: number; elapsed: number;
-    rows: { code: string; name: string; unit: string; day: number; dayPlan: number | null; month: number; monthPlan: number | null; monthPct: number | null; behind: number | null; defectDay: number; defectMonth: number }[];
+    rows: { productId?: string; code: string; name: string; unit: string; day: number; dayPlan: number | null; month: number; monthPlan: number | null; monthPct: number | null; behind: number | null; defectDay: number; defectMonth: number }[];
   };
   producedToday: string;
-  load: { total: string; orders: { orderNo: string; time: string | null; customer: string; items: string; shipped: number; left: number }[] };
-  brigades: { name: string; leader: string | null; today: string; month: string; open: number; overdue: number }[];
-  defects: { time: string; code: string; qty: number; unit: string; reason: string; brigade: string | null; by: string }[];
-  stock: { name: string; unit: string; balance: number; perDay: number; days: number | null; planned: number; minStock: number; need: number; level: StockLevel }[];
+  load: { total: string; orders: { id?: string; orderNo: string; time: string | null; customer: string; items: string; shipped: number; left: number }[] };
+  brigades: { id?: string; name: string; leader: string | null; today: string; month: string; open: number; overdue: number }[];
+  defects: { id?: string; taskId?: string | null; time: string; code: string; qty: number; unit: string; reason: string; brigade: string | null; by: string }[];
+  stock: { id?: string; name: string; unit: string; balance: number; perDay: number; days: number | null; planned: number; minStock: number; need: number; level: StockLevel }[];
+  /** 08:00 dan qayd etilgan daqiqagacha soatma-soat + brigadirlar belgilagan muammolar (eski nusxalarda yo'q). */
+  hourly?: HourlyReport;
 };
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -44,13 +47,13 @@ const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
  * `need` — zayavkalarga yetishi va minimal qoldiqqa chiqishi uchun yetishmayotgan miqdor.
  * `short` — tasdiqlangan zayavkalarga yetmaydi yoki 3 kunga yetmaydi; `low` — minimaldan kam yoki 7 kundan kam.
  */
-export async function stockStatus() {
-  const rows = await materialOutlook();
+export async function stockStatus(opts: { until?: Date } = {}) {
+  const rows = await materialOutlook(opts);
   return rows
     .map((m) => {
       const need = Math.max(0, m.planned - m.balance, m.minStock - m.balance);
       const level: StockLevel = m.short || (m.days !== null && m.days < 3) ? "short" : m.balance < m.minStock || (m.days !== null && m.days < 7) ? "low" : "ok";
-      return { name: m.name, unit: m.unit, balance: m.balance, perDay: m.perDay, days: m.days, planned: m.planned, minStock: m.minStock, need, level, id: m.id };
+      return { name: m.name, unit: m.unit, balance: m.balance, perDay: m.perDay, days: m.days, planned: m.planned, minStock: m.minStock, need, level, id: m.id, orderGap: m.orderGap, orders: m.orders };
     })
     .sort((a, b) => ({ short: 0, low: 1, ok: 2 })[a.level] - ({ short: 0, low: 1, ok: 2 })[b.level] || (a.days ?? 1e9) - (b.days ?? 1e9) || a.name.localeCompare(b.name));
 }
@@ -63,8 +66,8 @@ export function stockHighlights<T extends { level: StockLevel; days: number | nu
 export const STOCK_LEVEL_LABEL: Record<StockLevel, string> = { short: "Yetmaydi", low: "Kam qoldi", ok: "Yetarli" };
 
 /** Kun raqamlari → hisobot obyekti (serializatsiyaga tayyor). */
-export async function buildReport(iso = today()): Promise<ReportSnapshot> {
-  const [d, stock] = await Promise.all([productionDay(iso), stockStatus()]);
+export async function buildReport(iso = today(), at = new Date()): Promise<ReportSnapshot> {
+  const [d, stock, hourly] = await Promise.all([productionDay(iso), stockStatus(), hourlyReport(iso, at)]);
   const ids = [...new Set([...d.plan.rows.map((p) => p.product.id), ...d.produced.map((r) => r.product.id)])];
   return {
     v: 1, iso, ym: d.ym,
@@ -72,7 +75,7 @@ export async function buildReport(iso = today()): Promise<ReportSnapshot> {
       total: d.staff.total, present: d.attendance.present.length, absent: d.attendance.absent, sick: d.attendance.sick, leave: d.attendance.leave,
       dayoff: d.attendance.dayoff, notMarked: d.attendance.notMarked.length, unassigned: d.staff.unassigned,
       groups: d.staff.groups.filter((g) => g.total > 0).map((g) => ({ name: g.name, total: g.total, present: g.present })),
-      away: d.attendance.away.map((e) => ({ name: e.fullName, status: markOf(e.status).label })),
+      away: d.attendance.away.map((e) => ({ id: e.id, name: e.fullName, status: markOf(e.status).label })),
       presentList: d.attendance.present.map((e) => ({ name: e.fullName, brigade: e.brigade, checkIn: e.checkIn, checkOut: e.checkOut })),
     },
     plan: {
@@ -82,7 +85,7 @@ export async function buildReport(iso = today()): Promise<ReportSnapshot> {
         const r = d.produced.find((x) => x.product.id === id);
         const prod = p?.product ?? r!.product;
         return {
-          code: prod.code, name: prod.name, unit: prod.unit,
+          productId: prod.id, code: prod.code, name: prod.name, unit: prod.unit,
           day: r?.day ?? 0, dayPlan: p ? p.dayQty : null, month: r?.month ?? 0, monthPlan: p ? p.monthQty : null,
           monthPct: p ? p.monthPct : null, behind: p ? p.behind : null, defectDay: r?.defectDay ?? 0, defectMonth: r?.defectMonth ?? 0,
         };
@@ -91,15 +94,16 @@ export async function buildReport(iso = today()): Promise<ReportSnapshot> {
     producedToday: fmtUnitTotals(d.produced.filter((r) => r.day > 0).map((r) => ({ unit: r.product.unit, qty: r.day }))),
     load: {
       total: d.load.products.map((p) => `${p.code} ${+p.need.toFixed(2)} ${unitLabel(p.unit)}`).join(" · "),
-      orders: d.load.orders.map((o) => ({ orderNo: o.orderNo, time: o.time, customer: o.customer, items: o.items.map((i) => `${i.code} ${+i.qty.toFixed(2)} ${unitLabel(i.unit)}`).join(", "), shipped: o.shipped, left: o.left })),
+      orders: d.load.orders.map((o) => ({ id: o.id, orderNo: o.orderNo, time: o.time, customer: o.customer, items: o.items.map((i) => `${i.code} ${+i.qty.toFixed(2)} ${unitLabel(i.unit)}`).join(", "), shipped: o.shipped, left: o.left })),
     },
     brigades: d.brigades.map((b) => ({
-      name: b.name, leader: b.leader, today: b.today.map((t) => `${t.product} ${+t.qty.toFixed(2)} ${unitLabel(t.unit)}`).join("; "),
+      id: b.id, name: b.name, leader: b.leader, today: b.today.map((t) => `${t.product} ${+t.qty.toFixed(2)} ${unitLabel(t.unit)}`).join("; "),
       month: b.monthText, open: b.openCount, overdue: b.overdue,
     })),
-    defects: d.defects.today.map((r) => ({ time: hhmm(r.date), code: r.product.code, qty: r.qty, unit: r.product.unit, reason: r.note ? `${r.reason} · ${r.note}` : r.reason, brigade: r.brigade, by: r.by })),
+    defects: d.defects.today.map((r) => ({ id: r.id, taskId: r.taskId, time: hhmm(r.date), code: r.product.code, qty: r.qty, unit: r.product.unit, reason: r.note ? `${r.reason} · ${r.note}` : r.reason, brigade: r.brigade, by: r.by })),
     // Varaqqa hamma xomashyo emas: kam qolganlar + eng tez tugaydigan 10 tasi
-    stock: (() => { const h = stockHighlights(stock); return [...h.low, ...h.ok].map((s) => ({ name: s.name, unit: s.unit, balance: s.balance, perDay: s.perDay, days: s.days, planned: s.planned, minStock: s.minStock, need: s.need, level: s.level })); })(),
+    stock: (() => { const h = stockHighlights(stock); return [...h.low, ...h.ok].map((s) => ({ id: s.id, name: s.name, unit: s.unit, balance: s.balance, perDay: s.perDay, days: s.days, planned: s.planned, minStock: s.minStock, need: s.need, level: s.level })); })(),
+    hourly,
   };
 }
 
@@ -111,16 +115,21 @@ export function reportSummary(r: ReportSnapshot) {
     `ishda ${r.staff.present}/${r.staff.total}`,
     r.producedToday && r.producedToday !== "0" ? `chiqarildi ${r.producedToday}` : "ishlab chiqarish qayd qilinmagan",
     r.defects.length ? `brak ${r.defects.length} ta` : null,
+    r.hourly?.downtimeMin ? `to'xtash ${minText(r.hourly.downtimeMin)}` : null,
+    r.hourly?.openIssues ? `${r.hourly.openIssues} muammo ochiq` : null,
     lagging ? `${lagging} mahsulot plandan orqada` : null,
     shortStock ? `${shortStock} xomashyo kam` : null,
   ].filter(Boolean).join(" · ");
 }
 
-/** "Qayd etish": hozirgi raqamlarni muzlatib saqlaydi va direktorga xabar beradi. */
+/**
+ * "Qayd etish": hozirgi raqamlarni muzlatib saqlaydi va direktorga xabar beradi.
+ * Soatma-soat qism 08:00 dan aynan shu bosilgan daqiqagacha yoziladi.
+ */
 export async function submitReport(userId: string, iso: string, note: string | null) {
   if (iso > today()) return { error: "Kelajak kunga hisobot yozib bo'lmaydi" } as const;
   const snap = await buildReport(iso);
-  const summary = reportSummary(snap);
+  const summary = `${snap.hourly ? `${snap.hourly.from}–${snap.hourly.to} · ` : ""}${reportSummary(snap)}`;
   const rep = await db.$transaction(async (tx) => {
     const r = await tx.productionReport.create({ data: { date: dayUtc(iso), data: snap as unknown as Prisma.InputJsonValue, summary, note, createdById: userId } });
     await audit(tx, userId, "CREATE", "ProductionReport", r.id, undefined, { kun: iso, summary });

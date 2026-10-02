@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { workPositions } from "@/lib/positions";
 import { Card, Checkbox, Field, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
@@ -11,7 +11,7 @@ import { importEmployeesFromExcel } from "../actions";
  * Ustun nomlari rus/o'zbek aralash bo'lishi mumkin — mos ustun o'zi topiladi, keyin tekshirib tuzatiladi.
  */
 export default async function EmployeesImportPage() {
-  await requireSession(["HR"]);
+  await requireRoles(["HR"]);
   const positions = await workPositions();
 
   return (

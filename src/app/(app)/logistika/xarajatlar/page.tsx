@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Coins, Fuel, Route, Truck } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { transportCosts } from "@/lib/logistics-costs";
 import { EXPENSE_KIND } from "@/lib/logistics";
 import { date, money, moneyShort, qty } from "@/lib/format";
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * reysning jami logistika tannarxi. 1 m³ ga tannarx — xarajat / yetkazilgan hajm.
  */
 export default async function ExpensesPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; vehicleId?: string }> }) {
-  await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rows, costs, opts, delivered, vehicles] = await Promise.all([
@@ -43,14 +43,14 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Transport xarajatlari" subtitle={`${r.label} · yoqilg'i + boshqa xarajatlar = logistika tannarxi`} />
       <PeriodTabs base="/logistika/xarajatlar" current={r.period} />
       <RangeForm base="/logistika/xarajatlar" from={r.from} to={r.to} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Jami tannarx" value={moneyShort(costs.total)} icon={Coins} tone="brand" />
         <StatCard label="Yoqilg'i" value={moneyShort(costs.fuel)} hint={costs.total ? `${Math.round((costs.fuel / costs.total) * 100)}%` : undefined} icon={Fuel} href="/logistika/yoqilgi" />
         <StatCard label="Boshqa xarajat" value={moneyShort(costs.other)} icon={Truck} />
         <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} />
       </div>
       <Card className="mb-5"><CardHeader title="Xarajat qo'shish" description="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>
-      <div className="grid gap-5 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <div className="space-y-5 xl:col-span-2">
           <Card>
             <CardHeader title="Turlar bo'yicha" icon={Coins} />

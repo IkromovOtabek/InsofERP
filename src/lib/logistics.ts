@@ -30,6 +30,18 @@ export async function logisticsSettings(): Promise<LogisticsSettings> {
   };
 }
 
+/**
+ * Baraban vaqti: beton yuklangandan shuncha daqiqada quyilishi kerak, keyin qota boshlaydi.
+ * Sozlamalar jadvalida (`CompanySettings`) alohida maydon yo'q — sxemaga tegmaslik uchun konstanta.
+ * Maydon qo'shilsa `logisticsSettings()` ga `drumMaxMin` sifatida olib o'tiladi.
+ */
+export const DRUM_MAX_MIN = 90;
+
+/** Reys beton (m³) tashiydimi: mikser + zayavkada m³ qator. Aralash zayavkada dona qatorni yuk mashina oladi. */
+export function isConcreteTrip(t: { vehicle: { type: string }; order: { items: { product: { unit: string } }[] } }): boolean {
+  return t.vehicle.type === "MIXER" && t.order.items.some((i) => i.product.unit === "m3");
+}
+
 // ───────────────────────── Reys bosqichi ─────────────────────────
 
 /**
@@ -308,4 +320,72 @@ export async function driverEmployees(opts: { activeOnly?: boolean } = {}) {
   const names = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
   const all = await db.employee.findMany({ where: opts.activeOnly ? { isActive: true } : {}, orderBy: [{ isActive: "desc" }, { fullName: "asc" }] });
   return all.filter((e) => names.includes(e.position.trim().toLowerCase()));
+}
+
+// ───────────────────────── Texnik xizmat muddati (mexanik) ─────────────────────────
+
+/** Keyingi xizmatgacha shuncha kun yoki km qolsa — "yaqinlashdi" (e'tibor). */
+export const SERVICE_WARN_DAYS = 14;
+export const SERVICE_WARN_KM = 1000;
+
+/** Xizmat jurnalidagi oddiy turlar — formada tanlov, lekin boshqasini ham yozish mumkin. */
+export const SERVICE_KINDS = ["Moy almashtirish", "Filtrlar", "Ta'mir", "Shina", "Tormoz tizimi", "Akkumulyator", "Baraban / gidravlika", "Texnik ko'rik", "Boshqa"] as const;
+
+export type ServiceDue = {
+  serviceId: string; vehicleId: string; plate: string; kind: string; level: Exclude<Level, "ok">;
+  dueAt: Date | null; dueKm: number | null; daysLeft: number | null; kmLeft: number | null; text: string;
+};
+
+/**
+ * Bitta xizmat yozuvining muddati: sana yoki probeg (qaysi biri oldin kelsa). O'tgan — kritik,
+ * `SERVICE_WARN_DAYS` / `SERVICE_WARN_KM` ichida — e'tibor. Muddati yo'q yoki uzoq — null.
+ */
+export function serviceDueLevel(
+  s: { nextDueAt: Date | null; nextDueKm: number | null },
+  odometerKm: number | null,
+  now = new Date(),
+): { level: Exclude<Level, "ok">; daysLeft: number | null; kmLeft: number | null } | null {
+  const daysLeft = s.nextDueAt ? Math.floor((s.nextDueAt.getTime() - now.getTime()) / 86_400_000) : null;
+  const kmLeft = s.nextDueKm != null && odometerKm != null ? s.nextDueKm - odometerKm : null;
+  if ((daysLeft != null && daysLeft < 0) || (kmLeft != null && kmLeft < 0)) return { level: "crit", daysLeft, kmLeft };
+  if ((daysLeft != null && daysLeft <= SERVICE_WARN_DAYS) || (kmLeft != null && kmLeft <= SERVICE_WARN_KM)) return { level: "warn", daysLeft, kmLeft };
+  return null;
+}
+
+/**
+ * Muddati yaqinlashgan / o'tgan texnik xizmatlar — transport ro'yxati, transport kartasi va
+ * mexanik bosh sahifasi uchun (dashboard shu funksiyani chaqiradi, o'zi hisoblamaydi).
+ *
+ * Har texnika va har xizmat turi bo'yicha faqat OXIRGI yozuv qaraladi: moy almashtirilib yangi
+ * yozuv kiritilsa, eskisining "muddati o'tgan" ogohlantirishi o'z-o'zidan yo'qoladi.
+ */
+export async function vehicleServiceDue(opts: { vehicleId?: string; now?: Date } = {}): Promise<ServiceDue[]> {
+  const now = opts.now ?? new Date();
+  const rows = await db.vehicleService.findMany({
+    where: { ...(opts.vehicleId ? { vehicleId: opts.vehicleId } : {}), vehicle: { isActive: true }, OR: [{ nextDueAt: { not: null } }, { nextDueKm: { not: null } }] },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    select: { id: true, vehicleId: true, kind: true, nextDueAt: true, nextDueKm: true, vehicle: { select: { plate: true, odometerKm: true } } },
+  });
+  // Har (texnika, tur) uchun eng oxirgi yozuv — undan oldingilari allaqachon bajarilgan
+  const latest = await db.vehicleService.findMany({
+    where: { ...(opts.vehicleId ? { vehicleId: opts.vehicleId } : {}), vehicle: { isActive: true } },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    distinct: ["vehicleId", "kind"],
+    select: { id: true },
+  });
+  const latestIds = new Set(latest.map((x) => x.id));
+  const out: ServiceDue[] = [];
+  for (const r of rows) {
+    if (!latestIds.has(r.id)) continue;
+    const d = serviceDueLevel(r, r.vehicle.odometerKm, now);
+    if (!d) continue;
+    const parts: string[] = [];
+    if (d.daysLeft != null) parts.push(d.daysLeft < 0 ? `${-d.daysLeft} kun o'tdi` : d.daysLeft === 0 ? "bugun" : `${d.daysLeft} kun qoldi`);
+    if (d.kmLeft != null) parts.push(d.kmLeft < 0 ? `${-d.kmLeft} km o'tdi` : `${d.kmLeft} km qoldi`);
+    out.push({
+      serviceId: r.id, vehicleId: r.vehicleId, plate: r.vehicle.plate, kind: r.kind, level: d.level,
+      dueAt: r.nextDueAt, dueKm: r.nextDueKm, daysLeft: d.daysLeft, kmLeft: d.kmLeft, text: `${r.kind}: ${parts.join(" · ")}`,
+    });
+  }
+  return out.sort((a, b) => (a.level === b.level ? (a.daysLeft ?? 9e9) - (b.daysLeft ?? 9e9) : a.level === "crit" ? -1 : 1));
 }

@@ -28,13 +28,13 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-slate-400">Oqim yo'qotishi</div><div className="text-base font-semibold tabular">{moneyShort(L.channels.filter((c) => c.flow === "OQIM").reduce((s, c) => s + c.perDay, 0))}<span className="ml-1 text-[10px] font-normal text-slate-400">so'm/kun</span></div></div>
               <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-slate-400">Muzlagan pul</div><div className="text-base font-semibold tabular">{moneyShort(L.frozen)}<span className="ml-1 text-[10px] font-normal text-slate-400">qoldiq</span></div></div>
-              <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-slate-400">Eng katta teshik</div><div className="text-base font-semibold">{L.biggest.title}</div><div className="text-[10px] text-slate-400">{fmtNum(share(L.biggest.perDay), 0)}% yo'qotishning</div></div>
+              <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-slate-400">Eng katta teshik</div><div className="text-base font-semibold">{L.biggest?.title ?? "—"}</div><div className="text-[10px] text-slate-400">{L.biggest ? `${fmtNum(share(L.biggest.perDay), 0)}% yo'qotishning` : "yo'qotish yo'q"}</div></div>
               <div className="rounded-lg bg-slate-50 p-2.5"><div className="text-slate-400">Davr yo'qotishi</div><div className="text-base font-semibold tabular">{moneyShort(L.channels.reduce((s, c) => s + c.periodTotal, 0))}</div><div className="text-[10px] text-slate-400">{range.days} kun</div></div>
             </div>
           </div>
           <div className="lg:col-span-2">
             <HBarList data={L.channels.map((c) => ({ label: c.title, value: c.perDay, hint: `${fmtNum(share(c.perDay), 1)}%`, tone: "danger" as const }))} formatValue={(v) => `${moneyShort(v)}/kun`} />
-            <div className="mt-3"><Insight>Bugungi holatda kuniga taxminan {money(Math.round(L.totalPerDay))} yo'qotilmoqda (oyiga ≈ {moneyShort(L.totalPerDay * 30)} so'm). Eng katta teshik — {L.biggest.title} ({fmtNum(share(L.biggest.perDay), 1)}%, kuniga {moneyShort(L.biggest.perDay)} so'm). Bundan tashqari {moneyShort(L.frozen)} so'm aylanmadan chiqib, qarz va zaxirada muzlab turibdi.</Insight></div>
+            <div className="mt-3"><Insight>Bugungi holatda kuniga taxminan {money(Math.round(L.totalPerDay))} yo'qotilmoqda (oyiga ≈ {moneyShort(L.totalPerDay * 30)} so'm). {L.biggest ? <>Eng katta teshik — {L.biggest.title} ({fmtNum(share(L.biggest.perDay), 1)}%, kuniga {moneyShort(L.biggest.perDay)} so&apos;m).</> : "Aniqlangan yo'qotish kanali yo'q."} Bundan tashqari {moneyShort(L.frozen)} so'm aylanmadan chiqib, qarz va zaxirada muzlab turibdi.</Insight></div>
           </div>
         </div>
       </Panel>
@@ -42,7 +42,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       {/* Kanallar */}
       <div>
         <div className="mb-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Yo'qotishlar · kanal bo'yicha · kattadan kichikka</div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 [&>*]:min-w-0">
           {L.channels.map((c, i) => (
             <div key={c.key} className="rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)">
               <div className="flex items-start justify-between gap-2"><div><div className="text-[11px] font-semibold text-slate-400">#{i + 1}</div><div className="font-semibold">{c.title}</div><div className="text-xs text-slate-500">{c.sub}</div></div><div className="flex gap-1"><Tag>{c.kind}</Tag><Tag>{c.flow}</Tag></div></div>
@@ -57,7 +57,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       {/* Cash forecast */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
         <Panel title="Cash Forecast — 7 kun" info="Boshlang'ich — barcha kassa/hisoblarga kelib tushgan to'lovlar jami (tizimda xarajat moduli yo'q). Kutilayotgan tushum — so'nggi 30 kun kunlik o'rtacha, ochiq debitorka bilan cheklangan. Yomon/yaxshi stsenariy — ±1σ.">
           <div className="grid grid-cols-2 gap-3 text-[13px] md:grid-cols-4">
             <div><div className="text-xs text-slate-400">7 kundan keyin</div><div className="text-lg font-bold tabular text-emerald-600">{moneyShort(cf.after7)}</div></div>
@@ -69,13 +69,13 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900"><b>Agar hech narsa qilmasangiz:</b> kunlik o'rtacha tushum {moneyShort(cf.perDay)} so'm (σ = {moneyShort(cf.sigma)}). Ochiq debitorka {moneyShort(cf.receivable)} so'm — shu tempda {cf.coverDays === null ? "—" : `${fmtNum(cf.coverDays, 0)} kunda`} undiriladi. {cf.risk === "Yuqori" ? "Tushum juda notekis — yirik chiqimni kutilayotgan to'lov kelgandan keyin rejalashtiring." : "Zaxira barqaror."}</div>
           <Why label="Prognoz qanday hisoblangan (3 ta taxmin)"><p>1. Kelajak tushum — so'nggi 30 kun o'rtachasi bilan bir xil.</p><p>2. Tushum ochiq debitorkadan oshmaydi.</p><p>3. Tarqoqlik (σ) tarixiy kunlik tushumlardan olingan.</p></Why>
         </Panel>
-        <Panel title="P&L Waterfall" info="Bazaviy tushumdan foydagacha. Tannarx — retsept × xomashyo o'rtacha kirim narxi. * Ish haqi, energiya, transport xarajatlari tizimda yo'q — bu yalpi foyda darajasi.">
-          <Waterfall steps={d.waterfall} formatValue={moneyShort} />
+        <Panel title="P&L Waterfall" info="Bazaviy tushumdan foydagacha. Tushum — yetkazilgan reyslar bo'yicha (mijoz qabul qilgan miqdor × narx, yetkazilgan kuni). Tannarx — retsept × xomashyo o'rtacha kirim narxi (miqdorga tortilgan). * Ish haqi, energiya, transport xarajatlari bu yerda yo'q — bu yalpi foyda darajasi (to'liq sof foyda — Egasi dashbordida).">
+          <div className="overflow-x-auto"><div className="min-w-[420px]"><Waterfall steps={d.waterfall} formatValue={moneyShort} /></div></div>
           <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Gross margin</div><div className="text-base font-semibold tabular">{fmtNum(k.margin, 1)}%</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Chegirma</div><div className="text-base font-semibold tabular text-amber-600">{moneyShort(k.discount)}</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Brak</div><div className="text-base font-semibold tabular text-red-600">{moneyShort(k.writeOff)}</div></div></div>
         </Panel>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8 [&>*]:min-w-0">
         <Kpi label="Jami sotuv tushumi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" />
         <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%`} />
         <Kpi label="Foyda*" value={moneyShort(k.profit)} icon={PiggyBank} tone={k.profit >= 0 ? "success" : "danger"} hint="brakdan keyin" />
@@ -86,7 +86,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
         <Kpi label="Faol mijozlar" value={`${k.activeCustomers} / ${k.totalCustomers}`} icon={Users} tone="violet" hint={`Faollik ${fmtNum(d.activeRate, 0)}%`} />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
         <Panel title="Xarajat tuzilmasi" info="Davr ichidagi xomashyo xaridlari yetkazuvchi bo'yicha + brak. Boshqa xarajat turlari tizimda yuritilmaydi.">
           {d.expenses.length ? <DonutChart data={d.expenses.slice(0, 8)} formatValue={moneyShort} center={{ value: moneyShort(d.expenseTotal), label: "jami" }} /> : <Note>Davrda xarid yo'q.</Note>}
         </Panel>
@@ -96,7 +96,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
         <Panel title="Daromad vs Xarajat — 6 oy" info="Sotuv tushumi, xomashyo xaridi va kassa tushumi oylar bo'yicha.">
           <LineChart labels={d.months.labels} series={[{ name: "Sotuv", values: d.months.revenue, color: "#ffa800" }, { name: "Xarid", values: d.months.purchases, color: "#fa1636" }, { name: "Kassa", values: d.months.cash, color: "#00cb80" }]} formatValue={moneyShort} height={160} area={false} />
         </Panel>
@@ -110,7 +110,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
         <Panel title="Kassa balanslari" info="Har kassa/hisob bo'yicha: davr tushumi va jami tushumlar." padded={false}>
           <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Kassa / hisob</Th><Th right>Davr</Th><Th right>Jami</Th></tr></thead><tbody>{d.accountRows.length === 0 && <Empty text="Kassa yo'q" />}{d.accountRows.map((a) => <Tr key={a.id}><Td>{a.name} <span className="text-xs text-slate-400">{a.type === "CASH" ? "naqd" : "bank"}</span></Td><Td right>{moneyShort(a.period)}</Td><Td right className="font-semibold">{moneyShort(a.total)}</Td></Tr>)}</tbody></Table>
         </Panel>

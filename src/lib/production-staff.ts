@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { DEFAULT_SHIFT, dayUtc, markOf, toMinutes, today } from "@/lib/davomat";
+import { DEFAULT_SHIFT, dayUtc, markOf, shiftProblem, toMinutes, today } from "@/lib/davomat";
 import type { AttendanceStatus } from "@/generated/prisma";
 
 /**
@@ -90,7 +90,11 @@ export type ProductionStaff = Awaited<ReturnType<typeof productionStaff>>;
 /** Hozirgi soat "HH:MM" (server mahalliy vaqti). */
 export const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
-type Mark = { status: AttendanceStatus; checkIn?: string | null; checkOut?: string | null; note?: string | null };
+type Mark = {
+  status: AttendanceStatus; checkIn?: string | null; checkOut?: string | null; note?: string | null;
+  /** "Keldi" yuz bilan tasdiqlangan — kadr fayli (`uploads/employees/`). Qo'lda belgilashda berilmaydi va o'zgarmaydi. */
+  facePhoto?: string;
+};
 
 /**
  * Sex davomatini belgilash — ishlab chiqarish boshlig'i faqat o'z sexining xodimini belgilaydi
@@ -106,13 +110,57 @@ export async function markProductionAttendance(userId: string, employeeId: strin
   const checkOut = present ? (m.checkOut === undefined ? e.checkOut : m.checkOut?.trim() || null) : null;
   if (checkIn && toMinutes(checkIn) === null) return { error: "Kelgan vaqt noto'g'ri — SS:DD ko'rinishida yozing" };
   if (checkOut && toMinutes(checkOut) === null) return { error: "Ketgan vaqt noto'g'ri — SS:DD ko'rinishida yozing" };
+  const tooLong = shiftProblem(checkIn, checkOut);
+  if (tooLong) return { error: `${e.fullName}: ${tooLong}` };
   const date = dayUtc(iso);
-  const data = { status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId };
+  const data = {
+    status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId,
+    ...(m.facePhoto ? { facePhoto: m.facePhoto, faceVerifiedAt: new Date() } : {}),
+  };
   await db.$transaction(async (tx) => {
     const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId, date } }, create: { employeeId, date, ...data }, update: data });
-    await audit(tx, userId, "UPDATE", "Attendance", a.id, e.status ? { status: e.status, checkIn: e.checkIn, checkOut: e.checkOut } : undefined, { xodim: e.fullName, ...data });
+    await audit(tx, userId, "UPDATE", "Attendance", a.id, e.status ? { status: e.status, checkIn: e.checkIn, checkOut: e.checkOut } : undefined, { xodim: e.fullName, ...data, ...(m.facePhoto ? { yuz: "tasdiqlandi" } : {}) });
   });
   return { ok: true, text: `${e.fullName} — ${markOf(m.status).label.toLowerCase()}${checkIn ? ` ${checkIn}` : ""}${checkOut ? `–${checkOut}` : ""}` };
+}
+
+/**
+ * "Keldi" — yuz bilan (mobil `att.face`). Kamera kadri xodimning profil surati bilan solishtiriladi
+ * (`lib/ai/face.ts`); mos kelsa kadr saqlanib davomat yoziladi, aks holda hech narsa yozilmaydi —
+ * faqat auditda urinish qoladi (kim, kimni, nima sababdan o'tmadi).
+ */
+export async function markAttendanceByFace(userId: string, employeeId: string, photo: File, iso = today()): Promise<{ error: string } | { ok: true; text: string; confidence: number }> {
+  const { faceCheckEnabled, compareFaces } = await import("@/lib/ai/face");
+  const { employeeFilePath, saveEmployeeFile } = await import("@/lib/uploads");
+  const { readFile } = await import("fs/promises");
+  if (!faceCheckEnabled()) return { error: "Yuz tekshiruvi sozlanmagan (AI kaliti yo'q) — davomatni sex boshlig'i qo'lda belgilaydi" };
+  const staff = await productionStaff(iso);
+  const e = staff.members.find((x) => x.id === employeeId);
+  if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };
+  if (e.status === "PRESENT") return { error: `${e.fullName} bugun allaqachon "Keldi" deb belgilangan` };
+  const emp = await db.employee.findUnique({ where: { id: employeeId }, select: { photo: true } });
+  const refPath = emp?.photo ? employeeFilePath(emp.photo) : null;
+  if (!refPath) return { error: `${e.fullName} ning profil surati yo'q — otdel kadr avval kartasiga rasm yuklaydi` };
+  let reference: Buffer;
+  try { reference = await readFile(refPath); } catch { return { error: "Profil surati diskda topilmadi — otdel kadr qayta yuklasin" }; }
+  const probe = Buffer.from(await photo.arrayBuffer());
+
+  let r: Awaited<ReturnType<typeof compareFaces>>;
+  try { r = await compareFaces(reference, probe); } catch (err) {
+    // Provayder xatosi (limit, tarmoq) — ichki matn (org id, URL) ilovaga chiqmasin
+    const msg = (err as Error).message ?? "";
+    console.error("[face] tekshiruv xatosi:", msg);
+    return { error: /rate limit/i.test(msg) ? "AI tekshiruvi band (bepul tarif limiti) — bir daqiqadan keyin qayta urining" : "Yuz tekshiruvi vaqtincha ishlamadi — qayta urining yoki sex boshlig'i qo'lda belgilasin" };
+  }
+  if (!r.match) {
+    await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: "tasdiqlanmadi", ishonch: r.confidence, sabab: r.reason });
+    return { error: `Yuz tasdiqlanmadi (${r.confidence}%): ${r.reason}` };
+  }
+  const saved = await saveEmployeeFile(employeeId, photo, { imageOnly: true });
+  if (!saved || "error" in saved) return { error: saved?.error ?? "Kadr saqlanmadi" };
+  const m = await markProductionAttendance(userId, employeeId, { status: "PRESENT", facePhoto: saved.stored }, iso);
+  if ("error" in m) return m;
+  return { ok: true, text: `${m.text} · yuz tasdiqlandi (${r.confidence}%)`, confidence: r.confidence };
 }
 
 /** Ketgan vaqtini qo'yish (faqat kelgan xodimga). */

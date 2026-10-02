@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Search, Truck } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog, roleForPosition } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { date, isoDate, qty } from "@/lib/format";
@@ -13,7 +13,7 @@ import { toggleEmployee } from "./actions";
 import type { Prisma } from "@/generated/prisma";
 
 export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string; holat?: string }> }) {
-  const s = await requireSession(["HR", "LOGISTICS"]);
+  const s = await requireRoles(["HR", "LOGISTICS"]);
   const isHR = ["HR", "DIRECTOR"].includes(s.role);
   const { q = "", pos = "", holat = "" } = await searchParams;
 

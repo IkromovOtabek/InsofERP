@@ -30,3 +30,21 @@ export const VEHICLE_TYPES: { value: string; label: string }[] = [
 
 /** Guvohnoma muddati tugashiga necha kun qolganini qaytaradi (o'tib ketgan bo'lsa manfiy). */
 export const licenseDaysLeft = (expiry: Date) => Math.ceil((expiry.getTime() - Date.now()) / 86_400_000);
+
+/* ───────────────────────── Fayl hajmi (klient tomonda) ───────────────────────── */
+
+/** Xodim surati va hujjatlari uchun eng katta fayl — serverdagi `EMPLOYEE_MAX_MB` bilan bir xil. */
+export const HR_FILE_MAX_MB = 10;
+
+/**
+ * Formadagi fayl maydonlarini yuborishdan OLDIN tekshiradi: katta fayl serverga yuklanib, keyin rad
+ * etilmasin (sekin internetda daqiqalab kutib, oxirida xato ko'rish o'rniga — darhol xabar).
+ * Xato bo'lsa o'zbekcha matn, aks holda null. Faqat `name` li maydonlar (formaga ketadiganlar) qaraladi.
+ */
+export function oversizeFiles(form: HTMLFormElement, maxMb = HR_FILE_MAX_MB): string | null {
+  const big: string[] = [];
+  for (const el of Array.from(form.querySelectorAll<HTMLInputElement>('input[type="file"][name]'))) {
+    for (const f of Array.from(el.files ?? [])) if (f.size > maxMb * 1024 * 1024) big.push(`"${f.name}" (${(f.size / 1024 / 1024).toFixed(1)} MB)`);
+  }
+  return big.length ? `${maxMb} MB dan katta fayl yuklab bo'lmaydi: ${big.join(", ")}` : null;
+}

@@ -104,7 +104,7 @@ export async function DriverTrips({ driverId }: { driverId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Haydovchi" value={<span className="text-base">{driver.fullName}</span>} hint={driver.phone ?? driver.position} icon={Phone} />
         <StatCard label="Texnikasi" value={<span className="text-base">{driver.vehicle?.plate ?? "—"}</span>} hint={driver.vehicle?.capacityM3 ? `${qty(driver.vehicle.capacityM3)} m³` : "biriktirilmagan"} icon={Truck} />
         <StatCard label="Jami reys" value={trips.length} hint={`${delivered.length} yetkazilgan · ${trips.filter((t) => t.status === "CANCELLED").length} bekor`} icon={Route} />
@@ -123,7 +123,7 @@ export async function DriverTrips({ driverId }: { driverId: string }) {
         </div>
         <Table>
           <thead>
-            <tr><Th>Nakladnoy</Th><Th>Sana</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Mikser</Th><Th right>m³</Th><Th>Holat</Th><Th>Yetkazilgan</Th>{eco && <Th>ECO</Th>}</tr>
+            <tr><Th>Nakladnoy</Th><Th>Sana</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Texnika</Th><Th right>Miqdor</Th><Th>Holat</Th><Th>Yetkazilgan</Th>{eco && <Th>ECO</Th>}</tr>
           </thead>
           <tbody>
             {trips.length === 0 && <Empty text="Bu haydovchida hali reys yo'q" />}

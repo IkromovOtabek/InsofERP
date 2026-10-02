@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
+import { verifyLoginCode } from "@/lib/sms-login";
 
 /**
  * Mobil ilova (Insof ECO) uchun autentifikatsiya — ERP login/paroli bo'yicha.
@@ -55,6 +56,18 @@ export async function mobileLogin(loginName: string, password: string) {
     throw new MobileAuthError("BAD_CREDENTIALS", "Login yoki parol noto'g'ri");
   }
   return issue(user);
+}
+
+/**
+ * SMS/Telegram kod bilan kirish (parolsiz) — telefoni bor har qanday faol xodim uchun.
+ * Kodni `lib/sms-login.ts` yaratadi/yuboradi (`/api/mobile/auth/code`), bu yerda tekshiriladi
+ * va kuydiriladi. Token FAQAT kod to'g'ri bo'lgach beriladi. Xato xabari bir xil —
+ * raqam tizimda bor-yo'qligi oshkor qilinmaydi.
+ */
+export async function mobileLoginWithCode(phone: string, code: string) {
+  const r = await verifyLoginCode(phone, code);
+  if (!r.ok) throw new MobileAuthError("BAD_CODE", r.error);
+  return issue(r.user);
 }
 
 /** Refresh → yangi juftlik. Xodim o'chirilgan bo'lsa sessiya tugaydi. */

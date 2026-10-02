@@ -20,8 +20,43 @@ const schema = z.object({
   // Har qator xomashyo YOKI boshqa mahsulot bo'lishi mumkin: kind — "material"/"product", refId — o'sha id
   kind: z.array(z.string()),
   refId: z.array(z.string()),
-  qtyPerM3: z.array(z.coerce.number().min(0)),
+  qtyPerM3: z.array(z.coerce.number({ message: "Miqdorni raqam bilan yozing" }).min(0, "Miqdor manfiy bo'lmasin").max(1_000_000, "Miqdor juda katta")),
 });
+
+/**
+ * Retsept tsikli: A ga B kiradi, B ning faol retseptiga esa A (yoki A ga olib boradigan zanjir) kiradi.
+ * Shunday bo'lsa zames/brigada sarfi bir-birini cheksiz talab qiladi — saqlanmaydi.
+ * Faol retseptlar bo'yicha ingredient-mahsulotlardan pastga yuriladi; productId ga yetib borsak — tsikl.
+ * Topilsa zanjir nomlari qaytadi (xabar uchun), aks holda null.
+ */
+async function recipeCycle(productId: string, ingredientProductIds: string[]): Promise<string[] | null> {
+  const parent = new Map<string, string>(); // bola → qaysi mahsulot orqali yetildi
+  const seen = new Set<string>(ingredientProductIds);
+  let frontier = [...ingredientProductIds];
+  for (const id of frontier) parent.set(id, productId);
+  for (let depth = 0; frontier.length && depth < 50; depth++) {
+    const rows = await db.recipeItem.findMany({
+      where: { recipe: { productId: { in: frontier }, isActive: true }, productId: { not: null } },
+      select: { productId: true, recipe: { select: { productId: true } } },
+    });
+    const next: string[] = [];
+    for (const r of rows) {
+      const child = r.productId!;
+      if (child === productId) {
+        // Zanjirni tiklash: productId → … → r.recipe.productId → productId
+        const chain = [r.recipe.productId];
+        for (let cur = r.recipe.productId; parent.get(cur) && parent.get(cur) !== productId; ) { cur = parent.get(cur)!; chain.unshift(cur); }
+        const ids = [productId, ...chain, productId];
+        const names = new Map((await db.product.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((p) => [p.id, p.name]));
+        return ids.map((id) => names.get(id) ?? "?");
+      }
+      if (seen.has(child)) continue;
+      seen.add(child); parent.set(child, r.recipe.productId); next.push(child);
+    }
+    frontier = next;
+  }
+  return null;
+}
 
 /** Yangi versiya yaratadi; eskisi nofaol bo'ladi, lekin o'chirilmaydi (tarix). */
 export async function createRecipeVersion(productId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -41,6 +76,19 @@ export async function createRecipeVersion(productId: string, _prev: ActionState,
   const keys = items.map((i) => i.materialId ?? i.productId);
   if (new Set(keys).size !== keys.length) return { error: "Bitta xomashyo/mahsulot ikki marta kiritilgan" };
   if (items.some((i) => i.productId === productId)) return { error: "Mahsulot o'zining retseptiga ingredient bo'la olmaydi" };
+  // Mahsulot va ingredientlar haqiqatan mavjudmi (o'chirilgan/soxta id bilan retsept yozilmasin)
+  const matIds = items.filter((i) => i.materialId).map((i) => i.materialId!);
+  const prodIds = items.filter((i) => i.productId).map((i) => i.productId!);
+  const [own, matCount, prodCount] = await Promise.all([
+    db.product.findUnique({ where: { id: productId }, select: { id: true } }),
+    matIds.length ? db.material.count({ where: { id: { in: matIds } } }) : 0,
+    prodIds.length ? db.product.count({ where: { id: { in: prodIds } } }) : 0,
+  ]);
+  if (!own) return { error: "Mahsulot topilmadi" };
+  if (matCount !== matIds.length || prodCount !== prodIds.length) return { error: "Ingredientlardan biri topilmadi — sahifani yangilab, qayta tanlang" };
+  // A → B → A: B ning faol retseptida A (yoki A ga olib boruvchi zanjir) bo'lsa — rad
+  const cycle = prodIds.length ? await recipeCycle(productId, prodIds) : null;
+  if (cycle) return { error: `Retseptlar aylanib qoladi: ${cycle.join(" → ")}. Bir mahsulot ikkinchisiga, u esa birinchisiga ingredient bo'la olmaydi.` };
 
   await db.$transaction(async (tx) => {
     const last = await tx.recipe.findFirst({ where: { productId }, orderBy: { version: "desc" } });

@@ -66,8 +66,8 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
             {hasHeader && (
               <button type="button" style={stagger(0)} aria-expanded={groupOpen} data-tour={`group:${g}`}
                 onClick={() => setOpenGroup(groupOpen ? "" : g)}
-                className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-slate-50 hover:text-slate-700",
-                  groupActive ? "text-slate-600" : "text-slate-400")}>
+                className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-slate-50 hover:text-slate-700 pointer-coarse:py-2.5 pointer-coarse:text-[11.5px]",
+                  groupActive ? "text-slate-700" : "text-slate-500")}>
                 <span>{g}</span>
                 <ChevronDown size={13} className={cn("sb-gcaret transition-transform duration-300", groupOpen ? "rotate-180" : "")} />
               </button>
@@ -85,7 +85,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                   <div className="relative flex items-center">
                     {/* Yig'ilganda yozuv ko'rinmaydi, shuning uchun nomni sichqoncha ostida ko'rsatamiz */}
                     <Link href={i.href} onClick={onNavigate} title={collapsed ? i.label : undefined} data-tour={`nav:${i.href}`}
-                      className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px]",
+                      className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] pointer-coarse:py-3 pointer-coarse:text-[15px]",
                         isActive ? "bg-slate-100 font-medium text-slate-900" : childActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
                       {isActive && <span className="sb-active absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
                       {Icon && <Icon size={17} className={cn("sb-icon shrink-0", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
@@ -93,7 +93,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                     </Link>
                     {i.children && (
                       <button type="button" aria-label={expanded ? "Yopish" : "Ochish"} onClick={() => setOpen((o) => ({ ...o, [i.href]: !expanded }))}
-                        className="sb-caret absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900">
+                        className="sb-caret absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900 pointer-coarse:h-10 pointer-coarse:w-10">
                         <ChevronDown size={15} className={cn("transition-transform", expanded ? "rotate-180" : "")} />
                       </button>
                     )}
@@ -104,7 +104,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                         const ca = active === c.href;
                         return (
                           <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
-                            className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
+                            className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] pointer-coarse:py-2.5 pointer-coarse:text-sm", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
                             <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />
                             <span className="truncate">{c.label}</span>
                           </Link>
@@ -128,7 +128,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
 function SidebarInner({ items, user, brand, apk, onNavigate, collapsed, onToggle }:
   { items: NavItem[]; user: User; brand: string; apk?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
-    <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-white text-slate-700 dark:bg-[#0c1729]">
+    <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-white text-slate-700 dark:bg-[#0e1115]">
       {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
       {onToggle && (
         <button type="button" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? "Menyuni yoyish" : "Menyuni yig'ish"}
@@ -171,7 +171,7 @@ function SidebarInner({ items, user, brand, apk, onNavigate, collapsed, onToggle
             <div className="truncate text-[11px] text-slate-500">{user.roleLabel}</div>
           </div>
           <form action="/api/logout" method="post">
-            <button title="Chiqish" data-tour="logout" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"><LogOut size={15} /></button>
+            <button title="Chiqish" aria-label="Chiqish" data-tour="logout" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-600 pointer-coarse:h-11 pointer-coarse:w-11"><LogOut size={15} /></button>
           </form>
         </div>
       </div>
@@ -205,12 +205,34 @@ function HeaderClock() {
   );
 }
 
+/** Joriy sahifa nomi — telefon sarlavhasida ko'rsatiladi (sidebar yopiq bo'lganda qayerdaligingiz bilinsin). */
+function currentLabel(path: string, items: NavItem[]) {
+  const href = bestMatch(path, items);
+  if (!href) return null;
+  for (const i of items) {
+    if (i.href === href) return i.label;
+    const c = (i.children ?? []).find((x) => x.href === href);
+    if (c) return c.label;
+  }
+  return null;
+}
+
 export function AppShell({ items, user, brand, ai = false, apk = null, tour, children }:
   { items: NavItem[]; user: User; brand: string; ai?: boolean; apk?: string | null; tour?: { steps: TourStep[]; start: string | null }; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const path = usePathname();
   useEffect(() => { setOpen(false); }, [path]);
+  // Menyu ochiq: orqadagi sahifa aylanmasin, Esc bilan yopilsin
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const pageLabel = currentLabel(path, items);
   // Holatni <html> dagi klassdan o'qiymiz — uni layout.tsx skripti sahifa chizilishidan oldin qo'ygan
   useEffect(() => { setCollapsed(document.documentElement.classList.contains("sb-collapsed")); }, []);
 
@@ -230,30 +252,32 @@ export function AppShell({ items, user, brand, ai = false, apk = null, tour, chi
 
       {/* Mobile drawer */}
       {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menyu">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 shadow-(--shadow-pop) animate-fade-up">
+          <aside className="absolute inset-y-0 left-0 w-[min(20rem,86vw)] shadow-(--shadow-pop) animate-fade-up">
             <SidebarInner items={items} user={user} brand={brand} apk={apk} onNavigate={() => setOpen(false)} />
-            <button onClick={() => setOpen(false)} className="absolute right-3 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+            <button onClick={() => setOpen(false)} aria-label="Menyuni yopish" className="absolute right-2 top-3 flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button>
           </aside>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:pl-[var(--sb-w)]">
         {/* Topbar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur lg:px-6">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setOpen(true)} data-tour="menu" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Menyu"><Menu size={20} /></button>
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-2 border-b border-slate-200/80 bg-white/85 px-2 backdrop-blur sm:px-4 lg:px-6 print:hidden">
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+            <button onClick={() => setOpen(true)} data-tour="menu" aria-expanded={open} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 lg:hidden" aria-label="Menyu"><Menu size={22} /></button>
+            {/* Telefonda: logotip o'rniga joriy bo'lim nomi */}
+            {pageLabel && <span className="truncate text-[15px] font-semibold text-slate-900 sm:hidden">{pageLabel}</span>}
             <HeaderClock />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <Link href="/qollanma" data-tour="help" className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 sm:inline-flex"><BookOpen size={15} /> Yordam</Link>
             <TourTrigger />
             {ai && <span data-tour="ai" className="inline-flex"><AiTrigger /></span>}
             <span data-tour="theme" className="inline-flex"><ThemeToggle /></span>
             <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
-              <Avatar name={user.fullName} className="h-8 w-8 text-xs" />
+              <Avatar name={user.fullName} className="hidden h-8 w-8 text-xs min-[400px]:flex" />
               <div className="hidden leading-tight sm:block">
                 <div className="text-[13px] font-medium text-slate-900">{user.fullName}</div>
               </div>
@@ -261,7 +285,7 @@ export function AppShell({ items, user, brand, ai = false, apk = null, tour, chi
           </div>
         </header>
         {ai && <AiPanel />}
-        <main className="flex-1 px-4 py-6 lg:px-8 lg:py-7">
+        <main className="app-main min-w-0 flex-1 px-3 py-5 sm:px-4 sm:py-6 lg:px-8 lg:py-7">
           <div className="mx-auto max-w-[1400px]">{children}</div>
         </main>
       </div>

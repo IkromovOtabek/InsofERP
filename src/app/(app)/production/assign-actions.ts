@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
+import { reassignable } from "@/lib/tasks";
 import type { ActionState } from "@/lib/action";
 import { notifyAfter, notifyEmployees } from "@/lib/notify";
 
@@ -16,10 +17,13 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
   const s = await requireSession(["PRODUCTION"]);
   const o = await db.order.findUnique({ where: { id: orderId }, include: { items: { include: { task: true } } } });
   if (!o) return { error: "Zayavka topilmadi" };
-  if (!["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return { error: "Bu zayavkaga brigada tayinlab bo'lmaydi (bloklangan, bekor yoki yakunlangan)" };
+  // Faqat tasdiqlangan zayavka ishga tushadi: qoralama (DRAFT) hali sotuv/limit tekshiruvidan o'tmagan.
+  // Sklad zaxirasi (STOCK) zayavkasi ham shu tasdiqdan o'tadi.
+  if (o.status === "DRAFT") return { error: "Zayavka hali tasdiqlanmagan (qoralama) — avval sotuv bo'limi tasdiqlasin, keyin brigadaga beriladi" };
+  if (!["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return { error: "Bu zayavkaga brigada tayinlab bo'lmaydi (bloklangan, bekor yoki yakunlangan)" };
 
   const picks = o.items
-    .filter((i) => !i.task)
+    .filter((i) => !i.task || reassignable(i.task))
     .map((i) => ({ item: i, brigadeId: String(fd.get(`brigade_${i.id}`) ?? "").trim() }))
     .filter((x) => x.brigadeId);
   if (picks.length === 0) return { error: "Kamida bitta qator uchun brigada tanlang" };
@@ -27,6 +31,8 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
   const made = await db.$transaction(async (tx) => {
     const rows: { taskId: string; taskNo: string; brigadeId: string; qty: number }[] = [];
     for (const { item, brigadeId } of picks) {
+      // Bekor qilingan (bajarilmagan) topshiriq qatorni band qilib turmasin — o'rniga yangisi ochiladi
+      if (item.task) await tx.brigadeTask.delete({ where: { id: item.task.id } });
       await tx.orderItem.update({ where: { id: item.id }, data: { brigadeId } });
       const t = await tx.brigadeTask.create({
         data: { taskNo: await nextNo(tx, "brigadeTask", "T"), orderId, orderItemId: item.id, brigadeId, qty: item.qtyM3, dueDate: o.deliveryDate, createdById: s.userId },

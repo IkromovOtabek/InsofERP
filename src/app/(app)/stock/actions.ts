@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { num, str, codeFromName } from "@/lib/excel";
 import { normalizeUnit, UNIT_FALLBACK, toMaterialUnit } from "@/lib/unit";
 import { ensureMaterialGroup } from "@/lib/material-groups";
@@ -29,6 +29,8 @@ const dec = (v: unknown) => { const n = num(v); return Number.isFinite(n) && n >
  * Faylda bir nom bir necha marta kelsa (turli narx yoki partiya) — xomashyo bitta yaratiladi, har qator alohida
  * qoldiq harakati bo'lib yoziladi; bir xil qatorlarni oldindan ko'rishda birlashtirib yuborsa ham bo'ladi.
  * Boshlang'ich qoldiq StockMove ADJUSTMENT ("Qo'lda") bo'lib yoziladi — Harakat jurnalida ko'rinadi.
+ * Qoldiqni hujjatsiz oshirib bo'lmasin: boshlang'ich qoldiq faqat HALI HARAKATI YO'Q xomashyoga yoziladi
+ * (yoki direktor). Harakati bor xomashyo qoldig'i — Kirim, Inventarizatsiya yoki Hisobdan chiqarish orqali.
  * Fayl qancha qator bo'lsa ham to'xtatmaydi: birlik tanilmasa (`letr`, `тн`, `pachka`… tarjima qilinadi, baribir
  * tanilmasa "dona"), raqam xato bo'lsa 0/bo'sh olinadi — faqat nomi bo'sh qatorlar tashlanadi.
  */
@@ -41,10 +43,14 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
   rows = rows.filter((x) => str(x.name));
   if (!rows.length) return { error: "Kamida bitta xomashyo nomi kerak" };
   const wh = await db.warehouse.findUnique({ where: { id: r.data.warehouseId } });
-  if (!wh) return { error: "Sklad topilmadi" };
+  if (!wh || !wh.isActive) return { error: "Sklad topilmadi" };
+  const director = s.role === "DIRECTOR";
 
   const out = await db.$transaction(async (tx) => {
     const all = await tx.material.findMany();
+    // Harakati bor xomashyolar (seans boshidagi holat) — ularga boshlang'ich qoldiq yozilmaydi
+    const moved0 = new Set((await tx.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } } })).map((x) => x.materialId!));
+    const blocked: string[] = [];
     const byKey = new Map<string, (typeof all)[number]>();
     for (const m of all) { byKey.set(m.code.toLowerCase(), m); byKey.set(m.name.toLowerCase().trim(), m); }
     let created = 0, updated = 0, moved = 0, guessed = 0, cost = 0;
@@ -78,7 +84,9 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
         await audit(tx, s.userId, "CREATE", "Material", m.id, undefined, { ...m, via: "stock-add" });
         created++;
       }
+      if (qty > 0 && !director && moved0.has(m.id)) { blocked.push(m.name); continue; }
       if (qty > 0) {
+        if (qty * (price ?? 0) > MAX_AMOUNT || qty > MAX_AMOUNT) throw new Error(`"${m.name}": miqdor yoki summa juda katta`);
         // Mavjud xomashyoga boshqa birlikda (t ↔ kg) kelgan miqdor o'giriladi; o'girib bo'lmasa — to'xtaymiz,
         // aks holda "5 t" kg'dagi sementga 5 bo'lib qo'shilardi
         const conv = toMaterialUnit(qty, price ?? 0, u ?? undefined, m.unit);
@@ -88,6 +96,11 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
         cost += conv.qty * (price == null ? 0 : conv.price);
       }
     }
+
+    if (blocked.length) {
+      throw new Error(`Bu xomashyolarning skladda harakati bor — boshlang'ich qoldiq yozilmaydi: ${blocked.slice(0, 8).join(", ")}${blocked.length > 8 ? ` va yana ${blocked.length - 8} ta` : ""}. Qoldiqni Kirim (yetkazuvchidan) yoki Sklad → Inventarizatsiya orqali o'zgartiring; qoldiq ustunini bo'sh qoldirsangiz — faqat spravochnik yangilanadi`);
+    }
+    if (moved) await audit(tx, s.userId, "CREATE", "StockMove", batchId, undefined, { via: "stock-add-opening", warehouse: wh.name, rows: moved, cost });
 
     // Qo'shilgan xomashyo summasi — hisobdan chiqim bo'lib Kirim-Chiqimga tushadi
     // Kassadan chiqimni faqat direktor shu yerdan yozadi (boshqalarga hisob tanlash berilmaydi)

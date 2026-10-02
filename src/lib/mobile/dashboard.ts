@@ -10,7 +10,8 @@ import { unitLabel, unitTotals, soleUnit, type UnitRow } from "@/lib/unit";
 import { day, inUnit, num, pctText, short, shortSigned, sum, time, totalsText } from "./fmt";
 import { productionStaff } from "@/lib/production-staff";
 import { stockStatus } from "@/lib/production-report";
-import { dayUtc, today as todayIso } from "@/lib/davomat";
+import { periodAttendance, periodPlan } from "@/lib/period-stats";
+import { dayUtc } from "@/lib/davomat";
 import { periodId } from "./sex";
 import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
 import type { MobileUser } from "./auth";
@@ -47,6 +48,7 @@ export const PERIOD_PARAM = "period";
 const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
 const parseYmd = (v?: string) => (v && ymdRe.test(v) ? new Date(`${v}T00:00:00`) : null);
 const fmtYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const ymd = (d: Date) => fmtYmd(d);
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const DAY_MS = 86_400_000;
 
@@ -90,6 +92,24 @@ export function dashRange(opts: { period?: string; from?: string; to?: string })
 const deltaText = (cur: number, prev: number, r: DashRange) =>
   prev > 0 ? `${r.prevName} ${cur >= prev ? "▲" : "▼"} ${Math.abs(((cur - prev) / prev) * 100).toFixed(0)}%` : null;
 const joinHint = (...parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join(" · ");
+
+/**
+ * Oylik ko'rsatkich (sotuv plani, xarajat byudjeti) davrga qanchalik tushadi: davr kesib o'tgan har oy
+ * va uning ulushi (kalendar kunlari bo'yicha) — hafta ≈ oylik planning 7/30 qismi, yil — 12 oy yig'indisi.
+ */
+export function monthShares(r: DashRange): { year: number; month: number; share: number }[] {
+  const out: { year: number; month: number; share: number }[] = [];
+  for (let d = new Date(r.from.getFullYear(), r.from.getMonth(), 1); d < r.to; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+    const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const a = Math.max(d.getTime(), r.from.getTime()), b = Math.min(mEnd.getTime(), r.to.getTime());
+    if (b > a) out.push({ year: d.getFullYear(), month: d.getMonth() + 1, share: (b - a) / (mEnd.getTime() - d.getTime()) });
+  }
+  return out;
+}
+const scaled = <T extends { year: number; month: number }>(rows: T[], r: DashRange, value: (x: T) => number) => {
+  const sh = monthShares(r);
+  return rows.reduce((s, x) => s + value(x) * (sh.find((m) => m.year === x.year && m.month === x.month)?.share ?? 0), 0);
+};
 
 // ───────────────────────── Vaqt savatlari (bars) ─────────────────────────
 
@@ -185,11 +205,11 @@ function unitSeries<T extends { qty: unknown; unit: string }>(rows: T[]): BarSer
   return units.map((u) => ({ label: unitLabel(u), value: (r) => ((r.unit || "m3") === u ? sum(r.qty) : 0), fmt: (v) => inUnit(v, u) }));
 }
 const cnt = (n: number, word: string) => `${n} ${word}`;
-const ORDER_LABEL: Record<string, string> = { DRAFT: "Qoralama", BLOCKED: "Bloklangan", CONFIRMED: "Tasdiqlangan", IN_PRODUCTION: "Ishlab chiqarishda", DELIVERED: "Yetkazildi", CLOSED: "Yopildi", CANCELLED: "Bekor" };
-const INVOICE_LABEL: Record<string, string> = { OPEN: "Ochiq", PARTIAL: "Qisman", PAID: "To'langan", CANCELLED: "Bekor" };
+export const ORDER_LABEL: Record<string, string> = { DRAFT: "Qoralama", BLOCKED: "Bloklangan", CONFIRMED: "Tasdiqlangan", IN_PRODUCTION: "Ishlab chiqarishda", DELIVERED: "Yetkazildi", CLOSED: "Yopildi", CANCELLED: "Bekor" };
+export const INVOICE_LABEL: Record<string, string> = { OPEN: "Ochiq", PARTIAL: "Qisman", PAID: "To'langan", CANCELLED: "Bekor" };
 const VEHICLE_LABEL: Record<string, string> = { ACTIVE: "Saflda", REPAIR: "Ta'mirda", IDLE: "Bekor turibdi" };
-const ATT_LABEL: Record<string, string> = { PRESENT: "Keldi", ABSENT: "Kelmadi", LEAVE: "Ta'til", SICK: "Kasal", DAYOFF: "Dam olish" };
-const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames sarfi", PRODUCTION_OUTPUT: "Tayyor mahsulot", SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi" };
+export const ATT_LABEL: Record<string, string> = { PRESENT: "Keldi", ABSENT: "Kelmadi", LEAVE: "Ta'til", SICK: "Kasal", DAYOFF: "Dam olish" };
+export const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames sarfi", PRODUCTION_OUTPUT: "Tayyor mahsulot", SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi" };
 
 export type RoleDashboard = { hero: HomeCard; tiles: HomeCard[]; charts: HomeSection[] };
 const pick = (...s: (HomeSection | null)[]) => s.filter((x): x is HomeSection => !!x);
@@ -221,12 +241,27 @@ async function moneyFlow(r: DashRange) {
   return { flows, pay, inSum, outSum, prevIn, prevOut, bars, expenseDonut };
 }
 
-/** Hisoblar bo'yicha hozirgi qoldiq (kassa va bank alohida). */
-async function accountBalances() {
+/**
+ * Davr oxirida ishlagan xodimlar: joriy davrda — hozir faollar; o'tgan davrda — shu paytgacha ishga kirgan
+ * (sana yo'q bo'lsa kartasi ochilgan) va hali bo'shamagan.
+ */
+export const staffAt = (r: DashRange) => {
+  const at = r.to < new Date() ? r.to : null;
+  return at
+    ? { OR: [{ hiredAt: { lt: at } }, { hiredAt: null, createdAt: { lt: at } }], AND: [{ OR: [{ firedAt: null, isActive: true }, { firedAt: { gte: at } }] }] }
+    : { isActive: true };
+};
+
+/** Davr oxiri: o'tgan davr tanlansa — o'sha paytdagi holat; joriy davrda — hozir (null). */
+export const asOf = (r: DashRange) => (r.to < new Date() ? r.to : null);
+
+/** Hisoblar bo'yicha qoldiq (kassa va bank alohida) — `until` gacha (berilmasa hozirgi). */
+async function accountBalances(until: Date | null = null) {
+  const d = until ? { date: { lt: until } } : {};
   const [accounts, pay, tx] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
-    db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
+    db.payment.groupBy({ by: ["cashAccountId"], where: d, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: d, _sum: { amount: true } }),
   ]);
   return accounts.map((a) => ({
     label: a.name,
@@ -236,54 +271,68 @@ async function accountBalances() {
   }));
 }
 
-/** Ochiq schyotlar bo'yicha qarz (debitorka) — mijoz kesimida. */
-async function receivables() {
-  const open = await db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { customerId: true, amount: true, customer: { select: { name: true } }, payments: { select: { amount: true } } } });
+/**
+ * Debitorka — mijoz kesimida. `until` berilsa — o'sha paytdagi qarz: shu vaqtgacha yozilgan schyotlar
+ * minus shu vaqtgacha kelgan to'lovlar (o'tgan davr uchun); aks holda hozirgi ochiq schyotlar.
+ */
+export async function receivables(until: Date | null = null) {
+  const open = await db.invoice.findMany({
+    where: until ? { status: { not: "CANCELLED" }, date: { lt: until } } : { status: { in: ["OPEN", "PARTIAL"] } },
+    select: { id: true, customerId: true, amount: true, customer: { select: { name: true } }, payments: { where: until ? { date: { lt: until } } : {}, select: { amount: true } } },
+  });
   const byCustomer = new Map<string, { id: string; name: string; debt: number; n: number }>();
+  let count = 0;
   for (const i of open) {
     const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0);
+    if (left <= 0.5) continue;
+    count++;
     const c = byCustomer.get(i.customerId) ?? { id: i.customerId, name: i.customer.name, debt: 0, n: 0 };
     c.debt += left; c.n += 1; byCustomer.set(i.customerId, c);
   }
   const list = [...byCustomer.values()].sort((a, b) => b.debt - a.debt);
-  return { total: list.reduce((s, c) => s + c.debt, 0), count: open.length, list };
+  return { total: list.reduce((s, c) => s + c.debt, 0), count, list };
 }
 
-/** Kreditorka — tasdiqlangan, hali qabul qilinmagan ta'minot zayavkalari. */
-async function payables() {
-  const rows = await db.supplyRequest.findMany({ where: { status: { in: ["APPROVED", "FUNDED"] } }, include: { items: true } });
-  return { total: rows.reduce((s, r) => s + totalPlanned(r), 0), count: rows.length };
+/** Kreditorka — davrda ochilgan, tasdiqlangan, hali qabul qilinmagan ta'minot zayavkalari. */
+async function payables(r: DashRange) {
+  const rows = await db.supplyRequest.findMany({ where: { status: { in: ["APPROVED", "FUNDED"] }, date: { gte: r.from, lt: r.to } }, include: { items: true } });
+  return { total: rows.reduce((s, x) => s + totalPlanned(x), 0), count: rows.length };
 }
 
 // ───────────────────────── Rollar ─────────────────────────
 
 async function production(r: DashRange): Promise<RoleDashboard> {
-  const now = new Date();
-  const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1), monthTo = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [batches, prev, defects, progress, plans, monthBatches, staff, stock, reportsToday] = await Promise.all([
+  const isDay = r.key === "day";
+  const [batches, prev, defects, progress, pp, staff, stock, reports] = await Promise.all([
     db.productionBatch.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, qtyM3: true, shift: true, productId: true, product: { select: { name: true, unit: true } } } }),
     db.productionBatch.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
     db.productDefect.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { qty: true, reason: true, product: { select: { unit: true } } } }),
     db.taskProgress.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
-    db.productionPlan.findMany({ where: { year: now.getFullYear(), month: now.getMonth() + 1 }, include: { product: { select: { name: true, unit: true } } } }),
-    db.productionBatch.groupBy({ by: ["productId"], where: { date: { gte: monthFrom, lt: monthTo } }, _sum: { qtyM3: true } }),
+    // Plan — tanlangan davrga bo'lingan (oylik plan ÷ ish kunlari × davrdagi ish kunlari)
+    periodPlan(r.from, r.to),
     productionStaff(),
-    stockStatus(),
-    db.productionReport.findMany({ where: { date: dayUtc(todayIso()) }, orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true, seenAt: true } }),
+    // Sklad — davr oxirigacha yetkazilishi kerak bo'lgan zayavkalarga yetadimi
+    stockStatus({ until: r.to }),
+    db.productionReport.findMany({ where: { date: { gte: dayUtc(ymd(r.from)), lt: dayUtc(ymd(r.to)) } }, orderBy: { createdAt: "desc" }, select: { date: true, createdAt: true, seenAt: true } }),
   ]);
+  // Davomat: "bugun" — jonli (kim keldi), boshqa davr — shu davr bo'yicha yig'indi
+  const att = isDay ? null : await periodAttendance(staff.members.map((m) => m.id), r.from, r.to);
   // Karta bosilsa — shu davr bo'yicha batafsil (`lib/mobile/sex.ts`)
   const pid = periodId(r);
   const open = (stat: string, withPeriod = true) => ({ key: "sex", id: withPeriod ? `${stat}.${pid}` : stat });
   const lowStock = stock.filter((m) => m.level !== "ok");
   const shortStock = stock.filter((m) => m.level === "short");
+  // Olib kelish kerak bo'lganlar: zayavkaga yetmaganlari birinchi, keyin eng ko'p yetishmagani
+  const needList = stock.filter((m) => m.need > 0).sort((a, b) => Number(b.orderGap > 0) - Number(a.orderGap > 0) || (a.days ?? 1e9) - (b.days ?? 1e9));
+  const reportDays = new Set(reports.map((x) => x.date.toISOString().slice(0, 10))).size;
+  const wdElapsed = pp.elapsed;
   const rows = batches.map((b) => ({ qty: b.qtyM3, unit: b.product.unit, date: b.date, name: b.product.name, shift: b.shift }));
   const main = mainUnit(rows);
   const prevMain = main ? unitSum(prev.map((b) => ({ qty: b.qtyM3, unit: b.product.unit })), main.unit) : 0;
   const defRows = defects.map((d) => ({ qty: d.qty, unit: d.product.unit, reason: d.reason }));
   const progRows = progress.map((p) => ({ qty: p.qty, unit: p.task.orderItem.product.unit }));
-  const planItems = plans.map((p) => progressItem(p.product.name, sum(monthBatches.find((m) => m.productId === p.productId)?._sum.qtyM3), sum(p.monthQty), (v) => inUnit(v, p.product.unit)));
-  const planPct = planItems.filter((i) => i.pct != null);
-  const avgPlan = planPct.length ? Math.round(planPct.reduce((s, i) => s + i.pct!, 0) / planPct.length) : null;
+  const planItems = pp.rows.map((p) => progressItem(p.product.name, p.fact, p.plan, (v) => inUnit(v, p.product.unit)));
+  const avgPlan = pp.avgPct == null ? null : Math.round(pp.avgPct);
   const defectMain = main ? unitSum(defRows, main.unit) : 0;
   const defectPct = main && main.qty > 0 ? (defectMain / (main.qty + defectMain)) * 100 : null;
   const series = unitSeries(rows);
@@ -291,28 +340,35 @@ async function production(r: DashRange): Promise<RoleDashboard> {
   return {
     hero: { key: "produced", label: `Ishlab chiqarildi (${r.label})`, value: totalsText(unitRows(rows)), hint: joinHint(cnt(batches.length, "zames"), main && deltaText(main.qty, prevMain, r)), tone: "brand", icon: "factory", open: open("produced") },
     tiles: [
-      // Sex tarkibi va bugungi davomat — davr filtriga bog'liq emas (bugun)
-      { key: "staff", label: "Sex xodimlari", value: `${staff.present} / ${staff.total}`, hint: joinHint("ishga keldi (bugun)", staff.unassigned > 0 && `${staff.unassigned} taqsimlanmagan`), tone: staff.total && staff.present === staff.total ? "success" : "info", icon: "users", open: open("staff", false) },
-      { key: "attendance", label: "Davomat", value: staff.notMarked ? `${staff.notMarked} belgilanmagan` : "Belgilangan", hint: joinHint(`keldi ${staff.present}`, staff.absent > 0 && `kelmadi ${staff.absent}`, staff.sick + staff.leave > 0 && `kasal/ta'til ${staff.sick + staff.leave}`), tone: staff.notMarked ? "warning" : "success", icon: "user-check", open: open("attendance", false) },
-      { key: "plan", label: "Oylik plan", value: pctText(avgPlan), hint: planItems.length ? `${planItems.length} mahsulot bo'yicha` : "plan belgilanmagan", tone: avgPlan == null ? "info" : avgPlan >= 90 ? "success" : avgPlan >= 60 ? "warning" : "danger", icon: "square-check", open: open("plan", false) },
+      // Sex tarkibi va davomat: "bugun" — jonli; boshqa davr — shu davr bo'yicha yig'indi
+      att
+        ? { key: "staff", label: `Sex xodimlari (${r.label})`, value: `${num(att.avgPresent)} / ${staff.total}`, hint: joinHint(`kuniga o'rtacha keldi · ${att.days} kun`, staff.unassigned > 0 && `${staff.unassigned} taqsimlanmagan`), tone: "info", icon: "users", open: open("staff") }
+        : { key: "staff", label: "Sex xodimlari", value: `${staff.present} / ${staff.total}`, hint: joinHint("ishga keldi (bugun)", staff.unassigned > 0 && `${staff.unassigned} taqsimlanmagan`), tone: staff.total && staff.present === staff.total ? "success" : "info", icon: "users", open: open("staff") },
+      att
+        ? { key: "attendance", label: `Davomat (${r.label})`, value: pctText(att.pct), hint: att.marked ? joinHint(`keldi ${att.byStatus.PRESENT}`, att.byStatus.ABSENT > 0 && `kelmadi ${att.byStatus.ABSENT}`, att.byStatus.SICK + att.byStatus.LEAVE > 0 && `kasal/ta'til ${att.byStatus.SICK + att.byStatus.LEAVE}`, "kishi-kun") : "davomat belgilanmagan", tone: att.pct == null ? "warning" : att.pct >= 90 ? "success" : att.pct >= 75 ? "warning" : "danger", icon: "user-check", open: open("attendance") }
+        : { key: "attendance", label: "Davomat", value: staff.notMarked ? `${staff.notMarked} belgilanmagan` : "Belgilangan", hint: joinHint(`keldi ${staff.present}`, staff.absent > 0 && `kelmadi ${staff.absent}`, staff.sick + staff.leave > 0 && `kasal/ta'til ${staff.sick + staff.leave}`), tone: staff.notMarked ? "warning" : "success", icon: "user-check", open: open("attendance") },
+      { key: "plan", label: `Plan (${r.label})`, value: pctText(avgPlan), hint: planItems.length ? `${planItems.length} mahsulot · ${pp.elapsed}/${pp.workDays} ish kuni` : "plan belgilanmagan", tone: avgPlan == null ? "info" : avgPlan >= 90 ? "success" : avgPlan >= 60 ? "warning" : "danger", icon: "square-check", open: open("plan") },
       { key: "defect", label: "Brak", value: totalsText(unitRows(defRows)), hint: joinHint(cnt(defects.length, "qayd"), defectPct != null && `${defectPct.toFixed(1)}%`), tone: defects.length ? (defectPct != null && defectPct > 2 ? "danger" : "warning") : "success", icon: "triangle-alert", open: open("defect") },
       { key: "brigades", label: "Brigadalar bajardi", value: totalsText(unitRows(progRows)), hint: cnt(progress.length, "qayd"), tone: "success", icon: "hard-hat", open: open("brigades") },
-      { key: "shifts", label: "Smenalar", value: `${rows.filter((x) => x.shift === 1).length} / ${rows.filter((x) => x.shift !== 1).length}`, hint: "1-smena / 2-smena zames", tone: "info", icon: "clock", open: open("shifts") },
-      { key: "stock", label: "Sklad holati", value: lowStock.length ? `${lowStock.length} ta kam` : "Yetarli", hint: lowStock.length ? lowStock.slice(0, 2).map((m) => m.name).join(", ") : `${stock.length} xomashyo`, tone: shortStock.length ? "danger" : lowStock.length ? "warning" : "success", icon: "warehouse", open: open("stock", false) },
-      { key: "report", label: "Kunlik hisobot", value: reportsToday.length ? "Qayd etildi" : "Qayd etilmagan", hint: reportsToday.length ? `${time(reportsToday[0].createdAt)} · ${reportsToday[0].seenAt ? "direktor ko'rdi" : "direktorga yuborildi"}` : "ko'rib, «Qayd etish» ni bosing", tone: reportsToday.length ? "success" : "warning", icon: "file-text", open: open("report", false) },
+      // Son emas — nima va qancha kam: birinchisi qiymatda, qolganlari izohda (zayavkaga yetmaganlari oldin)
+      { key: "stock", label: "Sklad holati", value: needList[0] ? `${needList[0].name} −${num(needList[0].need)} ${needList[0].unit}` : "Yetarli", hint: needList.length > 1 ? `yana: ${needList.slice(1, 4).map((m) => `${m.name} ${num(m.need)} ${m.unit}`).join(", ")}${needList.length > 4 ? ` +${needList.length - 4}` : ""}` : needList.length ? (needList[0].orderGap > 0 ? `zayavkalarga yetmaydi` : "minimal qoldiqdan kam") : `${stock.length} xomashyo`, tone: shortStock.length ? "danger" : lowStock.length ? "warning" : "success", icon: "warehouse", open: open("stock") },
+      isDay
+        ? { key: "report", label: "Kunlik hisobot", value: reports.length ? "Qayd etildi" : "Qayd etilmagan", hint: reports.length ? `${time(reports[0].createdAt)} · ${reports[0].seenAt ? "direktor ko'rdi" : "direktorga yuborildi"}` : "ko'rib, «Qayd etish» ni bosing", tone: reports.length ? "success" : "warning", icon: "file-text", open: open("report", false) }
+        // Davrda: nechta ish kunida hisobot qayd etilgan — ro'yxat "Ishlab chiqarish hisobotlari"
+        : { key: "report", label: `Hisobotlar (${r.label})`, value: `${reportDays} / ${wdElapsed}`, hint: joinHint("ish kunida qayd etildi", reports.some((x) => !x.seenAt) && `${reports.filter((x) => !x.seenAt).length} tasi direktor ko'rmagan`), tone: reportDays >= wdElapsed ? "success" : "warning", icon: "file-text", open: { key: "prod-report" } },
     ],
     charts: pick(
       chartSection("Ishlab chiqarish dinamikasi", bars, barsRows(bars, series.map((s) => s.fmt)), "chart-column"),
-      plans.length ? chartSection("Oylik plan / fakt", { kind: "progress", items: planItems }, progressRows(planItems), "square-check") : null,
+      planItems.length ? chartSection(`Plan / fakt (${r.label})`, { kind: "progress", items: planItems }, progressRows(planItems), "square-check") : null,
       main ? chartSection(`Mahsulotlar ulushi (${unitLabel(main.unit)})`, donutChart(groupSum(rows.filter((x) => (x.unit || "m3") === main.unit), (x) => x.name, (x) => sum(x.qty)), (v) => inUnit(v, main.unit)), [], "chart-pie") : null,
       chartSection("Brak sabablari", donutChart(groupSum(defRows, (x) => x.reason, (x) => sum(x.qty)), (v) => num(v)), [], "triangle-alert"),
       // Sklad: kam qolgan xomashyo va qancha olib kelish kerak — qator bosilsa xomashyo kartochkasi
       lowStock.length ? {
-        title: "Sklad — kam qolganlar", empty: "", target: "stock", icon: "warehouse",
+        title: `Sklad — ${r.label} zayavkalariga kam`, empty: "", target: "stock", icon: "warehouse",
         rows: lowStock.slice(0, 6).map((m) => ({
           id: m.id, title: m.name,
-          subtitle: `qoldiq ${num(m.balance)} ${m.unit}${m.days !== null ? ` · ${m.days > 999 ? ">999" : m.days.toFixed(1)} kunga` : ""}`,
-          right: m.need > 0 ? `kerak ${num(m.need)} ${m.unit}` : "kam", tone: m.level === "short" ? "danger" as Tone : "warning" as Tone,
+          subtitle: `skladda ${num(m.balance)} ${m.unit}${m.planned > 0 ? ` · zayavkalarga ${num(m.planned)} ${m.unit} (${m.orders.length} ta)` : ""}${m.days !== null ? ` · ${m.days > 999 ? ">999" : m.days.toFixed(1)} kunga` : ""}`,
+          right: m.need > 0 ? `${num(m.need)} ${m.unit} kam` : "kam", tone: m.level === "short" ? "danger" as Tone : "warning" as Tone,
         })),
       } : null,
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
@@ -320,24 +376,22 @@ async function production(r: DashRange): Promise<RoleDashboard> {
 }
 
 async function sales(user: MobileUser, r: DashRange): Promise<RoleDashboard> {
-  const now = new Date();
-  const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1), monthTo = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [cur, prev, orders, leads, newCustomers, plans, month] = await Promise.all([
+  const months = monthShares(r).map(({ year, month }) => ({ year, month }));
+  const [cur, prev, orders, leads, newCustomers, plans] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
     db.order.findMany({ where: { date: { gte: r.from, lt: r.to }, kind: "SALE" }, select: { status: true, createdById: true } }),
     db.lead.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { status: true } }),
     db.customer.count({ where: { createdAt: { gte: r.from, lt: r.to }, isInternal: false } }),
-    db.salesPlan.findMany({ where: { year: now.getFullYear(), month: now.getMonth() + 1 } }),
-    r.key === "month" ? Promise.resolve(null) : loadSales(monthFrom, monthTo),
+    db.salesPlan.findMany({ where: { OR: months } }),
   ]);
   const revenue = cur.reduce((s, x) => s + x.revenue, 0), prevRevenue = prev.reduce((s, x) => s + x.revenue, 0);
   const mine = cur.filter((x) => x.sellerId === user.id).reduce((s, x) => s + x.revenue, 0);
-  const monthRows = month ?? cur;
-  const monthRevenue = monthRows.reduce((s, x) => s + x.revenue, 0), monthMine = monthRows.filter((x) => x.sellerId === user.id).reduce((s, x) => s + x.revenue, 0);
-  const planAll = plans.find((p) => !p.sellerId), planMine = plans.find((p) => p.sellerId === user.id);
+  // Plan — tanlangan davrga bo'lingan oylik plan; fakt — shu davr sotuvi
+  const planAll = scaled(plans.filter((p) => !p.sellerId), r, (p) => sum(p.amount));
+  const planMine = scaled(plans.filter((p) => p.sellerId === user.id), r, (p) => sum(p.amount));
   const planItems = [
-    ...(planAll ? [progressItem("Umumiy plan (oy)", monthRevenue, sum(planAll.amount), short)] : []),
-    ...(planMine ? [progressItem("Mening planim (oy)", monthMine, sum(planMine.amount), short)] : []),
+    ...(planAll > 0 ? [progressItem(`Umumiy plan (${r.label})`, revenue, planAll, short)] : []),
+    ...(planMine > 0 ? [progressItem(`Mening planim (${r.label})`, mine, planMine, short)] : []),
   ];
   const converted = leads.filter((l) => l.status === "CONVERTED").length;
   const bars = barsChart(r, cur, (x) => x.date, [
@@ -354,7 +408,7 @@ async function sales(user: MobileUser, r: DashRange): Promise<RoleDashboard> {
     ],
     charts: pick(
       chartSection("Sotuv dinamikasi", bars, barsRows(bars, [short, short]), "chart-column"),
-      planItems.length ? chartSection("Sotuv plani — oy", { kind: "progress", items: planItems }, progressRows(planItems), "square-check") : null,
+      planItems.length ? chartSection(`Sotuv plani — ${r.label}`, { kind: "progress", items: planItems }, progressRows(planItems), "square-check") : null,
       chartSection("Mahsulotlar bo'yicha", donutChart(groupSum(cur, (x) => x.product, (x) => x.revenue), short, "sotuv"), [], "chart-pie"),
       chartSection("Mijozlar bo'yicha", donutChart(groupSum(cur, (x) => x.customer, (x) => x.revenue), short, "sotuv"), [], "users"),
       chartSection("Zayavkalar holati", donutChart(groupSum(orders, (o) => ORDER_LABEL[o.status] ?? o.status, count), (v) => cnt(v, "ta"), "zayavka"), [], "file-text"),
@@ -370,7 +424,8 @@ async function brigadeWork(r: DashRange, brigadeIds: string[] | null, mineLabel:
     db.taskProgress.findMany({ where: { date: { gte: r.from, lt: r.to }, task: bw }, select: { date: true, qty: true, task: { select: { brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } } }),
     db.taskProgress.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo }, task: bw }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
     db.brigadeTask.count({ where: { ...bw, status: "DONE", updatedAt: { gte: r.from, lt: r.to } } }),
-    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, qty: true, doneQty: true, dueDate: true, brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } }),
+    // Ochiq — muddati davr oxirigacha bo'lgan (kechikkanlari ham) hali bajarilmagan topshiriqlar
+    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: r.to } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, qty: true, doneQty: true, dueDate: true, brigadeId: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } }),
     db.productDefect.findMany({ where: { date: { gte: r.from, lt: r.to }, ...(brigadeIds ? { brigadeId: { in: brigadeIds } } : {}) }, select: { qty: true, product: { select: { unit: true } } } }),
     db.brigade.findMany({ where: { isActive: true, ...(brigadeIds ? { id: { in: brigadeIds } } : {}) }, select: { id: true, name: true } }),
   ]);
@@ -392,7 +447,7 @@ async function brigadeWork(r: DashRange, brigadeIds: string[] | null, mineLabel:
     hero: { key: "done", label: `${mineLabel ? "Bajardik" : "Bajarildi"} (${r.label})`, value: totalsText(unitRows(rows)), hint: joinHint(cnt(progress.length, "qayd"), main && deltaText(main.qty, prevMain, r)), tone: "brand", icon: "checkmark-done" },
     tiles: [
       { key: "closed", label: "Yopilgan topshiriq", value: String(closed), tone: "success", icon: "circle-check" },
-      { key: "open", label: "Ochiq topshiriq", value: String(open.length), hint: totalsText(open.map((t) => ({ unit: t.orderItem.product.unit, qty: sum(t.qty) - sum(t.doneQty) }))) + " qoldi", tone: open.length ? "info" : "success", icon: "list" },
+      { key: "open", label: `Ochiq topshiriq (${r.label})`, value: String(open.length), hint: totalsText(open.map((t) => ({ unit: t.orderItem.product.unit, qty: sum(t.qty) - sum(t.doneQty) }))) + " qoldi · muddati davr oxirigacha", tone: open.length ? "info" : "success", icon: "list" },
       { key: "overdue", label: "Kechikkan", value: String(overdue), hint: overdue ? "muddati o'tgan" : "kechikish yo'q", tone: overdue ? "danger" : "success", icon: "alarm" },
       mineLabel
         ? { key: "defect", label: "Brak", value: totalsText(defects.map((d) => ({ unit: d.product.unit, qty: d.qty }))), hint: cnt(defects.length, "qayd"), tone: defects.length ? "warning" : "success", icon: "triangle-alert" }
@@ -419,10 +474,11 @@ async function brigadier(r: DashRange, brigadeIds: string[]): Promise<RoleDashbo
     db.taskProgress.findMany({ where: { date: { gte: r.from, lt: r.to }, task: bw }, select: { date: true, qty: true, task: { select: { orderItem: { select: { product: { select: { name: true, unit: true } } } } } } } }),
     db.taskProgress.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo }, task: bw }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
     db.brigadeTask.findMany({ where: { ...bw, status: { not: "CANCELLED" }, dueDate: { gte: r.from, lt: r.to } }, select: { dueDate: true, qty: true, orderItem: { select: { product: { select: { unit: true } } } } } }),
-    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, orderItem: { select: { product: { select: { name: true, unit: true } } } }, issues: { where: { resolvedAt: null }, select: { kind: true } } } }),
+    db.brigadeTask.findMany({ where: { ...bw, status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: r.to } }, orderBy: { dueDate: "asc" }, select: { id: true, taskNo: true, qty: true, doneQty: true, status: true, startedAt: true, dueDate: true, orderItem: { select: { product: { select: { name: true, unit: true } } } }, issues: { where: { resolvedAt: null }, select: { kind: true } } } }),
     db.productDefect.findMany({ where: { ...bw, date: { gte: r.from, lt: r.to } }, select: { qty: true, product: { select: { name: true, unit: true } } } }),
     db.brigadeIssue.findMany({ where: { ...bw, createdAt: { gte: r.from, lt: r.to } }, select: { kind: true, downtimeMin: true } }),
-    db.brigadeIssue.count({ where: { ...bw, resolvedAt: null } }),
+    // Davrda ochilgan va hali hal qilinmagan muammolar
+    db.brigadeIssue.count({ where: { ...bw, resolvedAt: null, createdAt: { gte: r.from, lt: r.to } } }),
     r.key === "day" ? dayPlan(brigadeIds) : null,
   ]);
   const facts = progress.map((p) => ({ date: p.date, qty: p.qty, unit: p.task.orderItem.product.unit, product: p.task.orderItem.product.name }));
@@ -471,7 +527,7 @@ async function brigadier(r: DashRange, brigadeIds: string[]): Promise<RoleDashbo
       { key: "inwork", label: "Jarayonda", value: String(inWork), hint: fresh ? `${fresh} tasi yangi — boshlang` : cnt(open.length, "ochiq topshiriq"), tone: fresh ? "warning" : "brand", icon: "hammer", open: { key: "tasks" } },
       { key: "overdue", label: "Kechikkan", value: String(overdue), hint: overdue ? "muddati o'tgan" : "kechikish yo'q", tone: overdue ? "danger" : "success", icon: "alarm", open: { key: "tasks" } },
       { key: "defect", label: "Brak", value: defects.length ? totalsText(defects.map((d) => ({ unit: d.product.unit, qty: sum(d.qty) }))) : "0", hint: defPct != null && defMain ? `${pctText(defPct)} ishlab chiqarilganidan` : cnt(defects.length, "qayd"), tone: defPct != null && defPct > 5 ? "danger" : defects.length ? "warning" : "success", icon: "triangle-alert" },
-      { key: "issues", label: "Ochiq muammolar", value: String(openIssues), hint: joinHint(cnt(issues.length, "davrda"), downtime ? `to'xtash ${downtime} daq` : null), tone: openIssues ? "danger" : "success", icon: "wrench", open: { key: "brig-issues" } },
+      { key: "issues", label: `Muammolar (${r.label})`, value: String(issues.length), hint: joinHint(openIssues ? `${openIssues} tasi ochiq` : issues.length ? "hammasi hal qilindi" : "muammo bo'lmadi", downtime ? `to'xtash ${downtime} daq` : null), tone: openIssues ? "danger" : issues.length ? "warning" : "success", icon: "wrench", open: { key: "brig-issues" } },
     ],
     charts: pick(
       bars ? chartSection(`Reja / fakt (${unitLabel(u)})`, bars, barsRows(bars, [(v) => inUnit(v, u), (v) => inUnit(v, u)]), "chart-column") : null,
@@ -484,7 +540,7 @@ async function brigadier(r: DashRange, brigadeIds: string[]): Promise<RoleDashbo
 
 async function logistics(r: DashRange): Promise<RoleDashboard> {
   const [delivered, prevDelivered, created, fuel, expenses, issues, vehicles] = await Promise.all([
-    db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { deliveredAt: true, departedAt: true, loadedAt: true, plannedAt: true, createdAt: true, qtyM3: true, driver: { select: { fullName: true } }, order: { select: { customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
+    db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { vehicle: { select: { plate: true } }, deliveredAt: true, departedAt: true, loadedAt: true, plannedAt: true, createdAt: true, qtyM3: true, driver: { select: { fullName: true } }, order: { select: { customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true } }),
     db.trip.groupBy({ by: ["status"], where: { createdAt: { gte: r.from, lt: r.to } }, _count: true }),
     db.fuelLog.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true, liters: true } }),
@@ -492,7 +548,7 @@ async function logistics(r: DashRange): Promise<RoleDashboard> {
     db.tripIssue.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { kind: true, resolvedAt: true } }),
     db.vehicle.groupBy({ by: ["status"], where: { isActive: true }, _count: true }),
   ]);
-  const rows = delivered.map((t) => ({ date: t.deliveredAt!, qty: t.qtyM3, unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", driver: t.driver.fullName, customer: t.order.customer.name,
+  const rows = delivered.map((t) => ({ plate: t.vehicle.plate, date: t.deliveredAt!, qty: t.qtyM3, unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", driver: t.driver.fullName, customer: t.order.customer.name,
     minutes: (t.deliveredAt!.getTime() - (t.departedAt ?? t.loadedAt ?? t.createdAt).getTime()) / 60_000,
     late: !!t.plannedAt && t.deliveredAt!.getTime() - t.plannedAt.getTime() > 15 * 60_000 }));
   const qty = rows.reduce((s, x) => s + sum(x.qty), 0), prevQty = prevDelivered.reduce((s, x) => s + sum(x.qtyM3), 0);
@@ -513,7 +569,9 @@ async function logistics(r: DashRange): Promise<RoleDashboard> {
     charts: pick(
       chartSection("Reyslar dinamikasi", bars, barsRows(bars, [(v) => cnt(v, "reys"), (v) => totalsText([{ unit: mainUnit(rows)?.unit ?? "m3", qty: v }])]), "chart-column"),
       chartSection("Haydovchilar bo'yicha", donutChart(groupSum(rows, (x) => x.driver, count), (v) => cnt(v, "reys"), "reys"), [], "id-card"),
-      chartSection("Transport holati", donutChart(vehicles.map((v) => ({ label: VEHICLE_LABEL[v.status] ?? v.status, value: v._count })), (v) => cnt(v, "ta"), "texnika"), [], "truck", "Faol texnika yo'q"),
+      // Davr bo'yicha: qaysi mashina nechta reys qildi (hozirgi holat — "Transport holati" pastda)
+      chartSection(`Mashinalar bo'yicha reyslar (${r.label})`, donutChart(groupSum(rows, (x) => x.plate, count), (v) => cnt(v, "reys"), "reys"), [], "truck", "Bu davrda reys yo'q"),
+      chartSection("Transport holati (hozir)", donutChart(vehicles.map((v) => ({ label: VEHICLE_LABEL[v.status] ?? v.status, value: v._count })), (v) => cnt(v, "ta"), "texnika"), [], "truck", "Faol texnika yo'q"),
       chartSection("Muammo turlari", donutChart(groupSum(issues, (i) => ISSUE_KIND[i.kind] ?? i.kind, count), (v) => cnt(v, "ta"), "muammo"), [], "triangle-alert"),
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
   };
@@ -525,7 +583,8 @@ async function warehouse(r: DashRange): Promise<RoleDashboard> {
     db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
     db.stockMove.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { type: true, qty: true, material: { select: { name: true, unit: true } } } }),
     db.material.findMany({ where: { isActive: true, minStock: { gt: 0 } }, select: { id: true, name: true, unit: true, minStock: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
+    // Qoldiq — davr oxirida (o'tgan davr tanlansa o'sha paytdagi; joriy davrda — hozirgi)
+    db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null }, ...(r.to < new Date() ? { date: { lt: r.to } } : {}) }, _sum: { qty: true } }),
   ]);
   const recRows = receipts.map((x) => ({ date: x.date, supplier: x.supplier.name, amount: x.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0), items: x.items }));
   const amount = recRows.reduce((s, x) => s + x.amount, 0), prevAmount = prevReceipts.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0);
@@ -541,19 +600,22 @@ async function warehouse(r: DashRange): Promise<RoleDashboard> {
   return {
     hero: { key: "receipts", label: `Kirim (${r.label})`, value: short(amount), hint: joinHint(cnt(receipts.length, "hujjat"), deltaText(amount, prevAmount, r)), tone: "brand", icon: "download" },
     tiles: [
-      { key: "low", label: "Kam qolgan", value: String(low), hint: low ? "minimumdan past" : "hammasi yetarli", tone: low ? "danger" : "success", icon: "alert-circle" },
+      { key: "low", label: "Kam qolgan", value: String(low), hint: joinHint(low ? "minimumdan past" : "hammasi yetarli", r.to < new Date() && `${r.label} oxirida`), tone: low ? "danger" : "success", icon: "alert-circle" },
       { key: "consume", label: "Zames sarfi", value: cnt(consume.length, "harakat"), hint: topConsumed ? `eng ko'p: ${topConsumed.label}` : undefined, tone: "info", icon: "layers" },
       { key: "adjust", label: "Inventarizatsiya", value: String(moves.filter((m) => m.type === "ADJUSTMENT").length), hint: "tuzatish yozuvi", tone: "info", icon: "clipboard-list" },
       { key: "brigade", label: "Brigadaga berildi", value: String(moves.filter((m) => m.type === "BRIGADE_ISSUE").length), hint: `${moves.filter((m) => m.type === "BRIGADE_RETURN").length} qaytdi`, tone: "info", icon: "hard-hat" },
     ],
     charts: pick(
       chartSection("Kirim dinamikasi", bars, barsRows(bars, [short]), "chart-column"),
-      stockItems.length ? chartSection("Qoldiq / minimum", { kind: "progress", items: stockItems }, progressRows(stockItems), "layers") : null,
+      stockItems.length ? chartSection(r.to < new Date() ? `Qoldiq / minimum (${r.label} oxirida)` : "Qoldiq / minimum", { kind: "progress", items: stockItems }, progressRows(stockItems), "layers") : null,
       chartSection("Yetkazuvchilar bo'yicha", donutChart(groupSum(recRows, (x) => x.supplier, (x) => x.amount), short, "kirim"), [], "store"),
       chartSection("Harakat turlari", donutChart(groupSum(moves, (m) => MOVE_LABEL[m.type] ?? m.type, count), (v) => cnt(v, "ta"), "harakat"), [], "arrow-up-down"),
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
   };
 }
+
+/** Dashboard davri → `procurementHome` sana filtri (`to` — shu kun ham kiradi). */
+export const procRange = (r: DashRange) => ({ from: fmtYmd(r.from), to: fmtYmd(addDays(r.to, -1)) });
 
 /**
  * Snabjeniye — "Biton Snabjenya Dashboard" TZ: 5 KPI (ochiq, shoshilinch, buyurtmalar, yo'lda, kechikkan),
@@ -562,7 +624,8 @@ async function warehouse(r: DashRange): Promise<RoleDashboard> {
  */
 async function procurement(r: DashRange): Promise<RoleDashboard> {
   const [home, receipts, prevReceipts, requests] = await Promise.all([
-    procurementHome(),
+    // Talablar — shu davrda ochilganlari (vebdagi "sana oralig'i" filtri bilan bir xil)
+    procurementHome(procRange(r)),
     db.goodsReceipt.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, supplierId: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
     db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
     db.supplyRequest.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { status: true, createdAt: true, receipt: { select: { date: true } } } }),
@@ -570,7 +633,8 @@ async function procurement(r: DashRange): Promise<RoleDashboard> {
   const c = home.counts;
   const recRows = receipts.map((x) => ({ date: x.date, supplier: x.supplier.name, amount: x.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0), items: x.items }));
   const amount = recRows.reduce((s, x) => s + x.amount, 0), prevAmount = prevReceipts.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0);
-  const received = requests.filter((q) => q.receipt);
+  // Kirim so'rovdan oldin yozilgan (eski hujjatga bog'langan) bo'lsa — manfiy muddat o'rtachani buzmasin
+  const received = requests.filter((q) => q.receipt && q.receipt.date >= q.createdAt);
   const avgDays = received.length ? received.reduce((s, q) => s + (q.receipt!.date.getTime() - q.createdAt.getTime()) / DAY_MS, 0) / received.length : null;
   const bars = barsChart(r, recRows, (x) => x.date, [{ label: "Xarid", value: (x) => x.amount, fmt: short }], `Jami ${short(amount)}`);
   const byMaterial = groupSum(recRows.flatMap((x) => x.items), (i) => i.material.name, (i) => sum(i.qty) * sum(i.price));
@@ -623,8 +687,11 @@ async function procurement(r: DashRange): Promise<RoleDashboard> {
  * jo'natilgan hajm va uning dinamikasiga ta'sir qiladi.
  */
 async function mechanic(r: DashRange): Promise<RoleDashboard> {
+  // Kunda — bugun/ertaga (PDF); hafta/oy/yil — shu davr va keyingi teng davr
+  const isDay = r.key === "day";
+  const W = isDay ? { cur: "bugun", Cur: "Kunlik", next: "ertaga", Next: "Ertangi" } : { cur: r.label, Cur: `Davr (${r.label})`, next: "keyingi davr", Next: "Keyingi davr" };
   const [d, shipped, prevShipped] = await Promise.all([
-    skladLogistika(),
+    isDay ? skladLogistika() : skladLogistika(undefined, { from: r.from, to: r.to }),
     db.trip.findMany({ where: { status: { in: ["LOADED", "ON_ROAD", "DELIVERED"] }, loadedAt: { gte: r.from, lt: r.to } }, select: { loadedAt: true, qtyM3: true, order: { select: { items: { select: { product: { select: { unit: true } } } } } } } }),
     db.trip.count({ where: { status: { in: ["LOADED", "ON_ROAD", "DELIVERED"] }, loadedAt: { gte: r.prevFrom, lt: r.prevTo } } }),
   ]);
@@ -642,7 +709,7 @@ async function mechanic(r: DashRange): Promise<RoleDashboard> {
     const short = p.balance < -0.001;
     return {
       id: `p:${p.id}`, title: `${p.code} · ${p.name}`,
-      subtitle: `bugun ${p.today ? inUnit(p.today, p.unit) : "—"} · ertaga ${p.tomorrow ? inUnit(p.tomorrow, p.unit) : "—"} · skladda ${inUnit(p.onHand, p.unit)}`,
+      subtitle: `${W.cur} ${p.today ? inUnit(p.today, p.unit) : "—"} · ${W.next} ${p.tomorrow ? inUnit(p.tomorrow, p.unit) : "—"} · skladda ${inUnit(p.onHand, p.unit)}`,
       right: p.tomorrow === 0 ? "—" : short ? inUnit(p.balance, p.unit) : "Yetarli",
       tone: p.tomorrow === 0 ? "info" : short ? "danger" : "success",
     };
@@ -662,22 +729,22 @@ async function mechanic(r: DashRange): Promise<RoleDashboard> {
   return {
     hero: { key: "shipped", label: `Jo'natildi (${r.label})`, value: totalsText(unitRows(rows)), hint: joinHint(cnt(rows.length, "reys"), deltaText(rows.length, prevShipped, r)), tone: "brand", icon: "send", open: { key: "trips" } },
     tiles: [
-      { key: "t-orders", label: "Kunlik zayavka", value: `${t.orders} ta`, hint: t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : "bugun", tone: "info", icon: "clipboard-list" },
-      { key: "t-volume", label: "Zayavka bo'yicha mahsulot", value: t.volume, hint: "bugun", tone: "brand", icon: "package", open: { key: "stock" } },
-      { key: "t-shipped", label: "Jo'natilgan", value: `${t.shipped} ta`, hint: t.shippedVolume, tone: t.shipped ? "success" : "info", icon: "send", open: { key: "trips" } },
+      { key: "t-orders", label: isDay ? "Kunlik zayavka" : `Zayavkalar (${r.label})`, value: `${t.orders} ta`, hint: t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : W.cur, tone: "info", icon: "clipboard-list" },
+      { key: "t-volume", label: "Zayavka bo'yicha mahsulot", value: t.volume, hint: W.cur, tone: "brand", icon: "package", open: { key: "stock" } },
+      { key: "t-shipped", label: `Jo'natilgan (${W.cur})`, value: `${t.shipped} ta`, hint: t.shippedVolume, tone: t.shipped ? "success" : "info", icon: "send", open: { key: "trips" } },
       { key: "t-left", label: "Qolgan zayavka", value: `${t.left} ta`, hint: t.leftVolume, tone: t.left ? "warning" : "success", icon: "hourglass" },
-      { key: "t-problem", label: "Muammoli / kechikkan", value: `${t.problem} ta`, hint: t.overdue ? `${t.overdue} tasi oldingi kunlardan` : "kechikish, blok, muammo", tone: t.problem ? "danger" : "success", icon: "warning", open: { key: "trips" } },
-      { key: "n-orders", label: "Ertangi zayavka", value: `${n.orders} ta`, hint: n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : "ertaga", tone: "info", icon: "calendar" },
-      { key: "n-need", label: "Kerak bo'ladigan mahsulot", value: n.need, hint: "ertaga", tone: "brand", icon: "package" },
-      { key: "n-stock", label: "Skladda mavjud", value: n.available, hint: "bugungi jo'natishdan keyin", tone: "info", icon: "warehouse", open: { key: "stock" } },
+      { key: "t-problem", label: "Muammoli / kechikkan", value: `${t.problem} ta`, hint: t.overdue ? `${t.overdue} tasi ${isDay ? "oldingi kunlardan" : "davrdan oldingi"}` : "kechikish, blok, muammo", tone: t.problem ? "danger" : "success", icon: "warning", open: { key: "trips" } },
+      { key: "n-orders", label: `${W.Next} zayavka`, value: `${n.orders} ta`, hint: n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : W.next, tone: "info", icon: "calendar" },
+      { key: "n-need", label: "Kerak bo'ladigan mahsulot", value: n.need, hint: W.next, tone: "brand", icon: "package" },
+      { key: "n-stock", label: "Skladda mavjud", value: n.available, hint: `${W.cur} jo'natishdan keyin`, tone: "info", icon: "warehouse", open: { key: "stock" } },
       { key: "n-short", label: "Yetishmaydigan mahsulot", value: n.short, hint: n.shortCount ? `${n.shortCount} xil mahsulot` : "hammasi yetarli", tone: n.shortCount ? "danger" : "success", icon: n.shortCount ? "circle-alert" : "package-check" },
-      { key: "n-trucks", label: "Ertangi transport ehtiyoji", value: `${n.trips} ta mashina`, hint: joinHint(n.mixerTrips > 0 && `${n.mixerTrips} mikser`, n.truckTrips > 0 && `${n.truckTrips} yuk`, n.pumps > 0 && `${n.pumps} nasos`, `saflda ${fleet}`), tone: n.trips > fleet ? "warning" : "info", icon: "truck", open: { key: "trips" } },
+      { key: "n-trucks", label: `${W.Next} transport ehtiyoji`, value: `${n.trips} ta mashina`, hint: joinHint(n.mixerTrips > 0 && `${n.mixerTrips} mikser`, n.truckTrips > 0 && `${n.truckTrips} yuk`, n.pumps > 0 && `${n.pumps} nasos`, `saflda ${fleet}`), tone: n.trips > fleet ? "warning" : "info", icon: "truck", open: { key: "trips" } },
     ],
     charts: pick(
       { title: "Avtomatik ogohlantirish", empty: "Hammasi joyida — yetishmovchilik yo'q", icon: "bell", rows: alerts },
-      { title: "Mahsulot bo'yicha nazorat", empty: "Bugun va ertaga zayavka yo'q", icon: "layers", rows: products },
-      { title: "Ish jarayoni (bugun)", empty: "", icon: "route", rows: progressRows(flow.items), chart: flow },
-      { title: "Bugungi va kechikkan zayavkalar", empty: "Qolgan zayavka yo'q", target: "orders", rows: orders },
+      { title: "Mahsulot bo'yicha nazorat", empty: `${isDay ? "Bugun va ertaga" : "Davrda va keyingi davrda"} zayavka yo'q`, icon: "layers", rows: products },
+      { title: `Ish jarayoni (${W.cur})`, empty: "", icon: "route", rows: progressRows(flow.items), chart: flow },
+      { title: isDay ? "Bugungi va kechikkan zayavkalar" : `${r.label} va kechikkan zayavkalar`, empty: "Qolgan zayavka yo'q", target: "orders", rows: orders },
       chartSection("Jo'natish dinamikasi", bars, barsRows(bars, unitSeries(rows).map((s) => s.fmt)), "chart-column"),
     ),
   };
@@ -687,7 +754,8 @@ async function accounting(r: DashRange): Promise<RoleDashboard> {
   const [flow, invoices, recv, pay] = await Promise.all([
     moneyFlow(r),
     db.invoice.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { amount: true, status: true } }),
-    receivables(), payables(),
+    // Debitorka — davr oxiridagi qarz (joriy davrda — hozirgi)
+    receivables(asOf(r)), payables(r),
   ]);
   const paySum = flow.pay.reduce((s, p) => s + sum(p.amount), 0);
   const invSum = invoices.reduce((s, i) => s + sum(i.amount), 0);
@@ -696,62 +764,64 @@ async function accounting(r: DashRange): Promise<RoleDashboard> {
     hero: { key: "payments", label: `To'lovlar (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevIn, r)), tone: "success", icon: "banknote" },
     tiles: [
       { key: "invoiced", label: "Schyot yozildi", value: short(invSum), hint: cnt(invoices.length, "schyot"), tone: "info", icon: "receipt" },
-      { key: "receivable", label: "Debitorka", value: short(recv.total), hint: cnt(recv.count, "ochiq schyot"), tone: recv.total > 0 ? "danger" : "success", icon: "warning" },
-      { key: "payable", label: "Kreditorka", value: short(pay.total), hint: cnt(pay.count, "ta'minot zayavkasi"), tone: pay.total > 0 ? "warning" : "success", icon: "clipboard-list" },
+      { key: "receivable", label: asOf(r) ? `Debitorka (${r.label} oxirida)` : "Debitorka", value: short(recv.total), hint: joinHint(cnt(recv.count, "ochiq schyot"), `davrda +${short(invSum)} yozildi · −${short(paySum)} to'landi`), tone: recv.total > 0 ? "danger" : "success", icon: "warning" },
+      { key: "payable", label: `Kreditorka (${r.label})`, value: short(pay.total), hint: `${cnt(pay.count, "ta'minot zayavkasi")} · davrda ochilgan`, tone: pay.total > 0 ? "warning" : "success", icon: "clipboard-list" },
       { key: "expense", label: "Chiqim", value: short(flow.outSum), hint: deltaText(flow.outSum, flow.prevOut, r) ?? undefined, tone: "warning", icon: "arrow-up-circle" },
     ],
     charts: pick(
       chartSection("Kirim / chiqim", flow.bars, barsRows(flow.bars, [short, short]), "chart-column"),
       chartSection("Chiqim kategoriyalari", flow.expenseDonut, [], "chart-pie"),
       chartSection("Schyotlar holati", donutChart(groupSum(invoices, (i) => INVOICE_LABEL[i.status] ?? i.status, (i) => sum(i.amount)), short, "schyot"), [], "receipt"),
-      debtors.length ? { title: "Top qarzdorlar", empty: "", target: "customers", rows: debtors } : null,
+      debtors.length ? { title: asOf(r) ? `Top qarzdorlar (${r.label} oxirida)` : "Top qarzdorlar", empty: "", target: "customers", rows: debtors } : null,
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
   };
 }
 
 async function finance(r: DashRange): Promise<RoleDashboard> {
-  const now = new Date();
-  const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1), monthTo = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const [flow, accounts, budgets, monthExpense] = await Promise.all([
-    moneyFlow(r), accountBalances(),
-    db.expenseBudget.findMany({ where: { year: now.getFullYear(), month: now.getMonth() + 1 } }),
-    db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", date: { gte: monthFrom, lt: monthTo } }, _sum: { amount: true } }),
+  const months = monthShares(r).map(({ year, month }) => ({ year, month }));
+  const [flow, accounts, budgets] = await Promise.all([
+    moneyFlow(r), accountBalances(asOf(r)),
+    db.expenseBudget.findMany({ where: { OR: months } }),
   ]);
+  // Byudjet — oylik byudjet davrga bo'lingan; fakt — shu davr chiqimi (kategoriya bo'yicha)
+  const cats = [...new Set(budgets.map((b) => b.category))];
+  const spentOf = (cat: string) => flow.flows.filter((x) => x.dir === "out" && x.category === cat).reduce((a, x) => a + x.amount, 0);
+  const planOf = (cat: string) => scaled(budgets.filter((b) => b.category === cat), r, (b) => sum(b.amount));
   const net = flow.inSum - flow.outSum, prevNet = flow.prevIn - flow.prevOut;
   const balance = accounts.reduce((s, a) => s + a.value, 0);
-  const budgetItems = budgets.map((b) => progressItem(b.category, sum(monthExpense.find((m) => m.category === b.category)?._sum.amount), sum(b.amount), short, true, "cashflow"));
-  const budgetTotal = budgets.reduce((s, b) => s + sum(b.amount), 0);
-  const spentTotal = budgets.reduce((s, b) => s + sum(monthExpense.find((m) => m.category === b.category)?._sum.amount), 0);
+  const budgetItems = cats.map((c) => progressItem(c, spentOf(c), planOf(c), short, true, "cashflow"));
+  const budgetTotal = cats.reduce((a, c) => a + planOf(c), 0);
+  const spentTotal = cats.reduce((a, c) => a + spentOf(c), 0);
   const budgetPct = budgetTotal > 0 ? (spentTotal / budgetTotal) * 100 : null;
   return {
     hero: { key: "net", label: `Sof pul oqimi (${r.label})`, value: shortSigned(net), hint: joinHint(`kirim ${short(flow.inSum)} · chiqim ${short(flow.outSum)}`, prevNet !== 0 && deltaText(Math.abs(net), Math.abs(prevNet), r)), tone: net >= 0 ? "success" : "danger", icon: "arrow-up-down" },
     tiles: [
       { key: "in", label: "Kirim", value: short(flow.inSum), hint: deltaText(flow.inSum, flow.prevIn, r) ?? undefined, tone: "success", icon: "arrow-down-circle" },
       { key: "out", label: "Chiqim", value: short(flow.outSum), hint: deltaText(flow.outSum, flow.prevOut, r) ?? undefined, tone: "warning", icon: "arrow-up-circle" },
-      { key: "balance", label: "Kassa qoldig'i", value: shortSigned(balance), hint: cnt(accounts.length, "hisob"), tone: balance >= 0 ? "info" : "danger", icon: "wallet" },
-      { key: "budget", label: "Byudjet (oy)", value: pctText(budgetPct), hint: budgets.length ? `${short(spentTotal)} / ${short(budgetTotal)}` : "byudjet belgilanmagan", tone: budgetPct == null ? "info" : budgetPct > 100 ? "danger" : budgetPct > 90 ? "warning" : "success", icon: "square-check" },
+      { key: "balance", label: asOf(r) ? `Kassa qoldig'i (${r.label} oxirida)` : "Kassa qoldig'i", value: shortSigned(balance), hint: cnt(accounts.length, "hisob"), tone: balance >= 0 ? "info" : "danger", icon: "wallet" },
+      { key: "budget", label: `Byudjet (${r.label})`, value: pctText(budgetPct), hint: budgets.length ? `${short(spentTotal)} / ${short(budgetTotal)}` : "byudjet belgilanmagan", tone: budgetPct == null ? "info" : budgetPct > 100 ? "danger" : budgetPct > 90 ? "warning" : "success", icon: "square-check" },
     ],
     charts: pick(
       chartSection("Pul oqimi", flow.bars, barsRows(flow.bars, [short, short]), "chart-column"),
-      budgetItems.length ? chartSection("Byudjet — oy", { kind: "progress", items: budgetItems }, progressRows(budgetItems), "square-check") : null,
+      budgetItems.length ? chartSection(`Byudjet — ${r.label}`, { kind: "progress", items: budgetItems }, progressRows(budgetItems), "square-check") : null,
       chartSection("Xarajat kategoriyalari", flow.expenseDonut, [], "chart-pie"),
-      chartSection("Hisoblar bo'yicha qoldiq", donutChart(accounts, shortSigned, "qoldiq"), [], "landmark", "Hisob yo'q"),
+      chartSection(asOf(r) ? `Hisoblar bo'yicha qoldiq (${r.label} oxirida)` : "Hisoblar bo'yicha qoldiq", donutChart(accounts, shortSigned, "qoldiq"), [], "landmark", "Hisob yo'q"),
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
   };
 }
 
 async function cashier(r: DashRange): Promise<RoleDashboard> {
-  const [flow, accounts] = await Promise.all([moneyFlow(r), accountBalances()]);
+  const [flow, accounts] = await Promise.all([moneyFlow(r), accountBalances(asOf(r))]);
   const paySum = flow.pay.reduce((s, p) => s + sum(p.amount), 0);
   return {
     hero: { key: "payments", label: `Tushum (${r.label})`, value: short(paySum), hint: joinHint(cnt(flow.pay.length, "to'lov"), deltaText(paySum, flow.prevIn, r)), tone: "success", icon: "banknote" },
     tiles: [
       { key: "out", label: "Chiqim", value: short(flow.outSum), tone: "warning", icon: "arrow-up-circle" },
-      { key: "balance", label: "Kassa qoldig'i", value: shortSigned(accounts.reduce((s, a) => s + a.value, 0)), hint: cnt(accounts.length, "hisob"), tone: "info", icon: "wallet" },
+      { key: "balance", label: asOf(r) ? `Kassa qoldig'i (${r.label} oxirida)` : "Kassa qoldig'i", value: shortSigned(accounts.reduce((s, a) => s + a.value, 0)), hint: cnt(accounts.length, "hisob"), tone: "info", icon: "wallet" },
     ],
     charts: pick(
       chartSection("Kirim / chiqim", flow.bars, barsRows(flow.bars, [short, short]), "chart-column"),
-      chartSection("Hisoblar bo'yicha qoldiq", donutChart(accounts, shortSigned, "qoldiq"), [], "landmark", "Hisob yo'q"),
+      chartSection(asOf(r) ? `Hisoblar bo'yicha qoldiq (${r.label} oxirida)` : "Hisoblar bo'yicha qoldiq", donutChart(accounts, shortSigned, "qoldiq"), [], "landmark", "Hisob yo'q"),
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
   };
 }
@@ -762,8 +832,8 @@ async function hr(r: DashRange): Promise<RoleDashboard> {
     db.attendance.groupBy({ by: ["status"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _count: true }),
     db.employee.count({ where: { hiredAt: { gte: r.from, lt: r.to } } }),
     db.employee.count({ where: { firedAt: { gte: r.from, lt: r.to } } }),
-    db.employee.count({ where: { isActive: true } }),
-    db.employee.groupBy({ by: ["position"], where: { isActive: true }, _count: true }),
+    db.employee.count({ where: staffAt(r) }),
+    db.employee.groupBy({ by: ["position"], where: staffAt(r), _count: true }),
   ]);
   const by = (s: string) => att.filter((a) => a.status === s).length;
   const present = by("PRESENT"), absent = by("ABSENT"), sick = by("SICK"), leave = by("LEAVE");
@@ -781,12 +851,12 @@ async function hr(r: DashRange): Promise<RoleDashboard> {
       { key: "absent", label: "Kelmadi", value: String(absent), hint: "sababsiz", tone: absent ? "danger" : "success", icon: "user-x" },
       { key: "sick", label: "Kasal / ta'til", value: `${sick} / ${leave}`, tone: "info", icon: "heart-pulse" },
       { key: "hired", label: "Yangi xodim", value: String(hired), hint: fired ? `${fired} bo'shadi` : undefined, tone: "success", icon: "user-plus" },
-      { key: "active", label: "Faol xodim", value: String(active), hint: cnt(positions.length, "lavozim"), tone: "brand", icon: "people" },
+      { key: "active", label: asOf(r) ? `Xodimlar (${r.label} oxirida)` : "Faol xodim", value: String(active), hint: cnt(positions.length, "lavozim"), tone: "brand", icon: "people" },
     ],
     charts: pick(
       bars ? chartSection("Davomat dinamikasi", bars, barsRows(bars, [(v) => cnt(v, "kishi"), (v) => cnt(v, "kishi")]), "chart-column") : null,
       chartSection("Davomat tarkibi", donutChart(groupSum(att, (a) => ATT_LABEL[a.status] ?? a.status, count), (v) => cnt(v, "belgi"), "belgi"), [], "calendar"),
-      chartSection("Lavozimlar bo'yicha", donutChart(positions.map((p) => ({ label: p.position, value: p._count })), (v) => cnt(v, "kishi"), "xodim"), [], "id-card", "Faol xodim yo'q"),
+      chartSection(asOf(r) ? `Lavozimlar bo'yicha (${r.label} oxirida)` : "Lavozimlar bo'yicha", donutChart(positions.map((p) => ({ label: p.position, value: p._count })), (v) => cnt(v, "kishi"), "xodim"), [], "id-card", "Faol xodim yo'q"),
     ).map((s) => (s.chart?.kind === "donut" && !s.rows.length ? { ...s, rows: donutRows(s.chart) } : s)),
   };
 }

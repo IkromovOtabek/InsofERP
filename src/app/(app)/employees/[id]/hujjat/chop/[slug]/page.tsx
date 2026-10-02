@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { HIRING_DOCS, HIRING_SLUG, HR_DOC_BY_SLUG } from "@/lib/hr-docs";
 import { PrintButton } from "@/components/print-button";
@@ -21,7 +21,7 @@ export default async function HrDocPrintPage({ params, searchParams }: {
   params: Promise<{ id: string; slug: string }>;
   searchParams: Promise<{ doc?: string; print?: string }>;
 }) {
-  await requireSession(["HR"]);
+  await requireRoles(["HR"]);
   const { id, slug } = await params;
   const { doc, print } = await searchParams;
 

@@ -4,6 +4,32 @@ import { consumeForTask } from "@/lib/brigade-stock";
 import { qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
+import type { Role } from "@/generated/prisma";
+
+/**
+ * Topshiriq va brigada amallari — yagona rol matritsasi (veb sahifa, server action va mobil
+ * `ACTION_ROLES` shu ro'yxatdan oladi, aks holda tugma chiqib, server rad etadigan holat bo'ladi).
+ *  - progress: bajarilgan miqdorni qayd qilish — ishlab chiqarish natijasini faqat ishlab chiqarish yozadi
+ *    (logistika emas). Brigadir mobil ilovada o'z topshirig'ini qo'shimcha ravishda qayd qiladi.
+ *  - cancel: topshiriqni bekor qilish — ishlab chiqarish rejasi, sotuv emas.
+ *  - brigadeEdit: brigada ochish/tahrirlash/yopish, brigadir tayinlash.
+ * Veb'da direktor har doim ruxsatli (`requireSession`), mobil ilovada esa faqat ro'yxatdagilar.
+ */
+export const TASK_ROLES = {
+  progress: ["PRODUCTION", "SUPERVISOR"],
+  cancel: ["PRODUCTION", "SUPERVISOR"],
+  brigadeEdit: ["PRODUCTION", "SUPERVISOR", "HR"],
+} as const satisfies Record<string, readonly Role[]>;
+
+export type TaskPermission = keyof typeof TASK_ROLES;
+
+/** Veb uchun: rol shu amalni bajara oladimi (direktor — har doim). */
+export function canTask(role: Role, what: TaskPermission): boolean {
+  return role === "DIRECTOR" || (TASK_ROLES[what] as readonly Role[]).includes(role);
+}
+
+/** `requireSession` ga uzatish uchun o'zgaruvchan nusxa. */
+export const taskRoles = (what: TaskPermission): Role[] => [...TASK_ROLES[what]];
 
 /**
  * Brigada topshiriqlari — yagona joy (veb "Topshiriqlar" sahifasi ham, mobil ilova ham).
@@ -52,7 +78,7 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     // uchun sement ikki marta hisobdan chiqardi. Dona mahsulot esa brigada qo'lidagidan sarflanadi.
     const used = toYard
       ? await consumeForTask(tx, { id: t.id, brigadeId: t.brigadeId, orderItemId: t.orderItemId }, qty, userId)
-      : { rows: 0, deficit: [] as string[] };
+      : { rows: 0, deficit: [] as string[], issued: [] as string[] };
 
     // ── Tayyor mahsulot hovliga ──
     if (toYard && wh) {
@@ -85,7 +111,8 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} hovliga kirim qilindi (erkin qoldiq)` : null,
     toYard && !wh ? "Sklad ochilmagan — tayyor mahsulot kirim qilinmadi" : null,
     res.closed ? "Zaxira to'liq tayyor — zayavka yopildi" : null,
-    res.used.deficit.length ? `Brigadada xomashyo yetmadi (qarzga yozildi): ${res.used.deficit.join(", ")} — skladdan bering` : null,
+    res.used.issued.length ? `Brigadada yetmagani skladdan avtomatik berildi: ${res.used.issued.join(", ")}` : null,
+    res.used.deficit.length ? `DIQQAT: skladda ham yetmadi — brigada qoldig'i minusda: ${res.used.deficit.join(", ")}. Sklad va ishlab chiqarishga xabar ketdi` : null,
   ].filter(Boolean);
   // Topshiriq bajarilgani — keyingi qadamni (qabul qilish, yuklash) boshlaydigan xabar
   if (status === "DONE") {
@@ -97,6 +124,14 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     }, { except: userId }));
   }
   return { changed: true, orderId: t.orderId, status, note: hints.length ? hints.join(" · ") : undefined };
+}
+
+/**
+ * Bekor qilingan va hech narsa bajarilmagan topshiriq — zayavka qatori qayta brigadaga berilishi mumkin
+ * (`BrigadeTask.orderItemId` yagona: aks holda bekor qilingan topshiriq qatorni abadiy band qiladi).
+ */
+export function reassignable(t: { status: string; doneQty: unknown } | null | undefined): boolean {
+  return !!t && t.status === "CANCELLED" && Number(t.doneQty) === 0;
 }
 
 export async function taskCancel(taskId: string, userId: string): Promise<TaskResult> {

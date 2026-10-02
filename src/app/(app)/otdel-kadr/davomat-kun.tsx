@@ -7,7 +7,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Eraser, User, UserCheck } from
 import { saveAttendance } from "./davomat-actions";
 import { Badge, Button, FormError, Input, Select, Table, Td, Th, Tr, Empty } from "@/components/ui";
 import {
-  ATTENDANCE_MARKS, DEFAULT_SHIFT, dayTitle, hoursShort, hoursText, monthOf, shiftDay, today, workedMinutes,
+  ATTENDANCE_MARKS, DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayTitle, hoursShort, hoursText, monthOf, shiftDay, today, workedMinutes,
 } from "@/lib/davomat";
 import { cn } from "@/lib/utils";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -15,9 +15,16 @@ import type { AttendanceStatus } from "@/generated/prisma";
 export type KunRow = {
   id: string; fullName: string; position: string; photo: boolean;
   status: AttendanceStatus | null; checkIn: string | null; checkOut: string | null; note: string | null;
+  /** Sahifa ochilgandagi yozuv versiyasi (`updatedAt` ISO, yozuv yo'q bo'lsa bo'sh) — boshqa joyda o'zgargan bo'lsa server ustidan yozmaydi. */
+  ver: string;
 };
 
 type Val = { status: string; checkIn: string; checkOut: string; note: string };
+
+const valOf = (r: KunRow): Val => ({ status: r.status ?? "", checkIn: r.checkIn ?? "", checkOut: r.checkOut ?? "", note: r.note ?? "" });
+const initVals = (rows: KunRow[]) => Object.fromEntries(rows.map((r) => [r.id, valOf(r)]));
+/** Server saqlaydigan ko'rinish: soat faqat "Keldi" da, izoh bo'shliqsiz — shu bo'yicha o'zgarganmi deb solishtiriladi. */
+const norm = (v: Val) => [v.status, v.status === "PRESENT" ? v.checkIn : "", v.status === "PRESENT" ? v.checkOut : "", v.note.trim()].join("|");
 
 const dayHref = (iso: string) => `/otdel-kadr?tab=davomat&kun=${iso}`;
 
@@ -27,11 +34,14 @@ const dayHref = (iso: string) => `/otdel-kadr?tab=davomat&kun=${iso}`;
  */
 export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
   const router = useRouter();
-  const [vals, setVals] = useState<Record<string, Val>>(() =>
-    Object.fromEntries(rows.map((r) => [r.id, {
-      status: r.status ?? "", checkIn: r.checkIn ?? "", checkOut: r.checkOut ?? "", note: r.note ?? "",
-    }])),
-  );
+  const [vals, setVals] = useState<Record<string, Val>>(() => initVals(rows));
+  // Saqlangandan keyin sahifa yangilanadi (router.refresh) — jadval bazadagi joriy holatga qaytadi:
+  // boshqa joyda o'zgargani uchun o'tkazib yuborilgan qatorda ham endi yangi qiymat ko'rinadi
+  const [prevRows, setPrevRows] = useState(rows);
+  if (rows !== prevRows) { setPrevRows(rows); setVals(initVals(rows)); }
+  const orig = new Map(rows.map((r) => [r.id, norm(valOf(r))]));
+  const isChanged = (id: string) => !!vals[id] && norm(vals[id]) !== orig.get(id);
+  const changedCount = rows.filter((r) => isChanged(r.id)).length;
   const [state, act, pending] = useActionState(saveAttendance.bind(null, iso), undefined);
   useEffect(() => { if (state?.ok) router.refresh(); }, [state, router]);
 
@@ -94,11 +104,14 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
             {rows.map((r) => {
               const v = vals[r.id];
               const min = v.status === "PRESENT" ? workedMinutes(v.checkIn, v.checkOut) : null;
+              const changed = isChanged(r.id);
               return (
-                <Tr key={r.id} className={cn(!v.status && "bg-slate-50/40")}>
+                <Tr key={r.id} className={cn(!v.status && "bg-slate-50/40", changed && "bg-amber-50/50")}>
                   <Td>
-                    {/* `<tr>` ichida bevosita `<input>` turolmaydi — yashirin maydon katak ichida */}
-                    <input type="hidden" name="emp[]" value={r.id} />
+                    {/* `<tr>` ichida bevosita `<input>` turolmaydi — yashirin maydon katak ichida.
+                        Faqat o'zgartirilgan qator yuboriladi: boshqalar (masalan sex ilovada qo'ygan belgi) tegilmaydi */}
+                    {changed && <input type="hidden" name="emp[]" value={r.id} />}
+                    {changed && <input type="hidden" name={`ver:${r.id}`} value={r.ver} />}
                     <span className="flex items-center gap-2">
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -131,7 +144,8 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                   </Td>
                   <Td right className="text-sm">
                     {min !== null
-                      ? <span className={cn("font-semibold", min > 12 * 60 ? "text-amber-600" : "text-slate-900")}>{hoursShort(min)}</span>
+                      ? <span title={min > MAX_SHIFT_MINUTES ? `${MAX_SHIFT_MINUTES / 60} soatdan uzun — saqlanmaydi, vaqtni tekshiring` : undefined}
+                          className={cn("font-semibold", min > MAX_SHIFT_MINUTES ? "text-red-600" : min > 12 * 60 ? "text-amber-600" : "text-slate-900")}>{hoursShort(min)}</span>
                       : <span className="text-slate-300">—</span>}
                   </Td>
                   <Td>
@@ -155,14 +169,15 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
           <span className="text-xs text-slate-500">Standart smena {DEFAULT_SHIFT.checkIn}–{DEFAULT_SHIFT.checkOut}</span>
           <div className="ml-auto flex items-center gap-3">
             {state?.ok && state.note && <span className="text-xs text-emerald-700">{state.note}</span>}
-            <Button type="submit" disabled={pending || rows.length === 0}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
+            <Button type="submit" disabled={pending || changedCount === 0}>{pending ? "Saqlanmoqda…" : changedCount ? `Saqlash (${changedCount})` : "Saqlash"}</Button>
           </div>
         </div>
         <FormError error={state?.error} />
       </form>
 
       <p className="px-1 text-xs text-slate-500">
-        Belgi «— belgilanmagan» qoldirilsa, o&apos;sha kunlik yozuv o&apos;chadi va oylik tabelda katak bo&apos;sh turadi.
+        Faqat o&apos;zgartirilgan qatorlar (sariq) saqlanadi. Belgi «— belgilanmagan» qilib o&apos;zgartirilsa, o&apos;sha kunlik yozuv o&apos;chadi.
+        Sahifa ochilgandan keyin boshqa joyda (sex ilovasi) o&apos;zgargan qator ustidan yozilmaydi.
         Ketish vaqti kelishdan oldin bo&apos;lsa tungi smena deb hisoblanadi: 20:00 → 06:00 = 10 soat.
       </p>
     </div>

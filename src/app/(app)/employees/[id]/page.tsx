@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileSignature, FileText, KeyRound, Paperclip } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT, PHOTO_ACCEPT } from "@/lib/uploads";
@@ -19,7 +19,7 @@ import { HrDocsPanel, type HrDocRow } from "./hr-doc-forms";
 import { EmployeePhotoForm } from "./photo-form";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await requireSession(["HR"]);
+  const s = await requireRoles(["HR"]);
   const { id } = await params;
   const [e, catalog, vehicles, orderNos] = await Promise.all([
     db.employee.findUnique({

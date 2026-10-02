@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CalendarDays, MapPin, Truck, Users } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { avgMin, cost, logisticsReport, onTimePct } from "@/lib/logistics-report";
 import { isoDate, money, moneyShort, qty } from "@/lib/format";
 import { minutesLabel, VEHICLE_TYPE } from "@/lib/logistics";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 /** Hisobotlar (TZ 14): kunlar, transport, haydovchi va obyekt kesimida — jadval + Excel. */
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string }> }) {
-  await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const rep = await logisticsReport(r.from, r.to);
@@ -65,7 +65,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </Table>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Haydovchilar faoliyati" icon={Users} /></div>
           <Table>

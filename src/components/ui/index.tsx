@@ -3,6 +3,8 @@ import type { LucideIcon } from "lucide-react";
 import { Inbox, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { EmptySlot } from "./empty-slot";
+
 export { PasswordInput } from "./password-input";
 
 /* ═══════════════════════ Layout ═══════════════════════ */
@@ -13,9 +15,9 @@ export function PageHeader({ title, subtitle, eyebrow, action, back }: {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4 animate-fade-up">
       <div className="min-w-0">
-        {back && <Link href={back.href} className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">← {back.label}</Link>}
+        {back && <Link href={back.href} className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900 pointer-coarse:min-h-9 pointer-coarse:text-sm">← {back.label}</Link>}
         {eyebrow && !back && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
-        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {/* `data-tour` — instruksiya (onboarding) shu belgilarga strelka qo'yadi */}
@@ -74,29 +76,31 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "default", hre
 }) {
   const t = tones[tone];
   const body = (
-    <div className={cn("flex items-start justify-between gap-3 rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition", tone === "danger" ? "border-red-200" : "border-slate-200/80", href && "hover:border-slate-300 hover:shadow-md")}>
+    <div className={cn("flex items-start justify-between gap-3 rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition", tone === "danger" ? "border-red-200" : "border-slate-200/80", href && "hover:border-slate-300 hover:shadow-md active:scale-[.99]")}>
       <div className="min-w-0">
-        <div className="text-[13px] font-medium text-slate-500">{label}</div>
-        <div className={cn("mt-1.5 break-words text-lg leading-tight font-semibold tracking-tight tabular sm:text-[22px]", t.value)}>{value}</div>
+        <div className="text-[13px] font-medium leading-snug text-slate-500">{label}</div>
+        <div className={cn("mt-1.5 break-words text-xl leading-tight font-semibold tracking-tight tabular sm:text-[22px]", t.value)}>{value}</div>
         {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
       </div>
       {Icon && <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={19} /></div>}
     </div>
   );
-  return href ? <Link href={href} className="block">{body}</Link> : body;
+  return href ? <Link href={href} className="block rounded-(--radius-card)">{body}</Link> : body;
 }
 
 /* ═══════════════════════ Buttons ═══════════════════════ */
 
-const btnBase = "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:pointer-events-none disabled:opacity-50";
-const btnSize = { sm: "h-8 px-3 text-[13px]", md: "h-10 px-4 text-sm", lg: "h-11 px-5 text-[15px]" };
+const btnBase = "inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-[color,background-color,border-color,transform] active:scale-[.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:pointer-events-none disabled:opacity-50";
+/* `pointer-coarse:` — sensorli ekran (telefon/planshet): barmoq, ko'pincha qo'lqop bilan bosiladi,
+   shuning uchun har qanday tugma kamida 44px (Apple/WCAG 2.5.5 tavsiyasi). Kompyuterda ixcham qoladi. */
+const btnSize = { sm: "h-8 px-3 text-[13px] pointer-coarse:h-11 pointer-coarse:px-3.5", md: "h-10 px-4 text-sm pointer-coarse:h-11", lg: "h-11 px-5 text-[15px] pointer-coarse:h-12" };
 const btnVariant = {
   primary: "bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:bg-slate-950",
   secondary: "border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-300",
-  ghost: "text-slate-700 hover:bg-slate-100",
+  ghost: "text-slate-700 hover:bg-slate-100 hover:text-slate-900",
   danger: "bg-red-600 text-white shadow-sm hover:bg-red-700",
   success: "bg-emerald-600 text-white shadow-sm hover:bg-emerald-700",
-  brand: "bg-brand-500 text-slate-950 shadow-sm hover:bg-brand-400",
+  brand: "bg-brand-500 font-semibold text-slate-950 shadow-sm hover:bg-brand-400",
 };
 type Variant = keyof typeof btnVariant;
 type Size = keyof typeof btnSize;
@@ -110,7 +114,7 @@ export function LinkButton({ href, variant = "primary", size = "md", className, 
 }
 
 export function IconButton({ icon: Icon, label, className, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string }) {
-  return <button aria-label={label} title={label} className={cn("inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-900", className)} {...p}><Icon size={16} /></button>;
+  return <button aria-label={label} title={label} className={cn("inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 pointer-coarse:h-11 pointer-coarse:w-11", className)} {...p}><Icon size={16} /></button>;
 }
 
 /* ═══════════════════════ Form ═══════════════════════ */
@@ -120,12 +124,15 @@ export function Field({ label, children, hint, error, className }: { label: stri
     <label className={cn("block", className)}>
       <span className="mb-1.5 block text-[13px] font-medium text-slate-700">{label}</span>
       {children}
-      {error ? <span className="mt-1 block text-xs text-red-600">{error}</span> : hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {error ? <span role="alert" className="mt-1 block text-xs font-medium text-red-600">{error}</span> : hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </label>
   );
 }
 
-export const inputCls = "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-3 focus:ring-slate-900/8 disabled:bg-slate-50 disabled:text-slate-500 read-only:bg-slate-50";
+/* Fokus — amber chegara + yumshoq halqa: qaysi maydonga yozilayotgani uzoqdan ham ko'rinadi
+   (eski kulrang halqa deyarli sezilmasdi). Sensorli ekranda 44px balandlik va 16px matn —
+   iOS fokusda sahifani kattalashtirib yubormaydi. Xato holati: `aria-invalid`. */
+export const inputCls = "h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 shadow-xs transition placeholder:text-slate-400 hover:border-slate-400 focus:border-brand-500 focus:outline-none focus:ring-3 focus:ring-brand-500/25 aria-invalid:border-red-500 aria-invalid:focus:ring-red-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 read-only:bg-slate-50 pointer-coarse:h-11 pointer-coarse:text-base";
 
 export function Input({ className, ...p }: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(inputCls, className)} {...p} />;
@@ -136,12 +143,12 @@ export function Select({ className, ...p }: React.SelectHTMLAttributes<HTMLSelec
   return <select className={cn(inputCls, "select-caret appearance-none pr-9 read-only:bg-white", className)} {...p} />;
 }
 export function Textarea({ className, ...p }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn(inputCls, "h-auto min-h-20 py-2", className)} {...p} />;
+  return <textarea className={cn(inputCls, "h-auto min-h-20 py-2 pointer-coarse:h-auto", className)} {...p} />;
 }
 export function Checkbox({ label, className, ...p }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return (
-    <label className={cn("inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700", className)}>
-      <input type="checkbox" className="h-4 w-4 rounded border-slate-300 accent-slate-900" {...p} /> {label}
+    <label className={cn("inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700 pointer-coarse:min-h-11", className)}>
+      <input type="checkbox" className="h-4 w-4 shrink-0 rounded border-slate-300 accent-slate-900 pointer-coarse:h-5 pointer-coarse:w-5" {...p} /> {label}
     </label>
   );
 }
@@ -175,8 +182,8 @@ export type BadgeColor = keyof typeof badgeColors;
 
 export function Badge({ color = "slate", children, dot = true }: { color?: BadgeColor; children: React.ReactNode; dot?: boolean }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", badgeColors[color])}>
-      {dot && <span className={cn("h-1.5 w-1.5 rounded-full", dotColors[color])} />}
+    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium tabular ring-1 ring-inset", badgeColors[color])}>
+      {dot && <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dotColors[color])} />}
       {children}
     </span>
   );
@@ -186,18 +193,18 @@ export function Badge({ color = "slate", children, dot = true }: { color?: Badge
 
 export function Tabs({ items, current, className }: { items: { key: string; label: React.ReactNode; href: string; count?: number; icon?: LucideIcon }[]; current: string; className?: string }) {
   return (
-    <div className={cn("mb-4 flex gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white p-1 shadow-(--shadow-card)", className)}>
+    <nav className={cn("mb-4 flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200/80 bg-white p-1 shadow-(--shadow-card)", className)}>
       {items.map((t) => {
         const active = t.key === current;
         return (
-          <Link key={t.key} href={t.href} className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition", active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")}>
+          <Link key={t.key} href={t.href} aria-current={active ? "page" : undefined} className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition pointer-coarse:py-2.5", active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")}>
             {t.icon && <t.icon size={14} />}
             {t.label}
             {t.count !== undefined && <span className={cn("rounded-full px-1.5 text-[11px] tabular", active ? "bg-white/20" : "bg-slate-100 text-slate-500")}>{t.count}</span>}
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }
 
@@ -228,28 +235,40 @@ export function StatusSteps({ steps, current, failed }: { steps: { key: string; 
 
 /* ═══════════════════════ Table ═══════════════════════ */
 
-export function Table({ children, className }: { children: React.ReactNode; className?: string }) {
+/**
+ * Jadval qobig'i. Ichida doim `overflow-x-auto`: telefonda keng jadval faqat o'z ichida
+ * yon tomonga aylanadi, sahifa joyida qoladi.
+ * `maxHeight` (ixtiyoriy, masalan "70vh") — jadval o'z ichida tik ham aylanadi va
+ * sarlavha (`Th`) tepada yopishib turadi: uzun ro'yxatda ustun nomlari ko'zdan yo'qolmaydi.
+ */
+export function Table({ children, className, maxHeight }: { children: React.ReactNode; className?: string; maxHeight?: string | number }) {
   return (
-    <div className={cn("overflow-x-auto rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", className)}>
-      <table className="w-full text-sm">{children}</table>
+    <div className={cn("relative max-w-full overflow-x-auto overscroll-x-contain rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", maxHeight != null && "overflow-y-auto", className)}
+      style={maxHeight != null ? { maxHeight } : undefined}>
+      <table className="w-full text-sm tabular">{children}</table>
     </div>
   );
 }
 export function Th({ children, right, className }: { children?: React.ReactNode; right?: boolean; className?: string }) {
-  return <th className={cn("sticky top-0 border-b border-slate-200 bg-slate-50/80 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 backdrop-blur", right && "text-right", className)}>{children}</th>;
+  return <th scope="col" className={cn("sticky top-0 z-[1] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500", right && "text-right", className)}>{children}</th>;
 }
 export function Td({ children, right, className, colSpan }: { children?: React.ReactNode; right?: boolean; className?: string; colSpan?: number }) {
-  return <td colSpan={colSpan} className={cn("border-t border-slate-100 px-4 py-3 text-slate-700 first:font-medium first:text-slate-900", right && "text-right tabular", className)}>{children}</td>;
+  return <td colSpan={colSpan} className={cn("border-t border-slate-100 px-4 py-3 text-slate-700 first:font-medium first:text-slate-900", right && "whitespace-nowrap text-right tabular", className)}>{children}</td>;
 }
 export function Tr({ children, className }: { children: React.ReactNode; className?: string }) {
   return <tr className={cn("transition-colors hover:bg-slate-50/70", className)}>{children}</tr>;
 }
+/**
+ * Bo'sh holat. Jadval ichida (`<tbody>`) — `<tr><td colSpan>` qatori, oddiy blok ichida
+ * (`<div>`, karta) — `<div>`. Qaysi biri kerakligini `EmptySlot` brauzerda o'zi aniqlaydi:
+ * avval `<tr>` ni `<div>` ichida chizish HTML'ni buzib, React #418 (hydration) xatosini berardi.
+ */
 export function Empty({ text, icon: Icon = Inbox }: { text: string; icon?: LucideIcon }) {
   return (
-    <tr><td colSpan={99} className="px-4 py-12 text-center">
+    <EmptySlot>
       <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400"><Icon size={18} /></div>
       <div className="text-sm text-slate-500">{text}</div>
-    </td></tr>
+    </EmptySlot>
   );
 }
 
@@ -268,7 +287,7 @@ export function EmptyState({ icon: Icon = Inbox, title, text, action }: { icon?:
 
 export function Callout({ tone = "info", title, children }: { tone?: "info" | "warning" | "danger" | "success"; title?: string; children: React.ReactNode }) {
   const c = { info: "border-blue-200 bg-blue-50 text-blue-900", warning: "border-amber-200 bg-amber-50 text-amber-900", danger: "border-red-200 bg-red-50 text-red-900", success: "border-emerald-200 bg-emerald-50 text-emerald-900" }[tone];
-  return <div className={cn("mb-4 rounded-lg border px-4 py-3 text-sm", c)}>{title && <div className="mb-0.5 font-semibold">{title}</div>}{children}</div>;
+  return <div role={tone === "danger" || tone === "warning" ? "alert" : undefined} className={cn("mb-4 rounded-lg border px-4 py-3 text-sm", c)}>{title && <div className="mb-0.5 font-semibold">{title}</div>}{children}</div>;
 }
 
 /** Kalit–qiymat ro'yxati (detail sahifalar) */
@@ -278,7 +297,7 @@ export function DL({ items }: { items: { k: string; v: React.ReactNode }[] }) {
       {items.map((i) => (
         <div key={i.k} className="flex items-start justify-between gap-4 py-2 first:pt-0 last:pb-0">
           <dt className="shrink-0 text-slate-500">{i.k}</dt>
-          <dd className="min-w-0 flex-1 text-right font-medium text-slate-900 [overflow-wrap:anywhere]">{i.v ?? "—"}</dd>
+          <dd className="min-w-0 flex-1 text-right font-medium text-slate-900 tabular [overflow-wrap:anywhere]">{i.v ?? "—"}</dd>
         </div>
       ))}
     </dl>
@@ -288,10 +307,10 @@ export function DL({ items }: { items: { k: string; v: React.ReactNode }[] }) {
 export function Progress({ value, max, tone = "default" }: { value: number; max: number; tone?: "default" | "success" | "warning" | "danger" }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   const bar = { default: "bg-slate-900", success: "bg-emerald-500", warning: "bg-amber-500", danger: "bg-red-500" }[tone];
-  return <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={cn("h-full rounded-full transition-all", bar)} style={{ width: `${pct}%` }} /></div>;
+  return <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={cn("h-full rounded-full transition-all", bar)} style={{ width: `${pct}%` }} /></div>;
 }
 
 export function Avatar({ name, className }: { name: string; className?: string }) {
   const initials = name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-  return <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[13px] font-semibold text-slate-950", className)}>{initials}</div>;
+  return <div aria-hidden className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[13px] font-semibold text-slate-950", className)}>{initials}</div>;
 }

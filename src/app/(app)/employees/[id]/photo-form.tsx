@@ -5,6 +5,7 @@ import { Trash2, Upload } from "lucide-react";
 import { deleteEmployeePhoto, updateEmployeePhoto } from "../../otdel-kadr/actions";
 import { PhotoPicker } from "@/components/photo-picker";
 import { Button, FormError } from "@/components/ui";
+import { oversizeFiles } from "@/lib/kadr";
 
 /**
  * Kartadagi 3x4 surat: mavjud xodimga ham istalgan payt yuklanadi — fayldan,
@@ -19,10 +20,11 @@ export function EmployeePhotoForm({ employeeId, accept, hasPhoto, src }: {
 }) {
   const [state, action, pending] = useActionState(updateEmployeePhoto.bind(null, employeeId), undefined);
   const [picked, setPicked] = useState(false);
+  const [tooBig, setTooBig] = useState<string | null>(null); // 10 MB dan katta fayl — yuborilmaydi
 
   return (
     <div className="w-[120px]">
-      <form action={action}>
+      <form action={action} onSubmit={(e) => { const p = oversizeFiles(e.currentTarget); setTooBig(p); if (p) e.preventDefault(); }}>
         <PhotoPicker
           accept={accept}
           currentSrc={hasPhoto ? src : null}
@@ -34,7 +36,7 @@ export function EmployeePhotoForm({ employeeId, accept, hasPhoto, src }: {
             <Upload size={14} /> {pending ? "Saqlanmoqda…" : "Saqlash"}
           </Button>
         )}
-        <FormError error={state?.error} />
+        <FormError error={tooBig ?? state?.error} />
       </form>
       {hasPhoto && !picked && (
         <form action={deleteEmployeePhoto.bind(null, employeeId)} className="mt-1">

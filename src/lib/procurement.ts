@@ -1,11 +1,11 @@
 import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
-import type { Prisma, SupplyDelivery, SupplyIncidentKind, SupplyPriority, SupplyStatus } from "@/generated/prisma";
+import type { Prisma, Role, SupplyDelivery, SupplyIncidentKind, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { db } from "./db";
 import { audit } from "./audit";
 import { getCompany } from "./company";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
-import { UPLOADS_DIR } from "./uploads";
+import { UPLOADS_DIR, readUpload } from "./uploads";
 import { DELIVERY_LABEL, DELIVERY_MANUAL, DEPARTMENTS, DOC_KINDS, INCIDENT_KINDS, INCIDENT_LABEL, PRIORITIES, PRIORITY_LABEL } from "./procurement-const";
 import { SUPPLY_LABEL, totalPlanned, type SupplyResult } from "./supply";
 
@@ -333,15 +333,17 @@ export async function addSupplyDocument(id: string, kind: string, file: File | n
   if (!req) return { error: "Ta'minot zayavkasi topilmadi" };
   if (!(DOC_KINDS as readonly string[]).includes(kind)) return { error: "Hujjat turini tanlang" };
   if (!file || file.size === 0) return { error: "Fayl tanlanmagan" };
-  const ext = DOC_TYPES[file.type];
-  if (!ext) return { error: "Hujjat PDF yoki rasm (JPG, PNG, WEBP) bo'lishi kerak" };
   if (file.size > SUPPLY_DOC_MAX_MB * 1024 * 1024) return { error: `Fayl ${SUPPLY_DOC_MAX_MB} MB dan katta` };
+  // Turi brauzer yuborgan `file.type` dan emas, fayl mazmunidan (magic bytes) aniqlanadi
+  const f = await readUpload(file, ["pdf", "jpg", "png", "webp", "heic"]);
+  if (!f) return { error: "Hujjat PDF yoki rasm (JPG, PNG, WEBP, HEIC) bo'lishi kerak" };
+  const ext = f.ext;
   const dir = path.join(UPLOADS_DIR, "supply");
   await mkdir(dir, { recursive: true });
   const stored = `${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  await writeFile(path.join(dir, stored), Buffer.from(await file.arrayBuffer()));
+  await writeFile(path.join(dir, stored), f.buf);
   const doc = await db.$transaction(async (tx) => {
-    const doc = await tx.supplyDocument.create({ data: { requestId: id, kind, file: stored, fileName: file.name || `${kind}.${ext}`, fileType: file.type, createdById: userId } });
+    const doc = await tx.supplyDocument.create({ data: { requestId: id, kind, file: stored, fileName: file.name || `${kind}.${ext}`, fileType: f.mime, createdById: userId } });
     await event(tx, id, req.status, userId, `Hujjat biriktirildi: ${kind}`);
     await audit(tx, userId, "CREATE", "SupplyDocument", doc.id, undefined, doc);
     return doc;
@@ -349,9 +351,13 @@ export async function addSupplyDocument(id: string, kind: string, file: File | n
   return { id: doc.id, docNo: req.docNo, note: `${kind} biriktirildi` };
 }
 
-export async function removeSupplyDocument(docId: string, userId: string): Promise<SupplyResult> {
+/** Qabul qilingan (RECEIVED) zayavkaning hujjatlari — kirim va to'lov asosi: ularni faqat direktor o'chiradi. */
+export const canRemoveSupplyDoc = (status: SupplyStatus, role: Role) => status !== "RECEIVED" || role === "DIRECTOR";
+
+export async function removeSupplyDocument(docId: string, userId: string, role: Role): Promise<SupplyResult> {
   const doc = await db.supplyDocument.findUnique({ where: { id: docId }, include: { request: { select: { docNo: true, status: true } } } });
   if (!doc) return { error: "Hujjat topilmadi" };
+  if (!canRemoveSupplyDoc(doc.request.status, role)) return { error: "Qabul qilingan zayavka hujjatini faqat direktor o'chiradi" };
   await db.$transaction(async (tx) => {
     await tx.supplyDocument.delete({ where: { id: doc.id } });
     await event(tx, doc.requestId, doc.request.status, userId, `Hujjat o'chirildi: ${doc.kind} (${doc.fileName})`);

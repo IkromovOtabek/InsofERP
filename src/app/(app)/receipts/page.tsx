@@ -7,7 +7,7 @@ import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/u
 
 export default async function ReceiptsPage() {
   const s = await getSession();
-  const canCreate = ["PROCUREMENT", "WAREHOUSE"].includes(s?.role ?? "");
+  const canCreate = ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"].includes(s?.role ?? "");
   const receipts = await db.goodsReceipt.findMany({ orderBy: { date: "desc" }, take: 200, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
   return (
     <div>

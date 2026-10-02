@@ -1,11 +1,13 @@
-import type { Prisma, SupplyStatus } from "@/generated/prisma";
-import { toMaterialUnit } from "./unit";
+import type { Prisma, Role, SupplyStatus } from "@/generated/prisma";
+import { normalizeUnit, toMaterialUnit, UNIT_FALLBACK } from "./unit";
+import { MAX_AMOUNT } from "./action";
 import { db } from "./db";
 import { audit } from "./audit";
 import { nextNo } from "./numbering";
 import { resolveMaterials } from "./import-materials";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 import { getCompany } from "./company";
+import { cashOutflowError } from "./payments";
 
 /**
  * Ta'minot zayavkasi — bitta hujjat besh bo'limdan o'tadi:
@@ -134,12 +136,36 @@ export async function createSupplyRequest(
   },
   userId: string,
 ): Promise<SupplyResult> {
-  const items = input.items.filter((i) => i.name.trim());
-  if (!items.length) return { error: "Kamida bitta mahsulot kiriting" };
-  const bad = items.find((i) => !(i.qty > 0));
-  if (bad) return { error: `"${bad.name}": miqdor 0 dan katta bo'lsin` };
-  const wh = await db.warehouse.findUnique({ where: { id: input.warehouseId } });
+  if (!Array.isArray(input.items)) return { error: "Jadval o'qilmadi" };
+  const raw = input.items.filter((i) => i && typeof i.name === "string" && i.name.trim());
+  if (!raw.length) return { error: "Kamida bitta mahsulot kiriting" };
+  const bad = raw.find((i) => !(Number(i.qty) > 0) || Number(i.qty) > MAX_AMOUNT);
+  if (bad) return { error: `"${bad.name}": miqdor 0 dan katta (va juda katta bo'lmagan) raqam bo'lsin` };
+  if (input.needBy && !Number.isFinite(new Date(input.needBy).getTime())) return { error: "Kerak sana noto'g'ri" };
+  const wh = await db.warehouse.findFirst({ where: { id: input.warehouseId, isActive: true } });
   if (!wh) return { error: "Sklad tanlanmagan" };
+
+  // Birlik brauzerdan emas, spravochnikdan: tanlangan xomashyo bazadan yuklanadi, noma'lum id — forma xatosi.
+  // Birlik xomashyo birligi bo'ladi; faqat kg ↔ t farqiga ruxsat (qabulda o'zi o'giriladi — `toMaterialUnit`).
+  const ids = [...new Set(raw.map((i) => i.materialId).filter((x): x is string => typeof x === "string" && !!x))];
+  const mats = ids.length ? await db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true, isActive: true } }) : [];
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const items: { materialId: string | null; name: string; unit: string; qty: number; note: string | null }[] = [];
+  for (const i of raw) {
+    const qty = Number(i.qty);
+    const note = typeof i.note === "string" && i.note.trim() ? i.note.trim() : null;
+    if (i.materialId) {
+      const m = byId.get(i.materialId);
+      if (!m || !m.isActive) return { error: `"${i.name}" spravochnikda topilmadi — qatorni qayta tanlang` };
+      const asked = normalizeUnit(i.unit);
+      const unit = !asked || asked === m.unit ? m.unit : toMaterialUnit(1, 0, asked, m.unit) ? asked : null;
+      if (!unit) return { error: `"${m.name}": birligi «${m.unit}», so'rovda «${String(i.unit)}» — faqat kg ↔ t o'girish mumkin` };
+      items.push({ materialId: m.id, name: m.name, unit, qty, note });
+    } else {
+      // Spravochnikda yo'q (yangi) mahsulot — birlik tanilgan ro'yxatdan, tanilmasa "dona"
+      items.push({ materialId: null, name: i.name.trim().slice(0, 200), unit: normalizeUnit(i.unit) ?? UNIT_FALLBACK, qty, note });
+    }
+  }
 
   const req = await db.$transaction(async (tx) => {
     const r = await tx.supplyRequest.create({
@@ -152,14 +178,7 @@ export async function createSupplyRequest(
         priority: input.priority ?? "NORMAL",
         createdById: userId,
         items: {
-          create: items.map((i, n) => ({
-            materialId: i.materialId || null,
-            name: i.name.trim(),
-            unit: i.unit.trim() || "dona",
-            qty: i.qty,
-            note: i.note ?? null,
-            sortOrder: n,
-          })),
+          create: items.map((i, n) => ({ ...i, sortOrder: n })),
         },
       },
       include: { items: true },
@@ -215,6 +234,7 @@ export async function priceSupplyRequest(
     delivery?: { kind?: string | null; provider?: string | null; cost?: number; note?: string | null };
   },
   userId: string,
+  role?: Role,
 ): Promise<SupplyResult> {
   const req = await db.supplyRequest.findUnique({ where: { id }, include: { items: true } });
   const err = guard(req, ["NEW", "PRICED"]);
@@ -222,11 +242,21 @@ export async function priceSupplyRequest(
   const byId = new Map(req.items.map((i) => [i.id, i]));
   const rows = input.rows.filter((r) => byId.has(r.itemId));
   if (rows.length !== req.items.length) return { error: "Jadval o'zgargan — sahifani yangilang" };
-  const bad = rows.find((r) => !(r.price >= 0) || !(r.qty >= 0));
-  if (bad) return { error: `"${byId.get(bad.itemId)?.name}": miqdor va narx manfiy bo'lmasin` };
+  const bad = rows.find((r) => !(r.price >= 0) || !(r.qty >= 0) || r.price > MAX_AMOUNT || r.qty > MAX_AMOUNT);
+  if (bad) return { error: `"${byId.get(bad.itemId)?.name}": miqdor va narx manfiy (yoki juda katta) bo'lmasin` };
   const delivery = Math.max(0, input.delivery?.cost ?? Number(req.deliveryCost));
-  const total = rows.reduce((s, r) => s + r.qty * r.price, 0) + delivery;
+  const goods = rows.reduce((s, r) => s + r.qty * r.price, 0);
+  const total = goods + delivery;
+  if (!Number.isFinite(total) || total > MAX_AMOUNT) return { error: "Jami summa juda katta" };
   if (total <= 0) return { error: "Jami summa 0 — kamida bitta qatorga narx qo'ying" };
+  // Hamma qator miqdori 0 qilinib "faqat dostavka" zayavkasiga aylantirilmasin: kamida bitta haqiqiy mol bo'lsin
+  if (!rows.some((r) => r.qty > 0 && r.price > 0)) return { error: "Kamida bitta qatorda miqdor ham, narx ham 0 dan katta bo'lsin" };
+  // Dostavka mol summasidan qimmat — g'alati holat: snabjeniye yuborolmaydi, faqat direktor o'zi narxlasa o'tadi
+  if (delivery > goods + 0.5 && role !== "DIRECTOR") {
+    return { error: `Dostavka (${ROUND(delivery)} so'm) mahsulot summasidan (${ROUND(goods)} so'm) katta — narxni tekshiring yoki direktor bilan kelishing` };
+  }
+  // So'ralgan vs narxlangan: miqdori o'zgargan qatorlar tarixda va auditda ko'rinsin
+  const qtyChanged = rows.filter((r) => Math.abs(r.qty - Number(byId.get(r.itemId)!.qty)) > 0.0005);
 
   const res = await db.$transaction(async (tx) => {
     // Narx faqat hali tasdiqlanmagan zayavkaga qo'yiladi — tasdiq bilan bir vaqtda kelsa, tasdiq ustun
@@ -238,8 +268,11 @@ export async function priceSupplyRequest(
       directorOkAt: null, directorOkById: null,
     });
     for (const r of rows) await tx.supplyRequestItem.update({ where: { id: r.itemId }, data: { qty: r.qty, price: r.price } });
-    await event(tx, id, "PRICED", userId, `Jami ${ROUND(total)} so'm${delivery > 0 ? ` (dostavka ${ROUND(delivery)})` : ""}${input.note ? ` · ${input.note}` : ""}`);
-    await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "PRICED", total });
+    await event(tx, id, "PRICED", userId, `Jami ${ROUND(total)} so'm${delivery > 0 ? ` (dostavka ${ROUND(delivery)})` : ""}${
+      qtyChanged.length ? ` · miqdor o'zgardi: ${qtyChanged.map((r) => `${byId.get(r.itemId)!.name} ${Number(byId.get(r.itemId)!.qty)} → ${r.qty}`).join("; ")}` : ""}${input.note ? ` · ${input.note}` : ""}`);
+    await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id,
+      { status: req.status, items: req.items.map((i) => ({ id: i.id, name: i.name, qty: Number(i.qty), price: Number(i.price) })), deliveryCost: Number(req.deliveryCost) },
+      { status: "PRICED", total, delivery, items: rows.map((r) => ({ id: r.itemId, name: byId.get(r.itemId)!.name, askedQty: Number(byId.get(r.itemId)!.qty), qty: r.qty, price: r.price })) });
   }).catch((e: Error) => ({ error: e.message }));
   if (res && "error" in res) return { error: res.error };
   // Katta xarid (Sozlamalardagi chegaradan oshsa) — avval direktor tasdiqlaydi, sotuv keyin
@@ -312,15 +345,24 @@ export async function fundSupplyRequest(
   const res = await db.$transaction(async (tx) => {
     // Avval bosqich egallanadi — ikkinchi bosish chiqimni ikki marta yozmasin
     await claim(tx, id, ["APPROVED"], { status: "FUNDED", cashAccountId: acc.id, deliveryStatus: "PLANNED" });
-    const ct = await tx.cashTransaction.create({
-      data: {
-        type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: total, category: "Xomashyo",
-        supplierId: req.supplierId, counterparty: req.supplier?.name ?? "Ta'minot",
-        note: `Ta'minot ${req.docNo} · ${req.items.length} qator${Number(req.deliveryCost) > 0 ? ` + dostavka ${ROUND(Number(req.deliveryCost))}` : ""} (reja)`,
-        refType: "SupplyRequest", refId: id, createdById: userId,
-      },
-    });
-    await tx.supplyRequest.update({ where: { id }, data: { cashTxId: ct.id } });
+    const data = {
+      cashAccountId: acc.id, amount: total, category: "Xomashyo",
+      supplierId: req.supplierId, counterparty: req.supplier?.name ?? "Ta'minot",
+      note: `Ta'minot ${req.docNo} · ${req.items.length} qator${Number(req.deliveryCost) > 0 ? ` + dostavka ${ROUND(Number(req.deliveryCost))}` : ""} (reja${req.recheck > 0 ? `, ${req.recheck}-qayta tasdiq` : ""})`,
+    };
+    // Narx o'zgarib qayta tasdiqqa qaytgan zayavkada chiqim allaqachon bor — yangisi ochilmaydi, o'sha tuzatiladi
+    const prev = req.cashTxId ? await tx.cashTransaction.findUnique({ where: { id: req.cashTxId } }) : null;
+    // Naqd kassa minusga tushmasin (hisob bo'yicha qulf ostida). Mavjud chiqim tuzatilsa — faqat o'sgan qismi tekshiriladi
+    const extra = prev && prev.cashAccountId === acc.id ? total - Number(prev.amount) : total;
+    if (extra > 0.005) {
+      const cashErr = await cashOutflowError(tx, acc.id, extra);
+      if (cashErr) throw new Error(cashErr);
+    }
+    const ct = prev
+      ? await tx.cashTransaction.update({ where: { id: prev.id }, data })
+      : await tx.cashTransaction.create({ data: { ...data, type: "EXPENSE", date: new Date(), refType: "SupplyRequest", refId: id, createdById: userId } });
+    if (prev) await audit(tx, userId, "UPDATE", "CashTransaction", ct.id, prev, ct);
+    else await tx.supplyRequest.update({ where: { id }, data: { cashTxId: ct.id } });
     await event(tx, id, "FUNDED", userId, `${acc.name} · ${ROUND(total)} so'm${input.note ? ` · ${input.note}` : ""}`);
     await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "FUNDED", cashTxId: ct.id, total });
   }).catch((e: Error) => ({ error: e.message }));
@@ -398,14 +440,11 @@ export async function receiveSupplyRequest(
           data: { prevPrice: l.item.price, price: l.price, qty: l.qty, factQty: l.qty, factPrice: l.price },
         });
       }
-      // Ajratilgan pul bekor qilinadi — yangi summa tasdiqlangach qaytadan yoziladi
-      if (req.cashTxId) {
-        const ct = await tx.cashTransaction.findUnique({ where: { id: req.cashTxId } });
-        if (ct) { await tx.cashTransaction.delete({ where: { id: ct.id } }); await audit(tx, userId, "DELETE", "CashTransaction", ct.id, ct, undefined); }
-      }
+      // Ajratilgan pul (chiqim) o'chirilmaydi — pul yetkazuvchiga ketgan bo'lishi mumkin. Yozuv joyida qoladi,
+      // yangi summa moliya qayta tasdiqlaganda (`fundSupplyRequest`) shu yozuvning o'zi tuzatiladi
       await tx.supplyRequest.update({
         where: { id },
-        data: { status: "PRICED", cashTxId: null, recheck: { increment: 1 }, supplierId, deliveryCost: deliveryFact, deliveryFactCost: deliveryFact, directorOkAt: null, directorOkById: null },
+        data: { status: "PRICED", recheck: { increment: 1 }, supplierId, deliveryCost: deliveryFact, deliveryFactCost: deliveryFact, directorOkAt: null, directorOkById: null },
       });
       const what = [
         ...priceMoved.map((l) => `${l.item.name}: ${ROUND(Number(l.item.price))} → ${ROUND(l.price)}`),
@@ -503,35 +542,87 @@ const rows2map = (rows: FactRow[]): [string, FactRow][] => rows.map((r) => [r.it
 
 // ───────────────────────── Bekor qilish ─────────────────────────
 
-/** Har qanday ochiq bosqichda bekor qilish. Pul ajratilgan bo'lsa — chiqim yozuvi olib tashlanadi. */
-export async function rejectSupplyRequest(id: string, userId: string, reason: string): Promise<SupplyResult> {
+/** Pul bosqichidagi (moliya tasdiqlagan yoki pul ajratilgan) zayavkani bekor qila oladiganlar. */
+export const SUPPLY_MONEY_REJECTERS: Role[] = ["FINANCE", "ACCOUNTING", "DIRECTOR"];
+
+/**
+ * Kim bekor qila oladi (veb, mobil va server bir qoidadan):
+ *  · NEW / PRICED (pul hali ajratilmagan) — so'rovni yaratgan xodim, snabjeniye (PROCUREMENT, uning o'rnidagi
+ *    WAREHOUSE), PRICED bosqichida tasdiqlovchi sotuv, direktor;
+ *  · APPROVED / FUNDED, yoki chiqim allaqachon yozilgan (narx o'zgarib qayta tasdiqqa qaytgan) — faqat
+ *    moliya/buxgalteriya/direktor: pul masalasi, sklad bekor qilsa to'lov "osilib" qoladi.
+ */
+export function canRejectSupply(
+  req: { status: SupplyStatus; createdById: string; cashTxId: string | null },
+  user: { id: string; role: Role },
+): boolean {
+  if (!isOpenSupply(req.status)) return false;
+  if (req.status === "APPROVED" || req.status === "FUNDED" || req.cashTxId) return SUPPLY_MONEY_REJECTERS.includes(user.role);
+  if (user.role === "DIRECTOR" || user.role === "PROCUREMENT" || user.role === "WAREHOUSE") return true;
+  if (req.status === "PRICED" && user.role === "SALES") return true;
+  return req.createdById === user.id;
+}
+
+/**
+ * Ochiq zayavkani bekor qilish. Pul ajratilgan bo'lsa chiqim (CashTransaction) HECH QACHON o'chirilmaydi:
+ * pul yetkazuvchiga ketgan bo'lishi mumkin. Chiqim joyida qoladi, izohiga "yetkazuvchidan qaytarilishi kerak"
+ * belgisi yoziladi, zayavka tarixiga hodisa, auditga yozuv va moliya bo'limiga xabar ketadi.
+ */
+export async function rejectSupplyRequest(id: string, user: { id: string; role: Role }, reason: string): Promise<SupplyResult> {
+  const userId = user.id;
   const req = await db.supplyRequest.findUnique({ where: { id } });
   const err = guard(req, ["NEW", "PRICED", "APPROVED", "FUNDED"]);
   if (err || !req) return { error: err ?? "Topilmadi" };
+  if (!canRejectSupply(req, user)) {
+    return {
+      error: req.status === "APPROVED" || req.status === "FUNDED" || req.cashTxId
+        ? "Moliya tasdig'idan o'tgan zayavkani faqat moliya, buxgalteriya yoki direktor bekor qiladi"
+        : "Bu zayavkani so'rovni kiritgan xodim yoki snabjeniye bekor qiladi",
+    };
+  }
   if (!reason.trim()) return { error: "Bekor qilish sababini yozing" };
+  const why = reason.trim();
 
   const res = await db.$transaction(async (tx) => {
-    // Qabul bilan bir vaqtda bekor qilinmasin — kirim yozilgan zayavkaning chiqimi o'chib ketardi
-    await claim(tx, id, ["NEW", "PRICED", "APPROVED", "FUNDED"], { status: "REJECTED", cashTxId: null });
+    // Qabul bilan bir vaqtda bekor qilinmasin — kirim yozilgan zayavka bekor bo'lib qolardi
+    await claim(tx, id, ["NEW", "PRICED", "APPROVED", "FUNDED"], { status: "REJECTED" });
+    let refund: { amount: number } | null = null;
     if (req.cashTxId) {
       const ct = await tx.cashTransaction.findUnique({ where: { id: req.cashTxId } });
       if (ct) {
-        await tx.cashTransaction.delete({ where: { id: ct.id } });
-        await audit(tx, userId, "DELETE", "CashTransaction", ct.id, ct, undefined);
+        // Chiqim o'chirilmaydi — faqat belgi: pul yetkazuvchidan qaytarilishi (yoki boshqa xaridga hisoblanishi) kerak
+        const mark = `BEKOR QILINGAN ZAYAVKA ${req.docNo} — yetkazuvchidan qaytarilishi kerak (${why})`;
+        const after = await tx.cashTransaction.update({
+          where: { id: ct.id },
+          data: { note: ct.note?.includes("yetkazuvchidan qaytarilishi kerak") ? ct.note : `${ct.note ? `${ct.note} · ` : ""}${mark}` },
+        });
+        await audit(tx, userId, "UPDATE", "CashTransaction", ct.id, ct, after);
+        refund = { amount: Number(ct.amount) };
       }
     }
-    await event(tx, id, "REJECTED", userId, `${SUPPLY_LABEL[req.status]} bosqichida: ${reason.trim()}`);
-    await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "REJECTED", reason });
+    await event(tx, id, "REJECTED", userId,
+      `${SUPPLY_LABEL[req.status]} bosqichida: ${why}${refund ? ` · ajratilgan ${ROUND(refund.amount)} so'm chiqim joyida qoldi — yetkazuvchidan qaytarilishi kerak` : ""}`);
+    await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status }, { status: "REJECTED", reason: why, cashTxId: req.cashTxId, refundDue: refund?.amount ?? 0 });
+    return refund;
   }).catch((e: Error) => ({ error: e.message }));
   if (res && "error" in res) return { error: res.error };
   // So'rovni kiritgan sklad/snabjeniye xodimi nega to'xtaganini bilsin
   notifyAfter(() => notifyUsers([req.createdById], {
     type: "SUPPLY_REJECTED",
     title: `Ta'minot bekor qilindi — ${req.docNo}`,
-    body: reason.trim(),
+    body: why,
     link: { key: "supply", id },
   }));
-  return { id, docNo: req.docNo, note: "Zayavka bekor qilindi" };
+  if (res) {
+    // Pul chiqib ketgan — moliya qaytarib olishni kuzatsin
+    notifyAfter(() => notifyRoles(["FINANCE", "ACCOUNTING", "DIRECTOR"], {
+      type: "SUPPLY_REFUND_DUE",
+      title: `Bekor qilingan ta'minot — pul qaytarilishi kerak · ${req.docNo}`,
+      body: `${ROUND(res.amount)} so'm chiqim joyida qoldi. Sabab: ${why}`,
+      link: { key: "supply", id },
+    }, { except: userId }));
+  }
+  return { id, docNo: req.docNo, note: res ? `Zayavka bekor qilindi — ${ROUND(res.amount)} so'm chiqim joyida qoldi, yetkazuvchidan qaytarilishi kerak` : "Zayavka bekor qilindi" };
 }
 
 // ───────────────────────── Oldingi narx (taqqoslash) ─────────────────────────

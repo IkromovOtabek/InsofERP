@@ -7,7 +7,8 @@ import { qty } from "@/lib/format";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { TRIP_STATUS } from "./status";
-import { tripPhase } from "@/lib/logistics";
+import { tripPhase, VEHICLE_TYPE } from "@/lib/logistics";
+import { tripLine } from "@/lib/trips";
 import { PhaseBadge } from "../logistika/ui";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
@@ -17,8 +18,11 @@ import type { TripStatus } from "@/generated/prisma";
 import { requirePage } from "@/lib/page-guard";
 
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; driver?: string }> }) {
-  await requirePage("/trips");
+  const s = await requirePage("/trips");
   const { status, q, driver } = await searchParams;
+  // Reysni dispetcher va ishlab chiqarish ochadi; mexanik/ish boshqaruvchi faqat ko'radi (/trips/new ularga yopiq)
+  const canCreate = ["LOGISTICS", "PRODUCTION", "DIRECTOR"].includes(s.role);
+  const newBtn = canCreate ? <LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton> : undefined;
   const eco = ecoEnabled();
   // "Tarix" — holat emas, alohida ko'rinish: haydovchilar ro'yxati va ularning butun tarixi
   const history = status === "tarix";
@@ -34,7 +38,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
         <PageHeader
           title="Reyslar / nakladnoy"
           subtitle={driver ? undefined : "Haydovchilar kesimida butun tarix"}
-          action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>}
+          action={newBtn}
         />
         <Tabs current="tarix" items={tabItems} />
         {driver ? (
@@ -54,23 +58,23 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
     },
     orderBy: { createdAt: "desc" }, take: 200,
     // Mahsulot birligi ham kerak: reys miqdori zayavkadagi birlikda ko'rsatiladi (m³ / dona)
-    include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true, driver: true, issues: { where: { resolvedAt: null }, select: { id: true } } },
+    include: { order: { include: { customer: true, items: { select: { productId: true, qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true, driver: true, issues: { where: { resolvedAt: null }, select: { id: true } } },
   });
   const marks = await customerMarks(trips.map((t) => t.order.customerId));
   return (
     <div>
-      <PageHeader title="Reyslar" action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
+      <PageHeader title="Reyslar" action={newBtn} />
       {eco && <LiveDrivers />}
       <Tabs current={status ?? ""} items={tabItems} />
       <Table>
-        <thead><tr><Th>Nakladnoy</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Bosqich</Th>{eco && <Th>ECO</Th>}</tr></thead>
+        <thead><tr><Th>Nakladnoy</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Texnika</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Bosqich</Th>{eco && <Th>ECO</Th>}</tr></thead>
         <tbody>
           {trips.length === 0 && <Empty text="Reyslar yo'q" />}
           {trips.map((t) => (
             <Tr key={t.id}>
               <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link></Td>
               <Td><Link href={`/orders/${t.orderId}`} className="hover:underline">{t.order.orderNo}</Link></Td>
-              <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} /></Td><Td>{t.vehicle.plate}</Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{(() => { const u = soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))); return u ? `${qty(t.qtyM3)} ${unitLabel(u)}` : qty(t.qtyM3); })()}</Td>
+              <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} /></Td><Td className="whitespace-nowrap">{t.vehicle.plate}<div className="text-xs text-slate-500">{VEHICLE_TYPE[t.vehicle.type] ?? t.vehicle.type}</div></Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{(() => { const l = tripLine(t.order.items, t.vehicle.type); const u = "error" in l ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) : l.unit; return u ? `${qty(t.qtyM3)} ${unitLabel(u)}` : qty(t.qtyM3); })()}</Td>
               {/* TZ bosqichi (obyektga keldi / tushirilmoqda / yopildi — vaqt belgilaridan) */}
               <Td><PhaseBadge phase={tripPhase(t)} />{t.issues.length > 0 && <div><Badge color="red">muammo</Badge></div>}</Td>
               {eco && <Td>{(() => { const st = ecoLabel(t.ecoStatus); return st ? <Badge color={st.color}>{st.label}</Badge> : t.ecoError ? <Badge color="red">xato</Badge> : <span className="text-xs text-slate-400">—</span>; })()}</Td>}

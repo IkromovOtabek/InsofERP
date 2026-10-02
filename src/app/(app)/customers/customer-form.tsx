@@ -18,7 +18,7 @@ export function CustomerForm({ customer, canEditLimit }: { customer: C; canEditL
         <Field label="Telefon"><Input name="phone" defaultValue={customer?.phone ?? ""} /></Field>
       </div>
       <Field label="Manzil"><Textarea name="address" defaultValue={customer?.address ?? ""} /></Field>
-      <Field label="Kredit limit" hint={canEditLimit ? "Standart 100 000 000. 0 = faqat oldindan to'lov" : "Standart 100 mln. Faqat Finance / Direktor o'zgartira oladi"}>
+      <Field label="Kredit limit" hint={canEditLimit ? "Standart 100 000 000. 0 = faqat oldindan to'lov" : "Standart 100 mln. Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi"}>
         <MoneyInput name="creditLimit" defaultValue={customer?.creditLimit ?? "100000000"} readOnly={!canEditLimit} />
       </Field>
       <Checkbox name="isActive" defaultChecked={customer?.isActive ?? true} label="Faol" />

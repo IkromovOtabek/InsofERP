@@ -52,6 +52,19 @@ export function workedMinutes(checkIn: string | null | undefined, checkOut: stri
   return b > a ? b - a : b + 24 * 60 - a;
 }
 
+/**
+ * Bir smena uchun eng uzun ish vaqti. Undan uzuni deyarli har doim xato kiritilgan vaqt
+ * (08:00 → 07:00 = 23 soat "tungi smena" bo'lib ketadi) — tabel va ish haqini buzmasin, rad etiladi.
+ */
+export const MAX_SHIFT_MINUTES = 16 * 60;
+
+/** Kelgan/ketgan vaqt juftligi bo'yicha xato matni (smena 16 soatdan uzun) yoki null. */
+export function shiftProblem(checkIn: string | null | undefined, checkOut: string | null | undefined): string | null {
+  const min = workedMinutes(checkIn, checkOut);
+  if (min === null || min <= MAX_SHIFT_MINUTES) return null;
+  return `${checkIn}–${checkOut} = ${hoursText(min)}: smena ${MAX_SHIFT_MINUTES / 60} soatdan uzun bo'lmaydi — kelgan/ketgan vaqtni tekshiring`;
+}
+
 /** Daqiqa → "8,5 soat" ko'rinishidagi qisqa yozuv. */
 export const hoursText = (min: number) => `${(min / 60).toFixed(1).replace(".", ",").replace(",0", "")} soat`;
 /** Daqiqa → jadval katagidagi raqam ("8", "8,5"). */

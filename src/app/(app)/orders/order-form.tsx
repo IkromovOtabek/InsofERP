@@ -122,7 +122,10 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
   );
 }
 
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, cashAccounts, preselectCustomer, contractAccept, geoSearch }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean }) {
+/** Sayt arizasidan (`/leads` → "Zayavka ochish") kelgan boshlang'ich ma'lumot. */
+export type OrderPrefill = { productId?: string | null; qty?: number | null; address?: string | null; note?: string | null };
+
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, contractAccept, geoSearch, prefill }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi
@@ -137,11 +140,11 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [prepay, setPrepay] = useState("");
   // Bosh to'lov: null — hali so'ralmagan, false — yo'q, true — bor
   const [hasDeposit, setHasDeposit] = useState<boolean | null>(null);
-  // Bosh to'lov naqd olinadi — shuning uchun kassaga tushadi
-  const cashAcc = cashAccounts.find((a) => a.type === "CASH") ?? cashAccounts[0] ?? null;
   const [contract, setContract] = useState(false); // "Shartnoma qilish" belgilanganmi
   const [contractAmount, setContractAmount] = useState("");
-  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: false }]);
+  // Arizadan kelgan mahsulot ro'yxatda bo'lsa — birinchi qator shu bilan to'ldiriladi
+  const firstProduct = products.find((p) => p.id === prefill?.productId) ?? products[0];
+  const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false }]);
   const [pickFor, setPickFor] = useState<number | null>(null); // qaysi qator uchun spravochnik ochiq
 
   // Mahsulot yonidagi qoldiq izohi: beton — xomashyodan qancha chiqadi, dona mahsulot — hovlidagi erkin qoldiq
@@ -176,6 +179,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const ndsSum = rows.reduce((s, r) => s + (r.nds ? (Number(r.qtyM3) || 0) * ndsOf(Number(r.price) || 0) : 0), 0);
   const total = sumNoNds + ndsSum; // mijoz to'laydigan summa — limit, bosh to'lov va shartnoma shu bo'yicha
   const tomorrow = isoDate(new Date(Date.now() + 86400000));
+  const minDate = isoDate(new Date(Date.now() - 86400000)); // server ham kechagidan oldingi sanani qabul qilmaydi
   const prepayN = Number(prepay) || 0;
   const remaining = Math.max(0, total - prepayN);
   const overLimit = mode === "existing" && customer ? customer.used + total > customer.limit : false;
@@ -297,7 +301,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
       <div>
         <div className="mb-2 text-[13px] font-medium text-slate-700">To&apos;lov *</div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {([["prepay", "Naqd to'lov", "Pul naqd olinadi — kassaga tushadi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
+          {([["prepay", "Naqd to'lov", "Mijoz pulni kassaga to'laydi — kassir qabul qiladi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
             <label key={v} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm transition", payment === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300")}>
               <input type="radio" name="payment" value={v} checked={payment === v} onChange={() => pickPayment(v)} className="mt-0.5 accent-slate-900" />
               <span><span className="font-medium text-slate-900">{l}</span><span className="block text-xs text-slate-500">{h}</span></span>
@@ -336,21 +340,20 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               <p className="mt-2 text-xs text-slate-500">
                 {payment === "credit"
                   ? "Bosh to'lov olinmadi — zayavka summasi to'liq qarzga yoziladi."
-                  : "Bosh to'lov olinmadi — pul keyin Kassa bo'limi orqali kiritiladi."}
+                  : "Bosh to'lov yo'q — pul keyin kassir tomonidan Kassa/bank bo'limida qabul qilinadi."}
               </p>
             )}
 
             {hasDeposit === true && (
               <>
-                <input type="hidden" name="prepayAccountId" value={cashAcc?.id ?? ""} />
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr]">
-                  <Field label="Bosh to'lov summasi" hint="Mijozdan hozir necha pul olindi">
+                  <Field label="Kutilayotgan bosh to'lov" hint="Mijoz qancha avans to'laydi — pulni kassir qabul qiladi">
                     <MoneyInput name="prepayAmount" value={prepay} onChange={setPrepay} />
                   </Field>
                   <div className="flex flex-col justify-end gap-1 pb-1 text-xs">
                     <div className="flex justify-between gap-3"><span className="text-slate-500">Zayavka summasi</span><b className="text-slate-900">{money(total)}</b></div>
                     <div className="flex justify-between gap-3">
-                      <span className="text-slate-500">Bosh to&apos;lov</span>
+                      <span className="text-slate-500">Avans (kutilmoqda)</span>
                       <b className="text-emerald-700">{money(prepayN)}{total > 0 && prepayN > 0 && ` · ${fmtNum(Math.min(100, (prepayN / total) * 100), 1)}%`}</b>
                     </div>
                     <div className={cn("flex justify-between gap-3 border-t border-slate-200 pt-1", remaining > 0 ? "text-amber-700" : "text-emerald-700")}>
@@ -365,7 +368,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40">{pc}%</button>
                   ))}
                   {prepayN > 0 && <button type="button" onClick={() => setPrepay("")} className="px-2 py-0.5 text-[11px] text-slate-500 hover:underline">tozalash</button>}
-                  <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Wallet size={13} /> {cashAcc ? <>Pul <b className="text-slate-700">{cashAcc.name}</b> (naqd) ga tushadi</> : <span className="text-red-600">Naqd kassa ochilmagan — Sozlamalardan qo&apos;shing</span>}</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Wallet size={13} /> Sotuvchi kassaga pul yozmaydi: kassir va buxgalterga «avans kutilmoqda» xabari boradi, pulni ular qabul qiladi</span>
                 </div>
                 {total > 0 && prepayN > total + 0.005 && <p className="mt-1 text-xs text-red-600">Bosh to&apos;lov zayavka summasidan katta!</p>}
               </>
@@ -374,8 +377,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label="Yetkazish sanasi *"><Input name="deliveryDate" type="date" defaultValue={tomorrow} required /></Field>
-        <AddressPicker searchEnabled={geoSearch} required />
+        <Field label="Yetkazish sanasi *"><Input name="deliveryDate" type="date" defaultValue={tomorrow} min={minDate} required /></Field>
+        <AddressPicker searchEnabled={geoSearch} required defaultAddress={prefill?.address ?? ""} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -518,7 +521,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
       </div>
 
       <Checkbox name="needsPump" label="Nasos kerak" />
-      <Field label="Izoh"><Textarea name="note" /></Field>
+      <Field label="Izoh"><Textarea name="note" defaultValue={prefill?.note ?? ""} /></Field>
       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
         <span className="inline-flex items-center gap-1"><Truck size={13} /> Dastavka va nasos — logistika uchun</span>
         <span className="inline-flex items-center gap-1"><Zap size={13} /> Zarur — brigadalar uchun ustuvorlik</span>

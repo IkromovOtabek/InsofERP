@@ -6,8 +6,11 @@ import { Button, Callout, Field, FormError, Input, LinkButton, Select, Textarea,
 import { ProductSelect } from "@/components/product-select";
 import type { CatalogGroup, CatalogProduct } from "@/components/product-picker";
 
-/** unit — zayavkadagi mahsulot birligi ("m³", "dona"…). */
-type Order = { id: string; orderNo: string; customer: string; productId: string; remainingM3: number; unit: string };
+/**
+ * Zayavka qatori (zayavka + mahsulot): key — `${orderId}~${productId}`, unit — mahsulot birligi ("m³"),
+ * remainingM3 — shu mahsulot bo'yicha zayavkada qolgan miqdor.
+ */
+type Order = { key: string; id: string; orderNo: string; customer: string; productId: string; product: string; remainingM3: number; unit: string };
 /** Spravochnikdagi mahsulot + retsepti bormi (retseptsiz zames yozib bo'lmaydi). */
 type Product = CatalogProduct & { hasRecipe: boolean };
 type Wh = { id: string; name: string };
@@ -20,28 +23,30 @@ export type OpenTask = { taskNo: string; brigade: string; orderNo: string; qty: 
 
 export function BatchForm({ orders, products, groups, canCreateProduct, warehouses, openTasks = {} }: { orders: Order[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; warehouses: Wh[]; openTasks?: Record<string, OpenTask[]> }) {
   const [state, action, pending] = useActionState(createBatch, undefined);
-  const [orderId, setOrderId] = useState("");
+  const [orderKey, setOrderKey] = useState("");
   const [productId, setProductId] = useState(products[0]?.id ?? "");
   const [qty, setQty] = useState("");
-  const order = orders.find((o) => o.id === orderId);
+  const order = orders.find((o) => o.key === orderKey);
+  const over = !!order && Number(qty) > order.remainingM3 + 0.0005; // server ham rad etadi
   const picked = products.find((p) => p.id === productId);
   const unit = picked?.unit ?? "m³";
   const noRecipe = !!picked && !picked.hasRecipe; // retseptsiz mahsulotga zames yozilmaydi
   const brigadeTasks = openTasks[productId] ?? []; // shu mahsulotni brigada ham chiqarayaptimi
 
-  const pickOrder = (id: string) => {
-    setOrderId(id);
-    const o = orders.find((x) => x.id === id);
+  const pickOrder = (key: string) => {
+    setOrderKey(key);
+    const o = orders.find((x) => x.key === key);
     if (o) { setProductId(o.productId); setQty(String(o.remainingM3)); }
   };
 
   return (
     <form action={action} className="max-w-xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
-      <Field label="Zayavka" hint="Ixtiyoriy — zayavkasiz zames (sklad uchun) ham bo'ladi">
-        <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)}>
+      <Field label="Zayavka" hint="Ixtiyoriy — zayavkasiz zames (sklad uchun) ham bo'ladi. Ko'p mahsulotli zayavkaning har bir beton qatori alohida">
+        <input type="hidden" name="orderId" value={order?.id ?? ""} />
+        <Select value={orderKey} onChange={(e) => pickOrder(e.target.value)}>
           <option value="">— zayavkasiz —</option>
-          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · qoldi {o.remainingM3} {o.unit}</option>)}
+          {orders.map((o) => <option key={o.key} value={o.key}>{o.orderNo} · {o.customer} · {o.product} · qoldi {o.remainingM3} {o.unit}</option>)}
         </Select>
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -58,7 +63,7 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
             hint={(p) => ((p as Product).hasRecipe ? null : "retsept yo'q")}
           />
         </Field>
-        <Field label={`Miqdor, ${unit} *`}><Input name="qtyM3" type="number" step={unit === "m³" ? "0.5" : "1"} min={unit === "m³" ? "0.5" : "1"} value={qty} onChange={(e) => setQty(e.target.value)} required /></Field>
+        <Field label={`Miqdor, ${unit} *`} error={over ? `Zayavka bo'yicha qolgani ${order!.remainingM3} ${order!.unit} — ortig'ini zayavkasiz zames qiling` : undefined}><Input name="qtyM3" type="number" step={unit === "m³" ? "any" : "1"} min={unit === "m³" ? "0.5" : "1"} max={order ? order.remainingM3 : undefined} value={qty} onChange={(e) => setQty(e.target.value)} required /></Field>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Smena"><Select name="shift" defaultValue="1"><option value="1">1-smena</option><option value="2">2-smena</option><option value="3">3-smena</option></Select></Field>
@@ -82,7 +87,7 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
       )}
       <Field label="Izoh"><Textarea name="note" /></Field>
       <FormActions>
-        <Button disabled={pending || !productId || noRecipe}>{pending ? "Yozilmoqda…" : "Zamesni qayd etish"}</Button>
+        <Button disabled={pending || !productId || noRecipe || over}>{pending ? "Yozilmoqda…" : "Zamesni qayd etish"}</Button>
         <LinkButton href="/production" variant="secondary">Bekor</LinkButton>
       </FormActions>
     </form>

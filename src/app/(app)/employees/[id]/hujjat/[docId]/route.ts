@@ -3,15 +3,14 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { employeeFilePath } from "@/lib/uploads";
 import { getSession } from "@/lib/auth";
-import { pathAllowed } from "@/lib/nav";
 
 export const dynamic = "force-dynamic";
 
 /** GET /employees/[id]/hujjat/[docId] — hujjat nusxasi (rasm yoki PDF). `?download=1` — yuklab olish. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
-  // Ikkinchi qulf: xodim hujjatlari faqat /employees ga kirish huquqi borlarga
+  // Ikkinchi qulf: xodim hujjatlari (pasport, shartnoma) faqat Otdel kadr va direktorga — xodim kartasi kabi
   const s = await getSession();
-  if (!s || !pathAllowed("/employees", s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!s || (s.role !== "HR" && s.role !== "DIRECTOR")) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id, docId } = await params;
   const doc = await db.employeeDocument.findUnique({ where: { id: docId } });
   const p = doc && doc.employeeId === id ? employeeFilePath(doc.file) : null;

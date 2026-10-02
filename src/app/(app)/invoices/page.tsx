@@ -5,7 +5,8 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { getSession } from "@/lib/auth";
 import { money, date } from "@/lib/format";
-import { Button, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
+import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
+import { ConfirmButton } from "../payments/confirm-button";
 import { INVOICE_STATUS, InvoiceStatusBadge } from "./status";
 import { cancelInvoice } from "./actions";
 import type { InvoiceStatus } from "@/generated/prisma";
@@ -23,10 +24,12 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const receivable = open.reduce((s, i) => s + Number(i.amount) - i.payments.reduce((p, x) => p + Number(x.amount), 0), 0);
   const tabs: Array<[string, string]> = [["", "Hammasi"], ...Object.entries(INVOICE_STATUS).map(([k, v]) => [k, v.label] as [string, string])];
   const canCancel = ["ACCOUNTING", "DIRECTOR"].includes(s?.role ?? "");
+  // Schyot yozish — server ruxsatiga mos (buxgalteriya, sotuv, direktor); moliya faqat ko'radi
+  const canCreate = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s?.role ?? "");
 
   return (
     <div>
-      <PageHeader title="Schyotlar" action={<LinkButton href="/invoices/new"><Plus size={16} /> Schyot</LinkButton>} />
+      <PageHeader title="Schyotlar" action={canCreate ? <LinkButton href="/invoices/new"><Plus size={16} /> Schyot</LinkButton> : undefined} />
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3"><StatCard label="Jami debitorka (ro'yxat bo'yicha)" value={money(receivable)} icon={Wallet} tone={receivable > 0 ? "danger" : "success"} hint={`${open.length} ta ochiq schyot`} /></div>
       <Tabs current={status ?? ""} items={tabs.map(([k, l]) => ({ key: k, label: l, href: k ? `/invoices?status=${k}` : "/invoices" }))} />
       <Table>
@@ -43,7 +46,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                 <Td right>{money(i.amount)}</Td><Td right>{money(paid)}</Td>
                 <Td right className={Number(i.amount) - paid > 0 && i.status !== "CANCELLED" ? "text-red-600" : ""}>{i.status === "CANCELLED" ? "—" : money(Number(i.amount) - paid)}</Td>
                 <Td><InvoiceStatusBadge status={i.status} /></Td>
-                <Td>{i.status === "OPEN" && paid === 0 && canCancel && <form action={cancelInvoice.bind(null, i.id)}><Button variant="secondary" className="px-2 py-1 text-xs">Bekor</Button></form>}</Td>
+                <Td>{i.status === "OPEN" && paid === 0 && canCancel && <ConfirmButton action={cancelInvoice.bind(null, i.id)} label="Bekor" question={`${i.invoiceNo} bekor qilinsinmi?`} reason="optional" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}</Td>
               </Tr>
             );
           })}

@@ -38,13 +38,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Link href={mHref(prevM.y, prevM.m)} className="rounded-lg px-2.5 py-1.5 text-slate-600 hover:bg-slate-100">‹ {MONTHS_SHORT[prevM.m - 1]}</Link>
           <span className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white">{MONTHS_UZ[month - 1]} {year}</span>
           <Link href={mHref(nextM.y, nextM.m)} className="rounded-lg px-2.5 py-1.5 text-slate-600 hover:bg-slate-100">{MONTHS_SHORT[nextM.m - 1]} ›</Link>
-          <div className="ml-auto flex gap-1">{MONTHS_SHORT.map((m, i) => <Link key={m} href={mHref(year, i + 1)} className={cn("rounded-md px-2 py-1 text-xs", i + 1 === month ? "bg-slate-100 font-semibold text-slate-900" : "text-slate-500 hover:bg-slate-50")}>{m}</Link>)}</div>
+          <div className="-mx-1 flex w-full gap-1 overflow-x-auto px-1 sm:mx-0 sm:ml-auto sm:w-auto sm:px-0">{MONTHS_SHORT.map((m, i) => <Link key={m} href={mHref(year, i + 1)} className={cn("shrink-0 rounded-md px-2 py-1 text-xs", i + 1 === month ? "bg-slate-100 font-semibold text-slate-900" : "text-slate-500 hover:bg-slate-50")}>{m}</Link>)}</div>
         </div>
 
         {/* Executive summary */}
         <div>
           <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Executive summary</div>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7 [&>*]:min-w-0">
             <Kpi label="Jami reja" value={d.companyPlan ? moneyShort(d.companyPlan) : "—"} icon={Target} tone="brand" hint={d.hasCompanyPlan ? "zavod rejasi" : d.companyPlan ? "sotuvchilar rejalari yig'indisi" : "reja kiritilmagan"} />
             <Kpi label="Jami fakt" value={moneyShort(d.fact)} icon={Wallet} hint={`${d.wdPassed} ish kunida`} />
             <Kpi label="Reja bajarilishi" value={pct(d.pct, 1)} icon={Percent} tone={d.pct === null ? "default" : d.pct >= 100 ? "success" : d.pct >= 70 ? "warning" : "danger"} badge={d.pct !== null && <Badge color={SIG[d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"]} dot={false}>{d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"}</Badge>} />
@@ -55,7 +55,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
           <Panel className="xl:col-span-2" title="Forecast engine" eyebrow="oylik ko'rsatkich" info="Kumulyativ fakt (uzluksiz) + prognoz (uzuq, hozirgi ish kuni tempi bilan) + reja chizig'i (ish kunlariga teng taqsimlangan).">
             <LineChart labels={d.engine.labels} series={[{ name: "Fakt (kumulyativ)", values: d.engine.cumVals, color: "#ffa800" }, { name: "Prognoz", values: d.engine.fcVals, color: "#0d78ff", dashed: true }, { name: "Reja", values: d.engine.planVals, color: "#93a3bd", dashed: true }]} formatValue={(v) => `${moneyShort(v)} so'm`} labelEvery={3} height={220} />
             <div className="mt-4 grid grid-cols-2 gap-3 text-[13px] md:grid-cols-5">
@@ -87,7 +87,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div>
           <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Risk & action center</div>
           {d.noPlan.length > 0 && <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900"><AlertTriangle size={14} className="mr-1 inline" /> <b>{d.noPlan.length} ta sotuvchi rejasiz:</b> {d.noPlan.slice(0, 5).map((x) => x.name).join(", ")}{d.noPlan.length > 5 ? ` va yana ${d.noPlan.length - 5} ta` : ""} — rejani kiriting, usiz bajarilish foizi hisoblanmaydi.</div>}
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 [&>*]:min-w-0">
             {groups.map((g) => (
               <div key={g.title} className={cn("rounded-(--radius-card) border border-slate-200/80 border-l-4 bg-white p-4 shadow-(--shadow-card)", g.tone)}>
                 <div className="text-[12px] font-semibold uppercase tracking-wider">{g.title}</div><div className="text-xs text-slate-500">{g.sub}</div>

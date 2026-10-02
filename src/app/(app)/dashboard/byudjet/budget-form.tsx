@@ -7,7 +7,7 @@ import { Button, FormError, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { money, pct } from "@/lib/format";
 
-export type BudgetRow = { cat: string; amount: number | null; limit: number | null; fact: number; forecast: number; histAvg: number | null };
+export type BudgetRow = { cat: string; amount: number | null; limit: number | null; fact: number; forecast: number; histAvg: number | null; /** fakt byudjetdan yoki limitdan katta (`isOverBudget`) */ over: boolean };
 
 /** Oy byudjeti jadvali: har kategoriya — byudjet, limit, fakt, prognoz, o'tgan 3 oy o'rtachasi. */
 export function BudgetForm({ month, rows, prevMonth }: { month: string; rows: BudgetRow[]; prevMonth: string }) {
@@ -27,9 +27,9 @@ export function BudgetForm({ month, rows, prevMonth }: { month: string; rows: Bu
                 <Td right className="text-slate-500 tabular">{r.histAvg !== null ? money(r.histAvg) : "—"}</Td>
                 <Td right><MoneyInput name={`amt:${r.cat}`} defaultValue={r.amount ? String(r.amount) : ""} placeholder={r.histAvg ? String(Math.round(r.histAvg)) : "0"} suffix={null} className="py-1.5 text-right text-sm" /></Td>
                 <Td right><MoneyInput name={`lim:${r.cat}`} defaultValue={r.limit ? String(r.limit) : ""} placeholder="= byudjet" suffix={null} className="py-1.5 text-right text-sm" /></Td>
-                <Td right className={`tabular ${r.amount && r.fact > r.amount ? "font-semibold text-red-600" : ""}`}>{money(r.fact)}</Td>
+                <Td right className={`tabular ${r.over ? "font-semibold text-red-600" : ""}`}>{money(r.fact)}</Td>
                 <Td right className={`tabular ${r.amount && r.forecast > r.amount ? "text-amber-700" : "text-slate-500"}`}>{money(r.forecast)}</Td>
-                <Td right className="tabular">{p === null ? <span className="text-slate-400">byudjet yo&apos;q</span> : <span className={p >= 100 ? "font-semibold text-red-600" : p >= 90 ? "text-amber-700" : "text-emerald-700"}>{pct(p, 0)}</span>}</Td>
+                <Td right className="tabular">{p === null ? <span className="text-slate-400">byudjet yo&apos;q</span> : <span className={r.over ? "font-semibold text-red-600" : p >= 90 ? "text-amber-700" : "text-emerald-700"}>{pct(p, 0)}</span>}</Td>
               </Tr>
             );
           })}

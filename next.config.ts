@@ -41,7 +41,12 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false, // "X-Powered-By: Next.js" — texnologiyani oshkor qilmaymiz
-  experimental: { serverActions: { bodySizeLimit: "16mb" } }, // imzolangan shartnoma fayli (15 MB gacha) server action orqali yuklanadi
+  experimental: {
+    serverActions: { bodySizeLimit: "16mb" }, // imzolangan shartnoma fayli (15 MB gacha) server action orqali yuklanadi
+    // Middleware so'rov tanasini sukut bo'yicha 10 MB da kesadi — 10–15 MB fayl server action'ga
+    // chala yetib 500 berardi. Chegara server action chegarasi bilan bir xil (Next 15.5 da mavjud opsiya).
+    middlewareClientMaxBodySize: "16mb",
+  },
   async headers() {
     return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
   },

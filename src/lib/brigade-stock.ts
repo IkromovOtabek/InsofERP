@@ -2,6 +2,8 @@ import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
 import type { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { audit } from "./audit";
+import { avgUnitCosts } from "./stock";
+import { notifyAfter, notifyRoles } from "./notify";
 
 /**
  * Brigada qo'lidagi xomashyo — sklad bilan bir prinsipda: qoldiq saqlanmaydi,
@@ -30,15 +32,8 @@ export type BrigadeStock = {
   openQty: number; // ochiq topshiriqlardagi qoldiq (qancha ish bor)
 };
 
-/** O'rtacha tannarx — kirim va narxli tuzatishlar bo'yicha (Sklad sahifasidagi bilan bir xil qoida). */
-async function avgCosts(): Promise<Map<string, number>> {
-  const rows = await db.stockMove.groupBy({
-    by: ["materialId"],
-    where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } },
-    _avg: { unitCost: true },
-  });
-  return new Map(rows.map((r) => [r.materialId!, Number(r._avg.unitCost ?? 0)]));
-}
+/** O'rtacha tannarx — miqdorga tortilgan (`lib/stock.ts` dagi umumiy qoida, Sklad sahifasidagi bilan bir xil). */
+const avgCosts = (ids?: string[]) => avgUnitCosts(ids);
 
 /**
  * Barcha brigadalar bo'yicha qoldiq va ishlab chiqarish imkoni.
@@ -135,7 +130,7 @@ export async function issueToBrigade(
   const ids = [...new Set(rows.map((r) => r.materialId))];
   const [materials, costs] = await Promise.all([
     db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } }),
-    avgCosts(),
+    avgCosts(ids),
   ]);
   const meta = new Map(materials.map((m) => [m.id, m]));
   // Bir xomashyo bir necha qatorda bo'lsa yig'indisi tekshiriladi — 2 t qoldiqdan 4 t berilmaydi
@@ -183,25 +178,28 @@ export async function returnFromBrigade(
   if (!rows.length) return { error: "Kamida bitta xomashyo va miqdor kiriting" };
   const brigade = await db.brigade.findUnique({ where: { id: input.brigadeId } });
   if (!brigade) return { error: "Brigada topilmadi" };
+  const wh = await db.warehouse.findFirst({ where: { id: input.warehouseId, isActive: true }, select: { id: true } });
+  if (!wh) return { error: "Sklad topilmadi" };
   const ids = [...new Set(rows.map((r) => r.materialId))];
-  const [sums, materials] = await Promise.all([
-    db.brigadeMove.groupBy({ by: ["materialId"], where: { brigadeId: brigade.id, materialId: { in: ids } }, _sum: { qty: true } }),
-    db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
-  ]);
-  const bal = new Map(sums.map((s) => [s.materialId, Number(s._sum.qty ?? 0)]));
+  const materials = await db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
   const meta = new Map(materials.map((m) => [m.id, m.name]));
   const wanted = new Map<string, number>();
   for (const r of rows) wanted.set(r.materialId, (wanted.get(r.materialId) ?? 0) + r.qty);
-  const short = [...wanted.entries()]
-    .filter(([id, q]) => (bal.get(id) ?? 0) < q - 0.0005)
-    .map(([id, q]) => `${meta.get(id) ?? "?"} (brigadada ${fmt(bal.get(id) ?? 0)}, so'ralgan ${fmt(q)})`);
-  if (short.length) return { error: `Brigadada yo'q: ${short.join(", ")}` };
 
-  await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    // Brigada qoldig'i qulf ostida tekshiriladi: ikki qaytarish bir vaqtda kelsa, brigadada yo'q
+    // xomashyo skladga "qaytib" qolmasin
+    await lockStock(tx);
+    const sums = await tx.brigadeMove.groupBy({ by: ["materialId"], where: { brigadeId: brigade.id, materialId: { in: ids } }, _sum: { qty: true } });
+    const bal = new Map(sums.map((s) => [s.materialId, Number(s._sum.qty ?? 0)]));
+    const short = [...wanted.entries()]
+      .filter(([id, q]) => (bal.get(id) ?? 0) < q - STOCK_EPS)
+      .map(([id, q]) => `${meta.get(id) ?? "?"} (brigadada ${fmt(bal.get(id) ?? 0)}, so'ralgan ${fmt(q)})`);
+    if (short.length) return { error: `Brigadada yo'q: ${short.join(", ")}` };
     for (const r of rows) {
       const move = await tx.stockMove.create({
         data: {
-          type: "BRIGADE_RETURN", warehouseId: input.warehouseId, materialId: r.materialId, brigadeId: brigade.id,
+          type: "BRIGADE_RETURN", warehouseId: wh.id, materialId: r.materialId, brigadeId: brigade.id,
           qty: r.qty, refType: "Brigade", refId: brigade.id,
           note: `${brigade.name} brigadasidan qaytdi${input.note ? ` · ${input.note}` : ""}`, createdById: userId,
         },
@@ -211,7 +209,9 @@ export async function returnFromBrigade(
       });
     }
     await audit(tx, userId, "CREATE", "BrigadeMove", brigade.id, undefined, { brigade: brigade.name, returned: rows });
+    return null;
   });
+  if (res) return res;
   return { ok: true, note: `${brigade.name}: ${rows.length} ta xomashyo qaytarildi` };
 }
 
@@ -219,38 +219,103 @@ export async function returnFromBrigade(
  * Topshiriq bajarilganda brigada qo'lidagi xomashyo retsept normasi bo'yicha kamayadi.
  * `lib/tasks.ts` shu funksiyani topshiriq tranzaksiyasi ichida chaqiradi — veb ham, mobil ilova ham.
  * Retsepti yo'q mahsulotda hech narsa yozilmaydi.
+ *
+ * Brigadada yetmasa (brigada qoldig'i minusga tushmasin):
+ *  1) yetmagan qism skladdan AVTOMATIK beriladi (StockMove BRIGADE_ISSUE −, BrigadeMove ISSUE +),
+ *     qoldig'i ko'p skladdan boshlab, `lockStock` ostida;
+ *  2) skladda ham yetmasa — progress baribir yoziladi (ish bajarilgan), lekin natijada aniq ogohlantirish
+ *     (`deficit`) qaytadi va Sklad + Ishlab chiqarish bo'limiga xabar ketadi.
+ * `issued` — skladdan avtomatik berilganlar (chaqiruvchi xabarga qo'shishi mumkin).
  */
 export async function consumeForTask(
   tx: Prisma.TransactionClient,
   task: { id: string; brigadeId: string; orderItemId: string },
   doneQty: number,
   userId: string,
-): Promise<{ rows: number; deficit: string[] }> {
+): Promise<{ rows: number; deficit: string[]; issued: string[] }> {
   const item = await tx.orderItem.findUnique({ where: { id: task.orderItemId }, select: { productId: true } });
-  if (!item) return { rows: 0, deficit: [] };
+  if (!item) return { rows: 0, deficit: [], issued: [] };
   const recipe = await tx.recipe.findFirst({
     where: { productId: item.productId, isActive: true },
     orderBy: { version: "desc" },
     include: { items: { include: { material: { select: { name: true, unit: true } } } } },
   });
-  if (!recipe?.items.length) return { rows: 0, deficit: [] };
+  if (!recipe?.items.length) return { rows: 0, deficit: [], issued: [] };
   // Brigada qo'lida faqat xomashyo saqlanadi — retseptdagi mahsulot-ingredient (masalan FBS blok)
   // bu yerda hisobga olinmaydi (BrigadeMove hali mahsulotni qo'llamaydi, sklad → zames orqali hisoblanadi)
   const items = recipe.items.filter((i) => i.materialId);
-  if (!items.length) return { rows: 0, deficit: [] };
+  if (!items.length) return { rows: 0, deficit: [], issued: [] };
+  const ids = items.map((i) => i.materialId!);
 
+  // Brigada va sklad qoldig'i qulf ostida o'qiladi — parallel berish/sarf bir qoldiqni ikki marta ishlatmasin
+  await lockStock(tx);
   const sums = await tx.brigadeMove.groupBy({
     by: ["materialId"],
-    where: { brigadeId: task.brigadeId, materialId: { in: items.map((i) => i.materialId!) } },
+    where: { brigadeId: task.brigadeId, materialId: { in: ids } },
     _sum: { qty: true },
   });
   const bal = new Map(sums.map((s) => [s.materialId, Number(s._sum.qty ?? 0)]));
+  // Yetmagan qism: material → miqdor
+  const needBy = new Map<string, number>();
+  for (const i of items) {
+    const need = Number(i.qtyPerM3) * doneQty;
+    if (need > 0) needBy.set(i.materialId!, (needBy.get(i.materialId!) ?? 0) + need);
+  }
+  const lack = new Map<string, number>();
+  for (const [id, need] of needBy) {
+    const have = Math.max(0, bal.get(id) ?? 0);
+    if (have < need - STOCK_EPS) lack.set(id, need - have);
+  }
+
+  const issued: string[] = [];
   const deficit: string[] = [];
+  if (lack.size) {
+    const brigade = await tx.brigade.findUnique({ where: { id: task.brigadeId }, select: { name: true } });
+    const [whSums, warehouses, costs] = await Promise.all([
+      tx.stockMove.groupBy({ by: ["warehouseId", "materialId"], where: { materialId: { in: [...lack.keys()] } }, _sum: { qty: true } }),
+      tx.warehouse.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
+      avgUnitCosts([...lack.keys()], tx),
+    ]);
+    const active = new Set(warehouses.map((w) => w.id));
+    for (const [materialId, missing] of lack) {
+      const meta = items.find((i) => i.materialId === materialId)!.material!;
+      // Qoldig'i ko'p skladdan boshlab olinadi (bir nechta sklad bo'lsa — bo'lib)
+      const sources = whSums
+        .filter((w) => w.materialId === materialId && active.has(w.warehouseId) && Number(w._sum.qty ?? 0) > STOCK_EPS)
+        .map((w) => ({ warehouseId: w.warehouseId, qty: Number(w._sum.qty ?? 0) }))
+        .sort((x, y) => y.qty - x.qty);
+      let left = missing;
+      for (const src of sources) {
+        if (left <= STOCK_EPS) break;
+        const take = Math.min(left, src.qty);
+        const cost = costs.get(materialId) ?? null;
+        const move = await tx.stockMove.create({
+          data: {
+            type: "BRIGADE_ISSUE", warehouseId: src.warehouseId, materialId, brigadeId: task.brigadeId,
+            qty: -take, unitCost: cost, refType: "BrigadeTask", refId: task.id,
+            note: `${brigade?.name ?? "Brigada"}ga avtomatik berildi — topshiriq uchun yetmadi`, createdById: userId,
+          },
+        });
+        await tx.brigadeMove.create({
+          data: {
+            type: "ISSUE", brigadeId: task.brigadeId, materialId, qty: take, unitCost: cost,
+            refType: "StockMove", refId: move.id, note: "Avtomatik: topshiriq sarfi uchun skladdan", createdById: userId,
+          },
+        });
+        left -= take;
+      }
+      const given = missing - Math.max(0, left);
+      if (given > STOCK_EPS) issued.push(`${meta.name}: ${fmt(given)} ${meta.unit}`);
+      if (left > STOCK_EPS) deficit.push(`${meta.name}: ${fmt(left)} ${meta.unit}`);
+    }
+    if (issued.length || deficit.length) {
+      await audit(tx, userId, "CREATE", "BrigadeMove", task.brigadeId, undefined, { autoIssue: issued, deficit, taskId: task.id });
+    }
+  }
+
   for (const i of items) {
     const need = Number(i.qtyPerM3) * doneQty;
     if (need <= 0) continue;
-    const have = bal.get(i.materialId!) ?? 0;
-    if (have < need - 0.0005) deficit.push(`${i.material!.name}: ${Math.round((need - have) * 1000) / 1000} ${i.material!.unit}`);
     await tx.brigadeMove.create({
       data: {
         type: "CONSUME", brigadeId: task.brigadeId, materialId: i.materialId!, qty: -need,
@@ -258,7 +323,17 @@ export async function consumeForTask(
       },
     });
   }
-  return { rows: items.length, deficit };
+
+  if (deficit.length) {
+    // Skladda ham yetmadi — brigada qoldig'i minusga tushdi: sklad to'ldirsin, ishlab chiqarish bilsin
+    notifyAfter(() => notifyRoles(["WAREHOUSE", "PRODUCTION"], {
+      type: "BRIGADE_DEFICIT",
+      title: "Brigadada xomashyo yetmadi — skladda ham yo'q",
+      body: `${deficit.join("; ")} — brigada qoldig'i minusda, ta'minot kerak`,
+      link: { key: "tasks", id: task.id },
+    }, { except: userId }));
+  }
+  return { rows: items.length, deficit, issued };
 }
 
 /**

@@ -10,7 +10,7 @@ import { nextNo } from "@/lib/numbering";
 import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
 import { createStockOrder as createStockOrderDomain, STOCK_ORDER_ROLES } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
-import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { saveContractFile, removeContractFile } from "@/lib/uploads";
 import { withNds } from "@/lib/nds";
 
@@ -22,7 +22,7 @@ const schema = z.object({
   newPhone: zOpt,
   newInn: zOpt,
   newAddress: zOpt,
-  deliveryDate: zStr("Yetkazish sanasi kerak"),
+  deliveryDate: zStr("Yetkazish sanasi kerak").refine((v) => Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
   deliveryAddress: zStr("Obyekt manzili kerak"),
   // Xaritadan belgilangan nuqta; bo'sh bo'lishi mumkin. Masofa serverda hisoblanadi.
   lat: z.coerce.number().optional().catch(undefined),
@@ -31,17 +31,30 @@ const schema = z.object({
   needsDelivery: z.string().optional().transform((v) => v === "on"),
   isUrgent: z.string().optional().transform((v) => v === "on"),
   payment: z.enum(["prepay", "credit"]).default("prepay"),
-  prepayAmount: z.coerce.number().min(0, "summa manfiy bo'lmasin").default(0), // oldindan olingan pul (0 — hali olinmagan)
-  prepayAccountId: zOpt, // qayerga tushdi: kassa yoki bank
+  // Kutilayotgan bosh to'lov (0 — yo'q). Pul kassaga yozilmaydi — kassir `/payments` da qabul qiladi
+  prepayAmount: z.coerce.number({ message: "Bosh to'lov raqam bo'lsin" }).min(0, "Bosh to'lov manfiy bo'lmasin").max(MAX_AMOUNT, "Bosh to'lov juda katta").default(0),
   hasContract: z.string().optional().transform((v) => v === "on"), // "Shartnoma qilish" belgilangan
-  contractAmount: z.coerce.number().min(0, "shartnoma summasi manfiy bo'lmasin").default(0),
+  contractAmount: z.coerce.number({ message: "Shartnoma summasi raqam bo'lsin" }).min(0, "Shartnoma summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Shartnoma summasi juda katta").default(0),
   note: zOpt,
   productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
-  qtyM3: z.array(z.coerce.number().positive("miqdor 0 dan katta bo'lsin")),
-  price: z.array(z.coerce.number().min(0)),
+  qtyM3: z.array(z.coerce.number({ message: "Miqdor raqam bo'lsin" }).positive("Miqdor 0 dan katta bo'lsin").max(100_000, "Miqdor juda katta (100 000 dan oshmasin)")),
+  price: z.array(z.coerce.number({ message: "Narx raqam bo'lsin" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Narx juda katta")),
   // Qator narxiga "NDS 12%" tugmasi bilan soliq qo'shilganmi ("1" / "0")
   nds: z.array(z.string()).optional(),
 });
+
+/**
+ * Domen xatosi (o'zbekcha `Error`) foydalanuvchiga o'zicha ko'rinadi; baza (Prisma) xatosi esa xom
+ * ko'rinmasin — jurnalga yoziladi, foydalanuvchiga umumiy gap.
+ */
+function userError(e: unknown): string {
+  const err = e as Error;
+  if (err?.name?.startsWith("PrismaClient") || /prisma|invocation/i.test(err?.message ?? "")) {
+    console.error("[orders]", e);
+    return "Zayavka saqlanmadi: ma'lumotlarni tekshirib, qayta urinib ko'ring";
+  }
+  return err?.message || "Zayavka saqlanmadi";
+}
 
 export async function createOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["SALES"]);
@@ -79,7 +92,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         needsDelivery: d.needsDelivery,
         isUrgent: d.isUrgent,
         onCredit: d.payment === "credit",
-        prepay: d.prepayAmount > 0 ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
+        prepay: d.prepayAmount > 0 ? { amount: d.prepayAmount } : undefined,
         contractAmount,
         note: d.note,
       },
@@ -87,10 +100,10 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
       { id: orderId, contractFile: saved ?? undefined },
     );
   } catch (e) {
-    return { error: (e as Error).message };
+    return { error: userError(e) };
   }
 
-  revalidatePath("/orders"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/payments"); revalidatePath("/cashflow");
+  revalidatePath("/orders"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/payments");
   const q = [res.onCredit && "guarantee=1", res.contractNo && "contract=1"].filter(Boolean).join("&");
   redirect(q ? `/orders/${res.id}?${q}` : `/orders/${res.id}`);
 }
@@ -125,7 +138,7 @@ export async function createStockOrder(_prev: ActionState, fd: FormData): Promis
       s.userId,
     );
   } catch (e) {
-    return { error: (e as Error).message };
+    return { error: userError(e) };
   }
 
   revalidatePath("/orders"); revalidatePath("/production"); revalidatePath("/stock");
@@ -154,13 +167,18 @@ export async function unblockOrder(id: string) {
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
 }
 
-export async function cancelOrder(id: string) {
+/** Bekor qilish — sabab so'raladi va auditga yoziladi (tasdiq tugmasi `ConfirmButton`). */
+export async function cancelOrder(id: string, reason: string): Promise<ActionState> {
   const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
   const s = await requireSession(kind === "STOCK" ? [...STOCK_ORDER_ROLES] : ["SALES"]);
+  const why = String(reason ?? "").trim().slice(0, 300);
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   const r = await orderCancel(id, s.userId);
-  if (r.error) throw new Error(r.error);
+  if (r.error) return { error: r.error };
+  await audit(db, s.userId, "UPDATE", "Order", id, undefined, { cancelReason: why });
   revalidatePath(`/orders/${id}`); revalidatePath("/tasks"); revalidatePath("/brigades");
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
+  return { ok: true, note: "Zayavka bekor qilindi" };
 }
 
 /**
@@ -247,7 +265,7 @@ export async function importOrdersFromExcel(_prev: ActionState, fd: FormData): P
       s.userId,
     );
   } catch (e) {
-    return { error: (e as Error).message };
+    return { error: userError(e) };
   }
 
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/cashflow");

@@ -21,6 +21,8 @@ import { ContractForm } from "./contract-form";
 import { contractedIds } from "@/lib/finance";
 import { NDS_LABEL, ndsPart } from "@/lib/nds";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
+import { expectedAdvance } from "@/lib/payments";
+import { ConfirmButton } from "../../payments/confirm-button";
 
 const STEPS = [
   { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
@@ -71,10 +73,12 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   for (const x of o.payments) paidMap.set(x.id, Number(x.amount));
   // Sklad zaxirasi zayavkasi: mijoz, narx, schyot, reys — hech biri yo'q
   const isStock = o.kind === "STOCK";
-  const canStock = ([...STOCK_ORDER_ROLES] as string[]).includes(s.role);
+  const canStock = ([...STOCK_ORDER_ROLES] as string[]).includes(s.role) || s.role === "DIRECTOR";
   const canClose = isStock && ["CONFIRMED", "IN_PRODUCTION"].includes(o.status) && canStock;
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
+  // Sotuvchi zayavka ochganda yozgan kutilayotgan avans — pulni kassir qabul qiladi
+  const expected = expectedAdvance(o.note);
   const [credit, contractedSet, snapshot] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot()]);
   // Zayavkani qabul qilishdan oldin: har mahsulot bo'yicha tayyor qoldiq va xomashyodan yana qancha chiqishi
   const stockByProduct = new Map([...snapshot.pieces, ...snapshot.concrete].map((x) => [x.id, x]));
@@ -82,18 +86,20 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const hasContract = !!o.contractNo && o.contractAmount != null;
   const contractAmount = hasContract ? Number(o.contractAmount) : 0;
   const contractLeft = contractAmount - total; // shartnoma summasidan mahsulot summasi ayirilgan qoldiq
-  const canContract = !isStock && ["SALES", "ACCOUNTING"].includes(s.role) && o.status !== "CANCELLED";
+  const canContract = !isStock && ["SALES", "ACCOUNTING", "DIRECTOR"].includes(s.role) && o.status !== "CANCELLED";
   const hasFile = !!o.contractFile;
   const fileHref = `/orders/${id}/contract/file`;
   const accepted = SALES_STATUSES.includes(o.status);
 
-  // Direktor zayavkani qabul qilmaydi va brigada tayinlamaydi — u faqat blokdan chiqaradi (limit qarori)
-  const isSales = s.role === "SALES";
+  // Zayavkani qabul qilish — sotuv yoki direktor
+  const isSales = ["SALES", "DIRECTOR"].includes(s.role);
   const isDirector = s.role === "DIRECTOR";
   const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (o.kind === "STOCK" ? canStock : isSales) && o.batches.length === 0 && o.trips.length === 0;
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
-  const isProduction = s.role === "PRODUCTION";
-  const needsAssign = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
+  const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
+  const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
+  // Brigada faqat qabul qilingan zayavkaga tayinlanadi (server ham DRAFT ni rad etadi) — qoralamada tugma yo'q
+  const needsAssign = unassigned && o.status !== "DRAFT";
 
   return (
     <div>
@@ -109,7 +115,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
-            {canCancel && <form action={cancelOrder.bind(null, id)}><Button variant="ghost" className="text-red-600 hover:bg-red-50"><XCircle size={16} /> Bekor qilish</Button></form>}
+            {canCancel && <ConfirmButton action={cancelOrder.bind(null, id)} label="Bekor qilish" icon={<XCircle size={16} />} question={`${o.orderNo} bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-10 px-4" />}
           </>
         }
       />
@@ -183,7 +189,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
               action={<Link href="/stock?tab=capacity" className="text-sm text-slate-500 hover:text-slate-900">Ishlab chiqarish imkoni</Link>}
             />
           </div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
             <thead><tr><Th>Mahsulot</Th><Th right>Kerak</Th><Th right>Tayyor (sklad)</Th><Th right>Xomashyodan yana</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {o.items.map((i) => {
@@ -206,6 +213,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
               })}
             </tbody>
           </table>
+          </div>
           <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
             Dona mahsulot qoldig&apos;i — <Link href="/stock?tab=capacity" className="underline">Sklad → Ishlab chiqarish imkoni</Link>, xomashyo — <Link href="/stock" className="underline">Sklad</Link> bo&apos;limidan olinadi.
           </p>
@@ -308,6 +316,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             ...(!o.onCredit ? [{ k: "Oldindan olindi", v: prepaid > 0
               ? <span className="inline-flex flex-wrap items-center justify-end gap-2"><span className="whitespace-nowrap font-semibold text-emerald-700">{money(prepaid)}</span><span className="text-xs text-slate-500">{o.payments.map((x) => x.cashAccount.name).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</span>{total - paid > 0.005 ? <Badge color="amber">qoldiq {money(total - paid)}</Badge> : <Badge color="green">to&apos;liq</Badge>}</span>
               : <span className="text-slate-400">hali olinmagan</span> }] : []),
+            ...(expected > 0 && prepaid + 0.005 < expected && !["CANCELLED", "CLOSED"].includes(o.status) ? [{ k: "Kutilayotgan avans", v: <span className="inline-flex flex-wrap items-center justify-end gap-2"><span className="whitespace-nowrap font-semibold text-amber-700">{money(expected - prepaid)}</span><span className="text-xs text-slate-500">kassir qabul qiladi</span></span> }] : []),
             { k: "Kredit limit", v: <span className="inline-flex items-center gap-1.5"><CreditCard size={14} className="text-slate-400" />{money(credit.limit)}</span> },
             { k: "Bo'sh limit", v: <span className={credit.free <= 0 ? "font-semibold text-red-600" : "font-semibold text-emerald-700"}>{money(credit.free)}{credit.blacklisted && <BlacklistMark className="ml-1.5" />}</span> },
             ...(o.note ? [{ k: "Izoh", v: o.note }] : []),
@@ -317,7 +326,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         )}
         <Card padded={false} className="lg:col-span-3">
           <div className="px-5 pt-5"><CardHeader title={isStock ? "Ishlab chiqariladi" : "Mahsulotlar"} /></div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             {/* Sklad zayavkasida narx yo'q — narx/summa ustunlari ham chiqmaydi */}
             <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th>{!isStock && <><Th right>Narx</Th><Th right>Summa</Th></>}<Th>Brigada</Th><Th right>Bajarildi / qoldiq</Th></tr></thead>
             <tbody>
@@ -332,9 +342,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                   </Tr>
                 );
               })}
-              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td>{!isStock && <><Td /><Td right className="font-semibold">{money(total)}{ndsTotal > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500 whitespace-nowrap">shundan {NDS_LABEL}: {money(ndsTotal)}</div>}</Td></>}<Td colSpan={2} className="text-xs text-slate-500">{needsAssign ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
+              <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td>{!isStock && <><Td /><Td right className="font-semibold">{money(total)}{ndsTotal > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500 whitespace-nowrap">shundan {NDS_LABEL}: {money(ndsTotal)}</div>}</Td></>}<Td colSpan={2} className="text-xs text-slate-500">{unassigned ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — {o.status === "DRAFT" ? "zayavka qabul qilingach" : ""} Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
             </tbody>
           </table>
+          </div>
         </Card>
       </div>
 
@@ -342,13 +353,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         {(!isStock || o.batches.length > 0) && (
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Zameslar" icon={Factory} description={isStock ? "Zaxiraga qilingan zameslar — har biri hovlidagi erkin qoldiqni oshiradi" : undefined} /></div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
             <thead><tr><Th>№</Th><Th>Sana</Th><Th>Smena</Th><Th right>Miqdor</Th></tr></thead>
             <tbody>
               {o.batches.length === 0 && <Empty text="Hali zames yo'q" icon={Factory} />}
               {o.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td right className="whitespace-nowrap">{qty(b.qtyM3)} {unitLabel(b.product.unit)}</Td></Tr>)}
             </tbody>
           </table>
+          </div>
         </Card>
         )}
         {!isStock && (
@@ -361,13 +374,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
               <LiveDrivers orderRef={o.orderNo} title="Shu zayavka bo'yicha yo'lda" compact />
             </div>
           )}
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-sm">
             <thead><tr><Th>Nakladnoy</Th><Th>Mikser</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {o.trips.length === 0 && <Empty text="Hali reys yo'q" icon={Truck} />}
               {o.trips.map((t) => <Tr key={t.id}><Td><Link href={`/trips/${t.id}`} className="hover:underline">{t.deliveryNoteNo}</Link></Td><Td className="tabular">{t.vehicle.plate}</Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{qty(t.qtyM3)}{orderUnit ? ` ${unitLabel(orderUnit)}` : ""}</Td><Td><TripStatusBadge status={t.status} /></Td></Tr>)}
             </tbody>
           </table>
+          </div>
         </Card>
         )}
       </div>

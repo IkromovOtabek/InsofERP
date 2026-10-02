@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { geoSearchEnabled } from "@/lib/geo";
 import { Card, PageHeader } from "@/components/ui";
 import { SiteForm } from "../site-form";
 
 export default async function NewSitePage({ searchParams }: { searchParams: Promise<{ customerId?: string }> }) {
-  await requireSession(["LOGISTICS", "SALES"]);
+  await requireRoles(["LOGISTICS", "SALES"]);
   const { customerId } = await searchParams;
   const customers = await db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } });
   return (

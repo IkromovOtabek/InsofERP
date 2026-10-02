@@ -6,31 +6,44 @@ const DAYS = 30;
  * Xomashyo: qoldiq, o'rtacha kunlik sarf (so'nggi 30 kun), necha kunga yetadi,
  * tasdiqlangan zayavkalar uchun rejadagi ehtiyoj.
  */
-export async function materialOutlook() {
+/**
+ * `until` — faqat shu vaqtgacha yetkazilishi kerak bo'lgan zayavkalar ehtiyoji (dashboard davr filtri:
+ * "bugun" — bugungacha, "hafta" — hafta oxirigacha; kechikkanlar ham kiradi). Berilmasa — hamma ochiq zayavka.
+ */
+export async function materialOutlook(opts: { until?: Date } = {}) {
   const since = new Date(Date.now() - DAYS * 86400000);
   const [materials, sums, consumed, orders] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since } }, _sum: { qty: true } }),
     db.order.findMany({
-      where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
-      include: { items: { include: { product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: true },
+      where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, ...(opts.until ? { deliveryDate: { lt: opts.until } } : {}) },
+      include: { customer: { select: { name: true } }, items: { include: { task: { select: { doneQty: true } }, product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: true },
     }),
   ]);
   const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
   const daily = new Map(consumed.map((x) => [x.materialId, -Number(x._sum.qty ?? 0) / DAYS]));
 
-  // Rejadagi ehtiyoj: har zayavkaning ishlab chiqarilmagan qismi × retsept
+  // Rejadagi ehtiyoj: har zayavkaning hali ishlab chiqarilmagan qismi × retsept.
+  // Beton (m³) — zames bilan qilingani ayriladi; dona mahsulot — brigada topshirig'ida bajarilgani.
   const need = new Map<string, number>();
+  const byOrder = new Map<string, MaterialOrderNeed[]>();
   for (const o of orders) {
-    const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-    const done = o.batches.reduce((s, b) => s + Number(b.qtyM3), 0);
-    const remaining = Math.max(0, total - done);
-    if (!remaining) continue;
+    const m3Total = o.items.filter((i) => i.product.unit === "m3").reduce((s, i) => s + Number(i.qtyM3), 0);
+    const m3Done = o.batches.reduce((s, b) => s + Number(b.qtyM3), 0);
+    const m3Left = Math.max(0, m3Total - m3Done);
+    const perMat = new Map<string, number>();
     for (const i of o.items) {
-      const share = remaining * (Number(i.qtyM3) / total);
+      const left = i.product.unit === "m3"
+        ? (m3Total > 0 ? m3Left * (Number(i.qtyM3) / m3Total) : 0)
+        : Math.max(0, Number(i.qtyM3) - Number(i.task?.doneQty ?? 0));
+      if (left <= 0) continue;
       // Xomashyo dashboardida faqat xomashyo-ingredientlar hisoblanadi — mahsulot-ingredient o'tkazib yuboriladi
-      for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3)); }
+      for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; perMat.set(ri.materialId, (perMat.get(ri.materialId) ?? 0) + left * Number(ri.qtyPerM3)); }
+    }
+    for (const [mid, q] of perMat) {
+      need.set(mid, (need.get(mid) ?? 0) + q);
+      byOrder.set(mid, [...(byOrder.get(mid) ?? []), { id: o.id, orderNo: o.orderNo, customer: o.customer.name, date: o.deliveryDate, qty: q }]);
     }
   }
 
@@ -42,9 +55,14 @@ export async function materialOutlook() {
       id: m.id, name: m.name, unit: m.unit, balance, minStock: Number(m.minStock), perDay, planned,
       days: perDay > 0 ? balance / perDay : null,
       short: balance < planned,
+      /** Zayavkalarga yetmayotgan miqdor (0 — yetadi). */
+      orderGap: Math.max(0, planned - balance),
+      /** Qaysi zayavkaga qancha kerak — yetkazish sanasi bo'yicha. */
+      orders: (byOrder.get(m.id) ?? []).sort((a, b) => a.date.getTime() - b.date.getTime()),
     };
   });
 }
+export type MaterialOrderNeed = { id: string; orderNo: string; customer: string; date: Date; qty: number };
 
 /** Mikserlar: hozir qayerda, bugun nechta reys. */
 export async function mixerStatus() {

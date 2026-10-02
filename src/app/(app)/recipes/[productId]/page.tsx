@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { qty, date, money } from "@/lib/format";
 import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { RecipeForm } from "../recipe-form";
@@ -13,7 +13,7 @@ import { Pencil } from "lucide-react";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const s = await requireSession(["PRODUCTION"]);
+  const s = await requireRoles(["PRODUCTION"]);
   const [p, materials, materialGroups, catalog] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },

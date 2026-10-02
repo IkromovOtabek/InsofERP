@@ -9,6 +9,7 @@ import { normalizePhone } from "@/lib/sms/phone";
 import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId, sendResetCodeToBot } from "@/lib/telegram/notify";
 import { botEnabled } from "@/lib/telegram/api";
+import { gatewayEnabled, sendGatewayCode } from "@/lib/telegram/gateway";
 
 /**
  * Parolni xodimning o'zi tiklashi (`/login/reset`) — bir martalik kod orqali.
@@ -42,7 +43,7 @@ const NOT_LINKED_ERROR =
  * `via` — kod qayerga ketdi: ilova sahifada aynan shuni yozadi ("Telegram botga yuborildi").
  * `devCode` — faqat dev'da (SMS_PROVIDER ESKIZ emas): kodni ekranda ko'rsatish uchun.
  */
-export type ResetVia = "telegram" | "sms";
+export type ResetVia = "telegram" | "gateway" | "sms";
 export type ResetRequest = { ok: true; sent: boolean; via?: ResetVia; devCode?: string } | { ok: false; error: string };
 export type ResetConfirm = { ok: true; login: string } | { ok: false; error: string };
 
@@ -58,10 +59,11 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   const found = await staffByPhone(phone);
   if (found.kind === "ambiguous" || found.kind === "none") return silent;
 
-  // Hozircha kod faqat Telegram botga boradi: bot ulanmagan bo'lsa kod yaratmaymiz
-  // (soatiga 3 ta limit behuda yeyilmasin) va qanday ulashni aytamiz.
+  // Kod kanallari: Telegram bot (ulangan bo'lsa) → Telegram Gateway (raqamga to'g'ridan-to'g'ri) → SMS.
+  // Bot ulanmagan va Gateway ham o'chiq, SMS ham o'chiq bo'lsagina kod yaratmaymiz (limit behuda yeyilmasin).
   const botReady = botEnabled();
-  if (!SMS_FALLBACK && botReady && !(await linkedChatId(found.user.id))) return silent;
+  const gateway = gatewayEnabled();
+  if (!SMS_FALLBACK && !gateway && botReady && !(await linkedChatId(found.user.id))) return silent;
 
   const recent = await db.passwordResetCode.count({
     where: { phone, createdAt: { gt: new Date(Date.now() - 3600_000) } },
@@ -83,6 +85,14 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   // 1) Telegram bot — hisobi ulangan bo'lsa kod shu yerga boradi
   const bot = await sendResetCodeToBot(found.user.id, code);
   if (bot.ok) return { ok: true, sent: true, via: "telegram" };
+
+  // 2) Telegram Gateway — raqamga to'g'ridan-to'g'ri (botga ulanish shart emas). Yoqilgan bo'lsa.
+  if (gateway) {
+    const gw = await sendGatewayCode(phone, code, { ttlSec: Math.round(CODE_TTL_MS / 1000), payload: `reset:${found.user.id}` });
+    if (gw.ok) return { ok: true, sent: true, via: "gateway" };
+    if (gw.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
+    // yuborilmadi — SMS zaxirasiga o'tamiz (yoqilgan bo'lsa), aks holda quyida xato/devCode
+  }
 
   if (!SMS_FALLBACK) {
     // Dev: bot tokeni sozlanmagan bo'lsa oqim to'xtamasin — kod ekranda ko'rinadi. Prodda yopiq.

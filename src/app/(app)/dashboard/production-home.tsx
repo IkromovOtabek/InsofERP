@@ -10,6 +10,7 @@ import { qty, pct, dateTime, fmtNum } from "@/lib/format";
 import { reportHistory, stockHighlights, stockStatus, STOCK_LEVEL_LABEL } from "@/lib/production-report";
 import { unitLabel, fmtUnitTotals } from "@/lib/unit";
 import { Badge, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { MobileFold } from "./mobile-fold";
 import { OrderStatusBadge } from "../orders/status";
 import { DefectForm, DeleteDefectButton, DeletePlanButton, MarkAllButton, PlanForm, SaveReportForm, StaffMark } from "./production-forms";
 import type { Session } from "@/lib/auth";
@@ -32,6 +33,8 @@ export async function ProductionHome({ s }: { s: Session }) {
     reportHistory(5),
   ]);
   const { low: lowStock, ok: okStock, rest: restStock } = stockHighlights(stock, 8);
+  const orderGap = stock.filter((m) => m.orderGap > 0);
+  const stockNeed = stock.filter((m) => m.need > 0).sort((a, b) => b.orderGap - a.orderGap);
   const todayReports = reports.filter((r) => r.iso === iso);
   const marks = await customerMarks(d.load.orders.map((o) => o.customerId));
   const isDirector = s.role === "DIRECTOR";
@@ -42,8 +45,8 @@ export async function ProductionHome({ s }: { s: Session }) {
   const presentCount = d.attendance.present.length;
 
   return (
-    <div className="space-y-8">
-      <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+    <div className="min-w-0 space-y-8">
+      <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
         <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={isDirector ? "/dashboard/xodimlar" : "#davomat"} />
         <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
@@ -56,7 +59,7 @@ export async function ProductionHome({ s }: { s: Session }) {
         {d.load.orders.length === 0 ? (
           <Card className="text-sm text-slate-500">Bugunga yetkazish sanasi qo&apos;yilgan qabul qilingan zayavka yo&apos;q.</Card>
         ) : (
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] [&>*]:min-w-0">
             <Table>
               <thead><tr><Th>Mahsulot</Th><Th right>Jami</Th><Th right>Zayavka</Th></tr></thead>
               <tbody>
@@ -94,12 +97,13 @@ export async function ProductionHome({ s }: { s: Session }) {
 
       {/* ── 6. Plan holati ── */}
       <Section title={`Plan holati — ${monthTitle(d.ym)}`} action={<span className="text-xs text-slate-500">{d.plan.elapsed} / {d.plan.workDays} ish kuni o&apos;tdi</span>}>
+        <MobileFold label="Plan jadvali">
         <Card padded={false}>
           {d.plan.rows.length === 0 ? (
             <div className="px-5 py-4 text-sm text-slate-500">{isDirector ? "Bu oyga plan belgilanmagan — pastdagi formadan mahsulot bo'yicha oylik plan qo'ying." : "Bu oyga plan belgilanmagan. Planni direktor belgilaydi."}</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead><tr><Th>Mahsulot</Th><Th className="w-56">Bugun (kunlik plan)</Th><Th className="w-56">Oy (oylik plan)</Th><Th right>Orqada</Th><Th right>Brak (oy)</Th>{isDirector && <Th />}</tr></thead>
                 <tbody>
                   {d.plan.rows.map((p) => {
@@ -133,10 +137,12 @@ export async function ProductionHome({ s }: { s: Session }) {
             </div>
           )}
         </Card>
+        </MobileFold>
       </Section>
 
       {/* ── 4. Brigadirlar ishi ── */}
       <Section title="Brigadalar bugun nima qildi" action={more("/tasks", "Topshiriqlar")}>
+        <MobileFold label="Brigadalar kartalari">
         {d.brigades.length === 0 ? (
           <Card className="text-sm text-slate-500">Faol brigada yo&apos;q.</Card>
         ) : (
@@ -168,12 +174,14 @@ export async function ProductionHome({ s }: { s: Session }) {
             ))}
           </div>
         )}
+        </MobileFold>
       </Section>
 
       {/* ── 1–2. Sex xodimlari va davomat ── */}
       <div id="davomat" className="scroll-mt-20" />
       <Section title="Sex xodimlari va davomat" action={isDirector ? <LinkButton href="/dashboard/xodimlar" variant="secondary" size="sm"><UserCog size={14} /> Xodimlarni taqsimlash</LinkButton> : <MarkAllButton left={d.attendance.notMarked.length} />}>
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <MobileFold label="Davomat jadvali">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
           <Card>
             <div className="flex items-center gap-2 text-sm font-medium"><HardHat size={15} className="text-slate-400" /> Brigadalar bo&apos;yicha · keldi / jami</div>
             <ul className="mt-3 space-y-2 text-sm">
@@ -207,8 +215,8 @@ export async function ProductionHome({ s }: { s: Session }) {
               </div>
             </div>
             <p className="px-5 pt-1 text-xs text-slate-400">{isDirector ? "Davomatni sex boshlig'i belgilaydi — otdel kadr tabeliga ham shu yozuv tushadi." : "Belgi bosilsa darhol saqlanadi (Keldi — hozirgi soat bilan). Otdel kadr tabeliga ham tushadi."}</p>
-            <div className="mt-2 max-h-[28rem] overflow-y-auto">
-              <table className="w-full text-sm">
+            <div className="mt-2 max-h-[28rem] overflow-auto">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead><tr><Th>Xodim</Th><Th>Brigada</Th><Th>Holat</Th><Th right>Keldi</Th><Th right>Ketdi</Th>{!isDirector && <Th right>Belgilash</Th>}</tr></thead>
                 <tbody>
                   {[...d.attendance.notMarked, ...d.attendance.present, ...d.attendance.away].map((e) => {
@@ -230,18 +238,20 @@ export async function ProductionHome({ s }: { s: Session }) {
             </div>
           </Card>
         </div>
+        </MobileFold>
       </Section>
 
       {/* ── 7. Brak ── */}
       <Section title="Brak" action={<span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv</span>}>
+        <MobileFold label="Brak yozuvlari">
         <Card padded={false}>
           <div className="px-5 py-4">
             <DefectForm products={d.products} brigades={brigades} reasons={DEFECT_REASONS} />
           </div>
           {d.defects.month.length > 0 && (
-            <div className="grid grid-cols-1 border-t border-slate-100 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:divide-x xl:divide-slate-100">
-              <div className="max-h-80 overflow-y-auto">
-                <table className="w-full text-sm">
+            <div className="grid grid-cols-1 border-t border-slate-100 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:divide-x xl:divide-slate-100 [&>*]:min-w-0">
+              <div className="max-h-80 overflow-auto">
+                <table className="w-full min-w-[600px] text-sm">
                   <thead><tr><Th>Vaqt</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Sabab</Th><Th>Brigada</Th><Th>Kim</Th><Th /></tr></thead>
                   <tbody>
                     {d.defects.month.map((r) => {
@@ -279,14 +289,35 @@ export async function ProductionHome({ s }: { s: Session }) {
             </div>
           )}
         </Card>
+        </MobileFold>
       </Section>
 
       {/* ── 3. Sklad: xomashyo — nima kerak, nima kam ── */}
-      <Section title="Sklad holati — xomashyo" action={<span className="inline-flex items-center gap-3">{lowStock.length > 0 ? <Badge color="red">{lowStock.length} ta kam qoldi</Badge> : <Badge color="green">hammasi yetarli</Badge>}{more("/stock", "Sklad")}</span>}>
+      <Section title="Sklad holati — xomashyo" action={<span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-1 [&>*]:max-w-full [&>*]:whitespace-normal">{orderGap.length > 0 ? <Badge color="red">zayavkaga yetmaydi: {orderGap.map((m) => m.name).slice(0, 3).join(", ")}{orderGap.length > 3 ? ` +${orderGap.length - 3}` : ""}</Badge> : lowStock.length > 0 ? <Badge color="amber">kam qoldi</Badge> : <Badge color="green">hammasi yetarli</Badge>}{more("/stock", "Sklad")}</span>}>
+        <MobileFold label="Xomashyo jadvali">
         <Card padded={false}>
+          {/* Son emas — nima, qancha va qaysi zayavkaga yetmaydi */}
+          {stockNeed.length > 0 && (
+            <div className="space-y-1.5 border-b border-slate-100 px-5 py-3 text-sm">
+              {orderGap.map((m) => (
+                <div key={m.id}>
+                  <b className="text-red-700">{m.name} — {qty(m.orderGap)} {m.unit} kam</b>
+                  <span className="text-slate-500"> (skladda {qty(m.balance)}, zayavkalarga {qty(m.planned)} {m.unit}): </span>
+                  {m.orders.map((o, i) => (
+                    <span key={o.id}>{i > 0 && ", "}<Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link> <span className="text-slate-500">{qty(o.qty)}</span></span>
+                  ))}
+                </div>
+              ))}
+              {stockNeed.filter((m) => m.orderGap <= 0).length > 0 && (
+                <div className="text-amber-700">
+                  <b>Minimal qoldiqqa yetmaydi:</b> {stockNeed.filter((m) => m.orderGap <= 0).map((m) => `${m.name} ${qty(m.need)} ${m.unit}`).join(", ")}
+                </div>
+              )}
+            </div>
+          )}
           <div className="border-b border-slate-100 px-5 py-3 text-xs text-slate-500">Kunlik sarf — so&apos;nggi 30 kun o&apos;rtachasi. «Olib kelish kerak» — tasdiqlangan zayavkalarga va minimal qoldiqqa yetishi uchun yetishmayotgan miqdor.</div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead><tr><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>Kunlik sarf</Th><Th className="w-40">Yetadi</Th><Th right>Zayavkalarga kerak</Th><Th right>Olib kelish kerak</Th><Th>Holat</Th></tr></thead>
               <tbody>
                 {stock.length === 0 && <Empty text="Xomashyo kiritilmagan" icon={Layers} />}
@@ -305,7 +336,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                           </div>
                         )}
                       </Td>
-                      <Td right className="text-slate-500">{m.planned > 0 ? `${qty(m.planned)} ${m.unit}` : "—"}</Td>
+                      <Td right className="text-slate-500">{m.planned > 0 ? <>{qty(m.planned)} {m.unit}<div className="text-[11px] text-slate-400">{m.orders.length} zayavka</div></> : "—"}</Td>
                       <Td right className={m.need > 0 ? "font-semibold text-red-600" : "text-slate-400"}>{m.need > 0 ? `${qty(m.need)} ${m.unit}` : "—"}</Td>
                       <Td><Badge color={tone === "danger" ? "red" : tone === "warning" ? "amber" : "green"}>{STOCK_LEVEL_LABEL[m.level]}</Badge></Td>
                     </Tr>
@@ -316,6 +347,7 @@ export async function ProductionHome({ s }: { s: Session }) {
           </div>
           {restStock > 0 && <div className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">Yana {restStock} ta xomashyo yetarli — to&apos;liq ro&apos;yxat <Link href="/stock" className="font-medium text-slate-700 hover:underline">Skladda</Link>.</div>}
         </Card>
+        </MobileFold>
       </Section>
       <StockSnapshotCard layout="grid" title="Hovli va tayyor mahsulot" />
 

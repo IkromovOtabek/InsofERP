@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { qty, money, dateTime } from "@/lib/format";
-import { lastInboundMoves } from "@/lib/stock";
+import { avgUnitCosts, lastInboundMoves } from "@/lib/stock";
 import { productionCapacity } from "@/lib/production-capacity";
 import { ostatkaSummary } from "@/lib/ostatka";
 import { unitLabel } from "@/lib/unit";
 import { getSession } from "@/lib/auth";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight, ClipboardList, HardHat, ShoppingBasket } from "lucide-react";
+import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight, ClipboardList, HardHat, ShoppingBasket, ScanLine, PackageMinus } from "lucide-react";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
 import { Card, CardHeader } from "@/components/ui";
@@ -19,12 +19,12 @@ const TYPE_LABEL: Record<string, string> = {
   BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi",
 };
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
-const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada" };
+const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string }> }) {
   const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
   const s = await getSession();
-  const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"].includes(s?.role ?? "");
+  const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   const [materials, mSums, last] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
@@ -32,9 +32,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   ]);
   const mb = new Map(mSums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
 
-  // O'rtacha tannarx: kirimlar va narxli boshlang'ich qoldiqlar bo'yicha
-  const costs = await db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _sum: { qty: true }, _avg: { unitCost: true } });
-  const avgCost = new Map(costs.map((c) => [c.materialId, Number(c._avg.unitCost ?? 0)]));
+  // O'rtacha tannarx: miqdorga tortilgan (kirimlar; kirimi yo'q bo'lsa — narxli boshlang'ich qoldiq)
+  const avgCost: Map<string | null, number> = await avgUnitCosts();
 
   // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi)
   const moves = tab === "moves"
@@ -80,6 +79,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
             <LinkButton href="/stock/products/new" variant="secondary"><Plus size={16} /> Tayyor mahsulot qo&apos;shish</LinkButton>
             <LinkButton href="/stock/materials/new" variant="secondary"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
+            {/* Qoldiqni faqat hujjat bilan o'zgartirish: sanab chiqish farqi va hisobdan chiqarish (sabab majburiy) */}
+            <LinkButton href="/stock/inventarizatsiya" variant="secondary"><ScanLine size={16} /> Inventarizatsiya</LinkButton>
+            <LinkButton href="/stock/spisanie" variant="secondary"><PackageMinus size={16} /> Hisobdan chiqarish</LinkButton>
             {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}
             <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Kerakli mahsulotlar</LinkButton>
           </div>
@@ -138,22 +140,25 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                   <div className="p-5">
                     <CardHeader icon={HardHat} title={b.name}
                       description={`${b.leader ?? "brigadirsiz"} · ochiq topshiriq qoldig'i ${qty(b.openQty)}`}
-                      action={<Badge color={b.value > 0 ? "green" : "slate"}>{money(b.value)}</Badge>} />
+                      action={<span className="inline-flex flex-wrap gap-1.5">
+                        {b.materials.some((m) => m.qty < 0) && <Badge color="red">minus qoldiq</Badge>}
+                        <Badge color={b.value > 0 ? "green" : "slate"}>{money(b.value)}</Badge>
+                      </span>} />
                     {b.materials.length === 0 ? (
                       <p className="text-sm text-slate-500">Qo&apos;lida xomashyo yo&apos;q — yuqoridagi forma orqali bering.</p>
                     ) : (
-                      <table className="w-full text-sm">
+                      <div className="overflow-x-auto"><table className="w-full text-sm">
                         <thead><tr className="text-left text-xs text-slate-500"><th className="py-1">Xomashyo</th><th className="py-1 text-right">Qoldiq</th><th className="py-1 text-right">Qiymati</th></tr></thead>
                         <tbody>
                           {b.materials.map((m) => (
                             <tr key={m.materialId} className="border-t border-slate-100">
                               <td className="py-1.5">{m.name}</td>
-                              <td className={cn("py-1.5 text-right tabular", m.qty < 0 && "font-medium text-red-600")}>{qty(m.qty)} {unitLabel(m.unit)}</td>
-                              <td className="py-1.5 text-right tabular text-slate-500">{money(m.cost)}</td>
+                              <td className={cn("py-1.5 text-right tabular", m.qty < 0 && "font-semibold text-red-600")}>{qty(m.qty)} {unitLabel(m.unit)}</td>
+                              <td className={cn("py-1.5 text-right tabular", m.qty < 0 ? "text-red-600" : "text-slate-500")}>{money(m.cost)}</td>
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </table></div>
                     )}
                     {b.materials.length > 0 && warehouses[0] && (
                       <BrigadeReturnForm brigadeId={b.id} warehouseId={warehouses[0].id} materials={b.materials.map((m) => ({ materialId: m.materialId, name: m.name, unit: m.unit, qty: m.qty }))} />
@@ -176,7 +181,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               );
             })}
           </div>
-          <p className="text-xs text-slate-500">Brigada qoldig&apos;i manfiy chiqsa — topshiriq skladdan xomashyo olmasdan bajarilgan (qarzga yozilgan): shu miqdorni brigadaga bersangiz nolga tushadi.</p>
+          <p className="text-xs text-slate-500">Topshiriq bajarilganda brigadada yetmagan xomashyo skladdan avtomatik beriladi. Brigada qoldig&apos;i manfiy (qizil) chiqsa — skladda ham yetmagan: xomashyo kelgach shu miqdorni brigadaga bersangiz nolga tushadi.</p>
         </div>
       )}
 

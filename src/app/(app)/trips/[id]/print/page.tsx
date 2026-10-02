@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";
-import { qty, date, money } from "@/lib/format";
+import { qty, date, dateTime, money } from "@/lib/format";
+import { tripLine } from "@/lib/trips";
+import { DRUM_MAX_MIN } from "@/lib/logistics";
 import { PrintButton } from "@/components/print-button";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
@@ -16,12 +18,19 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
   if (!t) notFound();
   const company = await getCompany();
   const { origin, fromEnv } = await publicOrigin();
-  const verifyUrl = `${origin}/verify/${encodeURIComponent(t.deliveryNoteNo)}`;
+  // Yangi reyslarda tasodifiy kalit bilan — kalitsiz havola ochiq sahifada "topilmadi" beradi
+  const verifyUrl = `${origin}/verify/${encodeURIComponent(t.deliveryNoteNo)}${t.verifyToken ? `?k=${t.verifyToken}` : ""}`;
   // Skaner ishlashi uchun QR atrofida "tinch zona" (margin) bo'lishi shart; M darajali xato tuzatish
   // qog'oz g'ijimlansa ham o'qishga yordam beradi. Ranglar qat'iy qora/oq — dark rejimga bog'liq emas.
   const qr = await QRCode.toString(verifyUrl, { type: "svg", margin: 2, width: 128, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });
-  const item = t.order.items[0];
+  // Aralash zayavkada reys qatori texnika turidan (beton — mikser, dona — yuk mashina)
+  const line = tripLine(t.order.items, t.vehicle.type);
+  const item = ("error" in line ? undefined : t.order.items.find((i) => i.productId === line.productId)) ?? t.order.items[0];
   const sum = item ? Number(t.qtyM3) * Number(item.price) : 0;
+  // Zames raqami: shu zayavka va mahsulot bo'yicha yuklashgacha quyilgan oxirgi zames (beton uchun)
+  const batch = item && item.product.unit === "m3"
+    ? await db.productionBatch.findFirst({ where: { orderId: t.orderId, productId: item.productId, ...(t.loadedAt ? { date: { lte: t.loadedAt } } : {}) }, orderBy: { date: "desc" }, select: { batchNo: true, date: true } })
+    : null;
 
   return (
     <div className="paper mx-auto max-w-3xl rounded-sm bg-white p-8 text-[13px] text-black print:max-w-none print:rounded-none print:p-4 print:shadow-none">
@@ -36,6 +45,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
           <div className="text-xl font-bold">TOVAR-TRANSPORT NAKLADNOYI</div>
           <div className="text-lg font-semibold">№ {t.deliveryNoteNo}</div>
           <div className="mt-1">Sana: {date(t.loadedAt ?? t.createdAt)} · Zayavka {t.order.orderNo}</div>
+          <div>Yuklash vaqti: <b>{t.loadedAt ? dateTime(t.loadedAt) : "—"}</b>{item?.product.unit === "m3" && <> · Zames №: <b>{batch?.batchNo ?? "—"}</b></>}</div>
         </div>
         <div className="flex flex-col items-center">
           <div className="bg-white" dangerouslySetInnerHTML={{ __html: qr }} />
@@ -78,7 +88,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
           <div key={l}><div className="text-slate-600">{l}</div><div className="mt-8 border-t border-black pt-1 text-[11px]">F.I.O. / imzo{l.includes("Qabul") && t.receiverName ? `: ${t.receiverName}` : ""}</div></div>
         ))}
       </div>
-      <div className="mt-6 text-[10px] text-slate-500">Beton yetkazilgandan keyin 2 soat ichida ishlatilishi shart. Da'volar qabul qilish paytida bildiriladi.</div>
+      <div className="mt-6 text-[10px] text-slate-500">{item?.product.unit === "m3" ? `Beton yuklangan vaqtdan boshlab ${DRUM_MAX_MIN} daqiqa ichida quyilishi shart (yuklash vaqti yuqorida). ` : ""}Da'volar qabul qilish paytida bildiriladi.</div>
       <div className="mt-6 flex justify-end print:hidden"><PrintButton /></div>
     </div>
   );

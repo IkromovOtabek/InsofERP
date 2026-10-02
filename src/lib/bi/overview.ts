@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, CAPITAL_RATE_DAY, type Range } from "./core";
+import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, CAPITAL_RATE_DAY, type Range } from "./core";
 import { lossChannels } from "./finance";
 import { customerBase } from "./customers";
 import { materialOverview } from "./stock";
@@ -27,7 +27,12 @@ export async function overviewTab(r: Range) {
   const daysPassed = Math.max(1, Math.round((today.getTime() - monthStart.getTime()) / 86400000) + 1);
   const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86400000);
   const planPerDay = prevMonthRevenue / Math.max(1, Math.round((monthStart.getTime() - prevMonthStart.getTime()) / 86400000));
-  const monthForecast = (monthRevenue / daysPassed) * daysInMonth;
+  // Oy boshidan bugungacha — o'tgan oyning SHU kunlari bilan solishtiriladi (1–N kun ↔ 1–N kun).
+  // Ilgari to'liq o'tgan oy bilan solishtirilardi: oyning 5-kunida har doim "−80%" chiqardi.
+  const prevSameEnd = new Date(Math.min(addDays(prevMonthStart, daysPassed).getTime(), monthStart.getTime()));
+  const prevSameRevenue = rev(prevMonthS.filter((x) => x.date < prevSameEnd));
+  // Prognoz — Egasi dashbordi bilan bitta funksiya (ish kunlari sur'ati)
+  const monthForecastValue = monthForecast(monthRevenue, today);
 
   const revenue = rev(cur), prevRevenue = rev(prev);
   const gross = sum(cur.map((x) => x.revenue - x.cost)), prevGross = sum(prev.map((x) => x.revenue - x.cost));
@@ -94,13 +99,13 @@ export async function overviewTab(r: Range) {
 
   const goodNews: string[] = [];
   if (todayRevenue > planPerDay && planPerDay > 0) goodNews.push(`Bugungi sotuv o'tgan oy o'rtachasidan ${Math.round(((todayRevenue - planPerDay) / planPerDay) * 100)}% yuqori.`);
-  if (monthForecast > prevMonthRevenue && prevMonthRevenue > 0) goodNews.push(`Hozirgi temp bilan oy oxirida o'tgan oydan ${Math.round(((monthForecast - prevMonthRevenue) / prevMonthRevenue) * 100)}% ko'p sotiladi.`);
+  if (monthForecastValue > prevMonthRevenue && prevMonthRevenue > 0) goodNews.push(`Hozirgi temp bilan oy oxirida o'tgan oydan ${Math.round(((monthForecastValue - prevMonthRevenue) / prevMonthRevenue) * 100)}% ko'p sotiladi.`);
   if (margin >= 25) goodNews.push(`Yalpi marja ${margin.toFixed(1)}% — sog'lom darajada.`);
   const topProduct = [...new Set(cur.map((x) => x.code))].map((c) => ({ c, v: sum(cur.filter((x) => x.code === c).map((x) => x.revenue)) })).sort((a, b) => b.v - a.v)[0];
 
   return {
     todayRevenue, yestRevenue, todayDelta: delta(todayRevenue, yestRevenue), todayM3: sum(todayS.filter((x) => x.unit === "m3").map((x) => x.qty)), delivered, tripsToday: tripsToday.filter((t) => t.status !== "CANCELLED").length,
-    month: { revenue: monthRevenue, prev: prevMonthRevenue, forecast: monthForecast, planPerDay, perDay: monthRevenue / daysPassed, daysPassed, daysLeft: daysInMonth - daysPassed, delta: delta(monthRevenue, prevMonthRevenue) },
+    month: { revenue: monthRevenue, prev: prevSameRevenue, prevFull: prevMonthRevenue, forecast: monthForecastValue, planPerDay, perDay: monthRevenue / daysPassed, daysPassed, daysLeft: daysInMonth - daysPassed, delta: delta(monthRevenue, prevSameRevenue) },
     kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: kpi(margin, prevMargin), cashIn: kpi(cashIn, prevCashIn), receivable, debtors: customers.filter((c) => c.debt > 0).length, active, total: customers.length, lost: lostCount, activeRate: safeDiv(active, customers.length) * 100 },
     spark, health, healthLabel, healthBasis: scored.length, components, risk, riskTotal, capitalCost30: riskTotal * CAPITAL_RATE_DAY * 30, loss, tasks: topTasks, goodNews, topProduct, materialsAtRisk: materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length,
   };

@@ -1,5 +1,5 @@
 import { ClipboardCheck, Clock, CircleDollarSign, PackageCheck, Plus } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { supplyList, supplyTab, supplyCounts, SUPPLY_TABS, plannedSum } from "@/lib/supply";
 import { money } from "@/lib/format";
 import { LinkButton, PageHeader, StatCard, Tabs } from "@/components/ui";
@@ -10,12 +10,12 @@ import { SupplyTable } from "./supply-table";
  * Zanjirdagi boshqa bo'limlar ham shu ro'yxatdan hujjatni ochib holatini ko'radi.
  */
 export default async function TaminotPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const s = await requireSession(["SALES", "WAREHOUSE", "PROCUREMENT", "PRODUCTION", "FINANCE", "ACCOUNTING", "CASHIER"]);
+  const s = await requireRoles(["SALES", "WAREHOUSE", "PROCUREMENT", "PRODUCTION", "FINANCE", "ACCOUNTING", "CASHIER"]);
   const { tab } = await searchParams;
   const t = supplyTab(tab);
   const [rows, counts] = await Promise.all([supplyList(t.status), supplyCounts()]);
   const waiting = rows.filter((r) => r.status === "PRICED");
-  const canAsk = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"].includes(s.role);
+  const canAsk = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(s.role);
 
   return (
     <div>

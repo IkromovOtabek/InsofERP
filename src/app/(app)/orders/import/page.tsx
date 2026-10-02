@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { isoDate } from "@/lib/format";
 import { Callout, Card, Checkbox, Field, Input, PageHeader, Textarea } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
@@ -13,7 +13,7 @@ import { importOrdersFromExcel } from "../actions";
  * Mijoz + yetkazish sanasi bo'yicha guruhlanib qoralama zayavkalar ochiladi.
  */
 export default async function OrdersImport() {
-  await requireSession(["SALES"]);
+  await requireRoles(["SALES"]);
   const products = await db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, select: { code: true, unit: true } });
   return (
     <div>

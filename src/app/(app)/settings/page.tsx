@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX } from "lucide-react";
+import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
-import { ROLE_LABELS } from "@/lib/nav";
-import { dateTime } from "@/lib/format";
+import { ROLE_LABELS, MODULES } from "@/lib/nav";
+import { parsePerms } from "@/lib/auth";
+import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { Badge, Button, Card, Empty, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
@@ -14,10 +15,10 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, UserPermsForm } from "./user-forms";
 import { DeletionRow } from "./deletion-forms";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
-import { toggleUser, saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
+import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 
 const TABS = [
   ["company", "Zavod rekvizitlari", Building2],
@@ -26,22 +27,34 @@ const TABS = [
   ["warehouses", "Skladlar", Warehouse],
   ["accounts", "Kassa / hisoblar", Landmark],
   ["users", "Foydalanuvchilar", Users],
+  ["permissions", "Ruxsatlar", ShieldCheck],
   ["deletions", "Hisob so'rovlari", UserX],
   ["audit", "Audit jurnali", ScrollText],
 ] as const;
 
 const ACTION_LABEL: Record<string, string> = { CREATE: "Yaratdi", UPDATE: "O'zgartirdi", DELETE: "O'chirdi", STATUS_CHANGE: "Holatni o'zgartirdi" };
+/** Audit jurnalidagi barcha obyekt turlari (kodda `audit(..., "<Entity>", ...)` chaqiriladigan hammasi). */
 const ENTITY_LABEL: Record<string, string> = {
   Customer: "Mijoz", Supplier: "Yetkazuvchi", Order: "Zayavka", ProductionBatch: "Zames", Recipe: "Retsept", GoodsReceipt: "Kirim",
   Trip: "Reys", Invoice: "Schyot", Payment: "To'lov", Employee: "Xodim", Vehicle: "Texnika", User: "Foydalanuvchi",
-  Product: "Beton markasi", Material: "Xomashyo", Warehouse: "Sklad", CashAccount: "Kassa/hisob", CompanySettings: "Rekvizitlar", StockMove: "Sklad harakati",
-  Brigade: "Brigada", BrigadeTask: "Topshiriq", TaskProgress: "Bajarilganlik", CashTransaction: "Kirim-chiqim", WorkPosition: "Ishchi lavozim", EmployeeDocument: "Xodim hujjati",
+  Product: "Mahsulot (marka)", Material: "Xomashyo", Warehouse: "Sklad", CashAccount: "Kassa/hisob", CompanySettings: "Sozlamalar / rekvizitlar", StockMove: "Sklad harakati",
+  Brigade: "Brigada", BrigadeTask: "Brigada topshirig'i", TaskProgress: "Bajarilganlik", CashTransaction: "Kirim-chiqim", WorkPosition: "Ishchi lavozim", EmployeeDocument: "Xodim hujjati",
+  Attendance: "Davomat", BrigadeIssue: "Brigadaga berish", BrigadeMove: "Brigada harakati", BrigadeShift: "Brigada smenasi", ExpenseBudget: "Xarajat byudjeti",
+  FuelLog: "Zapravka", HrDocument: "Kadr hujjati", Lead: "Ariza (lid)", MarketingEntry: "Marketing yozuvi", MaterialGroup: "Xomashyo guruhi",
+  ProductDefect: "Brak", ProductGroup: "Mahsulot guruhi", ProductionPlan: "Ishlab chiqarish plani", ProductionReport: "Ishlab chiqarish hisoboti",
+  SalesPlan: "Sotuv plani", SalesRegister: "Realizatsiya jurnali", ShopBanner: "Vitrina reklamasi", ShopItem: "Vitrina mahsuloti", Site: "Obyekt",
+  SupplyDocument: "Ta'minot hujjati", SupplyIncident: "Ta'minot muammosi", SupplyQuote: "Tijorat taklifi", SupplyRequest: "Ta'minot zayavkasi",
+  TransportExpense: "Transport xarajati", TripIssue: "Reys muammosi",
 };
+const AUDIT_PAGE = 50;
 const UNITS: [string, string][] = [["kg", "kg"], ["t", "t"], ["l", "l"], ["m3", "m³"], ["dona", "dona"]];
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const s = await requireSession(["DIRECTOR"]);
-  const { tab = "company" } = await searchParams;
+type AuditFilter = { user?: string; entity?: string; from?: string; to?: string; page?: string };
+
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string } & AuditFilter> }) {
+  const s = await requireRoles(["DIRECTOR"]);
+  const sp = await searchParams;
+  const { tab = "company" } = sp;
   const pendingDeletions = await db.accountDeletionRequest.count({ where: { status: "PENDING" } });
 
   return (
@@ -55,8 +68,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "warehouses" && <WarehousesTab />}
       {tab === "accounts" && <AccountsTab />}
       {tab === "users" && <UsersTab me={s.userId} />}
+      {tab === "permissions" && <PermissionsTab />}
       {tab === "deletions" && <DeletionsTab />}
-      {tab === "audit" && <AuditTab />}
+      {tab === "audit" && <AuditTab f={sp} />}
     </div>
   );
 }
@@ -93,6 +107,48 @@ async function CompanyTab() {
       ]} />
       </Card>
       <PlantLocation lat={c.lat} lng={c.lng} />
+      <Card>
+        <h2 className="mb-1 font-semibold">Katta xarid — direktor tasdig&apos;i</h2>
+        <p className="mb-3 text-sm text-slate-500">Summasi shu chegaradan katta ta&apos;minot zayavkasi ma&apos;sul xodim tasdig&apos;idan oldin direktor tasdig&apos;idan o&apos;tadi va bosh sahifadagi «Sizning tasdig&apos;ingiz kutilmoqda» navbatida chiqadi. 0 — cheklov yo&apos;q. Hozir: <b>{Number(c.supplyDirectorLimit) > 0 ? money(Number(c.supplyDirectorLimit)) : "cheklov yo'q"}</b>.</p>
+        <SupplyLimitForm value={Number(c.supplyDirectorLimit)} />
+      </Card>
+      <Card>
+        <h2 className="mb-1 font-semibold">Kunlik zayavka limiti</h2>
+        <p className="mb-3 text-sm text-slate-500">Bir yetkazish kuniga qabul qilinadigan eng ko&apos;p beton hajmi (m³) va zayavkalar soni. Chegaradan oshsa zayavka <b>qabul qilinmaydi</b> (tasdiqlashda tekshiriladi). 0 yoki bo&apos;sh — cheklov yo&apos;q. Bu «Kunlik quvvat» (kalendar rangi) dan alohida qattiq cheklov. Hozir: <b>{Number(c.dailyOrderMaxM3) > 0 ? `${Number(c.dailyOrderMaxM3)} m³` : "hajm cheklanmagan"}</b>, <b>{c.dailyOrderMaxCount ? `${c.dailyOrderMaxCount} ta` : "son cheklanmagan"}</b>.</p>
+        <DailyOrderLimitForm m3={Number(c.dailyOrderMaxM3 ?? 0)} count={Number(c.dailyOrderMaxCount ?? 0)} />
+      </Card>
+    </div>
+  );
+}
+
+/** Modul bo'yicha ruxsat — direktor har foydalanuvchiga asosiy bo'limlar uchun ko'rish/yozish belgilaydi. */
+async function PermissionsTab() {
+  const users = await db.user.findMany({
+    where: { isActive: true, role: { not: "DIRECTOR" } },
+    orderBy: [{ fullName: "asc" }],
+    select: { id: true, fullName: true, login: true, role: true, perms: true },
+  });
+  const modules = MODULES.map((m) => ({ key: m.key, label: m.label }));
+  return (
+    <div className="space-y-4">
+      <Card>
+        <h2 className="mb-1 font-semibold">Modul bo&apos;yicha ruxsat</h2>
+        <p className="text-sm text-slate-500">
+          Har bir foydalanuvchiga asosiy bo&apos;limlar uchun <b>Ko&apos;rish</b> (faqat o&apos;qiydi) yoki <b>Yozish</b> (o&apos;zgartiradi) huquqini bering.
+          Bu ruxsat rol ustiga ishlaydi: <b>Rol bo&apos;yicha</b> — odatdagi holat; <b>Yopiq</b> — bo&apos;limni butunlay yashiradi.
+          Ruxsat modul darajali: masalan Zayavkalarga «Ko&apos;rish» bergan xodim zayavkani ko&apos;radi, lekin ocha ham, qabul ham qila olmaydi. Direktor doim to&apos;liq huquqli.
+        </p>
+      </Card>
+      {users.length === 0 ? <Card><Empty text="Direktordan boshqa faol foydalanuvchi yo'q" /></Card> : users.map((u) => (
+        <Card key={u.id}>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="font-medium">{u.fullName}</span>
+            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code>
+            <Badge color="slate">{ROLE_LABELS[u.role]}</Badge>
+          </div>
+          <UserPermsForm userId={u.id} modules={modules} current={(parsePerms(u.perms) ?? {}) as Record<string, string>} />
+        </Card>
+      ))}
     </div>
   );
 }
@@ -178,7 +234,15 @@ async function WarehousesTab() {
 }
 
 async function AccountsTab() {
-  const list = await db.cashAccount.findMany({ orderBy: { name: "asc" } });
+  const [list, pay, tx] = await Promise.all([
+    db.cashAccount.findMany({ orderBy: { name: "asc" } }),
+    db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
+  ]);
+  // Qoldiq — Kirim-Chiqim va Egasi dashbordi bilan bir xil formula; qoldig'i bor hisob nofaol qilinmaydi
+  const bal = new Map<string, number>();
+  for (const p of pay) bal.set(p.cashAccountId, (bal.get(p.cashAccountId) ?? 0) + Number(p._sum.amount ?? 0));
+  for (const t of tx) bal.set(t.cashAccountId, (bal.get(t.cashAccountId) ?? 0) + (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0));
   const types: [string, string][] = [["CASH", "Naqd kassa"], ["BANK", "Bank hisobi"]];
   return (
     <div className="space-y-4">
@@ -186,7 +250,7 @@ async function AccountsTab() {
       <Card>
         <h2 className="mb-3 font-semibold">Kassa va hisoblar</h2>
         <div className="divide-y divide-slate-100">
-          {list.map((a) => <div key={a.id} className="py-3"><RowForm action={saveCashAccount.bind(null, a.id)} cols={4} fields={[{ name: "name", label: "Nomi", defaultValue: a.name, required: true, className: "sm:col-span-2" }, { name: "type", label: "Turi", type: "select", options: types, defaultValue: a.type }, { name: "isActive", label: "Faol", type: "checkbox", defaultValue: a.isActive }]} /></div>)}
+          {list.map((a) => <div key={a.id} className="py-3"><div className="mb-1 text-xs text-slate-500">Qoldiq: <b className={(bal.get(a.id) ?? 0) < 0 ? "text-red-600" : "text-slate-700"}>{money(bal.get(a.id) ?? 0)}</b>{Math.abs(bal.get(a.id) ?? 0) >= 1 && a.isActive && " · qoldiq 0 bo'lmaguncha nofaol qilinmaydi"}{!a.isActive && Math.abs(bal.get(a.id) ?? 0) >= 1 && <span className="text-amber-700"> · nofaol, lekin qoldig&apos;i bor — Kirim-Chiqimda boshqa hisobga o&apos;tkazing</span>}</div><RowForm action={saveCashAccount.bind(null, a.id)} cols={4} fields={[{ name: "name", label: "Nomi", defaultValue: a.name, required: true, className: "sm:col-span-2" }, { name: "type", label: "Turi", type: "select", options: types, defaultValue: a.type }, { name: "isActive", label: "Faol", type: "checkbox", defaultValue: a.isActive }]} /></div>)}
         </div>
       </Card>
     </div>
@@ -195,19 +259,22 @@ async function AccountsTab() {
 
 async function UsersTab({ me }: { me: string }) {
   const users = await db.user.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { employee: true } });
+  const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER");
   return (
     <div className="space-y-4">
-      <Card><h2 className="mb-1 font-semibold">Yangi foydalanuvchi</h2><p className="mb-3 text-xs text-slate-500">Xodim bilan bog'lash uchun Xodimlar sahifasidan qo'shing — u yerda lavozim bo'yicha rol avtomatik beriladi.</p><UserForm roles={Object.entries(ROLE_LABELS)} /></Card>
+      <Card><h2 className="mb-1 font-semibold">Yangi foydalanuvchi</h2><p className="mb-3 text-xs text-slate-500">Xodim bilan bog'lash uchun Xodimlar sahifasidan qo'shing — u yerda lavozim bo'yicha rol avtomatik beriladi.</p><UserForm roles={roles} /></Card>
+      <p className="text-xs text-slate-500">Ism va rolni shu yerda tahrirlang (har o&apos;zgarish audit jurnalida). Rol o&apos;zgarsa foydalanuvchining ochiq sessiyalari tugaydi. O&apos;z rolingizni va oxirgi faol direktorni o&apos;zgartirib/bloklab bo&apos;lmaydi.</p>
       <Table>
-        <thead><tr><Th>F.I.O.</Th><Th>Login</Th><Th>Rol</Th><Th>Xodim</Th><Th>Holat</Th><Th>Parol</Th><Th></Th></tr></thead>
+        <thead><tr><Th>F.I.O. va rol</Th><Th>Login</Th><Th>Xodim</Th><Th>Holat</Th><Th>Parol</Th><Th></Th></tr></thead>
         <tbody>
           {users.map((u) => (
             <Tr key={u.id}>
-              <Td className="font-medium">{u.fullName}</Td><Td><code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code></Td><Td>{ROLE_LABELS[u.role]}</Td>
+              <Td><UserEditForm userId={u.id} fullName={u.fullName} role={u.role} roles={u.role === "DRIVER" || u.role === "BRIGADIER" ? [[u.role, ROLE_LABELS[u.role]], ...roles] : roles} self={u.id === me} /></Td>
+              <Td><code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code></Td>
               <Td className="text-slate-500">{u.employee ? u.employee.position : "—"}</Td>
               <Td>{u.isActive ? <Badge color="green">Faol</Badge> : <Badge>Bloklangan</Badge>}</Td>
               <Td><ResetPasswordForm userId={u.id} /></Td>
-              <Td>{u.id !== me && <form action={toggleUser.bind(null, u.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{u.isActive ? "Bloklash" : "Yoqish"}</Button></form>}</Td>
+              <Td>{u.id !== me && <ToggleUserButton userId={u.id} name={u.fullName} active={u.isActive} />}</Td>
             </Tr>
           ))}
         </tbody>
@@ -268,20 +335,87 @@ async function DeletionsTab() {
   );
 }
 
-async function AuditTab() {
-  const logs = await db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100, include: { user: true } });
+/** Ikki JSON holat orasidagi farq — faqat o'zgargan maydonlar (yuqori daraja). */
+function auditDiff(before: unknown, after: unknown): { key: string; from: string; to: string }[] {
+  const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+  const b = obj(before), a = obj(after);
+  const show = (v: unknown) => { if (v === undefined) return "—"; const t = typeof v === "string" ? v : JSON.stringify(v); return t.length > 60 ? `${t.slice(0, 57)}…` : t; };
+  if (!b && !a) return before === undefined && after === undefined ? [] : [{ key: "", from: show(before ?? undefined), to: show(after ?? undefined) }];
+  const skip = new Set(["updatedAt", "createdAt", "passwordHash", "sessionVersion"]);
+  const keys = [...new Set([...Object.keys(b ?? {}), ...Object.keys(a ?? {})])].filter((k) => !skip.has(k));
+  // Yaratishda (before yo'q) — hamma maydon "yangi"; tahrirda — faqat farq qilganlari
+  return keys.filter((k) => !b || !a || JSON.stringify(b[k]) !== JSON.stringify(a[k])).map((k) => ({ key: k, from: b ? show(b[k]) : "—", to: a ? show(a[k]) : "—" }));
+}
+
+async function AuditTab({ f }: { f: AuditFilter }) {
+  const page = Math.max(1, Number(f.page) || 1);
+  const from = f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from) ? new Date(`${f.from}T00:00:00`) : null;
+  const to = f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to) ? new Date(new Date(`${f.to}T00:00:00`).getTime() + 86400000) : null;
+  const where = {
+    ...(f.user ? { userId: f.user } : {}),
+    ...(f.entity ? { entity: f.entity } : {}),
+    ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {}),
+  };
+  const [logs, total, users, entities] = await Promise.all([
+    db.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * AUDIT_PAGE, take: AUDIT_PAGE, include: { user: { select: { fullName: true } } } }),
+    db.auditLog.count({ where }),
+    db.user.findMany({ orderBy: { fullName: "asc" }, select: { id: true, fullName: true } }),
+    db.auditLog.groupBy({ by: ["entity"], _count: { _all: true } }),
+  ]);
+  const pages = Math.max(1, Math.ceil(total / AUDIT_PAGE));
+  const qs = (p: number) => { const q = new URLSearchParams({ tab: "audit" }); for (const k of ["user", "entity", "from", "to"] as const) if (f[k]) q.set(k, f[k]!); if (p > 1) q.set("page", String(p)); return `/settings?${q}`; };
+  const sel = "rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm";
   return (
-    <Table>
-      <thead><tr><Th>Vaqt</Th><Th>Kim</Th><Th>Amal</Th><Th>Obyekt</Th><Th>O'zgarish</Th></tr></thead>
-      <tbody>
-        {logs.map((l) => (
-          <Tr key={l.id}>
-            <Td className="whitespace-nowrap">{dateTime(l.createdAt)}</Td>
-            <Td>{l.user.fullName}</Td><Td>{ACTION_LABEL[l.action] ?? l.action}</Td><Td>{ENTITY_LABEL[l.entity] ?? l.entity}</Td>
-            <Td className="max-w-md truncate font-mono text-xs text-slate-500">{l.after ? JSON.stringify(l.after).slice(0, 120) : ""}</Td>
-          </Tr>
-        ))}
-      </tbody>
-    </Table>
+    <div className="space-y-3">
+      <Card>
+        <form method="get" action="/settings" className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="tab" value="audit" />
+          <label className="text-xs text-slate-500">Kim<select name="user" defaultValue={f.user ?? ""} className={`mt-1 block w-48 ${sel}`}><option value="">Hammasi</option>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</select></label>
+          <label className="text-xs text-slate-500">Obyekt<select name="entity" defaultValue={f.entity ?? ""} className={`mt-1 block w-52 ${sel}`}><option value="">Hammasi</option>{entities.sort((a, b) => (ENTITY_LABEL[a.entity] ?? a.entity).localeCompare(ENTITY_LABEL[b.entity] ?? b.entity)).map((e) => <option key={e.entity} value={e.entity}>{ENTITY_LABEL[e.entity] ?? e.entity} ({e._count._all})</option>)}</select></label>
+          <label className="text-xs text-slate-500">Sanadan<input type="date" name="from" defaultValue={f.from ?? ""} className={`mt-1 block ${sel}`} /></label>
+          <label className="text-xs text-slate-500">Sanagacha<input type="date" name="to" defaultValue={f.to ?? isoDate(new Date())} className={`mt-1 block ${sel}`} /></label>
+          <Button className="py-1.5 text-sm">Ko&apos;rsatish</Button>
+          {(f.user || f.entity || f.from || f.to) && <Link href="/settings?tab=audit" className="py-1.5 text-sm text-slate-500 hover:underline">Tozalash</Link>}
+          <span className="ml-auto text-xs text-slate-500">{total} ta yozuv</span>
+        </form>
+      </Card>
+      <Table>
+        <thead><tr><Th>Vaqt</Th><Th>Kim</Th><Th>Amal</Th><Th>Obyekt</Th><Th>O&apos;zgarish (oldin → keyin)</Th></tr></thead>
+        <tbody>
+          {logs.length === 0 && <Empty text="Bu filtr bo'yicha yozuv yo'q" />}
+          {logs.map((l) => {
+            const diff = auditDiff(l.before ?? undefined, l.after ?? undefined);
+            return (
+              <Tr key={l.id}>
+                <Td className="whitespace-nowrap align-top">{dateTime(l.createdAt)}</Td>
+                <Td className="align-top">{l.user.fullName}</Td><Td className="align-top">{ACTION_LABEL[l.action] ?? l.action}</Td>
+                <Td className="align-top">{ENTITY_LABEL[l.entity] ?? l.entity}<div className="font-mono text-[10px] text-slate-400">{l.entityId.slice(0, 12)}</div></Td>
+                <Td className="max-w-xl align-top text-xs">
+                  {diff.length === 0 ? <span className="text-slate-400">—</span> : (
+                    <ul className="space-y-0.5">
+                      {diff.slice(0, 8).map((d) => (
+                        <li key={d.key} className="break-words">
+                          {d.key && <span className="font-medium text-slate-700">{d.key}: </span>}
+                          {l.before != null && <><span className="text-red-600 line-through decoration-red-300">{d.from}</span> → </>}
+                          <span className="text-emerald-700">{d.to}</span>
+                        </li>
+                      ))}
+                      {diff.length > 8 && <li className="text-slate-400">yana {diff.length - 8} ta maydon</li>}
+                    </ul>
+                  )}
+                </Td>
+              </Tr>
+            );
+          })}
+        </tbody>
+      </Table>
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          {page > 1 ? <Link href={qs(page - 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 hover:bg-slate-50">← Oldingi</Link> : <span />}
+          <span className="text-slate-500">{page} / {pages}</span>
+          {page < pages ? <Link href={qs(page + 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 hover:bg-slate-50">Keyingi →</Link> : <span />}
+        </div>
+      )}
+    </div>
   );
 }

@@ -43,6 +43,8 @@ export type ImportEmployeesResult = {
   fired: number;
   /** Haydovchi lavozimidagi xodimlar — haydovchi ilovasiga (ECO) jo'natish uchun. */
   driverIds: string[];
+  /** Lavozimi o'zgartirilmagan login egalari (lavozim bo'limni belgilaydi — importdan o'zgarmaydi). */
+  keptPositions: string[];
 };
 
 type Prepared = {
@@ -146,6 +148,7 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
     }
 
     let created = 0, updated = 0, skipped = 0, fired = 0;
+    const keptPositions: string[] = [];
     const driverIds: string[] = [];
     for (const r of rows) {
       const position = known.get(r.position.toLowerCase()) ?? r.position;
@@ -166,10 +169,14 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
         // Fayldagi bo'sh katak kartadagi qiymatni o'chirmaydi — bo'shatish sanasi ham:
         // bo'sh katak ishdan bo'shagan xodimni (va logini) qayta yoqib yubormasin
         const firedPatch = r.firedAt ? { firedAt: r.firedAt, isActive: false } : {};
+        // Login egasining bo'lim lavozimi (Sotuv, Buxgalteriya…) importdan o'zgarmaydi: lavozim bo'limni
+        // (huquqni) bildiradi, uni faqat kartadagi "Bo'limni almashtirish" o'zgartiradi. Eski lavozim qoladi.
+        const keepPosition = !!cur.userId && before.position !== position && roleForPosition(before.position) !== roleForPosition(position);
+        if (keepPosition) keptPositions.push(`${before.fullName} («${before.position}» qoldi, faylda «${position}»)`);
         const e = await tx.employee.update({
           where: { id: cur.id },
           data: {
-            position, ...firedPatch,
+            ...(keepPosition ? {} : { position }), ...firedPatch,
             ...(r.tabelNo ? { tabelNo: r.tabelNo } : {}),
             ...(r.subdivision ? { subdivision: r.subdivision } : {}),
             ...(r.tariffRate != null ? { tariffRate: r.tariffRate } : {}),
@@ -183,7 +190,7 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
         await audit(tx, userId, "UPDATE", "Employee", e.id, before, { ...e, via: "excel" });
         updated++;
         if (r.firedAt) fired++;
-        if (drivers.has(position.toLowerCase())) driverIds.push(e.id);
+        if (drivers.has(e.position.toLowerCase())) driverIds.push(e.id);
         const rec: Found = { id: e.id, fullName: e.fullName, tabelNo: e.tabelNo, isActive: e.isActive, userId: e.userId };
         if (e.tabelNo) byTabel.set(tabelKey(e.tabelNo), rec);
         byName.set(flatName(e.fullName), rec);
@@ -207,6 +214,6 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
       byName.set(flatName(e.fullName), rec);
     }
 
-    return { created, updated, skipped, createdPositions: missing, groups, fired, driverIds };
+    return { created, updated, skipped, createdPositions: missing, groups, fired, driverIds, keptPositions };
   }, { timeout: 120_000, maxWait: 20_000 });
 }

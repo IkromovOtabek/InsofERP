@@ -28,7 +28,9 @@ export async function POST(req: Request) {
   const body = await req.text();
   const ts = req.headers.get("x-eco-timestamp") ?? "";
   const sig = (req.headers.get("x-eco-signature") ?? "").replace(/^sha256=/, "");
-  if (!ts || !sig || Math.abs(Date.now() - Number(ts)) > 5 * 60_000) return NextResponse.json({ error: "STALE_OR_UNSIGNED" }, { status: 401 });
+  // Raqamsiz ts bo'lsa Number(ts)=NaN va NaN>... = false bo'lib tekshiruvdan o'tib ketardi — aniq rad etamiz
+  const tsNum = Number(ts);
+  if (!ts || !sig || !Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > 5 * 60_000) return NextResponse.json({ error: "STALE_OR_UNSIGNED" }, { status: 401 });
   const expected = createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
   if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return NextResponse.json({ error: "BAD_SIGNATURE" }, { status: 401 });
 

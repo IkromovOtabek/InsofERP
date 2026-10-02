@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CalendarDays, ClipboardList, Layers, Percent, TrendingUp, XCircle } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { money, moneyShort, date, isoDate, qty as q, fmtNum, pct } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, Empty, Input, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { BarChart, DonutChart, HBarList } from "@/components/ui/charts";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * kunlar bo'yicha ham ko'radi — ish tartibi taqvimining tarixiy tomoni.
  */
 export default async function OrdersHistoryPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; by?: string }> }) {
-  await requireSession(["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"]);
   const sp = await searchParams;
   const now = new Date();
   const from = new Date(sp.from ?? isoDate(new Date(now.getTime() - 29 * 864e5)));

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { Card, Checkbox, PageHeader } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
@@ -7,7 +7,7 @@ import { importRecipesFromExcel } from "../actions";
 
 /** Retseptlar → Excel orqali: bir faylda bir nechta mahsulot retsepti, har biri uchun yangi faol versiya. */
 export default async function RecipeImport() {
-  await requireSession(["PRODUCTION", "WAREHOUSE", "PROCUREMENT"]);
+  await requireRoles(["PRODUCTION", "WAREHOUSE", "PROCUREMENT"]);
   const [products, materials] = await Promise.all([
     db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, select: { code: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true, unit: true } }),

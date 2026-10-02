@@ -262,6 +262,25 @@ const BRIGADIER_STEPS: TourStep[] = [
   },
 ];
 
+/* Sotuv agenti — vebda faqat bitta sahifa (`/agent`): o'z mijozlari, ularning qarzi va zayavka ochish.
+   Shuning uchun tur qisqa: sahifaning o'zini va "Yangi zayavka" tugmasini ko'rsatadi. */
+const AGENT_STEPS: TourStep[] = [
+  onPage(
+    "agent-page",
+    "/agent",
+    "Mening mijozlarim",
+    "Veb-saytda sizga faqat shu sahifa ochiq: o'zingiz olib kelgan mijozlar, ularning zavoddan qarzi va umumiy qarz. Qolgan bo'limlar yopiq.",
+    '[data-tour="page-title"]',
+  ),
+  onPage(
+    "agent-new-order",
+    "/agent",
+    "Yangi zayavka",
+    "«Yangi zayavka» tugmasi o'z mijozingizga buyurtma ochadi: mijoz, mahsulot, hajm va manzilni kiritasiz. Zayavka qoralama bo'lib tushadi — sotuv bo'limi qabul qiladi.",
+    '[data-tour="page-action"]',
+  ),
+];
+
 const MECHANIC_STEPS: TourStep[] = [
   openGroup("Sklad"),
   openPage("/stock", "Sklad", "Xomashyo qoldig'i va hovlidagi tayyor mahsulot — bosh sahifadagi «Skladda» ustuni shu yerdan olinadi."),
@@ -272,6 +291,7 @@ const MECHANIC_STEPS: TourStep[] = [
 
 const BY_ROLE: Record<Role, TourStep[]> = {
   DIRECTOR: DIRECTOR_STEPS,
+  AGENT: AGENT_STEPS,
   SALES: SALES_STEPS,
   PRODUCTION: PRODUCTION_STEPS,
   SUPERVISOR: SUPERVISOR_STEPS,

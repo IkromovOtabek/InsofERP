@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { ACTIVE_TRIP, dayRange, orderLogistics, orderPlannedAt, parseDay, tripPhase, tripPlannedAt, VEHICLE_TYPE } from "@/lib/logistics";
 import { date, isoDate, qty } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
@@ -20,7 +20,7 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  * qachon band (reys rejasi / haqiqiy vaqtlar).
  */
 export default async function DispatchCalendar({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
-  await requireSession(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"]);
   const { date: dp } = await searchParams;
   const day = parseDay(dp);
   const { from, to } = dayRange(day);

@@ -3,7 +3,7 @@ import { haversineMeters } from "@/lib/geo";
 import { liveTrips } from "@/lib/live";
 import { transportCosts } from "@/lib/logistics-costs";
 import {
-  ACTIVE_TRIP, dayRange, delayLevel, expiryLevel, ISSUE_KIND, logisticsSettings, minutesLabel, orderLogistics, tripDelayMin, tripPhase,
+  ACTIVE_TRIP, dayRange, delayLevel, DRUM_MAX_MIN, expiryLevel, isConcreteTrip, ISSUE_KIND, logisticsSettings, minutesLabel, orderLogistics, tripDelayMin, tripPhase,
   tripPlannedAt, vehicleLive, type Level, type LogisticsSettings, type OrderLogi, type TripPhase, type VehicleLive,
 } from "@/lib/logistics";
 
@@ -22,6 +22,10 @@ export type DashTrip = {
   qty: number; unit: string;
   plannedAt: Date | null; loadedAt: Date | null; departedAt: Date | null; arrivedAt: Date | null; deliveredAt: Date | null;
   delayMin: number | null; level: Level; fix: LiveFix | null; openIssues: number;
+  /** Beton (m³) reysi — mikserda, baraban vaqti va qotish xavfi faqat shunga tegishli */
+  concrete: boolean;
+  /** Yuklangandan beri daqiqa (yetkazilmagan beton reysi uchun), aks holda null */
+  drumMin: number | null;
 };
 
 export type DashOrder = OrderLogi & {
@@ -145,6 +149,8 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
       qty: Number(t.qtyM3), unit: unitOf(t.order.items),
       plannedAt: tripPlannedAt(t, t.order), loadedAt: t.loadedAt, departedAt: t.departedAt, arrivedAt: t.arrivedAt, deliveredAt: t.deliveredAt,
       delayMin: delay, level: delayLevel(delay, settings), fix, openIssues: t.issues.filter((i) => !i.resolvedAt).length,
+      concrete: isConcreteTrip(t),
+      drumMin: isConcreteTrip(t) && t.loadedAt && (t.status === "LOADED" || t.status === "ON_ROAD") ? mins(t.loadedAt, now) : null,
     };
   };
   const dashTrips = trips.map(toDash);
@@ -227,7 +233,18 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
       }
       if (t.status === "LOADED" && t.loadedAt && mins(t.loadedAt, now) >= settings.loadedWarnMin) {
         const m = mins(t.loadedAt, now);
-        alerts.push({ level: m >= settings.loadedWarnMin * 3 ? "crit" : "warn", title: `${t.noteNo} yuklangan, chiqmadi`, text: `${minutesLabel(m)} · ${t.plate} · beton qotish xavfi`, href: `/trips/${t.id}` });
+        // "Qotish xavfi" faqat beton reysida — yuk mashinadagi plita qotmaydi
+        alerts.push({ level: m >= settings.loadedWarnMin * 3 ? "crit" : "warn", title: `${t.noteNo} yuklangan, chiqmadi`, text: `${minutesLabel(m)} · ${t.plate}${t.concrete ? " · beton qotish xavfi" : ""}`, href: `/trips/${t.id}` });
+      }
+      // Baraban vaqti: yuklangan beton yetkazilmasdan limitdan oshdi (yo'lda ham, zavodda ham)
+      if (t.drumMin != null && t.drumMin >= DRUM_MAX_MIN * 0.8) {
+        const over = t.drumMin >= DRUM_MAX_MIN;
+        alerts.push({
+          level: over ? "crit" : "warn",
+          title: over ? `${t.noteNo}: baraban vaqti oshdi` : `${t.noteNo}: baraban vaqti tugayapti`,
+          text: `yuklanganiga ${minutesLabel(t.drumMin)} (chegara ${DRUM_MAX_MIN} daq) · ${t.plate} · ${t.driver} · beton qotish xavfi`,
+          href: `/trips/${t.id}`,
+        });
       }
     }
     for (const o of dashOrders) {

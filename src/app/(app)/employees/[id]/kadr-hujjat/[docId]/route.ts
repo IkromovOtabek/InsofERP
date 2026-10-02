@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { employeeFilePath } from "@/lib/uploads";
 import { getSession } from "@/lib/auth";
-import { pathAllowed } from "@/lib/nav";
 import { hrDocLabel } from "@/lib/hr-docs";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +12,9 @@ export const dynamic = "force-dynamic";
  * (ariza, shartnoma, buyruq…). `?download=1` — yuklab olish.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
-  // Ikkinchi qulf: kadr hujjatlari faqat /employees ga kirish huquqi borlarga
+  // Ikkinchi qulf: kadr hujjatlari (pasport, shartnoma) faqat Otdel kadr va direktorga — xodim kartasi kabi
   const s = await getSession();
-  if (!s || !pathAllowed("/employees", s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!s || (s.role !== "HR" && s.role !== "DIRECTOR")) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id, docId } = await params;
   const doc = await db.hrDocument.findUnique({ where: { id: docId } });
   const p = doc?.file && doc.employeeId === id ? employeeFilePath(doc.file) : null;

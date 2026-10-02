@@ -4,13 +4,14 @@ import { Smartphone, Plug, Users, Truck, Route, AlertTriangle } from "lucide-rea
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelivery, type EcoVehicle, type EcoMileage } from "@/lib/eco/client";
 import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ApproveDriverButton, ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncAllButton, SyncVehiclesButton } from "./buttons";
 import { VehicleStatusBadge, VehicleStatusForm } from "./vehicle-status-form";
+import { TripStatusBadge } from "../trips/status";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,10 @@ export const dynamic = "force-dynamic";
  * ERP: xodimlar/texnika/nakladnoy manbai. ECO: haydovchi telefoni (qabul, GPS, imzo).
  */
 export default async function DriversPage() {
-  const s = await requireSession(["LOGISTICS", "HR"]);
-  const canManage = s.role === "LOGISTICS";
+  const s = await requireRoles(["LOGISTICS", "HR"]);
+  const canManage = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  // Server sozlamasi (.env, ECO buyruqlari) — faqat direktor/administratorga ko'rinadi
+  const isDirector = s.role === "DIRECTOR";
   const enabled = ecoEnabled();
 
   const [employees, vehicles, trips] = await Promise.all([
@@ -60,19 +63,23 @@ export default async function DriversPage() {
 
       {!enabled ? (
         <Callout tone="warning" title="ECO ulanmagan">
-          <p>ECO serverida integratsiya kalitini yarating va ERP <code>.env</code> ga yozing, so'ng serverni qayta ishga tushiring:</p>
-          <pre className="mt-2 overflow-x-auto rounded bg-slate-100 p-2 text-xs">{`# InsofECO papkasida
+          {isDirector ? (
+            <>
+              <p>ECO serverida integratsiya kalitini yarating va ERP <code>.env</code> ga yozing, so'ng serverni qayta ishga tushiring:</p>
+              <pre className="mt-2 overflow-x-auto rounded bg-slate-100 p-2 text-xs">{`# InsofECO papkasida
 yarn workspace @insof/api integration:create -- --org <zavod INN> --webhook http://<erp-manzil>/api/eco/webhook
 
 # Insof ERP .env
 ECO_API_URL="http://localhost:3010"
 ECO_API_KEY="eco_…"
 ECO_WEBHOOK_SECRET="…"`}</pre>
+            </>
+          ) : <p>Haydovchi ilovasi (Insof ECO) hali ulanmagan — ulash uchun direktor yoki tizim administratoriga murojaat qiling.</p>}
         </Callout>
       ) : ecoErr ? (
-        <Callout tone="danger" title="ECO serveriga ulanib bo'lmadi"><p>{ecoErr}</p><p className="mt-1 text-xs">Manzil: {ecoUrl()}. ECO API (3010) va uning bazasi ishga tushganini tekshiring.</p></Callout>
+        <Callout tone="danger" title="ECO serveriga ulanib bo'lmadi"><p>{ecoErr}</p>{isDirector && <p className="mt-1 text-xs">Manzil: {ecoUrl()}. ECO API (3010) va uning bazasi ishga tushganini tekshiring.</p>}</Callout>
       ) : (
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
           <StatCard label="Ulanish" value={<span className="text-base">{ping?.organization.name}</span>} hint={`${ping?.client} · ${ecoUrl()}`} icon={Plug} tone="success" />
           <StatCard label="ECO haydovchilari" value={ecoDrivers.length} hint={`${ecoDrivers.filter((d) => d.isActive).length} tasdiqlangan · ${ecoDrivers.filter((d) => d.activeDelivery).length} reysda`} icon={Users} />
           <StatCard label="ECO mashinalari" value={ecoVehicles.length} hint={`ERP'da ${vehicles.length} ta faol texnika`} icon={Truck} />
@@ -81,7 +88,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
       )}
 
       <Card className="mt-5" padded={false}>
-        <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-5 pt-5">
           <CardHeader title="ERP haydovchilari" description="Xodimlar sahifasidagi 'Haydovchi' lavozimli xodimlar. Ulash uchun telefon +998… formatida bo'lsin." icon={Smartphone} />
           {enabled && canManage && employees.some((e) => e.isActive && !e.ecoUserId) && <LinkAllButton />}
         </div>
@@ -148,7 +155,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
         </Card>
       )}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Texnika" description="Davlat raqami bo'yicha moslanadi. Reys yuborilganda mashina ECO'da avtomatik yaratiladi." icon={Truck} /></div>
           <Table>
@@ -177,7 +184,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
                   <Tr key={t.id}>
                     <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link><div className="text-xs text-slate-500"><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} short /></div></Td>
                     <Td>{t.driver.fullName}</Td>
-                    <Td className="text-xs">{t.status}</Td>
+                    <Td><TripStatusBadge status={t.status} /></Td>
                     <Td>{st ? <Badge color={st.color}>{st.label}</Badge> : <span className="text-xs text-slate-400">yuborilmagan</span>}</Td>
                     <Td className="max-w-xs text-xs">{t.ecoError ? <span className="text-red-600">{t.ecoError}</span> : t.ecoSyncedAt ? <span className="text-slate-500">{dateTime(t.ecoSyncedAt)}</span> : "—"}</Td>
                   </Tr>

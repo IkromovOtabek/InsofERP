@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { MapPin, Plus } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { date, qty } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /** Obyektlar moduli (TZ 8): mijozlarning qurilish maydonlari va har biriga yetkazish tarixi. */
 export default async function SitesPage({ searchParams }: { searchParams: Promise<{ q?: string; all?: string }> }) {
-  await requireSession(["LOGISTICS", "SALES"]);
+  await requireRoles(["LOGISTICS", "SALES"]);
   const { q, all } = await searchParams;
   const sites = await db.site.findMany({
     where: {

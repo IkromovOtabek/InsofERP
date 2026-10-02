@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { date, dateTime } from "@/lib/format";
 import { ROLE_LABELS } from "@/lib/nav";
@@ -15,7 +15,7 @@ export default async function EmployeeSheetPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ print?: string }>;
 }) {
-  await requireSession(["HR"]);
+  await requireRoles(["HR"]);
   const { id } = await params;
   const { print } = await searchParams;
   const [e, company] = await Promise.all([

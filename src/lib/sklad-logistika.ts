@@ -108,13 +108,17 @@ function itemSplit(o: LoadedOrder) {
   };
 }
 
-export async function skladLogistika(dayParam?: string): Promise<SkladLogistika> {
+/**
+ * `range` — kun o'rniga davr (mobil dashboard filtri: hafta / oy / yil): "bugun" o'rnida shu davr,
+ * "ertaga" o'rnida keyingi teng davr. Berilmasa — `dayParam` kuni va ertasi.
+ */
+export async function skladLogistika(dayParam?: string, range?: { from: Date; to: Date }): Promise<SkladLogistika> {
   const day = parseDay(dayParam);
-  const { from, to } = dayRange(day);
+  const { from, to } = range ?? dayRange(day);
   const next = to;
-  const { to: afterNext } = dayRange(next);
+  const afterNext = range ? new Date(to.getTime() + (to.getTime() - from.getTime())) : dayRange(next).to;
   const now = new Date();
-  const isToday = dayRange(now).from.getTime() === from.getTime();
+  const isToday = !range && dayRange(now).from.getTime() === from.getTime();
 
   // Qoralama va bloklangan ham kiradi: sklad ertangi ehtiyojni tasdiqdan oldin bilishi kerak (hisobda belgi bilan)
   const live = { status: { not: "CANCELLED" as const } };
@@ -205,7 +209,7 @@ export async function skladLogistika(dayParam?: string): Promise<SkladLogistika>
 
   // ── Avtomatik ogohlantirishlar ──
   const alerts: SlAlert[] = [];
-  const dayWord = isToday ? "Ertaga" : "Keyingi kun";
+  const dayWord = range ? "Keyingi davrda" : isToday ? "Ertaga" : "Keyingi kun";
   for (const p of shortProducts) {
     alerts.push({
       key: `short:${p.id}`, tone: "danger", href: `/stock/products/${p.id}`,
@@ -216,7 +220,7 @@ export async function skladLogistika(dayParam?: string): Promise<SkladLogistika>
   for (const p of products.filter((x) => x.todayLeft > EPS && x.onHand < x.todayLeft - EPS)) {
     alerts.push({
       key: `today:${p.id}`, tone: "danger", href: `/stock/products/${p.id}`,
-      title: `Bugun ${p.code} yetmaydi`,
+      title: `${range ? "Shu davrda" : "Bugun"} ${p.code} yetmaydi`,
       text: `Jo'natilishi kerak — ${inUnit(p.todayLeft, p.unit)}, skladda — ${inUnit(p.onHand, p.unit)}. Yetishmaydi — ${inUnit(p.todayLeft - p.onHand, p.unit)}.`,
     });
   }

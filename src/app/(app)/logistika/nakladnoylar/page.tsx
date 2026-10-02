@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FileText, Printer, QrCode } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
@@ -17,7 +17,7 @@ const hm = (d: Date | null) => (d ? dateTime(d) : "—");
  * Nakladnoy = reys (Trip.deliveryNoteNo) — chop etish va QR tekshiruv mavjud sahifalarda.
  */
 export default async function WaybillsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; q?: string }> }) {
-  await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
   const sp = await searchParams;
   const r = periodRange(sp, "week");
   const trips = await db.trip.findMany({
@@ -61,7 +61,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
                   <Td>
                     <div className="flex gap-2 text-slate-500">
                       <Link href={`/trips/${t.id}/print`} title="Chop etish" className="hover:text-slate-900"><Printer size={15} /></Link>
-                      <Link href={`/verify/${encodeURIComponent(t.deliveryNoteNo)}`} title="QR tekshiruv sahifasi" className="hover:text-slate-900"><QrCode size={15} /></Link>
+                      <Link href={`/verify/${encodeURIComponent(t.deliveryNoteNo)}${t.verifyToken ? `?k=${t.verifyToken}` : ""}`} title="QR tekshiruv sahifasi" className="hover:text-slate-900"><QrCode size={15} /></Link>
                     </div>
                   </Td>
                 </Tr>

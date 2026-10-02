@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { loadSales } from "@/lib/bi/core";
-import { ownerDashboard } from "@/lib/owner-dashboard";
+import { customersCredit } from "@/lib/finance";
 import { reportHistory } from "@/lib/production-report";
 import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
@@ -11,8 +11,12 @@ import { listsFor } from "./list";
 import { prodFilter } from "@/lib/production";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { soleUnit } from "@/lib/unit";
-import { day, inUnit, money, num, short, sum, time, totalsText, tripQty } from "./fmt";
+import { day, inUnit, money, num, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
 import { dashRange, roleDashboard } from "./dashboard";
+import { ownerPeriod } from "./owner-period";
+import { ownerCached } from "./owner-cache";
+import { periodId } from "./sex";
+import { hasDashDetail } from "./dash-detail";
 import { brigadierHome } from "./brigadier";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
@@ -156,6 +160,7 @@ export type LiveTruck = {
 /** Har bir rolning "ishchi" ro'yxati — `lib/mobile/list.ts` dagi kalit. */
 export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   DIRECTOR: { key: "approvals", title: "Tasdiqlar" },
+  AGENT: { key: "orders", title: "Zayavkalarim" },
   SALES: { key: "orders", title: "Zayavkalar" },
   PRODUCTION: { key: "production", title: "Zameslar" },
   SUPERVISOR: { key: "tasks", title: "Topshiriqlar" },
@@ -202,19 +207,6 @@ const startOfMonth = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0
 const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CONFIRMED: "brand", IN_PRODUCTION: "warning", DELIVERED: "success", CLOSED: "success", CANCELLED: "danger" };
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
-/**
- * Direktor bosh sahifasi — vebdagi Egasi dashbordi (`ownerDashboard()`). Og'ir (o'nlab so'rov), ilova
- * esa bosh ekranni 30 s da yangilaydi — shuning uchun bir daqiqa keshda turadi (hamma direktorlar uchun bitta).
- */
-let ownerCache: { at: number; data: Promise<Awaited<ReturnType<typeof ownerDashboard>>> } | null = null;
-function ownerCached() {
-  if (!ownerCache || Date.now() - ownerCache.at > 60_000) {
-    const data = ownerDashboard();
-    ownerCache = { at: Date.now(), data };
-    data.catch(() => { ownerCache = null; });
-  }
-  return ownerCache.data;
-}
 
 /** Vebdagi vazifa havolasi → ilovadagi ro'yxat. Mos ro'yxat bo'lmasa qator bosilmaydi. */
 function taskList(href: string): string | undefined {
@@ -326,15 +318,36 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "custom", label: period === "custom" ? periodLabel : "Kalendar", active: period === "custom" },
       ];
       revenueCard.range = period === "custom" ? { from: fmtYmd(cFrom!), to: fmtYmd(cToIn!) } : null;
-      cards.push(
+      // Karta bosilsa — shu davr bo'yicha batafsil (`lib/mobile/dash-detail.ts`). Tushumdagi davr filtri
+      // hamma kartaga tegishli: "oy" — vebdagi Egasi dashbordi raqamlari, boshqa davr — `ownerPeriod()`.
+      const pid = period === "custom" ? `custom~${fmtYmd(cFrom!)}~${fmtYmd(cToIn!)}` : period;
+      revenueCard.open = { key: "dash", id: `revenue.${pid}` };
+      const dOpen = (k: string) => ({ key: "dash", id: `${k}.${pid}` });
+      if (period !== "month") {
+        const pr = dashRange({ period, from: opts.from, to: opts.to });
+        const P = await ownerPeriod(pr);
+        const pl = `(${periodLabel})`;
+        const endTag = P.until ? ` (${periodLabel} oxirida)` : "";
+        cards.push(
+          revenueCard,
+          { key: "profit", label: `Sof foyda ${pl}`, value: shortSigned(P.profit.net), hint: `yalpi ${short(P.profit.gross)} · xarajat ${short(P.profit.opex)}`, tone: P.profit.net < 0 ? "danger" : "success", icon: "banknote", open: dOpen("profit") },
+          { key: "expenses", label: `Xarajatlar ${pl}`, value: short(P.expenses.total), hint: P.expenses.plan ? `byudjet ${short(P.expenses.plan)}` : `tushumning ${pctTxt(P.expenses.ratio)}`, tone: P.expenses.plan && P.expenses.total > P.expenses.plan ? "danger" : "success", icon: "wallet", open: dOpen("expenses") },
+          { key: "cash", label: `Pul${endTag}`, value: short(P.cash.total), hint: `kassa ${short(P.cash.cash)} · bank ${short(P.cash.bank)}`, tone: P.cash.total < 0 ? "danger" : "success", icon: "landmark", open: dOpen("cash") },
+          { key: "receivable", label: `Debitorka${endTag}`, value: short(P.receivable.total), hint: `${P.receivable.debtors} ta qarzdor`, tone: P.receivable.total > 0 ? "warning" : "success", icon: "receipt", open: dOpen("receivable") },
+          // Muammolar — qaror kutayotgan hozirgi holat (tarixi yo'q)
+          { key: "problems", label: "Muammolar (hozir)", value: String(d.problems.length), hint: d.problems.length ? "qaror kerak" : "hammasi joyida", tone: d.problems.length ? (d.problems.some((p) => p.level === "crit") ? "danger" : "warning") : "success", icon: "triangle-alert", open: dOpen("problems") },
+          { key: "production", label: `Ishlab chiqarish ${pl}`, value: `${num(P.production.concrete)} m³`, hint: P.production.plan ? `plan ${num(P.production.plan)} m³ · ${pctTxt((P.production.concrete / P.production.plan) * 100)}` : `plan bajarilishi ${pctTxt(P.production.planPct)}`, tone: P.production.plan && P.production.concrete < P.production.plan * 0.9 ? "warning" : "success", icon: "factory", open: { key: "sex", id: `produced.${pid}` } },
+          { key: "shipment", label: `Otgruzka ${pl}`, value: `${num(P.shipment.m3)} m³`, hint: `${P.shipment.trips} reys`, tone: "info", icon: "truck", open: dOpen("shipment") },
+        );
+      } else cards.push(
         revenueCard,
-        { key: "profit", label: "Sof foyda", value: short(S.profit.month), hint: `prognoz ${short(S.profit.forecast)}`, tone: tone(L.profit), icon: "banknote" },
-        { key: "expenses", label: "Xarajatlar", value: short(S.expenses.month), hint: S.expenses.plan ? `byudjet ${short(S.expenses.plan)}` : `tushumning ${pctTxt(S.expenses.ratio)}`, tone: tone(L.expenses), icon: "wallet" },
-        { key: "cash", label: "Pul", value: short(S.cash.total), hint: `kassa ${short(S.cash.cash)} · bank ${short(S.cash.bank)}`, tone: tone(L.cash), icon: "landmark" },
-        { key: "receivable", label: "Debitorka", value: short(S.receivable.total), hint: S.receivable.overdue ? `muddati o'tgan ${short(S.receivable.overdue)}` : `${S.receivable.debtors} ta qarzdor`, tone: tone(L.receivable), icon: "receipt" },
-        { key: "problems", label: "Muammolar", value: String(d.problems.length), hint: d.problems.length ? "qaror kerak" : "hammasi joyida", tone: d.problems.length ? (d.problems.some((p) => p.level === "crit") ? "danger" : "warning") : "success", icon: "triangle-alert" },
-        { key: "production", label: "Ishlab chiqarish", value: `${num(S.production.concreteMonth)} m³`, hint: S.production.concretePlan ? `plan ${num(S.production.concretePlan)} m³ · bugun ${num(S.production.concreteToday)}` : `bugun ${num(S.production.concreteToday)} m³`, tone: tone(L.production), icon: "factory" },
-        { key: "shipment", label: "Otgruzka", value: `${num(S.shipment.month)} m³`, hint: `bugun ${num(S.shipment.today)} m³ · ${S.shipment.tripsToday} reys`, tone: tone(L.transport), icon: "truck" },
+        { key: "profit", label: "Sof foyda", value: short(S.profit.month), hint: `prognoz ${short(S.profit.forecast)}`, tone: tone(L.profit), icon: "banknote", open: dOpen("profit") },
+        { key: "expenses", label: "Xarajatlar", value: short(S.expenses.month), hint: S.expenses.plan ? `byudjet ${short(S.expenses.plan)}` : `tushumning ${pctTxt(S.expenses.ratio)}`, tone: tone(L.expenses), icon: "wallet", open: dOpen("expenses") },
+        { key: "cash", label: "Pul", value: short(S.cash.total), hint: `kassa ${short(S.cash.cash)} · bank ${short(S.cash.bank)}`, tone: tone(L.cash), icon: "landmark", open: dOpen("cash") },
+        { key: "receivable", label: "Debitorka", value: short(S.receivable.total), hint: S.receivable.overdue ? `muddati o'tgan ${short(S.receivable.overdue)}` : `${S.receivable.debtors} ta qarzdor`, tone: tone(L.receivable), icon: "receipt", open: dOpen("receivable") },
+        { key: "problems", label: "Muammolar", value: String(d.problems.length), hint: d.problems.length ? "qaror kerak" : "hammasi joyida", tone: d.problems.length ? (d.problems.some((p) => p.level === "crit") ? "danger" : "warning") : "success", icon: "triangle-alert", open: dOpen("problems") },
+        { key: "production", label: "Ishlab chiqarish", value: `${num(S.production.concreteMonth)} m³`, hint: S.production.concretePlan ? `plan ${num(S.production.concretePlan)} m³ · bugun ${num(S.production.concreteToday)}` : `bugun ${num(S.production.concreteToday)} m³`, tone: tone(L.production), icon: "factory", open: dOpen("production") },
+        { key: "shipment", label: "Otgruzka", value: `${num(S.shipment.month)} m³`, hint: `bugun ${num(S.shipment.today)} m³ · ${S.shipment.tripsToday} reys`, tone: tone(L.transport), icon: "truck", open: dOpen("shipment") },
       );
       const decisionsSection: HomeSection = {
         title: "Egasi qarori kerak", empty: "Qaror talab qiladigan masala yo'q", icon: "triangle-alert",
@@ -374,7 +387,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         {
           title: `Ishlab chiqarish hisobotlari${prodReports.some((r) => !r.seenAt) ? ` · ${prodReports.filter((r) => !r.seenAt).length} yangi` : ""}`,
           empty: "Hali hisobot qayd etilmagan", target: "prod-report", icon: "file-text",
-          rows: prodReports.map((r) => ({ id: r.id, title: `${r.iso.split("-").reverse().join(".")}${r.latest ? "" : " (avvalgi nusxa)"}`, subtitle: `${r.summary} · ${r.by}`, right: r.seenAt ? "ko'rildi" : "yangi", tone: r.seenAt ? "success" : "warning" })),
+          // Birinchi qator — bugungi jonli hisobot (08:00 dan hozirgacha soatma-soat); direktor faqat ko'radi
+          rows: [{ id: "sex:report", title: "Bugun — jonli ko'rinish", subtitle: "08:00 dan hozirgacha soatma-soat · har qator bosiladi", tone: "info" as Tone }, ...prodReports.map((r) => ({ id: r.id, title: `${r.iso.split("-").reverse().join(".")}${r.latest ? "" : " (avvalgi nusxa)"}`, subtitle: `${r.summary} · ${r.by}`, right: r.seenAt ? "ko'rildi" : "yangi", tone: (r.seenAt ? "success" : "warning") as Tone }))],
         },
         { title: "Yo'ldagi reyslar", empty: "Yo'lda reys yo'q", target: "trips", rows: trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
       );
@@ -392,7 +406,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "mine", label: "Bugungi zayavkam", value: String(mine), tone: "brand", icon: "document-text" },
         { key: "m3", label: "Oylik hajm", value: totalsText(monthItems.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), tone: "info", icon: "cube" },
         { key: "sum", label: "Oylik summa", value: short(monthItems.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0)), hint: "so'm", tone: "success", icon: "cash" },
-        { key: "blocked", label: "Bloklangan", value: String(blocked), tone: blocked ? "danger" : "success", icon: "lock-closed" },
+        { key: "blocked", label: "Bloklangan", value: String(blocked), tone: blocked ? "danger" : "success", icon: "lock-closed", open: { key: "dash", id: "blocked.month" } },
       );
       // Vebdagi "Zayavkalar" sahifasi tepasidagi ikki karta: ta'minot tasdig'i va sayt arizalari
       const [supplyWait, newLeads, leadRows] = await Promise.all([
@@ -400,7 +414,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.lead.count({ where: { status: "NEW" } }),
         db.lead.findMany({ where: { status: "NEW" }, orderBy: { createdAt: "desc" }, take: 5, include: { product: { select: { name: true } } } }),
       ]);
-      if (supplyWait) cards.push({ key: "supply", label: "Ta'minot tasdig'i", value: String(supplyWait), hint: "sizni kutmoqda", tone: "warning", icon: "clipboard-list" });
+      if (supplyWait) cards.push({ key: "supply", label: "Ta'minot tasdig'i", value: String(supplyWait), hint: "sizni kutmoqda", tone: "warning", icon: "clipboard-list", open: { key: "supply" } });
       if (newLeads) cards.push({ key: "leads", label: "Yangi ariza", value: String(newLeads), hint: "saytdan", tone: "brand", icon: "inbox" });
       if (supplyWait) sections.push(await supplySection("Ta'minot — tasdiqingizni kutmoqda", "", ["PRICED"]));
       if (newLeads) sections.push({ title: "Saytdan yangi arizalar", empty: "", target: "leads", rows: leadRows.map((l) => ({ id: l.id, title: `${l.name} · ${l.phone}`, subtitle: `${day(l.createdAt)}${l.product ? ` · ${l.product.name}` : ""}${l.address ? ` · ${l.address}` : ""}`, status: "Yangi", tone: "brand" as Tone })) });
@@ -408,10 +422,30 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       break;
     }
 
+    // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z zayavkalari (vebdagi `/agent` bilan bir xil mantiq)
+    case "AGENT": {
+      const [customers, recent] = await Promise.all([
+        db.customer.findMany({ where: { agentId: user.id }, orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, phone: true, isActive: true } }),
+        db.order.findMany({ where: { createdById: user.id }, orderBy: { date: "desc" }, take: 10, include: { customer: true, items: { include: { product: true } } } }),
+      ]);
+      const credit = await customersCredit(customers.map((c) => c.id));
+      const totalDebt = customers.reduce((s, c) => s + (credit.get(c.id)?.debt ?? 0), 0);
+      const debtors = [...credit.values()].filter((c) => c.debt > 0).length;
+      cards.push(
+        { key: "customers", label: "Mijozlarim", value: String(customers.length), hint: `${customers.filter((c) => c.isActive).length} faol`, tone: "brand", icon: "people", open: { key: "customers" } },
+        { key: "debt", label: "Umumiy qarz", value: short(totalDebt), hint: "so'm", tone: totalDebt > 0 ? "warning" : "success", icon: "cash" },
+        { key: "debtors", label: "Qarzdor mijoz", value: String(debtors), tone: debtors ? "warning" : "success", icon: "warning" },
+      );
+      sections.push(
+        { title: "Mijozlarim", empty: "Sizga hali mijoz biriktirilmagan", target: "customers", rows: customers.map((c) => { const cr = credit.get(c.id); return { id: c.id, title: c.name, subtitle: `${c.phone ?? "telefonsiz"}${cr?.debt ? ` · qarz ${money(cr.debt)}` : ""}`, right: cr ? money(Math.max(0, cr.limit - cr.used)) : undefined, status: !c.isActive ? "Nofaol" : cr?.blacklisted ? "Qora ro'yxat" : undefined, tone: !c.isActive ? "info" : cr?.blacklisted ? "danger" : cr && cr.debt > 0 ? "warning" : "success" }; }) },
+        { title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) },
+      );
+      break;
+    }
+
     case "PRODUCTION": {
-      const [batches, inProd, tasks, openTasks, prodOrders] = await Promise.all([
+      const [batches, tasks, openTasks, prodOrders] = await Promise.all([
         db.productionBatch.findMany({ where: { date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
-        db.order.count({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } } }),
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
         db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         // "Zayavkalar" ro'yxatidagi filtrlar bilan bir xil sanoq — `lib/production.ts`
@@ -424,7 +458,6 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "today", label: "Bugungi zames", value: totalsText(batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }))), hint: `${batches.length} partiya`, tone: "brand", icon: "today", open: { key: "sex", id: "produced.day" } },
         { key: "unassigned", label: "Brigada kutayotgan", value: String(waiting), hint: "zayavka", tone: waiting ? "warning" : "success", icon: "hammer", open: { key: "orders" } },
         { key: "soon", label: "Muddati yaqin", value: String(soon), hint: "≤ 2 kun", tone: soon ? "danger" : "success", icon: "alarm", open: { key: "orders" } },
-        { key: "inprod", label: "Ishlab chiqarishda", value: String(inProd), hint: "zayavka", tone: "warning", icon: "construct", open: { key: "orders" } },
         { key: "tasks", label: "Ochiq topshiriq", value: String(tasks), tone: tasks ? "info" : "success", icon: "list", open: { key: "tasks" } },
       );
       sections.push(
@@ -462,18 +495,21 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const d = await logisticsDashboard();
       const k = d.kpi;
       cards.push(
-        { key: "today", label: "Bugungi reyslar", value: String(k.trips), hint: `${k.done} yakunlandi`, tone: "brand", icon: "today" },
-        { key: "onroad", label: "Yo'ldagi transport", value: String(k.onRoad), hint: `${k.freeVehicles} bo'sh / ${k.totalVehicles}`, tone: "info", icon: "navigate" },
-        { key: "waiting", label: "Kutayotgan buyurtma", value: String(k.waitingOrders), hint: k.waitingQty ? `${k.waitingQty} biriktirilmagan` : undefined, tone: k.waitingOrders ? "warning" : "success", icon: "calendar" },
+        { key: "today", label: "Bugungi reyslar", value: String(k.trips), hint: `${k.done} yakunlandi`, tone: "brand", icon: "today", open: { key: "dash", id: "today.day" } },
+        { key: "onroad", label: "Yo'ldagi transport", value: String(k.onRoad), hint: `${k.freeVehicles} bo'sh / ${k.totalVehicles}`, tone: "info", icon: "navigate", open: { key: "dash", id: "onroad.day" } },
+        { key: "waiting", label: "Kutayotgan buyurtma", value: String(k.waitingOrders), hint: k.waitingQty ? `${k.waitingQty} biriktirilmagan` : undefined, tone: k.waitingOrders ? "warning" : "success", icon: "calendar", open: { key: "dash", id: "waiting.day" } },
         { key: "late", label: "Kechikmoqda", value: String(k.late), tone: k.late ? "danger" : "success", icon: "alarm" },
-        { key: "m3", label: "Bugungi beton", value: `${k.concreteM3} m³`, hint: `o'rt. ${minutesLabel(k.avgDeliveryMin)}`, tone: "success", icon: "cube" },
+        { key: "m3", label: "Bugungi beton", value: `${k.concreteM3} m³`, hint: `o'rt. ${minutesLabel(k.avgDeliveryMin)}`, tone: "success", icon: "cube", open: { key: "dash", id: "delivered.day" } },
         { key: "cost", label: "Transport xarajati", value: money(k.cost), tone: "info", icon: "wallet" },
       );
       if (d.alerts.length) {
-        sections.push({ title: "Ogohlantirishlar", empty: "", icon: "alert-circle", rows: d.alerts.slice(0, 8).map((a, i) => {
+        // Bir reysga bir nechta ogohlantirish bo'lishi mumkin (kechikish + muammo) — qator id reys id'si,
+        // ilovada React kaliti bo'lgani uchun har reysdan birinchisi (eng og'iri) qoladi.
+        const seen = new Set<string>();
+        sections.push({ title: "Ogohlantirishlar", empty: "", icon: "alert-circle", rows: d.alerts.map((a, i) => {
           const tripId = a.href.startsWith("/trips/") && !a.href.includes("new") ? a.href.slice(7) : null;
           return { id: tripId ?? `a${i}`, title: a.title, subtitle: a.text, tone: a.level === "crit" ? "danger" as Tone : "warning" as Tone, ...(tripId ? {} : { open: a.href.includes("orderId") || a.href.startsWith("/orders") ? "orders" : "trips" }) };
-        }) });
+        }).filter((row) => !seen.has(row.id) && !!seen.add(row.id)).slice(0, 8) });
       }
       // Faol reyslar — ro'yxat emas, xarita: ilova `fleet` ni xarita + mashinalar ro'yxati qilib chizadi
       // (vebdagi logistika paneli bilan bir xil). GPS'siz reys ham ro'yxatda turadi — "GPS yo'q" belgisi bilan.
@@ -511,12 +547,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const low = materials.filter((m) => (bal.get(m.id) ?? 0) < sum(m.minStock));
       cards.push(
         { key: "low", label: "Kam qolgan", value: String(low.length), hint: low.length ? "buyurtma bering" : "hammasi yetarli", tone: low.length ? "danger" : "success", icon: "alert-circle" },
-        { key: "kinds", label: "Xomashyo turi", value: String(materials.length), tone: "info", icon: "layers" },
+        { key: "kinds", label: "Xomashyo turi", value: String(materials.length), tone: "info", icon: "layers", open: { key: "stock" } },
         { key: "receipts", label: "Bugungi kirim", value: String(receipts.length), hint: "hujjat", tone: "brand", icon: "download" },
       );
       // Sklad ham snabjeniye amallarini bajaradi (`lib/supply-actions.ts` izohi): narx va qabul kutayotganlar shu yerda
       const [needPrice, needReceive] = await Promise.all([db.supplyRequest.count({ where: { status: "NEW" } }), db.supplyRequest.count({ where: { status: "FUNDED" } })]);
-      cards.push({ key: "supply", label: "Ta'minot navbati", value: String(needPrice + needReceive), hint: needPrice || needReceive ? `${needPrice} narx · ${needReceive} qabul` : "navbat bo'sh", tone: needPrice + needReceive ? "warning" : "success", icon: "clipboard-list" });
+      cards.push({ key: "supply", label: "Ta'minot navbati", value: String(needPrice + needReceive), hint: needPrice || needReceive ? `${needPrice} narx · ${needReceive} qabul` : "navbat bo'sh", tone: needPrice + needReceive ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
       sections.push(
         { title: "Kam qolgan xomashyo", empty: "Hammasi minimumdan yuqori", target: "stock", rows: low.map((m) => ({ id: m.id, title: m.name, subtitle: `Minimum ${sum(m.minStock)} ${m.unit}`, right: `${(bal.get(m.id) ?? 0).toFixed(1)} ${m.unit}`, tone: "danger" })) },
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
@@ -539,7 +575,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "suppliers", label: "Yetkazuvchi", value: String(suppliers), tone: "success", icon: "people" },
       );
       const [needPrice, needReceive] = await Promise.all([db.supplyRequest.count({ where: { status: "NEW" } }), db.supplyRequest.count({ where: { status: "FUNDED" } })]);
-      cards.push({ key: "supply", label: "Narx kutmoqda", value: String(needPrice), hint: needReceive ? `${needReceive} ta qabul kutmoqda` : undefined, tone: needPrice ? "warning" : "success", icon: "clipboard-list" });
+      cards.push({ key: "supply", label: "Narx kutmoqda", value: String(needPrice), hint: needReceive ? `${needReceive} ta qabul kutmoqda` : undefined, tone: needPrice ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
       sections.push(
         await supplySection("Narx qo'yish kerak", "Narx kutayotgan so'rov yo'q", ["NEW"]),
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
@@ -558,11 +594,11 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       cards.push(
         { key: "debt", label: "Qarzdorlik", value: short(debt), hint: "so'm", tone: debt > 0 ? "danger" : "success", icon: "warning" },
         { key: "open", label: "Ochiq schyot", value: String(open.length), tone: "warning", icon: "receipt" },
-        { key: "paid", label: "Bugungi to'lov", value: short(sum(todayPay._sum.amount)), hint: `${todayPay._count} ta`, tone: "success", icon: "checkmark-circle" },
+        { key: "paid", label: "Bugungi to'lov", value: short(sum(todayPay._sum.amount)), hint: `${todayPay._count} ta`, tone: "success", icon: "checkmark-circle", open: { key: "dash", id: "payments.day" } },
       );
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       if (fundWait) {
-        cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: "tasdiq kutmoqda", tone: "warning", icon: "clipboard-list" });
+        cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: "tasdiq kutmoqda", tone: "warning", icon: "clipboard-list", open: { key: "supply" } });
         sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
       }
       sections.push({ title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" : "danger" }; }) });
@@ -583,7 +619,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       // Vebdagi Kirim-Chiqim tepasidagi "Ta'minot to'lovlari" kartasi
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
-      cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: fundWait ? "tasdiq kutmoqda" : "navbat bo'sh", tone: fundWait ? "warning" : "success", icon: "clipboard-list" });
+      cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: fundWait ? "tasdiq kutmoqda" : "navbat bo'sh", tone: fundWait ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
       sections.push({ title: "So'nggi harakatlar", empty: "Harakat yo'q", target: "cashflow", rows: recent.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${t.type === "EXPENSE" ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "EXPENSE" ? "danger" : "success" })) });
       break;
@@ -601,9 +637,9 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const headless = brigades.filter((b) => !b.leaderId).length;
       cards.push(
         { key: "active", label: "Faol xodim", value: String(active), tone: "success", icon: "people" },
-        { key: "drivers", label: "Haydovchi", value: String(drivers), tone: "brand", icon: "car" },
-        { key: "brigadiers", label: "Brigadir", value: String(brigades.length - headless), hint: headless ? `${headless} brigada brigadirsiz` : `${brigades.length} brigada`, tone: headless ? "warning" : "success", icon: "construct" },
-        { key: "inactive", label: "Nofaol", value: String(inactive), tone: inactive ? "warning" : "info", icon: "person-remove" },
+        { key: "drivers", label: "Haydovchi", value: String(drivers), tone: "brand", icon: "car", open: { key: "drivers" } },
+        { key: "brigadiers", label: "Brigadir", value: String(brigades.length - headless), hint: headless ? `${headless} brigada brigadirsiz` : `${brigades.length} brigada`, tone: headless ? "warning" : "success", icon: "construct", open: { key: "brigades" } },
+        { key: "inactive", label: "Nofaol", value: String(inactive), tone: inactive ? "warning" : "info", icon: "person-remove", open: { key: "dash", id: "inactive.month" } },
       );
       sections.push(
         { title: "Brigadalar", empty: "Brigada yo'q", rows: brigades.map((b) => ({ id: b.id, title: b.name, subtitle: b.leader ? `Brigadir: ${b.leader.fullName}${b.leader.phone ? ` · ${b.leader.phone}` : ""}` : "Brigadir biriktirilmagan — Xodimlar kartochkasidan tanlang", right: `${b.tasks.length} topshiriq`, tone: b.leader ? "success" : "warning" })) },
@@ -621,8 +657,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, orderBy: { date: "asc" }, take: 12, include: { customer: true, payments: true } }),
       ]);
       cards.push(
-        { key: "today", label: "Bugungi tushum", value: short(sum(todayPay._sum.amount)), hint: "so'm", tone: "success", icon: "today" },
-        { key: "count", label: "To'lovlar", value: String(todayPay._count), tone: "brand", icon: "swap-horizontal" },
+        { key: "today", label: "Bugungi tushum", value: short(sum(todayPay._sum.amount)), hint: "so'm", tone: "success", icon: "today", open: { key: "dash", id: "payments.day" } },
+        { key: "count", label: "Bugungi to'lovlar", value: String(todayPay._count), tone: "brand", icon: "swap-horizontal", open: { key: "dash", id: "payments.day" } },
         { key: "balance", label: "Kassa qoldig'i", value: short(balance), hint: `${accounts} hisob`, tone: "info", icon: "wallet" },
       );
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
@@ -649,9 +685,9 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED" }, orderBy: { deliveredAt: "desc" }, take: 8, include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true } }),
       ]);
       cards.push(
-        { key: "active", label: "Ochiq reys", value: String(active.length), hint: me.vehicle?.plate ?? "mashina biriktirilmagan", tone: active.length ? "brand" : "success", icon: "bus" },
-        { key: "todayM3", label: "Bugun yetkazdim", value: totalsText(doneToday.map((t) => ({ unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", qty: t.qtyM3 }))), hint: `${doneToday.length} reys`, tone: "success", icon: "checkmark-done" },
-        { key: "todayAll", label: "Bugungi reyslar", value: String(todayTrips.length), tone: "info", icon: "today" },
+        { key: "active", label: "Ochiq reys", value: String(active.length), hint: me.vehicle?.plate ?? "mashina biriktirilmagan", tone: active.length ? "brand" : "success", icon: "bus", open: { key: "trips" } },
+        { key: "todayM3", label: "Bugun yetkazdim", value: totalsText(doneToday.map((t) => ({ unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", qty: t.qtyM3 }))), hint: `${doneToday.length} reys`, tone: "success", icon: "checkmark-done", open: { key: "dash", id: "delivered.day" } },
+        { key: "todayAll", label: "Bugungi reyslar", value: String(todayTrips.length), tone: "info", icon: "today", open: { key: "dash", id: "trips.day" } },
       );
       sections.push(
         { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
@@ -675,8 +711,21 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
   if (user.role !== "DIRECTOR") {
     const dash = await roleDashboard(user, dashRange(opts));
     if (dash) {
-      const drop = new Set(DASH_COVERS[user.role] ?? []);
-      cards = [dash.hero, ...dash.tiles, ...cards.filter((c) => !drop.has(c.key))];
+      // Dashboard kartasi bilan bir xil kalitli holat kartasi tushib qoladi — ilova `key` ni React kaliti qiladi
+      // (logistika: ikkalasida ham "late" bor edi → "Encountered two children with the same key").
+      const drop = new Set([...(DASH_COVERS[user.role] ?? []), dash.hero.key, ...dash.tiles.map((t) => t.key)]);
+      // Har karta bosilganda batafsil kartochka (`lib/mobile/dash-detail.ts`): davr bosh ekrandagi filtr bilan bir xil.
+      // Sex kartalari o'z kartochkasini (`sex`) ochadi; batafsili yozilmagan karta eski `open` bilan qoladi.
+      const pid = periodId(dashRange(opts));
+      const withOpen = (c: HomeCard): HomeCard => (c.open?.key === "sex" || !hasDashDetail(user.role, c.key) ? c : { ...c, open: { key: "dash", id: `${c.key}.${pid}` } });
+      // Davr filtri hamma raqamga tegishli: kun/oyga qotib qolgan eski kartalar ("Bugungi kirim", "Oylik hajm")
+      // hafta/oy/yil tanlanganda chiqmaydi — ularning davrli nusxasi dashboard kartalarida bor. Qolgan holat
+      // kartalari (bloklangan, navbat, yo'ldagi transport) — ish navbati, davrga bog'lanmaydi: "(hozir)" belgisi bilan.
+      const r = dashRange(opts);
+      const rest = cards.filter((c) => !drop.has(c.key))
+        .filter((c) => r.key === "day" || !/^(Bugun|Bugungi|Oylik)\b/.test(c.label))
+        .map((c) => (r.key === "day" || c.key === "nolink" ? c : { ...c, label: `${c.label} (hozir)` }));
+      cards = [withOpen(dash.hero), ...dash.tiles.map(withOpen), ...rest];
       // Brigadir: hujjatdagi tartib — ogohlantirishlar va brigada tarkibi grafiklardan oldin
       if (user.role === "BRIGADIER") sections.splice(2, 0, ...dash.charts);
       else sections.unshift(...dash.charts);

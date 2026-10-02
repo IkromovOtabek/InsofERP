@@ -52,32 +52,35 @@ export function RecipeForm({ productId, ingredients, groups, products, canCreate
       <FormError error={state?.error} />
       {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
 
+      {/* Telefonda (390px): № va Birlik ustunlari yashiriladi (birlik nom ostida) — jadval ekranga sig'adi.
+          overflow-x-auto ishlatilmaydi: xomashyo tanlash ro'yxati (absolute) qirqilib qolardi */}
       <div>
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
-              <th className="w-8 px-2 py-2">№</th>
+              <th className="hidden w-8 px-2 py-2 sm:table-cell">№</th>
               <th className="px-2 py-2">Xomashyo / mahsulot nomi</th>
-              <th className="w-20 px-2 py-2">Birlik</th>
-              <th className="w-32 px-2 py-2 text-right">{`Soni (1 ${unit} ga)`}</th>
-              <th className="w-24 px-2 py-2" />
+              <th className="hidden w-20 px-2 py-2 sm:table-cell">Birlik</th>
+              <th className="w-24 px-2 py-2 text-right sm:w-32">{`Soni (1 ${unit} ga)`}</th>
+              <th className="w-20 px-1 py-2 sm:w-24 sm:px-2" />
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.key} className="border-b border-slate-100 align-top">
-                <td className="px-2 py-1.5 pt-3.5 text-slate-400 tabular">{i + 1}</td>
+                <td className="hidden px-2 py-1.5 pt-3.5 text-slate-400 tabular sm:table-cell">{i + 1}</td>
                 {/* Xomashyo yoki mahsulot spravochnigidan tanlanadi: nom terib ham, «…» orqali papkalardan ham */}
                 <td className="px-2 py-1.5">
                   <input type="hidden" name="kind[]" value={r.ing?.kind ?? ""} />
                   <input type="hidden" name="refId[]" value={r.ing?.id ?? ""} />
                   <IngredientField ingredients={ingredients} groups={groups} products={products} canCreateMaterial={canCreateMaterial} canCreateProduct={canCreateProduct} value={r.ing?.id ?? ""} onPick={(ing) => update(r.key, { ing })} />
+                  {r.ing?.unit && <div className="mt-0.5 text-xs text-slate-500 sm:hidden">{r.ing.unit}</div>}
                 </td>
-                <td className="px-2 py-1.5 pt-3.5 text-slate-500">{r.ing?.unit || "—"}</td>
+                <td className="hidden px-2 py-1.5 pt-3.5 text-slate-500 sm:table-cell">{r.ing?.unit || "—"}</td>
                 <td className="px-2 py-1.5">
                   <Input name="qtyPerM3[]" type="number" step="0.001" min="0" value={r.qtyPerM3} onChange={(e) => update(r.key, { qtyPerM3: e.target.value })} required className="text-right tabular" />
                 </td>
-                <td className="px-2 py-1.5 pt-3">
+                <td className="px-1 py-1.5 pt-3 sm:px-2">
                   <div className="flex items-center justify-end gap-0.5">
                     <button type="button" onClick={() => move(r.key, -1)} disabled={i === 0} title="Yuqoriga ko'chirish"
                       className="flex h-7 w-7 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"><ChevronUp size={15} /></button>

@@ -30,9 +30,11 @@ export type MobileList = { key: string; title: string; rows: HomeRow[]; filters?
  */
 const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   // ── Sotuv ──
-  orders: { title: "Zayavkalar", roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
+  // AGENT — faqat o'zi kiritgan zayavkalar (ownership `mobileList` da filtrlanadi)
+  orders: { title: "Zayavkalar", roles: ["AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
   sales: { title: "Sotuv", roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
-  customers: { title: "Mijozlar", roles: ["SALES", "ACCOUNTING", "FINANCE"] },
+  // AGENT — faqat o'ziga biriktirilgan mijozlar (ownership `mobileList` da filtrlanadi)
+  customers: { title: "Mijozlar", roles: ["AGENT", "SALES", "ACCOUNTING", "FINANCE"] },
   leads: { title: "Sayt arizalari", roles: ["SALES"] },
   // CASHIER veb ERP'da schyotlar sahifasiga kirmaydi, lekin to'lov aynan schyot ustida olinadi —
   // mobil ilovada kassir schyotni ochib, shu yerdan to'lovni kiritadi.
@@ -136,9 +138,13 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   const driverId = user.role === "DRIVER" ? await driverEmployeeId(user.id) : undefined;
   // Brigadir faqat o'z brigadasiga tayinlangan topshiriqlarni ko'radi
   const brigadeIds = user.role === "BRIGADIER" ? await myBrigadeIds(user.id) : undefined;
-  const rows = await build(key, s, driverId, brigadeIds);
+  // Sotuv agenti faqat o'z mijozlari (customers) va o'zi kiritgan zayavkalarini (orders) ko'radi
+  const agentUserId = user.role === "AGENT" ? user.id : undefined;
+  const rows = await build(key, s, driverId, brigadeIds, agentUserId);
   const title = user.role === "DRIVER" && key === "trips" ? "Mening reyslarim"
     : user.role === "BRIGADIER" && key === "tasks" ? "Topshiriqlarim"
+    : user.role === "AGENT" && key === "orders" ? "Zayavkalarim"
+    : user.role === "AGENT" && key === "customers" ? "Mijozlarim"
     : meta.title;
   return { key, title, rows };
 }
@@ -318,11 +324,14 @@ export async function myBrigadeIds(userId: string): Promise<string[]> {
   return list.map((b) => b.id);
 }
 
-async function build(key: string, q?: string, driverId?: string, brigadeIds?: string[]): Promise<HomeRow[]> {
+async function build(key: string, q?: string, driverId?: string, brigadeIds?: string[], agentUserId?: string): Promise<HomeRow[]> {
   switch (key) {
     case "orders": {
       const list = await db.order.findMany({
-        where: q ? { OR: [{ orderNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }] } : undefined,
+        where: {
+          ...(agentUserId ? { createdById: agentUserId } : {}),
+          ...(q ? { OR: [{ orderNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }] } : {}),
+        },
         orderBy: { date: "desc" }, take: TAKE, include: { customer: true, items: true },
       });
       return list.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress}`, right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)), status: o.status, tone: ORDER_TONE[o.status] }));
@@ -408,7 +417,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         where: q ? { customer: { name: { contains: q, mode: "insensitive" } } } : undefined,
         orderBy: { date: "desc" }, take: TAKE, include: { customer: true, cashAccount: true, invoice: true },
       });
-      return list.map((p) => ({ id: p.id, title: p.customer.name, subtitle: `${day(p.date)} · ${p.cashAccount.name}${p.invoice ? ` · ${p.invoice.invoiceNo}` : ""}`, right: money(sum(p.amount)), tone: "success" }));
+      return list.map((p) => ({ id: p.id, title: p.customer.name, subtitle: `${day(p.date)} · ${p.cashAccount.name}${p.invoice ? ` · ${p.invoice.invoiceNo}` : ""}`, right: `+${money(sum(p.amount))}`, tone: "success" }));
     }
     case "employees": {
       const list = await db.employee.findMany({
@@ -446,7 +455,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
     // Mijozlar — limit, qarz va yulduzcha (vebdagi `/customers` bilan bir xil hisob)
     case "customers": {
       const list = await db.customer.findMany({
-        where: { isInternal: false, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { inn: { contains: q } }] } : {}) },
+        where: { isInternal: false, ...(agentUserId ? { agentId: agentUserId } : {}), ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { inn: { contains: q } }] } : {}) },
         orderBy: [{ isActive: "desc" }, { name: "asc" }], take: TAKE,
       });
       const ids = list.map((c) => c.id);

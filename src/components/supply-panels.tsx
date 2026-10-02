@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Check, CircleDollarSign, X } from "lucide-react";
-import { decide, financeDecide } from "@/lib/supply-actions";
+import { BadgeCheck, Check, CircleDollarSign, X } from "lucide-react";
+import { decide, directorDecide, financeDecide } from "@/lib/supply-actions";
 import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -52,7 +52,11 @@ export function ApprovePanel({ id, total, compact }: { id: string; total: number
 
 /* ═══════════ Moliya: pul ajratish ═══════════ */
 
-export function FundPanel({ id, total, accounts, compact }: { id: string; total: number; accounts: { id: string; name: string; type: string }[]; compact?: boolean }) {
+export function FundPanel({ id, total, accounts, compact, canReject = true }: {
+  id: string; total: number; accounts: { id: string; name: string; type: string }[]; compact?: boolean;
+  /** Pul bosqichida bekor qilish — faqat moliya/buxgalteriya/direktor (kassir faqat pul ajratadi) */
+  canReject?: boolean;
+}) {
   const [state, action, pending] = useActionState(financeDecide.bind(null, id), undefined);
   const [reject, setReject] = useState(false);
 
@@ -81,7 +85,7 @@ export function FundPanel({ id, total, accounts, compact }: { id: string; total:
             </>
           ) : (
             <>
-              <Button type="button" variant="secondary" size={compact ? "sm" : "md"} onClick={() => setReject(true)}><X size={16} /> Bekor qilish</Button>
+              {canReject && <Button type="button" variant="secondary" size={compact ? "sm" : "md"} onClick={() => setReject(true)}><X size={16} /> Bekor qilish</Button>}
               <Button name="mode" value="fund" variant="success" size={compact ? "sm" : "md"} disabled={pending}><CircleDollarSign size={16} /> {pending ? "Yozilmoqda…" : "Tasdiqlash — pul ajratish"}</Button>
             </>
           )}
@@ -90,3 +94,32 @@ export function FundPanel({ id, total, accounts, compact }: { id: string; total:
     </form>
   );
 }
+
+/* ═══════════ Direktor: katta xaridni tasdiqlash / rad etish ═══════════ */
+
+/** Direktor katta xaridni tasdiqlaydi yoki sabab bilan rad etadi (rad etilsa zayavka bekor qilinadi). */
+export function DirectorPanel({ id }: { id: string }) {
+  const [state, action, pending] = useActionState(directorDecide.bind(null, id), undefined);
+  const [rejecting, setRejecting] = useState(false);
+  return (
+    <form action={action} className="space-y-3">
+      {rejecting
+        ? <Input name="reason" placeholder="Rad etish sababi *" required autoComplete="off" />
+        : <Input name="note" placeholder="Izoh (ixtiyoriy)" autoComplete="off" />}
+      <FormError error={state?.error} />
+      {state?.ok && <FormSuccess text={state.note ?? "Bajarildi"} />}
+      {rejecting ? (
+        <div className="flex gap-2">
+          <Button type="button" variant="secondary" onClick={() => setRejecting(false)}>Qaytish</Button>
+          <Button name="mode" value="reject" variant="danger" disabled={pending} className="flex-1"><X size={16} /> {pending ? "Rad etilmoqda…" : "Rad etish"}</Button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button type="button" variant="secondary" onClick={() => setRejecting(true)}><X size={16} /> Rad etish</Button>
+          <Button name="mode" value="approve" variant="success" disabled={pending} className="flex-1"><BadgeCheck size={16} /> {pending ? "Tasdiqlanmoqda…" : "Katta xaridni tasdiqlash"}</Button>
+        </div>
+      )}
+    </form>
+  );
+}
+

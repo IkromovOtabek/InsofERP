@@ -6,6 +6,7 @@ import {
 import { DEFECT_REASONS } from "@/lib/production-day";
 import { markOf, today } from "@/lib/davomat";
 import { unitLabel } from "@/lib/unit";
+import { faceCheckEnabled } from "@/lib/ai/face";
 import { day, inUnit, num, pctText, sum, time, totalsText } from "./fmt";
 import { ListError, type MobileList } from "./list";
 import type { MobileUser } from "./auth";
@@ -251,7 +252,8 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
   const actions: DetailAction[] = [];
   if (mine) {
     if (!s) actions.push({ id: "shift.open", label: "Smenani boshlash", tone: "success", confirm: `${b.name} — bugungi smena ochilsinmi? Ochilgan vaqt ish vaqtining boshi hisoblanadi.` });
-    if (members.some((m) => !m.status)) actions.push({ id: "att.all", label: "Belgilanmaganlar — hammasi keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
+    // Yuz tekshiruvi yoqiq bo'lsa hammani birdan "Keldi" qilib bo'lmaydi — har biri yuz bilan
+    if (members.some((m) => !m.status) && !faceCheckEnabled()) actions.push({ id: "att.all", label: "Belgilanmaganlar — hammasi keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
     actions.push(...issueActions(open.map((t) => ({ id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name }))));
     const products = [...new Map(open.map((t) => [t.orderItem.product.id, t.orderItem.product])).values()];
     if (products.length) actions.push(defectAction("shift.defect", products));

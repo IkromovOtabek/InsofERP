@@ -48,6 +48,9 @@ export type CustomerCredit = {
   debt: number; // schyotlar bo'yicha qarz (to'lovlar ayirilgan)
   open: number; // schyot yozilmagan tasdiqlangan zayavkalar (avanslar ayirilgan)
   used: number; // debt + open — limitdan ayiriladi
+  /** Yaxlitlanmagan sof holat (qarz + ochiq − ortiqcha to'lov): to'liq oldindan to'langan zayavka
+   *  qabul qilishda limitga urilmasin — `used` 0 dan pastga tushmaydi, ortiqcha avans esa yo'qolardi. */
+  net: number;
   free: number; // limit − used
   blacklisted: boolean; // limit to'liq ishlatilgan (free ≤ 0)
 };
@@ -61,7 +64,7 @@ function creditOf(limit: number, rawDebt: number, rawOpen: number): CustomerCred
   const open = Math.max(0, rawOpen + Math.min(0, rawDebt));
   const used = debt + open;
   const free = limit - used;
-  return { limit, debt, open, used, free, blacklisted: free <= 0 };
+  return { limit, debt, open, used, net: rawDebt + rawOpen, free, blacklisted: free <= 0 };
 }
 
 /**
@@ -81,7 +84,7 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
   const where: Prisma.CustomerWhereInput = { ...(opts?.includeInternal ? {} : { isInternal: false }), ...(ids ? { id: { in: ids } } : {}) };
   const byCustomer = ids ? { customerId: { in: ids } } : {};
   const open = openOrderWhere(byCustomer);
-  const [customers, inv, pay, items, adv] = await Promise.all([
+  const [customers, inv, pay, items, adv, partly] = await Promise.all([
     db.customer.findMany({ where, select: { id: true, creditLimit: true } }),
     db.invoice.groupBy({ by: ["customerId"], where: { status: { not: "CANCELLED" }, ...byCustomer }, _sum: { amount: true } }),
     // Realizatsiya jurnalidan yozilgan to'lov — o'sha qatordagi sotuvning puli (sotuv va to'lov birga,
@@ -89,6 +92,12 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
     db.payment.groupBy({ by: ["customerId"], where: { ...byCustomer, register: { is: null } }, _sum: { amount: true } }),
     db.orderItem.findMany({ where: { order: open }, select: { qtyM3: true, price: true, order: { select: { customerId: true } } } }),
     db.payment.groupBy({ by: ["customerId"], where: { invoiceId: null, order: open }, _sum: { amount: true } }),
+    // Schyoti zayavka summasidan kam yozilgan ochiq zayavkalar: schyotlanmagan qoldiq ham limitga kiradi —
+    // aks holda 1 so'mlik schyot butun zayavkani limitdan chiqarib yuborardi
+    db.order.findMany({
+      where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { some: { status: { not: "CANCELLED" } } }, ...byCustomer },
+      select: { customerId: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { amount: true } } },
+    }),
   ]);
   const num = (x: { _sum: { amount: unknown } }) => Number(x._sum.amount ?? 0);
   const advance = new Map(adv.map((x) => [x.customerId, num(x)]));
@@ -99,6 +108,10 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
   const openSum = new Map<string, number>();
   for (const i of items) openSum.set(i.order.customerId, (openSum.get(i.order.customerId) ?? 0) + Number(i.qtyM3) * Number(i.price));
   for (const [cid, a] of advance) openSum.set(cid, (openSum.get(cid) ?? 0) - a);
+  for (const o of partly) {
+    const rest = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0) - o.invoices.reduce((x, i) => x + Number(i.amount), 0);
+    if (rest > 0.005) openSum.set(o.customerId, (openSum.get(o.customerId) ?? 0) + rest);
+  }
   return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), debt.get(c.id) ?? 0, openSum.get(c.id) ?? 0)]));
 }
 

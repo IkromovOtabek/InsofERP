@@ -22,7 +22,7 @@ export function FuelForm({ vehicles, drivers, trips, lastPrice, vehicleId }: {
   const total = Number(liters.replace(",", ".")) * Number(price.replace(",", "."));
   useEffect(() => { if (state?.ok) { ref.current?.reset(); setLiters(""); } }, [state]);
   return (
-    <form ref={ref} action={action} className="grid gap-3 sm:grid-cols-4">
+    <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-4 [&>*]:min-w-0">
       <div className="sm:col-span-4"><FormError error={state?.error} />{state?.ok && <FormSuccess text="Zapravka yozildi" />}</div>
       <Field label="Transport *">
         <Select name="vehicleId" value={vid} onChange={(e) => setVid(e.target.value)}>{vehicles.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>
@@ -57,7 +57,7 @@ export function ExpenseForm({ vehicles, drivers, trips, vehicleId }: { vehicles:
   const [vid, setVid] = useState(vehicleId ?? "");
   useEffect(() => { if (state?.ok) ref.current?.reset(); }, [state]);
   return (
-    <form ref={ref} action={action} className="grid gap-3 sm:grid-cols-4">
+    <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-4 [&>*]:min-w-0">
       <div className="sm:col-span-4"><FormError error={state?.error} />{state?.ok && <FormSuccess text="Xarajat yozildi" />}</div>
       <Field label="Turi *"><Select name="kind" defaultValue="REPAIR">{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></Field>
       <Field label="Summa, so'm *"><Input name="amount" inputMode="numeric" required /></Field>

@@ -21,6 +21,10 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
   const [rows, setRows] = useState<Row[]>([{ key: 1, materialId: "", qty: "", price: "" }]);
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const total = rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(r.price) || 0), 0);
+  const [scale, setScale] = useState({ gross: "", tare: "" });
+  const kg = (v: string) => (v.trim() === "" ? null : Number(v.replace(/\s+/g, "").replace(",", ".")));
+  const g = kg(scale.gross), t = kg(scale.tare);
+  const netto = g != null && t != null && Number.isFinite(g) && Number.isFinite(t) ? g - t : null;
 
   return (
     <form action={action} className="max-w-3xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
@@ -82,7 +86,23 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
         <div className="mt-3 text-right text-base font-semibold">Jami: {fmtNum(total)} so'm</div>
       </div>
 
-      <Field label="Izoh"><Textarea name="note" placeholder="Nakladnoy raqami, mashina, tarozi ko'rsatkichi…" /></Field>
+      {/* Nakladnoy va tarozi — kirim izohiga tuzilgan holda yoziladi (netto = brutto − tara) */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+        <div className="mb-3 text-[13px] font-semibold text-slate-700">Nakladnoy va tarozi</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Field label="Nakladnoy №"><Input name="waybillNo" placeholder="1234" autoComplete="off" /></Field>
+          <Field label="Mashina raqami"><Input name="vehicle" placeholder="01 A 123 BC" autoComplete="off" /></Field>
+          <Field label="Brutto, kg"><Input name="gross" value={scale.gross} onChange={(e) => setScale((x) => ({ ...x, gross: e.target.value }))} inputMode="decimal" placeholder="32500" /></Field>
+          <Field label="Tara, kg"><Input name="tare" value={scale.tare} onChange={(e) => setScale((x) => ({ ...x, tare: e.target.value }))} inputMode="decimal" placeholder="12300" /></Field>
+          <Field label="Netto, kg">
+            <div className={`flex h-10 items-center rounded-lg border px-3 text-sm tabular ${netto != null && netto <= 0 ? "border-red-300 text-red-700" : "border-slate-200 bg-white text-slate-900"}`}>
+              {netto == null ? "—" : fmtNum(netto, 3)}
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <Field label="Izoh"><Textarea name="note" placeholder="Holati, qo'shimcha ma'lumot…" /></Field>
       <FormActions>
         <Button disabled={pending}>{pending ? "Yozilmoqda…" : "Kirimni qayd etish"}</Button>
         <LinkButton href="/receipts" variant="secondary">Bekor</LinkButton>

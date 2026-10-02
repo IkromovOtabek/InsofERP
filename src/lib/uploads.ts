@@ -7,6 +7,41 @@ import path from "path";
  */
 export const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 
+// ───────────────────────── Fayl turini mazmunidan aniqlash ─────────────────────────
+
+export type FileKind = "pdf" | "jpg" | "png" | "webp" | "heic";
+export const KIND_MIME: Record<FileKind, string> = {
+  pdf: "application/pdf", jpg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic",
+};
+const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis", "heif", "mif1", "msf1"]);
+const ascii = (b: Uint8Array, from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+
+/**
+ * Fayl boshidagi baytlar (magic bytes) bo'yicha haqiqiy turi. Brauzer yuborgan `file.type` ga
+ * ishonilmaydi — uni istalgan qiymatga almashtirib, rasm nomi ostida HTML/skript yuklash mumkin.
+ *   PDF  `%PDF-` · JPEG `FF D8 FF` · PNG `89 50 4E 47` · WEBP `RIFF....WEBP` · HEIC/HEIF `....ftyp<heic|heif|mif1…>`
+ */
+export function sniffFileKind(b: Uint8Array): FileKind | null {
+  if (b.length >= 5 && ascii(b, 0, 5) === "%PDF-") return "pdf";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpg";
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return "png";
+  if (b.length >= 12 && ascii(b, 0, 4) === "RIFF" && ascii(b, 8, 12) === "WEBP") return "webp";
+  if (b.length >= 12 && ascii(b, 4, 8) === "ftyp" && HEIF_BRANDS.has(ascii(b, 8, 12))) return "heic";
+  return null;
+}
+
+/**
+ * Yuklangan faylni o'qiydi va mazmuni bo'yicha turini tekshiradi. Ruxsat etilgan turlardan biri
+ * bo'lmasa `null` — chaqiruvchi o'z xato matnini qaytaradi. Saqlashda kengaytma va MIME turi
+ * brauzerdan emas, shu aniqlangan turdan olinadi.
+ */
+export async function readUpload(file: File, allowed: readonly FileKind[]): Promise<{ buf: Buffer; ext: FileKind; mime: string } | null> {
+  const buf = Buffer.from(await file.arrayBuffer());
+  const ext = sniffFileKind(buf);
+  if (!ext || !allowed.includes(ext)) return null;
+  return { buf, ext, mime: KIND_MIME[ext] };
+}
+
 const CONTRACT_TYPES: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 export const CONTRACT_ACCEPT = Object.keys(CONTRACT_TYPES).join(",");
 export const CONTRACT_MAX_MB = 15;
@@ -16,14 +51,14 @@ export type SavedFile = { stored: string; name: string; type: string };
 /** FormData'dan kelgan faylni tekshirib saqlaydi. Fayl tanlanmagan bo'lsa null, xato bo'lsa { error }. */
 export async function saveContractFile(orderId: string, file: FormDataEntryValue | null): Promise<SavedFile | null | { error: string }> {
   if (!(file instanceof File) || file.size === 0) return null;
-  const ext = CONTRACT_TYPES[file.type];
-  if (!ext) return { error: "Shartnoma fayli PDF yoki rasm (JPG, PNG, WEBP) bo'lishi kerak" };
   if (file.size > CONTRACT_MAX_MB * 1024 * 1024) return { error: `Fayl ${CONTRACT_MAX_MB} MB dan katta` };
+  const f = await readUpload(file, ["pdf", "jpg", "png", "webp"]);
+  if (!f) return { error: "Shartnoma fayli PDF yoki rasm (JPG, PNG, WEBP) bo'lishi kerak" };
   const dir = path.join(UPLOADS_DIR, "contracts");
   await mkdir(dir, { recursive: true });
-  const stored = `${orderId}-${Date.now()}.${ext}`;
-  await writeFile(path.join(dir, stored), Buffer.from(await file.arrayBuffer()));
-  return { stored, name: file.name || `shartnoma.${ext}`, type: file.type };
+  const stored = `${orderId}-${Date.now()}.${f.ext}`;
+  await writeFile(path.join(dir, stored), f.buf);
+  return { stored, name: file.name || `shartnoma.${f.ext}`, type: f.mime };
 }
 
 /** Saqlangan fayl nomidan diskdagi to'liq yo'l — faqat bizning nomlash sxemamizga mos nomlar (yo'l bo'ylab yurish yo'q). */
@@ -52,16 +87,16 @@ export const EMPLOYEE_MAX_MB = 10;
  */
 export async function saveEmployeeFile(employeeId: string, file: FormDataEntryValue | null, opts?: { imageOnly?: boolean }): Promise<SavedFile | null | { error: string }> {
   if (!(file instanceof File) || file.size === 0) return null;
-  const ext = EMPLOYEE_TYPES[file.type];
-  if (!ext || (opts?.imageOnly && ext === "pdf")) {
+  if (file.size > EMPLOYEE_MAX_MB * 1024 * 1024) return { error: `"${file.name}" — ${EMPLOYEE_MAX_MB} MB dan katta` };
+  const f = await readUpload(file, opts?.imageOnly ? ["jpg", "png", "webp", "heic"] : ["pdf", "jpg", "png", "webp", "heic"]);
+  if (!f) {
     return { error: opts?.imageOnly ? "Surat rasm bo'lishi kerak (JPG, PNG, WEBP)" : "Hujjat PDF yoki rasm (JPG, PNG, WEBP) bo'lishi kerak" };
   }
-  if (file.size > EMPLOYEE_MAX_MB * 1024 * 1024) return { error: `"${file.name}" — ${EMPLOYEE_MAX_MB} MB dan katta` };
   const dir = path.join(UPLOADS_DIR, "employees");
   await mkdir(dir, { recursive: true });
-  const stored = `${employeeId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  await writeFile(path.join(dir, stored), Buffer.from(await file.arrayBuffer()));
-  return { stored, name: file.name || `hujjat.${ext}`, type: file.type };
+  const stored = `${employeeId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${f.ext}`;
+  await writeFile(path.join(dir, stored), f.buf);
+  return { stored, name: file.name || `hujjat.${f.ext}`, type: f.mime };
 }
 
 /**
@@ -106,14 +141,15 @@ export { SHOP_PHOTO_ACCEPT, SHOP_PHOTO_MAX_MB } from "./shop-upload";
  */
 export async function saveShopPhoto(productId: string, file: FormDataEntryValue | null): Promise<SavedFile | null | { error: string }> {
   if (!(file instanceof File) || file.size === 0) return null;
-  const ext = SHOP_TYPES[file.type];
-  if (!ext) return { error: "Surat JPG, PNG yoki WEBP bo'lishi kerak" };
   if (file.size > SHOP_PHOTO_MAX_MB * 1024 * 1024) return { error: `Surat ${SHOP_PHOTO_MAX_MB} MB dan katta` };
+  // Ommaviy marshrut orqali beriladi — mazmuni haqiqatan rasm bo'lsin (SHOP_TYPES dagi turlar)
+  const f = await readUpload(file, Object.values(SHOP_TYPES) as FileKind[]);
+  if (!f) return { error: "Surat JPG, PNG yoki WEBP bo'lishi kerak" };
   const dir = path.join(UPLOADS_DIR, "shop");
   await mkdir(dir, { recursive: true });
-  const stored = `${productId}-${Date.now()}.${ext}`;
-  await writeFile(path.join(dir, stored), Buffer.from(await file.arrayBuffer()));
-  return { stored, name: file.name || `mahsulot.${ext}`, type: file.type };
+  const stored = `${productId}-${Date.now()}.${f.ext}`;
+  await writeFile(path.join(dir, stored), f.buf);
+  return { stored, name: file.name || `mahsulot.${f.ext}`, type: f.mime };
 }
 
 export function shopPhotoPath(stored: string) {

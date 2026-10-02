@@ -302,12 +302,12 @@ export function Tour({ steps: all, start }: { steps: TourStep[]; start: string |
         </button>
         <div className="flex items-center gap-1.5">
           {index > 0 && (
-            <button type="button" onClick={back} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900">
+            <button type="button" onClick={back} className="inline-flex h-8 pointer-coarse:h-11 items-center gap-1 rounded-lg px-2.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900">
               <ArrowLeft size={14} /> Orqaga
             </button>
           )}
           {!mustClick && (
-            <button type="button" onClick={next} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-[13px] font-medium text-white transition hover:bg-slate-800">
+            <button type="button" onClick={next} className="inline-flex h-8 pointer-coarse:h-11 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-[13px] font-medium text-white transition hover:bg-slate-800">
               {last ? <>Tugatish <Check size={14} /></> : <>Keyingi <ArrowRight size={14} /></>}
             </button>
           )}
@@ -378,7 +378,7 @@ export function TourTrigger() {
       title="Instruksiyani boshidan ko'rish"
       aria-label="Instruksiyani boshidan ko'rish"
       onClick={() => window.dispatchEvent(new Event("insof-tour"))}
-      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 pointer-coarse:h-11 pointer-coarse:w-11"
     >
       <GraduationCap size={17} />
     </button>

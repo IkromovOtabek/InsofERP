@@ -66,7 +66,8 @@ export type CreateForm = { key: string; title: string; submitLabel: string; fiel
 
 /** Kim qaysi hujjatni ocha oladi — veb ERP bilan bir xil. */
 export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label: string }> = {
-  orders: { roles: ["SALES"], title: "Yangi zayavka", label: "Zayavka ochish" },
+  // AGENT ham zayavka ochadi, lekin faqat o'z mijoziga (ownership `mobileCreate` da tekshiriladi)
+  orders: { roles: ["SALES", "AGENT"], title: "Yangi zayavka", label: "Zayavka ochish" },
   trips: { roles: ["LOGISTICS", "PRODUCTION"], title: "Yangi reys", label: "Reys ochish" },
   // Ta'minot so'rovi — sklad kerakli mahsulotlar jadvalini tuzadi (veb `/stock/supply/new`)
   supply: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Ta'minot so'rovi", label: "Ta'minot so'rash" },
@@ -89,7 +90,7 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
   if (!CREATE_ROLES[key]) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
   switch (key) {
-    case "orders": return orderForm();
+    case "orders": return orderForm(user);
     case "trips": return tripForm();
     case "supply": return supplyForm(user);
     case "customers": return customerForm();
@@ -163,11 +164,12 @@ async function brigadeForm(): Promise<CreateForm> {
   };
 }
 
-async function orderForm(): Promise<CreateForm> {
-  const [customers, catalog, accounts, cells] = await Promise.all([
-    db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" } }),
+async function orderForm(user: MobileUser): Promise<CreateForm> {
+  // Sotuv agenti faqat o'z mijoziga zayavka ochadi: ro'yxat o'ziga biriktirilganlar, yangi mijoz tugmasi yo'q
+  const isAgent = user.role === "AGENT";
+  const [customers, catalog, cells] = await Promise.all([
+    db.customer.findMany({ where: { isActive: true, isInternal: false, ...(isAgent ? { agentId: user.id } : {}) }, orderBy: { name: "asc" } }),
     productCatalog(), // veb bilan bir xil mahsulot ro'yxati (papka yo'li nom yonida)
-    db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     dayCells(),
   ]);
   // Qora ro'yxatdagi mijoz tanlanmasin — ro'yxatdan chiqarilmaydi, lekin belgilanadi
@@ -175,7 +177,7 @@ async function orderForm(): Promise<CreateForm> {
   const credit = await customersCredit(customers.map((c) => c.id));
 
   const customerOptions: FormOption[] = [
-    { value: NEW_CUSTOMER, label: "+ Yangi mijoz" },
+    ...(isAgent ? [] : [{ value: NEW_CUSTOMER, label: "+ Yangi mijoz" }]),
     ...customers.map((c) => {
       const cr = credit.get(c.id);
       const left = cr ? cr.limit - cr.used : null;
@@ -209,8 +211,8 @@ async function orderForm(): Promise<CreateForm> {
       { name: "needsPump", label: "Nasos kerak", type: "switch", value: "false" },
       { name: "isUrgent", label: "Shoshilinch", type: "switch", value: "false" },
       { name: "onCredit", label: "Qarzga", type: "switch", value: "false", hint: "Belgilansa kafolat xati talab qilinadi, oldindan to'lov olinmaydi" },
-      { name: "prepayAmount", label: "Oldindan to'lov (so'm)", type: "number", placeholder: "0", showIf: { field: "onCredit", equals: "false" } },
-      { name: "prepayAccountId", label: "To'lov qayerga tushdi", type: "select", options: accounts.map((a) => ({ value: a.id, label: `${a.name} (${a.type === "CASH" ? "kassa" : "bank"})` })), showIf: { field: "onCredit", equals: "false" } },
+      // Sotuvchi kassaga pul yozmaydi: summa "kutilayotgan avans" bo'lib zayavkaga yoziladi, kassir o'zi qabul qiladi
+      { name: "prepayAmount", label: "Kutilayotgan avans (so'm)", type: "number", placeholder: "0", showIf: { field: "onCredit", equals: "false" } },
       { name: "note", label: "Izoh", type: "text" },
     ],
   };
@@ -312,6 +314,13 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
       const isNew = d.customerId === NEW_CUSTOMER;
+      // Sotuv agenti: yangi mijoz ocholmaydi va faqat O'Z mijoziga zayavka ochadi (ownership)
+      const isAgent = user.role === "AGENT";
+      if (isAgent) {
+        if (isNew) throw new Error("Agent yangi mijoz qo'sha olmaydi — mavjud (o'zingizga biriktirilgan) mijozni tanlang");
+        const c = await db.customer.findUnique({ where: { id: d.customerId }, select: { agentId: true } });
+        if (!c || c.agentId !== user.id) throw new Error("Bu mijoz sizga biriktirilmagan — faqat o'z mijozingizga zayavka ocha olasiz");
+      }
       const r = await createOrder({
         customerId: isNew ? undefined : d.customerId,
         newCustomer: isNew ? { name: d.newName ?? "", phone: d.newPhone || undefined, inn: d.newInn || undefined } : undefined,
@@ -323,7 +332,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         onCredit: d.onCredit,
         prepay: d.prepayAmount ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
         note: d.note,
-      }, user.id);
+      }, user.id, isAgent ? { viaAgent: true } : undefined);
       return { key: "orders", id: r.id, message: `${r.orderNo} ochildi — qoralama holatida, qabul qilishni unutmang` };
     }
 

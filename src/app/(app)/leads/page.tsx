@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { ExternalLink, MapPin, MessageSquare, Phone } from "lucide-react";
+import { ExternalLink, FilePlus2, MapPin, MessageSquare, Phone } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/sms/phone";
 import { unitLabel } from "@/lib/unit";
-import { Badge, Card, EmptyState, PageHeader, Tabs } from "@/components/ui";
+import { Badge, Card, EmptyState, LinkButton, PageHeader, Tabs } from "@/components/ui";
 import { ConvertLead, LeadNote, LeadStatusButtons } from "./lead-actions";
 
 const STATUS = {
@@ -20,9 +20,9 @@ const STATUS = {
  * va kerak bo'lsa arizani mijozga aylantiradi — shundan keyingina `Customer` yaratiladi.
  */
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const s = await requireSession(["SALES"]);
-  // Direktor arizalarni ko'radi, lekin bog'lanish/izoh — sotuvchining ishi: tugmalar faqat unda
-  const canAct = s.role === "SALES";
+  const s = await requireRoles(["SALES"]);
+  // Bog'lanish/izoh — sotuvchi va direktor
+  const canAct = ["SALES", "DIRECTOR"].includes(s.role);
   const { tab = "new" } = await searchParams;
 
   const leads = await db.lead.findMany({
@@ -112,6 +112,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                     <div className="flex flex-wrap items-center gap-2">
                       <LeadStatusButtons leadId={l.id} status={l.status} />
                       {l.status !== "CONVERTED" && <ConvertLead leadId={l.id} defaultName={l.name} />}
+                      {/* Mijozga aylangan ariza — keyingi qadam zayavka: mahsulot, hajm va manzil arizadan to'ldiriladi */}
+                      {l.customer && <LinkButton href={`/orders/new?customer=${l.customer.id}&lead=${l.id}`} size="sm"><FilePlus2 size={14} /> Zayavka ochish</LinkButton>}
                     </div>
                     <LeadNote leadId={l.id} note={l.note} />
                   </div>

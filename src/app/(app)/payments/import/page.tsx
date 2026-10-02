@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { Callout, Card, Checkbox, Field, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { FIELD_SYNONYMS } from "@/lib/excel";
@@ -11,7 +11,7 @@ import { importSalesRegisterFromExcel } from "../actions";
  * Ustun nomlari rus/o'zbek aralash bo'lishi mumkin — mos ustun o'zi topiladi, keyin tekshirib tuzatiladi.
  */
 export default async function SalesRegisterImport() {
-  await requireSession(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"]);
   const accounts = await db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
   const cash = accounts.filter((a) => a.type === "CASH");
   const bank = accounts.filter((a) => a.type === "BANK");
@@ -21,7 +21,7 @@ export default async function SalesRegisterImport() {
       <PageHeader
         back={{ href: "/payments?tab=jurnal", label: "Kassa / bank" }}
         title="Excel orqali qo'shish"
-        subtitle="Kunlik realizatsiya jadvalini yuklang — har qator jurnalga tushadi va «Деньги» ustuniga qarab pul naqd kassaga (н-к) yoki bank hisobiga (п-р) kirim bo'lib yoziladi."
+        subtitle="Kunlik realizatsiya jadvalini yuklang — har qator jurnalga tushadi. Kassaga kirim belgilansa, «Деньги» ustuniga qarab pul naqd kassaga (н-к) yoki bank hisobiga (п-р) yoziladi."
       />
       <Card className="max-w-6xl">
         {accounts.length === 0 ? (
@@ -79,7 +79,8 @@ export default async function SalesRegisterImport() {
               </Field>
             </div>
             <div className="space-y-2">
-              <Checkbox name="toCash" defaultChecked label="Har qator summasi («Итого Сумма») kassaga kirim qilib yozilsin — kassa qoldig'i shunga qarab o'zgaradi" />
+              {/* Sukut bo'yicha o'chiq: jurnal ko'pincha allaqachon kassada qayd etilgan sotuvlar — ikki marta kirim bo'lmasin */}
+              <Checkbox name="toCash" label="Har qator summasi («Итого Сумма») kassaga kirim qilib ham yozilsin — faqat pul kassaga hali kiritilmagan bo'lsa belgilang" />
               <Checkbox name="createMissing" defaultChecked label="Ro'yxatda yo'q mijozlarni avtomatik yaratish" />
             </div>
             <p className="text-xs text-slate-500">

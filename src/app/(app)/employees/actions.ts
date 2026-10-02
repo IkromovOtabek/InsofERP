@@ -14,12 +14,38 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { num } from "@/lib/excel";
 import { sendSms, smsNote } from "@/lib/sms";
 import { publicOrigin } from "@/lib/public-url";
+import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
+import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
 
 const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
 
 /** Login berishda tanlanadigan bo'limlar: bo'lim lavozimlari + haydovchi va brigadir ilovasi. */
 const LOGIN_ROLES: Role[] = LOGIN_ROLE_OPTIONS.map((o) => o.value);
+
+/**
+ * Moliyaviy va kadr loginlari: shu rollar bilan login ochish, rolni shularga o'tkazish yoki shu roldagi
+ * xodim parolini tiklash — pul va kadr ma'lumotlariga kirish beradi. Otdel kadr buni bajara oladi
+ * (zavodda kundalik ish), lekin direktor darhol xabar oladi va auditda alohida belgilanadi.
+ */
+const SENSITIVE_ROLES: Role[] = ["ACCOUNTING", "CASHIER", "FINANCE", "HR", "PROCUREMENT"];
+const isSensitive = (r: Role | null | undefined) => !!r && SENSITIVE_ROLES.includes(r);
+
+/** Direktorga xabar (faqat direktor o'zi bajarmagan bo'lsa). Javobni kutmaydi. */
+function alertDirector(callerRole: Role, callerId: string, employeeId: string, title: string, body: string) {
+  if (callerRole === "DIRECTOR") return;
+  notifyAfter(async () => {
+    const who = await db.user.findUnique({ where: { id: callerId }, select: { fullName: true } });
+    await notifyRoles(["DIRECTOR"], {
+      type: "SENSITIVE_LOGIN",
+      title,
+      body: `${body} · bajardi: ${who?.fullName ?? "?"}`,
+      link: { key: "employees", id: employeeId },
+    });
+  });
+}
+
+const roleLabel = (r: Role) => LOGIN_ROLE_OPTIONS.find((o) => o.value === r)?.label ?? r;
 
 const schema = z.object({
   // Ro'yxatdan tanlangan mavjud xodim — yangi karta ochilmaydi, shu kartaga login beriladi
@@ -28,7 +54,7 @@ const schema = z.object({
   role: zOpt,
   fullName: zStr("F.I.O. kerak"),
   position: zStr("Lavozim kerak"),
-  phone: zOpt,
+  phone: zPhone,
   hiredAt: zDate,
   birthDate: zDate,
   note: zOpt,
@@ -97,7 +123,7 @@ const cardSchema = schema.omit({ login: true, password: true }).extend({
   tariffRate: zMoney,
   firedAt: zDate,
   passportSeries: zOpt,
-  pinfl: zOpt,
+  pinfl: zPinfl,
   passportIssuedBy: zOpt,
   passportIssuedAt: zDate,
   address: zOpt,
@@ -160,12 +186,20 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   if (chosen && !hasCreds) return { error: "Login va parol kiriting yoki bo'limni «login kerak emas» qilib qo'ying" };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
   if (role === "DIRECTOR" && s.role !== "DIRECTOR") return { error: DIRECTOR_ONLY };
+  const dup = await duplicateProblem(d.employeeId, d.phone);
+  if (dup) return { error: dup };
 
   // Ro'yxatdan tanlangan xodim: dublikat karta ochilmaydi — login beriladi, lavozim/telefon yangilanadi
   if (d.employeeId) {
     const cur = await db.employee.findUnique({ where: { id: d.employeeId } });
     if (!cur) return { error: "Tanlangan xodim topilmadi" };
     if (cur.userId) return { error: `${cur.fullName} — bu xodimda login bor` };
+    // Bo'shatilgan xodim bu forma orqali "jim" qaytarilmaydi — firedAt qolib ketadi va audit yo'qoladi
+    if (cur.firedAt || !cur.isActive) return { error: `${cur.fullName} bo'shatilgan — avval kartadan «Ishga qaytarish»` };
+    // Logistika faqat faol haydovchi kartasini to'ldiradi: boshqa bo'lim xodimini qayta nomlash yoki bo'shatilganni qaytarish — kadr ishi
+    if (!["HR", "DIRECTOR"].includes(s.role) && (!driver || !(await isDriverPosition(cur.position)))) {
+      return { error: "Bu xodimni faqat Otdel kadr o'zgartira oladi" };
+    }
     if (!role && (d.login || d.password)) return { error: `"${d.position}" lavozimi tizimga kirmaydi — login uchun bo'limni tanlang` };
     let attachedVehicleId: string | null = null;
     try {
@@ -186,7 +220,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
           },
         });
         attachedVehicleId = e.vehicleId;
-        await audit(tx, s.userId, "UPDATE", "Employee", e.id, cur, { ...e, login: user?.login, role, via: "xodimlar-formasi" });
+        await audit(tx, s.userId, "UPDATE", "Employee", e.id, cur, { ...e, login: user?.login, role, via: "xodimlar-formasi", ...(user && isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
       });
     } catch (e) {
       const m = String(e);
@@ -196,6 +230,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     }
     if (driver) pushEmployeeSilently(cur.id);
     if (attachedVehicleId) pushVehicleSilently(attachedVehicleId);
+    if (role && d.login && isSensitive(role)) alertDirector(s.role, s.userId, cur.id, `Moliyaviy/kadr login berildi — ${roleLabel(role)}`, `${d.fullName} · login «${d.login.toLowerCase()}»`);
     revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
     if (!role || !d.login) return { ok: true, note: `${d.fullName} — lavozimi «${d.position}» qilib belgilandi.` };
     return { ok: true, note: smsNote(await loginSms("login_granted", d.phone ?? cur.phone, d.login, d.password!)) };
@@ -213,7 +248,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
       const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note, userId: user?.id, ...extra } });
       createdId = e.id;
       vehicleId = e.vehicleId;
-      await audit(tx, s.userId, "CREATE", "Employee", e.id, undefined, { ...e, login: user?.login, role });
+      await audit(tx, s.userId, "CREATE", "Employee", e.id, undefined, { ...e, login: user?.login, role, ...(user && isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
     });
   } catch (e) {
     const m = String(e);
@@ -224,6 +259,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   // Haydovchi — haydovchi ilovasida ham paydo bo'lsin (ECO o'chiq bo'lsa jim o'tadi)
   if (createdId && driver) pushEmployeeSilently(createdId);
   if (vehicleId) pushVehicleSilently(vehicleId);
+  if (createdId && role && isSensitive(role)) alertDirector(s.role, s.userId, createdId, `Moliyaviy/kadr login yaratildi — ${roleLabel(role)}`, `${d.fullName} (yangi xodim) · login «${d.login!.toLowerCase()}»`);
   revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
 
   // Tizimga kiradigan xodim bo'lsa — login va parol SMS bilan. Ketmasa ham xodim yaratilgan:
@@ -256,7 +292,7 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
     await db.$transaction(async (tx) => {
       const u = await createLoginFor(tx, s.role, e.fullName, role, login, password);
       await tx.employee.update({ where: { id: employeeId }, data: { userId: u.id } });
-      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, { login: u.login, role: u.role });
+      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, { login: u.login, role: u.role, ...(isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
     });
   } catch (err) {
     const m = String(err);
@@ -264,6 +300,7 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
     if (err instanceof Error && !m.includes("prisma")) return { error: err.message };
     throw err;
   }
+  if (isSensitive(role)) alertDirector(s.role, s.userId, employeeId, `Moliyaviy/kadr login berildi — ${roleLabel(role)}`, `${e.fullName} · login «${login.toLowerCase()}»`);
   revalidatePath("/employees"); revalidatePath("/settings");
   return { ok: true, note: smsNote(await loginSms("login_granted", e.phone, login, password)) };
 }
@@ -366,6 +403,8 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   const before = await db.employee.findUniqueOrThrow({ where: { id } });
   const denied = await directorGuard(before.userId, s.role);
   if (denied) return { error: denied };
+  const dup = await duplicateProblem(id, d.phone !== before.phone ? d.phone : null, d.pinfl !== before.pinfl ? d.pinfl : null);
+  if (dup) return { error: dup };
 
   // Lavozim o'zgarishi rolni o'zgartirmaydi: login berilgan xodimning roli o'z joyida qoladi
   const newRole = roleForPosition(d.position);
@@ -413,6 +452,7 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
 async function loginTarget(employeeId: string, session: { userId: string; role: Role }) {
   const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, include: { user: true } });
   if (!e.user) return { error: "Bu xodimda login yo'q" as const };
+  // O'z loginiga (rol, parol, login nomi) tegish taqiqlangan — HR o'zini yuqori bo'limga o'tkaza olmaydi
   if (e.user.id === session.userId) return { error: "O'z loginingizni bu yerdan o'zgartirib bo'lmaydi" as const };
   if (e.user.role === "DIRECTOR" && session.role !== "DIRECTOR") return { error: DIRECTOR_ONLY };
   return { employee: e, user: e.user };
@@ -464,8 +504,12 @@ export async function changeEmployeeRole(employeeId: string, _prev: ActionState,
     await tx.user.update({ where: { id: t.user.id }, data: { role } });
     if (position !== t.employee.position) await tx.employee.update({ where: { id: employeeId }, data: { position } });
     await revokeSessions(tx, t.user.id);
-    await audit(tx, s.userId, "UPDATE", "User", t.user.id, { role: t.user.role, position: t.employee.position }, { role, position });
+    await audit(tx, s.userId, "UPDATE", "User", t.user.id, { role: t.user.role, position: t.employee.position }, {
+      role, position, xodim: t.employee.fullName, login: t.user.login,
+      ...(isSensitive(role) || isSensitive(t.user.role) ? { sensitiveLogin: true, by: s.role } : {}),
+    });
   });
+  if (isSensitive(role)) alertDirector(s.role, s.userId, employeeId, `Bo'lim moliyaviy/kadr huquqiga o'tkazildi — ${roleLabel(role)}`, `${t.employee.fullName} · «${roleLabel(t.user.role)}» → «${roleLabel(role)}» · login «${t.user.login}»`);
   const wasDriver = await isDriverPosition(t.employee.position);
   if (wasDriver || (await isDriverPosition(position))) pushEmployeeSilently(employeeId);
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings");
@@ -484,8 +528,12 @@ export async function resetEmployeePassword(employeeId: string, _prev: ActionSta
   await db.$transaction(async (tx) => {
     await tx.user.update({ where: { id: t.user.id }, data: { passwordHash: await hashPassword(password) } });
     await revokeSessions(tx, t.user.id); // xodimning eski veb/mobil sessiyalari tugaydi
-    await audit(tx, s.userId, "UPDATE", "User", t.user.id, undefined, { passwordReset: true });
+    await audit(tx, s.userId, "UPDATE", "User", t.user.id, undefined, {
+      passwordReset: true, xodim: t.employee.fullName, login: t.user.login, role: t.user.role,
+      ...(isSensitive(t.user.role) ? { sensitiveLogin: true, by: s.role } : {}),
+    });
   });
+  if (isSensitive(t.user.role)) alertDirector(s.role, s.userId, employeeId, `Moliyaviy/kadr login paroli tiklandi — ${roleLabel(t.user.role)}`, `${t.employee.fullName} · login «${t.user.login}»`);
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/settings");
   return { ok: true, note: smsNote(await loginSms("password_changed", t.employee.phone, t.user.login, password)) };
 }

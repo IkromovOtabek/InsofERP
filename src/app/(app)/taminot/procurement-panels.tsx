@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { AlertTriangle, BadgeCheck, CheckCircle2, Download, FileText, Paperclip, Plus, Save, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileText, Paperclip, Plus, Save, Trash2, Truck } from "lucide-react";
 import {
-  addIncident, addQuote, attachDoc, chooseQuote, closeIncident, directorApprove, dropDoc, dropQuote, saveDelivery, saveMeta,
+  addIncident, addQuote, attachDoc, chooseQuote, closeIncident, dropDoc, dropQuote, saveDelivery, saveMeta,
 } from "@/lib/supply-actions";
 import type { ActionState } from "@/lib/action";
 import { Badge, Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
@@ -136,16 +136,8 @@ export function QuotesPanel({ id, quotes, suppliers, editable }: { id: string; q
 
 /* ═══════════ Direktor: katta xarid tasdig'i ═══════════ */
 
-export function DirectorPanel({ id }: { id: string }) {
-  const [state, action, pending] = useActionState(directorApprove.bind(null, id), undefined);
-  return (
-    <form action={action} className="space-y-3">
-      <Input name="note" placeholder="Izoh (ixtiyoriy)" />
-      <Done s={state} />
-      <Button variant="success" disabled={pending} className="w-full"><BadgeCheck size={16} /> {pending ? "Tasdiqlanmoqda…" : "Katta xaridni tasdiqlash"}</Button>
-    </form>
-  );
-}
+// Direktor paneli umumiy komponentda — Zayavkalar oynasidagi tasdiq kartasi ham ishlatadi
+export { DirectorPanel } from "@/components/supply-panels";
 
 /* ═══════════ Yetkazib berish monitoringi ═══════════ */
 
@@ -234,7 +226,11 @@ export function IncidentsPanel({ id, incidents, canAdd, canResolve }: { id: stri
 
 export type DocRow = { id: string; kind: string; fileName: string; by: string; at: string };
 
-export function DocsPanel({ id, docs, missing, canEdit, accept }: { id: string; docs: DocRow[]; missing: string[]; canEdit: boolean; accept: string }) {
+export function DocsPanel({ id, docs, missing, canEdit, canDelete = canEdit, accept }: {
+  id: string; docs: DocRow[]; missing: string[]; canEdit: boolean;
+  /** Qabul qilingan zayavka hujjatini faqat direktor o'chiradi */
+  canDelete?: boolean; accept: string;
+}) {
   const [state, action, pending] = useActionState(attachDoc.bind(null, id), undefined);
   const [busy, start] = useTransition();
   const [msg, setMsg] = useState<ActionState>(undefined);
@@ -251,7 +247,7 @@ export function DocsPanel({ id, docs, missing, canEdit, accept }: { id: string; 
               <span className="block truncate text-xs text-slate-500">{d.fileName} · {d.by} · {d.at}</span>
             </a>
             <a href={`/taminot/${id}/hujjat/${d.id}?download=1`} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900" title="Yuklab olish"><Download size={15} /></a>
-            {canEdit && (
+            {canDelete && (
               <button type="button" disabled={busy} title="O'chirish" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                 onClick={() => { if (confirm(`${d.kind} o'chirilsinmi?`)) start(async () => setMsg(await dropDoc(d.id))); }}><Trash2 size={15} /></button>
             )}

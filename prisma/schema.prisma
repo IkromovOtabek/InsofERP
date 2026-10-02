@@ -29,6 +29,7 @@ enum Role {
   MECHANIC // mexanik — bosh sahifasi "Sklad & Logistika" nazorati: bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
   BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
+  AGENT // ko'chadagi sotuv agenti — o'z mijozlari, zayavka ochish, mijozlar qarzi (mobil + cheklangan veb)
 }
 
 model User {
@@ -81,6 +82,12 @@ model User {
   shiftsClosed      BrigadeShift[]           @relation("ShiftClosedBy")
   brigadeIssues     BrigadeIssue[]           @relation("BrigadeIssueBy")
   brigadeIssuesDone BrigadeIssue[]           @relation("BrigadeIssueResolvedBy")
+  payments          Payment[]                @relation("PaymentCreatedBy")
+  vehicleServices   VehicleService[]         @relation("VehicleServiceBy")
+  agentCustomers    Customer[]               @relation("CustomerAgent")
+  aiChats           AiChat[]                 @relation("AiChatUser")
+  /// Modul bo'yicha qo'shimcha ruxsat (direktor beradi): { "modul": "view" | "write" }. Rol ustiga qo'shiladi/cheklaydi.
+  perms             Json?
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -111,6 +118,9 @@ model CompanySettings {
   telegram            String? // mijozlar yozadigan Telegram (@username yoki t.me havola)
   /// Kunlik ishlab chiqarish quvvati, m³ — Zayavkalar taqvimi shu chegaraga qarab rang beradi
   dailyCapacityM3     Decimal? @default(200) @db.Decimal(10, 2)
+  /// Kunlik zayavka chegaralari (direktor sozlaydi; 0/bo'sh — cheklov yo'q). orderConfirm shu bo'yicha rad etadi.
+  dailyOrderMaxM3     Decimal? @db.Decimal(12, 2)
+  dailyOrderMaxCount  Int?
   foundedYear         Int?
   // ── Egasi dashbordi chegaralari (norma / e'tibor / kritik) — direktor Byudjet sahifasida sozlaydi ──
   alertWarnPct        Int      @default(90) // byudjetning shu foizidan oshsa — e'tibor
@@ -145,6 +155,8 @@ model Customer {
   /// Mijozlar ro'yxati, limit, reyting va ECO sinxronidan chiqarib tashlanadi.
   isInternal  Boolean  @default(false)
   isActive    Boolean  @default(true)
+  /// Ko'chadagi sotuv agenti (bu mijozni olib kelgan / yurituvchi). Agent o'z mijozlari va ularning qarzini ko'radi.
+  agentId     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   sites       Site[]
@@ -154,6 +166,9 @@ model Customer {
   payments Payment[]
   leads    Lead[]
   register SalesRegister[]
+  agent    User?           @relation("CustomerAgent", fields: [agentId], references: [id])
+
+  @@index([agentId])
 }
 
 model Supplier {
@@ -385,6 +400,27 @@ model Vehicle {
   drivers  Employee[]         @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar
   fuelLogs FuelLog[]
   expenses TransportExpense[]
+  services VehicleService[]
+}
+
+/// Texnik xizmat jurnali (mexanik): moy almashtirish, ta'mir, shina, ko'rik — keyingi xizmat muddati bilan
+model VehicleService {
+  id          String    @id @default(cuid())
+  vehicleId   String
+  date        DateTime  @default(now())
+  kind        String // xizmat turi: "Moy almashtirish", "Ta'mir", "Shina", "Texnik ko'rik"...
+  odometerKm  Int? // xizmat paytidagi probeg
+  cost        Decimal?  @db.Decimal(18, 2)
+  note        String?
+  nextDueAt   DateTime? // keyingi xizmat sanasi
+  nextDueKm   Int? // keyingi xizmat probegi
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("VehicleServiceBy", fields: [createdById], references: [id])
+
+  @@index([vehicleId, date])
 }
 
 enum FuelType {
@@ -517,6 +553,10 @@ model Attendance {
   checkOut   String? // ketdi, "HH:MM"; kelishdan oldin bo'lsa tungi smena deb hisoblanadi
   note       String?
   markedById String? // kim belgilagani (User.id) — auditda ham qoladi
+  // "Keldi" yuz bilan tasdiqlangan bo'lsa: kamera kadri (`uploads/employees/`) va tasdiq vaqti.
+  // Qo'lda belgilangan yozuvda ikkalasi ham bo'sh — tabelda farqi ko'rinadi.
+  facePhoto      String?
+  faceVerifiedAt DateTime?
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
@@ -992,6 +1032,7 @@ model BrigadeTask {
   createdBy User           @relation("TaskCreatedBy", fields: [createdById], references: [id])
   progress  TaskProgress[]
   issues    BrigadeIssue[]
+  defects   ProductDefect[]
 
   @@index([brigadeId, status])
 }
@@ -1138,17 +1179,21 @@ model ProductDefect {
   date        DateTime @default(now())
   productId   String
   brigadeId   String?
+  /// Qaysi topshiriqdan chiqqan brak (brigadir topshiriq kartasida yoki fakt bilan birga belgilaydi).
+  taskId      String?
   qty         Decimal  @db.Decimal(18, 3)
   reason      String
   note        String?
   createdById String
   createdAt   DateTime @default(now())
 
-  product   Product  @relation(fields: [productId], references: [id])
-  brigade   Brigade? @relation(fields: [brigadeId], references: [id])
-  createdBy User     @relation("DefectCreatedBy", fields: [createdById], references: [id])
+  product   Product      @relation(fields: [productId], references: [id])
+  brigade   Brigade?     @relation(fields: [brigadeId], references: [id])
+  task      BrigadeTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  createdBy User         @relation("DefectCreatedBy", fields: [createdById], references: [id])
 
   @@index([date])
+  @@index([taskId])
 }
 
 /// Ishlab chiqarishning kunlik hisoboti — sex "Qayd etish" bosganda o'sha paytdagi raqamlar
@@ -1221,6 +1266,10 @@ model Trip {
   returnedQty     Decimal? @db.Decimal(18, 3) // qaytarilgan miqdor (ortiqcha / sifat)
   deliveryComment String? // yetkazishdagi izoh
 
+  /// Ochiq /verify sahifasi uchun tasodifiy kalit (QR havolasida `?k=`): nakladnoy raqami ketma-ket —
+  /// kalitsiz raqamlarni terib butun mijozlar ro'yxatini yig'ib bo'lmasin. Eski reyslarda bo'sh.
+  verifyToken String? @unique
+
   order     Order              @relation(fields: [orderId], references: [id])
   vehicle   Vehicle            @relation(fields: [vehicleId], references: [id])
   driver    Employee           @relation("TripDriver", fields: [driverId], references: [id])
@@ -1267,6 +1316,29 @@ enum TripIssueKind {
 
 /// Obyekt — mijozning qurilish maydoni. Bir mijozda bir nechta obyekt bo'ladi.
 /// Kontakt, qabul vaqti va maxsus ko'rsatma haydovchiga reys kartasida ko'rinadi.
+model AiChat {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String   @default("Yangi suhbat")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User        @relation("AiChatUser", fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model AiMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  role      String // "user" | "assistant"
+  content   String
+  createdAt DateTime @default(now())
+  chat      AiChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
+}
+
 model Site {
   id            String   @id @default(cuid())
   customerId    String
@@ -1456,8 +1528,11 @@ model Payment {
   amount        Decimal  @db.Decimal(18, 2)
   note          String?
   createdAt     DateTime @default(now())
+  /// Pulni kim qabul qildi/kiritdi (kassir, buxgalter; eski yozuvlarda bo'sh)
+  createdById   String?
 
   customer    Customer       @relation(fields: [customerId], references: [id])
+  createdBy   User?          @relation("PaymentCreatedBy", fields: [createdById], references: [id])
   invoice     Invoice?       @relation(fields: [invoiceId], references: [id])
   order       Order?         @relation(fields: [orderId], references: [id])
   cashAccount CashAccount    @relation(fields: [cashAccountId], references: [id])

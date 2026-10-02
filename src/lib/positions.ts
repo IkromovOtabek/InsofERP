@@ -7,6 +7,8 @@ import type { Role } from "@/generated/prisma";
  */
 export const POSITIONS: { label: string; role: Role }[] = [
   { label: "Sotuv", role: "SALES" },
+  // Ko'chadagi sotuv agenti — faqat o'z mijozlari va ularga zayavka ochish (cheklangan kabinet)
+  { label: "Sotuv agenti", role: "AGENT" },
   { label: "Ishlab chiqarish", role: "PRODUCTION" },
   { label: "Ish boshqaruvchi", role: "SUPERVISOR" },
   { label: "Logistika", role: "LOGISTICS" },

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
+import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { flatName } from "@/lib/excel";
 import { deptByLabel, guessDepartment } from "@/lib/orgchart";
 import { pushEmployeeSilently } from "@/lib/eco/people";
@@ -25,7 +26,7 @@ const schema = z.object({
   // Tuzilma diagrammasida qaysi bo'lim tagida turadi. Bo'sh bo'lsa kod nom bo'yicha taxmin qiladi.
   department: z.string().trim().optional().transform((v) => (v && isAssignableDept(v) ? v : null)),
   isDriver: z.string().optional().transform((v) => v === "on"),
-  sortOrder: z.coerce.number().int().min(0).default(0),
+  sortOrder: z.coerce.number({ message: "Tartib raqamini son bilan yozing" }).int("Tartib raqami butun son bo'lsin").min(0, "Tartib raqami manfiy bo'lmasin").default(0),
 });
 
 
@@ -129,7 +130,8 @@ function refresh() {
 /** Bo'lim lavozimi bilan bir xil nom ishchi lavozimga berilmasin — aks holda login mantig'i chalkashadi. */
 function clashesWithDepartment(name: string) {
   // Tuzilmadagi bo'lim tuguni (masalan "Brigadir") ham — aks holda xodim diagrammada ikki joyda chiqadi
-  return POSITIONS.some((p) => p.label.toLowerCase() === name.trim().toLowerCase()) || !!deptByLabel(name);
+  // roleForPosition — eski bo'lim nomlarini ham taniydi (masalan oldingi nomi), aks holda ular ishchi lavozimga o'tib ketardi
+  return POSITIONS.some((p) => p.label.toLowerCase() === name.trim().toLowerCase()) || !!roleForPosition(name) || !!deptByLabel(name);
 }
 
 export async function saveWorkPosition(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -193,11 +195,11 @@ const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : n
 const cardSchema = z.object({
   fullName: zStr("F.I.O. kerak"),
   position: zStr("Lavozim kerak"),
-  phone: zOpt,
+  phone: zPhone,
   birthDate: zDate,
   hiredAt: zDate,
   passportSeries: zOpt,
-  pinfl: zOpt,
+  pinfl: zPinfl,
   passportIssuedBy: zOpt,
   passportIssuedAt: zDate,
   address: zOpt,
@@ -245,6 +247,8 @@ export async function createEmployeeCard(_prev: ActionState, fd: FormData): Prom
   if (roleForPosition(d.position)) {
     return { error: `"${d.position}" — tizimga kiradigan bo'lim. Uni Xodimlar sahifasidan login bilan qo'shing` };
   }
+  const dup = await duplicateProblem(null, d.phone, d.pinfl);
+  if (dup) return { error: dup };
 
   // Fayllar xodim id'si bo'yicha nomlanadi — shuning uchun id oldindan beriladi
   const id = crypto.randomUUID();
@@ -396,7 +400,7 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
   revalidatePath("/drivers");
 
   // E'tibor beriladigan joyi bo'lmasa — ro'yxatga qaytadi; bo'lsa sahifada qolib tushuntiradi
-  if (!res.createdPositions.length && !res.skipped) {
+  if (!res.createdPositions.length && !res.skipped && !res.keptPositions.length) {
     redirect(`/otdel-kadr?tab=xodimlar&qoshildi=${res.created}&yangilandi=${res.updated}`);
   }
   const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n ? "…" : ""}`;
@@ -407,6 +411,7 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
       res.createdPositions.length ? `yangi lavozim ochildi: ${list(res.createdPositions)}` : "",
       res.skipped ? `${res.skipped} ta qator o'tkazib yuborildi — bunday xodim bazada bor ("mavjud xodimlar yangilansin"ni belgilang)` : "",
       res.fired ? `${res.fired} tasi nofaol qilindi (ishdan bo'shagan sanasi bor)` : "",
+      res.keptPositions.length ? `diqqat: ${res.keptPositions.length} ta login egasining lavozimi o'zgartirilmadi (bo'limi — kartadan "Bo'limni almashtirish" orqali): ${list(res.keptPositions, 3)}` : "",
     ].filter(Boolean).join(" · "),
   };
 }

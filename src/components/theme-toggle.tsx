@@ -30,7 +30,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   return (
     <button type="button" onClick={toggle} aria-label={dark ? "Ochiq rejim" : "Qorong'i rejim"} title={dark ? "Ochiq rejim" : "Qorong'i rejim"}
-      className={cn("relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900", className)}>
+      className={cn("relative flex h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900", className)}>
       <Sun size={17} className={cn("absolute transition-all duration-300", dark ? "rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100")} />
       <Moon size={17} className={cn("absolute transition-all duration-300", dark ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-0 opacity-0")} />
     </button>

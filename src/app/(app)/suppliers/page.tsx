@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { Badge, Button, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { SupplierForm } from "./supplier-form";
@@ -17,9 +18,14 @@ export default async function SuppliersPage() {
           {suppliers.length === 0 && <Empty text="Yetkazuvchilar yo'q" />}
           {suppliers.map((s) => (
             <Tr key={s.id}>
-              <Td className="font-medium">{s.name}</Td><Td>{s.inn ?? "—"}</Td><Td>{s.phone ?? "—"}</Td><Td right>{s._count.receipts}</Td>
+              <Td className="font-medium"><Link href={`/suppliers/${s.id}`} className="hover:underline">{s.name}</Link></Td><Td>{s.inn ?? "—"}</Td><Td>{s.phone ?? "—"}</Td><Td right>{s._count.receipts}</Td>
               <Td>{s.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</Td>
-              <Td><form action={toggleSupplier.bind(null, s.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{s.isActive ? "O'chirish" : "Yoqish"}</Button></form></Td>
+              <Td>
+                <div className="flex justify-end gap-2">
+                  <Link href={`/suppliers/${s.id}`} className="rounded-lg px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100">Karta</Link>
+                  <form action={toggleSupplier.bind(null, s.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{s.isActive ? "O'chirish" : "Yoqish"}</Button></form>
+                </div>
+              </Td>
             </Tr>
           ))}
         </tbody>

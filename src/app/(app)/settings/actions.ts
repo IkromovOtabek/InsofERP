@@ -6,10 +6,14 @@ import { db } from "@/lib/db";
 import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
-import { parseForm, zStr, zOpt, zDec, type ActionState } from "@/lib/action";
+import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
+import { saveDailyOrderLimits as saveDailyOrderLimitsDb } from "@/lib/company";
+import { MODULES } from "@/lib/nav";
+import { parsePerms, type Perms, type PermLevel } from "@/lib/auth";
+import { Prisma } from "@/generated/prisma";
 
-const ROLES = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
+const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
 const uniq = (e: unknown, msg: string) => (String(e).includes("Unique constraint") ? { error: msg } : null);
 
@@ -127,13 +131,29 @@ export async function saveWarehouse(id: string | null, _prev: ActionState, fd: F
 
 const accSchema = z.object({ name: zStr("Nomi kerak"), type: z.enum(["CASH", "BANK"]), isActive: zBool });
 
+/** Hisob qoldig'i — mijoz to'lovlari + boshqa kirimlar − chiqimlar (Kirim-Chiqim va Egasi dashbordi bilan bir xil formula). */
+async function accountBalance(id: string) {
+  const [pay, tx] = await Promise.all([
+    db.payment.aggregate({ where: { cashAccountId: id }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId: id }, _sum: { amount: true } }),
+  ]);
+  return Number(pay._sum.amount ?? 0) + tx.reduce((x, t) => x + (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0), 0);
+}
+
 export async function saveCashAccount(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(accSchema, fd);
   if ("error" in r) return { error: r.error };
   if (id) {
-    await db.cashAccount.update({ where: { id }, data: r.data });
-    await audit(db, s.userId, "UPDATE", "CashAccount", id, undefined, r.data);
+    const before = await db.cashAccount.findUniqueOrThrow({ where: { id } });
+    // Qoldig'i bor hisob nofaol qilinsa pul Kirim-Chiqim va dashborddagi jami summadan "yo'qolardi",
+    // tanlov ro'yxatidan ham chiqib, qoldiqni boshqa hisobga o'tkazib bo'lmay qolardi
+    if (before.isActive && !r.data.isActive) {
+      const bal = await accountBalance(id);
+      if (Math.abs(bal) >= 1) return { error: `«${before.name}» qoldig'i ${Math.round(bal).toLocaleString("ru-RU")} so'm — avval qoldiqni boshqa hisobga o'tkazing (Kirim-Chiqim), keyin nofaol qiling` };
+    }
+    const after = await db.cashAccount.update({ where: { id }, data: r.data });
+    await audit(db, s.userId, "UPDATE", "CashAccount", id, before, after);
   } else {
     const a = await db.cashAccount.create({ data: { name: r.data.name, type: r.data.type } });
     await audit(db, s.userId, "CREATE", "CashAccount", a.id, undefined, a);
@@ -163,10 +183,40 @@ export async function createUser(_prev: ActionState, fd: FormData): Promise<Acti
   return { ok: true };
 }
 
+/** Mavjud foydalanuvchining ismi va roli. DIRECTOR rolini faqat direktor beradi/oladi (sahifa faqat direktorniki);
+ *  o'z rolini o'zgartirib bo'lmaydi va oxirgi faol direktor rolidan tushirilmaydi — tizim egasiz qolmasin. */
+const editUserSchema = z.object({ fullName: zStr("F.I.O. kerak"), role: z.enum(ROLES) });
+
+export async function updateUser(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  if (s.role !== "DIRECTOR") return { error: "Faqat direktor" };
+  const r = parseForm(editUserSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const before = await db.user.findUniqueOrThrow({ where: { id }, select: { id: true, fullName: true, role: true, isActive: true } });
+  if (before.role !== r.data.role) {
+    if (id === s.userId) return { error: "O'z rolingizni o'zgartirib bo'lmaydi" };
+    if (before.role === "DIRECTOR" && before.isActive) {
+      const directors = await db.user.count({ where: { role: "DIRECTOR", isActive: true } });
+      if (directors <= 1) return { error: "Oxirgi faol direktorning rolini o'zgartirib bo'lmaydi" };
+    }
+  }
+  if (before.fullName === r.data.fullName && before.role === r.data.role) return { ok: true };
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id }, data: { fullName: r.data.fullName, role: r.data.role } });
+    // Rol o'zgarsa ochiq sessiyalar (ayniqsa mobil ilova) eski ruxsat bilan qolmasin
+    if (before.role !== r.data.role) await revokeSessions(tx, id);
+    await audit(tx, s.userId, "UPDATE", "User", id, { fullName: before.fullName, role: before.role }, { fullName: r.data.fullName, role: r.data.role });
+  });
+  refresh();
+  return { ok: true };
+}
+
 export async function toggleUser(id: string) {
   const s = await requireSession(["DIRECTOR"]);
   if (s.userId === id) return;
   const u = await db.user.findUniqueOrThrow({ where: { id } });
+  // Oxirgi faol direktor bloklanmasin
+  if (u.isActive && u.role === "DIRECTOR" && (await db.user.count({ where: { role: "DIRECTOR", isActive: true } })) <= 1) return;
   await db.user.update({ where: { id }, data: { isActive: !u.isActive } });
   // Hisob yopilganda uning ochiq veb/mobil sessiyalari ham shu zahoti tugaydi
   if (u.isActive) await revokeSessions(db, id);
@@ -188,15 +238,94 @@ export async function resetPassword(id: string, _prev: ActionState, fd: FormData
 }
 
 /** Zavod nuqtasi — Sozlamalardagi xaritadan belgilanadi; masofalar shundan hisoblanadi. */
-export async function savePlantLocation(lat: number, lng: number) {
-  await requireSession(["DIRECTOR"]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error("Nuqta noto'g'ri");
+export async function savePlantLocation(lat: number, lng: number): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng)) return { error: "Nuqta noto'g'ri" };
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return { error: "Koordinata oralig'idan tashqarida (kenglik −90…90, uzunlik −180…180)" };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { lat: true, lng: true } });
   await db.companySettings.upsert({
     where: { id: "main" },
     update: { lat, lng },
     create: { id: "main", lat, lng },
   });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ?? undefined, { lat, lng });
   revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** "Katta xarid" chegarasi — shundan katta ta'minot zayavkasi avval direktor tasdig'idan o'tadi (0 — cheklov yo'q).
+ *  Xuddi shu maydon Byudjet sahifasidagi "Holat chegaralari" formasida ham bor. */
+const supplyLimitSchema = z.object({
+  supplyDirectorLimit: z.string().trim().transform((v) => Number(v.replace(/[\s,]/g, ""))).refine((v) => Number.isFinite(v) && v >= 0 && v <= MAX_AMOUNT, "Summa noto'g'ri"),
+});
+
+export async function saveSupplyDirectorLimit(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(supplyLimitSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { supplyDirectorLimit: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, update: { supplyDirectorLimit: r.data.supplyDirectorLimit }, create: { id: "main", supplyDirectorLimit: r.data.supplyDirectorLimit } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ? { supplyDirectorLimit: Number(before.supplyDirectorLimit) } : undefined, { supplyDirectorLimit: r.data.supplyDirectorLimit });
+  refresh(); revalidatePath("/dashboard/byudjet"); revalidatePath("/taminot");
+  return { ok: true };
+}
+
+/* ───────── Kunlik zayavka limiti (direktor) ───────── */
+
+const dailyLimitSchema = z.object({
+  // 0 yoki bo'sh — cheklov yo'q
+  dailyOrderMaxM3: z.coerce.number().min(0).max(1_000_000).optional().or(z.literal("").transform(() => undefined)),
+  dailyOrderMaxCount: z.coerce.number().int().min(0).max(100000).optional().or(z.literal("").transform(() => undefined)),
+});
+
+/** Bir yetkazish kuniga tasdiqlanadigan zayavkalarning eng ko'p hajmi (m³) va soni. 0/bo'sh — cheklov yo'q. */
+export async function saveDailyOrderLimits(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(dailyLimitSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const m3 = r.data.dailyOrderMaxM3 && r.data.dailyOrderMaxM3 > 0 ? r.data.dailyOrderMaxM3 : null;
+  const count = r.data.dailyOrderMaxCount && r.data.dailyOrderMaxCount > 0 ? r.data.dailyOrderMaxCount : null;
+  await saveDailyOrderLimitsDb(s.userId, m3, count);
+  refresh(); revalidatePath("/orders");
+  return { ok: true };
+}
+
+/* ───────── Modul bo'yicha ruxsat (direktor taqsimlaydi) ───────── */
+
+const MODULE_KEYS = new Set(MODULES.map((m) => m.key));
+const LEVELS: PermLevel[] = ["none", "view", "write"];
+
+/**
+ * Foydalanuvchiga modul bo'yicha "yo'q / ko'rish / yozish" ruxsatini belgilaydi (rol ustiga ishlaydi).
+ * Faqat direktor; har o'zgarish auditda. Direktorning o'zini cheklab bo'lmaydi (u doim to'liq).
+ * Forma har modul uchun `perm.<modul>` = none|view|write yuboradi; "none" — saqlanmaydi (bo'sh = rol bo'yicha).
+ *
+ * Eslatma: ruxsat MODUL darajali. "orders" ga "view" — zayavkani ko'radi, lekin ocha/qabul qila olmaydi
+ * (ochish ham, qabul ham "write" talab qiladi — amal darajali ajratish yo'q).
+ */
+export async function saveUserPerms(userId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  if (s.role !== "DIRECTOR") return { error: "Faqat direktor" };
+  const target = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true, perms: true, fullName: true } });
+  if (!target) return { error: "Foydalanuvchi topilmadi" };
+  if (target.role === "DIRECTOR") return { error: "Direktor ruxsatlari cheklanmaydi — u doim to'liq huquqli" };
+
+  const perms: Perms = {};
+  for (const m of MODULES) {
+    const v = String(fd.get(`perm.${m.key}`) ?? "").trim();
+    // "none" — rolning odatiy holati emas, aniq yopish; "" (tanlanmagan/"rol bo'yicha") — perms'da saqlanmaydi
+    if ((LEVELS as string[]).includes(v) && v !== "" && MODULE_KEYS.has(m.key)) {
+      if (v === "none" || v === "view" || v === "write") perms[m.key] = v;
+    }
+  }
+  const before = parsePerms(target.perms) ?? {};
+  const after = Object.keys(perms).length ? perms : null;
+  // Hammasi "rol bo'yicha" bo'lsa perms ustuni tozalanadi (DbNull) — rol ruxsati o'z holicha qaytadi.
+  // Qayta kirish shart emas: perms tokenga yozilmaydi, `getSession` har so'rovda bazadan yangi qiymatni o'qiydi.
+  await db.user.update({ where: { id: userId }, data: { perms: after ?? Prisma.DbNull } });
+  await audit(db, s.userId, "UPDATE", "User", userId, { perms: before }, { perms: after ?? {}, xodim: target.fullName });
+  refresh();
+  return { ok: true };
 }
 
 /* ───────── Hisobni o'chirish so'rovlari (do'kon talabi) ───────── */

@@ -18,7 +18,7 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
     <form action={action} className="space-y-5">
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text="Saqlandi" />}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 [&>*]:min-w-0">
         <Field label="Davlat raqami *"><Input name="plate" defaultValue={v?.plate} placeholder="01 A 123 BC" required /></Field>
         <Field label="Turi *">
           <Select name="type" defaultValue={v?.type ?? "MIXER"}>
@@ -30,10 +30,10 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
         <Field label="Yuk sig'imi, m³" hint="Mikser uchun majburiy"><Input name="capacityM3" type="number" step="0.5" min="0" defaultValue={v?.capacityM3 ?? ""} /></Field>
         <Field label="Marka"><Input name="brand" defaultValue={v?.brand ?? ""} placeholder="Howo, Shacman, Kamaz" /></Field>
         <Field label="Modeli"><Input name="model" defaultValue={v?.model ?? ""} /></Field>
-        <Field label="Yili"><Input name="year" type="number" min="1980" max="2100" defaultValue={v?.year ?? ""} /></Field>
+        <Field label="Yili"><Input name="year" type="number" min="1970" max={new Date().getFullYear() + 1} defaultValue={v?.year ?? ""} /></Field>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 [&>*]:min-w-0">
         <Field label="Biriktirilgan haydovchi" hint="Reys ochilganda o'zi tanlanadi">
           <Select name="driverId" defaultValue={v?.driverId ?? ""}>
             <option value="">— biriktirilmagan —</option>
@@ -46,17 +46,18 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
           </Select>
         </Field>
         <Field label="Sarf normasi, l/100 km" hint="Haqiqiy sarf shu bilan solishtiriladi"><Input name="fuelNormL100" type="number" step="0.1" min="0" defaultValue={v?.fuelNormL100 ?? ""} /></Field>
-        <Field label="Probeg, km"><Input name="odometerKm" type="number" min="0" defaultValue={v?.odometerKm ?? ""} /></Field>
+        <Field label="Probeg, km" hint={v?.odometerKm != null ? "Kamaytirib bo'lmaydi — faqat xatoni tuzatish (sababi bilan)" : undefined}><Input name="odometerKm" type="number" min="0" defaultValue={v?.odometerKm ?? ""} /></Field>
         <Field label="Texnik ko'rik muddati"><Input name="inspectionUntil" type="date" defaultValue={v?.inspectionUntil ?? ""} /></Field>
         <div className="flex items-end pb-2"><Checkbox name="hasGps" label="Doimiy GPS-treker o'rnatilgan" defaultChecked={v?.hasGps} /></div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 [&>*]:min-w-0">
         <Field label="Sug'urta kompaniyasi"><Input name="insuranceCompany" defaultValue={v?.insuranceCompany ?? ""} /></Field>
         <Field label="Polis raqami"><Input name="insurancePolicy" defaultValue={v?.insurancePolicy ?? ""} /></Field>
         <Field label="Sug'urta muddati"><Input name="insuranceUntil" type="date" defaultValue={v?.insuranceUntil ?? ""} /></Field>
       </div>
 
+      {v?.odometerKm != null && <Field label="Probegni kamaytirish sababi" hint="Faqat probeg avvalgisidan kam kiritilsa kerak (auditga yoziladi)"><Input name="odometerReason" placeholder="Masalan: 125400 o'rniga 1254000 yozilgan edi" /></Field>}
       <Field label="Izoh"><Textarea name="note" defaultValue={v?.note ?? ""} rows={2} /></Field>
       {v && <Checkbox name="isActive" label="Faol (reysga beriladi). Sotilgan/hisobdan chiqarilgan bo'lsa belgini olib tashlang" defaultChecked={v.isActive} />}
       <FormActions>

@@ -1,38 +1,23 @@
-"use client";
+import { isTestMode } from "@/lib/test-mode";
+import { db } from "@/lib/db";
+import { ROLE_LABELS } from "@/lib/nav";
+import { LoginForm, type TestUser } from "./login-form";
 
-import { useActionState } from "react";
-import Link from "next/link";
-import { LogIn } from "lucide-react";
-import { loginAction } from "./actions";
-import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
-import { Logo } from "@/components/logo";
-import { BrandPanel } from "../brand-panel";
-
-export default function LoginPage() {
-  const [state, action, pending] = useActionState(loginAction, undefined);
-  return (
-    <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <BrandPanel />
-
-      {/* Forma */}
-      <section className="flex items-center justify-center bg-(--background) p-6">
-        <div className="w-full max-w-sm animate-fade-up">
-          <div className="mb-6 lg:hidden">
-            <Logo className="h-12" />
-          </div>
-          <h2 className="text-2xl font-semibold tracking-tight">Tizimga kirish</h2>
-          <p className="mt-1 text-sm text-slate-500">Xodimlar — Otdel kadr bergan login bilan. Insof ECO ilovasida ro'yxatdan o'tganlar — telefon raqami va ilovadagi parol bilan (direktor ruxsati kerak).</p>
-          <form action={action} className="mt-8 space-y-4">
-            <FormError error={state?.error} />
-            <Field label="Login yoki telefon"><Input name="login" autoComplete="username" autoFocus placeholder="sotuv1 yoki +998 90 123 45 67" /></Field>
-            <Field label="Parol"><PasswordInput name="password" autoComplete="current-password" placeholder="••••••••" /></Field>
-            <Button size="lg" className="w-full" disabled={pending}><LogIn size={17} /> {pending ? "Kirilmoqda…" : "Kirish"}</Button>
-          </form>
-          <Link href="/login/reset" className="mt-5 inline-block text-sm text-slate-500 transition hover:text-slate-900">
-            Parolni unutdingizmi?
-          </Link>
-        </div>
-      </section>
-    </main>
-  );
+/**
+ * Kirish sahifasi. Ikki yo'l: login+parol va telefon+kod (SMS/Telegram). Test rejimida
+ * qo'shimcha "Test xodimlar" bo'limi — `test.*` loginlarga bir bosishda kirish
+ * (`isTestMode` orqali; production'da bu bo'lim umuman yuklanmaydi).
+ */
+export default async function LoginPage() {
+  const testMode = isTestMode();
+  let testUsers: TestUser[] = [];
+  if (testMode) {
+    const rows = await db.user.findMany({
+      where: { login: { startsWith: "test." }, isActive: true },
+      select: { login: true, fullName: true, role: true },
+      orderBy: { login: "asc" },
+    });
+    testUsers = rows.map((u) => ({ login: u.login, fullName: u.fullName, roleLabel: ROLE_LABELS[u.role] }));
+  }
+  return <LoginForm testMode={testMode} testUsers={testUsers} />;
 }

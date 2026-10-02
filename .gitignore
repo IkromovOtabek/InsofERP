@@ -5,6 +5,7 @@ out
 .env.local
 .env.*
 !.env.example
+!.env.test.example
 *.log
 .DS_Store
 src/generated

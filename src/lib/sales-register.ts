@@ -18,10 +18,11 @@ const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёўқғҳ]+/g
  * н-к (наличка) — naqd kassa, п-р (перечисление) — bank hisobi. Tanib bo'lmasa null.
  */
 export function payKind(v: string): "CASH" | "BANK" | null {
-  const s = v.toLowerCase().replace(/[\s.,'"]/g, "");
+  // Bo'shliq, nuqta va o'zbekcha tutuq belgilarining barcha ko'rinishi (' ‘ ’ ʻ ʼ `) olib tashlanadi; "п/р" = "п-р"
+  const s = v.toLowerCase().replace(/[\s.,'"‘’ʻʼ`]/g, "").replace(/\//g, "-");
   if (!s) return null;
   if (/^(н-?к|нал|naqd|nk|nal)/.test(s)) return "CASH";
-  if (/^(п-?р|перечисл|безнал|б\/?н|pr|otkazma|o‘tkazma|o'tkazma|bank|plastik)/.test(s)) return "BANK";
+  if (/^(п-?р|перечисл|безнал|б-?н|pr|otkazma|otkazish|pulotkaz|perechisl|bank|plastik|karta|terminal|click|payme|uzcard|humo)/.test(s)) return "BANK";
   return null;
 }
 
@@ -132,6 +133,15 @@ function rowKey(x: { date: Date; customerId: string; ttn?: string | null; vehicl
  * "Деньги" ustuni tanilmasa — pul naqd kassaga yoziladi (jurnalda ko'rinadi, keyin tuzatish mumkin).
  */
 export async function importSalesRegister(input: RegisterImportInput, userId: string): Promise<RegisterImportResult> {
+  // Manfiy narx/summa — Excel'dagi qaytarish yoki xato: kassadan "minus kirim" yozilib qolmasin
+  const MONEY_COLS = [["price", "narx"], ["sum", "summa"], ["nds", "NDS"], ["total", "itogo summa"], ["deliveryFee", "dostavka"]] as const;
+  for (const [i, r] of input.rows.entries()) {
+    for (const [k, label] of MONEY_COLS) {
+      const v = r[k];
+      if (v != null && Number.isFinite(v) && v < 0) throw new Error(`${i + 1}-qator (${r.customer}): ${label} manfiy (${v}) — qaytarish/tuzatish importda qabul qilinmaydi`);
+    }
+    if (!(r.qty > 0)) throw new Error(`${i + 1}-qator (${r.customer}): miqdor 0 dan katta bo'lsin`);
+  }
   const batch = `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return db.$transaction(async (tx) => {
     const { result, missing, created } = await resolveCustomers(tx, input.rows.map((r) => r.customer), input.createMissing);
@@ -172,6 +182,7 @@ export async function importSalesRegister(input: RegisterImportInput, userId: st
           data: {
             customerId: customer.id, cashAccountId: accountId, amount: a.total, date: r.date,
             note: ["Realizatsiya", r.productName, r.ttn ? `TTN ${r.ttn}` : "", r.invoiceNo ? `Schyot ${r.invoiceNo}` : ""].filter(Boolean).join(" · "),
+            createdById: userId,
           },
           select: { id: true },
         });

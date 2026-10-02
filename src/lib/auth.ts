@@ -10,12 +10,35 @@ import { authSecret, JWT_ALGS } from "./secret";
 const COOKIE = "insof_session";
 const SESSION_TTL_SEC = 60 * 60 * 12;
 
-export type Session = { userId: string; login: string; fullName: string; role: Role };
+/** Modul (asosiy bo'lim) bo'yicha ruxsat darajasi — direktor User.perms da taqsimlaydi. */
+export type PermLevel = "none" | "view" | "write";
+/** `{ "<modul>": "none" | "view" | "write" }` — modul darajali ruxsat (amal darajali emas). */
+export type Perms = Record<string, PermLevel>;
 
-/** Tokendagi maydonlar: `sv` — User.sessionVersion; parol almashsa/hisob yopilsa eski tokenlar kuyadi. */
-type Claims = Session & { sv: number };
+export type Session = {
+  userId: string; login: string; fullName: string; role: Role;
+  /** Direktor bergan modul ruxsatlari (rol ustiga ishlaydi). Token ichida saqlanmaydi — bazadan o'qiladi. */
+  perms?: Perms;
+};
+
+/** Tokendagi maydonlar: `sv` — User.sessionVersion; parol almashsa/hisob yopilsa eski tokenlar kuyadi.
+ *  `perms` tokenga yozilmaydi: direktor ruxsatni o'zgartirsa, foydalanuvchini qayta kirishga majburlamay,
+ *  har so'rovda bazadagi yangi qiymat o'qiladi. */
+type Claims = Omit<Session, "perms"> & { sv: number };
 
 type SessionUser = { id: string; login: string; fullName: string; role: Role; sessionVersion: number };
+
+const VALID_LEVELS: PermLevel[] = ["none", "view", "write"];
+
+/** User.perms (Json) ni xavfsiz o'qish: faqat satr → daraja juftliklari qoladi, buzuq qiymat tashlanadi. */
+export function parsePerms(raw: unknown): Perms | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Perms = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && (VALID_LEVELS as string[]).includes(v)) out[k] = v as PermLevel;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 /** Cookie'ga yangi imzolangan sessiya yozadi (login va parol o'zgarganda qayta berish uchun). */
 export async function issueSession(user: SessionUser): Promise<Session> {
@@ -78,12 +101,24 @@ export const getSession = cache(async (): Promise<Session | null> => {
   if ((claims as { typ?: unknown }).typ !== undefined || typeof claims.userId !== "string") return null;
   const user = await db.user.findUnique({
     where: { id: claims.userId },
-    select: { id: true, login: true, fullName: true, role: true, isActive: true, sessionVersion: true },
+    select: { id: true, login: true, fullName: true, role: true, isActive: true, sessionVersion: true, perms: true },
   });
   if (!user || !user.isActive) return null;
   if ((claims.sv ?? 0) !== user.sessionVersion) return null;
-  return { userId: user.id, login: user.login, fullName: user.fullName, role: user.role };
+  return { userId: user.id, login: user.login, fullName: user.fullName, role: user.role, perms: parsePerms(user.perms) };
 });
+
+/**
+ * Modul bo'yicha YOZISH huquqi — server action'lar uchun. `userId` (sessiya emas) bilan ishlaydi,
+ * shuning uchun `lib/orders.ts` kabi domen funksiyalari (veb va mobil bitta joydan o'tadi) ham chaqira oladi.
+ * Direktor doim to'liq. perms'da modul berilgan bo'lsa shu hal qiladi (grant/restrict), aks holda rol bo'yicha.
+ */
+export async function canWriteByUserId(userId: string, module: string): Promise<boolean> {
+  const { canWrite } = await import("./nav");
+  const u = await db.user.findUnique({ where: { id: userId }, select: { role: true, perms: true } });
+  if (!u) return false;
+  return canWrite({ role: u.role, perms: parsePerms(u.perms) }, module);
+}
 
 /**
  * Hisobning barcha sessiyalarini (veb cookie + mobil access/refresh) bekor qiladi.

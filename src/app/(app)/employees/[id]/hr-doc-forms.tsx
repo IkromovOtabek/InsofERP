@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Download, FileSignature, FileText, Pencil, Printer, Upload, X } from "lucide-react";
 import type { HrDocField } from "@/lib/hr-docs";
+import { oversizeFiles } from "@/lib/kadr";
 import { deleteHrDoc, deleteHrDocScan, prepareHiringSet, saveHrDoc, uploadHrDocScan } from "../../otdel-kadr/hr-doc-actions";
 import { Badge, Button, Field, FormError, Input, Select } from "@/components/ui";
 import { DeleteButton } from "@/components/delete-button";
@@ -331,11 +332,12 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
 
 function ScanForm({ docId, accept, onDone }: { docId: string; accept: string; onDone: () => void }) {
   const [state, action, pending] = useActionState(uploadHrDocScan.bind(null, docId), undefined);
+  const [tooBig, setTooBig] = useState<string | null>(null); // 10 MB dan katta fayl — yuborilmaydi
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => { if (state?.ok) { ref.current?.reset(); onDone(); } }, [state, onDone]);
 
   return (
-    <form ref={ref} action={action} className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+    <form ref={ref} action={action} onSubmit={(e) => { const p = oversizeFiles(e.currentTarget); setTooBig(p); if (p) e.preventDefault(); }} className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
       <p className="mb-2 text-xs text-slate-600">
         Imzolangan hujjatni skaner qiling yoki telefonda suratga oling — PDF, JPG, PNG yoki WEBP.
       </p>
@@ -344,7 +346,7 @@ function ScanForm({ docId, accept, onDone }: { docId: string; accept: string; on
         <Button variant="secondary" disabled={pending}><Upload size={15} /> {pending ? "Yuklanmoqda…" : "Yuklash"}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>Bekor qilish</Button>
       </div>
-      <FormError error={state?.error} />
+      <FormError error={tooBig ?? state?.error} />
     </form>
   );
 }

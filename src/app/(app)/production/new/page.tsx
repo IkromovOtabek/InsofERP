@@ -1,14 +1,17 @@
 import { db } from "@/lib/db";
 import { customerMarks, markedName } from "@/lib/finance";
-import { requireSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { requirePage } from "@/lib/page-guard";
 import { PageHeader } from "@/components/ui";
 import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
 import { BatchForm, type OpenTask } from "../batch-form";
-import { unitLabel, soleUnit } from "@/lib/unit";
+import { unitLabel } from "@/lib/unit";
 
 export default async function NewBatch() {
-  const s = await requireSession(["PRODUCTION"]);
+  const s = await requirePage("/production");
+  // Zames faqat ishlab chiqarish (va direktor) yozadi — boshqalarga xato sahifasi emas, ro'yxatga qaytish
+  if (s.role !== "PRODUCTION" && s.role !== "DIRECTOR") redirect("/production");
   const [orders, catalog, warehouses, tasks] = await Promise.all([
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
@@ -34,11 +37,25 @@ export default async function NewBatch() {
     });
   }
   const marks = await customerMarks(orders.map((o) => o.customerId));
-  // Sodda holat: zayavkada bitta marka deb olamiz (ko'p markali zayavka bo'lsa — birinchisi)
-  const orderOpts = orders.map((o) => {
-    const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-    const done = o.batches.reduce((s, b) => s + Number(b.qtyM3), 0);
-    return { id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), productId: o.items[0]?.productId ?? "", remainingM3: Math.max(0, total - done), unit: unitLabel(soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3") };
+  // Har zayavka QATORI alohida variant: o'z mahsuloti, birligi va shu mahsulot bo'yicha qolgan miqdori.
+  // Zames faqat beton (m³) uchun — dona mahsulot brigada topshirig'i orqali chiqariladi.
+  // Zames `orderItemId` saqlamaydi, shuning uchun qoldiq (zayavka, mahsulot) juftligi bo'yicha:
+  // bir zayavkada bir marka ikki qatorda bo'lsa — bitta variant (miqdorlar qo'shiladi).
+  const orderOpts = orders.flatMap((o) => {
+    const byProduct = new Map<string, { name: string; unit: string; total: number }>();
+    for (const i of o.items) {
+      if (i.product.unit !== "m3") continue;
+      const cur = byProduct.get(i.productId) ?? { name: i.product.name, unit: i.product.unit, total: 0 };
+      cur.total += Number(i.qtyM3);
+      byProduct.set(i.productId, cur);
+    }
+    return [...byProduct].map(([productId, x]) => {
+      const done = o.batches.filter((b) => b.productId === productId).reduce((s, b) => s + Number(b.qtyM3), 0);
+      return {
+        key: `${o.id}~${productId}`, id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks),
+        productId, product: x.name, remainingM3: Math.max(0, Math.round((x.total - done) * 1000) / 1000), unit: unitLabel(x.unit),
+      };
+    });
   }).filter((o) => o.remainingM3 > 0);
 
   return (

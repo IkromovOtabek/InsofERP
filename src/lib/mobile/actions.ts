@@ -25,8 +25,9 @@ import { pushTripStatus, pushTripToEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
 import type { AttendanceStatus } from "@/generated/prisma";
-import { isAttendanceStatus, today } from "@/lib/davomat";
-import { assignEmployeeBrigade, markAllPresent, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
+import { dayUtc, isAttendanceStatus, today } from "@/lib/davomat";
+import { faceCheckEnabled } from "@/lib/ai/face";
+import { assignEmployeeBrigade, markAllPresent, markAttendanceByFace, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
 import { submitReport } from "@/lib/production-report";
 import { addProductDefect } from "@/lib/defects";
 import { closeShift, isIssueKind, openShift, reportBrigadeIssue, resolveBrigadeIssue, canResolveIssue, startTask } from "@/lib/brigade-shift";
@@ -60,11 +61,11 @@ export type Receipt = {
 
 const Receiver = z.object({ receiverName: z.string().trim().min(2, "Qabul qilgan kishini yozing"), note: z.string().trim().optional() });
 const Progress = z.object({
-  qty: z.coerce.number().positive("Miqdor 0 dan katta bo'lsin"),
+  qty: z.coerce.number({ message: "Raqam kiriting" }).positive("Miqdor 0 dan katta bo'lsin"),
   note: z.string().trim().optional(),
 });
 const Pay = z.object({
-  amount: z.coerce.number().positive("Summa 0 dan katta bo'lsin"),
+  amount: z.coerce.number({ message: "Raqam kiriting" }).positive("Summa 0 dan katta bo'lsin"),
   cashAccountId: z.string().trim().min(1, "Kassa/hisob tanlanmagan"),
   note: z.string().trim().optional(),
 });
@@ -143,6 +144,24 @@ async function brigadeOf(user: MobileUser, id: string): Promise<{ brigadeId: str
   return { brigadeId, taskId };
 }
 
+/**
+ * Fakt kiritish / yakunlash formasidagi ixtiyoriy "shundan brak" — bajarilgan miqdor yozilgach
+ * brak shu topshiriqqa bog'lanib qayd qilinadi. Brak yozilmasa ham fakt saqlangan bo'ladi:
+ * xato matni xabarga qo'shiladi (brigadir kartadagi "Brakni qayd qilish" bilan qayta yozadi).
+ */
+async function defectWithProgress(user: MobileUser, taskId: string, payload: Record<string, unknown>): Promise<string | null> {
+  const qty = optNum(payload, "defectQty");
+  if (!qty || qty <= 0) return null;
+  const t = await db.brigadeTask.findUniqueOrThrow({ where: { id: taskId }, select: { brigadeId: true, orderItem: { select: { productId: true } } } });
+  const r = await addProductDefect({
+    productId: t.orderItem.productId, qty, reason: textOf(payload, "defectReason") || "Boshqa", brigadeId: t.brigadeId, taskId,
+    note: textOf(payload, "defectNote") || null,
+  }, user.id);
+  if ("error" in r) return `Brak yozilmadi: ${r.error}`;
+  notifyAfter(() => notifyRoles(["PRODUCTION", "SUPERVISOR"], { type: "DEFECT", title: "Brak qayd qilindi", body: r.text, channel: "oddiy" }, { except: user.id }));
+  return `brak ${r.text}`;
+}
+
 export async function runMobileAction(user: MobileUser, action: string, rawId: string, payload: Record<string, unknown> = {}): Promise<ActionResult> {
   if (!rawId) fail("id yo'q");
   // Aralash ro'yxatdan ochilgan kartochka (`orders:<id>`) — amal haqiqiy id bilan bajariladi
@@ -151,7 +170,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (!can(user, action)) fail("Bu amalga ruxsatingiz yo'q", 403);
   if (action.startsWith("trip.")) await assertOwnTrip(user, id);
   if (action.startsWith("task.")) await assertOwnTask(user, id);
-  if (["att.present", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
+  if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
   switch (action) {
     // ── Zayavka ──
@@ -275,7 +294,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "trip.close": {
       const r = await tripClosed(id, user.id, { acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: textOf(payload, "note") || null });
       if (r.error) fail(r.error);
-      return { ok: true, message: "Reys yopildi" };
+      return { ok: true, message: r.warning ? `Reys yopildi. ${r.warning}` : "Reys yopildi" };
     }
     case "trip.eco": {
       if (!ecoEnabled()) fail("ECO ulanmagan");
@@ -290,9 +309,11 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       if (!p.success) fail(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const r = await taskProgress(id, p.data!.qty, user.id, p.data!.note);
       if (r.error) fail(r.error);
+      clearDashCache();
       // `note` — hovliga nechta kirim bo'lgani, zayavka yopilgani, xomashyo yetmagani
       const base = r.status === "DONE" ? "Qayd qilindi — topshiriq bajarildi" : "Qayd qilindi";
-      return { ok: true, message: r.note ? `${base}. ${r.note}` : base };
+      const def = await defectWithProgress(user, id, payload);
+      return { ok: true, message: [r.note ? `${base}. ${r.note}` : base, def].filter(Boolean).join(" · ") };
     }
     case "task.start": {
       // Smena ochilmagan bo'lsa — ish boshlanishi smenani ham ochadi (brigadir unutib qo'ymasin)
@@ -310,12 +331,21 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const r = await taskProgress(id, left, user.id, textOf(payload, "note") || "Yakunlandi");
       if (r.error) fail(r.error);
       clearDashCache();
-      return { ok: true, message: r.note ? `Topshiriq yakunlandi. ${r.note}` : "Topshiriq yakunlandi" };
+      const def = await defectWithProgress(user, id, payload);
+      return { ok: true, message: [r.note ? `Topshiriq yakunlandi. ${r.note}` : "Topshiriq yakunlandi", def].filter(Boolean).join(" · ") };
     }
     case "task.defect":
     case "shift.defect": {
-      const { brigadeId } = await brigadeOf(user, id);
-      const r = await addProductDefect({ productId: textOf(payload, "productId"), qty: numOf(payload, "qty"), reason: textOf(payload, "reason"), brigadeId, note: textOf(payload, "note") || null }, user.id);
+      const { brigadeId, taskId } = await brigadeOf(user, id);
+      // Smena bo'yicha brak (topshiriqsiz): brigadir faqat o'z brigadasi ishlayotgan mahsulotni yozadi —
+      // hovlidagi istalgan mahsulotni (masalan, betonni) hisobdan chiqarib bo'lmasin
+      if (!taskId && user.role === "BRIGADIER") {
+        const own = await db.brigadeTask.count({
+          where: { brigadeId, status: { in: ["NEW", "IN_PROGRESS", "DONE"] }, orderItem: { productId: textOf(payload, "productId") } },
+        });
+        if (!own) fail("Bu mahsulot brigadangiz topshiriqlarida yo'q");
+      }
+      const r = await addProductDefect({ productId: textOf(payload, "productId"), qty: numOf(payload, "qty"), reason: textOf(payload, "reason"), brigadeId, taskId, note: textOf(payload, "note") || null }, user.id);
       if ("error" in r) fail(r.error);
       const text = (r as { text: string }).text;
       // Sifat — ishlab chiqarishning nazorati: brigadir yozgan brak ularga ham ko'rinsin
@@ -437,7 +467,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: r.note ?? "Qabul qilindi — skladga kirim yozildi" };
     }
     case "supply.reject": {
-      const r = await rejectSupplyRequest(id, user.id, textOf(payload, "reason"));
+      const r = await rejectSupplyRequest(id, { id: user.id, role: user.role }, textOf(payload, "reason"));
       if (r.error) fail(r.error);
       return { ok: true, message: "Ta'minot zayavkasi bekor qilindi" };
     }
@@ -579,14 +609,31 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const status = action === "att.present" ? "PRESENT" : action === "att.absent" ? "ABSENT" : textOf(payload, "status");
       if (!employeeId) fail("Xodim tanlanmagan");
       if (!isAttendanceStatus(status)) fail("Holatni tanlang");
-      const withForm = action === "att.status" || action === "att.form";
+      // Brigadir: yuz tekshiruvi yoqiq bo'lsa "Keldi" faqat `att.face` orqali (kamerasiz belgilab yuborilmasin);
+      // kelgan/ketgan vaqtni esa faqat sex boshlig'i (PRODUCTION/SUPERVISOR) tuzatadi
+      const brig = user.role === "BRIGADIER";
+      if (brig && status === "PRESENT" && faceCheckEnabled()) {
+        const cur = await db.attendance.findUnique({ where: { employeeId_date: { employeeId: employeeId!, date: dayUtc(today()) } }, select: { status: true } });
+        if (cur?.status !== "PRESENT") fail("Yuz tekshiruvi yoqilgan — \"Keldi\" ni faqat yuz bilan tasdiqlang", 403);
+      }
+      const withForm = (action === "att.status" || action === "att.form") && !brig;
       const r = await markProductionAttendance(user.id, employeeId, {
         status: status as AttendanceStatus,
         checkIn: withForm ? textOf(payload, "checkIn") || null : undefined,
         checkOut: withForm ? textOf(payload, "checkOut") || null : undefined,
+        ...(brig && action === "att.status" ? { note: textOf(payload, "note") || null } : {}),
         note: withForm ? textOf(payload, "note") || null : undefined,
       });
       if ("error" in r) fail(r.error!);
+      clearDashCache();
+      return { ok: true, message: (r as { text: string }).text };
+    }
+    case "att.face": {
+      // Ilova old kameradan kadrni data-URL qilib yuboradi; solishtirish va qoida — `lib/production-staff.ts`
+      const photo = dataUrlFile(textOf(payload, "photo"), "yuz");
+      if (!photo) fail("Xodimning yuzini kameraga oling");
+      const r = await markAttendanceByFace(user.id, id, photo!);
+      if ("error" in r) fail(r.error);
       clearDashCache();
       return { ok: true, message: (r as { text: string }).text };
     }
@@ -598,6 +645,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     }
     case "att.all": {
       // Brigadir — faqat o'z brigadasi (smena kartasidan, id `b~<brigadeId>`)
+      // Yuz tekshiruvi yoqiq bo'lsa brigadir hammani birdan "Keldi" qila olmaydi — har biri yuz bilan
+      if (user.role === "BRIGADIER" && faceCheckEnabled()) fail("Yuz tekshiruvi yoqilgan — har bir a'zoni yuz bilan \"Keldi\" qiling", 403);
       const only = user.role === "BRIGADIER" ? [(await brigadeOf(user, id)).brigadeId] : undefined;
       const r = await markAllPresent(user.id, today(), only);
       clearDashCache();

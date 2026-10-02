@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { activityDetail, splitRef } from "./director";
 import { customerCredit } from "@/lib/finance";
+import { materialOutlook } from "@/lib/dashboard";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { activeBrigades } from "@/lib/brigades";
@@ -10,7 +11,7 @@ import { lastFuelPrice } from "@/lib/logistics-costs";
 import { customersHistory, STAR_LABELS } from "@/lib/finance";
 import {
   DELIVERY_KINDS, SUPPLY_LABEL, SUPPLY_OWNER, SUPPLY_STEPS, hasFact, lastPurchasePrices, plannedSum, priceDelta, priceKey,
-  supplyRequest, totalFact, totalPlanned, isOpenSupply,
+  supplyRequest, totalFact, totalPlanned, isOpenSupply, canRejectSupply,
 } from "@/lib/supply";
 import { DELIVERY_OWN } from "@/lib/supply-const";
 import { directorLimit, needsDirector, responsibleOptions } from "@/lib/procurement";
@@ -23,8 +24,13 @@ import { DETAIL_KEY, driverEmployeeId, myBrigadeIds, ListError } from "./list";
 import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
 import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
+import { repDetail } from "./report-detail";
+import { dashDetail } from "./dash-detail";
 import { brigIssueDetail, brigShiftDetail, defectAction, issueActions } from "./brigadier";
 import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
+import { DEFECT_REASONS } from "@/lib/production-day";
+import { TASK_ROLES } from "@/lib/tasks";
+import { pctText } from "./fmt";
 import type { Role, SupplyStatus } from "@/generated/prisma";
 
 /**
@@ -59,6 +65,9 @@ export type FormField = {
   options?: FormOption[];
   /** Shart: boshqa maydon shu qiymatda bo'lsagina ko'rinadi. */
   showIf?: { field: string; equals: string };
+  /** `photo` uchun: qaysi kamera ochilsin (yuz — old kamera) va galereyadan tanlashga yo'l qo'ymaslik (faqat jonli kadr). */
+  camera?: "front" | "back";
+  cameraOnly?: boolean;
   columns?: FormField[];
   /** `date` maydoni uchun — veb "10 kunlik ish tartibi" bilan bir xil kunlik yuklama (`lib/mobile/create.ts` `dayCells`). */
   cells?: DayCell[];
@@ -103,6 +112,18 @@ export type DetailAction = {
   /** Serverga so'rov yubormaydigan tugma — faqat `effect` bajariladi (masalan marshrutni ochish). */
   local?: boolean;
 };
+/**
+ * Pul hujjati "chek" ko'rinishida (kirim-chiqim, to'lov, schyot, xarid kirimi) — ilova sarlavha va
+ * maydonlar o'rniga chek kartasini chizadi: katta summa, holat plashkasi (kirim yashil / chiqim qizil),
+ * qatorlar, raqamni nusxalash. `fields` baribir to'ldiriladi — eski ilova chekni bilmaydi.
+ * Amal natijasidagi `Receipt` (`actions.ts`) bilan bir xil shakl.
+ */
+export type DetailReceipt = {
+  headline: string;
+  caption?: string;
+  status: { label: string; tone: "success" | "warning" | "danger"; at: string };
+  rows: { label: string; value: string; copy?: boolean }[];
+};
 export type MobileDetail = {
   key: string;
   id: string;
@@ -112,6 +133,7 @@ export type MobileDetail = {
   fields: DetailField[];
   sections: HomeSection[];
   actions: DetailAction[];
+  receipt?: DetailReceipt;
 };
 
 const sum = (n: unknown) => Number(n ?? 0);
@@ -208,10 +230,11 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Schyot yozish — veb `/invoices/new` bilan bir xil
   "order.invoice": ["SALES", "ACCOUNTING"],
   // Brigadir o'z brigadasining topshirig'ini ilovada qayd qiladi (`assertOwnTask` — qaysi topshiriqni)
-  "task.progress": ["SUPERVISOR", "PRODUCTION", "LOGISTICS", "BRIGADIER"],
+  // Rol matritsasi `lib/tasks.ts` (TASK_ROLES) — veb bilan bir xil; logistika ishlab chiqarish natijasini yozmaydi
+  "task.progress": [...TASK_ROLES.progress, "BRIGADIER"],
   // Brigadir ish kuni (`lib/brigade-shift.ts`): ishni boshlash, yakunlash, muammo va brak — o'z topshirig'ida
   "task.start": ["BRIGADIER"],
-  "task.finish": ["SUPERVISOR", "PRODUCTION", "LOGISTICS", "BRIGADIER"],
+  "task.finish": [...TASK_ROLES.progress, "BRIGADIER"],
   "task.defect": ["BRIGADIER"],
   // Smena kartochkasi (id — `b~<brigadeId>`) va topshiriq kartasi (id — topshiriq): smena, muammolar, brak
   "shift.open": ["BRIGADIER"],
@@ -223,11 +246,11 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "issue.other": ["BRIGADIER"],
   // Muammoni mas'ul bo'lim yopadi; qaysi tur kimniki — `canResolveIssue` (brigadir o'zinikini ham)
   "issue.resolve": ["BRIGADIER", ...ISSUE_RESOLVERS],
-  "task.cancel": ["SUPERVISOR", "PRODUCTION", "SALES"],
+  "task.cancel": [...TASK_ROLES.cancel],
   // Brigadir — veb "Brigadalar" sahifasidagi bilan bir xil ruxsat
-  "employee.brigade": ["HR", "PRODUCTION", "SUPERVISOR"],
-  "employee.brigade.clear": ["HR", "PRODUCTION", "SUPERVISOR"],
-  "brigade.toggle": ["SUPERVISOR", "PRODUCTION", "HR"],
+  "employee.brigade": [...TASK_ROLES.brigadeEdit],
+  "employee.brigade.clear": [...TASK_ROLES.brigadeEdit],
+  "brigade.toggle": [...TASK_ROLES.brigadeEdit],
   // Ta'minot zanjiri — `lib/supply-actions.ts` dagi bilan bir xil bo'linish:
   // sklad so'raydi → snabjeniye narxlaydi → sotuv tasdiqlaydi → moliya pul ajratadi → snabjeniye qabul qiladi.
   // Zavodda alohida snabjeniye logini bo'lmasligi mumkin — snabjeniye amallarini WAREHOUSE ham bajaradi.
@@ -237,7 +260,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supply.fund": ["FINANCE", "ACCOUNTING", "CASHIER"],
   "supply.fact": ["PROCUREMENT", "WAREHOUSE"],
   "supply.receive": ["PROCUREMENT", "WAREHOUSE"],
-  "supply.reject": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"],
+  // Aniq qoida bosqich va yaratuvchiga bog'liq — `canRejectSupply` (pul bosqichida faqat moliya/direktor)
+  "supply.reject": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "DIRECTOR"],
   // Snabjeniye TZ (`lib/procurement.ts`): rekvizit, taklif, yetkazish — snabjeniye; katta xarid — direktor;
   // muammoni so'rovchi bo'lim ham yozadi; hujjatni buxgalteriya/moliya ham biriktiradi
   "supply.meta": ["PROCUREMENT", "WAREHOUSE"],
@@ -258,8 +282,12 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supplier.toggle": ["WAREHOUSE", "PROCUREMENT"],
   // Sex (mobil ishlab chiqarish bosh ekrani): davomatni sex boshlig'i belgilaydi (`lib/production-staff.ts`),
   // kunlik hisobotni u qayd etadi; xodimni brigadaga direktor taqsimlaydi
-  // Brigadir smena boshida faqat O'Z brigadasi a'zolarini belgilaydi (`assertOwnMember`)
+  // Brigadir smena boshida faqat O'Z brigadasi a'zolarini belgilaydi (`assertOwnMember`).
+  // Yuz tekshiruvi yoqiq bo'lsa brigadir "Keldi" ni faqat `att.face` bilan qo'yadi: att.present/att.all va
+  // att.status orqali PRESENT rad etiladi, vaqtni esa faqat sex boshlig'i tuzatadi (`lib/mobile/actions.ts`)
   "att.present": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
+  // "Keldi" yuz bilan: kamera kadri profil surati bilan solishtiriladi (`lib/ai/face.ts`), mos kelmasa yozilmaydi
+  "att.face": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "att.checkout": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "att.absent": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "att.status": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
@@ -296,9 +324,17 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   "brig-shift": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "brig-issue": ["BRIGADIER", ...ISSUE_RESOLVERS],
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
+  // Hisobotdan bosib ochiladigan soat / brigada / mahsulot / brak kartalari — faqat ko'rish (`./report-detail.ts`)
+  rep: ["PRODUCTION", "SUPERVISOR"],
+  // Mijozning shaxsiy ma'lumoti (ism, telefon) — faqat sotuv
+  leads: ["SALES"],
+  // Pul hujjati: summa, to'lovlar — ro'yxatdagi ACCESS bilan bir xil
+  invoices: ["ACCOUNTING", "FINANCE", "SALES", "CASHIER"],
+  // Yetkazuvchi rekvizitlari va qarzi
+  suppliers: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
 };
 
-const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp"];
+const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"];
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
@@ -306,7 +342,9 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   // zayavka, schyot va boshqa hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
   if (user.role === "BRIGADIER" && !BRIGADIER_CARDS.includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Haydovchi ilovada faqat reys kartochkasini ochadi — vebda ham unga faqat "Mening reyslarim" ochiq
-  if (user.role === "DRIVER" && key !== "trips") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  if (user.role === "DRIVER" && key !== "trips" && key !== "dash") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  // Sotuv agenti faqat o'z zayavkasi va o'z mijozi kartochkasini ochadi (ownership quyida tekshiriladi)
+  if (user.role === "AGENT" && !["orders", "customers", "dash"].includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Aralash ro'yxatlar (direktor "Tasdiqlar") qator id'sida kartochka kalitini olib keladi: `orders:<id>`
   const [refKey, refId] = splitRef(id);
   if (refKey) return mobileDetail(user, refKey, refId);
@@ -329,14 +367,17 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "employees": return employeeDetail(user, id);
     case "cashflow": return cashflowDetail(id);
     case "supply": return supplyDetail(user, id);
-    case "customers": return customerDetail(id);
+    case "customers": return customerDetail(user, id);
     case "leads": return leadDetail(user, id);
     case "brigades": return brigadeDetail(user, id);
     case "suppliers": return supplierDetail(user, id);
     case "recipes": return recipeDetail(id);
+    // Dashboard kartasi bosilganda — davr bo'yicha batafsil (`./dash-detail.ts`), rol foydalanuvchidan
+    case "dash": return dashDetail(user, id);
     case "sex": return sexDetail(user, id);
     case "sex-emp": return sexEmployeeDetail(user, id);
     case "prod-report": return savedReportDetail(user, id);
+    case "rep": return repDetail(user, id);
     case "brig-shift": return brigShiftDetail(user, id);
     case "brig-issue": return brigIssueDetail(user, id);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
@@ -351,6 +392,8 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     include: { customer: true, items: { include: { product: true } }, trips: { include: { driver: true, vehicle: true } }, batches: { include: { product: true } }, invoices: true, createdBy: true },
   });
   if (!o) throw new ListError("NOT_FOUND", "Zayavka topilmadi", 404);
+  // Sotuv agenti faqat o'zi kiritgan zayavkani ochadi (begona id qo'lda yuborilsa — "topilmadi")
+  if (user.role === "AGENT" && o.createdById !== user.id) throw new ListError("NOT_FOUND", "Zayavka topilmadi", 404);
   const credit = await customerCredit(o.customerId);
   const total = o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0);
   // Hajm mahsulot birligida — vebdagi zayavka kartochkasi bilan bir xil
@@ -399,7 +442,10 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       { title: "Reyslar", empty: "Reys yo'q", target: "trips", rows: o.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: t.driver.fullName, right: inUnit(sum(t.qtyM3), orderUnit), status: t.status, tone: TRIP_TONE[t.status] })) },
       { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: day(b.date), right: inUnit(sum(b.qtyM3), b.product.unit) })) },
       { title: "Schyotlar", empty: "Schyot yo'q", target: "invoices", rows: o.invoices.map((i) => ({ id: i.id, title: i.invoiceNo, subtitle: day(i.date), right: money(sum(i.amount)), status: i.status })) },
-    ].filter((s) => s.rows.length > 0 || s.title === "Mahsulotlar"),
+    ]
+      // Schyot kartasi faqat moliya va sotuvga ochiq (DETAIL_ROLES) — boshqalarga ochilmaydigan havola ko'rsatilmaydi
+      .filter((s) => s.target !== "invoices" || user.role === "DIRECTOR" || (DETAIL_ROLES.invoices ?? []).includes(user.role))
+      .filter((s) => s.rows.length > 0 || s.title === "Mahsulotlar"),
     actions,
   };
 }
@@ -556,35 +602,54 @@ async function invoiceDetail(user: MobileUser, id: string): Promise<MobileDetail
     });
   }
 
+  const fields: DetailField[] = [
+    { label: "Schyot", value: inv.invoiceNo },
+    { label: "Sana", value: day(inv.date) },
+    { label: "Jami", value: money(sum(inv.amount)) },
+    { label: "To'landi", value: money(paid), tone: "success" },
+    { label: "Qoldiq", value: money(left), tone: left > 0 ? "danger" : "success" },
+    ...(inv.order ? [{ label: "Zayavka", value: inv.order.orderNo }] : []),
+  ];
+  // Chek holati — schyot holatining o'zi: to'langan yashil, qisman/ochiq sariq, bekor qizil
+  const st = inv.status === "PAID" ? { label: "To'langan", tone: "success" as const }
+    : inv.status === "PARTIAL" ? { label: `Qisman · qoldiq ${money(left)}`, tone: "warning" as const }
+    : inv.status === "CANCELLED" ? { label: "Bekor qilingan", tone: "danger" as const }
+    : { label: "To'lanmagan", tone: "warning" as const };
   return {
     key: "invoices", id: inv.id, title: inv.invoiceNo, subtitle: inv.customer.name, status: inv.status,
-    fields: [
-      { label: "Sana", value: day(inv.date) },
-      { label: "Jami", value: money(sum(inv.amount)) },
-      { label: "To'landi", value: money(paid), tone: "success" },
-      { label: "Qoldiq", value: money(left), tone: left > 0 ? "danger" : "success" },
-      ...(inv.order ? [{ label: "Zayavka", value: inv.order.orderNo }] : []),
-    ],
-    sections: [{ title: "To'lovlar", empty: "To'lov yo'q", target: "payments", rows: inv.payments.map((p) => ({ id: p.id, title: money(sum(p.amount)), subtitle: `${day(p.date)} · ${p.cashAccount.name}`, tone: "success" as Tone })) }],
+    fields: fields.slice(1),
+    sections: [{ title: "To'lovlar", empty: "To'lov yo'q", target: "payments", rows: inv.payments.map((p) => ({ id: p.id, title: `+${money(sum(p.amount))}`, subtitle: `${day(p.date)} · ${p.cashAccount.name}`, right: `+${money(sum(p.amount))}`, tone: "success" as Tone })) }],
     actions,
+    receipt: {
+      headline: money(sum(inv.amount)), caption: inv.customer.name,
+      status: { ...st, at: inv.date.toISOString() },
+      rows: fields.map((f) => ({ label: f.label, value: f.value, copy: f.label === "Schyot" || f.label === "Zayavka" })),
+    },
   };
 }
 
 // ───────────────────────── Qolganlari — faqat ko'rish ─────────────────────────
 
 async function paymentDetail(id: string): Promise<MobileDetail> {
-  const p = await db.payment.findUnique({ where: { id }, include: { customer: true, cashAccount: true, invoice: true, order: true } });
+  const p = await db.payment.findUnique({ where: { id }, include: { customer: true, cashAccount: true, invoice: true, order: true, createdBy: { select: { fullName: true } } } });
   if (!p) throw new ListError("NOT_FOUND", "To'lov topilmadi", 404);
+  const fields: DetailField[] = [
+    { label: "Sana", value: dt(p.date) },
+    { label: "Mijoz", value: p.customer.name },
+    { label: "Hisob", value: p.cashAccount.name },
+    ...(p.invoice ? [{ label: "Schyot", value: p.invoice.invoiceNo }] : []),
+    ...(p.order ? [{ label: "Zayavka", value: p.order.orderNo }] : []),
+    ...(p.createdBy ? [{ label: "Kim kiritdi", value: p.createdBy.fullName }] : []),
+    ...(p.note ? [{ label: "Izoh", value: p.note }] : []),
+  ];
   return {
-    key: "payments", id: p.id, title: money(sum(p.amount)), subtitle: p.customer.name,
-    fields: [
-      { label: "Sana", value: dt(p.date) },
-      { label: "Hisob", value: p.cashAccount.name },
-      ...(p.invoice ? [{ label: "Schyot", value: p.invoice.invoiceNo }] : []),
-      ...(p.order ? [{ label: "Zayavka", value: p.order.orderNo }] : []),
-      ...(p.note ? [{ label: "Izoh", value: p.note }] : []),
-    ],
-    sections: [], actions: [],
+    key: "payments", id: p.id, title: `+${money(sum(p.amount))}`, subtitle: p.customer.name,
+    fields, sections: [], actions: [],
+    receipt: {
+      headline: `+${money(sum(p.amount))}`, caption: p.customer.name,
+      status: { label: "To'lov qabul qilindi", tone: "success", at: p.date.toISOString() },
+      rows: fields.filter((f) => f.label !== "Mijoz").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Schyot" || f.label === "Zayavka" })),
+    },
   };
 }
 
@@ -592,17 +657,26 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
   const r = await db.goodsReceipt.findUnique({ where: { id }, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
   if (!r) throw new ListError("NOT_FOUND", "Kirim topilmadi", 404);
   const total = r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0);
+  const fields: DetailField[] = [
+    { label: "Hujjat", value: r.docNo },
+    { label: "Sana", value: day(r.date) },
+    { label: "Yetkazuvchi", value: r.supplier.name },
+    { label: "Ombor", value: r.warehouse.name },
+    { label: "Jami", value: money(total) },
+    ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
+    ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
+  ];
   return {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
-    fields: [
-      { label: "Sana", value: day(r.date) },
-      { label: "Ombor", value: r.warehouse.name },
-      { label: "Jami", value: money(total) },
-      ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
-      ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
-    ],
+    fields: fields.slice(1),
     sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [],
+    // Xarid — pul chiqib ketgan hujjat, chekda qizil
+    receipt: {
+      headline: `−${money(total)}`, caption: r.supplier.name,
+      status: { label: "Xarid · omborga kirim", tone: "danger", at: r.date.toISOString() },
+      rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" })),
+    },
   };
 }
 
@@ -613,6 +687,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } },
       progress: { orderBy: { date: "desc" }, include: { createdBy: true } },
       issues: { orderBy: { createdAt: "desc" }, select: { id: true, kind: true, note: true, equipment: true, createdAt: true, resolvedAt: true } },
+      defects: { orderBy: { date: "desc" }, select: { id: true, qty: true, reason: true, note: true, date: true, createdBy: { select: { fullName: true } } } },
     },
   });
   if (!t) throw new ListError("NOT_FOUND", "Topshiriq topilmadi", 404);
@@ -625,6 +700,14 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const open = !["DONE", "CANCELLED"].includes(t.status);
   const unit = unitLabel(t.orderItem.product.unit);
   const ph = taskPhase(t, t.issues.filter((i) => !i.resolvedAt).map((i) => i.kind));
+  const pu = t.orderItem.product.unit;
+  const defQty = t.defects.reduce((a, d) => a + sum(d.qty), 0);
+  const defPct = sum(t.doneQty) > 0 ? (defQty / sum(t.doneQty)) * 100 : 0;
+  // Fakt bilan birga "shundan brak" — brigadir alohida forma ochmasin
+  const defectFields: FormField[] = [
+    { name: "defectQty", label: `Shundan brak (${unit})`, type: "number", placeholder: "0", hint: "brak chiqmagan bo'lsa bo'sh qoldiring" },
+    { name: "defectReason", label: "Brak sababi", type: "select", value: DEFECT_REASONS[0], options: DEFECT_REASONS.map((r) => ({ value: r, label: r })) },
+  ];
 
   // Hujjatdagi tartib: Ishni boshlash → fakt (qisman) → yakunlash; yon tomonda muammo va brak
   const actions: DetailAction[] = [];
@@ -636,6 +719,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       id: "task.progress", label: "Fakt kiritish (qisman bajarildi)", tone: "success",
       form: [
         { name: "qty", label: `Bajarilgan miqdor (${unit}) — qoldiq ${num(left)}`, type: "number", required: true, value: String(left) },
+        ...defectFields,
         { name: "note", label: "Izoh", type: "text" },
       ],
     });
@@ -644,7 +728,7 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     actions.push({
       id: "task.finish", label: `Ishni yakunlash — ${num(left)} ${unit}`, tone: "success",
       confirm: `Qolgan ${num(left)} ${unit} bajarildi va topshiriq yopilsinmi?`,
-      form: [{ name: "note", label: "Yakuniy izoh", type: "text", placeholder: "ixtiyoriy" }],
+      form: [...defectFields, { name: "note", label: "Yakuniy izoh", type: "text", placeholder: "ixtiyoriy" }],
     });
   }
   // Muammo tugmalari smena kartasidagi bilan bir xil (`issue.*`) — id topshiriq bo'lgani uchun muammo shunga bog'lanadi
@@ -658,8 +742,13 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Holat", value: ph.label, tone: ph.tone === "brand" || ph.tone === "info" ? undefined : ph.tone },
       { label: "Mahsulot", value: t.orderItem.product.name },
       { label: "Topshiriq", value: inUnit(sum(t.qty), t.orderItem.product.unit) },
-      { label: "Bajarildi", value: `${inUnit(sum(t.doneQty), t.orderItem.product.unit)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)} · ${Math.round((sum(t.doneQty) / (sum(t.qty) || 1)) * 100)}%`, tone: left <= 0 ? "success" : "warning" },
+      // Brigadirga faqat foiz — miqdorlar "Topshiriq" va "Qoldiq" qatorlarida bor
+      { label: "Bajarildi", value: user.role === "BRIGADIER" ? `${Math.round((sum(t.doneQty) / (sum(t.qty) || 1)) * 100)}%` : `${inUnit(sum(t.doneQty), t.orderItem.product.unit)} / ${inUnit(sum(t.qty), t.orderItem.product.unit)} · ${Math.round((sum(t.doneQty) / (sum(t.qty) || 1)) * 100)}%`, tone: left <= 0 ? "success" : "warning" },
       { label: "Qoldiq", value: inUnit(left, t.orderItem.product.unit), tone: left > 0 ? "warning" : "success" },
+      ...(sum(t.doneQty) > 0 ? [
+        { label: "Brak", value: defQty > 0 ? `${inUnit(defQty, pu)} · ${pctText(defPct)}` : "yo'q", tone: (defQty > 0 ? (defPct > 5 ? "danger" : "warning") : "success") as Tone },
+        { label: "Sifatli", value: inUnit(Math.max(0, sum(t.doneQty) - defQty), pu), tone: "success" as Tone },
+      ] : []),
       { label: "Muddat", value: day(t.dueDate), tone: ph.late ? "danger" : undefined },
       ...(t.startedAt ? [{ label: "Boshlandi", value: dt(t.startedAt) }] : []),
       ...(t.order.isUrgent ? [{ label: "Shoshilinch", value: "ha", tone: "danger" as Tone }] : []),
@@ -671,6 +760,10 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
         title: "Bajarilganlik qaydlari", empty: "Hali qayd yo'q", icon: "square-check",
         rows: t.progress.map((p) => ({ id: p.id, title: inUnit(sum(p.qty), t.orderItem.product.unit), subtitle: `${day(p.date)} · ${p.createdBy.fullName}${p.note ? ` · ${p.note}` : ""}`, tone: "success" as Tone })),
       },
+      ...(t.defects.length ? [{
+        title: `Brak — ${inUnit(defQty, pu)}`, empty: "Brak yo'q", icon: "triangle-alert",
+        rows: t.defects.map((d) => ({ id: d.id, title: inUnit(sum(d.qty), pu), subtitle: `${dt(d.date)} · ${d.reason}${d.note ? ` · ${d.note}` : ""} · ${d.createdBy.fullName}`, tone: "danger" as Tone })),
+      }] : []),
       ...(t.issues.length ? [{
         title: "Muammolar", empty: "Muammo yo'q", target: "brig-issue",
         rows: t.issues.map((i) => ({ id: i.id, title: BRIGADE_ISSUE[i.kind].label, subtitle: [i.equipment, i.note].filter(Boolean).join(" · "), right: day(i.createdAt), status: i.resolvedAt ? "Hal qilindi" : "Ochiq", tone: (i.resolvedAt ? "success" : "danger") as Tone })),
@@ -704,20 +797,40 @@ async function batchDetail(id: string): Promise<MobileDetail> {
 async function materialDetail(id: string): Promise<MobileDetail> {
   const m = await db.material.findUnique({ where: { id } });
   if (!m) throw new ListError("NOT_FOUND", "Xomashyo topilmadi", 404);
-  const [agg, moves] = await Promise.all([
+  const [agg, moves, outlook] = await Promise.all([
     db.stockMove.aggregate({ where: { materialId: id }, _sum: { qty: true } }),
     db.stockMove.findMany({ where: { materialId: id }, orderBy: { date: "desc" }, take: 20, include: { createdBy: true } }),
+    materialOutlook(),
   ]);
   const balance = sum(agg._sum.qty);
+  const o = outlook.find((x) => x.id === id);
+  const n = (v: number) => `${num(v)} ${m.unit}`;
+  const need = o ? Math.max(0, o.planned - balance, sum(m.minStock) - balance) : 0;
   const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", SHIPMENT: "Chiqim", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", TRANSFER: "Ko'chirish" };
   return {
     key: "stock", id: m.id, title: m.name, subtitle: m.code,
     fields: [
       { label: "Qoldiq", value: `${balance.toFixed(1)} ${m.unit}`, tone: balance < sum(m.minStock) ? "danger" : "success" },
       { label: "Minimum", value: `${sum(m.minStock)} ${m.unit}` },
+      ...(o ? [
+        { label: "Zayavkalarga kerak", value: o.planned > 0 ? `${n(o.planned)} · ${o.orders.length} ta zayavka` : "yo'q" },
+        { label: "Zayavkaga yetmaydi", value: o.orderGap > 0 ? n(o.orderGap) : "yetadi", tone: (o.orderGap > 0 ? "danger" : "success") as Tone },
+        ...(need > 0 ? [{ label: "Olib kelish kerak", value: n(need), tone: "warning" as Tone }] : []),
+        ...(o.perDay > 0 ? [{ label: "Kunlik sarf", value: `${n(o.perDay)} · ${o.days !== null ? `${o.days > 999 ? ">999" : o.days.toFixed(1)} kunga yetadi` : "—"}` }] : []),
+      ] : []),
       { label: "Holat", value: m.isActive ? "Faol" : "Nofaol" },
     ],
-    sections: [{
+    sections: [...(o && o.orders.length ? [{
+      title: `Zayavkalar bo'yicha kerak · ${o.orders.length}`, empty: "", target: "orders", icon: "clipboard-list",
+      rows: (() => {
+        // Yetkazish sanasi bo'yicha navbat: qoldiq qaysi zayavkagacha yetadi
+        let left = balance;
+        return o.orders.map((x) => {
+          left -= x.qty;
+          return { id: x.id, title: `${x.orderNo} · ${x.customer}`, subtitle: `${day(x.date)} · ${left >= 0 ? "qoldiq yetadi" : `yetmaydi: ${n(Math.min(x.qty, -left))} kam`}`, right: n(x.qty), tone: (left >= 0 ? "success" : "danger") as Tone };
+        });
+      })(),
+    }] : []), {
       title: "So'nggi harakatlar", empty: "Harakat yo'q",
       rows: moves.map((mv) => ({ id: mv.id, title: MOVE_LABEL[mv.type] ?? mv.type, subtitle: `${day(mv.date)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
     }],
@@ -796,18 +909,26 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
 async function cashflowDetail(id: string): Promise<MobileDetail> {
   const t = await db.cashTransaction.findUnique({ where: { id }, include: { cashAccount: true, supplier: true, createdBy: true } });
   if (!t) throw new ListError("NOT_FOUND", "Yozuv topilmadi", 404);
+  const out = t.type === "EXPENSE";
+  const fields: DetailField[] = [
+    { label: "Sana", value: dt(t.date) },
+    { label: "Turi", value: out ? "Chiqim" : "Kirim", tone: out ? "danger" : "success" },
+    { label: "Kategoriya", value: t.category },
+    { label: "Hisob", value: t.cashAccount.name },
+    ...(t.counterparty ? [{ label: out ? "Kimga" : "Kimdan", value: t.counterparty }] : []),
+    ...(t.supplier ? [{ label: "Yetkazuvchi", value: t.supplier.name }] : []),
+    ...(t.refType === "SupplyRequest" && t.refId ? [{ label: "Talabnoma", value: t.refId }] : []),
+    { label: "Kim kiritdi", value: t.createdBy.fullName },
+    ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
+  ];
   return {
-    key: "cashflow", id: t.id, title: `${t.type === "EXPENSE" ? "−" : "+"}${money(sum(t.amount))}`, subtitle: t.category,
-    fields: [
-      { label: "Sana", value: day(t.date) },
-      { label: "Turi", value: t.type === "EXPENSE" ? "Chiqim" : "Kirim", tone: t.type === "EXPENSE" ? "danger" : "success" },
-      { label: "Hisob", value: t.cashAccount.name },
-      ...(t.counterparty ? [{ label: "Kimga / kimdan", value: t.counterparty }] : []),
-      ...(t.supplier ? [{ label: "Yetkazuvchi", value: t.supplier.name }] : []),
-      { label: "Kim kiritdi", value: t.createdBy.fullName },
-      ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
-    ],
-    sections: [], actions: [],
+    key: "cashflow", id: t.id, title: `${out ? "−" : "+"}${money(sum(t.amount))}`, subtitle: t.category,
+    fields, sections: [], actions: [],
+    receipt: {
+      headline: `${out ? "−" : "+"}${money(sum(t.amount))}`, caption: t.counterparty ? `${t.category} · ${t.counterparty}` : t.category,
+      status: { label: out ? "Chiqim" : "Kirim", tone: out ? "danger" : "success", at: t.date.toISOString() },
+      rows: fields.filter((f) => f.label !== "Turi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Talabnoma" })),
+    },
   };
 }
 
@@ -1003,7 +1124,7 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
         { name: "photo", label: "Surat (kamera yoki galereya)", type: "photo", required: true, hint: "PDF bo'lsa — vebdan biriktiring" },
       ] });
   }
-  if (isOpenSupply(st) && can(user, "supply.reject")) {
+  if (isOpenSupply(st) && can(user, "supply.reject") && canRejectSupply(r, user)) {
     actions.push({ id: "supply.reject", label: "Bekor qilish", tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" }] });
   }
 
@@ -1068,7 +1189,7 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
 
 // ───────────────────────── Mijoz ─────────────────────────
 
-async function customerDetail(id: string): Promise<MobileDetail> {
+async function customerDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const c = await db.customer.findUnique({
     where: { id },
     include: {
@@ -1077,6 +1198,8 @@ async function customerDetail(id: string): Promise<MobileDetail> {
     },
   });
   if (!c) throw new ListError("NOT_FOUND", "Mijoz topilmadi", 404);
+  // Sotuv agenti faqat o'ziga biriktirilgan mijozni ochadi (begona id — "topilmadi")
+  if (user.role === "AGENT" && c.agentId !== user.id) throw new ListError("NOT_FOUND", "Mijoz topilmadi", 404);
   const credit = await customerCredit(c.id);
   const history = (await customersHistory([c.id])).get(c.id);
   const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CONFIRMED: "brand", IN_PRODUCTION: "warning", DELIVERED: "success", CLOSED: "success", CANCELLED: "danger" };

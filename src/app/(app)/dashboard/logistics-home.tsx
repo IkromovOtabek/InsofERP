@@ -170,7 +170,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
       </Card>
 
       {/* ── Transport + haydovchilar ── */}
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Transport holati" description="Bandlik — smena ichida yuklashdan qaytishgacha o'tgan vaqt" icon={Wrench}
             action={<Link href="/logistika/transport" className="text-sm text-slate-500 hover:text-slate-900">Transport →</Link>} /></div>
@@ -215,7 +215,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
       </div>
 
       {/* ── Tendensiya + nasoslar ── */}
-      <div className="grid gap-5 xl:grid-cols-3">
+      <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">
         <Card className="xl:col-span-2">
           <CardHeader title="So'nggi 14 kun" description="Kunlik yetkazilgan beton (m³) va o'z vaqtida yetkazish foizi" icon={Gauge} />
           <div className="flex h-40 items-end gap-1.5">

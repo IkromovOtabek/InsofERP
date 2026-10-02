@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Fuel, Coins, Droplets, Gauge } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
-import { lastFuelPrice } from "@/lib/logistics-costs";
+import { requireRoles } from "@/lib/page-guard";
+import { fuelConsumption, lastFuelPrice } from "@/lib/logistics-costs";
 import { FUEL_TYPE } from "@/lib/logistics";
 import { date, fmtNum, money, moneyShort } from "@/lib/format";
 import { Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 /** Yoqilg'i (TZ 12): zapravkalar, transport va haydovchi kesimida litr/summa, haqiqiy sarf. */
 export default async function FuelPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; vehicleId?: string }> }) {
-  await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [logs, opts, price] = await Promise.all([
@@ -31,11 +31,11 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
   const liters = logs.reduce((a, f) => a + Number(f.liters), 0);
   const sum = logs.reduce((a, f) => a + Number(f.amount), 0);
   // Transport kesimida: litr, summa va probeg oralig'idan sarf
-  const byV = new Map<string, { plate: string; liters: number; sum: number; odo: number[]; norm: number | null; count: number }>();
+  const byV = new Map<string, { plate: string; liters: number; sum: number; logs: { liters: unknown; odometerKm: number | null }[]; norm: number | null; count: number }>();
   for (const f of logs) {
-    const x = byV.get(f.vehicleId) ?? { plate: f.vehicle.plate, liters: 0, sum: 0, odo: [], norm: f.vehicle.fuelNormL100 ? Number(f.vehicle.fuelNormL100) : null, count: 0 };
+    const x = byV.get(f.vehicleId) ?? { plate: f.vehicle.plate, liters: 0, sum: 0, logs: [], norm: f.vehicle.fuelNormL100 ? Number(f.vehicle.fuelNormL100) : null, count: 0 };
     x.liters += Number(f.liters); x.sum += Number(f.amount); x.count++;
-    if (f.odometerKm != null) x.odo.push(f.odometerKm);
+    x.logs.push({ liters: f.liters, odometerKm: f.odometerKm });
     byV.set(f.vehicleId, x);
   }
   return (
@@ -43,14 +43,14 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
       <PageHeader title="Yoqilg'i" subtitle={`${r.label} · haydovchi ilovadan ham kiritadi (reys kartasi → "Yoqilg'i")`} />
       <PeriodTabs base="/logistika/yoqilgi" current={r.period} />
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${logs.length} zapravka`} icon={Droplets} tone="brand" />
         <StatCard label="Summa" value={moneyShort(sum)} icon={Coins} />
         <StatCard label="O'rtacha narx" value={liters ? `${fmtNum(sum / liters, 0)} so'm/l` : "—"} icon={Fuel} />
         <StatCard label="Transport soni" value={byV.size} icon={Gauge} />
       </div>
-      <Card className="mb-5"><CardHeader title="Zapravka qo'shish" icon={Fuel} /><FuelForm {...opts} lastPrice={price} vehicleId={sp.vehicleId} /></Card>
-      <div className="grid gap-5 xl:grid-cols-5">
+      <Card className="mb-5 min-w-0"><CardHeader title="Zapravka qo'shish" icon={Fuel} /><FuelForm {...opts} lastPrice={price} vehicleId={sp.vehicleId} /></Card>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card padded={false} className="xl:col-span-2">
           <div className="px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} /></div>
           <Table>
@@ -58,8 +58,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
             <tbody>
               {byV.size === 0 && <Empty text="Ma'lumot yo'q" />}
               {[...byV.entries()].sort((a, b) => b[1].sum - a[1].sum).map(([id, x]) => {
-                const km = x.odo.length >= 2 ? Math.max(...x.odo) - Math.min(...x.odo) : 0;
-                const per = km > 0 ? (x.liters / km) * 100 : null;
+                const per = fuelConsumption(x.logs).per100;
                 return (
                   <Tr key={id}>
                     <Td><Link href={`/logistika/transport/${id}`} className="font-medium tabular hover:underline">{x.plate}</Link></Td>
@@ -71,7 +70,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
               })}
             </tbody>
           </Table>
-          <p className="px-5 pb-4 pt-2 text-xs text-slate-500">Sarf — davrdagi birinchi va oxirgi probeg oralig'i bo'yicha (taxminiy). Aniq sarf transport kartasida.</p>
+          <p className="px-5 pb-4 pt-2 text-xs text-slate-500">Sarf — probegi yozilgan quyishlar bo'yicha, "to'liq bak" usuli: birinchi quyishning litri hisobga kirmaydi (u oldingi yo'l uchun).</p>
         </Card>
         <Card padded={false} className="xl:col-span-3">
           <div className="px-5 pt-5"><CardHeader title="Zapravkalar" icon={Fuel} /></div>

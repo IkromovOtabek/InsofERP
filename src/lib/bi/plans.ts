@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
-import { loadSales, sum, addDays, startOfDay, series, mean, type SaleRow } from "./core";
+import { loadSales, sum, addDays, startOfDay, series, mean, workingDays, type SaleRow } from "./core";
 
 export const MONTHS_UZ = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 export const MONTHS_SHORT = ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"];
 
-/** Ish kunlari — Dushanba–Shanba (zavod jadvali). */
-export function workingDays(from: Date, to: Date) { let n = 0; for (let d = new Date(from); d < to; d = addDays(d, 1)) if (d.getDay() !== 0) n++; return n; }
+/** Ish kunlari — `core.ts` da (prognoz formulasi bilan birga); eski importlar uchun qayta eksport. */
+export { workingDays };
 
 export type Signal = "BONUS" | "NORMAL" | "OGOHLANTIRISH" | "XAVF" | "REJA YO'Q";
 export const signalOf = (pct: number | null): Signal => pct === null ? "REJA YO'Q" : pct >= 110 ? "BONUS" : pct >= 90 ? "NORMAL" : pct >= 70 ? "OGOHLANTIRISH" : "XAVF";

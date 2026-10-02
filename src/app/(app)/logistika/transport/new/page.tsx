@@ -1,10 +1,10 @@
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { driverEmployees } from "@/lib/logistics";
 import { Card, PageHeader } from "@/components/ui";
 import { VehicleForm } from "../vehicle-form";
 
 export default async function NewVehiclePage() {
-  await requireSession(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"]);
   const drivers = await driverEmployees({ activeOnly: true });
   return (
     <div>

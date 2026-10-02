@@ -7,15 +7,20 @@
 @theme {
   --font-sans: var(--font-jakarta), var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  /* Brend: beton/sanoat — neytral slate + yorqin amber aksent */
+  /* Brend: beton/sanoat — po'lat-kulrang neytral + xavfsizlik belgisidagi amber.
+     500 — "signal" rangi: faqat to'ldirish (tugma, faol chiziq, fokus halqasi),
+     uning ustida doim QORA matn (9:1). Matn/ikonka sifatida faqat 600–800:
+     600 oq fonda ≥3:1 (ikonka), 700 ochiq tint fonida ≥5:1 (matn) — quyosh
+     ostida telefon ekranida ham o'qiladi. */
   --color-brand-50: #fff8e0;
   --color-brand-100: #ffefb8;
   --color-brand-200: #ffe17a;
   --color-brand-300: #ffd042;
   --color-brand-400: #ffbb0f;
   --color-brand-500: #ffa300;
-  --color-brand-600: #f08a00;
-  --color-brand-700: #c26d00;
+  --color-brand-600: #c76f00;
+  --color-brand-700: #9a5a00;
+  --color-brand-800: #7a4700;
 
   /* ───────── Yorqin palitra ─────────
      Tailwind'ning standart shkalalari o'rniga to'yingan variantlari. Kod hamma
@@ -54,10 +59,10 @@
   --color-amber-300: #ffd24d;
   --color-amber-400: #ffbe1a;
   --color-amber-500: #ffa800;
-  --color-amber-600: #ef8c00;
-  --color-amber-700: #b25c00;
-  --color-amber-800: #8f4a05;
-  --color-amber-900: #763e0b;
+  --color-amber-600: #ad5c00;   /* oq fonda 4.9:1 — "ogohlantirish" matni AA */
+  --color-amber-700: #8f4a00;   /* amber-50 tintida 6.5:1 */
+  --color-amber-800: #733c05;
+  --color-amber-900: #5e3209;
   --color-amber-950: #451f00;
 
   --color-lime-50: #f4ffdb;
@@ -77,10 +82,10 @@
   --color-emerald-300: #42f2b3;
   --color-emerald-400: #0fe296;
   --color-emerald-500: #00cb80;
-  --color-emerald-600: #009b61;
-  --color-emerald-700: #00794b;
-  --color-emerald-800: #00603d;
-  --color-emerald-900: #045034;
+  --color-emerald-600: #00804d;   /* oq fonda 5:1 — eski #009b61 3.6:1 edi (AA dan past) */
+  --color-emerald-700: #006b42;
+  --color-emerald-800: #00573a;
+  --color-emerald-900: #044830;
   --color-emerald-950: #002c1d;
 
   --color-sky-50: #e6f8ff;
@@ -119,19 +124,25 @@
   --color-violet-900: #451486;
   --color-violet-950: #2a0a56;
 
-  /* Neytral shkala — matn to'qligi saqlanadi, ochiq bosqichlar salqinroq va
-     tozaroq bo'ladi: kulrang fon "iflos" emas, yorug' ko'rinadi. */
-  --color-slate-50: #f6f9fe;
-  --color-slate-100: #eef3fa;
-  --color-slate-200: #dfe7f2;
-  --color-slate-300: #c6d3e6;
+  /* Neytral shkala — po'lat/beton kulrangi. Eski ochiq bosqichlar ko'kish edi
+     (#f6f9fe) — ofis dasturidek ko'rinardi va amber aksent bilan "urishardi".
+     Endi deyarli neytral, ozgina salqin: beton yuzasi kabi.
+     400/500 to'qroq: 500 fonda ham ≥5:1 (ikkilamchi matn), 400 ≥3.6:1
+     (ikonka, placeholder) — eski #94a3b8 2.6:1 bo'lib, quyoshda ko'rinmasdi. */
+  --color-slate-50: #f7f8fa;
+  --color-slate-100: #eef0f3;
+  --color-slate-200: #e2e6eb;
+  --color-slate-300: #cbd1da;
+  --color-slate-400: #7c8799;
+  --color-slate-500: #5b6880;
 
-  --color-ink-950: #0b1220;
-  --color-ink-900: #0f172a;
-  --color-ink-800: #1e293b;
+  /* Doim qorong'i bloklar (login paneli, AI) — grafit, navy emas */
+  --color-ink-950: #0d1013;
+  --color-ink-900: #14181d;
+  --color-ink-800: #1f252c;
 
-  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
-  --shadow-pop: 0 10px 30px -12px rgb(15 23 42 / 0.25);
+  --shadow-card: 0 1px 2px 0 rgb(16 20 26 / 0.05), 0 1px 3px 0 rgb(16 20 26 / 0.06);
+  --shadow-pop: 0 10px 30px -12px rgb(16 20 26 / 0.28);
   --radius-card: 14px;
 
   /* ───────── Ommaviy sayt paletasi ─────────
@@ -174,7 +185,7 @@
 }
 
 :root {
-  --background: #f4f7fd;
+  --background: #f2f4f7;
   --foreground: #0f172a;
   --logo-blue: #5b81dd;
 }
@@ -182,26 +193,29 @@
 /* Qorong'i fonda logotip ko'ki yorqinroq bo'lishi kerak */
 .dark, .on-dark { --logo-blue: #8aacf7; }
 
-/* ───────── Dark rejim (Team24 BI uslubi, yorqinlashtirilgan: #101c33 fon, #1d2c49 karta, #394d70 chegara) ─────────
+/* ───────── Dark rejim — grafit/po'lat ─────────
+   Avval to'q ko'k (navy) edi. Zavod uchun neytral grafit yaxshiroq: amber signal
+   va holat ranglari unda "toza" ko'rinadi, ko'k fon esa ularni xiralashtirardi.
+   Fon #111418, karta #1a1e24, chegara #343c47; asosiy matn 16:1, ikkilamchi 7:1.
    Butun kod slate/white tokenlaridan foydalanadi, shuning uchun tokenlarning o'zini
    qayta belgilash bilan barcha sahifalar avtomatik qorong'i bo'ladi. */
 .dark {
   color-scheme: dark;
-  --background: #101c33;
-  --foreground: #f2f6fc;
+  --background: #111418;
+  --foreground: #f1f4f8;
 
-  --color-white: #1d2c49;        /* kartalar, header, inputlar */
-  --color-slate-50: #263756;     /* hover qatorlar, jadval sarlavhasi */
-  --color-slate-100: #2f4263;    /* hover fon, ikonka chiplari */
-  --color-slate-200: #394d70;    /* chegaralar */
-  --color-slate-300: #4a6088;    /* kuchliroq chegaralar */
-  --color-slate-400: #93a3bd;    /* xira matn, ikonkalar */
-  --color-slate-500: #a5b4cb;    /* ikkilamchi matn */
-  --color-slate-600: #becadb;
-  --color-slate-700: #d4dded;
-  --color-slate-800: #e6ecf7;
-  --color-slate-900: #f2f6fc;    /* sarlavhalar, asosiy matn */
-  --color-slate-950: #fafcff;
+  --color-white: #1a1e24;        /* kartalar, header, inputlar */
+  --color-slate-50: #20252c;     /* hover qatorlar, jadval sarlavhasi */
+  --color-slate-100: #29303a;    /* hover fon, ikonka chiplari */
+  --color-slate-200: #343c47;    /* chegaralar */
+  --color-slate-300: #46505e;    /* kuchliroq chegaralar */
+  --color-slate-400: #8b95a5;    /* xira matn, ikonkalar (5.5:1) */
+  --color-slate-500: #a3acba;    /* ikkilamchi matn (7.3:1) */
+  --color-slate-600: #bec6d2;
+  --color-slate-700: #d3d9e2;
+  --color-slate-800: #e5e9ef;
+  --color-slate-900: #f1f4f8;    /* sarlavhalar, asosiy matn */
+  --color-slate-950: #fafbfc;
 
   /* Rangli tuslar: ochiq tint → shaffof, quyuq matn → ochiq matn */
   --color-red-50: color-mix(in srgb, #ef4444 20%, transparent);
@@ -246,28 +260,31 @@
 
   --color-brand-50: color-mix(in srgb, #ffa800 18%, transparent);
   --color-brand-100: color-mix(in srgb, #ffa800 28%, transparent);
+  --color-brand-600: #ffb21f;
   --color-brand-700: #ffd24d;
+  --color-brand-800: #ffe38a;
 
   --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.25), 0 1px 3px 0 rgb(0 0 0 / 0.3);
   --shadow-pop: 0 10px 30px -12px rgb(0 0 0 / 0.6);
 
-  scrollbar-color: #4a6088 transparent;
+  scrollbar-color: #46505e transparent;
 }
-.dark *::-webkit-scrollbar-thumb { background: #4a6088; }
+.dark *::-webkit-scrollbar-thumb { background: #46505e; }
 
 /* Tokenlar teskari bo'lganda ham to'g'ri ko'rinishi kerak bo'lgan holatlar */
 .dark .text-white { color: #fff; }                                    /* rangli fonlardagi oq matn */
-.dark .text-slate-950 { color: #101c33; }                             /* brend (amber) tugma/avatar matni */
+.dark .text-slate-950 { color: #111418; }                             /* brend (amber) tugma/avatar matni */
 .dark .bg-slate-900.text-white,
 .dark .bg-slate-800.text-white,
-.dark .hover\:bg-slate-800:hover.text-white { color: #101c33; }       /* primary tugma: ochiq fon + qora matn */
-.dark .bg-red-600 { background-color: #f01a33; }
-.dark .bg-emerald-600 { background-color: #00b573; }
-.dark .bg-amber-600 { background-color: #f59500; }
-.dark .bg-blue-600 { background-color: #0d6efd; }
-.dark .bg-violet-600 { background-color: #8828ff; }
-.dark .hover\:bg-red-700:hover { background-color: #d00a24; }
-.dark .hover\:bg-emerald-700:hover { background-color: #008f59; }
+.dark .hover\:bg-slate-800:hover.text-white { color: #111418; }       /* primary tugma: ochiq fon + qora matn */
+/* To'liq rangli tugmalar: oq matn bilan ≥4.7:1 (eski yorqin tuslar 2.3–2.7:1 edi) */
+.dark .bg-red-600 { background-color: #d1102b; }
+.dark .bg-emerald-600 { background-color: #007a4c; }
+.dark .bg-amber-600 { background-color: #b25c00; }
+.dark .bg-blue-600 { background-color: #0062f0; }
+.dark .bg-violet-600 { background-color: #7a12f5; }
+.dark .hover\:bg-red-700:hover { background-color: #b00d24; }
+.dark .hover\:bg-emerald-700:hover { background-color: #006640; }
 
 /* ───────── <select> ochilish strelkasi ─────────
    SVG'ni Tailwind'ning `bg-[url(...)]` arbitrary qiymatida berib bo'lmaydi: ichidagi
@@ -275,22 +292,22 @@
    yo'q qiladi) — natijada `appearance-none` li select oddiy inputdek ko'rinib, uning
    ro'yxat ekani bilinmaydi. Shuning uchun strelka oddiy CSS'da turadi. */
 .select-caret {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235b6880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-position: right 10px center;
   background-size: 16px 16px;
   background-repeat: no-repeat;
 }
 .dark .select-caret {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2393a3bd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b95a5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 /* Qorong'i rejimda brauzerning o'z ro'yxati ham o'qilarli bo'lsin */
-.dark .select-caret option { background-color: #1d2c49; color: #f2f6fc; }
+.dark .select-caret option { background-color: #1a1e24; color: #f1f4f8; }
 
 /* Doim qorong'i bloklar (sidebar, login paneli, hero) — asl tokenlarni saqlaydi */
 .on-dark {
   --color-white: #fff;
-  --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
-  --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+  --color-slate-50: #f7f8fa; --color-slate-100: #eef0f3; --color-slate-200: #e2e6eb; --color-slate-300: #cbd1da;
+  --color-slate-400: #7c8799; --color-slate-500: #5b6880; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
 }
 
@@ -302,12 +319,12 @@
   color: #000;
   --color-white: #fff;
   --color-black: #000;
-  --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
-  --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+  --color-slate-50: #f7f8fa; --color-slate-100: #eef0f3; --color-slate-200: #e2e6eb; --color-slate-300: #cbd1da;
+  --color-slate-400: #7c8799; --color-slate-500: #5b6880; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
 }
 .dark .paper .bg-slate-900.text-white { color: #fff; }   /* qog'ozdagi "Chop etish" tugmasi */
-.dark .paper { box-shadow: 0 0 0 1px #394d70, var(--shadow-pop); }
+.dark .paper { box-shadow: 0 0 0 1px #343c47, var(--shadow-pop); }
 
 /* ───────── Ommaviy sayt qobig'i ─────────
    Sayt xodimning ERP rejimidan qat'i nazar bir xil ko'rinadi: `.site` slate
@@ -315,8 +332,8 @@
 .site {
   color-scheme: light;
   --color-white: #fff;
-  --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
-  --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+  --color-slate-50: #f7f8fa; --color-slate-100: #eef0f3; --color-slate-200: #e2e6eb; --color-slate-300: #cbd1da;
+  --color-slate-400: #7c8799; --color-slate-500: #5b6880; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
   --logo-blue: #5b81dd;
 
@@ -433,6 +450,17 @@ body {
 h1, h2, h3, h4 { letter-spacing: -0.02em; }
 
 .tabular { font-variant-numeric: tabular-nums; }
+/* Jadval va raqam maydonlarida raqamlar ustun bo'yicha tekis turadi (1 111 va 8 888 bir xil en) */
+table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="number"] { font-variant-numeric: tabular-nums; }
+
+/* ───────── Telefon: jadval sahifani buzmasin ─────────
+   Sahifalardagi xom <table> lar ba'zan o'ramsiz qolgan — telefonda butun sahifa
+   yon tomonga siljib, menyu va sarlavha ekrandan chiqib ketardi. Xavfsizlik to'ri:
+   jadvalning bevosita ota bloki gorizontal aylanadi, sahifa esa joyida qoladi.
+   Faqat tor ekranda: kompyuterda maketga tegilmaydi. Qog'oz (chop etish) hujjatlari bundan mustasno. */
+@media (max-width: 1023px) {
+  .app-main :is(div, section, form):has(> table):not(.paper, .paper *) { overflow-x: auto; max-width: 100%; }
+}
 
 /* Nozik scrollbar */
 * { scrollbar-width: thin; scrollbar-color: #c6d3e6 transparent; }
@@ -562,8 +590,8 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
   .dark {
     color-scheme: light; --background: #fff; --foreground: #0f172a;
     --color-white: #fff;
-    --color-slate-50: #f6f9fe; --color-slate-100: #eef3fa; --color-slate-200: #dfe7f2; --color-slate-300: #c6d3e6;
-    --color-slate-400: #94a3b8; --color-slate-500: #64748b; --color-slate-600: #475569; --color-slate-700: #334155;
+    --color-slate-50: #f7f8fa; --color-slate-100: #eef0f3; --color-slate-200: #e2e6eb; --color-slate-300: #cbd1da;
+    --color-slate-400: #7c8799; --color-slate-500: #5b6880; --color-slate-600: #475569; --color-slate-700: #334155;
     --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
   }
   aside, nav, .print\:hidden { display: none !important; }

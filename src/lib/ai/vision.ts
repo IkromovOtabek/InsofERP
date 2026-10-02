@@ -85,21 +85,35 @@ export async function scanInvoice(images: ScanImage[]): Promise<ScanResult> {
   if (!provider) throw new Error("Rasmdan o'qish sozlanmagan: ANTHROPIC_API_KEY, OPENAI_API_KEY yoki GROQ_API_KEY kerak.");
   if (!images.length) throw new Error("Rasm yo'q");
   const model = visionModel(provider);
-  const text = provider === "claude" ? await askClaudeVision(images, model) : await askOpenAiVision(images, model, provider);
+  const text = await askVision(images, PROMPT, 8000);
   return shape(parseJson(text), model);
 }
 
-async function askClaudeVision(images: ScanImage[], model: string): Promise<string> {
+/**
+ * Rasm(lar) + savol → model javobi (matn). Hujjat skaneri va yuz solishtirish (`face.ts`) shu
+ * bitta joydan o'tadi — provayder/model tanlovi bir xil.
+ */
+export async function askVision(images: ScanImage[], prompt: string, maxTokens = 2000): Promise<string> {
+  const provider = visionProvider();
+  if (!provider) throw new Error("Rasmdan o'qish sozlanmagan: ANTHROPIC_API_KEY, OPENAI_API_KEY yoki GROQ_API_KEY kerak.");
+  const model = visionModel(provider);
+  return provider === "claude" ? askClaudeVision(images, model, prompt, maxTokens) : askOpenAiVision(images, model, provider, prompt, maxTokens);
+}
+
+/** Model javobidagi JSON obyekt — hujjat va yuz javoblari uchun umumiy. */
+export const extractJson = parseJson;
+
+async function askClaudeVision(images: ScanImage[], model: string, prompt: string, maxTokens: number): Promise<string> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic();
   const res = await client.messages.create({
     model,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     messages: [{
       role: "user",
       content: [
         ...images.map((im) => ({ type: "image" as const, source: { type: "base64" as const, media_type: im.mime as "image/jpeg", data: im.base64 } })),
-        { type: "text" as const, text: PROMPT },
+        { type: "text" as const, text: prompt },
       ],
     }],
   });
@@ -107,7 +121,7 @@ async function askClaudeVision(images: ScanImage[], model: string): Promise<stri
 }
 
 /** OpenAI-mos API (OpenAI va Groq bir xil ko'rinishda ishlaydi). */
-async function askOpenAiVision(images: ScanImage[], model: string, provider: "openai" | "groq"): Promise<string> {
+async function askOpenAiVision(images: ScanImage[], model: string, provider: "openai" | "groq", prompt: string, maxTokens: number): Promise<string> {
   const url = provider === "groq" ? "https://api.groq.com/openai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
   const res = await fetch(url, {
     method: "POST",
@@ -116,12 +130,12 @@ async function askOpenAiVision(images: ScanImage[], model: string, provider: "op
     body: JSON.stringify({
       model,
       temperature: 0,
-      max_tokens: 8000,
+      max_tokens: maxTokens,
       messages: [{
         role: "user",
         content: [
           ...images.map((im) => ({ type: "image_url", image_url: { url: `data:${im.mime};base64,${im.base64}` } })),
-          { type: "text", text: PROMPT },
+          { type: "text", text: prompt },
         ],
       }],
     }),

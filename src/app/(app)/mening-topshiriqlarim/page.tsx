@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { CheckCheck, HardHat, ListChecks, Package, Phone, Zap } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { myBrigades } from "@/lib/brigades";
 import { qty as q, date, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
+import { taskDefectTotals } from "@/lib/defects";
 import { Badge, Card, CardHeader, Empty, EmptyState, PageHeader, Progress, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { TaskStatusBadge } from "../tasks/status";
 
@@ -14,7 +15,7 @@ import { TaskStatusBadge } from "../tasks/status";
  * Bajarilgan miqdor Insof ECO ilovasida qayd qilinadi — veb "nima qilish kerak edi" ni ko'rsatadi.
  */
 export default async function MyTasksPage() {
-  const s = await requireSession(["BRIGADIER"]);
+  const s = await requireRoles(["BRIGADIER"]);
   const [me, brigades] = await Promise.all([
     db.employee.findFirst({ where: { userId: s.userId }, select: { fullName: true, phone: true } }),
     myBrigades(s.userId),
@@ -56,6 +57,7 @@ export default async function MyTasksPage() {
       select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } },
     }),
   ]);
+  const defects = await taskDefectTotals([...open, ...done].map((t) => t.id));
   const left = open.reduce((x, t) => x + Math.max(0, Number(t.qty) - Number(t.doneQty)), 0);
   const overdue = open.filter((t) => t.dueDate < today).length;
   const doneToday = todayProgress.reduce((x, p) => x + Number(p.qty), 0);
@@ -75,7 +77,7 @@ export default async function MyTasksPage() {
       <Card className="mb-5" padded={false}>
         <div className="p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Ishlab chiqarish brigadangizga tayinlagan topshiriqlar" /></div>
         <Table>
-          <thead><tr><Th>№</Th><Th>Muddat</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>№</Th><Th>Muddat</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {open.length === 0 && <Empty text="Ochiq topshiriq yo'q — brigadangizga tayinlansa shu yerda chiqadi" icon={ListChecks} />}
             {open.map((t) => {
@@ -92,6 +94,7 @@ export default async function MyTasksPage() {
                   <Td>{t.orderItem.product.name}</Td>
                   <Td right className="whitespace-nowrap">{q(total)} {unit}</Td>
                   <Td right className="text-emerald-700">{q(doneQty)}</Td>
+                  <Td right className={defects.get(t.id) ? "text-red-700" : "text-slate-400"}>{defects.get(t.id) ? q(defects.get(t.id)!) : "—"}</Td>
                   <Td right className={rem > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>
                     {q(rem)}<div className="mt-1 w-20"><Progress value={doneQty} max={total || 1} tone={rem === 0 ? "success" : "default"} /></div>
                   </Td>
@@ -105,7 +108,7 @@ export default async function MyTasksPage() {
 
       <h2 className="mb-3 font-semibold">Tarix</h2>
       <Table>
-        <thead><tr><Th>№</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th>Muddat</Th><Th right>Bajarildi</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>№</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th>Muddat</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {done.length === 0 && <Empty text="Hali yakunlangan topshiriq yo'q" />}
           {done.map((t) => (
@@ -115,6 +118,7 @@ export default async function MyTasksPage() {
               <Td>{t.orderItem.product.name}</Td>
               <Td>{date(t.dueDate)}</Td>
               <Td right className="whitespace-nowrap">{q(t.doneQty)} / {q(t.qty)} {unitLabel(t.orderItem.product.unit)}</Td>
+              <Td right className={defects.get(t.id) ? "text-red-700" : "text-slate-400"}>{defects.get(t.id) ? q(defects.get(t.id)!) : "—"}</Td>
               <Td><TaskStatusBadge status={t.status} /></Td>
             </Tr>
           ))}

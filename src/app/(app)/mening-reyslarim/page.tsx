@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Bus, CheckCheck, MapPin, Package, Phone, Truck } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { qty as q, date, dateTime, deliveryAt } from "@/lib/format";
 import { ecoLabel } from "@/lib/eco/labels";
 import { Card, CardHeader, Empty, EmptyState, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
 import { fmtUnitTotals, soleUnit, unitLabel } from "@/lib/unit";
+import { tripLine } from "@/lib/trips";
 
 /**
  * Haydovchining o'z sahifasi. ERP'da haydovchi boshqa bo'limlarni ko'rmaydi (middleware shu sahifaga yo'naltiradi):
@@ -14,7 +15,7 @@ import { fmtUnitTotals, soleUnit, unitLabel } from "@/lib/unit";
  * Asosiy ish joyi baribir ilova; veb — "qayerga borishim kerak edi" ni ko'rish uchun.
  */
 export default async function MyTripsPage() {
-  const s = await requireSession(["DRIVER"]);
+  const s = await requireRoles(["DRIVER"]);
   const me = await db.employee.findFirst({
     where: { userId: s.userId },
     include: { vehicle: true },
@@ -34,22 +35,25 @@ export default async function MyTripsPage() {
     db.trip.findMany({
       where: { driverId: me.id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } },
       orderBy: { createdAt: "asc" },
-      include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true },
+      include: { order: { include: { customer: true, items: { select: { productId: true, qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true },
     }),
     db.trip.findMany({
       where: { driverId: me.id, status: { in: ["DELIVERED", "CANCELLED"] } },
       orderBy: { createdAt: "desc" }, take: 50,
-      include: { order: { include: { customer: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true },
+      include: { order: { include: { customer: true, items: { select: { productId: true, qtyM3: true, product: { select: { unit: true } } } } } }, vehicle: true },
     }),
     db.trip.findMany({
       where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: today } },
-      select: { qtyM3: true, order: { select: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } },
+      select: { qtyM3: true, vehicle: { select: { type: true } }, order: { select: { items: { select: { productId: true, qtyM3: true, product: { select: { unit: true } } } } } } },
     }),
   ]);
-  // Reys miqdori zayavkadagi mahsulot birligida: beton m³, ustun/blok dona
-  const tripUnit = (t: { order: { items: { qtyM3: unknown; product: { unit: string } }[] } }) =>
-    soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: String(i.qtyM3) })));
-  const tripQty = (t: { qtyM3: unknown; order: { items: { qtyM3: unknown; product: { unit: string } }[] } }) => {
+  // Reys miqdori zayavkadagi mahsulot birligida: beton m³, ustun/blok dona. Aralash zayavkada — texnika turidan
+  type UT = { vehicle: { type: string }; order: { items: { productId: string; qtyM3: unknown; product: { unit: string } }[] } };
+  const tripUnit = (t: UT) => {
+    const l = tripLine(t.order.items, t.vehicle.type);
+    return "error" in l ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: String(i.qtyM3) }))) : l.unit;
+  };
+  const tripQty = (t: UT & { qtyM3: unknown }) => {
     const u = tripUnit(t);
     return u ? `${q(String(t.qtyM3))} ${unitLabel(u)}` : q(String(t.qtyM3));
   };
@@ -59,7 +63,7 @@ export default async function MyTripsPage() {
       <PageHeader title="Mening reyslarim"
         subtitle={`${me.fullName}${me.vehicle ? ` · ${me.vehicle.plate}` : " · mashina biriktirilmagan"}`} />
 
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Ochiq reyslar" value={`${open.length} ta`} icon={Bus} tone={open.length ? "brand" : "success"} />
         <StatCard label="Bugun yetkazdim" value={fmtUnitTotals(todayAgg.map((t) => ({ unit: tripUnit(t) ?? "m3", qty: String(t.qtyM3) })))} hint={`${todayAgg.length} reys`} icon={CheckCheck} tone="success" />
         <StatCard label="Mashina" value={me.vehicle?.plate ?? "—"} hint={me.vehicle?.capacityM3 ? `${q(me.vehicle.capacityM3)} m³` : undefined} icon={Truck} />

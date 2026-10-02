@@ -263,6 +263,7 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
       )}
       <FormError error={state?.error} />
       <FormSuccess text={state?.ok ? "Xodim qo'shildi" : undefined} />
+      {state?.note && <p className="text-xs text-slate-600">{state.note}</p>}
     </form>
   );
 }

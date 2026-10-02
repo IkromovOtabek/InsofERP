@@ -146,7 +146,7 @@ export async function productionDay(iso: string) {
     .sort((a, b) => b.day - a.day || b.month - a.month);
 
   const defectRows = defects.map((d) => ({
-    id: d.id, date: d.date, product: d.product, qty: Number(d.qty), reason: d.reason, note: d.note,
+    id: d.id, taskId: d.taskId, date: d.date, product: d.product, qty: Number(d.qty), reason: d.reason, note: d.note,
     brigade: d.brigade?.name ?? null, by: d.createdBy.fullName, createdById: d.createdById,
   }));
   const byReason = new Map<string, number>();

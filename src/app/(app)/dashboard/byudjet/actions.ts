@@ -5,12 +5,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { parseForm, type ActionState } from "@/lib/action";
+import { parseForm, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { validMonth } from "@/lib/davomat";
 import { EXPENSE_CATEGORIES } from "@/app/(app)/cashflow/categories";
 
 const refresh = () => { revalidatePath("/dashboard"); revalidatePath("/dashboard/byudjet"); };
-const zMoney = z.string().trim().optional().transform((v) => (v ? Number(v.replace(/[\s,]/g, "")) : null)).refine((v) => v === null || (Number.isFinite(v) && v >= 0), "summa noto'g'ri");
+const zMoney = z.string().trim().optional().transform((v) => (v ? Number(v.replace(/[\s,]/g, "")) : null)).refine((v) => v === null || (Number.isFinite(v) && v >= 0 && v <= MAX_AMOUNT), "summa noto'g'ri");
 
 /**
  * Oy byudjeti — bitta forma, har kategoriya uchun `amt:<kat>` va `lim:<kat>`.

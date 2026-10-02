@@ -13,6 +13,7 @@ import { OrderStatusBadge } from "../orders/status";
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { requirePage } from "@/lib/page-guard";
+import { reassignable } from "@/lib/tasks";
 
 /**
  * Ishlab chiqarish oynasi: saqlangan zayavkalar (qoralama, tasdiqlangan, ishlab chiqarilmoqda) shu yerga tushadi.
@@ -20,7 +21,8 @@ import { requirePage } from "@/lib/page-guard";
  * Tayinlash formasi shu oynaning o'zida ochiladi; "Tasdiqlash" bosilganda topshiriq brigadaga yuboriladi.
  */
 export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string }> }) {
-  await requirePage("/production");
+  const session = await requirePage("/production");
+  const canBatch = session.role === "PRODUCTION" || session.role === "DIRECTOR";
   const { order: selectedId, tab = "open" } = await searchParams;
   const [allOrders, brigades, batches] = await Promise.all([
     db.order.findMany({
@@ -58,7 +60,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <PageHeader title="Ishlab chiqarish" subtitle={`Bugun: ${qty(todayM3)} m³ · brigada kutayotgan: ${unassignedCount} · muddati yaqin (≤ 2 kun): ${soonCount}`} action={<LinkButton href="/production/new"><Plus size={16} /> Zames</LinkButton>} />
+      <PageHeader title="Ishlab chiqarish" subtitle={`Bugun: ${qty(todayM3)} m³ · brigada kutayotgan: ${unassignedCount} · muddati yaqin (≤ 2 kun): ${soonCount}`} action={canBatch ? <LinkButton href="/production/new"><Plus size={16} /> Zames</LinkButton> : undefined} />
 
       {selected && (
         <Card padded={false} className="mb-5 border-brand-500/40">
@@ -71,8 +73,10 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
             />
           </div>
           {brigades.length === 0 && <p className="px-5 pb-3 text-sm text-red-600">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> sahifasida qo&apos;shing.</p>}
-          <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
-            items={selected.items.map((i) => ({ id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit), taskNo: i.task?.taskNo ?? null, brigade: i.brigade?.name ?? null }))} />
+          {/* Qoralama zayavka ishlab chiqarishga berilmaydi — avval sotuv tasdiqlaydi (server ham rad etadi) */}
+          {selected.status === "DRAFT" && <p className="px-5 pb-5 text-sm text-amber-700">Zayavka hali tasdiqlanmagan (qoralama). Sotuv bo&apos;limi qabul qilgach brigada tayinlanadi.</p>}
+          {selected.status !== "DRAFT" && <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
+            items={selected.items.map((i) => ({ id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit), taskNo: reassignable(i.task) ? null : i.task?.taskNo ?? null, brigade: i.brigade?.name ?? null }))} />}
         </Card>
       )}
 

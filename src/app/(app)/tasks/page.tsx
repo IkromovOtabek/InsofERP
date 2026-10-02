@@ -3,20 +3,24 @@ import { ListChecks, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { qty, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
+import { taskDefectTotals } from "@/lib/defects";
+import { canTask } from "@/lib/tasks";
 import { Badge, Button, Empty, PageHeader, Progress, Select, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { TASK_STATUS, TaskStatusBadge } from "./status";
 import { ProgressForm } from "./progress-form";
 import { cancelTask } from "./actions";
+import { CancelTaskButton } from "./cancel-button";
 import type { TaskStatus } from "@/generated/prisma";
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ status?: string; brigade?: string }> }) {
   const { status, brigade } = await searchParams;
-  const s = await requireSession(["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"]);
-  const canProgress = ["PRODUCTION", "LOGISTICS"].includes(s.role);
-  const canCancel = ["PRODUCTION", "SALES"].includes(s.role);
+  const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"]);
+  // Rol matritsasi `lib/tasks.ts` da — server action va mobil ilova ham shundan foydalanadi
+  const canProgress = canTask(s.role, "progress");
+  const canCancel = canTask(s.role, "cancel");
   const st = status && status in TASK_STATUS ? (status as TaskStatus) : undefined;
   const [tasks, brigades] = await Promise.all([
     db.brigadeTask.findMany({
@@ -27,7 +31,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     }),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
-  const marks = await customerMarks(tasks.map((t) => t.order.customerId));
+  const [marks, defects] = await Promise.all([customerMarks(tasks.map((t) => t.order.customerId)), taskDefectTotals(tasks.map((t) => t.id))]);
   const q = (k: string) => `${k}${brigade ? `${k.includes("?") ? "&" : "?"}brigade=${brigade}` : ""}`;
   const tabs = [{ key: "", label: "Ochiq", href: q("/tasks") }, ...(Object.keys(TASK_STATUS) as TaskStatus[]).map((k) => ({ key: k, label: TASK_STATUS[k].label, href: q(`/tasks?status=${k}`) }))];
 
@@ -46,7 +50,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         </form>
       </div>
       <Table>
-        <thead><tr><Th>№</Th><Th>Muddat</Th><Th>Brigada</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Qoldiq</Th><Th>Holat</Th><Th></Th></tr></thead>
+        <thead><tr><Th>№</Th><Th>Muddat</Th><Th>Brigada</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th><Th></Th></tr></thead>
         <tbody>
           {tasks.length === 0 && <Empty text="Topshiriqlar yo'q" icon={ListChecks} />}
           {tasks.map((t) => {
@@ -62,12 +66,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <Td>{t.orderItem.product.name}</Td>
                 <Td right>{qty(total)} {unit}</Td>
                 <Td right className="text-emerald-700">{qty(done)}</Td>
+                <Td right className={defects.get(t.id) ? "text-red-700" : "text-slate-400"}>{defects.get(t.id) ? qty(defects.get(t.id)!) : "—"}</Td>
                 <Td right className={rem > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(rem)}<div className="mt-1 w-20"><Progress value={done} max={total} tone={rem === 0 ? "success" : "default"} /></div></Td>
                 <Td><TaskStatusBadge status={t.status} /></Td>
                 <Td>
                   <div className="flex items-center gap-2">
                     {open && canProgress && <ProgressForm taskId={t.id} remaining={rem} unit={unit} />}
-                    {open && canCancel && <form action={cancelTask.bind(null, t.id)}><Button variant="ghost" className="h-8 px-2 text-xs text-red-600 hover:bg-red-50">Bekor</Button></form>}
+                    {open && canCancel && <CancelTaskButton action={cancelTask.bind(null, t.id)} />}
                   </div>
                 </Td>
               </Tr>

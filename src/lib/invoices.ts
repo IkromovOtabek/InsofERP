@@ -11,8 +11,11 @@ export type InvoiceResult = { id?: string; invoiceNo?: string; status?: string; 
 
 export async function createInvoice(input: { orderId: string; amount: number; date: Date }, userId: string): Promise<InvoiceResult> {
   if (!(input.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
-  const o = await db.order.findUnique({ where: { id: input.orderId }, include: { invoices: { where: { status: { not: "CANCELLED" } } } } });
+  const o = await db.order.findUnique({ where: { id: input.orderId }, include: { invoices: { where: { status: { not: "CANCELLED" } } }, items: { select: { qtyM3: true, price: true } } } });
   if (!o) return { error: "Zayavka topilmadi" };
+  // Schyot zayavka summasidan oshmaydi (narxda NDS bor — `lib/nds.ts`): xato raqam mijozni qarzdor/qora ro'yxatga tushirmasin
+  const orderTotal = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0);
+  if (input.amount > orderTotal + 0.005) return { error: `Schyot zayavka summasidan (${Math.round(orderTotal).toLocaleString("ru-RU")} so'm) ko'p bo'lolmaydi` };
   if (["DRAFT", "BLOCKED", "CANCELLED"].includes(o.status)) return { error: "Tasdiqlanmagan zayavkaga schyot yozib bo'lmaydi" };
   if (o.invoices.length) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
 
@@ -35,4 +38,34 @@ export async function createInvoice(input: { orderId: string; amount: number; da
     }
     return { id: inv.id, invoiceNo: inv.invoiceNo, status };
   });
+}
+
+// ───────────────────────── Akt sverki (mijoz bilan solishtirma dalolatnoma) ─────────────────────────
+
+export type StatementLine = { date: Date; doc: string; kind: "INVOICE" | "PAYMENT"; debit: number; credit: number; note: string | null; href?: string };
+export type Statement = { opening: number; lines: StatementLine[]; debit: number; credit: number; closing: number };
+
+/**
+ * Davr bo'yicha akt sverki: boshlang'ich qoldiq, davrdagi schyotlar (debet) va to'lovlar (kredit), yakuniy qoldiq.
+ * Qoida `lib/finance.ts` dagi qarz hisobi bilan bir xil: bekor qilingan schyot kirmaydi, Realizatsiya jurnali
+ * to'lovlari (o'z sotuvini yopadi, ERP schyotlariga tegmaydi) kirmaydi. Musbat qoldiq — mijoz qarzi, manfiy — avans.
+ */
+export async function customerStatement(customerId: string, from: Date, to: Date): Promise<Statement> {
+  const invWhere = { customerId, status: { not: "CANCELLED" as const } };
+  const payWhere = { customerId, register: { is: null } };
+  const [invBefore, payBefore, invoices, payments] = await Promise.all([
+    db.invoice.aggregate({ where: { ...invWhere, date: { lt: from } }, _sum: { amount: true } }),
+    db.payment.aggregate({ where: { ...payWhere, date: { lt: from } }, _sum: { amount: true } }),
+    db.invoice.findMany({ where: { ...invWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { order: { select: { orderNo: true } } } }),
+    db.payment.findMany({ where: { ...payWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, cashAccount: { select: { name: true } } } }),
+  ]);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const opening = r2(Number(invBefore._sum.amount ?? 0) - Number(payBefore._sum.amount ?? 0));
+  const lines: StatementLine[] = [
+    ...invoices.map((i): StatementLine => ({ date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${i.order.orderNo}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined })),
+    ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans ${p.order.orderNo}` : p.note, href: undefined })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.kind === b.kind ? 0 : a.kind === "INVOICE" ? -1 : 1));
+  const debit = r2(lines.reduce((s, l) => s + l.debit, 0));
+  const credit = r2(lines.reduce((s, l) => s + l.credit, 0));
+  return { opening, lines, debit, credit, closing: r2(opening + debit - credit) };
 }

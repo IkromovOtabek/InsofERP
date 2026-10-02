@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Banknote, Boxes, CheckCircle2, ClipboardList, Factory, FileText, Gauge, Landmark, ShieldAlert, Sliders, TrendingDown, TrendingUp, Truck, Wallet } from "lucide-react";
-import { ownerDashboard, LEVEL_LABEL, type Level } from "@/lib/owner-dashboard";
+import { ownerDashboard, directorQueue, LEVEL_LABEL, type Level, type DirectorQueue } from "@/lib/owner-dashboard";
 import { moneyShort, pct, qty, date, fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, Progress, Td, Th, Tr } from "@/components/ui";
@@ -24,15 +24,17 @@ const Dev = ({ v, invert, unit = "so'm" }: { v: number | null; invert?: boolean;
   return <span className={cn("tabular", good ? "text-emerald-700" : "text-red-600")}>{v > 0 ? "+" : v < 0 ? "−" : ""}{unit === "so'm" ? moneyShort(Math.abs(v)) : `${fmtNum(Math.abs(v), 1)} ${unit}`}</span>;
 };
 const m = (v: number | null | undefined) => (v === null || v === undefined ? "—" : moneyShort(v));
+/** Xom jadval telefonda (390px) sahifani yon tomonga itarmasin — o'z ichida suriladi. */
+const Scroll = ({ children, className }: { children: React.ReactNode; className?: string }) => <div className={cn("overflow-x-auto", className)}>{children}</div>;
 const more = (href: string, text: React.ReactNode = "Batafsil") => <Link href={href} className="inline-flex items-center gap-1 font-medium text-slate-600 hover:text-slate-900">{text} <ArrowRight size={13} /></Link>;
 
 /** Yuqori panel kartasi — raqam + holat nuqtasi + bir qatorli izoh. */
 function Top({ label, value, sub, level, href, icon: Icon }: { label: string; value: string; sub: React.ReactNode; level: Level; href: string; icon: typeof Wallet }) {
   return (
-    <Link href={href} className={cn("flex flex-col rounded-(--radius-card) border p-4 shadow-(--shadow-card) transition hover:shadow-md", LV[level].bg)}>
-      <div className="flex items-center justify-between gap-2 text-[12.5px] font-medium text-slate-600"><span className="inline-flex items-center gap-1.5"><Icon size={14} className="text-slate-400" /> {label}</span><Dot level={level} /></div>
-      <div className={cn("mt-1 text-[22px] font-semibold leading-tight tracking-tight tabular", level === "ok" ? "text-slate-900" : LV[level].text)}>{value}</div>
-      <div className="mt-1 text-xs text-slate-600">{sub}</div>
+    <Link href={href} className={cn("flex min-w-0 flex-col rounded-(--radius-card) border p-3 shadow-(--shadow-card) transition hover:shadow-md sm:p-4", LV[level].bg)}>
+      <div className="flex items-center justify-between gap-2 text-[12.5px] font-medium text-slate-600"><span className="inline-flex min-w-0 items-center gap-1.5 truncate"><Icon size={14} className="shrink-0 text-slate-400" /> {label}</span><Dot level={level} /></div>
+      <div className={cn("mt-1 truncate text-lg font-semibold leading-tight tracking-tight tabular sm:text-[22px]", level === "ok" ? "text-slate-900" : LV[level].text)}>{value}</div>
+      <div className="mt-1 break-words text-xs text-slate-600">{sub}</div>
     </Link>
   );
 }
@@ -43,14 +45,17 @@ function Top({ label, value, sub, level, href, icon: Icon }: { label: string; va
  * Reyslar, nakladnoylar, sklad qatorlari bu yerda ko'rsatilmaydi (TZ §22) — har blokdan tegishli bo'limga havola.
  */
 export async function OwnerHome() {
-  const [d, prodReports] = await Promise.all([ownerDashboard(), reportHistory(7)]);
+  const [d, prodReports, queue] = await Promise.all([ownerDashboard(), reportHistory(7), directorQueue()]);
   const unseenReports = prodReports.filter((r) => !r.seenAt).length;
   const S = d.summary, L = d.levels;
   const worstProblem = d.problems[0];
   const problemLevel: Level = d.problems.some((p) => p.level === "crit") ? "crit" : d.problems.length ? "warn" : "ok";
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
+      {/* ── 0. Direktor tasdig'ini kutayotganlar — har kuni birinchi ko'rinishi kerak ── */}
+      <ApprovalQueue q={queue} />
+
       {/* ── 1. Yuqori panel: 30–60 soniya ── */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Top label="Tushum" value={m(S.revenue.month)} level={L.revenue} href="/bi-tahlil/sotuvlar" icon={TrendingUp}
@@ -68,7 +73,7 @@ export async function OwnerHome() {
       </div>
 
       {/* Ikkinchi qator: kreditorka, ishlab chiqarish, otgruzka, marja */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <Card className="py-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500"><span>Kreditorka (tasdiqlangan ta&apos;minot)</span><Dot level={L.payable} /></div>
           <div className="mt-1 text-lg font-semibold tabular">{m(S.payable.total)}</div>
@@ -106,9 +111,9 @@ export async function OwnerHome() {
       <ReportHistory rows={prodReports} current={null} title={`Ishlab chiqarish — kunlik hisobotlar${unseenReports ? ` · ${unseenReports} ta yangi` : ""}`} />
 
       {/* ── 15. Plan / fakt / prognoz + trend ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Panel className="xl:col-span-2" title="Plan / fakt / prognoz — joriy oy" info={`${d.wdPassed} / ${d.wdTotal} ish kuni o'tdi. Prognoz — shu kungacha bo'lgan sur'at oy oxirigacha davom etsa.`} action={more("/bi-tahlil/reja", "Reja nazorati")} padded={false}>
-          <table className="w-full text-sm">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
+        <Panel className="min-w-0 xl:col-span-2" title="Plan / fakt / prognoz — joriy oy" info={`${d.wdPassed} / ${d.wdTotal} ish kuni o'tdi. Prognoz — shu kungacha bo'lgan sur'at (ish kunlari bo'yicha) oy oxirigacha davom etsa. Tushum — yetkazilgan reyslar bo'yicha. Xarajat prognozi: ish haqi, ijara, soliq, kommunal — max(fakt, byudjet); qolganlari proporsional.`} action={more("/bi-tahlil/reja", "Reja nazorati")} padded={false}>
+          <Scroll><table className="w-full min-w-[560px] text-sm">
             <thead><tr><Th>Ko&apos;rsatkich</Th><Th right>Plan</Th><Th right>Fakt</Th><Th right>Prognoz (oy)</Th><Th right>Chetlanish</Th><Th className="w-40">Bajarilish</Th></tr></thead>
             <tbody>
               {[
@@ -137,9 +142,9 @@ export async function OwnerHome() {
                 <Td>{S.production.concretePlan ? <Progress value={Math.min(100, (S.production.concreteMonth / S.production.concretePlan) * 100)} max={100} tone={L.production === "ok" ? "success" : L.production === "warn" ? "warning" : "danger"} /> : <span className="text-xs text-slate-400">plan yo&apos;q</span>}</Td>
               </Tr>
             </tbody>
-          </table>
+          </table></Scroll>
         </Panel>
-        <Panel title="Dinamika — 3 oy" info="Tushum, foyda va xarajat oylar bo'yicha; pastda 30/60/90 kunlik o'sish oldingi shunday davrga nisbatan.">
+        <Panel className="min-w-0" title="Dinamika — 3 oy" info="Tushum, foyda va xarajat oylar bo'yicha; pastda 30/60/90 kunlik o'sish oldingi shunday davrga nisbatan.">
           <LineChart labels={d.trend.map((t) => t.label)} series={[{ name: "Tushum", values: d.trend.map((t) => t.revenue), color: "#0d78ff" }, { name: "Foyda", values: d.trend.map((t) => t.profit), color: "#00cb80" }, { name: "Xarajat", values: d.trend.map((t) => t.expenses), color: "#fa1636", dashed: true }]} height={150} formatValue={(v) => moneyShort(v)} />
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             {d.dyn.map((x) => (
@@ -155,10 +160,11 @@ export async function OwnerHome() {
       </div>
 
       {/* ── 3. Foyda + 2. Cash flow | 4. Xarajatlar ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
         <div className="space-y-6">
-          <Panel title="Foyda" info="Tannarx — retsept × xomashyo o'rtacha kirim narxi. Operatsion xarajat — Kirim-Chiqimdagi chiqimlar, xomashyodan tashqari (u tannarxda). Plan — sotuv plani va byudjetdan." padded={false} action={more("/bi-tahlil/moliya", "Moliya")}>
-            <table className="w-full text-sm">
+          <Panel title="Foyda" info="Tushum — yetkazilgan reyslar (mijoz qabul qilgan miqdor × narx), yetkazilgan kuni. Tannarx — retsept × xomashyo o'rtacha kirim narxi (miqdorga tortilgan). Operatsion xarajat — Kirim-Chiqimdagi chiqimlar, xomashyodan tashqari (u tannarxda). Plan — faqat rejalardan: sotuv plani − xomashyo byudjeti − operatsion byudjet." padded={false} action={more("/bi-tahlil/moliya", "Moliya")}>
+            {d.profitPlanNote && <div className="border-b border-slate-100 px-5 py-2 text-xs text-amber-700">{d.profitPlanNote}</div>}
+            <Scroll><table className="w-full min-w-[480px] text-sm">
               <thead><tr><Th>Ko&apos;rsatkich</Th><Th right>Bugun</Th><Th right>Oy</Th><Th right>Plan</Th><Th right>±</Th></tr></thead>
               <tbody>
                 {d.profitTable.map((r) => (
@@ -172,7 +178,7 @@ export async function OwnerHome() {
                 ))}
                 <Tr><Td>Marja, %</Td><Td right className="tabular">—</Td><Td right className="tabular font-semibold">{fmtNum(d.marginTotal, 1)}%</Td><Td right className="tabular text-slate-500">{d.marginPlan !== null ? `${fmtNum(d.marginPlan, 1)}%` : "—"}</Td><Td right>{d.marginPlan !== null ? <Dev v={d.marginTotal - d.marginPlan} unit="%" /> : "—"}</Td></Tr>
               </tbody>
-            </table>
+            </table></Scroll>
           </Panel>
 
           <Panel title="Pul va cash flow" info="Kun boshi qoldig'i = hozirgi qoldiq − bugungi kirim + bugungi chiqim. Yaqin to'lovlar — ma'sul xodim tasdiqlagan, moliya hali to'lamagan ta'minot zayavkalari. Uzilish prognozi: o'rtacha kunlik tushum (30 kun) va chiqim (joriy oy) bo'yicha." action={more("/cashflow", "Kirim-Chiqim")}>
@@ -182,7 +188,7 @@ export async function OwnerHome() {
               ))}
             </div>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-              {d.cashflow.accounts.map((a) => <span key={a.id}>{a.type === "CASH" ? "Kassa" : "Bank"} · {a.name}: <b className="tabular text-slate-900">{moneyShort(a.balance)}</b></span>)}
+              {d.cashflow.accounts.map((a) => <span key={a.id}>{a.type === "CASH" ? "Kassa" : "Bank"} · {a.name}{!a.isActive && <span className="text-amber-700"> (nofaol)</span>}: <b className="tabular text-slate-900">{moneyShort(a.balance)}</b></span>)}
             </div>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
@@ -214,19 +220,19 @@ export async function OwnerHome() {
         {/* 4/6. Xarajatlar va byudjet nazorati */}
         <Panel title="Xarajatlar va byudjet nazorati" info="Har kategoriya: bugun, oy, byudjet, chetlanish, holat. Kategoriya bosilsa Kirim-Chiqimda detalizatsiya (sana → summa → kontragent → hisob → kim kiritgan)." padded={false}
           action={<><span className="text-slate-500">Xarajat / tushum: <b className={cn("tabular", d.expenses.ratio > 80 ? "text-red-600" : "text-slate-900")}>{fmtNum(d.expenses.ratio, 0)}%</b></span>{more("/dashboard/byudjet", "Byudjet")}</>}>
-          <div className="max-h-[26rem] overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="max-h-[26rem] overflow-auto">
+            <table className="w-full min-w-[620px] text-sm">
               <thead><tr><Th>Kategoriya</Th><Th right>Bugun</Th><Th right>Oy</Th><Th right>Byudjet</Th><Th right>±</Th><Th right>Prognoz</Th><Th>Holat</Th></tr></thead>
               <tbody>
                 {d.expenses.categories.filter((c) => c.month > 0 || c.plan).map((c) => (
                   <Tr key={c.cat}>
-                    <Td><Link href={`/cashflow?tab=EXPENSE&category=${encodeURIComponent(c.cat)}`} className="font-medium hover:underline">{c.cat}</Link>{c.by && c.level !== "ok" && <div className="text-[11px] text-slate-400">{c.by} · {c.count} yozuv</div>}</Td>
+                    <Td><Link href={`/cashflow?tab=EXPENSE&category=${encodeURIComponent(c.cat)}`} className="font-medium hover:underline">{c.cat}</Link>{c.oneOff && <span className="ml-1 text-[10px] text-slate-400" title="Oyiga bir marta to'lanadi — prognoz = max(fakt, byudjet)">· oylik</span>}{c.by && c.level !== "ok" && <div className="text-[11px] text-slate-400">{c.by} · {c.count} yozuv</div>}</Td>
                     <Td right className="tabular">{c.day ? moneyShort(c.day) : "—"}</Td>
                     <Td right className="tabular font-medium">{moneyShort(c.month)}</Td>
                     <Td right className="tabular text-slate-500">{c.plan !== null ? moneyShort(c.plan) : <span className="text-amber-600">yo&apos;q</span>}</Td>
                     <Td right><Dev v={c.deviation} invert /></Td>
                     <Td right className={cn("tabular", c.forecastOver ? "text-amber-700" : "text-slate-500")}>{moneyShort(c.forecast)}</Td>
-                    <Td><span className="inline-flex items-center gap-1.5"><Dot level={c.level} /><span className="text-xs">{c.unplanned ? "Rejasiz" : c.anomaly ? "Anomal" : LEVEL_LABEL[c.level]}</span></span></Td>
+                    <Td><span className="inline-flex items-center gap-1.5"><Dot level={c.level} /><span className="text-xs">{c.unplanned ? "Rejasiz" : c.over ? "Oshdi" : c.anomaly ? "Anomal" : LEVEL_LABEL[c.level]}</span></span></Td>
                   </Tr>
                 ))}
                 {d.expenses.categories.every((c) => !c.month && !c.plan) && <tr><Td colSpan={7} className="py-6 text-center text-slate-500">Bu oyda chiqim yo&apos;q va byudjet belgilanmagan — <Link href="/dashboard/byudjet" className="underline">byudjet qo&apos;ying</Link>.</Td></tr>}
@@ -262,9 +268,9 @@ export async function OwnerHome() {
       </div>
 
       {/* ── 7. Ishlab chiqarish | 8. Voronka ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Ishlab chiqarish" info="Plan — direktor belgilagan oylik plan (Ishlab chiqarish bosh sahifasi). Fakt — zames (beton) va brigada qaydlari (ЖБИ). Tannarx va marja — retsept bo'yicha." padded={false} action={more("/dashboard?view=production", "Ishlab chiqarish")}>
-          <table className="w-full text-sm">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
+        <Panel className="min-w-0" title="Ishlab chiqarish" info="Plan — direktor belgilagan oylik plan (Ishlab chiqarish bosh sahifasi). Fakt — zames (beton) va brigada qaydlari (ЖБИ). Tannarx va marja — retsept bo'yicha." padded={false} action={more("/dashboard?view=production", "Ishlab chiqarish")}>
+          <Scroll><table className="w-full min-w-[520px] text-sm">
             <thead><tr><Th>Mahsulot</Th><Th right>Bugun</Th><Th right>Oy fakt</Th><Th right>Plan</Th><Th right>Orqada</Th><Th className="w-32">Bajarilish</Th></tr></thead>
             <tbody>
               {d.production.rows.length === 0 && <tr><Td colSpan={6} className="py-5 text-center text-slate-500">Bu oyga ishlab chiqarish plani belgilanmagan — <Link href="/dashboard?view=production" className="underline">plan qo&apos;ying</Link>. Beton fakt: {qty(S.production.concreteMonth)} m³.</Td></tr>}
@@ -279,7 +285,7 @@ export async function OwnerHome() {
                 </Tr>
               ))}
             </tbody>
-          </table>
+          </table></Scroll>
           <div className="grid grid-cols-1 gap-4 border-t border-slate-100 px-5 py-4 text-sm md:grid-cols-2">
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><Gauge size={12} /> Quvvat yuklanishi</div>
@@ -295,8 +301,8 @@ export async function OwnerHome() {
           </div>
         </Panel>
 
-        <Panel title="Zayavka → ishlab chiqarish → yetkazildi → to'landi" info="Joriy oyda qabul qilingan zayavkalar bosqichlar bo'yicha: soni va summasi. Pastda osilib qolganlar — yetkazish sanasi o'tgan zayavkalar va to'lanmagan otgruzkalar." action={more("/sales", "Sotuv")}>
-          <div className="grid grid-cols-5 gap-1.5">
+        <Panel className="min-w-0" title="Zayavka → ishlab chiqarish → yetkazildi → to'landi" info="Joriy oyda qabul qilingan zayavkalar bosqichlar bo'yicha: soni va summasi. Pastda osilib qolganlar — yetkazish sanasi o'tgan zayavkalar va to'lanmagan otgruzkalar." action={more("/sales", "Sotuv")}>
+          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
             {d.funnel.stages.map((st, i) => {
               const base = d.funnel.stages[0].sum || 1;
               return (
@@ -323,8 +329,8 @@ export async function OwnerHome() {
       </div>
 
       {/* ── 9. Debitorka / kreditorka | 10. Sklad ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Debitorka va kreditorka" info={`Muddati o'tgan — ${d.thresholds.overdue} kundan eski ochiq schyotlar. Kreditorka — tasdiqlangan, hali to'lanmagan ta'minot zayavkalari.`} action={more("/customers", "Mijozlar")}>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
+        <Panel className="min-w-0" title="Debitorka va kreditorka" info={`Muddati o'tgan — ${d.thresholds.overdue} kundan eski ochiq schyotlar. Kreditorka — tasdiqlangan, hali to'lanmagan ta'minot zayavkalari.`} action={more("/customers", "Mijozlar")}>
           <div className="grid grid-cols-4 gap-2 text-center">
             {[["0–7 kun", 0], ["8–30", 1], ["31–60", 2], ["60+", 3]].map(([k, i]) => <div key={k as string} className={cn("rounded-lg border py-2", (i as number) >= 2 && d.debt.aging[i as number] > 0 ? "border-red-200 bg-red-50" : "border-slate-200")}><div className="text-[11px] text-slate-500">{k as string}</div><div className="text-sm font-semibold tabular">{moneyShort(d.debt.aging[i as number])}</div></div>)}
           </div>
@@ -341,14 +347,14 @@ export async function OwnerHome() {
           </div>
         </Panel>
 
-        <Panel title="Sklad va xomashyo" info={`Kunlar — hozirgi qoldiq so'nggi 30 kun o'rtacha sarfida necha kunga yetadi. ${d.thresholds.stockCrit} kundan kam — kritik (to'xtash xavfi), ${d.thresholds.stockWarn} kundan kam — e'tibor. Normadan chetlanish — fakt sarf / retsept bo'yicha kerak bo'lgani.`} padded={false} action={more("/stock", "Sklad")}>
+        <Panel className="min-w-0" title="Sklad va xomashyo" info={`Kunlar — hozirgi qoldiq so'nggi 30 kun o'rtacha sarfida necha kunga yetadi. ${d.thresholds.stockCrit} kundan kam — kritik (to'xtash xavfi), ${d.thresholds.stockWarn} kundan kam — e'tibor. Normadan chetlanish — fakt sarf / retsept bo'yicha kerak bo'lgani.`} padded={false} action={more("/stock", "Sklad")}>
           <div className="flex flex-wrap gap-x-4 gap-y-1 px-5 py-2 text-xs text-slate-600">
             <span>Qoldiq qiymati: <b className="tabular text-slate-900">{moneyShort(d.stock.value)}</b></span>
             {d.stock.minDays && <span>Eng avval tugaydi: <b className={cn(d.stock.minDays.days < d.thresholds.stockCrit ? "text-red-600" : "text-slate-900")}>{d.stock.minDays.name} — {fmtNum(d.stock.minDays.days, 1)} kun</b></span>}
             {d.production.materialOverspend > 0 && <span>Ortiqcha sarf: <b className="tabular text-red-600">{moneyShort(d.production.materialOverspend)}</b></span>}
           </div>
-          <div className="max-h-72 overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full min-w-[560px] text-sm">
               <thead><tr><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>Qiymat</Th><Th right>Sarf/kun</Th><Th right>Yetadi</Th><Th right>Normadan</Th><Th /></tr></thead>
               <tbody>
                 {d.stock.rows.slice(0, 12).map((r) => (
@@ -369,8 +375,8 @@ export async function OwnerHome() {
       </div>
 
       {/* ── 11. Transport | 12. Pul oqib ketishi ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Transport va texnika" info="Holat (ta'mirda / bekor) — logistika Haydovchilar sahifasida belgilaydi. Bekor turish narxi — oylik tushumning bir texnikaga to'g'ri keladigan kunlik ulushi × texnika-kun (taxmin). Yoqilg'i normasi — byudjetdagi «Transport / yoqilg'i»." action={more("/drivers", "Haydovchilar")}>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
+        <Panel className="min-w-0" title="Transport va texnika" info="Holat (ta'mirda / bekor) — logistika Haydovchilar sahifasida belgilaydi. Bekor turish — texnika-kun (ta'mirda yoki bekor holatda turgan kunlar yig'indisi); so'mga aylantirilmaydi. Yoqilg'i normasi — byudjetdagi «Transport / yoqilg'i»." action={more("/drivers", "Haydovchilar")}>
           <div className="grid grid-cols-4 gap-2 text-center">
             {[["Jami", d.transport.total, "ok"], ["Ishda", d.transport.working, "ok"], ["Ta'mirda", d.transport.repair.length, d.transport.repair.length ? "warn" : "ok"], ["Bekor", d.transport.idle.length, d.transport.idle.length ? "warn" : "ok"]].map(([k, v, lv]) => <div key={k as string} className={cn("rounded-lg border py-2", LV[lv as Level].bg)}><div className="text-[11px] text-slate-500">{k as string}</div><div className="text-base font-semibold tabular">{v as number}</div></div>)}
           </div>
@@ -380,29 +386,39 @@ export async function OwnerHome() {
             <div><div className="text-[11px] text-slate-500">Bo&apos;sh (saflda)</div><div className="font-medium tabular">{d.transport.free}</div></div>
             <div><div className="text-[11px] text-slate-500">Yoqilg&apos;i fakt / norma</div><div className={cn("font-medium tabular", d.transport.fuelOver > 0 && "text-red-600")}>{moneyShort(d.transport.fuelFact)} / {d.transport.fuelNorm !== null ? moneyShort(d.transport.fuelNorm) : "—"}</div></div>
             <div><div className="text-[11px] text-slate-500">Ta&apos;mir xarajati (oy)</div><div className="font-medium tabular">{moneyShort(d.transport.repairFact)}</div></div>
-            <div><div className="text-[11px] text-slate-500">Bekor turish narxi</div><div className={cn("font-medium tabular", d.transport.idleCost > 0 && "text-amber-700")}>{d.transport.idleDays ? `≈ ${moneyShort(d.transport.idleCost)}` : "—"}</div></div>
+            <div><div className="text-[11px] text-slate-500">Bekor turish</div><div className={cn("font-medium tabular", d.transport.idleDays > 0 && "text-amber-700")}>{d.transport.idleDays ? `${d.transport.idleDays} texnika-kun` : "—"}</div></div>
           </div>
           {(d.transport.repair.length > 0 || d.transport.idle.length > 0) && (
             <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
-              {[...d.transport.repair, ...d.transport.idle].map((v) => <li key={v.id} className="flex justify-between gap-2"><span><Truck size={13} className="mr-1 inline text-slate-400" /><b>{v.plate}</b> <span className="text-slate-500">· {v.statusNote ?? "sabab yozilmagan"}</span></span><Badge color={v.status === "REPAIR" ? "red" : "amber"}>{v.status === "REPAIR" ? "Ta'mirda" : "Bekor"}{v.statusSince ? ` · ${date(v.statusSince)} dan` : ""}</Badge></li>)}
+              {[...d.transport.repair, ...d.transport.idle].map((v) => <li key={v.id} className="flex flex-wrap justify-between gap-2"><span className="min-w-0"><Truck size={13} className="mr-1 inline text-slate-400" /><b>{v.plate}</b> <span className="text-slate-500">· {v.statusNote ?? "sabab yozilmagan"}</span></span><Badge color={v.status === "REPAIR" ? "red" : "amber"}>{v.status === "REPAIR" ? "Ta'mirda" : "Bekor"}{v.statusSince ? ` · ${date(v.statusSince)} dan` : ""}</Badge></li>)}
             </ul>
           )}
         </Panel>
 
-        <Panel title="Pul qayerdan oqib ketyapti" info="Joriy oy. Aniq raqamlar (brak, byudjetdan oshish, takroriy to'lov) va taxminlar (bekor turish narxi). Har qator tegishli bo'limga olib boradi." action={<span className="text-slate-500">Jami <b className="tabular text-red-600">{moneyShort(d.leaks.total)}</b></span>}>
-          <HBarList data={d.leaks.rows.filter((l) => l.amount > 0).map((l) => ({ label: l.title, value: l.amount, tone: (l.level === "crit" ? "danger" : "warning") as "danger" | "warning", sub: l.text }))} formatValue={(v) => moneyShort(v)} />
-          {d.leaks.rows.every((l) => l.amount === 0) && <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Bu oyda aniqlangan yo&apos;qotish yo&apos;q.</div>}
-          <ul className="mt-3 grid grid-cols-1 gap-1 text-xs text-slate-500 sm:grid-cols-2">
-            {d.leaks.rows.filter((l) => l.amount === 0).map((l) => <li key={l.key} className="flex items-center gap-1.5"><Dot level="ok" /> {l.title}: {l.text}</li>)}
+        <Panel className="min-w-0" title="Pul qayerdan oqib ketyapti" info="Joriy oy. Ikki xil narsa alohida: «Yo'qotish» — pul allaqachon ketdi (brak, xomashyo ortiqcha sarfi, yoqilg'i normadan ortig'i, takroriy to'lov). «Xavf / muzlagan pul» — pul hali bizniki, lekin muzlagan yoki ketish xavfi bor; ular bir-biriga qo'shilmaydi.">
+          <div className="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400"><span>Yo&apos;qotish (fakt)</span><b className="tabular normal-case text-red-600">{moneyShort(d.leaks.lossTotal)}</b></div>
+          {d.leaks.lossTotal > 0 ? <HBarList data={d.leaks.loss.filter((l) => l.amount > 0).map((l) => ({ label: l.title, value: l.amount, tone: (l.level === "crit" ? "danger" : "warning") as "danger" | "warning", sub: l.text }))} formatValue={(v) => moneyShort(v)} />
+            : <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Bu oyda aniqlangan yo&apos;qotish yo&apos;q.</div>}
+          <ul className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-500 sm:grid-cols-2">
+            {d.leaks.loss.filter((l) => l.amount === 0).map((l) => <li key={l.key} className="flex items-center gap-1.5"><Dot level="ok" /> {l.title}: {l.text}</li>)}
+          </ul>
+          <div className="mb-2 mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400"><span>Xavf / muzlagan pul</span><b className="tabular normal-case text-amber-700">{moneyShort(d.leaks.riskTotal)}</b></div>
+          <ul className="space-y-1.5 text-sm">
+            {d.leaks.risk.map((l) => (
+              <li key={l.key} className="flex items-start justify-between gap-2">
+                <Link href={l.href} className="inline-flex min-w-0 items-start gap-2 hover:underline"><span className="mt-1.5"><Dot level={l.level} /></span><span className="min-w-0"><span className="font-medium">{l.title}</span><span className="block text-xs text-slate-500">{l.text}</span></span></Link>
+                <span className={cn("shrink-0 tabular", l.level === "crit" ? "text-red-600" : l.level === "warn" ? "text-amber-700" : "text-slate-400")}>{l.amount === null ? "—" : moneyShort(l.amount)}</span>
+              </li>
+            ))}
           </ul>
         </Panel>
       </div>
 
       {/* ── 14. Egasi qarori kerak | 13. Direktor nazorati ── */}
-      <div id="qaror" className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        <Panel className="xl:col-span-3" title={<span className="inline-flex items-center gap-2"><ShieldAlert size={16} className="text-red-500" /> Egasi qarorini talab qiladi</span>} info="Avtomatik: byudjet oshishi, kassa uzilishi, katta muddati o'tgan qarz, texnika ta'miri, rejalashtirilmagan xarajat, xomashyo tugashi, takroriy to'lov. Summa bo'yicha, kritik birinchi." padded={false}>
+      <div id="qaror" className="grid grid-cols-1 gap-6 xl:grid-cols-5 [&>*]:min-w-0">
+        <Panel className="min-w-0 xl:col-span-3" title={<span className="inline-flex items-center gap-2"><ShieldAlert size={16} className="text-red-500" /> Egasi qarorini talab qiladi</span>} info="Avtomatik: byudjet oshishi, kassa uzilishi, katta muddati o'tgan qarz, texnika ta'miri, rejalashtirilmagan xarajat, xomashyo tugashi, takroriy to'lov. Summa bo'yicha, kritik birinchi." padded={false}>
           {d.decisions.length === 0 ? <div className="flex items-center gap-2 px-5 py-8 text-sm text-emerald-700"><CheckCircle2 size={18} /> Hozir egasi qarorini talab qiladigan masala yo&apos;q.</div> : (
-            <table className="w-full text-sm">
+            <Scroll><table className="w-full min-w-[640px] text-sm">
               <thead><tr><Th>Muammo</Th><Th right>Summa / ta&apos;sir</Th><Th>Javobgar</Th><Th>Muddat</Th><Th>Qaror</Th><Th /></tr></thead>
               <tbody>
                 {d.decisions.slice(0, 8).map((x) => (
@@ -416,12 +432,12 @@ export async function OwnerHome() {
                   </Tr>
                 ))}
               </tbody>
-            </table>
+            </table></Scroll>
           )}
         </Panel>
 
-        <Panel className="xl:col-span-2" title="Direktor nazorati — plan / fakt" info="Egasi natijani emas, direktorning tasdiqlangan planni bajarishini ham ko'radi. Teskari ko'rsatkichlarda (xarajat, brak, bekor turish) plan = 0 yoki byudjet." padded={false} action={more("/dashboard/byudjet", <><Sliders size={13} className="inline" /> Chegaralar</>)}>
-          <table className="w-full text-sm">
+        <Panel className="min-w-0 xl:col-span-2" title="Direktor nazorati — plan / fakt" info="Egasi natijani emas, direktorning tasdiqlangan planni bajarishini ham ko'radi. Teskari ko'rsatkichlarda (xarajat, brak, bekor turish) plan = 0 yoki byudjet." padded={false} action={more("/dashboard/byudjet", <><Sliders size={13} className="inline" /> Chegaralar</>)}>
+          <Scroll><table className="w-full min-w-[420px] text-sm">
             <thead><tr><Th>Ko&apos;rsatkich</Th><Th right>Plan</Th><Th right>Fakt</Th><Th right>%</Th><Th /></tr></thead>
             <tbody>
               {d.directorControl.map((r) => (
@@ -434,14 +450,80 @@ export async function OwnerHome() {
                 </Tr>
               ))}
             </tbody>
-          </table>
+          </table></Scroll>
         </Panel>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-        <span className="inline-flex items-center gap-3"><span className="inline-flex items-center gap-1"><Dot level="ok" /> Norma</span><span className="inline-flex items-center gap-1"><Dot level="warn" /> E&apos;tibor — chetlanish nazorat talab qiladi</span><span className="inline-flex items-center gap-1"><Dot level="crit" /> Kritik — limit oshdi, to&apos;xtash yoki kassa uzilishi xavfi</span></span>
-        <span className="inline-flex items-center gap-3"><Link href="/dashboard/byudjet" className="hover:text-slate-700">Byudjet va chegaralar</Link><Link href="/dashboard?view=production" className="hover:text-slate-700"><Factory size={12} className="inline" /> Ishlab chiqarish</Link><Link href="/bi-tahlil" className="hover:text-slate-700"><Boxes size={12} className="inline" /> BI tahlil</Link><Link href="/dashboard/hisobot" className="hover:text-slate-700"><TrendingDown size={12} className="inline" /> Kunlik hisobot</Link></span>
+        <span className="inline-flex flex-wrap items-center gap-3"><span className="inline-flex items-center gap-1"><Dot level="ok" /> Norma</span><span className="inline-flex items-center gap-1"><Dot level="warn" /> E&apos;tibor — chetlanish nazorat talab qiladi</span><span className="inline-flex items-center gap-1"><Dot level="crit" /> Kritik — limit oshdi, to&apos;xtash yoki kassa uzilishi xavfi</span></span>
+        <span className="inline-flex flex-wrap items-center gap-3"><Link href="/dashboard/byudjet" className="hover:text-slate-700">Byudjet va chegaralar</Link><Link href="/dashboard?view=production" className="hover:text-slate-700"><Factory size={12} className="inline" /> Ishlab chiqarish</Link><Link href="/bi-tahlil" className="hover:text-slate-700"><Boxes size={12} className="inline" /> BI tahlil</Link><Link href="/dashboard/hisobot" className="hover:text-slate-700"><TrendingDown size={12} className="inline" /> Kunlik hisobot</Link></span>
       </div>
     </div>
+  );
+}
+
+/**
+ * "Sizning tasdig'ingiz kutilmoqda" — direktor qarorisiz harakatlanmaydigan hujjatlar navbati:
+ * kredit limiti sabab bloklangan zayavkalar va direktor chegarasidan katta xaridlar. Tasdiq / rad etish
+ * hujjatning o'z sahifasida (u yerda tarix, summa va izoh bor) — bu yerda faqat navbat va havola.
+ */
+function ApprovalQueue({ q }: { q: DirectorQueue }) {
+  if (q.total === 0) return null;
+  const fits = q.orders.filter((o) => o.fitsNow).length;
+  return (
+    <Panel
+      title={<span className="inline-flex items-center gap-2"><ShieldAlert size={16} className="text-amber-500" /> Sizning tasdig&apos;ingiz kutilmoqda · {q.total}</span>}
+      info={`Bloklangan zayavka — kredit limiti yetmagan. «Limit endi yetadi» — mijoz to'lov qilgan yoki limiti oshirilgan: zayavka hozir qabul qilinsa bloklanmasdi. Katta xarid — narx qo'yilgan, summasi ${moneyShort(q.limit)} so'mdan katta ta'minot zayavkasi (chegara Sozlamalar / Byudjet sahifasida).`}
+      padded={false}
+      className="border-amber-200"
+    >
+      <div className="grid grid-cols-1 divide-y divide-slate-100 lg:grid-cols-2 lg:divide-x lg:divide-y-0 [&>*]:min-w-0">
+        <div className="px-4 py-3 sm:px-5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <span>Bloklangan zayavkalar ({q.orders.length})</span>
+            {fits > 0 && <Badge color="green">{fits} tasining limiti endi yetadi</Badge>}
+          </div>
+          {q.orders.length === 0 ? <div className="text-xs text-slate-400">yo&apos;q</div> : (
+            <ul className="space-y-2 text-sm">
+              {q.orders.slice(0, 8).map((o) => (
+                <li key={o.id} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link> <span className="text-slate-600">· <Link href={`/customers/${o.customerId}`} className="hover:underline">{o.customer}</Link></span>
+                    <div className="text-[11px] text-slate-500">
+                      limit {moneyShort(o.limit)} · band {moneyShort(o.used)} · bo&apos;sh <span className={o.free >= o.amount ? "text-emerald-700" : "text-red-600"}>{moneyShort(Math.max(0, o.free))}</span> · {o.seller} · yetkazish {date(o.deliveryDate)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="font-semibold tabular">{moneyShort(o.amount)}</div>
+                    {o.fitsNow ? <Badge color="green">Limit endi yetadi ✓</Badge> : <Badge color="red">Limitdan oshadi</Badge>}
+                  </div>
+                </li>
+              ))}
+              {q.orders.length > 8 && <li>{more("/orders?status=BLOCKED", `Yana ${q.orders.length - 8} ta`)}</li>}
+            </ul>
+          )}
+        </div>
+        <div className="px-4 py-3 sm:px-5">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Katta xarid — direktor tasdig&apos;i ({q.supply.length})</div>
+          {q.supply.length === 0 ? <div className="text-xs text-slate-400">yo&apos;q</div> : (
+            <ul className="space-y-2 text-sm">
+              {q.supply.slice(0, 8).map((r) => (
+                <li key={r.id} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/taminot/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link> <span className="text-slate-600">· {r.supplier}</span>
+                    <div className="text-[11px] text-slate-500">{r.by} · {date(r.createdAt)}{r.needBy && <> · kerak {date(r.needBy)}</>}</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="font-semibold tabular">{moneyShort(r.amount)}</div>
+                    <Link href={`/taminot/${r.id}`} className="text-xs font-medium text-brand-600 hover:underline">Ko&apos;rib chiqish →</Link>
+                  </div>
+                </li>
+              ))}
+              {q.supply.length > 8 && <li>{more("/taminot", `Yana ${q.supply.length - 8} ta`)}</li>}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Panel>
   );
 }

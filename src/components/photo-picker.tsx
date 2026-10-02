@@ -234,7 +234,7 @@ export function PhotoPicker({ name = "photo", accept, currentSrc, hint, onPick }
               <span className="font-semibold text-slate-900">Suratga olish</span>
               <span className="text-xs text-slate-500">Yuz kadr o&apos;rtasida, yorug&apos;da bo&apos;lsin</span>
               <button type="button" onClick={() => setCam(false)} aria-label="Yopish"
-                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
+                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 pointer-coarse:h-11 pointer-coarse:w-11 transition hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
             </header>
 
             <div className="min-h-0 flex-1 overflow-auto p-4">

@@ -1,4 +1,5 @@
 import type { Role } from "@/generated/prisma";
+import type { Perms, Session } from "./auth";
 
 export type NavChild = { href: string; label: string };
 /** `hidden` — menyuda ko'rinmaydi, lekin middleware ruxsatni shu yerdan tekshiradi (havola bo'yicha ochiladi). */
@@ -13,6 +14,9 @@ export const NAV: NavItem[] = [
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
+  // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z mijoziga zayavka. AGENT uchun yagona sahifa
+  // (DRIVER/BRIGADIER kabi). DIRECTOR/HR/SALES — mijozni agentga biriktirish uchun shu sahifaga kiradi.
+  { href: "/agent",       label: "Sotuv agentlari",    roles: ["AGENT", "HR", "SALES"], group: "Sotuv" },
   // Saytdagi (`/`) formadan tushgan so'rovlar — mijozga aylantirilgandan keyingina Customer yaratiladi
   { href: "/leads",       label: "Sayt arizalari",     roles: ["SALES"], group: "Sotuv" },
   // Insof ECO ilovasidagi do'kon: qaysi mahsulot ko'rinadi, surat/narx, ilovadan tushgan buyurtmalar
@@ -89,10 +93,13 @@ export const NAV: NavItem[] = [
 export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
   DRIVER: "/mening-reyslarim",
   BRIGADIER: "/mening-topshiriqlarim",
+  // Sotuv agenti ham ko'chada ishlaydi: vebda faqat o'z kabineti (o'z mijozlari + zayavka ochish)
+  AGENT: "/agent",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
   DIRECTOR: "Direktor",
+  AGENT: "Sotuv agenti",
   SALES: "Sotuv",
   PRODUCTION: "Ishlab chiqarish",
   SUPERVISOR: "Ish boshqaruvchi",
@@ -112,18 +119,97 @@ export const ROLE_LABELS: Record<Role, string> = {
  * Yo'l darajasidagi ruxsat: yo'l NAV'dagi qaysi bo'limga tegishli bo'lsa, shu rollar kiradi.
  * Middleware (sahifa) ham, fayl beruvchi marshrutlar ham shu qoidadan foydalanadi —
  * ikki joyda ikki xil ro'yxat bo'lib qolmasin.
+ *
+ * `perms` — direktor bergan modul ruxsati (ixtiyoriy): yo'l modulga tegishli bo'lsa va perms'da shu
+ * modul uchun qiymat bo'lsa, u KO'RISH huquqini rol o'rniga aniqlaydi ("none" — yopiq, aks holda ochiq).
  */
-export function pathAllowed(pathname: string, role: Role) {
+export function pathAllowed(pathname: string, role: Role, perms?: Perms) {
   if (role === "DIRECTOR") return true;
+  // Modul ruxsati rol ustiga ishlaydi: direktor berib qo'ygan bo'lsa shu hal qiladi (grant yoki restrict)
+  const mod = moduleForPath(pathname);
+  const lvl = mod && perms?.[mod];
+  if (lvl) return lvl !== "none";
   const item = NAV.filter((i) => pathname.startsWith(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
-  if (!item) return true;
+  // Default-deny: NAV'da ro'yxatga olinmagan yo'l faqat direktorga ochiq (fail-open emas).
+  // Istisno — qo'llanma har kimga ochiq. Yangi sahifa qo'shilganda uni NAV'ga kiritish shart.
+  if (!item) return pathname.startsWith("/qollanma");
   return item.roles === "all" || item.roles.includes(role);
 }
 
-export function navFor(role: Role) {
-  const items = NAV.filter(
-    (i) => !i.hidden && (i.roles === "all" || role === "DIRECTOR" || i.roles.includes(role)),
-  );
-  // Haydovchi va brigadir vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
+export function navFor(role: Role, perms?: Perms) {
+  const items = NAV.filter((i) => {
+    if (i.hidden) return false;
+    if (i.roles === "all") return true;
+    // Modul ruxsati rol o'rniga: granted modul rol ko'rmasa ham menyuda chiqadi, "none" esa yashiriladi
+    const mod = moduleForPath(i.href);
+    const lvl = mod && perms?.[mod];
+    if (lvl) return lvl !== "none";
+    return role === "DIRECTOR" || i.roles.includes(role);
+  });
+  // Haydovchi, brigadir va sotuv agenti vebda faqat o'z sahifasini ko'radi — umumiy bandlar (Bosh sahifa) menyuda turmaydi
   return OWN_PAGE_ONLY[role] ? items.filter((i) => i.roles !== "all") : items;
+}
+
+/* ───────────────────────── Modul bo'yicha ruxsat (User.perms) ─────────────────────────
+ *
+ * Modul = asosiy bo'lim. Direktor har foydalanuvchiga modul bo'yicha "yo'q / ko'rish / yozish"
+ * belgilaydi; bu rol ruxsatining USTIGA ishlaydi. Perms'da modul berilmagan bo'lsa — avvalgidek rol bo'yicha.
+ *
+ * Ruxsat MODUL darajali (amal darajali emas): masalan "orders" ga "view" berilgan xodim zayavkani
+ * ko'radi, lekin ocha ham, qabul ham qila olmaydi — buning uchun "write" kerak.
+ */
+export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
+  { key: "orders",    label: "Zayavkalar",            prefixes: ["/orders"] },
+  { key: "sales",     label: "Sotuv va arizalar",     prefixes: ["/sales", "/leads", "/e-commerce"] },
+  { key: "customers", label: "Mijozlar",              prefixes: ["/customers"] },
+  { key: "production",label: "Ishlab chiqarish",      prefixes: ["/production", "/recipes"] },
+  { key: "tasks",     label: "Topshiriq / brigada",   prefixes: ["/tasks", "/brigades"] },
+  { key: "trips",     label: "Reyslar / haydovchi",   prefixes: ["/trips", "/drivers"] },
+  { key: "logistika", label: "Logistika",             prefixes: ["/logistika"] },
+  { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers"] },
+  { key: "taminot",   label: "Ta'minot zayavkalari",  prefixes: ["/taminot"] },
+  { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices"] },
+  { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
+  { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
+  { key: "bi-tahlil", label: "BI tahlil",             prefixes: ["/bi-tahlil"] },
+];
+
+/** Yo'l qaysi modulga tegishli (eng uzun mos prefiks). Modulga kirmagan yo'l (dashboard, settings, agent) — null. */
+export function moduleForPath(pathname: string): string | null {
+  let best: { key: string; len: number } | null = null;
+  for (const m of MODULES) {
+    for (const p of m.prefixes) {
+      if ((pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?")) && (!best || p.length > best.len)) {
+        best = { key: m.key, len: p.length };
+      }
+    }
+  }
+  return best?.key ?? null;
+}
+
+/** Rol modulni odatda ko'radimi (perms yo'q holat uchun asos) — NAV ro'yxatidan hisoblanadi. */
+function roleHasModule(role: Role, module: string): boolean {
+  if (role === "DIRECTOR") return true;
+  const prefixes = MODULES.find((m) => m.key === module)?.prefixes ?? [];
+  return NAV.some((i) => prefixes.some((p) => i.href.startsWith(p)) && i.roles !== "all" && (i.roles as Role[]).includes(role));
+}
+
+/** Modulni KO'RISH huquqi: perms bergan bo'lsa shu, aks holda rol bo'yicha. */
+export function canView(session: Pick<Session, "role" | "perms">, module: string): boolean {
+  if (session.role === "DIRECTOR") return true;
+  const lvl = session.perms?.[module];
+  if (lvl) return lvl !== "none";
+  return roleHasModule(session.role, module);
+}
+
+/**
+ * Modulga YOZISH huquqi (zayavka ochish/qabul qilish, to'lov kiritish, sklad harakati...).
+ * perms bergan bo'lsa — faqat "write" yozdiradi; aks holda rol moduli bo'yicha avvalgidek
+ * (ya'ni modulni ko'rsa yoza ham olardi — perms kiritilmaguncha xulq o'zgarmaydi).
+ */
+export function canWrite(session: Pick<Session, "role" | "perms">, module: string): boolean {
+  if (session.role === "DIRECTOR") return true;
+  const lvl = session.perms?.[module];
+  if (lvl) return lvl === "write";
+  return roleHasModule(session.role, module);
 }

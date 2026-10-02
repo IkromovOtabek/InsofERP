@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { canEditMaterials } from "@/lib/catalog";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
+import { avgUnitCosts } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { ReceiptForm } from "../receipt-form";
 
 export default async function NewReceipt() {
-  const s = await requireSession(["PROCUREMENT", "WAREHOUSE"]);
+  const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
   const [suppliers, warehouses, materials, groups, accounts, balances, costs] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.warehouse.findMany({ where: { isActive: true } }),
@@ -14,10 +15,10 @@ export default async function NewReceipt() {
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
     // Qoldiq va oxirgi narx — spravochnikda ko'rinadi va tanlanganda narx qatorga tushadi
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["RECEIPT", "ADJUSTMENT"] }, unitCost: { not: null }, materialId: { not: null } }, _avg: { unitCost: true } }),
+    avgUnitCosts(), // miqdorga tortilgan o'rtacha tannarx (umumiy qoida — `lib/stock.ts`)
   ]);
   const bal = new Map(balances.map((b) => [b.materialId, Number(b._sum.qty ?? 0)]));
-  const avg = new Map(costs.map((c) => [c.materialId, Number(c._avg.unitCost ?? 0)]));
+  const avg = costs;
   return (
     <div>
       <PageHeader title="Yangi kirim" subtitle="Saqlanganda sklad qoldig'i darhol oshadi" />

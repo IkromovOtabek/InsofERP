@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, Clock, PackageCheck, ShoppingCart, Store, XCircle } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { procurementReport } from "@/lib/procurement-report";
 import { INCIDENT_LABEL } from "@/lib/procurement-const";
 import { money, moneyShort, qty, fmtNum, isoDate } from "@/lib/format";
@@ -9,7 +9,7 @@ import { PrintButton } from "@/components/print-button";
 
 /** Snabjeniye hisoboti — xaridlar, sarf, yetkazib berish, kechikish, yetkazib beruvchilar (davr bo'yicha). */
 export default async function ProcurementReportPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
-  await requireSession(["PROCUREMENT", "WAREHOUSE"]);
+  await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
   const sp = await searchParams;
   const d = await procurementReport(sp);
   const t = d.totals;

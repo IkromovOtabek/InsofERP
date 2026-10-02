@@ -9,6 +9,8 @@ import { EXPENSE_CATEGORIES } from "@/app/(app)/cashflow/categories";
 import { dateTime, money } from "@/lib/format";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { BudgetForm, ThresholdForm, type BudgetRow } from "./budget-form";
+import { expenseForecast, isOverBudget } from "@/lib/owner-dashboard";
+import { monthForecast } from "@/lib/bi/core";
 
 /**
  * Xarajat byudjeti (TZ §4, §6): har kategoriya uchun oylik byudjet va limit, fakt/prognoz yonida.
@@ -38,7 +40,11 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
   const rows: BudgetRow[] = cats.map((cat) => {
     const b = budgets.find((x) => x.category === cat);
     const f = factBy.get(cat) ?? 0, months = histBy.get(cat)?.size ?? 0;
-    return { cat, amount: b ? Number(b.amount) : null, limit: b?.limit ? Number(b.limit) : null, fact: f, forecast: daysPassed > 0 ? (f / daysPassed) * daysInMonth : 0, histAvg: months ? (histSum.get(cat) ?? 0) / months : null };
+    const amount = b ? Number(b.amount) : null, limit = b?.limit ? Number(b.limit) : null;
+    // Prognoz va "oshdi" — Egasi dashbordi bilan bitta qoida: oylik bir martalik toifa (ish haqi, ijara, soliq…) — max(fakt, byudjet),
+    // kunlik toifa — joriy oyda ish kunlari sur'ati bo'yicha; o'tgan oyda fakt o'zi, kelajak oyda 0
+    const project = (x: number) => (daysPassed === 0 ? 0 : daysPassed >= daysInMonth ? x : monthForecast(x));
+    return { cat, amount, limit, fact: f, forecast: daysPassed === 0 ? 0 : expenseForecast(cat, f, amount, project), over: isOverBudget(f, amount, limit), histAvg: months ? (histSum.get(cat) ?? 0) / months : null };
   });
 
   return (

@@ -43,13 +43,15 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
           ) : step === 2 ? (
             <>
               <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-                {req?.via === "telegram"
+                {req?.via === "telegram" || req?.via === "gateway"
                   ? <><Send size={22} className="text-sky-500" /> Telegram kodi</>
                   : <><MessageSquare size={22} className="text-slate-400" /> SMS kodi</>}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
                 {req?.via === "telegram"
                   ? <>6 xonali kod <b>Insof ERP botiga</b> yuborildi — Telegramni oching. Kod 5 daqiqa amal qiladi.</>
+                  : req?.via === "gateway"
+                  ? <>6 xonali kod {phone} raqamining <b>Telegram</b> hisobiga yuborildi. Kod 5 daqiqa amal qiladi.</>
                   : <>{phone} raqamiga 6 xonali kod yuborildi. Kod 5 daqiqa amal qiladi.</>}
               </p>
               {req?.devCode && (

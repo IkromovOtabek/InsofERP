@@ -140,7 +140,9 @@ export function AssignForm({ orderId, items, brigades, capacity }: { orderId: st
     <form action={action}>
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text="Topshiriqlar brigadalarga yuborildi" />}
-      <table className="w-full text-sm">
+      {/* Telefonda (390px) jadval sahifani kengaytirmasin — o'zi yonga suriladi */}
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-sm">
         <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Brigada</Th><Th>Brigada imkoni</Th></tr></thead>
         <tbody>
           {items.map((i) => {
@@ -197,6 +199,7 @@ export function AssignForm({ orderId, items, brigades, capacity }: { orderId: st
           })}
         </tbody>
       </table>
+      </div>
       {open.length > 0 && (
         <div className="flex flex-wrap items-center justify-end gap-3 px-5 py-4">
           <span className="text-xs text-slate-500">Xomashyo yetmasa ham tayinlash mumkin — skladdan <b>Sklad → Brigadalar</b> bo&apos;limi orqali berasiz</span>

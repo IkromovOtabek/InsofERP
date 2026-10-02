@@ -25,12 +25,12 @@ export async function saveCustomer(id: string | null, _prev: ActionState, fd: Fo
   if ("error" in r) return { error: r.error };
   const d = r.data;
 
-  // Kredit limitni faqat finance/direktor o'zgartira oladi. Yangi mijozda ham: aks holda sotuvchi
+  // Kredit limitni faqat buxgalteriya/finance/direktor o'zgartira oladi. Yangi mijozda ham: aks holda sotuvchi
   // mijozni 10 mlrd limit bilan ochib, qora ro'yxat tekshiruvini chetlab o'tardi.
-  if (!["FINANCE", "DIRECTOR"].includes(s.role)) {
+  if (!["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)) {
     if (id) {
       const cur = await db.customer.findUniqueOrThrow({ where: { id } });
-      if (Number(cur.creditLimit) !== d.creditLimit) return { error: "Kredit limitni faqat Finance yoki Direktor o'zgartira oladi" };
+      if (Number(cur.creditLimit) !== d.creditLimit) return { error: "Kredit limitni faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi" };
     } else if (d.creditLimit !== DEFAULT_CREDIT_LIMIT) {
       d.creditLimit = DEFAULT_CREDIT_LIMIT;
     }
@@ -43,6 +43,10 @@ export async function saveCustomer(id: string | null, _prev: ActionState, fd: Fo
         const before = await tx.customer.findUniqueOrThrow({ where: { id } });
         const after = await tx.customer.update({ where: { id }, data: d });
         await audit(tx, s.userId, "UPDATE", "Customer", id, before, after);
+        // Limit o'zgarishi alohida yozuv: kim, qachon, qanchadan qanchaga — tekshiruvda tez topilsin
+        if (Number(before.creditLimit) !== Number(after.creditLimit)) {
+          await audit(tx, s.userId, "UPDATE", "CustomerCreditLimit", id, { creditLimit: before.creditLimit, role: s.role }, { creditLimit: after.creditLimit, role: s.role });
+        }
       } else {
         const c = await tx.customer.create({ data: d });
         await audit(tx, s.userId, "CREATE", "Customer", c.id, undefined, c);

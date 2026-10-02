@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
+import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripPickup, type DeliveryQty } from "@/lib/trips";
 import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
 import type { FuelType, TransportExpenseKind, TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
@@ -61,15 +61,53 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
   redirect(`/trips/${created.id}`);
 }
 
-// Yo'l bosqichlari (yo'lga chiqdi, obyektga keldi, tushirilmoqda, yetkazildi, qaytdi) vebda YO'Q —
-// ularni haydovchi o'z ilovasidan belgilaydi (`lib/mobile/actions.ts`), ECO webhook'i ham shu yo'ldan keladi.
+// Yo'l bosqichlarini odatda haydovchi o'z ilovasidan belgilaydi (`lib/mobile/actions.ts`), ECO webhook'i ham
+// shu yo'ldan keladi. Haydovchida ilova bo'lmasa (telefon o'chgan, pudratchi) dispetcher vebdan
+// "Yo'lga chiqdi" va "Yetkazildi"ni belgilaydi — bu audit jurnaliga "dispetcher belgiladi" deb yoziladi,
+// yetkazish esa GPS tasdig'isiz bo'lgani uchun reysga muammo sifatida tushadi (yopishdan oldin ko'riladi).
 
 /** PLANNED → LOADED: mikser zavodda yuklandi, tayyor beton skladdan chiqadi (SHIPMENT). Ishlab chiqarish tasdiqlaydi. */
-export async function markLoaded(id: string) {
+export async function markLoaded(id: string): Promise<ActionState> {
   const s = await requireSession(["PRODUCTION"]);
   const r = await tripLoaded(id, s.userId);
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "LOADING"));
   refresh(id, r.orderId); revalidatePath("/stock");
+  if (r.error) return { error: r.error };
+  return { ok: true };
+}
+
+const DISPATCH_NOTE = "Dispetcher belgiladi (veb)";
+
+/** LOADED → ON_ROAD — dispetcher vebdan (haydovchi ilovasi ishlamaganda). */
+export async function markOnRoad(id: string): Promise<ActionState> {
+  const s = await requireSession(["LOGISTICS"]);
+  const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
+  if (!cur) return { error: "Reys topilmadi" };
+  if (cur.status !== "LOADED") return { error: "Faqat yuklangan reys yo'lga chiqariladi" };
+  const r = await tripOnRoad(id, s.userId, DISPATCH_NOTE);
+  if (r.error) return { error: r.error };
+  if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "EN_ROUTE"));
+  refresh(id, r.orderId);
+  return { ok: true };
+}
+
+/** LOADED / ON_ROAD → DELIVERED — dispetcher vebdan: qabul qilgan kishi va miqdorlar bilan. */
+export async function markDelivered(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["LOGISTICS"]);
+  const receiverName = String(fd.get("receiverName") ?? "").trim();
+  if (!receiverName) return { error: "Obyektda kim qabul qilganini yozing" };
+  const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
+  if (!cur) return { error: "Reys topilmadi" };
+  if (!["LOADED", "ON_ROAD"].includes(cur.status)) return { error: "Faqat yuklangan yoki yo'ldagi reys yetkazildi deb belgilanadi" };
+  const q = qtyFrom(fd);
+  const r = await tripDelivered(id, s.userId, receiverName, DISPATCH_NOTE, q);
+  if (r.error) return { error: r.error };
+  if (!r.changed) return { error: "Holat o'zgargan — sahifani yangilang" };
+  // Haydovchi tasdig'i ham, GPS ham yo'q — dispetcher qayta ko'rib, hal qilmaguncha reys yopilmaydi
+  await reportTripIssue(id, s.userId, { kind: "OTHER", source: "LOGISTICS", note: `Yetkazildi dispetcher tomonidan belgilandi (haydovchi ilovasisiz, GPS tasdig'isiz) — qabul qildi: ${receiverName}` }).catch(() => undefined);
+  if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));
+  refresh(id, r.orderId); revalidatePath("/stock");
+  return { ok: true };
 }
 
 const pickupSchema = z.object({
@@ -123,7 +161,7 @@ export async function closeTrip(id: string, _prev: ActionState, fd: FormData): P
   const r = await tripClosed(id, s.userId, qtyFrom(fd));
   if (r.error) return { error: r.error };
   refresh(id, r.orderId);
-  return { ok: true };
+  return r.warning ? { ok: true, note: r.warning } : { ok: true };
 }
 
 const ISSUE_KINDS = ["BREAKDOWN", "TRAFFIC", "SITE_NOT_READY", "QUALITY", "ACCIDENT", "DECLINED", "OTHER"] as const;

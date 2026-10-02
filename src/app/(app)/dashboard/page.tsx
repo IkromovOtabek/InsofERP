@@ -19,6 +19,7 @@ import { PROCUREMENT_HOME_ROLES, type ProcFilters } from "@/lib/procurement-home
 import { ProcurementHome } from "./procurement-home";
 import { LogisticsHome } from "./logistics-home";
 import { MechanicHome } from "./mechanic-home";
+import { HrHome } from "./hr-home";
 import { MECHANIC_HOME_ROLES } from "@/lib/sklad-logistika";
 import { parseDay } from "@/lib/logistics";
 
@@ -40,15 +41,17 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // Mexanik — "Sklad & Logistika" nazorati: bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport
   const mechanicView = !!s && ((MECHANIC_HOME_ROLES as readonly string[]).includes(s.role) || (isDirector && view === "mechanic"));
   // Direktor (egasi) uchun bosh sahifa — Owner Dashboard (TZ v2.0); eski operatsion ko'rinish alohida tabda
-  const ownerView = isDirector && !productionView && !procurementView && !logisticsView && !mechanicView && view !== "operations";
-  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : ownerView ? "" : "operations";
+  // Otdel kadr — o'z bosh sahifasi (xodimlar, bugungi davomat, tug'ilgan kunlar, muddati yaqin hujjatlar); direktor tabda ko'radi
+  const hrView = !!s && (s.role === "HR" || (isDirector && view === "hr"));
+  const ownerView = isDirector && !productionView && !procurementView && !logisticsView && !mechanicView && !hrView && view !== "operations";
+  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : ownerView ? "" : "operations";
   const header = (
     <>
       <div className="mb-6 animate-fade-up">
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
       </div>
-      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
     </>
   );
@@ -56,6 +59,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (procurementView) return <div>{header}<ProcurementHome filters={sp} base={isDirector ? "/dashboard?view=procurement" : "/dashboard"} /></div>;
   if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} /></div>;
   if (mechanicView) return <div>{header}<MechanicHome day={dayParam} base={isDirector ? "/dashboard?view=mechanic" : "/dashboard"} /></div>;
+  if (hrView) return <div>{header}<HrHome /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 

@@ -39,7 +39,7 @@ function md(text: string) {
 export function AiTrigger({ className }: { className?: string }) {
   return (
     <button type="button" onClick={openAiPanel} title="Insof AI (Ctrl+K)"
-      className={cn("inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] font-medium text-slate-600 shadow-xs transition-colors hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400", className)}>
+      className={cn("inline-flex h-9 items-center gap-1.5 pointer-coarse:h-11 pointer-coarse:min-w-11 pointer-coarse:justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] font-medium text-slate-600 shadow-xs transition-colors hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400", className)}>
       <Sparkles size={15} className="text-brand-500" />
       <span className="hidden sm:inline">Insof AI</span>
       <kbd className="hidden rounded border border-slate-200 px-1 text-[10px] font-medium text-slate-400 md:inline">Ctrl K</kbd>
@@ -134,7 +134,7 @@ export function AiPanel({ period }: { period?: string }) {
   return (
     <>
       {open && <div className="fixed inset-0 z-[60] bg-slate-900/35 backdrop-blur-[1px] dark:bg-black/50" onClick={() => setOpen(false)} />}
-      <aside aria-hidden={!open} className={cn("fixed inset-y-0 right-0 z-[70] flex w-[440px] max-w-[100vw] flex-col border-l border-slate-200 bg-white shadow-(--shadow-pop) transition-transform duration-200 ease-out", open ? "translate-x-0" : "translate-x-full")}>
+      <aside aria-hidden={!open} className={cn("fixed inset-y-0 right-0 z-[70] flex w-[440px] max-w-[100vw] flex-col border-l border-slate-200 bg-white shadow-(--shadow-pop) transition-[transform,visibility] duration-200 ease-out", open ? "visible translate-x-0" : "invisible translate-x-full")}>
         {/* Sarlavha */}
         <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
           <div>

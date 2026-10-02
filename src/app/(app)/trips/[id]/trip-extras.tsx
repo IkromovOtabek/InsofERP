@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Coins, Lock } from "lucide-react";
-import { addTripCost, closeTrip, reportIssue, resolveIssue } from "../actions";
-import { Button, FormError, Input, Select } from "@/components/ui";
+import { AlertTriangle, CheckCircle2, Coins, Lock, PackageCheck, Truck } from "lucide-react";
+import { addTripCost, closeTrip, markDelivered, markLoaded, markOnRoad, reportIssue, resolveIssue } from "../actions";
+import { Button, FormError, FormSuccess, Input, Select } from "@/components/ui";
 
 const ISSUE_OPTS: [string, string][] = [
   ["BREAKDOWN", "Mashina buzildi"], ["TRAFFIC", "Tirbandlik / yo'l yopiq"], ["SITE_NOT_READY", "Obyekt tayyor emas"],
@@ -48,7 +48,7 @@ export function CloseTripForm({ tripId, loaded, accepted, returned }: { tripId: 
       <label className="flex flex-col text-xs text-slate-500">Qaytarildi<Input name="returnedQty" inputMode="decimal" defaultValue={returned ?? ""} placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
       <label className="flex min-w-[12rem] flex-1 flex-col text-xs text-slate-500">Izoh<Input name="comment" className="mt-1 h-9 text-sm" /></label>
       <Button size="sm" disabled={pending}><Lock size={14} /> Reysni yopish</Button>
-      <div className="w-full"><FormError error={state?.error} /></div>
+      <div className="w-full"><FormError error={state?.error} /><FormSuccess text={state?.note} /></div>
     </form>
   );
 }
@@ -73,6 +73,43 @@ export function TripCostForm({ tripId, lastPrice }: { tripId: string; lastPrice:
       ) : <Input name="amount" inputMode="numeric" placeholder="summa, so'm" className="h-9 w-32 text-sm" required />}
       <Input name="note" placeholder="izoh" className="h-9 min-w-[8rem] flex-1 text-sm" />
       <Button size="sm" variant="secondary" disabled={pending}><Coins size={14} /> Qo'shish</Button>
+      <div className="w-full"><FormError error={state?.error} /></div>
+    </form>
+  );
+}
+
+/** "Yuklandi" — ishlab chiqarish. Qoldiq yetmasa sabab tugma yonida chiqadi. */
+export function LoadButton({ tripId }: { tripId: string }) {
+  const [state, action, pending] = useActionState(markLoaded.bind(null, tripId), undefined);
+  return (
+    <form action={action} className="flex flex-col items-end gap-1">
+      <Button disabled={pending}><PackageCheck size={16} /> Yuklandi</Button>
+      {state?.error && <span className="max-w-xs text-right text-xs text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** "Yo'lga chiqdi" — dispetcher vebdan (haydovchi ilovasi ishlamaganda). */
+export function OnRoadButton({ tripId }: { tripId: string }) {
+  const [state, action, pending] = useActionState(markOnRoad.bind(null, tripId), undefined);
+  return (
+    <form action={action} className="flex flex-col items-end gap-1">
+      <Button variant="secondary" disabled={pending}><Truck size={16} /> Yo&apos;lga chiqdi</Button>
+      {state?.error && <span className="max-w-xs text-right text-xs text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** "Yetkazildi (dispetcher)": qabul qilgan kishi, qabul / qaytgan miqdor. GPS tasdig'isiz — reysga muammo yoziladi. */
+export function DispatchDeliverForm({ tripId, loaded, unit }: { tripId: string; loaded: number; unit: string }) {
+  const [state, action, pending] = useActionState(markDelivered.bind(null, tripId), undefined);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex min-w-[12rem] flex-1 flex-col text-xs text-slate-500">Qabul qildi (F.I.O.) *<Input name="receiverName" className="mt-1 h-9 text-sm" required /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qabul, {unit}<Input name="acceptedQty" inputMode="decimal" defaultValue={loaded} className="mt-1 h-9 w-28 text-sm" /></label>
+      <label className="flex flex-col text-xs text-slate-500">Qaytdi, {unit}<Input name="returnedQty" inputMode="decimal" placeholder="0" className="mt-1 h-9 w-24 text-sm" /></label>
+      <label className="flex min-w-[10rem] flex-1 flex-col text-xs text-slate-500">Izoh<Input name="comment" className="mt-1 h-9 text-sm" /></label>
+      <Button size="sm" variant="success" disabled={pending}><PackageCheck size={14} /> Yetkazildi (dispetcher)</Button>
       <div className="w-full"><FormError error={state?.error} /></div>
     </form>
   );

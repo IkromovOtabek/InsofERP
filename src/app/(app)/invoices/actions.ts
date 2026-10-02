@@ -7,12 +7,12 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { createInvoice as create } from "@/lib/invoices";
-import { parseForm, zStr, type ActionState } from "@/lib/action";
+import { parseForm, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 
 const schema = z.object({
   orderId: zStr("Zayavka tanlanmagan"),
-  amount: z.coerce.number().positive("summa 0 dan katta bo'lsin"),
-  date: zStr("Sana kerak"),
+  amount: z.coerce.number({ message: "Summa raqam bo'lsin" }).positive("Summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "Summa juda katta"),
+  date: zStr("Sana kerak").refine(validDate, "Sana noto'g'ri"),
 });
 
 export async function createInvoice(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -27,14 +27,18 @@ export async function createInvoice(_prev: ActionState, fd: FormData): Promise<A
   redirect(`/invoices?created=${res.id}`);
 }
 
-export async function cancelInvoice(id: string) {
+/** Schyotni bekor qilish — tasdiq tugmasi (`ConfirmButton`) orqali, sabab auditga yoziladi. */
+export async function cancelInvoice(id: string, reason: string): Promise<ActionState> {
   const s = await requireSession(["ACCOUNTING"]);
-  const inv = await db.invoice.findUniqueOrThrow({ where: { id }, include: { payments: true } });
-  if (inv.payments.length) throw new Error("To'lov bor — bekor qilib bo'lmaydi");
-  if (inv.status !== "OPEN") return;
+  const inv = await db.invoice.findUnique({ where: { id }, include: { payments: true } });
+  if (!inv) return { error: "Schyot topilmadi" };
+  if (inv.payments.length) return { error: "To'lov bor — bekor qilib bo'lmaydi" };
+  if (inv.status !== "OPEN") return { error: "Faqat ochiq schyot bekor qilinadi" };
   // Shart bilan: tekshiruvdan keyin to'lov kelib qolgan bo'lsa bekor qilinmaydi
   const r = await db.invoice.updateMany({ where: { id, status: "OPEN", payments: { none: {} } }, data: { status: "CANCELLED" } });
-  if (!r.count) throw new Error("Schyotga hozirgina to'lov tushdi — bekor qilib bo'lmaydi");
-  await audit(db, s.userId, "STATUS_CHANGE", "Invoice", id, { status: "OPEN" }, { status: "CANCELLED" });
-  revalidatePath("/invoices"); revalidatePath("/");
+  if (!r.count) return { error: "Schyotga hozirgina to'lov tushdi — bekor qilib bo'lmaydi" };
+  await audit(db, s.userId, "STATUS_CHANGE", "Invoice", id, { status: "OPEN" }, { status: "CANCELLED", reason: String(reason ?? "").trim().slice(0, 300) || undefined });
+  revalidatePath("/invoices"); revalidatePath("/customers"); revalidatePath("/sales"); revalidatePath("/");
+  if (inv.orderId) revalidatePath(`/orders/${inv.orderId}`);
+  return { ok: true, note: "Schyot bekor qilindi" };
 }

@@ -54,7 +54,8 @@ export async function sendSms<K extends TemplateKey>(
   }
 
   if (provider !== "eskiz") {
-    console.log(`[SMS · yuborilmadi] ${maskPhone(phone)}: ${text}`); // dev: kodni terminalda ko'rish uchun ochiq matn
+    // Ochiq matn (parol, kod) faqat dev terminalida — server/test jurnaliga parol tushmasin
+    console.log(`[SMS · yuborilmadi] ${maskPhone(phone)}: ${process.env.NODE_ENV === "development" ? text : logText}`);
     await db.smsLog.create({ data: { phone, template: key, text: logText, status: "SKIPPED", provider, error: "SMS_PROVIDER=ESKIZ emas", userId: opts?.userId ?? undefined } });
     return { ok: false, reason: "DISABLED" };
   }

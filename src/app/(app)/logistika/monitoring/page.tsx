@@ -1,5 +1,5 @@
 import { Radio } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { monitorRows } from "@/lib/logistics-monitor";
 import { minutesLabel } from "@/lib/logistics";
 import { Badge, Card, CardHeader, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
@@ -15,7 +15,7 @@ const hm = (d: Date | null) => (d ? `${String(d.getHours()).padStart(2, "0")}:${
  * Xarita — mavjud jonli xarita (15 s da yangilanadi); jadval sahifa bilan 30 s da.
  */
 export default async function MonitoringPage() {
-  await requireSession(["LOGISTICS", "PRODUCTION", "SUPERVISOR"]);
+  await requireRoles(["LOGISTICS", "PRODUCTION", "SUPERVISOR"]);
   const { rows, gpsSilentMin, error } = await monitorRows();
   return (
     <div>

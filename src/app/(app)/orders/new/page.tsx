@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { customersCredit, customersHistory, contractedIds } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
-import { OrderForm, type CustomerOpt, type ProductStock } from "../order-form";
+import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } from "../order-form";
 import { StockOrderForm } from "../stock-order-form";
 import { NewOrderMode } from "../new-order-mode";
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
@@ -21,18 +21,20 @@ import { canEditProducts } from "@/lib/catalog";
  * `?tur=sklad` bilan to'g'ridan-to'g'ri sklad formasi ochiladi.
  * Sotuvdan tashqari rollar (sklad, ishlab chiqarish) faqat sklad zayavkasini ocha oladi.
  */
-export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string }> }) {
-  const s = await requireSession([...STOCK_ORDER_ROLES]);
-  const { customer, tur } = await searchParams;
-  const canSale = s.role === "SALES";
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string; lead?: string }> }) {
+  const s = await requireRoles([...STOCK_ORDER_ROLES]);
+  const { customer, tur, lead: leadId } = await searchParams;
+  const canSale = ["SALES", "DIRECTOR"].includes(s.role);
 
-  const [catalog, stock, cashAccounts] = await Promise.all([
+  const [catalog, stock, lead] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     stockSnapshot(),
-    canSale
-      ? db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], distinct: ["name"], select: { id: true, name: true, type: true } })
-      : [],
+    // Sayt arizasidan ochilgan zayavka: mahsulot, hajm va manzil arizadan olinadi
+    canSale && leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
   ]);
+  const prefill: OrderPrefill | undefined = lead && (!customer || lead.customerId === customer)
+    ? { productId: lead.productId, qty: lead.qty != null ? Number(lead.qty) : null, address: lead.address, note: ["Sayt arizasidan", lead.message].filter(Boolean).join(": ") }
+    : undefined;
 
   // Zayavka qabul qilayotgan xodim har mahsulot bo'yicha nima borligini ko'rishi uchun:
   // hovlidagi dona mahsulot va beton — ikkalasi ham, xomashyodan yana qancha chiqishi bilan.
@@ -77,7 +79,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
           <NewOrderMode
             initial={tur === "sklad" ? "stock" : "sale"}
             sale={canSale ? (
-              <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} cashAccounts={cashAccounts} preselectCustomer={customer} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
+              <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
             ) : null}
             stock={<StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} />}
           />

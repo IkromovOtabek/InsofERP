@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ClipboardList, Clock, FileBarChart, PackageCheck, ShoppingCart, Truck } from "lucide-react";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { supplyList, supplyTab, supplyCounts, SUPPLY_TABS, plannedSum } from "@/lib/supply";
 import { money } from "@/lib/format";
 import { Callout, LinkButton, PageHeader, StatCard, Tabs } from "@/components/ui";
@@ -11,7 +11,7 @@ import { SupplyTable } from "../taminot/supply-table";
  * sotib olinadi va kelgan mol tekshirilib qabul qilinadi (shundan keyin sklad kirimi bo'ladi).
  */
 export default async function SnabjeniyePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  await requireSession(["PROCUREMENT", "WAREHOUSE"]);
+  await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
   const { tab } = await searchParams;
   const t = supplyTab(tab);
   const [rows, counts] = await Promise.all([supplyList(t.status), supplyCounts()]);

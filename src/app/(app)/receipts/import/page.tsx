@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { isoDate } from "@/lib/format";
 import { Card, Checkbox, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
@@ -9,7 +9,7 @@ import { importReceiptFromExcel } from "../actions";
 
 /** Kirim → Excel orqali: zavod va texnikaga kerakli mahsulotlar ro'yxati bitta kirim hujjati sifatida, ko'p qator birdan. */
 export default async function ReceiptImport() {
-  await requireSession(["PROCUREMENT", "WAREHOUSE"]);
+  await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
   const [suppliers, warehouses] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.warehouse.findMany({ where: { isActive: true } }),

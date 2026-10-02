@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { History, MapPin, Package, Timer } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { geoSearchEnabled } from "@/lib/geo";
 import { minutesLabel, orderLogistics, tripPhase } from "@/lib/logistics";
 import { dateTime, deliveryAt, qty } from "@/lib/format";
@@ -13,7 +13,7 @@ import { OrderLogiBadge, PhaseBadge, TripLink } from "../../ui";
 export const dynamic = "force-dynamic";
 
 export default async function SitePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireSession(["LOGISTICS", "SALES"]);
+  await requireRoles(["LOGISTICS", "SALES"]);
   const { id } = await params;
   const s = await db.site.findUnique({
     where: { id },
@@ -40,7 +40,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
     <div>
       <PageHeader back={{ href: "/logistika/obyektlar", label: "Obyektlar" }} title={s.name}
         subtitle={<><Link href={`/customers/${s.customer.id}`} className="hover:underline">{s.customer.name}</Link> · {s.address}</>} />
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Zayavkalar" value={s.orders.length} icon={History} />
         <StatCard label="Yetkazilgan" value={qty(delivered.reduce((a, t) => a + Number(t.qtyM3), 0))} hint={`${delivered.length} reys`} icon={Package} tone="success" />
         <StatCard label="O'rtacha yo'l" value={minutesLabel(avg(durations))} hint="yuklashdan topshirishgacha" icon={Timer} />

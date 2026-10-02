@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Receipt, Wallet, Truck, CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { customerCredit, contractedIds } from "@/lib/finance";
 import { BlacklistMark, ContractMark } from "@/components/customer-name";
 import { money, fmtNum, date, isoDate } from "@/lib/format";
@@ -20,7 +20,7 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  await requireSession(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"]);
 
   const from = sp.from ? new Date(sp.from) : undefined;
   const to = sp.to ? new Date(sp.to) : undefined;

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { PageHeader } from "@/components/ui";
 import { AddForm } from "./add-form";
 
@@ -12,7 +12,7 @@ import { AddForm } from "./add-form";
  * Beton (m³) hovlida saqlanmaydi, shuning uchun ro'yxatga tushmaydi.
  */
 export default async function AddStockPage() {
-  const s = await requireSession(["WAREHOUSE", "PRODUCTION"]);
+  const s = await requireRoles(["WAREHOUSE", "PRODUCTION"]);
   const [catalog, warehouses] = await Promise.all([
     productCatalog({ pieceOnly: true }), // hamma joyda bir xil ro'yxat; beton (m³) hovlida saqlanmaydi
     db.warehouse.findMany({ where: { isActive: true } }),

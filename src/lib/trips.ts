@@ -4,8 +4,11 @@ import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { haversineMeters } from "@/lib/geo";
 import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
+import { randomBytes } from "node:crypto";
 import { soleUnit, unitLabel } from "@/lib/unit";
-import { ISSUE_KIND } from "@/lib/logistics";
+import { ISSUE_KIND, logisticsSettings } from "@/lib/logistics";
+import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+import { driverPositionNames } from "@/lib/positions";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -53,29 +56,91 @@ async function once<T>(fn: () => Promise<T>): Promise<T | null> {
 }
 function claimed(r: { count: number }) { if (r.count !== 1) throw new AlreadyChanged(); }
 
-const tripWithOrder = (id: string) => db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true, trips: true } } } });
+const tripWithOrder = (id: string) => db.trip.findUniqueOrThrow({
+  where: { id },
+  include: { vehicle: { select: { type: true } }, order: { include: { items: { include: { product: { select: { unit: true, name: true } } } }, trips: true } } },
+});
 
-/** PLANNED → LOADED: tayyor beton skladdan chiqadi (SHIPMENT). */
+// ───────────────────────── Reysning mahsulot qatori ─────────────────────────
+
+/**
+ * Reys zayavkaning qaysi mahsulot qatorini tashiydi.
+ *
+ * Sxemada `Trip.productId` yo'q, shuning uchun qator texnika turidan aniqlanadi: beton (m³) faqat
+ * mikserda, dona mahsulot (plita, blok) faqat mikser bo'lmagan texnikada ketadi. Ilgari doim
+ * `items[0]` olinardi — aralash zayavkada blok tashigan yuk mashina skladdan BETON chiqarib yuborardi.
+ * Bir guruhda bir nechta mahsulot bo'lsa (masalan ikki xil beton) qatorni aniqlab bo'lmaydi —
+ * reys ochilmaydi va zayavkani mahsulot bo'yicha ajratish so'raladi.
+ */
+export type TripLine = { productId: string; unit: string; name: string | null; qty: number };
+type LineItem = { productId: string; qtyM3: unknown; product: { unit: string; name?: string | null } };
+
+export function tripLine(items: LineItem[], vehicleType: string): TripLine | { error: string } {
+  if (items.length === 0) return { error: "Zayavkada mahsulot yo'q" };
+  const ids = new Set(items.map((i) => i.productId));
+  const pick = (list: LineItem[]): TripLine | { error: string } => {
+    const pids = new Set(list.map((i) => i.productId));
+    if (pids.size !== 1) return { error: "Zayavkada bir xil turdagi bir nechta mahsulot bor — reysning mahsulotini aniqlab bo'lmaydi. Zayavkani mahsulot bo'yicha ajrating" };
+    const first = list[0]!;
+    return { productId: first.productId, unit: first.product.unit, name: first.product.name ?? null, qty: list.reduce((s, i) => s + Number(i.qtyM3), 0) };
+  };
+  if (ids.size === 1) return pick(items);
+  const concrete = items.filter((i) => i.product.unit === "m3");
+  const piece = items.filter((i) => i.product.unit !== "m3");
+  if (vehicleType === "MIXER") return concrete.length ? pick(concrete) : { error: "Zayavkada beton yo'q — mikser dona mahsulot tashimaydi" };
+  return piece.length ? pick(piece) : { error: "Beton faqat mikserda tashiladi" };
+}
+
+/** Skladdagi qoldiq (barcha sklad) — qulf ostida chaqiriladi. */
+async function productBalance(tx: Prisma.TransactionClient, productId: string): Promise<number> {
+  const b = await tx.stockMove.aggregate({ where: { productId }, _sum: { qty: true } });
+  return Number(b._sum.qty ?? 0);
+}
+
+/** Qoldiq yetmaganda tranzaksiyani to'xtatish uchun (xabar foydalanuvchiga boradi). */
+class StockShort extends Error {}
+
+const fq = (n: number) => String(Math.round(n * 1000) / 1000);
+
+/** PLANNED → LOADED: tayyor mahsulot skladdan chiqadi (SHIPMENT) — qoldiq sklad qulfi ostida tekshiriladi. */
 export async function tripLoaded(id: string, userId: string, note?: string): Promise<TripResult> {
   const t = await tripWithOrder(id);
   if (t.status !== "PLANNED") return { changed: false, orderId: t.orderId, error: t.status === "CANCELLED" ? "Reys bekor qilingan" : undefined };
-  const productId = t.order.items[0]?.productId;
-  const wh = await db.warehouse.findFirstOrThrow({ where: { isActive: true } });
-  const ok = await once(() => db.$transaction(async (tx) => {
-    claimed(await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "LOADED", loadedAt: new Date() } }));
-    if (productId) {
-      await tx.stockMove.create({ data: { type: "SHIPMENT", warehouseId: wh.id, productId, qty: -Number(t.qtyM3), refType: "Trip", refId: id, note, createdById: userId } });
-    }
-    await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
-    return true;
-  }));
-  return { changed: !!ok, orderId: t.orderId };
+  const line = tripLine(t.order.items, t.vehicle.type);
+  if ("error" in line) return { changed: false, orderId: t.orderId, error: line.error };
+  const wh = await db.warehouse.findFirst({ where: { isActive: true } });
+  if (!wh) return { changed: false, orderId: t.orderId, error: "Faol sklad yo'q — sklad ochilmagan" };
+  const qty = Number(t.qtyM3);
+  try {
+    const ok = await once(() => db.$transaction(async (tx) => {
+      // Ikki reys bir vaqtda yuklansa ikkalasi eski qoldiqni ko'rib o'tib ketmasin — sklad qulfi
+      await lockStock(tx);
+      const balance = await productBalance(tx, line.productId);
+      if (qty > balance + STOCK_EPS) {
+        const u = unitLabel(line.unit);
+        throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, balance))} ${u} — ${fq(qty)} ${u} yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
+      }
+      claimed(await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "LOADED", loadedAt: new Date() } }));
+      await tx.stockMove.create({ data: { type: "SHIPMENT", warehouseId: wh.id, productId: line.productId, qty: -qty, refType: "Trip", refId: id, note, createdById: userId } });
+      await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "LOADED", note });
+      return true;
+    }));
+    return { changed: !!ok, orderId: t.orderId };
+  } catch (e) {
+    if (e instanceof StockShort) return { changed: false, orderId: t.orderId, error: e.message };
+    throw e;
+  }
 }
 
 /** LOADED → ON_ROAD. PLANNED bo'lsa avval yuklanadi (ECO'dan "yo'lda" kelganda). */
 export async function tripOnRoad(id: string, userId: string, note?: string): Promise<TripResult> {
   let t = await db.trip.findUniqueOrThrow({ where: { id } });
-  if (t.status === "PLANNED") { await tripLoaded(id, userId, note); t = await db.trip.findUniqueOrThrow({ where: { id } }); }
+  if (t.status === "PLANNED") {
+    // Yuklash rad etilsa (qoldiq yetmaydi) — yo'lga ham chiqarilmaydi, sabab chaqiruvchiga qaytadi
+    const l = await tripLoaded(id, userId, note);
+    if (l.error) return l;
+    t = await db.trip.findUniqueOrThrow({ where: { id } });
+  }
   if (t.status !== "LOADED") return { changed: false, orderId: t.orderId };
   const ok = await once(() => db.$transaction(async (tx) => {
     claimed(await tx.trip.updateMany({ where: { id, status: "LOADED" }, data: { status: "ON_ROAD", departedAt: new Date() } }));
@@ -104,21 +169,48 @@ function checkQty(loaded: number, q?: DeliveryQty): string | null {
  * Qaytgan dona mahsulot (plita, blok) skladga qaytadi. Beton qaytmaydi — u chiqindi,
  * shuning uchun faqat miqdor sifatida yoziladi (hisobotda "qaytarilgan").
  */
-async function returnToStock(tx: Prisma.TransactionClient, t: { id: string; order: { items: { productId: string }[] } }, returned: number, userId: string) {
+async function returnToStock(tx: Prisma.TransactionClient, tripId: string, line: TripLine | { error: string }, returned: number, userId: string) {
   // Manfiy — yopishda qaytgan miqdor kamaytirildi (5 → 2): ortiqcha kirim qilingan 3 dona skladdan qaytariladi
   if (!Number.isFinite(returned) || Math.abs(returned) < 0.0005) return;
-  const productId = t.order.items[0]?.productId;
-  if (!productId) return;
-  const p = await tx.product.findUnique({ where: { id: productId }, select: { unit: true } });
-  if (!p || p.unit === "m3") return;
+  if ("error" in line || line.unit === "m3") return;
   const wh = await tx.warehouse.findFirstOrThrow({ where: { isActive: true } });
-  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, productId, qty: returned, refType: "Trip", refId: t.id, note: returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)", createdById: userId } });
+  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, productId: line.productId, qty: returned, refType: "Trip", refId: tripId, note: returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)", createdById: userId } });
+}
+
+/** Tizim o'zi yozadigan shubha belgisi — dispetcher ko'rib hal qilmaguncha reys yopilmaydi. */
+async function flagTrip(tripId: string, userId: string, note: string, source: "DRIVER" | "LOGISTICS" = "LOGISTICS") {
+  await reportTripIssue(tripId, userId, { kind: "OTHER", note, source }).catch(() => undefined);
+}
+
+/**
+ * "Shubhali tez yetkazish": yuklashdan topshirishgacha o'tgan vaqt yuk olingan joy → obyekt
+ * to'g'ri chiziq masofasini o'rtacha tezlikda (`avgSpeedKmh`) bosib o'tishdan ham qisqa bo'lsa,
+ * mashina obyektga bormagan bo'lishi mumkin. To'g'ri chiziq yo'ldan doim qisqa — shuning uchun
+ * bu chegara haydovchi foydasiga, soxta "Yetkazdim"ni ushlaydi.
+ */
+async function checkFastDelivery(id: string, userId: string) {
+  const t = await db.trip.findUnique({ where: { id }, select: { loadedAt: true, deliveredAt: true, pickupLat: true, pickupLng: true, order: { select: { lat: true, lng: true } } } });
+  if (!t?.loadedAt || !t.deliveredAt || t.order.lat == null || t.order.lng == null) return;
+  const s = await logisticsSettings();
+  const from = t.pickupLat != null && t.pickupLng != null ? { lat: t.pickupLat, lng: t.pickupLng } : s.plant;
+  if (!from) return;
+  const km = haversineMeters(from.lat, from.lng, t.order.lat, t.order.lng) / 1000;
+  if (km < 2) return; // zavod yonidagi obyekt — vaqt bo'yicha xulosa chiqarib bo'lmaydi
+  const minMin = (km / s.avgSpeedKmh) * 60;
+  const tookMin = (t.deliveredAt.getTime() - t.loadedAt.getTime()) / 60000;
+  if (tookMin < minMin) {
+    await flagTrip(id, userId, `Shubhali tez yetkazish: obyektgacha ~${km.toFixed(1)} km (to'g'ri chiziq), yuklashdan topshirishgacha ${Math.max(0, Math.round(tookMin))} daq — ${s.avgSpeedKmh} km/soat tezlikda kamida ${Math.round(minMin)} daq kerak. Tekshiring`);
+  }
 }
 
 /** → DELIVERED. Zayavkaning hamma hajmi yetkazilgan bo'lsa — zayavka DELIVERED. */
 export async function tripDelivered(id: string, userId: string, receiverName: string, note?: string, q?: DeliveryQty): Promise<TripResult> {
   let t = await tripWithOrder(id);
-  if (t.status === "PLANNED") { await tripLoaded(id, userId, note); t = await tripWithOrder(id); }
+  if (t.status === "PLANNED") {
+    const l = await tripLoaded(id, userId, note);
+    if (l.error) return l;
+    t = await tripWithOrder(id);
+  }
   if (!["LOADED", "ON_ROAD"].includes(t.status)) return { changed: false, orderId: t.orderId, error: t.status === "DELIVERED" ? undefined : "Holat mos emas" };
   const bad = checkQty(Number(t.qtyM3), q);
   if (bad) return { changed: false, orderId: t.orderId, error: bad };
@@ -147,11 +239,12 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
       const paid = inv.length > 0 && inv.every((i) => i.status === "PAID");
       await tx.order.update({ where: { id: t.orderId }, data: { status: paid ? "CLOSED" : "DELIVERED" } });
     }
-    await returnToStock(tx, t, q?.returnedQty ?? 0, userId);
+    await returnToStock(tx, id, tripLine(t.order.items, t.vehicle.type), q?.returnedQty ?? 0, userId);
     await audit(tx, userId, "STATUS_CHANGE", "Trip", id, { status: t.status }, { status: "DELIVERED", receiverName, note, ...q });
     return d;
   }));
   if (delivered === null) return { changed: false, orderId: t.orderId };
+  await checkFastDelivery(id, userId);
 
   // Zayavkani kiritgan sotuvchi mijozga javob beradi; logistika keyingi reysni rejalashtiradi
   const done = delivered >= total - 0.001;
@@ -236,8 +329,11 @@ export async function tripReturned(id: string, userId: string): Promise<TripResu
  * Reysni yopish — TZ oxirgi qadami: qabul tasdiqlandi, miqdorlar aniqlandi.
  * Ochiq muammo bo'lsa yopilmaydi: avval hal qilinadi (aks holda e'tiroz "yo'qolib" qoladi).
  */
-export async function tripClosed(id: string, userId: string, q?: DeliveryQty): Promise<TripResult> {
-  const t = await db.trip.findUniqueOrThrow({ where: { id }, include: { order: { include: { items: true } }, issues: { where: { resolvedAt: null }, select: { id: true } } } });
+export async function tripClosed(id: string, userId: string, q?: DeliveryQty): Promise<TripResult & { warning?: string }> {
+  const t = await db.trip.findUniqueOrThrow({
+    where: { id },
+    include: { vehicle: { select: { type: true } }, order: { include: { items: { include: { product: { select: { unit: true, name: true } } } } } }, issues: { where: { resolvedAt: null }, select: { id: true } } },
+  });
   if (t.status !== "DELIVERED") return { changed: false, orderId: t.orderId, error: "Faqat yetkazilgan reys yopiladi" };
   if (t.closedAt) return { changed: false, orderId: t.orderId };
   if (t.issues.length) return { changed: false, orderId: t.orderId, error: `Ochiq muammo bor (${t.issues.length}) — avval hal qiling` };
@@ -255,11 +351,34 @@ export async function tripClosed(id: string, userId: string, q?: DeliveryQty): P
         ...(q?.comment ? { deliveryComment: q.comment } : {}),
       },
     }));
-    await returnToStock(tx, t, extraReturn, userId);
+    await returnToStock(tx, id, tripLine(t.order.items, t.vehicle.type), extraReturn, userId);
     await audit(tx, userId, "UPDATE", "Trip", id, { closedAt: null }, { closedAt: new Date(), ...q });
-    return true;
+
+    // Yopishda qabul/qaytgan miqdor o'zgargan bo'lishi mumkin — zayavka qamrovi qayta hisoblanadi
+    // (tripDelivered dagi kabi). To'liq qoplanmasa zayavka yana reys ochiladigan holatga qaytadi.
+    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${t.orderId} FOR UPDATE`;
+    const o = await tx.order.findUniqueOrThrow({ where: { id: t.orderId }, select: { status: true, items: { select: { qtyM3: true } }, trips: { select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } } } });
+    const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+    const covered = o.trips.reduce((s, x) => s + tripCoveredQty(x), 0);
+    if (covered < total - 0.001) {
+      const left = r3(total - covered);
+      if (o.status === "DELIVERED") {
+        // Brigada topshirig'i bor bo'lsa — ishlab chiqarishda, bo'lmasa — tasdiqlangan
+        const tasks = await tx.brigadeTask.count({ where: { orderItem: { orderId: t.orderId }, status: { not: "CANCELLED" } } });
+        const back = tasks > 0 ? "IN_PRODUCTION" : "CONFIRMED";
+        await tx.order.update({ where: { id: t.orderId }, data: { status: back } });
+        await audit(tx, userId, "STATUS_CHANGE", "Order", t.orderId, { status: "DELIVERED" }, { status: back, reason: `Reys ${t.deliveryNoteNo} yopilganda qabul kamaydi — ${left} yetkazilmagan` });
+        return { warning: `Zayavka to'liq yetkazilmagan (${left} qoldi) — zayavka qayta ochildi, yangi reys ochish mumkin` };
+      }
+      if (o.status === "CLOSED") return { warning: `Diqqat: zayavka yopilgan, lekin ${left} yetkazilmagan bo'lib chiqdi — sotuv/moliya bilan hal qiling` };
+    }
+    return { warning: undefined };
   }));
-  return { changed: !!ok, orderId: t.orderId };
+  if (ok?.warning && ok.warning.startsWith("Diqqat")) {
+    const w = ok.warning;
+    notifyAfter(() => notifyRoles(["SALES", "ACCOUNTING"], { type: "TRIP_DELIVERED", title: `Zayavka ${t.order.orderNo}: qabul kamaydi`, body: w, link: { key: "orders", id: t.orderId } }, { except: userId }));
+  }
+  return { changed: !!ok, orderId: t.orderId, warning: ok?.warning };
 }
 
 // ───────────────────────── Muammo ─────────────────────────
@@ -403,6 +522,9 @@ export const ARRIVE_RADIUS_M = 1000;
  * shuning uchun bir necha daqiqalik kechikish odatiy hol, 15 daqiqalik esa emas.
  */
 const FIX_MAX_AGE_MS = 15 * 60_000;
+/** Obyekt radiusida kamida shuncha nuqta va birinchisidan oxirgisigacha shuncha vaqt bo'lsin. */
+const ARRIVE_MIN_POINTS = 2;
+const ARRIVE_MIN_DWELL_MS = 60_000;
 
 /**
  * Mashina obyektga yetib keldimi — "Yetkazdim" tugmasi shu javobga qarab ochiladi.
@@ -448,8 +570,24 @@ export async function tripArrival(tripId: string): Promise<TripArrival> {
   if (remainingM > ARRIVE_RADIUS_M) {
     return { destination: dest, last, remainingM, near: false, unknown: false, reason: `Obyektgacha ${distanceLabel(remainingM)} — 1 km qolganda ochiladi` };
   }
+  // Bitta nuqta soxta bo'lishi mumkin (GPS "mock" ilovasi bir zumda obyektga "ko'chiradi").
+  // Shuning uchun radius ichida kamida 2 ta nuqta va ular orasida ≥ 60 s bo'lishi talab qilinadi:
+  // haqiqiy mashina obyekt hududida baribir bir necha daqiqa turadi.
+  const recent = await db.tripPosition.findMany({
+    where: { tripId, at: { lte: p.at, gte: new Date(p.at.getTime() - FIX_MAX_AGE_MS) } },
+    orderBy: { at: "desc" }, take: 60, select: { lat: true, lng: true, at: true },
+  });
+  let earliest = p.at, inside = 0;
+  for (const x of recent) {
+    if (haversineMeters(x.lat, x.lng, dest.lat, dest.lng) > ARRIVE_RADIUS_M) break; // radiusdan tashqari — ketma-ketlik uzildi
+    inside++; earliest = x.at;
+  }
+  if (inside < ARRIVE_MIN_POINTS || p.at.getTime() - earliest.getTime() < ARRIVE_MIN_DWELL_MS) {
+    return { destination: dest, last, remainingM, near: false, unknown: false, reason: "Obyekt hududida GPS tasdig'i kutilmoqda — taxminan 1 daqiqadan keyin qayta urinib ko'ring" };
+  }
   return { destination: dest, last, remainingM, near: true, unknown: false, reason: null };
 }
+
 
 // ───────────────────────── Tayyorlik: nima jo'natish mumkin ─────────────────────────
 
@@ -476,7 +614,7 @@ export type OrderReadiness = {
 
 /** `orderReadiness` uchun kerakli include — veb forma, mobil forma va `createTrip` bir xil yuklaydi. */
 export const READINESS_INCLUDE = {
-  items: { include: { product: { select: { unit: true } }, task: { select: { doneQty: true, status: true } } } },
+  items: { include: { product: { select: { unit: true, name: true } }, task: { select: { doneQty: true, status: true } } } },
   trips: { select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } },
   batches: { select: { productId: true, qtyM3: true } },
 } as const;
@@ -560,16 +698,32 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   if (!v || !v.isActive) throw new Error("Texnika topilmadi yoki nofaol");
   if (v.status === "REPAIR") throw new Error(`${v.plate} ta'mirda — boshqa transport tanlang`);
   if (v.type === "PUMP") throw new Error("Nasos yuk tashimaydi — mikser yoki yuk mashina tanlang");
-  // Beton faqat mikserda ketadi; dona mahsulot (plita, blok) — yuk mashinada. Sig'im (m³) faqat mikserga tegishli.
+  // Beton faqat mikserda ketadi; dona mahsulot (plita, blok) — mikser bo'lmagan texnikada. Sig'im (m³) faqat mikserga tegishli.
   const items = o.items;
   const concrete = items.some((i) => i.product.unit === "m3");
   const piece = items.some((i) => i.product.unit !== "m3");
-  if (concrete && !piece && v.type !== "MIXER") throw new Error("Beton zayavkasi — mikser tanlang");
-  if (piece && !concrete && v.type !== "TRUCK") throw new Error("Dona mahsulot (plita, blok) mikserda ketmaydi — yuk mashina tanlang");
+  if (concrete && !piece && v.type !== "MIXER") throw new Error("Beton zayavkasi — mikser tanlang (beton faqat mikserda tashiladi)");
+  if (piece && !concrete && v.type === "MIXER") throw new Error("Dona mahsulot (plita, blok) mikserda ketmaydi — yuk mashina tanlang");
+  // Reys qaysi qatorni tashishi texnika turidan aniqlanadi (aralash zayavka: beton → mikser, dona → yuk mashina)
+  const line = tripLine(items, v.type);
+  if ("error" in line) throw new Error(line.error);
+  if (line.unit === "m3" && v.type !== "MIXER") throw new Error("Beton (m³) faqat mikserda tashiladi — mikser tanlang");
   if (v.type === "MIXER" && v.capacityM3 && input.qtyM3 > Number(v.capacityM3)) throw new Error(`Mikser sig'imi ${v.capacityM3} m³`);
+
+  // Hujjat muddatlari: muddati o'tgan texnika/haydovchi yo'lga chiqarilmaydi (jarima, sug'urtasiz avariya)
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const expired = (x: Date | null | undefined) => !!x && x < today;
+  const dmy = (x: Date) => x.toLocaleDateString("ru-RU");
+  if (expired(v.inspectionUntil)) throw new Error(`${v.plate}: texnik ko'rik muddati o'tgan (${dmy(v.inspectionUntil!)}) — Transport kartasida yangilang`);
+  if (expired(v.insuranceUntil)) throw new Error(`${v.plate}: sug'urta muddati o'tgan (${dmy(v.insuranceUntil!)}) — Transport kartasida yangilang`);
 
   const d = await db.employee.findUnique({ where: { id: input.driverId } });
   if (!d || !d.isActive) throw new Error("Haydovchi topilmadi yoki nofaol");
+  const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
+  if (!driverNames.includes(d.position.trim().toLowerCase())) throw new Error(`${d.fullName} haydovchi lavozimida emas (${d.position}) — Otdel kadrda lavozimini tekshiring`);
+  if (expired(d.licenseExpiry)) throw new Error(`${d.fullName}: haydovchilik guvohnomasi muddati o'tgan (${dmy(d.licenseExpiry!)}) — haydovchi kartasida yangilang`);
+
+  const mixed = new Set(items.map((i) => i.productId)).size > 1;
 
   const created = await db.$transaction(async (tx) => {
     // Qoldiq qulf ostida qayta tekshiriladi: ikki dispetcher bir vaqtda oxirgi 8 m³ ga reys ochsa, ikkinchisi to'xtaydi
@@ -577,20 +731,31 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     const fresh = await tx.order.findUniqueOrThrow({ where: { id: input.orderId }, include: READINESS_INCLUDE });
     const again = readinessError(orderReadiness(fresh), input.qtyM3);
     if (again) throw new Error(again);
+    if (mixed) {
+      // Aralash zayavka: shu qatorga (beton yoki dona) yozilgan reyslar texnika turidan ajratiladi —
+      // umumiy qoldiq yetsa ham bitta qatorning miqdoridan oshib ketmasin
+      const prev = await tx.trip.findMany({ where: { orderId: input.orderId, status: { not: "CANCELLED" } }, select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true, vehicle: { select: { type: true } } } });
+      const sameLine = prev.filter((x) => (x.vehicle.type === "MIXER") === (line.unit === "m3"));
+      const left = r3(line.qty - sameLine.reduce((s, x) => s + tripCoveredQty(x), 0));
+      if (input.qtyM3 > left + 0.001) throw new Error(left > 0.001 ? `${line.name ?? "Bu mahsulot"} bo'yicha faqat ${left} ${unitLabel(line.unit)} qoldi` : `${line.name ?? "Bu mahsulot"} to'liq jo'natilgan`);
+    }
     const t = await tx.trip.create({
-      data: { deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined },
+      data: {
+        deliveryNoteNo: await nextNo(tx, "trip", "N"), orderId: input.orderId, vehicleId: input.vehicleId, driverId: input.driverId, qtyM3: input.qtyM3, note: input.note ?? undefined, plannedAt: input.plannedAt ?? undefined,
+        // QR havolasidagi kalit: raqam ketma-ket, kalitsiz ochiq sahifadan mijozlar ro'yxatini yig'ib bo'lmasin
+        verifyToken: randomBytes(18).toString("base64url"),
+      },
     });
-    await audit(tx, userId, "CREATE", "Trip", t.id, undefined, t);
+    await audit(tx, userId, "CREATE", "Trip", t.id, undefined, { ...t, verifyToken: undefined });
     return { id: t.id, deliveryNoteNo: t.deliveryNoteNo };
   });
 
   // Haydovchi reys biriktirilganini BILISHI kerak — u ro'yxatni kutib o'tirmaydi,
   // mashinada yoki hovlida bo'ladi. Shu sababli bu eng muhim bildirishnoma.
-  const unit = soleUnit(items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
   notifyAfter(() => notifyEmployees([input.driverId], {
     type: "TRIP_ASSIGNED",
     title: `Yangi reys — ${created.deliveryNoteNo}`,
-    body: `${input.qtyM3}${unit ? ` ${unitLabel(unit)}` : ""} · ${v.plate} · ${o.deliveryAddress}`,
+    body: `${input.qtyM3} ${unitLabel(line.unit)}${mixed && line.name ? ` ${line.name}` : ""} · ${v.plate} · ${o.deliveryAddress}`,
     link: { key: "trips", id: created.id },
   }));
   return created;

@@ -3,6 +3,7 @@ import {
   AlertTriangle, ArrowRight, Bell, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Package, PackageCheck, PackageX, Send, Truck, Warehouse,
 } from "lucide-react";
 import { skladLogistika, type SlTone } from "@/lib/sklad-logistika";
+import { vehicleServiceDue } from "@/lib/logistics";
 import { date, fmtNum, isoDate } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -25,7 +26,9 @@ const q = (v: number, unit: string) => `${fmtNum(v, 2)} ${unitLabel(unit)}`;
  * Hamma raqam `skladLogistika()` dan — UI o'zi hisoblamaydi.
  */
 export async function MechanicHome({ day, base = "/dashboard" }: { day?: string; base?: string }) {
-  const d = await skladLogistika(day);
+  // Texnik xizmat muddati — logistika moduli hisoblaydi (`vehicleServiceDue`), bu yerda faqat ko'rsatiladi
+  const [d, service] = await Promise.all([skladLogistika(day), vehicleServiceDue()]);
+  const alerts = d.alerts;
   const t = d.today, n = d.tomorrow;
   const prev = new Date(d.day); prev.setDate(prev.getDate() - 1);
   const link = (x: Date) => `${base}${base.includes("?") ? "&" : "?"}date=${isoDate(x)}`;
@@ -114,12 +117,12 @@ export async function MechanicHome({ day, base = "/dashboard" }: { day?: string;
         {/* ── 4. Avtomatik ogohlantirish ── */}
         <Section title="4. Avtomatik ogohlantirish" className="mt-0">
           <Card padded={false}>
-            <div className="border-b border-slate-100 px-4 py-3"><CardHeader title={`${d.alerts.length} ta ogohlantirish`} icon={Bell} /></div>
+            <div className="border-b border-slate-100 px-4 py-3"><CardHeader title={`${alerts.length} ta ogohlantirish`} icon={Bell} /></div>
             <div className="space-y-2 p-3">
-              {d.alerts.length === 0 && (
+              {alerts.length === 0 && (
                 <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-900"><CheckCircle2 size={16} /> Hammasi joyida — yetishmovchilik yo&apos;q</div>
               )}
-              {d.alerts.map((a) => (
+              {alerts.map((a) => (
                 <Link key={a.key} href={a.href} className={cn("block rounded-lg border p-3 text-sm transition hover:brightness-95", ALERT_CLS[a.tone])}>
                   <div className="font-semibold">{a.title}</div>
                   <div className="mt-0.5 text-[13px] opacity-90">{a.text}</div>
@@ -129,6 +132,23 @@ export async function MechanicHome({ day, base = "/dashboard" }: { day?: string;
           </Card>
         </Section>
       </div>
+
+      {/* ── Texnik xizmat muddati (moy, filtr, ko'rik…) ── */}
+      <Section title="Texnik xizmat muddati" action={more("/logistika/transport", "Transport")}>
+        {service.length === 0 ? (
+          <Card className="flex items-center gap-2 text-sm text-emerald-800"><CheckCircle2 size={16} /> Muddati o&apos;tgan yoki 14 kun / 1000 km ichida keladigan texnik xizmat yo&apos;q</Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3 [&>*]:min-w-0">
+            {service.map((x) => (
+              <Link key={x.serviceId} href={`/logistika/transport/${x.vehicleId}`} className={cn("block rounded-lg border p-3 text-sm transition hover:brightness-95", ALERT_CLS[x.level === "crit" ? "danger" : "warning"])}>
+                <div className="flex items-center justify-between gap-2 font-semibold"><span className="tabular">{x.plate}</span><Badge color={x.level === "crit" ? "red" : "amber"}>{x.level === "crit" ? "Muddati o'tgan" : "Yaqinlashdi"}</Badge></div>
+                <div className="mt-0.5 text-[13px] opacity-90">{x.text}</div>
+                {(x.dueAt || x.dueKm != null) && <div className="mt-0.5 text-xs opacity-75">{x.dueAt ? `muddat ${date(x.dueAt)}` : ""}{x.dueAt && x.dueKm != null ? " · " : ""}{x.dueKm != null ? `${fmtNum(x.dueKm, 0)} km da` : ""}</div>}
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
 
       {/* ── 5. Asosiy ish jarayoni ── */}
       <Section title={`5. Ish jarayoni (${d.isToday ? "bugun" : date(d.day)})`}>

@@ -109,3 +109,19 @@ export async function transportCosts(from: Date, to: Date) {
   for (const x of [...fuel, ...other]) if (x.tripId) byTrip.set(x.tripId, (byTrip.get(x.tripId) ?? 0) + Number(x.amount));
   return { fuel: fuelSum, liters, other: otherSum, total: fuelSum + otherSum, byKind, byVehicle, byTrip };
 }
+
+/**
+ * Haqiqiy yoqilg'i sarfi, l/100 km — "to'liq bak" usuli. Yoqilg'i sahifasi ham, transport kartasi ham shu bittasidan.
+ *
+ *  • faqat probegi yozilgan quyishlar olinadi (probegsizi qaysi oraliqqa tegishli ekani noma'lum);
+ *  • probeg bo'yicha tartiblanadi (sana bo'yicha emas — kechikib kiritilgan yozuv tartibni buzmasin);
+ *  • BIRINCHI quyishning litri chiqarib tashlanadi: u oldingi (hisobga kirmagan) yo'l uchun quyilgan.
+ *    Ilgari hamma litr yig'ilib, oraliq km ga bo'linardi — sarf ~2 baravar katta chiqardi.
+ */
+export function fuelConsumption(logs: { liters: unknown; odometerKm: number | null }[]): { per100: number | null; km: number; liters: number; fills: number } {
+  const xs = logs.filter((f): f is { liters: unknown; odometerKm: number } => f.odometerKm != null).sort((a, b) => a.odometerKm - b.odometerKm);
+  if (xs.length < 2) return { per100: null, km: 0, liters: 0, fills: xs.length };
+  const km = xs[xs.length - 1]!.odometerKm - xs[0]!.odometerKm;
+  const liters = xs.slice(1).reduce((a, f) => a + Number(f.liters), 0);
+  return { per100: km > 0 ? (liters / km) * 100 : null, km, liters, fills: xs.length };
+}

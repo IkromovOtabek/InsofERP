@@ -2,11 +2,15 @@ import { db } from "@/lib/db";
 import { ATTENDANCE_MARKS, dayUtc, isoDay, markOf, today } from "@/lib/davomat";
 import { productionDay } from "@/lib/production-day";
 import { productionStaff, UNASSIGNED, type StaffMember } from "@/lib/production-staff";
+import { minText } from "@/lib/production-hourly";
+import { REP, repId, reportCut } from "./report-detail";
 import { buildReport, loadReport, reportHistory, reportSummary, stockHighlights, stockStatus, STOCK_LEVEL_LABEL, type ReportSnapshot } from "@/lib/production-report";
 import { unitLabel } from "@/lib/unit";
 import { myBrigades } from "@/lib/brigades";
+import { faceCheckEnabled } from "@/lib/ai/face";
 import { day, inUnit, num, pctText, sum, time, totalsText } from "./fmt";
 import { dashRange, type DashRange } from "./dashboard";
+import { periodAttendance, periodPlan } from "@/lib/period-stats";
 import { ListError } from "./list";
 import type { MobileUser } from "./auth";
 import type { DetailAction, DetailField, MobileDetail } from "./detail";
@@ -28,7 +32,8 @@ const canWork = (u: MobileUser) => (SEX_ROLES as readonly string[]).includes(u.r
 
 /** Bosh ekrandagi davr → kartochka id'si ichidagi qism. */
 export const periodId = (r: DashRange) => (r.key === "custom" && r.range ? `custom~${r.range.from}~${r.range.to}` : r.key);
-const parsePeriod = (p?: string) => { const [period, from, to] = (p ?? "month").split("~"); return dashRange({ period, from, to }); };
+/** Kartochka id'sidagi davr qismi → DashRange (`dash-detail.ts` ham ishlatadi). */
+export const parsePeriod = (p?: string) => { const [period, from, to] = (p ?? "month").split("~"); return dashRange({ period, from, to }); };
 
 const f = (label: string, value: string, tone?: Tone): DetailField => ({ label, value, tone });
 const section = (title: string, rows: HomeRow[], opts: { empty?: string; target?: string; icon?: string } = {}): HomeSection =>
@@ -50,15 +55,18 @@ const staffRow = (m: StaffMember, withBrigade = false): HomeRow => {
 export async function sexDetail(user: MobileUser, rawId: string): Promise<MobileDetail> {
   const [stat, per] = rawId.split(".");
   const r = parsePeriod(per);
+  // Holat kartalari: davr berilmagan yoki "bugun" — jonli ko'rinish (davomat tugmalari bilan), aks holda davr yig'indisi
+  // (`g0` — hisobotdagi davomat guruhi qatori, davr emas)
+  const pr = per && per !== "day" && !/^g\d/.test(per) ? r : null;
   switch (stat) {
     case "produced": return produced(r);
     case "shifts": return produced(r, true);
-    case "plan": return plan();
+    case "plan": return pr ? periodPlanDetail(pr) : plan();
     case "defect": return defects(r);
     case "brigades": return brigades(r);
-    case "staff": return staff(user, false);
-    case "attendance": return staff(user, true);
-    case "stock": return stock();
+    case "staff": return pr ? periodStaff(pr, false) : staff(user, false);
+    case "attendance": return pr ? periodStaff(pr, true) : staff(user, true);
+    case "stock": return stock(pr);
     case "report": return report(user);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   }
@@ -137,6 +145,63 @@ async function plan(): Promise<MobileDetail> {
         right: pctText(p.dayPct), tone: tone(p.dayPct),
       })), { empty: "Plan yo'q", icon: "target" }),
     ],
+    actions: [],
+  };
+}
+
+/** Plan — tanlangan davrga bo'lingan (hafta, yil, kalendar oralig'i). */
+async function periodPlanDetail(r: DashRange): Promise<MobileDetail> {
+  const pp = await periodPlan(r.from, r.to);
+  const behind = pp.rows.filter((p) => p.behind > 0);
+  const tone = (v: number | null): Tone | undefined => (v == null ? undefined : v >= 90 ? "success" : v >= 60 ? "warning" : "danger");
+  return {
+    key: "sex", id: `plan.${periodId(r)}`, title: `Plan (${r.label})`,
+    subtitle: `${pp.elapsed} / ${pp.workDays} ish kuni o'tdi · oylik plan davrdagi ish kunlariga bo'lingan`,
+    fields: [
+      f("O'rtacha bajarilish", pctText(pp.avgPct), tone(pp.avgPct)),
+      f("Mahsulotlar", `${pp.rows.length} ta plan`),
+      f("Plandan orqada", behind.length ? behind.map((p) => `${p.product.code} ${inUnit(p.behind, p.product.unit)}`).join(", ") : "yo'q", behind.length ? "danger" : "success"),
+    ],
+    sections: [
+      section(`Mahsulotlar — ${r.label}`, pp.rows.map((p) => ({
+        id: `m-${p.product.id}`, title: `${p.product.code} · ${p.product.name}`,
+        subtitle: `fakt ${inUnit(p.fact, p.product.unit)} / plan ${inUnit(p.plan, p.product.unit)}${p.behind > 0 ? ` · orqada ${inUnit(p.behind, p.product.unit)}` : ""}${p.defect > 0 ? ` · brak ${inUnit(p.defect, p.product.unit)}` : ""}`,
+        right: pctText(p.pct), tone: p.behind > 0 ? "danger" : tone(p.pct),
+      })), { empty: "Bu davrga plan belgilanmagan", icon: "square-check" }),
+    ],
+    actions: [],
+  };
+}
+
+/** Sex xodimlari va davomat — davr bo'yicha yig'indi (har xodim: keldi / kelmadi / kasal-ta'til). */
+async function periodStaff(r: DashRange, attendanceView: boolean): Promise<MobileDetail> {
+  const s = await productionStaff();
+  const a = await periodAttendance(s.members.map((m) => m.id), r.from, r.to);
+  const row = (m: StaffMember): HomeRow => {
+    const e = a.perEmployee.get(m.id);
+    const marked = e ? e.PRESENT + e.ABSENT + e.SICK + e.LEAVE : 0;
+    return {
+      id: m.id, title: m.fullName,
+      subtitle: [m.position, m.brigade ?? UNASSIGNED, e ? `keldi ${e.PRESENT} · kelmadi ${e.ABSENT}${e.SICK + e.LEAVE ? ` · kasal/ta'til ${e.SICK + e.LEAVE}` : ""}` : "belgilanmagan"].filter(Boolean).join(" · "),
+      right: marked ? pctText((e!.PRESENT / marked) * 100) : "—",
+      tone: !marked ? "warning" : e!.ABSENT ? "danger" : "success",
+    };
+  };
+  const byAbsent = [...s.members].sort((x, y) => (a.perEmployee.get(y.id)?.ABSENT ?? 0) - (a.perEmployee.get(x.id)?.ABSENT ?? 0) || x.fullName.localeCompare(y.fullName));
+  return {
+    key: "sex", id: `${attendanceView ? "attendance" : "staff"}.${periodId(r)}`,
+    title: `${attendanceView ? "Davomat" : "Sex xodimlari"} (${r.label})`,
+    subtitle: `${a.days} kun davomat yozilgan · kishi-kun hisobida`,
+    fields: [
+      f("Sexda jami", `${s.total} kishi`),
+      f("Davomat", pctText(a.pct), a.pct == null ? "warning" : a.pct >= 90 ? "success" : a.pct >= 75 ? "warning" : "danger"),
+      f("Kuniga o'rtacha keldi", `${num(a.avgPresent)} kishi`),
+      f("Keldi / kelmadi", `${a.byStatus.PRESENT} / ${a.byStatus.ABSENT} kishi-kun`, a.byStatus.ABSENT ? "danger" : undefined),
+      f("Kasal / ta'til / dam", `${a.byStatus.SICK} / ${a.byStatus.LEAVE} / ${a.byStatus.DAYOFF}`),
+    ],
+    sections: attendanceView
+      ? [section("Xodimlar — ko'p kelmaganlar birinchi", byAbsent.map(row), { target: "sex-emp", empty: "Sex xodimi yo'q", icon: "user" })]
+      : s.groups.filter((g) => g.total).map((g) => section(g.name, g.members.map(row), { target: "sex-emp", icon: "user" })),
     actions: [],
   };
 }
@@ -278,18 +343,34 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
   if (own && !(m?.brigadeId && own.includes(m.brigadeId))) throw new ListError("NOT_FOUND", "Xodim sizning brigadangizda emas", 404);
   const week = new Date(dayUtc(today())); week.setUTCDate(week.getUTCDate() - 7);
   const history = await db.attendance.findMany({ where: { employeeId, date: { gte: week } }, orderBy: { date: "desc" } });
+  const todayRow = history.find((a) => isoDay(a.date) === today());
   const mk = m?.status ? markOf(m.status) : null;
   const actions: DetailAction[] = [];
   if (m && (canWork(user) || own)) {
-    if (m.status !== "PRESENT") actions.push({ id: "att.present", label: "Keldi (hozir)", tone: "success" });
+    // "Keldi" — yuz bilan (AI kaliti bo'lsa): old kamera kadri profil surati bilan solishtiriladi, mos kelmasa
+    // yozilmaydi. Kalit bo'lmasa — eskicha bir tugma. Vaqtni tuzatish/boshqa belgi pastdagi formada qoladi.
+    if (m.status !== "PRESENT") {
+      if (faceCheckEnabled()) actions.push({
+        id: "att.face", label: "Keldi — yuz bilan tasdiqlash", tone: "success",
+        form: [{ name: "photo", label: "Xodimning yuzi", type: "photo", required: true, camera: "front", cameraOnly: true, hint: "Kamerani xodimga qarating — kadr profil surati bilan solishtiriladi" }],
+      });
+      else actions.push({ id: "att.present", label: "Keldi (hozir)", tone: "success" });
+    }
     if (m.status === "PRESENT" && !m.checkOut) actions.push({ id: "att.checkout", label: "Ketdi (hozir)", tone: "brand" });
     if (m.status !== "ABSENT") actions.push({ id: "att.absent", label: "Kelmadi", tone: "danger", confirm: `${m.fullName} bugun kelmadi deb belgilansinmi?` });
+    // Vaqtni faqat sex boshlig'i tuzatadi. Brigadir esa yuz tekshiruvi yoqiq bo'lsa "Keldi" ni bu
+    // formadan qo'ya olmaydi (aks holda kamerasiz belgilab yuborardi) — server ham rad etadi
+    const editor = canWork(user);
+    const noPresent = !editor && faceCheckEnabled() && m.status !== "PRESENT";
+    const opts = noPresent ? statusOptions.filter((o) => o.value !== "PRESENT") : statusOptions;
     actions.push({
-      id: "att.status", label: "Boshqa belgi / vaqtni tuzatish", tone: "warning",
+      id: "att.status", label: editor ? "Boshqa belgi / vaqtni tuzatish" : "Boshqa belgi", tone: "warning",
       form: [
-        { name: "status", label: "Holat", type: "select", required: true, value: m.status ?? "PRESENT", options: statusOptions },
-        { name: "checkIn", label: "Keldi (soat)", type: "time", value: m.checkIn ?? "", showIf: { field: "status", equals: "PRESENT" } },
-        { name: "checkOut", label: "Ketdi (soat)", type: "time", value: m.checkOut ?? "", showIf: { field: "status", equals: "PRESENT" } },
+        { name: "status", label: "Holat", type: "select", required: true, value: noPresent ? (m.status ?? opts[0]?.value ?? "") : (m.status ?? "PRESENT"), options: opts },
+        ...(editor ? [
+          { name: "checkIn", label: "Keldi (soat)", type: "time" as const, value: m.checkIn ?? "", showIf: { field: "status", equals: "PRESENT" } },
+          { name: "checkOut", label: "Ketdi (soat)", type: "time" as const, value: m.checkOut ?? "", showIf: { field: "status", equals: "PRESENT" } },
+        ] : []),
         { name: "note", label: "Izoh", type: "text", value: m.note ?? "", placeholder: "ixtiyoriy" },
       ],
     });
@@ -307,6 +388,7 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
       f("Brigada", m?.brigade ?? UNASSIGNED, m?.brigade ? undefined : "warning"),
       f("Bugun", mk ? mk.label : "belgilanmagan", m?.status ? STATUS_TONE[m.status] : "warning"),
       f("Keldi", m?.checkIn ?? "—"),
+      ...(m?.status === "PRESENT" ? [f("Yuz tekshiruvi", todayRow?.faceVerifiedAt ? `tasdiqlangan ${time(todayRow.faceVerifiedAt)}` : "qo'lda belgilangan", todayRow?.faceVerifiedAt ? "success" : "warning")] : []),
       f("Ketdi", m?.checkOut ?? "—"),
       ...(m?.note ? [f("Izoh", m.note)] : []),
       ...(e.phone ? [f("Telefon", e.phone)] : []),
@@ -315,7 +397,7 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
       section("Oxirgi 7 kun", history.map((a) => ({
         id: a.id, title: isoDay(a.date).split("-").reverse().join("."),
         subtitle: a.note ?? undefined,
-        right: `${markOf(a.status).label}${a.checkIn ? ` ${a.checkIn}${a.checkOut ? `–${a.checkOut}` : ""}` : ""}`, tone: STATUS_TONE[a.status],
+        right: `${markOf(a.status).label}${a.checkIn ? ` ${a.checkIn}${a.checkOut ? `–${a.checkOut}` : ""}` : ""}${a.faceVerifiedAt ? " ✓" : ""}`, tone: STATUS_TONE[a.status],
       })), { empty: "Davomat yozilmagan", icon: "calendar" }),
     ],
     actions,
@@ -326,25 +408,57 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
 
 const days = (d: number | null) => (d === null ? "sarf yo'q" : d > 999 ? ">999 kunga" : `${d.toFixed(d < 10 ? 1 : 0)} kunga yetadi`);
 
-async function stock(): Promise<MobileDetail> {
-  const list = await stockStatus();
-  const { low, ok, rest } = stockHighlights(list, 20);
+/**
+ * Sklad holati — son emas, nima va qancha kam: zayavkalarga yetmayotgani (qaysi zayavkaga qancha),
+ * minimal qoldiqdan kami va tez tugaydiganlari. Qator bosilsa xomashyo yoki zayavka kartochkasi.
+ */
+async function stock(r: DashRange | null = null): Promise<MobileDetail> {
+  // Davr tanlangan bo'lsa — shu davr oxirigacha yetkazilishi kerak bo'lgan zayavkalar (kechikkanlar ham)
+  const list = await stockStatus(r ? { until: r.to } : {});
+  const { ok, rest } = stockHighlights(list, 20);
+  const u = (n: number, unit: string) => `${num(n)} ${unit}`;
+  const gap = list.filter((m) => m.orderGap > 0).sort((a, b) => b.orderGap / (b.planned || 1) - a.orderGap / (a.planned || 1));
+  // Zayavkaga yetadi, lekin minimal qoldiqqa yetmaydi yoki tez tugaydi
+  const low = list.filter((m) => m.orderGap <= 0 && m.level !== "ok");
+  const listText = (rows: typeof list, pick: (m: (typeof list)[number]) => number) => rows.map((m) => `${m.name} ${u(pick(m), m.unit)}`).join(", ");
+
+  // Zayavkalar kesimida: har zayavka qaysi yetmayotgan xomashyodan qancha talab qiladi
+  const orders = new Map<string, { id: string; orderNo: string; customer: string; date: Date; items: string[] }>();
+  for (const m of gap) for (const o of m.orders) {
+    const cur = orders.get(o.id) ?? { id: o.id, orderNo: o.orderNo, customer: o.customer, date: o.date, items: [] };
+    cur.items.push(`${m.name} ${u(o.qty, m.unit)}`); orders.set(o.id, cur);
+  }
+  const orderRows = [...orders.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
+
   const row = (m: (typeof list)[number]): HomeRow => ({
     id: m.id, title: m.name,
-    subtitle: `qoldiq ${num(m.balance)} ${m.unit} · ${days(m.days)}${m.perDay > 0 ? ` · kunlik ${num(m.perDay)} ${m.unit}` : ""}${m.planned > 0 ? ` · zayavkalarga ${num(m.planned)} ${m.unit}` : ""}`,
-    right: m.need > 0 ? `kerak ${num(m.need)} ${m.unit}` : STOCK_LEVEL_LABEL[m.level],
+    subtitle: [
+      `skladda ${u(m.balance, m.unit)}`,
+      m.planned > 0 ? `zayavkalarga ${u(m.planned, m.unit)} (${m.orders.length} ta)` : null,
+      m.balance < m.minStock ? `minimal ${u(m.minStock, m.unit)}` : null,
+      days(m.days),
+      m.perDay > 0 ? `kunlik ${u(m.perDay, m.unit)}` : null,
+    ].filter(Boolean).join(" · "),
+    right: m.need > 0 ? `${u(m.need, m.unit)} kam` : m.level !== "ok" && m.days !== null ? `${num(m.days)} kunga` : STOCK_LEVEL_LABEL[m.level],
     tone: m.level === "short" ? "danger" : m.level === "low" ? "warning" : "success",
   });
   return {
-    key: "sex", id: "stock", title: "Sklad holati", subtitle: "Xomashyo: nima kam qoldi va qancha olib kelish kerak",
+    key: "sex", id: r ? `stock.${periodId(r)}` : "stock", title: r ? `Sklad holati (${r.label})` : "Sklad holati",
+    subtitle: r ? `Zayavkalar: ${r.label} oxirigacha yetkazilishi kerak bo'lganlari (kechikkanlar ham) — nima, qancha kam` : "Xomashyo: nima, qancha kam va qaysi zayavkaga yetmaydi",
+    status: gap.length ? "Zayavkaga yetmaydi" : low.length ? "Kam qolgan" : "Yetarli",
     fields: [
-      f("Yetmaydi", `${list.filter((m) => m.level === "short").length} ta`, list.some((m) => m.level === "short") ? "danger" : "success"),
-      f("Kam qoldi", `${list.filter((m) => m.level === "low").length} ta`, list.some((m) => m.level === "low") ? "warning" : undefined),
-      f("Yetarli", `${list.filter((m) => m.level === "ok").length} ta`),
-      f("Hisob", "kunlik sarf — 30 kun o'rtachasi; «kerak» — zayavkalar va minimal qoldiqqa yetmagani"),
+      f("Zayavkalarga yetmaydi", gap.length ? listText(gap, (m) => m.orderGap) : "hammasi yetadi", gap.length ? "danger" : "success"),
+      ...(orderRows.length ? [f("Ta'sir qiladigan zayavkalar", `${orderRows.length} ta: ${orderRows.slice(0, 5).map((o) => o.orderNo).join(", ")}${orderRows.length > 5 ? "…" : ""}`, "danger" as Tone)] : []),
+      f("Minimal qoldiqdan kam / tez tugaydi", low.length ? low.map((m) => (m.need > 0 ? `${m.name} ${u(m.need, m.unit)} kam` : `${m.name} ${days(m.days)}`)).join(", ") : "yo'q", low.length ? "warning" : "success"),
+      f("Olib kelish kerak (jami)", list.some((m) => m.need > 0) ? listText(list.filter((m) => m.need > 0), (m) => m.need) : "hech narsa", list.some((m) => m.need > 0) ? "warning" : "success"),
+      f("Hisob", "«zayavkalarga» — tasdiqlangan zayavkalarning hali qilinmagan qismi × retsept; «kam» — zayavkaga va minimal qoldiqqa yetishi uchun yetmayotgani; kunlik sarf — 30 kun o'rtachasi"),
     ],
     sections: [
-      section("Olib kelish kerak", low.map(row), { target: "stock", empty: "Hamma xomashyo yetarli", icon: "triangle-alert" }),
+      section(`Zayavkaga yetmaydi · ${gap.length}`, gap.map((m) => ({ ...row(m), right: `${u(m.orderGap, m.unit)} kam`, tone: "danger" as Tone })), { target: "stock", empty: "Hamma zayavkaga xomashyo yetadi", icon: "triangle-alert" }),
+      section(`Zayavkalar bo'yicha · ${orderRows.length}`, orderRows.map((o) => ({
+        id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `kerak: ${o.items.join(", ")}`, right: day(o.date), tone: "danger" as Tone,
+      })), { target: "orders", empty: "Xomashyo yetmaydigan zayavka yo'q", icon: "clipboard-list" }),
+      section(`Minimal qoldiqdan kam / tez tugaydi · ${low.length}`, low.map(row), { target: "stock", empty: "Yo'q", icon: "layers" }),
       section(rest > 0 ? `Yetarli (yana ${rest} ta Skladda)` : "Yetarli", ok.map(row), { target: "stock", empty: "—", icon: "layers" }),
     ],
     actions: [],
@@ -353,22 +467,46 @@ async function stock(): Promise<MobileDetail> {
 
 // ───────────────────────── Kunlik hisobot ─────────────────────────
 
-/** Hisobot obyektidan kartochka bo'limlari — jonli ham, saqlangan ham bir xil chiziladi. */
+/**
+ * Hisobot obyektidan kartochka bo'limlari — jonli ham, saqlangan ham bir xil chiziladi.
+ * Har qator bosiladi (faqat ko'rish): soat → shu soatdagi amallar izohlari bilan, brigada/mahsulot → shu kun,
+ * muammo/zayavka/xomashyo/xodim → o'z kartochkasi (`./report-detail.ts`). Eski nusxada id yo'q qatorlar "none" ga boradi.
+ */
 function reportSections(r: ReportSnapshot): HomeSection[] {
+  const cut = reportCut(r.iso, r.hourly?.cutoffAt);
+  const none = (i: number | string) => `${repId.none}~${i}`;
+  const opts = (empty: string, icon: string) => ({ empty, icon, target: REP });
+  const hourOf = (t: string) => Number(t.slice(0, 2));
   return [
     section("Ishlab chiqarildi va plan", r.plan.rows.map((p) => ({
-      id: `p-${p.code}`, title: `${p.code} · ${p.name}`,
+      id: p.productId ? repId.product(r.iso, p.productId, cut) : none(`p${p.code}`), title: `${p.code} · ${p.name}`,
       subtitle: `bugun ${num(p.day)}${p.dayPlan !== null ? ` / ${num(p.dayPlan)}` : ""} · oy ${num(p.month)}${p.monthPlan !== null ? ` / ${num(p.monthPlan)}` : ""} ${unitLabel(p.unit)}${p.defectDay ? ` · brak ${num(p.defectDay)}` : ""}`,
       right: p.monthPct !== null ? pctText(p.monthPct) : undefined, tone: (p.behind ?? 0) > 0 ? "danger" : p.monthPct !== null ? "success" : undefined,
-    })), { empty: "Ishlab chiqarish qayd qilinmagan", icon: "factory" }),
-    section("Yuklash", r.load.orders.map((o) => ({ id: `o-${o.orderNo}`, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.time ?? "—"} · ${o.items}`, right: o.left > 0 ? `qoldi ${num(o.left)}` : "✓", tone: o.left > 0 ? "warning" : "success" })), { empty: "Bugunga zayavka yo'q", icon: "truck" }),
-    section("Brigadalar", r.brigades.map((b) => ({ id: `b-${b.name}`, title: b.name, subtitle: b.today || "qayd yo'q", right: b.overdue ? `${b.overdue} kechikkan` : `${b.open} ochiq`, tone: b.overdue ? "danger" : b.today ? "success" : undefined })), { empty: "Faol brigada yo'q", icon: "hard-hat" }),
-    section("Brak", r.defects.map((d, i) => ({ id: `d-${i}`, title: `${d.code} · ${d.reason}`, subtitle: `${d.time} · ${d.brigade ?? "—"} · ${d.by}`, right: `${num(d.qty)} ${unitLabel(d.unit)}`, tone: "danger" as Tone })), { empty: "Brak yo'q", icon: "triangle-alert" }),
+    })), opts("Ishlab chiqarish qayd qilinmagan", "factory")),
+    ...(r.hourly ? [
+      section(`Soatma-soat · ${r.hourly.from}–${r.hourly.to}`, [
+        ...(r.hourly.before ? [{ id: repId.hour(r.iso, "early", cut), title: `${r.hourly.from} gacha`, subtitle: r.hourly.before.items, right: r.hourly.before.produced }] : []),
+        ...r.hourly.blocks.map((b) => ({
+          id: repId.hour(r.iso, hourOf(b.from), cut), title: `${b.from}–${b.to}`,
+          subtitle: [b.items || (b.state === "stopped" ? "to'xtab turdi" : "qayd yo'q"), b.defects ? `brak ${b.defects}` : null, ...b.events.filter((e) => e.tone !== "info").map((e) => `${e.time} ${e.brigade ?? ""} ${e.text}`.replace(/\s+/g, " "))].filter(Boolean).join(" · "),
+          right: b.produced || (b.downtimeMin ? `to'xtash ${minText(b.downtimeMin)}` : "—"),
+          tone: (b.state === "stopped" ? "danger" : b.state === "idle" ? "warning" : b.downtimeMin ? "warning" : "success") as Tone,
+        })),
+      ], opts(`Ish kuni ${r.hourly.from} dan boshlanadi`, "clock")),
+      section("Brigadirlar belgilagan muammolar", r.hourly.issues.map((x, i) => ({
+        id: x.id ? `brig-issue:${x.id}` : repId.hour(r.iso, hourOf(x.time), cut) + `~${i}`, title: `${x.kind}${x.equipment ? ` · ${x.equipment}` : ""}`,
+        subtitle: `${x.time} · ${x.brigade} · ${x.note}${x.downtimeMin ? ` · to'xtash ${minText(x.downtimeMin)}` : ""}${x.resolved ? ` · hal qilindi ${x.resolved}` : ""}`,
+        right: x.resolved ? "hal qilindi" : "ochiq", tone: (x.resolved ? "success" : "danger") as Tone,
+      })), opts("Muammo belgilanmagan", "triangle-alert")),
+    ] : []),
+    section("Yuklash", r.load.orders.map((o) => ({ id: o.id ? `orders:${o.id}` : none(`o${o.orderNo}`), title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.time ?? "—"} · ${o.items}`, right: o.left > 0 ? `qoldi ${num(o.left)}` : "✓", tone: o.left > 0 ? "warning" : "success" })), opts("Bugunga zayavka yo'q", "truck")),
+    section("Brigadalar", r.brigades.map((b, i) => ({ id: b.id ? repId.brigade(r.iso, b.id, cut) : none(`b${i}`), title: b.name, subtitle: b.today || "qayd yo'q", right: b.overdue ? `${b.overdue} kechikkan` : `${b.open} ochiq`, tone: b.overdue ? "danger" : b.today ? "success" : undefined })), opts("Faol brigada yo'q", "hard-hat")),
+    section("Brak", r.defects.map((d, i) => ({ id: d.id ? repId.defect(d.id) : none(`d${i}`), title: `${d.code} · ${d.reason}`, subtitle: `${d.time} · ${d.brigade ?? "—"} · ${d.by}`, right: `${num(d.qty)} ${unitLabel(d.unit)}`, tone: "danger" as Tone })), opts("Brak yo'q", "triangle-alert")),
     section("Davomat", [
-      ...r.staff.groups.map((g) => ({ id: `g-${g.name}`, title: g.name, right: `${g.present} / ${g.total}` })),
-      ...r.staff.away.map((a, i) => ({ id: `a-${i}`, title: a.name, right: a.status, tone: "warning" as Tone })),
-    ], { empty: "Sex xodimi yo'q", icon: "users" }),
-    section("Sklad — kam qolganlar", r.stock.filter((s) => s.level !== "ok").map((s) => ({ id: `s-${s.name}`, title: s.name, subtitle: `qoldiq ${num(s.balance)} ${s.unit} · ${days(s.days)}`, right: s.need > 0 ? `kerak ${num(s.need)} ${s.unit}` : STOCK_LEVEL_LABEL[s.level], tone: s.level === "short" ? "danger" : "warning" as Tone })), { empty: "Hamma xomashyo yetarli", icon: "layers" }),
+      ...r.staff.groups.map((g, i) => ({ id: `sex:attendance.g${i}`, title: g.name, right: `${g.present} / ${g.total}` })),
+      ...r.staff.away.map((a, i) => ({ id: a.id ? `sex-emp:${a.id}` : none(`a${i}`), title: a.name, right: a.status, tone: "warning" as Tone })),
+    ], opts("Sex xodimi yo'q", "users")),
+    section("Sklad — kam qolganlar", r.stock.filter((s) => s.level !== "ok").map((s, i) => ({ id: s.id ? `stock:${s.id}` : none(`s${i}`), title: s.name, subtitle: `qoldiq ${num(s.balance)} ${s.unit} · ${days(s.days)}`, right: s.need > 0 ? `kerak ${num(s.need)} ${s.unit}` : STOCK_LEVEL_LABEL[s.level], tone: s.level === "short" ? "danger" : "warning" as Tone })), opts("Hamma xomashyo yetarli", "layers")),
   ];
 }
 
@@ -377,6 +515,11 @@ const reportFields = (r: ReportSnapshot): DetailField[] => [
   f("Ishlab chiqarildi", r.producedToday && r.producedToday !== "0" ? r.producedToday : "—"),
   f("Yuklash", `${r.load.orders.length} zayavka`),
   f("Brak", r.defects.length ? `${r.defects.length} ta qayd` : "yo'q", r.defects.length ? "danger" : "success"),
+  ...(r.hourly ? [
+    f("Vaqt oralig'i", `${r.hourly.from}–${r.hourly.to}`),
+    f("To'xtab qolish", r.hourly.downtimeMin ? `${minText(r.hourly.downtimeMin)}${r.hourly.openIssues ? ` · ${r.hourly.openIssues} ochiq` : ""}` : "yo'q", r.hourly.downtimeMin ? "danger" : "success"),
+    ...(r.hourly.idleHours ? [f("Qaydsiz soatlar", `${r.hourly.idleHours} soat — na ish, na sabab`, "warning" as Tone)] : []),
+  ] : []),
 ];
 
 async function report(user: MobileUser): Promise<MobileDetail> {

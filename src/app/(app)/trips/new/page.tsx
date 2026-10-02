@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/eco/client";
 import { driverPositionNames } from "@/lib/positions";
 import { customerMarks, markedName } from "@/lib/finance";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { PageHeader } from "@/components/ui";
 import { TripForm } from "../trip-form";
 import { unitLabel } from "@/lib/unit";
@@ -14,7 +14,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 export default async function NewTrip({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
-  await requireSession(["LOGISTICS", "PRODUCTION"]);
+  await requireRoles(["LOGISTICS", "PRODUCTION"]);
   const { orderId } = await searchParams;
   const [orders, vehicles, drivers] = await Promise.all([
     db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, ...READINESS_INCLUDE } }),
@@ -23,10 +23,9 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
     db.vehicle.findMany({ where: { isActive: true, status: { not: "REPAIR" }, type: { in: ["MIXER", "TRUCK"] } }, orderBy: [{ type: "asc" }, { plate: "asc" }], include: { trips: { where: { status: { in: ACTIVE_TRIP } }, select: { status: true } } } }),
     db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" } }),
   ]);
-  // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar; birorta ham bo'lmasa — hamma xodim
-  const driverNames = (await driverPositionNames()).map((n) => n.toLowerCase());
-  const driversOnly = drivers.filter((d) => driverNames.includes(d.position.trim().toLowerCase()));
-  const driverOpts = driversOnly.length ? driversOnly : drivers;
+  // Otdel kadr "haydovchi ilovasiga chiqsin" deb belgilagan lavozimlar — reys faqat shularga ochiladi (`createTrip` ham tekshiradi)
+  const driverNames = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
+  const driverOpts = drivers.filter((d) => driverNames.includes(d.position.trim().toLowerCase()));
   const marks = await customerMarks(orders.map((o) => o.customerId));
   // Haydovchi ilovasiga reys telefon raqami bo'yicha boradi — raqamsiz xodim ECO'da topilmaydi
   const driverList = driverOpts.map((d) => ({ id: d.id, fullName: d.fullName, vehicleId: d.vehicleId, phoneOk: !!normalizePhone(d.phone) }));
@@ -35,7 +34,10 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
   const all = orders.map((o) => {
     const rd = orderReadiness(o);
     const plan = orderPlannedAt(o);
-    return { plannedAt: plan ? localInput(plan) : "", id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress, remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks, unit: unitLabel(rd.unit ?? "m3") };
+    // Aralash zayavka (beton + dona): birlik texnika turidan — mikserda m³, yuk mashinada dona birligi
+    const mixed = new Set(o.items.map((i) => i.product.unit === "m3")).size > 1;
+    const pieceUnit = o.items.find((i) => i.product.unit !== "m3")?.product.unit ?? "dona";
+    return { plannedAt: plan ? localInput(plan) : "", id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress, remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks, unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit) };
   });
   const opts = all.filter((o) => o.remainingM3 > 0);
   // Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavkalar — logist nima uchun ro'yxatda yo'qligini bilsin

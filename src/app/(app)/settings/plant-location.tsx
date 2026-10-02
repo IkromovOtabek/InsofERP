@@ -15,6 +15,7 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
   const [point, setPoint] = useState<{ lat: number; lng: number } | null>(lat != null && lng != null ? { lat, lng } : null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const el = useRef<HTMLDivElement | null>(null);
   const map = useRef<LMap | null>(null);
@@ -43,10 +44,10 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
 
   const save = async () => {
     if (!point) return;
-    setSaving(true);
+    setSaving(true); setError(null);
     try {
-      await savePlantLocation(point.lat, point.lng);
-      setSaved(true);
+      const r = await savePlantLocation(point.lat, point.lng);
+      if (r?.error) setError(r.error); else setSaved(true);
     } finally {
       setSaving(false);
     }
@@ -76,6 +77,7 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
           {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : null}
           {saved ? "Saqlandi" : "Saqlash"}
         </Button>
+        {error && <span className="text-red-600">{error}</span>}
       </div>
     </Card>
   );

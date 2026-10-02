@@ -14,6 +14,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "tsx scripts/reset-data.ts",
     "db:test-users": "tsx scripts/test-users.ts",
+    "db:demo": "tsx scripts/demo-data.ts",
     "db:studio": "prisma studio",
     "bot": "tsx watch --clear-screen=false scripts/telegram-bot.ts",
     "ai": "tsx scripts/ai-ask.ts",
@@ -35,6 +36,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "sharp": "^0.33.5",
     "tailwind-merge": "^3.3.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.1.0"

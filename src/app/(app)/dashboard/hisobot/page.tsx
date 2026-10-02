@@ -27,10 +27,10 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <div className="paper rounded-sm bg-white p-8 text-[12.5px] text-black print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+      <div className="paper min-w-0 rounded-sm bg-white p-4 sm:p-8 text-[12.5px] text-black print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav, header, .no-print { display: none !important } body { background: #fff } }`}</style>
 
-        <div className="mb-4 flex items-center justify-between gap-2 print:hidden">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
           <Link href="/dashboard" className="text-sm text-slate-500 hover:text-slate-900">← Bosh sahifa</Link>
           <div className="flex items-center gap-1 text-sm">
             <Link href={`?kun=${shiftDay(iso, -1)}`} className="rounded-md p-1.5 hover:bg-slate-100" aria-label="Oldingi kun"><ChevronLeft size={16} /></Link>
@@ -46,6 +46,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               {saved.length
                 ? <>Bu kun uchun hisobot <b>{saved.length} marta</b> qayd etilgan (oxirgisi {dateTime(saved[0].createdAt)}). Qayta qayd etsangiz yangi nusxa saqlanadi — oldingisi tarixda qoladi.</>
                 : <>Raqamlarni tekshirib, <b>&quot;Qayd etish&quot;</b> ni bosing — hisobot saqlanadi va direktor kabinetiga tushadi.</>}
+              {" "}Soatma-soat qism 08:00 dan tugma bosilgan daqiqagacha yoziladi — brigadirlar belgilagan to&apos;xtash va muammolar bilan.
             </div>
             <SaveReportForm iso={iso} />
           </div>

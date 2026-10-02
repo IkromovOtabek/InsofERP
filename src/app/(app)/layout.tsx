@@ -17,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const tourRaw = (await cookies()).get(TOUR_COOKIE)?.value;
   const tourStart = tourRaw ? decodeURIComponent(tourRaw) : null;
   return (
-    <AppShell items={navFor(s.role)} user={{ fullName: s.fullName, roleLabel: ROLE_LABELS[s.role] }} brand={company.name} ai={["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} apk={apk.exists ? apkSize(apk.size) : null} tour={{ steps: tourFor(s.role), start: tourStart }}>
+    <AppShell items={navFor(s.role, s.perms)} user={{ fullName: s.fullName, roleLabel: ROLE_LABELS[s.role] }} brand={company.name} ai={["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} apk={apk.exists ? apkSize(apk.size) : null} tour={{ steps: tourFor(s.role), start: tourStart }}>
       {/* Ma'lumot o'zi yangilanib turadi — sahifani qo'lda yangilash shart emas */}
       <LiveRefresh />
       {children}

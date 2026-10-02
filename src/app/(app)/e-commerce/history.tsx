@@ -2,7 +2,7 @@ import Link from "next/link";
 import { History, X } from "lucide-react";
 import { dateTime } from "@/lib/format";
 import type { ShopHistoryEntry } from "@/lib/shop-history";
-import { Badge, Card, Empty } from "@/components/ui";
+import { Badge, Card } from "@/components/ui";
 
 const ACTION = {
   CREATE: { label: "Qo'shdi", color: "green" },
@@ -28,7 +28,11 @@ export function ShopHistoryList({ entries, filter }: { entries: ShopHistoryEntry
         )}
       </div>
       {entries.length === 0 ? (
-        <Empty text="Hali o'zgarish yo'q" icon={History} />
+        // `Empty` jadval qatori (`<tr>`) — bu yerda oddiy blok kerak (gidratsiya xatosi bo'lmasin)
+        <div className="px-4 py-10 text-center">
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400"><History size={18} /></div>
+          <div className="text-sm text-slate-500">Hali o&apos;zgarish yo&apos;q</div>
+        </div>
       ) : (
         <ol className="divide-y divide-slate-100">
           {entries.map((e) => {

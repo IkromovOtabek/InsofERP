@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { ORDER_LOGI, orderLogistics, type OrderLogiStatus } from "@/lib/logistics";
 import { deliveryAt, qty } from "@/lib/format";
 import { Card, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -16,7 +16,7 @@ type Filter = "open" | "waiting" | "onroad" | "late" | "problem" | "done" | "all
  * qanchasi transportga biriktirilgan va yetkazilgan. Holat reyslardan chiqadi (`orderLogistics`).
  */
 export default async function LogisticsOrdersPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string }> }) {
-  await requireSession(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"]);
   const sp = await searchParams;
   const filter = (["open", "waiting", "onroad", "late", "problem", "done", "all"].includes(sp.filter ?? "") ? sp.filter : "open") as Filter;
   const now = new Date();

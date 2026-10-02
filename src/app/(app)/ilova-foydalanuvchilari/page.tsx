@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Search, Users, Briefcase, HardHat, Truck, Sparkles } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireRoles } from "@/lib/page-guard";
 import { eco, ecoEnabled, ecoUrl, type EcoAppRole, type EcoAppUser } from "@/lib/eco/client";
 import { dateTime } from "@/lib/format";
 import { ROLE_LABELS } from "@/lib/nav";
@@ -24,7 +24,7 @@ const NEW_DAYS = 7;
  * Manba ECO (`GET /v1/erp/app-users`), ERP'da saqlanmaydi. ERP mijoz/xodim kartasiga ulanganlari havola bilan chiqadi.
  */
 export default async function AppUsersPage({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string }> }) {
-  await requireSession(["DIRECTOR"]);
+  await requireRoles(["DIRECTOR"]);
   const { q = "", tab: rawTab } = await searchParams;
   const tab = (TABS as readonly string[]).includes(rawTab ?? "") ? rawTab! : "all";
   const enabled = ecoEnabled();

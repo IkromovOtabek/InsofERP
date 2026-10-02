@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Clock, ClipboardCheck, RefreshCw, Truck, TrendingUp, TrendingDown } from "lucide-react";
 import { db } from "@/lib/db";
-import { supplyList, lastPurchasePrices, priceDelta, priceKey, totalPlanned, plannedSum, SUPPLY_LABEL } from "@/lib/supply";
+import { supplyList, lastPurchasePrices, priceDelta, priceKey, totalPlanned, plannedSum, SUPPLY_LABEL, SUPPLY_MONEY_REJECTERS } from "@/lib/supply";
+import { getSession } from "@/lib/auth";
 import { money, fmtNum, date } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Card, CardHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { ApprovePanel, FundPanel } from "@/components/supply-panels";
+import { ApprovePanel, DirectorPanel, FundPanel } from "@/components/supply-panels";
 import { directorLimit, needsDirector } from "@/lib/procurement";
 
 /**
@@ -24,6 +25,10 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
   // "O'tgan safar necha edi" — aynan shu mahsulotning oxirgi xarid narxi (boshqa mahsulot bilan taqqoslanmaydi)
   const last = await lastPurchasePrices(rows.flatMap((r) => r.items.map((i) => ({ materialId: i.materialId, name: i.name }))));
   const limit = mode === "sales" ? await directorLimit() : 0;
+  // Ko'ruvchi: direktor katta xaridni shu yerning o'zida tasdiqlaydi/rad etadi; pul bosqichida bekor qilish — faqat moliya/direktor
+  const role = (await getSession())?.role;
+  const isDirector = role === "DIRECTOR";
+  const canRejectMoney = !!role && SUPPLY_MONEY_REJECTERS.includes(role);
 
   return (
     <Card className={cn("mb-6", mode === "finance" ? "border-amber-200" : "border-brand-500/40")}>
@@ -70,7 +75,7 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
               </summary>
 
               <div className="mt-3 space-y-3">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="text-left text-xs text-slate-500">
                       <th className="py-1">Nomi</th><th className="py-1 text-right">Miqdor</th><th className="py-1 text-right">Hozirgi narx</th>
@@ -121,13 +126,18 @@ export async function SupplyApprovals({ mode }: { mode: "sales" | "finance" }) {
                       <td className="py-1.5 text-right text-base font-semibold tabular">{money(total)}</td>
                     </tr>
                   </tbody>
-                </table>
+                </table></div>
 
                 {mode === "sales"
                   ? waitDirector
-                    ? <p className="text-sm text-amber-800">Jami {money(total)} — {money(limit)} dan katta xarid. Direktor tasdiqlagach shu yerda tasdiqlaysiz.</p>
+                    ? isDirector
+                      ? <div className="space-y-2">
+                          <p className="text-sm text-amber-800">Jami {money(total)} — {money(limit)} dan katta xarid: avval siz tasdiqlaysiz yoki rad etasiz.</p>
+                          <DirectorPanel id={r.id} />
+                        </div>
+                      : <p className="text-sm text-amber-800">Jami {money(total)} — {money(limit)} dan katta xarid. Direktor tasdiqlagach shu yerda tasdiqlaysiz.</p>
                     : <ApprovePanel id={r.id} total={total} compact />
-                  : <FundPanel id={r.id} total={total} accounts={accounts} compact />}
+                  : <FundPanel id={r.id} total={total} accounts={accounts} compact canReject={canRejectMoney} />}
                 <Link href={`/taminot/${r.id}`} className="inline-block text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline">To&apos;liq hujjatni ochish →</Link>
               </div>
             </details>
