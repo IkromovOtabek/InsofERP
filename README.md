@@ -323,6 +323,40 @@ src/lib/bi/answer.ts          AI panel va bot uchun umumiy javob funksiyasi
 Bot hech narsani o'zgartirmaydi — faqat o'qiydi. Webhook `src/middleware.ts` da login'dan ozod
 qilingan, o'rniga Telegram yuboradigan `X-Telegram-Bot-Api-Secret-Token` sarlavhasi tekshiriladi.
 
+## Telegram Gateway (kirish va parol tiklash kodlari)
+
+Kodni xodim raqamining Telegram hisobiga to'g'ridan-to'g'ri yuboradi — botga ulanish shart emas.
+Kod «Verification Codes» rasmiy chatiga keladi. Kanallar tartibi (`lib/sms-login.ts`, `lib/password-reset.ts`):
+
+```
+Insof ERP boti (hisob ulangan bo'lsa, bepul) → Telegram Gateway → SMS (Eskiz)
+```
+
+Raqamda Telegram bo'lmasa yoki Gateway xato bersa — navbatdagi kanal (SMS) ishlaydi.
+
+### Sozlash
+
+1. [gateway.telegram.org](https://gateway.telegram.org) → *Log in to Start* → Telegram orqali tasdiqlang
+2. [Budget](https://gateway.telegram.org/account/budget) → *Add Funds on Fragment*. Narx ~$0.01
+   har bir kod uchun; `ttl` (5 daqiqa) ichida yetmagan kodning puli avtomatik qaytadi.
+   Hisob egasining o'z raqamiga yuborish bepul.
+3. [API](https://gateway.telegram.org/account/api) → *Copy Token* → `.env` ga qo'shing:
+
+```bash
+TELEGRAM_GATEWAY_TOKEN="AAH..."
+TELEGRAM_GATEWAY_SENDER=""   # ixtiyoriy: Gateway'da tasdiqlangan kanal username — kod shu kanal nomidan keladi
+```
+
+4. Tekshiring va serverni qayta ishga tushiring:
+
+```bash
+npm run gateway                        # token holati (bepul)
+npm run gateway -- test 901234567      # haqiqiy sinov kodi
+npm run gateway -- holat <request_id>  # yetib bordimi / o'qildimi / pul qaytdimi
+```
+
+Test rejimida (`INSOF_ENV=test`) token bo'sh bo'lishi shart — aks holda server ishga tushmaydi.
+
 ## Insof ECO (haydovchi ilovasi) integratsiyasi
 
 Haydovchilar telefonida **Insof ECO** ilovasini ishlatadi (`~/Desktop/InsofECO`, NestJS API + Expo).
