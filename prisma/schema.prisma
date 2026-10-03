@@ -144,6 +144,8 @@ model CompanySettings {
   avgSpeedKmh         Int      @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
   // ── Snabjeniye: shu summadan (so'm) katta xarid avval direktor tasdig'idan o'tadi; 0 — cheklov yo'q ──
   supplyDirectorLimit Decimal  @default(50000000) @db.Decimal(18, 2)
+  /// "To'lanmagan kirimlar" shu sanadan keyingi kirimlarni ko'rsatadi (bo'sh — 2026-09-30); eski chiqimsiz kirimlar to'lov kutmaydi
+  payablesSince       DateTime?
   updatedAt           DateTime @updatedAt
 }
 
@@ -155,7 +157,7 @@ model Customer {
   inn         String?  @unique
   phone       String?
   address     String?
-  creditLimit Decimal  @default(100000000) @db.Decimal(18, 2) // standart 100 mln; ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
+  creditLimit Decimal  @default(0) @db.Decimal(18, 2) // yangi mijozga 0 (direktor/moliya oshiradi); ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
   /// Ichki "mijoz" — haqiqiy mijoz emas, tizimning o'zi ishlatadi (sklad zaxirasi zayavkasi shu nomga ochiladi).
   /// Mijozlar ro'yxati, limit, reyting va ECO sinxronidan chiqarib tashlanadi.
   isInternal  Boolean  @default(false)
@@ -354,6 +356,8 @@ model Warehouse {
   id       String  @id @default(cuid())
   name     String
   isActive Boolean @default(true)
+  /// Asosiy sklad: reys yuklash, brigada chiqargan mahsulot va brak shu skladdan boshlab ishlaydi (bittasi)
+  isDefault Boolean @default(false)
 
   stockMoves     StockMove[]
   receipts       GoodsReceipt[]
@@ -622,6 +626,8 @@ model StockMove {
   refType     String? // "GoodsReceipt" | "ProductionBatch" | "Trip"
   refId       String?
   note        String?
+  /// Formadagi bir martalik kalit — ikki marta bosilgan "qo'shish" ikkinchi harakat yozmasin
+  clientToken String?       @unique
   createdById String
   createdAt   DateTime      @default(now())
 
@@ -647,6 +653,12 @@ model GoodsReceipt {
   note        String?
   createdById String? // kirimni kiritgan sklad/snabjeniye xodimi — sotuvchi shu ma'lumotga tayanadi
   createdAt   DateTime @default(now())
+  /// Formadagi bir martalik kalit — ikki marta bosilgan "Saqlash" ikkinchi kirim ochmasin
+  clientToken String?  @unique
+  /// Storno: kirim bekor qilingan (sklad harakatlari teskari yozilgan) — kim, qachon, nima sababdan
+  cancelledAt DateTime?
+  cancelReason String?
+  cancelledById String?
 
   supplier  Supplier           @relation(fields: [supplierId], references: [id])
   warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
@@ -1129,6 +1141,10 @@ model ProductionBatch {
   note        String?
   createdById String
   createdAt   DateTime @default(now())
+  /// Storno: zames bekor qilingan (xomashyo qaytgan, mahsulot chiqarilgan) — kim, qachon, nima sababdan
+  cancelledAt DateTime?
+  cancelReason String?
+  cancelledById String?
 
   order     Order?  @relation(fields: [orderId], references: [id])
   product   Product @relation(fields: [productId], references: [id])

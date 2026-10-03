@@ -9,11 +9,13 @@ import { Button, Field, FormActions, FormError, Input, LinkButton, Select, Texta
 
 type Opt = { id: string; name: string };
 
-export function AddForm({ products, groups, canCreateProduct, warehouses }: {
+export function AddForm({ products, groups, canCreateProduct, warehouses, clientToken }: {
   products: CatalogProduct[];
   groups: CatalogGroup[];
   canCreateProduct: boolean;
   warehouses: Opt[];
+  /** Sahifa ochilganda server bergan bir martalik kalit — ikki marta bosish ikkinchi kirim yozmaydi */
+  clientToken?: string;
 }) {
   const [state, action, pending] = useActionState(addStock, undefined);
   const [productId, setProductId] = useState(products[0]?.id ?? "");
@@ -21,6 +23,7 @@ export function AddForm({ products, groups, canCreateProduct, warehouses }: {
   return (
     <form action={action} className="max-w-xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
+      {clientToken && <input type="hidden" name="clientToken" value={clientToken} />}
       {/* Zayavkadagi bilan bir xil spravochnik: nom terib ham, «…» orqali papkalardan ham tanlanadi */}
       <Field label="Mahsulot *" hint="Nomini yozing yoki «…» tugmasidan ro'yxatdan tanlang">
         <ProductSelect name="productId" products={products} groups={groups} canCreate={canCreateProduct} value={productId} onChange={setProductId} />

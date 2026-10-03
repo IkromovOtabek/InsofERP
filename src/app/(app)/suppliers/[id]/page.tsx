@@ -61,7 +61,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
               {ledger.unpaid.map((r) => (
                 <Tr key={r.id}>
                   <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link></Td>
-                  <Td>{date(r.date)}</Td><Td right>{r.lines}</Td><Td right className="font-semibold text-red-600">{money(r.total)}</Td>
+                  <Td>{date(r.date)}</Td><Td right>{r.lines}</Td><Td right className="font-semibold text-red-600">{money(r.left)}{r.paid > 0.005 && <span className="block text-xs font-normal text-slate-500">jami {money(r.total)}, to&apos;langan {money(r.paid)}</span>}</Td>
                 </Tr>
               ))}
             </tbody>

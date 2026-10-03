@@ -1372,7 +1372,7 @@ async function supplierDetail(user: MobileUser, id: string): Promise<MobileDetai
     },
   });
   if (!s) throw new ListError("NOT_FOUND", "Yetkazuvchi topilmadi", 404);
-  const spent = (await db.goodsReceipt.findMany({ where: { supplierId: id }, select: { items: { select: { qty: true, price: true } } } }))
+  const spent = (await db.goodsReceipt.findMany({ where: { cancelledAt: null, supplierId: id }, select: { items: { select: { qty: true, price: true } } } }))
     .reduce((a, r) => a + r.items.reduce((x, i) => x + sum(i.qty) * sum(i.price), 0), 0);
   const actions: DetailAction[] = [];
   if (can(user, "supplier.toggle")) {

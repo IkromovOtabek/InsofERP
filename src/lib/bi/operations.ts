@@ -4,13 +4,13 @@ import { type Range, type Gran, sum, safeDiv, kpi, series, addDays, startOfDay, 
 export async function operationsTab(r: Range, gran: Gran) {
   const today = startOfDay(new Date());
   const [batches, prevBatches, trips, prevTrips, vehicles, drivers, openOrders] = await Promise.all([
-    db.productionBatch.findMany({ where: { date: { gte: r.from, lt: r.to } }, include: { product: { select: { code: true, name: true, unit: true } }, order: { select: { orderNo: true } } } }),
-    db.productionBatch.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, include: { product: { select: { code: true, name: true, unit: true } }, order: { select: { orderNo: true } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true } }),
     db.trip.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, include: { vehicle: true, driver: true, order: { select: { deliveryDate: true, customer: { select: { name: true } } } } } }),
     db.trip.findMany({ where: { createdAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, status: true, loadedAt: true, deliveredAt: true } }),
     db.vehicle.findMany({ where: { isActive: true }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
     db.employee.findMany({ where: { isActive: true, trips: { some: {} } }, select: { id: true, fullName: true } }),
-    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: true, batches: true, trips: { where: { status: { not: "CANCELLED" } } } }, orderBy: { deliveryDate: "asc" } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: true, batches: { where: { cancelledAt: null } }, trips: { where: { status: { not: "CANCELLED" } } } }, orderBy: { deliveryDate: "asc" } }),
   ]);
 
   const produced = sum(batches.map((b) => Number(b.qtyM3))), prevProduced = sum(prevBatches.map((b) => Number(b.qtyM3)));

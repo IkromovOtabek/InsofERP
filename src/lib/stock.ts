@@ -24,8 +24,9 @@ export async function avgUnitCosts(
   const rows = await client.$queryRaw<{ materialId: string; type: string; cost: Prisma.Decimal | number | null }[]>`
     SELECT "materialId", "type"::text AS "type", SUM("qty" * "unitCost") / NULLIF(SUM("qty"), 0) AS "cost"
     FROM "StockMove"
-    WHERE "materialId" IS NOT NULL AND "unitCost" IS NOT NULL AND "qty" > 0
-      AND "type" IN ('RECEIPT', 'ADJUSTMENT')
+    WHERE "materialId" IS NOT NULL AND "unitCost" IS NOT NULL
+      -- RECEIPT ishorasi bilan: storno (teskari kirim, qty < 0, o'sha narx) asl kirimni o'rtachadan aynan chiqaradi
+      AND ("type" = 'RECEIPT' OR ("type" = 'ADJUSTMENT' AND "qty" > 0))
       AND (${ids}::text[] IS NULL OR "materialId" = ANY(${ids}::text[]))
     GROUP BY "materialId", "type"`;
   const receipt = new Map<string, number>();

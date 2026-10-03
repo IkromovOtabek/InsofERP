@@ -5,6 +5,7 @@ import { qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Role } from "@/generated/prisma";
+import { defaultWarehouse } from "@/lib/warehouse";
 
 /**
  * Topshiriq va brigada amallari — yagona rol matritsasi (veb sahifa, server action va mobil
@@ -63,7 +64,10 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
   const status = done >= Number(t.qty) - 0.0005 ? "DONE" : "IN_PROGRESS";
   const product = t.orderItem.product;
   const toYard = product.unit !== "m3"; // dona mahsulot hovliga qo'yiladi
-  const wh = toYard ? await db.warehouse.findFirst({ where: { isActive: true }, select: { id: true } }) : null;
+  // Tayyor dona mahsulot asosiy skladga (hovliga) kirim qilinadi. Sklad bo'lmasa — qayd ham yozilmaydi:
+  // aks holda topshiriq "bajarildi" bo'lib, mahsulot hech qayerda ko'rinmay qolardi
+  const wh = toYard ? await defaultWarehouse() : null;
+  if (toYard && !wh) return { changed: false, orderId: t.orderId, error: "Faol sklad yo'q — avval Sozlamalar → Skladlar bo'limida sklad oching, keyin bajarilganini qayd qiling" };
 
   const res = await db.$transaction(async (tx) => {
     // O'qilgan doneQty hali o'zgarmagan bo'lsagina yoziladi: ikki marta bosilsa (yoki brigadir va
@@ -108,8 +112,7 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
   if (!res) return { changed: false, orderId: t.orderId, error: TASK_STALE };
 
   const hints = [
-    toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} hovliga kirim qilindi (erkin qoldiq)` : null,
-    toYard && !wh ? "Sklad ochilmagan — tayyor mahsulot kirim qilinmadi" : null,
+    toYard && wh ? `${fq(qty)} ${unitLabel(product.unit)} hovliga kirim qilindi (${wh.name}, erkin qoldiq)` : null,
     res.closed ? "Zaxira to'liq tayyor — zayavka yopildi" : null,
     res.used.issued.length ? `Brigadada yetmagani skladdan avtomatik berildi: ${res.used.issued.join(", ")}` : null,
     res.used.deficit.length ? `DIQQAT: skladda ham yetmadi — brigada qoldig'i minusda: ${res.used.deficit.join(", ")}. Sklad va ishlab chiqarishga xabar ketdi` : null,

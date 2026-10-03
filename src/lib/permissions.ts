@@ -60,6 +60,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "assign",  label: "Brigadalarga taqsimlash",          roles: ["PRODUCTION"] },
     { key: "recipe",  label: "Retsept versiyasi / import",       roles: ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] },
     { key: "report",  label: "Brak, davomat, smena hisoboti",    roles: ["PRODUCTION", "SUPERVISOR"] },
+    { key: "batch_storno", label: "Zamesni storno qilish",       roles: [], hint: "Xomashyo skladga qaytadi, mahsulot chiqariladi — odatda faqat direktor" },
   ],
   tasks: [
     { key: "progress", label: "Bajarilgan hajmni qayd qilish",   roles: ["PRODUCTION", "SUPERVISOR"] },
@@ -86,6 +87,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   ],
   stock: [
     { key: "receipt",   label: "Kirim (xomashyo qabul qilish)",  roles: ["PROCUREMENT", "WAREHOUSE"] },
+    { key: "receipt_storno", label: "Kirimni storno qilish",    roles: [], hint: "Sklad harakatlari teskari yoziladi — odatda faqat direktor" },
     { key: "adjust",    label: "Inventarizatsiya va spisanie",   roles: ["WAREHOUSE"] },
     { key: "brigade",   label: "Brigadaga berish / qaytarish",   roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"] },
     { key: "products",  label: "Tayyor mahsulot qoldig'ini kiritish", roles: ["WAREHOUSE", "PRODUCTION"] },

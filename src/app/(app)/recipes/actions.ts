@@ -10,6 +10,15 @@ import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import { num, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
 import { toMaterialUnit } from "@/lib/unit";
+import type { Prisma } from "@/generated/prisma";
+
+/**
+ * Retsept versiyasi qulfi (mahsulot bo'yicha). Faol versiya har doim bitta: yangisi yoziladigan tranzaksiyada
+ * eskilari nofaol qilinadi. Zames ham, brigada sarfi ham faol versiyalardan eng yangisini (`version desc`) oladi.
+ */
+async function lockRecipe(tx: Prisma.TransactionClient, productId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"recipe:" + productId}))`;
+}
 
 // Retsept kiritish huquqi: production → "recipe" amali (lib/permissions.ts) — ishlab chiqarish va sklad, direktor bergan xodim
 
@@ -90,6 +99,8 @@ export async function createRecipeVersion(productId: string, _prev: ActionState,
   if (cycle) return { error: `Retseptlar aylanib qoladi: ${cycle.join(" → ")}. Bir mahsulot ikkinchisiga, u esa birinchisiga ingredient bo'la olmaydi.` };
 
   await db.$transaction(async (tx) => {
+    // Mahsulot bo'yicha navbat: bir vaqtdagi ikki saqlash ikkita faol versiya qoldirmasin
+    await lockRecipe(tx, productId);
     const last = await tx.recipe.findFirst({ where: { productId }, orderBy: { version: "desc" } });
     await tx.recipe.updateMany({ where: { productId, isActive: true }, data: { isActive: false } });
     const rec = await tx.recipe.create({
@@ -150,6 +161,7 @@ export async function importRecipesFromExcel(_prev: ActionState, fd: FormData): 
       byProduct.set(pid, m);
     }
     for (const [productId, items] of byProduct) {
+      await lockRecipe(tx, productId);
       const last = await tx.recipe.findFirst({ where: { productId }, orderBy: { version: "desc" } });
       await tx.recipe.updateMany({ where: { productId, isActive: true }, data: { isActive: false } });
       const rec = await tx.recipe.create({ data: { productId, version: (last?.version ?? 0) + 1, note: "Excel'dan import", items: { create: [...items].map(([materialId, qtyPerM3]) => ({ materialId, qtyPerM3 })) } } });

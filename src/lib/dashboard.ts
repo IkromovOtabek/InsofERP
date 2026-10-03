@@ -18,7 +18,7 @@ export async function materialOutlook(opts: { until?: Date } = {}) {
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since } }, _sum: { qty: true } }),
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, ...(opts.until ? { deliveryDate: { lt: opts.until } } : {}) },
-      include: { customer: { select: { name: true } }, items: { include: { task: { select: { doneQty: true } }, product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: true },
+      include: { customer: { select: { name: true } }, items: { include: { task: { select: { doneQty: true } }, product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } },
     }),
   ]);
   const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));

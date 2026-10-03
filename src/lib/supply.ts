@@ -506,6 +506,12 @@ export async function receiveSupplyRequest(
     if (req.cashTxId) {
       const before = await tx.cashTransaction.findUnique({ where: { id: req.cashTxId } });
       if (before) {
+        // Fakt summa rejadan oshsa — farq kassadan qo'shimcha chiqadi: naqd kassa minusga tushmasin
+        const extra = factTotal - Number(before.amount);
+        if (extra > 0.005) {
+          const cashErr = await cashOutflowError(tx, before.cashAccountId, extra);
+          if (cashErr) throw new Error(`Fakt summa rejadan ${ROUND(extra)} so'm ko'p. ${cashErr}`);
+        }
         const after = await tx.cashTransaction.update({
           where: { id: req.cashTxId },
           data: { amount: factTotal, supplierId, note: `Ta'minot ${req.docNo} · kirim ${rec.docNo}${deliveryFact > 0 ? ` + dostavka ${ROUND(deliveryFact)}` : ""} (fakt)`, refType: "GoodsReceipt", refId: rec.id },

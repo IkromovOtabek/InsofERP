@@ -360,7 +360,7 @@ const productionSummary: Tool = {
   run: async (a) => {
     const p = period(a)!;
     const [batches, tasks] = await Promise.all([
-      db.productionBatch.findMany({ where: { date: { gte: p.from, lt: p.to } }, include: { product: { select: { code: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } }, orderBy: { date: "asc" } }),
+      db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: p.from, lt: p.to } }, include: { product: { select: { code: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } }, orderBy: { date: "asc" } }),
       db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, include: { brigade: { select: { name: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, orderItem: { select: { product: { select: { code: true } } } } }, orderBy: { dueDate: "asc" } }),
     ]);
     const total = sum(batches.map((b) => Number(b.qtyM3)));
@@ -435,7 +435,7 @@ const receiptsList: Tool = {
   run: async (a) => {
     const p = period(a)!;
     const rows = await db.goodsReceiptItem.findMany({
-      where: { receipt: { date: { gte: p.from, lt: p.to }, ...(str(a.supplier) ? { supplier: { name: like(str(a.supplier)) } } : {}) }, ...(str(a.material) ? { material: { name: like(str(a.material)) } } : {}) },
+      where: { receipt: { cancelledAt: null, date: { gte: p.from, lt: p.to }, ...(str(a.supplier) ? { supplier: { name: like(str(a.supplier)) } } : {}) }, ...(str(a.material) ? { material: { name: like(str(a.material)) } } : {}) },
       include: { receipt: { select: { docNo: true, date: true, supplier: { select: { name: true } } } }, material: { select: { name: true, unit: true } } },
       orderBy: { receipt: { date: "desc" } }, take: 200,
     });

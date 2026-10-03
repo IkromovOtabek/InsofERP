@@ -16,7 +16,8 @@ type Row = { key: number; materialId: string; qty: string; price: string };
 
 type Account = Opt & { type: "CASH" | "BANK" };
 
-export function ReceiptForm({ suppliers, warehouses, materials, groups = [], canCreate = false, accounts }: { suppliers: Opt[]; warehouses: Opt[]; materials: Material[]; groups?: MaterialGroup[]; canCreate?: boolean; accounts: Account[] }) {
+/** `clientToken` — sahifa ochilganda server bergan bir martalik kalit: ikki marta bosilgan "Saqlash" ikkinchi kirim ochmaydi. */
+export function ReceiptForm({ suppliers, warehouses, materials, groups = [], canCreate = false, accounts, clientToken }: { suppliers: Opt[]; warehouses: Opt[]; materials: Material[]; groups?: MaterialGroup[]; canCreate?: boolean; accounts: Account[]; clientToken?: string }) {
   const [state, action, pending] = useActionState(createReceipt, undefined);
   const [rows, setRows] = useState<Row[]>([{ key: 1, materialId: "", qty: "", price: "" }]);
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -29,6 +30,7 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
   return (
     <form action={action} className="max-w-3xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
+      {clientToken && <input type="hidden" name="clientToken" value={clientToken} />}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Yetkazuvchi *">
           <Select name="supplierId" defaultValue="" required>

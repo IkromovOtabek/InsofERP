@@ -11,6 +11,18 @@ import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "
 import { num, numMoney, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
 import { toMaterialUnit } from "@/lib/unit";
+import { cashOutflowError } from "@/lib/payments";
+import { cancelReceipt } from "@/lib/storno";
+import { Prisma } from "@/generated/prisma";
+
+/** Tranzaksiya ichidan foydalanuvchiga ko'rinadigan xato (kassa yetmaydi va h.k.). */
+class ReceiptError extends Error {}
+
+/** Formadagi bir martalik kalit (brauzer yaratadi): bo'sh yoki g'alati bo'lsa — e'tiborga olinmaydi. */
+const tokenOf = (v: FormDataEntryValue | null) => {
+  const t = typeof v === "string" ? v.trim() : "";
+  return /^[A-Za-z0-9-]{16,64}$/.test(t) ? t : null;
+};
 
 const schema = z.object({
   supplierId: zStr("Yetkazuvchi tanlanmagan"),
@@ -67,6 +79,14 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
   const n = receiptNote(d);
   if ("error" in n) return { error: n.error };
 
+  // Ikki marta bosilgan "Saqlash" (yoki tarmoq qayta yuborgan so'rov) ikkinchi kirim ochmasin:
+  // shu kalit bilan kirim allaqachon bor bo'lsa — o'shanga qaytamiz. Poyga holati — `clientToken` unique.
+  const clientToken = tokenOf(fd.get("clientToken"));
+  if (clientToken) {
+    const dup = await db.goodsReceipt.findUnique({ where: { clientToken }, select: { id: true } });
+    if (dup) redirect(`/receipts/${dup.id}`);
+  }
+
   // Sklad, yetkazuvchi, xomashyo va hisob — mavjud va faol bo'lsin (aks holda bazada FK xatosi → 500)
   const ids = [...new Set(items.map((i) => i.materialId))];
   const [wh, sup, mats, acc] = await Promise.all([
@@ -84,7 +104,7 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
 
   const id = await db.$transaction(async (tx) => {
     const rec = await tx.goodsReceipt.create({
-      data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: s.userId, items: { create: items } },
+      data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: s.userId, clientToken, items: { create: items } },
     });
     await tx.stockMove.createMany({
       data: items.map((i) => ({
@@ -96,6 +116,9 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
     // Kirim-Chiqimda "To'lanmagan kirimlar" ro'yxatiga tushadi va moliya to'laydi (`payReceipt`).
     // Direktor esa hisobni tanlab, shu zahoti to'langan deb yozishi mumkin.
     if (total > 0 && acc) {
+      // Naqd kassa minusga tushmasin (qulf ostida) — bankdan to'lash yoki to'lovni moliyaga qoldirish kerak
+      const cashErr = await cashOutflowError(tx, acc.id, total);
+      if (cashErr) throw new ReceiptError(`${cashErr}. Hisobni o'zgartiring yoki to'lovsiz saqlang — moliya keyin to'laydi`);
       const cashTx = await tx.cashTransaction.create({
         data: {
           type: "EXPENSE", date, cashAccountId: acc.id, amount: total,
@@ -108,7 +131,14 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
     }
     await audit(tx, s.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items });
     return rec.id;
-  }).catch((e: Error) => ({ error: e.message }));
+  }).catch(async (e: Error) => {
+    // Bir vaqtda kelgan ikki bir xil yuborish: ikkinchisi unique kalitga urildi — birinchisining kirimi ochiladi
+    if (clientToken && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const dup = await db.goodsReceipt.findUnique({ where: { clientToken }, select: { id: true } });
+      if (dup) return dup.id;
+    }
+    return { error: e.message };
+  });
   if (typeof id === "object") return { error: id.error };
   revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/suppliers");
   redirect(`/receipts/${id}`);
@@ -172,4 +202,16 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
   if (typeof out === "object") return out;
   revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new");
   redirect(`/receipts/${out}`);
+}
+
+/**
+ * Kirimni storno qilish — faqat direktor (yoki direktor "Kirimni storno qilish" amalini bergan xodim).
+ * Qoida `lib/storno.ts` da: teskari sklad harakatlari, to'lov bog'langan bo'lsa rad, qoldiq minusga tushmasin.
+ */
+export async function stornoReceipt(id: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("stock", "receipt_storno");
+  const r = await cancelReceipt(id, String(reason ?? "").slice(0, 300), s.userId);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/receipts"); revalidatePath(`/receipts/${id}`); revalidatePath("/stock"); revalidatePath("/cashflow"); revalidatePath("/suppliers"); revalidatePath("/");
+  return { ok: true, note: r.note };
 }

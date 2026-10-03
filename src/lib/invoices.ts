@@ -11,19 +11,18 @@ export type InvoiceResult = { id?: string; invoiceNo?: string; status?: string; 
 
 export async function createInvoice(input: { orderId: string; amount: number; date: Date }, userId: string): Promise<InvoiceResult> {
   if (!(input.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
-  const o = await db.order.findUnique({ where: { id: input.orderId }, include: { invoices: { where: { status: { not: "CANCELLED" } } }, items: { select: { qtyM3: true, price: true } } } });
-  if (!o) return { error: "Zayavka topilmadi" };
-  // Schyot zayavka summasidan oshmaydi (narxda NDS bor — `lib/nds.ts`): xato raqam mijozni qarzdor/qora ro'yxatga tushirmasin
-  const orderTotal = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0);
-  if (input.amount > orderTotal + 0.005) return { error: `Schyot zayavka summasidan (${Math.round(orderTotal).toLocaleString("ru-RU")} so'm) ko'p bo'lolmaydi` };
-  if (["DRAFT", "BLOCKED", "CANCELLED"].includes(o.status)) return { error: "Tasdiqlanmagan zayavkaga schyot yozib bo'lmaydi" };
-  if (o.invoices.length) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
 
   return db.$transaction(async (tx) => {
-    // Zayavka qulflanadi va tekshiruv qaytariladi: ikki marta bosish (yoki veb + ilova) ikkita schyot ochmasin
-    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${o.id} FOR UPDATE`;
-    const already = await tx.invoice.count({ where: { orderId: o.id, status: { not: "CANCELLED" } } });
-    if (already) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
+    // Zayavka qulflanadi va BARCHA tekshiruvlar qulf ostida o'qiladi: ikki marta bosish (yoki veb + ilova)
+    // ikkita schyot ochmasin, shu payt bekor qilingan / o'zgargan zayavkaga schyot yozilmasin
+    await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
+    const o = await tx.order.findUnique({ where: { id: input.orderId }, include: { invoices: { where: { status: { not: "CANCELLED" } }, select: { id: true } }, items: { select: { qtyM3: true, price: true } } } });
+    if (!o) return { error: "Zayavka topilmadi" };
+    // Schyot zayavka summasidan oshmaydi (narxda NDS bor — `lib/nds.ts`): xato raqam mijozni qarzdor/qora ro'yxatga tushirmasin
+    const orderTotal = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0);
+    if (input.amount > orderTotal + 0.005) return { error: `Schyot zayavka summasidan (${Math.round(orderTotal).toLocaleString("ru-RU")} so'm) ko'p bo'lolmaydi` };
+    if (["DRAFT", "BLOCKED", "CANCELLED"].includes(o.status)) return { error: "Tasdiqlanmagan zayavkaga schyot yozib bo'lmaydi" };
+    if (o.invoices.length) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
     const inv = await tx.invoice.create({ data: { invoiceNo: await nextNo(tx, "invoice", "S"), date: input.date, customerId: o.customerId, orderId: o.id, amount: input.amount } });
     await audit(tx, userId, "CREATE", "Invoice", inv.id, undefined, inv);
     // Zayavka ochilganda olingan oldindan to'lov (avans) shu schyotga bog'lanadi

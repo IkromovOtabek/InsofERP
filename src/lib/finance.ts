@@ -1,8 +1,11 @@
 import { db } from "./db";
 import type { Prisma } from "@/generated/prisma";
 
-/** Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm). */
-export const DEFAULT_CREDIT_LIMIT = 100_000_000;
+/**
+ * Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm): 0 — yangi mijoz qarzga olmaydi,
+ * naqd/avans bilan ishlaydi. Qarz berish kerak bo'lsa direktor/moliya mijoz kartasida limitni oshiradi.
+ */
+export const DEFAULT_CREDIT_LIMIT = 0;
 
 /**
  * Qarz va limit — hisob qoidasi (bitta joyda):
@@ -64,7 +67,8 @@ function creditOf(limit: number, rawDebt: number, rawOpen: number): CustomerCred
   const open = Math.max(0, rawOpen + Math.min(0, rawDebt));
   const used = debt + open;
   const free = limit - used;
-  return { limit, debt, open, used, net: rawDebt + rawOpen, free, blacklisted: free <= 0 };
+  // Qora ro'yxat — limitdan foydalangan va u to'lgan mijoz. Limiti 0 (yangi, naqd) mijoz qarzi bo'lmasa qora ro'yxatda emas
+  return { limit, debt, open, used, net: rawDebt + rawOpen, free, blacklisted: free <= 0 && (limit > 0 || used > 0.005) };
 }
 
 /**

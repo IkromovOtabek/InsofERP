@@ -17,9 +17,10 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
 import { DeletionRow } from "./deletion-forms";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
+import { DEFAULT_PAYABLES_SINCE } from "@/lib/receipt-payables";
 import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 
 const TABS = [
@@ -118,6 +119,12 @@ async function CompanyTab() {
         <h2 className="mb-1 font-semibold">Kunlik zayavka limiti</h2>
         <p className="mb-3 text-sm text-slate-500">Bir yetkazish kuniga qabul qilinadigan eng ko&apos;p beton hajmi (m³) va zayavkalar soni. Chegaradan oshsa zayavka <b>qabul qilinmaydi</b> (tasdiqlashda tekshiriladi). 0 yoki bo&apos;sh — cheklov yo&apos;q. Bu «Kunlik quvvat» (kalendar rangi) dan alohida qattiq cheklov. Hozir: <b>{Number(c.dailyOrderMaxM3) > 0 ? `${Number(c.dailyOrderMaxM3)} m³` : "hajm cheklanmagan"}</b>, <b>{c.dailyOrderMaxCount ? `${c.dailyOrderMaxCount} ta` : "son cheklanmagan"}</b>.</p>
         <DailyOrderLimitForm m3={Number(c.dailyOrderMaxM3 ?? 0)} count={Number(c.dailyOrderMaxCount ?? 0)} />
+      </Card>
+      <Card>
+        <h2 className="mb-1 font-semibold">To&apos;lanmagan kirimlar — boshlanish sanasi</h2>
+        <p className="mb-3 text-sm text-slate-500">Kirim-Chiqimdagi «To&apos;lanmagan kirimlar» ro&apos;yxati va yetkazuvchi qarzi shu sanadan keyin kiritilgan kirimlardan hisoblanadi. Undan oldingi chiqimsiz kirimlar (Excel import, dastlabki ma&apos;lumot) to&apos;lov kutmaydi.</p>
+        {/* Sana Toshkent vaqti bo'yicha ko'rsatiladi (UTC+5) */}
+        <PayablesSinceForm value={new Date((c.payablesSince ?? DEFAULT_PAYABLES_SINCE).getTime() + 5 * 3_600_000).toISOString().slice(0, 10)} />
       </Card>
     </div>
   );
@@ -288,8 +295,8 @@ async function WarehousesTab() {
         <div className="divide-y divide-slate-100">
           {list.map((w) => (
             <div key={w.id} className="py-3">
-              <div className="mb-1 text-xs text-slate-500">{w._count.stockMoves} ta harakat</div>
-              <RowForm action={saveWarehouse.bind(null, w.id)} cols={3} fields={[{ name: "name", label: "Nomi", defaultValue: w.name, required: true }, { name: "isActive", label: "Faol", type: "checkbox", defaultValue: w.isActive }]} />
+              <div className="mb-1 text-xs text-slate-500">{w._count.stockMoves} ta harakat{w.isDefault && <b className="text-emerald-700"> · asosiy sklad</b>}</div>
+              <RowForm action={saveWarehouse.bind(null, w.id)} cols={3} fields={[{ name: "name", label: "Nomi", defaultValue: w.name, required: true }, { name: "isActive", label: "Faol", type: "checkbox", defaultValue: w.isActive }, { name: "isDefault", label: "Asosiy (reys, brigada, brak)", type: "checkbox", defaultValue: w.isDefault }]} />
             </div>
           ))}
         </div>

@@ -26,7 +26,7 @@ export async function forecastTab() {
   const today = startOfDay(new Date()), from60 = addDays(today, -60);
   const [sales, materials, batches, shares, products] = await Promise.all([
     loadSales(from60, addDays(today, 1)), materialOverview(),
-    db.productionBatch.findMany({ where: { date: { gte: from60 } }, select: { date: true, qtyM3: true } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: from60 } }, select: { date: true, qtyM3: true } }),
     db.orderItem.findMany({ where: { order: { date: { gte: addDays(today, -30) }, status: { in: ACTIVE_ORDER } } }, select: { productId: true, qtyM3: true } }),
     db.product.findMany({ where: { isActive: true }, include: { recipes: { where: { isActive: true }, include: { items: true } } } }),
   ]);
@@ -73,7 +73,7 @@ export async function anomaliesTab(filter: { level?: string; source?: string; pa
   const [items, payments, batches, adjustments, trips] = await Promise.all([
     db.orderItem.findMany({ where: { order: { date: { gte: since } } }, include: { product: { select: { code: true, price: true } }, order: { select: { id: true, orderNo: true, date: true, status: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } } } } } }),
     db.payment.findMany({ where: { date: { gte: since } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } } } }),
-    db.productionBatch.findMany({ where: { date: { gte: since } }, include: { product: { select: { code: true } }, createdBy: { select: { fullName: true } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: since } }, include: { product: { select: { code: true } }, createdBy: { select: { fullName: true } } } }),
     db.stockMove.findMany({ where: { date: { gte: since }, type: { in: ["ADJUSTMENT", "WRITE_OFF"] } }, include: { material: { select: { name: true } }, product: { select: { code: true } }, createdBy: { select: { fullName: true } } } }),
     db.trip.findMany({ where: { createdAt: { gte: since }, status: "CANCELLED" }, include: { vehicle: true, driver: true, order: { select: { orderNo: true } } } }),
   ]);

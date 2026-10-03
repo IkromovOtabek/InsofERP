@@ -112,19 +112,28 @@ export async function saveMaterial(id: string | null, _prev: ActionState, fd: Fo
 
 /* ───────── Skladlar ───────── */
 
-const whSchema = z.object({ name: zStr("Nomi kerak"), isActive: zBool });
+const whSchema = z.object({ name: zStr("Nomi kerak"), isActive: zBool, isDefault: zBool });
 
+/**
+ * Sklad saqlash. "Asosiy sklad" bittagina bo'ladi: belgilansa qolganlaridan olinadi (reys yuklash,
+ * brigada chiqargan mahsulot va brak shu skladdan boshlab ishlaydi — `lib/warehouse.ts`).
+ */
 export async function saveWarehouse(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(whSchema, fd);
   if ("error" in r) return { error: r.error };
-  if (id) {
-    await db.warehouse.update({ where: { id }, data: r.data });
-    await audit(db, s.userId, "UPDATE", "Warehouse", id, undefined, r.data);
-  } else {
-    const w = await db.warehouse.create({ data: { name: r.data.name } });
-    await audit(db, s.userId, "CREATE", "Warehouse", w.id, undefined, w);
-  }
+  if (r.data.isDefault && id && !r.data.isActive) return { error: "Nofaol sklad asosiy bo'lolmaydi" };
+  await db.$transaction(async (tx) => {
+    if (r.data.isDefault) await tx.warehouse.updateMany({ where: { isDefault: true, ...(id ? { id: { not: id } } : {}) }, data: { isDefault: false } });
+    if (id) {
+      const before = await tx.warehouse.findUnique({ where: { id } });
+      await tx.warehouse.update({ where: { id }, data: r.data });
+      await audit(tx, s.userId, "UPDATE", "Warehouse", id, before, r.data);
+    } else {
+      const w = await tx.warehouse.create({ data: { name: r.data.name, isDefault: r.data.isDefault } });
+      await audit(tx, s.userId, "CREATE", "Warehouse", w.id, undefined, w);
+    }
+  });
   refresh();
   return { ok: true };
 }
@@ -279,6 +288,26 @@ export async function saveSupplyDirectorLimit(_prev: ActionState, fd: FormData):
   await db.companySettings.upsert({ where: { id: "main" }, update: { supplyDirectorLimit: r.data.supplyDirectorLimit }, create: { id: "main", supplyDirectorLimit: r.data.supplyDirectorLimit } });
   await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ? { supplyDirectorLimit: Number(before.supplyDirectorLimit) } : undefined, { supplyDirectorLimit: r.data.supplyDirectorLimit });
   refresh(); revalidatePath("/dashboard/byudjet"); revalidatePath("/taminot");
+  return { ok: true };
+}
+
+/* ───────── To'lanmagan kirimlar sanasi (direktor) ───────── */
+
+const payablesSchema = z.object({
+  payablesSince: zStr("Sana kerak").refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(new Date(v).getTime()), "Sana noto'g'ri"),
+});
+
+/** Shu sanadan (Toshkent vaqti) keyin kiritilgan kirimlar "To'lanmagan kirimlar" ro'yxatiga tushadi. */
+export async function savePayablesSince(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(payablesSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const since = new Date(`${r.data.payablesSince}T00:00:00+05:00`);
+  if (since.getTime() > Date.now()) return { error: "Kelajakdagi sana bo'lmasin" };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { payablesSince: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, update: { payablesSince: since }, create: { id: "main", payablesSince: since } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", { payablesSince: before?.payablesSince ?? null }, { payablesSince: since });
+  refresh(); revalidatePath("/cashflow"); revalidatePath("/suppliers");
   return { ok: true };
 }
 

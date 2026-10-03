@@ -39,7 +39,13 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   ]);
 
   const canPay = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
-  const [marks, unpaid] = await Promise.all([customerMarks(payments.map((p) => p.customerId)), unpaidReceipts()]);
+  const [marks, unpaid, supplyTx] = await Promise.all([
+    customerMarks(payments.map((p) => p.customerId)),
+    unpaidReceipts(),
+    // Ta'minot zanjirining chiqimlari kirimga bog'langan bo'lsa ham bu yerdan o'chirilmaydi
+    db.supplyRequest.findMany({ where: { cashTxId: { in: txs.filter((t) => t.refType === "GoodsReceipt").map((t) => t.id) } }, select: { cashTxId: true } }),
+  ]);
+  const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
   const rows: Row[] = [
     ...payments.map((p): Row => ({ id: p.id, date: p.date, kind: "INCOME", account: p.cashAccount.name, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
@@ -51,7 +57,9 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
         : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
         : undefined,
-      deletable: !t.refType, // hujjatga bog'langanini bu yerdan o'chirib bo'lmaydi — hujjatning o'zidan tuzatiladi
+      // Hujjatga bog'langanini bu yerdan o'chirib bo'lmaydi — hujjatning o'zidan tuzatiladi. Istisno: kirim hujjatiga
+      // to'lov (o'chirish = to'lov storno, kirim yana "to'lanmagan" bo'ladi), ta'minot zanjirinikidan tashqari
+      deletable: !t.refType || (t.refType === "GoodsReceipt" && !supplyTxIds.has(t.id)),
     })),
   ].filter((r) => (tab === "all" || r.kind === tab) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`))).sort((a, b) => b.date.getTime() - a.date.getTime());
 
@@ -78,7 +86,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       {unpaid.length > 0 && (
         <Card className="mb-6">
           <h2 className="mb-1 font-semibold">To&apos;lanmagan kirimlar <Badge color="amber">{unpaid.length}</Badge></h2>
-          <p className="mb-3 text-sm text-slate-500">Xomashyo skladga kirim qilingan, yetkazuvchiga hali pul to&apos;lanmagan. Jami {money(unpaid.reduce((x, r) => x + r.total, 0))}.</p>
+          <p className="mb-3 text-sm text-slate-500">Xomashyo skladga kirim qilingan, yetkazuvchiga hali to&apos;liq pul to&apos;lanmagan. Qolgan jami {money(unpaid.reduce((x, r) => x + r.left, 0))}. Summa bo&apos;sh qolsa — qolgani to&apos;liq to&apos;lanadi; qisman to&apos;lash uchun summani yozing.</p>
           <Table>
             <thead><tr><Th>Sana</Th><Th>Kirim</Th><Th>Yetkazuvchi</Th><Th right>Summa</Th><Th></Th></tr></thead>
             <tbody>
@@ -87,10 +95,10 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
                   <Td>{date(r.date)}</Td>
                   <Td><Link href={`/receipts/${r.id}`} className="font-medium text-slate-800 hover:underline">{r.docNo} →</Link> <span className="text-xs text-slate-500">{r.lines} qator</span></Td>
                   <Td>{r.supplier}</Td>
-                  <Td right className="font-medium">{money(r.total)}</Td>
+                  <Td right className="font-medium">{money(r.left)}{r.paid > 0.005 && <span className="block text-xs font-normal text-slate-500">jami {money(r.total)}, to&apos;langan {money(r.paid)}</span>}</Td>
                   <Td>
                     {canPay ? (
-                      <PayReceiptForm receiptId={r.id} accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} />
+                      <PayReceiptForm receiptId={r.id} left={r.left} accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} />
                     ) : <span className="text-xs text-slate-500">Moliya to&apos;laydi</span>}
                   </Td>
                 </Tr>
@@ -103,7 +111,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} suppliers={suppliers} incomeCats={INCOME_CATEGORIES} expenseCats={EXPENSE_CATEGORIES} />
+          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={INCOME_CATEGORIES} expenseCats={EXPENSE_CATEGORIES} />
         </Card>
         <Card className="lg:col-span-2">
           <h2 className="mb-3 font-semibold">Chiqimlar kategoriya bo&apos;yicha</h2>

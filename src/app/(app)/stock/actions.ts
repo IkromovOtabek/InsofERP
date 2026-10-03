@@ -10,6 +10,7 @@ import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/actio
 import { num, str, codeFromName } from "@/lib/excel";
 import { normalizeUnit, UNIT_FALLBACK, toMaterialUnit } from "@/lib/unit";
 import { ensureMaterialGroup } from "@/lib/material-groups";
+import { cashOutflowError } from "@/lib/payments";
 
 
 const schema = z.object({
@@ -45,6 +46,9 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
   const wh = await db.warehouse.findUnique({ where: { id: r.data.warehouseId } });
   if (!wh || !wh.isActive) return { error: "Sklad topilmadi" };
   const director = s.role === "DIRECTOR";
+  // To'lov hisobi (faqat direktor) mavjud va faol bo'lsin — aks holda bazada FK xatosi (500) chiqardi
+  const payAcc = r.data.cashAccountId && director ? await db.cashAccount.findFirst({ where: { id: r.data.cashAccountId, isActive: true }, select: { id: true } }) : null;
+  if (r.data.cashAccountId && director && !payAcc) return { error: "To'lov hisobi topilmadi yoki yopilgan" };
 
   const out = await db.$transaction(async (tx) => {
     const all = await tx.material.findMany();
@@ -104,10 +108,13 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
 
     // Qo'shilgan xomashyo summasi — hisobdan chiqim bo'lib Kirim-Chiqimga tushadi
     // Kassadan chiqimni faqat direktor shu yerdan yozadi (boshqalarga hisob tanlash berilmaydi)
-    if (cost > 0 && r.data.cashAccountId && s.role === "DIRECTOR") {
+    if (cost > 0 && payAcc) {
+      // Naqd kassa minusga tushmasin — qulf ostida tekshiriladi
+      const cashErr = await cashOutflowError(tx, payAcc.id, cost);
+      if (cashErr) throw new Error(`${cashErr}. Boshqa hisobni tanlang yoki to'lovsiz saqlang`);
       const ct = await tx.cashTransaction.create({
         data: {
-          type: "EXPENSE", cashAccountId: r.data.cashAccountId, amount: cost, category: "Xomashyo",
+          type: "EXPENSE", cashAccountId: payAcc.id, amount: cost, category: "Xomashyo",
           counterparty: wh.name, note: `Sklad → Xomashyo qo'shish · ${moved} qator`,
           refType: "StockIn", refId: batchId, createdById: s.userId,
         },

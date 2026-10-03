@@ -7,6 +7,8 @@ import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import { cashOutflowError } from "@/lib/payments";
+import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
+import { money } from "@/lib/format";
 
 class CashError extends Error {}
 
@@ -21,6 +23,8 @@ const schema = z.object({
   category: zStr("Kategoriya tanlanmagan"),
   counterparty: zOpt,
   supplierId: zOpt,
+  // Chiqim qaysi kirim hujjati (yetkazuvchidan olingan mol) uchun — bog'lansa kirim "to'langan" summasiga qo'shiladi
+  receiptId: zOpt,
   note: zOpt,
 });
 
@@ -28,12 +32,27 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   const s = await requireAction("cashflow", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
+  const { receiptId, ...d } = r.data;
+  if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
   const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
   if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
   const res = await db.$transaction(async (tx) => {
     // Hisob bo'yicha navbat: dublikat va qoldiq tekshiruvi parallel so'rovlarda ham to'g'ri ishlasin
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + d.cashAccountId}))`;
+    // Kirim hujjatiga bog'langan to'lov: kirim qulfi ostida qolgan summa tekshiriladi — "To'lash" tugmasi
+    // va qo'lda chiqim bir kirimni ikki marta to'lab yubormasin (qisman to'lov mumkin, ortiqchasi yo'q)
+    let link: { refType: string; refId: string; supplierId: string; counterparty: string } | null = null;
+    if (receiptId) {
+      await lockReceipt(tx, receiptId);
+      const st = await receiptPayState(tx, receiptId);
+      if (!st) throw new CashError("Kirim hujjati topilmadi");
+      if (st.cancelled) throw new CashError(`${st.docNo} storno qilingan — unga to'lov yozilmaydi`);
+      if (st.fromSupply) throw new CashError(`${st.docNo} ta'minot zayavkasidan — uning puli ta'minot zanjirida to'langan`);
+      if (d.supplierId && d.supplierId !== st.supplierId) throw new CashError(`${st.docNo} boshqa yetkazuvchiniki (${st.supplierName})`);
+      if (st.left <= 0.005) throw new CashError(`${st.docNo} to'liq to'langan (${money(st.paid)})`);
+      if (d.amount > st.left + 0.005) throw new CashError(`${st.docNo} bo'yicha qolgan to'lov ${money(st.left)} — ${money(d.amount)} ortiqcha`);
+      link = { refType: "GoodsReceipt", refId: st.id, supplierId: st.supplierId, counterparty: d.counterparty ?? st.supplierName };
+    }
     const dup = await tx.cashTransaction.findFirst({
       where: { type: d.type, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category, createdById: s.userId, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) } },
       select: { id: true },
@@ -44,7 +63,7 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
       const err = await cashOutflowError(tx, d.cashAccountId, d.amount);
       if (err) throw new CashError(err);
     }
-    const t = await tx.cashTransaction.create({ data: { ...d, date: new Date(d.date), createdById: s.userId } });
+    const t = await tx.cashTransaction.create({ data: { ...d, ...(link ?? {}), date: new Date(d.date), createdById: s.userId } });
     await audit(tx, s.userId, "CREATE", "CashTransaction", t.id, undefined, t);
     return { ok: true as const };
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
@@ -58,9 +77,12 @@ export async function deleteCashTx(id: string): Promise<ActionState> {
   const s = await requireAction("cashflow", "delete");
   const t = await db.cashTransaction.findUnique({ where: { id } });
   if (!t) return { error: "Yozuv topilmadi (allaqachon o'chirilgan bo'lishi mumkin)" };
-  // Hujjatga bog'langan yozuv (kirim to'lovi, ta'minot to'lovi) qo'lda o'chirilmaydi — aks holda hujjat
-  // "to'lanmagan" bo'lib qaytadi yoki yo'q yozuvga ishora qilib qoladi. Sahifada tugma ham yashirin.
-  if (t.refType) return { error: "Hujjatga bog'langan yozuvni o'chirib bo'lmaydi" };
+  // Hujjatga bog'langan yozuv (sklad kirimi, ta'minot to'lovi) qo'lda o'chirilmaydi — aks holda yo'q yozuvga
+  // ishora qilib qoladi. Istisno — kirim hujjatiga (GoodsReceipt) to'lov: uni o'chirish to'lovni storno qilish,
+  // kirim yana "to'lanmagan" ro'yxatiga qaytadi (kirimni storno qilishdan oldin shu kerak).
+  // Ta'minot zanjirining chiqimi esa zanjirda (moliya) boshqariladi.
+  if (t.refType && t.refType !== "GoodsReceipt") return { error: "Hujjatga bog'langan yozuvni o'chirib bo'lmaydi" };
+  if (t.refType === "GoodsReceipt" && (await db.supplyRequest.count({ where: { cashTxId: t.id } }))) return { error: "Bu chiqim ta'minot zayavkasining puli — Ta'minot bo'limida boshqariladi" };
   const res = await db.$transaction(async (tx) => {
     // Kirimni o'chirish ham naqd kassani minusga tushirishi mumkin
     if (t.type === "INCOME") {
@@ -77,30 +99,36 @@ export async function deleteCashTx(id: string): Promise<ActionState> {
 }
 
 /**
- * To'lanmagan kirimni to'lash: moliya hisobni tanlaydi, kirim summasi chiqim bo'lib yoziladi.
- * Kirim bo'yicha qulf — ikki marta bosilsa ikkinchi chiqim yozilmaydi.
+ * To'lanmagan kirimni to'lash: moliya hisobni tanlaydi, kirimning QOLGAN summasi (yoki kiritilgan qismi)
+ * chiqim bo'lib yoziladi. To'langan = kirimga bog'langan barcha chiqimlar (qo'lda bog'langan qisman to'lov ham).
+ * Kirim bo'yicha qulf — ikki marta bosilsa ikkinchisi qolgan summani 0 ko'radi; ortiqcha to'lov rad etiladi.
  */
 export async function payReceipt(receiptId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("cashflow", "pay");
   const cashAccountId = String(fd.get("cashAccountId") ?? "");
   const acc = await db.cashAccount.findFirst({ where: { id: cashAccountId, isActive: true } });
   if (!acc) return { error: "Kassa/hisob tanlanmagan" };
+  // Bo'sh — qolgan summaning hammasi; kiritilsa — qisman to'lov
+  const rawAmount = String(fd.get("amount") ?? "").replace(/[\s,]/g, "");
+  const part = rawAmount ? Number(rawAmount) : null;
+  if (part != null && !(Number.isFinite(part) && part > 0 && part <= MAX_AMOUNT)) return { error: "To'lov summasi noto'g'ri" };
   const res = await db.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${receiptId}))`;
-    const already = await tx.cashTransaction.count({ where: { refType: "GoodsReceipt", refId: receiptId } });
-    if (already) return;
-    const rec = await tx.goodsReceipt.findUniqueOrThrow({ where: { id: receiptId }, include: { supplier: true, items: true } });
-    const total = rec.items.reduce((x, i) => x + Number(i.qty) * Number(i.price), 0);
-    if (!(total > 0)) return;
+    await lockReceipt(tx, receiptId);
+    const st = await receiptPayState(tx, receiptId);
+    if (!st) throw new CashError("Kirim hujjati topilmadi");
+    if (st.cancelled) throw new CashError(`${st.docNo} storno qilingan — to'lanmaydi`);
+    if (st.left <= 0.005) return; // allaqachon to'liq to'langan (ikki marta bosilgan)
+    if (part != null && part > st.left + 0.005) throw new CashError(`${st.docNo} bo'yicha qolgan to'lov ${money(st.left)} — ${money(part)} ortiqcha`);
+    const amount = part ?? st.left;
     // Naqd kassadan to'lov qoldiqdan oshmasin — bankdan to'lash yoki avval kassani to'ldirish kerak
-    const err = await cashOutflowError(tx, acc.id, total);
+    const err = await cashOutflowError(tx, acc.id, amount);
     if (err) throw new CashError(err);
     const t = await tx.cashTransaction.create({
       data: {
-        type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: total, category: "Xomashyo",
-        supplierId: rec.supplierId, counterparty: rec.supplier.name,
-        note: `Kirim ${rec.docNo} · ${rec.items.length} qator (moliya to'ladi)`,
-        refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
+        type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount, category: "Xomashyo",
+        supplierId: st.supplierId, counterparty: st.supplierName,
+        note: `Kirim ${st.docNo} · ${st.lines} qator (moliya to'ladi${amount < st.left - 0.005 ? `, qisman: ${money(amount)} / ${money(st.left)}` : ""})`,
+        refType: "GoodsReceipt", refId: st.id, createdById: s.userId,
       },
     });
     await audit(tx, s.userId, "CREATE", "CashTransaction", t.id, undefined, t);

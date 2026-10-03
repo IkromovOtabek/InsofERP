@@ -29,7 +29,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
   const sum = item ? Number(t.qtyM3) * Number(item.price) : 0;
   // Zames raqami: shu zayavka va mahsulot bo'yicha yuklashgacha quyilgan oxirgi zames (beton uchun)
   const batch = item && item.product.unit === "m3"
-    ? await db.productionBatch.findFirst({ where: { orderId: t.orderId, productId: item.productId, ...(t.loadedAt ? { date: { lte: t.loadedAt } } : {}) }, orderBy: { date: "desc" }, select: { batchNo: true, date: true } })
+    ? await db.productionBatch.findFirst({ where: { cancelledAt: null, orderId: t.orderId, productId: item.productId, ...(t.loadedAt ? { date: { lte: t.loadedAt } } : {}) }, orderBy: { date: "desc" }, select: { batchNo: true, date: true } })
     : null;
 
   return (

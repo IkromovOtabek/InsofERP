@@ -544,8 +544,8 @@ async function driverKm({ user, r }: Ctx): Promise<Part> {
 
 async function goodsReceipts(r: DashRange, title: string): Promise<Part> {
   const [rows, prev] = await Promise.all([
-    db.goodsReceipt.findMany({ where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, material: { select: { id: true, name: true, unit: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, material: { select: { id: true, name: true, unit: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
   ]);
   const amt = (x: (typeof rows)[number]) => sumBy(x.items, (i) => sum(i.qty) * sum(i.price));
   const amount = sumBy(rows, amt), prevAmount = sumBy(prev, (i) => sum(i.qty) * sum(i.price));
@@ -1126,7 +1126,7 @@ async function ownerProduction(): Promise<Part> {
   const d = await ownerCached();
   const P = d.production, S = d.summary.production;
   const t0 = today0(), t1 = new Date(t0); t1.setDate(t1.getDate() + 1);
-  const batches = await db.productionBatch.findMany({ where: { date: { gte: t0, lt: t1 } }, orderBy: { date: "desc" }, select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } } });
+  const batches = await db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: t0, lt: t1 } }, orderBy: { date: "desc" }, select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } } } });
   const tone = (l: string): Tone => (l === "crit" ? "danger" : l === "warn" ? "warning" : "success");
   return {
     title: "Ishlab chiqarish", subtitle: "Joriy oy · plan / fakt",

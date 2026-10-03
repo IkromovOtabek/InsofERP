@@ -10,13 +10,16 @@ import { cn } from "@/lib/utils";
 
 type Opt = { id: string; name: string };
 
-export function TxForm({ accounts, suppliers, incomeCats, expenseCats }: { accounts: Opt[]; suppliers: Opt[]; incomeCats: string[]; expenseCats: string[] }) {
+/** `receipts` — to'lanmagan kirim hujjatlari: chiqim shulardan biriga bog'lansa, kirimning "to'langan" summasiga qo'shiladi. */
+export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats }: { accounts: Opt[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: string[]; expenseCats: string[] }) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   // Saqlangandan keyin maydonlar qayta mount qilinadi — summa (MoneyInput) ham, tanlovlar ham to'liq tozalanadi
   const [formKey, setFormKey] = useState(0);
-  useEffect(() => { if (state?.ok) setFormKey((k) => k + 1); }, [state]);
+  const [supplierId, setSupplierId] = useState("");
+  useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); } }, [state]);
   const cats = type === "INCOME" ? incomeCats : expenseCats;
+  const shownReceipts = supplierId ? receipts.filter((r) => r.supplierId === supplierId) : receipts;
 
   return (
     <form action={action} className="space-y-4">
@@ -33,8 +36,13 @@ export function TxForm({ accounts, suppliers, incomeCats, expenseCats }: { accou
         <Field label="Summa *"><MoneyInput name="amount" required /></Field>
         <Field label="Kategoriya *"><Select name="category" defaultValue={cats[0]} key={`${type}-${formKey}`}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</Select></Field>
         {type === "EXPENSE" ? (
-          <Field label="Yetkazuvchi" hint="Xomashyo uchun"><Select name="supplierId" defaultValue=""><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+          <Field label="Yetkazuvchi" hint="Xomashyo uchun"><Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
         ) : <div />}
+        {type === "EXPENSE" && shownReceipts.length > 0 && (
+          <Field label="Kirim hujjati" hint="Tanlansa — shu kirimga to'lov (qisman ham), qolgandan oshmaydi" className="sm:col-span-2">
+            <Select name="receiptId" defaultValue=""><option value="">— bog&apos;lanmagan —</option>{shownReceipts.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</Select>
+          </Field>
+        )}
         <Field label={type === "INCOME" ? "Kimdan" : "Kimga"}><Input name="counterparty" placeholder="Nomi / F.I.O." /></Field>
         <Field label="Izoh" className="sm:col-span-3"><Input name="note" placeholder="Nima uchun" /></Field>
       </div>

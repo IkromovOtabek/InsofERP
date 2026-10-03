@@ -8,7 +8,8 @@ import { money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
-import { expectedAdvanceLine } from "@/lib/payments";
+import { expectedAdvance, expectedAdvanceLine } from "@/lib/payments";
+import type { Prisma } from "@/generated/prisma";
 import { MAX_AMOUNT } from "@/lib/action";
 
 /**
@@ -30,18 +31,19 @@ const concreteM3 = (items: { qtyM3: unknown; product: { unit: string } }[]) =>
  * direktor qo'ygan chegaradan oshsa — o'zbekcha xato qaytadi. 0/bo'sh chegara — cheklov yo'q.
  */
 async function dailyOrderLimitError(
+  client: Prisma.TransactionClient | typeof db,
   orderId: string,
   deliveryDate: Date,
   items: { qtyM3: unknown; product: { unit: string } }[],
 ): Promise<string | null> {
-  const c = await db.companySettings.findUnique({ where: { id: "main" }, select: { dailyOrderMaxM3: true, dailyOrderMaxCount: true } });
+  const c = await client.companySettings.findUnique({ where: { id: "main" }, select: { dailyOrderMaxM3: true, dailyOrderMaxCount: true } });
   const maxM3 = Number(c?.dailyOrderMaxM3 ?? 0);
   const maxCount = Number(c?.dailyOrderMaxCount ?? 0);
   if (maxM3 <= 0 && maxCount <= 0) return null;
 
   const dayStart = new Date(deliveryDate); dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
-  const confirmed = await db.order.findMany({
+  const confirmed = await client.order.findMany({
     where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED", "CLOSED"] }, deliveryDate: { gte: dayStart, lt: dayEnd }, id: { not: orderId } },
     select: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } },
   });
@@ -81,27 +83,36 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     return { changed: true, status: "CONFIRMED" };
   }
 
-  // ── Kunlik zayavka limiti (Sozlamalar → direktor) ──
-  // Shu yetkazish kuniga allaqachon tasdiqlangan SALE zayavkalar hajmi (m³) yoki soni chegaradan oshsa — qabul
-  // qilinmaydi. `dailyCapacityM3` (kalendar rangi) bilan ARALASHTIRILMAYDI: bu — direktor qo'ygan qattiq cheklov.
-  const limitErr = await dailyOrderLimitError(o.id, o.deliveryDate, o.items);
-  if (limitErr) return { changed: false, error: limitErr };
-
   const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
-  // Mijoz bo'yicha navbat: bir vaqtda qabul qilingan ikki zayavka limitni birga oshirib yubormasin.
-  // Shu zayavkaga olingan avans (u hali DRAFT) mijozning umumiy to'lovi sifatida `used` dan ayirilgan.
+  // Naqd to'lovli zayavka: bosh to'lov reys ochish/yuklashdan oldin majburiy (`prepayShortError`), shuning uchun
+  // kutilayotgan, hali kelmagan qismi kredit limitiga yuklanmaydi — limitga faqat qolgan (qarzga ketadigan) qism tushadi.
+  const required = o.onCredit ? 0 : expectedAdvance(o.note);
   const res = await db.$transaction(async (tx) => {
+    // Mijoz bo'yicha navbat: bir vaqtda qabul qilingan ikki zayavka limitni birga oshirib yubormasin.
+    // Shu zayavkaga olingan avans (u hali DRAFT) mijozning umumiy to'lovi sifatida `used` dan ayirilgan.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"credit:" + o.customerId}))`;
+    // ── Kunlik zayavka limiti (Sozlamalar → direktor) ──
+    // Shu yetkazish kuniga allaqachon tasdiqlangan SALE zayavkalar hajmi (m³) yoki soni chegaradan oshsa — qabul
+    // qilinmaydi. `dailyCapacityM3` (kalendar rangi) bilan ARALASHTIRILMAYDI: bu — direktor qo'ygan qattiq cheklov.
+    // Kun bo'yicha qulf ostida: turli mijozlarning ikki zayavkasi bir vaqtda qabul qilinsa ham chegara oshmaydi.
+    const day = new Date(o.deliveryDate); day.setHours(0, 0, 0, 0);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"orderday:" + day.toISOString()}))`;
+    const limitErr = await dailyOrderLimitError(tx, o.id, o.deliveryDate, o.items);
+    if (limitErr) return { error: limitErr };
     const credit = await customerCredit(o.customerId);
+    const advance = await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } });
+    const pending = Math.max(0, required - Number(advance._sum.amount ?? 0));
+    const exposure = total - pending;
     // `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat: to'liq oldindan to'langan zayavka bloklanmaydi
-    const status = Math.max(0, credit.net) + total > credit.limit && credit.net + total > credit.limit ? "BLOCKED" : "CONFIRMED";
+    const status = Math.max(0, credit.net) + exposure > credit.limit && credit.net + exposure > credit.limit ? "BLOCKED" : "CONFIRMED";
     const r = await tx.order.updateMany({ where: { id, status: "DRAFT" }, data: { status } });
     if (r.count !== 1) return null;
-    await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit });
-    return status;
+    await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit, prepayPending: pending });
+    return { status };
   });
   if (!res) return { changed: false, error: "Zayavka shu payt boshqa joyda qabul qilindi" };
-  const status = res;
+  if ("error" in res) return { changed: false, error: res.error };
+  const status = res.status;
 
   // Bloklangan zayavkani faqat direktor ocha oladi — u bilmasa zayavka turib qoladi.
   // Tasdiqlangani esa ishlab chiqarish va logistikaning ishi: ular kun bo'yi ro'yxatni
@@ -145,14 +156,14 @@ export async function orderUnblock(id: string, userId: string): Promise<OrderRes
 
 /** Bekor qilish. Zames yoki reys boshlangan bo'lsa — mumkin emas. */
 export async function orderCancel(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: true, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } } } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: { where: { cancelledAt: null } }, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } } } });
   if (o.batches.length || o.trips.length) return { changed: false, error: "Zames yoki reys bor — bekor qilib bo'lmaydi" };
   if (!["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status)) return { changed: false, error: "Bu holatdagi zayavka bekor qilinmaydi" };
   // Schyot qolib ketsa mijoz yetkazilmagan mahsulot uchun qarzdor bo'lib turardi — avval schyot bekor qilinadi.
   // Avans esa yo'qolmaydi: bekor qilingan zayavkadagi to'lov mijozning ortiqcha to'lovi bo'lib qarz/limitni kamaytiradi.
   if (o.invoices.length) return { changed: false, error: `Schyot bor (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — avval uni bekor qiling` };
   const done = await db.$transaction(async (tx) => {
-    const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: {} }, trips: { none: {} } }, data: { status: "CANCELLED" } });
+    const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: { cancelledAt: null } }, trips: { none: {} } }, data: { status: "CANCELLED" } });
     if (r.count !== 1) return false;
     await tx.brigadeTask.updateMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, data: { status: "CANCELLED" } });
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CANCELLED" });

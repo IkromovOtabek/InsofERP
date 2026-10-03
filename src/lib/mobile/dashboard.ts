@@ -304,8 +304,8 @@ async function payables(r: DashRange) {
 async function production(r: DashRange): Promise<RoleDashboard> {
   const isDay = r.key === "day";
   const [batches, prev, defects, progress, pp, staff, stock, reports] = await Promise.all([
-    db.productionBatch.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, qtyM3: true, shift: true, productId: true, product: { select: { name: true, unit: true } } } }),
-    db.productionBatch.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, qtyM3: true, shift: true, productId: true, product: { select: { name: true, unit: true } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
     db.productDefect.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { qty: true, reason: true, product: { select: { unit: true } } } }),
     db.taskProgress.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
     // Plan — tanlangan davrga bo'lingan (oylik plan ÷ ish kunlari × davrdagi ish kunlari)
@@ -579,8 +579,8 @@ async function logistics(r: DashRange): Promise<RoleDashboard> {
 
 async function warehouse(r: DashRange): Promise<RoleDashboard> {
   const [receipts, prevReceipts, moves, materials, balances] = await Promise.all([
-    db.goodsReceipt.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
     db.stockMove.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { type: true, qty: true, material: { select: { name: true, unit: true } } } }),
     db.material.findMany({ where: { isActive: true, minStock: { gt: 0 } }, select: { id: true, name: true, unit: true, minStock: true } }),
     // Qoldiq — davr oxirida (o'tgan davr tanlansa o'sha paytdagi; joriy davrda — hozirgi)
@@ -626,8 +626,8 @@ async function procurement(r: DashRange): Promise<RoleDashboard> {
   const [home, receipts, prevReceipts, requests] = await Promise.all([
     // Talablar — shu davrda ochilganlari (vebdagi "sana oralig'i" filtri bilan bir xil)
     procurementHome(procRange(r)),
-    db.goodsReceipt.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, supplierId: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, supplierId: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
     db.supplyRequest.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { status: true, createdAt: true, receipt: { select: { date: true } } } }),
   ]);
   const c = home.counts;

@@ -11,6 +11,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { qty as fq } from "@/lib/format";
 import { ingredientOf, balanceOf } from "@/lib/recipe";
 import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+import { cancelBatch } from "@/lib/storno";
 
 class ShortError extends Error {}
 
@@ -36,7 +37,8 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
   if ("error" in r) return { error: r.error };
   const d = r.data;
 
-  const recipe = await db.recipe.findFirst({ where: { productId: d.productId, isActive: true }, include: { items: { include: { material: true, product: true } } } });
+  // Faol retsept tanlash qoidasi brigada sarfi (`consumeForTask`) bilan bir xil: eng yangi faol versiya
+  const recipe = await db.recipe.findFirst({ where: { productId: d.productId, isActive: true }, orderBy: { version: "desc" }, include: { items: { include: { material: true, product: true } } } });
   if (!recipe) return { error: "Bu marka uchun faol retsept yo'q. Avval retsept kiriting." };
 
   if (d.orderId) {
@@ -60,7 +62,7 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
     if (d.orderId) {
       const [ordered, made] = await Promise.all([
         tx.orderItem.aggregate({ where: { orderId: d.orderId, productId: d.productId }, _sum: { qtyM3: true } }),
-        tx.productionBatch.aggregate({ where: { orderId: d.orderId, productId: d.productId }, _sum: { qtyM3: true } }),
+        tx.productionBatch.aggregate({ where: { orderId: d.orderId, productId: d.productId, cancelledAt: null }, _sum: { qtyM3: true } }),
       ]);
       const left = Number(ordered._sum.qtyM3 ?? 0) - Number(made._sum.qtyM3 ?? 0);
       if (d.qtyM3 > left + STOCK_EPS) {
@@ -115,4 +117,16 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
   if (typeof id !== "string") return id;
   revalidatePath("/production"); revalidatePath("/orders"); revalidatePath("/");
   redirect(`/production/${id}`);
+}
+
+/**
+ * Zamesni storno qilish — faqat direktor (yoki direktor "Zamesni storno qilish" amalini bergan xodim).
+ * Qoida `lib/storno.ts` da: xomashyo qaytadi, mahsulot chiqariladi; mahsulot jo'natilgan bo'lsa rad.
+ */
+export async function stornoBatch(id: string, reason: string): Promise<ActionState> {
+  const s = await requireAction("production", "batch_storno");
+  const r = await cancelBatch(id, String(reason ?? "").slice(0, 300), s.userId);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/production"); revalidatePath(`/production/${id}`); revalidatePath("/orders"); revalidatePath("/stock"); revalidatePath("/trips"); revalidatePath("/");
+  return { ok: true, note: r.note };
 }

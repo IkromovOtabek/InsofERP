@@ -197,6 +197,9 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
     const p = await tx.payment.findUnique({ where: { id: paymentId }, include: { register: { select: { id: true, batch: true } } } });
     if (!p) throw new PaymentError("To'lov topilmadi");
     if (p.register) throw new PaymentError("Bu to'lov Excel importidan yozilgan — Realizatsiya jurnalida partiyani qaytaring");
+    // Storno kassadan pulni olib tashlaydi — naqd kassa minusga tushmasin (pul allaqachon sarflangan bo'lsa)
+    const cashErr = await cashOutflowError(tx, p.cashAccountId, Number(p.amount));
+    if (cashErr) throw new PaymentError(`Storno qilinsa kassa minusga tushadi. ${cashErr}`);
     await tx.payment.delete({ where: { id: p.id } });
     await audit(tx, userId, "DELETE", "Payment", p.id, { ...p, register: undefined }, { reversed: true, reason: reason.trim() });
     if (p.invoiceId) await recalcInvoice(tx, p.invoiceId, userId);
@@ -221,6 +224,23 @@ export function expectedAdvanceLine(amount: number): string {
 export function expectedAdvance(note: string | null | undefined): number {
   const m = note?.match(/Kutilayotgan avans:\s*([\d\s]+)\s*so'm/);
   return m ? Number(m[1].replace(/\s/g, "")) || 0 : 0;
+}
+
+/**
+ * Naqd to'lovli zayavka (`onCredit = false`) bo'yicha talab qilingan bosh to'lov hali kelmagan bo'lsa —
+ * reys ochilmaydi va yuklanmaydi (mahsulot pulsiz chiqib ketmasin). To'langan = zayavkaga yozilgan avans
+ * + zayavka schyotlariga tushgan to'lovlar. Qarzga (kafolat xati) zayavka va bosh to'lovsiz zayavka tekshirilmaydi.
+ * Qaytaradi: xato matni yoki null.
+ */
+export async function prepayShortError(client: Tx | typeof db, orderId: string): Promise<string | null> {
+  const o = await client.order.findUnique({ where: { id: orderId }, select: { kind: true, onCredit: true, note: true, orderNo: true } });
+  if (!o || o.kind !== "SALE" || o.onCredit) return null;
+  const required = expectedAdvance(o.note);
+  if (!(required > 0.005)) return null;
+  const agg = await client.payment.aggregate({ where: { OR: [{ orderId }, { invoice: { orderId } }] }, _sum: { amount: true } });
+  const paid = Number(agg._sum.amount ?? 0);
+  if (paid + 0.005 >= required) return null;
+  return `${o.orderNo}: bosh to'lov ${money(required)} kerak, to'langan ${money(paid)} — qolgan ${money(required - paid)} kassaga tushmaguncha reys ochilmaydi va yuklanmaydi`;
 }
 
 // ───────────────────────── Hisob qoldiqlari ─────────────────────────

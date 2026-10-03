@@ -65,7 +65,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming] = await Promise.all([
     db.order.findMany({ where: { deliveryDate: { gte: today, lt: tomorrow }, status: { notIn: ["CANCELLED", "DRAFT"] } }, include: { items: { include: { product: true } } } }),
-    db.productionBatch.aggregate({ where: { date: { gte: today }, product: { unit: "m3" } }, _sum: { qtyM3: true } }),
+    db.productionBatch.aggregate({ where: { cancelledAt: null, date: { gte: today }, product: { unit: "m3" } }, _sum: { qtyM3: true } }),
     db.customer.findMany({ where: { invoices: { some: { status: { in: ["OPEN", "PARTIAL"] } } } }, select: { id: true, name: true } }),
     db.order.count({ where: { status: "BLOCKED" } }),
     materialOutlook(),
