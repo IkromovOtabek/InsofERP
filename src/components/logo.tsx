@@ -4,7 +4,7 @@
 /** Belgi: ko'k plitka + ichidagi oq nishon. */
 export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 121 121" className={className} role="img" aria-label="Insof">
+    <svg viewBox="0 0 121 121" className={className} role="img" aria-label="Insof" data-no-translit>
       <rect width="121" height="121" rx="10" fill="var(--logo-blue, #4f6ebe)" />
       <path d="M25 25H96V47H61V54L70 59.5V74H96V96H25V74H48.5V47H25Z" fill="#fff" />
     </svg>
@@ -14,7 +14,7 @@ export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
 /** To'liq lokap: belgi + INSOF. + tagline. */
 export function Logo({ className = "h-10", tagline = true }: { className?: string; tagline?: boolean }) {
   return (
-    <svg viewBox={tagline ? "0 0 669 121" : "0 0 669 96"} className={className} role="img" aria-label="INSOF — temir beton maxsulotlari">
+    <svg viewBox={tagline ? "0 0 669 121" : "0 0 669 96"} className={className} role="img" aria-label="INSOF — temir beton maxsulotlari" data-no-translit>
       <rect width="121" height="121" rx="10" fill="var(--logo-blue, #4f6ebe)" />
       <path d="M25 25H96V47H61V54L70 59.5V74H96V96H25V74H48.5V47H25Z" fill="#fff" />
 

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ScriptToggle } from "@/components/script-toggle";
 import { LogoMark } from "@/components/logo";
 import { AiPanel, AiTrigger } from "@/components/ai-panel";
 import { Tour, TourTrigger } from "@/components/tour";
@@ -274,6 +275,7 @@ export function AppShell({ items, user, brand, ai = false, apk = null, tour, chi
             <Link href="/qollanma" data-tour="help" className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 sm:inline-flex"><BookOpen size={15} /> Yordam</Link>
             <TourTrigger />
             {ai && <span data-tour="ai" className="inline-flex"><AiTrigger /></span>}
+            <ScriptToggle className="hidden min-[360px]:inline-flex" />
             <span data-tour="theme" className="inline-flex"><ThemeToggle /></span>
             <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
             <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
