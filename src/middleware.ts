@@ -10,7 +10,7 @@ import { authSecret, JWT_ALGS } from "@/lib/secret";
  * `lib/mobile/auth.ts`; cookie sessiyasiga tayanmaydi).
  */
 const isPublic = (p: string) =>
-  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile") || p.startsWith("/api/control") || p === "/api/health";
+  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile") || p.startsWith("/api/control") || p === "/api/health" || p === "/api/logout";
 
 /**
  * Markaziy panel (INSOF_MODE=control, admin.insof.uz): korxona sahifalari yo'q — faqat /superadmin.
@@ -61,6 +61,9 @@ export async function middleware(req: NextRequest) {
   if (ownPage && !pathname.startsWith(ownPage) && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL(ownPage, req.url));
   }
+  // API marshrutlari ruxsatni o'zi tekshiradi (getSession + rol/canDo) — sahifa qoidasi (NAV) ularga qo'llanmaydi,
+  // aks holda direktor bo'lmagan rollar uchun /api/geo, /api/ai, /api/scan bloklanib qoladi.
+  if (pathname.startsWith("/api/")) return NextResponse.next();
   if (!pathAllowed(pathname, role)) return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
   return NextResponse.next();
 }

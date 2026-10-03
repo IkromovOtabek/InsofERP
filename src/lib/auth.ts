@@ -57,6 +57,9 @@ export async function issueSession(user: SessionUser): Promise<Session> {
   const claims: Claims = { ...base, sv: user.sessionVersion };
   const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
+    // Noyob jti: chiqqandan keyin shu soniyada qayta kirilsa ham token eskisidan farq qiladi
+    // (aks holda bir xil token rad ro'yxatida bo'lib, yangi sessiya darhol bekor bo'lardi)
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${SESSION_TTL_SEC}s`)
     .sign(authSecret());
