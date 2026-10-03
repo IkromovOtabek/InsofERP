@@ -298,13 +298,20 @@ export async function brigIssueDetail(user: MobileUser, id: string): Promise<Mob
   await assertBrigade(user, i.brigadeId);
   const meta = BRIGADE_ISSUE[i.kind];
   const actions: DetailAction[] = [];
-  if (!i.resolvedAt && canResolveIssue(user.role, i.kind)) {
+  // Direktor ham hal qila oladi (veb bilan bir xil — u har bo'limning ishini yopa oladi) va mas'ulga eslatadi
+  if (!i.resolvedAt && (canResolveIssue(user.role, i.kind) || user.role === "DIRECTOR")) {
     actions.push({
       id: "issue.resolve", label: "Hal qilindi", tone: "success",
       form: [
         { name: "resolution", label: "Qanday hal qilindi", type: "text", required: true, placeholder: i.kind === "MATERIAL" ? "material berildi, 200 kg" : i.kind === "EQUIPMENT" ? "ta'mirlandi, ishlayapti" : "" },
         ...(i.kind === "EQUIPMENT" || i.kind === "DELAY" ? [{ ...downtimeField, label: "Jami to'xtash vaqti (daqiqa)", value: i.downtimeMin != null ? String(i.downtimeMin) : String(Math.round((Date.now() - i.createdAt.getTime()) / 60_000)), hint: undefined }] : []),
       ],
+    });
+  }
+  if (!i.resolvedAt && user.role === "DIRECTOR") {
+    actions.push({
+      id: "issue.remind", label: "Mas'ulga eslatish", tone: "brand",
+      form: [{ name: "note", label: "Xabar", type: "text", required: true, value: "Muammoni bugun hal qiling va natijani yozing", hint: `${meta.owner.map((r) => ROLE_NAME[r] ?? r).join(", ")} bo'limiga bildirishnoma boradi` }],
     });
   }
   return {

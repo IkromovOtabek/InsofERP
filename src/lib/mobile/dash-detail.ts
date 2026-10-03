@@ -14,6 +14,7 @@ import { day, inUnit, money, num, pctText, short, shortSigned, sum, time, totals
 import { ATT_LABEL, INVOICE_LABEL, MOVE_LABEL, ORDER_LABEL, asOf, dashRange, monthShares, procRange, staffAt, type DashRange } from "./dashboard";
 import { parsePeriod } from "./sex";
 import { ownerCached } from "./owner-cache";
+import { webList } from "./problems";
 import { ListError, driverEmployeeId, myBrigadeIds } from "./list";
 import type { MobileUser } from "./auth";
 import type { DetailField, MobileDetail } from "./detail";
@@ -1116,9 +1117,9 @@ async function ownerProblems(): Promise<Part> {
     title: "Muammolar", subtitle: "Egasi qarori kerak bo'lgan masalalar",
     fields: [f("Qaror kutayotgan", cnt(d.decisions.length, "masala"), d.decisions.length ? (d.decisions.some((x) => x.level === "crit") ? "danger" : "warning") : "success"), f("Kritik", String(d.decisions.filter((x) => x.level === "crit").length)), f("Yo'qotish (fakt, oy)", money(d.leaks.lossTotal), d.leaks.lossTotal > 0 ? "warning" : "success"), f("Xavf / muzlagan pul", money(d.leaks.riskTotal), d.leaks.riskTotal > 0 ? "warning" : "success")],
     sections: [
-      sec("Qaror kerak", d.decisions.map((x) => ({ id: `dec-${x.key}`, title: x.problem, subtitle: `${x.decision} · ${x.owner} · ${x.due}${x.effect ? ` · ${x.effect}` : ""}`, right: x.amount ? short(Math.abs(x.amount)) : undefined, tone: tone(x.level) })), { icon: "triangle-alert", empty: "Qaror talab qiladigan masala yo'q" }),
-      sec("Yo'qotish (fakt)", d.leaks.loss.filter((l) => l.amount > 0).map((l) => ({ id: `leak-${l.key}`, title: l.title, subtitle: String(l.text), right: short(l.amount), tone: "warning" as Tone })), { icon: "droplets", empty: "Yo'qotish topilmadi" }),
-      sec("Xavf / muzlagan pul", d.leaks.risk.filter((l) => l.level !== "ok").map((l) => ({ id: `risk-${l.key}`, title: l.title, subtitle: String(l.text), right: l.amount !== null ? short(l.amount) : undefined, tone: tone(l.level) })), { icon: "triangle-alert", empty: "Xavf yo'q" }),
+      sec("Qaror kerak", d.decisions.map((x) => ({ id: x.key, title: x.problem, subtitle: `${x.decision} · ${x.owner} · ${x.due}${x.effect ? ` · ${x.effect}` : ""}`, right: x.amount ? short(Math.abs(x.amount)) : undefined, tone: tone(x.level) })), { icon: "triangle-alert", target: "problem", empty: "Qaror talab qiladigan masala yo'q" }),
+      sec("Yo'qotish (fakt)", d.leaks.loss.filter((l) => l.amount > 0).map((l) => ({ id: `leak-${l.key}`, title: l.title, subtitle: String(l.text), right: short(l.amount), tone: "warning" as Tone, open: webList(l.href) })), { icon: "droplets", empty: "Yo'qotish topilmadi" }),
+      sec("Xavf / muzlagan pul", d.leaks.risk.filter((l) => l.level !== "ok").map((l) => ({ id: `risk-${l.key}`, title: l.title, subtitle: String(l.text), right: l.amount !== null ? short(l.amount) : undefined, tone: tone(l.level), open: webList(l.href) })), { icon: "triangle-alert", empty: "Xavf yo'q" }),
     ],
   };
 }

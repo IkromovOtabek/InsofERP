@@ -78,7 +78,9 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
 };
 
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
-export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees" };
+// Ro'yxat kaliti → kartochka kaliti. "brig-issues"/"brig-shifts" ro'yxati qatorlari oddiy id bilan keladi —
+// ilova `/erp/brig-issues/<id>` ni ochadi; bu xaritasiz kartochka "Bunday kartochka yo'q" (brigadirda — "ruxsat yo'q") bo'lardi.
+export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift" };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {

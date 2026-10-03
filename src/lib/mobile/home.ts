@@ -18,6 +18,8 @@ import { ownerCached } from "./owner-cache";
 import { periodId } from "./sex";
 import { hasDashDetail } from "./dash-detail";
 import { brigadierHome } from "./brigadier";
+import { toFleet } from "./fleet";
+import { webList } from "./problems";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
 
@@ -140,6 +142,12 @@ export type FleetTruck = {
   delayTone: Tone | null;
   openIssues: number;
   gps: { lat: number; lng: number; at: string; etaMin: number | null; km: number | null } | null;
+  /** Zayavka (kartochka uchun), reys holati, hajm va obyekt nuqtasi (navigator) — `./fleet.ts`. */
+  orderId?: string;
+  orderNo?: string;
+  status?: string;
+  qty?: string;
+  dest?: { lat: number; lng: number } | null;
 };
 
 /** Xaritadagi bitta mashina. `km` — reys boshidan beri GPS izi bo'yicha yurilgan yo'l. */
@@ -209,17 +217,8 @@ const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CON
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
 
-/** Vebdagi vazifa havolasi → ilovadagi ro'yxat. Mos ro'yxat bo'lmasa qator bosilmaydi. */
-function taskList(href: string): string | undefined {
-  const path = href.split("?")[0];
-  if (path.startsWith("/receipts")) return "receipts";
-  if (path.startsWith("/invoices")) return "invoices";
-  if (path.startsWith("/orders")) return "orders";
-  if (path.startsWith("/drivers")) return "drivers";
-  if (path.startsWith("/stock")) return "stock";
-  if (path.includes("mijozlar")) return "customers";
-  return undefined;
-}
+/** Vebdagi vazifa havolasi → ilovadagi ro'yxat (`./problems.ts` `webList`). Mos ro'yxat bo'lmasa qator bosilmaydi. */
+const taskList = (href: string): string | undefined => webList(href);
 
 /** Kassa va bank hisoblarining hozirgi qoldig'i. */
 async function cashBalance() {
@@ -353,7 +352,9 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       const decisionsSection: HomeSection = {
         title: "Egasi qarori kerak", empty: "Qaror talab qiladigan masala yo'q", icon: "triangle-alert",
-        rows: d.decisions.slice(0, 8).map((x) => ({ id: `dec-${x.key}`, title: x.problem, subtitle: `${x.decision} · ${x.owner} · ${x.due}`, right: x.amount ? short(Math.abs(x.amount)) : undefined, tone: tone(x.level), open: taskList(x.href) })),
+                // Har qator — masala kartochkasi (`problem`): tafsilot, tarix, mas'ulga topshirish (`./problems.ts`)
+        target: "problem",
+        rows: d.decisions.slice(0, 8).map((x) => ({ id: x.key, title: x.problem, subtitle: `${x.decision} · ${x.owner} · ${x.due}`, right: x.amount ? short(Math.abs(x.amount)) : undefined, tone: tone(x.level) })),
       };
       const val = (v: number, unit: string) => (unit === "so'm" ? short(v) : `${num(v)} ${unit}`);
       sections.push(
@@ -493,7 +494,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     case "LOGISTICS": {
       // Vebdagi logistika paneli bilan bir xil raqamlar — bitta `logisticsDashboard()` dan (TZ 3-bo'lim)
       const { logisticsDashboard } = await import("@/lib/logistics-dashboard");
-      const { TRIP_PHASE, minutesLabel } = await import("@/lib/logistics");
+      const { minutesLabel } = await import("@/lib/logistics");
       const d = await logisticsDashboard();
       const k = d.kpi;
       cards.push(
@@ -508,32 +509,20 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         // Bir reysga bir nechta ogohlantirish bo'lishi mumkin (kechikish + muammo) — qator id reys id'si,
         // ilovada React kaliti bo'lgani uchun har reysdan birinchisi (eng og'iri) qoladi.
         const seen = new Set<string>();
-        sections.push({ title: "Ogohlantirishlar", empty: "", icon: "alert-circle", rows: d.alerts.map((a, i) => {
-          const tripId = a.href.startsWith("/trips/") && !a.href.includes("new") ? a.href.slice(7) : null;
-          return { id: tripId ?? `a${i}`, title: a.title, subtitle: a.text, tone: a.level === "crit" ? "danger" as Tone : "warning" as Tone, ...(tripId ? {} : { open: a.href.includes("orderId") || a.href.startsWith("/orders") ? "orders" : "trips" }) };
+        // Qator bosilsa: reys ogohlantirishi — reys kartochkasi, zayavkaniki — zayavka (`orders:<id>`, `splitRef`).
+        // Ilgari bo'limda `target` yo'q edi va reys qatorlari (eng ko'p uchraydigani) bosilmasdi.
+        sections.push({ title: "Ogohlantirishlar", empty: "", icon: "alert-circle", target: "trips", rows: d.alerts.map((a, i) => {
+          const path = a.href.split("?")[0];
+          const tripId = path.startsWith("/trips/") && !path.includes("new") ? path.slice(7) : null;
+          const orderId = /[?&]orderId=([^&]+)/.exec(a.href)?.[1] ?? (path.startsWith("/orders/") ? path.slice(8) : null);
+          const id = tripId ?? (orderId ? `orders:${orderId}` : `a${i}`);
+          return { id, title: a.title, subtitle: a.text, tone: a.level === "crit" ? "danger" as Tone : "warning" as Tone, ...(tripId || orderId ? {} : { open: "trips" }) };
         }).filter((row) => !seen.has(row.id) && !!seen.add(row.id)).slice(0, 8) });
       }
       // Faol reyslar — ro'yxat emas, xarita: ilova `fleet` ni xarita + mashinalar ro'yxati qilib chizadi
       // (vebdagi logistika paneli bilan bir xil). GPS'siz reys ham ro'yxatda turadi — "GPS yo'q" belgisi bilan.
       live = await liveTrucks(user);
-      const byRef = new Map(live.map((l) => [l.ref, l]));
-      const active = d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status));
-      fleet = active.map((t) => {
-        const l = byRef.get(t.noteNo);
-        const gps = l ? { lat: l.lat, lng: l.lng, at: new Date().toISOString(), etaMin: l.etaMin, km: l.km }
-          : t.fix ? { lat: t.fix.lat, lng: t.fix.lng, at: t.fix.at.toISOString(), etaMin: t.fix.etaMin, km: null } : null;
-        const ph = TRIP_PHASE[t.phase];
-        return {
-          tripId: t.id, ref: t.noteNo, plate: t.plate, driver: t.driver, driverPhone: t.driverPhone,
-          customer: t.customer, address: t.address,
-          phase: ph.label, tone: t.openIssues ? "danger" as Tone : TRIP_TONE[t.status] ?? "info",
-          plannedAt: t.plannedAt ? time(t.plannedAt) : null,
-          delay: t.delayMin == null ? null : t.delayMin <= 0 ? "o'z vaqtida" : `+${minutesLabel(t.delayMin)}`,
-          delayTone: t.delayMin == null || t.delayMin <= 0 ? null : t.level === "crit" ? "danger" : t.level === "warn" ? "warning" : "info",
-          openIssues: t.openIssues,
-          gps,
-        };
-      });
+      fleet = await toFleet(d, live);
       const waiting = d.orders.filter((o) => o.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(o.status));
       if (waiting.length) sections.push({ title: "Transport kutayotgan buyurtmalar", empty: "", target: "orders", rows: waiting.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.deliveryTime ?? "soatsiz"} · ${o.address}`, right: `${o.remaining} ${o.unit === "m3" ? "m³" : o.unit}`, tone: o.late ? "danger" as Tone : "warning" as Tone })) });
       break;
@@ -644,7 +633,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "inactive", label: "Nofaol", value: String(inactive), tone: inactive ? "warning" : "info", icon: "person-remove", open: { key: "dash", id: "inactive.month" } },
       );
       sections.push(
-        { title: "Brigadalar", empty: "Brigada yo'q", rows: brigades.map((b) => ({ id: b.id, title: b.name, subtitle: b.leader ? `Brigadir: ${b.leader.fullName}${b.leader.phone ? ` · ${b.leader.phone}` : ""}` : "Brigadir biriktirilmagan — Xodimlar kartochkasidan tanlang", right: `${b.tasks.length} topshiriq`, tone: b.leader ? "success" : "warning" })) },
+        // Qator — brigada kartochkasi (a'zolar, brigadir, topshiriqlar); ilgari `target` yo'q edi va bosilmasdi
+        { title: "Brigadalar", empty: "Brigada yo'q", target: "brigades", rows: brigades.map((b) => ({ id: b.id, title: b.name, subtitle: b.leader ? `Brigadir: ${b.leader.fullName}${b.leader.phone ? ` · ${b.leader.phone}` : ""}` : "Brigadir biriktirilmagan — Xodimlar kartochkasidan tanlang", right: `${b.tasks.length} topshiriq`, tone: b.leader ? "success" : "warning" })) },
         { title: "So'nggi xodimlar", empty: "Xodim yo'q", target: "employees", rows: recent.map((e) => { const led = e.brigades.map((b) => b.name).join(", "); return { id: e.id, title: e.fullName, subtitle: `${e.position}${led ? ` · ${led} brigadiri` : ""}${e.phone ? ` · ${e.phone}` : ""}`, status: e.isActive ? "Faol" : "Nofaol", tone: e.isActive ? "success" : "danger" }; }) },
       );
       break;
@@ -741,7 +731,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
  * (zavod haydovchilari); `lib/live.ts` ularni qo'shadi. Xato bo'lsa bo'sh ro'yxat qaytadi,
  * bosh ekran buzilmaydi.
  */
-async function liveTrucks(user: MobileUser): Promise<LiveTruck[]> {
+export async function liveTrucks(user: MobileUser): Promise<LiveTruck[]> {
   try {
     const trips = (await liveTrips({ userId: user.id, role: user.role })).trips.filter((t) => t.position);
     // ECO `ref` = ERP nakladnoy raqami; kartochka esa Trip.id bo'yicha ochiladi

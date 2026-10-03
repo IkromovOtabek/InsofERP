@@ -30,11 +30,12 @@ import { faceCheckEnabled } from "@/lib/ai/face";
 import { assignEmployeeBrigade, markAllPresent, markAttendanceByFace, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
 import { submitReport } from "@/lib/production-report";
 import { addProductDefect } from "@/lib/defects";
-import { closeShift, isIssueKind, openShift, reportBrigadeIssue, resolveBrigadeIssue, canResolveIssue, startTask } from "@/lib/brigade-shift";
+import { BRIGADE_ISSUE, closeShift, isIssueKind, openShift, reportBrigadeIssue, resolveBrigadeIssue, canResolveIssue, startTask } from "@/lib/brigade-shift";
 import { productionStaff } from "@/lib/production-staff";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { TODAY_PREFIX } from "./brigadier";
 import { clearDashCache } from "./dashboard";
+import { problemAction } from "./problems";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
@@ -173,6 +174,11 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
   switch (action) {
+    // ── Egasi qarori (direktor "Muammolar") — id: masala kaliti ──
+    case "problem.assign":
+    case "problem.note":
+      return { ok: true, message: await problemAction(user, action, id, payload) };
+
     // ── Zayavka ──
     case "order.confirm": {
       const r = await orderConfirm(id, user.id);
@@ -388,13 +394,24 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "issue.resolve": {
       const i = await db.brigadeIssue.findUnique({ where: { id }, select: { kind: true, brigadeId: true } });
       if (!i) fail("Muammo topilmadi", 404);
-      if (!canResolveIssue(user.role, i!.kind)) fail("Bu muammo sizning bo'limingizga tegishli emas", 403);
+      if (!canResolveIssue(user.role, i!.kind) && user.role !== "DIRECTOR") fail("Bu muammo sizning bo'limingizga tegishli emas", 403);
       if (user.role === "BRIGADIER" && !(await myBrigadeIds(user.id)).includes(i!.brigadeId)) fail("Bu brigada sizga biriktirilmagan", 403);
       const dm = optNum(payload, "downtimeMin");
       const r = await resolveBrigadeIssue(id, user.id, textOf(payload, "resolution"), dm != null ? Math.max(0, Math.round(dm)) : null);
       if ("error" in r) fail(r.error);
       clearDashCache();
       return { ok: true, message: "Muammo hal qilindi" };
+    }
+    case "issue.remind": {
+      const i = await db.brigadeIssue.findUnique({ where: { id }, select: { kind: true, note: true, resolvedAt: true, brigade: { select: { name: true } } } });
+      if (!i) return fail("Muammo topilmadi", 404) as never;
+      if (i.resolvedAt) fail("Muammo allaqachon hal qilingan");
+      const note = textOf(payload, "note");
+      if (!note) fail("Xabar matnini yozing");
+      const owners = BRIGADE_ISSUE[i.kind].owner;
+      await audit(db, user.id, "UPDATE", "BrigadeIssue", id, undefined, { remind: owners, note });
+      notifyAfter(() => notifyRoles(owners, { type: "BRIGADE_ISSUE", title: `Direktor: ${BRIGADE_ISSUE[i.kind].label} — ${i.brigade.name}`, body: `${note} · ${i.note}`.slice(0, 300), link: { key: "brig-issue", id } }));
+      return { ok: true, message: "Mas'ul bo'limga eslatma yuborildi" };
     }
     case "task.cancel": {
       const r = await taskCancel(id, user.id);

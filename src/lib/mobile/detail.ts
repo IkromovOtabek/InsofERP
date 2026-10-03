@@ -26,6 +26,7 @@ import { ingredientOf } from "@/lib/recipe";
 import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
 import { repDetail } from "./report-detail";
 import { dashDetail } from "./dash-detail";
+import { problemDetail } from "./problems";
 import { brigIssueDetail, brigShiftDetail, defectAction, issueActions } from "./brigadier";
 import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
 import { DEFECT_REASONS } from "@/lib/production-day";
@@ -204,7 +205,8 @@ export const closeForm = (loaded: number, accepted: number | null, returned: num
 export const ACTION_ROLES: Record<string, Role[]> = {
   "order.confirm": ["SALES"],
   "order.unblock": ["DIRECTOR"],
-  "order.cancel": ["SALES"],
+  // Direktor "Tasdiqlar" tabida bloklangan zayavkani rad eta oladi (vebda ham `requireSession` direktorni o'tkazadi)
+  "order.cancel": ["SALES", "DIRECTOR"],
   // Reys bosqichlarini HAYDOVCHI belgilaydi — o'z ilovasidan, faqat o'ziga biriktirilgan reysda
   // (`assertOwnTrip`, `lib/mobile/actions.ts`). Dispetcher haydovchi o'rniga bosmaydi: har kim
   // o'z ishiga javob beradi. "Yuklandi" — zavod tomonidagi tasdiq, shuning uchun ishlab chiqarish ham.
@@ -246,7 +248,9 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "issue.staff": ["BRIGADIER"],
   "issue.other": ["BRIGADIER"],
   // Muammoni mas'ul bo'lim yopadi; qaysi tur kimniki — `canResolveIssue` (brigadir o'zinikini ham)
-  "issue.resolve": ["BRIGADIER", ...ISSUE_RESOLVERS],
+  "issue.resolve": ["BRIGADIER", ...ISSUE_RESOLVERS, "DIRECTOR"],
+  // Direktor muammoni mas'ul bo'limga eslatadi (bildirishnoma) — `brigIssueDetail`
+  "issue.remind": ["DIRECTOR"],
   "task.cancel": [...TASK_ROLES.cancel],
   // Brigadir — veb "Brigadalar" sahifasidagi bilan bir xil ruxsat
   "employee.brigade": [...TASK_ROLES.brigadeEdit],
@@ -257,8 +261,10 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Zavodda alohida snabjeniye logini bo'lmasligi mumkin — snabjeniye amallarini WAREHOUSE ham bajaradi.
   "supply.items": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"],
   "supply.price": ["PROCUREMENT", "WAREHOUSE"],
-  "supply.approve": ["SALES"],
-  "supply.fund": ["FINANCE", "ACCOUNTING", "CASHIER"],
+  // Direktor "Tasdiqlar" tabidagi ta'minot: tasdiqlash va pul ajratish (veb `approve`/`fund` — `requireModuleWrite`
+  // direktorni har doim o'tkazadi). Ilgari bu yerda direktor yo'q edi — kartochkada faqat "Bekor qilish" qolardi.
+  "supply.approve": ["SALES", "DIRECTOR"],
+  "supply.fund": ["FINANCE", "ACCOUNTING", "CASHIER", "DIRECTOR"],
   "supply.fact": ["PROCUREMENT", "WAREHOUSE"],
   "supply.receive": ["PROCUREMENT", "WAREHOUSE"],
   // Aniq qoida bosqich va yaratuvchiga bog'liq — `canRejectSupply` (pul bosqichida faqat moliya/direktor)
@@ -296,6 +302,9 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "att.form": ["PRODUCTION", "SUPERVISOR"],
   "report.submit": ["PRODUCTION", "SUPERVISOR"],
   "sex.assign": ["DIRECTOR"],
+  // Egasi qarori (dashboard "Muammolar") — mas'ul bo'limga topshirish va qarorni qayd etish (`problemDetail`)
+  "problem.assign": ["DIRECTOR"],
+  "problem.note": ["DIRECTOR"],
 };
 
 /**
@@ -361,6 +370,8 @@ function permFor(action: string): { module: string; action?: string } | undefine
  * Operatsion hujjatlar (zayavka, reys, zames...) ochiq qoladi — ular kartalar orasida bog'langan.
  */
 const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
+  // Egasi qarori — faqat direktor (moliyaviy xulosa, mas'ul bo'limlar)
+  problem: [],
   cashflow: ["CASHIER", "ACCOUNTING", "FINANCE"],
   // Sotuvchi schyot kartasidan to'lovni ochadi
   payments: ["CASHIER", "ACCOUNTING", "FINANCE", "SALES"],
@@ -391,7 +402,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
   // Brigadir ilovada faqat o'z ish joyi kartochkalarini ochadi (topshiriq, smena, muammo, brigada a'zosi):
   // zayavka, schyot va boshqa hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
-  if (user.role === "BRIGADIER" && !BRIGADIER_CARDS.includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  if (user.role === "BRIGADIER" && !BRIGADIER_CARDS.includes(DETAIL_KEY[key] ?? key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Haydovchi ilovada faqat reys kartochkasini ochadi — vebda ham unga faqat "Mening reyslarim" ochiq
   if (user.role === "DRIVER" && key !== "trips" && key !== "dash") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Sotuv agenti faqat o'z zayavkasi va o'z mijozi kartochkasini ochadi (ownership quyida tekshiriladi)
@@ -431,6 +442,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "rep": return repDetail(user, id);
     case "brig-shift": return brigShiftDetail(user, id);
     case "brig-issue": return brigIssueDetail(user, id);
+    // Egasi qarori kerak bo'lgan masala (direktor dashboardidagi "Muammolar") — `./problems.ts`
+    case "problem": return problemDetail(user, id);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   }
 }
@@ -457,8 +470,13 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
 
   const actions: DetailAction[] = [];
   if (o.status === "DRAFT" && can(user, "order.confirm")) actions.push({ id: "order.confirm", label: "Qabul qilish", tone: "success", confirm: "Zayavka qabul qilinsinmi? Kredit limiti tekshiriladi." });
-  if (o.status === "BLOCKED" && can(user, "order.unblock")) actions.push({ id: "order.unblock", label: "Blokni ochish", tone: "warning", confirm: `Limit oshgan (${money(credit.used)} / ${money(credit.limit)}). Baribir ochilsinmi?` });
-  if (["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && can(user, "order.cancel")) actions.push({ id: "order.cancel", label: "Bekor qilish", tone: "danger", confirm: "Zayavka bekor qilinsinmi?" });
+  // Direktor qarori: "Tasdiqlash" (blokni ochish) — asosiy, "Rad etish" (bekor qilish) — ikkilamchi
+  if (o.status === "BLOCKED" && can(user, "order.unblock")) actions.push({ id: "order.unblock", label: "Tasdiqlash", tone: "success", confirm: `Kredit limiti oshgan (${money(credit.used)} / ${money(credit.limit)}). Blok ochilib, zayavka ishlab chiqarishga o'tsinmi?` });
+  if (["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && can(user, "order.cancel")) {
+    // Direktor faqat bloklangan zayavkani rad etadi (qolganlari — sotuv bo'limining ishi)
+    if (user.role !== "DIRECTOR") actions.push({ id: "order.cancel", label: "Bekor qilish", tone: "danger", confirm: "Zayavka bekor qilinsinmi?" });
+    else if (o.status === "BLOCKED") actions.push({ id: "order.cancel", label: "Rad etish", tone: "danger", confirm: "Bloklangan zayavka rad etilsinmi? U bekor qilinadi." });
+  }
   // Schyot yozish — tasdiqlangan, hali schyoti yo'q zayavkaga (veb `/invoices/new` bilan bir xil qoida)
   const liveInvoices = o.invoices.filter((i) => i.status !== "CANCELLED");
   if (!["DRAFT", "BLOCKED", "CANCELLED"].includes(o.status) && liveInvoices.length === 0 && can(user, "order.invoice")) {
@@ -1101,7 +1119,11 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
   const waitDirector = st === "PRICED" && big && !r.directorOkAt;
   // Katta xarid direktor tasdig'ini kutsa — sotuvchining "Tasdiqlash" tugmasi ko'rinadi, lekin yopiq (nega — hint'da)
   const ap = actions.find((a) => a.id === "supply.approve");
-  if (ap && waitDirector) { ap.disabled = true; ap.hint = `${money(planned)} — ${money(limit)} dan katta xarid: avval direktor tasdiqlaydi`; }
+  if (ap && waitDirector) {
+    // Direktorga yopiq "Tasdiqlash" ko'rsatilmaydi — uning tugmasi tepada ("Katta xaridni tasdiqlash")
+    if (user.role === "DIRECTOR") actions.splice(actions.indexOf(ap), 1);
+    else { ap.disabled = true; ap.hint = `${money(planned)} — ${money(limit)} dan katta xarid: avval direktor tasdiqlaydi`; }
+  }
   if (waitDirector && can(user, "supply.director")) {
     actions.unshift({ id: "supply.director", label: "Katta xaridni tasdiqlash", tone: "success",
       form: [{ name: "note", label: "Izoh", type: "text", hint: `Jami ${money(planned)} — chegara ${money(limit)}. Tasdiqlasangiz ma'sul xodim tasdig'iga o'tadi` }] });
@@ -1176,7 +1198,9 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
       ] });
   }
   if (isOpenSupply(st) && can(user, "supply.reject") && canRejectSupply(r, user)) {
-    actions.push({ id: "supply.reject", label: "Bekor qilish", tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" }] });
+    // Direktor uchun bu qaror — "Rad etish" (tasdiq kutayotgan hujjat), boshqalarga — "Bekor qilish"
+    const rejectLabel = user.role === "DIRECTOR" && (st === "PRICED" || st === "APPROVED") ? "Rad etish" : "Bekor qilish";
+    actions.push({ id: "supply.reject", label: rejectLabel, tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: `Nega ${rejectLabel === "Rad etish" ? "rad etilmoqda" : "bekor qilinmoqda"}` }] });
   }
 
   // Ombor qoldig'i — omborda bor bo'lsa xaridni kamaytirish uchun (TZ 4.3)
