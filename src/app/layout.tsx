@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import "./globals.css";
+import { ScriptProvider } from "@/components/script-provider";
+import { YOZUV_SCRIPT, YOZUV_STYLE } from "@/lib/translit";
 
 // Asosiy shrift — geometrik, keng, sarlavhalarda kuchli
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin", "latin-ext"], variable: "--font-jakarta", display: "swap" });
-// Kirill matnlar uchun zaxira (Jakarta kirillni qo'llab-quvvatlamaydi)
-const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-inter", display: "swap" });
+// Kirill matnlar uchun zaxira (Jakarta kirillni qo'llab-quvvatlamaydi); cyrillic-ext — ў қ ғ ҳ uchun
+const inter = Inter({ subsets: ["cyrillic", "cyrillic-ext", "latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
   title: { default: "Insof ERP", template: "%s · Insof ERP" },
@@ -32,8 +34,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Rejimni birinchi bo'yoqdan oldin qo'llash — oq "flash" bo'lmasligi uchun */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* Yozuv (lotin/kirill) — tanlov cookie'da; kirillda body birinchi o'tishgacha yashirin */}
+        <style dangerouslySetInnerHTML={{ __html: YOZUV_STYLE }} />
+        <script dangerouslySetInnerHTML={{ __html: YOZUV_SCRIPT }} />
       </head>
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased"><ScriptProvider>{children}</ScriptProvider></body>
     </html>
   );
 }
