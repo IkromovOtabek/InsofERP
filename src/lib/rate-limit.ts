@@ -30,4 +30,9 @@ export async function publicLeadAllowedFromAction(): Promise<boolean> {
   return publicLeadAllowed(ipFromHeaders(await headers()));
 }
 
+/** Insof AI (veb va mobil): bitta foydalanuvchi daqiqasiga 20 ta, soatiga 200 ta savol. */
+export function aiAllowed(userId: string): boolean {
+  return hit(`ai:m:${userId}`, 20, 60_000) && hit(`ai:h:${userId}`, 200, 3_600_000);
+}
+
 export const RATE_LIMITED = "So'rovlar juda ko'p. Birozdan keyin qayta urinib ko'ring yoki telefon qiling.";

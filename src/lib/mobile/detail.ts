@@ -30,6 +30,7 @@ import { brigIssueDetail, brigShiftDetail, defectAction, issueActions } from "./
 import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
 import { DEFECT_REASONS } from "@/lib/production-day";
 import { TASK_ROLES } from "@/lib/tasks";
+import { canDo } from "@/lib/permissions";
 import { pctText } from "./fmt";
 import type { Role, SupplyStatus } from "@/generated/prisma";
 
@@ -302,7 +303,57 @@ export const ACTION_ROLES: Record<string, Role[]> = {
  * DIRECTOR yozilgan amallarda chiqadi (blokdan chiqarish kabi). Aks holda direktor ilovasida
  * "Bog'landim", "Yetkazildi" kabi xodimning ishi turib qoladi va kim javobgar — chalkashadi.
  */
-export const can = (user: MobileUser, action: string) => (ACTION_ROLES[action] ?? []).includes(user.role);
+export const can = (user: MobileUser, action: string) => {
+  const roleOk = (ACTION_ROLES[action] ?? []).includes(user.role);
+  if (user.role === "DIRECTOR") return roleOk; // direktor — yuqoridagi izohdagi kabi faqat ro'yxat bo'yicha
+  const map = permFor(action);
+  const lvl = map && user.perms?.[map.module];
+  if (!map || !lvl) return roleOk; // direktor bu modulga ruxsat bermagan — rol bo'yicha
+  // Katalogdagi amal (`lib/permissions.ts`) — veb bilan AYNAN bir qoida: yopadi ham, beradi ham
+  if (map.action) return canDo({ role: user.role, perms: user.perms }, map.module, map.action);
+  // Katalogda yo'q amal (haydovchi/brigadir o'z ishi) — perms faqat CHEKLAYDI: "yo'q"/"ko'rish" — amal yo'q
+  if (lvl === "none" || lvl === "view") return false;
+  return roleOk;
+};
+
+/**
+ * Mobil amal → veb ruxsat moduli (+ katalog amali). Direktor `User.perms` da modulni yopsa yoki
+ * "faqat ko'rish" qilsa, ilovada ham tugma chiqmaydi va server rad etadi (veb bilan bir xil).
+ */
+const PERM_EXACT: Record<string, { module: string; action?: string }> = {
+  "order.confirm": { module: "orders", action: "confirm" },
+  "order.cancel": { module: "orders", action: "cancel" },
+  "order.unblock": { module: "orders", action: "unblock" },
+  "order.invoice": { module: "sales", action: "invoice" },
+  "invoice.pay": { module: "payments", action: "create" },
+  "trip.loaded": { module: "trips", action: "load" },
+  "trip.cancel": { module: "trips", action: "cancel" },
+  "trip.close": { module: "trips", action: "move" },
+  "trip.eco": { module: "trips", action: "move" },
+  "trip.problem": { module: "trips", action: "issue" },
+  "trip.resolve": { module: "trips", action: "issue" },
+  "task.progress": { module: "tasks", action: "progress" },
+  "task.finish": { module: "tasks", action: "progress" },
+  "task.cancel": { module: "tasks", action: "cancel" },
+  "employee.brigade": { module: "tasks", action: "brigade" },
+  "employee.brigade.clear": { module: "tasks", action: "brigade" },
+  "brigade.toggle": { module: "tasks", action: "brigade" },
+  "supplier.toggle": { module: "stock", action: "suppliers" },
+  "report.submit": { module: "production", action: "report" },
+  "att.form": { module: "production", action: "report" },
+};
+const PERM_PREFIX: [string, { module: string; action?: string }][] = [
+  ["lead.", { module: "sales", action: "leads" }],
+  ["supply.", { module: "taminot" }],
+  ["trip.", { module: "trips" }],
+  ["task.", { module: "tasks" }],
+  ["shift.", { module: "tasks" }],
+  ["issue.", { module: "tasks" }],
+  ["att.", { module: "production" }],
+];
+function permFor(action: string): { module: string; action?: string } | undefined {
+  return PERM_EXACT[action] ?? PERM_PREFIX.find(([p]) => action.startsWith(p))?.[1];
+}
 
 /**
  * Maxfiy kartochkalar — id bilan to'g'ridan-to'g'ri so'ralsa ham faqat shu rollar ochadi

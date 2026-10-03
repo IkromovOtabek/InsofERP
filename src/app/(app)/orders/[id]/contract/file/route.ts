@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Ikkinchi qulf: middleware'dan tashqari marshrutning o'zi ham sessiya va rolni tekshiradi
   const s = await getSession();
-  if (!s || !pathAllowed("/orders", s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!s || !pathAllowed("/orders", s.role, s.perms)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id } = await params;
   const o = await db.order.findUnique({ where: { id }, select: { contractNo: true, contractFile: true, contractFileName: true, contractFileType: true } });
   const p = o?.contractFile ? contractFilePath(o.contractFile) : null;

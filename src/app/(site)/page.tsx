@@ -56,6 +56,15 @@ const STEPS = [
   { icon: Truck, title: "Yetkazib berish", text: "Belgilangan vaqtda obyektga chiqamiz, QR-nakladnoy bilan topshiramiz." },
 ];
 
+/**
+ * `<script>` ichiga qo'yiladigan JSON: `<` va U+2028/U+2029 belgilari JSON unicode-escape ko'rinishiga
+ * o'tkaziladi (ma'nosi o'zgarmaydi, JSON-LD o'quvchilari bir xil qiymatni oladi).
+ */
+const JSON_LD_UNSAFE = new RegExp("[<\\u2028\\u2029]", "g");
+function safeJsonLd(data: unknown): string {
+  return JSON.stringify(data).replace(JSON_LD_UNSAFE, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+}
+
 export default async function LandingPage() {
   const [company, groups, products] = await Promise.all([
     getCompany(),
@@ -133,7 +142,9 @@ export default async function LandingPage() {
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {/* JSON-LD xavfsiz satrga aylantiriladi (safeJsonLd): sozlamalardagi matnda "</script>" bo'lsa ham
+          skript tegi yopilib, sahifaga HTML/JS kiritib bo'lmasin */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
       <SiteHeader phone={phone} email={email} hours={hours} />
 
       {/* ───────── Hero banneri ───────── */}

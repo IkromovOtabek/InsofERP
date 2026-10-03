@@ -5,7 +5,12 @@ import { login } from "@/lib/auth";
 import { looksLikePhone, loginWithAppPhone } from "@/lib/eco/app-login";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 import { confirmLoginCode, requestLoginCode, type LoginVia } from "@/lib/sms-login";
+import { hit } from "@/lib/rate-limit";
 import { isTestMode } from "@/lib/test-mode";
+
+/** Kod so'rash: bitta IP'dan soatiga (raqamdan qat'i nazar). */
+const CODE_REQ_PER_IP_HOUR = 10;
+const CODE_REQ_LIMITED = "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling.";
 import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
 
 export async function loginAction(_prev: { error?: string } | undefined, formData: FormData) {
@@ -53,9 +58,13 @@ export async function requestLoginCodeAction(_prev: CodeRequestState, fd: FormDa
   const phone = String(fd.get("phone") ?? "");
   if (!phone.trim()) return { error: "Telefon raqamini kiriting" };
   if (await companySuspension()) return { error: SUSPENDED_MESSAGE };
+  // IP bo'yicha chek — har qanday raqam uchun bir xil (raqamlarni ommaviy sinab chiqish sekinlashadi)
+  if (!hit(`login-code:ip:${await clientIp()}`, CODE_REQ_PER_IP_HOUR, 3600_000)) return { error: CODE_REQ_LIMITED };
   const r = await requestLoginCode(phone);
   if (!r.ok) return { error: r.error };
-  return { sent: true, via: r.via, devCode: r.devCode };
+  // Javob mavjud va noma'lum raqam uchun AYNAN bir xil: `via` (kanal) qaytarilmaydi — u faqat
+  // mavjud raqamda bo'lardi va raqam tizimda borligini oshkor qilardi. devCode faqat dev/test'da.
+  return { sent: true, ...(r.devCode ? { devCode: r.devCode } : {}) };
 }
 
 /** 2-qadam: kod → sessiya. Qo'pol kuch himoyasi raqam bo'yicha. */

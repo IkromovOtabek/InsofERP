@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { qty, date, dateTime } from "@/lib/format";
 import { getCompany } from "@/lib/company";
@@ -25,6 +26,9 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
   const company = await getCompany();
   const found = await db.trip.findUnique({ where: { deliveryNoteNo: noteNo }, include: { order: { include: { customer: true, items: { include: { product: true } } } }, vehicle: true } });
   const t = found && (!found.verifyToken || found.verifyToken === k) ? found : null;
+  // Haqiqiy 404 (200 emas): skanerlar/qidiruv tizimlari "topilmadi" sahifasini mavjud hujjat deb hisoblamasin.
+  // Kalit mos kelmasa ham xuddi shu javob — raqam mavjudligi oshkor bo'lmaydi (`./not-found.tsx`).
+  if (!t) notFound();
   const line = t ? tripLine(t.order.items, t.vehicle.type) : null;
   const product = t && line && !("error" in line) ? t.order.items.find((i) => i.productId === line.productId)?.product : t?.order.items[0]?.product;
   const unit = unitLabel(line && !("error" in line) ? line.unit : (t ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) : null) ?? product?.unit ?? "m3");

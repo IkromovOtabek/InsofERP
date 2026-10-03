@@ -34,6 +34,11 @@ export async function POST(req: Request) {
   const expected = createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
   if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return NextResponse.json({ error: "BAD_SIGNATURE" }, { status: 401 });
 
+  // Replay: 5 daqiqalik oyna ichida AYNAN shu imzoli so'rovni qayta yuborib bo'lmaydi.
+  // Imzo ts+body'ni qamraydi — bir xil imzo = bir xil hodisa. Xatoda (5xx) belgi olib tashlanadi,
+  // shunda ECO'ning qonuniy qayta urinishi o'tadi.
+  if (!claimSignature(sig, tsNum)) return NextResponse.json({ error: "REPLAY" }, { status: 409 });
+
   let p: EcoPayload;
   try { p = JSON.parse(body); } catch { return NextResponse.json({ error: "BAD_JSON" }, { status: 400 }); }
 
@@ -46,8 +51,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, ignored: true });
   } catch (e) {
     console.error("[eco][webhook]", p.event, e);
+    seenSignatures.delete(sig);
     return NextResponse.json({ error: "APPLY_FAILED" }, { status: 500 });
   }
+}
+
+/**
+ * Ko'rilgan imzolar (xotirada, ERP bitta jarayon). Kalit — imzo, qiymat — ts bilan birga
+ * eskirish vaqti; oynadan chiqqan yozuvlar tozalanadi (eski ts baribir STALE bo'lib rad etiladi).
+ */
+const REPLAY_WINDOW_MS = 5 * 60_000;
+const SEEN_MAX = 10_000;
+const seenSignatures = new Map<string, number>();
+
+function claimSignature(sig: string, ts: number): boolean {
+  const now = Date.now();
+  if (seenSignatures.size >= SEEN_MAX / 2) for (const [k, exp] of seenSignatures) if (exp <= now) seenSignatures.delete(k);
+  const exp = seenSignatures.get(sig);
+  if (exp !== undefined && exp > now) return false;
+  // Juda ko'p (hujum) — eng eskilari chiqariladi (Map qo'shilish tartibini saqlaydi → LRU)
+  while (seenSignatures.size >= SEEN_MAX) { const first = seenSignatures.keys().next().value; if (first === undefined) break; seenSignatures.delete(first); }
+  // ts ± 5 daqiqa qabul qilinadi — shuning uchun belgi ts + 5 daqiqa + zaxira bilan saqlanadi
+  seenSignatures.set(sig, Math.max(ts, now) + REPLAY_WINDOW_MS + 60_000);
+  return true;
 }
 
 type EcoPayload = {

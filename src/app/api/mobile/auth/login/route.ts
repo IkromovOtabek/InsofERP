@@ -14,16 +14,20 @@ export async function POST(req: Request) {
   const p = Body.safeParse(raw);
   if (!p.success) return jsonErr("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot to'liq emas", 400);
   const ip = ipFromHeaders(req.headers);
-  const guard = checkLogin(p.data.login, ip);
+  // Qulf kaliti mobileLogin qidiradigan login bilan bir xil (trim) — " ali" va "ali" alohida
+  // hisob bo'lib, qulfni bo'shliq qo'shib aylanib o'tish mumkin bo'lmasin (katta-kichik harf guard'da).
+  const login = p.data.login.trim();
+  if (!login) return jsonErr("BAD_REQUEST", "Login kiriting", 400);
+  const guard = checkLogin(login, ip);
   if (!guard.ok) return jsonErr("LOCKED", lockedMessage(guard.retryAfterSec), 429);
   return handle(async () => {
     try {
-      const r = await mobileLogin(p.data.login, p.data.password);
-      recordSuccess(p.data.login);
+      const r = await mobileLogin(login, p.data.password);
+      recordSuccess(login);
       return r;
     } catch (e) {
       // Qo'pol kuch himoyasi: urinish hisoblanadi (5 tadan keyin qulf) va javob kechiktiriladi
-      if (e instanceof MobileAuthError) { recordFailure(p.data.login, ip); await failDelay(); }
+      if (e instanceof MobileAuthError) { recordFailure(login, ip); await failDelay(); }
       throw e;
     }
   });

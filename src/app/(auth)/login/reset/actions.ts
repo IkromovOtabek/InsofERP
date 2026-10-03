@@ -1,6 +1,9 @@
 "use server";
 
 import { confirmPasswordReset, requestPasswordReset, type ResetVia } from "@/lib/password-reset";
+import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
+import { passwordProblem } from "@/lib/password-policy";
+import { normalizePhone } from "@/lib/sms/phone";
 
 /** `via` — kod qayerga yuborildi (bot yoki SMS); forma shunga qarab matn yozadi. */
 export type RequestState = { error?: string; sent?: boolean; via?: ResetVia; devCode?: string } | undefined;
@@ -15,7 +18,11 @@ export async function requestCodeAction(_prev: RequestState, fd: FormData): Prom
   return { sent: true, via: r.via, devCode: r.devCode };
 }
 
-/** 2-qadam: kod + yangi parol. */
+/**
+ * 2-qadam: kod + yangi parol.
+ * Qo'pol kuch himoyasi (login-guard): normallashgan raqam va IP bo'yicha — kodni bir nechta
+ * raqam/yangi kodlar bilan ketma-ket taxmin qilib bo'lmasin. Faqat KOD xatosi hisoblanadi.
+ */
 export async function confirmResetAction(_prev: ConfirmState, fd: FormData): Promise<ConfirmState> {
   const phone = String(fd.get("phone") ?? "");
   const code = String(fd.get("code") ?? "");
@@ -23,8 +30,21 @@ export async function confirmResetAction(_prev: ConfirmState, fd: FormData): Pro
   const password2 = String(fd.get("password2") ?? "");
   if (!code.trim()) return { error: "Kodni kiriting" };
   if (password !== password2) return { error: "Parollar bir xil emas" };
+  // Parol talablari kodni tekshirishdan oldin — bu xato urinish sifatida hisoblanmaydi
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem };
+
+  const key = `reset:${normalizePhone(phone) ?? phone.trim()}`;
+  const ip = await clientIp();
+  const guard = checkLogin(key, ip);
+  if (!guard.ok) return { error: lockedMessage(guard.retryAfterSec) };
 
   const r = await confirmPasswordReset(phone, code, password);
-  if (!r.ok) return { error: r.error };
+  if (!r.ok) {
+    recordFailure(key, ip);
+    await failDelay();
+    return { error: r.error };
+  }
+  recordSuccess(key);
   return { login: r.login };
 }

@@ -1,6 +1,6 @@
 "use server";
 
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { aiAnswer, type Answer } from "@/lib/bi/ai";
 import * as store from "@/lib/bi/ai-chat";
 import { decode, encodeAnswer, type StoredMsg, type ChatListItem } from "./shared";
@@ -9,7 +9,7 @@ const ROLES = ["DIRECTOR", "FINANCE", "ACCOUNTING"] as const;
 
 /** Har bir action boshida: sessiya + rol (mavjud /api/ai bilan bir xil), joriy userId qaytadi. */
 async function uid(): Promise<string> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("bi-tahlil", "ai", ROLES); // rol + direktor bergan ruxsat (perms)
   return s.userId;
 }
 

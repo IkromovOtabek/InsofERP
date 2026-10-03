@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireModuleWrite } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { codeFromName, flatName } from "@/lib/excel";
@@ -31,7 +31,7 @@ const groupSchema = z.object({ name: zStr("Papka nomi kerak"), parentId: zOpt, c
 
 /** Yangi xomashyo papkasi. `parentId` — ochiq turgan papka. */
 export async function createMaterialGroup(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...MATERIAL_ROLES]);
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
   const r = parseForm(groupSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -61,7 +61,7 @@ const materialSchema = z.object({
  * Shu nomli xomashyo bo'lsa dublikat ochilmaydi: mavjudi yangilanadi (papkasi va minimal qoldiq).
  */
 export async function createCatalogMaterial(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...MATERIAL_ROLES]);
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
   const r = parseForm(materialSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -101,7 +101,7 @@ export async function createCatalogMaterial(_prev: ActionState, fd: FormData): P
  * ro'yxatlarda ko'rinmaydi, eski hujjatlar buzilmaydi.
  */
 export async function deleteCatalogMaterial(id: string): Promise<ActionState> {
-  const s = await requireSession([...MATERIAL_ROLES]);
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
   const m = await db.material.findUnique({ where: { id } });
   if (!m) return { error: "Xomashyo topilmadi" };
 
@@ -134,7 +134,7 @@ export async function deleteCatalogMaterial(id: string): Promise<ActionState> {
 
 /** Papkani o'chirish — faqat bo'sh papka (ichida papka ham, xomashyo ham bo'lmasa). */
 export async function deleteMaterialGroup(id: string): Promise<ActionState> {
-  const s = await requireSession([...MATERIAL_ROLES]);
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
   const g = await db.materialGroup.findUnique({ where: { id } });
   if (!g) return { error: "Papka topilmadi" };
   const [children, materials] = await Promise.all([

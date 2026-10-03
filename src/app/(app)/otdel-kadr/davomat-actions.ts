@@ -2,14 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { dayUtc, isAttendanceStatus, shiftProblem, toMinutes, validDay, workedMinutes } from "@/lib/davomat";
 import type { ActionState } from "@/lib/action";
 import type { AttendanceStatus } from "@/generated/prisma";
 
 /** Davomatni faqat otdel kadr (va direktor) yuritadi. */
-const hr = () => requireSession(["HR"]);
+// Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
+const hr = () => requireAction("employees", "edit", ["HR"]);
 
 type Row = { employeeId: string; status: AttendanceStatus | null; checkIn: string | null; checkOut: string | null; note: string | null; ver: string };
 

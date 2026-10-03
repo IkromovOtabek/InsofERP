@@ -104,11 +104,8 @@ function SmsLogin() {
     return (
       <>
         <p className="mb-4 text-sm text-slate-500">
-          {req.via === "telegram"
-            ? <>6 xonali kod <b>Insof ERP botiga</b> yuborildi — Telegramni oching.</>
-            : req.via === "gateway"
-            ? <>6 xonali kod {phone} raqamining <b>Telegram</b> hisobiga yuborildi.</>
-            : <>{phone} raqamiga 6 xonali kod yuborildi.</>}
+          {/* Kanal (bot / Telegram / SMS) ataylab aytilmaydi — raqam tizimda borligi oshkor bo'lmasin */}
+          Raqam tizimda bo&apos;lsa, 6 xonali kod <b>Insof ERP botiga</b>, {phone} raqamining <b>Telegram</b> hisobiga yoki SMS orqali yuborildi.
           {" "}Kod 5 daqiqa amal qiladi.
         </p>
         {req.devCode && (

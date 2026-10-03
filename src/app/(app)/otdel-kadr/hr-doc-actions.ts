@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { HIRING_DOCS, HR_DOC_BY_KIND } from "@/lib/hr-docs";
 import { saveEmployeeFile, removeEmployeeFile } from "@/lib/uploads";
@@ -16,7 +16,8 @@ import type { HrDocKind, Prisma } from "@/generated/prisma";
  * Matn va ro'yxat — `lib/hr-docs.ts`.
  */
 
-const hr = () => requireSession(["HR"]);
+// Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
+const hr = () => requireAction("employees", "edit", ["HR"]);
 
 /** "2026-09-10" → Date; bo'sh bo'lsa null. Noto'g'ri sana ham null bo'ladi (forma tekshiradi). */
 const zDate = z.string().trim().optional().transform((v) => {

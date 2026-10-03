@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 /** GET /taminot/[id]/hujjat/[docId] — xarid hujjati (shartnoma, hisob-faktura, nakladnoy...). `?download=1` — yuklab olish. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; docId: string }> }) {
   const s = await getSession();
-  if (!s || !pathAllowed(`/taminot/x`, s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!s || !pathAllowed(`/taminot/x`, s.role, s.perms)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id, docId } = await params;
   const doc = await db.supplyDocument.findUnique({ where: { id: docId } });
   const p = doc && doc.requestId === id ? supplyDocPath(doc.file) : null;

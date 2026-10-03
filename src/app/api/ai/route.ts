@@ -4,14 +4,16 @@ import { CATALOG, aiAnswer } from "@/lib/bi/ai";
 import { parseRange } from "@/lib/bi/core";
 import { llmEnabled, type LlmTurn } from "@/lib/ai/llm";
 import { askInsofAi } from "@/lib/bi/answer";
+import { canDo } from "@/lib/permissions";
+import { aiAllowed } from "@/lib/rate-limit";
 
-const AI_ROLES = new Set(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
 type Body = { mode: "quick" | "chat"; key?: string; question?: string; history?: LlmTurn[]; sp?: Record<string, string | undefined> };
 
 async function guard() {
   const s = await getSession();
   if (!s) return { error: NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 }) };
-  if (!AI_ROLES.has(s.role)) return { error: NextResponse.json({ error: "FORBIDDEN" }, { status: 403 }) };
+  // Rol (direktor, moliya, buxgalteriya) + direktor bergan "bi-tahlil → ai" ruxsati — `lib/permissions.ts`
+  if (!canDo(s, "bi-tahlil", "ai")) return { error: NextResponse.json({ error: "FORBIDDEN" }, { status: 403 }) };
   return { s };
 }
 
@@ -24,6 +26,8 @@ export async function GET() {
 /** quick — katalogdagi savol (0 token). chat — erkin savol: mos kelsa qoida, bo'lmasa (kalit bo'lsa) Claude. */
 export async function POST(req: Request) {
   const g = await guard(); if (g.error) return g.error;
+  // Foydalanuvchi bo'yicha chek: LLM so'rovlari pulli/kvotali — bitta hisob tsiklda so'rov yog'dirmasin
+  if (!aiAllowed(g.s.userId)) return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
   const t0 = Date.now();
   let body: Body;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "BAD_JSON" }, { status: 400 }); }

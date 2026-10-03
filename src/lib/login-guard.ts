@@ -76,17 +76,28 @@ export function recordSuccess(login: string) {
 
 export const failDelay = () => new Promise((r) => setTimeout(r, FAIL_DELAY_MS));
 
-/** Mijoz IP manzili — nginx/PM2 orqasida `x-forwarded-for` dagi birinchi manzil. */
 /**
- * Mijoz IP'si. Birinchi o'rinda `X-Real-IP` (nginx `$remote_addr` bilan o'zi yozadi, mijoz soxtalay olmaydi).
- * Bo'lmasa `X-Forwarded-For` ning OXIRGI qiymati — uni bizning proksi qo'shadi; birinchisini esa mijoz
- * o'zi yuborishi mumkin edi va har urinishda boshqa IP ko'rsatib qulfni aylanib o'tardi.
+ * Mijoz IP'si — faqat nginx o'zi yozadigan sarlavhalarga ishoniladi.
+ *
+ * nginx kutilmasi (docs/deploy/nginx-tenant.conf):
+ *   proxy_set_header X-Forwarded-For $remote_addr;   // mijoz yuborgan qiymat USTIGA yoziladi
+ *   proxy_set_header X-Real-IP       $remote_addr;   // mijoz yuborgan qiymat USTIGA yoziladi
+ * (`$proxy_add_x_forwarded_for` ishlatilsa ham OXIRGI qiymat nginx qo'shgan `$remote_addr` bo'ladi.)
+ *
+ * Shuning uchun birinchi o'rinda `X-Forwarded-For` ning OXIRGI qiymati olinadi — birinchisini mijoz
+ * o'zi yuborishi va har urinishda boshqa IP ko'rsatib qulfni aylanib o'tishi mumkin edi.
+ * `X-Real-IP` faqat XFF umuman yo'q bo'lsa ishlatiladi: nginx uni o'rnatmagan konfiguratsiyada
+ * mijoz yuborgan `X-Real-IP` to'g'ridan-to'g'ri o'tib ketadi, unga birinchi bo'lib ishonib bo'lmaydi.
+ * Ilova nginx'siz to'g'ridan-to'g'ri internetga ochilmasligi SHART (port faqat 127.0.0.1 da tinglaydi).
  */
 export function ipFromHeaders(h: Headers): string {
+  const xff = h.get("x-forwarded-for");
+  if (xff) {
+    const last = xff.split(",").map((x) => x.trim()).filter(Boolean).pop();
+    if (last) return last;
+  }
   const real = h.get("x-real-ip")?.trim();
   if (real) return real;
-  const xff = h.get("x-forwarded-for");
-  if (xff) return xff.split(",").map((x) => x.trim()).filter(Boolean).pop() ?? "unknown";
   return "unknown";
 }
 

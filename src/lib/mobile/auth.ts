@@ -6,6 +6,7 @@ import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { verifyLoginCode } from "@/lib/sms-login";
+import { parsePerms, type Perms } from "@/lib/auth";
 
 /**
  * Mobil ilova (Insof ECO) uchun autentifikatsiya — ERP login/paroli bo'yicha.
@@ -24,7 +25,8 @@ import { verifyLoginCode } from "@/lib/sms-login";
 const ACCESS_TTL = "12h";
 const REFRESH_TTL = "30d";
 
-export type MobileUser = { id: string; login: string; fullName: string; role: Role; roleLabel: string };
+/** `perms` — direktor bergan modul/amal ruxsatlari (veb bilan bir xil, `lib/permissions.ts`); har so'rovda bazadan. */
+export type MobileUser = { id: string; login: string; fullName: string; role: Role; roleLabel: string; perms?: Perms };
 export type MobileTokens = { accessToken: string; refreshToken: string };
 
 export class MobileAuthError extends Error {
@@ -104,5 +106,6 @@ export async function requireMobileUser(req: Request): Promise<MobileUser> {
   if ((payload.sv ?? 0) !== user.sessionVersion) throw new MobileAuthError("TOKEN_INVALID", "Sessiya muddati tugagan");
   if (user.role === "SUPERADMIN") throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
   if (await companySuspension()) throw new MobileAuthError("USER_DISABLED", SUSPENDED_MESSAGE);
-  return toUser(user);
+  // Ruxsatlar tokenga yozilmaydi — direktor o'zgartirsa keyingi so'rovdanoq amal qiladi (`can()` — detail.ts)
+  return { ...toUser(user), perms: parsePerms(user.perms) };
 }

@@ -11,6 +11,7 @@
  */
 import sharp from "sharp";
 import { askVision, extractJson, visionEnabled, type ScanImage } from "./vision";
+import { sniffFileKind } from "@/lib/uploads";
 
 export type FaceMatch = { match: boolean; confidence: number; reason: string };
 
@@ -36,9 +37,24 @@ Qoidalar:
 - 1-rasmda yuz bo'lmasa — match=false, reason: "etalon suratda yuz yo'q".
 - Ishonchsiz bo'lsang confidence'ni past qo'y — "ha" deb o'ylab topma.`;
 
-/** Rasmni modelga mos o'lchamga keltiradi (JPEG, uzun tomoni ≤ 640 px). HEIC ham shu yerda JPEG bo'ladi. */
+/**
+ * sharp xavfsizligi (sharp 0.33.5 da qoladi — server CPU cheklovi, yangilanmaydi):
+ *  · faqat JPEG / PNG / WEBP — HEIF/AVIF/SVG/TIFF dekoderlari (libheif, librsvg, libtiff) eng ko'p
+ *    zaiflik topilgan joy, ularga umuman yetib bormaymiz: avval fayl boshidagi baytlar, keyin sharp
+ *    o'zi aniqlagan format tekshiriladi;
+ *  · `limitInputPixels` — "dekompressiya bombasi" (kichik fayl, ulkan o'lcham) xotirani yeb qo'ymasin;
+ *  · `failOn: "error"` — buzuq fayl jimgina "tuzatilib" o'qilmaydi, rad etiladi.
+ */
+const FACE_FORMATS = new Set(["jpeg", "png", "webp"]);
+const SHARP_OPTS = { failOn: "error", limitInputPixels: 40_000_000 } as const;
+
+/** Rasmni modelga mos o'lchamga keltiradi (JPEG, uzun tomoni ≤ 512 px). Faqat JPEG/PNG/WEBP qabul qilinadi. */
 export async function faceImage(input: Buffer): Promise<ScanImage> {
-  const buf = await sharp(input, { failOn: "none" }).rotate().resize(SIDE, SIDE, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+  const kind = sniffFileKind(input);
+  if (kind !== "jpg" && kind !== "png" && kind !== "webp") throw new Error("Rasm formati qo'llab-quvvatlanmaydi — faqat JPEG, PNG yoki WEBP");
+  const meta = await sharp(input, SHARP_OPTS).metadata();
+  if (!meta.format || !FACE_FORMATS.has(meta.format)) throw new Error("Rasm formati qo'llab-quvvatlanmaydi — faqat JPEG, PNG yoki WEBP");
+  const buf = await sharp(input, SHARP_OPTS).rotate().resize(SIDE, SIDE, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
   return { mime: "image/jpeg", base64: buf.toString("base64") };
 }
 

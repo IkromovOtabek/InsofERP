@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { createHash } from "crypto";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
@@ -88,8 +89,42 @@ export async function login(loginName: string, password: string): Promise<Sessio
   return session;
 }
 
+/* ───────────── Chiqish: tokenni server tomonda bekor qilish ─────────────
+ *
+ * Nega `sessionVersion` emas: uni oshirish hisobning BARCHA sessiyalarini (boshqa brauzer, mobil
+ * ilova tokenlari) kuydiradi — bu "hamma qurilmadan chiqish" (`revokeSessions`, parol almashganda).
+ * Oddiy "Chiqish" esa faqat SHU tokenni o'ldirishi kerak. Shuning uchun token xeshi muddati
+ * tugaguncha xotiradagi rad ro'yxatida turadi: cookie o'g'irlangan bo'lsa ham chiqqandan keyin ishlamaydi.
+ * Xotirada (ERP bitta jarayonda ishlaydi): restart'da ro'yxat tozalanadi — maqbul, chunki token
+ * baribir 12 soatda o'ladi, xavfli holatda esa direktor parolni almashtiradi (sessionVersion).
+ * `globalThis` — Next route handler va server action modullari alohida yuklansa ham ro'yxat bitta bo'lsin.
+ */
+const g = globalThis as unknown as { __insofRevokedTokens?: Map<string, number> };
+const revokedTokens = (g.__insofRevokedTokens ??= new Map<string, number>());
+const tokenKey = (token: string) => createHash("sha256").update(token).digest("base64url");
+
+/** Tokenni muddati tugaguncha bekor qiladi (imzosi noto'g'ri/eskirgan bo'lsa — hech narsa qilinmaydi). */
+export async function revokeToken(token: string | undefined | null) {
+  if (!token) return;
+  try {
+    const { payload } = await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS });
+    const exp = (payload.exp ?? 0) * 1000;
+    const now = Date.now();
+    if (exp > now) revokedTokens.set(tokenKey(token), exp);
+    if (revokedTokens.size > 1000) for (const [k, e] of revokedTokens) if (e <= now) revokedTokens.delete(k);
+  } catch { /* yaroqsiz token — bekor qilishga hojat yo'q */ }
+}
+
+function isRevoked(token: string): boolean {
+  const exp = revokedTokens.get(tokenKey(token));
+  if (exp === undefined) return false;
+  if (exp <= Date.now()) { revokedTokens.delete(tokenKey(token)); return false; }
+  return true;
+}
+
 export async function logout() {
   const c = await cookies();
+  await revokeToken(c.get(COOKIE)?.value);
   c.delete(COOKIE);
   c.delete(TOUR_COOKIE);
 }
@@ -103,6 +138,7 @@ export async function logout() {
 export const getSession = cache(async (): Promise<Session | null> => {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
+  if (isRevoked(token)) return null; // "Chiqish" bosilgan token
   let claims: Claims;
   try {
     claims = (await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS })).payload as unknown as Claims;
@@ -143,6 +179,26 @@ export async function requireAction(module: string, action: string, fallbackRole
   const s = await getSession();
   if (!s) throw new Error("UNAUTHENTICATED");
   if (!canDo(s, module, action, fallbackRoles)) throw new Error("Bu amal uchun sizda ruxsat yo'q — direktordan ruxsat so'rang");
+  return s;
+}
+
+/**
+ * Katalogda (`MODULE_ACTIONS`) aniq amali yo'q modul uchun YOZISH guard'i (ta'minot zanjiri, katalog...).
+ * Avvalgidek rol ro'yxati bo'yicha, lekin direktor bergan modul ruxsati (User.perms) ham hisobga olinadi:
+ *  · "none" / "view" / bo'sh amallar ro'yxati — rol mos kelsa ham YOZA OLMAYDI (faqat ko'radi yoki yopiq);
+ *  · "write" — rol ro'yxatida bo'lmasa ham yozadi (direktor bergan ruxsat rol cheklovidan ustun).
+ * Bare `requireSession([...rollar])` o'rniga mutatsiya qiladigan server action'larda shu ishlatiladi.
+ */
+export async function requireModuleWrite(module: string, allowed: readonly Role[]): Promise<Session> {
+  const s = await getSession();
+  if (!s) throw new Error("UNAUTHENTICATED");
+  if (s.role === "DIRECTOR") return s;
+  const lvl = s.perms?.[module];
+  if (lvl === "none" || lvl === "view" || (Array.isArray(lvl) && lvl.length === 0)) {
+    throw new Error("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
+  }
+  if (lvl === "write") return s;
+  if (!allowed.includes(s.role)) throw new Error("FORBIDDEN");
   return s;
 }
 

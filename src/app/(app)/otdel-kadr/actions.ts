@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
@@ -18,7 +18,8 @@ import { saveEmployeeFile, removeEmployeeFile, photoEntry } from "@/lib/uploads"
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
 /** Ishchi lavozimlarni faqat otdel kadr (va direktor) yuritadi. */
-const hr = () => requireSession(["HR"]);
+// Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
+const hr = () => requireAction("employees", "edit", ["HR"]);
 
 const schema = z.object({
   name: zStr("Lavozim nomi kerak"),

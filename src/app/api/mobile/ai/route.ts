@@ -4,17 +4,18 @@ import { CATALOG, aiAnswer } from "@/lib/bi/ai";
 import { parseRange } from "@/lib/bi/core";
 import { askInsofAi } from "@/lib/bi/answer";
 import { llmEnabled, type LlmTurn } from "@/lib/ai/llm";
+import { canDo } from "@/lib/permissions";
+import { aiAllowed } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Vebdagi AI panel (`/api/ai`) bilan bir xil rollar. */
-const AI_ROLES = new Set(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
 type Body = { mode?: "quick" | "chat"; key?: string; question?: string; history?: LlmTurn[] };
 
 async function guard(req: Request) {
   const user = await requireMobileUser(req);
-  if (!AI_ROLES.has(user.role)) throw new MobileAuthError("FORBIDDEN", "AI yordamchi faqat direktor va moliya uchun", 403);
+  // Vebdagi AI panel (`/api/ai`) bilan bir xil qoida: rol + direktor bergan "bi-tahlil → ai" ruxsati
+  if (!canDo(user, "bi-tahlil", "ai")) throw new MobileAuthError("FORBIDDEN", "AI yordamchi faqat direktor va moliya uchun", 403);
   return user;
 }
 
@@ -35,7 +36,9 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   return handle(async () => {
-    await guard(req);
+    const user = await guard(req);
+    // Foydalanuvchi bo'yicha chek (veb bilan umumiy hisob): LLM so'rovlari pulli/kvotali
+    if (!aiAllowed(user.id)) throw new MobileAuthError("RATE_LIMITED", "So'rovlar juda ko'p. Birozdan keyin qayta urinib ko'ring.", 429);
     const body = (await req.json().catch(() => ({}))) as Body;
     const sp = { period: "month" };
     const range = parseRange(sp);
@@ -49,7 +52,10 @@ export async function POST(req: Request) {
     const question = (body.question ?? "").trim().slice(0, 1000);
     if (!question) throw new MobileAuthError("EMPTY", "Savol bo'sh", 400);
     // Tarix qisqa: Groq bepul tarifida bitta so'rov 8K token bilan cheklangan
-    const history = (body.history ?? []).slice(-6).map((t) => ({ role: t.role, text: String(t.text).slice(0, 2000) }));
+    // `role` faqat "user" | "assistant" — mijoz "system" kabi rol yuborib model ko'rsatmasini almashtira olmasin
+    const history = (Array.isArray(body.history) ? body.history : []).slice(-6)
+      .filter((t) => t && (t.role === "user" || t.role === "assistant"))
+      .map((t) => ({ role: t.role, text: String(t.text ?? "").slice(0, 2000) }));
     const r = await askInsofAi(question, { sp, history });
     return { answer: r.answer, level: r.level, model: r.model, period: r.period };
   });

@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireModuleWrite } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { flatName, num, str } from "@/lib/excel";
@@ -40,7 +40,7 @@ const groupSchema = z.object({
 
 /** Yangi papka (guruh). `parentId` — ochiq turgan papka. */
 export async function createProductGroup(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(groupSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -74,7 +74,7 @@ const productSchema = z.object({
  * Shu nomli (yoki kodli) mahsulot allaqachon bo'lsa dublikat ochilmaydi — mavjudi yangilanadi.
  */
 export async function createCatalogProduct(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(productSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -207,7 +207,7 @@ const productKind = (v: unknown) => { const k = flatName(str(v)); return k ? (PR
  * Fayl to'xtatmaydi: birlik tanilmasa "dona", narx xato bo'lsa 0 olinadi — faqat nomi bo'sh qatorlar tashlanadi.
  */
 export async function importCatalogProducts(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
   let rows: ImportRow[];
@@ -267,7 +267,7 @@ const MATRIX_MAX = 500; // bir urinishda shuncha katakdan ko'pi yozilmaydi
  * Nomi mavjud mahsulotga to'g'ri kelsa — takror yaratilmaydi, narxi/birligi yangilanadi.
  */
 export async function createProductMatrix(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(matrixSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -317,7 +317,7 @@ type MergePair = { keepId?: unknown; dropIds?: unknown };
 class MergeError extends Error {}
 
 export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const r = parseForm(mergeSchema, fd);
   if ("error" in r) return { error: r.error };
   let pairs: MergePair[];
@@ -382,7 +382,7 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
  * (`isActive = false`): ro'yxatlarda ko'rinmaydi, eski hujjatlar esa joyida qoladi.
  */
 export async function deleteCatalogProduct(id: string): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const p = await db.product.findUnique({ where: { id } });
   if (!p) return { error: "Mahsulot topilmadi" };
 
@@ -424,7 +424,7 @@ export async function deleteCatalogProduct(id: string): Promise<ActionState> {
 
 /** Papkani o'chirish — faqat bo'sh papka (ichida papka ham, mahsulot ham bo'lmasa). */
 export async function deleteProductGroup(id: string): Promise<ActionState> {
-  const s = await requireSession([...CATALOG_ROLES]);
+  const s = await requireModuleWrite("production", CATALOG_ROLES);
   const g = await db.productGroup.findUnique({ where: { id } });
   if (!g) return { error: "Papka topilmadi" };
   const [children, products] = await Promise.all([

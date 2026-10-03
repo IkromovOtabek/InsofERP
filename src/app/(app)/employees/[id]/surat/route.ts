@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Ikkinchi qulf: xodim hujjatlari faqat /employees ga kirish huquqi borlarga
   const s = await getSession();
-  if (!s || !pathAllowed("/employees", s.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!s || !pathAllowed("/employees", s.role, s.perms)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   const { id } = await params;
   const e = await db.employee.findUnique({ where: { id }, select: { photo: true } });
   const p = e?.photo ? employeeFilePath(e.photo) : null;

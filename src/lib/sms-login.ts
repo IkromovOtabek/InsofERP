@@ -7,6 +7,7 @@ import { issueSession } from "@/lib/auth";
 import { TOUR_COOKIE } from "@/lib/tour";
 import { sendSms } from "@/lib/sms";
 import { normalizePhone } from "@/lib/sms/phone";
+import { hit } from "@/lib/rate-limit";
 import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId } from "@/lib/telegram/notify";
 import { botEnabled, sendMessage } from "@/lib/telegram/api";
@@ -54,6 +55,8 @@ export type LoginCodeConfirm = { ok: true; login: string } | { ok: false; error:
 
 /** Noto'g'ri kod / noma'lum raqamda bir xil xabar — raqam tizimda bor-yo'qligi bilinmasin. */
 const WRONG = "Kod noto'g'ri yoki muddati tugagan";
+/** Soatlik chek xabari — mavjud va noma'lum raqam uchun bir xil. */
+const RATE_LIMIT_MSG = "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling.";
 
 /** Login kodini xodimning Telegram botiga yuborish (reset'dan boshqa matn: bu kirish kodi). */
 async function sendCodeToBot(userId: string, code: string): Promise<{ ok: boolean }> {
@@ -81,8 +84,13 @@ export async function requestLoginCode(rawPhone: string): Promise<LoginCodeReque
   const phone = normalizePhone(rawPhone);
   if (!phone) return { ok: false, error: "Telefon raqami noto'g'ri. Masalan: 90 123 45 67" };
 
+  // Raqam bo'yicha soatlik chek — raqam tizimda bor-yo'qligidan QAT'I NAZAR bir xil qo'llanadi,
+  // aks holda "juda ko'p urinish" faqat mavjud raqamlarda chiqib, ularni oshkor qilardi.
+  if (!hit(`login-code:ph:${phone}`, MAX_CODES_PER_HOUR, 3600_000)) return { ok: false, error: RATE_LIMIT_MSG };
+
   // Raqam yo'q / bir nechta kartada bo'lsa — javob bir xil ("yuborildi"): begona odam istalgan
   // raqam xodimniki ekanini sinab bilib olmasin. Kod ham yaratilmaydi (limit behuda yeyilmasin).
+  // Chaqiruvchilar `sent`/`via` ni tashqariga chiqarmaydi — javob har doim bir xil `{sent:true}`.
   const silent: LoginCodeRequest = { ok: true, sent: false };
   const found = await staffByPhone(phone);
   if (found.kind !== "found") return silent;
@@ -90,9 +98,7 @@ export async function requestLoginCode(rawPhone: string): Promise<LoginCodeReque
   const recent = await db.passwordResetCode.count({
     where: { phone, createdAt: { gt: new Date(Date.now() - 3600_000) } },
   });
-  if (recent >= MAX_CODES_PER_HOUR) {
-    return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling." };
-  }
+  if (recent >= MAX_CODES_PER_HOUR) return { ok: false, error: RATE_LIMIT_MSG };
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await db.passwordResetCode.create({
@@ -145,8 +151,15 @@ export async function verifyLoginCode(rawPhone: string, code: string): Promise<L
   if (rec.expiresAt < new Date()) return { ok: false, error: WRONG };
   if (rec.attempts >= MAX_ATTEMPTS) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
 
+  // Urinish taqqoslashdan OLDIN atomar hisoblanadi: parallel so'rovlar bilan 5 tadan ortiq
+  // taxmin qilib bo'lmasin (o'qish → taqqoslash → yozish orasidagi poyga yopiladi).
+  const slot = await db.passwordResetCode.updateMany({
+    where: { id: rec.id, usedAt: null, attempts: { lt: MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (slot.count === 0) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
+
   if (!(await bcrypt.compare(code.trim(), rec.codeHash))) {
-    await db.passwordResetCode.update({ where: { id: rec.id }, data: { attempts: { increment: 1 } } });
     const left = MAX_ATTEMPTS - rec.attempts - 1;
     return { ok: false, error: left > 0 ? `Kod noto'g'ri. Yana ${left} urinish qoldi` : "Urinishlar tugadi — yangi kod so'rang" };
   }
@@ -158,12 +171,16 @@ export async function verifyLoginCode(rawPhone: string, code: string): Promise<L
   });
   if (!user || !user.isActive) return { ok: false, error: WRONG };
 
-  await db.$transaction(async (tx) => {
-    await tx.passwordResetCode.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
+  const done = await db.$transaction(async (tx) => {
+    // Kod faqat bir marta ishlatiladi — parallel ikkinchi so'rov shu yerda to'xtaydi
+    const claim = await tx.passwordResetCode.updateMany({ where: { id: rec.id, usedAt: null }, data: { usedAt: new Date() } });
+    if (claim.count === 0) return false;
     // Qolgan ochiq kodlar ham kuyadi — bittasi ishlatildi, boshqasi kerak emas
     await tx.passwordResetCode.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
     await audit(tx, user.id, "UPDATE", "User", user.id, undefined, { login: "sms-code", phone });
+    return true;
   });
+  if (!done) return { ok: false, error: WRONG };
 
   return { ok: true, user };
 }

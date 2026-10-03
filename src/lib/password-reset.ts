@@ -6,6 +6,7 @@ import { hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { sendSms } from "@/lib/sms";
 import { normalizePhone } from "@/lib/sms/phone";
+import { hit } from "@/lib/rate-limit";
 import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId, sendResetCodeToBot } from "@/lib/telegram/notify";
 import { botEnabled } from "@/lib/telegram/api";
@@ -56,6 +57,11 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   // odam istalgan raqam xodimniki ekanini (va Telegram ulanganini) sinab bilib olardi. Nima qilish
   // kerakligi sahifada har doim yozilgan (raqamni tekshirish, botga ulanish, Otdel kadr).
   const silent: ResetRequest = { ok: true, sent: false, via: SMS_FALLBACK ? undefined : "telegram" };
+  // Soatlik chek raqam tizimda bor-yo'qligidan qat'i nazar bir xil qo'llanadi — "juda ko'p urinish"
+  // faqat mavjud raqamda chiqib, uni oshkor qilmasin.
+  if (!hit(`reset-code:ph:${phone}`, MAX_CODES_PER_HOUR, 3600_000)) {
+    return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling." };
+  }
   const found = await staffByPhone(phone);
   if (found.kind === "ambiguous" || found.kind === "none") return silent;
 
@@ -147,20 +153,32 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
   if (rec.expiresAt < new Date()) return wrong;
   if (rec.attempts >= MAX_ATTEMPTS) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
 
+  // Urinish taqqoslashdan OLDIN atomar hisoblanadi: parallel so'rovlar bilan 5 tadan ortiq
+  // taxmin qilib bo'lmasin (o'qish → taqqoslash → yozish orasidagi poyga yopiladi).
+  const slot = await db.passwordResetCode.updateMany({
+    where: { id: rec.id, usedAt: null, attempts: { lt: MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (slot.count === 0) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
+
   if (!(await bcrypt.compare(code.trim(), rec.codeHash))) {
-    await db.passwordResetCode.update({ where: { id: rec.id }, data: { attempts: { increment: 1 } } });
     const left = MAX_ATTEMPTS - rec.attempts - 1;
     return { ok: false, error: left > 0 ? `Kod noto'g'ri. Yana ${left} urinish qoldi` : "Urinishlar tugadi — yangi kod so'rang" };
   }
 
-  await db.$transaction(async (tx) => {
-    await tx.user.update({ where: { id: found.user.id }, data: { passwordHash: await hashPassword(newPassword) } });
+  const hash = await hashPassword(newPassword);
+  const done = await db.$transaction(async (tx) => {
+    // Kod faqat bir marta ishlatiladi — parallel ikkinchi so'rov shu yerda to'xtaydi
+    const claim = await tx.passwordResetCode.updateMany({ where: { id: rec.id, usedAt: null }, data: { usedAt: new Date() } });
+    if (claim.count === 0) return false;
+    await tx.user.update({ where: { id: found.user.id }, data: { passwordHash: hash } });
     await revokeSessions(tx, found.user.id); // parol almashdi — eski sessiyalar (telefonini yo'qotgan bo'lsa ham) kuyadi
-    await tx.passwordResetCode.update({ where: { id: rec.id }, data: { usedAt: new Date() } });
     // Qolgan ochiq kodlar ham kuyadi — bittasi ishlatildi, boshqasi kerak emas
     await tx.passwordResetCode.updateMany({ where: { userId: found.user.id, usedAt: null }, data: { usedAt: new Date() } });
     await audit(tx, found.user.id, "UPDATE", "User", found.user.id, undefined, { passwordReset: "self-code", phone });
+    return true;
   });
+  if (!done) return wrong;
 
   return { ok: true, login: found.user.login };
 }
