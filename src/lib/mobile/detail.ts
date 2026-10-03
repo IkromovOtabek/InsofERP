@@ -963,7 +963,7 @@ async function cashflowDetail(id: string): Promise<MobileDetail> {
   const out = t.type === "EXPENSE";
   const fields: DetailField[] = [
     { label: "Sana", value: dt(t.date) },
-    { label: "Turi", value: out ? "Chiqim" : "Kirim", tone: out ? "danger" : "success" },
+    { label: "Turi", value: out ? "Chiqim" : t.type === "OPENING" ? "Boshlang'ich qoldiq" : "Kirim", tone: out ? "danger" : t.type === "OPENING" ? "info" : "success" },
     { label: "Kategoriya", value: t.category },
     { label: "Hisob", value: t.cashAccount.name },
     ...(t.counterparty ? [{ label: out ? "Kimga" : "Kimdan", value: t.counterparty }] : []),

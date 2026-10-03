@@ -9,6 +9,8 @@ import { reassignable } from "@/lib/tasks";
 import type { ActionState } from "@/lib/action";
 import { notifyAfter, notifyEmployees } from "@/lib/notify";
 
+class AssignError extends Error {}
+
 /**
  * Tasdiqlash: tanlangan brigadalar qatorlarga yoziladi va har qator uchun topshiriq yaratiladi.
  * Faqat shu tugma bosilganda brigadalarga yuboriladi. Brigada tanlanmagan qatorlar keyinga qoladi.
@@ -31,8 +33,13 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
   const made = await db.$transaction(async (tx) => {
     const rows: { taskId: string; taskNo: string; brigadeId: string; qty: number }[] = [];
     for (const { item, brigadeId } of picks) {
-      // Bekor qilingan (bajarilmagan) topshiriq qatorni band qilib turmasin — o'rniga yangisi ochiladi
-      if (item.task) await tx.brigadeTask.delete({ where: { id: item.task.id } });
+      // Bekor qilingan (bajarilmagan) topshiriq qatorni band qilib turmasin — o'rniga yangisi ochiladi.
+      // Bajarilganlik qaydi (TaskProgress) bo'lsa o'chirilmaydi (FK Restrict) — tarix yo'qolmasin
+      if (item.task) {
+        const progress = await tx.taskProgress.count({ where: { taskId: item.task.id } });
+        if (progress) throw new AssignError(`${item.task.taskNo}: bajarilganlik qaydi bor — topshiriqni qayta tayinlab bo'lmaydi`);
+        await tx.brigadeTask.delete({ where: { id: item.task.id } });
+      }
       await tx.orderItem.update({ where: { id: item.id }, data: { brigadeId } });
       const t = await tx.brigadeTask.create({
         data: { taskNo: await nextNo(tx, "brigadeTask", "T"), orderId, orderItemId: item.id, brigadeId, qty: item.qtyM3, dueDate: o.deliveryDate, createdById: s.userId },
@@ -41,7 +48,8 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
       rows.push({ taskId: t.id, taskNo: t.taskNo, brigadeId, qty: Number(item.qtyM3) });
     }
     return rows;
-  });
+  }).catch((e: Error) => { if (e instanceof AssignError) return { error: e.message }; throw e; });
+  if ("error" in made) return { error: made.error };
 
   // Brigadir topshiriq berilganini bilishi kerak — u sexda, ekran oldida emas
   notifyAfter(async () => {

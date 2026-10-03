@@ -313,7 +313,8 @@ const cashSummary: Tool = {
         const p0 = Number(allPay.find((x) => x.cashAccountId === acc.id)?._sum.amount ?? 0);
         const i0 = Number(allTx.find((x) => x.cashAccountId === acc.id && x.type === "INCOME")?._sum.amount ?? 0);
         const e0 = Number(allTx.find((x) => x.cashAccountId === acc.id && x.type === "EXPENSE")?._sum.amount ?? 0);
-        return `  ${acc.name} (${acc.type === "CASH" ? "naqd" : "bank"}): ${M(p0 + i0 - e0)}`;
+        const o0 = Number(allTx.find((x) => x.cashAccountId === acc.id && x.type === "OPENING")?._sum.amount ?? 0); // boshlang'ich qoldiq
+        return `  ${acc.name} (${acc.type === "CASH" ? "naqd" : "bank"}): ${M(p0 + i0 + o0 - e0)}`;
       }),
     ];
     return out.filter(Boolean).join("\n");

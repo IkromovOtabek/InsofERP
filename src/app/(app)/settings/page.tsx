@@ -22,6 +22,7 @@ import { DeletionRow } from "./deletion-forms";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
 import { DEFAULT_PAYABLES_SINCE } from "@/lib/receipt-payables";
 import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
+import { txSign } from "@/lib/cash-tx";
 
 const TABS = [
   ["company", "Zavod rekvizitlari", Building2],
@@ -314,7 +315,7 @@ async function AccountsTab() {
   // Qoldiq — Kirim-Chiqim va Egasi dashbordi bilan bir xil formula; qoldig'i bor hisob nofaol qilinmaydi
   const bal = new Map<string, number>();
   for (const p of pay) bal.set(p.cashAccountId, (bal.get(p.cashAccountId) ?? 0) + Number(p._sum.amount ?? 0));
-  for (const t of tx) bal.set(t.cashAccountId, (bal.get(t.cashAccountId) ?? 0) + (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0));
+  for (const t of tx) bal.set(t.cashAccountId, (bal.get(t.cashAccountId) ?? 0) + txSign(t.type) * Number(t._sum.amount ?? 0));
   const types: [string, string][] = [["CASH", "Naqd kassa"], ["BANK", "Bank hisobi"]];
   return (
     <div className="space-y-4">

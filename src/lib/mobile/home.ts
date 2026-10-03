@@ -229,7 +229,8 @@ async function cashBalance() {
   ]);
   const income = tx.find((t) => t.type === "INCOME")?._sum.amount;
   const expense = tx.find((t) => t.type === "EXPENSE")?._sum.amount;
-  return sum(pay._sum.amount) + sum(income) - sum(expense);
+  const opening = tx.find((t) => t.type === "OPENING")?._sum.amount; // boshlang'ich qoldiq
+  return sum(pay._sum.amount) + sum(income) + sum(opening) - sum(expense);
 }
 
 /** Dashboard qoplab olgan eski "hozirgi holat" kartalari — ikki marta chiqmasin (kalitlar shu fayldagi `cards.push` lardan). */
@@ -611,7 +612,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         cashBalance(),
         db.payment.aggregate({ where: { date: { gte: today } }, _sum: { amount: true } }),
         db.cashTransaction.aggregate({ where: { date: { gte: today }, type: "EXPENSE" }, _sum: { amount: true } }),
-        db.cashTransaction.findMany({ orderBy: { date: "desc" }, take: 12, include: { cashAccount: true } }),
+        db.cashTransaction.findMany({ where: { type: { not: "OPENING" } }, orderBy: { date: "desc" }, take: 12, include: { cashAccount: true } }),
       ]);
       cards.push(
         { key: "balance", label: "Kassa qoldig'i", value: short(balance), hint: "so'm", tone: balance >= 0 ? "success" : "danger", icon: "wallet" },

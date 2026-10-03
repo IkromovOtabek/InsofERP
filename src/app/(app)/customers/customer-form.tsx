@@ -5,7 +5,7 @@ import { saveCustomer } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Textarea, FormActions, Checkbox } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 
-type C = { id: string; name: string; inn: string | null; phone: string | null; address: string | null; creditLimit: string; isActive: boolean } | null;
+type C = { id: string; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson?: string | null; creditLimit: string; isActive: boolean } | null;
 
 export function CustomerForm({ customer, canEditLimit }: { customer: C; canEditLimit: boolean }) {
   const [state, action, pending] = useActionState(saveCustomer.bind(null, customer?.id ?? null), undefined);
@@ -18,6 +18,7 @@ export function CustomerForm({ customer, canEditLimit }: { customer: C; canEditL
         <Field label="Telefon"><Input name="phone" defaultValue={customer?.phone ?? ""} /></Field>
       </div>
       <Field label="Manzil"><Textarea name="address" defaultValue={customer?.address ?? ""} /></Field>
+      <Field label="Mas'ul shaxs" hint="F.I.O., lavozimi — kim bilan gaplashiladi"><Input name="contactPerson" defaultValue={customer?.contactPerson ?? ""} /></Field>
       <Field label="Kredit limit" hint={canEditLimit ? "Standart 100 000 000. 0 = faqat oldindan to'lov" : "Standart 100 mln. Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi"}>
         <MoneyInput name="creditLimit" defaultValue={customer?.creditLimit ?? "0"} readOnly={!canEditLimit} />
       </Field>

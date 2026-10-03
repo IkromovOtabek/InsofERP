@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { Badge, Button, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { FileSpreadsheet } from "lucide-react";
+import { Badge, Button, Card, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { SupplierForm } from "./supplier-form";
 import { toggleSupplier } from "./actions";
 import { requirePage } from "@/lib/page-guard";
@@ -10,7 +11,7 @@ export default async function SuppliersPage() {
   const suppliers = await db.supplier.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { receipts: true } } } });
   return (
     <div>
-      <PageHeader title="Yetkazuvchilar" />
+      <PageHeader title="Yetkazuvchilar" action={<LinkButton href="/suppliers/import" variant="secondary"><FileSpreadsheet size={16} /> Excel import</LinkButton>} />
       <Card className="mb-6"><SupplierForm /></Card>
       <Table>
         <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Kirimlar</Th><Th>Holat</Th><Th></Th></tr></thead>

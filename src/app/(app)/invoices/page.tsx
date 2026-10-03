@@ -5,7 +5,7 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { getSession } from "@/lib/auth";
 import { money, date } from "@/lib/format";
-import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
+import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
 import { ConfirmButton } from "../payments/confirm-button";
 import { INVOICE_STATUS, InvoiceStatusBadge } from "./status";
 import { cancelInvoice } from "./actions";
@@ -42,11 +42,11 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
               <Tr key={i.id}>
                 <Td className="font-medium">{i.invoiceNo}</Td><Td>{date(i.date)}</Td>
                 <Td><CustomerName name={i.customer.name} blacklisted={marks.black.has(i.customerId)} contracted={marks.contract.has(i.customerId)} href={`/customers/${i.customerId}`} /></Td>
-                <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{i.order.orderNo}</Link> : "—"}</Td>
+                <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{i.order.orderNo}</Link> : i.isOpening ? <Badge color="blue" dot={false}>Boshlang&apos;ich qoldiq</Badge> : "—"}</Td>
                 <Td right>{money(i.amount)}</Td><Td right>{money(paid)}</Td>
                 <Td right className={Number(i.amount) - paid > 0 && i.status !== "CANCELLED" ? "text-red-600" : ""}>{i.status === "CANCELLED" ? "—" : money(Number(i.amount) - paid)}</Td>
                 <Td><InvoiceStatusBadge status={i.status} /></Td>
-                <Td>{i.status === "OPEN" && paid === 0 && canCancel && <ConfirmButton action={cancelInvoice.bind(null, i.id)} label="Bekor" question={`${i.invoiceNo} bekor qilinsinmi?`} reason="optional" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}</Td>
+                <Td>{i.status === "OPEN" && paid === 0 && canCancel && !i.isOpening && <ConfirmButton action={cancelInvoice.bind(null, i.id)} label="Bekor" question={`${i.invoiceNo} bekor qilinsinmi?`} reason="optional" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}</Td>
               </Tr>
             );
           })}

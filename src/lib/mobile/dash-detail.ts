@@ -825,7 +825,7 @@ async function income(r: DashRange): Promise<Part> {
 async function netFlow({ r }: Ctx): Promise<Part> {
   const [pay, tx, prevPay, prevTx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccount: { select: { name: true } } } }),
-    db.cashTransaction.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccount: { select: { name: true } } } }),
+    db.cashTransaction.findMany({ where: { type: { not: "OPENING" }, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccount: { select: { name: true } } } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
@@ -860,7 +860,8 @@ async function balances({ r }: Ctx): Promise<Part> {
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
   ]);
   const rows = accounts.map((a) => {
-    const inAll = sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount) + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount);
+    // Boshlang'ich qoldiq (OPENING) qoldiqqa kiradi, davr kirimi/chiqimiga emas
+    const inAll = sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount) + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount) + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "OPENING")?._sum.amount);
     const outAll = sum(tx.find((t) => t.cashAccountId === a.id && t.type === "EXPENSE")?._sum.amount);
     const inP = sum(perPay.find((p) => p.cashAccountId === a.id)?._sum.amount) + sum(perTx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount);
     const outP = sum(perTx.find((t) => t.cashAccountId === a.id && t.type === "EXPENSE")?._sum.amount);
@@ -876,7 +877,7 @@ async function balances({ r }: Ctx): Promise<Part> {
 }
 
 async function invoicesIssued({ r }: Ctx): Promise<Part> {
-  const rows = await db.invoice.findMany({ where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, amount: true, status: true, customer: { select: { id: true, name: true } }, order: { select: { orderNo: true } }, payments: { select: { amount: true } } } });
+  const rows = await db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, amount: true, status: true, customer: { select: { id: true, name: true } }, order: { select: { orderNo: true } }, payments: { select: { amount: true } } } });
   const total = sumBy(rows, (i) => sum(i.amount));
   const paid = sumBy(rows, (i) => sumBy(i.payments, (p) => sum(p.amount)));
   const TONE: Record<string, Tone> = { OPEN: "warning", PARTIAL: "warning", PAID: "success", CANCELLED: "danger" };
