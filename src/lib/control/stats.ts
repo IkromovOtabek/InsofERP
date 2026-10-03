@@ -1,6 +1,7 @@
 import { statfs } from "node:fs/promises";
 import os from "node:os";
 import { control, tenantDb } from "./db";
+import { releaseVersion } from "./release";
 import type { Tenant } from "@/generated/control";
 
 /**
@@ -166,6 +167,6 @@ export async function serverStats() {
     memTotalGb: Math.round((os.totalmem() / 1e9) * 10) / 10,
     disk,
     node: process.version,
-    commit: process.env.GIT_COMMIT?.slice(0, 7) ?? null,
+    commit: releaseVersion()?.slice(0, 7) ?? null,
   };
 }

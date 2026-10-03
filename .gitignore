@@ -19,3 +19,14 @@ uploads/
 # Vaqtinchalik GPS kuzatuv skripti
 .tmp-watch/
 tenants/
+
+# Platforma: sirli sozlamalar va relizlar (serverda)
+control.env
+build.env
+backup.env
+releases/
+current
+
+# Lokal artefaktlar
+tsconfig.tsbuildinfo
+scratchpad/

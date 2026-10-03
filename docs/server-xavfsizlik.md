@@ -298,6 +298,11 @@ paydo bo'ladi — oyda bir `sudo reboot` (tungi vaqtda; xizmatlar `enabled`, o'z
 
 ### 3.4 Nginx: versiya yashirish, haqiqiy IP, tezlik cheklovi
 
+> **Platformada (ko'p korxona):** quyidagilar tayyor shablonlarda — `docs/deploy/nginx-limits.conf`
+> (`insof_auth`, `insof_pub`, `insof_ai` zonalari → `/etc/nginx/conf.d/insof-limits.conf`), `docs/deploy/nginx-tenant.conf`
+> (har korxona; `scripts/tenant-up.sh` qo'yadi) va `docs/deploy/nginx-control.conf` (admin domeni). Pastdagi qo'lda
+> tahrirlash — eski bitta korxonali sayt uchun.
+
 ```bash
 sudo nano /etc/nginx/nginx.conf
 ```
@@ -396,52 +401,54 @@ Baza parolini almashtirish: `ALTER ROLE insof PASSWORD '...'` + `.env` dagi `DAT
 
 ### 3.6 systemd qatlami (ilova buzilsa ham zarar chegaralanadi)
 
-`sudo systemctl edit insof-erp` ga 3.1 dagi bilan birga:
+Platformada himoya to'g'ridan-to'g'ri unit fayllarda: `docs/deploy/insof-erp@.service` va `docs/deploy/insof-control.service`
+(`systemctl edit` shart emas):
 
 ```ini
-[Service]
-ExecStart=
-ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1
+Restart=on-failure
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
+PrivateDevices=true
+ProtectSystem=strict          # butun fayl tizimi faqat o'qish uchun
 ProtectHome=true
-ReadWritePaths=/var/www/insof-erp/uploads /var/www/insof-erp/.next
+ProtectKernelTunables=true / ProtectKernelModules=true / ProtectControlGroups=true ...
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+# yozish faqat shu joylarga ("-" — papka bo'lmasa xato bermaydi):
+ReadWritePaths=-/var/lib/insof -/var/www/insof-erp/uploads -/var/www/insof-erp/releases   # .next/cache relizda
+# panel qo'shimcha: -/var/www/insof-erp/tenants (yangi korxona .env fayli)
 ```
 
-`ProtectSystem=full` — `/usr`, `/boot`, `/etc` faqat o'qishga. Ilova `uploads/` va `.next/cache` ga yozadi, shuning uchun
-`ReadWritePaths`. Restart'dan keyin `journalctl -u insof-erp -n 30` da `EACCES` bo'lmasa — ishlayapti.
+`MemoryDenyWriteExecute` qo'yilmaydi — Node (V8 JIT) u bilan ishlamaydi. O'rnatish/yangilash:
+
+```bash
+sudo install -m 644 docs/deploy/insof-erp@.service docs/deploy/insof-control.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl restart 'insof-erp@*' insof-control
+journalctl -u 'insof-erp@*' -n 50 | grep -i eacces     # bo'sh bo'lsa — yozish huquqlari yetarli
+systemd-analyze security insof-erp@insof                # ball (past — yaxshi)
+```
 
 ### 3.7 Zaxira nusxa: server tashqarisida ham
 
-Cron'dagi `erp-backup` bazani `/var/backups/insof-erp` ga oladi — lekin **shu serverda**. Disk yonsa ikkalasi ketadi.
+Platformada `scripts/server-backup.sh` barcha bazalarni (control + har korxona) va fayllar papkalarini oladi, 14 kun
+saqlaydi va **rclone/restic bilan server tashqarisiga** yuboradi; xato bo'lsa Telegram'ga xabar beradi va exit 1.
+`scripts/restore-test.sh` har hafta oxirgi nusxani vaqtinchalik bazaga tiklab tekshiradi. Sozlash, cron va logrotate:
+`docs/deploy/PLATFORMA.md` → «Zaxira nusxa». Eski `erp-backup` cron qatorini o'chiring.
 
-Serverda `uploads/` ni ham kunlik arxivga qo'shing (`crontab -e`, `deploy` ostida):
-
-```cron
-0 3 * * * APP_DIR=/var/www/insof-erp /usr/local/bin/erp-backup >> /var/log/erp-backup.log 2>&1
-15 3 * * * tar -czf /var/backups/insof-erp/uploads_$(date +\%F).tgz -C /var/www/insof-erp uploads && find /var/backups/insof-erp -name 'uploads_*.tgz' -mtime +14 -delete
-```
-
-Mac'da har kuni nusxani tortib olish (`crontab -e` Mac'da, kalit bilan kirish 3.2 da tayyor):
+Qo'shimcha (ixtiyoriy) — Mac'da har kuni mahalliy nusxani tortib olish:
 
 ```cron
-0 8 * * * rsync -az --delete deploy@189.74.98.242:/var/backups/insof-erp/ ~/Backups/insof-erp/
+0 8 * * * rsync -az --delete deploy@189.74.98.242:/var/backups/insof/ ~/Backups/insof/
 ```
 
-Nusxa **tiklanishini** oyda bir sinang (lokal bazaga):
-
-```bash
-createdb insof_restore_test && pg_restore -d insof_restore_test --no-owner ~/Backups/insof-erp/$(ls -t ~/Backups/insof-erp | grep dump | head -1) && psql insof_restore_test -c 'select count(*) from "Order";' && dropdb insof_restore_test
-```
-
-Tiklanmagan nusxa — nusxa emas.
+Tiklanmagan nusxa — nusxa emas: `restore-test.sh` jurnali (`/var/log/insof-restore-test.log`) ni oyda bir ko'ring.
 
 ### 3.8 Ilova darajasida (kod)
 
 - Har deploy'dan oldin: `npm run security:check` (exit 1 bo'lsa deploy to'xtasin).
-- Deploy qatori: `git pull && npm ci && npx prisma migrate deploy && npm run build && npm run security:check && sudo systemctl restart insof-erp`.
-- Prodda **hech qachon** `npm run db:seed` (admin123 yaratadi).
+- Deploy: `bash scripts/deploy.sh` — alohida relizda build, barcha bazalarga migratsiya, bittadan restart, `/api/health`, xato bo'lsa avtomatik qaytarish.
+- Davriy: `ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npm run security:check` (exit 1 — muammo bor).
+- Prodda **hech qachon** `npm run db:seed` / `db:demo` / `db:test-users` — skriptlar test bo'lmagan bazada rad etadi (`ALLOW_DEMO=yes-i-know` siz).
 - Ishdan ketgan xodim: Sozlamalar → hisobni faolsizlantirish (`sessionVersion` oshadi, veb va mobil sessiya darhol o'chadi).
 - Keyingi bosqich (kod): `/verify` QR'ga tasodifiy kod; direktor uchun 2FA; Next 16.
 

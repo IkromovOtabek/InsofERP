@@ -1,20 +1,55 @@
 # Har korxona uchun bitta jarayon: systemctl start insof-erp@<slug>
-# O'rnatish: sudo cp docs/deploy/insof-erp@.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# O'rnatish: sudo install -m 644 docs/deploy/insof-erp@.service /etc/systemd/system/ && sudo systemctl daemon-reload
 # (scripts/tenant-up.sh buni o'zi qiladi)
+#
+# Kod: /var/www/insof-erp/current → releases/<sha> (scripts/deploy.sh atomar almashtiradi).
+# Himoya (docs/server-xavfsizlik.md 3.6): butun fayl tizimi faqat o'qish uchun, yozish faqat
+# fayllar papkasi va relizlarning .next/cache ga. Tekshirish: journalctl -u insof-erp@<slug> -n 50 | grep EACCES
 [Unit]
 Description=Insof ERP — %i korxonasi
 After=network.target postgresql.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
 User=deploy
-WorkingDirectory=/var/www/insof-erp
+Group=deploy
+WorkingDirectory=/var/www/insof-erp/current
 EnvironmentFile=/var/www/insof-erp/tenants/%i.env
 # PORT .env dan; faqat localhost — tashqariga nginx orqali
 ExecStart=/bin/sh -c 'exec /usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$PORT"'
-Restart=always
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=20
 MemoryMax=900M
+UMask=0027
+
+# ── Xavfsizlik qatlami ──
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# MemoryDenyWriteExecute YO'Q — Node (V8 JIT) bilan ishlamaydi.
+# Yozish mumkin bo'lgan joylar ("-" — papka bo'lmasa xato bermaydi):
+#   /var/lib/insof          — yangi korxonalar fayllari (UPLOADS_DIR=/var/lib/insof/<slug>/uploads)
+#   /var/www/insof-erp/uploads — eski "insof" korxonasi fayllari va APK
+#   /var/www/insof-erp/releases — har relizning .next/cache (rasm optimizatsiyasi, ISR)
+ReadWritePaths=-/var/lib/insof -/var/www/insof-erp/uploads -/var/www/insof-erp/releases
 
 [Install]
 WantedBy=multi-user.target

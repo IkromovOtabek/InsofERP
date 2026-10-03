@@ -4,6 +4,8 @@
  *
  *   npx tsx scripts/reset-data.ts --yes          (yoki: npm run db:reset -- --yes)
  *
+ * Test bo'lmagan bazada (prod): ALLOW_DEMO=yes-i-know ADMIN_LOGIN=... ADMIN_PASSWORD='kamida 10 belgi' ADMIN_NAME='...'
+ *
  * HAMMASI o'chadi: mijoz, yetkazuvchi, zayavka, reys, kirim, zames, schyot,
  * to'lov, kassa, xomashyo, mahsulot, retsept, xodim, texnika, audit, SMS,
  * Telegram bog'lanishlari, foydalanuvchilar — barchasi.
@@ -16,13 +18,15 @@
  */
 import { PrismaClient } from "../src/generated/prisma";
 import bcrypt from "bcryptjs";
+import { guardDemo, scriptPassword } from "./demo-guard";
 
+// Bazani butunlay tozalaydi — test bazasida yoki ALLOW_DEMO=yes-i-know bilan (prodni go-live oldidan tozalash)
+const { testDb } = guardDemo("scripts/reset-data.ts");
 const db = new PrismaClient();
 
 const KEEP_TABLES = ["_prisma_migrations"];
 
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || "admin";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const ADMIN_NAME = process.env.ADMIN_NAME || "Direktor";
 
 /** Prodda ERP bazasi ECO Postgres'i ichida boshqa sxemada turishi mumkin (?schema=erp). */
@@ -75,6 +79,10 @@ async function main() {
     console.log(`  npx tsx scripts/reset-data.ts --yes\n`);
     return;
   }
+
+  // Test bo'lmagan bazada ADMIN_PASSWORD (kamida 10 belgi) majburiy — "admin123" faqat lokal test bazasida.
+  // Tozalashdan OLDIN tekshiriladi: parolsiz baza bo'shab, kirib bo'lmaydigan holat qolmasin.
+  const ADMIN_PASSWORD = scriptPassword(["ADMIN_PASSWORD"], testDb, "admin123");
 
   console.log(`\nTozalanmoqda...`);
   const list = tables.map((t) => `"${schema}"."${t}"`).join(", ");

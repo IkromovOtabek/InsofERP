@@ -6,11 +6,11 @@ import { authSecret, JWT_ALGS } from "@/lib/secret";
 
 /**
  * Login talab qilmaydigan yo'llar: ommaviy taqdimot, maxfiylik siyosati (do'konlar uchun), login, QR tekshiruv, Telegram va Insof ECO webhook'lari
- * (maxfiy token/imzo bilan himoyalangan) va mobil ilova API'si (o'z Bearer tokeni bilan himoyalangan —
+ * (maxfiy token/imzo bilan himoyalangan), `/api/health` (deploy va kuzatuv uchun, maxfiy ma'lumotsiz) va mobil ilova API'si (o'z Bearer tokeni bilan himoyalangan —
  * `lib/mobile/auth.ts`; cookie sessiyasiga tayanmaydi).
  */
 const isPublic = (p: string) =>
-  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile") || p.startsWith("/api/control");
+  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile") || p.startsWith("/api/control") || p === "/api/health";
 
 /**
  * Markaziy panel (INSOF_MODE=control, admin.insof.uz): korxona sahifalari yo'q — faqat /superadmin.
@@ -18,6 +18,8 @@ const isPublic = (p: string) =>
  */
 async function controlMiddleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // Holat tekshiruvi (deploy.sh, health-watch.sh) — login'siz, maxfiy ma'lumotsiz
+  if (pathname === "/api/health") return NextResponse.next();
   if (!pathname.startsWith("/superadmin")) return NextResponse.redirect(new URL("/superadmin", req.url));
   if (pathname.startsWith("/superadmin/login")) return NextResponse.next();
   const token = req.cookies.get("insof_admin")?.value;

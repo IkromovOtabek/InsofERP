@@ -6,6 +6,7 @@ import path from "node:path";
 import bcrypt from "bcryptjs";
 import { control, tenantDb, tenantDbUrl, DB_NAME_RE } from "./db";
 import { passwordProblem } from "../password-policy";
+import { deriveTenantSsoKey } from "./token";
 import type { Tenant } from "@/generated/control";
 
 const run = promisify(execFile);
@@ -98,28 +99,60 @@ export async function setSuspended(dbName: string, suspended: boolean, reason?: 
   });
 }
 
-/** Korxona jarayonining .env fayli. Sirlar shu yerda yaratiladi va faqat serverdagi faylda qoladi (0600). */
+/** Korxona SSO kaliti — HMAC(CONTROL_SECRET, slug). Panelda CONTROL_SECRET bo'lmasa bo'sh (SSO o'chiq). */
+export function tenantSsoKey(slug: string): string {
+  const secret = (process.env.CONTROL_SECRET ?? "").trim();
+  return secret.length >= 32 ? deriveTenantSsoKey(secret, slug) : "";
+}
+
+const rnd = (bytes: number) => randomBytes(bytes).toString("base64url");
+
+/**
+ * Korxona jarayonining .env fayli. Sirlar shu yerda yaratiladi va faqat serverdagi faylda qoladi (0600).
+ * Global CONTROL_SECRET bu yerga YOZILMAYDI — faqat shu korxonaga xos hosila kalit (CONTROL_SSO_KEY).
+ */
 export function renderEnv(t: Pick<Tenant, "slug" | "port" | "dbName" | "domain" | "ecoApiUrl">): string {
   const dataRoot = process.env.TENANT_DATA_ROOT || "/var/lib/insof";
+  const url = t.domain ? `https://${t.domain}` : "";
   return [
     `# Insof ERP — "${t.slug}" korxonasi jarayoni. Markaziy panel yaratgan: ${new Date().toISOString()}`,
     `# Ishga tushirish: sudo bash scripts/tenant-up.sh ${t.slug}`,
+    `# Barcha kalitlar va izohlari: .env.example`,
     `NODE_ENV=production`,
     `TZ=Asia/Tashkent`,
     `PORT=${t.port}`,
     `TENANT_SLUG=${t.slug}`,
     `DATABASE_URL=${tenantDbUrl(t.dbName)}`,
     `AUTH_SECRET=${randomBytes(48).toString("base64")}`,
-    `# Markaziy panel bilan bir xil bo'lishi shart (SSO kirish)`,
-    `CONTROL_SECRET=${process.env.CONTROL_SECRET ?? ""}`,
+    `# Markaziy panel SSO kaliti — HMAC(CONTROL_SECRET, "${t.slug}"): faqat shu korxona uchun yaroqli`,
+    `CONTROL_SSO_KEY=${tenantSsoKey(t.slug)}`,
     `UPLOADS_DIR=${dataRoot}/${t.slug}/uploads`,
-    `APP_URL=${t.domain ? `https://${t.domain}` : ""}`,
+    `APP_URL=${url}`,
     ``,
-    `# ── Ixtiyoriy integratsiyalar (korxonaning o'z kalitlari) ──`,
+    `# ── Webhook sirlari (yaratilganda tasodifiy) ──`,
+    `# Telegram: ENV_FILE=tenants/${t.slug}.env npm run bot:webhook -- ${url || "https://<domen>"}`,
+    `TELEGRAM_WEBHOOK_SECRET=${rnd(32)}`,
+    `# ECO → ERP webhook imzosi: ECO'da integration:create bergan qiymat bilan ALMASHTIRING`,
+    `ECO_WEBHOOK_SECRET=${rnd(32)}`,
+    ``,
+    `# ── Ixtiyoriy integratsiyalar (korxonaning o'z kalitlari; bo'sh — o'chiq) ──`,
     `ECO_API_URL=${t.ecoApiUrl ?? ""}`,
     `ECO_API_KEY=`,
     `ANTHROPIC_API_KEY=`,
+    `GROQ_API_KEY=`,
     `TELEGRAM_BOT_TOKEN=`,
+    `TELEGRAM_GATEWAY_TOKEN=`,
+    `# SMS: ESKIZ bo'lmasa xabar yuborilmaydi (faqat jurnalga yoziladi)`,
+    `SMS_PROVIDER=FAKE`,
+    `ESKIZ_EMAIL=`,
+    `ESKIZ_PASSWORD=`,
+    `ESKIZ_FROM=`,
+    `EXPO_ACCESS_TOKEN=`,
+    `DGIS_API_KEY=`,
+    `YANDEX_SUGGEST_KEY=`,
+    `YANDEX_GEOCODER_KEY=`,
+    `YANDEX_ROUTER_KEY=`,
+    `# OSRM_URL=http://127.0.0.1:5000   # o'z OSRM serveringiz (bo'sh — ochiq router.project-osrm.org)`,
     ``,
   ].join("\n");
 }
@@ -159,6 +192,9 @@ export async function provisionTenant(input: NewTenantInput): Promise<ProvisionR
     const migrateLog = await migrateTenant(dbName);
     const db = tenantDb(dbName);
     await db.companySettings.upsert({ where: { id: "main" }, update: { name: tenant.name }, create: { id: "main", name: tenant.name } });
+    // reset-data.ts bilan bir xil minimum: faol "Asosiy sklad" (lib/trips.ts faol sklad bo'lishini talab qiladi).
+    // Kassa/bank hisoblari reset-data'da ham yaratilmaydi — direktor Sozlamalar sahifasidan qo'shadi.
+    await db.warehouse.upsert({ where: { id: "main" }, update: { isActive: true }, create: { id: "main", name: "Asosiy sklad", isActive: true } });
     await setDirector(dbName, input.director);
     const envFile = await writeEnvFile(tenant);
     return { tenant, envFile, migrateLog };

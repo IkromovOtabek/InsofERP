@@ -1,0 +1,17 @@
+# Insof skriptlari loglari (zaxira, tiklash sinovi, kuzatuv, statistika).
+# O'rnatish: sudo install -m 644 docs/deploy/logrotate-insof /etc/logrotate.d/insof
+# Tekshirish: sudo logrotate -d /etc/logrotate.d/insof
+# Fayllarni cron (deploy) yozadi — oldindan yarating:
+#   sudo install -o deploy -g deploy -m 640 /dev/null /var/log/insof-backup.log   (va boshqalari)
+/var/log/insof-*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # cron har safar faylni ochib yozadi (>>) — copytruncate shart emas, yangi fayl shu egalik bilan yaratiladi
+    create 0640 deploy deploy
+    # Ubuntu'da /var/log — root:syslog 775; logrotate shu bilan ishlaydi (fayl egasi baribir deploy)
+    su root syslog
+}

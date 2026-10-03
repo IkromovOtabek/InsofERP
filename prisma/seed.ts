@@ -3,17 +3,20 @@ import bcrypt from "bcryptjs";
 import { audit } from "../src/lib/audit";
 import { roleForPosition } from "../src/lib/positions";
 import { nextNo } from "../src/lib/numbering";
+import { guardDemo, scriptPassword } from "../scripts/demo-guard";
 
+// Seed sun'iy (namunaviy) ma'lumot va xodim loginlarini yaratadi — faqat test bazasida yoki ALLOW_DEMO=yes-i-know bilan.
+// Prodda birinchi direktor uchun seed EMAS: `npm run db:reset -- --yes` (ADMIN_PASSWORD bilan) — README ga qarang.
+const { testDb } = guardDemo("prisma/seed.ts");
 const db = new PrismaClient();
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000);
 const inDays = (n: number) => new Date(Date.now() + n * 86400000);
 
 async function main() {
-  // Production'da standart parol bilan seed qilinmaydi — SEED_ADMIN_PASSWORD beriladi
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? (process.env.NODE_ENV === "production" ? "" : "admin123");
-  if (!adminPassword) throw new Error("SEED_ADMIN_PASSWORD kerak (production'da admin123 ishlatilmaydi)");
-  const staffPassword = process.env.SEED_STAFF_PASSWORD ?? "parol123";
+  // Test bo'lmagan bazada standart parol yo'q: ADMIN_PASSWORD va SEED_STAFF_PASSWORD (kamida 10 belgi) majburiy
+  const adminPassword = scriptPassword(["ADMIN_PASSWORD", "SEED_ADMIN_PASSWORD"], testDb, "admin123");
+  const staffPassword = scriptPassword(["SEED_STAFF_PASSWORD"], testDb, "parol123");
   const pw = await bcrypt.hash(adminPassword, 10);
   await db.user.upsert({
     where: { login: "admin" },
@@ -115,7 +118,7 @@ async function main() {
     skipDuplicates: true,
   });
 
-  console.log("Asosiy ma'lumotlar tayyor. Login: admin / admin123");
+  console.log(`Asosiy ma'lumotlar tayyor. Login: admin${testDb ? " / admin123" : " (parol — ADMIN_PASSWORD)"}`);
 
   // ───────────────────────── Namunaviy (sun'iy) ma'lumotlar ─────────────────────────
   // Bazada avvaldan qo'lda kiritilgan test yozuvlar bo'lishi mumkin — ular saqlanadi,
