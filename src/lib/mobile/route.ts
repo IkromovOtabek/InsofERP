@@ -81,7 +81,7 @@ export async function tripRoute(
    *
    * Ilova ko'rsatkichlarni yangilab turish uchun har daqiqa-yarimda so'raydi, lekin yo'lning
    * o'zi kamdan-kam o'zgaradi (faqat boshqa ko'chaga burilganda). Har safar qayta qursak,
-   * OSRM'ga keraksiz yuk tushardi va telefonga o'sha 17 KB qayta-qayta kelardi —
+   * marshrut xizmatiga (Yandex/OSRM) keraksiz yuk tushardi va telefonga o'sha 17 KB qayta-qayta kelardi —
    * shuning uchun ilova "menda bor" deb aytsa (`line=skip`), qurilmaydi.
    */
   const keep = raw.line === "skip";

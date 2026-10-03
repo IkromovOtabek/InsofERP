@@ -20,7 +20,8 @@ import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap, type LMarker }
  * nomi, sarlavha va masofa ko'rsatish sozlanadi.
  */
 
-type Place = { name: string; address: string; lat: number; lng: number };
+/** Yandex takliflari koordinatasiz keladi (`uri` bilan) — nuqta tanlanganda so'raladi. */
+type Place = { name: string; address: string; lat: number | null; lng: number | null; uri?: string };
 type Point = { lat: number; lng: number };
 type Distance = { km: number; source: "ROUTE" | "LINE" };
 
@@ -41,7 +42,7 @@ export function AddressPicker({
   defaultAddress?: string;
   defaultLat?: number | null;
   defaultLng?: number | null;
-  /** 2GIS kaliti sozlanganmi — yo'q bo'lsa faqat xaritadan belgilash qoladi. */
+  /** Yandex yoki 2GIS kaliti sozlanganmi — yo'q bo'lsa faqat xaritadan belgilash qoladi. */
   searchEnabled: boolean;
   required?: boolean;
   name?: string;
@@ -59,6 +60,9 @@ export function AddressPicker({
   );
   const [places, setPlaces] = useState<Place[]>([]);
   const [searching, setSearching] = useState(false);
+  /** Tanlangan Yandex taklifining nuqtasi so'ralmoqda. */
+  const [resolving, setResolving] = useState(false);
+  const [unresolved, setUnresolved] = useState(false);
   const [open, setOpen] = useState(false);
   const [distance, setDistance] = useState<Distance | null>(null);
   const [plantUnset, setPlantUnset] = useState(false);
@@ -71,11 +75,23 @@ export function AddressPicker({
   /** Taklif tanlangach qidiruv qayta ishga tushmasin. */
   const skipSearch = useRef(false);
 
-  const choose = (p: Place) => {
+  const choose = async (p: Place) => {
     skipSearch.current = true;
     setAddress(p.address);
-    setPoint({ lat: p.lat, lng: p.lng });
     setOpen(false);
+    setUnresolved(false);
+    if (p.lat != null && p.lng != null) { setPoint({ lat: p.lat, lng: p.lng }); return; }
+    setResolving(true);
+    try {
+      const res = await fetch(`/api/geo/resolve?uri=${encodeURIComponent(p.uri ?? "")}&text=${encodeURIComponent(p.address)}`, { cache: "no-store" });
+      const j = (await res.json()) as { point?: Point | null };
+      if (j.point) setPoint(j.point);
+      else setUnresolved(true);
+    } catch {
+      setUnresolved(true);
+    } finally {
+      setResolving(false);
+    }
   };
 
   // ── manzil bo'yicha qidiruv ──
@@ -126,17 +142,19 @@ export function AddressPicker({
     for (const h of hints.current) m.removeLayer(h);
     hints.current = [];
     if (places.length === 0) return;
-    for (const p of places) {
+    const located = places.filter((p): p is Place & Point => p.lat != null && p.lng != null);
+    if (located.length === 0) return;
+    for (const p of located) {
       const h = L.circleMarker([p.lat, p.lng], { radius: 6, color: "#0f172a", weight: 2, fillColor: "#38bdf8", fillOpacity: 0.9 })
         .addTo(m)
         .bindTooltip(p.name);
-      h.on("click", () => choose(p));
+      h.on("click", () => void choose(p));
       hints.current.push(h);
     }
     // Nuqta allaqachon qo'yilgan bo'lsa xarita joyidan qimirlamaydi — foydalanuvchi tanlovi ustun
     if (point) return;
-    const first = places[0]!;
-    m.setView([first.lat, first.lng], places.length === 1 ? 16 : 13);
+    const first = located[0]!;
+    m.setView([first.lat, first.lng], located.length === 1 ? 16 : 13);
   }, [places, point]);
 
   // ── nuqta o'zgarsa: belgi, ko'rinish va masofa ──
@@ -185,7 +203,7 @@ export function AddressPicker({
           className={`${inputCls} pr-9`}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-          {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+          {searching || resolving ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
         </span>
 
         {open && places.length > 0 && (
@@ -195,7 +213,7 @@ export function AddressPicker({
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => choose(p)}
+                  onClick={() => void choose(p)}
                   className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-slate-50"
                 >
                   <MapPin size={14} className="mt-0.5 shrink-0 text-slate-400" />
@@ -223,7 +241,9 @@ export function AddressPicker({
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        {point ? (
+        {resolving ? (
+          <span className="text-slate-400">nuqta aniqlanmoqda…</span>
+        ) : point ? (
           <>
             <span className="inline-flex items-center gap-1 text-emerald-700">
               <MapPin size={12} /> Nuqta belgilandi
@@ -246,6 +266,10 @@ export function AddressPicker({
               nuqtani olib tashlash
             </button>
           </>
+        ) : unresolved ? (
+          <span className="inline-flex items-center gap-1 text-amber-700">
+            <TriangleAlert size={12} /> Bu manzilning nuqtasi topilmadi — xaritadan bosib belgilang
+          </span>
         ) : (
           <span className="text-slate-500">
             {searchEnabled ? "Yozgan sayin xaritada qidiriladi — ro'yxatdan yoki xaritadagi nuqtadan tanlang " : "Xaritadan obyekt joyini bosib belgilang "}

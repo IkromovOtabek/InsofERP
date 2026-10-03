@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
-  // Pullik tashqi xizmat (2GIS/OSRM) proksisi: haydovchi/brigadir vebda buni ishlatmaydi, qolganlarga daqiqalik chegara
+  // Pullik tashqi xizmat (Yandex/OSRM) proksisi: haydovchi/brigadir vebda buni ishlatmaydi, qolganlarga daqiqalik chegara
   if (s.role === "DRIVER" || s.role === "BRIGADIER") return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   if (!hit(`geo:distance:${s.userId}`, 30, 60_000)) return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
   const p = new URL(req.url).searchParams;
