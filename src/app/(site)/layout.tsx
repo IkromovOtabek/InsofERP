@@ -3,6 +3,10 @@ import { Unbounded, Onest, JetBrains_Mono } from "next/font/google";
 import { getCompany } from "@/lib/company";
 import { SITE_URL } from "@/lib/site";
 
+/** Har korxona o'z bazasidan o'qiydi — build paytida statik tayyorlanmasin (aks holda bitta
+ *  korxonaning ma'lumoti hammasiga chiqadi va build bazaga ulanishni talab qiladi). */
+export const dynamic = "force-dynamic";
+
 /**
  * Ommaviy sayt (landing) qobig'i.
  *

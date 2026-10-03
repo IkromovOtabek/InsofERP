@@ -30,3 +30,6 @@ current
 # Lokal artefaktlar
 tsconfig.tsbuildinfo
 scratchpad/
+
+# Claude agent worktree papkalari
+.claude/worktrees/
