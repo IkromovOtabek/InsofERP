@@ -8,9 +8,14 @@ Tayyor beton (BSG) ishlab chiqaruvchi zavod uchun ichki ERP. Bitta Next.js ilova
 cp .env.example .env        # DATABASE_URL va AUTH_SECRET ni to'g'rilang
 npm install
 npx prisma migrate deploy   # jadvallarni yaratadi
-npm run db:seed             # admin / admin123 (Direktor), namuna xomashyo, markalar, M300 retsepti
+npm run db:seed             # admin / admin123 (Direktor), namuna xomashyo, markalar, M300 retsepti — faqat test bazasida
 npm run dev
 ```
+
+Seed/demo skriptlari (`db:seed`, `db:reset`, `db:demo`, `db:test-users`, `shop-demo`) faqat **lokal test bazasida**
+ishlaydi — baza nomi `insof_test…` (masalan `insof_test_dev`), host `localhost`/`127.0.0.1` (`scripts/demo-guard.ts`).
+Boshqa bazada — faqat `ALLOW_DEMO=yes-i-know` bilan va kamida 10 belgili `ADMIN_PASSWORD` / `SEED_STAFF_PASSWORD`
+(standart `admin123`/`parol123` faqat test bazasida).
 
 Postgres lokal bo'lmasa: `docker compose up -d db` (foydalanuvchi/parol: postgres/postgres).
 
@@ -149,101 +154,34 @@ src/app/verify/[noteNo]     ommaviy QR tekshiruv sahifasi (login shart emas)
 
 ## Serverga o'rnatish (VPS)
 
-Ubuntu 22/24, `root` bilan. Har bir blokni ketma-ket qo'yib chiqasiz.
-
-```bash
-# 1. Tizim + Node 22 + PostgreSQL + Nginx
-apt update && apt install -y curl git build-essential postgresql nginx ufw
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt install -y nodejs
-
-# 2. Baza (PAROL o'rniga o'zingiznikini yozing)
-sudo -u postgres psql -c "CREATE ROLE insof LOGIN PASSWORD 'PAROL';"
-sudo -u postgres createdb -O insof insof_erp
-
-# 3. Kod
-git clone https://github.com/IkromovOtabek/InsofERP.git /var/www/insof-erp
-cd /var/www/insof-erp
-
-# 4. .env
-cat > .env <<EOF
-DATABASE_URL="postgresql://insof:PAROL@localhost:5432/insof_erp?schema=public"
-AUTH_SECRET="$(openssl rand -hex 32)"
-APP_URL="https://erp.domen.uz"
-EOF
-chmod 600 .env
-
-# 5. Build (1 GB RAM da avval swap: fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile)
-npm ci && npx prisma migrate deploy && npm run build
-npm run db:seed        # ixtiyoriy: admin/admin123 + namuna ma'lumot
-
-# 6. systemd xizmati
-cat > /etc/systemd/system/insof-erp.service <<'EOF'
-[Unit]
-Description=Insof ERP
-After=network.target postgresql.service
-
-[Service]
-WorkingDirectory=/var/www/insof-erp
-Environment=NODE_ENV=production
-Environment=PORT=3000
-# `npm run start` EMAS: npm bola jarayon ochadi va signallarni unga uzatmaydi —
-# systemd npm'ni o'ldiradi, next-server esa yetim bo'lib qolib 3000-portni
-# ushlab turaveradi va keyingi restart EADDRINUSE bilan yiqiladi.
-ExecStart=/usr/bin/node node_modules/next/dist/bin/next start
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload && systemctl enable --now insof-erp
-
-# 7. Nginx
-cat > /etc/nginx/sites-available/insof-erp <<'EOF'
-server {
-    listen 80;
-    server_name erp.domen.uz;
-    client_max_body_size 20m;          # imzolangan shartnoma 15 MB gacha
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 300s;
-    }
-}
-EOF
-ln -sf /etc/nginx/sites-available/insof-erp /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
-
-# 8. SSL + firewall (domen A-yozuvi shu serverga qaragan bo'lsin)
-apt install -y certbot python3-certbot-nginx && certbot --nginx -d erp.domen.uz
-ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw --force enable
-```
-
-**Keyingi deploylar** — bitta qator:
-
-```bash
-cd /var/www/insof-erp && git pull && npm ci && npx prisma migrate deploy && npm run build && systemctl restart insof-erp
-```
-
-**Kunlik baza nusxasi** (`scripts/server-backup.sh` repoda bor):
-
-```bash
-install -m 755 /var/www/insof-erp/scripts/server-backup.sh /usr/local/bin/erp-backup
-crontab -e   # 0 3 * * * APP_DIR=/var/www/insof-erp /usr/local/bin/erp-backup >> /var/log/erp-backup.log 2>&1
-```
+Prod — ko'p korxonali platforma: bitta build (`releases/<sha>`, `current` symlink), har korxona alohida
+`insof-erp@<slug>` jarayoni, o'z bazasi (`insof_t_<slug>`) va `tenants/<slug>.env`; IT panel — `insof-control`.
+To'liq yo'riqnoma, go-live ro'yxati, zaxira nusxa va kuzatuv: **[docs/deploy/PLATFORMA.md](docs/deploy/PLATFORMA.md)**.
+Server xavfsizligi: [docs/server-xavfsizlik.md](docs/server-xavfsizlik.md).
 
 | Ish | Buyruq |
 | --- | --- |
-| Loglar | `journalctl -u insof-erp -f` |
-| Qayta yuklash | `systemctl restart insof-erp` |
-| Tiklash | `pg_restore -d "$DATABASE_URL" --clean --no-owner nusxa.dump` |
+| Yangilash (build → migratsiya → bittadan restart → health; xato bo'lsa avtomatik qaytarish) | `cd /var/www/insof-erp && bash scripts/deploy.sh` |
+| Oldingi relizga qaytish | `ROLLBACK=1 bash scripts/deploy.sh` |
+| Yangi korxonani ishga tushirish | `sudo bash scripts/tenant-up.sh <slug> <domen>` |
+| Loglar | `journalctl -u insof-erp@<slug> -f` |
+| Holat | `curl -s 127.0.0.1:<port>/api/health` |
+| Zaxira nusxa / tiklash sinovi | `scripts/server-backup.sh`, `scripts/restore-test.sh` |
 
-AI/Telegram/ECO kalitlarini `.env` ga qo'shgach `systemctl restart insof-erp`. `uploads/` (shartnoma fayllari) `/var/www/insof-erp/uploads` da — `pg_dump` uni olmaydi, alohida nusxa oling.
+**Prodda `npm run db:seed` ISHLATILMAYDI** — namunaviy mijoz/xodimlar va hammaga ma'lum loginlar yaratadi
+(skript test bo'lmagan bazada baribir rad etadi).
+
+### Birinchi direktor hisobi
+
+- **Platformada (tavsiya):** IT panel → «Yangi korxona» — direktor F.I.O., login va parolni panel o'zi yaratadi
+  (parol siyosati tekshiriladi). Mavjud korxona direktorini tiklash ham panelda.
+- **Bo'sh bazada qo'lda** (masalan eski bitta korxonali o'rnatish): bazani tozalab, faqat direktor va «Asosiy sklad»
+  qoldiradi — bazada ma'lumot bo'lsa HAMMASI o'chadi:
+  ```bash
+  ENV_FILE=tenants/insof.env ALLOW_DEMO=yes-i-know ADMIN_LOGIN=direktor ADMIN_NAME="F.I.O." \
+    ADMIN_PASSWORD='kamida-10-belgili-parol' npm run db:reset -- --yes
+  ```
+  Avval `--yes` siz ishga tushirib, qaysi bazaga ulanayotganini va undagi yozuvlar sonini ko'ring.
 
 ## Telegram bot (ovozli savol → AI javob)
 

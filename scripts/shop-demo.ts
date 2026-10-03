@@ -9,8 +9,9 @@
  */
 import { existsSync } from "fs";
 import path from "path";
-import { loadEnv } from "./env";
-loadEnv();
+import { guardDemo } from "./demo-guard";
+// Faqat lokal test bazasi (insof_test…) yoki ALLOW_DEMO=yes-i-know (env shu yerda yuklanadi)
+guardDemo("scripts/shop-demo.ts");
 
 const GROUPS = [
   { code: "SHOP-BETON", name: "Tovar beton", sortOrder: 1 },

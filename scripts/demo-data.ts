@@ -8,10 +8,11 @@
  * Avval `npm run db:test-users` ishlagan bo'lishi kerak (test.* loginlar — yozuvlar ularning nomidan).
  * Har bir demo yozuv `[demo]` belgisi bilan (note / nom) — o'chirish shu belgi bo'yicha.
  */
-import { loadEnv } from "./env";
 import { PrismaClient, Prisma, type OrderStatus, type SupplyStatus, type AttendanceStatus } from "../src/generated/prisma";
+import { guardDemo } from "./demo-guard";
 
-loadEnv();
+// Faqat lokal test bazasi (insof_test…) yoki ALLOW_DEMO=yes-i-know (env shu yerda yuklanadi)
+guardDemo("scripts/demo-data.ts");
 const db = new PrismaClient();
 const TAG = "[demo]";
 const D = (n: number) => new Prisma.Decimal(n.toFixed(3));
@@ -471,9 +472,6 @@ async function create() {
 }
 
 async function main() {
-  if (process.env.NODE_ENV === "production") throw new Error("Production'da ishlatib bo'lmaydi");
-  const url = process.env.DATABASE_URL ?? "";
-  if (!/localhost|127\.0\.0\.1/.test(url)) throw new Error(`Faqat lokal baza: ${url.replace(/:[^:@/]+@/, ":***@")}`);
   await remove();
   if (!process.argv.includes("--remove")) await create();
 }

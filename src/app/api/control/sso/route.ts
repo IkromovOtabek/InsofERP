@@ -5,12 +5,13 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { issueSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { verifySso, controlSecretSet } from "@/lib/control/token";
+import { verifySso, tenantSsoKeySet } from "@/lib/control/token";
 import { isControlMode, tenantSlug } from "@/lib/tenant";
 
 /**
  * IT superadmin markaziy paneldan korxonaga kiradi (SSO). Panel 60 soniyalik, bir martalik, shu korxona
  * (`aud` = TENANT_SLUG) uchun imzolangan tokenni POST forma bilan yuboradi — token URL/loglarga tushmaydi.
+ * Imzo kaliti — shu korxonaning o'z `CONTROL_SSO_KEY` i (HMAC(CONTROL_SECRET, slug), lib/control/token.ts).
  *
  * Korxona bazasida `it.<login>` hisobi (rol SUPERADMIN) bo'lmasa ochiladi: paroli tasodifiy, login/parol
  * bilan kirib bo'lmaydi. Ichkarida direktor huquqi; har kirish korxonaning audit jurnaliga yoziladi —
@@ -19,7 +20,7 @@ import { isControlMode, tenantSlug } from "@/lib/tenant";
 const used = new Map<string, number>(); // jti → muddati (bir jarayon ichida qayta ishlatishga qarshi)
 
 export async function POST(req: Request) {
-  if (isControlMode() || !controlSecretSet()) return new NextResponse("Not found", { status: 404 });
+  if (isControlMode() || !tenantSsoKeySet(tenantSlug())) return new NextResponse("Not found", { status: 404 });
   const form = await req.formData().catch(() => null);
   const token = String(form?.get("token") ?? "");
   let c;

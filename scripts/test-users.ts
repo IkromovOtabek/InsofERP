@@ -10,7 +10,10 @@
  */
 import bcrypt from "bcryptjs";
 import { PrismaClient, type Role } from "../src/generated/prisma";
+import { guardDemo } from "./demo-guard";
 
+// Faqat lokal test bazasi (insof_test…) yoki ALLOW_DEMO=yes-i-know
+guardDemo("scripts/test-users.ts");
 const db = new PrismaClient();
 const TEST_PASSWORD = "Test2026";
 const NOTE = "Sun'iy test xodimi (scripts/test-users.ts)";
@@ -85,7 +88,6 @@ async function remove() {
 }
 
 (async () => {
-  if (process.env.NODE_ENV === "production") throw new Error("Test xodimlar production'da yaratilmaydi");
   await (process.argv.includes("--remove") ? remove() : create());
 })()
   .catch((e) => { console.error(e); process.exitCode = 1; })
