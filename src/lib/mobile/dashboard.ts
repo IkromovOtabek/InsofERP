@@ -220,7 +220,7 @@ const pick = (...s: (HomeSection | null)[]) => s.filter((x): x is HomeSection =>
 async function moneyFlow(r: DashRange) {
   const [pay, tx, prevPay, prevTx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccountId: true, customerId: true } }),
-    db.cashTransaction.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
+    db.cashTransaction.findMany({ where: { type: { not: "OPENING" }, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
@@ -267,6 +267,7 @@ async function accountBalances(until: Date | null = null) {
     label: a.name,
     value: sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount)
       + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount)
+      + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "OPENING")?._sum.amount) // boshlang'ich qoldiq
       - sum(tx.find((t) => t.cashAccountId === a.id && t.type === "EXPENSE")?._sum.amount),
   }));
 }
@@ -753,7 +754,7 @@ async function mechanic(r: DashRange): Promise<RoleDashboard> {
 async function accounting(r: DashRange): Promise<RoleDashboard> {
   const [flow, invoices, recv, pay] = await Promise.all([
     moneyFlow(r),
-    db.invoice.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { amount: true, status: true } }),
+    db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, select: { amount: true, status: true } }), // boshlang'ich qoldiq — sotuv emas
     // Debitorka — davr oxiridagi qarz (joriy davrda — hozirgi)
     receivables(asOf(r)), payables(r),
   ]);

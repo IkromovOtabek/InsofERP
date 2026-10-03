@@ -62,7 +62,10 @@ export async function customerStatement(customerId: string, from: Date, to: Date
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const opening = r2(Number(invBefore._sum.amount ?? 0) - Number(payBefore._sum.amount ?? 0));
   const lines: StatementLine[] = [
-    ...invoices.map((i): StatementLine => ({ date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${i.order.orderNo}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined })),
+    ...invoices.map((i): StatementLine => i.isOpening
+      // Boshlang'ich qoldiq: musbat — mijoz qarzi (debet), manfiy — mijoz avansi (kredit)
+      ? { date: i.date, doc: `Boshlang'ich qoldiq ${i.invoiceNo}`, kind: "INVOICE", debit: Math.max(0, Number(i.amount)), credit: Math.max(0, -Number(i.amount)), note: "tizimga o'tish sanasidagi qoldiq", href: undefined }
+      : { date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${i.order.orderNo}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined }),
     ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans ${p.order.orderNo}` : p.note, href: undefined })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.kind === b.kind ? 0 : a.kind === "INVOICE" ? -1 : 1));
   const debit = r2(lines.reduce((s, l) => s + l.debit, 0));

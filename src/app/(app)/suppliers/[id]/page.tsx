@@ -40,15 +40,15 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard label="Jami olingan mol" value={money(ledger.received)} icon={PackageCheck} tone="brand" />
         <StatCard label="Jami to'langan" value={money(ledger.paid)} icon={Wallet} tone="info" />
-        <StatCard label="Qarzimiz (to'lanmagan kirim)" value={money(ledger.debt)} hint={`${ledger.unpaid.length} ta kirim`} icon={Banknote} tone={ledger.debt > 0 ? "danger" : "success"} />
+        <StatCard label="Qarzimiz (to'lanmagan kirim)" value={money(ledger.debt)} hint={`${ledger.unpaid.length} ta kirim${ledger.opening > 0.005 ? ` + boshlang'ich qoldiq ${money(ledger.opening)}` : ""}`} icon={Banknote} tone={ledger.debt > 0 ? "danger" : "success"} />
         <StatCard label="Avans (mol kutilmoqda)" value={money(ledger.advance)} icon={Scale} tone={ledger.advance > 0 ? "warning" : "default"} />
         <StatCard label="Qaytarilishi kerak" value={money(ledger.refundDue)} hint="bekor qilingan ta'minot" icon={Undo2} tone={ledger.refundDue > 0 ? "danger" : "default"} />
       </div>
 
       {canEdit && (
         <Card className="mt-5">
-          <CardHeader title="Rekvizitlar" description="Nomi, INN va telefon — o'zgarish auditda qoladi" />
-          <SupplierEditForm id={sup.id} value={{ name: sup.name, inn: sup.inn ?? "", phone: sup.phone ?? "" }} />
+          <CardHeader title="Rekvizitlar" description="Nomi, INN, telefon, manzil va mas'ul shaxs — o'zgarish auditda qoladi" />
+          <SupplierEditForm id={sup.id} value={{ name: sup.name, inn: sup.inn ?? "", phone: sup.phone ?? "", address: sup.address ?? "", contactPerson: sup.contactPerson ?? "" }} />
         </Card>
       )}
 

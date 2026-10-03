@@ -33,7 +33,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.payment.findMany({ where: { date: { gte: from, lte: to }, ...(acc ? { cashAccountId: acc } : {}) }, include: { customer: true, invoice: true, cashAccount: true, createdBy: { select: { fullName: true } } } }),
-    db.cashTransaction.findMany({ where: { date: { gte: from, lte: to }, ...(acc ? { cashAccountId: acc } : {}) }, include: { cashAccount: true, supplier: true, createdBy: true } }),
+    // Boshlang'ich qoldiq (OPENING) kirim ham, chiqim ham emas — u faqat hisob qoldig'ida (Boshlang'ich qoldiqlar bo'limi)
+    db.cashTransaction.findMany({ where: { type: { not: "OPENING" }, date: { gte: from, lte: to }, ...(acc ? { cashAccountId: acc } : {}) }, include: { cashAccount: true, supplier: true, createdBy: true } }),
     // Hisob qoldiqlari (butun davr): mijoz to'lovlari + kirim − chiqim — Kassa/bank sahifasi bilan bir manba
     accountBalances(),
   ]);
@@ -45,7 +46,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     ...payments.map((p): Row => ({ id: p.id, date: p.date, kind: "INCOME", account: p.cashAccount.name, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
     // Hujjatdan avtomatik yozilgan chiqim (kirim hujjati / sklad kirimi) — ustiga bosilsa batafsili ochiladi
     ...txs.map((t): Row => ({
-      id: t.id, date: t.date, kind: t.type, account: t.cashAccount.name,
+      id: t.id, date: t.date, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name,
       category: t.refType ? `Kirim · ${t.category}` : t.category,
       who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount),
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`

@@ -407,7 +407,8 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
     }
     case "cashflow": {
       const list = await db.cashTransaction.findMany({
-        where: q ? { OR: [{ category: { contains: q, mode: "insensitive" } }, { counterparty: { contains: q, mode: "insensitive" } }] } : undefined,
+        // Boshlang'ich qoldiq (OPENING) kirim-chiqim emas — ro'yxatga tushmaydi
+        where: { type: { not: "OPENING" }, ...(q ? { OR: [{ category: { contains: q, mode: "insensitive" } }, { counterparty: { contains: q, mode: "insensitive" } }] } : {}) },
         orderBy: { date: "desc" }, take: TAKE, include: { cashAccount: true },
       });
       return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${t.type === "EXPENSE" ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "EXPENSE" ? "danger" : "success" }));

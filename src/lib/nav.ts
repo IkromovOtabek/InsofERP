@@ -55,6 +55,9 @@ export const NAV: NavItem[] = [
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
+  // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — direktor va buxgalteriya.
+  // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha buxgalteriyaga ochiq, qolgan sozlamalar yopiq.
+  { href: "/settings/boshlangich-qoldiq", label: "Boshlang'ich qoldiqlar", roles: ["ACCOUNTING"], group: "Moliya" },
   // Otdel kadr bo'limi: sahifaning tablari bevosita menyuda turadi — ichida yana "Otdel kadr" bandi bo'lmaydi.
   // Birinchisi sahifaning o'zi (`?tab` siz ochilganda xodimlar ro'yxati chiqadi) — middleware ruxsatni shu yo'ldan tekshiradi.
   { href: "/otdel-kadr",                label: "Xodimlar ro'yxati", roles: ["HR"], group: "Otdel kadr" },

@@ -14,6 +14,7 @@ import { parsePerms, type Perms } from "@/lib/auth";
 import { actionDef, delegableActions } from "@/lib/permissions";
 import { notifyAfter, notifyUsers } from "@/lib/notify";
 import { Prisma } from "@/generated/prisma";
+import { txSign } from "@/lib/cash-tx";
 
 const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
@@ -139,7 +140,7 @@ async function accountBalance(id: string) {
     db.payment.aggregate({ where: { cashAccountId: id }, _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId: id }, _sum: { amount: true } }),
   ]);
-  return Number(pay._sum.amount ?? 0) + tx.reduce((x, t) => x + (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0), 0);
+  return Number(pay._sum.amount ?? 0) + tx.reduce((x, t) => x + txSign(t.type) * Number(t._sum.amount ?? 0), 0);
 }
 
 export async function saveCashAccount(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {

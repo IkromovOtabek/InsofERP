@@ -70,7 +70,12 @@ async function remove() {
     const user = await db.user.findUnique({ where: { login: u.login } });
     if (!user) continue;
     try {
+      // Xodim bolalari (davomat, hujjatlar) endi Restrict — avval ular o'chiriladi, keyin xodim va login
+      const emp = { employee: { userId: user.id } };
       await db.$transaction([
+        db.attendance.deleteMany({ where: emp }),
+        db.employeeDocument.deleteMany({ where: emp }),
+        db.hrDocument.deleteMany({ where: emp }),
         db.employee.deleteMany({ where: { userId: user.id } }),
         db.user.delete({ where: { id: user.id } }),
       ]);

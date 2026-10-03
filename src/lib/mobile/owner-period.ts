@@ -32,6 +32,7 @@ export async function ownerPeriod(r: DashRange) {
   const expensePlan = budgets.length ? budgets.reduce((s, b) => s + n(b.amount) * share(b), 0) : null;
   const bal = (id: string) => n(pay.find((p) => p.cashAccountId === id)?._sum.amount)
     + n(allTx.find((t) => t.cashAccountId === id && t.type === "INCOME")?._sum.amount)
+    + n(allTx.find((t) => t.cashAccountId === id && t.type === "OPENING")?._sum.amount) // boshlang'ich qoldiq
     - n(allTx.find((t) => t.cashAccountId === id && t.type === "EXPENSE")?._sum.amount);
   const cash = accounts.filter((a) => a.type === "CASH").reduce((s, a) => s + bal(a.id), 0);
   const bank = accounts.filter((a) => a.type !== "CASH").reduce((s, a) => s + bal(a.id), 0);

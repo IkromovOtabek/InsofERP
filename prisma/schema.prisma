@@ -95,11 +95,11 @@ model User {
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
 
 model CompanySettings {
-  id                  String   @id @default("main")
+  id                  String    @id @default("main")
   /// Platforma (superadmin) korxonani to'xtatgan bo'lsa — xodimlar veb va mobilda kira olmaydi, ma'lumot saqlanadi
   suspendedAt         DateTime?
   suspendReason       String?
-  name                String   @default("Insof beton zavodi")
+  name                String    @default("Insof beton zavodi")
   legalName           String? // yuridik nomi (MChJ)
   inn                 String?
   address             String?
@@ -114,77 +114,84 @@ model CompanySettings {
   mfo                 String?
   directorName        String?
   about               String? // landing uchun qisqa matn
-  workingHours        String?  @default("Dush–Shan 08:00–18:00")
+  workingHours        String?   @default("Dush–Shan 08:00–18:00")
   // ── Mijoz ilovasi (do'kon) "bugungi holat" — ish vaqti matni (workingHours) ko'rsatish uchun, bular hisob uchun ──
-  openHour            Int      @default(8) // qabul boshlanadi (Toshkent vaqti)
-  closeHour           Int      @default(18) // qabul tugaydi
-  workSunday          Boolean  @default(false) // yakshanba ham ishlaydimi
-  sameDayCutoffHour   Int      @default(14) // shu soatgacha buyurtma — shu kuni yetkaziladi
+  openHour            Int       @default(8) // qabul boshlanadi (Toshkent vaqti)
+  closeHour           Int       @default(18) // qabul tugaydi
+  workSunday          Boolean   @default(false) // yakshanba ham ishlaydimi
+  sameDayCutoffHour   Int       @default(14) // shu soatgacha buyurtma — shu kuni yetkaziladi
   telegram            String? // mijozlar yozadigan Telegram (@username yoki t.me havola)
   /// Kunlik ishlab chiqarish quvvati, m³ — Zayavkalar taqvimi shu chegaraga qarab rang beradi
-  dailyCapacityM3     Decimal? @default(200) @db.Decimal(10, 2)
+  dailyCapacityM3     Decimal?  @default(200) @db.Decimal(10, 2)
   /// Kunlik zayavka chegaralari (direktor sozlaydi; 0/bo'sh — cheklov yo'q). orderConfirm shu bo'yicha rad etadi.
-  dailyOrderMaxM3     Decimal? @db.Decimal(12, 2)
+  dailyOrderMaxM3     Decimal?  @db.Decimal(12, 2)
   dailyOrderMaxCount  Int?
   foundedYear         Int?
   // ── Egasi dashbordi chegaralari (norma / e'tibor / kritik) — direktor Byudjet sahifasida sozlaydi ──
-  alertWarnPct        Int      @default(90) // byudjetning shu foizidan oshsa — e'tibor
-  alertCritPct        Int      @default(100) // shu foizdan oshsa — kritik
-  stockWarnDays       Int      @default(7) // xomashyo shu kundan kamga yetsa — e'tibor
-  stockCritDays       Int      @default(3) // shu kundan kamga yetsa — kritik (ishlab chiqarish to'xtash xavfi)
-  overdueDays         Int      @default(30) // schyot shu kundan eski bo'lsa — muddati o'tgan debitorka
+  alertWarnPct        Int       @default(90) // byudjetning shu foizidan oshsa — e'tibor
+  alertCritPct        Int       @default(100) // shu foizdan oshsa — kritik
+  stockWarnDays       Int       @default(7) // xomashyo shu kundan kamga yetsa — e'tibor
+  stockCritDays       Int       @default(3) // shu kundan kamga yetsa — kritik (ishlab chiqarish to'xtash xavfi)
+  overdueDays         Int       @default(30) // schyot shu kundan eski bo'lsa — muddati o'tgan debitorka
   // ── Logistika chegaralari — /logistika/sozlamalar da logistika rahbari sozlaydi ──
-  lateWarnMin         Int      @default(15) // reys rejadagi vaqtdan shuncha daqiqa kechiksa — e'tibor
-  lateCritMin         Int      @default(45) // shuncha daqiqa — kritik
-  gpsSilentMin        Int      @default(15) // yo'ldagi mashinadan GPS shuncha daqiqa kelmasa — ogohlantirish
-  loadedWarnMin       Int      @default(30) // yuklangan beton zavoddan shuncha daqiqa chiqmasa — ogohlantirish (qotish xavfi)
-  assignLeadMin       Int      @default(60) // yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik
-  shiftStartHour      Int      @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
-  shiftEndHour        Int      @default(20) // smena tugashi
-  avgSpeedKmh         Int      @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
+  lateWarnMin         Int       @default(15) // reys rejadagi vaqtdan shuncha daqiqa kechiksa — e'tibor
+  lateCritMin         Int       @default(45) // shuncha daqiqa — kritik
+  gpsSilentMin        Int       @default(15) // yo'ldagi mashinadan GPS shuncha daqiqa kelmasa — ogohlantirish
+  loadedWarnMin       Int       @default(30) // yuklangan beton zavoddan shuncha daqiqa chiqmasa — ogohlantirish (qotish xavfi)
+  assignLeadMin       Int       @default(60) // yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik
+  shiftStartHour      Int       @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
+  shiftEndHour        Int       @default(20) // smena tugashi
+  avgSpeedKmh         Int       @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
   // ── Snabjeniye: shu summadan (so'm) katta xarid avval direktor tasdig'idan o'tadi; 0 — cheklov yo'q ──
-  supplyDirectorLimit Decimal  @default(50000000) @db.Decimal(18, 2)
-  updatedAt           DateTime @updatedAt
+  supplyDirectorLimit Decimal   @default(50000000) @db.Decimal(18, 2)
+  updatedAt           DateTime  @updatedAt
 }
 
 // ───────────────────────── Spravochniklar ─────────────────────────
 
 model Customer {
-  id          String   @id @default(cuid())
-  name        String
-  inn         String?  @unique
-  phone       String?
-  address     String?
-  creditLimit Decimal  @default(100000000) @db.Decimal(18, 2) // standart 100 mln; ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
+  id            String   @id @default(cuid())
+  name          String
+  inn           String?  @unique
+  phone         String?
+  address       String?
+  /// Mas'ul shaxs (F.I.O., lavozimi) — Excel importi va karta uchun
+  contactPerson String?
+  creditLimit   Decimal  @default(100000000) @db.Decimal(18, 2) // standart 100 mln; ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
   /// Ichki "mijoz" — haqiqiy mijoz emas, tizimning o'zi ishlatadi (sklad zaxirasi zayavkasi shu nomga ochiladi).
   /// Mijozlar ro'yxati, limit, reyting va ECO sinxronidan chiqarib tashlanadi.
-  isInternal  Boolean  @default(false)
-  isActive    Boolean  @default(true)
+  isInternal    Boolean  @default(false)
+  isActive      Boolean  @default(true)
   /// Ko'chadagi sotuv agenti (bu mijozni olib kelgan / yurituvchi). Agent o'z mijozlari va ularning qarzini ko'radi.
-  agentId     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  sites       Site[]
+  agentId       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  sites         Site[]
 
   orders   Order[]
   invoices Invoice[]
   payments Payment[]
   leads    Lead[]
   register SalesRegister[]
-  agent    User?           @relation("CustomerAgent", fields: [agentId], references: [id])
+  agent    User?            @relation("CustomerAgent", fields: [agentId], references: [id])
+  openings OpeningBalance[]
 
   @@index([agentId])
 }
 
 model Supplier {
-  id        String   @id @default(cuid())
-  name      String
-  inn       String?  @unique
-  phone     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  name          String
+  inn           String?  @unique
+  phone         String?
+  address       String?
+  /// Mas'ul shaxs (F.I.O., lavozimi)
+  contactPerson String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
 
   receipts       GoodsReceipt[]
+  openings       OpeningBalance[]
   transactions   CashTransaction[]
   supplyRequests SupplyRequest[]
   supplyQuotes   SupplyQuote[]
@@ -273,6 +280,7 @@ model Product {
   banners     ShopBanner[]
   plans       ProductionPlan[]
   defects     ProductDefect[]
+  openings    OpeningBalance[]
 
   @@index([groupId])
 }
@@ -358,6 +366,7 @@ model Warehouse {
   stockMoves     StockMove[]
   receipts       GoodsReceipt[]
   supplyRequests SupplyRequest[]
+  openings       OpeningBalance[]
 }
 
 enum VehicleType {
@@ -500,7 +509,7 @@ model EmployeeDocument {
   fileType   String // MIME turi
   createdAt  DateTime @default(now())
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([employeeId])
 }
@@ -541,7 +550,7 @@ model HrDocument {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([employeeId])
   @@index([kind, docDate])
@@ -565,7 +574,7 @@ model Attendance {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@unique([employeeId, date])
   @@index([date])
@@ -625,11 +634,12 @@ model StockMove {
   createdById String
   createdAt   DateTime      @default(now())
 
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
-  material  Material? @relation(fields: [materialId], references: [id])
-  product   Product?  @relation(fields: [productId], references: [id])
-  brigade   Brigade?  @relation(fields: [brigadeId], references: [id])
-  createdBy User      @relation("MoveCreatedBy", fields: [createdById], references: [id])
+  warehouse Warehouse       @relation(fields: [warehouseId], references: [id])
+  material  Material?       @relation(fields: [materialId], references: [id])
+  product   Product?        @relation(fields: [productId], references: [id])
+  brigade   Brigade?        @relation(fields: [brigadeId], references: [id])
+  createdBy User            @relation("MoveCreatedBy", fields: [createdById], references: [id])
+  opening   OpeningBalance?
 
   @@index([warehouseId, materialId, date])
   @@index([warehouseId, productId, date])
@@ -664,6 +674,8 @@ model GoodsReceiptItem {
 
   receipt  GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   material Material     @relation(fields: [materialId], references: [id])
+
+  @@index([receiptId])
 }
 
 // ───────────────────────── Ta'minot zayavkasi (sklad → snabjeniye → tasdiq → moliya → kirim) ─────────────────────────
@@ -732,6 +744,7 @@ model SupplyRequest {
   documents   SupplyDocument[]
 
   @@index([status, date])
+  @@index([supplierId])
 }
 
 /// Jadval qatori. Spravochnikda yo'q mahsulot ham yoziladi (`materialId` bo'sh, `name` bor) —
@@ -981,6 +994,7 @@ model OrderItem {
 
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([orderId])
+  @@index([productId])
 }
 
 // ───────────────────────── Brigadalar va topshiriqlar ─────────────────────────
@@ -1039,6 +1053,7 @@ model BrigadeTask {
   defects   ProductDefect[]
 
   @@index([brigadeId, status])
+  @@index([orderId])
 }
 
 /// Brigada smenasi — brigadir ilovada ochadi va yopadi (kuniga bitta). Yopilganda yakuniy hisobot
@@ -1109,8 +1124,10 @@ model TaskProgress {
   createdById String
   createdAt   DateTime @default(now())
 
-  task      BrigadeTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task      BrigadeTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
   createdBy User        @relation("ProgressCreatedBy", fields: [createdById], references: [id])
+
+  @@index([taskId])
 }
 
 // ───────────────────────── Ishlab chiqarish: zames ─────────────────────────
@@ -1134,6 +1151,8 @@ model ProductionBatch {
   product   Product @relation(fields: [productId], references: [id])
   recipe    Recipe  @relation(fields: [recipeId], references: [id])
   createdBy User    @relation("BatchCreatedBy", fields: [createdById], references: [id])
+
+  @@index([orderId])
 }
 
 /// Ishlab chiqarish plani — direktor mahsulot bo'yicha oyga belgilaydi (plita, ustun, beton...).
@@ -1285,6 +1304,8 @@ model Trip {
   @@index([status, createdAt])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([orderId])
+  @@index([vehicleId])
+  @@index([driverId])
 }
 
 /// Reysdagi muammo — haydovchi ilovadan, dispetcher vebdan yoki ECO (rad etish, e'tiroz) yozadi.
@@ -1386,6 +1407,7 @@ model FuelLog {
 
   @@index([date])
   @@index([vehicleId, date])
+  @@index([tripId])
 }
 
 /// Transport xarajati (yoqilg'idan tashqari): haydovchi haqi, yo'l, ta'mir, jarima...
@@ -1407,6 +1429,7 @@ model TransportExpense {
   trip    Trip?     @relation(fields: [tripId], references: [id])
 
   @@index([date])
+  @@index([tripId])
 }
 
 enum TransportExpenseKind {
@@ -1458,11 +1481,16 @@ model Invoice {
   orderId    String?
   amount     Decimal       @db.Decimal(18, 2)
   status     InvoiceStatus @default(OPEN)
+  /// Boshlang'ich qoldiq (tizimga o'tish sanasidagi mijoz qarzi/avansi) — zayavkasiz "schyot".
+  /// Musbat — mijoz qarzi (OPEN, to'lov shunga bog'lanadi); manfiy — mijoz avansi (PAID, qarzdan ayiriladi).
+  /// Qarz/akt sverka hisoblarida oddiy schyotdek qatnashadi, sotuv (tushum) hisobotlariga kirmaydi.
+  isOpening  Boolean       @default(false)
   createdAt  DateTime      @default(now())
 
-  customer Customer  @relation(fields: [customerId], references: [id])
-  order    Order?    @relation(fields: [orderId], references: [id])
+  customer Customer        @relation(fields: [customerId], references: [id])
+  order    Order?          @relation(fields: [orderId], references: [id])
   payments Payment[]
+  opening  OpeningBalance?
 
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([customerId, status])
@@ -1484,6 +1512,7 @@ model CashAccount {
   transactions   CashTransaction[]
   supplyRequests SupplyRequest[]
   register       SalesRegister[]
+  openings       OpeningBalance[]
 
   // Bir xil nomli hisob ikki marta ochilmasin (seed qayta ishga tushsa ham)
   @@unique([name, type])
@@ -1492,6 +1521,9 @@ model CashAccount {
 enum CashTxType {
   INCOME // kirim (mijoz to'lovidan tashqari: boshqa tushumlar)
   EXPENSE // chiqim
+  /// Boshlang'ich qoldiq: hisob qoldig'iga qo'shiladi (summa ishorali, manfiy — overdraft),
+  /// lekin kirim/chiqim (P&L, pul oqimi) hisobotlariga kirmaydi. Faqat "Boshlang'ich qoldiqlar" bo'limi yozadi.
+  OPENING
 }
 
 /// Kirim-Chiqim jurnali. Mijoz to'lovlari Payment'da — bu yerda boshqa kirim va barcha chiqimlar.
@@ -1510,14 +1542,65 @@ model CashTransaction {
   createdById   String
   createdAt     DateTime   @default(now())
 
-  cashAccount CashAccount @relation(fields: [cashAccountId], references: [id])
-  supplier    Supplier?   @relation(fields: [supplierId], references: [id])
-  createdBy   User        @relation("CashTxCreatedBy", fields: [createdById], references: [id])
+  cashAccount CashAccount     @relation(fields: [cashAccountId], references: [id])
+  supplier    Supplier?       @relation(fields: [supplierId], references: [id])
+  createdBy   User            @relation("CashTxCreatedBy", fields: [createdById], references: [id])
+  opening     OpeningBalance?
 
   @@index([date, type])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([cashAccountId])
   @@index([refType, refId])
+  @@index([supplierId])
+}
+
+enum OpeningKind {
+  CUSTOMER // mijoz qarzi (+) yoki avansi (−)
+  SUPPLIER // yetkazuvchiga qarzimiz (+) yoki unga bergan avansimiz (−)
+  CASH // kassa / bank hisobi qoldig'i
+  STOCK // tayyor mahsulot qoldig'i (sklad bo'yicha)
+}
+
+/// Boshlang'ich qoldiq — tizimga o'tish sanasidagi holat (real korxona ma'lumotini kiritish).
+/// Har yozuv o'z hujjatini yaratadi va undan o'tib hamma hisobotga tushadi:
+///   CUSTOMER → Invoice (isOpening), CASH → CashTransaction (OPENING), STOCK → StockMove (ADJUSTMENT, refType "OpeningBalance"),
+///   SUPPLIER → alohida hujjat yo'q: yetkazuvchi qarzi shu yozuvdan, to'lovi — CashTransaction (refType "OpeningBalance").
+/// Bitta obyektga bitta faol qoldiq (`activeKey` unique); bekor qilinsa kalit bo'shaydi. Tahrir/bekor — faqat direktor.
+model OpeningBalance {
+  id            String      @id @default(cuid())
+  kind          OpeningKind
+  date          DateTime // qoldiq qaysi sana holatiga (tizimga o'tish sanasi)
+  customerId    String?
+  supplierId    String?
+  cashAccountId String?
+  productId     String?
+  warehouseId   String?
+  amount        Decimal     @db.Decimal(18, 2) // pul (ishorali); STOCK da = qty × unitCost
+  qty           Decimal?    @db.Decimal(18, 3) // STOCK: miqdor
+  unitCost      Decimal?    @db.Decimal(18, 2) // STOCK: birlik tannarxi
+  note          String?
+  /// "CUSTOMER:<id>", "STOCK:<productId>:<warehouseId>"... — faol yozuvda to'ldiriladi, bekor qilinganda null
+  activeKey     String?     @unique
+  invoiceId     String?     @unique
+  cashTxId      String?     @unique
+  stockMoveId   String?     @unique
+  createdById   String
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  customer    Customer?        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  supplier    Supplier?        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  cashAccount CashAccount?     @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+  product     Product?         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse   Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  invoice     Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  cashTx      CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: Restrict)
+  stockMove   StockMove?       @relation(fields: [stockMoveId], references: [id], onDelete: Restrict)
+
+  @@index([kind, cancelledAt])
 }
 
 model Payment {
@@ -1708,7 +1791,7 @@ model TelegramMessage {
 /// Argumentlar tayyorlash bosqichida tekshirilgan va id'larga keltirilgan holda saqlanadi.
 model AiAction {
   id        String    @id @default(cuid())
-  userId    String
+  userId    String? // foydalanuvchi o'chirilsa tarix qoladi (SetNull)
   kind      String // order_create, payment_add, …
   args      Json // tekshirilgan, id'larga keltirilgan argumentlar
   summary   String // foydalanuvchiga ko'rsatiladigan tasdiq matni
@@ -1721,7 +1804,7 @@ model AiAction {
   expiresAt DateTime
   doneAt    DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, status, createdAt])
 }
@@ -1796,6 +1879,7 @@ model Lead {
 
   @@index([status, createdAt])
   @@index([phone])
+  @@index([customerId])
 }
 
 enum DeletionRequestSource {
@@ -1867,7 +1951,7 @@ model MobileDevice {
 /// "darhol xabar berish" vositasi, manba esa shu jadval.
 model Notification {
   id        String    @id @default(cuid())
-  userId    String
+  userId    String? // foydalanuvchi o'chirilsa bildirishnoma tarixi qoladi (SetNull)
   type      String /// TRIP_ASSIGNED, ORDER_BLOCKED… — ikonka va guruhlash uchun
   title     String
   body      String
@@ -1876,7 +1960,7 @@ model Notification {
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([userId, readAt])

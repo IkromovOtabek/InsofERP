@@ -11,6 +11,7 @@ import { totalPlanned } from "@/lib/supply";
 import { needsDirector } from "@/lib/procurement";
 import { moneyShort, qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
+import { txSign, FLOW_ONLY } from "@/lib/cash-tx";
 
 /**
  * Egasi dashbordi (TZ "Owner Dashboard v2.0") — bitta chaqiruvda hamma blok.
@@ -114,7 +115,7 @@ export async function ownerDashboard() {
     loadRevenue(from90 < from3 ? from90 : from3, tomorrow),
     db.salesPlan.findMany({ where: { year: y, month: m + 1 } }),
     db.expenseBudget.findMany({ where: { year: y, month: m + 1 } }),
-    db.cashTransaction.findMany({ where: { date: { gte: monthStart, lt: tomorrow } }, include: { cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true, role: true } } }, orderBy: { amount: "desc" } }),
+    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, date: { gte: monthStart, lt: tomorrow } }, include: { cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true, role: true } } }, orderBy: { amount: "desc" } }),
     db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: new Date(y, m - 3, 1), lt: monthStart } }, select: { category: true, amount: true, date: true } }),
     db.payment.findMany({ where: { date: { gte: monthStart, lt: tomorrow } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true, type: true } } }, orderBy: { amount: "desc" } }),
     db.payment.findMany({ where: { date: { gte: addDays(today, -30), lt: tomorrow } }, select: { amount: true } }),
@@ -236,7 +237,7 @@ export async function ownerDashboard() {
   /* ───────────────────────── Pul va cash flow ───────────────────────── */
   const bal = new Map<string, number>();
   for (const p of allPay) add(bal, p.cashAccountId, Number(p._sum.amount ?? 0));
-  for (const t of allTx) add(bal, t.cashAccountId, (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0));
+  for (const t of allTx) add(bal, t.cashAccountId, txSign(t.type) * Number(t._sum.amount ?? 0));
   const accountRows = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, isActive: a.isActive, balance: bal.get(a.id) ?? 0 })).filter((a) => a.isActive || Math.abs(a.balance) >= 1);
   const cashTotal = sum(accountRows.map((a) => a.balance));
   const cashOnHand = sum(accountRows.filter((a) => a.type === "CASH").map((a) => a.balance)), bankTotal = cashTotal - cashOnHand;

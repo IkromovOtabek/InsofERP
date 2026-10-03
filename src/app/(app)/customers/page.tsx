@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Search, ShieldAlert, FileSignature } from "lucide-react";
+import { Plus, Search, ShieldAlert, FileSignature, FileSpreadsheet } from "lucide-react";
 import { db } from "@/lib/db";
 import { customersCredit, contractedIds } from "@/lib/finance";
 import { ContractMark } from "@/components/customer-name";
@@ -26,7 +26,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <PageHeader title="Mijozlar" subtitle="Har bir mijozga standart 100 mln so'm kredit limit. Qarz + ochiq zayavkalar limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi." action={<LinkButton href="/customers/new"><Plus size={16} /> Yangi mijoz</LinkButton>} />
+      <PageHeader title="Mijozlar" subtitle="Har bir mijozga standart 100 mln so'm kredit limit. Qarz + ochiq zayavkalar limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi." action={<div className="flex gap-2"><LinkButton href="/customers/import" variant="secondary"><FileSpreadsheet size={16} /> Excel import</LinkButton><LinkButton href="/customers/new"><Plus size={16} /> Yangi mijoz</LinkButton></div>} />
       {black.length > 0 && tab !== "black" && (
         <div className="mb-4"><Callout tone="danger" title={`Qora ro'yxatda ${black.length} ta mijoz`}>Limit to'liq ishlatilgan — ularga yangi zayavka ochilmaydi. <Link href="/customers?tab=black" className="underline">Ro'yxatni ko'rish</Link></Callout></div>
       )}

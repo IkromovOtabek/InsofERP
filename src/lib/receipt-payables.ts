@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { supplierOpeningDues } from "./opening-balances";
 
 /**
  * To'lanmagan kirimlar — sklad/snabjeniye yozgan, lekin hali kassadan pul chiqmagan kirim hujjatlari.
@@ -43,7 +44,9 @@ export type SupplierLedger = {
   received: number; // jami kirim summasi (barcha kirim hujjatlari)
   paid: number; // shu yetkazuvchiga yozilgan chiqimlar − kirimlar (qaytgan pul)
   unpaid: UnpaidReceipt[]; // to'lanmagan kirimlar — qarzimiz
-  debt: number; // to'lanmagan kirimlar jami
+  debt: number; // to'lanmagan kirimlar jami + boshlang'ich qoldiqdan qolgan qarz
+  /** Boshlang'ich qoldiq (tizimga o'tish sanasidagi qarzimiz) — to'lanmagan qismi; manfiy — bergan avansimiz */
+  opening: number;
   advance: number; // pul ajratilgan, mol hali qabul qilinmagan ta'minotlar (avans)
   refundDue: number; // bekor qilingan, lekin puli ajratilgan ta'minotlar — yetkazuvchi qaytarishi kerak
 };
@@ -54,7 +57,7 @@ export type SupplierLedger = {
  * bo'lgan pul ta'minot zayavkalarining chiqimlaridan (`SupplyRequest.cashTxId`) olinadi.
  */
 export async function supplierLedger(supplierId: string): Promise<SupplierLedger> {
-  const [items, txs, unpaidAll, supply] = await Promise.all([
+  const [items, txs, unpaidAll, supply, openings] = await Promise.all([
     db.goodsReceiptItem.findMany({ where: { receipt: { supplierId } }, select: { qty: true, price: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { supplierId }, _sum: { amount: true } }),
     unpaidReceipts(),
@@ -62,7 +65,9 @@ export async function supplierLedger(supplierId: string): Promise<SupplierLedger
       where: { supplierId, cashTxId: { not: null }, status: { in: ["PRICED", "APPROVED", "FUNDED", "REJECTED"] } },
       select: { status: true, cashTxId: true },
     }),
+    supplierOpeningDues(supplierId),
   ]);
+  const opening = openings.reduce((s, o) => s + o.left, 0);
   const cash = supply.length
     ? new Map((await db.cashTransaction.findMany({ where: { id: { in: supply.map((s) => s.cashTxId!) } }, select: { id: true, amount: true } })).map((c) => [c.id, Number(c.amount)]))
     : new Map<string, number>();
@@ -72,8 +77,9 @@ export async function supplierLedger(supplierId: string): Promise<SupplierLedger
     received: items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0),
     paid: sumOf("EXPENSE") - sumOf("INCOME"),
     unpaid,
-    debt: unpaid.reduce((s, r) => s + r.total, 0),
-    advance: supply.filter((s) => s.status !== "REJECTED").reduce((s, r) => s + (cash.get(r.cashTxId!) ?? 0), 0),
+    debt: unpaid.reduce((s, r) => s + r.total, 0) + Math.max(0, opening),
+    opening,
+    advance: supply.filter((s) => s.status !== "REJECTED").reduce((s, r) => s + (cash.get(r.cashTxId!) ?? 0), 0) + Math.max(0, -opening),
     refundDue: supply.filter((s) => s.status === "REJECTED").reduce((s, r) => s + (cash.get(r.cashTxId!) ?? 0), 0),
   };
 }

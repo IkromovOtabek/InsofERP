@@ -3,6 +3,7 @@ import { audit } from "@/lib/audit";
 import { money } from "@/lib/format";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
+import { txSign } from "@/lib/cash-tx";
 
 type Tx = Prisma.TransactionClient;
 
@@ -237,7 +238,7 @@ export async function accountBalances(client: Tx = db, ids?: string[]): Promise<
   ]);
   const balance = new Map<string, number>();
   for (const p of pay) balance.set(p.cashAccountId, (balance.get(p.cashAccountId) ?? 0) + Number(p._sum.amount ?? 0));
-  for (const t of tx) balance.set(t.cashAccountId, (balance.get(t.cashAccountId) ?? 0) + (t.type === "INCOME" ? 1 : -1) * Number(t._sum.amount ?? 0));
+  for (const t of tx) balance.set(t.cashAccountId, (balance.get(t.cashAccountId) ?? 0) + txSign(t.type) * Number(t._sum.amount ?? 0));
   for (const [k, v] of balance) balance.set(k, r2(v));
   return balance;
 }
