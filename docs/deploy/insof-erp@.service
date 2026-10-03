@@ -1,0 +1,20 @@
+# Har korxona uchun bitta jarayon: systemctl start insof-erp@<slug>
+# O'rnatish: sudo cp docs/deploy/insof-erp@.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# (scripts/tenant-up.sh buni o'zi qiladi)
+[Unit]
+Description=Insof ERP — %i korxonasi
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/var/www/insof-erp
+EnvironmentFile=/var/www/insof-erp/tenants/%i.env
+# PORT .env dan; faqat localhost — tashqariga nginx orqali
+ExecStart=/bin/sh -c 'exec /usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$PORT"'
+Restart=always
+RestartSec=5
+MemoryMax=900M
+
+[Install]
+WantedBy=multi-user.target

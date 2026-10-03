@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/nav";
@@ -45,6 +46,9 @@ async function sign(user: DbUser, typ: "access" | "refresh") {
 }
 
 async function issue(u: DbUser): Promise<MobileTokens & { user: MobileUser }> {
+  // IT superadmin mobil ilovaga kirmaydi; to'xtatilgan korxonaga hech kim kirmaydi
+  if (u.role === "SUPERADMIN") throw new MobileAuthError("BAD_CREDENTIALS", "Login yoki parol noto'g'ri");
+  if (await companySuspension()) throw new MobileAuthError("USER_DISABLED", SUSPENDED_MESSAGE);
   const [accessToken, refreshToken] = await Promise.all([sign(u, "access"), sign(u, "refresh")]);
   return { accessToken, refreshToken, user: toUser(u) };
 }
@@ -98,5 +102,7 @@ export async function requireMobileUser(req: Request): Promise<MobileUser> {
   const user = await db.user.findUnique({ where: { id: payload.sub } });
   if (!user || !user.isActive) throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
   if ((payload.sv ?? 0) !== user.sessionVersion) throw new MobileAuthError("TOKEN_INVALID", "Sessiya muddati tugagan");
+  if (user.role === "SUPERADMIN") throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
+  if (await companySuspension()) throw new MobileAuthError("USER_DISABLED", SUSPENDED_MESSAGE);
   return toUser(user);
 }

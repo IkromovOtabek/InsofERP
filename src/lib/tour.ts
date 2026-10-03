@@ -305,6 +305,7 @@ const BY_ROLE: Record<Role, TourStep[]> = {
   MECHANIC: MECHANIC_STEPS,
   DRIVER: DRIVER_STEPS,
   BRIGADIER: BRIGADIER_STEPS,
+  SUPERADMIN: [], // IT — instruksiya ko'rsatilmaydi
 };
 
 /** Rolga mos to'liq instruksiya: kirish → qobiq → rol bo'limlari → yakun. */

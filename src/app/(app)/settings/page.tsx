@@ -131,7 +131,7 @@ type PermFilter = { q?: string; rol?: string; faqat?: string; u?: string };
  */
 async function PermissionsTab({ f }: { f: PermFilter }) {
   const all = await db.user.findMany({
-    where: { isActive: true, role: { not: "DIRECTOR" } },
+    where: { isActive: true, role: { notIn: ["DIRECTOR", "SUPERADMIN"] } },
     orderBy: [{ fullName: "asc" }],
     select: { id: true, fullName: true, login: true, role: true, perms: true },
   });
@@ -323,7 +323,8 @@ async function AccountsTab() {
 }
 
 async function UsersTab({ me }: { me: string }) {
-  const users = await db.user.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { employee: true } });
+  // IT superadmin (platforma hisobi) ro'yxatda ko'rinmaydi — uni markaziy panel boshqaradi
+  const users = await db.user.findMany({ where: { role: { not: "SUPERADMIN" } }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { employee: true } });
   const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER");
   return (
     <div className="space-y-4">

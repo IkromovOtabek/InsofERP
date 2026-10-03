@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "postinstall": "prisma generate",
-    "build": "prisma generate && next build",
+    "postinstall": "prisma generate && prisma generate --schema prisma/control/schema.prisma",
+    "build": "prisma generate && prisma generate --schema prisma/control/schema.prisma && next build",
     "start": "next start",
     "lint": "eslint .",
     "db:generate": "prisma generate",
@@ -22,7 +22,10 @@
     "eco:sync": "tsx scripts/eco-sync.ts",
     "sms": "tsx scripts/sms.ts",
     "gateway": "tsx scripts/telegram-gateway.ts",
-    "security:check": "tsx scripts/security-check.ts"
+    "security:check": "tsx scripts/security-check.ts",
+    "control:migrate": "prisma migrate deploy --schema prisma/control/schema.prisma",
+    "control:admin": "tsx scripts/control-admin.ts",
+    "tenant": "tsx scripts/tenant.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

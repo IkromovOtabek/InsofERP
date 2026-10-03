@@ -113,6 +113,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   MECHANIC: "Mexanik",
   DRIVER: "Haydovchi",
   BRIGADIER: "Brigadir",
+  SUPERADMIN: "IT superadmin",
 };
 
 /**

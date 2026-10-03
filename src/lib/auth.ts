@@ -6,6 +6,7 @@ import { db } from "./db";
 import type { Prisma, Role } from "@/generated/prisma";
 import { TOUR_COOKIE } from "./tour";
 import { authSecret, JWT_ALGS } from "./secret";
+import { companySuspension, effectiveRole } from "./tenant";
 
 const COOKIE = "insof_session";
 const SESSION_TTL_SEC = 60 * 60 * 12;
@@ -23,12 +24,14 @@ export type Session = {
   userId: string; login: string; fullName: string; role: Role;
   /** Direktor bergan modul ruxsatlari (rol ustiga ishlaydi). Token ichida saqlanmaydi — bazadan o'qiladi. */
   perms?: Perms;
+  /** IT superadmin (markaziy paneldan SSO). `role` bunda "DIRECTOR" — korxona ichida to'liq huquq. */
+  superadmin?: boolean;
 };
 
 /** Tokendagi maydonlar: `sv` — User.sessionVersion; parol almashsa/hisob yopilsa eski tokenlar kuyadi.
  *  `perms` tokenga yozilmaydi: direktor ruxsatni o'zgartirsa, foydalanuvchini qayta kirishga majburlamay,
  *  har so'rovda bazadagi yangi qiymat o'qiladi. */
-type Claims = Omit<Session, "perms"> & { sv: number };
+type Claims = Omit<Session, "perms" | "superadmin"> & { sv: number };
 
 type SessionUser = { id: string; login: string; fullName: string; role: Role; sessionVersion: number };
 
@@ -47,8 +50,10 @@ export function parsePerms(raw: unknown): Perms | undefined {
 
 /** Cookie'ga yangi imzolangan sessiya yozadi (login va parol o'zgarganda qayta berish uchun). */
 export async function issueSession(user: SessionUser): Promise<Session> {
-  const session: Session = { userId: user.id, login: user.login, fullName: user.fullName, role: user.role };
-  const claims: Claims = { ...session, sv: user.sessionVersion };
+  // Superadmin tokenda ham "DIRECTOR" — middleware (Edge, bazasiz) yo'l ruxsatini shu bo'yicha hisoblaydi
+  const session: Session = { userId: user.id, login: user.login, fullName: user.fullName, role: effectiveRole(user.role), superadmin: user.role === "SUPERADMIN" || undefined };
+  const { superadmin: _sa, ...base } = session; void _sa;
+  const claims: Claims = { ...base, sv: user.sessionVersion };
   const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -71,7 +76,9 @@ export async function hashPassword(p: string) {
 
 export async function login(loginName: string, password: string): Promise<Session | null> {
   const user = await db.user.findUnique({ where: { login: loginName } });
-  if (!user || !user.isActive) return null;
+  // Superadmin login/parol bilan kirmaydi — faqat markaziy paneldan SSO (`/api/control/sso`)
+  if (!user || !user.isActive || user.role === "SUPERADMIN") return null;
+  if (await companySuspension()) return null; // sabab login sahifasida alohida ko'rsatiladi
   if (!(await bcrypt.compare(password, user.passwordHash))) return null;
 
   const session = await issueSession(user);
@@ -110,7 +117,10 @@ export const getSession = cache(async (): Promise<Session | null> => {
   });
   if (!user || !user.isActive) return null;
   if ((claims.sv ?? 0) !== user.sessionVersion) return null;
-  return { userId: user.id, login: user.login, fullName: user.fullName, role: user.role, perms: parsePerms(user.perms) };
+  const superadmin = user.role === "SUPERADMIN";
+  // To'xtatilgan korxonada faqat IT superadmin ishlay oladi (ma'lumotni ko'rish, eksport, qayta yoqish)
+  if (!superadmin && (await companySuspension())) return null;
+  return { userId: user.id, login: user.login, fullName: user.fullName, role: effectiveRole(user.role), perms: parsePerms(user.perms), superadmin: superadmin || undefined };
 });
 
 /**

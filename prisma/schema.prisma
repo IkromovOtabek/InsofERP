@@ -30,6 +30,8 @@ enum Role {
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
   BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
   AGENT // ko'chadagi sotuv agenti — o'z mijozlari, zayavka ochish, mijozlar qarzi (mobil + cheklangan veb)
+  SUPERADMIN // IT (platforma egasi) — markaziy paneldan SSO bilan kiradi; korxona ichida direktor huquqi + IT kuzatuv.
+  // Direktor bu hisobni ko'rmaydi, o'zgartira olmaydi; login/parol bilan kirib bo'lmaydi (faqat SSO).
 }
 
 model User {
@@ -94,6 +96,9 @@ model User {
 
 model CompanySettings {
   id                  String   @id @default("main")
+  /// Platforma (superadmin) korxonani to'xtatgan bo'lsa — xodimlar veb va mobilda kira olmaydi, ma'lumot saqlanadi
+  suspendedAt         DateTime?
+  suspendReason       String?
   name                String   @default("Insof beton zavodi")
   legalName           String? // yuridik nomi (MChJ)
   inn                 String?

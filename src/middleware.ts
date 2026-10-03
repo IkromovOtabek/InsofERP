@@ -10,9 +10,31 @@ import { authSecret, JWT_ALGS } from "@/lib/secret";
  * `lib/mobile/auth.ts`; cookie sessiyasiga tayanmaydi).
  */
 const isPublic = (p: string) =>
-  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile");
+  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/mobile") || p.startsWith("/api/control");
+
+/**
+ * Markaziy panel (INSOF_MODE=control, admin.insof.uz): korxona sahifalari yo'q — faqat /superadmin.
+ * Sessiya — alohida `insof_admin` cookie (`typ: "admin"`); to'liq tekshiruv `requireAdmin` da (control baza).
+ */
+async function controlMiddleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  if (!pathname.startsWith("/superadmin")) return NextResponse.redirect(new URL("/superadmin", req.url));
+  if (pathname.startsWith("/superadmin/login")) return NextResponse.next();
+  const token = req.cookies.get("insof_admin")?.value;
+  let ok = false;
+  if (token) {
+    try {
+      const { payload } = await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS });
+      ok = payload.typ === "admin";
+    } catch { ok = false; }
+  }
+  return ok ? NextResponse.next() : NextResponse.redirect(new URL("/superadmin/login", req.url));
+}
 
 export async function middleware(req: NextRequest) {
+  if (process.env.INSOF_MODE === "control") return controlMiddleware(req);
+  // Korxona jarayonida markaziy panel yo'q
+  if (req.nextUrl.pathname.startsWith("/superadmin")) return new NextResponse("Not found", { status: 404 });
   const token = req.cookies.get("insof_session")?.value;
   let role: Role | null = null;
   if (token) {

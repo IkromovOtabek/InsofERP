@@ -1,0 +1,16 @@
+# Markaziy IT panel (admin domeni) — xuddi shu kod, INSOF_MODE=control
+[Unit]
+Description=Insof platforma — markaziy IT panel
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/var/www/insof-erp
+EnvironmentFile=/var/www/insof-erp/control.env
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3100
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

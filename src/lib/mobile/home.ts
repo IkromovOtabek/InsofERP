@@ -174,6 +174,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   MECHANIC: { key: "trips", title: "Reyslar" },
   DRIVER: { key: "trips", title: "Mening reyslarim" },
   BRIGADIER: { key: "tasks", title: "Topshiriqlarim" },
+  SUPERADMIN: { key: "approvals", title: "Tasdiqlar" }, // mobilga kirmaydi (faqat veb SSO) — jadval to'liq bo'lishi uchun
 };
 
 /** Tezkor amal katakchasi ikonlari (ilovadagi `design/icons.tsx` nomlari). */

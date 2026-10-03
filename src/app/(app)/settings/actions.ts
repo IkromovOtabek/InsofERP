@@ -187,6 +187,13 @@ export async function createUser(_prev: ActionState, fd: FormData): Promise<Acti
 
 /** Mavjud foydalanuvchining ismi va roli. DIRECTOR rolini faqat direktor beradi/oladi (sahifa faqat direktorniki);
  *  o'z rolini o'zgartirib bo'lmaydi va oxirgi faol direktor rolidan tushirilmaydi — tizim egasiz qolmasin. */
+/** IT superadmin hisobi (platforma) — direktor uni o'zgartira, bloklay va parolini almashtira olmaydi. */
+async function isPlatformUser(id: string) {
+  const u = await db.user.findUnique({ where: { id }, select: { role: true } });
+  return u?.role === "SUPERADMIN";
+}
+const PLATFORM_ERR = "Bu IT (platforma) hisobi — uni faqat markaziy panel boshqaradi";
+
 const editUserSchema = z.object({ fullName: zStr("F.I.O. kerak"), role: z.enum(ROLES) });
 
 export async function updateUser(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -195,6 +202,7 @@ export async function updateUser(id: string, _prev: ActionState, fd: FormData): 
   const r = parseForm(editUserSchema, fd);
   if ("error" in r) return { error: r.error };
   const before = await db.user.findUniqueOrThrow({ where: { id }, select: { id: true, fullName: true, role: true, isActive: true } });
+  if (before.role === "SUPERADMIN") return { error: PLATFORM_ERR };
   if (before.role !== r.data.role) {
     if (id === s.userId) return { error: "O'z rolingizni o'zgartirib bo'lmaydi" };
     if (before.role === "DIRECTOR" && before.isActive) {
@@ -217,6 +225,7 @@ export async function toggleUser(id: string) {
   const s = await requireSession(["DIRECTOR"]);
   if (s.userId === id) return;
   const u = await db.user.findUniqueOrThrow({ where: { id } });
+  if (u.role === "SUPERADMIN") return;
   // Oxirgi faol direktor bloklanmasin
   if (u.isActive && u.role === "DIRECTOR" && (await db.user.count({ where: { role: "DIRECTOR", isActive: true } })) <= 1) return;
   await db.user.update({ where: { id }, data: { isActive: !u.isActive } });
@@ -228,6 +237,7 @@ export async function toggleUser(id: string) {
 
 export async function resetPassword(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
+  if (await isPlatformUser(id)) return { error: PLATFORM_ERR };
   const pw = String(fd.get("password") ?? "");
   const problem = passwordProblem(pw);
   if (problem) return { error: problem };
@@ -334,7 +344,7 @@ export async function saveUserPerms(userId: string, _prev: ActionState, fd: Form
   if (s.role !== "DIRECTOR") return { error: "Faqat direktor" };
   const target = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true, perms: true, fullName: true } });
   if (!target) return { error: "Foydalanuvchi topilmadi" };
-  if (target.role === "DIRECTOR") return { error: "Direktor ruxsatlari cheklanmaydi — u doim to'liq huquqli" };
+  if (target.role === "DIRECTOR" || target.role === "SUPERADMIN") return { error: "Direktor ruxsatlari cheklanmaydi — u doim to'liq huquqli" };
 
   const perms: Perms = {};
   for (const m of MODULES) {
@@ -364,7 +374,7 @@ export async function copyUserPerms(targetId: string, _prev: ActionState, fd: Fo
     db.user.findUnique({ where: { id: sourceId }, select: { perms: true } }),
   ]);
   if (!target || !source) return { error: "Foydalanuvchi topilmadi" };
-  if (target.role === "DIRECTOR") return { error: "Direktor ruxsatlari cheklanmaydi" };
+  if (target.role === "DIRECTOR" || target.role === "SUPERADMIN") return { error: "Direktor ruxsatlari cheklanmaydi" };
   await applyPerms(s.userId, target, parsePerms(source.perms) ?? {});
   refresh();
   return { ok: true };

@@ -1,0 +1,104 @@
+// Insof — markaziy boshqaruv (control) bazasi.
+//
+// Ko'p korxonali tuzilma: har korxona (tenant) o'z Postgres bazasida, shu kodning alohida
+// jarayonida ishlaydi (zavod2.insof.uz → 127.0.0.1:3101 → insof_t_zavod2). Bu baza esa faqat
+// korxonalar ro'yxati, IT superadminlar, ular qilgan amallar va kunlik statistika suratlarini saqlaydi.
+// Korxona ma'lumotlari (zayavka, mijoz, pul) bu yerga HECH QACHON yozilmaydi.
+//
+// Migratsiya: npx prisma migrate deploy --schema prisma/control/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/control"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("CONTROL_DATABASE_URL")
+}
+
+enum TenantStatus {
+  PROVISIONING // baza yaratildi, jarayon hali ishga tushirilmagan
+  ACTIVE
+  SUSPENDED // superadmin to'xtatgan: xodimlar kira olmaydi, ma'lumot saqlanadi
+  ARCHIVED // shartnoma tugagan — faqat zaxira nusxa uchun
+}
+
+/// IT xodimi (superadmin) — barcha korxonalarni kuzatadi, yaratadi, direktorga login beradi.
+model SuperAdmin {
+  id             String    @id @default(cuid())
+  login          String    @unique
+  passwordHash   String
+  fullName       String
+  isActive       Boolean   @default(true)
+  /// Parol almashsa yoki hisob yopilsa eski cookie'lar kuyadi
+  sessionVersion Int       @default(0)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  events ControlEvent[]
+}
+
+/// Korxona — alohida baza + alohida jarayon (port) + o'z subdomeni.
+model Tenant {
+  id            String       @id @default(cuid())
+  /// Lotin kichik harf, raqam, chiziqcha: subdomen va baza nomi shundan ("zavod2" → insof_t_zavod2)
+  slug          String       @unique
+  name          String
+  /// Brauzerdagi manzil (zavod2.insof.uz). Bo'sh — hali domen ulanmagan.
+  domain        String?      @unique
+  /// Server ichidagi manzil — statistika va SSO shu orqali (http://127.0.0.1:3101)
+  internalUrl   String
+  port          Int          @unique
+  dbName        String       @unique
+  status        TenantStatus @default(PROVISIONING)
+  plan          String       @default("standard")
+  contactName   String?
+  contactPhone  String?
+  note          String?
+  /// Direktorning logini (paroli saqlanmaydi — faqat korxona bazasida, hash holida)
+  directorLogin String?
+  /// Korxona ulangan ECO API (monitoring uchun /v1/health tekshiriladi)
+  ecoApiUrl     String?
+  suspendedAt   DateTime?
+  suspendReason String?
+  /// Oxirgi muvaffaqiyatli statistika so'rovi va natijasi
+  lastSeenAt    DateTime?
+  lastStats     Json?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  events ControlEvent[]
+  stats  TenantStat[]
+}
+
+/// Superadmin amallari jurnali: korxona yaratish, to'xtatish, direktor parolini tiklash, SSO kirish...
+model ControlEvent {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  adminId   String?
+  action    String
+  detail    Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant?     @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  admin  SuperAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([createdAt])
+}
+
+/// Kunlik statistika surati (o'sish grafigi uchun). Bir korxona — bir kunda bitta qator (oxirgisi yoziladi).
+model TenantStat {
+  id       String   @id @default(cuid())
+  tenantId String
+  day      DateTime @db.Date
+  stats    Json
+  takenAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, day])
+}

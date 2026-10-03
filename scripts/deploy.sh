@@ -21,18 +21,36 @@ cd "$ERP_DIR"
 git pull --ff-only
 step "ERP: paketlar"
 npm ci --no-audit --no-fund
-step "ERP: bazaga migratsiya"
-npx prisma migrate deploy
+# Ko'p korxonali serverda (control.env bor) har korxona bazasi pastda `tenant migrate-all` bilan yangilanadi
+if [ ! -f "$ERP_DIR/control.env" ]; then
+  step "ERP: bazaga migratsiya"
+  npx prisma migrate deploy
+fi
 npx prisma generate
 step "ERP: build"
 # /_next/image keshi: public/ dagi surat almashsa ham eski optimallashtirilgan nusxa qolib ketadi.
 rm -rf .next/cache/images
 npm run build
 step "ERP: qayta ishga tushirish"
-sudo systemctl restart insof-erp
+# Eski yagona xizmat — platformaga ko'chirilgach o'chirilgan bo'ladi (o'rniga insof-erp@<slug>)
+if systemctl is-enabled --quiet insof-erp 2>/dev/null; then sudo systemctl restart insof-erp; fi
 # Vaqt zonasi: ilova o'zi Asia/Tashkent o'rnatadi (src/instrumentation.ts), lekin server soati ham shunday bo'lsin
 if [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "Asia/Tashkent" ]; then
   echo "⚠ Server vaqt zonasi: $(timedatectl show -p Timezone --value 2>/dev/null || echo aniqlanmadi). Tavsiya: sudo timedatectl set-timezone Asia/Tashkent" >&2
+fi
+
+# ───────────── Ko'p korxonali platforma (control.env bo'lsa) ─────────────
+if [ -f "$ERP_DIR/control.env" ]; then
+  cd "$ERP_DIR"
+  step "Platforma: control baza migratsiyasi"
+  ( set -a; . ./control.env; set +a; npx prisma migrate deploy --schema prisma/control/schema.prisma )
+  step "Platforma: barcha korxona bazalariga migratsiya"
+  npm run -s tenant -- migrate-all
+  step "Platforma: jarayonlarni qayta ishga tushirish"
+  sudo systemctl restart insof-control
+  for unit in $(systemctl list-units --type=service --all --no-legend 'insof-erp@*' | awk '{print $1}'); do
+    sudo systemctl restart "$unit" && echo "  $unit"
+  done
 fi
 
 # ───────────── Insof ECO API ─────────────
@@ -57,6 +75,10 @@ step "Tekshiruv"
 sleep 6
 ok=1
 curl -fsS -o /dev/null http://127.0.0.1:3000/login && echo "ERP  3000 — ishlayapti" || { echo "ERP 3000 javob bermadi: journalctl -u insof-erp -n 50"; ok=0; }
+if [ -f "$ERP_DIR/control.env" ]; then
+  curl -fsS -o /dev/null http://127.0.0.1:3100/superadmin/login && echo "IT panel 3100 — ishlayapti" || { echo "IT panel javob bermadi: journalctl -u insof-control -n 50"; ok=0; }
+  (cd "$ERP_DIR" && npm run -s tenant -- stats) || ok=0
+fi
 if [ "${SKIP_ECO:-0}" != "1" ]; then
   curl -fsS -o /dev/null http://127.0.0.1:3010/v1/health && echo "ECO  3010 — ishlayapti" || { echo "ECO 3010 javob bermadi: journalctl -u insof-eco -n 50"; ok=0; }
 fi

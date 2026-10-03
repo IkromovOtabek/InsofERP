@@ -5,7 +5,8 @@ import path from "path";
  * Yuklangan fayllar (imzolangan shartnomalar) — loyiha ildizidagi `uploads/` papkasida saqlanadi (git'ga kirmaydi).
  * Fayl faqat marshrut orqali (login talab qiladi) beriladi, `public/` ga qo'yilmaydi.
  */
-export const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+// Ko'p korxonali serverda har korxona fayllari alohida (UPLOADS_DIR=/var/lib/insof/<slug>/uploads)
+export const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), "uploads");
 
 // ───────────────────────── Fayl turini mazmunidan aniqlash ─────────────────────────
 

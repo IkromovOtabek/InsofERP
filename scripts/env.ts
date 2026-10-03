@@ -20,7 +20,8 @@ function parseValue(raw: string): string {
 }
 
 /** .env ni process.env ga yuklaydi (skriptlar Next runtime'idan tashqarida ishlaydi). */
-export function loadEnv(file = ".env") {
+// Ko'p korxonali serverda: ENV_FILE=tenants/<slug>.env npm run eco:sync — skript shu korxona bilan ishlaydi
+export function loadEnv(file = process.env.ENV_FILE || ".env") {
   let raw: string;
   try { raw = readFileSync(resolve(process.cwd(), file), "utf8"); } catch { return; }
   const fromFile = new Map<string, string>();

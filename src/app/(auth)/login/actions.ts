@@ -6,11 +6,14 @@ import { looksLikePhone, loginWithAppPhone } from "@/lib/eco/app-login";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 import { confirmLoginCode, requestLoginCode, type LoginVia } from "@/lib/sms-login";
 import { isTestMode } from "@/lib/test-mode";
+import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
 
 export async function loginAction(_prev: { error?: string } | undefined, formData: FormData) {
   const loginName = String(formData.get("login") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   if (!loginName || !password) return { error: "Login va parolni kiriting" };
+  // Platforma korxonani to'xtatgan — hech kim kira olmaydi (sabab aniq ko'rsatiladi)
+  if (await companySuspension()) return { error: SUSPENDED_MESSAGE };
 
   // Qo'pol kuch himoyasi: qulflangan login/IP parol tekshiruvigacha ham yetmaydi
   // Telefon har xil yozilishi mumkin (+998…, 90…) — qulf bitta raqamga tushsin
@@ -49,6 +52,7 @@ export type CodeRequestState = { error?: string; sent?: boolean; via?: LoginVia;
 export async function requestLoginCodeAction(_prev: CodeRequestState, fd: FormData): Promise<CodeRequestState> {
   const phone = String(fd.get("phone") ?? "");
   if (!phone.trim()) return { error: "Telefon raqamini kiriting" };
+  if (await companySuspension()) return { error: SUSPENDED_MESSAGE };
   const r = await requestLoginCode(phone);
   if (!r.ok) return { error: r.error };
   return { sent: true, via: r.via, devCode: r.devCode };
@@ -59,6 +63,7 @@ export async function confirmLoginCodeAction(_prev: { error?: string } | undefin
   const phone = String(fd.get("phone") ?? "");
   const code = String(fd.get("code") ?? "");
   if (!code.trim()) return { error: "Kodni kiriting" };
+  if (await companySuspension()) return { error: SUSPENDED_MESSAGE };
 
   const key = looksLikePhone(phone) ?? phone;
   const ip = await clientIp();
