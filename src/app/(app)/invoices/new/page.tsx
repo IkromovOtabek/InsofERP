@@ -6,7 +6,7 @@ import { InvoiceForm } from "../invoice-form";
 import { unitLabel, soleUnit } from "@/lib/unit";
 
 export default async function NewInvoice({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
-  await requireRoles(["ACCOUNTING", "SALES"]);
+  await requireRoles(["ACCOUNTING", "SALES"], { module: "sales", actions: ["invoice"] });
   const { orderId } = await searchParams;
   const orders = await db.order.findMany({
     where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED"] }, invoices: { none: { status: { not: "CANCELLED" } } } },

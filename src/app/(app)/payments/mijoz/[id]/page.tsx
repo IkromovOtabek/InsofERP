@@ -20,7 +20,7 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "payments" });
 
   const from = sp.from ? new Date(sp.from) : undefined;
   const to = sp.to ? new Date(sp.to) : undefined;

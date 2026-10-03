@@ -9,7 +9,7 @@ import { importReceiptFromExcel } from "../actions";
 
 /** Kirim → Excel orqali: zavod va texnikaga kerakli mahsulotlar ro'yxati bitta kirim hujjati sifatida, ko'p qator birdan. */
 export default async function ReceiptImport() {
-  await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
+  await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   const [suppliers, warehouses] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.warehouse.findMany({ where: { isActive: true } }),

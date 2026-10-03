@@ -12,8 +12,12 @@ const SESSION_TTL_SEC = 60 * 60 * 12;
 
 /** Modul (asosiy bo'lim) bo'yicha ruxsat darajasi — direktor User.perms da taqsimlaydi. */
 export type PermLevel = "none" | "view" | "write";
-/** `{ "<modul>": "none" | "view" | "write" }` — modul darajali ruxsat (amal darajali emas). */
-export type Perms = Record<string, PermLevel>;
+/**
+ * `{ "<modul>": "none" | "view" | "write" | ["<amal>", ...] }` — massiv: ko'radi + faqat shu amallar
+ * (amallar katalogi `lib/permissions.ts`). Satr qiymatlar — eski (modul darajali) format, o'zgarishsiz ishlaydi.
+ */
+export type PermValue = PermLevel | string[];
+export type Perms = Record<string, PermValue>;
 
 export type Session = {
   userId: string; login: string; fullName: string; role: Role;
@@ -30,12 +34,13 @@ type SessionUser = { id: string; login: string; fullName: string; role: Role; se
 
 const VALID_LEVELS: PermLevel[] = ["none", "view", "write"];
 
-/** User.perms (Json) ni xavfsiz o'qish: faqat satr → daraja juftliklari qoladi, buzuq qiymat tashlanadi. */
+/** User.perms (Json) ni xavfsiz o'qish: daraja satri yoki amallar massivi qoladi, buzuq qiymat tashlanadi. */
 export function parsePerms(raw: unknown): Perms | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const out: Perms = {};
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v === "string" && (VALID_LEVELS as string[]).includes(v)) out[k] = v as PermLevel;
+    else if (Array.isArray(v)) out[k] = [...new Set(v.filter((a): a is string => typeof a === "string" && /^[a-z_]{1,32}$/.test(a)))];
   }
   return Object.keys(out).length ? out : undefined;
 }
@@ -109,15 +114,26 @@ export const getSession = cache(async (): Promise<Session | null> => {
 });
 
 /**
- * Modul bo'yicha YOZISH huquqi — server action'lar uchun. `userId` (sessiya emas) bilan ishlaydi,
- * shuning uchun `lib/orders.ts` kabi domen funksiyalari (veb va mobil bitta joydan o'tadi) ham chaqira oladi.
- * Direktor doim to'liq. perms'da modul berilgan bo'lsa shu hal qiladi (grant/restrict), aks holda rol bo'yicha.
+ * Amal huquqi — `userId` (sessiya emas) bilan, shuning uchun `lib/orders.ts` kabi domen funksiyalari
+ * (veb va mobil bitta joydan o'tadi) ham chaqira oladi. Qoida — `lib/permissions.ts` → `canDo`.
  */
-export async function canWriteByUserId(userId: string, module: string): Promise<boolean> {
-  const { canWrite } = await import("./nav");
-  const u = await db.user.findUnique({ where: { id: userId }, select: { role: true, perms: true } });
-  if (!u) return false;
-  return canWrite({ role: u.role, perms: parsePerms(u.perms) }, module);
+export async function canDoByUserId(userId: string, module: string, action: string): Promise<boolean> {
+  const { canDo } = await import("./permissions");
+  const u = await db.user.findUnique({ where: { id: userId }, select: { role: true, perms: true, isActive: true } });
+  if (!u || !u.isActive) return false;
+  return canDo({ role: u.role, perms: parsePerms(u.perms) }, module, action);
+}
+
+/**
+ * Server action uchun: amal ruxsati bo'lmasa xato. Direktor bergan ruxsat rol cheklovidan ustun.
+ * `fallbackRoles` — katalogda (`MODULE_ACTIONS`) yo'q amal uchun.
+ */
+export async function requireAction(module: string, action: string, fallbackRoles?: readonly Role[]): Promise<Session> {
+  const { canDo } = await import("./permissions");
+  const s = await getSession();
+  if (!s) throw new Error("UNAUTHENTICATED");
+  if (!canDo(s, module, action, fallbackRoles)) throw new Error("Bu amal uchun sizda ruxsat yo'q — direktordan ruxsat so'rang");
+  return s;
 }
 
 /**

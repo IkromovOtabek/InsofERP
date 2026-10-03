@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 
@@ -18,7 +18,7 @@ const schema = z.object({
 function refresh() { for (const p of ["/bi-tahlil/marketing", "/bi-tahlil/marketing/reja", "/bi-tahlil/marketing/malumotlar", "/bi-tahlil/ai"]) revalidatePath(p); }
 
 export async function saveEntry(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
+  const s = await requireAction("bi-tahlil", "marketing");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -36,7 +36,7 @@ export async function saveEntry(id: string | null, _prev: ActionState, fd: FormD
 }
 
 export async function deleteEntry(id: string): Promise<void> {
-  const s = await requireSession(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
+  const s = await requireAction("bi-tahlil", "marketing");
   const before = await db.marketingEntry.findUnique({ where: { id } });
   if (!before) return;
   await db.marketingEntry.delete({ where: { id } });

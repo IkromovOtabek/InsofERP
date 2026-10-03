@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import { cashOutflowError } from "@/lib/payments";
@@ -25,7 +25,7 @@ const schema = z.object({
 });
 
 export async function createCashTx(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  const s = await requireAction("cashflow", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -55,7 +55,7 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
 
 /** Qo'lda yozilgan kirim/chiqimni o'chirish — tasdiq tugmasi (`ConfirmButton`) orqali. */
 export async function deleteCashTx(id: string): Promise<ActionState> {
-  const s = await requireSession(["ACCOUNTING", "FINANCE"]);
+  const s = await requireAction("cashflow", "delete");
   const t = await db.cashTransaction.findUnique({ where: { id } });
   if (!t) return { error: "Yozuv topilmadi (allaqachon o'chirilgan bo'lishi mumkin)" };
   // Hujjatga bog'langan yozuv (kirim to'lovi, ta'minot to'lovi) qo'lda o'chirilmaydi — aks holda hujjat
@@ -81,7 +81,7 @@ export async function deleteCashTx(id: string): Promise<ActionState> {
  * Kirim bo'yicha qulf — ikki marta bosilsa ikkinchi chiqim yozilmaydi.
  */
 export async function payReceipt(receiptId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["FINANCE", "ACCOUNTING"]);
+  const s = await requireAction("cashflow", "pay");
   const cashAccountId = String(fd.get("cashAccountId") ?? "");
   const acc = await db.cashAccount.findFirst({ where: { id: cashAccountId, isActive: true } });
   if (!acc) return { error: "Kassa/hisob tanlanmagan" };

@@ -12,7 +12,7 @@ import { PrintButton } from "@/components/print-button";
  * Davr sukut bo'yicha: joriy yil boshidan bugungacha. Debet — schyotlar, kredit — to'lovlar.
  */
 export default async function AktSverki({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
-  await requireRoles(["SALES", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["SALES", "ACCOUNTING", "FINANCE"], { module: "customers" });
   const { id } = await params;
   const sp = await searchParams;
   const c = await db.customer.findUnique({ where: { id }, select: { id: true, name: true, inn: true, address: true } });

@@ -10,12 +10,13 @@ import { cn } from "@/lib/utils";
  * Ikkala forma ham serverda tayyorlanadi, bu yerda faqat qaysi biri ko'rinishi hal qilinadi.
  */
 export function NewOrderMode({ sale, stock, initial = "sale" }: { sale: ReactNode; stock: ReactNode; initial?: "sale" | "stock" }) {
-  const [mode, setMode] = useState<"sale" | "stock">(sale ? initial : "stock");
+  // Ruxsat bo'yicha formalardan biri bo'lmasligi mumkin (`null`) — borini ochamiz
+  const [mode, setMode] = useState<"sale" | "stock">(!sale ? "stock" : !stock ? "sale" : initial);
 
   const tabs = [
     { key: "sale" as const, icon: Users, label: "Mijoz uchun", hint: "Sotuv: narx, to'lov, yetkazish" },
     { key: "stock" as const, icon: Boxes, label: "Sklad uchun", hint: "Zaxira: erkin mahsulot chiqarib qo'yish" },
-  ].filter((t) => (t.key === "sale" ? !!sale : true));
+  ].filter((t) => (t.key === "sale" ? !!sale : !!stock));
 
   return (
     <div>

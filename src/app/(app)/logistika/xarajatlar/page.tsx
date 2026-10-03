@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * reysning jami logistika tannarxi. 1 m³ ga tannarx — xarajat / yetkazilgan hajm.
  */
 export default async function ExpensesPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; vehicleId?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rows, costs, opts, delivered, vehicles] = await Promise.all([

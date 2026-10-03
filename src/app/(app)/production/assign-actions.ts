@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { reassignable } from "@/lib/tasks";
@@ -14,7 +14,7 @@ import { notifyAfter, notifyEmployees } from "@/lib/notify";
  * Faqat shu tugma bosilganda brigadalarga yuboriladi. Brigada tanlanmagan qatorlar keyinga qoladi.
  */
 export async function assignBrigades(orderId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION"]);
+  const s = await requireAction("production", "assign");
   const o = await db.order.findUnique({ where: { id: orderId }, include: { items: { include: { task: true } } } });
   if (!o) return { error: "Zayavka topilmadi" };
   // Faqat tasdiqlangan zayavka ishga tushadi: qoralama (DRAFT) hali sotuv/limit tekshiruvidan o'tmagan.

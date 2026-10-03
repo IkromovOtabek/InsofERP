@@ -3,11 +3,13 @@ import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, Use
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
-import { ROLE_LABELS, MODULES } from "@/lib/nav";
+import { ROLE_LABELS, MODULES, NAV, canView } from "@/lib/nav";
+import { actionDef, delegableActions, roleDefaultActions } from "@/lib/permissions";
+import type { Role } from "@/generated/prisma";
 import { parsePerms } from "@/lib/auth";
 import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
-import { Badge, Button, Card, Empty, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { Badge, Button, Card, Empty, Input, PageHeader, Select, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { ProductExcelPanel } from "@/components/product-excel-import";
 import { ProductMatrixPanel } from "@/components/product-matrix-add";
@@ -15,7 +17,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, UserPermsForm } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
 import { DeletionRow } from "./deletion-forms";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
 import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
@@ -51,7 +53,7 @@ const UNITS: [string, string][] = [["kg", "kg"], ["t", "t"], ["l", "l"], ["m3", 
 
 type AuditFilter = { user?: string; entity?: string; from?: string; to?: string; page?: string };
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string } & AuditFilter> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string } & AuditFilter & PermFilter> }) {
   const s = await requireRoles(["DIRECTOR"]);
   const sp = await searchParams;
   const { tab = "company" } = sp;
@@ -68,7 +70,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "warehouses" && <WarehousesTab />}
       {tab === "accounts" && <AccountsTab />}
       {tab === "users" && <UsersTab me={s.userId} />}
-      {tab === "permissions" && <PermissionsTab />}
+      {tab === "permissions" && <PermissionsTab f={sp} />}
       {tab === "deletions" && <DeletionsTab />}
       {tab === "audit" && <AuditTab f={sp} />}
     </div>
@@ -121,34 +123,97 @@ async function CompanyTab() {
   );
 }
 
-/** Modul bo'yicha ruxsat — direktor har foydalanuvchiga asosiy bo'limlar uchun ko'rish/yozish belgilaydi. */
-async function PermissionsTab() {
-  const users = await db.user.findMany({
+type PermFilter = { q?: string; rol?: string; faqat?: string; u?: string };
+
+/**
+ * Ruxsatlar — faqat direktor. Har xodimga istalgan bo'limni (rolidan tashqari ham) daraja yoki aniq amallar
+ * bilan beradi: masalan Ishlab chiqarish xodimiga Sotuv → Zayavkalardan "ochish" va "qabul qilish".
+ */
+async function PermissionsTab({ f }: { f: PermFilter }) {
+  const all = await db.user.findMany({
     where: { isActive: true, role: { not: "DIRECTOR" } },
     orderBy: [{ fullName: "asc" }],
     select: { id: true, fullName: true, login: true, role: true, perms: true },
   });
-  const modules = MODULES.map((m) => ({ key: m.key, label: m.label }));
+  const q = f.q?.trim().toLowerCase();
+  const users = all.filter((u) =>
+    (!q || u.fullName.toLowerCase().includes(q) || u.login.toLowerCase().includes(q)) &&
+    (!f.rol || u.role === f.rol) &&
+    (f.faqat !== "1" || !!parsePerms(u.perms)));
+  // Modul qaysi menyu guruhiga tegishli (Sotuv, Sklad...) — forma shu bo'yicha bo'linadi
+  const groupOf = (m: (typeof MODULES)[number]) => NAV.find((i) => m.prefixes.some((p) => i.href.startsWith(p)))?.group ?? "Boshqa";
+  const modulesFor = (role: Role): PermModule[] => MODULES.map((m) => ({
+    key: m.key, label: m.label, group: groupOf(m),
+    actions: delegableActions(m.key).map((a) => ({ key: a.key, label: a.label, hint: a.hint })),
+    role: { view: canView({ role }, m.key), actions: canView({ role }, m.key) ? roleDefaultActions(role, m.key) : [] },
+  }));
+  const withPerms = all.filter((u) => parsePerms(u.perms)).length;
+  const roles = [...new Set(all.map((u) => u.role))];
+  const others = all.map((u) => ({ id: u.id, label: `${u.fullName} · ${ROLE_LABELS[u.role]}`, has: !!parsePerms(u.perms) })).filter((o) => o.has);
+
   return (
     <div className="space-y-4">
       <Card>
-        <h2 className="mb-1 font-semibold">Modul bo&apos;yicha ruxsat</h2>
+        <h2 className="mb-1 font-semibold">Bo&apos;lim va amal bo&apos;yicha ruxsat</h2>
         <p className="text-sm text-slate-500">
-          Har bir foydalanuvchiga asosiy bo&apos;limlar uchun <b>Ko&apos;rish</b> (faqat o&apos;qiydi) yoki <b>Yozish</b> (o&apos;zgartiradi) huquqini bering.
-          Bu ruxsat rol ustiga ishlaydi: <b>Rol bo&apos;yicha</b> — odatdagi holat; <b>Yopiq</b> — bo&apos;limni butunlay yashiradi.
-          Ruxsat modul darajali: masalan Zayavkalarga «Ko&apos;rish» bergan xodim zayavkani ko&apos;radi, lekin ocha ham, qabul ham qila olmaydi. Direktor doim to&apos;liq huquqli.
+          Har xodimga istalgan bo&apos;limni — o&apos;z rolidan tashqari ham — kerakli huquq bilan bering. Masalan, Ishlab chiqarish xodimiga
+          Sotuv → <b>Zayavkalar</b>dan faqat <b>«Mijoz zayavkasini ochish»</b>ni belgilasangiz, u zayavka ochadi, lekin qabul ham, bekor ham qila olmaydi.
+        </p>
+        <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-5">
+          <div><Badge color="slate">Rol bo&apos;yicha</Badge> odatdagi holat</div>
+          <div><Badge color="red">Yopiq</Badge> bo&apos;lim yashiriladi</div>
+          <div><Badge color="blue">Ko&apos;rish</Badge> faqat o&apos;qiydi</div>
+          <div><Badge color="amber">Tanlangan amallar</Badge> ko&apos;radi + belgilangani</div>
+          <div><Badge color="green">To&apos;liq</Badge> barcha amallar</div>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Faqat direktor beradi va o&apos;zgartiradi. Har o&apos;zgarish audit jurnaliga yoziladi, xodimga bildirishnoma boradi va qayta kirmasdan kuchga kiradi.
+          Ruxsat qoidalari (kredit limiti, kunlik limit, qora ro&apos;yxat) baribir tekshiriladi.
         </p>
       </Card>
-      {users.length === 0 ? <Card><Empty text="Direktordan boshqa faol foydalanuvchi yo'q" /></Card> : users.map((u) => (
-        <Card key={u.id}>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="font-medium">{u.fullName}</span>
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code>
-            <Badge color="slate">{ROLE_LABELS[u.role]}</Badge>
-          </div>
-          <UserPermsForm userId={u.id} modules={modules} current={(parsePerms(u.perms) ?? {}) as Record<string, string>} />
-        </Card>
-      ))}
+
+      <Card>
+        <form className="flex flex-wrap items-end gap-2" action="/settings">
+          <input type="hidden" name="tab" value="permissions" />
+          <label className="text-xs text-slate-500">Qidirish<Input name="q" defaultValue={f.q ?? ""} placeholder="F.I.O. yoki login" className="mt-1 w-56" /></label>
+          <label className="text-xs text-slate-500">Rol
+            <Select name="rol" defaultValue={f.rol ?? ""} className="mt-1 w-44">
+              <option value="">Hammasi</option>
+              {roles.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </Select>
+          </label>
+          <label className="flex h-10 items-center gap-2 text-sm"><input type="checkbox" name="faqat" value="1" defaultChecked={f.faqat === "1"} className="h-4 w-4 accent-slate-900" /> Faqat qo&apos;shimcha ruxsatlilar ({withPerms})</label>
+          <Button variant="secondary">Ko&apos;rsatish</Button>
+          {(f.q || f.rol || f.faqat) && <Link href="/settings?tab=permissions" className="py-2 text-sm text-slate-500 hover:underline">Tozalash</Link>}
+        </form>
+      </Card>
+
+      {users.length === 0 ? <Card><Empty text="Mos foydalanuvchi topilmadi" /></Card> : users.map((u) => {
+        const perms = parsePerms(u.perms) ?? {};
+        const chips = Object.entries(perms).map(([m, v]) => {
+          const label = MODULES.find((x) => x.key === m)?.label ?? m;
+          if (Array.isArray(v)) return { key: m, color: "amber" as const, text: `${label}: ${v.length ? v.map((a) => actionDef(m, a)?.label ?? a).join(", ") : "ko'rish"}`.slice(0, 90) };
+          return { key: m, color: v === "none" ? ("red" as const) : v === "view" ? ("blue" as const) : ("green" as const), text: `${label}: ${v === "none" ? "yopiq" : v === "view" ? "ko'rish" : "to'liq"}` };
+        });
+        return (
+          <Card key={u.id}>
+            <details open={f.u === u.id || users.length === 1}>
+              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
+                <ShieldCheck size={16} className={chips.length ? "text-amber-500" : "text-slate-300"} />
+                <span className="font-medium">{u.fullName}</span>
+                <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{u.login}</code>
+                <Badge color="slate">{ROLE_LABELS[u.role]}</Badge>
+                {chips.length === 0 ? <span className="text-xs text-slate-400">rol bo&apos;yicha</span> : chips.map((c) => <Badge key={c.key} color={c.color}>{c.text}</Badge>)}
+                <span className="ml-auto text-xs text-slate-400">ochish / yopish</span>
+              </summary>
+              <div className="mt-4 space-y-3">
+                <CopyPermsForm userId={u.id} others={others.filter((o) => o.id !== u.id)} />
+                <UserPermsForm userId={u.id} modules={modulesFor(u.role)} current={perms} />
+              </div>
+            </details>
+          </Card>
+        );
+      })}
     </div>
   );
 }

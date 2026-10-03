@@ -20,7 +20,7 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  * qachon band (reys rejasi / haqiqiy vaqtlar).
  */
 export default async function DispatchCalendar({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
-  await requireRoles(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"], { module: "logistika" });
   const { date: dp } = await searchParams;
   const day = parseDay(dp);
   const { from, to } = dayRange(day);

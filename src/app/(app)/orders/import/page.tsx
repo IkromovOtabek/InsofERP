@@ -13,7 +13,7 @@ import { importOrdersFromExcel } from "../actions";
  * Mijoz + yetkazish sanasi bo'yicha guruhlanib qoralama zayavkalar ochiladi.
  */
 export default async function OrdersImport() {
-  await requireRoles(["SALES"]);
+  await requireRoles(["SALES"], { module: "orders", actions: ["import"] });
   const products = await db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, select: { code: true, unit: true } });
   return (
     <div>

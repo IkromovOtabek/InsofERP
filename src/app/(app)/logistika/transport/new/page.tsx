@@ -4,7 +4,7 @@ import { Card, PageHeader } from "@/components/ui";
 import { VehicleForm } from "../vehicle-form";
 
 export default async function NewVehiclePage() {
-  await requireRoles(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"], { module: "logistika", actions: ["vehicle"] });
   const drivers = await driverEmployees({ activeOnly: true });
   return (
     <div>

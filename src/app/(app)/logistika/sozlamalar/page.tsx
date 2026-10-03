@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Logistika sozlamalari: kechikish/GPS/yuklash chegaralari, smena, ETA uchun o'rtacha tezlik. */
 export default async function LogisticsSettingsPage() {
-  await requireRoles(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"], { module: "logistika" });
   const s = await db.companySettings.findUnique({ where: { id: "main" } });
   return (
     <div>

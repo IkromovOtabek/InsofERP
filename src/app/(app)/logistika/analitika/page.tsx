@@ -31,7 +31,7 @@ function Bars({ rows, fmt = (n: number) => String(n), tone = "bg-slate-800" }: {
  * haydovchilar reytingi, kechikish taqsimoti, muammo turlari, eng band soatlar.
  */
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [rep, delivered, issues] = await Promise.all([

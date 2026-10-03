@@ -11,7 +11,7 @@ import { importEmployeesFromExcel } from "../actions";
  * Ustun nomlari rus/o'zbek aralash bo'lishi mumkin — mos ustun o'zi topiladi, keyin tekshirib tuzatiladi.
  */
 export default async function EmployeesImportPage() {
-  await requireRoles(["HR"]);
+  await requireRoles(["HR"], { module: "employees", actions: ["create"] });
   const positions = await workPositions();
 
   return (

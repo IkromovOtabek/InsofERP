@@ -34,7 +34,7 @@ const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} ku
 export default async function OtdelKadrPage({ searchParams }: {
   searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string }>;
 }) {
-  const s = await requireRoles(["HR"]);
+  const s = await requireRoles(["HR"], { module: "employees" });
   const { tab = "xodimlar", qoshildi, yangilandi, kun, oy } = await searchParams;
 
   // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi

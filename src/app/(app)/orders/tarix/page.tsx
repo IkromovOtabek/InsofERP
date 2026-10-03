@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * kunlar bo'yicha ham ko'radi — ish tartibi taqvimining tarixiy tomoni.
  */
 export default async function OrdersHistoryPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; by?: string }> }) {
-  await requireRoles(["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], { module: "orders" });
   const sp = await searchParams;
   const now = new Date();
   const from = new Date(sp.from ?? isoDate(new Date(now.getTime() - 29 * 864e5)));

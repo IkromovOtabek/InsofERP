@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
@@ -31,7 +31,7 @@ const schema = z.object({
  * Xomashyo yoki mahsulot yetmasa — xato, hech narsa yozilmaydi.
  */
 export async function createBatch(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION"]);
+  const s = await requireAction("production", "batch");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

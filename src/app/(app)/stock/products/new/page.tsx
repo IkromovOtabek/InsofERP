@@ -12,7 +12,7 @@ import { AddForm } from "./add-form";
  * Beton (m³) hovlida saqlanmaydi, shuning uchun ro'yxatga tushmaydi.
  */
 export default async function AddStockPage() {
-  const s = await requireRoles(["WAREHOUSE", "PRODUCTION"]);
+  const s = await requireRoles(["WAREHOUSE", "PRODUCTION"], { module: "stock", actions: ["products"] });
   const [catalog, warehouses] = await Promise.all([
     productCatalog({ pieceOnly: true }), // hamma joyda bir xil ro'yxat; beton (m³) hovlida saqlanmaydi
     db.warehouse.findMany({ where: { isActive: true } }),

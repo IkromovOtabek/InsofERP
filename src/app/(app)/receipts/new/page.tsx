@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui";
 import { ReceiptForm } from "../receipt-form";
 
 export default async function NewReceipt() {
-  const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
+  const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   const [suppliers, warehouses, materials, groups, accounts, balances, costs] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.warehouse.findMany({ where: { isActive: true } }),

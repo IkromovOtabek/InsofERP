@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import type { ActionState } from "@/lib/action";
 
@@ -14,7 +14,7 @@ import type { ActionState } from "@/lib/action";
  * `agentId` bo'sh ("") — biriktirish uziladi. Tanlangan agent aynan AGENT rolli faol foydalanuvchi bo'lishi shart.
  */
 export async function assignCustomerAgent(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["DIRECTOR", "HR", "SALES"]);
+  const s = await requireAction("customers", "agent");
   const customerId = String(fd.get("customerId") ?? "").trim();
   const agentId = String(fd.get("agentId") ?? "").trim();
   if (!customerId) return { error: "Mijoz tanlanmagan" };

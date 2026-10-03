@@ -10,12 +10,15 @@ import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { OrderLoadCalendar } from "./load-calendar";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { requireSession } from "@/lib/auth";
+import { canDo } from "@/lib/permissions";
 import { ORDER_STATUS, OrderStatusBadge, PENDING_STATUSES as PENDING } from "./status";
 import type { OrderStatus } from "@/generated/prisma";
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string; tur?: string }> }) {
   const { status, customer, kun, imported, tur } = await searchParams;
   const s = await requireSession();
+  // Tugmalar amal ruxsatidan: direktor bergan (masalan ishlab chiqarishga "Zayavka ochish") yoki rol bo'yicha
+  const can = (a: string) => canDo(s, "orders", a);
   // Ta'minot zayavkasini tasdiqlash shu oynada: narx qo'yilgach ma'sul (sotuv) xodim ko'radi
   const canApproveSupply = ["SALES", "DIRECTOR"].includes(s.role); // ta'minot tasdig'i — sotuv xodimi yoki direktor
   const st = status && PENDING.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
@@ -68,7 +71,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Zayavkalar"
         subtitle="Yangi kiritilgan va qabul qilinmagan zayavkalar. Qabul qilingach zayavka Sotuv bo'limiga o'tadi."
-        action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton><LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton><LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton><LinkButton href="/orders/new?tur=sklad" variant="secondary"><Boxes size={16} /> Sklad zayavkasi</LinkButton><LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton></div>}
+        action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton><LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton>{can("import") && <LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}{can("stock") && <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Boxes size={16} /> Sklad zayavkasi</LinkButton>}{can("create") && <LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton>}</div>}
       />
       {/* Excel importidan keyin: nechta zayavka ochilgani — hammasi qoralama, quyidagi ro'yxatda turadi */}
       {imported && /^\d+$/.test(imported) && (

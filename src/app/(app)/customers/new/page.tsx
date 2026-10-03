@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { CustomerForm } from "../customer-form";
 
 export default async function NewCustomer() {
-  const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"]);
+  const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"], { module: "customers", actions: ["edit"] });
   return (
     <div>
       <PageHeader title="Yangi mijoz" />

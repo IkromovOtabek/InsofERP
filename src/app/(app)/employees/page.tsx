@@ -10,21 +10,27 @@ import { Badge, Button, Card, Empty, Input, PageHeader, Select, Table, Td, Th, T
 import { EmployeeForm, GrantLoginForm } from "./employee-form";
 import { ToggleLoginButton } from "./login-forms";
 import { toggleEmployee } from "./actions";
+import { AccessRequests } from "./access-requests";
+import { pendingAccessRequests } from "@/lib/access-request";
 import type { Prisma } from "@/generated/prisma";
 
-export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string; holat?: string }> }) {
-  const s = await requireRoles(["HR", "LOGISTICS"]);
+export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string; holat?: string; login?: string }> }) {
+  const s = await requireRoles(["HR", "LOGISTICS"], { module: "employees" });
   const isHR = ["HR", "DIRECTOR"].includes(s.role);
-  const { q = "", pos = "", holat = "" } = await searchParams;
+  const { q = "", pos = "", holat = "", login = "" } = await searchParams;
 
   const where: Prisma.EmployeeWhereInput = {
     ...(q ? { OR: [{ fullName: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }] } : {}),
     // Lavozim katta-kichik harf va ortiqcha bo'shliqqa qaramay topilsin (Excel'dan kelgan yozuvlar uchun)
     ...(pos ? { position: { equals: pos, mode: "insensitive" } } : {}),
     ...(holat === "faol" ? { isActive: true } : holat === "nofaol" ? { isActive: false } : {}),
+    // Tizimga kirish: login ochilganlar / ochilmaganlar / bloklanganlar
+    ...(login === "bor" ? { userId: { not: null } }
+      : login === "yoq" ? { userId: null }
+      : login === "blok" ? { user: { isActive: false } } : {}),
   };
 
-  const [employees, catalog, workRows, staff, vehicles] = await Promise.all([
+  const [employees, catalog, workRows, staff, vehicles, access] = await Promise.all([
     db.employee.findMany({ where, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: true, vehicle: true, _count: { select: { trips: true } } } }),
     positionCatalog(),
     db.workPosition.findMany({ select: { name: true, department: true } }),
@@ -33,6 +39,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true, vehicle: true, licenseNo: true, licenseCategory: true, licenseExpiry: true } }),
     // Texnikaga hozir kim biriktirilgani — formada "band" degan ogohlantirish uchun
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true, drivers: { where: { isActive: true }, select: { fullName: true }, take: 1 } } }),
+    // Kirish sahifasidan kelgan "Ro'yxatdan o'tish" arizalari — tasdiqlashni kadr/direktor qiladi
+    isHR ? pendingAccessRequests() : Promise.resolve([]),
   ]);
   const { work: workNames, drivers, strays } = catalog;
   // Login qaysi bo'lim uchun ochilishi: bo'lim lavozimlari + haydovchi va brigadir ilovasi
@@ -45,7 +53,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
     licenseNo: e.licenseNo, licenseCategory: e.licenseCategory, licenseExpiry: e.licenseExpiry ? isoDate(e.licenseExpiry) : null,
   }));
   const vehicleOpts = vehicles.map((v) => ({ plate: v.plate, type: v.type, capacityM3: v.capacityM3 ? String(v.capacityM3) : null, driver: v.drivers[0]?.fullName ?? null }));
-  const filtering = !!(q || pos || holat);
+  const filtering = !!(q || pos || holat || login);
 
   return (
     <div>
@@ -54,6 +62,13 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         subtitle="Bo'lim lavozimi tanlansa xodimga login beriladi va u faqat o'z bo'limini ko'radi"
         action={isHR ? <Link href="/otdel-kadr" className="text-sm font-medium text-slate-600 hover:text-slate-900">Otdel kadr →</Link> : undefined}
       />
+
+      {access.length > 0 && (
+        <AccessRequests
+          rows={access.map((r) => ({ ...r, createdAt: date(r.createdAt) }))}
+          roles={LOGIN_ROLE_OPTS.filter((o) => POSITIONS.some((p) => p.role === o.value && p.role !== "DIRECTOR"))}
+        />
+      )}
 
       {isHR && (
         <Card className="mb-4">
@@ -67,7 +82,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       )}
 
       {/* Qidiruv — ro'yxat uzayganda kerak bo'ladi */}
-      <form className="mb-4 grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_200px_150px_auto_auto]">
+      <form className="mb-4 grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_200px_150px_170px_auto_auto]">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Qidiruv</span>
           <Input name="q" defaultValue={q} placeholder="F.I.O. yoki telefon" />
@@ -86,9 +101,23 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
           <span className="mb-1 block text-xs font-medium text-slate-600">Holat</span>
           <Select name="holat" defaultValue={holat}><option value="">Hammasi</option><option value="faol">Faol</option><option value="nofaol">Nofaol</option></Select>
         </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">Tizimga kirish</span>
+          <Select name="login" defaultValue={login}>
+            <option value="">Hammasi</option>
+            <option value="bor">Login ochilgan</option>
+            <option value="yoq">Login ochilmagan</option>
+            <option value="blok">Login bloklangan</option>
+          </Select>
+        </label>
         <Button variant="secondary"><Search size={16} /> Qidirish</Button>
         {filtering && <Link href="/employees" className="self-center text-sm text-slate-500 hover:text-slate-900">Tozalash</Link>}
       </form>
+
+      <p className="mb-2 text-xs text-slate-500">
+        {employees.length} ta xodim · loginli: <b className="text-slate-700">{employees.filter((e) => e.user).length}</b>
+        {" "}· loginsiz: <b className="text-slate-700">{employees.filter((e) => !e.user).length}</b>
+      </p>
 
       <Table>
         <thead><tr><Th>F.I.O.</Th><Th>Lavozim</Th><Th>Telefon</Th><Th>Ishga kirgan</Th><Th>Tizimga kirish</Th><Th right>Reyslar</Th><Th>Holat</Th><Th></Th></tr></thead>

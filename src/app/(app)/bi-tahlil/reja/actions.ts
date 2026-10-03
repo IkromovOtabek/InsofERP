@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, type ActionState } from "@/lib/action";
 
@@ -14,7 +14,7 @@ const schema = z.object({
 });
 
 export async function savePlan(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["DIRECTOR", "FINANCE"]);
+  const s = await requireAction("bi-tahlil", "plan");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const { year, month, sellerId, amount, volumeM3, note } = r.data;
@@ -33,7 +33,7 @@ export async function savePlan(_prev: ActionState, fd: FormData): Promise<Action
 }
 
 export async function deletePlan(id: string): Promise<void> {
-  const s = await requireSession(["DIRECTOR", "FINANCE"]);
+  const s = await requireAction("bi-tahlil", "plan");
   const before = await db.salesPlan.findUnique({ where: { id } });
   if (!before) return;
   await db.salesPlan.delete({ where: { id } });

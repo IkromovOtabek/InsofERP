@@ -17,7 +17,7 @@ import type { TaskStatus } from "@/generated/prisma";
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ status?: string; brigade?: string }> }) {
   const { status, brigade } = await searchParams;
-  const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"]);
+  const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS"], { module: "tasks" });
   // Rol matritsasi `lib/tasks.ts` da — server action va mobil ilova ham shundan foydalanadi
   const canProgress = canTask(s.role, "progress");
   const canCancel = canTask(s.role, "cancel");

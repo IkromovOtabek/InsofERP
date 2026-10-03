@@ -15,7 +15,7 @@ export default async function EmployeeSheetPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ print?: string }>;
 }) {
-  await requireRoles(["HR"]);
+  await requireRoles(["HR"], { module: "employees" });
   const { id } = await params;
   const { print } = await searchParams;
   const [e, company] = await Promise.all([

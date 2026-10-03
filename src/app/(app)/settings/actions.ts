@@ -10,7 +10,9 @@ import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, type ActionState } from "@/lib
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 import { saveDailyOrderLimits as saveDailyOrderLimitsDb } from "@/lib/company";
 import { MODULES } from "@/lib/nav";
-import { parsePerms, type Perms, type PermLevel } from "@/lib/auth";
+import { parsePerms, type Perms } from "@/lib/auth";
+import { actionDef, delegableActions } from "@/lib/permissions";
+import { notifyAfter, notifyUsers } from "@/lib/notify";
 import { Prisma } from "@/generated/prisma";
 
 const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
@@ -290,18 +292,42 @@ export async function saveDailyOrderLimits(_prev: ActionState, fd: FormData): Pr
   return { ok: true };
 }
 
-/* ───────── Modul bo'yicha ruxsat (direktor taqsimlaydi) ───────── */
+/* ───────── Modul va amal bo'yicha ruxsat (faqat direktor taqsimlaydi) ───────── */
 
 const MODULE_KEYS = new Set(MODULES.map((m) => m.key));
-const LEVELS: PermLevel[] = ["none", "view", "write"];
+
+/** Ruxsatlarni o'qiladigan matnga — audit va bildirishnoma uchun ("Zayavkalar: ochish, qabul qilish"). */
+function describePerms(p: Perms): string[] {
+  return Object.entries(p).map(([m, v]) => {
+    const label = MODULES.find((x) => x.key === m)?.label ?? m;
+    if (Array.isArray(v)) {
+      const names = v.map((a) => actionDef(m, a)?.label ?? a);
+      return `${label}: ko'rish${names.length ? " + " + names.join(", ") : ""}`;
+    }
+    return `${label}: ${v === "none" ? "yopiq" : v === "view" ? "faqat ko'rish" : "to'liq"}`;
+  });
+}
+
+/** Ruxsat o'zgargach: audit + xodimga bildirishnoma (nima o'zgarganini ko'rsin). */
+async function applyPerms(directorId: string, target: { id: string; fullName: string; perms: unknown }, perms: Perms) {
+  const before = parsePerms(target.perms) ?? {};
+  const after = Object.keys(perms).length ? perms : null;
+  if (JSON.stringify(before) === JSON.stringify(after ?? {})) return;
+  // Hammasi "rol bo'yicha" bo'lsa perms ustuni tozalanadi (DbNull) — rol ruxsati o'z holicha qaytadi.
+  // Qayta kirish shart emas: perms tokenga yozilmaydi, `getSession` har so'rovda bazadan yangi qiymatni o'qiydi.
+  await db.user.update({ where: { id: target.id }, data: { perms: after ?? Prisma.DbNull } });
+  await audit(db, directorId, "UPDATE", "User", target.id, { perms: before, ruxsat: describePerms(before) }, { perms: after ?? {}, ruxsat: describePerms(after ?? {}), xodim: target.fullName });
+  notifyAfter(() => notifyUsers([target.id], {
+    type: "PERMS_CHANGED",
+    title: "Ruxsatlaringiz yangilandi",
+    body: after ? describePerms(after).join(" · ").slice(0, 300) : "Ruxsatlar rol bo'yicha holatga qaytarildi",
+  }));
+}
 
 /**
- * Foydalanuvchiga modul bo'yicha "yo'q / ko'rish / yozish" ruxsatini belgilaydi (rol ustiga ishlaydi).
- * Faqat direktor; har o'zgarish auditda. Direktorning o'zini cheklab bo'lmaydi (u doim to'liq).
- * Forma har modul uchun `perm.<modul>` = none|view|write yuboradi; "none" — saqlanmaydi (bo'sh = rol bo'yicha).
- *
- * Eslatma: ruxsat MODUL darajali. "orders" ga "view" — zayavkani ko'radi, lekin ocha/qabul qila olmaydi
- * (ochish ham, qabul ham "write" talab qiladi — amal darajali ajratish yo'q).
+ * Foydalanuvchiga modul/amal bo'yicha ruxsat belgilaydi (rol ustiga ishlaydi). Faqat direktor; har o'zgarish auditda.
+ * Forma har modul uchun `perm.<modul>` = "" (rol bo'yicha) | none | view | custom | write yuboradi;
+ * "custom" bo'lsa `act.<modul>` — belgilangan amallar (faqat katalogdagi, topshiriladiganlari qabul qilinadi).
  */
 export async function saveUserPerms(userId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
@@ -312,18 +338,34 @@ export async function saveUserPerms(userId: string, _prev: ActionState, fd: Form
 
   const perms: Perms = {};
   for (const m of MODULES) {
+    if (!MODULE_KEYS.has(m.key)) continue;
     const v = String(fd.get(`perm.${m.key}`) ?? "").trim();
-    // "none" — rolning odatiy holati emas, aniq yopish; "" (tanlanmagan/"rol bo'yicha") — perms'da saqlanmaydi
-    if ((LEVELS as string[]).includes(v) && v !== "" && MODULE_KEYS.has(m.key)) {
-      if (v === "none" || v === "view" || v === "write") perms[m.key] = v;
+    if (v === "none" || v === "view" || v === "write") perms[m.key] = v;
+    else if (v === "custom") {
+      const allowed = new Set(delegableActions(m.key).map((a) => a.key));
+      const acts = [...new Set(fd.getAll(`act.${m.key}`).map(String).filter((a) => allowed.has(a)))];
+      // Birorta amal belgilanmagan "tanlangan amallar" — amalda "faqat ko'rish"
+      perms[m.key] = acts.length ? acts : "view";
     }
   }
-  const before = parsePerms(target.perms) ?? {};
-  const after = Object.keys(perms).length ? perms : null;
-  // Hammasi "rol bo'yicha" bo'lsa perms ustuni tozalanadi (DbNull) — rol ruxsati o'z holicha qaytadi.
-  // Qayta kirish shart emas: perms tokenga yozilmaydi, `getSession` har so'rovda bazadan yangi qiymatni o'qiydi.
-  await db.user.update({ where: { id: userId }, data: { perms: after ?? Prisma.DbNull } });
-  await audit(db, s.userId, "UPDATE", "User", userId, { perms: before }, { perms: after ?? {}, xodim: target.fullName });
+  await applyPerms(s.userId, target, perms);
+  refresh();
+  return { ok: true };
+}
+
+/** Bir xodimning ruxsatlarini boshqasiga ko'chirish (masalan yangi sotuvchiga tajribalinikini). */
+export async function copyUserPerms(targetId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  if (s.role !== "DIRECTOR") return { error: "Faqat direktor" };
+  const sourceId = String(fd.get("sourceId") ?? "");
+  if (!sourceId || sourceId === targetId) return { error: "Kimdan nusxa olinishini tanlang" };
+  const [target, source] = await Promise.all([
+    db.user.findUnique({ where: { id: targetId }, select: { id: true, role: true, perms: true, fullName: true } }),
+    db.user.findUnique({ where: { id: sourceId }, select: { perms: true } }),
+  ]);
+  if (!target || !source) return { error: "Foydalanuvchi topilmadi" };
+  if (target.role === "DIRECTOR") return { error: "Direktor ruxsatlari cheklanmaydi" };
+  await applyPerms(s.userId, target, parsePerms(source.perms) ?? {});
   refresh();
   return { ok: true };
 }

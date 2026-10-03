@@ -29,7 +29,7 @@ const LEAD_STATUS = {
  * "Sayt arizalari" sahifasidagi bilan bir xil (bog'lanish, mijozga aylantirish).
  */
 export default async function EcommercePage({ searchParams }: { searchParams: Promise<{ tab?: string; p?: string }> }) {
-  await requireRoles(["SALES", "DIRECTOR"]);
+  await requireRoles(["SALES", "DIRECTOR"], { module: "sales", actions: ["ecommerce"] });
   const { tab = "vitrina", p: historyFor } = await searchParams;
 
   const [products, leads, banners] = await Promise.all([

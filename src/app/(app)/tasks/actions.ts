@@ -2,8 +2,8 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireSession } from "@/lib/auth";
-import { taskCancel, taskProgress, taskRoles } from "@/lib/tasks";
+import { requireAction } from "@/lib/auth";
+import { taskCancel, taskProgress } from "@/lib/tasks";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -13,7 +13,7 @@ const schema = z.object({
 
 /** Brigada bajargan miqdorni qayd qilish. doneQty oshadi, qoldiq = qty − doneQty; to'liq bo'lsa DONE. */
 export async function addProgress(taskId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(taskRoles("progress"));
+  const s = await requireAction("tasks", "progress");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -26,7 +26,7 @@ export async function addProgress(taskId: string, _prev: ActionState, fd: FormDa
 }
 
 export async function cancelTask(taskId: string) {
-  const s = await requireSession(taskRoles("cancel"));
+  const s = await requireAction("tasks", "cancel");
   const res = await taskCancel(taskId, s.userId);
   revalidatePath("/tasks"); revalidatePath("/brigades"); revalidatePath(`/orders/${res.orderId}`);
 }

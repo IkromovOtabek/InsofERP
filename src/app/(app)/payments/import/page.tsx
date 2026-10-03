@@ -11,7 +11,7 @@ import { importSalesRegisterFromExcel } from "../actions";
  * Ustun nomlari rus/o'zbek aralash bo'lishi mumkin — mos ustun o'zi topiladi, keyin tekshirib tuzatiladi.
  */
 export default async function SalesRegisterImport() {
-  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "payments", actions: ["import"] });
   const accounts = await db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
   const cash = accounts.filter((a) => a.type === "CASH");
   const bank = accounts.filter((a) => a.type === "BANK");

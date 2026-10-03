@@ -12,7 +12,7 @@ import { DIRECTOR_NOTIFY_SUM } from "../adjust-const";
  * StockMove WRITE_OFF (−), sabab majburiy, skladdagi qoldiqdan oshmaydi.
  */
 export default async function WriteOffPage({ searchParams }: { searchParams: Promise<{ wh?: string }> }) {
-  await requireRoles(["WAREHOUSE"]);
+  await requireRoles(["WAREHOUSE"], { module: "stock", actions: ["adjust"] });
   const { wh } = await searchParams;
   const warehouses = await db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } });
   const current = warehouses.find((w) => w.id === wh) ?? warehouses[0];

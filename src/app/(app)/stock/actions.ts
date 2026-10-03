@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { num, str, codeFromName } from "@/lib/excel";
@@ -35,7 +35,7 @@ const dec = (v: unknown) => { const n = num(v); return Number.isFinite(n) && n >
  * tanilmasa "dona"), raqam xato bo'lsa 0/bo'sh olinadi — faqat nomi bo'sh qatorlar tashlanadi.
  */
 export async function importMaterials(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  const s = await requireAction("stock", "import");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   let rows: Row[];

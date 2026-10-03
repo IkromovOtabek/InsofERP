@@ -12,7 +12,7 @@ import { RowForm } from "@/components/row-form";
 import { saveBrigade, toggleBrigade } from "./actions";
 
 export default async function BrigadesPage() {
-  const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "HR", "SALES"]);
+  const s = await requireRoles(["SUPERVISOR", "PRODUCTION", "HR", "SALES"], { module: "tasks" });
   const canEdit = canTask(s.role, "brigadeEdit"); // rol matritsasi — `lib/tasks.ts`
   const [brigades, employees, stocks, undistributed] = await Promise.all([
     // Brigadirning login roli ham kerak: topshiriq ECO ilovasiga faqat BRIGADIER logini bor brigadirga tushadi

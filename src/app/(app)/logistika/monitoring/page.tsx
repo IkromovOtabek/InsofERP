@@ -15,7 +15,7 @@ const hm = (d: Date | null) => (d ? `${String(d.getHours()).padStart(2, "0")}:${
  * Xarita — mavjud jonli xarita (15 s da yangilanadi); jadval sahifa bilan 30 s da.
  */
 export default async function MonitoringPage() {
-  await requireRoles(["LOGISTICS", "PRODUCTION", "SUPERVISOR"]);
+  await requireRoles(["LOGISTICS", "PRODUCTION", "SUPERVISOR"], { module: "logistika" });
   const { rows, gpsSilentMin, error } = await monitorRows();
   return (
     <div>

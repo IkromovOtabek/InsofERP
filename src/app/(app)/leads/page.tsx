@@ -20,7 +20,7 @@ const STATUS = {
  * va kerak bo'lsa arizani mijozga aylantiradi — shundan keyingina `Customer` yaratiladi.
  */
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const s = await requireRoles(["SALES"]);
+  const s = await requireRoles(["SALES"], { module: "sales", actions: ["leads"] });
   // Bog'lanish/izoh — sotuvchi va direktor
   const canAct = ["SALES", "DIRECTOR"].includes(s.role);
   const { tab = "new" } = await searchParams;

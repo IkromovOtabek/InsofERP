@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * muammo va qabul qiluvchi tasdig'i. "Yopilmagan" — yetkazilgan, lekin qabul hali tasdiqlanmagan reyslar.
  */
 export default async function DeliveriesPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; tab?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const r = periodRange(sp, "week");
   const tab = sp.tab ?? "";

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 
@@ -21,7 +21,7 @@ const schema = z.object({
  * yoki direktor. Ishlab chiqarilgan mahsulot topshiriq orqali (PRODUCTION_OUTPUT) kirim bo'ladi.
  */
 export async function addStock(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["WAREHOUSE", "PRODUCTION"]);
+  const s = await requireAction("stock", "products");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

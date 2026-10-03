@@ -3,8 +3,7 @@
 import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
-import { BI_ROLES } from "../../shell";
+import { requireSession, requireAction } from "@/lib/auth";
 
 const PATH = "/bi-tahlil/ai/telegram";
 const CODE_TTL_MIN = 15;
@@ -13,7 +12,7 @@ export type CodeState = { error?: string; code?: string; expiresAt?: string } | 
 
 /** Bir martalik 8 xonali kod (kriptografik tasodifiy) — foydalanuvchi uni botga yuboradi. */
 export async function createLinkCode(): Promise<CodeState> {
-  const s = await requireSession([...BI_ROLES]);
+  const s = await requireAction("bi-tahlil", "ai");
   const expiresAt = new Date(Date.now() + CODE_TTL_MIN * 60_000);
 
   // eski ishlatilmagan kodlarni bekor qilamiz — bir vaqtda bitta amaldagi kod bo'lsin
@@ -32,7 +31,7 @@ export async function createLinkCode(): Promise<CodeState> {
 
 /** Chatni uzish: o'zinikini har kim, birovnikini faqat direktor. */
 export async function unlinkAccount(id: string) {
-  const s = await requireSession([...BI_ROLES]);
+  const s = await requireAction("bi-tahlil", "ai");
   const acc = await db.telegramAccount.findUnique({ where: { id } });
   if (!acc) return;
   if (acc.userId !== s.userId && s.role !== "DIRECTOR") throw new Error("FORBIDDEN");

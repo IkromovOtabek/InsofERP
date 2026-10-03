@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /** Obyektlar moduli (TZ 8): mijozlarning qurilish maydonlari va har biriga yetkazish tarixi. */
 export default async function SitesPage({ searchParams }: { searchParams: Promise<{ q?: string; all?: string }> }) {
-  await requireRoles(["LOGISTICS", "SALES"]);
+  await requireRoles(["LOGISTICS", "SALES"], { module: "logistika" });
   const { q, all } = await searchParams;
   const sites = await db.site.findMany({
     where: {

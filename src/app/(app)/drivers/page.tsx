@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * ERP: xodimlar/texnika/nakladnoy manbai. ECO: haydovchi telefoni (qabul, GPS, imzo).
  */
 export default async function DriversPage() {
-  const s = await requireRoles(["LOGISTICS", "HR"]);
+  const s = await requireRoles(["LOGISTICS", "HR"], { module: "trips", actions: ["drivers"] });
   const canManage = ["LOGISTICS", "DIRECTOR"].includes(s.role);
   // Server sozlamasi (.env, ECO buyruqlari) — faqat direktor/administratorga ko'rinadi
   const isDirector = s.role === "DIRECTOR";

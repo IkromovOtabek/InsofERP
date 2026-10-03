@@ -13,7 +13,7 @@ import { Pencil } from "lucide-react";
 
 export default async function RecipePage({ params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
-  const s = await requireRoles(["PRODUCTION"]);
+  const s = await requireRoles(["PRODUCTION"], { module: "production" });
   const [p, materials, materialGroups, catalog] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },

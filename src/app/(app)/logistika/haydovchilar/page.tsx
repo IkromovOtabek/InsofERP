@@ -13,7 +13,7 @@ const ATT: Record<string, string> = { ABSENT: "Kelmadi", LEAVE: "Ta'tilda", SICK
 
 /** Haydovchilar moduli (TZ 7): guvohnoma, transport, grafik, mavjudlik, reyslar, kechikish va muammolar. */
 export default async function DriversPage() {
-  await requireRoles(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"], { module: "logistika" });
   const settings = await logisticsSettings();
   const drivers = await driverEmployees();
   const ids = drivers.map((d) => d.id);

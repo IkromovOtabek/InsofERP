@@ -14,7 +14,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const localInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 export default async function NewTrip({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
-  await requireRoles(["LOGISTICS", "PRODUCTION"]);
+  await requireRoles(["LOGISTICS", "PRODUCTION"], { module: "trips", actions: ["create"] });
   const { orderId } = await searchParams;
   const [orders, vehicles, drivers] = await Promise.all([
     db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, orderBy: { deliveryDate: "asc" }, include: { customer: true, ...READINESS_INCLUDE } }),

@@ -21,7 +21,7 @@ export default async function HrDocPrintPage({ params, searchParams }: {
   params: Promise<{ id: string; slug: string }>;
   searchParams: Promise<{ doc?: string; print?: string }>;
 }) {
-  await requireRoles(["HR"]);
+  await requireRoles(["HR"], { module: "employees" });
   const { id, slug } = await params;
   const { doc, print } = await searchParams;
 

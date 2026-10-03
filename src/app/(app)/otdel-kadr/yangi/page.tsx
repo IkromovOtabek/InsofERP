@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { EmployeeCardForm } from "./employee-card-form";
 
 export default async function NewEmployeeCardPage() {
-  await requireRoles(["HR"]);
+  await requireRoles(["HR"], { module: "employees", actions: ["create"] });
   // Ro'yxat Xodimlar sahifasidagi bilan bir xil (Excel'dan qolgan lavozimlar ham ko'rinadi)
   const { work, strays } = await positionCatalog();
   return (

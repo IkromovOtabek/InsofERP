@@ -19,7 +19,7 @@ type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE"; account: string
 
 /** Kirim-Chiqim: mijoz to'lovlari (Payment) + boshqa kirimlar va barcha chiqimlar (CashTransaction) bitta jurnalda. */
 export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string; category?: string }> }) {
-  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "cashflow" });
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
   const sp = await searchParams;
   const tab = sp.tab ?? "all";

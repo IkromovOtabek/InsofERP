@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession, hashPassword, revokeSessions } from "@/lib/auth";
+import { hashPassword, revokeSessions, requireAction } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { audit } from "@/lib/audit";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
@@ -169,7 +169,7 @@ async function createLoginFor(tx: Prisma.TransactionClient, callerRole: Role, fu
 }
 
 export async function createEmployee(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR", "LOGISTICS"]);
+  const s = await requireAction("employees", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -275,7 +275,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
  * Tanlanmagan bo'lsa rol lavozimdan olinadi (bo'lim lavozimi yoki haydovchi).
  */
 export async function grantLogin(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "login");
   const login = String(fd.get("login") ?? "").trim();
   const password = String(fd.get("password") ?? "");
   const wanted = String(fd.get("role") ?? "").trim();
@@ -307,7 +307,7 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
 
 /** Xodimni o'chirish/yoqish — bog'langan login ham birga bloklanadi/ochiladi. */
 export async function toggleEmployee(id: string) {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "edit");
   const cur = await db.employee.findUniqueOrThrow({ where: { id } });
   const denied = await directorGuard(cur.userId, s.role);
   if (denied) throw new Error(denied);
@@ -341,7 +341,7 @@ function dismissPaths() {
  * Reyslar tarixi va hujjatlari joyida qoladi — karta o'chmaydi.
  */
 export async function dismissEmployee(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "edit");
   const r = parseForm(dismissSchema, fd);
   if ("error" in r) return { error: r.error };
   const firedAt = r.data.firedAt;
@@ -378,7 +378,7 @@ export async function dismissEmployee(id: string, _prev: ActionState, fd: FormDa
 
 /** Bo'shatishni bekor qilish: sana va sabab tozalanadi, xodim va logini qaytadi. */
 export async function restoreEmployee(id: string): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "edit");
   const before = await db.employee.findUniqueOrThrow({ where: { id } });
   if (!before.firedAt) return { error: "Bu xodim ishdan bo'shatilmagan" };
   const denied = await directorGuard(before.userId, s.role);
@@ -396,7 +396,7 @@ export async function restoreEmployee(id: string): Promise<ActionState> {
 
 /** Xodim kartasi: otdel kadr F.I.O., lavozim, telefon va sanalarni tuzatadi. */
 export async function updateEmployee(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "edit");
   const r = parseForm(cardSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -460,7 +460,7 @@ async function loginTarget(employeeId: string, session: { userId: string; role: 
 
 /** Login nomini almashtirish. */
 export async function changeLogin(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "login");
   const t = await loginTarget(employeeId, s);
   if ("error" in t) return { error: t.error };
   const login = String(fd.get("login") ?? "").trim().toLowerCase();
@@ -485,7 +485,7 @@ export async function changeLogin(employeeId: string, _prev: ActionState, fd: Fo
  * Xodimning ochiq sessiyalari (veb va ilova) tugaydi — qayta kirganda yangi bo'limni ko'radi.
  */
 export async function changeEmployeeRole(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "login");
   const t = await loginTarget(employeeId, s);
   if ("error" in t) return { error: t.error };
   const wanted = String(fd.get("role") ?? "").trim();
@@ -519,7 +519,7 @@ export async function changeEmployeeRole(employeeId: string, _prev: ActionState,
 
 /** Parolni almashtirish — eski parol so'ralmaydi, otdel kadr yangisini beradi. */
 export async function resetEmployeePassword(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "login");
   const t = await loginTarget(employeeId, s);
   if ("error" in t) return { error: t.error };
   const password = String(fd.get("password") ?? "");
@@ -543,7 +543,7 @@ export async function resetEmployeePassword(employeeId: string, _prev: ActionSta
  * ishdan bo'shatish uchun xodim qatoridagi "O'chirish" ishlatiladi.
  */
 export async function toggleEmployeeLogin(employeeId: string) {
-  const s = await requireSession(["HR"]);
+  const s = await requireAction("employees", "login");
   const t = await loginTarget(employeeId, s);
   if ("error" in t) throw new Error(t.error); // UI bunday holatda tugmani ko'rsatmaydi
   // Ishdan bo'shatilgan xodimning logini shu yerdan ochilmaydi — avval xodimning o'zi yoqiladi

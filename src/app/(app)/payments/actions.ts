@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { addPayment, linkPaymentToInvoice, reversePayment } from "@/lib/payments";
 import { num, numMoney, parseDate, str } from "@/lib/excel";
@@ -22,7 +22,7 @@ const schema = z.object({
 
 /** To'lov. Schyot ko'rsatilsa — uning holati yangilanadi; to'liq to'lansa zayavka CLOSED. */
 export async function createPayment(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["CASHIER", "ACCOUNTING"]);
+  const s = await requireAction("payments", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -36,7 +36,7 @@ export async function createPayment(_prev: ActionState, fd: FormData): Promise<A
 
 /** Taqsimlanmagan to'lovni ochiq schyotga bog'lash (FIFO tavsiya sahifada). */
 export async function linkPayment(paymentId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["CASHIER", "ACCOUNTING"]);
+  const s = await requireAction("payments", "create");
   const invoiceId = String(fd.get("invoiceId") ?? "");
   if (!invoiceId) return { error: "Schyot tanlanmagan" };
   const r = await linkPaymentToInvoice(paymentId, invoiceId, s.userId);
@@ -47,7 +47,7 @@ export async function linkPayment(paymentId: string, _prev: ActionState, fd: For
 
 /** To'lov stornosi — faqat buxgalteriya va direktor; sabab majburiy, oldingi holat auditda. */
 export async function stornoPayment(paymentId: string, reason: string): Promise<ActionState> {
-  const s = await requireSession(["ACCOUNTING"]);
+  const s = await requireAction("payments", "storno");
   const r = await reversePayment(paymentId, String(reason ?? "").slice(0, 300), s.userId);
   if (r.error) return { error: r.error };
   revalidatePath("/payments"); revalidatePath("/invoices"); revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/cashflow"); revalidatePath("/customers"); revalidatePath("/");
@@ -73,7 +73,7 @@ type FileRow = Record<string, unknown>;
  * "Деньги" ustuniga qarab pul naqd kassaga yoki bank hisobiga kirim bo'lib yoziladi.
  */
 export async function importSalesRegisterFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["CASHIER", "ACCOUNTING", "FINANCE"]);
+  const s = await requireAction("payments", "import");
   const r = parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -134,7 +134,7 @@ export async function importSalesRegisterFromExcel(_prev: ActionState, fd: FormD
  * Buxgalteriya/moliya — har qanday partiyani; kassir — faqat o'zi yuklaganini.
  */
 export async function deleteImportBatch(batch: string): Promise<ActionState> {
-  const s = await requireSession(["ACCOUNTING", "FINANCE", "CASHIER"]);
+  const s = await requireAction("payments", "import");
   if (s.role === "CASHIER") {
     const other = await db.salesRegister.count({ where: { batch, createdById: { not: s.userId } } });
     if (other) return { error: "Bu partiyani boshqa xodim yuklagan — buxgalteriya qaytaradi" };

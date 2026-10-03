@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripPickup, type DeliveryQty } from "@/lib/trips";
 import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
@@ -41,7 +41,7 @@ const qtyFrom = (fd: FormData): DeliveryQty => ({
 });
 
 export async function createTrip(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const s = await requireAction("trips", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -68,7 +68,7 @@ export async function createTrip(_prev: ActionState, fd: FormData): Promise<Acti
 
 /** PLANNED → LOADED: mikser zavodda yuklandi, tayyor beton skladdan chiqadi (SHIPMENT). Ishlab chiqarish tasdiqlaydi. */
 export async function markLoaded(id: string): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION"]);
+  const s = await requireAction("trips", "load");
   const r = await tripLoaded(id, s.userId);
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "LOADING"));
   refresh(id, r.orderId); revalidatePath("/stock");
@@ -80,7 +80,7 @@ const DISPATCH_NOTE = "Dispetcher belgiladi (veb)";
 
 /** LOADED → ON_ROAD — dispetcher vebdan (haydovchi ilovasi ishlamaganda). */
 export async function markOnRoad(id: string): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("trips", "move");
   const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
   if (!cur) return { error: "Reys topilmadi" };
   if (cur.status !== "LOADED") return { error: "Faqat yuklangan reys yo'lga chiqariladi" };
@@ -93,7 +93,7 @@ export async function markOnRoad(id: string): Promise<ActionState> {
 
 /** LOADED / ON_ROAD → DELIVERED — dispetcher vebdan: qabul qilgan kishi va miqdorlar bilan. */
 export async function markDelivered(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("trips", "move");
   const receiverName = String(fd.get("receiverName") ?? "").trim();
   if (!receiverName) return { error: "Obyektda kim qabul qilganini yozing" };
   const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
@@ -119,7 +119,7 @@ const pickupSchema = z.object({
 
 /** "Yuklandi" bosqichidagi "Yukni olgani joyi" formasi. */
 export async function saveTripPickup(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const s = await requireAction("trips", "create");
   const r = parseForm(pickupSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -136,7 +136,7 @@ export async function saveTripPickup(id: string, _prev: ActionState, fd: FormDat
 
 
 export async function cancelTrip(id: string) {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("trips", "cancel");
   const r = await tripCancelled(id, s.userId);
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "CANCELLED"));
   refresh(id, r.orderId);
@@ -144,7 +144,7 @@ export async function cancelTrip(id: string) {
 
 /** Reys sahifasidagi "ECO'ga yuborish / yangilash" tugmasi. */
 export async function syncTripWithEco(id: string, mode: "push" | "pull"): Promise<ActionState> {
-  await requireSession(["LOGISTICS", "PRODUCTION"]);
+  await requireAction("trips", "create");
   const t = await db.trip.findUniqueOrThrow({ where: { id }, select: { orderId: true } });
   const r = mode === "push" ? await pushTripToEco(id) : await pullTripFromEco(id);
   refresh(id, t.orderId); revalidatePath("/stock");
@@ -157,7 +157,7 @@ export async function syncTripWithEco(id: string, mode: "push" | "pull"): Promis
 
 /** Reysni yopish: qabul qilingan / qaytarilgan miqdor tasdiqlanadi. */
 export async function closeTrip(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("trips", "move");
   const r = await tripClosed(id, s.userId, qtyFrom(fd));
   if (r.error) return { error: r.error };
   refresh(id, r.orderId);
@@ -167,7 +167,7 @@ export async function closeTrip(id: string, _prev: ActionState, fd: FormData): P
 const ISSUE_KINDS = ["BREAKDOWN", "TRAFFIC", "SITE_NOT_READY", "QUALITY", "ACCIDENT", "DECLINED", "OTHER"] as const;
 
 export async function reportIssue(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "PRODUCTION"]);
+  const s = await requireAction("trips", "issue");
   const kind = String(fd.get("kind") ?? "") as TripIssueKind;
   if (!(ISSUE_KINDS as readonly string[]).includes(kind)) return { error: "Muammo turini tanlang" };
   try { await reportTripIssue(id, s.userId, { kind, note: String(fd.get("note") ?? ""), source: "LOGISTICS" }); }
@@ -178,7 +178,7 @@ export async function reportIssue(id: string, _prev: ActionState, fd: FormData):
 }
 
 export async function resolveIssue(issueId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("trips", "move");
   try {
     const r = await resolveTripIssue(issueId, s.userId, String(fd.get("resolution") ?? ""));
     const t = await db.trip.findUniqueOrThrow({ where: { id: r.tripId }, select: { orderId: true } });
@@ -192,7 +192,7 @@ const EXPENSE_KINDS = ["DRIVER_PAY", "ROAD", "REPAIR", "PARTS", "PARKING", "FINE
 
 /** Reys kartasidan yoqilg'i yoki xarajat qo'shish — transport/haydovchi reysdan olinadi. */
 export async function addTripCost(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  const s = await requireAction("trips", "cost");
   const t = await db.trip.findUnique({ where: { id }, select: { vehicleId: true, driverId: true, orderId: true } });
   if (!t) return { error: "Reys topilmadi" };
   const what = String(fd.get("what") ?? "");

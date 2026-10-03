@@ -4,11 +4,11 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
-import { createStockOrder as createStockOrderDomain, STOCK_ORDER_ROLES } from "@/lib/stock-orders";
+import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { saveContractFile, removeContractFile } from "@/lib/uploads";
@@ -57,7 +57,7 @@ function userError(e: unknown): string {
 }
 
 export async function createOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["SALES"]);
+  const s = await requireAction("orders", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -121,7 +121,7 @@ const stockSchema = z.object({
  * Qoida `lib/stock-orders.ts` da.
  */
 export async function createStockOrder(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...STOCK_ORDER_ROLES]);
+  const s = await requireAction("orders", "stock");
   const r = parseForm(stockSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -152,16 +152,16 @@ export async function createStockOrder(_prev: ActionState, fd: FormData): Promis
 export async function confirmOrder(id: string) {
   // Sklad zayavkasini sotuvdan tashqari ishlab chiqarish/sklad xodimi ham qabul qiladi
   const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
-  const s = await requireSession(kind === "STOCK" ? [...STOCK_ORDER_ROLES] : ["SALES"]);
+  const s = await requireAction("orders", kind === "STOCK" ? "stock" : "confirm");
   const r = await orderConfirm(id, s.userId); // qoida `lib/orders.ts` da — mobil ilova ham shuni chaqiradi
   if (r.error) throw new Error(r.error); // ilgari xato yutilib, "qabul qilindi" ko'rinardi
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/stock");
 }
 
-/** BLOCKED → CONFIRMED. Faqat direktor. */
+/** BLOCKED → CONFIRMED. Direktor (yoki direktor "unblock" ruxsatini bergan xodim). */
 export async function unblockOrder(id: string) {
-  const s = await requireSession(["DIRECTOR"]);
+  const s = await requireAction("orders", "unblock");
   await orderUnblock(id, s.userId);
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
@@ -170,7 +170,7 @@ export async function unblockOrder(id: string) {
 /** Bekor qilish — sabab so'raladi va auditga yoziladi (tasdiq tugmasi `ConfirmButton`). */
 export async function cancelOrder(id: string, reason: string): Promise<ActionState> {
   const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
-  const s = await requireSession(kind === "STOCK" ? [...STOCK_ORDER_ROLES] : ["SALES"]);
+  const s = await requireAction("orders", kind === "STOCK" ? "stock" : "cancel");
   const why = String(reason ?? "").trim().slice(0, 300);
   if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   const r = await orderCancel(id, s.userId);
@@ -186,7 +186,7 @@ export async function cancelOrder(id: string, reason: string): Promise<ActionSta
  * Mijoz zayavkasi bunday yopilmaydi — u schyot/to'lov bo'yicha yopiladi.
  */
 export async function closeStockOrder(id: string) {
-  const s = await requireSession([...STOCK_ORDER_ROLES]);
+  const s = await requireAction("orders", "stock");
   const o = await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true, status: true } });
   if (o.kind !== "STOCK") throw new Error("Bu tugma faqat sklad zayavkasi uchun");
   if (!["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Faqat qabul qilingan sklad zayavkasi yopiladi");
@@ -199,7 +199,7 @@ export async function closeStockOrder(id: string) {
 
 /** Mijoz imzolagan kafolat xati qabul qilindi / qaytarildi. */
 export async function toggleGuarantee(id: string) {
-  const s = await requireSession(["SALES", "ACCOUNTING"]);
+  const s = await requireAction("orders", "contract");
   const o = await db.order.findUniqueOrThrow({ where: { id } });
   const guaranteeAt = o.guaranteeAt ? null : new Date();
   await db.$transaction(async (tx) => {
@@ -216,7 +216,7 @@ const contractSchema = z.object({ contractAmount: z.coerce.number().positive("Sh
  * Raqam bir marta beriladi. Fayl `uploads/contracts/` ga yoziladi — isbot uchun tizimda saqlanadi.
  */
 export async function setContract(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["SALES", "ACCOUNTING"]);
+  const s = await requireAction("orders", "contract");
   const r = parseForm(contractSchema, fd);
   if ("error" in r) return { error: r.error };
   const o = await db.order.findUniqueOrThrow({ where: { id } });
@@ -250,7 +250,7 @@ const importSchema = z.object({
  * Hammasi o'tsa /orders ga qaytadi; bir qismi o'tmasa (limit, qora ro'yxat) sahifada qolib, sababi yoziladi.
  */
 export async function importOrdersFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["SALES"]);
+  const s = await requireAction("orders", "import");
   const r = parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

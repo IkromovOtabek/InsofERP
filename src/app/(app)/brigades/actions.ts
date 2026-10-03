@@ -3,9 +3,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { taskRoles } from "@/lib/tasks";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
 const schema = z.object({
@@ -16,7 +15,7 @@ const schema = z.object({
 });
 
 export async function saveBrigade(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(taskRoles("brigadeEdit"));
+  const s = await requireAction("tasks", "brigade");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -35,7 +34,7 @@ export async function saveBrigade(id: string | null, _prev: ActionState, fd: For
 }
 
 export async function toggleBrigade(id: string) {
-  const s = await requireSession(taskRoles("brigadeEdit"));
+  const s = await requireAction("tasks", "brigade");
   const b = await db.brigade.findUniqueOrThrow({ where: { id } });
   await db.$transaction(async (tx) => {
     await tx.brigade.update({ where: { id }, data: { isActive: !b.isActive } });

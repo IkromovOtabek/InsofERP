@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 /** Yoqilg'i (TZ 12): zapravkalar, transport va haydovchi kesimida litr/summa, haqiqiy sarf. */
 export default async function FuelPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; vehicleId?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const [logs, opts, price] = await Promise.all([

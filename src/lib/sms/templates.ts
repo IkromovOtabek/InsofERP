@@ -34,6 +34,13 @@ export const TEMPLATES = {
     text: (v: { code: string }) => `Insof ERP: parolni tiklash kodi ${v.code}. Hech kimga bermang.`,
     secret: (v: { code: string }) => [v.code],
   },
+
+  /** Kirish sahifasidan ro'yxatdan o'tish — telefonni tasdiqlash kodi. */
+  signup_code: {
+    label: "Ro'yxatdan o'tish kodi",
+    text: (v: { code: string }) => `Insof ERP: ro'yxatdan o'tish kodi ${v.code}. Hech kimga bermang.`,
+    secret: (v: { code: string }) => [v.code],
+  },
 } as const;
 
 /** Maxfiy qismlari yashirilgan matn — SmsLog uchun. */
@@ -50,6 +57,7 @@ export const TEMPLATES_FOR_MODERATION: { key: TemplateKey; text: string }[] = [
   { key: "login_granted", text: TEMPLATES.login_granted.text({ login: "#login#", password: "#parol#", url: "#havola#" }) },
   { key: "password_changed", text: TEMPLATES.password_changed.text({ login: "#login#", password: "#parol#" }) },
   { key: "reset_code", text: TEMPLATES.reset_code.text({ code: "#kod#" }) },
+  { key: "signup_code", text: TEMPLATES.signup_code.text({ code: "#kod#" }) },
 ];
 
 /** Barcha shablonlarning namunaviy matni — moderatsiyaga berish va sozlamalar sahifasi uchun. */
@@ -57,4 +65,5 @@ export const TEMPLATE_SAMPLES: { key: TemplateKey; label: string; sample: string
   { key: "login_granted", label: TEMPLATES.login_granted.label, sample: TEMPLATES.login_granted.text({ login: "sotuv1", password: "4821xk", url: "https://erp.insof.uz" }) },
   { key: "password_changed", label: TEMPLATES.password_changed.label, sample: TEMPLATES.password_changed.text({ login: "sotuv1", password: "4821xk" }) },
   { key: "reset_code", label: TEMPLATES.reset_code.label, sample: TEMPLATES.reset_code.text({ code: "482174" }) },
+  { key: "signup_code", label: TEMPLATES.signup_code.label, sample: TEMPLATES.signup_code.text({ code: "482174" }) },
 ];

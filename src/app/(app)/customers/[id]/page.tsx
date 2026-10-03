@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { canDo } from "@/lib/permissions";
 import { notFound } from "next/navigation";
 import { Wallet, ClipboardList, CreditCard, ArrowRight, Plus, Smartphone, FileText, Scale, Building2 } from "lucide-react";
 import { db } from "@/lib/db";
@@ -17,7 +18,7 @@ import { AppAccount } from "../app-account";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"]);
+  const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"], { module: "customers" });
   const c = await db.customer.findUnique({ where: { id }, include: { orders: { orderBy: { date: "desc" }, take: 10, include: { items: true } } } });
   if (!c) notFound();
   const [{ limit, debt, open, used, free, blacklisted }, contracted, appStatus, invoices, payments, sites] = await Promise.all([
@@ -27,7 +28,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
     db.payment.findMany({ where: { customerId: id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15, include: { invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, cashAccount: { select: { name: true } }, createdBy: { select: { fullName: true } }, register: { select: { id: true } } } }),
     siteDebts(id),
   ]);
-  const canOrder = ["SALES", "DIRECTOR"].includes(s.role) && c.isActive && !blacklisted;
+  const canOrder = canDo(s, "orders", "create") && c.isActive && !blacklisted;
   const canEditSites = ["SALES", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
 
   return (

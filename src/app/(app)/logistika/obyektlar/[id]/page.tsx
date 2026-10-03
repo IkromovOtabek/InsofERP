@@ -13,7 +13,7 @@ import { OrderLogiBadge, PhaseBadge, TripLink } from "../../ui";
 export const dynamic = "force-dynamic";
 
 export default async function SitePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireRoles(["LOGISTICS", "SALES"]);
+  await requireRoles(["LOGISTICS", "SALES"], { module: "logistika" });
   const { id } = await params;
   const s = await db.site.findUnique({
     where: { id },

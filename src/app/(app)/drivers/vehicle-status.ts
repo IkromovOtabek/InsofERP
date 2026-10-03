@@ -2,14 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import type { ActionState } from "@/lib/action";
 import type { VehicleStatus } from "@/generated/prisma";
 
 /** Texnika holati — logistika va mexanik belgilaydi; egasi dashbordidagi "Transport" bloki shundan o'qiydi. */
 export async function setVehicleStatus(vehicleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "MECHANIC"]);
+  const s = await requireAction("logistika", "service");
   const status = String(fd.get("status") ?? "");
   if (!["ACTIVE", "REPAIR", "IDLE"].includes(status)) return { error: "Holat noto'g'ri" };
   const note = String(fd.get("note") ?? "").trim() || null;

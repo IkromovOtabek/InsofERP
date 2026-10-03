@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
@@ -22,9 +22,8 @@ import { DIRECTOR_NOTIFY_SUM, WRITE_OFF_REASONS } from "./adjust-const";
  * Ikkalasida sabab majburiy, har biri auditda. Qoldiqqa tegadigan tekshiruv va yozuv — `lockStock` ostida
  * (parallel zames/berish bilan bir qoldiqni ikki marta ishlatmasin). Farq summasi katta bo'lsa
  * (DIRECTOR_NOTIFY_SUM dan) — yoziladi, lekin direktorga xabar ketadi.
- * Kim: sklad (WAREHOUSE) yaratadi; direktor har doim.
+ * Kim: stock → "adjust" amali (lib/permissions.ts) — sklad (WAREHOUSE), direktor va u ruxsat bergan xodim.
  */
-const ROLES = ["WAREHOUSE"] as const;
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const text = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -39,7 +38,7 @@ function refresh() {
 type CountRow = { materialId: string; book: number; actual: number };
 
 export async function saveInventory(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("stock", "adjust");
   const warehouseId = text(fd, "warehouseId");
   const reason = text(fd, "reason");
   if (!reason) return { error: "Farq sababini yozing (masalan: oylik sanoq, tarozi xatosi, o'g'irlik)" };
@@ -119,7 +118,7 @@ export async function saveInventory(_prev: ActionState, fd: FormData): Promise<A
 // ───────────────────────── Hisobdan chiqarish (spisanie) ─────────────────────────
 
 export async function saveWriteOff(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("stock", "adjust");
   const warehouseId = text(fd, "warehouseId");
   const kind = text(fd, "kind");
   const note = text(fd, "note");

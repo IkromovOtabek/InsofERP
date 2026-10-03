@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
@@ -41,7 +41,7 @@ const vehicleSchema = z.object({
 });
 
 export async function saveVehicle(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("logistika", "vehicle");
   const r = parseForm(vehicleSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -97,7 +97,7 @@ const siteSchema = z.object({
 });
 
 export async function saveSite(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "SALES"]);
+  const s = await requireAction("logistika", "sites");
   const r = parseForm(siteSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -127,7 +127,7 @@ const driverSchema = z.object({ workSchedule: zOpt, licenseNo: zOpt, licenseCate
 
 /** Logistika to'ldiradigan qism: grafik, guvohnoma, biriktirilgan transport. Shaxsiy ma'lumot — Otdel kadrda. */
 export async function saveDriverCard(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("logistika", "drivers");
   const r = parseForm(driverSchema, fd);
   if ("error" in r) return { error: r.error };
   const before = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
@@ -148,7 +148,7 @@ const fuelSchema = z.object({
 });
 
 export async function addFuel(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  const s = await requireAction("logistika", "fuel");
   const r = parseForm(fuelSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -171,7 +171,7 @@ const expenseSchema = z.object({
 const MECHANIC_EXPENSE_KINDS = ["REPAIR", "PARTS", "WASH"] as const;
 
 export async function addExpense(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "ACCOUNTING", "MECHANIC"]);
+  const s = await requireAction("logistika", "expense");
   const r = parseForm(expenseSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -190,7 +190,7 @@ export async function addExpense(_prev: ActionState, fd: FormData): Promise<Acti
 
 /** Xato kiritilgan yozuvni o'chirish (audit jurnalida asl yozuv qoladi). */
 export async function deleteFuel(id: string): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  const s = await requireAction("logistika", "fuel");
   const f = await db.fuelLog.findUnique({ where: { id } });
   if (!f) return { error: "Topilmadi" };
   await db.fuelLog.delete({ where: { id } });
@@ -200,7 +200,7 @@ export async function deleteFuel(id: string): Promise<ActionState> {
 }
 
 export async function deleteExpense(id: string): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "ACCOUNTING"]);
+  const s = await requireAction("logistika", "fuel");
   const e = await db.transportExpense.findUnique({ where: { id } });
   if (!e) return { error: "Topilmadi" };
   await db.transportExpense.delete({ where: { id } });
@@ -223,7 +223,7 @@ const serviceSchema = z.object({
  * Narx bu yerda faqat jurnal uchun: pul xarajati "Boshqa xarajatlar"ga alohida yoziladi (ikki marta sanalmasin).
  */
 export async function addVehicleService(vehicleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["MECHANIC", "LOGISTICS"]);
+  const s = await requireAction("logistika", "service");
   const r = parseForm(serviceSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -248,7 +248,7 @@ export async function addVehicleService(vehicleId: string, _prev: ActionState, f
 }
 
 export async function deleteVehicleService(id: string): Promise<ActionState> {
-  const s = await requireSession(["MECHANIC", "LOGISTICS"]);
+  const s = await requireAction("logistika", "service");
   const x = await db.vehicleService.findUnique({ where: { id } });
   if (!x) return { error: "Topilmadi" };
   await db.vehicleService.delete({ where: { id } });
@@ -266,7 +266,7 @@ const settingsSchema = z.object({
 });
 
 export async function saveLogisticsSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS"]);
+  const s = await requireAction("logistika", "settings");
   const r = parseForm(settingsSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

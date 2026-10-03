@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
-import { Check, KeyRound, Save, UserPlus } from "lucide-react";
-import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, saveUserPerms, toggleUser, updateUser } from "./actions";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { Check, Copy, KeyRound, RotateCcw, Save, UserPlus } from "lucide-react";
+import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, saveUserPerms, copyUserPerms, toggleUser, updateUser } from "./actions";
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, Input, PasswordInput, Select } from "@/components/ui";
 
@@ -90,32 +90,141 @@ export function DailyOrderLimitForm({ m3, count }: { m3: number; count: number }
   );
 }
 
+export type PermModule = {
+  key: string;
+  label: string;
+  group: string;
+  actions: { key: string; label: string; hint?: string }[];
+  /** Rol bo'yicha (direktor bermagan holatda): ko'radimi va qaysi amallarni bajaradi */
+  role: { view: boolean; actions: string[] };
+};
+
+type Level = "" | "none" | "view" | "custom" | "write";
+
+const LEVELS: { v: Level; label: string; tone: string }[] = [
+  { v: "", label: "Rol bo'yicha", tone: "border-slate-200 bg-white text-slate-600" },
+  { v: "none", label: "Yopiq", tone: "border-red-300 bg-red-50 text-red-700" },
+  { v: "view", label: "Ko'rish", tone: "border-sky-300 bg-sky-50 text-sky-700" },
+  { v: "custom", label: "Tanlangan amallar", tone: "border-amber-300 bg-amber-50 text-amber-800" },
+  { v: "write", label: "To'liq", tone: "border-emerald-300 bg-emerald-50 text-emerald-700" },
+];
+
+function initialLevel(v: string | string[] | undefined): Level {
+  if (Array.isArray(v)) return "custom";
+  return v === "none" || v === "view" || v === "write" ? v : "";
+}
+
 /**
- * Modul bo'yicha ruxsat — direktor foydalanuvchiga har bir asosiy bo'lim uchun
- * "Rol bo'yicha / Ko'rish / Yozish / Yopiq" belgilaydi. "Rol bo'yicha" — perms'da saqlanmaydi.
+ * Modul va amal bo'yicha ruxsat — faqat direktor. Har bir bo'lim uchun daraja:
+ * Rol bo'yicha / Yopiq / Ko'rish / Tanlangan amallar / To'liq. "Tanlangan amallar"da
+ * aniq amallar belgilanadi (masalan Ishlab chiqarish xodimiga Zayavkalardan faqat "ochish").
  */
 export function UserPermsForm({
   userId, modules, current,
-}: { userId: string; modules: { key: string; label: string }[]; current: Record<string, string> }) {
+}: { userId: string; modules: PermModule[]; current: Record<string, string | string[]> }) {
   const [state, action, pending] = useActionState(saveUserPerms.bind(null, userId), undefined);
-  const opts: [string, string][] = [["", "Rol bo'yicha"], ["view", "Ko'rish"], ["write", "Yozish"], ["none", "Yopiq"]];
+  const [levels, setLevels] = useState<Record<string, Level>>(() => Object.fromEntries(modules.map((m) => [m.key, initialLevel(current[m.key])])));
+  // "Tanlangan amallar"ga o'tganda boshlang'ich belgilar: saqlangan ro'yxat, bo'lmasa rolning odatiy amallari
+  const [acts, setActs] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(modules.map((m) => [m.key, Array.isArray(current[m.key]) ? (current[m.key] as string[]) : m.role.actions])));
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (state?.ok) setDirty(false); }, [state]);
+
+  const setLevel = (k: string, v: Level) => { setLevels((p) => ({ ...p, [k]: v })); setDirty(true); };
+  const toggleAct = (k: string, a: string) => {
+    setActs((p) => ({ ...p, [k]: p[k].includes(a) ? p[k].filter((x) => x !== a) : [...p[k], a] }));
+    setDirty(true);
+  };
+  const groups = [...new Set(modules.map((m) => m.group))];
+
   return (
-    <form action={action} className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-2">
-        {modules.map((m) => (
-          <label key={m.key} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
-            <span>{m.label}</span>
-            <Select name={`perm.${m.key}`} defaultValue={current[m.key] ?? ""} className="w-32 px-2 py-1 text-xs">
-              {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </Select>
-          </label>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <Button className="px-3 py-1.5 text-sm" disabled={pending}>{state?.ok ? <Check size={14} /> : <Save size={14} />} Saqlash</Button>
-        {state?.ok && <span className="text-xs text-emerald-600">Saqlandi</span>}
+    <form action={action} className="space-y-4">
+      {groups.map((g) => (
+        <div key={g}>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{g}</div>
+          <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {modules.filter((m) => m.group === g).map((m) => {
+              const lvl = levels[m.key];
+              return (
+                <div key={m.key} className="px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{m.label}</div>
+                      <div className="text-xs text-slate-500">
+                        Rol bo&apos;yicha: {!m.role.view ? "kirmaydi" : m.role.actions.length === 0 ? "faqat ko'radi" : m.role.actions.length === m.actions.length && m.actions.length > 0 ? "barcha amallar" : `${m.role.actions.length} ta amal`}
+                      </div>
+                    </div>
+                    <input type="hidden" name={`perm.${m.key}`} value={lvl} />
+                    <div role="radiogroup" aria-label={m.label} className="flex flex-wrap gap-1">
+                      {LEVELS.filter((l) => l.v !== "custom" || m.actions.length > 0).map((l) => (
+                        <button
+                          key={l.v}
+                          type="button"
+                          role="radio"
+                          aria-checked={lvl === l.v}
+                          onClick={() => setLevel(m.key, l.v)}
+                          className={`rounded-md border px-2 py-1 text-xs transition ${lvl === l.v ? l.tone + " font-semibold" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"}`}
+                        >
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {lvl === "custom" && (
+                    <div className="mt-2 grid gap-1.5 rounded-md bg-amber-50/60 p-2 sm:grid-cols-2">
+                      <div className="text-xs text-slate-500 sm:col-span-2">Bo&apos;limni ko&apos;radi va faqat belgilangan amallarni bajaradi:</div>
+                      {m.actions.map((a) => (
+                        <label key={a.key} className="flex cursor-pointer items-start gap-2 text-sm">
+                          <input type="checkbox" name={`act.${m.key}`} value={a.key} checked={acts[m.key].includes(a.key)} onChange={() => toggleAct(m.key, a.key)} className="mt-0.5 h-4 w-4 shrink-0 accent-slate-900" />
+                          <span>
+                            {a.label}
+                            {m.role.actions.includes(a.key) && <span className="ml-1 text-xs text-slate-400">(rolda bor)</span>}
+                            {a.hint && <span className="block text-xs text-slate-500">{a.hint}</span>}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {lvl === "write" && m.actions.length > 0 && (
+                    <div className="mt-1.5 text-xs text-emerald-700">Barcha amallar: {m.actions.map((a) => a.label).join(", ")}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-slate-100 bg-white/95 py-2 backdrop-blur">
+        <Button className="px-3 py-1.5 text-sm" disabled={pending}>{state?.ok && !dirty ? <Check size={14} /> : <Save size={14} />} Saqlash</Button>
+        <Button
+          type="button"
+          variant="secondary"
+          className="px-3 py-1.5 text-sm"
+          onClick={() => { setLevels(Object.fromEntries(modules.map((m) => [m.key, "" as Level]))); setDirty(true); }}
+        >
+          <RotateCcw size={14} /> Hammasini rol bo&apos;yicha
+        </Button>
+        {dirty && <span className="text-xs text-amber-600">Saqlanmagan o&apos;zgarish bor</span>}
+        {state?.ok && !dirty && <span className="text-xs text-emerald-600">Saqlandi — xodim keyingi sahifa ochishida kuchga kiradi</span>}
         {state?.error && <span className="text-xs text-red-600">{state.error}</span>}
       </div>
+    </form>
+  );
+}
+
+/** Boshqa xodimning ruxsatlarini nusxalash. */
+export function CopyPermsForm({ userId, others }: { userId: string; others: { id: string; label: string }[] }) {
+  const [state, action, pending] = useActionState(copyUserPerms.bind(null, userId), undefined);
+  if (others.length === 0) return null;
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-1.5">
+      <Select name="sourceId" defaultValue="" className="w-56 px-2 py-1 text-xs" aria-label="Kimdan nusxa">
+        <option value="" disabled>Ruxsatni kimdan nusxalash…</option>
+        {others.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </Select>
+      <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending}><Copy size={14} /> Nusxalash</Button>
+      {state?.ok && <span className="text-xs text-emerald-600">Ko&apos;chirildi</span>}
+      {state?.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
   );
 }

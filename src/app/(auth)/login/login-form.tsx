@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { KeyRound, LogIn, Send, Smartphone, Sparkles, UserRound } from "lucide-react";
+import { KeyRound, LogIn, Send, Smartphone, Sparkles, UserPlus, UserRound } from "lucide-react";
 import { confirmLoginCodeAction, loginAction, quickLoginAction, requestLoginCodeAction } from "./actions";
 import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
 import { Logo } from "@/components/logo";
@@ -38,6 +38,13 @@ export function LoginForm({ testMode, testUsers }: { testMode: boolean; testUser
 
           <div className="mt-6">
             {mode === "password" ? <PasswordLogin /> : <SmsLogin />}
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-1.5 border-t border-slate-200 pt-5 text-sm text-slate-500">
+            Hisobingiz yo&apos;qmi?
+            <Link href="/login/register" className="inline-flex min-h-11 items-center gap-1 font-semibold text-slate-900 underline-offset-4 hover:underline">
+              <UserPlus size={15} /> Ro&apos;yxatdan o&apos;tish
+            </Link>
           </div>
 
           {testMode && <TestUsers users={testUsers} />}

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { createInvoice as create } from "@/lib/invoices";
 import { parseForm, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
@@ -16,7 +16,7 @@ const schema = z.object({
 });
 
 export async function createInvoice(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["ACCOUNTING", "SALES"]);
+  const s = await requireAction("sales", "invoice");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -29,7 +29,7 @@ export async function createInvoice(_prev: ActionState, fd: FormData): Promise<A
 
 /** Schyotni bekor qilish — tasdiq tugmasi (`ConfirmButton`) orqali, sabab auditga yoziladi. */
 export async function cancelInvoice(id: string, reason: string): Promise<ActionState> {
-  const s = await requireSession(["ACCOUNTING"]);
+  const s = await requireAction("sales", "invoice_cancel");
   const inv = await db.invoice.findUnique({ where: { id }, include: { payments: true } });
   if (!inv) return { error: "Schyot topilmadi" };
   if (inv.payments.length) return { error: "To'lov bor — bekor qilib bo'lmaydi" };

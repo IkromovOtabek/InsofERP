@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
@@ -53,7 +53,7 @@ function receiptNote(d: { note: string | null; waybillNo: string | null; vehicle
 
 /** Kirim: GoodsReceipt + har qator uchun StockMove RECEIPT (+qty, unitCost). */
 export async function createReceipt(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PROCUREMENT", "WAREHOUSE"]);
+  const s = await requireAction("stock", "receipt");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -129,7 +129,7 @@ type ImportRow = { material?: unknown; code?: unknown; qty?: unknown; price?: un
  * Ro'yxatda yo'q mahsulotlar `createMissing` bilan xomashyo sifatida yaratiladi, sklad qoldig'i darhol oshadi.
  */
 export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PROCUREMENT", "WAREHOUSE"]);
+  const s = await requireAction("stock", "receipt");
   const r = parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

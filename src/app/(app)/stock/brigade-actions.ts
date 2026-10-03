@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import { issueToBrigade, returnFromBrigade } from "@/lib/brigade-stock";
 
@@ -17,7 +17,7 @@ const refresh = () => {
  * Skladdagidan ko'p berilmaydi: yig'indi tekshiruvi `lib/brigade-stock.ts` da.
  */
 export async function distributeToBrigade(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("stock", "brigade");
   let rows: Row[];
   try { rows = JSON.parse(String(fd.get("rows") ?? "[]")); } catch { return { error: "Jadval o'qilmadi" }; }
   rows = rows.filter((r) => r.materialId && r.brigadeId && r.qty > 0);
@@ -40,7 +40,7 @@ export async function distributeToBrigade(_prev: ActionState, fd: FormData): Pro
 
 /** Brigadadan ishlatilmagan xomashyoni skladga qaytarish. */
 export async function returnToStock(brigadeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("stock", "brigade");
   const materialId = String(fd.get("materialId") ?? "");
   const qty = Number(String(fd.get("qty") ?? "").replace(",", ".")) || 0;
   const warehouseId = String(fd.get("warehouseId") ?? "");

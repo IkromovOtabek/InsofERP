@@ -155,8 +155,8 @@ export function navFor(role: Role, perms?: Perms) {
  * Modul = asosiy bo'lim. Direktor har foydalanuvchiga modul bo'yicha "yo'q / ko'rish / yozish"
  * belgilaydi; bu rol ruxsatining USTIGA ishlaydi. Perms'da modul berilmagan bo'lsa — avvalgidek rol bo'yicha.
  *
- * Ruxsat MODUL darajali (amal darajali emas): masalan "orders" ga "view" berilgan xodim zayavkani
- * ko'radi, lekin ocha ham, qabul ham qila olmaydi — buning uchun "write" kerak.
+ * Modul ichidagi aniq amallar (zayavka ochish, qabul qilish...) — `lib/permissions.ts` (MODULE_ACTIONS, canDo).
+ * Masalan "orders" ga ["create"] berilgan Ishlab chiqarish xodimi zayavkani ko'radi va ochadi, lekin qabul qila olmaydi.
  */
 export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "orders",    label: "Zayavkalar",            prefixes: ["/orders"] },
@@ -210,6 +210,7 @@ export function canView(session: Pick<Session, "role" | "perms">, module: string
 export function canWrite(session: Pick<Session, "role" | "perms">, module: string): boolean {
   if (session.role === "DIRECTOR") return true;
   const lvl = session.perms?.[module];
+  if (Array.isArray(lvl)) return lvl.length > 0; // tanlangan amallar — aniq amal `canDo` bilan tekshiriladi
   if (lvl) return lvl === "write";
   return roleHasModule(session.role, module);
 }

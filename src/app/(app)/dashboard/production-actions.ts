@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSession, requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 import { today, validDay, validMonth } from "@/lib/davomat";
@@ -67,7 +67,7 @@ const DefectSchema = z.object({
 
 /** Brak yozuvi — qoida `lib/defects.ts` da (brigadir ilovasi ham shuni chaqiradi). */
 export async function addDefect(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("production", "report");
   const r = parseForm(DefectSchema, fd);
   if ("error" in r) return { error: r.error };
   const res = await addProductDefect(r.data, s.userId);
@@ -78,7 +78,7 @@ export async function addDefect(_prev: ActionState, fd: FormData): Promise<Actio
 
 /** Xato yozilgan brakni o'chirish: direktor yoki shu kuni o'zi yozgan xodim. Hovli qoldig'i qaytadi. */
 export async function deleteDefect(id: string): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("production", "report");
   const def = await db.productDefect.findUnique({ where: { id } });
   if (!def) return { error: "Yozuv topilmadi" };
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -114,7 +114,7 @@ const MarkSchema = z.object({
 
 /** Bitta sex xodimining bugungi davomati. `CHECKOUT` — ketgan vaqtini hozir qilib qo'yadi. */
 export async function markStaff(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("production", "report");
   const r = parseForm(MarkSchema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -128,7 +128,7 @@ export async function markStaff(_prev: ActionState, fd: FormData): Promise<Actio
 
 /** Belgilanmagan hamma sex xodimi — "Keldi". */
 export async function markAllStaff(): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("production", "report");
   const r = await markAllPresent(s.userId);
   revalidatePath("/otdel-kadr");
   revalidatePath("/dashboard");
@@ -148,7 +148,7 @@ export async function assignStaff(employeeId: string, brigadeId: string): Promis
 /* ───────────────────────── Kunlik hisobot: "Qayd etish" ───────────────────────── */
 
 export async function saveReport(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["PRODUCTION", "SUPERVISOR"]);
+  const s = await requireAction("production", "report");
   const iso = validDay(String(fd.get("iso") ?? "")) ?? today();
   const note = String(fd.get("note") ?? "").trim() || null;
   const r = await submitReport(s.userId, iso, note);

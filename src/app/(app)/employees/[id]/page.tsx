@@ -19,7 +19,7 @@ import { HrDocsPanel, type HrDocRow } from "./hr-doc-forms";
 import { EmployeePhotoForm } from "./photo-form";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await requireRoles(["HR"]);
+  const s = await requireRoles(["HR"], { module: "employees" });
   const { id } = await params;
   const [e, catalog, vehicles, orderNos] = await Promise.all([
     db.employee.findUnique({

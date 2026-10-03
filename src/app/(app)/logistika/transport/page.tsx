@@ -18,7 +18,7 @@ const docBadge = (d: Date | null) => {
 
 /** Transport moduli (TZ 6): hamma texnika, joriy holati, hujjat muddatlari, oy xarajati. */
 export default async function TransportPage({ searchParams }: { searchParams: Promise<{ type?: string; state?: string }> }) {
-  const s = await requireRoles(["LOGISTICS", "MECHANIC"]);
+  const s = await requireRoles(["LOGISTICS", "MECHANIC"], { module: "logistika" });
   const { type, state } = await searchParams;
   const monthFrom = new Date(); monthFrom.setDate(1); monthFrom.setHours(0, 0, 0, 0);
   const vehicles = await db.vehicle.findMany({

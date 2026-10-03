@@ -12,7 +12,7 @@ import { DelayText, PhaseBadge, TripLink } from "../../ui";
 export const dynamic = "force-dynamic";
 
 export default async function DriverPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireRoles(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"], { module: "logistika" });
   const { id } = await params;
   const settings = await logisticsSettings();
   const d = await db.employee.findUnique({

@@ -9,7 +9,7 @@ import { PrintButton } from "@/components/print-button";
 
 /** Snabjeniye hisoboti — xaridlar, sarf, yetkazib berish, kechikish, yetkazib beruvchilar (davr bo'yicha). */
 export default async function ProcurementReportPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
-  await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
+  await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock" });
   const sp = await searchParams;
   const d = await procurementReport(sp);
   const t = d.totals;

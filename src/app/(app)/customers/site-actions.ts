@@ -3,12 +3,11 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
 /** Obyekt (Site) qo'shish/tahrirlash — mijoz kartasidagi kabi rol: SALES, ACCOUNTING, FINANCE (+DIRECTOR). */
-const ROLES = ["SALES", "ACCOUNTING", "FINANCE"] as const;
 
 const schema = z.object({
   name: zStr("Obyekt nomi to'ldirilishi shart"),
@@ -21,7 +20,7 @@ const schema = z.object({
 });
 
 export async function saveSite(customerId: string, id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("customers", "sites");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
@@ -51,7 +50,7 @@ export async function saveSite(customerId: string, id: string | null, _prev: Act
 }
 
 export async function deleteSite(customerId: string, id: string): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("customers", "sites");
   const site = await db.site.findUnique({ where: { id }, select: { customerId: true } });
   if (!site || site.customerId !== customerId) return { error: "Obyekt topilmadi" };
 

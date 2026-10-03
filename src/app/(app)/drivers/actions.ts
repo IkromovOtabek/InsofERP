@@ -3,7 +3,7 @@ import { driverPositionNames } from "@/lib/positions";
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { eco, ecoEnabled, EcoError, normalizePhone } from "@/lib/eco/client";
 import { pushTripToEco } from "@/lib/eco/sync";
@@ -15,7 +15,7 @@ const guard = () => (ecoEnabled() ? null : { error: "ECO ulanmagan — .env da E
 
 /** ERP xodimi (Haydovchi) → ECO'da foydalanuvchi + haydovchi a'zoligi. Telefon +998… bo'lishi shart. */
 export async function linkDriver(employeeId: string): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "HR"]);
+  const s = await requireAction("trips", "drivers");
   const off = guard(); if (off) return off;
   const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
   const phone = normalizePhone(e.phone);
@@ -30,7 +30,7 @@ export async function linkDriver(employeeId: string): Promise<ActionState> {
 
 /** Ilovada o'zi ro'yxatdan o'tgan haydovchini ERP'dan tasdiqlash — Tadbirkor telefonisiz. */
 export async function approveDriver(employeeId: string): Promise<ActionState> {
-  const s = await requireSession(["LOGISTICS", "HR"]);
+  const s = await requireAction("trips", "drivers");
   const off = guard(); if (off) return off;
   const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
   if (!e.ecoUserId) return { error: "Avval ECO'ga ulang" };
@@ -48,7 +48,7 @@ export async function approveDriver(employeeId: string): Promise<ActionState> {
  * `approve` — bir vaqtning o'zida ECO a'zoligini ham tasdiqlash (shundan keyin ilovaga kira oladi).
  */
 export async function adoptEcoDriver(userId: string, fullName: string, phone: string, isActive: boolean, approve: boolean): Promise<ActionState> {
-  await requireSession(["LOGISTICS", "HR"]);
+  await requireAction("trips", "drivers");
   let employeeId: string | undefined;
   try {
     const r = await applyEcoDriver({ userId, fullName: fullName || null, phone, isActive, reason: "invited", byIntegration: true });
@@ -64,7 +64,7 @@ export async function adoptEcoDriver(userId: string, fullName: string, phone: st
 
 /** Telefoni to'g'ri barcha faol haydovchilarni bir yo'la ulash. */
 export async function linkAllDrivers(): Promise<ActionState> {
-  await requireSession(["LOGISTICS", "HR"]);
+  await requireAction("trips", "drivers");
   const off = guard(); if (off) return off;
   const list = await db.employee.findMany({ where: { position: { in: await driverPositionNames() }, isActive: true, ecoUserId: null } });
   let ok = 0; const bad: string[] = [];
@@ -78,7 +78,7 @@ export async function linkAllDrivers(): Promise<ActionState> {
 
 /** ERP texnikasi (mikser/nasos) → ECO mashinalari (davlat raqami bo'yicha). */
 export async function syncVehicles(): Promise<ActionState> {
-  await requireSession(["LOGISTICS"]);
+  await requireAction("trips", "drivers");
   const off = guard(); if (off) return off;
   const list = await db.vehicle.findMany();
   const bad: string[] = [];
@@ -92,7 +92,7 @@ export async function syncVehicles(): Promise<ActionState> {
  * ERP'dagilari ECO'ga yuboriladi. Webhook yetib bormay qolgan holatlar uchun.
  */
 export async function syncAll(): Promise<ActionState> {
-  await requireSession(["LOGISTICS", "HR"]);
+  await requireAction("trips", "drivers");
   const off = guard(); if (off) return off;
   const r = await syncDirectories();
   revalidatePath("/drivers"); revalidatePath("/employees");
@@ -103,7 +103,7 @@ export async function syncAll(): Promise<ActionState> {
 
 /** ECO'ga yetib bormagan (yoki xatolik bilan qolgan) faol reyslarni qayta yuborish. */
 export async function resendPendingTrips(): Promise<ActionState> {
-  await requireSession(["LOGISTICS"]);
+  await requireAction("trips", "drivers");
   const off = guard(); if (off) return off;
   const trips = await db.trip.findMany({ where: { status: { in: ["PLANNED", "LOADED", "ON_ROAD"] }, OR: [{ ecoDeliveryId: null }, { ecoError: { not: null } }] }, select: { id: true, deliveryNoteNo: true } });
   const bad: string[] = [];

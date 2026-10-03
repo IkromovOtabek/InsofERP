@@ -16,7 +16,7 @@ type Filter = "open" | "waiting" | "onroad" | "late" | "problem" | "done" | "all
  * qanchasi transportga biriktirilgan va yetkazilgan. Holat reyslardan chiqadi (`orderLogistics`).
  */
 export default async function LogisticsOrdersPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string }> }) {
-  await requireRoles(["LOGISTICS"]);
+  await requireRoles(["LOGISTICS"], { module: "logistika" });
   const sp = await searchParams;
   const filter = (["open", "waiting", "onroad", "late", "problem", "done", "all"].includes(sp.filter ?? "") ? sp.filter : "open") as Filter;
   const now = new Date();

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { ensureSite } from "@/lib/logistics";
 import { audit } from "@/lib/audit";
-import { canWriteByUserId } from "@/lib/auth";
+import { canDoByUserId } from "@/lib/auth";
 import { customerCredit, DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
 import { money } from "@/lib/format";
@@ -65,11 +65,11 @@ async function dailyOrderLimitError(
  * Limit: qarz + ochiq zayavkalar + shu zayavka ≤ limit.
  */
 export async function orderConfirm(id: string, userId: string): Promise<OrderResult> {
-  // Modul ruxsati: "orders" ga faqat "view" berilgan xodim zayavkani ko'radi, lekin qabul qila olmaydi
-  if (!(await canWriteByUserId(userId, "orders"))) {
-    return { changed: false, error: "Zayavkalar bo'limida sizda faqat ko'rish huquqi bor — qabul qilish uchun direktordan ruxsat so'rang" };
-  }
   const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { include: { product: { select: { unit: true } } } }, customer: true } });
+  // Amal ruxsati (rol yoki direktor bergan): mijoz zayavkasi — "confirm", sklad zayavkasi — "stock"
+  if (!(await canDoByUserId(userId, "orders", o.kind === "STOCK" ? "stock" : "confirm"))) {
+    return { changed: false, error: "Zayavkani qabul qilishga ruxsatingiz yo'q — direktordan ruxsat so'rang" };
+  }
   if (o.status !== "DRAFT") return { changed: false, error: "Faqat qoralama zayavka qabul qilinadi" };
 
   // Sklad zaxirasi zayavkasida mijoz ham, narx ham yo'q — kredit limiti tekshirilmaydi
@@ -208,11 +208,12 @@ export async function createOrder(
   /** `allowPastDate` — Excel importi: eski zayavkalar o'tgan sana bilan ham kiritiladi.
    *  `viaAgent` — sotuv agenti kabinetidan (o'z faylidagi action ruxsatni o'zi tekshirgan): "orders"
    *  moduli tekshiruvi o'tkazib yuboriladi, chunki agent "orders" roliga kirmaydi. */
-  opts?: { id?: string; contractFile?: { stored: string; name: string; type: string }; allowPastDate?: boolean; viaAgent?: boolean },
+  opts?: { id?: string; contractFile?: { stored: string; name: string; type: string }; allowPastDate?: boolean; viaAgent?: boolean; viaImport?: boolean },
 ): Promise<NewOrderResult> {
-  // Modul ruxsati: "orders" ga faqat "view" berilgan xodim zayavka OCHA olmaydi (agent kabineti bundan mustasno)
-  if (!opts?.viaAgent && !(await canWriteByUserId(userId, "orders"))) {
-    throw new Error("Zayavkalar bo'limida sizda faqat ko'rish huquqi bor — zayavka ochish uchun direktordan ruxsat so'rang");
+  // Amal ruxsati: zayavka ochish (rol yoki direktor bergan "create"); agent kabineti o'z ruxsatini o'zi tekshiradi
+  // Excel importi (`viaImport`) — chaqiruvchi "import" amalini tekshirgan
+  if (!opts?.viaAgent && !opts?.viaImport && !(await canDoByUserId(userId, "orders", "create"))) {
+    throw new Error("Zayavka ochishga ruxsatingiz yo'q — direktordan ruxsat so'rang");
   }
   const items = input.items.filter((i) => i.productId && i.qtyM3 > 0);
   if (items.length === 0) throw new Error("Kamida bitta mahsulot qatori kerak");

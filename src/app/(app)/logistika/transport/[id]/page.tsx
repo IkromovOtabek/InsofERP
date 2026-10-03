@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 /** Transport kartasi: ma'lumot, oxirgi reyslar, yoqilg'i (haqiqiy sarf vs norma), xarajatlar. */
 export default async function VehiclePage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await requireRoles(["LOGISTICS", "MECHANIC"]);
+  const s = await requireRoles(["LOGISTICS", "MECHANIC"], { module: "logistika" });
   const { id } = await params;
   const monthFrom = new Date(); monthFrom.setDate(1); monthFrom.setHours(0, 0, 0, 0);
   const v = await db.vehicle.findUnique({

@@ -8,6 +8,7 @@ import { OrderForm, type CustomerOpt, type OrderPrefill, type ProductStock } fro
 import { StockOrderForm } from "../stock-order-form";
 import { NewOrderMode } from "../new-order-mode";
 import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
+import { canDo } from "@/lib/permissions";
 import { geoSearchEnabled } from "@/lib/geo";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { productCatalog } from "@/lib/product-catalog";
@@ -22,9 +23,11 @@ import { canEditProducts } from "@/lib/catalog";
  * Sotuvdan tashqari rollar (sklad, ishlab chiqarish) faqat sklad zayavkasini ocha oladi.
  */
 export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string; lead?: string }> }) {
-  const s = await requireRoles([...STOCK_ORDER_ROLES]);
+  // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
+  const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
   const { customer, tur, lead: leadId } = await searchParams;
-  const canSale = ["SALES", "DIRECTOR"].includes(s.role);
+  const canSale = canDo(s, "orders", "create");
+  const canStockOrder = canDo(s, "orders", "stock");
 
   const [catalog, stock, lead] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
@@ -77,11 +80,11 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
         <div className="xl:col-span-3">
           <NewOrderMode
-            initial={tur === "sklad" ? "stock" : "sale"}
+            initial={tur === "sklad" || !canSale ? "stock" : "sale"}
             sale={canSale ? (
               <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
             ) : null}
-            stock={<StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} />}
+            stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} /> : null}
           />
         </div>
         <div className="xl:col-span-2">

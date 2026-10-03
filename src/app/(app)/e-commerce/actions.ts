@@ -3,13 +3,12 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import { removeShopPhoto, saveShopPhoto } from "@/lib/uploads";
 import { audit } from "@/lib/audit";
 import { shopDiff, shopItemSnapshot } from "@/lib/shop-history";
 
-const ROLES = ["SALES", "DIRECTOR"] as const;
 
 const schema = z.object({
   isPublished: z.string().optional().transform((v) => v === "on"),
@@ -33,7 +32,7 @@ const schema = z.object({
 
 /** Vitrina qatori: chiqarish, nom/narx/tavsif, surat. Product'ning o'zi o'zgarmaydi. */
 export async function saveShopItem(productId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("sales", "ecommerce");
   const parsed = parseForm(schema, fd);
   if ("error" in parsed) return { error: parsed.error };
   const d = parsed.data;
@@ -70,7 +69,7 @@ export async function saveShopItem(productId: string, _prev: ActionState, fd: Fo
 
 /** Bitta tugma bilan chiqarish/yashirish — ro'yxatda tez ishlash uchun. */
 export async function toggleShopItem(productId: string, on: boolean) {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("sales", "ecommerce");
   const prev = await db.shopItem.findUnique({ where: { productId }, select: { isPublished: true, product: { select: { name: true } } } });
   if (prev?.isPublished === on) return;
   const item = await db.shopItem.upsert({ where: { productId }, create: { productId, isPublished: on }, update: { isPublished: on }, include: { product: { select: { name: true } } } });
@@ -80,7 +79,7 @@ export async function toggleShopItem(productId: string, on: boolean) {
 
 /** Suratni olib tashlash — ilovada ikonka ko'rinadi. */
 export async function deleteShopPhoto(productId: string) {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("sales", "ecommerce");
   const item = await db.shopItem.findUnique({ where: { productId }, select: { id: true, photo: true, product: { select: { name: true } } } });
   if (!item?.photo) return;
   await db.shopItem.update({ where: { productId }, data: { photo: null } });
@@ -104,7 +103,7 @@ const bannerSchema = z.object({
 
 /** Banner saqlash (id bo'lmasa — yangi). Surat ixtiyoriy: bo'lmasa ilovada brend rangli fon. */
 export async function saveBanner(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("sales", "ecommerce");
   const parsed = parseForm(bannerSchema, fd);
   if ("error" in parsed) return { error: parsed.error };
   const d = parsed.data;
@@ -121,14 +120,14 @@ export async function saveBanner(id: string | null, _prev: ActionState, fd: Form
 }
 
 export async function toggleBanner(id: string, on: boolean) {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("sales", "ecommerce");
   const b = await db.shopBanner.update({ where: { id }, data: { isActive: on } });
   await audit(db, s.userId, "STATUS_CHANGE", "ShopBanner", id, { title: b.title, isActive: !on }, { title: b.title, isActive: on });
   revalidatePath("/e-commerce");
 }
 
 export async function deleteBanner(id: string): Promise<ActionState> {
-  const s = await requireSession([...ROLES]);
+  const s = await requireAction("sales", "ecommerce");
   const b = await db.shopBanner.findUnique({ where: { id } });
   if (!b) return { error: "Topilmadi" };
   await db.shopBanner.delete({ where: { id } });

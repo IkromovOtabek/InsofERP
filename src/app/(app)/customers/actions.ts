@@ -4,7 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, type ActionState } from "@/lib/action";
 import { syncCustomerLater } from "@/lib/eco/customers";
@@ -20,7 +20,7 @@ const schema = z.object({
 });
 
 export async function saveCustomer(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["SALES", "ACCOUNTING", "FINANCE"]);
+  const s = await requireAction("customers", "edit");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;

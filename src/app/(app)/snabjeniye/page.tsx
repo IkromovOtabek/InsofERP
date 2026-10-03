@@ -11,7 +11,7 @@ import { SupplyTable } from "../taminot/supply-table";
  * sotib olinadi va kelgan mol tekshirilib qabul qilinadi (shundan keyin sklad kirimi bo'ladi).
  */
 export default async function SnabjeniyePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  await requireRoles(["PROCUREMENT", "WAREHOUSE"]);
+  await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock" });
   const { tab } = await searchParams;
   const t = supplyTab(tab);
   const [rows, counts] = await Promise.all([supplyList(t.status), supplyCounts()]);

@@ -4,15 +4,14 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import { num, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
 import { toMaterialUnit } from "@/lib/unit";
 
-/** Retsept kiritish huquqi: ishlab chiqarish va sklad (Sklad bo'limidan ham qo'shiladi). */
-const RECIPE_ROLES = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] as const;
+// Retsept kiritish huquqi: production → "recipe" amali (lib/permissions.ts) — ishlab chiqarish va sklad, direktor bergan xodim
 
 const schema = z.object({
   note: zOpt,
@@ -60,7 +59,7 @@ async function recipeCycle(productId: string, ingredientProductIds: string[]): P
 
 /** Yangi versiya yaratadi; eskisi nofaol bo'ladi, lekin o'chirilmaydi (tarix). */
 export async function createRecipeVersion(productId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...RECIPE_ROLES]);
+  const s = await requireAction("production", "recipe");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const items = r.data.kind
@@ -115,7 +114,7 @@ type ImportRow = { product?: unknown; material?: unknown; qty?: unknown; unit?: 
  * har biri uchun yangi faol versiya yaratiladi (eskisi arxivga). Mahsulot kodi yoki nomi bo'yicha topiladi.
  */
 export async function importRecipesFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession([...RECIPE_ROLES]);
+  const s = await requireAction("production", "recipe");
   const r = parseForm(importSchema, fd);
   if ("error" in r) return { error: r.error };
   let rows: ImportRow[];

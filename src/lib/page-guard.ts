@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, type Session } from "./auth";
 import type { Role } from "@/generated/prisma";
 import { OWN_PAGE_ONLY, pathAllowed, canWrite } from "./nav";
+import { canDo } from "./permissions";
 
 /**
  * Sahifa darajasidagi himoya — ma'lumot o'qiydigan har bir sahifa boshida chaqiriladi.
@@ -43,9 +44,20 @@ export async function requireWrite(module: string): Promise<Session> {
  * rollariga kirmagan xodim (masalan, mexanik → /trips/new) "Xatolik" (500) sahifasini ko'rardi.
  * DIRECTOR — `requireSession` dagidek har doim o'tadi.
  */
-export async function requireRoles(allowed: Role[]): Promise<Session> {
+export async function requireRoles(allowed: readonly Role[], grant?: Grant): Promise<Session> {
   const s = await getSession();
   if (!s) redirect("/api/logout");
-  if (s.role !== "DIRECTOR" && !allowed.includes(s.role)) redirect(OWN_PAGE_ONLY[s.role] ?? "/dashboard?denied=1");
+  if (s.role !== "DIRECTOR" && !allowed.includes(s.role) && !(grant && granted(s, grant))) redirect(OWN_PAGE_ONLY[s.role] ?? "/dashboard?denied=1");
   return s;
+}
+
+/**
+ * Direktor bergan ruxsat sahifani ochadimi: `module` — modulni ko'rish huquqi (perms'da berilgan bo'lsa),
+ * `actions` — shu amallardan birortasi (masalan yangi zayavka sahifasi — "create" yoki "stock").
+ */
+export type Grant = { module: string; actions?: string[] };
+function granted(s: Session, g: Grant): boolean {
+  if (g.actions?.length) return g.actions.some((a) => canDo(s, g.module, a));
+  const lvl = s.perms?.[g.module];
+  return !!lvl && lvl !== "none";
 }

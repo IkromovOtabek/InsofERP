@@ -17,7 +17,7 @@ const hm = (d: Date | null) => (d ? dateTime(d) : "—");
  * Nakladnoy = reys (Trip.deliveryNoteNo) — chop etish va QR tekshiruv mavjud sahifalarda.
  */
 export default async function WaybillsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string; q?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const r = periodRange(sp, "week");
   const trips = await db.trip.findMany({

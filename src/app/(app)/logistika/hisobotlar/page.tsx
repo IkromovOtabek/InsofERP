@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 /** Hisobotlar (TZ 14): kunlar, transport, haydovchi va obyekt kesimida — jadval + Excel. */
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ period?: string; from?: string; to?: string }> }) {
-  await requireRoles(["LOGISTICS", "ACCOUNTING"]);
+  await requireRoles(["LOGISTICS", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const r = periodRange(sp, "month");
   const rep = await logisticsReport(r.from, r.to);

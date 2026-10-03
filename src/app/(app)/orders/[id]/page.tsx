@@ -15,7 +15,7 @@ import { LiveDrivers } from "../../trips/live-drivers";
 import { ecoEnabled } from "@/lib/eco/client";
 import { InvoiceStatusBadge } from "../../invoices/status";
 import { confirmOrder, unblockOrder, cancelOrder, toggleGuarantee, closeStockOrder } from "../actions";
-import { STOCK_ORDER_ROLES } from "@/lib/stock-orders";
+import { canDo } from "@/lib/permissions";
 import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
 import { ContractForm } from "./contract-form";
 import { contractedIds } from "@/lib/finance";
@@ -73,7 +73,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   for (const x of o.payments) paidMap.set(x.id, Number(x.amount));
   // Sklad zaxirasi zayavkasi: mijoz, narx, schyot, reys — hech biri yo'q
   const isStock = o.kind === "STOCK";
-  const canStock = ([...STOCK_ORDER_ROLES] as string[]).includes(s.role) || s.role === "DIRECTOR";
+  // Tugmalar amal ruxsatidan (rol yoki direktor bergan) — server action ham xuddi shu qoidani tekshiradi
+  const can = (a: string) => canDo(s, "orders", a);
+  const canStock = can("stock");
   const canClose = isStock && ["CONFIRMED", "IN_PRODUCTION"].includes(o.status) && canStock;
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
@@ -86,15 +88,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const hasContract = !!o.contractNo && o.contractAmount != null;
   const contractAmount = hasContract ? Number(o.contractAmount) : 0;
   const contractLeft = contractAmount - total; // shartnoma summasidan mahsulot summasi ayirilgan qoldiq
-  const canContract = !isStock && ["SALES", "ACCOUNTING", "DIRECTOR"].includes(s.role) && o.status !== "CANCELLED";
+  const canContract = !isStock && can("contract") && o.status !== "CANCELLED";
   const hasFile = !!o.contractFile;
   const fileHref = `/orders/${id}/contract/file`;
   const accepted = SALES_STATUSES.includes(o.status);
 
-  // Zayavkani qabul qilish — sotuv yoki direktor
-  const isSales = ["SALES", "DIRECTOR"].includes(s.role);
-  const isDirector = s.role === "DIRECTOR";
-  const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (o.kind === "STOCK" ? canStock : isSales) && o.batches.length === 0 && o.trips.length === 0;
+  // Zayavkani qabul qilish / bekor qilish / blokni ochish — amal ruxsati bo'yicha
+  const canConfirm = isStock ? canStock : can("confirm");
+  const canUnblock = can("unblock");
+  const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (isStock ? canStock : can("cancel")) && o.batches.length === 0 && o.trips.length === 0;
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
   const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
   const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
@@ -109,9 +111,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
         action={
           <>
-            {o.status === "DRAFT" && (isStock ? canStock : isSales) && <form action={confirmOrder.bind(null, id)}><Button variant="success"><CheckCircle2 size={16} /> Qabul qilish</Button></form>}
+            {o.status === "DRAFT" && canConfirm && <form action={confirmOrder.bind(null, id)}><Button variant="success"><CheckCircle2 size={16} /> Qabul qilish</Button></form>}
             {canClose && <form action={closeStockOrder.bind(null, id)}><Button variant="success"><Boxes size={16} /> Zaxira tayyor — yopish</Button></form>}
-            {o.status === "BLOCKED" && isDirector && <form action={unblockOrder.bind(null, id)}><Button variant="success"><Unlock size={16} /> Blokdan chiqarish</Button></form>}
+            {o.status === "BLOCKED" && canUnblock && <form action={unblockOrder.bind(null, id)}><Button variant="success"><Unlock size={16} /> Blokdan chiqarish</Button></form>}
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
@@ -174,7 +176,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         <Callout tone={o.guaranteeAt ? "success" : "warning"} title={o.guaranteeAt ? `Kafolat xati qabul qilingan · ${date(o.guaranteeAt)}` : guarantee ? "Zayavka qarzga saqlandi — kafolat xatini chop eting" : "Kafolat xati hali olinmagan"}>
           <div className="flex flex-wrap items-center gap-3">
             <span>Qarzga beriladigan mahsulot uchun mijoz kafolat xatini to&apos;ldirib, imzo va muhr qo&apos;yadi. <Link href={`/orders/${id}/guarantee`} className="underline">Xatni ochish / chop etish</Link></span>
-            {isSales && <form action={toggleGuarantee.bind(null, id)}><Button variant={o.guaranteeAt ? "ghost" : "secondary"} className="h-8 text-xs">{o.guaranteeAt ? "Belgini olib tashlash" : "Imzolangan xat qabul qilindi"}</Button></form>}
+            {can("contract") && <form action={toggleGuarantee.bind(null, id)}><Button variant={o.guaranteeAt ? "ghost" : "secondary"} className="h-8 text-xs">{o.guaranteeAt ? "Belgini olib tashlash" : "Imzolangan xat qabul qilindi"}</Button></form>}
           </div>
         </Callout>
       )}

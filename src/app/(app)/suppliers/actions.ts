@@ -3,14 +3,14 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
 const schema = z.object({ name: zStr("Nomi kerak"), inn: zOpt, phone: zOpt });
 
 export async function createSupplier(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"]);
+  const s = await requireAction("stock", "suppliers");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   try {
@@ -25,7 +25,7 @@ export async function createSupplier(_prev: ActionState, fd: FormData): Promise<
 }
 
 export async function toggleSupplier(id: string) {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT"]);
+  const s = await requireAction("stock", "suppliers");
   const cur = await db.supplier.findUniqueOrThrow({ where: { id } });
   await db.supplier.update({ where: { id }, data: { isActive: !cur.isActive } });
   await audit(db, s.userId, "UPDATE", "Supplier", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
@@ -34,7 +34,7 @@ export async function toggleSupplier(id: string) {
 
 /** Yetkazuvchi rekvizitlarini tahrirlash (nomi, INN, telefon) — har o'zgarish auditda. */
 export async function updateSupplier(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireSession(["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"]);
+  const s = await requireAction("stock", "suppliers");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const cur = await db.supplier.findUnique({ where: { id } });

@@ -7,7 +7,7 @@ import { importRecipesFromExcel } from "../actions";
 
 /** Retseptlar → Excel orqali: bir faylda bir nechta mahsulot retsepti, har biri uchun yangi faol versiya. */
 export default async function RecipeImport() {
-  await requireRoles(["PRODUCTION", "WAREHOUSE", "PROCUREMENT"]);
+  await requireRoles(["PRODUCTION", "WAREHOUSE", "PROCUREMENT"], { module: "production", actions: ["recipe"] });
   const [products, materials] = await Promise.all([
     db.product.findMany({ where: { isActive: true }, orderBy: { code: "asc" }, select: { code: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { name: true, unit: true } }),
