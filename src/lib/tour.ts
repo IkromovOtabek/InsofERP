@@ -130,7 +130,7 @@ const SALES_STEPS: TourStep[] = [
   openPage("/orders", "Zayavkalar", "Ish shu yerdan boshlanadi: mijozdan kelgan yangi zayavka avval shu ro'yxatga tushadi."),
   onPage("orders-new", "/orders", "Yangi zayavka", "«Yangi zayavka» tugmasi mijoz, mahsulot, hajm, yetkazish sanasi va manzilini so'raydi. Manzilni 2GIS qidiruvidan yoki xaritadan belgilaysiz — masofa avtomatik hisoblanadi.", PAGE_ACTION),
   openPage("/sales", "Sotuv", "Qabul qilingan zayavkalar shu yerga o'tadi — bajarilish holati va realizatsiya jurnali shu bo'limda."),
-  openPage("/customers", "Mijozlar", "Mijozlar kartotekasi. Har bir mijozga 100 mln so'm kredit limit; qarz limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi va yangi zayavka bloklanadi."),
+  openPage("/customers", "Mijozlar", "Mijozlar kartotekasi. Yangi mijozning kredit limiti 0 (naqd / avans), qarz berish uchun buxgalteriya limitni oshiradi; qarz limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi va yangi zayavka bloklanadi."),
   openPage("/leads", "Sayt arizalari", "Kompaniya saytidagi formadan tushgan so'rovlar. Ariza bilan ishlab, uni mijozga aylantirganingizdan keyingina kartoteka ochiladi."),
   openGroup("Sklad"),
   openPage("/stock", "Sklad", "Mijozga va'da berishdan oldin shu yerga qarang: xomashyo qoldig'i va «Ishlab chiqarish imkoni» qancha beton chiqarish mumkinligini ko'rsatadi."),

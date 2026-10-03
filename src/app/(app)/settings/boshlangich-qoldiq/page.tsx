@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Ban, Landmark, Package, Truck, Users } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage } from "@/lib/page-guard";
+import { moduleWriteAllowed } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
 import { money, qty as fq, date, isoDate } from "@/lib/format";
-import { KIND_LABEL, supplierOpeningDues } from "@/lib/opening-balances";
+import { KIND_LABEL, OPENING_WRITERS, supplierOpeningDues } from "@/lib/opening-balances";
 import { Badge, Callout, Card, CardHeader, Checkbox, Empty, Field, Input, PageHeader, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { ConfirmButton } from "../../payments/confirm-button";
@@ -64,7 +65,9 @@ const EXAMPLE: Record<OpeningKind, Record<string, string | number>> = {
 };
 
 export default async function OpeningBalancesPage({ searchParams }: { searchParams: Promise<{ tab?: string; bekor?: string }> }) {
-  const s = await requireRoles(["ACCOUNTING"]);
+  // Yo'l ruxsati (rol + direktor bergan "opening" modul ruxsati): "yopiq" qilingan buxgalter ham kira olmaydi
+  const s = await requirePage("/settings/boshlangich-qoldiq");
+  const canEdit = moduleWriteAllowed(s, "opening", OPENING_WRITERS) === true; // Finance — faqat ko'radi va to'laydi
   const sp = await searchParams;
   const kind: OpeningKind = KINDS.includes(sp.tab as OpeningKind) ? (sp.tab as OpeningKind) : "CUSTOMER";
   const showCancelled = sp.bekor === "1";
@@ -123,6 +126,7 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
         {kind !== "STOCK" && kind !== "CASH" && <StatCard label={kind === "CUSTOMER" ? "Mijozlar avansi (−)" : "Bergan avansimiz (−)"} value={money(-minus)} tone={minus < 0 ? "warning" : "default"} />}
       </div>
 
+      {canEdit && <>
       <Card className="mt-6">
         <CardHeader title="Qo'lda kiritish" description="Bitta obyektga bitta boshlang'ich qoldiq — kiritilganlari tanlov ro'yxatida chiqmaydi" />
         <OpeningCreateForm kind={kind} entities={entities} warehouses={warehouses.map((w) => ({ id: w.id, label: w.name }))} defaultDate={isoDate(lastDate ?? new Date())} />
@@ -152,6 +156,7 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
           )}
         </ExcelImport>
       </Card>
+      </>}
 
       <div className="mt-6 mb-2 flex items-center justify-between gap-3">
         <h2 className="font-semibold">Kiritilgan qoldiqlar</h2>

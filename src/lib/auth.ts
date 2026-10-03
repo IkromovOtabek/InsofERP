@@ -192,14 +192,22 @@ export async function requireAction(module: string, action: string, fallbackRole
 export async function requireModuleWrite(module: string, allowed: readonly Role[]): Promise<Session> {
   const s = await getSession();
   if (!s) throw new Error("UNAUTHENTICATED");
-  if (s.role === "DIRECTOR") return s;
-  const lvl = s.perms?.[module];
-  if (lvl === "none" || lvl === "view" || (Array.isArray(lvl) && lvl.length === 0)) {
-    throw new Error("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
-  }
-  if (lvl === "write") return s;
-  if (!allowed.includes(s.role)) throw new Error("FORBIDDEN");
+  const ok = moduleWriteAllowed(s, module, allowed);
+  if (ok === "view") throw new Error("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
+  if (!ok) throw new Error("FORBIDDEN");
   return s;
+}
+
+/**
+ * `requireModuleWrite` qoidasi xato tashlamasdan — sahifada tugma/formani ko'rsatish uchun (action bilan aynan bir xil).
+ * Qaytaradi: true — yoza oladi; "view" — direktor faqat ko'rishni bergan; false — rol mos emas.
+ */
+export function moduleWriteAllowed(s: Pick<Session, "role" | "perms">, module: string, allowed: readonly Role[]): boolean | "view" {
+  if (s.role === "DIRECTOR") return true;
+  const lvl = s.perms?.[module];
+  if (lvl === "none" || lvl === "view" || (Array.isArray(lvl) && lvl.length === 0)) return "view";
+  if (lvl === "write") return true;
+  return allowed.includes(s.role);
 }
 
 /**

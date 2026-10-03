@@ -3,6 +3,7 @@ import { audit } from "./audit";
 import { nextNo } from "./numbering";
 import { money } from "./format";
 import { cashOutflowError } from "./payments";
+import { lockStock } from "./stock-lock";
 import type { OpeningKind, Prisma } from "@/generated/prisma";
 
 /**
@@ -27,6 +28,8 @@ import type { OpeningKind, Prisma } from "@/generated/prisma";
 
 export const OPENING_REF = "OpeningBalance";
 export const OPENING_CATEGORY = "Boshlang'ich qoldiq";
+/** Qoldiq kirita oladigan rollar (direktordan tashqari) — action guard'i ham, sahifadagi formalar ham shu ro'yxatdan. */
+export const OPENING_WRITERS = ["ACCOUNTING"] as const;
 
 export const KIND_LABEL: Record<OpeningKind, string> = {
   CUSTOMER: "Mijozlar qarzi",
@@ -185,6 +188,8 @@ export async function updateOpening(id: string, patch: OpeningPatch, userId: str
       case "CUSTOMER": {
         const amount = r2(patch.amount ?? 0);
         if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
+        // Mijoz qulfi (`addPayment` bilan bir xil): shu payt yozilayotgan to'lov tekshiruvdan o'tib ketmasin
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`;
         const inv = await tx.invoice.findUniqueOrThrow({ where: { id: o.invoiceId! }, include: { payments: { select: { amount: true } } } });
         const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
         if (paid > 0.005 && amount < paid - 0.005) throw new OpeningError(`Bu qoldiqqa ${money(paid)} to'lov yozilgan — summa undan kam bo'lolmaydi`);
@@ -220,6 +225,8 @@ export async function updateOpening(id: string, patch: OpeningPatch, userId: str
         const unitCost = patch.unitCost == null ? null : r2(patch.unitCost);
         if (!(qty > 0)) throw new OpeningError("Miqdor 0 dan katta bo'lsin — qoldiq kerak bo'lmasa bekor qiling");
         const oldQty = Number(o.qty ?? 0);
+        // Sklad qulfi (reys yuklash, brak, storno bilan navbat): qoldiq tekshiruvi va yozuv orasida mahsulot chiqib ketmasin
+        await lockStock(tx);
         if (qty < oldQty) {
           const left = await productStock(tx, o.productId!, o.warehouseId!);
           if (left - (oldQty - qty) < -0.0005) throw new OpeningError(`Skladda hozir ${left} qoldi — boshlang'ich qoldiqni ${qty} gacha kamaytirib bo'lmaydi (mahsulot sotilgan/jo'natilgan)`);
@@ -250,6 +257,7 @@ export async function cancelOpening(id: string, reason: string, userId: string):
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
     switch (o.kind) {
       case "CUSTOMER": {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${o.customerId!}))`; // to'lov bilan navbat
         const inv = await tx.invoice.findUniqueOrThrow({ where: { id: o.invoiceId! }, include: { payments: { select: { id: true } } } });
         if (inv.payments.length) throw new OpeningError(`Bu qoldiqqa ${inv.payments.length} ta to'lov yozilgan — avval to'lovlarni bekor qiling (Kassa / bank)`);
         await tx.invoice.update({ where: { id: inv.id }, data: { status: "CANCELLED" } });
@@ -271,6 +279,7 @@ export async function cancelOpening(id: string, reason: string, userId: string):
       }
       case "STOCK": {
         const q = Number(o.qty ?? 0);
+        await lockStock(tx); // sklad qulfi — qoldiq tekshiruvi bilan chiqim navbatda
         const left = await productStock(tx, o.productId!, o.warehouseId!);
         if (left - q < -0.0005) throw new OpeningError(`Skladda hozir ${left} qoldi — ${q} ni qaytarib bo'lmaydi (mahsulot sotilgan/jo'natilgan)`);
         const rev = await tx.stockMove.create({ data: { type: "ADJUSTMENT", date: new Date(), warehouseId: o.warehouseId!, productId: o.productId!, qty: -q, unitCost: o.unitCost, refType: OPENING_REF, refId: o.id, note: `${OPENING_CATEGORY} bekor qilindi${reason ? `: ${reason}` : ""}`, createdById: userId } });

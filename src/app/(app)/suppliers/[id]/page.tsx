@@ -10,6 +10,9 @@ import { SUPPLY_COLOR, SUPPLY_LABEL } from "@/lib/supply";
 import { Badge, Card, CardHeader, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { SupplierEditForm } from "../supplier-form";
+import { supplierOpeningDues } from "@/lib/opening-balances";
+import { canDo } from "@/lib/permissions";
+import { SupplierPayForm } from "../../settings/boshlangich-qoldiq/forms";
 
 /**
  * Yetkazuvchi kartasi: rekvizitlar (tahrirlash), hisob-kitob (qancha mol oldik, qancha to'ladik, qarz,
@@ -30,6 +33,14 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
     db.supplyRequest.findMany({ where: { supplierId: id }, orderBy: { date: "desc" }, take: 10, include: { items: { select: { qty: true, price: true } } } }),
   ]);
   const canEdit = ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "DIRECTOR"].includes(s.role);
+  // Boshlang'ich qarzni shu kartadan ham to'lash ("Boshlang'ich qoldiqlar" bo'limidagi bilan bir action) — moliya huquqi bilan
+  const canPay = canDo(s, "cashflow", "pay");
+  const [dues, accounts] = canPay && ledger.opening > 0.005
+    ? await Promise.all([
+      supplierOpeningDues(id),
+      db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    ])
+    : [[], []];
 
   return (
     <div>
@@ -49,6 +60,20 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
         <Card className="mt-5">
           <CardHeader title="Rekvizitlar" description="Nomi, INN, telefon, manzil va mas'ul shaxs — o'zgarish auditda qoladi" />
           <SupplierEditForm id={sup.id} value={{ name: sup.name, inn: sup.inn ?? "", phone: sup.phone ?? "", address: sup.address ?? "", contactPerson: sup.contactPerson ?? "" }} />
+        </Card>
+      )}
+
+      {dues.some((d) => d.left > 0.005) && (
+        <Card className="mt-5">
+          <CardHeader title="Boshlang'ich qarz (tizimga o'tish sanasidagi)" description="To'lov Kirim-Chiqimga chiqim bo'lib yoziladi; qisman to'lash mumkin" />
+          <div className="space-y-2">
+            {dues.filter((d) => d.left > 0.005).map((d) => (
+              <div key={d.id} className="flex flex-wrap items-center gap-3 text-sm">
+                <span>{date(d.date)} holatiga: <b className="text-red-600">{money(d.left)}</b>{d.paid > 0.005 && <span className="text-slate-500"> (jami {money(d.amount)}, to&apos;langan {money(d.paid)})</span>}</span>
+                <SupplierPayForm id={d.id} left={d.left} accounts={accounts.map((a) => ({ id: a.id, label: a.name }))} />
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 

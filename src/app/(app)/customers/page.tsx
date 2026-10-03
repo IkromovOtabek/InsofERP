@@ -26,7 +26,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <PageHeader title="Mijozlar" subtitle="Har bir mijozga standart 100 mln so'm kredit limit. Qarz + ochiq zayavkalar limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi." action={<div className="flex gap-2"><LinkButton href="/customers/import" variant="secondary"><FileSpreadsheet size={16} /> Excel import</LinkButton><LinkButton href="/customers/new"><Plus size={16} /> Yangi mijoz</LinkButton></div>} />
+      <PageHeader title="Mijozlar" subtitle="Yangi mijoz qarzga olmaydi (standart limit 0 — naqd/avans); qarz berish uchun buxgalteriya/direktor limitni oshiradi. Qarz + ochiq zayavkalar limitni to'ldirsa mijoz avtomatik qora ro'yxatga tushadi." action={<div className="flex gap-2"><LinkButton href="/customers/import" variant="secondary"><FileSpreadsheet size={16} /> Excel import</LinkButton><LinkButton href="/customers/new"><Plus size={16} /> Yangi mijoz</LinkButton></div>} />
       {black.length > 0 && tab !== "black" && (
         <div className="mb-4"><Callout tone="danger" title={`Qora ro'yxatda ${black.length} ta mijoz`}>Limit to'liq ishlatilgan — ularga yangi zayavka ochilmaydi. <Link href="/customers?tab=black" className="underline">Ro'yxatni ko'rish</Link></Callout></div>
       )}

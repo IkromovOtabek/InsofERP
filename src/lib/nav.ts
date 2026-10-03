@@ -55,9 +55,10 @@ export const NAV: NavItem[] = [
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
-  // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — direktor va buxgalteriya.
-  // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha buxgalteriyaga ochiq, qolgan sozlamalar yopiq.
-  { href: "/settings/boshlangich-qoldiq", label: "Boshlang'ich qoldiqlar", roles: ["ACCOUNTING"], group: "Moliya" },
+  // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — kiritish direktor va buxgalteriya;
+  // Finance ko'radi va yetkazuvchining boshlang'ich qarzini to'laydi ("Yetkazuvchiga to'lash" huquqi — shu sahifada).
+  // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha shu rollarga ochiq, qolgan sozlamalar yopiq.
+  { href: "/settings/boshlangich-qoldiq", label: "Boshlang'ich qoldiqlar", roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Otdel kadr bo'limi: sahifaning tablari bevosita menyuda turadi — ichida yana "Otdel kadr" bandi bo'lmaydi.
   // Birinchisi sahifaning o'zi (`?tab` siz ochilganda xodimlar ro'yxati chiqadi) — middleware ruxsatni shu yo'ldan tekshiradi.
   { href: "/otdel-kadr",                label: "Xodimlar ro'yxati", roles: ["HR"], group: "Otdel kadr" },
@@ -176,6 +177,8 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
   { key: "bi-tahlil", label: "BI tahlil",             prefixes: ["/bi-tahlil"] },
+  // Sozlamalar ostidagi yagona modul: boshlang'ich qoldiqlar pulga ta'sir qiladi — direktor yopa/ocha olsin
+  { key: "opening",   label: "Boshlang'ich qoldiqlar", prefixes: ["/settings/boshlangich-qoldiq"] },
 ];
 
 /** Yo'l qaysi modulga tegishli (eng uzun mos prefiks). Modulga kirmagan yo'l (dashboard, settings, agent) — null. */

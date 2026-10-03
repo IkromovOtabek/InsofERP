@@ -2,14 +2,17 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireAction, requireSession } from "@/lib/auth";
+import { requireAction, requireModuleWrite, requireSession } from "@/lib/auth";
 import { parseForm, zOpt, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { cancelOpening, createOpening, paySupplierOpening, updateOpening } from "@/lib/opening-balances";
+import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, updateOpening } from "@/lib/opening-balances";
 import { importOpenings, type OpeningRow } from "@/lib/import-openings";
 import type { OpeningKind } from "@/generated/prisma";
 
-/** Kiritish va import — direktor va buxgalteriya. */
-const writer = () => requireSession(["ACCOUNTING"]);
+/**
+ * Kiritish va import — direktor va buxgalteriya; direktor bergan modul ruxsati ("opening") ham hisobga olinadi.
+ * Finance sahifani ko'radi (yetkazuvchi qarzini to'lash uchun), lekin qoldiq kiritmaydi. Sahifa ham shu ro'yxatdan.
+ */
+const writer = () => requireModuleWrite("opening", OPENING_WRITERS);
 
 /** Tahrir va bekor qilish — faqat direktor: tasdiqlangan boshlang'ich holat jimgina o'zgarmasin. */
 async function director() {
