@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { routeLine } from "@/lib/geo";
 import { ARRIVE_RADIUS_M, tripArrival, tripTrackStats } from "@/lib/trips";
+import { SITE_RADIUS_M } from "./geofence";
 import type { MobileUser } from "./auth";
 import { RECEIVER_FORM, type FormField } from "./detail";
 import { driverEmployeeId, ListError } from "./list";
@@ -107,7 +108,8 @@ export async function tripRoute(
     routeSource: line?.source ?? "LINE",
     traveledMeters: Math.round(st?.meters ?? 0),
     traveledMinutes: st?.minutes ?? 0,
-    arriveWithinM: ARRIVE_RADIUS_M,
+    // Server amalda 300 m talab qiladi (`./geofence.ts`) — ilova tugmani shu radiusda ochsin
+    arriveWithinM: Math.min(ARRIVE_RADIUS_M, SITE_RADIUS_M),
     canDeliver: arrival.near,
     deliverHint: arrival.reason,
     deliverForm: RECEIVER_FORM,

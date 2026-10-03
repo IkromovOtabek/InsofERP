@@ -313,7 +313,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
  * "Bog'landim", "Yetkazildi" kabi xodimning ishi turib qoladi va kim javobgar — chalkashadi.
  */
 export const can = (user: MobileUser, action: string) => {
-  const roleOk = (ACTION_ROLES[action] ?? []).includes(user.role);
+  const roleOk = (Object.hasOwn(ACTION_ROLES, action) ? ACTION_ROLES[action] : []).includes(user.role);
   if (user.role === "DIRECTOR") return roleOk; // direktor — yuqoridagi izohdagi kabi faqat ro'yxat bo'yicha
   const map = permFor(action);
   const lvl = map && user.perms?.[map.module];

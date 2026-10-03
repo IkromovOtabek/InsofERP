@@ -129,11 +129,11 @@ export async function problemDetail(user: MobileUser, key: string): Promise<Mobi
 /** `problem.assign` / `problem.note` — `actions.ts` dan chaqiriladi (ruxsat u yerda tekshirilgan). */
 export async function problemAction(user: MobileUser, action: string, key: string, payload: Record<string, unknown>): Promise<string> {
   const x = await findDecision(key);
-  const note = String(payload.note ?? "").trim();
+  const note = String(payload.note ?? "").trim().slice(0, 500);
   if (!note) throw new ListError("ACTION_FAILED", action === "problem.assign" ? "Topshiriq matnini yozing" : "Qaroringizni yozing", 400);
   if (action === "problem.assign") {
     const role = String(payload.role ?? "") as Role;
-    if (!(role in ROLE_LABELS) || role === "SUPERADMIN" || role === "DIRECTOR") throw new ListError("ACTION_FAILED", "Bo'lim tanlanmagan", 400);
+    if (!Object.hasOwn(ROLE_LABELS, role) || role === "SUPERADMIN" || role === "DIRECTOR") throw new ListError("ACTION_FAILED", "Bo'lim tanlanmagan", 400);
     await audit(db, user.id, "UPDATE", ENTITY, key, undefined, { kind: "assign", to: ROLE_LABELS[role], role, note, problem: x.problem });
     notifyAfter(() => notifyRoles([role], {
       type: "OWNER_DECISION", title: `Direktor topshirig'i: ${x.problem}`.slice(0, 120),

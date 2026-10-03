@@ -36,6 +36,7 @@ import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { TODAY_PREFIX } from "./brigadier";
 import { clearDashCache } from "./dashboard";
 import { problemAction } from "./problems";
+import { assertAtSite, knownPoint } from "./geofence";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
@@ -167,7 +168,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (!rawId) fail("id yo'q");
   // Aralash ro'yxatdan ochilgan kartochka (`orders:<id>`) — amal haqiqiy id bilan bajariladi
   const id = splitRef(rawId)[1];
-  if (!(action in ACTION_ROLES)) fail("Bunday amal yo'q", 404); // noma'lum amal — ruxsat xatosi bilan chalkashmasin
+  // `in` prototipni ham ko'radi ("constructor", "toString" → 500) — faqat o'z kalitlari
+  if (typeof action !== "string" || !Object.hasOwn(ACTION_ROLES, action)) fail("Bunday amal yo'q", 404); // noma'lum amal — ruxsat xatosi bilan chalkashmasin
   if (!can(user, action)) fail("Bu amalga ruxsatingiz yo'q", 403);
   if (action.startsWith("trip.")) await assertOwnTrip(user, id);
   if (action.startsWith("task.")) await assertOwnTask(user, id);
@@ -223,6 +225,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       // GPS umuman yo'q bo'lsa (`unknown`) — belgilashga ruxsat, lekin reysga muammo yoziladi:
       // bosqichni haydovchidan boshqa hech kim belgilamaydi, dispetcher esa tekshirib yopadi.
       const gps = await tripArrival(id);
+      // Hozirgi joylashuv (payload `lat/lng`) obyektdan 300 m ichida bo'lsin — ECO bilan bir xil qoida (`./geofence.ts`)
+      assertAtSite(payload, knownPoint(gps.destination?.lat, gps.destination?.lng), "Yetkazdim");
       if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
       const q = { acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: p.data!.note || null };
       const r = await tripDelivered(id, user.id, p.data!.receiverName, p.data!.note, q);
@@ -245,6 +249,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     // ── Logistika TZ: obyekt bosqichlari, muammo, yoqilg'i, yopish ──
     case "trip.arrived": {
       const gps = await tripArrival(id);
+      assertAtSite(payload, knownPoint(gps.destination?.lat, gps.destination?.lng), "Yetib keldim");
       if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
       const r = await tripArrived(id, user.id, gps.unknown ? "Haydovchi ilovasi (GPS'siz)" : "Haydovchi ilovasi");
       if (r.error) fail(r.error);
@@ -255,8 +260,11 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "trip.unloading": {
       // "Yetib keldim" bosilmagan bo'lsa tushirish uni ham belgilaydi — 1 km qoidasi shu yerda ham
       const cur = await db.trip.findUnique({ where: { id }, select: { arrivedAt: true } });
+      // "Tushirishni boshladim" ham obyektda bosiladi (ECO'da UNLOADING ham tekshiriladi)
+      const site = await tripArrival(id);
+      assertAtSite(payload, knownPoint(site.destination?.lat, site.destination?.lng), "Tushirishni boshladim");
       if (cur && !cur.arrivedAt) {
-        const gps = await tripArrival(id);
+        const gps = site;
         if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
         const a = await tripArrived(id, user.id, gps.unknown ? "Haydovchi ilovasi (GPS'siz)" : "Haydovchi ilovasi");
         if (a.error) fail(a.error);
@@ -406,7 +414,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const i = await db.brigadeIssue.findUnique({ where: { id }, select: { kind: true, note: true, resolvedAt: true, brigade: { select: { name: true } } } });
       if (!i) return fail("Muammo topilmadi", 404) as never;
       if (i.resolvedAt) fail("Muammo allaqachon hal qilingan");
-      const note = textOf(payload, "note");
+      const note = textOf(payload, "note").slice(0, 500);
       if (!note) fail("Xabar matnini yozing");
       const owners = BRIGADE_ISSUE[i.kind].owner;
       await audit(db, user.id, "UPDATE", "BrigadeIssue", id, undefined, { remind: owners, note });
