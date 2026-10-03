@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { audit } from "./audit";
 import type { Prisma } from "@/generated/prisma";
+import { cashOutflowError } from "./payments";
 
 /**
  * Realizatsiya jurnali — buxgalteriya Excel'da yuritadigan kunlik jo'natma jadvali
@@ -214,15 +215,25 @@ export async function importSalesRegister(input: RegisterImportInput, userId: st
   }, { timeout: 120_000, maxWait: 15_000 });
 }
 
+class RegisterError extends Error {}
+
 /** Import partiyasini butunlay qaytarish: qatorlar va ular yozgan kassa kirimlari o'chadi. */
-export async function deleteRegisterBatch(batch: string, userId: string) {
+export async function deleteRegisterBatch(batch: string, userId: string): Promise<{ rows: number; payments: number; error?: string }> {
   return db.$transaction(async (tx) => {
     const rows = await tx.salesRegister.findMany({ where: { batch }, select: { id: true, paymentId: true } });
     if (!rows.length) return { rows: 0, payments: 0 };
     await tx.salesRegister.deleteMany({ where: { batch } });
     const payIds = rows.map((r) => r.paymentId).filter((x): x is string => !!x);
-    if (payIds.length) await tx.payment.deleteMany({ where: { id: { in: payIds } } });
+    if (payIds.length) {
+      // Partiya yozgan kassa kirimlari o'chadi — har hisob bo'yicha naqd kassa minusga tushmasin
+      const byAcc = await tx.payment.groupBy({ by: ["cashAccountId"], where: { id: { in: payIds } }, _sum: { amount: true } });
+      for (const a of byAcc) {
+        const cashErr = await cashOutflowError(tx, a.cashAccountId, Number(a._sum.amount ?? 0));
+        if (cashErr) throw new RegisterError(`Partiya qaytarilsa kassa minusga tushadi. ${cashErr}`);
+      }
+      await tx.payment.deleteMany({ where: { id: { in: payIds } } });
+    }
     await audit(tx, userId, "DELETE", "SalesRegister", batch, { rows: rows.length, payments: payIds.length }, undefined);
     return { rows: rows.length, payments: payIds.length };
-  });
+  }).catch((e: Error) => { if (e instanceof RegisterError) return { rows: 0, payments: 0, error: e.message }; throw e; });
 }

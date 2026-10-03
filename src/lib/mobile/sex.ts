@@ -80,7 +80,7 @@ async function produced(r: DashRange, byShift = false): Promise<MobileDetail> {
       where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" },
       select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
     }),
-    db.productionBatch.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
   ]);
   const rows = batches.map((b) => ({ unit: b.product.unit, qty: b.qtyM3 }));
   const group = <K extends string>(key: (b: (typeof batches)[number]) => K) => {

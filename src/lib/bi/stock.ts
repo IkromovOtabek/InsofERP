@@ -15,7 +15,7 @@ export async function materialOverview(): Promise<MaterialRow[]> {
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since30 } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "RECEIPT", date: { gte: since30 } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since90 } }, _max: { date: true } }),
-    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: { include: { product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: true } }),
+    db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: { include: { product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } } }),
     materialCosts(),
   ]);
   const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
@@ -49,7 +49,7 @@ export async function stockTab(r: Range, gran: Gran) {
     materialOverview(),
     db.stockMove.findMany({ where: { date: { gte: addDays(today, -180) }, materialId: { not: null } }, select: { date: true, type: true, qty: true, materialId: true } }),
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: addDays(today, -180) } }, select: { date: true, qty: true, materialId: true, productId: true, note: true } }),
-    db.goodsReceipt.findMany({ where: { date: { gte: r.from, lt: r.to } }, include: { supplier: true, items: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, include: { supplier: true, items: true } }),
     db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, select: { id: true, code: true, name: true, price: true } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
     productCosts(),

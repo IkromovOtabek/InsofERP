@@ -21,6 +21,7 @@ export default async function AddStockPage() {
     <div>
       <PageHeader back={{ href: "/stock?tab=capacity", label: "Sklad" }} title="Tayyor mahsulot qo'shish" subtitle="Hovliga chiqarilgan dona mahsulotni qo'lda kirim qilish. Qoldiq Sklad → Ishlab chiqarish imkoni bo'limida ko'rinadi; retsept bo'yicha zames qilmoqchi bo'lsangiz — Ishlab chiqarish sahifasi." />
       <AddForm
+        clientToken={crypto.randomUUID()}
         products={catalog.products}
         groups={catalog.groups}
         canCreateProduct={canEditProducts(s.role)}

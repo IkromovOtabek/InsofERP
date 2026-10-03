@@ -310,8 +310,12 @@ type MergePair = { keepId?: unknown; dropIds?: unknown };
 /**
  * Dublikatlarni bitta mahsulotga yig'adi: qaysi yozuv qoladi — foydalanuvchi tanlaydi
  * ("Dublikat" panelidagi nuqta). Qolgan yozuvlardagi hujjatlar (zayavka qatorlari, zameslar,
- * sklad harakatlari, retseptlar, saytdan kelgan so'rovlar) qoladigan mahsulotga ko'chiriladi,
+ * sklad harakatlari, retseptlar, boshqa retseptdagi ingredient qatorlari, brak, ishlab chiqarish plani,
+ * do'kon vitrinasi va bannerlar, saytdan kelgan so'rovlar) qoladigan mahsulotga ko'chiriladi,
  * keyin ortiqcha yozuvlar o'chiriladi — shuning uchun qaysi birini qoldirsa ham hech narsa yo'qolmaydi.
+ * Yagonalik to'qnashuvlari: bir retseptda ikkalasi ingredient bo'lsa — normalari qo'shiladi; bir oyga
+ * ikkalasiga plan bo'lsa — plan qo'shiladi; ikkalasining ham vitrinasi bo'lsa — qoladiganiniki qoladi,
+ * ortiqchasi auditga yozilib o'chiriladi (jimgina kaskad bilan emas).
  * Ko'chirilgan retseptlar arxiv bo'lib qoladi (faol retsept bittaligi buzilmasin).
  */
 class MergeError extends Error {}
@@ -347,6 +351,49 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
           tx.recipe.findMany({ where: { productId: dropId }, orderBy: { version: "asc" } }),
           tx.recipe.findMany({ where: { productId: keep.id }, select: { version: true, isActive: true } }),
         ]);
+        // ── Boshqa retseptlardagi ingredient qatori (masalan katta konstruksiyaga kiradigan blok) ──
+        const ingRows = await tx.recipeItem.findMany({ where: { productId: dropId }, include: { recipe: { select: { productId: true } } } });
+        if (await tx.recipeItem.count({ where: { productId: keep.id, recipe: { productId: dropId } } })) {
+          throw new MergeError(`«${keep.name}» «${drop.name}» retseptiga ingredient sifatida kiradi — birlashtirilsa mahsulot o'ziga ingredient bo'ladi. Avval retseptni tuzating`);
+        }
+        for (const row of ingRows) {
+          // Qoladigan mahsulot o'z retseptiga ingredient bo'lib qolardi — tsikl
+          if (row.recipe.productId === keep.id || row.recipe.productId === dropId) throw new MergeError(`«${drop.name}» «${keep.name}» retseptiga ingredient sifatida kiradi — birlashtirilsa mahsulot o'ziga ingredient bo'ladi. Avval retseptni tuzating`);
+          const twin = await tx.recipeItem.findUnique({ where: { recipeId_productId: { recipeId: row.recipeId, productId: keep.id } } });
+          if (twin) {
+            await tx.recipeItem.update({ where: { id: twin.id }, data: { qtyPerM3: Number(twin.qtyPerM3) + Number(row.qtyPerM3) } });
+            await tx.recipeItem.delete({ where: { id: row.id } });
+          } else {
+            await tx.recipeItem.update({ where: { id: row.id }, data: { productId: keep.id } });
+          }
+        }
+        // ── Brak va bannerlar — oddiy ko'chirish ──
+        const [defects, banners] = await Promise.all([
+          tx.productDefect.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
+          tx.shopBanner.updateMany({ where: { productId: dropId }, data: { productId: keep.id } }),
+        ]);
+        // ── Ishlab chiqarish plani: bir oyga ikkalasida bo'lsa — qo'shiladi ──
+        const plans = await tx.productionPlan.findMany({ where: { productId: dropId } });
+        for (const pl of plans) {
+          const twin = await tx.productionPlan.findUnique({ where: { year_month_productId: { year: pl.year, month: pl.month, productId: keep.id } } });
+          if (twin) {
+            const dayQty = twin.dayQty == null && pl.dayQty == null ? null : Number(twin.dayQty ?? 0) + Number(pl.dayQty ?? 0);
+            await tx.productionPlan.update({ where: { id: twin.id }, data: { monthQty: Number(twin.monthQty) + Number(pl.monthQty), dayQty } });
+            await tx.productionPlan.delete({ where: { id: pl.id } });
+          } else {
+            await tx.productionPlan.update({ where: { id: pl.id }, data: { productId: keep.id } });
+          }
+        }
+        // ── Do'kon vitrinasi (mahsulotga bitta): mahsulot o'chirilganda kaskad bilan jimgina yo'qolmasin ──
+        const dropShop = await tx.shopItem.findUnique({ where: { productId: dropId } });
+        if (dropShop) {
+          const keepShop = await tx.shopItem.findUnique({ where: { productId: keep.id }, select: { id: true } });
+          if (!keepShop) await tx.shopItem.update({ where: { id: dropShop.id }, data: { productId: keep.id } });
+          else {
+            await tx.shopItem.delete({ where: { id: dropShop.id } });
+            await audit(tx, s.userId, "DELETE", "ShopItem", dropShop.id, dropShop, { mergedInto: keep.id, reason: "qoladigan mahsulotning o'z vitrinasi bor" });
+          }
+        }
         // Retsept versiyasi mahsulot bo'yicha yagona — ko'chirishda keyingi raqam beriladi
         let version = keepRecipes.reduce((a, b) => Math.max(a, b.version), 0);
         let hasActive = keepRecipes.some((x) => x.isActive);
@@ -359,7 +406,7 @@ export async function mergeProducts(_prev: ActionState, fd: FormData): Promise<A
         await tx.product.delete({ where: { id: dropId } });
         await audit(tx, s.userId, "DELETE", "Product", dropId, drop, { mergedInto: keep.id, keepName: keep.name });
         merged++;
-        moved += items.count + batches.count + moves.count + leads.count + recipes.length;
+        moved += items.count + batches.count + moves.count + leads.count + recipes.length + ingRows.length + defects.count + banners.count + plans.length + (dropShop ? 1 : 0);
       }
       await audit(tx, s.userId, "UPDATE", "Product", keep.id, undefined, { mergedFrom: job.dropIds });
     }

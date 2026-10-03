@@ -20,7 +20,7 @@ export async function ownerPeriod(r: DashRange) {
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: until ? { date: { lt: until } } : {}, _sum: { amount: true } }),
     db.cashAccount.findMany({ select: { id: true, type: true } }), // nofaol hisobning qoldig'i ham pul
     receivables(until),
-    db.productionBatch.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
+    db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { qtyM3: true, product: { select: { unit: true } } } }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { qtyM3: true } }),
     periodPlan(r.from, r.to),
   ]);

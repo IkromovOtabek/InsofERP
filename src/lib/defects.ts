@@ -3,6 +3,7 @@ import { audit } from "@/lib/audit";
 import { qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+import { pickProductWarehouse } from "@/lib/warehouse";
 
 /**
  * Brak yozuvi — yagona joy (veb sex sahifasi ham, brigadir ilovasi ham).
@@ -24,8 +25,6 @@ export async function addProductDefect(d: DefectInput, userId: string): Promise<
   if (!d.reason.trim()) return { error: "Sababini tanlang" };
   const product = await db.product.findUnique({ where: { id: d.productId }, select: { id: true, name: true, unit: true } });
   if (!product) return { error: "Mahsulot topilmadi" };
-  const wh = await db.warehouse.findFirst({ where: { isActive: true }, select: { id: true } });
-  if (!wh) return { error: "Sklad ochilmagan" };
 
   // Tekshiruv va yozuv bitta tranzaksiyada, sklad qulfi ostida: ikki brak bir vaqtda kelsa
   // ikkalasi eski qoldiqni ko'rib o'tib ketmasin (bajarilganidan / hovlidagidan ko'p brak).
@@ -45,10 +44,11 @@ export async function addProductDefect(d: DefectInput, userId: string): Promise<
       }
       brigadeId = brigadeId ?? t.brigadeId;
     }
-    const bal = await tx.stockMove.aggregate({ where: { productId: product.id }, _sum: { qty: true } });
-    const balance = Number(bal._sum.qty ?? 0);
-    if (d.qty > balance + STOCK_EPS) {
-      return { error: `Hovlida ${product.name} faqat ${fq(Math.max(0, balance))} ${unitLabel(product.unit)} — brak undan ko'p bo'lolmaydi. Avval ishlab chiqarilgani qayd qilinsin.` };
+    // Qoldiq va hisobdan chiqarish bitta skladda (avval asosiy sklad) — tasodifiy skladdan minusga ketmasin
+    const wh = await pickProductWarehouse(tx, product.id, d.qty);
+    if ("short" in wh) {
+      if (wh.none) return { error: "Sklad ochilmagan" };
+      return { error: `Hovlida ${product.name} faqat ${fq(Math.max(0, wh.total))} ${unitLabel(product.unit)}${wh.detail ? ` (${wh.detail})` : ""} — brak bitta skladdagi qoldiqdan ko'p bo'lolmaydi. Avval ishlab chiqarilgani qayd qilinsin.` };
     }
 
     const def = await tx.productDefect.create({

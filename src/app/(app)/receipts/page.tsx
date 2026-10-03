@@ -3,7 +3,7 @@ import { Plus, ScanLine } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { date, money } from "@/lib/format";
-import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 
 export default async function ReceiptsPage() {
   const s = await getSession();
@@ -18,7 +18,7 @@ export default async function ReceiptsPage() {
           {receipts.length === 0 && <Empty text="Kirimlar yo'q" />}
           {receipts.map((r) => (
             <Tr key={r.id}>
-              <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link></Td>
+              <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>{r.cancelledAt && <> <Badge color="red">Storno</Badge></>}</Td>
               <Td>{date(r.date)}</Td><Td>{r.supplier.name}</Td><Td>{r.warehouse.name}</Td>
               <Td className="text-slate-600">{r.items.map((i) => `${i.material.name} ${Number(i.qty)} ${i.material.unit}`).join(", ")}</Td>
               <Td right>{money(r.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0))}</Td>

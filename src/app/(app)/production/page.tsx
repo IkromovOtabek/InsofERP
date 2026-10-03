@@ -36,7 +36,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   ]);
   const marks = await customerMarks([...allOrders.map((o) => o.customerId), ...batches.map((b) => b.order?.customerId).filter((x): x is string => !!x)]);
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayM3 = batches.filter((b) => b.date >= today && b.product.unit === "m3").reduce((s, b) => s + Number(b.qtyM3), 0);
+  const todayM3 = batches.filter((b) => !b.cancelledAt && b.date >= today && b.product.unit === "m3").reduce((s, b) => s + Number(b.qtyM3), 0);
   const FILTER_ICON: Record<string, typeof Layers> = { open: ListTodo, today: CalendarDays, soon: AlarmClock, unassigned: HardHat, urgent: Zap, done: CheckCheck, all: Layers };
   const filter = prodFilter(tab);
   const orders = prodSort(allOrders.filter(filter.test));
@@ -122,7 +122,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {batches.length === 0 && <Empty text="Zameslar yo'q" />}
           {batches.map((b) => (
             <Tr key={b.id}>
-              <Td><Link href={`/production/${b.id}`} className="font-medium hover:underline">{b.batchNo}</Link></Td>
+              <Td><Link href={`/production/${b.id}`} className="font-medium hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Storno</Badge></>}</Td>
               <Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td>{b.product.name}</Td><Td right>{qty(b.qtyM3)} <span className="text-slate-400">{unitLabel(b.product.unit)}</span></Td>
               <Td>{b.order ? <span className="inline-flex items-center gap-1.5"><Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo} · {b.order.customer.name}</Link>{marks.black.has(b.order.customerId) && <BlacklistMark short />}{marks.contract.has(b.order.customerId) && <ContractMark short />}</span> : <span className="text-slate-400">—</span>}</Td>
               <Td>{b.createdBy.fullName}</Td>

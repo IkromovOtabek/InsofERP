@@ -140,6 +140,7 @@ export async function deleteImportBatch(batch: string): Promise<ActionState> {
     if (other) return { error: "Bu partiyani boshqa xodim yuklagan — buxgalteriya qaytaradi" };
   }
   const r = await deleteRegisterBatch(batch, s.userId);
+  if (r.error) return { error: r.error };
   if (!r.rows) return { error: "Partiya topilmadi yoki allaqachon qaytarilgan" };
   revalidatePath("/payments"); revalidatePath("/cashflow"); revalidatePath("/customers"); revalidatePath("/");
   return { ok: true, note: `Qaytarildi: ${r.rows} qator, ${r.payments} kirim` };

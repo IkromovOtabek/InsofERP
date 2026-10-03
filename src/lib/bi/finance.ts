@@ -67,12 +67,12 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     db.cashAccount.findMany({ where: { isActive: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
     db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { amount: true, date: true, payments: { select: { amount: true } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
     customerBase(),
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: r.from, lt: r.to } }, select: { qty: true, materialId: true } }),
-    db.productionBatch.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { qtyM3: true } }),
-    db.productionBatch.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { qtyM3: true } }),
+    db.productionBatch.aggregate({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { qtyM3: true } }),
+    db.productionBatch.aggregate({ where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { qtyM3: true } }),
     db.trip.findMany({ where: { deliveredAt: { gte: r.from, lt: r.to }, status: "DELIVERED" }, select: { qtyM3: true } }),
     db.trip.findMany({ where: { deliveredAt: { gte: r.prevFrom, lt: r.prevTo }, status: "DELIVERED" }, select: { qtyM3: true } }),
   ]);
@@ -113,7 +113,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const from6 = new Date(today.getFullYear(), today.getMonth() - 5, 1);
   const [sales6, rec6, pay6] = await Promise.all([
     loadRevenue(from6, addDays(today, 1)),
-    db.goodsReceiptItem.findMany({ where: { receipt: { date: { gte: from6 } } }, select: { qty: true, price: true, receipt: { select: { date: true } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, receipt: { select: { date: true } } } }),
     db.payment.findMany({ where: { date: { gte: from6 } }, select: { date: true, amount: true } }),
   ]);
   const rev6 = series(sales6, from6, addDays(today, 1), "month", (x) => x.date, (x) => x.revenue);

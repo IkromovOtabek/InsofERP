@@ -7,8 +7,10 @@ import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/no
 import { randomBytes } from "node:crypto";
 import { soleUnit, unitLabel } from "@/lib/unit";
 import { ISSUE_KIND, logisticsSettings } from "@/lib/logistics";
-import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+import { lockStock } from "@/lib/stock-lock";
 import { driverPositionNames } from "@/lib/positions";
+import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
+import { prepayShortError } from "@/lib/payments";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -91,34 +93,34 @@ export function tripLine(items: LineItem[], vehicleType: string): TripLine | { e
   return piece.length ? pick(piece) : { error: "Beton faqat mikserda tashiladi" };
 }
 
-/** Skladdagi qoldiq (barcha sklad) — qulf ostida chaqiriladi. */
-async function productBalance(tx: Prisma.TransactionClient, productId: string): Promise<number> {
-  const b = await tx.stockMove.aggregate({ where: { productId }, _sum: { qty: true } });
-  return Number(b._sum.qty ?? 0);
-}
-
 /** Qoldiq yetmaganda tranzaksiyani to'xtatish uchun (xabar foydalanuvchiga boradi). */
 class StockShort extends Error {}
 
 const fq = (n: number) => String(Math.round(n * 1000) / 1000);
 
-/** PLANNED → LOADED: tayyor mahsulot skladdan chiqadi (SHIPMENT) — qoldiq sklad qulfi ostida tekshiriladi. */
+/**
+ * PLANNED → LOADED: tayyor mahsulot skladdan chiqadi (SHIPMENT) — qoldiq sklad qulfi ostida tekshiriladi.
+ * Qoldiq va chiqim BITTA skladda: avval asosiy sklad, unda yetmasa — qoldig'i yetadigan boshqa faol sklad
+ * (`pickProductWarehouse`). Ilgari qoldiq barcha skladlar bo'yicha tekshirilib, chiqim tasodifiy skladdan yozilardi.
+ * Naqd to'lovli zayavkaning bosh to'lovi kelmagan bo'lsa — yuklanmaydi.
+ */
 export async function tripLoaded(id: string, userId: string, note?: string): Promise<TripResult> {
   const t = await tripWithOrder(id);
   if (t.status !== "PLANNED") return { changed: false, orderId: t.orderId, error: t.status === "CANCELLED" ? "Reys bekor qilingan" : undefined };
   const line = tripLine(t.order.items, t.vehicle.type);
   if ("error" in line) return { changed: false, orderId: t.orderId, error: line.error };
-  const wh = await db.warehouse.findFirst({ where: { isActive: true } });
-  if (!wh) return { changed: false, orderId: t.orderId, error: "Faol sklad yo'q — sklad ochilmagan" };
   const qty = Number(t.qtyM3);
   try {
     const ok = await once(() => db.$transaction(async (tx) => {
       // Ikki reys bir vaqtda yuklansa ikkalasi eski qoldiqni ko'rib o'tib ketmasin — sklad qulfi
       await lockStock(tx);
-      const balance = await productBalance(tx, line.productId);
-      if (qty > balance + STOCK_EPS) {
+      const unpaid = await prepayShortError(tx, t.orderId);
+      if (unpaid) throw new StockShort(unpaid);
+      const wh = await pickProductWarehouse(tx, line.productId, qty);
+      if ("short" in wh) {
+        if (wh.none) throw new StockShort("Faol sklad yo'q — sklad ochilmagan");
         const u = unitLabel(line.unit);
-        throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, balance))} ${u} — ${fq(qty)} ${u} yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
+        throw new StockShort(`Skladda ${line.name ?? "mahsulot"} faqat ${fq(Math.max(0, wh.total))} ${u}${wh.detail ? ` (${wh.detail})` : ""} — ${fq(qty)} ${u} bitta skladdan yuklab bo'lmaydi. Avval ishlab chiqarilgani (zames / brigada) qayd qilinsin`);
       }
       claimed(await tx.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "LOADED", loadedAt: new Date() } }));
       await tx.stockMove.create({ data: { type: "SHIPMENT", warehouseId: wh.id, productId: line.productId, qty: -qty, refType: "Trip", refId: id, note, createdById: userId } });
@@ -173,8 +175,11 @@ async function returnToStock(tx: Prisma.TransactionClient, tripId: string, line:
   // Manfiy — yopishda qaytgan miqdor kamaytirildi (5 → 2): ortiqcha kirim qilingan 3 dona skladdan qaytariladi
   if (!Number.isFinite(returned) || Math.abs(returned) < 0.0005) return;
   if ("error" in line || line.unit === "m3") return;
-  const wh = await tx.warehouse.findFirstOrThrow({ where: { isActive: true } });
-  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: wh.id, productId: line.productId, qty: returned, refType: "Trip", refId: tripId, note: returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)", createdById: userId } });
+  // Qaytgan mahsulot qaysi skladdan yuklangan bo'lsa — o'sha skladga (bo'lmasa asosiy skladga)
+  const shipped = await tx.stockMove.findFirst({ where: { refType: "Trip", refId: tripId, type: "SHIPMENT" }, select: { warehouseId: true } });
+  const whId = shipped?.warehouseId ?? (await defaultWarehouse(tx))?.id;
+  if (!whId) throw new Error("Faol sklad yo'q — qaytgan mahsulotni kirim qilib bo'lmaydi");
+  await tx.stockMove.create({ data: { type: "ADJUSTMENT", warehouseId: whId, productId: line.productId, qty: returned, refType: "Trip", refId: tripId, note: returned > 0 ? "Obyektdan qaytdi" : "Qaytgan miqdor tuzatildi (yopishda)", createdById: userId } });
 }
 
 /** Tizim o'zi yozadigan shubha belgisi — dispetcher ko'rib hal qilmaguncha reys yopilmaydi. */
@@ -616,7 +621,8 @@ export type OrderReadiness = {
 export const READINESS_INCLUDE = {
   items: { include: { product: { select: { unit: true, name: true } }, task: { select: { doneQty: true, status: true } } } },
   trips: { select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } },
-  batches: { select: { productId: true, qtyM3: true } },
+  // Storno qilingan zames tayyor hisoblanmaydi
+  batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
 } as const;
 
 /**
@@ -693,6 +699,9 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
   const rd = orderReadiness(o);
   const notReady = readinessError(rd, input.qtyM3);
   if (notReady) throw new Error(notReady);
+  // Naqd to'lovli zayavka: bosh to'lov kassaga tushmaguncha reys ochilmaydi
+  const unpaid = await prepayShortError(db, input.orderId);
+  if (unpaid) throw new Error(unpaid);
 
   const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!v || !v.isActive) throw new Error("Texnika topilmadi yoki nofaol");
@@ -731,6 +740,8 @@ export async function createTrip(input: NewTripInput, userId: string): Promise<{
     const fresh = await tx.order.findUniqueOrThrow({ where: { id: input.orderId }, include: READINESS_INCLUDE });
     const again = readinessError(orderReadiness(fresh), input.qtyM3);
     if (again) throw new Error(again);
+    const unpaidNow = await prepayShortError(tx, input.orderId);
+    if (unpaidNow) throw new Error(unpaidNow);
     if (mixed) {
       // Aralash zayavka: shu qatorga (beton yoki dona) yozilgan reyslar texnika turidan ajratiladi —
       // umumiy qoldiq yetsa ham bitta qatorning miqdoridan oshib ketmasin

@@ -1,40 +1,81 @@
 import { db } from "./db";
+import type { Prisma } from "@/generated/prisma";
+
+type Client = Prisma.TransactionClient | typeof db;
 
 /**
- * To'lanmagan kirimlar — sklad/snabjeniye yozgan, lekin hali kassadan pul chiqmagan kirim hujjatlari.
+ * To'lanmagan kirimlar — sklad/snabjeniye yozgan, lekin hali to'liq to'lanmagan kirim hujjatlari.
  *
- * Alohida holat ustuni yo'q: kirim to'langanini unga bog'langan chiqim (`CashTransaction`,
- * refType = "GoodsReceipt") ko'rsatadi. Ta'minot zanjiridan kelgan kirimning chiqimi moliya
- * pul ajratganda yozilgan va qabulda shu kirimga bog'lanadi — shuning uchun u bu ro'yxatga tushmaydi.
+ * Alohida holat ustuni yo'q: kirimga qancha to'langanini unga bog'langan chiqimlar (`CashTransaction`,
+ * type = EXPENSE, refType = "GoodsReceipt", refId = kirim) yig'indisi ko'rsatadi. To'lov qismlarga
+ * bo'linishi mumkin: moliya "To'lash" bilan (qolgan summa) yoki Kirim-Chiqimda qo'lda chiqim yozib,
+ * "Kirim hujjati" ni tanlab. Ta'minot zanjiridan kelgan kirimning chiqimi moliya pul ajratganda
+ * yozilgan va qabulda shu kirimga bog'lanadi — shuning uchun u bu ro'yxatga tushmaydi.
+ * Storno qilingan kirim to'lov kutmaydi.
  */
-export type UnpaidReceipt = { id: string; docNo: string; date: Date; supplier: string; supplierId: string; total: number; lines: number };
+export type UnpaidReceipt = { id: string; docNo: string; date: Date; supplier: string; supplierId: string; total: number; paid: number; left: number; lines: number };
 
 /**
- * Shu sanadan oldingi kirimlar ro'yxatga kirmaydi: ilgari kirim bilan birga chiqim darhol yozilardi,
- * chiqimsiz eski kirimlar (Excel import, dastlabki ma'lumot) esa to'lov kutmaydi.
+ * Standart sana: shundan oldingi kirimlar ro'yxatga kirmaydi — ilgari kirim bilan birga chiqim darhol
+ * yozilardi, chiqimsiz eski kirimlar (Excel import, dastlabki ma'lumot) esa to'lov kutmaydi.
+ * Direktor Sozlamalarda o'zgartiradi (`CompanySettings.payablesSince`).
  */
-const PAYABLES_SINCE = new Date("2026-09-30T00:00:00+05:00");
+export const DEFAULT_PAYABLES_SINCE = new Date("2026-09-30T00:00:00+05:00");
+
+export async function payablesSince(client: Client = db): Promise<Date> {
+  const c = await client.companySettings.findUnique({ where: { id: "main" }, select: { payablesSince: true } });
+  return c?.payablesSince ?? DEFAULT_PAYABLES_SINCE;
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Kirim(lar)ga bog'langan chiqimlar yig'indisi (kirim id → to'langan). */
+export async function receiptPaidMap(client: Client, receiptIds: string[]): Promise<Map<string, number>> {
+  if (!receiptIds.length) return new Map();
+  const g = await client.cashTransaction.groupBy({
+    by: ["refId"],
+    where: { type: "EXPENSE", refType: "GoodsReceipt", refId: { in: receiptIds } },
+    _sum: { amount: true },
+  });
+  return new Map(g.map((x) => [x.refId!, Number(x._sum.amount ?? 0)]));
+}
+
+export type ReceiptPayState = { id: string; docNo: string; supplierId: string; supplierName: string; total: number; paid: number; left: number; cancelled: boolean; fromSupply: boolean; lines: number };
+
+/** Bitta kirimning to'lov holati — to'lash/bog'lash tranzaksiyasi ichida (kirim qulfidan keyin) chaqiriladi. */
+export async function receiptPayState(client: Client, receiptId: string): Promise<ReceiptPayState | null> {
+  const rec = await client.goodsReceipt.findUnique({
+    where: { id: receiptId },
+    select: { id: true, docNo: true, supplierId: true, cancelledAt: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true } }, supply: { select: { id: true } } },
+  });
+  if (!rec) return null;
+  const total = r2(rec.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0));
+  const paid = r2((await receiptPaidMap(client, [rec.id])).get(rec.id) ?? 0);
+  return { id: rec.id, docNo: rec.docNo, supplierId: rec.supplierId, supplierName: rec.supplier.name, total, paid, left: r2(Math.max(0, total - paid)), cancelled: !!rec.cancelledAt, fromSupply: !!rec.supply, lines: rec.items.length };
+}
+
+/** Kirim bo'yicha qulf — to'lash, qo'lda chiqimni bog'lash va storno navbat bilan bajarilsin. */
+export async function lockReceipt(tx: Prisma.TransactionClient, receiptId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${receiptId}))`;
+}
 
 export async function unpaidReceipts(): Promise<UnpaidReceipt[]> {
+  const since = await payablesSince();
   const recs = await db.goodsReceipt.findMany({
     // Ta'minot zanjiridan kelgan kirim bu yerga tushmaydi — uning puli zanjirda ajratilgan
-    where: { createdAt: { gte: PAYABLES_SINCE }, supply: { is: null } },
+    where: { createdAt: { gte: since }, supply: { is: null }, cancelledAt: null },
     orderBy: { date: "asc" },
     include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true } } },
   });
   if (!recs.length) return [];
-  const paid = await db.cashTransaction.findMany({
-    where: { refType: "GoodsReceipt", refId: { in: recs.map((r) => r.id) } },
-    select: { refId: true },
-  });
-  const paidIds = new Set(paid.map((p) => p.refId));
+  const paid = await receiptPaidMap(db, recs.map((r) => r.id));
   return recs
-    .filter((r) => !paidIds.has(r.id))
-    .map((r) => ({
-      id: r.id, docNo: r.docNo, date: r.date, supplier: r.supplier.name, supplierId: r.supplierId,
-      total: r.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0), lines: r.items.length,
-    }))
-    .filter((r) => r.total > 0.005);
+    .map((r) => {
+      const total = r2(r.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0));
+      const p = r2(paid.get(r.id) ?? 0);
+      return { id: r.id, docNo: r.docNo, date: r.date, supplier: r.supplier.name, supplierId: r.supplierId, total, paid: p, left: r2(Math.max(0, total - p)), lines: r.items.length };
+    })
+    .filter((r) => r.left > 0.005);
 }
 
 // ───────────────────────── Yetkazuvchi hisob-kitobi (kartochka) ─────────────────────────
@@ -55,7 +96,7 @@ export type SupplierLedger = {
  */
 export async function supplierLedger(supplierId: string): Promise<SupplierLedger> {
   const [items, txs, unpaidAll, supply] = await Promise.all([
-    db.goodsReceiptItem.findMany({ where: { receipt: { supplierId } }, select: { qty: true, price: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { supplierId, cancelledAt: null } }, select: { qty: true, price: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { supplierId }, _sum: { amount: true } }),
     unpaidReceipts(),
     db.supplyRequest.findMany({
@@ -72,7 +113,7 @@ export async function supplierLedger(supplierId: string): Promise<SupplierLedger
     received: items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0),
     paid: sumOf("EXPENSE") - sumOf("INCOME"),
     unpaid,
-    debt: unpaid.reduce((s, r) => s + r.total, 0),
+    debt: unpaid.reduce((s, r) => s + r.left, 0),
     advance: supply.filter((s) => s.status !== "REJECTED").reduce((s, r) => s + (cash.get(r.cashTxId!) ?? 0), 0),
     refundDue: supply.filter((s) => s.status === "REJECTED").reduce((s, r) => s + (cash.get(r.cashTxId!) ?? 0), 0),
   };
@@ -83,7 +124,7 @@ export type SupplierPrice = { materialId: string; name: string; unit: string; pr
 /** Yetkazuvchidan olingan har xomashyoning oxirgi narxi va undan oldingisi (narx tarixi). */
 export async function supplierPrices(supplierId: string): Promise<SupplierPrice[]> {
   const rows = await db.goodsReceiptItem.findMany({
-    where: { receipt: { supplierId } },
+    where: { receipt: { supplierId, cancelledAt: null } },
     orderBy: { receipt: { date: "desc" } },
     take: 2000,
     select: { materialId: true, qty: true, price: true, receipt: { select: { date: true } }, material: { select: { name: true, unit: true } } },

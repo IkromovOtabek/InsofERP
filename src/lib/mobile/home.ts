@@ -446,7 +446,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
 
     case "PRODUCTION": {
       const [batches, tasks, openTasks, prodOrders] = await Promise.all([
-        db.productionBatch.findMany({ where: { date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
+        db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
         db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         // "Zayavkalar" ro'yxatidagi filtrlar bilan bir xil sanoq — `lib/production.ts`
@@ -473,7 +473,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 20, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] }, dueDate: { lt: today } } }),
         db.taskProgress.findMany({ where: { date: { gte: today } }, select: { qty: true, task: { select: { orderItem: { select: { product: { select: { unit: true } } } } } } } }),
-        db.productionBatch.findMany({ where: { date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
+        db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: today } }, orderBy: { date: "desc" }, take: 10, include: { product: true, order: { include: { customer: true } } } }),
       ]);
       const leftRows = openTasks.map((t) => ({ unit: t.orderItem.product.unit, qty: sum(t.qty) - sum(t.doneQty) }));
       cards.push(
@@ -542,7 +542,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const [materials, balances, receipts] = await Promise.all([
         db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
         db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-        db.goodsReceipt.findMany({ where: { date: { gte: today } }, include: { supplier: true, items: true } }),
+        db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: today } }, include: { supplier: true, items: true } }),
       ]);
       const bal = new Map(balances.map((b) => [b.materialId, sum(b._sum.qty)]));
       const low = materials.filter((m) => (bal.get(m.id) ?? 0) < sum(m.minStock));
@@ -565,7 +565,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
 
     case "PROCUREMENT": {
       const [monthReceipts, suppliers, recent] = await Promise.all([
-        db.goodsReceipt.findMany({ where: { date: { gte: startOfMonth() } }, include: { items: true } }),
+        db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: startOfMonth() } }, include: { items: true } }),
         db.supplier.count({ where: { isActive: true } }),
         db.goodsReceipt.findMany({ orderBy: { date: "desc" }, take: 12, include: { supplier: true, items: true } }),
       ]);

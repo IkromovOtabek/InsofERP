@@ -24,7 +24,7 @@ export async function procurementReport(p: { from?: string; to?: string }) {
       include: { items: true, supplier: { select: { id: true, name: true } }, receipt: { select: { date: true } } },
     }),
     db.goodsReceiptItem.findMany({
-      where: { receipt: { date: { gte: from, lt: to } } },
+      where: { receipt: { cancelledAt: null, date: { gte: from, lt: to } } },
       select: { qty: true, price: true, material: { select: { id: true, name: true, unit: true } }, receipt: { select: { supplier: { select: { id: true, name: true } } } } },
     }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: from, lt: to }, materialId: { not: null } }, _sum: { qty: true } }),
@@ -50,7 +50,7 @@ export async function procurementReport(p: { from?: string; to?: string }) {
     const c = S(x.r.supplier.id, x.r.supplier.name);
     c.orders += 1; c.leadSum += x.days; if (x.late > 0) c.late += 1;
   }
-  const receiptSupplierDocs = await db.goodsReceipt.groupBy({ by: ["supplierId"], where: { date: { gte: from, lt: to } }, _count: { _all: true } });
+  const receiptSupplierDocs = await db.goodsReceipt.groupBy({ by: ["supplierId"], where: { cancelledAt: null, date: { gte: from, lt: to } }, _count: { _all: true } });
   for (const g of receiptSupplierDocs) { const c = sup.get(g.supplierId); if (c) c.receipts = g._count._all; }
   for (const inc of incidents) { const id = inc.request.supplierId; if (id && sup.has(id)) sup.get(id)!.incidents += 1; }
   const suppliers = [...sup.values()].map((c) => ({ ...c, avgLead: c.orders ? c.leadSum / c.orders : null })).sort((a, b) => b.sum - a.sum);

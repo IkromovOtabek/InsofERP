@@ -16,7 +16,7 @@ export default async function NewBatch() {
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
       orderBy: { deliveryDate: "asc" },
-      include: { customer: true, items: { include: { product: true } }, batches: true },
+      include: { customer: true, items: { include: { product: true } }, batches: { where: { cancelledAt: null } } },
     }),
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     db.warehouse.findMany({ where: { isActive: true } }),

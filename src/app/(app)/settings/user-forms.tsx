@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, RotateCcw, Save, UserPlus } from "lucide-react";
-import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, saveUserPerms, copyUserPerms, toggleUser, updateUser } from "./actions";
+import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, savePayablesSince, saveUserPerms, copyUserPerms, toggleUser, updateUser } from "./actions";
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, Input, PasswordInput, Select } from "@/components/ui";
 
@@ -71,6 +71,18 @@ export function SupplyLimitForm({ value }: { value: number }) {
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <Field label="Katta xarid chegarasi, so'm"><MoneyInput name="supplyDirectorLimit" defaultValue={String(value)} suffix={null} className="w-48 py-2 text-sm" /></Field>
+      <Button disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
+      <FormError error={state?.error} />
+    </form>
+  );
+}
+
+/** "To'lanmagan kirimlar" boshlanish sanasi — undan oldingi kirimlar to'lov kutmaydi. */
+export function PayablesSinceForm({ value }: { value: string }) {
+  const [state, action, pending] = useActionState(savePayablesSince, undefined);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <Field label="Shu sanadan boshlab"><Input name="payablesSince" type="date" defaultValue={value} required className="w-44" /></Field>
       <Button disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
       <FormError error={state?.error} />
     </form>
