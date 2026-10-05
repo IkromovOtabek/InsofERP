@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { isTransfer, txSign } from "@/lib/cash-tx";
 import { activityList, approvalsList } from "./director";
 import { ecoLabel } from "@/lib/eco/labels";
+import { lineTotal } from "@/lib/receipt-vat";
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import { myBrigades } from "@/lib/brigades";
 import { customersCredit, customersHistory, STAR_LABELS } from "@/lib/finance";
@@ -438,7 +439,7 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
       return list.map((r) => ({
         id: r.id, title: `${r.docNo} · ${r.supplier.name}`,
         subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`,
-        right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)),
+        right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)),
         ...(r.cancelledAt ? { status: "Storno", tone: "danger" as Tone } : {}),
       }));
     }

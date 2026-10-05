@@ -18,7 +18,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | To'plam | Nima | Fayllar |
 |---|---|---|
 | a | sotuv / moliya, Excel importlari, INN tekshiruvi, kassa ⇄ bank o'tkazmalari, yagona debitorka | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, prepay-gate.mts, transfers.mts, receivables.mts |
-| b | sklad / ishlab chiqarish / logistika / ta'minot / kadr | b-all.sh |
+| b | sklad / ishlab chiqarish / logistika / ta'minot / kadr, kirim QQS (b-vat.mts) | b-all.sh |
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |

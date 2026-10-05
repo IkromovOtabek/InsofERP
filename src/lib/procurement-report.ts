@@ -1,5 +1,6 @@
 import type { SupplyIncidentKind } from "@/generated/prisma";
 import { db } from "./db";
+import { lineTotal } from "./receipt-vat";
 import { totalFact } from "./supply";
 
 /**
@@ -25,7 +26,7 @@ export async function procurementReport(p: { from?: string; to?: string }) {
     }),
     db.goodsReceiptItem.findMany({
       where: { receipt: { cancelledAt: null, date: { gte: from, lt: to } } },
-      select: { qty: true, price: true, material: { select: { id: true, name: true, unit: true } }, receipt: { select: { supplier: { select: { id: true, name: true } } } } },
+      select: { qty: true, price: true, vatAmount: true, material: { select: { id: true, name: true, unit: true } }, receipt: { select: { supplier: { select: { id: true, name: true } } } } },
     }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: from, lt: to }, materialId: { not: null } }, _sum: { qty: true } }),
     db.supplyIncident.findMany({ where: { createdAt: { gte: from, lt: to } }, select: { kind: true, resolvedAt: true, request: { select: { supplierId: true } } } }),
@@ -44,7 +45,7 @@ export async function procurementReport(p: { from?: string; to?: string }) {
   /* ── Yetkazib beruvchilar ── */
   const sup = new Map<string, { id: string; name: string; sum: number; receipts: number; orders: number; leadSum: number; late: number; incidents: number }>();
   const S = (id: string, name: string) => { const c = sup.get(id) ?? { id, name, sum: 0, receipts: 0, orders: 0, leadSum: 0, late: 0, incidents: 0 }; sup.set(id, c); return c; };
-  for (const i of receiptItems) { const c = S(i.receipt.supplier.id, i.receipt.supplier.name); c.sum += Number(i.qty) * Number(i.price); }
+  for (const i of receiptItems) { const c = S(i.receipt.supplier.id, i.receipt.supplier.name); c.sum += lineTotal(i); }
   for (const x of lead) {
     if (!x.r.supplier) continue;
     const c = S(x.r.supplier.id, x.r.supplier.name);
@@ -59,7 +60,7 @@ export async function procurementReport(p: { from?: string; to?: string }) {
   const mat = new Map<string, { id: string; name: string; unit: string; qty: number; sum: number; used: number }>();
   for (const i of receiptItems) {
     const c = mat.get(i.material.id) ?? { id: i.material.id, name: i.material.name, unit: i.material.unit, qty: 0, sum: 0, used: 0 };
-    c.qty += Number(i.qty); c.sum += Number(i.qty) * Number(i.price);
+    c.qty += Number(i.qty); c.sum += lineTotal(i);
     mat.set(i.material.id, c);
   }
   const usedIds = consumed.map((x) => x.materialId!).filter((id) => !mat.has(id));
@@ -86,7 +87,7 @@ export async function procurementReport(p: { from?: string; to?: string }) {
   return {
     from, to: toIncl,
     totals: {
-      purchase: receiptItems.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0),
+      purchase: receiptItems.reduce((s, i) => s + lineTotal(i), 0),
       receivedFact: received.reduce((s, r) => s + totalFact(r), 0),
       requests: created.length, done: received.length, rejected,
       avgLead, lateCount, incidents: incidents.length,

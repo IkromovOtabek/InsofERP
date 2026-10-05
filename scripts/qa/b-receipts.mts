@@ -69,7 +69,8 @@ check(Math.abs(bal(cem) - (cemB - 5000)) < 0.001, "storno: sement −5000 kg", b
 const after = (await avgUnitCosts([cem])).get(cem)!;
 check(Math.abs(after - before) < 0.01, `storno o'rtachani avvalgi holatga qaytardi: ${after.toFixed(2)} = ${before.toFixed(2)}`);
 const debt1 = (await supplierLedger(sup)).debt;
-check(Math.abs(debt0 - debt1 - 25_000_000) < 1, `yetkazuvchi qarzi 25 mln ga kamaydi (${debt0} → ${debt1})`);
+// QQS (20261005): yetkazuvchi QQS to'lovchisi — kirim 5000 × 5000 = 25 mln + 12% QQS = 28 mln qarz edi, storno shuncha kamaytiradi
+check(Math.abs(debt0 - debt1 - 28_000_000) < 1, `yetkazuvchi qarzi 28 mln (25 mln + QQS 3 mln) ga kamaydi (${debt0} → ${debt1})`);
 r = await dir.action(`${RA}#stornoReceipt`, [rExp, "QA: yana"], `/receipts/${rExp}`);
 check(/allaqachon/.test(r.error ?? ""), "qayta storno rad etildi", r.error);
 let page = await dir.get(`/receipts/${rExp}`);

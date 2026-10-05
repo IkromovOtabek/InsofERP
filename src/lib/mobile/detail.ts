@@ -34,6 +34,7 @@ import { DEFECT_REASONS } from "@/lib/production-day";
 import { TASK_ROLES } from "@/lib/tasks";
 import { canDo } from "@/lib/permissions";
 import { pctText } from "./fmt";
+import { lineTotal, receiptAmounts } from "@/lib/receipt-vat";
 import type { Role, SupplyStatus } from "@/generated/prisma";
 
 /**
@@ -730,13 +731,15 @@ async function paymentDetail(id: string): Promise<MobileDetail> {
 async function receiptDetail(id: string): Promise<MobileDetail> {
   const r = await db.goodsReceipt.findUnique({ where: { id }, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
   if (!r) throw new ListError("NOT_FOUND", "Kirim topilmadi", 404);
-  const total = r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0);
+  const { base, vat, total } = receiptAmounts(r.items);
   const fields: DetailField[] = [
     { label: "Hujjat", value: r.docNo },
     { label: "Sana", value: day(r.date) },
     { label: "Yetkazuvchi", value: r.supplier.name },
     { label: "Ombor", value: r.warehouse.name },
-    { label: "Jami", value: money(total) },
+    { label: "QQS'siz", value: money(base) },
+    { label: "QQS", value: money(vat) },
+    { label: "Jami (QQS bilan)", value: money(total) },
     ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
     ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
     // Storno: sklad harakatlari teskari yozilgan — qoldiq va qarzga kirmaydi
@@ -746,7 +749,7 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
     ...(r.cancelledAt ? { status: "Storno" } : {}),
     fields: fields.slice(1),
-    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
+    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [],
     // Xarid — pul chiqib ketgan hujjat, chekda qizil
     receipt: {
@@ -1415,8 +1418,8 @@ async function supplierDetail(user: MobileUser, id: string): Promise<MobileDetai
     },
   });
   if (!s) throw new ListError("NOT_FOUND", "Yetkazuvchi topilmadi", 404);
-  const spent = (await db.goodsReceipt.findMany({ where: { cancelledAt: null, supplierId: id }, select: { items: { select: { qty: true, price: true } } } }))
-    .reduce((a, r) => a + r.items.reduce((x, i) => x + sum(i.qty) * sum(i.price), 0), 0);
+  const spent = (await db.goodsReceipt.findMany({ where: { cancelledAt: null, supplierId: id }, select: { items: { select: { qty: true, price: true, vatAmount: true } } } }))
+    .reduce((a, r) => a + r.items.reduce((x, i) => x + lineTotal(i), 0), 0);
   const actions: DetailAction[] = [];
   if (can(user, "supplier.toggle")) {
     actions.push(s.isActive

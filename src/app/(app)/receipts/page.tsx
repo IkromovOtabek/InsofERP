@@ -3,6 +3,7 @@ import { Plus, ScanLine } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { date, money } from "@/lib/format";
+import { receiptAmounts, receiptTotal } from "@/lib/receipt-vat";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 
 export default async function ReceiptsPage() {
@@ -13,7 +14,7 @@ export default async function ReceiptsPage() {
     <div>
       <PageHeader title="Kirim" subtitle={canCreate ? undefined : "Sklad xodimlari kiritgan kirimlar — kim, nima, qancha. Faqat ko'rish."} action={canCreate ? <div className="flex flex-wrap gap-2"><LinkButton href="/receipts/import" variant="secondary"><ScanLine size={16} /> Nakladnoy skaneri / Excel</LinkButton><LinkButton href="/receipts/new"><Plus size={16} /> Kirim</LinkButton></div> : undefined} />
       <Table>
-        <thead><tr><Th>№</Th><Th>Sana</Th><Th>Yetkazuvchi</Th><Th>Sklad</Th><Th>Tarkib</Th><Th right>Summa</Th><Th>Kim kiritdi</Th></tr></thead>
+        <thead><tr><Th>№</Th><Th>Sana</Th><Th>Yetkazuvchi</Th><Th>Sklad</Th><Th>Tarkib</Th><Th right>QQS</Th><Th right>Jami (QQS bilan)</Th><Th>Kim kiritdi</Th></tr></thead>
         <tbody>
           {receipts.length === 0 && <Empty text="Kirimlar yo'q" />}
           {receipts.map((r) => (
@@ -21,7 +22,8 @@ export default async function ReceiptsPage() {
               <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>{r.cancelledAt && <> <Badge color="red">Storno</Badge></>}</Td>
               <Td>{date(r.date)}</Td><Td>{r.supplier.name}</Td><Td>{r.warehouse.name}</Td>
               <Td className="text-slate-600">{r.items.map((i) => `${i.material.name} ${Number(i.qty)} ${i.material.unit}`).join(", ")}</Td>
-              <Td right>{money(r.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0))}</Td>
+              <Td right className="text-slate-500">{money(receiptAmounts(r.items).vat)}</Td>
+              <Td right>{money(receiptTotal(r.items))}</Td>
               <Td className="text-slate-600">{r.createdBy?.fullName ?? "—"}</Td>
             </Tr>
           ))}

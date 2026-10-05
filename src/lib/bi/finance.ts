@@ -4,6 +4,7 @@ import { type Range, type Gran, loadSales, loadRevenue, materialCosts, sum, safe
 import { materialOverview } from "./stock";
 import { customerBase } from "./customers";
 import { txSign } from "@/lib/cash-tx";
+import { companyVatPayer, lineCost } from "@/lib/receipt-vat";
 
 export type LossChannel = { key: string; title: string; sub: string; perDay: number; frozen?: number; periodTotal: number; kind: "ANIQ" | "TAXMIN" | "QISMAN"; flow: "OQIM" | "ZAXIRA"; count: string; text: string; action: string; href?: string };
 
@@ -69,8 +70,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     db.cashAccount.findMany({ where: { isActive: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
     receivablesReport(), // yagona debitorka (schyotlar − barcha to'lovlar, FIFO aging)
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, vatAmount: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true } }),
     customerBase(),
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: r.from, lt: r.to } }, select: { qty: true, materialId: true } }),
     db.productionBatch.aggregate({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { qtyM3: true } }),
@@ -84,10 +85,12 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const grossAtBase = revenue + discount;
   const gross = revenue - cogs, prevGross = prevRevenue - prevCogs;
   const materialsCost = await materialCosts();
+  // Xarid xarajati: QQS to'lovchisi korxonada QQS'siz (kirim QQS'i qaytariladi), aks holda QQS bilan
+  const vatPayer = await companyVatPayer();
   const writeOff = sum(wo.map((w) => Math.abs(Number(w.qty)) * (w.materialId ? materialsCost.get(w.materialId) ?? 0 : 0)));
   const profit = gross - writeOff;
   const cashIn = sum(payments.map((p) => Number(p.amount))), prevCashIn = sum(prevPayments.map((p) => Number(p.amount)));
-  const purchases = sum(receipts.map((i) => Number(i.qty) * Number(i.price))), prevPurchases = sum(prevReceipts.map((i) => Number(i.qty) * Number(i.price)));
+  const purchases = sum(receipts.map((i) => lineCost(i, vatPayer))), prevPurchases = sum(prevReceipts.map((i) => lineCost(i, vatPayer)));
   const receivable = recv.total;
   const debtors = cust.filter((c) => c.debt > 0).length;
 
@@ -115,17 +118,17 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const from6 = new Date(today.getFullYear(), today.getMonth() - 5, 1);
   const [sales6, rec6, pay6] = await Promise.all([
     loadRevenue(from6, addDays(today, 1)),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, receipt: { select: { date: true } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, vatAmount: true, receipt: { select: { date: true } } } }),
     db.payment.findMany({ where: { date: { gte: from6 } }, select: { date: true, amount: true } }),
   ]);
   const rev6 = series(sales6, from6, addDays(today, 1), "month", (x) => x.date, (x) => x.revenue);
-  const cost6 = series(rec6, from6, addDays(today, 1), "month", (x) => x.receipt.date, (x) => Number(x.qty) * Number(x.price));
+  const cost6 = series(rec6, from6, addDays(today, 1), "month", (x) => x.receipt.date, (x) => lineCost(x, vatPayer));
   const pay6s = series(pay6, from6, addDays(today, 1), "month", (x) => x.date, (x) => Number(x.amount));
   const active6 = series(sales6, from6, addDays(today, 1), "month", (x) => x.date, () => 0).map((b) => ({ ...b, value: new Set(sales6.filter((x) => (x.date.getMonth() === Number(b.key.slice(5, 7)) - 1 && x.date.getFullYear() === Number(b.key.slice(0, 4)))).map((x) => x.customerId)).size }));
 
   // Xarajat tuzilmasi: yetkazuvchilar bo'yicha xaridlar + brak
   const bySup = new Map<string, number>();
-  for (const i of receipts) bySup.set(i.receipt.supplier.name, (bySup.get(i.receipt.supplier.name) ?? 0) + Number(i.qty) * Number(i.price));
+  for (const i of receipts) bySup.set(i.receipt.supplier.name, (bySup.get(i.receipt.supplier.name) ?? 0) + lineCost(i, vatPayer));
   const expenses = [...bySup.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   if (writeOff > 0) expenses.push({ label: "Brak / write-off", value: writeOff });
   const expenseTotal = sum(expenses.map((e) => e.value));

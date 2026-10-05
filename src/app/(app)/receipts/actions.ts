@@ -14,6 +14,7 @@ import { toMaterialUnit } from "@/lib/unit";
 import { cashOutflowError } from "@/lib/payments";
 import { cancelReceipt } from "@/lib/storno";
 import { Prisma } from "@/generated/prisma";
+import { companyVatPayer, isVatRate, supplierVatRate, vatLine, receiptTotal, type VatRate } from "@/lib/receipt-vat";
 
 /** Tranzaksiya ichidan foydalanuvchiga ko'rinadigan xato (kassa yetmaydi va h.k.). */
 class ReceiptError extends Error {}
@@ -39,6 +40,8 @@ const schema = z.object({
   materialId: z.array(z.string()).min(1, "Kamida bitta qator"),
   qty: z.array(z.coerce.number().positive("miqdor 0 dan katta bo'lsin").max(MAX_AMOUNT, "qiymat juda katta")),
   price: z.array(z.coerce.number().min(0, "narx manfiy bo'lmasin").max(MAX_AMOUNT, "qiymat juda katta")),
+  // Qator QQS stavkasi (0 yoki 12). Berilmasa — yetkazuvchidan (QQS to'lovchisi → 12, aks holda 0)
+  vatRate: z.array(z.string()).optional(),
 });
 
 const kg = (v: string | null) => (v ? Number(v.replace(/\s+/g, "").replace(",", ".")) : null);
@@ -63,7 +66,10 @@ function receiptNote(d: { note: string | null; waybillNo: string | null; vehicle
   return { note: parts.length ? parts.join(" · ") : null };
 }
 
-/** Kirim: GoodsReceipt + har qator uchun StockMove RECEIPT (+qty, unitCost). */
+/**
+ * Kirim: GoodsReceipt + har qator uchun StockMove RECEIPT (+qty, unitCost).
+ * Narx QQS'siz kiritiladi; qatorga QQS (0/12%) qo'shiladi — to'lanadigan summa QQS bilan (`lib/receipt-vat.ts`).
+ */
 export async function createReceipt(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "receipt");
   const r = parseForm(schema, fd);
@@ -71,11 +77,10 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
   const d = r.data;
   if (!validDate(d.date)) return { error: "Sana noto'g'ri — 2000-yildan bugungacha bo'lsin" };
   const date = new Date(d.date);
-  const items = d.materialId.map((materialId, i) => ({ materialId, qty: d.qty[i], price: d.price[i] })).filter((i) => i.materialId);
-  if (!items.length) return { error: "Kamida bitta qator kerak" };
-  if (items.some((i) => !(i.qty > 0) || !(i.price >= 0))) return { error: "Har qatorda miqdor va narx bo'lsin" };
-  const total = items.reduce((x, i) => x + i.qty * i.price, 0);
-  if (total > MAX_AMOUNT) return { error: "Kirim summasi juda katta" };
+  const raw = d.materialId.map((materialId, i) => ({ materialId, qty: d.qty[i], price: d.price[i], rate: d.vatRate?.[i] })).filter((i) => i.materialId);
+  if (!raw.length) return { error: "Kamida bitta qator kerak" };
+  if (raw.some((i) => !(i.qty > 0) || !(i.price >= 0))) return { error: "Har qatorda miqdor va narx bo'lsin" };
+  if (raw.some((i) => i.rate != null && i.rate !== "" && !isVatRate(Number(i.rate)))) return { error: "QQS stavkasi 0 yoki 12% bo'lsin" };
   const n = receiptNote(d);
   if ("error" in n) return { error: n.error };
 
@@ -88,10 +93,10 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
   }
 
   // Sklad, yetkazuvchi, xomashyo va hisob — mavjud va faol bo'lsin (aks holda bazada FK xatosi → 500)
-  const ids = [...new Set(items.map((i) => i.materialId))];
+  const ids = [...new Set(raw.map((i) => i.materialId))];
   const [wh, sup, mats, acc] = await Promise.all([
     db.warehouse.findFirst({ where: { id: d.warehouseId, isActive: true }, select: { id: true } }),
-    db.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true, name: true, isActive: true } }),
+    db.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true, name: true, isActive: true, vatPayer: true } }),
     db.material.findMany({ where: { id: { in: ids } }, select: { id: true, isActive: true } }),
     d.cashAccountId && s.role === "DIRECTOR" ? db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
   ]);
@@ -102,17 +107,31 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
   if (mats.some((m) => !m.isActive)) return { error: "Yopilgan xomashyoga kirim qilinmaydi" };
   if (d.cashAccountId && s.role === "DIRECTOR" && !acc) return { error: "To'lov hisobi topilmadi yoki yopilgan" };
 
+  // QQS: QQS to'lovchisi bo'lmagan yetkazuvchi QQS bermaydi — stavka majburan 0.
+  // QQS to'lovchisida qator stavkasi (0 — QQS'dan ozod tovar yoki 12), berilmasa 12.
+  const vatPayer = await companyVatPayer();
+  const defRate = supplierVatRate(sup.vatPayer);
+  const items = raw.map((i) => {
+    const rate: VatRate = !sup.vatPayer ? 0 : i.rate != null && i.rate !== "" ? (Number(i.rate) as VatRate) : defRate;
+    return { materialId: i.materialId, ...vatLine(i.qty, i.price, rate, vatPayer) };
+  });
+  const total = receiptTotal(items);
+  if (total > MAX_AMOUNT) return { error: "Kirim summasi juda katta" };
+
   const id = await db.$transaction(async (tx) => {
     const rec = await tx.goodsReceipt.create({
-      data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: s.userId, clientToken, items: { create: items } },
+      data: {
+        docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: s.userId, clientToken,
+        items: { create: items.map((i) => ({ materialId: i.materialId, qty: i.qty, price: i.price, vatRate: i.vatRate, vatAmount: i.vatAmount })) },
+      },
     });
     await tx.stockMove.createMany({
       data: items.map((i) => ({
         type: "RECEIPT" as const, date, warehouseId: wh.id, materialId: i.materialId,
-        qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
+        qty: i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
       })),
     });
-    // Kirim summasi — hisobdan chiqim. Sklad/snabjeniye kassadan pul chiqara olmaydi: bunday kirim
+    // Kirim summasi (QQS bilan — yetkazuvchiga shuncha to'lanadi) — hisobdan chiqim. Sklad/snabjeniye kassadan pul chiqara olmaydi: bunday kirim
     // Kirim-Chiqimda "To'lanmagan kirimlar" ro'yxatiga tushadi va moliya to'laydi (`payReceipt`).
     // Direktor esa hisobni tanlab, shu zahoti to'langan deb yozishi mumkin.
     if (total > 0 && acc) {
@@ -151,18 +170,27 @@ const importSchema = z.object({
   note: zOpt,
   rows: z.string(),
   createMissing: z.string().optional().transform((v) => v === "on"),
+  // "Narxlar QQS bilan": "Narx" va "Summa" ustunlaridagi qiymat QQS bilan — QQS ichidan ajratiladi
+  pricesWithVat: z.string().optional().transform((v) => v === "on"),
 });
-type ImportRow = { material?: unknown; code?: unknown; qty?: unknown; price?: unknown; unit?: unknown; nds?: unknown; sum?: unknown; note?: unknown };
+type ImportRow = { material?: unknown; code?: unknown; qty?: unknown; price?: unknown; priceVat?: unknown; unit?: unknown; nds?: unknown; sum?: unknown; sumVat?: unknown; note?: unknown };
 
 /**
- * Qator narxi (fayldagi birlikda). Narx ustuni bo'sh, lekin summa bor bo'lsa — narx = summa / miqdor
+ * Qator narxi (fayldagi birlikda) va u QQS bilanmi (`gross`).
+ * Ustunlar ustuvorligi: "Narx QQS bilan" → "Narx" → "Summa QQS bilan" / miqdor → "Summa" / miqdor
  * (ko'p nakladnoyda faqat "Сумма" bo'ladi; ilgari bunday qator 0 tannarx bilan kirib, o'rtacha narxni buzardi).
- * NDS qo'shilmaydi: xomashyo tannarxi NDS'siz yuritiladi (Sozlamalar → xomashyo formasidagi kabi).
+ * "Narx" va "Summa" ustunlari odatda QQS'siz; "Narxlar QQS bilan" belgilansa — QQS bilan deb olinadi.
  */
-function rowPrice(x: ImportRow): number {
-  if (str(x.price) !== "") return numMoney(x.price);
-  const q = num(x.qty), sum = str(x.sum) === "" ? NaN : numMoney(x.sum);
-  return Number.isFinite(sum) && q > 0 ? Math.round((sum / q) * 100) / 100 : 0;
+function rowPrice(x: ImportRow, withVat: boolean): { price: number; gross: boolean } {
+  const q = num(x.qty);
+  const perUnit = (v: unknown) => { const sum = str(v) === "" ? NaN : numMoney(v); return Number.isFinite(sum) && q > 0 ? Math.round((sum / q) * 100) / 100 : NaN; };
+  if (str(x.priceVat) !== "") return { price: numMoney(x.priceVat), gross: true };
+  if (str(x.price) !== "") return { price: numMoney(x.price), gross: withVat };
+  const sv = perUnit(x.sumVat);
+  if (Number.isFinite(sv)) return { price: sv, gross: true };
+  const sb = perUnit(x.sum);
+  if (Number.isFinite(sb)) return { price: sb, gross: withVat };
+  return { price: 0, gross: false };
 }
 
 /**
@@ -182,7 +210,7 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
   if (!validDate(d.date)) return { error: "Sana noto'g'ri — 2000-yildan bugungacha bo'lsin" };
   for (const [i, x] of rows.entries()) {
     const q = num(x.qty); if (!(q > 0) || q > MAX_AMOUNT) return { error: `${i + 1}-qator (${str(x.material)}): miqdor 0 dan katta raqam bo'lsin` };
-    const pr = rowPrice(x); if (!(pr >= 0) || pr > MAX_AMOUNT || q * pr > MAX_AMOUNT) return { error: `${i + 1}-qator (${str(x.material)}): narx noto'g'ri` };
+    const pr = rowPrice(x, d.pricesWithVat).price; if (!(pr >= 0) || pr > MAX_AMOUNT || q * pr > MAX_AMOUNT) return { error: `${i + 1}-qator (${str(x.material)}): narx noto'g'ri` };
   }
   // Ikki marta bosilgan "Kirimni qayd etish" ikkinchi kirim ochmasin (qo'lda kirimdagi kabi)
   const clientToken = tokenOf(fd.get("clientToken"));
@@ -192,26 +220,34 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
   }
   const [wh, sup] = await Promise.all([
     db.warehouse.findFirst({ where: { id: d.warehouseId, isActive: true }, select: { id: true } }),
-    db.supplier.findUnique({ where: { id: d.supplierId }, select: { name: true, isActive: true } }),
+    db.supplier.findUnique({ where: { id: d.supplierId }, select: { name: true, isActive: true, vatPayer: true } }),
   ]);
   if (!wh) return { error: "Sklad topilmadi yoki yopilgan" };
   if (!sup) return { error: "Yetkazuvchi topilmadi" };
   if (!sup.isActive) return { error: `"${sup.name}" yopilgan — avval Yetkazuvchilar bo'limida faollashtiring` };
+  // QQS: stavka yetkazuvchidan (QQS to'lovchisi — 12%, aks holda 0). QQS to'lovchisi bo'lmagan yetkazuvchida
+  // "QQS bilan" narx ham o'zgarmaydi — ichida QQS yo'q
+  const vatPayer = await companyVatPayer();
+  const rate = supplierVatRate(sup.vatPayer);
 
   const out = await db.$transaction(async (tx) => {
     const { result, missing, created } = await resolveMaterials(tx, rows.map((x) => ({ name: str(x.material), unit: str(x.unit), code: str(x.code) })), d.createMissing);
     if (missing.length) throw new Error(`Bunday mahsulot/xomashyo yo'q: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "…" : ""}. "Yo'q mahsulotlarni yaratish" ni belgilang.`);
     const items = rows.map((x) => {
       const m = result.get(str(x.material).toLowerCase().trim())!;
-      const conv = toMaterialUnit(num(x.qty), rowPrice(x), x.unit, m.unit);
+      const p = rowPrice(x, d.pricesWithVat);
+      const conv = toMaterialUnit(num(x.qty), p.price, x.unit, m.unit);
       if (!conv) throw new Error(`"${m.name}": faylda birlik «${str(x.unit)}», spravochnikda «${m.unit}» — o'girib bo'lmaydi. Faylni tuzating`);
-      return { materialId: m.id, qty: conv.qty, price: conv.price };
+      return { materialId: m.id, ...vatLine(conv.qty, conv.price, rate, vatPayer, p.gross) };
     });
     const rec = await tx.goodsReceipt.create({
-      data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date: new Date(d.date), supplierId: d.supplierId, warehouseId: d.warehouseId, note: d.note ?? "Excel'dan import", createdById: s.userId, clientToken, items: { create: items } },
+      data: {
+        docNo: await nextNo(tx, "goodsReceipt", "K"), date: new Date(d.date), supplierId: d.supplierId, warehouseId: d.warehouseId, note: d.note ?? "Excel'dan import", createdById: s.userId, clientToken,
+        items: { create: items.map((i) => ({ materialId: i.materialId, qty: i.qty, price: i.price, vatRate: i.vatRate, vatAmount: i.vatAmount })) },
+      },
     });
     await tx.stockMove.createMany({
-      data: items.map((i) => ({ type: "RECEIPT" as const, date: new Date(d.date), warehouseId: d.warehouseId, materialId: i.materialId, qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId })),
+      data: items.map((i) => ({ type: "RECEIPT" as const, date: new Date(d.date), warehouseId: d.warehouseId, materialId: i.materialId, qty: i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId })),
     });
     await audit(tx, s.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items, via: "excel", createdMaterials: created.map((m) => m.name) });
     return rec.id;
@@ -224,7 +260,7 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
     return { error: e.message };
   });
   if (typeof out === "object") return out;
-  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new");
+  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/suppliers");
   redirect(`/receipts/${out}`);
 }
 

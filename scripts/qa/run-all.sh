@@ -6,8 +6,6 @@
 #   QA_SKIP_BUILD=1 ...                        oldingi build'ni qayta ishlatish (ish papkasi saqlangan bo'lsa)
 #   QA_DB_PREFIX=insof_test_x_ ...             test bazalari prefiksi (standart insof_test_r_; parallel ishga tushirish uchun)
 #   QA_KEEP=1 ...                              oxirida ish papkasi va bazalarni o'chirmaslik (tahlil uchun)
-#   QA_DB_PREFIX=insof_test_x_ ...             baza nomlari prefiksi (sukut insof_test_r_) — parallel yugurishlar
-#                                              bir-birining bazasini o'chirmasin (QA_WORK va QA_PORT ham alohida bering)
 #
 # Nima qiladi:
 #   1. Repo nusxasi → $QA_WORK/app (rsync; .env*, .next, .git, uploads, node_modules KIRMAYDI — node_modules symlink).
@@ -16,7 +14,7 @@
 #   3. Har to'plam uchun: insof_test_r_<nom> = insof_test_golden nusxasi → migrate deploy → db:test-users →
 #      next start (QA_PORT) → testlar → server to'xtatiladi.
 #        a     — sotuv/moliya: sales-lifecycle, openings-cash, excel-imports, prepay-gate, transfers, receivables
-#        b     — sklad/ishlab chiqarish/logistika/ta'minot/kadr: b-all.sh (+ b-pages)
+#        b     — sklad/ishlab chiqarish/logistika/ta'minot/kadr, kirim QQS (b-vat): b-all.sh (+ b-pages)
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
 #        geo   — mobil geofence "yoqilgan" rejimi (MOBILE_SITE_COORDS_REQUIRED=true)

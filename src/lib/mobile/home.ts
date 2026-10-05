@@ -22,6 +22,7 @@ import { hasDashDetail } from "./dash-detail";
 import { brigadierHome } from "./brigadier";
 import { toFleet } from "./fleet";
 import { webList } from "./problems";
+import { lineTotal } from "@/lib/receipt-vat";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
 
@@ -548,7 +549,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { title: "Kam qolgan xomashyo", empty: "Hammasi minimumdan yuqori", target: "stock", rows: low.map((m) => ({ id: m.id, title: m.name, subtitle: `Minimum ${sum(m.minStock)} ${m.unit}`, right: `${(bal.get(m.id) ?? 0).toFixed(1)} ${m.unit}`, tone: "danger" })) },
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
         ...(needPrice ? [await supplySection("Narx kutayotgan so'rovlar", "", ["NEW"])] : []),
-        { title: "Bugungi kirimlar", empty: "Bugun kirim yo'q", target: "receipts", rows: receipts.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${r.items.length} qator · ${time(r.date)}`, right: money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)) })) },
+        { title: "Bugungi kirimlar", empty: "Bugun kirim yo'q", target: "receipts", rows: receipts.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${r.items.length} qator · ${time(r.date)}`, right: money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
       );
       break;
     }
@@ -559,7 +560,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.supplier.count({ where: { isActive: true } }),
         db.goodsReceipt.findMany({ orderBy: { date: "desc" }, take: 12, include: { supplier: true, items: true } }),
       ]);
-      const monthSum = monthReceipts.reduce((s, r) => s + r.items.reduce((x, i) => x + sum(i.qty) * sum(i.price), 0), 0);
+      const monthSum = monthReceipts.reduce((s, r) => s + r.items.reduce((x, i) => x + lineTotal(i), 0), 0);
       cards.push(
         { key: "month", label: "Oylik xarid", value: short(monthSum), hint: "so'm", tone: "brand", icon: "cart" },
         { key: "docs", label: "Oylik hujjat", value: String(monthReceipts.length), tone: "info", icon: "documents" },
@@ -570,7 +571,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       sections.push(
         await supplySection("Narx qo'yish kerak", "Narx kutayotgan so'rov yo'q", ["NEW"]),
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
-        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · storno" : ""}`, right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)) })) },
+        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · storno" : ""}`, right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
       );
       break;
     }

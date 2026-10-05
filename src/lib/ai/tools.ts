@@ -18,6 +18,7 @@ import { materialOverview } from "@/lib/bi/stock";
 import { plansTab } from "@/lib/bi/plans";
 import { aiSnapshot } from "@/lib/bi/ai";
 import { moneyShort, fmtNum, date as fmtDate, dateTime as fmtDateTime } from "@/lib/format";
+import { lineTotal } from "@/lib/receipt-vat";
 
 export type JsonSchema = {
   type: "object";
@@ -442,13 +443,13 @@ const receiptsList: Tool = {
       orderBy: { receipt: { date: "desc" } }, take: 200,
     });
     if (!rows.length) return `Davrda (${p.label}) kirim yo'q.`;
-    const total = sum(rows.map((r) => Number(r.qty) * Number(r.price)));
-    const agg = (key: (r: (typeof rows)[number]) => string) => [...groupBy(rows, key).entries()].map(([k, rs]) => `  ${k}: ${M(sum(rs.map((r) => Number(r.qty) * Number(r.price))))} · ${fmtNum(sum(rs.map((r) => Number(r.qty))), 0)} ${rs[0].material.unit}`).slice(0, 12);
+    const total = sum(rows.map((r) => lineTotal(r)));
+    const agg = (key: (r: (typeof rows)[number]) => string) => [...groupBy(rows, key).entries()].map(([k, rs]) => `  ${k}: ${M(sum(rs.map((r) => lineTotal(r))))} · ${fmtNum(sum(rs.map((r) => Number(r.qty))), 0)} ${rs[0].material.unit}`).slice(0, 12);
     return [
-      `Davr: ${p.label} · ${rows.length} pozitsiya · jami ${M(total)}`,
+      `Davr: ${p.label} · ${rows.length} pozitsiya · jami ${M(total)} (QQS bilan)`,
       "Yetkazuvchi bo'yicha:", ...agg((r) => r.receipt.supplier.name),
       "Xomashyo bo'yicha:", ...agg((r) => r.material.name),
-      "Oxirgi kirimlar:", ...rows.slice(0, 20).map((r) => `  ${r.receipt.docNo} · ${fmtDate(r.receipt.date)} · ${r.receipt.supplier.name} · ${r.material.name} ${fmtNum(Number(r.qty), 1)} ${r.material.unit} × ${M(Number(r.price))} = ${M(Number(r.qty) * Number(r.price))}`),
+      "Oxirgi kirimlar:", ...rows.slice(0, 20).map((r) => `  ${r.receipt.docNo} · ${fmtDate(r.receipt.date)} · ${r.receipt.supplier.name} · ${r.material.name} ${fmtNum(Number(r.qty), 1)} ${r.material.unit} × ${M(Number(r.price))} + QQS ${M(Number(r.vatAmount))} = ${M(lineTotal(r))}`),
     ].join("\n");
   },
 };

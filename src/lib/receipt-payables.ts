@@ -1,6 +1,7 @@
 import { db } from "./db";
 import type { Prisma } from "@/generated/prisma";
 import { supplierOpeningDues } from "./opening-balances";
+import { receiptTotal } from "./receipt-vat";
 
 type Client = Prisma.TransactionClient | typeof db;
 
@@ -13,6 +14,7 @@ type Client = Prisma.TransactionClient | typeof db;
  * "Kirim hujjati" ni tanlab. Ta'minot zanjiridan kelgan kirimning chiqimi moliya pul ajratganda
  * yozilgan va qabulda shu kirimga bog'lanadi — shuning uchun u bu ro'yxatga tushmaydi.
  * Storno qilingan kirim to'lov kutmaydi.
+ * Kirim summasi — QQS bilan (yetkazuvchiga aynan shuncha to'lanadi, `lib/receipt-vat.ts`).
  */
 export type UnpaidReceipt = { id: string; docNo: string; date: Date; supplier: string; supplierId: string; total: number; paid: number; left: number; lines: number };
 
@@ -47,10 +49,10 @@ export type ReceiptPayState = { id: string; docNo: string; supplierId: string; s
 export async function receiptPayState(client: Client, receiptId: string): Promise<ReceiptPayState | null> {
   const rec = await client.goodsReceipt.findUnique({
     where: { id: receiptId },
-    select: { id: true, docNo: true, supplierId: true, cancelledAt: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true } }, supply: { select: { id: true } } },
+    select: { id: true, docNo: true, supplierId: true, cancelledAt: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true } }, supply: { select: { id: true } } },
   });
   if (!rec) return null;
-  const total = r2(rec.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0));
+  const total = receiptTotal(rec.items);
   const paid = r2((await receiptPaidMap(client, [rec.id])).get(rec.id) ?? 0);
   return { id: rec.id, docNo: rec.docNo, supplierId: rec.supplierId, supplierName: rec.supplier.name, total, paid, left: r2(Math.max(0, total - paid)), cancelled: !!rec.cancelledAt, fromSupply: !!rec.supply, lines: rec.items.length };
 }
@@ -66,13 +68,13 @@ export async function unpaidReceipts(): Promise<UnpaidReceipt[]> {
     // Ta'minot zanjiridan kelgan kirim bu yerga tushmaydi — uning puli zanjirda ajratilgan
     where: { createdAt: { gte: since }, supply: { is: null }, cancelledAt: null },
     orderBy: { date: "asc" },
-    include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true } } },
+    include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true } } },
   });
   if (!recs.length) return [];
   const paid = await receiptPaidMap(db, recs.map((r) => r.id));
   return recs
     .map((r) => {
-      const total = r2(r.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0));
+      const total = receiptTotal(r.items);
       const p = r2(paid.get(r.id) ?? 0);
       return { id: r.id, docNo: r.docNo, date: r.date, supplier: r.supplier.name, supplierId: r.supplierId, total, paid: p, left: r2(Math.max(0, total - p)), lines: r.items.length };
     })
@@ -99,7 +101,7 @@ export type SupplierLedger = {
  */
 export async function supplierLedger(supplierId: string): Promise<SupplierLedger> {
   const [items, txs, unpaidAll, supply, openings] = await Promise.all([
-    db.goodsReceiptItem.findMany({ where: { receipt: { supplierId, cancelledAt: null } }, select: { qty: true, price: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { supplierId, cancelledAt: null } }, select: { qty: true, price: true, vatAmount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { supplierId }, _sum: { amount: true } }),
     unpaidReceipts(),
     db.supplyRequest.findMany({
@@ -115,7 +117,7 @@ export async function supplierLedger(supplierId: string): Promise<SupplierLedger
   const sumOf = (t: "INCOME" | "EXPENSE") => Number(txs.find((x) => x.type === t)?._sum.amount ?? 0);
   const unpaid = unpaidAll.filter((r) => r.supplierId === supplierId);
   return {
-    received: items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0),
+    received: receiptTotal(items),
     paid: sumOf("EXPENSE") - sumOf("INCOME"),
     unpaid,
     debt: unpaid.reduce((s, r) => s + r.left, 0) + Math.max(0, opening),

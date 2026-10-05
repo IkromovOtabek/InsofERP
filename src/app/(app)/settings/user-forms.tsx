@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, RotateCcw, Save, UserPlus } from "lucide-react";
-import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, savePayablesSince, saveUserPerms, copyUserPerms, toggleUser, updateUser } from "./actions";
+import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, savePayablesSince, saveVatPayer, saveUserPerms, copyUserPerms, toggleUser, updateUser } from "./actions";
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, Input, PasswordInput, Select } from "@/components/ui";
 
@@ -89,7 +89,24 @@ export function PayablesSinceForm({ value }: { value: string }) {
   );
 }
 
-/** Kunlik zayavka limiti — bir yetkazish kuniga qabul qilinadigan hajm (m³) va soni. 0/bo'sh — cheklov yo'q. */
+/** Korxona QQS to'lovchisimi — yangi kirimlarning sklad tannarxi QQS'siz (to'lovchi) yoki QQS bilan. */
+export function VatPayerForm({ value }: { value: boolean }) {
+  const [state, action, pending] = useActionState(saveVatPayer, undefined);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <Field label="Korxona">
+        <Select name="vatPayer" defaultValue={value ? "1" : "0"} className="w-72">
+          <option value="1">QQS to&apos;lovchisi (kirim QQS&apos;i qaytariladi)</option>
+          <option value="0">QQS to&apos;lovchisi emas (QQS tannarxga kiradi)</option>
+        </Select>
+      </Field>
+      <Button disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
+      <FormError error={state?.error} />
+    </form>
+  );
+}
+
+/** Kunlik zayavka limiti —bir yetkazish kuniga qabul qilinadigan hajm (m³) va soni. 0/bo'sh — cheklov yo'q. */
 export function DailyOrderLimitForm({ m3, count }: { m3: number; count: number }) {
   const [state, action, pending] = useActionState(saveDailyOrderLimits, undefined);
   return (

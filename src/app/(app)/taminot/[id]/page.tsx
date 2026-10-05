@@ -121,7 +121,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
             <Table>
               <thead>
                 <tr>
-                  <Th>Nomi</Th><Th>Birlik</Th><Th right>Kerak</Th><Th right>Narx</Th><Th right>Summa</Th>
+                  <Th>Nomi</Th><Th>Birlik</Th><Th right>Kerak</Th><Th right>Narx (QQS bilan)</Th><Th right>Summa</Th>
                   {showFact && <><Th right>Kelgan</Th><Th right>Kelgan narx</Th><Th right>Fakt summa</Th></>}
                 </tr>
               </thead>

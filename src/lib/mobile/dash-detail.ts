@@ -16,6 +16,7 @@ import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
 import { day, inUnit, money, num, pctText, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
 import { ATT_LABEL, INVOICE_LABEL, MOVE_LABEL, ORDER_LABEL, asOf, dashRange, monthShares, procRange, staffAt, type DashRange } from "./dashboard";
 import { parsePeriod } from "./sex";
+import { lineTotal } from "@/lib/receipt-vat";
 import { ownerCached } from "./owner-cache";
 import { webList } from "./problems";
 import { ListError, driverEmployeeId, myBrigadeIds } from "./list";
@@ -548,18 +549,18 @@ async function driverKm({ user, r }: Ctx): Promise<Part> {
 
 async function goodsReceipts(r: DashRange, title: string): Promise<Part> {
   const [rows, prev] = await Promise.all([
-    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, material: { select: { id: true, name: true, unit: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, vatAmount: true, material: { select: { id: true, name: true, unit: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true } }),
   ]);
-  const amt = (x: (typeof rows)[number]) => sumBy(x.items, (i) => sum(i.qty) * sum(i.price));
-  const amount = sumBy(rows, amt), prevAmount = sumBy(prev, (i) => sum(i.qty) * sum(i.price));
+  const amt = (x: (typeof rows)[number]) => sumBy(x.items, (i) => lineTotal(i));
+  const amount = sumBy(rows, amt), prevAmount = sumBy(prev, (i) => lineTotal(i));
   const items = rows.flatMap((x) => x.items);
   return {
     title, subtitle: period(r),
-    fields: [f("Jami summa", money(amount)), f("Hujjatlar", cnt(rows.length, "ta")), f("Yetkazuvchilar", cnt(new Set(rows.map((x) => x.supplier.id)).size, "ta")), f("Material turlari", String(new Set(items.map((i) => i.material.id)).size)), prevField(amount, prevAmount, r)],
+    fields: [f("Jami summa (QQS bilan)", money(amount)), f("Hujjatlar", cnt(rows.length, "ta")), f("Yetkazuvchilar", cnt(new Set(rows.map((x) => x.supplier.id)).size, "ta")), f("Material turlari", String(new Set(items.map((i) => i.material.id)).size)), prevField(amount, prevAmount, r)],
     sections: pick(
       breakdown("Yetkazuvchilar bo'yicha", rows, (x) => x.supplier.name, amt, short, { icon: "store", unitWord: "hujjat", target: "suppliers", id: (l) => l[0]!.supplier.id }),
-      sec("Materiallar bo'yicha", groupBy(items, (i) => i.material.id).map(([id, list]) => ({ id, list, v: sumBy(list, (i) => sum(i.qty) * sum(i.price)) })).sort((a, b) => b.v - a.v).slice(0, 15)
+      sec("Materiallar bo'yicha", groupBy(items, (i) => i.material.id).map(([id, list]) => ({ id, list, v: sumBy(list, (i) => lineTotal(i)) })).sort((a, b) => b.v - a.v).slice(0, 15)
         .map((g) => ({ id: g.id, title: g.list[0]!.material.name, subtitle: `${inUnit(sumBy(g.list, (i) => sum(i.qty)), g.list[0]!.material.unit)} · ${share(g.v, amount)}`, right: short(g.v) })), { icon: "layers", target: "stock" }),
       byDays(r, rows, (x) => x.date, (l) => short(sumBy(l, amt)), (l) => cnt(l.length, "hujjat")),
       sec("Hujjatlar", rows.slice(0, 50).map((x) => ({ id: x.id, title: `${x.docNo} · ${x.supplier.name}`, subtitle: `${day(x.date)} · ${x.items.slice(0, 3).map((i) => i.material.name).join(", ")}${x.items.length > 3 ? ` +${x.items.length - 3}` : ""}`, right: short(amt(x)) })), { target: "receipts", empty: "Bu davrda kirim yo'q" }),

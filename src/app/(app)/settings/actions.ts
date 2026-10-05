@@ -314,6 +314,25 @@ export async function savePayablesSince(_prev: ActionState, fd: FormData): Promi
   return { ok: true };
 }
 
+/* ───────── QQS to'lovchisi (direktor) ───────── */
+
+/**
+ * Korxona QQS to'lovchisimi: YANGI kirimlarning sklad tannarxiga ta'sir qiladi (to'lovchi — QQS'siz,
+ * aks holda QQS bilan). Oldingi kirimlarning tannarxi qayta hisoblanmaydi (`lib/receipt-vat.ts`).
+ */
+export async function saveVatPayer(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const v = fd.get("vatPayer");
+  if (v !== "1" && v !== "0") return { error: "Tanlang: QQS to'lovchisi yoki yo'q" };
+  const vatPayer = v === "1";
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { vatPayer: true } });
+  if (before && before.vatPayer === vatPayer) return { ok: true, note: "O'zgarish yo'q" };
+  await db.companySettings.upsert({ where: { id: "main" }, update: { vatPayer }, create: { id: "main", vatPayer } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", { vatPayer: before?.vatPayer ?? true }, { vatPayer });
+  refresh(); revalidatePath("/receipts/new"); revalidatePath("/kirim-qqs");
+  return { ok: true, note: "Saqlandi" };
+}
+
 /* ───────── Kunlik zayavka limiti (direktor) ───────── */
 
 const dailyLimitSchema = z.object({
