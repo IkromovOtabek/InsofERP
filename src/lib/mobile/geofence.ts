@@ -30,8 +30,12 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** Koordinata talab qilinadimi (env bilan o'tish davrida o'chiriladi). */
-export const coordsRequired = () => (process.env.MOBILE_SITE_COORDS_REQUIRED ?? "true").toLowerCase() !== "false";
+/**
+ * Koordinata talab qilinadimi. Standart — YO'Q: o'rnatilgan eski ilovalar lat/lng yubormaydi va
+ * deploy paytida env unutilsa haydovchilar reysni yopa olmay qolardi. Yangi ilova tarqalgach
+ * `MOBILE_SITE_COORDS_REQUIRED=true` bilan yoqiladi. Koordinata kelsa 300 m qoidasi baribir ishlaydi.
+ */
+export const coordsRequired = () => (process.env.MOBILE_SITE_COORDS_REQUIRED ?? "false").toLowerCase() === "true";
 
 /** Obyekt nuqtasi haqiqiymi: null, (0,0) yoki diapazondan tashqari — zayavkada belgilanmagan. */
 export function knownPoint(lat: number | null | undefined, lng: number | null | undefined): { lat: number; lng: number } | null {
