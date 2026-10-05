@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { customerDebt, customerMarks } from "@/lib/finance";
+import { customerMarks } from "@/lib/finance";
+import { receivablesReport } from "@/lib/receivables";
 import { CustomerName } from "@/components/customer-name";
 import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
 import { money, qty, fmtNum, pct } from "@/lib/format";
@@ -66,16 +67,16 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming] = await Promise.all([
     db.order.findMany({ where: { deliveryDate: { gte: today, lt: tomorrow }, status: { notIn: ["CANCELLED", "DRAFT"] } }, include: { items: { include: { product: true } } } }),
     db.productionBatch.aggregate({ where: { cancelledAt: null, date: { gte: today }, product: { unit: "m3" } }, _sum: { qtyM3: true } }),
-    db.customer.findMany({ where: { invoices: { some: { status: { in: ["OPEN", "PARTIAL"] } } } }, select: { id: true, name: true } }),
+    receivablesReport(), // yagona debitorka: schyotlar − barcha to'lovlar (avans ham)
     db.order.count({ where: { status: "BLOCKED" } }),
     materialOutlook(),
     mixerStatus(),
     todayTrips(),
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: true } }, batches: { include: { product: true } }, trips: true }, orderBy: { deliveryDate: "asc" }, take: 8 }),
   ]);
-  const debts = (await Promise.all(receivableRows.map(async (c) => ({ ...c, debt: await customerDebt(c.id) })))).filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt);
+  const debts = receivableRows.rows.map((c) => ({ id: c.customerId, name: c.name, debt: c.debt }));
   const marks = await customerMarks([...debts.map((c) => c.id), ...trips.map((t) => t.order.customerId), ...upcoming.map((o) => o.customerId), ...mixers.map((m) => m.active?.customerId).filter((x): x is string => !!x)]);
-  const receivable = debts.reduce((x, c) => x + c.debt, 0);
+  const receivable = receivableRows.total;
   // Reja mahsulot birligida: beton m³, dona mahsulot dona — bitta songa qo'shilmaydi
   const todayPlan = fmtUnitTotals(ordersToday.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))));
   const deliveredToday = trips.filter((t) => t.status === "DELIVERED" && t.deliveredAt && t.deliveredAt >= today).reduce((x, t) => x + Number(t.qtyM3), 0);

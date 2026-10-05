@@ -73,7 +73,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Panel title="Qarz aging" info="Ochiq schyotlar yoshi bo'yicha. 90+ kun — undirish ehtimoli keskin tushadi.">
+        <Panel title="Qarz aging" info="Mijoz qarzi (schyotlar − barcha to'lovlar) yoshi bo'yicha: to'lovlar eng eski schyotlardan yopiladi. 90+ kun — undirish ehtimoli keskin tushadi.">
           <HBarList data={Object.entries(d.aging).map(([k, v], i) => ({ label: `${k} kun`, value: v, tone: (["success", "info", "warning", "danger"] as const)[i] }))} formatValue={moneyShort} />
           <div className="mt-3 text-xs text-slate-500">Jami: <b className="text-slate-800">{money(Object.values(d.aging).reduce((a, b) => a + b, 0))}</b></div>
         </Panel>

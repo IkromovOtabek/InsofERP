@@ -38,7 +38,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       ]} />
       <form className="relative mb-4 max-w-md"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input name="q" aria-label="Qidirish" placeholder="Qidirish: nomi, INN, telefon" defaultValue={q} className="pl-9" /></form>
       <Table>
-        <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Limit</Th><Th right>Ishlatilgan</Th><Th right>Bo'sh limit</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Qarz / avans</Th><Th right>Limit</Th><Th right>Ishlatilgan</Th><Th right>Bo'sh limit</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {shown.length === 0 && <Empty text={tab === "black" ? "Qora ro'yxat bo'sh" : tab === "contract" ? "Shartnomali mijoz yo'q" : "Mijozlar yo'q"} />}
           {shown.map(({ c, cr, contract }) => (
@@ -46,6 +46,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               <Td><span className="inline-flex items-center gap-1.5"><Link href={`/customers/${c.id}`} data-no-translit className="font-medium hover:underline">{c.name}</Link>{contract && <ContractMark />}</span></Td>
               <Td>{c.inn ?? "—"}</Td>
               <Td>{c.phone ?? "—"}</Td>
+              <Td right className={cr.debt > 0 ? "font-medium text-red-600" : cr.advance > 0.005 ? "text-emerald-700" : "text-slate-400"}>{cr.advance > 0.005 ? `avans ${money(cr.advance)}` : money(cr.debt)}</Td>
               <Td right>{money(cr.limit)}</Td>
               <Td right className={cr.used > 0 ? "text-amber-700" : "text-slate-400"}>{money(cr.used)}</Td>
               <Td right className={cr.free <= 0 ? "font-semibold text-red-600" : "text-emerald-700"}>{money(cr.free)}</Td>

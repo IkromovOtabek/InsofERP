@@ -7,6 +7,7 @@ import { MONTHS_SHORT } from "@/lib/bi/plans";
 import { EXPENSE_CATEGORIES } from "@/app/(app)/cashflow/categories";
 import { ROLE_LABELS } from "@/lib/nav";
 import { customersCredit, type CustomerCredit } from "@/lib/finance";
+import { receivablesReport, OWNER_EDGES } from "@/lib/receivables";
 import { totalPlanned } from "@/lib/supply";
 import { needsDirector } from "@/lib/procurement";
 import { moneyShort, qty as fq } from "@/lib/format";
@@ -106,7 +107,7 @@ export async function ownerDashboard() {
   const range: Range = { period: "month", from: monthStart, to: tomorrow, prevFrom: prevMonthStart, prevTo: monthStart, days: daysPassed, label: "Joriy oy", prevLabel: "O'tgan oy" };
 
   const [
-    company, sales90, salesPlans, budgets, txMonth, txPrev3, payMonth, pay30, allPay, allTx, accounts, openInvoices,
+    company, sales90, salesPlans, budgets, txMonth, txPrev3, payMonth, pay30, allPay, allTx, accounts, recv,
     supplyOpen, receiptsMonth, prodPlans, batchesMonth, outputsMonth, ordersMonth, overdueOrders, tripsToday, tripsMonth, vehicles,
     materials, recipes, consumeMonth, loss, defectsMonth, overdueTasks, costs, matCost,
   ] = await Promise.all([
@@ -123,7 +124,8 @@ export async function ownerDashboard() {
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
     // Nofaol hisob ham olinadi: qoldig'i bor hisob yopilsa pul jami summadan "yo'qolmasin" (pastda faqat qoldig'i borlari ko'rsatiladi)
     db.cashAccount.findMany({ orderBy: { name: "asc" } }),
-    db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { id: true, date: true, amount: true, customerId: true, customer: { select: { name: true } }, payments: { select: { amount: true } } } }),
+    // Debitorka — yagona hisob (schyotlar − barcha to'lovlar, FIFO aging), overdue chegarasi sozlamadan
+    getCompany().then((c) => receivablesReport({ edges: OWNER_EDGES, overdueDays: c.overdueDays })),
     db.supplyRequest.findMany({ where: { status: { in: ["PRICED", "APPROVED"] } }, include: { items: { select: { qty: true, price: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } } }),
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: monthStart, lt: tomorrow } } }, select: { qty: true, price: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
     db.productionPlan.findMany({ where: { year: y, month: m + 1 }, include: { product: { select: { id: true, code: true, name: true, unit: true } } } }),
@@ -258,19 +260,10 @@ export async function ownerDashboard() {
   const topIn = payMonth.slice(0, 5).map((p) => ({ id: p.id, date: p.date, who: p.customer.name, amount: Number(p.amount), account: p.cashAccount.name, href: `/customers/${p.customerId}` }));
 
   /* ───────────────────────── Debitorka / kreditorka ───────────────────────── */
-  const aging = [0, 0, 0, 0]; // 0–7 / 8–30 / 31–60 / 60+
-  const debtByCustomer = new Map<string, { id: string; name: string; debt: number; overdue: number; oldest: number }>();
-  let receivable = 0, overdueReceivable = 0;
-  for (const inv of openInvoices) {
-    const open = Number(inv.amount) - sum(inv.payments.map((p) => Number(p.amount)));
-    if (open <= 0) continue;
-    const age = Math.floor((today.getTime() - startOfDay(inv.date).getTime()) / 86400000);
-    aging[age <= 7 ? 0 : age <= 30 ? 1 : age <= 60 ? 2 : 3] += open;
-    receivable += open;
-    const isOverdue = age > T.overdue; if (isOverdue) overdueReceivable += open;
-    const c = debtByCustomer.get(inv.customerId) ?? { id: inv.customerId, name: inv.customer.name, debt: 0, overdue: 0, oldest: 0 };
-    c.debt += open; if (isOverdue) c.overdue += open; c.oldest = Math.max(c.oldest, age); debtByCustomer.set(inv.customerId, c);
-  }
+  // Yagona debitorka (receivables.ts): mijoz balansi, to'lovlar FIFO bilan eng eski schyotlarga taqsimlangan
+  const aging = recv.buckets; // 0–7 / 8–30 / 31–60 / 60+
+  const debtByCustomer = new Map(recv.rows.map((r) => [r.customerId, { id: r.customerId, name: r.name, debt: r.debt, overdue: r.overdue, oldest: r.oldestDays ?? 0 }]));
+  const receivable = recv.total, overdueReceivable = recv.overdue;
   const topDebtors = [...debtByCustomer.values()].sort((a, b) => b.debt - a.debt).slice(0, 10);
   const payableTotal = sum(committed.map((s) => s.amount)), payableOverdue = sum(committed.filter((s) => s.overdue).map((s) => s.amount));
   const bySupplier = new Map<string, number>();

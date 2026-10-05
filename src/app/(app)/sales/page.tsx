@@ -10,6 +10,7 @@ import { Button, Empty, Input, PageHeader, StatCard, Table, Td, Th, Tr, Tabs } f
 import { ORDER_STATUS, OrderStatusBadge, SALES_STATUSES } from "../orders/status";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import type { Prisma, OrderStatus } from "@/generated/prisma";
+import { receivablesReport } from "@/lib/receivables";
 
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; from?: string; to?: string }> }) {
   const { status, customer, from: fromQ, to: toQ } = await searchParams;
@@ -23,7 +24,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const orderWhere: Prisma.OrderWhereInput = { kind: "SALE", status: st ?? { in: SALES_STATUSES }, date: { gte: from, lte: to }, ...(customer ? { customerId: customer } : {}) };
 
   const statuses = st ? [st] : SALES_STATUSES;
-  const [orders, totalRow, paidAgg, invoicedAgg, invPaidAgg, noInvoice] = await Promise.all([
+  const [orders, totalRow, paidAgg, recv, noInvoice] = await Promise.all([
     db.order.findMany({
       where: orderWhere,
       orderBy: [{ updatedAt: "desc" }],
@@ -46,8 +47,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       where: { OR: [{ invoice: { status: { not: "CANCELLED" }, order: orderWhere } }, { invoiceId: null, order: orderWhere }] },
       _sum: { amount: true },
     }),
-    db.invoice.aggregate({ where: { status: { not: "CANCELLED" }, order: orderWhere }, _sum: { amount: true } }),
-    db.payment.aggregate({ where: { invoice: { status: { not: "CANCELLED" }, order: orderWhere } }, _sum: { amount: true } }),
+    // Debitorka — joriy holat, yagona hisob (schyotlar − barcha to'lovlar, schyotsiz avans ham); davrga bog'liq emas
+    receivablesReport(customer ? { ids: [customer] } : {}),
     // Schyot yozilmagan (yopilganidan tashqari) tasdiqlangan zayavkalar
     db.order.count({ where: { ...orderWhere, status: { in: statuses.filter((x) => x !== "CLOSED") }, invoices: { none: { status: { not: "CANCELLED" } } } } }),
   ]);
@@ -64,7 +65,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const total = Number(totalRow[0]?.total ?? 0);
   const count = Number(totalRow[0]?.n ?? 0);
   const paid = Number(paidAgg._sum.amount ?? 0);
-  const receivable = Math.max(0, Number(invoicedAgg._sum.amount ?? 0) - Number(invPaidAgg._sum.amount ?? 0));
+  const receivable = recv.total;
   const canInvoice = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s?.role ?? "");
   const period = (k: string) => `${k ? `status=${k}&` : ""}from=${isoDate(from)}&to=${isoDate(to)}${customer ? `&customer=${customer}` : ""}`;
 
@@ -76,7 +77,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Sotuv summasi (davr)" value={money(total)} icon={Wallet} hint={`${count} ta zayavka`} />
         <StatCard label="To'langan" value={money(paid)} icon={CheckCircle2} tone="success" hint="schyot to'lovlari + avanslar" />
-        <StatCard label="Debitorka (schyot bo'yicha)" value={money(receivable)} icon={Clock} tone={receivable > 0 ? "danger" : "success"} />
+        <StatCard label="Debitorka (joriy)" value={money(receivable)} icon={Clock} tone={receivable > 0 ? "danger" : "success"} hint={[recv.overdue > 0 ? `muddati o'tgan ${money(recv.overdue)}` : `${recv.debtors} ta qarzdor`, recv.advance > 0.005 ? `avans ${money(recv.advance)}` : ""].filter(Boolean).join(" · ")} />
         <StatCard label="Schyot yozilmagan" value={String(noInvoice)} icon={FileText} tone={noInvoice > 0 ? "warning" : "default"} hint="tasdiqlangan, schyotsiz" href={canInvoice ? "/invoices/new" : undefined} />
       </div>
       <form className="mb-3 flex flex-wrap items-center gap-2 text-sm">

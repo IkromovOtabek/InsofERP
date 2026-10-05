@@ -15,19 +15,23 @@ import { BlacklistMark, ContractMark } from "@/components/customer-name";
 import { OrderStatusBadge } from "../../orders/status";
 import { customerAppStatus } from "@/lib/eco/customers";
 import { AppAccount } from "../app-account";
+import { receivablesReport } from "@/lib/receivables";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"], { module: "customers" });
   const c = await db.customer.findUnique({ where: { id }, include: { orders: { orderBy: { date: "desc" }, take: 10, include: { items: true } } } });
   if (!c) notFound();
-  const [{ limit, debt, open, used, free, blacklisted }, contracted, appStatus, invoices, payments, sites] = await Promise.all([
+  const [{ limit, debt, advance, open, used, free, blacklisted }, contracted, appStatus, invoices, payments, sites, recv] = await Promise.all([
     customerCredit(id), contractedIds([id]), c.isInternal ? null : customerAppStatus(id),
     // Schyot va to'lov tarixi — mijoz kartasida (to'liq hisob — Akt sverki)
     db.invoice.findMany({ where: { customerId: id }, orderBy: { date: "desc" }, take: 15, include: { payments: { select: { amount: true } }, order: { select: { id: true, orderNo: true } } } }),
     db.payment.findMany({ where: { customerId: id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15, include: { invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, cashAccount: { select: { name: true } }, createdBy: { select: { fullName: true } }, register: { select: { id: true } } } }),
     siteDebts(id),
+    // Muddati o'tgan qism — yagona debitorka (to'lovlar FIFO bilan eng eski schyotlarga)
+    receivablesReport({ ids: [id], includeInternal: true }),
   ]);
+  const aged = recv.byCustomer.get(id);
   const canOrder = canDo(s, "orders", "create") && c.isActive && !blacklisted;
   const canEditSites = ["SALES", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
 
@@ -43,7 +47,9 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       )}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Kredit limit" value={money(limit)} icon={CreditCard} hint={limit > 0 ? undefined : "0 — faqat naqd / avans"} />
-        <StatCard label="Qarz (debitorka)" value={money(debt)} icon={Wallet} tone={debt > 0 ? "danger" : "success"} />
+        {advance > 0.005
+          ? <StatCard label="Avans (oldindan to'langan)" value={money(advance)} icon={Wallet} tone="success" hint="schyotlardan ortiq to'lov" />
+          : <StatCard label="Qarz (debitorka)" value={money(debt)} icon={Wallet} tone={debt > 0 ? "danger" : "success"} hint={aged && aged.overdue > 0 ? `muddati o'tgan ${money(aged.overdue)} · ${aged.oldestDays} kun` : debt > 0 ? "schyotlar − barcha to'lovlar" : undefined} />}
         <StatCard label="Ochiq zayavkalar" value={money(open)} icon={ClipboardList} hint="schyot yozilmagan" />
         <StatCard label="Bo'sh limit" value={money(free)} icon={CreditCard} tone={free <= 0 ? "danger" : "info"} hint={`ishlatilgan ${money(used)}`} />
       </div>

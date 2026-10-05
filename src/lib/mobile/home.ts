@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { receivablesReport } from "@/lib/receivables";
 import { loadSales } from "@/lib/bi/core";
 import { customersCredit } from "@/lib/finance";
 import { reportHistory } from "@/lib/production-report";
@@ -576,15 +577,16 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     }
 
     case "ACCOUNTING": {
-      const [open, todayPay, invoices] = await Promise.all([
-        db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, include: { customer: true, payments: true } }),
+      const [open, todayPay, invoices, recv] = await Promise.all([
+        db.invoice.count({ where: { status: { in: ["OPEN", "PARTIAL"] } } }),
         db.payment.aggregate({ where: { date: { gte: today } }, _sum: { amount: true }, _count: true }),
         db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, orderBy: { date: "asc" }, take: 12, include: { customer: true, payments: true } }),
+        receivablesReport(), // yagona debitorka: schyotlar − barcha to'lovlar (schyotsiz avans ham)
       ]);
-      const debt = open.reduce((s, i) => s + sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0), 0);
+      const debt = recv.total;
       cards.push(
-        { key: "debt", label: "Qarzdorlik", value: short(debt), hint: "so'm", tone: debt > 0 ? "danger" : "success", icon: "warning" },
-        { key: "open", label: "Ochiq schyot", value: String(open.length), tone: "warning", icon: "receipt" },
+        { key: "debt", label: "Qarzdorlik", value: short(debt), hint: recv.advance > 0.005 ? `avans ${short(recv.advance)}` : `${recv.debtors} ta qarzdor`, tone: debt > 0 ? "danger" : "success", icon: "warning" },
+        { key: "open", label: "Ochiq schyot", value: String(open), tone: "warning", icon: "receipt" },
         { key: "paid", label: "Bugungi to'lov", value: short(sum(todayPay._sum.amount)), hint: `${todayPay._count} ta`, tone: "success", icon: "checkmark-circle", open: { key: "dash", id: "payments.day" } },
       );
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });

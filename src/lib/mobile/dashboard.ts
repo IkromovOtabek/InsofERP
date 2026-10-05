@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { receivablesReport } from "@/lib/receivables";
 import { loadSales } from "@/lib/bi/core";
 import { myBrigades } from "@/lib/brigades";
 import { ISSUE_KIND } from "@/lib/logistics";
@@ -274,25 +275,14 @@ async function accountBalances(until: Date | null = null) {
 }
 
 /**
- * Debitorka — mijoz kesimida. `until` berilsa — o'sha paytdagi qarz: shu vaqtgacha yozilgan schyotlar
- * minus shu vaqtgacha kelgan to'lovlar (o'tgan davr uchun); aks holda hozirgi ochiq schyotlar.
+ * Debitorka — mijoz kesimida, yagona hisob (`lib/receivables.ts`): schyotlar − barcha to'lovlar (avans ham).
+ * `until` berilsa — o'sha paytdagi qarz (shu vaqtgacha yozilgan schyotlar va kelgan to'lovlar), aks holda hozirgi.
+ * `count` — FIFO bo'yicha to'lanmagan qismi qolgan schyotlar soni.
  */
 export async function receivables(until: Date | null = null) {
-  const open = await db.invoice.findMany({
-    where: until ? { status: { not: "CANCELLED" }, date: { lt: until } } : { status: { in: ["OPEN", "PARTIAL"] } },
-    select: { id: true, customerId: true, amount: true, customer: { select: { name: true } }, payments: { where: until ? { date: { lt: until } } : {}, select: { amount: true } } },
-  });
-  const byCustomer = new Map<string, { id: string; name: string; debt: number; n: number }>();
-  let count = 0;
-  for (const i of open) {
-    const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0);
-    if (left <= 0.5) continue;
-    count++;
-    const c = byCustomer.get(i.customerId) ?? { id: i.customerId, name: i.customer.name, debt: 0, n: 0 };
-    c.debt += left; c.n += 1; byCustomer.set(i.customerId, c);
-  }
-  const list = [...byCustomer.values()].sort((a, b) => b.debt - a.debt);
-  return { total: list.reduce((s, c) => s + c.debt, 0), count, list };
+  const r = await receivablesReport({ asOf: until });
+  const list = r.rows.map((c) => ({ id: c.customerId, name: c.name, debt: c.debt, n: c.items.length }));
+  return { total: r.total, advance: r.advance, overdue: r.overdue, count: list.reduce((s, c) => s + c.n, 0), list };
 }
 
 

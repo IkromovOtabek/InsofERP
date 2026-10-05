@@ -1302,7 +1302,10 @@ async function customerDetail(user: MobileUser, id: string): Promise<MobileDetai
       { label: "Reyting", value: history ? `${"★".repeat(history.stars)}${"☆".repeat(5 - history.stars)} ${STAR_LABELS[history.stars]}` : "—" },
       { label: "Kredit limiti", value: money(credit.limit) },
       { label: "Ishlatilgan", value: money(credit.used), tone: credit.blacklisted ? "danger" : credit.used > credit.limit / 2 ? "warning" : "success" },
-      { label: "Qarz (schyot bo'yicha)", value: money(credit.debt), tone: credit.debt > 0 ? "danger" : "success" },
+      // Yagona balans (lib/receivables.ts): schyotlar − barcha to'lovlar; manfiy — mijoz avansi
+      credit.advance > 0.005
+        ? { label: "Avans (oldindan to'langan)", value: money(credit.advance), tone: "success" }
+        : { label: "Qarz (debitorka)", value: money(credit.debt), tone: credit.debt > 0 ? "danger" : "success" },
       { label: "Schyotsiz zayavkalar", value: money(credit.open), tone: credit.open > 0 ? "warning" : undefined },
       { label: "Limitda qoldi", value: money(Math.max(0, credit.free)), tone: credit.blacklisted ? "danger" : "success" },
       ...(history?.orders ? [{ label: "Xarid", value: `${money(history.bought)} · ${history.orders} zayavka` }] : []),

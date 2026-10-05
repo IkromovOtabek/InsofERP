@@ -89,7 +89,7 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
             {(from || to) && <Link href={`/payments/mijoz/${id}`} className="text-xs text-slate-500 hover:underline">tozalash</Link>}
           </form>
           <div className="mt-3 space-y-1 text-xs text-slate-500">
-            <div>Qarz (ochiq schyotlar): <span className="font-medium text-slate-800">{money(credit.debt)}</span></div>
+            <div>{credit.advance > 0.005 ? "Avans" : "Qarz (schyotlar − to'lovlar)"}: <span className="font-medium text-slate-800">{money(credit.advance > 0.005 ? credit.advance : credit.debt)}</span></div>
             <div>Bo&apos;sh limit: <span className="font-medium text-slate-800">{money(credit.free)}</span></div>
             {rows.length > 0 && <div>Oxirgi qator: {date(rows[0].date)}</div>}
           </div>

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { receivablesReport, OWNER_EDGES } from "@/lib/receivables";
 import { loadSales, type SaleRow } from "@/lib/bi/core";
 import { EXPENSE_KIND, FUEL_TYPE, ISSUE_KIND } from "@/lib/logistics";
 import { SUPPLY_LABEL } from "@/lib/supply";
@@ -896,23 +897,18 @@ async function invoicesIssued({ r }: Ctx): Promise<Part> {
 }
 
 async function receivablesDetail(r?: DashRange): Promise<Part> {
+  // Yagona debitorka (lib/receivables.ts): schyotlar − barcha to'lovlar; to'lovlar FIFO bilan eng eski schyotlarga.
   // Davr oxiridagi qarz: shu vaqtgacha yozilgan schyotlar − shu vaqtgacha kelgan to'lovlar (joriy davrda — hozir)
   const until = r ? asOf(r) : null;
-  const open = await db.invoice.findMany({
-    where: until ? { status: { not: "CANCELLED" }, date: { lt: until } } : { status: { in: ["OPEN", "PARTIAL"] } }, orderBy: { date: "asc" },
-    select: { id: true, invoiceNo: true, date: true, amount: true, status: true, customer: { select: { id: true, name: true } }, payments: { where: until ? { date: { lt: until } } : {}, select: { amount: true } } },
-  });
-  const t0 = until ?? today0();
-  const inv = open.map((i) => ({ i, left: sum(i.amount) - sumBy(i.payments, (p) => sum(p.amount)), age: daysBetween(i.date, t0) })).filter((x) => x.left > 0.5);
-  const total = sumBy(inv, (x) => x.left);
-  const byC = groupBy(inv, (x) => x.i.customer.id).map(([id, list]) => ({ id, name: list[0]!.i.customer.name, debt: sumBy(list, (x) => x.left), n: list.length, oldest: Math.max(...list.map((x) => x.age)) })).sort((a, b) => b.debt - a.debt);
-  const aging = [[0, 7], [8, 30], [31, 60], [61, Infinity]].map(([a, b]) => ({ label: b === Infinity ? "60 kundan eski" : `${a}–${b} kun`, v: sumBy(inv.filter((x) => x.age >= a! && x.age <= b!), (x) => x.left) }));
+  const rep = await receivablesReport({ asOf: until, edges: OWNER_EDGES });
+  const inv = rep.rows.flatMap((c) => c.items.map((x) => ({ ...x, customer: { id: c.customerId, name: c.name } }))).sort((a, b) => a.date.getTime() - b.date.getTime());
+  const aging = rep.labels.map((l, i) => ({ label: i === rep.labels.length - 1 ? `${rep.edges.at(-1)} kundan eski` : `${l} kun`, v: rep.buckets[i]!, old: i === rep.labels.length - 1 }));
   return {
-    title: "Debitorka", subtitle: until ? `${period(r!)} oxiridagi qarz` : "Ochiq schyotlar bo'yicha qarz",
-    fields: [f("Jami qarz", money(total), total > 0 ? "danger" : "success"), f("Qarzdorlar", cnt(byC.length, "mijoz")), f("Ochiq schyotlar", cnt(inv.length, "ta")), ...aging.map((a) => f(a.label, money(a.v), a.label.startsWith("60") && a.v > 0 ? "danger" : undefined))],
+    title: "Debitorka", subtitle: until ? `${period(r!)} oxiridagi qarz` : "Mijoz balansi: schyotlar − barcha to'lovlar",
+    fields: [f("Jami qarz", money(rep.total), rep.total > 0 ? "danger" : "success"), f("Qarzdorlar", cnt(rep.debtors, "mijoz")), f("Ochiq schyotlar", cnt(inv.length, "ta")), ...aging.map((a) => f(a.label, money(a.v), a.old && a.v > 0 ? "danger" : undefined)), ...(rep.advance > 0.005 ? [f("Mijozlar avansi", `${money(rep.advance)} · ${cnt(rep.advanceCustomers, "mijoz")}`, "success")] : [])],
     sections: [
-      sec("Qarzdorlar", byC.slice(0, 40).map((c) => ({ id: c.id, title: c.name, subtitle: `${cnt(c.n, "ochiq schyot")} · eng eskisi ${c.oldest} kun`, right: short(c.debt), tone: c.oldest > 60 ? "danger" : c.oldest > 30 ? "warning" : "info" })), { target: "customers", empty: "Qarzdor yo'q" }),
-      sec("Ochiq schyotlar (eskidan yangiga)", inv.slice(0, 60).map((x) => ({ id: x.i.id, title: `${x.i.invoiceNo} · ${x.i.customer.name}`, subtitle: `${day(x.i.date)} · ${x.age} kun · summa ${short(sum(x.i.amount))}`, right: short(x.left), status: INVOICE_LABEL[x.i.status], tone: x.age > 60 ? "danger" : x.age > 30 ? "warning" : "info" })), { target: "invoices", empty: "Ochiq schyot yo'q" }),
+      sec("Qarzdorlar", rep.rows.slice(0, 40).map((c) => ({ id: c.customerId, title: c.name, subtitle: `${cnt(c.items.length, "ochiq schyot")} · eng eskisi ${c.oldestDays ?? 0} kun`, right: short(c.debt), tone: (c.oldestDays ?? 0) > 60 ? "danger" : (c.oldestDays ?? 0) > 30 ? "warning" : "info" })), { target: "customers", empty: "Qarzdor yo'q" }),
+      sec("Ochiq schyotlar (eskidan yangiga)", inv.slice(0, 60).map((x) => ({ id: x.invoiceId, title: `${x.invoiceNo} · ${x.customer.name}`, subtitle: `${day(x.date)} · ${x.age} kun · summa ${short(x.amount)}`, right: short(x.left), status: INVOICE_LABEL[x.status], tone: x.age > 60 ? "danger" : x.age > 30 ? "warning" : "info" })), { target: "invoices", empty: "Ochiq schyot yo'q" }),
     ],
   };
 }

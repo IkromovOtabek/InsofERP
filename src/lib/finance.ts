@@ -1,5 +1,6 @@
 import { db } from "./db";
 import type { Prisma } from "@/generated/prisma";
+import { customerBalances, balanceOf } from "./receivables";
 
 /**
  * Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm): 0 — yangi mijoz qarzga olmaydi,
@@ -10,15 +11,14 @@ export const DEFAULT_CREDIT_LIMIT = 0;
 /**
  * Qarz va limit — hisob qoidasi (bitta joyda):
  *
- *   yozilgan  = bekor qilinmagan barcha schyotlar (OPEN, PARTIAL, PAID)
- *   avans     = schyoti hali yo'q ochiq zayavkaga olingan to'lov (invoiceId bo'sh, orderId ochiq zayavka)
- *   qarz      = yozilgan − (mijozning BARCHA to'lovlari − avans)
- *   ochiq     = schyot yozilmagan tasdiqlangan zayavkalar − avans
+ *   balans    = `receivables.ts` dagi yagona mijoz balansi: schyotlar (boshlang'ich qoldiq bilan, bekor
+ *               qilinganlarsiz) − mijozning BARCHA to'lovlari (schyotga bog'langan-bog'lanmagan, zayavka avansi ham)
+ *   qarz      = max(0, balans) — mijoz kartasi, dashboard, BI va mobil ilova bilan bir xil raqam
+ *   ochiq     = schyot yozilmagan tasdiqlangan zayavkalar (va qisman schyotlangan zayavka qoldig'i);
+ *               mijoz avansi (manfiy balans) avval shuni qoplaydi
+ *   ishlatilgan = qarz + ochiq (limitdan ayiriladi)
  *
- * Ilgari qarzdan faqat ochiq schyotga bog'langan to'lov ayirilardi: schyotsiz to'lov (kassa sahifasi,
- * Realizatsiya importi) qarzni kamaytirmas, to'lagan mijoz qora ro'yxatda qolib ketardi. Endi har qanday
- * to'lov hisobga tushadi; ortiqcha to'lov (avans) ochiq zayavkalarni qoplaydi. Istisno — Realizatsiya
- * jurnali to'lovlari: ular jurnaldagi sotuvning o'zini yopadi, ERP schyotlariga tegmaydi.
+ * Istisno — Realizatsiya jurnali to'lovlari: ular jurnaldagi sotuvning o'zini yopadi, ERP schyotlariga tegmaydi.
  */
 
 /** Ochiq (schyot yozilmagan) zayavka: bekor qilingan schyot "yozilmagan" hisoblanadi. */
@@ -48,8 +48,11 @@ export async function customerOpenOrdersTotal(customerId: string, excludeOrderId
 
 export type CustomerCredit = {
   limit: number;
-  debt: number; // schyotlar bo'yicha qarz (to'lovlar ayirilgan)
-  open: number; // schyot yozilmagan tasdiqlangan zayavkalar (avanslar ayirilgan)
+  /** Yagona mijoz balansi (receivables.ts): musbat — qarz, manfiy — avans. */
+  balance: number;
+  debt: number; // max(0, balans) — debitorka
+  advance: number; // max(0, −balans) — mijoz avansi
+  open: number; // schyot yozilmagan tasdiqlangan zayavkalar (avans ayirilgan)
   used: number; // debt + open — limitdan ayiriladi
   /** Yaxlitlanmagan sof holat (qarz + ochiq − ortiqcha to'lov): to'liq oldindan to'langan zayavka
    *  qabul qilishda limitga urilmasin — `used` 0 dan pastga tushmaydi, ortiqcha avans esa yo'qolardi. */
@@ -62,13 +65,14 @@ export type CustomerCredit = {
  * Ortiqcha to'lov bir tomonda manfiy chiqsa, ikkinchisini qoplaydi: schyotlardan ortgan pul ochiq
  * zayavkani, zayavkadan ortgan avans esa schyot qarzini kamaytiradi.
  */
-function creditOf(limit: number, rawDebt: number, rawOpen: number): CustomerCredit {
-  const debt = Math.max(0, rawDebt + Math.min(0, rawOpen));
-  const open = Math.max(0, rawOpen + Math.min(0, rawDebt));
-  const used = debt + open;
-  const free = limit - used;
+function creditOf(limit: number, balance: number, rawOpen: number): CustomerCredit {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const debt = Math.max(0, r2(balance + Math.min(0, rawOpen)));
+  const open = Math.max(0, r2(rawOpen + Math.min(0, balance)));
+  const used = r2(debt + open);
+  const free = r2(limit - used);
   // Qora ro'yxat — limitdan foydalangan va u to'lgan mijoz. Limiti 0 (yangi, naqd) mijoz qarzi bo'lmasa qora ro'yxatda emas
-  return { limit, debt, open, used, net: rawDebt + rawOpen, free, blacklisted: free <= 0 && (limit > 0 || used > 0.005) };
+  return { limit, balance, debt, advance: Math.max(0, -balance), open, used, net: r2(balance + rawOpen), free, blacklisted: free <= 0 && (limit > 0 || used > 0.005) };
 }
 
 /**
@@ -88,14 +92,11 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
   const where: Prisma.CustomerWhereInput = { ...(opts?.includeInternal ? {} : { isInternal: false }), ...(ids ? { id: { in: ids } } : {}) };
   const byCustomer = ids ? { customerId: { in: ids } } : {};
   const open = openOrderWhere(byCustomer);
-  const [customers, inv, pay, items, adv, partly] = await Promise.all([
+  const [customers, bal, items, partly] = await Promise.all([
     db.customer.findMany({ where, select: { id: true, creditLimit: true } }),
-    db.invoice.groupBy({ by: ["customerId"], where: { status: { not: "CANCELLED" }, ...byCustomer }, _sum: { amount: true } }),
-    // Realizatsiya jurnalidan yozilgan to'lov — o'sha qatordagi sotuvning puli (sotuv va to'lov birga,
-    // schyotsiz). U ERP qarzini kamaytirmaydi: aks holda eski sotuvlar summasi "avans" bo'lib qolardi.
-    db.payment.groupBy({ by: ["customerId"], where: { ...byCustomer, register: { is: null } }, _sum: { amount: true } }),
+    // Qarz/avans — yagona balans (schyotlar − barcha to'lovlar); zayavka avansi ham shu yerda ayiriladi
+    customerBalances({ ids, includeInternal: true }),
     db.orderItem.findMany({ where: { order: open }, select: { qtyM3: true, price: true, order: { select: { customerId: true } } } }),
-    db.payment.groupBy({ by: ["customerId"], where: { invoiceId: null, order: open }, _sum: { amount: true } }),
     // Schyoti zayavka summasidan kam yozilgan ochiq zayavkalar: schyotlanmagan qoldiq ham limitga kiradi —
     // aks holda 1 so'mlik schyot butun zayavkani limitdan chiqarib yuborardi
     db.order.findMany({
@@ -103,20 +104,13 @@ export async function customersCredit(ids?: string[], opts?: { includeInternal?:
       select: { customerId: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { amount: true } } },
     }),
   ]);
-  const num = (x: { _sum: { amount: unknown } }) => Number(x._sum.amount ?? 0);
-  const advance = new Map(adv.map((x) => [x.customerId, num(x)]));
-  const debt = new Map<string, number>();
-  for (const x of inv) debt.set(x.customerId, (debt.get(x.customerId) ?? 0) + num(x));
-  // Avans ochiq zayavkaniki — qarzdan emas, ochiq summadan ayiriladi
-  for (const x of pay) debt.set(x.customerId, (debt.get(x.customerId) ?? 0) - (num(x) - (advance.get(x.customerId) ?? 0)));
   const openSum = new Map<string, number>();
   for (const i of items) openSum.set(i.order.customerId, (openSum.get(i.order.customerId) ?? 0) + Number(i.qtyM3) * Number(i.price));
-  for (const [cid, a] of advance) openSum.set(cid, (openSum.get(cid) ?? 0) - a);
   for (const o of partly) {
     const rest = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0) - o.invoices.reduce((x, i) => x + Number(i.amount), 0);
     if (rest > 0.005) openSum.set(o.customerId, (openSum.get(o.customerId) ?? 0) + rest);
   }
-  return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), debt.get(c.id) ?? 0, openSum.get(c.id) ?? 0)]));
+  return new Map(customers.map((c) => [c.id, creditOf(Number(c.creditLimit), balanceOf(bal, c.id).balance, openSum.get(c.id) ?? 0)]));
 }
 
 // ───────────────────────── Mijoz tarixi va ishonch reytingi ─────────────────────────
