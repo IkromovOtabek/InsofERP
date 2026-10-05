@@ -655,7 +655,14 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: (r as { text: string }).text };
     }
     case "att.face": {
-      // Ilova old kameradan kadrni data-URL qilib yuboradi; solishtirish va qoida — `lib/production-staff.ts`
+      // Yangi ilova: telefonning Face ID / barmoq izi skaneri o'tdi — rasm yo'q, darhol "Keldi"
+      if (payload?.biometric === true) {
+        const r = await markProductionAttendance(user.id, id, { status: "PRESENT" });
+        if ("error" in r) fail(r.error!);
+        clearDashCache();
+        return { ok: true, message: (r as { text: string }).text };
+      }
+      // Eski ilova: old kameradan kadr (data-URL); solishtirish va qoida — `lib/production-staff.ts`
       const photo = dataUrlFile(textOf(payload, "photo"), "yuz");
       if (!photo) fail("Xodimning yuzini kameraga oling");
       const r = await markAttendanceByFace(user.id, id, photo!);

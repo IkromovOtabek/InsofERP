@@ -349,13 +349,9 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
   if (m && (canWork(user) || own)) {
     // "Keldi" — yuz bilan (AI kaliti bo'lsa): old kamera kadri profil surati bilan solishtiriladi, mos kelmasa
     // yozilmaydi. Kalit bo'lmasa — eskicha bir tugma. Vaqtni tuzatish/boshqa belgi pastdagi formada qoladi.
-    if (m.status !== "PRESENT") {
-      if (faceCheckEnabled()) actions.push({
-        id: "att.face", label: "Keldi — yuz bilan tasdiqlash", tone: "success",
-        form: [{ name: "photo", label: "Xodimning yuzi", type: "photo", required: true, camera: "front", cameraOnly: true, hint: "Kamerani xodimga qarating — kadr profil surati bilan solishtiriladi" }],
-      });
-      else actions.push({ id: "att.present", label: "Keldi (hozir)", tone: "success" });
-    }
+    // "Keldi" — telefonning Face ID / barmoq izi skaneri bilan (kamera ochilmaydi, rasm olinmaydi):
+    // ilova OS oynasida tasdiqlatib, `biometric: true` yuboradi
+    if (m.status !== "PRESENT") actions.push({ id: "att.face", label: "Keldi — Face ID", tone: "success" });
     if (m.status === "PRESENT" && !m.checkOut) actions.push({ id: "att.checkout", label: "Ketdi (hozir)", tone: "brand" });
     if (m.status !== "ABSENT") actions.push({ id: "att.absent", label: "Kelmadi", tone: "danger", confirm: `${m.fullName} bugun kelmadi deb belgilansinmi?` });
     // Vaqtni faqat sex boshlig'i tuzatadi. Brigadir esa yuz tekshiruvi yoqiq bo'lsa "Keldi" ni bu
