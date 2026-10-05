@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { control, tenantDb, tenantDbUrl, DB_NAME_RE } from "./db";
 import { passwordProblem } from "../password-policy";
 import { deriveTenantSsoKey } from "./token";
+import { isTestMode } from "../test-mode";
 import type { Tenant } from "@/generated/control";
 
 const run = promisify(execFile);
@@ -23,10 +24,19 @@ const run = promisify(execFile);
 
 export const SLUG_RE = /^[a-z][a-z0-9-]{1,29}$/;
 const RESERVED = new Set(["admin", "superadmin", "www", "api", "app", "eco", "mail", "control", "static", "test"]);
-const FIRST_PORT = 3101;
+// Birinchi korxona porti. Lokal sinovda boshqa jarayonlar bilan to'qnashmasin deb TENANT_FIRST_PORT bilan o'zgartiriladi.
+const firstPort = () => {
+  const n = Number(process.env.TENANT_FIRST_PORT);
+  return Number.isInteger(n) && n >= 1024 && n < 65000 ? n : 3101;
+};
 
 export const tenantsDir = () => process.env.TENANTS_DIR || path.join(process.cwd(), "tenants");
-export const dbNameFor = (slug: string) => `insof_t_${slug.replace(/-/g, "_")}`;
+/**
+ * Korxona bazasi nomi. Test rejimida (INSOF_ENV=test — lib/test-mode.ts) prefiks `insof_test_t_`:
+ * test himoyasi faqat `insof_test…` bazalarini qabul qiladi. Prodda test rejimi yoqilmaydi (server real
+ * kalitlar yoki test bo'lmagan baza bilan ishga tushmaydi), shuning uchun bu tarmoq prodga ta'sir qilmaydi.
+ */
+export const dbNameFor = (slug: string) => `${isTestMode() ? "insof_test_t_" : "insof_t_"}${slug.replace(/-/g, "_")}`;
 export const envPathFor = (slug: string) => path.join(tenantsDir(), `${slug}.env`);
 
 export type NewTenantInput = {
@@ -46,8 +56,9 @@ export function validateNewTenant(i: NewTenantInput): string | null {
 }
 
 async function nextPort(): Promise<number> {
-  const max = await control.tenant.aggregate({ _max: { port: true } });
-  return Math.max(FIRST_PORT, (max._max.port ?? FIRST_PORT - 1) + 1);
+  const first = firstPort();
+  const max = await control.tenant.aggregate({ _max: { port: true }, where: { port: { gte: first } } });
+  return Math.max(first, (max._max.port ?? first - 1) + 1);
 }
 
 async function createDatabase(dbName: string) {
@@ -128,6 +139,8 @@ export function renderEnv(t: Pick<Tenant, "slug" | "port" | "dbName" | "domain" 
     `CONTROL_SSO_KEY=${tenantSsoKey(t.slug)}`,
     `UPLOADS_DIR=${dataRoot}/${t.slug}/uploads`,
     `APP_URL=${url}`,
+    // Panel test rejimida bo'lsa (lokal QA) — korxona ham test rejimida: real kalitsiz, lokal OSRM
+    ...(isTestMode() ? [`INSOF_ENV=test`, `OSRM_URL=http://127.0.0.1:9`] : []),
     ``,
     `# ── Webhook sirlari (yaratilganda tasodifiy) ──`,
     `# Telegram: ENV_FILE=tenants/${t.slug}.env npm run bot:webhook -- ${url || "https://<domen>"}`,

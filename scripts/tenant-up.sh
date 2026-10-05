@@ -14,7 +14,11 @@ RUN_AS=${RUN_AS:-deploy}
 ENVF="$APP/tenants/$SLUG.env"
 step() { printf '\n\033[1;33m▶ %s\033[0m\n' "$*"; }
 
-[ "$(id -u)" = "0" ] || { echo "sudo bilan ishga tushiring" >&2; exit 1; }
+[ "$(id -u)" = "0" ] || { echo "sudo bilan ishga tushiring: sudo bash scripts/tenant-up.sh $SLUG ${DOMAIN}" >&2; exit 1; }
+command -v systemctl >/dev/null || { echo "systemctl topilmadi — bu skript faqat systemd'li Linux serverda ishlaydi" >&2; exit 1; }
+id "$RUN_AS" >/dev/null 2>&1 || { echo "foydalanuvchi '$RUN_AS' yo'q (RUN_AS=...)" >&2; exit 1; }
+[ -d "$APP" ] || { echo "APP_DIR topilmadi: $APP" >&2; exit 1; }
+[ -d "$APP/current" ] || { echo "$APP/current yo'q — avval bir marta: SKIP_RESTART=1 bash scripts/deploy.sh (deploy foydalanuvchisi)" >&2; exit 1; }
 [[ "$SLUG" =~ ^[a-z][a-z0-9-]{1,29}$ ]] || { echo "slug noto'g'ri: $SLUG" >&2; exit 1; }
 if [ -n "$DOMAIN" ] && ! [[ "$DOMAIN" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]]; then echo "domen noto'g'ri: $DOMAIN" >&2; exit 1; fi
 
@@ -56,6 +60,10 @@ if [ "$SLUG_DIR" = "$(realpath -m "$DATA_ROOT")/$SLUG" ]; then
 fi
 
 step "systemd: insof-erp@$SLUG (port $PORT)"
+# Port boshqa jarayonda band bo'lmasin (shu xizmatning o'zi bo'lsa — qayta ishga tushirish, zarari yo'q)
+if command -v ss >/dev/null && ss -Hltn "sport = :$PORT" | grep -q . && ! systemctl is-active --quiet "insof-erp@$SLUG"; then
+  echo "✗ port $PORT band (boshqa jarayon): ss -ltnp 'sport = :$PORT' — tenants/$SLUG.env dagi PORT ni tekshiring" >&2; exit 1
+fi
 install -m 644 "$APP/docs/deploy/insof-erp@.service" /etc/systemd/system/insof-erp@.service
 systemctl daemon-reload
 systemctl enable --now "insof-erp@$SLUG"

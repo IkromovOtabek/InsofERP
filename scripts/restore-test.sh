@@ -37,12 +37,17 @@ ALERT_TG_BOT_TOKEN="${ALERT_TG_BOT_TOKEN:-$(env_get "$BACKUP_ENV" ALERT_TG_BOT_T
 ALERT_TG_CHAT_ID="${ALERT_TG_CHAT_ID:-$(env_get "$BACKUP_ENV" ALERT_TG_CHAT_ID)}"
 TPL="${RESTORE_DB_URL_TEMPLATE:-$(env_get "$APP_DIR/control.env" TENANT_DATABASE_URL)}"
 HOST="$(hostname -s 2>/dev/null || hostname)"
+# Vaqtinchalik baza nomi prefiksi (lokal sinovda: RESTORE_DB_PREFIX=insof_test_restore — test himoyasi qabul qiladi)
+RESTORE_DB_PREFIX="${RESTORE_DB_PREFIX:-insof_restore}"
+[[ "$RESTORE_DB_PREFIX" =~ ^[a-z][a-z0-9_]{2,30}$ ]] || { echo "RESTORE_DB_PREFIX noto'g'ri: $RESTORE_DB_PREFIX" >&2; exit 1; }
 
 log() { printf '[%s] %s\n' "$(date +'%F %T')" "$*"; }
 tg_alert() {
-  [ -n "${ALERT_TG_BOT_TOKEN:-}" ] && [ -n "${ALERT_TG_CHAT_ID:-}" ] || return 0
+  if [ -z "${ALERT_TG_BOT_TOKEN:-}" ] || [ -z "${ALERT_TG_CHAT_ID:-}" ]; then
+    log "(ALERT) Telegram sozlanmagan — xabar faqat logda: $1"; return 0
+  fi
   curl -fsS -m 15 -o /dev/null "https://api.telegram.org/bot${ALERT_TG_BOT_TOKEN}/sendMessage" \
-    --data-urlencode "chat_id=${ALERT_TG_CHAT_ID}" --data-urlencode "text=$1" || true
+    --data-urlencode "chat_id=${ALERT_TG_CHAT_ID}" --data-urlencode "text=$1" || log "⚠ Telegram ogohlantirishi yuborilmadi"
 }
 
 case "$TPL" in
@@ -70,11 +75,13 @@ DUMPS=()
 if [ -n "${DUMP:-}" ]; then
   DUMPS=("$DUMP")
 else
-  LATEST="$(find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????' | sort | tail -n1)"
+  LATEST="$(find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' | sort | tail -n1)"
   [ -n "$LATEST" ] || { log "$OUT_DIR da nusxa yo'q"; exit 1; }
   log "Oxirgi nusxa: $LATEST"
   if [ -f "$LATEST/SHA256SUMS" ]; then
-    ( cd "$LATEST" && sha256sum --quiet -c SHA256SUMS ) || { log "SHA256SUMS mos emas — nusxa buzilgan"; exit 1; }
+    if command -v sha256sum >/dev/null; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
+    sums="$(cd "$LATEST" && "${SHA256[@]}" -c SHA256SUMS 2>&1)" \
+      || { printf '%s\n' "$sums" | grep -v ': OK$' >&2; log "SHA256SUMS mos emas — nusxa buzilgan"; exit 1; }
   fi
   if [ -n "${1:-}" ]; then
     DUMPS=("$LATEST/$1.dump")
@@ -88,7 +95,7 @@ bad=0
 for dump in "${DUMPS[@]}"; do
   [ -f "$dump" ] || { log "✗ $dump yo'q"; bad=1; continue; }
   name="$(basename "$dump" .dump | tr -c 'a-z0-9\n' '_')"
-  db="insof_restore_${name}_$(date +%s)_$RANDOM"
+  db="${RESTORE_DB_PREFIX}_${name}_$(date +%s)_$RANDOM"
   db="${db:0:63}"
   log "→ $(basename "$dump") → $db"
   psql "$(url_for postgres)" -qAtX -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$db\"" >/dev/null

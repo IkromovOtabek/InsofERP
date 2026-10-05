@@ -37,8 +37,19 @@ HOST="$(hostname -s 2>/dev/null || hostname)"
 NOW="$(date +%s)"
 
 mkdir -p "$STATE_DIR"
-exec 9>"$STATE_DIR/.lock"
-flock -n 9 || exit 0   # oldingi tekshiruv hali tugamagan
+if command -v flock >/dev/null; then
+  exec 9>"$STATE_DIR/.lock"
+  flock -n 9 || exit 0   # oldingi tekshiruv hali tugamagan
+else
+  # flock yo'q (macOS) — mkdir qulfi; eski (o'lgan jarayon) qulfi olib tashlanadi
+  if ! mkdir "$STATE_DIR/.lock.d" 2>/dev/null; then
+    other="$(cat "$STATE_DIR/.lock.d/pid" 2>/dev/null || true)"
+    if [ -n "$other" ] && kill -0 "$other" 2>/dev/null; then exit 0; fi
+    mkdir -p "$STATE_DIR/.lock.d"
+  fi
+  echo $$ > "$STATE_DIR/.lock.d/pid"
+  trap 'rm -rf "$STATE_DIR/.lock.d"' EXIT
+fi
 
 log() { printf '[%s] %s\n' "$(date +'%F %T')" "$*"; }
 tg() {
@@ -49,18 +60,26 @@ tg() {
     --data-urlencode "chat_id=${ALERT_TG_CHAT_ID}" --data-urlencode "text=$1" || log "⚠ Telegram xabari yuborilmadi"
 }
 
-# Kuzatiladigan nishonlar: "nom|port" — faqat yoqilgan (enabled) xizmatlar
+# Kuzatiladigan nishonlar: "nom|port" — faqat yoqilgan (enabled) xizmatlar.
+# CHECK_ALL=1 — systemd so'ralmaydi: barcha tenants/*.env (+ control.env bo'lsa panel). Lokal sinov yoki systemd'siz muhit.
+CHECK_ALL="${CHECK_ALL:-0}"
+if [ "$CHECK_ALL" != "1" ] && ! command -v systemctl >/dev/null; then
+  log "✗ systemctl topilmadi — qaysi xizmat yoqilganini bilib bo'lmaydi. Hammasini tekshirish: CHECK_ALL=1"
+  exit 1
+fi
+enabled() { [ "$CHECK_ALL" = "1" ] || systemctl is-enabled --quiet "$1" 2>/dev/null; }
 TARGETS=()
 shopt -s nullglob
 for f in "$APP_DIR"/tenants/*.env; do
   slug="$(basename "$f" .env)"
   [[ "$slug" =~ ^[a-z][a-z0-9-]{1,29}$ ]] || continue
-  systemctl is-enabled --quiet "insof-erp@$slug" 2>/dev/null || continue
+  enabled "insof-erp@$slug" || continue
   port="$(env_get "$f" PORT)"
   [ -n "$port" ] && TARGETS+=("insof-erp@$slug|$port")
 done
 shopt -u nullglob
-if systemctl is-enabled --quiet insof-control 2>/dev/null; then TARGETS+=("insof-control|$CONTROL_PORT"); fi
+if { [ "$CHECK_ALL" != "1" ] || [ -f "$APP_DIR/control.env" ]; } && enabled insof-control; then TARGETS+=("insof-control|$CONTROL_PORT"); fi
+[ "${#TARGETS[@]}" -gt 0 ] || log "⚠ kuzatiladigan xizmat topilmadi ($APP_DIR/tenants/*.env)"
 
 for t in ${TARGETS[@]+"${TARGETS[@]}"}; do
   name="${t%%|*}"; port="${t#*|}"

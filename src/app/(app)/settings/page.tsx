@@ -333,7 +333,8 @@ async function AccountsTab() {
 async function UsersTab({ me }: { me: string }) {
   // IT superadmin (platforma hisobi) ro'yxatda ko'rinmaydi — uni markaziy panel boshqaradi
   const users = await db.user.findMany({ where: { role: { not: "SUPERADMIN" } }, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { employee: true } });
-  const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER");
+  // SUPERADMIN — platforma (IT) roli: direktor uni bera olmaydi (server ham rad etadi), tanlovda ko'rinmasin
+  const roles = Object.entries(ROLE_LABELS).filter(([r]) => r !== "DRIVER" && r !== "BRIGADIER" && r !== "SUPERADMIN");
   return (
     <div className="space-y-4">
       <Card><h2 className="mb-1 font-semibold">Yangi foydalanuvchi</h2><p className="mb-3 text-xs text-slate-500">Xodim bilan bog'lash uchun Xodimlar sahifasidan qo'shing — u yerda lavozim bo'yicha rol avtomatik beriladi.</p><UserForm roles={roles} /></Card>
