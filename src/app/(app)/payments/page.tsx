@@ -93,7 +93,7 @@ async function PaymentsTab({ role }: { role: string }) {
       ? db.order.findMany({
           where: { kind: "SALE", status: { in: [...ADVANCE_ORDER_STATUSES] }, invoices: { none: { status: { not: "CANCELLED" } } }, customer: { isInternal: false } },
           orderBy: { date: "asc" },
-          select: { id: true, orderNo: true, customerId: true, note: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+          select: { id: true, orderNo: true, customerId: true, prepayAmount: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
         })
       : [],
   ]);
@@ -105,7 +105,7 @@ async function PaymentsTab({ role }: { role: string }) {
     id: o.id, orderNo: o.orderNo, customerId: o.customerId,
     total: o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0),
     paid: o.payments.reduce((s, p) => s + Number(p.amount), 0),
-    expected: expectedAdvance(o.note),
+    expected: expectedAdvance(o),
   }));
   // Kutilayotgan avanslar — sotuvchi zayavkada yozgan, pul hali to'liq kelmagan
   const waiting = orderOpts.filter((o) => o.expected > 0 && o.paid + 0.005 < o.expected);

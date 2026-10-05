@@ -102,6 +102,8 @@ export type LeadActionResult = { ok: true; note?: string } | { ok: false; error:
 
 /** Holatni almashtirish (bog'landim / bekor / yana yangi). Kim ko'targani ham yoziladi. */
 export async function setLeadStatus(leadId: string, status: "NEW" | "IN_PROGRESS" | "REJECTED", userId: string): Promise<LeadActionResult> {
+  // "CONVERTED" faqat `convertLead` orqali (mijoz bog'lanadi) — bu yerdan qo'yib bo'lmaydi
+  if (!["NEW", "IN_PROGRESS", "REJECTED"].includes(status)) return { ok: false, error: "Noto'g'ri holat" };
   const before = await db.lead.findUnique({ where: { id: leadId } });
   if (!before) return { ok: false, error: "Ariza topilmadi" };
   if (before.status === "CONVERTED") return { ok: false, error: "Bu ariza mijozga aylantirilgan — holati o'zgarmaydi" };

@@ -66,6 +66,8 @@ export async function recalcInvoice(tx: Tx, invoiceId: string, userId: string): 
 export const ADVANCE_ORDER_STATUSES = ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION", "DELIVERED"] as const;
 
 export async function addPayment(input: PaymentInput, userId: string): Promise<{ id?: string; invoiceStatus?: string; error?: string }> {
+  // Decimal(18,2): tiyindan mayda qism bazada yaxlitlanardi, tekshiruvlar esa yaxlitlanmagan summani ko'rardi
+  input = { ...input, amount: r2(input.amount) };
   if (!(input.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
   if (input.invoiceId && input.orderId) return { error: "Schyot yoki zayavkadan bittasini tanlang" };
   const res = await db.$transaction(async (tx) => {
@@ -211,21 +213,11 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
 // ───────────────────────── Kutilayotgan avans (zayavka formasidan) ─────────────────────────
 
 /**
- * Sotuvchi zayavka ochganda mijoz va'da qilgan bosh to'lov — pul emas, kutilayotgan avans.
- * Sxemada alohida maydon yo'q: zayavka izohiga tuzilgan qator bo'lib yoziladi, kassir uni
- * `/payments` dagi "Zayavka (avans)" tanlovida ko'radi va pulni o'zi qabul qiladi.
+ * Sotuvchi zayavka ochganda mijoz va'da qilgan bosh to'lov — pul emas, kutilayotgan avans (`Order.prepayAmount`).
+ * Kassir uni `/payments` dagi "Zayavka (avans)" tanlovida ko'radi va pulni o'zi qabul qiladi.
+ * Ilgari summa izoh matniga yozilib, undan regex bilan o'qilardi — izoh tahrirlansa qoida buzilardi.
  */
-const ADVANCE_PREFIX = "Kutilayotgan avans:";
-
-export function expectedAdvanceLine(amount: number): string {
-  return `${ADVANCE_PREFIX} ${Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} so'm`;
-}
-
-/** Zayavka izohidan kutilayotgan avans summasi (bo'lmasa 0). */
-export function expectedAdvance(note: string | null | undefined): number {
-  const m = note?.match(/Kutilayotgan avans:\s*([\d\s]+)\s*so'm/);
-  return m ? Number(m[1].replace(/\s/g, "")) || 0 : 0;
-}
+export const expectedAdvance = (o: { prepayAmount?: unknown }): number => Math.max(0, Number(o.prepayAmount ?? 0) || 0);
 
 /**
  * Naqd to'lovli zayavka (`onCredit = false`) bo'yicha talab qilingan bosh to'lov hali kelmagan bo'lsa —
@@ -234,9 +226,9 @@ export function expectedAdvance(note: string | null | undefined): number {
  * Qaytaradi: xato matni yoki null.
  */
 export async function prepayShortError(client: Tx | typeof db, orderId: string): Promise<string | null> {
-  const o = await client.order.findUnique({ where: { id: orderId }, select: { kind: true, onCredit: true, note: true, orderNo: true } });
+  const o = await client.order.findUnique({ where: { id: orderId }, select: { kind: true, onCredit: true, prepayAmount: true, orderNo: true } });
   if (!o || o.kind !== "SALE" || o.onCredit) return null;
-  const required = expectedAdvance(o.note);
+  const required = expectedAdvance(o);
   if (!(required > 0.005)) return null;
   const agg = await client.payment.aggregate({ where: { OR: [{ orderId }, { invoice: { orderId } }] }, _sum: { amount: true } });
   const paid = Number(agg._sum.amount ?? 0);
@@ -264,15 +256,20 @@ export async function accountBalances(client: Tx = db, ids?: string[]): Promise<
 }
 
 /**
- * Naqd kassadan chiqim qoldiqdan oshmasin (bank hisobi — overdraft bank tomonida, tekshirilmaydi).
+ * Chiqim hisob qoldig'idan oshmasin: naqd kassa — har doim; bank hisobi — direktor "overdraft ruxsat"
+ * (`CashAccount.allowOverdraft`) belgilamagan bo'lsa (ilgari bank tekshirilmasdi va jimgina minusga tushardi).
  * Tranzaksiya ichida chaqiriladi: hisob bo'yicha qulf olinadi, ikki parallel chiqim birga o'tib ketmasin.
  * Qaytaradi: xato matni yoki null.
  */
 export async function cashOutflowError(tx: Tx, cashAccountId: string, amount: number): Promise<string | null> {
-  const acc = await tx.cashAccount.findUnique({ where: { id: cashAccountId }, select: { type: true, name: true } });
-  if (!acc || acc.type !== "CASH") return null;
+  const acc = await tx.cashAccount.findUnique({ where: { id: cashAccountId }, select: { type: true, name: true, allowOverdraft: true } });
+  if (!acc || (acc.type === "BANK" && acc.allowOverdraft)) return null;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cash:" + cashAccountId}))`;
   const left = (await accountBalances(tx, [cashAccountId])).get(cashAccountId) ?? 0;
-  if (amount > left + 0.005) return `${acc.name} kassasida yetarli pul yo'q: qoldiq ${money(left)}, chiqim ${money(amount)}`;
+  if (amount > left + 0.005) {
+    return acc.type === "CASH"
+      ? `${acc.name} kassasida yetarli pul yo'q: qoldiq ${money(left)}, chiqim ${money(amount)}`
+      : `${acc.name} hisobida yetarli pul yo'q: qoldiq ${money(left)}, chiqim ${money(amount)} (overdraft kerak bo'lsa direktor Sozlamalarda ruxsat beradi)`;
+  }
   return null;
 }

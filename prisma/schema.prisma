@@ -960,6 +960,10 @@ model Order {
   needsDelivery    Boolean     @default(true) // dastavka kerakmi (yo'q bo'lsa mijoz o'zi olib ketadi)
   isUrgent         Boolean     @default(false) // zarur / shoshilinch
   onCredit         Boolean     @default(false) // qarzga — kafolat xati talab qilinadi
+  /// Kutilayotgan bosh to'lov (avans) — zayavka formasida sotuvchi kiritadi; pulni kassir qabul qiladi.
+  /// Naqd to'lovli zayavkada shu summa kassaga tushmaguncha reys ochilmaydi/yuklanmaydi (`prepayShortError`).
+  /// Ilgari izohga "Kutilayotgan avans: N so'm" qatori bo'lib yozilardi — migratsiya o'shandan to'ldirgan.
+  prepayAmount     Decimal?    @db.Decimal(18, 2)
   guaranteeAt      DateTime? // mijoz imzolagan kafolat xati qabul qilingan sana
   contractNo       String?     @unique // shartnoma raqami (SH-YYYY-00001) — "Shartnoma qilish" belgilanganda
   contractAmount   Decimal?    @db.Decimal(18, 2) // shartnoma summasi; mahsulot summasi shundan ayiriladi (qoldiq)
@@ -1519,10 +1523,13 @@ enum CashAccountType {
 }
 
 model CashAccount {
-  id       String          @id @default(cuid())
-  name     String
-  type     CashAccountType
-  isActive Boolean         @default(true)
+  id             String          @id @default(cuid())
+  name           String
+  type           CashAccountType
+  isActive       Boolean         @default(true)
+  /// Bank overdrafti ruxsat etilganmi (direktor belgilaydi). false — chiqim/storno hisob qoldig'idan oshmaydi
+  /// (naqd kassa uchun har doim shunday).
+  allowOverdraft Boolean         @default(false)
 
   payments       Payment[]
   transactions   CashTransaction[]

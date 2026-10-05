@@ -36,7 +36,7 @@ export async function importOpenings(
   const [customers, suppliers, accounts, products, warehouses] = await Promise.all([
     kind === "CUSTOMER" ? db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, inn: true } }) : [],
     kind === "SUPPLIER" ? db.supplier.findMany({ select: { id: true, name: true, inn: true } }) : [],
-    kind === "CASH" ? db.cashAccount.findMany({ select: { id: true, name: true } }) : [],
+    kind === "CASH" ? db.cashAccount.findMany({ select: { id: true, name: true, type: true, allowOverdraft: true } }) : [],
     kind === "STOCK" ? db.product.findMany({ select: { id: true, code: true, name: true } }) : [],
     kind === "STOCK" ? db.warehouse.findMany({ where: { isActive: true }, select: { id: true, name: true } }) : [],
   ]);
@@ -79,6 +79,8 @@ export async function importOpenings(
       const acc = accByName.get(flatName(name));
       if (!acc) { errors.push(`${no}-qator: «${name}» hisobi topilmadi (bor hisoblar: ${accounts.map((a) => a.name).join(", ") || "yo'q"} — yangisini Sozlamalarda oching)`); continue; }
       if (seen.has(acc.id)) { errors.push(`${no}-qator: «${name}» faylda ${seen.get(acc.id)}-qatorda ham bor`); continue; }
+      // Manfiy qoldiq — faqat overdraft ruxsat etilgan bankda (aks holda yozishda butun import qator raqamisiz yiqilardi)
+      if (amount < 0 && !(acc.type === "BANK" && acc.allowOverdraft)) { errors.push(`${no}-qator (${acc.name}): qoldiq manfiy bo'lolmaydi — overdraft faqat ruxsat etilgan bank hisobida`); continue; }
       seen.set(acc.id, no);
       plans.push({ no, label: acc.name, input: { ...base, cashAccountId: acc.id, amount } });
       continue;

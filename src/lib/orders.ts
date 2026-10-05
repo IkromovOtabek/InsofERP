@@ -8,7 +8,7 @@ import { money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
-import { expectedAdvance, expectedAdvanceLine } from "@/lib/payments";
+import { expectedAdvance } from "@/lib/payments";
 import type { Prisma } from "@/generated/prisma";
 import { MAX_AMOUNT } from "@/lib/action";
 
@@ -86,7 +86,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
   // Naqd to'lovli zayavka: bosh to'lov reys ochish/yuklashdan oldin majburiy (`prepayShortError`), shuning uchun
   // kutilayotgan, hali kelmagan qismi kredit limitiga yuklanmaydi — limitga faqat qolgan (qarzga ketadigan) qism tushadi.
-  const required = o.onCredit ? 0 : expectedAdvance(o.note);
+  const required = o.onCredit ? 0 : expectedAdvance(o);
   const res = await db.$transaction(async (tx) => {
     // Mijoz bo'yicha navbat: bir vaqtda qabul qilingan ikki zayavka limitni birga oshirib yubormasin.
     // Shu zayavkaga olingan avans (u hali DRAFT) mijozning umumiy to'lovi sifatida `used` dan ayirilgan.
@@ -103,8 +103,10 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     const advance = await tx.payment.aggregate({ where: { orderId: id }, _sum: { amount: true } });
     const pending = Math.max(0, required - Number(advance._sum.amount ?? 0));
     const exposure = total - pending;
-    // `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat: to'liq oldindan to'langan zayavka bloklanmaydi
-    const status = Math.max(0, credit.net) + exposure > credit.limit && credit.net + exposure > credit.limit ? "BLOCKED" : "CONFIRMED";
+    // `net` — ortiqcha to'lov (shu zayavkaning avansi ham) ayirilgan sof holat: to'liq oldindan to'langan zayavka bloklanmaydi.
+    // To'liq oldindan to'lovli zayavka (exposure ≤ 0) limitga hech narsa qo'shmaydi — mijozning eski qarzi bo'lsa ham
+    // (qora ro'yxat) qabul qilinadi: pul kassaga tushmaguncha reys baribir ochilmaydi (`prepayShortError`).
+    const status = exposure > 0.005 && Math.max(0, credit.net) + exposure > credit.limit && credit.net + exposure > credit.limit ? "BLOCKED" : "CONFIRMED";
     const r = await tx.order.updateMany({ where: { id, status: "DRAFT" }, data: { status } });
     if (r.count !== 1) return null;
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit, prepayPending: pending });
@@ -195,7 +197,7 @@ export type NewOrderInput = {
   /** Qarzga — kafolat xati talab qilinadi. Bosh to'lov bunda ham bo'lishi mumkin. */
   onCredit?: boolean;
   /**
-   * Kutilayotgan bosh to'lov (avans). Sotuvchi pulni kassaga yozmaydi: summa zayavka izohiga
+   * Kutilayotgan bosh to'lov (avans). Sotuvchi pulni kassaga yozmaydi: summa `Order.prepayAmount` ga
    * yoziladi, kassir/buxgalterga bildirishnoma ketadi, pulni kassir `/payments` da qabul qiladi.
    * `cashAccountId` — eski mijozlar (mobil ilova) uchun qoldirilgan, e'tiborga olinmaydi.
    */
@@ -259,12 +261,13 @@ export async function createOrder(
 
   // ── Bosh to'lov (kutilayotgan avans) ──
   // Qarzga olinganda ham bo'lishi mumkin: bir qismi naqd, qolgani kredit limitidan.
-  // Sotuvchi kassaga pul yozmaydi — bu faqat va'da: izohga yoziladi, pulni kassir qabul qiladi.
+  // Sotuvchi kassaga pul yozmaydi — bu faqat va'da: `prepayAmount` ga yoziladi, pulni kassir qabul qiladi.
   const prepay = input.prepay && input.prepay.amount > 0 ? input.prepay : null;
   if (prepay) {
     if (!Number.isFinite(prepay.amount) || prepay.amount > total + 0.005) throw new Error(`Oldindan to'lov ${money(prepay.amount)} zayavka summasidan ${money(total)} katta`);
   }
-  const note = [prepay ? expectedAdvanceLine(prepay.amount) : null, input.note?.trim() || null].filter(Boolean).join("\n") || null;
+  const prepayAmount = prepay ? Math.round(prepay.amount * 100) / 100 : null;
+  const note = input.note?.trim() || null;
 
   // ── Mijoz ──
   if (input.newCustomer) {
@@ -278,8 +281,10 @@ export async function createOrder(
     const c = await db.customer.findUnique({ where: { id: input.customerId } });
     if (!c || !c.isActive) throw new Error("Mijoz topilmadi yoki nofaol");
     const credit = await customerCredit(c.id);
-    if (credit.blacklisted) {
-      throw new Error(`${c.name} qora ro'yxatda: limit ${money(credit.limit)} to'liq ishlatilgan (qarz ${money(credit.debt)}, ochiq zayavkalar ${money(credit.open)}). Qarz to'langach zayavka ochish mumkin.`);
+    // Qora ro'yxat (limit yo'q yoki to'lgan) — faqat KREDIT bloklanadi: to'liq oldindan to'lovli zayavka ochiladi
+    // (yangi qarz tug'dirmaydi, pul kelmaguncha reys ochilmaydi). Qisman avans — qolgani qarz, u ham mumkin emas.
+    if (credit.blacklisted && (onCredit || (prepayAmount ?? 0) < total - 0.005)) {
+      throw new Error(`Kredit limiti yo'q — faqat oldindan to'lov bilan: ${c.name} uchun bosh to'lov zayavka summasiga teng bo'lsin (${money(total)}). Limit ${money(credit.limit)}, qarz ${money(credit.debt)}, ochiq zayavkalar ${money(credit.open)}.`);
     }
   }
 
@@ -311,6 +316,7 @@ export async function createOrder(
         needsDelivery: input.needsDelivery ?? true,
         isUrgent: !!input.isUrgent,
         onCredit,
+        prepayAmount,
         note: note ?? undefined,
         createdById: userId,
         items: { create: items },
@@ -318,7 +324,7 @@ export async function createOrder(
         ...(opts?.contractFile ? { contractFile: opts.contractFile.stored, contractFileName: opts.contractFile.name, contractFileType: opts.contractFile.type, contractFileAt: new Date() } : {}),
       },
     });
-    await audit(tx, userId, "CREATE", "Order", o.id, undefined, { ...o, items, expectedAdvance: prepay?.amount ?? 0, contractAmount });
+    await audit(tx, userId, "CREATE", "Order", o.id, undefined, { ...o, items, contractAmount });
     return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo };
   });
   // Kutilayotgan avans: kassir va buxgalter pulni qabul qilib, to'lov formasida shu zayavkani tanlaydi

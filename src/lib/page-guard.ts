@@ -3,6 +3,7 @@ import { getSession, type Session } from "./auth";
 import type { Role } from "@/generated/prisma";
 import { OWN_PAGE_ONLY, pathAllowed, canWrite } from "./nav";
 import { canDo } from "./permissions";
+import { AccessDenied, notSignedIn } from "./access-denied";
 
 /**
  * Sahifa darajasidagi himoya — ma'lumot o'qiydigan har bir sahifa boshida chaqiriladi.
@@ -28,13 +29,13 @@ export async function requirePage(path: string): Promise<Session> {
 
 /**
  * Server action ichida modulga YOZISH huquqini talab qiladi (zayavka ochish/qabul, to'lov, sklad...).
- * Ruxsat bo'lmasa `Error("FORBIDDEN")` — chaqiruvchi (action) xatoni foydalanuvchiga ko'rsatadi.
+ * Ruxsat bo'lmasa `AccessDenied` (403) — chaqiruvchi (action) xatoni foydalanuvchiga ko'rsatadi.
  * Modul darajali: "view" bergan foydalanuvchi ko'radi, lekin yoza olmaydi.
  */
 export async function requireWrite(module: string): Promise<Session> {
   const s = await getSession();
-  if (!s) throw new Error("UNAUTHENTICATED");
-  if (!canWrite(s, module)) throw new Error("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
+  if (!s) throw notSignedIn();
+  if (!canWrite(s, module)) throw new AccessDenied("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
   return s;
 }
 

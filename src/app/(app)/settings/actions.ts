@@ -141,7 +141,8 @@ export async function saveWarehouse(id: string | null, _prev: ActionState, fd: F
 
 /* ───────── Kassa / hisoblar ───────── */
 
-const accSchema = z.object({ name: zStr("Nomi kerak"), type: z.enum(["CASH", "BANK"]), isActive: zBool });
+// allowOverdraft — faqat bank hisobi uchun: belgilansa chiqim/storno hisobni minusga tushira oladi
+const accSchema = z.object({ name: zStr("Nomi kerak"), type: z.enum(["CASH", "BANK"]), isActive: zBool, allowOverdraft: zBool });
 
 /** Hisob qoldig'i — mijoz to'lovlari + boshqa kirimlar − chiqimlar (Kirim-Chiqim va Egasi dashbordi bilan bir xil formula). */
 async function accountBalance(id: string) {
@@ -164,10 +165,11 @@ export async function saveCashAccount(id: string | null, _prev: ActionState, fd:
       const bal = await accountBalance(id);
       if (Math.abs(bal) >= 1) return { error: `«${before.name}» qoldig'i ${Math.round(bal).toLocaleString("ru-RU")} so'm — avval qoldiqni boshqa hisobga o'tkazing (Kirim-Chiqim), keyin nofaol qiling` };
     }
-    const after = await db.cashAccount.update({ where: { id }, data: r.data });
+    // Naqd kassa hech qachon minusga tushmaydi — belgi faqat bankda saqlanadi
+    const after = await db.cashAccount.update({ where: { id }, data: { ...r.data, allowOverdraft: r.data.type === "BANK" && r.data.allowOverdraft } });
     await audit(db, s.userId, "UPDATE", "CashAccount", id, before, after);
   } else {
-    const a = await db.cashAccount.create({ data: { name: r.data.name, type: r.data.type } });
+    const a = await db.cashAccount.create({ data: { name: r.data.name, type: r.data.type, allowOverdraft: r.data.type === "BANK" && r.data.allowOverdraft } });
     await audit(db, s.userId, "CREATE", "CashAccount", a.id, undefined, a);
   }
   refresh(); revalidatePath("/payments");

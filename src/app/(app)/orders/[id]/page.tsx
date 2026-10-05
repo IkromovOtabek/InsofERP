@@ -23,6 +23,7 @@ import { NDS_LABEL, ndsPart } from "@/lib/nds";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { expectedAdvance } from "@/lib/payments";
 import { ConfirmButton } from "../../payments/confirm-button";
+import { ActionButton } from "@/components/action-button";
 
 const STEPS = [
   { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
@@ -80,7 +81,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const paid = [...paidMap.values()].reduce((a, b) => a + b, 0);
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
   // Sotuvchi zayavka ochganda yozgan kutilayotgan avans — pulni kassir qabul qiladi
-  const expected = expectedAdvance(o.note);
+  const expected = expectedAdvance(o);
   const [credit, contractedSet, snapshot] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot()]);
   // Zayavkani qabul qilishdan oldin: har mahsulot bo'yicha tayyor qoldiq va xomashyodan yana qancha chiqishi
   const stockByProduct = new Map([...snapshot.pieces, ...snapshot.concrete].map((x) => [x.id, x]));
@@ -111,9 +112,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
         action={
           <>
-            {o.status === "DRAFT" && canConfirm && <form action={confirmOrder.bind(null, id)}><Button variant="success"><CheckCircle2 size={16} /> Qabul qilish</Button></form>}
-            {canClose && <form action={closeStockOrder.bind(null, id)}><Button variant="success"><Boxes size={16} /> Zaxira tayyor — yopish</Button></form>}
-            {o.status === "BLOCKED" && canUnblock && <form action={unblockOrder.bind(null, id)}><Button variant="success"><Unlock size={16} /> Blokdan chiqarish</Button></form>}
+            {o.status === "DRAFT" && canConfirm && <ActionButton action={confirmOrder.bind(null, id)} variant="success"><CheckCircle2 size={16} /> Qabul qilish</ActionButton>}
+            {canClose && <ActionButton action={closeStockOrder.bind(null, id)} variant="success"><Boxes size={16} /> Zaxira tayyor — yopish</ActionButton>}
+            {o.status === "BLOCKED" && canUnblock && <ActionButton action={unblockOrder.bind(null, id)} variant="success"><Unlock size={16} /> Blokdan chiqarish</ActionButton>}
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
@@ -128,9 +129,11 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </Callout>
       )}
       {!isStock && credit.blacklisted && (
-        <Callout tone="danger" title="Mijoz qora ro'yxatda">
+        <Callout tone="danger" title="Kredit limiti yo'q — faqat oldindan to'lov bilan">
           Limit {money(credit.limit)} to'liq ishlatilgan (qarz {money(credit.debt)}, ochiq zayavkalar {money(credit.open)}).{" "}
-          {o.status === "DRAFT" ? "Qabul qilinsa zayavka bloklanadi — avval qarz to'lansin yoki direktor limitni oshirsin." : "Bu mijozga yangi zayavka ochilmaydi; jo'natish va schyot yozishda ehtiyot bo'ling — qarz to'langach belgi avtomatik olinadi."}{" "}
+          {o.status === "DRAFT"
+            ? (!o.onCredit && expected >= total - 0.005 ? "Zayavka to'liq oldindan to'lovli — qabul qilinadi, pul kassaga tushmaguncha reys ochilmaydi." : "Qabul qilinsa zayavka bloklanadi — avval qarz to'lansin yoki direktor limitni oshirsin.")
+            : "Bu mijozga faqat to'liq oldindan to'lovli zayavka ochiladi; jo'natish va schyot yozishda ehtiyot bo'ling — qarz to'langach belgi avtomatik olinadi."}{" "}
           <Link href={`/customers/${o.customerId}`} className="underline">Mijoz kartasi</Link>
         </Callout>
       )}

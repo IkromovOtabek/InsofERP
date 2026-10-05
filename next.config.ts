@@ -46,6 +46,9 @@ const nextConfig: NextConfig = {
     // Middleware so'rov tanasini sukut bo'yicha 10 MB da kesadi — 10–15 MB fayl server action'ga
     // chala yetib 500 berardi. Chegara server action chegarasi bilan bir xil (Next 15.5 da mavjud opsiya).
     middlewareClientMaxBodySize: "16mb",
+    // Ruxsat yo'q / sessiya tugagan (lib/access-denied.ts) — 500 xato o'rniga 403/401 va
+    // `(app)/forbidden.tsx`, `(app)/unauthorized.tsx` sahifalari
+    authInterrupts: true,
   },
   async headers() {
     return [{ source: "/(.*)", headers: SECURITY_HEADERS }];

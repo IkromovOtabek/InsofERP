@@ -8,6 +8,7 @@ import type { Prisma, Role } from "@/generated/prisma";
 import { TOUR_COOKIE } from "./tour";
 import { authSecret, JWT_ALGS } from "./secret";
 import { companySuspension, effectiveRole } from "./tenant";
+import { AccessDenied, notSignedIn } from "./access-denied";
 
 const COOKIE = "insof_session";
 const SESSION_TTL_SEC = 60 * 60 * 12;
@@ -180,8 +181,8 @@ export async function canDoByUserId(userId: string, module: string, action: stri
 export async function requireAction(module: string, action: string, fallbackRoles?: readonly Role[]): Promise<Session> {
   const { canDo } = await import("./permissions");
   const s = await getSession();
-  if (!s) throw new Error("UNAUTHENTICATED");
-  if (!canDo(s, module, action, fallbackRoles)) throw new Error("Bu amal uchun sizda ruxsat yo'q — direktordan ruxsat so'rang");
+  if (!s) throw notSignedIn();
+  if (!canDo(s, module, action, fallbackRoles)) throw new AccessDenied("Bu amal uchun sizda ruxsat yo'q — direktordan ruxsat so'rang");
   return s;
 }
 
@@ -194,10 +195,10 @@ export async function requireAction(module: string, action: string, fallbackRole
  */
 export async function requireModuleWrite(module: string, allowed: readonly Role[]): Promise<Session> {
   const s = await getSession();
-  if (!s) throw new Error("UNAUTHENTICATED");
+  if (!s) throw notSignedIn();
   const ok = moduleWriteAllowed(s, module, allowed);
-  if (ok === "view") throw new Error("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
-  if (!ok) throw new Error("FORBIDDEN");
+  if (ok === "view") throw new AccessDenied("Bu bo'limda sizda faqat ko'rish huquqi bor — o'zgartirish uchun direktordan ruxsat so'rang");
+  if (!ok) throw new AccessDenied();
   return s;
 }
 
@@ -232,9 +233,9 @@ export async function revokeSessions(tx: Prisma.TransactionClient | typeof db, u
 /** Server action / page ichida: sessiya yo'q bo'lsa xato, rol mos kelmasa xato. */
 export async function requireSession(allowed?: Role[]): Promise<Session> {
   const s = await getSession();
-  if (!s) throw new Error("UNAUTHENTICATED");
+  if (!s) throw notSignedIn();
   if (allowed && !allowed.includes(s.role) && s.role !== "DIRECTOR") {
-    throw new Error("FORBIDDEN");
+    throw new AccessDenied();
   }
   return s;
 }

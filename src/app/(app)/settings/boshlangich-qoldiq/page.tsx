@@ -5,12 +5,12 @@ import { requirePage } from "@/lib/page-guard";
 import { moduleWriteAllowed } from "@/lib/auth";
 import { canDo } from "@/lib/permissions";
 import { money, qty as fq, date, isoDate } from "@/lib/format";
-import { KIND_LABEL, OPENING_WRITERS, supplierOpeningDues } from "@/lib/opening-balances";
+import { KIND_LABEL, OPENING_WRITERS, supplierOpeningDues, supplierOpeningPayments } from "@/lib/opening-balances";
 import { Badge, Callout, Card, CardHeader, Checkbox, Empty, Field, Input, PageHeader, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { OpeningCreateForm, OpeningEditForm, SupplierPayForm } from "./forms";
-import { cancelOpeningAction, importOpeningsAction } from "./actions";
+import { cancelOpeningAction, importOpeningsAction, reverseSupplierOpeningPaymentAction } from "./actions";
 import type { ImportField } from "@/lib/excel";
 import type { OpeningKind } from "@/generated/prisma";
 
@@ -102,6 +102,8 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
         : (await db.product.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true } })).map((p) => ({ id: p.id, label: `${p.code} · ${p.name}` }));
 
   const dues = kind === "SUPPLIER" ? new Map((await supplierOpeningDues()).map((d) => [d.id, d])) : new Map();
+  // Yetkazuvchi qoldig'iga qilingan to'lovlar — xato yozilganini direktor storno qiladi
+  const supPays = kind === "SUPPLIER" ? await supplierOpeningPayments(rows.map((r) => r.id)) : new Map();
   const total = active.reduce((x, r) => x + Number(r.amount), 0);
   const plus = active.filter((r) => Number(r.amount) > 0).reduce((x, r) => x + Number(r.amount), 0);
   const minus = total - plus;
@@ -191,7 +193,17 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
                 {kind === "STOCK" && <><Td right>{fq(Number(r.qty ?? 0))}</Td><Td right>{r.unitCost == null ? "—" : money(Number(r.unitCost))}</Td></>}
                 <Td right className={amount < 0 ? "text-amber-700" : "font-medium"}>{amount < 0 ? `−${money(-amount)}` : money(amount)}</Td>
                 {kind === "CUSTOMER" && <Td right>{paidCustomer ? money(paidCustomer) : "—"}</Td>}
-                {kind === "SUPPLIER" && <Td right className={due && due.left > 0 ? "text-red-600" : ""}>{r.cancelledAt || !due ? "—" : money(due.left)}</Td>}
+                {kind === "SUPPLIER" && (
+                  <Td right className={due && due.left > 0 ? "text-red-600" : ""}>
+                    {r.cancelledAt || !due ? "—" : money(due.left)}
+                    {(supPays.get(r.id) ?? []).map((p: { id: string; date: Date; amount: number; account: string }) => (
+                      <div key={p.id} className="mt-1 flex items-center justify-end gap-1 text-xs font-normal text-slate-500">
+                        <span>{date(p.date)} · {money(p.amount)} · {p.account}</span>
+                        {isDirector && <ConfirmButton action={reverseSupplierOpeningPaymentAction.bind(null, p.id)} label="Storno" icon={<Ban size={12} />} question="To'lov storno qilinsinmi? Pul hisobga qaytadi, qarz yana ochiladi" reason="required" okText="Storno qilindi" className="h-6 px-1.5 text-[11px]" />}
+                      </div>
+                    ))}
+                  </Td>
+                )}
                 <Td className="max-w-56 text-xs text-slate-500">{r.note ?? ""}{r.cancelReason && <div className="text-red-600">Bekor: {r.cancelReason}</div>}</Td>
                 <Td>{r.cancelledAt ? <Badge color="slate">Bekor ({date(r.cancelledAt)})</Badge> : <Badge color="green">Faol</Badge>}</Td>
                 <Td>

@@ -130,9 +130,9 @@ export async function createOpeningTx(tx: Tx, input: OpeningInput, userId: strin
     case "CASH": {
       const amount = r2(input.amount ?? 0);
       if (!amount) throw new OpeningError("Summa 0 bo'lmasin");
-      const acc = await tx.cashAccount.findUnique({ where: { id: input.cashAccountId ?? "" }, select: { id: true, type: true, name: true } });
+      const acc = await tx.cashAccount.findUnique({ where: { id: input.cashAccountId ?? "" }, select: { id: true, type: true, name: true, allowOverdraft: true } });
       if (!acc) throw new OpeningError("Kassa/hisob topilmadi");
-      if (amount < 0 && acc.type === "CASH") throw new OpeningError(`${acc.name}: naqd kassa qoldig'i manfiy bo'lolmaydi (manfiy — faqat bank overdrafti)`);
+      if (amount < 0 && !(acc.type === "BANK" && acc.allowOverdraft)) throw new OpeningError(`${acc.name}: qoldiq manfiy bo'lolmaydi — manfiy qoldiq faqat overdraft ruxsat etilgan bank hisobida (Sozlamalar → Kassa / hisob)`);
       const o = await tx.openingBalance.create({ data: { ...base, cashAccountId: acc.id, amount } });
       const t = await tx.cashTransaction.create({
         data: { type: "OPENING", date: input.date, cashAccountId: acc.id, amount, category: OPENING_CATEGORY, note: note ?? "Tizimga o'tish sanasidagi qoldiq", refType: OPENING_REF, refId: o.id, createdById: userId },
@@ -210,8 +210,8 @@ export async function updateOpening(id: string, patch: OpeningPatch, userId: str
         const amount = r2(patch.amount ?? 0);
         if (!amount) throw new OpeningError("Summa 0 bo'lmasin — qoldiq kerak bo'lmasa bekor qiling");
         const t = await tx.cashTransaction.findUniqueOrThrow({ where: { id: o.cashTxId! } });
-        const acc = await tx.cashAccount.findUniqueOrThrow({ where: { id: t.cashAccountId }, select: { type: true, name: true } });
-        if (amount < 0 && acc.type === "CASH") throw new OpeningError(`${acc.name}: naqd kassa qoldig'i manfiy bo'lolmaydi`);
+        const acc = await tx.cashAccount.findUniqueOrThrow({ where: { id: t.cashAccountId }, select: { type: true, name: true, allowOverdraft: true } });
+        if (amount < 0 && !(acc.type === "BANK" && acc.allowOverdraft)) throw new OpeningError(`${acc.name}: qoldiq manfiy bo'lolmaydi — manfiy qoldiq faqat overdraft ruxsat etilgan bank hisobida`);
         // Qoldiq kamaysa — naqd kassa minusga tushmasin (shu orada pul chiqib ketgan bo'lishi mumkin)
         const drop = Number(t.amount) - amount;
         if (drop > 0.005) { const err = await cashOutflowError(tx, t.cashAccountId, drop); if (err) throw new OpeningError(err); }
@@ -336,6 +336,45 @@ export async function paySupplierOpening(id: string, cashAccountId: string, amou
     await audit(tx, userId, "CREATE", "CashTransaction", t.id, undefined, t);
     return {};
   }).catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+}
+
+/**
+ * Yetkazuvchi qoldig'iga xato yozilgan to'lovni storno qilish (faqat direktor — action'da tekshiriladi).
+ * Chiqim yozuvi o'chiriladi (to'liq holati auditda qoladi) — pul hisobga qaytadi, qarz yana ochiladi.
+ * Ilgari bunday to'lovni o'chirishning iloji yo'q edi: Kirim-Chiqim "hujjatga bog'langan" deb rad etardi.
+ */
+export async function reverseSupplierOpeningPayment(cashTxId: string, reason: string, userId: string): Promise<{ error?: string }> {
+  const why = reason.trim();
+  if (why.length < 3) return { error: "Storno sababini yozing" };
+  return db.$transaction(async (tx) => {
+    const t = await tx.cashTransaction.findUnique({ where: { id: cashTxId } });
+    if (!t || t.refType !== OPENING_REF || t.type !== "EXPENSE" || !t.refId) throw new OpeningError("To'lov topilmadi (allaqachon storno qilingan bo'lishi mumkin)");
+    const o = await tx.openingBalance.findUnique({ where: { id: t.refId }, select: { kind: true, activeKey: true } });
+    if (!o || o.kind !== "SUPPLIER") throw new OpeningError("Bu yozuv yetkazuvchi qoldig'iga to'lov emas");
+    // To'lov bilan navbat (`paySupplierOpening` ham shu qulfni oladi)
+    if (o.activeKey) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
+    const r = await tx.cashTransaction.deleteMany({ where: { id: t.id } });
+    if (!r.count) throw new OpeningError("To'lov shu payt storno qilindi");
+    await audit(tx, userId, "DELETE", "CashTransaction", t.id, t, { reversed: true, by: "opening-supplier-payment", reason: why.slice(0, 300) });
+    return {};
+  }).catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
+}
+
+/** Yetkazuvchi qoldiqlariga qilingan to'lovlar (sahifada har qator ostida, storno tugmasi bilan). */
+export async function supplierOpeningPayments(openingIds: string[]) {
+  if (!openingIds.length) return new Map<string, { id: string; date: Date; amount: number; account: string }[]>();
+  const rows = await db.cashTransaction.findMany({
+    where: { refType: OPENING_REF, refId: { in: openingIds }, type: "EXPENSE" },
+    orderBy: { date: "asc" },
+    select: { id: true, refId: true, date: true, amount: true, cashAccount: { select: { name: true } } },
+  });
+  const out = new Map<string, { id: string; date: Date; amount: number; account: string }[]>();
+  for (const r of rows) {
+    const l = out.get(r.refId!) ?? [];
+    l.push({ id: r.id, date: r.date, amount: Number(r.amount), account: r.cashAccount.name });
+    out.set(r.refId!, l);
+  }
+  return out;
 }
 
 export { OpeningError };

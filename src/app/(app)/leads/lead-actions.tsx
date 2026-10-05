@@ -8,10 +8,17 @@ import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
 /** Holat tugmalari: "Bog'landim" va "Bekor". Sahifa server tomondan yangilanadi. */
 export function LeadStatusButtons({ leadId, status }: { leadId: string; status: string }) {
   const [pending, start] = useTransition();
-  const go = (s: "NEW" | "IN_PROGRESS" | "REJECTED") => start(() => { void setLeadStatus(leadId, s); });
+  const [err, setErr] = useState<string | null>(null);
+  // Natija kutiladi: ilgari `void` bilan yuborilib, xato (ariza mijozga aylantirilgan va h.k.) jim yutilardi
+  const go = (s: "NEW" | "IN_PROGRESS" | "REJECTED") => start(async () => {
+    setErr(null);
+    try { const r = await setLeadStatus(leadId, s); if (r?.error) setErr(r.error); }
+    catch { setErr("Holat saqlanmadi — sahifani yangilab qayta urining"); }
+  });
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      {err && <span role="alert" className="text-xs text-red-600">{err}</span>}
       {status !== "IN_PROGRESS" && (
         <Button variant="secondary" size="sm" disabled={pending} onClick={() => go("IN_PROGRESS")}>
           <PhoneCall size={14} /> Bog&apos;landim

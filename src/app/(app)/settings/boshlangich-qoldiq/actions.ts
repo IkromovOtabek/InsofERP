@@ -3,8 +3,9 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAction, requireModuleWrite, requireSession } from "@/lib/auth";
+import { AccessDenied } from "@/lib/access-denied";
 import { parseForm, zOpt, zStr, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, updateOpening } from "@/lib/opening-balances";
+import { cancelOpening, createOpening, OPENING_WRITERS, paySupplierOpening, reverseSupplierOpeningPayment, updateOpening } from "@/lib/opening-balances";
 import { importOpenings, type OpeningRow } from "@/lib/import-openings";
 import type { OpeningKind } from "@/generated/prisma";
 
@@ -17,7 +18,7 @@ const writer = () => requireModuleWrite("opening", OPENING_WRITERS);
 /** Tahrir va bekor qilish — faqat direktor: tasdiqlangan boshlang'ich holat jimgina o'zgarmasin. */
 async function director() {
   const s = await requireSession();
-  if (s.role !== "DIRECTOR") throw new Error("Boshlang'ich qoldiqni faqat direktor o'zgartira yoki bekor qila oladi");
+  if (s.role !== "DIRECTOR") throw new AccessDenied("Boshlang'ich qoldiqni faqat direktor o'zgartira yoki bekor qila oladi");
   return s;
 }
 
@@ -135,6 +136,15 @@ const paySchema = z.object({
   cashAccountId: zStr("Kassa/hisob tanlanmagan"),
   amount: z.coerce.number({ message: "Summa raqam bo'lsin" }).positive("Summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "Summa juda katta"),
 });
+
+/** Yetkazuvchi qoldig'iga xato yozilgan to'lovni storno qilish — faqat direktor, sabab majburiy. */
+export async function reverseSupplierOpeningPaymentAction(cashTxId: string, reason: string): Promise<ActionState> {
+  const s = await director();
+  const res = await reverseSupplierOpeningPayment(cashTxId, String(reason ?? ""), s.userId);
+  if (res.error) return { error: res.error };
+  refresh();
+  return { ok: true, note: "To'lov storno qilindi" };
+}
 
 /** Yetkazuvchiga boshlang'ich qarzni to'lash — moliyaning "Yetkazuvchiga to'lash" huquqi bilan. */
 export async function paySupplierOpeningAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {

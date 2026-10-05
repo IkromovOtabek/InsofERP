@@ -8,11 +8,14 @@ import { convertLead as convert, saveLeadNote as saveNote, setLeadStatus as setS
 
 
 /** Holatni almashtirish (bog'landim / bekor). Qoida `lib/leads.ts` da — mobil ilova ham shuni chaqiradi. */
-export async function setLeadStatus(leadId: string, status: "NEW" | "IN_PROGRESS" | "REJECTED") {
+export async function setLeadStatus(leadId: string, status: "NEW" | "IN_PROGRESS" | "REJECTED"): Promise<ActionState> {
   const s = await requireAction("sales", "leads");
+  // Klientdan kelgan qiymat tekshiriladi: aks holda "CONVERTED" yuborib, arizani mijozsiz "aylantirilgan" qilish mumkin edi
+  if (!["NEW", "IN_PROGRESS", "REJECTED"].includes(status)) return { error: "Noto'g'ri holat" };
   const r = await setStatus(leadId, status, s.userId);
-  if (!r.ok) throw new Error(r.error);
+  if (!r.ok) return { error: r.error };
   revalidatePath("/leads");
+  return { ok: true };
 }
 
 /** Sotuvchining ichki izohi. */

@@ -149,27 +149,34 @@ export async function createStockOrder(_prev: ActionState, fd: FormData): Promis
  * Qabul qilish: DRAFT → CONFIRMED (Sotuv bo'limiga o'tadi) yoki BLOCKED (limit yetmaydi — direktor ochadi).
  * Limit tekshiruvi: qarz + ochiq zayavkalar + shu zayavka ≤ limit.
  */
-export async function confirmOrder(id: string) {
+export async function confirmOrder(id: string): Promise<ActionState> {
   // Sklad zayavkasini sotuvdan tashqari ishlab chiqarish/sklad xodimi ham qabul qiladi
-  const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
-  const s = await requireAction("orders", kind === "STOCK" ? "stock" : "confirm");
+  const o = await db.order.findUnique({ where: { id }, select: { kind: true } });
+  if (!o) return { error: "Zayavka topilmadi" };
+  const s = await requireAction("orders", o.kind === "STOCK" ? "stock" : "confirm");
   const r = await orderConfirm(id, s.userId); // qoida `lib/orders.ts` da — mobil ilova ham shuni chaqiradi
-  if (r.error) throw new Error(r.error); // ilgari xato yutilib, "qabul qilindi" ko'rinardi
+  // Xato (kunlik limit, holat o'zgargan) tugma yonida ko'rinadi — ilgari `throw` qilinib, prod'da matn yashirinardi
+  if (r.error) return { error: r.error };
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/stock");
+  return { ok: true, note: r.status === "BLOCKED" ? "Limit yetmadi — zayavka bloklandi, direktor ochadi" : "Qabul qilindi" };
 }
 
 /** BLOCKED → CONFIRMED. Direktor (yoki direktor "unblock" ruxsatini bergan xodim). */
-export async function unblockOrder(id: string) {
+export async function unblockOrder(id: string): Promise<ActionState> {
   const s = await requireAction("orders", "unblock");
-  await orderUnblock(id, s.userId);
+  const r = await orderUnblock(id, s.userId);
+  if (r.error) return { error: r.error };
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
+  return { ok: true };
 }
 
 /** Bekor qilish — sabab so'raladi va auditga yoziladi (tasdiq tugmasi `ConfirmButton`). */
 export async function cancelOrder(id: string, reason: string): Promise<ActionState> {
-  const kind = (await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true } })).kind;
+  const ord = await db.order.findUnique({ where: { id }, select: { kind: true } });
+  if (!ord) return { error: "Zayavka topilmadi" };
+  const kind = ord.kind;
   const s = await requireAction("orders", kind === "STOCK" ? "stock" : "cancel");
   const why = String(reason ?? "").trim().slice(0, 300);
   if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
@@ -185,16 +192,22 @@ export async function cancelOrder(id: string, reason: string): Promise<ActionSta
  * Sklad zayavkasini yopish: so'ralgan zaxira hovliga chiqarib qo'yilgan.
  * Mijoz zayavkasi bunday yopilmaydi — u schyot/to'lov bo'yicha yopiladi.
  */
-export async function closeStockOrder(id: string) {
+export async function closeStockOrder(id: string): Promise<ActionState> {
   const s = await requireAction("orders", "stock");
-  const o = await db.order.findUniqueOrThrow({ where: { id }, select: { kind: true, status: true } });
-  if (o.kind !== "STOCK") throw new Error("Bu tugma faqat sklad zayavkasi uchun");
-  if (!["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Faqat qabul qilingan sklad zayavkasi yopiladi");
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { status: "CLOSED" } });
+  const o = await db.order.findUnique({ where: { id }, select: { kind: true, status: true } });
+  if (!o) return { error: "Zayavka topilmadi" };
+  if (o.kind !== "STOCK") return { error: "Bu tugma faqat sklad zayavkasi uchun" };
+  if (!["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return { error: "Faqat qabul qilingan sklad zayavkasi yopiladi" };
+  const done = await db.$transaction(async (tx) => {
+    // Holat sharti bilan: ikki marta bosilsa ikkinchisi hech narsa yozmaydi
+    const r = await tx.order.updateMany({ where: { id, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, data: { status: "CLOSED" } });
+    if (!r.count) return false;
     await audit(tx, s.userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CLOSED", kind: "STOCK" });
+    return true;
   });
+  if (!done) return { error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
   revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/production"); revalidatePath("/stock");
+  return { ok: true };
 }
 
 /** Mijoz imzolagan kafolat xati qabul qilindi / qaytarildi. */
@@ -219,7 +232,8 @@ export async function setContract(id: string, _prev: ActionState, fd: FormData):
   const s = await requireAction("orders", "contract");
   const r = parseForm(contractSchema, fd);
   if ("error" in r) return { error: r.error };
-  const o = await db.order.findUniqueOrThrow({ where: { id } });
+  const o = await db.order.findUnique({ where: { id } });
+  if (!o) return { error: "Zayavka topilmadi" };
   if (o.status === "CANCELLED") return { error: "Bekor qilingan zayavkaga shartnoma qo'shib bo'lmaydi" };
   const saved = await saveContractFile(id, fd.get("contractFile"));
   if (saved && "error" in saved) return { error: saved.error };

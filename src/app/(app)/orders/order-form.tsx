@@ -183,7 +183,9 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const prepayN = Number(prepay) || 0;
   const remaining = Math.max(0, total - prepayN);
   const overLimit = mode === "existing" && customer ? customer.used + total > customer.limit : false;
-  const blocked = mode === "existing" && !!customer?.blacklisted;
+  // Qora ro'yxat (kredit limiti yo'q/to'lgan): faqat kredit yopiq — to'liq oldindan to'lov bilan zayavka ochiladi
+  const noCredit = mode === "existing" && !!customer?.blacklisted;
+  const blocked = noCredit && (payment === "credit" || total <= 0 || prepayN < total - 0.005);
   const contractN = Number(contractAmount) || 0;
   const contractLeft = contractN - total; // shartnoma summasidan mahsulot summasi ayirilgan qoldiq
 
@@ -204,7 +206,11 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
         {mode === "existing" ? (
           <>
-            <CustomerPicker customers={customers} value={customer} onChange={setCustomer} />
+            <CustomerPicker customers={customers} value={customer} onChange={(c) => {
+              setCustomer(c);
+              // Kredit limiti yo'q mijoz: to'lov turi darhol "naqd" va bosh to'lov ochiq — sotuvchi summani kiritadi
+              if (c?.blacklisted) { pickPayment("prepay"); setHasDeposit(true); }
+            }} />
             {customer && (
               <div className={cn("mt-2 rounded-lg border p-3 text-xs", customer.blacklisted ? "border-red-200 bg-red-50/60" : "border-slate-100 bg-slate-50/60")}>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -235,10 +241,12 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                 )}
               </div>
             )}
-            {blocked && (
-              <div className="mt-2"><Callout tone="danger" title="Mijoz qora ro'yxatda">Limit to&apos;liq ishlatilgan. Qarz to&apos;langach zayavka ochish mumkin. Direktor limitni oshirishi mumkin.</Callout></div>
+            {noCredit && customer && (
+              <div className="mt-2"><Callout tone="danger" title="Kredit limiti yo'q — faqat oldindan to'lov bilan">
+                Limit {money(customer.limit)}, qarz va ochiq zayavkalar {money(customer.used)}. Qarzga zayavka ochilmaydi — bosh to&apos;lov zayavka summasiga teng bo&apos;lsin (pul kassaga tushmaguncha reys ochilmaydi). Qarzga berish kerak bo&apos;lsa direktor limitni oshiradi.
+              </Callout></div>
             )}
-            {!blocked && overLimit && customer && (
+            {!noCredit && overLimit && customer && (
               <div className="mt-2"><Callout tone="warning" title="Limit yetmaydi">Bu zayavka bilan ishlatilgan summa {money(customer.used + total)} bo&apos;ladi, limit {money(customer.limit)}. Qabul qilinganda zayavka bloklanadi — direktor ochishi kerak.</Callout></div>
             )}
           </>
@@ -250,7 +258,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               <Field label="INN"><Input name="newInn" /></Field>
               <Field label="Manzil"><Input name="newAddress" /></Field>
             </div>
-            <p className="text-xs text-slate-500">Yangi mijozga avtomatik <b>100 000 000 so&apos;m</b> kredit limit ajratiladi. Mijoz zayavka bilan birga saqlanadi.</p>
+            <p className="text-xs text-slate-500">Yangi mijozning kredit limiti <b>0</b> — qarzga zayavka qabul qilinganda bloklanadi (direktor ochadi yoki limit beradi). Mijoz zayavka bilan birga saqlanadi.</p>
             {appHint && (
               <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-xs text-emerald-800">
                 <Smartphone size={14} className="mt-0.5 shrink-0" />
@@ -303,7 +311,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {([["prepay", "Naqd to'lov", "Mijoz pulni kassaga to'laydi — kassir qabul qiladi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
             <label key={v} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm transition", payment === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300")}>
-              <input type="radio" name="payment" value={v} checked={payment === v} onChange={() => pickPayment(v)} className="mt-0.5 accent-slate-900" />
+              <input type="radio" name="payment" value={v} checked={payment === v} disabled={v === "credit" && noCredit} onChange={() => pickPayment(v)} className="mt-0.5 accent-slate-900" />
               <span><span className="font-medium text-slate-900">{l}</span><span className="block text-xs text-slate-500">{h}</span></span>
             </label>
           ))}
@@ -531,7 +539,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
       <FormActions>
         <Button disabled={pending || blocked || (mode === "existing" && !customer)}>{pending ? "Saqlanmoqda…" : "Saqlash (qoralama)"}</Button>
         <LinkButton href="/orders" variant="secondary">Bekor</LinkButton>
-        {blocked && <span className="inline-flex items-center gap-1 text-xs text-red-600"><ShieldAlert size={14} /> Qora ro&apos;yxatdagi mijozga zayavka ochilmaydi</span>}
+        {blocked && <span className="inline-flex items-center gap-1 text-xs text-red-600"><ShieldAlert size={14} /> Kredit limiti yo&apos;q — faqat oldindan to&apos;lov bilan: bosh to&apos;lov {money(total)} bo&apos;lsin</span>}
       </FormActions>
     </form>
   );
