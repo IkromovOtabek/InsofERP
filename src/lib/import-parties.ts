@@ -3,6 +3,7 @@ import { audit } from "./audit";
 import { flatName, numMoney, str } from "./excel";
 import { normalizePhone } from "./sms/phone";
 import { DEFAULT_CREDIT_LIMIT } from "./finance";
+import { INN_ERROR, parseInn } from "./inn";
 
 /**
  * Excel'dan mijozlar / yetkazuvchilar ro'yxati (real korxona ma'lumotini ko'chirish).
@@ -18,8 +19,6 @@ export type ImportPartiesResult = { created: number; updated: number; skipped: n
 
 type Prepared = { no: number; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson: string | null; creditLimit: number | null };
 
-/** INN — faqat raqamlar (9 xonali yuridik, 14 xonali JSHSHIR). */
-const innOf = (v: unknown) => str(v).replace(/\D+/g, "") || null;
 
 function prepare(rows: PartyRow[], kind: PartyKind): Prepared[] {
   const errors: string[] = [];
@@ -28,8 +27,10 @@ function prepare(rows: PartyRow[], kind: PartyKind): Prepared[] {
     const no = i + 1;
     const name = str(x.name).replace(/\s+/g, " ");
     if (!name) { if ([x.inn, x.phone, x.address].some((v) => str(v) !== "")) errors.push(`${no}-qator: nomi yo'q`); continue; }
-    const inn = innOf(x.inn);
-    if (inn && inn.length !== 9 && inn.length !== 14) errors.push(`${no}-qator (${name}): INN 9 (yoki JSHSHIR 14) xonali bo'lsin — «${str(x.inn)}»`);
+    // INN — 9 (STIR) yoki 14 (JSHSHIR) raqam; bo'sh joylar olib tashlanadi, boshqa belgi bo'lsa — xato
+    const innR = parseInn(str(x.inn));
+    if (innR.error !== undefined) errors.push(`${no}-qator (${name}): ${INN_ERROR} — «${str(x.inn)}»`);
+    const inn = innR.inn ?? null;
     const rawPhone = str(x.phone);
     let creditLimit: number | null = null;
     if (kind === "customer" && str(x.creditLimit) !== "") {

@@ -12,7 +12,7 @@ import { PARTY_FIELDS } from "../../src/lib/party-fields";
 // @ts-expect-error — .mjs yordamchilari (tipsiz)
 import { Client, fd, check, eq2, summary } from "./client.mjs";
 // @ts-expect-error — .mjs yordamchilari (tipsiz)
-import { q, q1, lit } from "./db.mjs";
+import { q, q1, lit, exec } from "./db.mjs";
 
 const T = Date.now().toString(36).slice(-5);
 const today = new Date().toISOString().slice(0, 10);
@@ -162,6 +162,59 @@ if (stockKey === 0) {
 }
 r = await sotuv.action("settings/boshlangich-qoldiq/actions#importOpeningsAction", ["CUSTOMER", undefined, fd({ rows: "[]", date: today })], "/dashboard");
 check("3.11 sotuvchi qoldiq import qila olmaydi (403 yoki yo'naltirish, 500 emas)", r.status !== 500, `${r.status}`);
+
+// ───────── 4. INN tekshiruvi (9 — STIR, 14 — JSHSHIR; bo'sh joy olib tashlanadi) ─────────
+console.log("\n4. INN tekshiruvi");
+const INN_MSG = "INN 9 yoki 14 raqamdan iborat bo'lishi kerak";
+const inn14 = (n: number) => `4${T.replace(/\D/g, "").padEnd(3, "7").slice(0, 3)}${String(n).padStart(10, "0")}`; // 14 xonali
+const spaced = (s: string) => `${s.slice(0, 3)} ${s.slice(3, 6)} ${s.slice(6)}`;
+// Import: yomon INN'lar — qator raqami va aniq xabar, hech narsa yozilmaydi
+const cBefore = count(`select id from "Customer"`);
+r = await importCustomers(buh, xlsxRows("inn-xato", custHeader, [
+  [`INN harf ${T}`, "30512345A", "", "", "", ""],
+  [`INN chiziq ${T}`, "305-123-456", "", "", "", ""],
+  [`INN 10 xona ${T}`, "3051234567", "", "", "", ""],
+  [`INN to'g'ri ${T}`, inn(40), "", "", "", ""],
+], CUST_FIELDS));
+const innErr = r.result?.error ?? "";
+check("4.1 import: harf / chiziq / 10 xonali INN — 3 xato, qator raqami va o'zbekcha xabar bilan",
+  /3 ta qatorda xato/.test(innErr) && /1-qator.*INN 9 yoki 14 raqamdan iborat bo'lishi kerak/.test(innErr) && /2-qator/.test(innErr) && /3-qator/.test(innErr) && !/4-qator/.test(innErr), innErr);
+check("4.2 import: xatoda hech narsa yozilmadi", count(`select id from "Customer"`) === cBefore);
+r = await importCustomers(buh, xlsxRows("inn-togri", custHeader, [
+  [`INN bo'shliq ${T}`, spaced(inn(41)), "", "", "", ""],
+  [`JSHSHIR ${T}`, inn14(42), "", "", "", ""],
+  [`INN yo'q ${T}`, "", "", "", "", ""],
+], CUST_FIELDS));
+check("4.3 import: «305 123 456» ko'rinishi va 14 xonali JSHSHIR qabul qilindi, INN'siz ham bo'ladi", /3 ta yangi mijoz/.test(r.result?.note ?? ""), r.result);
+check("4.4 import: INN bo'sh joysiz saqlandi", count(`select id from "Customer" where inn=${lit(inn(41))}`) === 1 && count(`select id from "Customer" where inn=${lit(inn14(42))}`) === 1);
+r = await importSuppliers(xlsxRows("yetk-inn", supHeader, [[`Yetk INN harf ${T}`, "abc123456", "", "", ""]], PARTY_FIELDS));
+check("4.5 yetkazuvchi importi: harfli INN — xato", (r.result?.error ?? "").includes(INN_MSG), r.result);
+r = await importOpen("CUSTOMER", xlsxRows("qoldiq-inn", partyHeader, [[`Qoldiq INN ${T}`, "12345", "1 000", ""]], OPEN_FIELDS.PARTY), { createMissing: "on" });
+check("4.6 boshlang'ich qoldiq importi: noto'g'ri INN — xato", (r.result?.error ?? "").includes(INN_MSG), r.result);
+
+// Qo'lda forma: mijoz
+const saveCust = (id: string | null, o: Record<string, string>) => buh.action("customers/actions#saveCustomer", [id, undefined, fd({ creditLimit: "0", isActive: "on", ...o })], "/customers/new");
+r = await saveCust(null, { name: `Forma INN xato ${T}`, inn: "1234567890" });
+check("4.7 mijoz formasi: 10 xonali INN rad etildi", r.result?.error === INN_MSG, r.result ?? r.status);
+r = await saveCust(null, { name: `Forma INN ${T}`, inn: ` ${spaced(inn(43))} ` });
+const formCust = q1(`select id, inn from "Customer" where name=${lit(`Forma INN ${T}`)}`);
+check("4.8 mijoz formasi: «305 123 456» → 305123456 saqlandi", formCust?.inn === inn(43), { status: r.status, res: r.result, formCust });
+// Eski (noto'g'ri) INN li karta: INN o'zgarmasa boshqa maydonlarni saqlash to'silmaydi, o'zgarsa — tekshiriladi
+const legacyInn = `L${T}`.slice(0, 8);
+exec(`update "Customer" set inn=${lit(legacyInn)} where id=${lit(formCust?.id ?? "")}`);
+r = await saveCust(formCust?.id, { name: `Forma INN ${T} (tahrir)`, inn: legacyInn });
+check("4.9 eski noto'g'ri INN o'zgartirilmasa — tahrir saqlanadi", !r.result?.error && q1(`select name from "Customer" where id=${lit(formCust?.id ?? "")}`)?.name === `Forma INN ${T} (tahrir)`, r.result ?? r.status);
+r = await saveCust(formCust?.id, { name: `Forma INN ${T} (tahrir)`, inn: "98765" });
+check("4.10 INN noto'g'ri qiymatga o'zgartirilsa — rad etiladi", r.result?.error === INN_MSG, r.result ?? r.status);
+
+// Qo'lda forma: yetkazuvchi
+r = await sklad.action("suppliers/actions#createSupplier", [undefined, fd({ name: `Yetk forma xato ${T}`, inn: "30512345б" })], "/suppliers");
+check("4.11 yetkazuvchi formasi: kirill harfli INN rad etildi", r.result?.error === INN_MSG, r.result ?? r.status);
+r = await sklad.action("suppliers/actions#createSupplier", [undefined, fd({ name: `Yetk forma ${T}`, inn: spaced(inn14(44).slice(0, 9)) + inn14(44).slice(9) })], "/suppliers");
+const formSup = q1(`select id, inn from "Supplier" where name=${lit(`Yetk forma ${T}`)}`);
+check("4.12 yetkazuvchi formasi: 14 xonali JSHSHIR (bo'sh joyli) saqlandi", r.result?.ok === true && formSup?.inn === inn14(44), { res: r.result, formSup });
+r = await sklad.action("suppliers/actions#updateSupplier", [formSup?.id, undefined, fd({ name: `Yetk forma ${T}`, inn: "12 34" })], `/suppliers/${formSup?.id}`);
+check("4.13 yetkazuvchi tahriri: noto'g'ri INN rad etildi", r.result?.error === INN_MSG, r.result ?? r.status);
 
 fs.rmSync(DIR, { recursive: true, force: true });
 summary("excel-imports:");

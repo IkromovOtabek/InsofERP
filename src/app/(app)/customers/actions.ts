@@ -10,6 +10,7 @@ import { parseForm, zDec, zStr, zOpt, type ActionState } from "@/lib/action";
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
 import { importParties, type PartyRow } from "@/lib/import-parties";
+import { parseInn } from "@/lib/inn";
 
 const schema = z.object({
   name: zStr("Nomi to'ldirilishi shart"),
@@ -26,12 +27,20 @@ export async function saveCustomer(id: string | null, _prev: ActionState, fd: Fo
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
+  const cur = id ? await db.customer.findUnique({ where: { id } }) : null;
+  if (id && !cur) return { error: "Mijoz topilmadi" };
+
+  // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam. Tahrirda o'zgartirilmagan eski qiymat qayta tekshirilmaydi
+  if (!(cur && d.inn === cur.inn)) {
+    const inn = parseInn(d.inn);
+    if (inn.error !== undefined) return { error: inn.error };
+    d.inn = inn.inn;
+  }
 
   // Kredit limitni faqat buxgalteriya/finance/direktor o'zgartira oladi. Yangi mijozda ham: aks holda sotuvchi
   // mijozni 10 mlrd limit bilan ochib, qora ro'yxat tekshiruvini chetlab o'tardi.
   if (!["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)) {
-    if (id) {
-      const cur = await db.customer.findUniqueOrThrow({ where: { id } });
+    if (cur) {
       if (Number(cur.creditLimit) !== d.creditLimit) return { error: "Kredit limitni faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi" };
     } else if (d.creditLimit !== DEFAULT_CREDIT_LIMIT) {
       d.creditLimit = DEFAULT_CREDIT_LIMIT;

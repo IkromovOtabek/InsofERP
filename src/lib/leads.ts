@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { parseInn } from "./inn";
 import { audit } from "./audit";
 import { formatPhone, normalizePhone } from "./sms/phone";
 import { botEnabled, sendMessage } from "./telegram/api";
@@ -127,7 +128,10 @@ export async function saveLeadNote(leadId: string, note: string | null): Promise
 export async function convertLead(leadId: string, input: { name: string; inn?: string | null }, userId: string): Promise<LeadActionResult> {
   const name = input.name.trim();
   if (name.length < 2) return { ok: false, error: "Mijoz nomi to'liq yozilsin" };
-  const inn = input.inn?.trim() || null;
+  // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam
+  const innR = parseInn(input.inn);
+  if (innR.error !== undefined) return { ok: false, error: innR.error };
+  const inn = innR.inn;
   const lead = await db.lead.findUnique({ where: { id: leadId } });
   if (!lead) return { ok: false, error: "Ariza topilmadi" };
   if (lead.status === "CONVERTED") return { ok: false, error: "Bu ariza allaqachon mijozga aylantirilgan" };

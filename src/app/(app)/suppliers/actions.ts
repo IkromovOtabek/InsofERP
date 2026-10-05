@@ -7,6 +7,7 @@ import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { importParties, type PartyRow } from "@/lib/import-parties";
+import { parseInn } from "@/lib/inn";
 
 const schema = z.object({ name: zStr("Nomi kerak"), inn: zOpt, phone: zOpt, address: zOpt, contactPerson: zOpt });
 
@@ -14,8 +15,11 @@ export async function createSupplier(_prev: ActionState, fd: FormData): Promise<
   const s = await requireAction("stock", "suppliers");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
+  // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam
+  const inn = parseInn(r.data.inn);
+  if (inn.error !== undefined) return { error: inn.error };
   try {
-    const sup = await db.supplier.create({ data: r.data });
+    const sup = await db.supplier.create({ data: { ...r.data, inn: inn.inn } });
     await audit(db, s.userId, "CREATE", "Supplier", sup.id, undefined, sup);
   } catch (e) {
     if (String(e).includes("Unique constraint")) return { error: "Bu INN bilan yetkazuvchi bor" };
@@ -41,6 +45,12 @@ export async function updateSupplier(id: string, _prev: ActionState, fd: FormDat
   const cur = await db.supplier.findUnique({ where: { id } });
   if (!cur) return { error: "Yetkazuvchi topilmadi" };
   const data = { name: r.data.name, inn: r.data.inn, phone: r.data.phone, address: r.data.address, contactPerson: r.data.contactPerson };
+  // INN tekshiruvi faqat o'zgartirilganda — eski (noto'g'ri) qiymatli kartaning boshqa maydonlarini saqlash to'silmasin
+  if (data.inn !== cur.inn) {
+    const inn = parseInn(data.inn);
+    if (inn.error !== undefined) return { error: inn.error };
+    data.inn = inn.inn;
+  }
   if (data.name === cur.name && data.inn === cur.inn && data.phone === cur.phone && data.address === cur.address && data.contactPerson === cur.contactPerson) return { ok: true, note: "O'zgarish yo'q" };
   if (data.inn) {
     const dup = await db.supplier.findFirst({ where: { inn: data.inn, id: { not: id } }, select: { name: true } });

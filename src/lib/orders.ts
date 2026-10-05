@@ -11,6 +11,7 @@ import { syncCustomerLater } from "@/lib/eco/customers";
 import { expectedAdvance } from "@/lib/payments";
 import type { Prisma } from "@/generated/prisma";
 import { MAX_AMOUNT } from "@/lib/action";
+import { parseInn } from "@/lib/inn";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -272,7 +273,11 @@ export async function createOrder(
   // ── Mijoz ──
   if (input.newCustomer) {
     if (!input.newCustomer.name.trim()) throw new Error("Yangi mijoz nomi to'ldirilishi shart");
-    if (input.newCustomer.inn) {
+    // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam — veb forma ham, mobil ilova ham shu yerdan o'tadi
+    const innR = parseInn(input.newCustomer.inn);
+    if (innR.error !== undefined) throw new Error(innR.error);
+    input = { ...input, newCustomer: { ...input.newCustomer, inn: innR.inn } };
+    if (input.newCustomer?.inn) {
       const dup = await db.customer.findUnique({ where: { inn: input.newCustomer.inn } });
       if (dup) throw new Error(`Bu INN bilan mijoz allaqachon bor: ${dup.name}. Uni ro'yxatdan tanlang.`);
     }

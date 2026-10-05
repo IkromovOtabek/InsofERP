@@ -2,6 +2,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { flatName, num, numMoney, str } from "./excel";
 import { DEFAULT_CREDIT_LIMIT } from "./finance";
+import { INN_ERROR, parseInn } from "./inn";
 import { createOpeningTx, activeKeyOf, OpeningError, type OpeningInput } from "./opening-balances";
 import type { OpeningKind } from "@/generated/prisma";
 
@@ -20,7 +21,6 @@ export type OpeningRow = { name?: unknown; inn?: unknown; amount?: unknown; ware
 export type ImportOpeningsResult = { created: number; skipped: string[]; createdEntities: string[]; total: number };
 
 const cut = (l: string[], n = 8) => `${l.slice(0, n).join("; ")}${l.length > n ? `… (jami ${l.length} ta)` : ""}`;
-const innOf = (v: unknown) => str(v).replace(/\D+/g, "") || null;
 
 export async function importOpenings(
   kind: OpeningKind,
@@ -60,7 +60,10 @@ export async function importOpenings(
     if (kind === "CUSTOMER" || kind === "SUPPLIER") {
       const amount = numMoney(x.amount);
       if (!Number.isFinite(amount) || amount === 0) { errors.push(`${no}-qator (${name}): summa raqam va 0 dan farqli bo'lsin — «${str(x.amount)}»`); continue; }
-      const inn = innOf(x.inn);
+      // INN — 9 (STIR) yoki 14 (JSHSHIR) raqam (bazada yo'q bo'lsa shu INN bilan yaratiladi)
+      const innR = parseInn(str(x.inn));
+      if (innR.error !== undefined) { errors.push(`${no}-qator (${name}): ${INN_ERROR} — «${str(x.inn)}»`); continue; }
+      const inn = innR.inn;
       const found = (inn ? byInn.get(inn) : undefined) ?? byName.get(flatName(name));
       if (!found && !opts.createMissing) { errors.push(`${no}-qator: «${name}» bazada yo'q («bazada yo'qlarini yaratish»ni belgilang yoki avval ${kind === "CUSTOMER" ? "mijozlarni" : "yetkazuvchilarni"} import qiling)`); continue; }
       const k = found ? found.id : `new:${inn ?? flatName(name)}`;
