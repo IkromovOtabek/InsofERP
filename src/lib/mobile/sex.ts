@@ -388,7 +388,10 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
       f("Brigada", m?.brigade ?? UNASSIGNED, m?.brigade ? undefined : "warning"),
       f("Bugun", mk ? mk.label : "belgilanmagan", m?.status ? STATUS_TONE[m.status] : "warning"),
       f("Keldi", m?.checkIn ?? "—"),
-      ...(m?.status === "PRESENT" ? [f("Yuz tekshiruvi", todayRow?.faceVerifiedAt ? `tasdiqlangan ${time(todayRow.faceVerifiedAt)}` : "qo'lda belgilangan", todayRow?.faceVerifiedAt ? "success" : "warning")] : []),
+      ...(m?.status === "PRESENT" ? [todayRow?.source === "SELF_BIOMETRIC"
+        // Xodim o'zi telefonidan: Face ID / barmoq izi + GPS (`lib/self-attendance.ts`); yangi telefon — ogohlantirish
+        ? f("Belgiladi", `o'zi · Face ID${todayRow.checkInDistance != null ? ` · ${Math.round(todayRow.checkInDistance)} m` : ""}${todayRow.newDevice ? " · yangi telefon" : ""}`, todayRow.newDevice ? "warning" : "success")
+        : f("Yuz tekshiruvi", todayRow?.faceVerifiedAt ? `tasdiqlangan ${time(todayRow.faceVerifiedAt)}` : "qo'lda belgilangan", todayRow?.faceVerifiedAt ? "success" : "warning")] : []),
       f("Ketdi", m?.checkOut ?? "—"),
       ...(m?.note ? [f("Izoh", m.note)] : []),
       ...(e.phone ? [f("Telefon", e.phone)] : []),

@@ -1,3 +1,4 @@
+import { selfAttendance, type SelfAttendance } from "@/lib/self-attendance";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
@@ -123,6 +124,13 @@ export type MobileHome = {
    * qator bosilganda xarita shu mashinaga yaqinlashadi. Bo'lsa ilova `live` o'rniga shuni ko'rsatadi.
    */
   fleet?: FleetTruck[];
+  /**
+   * Xodimning o'z davomati — bosh sahifa tepasidagi "Keldim / Ketdim" kartasi (`lib/self-attendance.ts`).
+   * Login xodim kartasiga bog'lanmagan bo'lsa null — karta chiqmaydi. Eski ilova bu maydonni bilmaydi.
+   */
+  selfAttendance?: SelfAttendance | null;
+  /** Rahbar: boshqalarning davomatini belgilash kartochkasi — bosh sahifadan bir bosishda. */
+  attendanceManage?: { title: string; subtitle: string; key: string; id: string } | null;
 };
 
 /** Logistika xaritasidagi bitta reys — GPS bo'lmasa `gps` null, lekin qator ro'yxatda turadi. */
@@ -725,7 +733,27 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       else sections.unshift(...dash.charts);
     }
   }
-  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(fleet ? { fleet } : {}) };
+  const [selfAtt, manage] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null)]);
+  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage };
+}
+
+/**
+ * Rahbar uchun "Davomat" havolasi: ishlab chiqarish va ish boshqaruvchi — sex davomati (`sex/attendance`,
+ * xodimni bosib Keldi/Ketdi/Kelmadi); brigadir — o'z brigadasining bugungi smenasi (davomat shu yerda).
+ */
+async function attendanceManage(user: MobileUser): Promise<MobileHome["attendanceManage"]> {
+  if (user.role === "PRODUCTION" || user.role === "SUPERVISOR") {
+    const { productionStaff } = await import("@/lib/production-staff");
+    const s = await productionStaff();
+    return { title: "Xodimlar davomati", subtitle: `${s.present}/${s.total} keldi${s.notMarked ? ` · ${s.notMarked} belgilanmagan` : ""}`, key: "sex", id: "attendance" };
+  }
+  if (user.role === "BRIGADIER") {
+    const { myBrigades } = await import("@/lib/brigades");
+    const { TODAY_PREFIX } = await import("./brigadier");
+    const b = (await myBrigades(user.id))[0];
+    return b ? { title: "Brigada davomati", subtitle: `${b.name} · bugungi smena`, key: "brig-shift", id: `${TODAY_PREFIX}${b.id}` } : null;
+  }
+  return null;
 }
 
 /**

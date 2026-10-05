@@ -108,6 +108,8 @@ async function CompanyTab() {
         { name: "sameDayCutoffHour", label: "Bugun yetkazish uchun oxirgi soat", type: "number", step: "1", defaultValue: c.sameDayCutoffHour, required: true },
         { name: "telegram", label: "Telegram (mijozlar uchun)", defaultValue: c.telegram, placeholder: "@insof_beton" },
         { name: "workSunday", label: "Yakshanba ham ishlaymiz", type: "checkbox", defaultValue: c.workSunday },
+        // Ilovadagi "Keldim / Ketdim" (Face ID): xodim pastdagi "Zavod joyi" nuqtasidan shu masofada bo'lishi shart
+        { name: "attendanceRadiusM", label: "Davomat radiusi (m)", type: "number", step: "10", defaultValue: c.attendanceRadiusM, required: true, placeholder: "300" },
       ]} />
       </Card>
       <PlantLocation lat={c.lat} lng={c.lng} />

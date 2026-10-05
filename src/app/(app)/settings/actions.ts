@@ -38,6 +38,8 @@ const companySchema = z.object({
   sameDayCutoffHour: z.coerce.number().int().min(0).max(24),
   workSunday: zBool,
   telegram: zOpt,
+  // Xodim o'zi "Keldim/Ketdim" bosganda zavod nuqtasidan shu radius ichida bo'lishi shart (`lib/self-attendance.ts`)
+  attendanceRadiusM: z.coerce.number().int().min(50, "Davomat radiusi kamida 50 m").max(5000, "Davomat radiusi ko'pi bilan 5000 m"),
 }).refine((v) => v.closeHour > v.openHour, { message: "Yopilish soati ochilishdan keyin bo'lsin", path: ["closeHour"] });
 
 export async function saveCompany(_prev: ActionState, fd: FormData): Promise<ActionState> {

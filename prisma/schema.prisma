@@ -151,6 +151,9 @@ model CompanySettings {
   /// QQS (NDS 12%) to'lovchisi. true — kirimdagi QQS hisobga olinadi (qaytariladi): xomashyo tannarxi QQS'siz;
   /// false — QQS qaytarilmaydi, tannarxga QQS qo'shiladi. Direktor Sozlamalarda o'zgartiradi.
   vatPayer            Boolean   @default(true)
+  /// Xodim o'zi "Keldim"/"Ketdim" bosganda zavod nuqtasidan (lat/lng) shu radius ichida bo'lishi shart, metr.
+  /// Direktor Sozlamalar → Zavod rekvizitlari'da o'zgartiradi; nuqta — "Zavod joyi" xaritasi.
+  attendanceRadiusM   Int       @default(300)
   updatedAt           DateTime  @updatedAt
 }
 
@@ -570,20 +573,38 @@ model HrDocument {
 /// Bir xodimning bir kunlik davomati — otdel kadr "Davomat" tabidan belgilaydi.
 /// Yozuv yo'q kun = belgilanmagan (tabelda bo'sh katak).
 model Attendance {
-  id             String           @id @default(cuid())
-  employeeId     String
-  date           DateTime         @db.Date // kun, soatsiz
-  status         AttendanceStatus @default(PRESENT)
-  checkIn        String? // keldi, "HH:MM" — faqat ishga chiqqan kun uchun
-  checkOut       String? // ketdi, "HH:MM"; kelishdan oldin bo'lsa tungi smena deb hisoblanadi
-  note           String?
-  markedById     String? // kim belgilagani (User.id) — auditda ham qoladi
+  id               String           @id @default(cuid())
+  employeeId       String
+  date             DateTime         @db.Date // kun, soatsiz
+  status           AttendanceStatus @default(PRESENT)
+  checkIn          String? // keldi, "HH:MM" — faqat ishga chiqqan kun uchun
+  checkOut         String? // ketdi, "HH:MM"; kelishdan oldin bo'lsa tungi smena deb hisoblanadi
+  note             String?
+  markedById       String? // kim belgilagani (User.id) — auditda ham qoladi
   // "Keldi" yuz bilan tasdiqlangan bo'lsa: kamera kadri (`uploads/employees/`) va tasdiq vaqti.
   // Qo'lda belgilangan yozuvda ikkalasi ham bo'sh — tabelda farqi ko'rinadi.
-  facePhoto      String?
-  faceVerifiedAt DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  facePhoto        String?
+  faceVerifiedAt   DateTime?
+  // ── Xodimning o'zi telefonidan belgilagani ("Keldim" / "Ketdim", `lib/self-attendance.ts`) ──
+  // `source`: null — qo'lda (sex boshlig'i / HR), "SELF_BIOMETRIC" — xodim o'zi, Face ID / barmoq izi + GPS.
+  // Biometriya faqat telefon egasini tasdiqlaydi — shuning uchun qurilma id va nuqta ham saqlanadi.
+  source           String?
+  checkInLat       Float?
+  checkInLng       Float?
+  checkInAccuracy  Float? // GPS aniqligi, m
+  checkInDistance  Float? // ish joyigacha masofa, m
+  checkInDeviceId  String?
+  checkOutLat      Float?
+  checkOutLng      Float?
+  checkOutAccuracy Float?
+  checkOutDistance Float?
+  checkOutDeviceId String?
+  /// Smena boshidan necha daqiqa kech keldi (o'zi belgilaganda yoziladi)
+  lateMinutes      Int?
+  /// Xodim avval boshqa telefondan belgilagan bo'lsa — yangi qurilmadan belgilandi (rahbarga xabarda ham aytiladi)
+  newDevice        Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
