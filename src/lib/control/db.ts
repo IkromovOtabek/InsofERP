@@ -18,7 +18,9 @@ function assertTestDb(url: string | undefined, what: string) {
   if (isTestMode() && !isTestDbUrl(url)) throw new Error(`[test-mode] ${what} lokal test bazasi emas (insof_test…)`);
 }
 
-assertTestDb(process.env.CONTROL_DATABASE_URL, "CONTROL_DATABASE_URL");
+// Berilmagan (yoki bo'sh) bo'lsa — bu jarayonda panel yo'q (oddiy korxona test serveri, `next build`): tekshirilmaydi,
+// aks holda modul import qilinishi bilanoq build va test server yiqilardi. Panel ulanmagan bazaga birinchi so'rovda xato beradi.
+if (process.env.CONTROL_DATABASE_URL?.trim()) assertTestDb(process.env.CONTROL_DATABASE_URL, "CONTROL_DATABASE_URL");
 export const control = g.controlDb ?? new ControlClient({ log: ["error"] });
 if (process.env.NODE_ENV !== "production") g.controlDb = control;
 
