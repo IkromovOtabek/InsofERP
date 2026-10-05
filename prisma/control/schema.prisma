@@ -102,3 +102,165 @@ model TenantStat {
 
   @@unique([tenantId, day])
 }
+
+// ───────────────────────── Monitoring va kiberxavfsizlik (insof-agent) ─────────────────────────
+//
+// Panel serverga to'g'ridan-to'g'ri tegmaydi (insof-control.service: NoNewPrivileges, ProtectSystem=strict).
+// Serverdagi alohida `insof-agent` xizmati (scripts/insof-agent.ts) metrikalarni yig'adi, tekshiruvlarni
+// bajaradi va shu jadvallarga yozadi; panel o'qiydi va faqat AgentAction navbatiga so'rov qo'yadi.
+// Agent navbatdagi amalni faqat oq ro'yxat (src/lib/control/monitor/contract.ts) bo'yicha bajaradi.
+
+enum CheckStatus {
+  OK
+  WARN
+  CRIT
+  UNKNOWN
+}
+
+enum Severity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKED // superadmin ko'rdi, ustida ishlanmoqda
+  RESOLVED
+}
+
+enum ActionStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+  REJECTED // oq ro'yxatda yo'q yoki parametr noto'g'ri
+}
+
+/// Server holati surati (agent har ~15 s yozadi; 7 kundan eskilari agent tomonidan tozalanadi).
+model HostSnapshot {
+  id        String   @id @default(cuid())
+  hostname  String
+  takenAt   DateTime @default(now())
+  cpuPct    Float
+  load1     Float
+  load5     Float
+  load15    Float
+  memTotal  BigInt
+  memUsed   BigInt
+  swapTotal BigInt
+  swapUsed  BigInt
+  diskTotal BigInt
+  diskUsed  BigInt
+  uptimeSec Int
+  netRxBps  BigInt?
+  netTxBps  BigInt?
+  /// Qo'shimcha: jarayonlar soni, ochiq ulanishlar, top jarayonlar (xotira bo'yicha) va h.k.
+  extra     Json?
+
+  @@index([takenAt])
+}
+
+/// Tekshiruvning JORIY holati — har kalit uchun bitta qator (upsert). Tarix — Incident va HostSnapshot.
+/// Kalitlar: contract.ts dagi checkKey() bilan yasaladi (masalan "unit:insof-erp@insof", "http:tenant:insof").
+model ServiceCheck {
+  id        String      @id @default(cuid())
+  key       String      @unique
+  /// unit | http | db | ssl | backup | disk | security | agent ...
+  kind      String
+  /// Inson o'qiydigan nom ("insof-erp@insof", "insof-erp.uz SSL")
+  target    String
+  tenantId  String?
+  status    CheckStatus
+  message   String?
+  latencyMs Int?
+  data      Json?
+  checkedAt DateTime
+  /// Holat shu qiymatga qachon o'tgan (OK → CRIT o'tishi vaqti)
+  changedAt DateTime
+
+  @@index([kind])
+  @@index([status])
+}
+
+/// Hodisa: tekshiruv yiqildi yoki xavfsizlik topilmasi. Bir kalit — bitta ochiq hodisa (count oshadi).
+model Incident {
+  id               String         @id @default(cuid())
+  key              String
+  /// monitor | security | ai
+  source           String
+  /// availability | performance | security | backup | certificate | config | update
+  category         String
+  severity         Severity
+  status           IncidentStatus @default(OPEN)
+  title            String
+  detail           Json?
+  /// Tavsiya etilgan tuzatishlar: [{ type, params, label }] — contract.ts ActionType'lari
+  suggestedActions Json?
+  tenantId         String?
+  count            Int            @default(1)
+  firstSeenAt      DateTime       @default(now())
+  lastSeenAt       DateTime       @default(now())
+  resolvedAt       DateTime?
+  ackedById        String?
+  ackedAt          DateTime?
+  /// Telegram ogohlantirishi yuborilgan vaqt (takror yubormaslik uchun)
+  notifiedAt       DateTime?
+
+  actions AgentAction[]
+
+  @@index([status, severity])
+  @@index([key, status])
+  @@index([lastSeenAt])
+}
+
+/// Panel qo'ygan amal so'rovi — agent oq ro'yxat bo'yicha bajaradi va natijani yozadi.
+model AgentAction {
+  id            String       @id @default(cuid())
+  /// contract.ts ACTION_TYPES dan biri
+  type          String
+  params        Json         @default("{}")
+  status        ActionStatus @default(PENDING)
+  requestedById String?
+  requestedAt   DateTime     @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  /// stdout/stderr (oxirgi ~8 KB), sirlarsiz
+  output        String?
+  incidentId    String?
+
+  incident Incident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([status, requestedAt])
+}
+
+/// Agent tirikligi (bitta qator, id = "main"). Panel "Agent javob bermayapti" ni shundan biladi.
+model AgentHeartbeat {
+  id         String   @id
+  hostname   String
+  version    String
+  startedAt  DateTime
+  lastSeenAt DateTime
+  info       Json?
+}
+
+/// Kiberxavfsizlik AI tahlili (Claude): topilmalar bo'yicha qisqa hisobot va ustuvor tavsiyalar.
+model SecurityReport {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  /// scheduled | manual
+  trigger       String
+  model         String
+  /// Umumiy baho: A (yaxshi) … F (xavfli)
+  grade         String
+  summary       String
+  /// [{ title, severity, why, fix, actionType? }]
+  items         Json
+  /// Tahlilga berilgan topilmalar soni va kirish hajmi (token emas, qisqa statistika)
+  inputMeta     Json?
+  requestedById String?
+
+  @@index([createdAt])
+}
