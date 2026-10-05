@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { SignJWT, jwtVerify } from "jose";
 import { companySuspension, SUSPENDED_MESSAGE } from "@/lib/tenant";
 import bcrypt from "bcryptjs";
@@ -42,6 +43,9 @@ type DbUser = { id: string; login: string; fullName: string; role: Role; session
 async function sign(user: DbUser, typ: "access" | "refresh") {
   return new SignJWT({ sub: user.id, login: user.login, role: user.role, typ, sv: user.sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
+    // Noyob jti: bir soniyada berilgan ikki token bir xil bo'lmasin — aks holda refresh "yangi" juftlik
+    // sifatida eskisining aynan nusxasini qaytarardi, bitta qurilmadagi logout boshqasini ham o'ldirardi
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(typ === "access" ? ACCESS_TTL : REFRESH_TTL)
     .sign(authSecret());
@@ -76,29 +80,98 @@ export async function mobileLoginWithCode(phone: string, code: string) {
   return issue(r.user);
 }
 
-/** Refresh → yangi juftlik. Xodim o'chirilgan bo'lsa sessiya tugaydi. */
+/**
+ * Refresh → yangi juftlik (rotatsiya). Ishlatilgan refresh token darhol rad ro'yxatiga tushadi:
+ * o'g'irlangan nusxa bilan ikkinchi marta yangilab bo'lmaydi. Tekshiruv va belgilash orasida
+ * `await` yo'q — parallel ikki so'rovdan faqat bittasi o'tadi. Xodim o'chirilgan bo'lsa sessiya tugaydi.
+ */
 export async function mobileRefresh(refreshToken: string) {
   const payload = await verify(refreshToken, "refresh");
+  if (!claimToken(refreshToken, payload)) throw new MobileAuthError("TOKEN_INVALID", "Qayta kiring");
   const user = await db.user.findUnique({ where: { id: payload.sub } });
   if (!user || !user.isActive) throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
   if ((payload.sv ?? 0) !== user.sessionVersion) throw new MobileAuthError("TOKEN_INVALID", "Qayta kiring");
   return issue(user);
 }
 
+type TokenPayload = { sub: string; login: string; role: Role; typ: string; sv?: number; jti?: string; exp?: number };
+
 async function verify(token: string, typ: "access" | "refresh") {
+  let payload: TokenPayload;
   try {
-    const { payload } = await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS });
-    if (payload.typ !== typ) throw new Error("wrong typ");
-    return payload as unknown as { sub: string; login: string; role: Role; typ: string; sv?: number };
+    const r = await jwtVerify(token, authSecret(), { algorithms: JWT_ALGS });
+    if (r.payload.typ !== typ) throw new Error("wrong typ");
+    payload = r.payload as unknown as TokenPayload;
   } catch {
     throw new MobileAuthError("TOKEN_INVALID", typ === "refresh" ? "Qayta kiring" : "Sessiya muddati tugagan");
   }
+  if (isRevoked(token, payload)) throw new MobileAuthError("TOKEN_INVALID", typ === "refresh" ? "Qayta kiring" : "Sessiya muddati tugagan");
+  return payload;
+}
+
+/* ───────────── Chiqish va rotatsiya: tokenni server tomonda bekor qilish ─────────────
+ *
+ * Veb'dagi kabi (`lib/auth.ts` revokeToken) xotiradagi rad ro'yxati: kalit — jti (eski, jti'siz
+ * tokenlarda — token xeshi), qiymat — token muddati. ERP bitta jarayonda ishlaydi; restart'da ro'yxat
+ * tozalanadi — maqbul: access 12 soatda o'ladi, xavfli holatda direktor parolni almashtiradi (sessionVersion).
+ * `globalThis` — route modullari alohida yuklansa ham ro'yxat bitta bo'lsin.
+ */
+const g = globalThis as unknown as { __insofMobileRevoked?: Map<string, number> };
+const revoked = (g.__insofMobileRevoked ??= new Map<string, number>());
+const revokeKey = (token: string, p: { jti?: string }) => (p.jti ? `j:${p.jti}` : `h:${createHash("sha256").update(token).digest("base64url")}`);
+
+function isRevoked(token: string, p: TokenPayload): boolean {
+  const k = revokeKey(token, p);
+  const exp = revoked.get(k);
+  if (exp === undefined) return false;
+  if (exp <= Date.now()) { revoked.delete(k); return false; }
+  return true;
+}
+
+/** Tokenni rad ro'yxatiga qo'yadi. Allaqachon ro'yxatda bo'lsa false (sinxron — poyga yo'q). */
+function claimToken(token: string, p: TokenPayload): boolean {
+  const now = Date.now();
+  const k = revokeKey(token, p);
+  const exp = revoked.get(k);
+  if (exp !== undefined && exp > now) return false;
+  revoked.set(k, (p.exp ?? 0) * 1000 || now + 30 * 86400_000);
+  if (revoked.size > 5000) for (const [key, e] of revoked) if (e <= now) revoked.delete(key);
+  return true;
+}
+
+/**
+ * Mobil "Chiqish": berilgan access va refresh tokenlarni muddati tugaguncha bekor qiladi.
+ * Faqat SHU qurilma — boshqa qurilmalardagi sessiyalar qoladi. Yaroqsiz/eskirgan token — e'tiborsiz.
+ * Refresh token faqat access token egasiniki bo'lsa bekor qilinadi (begona tokenni "chiqarib" bo'lmasin).
+ * Qaytaradi: access token egasi (topilsa) — qurilmaning push manzilini o'chirish uchun.
+ */
+export async function mobileLogout(accessToken: string, refreshToken: string): Promise<{ userId: string | null }> {
+  let userId: string | null = null;
+  if (accessToken) {
+    try {
+      const p = await verify(accessToken, "access");
+      claimToken(accessToken, p);
+      userId = p.sub;
+    } catch { /* yaroqsiz yoki allaqachon bekor qilingan */ }
+  }
+  if (refreshToken) {
+    try {
+      const p = await verify(refreshToken, "refresh");
+      if (!userId || p.sub === userId) claimToken(refreshToken, p);
+    } catch { /* yaroqsiz */ }
+  }
+  return { userId };
+}
+
+/** `Authorization: Bearer …` sarlavhasidan token (bo'lmasa bo'sh satr). */
+export function bearerToken(req: Request): string {
+  const header = req.headers.get("authorization") ?? "";
+  return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
 }
 
 /** Har bir himoyalangan mobil endpoint boshida. `Authorization: Bearer <access>`. */
 export async function requireMobileUser(req: Request): Promise<MobileUser> {
-  const header = req.headers.get("authorization") ?? "";
-  const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  const token = bearerToken(req);
   if (!token) throw new MobileAuthError("NO_TOKEN", "Token yo'q");
   const payload = await verify(token, "access");
   const user = await db.user.findUnique({ where: { id: payload.sub } });

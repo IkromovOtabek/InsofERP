@@ -3,6 +3,8 @@
  * Token: TELEGRAM_BOT_TOKEN (@BotFather dan olinadi).
  */
 
+import { externalAllowed } from "@/lib/test-mode";
+
 const API = "https://api.telegram.org";
 
 export const botToken = () => process.env.TELEGRAM_BOT_TOKEN ?? "";
@@ -14,7 +16,20 @@ export class TelegramError extends Error {
   }
 }
 
+/**
+ * Test rejimida (INSOF_ENV=test) Telegram'ga hech qanday so'rov ketmaydi — token bo'lsa ham.
+ * Chaqiruv jurnalga yoziladi va bo'sh natija qaytadi: webhook/bot oqimini real API'siz sinash mumkin.
+ */
+function testStub<T>(method: string, body: unknown): T {
+  const b = (body ?? {}) as { chat_id?: unknown; text?: unknown };
+  console.log(`[telegram · test] ${method} yuborilmadi${b.chat_id !== undefined ? ` chat=${String(b.chat_id)}` : ""}${typeof b.text === "string" ? `: ${b.text.slice(0, 80).replace(/\n/g, " ")}` : ""}`);
+  if (method === "getUpdates") return [] as T;
+  if (method === "sendMessage") return { message_id: 0, date: Math.floor(Date.now() / 1000), chat: { id: Number(b.chat_id) || 0, type: "private" } } as T;
+  return {} as T;
+}
+
 async function call<T>(method: string, body?: unknown): Promise<T> {
+  if (!externalAllowed(API)) return testStub<T>(method, body);
   const token = botToken();
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN yo'q");
   const res = await fetch(`${API}/bot${token}/${method}`, {

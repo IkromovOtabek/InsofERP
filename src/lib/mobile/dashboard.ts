@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { loadSales } from "@/lib/bi/core";
 import { myBrigades } from "@/lib/brigades";
 import { ISSUE_KIND } from "@/lib/logistics";
-import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
+import { SUPPLY_LABEL } from "@/lib/supply";
+import { payables } from "./payables";
 import { procurementHome } from "@/lib/procurement-home";
 import { skladLogistika } from "@/lib/sklad-logistika";
 import { DELIVERY_LABEL, PRIORITY_LABEL, REQUISITION_LABEL } from "@/lib/procurement-const";
@@ -294,11 +295,6 @@ export async function receivables(until: Date | null = null) {
   return { total: list.reduce((s, c) => s + c.debt, 0), count, list };
 }
 
-/** Kreditorka — davrda ochilgan, tasdiqlangan, hali qabul qilinmagan ta'minot zayavkalari. */
-async function payables(r: DashRange) {
-  const rows = await db.supplyRequest.findMany({ where: { status: { in: ["APPROVED", "FUNDED"] }, date: { gte: r.from, lt: r.to } }, include: { items: true } });
-  return { total: rows.reduce((s, x) => s + totalPlanned(x), 0), count: rows.length };
-}
 
 // ───────────────────────── Rollar ─────────────────────────
 
@@ -756,7 +752,7 @@ async function accounting(r: DashRange): Promise<RoleDashboard> {
     moneyFlow(r),
     db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, select: { amount: true, status: true } }), // boshlang'ich qoldiq — sotuv emas
     // Debitorka — davr oxiridagi qarz (joriy davrda — hozirgi)
-    receivables(asOf(r)), payables(r),
+    receivables(asOf(r)), payables(),
   ]);
   const paySum = flow.pay.reduce((s, p) => s + sum(p.amount), 0);
   const invSum = invoices.reduce((s, i) => s + sum(i.amount), 0);
@@ -766,7 +762,8 @@ async function accounting(r: DashRange): Promise<RoleDashboard> {
     tiles: [
       { key: "invoiced", label: "Schyot yozildi", value: short(invSum), hint: cnt(invoices.length, "schyot"), tone: "info", icon: "receipt" },
       { key: "receivable", label: asOf(r) ? `Debitorka (${r.label} oxirida)` : "Debitorka", value: short(recv.total), hint: joinHint(cnt(recv.count, "ochiq schyot"), `davrda +${short(invSum)} yozildi · −${short(paySum)} to'landi`), tone: recv.total > 0 ? "danger" : "success", icon: "warning" },
-      { key: "payable", label: `Kreditorka (${r.label})`, value: short(pay.total), hint: `${cnt(pay.count, "ta'minot zayavkasi")} · davrda ochilgan`, tone: pay.total > 0 ? "warning" : "success", icon: "clipboard-list" },
+      // Kreditorka — hozirgi qarz (to'lanmagan kirimlar + boshlang'ich qoldiq + tasdiqlangan ta'minot), `./payables.ts`
+      { key: "payable", label: "Kreditorka", value: short(pay.total), hint: joinHint(cnt(pay.receipts.count, "to'lanmagan kirim"), pay.opening.total > 0 ? `boshl. qoldiq ${short(pay.opening.total)}` : null, pay.supply.count ? cnt(pay.supply.count, "ta'minot zayavkasi") : null), tone: pay.total > 0 ? "warning" : "success", icon: "clipboard-list" },
       { key: "expense", label: "Chiqim", value: short(flow.outSum), hint: deltaText(flow.outSum, flow.prevOut, r) ?? undefined, tone: "warning", icon: "arrow-up-circle" },
     ],
     charts: pick(

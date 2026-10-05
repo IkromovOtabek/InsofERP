@@ -95,10 +95,40 @@ const LEAD_LABEL: Record<LeadStatus, string> = { NEW: "Yangi", IN_PROGRESS: "Bog
 const LEAD_TONE: Record<LeadStatus, Tone> = { NEW: "brand", IN_PROGRESS: "warning", CONVERTED: "success", REJECTED: "danger" };
 const SUPPLY_TONE: Record<SupplyStatus, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
 
+/**
+ * Ro'yxat/kartochka kaliti → veb modul (`lib/nav.ts` MODULES). Direktor xodimga modulni "yo'q" (`none`)
+ * qilib qo'ysa, vebdagi kabi ilovada ham ro'yxat ham, kartochka ham ochilmaydi.
+ */
+const KEY_MODULE: Record<string, string> = {
+  orders: "orders", sales: "sales", leads: "sales", customers: "customers",
+  invoices: "payments", payments: "payments", cashflow: "cashflow",
+  production: "production", recipes: "production", "prod-report": "production",
+  tasks: "tasks", brigades: "tasks",
+  trips: "trips", drivers: "trips",
+  stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
+  supply: "taminot", employees: "employees",
+};
+
+/** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
+export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
+  if (user.role === "DIRECTOR") return false;
+  if ((user.role === "DRIVER" && key === "trips") || (user.role === "BRIGADIER" && key === "tasks")) return false;
+  const mod = Object.hasOwn(KEY_MODULE, key) ? KEY_MODULE[key] : undefined;
+  return !!mod && user.perms?.[mod] === "none";
+}
+
+/** Ro'yxatga (va u bilan bog'liq ekranlarga, masalan reys marshrutiga) kira oladimi: rol + direktor yopmagan modul. */
+export function listAllowed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
+  const meta = Object.hasOwn(ACCESS, key) ? ACCESS[key] : undefined; // "constructor" kabi prototip kalitlari — ro'yxat emas
+  if (!meta) return false;
+  return (user.role === "DIRECTOR" || meta.roles.includes(user.role)) && !moduleClosed(user, key);
+}
+
 /** Shu rol kira oladigan barcha ro'yxatlar — bosh ekrandagi tezkor amallar uchun. */
-export function listsFor(role: Role) {
+export function listsFor(role: Role, perms?: MobileUser["perms"]) {
   return Object.entries(ACCESS)
     .filter(([, m]) => role === "DIRECTOR" || m.roles.includes(role))
+    .filter(([key]) => !moduleClosed({ role, perms }, key))
     .map(([key, m]) => ({ key, title: m.title }));
 }
 
@@ -119,9 +149,10 @@ const TAKE = 60;
 const PROD_VIEW: Role[] = ["PRODUCTION", "SUPERVISOR"];
 
 export async function mobileList(user: MobileUser, key: string, q?: string, filter?: string): Promise<MobileList> {
-  const meta = ACCESS[key];
+  const meta = Object.hasOwn(ACCESS, key) ? ACCESS[key] : undefined; // "constructor" kabi prototip kalitlari — ro'yxat emas
   if (!meta) throw new ListError("UNKNOWN_LIST", "Bunday ro'yxat yo'q", 404);
   if (user.role !== "DIRECTOR" && !meta.roles.includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  if (moduleClosed(user, key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   const s = q?.trim() || undefined;
   // Ishlab chiqarish uchun zayavkalar veb "/production" oynasidagidek: filtrlar va brigada holati bilan
   if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);

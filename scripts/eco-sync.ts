@@ -14,7 +14,11 @@ async function main() {
   const { db } = await import("@/lib/db");
 
   if (!ecoEnabled()) {
-    console.error("ECO ulanmagan: .env da ECO_API_URL va ECO_API_KEY yo'q");
+    const { isTestMode } = await import("@/lib/test-mode");
+    // Test rejimida real ECO'ga hech qachon ulanilmaydi (`ecoEnabled` faqat lokal stub manzilni qabul qiladi)
+    console.error(isTestMode() && process.env.ECO_API_URL
+      ? "Test rejimi (INSOF_ENV=test): ECO_API_URL lokal emas — real ECO'ga so'rov yuborilmaydi"
+      : "ECO ulanmagan: .env da ECO_API_URL va ECO_API_KEY yo'q");
     process.exit(1);
   }
   const arg = process.argv.find((a) => a.startsWith("--days="));

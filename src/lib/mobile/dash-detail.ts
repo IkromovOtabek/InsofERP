@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { loadSales, type SaleRow } from "@/lib/bi/core";
 import { EXPENSE_KIND, FUEL_TYPE, ISSUE_KIND } from "@/lib/logistics";
-import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
+import { SUPPLY_LABEL } from "@/lib/supply";
 import { procurementHome } from "@/lib/procurement-home";
 import { skladLogistika } from "@/lib/sklad-logistika";
 import { logisticsDashboard } from "@/lib/logistics-dashboard";
 import { ownerPeriod } from "./owner-period";
+import { payables } from "./payables";
 import { ORDER_LOGI } from "@/lib/logistics";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { unitLabel, unitTotals, type UnitRow } from "@/lib/unit";
@@ -916,17 +917,27 @@ async function receivablesDetail(r?: DashRange): Promise<Part> {
   };
 }
 
-async function payablesDetail(r?: DashRange): Promise<Part> {
-  const rows = await db.supplyRequest.findMany({ where: { status: { in: ["APPROVED", "FUNDED"] }, ...(r ? { date: { gte: r.from, lt: r.to } } : {}) }, orderBy: [{ needBy: "asc" }, { date: "asc" }], include: { items: true, supplier: { select: { name: true } }, warehouse: { select: { name: true } } } });
-  const list = rows.map((x) => ({ x, total: totalPlanned(x) }));
-  const total = sumBy(list, (x) => x.total);
+/**
+ * Kreditorka batafsili — kartadagi summa bilan bir manba (`./payables.ts`): to'lanmagan kirimlar +
+ * boshlang'ich qoldiqdan qolgan qarz + tasdiqlangan (pul hali ajratilmagan) ta'minot zayavkalari.
+ * Qarz hozirgi holat — davr tanlovi unga ta'sir qilmaydi.
+ */
+async function payablesDetail(): Promise<Part> {
+  const p = await payables();
   return {
-    title: "Kreditorka", subtitle: `Tasdiqlangan, hali qabul qilinmagan ta'minot zayavkalari${r ? ` · ${period(r)} ochilgan` : ""}`,
-    fields: [f("Jami", money(total), total > 0 ? "warning" : "success"), f("Zayavkalar", cnt(rows.length, "ta")), f("Moliya tasdig'ida", String(rows.filter((x) => x.status === "APPROVED").length)), f("Xaridda (pul ajratildi)", String(rows.filter((x) => x.status === "FUNDED").length), "brand")],
-    sections: pick(
-      breakdown("Yetkazuvchilar bo'yicha", list, (x) => x.x.supplier?.name ?? "Yetkazuvchi tanlanmagan", (x) => x.total, short, { icon: "store", unitWord: "zayavka" }),
-      sec("Zayavkalar", list.slice(0, 60).map(({ x, total: t }) => ({ id: x.id, title: `${x.docNo} · ${x.department ?? x.warehouse.name}`, subtitle: [x.supplier?.name, x.items.slice(0, 2).map((i) => i.name).join(", "), x.needBy ? `kerak ${day(x.needBy)}` : null].filter(Boolean).join(" · "), right: short(t), status: SUPPLY_LABEL[x.status], tone: SUPPLY_TONE[x.status] })), { target: "supply", empty: "Ochiq zayavka yo'q" }),
-    ),
+    title: "Kreditorka", subtitle: "Yetkazuvchilarga hozirgi qarzimiz: to'lanmagan kirimlar, boshlang'ich qoldiq va tasdiqlangan ta'minot",
+    fields: [
+      f("Jami", money(p.total), p.total > 0 ? "warning" : "success"),
+      f("To'lanmagan kirimlar", `${money(p.receipts.total)} · ${cnt(p.receipts.count, "hujjat")}`),
+      f("Boshlang'ich qoldiq (qolgan)", money(p.opening.total)),
+      f("Tasdiqlangan ta'minot (pul ajratilmagan)", `${money(p.supply.total)} · ${cnt(p.supply.count, "zayavka")}`),
+      f("Xaridda (pul ajratildi — qarz emas)", `${money(p.funded.total)} · ${cnt(p.funded.count, "zayavka")}`, "brand"),
+    ],
+    sections: [
+      sec("Yetkazuvchilar bo'yicha", p.bySupplier.slice(0, 30).map((s) => ({ id: s.id, title: s.name, subtitle: [s.receipts ? `kirim ${short(s.receipts)}` : null, s.opening ? `boshl. qoldiq ${short(s.opening)}` : null, s.supply ? `ta'minot ${short(s.supply)}` : null].filter(Boolean).join(" · "), right: short(s.total), tone: "warning" as Tone })), { icon: "store", target: "suppliers", empty: "Qarz yo'q" }),
+      sec("To'lanmagan kirimlar", p.receipts.rows.slice(0, 60).map((x) => ({ id: x.id, title: `${x.docNo} · ${x.supplier}`, subtitle: `${day(x.date)} · jami ${short(x.total)}${x.paid ? ` · to'langan ${short(x.paid)}` : ""}`, right: short(x.left), tone: "warning" as Tone })), { target: "receipts", empty: "To'lanmagan kirim yo'q" }),
+      sec("Tasdiqlangan ta'minot", p.supply.rows.slice(0, 60).map((x) => ({ id: x.id, title: x.label, subtitle: [x.supplier, x.needBy ? `kerak ${day(x.needBy)}` : null].filter(Boolean).join(" · "), right: short(x.total), status: SUPPLY_LABEL.APPROVED, tone: SUPPLY_TONE.APPROVED })), { target: "supply", empty: "Moliya tasdig'ida zayavka yo'q" }),
+    ],
   };
 }
 
@@ -1296,7 +1307,7 @@ const BUILDERS: Partial<Record<Role, Record<string, Builder>>> = {
     payments: (c) => payments(c.r, "To'lovlar"),
     invoiced: invoicesIssued,
     receivable: (c) => receivablesDetail(c.r),
-    payable: (c) => payablesDetail(c.r),
+    payable: () => payablesDetail(),
     expense: (c) => expenses(c.r),
   },
   FINANCE: {
@@ -1337,7 +1348,8 @@ export const hasDashDetail = (role: Role, key: string) => !!BUILDERS[role]?.[key
 
 export async function dashDetail(user: MobileUser, rawId: string): Promise<MobileDetail> {
   const [stat, per] = rawId.split(".");
-  const build = BUILDERS[user.role]?.[stat ?? ""];
+  const own = BUILDERS[user.role];
+  const build = own && Object.hasOwn(own, stat ?? "") ? own[stat!] : undefined; // "constructor.x" — kartochka emas
   if (!build) throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   const part = await build({ user, r: parsePeriod(per) });
   return { key: "dash", id: rawId, actions: [], ...part };

@@ -253,7 +253,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
   const creatable = creatables.find((k) => k === list.key) ?? creatables[0];
   const quick: QuickAction[] = [
     ...creatables.map((k) => ({ key: k, label: CREATE_ROLES[k].label, icon: "add", kind: "new" as const })),
-    ...listsFor(user.role).filter((l) => l.key !== list.key).map((l) => ({ key: l.key, label: l.title, icon: LIST_ICON[l.key] ?? "folder", kind: "list" as const })),
+    ...listsFor(user.role, user.perms).filter((l) => l.key !== list.key).map((l) => ({ key: l.key, label: l.title, icon: LIST_ICON[l.key] ?? "folder", kind: "list" as const })),
   ];
   const base = {
     role: user.role, roleLabel: ROLE_LABELS[user.role], fullName: user.fullName, list,

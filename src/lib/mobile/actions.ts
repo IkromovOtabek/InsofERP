@@ -295,7 +295,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: `${open.length} ta muammo yopildi` };
     }
     case "trip.fuel": {
-      const t = await db.trip.findUniqueOrThrow({ where: { id }, select: { vehicleId: true, driverId: true } });
+      const t = await db.trip.findUnique({ where: { id }, select: { vehicleId: true, driverId: true } });
+      if (!t) return fail("Reys topilmadi", 404) as never;
       try {
         await addFuelLog({
           vehicleId: t.vehicleId, driverId: t.driverId, tripId: id,

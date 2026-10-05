@@ -15,6 +15,7 @@ import type { MobileUser } from "./auth";
 import type { DayCell, FormField, FormOption } from "./detail";
 import { ListError } from "./list";
 import { unitLabel } from "@/lib/unit";
+import { canDo } from "@/lib/permissions";
 import type { Role } from "@/generated/prisma";
 
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
@@ -77,8 +78,25 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
 };
 
 // Direktor hujjat ochmaydi — zayavka sotuvchining, reys dispetcherning ishi; u nazorat qiladi.
-export const canCreate = (user: MobileUser, key: string) =>
-  !!CREATE_ROLES[key] && CREATE_ROLES[key].roles.includes(user.role);
+// Direktor bergan ruxsat (`User.perms`) faqat CHEKLAYDI: modul "yo'q"/"ko'rish" yoki amal ro'yxatda bo'lmasa — vebdagi
+// kabi forma ham, yaratish ham rad etiladi. (Ilgari faqat rol tekshirilardi — "faqat ko'rish" sotuvchi ilovadan zayavka ochardi.)
+const CREATE_PERM: Record<string, { module: string; action?: string }> = {
+  orders: { module: "orders", action: "create" },
+  trips: { module: "trips", action: "create" },
+  supply: { module: "taminot" },
+  customers: { module: "customers", action: "edit" },
+  suppliers: { module: "stock", action: "suppliers" },
+  brigades: { module: "tasks", action: "brigade" },
+};
+
+export const canCreate = (user: MobileUser, key: string) => {
+  if (!Object.hasOwn(CREATE_ROLES, key) || !CREATE_ROLES[key].roles.includes(user.role)) return false; // prototip kalitlari ("constructor") — forma emas
+  const p = CREATE_PERM[key];
+  const lvl = p && user.perms?.[p.module];
+  if (!lvl) return true; // direktor bu modulga alohida ruxsat bermagan — rol bo'yicha
+  if (lvl === "none" || lvl === "view") return false;
+  return p.action ? canDo({ role: user.role, perms: user.perms }, p.module, p.action) : true;
+};
 
 const NEW_CUSTOMER = "__new__";
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
@@ -87,7 +105,7 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 // ───────────────────────── Forma tavsifi ─────────────────────────
 
 export async function mobileForm(user: MobileUser, key: string): Promise<CreateForm> {
-  if (!CREATE_ROLES[key]) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
+  if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
   switch (key) {
     case "orders": return orderForm(user);
@@ -305,7 +323,7 @@ const BrigadeBody = z.object({ name: z.string().trim().min(1, "Brigada nomi kera
 export type CreateResult = { key: string; id: string; message: string };
 
 export async function mobileCreate(user: MobileUser, key: string, payload: unknown): Promise<CreateResult> {
-  if (!CREATE_ROLES[key]) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
+  if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
 
   try {

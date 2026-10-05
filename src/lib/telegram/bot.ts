@@ -93,7 +93,7 @@ const voiceOf = (m: TgMessage): (TgVoice & { file_name?: string }) | null => m.v
 
 export async function handleUpdate(u: TgUpdate): Promise<void> {
   const msg = u.message;
-  if (!msg || msg.from?.is_bot) return;
+  if (!msg || msg.from?.is_bot || typeof msg.chat?.id !== "number") return; // buzuq update (chat yo'q) — e'tiborsiz
   const chatId = msg.chat.id;
 
   if (msg.chat.type !== "private") {

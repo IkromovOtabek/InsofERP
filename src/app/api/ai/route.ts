@@ -31,7 +31,11 @@ export async function POST(req: Request) {
   const t0 = Date.now();
   let body: Body;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "BAD_JSON" }, { status: 400 }); }
-  const sp = body.sp ?? {};
+  // `null`/massiv/raqam — `body.sp` da TypeError → 500 bo'lardi
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "BAD_JSON" }, { status: 400 });
+  // Davr parametrlari — faqat satrlar (parseRange obyekt/massivni kutmaydi)
+  const sp = Object.fromEntries(Object.entries(body.sp && typeof body.sp === "object" && !Array.isArray(body.sp) ? body.sp : {})
+    .filter(([, v]) => typeof v === "string").map(([k, v]) => [k, (v as string).slice(0, 40)]));
   const range = parseRange(sp);
 
   try {
@@ -42,7 +46,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ answer, level: 0, period: range.label, latency: Date.now() - t0 });
     }
 
-    const question = (body.question ?? "").trim().slice(0, 1000);
+    const question = (typeof body.question === "string" ? body.question : "").trim().slice(0, 1000);
     if (!question) return NextResponse.json({ error: "EMPTY" }, { status: 400 });
     // Mobil yo'l bilan bir xil cheklov: cheksiz tarix LLM tokenlarini (va pulini) yeb qo'yardi
     const history = (Array.isArray(body.history) ? body.history : []).slice(-6)

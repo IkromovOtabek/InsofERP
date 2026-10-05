@@ -3,6 +3,7 @@
  * Sozlash: ECO_API_URL, ECO_API_KEY (ECO'da `integration:create` skripti beradi).
  * Endpointlar ECO tomonida `/v1/erp/*` — faqat X-Api-Key bilan ochiladi.
  */
+import { externalAllowed } from "@/lib/test-mode";
 
 export const ECO_STATUSES = ["ASSIGNED", "ACCEPTED", "DECLINED", "LOADING", "EN_ROUTE", "ARRIVED", "UNLOADING", "COMPLETED", "DISPUTED", "FAILED", "CANCELLED"] as const;
 export type EcoStatus = (typeof ECO_STATUSES)[number];
@@ -159,8 +160,12 @@ export class EcoError extends Error {
   constructor(readonly code: string, message: string, readonly status: number, readonly details?: unknown) { super(message); }
 }
 
+/**
+ * ECO ulanganmi. Test rejimida (INSOF_ENV=test) faqat lokal manzil (stub server) — real ECO'ga
+ * hech qachon so'rov ketmaydi, hatto skript (`npm run eco:sync`) `.env` dan real URL/kalit o'qisa ham.
+ */
 export function ecoEnabled() {
-  return !!(process.env.ECO_API_URL && process.env.ECO_API_KEY);
+  return !!(process.env.ECO_API_URL && process.env.ECO_API_KEY) && externalAllowed(process.env.ECO_API_URL!);
 }
 export const ecoUrl = () => (process.env.ECO_API_URL ?? "").replace(/\/+$/, "");
 

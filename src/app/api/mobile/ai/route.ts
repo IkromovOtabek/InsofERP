@@ -39,7 +39,9 @@ export async function POST(req: Request) {
     const user = await guard(req);
     // Foydalanuvchi bo'yicha chek (veb bilan umumiy hisob): LLM so'rovlari pulli/kvotali
     if (!aiAllowed(user.id)) throw new MobileAuthError("RATE_LIMITED", "So'rovlar juda ko'p. Birozdan keyin qayta urinib ko'ring.", 429);
-    const body = (await req.json().catch(() => ({}))) as Body;
+    const raw = (await req.json().catch(() => ({}))) as unknown;
+    // `null`/massiv — `body.mode` da TypeError → 500 bo'lardi
+    const body: Body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Body) : {};
     const sp = { period: "month" };
     const range = parseRange(sp);
 
@@ -49,7 +51,7 @@ export async function POST(req: Request) {
       return { answer: await aiAnswer(q.q, sp), level: 0, period: range.label };
     }
 
-    const question = (body.question ?? "").trim().slice(0, 1000);
+    const question = (typeof body.question === "string" ? body.question : "").trim().slice(0, 1000);
     if (!question) throw new MobileAuthError("EMPTY", "Savol bo'sh", 400);
     // Tarix qisqa: Groq bepul tarifida bitta so'rov 8K token bilan cheklangan
     // `role` faqat "user" | "assistant" — mijoz "system" kabi rol yuborib model ko'rsatmasini almashtira olmasin
