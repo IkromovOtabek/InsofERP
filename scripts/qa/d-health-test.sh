@@ -36,7 +36,7 @@ out="$(watch REALERT_MIN=0 2>&1)"
 [[ "$out" == *"[XATO] insof-erp@beta"* ]] && pass "REALERT_MIN o'tgach — eslatma" || fail "eslatma: «$out»"
 
 $SVC start insof-erp@beta >/dev/null
-for _ in $(seq 1 60); do curl -fsS -m 2 -o /dev/null "http://127.0.0.1:3206/api/health" && break; sleep 1; done
+for _ in $(seq 1 60); do curl -fsS -m 2 -o /dev/null "http://127.0.0.1:$((D_FIRST_PORT + 1))/api/health" && break; sleep 1; done
 out="$(watch 2>&1)"
 [[ "$out" == *"[TIKLANDI] insof-erp@beta"* ]] && pass "tiklanish xabari" || fail "tiklanish: «$out»"
 out="$(watch 2>&1)"

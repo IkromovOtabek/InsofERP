@@ -7,7 +7,7 @@
 #   $D_ROOT/backups/        server-backup.sh OUT_DIR;  $D_ROOT/offsite/ — OFFSITE=local nishoni
 #   $D_ROOT/run/            jarayonlar pid va loglari, health-watch holati
 # Bazalar faqat lokal va `insof_test_` prefiksli: insof_test_ctl, insof_test_t_<slug>, insof_test_restore_*.
-# Portlar: panel 3204, korxonalar 3205+ (TENANT_FIRST_PORT).
+# Portlar: panel 3204, korxonalar 3205+ (TENANT_FIRST_PORT). Boshqa portlar: D_CTL_PORT=3214 D_FIRST_PORT=3215.
 
 D_REPO="${D_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 D_ROOT="${D_ROOT:-${TMPDIR:-/tmp}/insof-qa-d}"
@@ -18,8 +18,9 @@ D_RUN="$D_ROOT/run"
 D_PGUSER="${D_PGUSER:-$(id -un)}"
 D_PG="postgresql://$D_PGUSER@127.0.0.1:5432"
 D_CTL_DB=insof_test_ctl
-D_CTL_PORT=3204
-D_FIRST_PORT=3205
+D_CTL_PORT="${D_CTL_PORT:-3204}"
+D_FIRST_PORT="${D_FIRST_PORT:-3205}"
+export D_CTL_PORT D_FIRST_PORT
 D_NODE_MODULES="${D_NODE_MODULES:-$D_REPO/node_modules}"
 
 # Faqat shu nomlarga tegamiz (tozalash ham shu ro'yxat bo'yicha)

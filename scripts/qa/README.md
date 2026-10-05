@@ -1,4 +1,31 @@
-# QA regressiya testlari (sotuv / moliya)
+# QA regressiya testlari
+
+## To'liq regressiya — deploy oldidan bitta buyruq
+
+```bash
+bash scripts/qa/run-all.sh                      # a, b, pages, c, geo, d — ketma-ket, ~25–40 daqiqa
+QA_ONLY="a pages" bash scripts/qa/run-all.sh    # faqat tanlanganlar
+QA_KEEP=1 bash scripts/qa/run-all.sh            # ish papkasi va insof_test_r_* bazalari saqlanadi (tahlil uchun)
+```
+
+Skript repo nusxasini (`$QA_WORK`, standart `$TMPDIR/insof-qa-run/app`; `.env*`, `.git`, `.next`, `uploads` ko'chirilmaydi)
+`.env.test.example` dan yozilgan test `.env` bilan build qiladi, har to'plam uchun `insof_test_golden` dan **toza**
+`insof_test_r_<nom>` bazasini ochib (migrate deploy + test foydalanuvchilar) serverni `QA_PORT` (3210) da ishga tushiradi.
+Haqiqiy `.env`, `insof_erp`, `insof_test` va masofaviy serverlarga tegilmaydi. Oxirida natija jadvali; biror to'plam
+yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
+
+| To'plam | Nima | Fayllar |
+|---|---|---|
+| a | sotuv / moliya, Excel importlari, INN tekshiruvi | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, prepay-gate.mts |
+| b | sklad / ishlab chiqarish / logistika / ta'minot / kadr | b-all.sh |
+| pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
+| c | mobil API (jti, refresh rotatsiya, rollar, pul) va integratsiyalar | c-run-all.sh |
+| geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
+| d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch | d-run-all.sh (git HEAD klonida, portlar 3214–3216) |
+
+`d` to'plami `git archive HEAD` bilan ishlaydi — commit qilinmagan o'zgarishlar unga kirmaydi.
+
+## Sotuv / moliya to'plami (a) — qo'lda
 
 Faqat **test bazasida** ishlaydi (nomi `insof_test…`, `insof_test_golden` emas — skriptlar boshqasida to'xtaydi).
 
@@ -10,7 +37,7 @@ npx prisma migrate deploy && npm run db:test-users && npx next build && npx next
 export QA_DATABASE_URL=postgresql://otabek@localhost:5432/insof_test_a   # QA_BASE=http://localhost:3201 (standart)
 node scripts/qa/sales-lifecycle.mjs     # zayavka → avans → schyot → to'lov/ortiqcha/storno, limit/blok, qora ro'yxat, 403
 node scripts/qa/openings-cash.mjs       # boshlang'ich qoldiq (4 tur) qo'lda + bank overdraft nazorati + yetkazuvchi to'lovi stornosi
-npx tsx scripts/qa/excel-imports.mts    # haqiqiy .xlsx: mijoz/yetkazuvchi (1000 qator), qoldiqlar importi, yomon qatorlar
+npx tsx scripts/qa/excel-imports.mts    # haqiqiy .xlsx: mijoz/yetkazuvchi (1000 qator), qoldiqlar importi, yomon qatorlar, INN (9/14 raqam) forma+import
 DATABASE_URL=$QA_DATABASE_URL npx tsx scripts/qa/prepay-gate.mts   # bosh to'lov darvozasi (Order.prepayAmount)
 ```
 

@@ -77,7 +77,7 @@ case "$cmd" in
       u="$(basename "$pf" .pid)"; stop_unit "$u" || true
     done
     # pid fayli yo'qolgan bo'lsa ham — bizning portlar
-    for port in "$D_CTL_PORT" 3205 3206 3207; do
+    for port in "$D_CTL_PORT" "$D_FIRST_PORT" $((D_FIRST_PORT + 1)) $((D_FIRST_PORT + 2)); do
       pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)"
       # shellcheck disable=SC2086
       [ -z "$pids" ] || kill $pids 2>/dev/null || true
