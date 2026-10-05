@@ -12,6 +12,7 @@ import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId } from "@/lib/telegram/notify";
 import { botEnabled, sendMessage } from "@/lib/telegram/api";
 import { gatewayEnabled, sendGatewayCode } from "@/lib/telegram/gateway";
+import { isTestMode } from "@/lib/test-mode";
 
 /**
  * SMS/Telegram kod orqali tizimga kirish — login+parolga QO'SHIMCHA yo'l.
@@ -125,7 +126,10 @@ export async function requestLoginCode(rawPhone: string): Promise<LoginCodeReque
   if (sms.ok) return { ok: true, sent: true, via: "sms" };
 
   // Dev/test: hech bir kanal yo'q — oqim to'xtamasin, kod ekranda ko'rinadi. Prodda yopiq.
-  if (process.env.NODE_ENV !== "production") return { ok: true, sent: true, devCode: code };
+  // Test rejimi (INSOF_ENV=test) `next start` bilan ishlaydi — u yerda NODE_ENV=production, shuning uchun
+  // alohida tekshiruv: aks holda test serverida mavjud raqamga "Kod yuborilmadi" (429), noma'lumiga
+  // esa "yuborildi" qaytib, kod bilan kirishni sinab bo'lmasdi.
+  if (process.env.NODE_ENV !== "production" || isTestMode()) return { ok: true, sent: true, devCode: code };
 
   if (sms.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
   // Prodda birorta ham kanal ishlamadi: parol bilan kirishni taklif qilamiz.

@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, after } from "next/server";
 import { handleUpdate } from "@/lib/telegram/bot";
 import { botEnabled, type TgUpdate } from "@/lib/telegram/api";
+import { isTestMode } from "@/lib/test-mode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,20 +15,24 @@ export const runtime = "nodejs";
  * darhol 200 qaytarib, ishlov berishni after() ichida bajaramiz.
  */
 export async function POST(req: Request) {
-  if (!botEnabled()) return NextResponse.json({ error: "BOT_DISABLED" }, { status: 503 });
-
   // Sir sozlanmagan bo'lsa endpoint ishlamaydi: aks holda istalgan kishi botga soxta update yuborardi
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!secret) return NextResponse.json({ error: "TELEGRAM_WEBHOOK_SECRET sozlanmagan" }, { status: 503 });
+  // Sir bot holatidan OLDIN tekshiriladi: begona so'rov botning yoqilgan-yoqilmaganini ham bilmasin.
   // Doimiy vaqtli solishtirish — javob vaqtidan sirni belgima-belgi taxmin qilib bo'lmasin
   const got = Buffer.from(req.headers.get("x-telegram-bot-api-secret-token") ?? "");
   const want = Buffer.from(secret);
   if (got.length !== want.length || !timingSafeEqual(got, want)) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
+  // Test rejimida bot tokeni bo'lmaydi (real Telegram taqiqlangan), lekin update'lar ishlanadi —
+  // javoblar `lib/telegram/api.ts` da jurnalga yoziladi, Telegram'ga ketmaydi
+  if (!botEnabled() && !isTestMode()) return NextResponse.json({ error: "BOT_DISABLED" }, { status: 503 });
 
   let update: TgUpdate;
   try { update = (await req.json()) as TgUpdate; } catch { return NextResponse.json({ error: "BAD_JSON" }, { status: 400 }); }
+  // `null`, massiv, raqam — update emas (handleUpdate `u.message` da yiqilardi)
+  if (!update || typeof update !== "object" || Array.isArray(update)) return NextResponse.json({ error: "BAD_UPDATE" }, { status: 400 });
 
   after(async () => {
     try { await handleUpdate(update); } catch (e) { console.error("[telegram][webhook]", e); }

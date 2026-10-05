@@ -8,11 +8,15 @@
  * STT_PROVIDER = mohir | groq | openai — qo'lda tanlash (bo'lmasa kalitga qarab avtomatik).
  */
 
+import { isTestMode } from "@/lib/test-mode";
+
 export type SttProvider = "mohir" | "groq" | "openai";
 
 const KEY_ENV: Record<SttProvider, string> = { mohir: "MOHIR_API_KEY", groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY" };
 
 export function sttProvider(): SttProvider | null {
+  // Test rejimida real STT servislariga (uzbekvoice, Groq, OpenAI) so'rov ketmaydi — ovoz "o'qilmadi" deb javob beriladi
+  if (isTestMode()) return null;
   const forced = process.env.STT_PROVIDER?.trim().toLowerCase() as SttProvider | undefined;
   if (forced && forced in KEY_ENV) return process.env[KEY_ENV[forced]] ? forced : null;
   // aniqlik bo'yicha: mohir → groq (bepul) → openai

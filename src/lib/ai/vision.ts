@@ -15,6 +15,8 @@
  * tuzatadi va odatdagi import tugmasi bilan saqlaydi.
  */
 
+import { isTestMode } from "@/lib/test-mode";
+
 export type ScanImage = { mime: string; base64: string };
 export type ScanRow = Record<string, string>;
 export type ScanResult = { doc: { supplier: string; date: string; docNo: string }; rows: ScanRow[]; model: string };
@@ -28,6 +30,7 @@ const DEFAULT_MODEL: Record<VisionProvider, string> = {
 };
 
 export function visionProvider(): VisionProvider | null {
+  if (isTestMode()) return null; // test rejimida tashqi vision API'ga so'rov ketmaydi
   const forced = process.env.VISION_PROVIDER?.trim().toLowerCase() as VisionProvider | undefined;
   if (forced && forced in KEY_ENV) return process.env[KEY_ENV[forced]] ? forced : null;
   return (["claude", "openai", "groq"] as const).find((p) => process.env[KEY_ENV[p]]) ?? null;

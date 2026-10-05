@@ -2,11 +2,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { routeLine } from "@/lib/geo";
+import { hit } from "@/lib/rate-limit";
 import { ARRIVE_RADIUS_M, tripArrival, tripTrackStats } from "@/lib/trips";
 import { SITE_RADIUS_M } from "./geofence";
 import type { MobileUser } from "./auth";
 import { RECEIVER_FORM, type FormField } from "./detail";
-import { driverEmployeeId, ListError } from "./list";
+import { driverEmployeeId, listAllowed, ListError } from "./list";
 
 /**
  * Haydovchi ilovasidagi marshrut ekrani uchun ma'lumot.
@@ -59,6 +60,9 @@ export async function tripRoute(
   raw: { lat?: string | null; lng?: string | null; line?: string | null },
 ): Promise<TripRoute> {
   if (!tripId) throw new ListError("BAD_REQUEST", "Reys tanlanmagan", 400);
+  // Reyslarni ko'radigan rollar (`list.ts` ACCESS.trips) — aks holda kassir/brigadir ham istalgan reysning
+  // mijoz manzili va koordinatasini olar, pullik marshrut xizmatini ham chaqira olardi
+  if (!listAllowed(user, "trips")) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   const t = await db.trip.findUnique({
     where: { id: tripId },
     include: { order: { select: { lat: true, lng: true, deliveryAddress: true, customer: { select: { name: true } } } } },
@@ -85,7 +89,8 @@ export async function tripRoute(
    * marshrut xizmatiga (Yandex/OSRM) keraksiz yuk tushardi va telefonga o'sha 17 KB qayta-qayta kelardi —
    * shuning uchun ilova "menda bor" deb aytsa (`line=skip`), qurilmaydi.
    */
-  const keep = raw.line === "skip";
+  // Pullik marshrut xizmati (Yandex) — foydalanuvchiga daqiqasiga 20 ta qurish; oshsa chiziqsiz javob (ilova eski chiziqni ko'rsatadi)
+  const keep = raw.line === "skip" || !hit(`route:line:${user.id}`, 20, 60_000);
   const [line, stats, arrival] = await Promise.all([
     dest && origin && !keep ? routeLine(origin, dest) : Promise.resolve(null),
     tripTrackStats([t.id]),

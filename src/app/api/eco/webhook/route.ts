@@ -41,6 +41,10 @@ export async function POST(req: Request) {
 
   let p: EcoPayload;
   try { p = JSON.parse(body); } catch { return NextResponse.json({ error: "BAD_JSON" }, { status: 400 }); }
+  // To'g'ri imzoli, lekin obyekt bo'lmagan JSON (`null`, massiv, raqam) — `p.event` da TypeError → 500
+  // bo'lib, ECO uni 3 marta qayta urardi. Bu mijoz xatosi: 400, qayta urinish foydasiz.
+  if (!p || typeof p !== "object" || Array.isArray(p)) return NextResponse.json({ error: "BAD_PAYLOAD" }, { status: 400 });
+  p = sanitize(p);
 
   try {
     if (p.event === "delivery.status_changed") return await onDelivery(p);
@@ -87,7 +91,26 @@ type EcoPayload = {
   vehicleId?: string; plateNumber?: string; capacityM3?: number; type?: string;
 };
 
-const DRIVER_REASONS = ["registered", "invited", "approved", "removed", "profile"] as const;
+/**
+ * Maydon turlarini majburlash: imzo to'g'ri bo'lsa ham ECO tomonidagi xato (`externalRef: 123`, `deliveryId: {}`)
+ * Prisma'da TypeError → 500 → ECO 3 marta qayta urardi. Noto'g'ri turdagi maydon "yo'q" deb qaraladi —
+ * hodisa e'tiborsiz qoladi (200 ignored), 500 emas.
+ */
+function sanitize(raw: EcoPayload): EcoPayload {
+  const r = raw as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : undefined);
+  const d = r.driver as { fullName?: unknown; phone?: unknown } | null | undefined;
+  return {
+    event: s(r.event), byIntegration: r.byIntegration === true,
+    externalRef: s(r.externalRef), deliveryId: s(r.deliveryId), to: s(r.to), note: s(r.note) ?? null, acceptedM3: num(r.acceptedM3) ?? null,
+    driver: d && typeof d === "object" && s(d.phone) ? { fullName: s(d.fullName) ?? null, phone: s(d.phone)! } : null,
+    userId: s(r.userId), fullName: s(r.fullName) ?? null, phone: s(r.phone), isActive: typeof r.isActive === "boolean" ? r.isActive : undefined, reason: s(r.reason),
+    vehicleId: s(r.vehicleId), plateNumber: s(r.plateNumber), capacityM3: num(r.capacityM3), type: s(r.type),
+  };
+}
+
+const DRIVER_REASONS =["registered", "invited", "approved", "removed", "profile"] as const;
 
 async function onDelivery(p: EcoPayload) {
   if (!p.externalRef || !p.deliveryId || !p.to || !ECO_STATUSES.includes(p.to as EcoStatus)) return NextResponse.json({ ok: true, ignored: true });

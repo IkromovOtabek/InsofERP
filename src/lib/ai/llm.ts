@@ -17,6 +17,7 @@
 import { askClaude } from "./claude";
 import { askGroq } from "./groq";
 import { TOOLS, type Tool } from "./tools";
+import { isTestMode } from "@/lib/test-mode";
 
 export type LlmProvider = "claude" | "groq";
 export type LlmTurn = { role: "user" | "assistant"; text: string };
@@ -33,6 +34,8 @@ const KEY_ENV: Record<LlmProvider, string> = { claude: "ANTHROPIC_API_KEY", groq
 export const PROVIDER_LABEL: Record<LlmProvider, string> = { claude: "Claude", groq: "Groq (bepul)" };
 
 export function llmProvider(): LlmProvider | null {
+  // Test rejimida til modeliga so'rov ketmaydi (kalit `.env` dan skriptga o'tib qolgan bo'lsa ham) — qoida asosidagi javob
+  if (isTestMode()) return null;
   const forced = process.env.AI_PROVIDER?.trim().toLowerCase() as LlmProvider | undefined;
   if (forced && forced in KEY_ENV) return process.env[KEY_ENV[forced]] ? forced : null;
   // sifat bo'yicha: claude → groq (bepul)

@@ -20,7 +20,7 @@ import {
 } from "@/lib/procurement-const";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
-import { DETAIL_KEY, driverEmployeeId, myBrigadeIds, ListError } from "./list";
+import { DETAIL_KEY, driverEmployeeId, moduleClosed, myBrigadeIds, ListError } from "./list";
 import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import { ingredientOf } from "@/lib/recipe";
 import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
@@ -400,6 +400,8 @@ const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"]
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
+  // Prototip kalitlari ("constructor", "toString") jadvallardan funksiya qaytarardi — kartochka emas
+  if (Object.hasOwn(Object.prototype, key)) throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   // Brigadir ilovada faqat o'z ish joyi kartochkalarini ochadi (topshiriq, smena, muammo, brigada a'zosi):
   // zayavka, schyot va boshqa hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
   if (user.role === "BRIGADIER" && !BRIGADIER_CARDS.includes(DETAIL_KEY[key] ?? key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
@@ -413,6 +415,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   const card = DETAIL_KEY[key] ?? key;
   const allowed = DETAIL_ROLES[card];
   if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  // Direktor modulni "yo'q" qilgan bo'lsa kartochka ham ochilmaydi (veb sahifa kabi) — id qo'lda yuborilsa ham
+  if (moduleClosed(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   if (key === "activity") {
     if (user.role !== "DIRECTOR") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
     return activityDetail(id);

@@ -11,6 +11,10 @@ import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId, sendResetCodeToBot } from "@/lib/telegram/notify";
 import { botEnabled } from "@/lib/telegram/api";
 import { gatewayEnabled, sendGatewayCode } from "@/lib/telegram/gateway";
+import { isTestMode } from "@/lib/test-mode";
+
+/** Kod ekranda ko'rsatiladimi: dev yoki test rejimi (test serveri `next start` — NODE_ENV=production). Prodda hech qachon. */
+const devCodeAllowed = () => process.env.NODE_ENV !== "production" || isTestMode();
 
 /**
  * Parolni xodimning o'zi tiklashi (`/login/reset`) — bir martalik kod orqali.
@@ -102,7 +106,7 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
 
   if (!SMS_FALLBACK) {
     // Dev: bot tokeni sozlanmagan bo'lsa oqim to'xtamasin — kod ekranda ko'rinadi. Prodda yopiq.
-    if (!botReady && process.env.NODE_ENV !== "production") return { ok: true, sent: true, via: "telegram", devCode: code };
+    if (!botReady && devCodeAllowed()) return { ok: true, sent: true, via: "telegram", devCode: code };
     return {
       ok: false,
       error: bot.reason === "NOT_LINKED" ? NOT_LINKED_ERROR
@@ -116,7 +120,7 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
 
   // Dev: Eskiz ulanmagan bo'lsa oqim to'xtamasin — kod ekranda va terminalda ko'rinadi.
   // Prodda bu yo'l yopiq: SMS_PROVIDER noto'g'ri sozlansa "kod yuborildi" deb aldab qo'ymaymiz.
-  if (!sms.ok && sms.reason === "DISABLED" && process.env.NODE_ENV !== "production") {
+  if (!sms.ok && sms.reason === "DISABLED" && devCodeAllowed()) {
     return { ok: true, sent: true, via: "sms", devCode: code };
   }
 

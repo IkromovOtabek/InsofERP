@@ -65,6 +65,8 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
   if (!(REPORT_ROLES as readonly string[]).includes(user.role)) throw new ListError("FORBIDDEN", "Kunlik hisobot faqat direktorga ochiq", 403);
   if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) throw new ListError("BAD_REQUEST", "Sana YYYY-MM-DD ko'rinishida bo'lsin", 400);
   const { from, to, iso } = dayBounds(rawDate);
+  // "2026-02-31" kabi mavjud bo'lmagan sana JS'da jimgina 3-martga aylanardi — boshqa kunning hisobotini bermaymiz
+  if (rawDate && iso !== rawDate) throw new ListError("BAD_REQUEST", "Bunday sana yo'q", 400);
   if (from.getTime() > Date.now()) throw new ListError("BAD_REQUEST", "Kelajakdagi kun uchun hisobot yo'q", 400);
   const range = { gte: from, lt: to };
   const isToday = new Date() >= from && new Date() < to;

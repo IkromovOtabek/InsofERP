@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Prisma } from "@/generated/prisma";
 import type { HomeRow, HomeSection, Tone } from "./home";
-import type { ListFilter, MobileList } from "./list";
+import { ListError, type ListFilter, type MobileList } from "./list";
 import type { MobileDetail } from "./detail";
 
 /**
@@ -138,7 +138,7 @@ export async function activityDetail(userId: string): Promise<MobileDetail> {
     db.user.findUnique({ where: { id: userId }, select: { fullName: true, role: true, login: true } }),
     db.auditLog.findMany({ where: { userId, createdAt: { gte: from, lt: to } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, action: true, entity: true, after: true, before: true, createdAt: true } }),
   ]);
-  if (!user) throw new Error("Xodim topilmadi");
+  if (!user) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
   const section: HomeSection = {
     title: "Bugungi amallar", empty: "Bugun amal yo'q", icon: "clock",
     rows: log.map((l) => ({ id: l.id, title: describe(l), right: hm(l.createdAt), tone: (l.action === "DELETE" ? "danger" : l.action === "CREATE" ? "success" : "info") as Tone })),

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { externalAllowed } from "@/lib/test-mode";
 
 /**
  * Expo Push — xodimning mobil ilovasiga xabar yuborish.
@@ -55,6 +56,11 @@ type ExpoTicket = { status: "ok" | "error"; details?: { error?: string } };
 export async function sendPush(tokens: string[], msg: PushMessage): Promise<void> {
   const to = [...new Set(tokens.filter(Boolean))];
   if (to.length === 0) return;
+  // Test rejimida Expo'ga so'rov ketmaydi (Expo kalitsiz ham qabul qiladi — env tekshiruvi buni ushlamaydi)
+  if (!externalAllowed(EXPO_URL)) {
+    console.log(`[push · test] ${to.length} ta qurilmaga yuborilmadi: ${msg.title}`);
+    return;
+  }
 
   for (let i = 0; i < to.length; i += CHUNK) {
     const part = to.slice(i, i + CHUNK);

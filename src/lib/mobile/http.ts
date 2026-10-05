@@ -28,6 +28,9 @@ export async function handle<T>(fn: () => Promise<T>) {
   } catch (e) {
     if (e instanceof MobileAuthError) return jsonErr(e.code, e.message, e.status);
     if (e instanceof ListError) return jsonErr(e.code, e.message, e.status);
+    // Prisma "yozuv topilmadi" (findUniqueOrThrow / update mavjud bo'lmagan id bilan) — mijoz yuborgan
+    // noto'g'ri id, server xatosi emas: 404. Aks holda har bir begona/eskirgan id 500 bo'lib jurnalni to'ldirardi.
+    if ((e as { code?: unknown })?.code === "P2025") return jsonErr("NOT_FOUND", "Hujjat topilmadi", 404);
     console.error("[mobile-api]", e);
     return jsonErr("INTERNAL", "Server xatosi", 500);
   }
