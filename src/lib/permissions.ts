@@ -104,6 +104,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "create", label: "Kirim-chiqim yozish",              roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
     { key: "delete", label: "Yozuvni o'chirish",                roles: ["ACCOUNTING", "FINANCE"] },
     { key: "pay",    label: "Yetkazuvchiga to'lash",            roles: ["FINANCE", "ACCOUNTING"] },
+    { key: "transfer", label: "Hisoblararo o'tkazma (kassa ⇄ bank)", roles: ["CASHIER", "ACCOUNTING", "FINANCE"], hint: "Inkassatsiya, naqdlashtirish; kassa qoldig'idan oshmaydi" },
+    { key: "transfer_storno", label: "O'tkazmani storno qilish",  roles: [], delegable: false },
   ],
   employees: [
     { key: "create", label: "Xodim qo'shish",                    roles: ["HR", "LOGISTICS"] },

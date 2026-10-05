@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { FLOW_ONLY, balanceFromGroups } from "@/lib/cash-tx";
 import { loadSales, type SaleRow } from "@/lib/bi/core";
 import { EXPENSE_KIND, FUEL_TYPE, ISSUE_KIND } from "@/lib/logistics";
 import { SUPPLY_LABEL } from "@/lib/supply";
@@ -827,7 +828,8 @@ async function income(r: DashRange): Promise<Part> {
 async function netFlow({ r }: Ctx): Promise<Part> {
   const [pay, tx, prevPay, prevTx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccount: { select: { name: true } } } }),
-    db.cashTransaction.findMany({ where: { type: { not: "OPENING" }, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccount: { select: { name: true } } } }),
+    // Boshlang'ich qoldiq va hisoblararo o'tkazma — oqim emas
+    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccount: { select: { name: true } } } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
@@ -862,19 +864,20 @@ async function balances({ r }: Ctx): Promise<Part> {
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
   ]);
   const rows = accounts.map((a) => {
-    // Boshlang'ich qoldiq (OPENING) qoldiqqa kiradi, davr kirimi/chiqimiga emas
-    const inAll = sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount) + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount) + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "OPENING")?._sum.amount);
-    const outAll = sum(tx.find((t) => t.cashAccountId === a.id && t.type === "EXPENSE")?._sum.amount);
+    // Boshlang'ich qoldiq (OPENING) va o'tkazmalar (TRANSFER_IN/OUT) qoldiqqa kiradi, davr kirimi/chiqimiga emas
+    const balance = sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount) + balanceFromGroups(tx, a.id);
     const inP = sum(perPay.find((p) => p.cashAccountId === a.id)?._sum.amount) + sum(perTx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount);
     const outP = sum(perTx.find((t) => t.cashAccountId === a.id && t.type === "EXPENSE")?._sum.amount);
-    return { a, balance: inAll - outAll, inP, outP };
+    // Davrdagi o'tkazmalar sof qoldig'i (+ kirdi / − chiqdi) — alohida ko'rsatiladi
+    const trP = balanceFromGroups(perTx.filter((t) => t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT"), a.id);
+    return { a, balance, inP, outP, trP };
   }).sort((a, b) => b.balance - a.balance);
   const total = sumBy(rows, (x) => x.balance);
   const cash = sumBy(rows.filter((x) => x.a.type === "CASH"), (x) => x.balance), bank = sumBy(rows.filter((x) => x.a.type === "BANK"), (x) => x.balance);
   return {
     title: "Kassa qoldig'i", subtitle: asOf(r) ? `${period(r)} oxiridagi holat` : "Hozirgi holat",
     fields: [f("Jami", `${total < 0 ? "−" : ""}${money(Math.abs(total))}`, total >= 0 ? "info" : "danger"), f("Naqd kassa", money(cash)), f("Bank", money(bank)), f("Hisoblar", cnt(accounts.length, "ta")), f(`Davr kirimi (${r.label})`, money(sumBy(rows, (x) => x.inP)), "success"), f(`Davr chiqimi (${r.label})`, money(sumBy(rows, (x) => x.outP)), "warning")],
-    sections: [sec("Hisoblar", rows.map((x) => ({ id: x.a.id, title: x.a.name, subtitle: `${x.a.type === "CASH" ? "naqd" : "bank"} · davrda kirim ${short(x.inP)} · chiqim ${short(x.outP)}`, right: shortSigned(x.balance), tone: x.balance < 0 ? "danger" : "info" })), { icon: "landmark", empty: "Faol hisob yo'q" })],
+    sections: [sec("Hisoblar", rows.map((x) => ({ id: x.a.id, title: x.a.name, subtitle: `${x.a.type === "CASH" ? "naqd" : "bank"} · davrda kirim ${short(x.inP)} · chiqim ${short(x.outP)}${Math.abs(x.trP) >= 1 ? ` · o'tkazma ${shortSigned(x.trP)}` : ""}`, right: shortSigned(x.balance), tone: x.balance < 0 ? "danger" : "info" })), { icon: "landmark", empty: "Faol hisob yo'q" })],
   };
 }
 

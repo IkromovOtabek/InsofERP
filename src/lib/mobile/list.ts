@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isTransfer, txSign } from "@/lib/cash-tx";
 import { activityList, approvalsList } from "./director";
 import { ecoLabel } from "@/lib/eco/labels";
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
@@ -457,7 +458,8 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         where: { type: { not: "OPENING" }, ...(q ? { OR: [{ category: { contains: q, mode: "insensitive" } }, { counterparty: { contains: q, mode: "insensitive" } }] } : {}) },
         orderBy: { date: "desc" }, take: TAKE, include: { cashAccount: true },
       });
-      return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${t.type === "EXPENSE" ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "EXPENSE" ? "danger" : "success" }));
+      // Hisoblararo o'tkazma ham o'z qatori bilan ko'rinadi (ishora — txSign, rang — "info")
+      return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: isTransfer(t.type) ? "info" : txSign(t.type) < 0 ? "danger" : "success" }));
     }
     case "payments": {
       const list = await db.payment.findMany({
