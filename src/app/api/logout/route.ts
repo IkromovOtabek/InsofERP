@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { revokeToken } from "@/lib/auth";
+import { redirectUrl } from "@/lib/redirect-url";
 
 /**
  * Chiqish. Cookie o'chirilishi bilan birga token SERVER tomonda ham bekor qilinadi (`revokeToken`):
@@ -9,7 +10,7 @@ import { revokeToken } from "@/lib/auth";
  */
 export async function POST(req: Request) {
   await revokeToken((await cookies()).get("insof_session")?.value);
-  const res = NextResponse.redirect(new URL("/login", req.url), 303);
+  const res = NextResponse.redirect(redirectUrl(req, "/login"), 303);
   // cookies().delete() alohida yaratilgan redirect javobiga tushmaydi — javobning o'ziga yozamiz
   res.cookies.set("insof_session", "", { maxAge: 0, path: "/" });
   // Instruksiya holati ham o'chadi — qayta kirilganda yo'riqnoma boshidan boshlanadi
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
  * yana /login ga — foydalanuvchi aylanib qolardi. Sahifa shu yerga yuboradi: cookie o'chadi.
  */
 export async function GET(req: Request) {
-  const res = NextResponse.redirect(new URL("/login", req.url), 303);
+  const res = NextResponse.redirect(redirectUrl(req, "/login"), 303);
   res.cookies.set("insof_session", "", { maxAge: 0, path: "/" });
   return res;
 }

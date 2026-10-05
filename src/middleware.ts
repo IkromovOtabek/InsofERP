@@ -3,6 +3,7 @@ import { jwtVerify } from "jose";
 import { OWN_PAGE_ONLY, pathAllowed } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
+import { redirectUrl } from "@/lib/redirect-url";
 
 /**
  * Login talab qilmaydigan yo'llar: ommaviy taqdimot, maxfiylik siyosati (do'konlar uchun), login, QR tekshiruv, Telegram va Insof ECO webhook'lari
@@ -20,7 +21,7 @@ async function controlMiddleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   // Holat tekshiruvi (deploy.sh, health-watch.sh) — login'siz, maxfiy ma'lumotsiz
   if (pathname === "/api/health") return NextResponse.next();
-  if (!pathname.startsWith("/superadmin")) return NextResponse.redirect(new URL("/superadmin", req.url));
+  if (!pathname.startsWith("/superadmin")) return NextResponse.redirect(redirectUrl(req, "/superadmin"));
   if (pathname.startsWith("/superadmin/login")) return NextResponse.next();
   const token = req.cookies.get("insof_admin")?.value;
   let ok = false;
@@ -30,7 +31,7 @@ async function controlMiddleware(req: NextRequest) {
       ok = payload.typ === "admin";
     } catch { ok = false; }
   }
-  return ok ? NextResponse.next() : NextResponse.redirect(new URL("/superadmin/login", req.url));
+  return ok ? NextResponse.next() : NextResponse.redirect(redirectUrl(req, "/superadmin/login"));
 }
 
 export async function middleware(req: NextRequest) {
@@ -53,18 +54,18 @@ export async function middleware(req: NextRequest) {
   // "/" — ommaviy sayt (landing). Xodim tizimga kirgan bo'lsa ham shu yerda qoladi:
   // kabinetga o'tish uchun sahifada alohida havola bor.
   if (pathname === "/") return NextResponse.next();
-  if (role && pathname.startsWith("/login")) return NextResponse.redirect(new URL("/dashboard", req.url));
+  if (role && pathname.startsWith("/login")) return NextResponse.redirect(redirectUrl(req, "/dashboard"));
   if (isPublic(pathname)) return NextResponse.next();
-  if (!role) return NextResponse.redirect(new URL("/login", req.url));
+  if (!role) return NextResponse.redirect(redirectUrl(req, "/login"));
   // Haydovchi va brigadir vebda faqat o'z sahifasini ko'radi (asosiy ish joyi — ilova)
   const ownPage = OWN_PAGE_ONLY[role];
   if (ownPage && !pathname.startsWith(ownPage) && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
-    return NextResponse.redirect(new URL(ownPage, req.url));
+    return NextResponse.redirect(redirectUrl(req, ownPage));
   }
   // API marshrutlari ruxsatni o'zi tekshiradi (getSession + rol/canDo) — sahifa qoidasi (NAV) ularga qo'llanmaydi,
   // aks holda direktor bo'lmagan rollar uchun /api/geo, /api/ai, /api/scan bloklanib qoladi.
   if (pathname.startsWith("/api/")) return NextResponse.next();
-  if (!pathAllowed(pathname, role)) return NextResponse.redirect(new URL("/dashboard?denied=1", req.url));
+  if (!pathAllowed(pathname, role)) return NextResponse.redirect(redirectUrl(req, "/dashboard?denied=1"));
   return NextResponse.next();
 }
 
