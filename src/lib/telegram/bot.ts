@@ -104,11 +104,17 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   // Insof ECO ilovasiga kirish — xodim oqimidan OLDIN va TelegramAccount yaratmasdan (mijoz xodim emas)
   if (await ecoLogin(msg, chatId)) return;
 
-  const account = await db.telegramAccount.upsert({
+  const upsertAccount = () => db.telegramAccount.upsert({
     where: { chatId: String(chatId) },
     update: { username: msg.from?.username ?? null, firstName: msg.from?.first_name ?? null, lastSeen: new Date() },
     create: { chatId: String(chatId), username: msg.from?.username ?? null, firstName: msg.from?.first_name ?? null },
     include: { user: true },
+  });
+  // Bir chatdan bir vaqtda kelgan ikki update (Telegram webhook parallel yuboradi) — ikkalasi ham "yo'q" deb
+  // yaratishga urinadi va biri unique xatosi (P2002) bilan yiqiladi. Takror urinishda yozuv allaqachon bor — update
+  const account = await upsertAccount().catch((e: { code?: string }) => {
+    if (e?.code === "P2002") return upsertAccount();
+    throw e;
   });
 
   // "Telefon raqamimni yuborish" tugmasi — hisobni raqam bo'yicha ulash (kontakt xabarida matn yo'q)
