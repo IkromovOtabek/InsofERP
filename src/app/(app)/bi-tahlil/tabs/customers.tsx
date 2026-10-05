@@ -102,10 +102,10 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       <Panel title="Harakat markazi — mijozlar ro'yxati" info="Pul bo'yicha saralangan (kutilayotgan yo'qotish + qarz). Filtrlang va eksport qiling." padded={false} action={<ExportLink type="customers" range={range} />}>
         <form method="get" action={ROUTES.customers} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           <input type="hidden" name="period" value={range.period === "custom" ? "month" : range.period} />
-          <Select name="segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Yangi (xaridsiz)"].map((s) => <option key={s}>{s}</option>)}</Select>
-          <Select name="risk" defaultValue={sp.risk ?? ""} className="h-8 w-36"><option value="">Barcha xavf</option>{["Kritik", "Yuqori", "O'rta", "Past", "Xavfsiz"].map((s) => <option key={s}>{s}</option>)}</Select>
-          <Select name="debt" defaultValue={sp.debt ?? ""} className="h-8 w-32"><option value="">Barchasi</option><option value="yes">Qarzdor</option><option value="no">Qarzsiz</option></Select>
-          <Input name="q" defaultValue={sp.q ?? ""} placeholder="Mijoz qidirish" className="h-8 w-44" />
+          <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Yangi (xaridsiz)"].map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+          <Select name="risk" aria-label="Xavf darajasi" defaultValue={sp.risk ?? ""} className="h-8 w-36"><option value="">Barcha xavf</option>{["Kritik", "Yuqori", "O'rta", "Past", "Xavfsiz"].map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+          <Select name="debt" aria-label="Qarz holati" defaultValue={sp.debt ?? ""} className="h-8 w-32"><option value="">Barchasi</option><option value="yes">Qarzdor</option><option value="no">Qarzsiz</option></Select>
+          <Input name="q" aria-label="Qidirish" defaultValue={sp.q ?? ""} placeholder="Mijoz qidirish" className="h-8 w-44" />
           <button className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white">Qo'llash</button>
           {(sp.segment || sp.risk || sp.debt || sp.q) && <Link href={tabHref(range, "customers")} className="text-xs text-slate-500 hover:underline">Tozalash</Link>}
         </form>

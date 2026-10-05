@@ -125,8 +125,8 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       <Panel title="Tranzaksiyalar" info="Kassa/bank tushumlari — davr bo'yicha." padded={false} action={<ExportLink type="payments" range={range} />}>
         <form method="get" action={ROUTES.finance} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           <input type="hidden" name="period" value={range.period === "custom" ? "month" : range.period} />
-          <Select name="account" defaultValue={sp.account ?? ""} className="h-8 w-52"><option value="">Barcha kassa</option>{d.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>
-          <Select name="size" defaultValue={String(size)} className="h-8 w-20"><option value="25">25</option><option value="50">50</option><option value="100">100</option></Select>
+          <Select name="account" aria-label="Kassa / hisob" defaultValue={sp.account ?? ""} className="h-8 w-52"><option value="">Barcha kassa</option>{d.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>
+          <Select name="size" aria-label="Sahifadagi qatorlar" defaultValue={String(size)} className="h-8 w-20"><option value="25">25</option><option value="50">50</option><option value="100">100</option></Select>
           <button className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white">Qo'llash</button>
         </form>
         <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Kassa / hisob</Th><Th>Schyot</Th><Th right>Summa</Th><Th>Izoh</Th></tr></thead><tbody>{d.list.rows.length === 0 && <Empty text="Tranzaksiya yo'q" />}{d.list.rows.map((p) => <Tr key={p.id}><Td className="whitespace-nowrap text-slate-500">{dateTime(p.date)}</Td><Td><Link href={`/customers/${p.customerId}`} className="hover:underline">{p.customer.name}</Link></Td><Td>{p.cashAccount.name}</Td><Td>{p.invoice?.invoiceNo ?? "—"}</Td><Td right className="font-semibold">{money(Number(p.amount))}</Td><Td className="text-xs text-slate-500">{p.note ?? ""}</Td></Tr>)}</tbody></Table>

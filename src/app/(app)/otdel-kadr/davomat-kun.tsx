@@ -63,7 +63,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
       {/* ── Kun tanlash ── */}
       <div className="flex flex-wrap items-center gap-2 rounded-(--radius-card) border border-slate-200/80 bg-white px-3 py-2.5 shadow-(--shadow-card)">
         <Link href={dayHref(shiftDay(iso, -1))} aria-label="Oldingi kun" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"><ChevronLeft size={16} /></Link>
-        <Input type="date" value={iso} onChange={(e) => e.target.value && router.push(dayHref(e.target.value))} className="h-9 w-[170px]" />
+        <Input type="date" aria-label="Sana" value={iso} onChange={(e) => e.target.value && router.push(dayHref(e.target.value))} className="h-9 w-[170px]" />
         <Link href={dayHref(shiftDay(iso, 1))} aria-label="Keyingi kun" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"><ChevronRight size={16} /></Link>
         <span className="ml-1 text-sm font-medium text-slate-700">{dayTitle(iso)}</span>
         {isToday ? <Badge color="green">bugun</Badge> : <Link href={dayHref(today())} className="text-xs font-medium text-slate-500 underline hover:text-slate-900">bugunga qaytish</Link>}
@@ -123,7 +123,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                   <Td className="text-xs text-slate-500">{r.position}</Td>
                   <Td>
                     <Select
-                      name={`st:${r.id}`} value={v.status} className="h-9 text-sm"
+                      name={`st:${r.id}`} aria-label={`${r.fullName}: davomat belgisi`} value={v.status} className="h-9 text-sm"
                       onChange={(e) => set(r.id, {
                         status: e.target.value,
                         // "Keldi" tanlansa vaqt bo'sh qolmasin; boshqa belgida soat yozilmaydi
@@ -135,11 +135,11 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                     </Select>
                   </Td>
                   <Td>
-                    <Input type="time" name={`in:${r.id}`} value={v.checkIn} disabled={v.status !== "PRESENT"}
+                    <Input type="time" name={`in:${r.id}`} aria-label={`${r.fullName}: kelgan vaqti`} value={v.checkIn} disabled={v.status !== "PRESENT"}
                       onChange={(e) => set(r.id, { checkIn: e.target.value })} className="h-9 px-2 text-sm" />
                   </Td>
                   <Td>
-                    <Input type="time" name={`out:${r.id}`} value={v.checkOut} disabled={v.status !== "PRESENT"}
+                    <Input type="time" name={`out:${r.id}`} aria-label={`${r.fullName}: ketgan vaqti`} value={v.checkOut} disabled={v.status !== "PRESENT"}
                       onChange={(e) => set(r.id, { checkOut: e.target.value })} className="h-9 px-2 text-sm" />
                   </Td>
                   <Td right className="text-sm">
@@ -149,7 +149,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                       : <span className="text-slate-300">—</span>}
                   </Td>
                   <Td>
-                    <Input name={`nt:${r.id}`} value={v.note} onChange={(e) => set(r.id, { note: e.target.value })}
+                    <Input name={`nt:${r.id}`} aria-label={`${r.fullName}: izoh`} value={v.note} onChange={(e) => set(r.id, { note: e.target.value })}
                       placeholder={v.status && v.status !== "PRESENT" ? "sababi" : "izoh"} className="h-9 text-sm" />
                   </Td>
                 </Tr>

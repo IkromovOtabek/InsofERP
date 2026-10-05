@@ -78,7 +78,7 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
                 </div>
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:contents">
                   <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${unit}`} suffix={null} required />
-                  <button type="button" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto"><X size={16} /></button>
+                  <button type="button" aria-label="Qatorni o'chirish" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto"><X size={16} /></button>
                 </div>
               </div>
             );

@@ -41,7 +41,10 @@ export function RowForm({ action, fields, submit, mode = "edit", cols = 6, extra
   return (
     <form ref={ref} action={act} className={cn("grid grid-cols-1 items-end gap-2", gridCols)}>
       {fields.map((f) => (
-        <label key={f.name} className={cn("block", f.className)}>
+        // Kalitda server qiymati ham bor: boshqa qator saqlanib (masalan yangi "asosiy sklad")
+        // sahifa yangilanganda eski qiymatli maydon qayta chiziladi — aks holda boshqarilmaydigan
+        // checkbox eski holatda qolib, keyingi saqlashda o'zgarishni jimgina qaytarib yuborardi.
+        <label key={`${f.name}:${String(f.defaultValue ?? "")}`} className={cn("block", f.className)}>
           <span className="mb-1 block text-xs font-medium text-slate-600">{f.label}</span>
           {f.type === "select" ? (
             <Select name={f.name} defaultValue={String(f.defaultValue ?? "")} className="py-2 text-sm">
@@ -63,7 +66,7 @@ export function RowForm({ action, fields, submit, mode = "edit", cols = 6, extra
           {mode === "create" ? <Plus size={16} /> : <Check size={16} />}
           {submit ?? (mode === "create" ? "Qo'shish" : "Saqlash")}
         </Button>
-        {state?.ok && mode === "edit" && <span className="text-xs text-emerald-700">Saqlandi</span>}
+        {state?.ok && mode === "edit" && <span role="status" className="text-xs text-emerald-700">Saqlandi</span>}
         {extra}
       </div>
       {state?.error && <div className="sm:col-span-full"><FormError error={state.error} /></div>}

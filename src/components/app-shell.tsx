@@ -142,7 +142,8 @@ function SidebarInner({ items, user, brand, apk, onNavigate, collapsed, onToggle
         <LogoMark className="h-9 w-9 shrink-0" />
         <div className="sb-fade min-w-0">
           <div className="truncate text-[15px] font-semibold text-slate-900">Insof ERP</div>
-          <div className="truncate text-[11px] text-slate-500">{brand}</div>
+          {/* Korxona nomi — ro'yxatdan o'tgan yuridik nom, kirillga o'girilmaydi */}
+          <div data-no-translit className="truncate text-[11px] text-slate-500">{brand}</div>
         </div>
       </div>
       <NavList items={items} onNavigate={onNavigate} collapsed={collapsed} />

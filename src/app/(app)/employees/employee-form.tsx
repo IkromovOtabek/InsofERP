@@ -362,12 +362,12 @@ export function GrantLoginForm({ employeeId, roles, defaultRole }: {
   const [state, action, pending] = useActionState(grantLogin.bind(null, employeeId), undefined);
   return (
     <form action={action} className="flex flex-wrap items-center gap-1">
-      <Select name="role" defaultValue={defaultRole ?? ""} className="w-32 px-2 py-1 text-xs" required>
+      <Select name="role" aria-label="Rol" defaultValue={defaultRole ?? ""} className="w-32 px-2 py-1 text-xs" required>
         <option value="">Bo&apos;lim…</option>
         {roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
       </Select>
-      <Input name="login" placeholder="login" className="w-28 px-2 py-1 text-xs" autoComplete="off" required />
-      <PasswordInput name="password" placeholder="parol" className="w-28 px-2 py-1 text-xs" autoComplete="new-password" required />
+      <Input name="login" aria-label="Login" placeholder="login" className="w-28 px-2 py-1 text-xs" autoComplete="off" required />
+      <PasswordInput name="password" aria-label="Parol" placeholder="parol" className="w-28 px-2 py-1 text-xs" autoComplete="new-password" required />
       <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending}>Login berish</Button>
       {state?.error && <span className="w-full text-xs text-red-600">{state.error}</span>}
       {state?.note && <span className="w-full text-xs text-slate-600">{state.note}</span>}

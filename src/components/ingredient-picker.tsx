@@ -167,7 +167,7 @@ export function IngredientField({ ingredients, groups, products, canCreateMateri
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
+        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 min-w-[min(20rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
           {matches.length === 0 && <div className="px-3 py-2 text-sm text-slate-500">Mos yozuv topilmadi</div>}
           {matches.map((x, i) => (
             <button key={x.id} type="button" onMouseEnter={() => setCursor(i)} onClick={() => choose(x)}

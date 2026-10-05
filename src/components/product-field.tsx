@@ -68,7 +68,7 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
+        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 min-w-[min(20rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
           {matches.length === 0 && <div className="px-3 py-2 text-sm text-slate-500">Mos mahsulot topilmadi</div>}
           {matches.map((p, i) => {
             const extra = hint?.(p) ?? null;
@@ -85,7 +85,7 @@ export function ProductField({ products, value, onPick, onOpenPicker, hint }: {
                 {extra && <span className="shrink-0 text-xs text-slate-500">{extra}</span>}
                 {/* Birlik: "Hajmi" maydoni shu birlikda to'ldiriladi */}
                 <span className="shrink-0 text-xs text-slate-400">{p.unit}</span>
-                <span className="shrink-0 text-xs text-slate-400 tabular">{p.code}</span>
+                <span data-no-translit className="shrink-0 text-xs text-slate-400 tabular">{p.code}</span>
               </button>
             );
           })}

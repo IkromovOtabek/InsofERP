@@ -85,7 +85,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       <form className="mb-4 grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_200px_150px_170px_auto_auto]">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Qidiruv</span>
-          <Input name="q" defaultValue={q} placeholder="F.I.O. yoki telefon" />
+          <Input name="q" aria-label="Qidirish" defaultValue={q} placeholder="F.I.O. yoki telefon" />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-600">Lavozim</span>

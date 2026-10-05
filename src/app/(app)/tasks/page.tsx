@@ -42,7 +42,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         <Tabs current={st ?? ""} items={tabs} className="mb-0" />
         <form className="flex items-center gap-2">
           {st && <input type="hidden" name="status" value={st} />}
-          <Select name="brigade" defaultValue={brigade ?? ""} className="h-9 w-56 text-sm">
+          <Select name="brigade" aria-label="Brigada" defaultValue={brigade ?? ""} className="h-9 w-56 text-sm">
             <option value="">Barcha brigadalar</option>
             {brigades.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>

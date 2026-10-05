@@ -61,6 +61,44 @@ const CASES: [string, string][] = [
   ["Mening reyslarim", "Менинг рейсларим"],
   ["Yo'q", "Йўқ"],
   ["Ёзув уже кирилл", "Ёзув уже кирилл"],
+  // Qisqartma faqat katta harfda lotinda qoladi; kichik harfli o'zbekcha so'z o'giriladi
+  ["Bu it emas", "Бу ит эмас"],
+  ["ip va arqon", "ип ва арқон"],
+  ["IT bo'limi, IP manzil", "IT бўлими, IP манзил"],
+  ["ML tahlil", "ML таҳлил"],
+  // Brend nomlari — registrdan qat'i nazar, chiziqcha bilan ham
+  ["Excel-fayl yuklash", "Excel-файл юклаш"],
+  ["Excel fayl", "Excel файл"],
+  ["E-commerce", "E-commerce"],
+  ["Click orqali", "Click орқали"],
+  ["Finance (eski bo'lim)", "Finance (эски бўлим)"],
+  // Rol kodlari (katta harfda) — texnik nom
+  ["Sotuvchi (SALES)", "Сотувчи (SALES)"],
+  ["DIRECTOR", "DIRECTOR"],
+  ["Insof ECO ilovasi", "Инсоф ECO иловаси"],
+  // Raqamdan keyingi qo'shimcha
+  ["tushumning 80%ini beradi", "тушумнинг 80%ини беради"],
+  ["5ta mashina", "5та машина"],
+  ["10%dan ko'p", "10%дан кўп"],
+  ["B25 va 2GIS", "B25 ва 2GIS"],
+  ["267/dona, 0/kun", "267/дона, 0/кун"],
+  // "ц" bilan yoziladigan o'zlashma o'zaklar
+  ["Retseptlar", "Рецептлар"],
+  ["Sement M400", "Цемент M400"],
+  ["sementning narxi", "цементнинг нархи"],
+  ["3-sexda", "3-цехда"],
+  ["Sexlar", "Цехлар"],
+  ["seksiya va aksiya", "секция ва акция"],
+  ["Produksiya", "Продукция"],
+  ["SEMENT", "ЦЕМЕНТ"],
+  ["ketsa aytsa", "кетса айтса"],
+  // Marketing qisqartmalari va brendlar
+  ["Google Ads kuchli — ROAS 25,62x", "Google Ads кучли — ROAS 25,62х"],
+  ["VIP mijozlar, ABC tahlil", "VIP мижозлар, ABC таҳлил"],
+  // Bosh harflar nuqta bilan — o'giriladi, login/domen — yo'q
+  ["Nomi / F.I.O.", "Номи / Ф.И.О."],
+  ["A.Karimov va h.k.", "А.Каримов ва ҳ.к."],
+  ["Sayt insof.uz", "Сайт insof.uz"],
   ["", ""],
 ];
 

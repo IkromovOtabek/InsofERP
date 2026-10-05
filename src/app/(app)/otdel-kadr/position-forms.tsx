@@ -19,7 +19,7 @@ function DeptSelect({ value, posName, className }: { value?: string | null; posN
   const guessed = posName ? guessDepartment(posName) : null;
   const guess = guessed ? deptByRole(guessed) : null;
   return (
-    <Select name="department" defaultValue={value ?? ""} className={className}>
+    <Select name="department" aria-label="Bo'lim" defaultValue={value ?? ""} className={className}>
       <option value="">{guess ? `Avtomatik · ${guess.label}` : "Bo'lim tanlanmagan"}</option>
       {ASSIGNABLE_DEPTS.map((d) => <option key={d.role} value={d.role}>{d.label}</option>)}
     </Select>
@@ -86,10 +86,10 @@ export function PositionRow({ p, used }: { p: Pos; used: number }) {
   useEffect(() => { if (state?.ok) setDirty(false); }, [state]);
   return (
     <form action={action} onChange={() => setDirty(true)} className="grid grid-cols-1 items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0 sm:grid-cols-2 xl:grid-cols-[1fr_1.1fr_160px_72px_150px_66px_auto]">
-      <Input name="name" defaultValue={p.name} required className="py-2 text-sm" autoComplete="off" />
-      <Input name="note" defaultValue={p.note ?? ""} className="py-2 text-sm" placeholder="izoh" autoComplete="off" />
+      <Input name="name" aria-label="Lavozim nomi" defaultValue={p.name} required className="py-2 text-sm" autoComplete="off" />
+      <Input name="note" aria-label="Izoh" defaultValue={p.note ?? ""} className="py-2 text-sm" placeholder="izoh" autoComplete="off" />
       <DeptSelect value={p.department} posName={p.name} className="py-2 text-sm" />
-      <Input name="sortOrder" type="number" defaultValue={p.sortOrder} className="py-2 text-sm" />
+      <Input name="sortOrder" aria-label="Tartib raqami" type="number" defaultValue={p.sortOrder} className="py-2 text-sm" />
       <Checkbox name="isDriver" defaultChecked={p.isDriver} label="Haydovchi ilovasi" />
       <span className="text-xs text-slate-500 tabular">{used} xodim</span>
       <div className="flex items-center gap-1.5">

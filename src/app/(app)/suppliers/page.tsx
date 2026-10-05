@@ -19,7 +19,7 @@ export default async function SuppliersPage() {
           {suppliers.length === 0 && <Empty text="Yetkazuvchilar yo'q" />}
           {suppliers.map((s) => (
             <Tr key={s.id}>
-              <Td className="font-medium"><Link href={`/suppliers/${s.id}`} className="hover:underline">{s.name}</Link></Td><Td>{s.inn ?? "—"}</Td><Td>{s.phone ?? "—"}</Td><Td right>{s._count.receipts}</Td>
+              <Td className="font-medium"><Link href={`/suppliers/${s.id}`} data-no-translit className="hover:underline">{s.name}</Link></Td><Td>{s.inn ?? "—"}</Td><Td>{s.phone ?? "—"}</Td><Td right>{s._count.receipts}</Td>
               <Td>{s.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</Td>
               <Td>
                 <div className="flex justify-end gap-2">

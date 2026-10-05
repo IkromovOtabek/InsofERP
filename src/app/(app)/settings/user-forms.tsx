@@ -28,8 +28,8 @@ export function ResetPasswordForm({ userId }: { userId: string }) {
   useEffect(() => { if (state?.ok) ref.current?.reset(); }, [state]);
   return (
     <form ref={ref} action={action} className="flex items-center gap-1">
-      <PasswordInput name="password" placeholder="Yangi parol" className="w-36 px-2 py-1 text-xs" autoComplete="new-password" />
-      <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending}>{state?.ok ? <Check size={14} /> : <KeyRound size={14} />}</Button>
+      <PasswordInput name="password" aria-label="Yangi parol" placeholder="Yangi parol" className="w-36 px-2 py-1 text-xs" autoComplete="new-password" />
+      <Button variant="secondary" className="px-2 py-1 text-xs" disabled={pending} aria-label="Parolni almashtirish" title="Parolni almashtirish">{state?.ok ? <Check size={14} /> : <KeyRound size={14} />}</Button>
       {state?.error && <span className="text-xs text-red-600">{state.error}</span>}
     </form>
   );

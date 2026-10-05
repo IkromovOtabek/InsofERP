@@ -147,7 +147,7 @@ export function MaterialField({ materials, groups, canCreate, value, onPick, pla
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
+        <div className="absolute top-full right-0 left-0 z-30 mt-1 max-h-64 min-w-[min(20rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-(--shadow-pop)">
           {matches.length === 0 && <div className="px-3 py-2 text-sm text-slate-500">Mos xomashyo topilmadi</div>}
           {matches.map((m, i) => (
             <button key={m.id} type="button" onMouseEnter={() => setCursor(i)} onClick={() => choose(m)}
@@ -155,7 +155,7 @@ export function MaterialField({ materials, groups, canCreate, value, onPick, pla
               <Minus size={14} className="shrink-0 text-slate-400" />
               <span className="min-w-0 flex-1 truncate">{m.name}</span>
               <span className="shrink-0 text-xs text-slate-500">{unitLabel(m.unit)}</span>
-              <span className="shrink-0 text-xs text-slate-400 tabular">{m.code}</span>
+              <span data-no-translit className="shrink-0 text-xs text-slate-400 tabular">{m.code}</span>
             </button>
           ))}
         </div>

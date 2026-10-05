@@ -36,7 +36,8 @@ export function ContractMark({ className, short = false }: { className?: string;
  * Qora ro'yxatdagi mijoz nomi qizil rangda — jadvalni ko'zdan kechirganda darhol ajralib turadi.
  */
 export function CustomerName({ name, blacklisted, contracted = false, href, className, short }: { name: string; blacklisted: boolean; contracted?: boolean; href?: string; className?: string; short?: boolean }) {
-  const label = <span className={cn(blacklisted && "font-semibold text-red-700", className)}>{name}</span>;
+  // Korxona nomi — yuridik nom, kirill rejimida ham lotinda qoladi (data-no-translit)
+  const label = <span data-no-translit className={cn(blacklisted && "font-semibold text-red-700", className)}>{name}</span>;
   return (
     <span className="inline-flex max-w-full items-center gap-1.5">
       {href ? <Link href={href} className="truncate hover:underline">{label}</Link> : label}

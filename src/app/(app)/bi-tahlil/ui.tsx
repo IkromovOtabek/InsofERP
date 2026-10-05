@@ -32,9 +32,9 @@ export function PeriodBar({ range, tab, keep, className }: { range: Range; tab: 
       <div className="flex gap-1">{btn("day", "Kunlik")}{btn("month", "Oylik")}{btn("year", "Yillik")}</div>
       <form method="get" action={path} className="flex flex-wrap items-center gap-1.5 text-[13px]">
         {extra.map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-        <input type="date" name="from" defaultValue={isoDate(range.from)} className="h-8 rounded-lg border border-slate-200 px-2 text-[13px]" />
+        <input type="date" name="from" aria-label="Boshlanish sanasi" defaultValue={isoDate(range.from)} className="h-8 rounded-lg border border-slate-200 px-2 text-[13px]" />
         <span className="text-slate-400">—</span>
-        <input type="date" name="to" defaultValue={isoDate(addDays(range.to, -1))} className="h-8 rounded-lg border border-slate-200 px-2 text-[13px]" />
+        <input type="date" name="to" aria-label="Tugash sanasi" defaultValue={isoDate(addDays(range.to, -1))} className="h-8 rounded-lg border border-slate-200 px-2 text-[13px]" />
         <button className="h-8 rounded-lg border border-slate-200 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50">Qo'llash</button>
       </form>
       <div className="ml-auto text-[13px] text-slate-500"><span className="font-medium text-slate-800">{range.label}</span> <span className="text-slate-400">· taqqoslash: {range.prevLabel}</span></div>

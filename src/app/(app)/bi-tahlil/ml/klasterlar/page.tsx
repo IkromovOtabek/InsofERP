@@ -58,7 +58,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-500">Klaster:</span>{cl.map((c) => <Chip key={c.key} active={sp.cluster === c.key} href={href({ cluster: sp.cluster === c.key ? undefined : c.key })}>{c.title}</Chip>)}
           <span className="ml-2 font-medium text-slate-500">ABC:</span>{["A", "B", "C"].map((a) => <Chip key={a} active={sp.abc === a} href={href({ abc: sp.abc === a ? undefined : a })}>{a}</Chip>)}
-          <form method="get" action="/bi-tahlil/ml/klasterlar" className="ml-2 flex items-center gap-1">{sp.cluster && <input type="hidden" name="cluster" value={sp.cluster} />}{sp.abc && <input type="hidden" name="abc" value={sp.abc} />}<Input name="q" defaultValue={sp.q ?? ""} placeholder="Mahsulot qidirish" className="h-7 w-40 text-xs" /><button className="h-7 rounded-md bg-slate-900 px-2 text-white">OK</button></form>
+          <form method="get" action="/bi-tahlil/ml/klasterlar" className="ml-2 flex items-center gap-1">{sp.cluster && <input type="hidden" name="cluster" value={sp.cluster} />}{sp.abc && <input type="hidden" name="abc" value={sp.abc} />}<Input name="q" aria-label="Qidirish" defaultValue={sp.q ?? ""} placeholder="Mahsulot qidirish" className="h-7 w-40 text-xs" /><button className="h-7 rounded-md bg-slate-900 px-2 text-white">OK</button></form>
           {(sp.cluster || sp.abc || sp.q) && <Link href="/bi-tahlil/ml/klasterlar" className="text-slate-500 hover:underline">Tozalash</Link>}
           <span className="ml-auto text-slate-500">{list.length} mahsulot · {money(sum(list.map((x) => x.revenue)))}</span>
         </div>

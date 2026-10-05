@@ -131,10 +131,10 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         <form className="flex flex-wrap items-center gap-2 text-sm">
           <input type="hidden" name="tab" value={tab} />
           {cat && <input type="hidden" name="category" value={cat} />}
-          <Input name="from" type="date" defaultValue={isoDate(from)} className="h-9 w-40" />
+          <Input name="from" type="date" aria-label="Boshlanish sanasi" defaultValue={isoDate(from)} className="h-9 w-40" />
           <span className="text-slate-400">—</span>
-          <Input name="to" type="date" defaultValue={isoDate(to)} className="h-9 w-40" />
-          <select name="account" defaultValue={acc ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Barcha hisoblar</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+          <Input name="to" type="date" aria-label="Tugash sanasi" defaultValue={isoDate(to)} className="h-9 w-40" />
+          <select name="account" aria-label="Kassa / hisob" defaultValue={acc ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Barcha hisoblar</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           <Button variant="secondary" className="h-9 text-sm">Ko&apos;rsatish</Button>
         </form>
       </div>

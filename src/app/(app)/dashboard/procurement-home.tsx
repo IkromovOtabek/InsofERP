@@ -73,7 +73,7 @@ export async function ProcurementHome({ filters = {}, base = "/dashboard" }: { f
           </Select>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Input name="q" defaultValue={filters.q ?? ""} placeholder="Material kodi / nomi, buyurtma raqami, shartnoma" className="min-w-60 flex-1" />
+          <Input name="q" aria-label="Qidirish" defaultValue={filters.q ?? ""} placeholder="Material kodi / nomi, buyurtma raqami, shartnoma" className="min-w-60 flex-1" />
           <button className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"><Filter size={15} /> Filtrlash</button>
           {d.filtered && <Link href={base} className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm text-slate-600 hover:bg-slate-100"><X size={15} /> Tozalash</Link>}
           <span className="ml-auto text-xs text-slate-500">Davr: {date(d.from)} — {date(d.to)}{!d.dated && " (joriy oy)"}</span>
