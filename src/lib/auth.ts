@@ -79,10 +79,16 @@ export async function hashPassword(p: string) {
   return bcrypt.hash(p, 10);
 }
 
+/**
+ * Mavjud bo'lmagan / nofaol login uchun ham bcrypt bir marta ishlaydi — javob vaqti bo'yicha login
+ * bor-yo'qligi bilinmasin. Tasodifiy satrning xeshi: hech qanday parol unga mos kelmaydi.
+ */
+export const DUMMY_PASSWORD_HASH = "$2b$10$58EUmLeW3hkndKKu/Wu5KOCcIE0g0E/5Sf.VBPVHcZ8N1llorimpO";
+
 export async function login(loginName: string, password: string): Promise<Session | null> {
   const user = await db.user.findUnique({ where: { login: loginName } });
   // Superadmin login/parol bilan kirmaydi — faqat markaziy paneldan SSO (`/api/control/sso`)
-  if (!user || !user.isActive || user.role === "SUPERADMIN") return null;
+  if (!user || !user.isActive || user.role === "SUPERADMIN") { await bcrypt.compare(password, DUMMY_PASSWORD_HASH); return null; }
   if (await companySuspension()) return null; // sabab login sahifasida alohida ko'rsatiladi
   if (!(await bcrypt.compare(password, user.passwordHash))) return null;
 

@@ -55,7 +55,7 @@ export type LoginCodeVerify = { ok: true; user: LoginCodeUser } | { ok: false; e
 export type LoginCodeConfirm = { ok: true; login: string } | { ok: false; error: string };
 
 /** Noto'g'ri kod / noma'lum raqamda bir xil xabar — raqam tizimda bor-yo'qligi bilinmasin. */
-const WRONG = "Kod noto'g'ri yoki muddati tugagan";
+const WRONG = "Kod noto'g'ri yoki muddati tugagan. Bir necha marta xato bo'lsa — yangi kod so'rang";
 /** Soatlik chek xabari — mavjud va noma'lum raqam uchun bir xil. */
 const RATE_LIMIT_MSG = "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling.";
 
@@ -153,7 +153,7 @@ export async function verifyLoginCode(rawPhone: string, code: string): Promise<L
   });
   if (!rec) return { ok: false, error: WRONG };
   if (rec.expiresAt < new Date()) return { ok: false, error: WRONG };
-  if (rec.attempts >= MAX_ATTEMPTS) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
+  if (rec.attempts >= MAX_ATTEMPTS) return { ok: false, error: WRONG };
 
   // Urinish taqqoslashdan OLDIN atomar hisoblanadi: parallel so'rovlar bilan 5 tadan ortiq
   // taxmin qilib bo'lmasin (o'qish → taqqoslash → yozish orasidagi poyga yopiladi).
@@ -161,11 +161,11 @@ export async function verifyLoginCode(rawPhone: string, code: string): Promise<L
     where: { id: rec.id, usedAt: null, attempts: { lt: MAX_ATTEMPTS } },
     data: { attempts: { increment: 1 } },
   });
-  if (slot.count === 0) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
+  if (slot.count === 0) return { ok: false, error: WRONG };
 
   if (!(await bcrypt.compare(code.trim(), rec.codeHash))) {
-    const left = MAX_ATTEMPTS - rec.attempts - 1;
-    return { ok: false, error: left > 0 ? `Kod noto'g'ri. Yana ${left} urinish qoldi` : "Urinishlar tugadi — yangi kod so'rang" };
+    // Noma'lum raqam bilan bir xil javob: "Yana N urinish" faqat haqiqiy xodim raqamida chiqib, raqam bazada borligini oshkor qilardi
+    return { ok: false, error: WRONG };
   }
 
   // Kod to'g'ri — xodim hali faolligini bazadan tasdiqlaymiz (kod yaratilgandan keyin yopilgan bo'lishi mumkin)

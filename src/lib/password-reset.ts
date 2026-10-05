@@ -146,7 +146,7 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
 
   const found = await staffByPhone(phone);
   // Noto'g'ri kod bilan bir xil xabar — raqam bor-yo'qligi (yoki bir nechta kartada ekani) bilinmasin
-  const wrong = { ok: false as const, error: "Kod noto'g'ri yoki muddati tugagan" };
+  const wrong = { ok: false as const, error: "Kod noto'g'ri yoki muddati tugagan. Bir necha marta xato bo'lsa — yangi kod so'rang" };
   if (found.kind !== "found") return wrong;
 
   const rec = await db.passwordResetCode.findFirst({
@@ -155,7 +155,8 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
   });
   if (!rec) return wrong;
   if (rec.expiresAt < new Date()) return wrong;
-  if (rec.attempts >= MAX_ATTEMPTS) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
+  // Barcha xatolarda bir xil javob — "Yana N urinish" faqat haqiqiy xodim raqamida chiqib, raqamni oshkor qilardi
+  if (rec.attempts >= MAX_ATTEMPTS) return wrong;
 
   // Urinish taqqoslashdan OLDIN atomar hisoblanadi: parallel so'rovlar bilan 5 tadan ortiq
   // taxmin qilib bo'lmasin (o'qish → taqqoslash → yozish orasidagi poyga yopiladi).
@@ -163,12 +164,9 @@ export async function confirmPasswordReset(rawPhone: string, code: string, newPa
     where: { id: rec.id, usedAt: null, attempts: { lt: MAX_ATTEMPTS } },
     data: { attempts: { increment: 1 } },
   });
-  if (slot.count === 0) return { ok: false, error: "Urinishlar tugadi — yangi kod so'rang" };
+  if (slot.count === 0) return wrong;
 
-  if (!(await bcrypt.compare(code.trim(), rec.codeHash))) {
-    const left = MAX_ATTEMPTS - rec.attempts - 1;
-    return { ok: false, error: left > 0 ? `Kod noto'g'ri. Yana ${left} urinish qoldi` : "Urinishlar tugadi — yangi kod so'rang" };
-  }
+  if (!(await bcrypt.compare(code.trim(), rec.codeHash))) return wrong;
 
   const hash = await hashPassword(newPassword);
   const done = await db.$transaction(async (tx) => {

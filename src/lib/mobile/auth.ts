@@ -7,7 +7,7 @@ import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { verifyLoginCode } from "@/lib/sms-login";
-import { parsePerms, type Perms } from "@/lib/auth";
+import { DUMMY_PASSWORD_HASH, parsePerms, type Perms } from "@/lib/auth";
 
 /**
  * Mobil ilova (Insof ECO) uchun autentifikatsiya — ERP login/paroli bo'yicha.
@@ -62,7 +62,9 @@ async function issue(u: DbUser): Promise<MobileTokens & { user: MobileUser }> {
 /** Login + parol. Xato xabari bir xil — login bor/yo'qligi oshkor qilinmaydi. */
 export async function mobileLogin(loginName: string, password: string) {
   const user = await db.user.findUnique({ where: { login: loginName.trim() } });
-  if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) {
+  // bcrypt har doim ishlaydi (login yo'q bo'lsa soxta xesh bilan) — javob vaqti login borligini oshkor qilmasin
+  const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!user || !user.isActive || !ok) {
     throw new MobileAuthError("BAD_CREDENTIALS", "Login yoki parol noto'g'ri");
   }
   return issue(user);
