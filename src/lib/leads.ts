@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { parseInn } from "./inn";
 import { audit } from "./audit";
-import { formatPhone, normalizePhone } from "./sms/phone";
+import { formatPhone, normalizePhone } from "./phone";
 import { botEnabled, sendMessage } from "./telegram/api";
 import { unitLabel } from "./unit";
 import { phoneTail, samePhone } from "./phone-lookup";

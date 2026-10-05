@@ -3,7 +3,7 @@ import { ExternalLink, FilePlus2, MapPin, MessageSquare, Phone } from "lucide-re
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { dateTime, fmtNum } from "@/lib/format";
-import { formatPhone } from "@/lib/sms/phone";
+import { formatPhone } from "@/lib/phone";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Tabs } from "@/components/ui";
 import { ConvertLead, LeadNote, LeadStatusButtons } from "./lead-actions";

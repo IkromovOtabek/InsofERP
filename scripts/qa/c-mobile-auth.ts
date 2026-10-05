@@ -1,5 +1,5 @@
 /**
- * QA (C) — mobil autentifikatsiya: login/parol, SMS kod bilan kirish (FAKE kanal → devCode),
+ * QA (C) — mobil autentifikatsiya: login/parol, Telegram kod bilan kirish (test rejimida kanal yo'q → devCode),
  * refresh rotatsiyasi, soxta/eskirgan token, qulf, noma'lum raqamga bir xil javob, logout.
  */
 import { api, check, done, section, freshIp, PASSWORD } from "./c-lib";
@@ -94,8 +94,11 @@ async function main() {
   r = await api("POST", "/api/mobile/auth/logout", { token: "buzuq.token.qiymat" });
   check("buzuq token bilan logout → 200, 500 emas", r.status === 200, r.json ?? r.text);
 
-  section("SMS kod bilan kirish (FAKE kanal)");
+  section("Telegram kod bilan kirish (test rejimi: kanal o'chiq → devCode)");
   const ip = freshIp();
+  // Eski SmsLog jadvali (sxemada hali bor) — kod oqimi unga hech narsa yozmasligi kerak
+  const smsRows = async () => Number(((await db.$queryRawUnsafe(`SELECT count(*)::int AS n FROM "SmsLog"`)) as { n: number }[])[0]?.n ?? 0);
+  const smsBefore = await smsRows();
   const phone = "+998909000006"; // test.sklad
   const ph2 = "+998909000010"; // test.kadr
   // Oldingi yugurishlar izi: kod soni bazada ham soatiga hisoblanadi
@@ -103,14 +106,14 @@ async function main() {
   r = await api("POST", "/api/mobile/auth/request-code", { body: { phone }, ip });
   check("mavjud raqam → {sent:true}", r.status === 200 && r.json?.sent === true, r.json);
   const code = r.json?.devCode as string | undefined;
+  check("javobda kanal faqat Telegram (via yo'q yoki telegram)", r.json?.via === undefined || r.json.via === "telegram", r.json);
   check("test rejimida devCode qaytadi (real kanal yo'q)", !!code && /^\d{6}$/.test(code), r.json);
   const known = Object.keys(r.json ?? {}).filter((k) => k !== "devCode").sort().join(",");
   r = await api("POST", "/api/mobile/auth/request-code", { body: { phone: "+998909999999" }, ip });
   check("noma'lum raqam → xuddi shunday javob (devCode'siz)", r.status === 200 && r.json?.sent === true && Object.keys(r.json).sort().join(",") === known && !r.json.devCode, r.json);
   r = await api("POST", "/api/mobile/auth/request-code", { body: { phone: "123" }, ip });
   check("noto'g'ri raqam formati → 429/400 emas 500", r.status < 500, r.status);
-  const sms = await db.smsLog.findFirst({ where: { phone }, orderBy: { createdAt: "desc" } });
-  check("SMS jurnalida SKIPPED (FAKE provayder, real yuborilmadi)", !sms || sms.status === "SKIPPED", sms?.status);
+  check("eski SmsLog jadvaliga yozuv tushmadi (SMS kanali olib tashlangan)", (await smsRows()) === smsBefore);
   r = await api("POST", "/api/mobile/auth/code-login", { body: { phone, code: "000000" === code ? "111111" : "000000" } });
   check("noto'g'ri kod → 401", r.status === 401 && r.json?.code === "BAD_CODE", r.json);
   r = await api("POST", "/api/mobile/auth/code-login", { body: { phone: "90 900 00 06", code } });

@@ -12,8 +12,7 @@ import type { Role } from "@/generated/prisma";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { num } from "@/lib/excel";
-import { sendSms, smsNote } from "@/lib/sms";
-import { publicOrigin } from "@/lib/public-url";
+import { formatPhone, normalizePhone } from "@/lib/phone";
 import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
@@ -138,15 +137,19 @@ const cardSchema = schema.omit({ login: true, password: true }).extend({
 });
 
 /**
- * Kirish ma'lumotlarini xodimga SMS bilan yuborish (login berildi / parol almashdi).
- * Parolni ERP hech qayerda ochiq saqlamaydi, shuning uchun uni faqat SHU paytda —
- * kadr kiritgan zahoti — yuborish mumkin. `SmsLog` ga maskalangan holda tushadi.
+ * Kirish ma'lumotlari (login berildi / parol almashdi) haqida kadrga eslatma.
+ * Parol xodimga avtomatik YUBORILMAYDI: parolni chatga yoki xabarga ochiq yozish xavfsiz emas.
+ * Kadr login va parolni xodimga o'zi yetkazadi; telefon raqami to'g'ri
+ * bo'lsa xodim kirish sahifasida «Telegram kod» bilan ham kira oladi.
  */
-async function loginSms(template: "login_granted" | "password_changed", phone: string | null, login: string, password: string) {
-  const { origin } = await publicOrigin();
-  return template === "login_granted"
-    ? sendSms("login_granted", phone, { login, password, url: `${origin}/login` })
-    : sendSms("password_changed", phone, { login, password });
+function credentialsNote(kind: "login_granted" | "password_changed", rawPhone: string | null, login: string): string {
+  const phone = normalizePhone(rawPhone);
+  const how = kind === "login_granted"
+    ? `Login «${login}» berildi. Login va parolni xodimga o'zingiz yetkazing.`
+    : `«${login}» paroli yangilandi. Yangi parolni xodimga o'zingiz yetkazing.`;
+  return phone
+    ? `${how} Xodim ${formatPhone(phone)} raqami bilan Telegram orqali kod olib ham kira oladi.`
+    : `${how} Kartada to'g'ri telefon raqami yo'q — Telegram kod bilan kirish ishlamaydi.`;
 }
 
 const DIRECTOR_ONLY = "Direktor hisobini faqat direktor boshqaradi";
@@ -239,7 +242,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     if (role && d.login && isSensitive(role)) alertDirector(s.role, s.userId, cur.id, `Moliyaviy/kadr login berildi — ${roleLabel(role)}`, `${d.fullName} · login «${d.login.toLowerCase()}»`);
     revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
     if (!role || !d.login) return { ok: true, note: `${d.fullName} — lavozimi «${d.position}» qilib belgilandi.` };
-    return { ok: true, note: smsNote(await loginSms("login_granted", d.phone ?? cur.phone, d.login, d.password!)) };
+    return { ok: true, note: credentialsNote("login_granted", d.phone ?? cur.phone, d.login.toLowerCase()) };
   }
 
   if (driver && !d.plate) return { error: "Haydovchi uchun mashina davlat raqamini kiriting — reys shu texnika bilan ochiladi" };
@@ -268,10 +271,9 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   if (createdId && role && isSensitive(role)) alertDirector(s.role, s.userId, createdId, `Moliyaviy/kadr login yaratildi — ${roleLabel(role)}`, `${d.fullName} (yangi xodim) · login «${d.login!.toLowerCase()}»`);
   revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers"); revalidatePath("/trips");
 
-  // Tizimga kiradigan xodim bo'lsa — login va parol SMS bilan. Ketmasa ham xodim yaratilgan:
-  // natija `note` da qaytadi, kadr parolni o'zi aytishi kerakligini ko'radi.
+  // Tizimga kiradigan xodim bo'lsa — kadr login va parolni o'zi yetkazadi (eslatma `note` da).
   if (!role) return { ok: true };
-  return { ok: true, note: smsNote(await loginSms("login_granted", d.phone, d.login!, d.password!)) };
+  return { ok: true, note: credentialsNote("login_granted", d.phone, d.login!.toLowerCase()) };
 }
 
 /**
@@ -308,7 +310,7 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
   }
   if (isSensitive(role)) alertDirector(s.role, s.userId, employeeId, `Moliyaviy/kadr login berildi — ${roleLabel(role)}`, `${e.fullName} · login «${login.toLowerCase()}»`);
   revalidatePath("/employees"); revalidatePath("/settings");
-  return { ok: true, note: smsNote(await loginSms("login_granted", e.phone, login, password)) };
+  return { ok: true, note: credentialsNote("login_granted", e.phone, login.toLowerCase()) };
 }
 
 /** Xodimni o'chirish/yoqish — bog'langan login ham birga bloklanadi/ochiladi. */
@@ -550,7 +552,7 @@ export async function resetEmployeePassword(employeeId: string, _prev: ActionSta
   });
   if (isSensitive(t.user.role)) alertDirector(s.role, s.userId, employeeId, `Moliyaviy/kadr login paroli tiklandi — ${roleLabel(t.user.role)}`, `${t.employee.fullName} · login «${t.user.login}»`);
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/settings");
-  return { ok: true, note: smsNote(await loginSms("password_changed", t.employee.phone, t.user.login, password)) };
+  return { ok: true, note: credentialsNote("password_changed", t.employee.phone, t.user.login) };
 }
 
 /**

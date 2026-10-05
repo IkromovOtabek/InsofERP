@@ -414,6 +414,8 @@ export default function QollanmaPage() {
               <p className="text-sm text-slate-600">
                 <b>Xodimlar</b> bo'limida F.I.O. va lavozimni kiriting. Agar lavozim tizimga kiradigan bo'lim bo'lsa
                 (Sotuv, Sklad, Buxgalteriya...) — login va parol maydonlari chiqadi, shu orqali xodimga kirish huquqi beriladi.
+                Login va parolni xodimga o'zingiz yetkazasiz — tizim ularni avtomatik yubormaydi. Kartadagi telefon raqami
+                bilan xodim kirish sahifasida «Telegram kod» orqali ham kira oladi (kod Telegram'ga keladi).
                 Buni faqat <b>Otdel kadr</b> yoki <b>direktor</b> bajara oladi.
               </p>
             </Card>

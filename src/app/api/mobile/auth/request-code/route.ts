@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requestLoginCode } from "@/lib/sms-login";
+import { requestLoginCode } from "@/lib/code-login";
 import { MobileAuthError } from "@/lib/mobile/auth";
 import { handle, jsonErr, preflight } from "@/lib/mobile/http";
 import { ipFromHeaders } from "@/lib/login-guard";

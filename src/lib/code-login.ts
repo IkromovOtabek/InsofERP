@@ -5,25 +5,26 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { issueSession } from "@/lib/auth";
 import { TOUR_COOKIE } from "@/lib/tour";
-import { sendSms } from "@/lib/sms";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 import { hit } from "@/lib/rate-limit";
 import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId } from "@/lib/telegram/notify";
 import { botEnabled, sendMessage } from "@/lib/telegram/api";
 import { gatewayEnabled, sendGatewayCode } from "@/lib/telegram/gateway";
-import { isTestMode } from "@/lib/test-mode";
+import { devCodeAllowed, logUndelivered } from "@/lib/telegram/otp";
 
 /**
- * SMS/Telegram kod orqali tizimga kirish — login+parolga QO'SHIMCHA yo'l.
+ * Telegram kod orqali tizimga kirish — login+parolga QO'SHIMCHA yo'l (asosiy yo'l — login+parol).
  *
  * Maqsad: telefoni bor har qanday faol xodim (parol oldindan berilmagan bo'lsa ham)
  * bir martalik kod bilan kira olsin. Kod `lib/password-reset.ts` dagi aynan shu mexanizm
  * bilan ishlaydi — faqat oxirida parol tiklash emas, darhol sessiya beriladi.
  *
- * Kod QAYERGA boradi (shu tartibda): xodimning Telegram boti (ulangan bo'lsa) →
- * Telegram Gateway (raqamga to'g'ridan-to'g'ri) → SMS (Eskiz yoqilgan bo'lsa).
- * Test/dev rejimida hamma kanal o'chiq — kod konsolga chiqadi va `devCode` da qaytadi.
+ * Kod QAYERGA boradi (shu tartibda, faqat Telegram): xodimning Telegram boti (ulangan bo'lsa) →
+ * Telegram Gateway (raqamga to'g'ridan-to'g'ri). SMS kanali yo'q.
+ * Test/dev rejimida hamma kanal o'chiq — kod `devCode` da qaytadi.
+ * Prodda hech bir kanal yetkaza olmasa — javob baribir neytral (`sent:false`, xato emas), sabab
+ * faqat server jurnaliga yoziladi: aks holda xato faqat mavjud raqamda chiqib, uni oshkor qilardi.
  *
  * Kod `PasswordResetCode` jadvalida saqlanadi (yangi jadval kerak emas): xuddi parol
  * tiklashdagidek — userId, phone, codeHash (bcrypt), expiresAt, attempts. Kodning o'zi
@@ -43,7 +44,7 @@ const CODE_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_HOUR = 3;
 
-export type LoginVia = "telegram" | "gateway" | "sms";
+export type LoginVia = "telegram" | "gateway";
 /** `devCode` — faqat dev/test (real kanal yo'q): kodni ekranda ko'rsatish uchun. */
 export type LoginCodeRequest =
   | { ok: true; sent: boolean; via?: LoginVia; devCode?: string }
@@ -75,7 +76,7 @@ async function sendCodeToBot(userId: string, code: string): Promise<{ ok: boolea
     ].join("\n"));
     return { ok: true };
   } catch (e) {
-    console.error("[sms-login][bot]", e);
+    console.error("[code-login][bot]", e);
     return { ok: false };
   }
 }
@@ -99,7 +100,15 @@ export async function requestLoginCode(rawPhone: string): Promise<LoginCodeReque
   const recent = await db.passwordResetCode.count({
     where: { phone, createdAt: { gt: new Date(Date.now() - 3600_000) } },
   });
-  if (recent >= MAX_CODES_PER_HOUR) return { ok: false, error: RATE_LIMIT_MSG };
+  // Bazadagi chek (server qayta ishga tushsa ham saqlanadi) — neytral javob: xato faqat mavjud raqamda chiqmasin
+  if (recent >= MAX_CODES_PER_HOUR) { logUndelivered("code-login", phone, "soatlik chek (baza)"); return silent; }
+
+  // Hech bir kanal yetkaza olmaydigan holat (bot ulanmagan, Gateway o'chiq, prod) — kod yaratilmaydi
+  const botReady = botEnabled() && !!(await linkedChatId(found.user.id));
+  if (!botReady && !gatewayEnabled() && !devCodeAllowed()) {
+    logUndelivered("code-login", phone, "Telegram bot ulanmagan va TELEGRAM_GATEWAY_TOKEN sozlanmagan");
+    return silent;
+  }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await db.passwordResetCode.create({
@@ -112,28 +121,23 @@ export async function requestLoginCode(rawPhone: string): Promise<LoginCodeReque
   });
 
   // 1) Telegram bot — hisobi ulangan bo'lsa kod shu yerga boradi (bepul, bir zumda)
-  if ((await sendCodeToBot(found.user.id, code)).ok) return { ok: true, sent: true, via: "telegram" };
+  if (botReady && (await sendCodeToBot(found.user.id, code)).ok) return { ok: true, sent: true, via: "telegram" };
 
   // 2) Telegram Gateway — raqamga to'g'ridan-to'g'ri (botga ulanish shart emas). Yoqilgan bo'lsa.
   if (gatewayEnabled()) {
     const gw = await sendGatewayCode(phone, code, { ttlSec: Math.round(CODE_TTL_MS / 1000), payload: `login:${found.user.id}` });
     if (gw.ok) return { ok: true, sent: true, via: "gateway" };
-    if (gw.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
+    logUndelivered("code-login", phone, `Gateway: ${gw.reason}${gw.error ? ` (${gw.error})` : ""}`);
   }
 
-  // 3) SMS — Eskiz yoqilgan bo'lsa. (reset_code shabloni qayta ishlatiladi: matn "kod" haqida.)
-  const sms = await sendSms("reset_code", phone, { code }, { userId: found.user.id, maxPerHour: MAX_CODES_PER_HOUR });
-  if (sms.ok) return { ok: true, sent: true, via: "sms" };
-
   // Dev/test: hech bir kanal yo'q — oqim to'xtamasin, kod ekranda ko'rinadi. Prodda yopiq.
-  // Test rejimi (INSOF_ENV=test) `next start` bilan ishlaydi — u yerda NODE_ENV=production, shuning uchun
-  // alohida tekshiruv: aks holda test serverida mavjud raqamga "Kod yuborilmadi" (429), noma'lumiga
-  // esa "yuborildi" qaytib, kod bilan kirishni sinab bo'lmasdi.
-  if (process.env.NODE_ENV !== "production" || isTestMode()) return { ok: true, sent: true, devCode: code };
+  // Test rejimi (INSOF_ENV=test) `next start` bilan ishlaydi (NODE_ENV=production) — `devCodeAllowed`
+  // uni alohida tekshiradi, aks holda test serverida kod bilan kirishni sinab bo'lmasdi.
+  if (devCodeAllowed()) return { ok: true, sent: true, devCode: code };
 
-  if (sms.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
-  // Prodda birorta ham kanal ishlamadi: parol bilan kirishni taklif qilamiz.
-  return { ok: false, error: "Kod yuborilmadi. Login va parolingiz bilan kiring yoki Otdel kadrga murojaat qiling." };
+  // Prodda birorta ham Telegram kanali ishlamadi — neytral javob (noma'lum raqam bilan bir xil), sabab jurnalda.
+  logUndelivered("code-login", phone, "Telegram kanallari yetkaza olmadi");
+  return silent;
 }
 
 /**
@@ -181,7 +185,7 @@ export async function verifyLoginCode(rawPhone: string, code: string): Promise<L
     if (claim.count === 0) return false;
     // Qolgan ochiq kodlar ham kuyadi — bittasi ishlatildi, boshqasi kerak emas
     await tx.passwordResetCode.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
-    await audit(tx, user.id, "UPDATE", "User", user.id, undefined, { login: "sms-code", phone });
+    await audit(tx, user.id, "UPDATE", "User", user.id, undefined, { login: "telegram-code", phone });
     return true;
   });
   if (!done) return { ok: false, error: WRONG };

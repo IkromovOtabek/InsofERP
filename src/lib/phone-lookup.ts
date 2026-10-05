@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 import type { Role } from "@/generated/prisma";
 
 /**

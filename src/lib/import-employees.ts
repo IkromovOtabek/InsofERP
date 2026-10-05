@@ -2,7 +2,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { flatName, num, parseDate, str } from "./excel";
 import { driverPositionNames, roleForPosition } from "./positions";
-import { normalizePhone } from "./sms/phone";
+import { normalizePhone } from "./phone";
 
 /**
  * Excel'dan xodimlar ro'yxati (buxgalteriya tabeli ko'rinishi):

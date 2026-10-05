@@ -62,7 +62,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
               </ol>
               <p className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12.5px] text-sky-900">
                 Xodimlar botga <b>o'zlari</b> ham ulanadi: <code className="rounded bg-white/70 px-1">/start</code> → «Telefon raqamimni yuborish».
-                Raqam Otdel kadrdagi karta bilan mos kelsa hisob ulanadi va <b>parolni tiklash kodi SMS o'rniga botga</b> boradi.
+                Raqam Otdel kadrdagi karta bilan mos kelsa hisob ulanadi va <b>kirish va parolni tiklash kodlari botga</b> keladi.
               </p>
               <LinkCodeForm botUsername={bot.username} />
             </>

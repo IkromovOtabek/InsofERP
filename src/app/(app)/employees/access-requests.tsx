@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { Check, UserPlus, X } from "lucide-react";
 import { approveAccess, rejectAccess } from "./access-actions";
 import { Badge, Button, Card, CardHeader, FormError, Input, Select } from "@/components/ui";
-import { formatPhone } from "@/lib/sms/phone";
+import { formatPhone } from "@/lib/phone";
 
 export type AccessRow = {
   id: string; fullName: string; phone: string; position: string; login: string; note: string | null;

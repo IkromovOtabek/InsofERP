@@ -5,7 +5,7 @@
  * kalitlarsiz ishga tushadi — `instrumentation.ts` dagi `assertSafeTestEnv()` aks holda serverni to'xtatadi.
  *
  * Nega env tekshiruvi shart: Next `.env.test` dan keyin baribir `.env` ni ham o'qiydi va u yerdagi
- * kalit `.env.test` da yo'q bo'lsa o'shani oladi. Ya'ni bitta unutilgan kalit — real SMS/push/ECO.
+ * kalit `.env.test` da yo'q bo'lsa o'shani oladi. Ya'ni bitta unutilgan kalit — real Telegram/push/ECO.
  * Shuning uchun `.env.test` da har bir kalit aniq bo'sh yoziladi (jarayondagi bo'sh qiymat `.env` dan ustun),
  * bu yerda esa bo'sh bo'lmagani topilsa ishga tushish rad etiladi.
  *
@@ -14,8 +14,6 @@
 
 /** Test rejimida bo'sh bo'lishi shart: real tashqi servislarga kirish kalitlari. */
 const FORBIDDEN_KEYS = [
-  "ESKIZ_EMAIL",
-  "ESKIZ_PASSWORD",
   "TELEGRAM_BOT_TOKEN",
   "ECO_TELEGRAM_BOT_TOKEN",
   "TELEGRAM_GATEWAY_TOKEN",
@@ -90,10 +88,6 @@ export function testEnvProblems(env: Env = process.env): string[] {
   const filled = FORBIDDEN_KEYS.filter((k) => val(env, k) !== "");
   if (filled.length) {
     problems.push(`real tashqi servis kalitlari bo'sh bo'lishi kerak: ${filled.join(", ")}`);
-  }
-
-  if (val(env, "SMS_PROVIDER").toUpperCase() !== "FAKE") {
-    problems.push("SMS_PROVIDER=FAKE bo'lishi kerak");
   }
 
   // OSRM_URL berilmasa geo.ts ochiq router.project-osrm.org ga boradi — test rejimida lokal manzil majburiy

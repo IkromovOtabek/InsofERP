@@ -261,16 +261,21 @@ src/lib/bi/answer.ts          AI panel va bot uchun umumiy javob funksiyasi
 Bot hech narsani o'zgartirmaydi — faqat o'qiydi. Webhook `src/middleware.ts` da login'dan ozod
 qilingan, o'rniga Telegram yuboradigan `X-Telegram-Bot-Api-Secret-Token` sarlavhasi tekshiriladi.
 
-## Telegram Gateway (kirish va parol tiklash kodlari)
+## Telegram Gateway (kirish, parol tiklash va ro'yxatdan o'tish kodlari)
 
 Kodni xodim raqamining Telegram hisobiga to'g'ridan-to'g'ri yuboradi — botga ulanish shart emas.
-Kod «Verification Codes» rasmiy chatiga keladi. Kanallar tartibi (`lib/sms-login.ts`, `lib/password-reset.ts`):
+Kod «Verification Codes» rasmiy chatiga keladi. Bir martalik kodlar FAQAT Telegram orqali yuboriladi
+(SMS kanali olib tashlangan). Kanallar tartibi (`lib/code-login.ts`, `lib/password-reset.ts`, `lib/access-request.ts`):
 
 ```
-Insof ERP boti (hisob ulangan bo'lsa, bepul) → Telegram Gateway → SMS (Eskiz)
+Insof ERP boti (hisob ulangan bo'lsa, bepul) → Telegram Gateway
 ```
 
-Raqamda Telegram bo'lmasa yoki Gateway xato bersa — navbatdagi kanal (SMS) ishlaydi.
+Raqamda Telegram bo'lmasa yoki Gateway sozlanmagan/xato bersa — kod yetkazilmaydi: foydalanuvchiga
+mavjud va noma'lum raqam uchun bir xil neytral javob («Kod Telegram orqali yuboriladi…»), sabab esa
+server jurnaliga (`[code-login] kod yetkazilmadi …`) yoziladi. Asosiy kirish yo'li — login va parol.
+Dev/test rejimida kod ekranda (`devCode`) ko'rinadi. Xodimga login berilganda yoki parol almashtirilganda
+parol avtomatik yuborilmaydi — kadr uni xodimga o'zi yetkazadi.
 
 ### Sozlash
 

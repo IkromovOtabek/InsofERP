@@ -4,26 +4,21 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { hashPassword, revokeSessions } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
-import { sendSms } from "@/lib/sms";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 import { hit } from "@/lib/rate-limit";
 import { staffByPhone } from "@/lib/phone-lookup";
 import { linkedChatId, sendResetCodeToBot } from "@/lib/telegram/notify";
 import { botEnabled } from "@/lib/telegram/api";
 import { gatewayEnabled, sendGatewayCode } from "@/lib/telegram/gateway";
-import { isTestMode } from "@/lib/test-mode";
-
-/** Kod ekranda ko'rsatiladimi: dev yoki test rejimi (test serveri `next start` — NODE_ENV=production). Prodda hech qachon. */
-const devCodeAllowed = () => process.env.NODE_ENV !== "production" || isTestMode();
+import { devCodeAllowed, logUndelivered } from "@/lib/telegram/otp";
 
 /**
  * Parolni xodimning o'zi tiklashi (`/login/reset`) — bir martalik kod orqali.
  *
- * Kod QAYERGA boradi: Telegram botiga (xodimning hisobi botga ulangan bo'lsa) —
- * bepul, bir zumda va operatorga bog'liq emas. SMS zaxirasi hozircha o'chiq
- * (`RESET_SMS_FALLBACK=1` bilan qaytadi): bot ulanmagan bo'lsa xodimga qanday ulash aytiladi. Botga ulash
- * uchun parol kerak emas: botda «Telefon raqamimni yuborish» tugmasi bor
- * (`lib/telegram/bot.ts`), ya'ni parolni unutgan odam ham ulay oladi.
+ * Kod FAQAT Telegram orqali boradi (SMS kanali yo'q), shu tartibda:
+ *  1) Insof ERP boti — xodimning hisobi botga ulangan bo'lsa (bepul, bir zumda). Botga ulash
+ *     uchun parol kerak emas: botda «Telefon raqamimni yuborish» tugmasi bor (`lib/telegram/bot.ts`);
+ *  2) Telegram Gateway — raqamning Telegram hisobiga to'g'ridan-to'g'ri (`TELEGRAM_GATEWAY_TOKEN`).
  *
  * Telefon `Employee` dan olinadi (`lib/phone-lookup.ts`) — `User` da telefon maydoni yo'q
  * va qo'shilsa ham ikki joyda ikki xil raqam bo'lib qolardi. Otdel kadr kartadagi raqamni
@@ -33,22 +28,20 @@ const devCodeAllowed = () => process.env.NODE_ENV !== "production" || isTestMode
  *  · kodning o'zi saqlanmaydi — faqat bcrypt xeshi;
  *  · 5 daqiqa amal qiladi, 5 marta noto'g'ri kiritilsa kuyadi;
  *  · bir raqamga soatiga 3 ta kod;
- *  · noma'lum raqam uchun ham "yuborildi" deyiladi — kimning raqami tizimda borligi oshkor bo'lmasin.
+ *  · noma'lum raqam uchun ham, kod yetkazilmagan holatda ham javob bir xil ("yuborildi") — kimning
+ *    raqami tizimda borligi (yoki Telegram ulanganligi) oshkor bo'lmasin. Yetkazilmagan sabab —
+ *    faqat server jurnalida.
  */
 
 const CODE_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_CODES_PER_HOUR = 3;
-/** SMS zaxirasi — hozircha o'chiq, kod faqat Telegram botga boradi. */
-const SMS_FALLBACK = process.env.RESET_SMS_FALLBACK === "1";
-const NOT_LINKED_ERROR =
-  "Telegram botga hali ulanmagansiz. Insof ERP botini oching → /start → «Telefon raqamimni yuborish» tugmasini bosing, so'ng shu yerda qayta «Kodni Telegramga yuborish»ni bosing.";
 
 /**
- * `via` — kod qayerga ketdi: ilova sahifada aynan shuni yozadi ("Telegram botga yuborildi").
- * `devCode` — faqat dev'da (SMS_PROVIDER ESKIZ emas): kodni ekranda ko'rsatish uchun.
+ * `via` — tashqariga har doim "telegram" (kanal aniqligi raqam borligini oshkor qilmasin).
+ * `devCode` — faqat dev/test rejimida: kodni ekranda ko'rsatish uchun.
  */
-export type ResetVia = "telegram" | "gateway" | "sms";
+export type ResetVia = "telegram";
 export type ResetRequest = { ok: true; sent: boolean; via?: ResetVia; devCode?: string } | { ok: false; error: string };
 export type ResetConfirm = { ok: true; login: string } | { ok: false; error: string };
 
@@ -57,10 +50,10 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   const phone = normalizePhone(rawPhone);
   if (!phone) return { ok: false, error: "Telefon raqami noto'g'ri. Masalan: 90 123 45 67" };
 
-  // Raqam yo'q / bir nechta kartada / bot ulanmagan — javob bir xil ("yuborildi"): aks holda begona
-  // odam istalgan raqam xodimniki ekanini (va Telegram ulanganini) sinab bilib olardi. Nima qilish
-  // kerakligi sahifada har doim yozilgan (raqamni tekshirish, botga ulanish, Otdel kadr).
-  const silent: ResetRequest = { ok: true, sent: false, via: SMS_FALLBACK ? undefined : "telegram" };
+  // Raqam yo'q / bir nechta kartada / Telegram'ga yetkazib bo'lmadi — javob bir xil ("yuborildi"):
+  // aks holda begona odam istalgan raqam xodimniki ekanini sinab bilib olardi. Nima qilish kerakligi
+  // sahifada har doim yozilgan (raqamni tekshirish, Telegram, administrator).
+  const silent: ResetRequest = { ok: true, sent: false, via: "telegram" };
   // Soatlik chek raqam tizimda bor-yo'qligidan qat'i nazar bir xil qo'llanadi — "juda ko'p urinish"
   // faqat mavjud raqamda chiqib, uni oshkor qilmasin.
   if (!hit(`reset-code:ph:${phone}`, MAX_CODES_PER_HOUR, 3600_000)) {
@@ -69,17 +62,18 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   const found = await staffByPhone(phone);
   if (found.kind === "ambiguous" || found.kind === "none") return silent;
 
-  // Kod kanallari: Telegram bot (ulangan bo'lsa) → Telegram Gateway (raqamga to'g'ridan-to'g'ri) → SMS.
-  // Bot ulanmagan va Gateway ham o'chiq, SMS ham o'chiq bo'lsagina kod yaratmaymiz (limit behuda yeyilmasin).
-  const botReady = botEnabled();
-  const gateway = gatewayEnabled();
-  if (!SMS_FALLBACK && !gateway && botReady && !(await linkedChatId(found.user.id))) return silent;
-
   const recent = await db.passwordResetCode.count({
     where: { phone, createdAt: { gt: new Date(Date.now() - 3600_000) } },
   });
-  if (recent >= MAX_CODES_PER_HOUR) {
-    return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling." };
+  // Bazadagi chek — neytral javob (xato faqat mavjud raqamda chiqmasin)
+  if (recent >= MAX_CODES_PER_HOUR) { logUndelivered("password-reset", phone, "soatlik chek (baza)"); return silent; }
+
+  // Hech bir kanal yetkaza olmaydigan holat (bot ulanmagan, Gateway o'chiq, prod) — kod yaratilmaydi
+  const botReady = botEnabled() && !!(await linkedChatId(found.user.id));
+  const gateway = gatewayEnabled();
+  if (!botReady && !gateway && !devCodeAllowed()) {
+    logUndelivered("password-reset", phone, "Telegram bot ulanmagan va TELEGRAM_GATEWAY_TOKEN sozlanmagan");
+    return silent;
   }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
@@ -93,48 +87,21 @@ export async function requestPasswordReset(rawPhone: string): Promise<ResetReque
   });
 
   // 1) Telegram bot — hisobi ulangan bo'lsa kod shu yerga boradi
-  const bot = await sendResetCodeToBot(found.user.id, code);
-  if (bot.ok) return { ok: true, sent: true, via: "telegram" };
+  if (botReady && (await sendResetCodeToBot(found.user.id, code)).ok) return { ok: true, sent: true, via: "telegram" };
 
   // 2) Telegram Gateway — raqamga to'g'ridan-to'g'ri (botga ulanish shart emas). Yoqilgan bo'lsa.
   if (gateway) {
     const gw = await sendGatewayCode(phone, code, { ttlSec: Math.round(CODE_TTL_MS / 1000), payload: `reset:${found.user.id}` });
-    if (gw.ok) return { ok: true, sent: true, via: "gateway" };
-    if (gw.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
-    // yuborilmadi — SMS zaxirasiga o'tamiz (yoqilgan bo'lsa), aks holda quyida xato/devCode
+    if (gw.ok) return { ok: true, sent: true, via: "telegram" };
+    logUndelivered("password-reset", phone, `Gateway: ${gw.reason}${gw.error ? ` (${gw.error})` : ""}`);
   }
 
-  if (!SMS_FALLBACK) {
-    // Dev: bot tokeni sozlanmagan bo'lsa oqim to'xtamasin — kod ekranda ko'rinadi. Prodda yopiq.
-    if (!botReady && devCodeAllowed()) return { ok: true, sent: true, via: "telegram", devCode: code };
-    return {
-      ok: false,
-      error: bot.reason === "NOT_LINKED" ? NOT_LINKED_ERROR
-        : bot.reason === "NO_BOT" ? "Telegram bot sozlanmagan — parolni tiklash uchun Otdel kadrga murojaat qiling."
-        : "Kod Telegramga yuborilmadi. Birozdan keyin qayta urining yoki Otdel kadrga murojaat qiling.",
-    };
-  }
+  // Dev/test: Telegram sozlanmagan — oqim to'xtamasin, kod ekranda ko'rinadi. Prodda yopiq.
+  if (devCodeAllowed()) return { ok: true, sent: true, via: "telegram", devCode: code };
 
-  // 2) Bot ulanmagan (yoki yubora olmadi) — eski yo'l: SMS (RESET_SMS_FALLBACK=1 bo'lsagina)
-  const sms = await sendSms("reset_code", phone, { code }, { userId: found.user.id, maxPerHour: MAX_CODES_PER_HOUR });
-
-  // Dev: Eskiz ulanmagan bo'lsa oqim to'xtamasin — kod ekranda va terminalda ko'rinadi.
-  // Prodda bu yo'l yopiq: SMS_PROVIDER noto'g'ri sozlansa "kod yuborildi" deb aldab qo'ymaymiz.
-  if (!sms.ok && sms.reason === "DISABLED" && devCodeAllowed()) {
-    return { ok: true, sent: true, via: "sms", devCode: code };
-  }
-
-  if (!sms.ok) {
-    // Bu yerda jim turish mumkin emas: odam kodni kutib o'tiraveradi.
-    // Botga ulash parolsiz ham mumkin, shuning uchun chiqish yo'li sifatida taklif qilinadi.
-    const useBot = " Yoki Insof ERP Telegram botini ochib, «Telefon raqamimni yuborish» tugmasini bosing — keyingi kod botga keladi.";
-    const error =
-      sms.reason === "DISABLED" ? `SMS xizmati hali yoqilmagan.${useBot}`
-      : sms.reason === "RATE_LIMIT" ? "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring."
-      : `SMS yuborilmadi. Birozdan keyin qayta urining yoki Otdel kadrga murojaat qiling.${useBot}`;
-    return { ok: false, error };
-  }
-  return { ok: true, sent: true, via: "sms" };
+  // Prodda Telegram kanallari yetkaza olmadi — neytral javob, sabab jurnalda.
+  logUndelivered("password-reset", phone, "Telegram kanallari yetkaza olmadi");
+  return silent;
 }
 
 /** 2-qadam: kod + yangi parol. */

@@ -27,7 +27,6 @@ NODE_ENV=production
 TZ=Asia/Tashkent
 INSOF_MODE=control
 INSOF_ENV=test
-SMS_PROVIDER=FAKE
 OSRM_URL=http://127.0.0.1:9
 AUTH_SECRET=$(rnd 48)
 CONTROL_SECRET=$(rnd 48)

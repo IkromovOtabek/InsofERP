@@ -20,7 +20,7 @@ export type TenantStats = {
   orders: { today: number; month: number; draft: number; blocked: number; revenueMonth: number };
   payments: { month: number };
   trips: { today: number; onRoad: number };
-  usage: { ai30d: number; sms30d: number; notifications30d: number; audit24h: number };
+  usage: { ai30d: number; notifications30d: number; audit24h: number };
   lastActivityAt: string | null;
 };
 
@@ -49,7 +49,7 @@ async function dbStats(dbName: string) {
   const [
     size, settings, usersActive, usersTotal, byRole, active24h, devices, ecoLinked, employees, customers,
     ordersToday, ordersMonth, draft, blocked, revenue, paymentsMonth, tripsToday, onRoad,
-    ai30d, sms30d, notif30d, audit24h, lastAudit,
+    ai30d, notif30d, audit24h, lastAudit,
   ] = await Promise.all([
     db.$queryRaw<{ size: bigint }[]>`SELECT pg_database_size(current_database()) AS size`,
     db.companySettings.findUnique({ where: { id: "main" }, select: { suspendedAt: true } }),
@@ -74,7 +74,6 @@ async function dbStats(dbName: string) {
     db.trip.count({ where: { createdAt: { gte: day0 } } }),
     db.trip.count({ where: { status: "ON_ROAD" } }),
     db.aiMessage.count({ where: { createdAt: { gte: d30 } } }),
-    db.smsLog.count({ where: { createdAt: { gte: d30 } } }),
     db.notification.count({ where: { createdAt: { gte: d30 } } }),
     db.auditLog.count({ where: { createdAt: { gte: h24 }, user: notIt } }),
     db.auditLog.findFirst({ where: { user: notIt }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
@@ -92,7 +91,7 @@ async function dbStats(dbName: string) {
     orders: { today: ordersToday, month: ordersMonth, draft, blocked, revenueMonth: Math.round(n(revenue[0]?.sum)) },
     payments: { month: Math.round(n(paymentsMonth._sum.amount)) },
     trips: { today: tripsToday, onRoad },
-    usage: { ai30d, sms30d, notifications30d: notif30d, audit24h },
+    usage: { ai30d, notifications30d: notif30d, audit24h },
     lastActivityAt: lastAudit?.createdAt.toISOString() ?? null,
   };
 }
@@ -105,7 +104,7 @@ const EMPTY = {
   orders: { today: 0, month: 0, draft: 0, blocked: 0, revenueMonth: 0 },
   payments: { month: 0 },
   trips: { today: 0, onRoad: 0 },
-  usage: { ai30d: 0, sms30d: 0, notifications30d: 0, audit24h: 0 },
+  usage: { ai30d: 0, notifications30d: 0, audit24h: 0 },
   lastActivityAt: null,
 };
 

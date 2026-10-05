@@ -4,7 +4,7 @@ import { ROLE_LABELS } from "@/lib/nav";
 import { LoginForm, type TestUser } from "./login-form";
 
 /**
- * Kirish sahifasi. Ikki yo'l: login+parol va telefon+kod (SMS/Telegram). Test rejimida
+ * Kirish sahifasi. Ikki yo'l: login+parol va telefon+kod (faqat Telegram: bot yoki Gateway). Test rejimida
  * qo'shimcha "Test xodimlar" bo'limi — `test.*` loginlarga bir bosishda kirish
  * (`isTestMode` orqali; production'da bu bo'lim umuman yuklanmaydi).
  */

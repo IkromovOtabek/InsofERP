@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
-import { verifyLoginCode } from "@/lib/sms-login";
+import { verifyLoginCode } from "@/lib/code-login";
 import { DUMMY_PASSWORD_HASH, parsePerms, type Perms } from "@/lib/auth";
 
 /**
@@ -71,8 +71,8 @@ export async function mobileLogin(loginName: string, password: string) {
 }
 
 /**
- * SMS/Telegram kod bilan kirish (parolsiz) — telefoni bor har qanday faol xodim uchun.
- * Kodni `lib/sms-login.ts` yaratadi/yuboradi (`/api/mobile/auth/code`), bu yerda tekshiriladi
+ * Telegram kod bilan kirish (parolsiz) — telefoni bor har qanday faol xodim uchun.
+ * Kodni `lib/code-login.ts` yaratadi/yuboradi (`/api/mobile/auth/request-code`, faqat Telegram), bu yerda tekshiriladi
  * va kuydiriladi. Token FAQAT kod to'g'ri bo'lgach beriladi. Xato xabari bir xil —
  * raqam tizimda bor-yo'qligi oshkor qilinmaydi.
  */

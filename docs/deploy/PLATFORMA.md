@@ -42,7 +42,7 @@ lekin har kirishi korxona audit jurnaliga yoziladi. Bu hisobga parol bilan kirib
 ```
 
 **Muhim:** ildizda `.env` bo'lmasin — Next.js ishchi papkadagi `.env` ni har jarayonga yuklaydi va kalitlar
-(SMS, Telegram, ECO) boshqa korxonalarga «sizadi». Kod `releases/<sha>` dan ishlagani uchun barcha yo'llar
+(Telegram, ECO, AI) boshqa korxonalarga «sizadi». Kod `releases/<sha>` dan ishlagani uchun barcha yo'llar
 (`TENANTS_DIR`, `UPLOADS_DIR`, `APK_PATH`) **mutlaq** yozilsin.
 
 ## Birinchi o'rnatish (insof) — qadam-baqadam
@@ -103,7 +103,7 @@ sudo install -m 640 -o root -g deploy docs/deploy/backup.env.example /etc/insof/
 |---|---|
 | `control.env` | `NODE_ENV=production`, `TZ`, `INSOF_MODE=control`, `AUTH_SECRET` (yangi, `openssl rand -base64 48`), `CONTROL_SECRET` (yangi, boshqa qiymat), `CONTROL_DATABASE_URL` (…/insof_control), `TENANT_DATABASE_URL` (…/{db}?connection_limit=5), `DATABASE_URL` (= control), `TENANTS_DIR=/var/www/insof-erp/tenants`, `TENANT_DATA_ROOT=/var/lib/insof`, `TENANT_BASE_DOMAIN` |
 | `build.env` | `NEXT_PUBLIC_YANDEX_MAPS_KEY` (`.env` dan ko'chiring), `DATABASE_URL` (insof_erp), `APP_URL=https://insof-erp.uz`, `NEXT_TELEMETRY_DISABLED=1` |
-| `tenants/insof.env` | `.env` ning hammasi (`DATABASE_URL`, **eski** `AUTH_SECRET` — ochiq sessiyalar saqlanadi, SMS/Telegram/ECO/AI kalitlari) **+** `PORT=3000`, `TENANT_SLUG=insof`, `UPLOADS_DIR=/var/www/insof-erp/uploads`, `APK_PATH=/var/www/insof-erp/uploads/app/insof-eco.apk`, `CONTROL_SSO_KEY` (5-qadamda). **O'chiring:** `CONTROL_SECRET`, `NEXT_PUBLIC_*` (build.env da) |
+| `tenants/insof.env` | `.env` ning hammasi (`DATABASE_URL`, **eski** `AUTH_SECRET` — ochiq sessiyalar saqlanadi, Telegram/ECO/AI kalitlari) **+** `PORT=3000`, `TENANT_SLUG=insof`, `UPLOADS_DIR=/var/www/insof-erp/uploads`, `APK_PATH=/var/www/insof-erp/uploads/app/insof-eco.apk`, `CONTROL_SSO_KEY` (5-qadamda). **O'chiring:** `CONTROL_SECRET`, `NEXT_PUBLIC_*` (build.env da) |
 | `/etc/insof/backup.env` | `APP_DIR`, `OUT_DIR`, `KEEP_DAYS`, `BACKUP_UPLOADS`, `OFFSITE` (rclone/restic/local), `RCLONE_REMOTE` yoki `RESTIC_REPOSITORY`+`RESTIC_PASSWORD_FILE` yoki `OFFSITE_DIR`, `ALERT_TG_BOT_TOKEN`, `ALERT_TG_CHAT_ID` |
 
 Tekshirish: `ls -l control.env build.env tenants/` — hammasi `-rw-------`; `grep -c '^CONTROL_SECRET' tenants/insof.env` → 0;

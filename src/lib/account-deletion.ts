@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { revokeSessions, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import type { DeletionRequestSource } from "@/generated/prisma";
 import { randomBytes } from "crypto";

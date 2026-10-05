@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** `note` — amal bajarildi, lekin yonidagi ish haqida aytadigan gap bor
- *  (masalan: parol almashdi, ammo SMS ketmadi — telefon yo'q). */
+ *  (masalan: parol almashdi — uni xodimga kadr o'zi yetkazadi). */
 export type ActionState = { error?: string; ok?: boolean; note?: string } | undefined;
 
 /** Zod'ning standart (inglizcha) xabarlari — bular uchun maydon kaliti ko'rsatiladi. */

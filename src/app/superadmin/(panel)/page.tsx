@@ -42,7 +42,7 @@ export default async function Overview() {
         <StatCard label="Aylanma (oy)" value={moneyShort(sum((s) => s.orders.revenueMonth))} hint={`to'lovlar: ${moneyShort(sum((s) => s.payments.month))}`} icon={Wallet} tone="success" />
         <StatCard label="Mobil qurilmalar" value={fmtNum(sum((s) => s.users.mobileDevices))} hint={`ECO bilan bog'langan: ${sum((s) => s.users.ecoLinked)}`} icon={Smartphone} />
         <StatCard label="AI so'rovlar (30 kun)" value={fmtNum(sum((s) => s.usage.ai30d))} icon={Bot} />
-        <StatCard label="SMS (30 kun)" value={fmtNum(sum((s) => s.usage.sms30d))} icon={MessageSquare} />
+        <StatCard label="Bildirishnomalar (30 kun)" value={fmtNum(sum((s) => s.usage.notifications30d))} icon={MessageSquare} />
         <StatCard label="Bazalar hajmi" value={`${fmtNum(sum((s) => s.db.sizeMb ?? 0))} MB`} icon={Database} />
       </div>
 

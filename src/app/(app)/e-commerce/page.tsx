@@ -3,7 +3,7 @@ import { Smartphone, ShoppingBag, Store, Inbox, ExternalLink, History, type Luci
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { dateTime, fmtNum } from "@/lib/format";
-import { formatPhone } from "@/lib/sms/phone";
+import { formatPhone } from "@/lib/phone";
 import { unitLabel } from "@/lib/unit";
 import { SHOP_SOURCE } from "@/lib/shop";
 import { Badge, Callout, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";

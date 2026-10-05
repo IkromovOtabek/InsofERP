@@ -12,7 +12,7 @@ import { linkAppAccount, searchAppCandidates } from "./app-actions";
 /**
  * Mijoz kartasidagi "Ilova hisobi" bo'limi.
  *
- * Ulangan bo'lsa — kim ro'yxatdan o'tgan (parol qo'ygan), kim faqat taklif qilingan (SMS kutilmoqda).
+ * Ulangan bo'lsa — kim ro'yxatdan o'tgan (parol qo'ygan), kim faqat taklif qilingan (ro'yxatdan o'tish kutilmoqda).
  * Ulanmagan bo'lsa — ilovada o'zi ro'yxatdan o'tgan mijozlar orasidan izlab "Ulash" tugmasi.
  * Ulangach mijoz ilovada shu kartaning zayavkalarini, reyslarini va mashina qayerda ekanini ko'radi.
  */

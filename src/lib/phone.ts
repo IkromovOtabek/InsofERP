@@ -2,8 +2,8 @@
  * O'zbekiston telefon raqamlarini bitta ko'rinishga keltirish: `+998901234567`.
  *
  * Bazada raqamlar qo'lda kiritilgan — "90 123 45 67", "+998 (90) 123-45-67",
- * "998901234567" hammasi uchraydi. Eskiz esa faqat `998XXXXXXXXX` qabul qiladi,
- * shuning uchun yuborishdan oldin har doim shu yerdan o'tkaziladi.
+ * "998901234567" hammasi uchraydi. Qidiruv, takrorlanish tekshiruvi va Telegram'ga kod
+ * yuborishdan oldin har doim shu yerdan o'tkaziladi.
  */
 
 /** Raqamlardan boshqa hamma narsa olib tashlanadi. */
@@ -11,7 +11,7 @@ const digits = (v: string) => v.replace(/\D+/g, "");
 
 /**
  * `null` — raqam yaroqsiz (bo'sh, qisqa yoki O'zbekiston raqami emas).
- * Chaqiruvchi shuni tekshirib, SMS yuborishdan voz kechadi.
+ * Chaqiruvchi shuni tekshirib, kod yuborishdan voz kechadi.
  */
 export function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -30,9 +30,6 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   if (!/^[1-9]\d{8}$/.test(local)) return null;
   return `+998${local}`;
 }
-
-/** Eskiz uchun: `998901234567` (plyussiz). */
-export const toEskiz = (phone: string) => phone.replace(/\D+/g, "");
 
 /** Ekranda/jurnalda ko'rsatish uchun: `+998 90 123 45 67`. */
 export function formatPhone(phone: string): string {

@@ -3,7 +3,7 @@ import { ResetForm } from "./reset-form";
 
 /**
  * Parolni tiklash sahifasi. Bot nomi serverda aniqlanadi: forma "kod botga keladi" deb
- * yozishi va botga havola berishi uchun (bot sozlanmagan bo'lsa — eski, SMS ko'rinishi).
+ * yozishi va botga havola berishi uchun (bot sozlanmagan bo'lsa — havolasiz, Telegram Gateway matni).
  */
 export default async function ResetPage() {
   return <ResetForm botUsername={await botUsername()} />;

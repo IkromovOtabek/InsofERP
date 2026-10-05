@@ -68,7 +68,7 @@ export default async function MaxfiylikPage() {
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <strong>Hisob ma'lumotlari:</strong> telefon raqami, ism-familiya, lavozim yoki rol, tashkilot nomi. Kirish
-                uchun telefon raqamiga bir martalik kod yuboriladi.
+                uchun bir martalik kod telefon raqamining Telegram hisobiga yuboriladi.
               </li>
               <li>
                 <strong>Joylashuv:</strong> haydovchi uchun — faqat faol reys davomida mashinaning joylashuvi, shu jumladan
@@ -114,6 +114,10 @@ export default async function MaxfiylikPage() {
               <li>
                 <strong>Google Maps (Android) va Apple Maps (iOS)</strong> — xaritani chizish uchun; xarita provayderi
                 ko'rsatilayotgan hududni oladi.
+              </li>
+              <li>
+                <strong>Telegram</strong> (Telegram Gateway va Insof ERP boti) — bir martalik kirish kodini yetkazish uchun;
+                unga faqat telefon raqami va kod beriladi.
               </li>
               <li>Marshrut hisoblash uchun o'z serverimizdagi xizmat — koordinatalar tashqi kompaniyaga yuborilmaydi.</li>
             </ul>

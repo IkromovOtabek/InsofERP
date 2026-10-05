@@ -19,7 +19,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | a | sotuv / moliya, Excel importlari, INN tekshiruvi | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, prepay-gate.mts |
 | b | sklad / ishlab chiqarish / logistika / ta'minot / kadr | b-all.sh |
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
-| c | mobil API (jti, refresh rotatsiya, rollar, pul) va integratsiyalar | c-run-all.sh |
+| c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
 | d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch | d-run-all.sh (git HEAD klonida, portlar 3214–3216) |
 

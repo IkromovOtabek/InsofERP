@@ -3,13 +3,13 @@
 import { confirmPasswordReset, requestPasswordReset, type ResetVia } from "@/lib/password-reset";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 import { passwordProblem } from "@/lib/password-policy";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 
-/** `via` — kod qayerga yuborildi (bot yoki SMS); forma shunga qarab matn yozadi. */
+/** `via` — har doim "telegram" (kod faqat Telegram orqali yuboriladi). `devCode` — faqat dev/test. */
 export type RequestState = { error?: string; sent?: boolean; via?: ResetVia; devCode?: string } | undefined;
 export type ConfirmState = { error?: string; login?: string } | undefined;
 
-/** 1-qadam: telefon → kod (Telegram bot; SMS zaxirasi RESET_SMS_FALLBACK=1 bilan). */
+/** 1-qadam: telefon → kod (faqat Telegram: bot yoki Gateway). */
 export async function requestCodeAction(_prev: RequestState, fd: FormData): Promise<RequestState> {
   const phone = String(fd.get("phone") ?? "");
   if (!phone.trim()) return { error: "Telefon raqamini kiriting" };

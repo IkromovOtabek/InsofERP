@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { login } from "@/lib/auth";
 import { looksLikePhone, loginWithAppPhone } from "@/lib/eco/app-login";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
-import { confirmLoginCode, requestLoginCode, type LoginVia } from "@/lib/sms-login";
+import { confirmLoginCode, requestLoginCode } from "@/lib/code-login";
 import { hit } from "@/lib/rate-limit";
 import { isTestMode } from "@/lib/test-mode";
 
@@ -49,11 +49,11 @@ export async function loginAction(_prev: { error?: string } | undefined, formDat
   redirect("/dashboard");
 }
 
-/* ─────────────── SMS (bir martalik kod) bilan kirish ─────────────── */
+/* ─────────────── Telegram (bir martalik kod) bilan kirish ─────────────── */
 
-export type CodeRequestState = { error?: string; sent?: boolean; via?: LoginVia; devCode?: string } | undefined;
+export type CodeRequestState = { error?: string; sent?: boolean; devCode?: string } | undefined;
 
-/** 1-qadam: telefon → kirish kodi (Telegram bot / Gateway / SMS). */
+/** 1-qadam: telefon → kirish kodi (faqat Telegram: bot yoki Gateway). */
 export async function requestLoginCodeAction(_prev: CodeRequestState, fd: FormData): Promise<CodeRequestState> {
   const phone = String(fd.get("phone") ?? "");
   if (!phone.trim()) return { error: "Telefon raqamini kiriting" };

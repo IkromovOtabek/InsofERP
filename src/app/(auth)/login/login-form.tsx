@@ -2,16 +2,17 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { KeyRound, LogIn, Send, Smartphone, Sparkles, UserPlus, UserRound } from "lucide-react";
+import { KeyRound, LogIn, Send, Sparkles, UserPlus, UserRound } from "lucide-react";
 import { confirmLoginCodeAction, loginAction, quickLoginAction, requestLoginCodeAction } from "./actions";
 import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
 import { Logo } from "@/components/logo";
 import { BrandPanel } from "../brand-panel";
 import { cn } from "@/lib/utils";
+import { CODE_DELIVERY_HINT } from "@/lib/telegram/otp-text";
 
 export type TestUser = { login: string; fullName: string; roleLabel: string };
 
-type Mode = "password" | "sms";
+type Mode = "password" | "code";
 
 export function LoginForm({ testMode, testUsers }: { testMode: boolean; testUsers: TestUser[] }) {
   const [mode, setMode] = useState<Mode>("password");
@@ -27,17 +28,17 @@ export function LoginForm({ testMode, testUsers }: { testMode: boolean; testUser
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">Tizimga kirish</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Login va parol bilan, yoki telefon raqamingizga keladigan bir martalik kod bilan kiring.
+            Login va parol bilan, yoki Telegram orqali keladigan bir martalik kod bilan kiring.
           </p>
 
-          {/* Yo'l tanlovi: parol / SMS kod */}
+          {/* Yo'l tanlovi: parol / Telegram kod */}
           <div className="mt-6 grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1" role="tablist">
             <ModeTab active={mode === "password"} onClick={() => setMode("password")} icon={KeyRound}>Parol bilan</ModeTab>
-            <ModeTab active={mode === "sms"} onClick={() => setMode("sms")} icon={Smartphone}>SMS bilan</ModeTab>
+            <ModeTab active={mode === "code"} onClick={() => setMode("code")} icon={Send}>Telegram kod</ModeTab>
           </div>
 
           <div className="mt-6">
-            {mode === "password" ? <PasswordLogin /> : <SmsLogin />}
+            {mode === "password" ? <PasswordLogin /> : <CodeLogin />}
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-1.5 border-t border-slate-200 pt-5 text-sm text-slate-500">
@@ -95,7 +96,7 @@ function PasswordLogin() {
 
 /* ─────────────── Telefon + bir martalik kod ─────────────── */
 
-function SmsLogin() {
+function CodeLogin() {
   const [phone, setPhone] = useState("");
   const [req, requestAction, requesting] = useActionState(requestLoginCodeAction, undefined);
   const [conf, confirmAction, confirming] = useActionState(confirmLoginCodeAction, undefined);
@@ -104,9 +105,12 @@ function SmsLogin() {
     return (
       <>
         <p className="mb-4 text-sm text-slate-500">
-          {/* Kanal (bot / Telegram / SMS) ataylab aytilmaydi — raqam tizimda borligi oshkor bo'lmasin */}
-          Raqam tizimda bo&apos;lsa, 6 xonali kod <b>Insof ERP botiga</b>, {phone} raqamining <b>Telegram</b> hisobiga yoki SMS orqali yuborildi.
-          {" "}Kod 5 daqiqa amal qiladi.
+          {/* Aniq kanal (bot / Gateway) ataylab aytilmaydi — raqam tizimda borligi oshkor bo'lmasin */}
+          Raqam tizimda bo&apos;lsa, 6 xonali kod <b>Telegram</b> orqali yuborildi — <b>Insof ERP botiga</b> yoki {phone} raqamining
+          Telegram hisobiga («Verification Codes» chati). Kod 5 daqiqa amal qiladi.
+        </p>
+        <p className="mb-4 text-xs text-slate-500">
+          {CODE_DELIVERY_HINT}
         </p>
         {req.devCode && (
           <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -137,7 +141,7 @@ function SmsLogin() {
     <>
       <p className="mb-4 text-sm text-slate-500">
         Xodimlar bo&apos;limidagi telefon raqamingizni kiriting — bir martalik kirish kodi
-        Telegram yoki SMS orqali keladi. Parol oldindan berilmagan bo&apos;lsa ham kira olasiz.
+        Telegram orqali keladi. Parol oldindan berilmagan bo&apos;lsa ham kira olasiz.
       </p>
       <form action={requestAction} className="space-y-4">
         <FormError error={req?.error} />

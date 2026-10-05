@@ -7,7 +7,7 @@
  * Test bo'lmagan bazada (prod): ALLOW_DEMO=yes-i-know ADMIN_LOGIN=... ADMIN_PASSWORD='kamida 10 belgi' ADMIN_NAME='...'
  *
  * HAMMASI o'chadi: mijoz, yetkazuvchi, zayavka, reys, kirim, zames, schyot,
- * to'lov, kassa, xomashyo, mahsulot, retsept, xodim, texnika, audit, SMS,
+ * to'lov, kassa, xomashyo, mahsulot, retsept, xodim, texnika, audit, eski SMS jurnali,
  * Telegram bog'lanishlari, foydalanuvchilar — barchasi.
  *
  * Qayta yaratiladigan minimum (aks holda tizimga kirib bo'lmaydi):

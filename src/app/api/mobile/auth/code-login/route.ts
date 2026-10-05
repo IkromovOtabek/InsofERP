@@ -2,7 +2,7 @@ import { z } from "zod";
 import { mobileLoginWithCode, MobileAuthError } from "@/lib/mobile/auth";
 import { handle, jsonErr, preflight } from "@/lib/mobile/http";
 import { checkLogin, failDelay, ipFromHeaders, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

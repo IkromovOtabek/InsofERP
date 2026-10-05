@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 /**
  * Bitta `KALIT=qiymat` qatorini o'qiydi. `.env` da qiymat yonida izoh turishi mumkin:
- *   SMS_PROVIDER="ESKIZ"   # FAKE | ESKIZ
+ *   TELEGRAM_GATEWAY_SENDER="insof"   # ixtiyoriy
  * Qo'shtirnoqli qiymat yopiluvchi qo'shtirnoqgacha olinadi, qolgani tashlanadi.
  * Qo'shtirnoqsiz qiymatda faqat bo'sh joydan keyingi `#` izoh deb qaraladi —
  * parol ichidagi `#` yo'qolib qolmasin.

@@ -56,7 +56,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
             <StatCard label="Aylanma / to'lov (oy)" value={moneyShort(s.orders.revenueMonth)} hint={`to'lovlar ${moneyShort(s.payments.month)}`} tone="success" />
             <StatCard label="Reyslar" value={`${s.trips.today} bugun`} hint={`yo'lda: ${s.trips.onRoad}`} />
             <StatCard label="Mobil / ECO" value={`${s.users.mobileDevices} qurilma`} hint={`ECO hisobi bog'langan: ${s.users.ecoLinked}`} />
-            <StatCard label="AI / SMS (30 kun)" value={`${fmtNum(s.usage.ai30d)} / ${fmtNum(s.usage.sms30d)}`} hint={`bildirishnoma: ${fmtNum(s.usage.notifications30d)}`} />
+            <StatCard label="AI so'rovlar (30 kun)" value={fmtNum(s.usage.ai30d)} hint={`bildirishnoma: ${fmtNum(s.usage.notifications30d)}`} />
             <StatCard label="Amallar (24 soat)" value={fmtNum(s.usage.audit24h)} hint="audit jurnalidagi yozuvlar" />
           </div>
           <Card>

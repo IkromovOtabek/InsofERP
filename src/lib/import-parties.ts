@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { audit } from "./audit";
 import { flatName, numMoney, str } from "./excel";
-import { normalizePhone } from "./sms/phone";
+import { normalizePhone } from "./phone";
 import { DEFAULT_CREDIT_LIMIT } from "./finance";
 import { INN_ERROR, parseInn } from "./inn";
 

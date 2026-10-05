@@ -3,7 +3,8 @@
 import { useActionState, useState } from "react";
 import { PASSWORD_HINT } from "@/lib/password-policy";
 import Link from "next/link";
-import { ArrowLeft, KeyRound, MessageSquare, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, KeyRound, Send, ShieldCheck } from "lucide-react";
+import { CODE_DELIVERY_HINT } from "@/lib/telegram/otp-text";
 import { confirmResetAction, requestCodeAction } from "./actions";
 import { Button, Field, FormError, Input, PasswordInput } from "@/components/ui";
 import { BrandPanel } from "../../brand-panel";
@@ -43,20 +44,16 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
           ) : step === 2 ? (
             <>
               <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-                {req?.via === "telegram" || req?.via === "gateway"
-                  ? <><Send size={22} className="text-sky-500" /> Telegram kodi</>
-                  : <><MessageSquare size={22} className="text-slate-400" /> SMS kodi</>}
+                <Send size={22} className="text-sky-500" /> Telegram kodi
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                {req?.via === "telegram"
-                  ? <>6 xonali kod <b>Insof ERP botiga</b> yuborildi — Telegramni oching. Kod 5 daqiqa amal qiladi.</>
-                  : req?.via === "gateway"
-                  ? <>6 xonali kod {phone} raqamining <b>Telegram</b> hisobiga yuborildi. Kod 5 daqiqa amal qiladi.</>
-                  : <>{phone} raqamiga 6 xonali kod yuborildi. Kod 5 daqiqa amal qiladi.</>}
+                {/* Aniq kanal (bot / Gateway) ataylab aytilmaydi — raqam tizimda borligi oshkor bo'lmasin */}
+                Raqam tizimda bo&apos;lsa, 6 xonali kod <b>Telegram</b> orqali yuborildi — <b>Insof ERP botiga</b> yoki {phone}
+                raqamining Telegram hisobiga («Verification Codes» chati). Kod 5 daqiqa amal qiladi.
               </p>
               {req?.devCode && (
                 <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Dev rejimi ({req.via === "telegram" ? "bot sozlanmagan" : "SMS ulanmagan"}) — kod: <b className="tracking-widest">{req.devCode}</b>
+                  Dev/test rejimi (Telegram sozlanmagan) — kod: <b className="tracking-widest">{req.devCode}</b>
                 </p>
               )}
               <form action={confirmAction} className="mt-8 space-y-4">
@@ -76,8 +73,8 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
                 </Button>
               </form>
               <p className="mt-4 text-xs text-slate-500">
-                Kod kelmadimi? Kiritgan raqamingiz Otdel kadrdagi raqam bilan bir xilligini tekshiring —
-                boshqa raqamga kod yuborilmaydi.
+                Kod kelmadimi? {CODE_DELIVERY_HINT} Kiritgan raqamingiz Otdel kadrdagi raqam bilan bir xilligini
+                tekshiring — boshqa raqamga kod yuborilmaydi.
                 {botUsername && (
                   <> Telegram botga hali ulanmagan bo&apos;lsangiz: <BotLink username={botUsername} /> botini oching → /start → «Telefon raqamimni yuborish», so&apos;ng qaytadan kod so&apos;rang.</>
                 )}
@@ -88,8 +85,8 @@ export function ResetForm({ botUsername }: { botUsername: string | null }) {
             <>
               <h2 className="text-2xl font-semibold tracking-tight">Parolni tiklash</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Xodimlar bo'limidagi telefon raqamingizni kiriting — tiklash kodi Insof ERP Telegram
-                botiga keladi.
+                Xodimlar bo'limidagi telefon raqamingizni kiriting — tiklash kodi Telegram orqali keladi
+                (Insof ERP botiga yoki raqamingizning Telegram hisobiga). {CODE_DELIVERY_HINT}
               </p>
               {botUsername && (
                 <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">

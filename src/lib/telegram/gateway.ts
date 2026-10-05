@@ -1,9 +1,10 @@
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 import { isTestMode, externalAllowed } from "@/lib/test-mode";
 
 /**
  * Telegram Gateway API — tasdiqlash (OTP) kodlarini foydalanuvchining Telegram'iga to'g'ridan-to'g'ri
- * yuboradi (SMS'siz, botga ulanmasdan). Reset kodi va boshqa bir martalik kodlar uchun zaxira kanal.
+ * yuboradi (botga ulanmasdan). Kirish, parol tiklash va ro'yxatdan o'tish kodlari uchun asosiy kanal
+ * (bot ulangan bo'lsa — undan keyingi). SMS kanali yo'q.
  *
  * Hujjat: https://core.telegram.org/gateway/api
  *   POST https://gatewayapi.telegram.org/sendVerificationMessage

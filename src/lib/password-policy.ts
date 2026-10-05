@@ -1,5 +1,5 @@
 /**
- * Parol qoidasi — hamma joyda bitta: Sozlamalar (direktor), Otdel kadr, SMS orqali tiklash, seed.
+ * Parol qoidasi — hamma joyda bitta: Sozlamalar (direktor), Otdel kadr, Telegram kod orqali tiklash, seed.
  *  · kamida 8 belgi;
  *  · harf ham, raqam ham bo'lsin;
  *  · keng tarqalgan/standart parollar rad etiladi (seed'dagi admin123, parol123 shular jumlasidan).

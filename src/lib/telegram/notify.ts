@@ -2,11 +2,10 @@ import { db } from "@/lib/db";
 import { botEnabled, sendMessage } from "./api";
 
 /**
- * Xodimga Telegram bot orqali xabar yuborish (SMS o'rniga).
+ * Xodimga Telegram bot orqali xabar yuborish.
  *
- * Nega bot: SMS pullik va operator ushlab qolishi mumkin, bot esa bepul va bir zumda
- * yetib boradi. Bot ulanmagan bo'lsa oqim to'xtamaydi — chaqiruvchi SMS'ga qaytadi
- * (`lib/password-reset.ts`).
+ * Nega bot: bepul va bir zumda yetib boradi. Bot ulanmagan bo'lsa oqim to'xtamaydi —
+ * chaqiruvchi Telegram Gateway'ga o'tadi (`lib/password-reset.ts`, `lib/code-login.ts`).
  *
  * Kod hech qayerda jurnalga ochiq yozilmaydi: chatning o'zida qoladi.
  */

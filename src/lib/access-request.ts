@@ -5,9 +5,9 @@ import { audit } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password-policy";
 import { POSITIONS, roleForPosition } from "@/lib/positions";
-import { sendSms } from "@/lib/sms";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 import { gatewayEnabled, sendGatewayCode } from "@/lib/telegram/gateway";
+import { CODE_DELIVERY_HINT, devCodeAllowed, logUndelivered } from "@/lib/telegram/otp";
 import { hit } from "@/lib/rate-limit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Role } from "@/generated/prisma";
@@ -30,7 +30,7 @@ const LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 /** Ariza berib bo'ladigan bo'limlar — direktor hisobi faqat direktor qo'li bilan ochiladi. */
 export const SIGNUP_POSITIONS = POSITIONS.filter((p) => p.role !== "DIRECTOR").map((p) => p.label);
 
-export type SignupVia = "gateway" | "sms";
+export type SignupVia = "gateway";
 export type SubmitResult =
   | { ok: true; requestId: string; phone: string; via?: SignupVia; devCode?: string }
   | { ok: false; error: string };
@@ -40,17 +40,23 @@ export type SignupInput = {
   password: string; password2: string; note?: string | null;
 };
 
+/**
+ * Tasdiqlash kodi FAQAT Telegram Gateway orqali (SMS kanali yo'q) — ariza beruvchi hali xodim emas,
+ * botga ulana olmaydi. Bu yerda hisob mavjudligi masalasi yo'q (yangi ariza), shuning uchun
+ * yetkazilmasa aniq tushuntirish qaytariladi; sabab server jurnaliga yoziladi.
+ */
 async function sendCode(phone: string, code: string, requestId: string): Promise<{ ok: true; via?: SignupVia; devCode?: string } | { ok: false; error: string }> {
   if (gatewayEnabled()) {
     const gw = await sendGatewayCode(phone, code, { ttlSec: CODE_TTL_MS / 1000, payload: `signup:${requestId}` });
     if (gw.ok) return { ok: true, via: "gateway" };
+    logUndelivered("signup", phone, `Gateway: ${gw.reason}${gw.error ? ` (${gw.error})` : ""}`);
+    if (gw.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
+  } else if (!devCodeAllowed()) {
+    logUndelivered("signup", phone, "TELEGRAM_GATEWAY_TOKEN sozlanmagan");
   }
-  const sms = await sendSms("signup_code", phone, { code }, { maxPerHour: 3 });
-  if (sms.ok) return { ok: true, via: "sms" };
   // Dev/test: kanal yo'q — kod ekranda ko'rinadi. Prodda yopiq.
-  if (process.env.NODE_ENV !== "production") return { ok: true, devCode: code };
-  if (sms.reason === "RATE_LIMIT") return { ok: false, error: "Juda ko'p urinish. Bir soatdan keyin qayta urinib ko'ring." };
-  return { ok: false, error: "Kod yuborilmadi. Birozdan keyin qayta urinib ko'ring yoki Otdel kadrga murojaat qiling." };
+  if (devCodeAllowed()) return { ok: true, devCode: code };
+  return { ok: false, error: `Kod yuborilmadi. ${CODE_DELIVERY_HINT}` };
 }
 
 export async function submitAccessRequest(input: SignupInput, ip: string): Promise<SubmitResult> {

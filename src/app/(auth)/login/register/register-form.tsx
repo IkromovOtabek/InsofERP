@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Clock, MessageSquare, Send, UserPlus } from "lucide-react";
+import { ArrowLeft, Clock, Send, UserPlus } from "lucide-react";
 import { PASSWORD_HINT } from "@/lib/password-policy";
 import { submitSignupAction, verifySignupAction } from "./actions";
 import { Button, Field, FormError, Input, PasswordInput, Select, Textarea } from "@/components/ui";
@@ -56,14 +56,12 @@ export function RegisterForm({ positions }: { positions: string[] }) {
           ) : step === 1 ? (
             <>
               <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-                {req?.via === "gateway"
-                  ? <><Send size={22} className="text-sky-500" /> Telegram kodi</>
-                  : <><MessageSquare size={22} className="text-slate-400" /> Tasdiqlash kodi</>}
+                <Send size={22} className="text-sky-500" /> Telegram kodi
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                {req?.via === "gateway"
-                  ? <>6 xonali kod {v.phone} raqamining <b>Telegram</b> hisobiga yuborildi.</>
-                  : <>{v.phone} raqamiga 6 xonali kod yuborildi.</>}
+                {req?.devCode
+                  ? <>Dev/test rejimi: Telegram sozlanmagan, kod quyida.</>
+                  : <>6 xonali kod {v.phone} raqamining <b>Telegram</b> hisobiga yuborildi («Verification Codes» chati).</>}
                 {" "}Kod 5 daqiqa amal qiladi.
               </p>
               {req?.devCode && (
@@ -93,7 +91,7 @@ export function RegisterForm({ positions }: { positions: string[] }) {
                 <Field label="F.I.O.">
                   <Input name="fullName" autoComplete="name" autoFocus placeholder="Karimov Akmal Ravshanovich" value={v.fullName} onChange={set("fullName")} />
                 </Field>
-                <Field label="Telefon raqami" hint="Shu raqamga tasdiqlash kodi keladi">
+                <Field label="Telefon raqami" hint="Shu raqamning Telegram hisobiga tasdiqlash kodi keladi">
                   <Input name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="90 123 45 67" value={v.phone} onChange={set("phone")} />
                 </Field>
                 <Field label="Bo'lim">

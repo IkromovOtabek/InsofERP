@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { normalizePhone } from "@/lib/sms/phone";
+import { normalizePhone } from "@/lib/phone";
 
 /**
  * Xodim kartasidagi telefon va PINFL qoidasi — Xodimlar (tezkor forma, karta tahriri) va
@@ -24,7 +24,7 @@ export const zPinfl = z.string().trim().optional().transform((v, ctx) => {
 });
 
 /**
- * Telefon va PINFL takrorlanmasin: telefon — SMS va haydovchi ilovasi (ECO) uchun yagona kalit,
+ * Telefon va PINFL takrorlanmasin: telefon — Telegram kod bilan kirish va haydovchi ilovasi (ECO) uchun yagona kalit,
  * PINFL — bitta odam. Boshqa (telefon uchun — faol) xodimda shu qiymat bo'lsa — rad, kimdaligi aytiladi.
  * `selfId` — tahrirlanayotgan xodim (o'zi bilan solishtirilmaydi).
  */

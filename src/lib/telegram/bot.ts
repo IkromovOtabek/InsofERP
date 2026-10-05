@@ -23,7 +23,7 @@ const HELP = [
   "• «Qaysi xomashyo tugayapti?»",
   "• «Reja necha foiz bajarildi?»",
   "",
-  "Parolni unutsangiz — ERP «Parolni tiklash» bo'limidan kod so'rang, kod SMS o'rniga shu yerga keladi.",
+  "Parolni unutsangiz — ERP «Parolni tiklash» bo'limidan kod so'rang — kod shu yerga keladi.",
   "",
   "Buyruqlar: /savollar — tayyor savollar, /uzish — hisobni uzish, /yordam — shu matn.",
 ].join("\n");
@@ -260,7 +260,7 @@ function startText() {
   return [
     "*Insof ERP boti*",
     "",
-    "Hisobingizni ulang — shundan keyin parolni tiklash kodi SMS o'rniga shu yerga keladi.",
+    "Hisobingizni ulang — shundan keyin kirish va parolni tiklash kodlari shu yerga keladi.",
     "",
     "*Eng osoni:* pastdagi «Telefon raqamimni yuborish» tugmasini bosing. Raqam Otdel kadrdagi kartangizdagi raqam bilan bir xil bo'lsa, hisob darhol ulanadi.",
     "",
@@ -270,7 +270,7 @@ function startText() {
 
 /**
  * Raqam bo'yicha ulash. Telegram kontaktni o'zi tasdiqlaydi (raqam shu hisobniki),
- * shuning uchun bu SMS kodidan kam emas — lekin faqat FOYDALANUVCHINING O'Z raqami
+ * shuning uchun bu bir martalik koddan kam emas — lekin faqat FOYDALANUVCHINING O'Z raqami
  * qabul qilinadi: begona kontaktni uzatib yuborish mumkin, uni olsak boshqa odamning
  * hisobiga kod yuboradigan chat ochilib qolardi.
  */
