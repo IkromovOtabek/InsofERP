@@ -12,7 +12,7 @@ export function PayReceiptForm({ receiptId, left, accounts }: { receiptId: strin
   return (
     <form action={action} className="flex flex-col items-end gap-1">
       <div className="flex items-center justify-end gap-2">
-        <select name="cashAccountId" required defaultValue="" className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+        <select name="cashAccountId" aria-label="Kassa / hisob" required defaultValue="" className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-sm">
           <option value="" disabled>Hisob…</option>
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.type === "CASH" ? "naqd" : "bank"})</option>)}
         </select>

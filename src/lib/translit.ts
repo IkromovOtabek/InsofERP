@@ -34,17 +34,41 @@ const EXCEPTIONS: Record<string, string> = {
   kalkulyator: "калькулятор", fakultet: "факультет",
 };
 
+/**
+ * O'zak (so'z boshi) → kirill, qo'shimchalar odatdagidek o'giriladi.
+ * Uchinchi qiymat — ruxsat etilgan qo'shimchalar (qisqa o'zak boshqa so'zga tegmasligi uchun).
+ */
+const STEMS: [string, string, RegExp?][] = [
+  ["sement", "цемент"], ["retsept", "рецепт"], ["litsenz", "лиценз"], ["sentr", "центр"],
+  ["sex", "цех", /^(lar|i|da|ga|dan|ni|ning|dagi|imiz|ingiz)*['ʻ‘’`ʼ]*$/],
+];
+
 /** Aralash registrli tashkiliy-huquqiy shakllar (camelCase qoidasidan oldin) */
 const ABBR: Record<string, string> = { MChJ: "МЧЖ", YaTT: "ЯТТ", XK: "ХК", AJ: "АЖ", QK: "ҚК", OAJ: "ОАЖ", DUK: "ДУК" };
 const ABBR_RE = /^([^A-Za-z]*)(MChJ|YaTT|XK|AJ|QK|OAJ|DUK)([^A-Za-z]*)$/;
 
-/** Lotinda qoladigan texnik so'zlar va qisqartmalar */
+/**
+ * Lotinda qoladigan qisqartmalar — faqat BUTUNLAY KATTA harf bilan yozilganda.
+ * Kichik harfli "it" (ит), "ip" (ип), "ok" o'zbekcha so'z bo'lishi mumkin — ular o'giriladi.
+ * Rol kodlari (DIRECTOR, SALES ...) — ruxsatlar jadvalida ko'rinadigan texnik nomlar.
+ */
 const KEEP = new Set([
-  "QR", "PDF", "SMS", "ERP", "API", "GPS", "URL", "ID", "AI", "OK", "PIN", "CRM", "BI", "KPI", "IT",
+  "QR", "PDF", "SMS", "ERP", "API", "GPS", "URL", "ID", "AI", "ML", "OK", "PIN", "CRM", "BI", "KPI", "IT",
   "JSON", "CSV", "XLSX", "XLS", "HTML", "CSS", "USB", "IP", "OTP", "APK", "UZS", "USD", "EUR", "RUB",
-  "IOS", "ANDROID", "IPHONE", "EXCEL", "WORD", "GOOGLE", "YANDEX", "PAYME", "CLICK", "WI-FI", "WIFI",
-  "PWA", "SSO", "WEB", "PUSH", "OSRM",
+  "PWA", "SSO", "OSRM", "PNG", "JPG", "JPEG", "SVG", "ZIP", "XML", "HTTP", "HTTPS", "VPN", "SSL", "VIN",
+  "IBAN", "SWIFT", "GLONASS", "OSM", "ECO", "ROAS", "ROI", "CTR", "CPC", "CPA", "CPM", "CPL", "LTV", "CAC",
+  "RFM", "ABC", "XYZ", "SEO", "SMM", "VIP",
+  "DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT",
+  "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DRIVER", "BRIGADIER", "SUPERADMIN",
 ]);
+/** Brend va xorijiy nomlar — registrdan qat'i nazar lotinda qoladi (Excel, Google, E-commerce) */
+const BRANDS = new Set([
+  "IOS", "ANDROID", "IPHONE", "EXCEL", "WORD", "GOOGLE", "YANDEX", "PAYME", "CLICK", "WI-FI", "WIFI",
+  "WEB", "PUSH", "E-COMMERCE", "FINANCE", "WHATSAPP", "TESTFLIGHT", "EXPO", "UZCARD", "HUMO", "VISA",
+  "MASTERCARD", "CHURN", "ADS", "LEAFLET", "OPENSTREETMAP", "INSTAGRAM", "FACEBOOK", "YOUTUBE",
+]);
+/** So'z (yoki chiziqchali bo'lak) lotinda qoladimi */
+const keepWord = (w: string) => (w === w.toUpperCase() && KEEP.has(w)) || BRANDS.has(w.toUpperCase());
 
 const isLatin = (ch: string | undefined) => !!ch && ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z"));
 const isUpper = (ch: string) => ch !== ch.toLowerCase();
@@ -53,8 +77,8 @@ const up = (s: string, upper: boolean) => (upper ? s.toUpperCase() : s);
 /** Bitta so'z (faqat lotin harflari va apostroflar) */
 function convertWord(w: string): string {
   const core = w.replace(/['ʻ‘’`ʼ]+$/, "");
-  // Chiziqcha bilan qo'shilgan qisqartma: "QR-nakladnoy" → "QR-накладной"
-  if (core === core.toUpperCase() && KEEP.has(core)) return w;
+  // Chiziqcha bilan qo'shilgan qisqartma/brend: "QR-nakladnoy" → "QR-накладной", "Excel-fayl" → "Excel-файл"
+  if (keepWord(core)) return w;
   const exc = EXCEPTIONS[core.toLowerCase()];
   if (exc) {
     const tail = w.slice(core.length);
@@ -64,8 +88,17 @@ function convertWord(w: string): string {
   }
 
   let out = "";
+  let i0 = 0;
+  // Lotinda "s"/"ts" bilan yozilib, kirillda "ц" bilan yoziladigan o'zak: Sement → Цемент, 3-sexda → 3-цехда
+  const lw = w.toLowerCase();
+  const stem = STEMS.find(([k, , sfx]) => lw.startsWith(k) && (!sfx || sfx.test(lw.slice(k.length))));
+  if (stem) {
+    const allUp = w.length > 1 && w === w.toUpperCase();
+    out = allUp ? stem[1].toUpperCase() : isUpper(w[0]) ? stem[1][0].toUpperCase() + stem[1].slice(1) : stem[1];
+    i0 = stem[0].length;
+  }
   const n = w.length;
-  for (let i = 0; i < n; i++) {
+  for (let i = i0; i < n; i++) {
     const c = w[i];
     const lc = c.toLowerCase();
     const nx = w[i + 1];
@@ -82,6 +115,8 @@ function convertWord(w: string): string {
     if (lc === "s" && nx && APOS.has(nx) && w[i + 2]?.toLowerCase() === "h") {
       out += up("с", U) + up("ҳ", isUpper(w[i + 2])); i += 2; continue;
     }
+    // -ksiya → -кция: aksiya → акция, produksiya → продукция
+    if (lc === "s" && w[i - 1]?.toLowerCase() === "k" && w.slice(i + 1, i + 4).toLowerCase() === "iya") { out += up("ц", U); continue; }
     if (lc === "s" && nl === "h") { out += up("ш", U); i++; continue; }
     if (lc === "c" && nl === "h") { out += up("ч", U); i++; continue; }
     if (lc === "t" && nl === "s" && w.slice(i + 2, i + 5).toLowerCase() === "iya") { out += up("ц", U); i++; continue; }
@@ -111,19 +146,20 @@ function convertWord(w: string): string {
 }
 
 const WORD_RE = /[A-Za-z][A-Za-z'ʻ‘’`ʼ]*/g;
-const ORDINAL_RE = /^[^A-Za-z\d]*\d+-[a-z'ʻ‘’`ʼ]+[^A-Za-z\d]*$/; // 2026-yil, 3-sex
+// Raqam + o'zbekcha qo'shimcha: 2026-yil, 3-sex, 80%ini, 5ta, 10%dan — o'giriladi
+const ORDINAL_RE = /^[^A-Za-z\d]*\d[\d.,]*(?:-|%-?|\/)?[a-z'ʻ‘’`ʼ]+[^A-Za-z\d]*$/;
 const PLATE_PART = /^[A-Z]{1,3}$/;
 const PLATE_NUM = /^\d{2,3}$/;
 
 /** Bo'shliq bilan ajratilgan bo'lak lotinda qolishi kerakmi */
 function keepToken(t: string): boolean {
   if (/@|:\/\/|^www\./i.test(t)) return true; // email, URL
-  if (/[A-Za-z]\.[A-Za-z]/.test(t)) return true; // login, domen
+  // login, domen (test.direktor, insof.uz); bosh harflar (F.I.O., A.Karimov, h.k.) esa o'giriladi
+  if (/[A-Za-z]{2,}\.[A-Za-z]{2,}/.test(t)) return true;
   if (t.includes("_")) return true; // identifikator
   if (/[a-z][A-Z]/.test(t)) return true; // camelCase, iPhone
   if (/\d/.test(t) && !ORDINAL_RE.test(t)) return true; // hujjat raqami, marka, avto raqam
-  const bare = t.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, "").toUpperCase();
-  return KEEP.has(bare);
+  return keepWord(t.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ""));
 }
 
 const cache = new Map<string, string>();

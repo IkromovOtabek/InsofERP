@@ -33,7 +33,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
 
   return (
     <div>
-      <PageHeader back={{ href: "/customers", label: "Mijozlar" }} title={<>{c.name}{blacklisted && <BlacklistMark className="text-xs" />}{contracted.has(id) && <ContractMark className="text-xs" />}</>} subtitle={[c.inn && `INN ${c.inn}`, c.phone].filter(Boolean).join(" · ") || undefined}
+      <PageHeader back={{ href: "/customers", label: "Mijozlar" }} title={<><span data-no-translit>{c.name}</span>{blacklisted && <BlacklistMark className="text-xs" />}{contracted.has(id) && <ContractMark className="text-xs" />}</>} subtitle={[c.inn && `INN ${c.inn}`, c.phone].filter(Boolean).join(" · ") || undefined}
         action={<>
           <LinkButton href={`/customers/${id}/akt`} variant="secondary"><Scale size={16} /> Akt sverki</LinkButton>
           {canOrder && <LinkButton href={`/orders/new?customer=${id}`}><Plus size={16} /> Zayavka</LinkButton>}

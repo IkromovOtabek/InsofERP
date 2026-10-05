@@ -52,7 +52,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <form method="get" action="/bi-tahlil/marketing/malumotlar" className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
             <Select name="year" defaultValue={sp.year ?? String(now.getFullYear())} className="h-8 w-32"><option value="">Barcha yillar</option>{[...new Set([now.getFullYear(), ...d.years])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}</Select>
             <Select name="month" defaultValue={sp.month ?? ""} className="h-8 w-36"><option value="">Barcha oylar</option>{MONTHS_UZ.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</Select>
-            <Select name="channel" defaultValue={sp.channel ?? ""} className="h-8 w-40"><option value="">Barcha kanallar</option>{CHANNELS.map((c) => <option key={c}>{c}</option>)}</Select>
+            <Select name="channel" defaultValue={sp.channel ?? ""} className="h-8 w-40"><option value="">Barcha kanallar</option>{CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}</Select>
             <Select name="kind" defaultValue={sp.kind ?? ""} className="h-8 w-44"><option value="">Reja va fakt</option>{Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>
             <button className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white">Qo'llash</button>
             {(sp.month || sp.channel || sp.kind || sp.year === "") && <Link href="/bi-tahlil/marketing/malumotlar" className="text-xs text-slate-500 hover:underline">Tozalash</Link>}

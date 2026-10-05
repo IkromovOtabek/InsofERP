@@ -37,12 +37,77 @@ function attrsAllowed(el: Element): boolean {
   return !hardSkip(el) && !el.parentElement?.closest(SKIP_SEL);
 }
 
-function convertText(t: Text) {
+/* ─────────────── Gidratsiya bilan to'qnashmaslik ───────────────
+ * Ildiz gidratsiyasidan keyin ham Suspense bo'laklari (stream qilingan sahifa qismlari) kechroq
+ * gidratsiya qilinadi. Ularning SSR matnini React tekshirishidan oldin o'zgartirsak — React #418
+ * (Hydration failed) xatosi va bo'lak qaytadan chiziladi. Shuning uchun matn tuguni React
+ * tomonidan "tanib olingan"ini (fiber kaliti) kutamiz; kutilganlari qisqa oraliq bilan qayta
+ * tekshiriladi. React'ga tegishli bo'lmagan tugunlar (xarita kutubxonasi va h.k.) — sahifa
+ * yuklanib bo'lgach yoki HYDRATE_WAIT dan keyin baribir o'giriladi.
+ */
+const HYDRATE_WAIT = 2000;
+let fiberKey: string | null | undefined;
+let propsKey: string | undefined;
+const pending = new Map<Text, number>(); // tugun → birinchi kutish vaqti
+let retryTimer = 0;
+
+function reactKeys() {
+  if (fiberKey !== undefined) return;
+  const keys = Object.keys(document.body);
+  fiberKey = keys.find((k) => k.startsWith("__reactFiber$")) ?? null;
+  propsKey = keys.find((k) => k.startsWith("__reactProps$"));
+}
+
+/** Sahifa to'liq yuklanib, gidratsiya allaqachon tugagan bo'lishi kerak */
+function settled(): boolean {
+  const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+  return !!nav && nav.loadEventEnd > 0 && performance.now() - nav.loadEventEnd > 1500;
+}
+
+/** Matn tuguni React gidratsiyasidan o'tganmi (yoki React'ga tegishli emasmi) */
+function hydrated(t: Text): boolean {
+  reactKeys();
+  if (!fiberKey || fiberKey in t) return true;
+  const p = t.parentElement;
+  if (p && fiberKey in p) {
+    // Yagona matnli bola (children: "..."/123) React'da alohida fiber olmaydi — ota bilan tekshiriladi
+    const props = propsKey ? (p as unknown as Record<string, { children?: unknown; dangerouslySetInnerHTML?: unknown } | undefined>)[propsKey] : undefined;
+    const ch = props?.children;
+    if (typeof ch === "string" || typeof ch === "number" || props?.dangerouslySetInnerHTML) return true;
+  }
+  return settled();
+}
+
+function scheduleRetry() {
+  if (retryTimer) return;
+  retryTimer = window.setTimeout(() => {
+    retryTimer = 0;
+    if (!active) return;
+    const now = performance.now();
+    for (const [t, at] of pending) {
+      if (!t.isConnected) { pending.delete(t); continue; }
+      if (now - at > HYDRATE_WAIT || hydrated(t)) { pending.delete(t); convertText(t, true); }
+    }
+    observer?.takeRecords();
+    if (pending.size) scheduleRetry();
+  }, 100);
+}
+
+function convertText(t: Text, force = false) {
+  if (!force && !hydrated(t)) {
+    if (!pending.has(t)) pending.set(t, performance.now());
+    scheduleRetry();
+    return;
+  }
   const cur = t.data;
   const r = textMap.get(t);
   if (r && r.out === cur) return; // allaqachon o'girilgan (o'zimizning yozuvimiz)
   const out = toCyrillic(cur);
   if (out === cur) { if (r) textMap.delete(t); return; }
+  // value atributisiz <option> qiymati — uning matni: o'girsak forma kirillcha qiymat yuboradi
+  // ("Kritik" o'rniga "Критик"). Asl lotin qiymatni atributga mahkamlab qo'yamiz.
+  const p = t.parentElement;
+  if (p instanceof HTMLOptionElement && !p.hasAttribute("value")) p.setAttribute("value", p.value);
   textMap.set(t, { orig: cur, out });
   t.data = out;
 }
@@ -169,6 +234,8 @@ function disable() {
   queue.length = 0;
   attrQueue.clear();
   walker = null;
+  pending.clear();
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = 0; }
   if (rafId > 0) cancelAnimationFrame(rafId);
   else if (rafId < 0) clearTimeout(-rafId);
   rafId = 0;

@@ -69,7 +69,7 @@ export function DefectForm({ products, brigades, reasons }: { products: Product[
         <Input name="qty" type="number" step="any" min="0" required />
       </Field>
       <Field label="Sabab">
-        <Select name="reason" defaultValue={reasons[0]}>{reasons.map((r) => <option key={r}>{r}</option>)}</Select>
+        <Select name="reason" defaultValue={reasons[0]}>{reasons.map((r) => <option key={r} value={r}>{r}</option>)}</Select>
       </Field>
       <Field label="Brigada">
         <Select name="brigadeId" defaultValue=""><option value="">— ko&apos;rsatilmagan —</option>{brigades.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>

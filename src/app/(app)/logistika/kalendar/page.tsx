@@ -89,9 +89,9 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
       <PageHeader title="Dispetcher kalendari" subtitle="30 daqiqalik oraliqlar: qaysi vaqtga nechta mixer kerak, nechtasi bo'sh; transport bandligi"
         action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
       <div className="mb-4 flex items-center gap-1 text-sm">
-        <Link href={`/logistika/kalendar?date=${isoDate(prev)}`} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={16} /></Link>
+        <Link href={`/logistika/kalendar?date=${isoDate(prev)}`} aria-label="Oldingi kun" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={16} /></Link>
         <span className="font-medium tabular">{date(from)}</span>
-        <Link href={`/logistika/kalendar?date=${isoDate(next)}`} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronRight size={16} /></Link>
+        <Link href={`/logistika/kalendar?date=${isoDate(next)}`} aria-label="Keyingi kun" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"><ChevronRight size={16} /></Link>
         <Link href="/logistika/kalendar" className="ml-2 text-xs text-blue-700 hover:underline">Bugun</Link>
       </div>
 

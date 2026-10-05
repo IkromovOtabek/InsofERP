@@ -76,7 +76,7 @@ export default async function AppUsersPage({ searchParams }: { searchParams: Pro
           <form className="relative mb-4 max-w-md">
             {tab !== "all" && <input type="hidden" name="tab" value={tab} />}
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input name="q" placeholder="Qidirish: ism, telefon, tashkilot" defaultValue={q} className="pl-9" />
+            <Input name="q" aria-label="Qidirish" placeholder="Qidirish: ism, telefon, tashkilot" defaultValue={q} className="pl-9" />
           </form>
 
           <Tabs current={tab} items={[

@@ -37,7 +37,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Nakladnoylar" subtitle={`${r.label}: ${trips.length} ta · har biri QR bilan tekshiriladi (mijoz telefonidan ham)`} />
       <PeriodTabs base="/logistika/nakladnoylar" current={r.period} />
       <RangeForm base="/logistika/nakladnoylar" from={r.from} to={r.to} />
-      <form className="mb-3"><input type="hidden" name="period" value={r.period} /><input name="q" defaultValue={sp.q} placeholder="Nakladnoy, mijoz yoki davlat raqami…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
+      <form className="mb-3"><input type="hidden" name="period" value={r.period} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Nakladnoy, mijoz yoki davlat raqami…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Card padded={false}>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Mijoz / obyekt</Th><Th>Transport / haydovchi</Th><Th>Marka</Th><Th right>Miqdor</Th><Th>Yuklandi</Th><Th>Jo'nadi</Th><Th>Yetib keldi</Th><Th>Qabul qiluvchi</Th><Th>Tasdiq</Th><Th /></tr></thead>

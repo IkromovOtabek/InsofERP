@@ -119,8 +119,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <Panel title="Mijozlar ro'yxati" info="Kutilayotgan yo'qotish bo'yicha saralangan. Qatorni bosing — mijoz kartasi." padded={false} action={<span>{list.length} mijoz</span>}>
           <form method="get" action="/bi-tahlil/ml/churn" className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
             {sp.zone && <input type="hidden" name="zone" value={sp.zone} />}{sp.abc && <input type="hidden" name="abc" value={sp.abc} />}{sp.debt && <input type="hidden" name="debt" value={sp.debt} />}
-            <Select name="segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{SEGMENT_ORDER.filter((s) => s !== "Yangi (xaridsiz)").map((s) => <option key={s}>{s}</option>)}</Select>
-            <Input name="q" defaultValue={sp.q ?? ""} placeholder="Mijoz qidirish" className="h-8 w-44" />
+            <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{SEGMENT_ORDER.filter((s) => s !== "Yangi (xaridsiz)").map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+            <Input name="q" aria-label="Qidirish" defaultValue={sp.q ?? ""} placeholder="Mijoz qidirish" className="h-8 w-44" />
             <button className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white">Qo'llash</button>
           </form>
           <Table className="rounded-none border-0 shadow-none">

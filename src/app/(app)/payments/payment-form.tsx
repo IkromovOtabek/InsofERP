@@ -41,7 +41,7 @@ export function PaymentForm({ customers, invoices, orders, accounts }: { custome
   return (
     <form action={action} className="space-y-4">
       <FormError error={state?.error} />
-      {state?.ok && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">To&apos;lov qayd etildi</div>}
+      {state?.ok && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">To&apos;lov qayd etildi</div>}
       <div key={formKey} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Mijoz *">
           <Select name="customerId" value={customerId} onChange={(e) => { setCustomerId(e.target.value); setInvoiceId(""); setOrderId(""); }} required>

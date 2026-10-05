@@ -36,14 +36,14 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         { key: "contract", label: "Shartnomali", href: "/customers?tab=contract", count: withContract.length, icon: FileSignature },
         { key: "inactive", label: "Nofaol", href: "/customers?tab=inactive" },
       ]} />
-      <form className="relative mb-4 max-w-md"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input name="q" placeholder="Qidirish: nomi, INN, telefon" defaultValue={q} className="pl-9" /></form>
+      <form className="relative mb-4 max-w-md"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input name="q" aria-label="Qidirish" placeholder="Qidirish: nomi, INN, telefon" defaultValue={q} className="pl-9" /></form>
       <Table>
         <thead><tr><Th>Nomi</Th><Th>INN</Th><Th>Telefon</Th><Th right>Limit</Th><Th right>Ishlatilgan</Th><Th right>Bo'sh limit</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {shown.length === 0 && <Empty text={tab === "black" ? "Qora ro'yxat bo'sh" : tab === "contract" ? "Shartnomali mijoz yo'q" : "Mijozlar yo'q"} />}
           {shown.map(({ c, cr, contract }) => (
             <Tr key={c.id}>
-              <Td><span className="inline-flex items-center gap-1.5"><Link href={`/customers/${c.id}`} className="font-medium hover:underline">{c.name}</Link>{contract && <ContractMark />}</span></Td>
+              <Td><span className="inline-flex items-center gap-1.5"><Link href={`/customers/${c.id}`} data-no-translit className="font-medium hover:underline">{c.name}</Link>{contract && <ContractMark />}</span></Td>
               <Td>{c.inn ?? "—"}</Td>
               <Td>{c.phone ?? "—"}</Td>
               <Td right>{money(cr.limit)}</Td>

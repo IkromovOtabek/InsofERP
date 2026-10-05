@@ -60,7 +60,7 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
     <div>
       <PageHeader title="Buyurtmalar" subtitle="Dastavkali zayavkalar: yetkazish holati, biriktirilgan va yetkazilgan hajm"
         action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
-      <form className="mb-3"><input type="hidden" name="filter" value={filter} /><input name="q" defaultValue={sp.q} placeholder="Zayavka, mijoz yoki manzil…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
+      <form className="mb-3"><input type="hidden" name="filter" value={filter} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Zayavka, mijoz yoki manzil…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Tabs current={filter} items={[tab("open", "Ochiq"), tab("waiting", "Transport kutmoqda"), tab("onroad", "Yo'lda"), tab("late", "Kechikmoqda"), tab("problem", "Muammo"), tab("done", "Yetkazilgan"), tab("all", "Hammasi")]} />
       <Card padded={false}>
         <Table>

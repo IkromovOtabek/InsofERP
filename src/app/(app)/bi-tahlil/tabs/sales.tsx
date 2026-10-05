@@ -128,9 +128,9 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
       <Panel title="Batafsil tranzaksiyalar" info="Zayavka pozitsiyalari — davr bo'yicha. Filtrlash va eksport." padded={false} action={<ExportLink type="sales" range={range} />}>
         <form method="get" action={ROUTES.sales} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           {range.period === "custom" ? <><input type="hidden" name="from" value={range.from.toISOString().slice(0, 10)} /><input type="hidden" name="to" value={new Date(range.to.getTime() - 1).toISOString().slice(0, 10)} /></> : <input type="hidden" name="period" value={range.period} />}{sp.gran && <input type="hidden" name="gran" value={sp.gran} />}
-          <Select name="customer" defaultValue={sp.customer ?? ""} className="h-8 w-56"><option value="">Barcha mijozlar</option>{d.customerOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
-          <Select name="product" defaultValue={sp.product ?? ""} className="h-8 w-40"><option value="">Barcha markalar</option>{d.productOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
-          <Select name="size" defaultValue={String(size)} className="h-8 w-20"><option value="25">25</option><option value="50">50</option><option value="100">100</option></Select>
+          <Select name="customer" aria-label="Mijoz" defaultValue={sp.customer ?? ""} className="h-8 w-56"><option value="">Barcha mijozlar</option>{d.customerOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
+          <Select name="product" aria-label="Marka" defaultValue={sp.product ?? ""} className="h-8 w-40"><option value="">Barcha markalar</option>{d.productOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+          <Select name="size" aria-label="Sahifadagi qatorlar" defaultValue={String(size)} className="h-8 w-20"><option value="25">25</option><option value="50">50</option><option value="100">100</option></Select>
           <button className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white">Qo'llash</button>
           {(sp.customer || sp.product) && <Link href={tabHref(range, "sales")} className="text-xs text-slate-500 hover:underline">Tozalash</Link>}
         </form>

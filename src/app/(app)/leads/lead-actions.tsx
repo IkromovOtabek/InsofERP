@@ -56,7 +56,7 @@ export function LeadNote({ leadId, note }: { leadId: string; note: string | null
   const [state, action, pending] = useActionState(saveLeadNote.bind(null, leadId), undefined);
   return (
     <form action={action} className="space-y-2">
-      <Textarea name="note" defaultValue={note ?? ""} rows={2} placeholder="Ichki izoh: nima kelishildi, qachon qayta qo'ng'iroq qilish kerak" className="text-sm" />
+      <Textarea name="note" aria-label="Ichki izoh" defaultValue={note ?? ""} rows={2} placeholder="Ichki izoh: nima kelishildi, qachon qayta qo'ng'iroq qilish kerak" className="text-sm" />
       <div className="flex items-center gap-2">
         <Button variant="secondary" size="sm" disabled={pending}><Check size={14} /> Izohni saqlash</Button>
         {state?.ok && <span className="text-xs text-emerald-700">Saqlandi</span>}

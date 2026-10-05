@@ -197,7 +197,7 @@ export function AiPanel({ period }: { period?: string }) {
           {msgs.length > 0 && (
             <button type="button" onClick={() => setShowQuick((v) => !v)} title="Tez savollar" className={cn("flex h-9.5 w-9.5 shrink-0 items-center justify-center rounded-lg border bg-slate-50 transition", showQuick ? "border-brand-500 text-brand-600" : "border-slate-200 text-slate-500 hover:border-brand-500 hover:text-brand-600")}><Zap size={16} /></button>
           )}
-          <textarea ref={inputRef} rows={1} value={input} onChange={(e) => setInput(e.target.value)}
+          <textarea ref={inputRef} rows={1} aria-label="AI savoli" value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             placeholder={llm ? "Savolingizni yozing… masalan: Nega sotuv kamaydi?" : "Savol yozing yoki tayyor savolni tanlang…"}
             className="max-h-30 min-h-9.5 flex-1 resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13.5px] text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-3 focus:ring-brand-500/15" />
