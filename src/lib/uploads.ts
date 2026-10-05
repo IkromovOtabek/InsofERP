@@ -79,7 +79,10 @@ export async function removeContractFile(stored: string | null | undefined) {
 
 const EMPLOYEE_TYPES: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic" };
 export const EMPLOYEE_ACCEPT = Object.keys(EMPLOYEE_TYPES).join(",");
-export const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,image/heic";
+// Profil surati HEIC bo'lmaydi: yuz tekshiruvi (sharp 0.33, HEIF o'chiq) uni o'qiy olmaydi. `accept` da HEIC yo'qligi
+// iPhone Safari'ni rasmni o'zi JPEG ga o'girib yuborishga majbur qiladi
+export const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp";
+export const HEIC_PHOTO_ERROR = "HEIC (iPhone) surat qabul qilinmaydi — yuz tekshiruvi uni o'qiy olmaydi. Suratni JPG yoki PNG qilib yuklang (iPhone: Sozlamalar → Kamera → Formatlar → «Eng mos»)";
 export const EMPLOYEE_MAX_MB = 10;
 
 /**
@@ -89,8 +92,11 @@ export const EMPLOYEE_MAX_MB = 10;
 export async function saveEmployeeFile(employeeId: string, file: FormDataEntryValue | null, opts?: { imageOnly?: boolean }): Promise<SavedFile | null | { error: string }> {
   if (!(file instanceof File) || file.size === 0) return null;
   if (file.size > EMPLOYEE_MAX_MB * 1024 * 1024) return { error: `"${file.name}" — ${EMPLOYEE_MAX_MB} MB dan katta` };
-  const f = await readUpload(file, opts?.imageOnly ? ["jpg", "png", "webp", "heic"] : ["pdf", "jpg", "png", "webp", "heic"]);
+  // Surat (profil, yuz kadri) — HEIC'siz: aks holda saqlanadi-yu, keyin yuz tekshiruvi tushunarsiz xato beradi.
+  // Hujjat nusxasi esa HEIC bo'lishi mumkin (faqat saqlanadi va yuklab olinadi)
+  const f = await readUpload(file, opts?.imageOnly ? ["jpg", "png", "webp"] : ["pdf", "jpg", "png", "webp", "heic"]);
   if (!f) {
+    if (opts?.imageOnly && sniffFileKind(Buffer.from(await file.arrayBuffer())) === "heic") return { error: HEIC_PHOTO_ERROR };
     return { error: opts?.imageOnly ? "Surat rasm bo'lishi kerak (JPG, PNG, WEBP)" : "Hujjat PDF yoki rasm (JPG, PNG, WEBP) bo'lishi kerak" };
   }
   const dir = path.join(UPLOADS_DIR, "employees");

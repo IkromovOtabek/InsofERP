@@ -29,6 +29,10 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
     .map((i) => ({ item: i, brigadeId: String(fd.get(`brigade_${i.id}`) ?? "").trim() }))
     .filter((x) => x.brigadeId);
   if (picks.length === 0) return { error: "Kamida bitta qator uchun brigada tanlang" };
+  // Brigada mavjud va faol bo'lsin: soxta/eskirgan id bazada FK xatosi (500) berardi, yopilgan brigadaga topshiriq ketardi
+  const ids = [...new Set(picks.map((p) => p.brigadeId))];
+  const active = await db.brigade.count({ where: { id: { in: ids }, isActive: true } });
+  if (active !== ids.length) return { error: "Tanlangan brigada topilmadi yoki yopilgan — sahifani yangilab, qayta tanlang" };
 
   const made = await db.$transaction(async (tx) => {
     const rows: { taskId: string; taskNo: string; brigadeId: string; qty: number }[] = [];
@@ -48,7 +52,12 @@ export async function assignBrigades(orderId: string, _prev: ActionState, fd: Fo
       rows.push({ taskId: t.id, taskNo: t.taskNo, brigadeId, qty: Number(item.qtyM3) });
     }
     return rows;
-  }).catch((e: Error) => { if (e instanceof AssignError) return { error: e.message }; throw e; });
+  }).catch((e: Error) => {
+    if (e instanceof AssignError) return { error: e.message };
+    // Shu qatorga bir vaqtda boshqa joydan topshiriq ochildi (orderItemId yagona) — 500 emas, tushunarli xabar
+    if ((e as { code?: string }).code === "P2002") return { error: "Shu qatorga hozirgina boshqa joydan topshiriq berildi — sahifani yangilang" };
+    throw e;
+  });
   if ("error" in made) return { error: made.error };
 
   // Brigadir topshiriq berilganini bilishi kerak — u sexda, ekran oldida emas

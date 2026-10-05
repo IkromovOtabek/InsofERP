@@ -84,7 +84,7 @@ export async function procurementHome(f: ProcFilters = {}) {
       include: { items: true, documents: { select: { kind: true } }, supplier: { select: { id: true, name: true } } },
     }),
     db.goodsReceipt.findMany({
-      where: { date: { gte: from, lt: to } },
+      where: { cancelledAt: null, date: { gte: from, lt: to } }, // storno qilingan kirim xarid summasiga kirmaydi
       select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, items: { select: { qty: true, price: true } } },
       orderBy: { date: "asc" },
     }),

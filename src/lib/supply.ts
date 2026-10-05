@@ -209,6 +209,9 @@ export async function editSupplyItems(
   const bad = rows.find((r) => !(r.qty >= 0));
   if (bad) return { error: "Miqdor manfiy bo'lmasin" };
   if (foreignRow(req, rows.map((r) => r.itemId))) return { error: "Jadval o'zgargan — sahifani yangilang" };
+  // Hamma qator 0 qilinsa — zayavka bo'sh qolardi (ilgari tekshiruv o'chirishdan KEYIN edi: qatorlar o'chib bo'lgach xato chiqardi)
+  const zeroed = new Set(rows.filter((r) => r.qty === 0).map((r) => r.itemId));
+  if (req.items.every((i) => zeroed.has(i.id))) return { error: "Hamma qatorni 0 qilib bo'lmaydi — zayavka kerak bo'lmasa, uni bekor qiling" };
 
   const res = await db.$transaction(async (tx) => {
     await claim(tx, id, ["NEW"], { updatedAt: new Date() });
@@ -244,6 +247,7 @@ export async function priceSupplyRequest(
   if (rows.length !== req.items.length) return { error: "Jadval o'zgargan — sahifani yangilang" };
   const bad = rows.find((r) => !(r.price >= 0) || !(r.qty >= 0) || r.price > MAX_AMOUNT || r.qty > MAX_AMOUNT);
   if (bad) return { error: `"${byId.get(bad.itemId)?.name}": miqdor va narx manfiy (yoki juda katta) bo'lmasin` };
+  if (input.supplierId && !(await db.supplier.count({ where: { id: input.supplierId, isActive: true } }))) return { error: "Yetkazuvchi topilmadi yoki yopilgan" };
   const delivery = Math.max(0, input.delivery?.cost ?? Number(req.deliveryCost));
   const goods = rows.reduce((s, r) => s + r.qty * r.price, 0);
   const total = goods + delivery;
@@ -411,6 +415,8 @@ export async function receiveSupplyRequest(
   if (err || !req) return { error: err ?? "Topilmadi" };
   const supplierId = input.supplierId || req.supplierId;
   if (!supplierId) return { error: "Yetkazuvchi tanlanmagan — kirim hujjati yetkazuvchisiz yozilmaydi" };
+  // Formadan kelgan yetkazuvchi mavjud bo'lsin — aks holda kirim yozilayotganda Prisma (FK) matni chiqardi
+  if (supplierId !== req.supplierId && !(await db.supplier.count({ where: { id: supplierId, isActive: true } }))) return { error: "Yetkazuvchi topilmadi yoki yopilgan" };
   const byId = new Map(rows2map(input.rows));
   const bad = req.items.find((i) => { const r = byId.get(i.id); return r ? !(r.factQty >= 0) || !(r.factPrice >= 0) : false; });
   if (bad) return { error: `"${bad.name}": kelgan miqdor va narx manfiy bo'lmasin` };
@@ -664,7 +670,7 @@ export async function lastPurchasePrices(items: { materialId?: string | null; na
 
   // Har bir xomashyo bo'yicha eng oxirgi kirim qatori
   const rows = await db.goodsReceiptItem.findMany({
-    where: { materialId: { in: ids } },
+    where: { materialId: { in: ids }, receipt: { cancelledAt: null } }, // storno qilingan kirim narxi "oxirgi xarid" bo'lmasin
     orderBy: { receipt: { date: "desc" } },
     take: 1000,
     include: { receipt: { select: { date: true, supplier: { select: { name: true } } } }, material: { select: { name: true } } },

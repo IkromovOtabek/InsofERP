@@ -191,7 +191,13 @@ export async function deleteWorkPosition(id: string) {
 
 // ───────────────────────── Xodim kartasi (hujjatlari bilan) ─────────────────────────
 
-const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
+// Noto'g'ri sana (masalan "31.02.1990" yoki matn) Invalid Date bo'lib Prisma xatosi (500) berardi — forma xatosi bo'lsin
+const zDate = z.string().trim().optional().transform((v, ctx) => {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 1900 || d.getFullYear() > 2100) { ctx.addIssue({ code: "custom", message: `Sana noto'g'ri: «${v}»` }); return z.NEVER; }
+  return d;
+});
 
 const cardSchema = z.object({
   fullName: zStr("F.I.O. kerak"),

@@ -48,6 +48,8 @@ export default async function ReceiptImport() {
             <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
           </div>
           <Field label="Izoh"><Textarea name="note" placeholder="Nakladnoy raqami, mashina…" className="min-h-11" /></Field>
+          {/* Bir martalik kalit: ikki marta bosilgan tugma ikkinchi kirim ochmaydi */}
+          <input type="hidden" name="clientToken" value={crypto.randomUUID()} />
           <Checkbox name="createMissing" defaultChecked label="Ro'yxatda yo'q mahsulotlarni avtomatik yaratish (xomashyo sifatida)" />
         </ExcelImport>
       </Card>

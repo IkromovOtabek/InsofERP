@@ -155,6 +155,17 @@ const importSchema = z.object({
 type ImportRow = { material?: unknown; code?: unknown; qty?: unknown; price?: unknown; unit?: unknown; nds?: unknown; sum?: unknown; note?: unknown };
 
 /**
+ * Qator narxi (fayldagi birlikda). Narx ustuni bo'sh, lekin summa bor bo'lsa — narx = summa / miqdor
+ * (ko'p nakladnoyda faqat "Сумма" bo'ladi; ilgari bunday qator 0 tannarx bilan kirib, o'rtacha narxni buzardi).
+ * NDS qo'shilmaydi: xomashyo tannarxi NDS'siz yuritiladi (Sozlamalar → xomashyo formasidagi kabi).
+ */
+function rowPrice(x: ImportRow): number {
+  if (str(x.price) !== "") return numMoney(x.price);
+  const q = num(x.qty), sum = str(x.sum) === "" ? NaN : numMoney(x.sum);
+  return Number.isFinite(sum) && q > 0 ? Math.round((sum / q) * 100) / 100 : 0;
+}
+
+/**
  * Excel'dan kirim: zavod va texnikaga kerakli mahsulotlar ro'yxati (nomi, miqdor, narx, birlik) bitta kirim hujjati bo'lib tushadi.
  * Ro'yxatda yo'q mahsulotlar `createMissing` bilan xomashyo sifatida yaratiladi, sklad qoldig'i darhol oshadi.
  */
@@ -171,7 +182,13 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
   if (!validDate(d.date)) return { error: "Sana noto'g'ri — 2000-yildan bugungacha bo'lsin" };
   for (const [i, x] of rows.entries()) {
     const q = num(x.qty); if (!(q > 0) || q > MAX_AMOUNT) return { error: `${i + 1}-qator (${str(x.material)}): miqdor 0 dan katta raqam bo'lsin` };
-    const pr = str(x.price) === "" ? 0 : numMoney(x.price); if (!(pr >= 0) || pr > MAX_AMOUNT || q * pr > MAX_AMOUNT) return { error: `${i + 1}-qator (${str(x.material)}): narx noto'g'ri` };
+    const pr = rowPrice(x); if (!(pr >= 0) || pr > MAX_AMOUNT || q * pr > MAX_AMOUNT) return { error: `${i + 1}-qator (${str(x.material)}): narx noto'g'ri` };
+  }
+  // Ikki marta bosilgan "Kirimni qayd etish" ikkinchi kirim ochmasin (qo'lda kirimdagi kabi)
+  const clientToken = tokenOf(fd.get("clientToken"));
+  if (clientToken) {
+    const dup = await db.goodsReceipt.findUnique({ where: { clientToken }, select: { id: true } });
+    if (dup) redirect(`/receipts/${dup.id}`);
   }
   const [wh, sup] = await Promise.all([
     db.warehouse.findFirst({ where: { id: d.warehouseId, isActive: true }, select: { id: true } }),
@@ -186,19 +203,26 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
     if (missing.length) throw new Error(`Bunday mahsulot/xomashyo yo'q: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "…" : ""}. "Yo'q mahsulotlarni yaratish" ni belgilang.`);
     const items = rows.map((x) => {
       const m = result.get(str(x.material).toLowerCase().trim())!;
-      const conv = toMaterialUnit(num(x.qty), str(x.price) === "" ? 0 : numMoney(x.price), x.unit, m.unit);
+      const conv = toMaterialUnit(num(x.qty), rowPrice(x), x.unit, m.unit);
       if (!conv) throw new Error(`"${m.name}": faylda birlik «${str(x.unit)}», spravochnikda «${m.unit}» — o'girib bo'lmaydi. Faylni tuzating`);
       return { materialId: m.id, qty: conv.qty, price: conv.price };
     });
     const rec = await tx.goodsReceipt.create({
-      data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date: new Date(d.date), supplierId: d.supplierId, warehouseId: d.warehouseId, note: d.note ?? "Excel'dan import", createdById: s.userId, items: { create: items } },
+      data: { docNo: await nextNo(tx, "goodsReceipt", "K"), date: new Date(d.date), supplierId: d.supplierId, warehouseId: d.warehouseId, note: d.note ?? "Excel'dan import", createdById: s.userId, clientToken, items: { create: items } },
     });
     await tx.stockMove.createMany({
       data: items.map((i) => ({ type: "RECEIPT" as const, date: new Date(d.date), warehouseId: d.warehouseId, materialId: i.materialId, qty: i.qty, unitCost: i.price, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId })),
     });
     await audit(tx, s.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items, via: "excel", createdMaterials: created.map((m) => m.name) });
     return rec.id;
-  }).catch((e: Error) => ({ error: e.message }));
+  }).catch(async (e: Error) => {
+    // Bir vaqtda kelgan ikki bir xil yuborish: ikkinchisi unique kalitga urildi — birinchisining kirimi ochiladi
+    if (clientToken && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const dup = await db.goodsReceipt.findUnique({ where: { clientToken }, select: { id: true } });
+      if (dup) return dup.id;
+    }
+    return { error: e.message };
+  });
   if (typeof out === "object") return out;
   revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new");
   redirect(`/receipts/${out}`);

@@ -570,7 +570,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       sections.push(
         await supplySection("Narx qo'yish kerak", "Narx kutayotgan so'rov yo'q", ["NEW"]),
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
-        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator`, right: money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)) })) },
+        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · storno" : ""}`, right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)) })) },
       );
       break;
     }

@@ -19,6 +19,10 @@ export async function saveBrigade(id: string | null, _prev: ActionState, fd: For
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
+  // Brigadir — mavjud va ishlayotgan xodim (eskirgan id FK xatosi — 500 berardi; bo'shagan xodim brigadir bo'lmasin)
+  if (d.leaderId && !(await db.employee.count({ where: { id: d.leaderId, isActive: true, firedAt: null } }))) {
+    return { error: "Brigadir topilmadi yoki ishdan bo'shagan — ro'yxatdan qayta tanlang" };
+  }
   await db.$transaction(async (tx) => {
     if (id) {
       const before = await tx.brigade.findUniqueOrThrow({ where: { id } });

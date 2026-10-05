@@ -18,7 +18,13 @@ import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
 
-const zDate = z.string().trim().optional().transform((v) => (v ? new Date(v) : null));
+// Noto'g'ri sana (masalan "31.02.1990" yoki matn) Invalid Date bo'lib Prisma xatosi (500) berardi — forma xatosi bo'lsin
+const zDate = z.string().trim().optional().transform((v, ctx) => {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 1900 || d.getFullYear() > 2100) { ctx.addIssue({ code: "custom", message: `Sana noto'g'ri: «${v}»` }); return z.NEVER; }
+  return d;
+});
 
 /** Login berishda tanlanadigan bo'limlar: bo'lim lavozimlari + haydovchi va brigadir ilovasi. */
 const LOGIN_ROLES: Role[] = LOGIN_ROLE_OPTIONS.map((o) => o.value);
@@ -421,8 +427,17 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   const vehicleSent = driver || d.driverFields === "1";
   // Ishdan bo'shagan sana qo'yilsa xodim nofaol bo'ladi, tozalansa — qaytadi (Excel importdagi qoida bilan bir xil)
   const isActive = d.firedAt ? false : before.firedAt ? true : before.isActive;
+  // Kartada bo'shatish sanasi qo'yilsa — "Ishdan bo'shatish" tugmasidagi qoidalar ham amal qiladi:
+  // o'zini bo'shatmaydi, ochiq reysi bor haydovchi bo'shatilmaydi, texnikasi bo'shaydi
+  const firing = !!d.firedAt && !before.firedAt;
+  if (firing) {
+    if (before.userId === s.userId) return { error: "O'zingizni ishdan bo'shata olmaysiz" };
+    if (before.hiredAt && d.firedAt! < before.hiredAt) return { error: "Bo'shatilgan sana ishga kirgan sanadan oldin bo'lishi mumkin emas" };
+    const open = await db.trip.findMany({ where: { driverId: id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
+    if (open.length) return { error: `Haydovchida ochiq reys bor: ${open.map((t) => t.deliveryNoteNo).join(", ")} — avval yakunlang yoki bekor qiling` };
+  }
   const after = await db.$transaction(async (tx) => {
-    const extra = vehicleSent ? await driverData(tx, s.userId, d) : {};
+    const extra = firing ? { vehicleId: null } : vehicleSent ? await driverData(tx, s.userId, d) : {};
     const e = await tx.employee.update({
       where: { id },
       data: {

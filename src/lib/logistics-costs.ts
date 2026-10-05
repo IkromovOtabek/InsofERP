@@ -38,6 +38,7 @@ export async function addFuelLog(input: FuelInput, userId: string): Promise<{ id
     if (t.status === "CANCELLED") throw new Error("Bekor qilingan reysga yoqilg'i yozilmaydi");
     if (t.vehicleId !== v.id) throw new Error("Reys boshqa texnikaga biriktirilgan");
   }
+  if (input.driverId && !(await db.employee.count({ where: { id: input.driverId } }))) throw new Error("Haydovchi topilmadi");
   // Probeg orqaga ketmaydi — xato raqam yozilsa sarf hisobi buziladi
   if (input.odometerKm != null && v.odometerKm != null && input.odometerKm < v.odometerKm) {
     throw new Error(`Probeg ${v.odometerKm} km dan kam bo'lmasin (oxirgi yozilgan)`);
@@ -72,6 +73,14 @@ export async function addTransportExpense(input: ExpenseInput, userId: string): 
     const t = await db.trip.findUnique({ where: { id: input.tripId }, select: { vehicleId: true, driverId: true } });
     if (!t) throw new Error("Reys topilmadi");
     vehicleId = t.vehicleId; driverId = t.driverId;
+  } else {
+    // Transport / haydovchi mavjud bo'lsin — eskirgan id bazada FK xatosi (500) berardi
+    const [v, d] = await Promise.all([
+      vehicleId ? db.vehicle.count({ where: { id: vehicleId } }) : 1,
+      driverId ? db.employee.count({ where: { id: driverId } }) : 1,
+    ]);
+    if (!v) throw new Error("Transport topilmadi");
+    if (!d) throw new Error("Haydovchi topilmadi");
   }
   const e = await db.transportExpense.create({
     data: { kind: input.kind, amount: input.amount, date: input.date ?? new Date(), vehicleId, driverId, tripId: input.tripId ?? null, note: input.note?.trim() || null, createdById: userId },

@@ -67,6 +67,11 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
   if (!r.rows.length) return { ok: true, note: "O'zgarish yo'q — hech narsa saqlanmadi" };
 
   const date = dayUtc(day);
+  // Xodim mavjud bo'lsin (eskirgan id FK xatosi — 500 berardi) va o'sha kuni hali ishdan bo'shamagan bo'lsin
+  const emps = await db.employee.findMany({ where: { id: { in: r.rows.map((x) => x.employeeId) } }, select: { id: true, fullName: true, firedAt: true } });
+  if (emps.length !== r.rows.length) return { error: "Ro'yxatdagi xodim topilmadi — sahifani yangilang" };
+  const fired = emps.filter((e) => e.firedAt && e.firedAt.toLocaleDateString("sv-SE") < day && r.rows.some((x) => x.employeeId === e.id && x.status));
+  if (fired.length) return { error: `Ishdan bo'shagan xodimga davomat qo'yilmaydi: ${fired.map((e) => e.fullName).join(", ")}` };
   const res = await db.$transaction(async (tx) => {
     const cur = await tx.attendance.findMany({ where: { date, employeeId: { in: r.rows.map((x) => x.employeeId) } } });
     const byEmp = new Map(cur.map((a) => [a.employeeId, a]));

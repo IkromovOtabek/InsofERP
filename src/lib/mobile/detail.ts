@@ -734,16 +734,21 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
     { label: "Jami", value: money(total) },
     ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
     ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
+    // Storno: sklad harakatlari teskari yozilgan — qoldiq va qarzga kirmaydi
+    ...(r.cancelledAt ? [{ label: "Holat", value: `Storno qilingan · ${day(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
   ];
   return {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
+    ...(r.cancelledAt ? { status: "Storno" } : {}),
     fields: fields.slice(1),
     sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [],
     // Xarid — pul chiqib ketgan hujjat, chekda qizil
     receipt: {
-      headline: `−${money(total)}`, caption: r.supplier.name,
-      status: { label: "Xarid · omborga kirim", tone: "danger", at: r.date.toISOString() },
+      headline: r.cancelledAt ? `${money(total)} · storno` : `−${money(total)}`, caption: r.supplier.name,
+      status: r.cancelledAt
+        ? { label: "Storno qilingan · qoldiqqa kirmaydi", tone: "warning", at: r.cancelledAt.toISOString() }
+        : { label: "Xarid · omborga kirim", tone: "danger", at: r.date.toISOString() },
       rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" })),
     },
   };
@@ -847,7 +852,10 @@ async function batchDetail(id: string): Promise<MobileDetail> {
   if (!b) throw new ListError("NOT_FOUND", "Zames topilmadi", 404);
   return {
     key: "production", id: b.id, title: b.batchNo, subtitle: b.product.name,
+    ...(b.cancelledAt ? { status: "Storno" } : {}),
     fields: [
+      // Storno: xomashyo skladga qaytgan, mahsulot qoldiqdan chiqarilgan
+      ...(b.cancelledAt ? [{ label: "Holat", value: `Storno qilingan · ${dt(b.cancelledAt)}${b.cancelReason ? ` · ${b.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
       { label: "Sana", value: dt(b.date) },
       { label: "Smena", value: `${b.shift}-smena` },
       { label: "Hajm", value: inUnit(sum(b.qtyM3), b.product.unit) },
@@ -856,7 +864,7 @@ async function batchDetail(id: string): Promise<MobileDetail> {
       { label: "Kim kiritdi", value: b.createdBy.fullName },
     ],
     sections: [{
-      title: "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh", icon: "layers",
+      title: b.cancelledAt ? "Retsept bo'yicha (storno — skladga qaytarilgan)" : "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh", icon: "layers",
       rows: b.recipe.items.map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: `${sum(ing.qtyPerM3)} ${ing.unit} / ${unitLabel(b.product.unit)}`, right: `${(ing.qtyPerM3 * sum(b.qtyM3)).toFixed(1)} ${ing.unit}` }; }),
     }],
     actions: [],
@@ -875,7 +883,9 @@ async function materialDetail(id: string): Promise<MobileDetail> {
   const o = outlook.find((x) => x.id === id);
   const n = (v: number) => `${num(v)} ${m.unit}`;
   const need = o ? Math.max(0, o.planned - balance, sum(m.minStock) - balance) : 0;
-  const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", SHIPMENT: "Chiqim", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", TRANSFER: "Ko'chirish" };
+  const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Chiqim", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", TRANSFER: "Ko'chirish" };
+  // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin
+  const moveLabel = (mv: { type: string; note: string | null }) => `${mv.note?.startsWith("Storno ") ? "Storno · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}`;
   return {
     key: "stock", id: m.id, title: m.name, subtitle: m.code,
     fields: [
@@ -901,7 +911,7 @@ async function materialDetail(id: string): Promise<MobileDetail> {
       })(),
     }] : []), {
       title: "So'nggi harakatlar", empty: "Harakat yo'q",
-      rows: moves.map((mv) => ({ id: mv.id, title: MOVE_LABEL[mv.type] ?? mv.type, subtitle: `${day(mv.date)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
+      rows: moves.map((mv) => ({ id: mv.id, title: moveLabel(mv), subtitle: `${day(mv.date)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
     }],
     actions: [],
   };

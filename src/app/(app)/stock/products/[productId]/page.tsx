@@ -63,7 +63,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
             <thead><tr><Th>№</Th><Th>Sana</Th><Th right>Miqdor</Th><Th>Zayavka</Th><Th>Kim</Th></tr></thead>
             <tbody>
               {d.batches.length === 0 && <Empty text="Hali ishlab chiqarilmagan" icon={Factory} />}
-              {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link></Td><Td>{date(b.date)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
+              {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Storno</Badge></>}</Td><Td>{date(b.date)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
             </tbody>
           </table></div>
         </Card>

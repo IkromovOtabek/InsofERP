@@ -144,6 +144,12 @@ export async function markAttendanceByFace(userId: string, employeeId: string, p
   let reference: Buffer;
   try { reference = await readFile(refPath); } catch { return { error: "Profil surati diskda topilmadi — otdel kadr qayta yuklasin" }; }
   const probe = Buffer.from(await photo.arrayBuffer());
+  // HEIC (iPhone) serverda o'qilmaydi (sharp 0.33 — HEIF dekoderi o'chiq): umumiy "vaqtincha ishlamadi" o'rniga aniq sabab
+  const { sniffFileKind } = await import("@/lib/uploads");
+  if (sniffFileKind(reference) === "heic") return { error: `${e.fullName} ning profil surati HEIC formatida — yuz tekshiruvi uni o'qiy olmaydi. Otdel kadr suratni JPG yoki PNG qilib qayta yuklasin` };
+  const probeKind = sniffFileKind(probe);
+  if (probeKind === "heic") return { error: "Kamera kadri HEIC formatida — telefon sozlamalarida Kamera → Formatlar → «Eng mos» (JPG) ni tanlang va qayta suratga oling" };
+  if (probeKind !== "jpg" && probeKind !== "png" && probeKind !== "webp") return { error: "Kadr rasm emas — JPG, PNG yoki WEBP surat yuboring" };
 
   let r: Awaited<ReturnType<typeof compareFaces>>;
   try { r = await compareFaces(reference, probe); } catch (err) {
