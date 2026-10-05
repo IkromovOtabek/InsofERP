@@ -4,19 +4,40 @@
  * Parol argument sifatida berilmaydi (shell tarixiga tushmasin) — env yoki so'rov orqali.
  * Mavjud login berilsa — paroli almashtiriladi va eski sessiyalari kuyadi.
  */
-import { createInterface } from "node:readline/promises";
 import { loadEnv } from "./env";
 // Faqat panel sozlamasi. Ildizdagi `.env` (korxona kalitlari) bu yerda o'qilmaydi.
 loadEnv(process.env.CONTROL_ENV_FILE || "control.env");
+
+/** Parolni ekranda ko'rsatmasdan so'rash (terminal raw rejimi; belgi o'rniga hech narsa chiqmaydi). */
+function askHidden(prompt: string): Promise<string> {
+  const stdin = process.stdin;
+  if (!stdin.isTTY) throw new Error("Terminal yo'q — parolni CONTROL_ADMIN_PASSWORD orqali bering");
+  process.stdout.write(prompt);
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+    const done = (fn: () => void) => { stdin.setRawMode(false); stdin.pause(); stdin.off("data", onData); process.stdout.write("\n"); fn(); };
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === "\r" || ch === "\n") return done(() => resolve(buf));
+        if (ch === "\u0003") return done(() => reject(new Error("Bekor qilindi")));   // Ctrl+C
+        if (ch === "\u007f" || ch === "\b") buf = buf.slice(0, -1);                   // Backspace
+        else if (ch >= " ") buf += ch;
+      }
+    };
+    stdin.on("data", onData);
+  });
+}
 
 async function main() {
   const [login, ...nameParts] = process.argv.slice(2);
   if (!login || !/^[a-z0-9._-]{3,40}$/.test(login)) throw new Error('Ishlatish: npm run control:admin -- <login> "F.I.O."');
   let password = process.env.CONTROL_ADMIN_PASSWORD ?? "";
   if (!password) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    password = await rl.question("Parol: ");
-    rl.close();
+    password = await askHidden("Parol (ekranda ko'rinmaydi): ");
+    if ((await askHidden("Parolni takrorlang: ")) !== password) throw new Error("Parollar mos kelmadi");
   }
   const { passwordProblem } = await import("@/lib/password-policy");
   const problem = passwordProblem(password);
