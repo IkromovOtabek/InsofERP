@@ -89,6 +89,10 @@ Qaytarish: `sudo -u postgres psql -c "DROP DATABASE insof_control"`; `... "ALTER
 
 ### 3. Sozlama fayllari (hammasi `chmod 600`, egasi `deploy`)
 
+**Avtomatik usul (tavsiya):** `cd /var/www/insof-erp && bash scripts/platform-init-env.sh` — `control.env`, `build.env` va
+`tenants/insof.env` ni mavjud `.env` dan yaratadi (yangi panel sirlari, baza paroli `.env` dan; mavjud faylni ustidan yozmaydi).
+Keyin faqat `/etc/insof/backup.env` (9-qadamgacha) qoladi. Qo'lda usul:
+
 ```bash
 cd /var/www/insof-erp
 cp docs/deploy/control.env.example control.env && chmod 600 control.env && nano control.env
