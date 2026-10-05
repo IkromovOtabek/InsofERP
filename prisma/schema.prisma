@@ -49,47 +49,49 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  orders            Order[]                  @relation("OrderCreatedBy")
-  batches           ProductionBatch[]        @relation("BatchCreatedBy")
-  stockMoves        StockMove[]              @relation("MoveCreatedBy")
-  receipts          GoodsReceipt[]           @relation("ReceiptCreatedBy")
-  tasks             BrigadeTask[]            @relation("TaskCreatedBy")
-  taskProgress      TaskProgress[]           @relation("ProgressCreatedBy")
-  cashTx            CashTransaction[]        @relation("CashTxCreatedBy")
-  auditLogs         AuditLog[]
-  employee          Employee?
-  marketing         MarketingEntry[]         @relation("MarketingCreatedBy")
-  telegram          TelegramAccount[]
-  aiActions         AiAction[]
-  telegramCodes     TelegramLinkCode[]
-  resetCodes        PasswordResetCode[]
-  supplyReqs        SupplyRequest[]          @relation("SupplyCreatedBy")
-  supplyEvents      SupplyEvent[]            @relation("SupplyEventBy")
-  supplyResponsible SupplyRequest[]          @relation("SupplyResponsible")
-  supplyQuotes      SupplyQuote[]            @relation("SupplyQuoteBy")
-  supplyIncidents   SupplyIncident[]         @relation("SupplyIncidentBy")
-  supplyDocuments   SupplyDocument[]         @relation("SupplyDocBy")
-  brigadeMoves      BrigadeMove[]            @relation("BrigadeMoveBy")
-  leads             Lead[]                   @relation("LeadHandledBy")
-  salesRegister     SalesRegister[]          @relation("SalesRegisterCreatedBy")
-  devices           MobileDevice[]
-  notifications     Notification[]
-  deletionRequests  AccountDeletionRequest[] @relation("DeletionRequestUser")
-  deletionHandled   AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
-  productionPlans   ProductionPlan[]         @relation("PlanSetBy")
-  expenseBudgets    ExpenseBudget[]          @relation("BudgetSetBy")
-  defects           ProductDefect[]          @relation("DefectCreatedBy")
-  productionReports ProductionReport[]       @relation("ProdReportBy")
-  shiftsOpened      BrigadeShift[]           @relation("ShiftOpenedBy")
-  shiftsClosed      BrigadeShift[]           @relation("ShiftClosedBy")
-  brigadeIssues     BrigadeIssue[]           @relation("BrigadeIssueBy")
-  brigadeIssuesDone BrigadeIssue[]           @relation("BrigadeIssueResolvedBy")
-  payments          Payment[]                @relation("PaymentCreatedBy")
-  vehicleServices   VehicleService[]         @relation("VehicleServiceBy")
-  agentCustomers    Customer[]               @relation("CustomerAgent")
-  aiChats           AiChat[]                 @relation("AiChatUser")
+  orders                 Order[]                  @relation("OrderCreatedBy")
+  batches                ProductionBatch[]        @relation("BatchCreatedBy")
+  stockMoves             StockMove[]              @relation("MoveCreatedBy")
+  receipts               GoodsReceipt[]           @relation("ReceiptCreatedBy")
+  tasks                  BrigadeTask[]            @relation("TaskCreatedBy")
+  taskProgress           TaskProgress[]           @relation("ProgressCreatedBy")
+  cashTx                 CashTransaction[]        @relation("CashTxCreatedBy")
+  cashTransfers          CashTransfer[]           @relation("CashTransferCreatedBy")
+  cashTransfersCancelled CashTransfer[]           @relation("CashTransferCancelledBy")
+  auditLogs              AuditLog[]
+  employee               Employee?
+  marketing              MarketingEntry[]         @relation("MarketingCreatedBy")
+  telegram               TelegramAccount[]
+  aiActions              AiAction[]
+  telegramCodes          TelegramLinkCode[]
+  resetCodes             PasswordResetCode[]
+  supplyReqs             SupplyRequest[]          @relation("SupplyCreatedBy")
+  supplyEvents           SupplyEvent[]            @relation("SupplyEventBy")
+  supplyResponsible      SupplyRequest[]          @relation("SupplyResponsible")
+  supplyQuotes           SupplyQuote[]            @relation("SupplyQuoteBy")
+  supplyIncidents        SupplyIncident[]         @relation("SupplyIncidentBy")
+  supplyDocuments        SupplyDocument[]         @relation("SupplyDocBy")
+  brigadeMoves           BrigadeMove[]            @relation("BrigadeMoveBy")
+  leads                  Lead[]                   @relation("LeadHandledBy")
+  salesRegister          SalesRegister[]          @relation("SalesRegisterCreatedBy")
+  devices                MobileDevice[]
+  notifications          Notification[]
+  deletionRequests       AccountDeletionRequest[] @relation("DeletionRequestUser")
+  deletionHandled        AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
+  productionPlans        ProductionPlan[]         @relation("PlanSetBy")
+  expenseBudgets         ExpenseBudget[]          @relation("BudgetSetBy")
+  defects                ProductDefect[]          @relation("DefectCreatedBy")
+  productionReports      ProductionReport[]       @relation("ProdReportBy")
+  shiftsOpened           BrigadeShift[]           @relation("ShiftOpenedBy")
+  shiftsClosed           BrigadeShift[]           @relation("ShiftClosedBy")
+  brigadeIssues          BrigadeIssue[]           @relation("BrigadeIssueBy")
+  brigadeIssuesDone      BrigadeIssue[]           @relation("BrigadeIssueResolvedBy")
+  payments               Payment[]                @relation("PaymentCreatedBy")
+  vehicleServices        VehicleService[]         @relation("VehicleServiceBy")
+  agentCustomers         Customer[]               @relation("CustomerAgent")
+  aiChats                AiChat[]                 @relation("AiChatUser")
   /// Modul bo'yicha qo'shimcha ruxsat (direktor beradi): { "modul": "view" | "write" }. Rol ustiga qo'shiladi/cheklaydi.
-  perms             Json?
+  perms                  Json?
 }
 
 // ───────────────────────── Zavod rekvizitlari (bitta qator) ─────────────────────────
@@ -1536,6 +1538,8 @@ model CashAccount {
   supplyRequests SupplyRequest[]
   register       SalesRegister[]
   openings       OpeningBalance[]
+  transfersOut   CashTransfer[]    @relation("CashTransferFrom")
+  transfersIn    CashTransfer[]    @relation("CashTransferTo")
 
   // Bir xil nomli hisob ikki marta ochilmasin (seed qayta ishga tushsa ham)
   @@unique([name, type])
@@ -1547,6 +1551,44 @@ enum CashTxType {
   /// Boshlang'ich qoldiq: hisob qoldig'iga qo'shiladi (summa ishorali, manfiy — overdraft),
   /// lekin kirim/chiqim (P&L, pul oqimi) hisobotlariga kirmaydi. Faqat "Boshlang'ich qoldiqlar" bo'limi yozadi.
   OPENING
+  /// Hisoblararo o'tkazma (CashTransfer): manba hisobdan chiqadi (−) / qabul qiluvchi hisobga kiradi (+).
+  /// Faqat hisob qoldig'iga ta'sir qiladi — kirim/chiqim, P&L, pul oqimi (kategoriya) hisobotlariga KIRMAYDI.
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+/// Hisoblararo o'tkazma: kassa → bank (inkassatsiya), bank → kassa (naqdlashtirish), kassa → kassa.
+/// Ikki bog'langan CashTransaction yozadi (TRANSFER_OUT manbada, TRANSFER_IN qabul qiluvchida, refType "CashTransfer").
+/// Bank komissiyasi (fee) — oddiy chiqim (EXPENSE, "Bank xizmati"), u P&L ga kiradi.
+model CashTransfer {
+  id            String    @id @default(cuid())
+  docNo         String    @unique // OT-2026-00001
+  date          DateTime  @default(now())
+  fromAccountId String
+  toAccountId   String
+  amount        Decimal   @db.Decimal(18, 2)
+  /// Bank xizmati (komissiya) — bo'lsa alohida chiqim bo'lib yoziladi
+  fee           Decimal?  @db.Decimal(18, 2)
+  /// Komissiya qaysi hisobdan yechilgan (odatda bank tomoni)
+  feeAccountId  String?
+  note          String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  /// Formadagi bir martalik kalit — ikki marta bosilgan "Saqlash" ikkinchi o'tkazma ochmasin
+  clientToken   String?   @unique
+  /// Storno (faqat direktor): ikkala yozuv o'chiriladi, hujjat sababi bilan qoladi
+  cancelledAt   DateTime?
+  cancelReason  String?
+  cancelledById String?
+
+  fromAccount CashAccount @relation("CashTransferFrom", fields: [fromAccountId], references: [id])
+  toAccount   CashAccount @relation("CashTransferTo", fields: [toAccountId], references: [id])
+  createdBy   User        @relation("CashTransferCreatedBy", fields: [createdById], references: [id])
+  cancelledBy User?       @relation("CashTransferCancelledBy", fields: [cancelledById], references: [id])
+
+  @@index([date])
+  @@index([fromAccountId])
+  @@index([toAccountId])
 }
 
 /// Kirim-Chiqim jurnali. Mijoz to'lovlari Payment'da — bu yerda boshqa kirim va barcha chiqimlar.

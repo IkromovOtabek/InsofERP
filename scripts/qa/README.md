@@ -6,6 +6,7 @@
 bash scripts/qa/run-all.sh                      # a, b, pages, c, geo, d — ketma-ket, ~25–40 daqiqa
 QA_ONLY="a pages" bash scripts/qa/run-all.sh    # faqat tanlanganlar
 QA_KEEP=1 bash scripts/qa/run-all.sh            # ish papkasi va insof_test_r_* bazalari saqlanadi (tahlil uchun)
+QA_DB_PREFIX=insof_test_x_ QA_PORT=3230 QA_WORK=/tmp/qa-x bash scripts/qa/run-all.sh   # parallel ishga tushirish (boshqa bazalar/port)
 ```
 
 Skript repo nusxasini (`$QA_WORK`, standart `$TMPDIR/insof-qa-run/app`; `.env*`, `.git`, `.next`, `uploads` ko'chirilmaydi)
@@ -16,7 +17,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 
 | To'plam | Nima | Fayllar |
 |---|---|---|
-| a | sotuv / moliya, Excel importlari, INN tekshiruvi | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, prepay-gate.mts |
+| a | sotuv / moliya, Excel importlari, INN tekshiruvi, kassa ⇄ bank o'tkazmalari | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, prepay-gate.mts, transfers.mts |
 | b | sklad / ishlab chiqarish / logistika / ta'minot / kadr | b-all.sh |
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
@@ -39,6 +40,7 @@ node scripts/qa/sales-lifecycle.mjs     # zayavka → avans → schyot → to'lo
 node scripts/qa/openings-cash.mjs       # boshlang'ich qoldiq (4 tur) qo'lda + bank overdraft nazorati + yetkazuvchi to'lovi stornosi
 npx tsx scripts/qa/excel-imports.mts    # haqiqiy .xlsx: mijoz/yetkazuvchi (1000 qator), qoldiqlar importi, yomon qatorlar, INN (9/14 raqam) forma+import
 DATABASE_URL=$QA_DATABASE_URL npx tsx scripts/qa/prepay-gate.mts   # bosh to'lov darvozasi (Order.prepayAmount)
+DATABASE_URL=$QA_DATABASE_URL npx tsx scripts/qa/transfers.mts     # o'tkazma: kassa→bank, komissiya, overdraft, takror bosish, storno, P&L, mobil qoldiq
 ```
 
 Har skript oxirida `N OK, M FAIL` chiqaradi; xato bo'lsa chiqish kodi 1. Skriptlar qayta ishga tushirilsa ham

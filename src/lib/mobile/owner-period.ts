@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { balanceFromGroups } from "@/lib/cash-tx";
 import { loadRevenue } from "@/lib/bi/core";
 import { COGS_CATEGORY } from "@/lib/owner-dashboard";
 import { periodPlan } from "@/lib/period-stats";
@@ -30,10 +31,8 @@ export async function ownerPeriod(r: DashRange) {
   const opex = expense - tx.filter((t) => t.type === "EXPENSE" && t.category === COGS_CATEGORY).reduce((s, t) => s + n(t._sum.amount), 0);
   const share = (b: { year: number; month: number }) => months.find((m) => m.year === b.year && m.month === b.month)?.share ?? 0;
   const expensePlan = budgets.length ? budgets.reduce((s, b) => s + n(b.amount) * share(b), 0) : null;
-  const bal = (id: string) => n(pay.find((p) => p.cashAccountId === id)?._sum.amount)
-    + n(allTx.find((t) => t.cashAccountId === id && t.type === "INCOME")?._sum.amount)
-    + n(allTx.find((t) => t.cashAccountId === id && t.type === "OPENING")?._sum.amount) // boshlang'ich qoldiq
-    - n(allTx.find((t) => t.cashAccountId === id && t.type === "EXPENSE")?._sum.amount);
+  // Qoldiq: to'lovlar + barcha yozuvlar ishorasi bilan (boshlang'ich qoldiq, o'tkazmalar ham — txSign)
+  const bal = (id: string) => n(pay.find((p) => p.cashAccountId === id)?._sum.amount) + balanceFromGroups(allTx, id);
   const cash = accounts.filter((a) => a.type === "CASH").reduce((s, a) => s + bal(a.id), 0);
   const bank = accounts.filter((a) => a.type !== "CASH").reduce((s, a) => s + bal(a.id), 0);
   const concrete = batches.filter((b) => b.product.unit === "m3").reduce((s, b) => s + n(b.qtyM3), 0);

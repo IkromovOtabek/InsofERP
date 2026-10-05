@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { TX_TYPE_LABEL, isTransfer, txSign } from "@/lib/cash-tx";
 import { activityDetail, splitRef } from "./director";
 import { customerCredit } from "@/lib/finance";
 import { materialOutlook } from "@/lib/dashboard";
@@ -992,10 +993,11 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
 async function cashflowDetail(id: string): Promise<MobileDetail> {
   const t = await db.cashTransaction.findUnique({ where: { id }, include: { cashAccount: true, supplier: true, createdBy: true } });
   if (!t) throw new ListError("NOT_FOUND", "Yozuv topilmadi", 404);
-  const out = t.type === "EXPENSE";
+  // Ishora — txSign (chiqim va o'tkazma-chiqdi manfiy); o'tkazma va boshlang'ich qoldiq — "info"
+  const out = txSign(t.type) < 0;
   const fields: DetailField[] = [
     { label: "Sana", value: dt(t.date) },
-    { label: "Turi", value: out ? "Chiqim" : t.type === "OPENING" ? "Boshlang'ich qoldiq" : "Kirim", tone: out ? "danger" : t.type === "OPENING" ? "info" : "success" },
+    { label: "Turi", value: TX_TYPE_LABEL[t.type], tone: t.type === "OPENING" || isTransfer(t.type) ? "info" : out ? "danger" : "success" },
     { label: "Kategoriya", value: t.category },
     { label: "Hisob", value: t.cashAccount.name },
     ...(t.counterparty ? [{ label: out ? "Kimga" : "Kimdan", value: t.counterparty }] : []),

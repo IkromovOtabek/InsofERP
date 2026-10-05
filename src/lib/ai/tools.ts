@@ -9,6 +9,7 @@
  */
 
 import { db } from "@/lib/db";
+import { balanceFromGroups } from "@/lib/cash-tx";
 import type { Prisma } from "@/generated/prisma";
 import { loadSales, sum, safeDiv, startOfDay, addDays, type SaleRow } from "@/lib/bi/core";
 import { customerBase } from "@/lib/bi/customers";
@@ -296,6 +297,7 @@ const cashSummary: Tool = {
     ]);
     const cashIn = sum(pays.map((x) => Number(x.amount)));
     const income = txs.filter((t) => t.type === "INCOME"), expense = txs.filter((t) => t.type === "EXPENSE");
+    const transfers = txs.filter((t) => t.type === "TRANSFER_OUT"); // har o'tkazmaning bir tomoni — ikki marta sanalmasin
     const inc = sum(income.map((t) => Number(t.amount))), exp = sum(expense.map((t) => Number(t.amount)));
     const top = (rows: { k: string; v: number }[], n = 8) => { const m = new Map<string, number>(); for (const r of rows) m.set(r.k, (m.get(r.k) ?? 0) + r.v); return [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, n); };
     const out = [
@@ -308,13 +310,12 @@ const cashSummary: Tool = {
       `Chiqim: ${M(exp)} (${expense.length} ta)`,
       ...top(expense.map((x) => ({ k: x.category + (x.counterparty ? ` — ${x.counterparty}` : ""), v: Number(x.amount) })), 10).map(([k, v]) => `  ${k}: ${M(v)}`),
       `Sof oqim: ${M(cashIn + inc - exp)}`,
+      transfers.length ? `Hisoblararo o'tkazmalar (kirim/chiqim emas, faqat pul joyi o'zgargan): ${M(sum(transfers.map((t) => Number(t.amount))))} (${transfers.length} ta)` : "",
       "Hisoblar qoldig'i (barcha vaqt bo'yicha):",
       ...accounts.map((acc) => {
         const p0 = Number(allPay.find((x) => x.cashAccountId === acc.id)?._sum.amount ?? 0);
-        const i0 = Number(allTx.find((x) => x.cashAccountId === acc.id && x.type === "INCOME")?._sum.amount ?? 0);
-        const e0 = Number(allTx.find((x) => x.cashAccountId === acc.id && x.type === "EXPENSE")?._sum.amount ?? 0);
-        const o0 = Number(allTx.find((x) => x.cashAccountId === acc.id && x.type === "OPENING")?._sum.amount ?? 0); // boshlang'ich qoldiq
-        return `  ${acc.name} (${acc.type === "CASH" ? "naqd" : "bank"}): ${M(p0 + i0 + o0 - e0)}`;
+        // Kirim, chiqim, boshlang'ich qoldiq va o'tkazmalar — ishorasi bilan (txSign)
+        return `  ${acc.name} (${acc.type === "CASH" ? "naqd" : "bank"}): ${M(p0 + balanceFromGroups(allTx, acc.id))}`;
       }),
     ];
     return out.filter(Boolean).join("\n");

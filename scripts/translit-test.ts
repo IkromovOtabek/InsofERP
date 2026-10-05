@@ -44,6 +44,9 @@ const CASES: [string, string][] = [
   ["30-sentabr, dushanba", "30-сентябрь, душанба"],
   ["\"Qurilish\" MChJ", "\"Қурилиш\" МЧЖ"],
   ["Zayavka Z-2026-00153 tasdiqlandi", "Заявка Z-2026-00153 тасдиқланди"],
+  // Hisoblararo o'tkazma hujjat raqami lotincha qoladi
+  ["O'tkazma OT-2026-00001 saqlandi", "Ўтказма OT-2026-00001 сақланди"],
+  ["OT-2026-00001", "OT-2026-00001"],
   ["Beton B25 M300", "Бетон B25 M300"],
   ["Mashina 01A123BC", "Машина 01A123BC"],
   ["Mashina 01 A 123 BC keldi", "Машина 01 A 123 BC келди"],

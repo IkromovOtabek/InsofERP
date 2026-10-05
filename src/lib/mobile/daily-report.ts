@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
+import { TX_TYPE_LABEL, txSign } from "@/lib/cash-tx";
 import { ISSUE_KIND, TRIP_PHASE, tripPhase } from "@/lib/logistics";
 import { BRIGADE_ISSUE } from "@/lib/brigade-shift";
 import { unitLabel } from "@/lib/unit";
@@ -18,7 +19,8 @@ import { ListError } from "./list";
 const REPORT_ROLES = ["DIRECTOR"] as const;
 
 const ORDER_LABEL: Record<string, string> = { DRAFT: "Qoralama", BLOCKED: "Bloklangan", CONFIRMED: "Tasdiqlangan", IN_PRODUCTION: "Ishlab chiqarishda", DELIVERED: "Yetkazildi", CLOSED: "Yopildi", CANCELLED: "Bekor qilingan" };
-const TX_LABEL: Record<string, string> = { INCOME: "Kirim", EXPENSE: "Chiqim", OPENING: "Boshlang'ich qoldiq" };
+// Yozuv turlari nomi — umumiy ro'yxatdan (o'tkazma ham o'z nomi bilan)
+const TX_LABEL: Record<string, string> = TX_TYPE_LABEL;
 const LEVEL_LABEL: Record<string, string> = { crit: "Jiddiy", warn: "Ogohlantirish", ok: "Joyida" };
 
 const F_MONEY = "#,##0";
@@ -127,7 +129,7 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
   // ── To'lovlar ──
   const payRows: Cell[][] = payments.map((p) => [hm(p.date), p.customer.name, p.invoice?.invoiceNo ?? (p.orderId ? "Avans" : ""), p.cashAccount.name, n(p.amount), p.note ?? "", p.createdBy?.fullName ?? ""]);
   const paySum = payments.reduce((s, p) => s + n(p.amount), 0);
-  const txRows: Cell[][] = txs.map((t) => [hm(t.date), TX_LABEL[t.type] ?? t.type, t.category, t.counterparty ?? "", t.cashAccount.name, t.type === "EXPENSE" ? -n(t.amount) : n(t.amount), t.note ?? "", t.createdBy.fullName]);
+  const txRows: Cell[][] = txs.map((t) => [hm(t.date), TX_LABEL[t.type] ?? t.type, t.category, t.counterparty ?? "", t.cashAccount.name, txSign(t.type) * n(t.amount), t.note ?? "", t.createdBy.fullName]);
   const income = txs.filter((t) => t.type === "INCOME").reduce((s, t) => s + n(t.amount), 0);
   const expense = txs.filter((t) => t.type === "EXPENSE").reduce((s, t) => s + n(t.amount), 0);
 

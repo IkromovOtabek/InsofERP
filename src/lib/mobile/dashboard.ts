@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { FLOW_ONLY, balanceFromGroups } from "@/lib/cash-tx";
 import { loadSales } from "@/lib/bi/core";
 import { myBrigades } from "@/lib/brigades";
 import { ISSUE_KIND } from "@/lib/logistics";
@@ -221,7 +222,8 @@ const pick = (...s: (HomeSection | null)[]) => s.filter((x): x is HomeSection =>
 async function moneyFlow(r: DashRange) {
   const [pay, tx, prevPay, prevTx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccountId: true, customerId: true } }),
-    db.cashTransaction.findMany({ where: { type: { not: "OPENING" }, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
+    // Boshlang'ich qoldiq va hisoblararo o'tkazma — oqim emas
+    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
@@ -266,10 +268,8 @@ async function accountBalances(until: Date | null = null) {
   ]);
   return accounts.map((a) => ({
     label: a.name,
-    value: sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount)
-      + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "INCOME")?._sum.amount)
-      + sum(tx.find((t) => t.cashAccountId === a.id && t.type === "OPENING")?._sum.amount) // boshlang'ich qoldiq
-      - sum(tx.find((t) => t.cashAccountId === a.id && t.type === "EXPENSE")?._sum.amount),
+    // Kirim + boshlang'ich qoldiq + o'tkazma kirdi − chiqim − o'tkazma chiqdi (ishora — txSign)
+    value: sum(pay.find((p) => p.cashAccountId === a.id)?._sum.amount) + balanceFromGroups(tx, a.id),
   }));
 }
 

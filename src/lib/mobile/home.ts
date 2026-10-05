@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { txSign } from "@/lib/cash-tx";
 import { loadSales } from "@/lib/bi/core";
 import { customersCredit } from "@/lib/finance";
 import { reportHistory } from "@/lib/production-report";
@@ -226,10 +227,8 @@ async function cashBalance() {
     db.payment.aggregate({ _sum: { amount: true } }),
     db.cashTransaction.groupBy({ by: ["type"], _sum: { amount: true } }),
   ]);
-  const income = tx.find((t) => t.type === "INCOME")?._sum.amount;
-  const expense = tx.find((t) => t.type === "EXPENSE")?._sum.amount;
-  const opening = tx.find((t) => t.type === "OPENING")?._sum.amount; // boshlang'ich qoldiq
-  return sum(pay._sum.amount) + sum(income) + sum(opening) - sum(expense);
+  // Barcha turlar ishorasi bilan (txSign): kirim, boshlang'ich qoldiq + ; chiqim − ; o'tkazmalar jamida 0 ga chiqadi
+  return sum(pay._sum.amount) + tx.reduce((s, t) => s + txSign(t.type) * sum(t._sum.amount), 0);
 }
 
 /** Dashboard qoplab olgan eski "hozirgi holat" kartalari — ikki marta chiqmasin (kalitlar shu fayldagi `cards.push` lardan). */
@@ -612,7 +611,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: fundWait ? "tasdiq kutmoqda" : "navbat bo'sh", tone: fundWait ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
-      sections.push({ title: "So'nggi harakatlar", empty: "Harakat yo'q", target: "cashflow", rows: recent.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${t.type === "EXPENSE" ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "EXPENSE" ? "danger" : "success" })) });
+      sections.push({ title: "So'nggi harakatlar", empty: "Harakat yo'q", target: "cashflow", rows: recent.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT" ? "info" : txSign(t.type) < 0 ? "danger" : "success" })) });
       break;
     }
 
