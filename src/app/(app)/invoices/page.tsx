@@ -10,18 +10,22 @@ import { ConfirmButton } from "../payments/confirm-button";
 import { INVOICE_STATUS, InvoiceStatusBadge } from "./status";
 import { cancelInvoice } from "./actions";
 import type { InvoiceStatus } from "@/generated/prisma";
+import { receivablesReport } from "@/lib/receivables";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams;
   const s = await getSession();
-  const invoices = await db.invoice.findMany({
-    where: status && status in INVOICE_STATUS ? { status: status as InvoiceStatus } : undefined,
-    orderBy: { date: "desc" }, take: 300,
-    include: { customer: true, order: true, payments: true },
-  });
+  const [invoices, recv] = await Promise.all([
+    db.invoice.findMany({
+      where: status && status in INVOICE_STATUS ? { status: status as InvoiceStatus } : undefined,
+      orderBy: { date: "desc" }, take: 300,
+      include: { customer: true, order: true, payments: true },
+    }),
+    // Jami debitorka — yagona hisob: schyotlar − barcha to'lovlar (schyotga bog'lanmagan avans ham ayiriladi)
+    receivablesReport(),
+  ]);
   const marks = await customerMarks(invoices.map((i) => i.customerId));
-  const open = invoices.filter((i) => ["OPEN", "PARTIAL"].includes(i.status));
-  const receivable = open.reduce((s, i) => s + Number(i.amount) - i.payments.reduce((p, x) => p + Number(x.amount), 0), 0);
+  const receivable = recv.total;
   const tabs: Array<[string, string]> = [["", "Hammasi"], ...Object.entries(INVOICE_STATUS).map(([k, v]) => [k, v.label] as [string, string])];
   const canCancel = ["ACCOUNTING", "DIRECTOR"].includes(s?.role ?? "");
   // Schyot yozish — server ruxsatiga mos (buxgalteriya, sotuv, direktor); moliya faqat ko'radi
@@ -30,7 +34,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <PageHeader title="Schyotlar" action={canCreate ? <LinkButton href="/invoices/new"><Plus size={16} /> Schyot</LinkButton> : undefined} />
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3"><StatCard label="Jami debitorka (ro'yxat bo'yicha)" value={money(receivable)} icon={Wallet} tone={receivable > 0 ? "danger" : "success"} hint={`${open.length} ta ochiq schyot`} /></div>
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3"><StatCard label="Jami debitorka" value={money(receivable)} icon={Wallet} tone={receivable > 0 ? "danger" : "success"} hint={[`${recv.debtors} ta qarzdor`, recv.overdue > 0 ? `muddati o'tgan ${money(recv.overdue)}` : "", recv.advance > 0.005 ? `avans ${money(recv.advance)}` : ""].filter(Boolean).join(" · ")} /></div>
       <Tabs current={status ?? ""} items={tabs.map(([k, l]) => ({ key: k, label: l, href: k ? `/invoices?status=${k}` : "/invoices" }))} />
       <Table>
         <thead><tr><Th>№</Th><Th>Sana</Th><Th>Mijoz</Th><Th>Zayavka</Th><Th right>Summa</Th><Th right>To'langan</Th><Th right>Qoldiq</Th><Th>Holat</Th><Th></Th></tr></thead>

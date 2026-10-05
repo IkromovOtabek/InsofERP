@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { audit } from "./audit";
 import { nextNo } from "./numbering";
+import { customerBalance } from "./receivables";
 
 /**
  * Schyot yozish qoidasi — veb (`app/(app)/invoices/actions.ts`) ham, mobil ilova ham shu
@@ -52,14 +53,14 @@ export type Statement = { opening: number; lines: StatementLine[]; debit: number
 export async function customerStatement(customerId: string, from: Date, to: Date): Promise<Statement> {
   const invWhere = { customerId, status: { not: "CANCELLED" as const } };
   const payWhere = { customerId, register: { is: null } };
-  const [invBefore, payBefore, invoices, payments] = await Promise.all([
-    db.invoice.aggregate({ where: { ...invWhere, date: { lt: from } }, _sum: { amount: true } }),
-    db.payment.aggregate({ where: { ...payWhere, date: { lt: from } }, _sum: { amount: true } }),
+  const [before, invoices, payments] = await Promise.all([
+    // Davr boshidagi qoldiq — yagona mijoz balansi (receivables.ts) o'sha paytga
+    customerBalance(customerId, { asOf: from }),
     db.invoice.findMany({ where: { ...invWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { order: { select: { orderNo: true } } } }),
     db.payment.findMany({ where: { ...payWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, cashAccount: { select: { name: true } } } }),
   ]);
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const opening = r2(Number(invBefore._sum.amount ?? 0) - Number(payBefore._sum.amount ?? 0));
+  const opening = before.balance;
   const lines: StatementLine[] = [
     ...invoices.map((i): StatementLine => i.isOpening
       // Boshlang'ich qoldiq: musbat — mijoz qarzi (debet), manfiy — mijoz avansi (kredit)

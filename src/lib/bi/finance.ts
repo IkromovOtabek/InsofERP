@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { receivablesReport } from "@/lib/receivables";
 import { type Range, type Gran, loadSales, loadRevenue, materialCosts, sum, safeDiv, kpi, series, addDays, startOfDay, std, mean, CAPITAL_RATE_DAY } from "./core";
 import { materialOverview } from "./stock";
 import { customerBase } from "./customers";
@@ -60,14 +61,14 @@ export async function lossChannels(r: Range) {
 
 export async function financeTab(r: Range, gran: Gran, page: number, size: number, account?: string) {
   const today = startOfDay(new Date());
-  const [loss, cur, prev, payments, prevPayments, accounts, allPay, openInv, receipts, prevReceipts, cust, wo, batches, prevBatches, tripsCur, tripsPrev] = await Promise.all([
+  const [loss, cur, prev, payments, prevPayments, accounts, allPay, recv, receipts, prevReceipts, cust, wo, batches, prevBatches, tripsCur, tripsPrev] = await Promise.all([
     // Tushum va tannarx — yetkazilgan reyslar bo'yicha (realizatsiya), zayavka sanasi bo'yicha emas
     lossChannels(r), loadRevenue(r.from, r.to), loadRevenue(r.prevFrom, r.prevTo),
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, include: { customer: { select: { name: true } }, cashAccount: true, invoice: { select: { invoiceNo: true } } }, orderBy: { date: "desc" } }),
     db.payment.findMany({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, select: { amount: true } }),
     db.cashAccount.findMany({ where: { isActive: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
-    db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { amount: true, date: true, payments: { select: { amount: true } } } }),
+    receivablesReport(), // yagona debitorka (schyotlar − barcha to'lovlar, FIFO aging)
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
     customerBase(),
@@ -87,7 +88,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const profit = gross - writeOff;
   const cashIn = sum(payments.map((p) => Number(p.amount))), prevCashIn = sum(prevPayments.map((p) => Number(p.amount)));
   const purchases = sum(receipts.map((i) => Number(i.qty) * Number(i.price))), prevPurchases = sum(prevReceipts.map((i) => Number(i.qty) * Number(i.price)));
-  const receivable = sum(openInv.map((i) => Math.max(0, Number(i.amount) - sum(i.payments.map((p) => Number(p.amount))))));
+  const receivable = recv.total;
   const debtors = cust.filter((c) => c.debt > 0).length;
 
   // Kassa balanslari: mijoz to'lovlari + boshqa kirimlar − chiqimlar (Kirim-Chiqim va direktor paneli bilan bir xil).
@@ -130,8 +131,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const expenseTotal = sum(expenses.map((e) => e.value));
 
   // Debitorka aging
-  const aging = [0, 0, 0, 0];
-  for (const inv of openInv) { const open = Number(inv.amount) - sum(inv.payments.map((p) => Number(p.amount))); if (open <= 0) continue; const age = (today.getTime() - startOfDay(inv.date).getTime()) / 86400000; aging[age <= 30 ? 0 : age <= 60 ? 1 : age <= 90 ? 2 : 3] += open; }
+  const aging = recv.buckets; // 0–30 / 31–60 / 61–90 / 90+
 
   // Top 10 to'lov
   const topPayments = [...payments].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 10);

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { receivablesReport } from "@/lib/receivables";
 import { type Range, addDays, startOfDay, sum, safeDiv, ACTIVE_ORDER, abc, bucketKey, bucketLabel, bucketsFor } from "./core";
 
 export type Segment = "VIP" | "Loyal" | "Regular" | "New" | "At Risk" | "Lost" | "Yangi (xaridsiz)";
@@ -17,10 +18,11 @@ const DAY = 86400000;
 
 export async function customerBase(): Promise<CustomerRow[]> {
   const today = startOfDay(new Date()), since180 = addDays(today, -180);
-  const [customers, items, invoices] = await Promise.all([
+  const [customers, items, recv] = await Promise.all([
     db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, phone: true, creditLimit: true, createdAt: true, isActive: true } }),
     db.orderItem.findMany({ where: { order: { status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, order: { select: { id: true, date: true, customerId: true } } } }),
-    db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { id: true, customerId: true, amount: true, date: true, payments: { select: { amount: true } } } }),
+    // Qarz — yagona debitorka (schyotlar − barcha to'lovlar; muddati o'tgan — FIFO, sozlamadagi kun bo'yicha)
+    receivablesReport(),
   ]);
 
   const byCust = new Map<string, { orders: Map<string, { date: Date; revenue: number }> }>();
@@ -28,14 +30,7 @@ export async function customerBase(): Promise<CustomerRow[]> {
     const c = byCust.get(i.order.customerId) ?? { orders: new Map() }; byCust.set(i.order.customerId, c);
     const o = c.orders.get(i.order.id) ?? { date: i.order.date, revenue: 0 }; o.revenue += Number(i.qtyM3) * Number(i.price); c.orders.set(i.order.id, o);
   }
-  const debtBy = new Map<string, { debt: number; overdue: number; oldest: number | null }>();
-  for (const inv of invoices) {
-    const open = Number(inv.amount) - sum(inv.payments.map((p) => Number(p.amount)));
-    if (open <= 0) continue;
-    const age = Math.floor((today.getTime() - startOfDay(inv.date).getTime()) / DAY);
-    const d = debtBy.get(inv.customerId) ?? { debt: 0, overdue: 0, oldest: null }; debtBy.set(inv.customerId, d);
-    d.debt += open; if (age > 30) d.overdue += open; d.oldest = Math.max(d.oldest ?? 0, age);
-  }
+  const debtBy = new Map([...recv.byCustomer.values()].map((r) => [r.customerId, { debt: r.debt, overdue: r.overdue, oldest: r.oldestDays }]));
 
   const rows = customers.map((c) => {
     const orders = [...(byCust.get(c.id)?.orders.values() ?? [])].sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -104,17 +99,10 @@ export async function customersTab(r: Range, filter: { segment?: string; risk?: 
     cells[ri][fi]++; cellMoney[ri][fi] += x.monetary;
   }
 
-  // Qarz aging
-  const invoices = await db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { date: true, amount: true, customerId: true, customer: { select: { name: true } }, payments: { select: { amount: true } } } });
-  const aging = { "0–30": 0, "31–60": 0, "61–90": 0, "90+": 0 } as Record<string, number>;
-  const agingByCust = new Map<string, { name: string; b: number[] }>();
-  for (const inv of invoices) {
-    const open = Number(inv.amount) - sum(inv.payments.map((p) => Number(p.amount))); if (open <= 0) continue;
-    const age = (today.getTime() - startOfDay(inv.date).getTime()) / DAY;
-    const bi = age <= 30 ? 0 : age <= 60 ? 1 : age <= 90 ? 2 : 3;
-    aging[Object.keys(aging)[bi]] += open;
-    const c = agingByCust.get(inv.customerId) ?? { name: inv.customer.name, b: [0, 0, 0, 0] }; c.b[bi] += open; agingByCust.set(inv.customerId, c);
-  }
+  // Qarz aging — yagona debitorka, to'lovlar FIFO bilan eng eski schyotlarga taqsimlangan
+  const recv = await receivablesReport();
+  const aging = Object.fromEntries(recv.labels.map((l, i) => [l, recv.buckets[i]!])) as Record<string, number>;
+  const agingByCust = new Map(recv.rows.map((r) => [r.customerId, { name: r.name, b: r.buckets }]));
   const agingTop = [...agingByCust.entries()].map(([id, c]) => ({ id, name: c.name, b: c.b, total: sum(c.b) })).sort((a, b) => b.total - a.total).slice(0, 10);
 
   // Mijoz oqimi: oy bo'yicha yangi / yo'qotilgan (oxirgi 6 oy)

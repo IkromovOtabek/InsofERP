@@ -209,7 +209,7 @@ const customerFind: Tool = {
       return [
         `${c.name}${c.isActive ? "" : " (nofaol)"} · INN ${c.inn ?? "—"} · tel ${c.phone ?? "—"} · manzil ${c.address ?? "—"} · ro'yxatga olingan ${fmtDate(c.createdAt)}`,
         b ? `  Holat: ${b.segment} · xavf ${b.risk} · ${b.orders} ta buyurtma · oxirgisi ${b.lastOrder ? `${fmtDate(b.lastOrder)} (${b.recency} kun oldin)` : "hali yo'q"} · jami xarid ${M(b.lifetime)} · oyiga o'rtacha ${M(b.avgMonthly)}` : "",
-        cr ? `  Qarz: ${M(cr.debt)}${b?.overdueDebt ? ` (muddati o'tgan ${M(b.overdueDebt)}, eng eskisi ${b.oldestDebtDays} kun)` : ""} · schyotsiz ochiq zayavkalar ${M(cr.open)} · limit ${M(cr.limit)}, ishlatilgan ${M(cr.used)}, bo'sh ${M(cr.free)}${cr.blacklisted ? " · QORA RO'YXAT (limit to'liq ishlatilgan)" : ""}` : "",
+        cr ? `  ${cr.advance > 0.005 ? `Avans (mijoz oldindan to'lagan): ${M(cr.advance)}` : `Qarz: ${M(cr.debt)}`}${b?.overdueDebt ? ` (muddati o'tgan ${M(b.overdueDebt)}, eng eskisi ${b.oldestDebtDays} kun)` : ""} · schyotsiz ochiq zayavkalar ${M(cr.open)} · limit ${M(cr.limit)}, ishlatilgan ${M(cr.used)}, bo'sh ${M(cr.free)}${cr.blacklisted ? " · QORA RO'YXAT (limit to'liq ishlatilgan)" : ""}` : "",
         b ? `  Tavsiya: ${b.action}` : "",
         `  Sahifa: ${link(`/customers/${c.id}`)}`,
       ].filter(Boolean).join("\n");
@@ -245,7 +245,7 @@ const customersList: Tool = {
 
 const invoicesList: Tool = {
   name: "invoices_list",
-  description: "Schyotlar: raqam, sana, mijoz, summa, to'langan, qoldiq, holat, yoshi. open = ochiq/qisman to'langan (debitorka).",
+  description: "Schyotlar: raqam, sana, mijoz, summa, to'langan, qoldiq, holat, yoshi. open = ochiq/qisman to'langan. Bu hujjat holati: mijozning umumiy qarzi (schyotga bog'lanmagan avanslar ham ayirilgan) — customer_lookup / customers_list da.",
   parameters: {
     type: "object",
     properties: {
