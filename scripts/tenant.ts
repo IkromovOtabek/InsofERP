@@ -53,6 +53,8 @@ async function main() {
     const res = await collectAll();
     for (const t of all) {
       const s = res.get(t.id);
+      // Arxivdagi korxona tekshirilmaydi (collectAll) — «DOWN» deb chalg'itmasin
+      if (!s) { console.log(`${t.slug.padEnd(16)} ${t.status.toLowerCase()} (tekshirilmadi)`); continue; }
       console.log(`${t.slug.padEnd(16)} web:${s?.web.up ? "ok" : "DOWN"} db:${s?.db.ok ? "ok" : "DOWN"} eco:${s?.eco.configured ? (s.eco.up ? "ok" : "DOWN") : "-"} users:${s?.users.active ?? "-"} orders/oy:${s?.orders.month ?? "-"}`);
     }
   } else if (cmd === "sso-key") {

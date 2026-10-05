@@ -45,65 +45,161 @@ lekin har kirishi korxona audit jurnaliga yoziladi. Bu hisobga parol bilan kirib
 (SMS, Telegram, ECO) boshqa korxonalarga «sizadi». Kod `releases/<sha>` dan ishlagani uchun barcha yo'llar
 (`TENANTS_DIR`, `UPLOADS_DIR`, `APK_PATH`) **mutlaq** yozilsin.
 
-## Birinchi o'rnatish (bir marta)
+## Birinchi o'rnatish (insof) — qadam-baqadam
+
+Mavjud yagona `insof-erp` xizmatini (repo ildizida, `.env` bilan, port 3000) platformaga ko'chirish va IT panelni
+yoqish. Bir marta qilinadi, **ishdan tashqari vaqtda** (~1 soat; foydalanuvchilar uchun uzilish faqat 7-qadamda,
+10–30 soniya). Har qadam: buyruqlar → **tekshirish** → **qaytarish** (shu qadamda nimadir buzilsa).
+Buyruqlar `deploy` foydalanuvchisi ostida, `sudo` faqat ko'rsatilgan joyda. Oldin: `docs/server-xavfsizlik.md` 3.1–3.5.
+
+**Qaytarishning umumiy qoidasi:** 7-qadamgacha eski `insof-erp` xizmati umuman o'zgarmaydi — biror qadam o'xshamasa,
+shu yerda to'xtab, yangi narsalarni olib tashlash kifoya. Bazaga yagona o'zgarish — 4-qadamdagi navbatdagi migratsiyalar
+(oddiy `deploy.sh` ham shuni qiladi; migratsiyalar «kengaytiruvchi», eski kod yangi sxemada ishlaydi).
+
+### 0. Qo'lda zaxira (o'zgarishlardan OLDIN)
 
 ```bash
-# 1. Control baza
-sudo -u postgres psql -c "CREATE DATABASE insof_control OWNER insof"
-sudo -u postgres psql -c "ALTER ROLE insof CREATEDB"          # panel yangi korxona bazasini o'zi yaratadi
+cd /var/www/insof-erp
+pg_dump -Fc "$(grep -E '^DATABASE_URL=' .env | cut -d= -f2- | tr -d '"' | sed 's/?.*//')" -f ~/insof-oldin-$(date +%F).dump
+tar -czf ~/insof-uploads-oldin-$(date +%F).tar.gz -C /var/www/insof-erp uploads
+cp -p .env ~/insof-env-oldin-$(date +%F) && chmod 600 ~/insof-env-oldin-*
+```
+Tekshirish: `ls -lh ~/insof-*` — dump hajmi 0 emas; `pg_restore -l ~/insof-oldin-*.dump | head` xatosiz.
+Qaytarish: kerak emas (faqat o'qildi).
 
-# 2. Sozlamalar
+### 1. Paketlar va huquqlar
+
+```bash
+sudo apt install -y postgresql-client perl rclone        # rclone o'rniga restic ham bo'ladi (backup.env → OFFSITE)
+# deploy.sh xizmatlarni `sudo systemctl restart` bilan qayta ishga tushiradi. Parol so'ralmasligi uchun (ixtiyoriy):
+echo 'deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart insof-erp@*, /usr/bin/systemctl restart insof-control, /usr/bin/systemctl restart insof-eco' \
+  | sudo tee /etc/sudoers.d/insof-deploy >/dev/null && sudo chmod 440 /etc/sudoers.d/insof-deploy && sudo visudo -c
+```
+Tekshirish: `psql --version`, `rclone version`, `sudo -l -U deploy | grep insof`.
+Qaytarish: `sudo rm /etc/sudoers.d/insof-deploy`.
+
+### 2. Postgres: control baza va CREATEDB
+
+```bash
+sudo -u postgres psql -c "CREATE DATABASE insof_control OWNER insof"
+sudo -u postgres psql -c "ALTER ROLE insof CREATEDB"     # panel yangi korxona bazasini, restore-test.sh vaqtinchalik bazani o'zi yaratadi
+```
+Tekshirish: `psql "postgresql://insof:<PAROL>@127.0.0.1:5432/insof_control" -c 'SELECT 1'` → 1.
+Qaytarish: `sudo -u postgres psql -c "DROP DATABASE insof_control"`; `... "ALTER ROLE insof NOCREATEDB"`.
+
+### 3. Sozlama fayllari (hammasi `chmod 600`, egasi `deploy`)
+
+```bash
 cd /var/www/insof-erp
 cp docs/deploy/control.env.example control.env && chmod 600 control.env && nano control.env
-cp build.env.example build.env && chmod 600 build.env && nano build.env   # NEXT_PUBLIC_YANDEX_MAPS_KEY, DATABASE_URL, APP_URL
+cp build.env.example build.env && chmod 600 build.env && nano build.env
+mkdir -p -m 700 tenants && cp -p .env tenants/insof.env && chmod 600 tenants/insof.env && nano tenants/insof.env
+sudo install -d -m 750 -o root -g deploy /etc/insof
+sudo install -m 640 -o root -g deploy docs/deploy/backup.env.example /etc/insof/backup.env && sudo nano /etc/insof/backup.env
+```
+`.env` hozircha **ko'chirilmaydi, nusxalanadi** — eski xizmat 7-qadamgacha undan foydalanadi.
 
-# 3. Birinchi reliz (build + barcha bazalarga migratsiya + current symlink; xizmatlarga tegmaydi)
-SKIP_RESTART=1 bash scripts/deploy.sh
+| Fayl | Kalitlar (faqat nomlari) |
+|---|---|
+| `control.env` | `NODE_ENV=production`, `TZ`, `INSOF_MODE=control`, `AUTH_SECRET` (yangi, `openssl rand -base64 48`), `CONTROL_SECRET` (yangi, boshqa qiymat), `CONTROL_DATABASE_URL` (…/insof_control), `TENANT_DATABASE_URL` (…/{db}?connection_limit=5), `DATABASE_URL` (= control), `TENANTS_DIR=/var/www/insof-erp/tenants`, `TENANT_DATA_ROOT=/var/lib/insof`, `TENANT_BASE_DOMAIN` |
+| `build.env` | `NEXT_PUBLIC_YANDEX_MAPS_KEY` (`.env` dan ko'chiring), `DATABASE_URL` (insof_erp), `APP_URL=https://insof-erp.uz`, `NEXT_TELEMETRY_DISABLED=1` |
+| `tenants/insof.env` | `.env` ning hammasi (`DATABASE_URL`, **eski** `AUTH_SECRET` — ochiq sessiyalar saqlanadi, SMS/Telegram/ECO/AI kalitlari) **+** `PORT=3000`, `TENANT_SLUG=insof`, `UPLOADS_DIR=/var/www/insof-erp/uploads`, `APK_PATH=/var/www/insof-erp/uploads/app/insof-eco.apk`, `CONTROL_SSO_KEY` (5-qadamda). **O'chiring:** `CONTROL_SECRET`, `NEXT_PUBLIC_*` (build.env da) |
+| `/etc/insof/backup.env` | `APP_DIR`, `OUT_DIR`, `KEEP_DAYS`, `BACKUP_UPLOADS`, `OFFSITE` (rclone/restic/local), `RCLONE_REMOTE` yoki `RESTIC_REPOSITORY`+`RESTIC_PASSWORD_FILE` yoki `OFFSITE_DIR`, `ALERT_TG_BOT_TOKEN`, `ALERT_TG_CHAT_ID` |
 
-# 4. Birinchi superadmin (parol so'raladi)
-cd /var/www/insof-erp/current && CONTROL_ENV_FILE=/var/www/insof-erp/control.env npm run control:admin -- otabek "Otabek Ikromov"
+Tekshirish: `ls -l control.env build.env tenants/` — hammasi `-rw-------`; `grep -c '^CONTROL_SECRET' tenants/insof.env` → 0;
+`grep -E '^(PORT|TENANT_SLUG|UPLOADS_DIR)=' tenants/insof.env` — uchala qator bor.
+Qaytarish: `rm -r control.env build.env tenants` (eski `.env` joyida).
 
-# 5. Panel xizmati + nginx (admin.insof-erp.uz → 127.0.0.1:3100)
-sudo install -m 644 docs/deploy/insof-control.service /etc/systemd/system/ && sudo systemctl daemon-reload
+### 4. Birinchi reliz (xizmatlarga tegmaydi)
+
+```bash
+cd /var/www/insof-erp && SKIP_RESTART=1 bash scripts/deploy.sh
+```
+`git pull` → `releases/<sha>` ga `npm ci` + build → control baza va `insof_erp` ga `prisma migrate deploy` → `current` symlink.
+Bazasi topilmasa yoki ulanib bo'lmasa deploy to'xtaydi (Prisma yo'q bazani jim yaratib yubormasin).
+Tekshirish: oxirida `✓ Deploy tugadi`; `readlink current` → `releases/<sha>`; `cat current/RELEASE`;
+`psql "<CONTROL_DATABASE_URL, ?siz>" -c '\dt'` → Tenant, SuperAdmin, ControlEvent, TenantStat.
+Qaytarish: `rm current && rm -rf releases` (eski xizmat repo ildizidagi `.next` dan ishlashda davom etadi).
+
+### 5. Superadmin, insof'ni ro'yxatga olish, SSO kaliti
+
+```bash
+cd /var/www/insof-erp/current
+export CONTROL_ENV_FILE=/var/www/insof-erp/control.env
+npm run control:admin -- otabek "Otabek Ikromov"                    # parol so'raladi (8+ belgi, harf+raqam)
+npm run tenant -- register --slug insof --name "Insof beton" --db insof_erp --port 3000 --domain insof-erp.uz
+{ echo; npm run -s tenant -- sso-key insof; } >> /var/www/insof-erp/tenants/insof.env   # CONTROL_SSO_KEY=... qatori
+```
+Tekshirish: `npm run -s tenant -- list` → `insof ACTIVE :3000 insof_erp insof-erp.uz`;
+`grep -c '^CONTROL_SSO_KEY=' /var/www/insof-erp/tenants/insof.env` → 1.
+Qaytarish: `psql "<control URL>" -c "DELETE FROM \"Tenant\" WHERE slug='insof'"`; qatorni insof.env dan o'chiring.
+
+### 6. IT panel xizmati va nginx
+
+DNS: `admin.insof-erp.uz` → server IP (certbot'dan oldin).
+```bash
+cd /var/www/insof-erp
+sudo install -m 644 docs/deploy/insof-erp@.service docs/deploy/insof-control.service /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl enable --now insof-control
 sudo install -m 644 docs/deploy/nginx-limits.conf /etc/nginx/conf.d/insof-limits.conf
 sudo install -m 644 docs/deploy/nginx-control.conf /etc/nginx/sites-available/insof-control
 sudo ln -sf /etc/nginx/sites-available/insof-control /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx && sudo certbot --nginx -d admin.insof-erp.uz --redirect
 ```
+Tekshirish: `curl -s 127.0.0.1:3100/api/health` → `{"ok":true,"version":"<sha>"}`; brauzerda
+`https://admin.insof-erp.uz/superadmin/login` → kirish; ro'yxatda «Insof beton». `journalctl -u insof-control -n 50` xatosiz.
+Qaytarish: `sudo systemctl disable --now insof-control`; `sudo rm /etc/nginx/sites-enabled/insof-control && sudo systemctl reload nginx`.
 
-## Mavjud Insof'ni platformaga ko'chirish
+### 7. insof'ni yangi xizmatga o'tkazish (UZILISH 10–30 s)
 
 ```bash
 cd /var/www/insof-erp
-mkdir -p tenants && mv .env tenants/insof.env && chmod 600 tenants/insof.env
-# tenants/insof.env ga qo'shing / tekshiring:
-#   PORT=3000
-#   TENANT_SLUG=insof
-#   UPLOADS_DIR=/var/www/insof-erp/uploads                     # eski fayllar joyida qoladi (MUTLAQ yo'l)
-#   APK_PATH=/var/www/insof-erp/uploads/app/insof-eco.apk
-#   CONTROL_SSO_KEY=<pastdagi sso-key natijasi>                 # CONTROL_SECRET EMAS
-#   NEXT_PUBLIC_YANDEX_MAPS_KEY — build.env ga ko'chiring (bu yerda ta'siri yo'q)
+sudo systemctl disable --now insof-erp                    # eski yagona xizmat
+mv .env .env.pre-platform                                 # ildizda .env qolmasin (skriptlar uni o'qimasin); qaytarish uchun saqlanadi
+sudo bash scripts/tenant-up.sh insof                      # insof-erp@insof: current/ dan, port 3000, /api/health kutadi
+```
+Tekshirish:
+- `systemctl is-active insof-erp@insof` → active; `curl -s 127.0.0.1:3000/api/health` → `ok:true`, `version` = `cat current/RELEASE` boshi;
+- `journalctl -u insof-erp@insof -n 80 | grep -iE 'eacces|error'` — bo'sh (ProtectSystem=strict ostida yozish huquqi);
+- brauzerda `https://insof-erp.uz/login` → direktor kiradi; eski ochiq sessiyalar saqlangan; shartnoma faylini ochish (uploads);
+- panel → Insof → «Tekshirish» → ERP/baza yashil; «Kirish (IT)» → yangi oynada korxona ichida (yorliq «IT superadmin»).
 
-SKIP_RESTART=1 bash scripts/deploy.sh                      # releases/<sha> + current; eski xizmat ishlashda davom etadi
-
-cd /var/www/insof-erp/current
-export CONTROL_ENV_FILE=/var/www/insof-erp/control.env
-npm run -s tenant -- sso-key insof                         # → CONTROL_SSO_KEY=... ni tenants/insof.env ga yozing
-npm run tenant -- register --slug insof --name "Insof beton" --db insof_erp --port 3000 --domain insof-erp.uz
-cd /var/www/insof-erp
-
-sudo systemctl disable --now insof-erp                     # eski yagona xizmat (WorkingDirectory repo ildizida edi)
-sudo bash scripts/tenant-up.sh insof                       # endi insof-erp@insof (current/ dan, port 3000)
+Qaytarish (eski holatga, ~10 s):
+```bash
+sudo systemctl disable --now insof-erp@insof
+mv .env.pre-platform .env
+sudo systemctl enable --now insof-erp                     # eski unit va repo ildizidagi eski .next build o'zgarmagan
 ```
 
-Eski xizmat to'xtashi va yangisi ko'tarilishi orasida bir necha soniya uzilish bo'ladi — ishdan tashqari vaqtda qiling.
+### 8. nginx (insof domeni)
 
-Eski nginx sayt fayli (`/etc/nginx/sites-available/insof-erp`) ni `docs/deploy/nginx-tenant.conf` asosida yangilang
-(X-Real-IP, limit_req, 16m) yoki `sudo bash scripts/tenant-up.sh insof insof-erp.uz` bilan qayta yarating
-(certbot 443 qismini qayta qo'shadi).
+Mavjud `/etc/nginx/sites-available/insof-erp` 3000-portga yo'naltirgani uchun ishlashda davom etadi. Yangi shablonga
+(X-Real-IP, limit_req, 16m, `/api/health` yopiq) o'tish: `sudo bash scripts/tenant-up.sh insof insof-erp.uz`
+(`insof-insof` sayt faylini yaratadi, certbot 443 qismini qo'shadi) → eski faylni `sites-enabled` dan olib tashlang → `sudo nginx -t && sudo systemctl reload nginx`.
+Tekshirish: Mac'dan `curl -sI https://insof-erp.uz/login` → 200; `curl -sI https://insof-erp.uz/api/health` → 403.
+Qaytarish: eski sayt faylini `sites-enabled` ga qaytarib, `insof-insof` ni olib tashlang, `reload`.
 
-Skriptlar korxona fayli bilan: `cd /var/www/insof-erp/current && ENV_FILE=/var/www/insof-erp/tenants/insof.env npm run eco:sync`.
+### 9. Zaxira nusxa, kuzatuv, cron
+
+```bash
+sudo install -d -m 750 -o deploy -g deploy /var/backups/insof
+for f in backup restore-test health stats; do sudo install -o deploy -g deploy -m 640 /dev/null /var/log/insof-$f.log; done
+sudo install -m 644 docs/deploy/logrotate-insof /etc/logrotate.d/insof
+rclone config                                              # deploy ostida: masofa (B2/S3/...) → backup.env RCLONE_REMOTE
+bash scripts/server-backup.sh && bash scripts/restore-test.sh
+crontab -e                                                 # «Zaxira nusxa» bo'limidagi 4 qator
+```
+Tekshirish: ikkala skript `exit 0` (`echo $?`); `/var/backups/insof/<sana>/` da `control.dump`, `insof.dump`, `insof-uploads.tar.gz`, `SHA256SUMS`;
+`rclone ls <RCLONE_REMOTE>` — shu nusxa; Telegram: `sudo systemctl stop insof-control`, 2–3 daqiqada «[XATO]» xabari, `start` — «[TIKLANDI]».
+Qaytarish: cron qatorlarini o'chirish. Eski `erp-backup` cron qatorini endi o'chiring.
+
+### 10. Yakuniy
+
+```bash
+cd /var/www/insof-erp && bash scripts/deploy.sh             # to'liq: restart + /api/health + avtomatik qaytarish
+```
+Tekshirish: `✓ Deploy tugadi`; «Go-live ro'yxati» 9-band (demo/test ma'lumot yo'q). Skriptlar endi korxona fayli bilan:
+`cd /var/www/insof-erp/current && ENV_FILE=/var/www/insof-erp/tenants/insof.env npm run eco:sync`.
 
 ## Yangi korxona
 
@@ -147,32 +243,34 @@ sudo systemctl restart insof-erp@<slug>
 
 1. `git pull` → `releases/<sha>` ga alohida `npm ci` (npm 10, lock fayl bilan) + `npm run build` (`build.env` bilan).
    Ishlayotgan jarayonlarga tegilmaydi; build xato bo'lsa — hech narsa o'zgarmaydi.
-2. `prisma migrate deploy` — control baza va **har** `tenants/*.env` bazasi. Xato bo'lsa — almashtirilmaydi.
+2. `prisma migrate deploy` — control baza va **har** `tenants/*.env` bazasi. Avval `psql` bilan baza borligi tekshiriladi
+   (Prisma yo'q bazani o'zi yaratib yuboradi — `.env` dagi xato nom jim bo'sh bazaga aylanardi). Xato bo'lsa — almashtirilmaydi.
 3. `current` symlink atomar almashadi.
 4. Yoqilgan `insof-erp@*` va `insof-control` bittadan qayta ishga tushadi, har biri `127.0.0.1:<port>/api/health` = 200
    bo'lishini kutadi (60 s). Biri o'tmasa — `current` oldingi relizga qaytadi, qayta ishga tushirilganlar qaytariladi, exit 1.
 5. Oxirgi 3 reliz saqlanadi (`KEEP_RELEASES`).
 
-Qo'lda qaytarish: `ROLLBACK=1 bash scripts/deploy.sh`. **Migratsiyalar qaytmaydi** — sxema o'zgarishlari
+Qo'lda qaytarish: `ROLLBACK=1 bash scripts/deploy.sh` (eng yangi boshqa relizga). Aniq commit/tegni chiqarish:
+`DEPLOY_REF=<sha|teg> bash scripts/deploy.sh`. **Migratsiyalar qaytmaydi** — sxema o'zgarishlari
 «kengaytiruvchi» bo'lsin (ustun qo'shish; eski ustunni o'chirish keyingi relizda), shunda oldingi kod yangi bazada ishlaydi.
 
 Repodagi `docs/deploy/*.service` o'zgarsa deploy ogohlantiradi: `sudo install -m 644 docs/deploy/<unit> /etc/systemd/system/ && sudo systemctl daemon-reload`.
 
+**Sinov rejimi** `DRY_RUN=1` — faqat sinov `APP_DIR` bilan (prod papkasida rad etiladi): systemd, sudo, git pull, ECO'ga
+tegmaydi; build, migratsiya, symlink, /api/health va avtomatik qaytarish haqiqatan bajariladi; xizmatlar `RESTART_CMD` bilan.
+Namuna va to'liq lokal sinov — «Lokal sinov (QA)».
+
 ## Zaxira nusxa
 
-```bash
-sudo install -d -m 750 -o root -g deploy /etc/insof
-sudo install -m 640 -o root -g deploy docs/deploy/backup.env.example /etc/insof/backup.env && sudo nano /etc/insof/backup.env
-sudo install -d -m 750 -o deploy -g deploy /var/backups/insof
-for f in backup restore-test health stats; do sudo install -o deploy -g deploy -m 640 /dev/null /var/log/insof-$f.log; done
-sudo install -m 644 docs/deploy/logrotate-insof /etc/logrotate.d/insof
-# rclone: deploy ostida `rclone config` → masofa (B2/S3/...), backup.env da RCLONE_REMOTE=...
-bash scripts/server-backup.sh && bash scripts/restore-test.sh      # birinchi qo'lda sinov
-```
+O'rnatish — «Birinchi o'rnatish» 3-qadam (`/etc/insof/backup.env`) va 9-qadam (papka, loglar, logrotate, rclone, birinchi sinov).
 
 `server-backup.sh`: control + har korxona bazasi (`pg_dump -Fc`), har korxona fayllari (tar.gz), SHA256SUMS,
-14 kun mahalliy, rclone/restic bilan server tashqarisiga; xato bo'lsa Telegram + exit 1.
-`restore-test.sh`: oxirgi nusxani vaqtinchalik bazaga tiklaydi, jadval/qator sonlarini tekshiradi, bazani o'chiradi.
+14 kun mahalliy, server tashqarisiga `OFFSITE`: `rclone` | `restic` | `local` (`OFFSITE_DIR` — boshqa disk/mount, nazorat
+yig'indisi bilan) | `none`. Vosita o'rnatilmagan yoki sozlanmagan bo'lsa ham mahalliy nusxa olinadi, lekin skript **exit 1**
+va ogohlantirish beradi (jim «muvaffaqiyat» yo'q). Biror baza olinmasa — qolganlari olinadi, xabarda ro'yxat.
+Telegram sozlanmagan bo'lsa ogohlantirish matni logga `(ALERT)` bilan yoziladi. Bir vaqtda ikki nusxa ishlamaydi (qulf).
+`restore-test.sh`: oxirgi nusxaning SHA256SUMS ini tekshiradi, har dump'ni vaqtinchalik bazaga (`insof_restore_*`,
+`RESTORE_DB_PREFIX`) tiklaydi, jadval/qator sonlarini tekshiradi, bazani o'chiradi (xato bo'lsa ham); xato — exit 1 + ogohlantirish.
 
 Cron (`crontab -e`, **deploy** ostida):
 
@@ -192,6 +290,8 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
 
 - `scripts/health-watch.sh` (har daqiqa): har yoqilgan korxona va panelning `/api/health` i. Ketma-ket 2 marta
   yiqilsa Telegram'ga xabar, tiklanganda — yana xabar; davom etsa soatda bir eslatma (takrorlanmaydi).
+  Qaysi xizmat yoqilganini `systemctl is-enabled` dan oladi; systemd'siz muhitda xato bilan to'xtaydi (`CHECK_ALL=1` —
+  barcha `tenants/*.env` + panel).
 - `/api/health` — login'siz, 200 `{"ok":true,"version":"<sha>"}` yoki 503; nginx shablonlarida tashqaridan yopiq.
 - Panel bosh sahifasi har ochilganda jonli tekshiradi (ERP javobi, baza, ECO `/v1/health`) va kunlik suratni saqlaydi.
 - To'xtatilgan korxona: xodimlar veb/mobilda darhol chiqariladi, sabab login sahifasida ko'rinadi; IT kira oladi.
@@ -199,13 +299,12 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
 ## Go-live ro'yxati (tartib bilan)
 
 1. **Server:** `docs/server-xavfsizlik.md` 3.1–3.5 (3000/3010 yopiq, SSH faqat kalit, fail2ban, avtomatik yangilanish, Postgres faqat localhost).
-2. **Zaxira nusxa — o'zgarishlardan OLDIN:** joriy bazaning qo'lda nusxasi: `pg_dump -Fc "<URL>" -f ~/insof-oldin.dump`.
-3. **Sozlamalar:** `control.env`, `build.env`, `tenants/insof.env` (yuqoridagi «ko'chirish»); ildizda `.env` QOLMASIN; barcha fayllar `chmod 600`.
-4. **Birinchi reliz:** `SKIP_RESTART=1 bash scripts/deploy.sh`.
-5. **systemd:** `sudo install -m 644 docs/deploy/insof-erp@.service docs/deploy/insof-control.service /etc/systemd/system/ && sudo systemctl daemon-reload`;
-   eski `insof-erp` xizmatini o'chirish; `sudo bash scripts/tenant-up.sh insof insof-erp.uz`; panel (`insof-control`).
-   `journalctl -u insof-erp@insof -n 50 | grep -i eacces` — bo'sh bo'lsin (ProtectSystem=strict).
-6. **nginx:** `insof-limits.conf`, korxona va panel saytlari yangi shablonlardan; `nginx -t`. Mac'dan 429 sinovi (server-xavfsizlik.md 3.4).
+2. **Lokal sinov** (Mac'da, deploydan oldin): `scripts/qa/d-run-all.sh` — hammasi PASS («Lokal sinov (QA)»).
+3. **«Birinchi o'rnatish (insof)»** 0–7-qadamlar: qo'lda zaxira, paketlar, control baza, sozlama fayllari (ildizda `.env` QOLMASIN,
+   hammasi `chmod 600`), birinchi reliz, superadmin + ro'yxat + SSO kaliti, panel, insof'ni `insof-erp@insof` ga o'tkazish.
+4. **systemd:** `journalctl -u insof-erp@insof -n 50 | grep -i eacces` — bo'sh bo'lsin (ProtectSystem=strict).
+5. **nginx** (8-qadam): `insof-limits.conf`, korxona va panel saytlari yangi shablonlardan; `nginx -t`. Mac'dan 429 sinovi (server-xavfsizlik.md 3.4).
+6. **IT panel:** `https://admin.insof-erp.uz` faqat kerakli IP'lardan (nginx-control.conf → `allow`/`deny`), superadmin paroli kuchli.
 7. **SSO:** har korxonada `CONTROL_SSO_KEY` (global `CONTROL_SECRET` yo'q); paneldan «Kirish (IT)» ishlashini sinang.
 8. **Telegram webhook** har bot bor korxona uchun (`ENV_FILE=... npm run bot:webhook -- https://<domen>`), `npm run bot:webhook` holati — xatosiz.
 9. **Demo/test ma'lumot yo'qligini tekshirish** (insof bazasida, `psql "<insof DATABASE_URL, ?schema siz>"`):
@@ -225,7 +324,29 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
    Topilsa: test loginlar — `ALLOW_DEMO=yes-i-know npm run db:test-users -- --remove`; demo — `ALLOW_DEMO=yes-i-know npm run db:demo -- --remove`
    (har ikkalasi `ENV_FILE=/var/www/insof-erp/tenants/insof.env` bilan, `current/` dan); qolganini qo'lda yoki to'liq tozalash (README → «Birinchi direktor hisobi»).
    Keyin: `ENV_FILE=/var/www/insof-erp/tenants/insof.env npm run security:check` — standart parollar (admin123, parol123) qolmagan bo'lsin.
-10. **Zaxira va kuzatuv:** `/etc/insof/backup.env` (rclone masofa + Telegram), `server-backup.sh` → `restore-test.sh` qo'lda muvaffaqiyatli,
-    cron qatorlari, logrotate. Telegram sinov xabari: `health-watch.sh` ishlayotganda bitta xizmatni to'xtatib ko'ring.
-11. **Yakuniy:** `bash scripts/deploy.sh` (to'liq, restart bilan) xatosiz; `curl -s 127.0.0.1:3000/api/health` → `ok:true`; Mac'dan
+10. **Zaxira va kuzatuv** (9-qadam): `/etc/insof/backup.env` (rclone masofa + Telegram), `server-backup.sh` → `restore-test.sh` qo'lda
+    `exit 0`, cron qatorlari, logrotate. Telegram sinov xabari: `health-watch.sh` ishlayotganda bitta xizmatni to'xtatib ko'ring.
+11. **Yakuniy** (10-qadam): `bash scripts/deploy.sh` (to'liq, restart bilan) xatosiz; `curl -s 127.0.0.1:3000/api/health` → `ok:true`; Mac'dan
     `curl -sI https://insof-erp.uz/api/health` → 403 (tashqaridan yopiq).
+
+## Lokal sinov (QA)
+
+Platformani serverga chiqarishdan oldin Mac'da to'liq sinash (`scripts/qa/d-*`). Faqat lokal Postgres va `insof_test_` bazalari
+(`insof_test_ctl`, `insof_test_t_<slug>`, `insof_test_restore_*`), portlar 3204 (panel), 3205+ (korxonalar); serverdagi papkalar
+o'rniga `D_ROOT` (masalan `/tmp/insof-qa-d`). Panel test rejimida (`INSOF_ENV=test`) bo'lgani uchun u yaratgan korxonalar
+ham test rejimida va `insof_test_t_` prefiksli bazada (prodda test rejimi yoqilmaydi — server real kalit yoki test bo'lmagan
+baza bilan ishga tushmaydi).
+
+```bash
+D_ROOT=/tmp/insof-qa-d bash scripts/qa/d-run-all.sh        # sozlash → deploy (DRY_RUN) → HTTP → zaxira → kuzatuv → tozalash
+```
+
+| Skript | Nima |
+|---|---|
+| `d-setup.sh` | control.env/build.env/backup.env, `insof_test_ctl` + `control:migrate`, superadminlar (`control:admin`), «alfa» (`provisionTenant`) |
+| `d-deploy-test.sh first\|fail <ref>\|rollback\|again\|migfail\|guard` | `deploy.sh` `DRY_RUN=1`: build, migratsiya, symlink, health; buzuq reliz → avtomatik qaytarish; `ROLLBACK=1`; build qayta ishlatish; yo'q baza; himoyalar |
+| `d-platform.ts` | panel login/qulf, «beta» panel formasi orqali, SSO (takror, boshqa korxona, muddati o'tgan, soxta aud), direktor va IT hisobi, izolyatsiya, to'xtatish, statistika |
+| `d-backup-test.sh` | `server-backup.sh` (rclone/restic yo'q → exit 1, `OFFSITE=local`, yo'q baza, qulf) va `restore-test.sh` (butun, bitta, buzilgan) |
+| `d-health-test.sh` | `health-watch.sh`: korxona yiqilishi, ogohlantirish chegarasi, takrorlanmaslik, tiklanish |
+| `d-svc.sh` | systemd o'rnida `next start` (deploy'ning `RESTART_CMD`) |
+| `d-cleanup.sh` | jarayonlar, test bazalari, `D_ROOT` ni o'chiradi |

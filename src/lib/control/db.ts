@@ -1,5 +1,6 @@
 import { PrismaClient as ControlClient } from "@/generated/control";
 import { PrismaClient as TenantClient } from "@/generated/prisma";
+import { isTestDbUrl, isTestMode } from "../test-mode";
 
 /**
  * Markaziy panel bazalari.
@@ -9,6 +10,15 @@ import { PrismaClient as TenantClient } from "@/generated/prisma";
  */
 const g = globalThis as unknown as { controlDb?: ControlClient; tenantClients?: Map<string, TenantClient> };
 
+/**
+ * Test rejimi (INSOF_ENV=test): panel faqat lokal `insof_test…` bazalari bilan ishlaydi — control baza ham,
+ * korxona bazalari ham. Test panelga prod control.env berib yuborilsa birinchi murojaatdayoq xato.
+ */
+function assertTestDb(url: string | undefined, what: string) {
+  if (isTestMode() && !isTestDbUrl(url)) throw new Error(`[test-mode] ${what} lokal test bazasi emas (insof_test…)`);
+}
+
+assertTestDb(process.env.CONTROL_DATABASE_URL, "CONTROL_DATABASE_URL");
 export const control = g.controlDb ?? new ControlClient({ log: ["error"] });
 if (process.env.NODE_ENV !== "production") g.controlDb = control;
 
@@ -21,7 +31,10 @@ export function tenantDbUrl(dbName: string): string {
   if (!DB_NAME_RE.test(dbName)) throw new Error(`Baza nomi noto'g'ri: ${dbName}`);
   const tpl = process.env.TENANT_DATABASE_URL ?? "";
   if (!tpl.includes("{db}")) throw new Error("TENANT_DATABASE_URL sozlanmagan (masalan postgresql://insof:parol@127.0.0.1:5432/{db})");
-  return tpl.replace("{db}", dbName);
+  const url = tpl.replace("{db}", dbName);
+  // "postgres" — faqat CREATE DATABASE uchun tizim bazasi (provision.ts), unga ma'lumot yozilmaydi
+  if (dbName !== "postgres") assertTestDb(url, `Korxona bazasi "${dbName}"`);
+  return url;
 }
 
 export function tenantDb(dbName: string): TenantClient {

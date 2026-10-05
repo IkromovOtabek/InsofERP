@@ -8,7 +8,7 @@ const isProd = process.env.NODE_ENV === "production";
  * plugin/obyekt (object-src), <base> almashtirish va formani chetga yuborish (form-action) yopiladi.
  * Tashqi manbalar: Leaflet (cdnjs), xarita plitkalari (Yandex/OSM — img), Google shriftlari next/font orqali o'zimizda.
  */
-const CSP = [
+const cspWith = (formAction: string) => [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://cdnjs.cloudflare.com`,
   "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
@@ -21,8 +21,13 @@ const CSP = [
   "frame-ancestors 'self'",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  `form-action ${formAction}`,
 ].join("; ");
+const CSP = cspWith("'self'");
+// IT panel (/superadmin): «Kirish (IT)» tugmasi SSO tokenni korxona domeniga POST forma bilan yuboradi
+// (`/api/control/sso`). `form-action 'self'` buni brauzerda bloklardi — faqat panel sahifalarida korxona
+// domenlariga (https) forma yuborishga ruxsat. Korxona sahifalarida qoida o'zgarmaydi.
+const CSP_CONTROL = cspWith("'self' https:");
 
 const SECURITY_HEADERS = [
   // HTTPS majburiy (brauzer 1 yil eslab qoladi); HTTP javobda brauzer e'tiborsiz qoldiradi
@@ -48,7 +53,11 @@ const nextConfig: NextConfig = {
     middlewareClientMaxBodySize: "16mb",
   },
   async headers() {
-    return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
+    return [
+      { source: "/(.*)", headers: SECURITY_HEADERS },
+      // Bir xil kalitda keyingi qoida ustun (Next hujjati) — panelda faqat CSP almashadi
+      { source: "/superadmin/:path*", headers: [{ key: "Content-Security-Policy", value: CSP_CONTROL }] },
+    ];
   },
 };
 

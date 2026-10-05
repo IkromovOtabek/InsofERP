@@ -7,7 +7,7 @@
 #   2. Har bazaga `pg_dump -Fc` → $OUT_DIR/<sana>/<nom>.dump
 #   3. Har korxonaning fayllar papkasi → $OUT_DIR/<sana>/<slug>-uploads.tar.gz
 #   4. SHA256SUMS, mahalliy saqlash muddati (KEEP_DAYS, standart 14 kun)
-#   5. Server TASHQARISIGA: rclone yoki restic (OFFSITE=rclone|restic|none)
+#   5. Server TASHQARISIGA: rclone yoki restic (OFFSITE=rclone|restic|local|none); vosita o'rnatilmagan bo'lsa — XATO
 #   6. Biror qadam xato bersa — Telegram'ga ogohlantirish va exit 1
 #
 # Sozlama: /etc/insof/backup.env (namuna: docs/deploy/backup.env.example), chmod 600.
@@ -45,7 +45,7 @@ load_env_file() { # faqat ruxsat etilgan kalitlarni muhitga eksport qiladi (muhi
   return 0
 }
 
-load_env_file "$BACKUP_ENV" APP_DIR OUT_DIR KEEP_DAYS BACKUP_UPLOADS OFFSITE \
+load_env_file "$BACKUP_ENV" APP_DIR OUT_DIR KEEP_DAYS BACKUP_UPLOADS OFFSITE OFFSITE_DIR OFFSITE_KEEP_DAYS \
   RCLONE_REMOTE RCLONE_KEEP_DAYS RCLONE_CONFIG RESTIC_REPOSITORY RESTIC_PASSWORD_FILE RESTIC_KEEP_DAILY RESTIC_KEEP_WEEKLY RESTIC_KEEP_MONTHLY \
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY B2_ACCOUNT_ID B2_ACCOUNT_KEY \
   ALERT_TG_BOT_TOKEN ALERT_TG_CHAT_ID
@@ -62,8 +62,11 @@ FAILURES=()
 
 log() { printf '[%s] %s\n' "$(date +'%F %T')" "$*"; }
 
-tg_alert() { # Telegram'ga xabar (token/chat bo'lmasa — jim)
-  [ -n "${ALERT_TG_BOT_TOKEN:-}" ] && [ -n "${ALERT_TG_CHAT_ID:-}" ] || return 0
+tg_alert() { # Telegram'ga xabar (token/chat bo'lmasa — faqat logga, jim EMAS)
+  if [ -z "${ALERT_TG_BOT_TOKEN:-}" ] || [ -z "${ALERT_TG_CHAT_ID:-}" ]; then
+    log "(ALERT) Telegram sozlanmagan (ALERT_TG_BOT_TOKEN/ALERT_TG_CHAT_ID) — xabar faqat logda: ${1//$'\n'/ | }"
+    return 0
+  fi
   curl -fsS -m 15 -o /dev/null "https://api.telegram.org/bot${ALERT_TG_BOT_TOKEN}/sendMessage" \
     --data-urlencode "chat_id=${ALERT_TG_CHAT_ID}" \
     --data-urlencode "text=$1" || log "⚠ Telegram ogohlantirishi yuborilmadi"
@@ -71,6 +74,7 @@ tg_alert() { # Telegram'ga xabar (token/chat bo'lmasa — jim)
 
 on_exit() {
   local code=$?
+  [ -n "${LOCK_DIR:-}" ] && rm -rf "$LOCK_DIR"
   if [ "$code" -ne 0 ]; then
     log "✗ Zaxira nusxa XATO (qadam: $CURRENT_STEP, kod $code)"
     local detail=""
@@ -84,33 +88,66 @@ trap on_exit EXIT
 
 fail() { FAILURES+=("$1"); log "✗ $1"; }
 
-# Bir vaqtda ikki nusxa ishlamasin
+# Bir vaqtda ikki nusxa ishlamasin (Linux — flock; flock yo'q joyda — mkdir qulfi, jarayon tugasa o'chadi)
 mkdir -p "$OUT_DIR"
-exec 9>"$OUT_DIR/.lock"
-if ! flock -n 9; then
-  CURRENT_STEP="qulf"; log "Boshqa zaxira jarayoni ishlayapti — chiqildi"; exit 1
+LOCK_DIR=""
+if command -v flock >/dev/null; then
+  exec 9>"$OUT_DIR/.lock"
+  if ! flock -n 9; then
+    CURRENT_STEP="qulf"; log "Boshqa zaxira jarayoni ishlayapti — chiqildi"; exit 1
+  fi
+else
+  if ! mkdir "$OUT_DIR/.lock.d" 2>/dev/null; then
+    other="$(cat "$OUT_DIR/.lock.d/pid" 2>/dev/null || true)"
+    if [ -n "$other" ] && kill -0 "$other" 2>/dev/null; then
+      CURRENT_STEP="qulf"; log "Boshqa zaxira jarayoni ishlayapti (pid $other) — chiqildi"; exit 1
+    fi
+    log "⚠ eski qulf (pid ${other:-?} tirik emas) — olib tashlandi"
+  fi
+  mkdir -p "$OUT_DIR/.lock.d"; echo $$ > "$OUT_DIR/.lock.d/pid"; LOCK_DIR="$OUT_DIR/.lock.d"
 fi
 
-for bin in pg_dump tar sha256sum; do
+for bin in pg_dump tar; do
   command -v "$bin" >/dev/null || { CURRENT_STEP="tekshiruv"; log "$bin topilmadi"; exit 1; }
 done
+if command -v sha256sum >/dev/null; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
+sha_check() { # joriy papkadagi SHA256SUMS ni tekshiradi; mos kelmaganlarini chiqaradi (GNU va macOS)
+  local out
+  out="$("${SHA256[@]}" -c SHA256SUMS 2>&1)" || { printf '%s\n' "$out" | grep -v ': OK$' >&2; return 1; }
+}
+
+# Server tashqarisiga nusxa vositasi OLDINDAN tekshiriladi — o'rnatilmagan bo'lsa jim o'tib ketmasin.
+# (Mahalliy nusxa baribir olinadi; oxirida exit 1 + ogohlantirish.)
+OFFSITE_PROBLEM=""
+case "$OFFSITE" in
+  rclone) command -v rclone >/dev/null || OFFSITE_PROBLEM="OFFSITE=rclone, lekin rclone o'rnatilmagan (sudo apt install rclone)" ;;
+  restic) command -v restic >/dev/null || OFFSITE_PROBLEM="OFFSITE=restic, lekin restic o'rnatilmagan (sudo apt install restic)" ;;
+  local)  [ -n "${OFFSITE_DIR:-}" ] || OFFSITE_PROBLEM="OFFSITE=local, lekin OFFSITE_DIR berilmagan" ;;
+  none)   ;;
+  *)      OFFSITE_PROBLEM="OFFSITE noma'lum: $OFFSITE (rclone|restic|local|none)" ;;
+esac
+[ -z "$OFFSITE_PROBLEM" ] || log "✗ $OFFSITE_PROBLEM — mahalliy nusxa olinadi, lekin skript XATO bilan tugaydi"
 
 STAMP="$(date +%Y-%m-%d_%H%M)"
+# Shu daqiqada nusxa allaqachon bo'lsa (qo'lda + cron, xatodan keyin qayta) — `mv` uni ichiga joylab yubormasin
+n=2; base="$STAMP"
+while [ -e "$OUT_DIR/$STAMP" ]; do STAMP="$base-$n"; n=$((n + 1)); done
 DEST="$OUT_DIR/$STAMP"
+rm -rf "$DEST.partial"
 mkdir -p "$DEST.partial"
 
 # ── Bazalar ro'yxati: nom|url ──
 TARGETS=()      # "nom|DATABASE_URL"
 UPLOAD_DIRS=()  # "nom|papka"
-declare -A SEEN_DB=()
+SEEN_DB=" "     # bir bazani ikki marta olmaslik (bash 3 ham: assotsiativ massivsiz)
 
 add_db() { # add_db <nom> <url>
   local name="$1" url="$2" key
   [ -n "$url" ] || return 0
   case "$url" in *"{db}"*) return 0 ;; esac  # TENANT_DATABASE_URL shabloni — baza emas
   key="${url%%\?*}"
-  [ -z "${SEEN_DB[$key]:-}" ] || return 0
-  SEEN_DB[$key]=1
+  case "$SEEN_DB" in *" $key "*) return 0 ;; esac
+  SEEN_DB="$SEEN_DB$key "
   TARGETS+=("$name|$url")
 }
 
@@ -174,12 +211,29 @@ if [ "$BACKUP_UPLOADS" = "1" ]; then
 fi
 
 CURRENT_STEP="nazorat yig'indisi"
-( cd "$DEST.partial" && sha256sum -- * > SHA256SUMS )
+( cd "$DEST.partial" && "${SHA256[@]}" -- * > SHA256SUMS )
 mv "$DEST.partial" "$DEST"
 log "[OK] mahalliy nusxa: $DEST ($(du -sh "$DEST" | cut -f1))"
 
 # ── 3. Server tashqarisiga ──
+if [ -n "$OFFSITE_PROBLEM" ]; then
+  CURRENT_STEP="offsite"; fail "$OFFSITE_PROBLEM"
+else
 case "$OFFSITE" in
+  local)
+    # Boshqa disk / mount qilingan papka (masalan /mnt/backup-disk/insof). Bir server ichida — faqat qo'shimcha himoya,
+    # server yonsa/o'g'irlansa yordam bermaydi: asosiy masofa sifatida rclone/restic tavsiya etiladi.
+    CURRENT_STEP="local nusxa"
+    log "→ local: $OFFSITE_DIR/$STAMP"
+    if mkdir -p "$OFFSITE_DIR/$STAMP.partial" && cp -R "$DEST/." "$OFFSITE_DIR/$STAMP.partial/" \
+      && ( cd "$OFFSITE_DIR/$STAMP.partial" && sha_check ) \
+      && mv "$OFFSITE_DIR/$STAMP.partial" "$OFFSITE_DIR/$STAMP"; then
+      log "  ok (nazorat yig'indisi mos)"
+      find "$OFFSITE_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' -mtime "+${OFFSITE_KEEP_DAYS:-30}" -exec rm -rf {} +
+    else
+      fail "local: nusxalash yoki tekshiruv xato ($OFFSITE_DIR)"
+    fi
+    ;;
   rclone)
     CURRENT_STEP="rclone"
     [ -n "${RCLONE_REMOTE:-}" ] || { fail "RCLONE_REMOTE berilmagan"; exit 1; }
@@ -210,16 +264,14 @@ case "$OFFSITE" in
   none)
     log "⚠ OFFSITE=none — nusxa faqat shu serverda (disk yonsa ikkalasi ketadi)"
     ;;
-  *)
-    CURRENT_STEP="offsite"; fail "OFFSITE noma'lum: $OFFSITE (rclone|restic|none)"
-    ;;
 esac
+fi
 
 # ── 4. Mahalliy eskilarini tozalash (faqat to'liq nusxalar, joriy saqlanadi) ──
 CURRENT_STEP="tozalash"
-find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????' -mtime "+$KEEP_DAYS" -exec rm -rf {} +
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' -mtime "+$KEEP_DAYS" -exec rm -rf {} +
 find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.partial' -mtime +1 -exec rm -rf {} +
-log "→ $KEEP_DAYS kundan eskilari tozalandi. Jami: $(find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????' | wc -l) ta"
+log "→ $KEEP_DAYS kundan eskilari tozalandi. Jami: $(find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' | wc -l) ta"
 
 if [ "${#FAILURES[@]}" -gt 0 ]; then
   CURRENT_STEP="yakun (${#FAILURES[@]} ta xato)"

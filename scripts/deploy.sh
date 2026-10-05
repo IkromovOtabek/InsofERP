@@ -24,15 +24,27 @@
 #   SKIP_RESTART=1  faqat build + migratsiya + symlink (birinchi ko'chishda — PLATFORMA.md)
 #   KEEP_RELEASES=3 nechta reliz saqlansin
 #   ROLLBACK=1      xizmatlarni oldingi relizga qaytarish (build qilmasdan)
+#   DEPLOY_REF=<tag|sha>  HEAD o'rniga aniq commit/teg build qilish (standart HEAD)
+#   APP_DIR, REPO_DIR (git manbasi, standart APP_DIR), RELEASES_DIR, CONTROL_PORT (3100), HEALTH_TIMEOUT (60 s)
+#
+# Lokal sinov rejimi — DRY_RUN=1 (faqat sinov APP_DIR bilan; /var/www/insof-erp da rad etiladi):
+#   systemd, sudo, git pull, ECO va timedatectl'ga TEGMAYDI. Build, migratsiya (control + har korxona),
+#   symlink almashtirish, /api/health tekshiruvi va avtomatik qaytarish esa HAQIQATAN bajariladi.
+#   Xizmatlar: barcha tenants/*.env (+ control.env bo'lsa panel); qayta ishga tushirish — RESTART_CMD <unit>
+#   (berilmasa faqat yoziladi). NODE_MODULES_FROM=<papka> — npm ci o'rniga node_modules symlink (tezkor sinov).
+#   Namuna: scripts/qa/d-deploy-test.sh
 set -Eeuo pipefail
 
-APP_DIR=${APP_DIR:-/var/www/insof-erp}
+DEFAULT_APP_DIR=/var/www/insof-erp
+APP_DIR=${APP_DIR:-$DEFAULT_APP_DIR}
+REPO_DIR=${REPO_DIR:-$APP_DIR}
 ECO_DIR=${ECO_DIR:-/var/www/insof-eco}
-RELEASES="$APP_DIR/releases"
-CURRENT="$APP_DIR/current"
+RELEASES=${RELEASES_DIR:-$APP_DIR/releases}
+CURRENT=${CURRENT_LINK:-$APP_DIR/current}
 KEEP_RELEASES=${KEEP_RELEASES:-3}
 CONTROL_PORT=${CONTROL_PORT:-3100}
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-60}
+DRY_RUN=${DRY_RUN:-0}
 
 step() { printf '\n\033[1;33m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
@@ -62,6 +74,13 @@ export_env_file() {
   done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' "$file" | sort -u)
 }
 
+if [ "$DRY_RUN" = "1" ]; then
+  [ "$APP_DIR" != "$DEFAULT_APP_DIR" ] || die "DRY_RUN=1 faqat sinov APP_DIR bilan (prod papkasida emas): APP_DIR=/tmp/... DRY_RUN=1 bash scripts/deploy.sh"
+  SKIP_PULL=1; SKIP_ECO=1
+  printf '\033[1;36m[DRY_RUN] systemd/sudo/git pull/ECO ishlatilmaydi. APP_DIR=%s\033[0m\n' "$APP_DIR"
+elif [ -n "${NODE_MODULES_FROM:-}" ]; then
+  die "NODE_MODULES_FROM faqat DRY_RUN=1 bilan (prodda har reliz o'z npm ci si bilan)"
+fi
 if [ "$(id -u)" = "0" ]; then
   die "root bilan ishga tushirmang — node_modules egaligi buziladi. Avval: su - deploy"
 fi
@@ -79,31 +98,63 @@ HAS_CONTROL=0; [ -f "$APP_DIR/control.env" ] && HAS_CONTROL=1
 [ "${#TENANTS[@]}" -gt 0 ] || [ "$HAS_CONTROL" = 1 ] || die "tenants/*.env ham, control.env ham topilmadi. Eski (ildizda .env) o'rnatishni avval ko'chiring: docs/deploy/PLATFORMA.md → «Mavjud Insof'ni platformaga ko'chirish»"
 [ -f "$APP_DIR/.env" ] && warn "Ildizda .env bor — Next uni har jarayonga yuklaydi (kalitlar korxonalarga sizadi). tenants/insof.env ga ko'chiring."
 
+# Xizmat yoqilganmi (DRY_RUN da — hammasi «yoqilgan» deb olinadi)
+unit_enabled() {
+  if [ "$DRY_RUN" = "1" ]; then return 0; fi
+  systemctl is-enabled --quiet "$1" 2>/dev/null
+}
+# Xizmatni qayta ishga tushirish: prodda sudo systemctl, DRY_RUN da RESTART_CMD (yoki faqat yozuv)
+restart_unit() {
+  if [ "$DRY_RUN" = "1" ]; then
+    if [ -n "${RESTART_CMD:-}" ]; then
+      # RESTART_CMD bir nechta so'zdan iborat bo'lishi mumkin ("bash scripts/qa/d-svc.sh restart")
+      # shellcheck disable=SC2086
+      $RESTART_CMD "$1"
+    else
+      echo "  [DRY_RUN] restart $1 (RESTART_CMD berilmagan)"
+    fi
+  else
+    sudo systemctl restart "$1"
+  fi
+}
+
 # Faqat yoqilgan xizmatlar qayta ishga tushiriladi
 UNITS=()      # "unit|port"
 for s in ${TENANTS[@]+"${TENANTS[@]}"}; do
-  if systemctl is-enabled --quiet "insof-erp@$s" 2>/dev/null; then
+  if unit_enabled "insof-erp@$s"; then
     port="$(env_get "$APP_DIR/tenants/$s.env" PORT)"
     [ -n "$port" ] || die "tenants/$s.env da PORT yo'q"
     UNITS+=("insof-erp@$s|$port")
   fi
 done
-if [ "$HAS_CONTROL" = 1 ] && systemctl is-enabled --quiet insof-control 2>/dev/null; then
+if [ "$HAS_CONTROL" = 1 ] && unit_enabled insof-control; then
   UNITS+=("insof-control|$CONTROL_PORT")
 fi
 
 health() { # health <port> — /api/health 200 bo'lguncha kutadi
   local port="$1" i
   for ((i = 0; i < HEALTH_TIMEOUT; i++)); do
-    if curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$port/api/health"; then return 0; fi
+    if curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$port/api/health" 2>/dev/null; then return 0; fi
     sleep 1
   done
   return 1
 }
 
-switch_to() { # atomar: current.new → current
+switch_to() { # atomar: current.new → current (rename(2) — GNU mv -T; BSD/macOS da perl rename)
   ln -sfn "$1" "$CURRENT.new"
-  mv -Tf "$CURRENT.new" "$CURRENT"
+  if mv -Tf "$CURRENT.new" "$CURRENT" 2>/dev/null; then return 0; fi
+  perl -e 'rename($ARGV[0], $ARGV[1]) or die "rename: $!\n"' "$CURRENT.new" "$CURRENT"
+}
+
+# Relizlar — eng yangisi birinchi (mtime). Nomi sha (bo'sh joysiz), *.tmp lar kirmaydi.
+list_releases() {
+  local d
+  # shellcheck disable=SC2012
+  ls -1dt "$RELEASES"/*/ 2>/dev/null | while IFS= read -r d; do
+    d="${d%/}"
+    case "$d" in *.tmp) continue ;; esac
+    printf '%s\n' "$d"
+  done
 }
 
 FAILED_UNIT=""
@@ -111,13 +162,14 @@ restart_all() { # restart_all <unit|port>... — bittadan, har biri health bilan
   local u
   FAILED_UNIT=""
   for u in "$@"; do
-    sudo systemctl restart "${u%%|*}"
+    if ! restart_unit "${u%%|*}"; then FAILED_UNIT="${u%%|*}"; return 1; fi
     if health "${u#*|}"; then ok "${u%%|*}"; else FAILED_UNIT="${u%%|*}"; return 1; fi
   done
 }
 
 unit_check() { # repodagi unit fayllar o'rnatilganidan farq qilsa — ogohlantirish
   local name
+  [ "$DRY_RUN" = "1" ] && return 0
   for name in "insof-erp@.service" "insof-control.service"; do
     [ -f "/etc/systemd/system/$name" ] || continue
     cmp -s "$APP_DIR/docs/deploy/$name" "/etc/systemd/system/$name" \
@@ -127,15 +179,17 @@ unit_check() { # repodagi unit fayllar o'rnatilganidan farq qilsa — ogohlantir
 }
 
 PREV="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+[ -n "$PREV" ] && [ -d "$PREV" ] || PREV=""
 
 # ───────────── Qo'lda qaytarish ─────────────
 if [ "${ROLLBACK:-0}" = "1" ]; then
   step "Oldingi relizga qaytarish"
   [ -n "$PREV" ] || die "current yo'q"
-  TARGET="$(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d ! -name '*.tmp' -printf '%T@ %p\n' | sort -rn | awk '{print $2}' | grep -vxF "$PREV" | head -n1)"
+  TARGET="$(list_releases | grep -vxF "$PREV" | head -n1 || true)"
   [ -n "$TARGET" ] || die "Qaytish uchun boshqa reliz yo'q"
   switch_to "$TARGET"
-  restart_all ${UNITS[@]+"${UNITS[@]}"} || die "Qaytarilgan reliz ham ishga tushmadi — journalctl -u insof-erp@<slug> -n 80"
+  restart_all ${UNITS[@]+"${UNITS[@]}"} || die "Qaytarilgan reliz ham ishga tushmadi ($FAILED_UNIT) — journalctl -u $FAILED_UNIT -n 80"
+  touch "$TARGET"   # keyingi ROLLBACK/tozalash tartibi uchun — endi eng yangisi shu
   ok "current → $(basename "$TARGET")"
   exit 0
 fi
@@ -143,9 +197,9 @@ fi
 # ───────────── 1. Build (alohida papkada) ─────────────
 if [ "${SKIP_PULL:-0}" != "1" ]; then
   step "ERP: git pull"
-  git pull --ff-only
+  git -C "$REPO_DIR" pull --ff-only
 fi
-SHA="$(git rev-parse HEAD)"
+SHA="$(git -C "$REPO_DIR" rev-parse --verify "${DEPLOY_REF:-HEAD}^{commit}")" || die "DEPLOY_REF topilmadi: ${DEPLOY_REF:-HEAD}"
 REL="$RELEASES/$SHA"
 mkdir -p "$RELEASES"
 
@@ -156,15 +210,20 @@ else
   step "ERP: build → releases/${SHA:0:7}"
   rm -rf "$REL.tmp"
   mkdir -p "$REL.tmp"
-  git archive --format=tar "$SHA" | tar -x -C "$REL.tmp"
+  git -C "$REPO_DIR" archive --format=tar "$SHA" | tar -x -C "$REL.tmp"
   (
     cd "$REL.tmp"
     # Build vaqtidagi kalitlar (NEXT_PUBLIC_* — brauzer kodiga yoziladi) faqat build.env dan.
     # Korxona sirlari (tenants/*.env) build'ga KIRMAYDI.
     if [ -f "$APP_DIR/build.env" ]; then export_env_file "$APP_DIR/build.env"; else warn "build.env yo'q — NEXT_PUBLIC_YANDEX_MAPS_KEY bo'sh bo'ladi (build.env.example)"; fi
     export NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-    # npm 10: lock fayl bilan aniq o'rnatish (dev paketlar ham kerak: prisma CLI, build)
-    NODE_ENV=development npm ci --no-audit --no-fund
+    if [ -n "${NODE_MODULES_FROM:-}" ]; then
+      [ -d "$NODE_MODULES_FROM" ] || { echo "NODE_MODULES_FROM yo'q: $NODE_MODULES_FROM" >&2; exit 1; }
+      ln -s "$NODE_MODULES_FROM" node_modules   # faqat DRY_RUN (yuqorida tekshirilgan)
+    else
+      # npm 10: lock fayl bilan aniq o'rnatish (dev paketlar ham kerak: prisma CLI, build)
+      NODE_ENV=development npm ci --no-audit --no-fund
+    fi
     npm run build
   ) || { rm -rf "$REL.tmp"; die "Build xato — ishlayotgan xizmatlarga tegilmadi"; }
   echo "$SHA" > "$REL.tmp/RELEASE"
@@ -176,21 +235,29 @@ fi
 # ───────────── 2. Migratsiyalar (almashtirishdan OLDIN) ─────────────
 step "Migratsiya: control va barcha korxona bazalari"
 PRISMA="$REL/node_modules/.bin/prisma"
+# `prisma migrate deploy` bazasi yo'q bo'lsa uni O'ZI YARATADI — .env dagi xato nom (yoki o'chirilgan baza)
+# jim bo'sh baza bo'lib qolardi va korxona bo'sh tizim bilan ochilardi. Shuning uchun avval baza borligini tekshiramiz.
+db_reachable() { # db_reachable <url> — psql bilan ulanish (Prisma ?schema=/connection_limit= parametrlarisiz)
+  command -v psql >/dev/null || { warn "psql yo'q — baza borligi tekshirilmadi"; return 0; }
+  psql "${1%%\?*}" -qAtX -c 'SELECT 1' >/dev/null 2>&1
+}
 if [ "$HAS_CONTROL" = 1 ]; then
   CTRL_URL="$(env_get "$APP_DIR/control.env" CONTROL_DATABASE_URL)"
   [ -n "$CTRL_URL" ] || die "control.env da CONTROL_DATABASE_URL yo'q"
+  db_reachable "$CTRL_URL" || die "control bazasiga ulanib bo'lmadi yoki u yo'q (control.env → CONTROL_DATABASE_URL) — xizmatlar eski relizda qoldi"
   ( cd "$REL" && env CONTROL_DATABASE_URL="$CTRL_URL" "$PRISMA" migrate deploy --schema prisma/control/schema.prisma >/dev/null ) \
     || die "control baza migratsiyasi xato — xizmatlar eski relizda qoldi"
   ok "control"
 fi
-declare -A MIGRATED=()
+MIGRATED=" "   # bir bazani ikki marta migratsiya qilmaslik (bash 3 ham: assotsiativ massivsiz)
 for s in ${TENANTS[@]+"${TENANTS[@]}"}; do
   url="$(env_get "$APP_DIR/tenants/$s.env" DATABASE_URL)"
   [ -n "$url" ] || die "tenants/$s.env da DATABASE_URL yo'q"
-  [ -z "${MIGRATED[$url]:-}" ] || continue
+  case "$MIGRATED" in *" $url "*) ok "$s (baza allaqachon yangilandi)"; continue ;; esac
+  db_reachable "$url" || die "$s bazasi migratsiyasi xato: bazaga ulanib bo'lmadi yoki u yo'q (tenants/$s.env → DATABASE_URL) — xizmatlar eski relizda qoldi"
   ( cd "$REL" && env DATABASE_URL="$url" "$PRISMA" migrate deploy >/dev/null ) \
     || die "$s bazasi migratsiyasi xato — xizmatlar eski relizda qoldi (oldingi korxonalar bazasi allaqachon yangilangan)"
-  MIGRATED[$url]=1
+  MIGRATED="$MIGRATED$url "
   ok "$s"
 done
 
@@ -208,15 +275,20 @@ else
   if [ "${#UNITS[@]}" -gt 0 ] && ! restart_all "${UNITS[@]}"; then
     failed="$FAILED_UNIT"
     printf '  \033[1;31m✗\033[0m %s /api/health javob bermadi — journalctl -u %s -n 80\n' "$failed" "$failed" >&2
-    if [ -n "$PREV" ] && [ -d "$PREV" ] && [ "$PREV" != "$REL" ]; then
+    if [ -n "$PREV" ] && [ "$PREV" != "$REL" ]; then
       step "AVTOMATIK QAYTARISH → $(basename "$PREV")"
       switch_to "$PREV"
       # Qayta ishga tushirilgan (va yiqilgan) xizmatlarni eski relizga qaytaramiz
       for u in "${UNITS[@]}"; do
-        sudo systemctl restart "${u%%|*}"
+        restart_unit "${u%%|*}" || warn "${u%%|*} qayta ishga tushmadi"
         if [ "${u%%|*}" = "$failed" ]; then break; fi
       done
-      for u in "${UNITS[@]}"; do health "${u#*|}" && ok "${u%%|*} (eski reliz)" || warn "${u%%|*} eski relizda ham javob bermayapti"; done
+      for u in "${UNITS[@]}"; do
+        if health "${u#*|}"; then ok "${u%%|*} (eski reliz)"; else warn "${u%%|*} eski relizda ham javob bermayapti"; fi
+      done
+      ok "current → $(basename "$PREV")"
+    else
+      warn "Qaytish uchun oldingi reliz yo'q"
     fi
     die "Deploy bekor qilindi: ${SHA:0:7} ishga tushmadi"
   fi
@@ -226,15 +298,15 @@ fi
 step "Eski relizlar (saqlanadi: $KEEP_RELEASES)"
 find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -name '*.tmp' -mmin +120 -exec rm -rf {} +
 keep=0
-while read -r dir; do
+while IFS= read -r dir; do
   [ -n "$dir" ] || continue
   if [ "$dir" = "$REL" ] || [ "$dir" = "$PREV" ]; then keep=$((keep + 1)); continue; fi
   if [ "$keep" -lt "$KEEP_RELEASES" ]; then keep=$((keep + 1)); continue; fi
   rm -rf "$dir" && ok "o'chirildi: $(basename "$dir")"
-done < <(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d ! -name '*.tmp' -printf '%T@ %p\n' | sort -rn | awk '{print $2}')
+done < <(list_releases)
 
 # Vaqt zonasi: ilova o'zi Asia/Tashkent o'rnatadi (src/instrumentation.ts), lekin server soati ham shunday bo'lsin
-if [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "Asia/Tashkent" ]; then
+if [ "$DRY_RUN" != "1" ] && [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "Asia/Tashkent" ]; then
   warn "Server vaqt zonasi: $(timedatectl show -p Timezone --value 2>/dev/null || echo aniqlanmadi). Tavsiya: sudo timedatectl set-timezone Asia/Tashkent"
 fi
 
@@ -263,5 +335,5 @@ if [ "$HAS_CONTROL" = 1 ]; then
   (cd "$CURRENT" && CONTROL_ENV_FILE="$APP_DIR/control.env" npm run -s tenant -- stats) || warn "tenant stats xato"
 fi
 APK="$(env_get "$APP_DIR/tenants/insof.env" APK_PATH 2>/dev/null || true)"; APK="${APK:-$APP_DIR/uploads/app/insof-eco.apk}"
-if [ -f "$APK" ]; then echo "Android APK: $(du -h "$APK" | cut -f1), $(date -r "$APK" '+%d.%m.%Y %H:%M')"; else echo "Android APK yo'q: $APK"; fi
+if [ -f "$APK" ]; then echo "Android APK: $(du -h "$APK" | cut -f1)"; else echo "Android APK yo'q: $APK"; fi
 printf '\n\033[1;32m✓ Deploy tugadi: %s\033[0m\n' "${SHA:0:7}"

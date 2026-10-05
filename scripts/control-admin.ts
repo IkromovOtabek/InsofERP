@@ -6,8 +6,8 @@
  */
 import { createInterface } from "node:readline/promises";
 import { loadEnv } from "./env";
+// Faqat panel sozlamasi. Ildizdagi `.env` (korxona kalitlari) bu yerda o'qilmaydi.
 loadEnv(process.env.CONTROL_ENV_FILE || "control.env");
-loadEnv();
 
 async function main() {
   const [login, ...nameParts] = process.argv.slice(2);
