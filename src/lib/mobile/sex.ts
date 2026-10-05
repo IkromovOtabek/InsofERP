@@ -77,7 +77,7 @@ export async function sexDetail(user: MobileUser, rawId: string): Promise<Mobile
 async function produced(r: DashRange, byShift = false): Promise<MobileDetail> {
   const [batches, prev] = await Promise.all([
     db.productionBatch.findMany({
-      where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" },
+      where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" },
       select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
     }),
     db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, product: { select: { unit: true } } } }),

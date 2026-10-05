@@ -79,7 +79,7 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
     }),
     // Zames brigadaga bog'lanmaydi — brigada kartasida chiqmaydi
     s.brigadeId ? Promise.resolve([]) : db.productionBatch.findMany({
-      where: { date: range, ...(s.productId ? { productId: s.productId } : {}) }, orderBy: { date: "asc" },
+      where: { cancelledAt: null, date: range, ...(s.productId ? { productId: s.productId } : {}) }, orderBy: { date: "asc" },
       select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, note: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
     }),
     db.productDefect.findMany({

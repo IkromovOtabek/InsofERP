@@ -66,11 +66,19 @@ export async function lastInboundMoves(): Promise<{ materials: Map<string, LastM
     where: { type: { in: ["RECEIPT", "PRODUCTION_OUTPUT", "ADJUSTMENT"] }, qty: { gt: 0 } },
     orderBy: { date: "desc" },
     take: 500,
-    select: { materialId: true, productId: true, date: true, qty: true, createdBy: { select: { fullName: true } } },
+    select: { materialId: true, productId: true, date: true, qty: true, refType: true, refId: true, createdBy: { select: { fullName: true } } },
   });
+  // Storno qilingan kirim/zamesning asl harakati "oxirgi kirim" bo'lib ko'rinmasin
+  const refIds = (t: string) => [...new Set(moves.filter((m) => m.refType === t && m.refId).map((m) => m.refId!))];
+  const [badReceipts, badBatches] = await Promise.all([
+    db.goodsReceipt.findMany({ where: { id: { in: refIds("GoodsReceipt") }, cancelledAt: { not: null } }, select: { id: true } }),
+    db.productionBatch.findMany({ where: { id: { in: refIds("ProductionBatch") }, cancelledAt: { not: null } }, select: { id: true } }),
+  ]);
+  const cancelled = new Set([...badReceipts, ...badBatches].map((x) => x.id));
   const materials = new Map<string, LastMove>();
   const products = new Map<string, LastMove>();
   for (const m of moves) {
+    if (m.refId && cancelled.has(m.refId)) continue;
     const v = { by: m.createdBy.fullName, date: m.date, qty: Number(m.qty) };
     if (m.materialId && !materials.has(m.materialId)) materials.set(m.materialId, v);
     if (m.productId && !products.has(m.productId)) products.set(m.productId, v);

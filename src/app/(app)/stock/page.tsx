@@ -14,7 +14,7 @@ import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
 import { Card, CardHeader } from "@/components/ui";
 
 const TYPE_LABEL: Record<string, string> = {
-  RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Tayyor beton",
+  RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
   SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish",
   BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi",
 };
@@ -25,12 +25,19 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
   const s = await getSession();
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
-  const [materials, mSums, last] = await Promise.all([
+  const [materials, mSums, last, whSums, allWarehouses] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     lastInboundMoves(),
+    db.stockMove.groupBy({ by: ["materialId", "warehouseId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
+    db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { id: "asc" }], select: { id: true, name: true, isActive: true } }),
   ]);
   const mb = new Map(mSums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
+  // Bir nechta sklad bo'lsa — qoldiq har sklad bo'yicha ham ko'rsatiladi: zames, brigadaga berish va spisanie
+  // AYNAN tanlangan skladdan yechadi, faqat jami ko'rinsa "qoldiq bor, lekin yetmaydi" chalkashligi chiqardi
+  const mwb = new Map(whSums.map((x) => [`${x.materialId}|${x.warehouseId}`, Number(x._sum.qty ?? 0)]));
+  const shownWarehouses = allWarehouses.filter((w) => w.isActive || whSums.some((x) => x.warehouseId === w.id && Math.abs(Number(x._sum.qty ?? 0)) > 0.0005));
+  const perWarehouse = shownWarehouses.length > 1;
 
   // O'rtacha tannarx: miqdorga tortilgan (kirimlar; kirimi yo'q bo'lsa — narxli boshlang'ich qoldiq)
   const avgCost: Map<string | null, number> = await avgUnitCosts();
@@ -281,7 +288,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <div>
           <h2 className="mb-3 font-semibold">Xomashyo</h2>
           <Table>
-            <thead><tr><Th>Nomi</Th><Th>Kodi</Th><Th right>Qoldiq</Th><Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
+            <thead><tr><Th>Nomi</Th><Th>Kodi</Th><Th right>Qoldiq</Th>{perWarehouse && shownWarehouses.map((w) => <Th key={w.id} right>{w.name}{!w.isActive && " (yopiq)"}</Th>)}<Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
             <tbody>
               {materials.length === 0 && <Empty text="Xomashyo kiritilmagan — «Xomashyo qo'shish» tugmasi orqali kiriting" icon={Boxes} />}
               {materials.map((m) => {
@@ -291,6 +298,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                     <Td className="font-medium">{m.name}</Td>
                     <Td className="text-slate-500">{m.code}</Td>
                     <Td right className={cn("font-semibold", b < 0 && "text-red-600")}>{qty(b)} {m.unit}</Td>
+                    {perWarehouse && shownWarehouses.map((w) => {
+                      const wb = mwb.get(`${m.id}|${w.id}`) ?? 0;
+                      return <Td key={w.id} right className={cn("text-slate-600", wb < 0 && "font-semibold text-red-600")}>{qty(wb)}</Td>;
+                    })}
                     <Td right className="text-slate-500">{qty(m.minStock)}</Td>
                     <Td right>{c ? money(c) : "—"}</Td>
                     <Td right>{money(b * c)}</Td>
@@ -319,7 +330,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {moves.map((m) => (
               <Tr key={m.id}>
                 <Td>{dateTime(m.date)}</Td>
-                <Td>{m.refType === "OpeningBalance" || ((m.refType === "Manual" || m.refType === "StockIn") && m.note?.startsWith("Boshlang'ich")) ? "Boshlang'ich qoldiq" : TYPE_LABEL[m.type]}</Td>
+                <Td>{m.refType === "OpeningBalance" || ((m.refType === "Manual" || m.refType === "StockIn") && m.note?.startsWith("Boshlang'ich")) ? "Boshlang'ich qoldiq" : m.note?.startsWith("Storno ") ? `Storno · ${TYPE_LABEL[m.type]}` : TYPE_LABEL[m.type]}</Td>
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>

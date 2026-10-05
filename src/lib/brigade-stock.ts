@@ -122,7 +122,7 @@ export async function issueToBrigade(
   if (!rows.length) return { error: "Kamida bitta xomashyo va miqdor kiriting" };
   const [brigade, wh] = await Promise.all([
     db.brigade.findUnique({ where: { id: input.brigadeId } }),
-    db.warehouse.findUnique({ where: { id: input.warehouseId } }),
+    db.warehouse.findFirst({ where: { id: input.warehouseId, isActive: true } }), // yopilgan skladdan berilmaydi
   ]);
   if (!brigade || !brigade.isActive) return { error: "Brigada topilmadi yoki nofaol" };
   if (!wh) return { error: "Sklad tanlanmagan" };

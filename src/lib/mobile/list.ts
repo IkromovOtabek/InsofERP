@@ -407,7 +407,14 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         where: q ? { OR: [{ batchNo: { contains: q, mode: "insensitive" } }, { product: { name: { contains: q, mode: "insensitive" } } }] } : undefined,
         orderBy: { date: "desc" }, take: TAKE, include: { product: true, order: { include: { customer: true } } },
       });
-      return list.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${day(b.date)} · ${b.order ? b.order.customer.name : "Omborga"}`, right: m3(sum(b.qtyM3)), status: `${b.shift}-smena` }));
+      // Storno qilingan zames tarixda qoladi, lekin aniq belgilanadi — hajmi qoldiqda yo'q
+      return list.map((b) => ({
+        id: b.id, title: `${b.batchNo} · ${b.product.name}`,
+        subtitle: `${day(b.date)} · ${b.order ? b.order.customer.name : "Omborga"}${b.cancelledAt ? " · bekor qilingan" : ""}`,
+        right: b.cancelledAt ? "storno" : m3(sum(b.qtyM3)),
+        status: b.cancelledAt ? "Storno" : `${b.shift}-smena`,
+        ...(b.cancelledAt ? { tone: "danger" as Tone } : {}),
+      }));
     }
     case "stock": {
       const [materials, balances] = await Promise.all([
@@ -426,7 +433,13 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         where: q ? { OR: [{ docNo: { contains: q, mode: "insensitive" } }, { supplier: { name: { contains: q, mode: "insensitive" } } }] } : undefined,
         orderBy: { date: "desc" }, take: TAKE, include: { supplier: true, items: true },
       });
-      return list.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator`, right: money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)) }));
+      // Storno qilingan kirim — summasi qoldiq va qarzga kirmaydi, ro'yxatda "Storno" belgisi bilan
+      return list.map((r) => ({
+        id: r.id, title: `${r.docNo} · ${r.supplier.name}`,
+        subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`,
+        right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0)),
+        ...(r.cancelledAt ? { status: "Storno", tone: "danger" as Tone } : {}),
+      }));
     }
     case "invoices": {
       const list = await db.invoice.findMany({

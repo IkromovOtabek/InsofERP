@@ -673,7 +673,10 @@ export function readinessError(rd: OrderReadiness, qty: number): string | null {
   if (rd.ready <= 0.001) {
     return rd.hasTasks
       ? `Hali tayyor mahsulot yo'q — ${rd.inProduction}${u} ishlab chiqarilmoqda, brigada tasdiqini kuting`
-      : `Zayavkaga brigada tayinlanmagan — avval Ishlab chiqarish bo'limida tayinlang`;
+      // Beton uchun brigada shart emas — zames ham tayyorlik hisoblanadi; xabar shuni aytsin
+      : rd.unit === "m3"
+        ? `Hali beton quyilmagan — avval Ishlab chiqarish bo'limida zames qayd qiling (yoki brigada tayinlang)`
+        : `Zayavkaga brigada tayinlanmagan — avval Ishlab chiqarish bo'limida tayinlang`;
   }
   // Hammasi tayyor, faqat qolgani allaqachon jo'natilgan — sexda kutish gapi o'rinsiz
   if (rd.inProduction <= 0.001) return `Zayavkada faqat ${rd.available}${u} qoldi`;
@@ -692,6 +695,8 @@ export type NewTripInput = { orderId: string; vehicleId: string; driverId: strin
  */
 export async function createTrip(input: NewTripInput, userId: string): Promise<{ id: string; deliveryNoteNo: string }> {
   if (!(input.qtyM3 > 0)) throw new Error("Miqdor 0 dan katta bo'lsin");
+  // Noto'g'ri sana (qo'lda yozilgan "2026-13-40") bazaga Invalid Date bo'lib borib, Prisma matni chiqardi
+  if (input.plannedAt && !Number.isFinite(input.plannedAt.getTime())) throw new Error("Rejadagi vaqt noto'g'ri");
   const o = await db.order.findUnique({ where: { id: input.orderId }, include: READINESS_INCLUDE });
   if (!o || !["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) throw new Error("Zayavka tasdiqlanmagan yoki yopilgan");
 
