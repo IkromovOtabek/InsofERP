@@ -8,6 +8,7 @@ import { resolveMaterials } from "./import-materials";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 import { getCompany } from "./company";
 import { cashOutflowError } from "./payments";
+import { companyVatPayer, supplierVatRate, vatLine } from "./receipt-vat";
 
 /**
  * Ta'minot zayavkasi — bitta hujjat besh bo'limdan o'tadi:
@@ -488,18 +489,25 @@ export async function receiveSupplyRequest(
       return { ...l, qty: conv.qty, price: conv.price };
     });
 
+    // QQS: ta'minot zanjiridagi narx — yetkazuvchiga TO'LANADIGAN narx (QQS bilan; moliya shu summani ajratgan).
+    // Kirim qatorida u QQS'siz narx + QQS ga ajratiladi: hujjat jami (QQS bilan) fakt summaga teng qoladi,
+    // sklad tannarxi esa korxona QQS to'lovchisi bo'lsa QQS'siz (`lib/receipt-vat.ts`)
+    const sup = await tx.supplier.findUnique({ where: { id: supplierId }, select: { vatPayer: true } });
+    const rate = supplierVatRate(sup?.vatPayer ?? true);
+    const vatPayer = await companyVatPayer(tx);
+    const vatLines = stockLines.map((l) => ({ materialId: l.materialId!, ...vatLine(l.qty, l.price, rate, vatPayer, true) }));
     const rec = await tx.goodsReceipt.create({
       data: {
         docNo: await nextNo(tx, "goodsReceipt", "K"),
         date: new Date(), supplierId, warehouseId: req.warehouseId, createdById: userId,
         note: `Ta'minot ${req.docNo}${input.note ? ` · ${input.note}` : ""}`,
-        items: { create: stockLines.map((l) => ({ materialId: l.materialId!, qty: l.qty, price: l.price })) },
+        items: { create: vatLines.map((l) => ({ materialId: l.materialId, qty: l.qty, price: l.price, vatRate: l.vatRate, vatAmount: l.vatAmount })) },
       },
     });
     await tx.stockMove.createMany({
-      data: stockLines.map((l) => ({
-        type: "RECEIPT" as const, warehouseId: req.warehouseId, materialId: l.materialId!,
-        qty: l.qty, unitCost: l.price, refType: "GoodsReceipt", refId: rec.id, createdById: userId,
+      data: vatLines.map((l) => ({
+        type: "RECEIPT" as const, warehouseId: req.warehouseId, materialId: l.materialId,
+        qty: l.qty, unitCost: l.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: userId,
       })),
     });
     // Har qatorga fakt yoziladi va topilgan xomashyo biriktiriladi
@@ -678,7 +686,9 @@ export async function lastPurchasePrices(items: { materialId?: string | null; na
   const latest = new Map<string, LastPrice>();
   for (const r of rows) {
     if (latest.has(r.materialId)) continue;
-    latest.set(r.materialId, { price: Number(r.price), date: r.receipt.date, supplier: r.receipt.supplier.name, qty: Number(r.qty), material: r.material.name });
+    // Ta'minot narxi QQS bilan (to'lanadigan) — taqqoslash ham QQS bilan birlik narxida
+    const gross = Number(r.price) + (Number(r.qty) > 0 ? Number(r.vatAmount) / Number(r.qty) : 0);
+    latest.set(r.materialId, { price: Math.round(gross * 100) / 100, date: r.receipt.date, supplier: r.receipt.supplier.name, qty: Number(r.qty), material: r.material.name });
   }
   for (const [key, id] of keyToId) {
     const v = latest.get(id);

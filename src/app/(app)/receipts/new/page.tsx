@@ -2,12 +2,13 @@ import { db } from "@/lib/db";
 import { canEditMaterials } from "@/lib/catalog";
 import { requireRoles } from "@/lib/page-guard";
 import { avgUnitCosts } from "@/lib/stock";
+import { companyVatPayer } from "@/lib/receipt-vat";
 import { PageHeader } from "@/components/ui";
 import { ReceiptForm } from "../receipt-form";
 
 export default async function NewReceipt() {
   const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
-  const [suppliers, warehouses, materials, groups, accounts, balances, costs] = await Promise.all([
+  const [suppliers, warehouses, materials, groups, accounts, balances, costs, vatPayer] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.warehouse.findMany({ where: { isActive: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -16,13 +17,14 @@ export default async function NewReceipt() {
     // Qoldiq va oxirgi narx — spravochnikda ko'rinadi va tanlanganda narx qatorga tushadi
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     avgUnitCosts(), // miqdorga tortilgan o'rtacha tannarx (umumiy qoida — `lib/stock.ts`)
+    companyVatPayer(),
   ]);
   const bal = new Map(balances.map((b) => [b.materialId, Number(b._sum.qty ?? 0)]));
   const avg = costs;
   return (
     <div>
       <PageHeader title="Yangi kirim" subtitle="Saqlanganda sklad qoldig'i darhol oshadi" />
-      <ReceiptForm suppliers={suppliers.map((x) => ({ id: x.id, name: x.name }))} warehouses={warehouses.map((x) => ({ id: x.id, name: x.name }))} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, price: avg.get(m.id) ?? 0, balance: bal.get(m.id) ?? 0 }))} groups={groups} canCreate={canEditMaterials(s.role)} accounts={s.role === "DIRECTOR" ? accounts : []} clientToken={crypto.randomUUID()} />
+      <ReceiptForm suppliers={suppliers.map((x) => ({ id: x.id, name: x.name, vatPayer: x.vatPayer }))} warehouses={warehouses.map((x) => ({ id: x.id, name: x.name }))} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, price: avg.get(m.id) ?? 0, balance: bal.get(m.id) ?? 0 }))} groups={groups} canCreate={canEditMaterials(s.role)} accounts={s.role === "DIRECTOR" ? accounts : []} clientToken={crypto.randomUUID()} companyVatPayer={vatPayer} />
     </div>
   );
 }

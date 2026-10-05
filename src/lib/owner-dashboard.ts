@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { lineTotal } from "@/lib/receipt-vat";
 import { getCompany } from "@/lib/company";
 import { loadRevenue, productCosts, materialCosts, sum, safeDiv, addDays, startOfDay, monthForecast, workingDays, type Range, type SaleRow } from "@/lib/bi/core";
 import { lossChannels } from "@/lib/bi/finance";
@@ -125,7 +126,7 @@ export async function ownerDashboard() {
     db.cashAccount.findMany({ orderBy: { name: "asc" } }),
     db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, select: { id: true, date: true, amount: true, customerId: true, customer: { select: { name: true } }, payments: { select: { amount: true } } } }),
     db.supplyRequest.findMany({ where: { status: { in: ["PRICED", "APPROVED"] } }, include: { items: { select: { qty: true, price: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: monthStart, lt: tomorrow } } }, select: { qty: true, price: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: monthStart, lt: tomorrow } } }, select: { qty: true, price: true, vatAmount: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
     db.productionPlan.findMany({ where: { year: y, month: m + 1 }, include: { product: { select: { id: true, code: true, name: true, unit: true } } } }),
     db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: from3, lt: tomorrow } }, select: { date: true, qtyM3: true, productId: true, product: { select: { unit: true } } } }),
     db.stockMove.findMany({ where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: monthStart, lt: tomorrow } }, select: { productId: true, qty: true, date: true } }),
@@ -274,7 +275,7 @@ export async function ownerDashboard() {
   const topDebtors = [...debtByCustomer.values()].sort((a, b) => b.debt - a.debt).slice(0, 10);
   const payableTotal = sum(committed.map((s) => s.amount)), payableOverdue = sum(committed.filter((s) => s.overdue).map((s) => s.amount));
   const bySupplier = new Map<string, number>();
-  for (const i of receiptsMonth) add(bySupplier, i.receipt.supplier.name, Number(i.qty) * Number(i.price));
+  for (const i of receiptsMonth) add(bySupplier, i.receipt.supplier.name, lineTotal(i));
   const topSuppliers = [...bySupplier.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
 
   /* ───────────────────────── Ishlab chiqarish ───────────────────────── */

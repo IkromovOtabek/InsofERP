@@ -17,7 +17,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
 import { DeletionRow } from "./deletion-forms";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
 import { DEFAULT_PAYABLES_SINCE } from "@/lib/receipt-payables";
@@ -126,6 +126,11 @@ async function CompanyTab() {
         <p className="mb-3 text-sm text-slate-500">Kirim-Chiqimdagi «To&apos;lanmagan kirimlar» ro&apos;yxati va yetkazuvchi qarzi shu sanadan keyin kiritilgan kirimlardan hisoblanadi. Undan oldingi chiqimsiz kirimlar (Excel import, dastlabki ma&apos;lumot) to&apos;lov kutmaydi.</p>
         {/* Sana Toshkent vaqti bo'yicha ko'rsatiladi (UTC+5) */}
         <PayablesSinceForm value={new Date((c.payablesSince ?? DEFAULT_PAYABLES_SINCE).getTime() + 5 * 3_600_000).toISOString().slice(0, 10)} />
+      </Card>
+      <Card>
+        <h2 className="mb-1 font-semibold">QQS (NDS 12%) — kirim</h2>
+        <p className="mb-3 text-sm text-slate-500">Kirimda narx QQS&apos;siz kiritiladi, QQS to&apos;lovchisi yetkazuvchidan 12% QQS qo&apos;shiladi — yetkazuvchi qarzi va to&apos;lov QQS bilan. Korxona QQS to&apos;lovchisi bo&apos;lsa xomashyo tannarxi <b>QQS&apos;siz</b> (kirim QQS&apos;i byudjetdan qaytariladi, «Kirim QQS» reyestrida), aks holda QQS tannarxga qo&apos;shiladi. O&apos;zgartirish faqat yangi kirimlarga ta&apos;sir qiladi. Hozir: <b>{c.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas"}</b>.</p>
+        <VatPayerForm value={c.vatPayer} />
       </Card>
     </div>
   );

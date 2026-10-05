@@ -75,7 +75,8 @@ check(sreq[0] === "RECEIVED" && !!sreq[1], "holat RECEIVED, kirim hujjati bor", 
 check(Math.abs(bal(cem[0]) - cem0 - 18000) < 0.01, "sement +18 000 kg (t → kg o'girildi)", bal(cem[0]) - cem0);
 check(Math.abs(bal(sand[0]) - sand0 - 30000) < 0.01, "qum +30 000 kg", bal(sand[0]) - sand0);
 const cemCost = n1(`select "unitCost" from "StockMove" where "refId"='${sreq[1]}' and "materialId"='${cem[0]}'`);
-check(Math.abs(cemCost - 1200) < 0.01, "sement tannarxi 1 200 so'm/kg", cemCost);
+// QQS (20261005): ta'minot narxi QQS bilan (to'lanadigan), korxona QQS to'lovchisi — sklad tannarxi QQS'siz: 1200 / 1.12
+check(Math.abs(cemCost - 1071.43) < 0.01, "sement tannarxi QQS'siz 1 071,43 so'm/kg (1 200 / 1,12)", cemCost);
 const newMatRow = q(`select id, unit from "Material" where name='${newMat}'`)[0];
 check(!!newMatRow, "yangi xomashyo ochildi", newMatRow);
 const factTotal = 18 * 1_200_000 + 30000 * 100 + 2 * 9_000_000 + 6_000_000;

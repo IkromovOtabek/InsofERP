@@ -4,6 +4,7 @@ import { Banknote, PackageCheck, Scale, TrendingDown, TrendingUp, Undo2, Wallet 
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { supplierLedger, supplierPrices } from "@/lib/receipt-payables";
+import { receiptTotal } from "@/lib/receipt-vat";
 import { money, qty, date } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { SUPPLY_COLOR, SUPPLY_LABEL } from "@/lib/supply";
@@ -28,7 +29,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
     supplierPrices(id),
     db.goodsReceipt.findMany({
       where: { supplierId: id }, orderBy: { date: "desc" }, take: 20,
-      include: { items: { select: { qty: true, price: true } }, warehouse: { select: { name: true } } },
+      include: { items: { select: { qty: true, price: true, vatAmount: true } }, warehouse: { select: { name: true } } },
     }),
     db.supplyRequest.findMany({ where: { supplierId: id }, orderBy: { date: "desc" }, take: 10, include: { items: { select: { qty: true, price: true } } } }),
   ]);
@@ -46,10 +47,10 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
     <div>
       <PageHeader back={{ href: "/suppliers", label: "Yetkazuvchilar" }}
         title={<>{sup.name} {sup.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</>}
-        subtitle={[sup.inn ? `INN ${sup.inn}` : null, sup.phone, `qo'shilgan ${date(sup.createdAt)}`].filter(Boolean).join(" · ")} />
+        subtitle={[sup.inn ? `INN ${sup.inn}` : null, sup.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas", sup.phone, `qo'shilgan ${date(sup.createdAt)}`].filter(Boolean).join(" · ")} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-        <StatCard label="Jami olingan mol" value={money(ledger.received)} icon={PackageCheck} tone="brand" />
+        <StatCard label="Jami olingan mol (QQS bilan)" value={money(ledger.received)} icon={PackageCheck} tone="brand" />
         <StatCard label="Jami to'langan" value={money(ledger.paid)} icon={Wallet} tone="info" />
         <StatCard label="Qarzimiz (to'lanmagan kirim)" value={money(ledger.debt)} hint={`${ledger.unpaid.length} ta kirim${ledger.opening > 0.005 ? ` + boshlang'ich qoldiq ${money(ledger.opening)}` : ""}`} icon={Banknote} tone={ledger.debt > 0 ? "danger" : "success"} />
         <StatCard label="Avans (mol kutilmoqda)" value={money(ledger.advance)} icon={Scale} tone={ledger.advance > 0 ? "warning" : "default"} />
@@ -59,7 +60,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
       {canEdit && (
         <Card className="mt-5">
           <CardHeader title="Rekvizitlar" description="Nomi, INN, telefon, manzil va mas'ul shaxs — o'zgarish auditda qoladi" />
-          <SupplierEditForm id={sup.id} value={{ name: sup.name, inn: sup.inn ?? "", phone: sup.phone ?? "", address: sup.address ?? "", contactPerson: sup.contactPerson ?? "" }} />
+          <SupplierEditForm id={sup.id} value={{ name: sup.name, inn: sup.inn ?? "", phone: sup.phone ?? "", address: sup.address ?? "", contactPerson: sup.contactPerson ?? "", vatPayer: sup.vatPayer }} />
         </Card>
       )}
 
@@ -123,7 +124,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
         <div>
           <h2 className="mb-2 font-semibold">Oxirgi kirimlar</h2>
           <Table>
-            <thead><tr><Th>Kirim</Th><Th>Sana</Th><Th>Sklad</Th><Th right>Summa</Th></tr></thead>
+            <thead><tr><Th>Kirim</Th><Th>Sana</Th><Th>Sklad</Th><Th right>Summa (QQS bilan)</Th></tr></thead>
             <tbody>
               {receipts.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-slate-500">Kirim yo&apos;q</td></tr>}
               {receipts.map((r) => (
@@ -131,7 +132,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
                   <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link></Td>
                   <Td className="whitespace-nowrap">{date(r.date)}</Td>
                   <Td>{r.warehouse.name}</Td>
-                  <Td right>{money(r.items.reduce((x, i) => x + Number(i.qty) * Number(i.price), 0))}</Td>
+                  <Td right>{money(receiptTotal(r.items))}</Td>
                 </Tr>
               ))}
             </tbody>

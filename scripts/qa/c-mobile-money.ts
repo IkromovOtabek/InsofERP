@@ -49,7 +49,8 @@ async function main() {
   const unpaidRec = await db.goodsReceipt.findFirst({ where: { cancelledAt: null, supply: { is: null }, createdAt: { gte: new Date("2026-09-30T00:00:00+05:00") } }, include: { items: true } });
   if (unpaidRec) {
     const before = digits(field(d.json, "Jami"));
-    const total = unpaidRec.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0);
+    // Kirim summasi QQS bilan (20261005 dan): qty × price + vatAmount
+    const total = unpaidRec.items.reduce((s, i) => s + Number(i.qty) * Number(i.price) + Number(i.vatAmount), 0);
     const paid = Number((await db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: unpaidRec.id }, _sum: { amount: true } }))._sum.amount ?? 0);
     await db.goodsReceipt.update({ where: { id: unpaidRec.id }, data: { cancelledAt: new Date(), cancelReason: "QA (C) storno sinovi" } });
     try {

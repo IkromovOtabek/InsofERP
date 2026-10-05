@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma";
 import { audit } from "./audit";
 import { lockStock, STOCK_EPS } from "./stock-lock";
 import { lockReceipt } from "./receipt-payables";
+import { receiptAmounts } from "./receipt-vat";
 import { money, qty as fq } from "./format";
 
 /**
@@ -81,8 +82,9 @@ export async function cancelReceipt(id: string, reason: string, userId: string):
     await reverseMoves(tx, moves, "GoodsReceipt", id, `Storno ${rec.docNo}: ${why}`, userId);
     const r = await tx.goodsReceipt.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: why, cancelledById: userId } });
     if (r.count !== 1) throw new StornoError("Kirim shu payt boshqa joyda o'zgardi — sahifani yangilang");
-    const total = rec.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0);
-    await audit(tx, userId, "STATUS_CHANGE", "GoodsReceipt", id, { status: "ACTIVE" }, { status: "CANCELLED", reason: why, reversedMoves: moves.length, total });
+    // Audit: hujjat summasi QQS bilan (va alohida QQS) — storno aynan shu summalarni bekor qiladi
+    const { base, vat, total } = receiptAmounts(rec.items);
+    await audit(tx, userId, "STATUS_CHANGE", "GoodsReceipt", id, { status: "ACTIVE" }, { status: "CANCELLED", reason: why, reversedMoves: moves.length, base, vat, total });
     return { ok: true, note: `${rec.docNo} storno qilindi: ${moves.length} ta sklad harakati teskari yozildi` };
   }).catch((e: Error) => { if (e instanceof StornoError) return { error: e.message }; throw e; });
 }

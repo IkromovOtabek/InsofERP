@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { receiptTotal } from "@/lib/receipt-vat";
 import { type Range, type Gran, materialCosts, productCosts, sum, addDays, startOfDay, series, bucketsFor, bucketLabel, bucketKey, abc } from "./core";
 
 export type MaterialRow = {
@@ -88,7 +89,7 @@ export async function stockTab(r: Range, gran: Gran) {
 
   // Yetkazuvchilar
   const bySupplier = new Map<string, { name: string; value: number; docs: number }>();
-  for (const g of receipts) { const v = sum(g.items.map((i) => Number(i.qty) * Number(i.price))); const s = bySupplier.get(g.supplierId) ?? { name: g.supplier.name, value: 0, docs: 0 }; s.value += v; s.docs++; bySupplier.set(g.supplierId, s); }
+  for (const g of receipts) { const v = receiptTotal(g.items); /* QQS bilan — yetkazuvchiga to'lanadigan */ const s = bySupplier.get(g.supplierId) ?? { name: g.supplier.name, value: 0, docs: 0 }; s.value += v; s.docs++; bySupplier.set(g.supplierId, s); }
   const suppliers = [...bySupplier.values()].sort((a, b) => b.value - a.value).slice(0, 5);
   const purchases = sum([...bySupplier.values()].map((s) => s.value));
 

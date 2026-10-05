@@ -146,6 +146,9 @@ model CompanySettings {
   supplyDirectorLimit Decimal   @default(50000000) @db.Decimal(18, 2)
   /// "To'lanmagan kirimlar" shu sanadan keyingi kirimlarni ko'rsatadi (bo'sh — 2026-09-30); eski chiqimsiz kirimlar to'lov kutmaydi
   payablesSince       DateTime?
+  /// QQS (NDS 12%) to'lovchisi. true — kirimdagi QQS hisobga olinadi (qaytariladi): xomashyo tannarxi QQS'siz;
+  /// false — QQS qaytarilmaydi, tannarxga QQS qo'shiladi. Direktor Sozlamalarda o'zgartiradi.
+  vatPayer            Boolean   @default(true)
   updatedAt           DateTime  @updatedAt
 }
 
@@ -189,6 +192,8 @@ model Supplier {
   address       String?
   /// Mas'ul shaxs (F.I.O., lavozimi)
   contactPerson String?
+  /// QQS to'lovchisi: true — kirim qatoriga 12% QQS qo'shiladi, false — QQS 0 (yetkazuvchi QQS hisob-faktura bermaydi)
+  vatPayer      Boolean  @default(true)
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 
@@ -682,7 +687,11 @@ model GoodsReceiptItem {
   receiptId  String
   materialId String
   qty        Decimal @db.Decimal(18, 3)
-  price      Decimal @db.Decimal(18, 2) // birlik narxi
+  price      Decimal @db.Decimal(18, 2) // birlik narxi — QQS'SIZ
+  /// QQS stavkasi, %: 0 yoki 12. Eski (20261005 gacha) qatorlarda 0 — ularning summasi avvalgidek qoladi
+  vatRate    Int     @default(0)
+  /// Qator QQS summasi (so'm). To'lanadigan summa = qty × price + vatAmount (`lib/receipt-vat.ts`)
+  vatAmount  Decimal @default(0) @db.Decimal(18, 2)
 
   receipt  GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   material Material     @relation(fields: [materialId], references: [id])

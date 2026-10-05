@@ -25,7 +25,15 @@ type Amount = { sum: number; nds: number; total: number; sumCalc: boolean; ndsCa
  * (summa = miqdor × narx, NDS = summa × rate); berilmasa faqat fayldagi qiymat ishlatiladi.
  * Ikkala holatda ham fayldagi summa miqdor × narxga to'g'ri kelmasa ogohlantiriladi.
  */
-type AmountCols = { qtyKey: string; priceKey: string; sumKey: string; ndsKey?: string; rate?: number; fill?: boolean };
+type AmountCols = { qtyKey: string; priceKey: string; sumKey: string; ndsKey?: string; rate?: number; fill?: boolean; vat?: VatCols };
+
+/**
+ * Kirim QQS'i (oldindan ko'rish serverdagi `importReceiptFromExcel` bilan bir xil hisoblasin):
+ * `supplierName` — formadagi yetkazuvchi tanlovi, `supplierRates` — yetkazuvchi → QQS stavkasi (%, 0 yoki 12);
+ * `inclusiveName` — "Narxlar QQS bilan" belgisi; `grossPriceKey` / `grossSumKey` — QQS bilan narx/summa ustunlari.
+ * Summa ustunida QQS'siz summa, NDS ustunida QQS, jami — to'lanadigan summa (QQS bilan) ko'rinadi.
+ */
+type VatCols = { supplierName: string; supplierRates: Record<string, number>; inclusiveName: string; grossPriceKey?: string; grossSumKey?: string };
 
 /**
  * Takroriy qatorlarni birlashtirish. `sum` — qo'shiladigan ustunlar (miqdor, summa, NDS);
@@ -127,6 +135,21 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [mx, setMx] = useState<MxState | null>(null); // matritsa rejimi tanlovi; null — oddiy ro'yxat
   const formRef = useRef<HTMLFormElement>(null);
   const extraSeq = useRef(0);
+  // QQS rejimi: formadagi yetkazuvchi va "Narxlar QQS bilan" belgisi o'zgarsa — oldindan ko'rish qayta hisoblanadi
+  const vatCols = amountCols?.vat;
+  const [vatForm, setVatForm] = useState<{ rate: number; inclusive: boolean }>({ rate: 12, inclusive: false });
+  useEffect(() => {
+    const form = formRef.current;
+    if (!vatCols || !form) return;
+    const read = () => {
+      const sup = form.elements.namedItem(vatCols.supplierName) as HTMLSelectElement | null;
+      const inc = form.elements.namedItem(vatCols.inclusiveName) as HTMLInputElement | null;
+      setVatForm({ rate: sup?.value ? vatCols.supplierRates[sup.value] ?? 12 : 12, inclusive: !!inc?.checked });
+    };
+    read();
+    form.addEventListener("change", read);
+    return () => form.removeEventListener("change", read);
+  }, [vatCols]);
 
   // Olib tashlanmagan tayyor ustunlar (majburiysi olib tashlanmaydi)
   const shownFields = useMemo(() => fields.filter((f) => f.required || !hidden.has(f.key)), [fields, hidden]);
@@ -312,6 +335,21 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     const fs = str(r[ac.sumKey]) === "" ? NaN : num(r[ac.sumKey]);
     const fn = ac.ndsKey && str(r[ac.ndsKey]) !== "" ? num(r[ac.ndsKey]) : NaN;
     const hasFs = Number.isFinite(fs), hasFn = Number.isFinite(fn);
+    if (ac.vat) {
+      // Kirim QQS'i — server qoidasi: "Narx QQS bilan" → "Narx" → "Summa QQS bilan" → "Summa";
+      // "Narx"/"Summa" QQS'siz, "Narxlar QQS bilan" belgilansa — QQS bilan. QQS = stavka (yetkazuvchidan).
+      const v = ac.vat, k = vatForm.rate / 100, q = num(r[ac.qtyKey]);
+      const cellNum = (key?: string) => (key && str(r[key]) !== "" ? num(r[key]) : NaN);
+      const gp = cellNum(v.grossPriceKey), gs = cellNum(v.grossSumKey), p = num(r[ac.priceKey]);
+      const [line, gross] = Number.isFinite(gp) ? [q * gp, true]
+        : str(r[ac.priceKey]) !== "" && Number.isFinite(p) ? [q * p, vatForm.inclusive]
+        : Number.isFinite(gs) ? [gs, true]
+        : hasFs ? [fs, vatForm.inclusive] : [0, false];
+      const ln = Number.isFinite(line) ? line : 0;
+      const net = gross ? ln / (1 + k) : ln;
+      const vat = gross ? ln - net : net * k;
+      return { sum: net, nds: vat, total: net + vat, sumCalc: !hasFs && net > 0, ndsCalc: !hasFn && vat > 0, mismatch: !gross && hasFs && base > 0 && Math.abs(fs - base) > 0.5 };
+    }
     const sum = hasFs ? fs : ac.fill ? base : 0;
     const nds = hasFn ? fn : ac.fill && ac.rate ? sum * ac.rate : 0;
     return {
@@ -472,7 +510,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     <tfoot>
       <tr className="bg-slate-50">
         <Td colSpan={colCount} right className="text-slate-600">
-          Jami {source.length} ta qator · summa {money(totals.sum)} · NDS {money(totals.nds)} · <span className="font-semibold text-slate-900">jami {money(totals.total)}</span>
+          Jami {source.length} ta qator · {ac.vat ? "QQS'siz" : "summa"} {money(totals.sum)} · {ac.vat ? "QQS" : "NDS"} {money(totals.nds)} · <span className="font-semibold text-slate-900">{ac.vat ? "jami (QQS bilan)" : "jami"} {money(totals.total)}</span>
         </Td>
       </tr>
     </tfoot>
@@ -777,7 +815,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
             <footer className="flex flex-wrap items-center gap-3 border-t border-slate-200 px-4 py-3">
               {ac && totals.total > 0 && (
-                <span className="text-xs text-slate-500">{source.length} ta qator · summa {money(totals.sum)} · NDS {money(totals.nds)} · jami <span className="font-semibold text-slate-800">{money(totals.total)}</span></span>
+                <span className="text-xs text-slate-500">{source.length} ta qator · {ac.vat ? "QQS'siz" : "summa"} {money(totals.sum)} · {ac.vat ? "QQS" : "NDS"} {money(totals.nds)} · {ac.vat ? "jami (QQS bilan)" : "jami"} <span className="font-semibold text-slate-800">{money(totals.total)}</span></span>
               )}
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {canSkip && <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={submitValid}><Upload size={14} /> Bo&apos;sh kataklarsiz qo&apos;shish ({validRows.length} ta)</Button>}

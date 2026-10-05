@@ -14,6 +14,9 @@ export const FIELD_SYNONYMS = {
   unit: ["birlik", "unit", "ед.", "ед ", "ед изм", "изм", "o'lchov", "olchov", "o‘lchov", "измер"],
   nds: ["nds", "ндс", "qqs", "soliq", "vat", "tax", "налог"],
   sum: ["summa", "сумма", "jami", "itogo", "итого", "total", "stoimost", "стоимость"],
+  // QQS bilan narx/summa (kirim importi) — iboralar: oddiy "Narx"/"Summa" ustuniga tushib qolmasin, shu maydonlar oldinroq turadi
+  priceVat: ["narx qqs bilan", "narxi qqs bilan", "narx (qqs bilan)", "narx nds bilan", "цена с ндс", "цена с учетом ндс", "цена с учётом ндс", "цена (с ндс)", "price incl", "price with vat", "gross price"],
+  sumVat: ["summa qqs bilan", "jami qqs bilan", "qqs bilan summa", "qqs bilan jami", "summa nds bilan", "сумма с ндс", "стоимость с ндс", "с учетом ндс", "с учётом ндс", "итого с ндс", "всего с ндс", "total incl", "total with vat", "amount incl"],
 } as const;
 
 /** Sarlavhalar orasidan maydonga mos ustunni topadi (kichik harf, qism mosligi). */

@@ -11,17 +11,31 @@ import { MaterialField, type MaterialGroup, type MaterialRow } from "@/component
 import { MoneyInput } from "@/components/money-input";
 
 type Opt = { id: string; name: string };
+type SupplierOpt = Opt & { vatPayer: boolean };
 type Material = MaterialRow;
-type Row = { key: number; materialId: string; qty: string; price: string };
+/** `vat` — qator QQS stavkasi ("12" yoki "0" — QQS'dan ozod tovar). QQS to'lovchisi bo'lmagan yetkazuvchida doim 0. */
+type Row = { key: number; materialId: string; qty: string; price: string; vat: string };
 
 type Account = Opt & { type: "CASH" | "BANK" };
 
-/** `clientToken` — sahifa ochilganda server bergan bir martalik kalit: ikki marta bosilgan "Saqlash" ikkinchi kirim ochmaydi. */
-export function ReceiptForm({ suppliers, warehouses, materials, groups = [], canCreate = false, accounts, clientToken }: { suppliers: Opt[]; warehouses: Opt[]; materials: Material[]; groups?: MaterialGroup[]; canCreate?: boolean; accounts: Account[]; clientToken?: string }) {
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * `clientToken` — sahifa ochilganda server bergan bir martalik kalit: ikki marta bosilgan "Saqlash" ikkinchi kirim ochmaydi.
+ * Narx QQS'siz kiritiladi; QQS (12%) yetkazuvchiga qarab qo'shiladi — to'lanadigan jami QQS bilan (`lib/receipt-vat.ts`).
+ */
+export function ReceiptForm({ suppliers, warehouses, materials, groups = [], canCreate = false, accounts, clientToken, companyVatPayer = true }: { suppliers: SupplierOpt[]; warehouses: Opt[]; materials: Material[]; groups?: MaterialGroup[]; canCreate?: boolean; accounts: Account[]; clientToken?: string; companyVatPayer?: boolean }) {
   const [state, action, pending] = useActionState(createReceipt, undefined);
-  const [rows, setRows] = useState<Row[]>([{ key: 1, materialId: "", qty: "", price: "" }]);
+  const [rows, setRows] = useState<Row[]>([{ key: 1, materialId: "", qty: "", price: "", vat: "12" }]);
+  const [supplierId, setSupplierId] = useState("");
+  const supVat = suppliers.find((x) => x.id === supplierId)?.vatPayer ?? true;
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const total = rows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(r.price) || 0), 0);
+  const rateOf = (r: Row) => (supVat ? Number(r.vat) || 0 : 0);
+  const baseOf = (r: Row) => (Number(r.qty) || 0) * (Number(r.price) || 0);
+  const vatOf = (r: Row) => r2((baseOf(r) * rateOf(r)) / 100);
+  const base = rows.reduce((s, r) => s + baseOf(r), 0);
+  const vat = rows.reduce((s, r) => s + vatOf(r), 0);
+  const total = base + vat;
   const [scale, setScale] = useState({ gross: "", tare: "" });
   const kg = (v: string) => (v.trim() === "" ? null : Number(v.replace(/\s+/g, "").replace(",", ".")));
   const g = kg(scale.gross), t = kg(scale.tare);
@@ -33,9 +47,9 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
       {clientToken && <input type="hidden" name="clientToken" value={clientToken} />}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Yetkazuvchi *">
-          <Select name="supplierId" defaultValue="" required>
+          <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
             <option value="" disabled>Tanlang…</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.vatPayer ? "" : " (QQS'siz)"}</option>)}
           </Select>
         </Field>
         <Field label="Sklad *"><Select name="warehouseId" defaultValue={warehouses[0]?.id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
@@ -55,12 +69,13 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
       )}
 
       <div>
-        <div className="mb-2 text-sm font-medium text-slate-700">Xomashyo *</div>
+        <div className="mb-2 text-sm font-medium text-slate-700">Xomashyo * <span className="font-normal text-slate-500">— narx QQS&apos;siz; QQS {supVat ? "12% qo'shiladi (QQS'dan ozod qatorda 0% tanlang)" : "yo'q — yetkazuvchi QQS to'lovchisi emas"}</span></div>
         <div className="space-y-2">
           {rows.map((r) => {
             const unit = materials.find((m) => m.id === r.materialId)?.unit ?? "";
             return (
-              <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:grid sm:grid-cols-[1fr_140px_50px_160px_40px] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:p-0">
+              <div key={r.key} className="space-y-2 rounded-lg border border-slate-100 p-2 sm:grid sm:grid-cols-[1fr_130px_44px_150px_88px_40px] sm:items-center sm:gap-2 sm:space-y-0 sm:border-0 sm:p-0">
+                <input type="hidden" name="vatRate[]" value={String(rateOf(r))} />
                 {/* Nomi katagi: harflar bo'yicha qidiradi, "…" butun spravochnikni ochadi */}
                 <div>
                   <input type="hidden" name="materialId[]" value={r.materialId} />
@@ -78,14 +93,22 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
                 </div>
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:contents">
                   <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${unit}`} suffix={null} required />
+                  <Select aria-label="QQS stavkasi" value={supVat ? r.vat : "0"} disabled={!supVat} onChange={(e) => update(r.key, { vat: e.target.value })} title={vatOf(r) > 0 ? `QQS ${fmtNum(vatOf(r))} so'm` : "QQS'siz"}>
+                    <option value="12">QQS 12%</option>
+                    <option value="0">QQS 0%</option>
+                  </Select>
                   <button type="button" aria-label="Qatorni o'chirish" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto"><X size={16} /></button>
                 </div>
               </div>
             );
           })}
         </div>
-        <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), materialId: "", qty: "", price: "" }])} className="mt-2 text-sm font-medium hover:underline"><span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo'shish</span></button>
-        <div className="mt-3 text-right text-base font-semibold">Jami: {fmtNum(total)} so'm</div>
+        <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), materialId: "", qty: "", price: "", vat: "12" }])} className="mt-2 text-sm font-medium hover:underline"><span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo'shish</span></button>
+        <div className="mt-3 space-y-0.5 text-right text-sm text-slate-600">
+          <div>QQS&apos;siz: <span className="tabular">{fmtNum(base)}</span> so&apos;m · QQS: <span className="tabular">{fmtNum(vat)}</span> so&apos;m</div>
+          <div className="text-base font-semibold text-slate-900">Jami (to&apos;lanadi): {fmtNum(total)} so&apos;m</div>
+          <div className="text-xs text-slate-500">Sklad tannarxi: {companyVatPayer ? "QQS'siz (korxona QQS to'lovchisi — QQS qaytariladi)" : "QQS bilan (korxona QQS to'lovchisi emas)"}</div>
+        </div>
       </div>
 
       {/* Nakladnoy va tarozi — kirim izohiga tuzilgan holda yoziladi (netto = brutto − tara) */}

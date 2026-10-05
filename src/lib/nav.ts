@@ -55,6 +55,8 @@ export const NAV: NavItem[] = [
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
+  // Kirim QQS reyestri (oy va yetkazuvchi kesimida QQS'siz summa, QQS, jami) — buxgalteriya hisobotlari uchun
+  { href: "/kirim-qqs",   label: "Kirim QQS",          roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — kiritish direktor va buxgalteriya;
   // Finance ko'radi va yetkazuvchining boshlang'ich qarzini to'laydi ("Yetkazuvchiga to'lash" huquqi — shu sahifada).
   // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha shu rollarga ochiq, qolgan sozlamalar yopiq.
@@ -175,6 +177,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "taminot",   label: "Ta'minot zayavkalari",  prefixes: ["/taminot"] },
   { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices"] },
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
+  { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
   { key: "bi-tahlil", label: "BI tahlil",             prefixes: ["/bi-tahlil"] },
   // Sozlamalar ostidagi yagona modul: boshlang'ich qoldiqlar pulga ta'sir qiladi — direktor yopa/ocha olsin

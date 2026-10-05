@@ -1,5 +1,6 @@
 import type { SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { db } from "./db";
+import { receiptTotal } from "./receipt-vat";
 import { getCompany } from "./company";
 import { materialOutlook } from "./dashboard";
 import { totalPlanned } from "./supply";
@@ -85,7 +86,7 @@ export async function procurementHome(f: ProcFilters = {}) {
     }),
     db.goodsReceipt.findMany({
       where: { cancelledAt: null, date: { gte: from, lt: to } }, // storno qilingan kirim xarid summasiga kirmaydi
-      select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, items: { select: { qty: true, price: true } } },
+      select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, items: { select: { qty: true, price: true, vatAmount: true } } },
       orderBy: { date: "asc" },
     }),
     db.expenseBudget.findFirst({ where: { year: y, month: m + 1, category: CATEGORY } }),
@@ -199,7 +200,7 @@ export async function procurementHome(f: ProcFilters = {}) {
   ];
 
   /* ── 2-qator grafiklari ── */
-  const receiptSum = (g: (typeof receipts)[number]) => g.items.reduce((s, i) => s + Number(i.qty) * Number(i.price), 0);
+  const receiptSum = (g: (typeof receipts)[number]) => receiptTotal(g.items); // QQS bilan — to'lanadigan summa
   const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400000));
   const weekly = days > 45;
   const buckets = new Map<string, { label: string; value: number }>();

@@ -95,6 +95,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "suppliers", label: "Yetkazuvchilar",                 roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
   ],
   taminot: [],
+  "kirim-qqs": [], // faqat ko'rish (hisobot)
   payments: [
     { key: "create", label: "To'lov qabul qilish / bog'lash",   roles: ["CASHIER", "ACCOUNTING"] },
     { key: "storno", label: "To'lovni storno qilish",           roles: ["ACCOUNTING"] },

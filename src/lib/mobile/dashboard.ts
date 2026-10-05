@@ -15,6 +15,7 @@ import { periodAttendance, periodPlan } from "@/lib/period-stats";
 import { dayUtc } from "@/lib/davomat";
 import { periodId } from "./sex";
 import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
+import { lineTotal } from "@/lib/receipt-vat";
 import type { MobileUser } from "./auth";
 import type { CardFilter, HomeCard, HomeRow, HomeSection, SectionChart, Tone } from "./home";
 
@@ -576,15 +577,15 @@ async function logistics(r: DashRange): Promise<RoleDashboard> {
 
 async function warehouse(r: DashRange): Promise<RoleDashboard> {
   const [receipts, prevReceipts, moves, materials, balances] = await Promise.all([
-    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true, material: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true } }),
     db.stockMove.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { type: true, qty: true, material: { select: { name: true, unit: true } } } }),
     db.material.findMany({ where: { isActive: true, minStock: { gt: 0 } }, select: { id: true, name: true, unit: true, minStock: true } }),
     // Qoldiq — davr oxirida (o'tgan davr tanlansa o'sha paytdagi; joriy davrda — hozirgi)
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null }, ...(r.to < new Date() ? { date: { lt: r.to } } : {}) }, _sum: { qty: true } }),
   ]);
-  const recRows = receipts.map((x) => ({ date: x.date, supplier: x.supplier.name, amount: x.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0), items: x.items }));
-  const amount = recRows.reduce((s, x) => s + x.amount, 0), prevAmount = prevReceipts.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0);
+  const recRows = receipts.map((x) => ({ date: x.date, supplier: x.supplier.name, amount: x.items.reduce((s, i) => s + lineTotal(i), 0), items: x.items }));
+  const amount = recRows.reduce((s, x) => s + x.amount, 0), prevAmount = prevReceipts.reduce((s, i) => s + lineTotal(i), 0);
   const bal = new Map(balances.map((b) => [b.materialId, sum(b._sum.qty)]));
   const stockItems = materials
     .map((m) => progressItem(m.name, bal.get(m.id) ?? 0, sum(m.minStock), (v) => inUnit(v, m.unit), false, "stock"))
@@ -623,18 +624,18 @@ async function procurement(r: DashRange): Promise<RoleDashboard> {
   const [home, receipts, prevReceipts, requests] = await Promise.all([
     // Talablar — shu davrda ochilganlari (vebdagi "sana oralig'i" filtri bilan bir xil)
     procurementHome(procRange(r)),
-    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, supplierId: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, material: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, supplierId: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true, material: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true } }),
     db.supplyRequest.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { status: true, createdAt: true, receipt: { select: { date: true } } } }),
   ]);
   const c = home.counts;
-  const recRows = receipts.map((x) => ({ date: x.date, supplier: x.supplier.name, amount: x.items.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0), items: x.items }));
-  const amount = recRows.reduce((s, x) => s + x.amount, 0), prevAmount = prevReceipts.reduce((s, i) => s + sum(i.qty) * sum(i.price), 0);
+  const recRows = receipts.map((x) => ({ date: x.date, supplier: x.supplier.name, amount: x.items.reduce((s, i) => s + lineTotal(i), 0), items: x.items }));
+  const amount = recRows.reduce((s, x) => s + x.amount, 0), prevAmount = prevReceipts.reduce((s, i) => s + lineTotal(i), 0);
   // Kirim so'rovdan oldin yozilgan (eski hujjatga bog'langan) bo'lsa — manfiy muddat o'rtachani buzmasin
   const received = requests.filter((q) => q.receipt && q.receipt.date >= q.createdAt);
   const avgDays = received.length ? received.reduce((s, q) => s + (q.receipt!.date.getTime() - q.createdAt.getTime()) / DAY_MS, 0) / received.length : null;
   const bars = barsChart(r, recRows, (x) => x.date, [{ label: "Xarid", value: (x) => x.amount, fmt: short }], `Jami ${short(amount)}`);
-  const byMaterial = groupSum(recRows.flatMap((x) => x.items), (i) => i.material.name, (i) => sum(i.qty) * sum(i.price));
+  const byMaterial = groupSum(recRows.flatMap((x) => x.items), (i) => i.material.name, (i) => lineTotal(i));
 
   // Alertlar — bosilsa snabjeniye ro'yxati ochiladi (hujjat raqamlari izohda)
   const alerts: HomeRow[] = home.alerts.map((a) => ({
