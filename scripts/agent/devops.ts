@@ -103,7 +103,7 @@ function exec(file: string, args: string[], opt: { timeoutMs: number; cwd?: stri
     let out = "", err = "", timedOut = false;
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(file, args, { cwd: opt.cwd, env: (opt.env ?? ctx.childEnv) as unknown as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"], shell: false });
+      child = spawn(file, args, { cwd: opt.cwd, env: (opt.env ?? baseEnv()) as unknown as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"], shell: false });
     } catch (e) {
       resolve({ code: null, out: "", err: (e as Error).message, timedOut: false, missing: true });
       return;
@@ -136,27 +136,32 @@ async function readTail(file: string, maxBytes: number, fromOffset = 0): Promise
   } finally { await fh.close(); }
 }
 
+/** Bolalar muhiti; initDevops chaqirilmagan bo'lsa (deployBusy — infra modulidan) — minimal PATH. */
+const baseEnv = (): Record<string, string> => ctx?.childEnv ?? { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C.UTF-8" };
+
 /** systemd --user uchun muhit (user manager D-Bus soketi). */
 function userEnv(): Record<string, string> {
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   const rt = `/run/user/${uid}`;
-  return { ...ctx.childEnv, XDG_RUNTIME_DIR: rt, DBUS_SESSION_BUS_ADDRESS: `unix:path=${rt}/bus` };
+  return { ...baseEnv(), XDG_RUNTIME_DIR: rt, DBUS_SESSION_BUS_ADDRESS: `unix:path=${rt}/bus` };
 }
 
 /* ───────────────────────── Holat fayli ───────────────────────── */
 
 type DeployState = {
   actionId: string; type: "DEPLOY" | "ROLLBACK"; ref: string | null;
-  mode: "systemd-run" | "detached"; unit: string | null; pid: number | null;
+  /** starting — holat fayli atomar yaratildi (O_EXCL), jarayon hali ishga tushirilmoqda */
+  mode: "systemd-run" | "detached" | "starting"; unit: string | null; pid: number | null;
   logPath: string; offset: number; startedAt: string; prev: string | null; agentRelease: string | null;
 };
 
-async function readState(): Promise<DeployState | null> {
+async function readStateAt(file: string): Promise<DeployState | null> {
   try {
-    const s = JSON.parse(await readFile(P.state, "utf8")) as DeployState;
+    const s = JSON.parse(await readFile(file, "utf8")) as DeployState;
     return s && typeof s.actionId === "string" && ID_RE.test(s.actionId) ? s : null;
   } catch { return null; }
 }
+const readState = () => readStateAt(P.state);
 const clearState = () => unlink(P.state).catch(() => {});
 
 async function currentRelease(): Promise<{ sha: string | null; file: string | null }> {
@@ -170,10 +175,32 @@ async function currentRelease(): Promise<{ sha: string | null; file: string | nu
 }
 
 /** Deploy qulfi band-mi (deploy.sh ichidagi flock). flock yo'q bo'lsa — null (noma'lum). */
-async function lockBusy(): Promise<boolean | null> {
+async function lockBusy(lock = P.lock): Promise<boolean | null> {
   if (!existsSync(BIN.flock)) return null;
-  const r = await exec(BIN.flock, ["-n", "-E", "75", P.lock, "/bin/true"], { timeoutMs: 5000 });
+  const r = await exec(BIN.flock, ["-n", "-E", "75", lock, "/bin/true"], { timeoutMs: 5000, env: baseEnv() });
   return r.code === 75 ? true : r.code === 0 ? false : null;
+}
+
+/** «starting» holati shundan eski bo'lsa — jarayon ishga tushmay qolgan (agent yiqilgan) deb hisoblanadi. */
+const STARTING_STALE_MS = 2 * 60_000;
+
+/**
+ * Deploy/rollback hozir ketyaptimi — REBOOT va CLEAN_RELEASES (scripts/agent/infra.ts) shu bilan tekshiradi, chunki
+ * DEPLOY/ROLLBACK ajratilgan jarayonda ishlaydi va agentning «bajarilayotgan amallar» ro'yxatida ko'rinmaydi.
+ * Band: holat fayli bor va jarayon tirik (yoki endigina boshlanmoqda), yoki deploy.sh flock qulfi band (qo'lda deploy).
+ * initDevops chaqirilmagan bo'lsa ham ishlaydi (yo'llar appDir dan). Qaytaradi: sabab matni yoki null.
+ */
+export async function deployBusy(appDir: string): Promise<string | null> {
+  const p = paths(appDir);
+  const s = await readStateAt(p.state);
+  if (s && (await deployAlive(s))) return `${s.type} bajarilmoqda (amal ${s.actionId}, ${s.mode}${s.pid ? `, pid ${s.pid}` : ""})`;
+  if (!s && existsSync(p.state)) {
+    // Yozilayotgan (hali bo'sh) yoki buzuq holat fayli — yangi bo'lsa band deb olinadi
+    const st = await stat(p.state).catch(() => null);
+    if (st && Date.now() - st.mtimeMs < STARTING_STALE_MS) return `deploy holati yozilmoqda (${p.state})`;
+  }
+  if ((await lockBusy(p.lock)) === true) return `deploy qulfi band (${p.lock}) — serverda deploy/rollback ketmoqda`;
+  return null;
 }
 
 /* ───────────────────────── DEPLOY / ROLLBACK: ishga tushirish ───────────────────────── */
@@ -187,7 +214,33 @@ async function startDetached(actionId: string, type: "DEPLOY" | "ROLLBACK", ref:
     const other = await ctx.control.agentAction.findUnique({ where: { id: prevState.actionId }, select: { status: true } });
     if (other?.status === "RUNNING") return { status: "FAILED", output: `Boshqa ${prevState.type} hozir ishlayapti (amal ${prevState.actionId}) — tugashini kuting` };
     await clearState();
+  } else if (prevState) {
+    await clearState(); // shu amalning o'zi (agent qayta ishga tushgan) — qayta boshlanadi
+  } else if (existsSync(P.state)) {
+    // O'qib bo'lmaydigan holat fayli: yangisi — boshqa so'rov hozir band qilmoqda; eskisi — buzuq, o'chiriladi
+    const st = await stat(P.state).catch(() => null);
+    if (st && Date.now() - st.mtimeMs < STARTING_STALE_MS) return { status: "FAILED", output: "Boshqa deploy/rollback hozir boshlanmoqda — tugashini kuting" };
+    await clearState();
   }
+
+  // Atomar band qilish (O_EXCL): parallel DEPLOY va ROLLBACK ikkalasi ham shu nuqtadan o'ta olmaydi
+  const claim: DeployState = { actionId, type, ref, mode: "starting", unit: null, pid: null, logPath: P.deployLog, offset: 0, startedAt: new Date().toISOString(), prev: null, agentRelease: ctx.releaseVersion() };
+  try {
+    await writeFile(P.state, JSON.stringify(claim, null, 2), { mode: 0o600, flag: "wx" });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") return { status: "FAILED", output: "Boshqa deploy/rollback hozir boshlanmoqda — tugashini kuting" };
+    return { status: "FAILED", output: `${P.state} yozib bo'lmadi: ${errMsg(e)}` };
+  }
+  let out: DevopsOutcome = { status: "FAILED", output: "deploy boshlanmadi" };
+  try {
+    out = await launch(actionId, type, ref);
+    return out;
+  } finally {
+    if (out.status !== "RUNNING") await clearState(); // boshlanmagan — band qilish bekor
+  }
+}
+
+async function launch(actionId: string, type: "DEPLOY" | "ROLLBACK", ref: string | null): Promise<DevopsOutcome> {
   if ((await lockBusy()) === true) return { status: "FAILED", output: `Deploy qulfi band (${P.lock}) — serverda boshqa deploy (qo'lda?) ishlayapti` };
   if (!existsSync(P.script)) return { status: "FAILED", output: `${P.script} topilmadi` };
 
@@ -253,6 +306,7 @@ async function writeState(s: DeployState) {
 /* ───────────────────────── DEPLOY: kuzatish va yakunlash ───────────────────────── */
 
 async function deployAlive(s: DeployState): Promise<boolean> {
+  if (s.mode === "starting") return Date.now() - Date.parse(s.startedAt) < STARTING_STALE_MS;
   if (s.mode === "systemd-run" && s.unit) {
     const r = await exec(BIN.systemctl, ["--user", "is-active", s.unit], { timeoutMs: 10_000, env: userEnv() });
     return /^(active|activating|reloading|deactivating)/.test(r.out.trim());
@@ -306,6 +360,8 @@ async function watchDeploy(): Promise<string> {
   if (!s) return "deploy yo'q";
   const row = await ctx.control.agentAction.findUnique({ where: { id: s.actionId }, select: { status: true } });
   if (!row || row.status !== "RUNNING") { await clearState(); return "eski holat tozalandi"; }
+  // Holat endigina band qilingan (startDetached jarayonni ishga tushirmoqda) — log offseti hali yo'q
+  if (s.mode === "starting" && (await deployAlive(s))) return "boshlanmoqda";
 
   let { text, size } = await logSince(s);
   let rc = endMarker(text, s.actionId);
@@ -358,7 +414,7 @@ export async function collectReleaseInfo(fetch = true): Promise<ReleaseInfo> {
   const st = await readState();
   const info: ReleaseInfo = {
     current: cur.sha, releaseFile: cur.file, releases: [], originMain: null, ahead: null, commits: [],
-    fetchedAt: null, fetchError: null, deployLog: P.deployLog, mode: st?.mode ?? null,
+    fetchedAt: null, fetchError: null, deployLog: P.deployLog, mode: st && st.mode !== "starting" ? st.mode : null,
   };
   try {
     const names = (await readdir(P.releases, { withFileTypes: true })).filter((d) => d.isDirectory() && !d.name.endsWith(".tmp") && SHA_RE.test(d.name));
@@ -449,14 +505,15 @@ export async function logTail(p: DevopsParams): Promise<DevopsOutcome> {
       const hint = /permission|insufficient|not seeing messages/i.test(r.err) ? "\ndeploy `systemd-journal` guruhida emas: sudo usermod -aG systemd-journal deploy && sudo systemctl restart insof-agent" : "";
       return { status: "FAILED", output: `$ journalctl ${args.join(" ")}\n${r.err.trim().slice(0, 1000)}${hint}` };
     }
-    lines = cleanText(r.out).split("\n");
+    // Avval sirlar yashiriladi, keyin filtr: aks holda filtr («parol1…») sir qiymatini qator soni orqali taxmin qildirardi
+    lines = scrubSecrets(cleanText(r.out)).split("\n");
     if (/insufficient permissions|not seeing messages from other users/i.test(r.err)) lines.unshift("⚠ journal: huquq yetarli emas — deploy `systemd-journal` guruhida bo'lsin");
   } else if (isLogFile(source)) {
     const file = source === "deploy" ? P.deployLog : LOG_FILES[source].path;
     label = file;
     try {
       const t = await readTail(file, 4 * 1024 * 1024);
-      lines = cleanText(t.text).split("\n");
+      lines = scrubSecrets(cleanText(t.text)).split("\n");
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       const hint = code === "EACCES" ? (source.startsWith("nginx") ? " — deploy `adm` guruhida bo'lsin: sudo usermod -aG adm deploy && sudo systemctl restart insof-agent" : " — fayl huquqi") : code === "ENOENT" ? " — fayl hali yo'q" : "";

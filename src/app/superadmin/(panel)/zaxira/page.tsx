@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { CloudOff, CloudUpload, DatabaseBackup, FlaskConical, HardDrive } from "lucide-react";
 import { loadInfraView } from "@/lib/control/infra/view";
 import { infraKey, type RunLog } from "@/lib/control/infra/contract";
@@ -29,6 +30,7 @@ const ageTone = (iso: string | null, warnH: number) => {
 
 /** Zaxira: mahalliy nusxalar, oxirgi backup va tiklash sinovi (loglardan), masofadagi nusxa, disk prognozi. */
 export default async function BackupPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const v = await loadInfraView(TYPES);
   const inv = v.backup;
   const invCheck = v.check(infraKey.backup());

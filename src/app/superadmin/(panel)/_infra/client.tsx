@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Power } from "lucide-react";
 import { Button, Field, FormError, Input } from "@/components/ui";
 import { CONFIRM_WORD, REBOOT_AT_RE, rebootWhen } from "@/lib/control/infra/contract";
-import { Modal } from "../_monitor/action-dialog";
+import { Modal, PasswordBox } from "../_monitor/action-dialog";
 import { useRefreshOn } from "../_monitor/live";
 import { enqueueAction } from "../monitor-actions";
 
@@ -27,17 +27,19 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
   const [mode, setMode] = useState<"now" | "at">("at");
   const [time, setTime] = useState("03:00");
   const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState<string>();
   const [done, setDone] = useState<string>();
   const [pending, start] = useTransition();
   const at = mode === "now" ? "now" : time;
   const atOk = REBOOT_AT_RE.test(at);
   const when = atOk ? rebootWhen(at).label : "—";
-  const canSend = atOk && confirm.trim() === CONFIRM_WORD;
-  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); };
+  const canSend = atOk && confirm.trim() === CONFIRM_WORD && password.length > 0;
+  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); setPassword(""); };
   const send = () => start(async () => {
     setErr(undefined);
-    const r = await enqueueAction("REBOOT", { at }, null, confirm);
+    const r = await enqueueAction("REBOOT", { at }, null, confirm, password);
+    setPassword("");
     if (r.error) { setErr(r.error); return; }
     setDone(`Navbatga qo'yildi — server ${when} qayta yuklanadi. Telegram'ga xabar ketadi.`);
     router.refresh();
@@ -67,6 +69,7 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
               <span>Tasdiqlash uchun <code className="rounded bg-white px-1 font-semibold">{CONFIRM_WORD}</code> deb yozing.</span></p>
             <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="Tasdiqlash matni" autoComplete="off" spellCheck={false} />
           </div>
+          <PasswordBox value={password} onChange={setPassword} />
           <FormError error={err} />
           {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> {done}</p>}
           <div className="flex flex-wrap justify-end gap-2 pt-1">

@@ -13,23 +13,26 @@
 # (unit: insof-erp@<slug>|insof-control|insof-eco, ip: faqat IPv4).
 #
 # Eslatma: sudoers'dagi `*` bo'sh joyni ham qamraydi (masalan `systemctl restart insof-erp@a nginx` ham mos keladi).
-# Ubuntu 22.04 dagi sudo 1.9.9 da regex yo'q, shuning uchun himoyaning asosiy qatlami — agentdagi qat'iy tekshiruv
-# (src/lib/control/monitor/parse.ts → validateAction); bu yerda faqat restart/reload/deny kabi zararsiz fe'llar.
+# Ubuntu 22.04 dagi sudo 1.9.9 da regex yo'q — shuning uchun argumentli restart va ufw buyruqlari to'g'ridan-to'g'ri
+# emas, ROOT EGALIGIDAGI o'ramlar orqali: /usr/local/sbin/insof-restart va /usr/local/sbin/insof-ufw (scripts/*.sh dan
+# `install -o root -m 755`). O'ram argumentlar sonini, qat'iy regex'ni tekshiradi va buyruqni `--` bilan chaqiradi;
+# shuning uchun bu yerdagi `*` qolgan bo'lsa ham `insof-erp@a nginx` kabi qo'shimcha argument o'tmaydi.
+# Tartib: AVVAL o'ramlarni o'rnating, KEYIN shu faylni (aks holda deploy.sh/agent restart qila olmaydi).
 
 # IT panel → Relizlar (DEPLOY/ROLLBACK) uchun qo'shimcha qator YO'Q: deploy.sh deploy ostida ishlaydi va faqat
-# INSOF_RESTART dagi restartlarni chaqiradi; journalctl va nginx loglari — systemd-journal/adm guruhlari orqali (sudo'siz).
+# INSOF_RESTART dagi restartlarni (insof-restart o'rami orqali) chaqiradi; journalctl va nginx loglari — systemd-journal/adm guruhlari orqali (sudo'siz).
 
-Cmnd_Alias INSOF_RESTART = /usr/bin/systemctl restart insof-erp@*, \
-                           /usr/bin/systemctl restart insof-control, \
-                           /usr/bin/systemctl restart insof-eco, \
-                           /usr/bin/systemctl restart insof-agent
+Cmnd_Alias INSOF_RESTART = /usr/local/sbin/insof-restart insof-erp@[a-z0-9]*, \
+                           /usr/local/sbin/insof-restart insof-control, \
+                           /usr/local/sbin/insof-restart insof-eco, \
+                           /usr/local/sbin/insof-restart insof-agent
 Cmnd_Alias INSOF_NGINX   = /usr/sbin/nginx -t, \
                            /usr/bin/systemctl reload nginx
 # certbot: apt paketi /usr/bin/certbot, snap — /snap/bin/certbot (qaysi biri o'rnatilgan bo'lsa, agent o'shani chaqiradi)
 Cmnd_Alias INSOF_CERT    = /usr/bin/certbot renew --quiet, \
                            /snap/bin/certbot renew --quiet
-Cmnd_Alias INSOF_UFW     = /usr/sbin/ufw insert 1 deny from *, \
-                           /usr/sbin/ufw delete deny from *, \
+Cmnd_Alias INSOF_UFW     = /usr/local/sbin/insof-ufw deny [0-9]*, \
+                           /usr/local/sbin/insof-ufw undeny [0-9]*, \
                            /usr/sbin/ufw status, \
                            /usr/sbin/ufw status verbose
 

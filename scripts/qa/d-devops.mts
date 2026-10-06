@@ -6,8 +6,9 @@
  * Bazasiz: control o'rniga xotiradagi soxta obyekt; vaqtinchalik APP_DIR (soxta scripts/deploy.sh, releases/, current),
  * vaqtinchalik git repo + "origin" (bare). macOS'da systemd yo'q — detached rejim sinaladi. Hech narsa serverga tegmaydi.
  */
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 
@@ -198,6 +199,73 @@ section("DEPLOY: jarayon kutilmaganda o'ldi");
   check("FAILED «kutilmaganda to'xtadi»", r.status === "FAILED" && /kutilmaganda/.test(r.output ?? ""), r.output);
 }
 
+section("DEPLOY va ROLLBACK parallel: holat fayli atomar (O_EXCL)");
+{
+  fakeDeploy(`echo "parallel $\{ROLLBACK:-0}"; sleep 2`);
+  const a = "cparallel00000001", b = "cparallel00000002";
+  newAction(a, "DEPLOY"); newAction(b, "ROLLBACK");
+  const [ra, rb] = await Promise.all([D.devopsExecute(a, "DEPLOY", { ref: "main" }), D.devopsExecute(b, "ROLLBACK", {})]);
+  const running = [ra, rb].filter((r) => r.status === "RUNNING");
+  check("bir vaqtda ikkalasi so'raldi → faqat bittasi RUNNING, ikkinchisi FAILED", running.length === 1 && [ra, rb].some((r) => r.status === "FAILED" && /Boshqa/.test(r.output)), { ra, rb });
+  const winner = ra.status === "RUNNING" ? a : b;
+  const loser = winner === a ? b : a;
+  actions.get(loser)!.status = "FAILED";
+  const st = JSON.parse(readFileSync(path.join(APP, ".deploy-state.json"), "utf8")) as { actionId: string; mode: string };
+  check("holat fayli g'olibniki, rejim detached", st.actionId === winner && st.mode === "detached", st);
+  const busy = await D.deployBusy(APP);
+  check("deployBusy: ketayotganda — sabab matni", !!busy && busy.includes(winner), busy);
+  const r = await waitDone(winner);
+  check("g'olib yakunlandi (DONE)", r.status === "DONE", r);
+  check("deployBusy: tugagach — null", (await D.deployBusy(APP)) === null);
+  // Buzuq (o'qib bo'lmaydigan) holat fayli: yangisi — band, eskisi — tozalanib deploy boshlanadi
+  writeFileSync(path.join(APP, ".deploy-state.json"), "");
+  check("deployBusy: bo'sh/yozilayotgan holat fayli (yangi) → band", !!(await D.deployBusy(APP)));
+  newAction("cparallel00000003", "DEPLOY");
+  const c1 = await D.devopsExecute("cparallel00000003", "DEPLOY", { ref: "main" });
+  check("yangi buzuq holat fayli → FAILED «boshlanmoqda»", c1.status === "FAILED" && /boshlanmoqda/.test(c1.output), c1);
+  const old = new Date(Date.now() - 10 * 60_000);
+  utimesSync(path.join(APP, ".deploy-state.json"), old, old);
+  const c2 = await D.devopsExecute("cparallel00000003", "DEPLOY", { ref: "main" });
+  check("eski buzuq holat fayli tozalanadi → RUNNING", c2.status === "RUNNING", c2);
+  check("yakunlandi", (await waitDone("cparallel00000003")).status === "DONE");
+  // Ishga tushirish xato bo'lsa band qilish bekor qilinadi (holat fayli qolmaydi)
+  const saved = readFileSync(SCRIPT, "utf8");
+  rmSync(SCRIPT);
+  newAction("cparallel00000004", "DEPLOY");
+  const c3 = await D.devopsExecute("cparallel00000004", "DEPLOY", { ref: "main" });
+  check("deploy.sh yo'q → FAILED va holat fayli o'chirildi", c3.status === "FAILED" && !existsSync(path.join(APP, ".deploy-state.json")), c3);
+  actions.get("cparallel00000004")!.status = "FAILED";
+  writeFileSync(SCRIPT, saved);
+}
+
+section("deploy.sh: DEPLOY_REF faqat origin/main tarixidan");
+{
+  const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  const APP2 = path.join(TMP, "app2");
+  mkdirSync(path.join(APP2, "releases", SHA3, ".next"), { recursive: true });
+  writeFileSync(path.join(APP2, "control.env"), "");
+  writeFileSync(path.join(APP2, "releases", SHA3, "RELEASE"), SHA3);
+  writeFileSync(path.join(APP2, "releases", SHA3, ".next", "BUILD_ID"), "x");
+  // origin/main da yo'q commit (HEAD ko'chirilmaydi): commit-tree
+  const stray = g(APP, "commit-tree", `${SHA1}^{tree}`, "-p", SHA1, "-m", "ko'rib chiqilmagan shoxcha");
+  const runDeploy = (env: Record<string, string>) => spawnSync("/bin/bash", [path.join(REPO, "scripts/deploy.sh")], {
+    encoding: "utf8", timeout: 60_000,
+    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: os.homedir(), APP_DIR: APP2, REPO_DIR: APP, DEPLOY_LOCK: path.join(APP2, ".deploy.lock"), SKIP_ECO: "1", ...env },
+  });
+  const bad = runDeploy({ DRY_RUN: "1", DEPLOY_REF: stray });
+  const badOut = `${bad.stdout}${bad.stderr}`;
+  check("origin/main da yo'q sha → to'xtadi, aniq xabar", bad.status !== 0 && badOut.includes("origin/main tarixida yo'q") && !badOut.includes("build →"), badOut.slice(-600));
+  check("build boshlanmadi (releases/<sha>.tmp yo'q)", !existsSync(path.join(APP2, "releases", `${stray}.tmp`)));
+  const good = runDeploy({ DRY_RUN: "1", DEPLOY_REF: SHA3 });
+  const goodOut = `${good.stdout}${good.stderr}`;
+  check("origin/main dagi sha → tekshiruvdan o'tdi (mavjud reliz qayta ishlatiladi)", !goodOut.includes("tarixida yo'q") && goodOut.includes("allaqachon build qilingan"), goodOut.slice(-600));
+  const prodBase = runDeploy({ SKIP_PULL: "1", DEPLOY_REF: SHA3, DEPLOY_REF_BASE: "HEAD" });
+  check("prodda DEPLOY_REF_BASE → rad", prodBase.status !== 0 && `${prodBase.stdout}${prodBase.stderr}`.includes("DEPLOY_REF_BASE faqat DRY_RUN"), `${prodBase.stdout}${prodBase.stderr}`.slice(-400));
+  const dryBase = runDeploy({ DRY_RUN: "1", DEPLOY_REF: stray, DEPLOY_REF_BASE: stray });
+  check("DRY_RUN: DEPLOY_REF_BASE bilan sinov bazasi almashtiriladi", !`${dryBase.stdout}${dryBase.stderr}`.includes("tarixida yo'q"), `${dryBase.stdout}${dryBase.stderr}`.slice(-400));
+  rmSync(path.join(APP2, "releases", `${stray}.tmp`), { recursive: true, force: true });
+}
+
 section("DEPLOY: log faylga yozib bo'lmaydi");
 {
   process.env.AGENT_DEPLOY_LOG = path.join(TMP, "yoq", "log");
@@ -221,17 +289,24 @@ section("LOG_TAIL");
   check("filtr regex emas («.*» → 0 qator)", rx.output.split("\n").length === 2 && /mos qator yo'q/.test(rx.output), rx.output);
   const sec = P.trimOutput((await D.logTail({ source: "deploy", lines: 500 })).output, C.LOG_MAX_BYTES);
   check("chiqishda parol yashirilgan (trimOutput)", !sec.includes("parol123") && sec.includes("***"));
+  // Filtr sir «oracle»i bo'lmasin: filtr tozalangan qatorlarga qo'llanadi — sir qiymati bo'yicha qidiruv hech narsa topmaydi
+  const orc = await D.logTail({ source: "deploy", lines: 500, filter: "parol123" });
+  check("filtr sir qiymati bilan («parol123») → 0 qator", /mos qator yo'q/.test(orc.output) && orc.output.split("\n").length === 2, orc.output);
+  const orc2 = await D.logTail({ source: "deploy", lines: 500, filter: "u:par" });
+  check("filtr sir boshlanishi bilan («u:par») → 0 qator", /mos qator yo'q/.test(orc2.output), orc2.output);
+  const byKey = await D.logTail({ source: "deploy", lines: 500, filter: "DATABASE_URL" });
+  check("filtr kalit nomi bilan → qator topiladi, qiymat yashirin", /DATABASE_URL/.test(byKey.output) && byKey.output.includes("***") && !byKey.output.includes("parol123"), byKey.output);
   const u = await D.logTail({ source: "insof-control", lines: 10 });
   check("macOS: journald unit → FAILED (journalctl yo'q)", u.status === "FAILED", u);
   const nf = await D.logTail({ source: "restore-test", lines: 10 });
   check("yo'q fayl → FAILED ENOENT", nf.status === "FAILED" && /ENOENT/.test(nf.output), nf);
   const big = path.join(TMP, "big.log");
-  writeFileSync(big, Array.from({ length: 20000 }, (_, i) => `qator ${i} ${"x".repeat(40)}`).join("\n"));
+  writeFileSync(big, Array.from({ length: 20000 }, (_, i) => `qator ${i} ${"x".repeat(30)}`).join("\n"));
   process.env.AGENT_DEPLOY_LOG = big;
   D.initDevops({ control: fakeControl as never, appDir: APP, linux: false, test: false, childEnv: { PATH: process.env.PATH ?? "" }, hasSystemd: async () => false, releaseVersion: () => null, log: () => {}, warn: () => {}, requestSelfRestart: () => {} });
   const b = await D.logTail({ source: "deploy", lines: 500 });
   const trimmed = P.trimOutput(b.output, C.LOG_MAX_BYTES);
-  check("katta log: ≤ 500 qator, oxirgisi «qator 19999», ≤ 64 KB", b.output.split("\n").length === 501 && b.output.endsWith(`qator 19999 ${"x".repeat(40)}`) && Buffer.byteLength(trimmed) <= C.LOG_MAX_BYTES + 64);
+  check("katta log: ≤ 500 qator, oxirgisi «qator 19999», ≤ 64 KB", b.output.split("\n").length === 501 && b.output.endsWith(`qator 19999 ${"x".repeat(30)}`) && Buffer.byteLength(trimmed) <= C.LOG_MAX_BYTES + 64);
 }
 
 rmSync(TMP, { recursive: true, force: true });

@@ -98,7 +98,13 @@ const BIN = {
   bash: "/bin/bash",
   // apt (python3-certbot) → /usr/bin/certbot; snap → /snap/bin/certbot
   certbot: ["/usr/bin/certbot", "/snap/bin/certbot"].find((p) => existsSync(p)) ?? "/usr/bin/certbot",
+  // Root egaligidagi o'ramlar (scripts/insof-restart.sh, scripts/insof-ufw.sh → install -o root) — sudoers'da wildcard'li
+  // `systemctl restart insof-erp@*` / `ufw … from *` o'rniga; argumentni o'ram ham qat'iy tekshiradi (PLATFORMA.md → «Root o'ramlari»)
+  restart: "/usr/local/sbin/insof-restart",
+  ufwWrap: "/usr/local/sbin/insof-ufw",
 };
+const wrapperMissing = (bin: string, src: string) =>
+  `${bin} o'rnatilmagan — serverda: sudo install -o root -g root -m 755 ${src} ${bin} (va sudoers yangilansin: docs/deploy/PLATFORMA.md → «Root o'ramlari»)`;
 
 const log = (msg: string) => console.log(`[agent] ${scrubSecrets(msg)}`);
 const warnLog = (msg: string) => console.error(`[agent] ⚠ ${scrubSecrets(msg)}`);
@@ -1019,7 +1025,8 @@ async function execute(type: ActionType, params: ActionParams, requestedById: st
   switch (type) {
     case "RESTART_UNIT": {
       const unit = params.unit!;
-      const r = await sudo([BIN.systemctl, "restart", unit], 120_000);
+      if (!existsSync(BIN.restart)) return { status: "FAILED", output: wrapperMissing(BIN.restart, "scripts/insof-restart.sh") };
+      const r = await sudo([BIN.restart, unit], 120_000);
       if (!r.ok) return { status: "FAILED", output: r.text };
       return { status: "DONE", output: `${r.text}\n${await afterRestart(unit)}` };
     }
@@ -1052,11 +1059,13 @@ async function execute(type: ActionType, params: ActionParams, requestedById: st
     case "FIX_SECRET_PERMS":
       return { status: "DONE", output: await fixSecretPerms() };
     case "BLOCK_IP": {
-      const r = await sudo([BIN.ufw, "insert", "1", "deny", "from", params.ip!], 30_000);
+      if (!existsSync(BIN.ufwWrap)) return { status: "FAILED", output: wrapperMissing(BIN.ufwWrap, "scripts/insof-ufw.sh") };
+      const r = await sudo([BIN.ufwWrap, "deny", params.ip!], 30_000);
       return { status: r.ok ? "DONE" : "FAILED", output: r.text };
     }
     case "UNBLOCK_IP": {
-      const r = await sudo([BIN.ufw, "delete", "deny", "from", params.ip!], 30_000);
+      if (!existsSync(BIN.ufwWrap)) return { status: "FAILED", output: wrapperMissing(BIN.ufwWrap, "scripts/insof-ufw.sh") };
+      const r = await sudo([BIN.ufwWrap, "undeny", params.ip!], 30_000);
       return { status: r.ok ? "DONE" : "FAILED", output: r.text };
     }
     case "RUN_HEALTH_CHECK": {

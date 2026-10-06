@@ -134,7 +134,17 @@ try {
 
   const sudoCalls: string[][] = []; const tg: string[] = [];
   const tenants: Record<string, { id: string; status: string; domain: string | null }> = { alfa: { id: "t1", status: "PROVISIONING", domain: "alfa.insof-erp.uz" } };
+  // REBOOT cheklovi uchun: oxirgi DONE REBOOT / REBOOT_CANCEL (finishedAt) — sinov boshqaradi
+  const lastDone: Record<string, Date | null> = { REBOOT: null, REBOOT_CANCEL: null };
+  let uptime = 5 * 86400;
   const stubControl = {
+    agentAction: {
+      findFirst: async ({ where }: { where: { type: string; finishedAt: { gte?: Date; gt?: Date } } }) => {
+        const t = lastDone[where.type];
+        const min = where.finishedAt.gte ?? where.finishedAt.gt!;
+        return t && (where.finishedAt.gte ? t >= min : t > min) ? { id: "x", finishedAt: t } : null;
+      },
+    },
     hostSnapshot: { findFirst: async () => null },
     superAdmin: { findUnique: async () => ({ fullName: "Test Admin", login: "test" }) },
     tenant: { findUnique: async ({ where }: { where: { slug: string } }) => tenants[where.slug] ?? null, update: async () => ({}) },
@@ -150,7 +160,7 @@ try {
     telegram: async (t) => { tg.push(t); return true; }, log: () => {}, linux: false, test: false, hasSystemd: async () => false,
     appDir: app, backupDir: bdir, backupEnv: benv, backupLog: blog, restoreLog: rlog, childEnv: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: os.homedir() },
     host: "qa-host", bin: { systemctl: "/usr/bin/false", journalctl: "/nonexistent/journalctl", bash: "/bin/bash" },
-    runningTypes: () => [], afterChange: () => {},
+    runningTypes: () => [], afterChange: () => {}, uptimeSec: () => uptime,
   });
 
   const [inv, sys] = await infra.collect();
@@ -195,6 +205,47 @@ try {
   rmSync(path.join(bdir, "2026-10-06_0300.partial"), { recursive: true });
   await infra.execute("REBOOT_CANCEL", {}, "a1");
   check("REBOOT_CANCEL → shutdown -c", JSON.stringify(sudoCalls.at(-1)) === JSON.stringify(["/usr/sbin/shutdown", "-c"]));
+
+  // Cheklovlar: uptime < 30 daq, oxirgi DONE REBOOT < 1 soat (bekor qilinmagan) → REJECTED, sudo chaqirilmaydi
+  {
+    const n = sudoCalls.length;
+    uptime = 10 * 60;
+    const r1 = await infra.execute("REBOOT", { at: "now" }, "a1");
+    check("REBOOT: uptime 10 daq → REJECTED (sabab bilan)", r1.status === "REJECTED" && /10 daqiqa oldin yuklangan/.test(r1.output), r1);
+    uptime = 5 * 86400;
+    lastDone.REBOOT = new Date(Date.now() - 20 * 60_000);
+    const r2 = await infra.execute("REBOOT", { at: "03:00" }, "a1");
+    check("REBOOT: 20 daq oldin DONE REBOOT → REJECTED (~40 daqiqadan keyin)", r2.status === "REJECTED" && /1 soat ichida/.test(r2.output) && /4[01] daqiqadan keyin/.test(r2.output), r2);
+    check("REBOOT cheklovi: sudo chaqirilmadi", sudoCalls.length === n);
+    lastDone.REBOOT_CANCEL = new Date(Date.now() - 5 * 60_000);
+    const r3 = await infra.execute("REBOOT", { at: "03:00" }, "a1");
+    check("REBOOT: oxirgisi keyin bekor qilingan → ruxsat", r3.status === "DONE", r3);
+    lastDone.REBOOT = new Date(Date.now() - 2 * 3600_000); lastDone.REBOOT_CANCEL = null;
+    check("REBOOT: oxirgisi 2 soat oldin → ruxsat", (await infra.execute("REBOOT", { at: "03:00" }, "a1")).status === "DONE");
+    lastDone.REBOOT = null;
+  }
+
+  // Deploy ketmoqda (ajratilgan jarayon: .deploy-state.json + tirik pid) → REBOOT va CLEAN_RELEASES rad
+  {
+    const stateFile = path.join(app, ".deploy-state.json");
+    const st = (pid: number, mode = "detached", startedAt = new Date().toISOString()) => writeFileSync(stateFile, JSON.stringify({ actionId: "cdeploybusy00001", type: "DEPLOY", ref: "main", mode, unit: null, pid, logPath: "/x", offset: 0, startedAt, prev: null, agentRelease: null }));
+    const n = sudoCalls.length;
+    st(process.pid);
+    const rb2 = await infra.execute("REBOOT", { at: "now" }, "a1");
+    check("REBOOT: deploy ketmoqda (holat + tirik pid) → FAILED, sudo yo'q", rb2.status === "FAILED" && /Deploy ketmoqda/.test(rb2.output) && sudoCalls.length === n, rb2);
+    mkdirSync(path.join(app, "releases", "abc999"));
+    const cr = await infra.execute("CLEAN_RELEASES", {}, "a1");
+    check("CLEAN_RELEASES: deploy ketmoqda → FAILED, hech narsa o'chmadi", cr.status === "FAILED" && /Deploy ketmoqda/.test(cr.output) && existsSync(path.join(app, "releases", "abc999")), cr);
+    st(0, "starting");
+    check("REBOOT: holat endigina band qilingan (starting) → FAILED", (await infra.execute("REBOOT", { at: "now" }, "a1")).status === "FAILED");
+    st(0, "starting", new Date(Date.now() - 10 * 60_000).toISOString());
+    check("REBOOT: eski «starting» (jarayon ishga tushmagan) → band emas", (await infra.execute("REBOOT", { at: "now" }, "a1")).status === "DONE");
+    const dead = spawnSync("/bin/sh", ["-c", "echo $$"], { encoding: "utf8" });
+    st(Number(dead.stdout.trim()));
+    check("REBOOT: holat bor, lekin jarayon o'lgan → band emas", (await infra.execute("REBOOT", { at: "now" }, "a1")).status === "DONE");
+    rmSync(stateFile);
+    rmSync(path.join(app, "releases", "abc999"), { recursive: true });
+  }
   await infra.execute("JOURNAL_VACUUM", {}, "a1");
   check("JOURNAL_VACUUM → journalctl --vacuum-time=14d", JSON.stringify(sudoCalls.at(-1)) === JSON.stringify(["/nonexistent/journalctl", "--vacuum-time=14d"]));
 

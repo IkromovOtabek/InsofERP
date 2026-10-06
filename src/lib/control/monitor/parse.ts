@@ -313,6 +313,15 @@ export function validateAction(type: string, params: unknown): ValidAction {
   return { ok: true, type, params: {} };
 }
 
+/**
+ * Sir nomli kalit: SECRET/TOKEN/PASSWORD/… so'z ichida; `*_KEY` va aynan `KEY`; PASS — faqat alohida bo'lak (`DB_PASS`,
+ * `PASS_FILE`), «passed»/«bypass» emas. scrubSecrets (matn: `NOM=qiymat`) va scrubJson (JSON kaliti) uchun umumiy.
+ */
+const SECRET_WORDS = "SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|SSO_?KEY|COOKIE|SESSION|CREDENTIAL";
+const SECRET_NAME = `[A-Za-z0-9_]*(?:${SECRET_WORDS})[A-Za-z0-9_]*|(?:[A-Za-z0-9_]*_)?PASS(?:_[A-Za-z0-9_]*)?|[A-Za-z0-9_]*_KEY|KEY`;
+const SECRET_ASSIGN_RE = new RegExp(`\\b(${SECRET_NAME})(["']?\\s*[=:]\\s*["']?)[^\\s"'&,;]+`, "gi");
+const SECRET_KEY_RE = new RegExp(`^(?:${SECRET_NAME})$|${SECRET_WORDS}`, "i");
+
 /** Sirga o'xshagan hamma narsani yashiradi: URL ichidagi parol, bot tokenlari, KEY=qiymat, Bearer, uzun kalitlar. */
 export function scrubSecrets(text: string): string {
   return text
@@ -322,15 +331,14 @@ export function scrubSecrets(text: string): string {
     .replace(/\b\d{6,12}:[A-Za-z0-9_-]{30,}\b/g, "***")
     // Authorization: Bearer xxx
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, "$1 ***")
-    // SECRET=..., API_KEY: ..., password=... (env, query string, JSON)
-    .replace(/\b([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|PASS|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|SSO_KEY)[A-Za-z0-9_]*)(["']?\s*[=:]\s*["']?)[^\s"'&,;]+/gi, "$1$2***")
+    // SECRET=..., API_KEY: ..., password=..., YANDEX_MAPS_KEY=..., KEY=..., DB_PASS=... (env, query string, JSON)
+    .replace(SECRET_ASSIGN_RE, "$1$2***")
     // Anthropic/OpenAI uslubidagi kalitlar
     .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-***")
     // 40+ belgili base64/hex bo'laklari (kalitlar, imzolar)
     .replace(/[A-Za-z0-9+/_-]{40,}={0,2}/g, "***");
 }
 
-const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|PASS|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|SSO_KEY)/i;
 
 /**
  * JSON qiymatni tuzilmasi bo'yicha tozalaydi (matn sifatida emas): sir nomli kalitning qiymati butunlay "***",
@@ -339,7 +347,8 @@ const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|PASS|API_KEY|APIKEY|PRIVATE
  */
 export function scrubJson<T>(value: T): T {
   const walk = (v: unknown, key?: string): unknown => {
-    if (key && SECRET_KEY_RE.test(key) && v !== null && typeof v !== "object") return "***";
+    // Sir nomli kalit ostidagi qiymat — qanday turda bo'lmasin (satr, son, massiv, obyekt) butunlay yashiriladi
+    if (key && SECRET_KEY_RE.test(key) && v !== null && v !== undefined) return "***";
     if (typeof v === "string") return scrubSecrets(v);
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === "object") {

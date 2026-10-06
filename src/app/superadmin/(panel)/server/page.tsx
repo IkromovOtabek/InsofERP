@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { Cpu, HardDrive, PackageCheck, Power, ShieldCheck } from "lucide-react";
 import { loadInfraView } from "@/lib/control/infra/view";
 import { JOURNAL_KEEP, KEEP_RELEASES, infraKey } from "@/lib/control/infra/contract";
@@ -19,6 +20,7 @@ const TYPES = ["REBOOT", "REBOOT_CANCEL", "CLEAN_RELEASES", "JOURNAL_VACUUM"];
  * APT upgrade paneldan QILINMAYDI — faqat ko'rsatiladi (sabab sahifada va PLATFORMA.md da).
  */
 export default async function ServerPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const v = await loadInfraView(TYPES);
   const s = v.system;
   const chk = v.check(infraKey.system());

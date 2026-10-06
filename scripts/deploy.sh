@@ -27,7 +27,8 @@
 #   SKIP_AGENT_RESTART=1  insof-agent ni qayta ishga tushirmaslik (agent deploy'ni o'zi ishga tushirgan va o'zi qayta
 #                   ishga tushadi — scripts/agent/devops.ts, «detached» rejim)
 #   DEPLOY_LOCK     bir vaqtda bitta deploy: flock qulf fayli (standart $APP_DIR/.deploy.lock)
-#   DEPLOY_REF=<tag|sha>  HEAD o'rniga aniq commit/teg build qilish (standart HEAD)
+#   DEPLOY_REF=<tag|sha>  HEAD o'rniga aniq commit/teg build qilish (standart HEAD); faqat origin/main tarixidagi commit
+#                   (`git merge-base --is-ancestor`), aks holda to'xtaydi. ROLLBACK=1 ga taalluqli emas.
 #   APP_DIR, REPO_DIR (git manbasi, standart APP_DIR), RELEASES_DIR, CONTROL_PORT (3100), HEALTH_TIMEOUT (60 s)
 #
 # Lokal sinov rejimi — DRY_RUN=1 (faqat sinov APP_DIR bilan; /var/www/insof-erp da rad etiladi):
@@ -112,7 +113,23 @@ unit_enabled() {
   if [ "$DRY_RUN" = "1" ]; then return 0; fi
   systemctl is-enabled --quiet "$1" 2>/dev/null
 }
-# Xizmatni qayta ishga tushirish: prodda sudo systemctl, DRY_RUN da RESTART_CMD (yoki faqat yozuv)
+# Prodda xizmatni qayta ishga tushirish — root egaligidagi o'ram /usr/local/sbin/insof-restart orqali (sudoers'da faqat shu;
+# eski `systemctl restart insof-erp@*` wildcard'i olib tashlangan — PLATFORMA.md → «Root o'ramlari»).
+# O'ram hali o'rnatilmagan serverda vaqtincha eski buyruq ishlatiladi (ogohlantirish bilan) — deploy to'xtab qolmasin.
+RESTART_WRAPPER=/usr/local/sbin/insof-restart
+RESTART_WARNED=0
+sys_restart() {
+  if [ -x "$RESTART_WRAPPER" ]; then
+    sudo "$RESTART_WRAPPER" "$1"
+  else
+    if [ "$RESTART_WARNED" = 0 ]; then
+      warn "$RESTART_WRAPPER o'rnatilmagan — vaqtincha 'sudo systemctl restart'. O'rnating: sudo install -o root -g root -m 755 scripts/insof-restart.sh $RESTART_WRAPPER (va sudoers: docs/deploy/sudoers-insof-agent)"
+      RESTART_WARNED=1
+    fi
+    sudo systemctl restart "$1"
+  fi
+}
+# Xizmatni qayta ishga tushirish: prodda sys_restart, DRY_RUN da RESTART_CMD (yoki faqat yozuv)
 restart_unit() {
   if [ "$DRY_RUN" = "1" ]; then
     if [ -n "${RESTART_CMD:-}" ]; then
@@ -123,7 +140,7 @@ restart_unit() {
       echo "  [DRY_RUN] restart $1 (RESTART_CMD berilmagan)"
     fi
   else
-    sudo systemctl restart "$1"
+    sys_restart "$1"
   fi
 }
 
@@ -184,6 +201,15 @@ unit_check() { # repodagi unit fayllar o'rnatilganidan farq qilsa — ogohlantir
     cmp -s "$APP_DIR/docs/deploy/$name" "/etc/systemd/system/$name" \
       || warn "/etc/systemd/system/$name repodagidan farq qiladi: sudo install -m 644 docs/deploy/$name /etc/systemd/system/ && sudo systemctl daemon-reload"
   done
+  # Root o'ramlari (PLATFORMA.md → «Root o'ramlari») — repodagidan farq qilsa yoki o'rnatilmagan bo'lsa ogohlantirish
+  for name in insof-restart insof-ufw; do
+    if [ -f "/usr/local/sbin/$name" ]; then
+      cmp -s "$APP_DIR/scripts/$name.sh" "/usr/local/sbin/$name" \
+        || warn "/usr/local/sbin/$name repodagidan farq qiladi: sudo install -o root -g root -m 755 scripts/$name.sh /usr/local/sbin/$name"
+    else
+      warn "/usr/local/sbin/$name o'rnatilmagan: sudo install -o root -g root -m 755 scripts/$name.sh /usr/local/sbin/$name (PLATFORMA.md → «Root o'ramlari»)"
+    fi
+  done
   # Root egaligidagi insof-tenant-up va uning shablonlari (PLATFORMA.md → «Infratuzilma») — faqat ogohlantirish, root talab qilinmaydi
   if [ -f /usr/local/sbin/insof-tenant-up ]; then
     cmp -s "$APP_DIR/scripts/tenant-up.sh" /usr/local/sbin/insof-tenant-up \
@@ -218,6 +244,18 @@ if [ "${SKIP_PULL:-0}" != "1" ]; then
   git -C "$REPO_DIR" pull --ff-only
 fi
 SHA="$(git -C "$REPO_DIR" rev-parse --verify "${DEPLOY_REF:-HEAD}^{commit}")" || die "DEPLOY_REF topilmadi: ${DEPLOY_REF:-HEAD}"
+# Aniq ref (IT panel → Relizlar yoki qo'lda) faqat origin/main tarixidagi commit bo'lishi mumkin: ko'rib chiqilmagan
+# shoxcha yoki fork'dan olingan commit prodga chiqmasin. DEPLOY_REF_BASE — faqat DRY_RUN sinovlari uchun (prodda rad).
+if [ -n "${DEPLOY_REF:-}" ]; then
+  REF_BASE=origin/main
+  if [ -n "${DEPLOY_REF_BASE:-}" ]; then
+    [ "$DRY_RUN" = "1" ] || die "DEPLOY_REF_BASE faqat DRY_RUN=1 bilan (prodda tekshiruv har doim origin/main bo'yicha)"
+    REF_BASE="$DEPLOY_REF_BASE"
+  fi
+  git -C "$REPO_DIR" rev-parse --verify -q "$REF_BASE^{commit}" >/dev/null || die "$REF_BASE topilmadi — avval: git -C $REPO_DIR fetch origin main"
+  git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$REF_BASE" \
+    || die "DEPLOY_REF=$DEPLOY_REF (${SHA:0:12}) $REF_BASE tarixida yo'q — faqat main'ga qo'shilgan commitni deploy qilish mumkin (avval main'ga merge qiling va git fetch)"
+fi
 REL="$RELEASES/$SHA"
 mkdir -p "$RELEASES"
 
@@ -315,7 +353,7 @@ fi
 # ───────────── Monitoring agenti (insof-agent) ─────────────
 # Control migratsiyasidan (monitoring jadvallari) va symlink almashgandan KEYIN — agent yangi relizdan ishga tushsin.
 # Agent yiqilsa deploy qaytarilmaydi (foydalanuvchilarga ta'sir qilmaydi) — faqat ogohlantirish.
-# sudoers: /usr/bin/systemctl restart insof-agent (docs/deploy/sudoers-insof-agent).
+# sudoers: /usr/local/sbin/insof-restart insof-agent (docs/deploy/sudoers-insof-agent).
 AGENT_STATUS="o'rnatilmagan"
 if [ "$HAS_CONTROL" = 1 ]; then
   if [ "$DRY_RUN" = "1" ]; then
@@ -327,7 +365,7 @@ if [ "$HAS_CONTROL" = 1 ]; then
     AGENT_STATUS="deploy'ni agent boshlagan — u natijani yozib, o'zi qayta ishga tushadi"
   elif systemctl is-enabled --quiet insof-agent 2>/dev/null; then
     step "insof-agent qayta ishga tushirish"
-    if sudo systemctl restart insof-agent; then
+    if sys_restart insof-agent; then
       sleep 3
       if systemctl is-active --quiet insof-agent; then AGENT_STATUS="active"; ok "insof-agent"; else AGENT_STATUS="ishlamayapti"; warn "insof-agent ishga tushmadi: journalctl -u insof-agent -n 50"; fi
     else
@@ -366,7 +404,7 @@ if [ "${SKIP_ECO:-0}" != "1" ] && [ -d "$ECO_DIR" ]; then
   npx prisma generate
   npx nest build
   step "ECO: qayta ishga tushirish"
-  sudo systemctl restart insof-eco
+  sys_restart insof-eco
   sleep 5
   curl -fsS -o /dev/null http://127.0.0.1:3010/v1/health && ok "ECO 3010 ishlayapti" || die "ECO 3010 javob bermadi: journalctl -u insof-eco -n 50"
 fi

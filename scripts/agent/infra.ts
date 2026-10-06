@@ -27,6 +27,7 @@ import { parseAptUpgradable } from "@/lib/control/security/parsers";
 import { run as execRun } from "@/lib/control/security/exec";
 import { cached } from "@/lib/control/security/util";
 import { readEnvKeys } from "../env";
+import { deployBusy } from "./devops";
 
 export { INFRA_PRIVILEGED, isInfraActionType };
 
@@ -54,7 +55,13 @@ export type InfraDeps = {
   runningTypes: () => string[];
   /** Amaldan keyin: korxonalar keshi / tekshiruvlarni yangilash */
   afterChange: (what: "tenants" | "checks") => void;
+  /** Server qancha vaqtdan beri ishlayapti, soniya (standart os.uptime; sinovda almashtiriladi) */
+  uptimeSec?: () => number;
 };
+
+/** REBOOT cheklovlari: server yangi yuklangan bo'lsa yoki yaqinda qayta yuklash rejalashtirilgan bo'lsa — rad. */
+export const REBOOT_MIN_UPTIME_SEC = 30 * 60;
+export const REBOOT_COOLDOWN_MS = 3600_000;
 
 type Outcome = { status: "DONE" | "FAILED" | "REJECTED"; output: string };
 
@@ -408,10 +415,31 @@ export function createInfra(d: InfraDeps) {
     return { status: r.code === 0 ? "DONE" : "FAILED", output: d.fmt(["bash", "scripts/restore-test.sh"], r) + note };
   }
 
+  /** Qayta yuklash sikli (xato sozlama, ketma-ket so'rovlar) bo'lmasin: uptime ≥ 30 daq va oxirgi DONE REBOOT ≥ 1 soat. */
+  async function rebootCooldown(): Promise<string | null> {
+    const up = Math.floor((d.uptimeSec ?? os.uptime)());
+    if (up < REBOOT_MIN_UPTIME_SEC) {
+      return `Server ${Math.floor(up / 60)} daqiqa oldin yuklangan — qayta yuklash faqat ${REBOOT_MIN_UPTIME_SEC / 60} daqiqadan keyin mumkin (qayta yuklash sikli himoyasi).`;
+    }
+    const since = new Date(Date.now() - REBOOT_COOLDOWN_MS);
+    const last = await d.control.agentAction.findFirst({ where: { type: "REBOOT", status: "DONE", finishedAt: { gte: since } }, orderBy: { finishedAt: "desc" }, select: { finishedAt: true } });
+    if (!last?.finishedAt) return null;
+    // Keyin bekor qilingan bo'lsa (REBOOT_CANCEL DONE) — qayta rejalashtirish mumkin
+    const cancelled = await d.control.agentAction.findFirst({ where: { type: "REBOOT_CANCEL", status: "DONE", finishedAt: { gt: last.finishedAt } }, select: { id: true } });
+    if (cancelled) return null;
+    const mins = Math.max(1, Math.ceil((last.finishedAt.getTime() + REBOOT_COOLDOWN_MS - Date.now()) / 60_000));
+    return `Oxirgi qayta yuklash ${last.finishedAt.toISOString()} da so'ralgan — 1 soat ichida takrorlanmaydi (${mins} daqiqadan keyin; vaqtni o'zgartirish uchun avval «Qayta yuklashni bekor qilish»).`;
+  }
+
   async function reboot(at: string, requestedById: string | null): Promise<Outcome> {
     if (!REBOOT_AT_RE.test(at)) return { status: "REJECTED", output: "at noto'g'ri" };
+    const cool = await rebootCooldown();
+    if (cool) return { status: "REJECTED", output: cool };
     const busy = d.runningTypes().filter((t) => ["RUN_BACKUP", "RUN_RESTORE_TEST", "TENANT_UP", "CLEAN_RELEASES"].includes(t));
     if (busy.length) return { status: "FAILED", output: `Hozir bajarilmoqda: ${busy.join(", ")} — tugashini kuting, keyin qayta so'rang.` };
+    // DEPLOY/ROLLBACK ajratilgan jarayonda — runningTypes da ko'rinmaydi; holat fayli/flock bo'yicha tekshiriladi
+    const dep = await deployBusy(d.appDir);
+    if (dep) return { status: "FAILED", output: `Deploy ketmoqda: ${dep} — tugashini kuting, keyin qayta so'rang.` };
     const fresh = (await readdir(d.backupDir).catch(() => [] as string[])).filter((n) => n.endsWith(".partial"));
     for (const n of fresh) {
       const st = await stat(path.join(d.backupDir, n)).catch(() => null);
@@ -443,6 +471,8 @@ export function createInfra(d: InfraDeps) {
   async function cleanReleases(): Promise<Outcome> {
     const { list, current, dir } = await releasesList();
     if (!current) return { status: "FAILED", output: `${path.join(d.appDir, "current")} → releases/<reliz> aniqlanmadi — xavfsizlik uchun hech narsa o'chirilmadi.` };
+    const dep = await deployBusy(d.appDir);
+    if (dep) return { status: "FAILED", output: `Deploy ketmoqda: ${dep} — tugagach qayta urinib ko'ring (hech narsa o'chirilmadi).` };
     const all = (await readdir(dir).catch(() => [] as string[]));
     const tmpFresh = [];
     for (const n of all.filter((x) => x.endsWith(".tmp"))) {

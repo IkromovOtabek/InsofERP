@@ -44,7 +44,8 @@ case "$phase" in
   fail)
     ref="${2:?ref}"; before="$(cur)"
     victim="insof-erp@$(basename "$(ls "$D_APP"/tenants/*.env | tail -n1)" .env)"
-    HEALTH_TIMEOUT=8 run_deploy DEPLOY_REF="$ref" D_FAIL_UNIT="$victim" D_FAIL_RELEASE="$(git rev-parse "$ref^{commit}")"; code=$?
+    # DEPLOY_REF_BASE=HEAD: lokal repo origin/main dan oldinda bo'lishi mumkin (prodda tekshiruv origin/main bo'yicha)
+    HEALTH_TIMEOUT=8 run_deploy DEPLOY_REF="$ref" DEPLOY_REF_BASE=HEAD D_FAIL_UNIT="$victim" D_FAIL_RELEASE="$(git rev-parse "$ref^{commit}")"; code=$?
     [ "$code" != 0 ] && pass "yiqilgan xizmat ($victim) → deploy exit $code" || fail "deploy xato bermadi"
     [ "$(cur)" = "$before" ] && pass "avtomatik qaytarish: current = $before" || fail "current=$(cur), kutilgan $before"
     sleep 2; all_healthy && pass "qaytarilgandan keyin hammasi 200" || fail "qaytarishdan keyin health"

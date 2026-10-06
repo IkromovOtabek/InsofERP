@@ -71,9 +71,9 @@ Qaytarish: kerak emas (faqat o'qildi).
 
 ```bash
 sudo apt install -y postgresql-client perl rclone        # rclone o'rniga restic ham bo'ladi (backup.env → OFFSITE)
-# deploy.sh xizmatlarni `sudo systemctl restart` bilan qayta ishga tushiradi. Parol so'ralmasligi uchun (ixtiyoriy):
-echo 'deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart insof-erp@*, /usr/bin/systemctl restart insof-control, /usr/bin/systemctl restart insof-eco' \
-  | sudo tee /etc/sudoers.d/insof-deploy >/dev/null && sudo chmod 440 /etc/sudoers.d/insof-deploy && sudo visudo -c
+# deploy.sh xizmatlarni root egaligidagi /usr/local/sbin/insof-restart o'rami bilan qayta ishga tushiradi (repo klonlangandan
+# keyin, `cd /var/www/insof-erp`): o'ramlar va sudoers — «Root o'ramlari» bo'limi (wildcard'li `systemctl restart insof-erp@*`
+# qatori endi ishlatilmaydi).
 ```
 Tekshirish: `psql --version`, `rclone version`, `sudo -l -U deploy | grep insof`.
 Qaytarish: `sudo rm /etc/sudoers.d/insof-deploy`.
@@ -319,6 +319,9 @@ ning o'rnini bosadi (o'sha cron qatorini o'chiring yoki zaxira sifatida har 5 da
 cd /var/www/insof-erp
 bash scripts/deploy.sh                                     # monitoring jadvallari migratsiyasi (control baza) — avval
 sudo usermod -aG systemd-journal,adm deploy                # journald (unit xatolari, ssh) va nginx loglari
+# root o'ramlari (sudoers'dan OLDIN) — «Root o'ramlari» bo'limi
+sudo install -o root -g root -m 755 scripts/insof-restart.sh /usr/local/sbin/insof-restart
+sudo install -o root -g root -m 755 scripts/insof-ufw.sh /usr/local/sbin/insof-ufw
 # sudoers: eski /etc/sudoers.d/insof-deploy ni yangi fayl bilan almashtirish (restart qatorlari ham ichida)
 sudo install -m 440 -o root -g root docs/deploy/sudoers-insof-agent /etc/sudoers.d/insof-deploy.new
 sudo visudo -cf /etc/sudoers.d/insof-deploy.new && sudo mv /etc/sudoers.d/insof-deploy.new /etc/sudoers.d/insof-deploy
@@ -377,12 +380,12 @@ oxirgi 8 KB i (parol, token, `KEY=…`, URL ichidagi parol yashirilgan). Bir tur
 
 | Tur | Buyruq |
 |---|---|
-| `RESTART_UNIT {unit}` | `sudo -n systemctl restart <insof-erp@slug \| insof-control \| insof-eco>` → 60 s gacha unit + /api/health qayta tekshiriladi |
+| `RESTART_UNIT {unit}` | `sudo -n /usr/local/sbin/insof-restart <insof-erp@slug \| insof-control \| insof-eco>` (o'ram → `systemctl restart -- <unit>`) → 60 s gacha unit + /api/health qayta tekshiriladi |
 | `RELOAD_NGINX` | `sudo -n nginx -t` → faqat o'tsa `sudo -n systemctl reload nginx` |
 | `RUN_BACKUP` | `bash scripts/server-backup.sh` (APP_DIR dan, 3 soat cheklov; muhitga control.env sirlari berilmaydi) |
 | `RENEW_CERT` | `sudo -n certbot renew --quiet` → `nginx -t` → reload |
 | `FIX_SECRET_PERMS` | `control.env`, `build.env`, `tenants/*.env` → 600, `tenants/` → 700 (sudo'siz), nima o'zgargani hisobotda |
-| `BLOCK_IP` / `UNBLOCK_IP {ip}` | `sudo -n ufw insert 1 deny from <ip>` / `ufw delete deny from <ip>` (faqat IPv4; 127.x, 0.x bloklanmaydi) |
+| `BLOCK_IP` / `UNBLOCK_IP {ip}` | `sudo -n /usr/local/sbin/insof-ufw deny\|undeny <ip>` (o'ram → `ufw insert 1 deny from <ip>` / `ufw delete deny from <ip>`; faqat IPv4; 0.x, 127.x, serverning o'z IP'lari va `/etc/insof/ufw-allow` bloklanmaydi) |
 | `RUN_HEALTH_CHECK` / `RUN_SECURITY_SCAN` / `RUN_AI_ANALYSIS` | tegishli siklni darhol ishga tushiradi |
 
 Agent qayta ishga tushsa, `RUNNING` qolib ketgan amallar `FAILED` («natija noma'lum») bo'ladi. Bitta nusxa: control bazada
@@ -434,7 +437,7 @@ bolalarni ham o'ldiradi. Agent:
 
 Agent ishlayotgan deploy logini har ~3 s `AgentAction.output` ga yozadi (≤ 16 KB oxiri) — panel 2.5 s da yangilaydi.
 
-O'rnatish (bir marta; sudoers'ga **hech narsa qo'shilmaydi** — deploy.sh mavjud `systemctl restart` qatorlaridan foydalanadi):
+O'rnatish (bir marta; sudoers'ga **hech narsa qo'shilmaydi** — deploy.sh mavjud restart qatorlaridan — `insof-restart` o'ramidan — foydalanadi):
 ```bash
 sudo loginctl enable-linger deploy                                     # deploy user manager (systemd-run --user)
 sudo install -o deploy -g deploy -m 640 /dev/null /var/log/insof-deploy.log
@@ -605,6 +608,52 @@ oldingi nusxasini qaytaring (`git show <oldingi>:docs/deploy/sudoers-insof-agent
 | REBOOT/JOURNAL_VACUUM: «sudoers ruxsati yo'q» | sudoers yangilanmagan (4-qadam) |
 | Zaxira: «masofadagi nusxa: rclone lsf xato» | `rclone lsf gdrive:insof-backup/prod` (deploy ostida); Google Drive tokeni eskirgan → `rclone config reconnect gdrive:` |
 | Zaxira: «tiklash sinovi logi yo'q» | cron'dagi `restore-test.sh` qatori yoki paneldan «Tiklash sinovi» |
+
+## Root o'ramlari (insof-restart, insof-ufw) va xavfli amallar himoyasi
+
+sudo 1.9.9 (Ubuntu 22.04) da regex yo'q, sudoers'dagi `*` esa bo'sh joyni ham qamraydi (`systemctl restart insof-erp@a nginx`,
+`ufw insert 1 deny from any`). Shuning uchun argumentli buyruqlar root egaligidagi o'ramlar orqali: o'ram argumentlar sonini
+va qat'iy regex'ni tekshiradi, buyruqni to'liq yo'l va `--` bilan chaqiradi, PATH qat'iy, muhitdan sozlama olmaydi.
+
+| O'ram | Ruxsat | Buyruq |
+|---|---|---|
+| `/usr/local/sbin/insof-restart <unit>` | `insof-erp@<slug>`, `insof-control`, `insof-eco`, `insof-agent` | `systemctl restart -- <unit>` |
+| `/usr/local/sbin/insof-ufw deny\|undeny <ipv4>` | faqat IPv4; `deny` da 0.x, 127.x, 255.255.255.255, serverning o'z IPv4'lari va `/etc/insof/ufw-allow` dagilar rad | `ufw insert 1 deny from <ip>` / `ufw delete deny from <ip>` |
+
+O'rnatish / yangilash (root; AVVAL o'ramlar, KEYIN sudoers — aks holda restart ishlamay qoladi):
+```bash
+cd /var/www/insof-erp
+sudo install -o root -g root -m 755 scripts/insof-restart.sh /usr/local/sbin/insof-restart
+sudo install -o root -g root -m 755 scripts/insof-ufw.sh /usr/local/sbin/insof-ufw
+# ixtiyoriy: hech qachon bloklanmaydigan admin IP'lari (har qatorda bitta IPv4, # — izoh), faqat root yozadi
+sudo install -d -o root -g root -m 755 /etc/insof
+printf '# admin IP\n203.0.113.10\n' | sudo install -o root -g root -m 644 /dev/stdin /etc/insof/ufw-allow
+# sudoers: eski wildcard qatorlar (`systemctl restart insof-erp@*`, `ufw insert 1 deny from *`, `ufw delete deny from *`) o'rniga o'ramlar
+sudo install -m 440 -o root -g root docs/deploy/sudoers-insof-agent /etc/sudoers.d/insof-deploy.new
+sudo visudo -cf /etc/sudoers.d/insof-deploy.new && sudo mv /etc/sudoers.d/insof-deploy.new /etc/sudoers.d/insof-deploy
+sudo visudo -c && sudo -l -U deploy
+```
+Tekshirish (deploy ostida):
+- `ls -l /usr/local/sbin/insof-restart /usr/local/sbin/insof-ufw` → `root root -rwxr-xr-x`;
+- `sudo -n /usr/local/sbin/insof-restart insof-eco` → xizmat qayta ishga tushdi; `sudo -n /usr/local/sbin/insof-restart nginx` → «ruxsat etilmagan unit» (exit 2);
+- `sudo -n /usr/local/sbin/insof-ufw deny 127.0.0.1` → rad (exit 2); `sudo -n /usr/bin/systemctl restart insof-eco` → «a password is required» (eski qator olib tashlangan);
+- `bash scripts/deploy.sh` → «o'rnatilmagan» / «farq qiladi» ogohlantirishlari yo'q.
+
+`deploy.sh` o'ram bo'lmasa vaqtincha eski `sudo systemctl restart` ni ishlatadi va ogohlantiradi (eski sudoers bilan server
+to'xtab qolmasin); agent (`RESTART_UNIT`, `BLOCK_IP`, `UNBLOCK_IP`) o'ramsiz `FAILED` («o'rnatilmagan» + buyruq) qaytaradi.
+Qaytarish: sudoers'ning oldingi nusxasi (`git show <oldingi>:docs/deploy/sudoers-insof-agent`), keyin
+`sudo rm /usr/local/sbin/insof-restart /usr/local/sbin/insof-ufw`.
+
+Panel va agentdagi qo'shimcha himoyalar:
+- **Qayta autentifikatsiya**: DEPLOY, ROLLBACK, REBOOT, TENANT_UP, PG_TERMINATE — dialogda superadmin joriy parolini qayta
+  kiritish shart (server action'da `bcrypt.compare`; xato urinishlar login bilan umumiy hisobda — 5 ta xato → 15 daqiqa qulf).
+  Parol `AgentAction.params`, jurnal (`ControlEvent`) va loglarga yozilmaydi.
+- **REBOOT cheklovi** (agent): server 30 daqiqadan kam ishlagan bo'lsa yoki oxirgi `DONE` REBOOT 1 soatdan yangi bo'lsa
+  (keyin bekor qilinmagan) — `REJECTED` (sabab matni bilan). Deploy/rollback ketayotganda (`.deploy-state.json` + tirik
+  jarayon yoki `.deploy.lock` band) REBOOT va CLEAN_RELEASES — `FAILED`.
+- **DEPLOY ref**: `DEPLOY_REF` faqat `origin/main` tarixidagi commit (`git merge-base --is-ancestor`), aks holda deploy.sh to'xtaydi.
+- **Bir vaqtda bitta deploy**: holat fayli atomar (`O_EXCL`) yaratiladi; panelda «band» tekshiruvi AgentAction yaratish bilan
+  bitta tranzaksiyada (advisory lock).
 
 ## Go-live ro'yxati (tartib bilan)
 

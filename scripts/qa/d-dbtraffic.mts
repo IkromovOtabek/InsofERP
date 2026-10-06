@@ -147,6 +147,26 @@ section("Logni oxiridan o'qish (rotatsiya bilan)");
   check("bayt chegarasi", lim === "limit");
 }
 
+section("Panel himoyasi: sahifalar sessiyasi, qayta autentifikatsiya, bitta deploy");
+{
+  const { readFileSync } = await import("node:fs");
+  const { needsReauth } = await import("../../src/lib/control/monitor/shared");
+  const panel = path.join(REPO, "src/app/superadmin/(panel)");
+  for (const pg of ["baza", "server", "trafik", "zaxira", "loglar", "relizlar"]) {
+    const src = readFileSync(path.join(panel, pg, "page.tsx"), "utf8");
+    const body = src.slice(src.indexOf("export default async function"));
+    const first = body.split("\n")[1]?.trim() ?? "";
+    check(`${pg}/page.tsx: boshida await requireAdmin()`, src.includes('import { requireAdmin } from "@/lib/control/auth"') && first.startsWith("await requireAdmin()"), first);
+  }
+  check("PG_TERMINATE — qayta parol, PG_CANCEL/VACUUM — yo'q", needsReauth("PG_TERMINATE") && !needsReauth("PG_CANCEL") && !needsReauth("VACUUM_ANALYZE"));
+  const ma = readFileSync(path.join(panel, "monitor-actions.ts"), "utf8");
+  const tx = ma.slice(ma.indexOf("control.$transaction"), ma.indexOf("tx.agentAction.create"));
+  check("enqueueAction: parol tekshiruvi (verifyReauth) bor", /needsReauth\(type\)/.test(ma) && /verifyReauth\(/.test(ma));
+  check("enqueueAction: DEPLOY/ROLLBACK band tekshiruvi advisory lock tranzaksiyasida, create'dan oldin", tx.includes("pg_advisory_xact_lock") && tx.includes("DETACHED_ACTIONS"), tx.slice(0, 300));
+  const rel = readFileSync(path.join(panel, "relizlar/actions.ts"), "utf8");
+  check("relizlar/actions.ts: tranzaksiyasiz alohida busy() yo'q", !/async function busy\(/.test(rel));
+}
+
 if (process.env.DBT_QA_UNIT_ONLY) finish();
 
 /* ═════════════════════════ 2. Integratsiya ═════════════════════════ */

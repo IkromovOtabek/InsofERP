@@ -120,6 +120,13 @@ export function confirmPhrase(type: string, params: Record<string, unknown>): st
   return null;
 }
 
+/**
+ * Eng xavfli amallar: yozma tasdiqdan tashqari superadmin JORIY PAROLINI qayta kiritish shart (o'g'irlangan sessiya /
+ * ochiq qolgan brauzer bilan bajarilmasin). UI parol maydonini ko'rsatadi, server action (enqueueAction) bcrypt bilan tekshiradi.
+ */
+export const REAUTH_ACTIONS: readonly string[] = ["DEPLOY", "ROLLBACK", "REBOOT", "TENANT_UP", "PG_TERMINATE"];
+export const needsReauth = (type: string) => REAUTH_ACTIONS.includes(type);
+
 /** Xizmat kartasida "Qayta ishga tushirish" tugmasi faqat oq ro'yxatdagi unit uchun. */
 export function restartableUnit(checkKeyStr: string): string | null {
   if (!checkKeyStr.startsWith("unit:")) return null;

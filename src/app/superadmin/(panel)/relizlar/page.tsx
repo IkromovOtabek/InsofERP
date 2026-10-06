@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { loadReleasesView, type ReleasesView } from "@/lib/control/devops/data";
 import { Callout, PageHeader } from "@/components/ui";
 import { ReleasesClient } from "./view";
@@ -7,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Relizlar: joriy reliz, serverdagi relizlar, xizmatlar versiyasi, GitHub'dagi yangi commitlar, deploy/qaytarish. */
 export default async function ReleasesPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   let view: ReleasesView | null = null;
   let error: string | undefined;
   try {

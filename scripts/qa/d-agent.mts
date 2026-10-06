@@ -183,6 +183,96 @@ section("Amal tekshiruvi va sirlarni tozalash");
   check("trimOutput: kichik matn o'zgarmaydi", P.trimOutput("salom\n") === "salom");
 }
 
+section("Redaksiya: kalit ro'yxati (_KEY, KEY, COOKIE, SESSION, CREDENTIAL; PASS toraytirilgan)");
+{
+  const uuid = "3f2b8c1e-9a4d-4e7f-b1c2-0d9e8f7a6b5c";
+  const s2 = P.scrubSecrets([
+    `YANDEX_MAPS_KEY=${uuid}`,
+    "DOTENV_KEY=dotenv://:key_1234@dotenv.org/vault?environment=prod",
+    "KEY=abc123def",
+    "SESSION_COOKIE=s%3Aabcdef0123",
+    "session: 9f8e7d6c5b",
+    "GOOGLE_CREDENTIALS=gc-xyz-789",
+    "DB_PASS=hunter22 PASS_FILE=/etc/x",
+    "tests passed: 12, bypass=on, passes=3, compass: north",
+  ].join("\n"));
+  check("YANDEX_MAPS_KEY=uuid → yashirildi", !s2.includes(uuid) && s2.includes("YANDEX_MAPS_KEY=***"), s2);
+  check("DOTENV_KEY → yashirildi", !s2.includes("key_1234") && s2.includes("DOTENV_KEY=***"), s2);
+  check("aynan KEY= → yashirildi", s2.includes("KEY=***") && !s2.includes("abc123def"), s2);
+  check("COOKIE / SESSION / CREDENTIAL → yashirildi", !s2.includes("abcdef0123") && !s2.includes("9f8e7d6c5b") && !s2.includes("gc-xyz-789"), s2);
+  check("DB_PASS / PASS_FILE → yashirildi", !s2.includes("hunter22") && s2.includes("PASS_FILE=***"), s2);
+  check("«passed», «bypass», «passes», «compass» saqlanadi", s2.includes("tests passed: 12, bypass=on, passes=3, compass: north"), s2);
+  check("MONKEY=… (KEY so'z ichida) saqlanadi", P.scrubSecrets("MONKEY=banana") === "MONKEY=banana");
+
+  const j = P.scrubJson({
+    YANDEX_MAPS_KEY: uuid, DOTENV_KEY: "x", KEY: "y", apiKey: "z", sessionCookie: "c",
+    authSecret: ["a1", "a2"], credentials: { user: "u", pass: "p" }, tokens: [{ v: 1 }],
+    passed: 12, bypass: "on", note: `password=${"q".repeat(8)}`, list: ["ok"], nested: { DB_PASS: 5 },
+  });
+  check("scrubJson: sir nomli kalit (satr) → ***", j.YANDEX_MAPS_KEY === "***" && j.DOTENV_KEY === "***" && j.KEY === "***" && j.apiKey === "***" && j.sessionCookie === "***", j);
+  check("scrubJson: sir nomli kalit ostidagi massiv/obyekt → butunlay ***", (j.authSecret as unknown) === "***" && (j.credentials as unknown) === "***" && (j.tokens as unknown) === "***", j);
+  check("scrubJson: passed/bypass saqlanadi, ichki DB_PASS yashirildi", j.passed === 12 && j.bypass === "on" && (j.nested.DB_PASS as unknown) === "***", j);
+  check("scrubJson: oddiy satrdagi password= → ***", j.note === "password=***" && j.list[0] === "ok", j);
+}
+
+section("Qayta autentifikatsiya (xavfli amallar)");
+{
+  const { REAUTH_ACTIONS, needsReauth } = await import("../../src/lib/control/monitor/shared");
+  check("REAUTH: DEPLOY, ROLLBACK, REBOOT, TENANT_UP, PG_TERMINATE", ["DEPLOY", "ROLLBACK", "REBOOT", "TENANT_UP", "PG_TERMINATE"].every((t) => needsReauth(t)) && REAUTH_ACTIONS.length === 5);
+  check("REAUTH: oddiy amallar (RUN_HEALTH_CHECK, LOG_TAIL, PG_CANCEL) — yo'q", !needsReauth("RUN_HEALTH_CHECK") && !needsReauth("LOG_TAIL") && !needsReauth("PG_CANCEL"));
+  const bcrypt = (await import("bcryptjs")).default;
+  const { verifyReauth } = await import("../../src/lib/control/reauth");
+  const hash = await bcrypt.hash("To'g'riParol1", 4);
+  const ip = "198.51.100.77";
+  check("to'g'ri parol → null", (await verifyReauth({ login: "qa-reauth", hash, password: "To'g'riParol1", ip })) === null);
+  check("bo'sh parol → «kiriting» (hisobga olinmaydi)", /kiriting/.test((await verifyReauth({ login: "qa-reauth", hash, password: "", ip })) ?? ""));
+  check("noto'g'ri parol → «Parol noto'g'ri»", (await verifyReauth({ login: "qa-reauth", hash, password: "xato", ip })) === "Parol noto'g'ri");
+  check("hash yo'q (admin faol emas) → rad", (await verifyReauth({ login: "qa-reauth2", hash: null, password: "To'g'riParol1", ip })) === "Parol noto'g'ri");
+  for (let i = 0; i < 4; i++) await verifyReauth({ login: "qa-reauth", hash, password: `xato${i}`, ip });
+  const locked = await verifyReauth({ login: "qa-reauth", hash, password: "To'g'riParol1", ip });
+  check("5 ta xato → qulf (to'g'ri parol ham rad, login bilan umumiy hisob)", !!locked && /Juda ko'p/.test(locked), locked);
+  const { checkLogin } = await import("../../src/lib/login-guard");
+  check("qulf login sahifasiga ham ta'sir qiladi (admin:<login> kaliti)", !checkLogin("admin:qa-reauth", "203.0.113.200").ok);
+  const src = (await import("node:fs")).readFileSync(path.join(REPO, "src/app/superadmin/(panel)/monitor-actions.ts"), "utf8");
+  check("enqueueAction: parol params/jurnalga tushmaydi (create va logEvent faqat p bilan)", /agentAction\.create\(\{ data: \{ type, params: p as/.test(src) && /logEvent\(a\.id, "AGENT_ACTION", null, \{ actionId: res\.id, type, label: actionLabel\(type\), params: p,/.test(src) && !/params:\s*\{[^}]*password/.test(src));
+}
+
+section("Root o'ramlari: insof-restart, insof-ufw (root'siz — faqat tekshiruv qismi)");
+{
+  const sh = (file: string, args: string[]) => spawnSync("/bin/bash", [path.join(REPO, "scripts", file), ...args], { encoding: "utf8" });
+  check("insof-restart.sh: bash -n", spawnSync("bash", ["-n", path.join(REPO, "scripts/insof-restart.sh")]).status === 0);
+  check("insof-ufw.sh: bash -n", spawnSync("bash", ["-n", path.join(REPO, "scripts/insof-ufw.sh")]).status === 0);
+  for (const bad of [[], ["nginx"], ["insof-erp@"], ["insof-erp@a"], ["insof-erp@-x"], ["insof-erp@alfa;id"], ["insof-erp@alfa", "nginx"], ["insof-erp@ALFA"], ["--help"], ["insof-control.service"]]) {
+    const r = sh("insof-restart.sh", bad);
+    check(`insof-restart ${JSON.stringify(bad)} → rad (exit 2)`, r.status === 2, r.stderr);
+  }
+  for (const okUnit of ["insof-erp@alfa", "insof-erp@sharq-2", "insof-control", "insof-eco", "insof-agent"]) {
+    const r = sh("insof-restart.sh", [okUnit]);
+    check(`insof-restart ${okUnit} → tekshiruvdan o'tdi (root'siz: exit 1 «root kerak»)`, r.status === 1 && /root kerak/.test(r.stderr), r.stderr);
+  }
+  for (const bad of [["deny"], ["deny", "1.2.3.4", "x"], ["block", "1.2.3.4"], ["deny", "any"], ["deny", "1.2.3.4/8"], ["deny", "256.1.1.1"], ["deny", "01.2.3.4"],
+    ["deny", "127.0.0.1"], ["deny", "0.0.0.0"], ["deny", "255.255.255.255"], ["deny", "-1.2.3.4"]]) {
+    const r = sh("insof-ufw.sh", bad);
+    check(`insof-ufw ${JSON.stringify(bad)} → rad (exit 2)`, r.status === 2, r.stderr);
+  }
+  for (const a of [["deny", "203.0.113.7"], ["undeny", "203.0.113.7"], ["undeny", "127.0.0.1"]]) {
+    const r = sh("insof-ufw.sh", a);
+    check(`insof-ufw ${a.join(" ")} → tekshiruvdan o'tdi (root'siz: exit 1)`, r.status === 1 && /root kerak/.test(r.stderr), r.stderr);
+  }
+  const rsrc = (await import("node:fs")).readFileSync(path.join(REPO, "scripts/insof-restart.sh"), "utf8");
+  const usrc = (await import("node:fs")).readFileSync(path.join(REPO, "scripts/insof-ufw.sh"), "utf8");
+  check("o'ramlar: to'liq yo'l, `--`, PATH qat'iy", rsrc.includes('exec /usr/bin/systemctl restart -- "$UNIT"') && usrc.includes('exec /usr/sbin/ufw insert 1 deny from "$IP"') && usrc.includes('exec /usr/sbin/ufw delete deny from "$IP"') && /export PATH=\/usr\/sbin/.test(rsrc + usrc));
+  const sudoers = (await import("node:fs")).readFileSync(path.join(REPO, "docs/deploy/sudoers-insof-agent"), "utf8").split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+  check("sudoers: eski wildcard qatorlar yo'q (systemctl restart insof-erp@*, ufw … from *)", !/systemctl restart insof-erp@\*/.test(sudoers) && !/ufw (insert 1 deny|delete deny) from \*/.test(sudoers) && !/\/usr\/bin\/systemctl restart/.test(sudoers), sudoers);
+  check("sudoers: o'ramlar ruxsat etilgan", sudoers.includes("/usr/local/sbin/insof-restart insof-erp@[a-z0-9]*") && sudoers.includes("/usr/local/sbin/insof-restart insof-agent") && sudoers.includes("/usr/local/sbin/insof-ufw deny [0-9]*") && sudoers.includes("/usr/local/sbin/insof-ufw undeny [0-9]*"));
+  const vis = spawnSync("/usr/sbin/visudo", ["-cf", path.join(REPO, "docs/deploy/sudoers-insof-agent")], { encoding: "utf8" });
+  if (!vis.error) check("sudoers: visudo -cf parsed OK", vis.status === 0, vis.stdout + vis.stderr);
+  const asrc = (await import("node:fs")).readFileSync(path.join(REPO, "scripts/insof-agent.ts"), "utf8");
+  check("agent: RESTART_UNIT/BLOCK_IP/UNBLOCK_IP o'ramlar orqali", asrc.includes("sudo([BIN.restart, unit]") && asrc.includes('sudo([BIN.ufwWrap, "deny", params.ip!]') && asrc.includes('sudo([BIN.ufwWrap, "undeny", params.ip!]') && !/sudo\(\[BIN\.(systemctl, "restart"|ufw,)/.test(asrc));
+  const dsrc = (await import("node:fs")).readFileSync(path.join(REPO, "scripts/deploy.sh"), "utf8");
+  check("deploy.sh: o'ram (yo'q bo'lsa ogohlantirib eski buyruq)", dsrc.includes('sudo "$RESTART_WRAPPER" "$1"') && /RESTART_WRAPPER o'rnatilmagan/.test(dsrc) && (dsrc.match(/^\s*sudo systemctl restart/gm) ?? []).length === 1);
+}
+
 section("Xavfsizlik topilmalari (B kelishuvi)");
 {
   check("INFO + status OK → OK, muammo emas", P.findingCheckStatus({ severity: "INFO", detail: { status: "OK" } }) === "OK" && !P.findingIsProblem({ severity: "INFO", detail: { status: "OK" } }));

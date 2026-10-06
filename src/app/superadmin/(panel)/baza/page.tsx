@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { Activity, Clock, Database, Gauge, HardDrive, Lock, Table2, Zap } from "lucide-react";
 import { control } from "@/lib/control/db";
 import { DBT_KEYS, DBT_THRESHOLDS } from "@/lib/control/dbtraffic/contract";
@@ -26,6 +27,7 @@ const STATE_LABEL: Record<string, string> = {
 
 /** PostgreSQL: bazalar hajmi va o'sishi, katta jadvallar, ulanishlar, uzoq tranzaksiya/so'rovlar, qulflar, og'ir so'rovlar. */
 export default async function DbPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const row = await control.serviceCheck.findUnique({ where: { key: DBT_KEYS.dbStats } });
   const d = asDbStats(row?.data);
 

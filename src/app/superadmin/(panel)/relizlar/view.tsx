@@ -7,7 +7,7 @@ import { Badge, Button, Callout, Card, CardHeader, DL, Field, FormError, Input }
 import { DEPLOY_REF_RE } from "@/lib/control/devops/contract";
 import type { ReleasesView } from "@/lib/control/devops/data";
 import { actionLabel, dt, msBetween, type ActionView } from "@/lib/control/monitor/shared";
-import { Modal } from "../_monitor/action-dialog";
+import { Modal, PasswordBox } from "../_monitor/action-dialog";
 import { ActionOutput, ActionStatusBadge, Ago, StatusIcon } from "../_monitor/bits";
 import { deployStatus, requestDeploy, requestRollback } from "./actions";
 
@@ -185,20 +185,22 @@ function ConfirmBox({ value, onChange }: { value: string; onChange: (v: string) 
 function DeployDialog({ refValue, onClose, current, onStarted }: { refValue: string | null; onClose: () => void; current: string | null; onStarted: () => void }) {
   const [ref, setRef] = useState("main");
   const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState<string>();
   const [done, setDone] = useState(false);
   const [pending, start] = useTransition();
-  useEffect(() => { if (refValue) { setRef(refValue); setConfirm(""); setErr(undefined); setDone(false); } }, [refValue]);
+  useEffect(() => { if (refValue) { setRef(refValue); setConfirm(""); setPassword(""); setErr(undefined); setDone(false); } }, [refValue]);
   const r = ref.trim().toLowerCase();
   const refOk = DEPLOY_REF_RE.test(r);
-  const close = () => { onClose(); setConfirm(""); setErr(undefined); setDone(false); };
+  const close = () => { onClose(); setConfirm(""); setPassword(""); setErr(undefined); setDone(false); };
   return (
     <Modal open={refValue !== null} onClose={close} title="Deploy (yangi reliz)">
       <form className="space-y-3" onSubmit={(e) => {
         e.preventDefault();
-        if (!refOk || confirm.trim() !== PHRASE || pending) return;
+        if (!refOk || confirm.trim() !== PHRASE || !password || pending) return;
         start(async () => {
-          const res = await requestDeploy(r, confirm.trim());
+          const res = await requestDeploy(r, confirm.trim(), password);
+          setPassword("");
           if (res.error) { setErr(res.error); return; }
           setDone(true); onStarted(); setTimeout(close, 1200);
         });
@@ -211,11 +213,12 @@ function DeployDialog({ refValue, onClose, current, onStarted }: { refValue: str
           <Input value={ref} onChange={(e) => setRef(e.target.value)} autoComplete="off" spellCheck={false} aria-invalid={!!ref && !refOk} data-no-translit />
         </Field>
         <ConfirmBox value={confirm} onChange={setConfirm} />
+        <PasswordBox value={password} onChange={setPassword} />
         <FormError error={err} />
         {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> Navbatga qo&apos;yildi — jarayon shu sahifada ko&apos;rinadi.</p>}
         <div className="flex flex-wrap justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
-          <Button type="submit" variant="danger" disabled={!refOk || confirm.trim() !== PHRASE || pending || done}>{pending ? "Yuborilmoqda…" : "Deploy qilish"}</Button>
+          <Button type="submit" variant="danger" disabled={!refOk || confirm.trim() !== PHRASE || !password || pending || done}>{pending ? "Yuborilmoqda…" : "Deploy qilish"}</Button>
         </div>
       </form>
     </Modal>
@@ -224,17 +227,19 @@ function DeployDialog({ refValue, onClose, current, onStarted }: { refValue: str
 
 function RollbackDialog({ open, onClose, current, target, onStarted }: { open: boolean; onClose: () => void; current: string | null; target: string | null; onStarted: () => void }) {
   const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState<string>();
   const [done, setDone] = useState(false);
   const [pending, start] = useTransition();
-  const close = () => { onClose(); setConfirm(""); setErr(undefined); setDone(false); };
+  const close = () => { onClose(); setConfirm(""); setPassword(""); setErr(undefined); setDone(false); };
   return (
     <Modal open={open} onClose={close} title="Oldingi relizga qaytarish">
       <form className="space-y-3" onSubmit={(e) => {
         e.preventDefault();
-        if (confirm.trim() !== PHRASE || pending) return;
+        if (confirm.trim() !== PHRASE || !password || pending) return;
         start(async () => {
-          const res = await requestRollback(confirm.trim());
+          const res = await requestRollback(confirm.trim(), password);
+          setPassword("");
           if (res.error) { setErr(res.error); return; }
           setDone(true); onStarted(); setTimeout(close, 1200);
         });
@@ -244,11 +249,12 @@ function RollbackDialog({ open, onClose, current, target, onStarted }: { open: b
           <b> Migratsiyalar qaytmaydi</b> — baza yangi sxemada qoladi.
         </p>
         <ConfirmBox value={confirm} onChange={setConfirm} />
+        <PasswordBox value={password} onChange={setPassword} />
         <FormError error={err} />
         {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> Navbatga qo&apos;yildi.</p>}
         <div className="flex flex-wrap justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
-          <Button type="submit" variant="danger" disabled={confirm.trim() !== PHRASE || pending || done}>{pending ? "Yuborilmoqda…" : "Qaytarish"}</Button>
+          <Button type="submit" variant="danger" disabled={confirm.trim() !== PHRASE || !password || pending || done}>{pending ? "Yuborilmoqda…" : "Qaytarish"}</Button>
         </div>
       </form>
     </Modal>

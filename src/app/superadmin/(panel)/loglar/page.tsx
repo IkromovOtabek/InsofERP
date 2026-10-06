@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { control } from "@/lib/control/db";
 import { LOG_FILES } from "@/lib/control/devops/contract";
 import { PageHeader } from "@/components/ui";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 /** Loglar: oq ro'yxatdagi manbalar (journald unitlari va log fayllar) — agent o'qiydi, panel natijani ko'rsatadi. */
 export default async function LogsPage({ searchParams }: { searchParams: Promise<{ source?: string }> }) {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const sp = await searchParams;
   const tenants = await control.tenant.findMany({ where: { status: { in: ["ACTIVE", "SUSPENDED"] } }, select: { slug: true, name: true }, orderBy: { port: "asc" } });
   const sources: SourceOpt[] = [

@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { AlertTriangle, Ban, Globe, Network, ServerCrash, ShieldAlert, Snail } from "lucide-react";
 import { control } from "@/lib/control/db";
 import { DBT_KEYS } from "@/lib/control/dbtraffic/contract";
@@ -25,6 +26,7 @@ access_log /var/log/nginx/access.log insof_main;`;
 
 /** nginx trafik: domenlar bo'yicha so'rovlar, 4xx/5xx, 429, eng sekin yo'llar, eng faol IP'lar, upstream xatolari. */
 export default async function TrafficPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const [row, upRows, incidents, blockedActs] = await Promise.all([
     control.serviceCheck.findUnique({ where: { key: DBT_KEYS.traffic } }),
     control.serviceCheck.findMany({ where: { key: { startsWith: DBT_KEYS.upstreamPrefix } }, orderBy: [{ status: "desc" }, { target: "asc" }] }),

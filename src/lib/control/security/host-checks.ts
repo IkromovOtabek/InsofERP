@@ -236,7 +236,8 @@ export function evaluateSecrets(inp: SecretsInput): Finding[] {
   const shortAuth = inp.tenantEnvs.filter((t) => t.authSecretLen != null && t.authSecretLen < 32).map((t) => t.name);
   const noAuth = inp.tenantEnvs.filter((t) => t.authSecretLen == null).map((t) => t.name);
   const ctlLeak = inp.tenantEnvs.filter((t) => t.hasControlSecret).map((t) => t.name);
-  const keyDetail = { tenantEnvs: inp.tenantEnvs.length, shortAuthSecret: shortAuth, missingAuthSecret: noAuth, controlSecretInTenant: ctlLeak };
+  // Kalit nomlarida "secret" yo'q — scrubJson sir nomli kalit ostidagi massivni butunlay yashiradi (bu yerda faqat korxona nomlari)
+  const keyDetail = { tenantEnvs: inp.tenantEnvs.length, authTooShort: shortAuth, authMissing: noAuth, controlKeyLeak: ctlLeak };
   if (ctlLeak.length || shortAuth.length || noAuth.length) {
     const parts = [
       ctlLeak.length ? `CONTROL_SECRET korxona faylida: ${ctlLeak.join(", ")} (barcha korxonalarning SSO kalitini hosil qiladi!)` : "",

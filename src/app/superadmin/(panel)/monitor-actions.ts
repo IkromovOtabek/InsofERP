@@ -6,7 +6,9 @@ import { requireAdmin } from "@/lib/control/auth";
 import { control } from "@/lib/control/db";
 import { logEvent } from "@/lib/control/events";
 import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "@/lib/control/monitor/contract";
-import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
+import { actionLabel, confirmPhrase, needsReauth } from "@/lib/control/monitor/shared";
+import { verifyReauth } from "@/lib/control/reauth";
+import { DETACHED_ACTIONS } from "@/lib/control/devops/contract";
 import { PG_DB_RE, PG_PID_RE, PG_TABLE_RE } from "@/lib/control/dbtraffic/contract";
 import { invalidateMonitorSnapshot } from "@/lib/control/monitor/snapshot";
 import { INFRA_PARAMS, infraPreflight } from "@/lib/control/infra/preflight";
@@ -43,7 +45,11 @@ const PARAMS: Record<ActionType, z.ZodType<Record<string, string>>> = {
 };
 const ID = z.string().regex(/^[a-z0-9]{10,40}$/i);
 
-export async function enqueueAction(type: string, params: unknown, incidentId?: string | null, confirm?: string | null): Promise<MonitorResult> {
+/**
+ * `password` — faqat REAUTH_ACTIONS (DEPLOY, ROLLBACK, REBOOT, TENANT_UP, PG_TERMINATE) uchun: superadmin joriy paroli.
+ * U alohida argument: `params` ga (AgentAction.params, jurnal) hech qachon tushmaydi.
+ */
+export async function enqueueAction(type: string, params: unknown, incidentId?: string | null, confirm?: string | null, password?: string | null): Promise<MonitorResult> {
   const a = await requireAdmin();
   if (typeof type !== "string" || !isActionType(type)) return { error: "Noma'lum amal turi" };
   const parsed = PARAMS[type].safeParse(params ?? {});
@@ -59,6 +65,13 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
   }
   const phrase = confirmPhrase(type, p);
   if (phrase !== null && (confirm ?? "").trim() !== phrase) return { error: `Tasdiqlash uchun «${phrase}» deb yozing` };
+  if (needsReauth(type)) {
+    let ip = "unknown";
+    try { ip = ipFromHeaders(await headers()); } catch { /* so'rov yo'q */ }
+    const row = await control.superAdmin.findUnique({ where: { id: a.id }, select: { passwordHash: true, isActive: true } });
+    const bad = await verifyReauth({ login: a.login, hash: row?.isActive ? row.passwordHash : null, password, ip });
+    if (bad) return { error: bad };
+  }
   const pre = await infraPreflight(type, p);
   if (pre) return { error: pre };
 
@@ -80,6 +93,11 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
       select: { id: true },
     });
     if (dup) return { error: "Xuddi shu amal navbatda yoki bajarilmoqda — natijasini kuting", id: dup.id };
+    // DEPLOY va ROLLBACK bir-birini ham istisno qiladi (bir vaqtda bitta) — shu qulf ichida, yaratish bilan bir tranzaksiyada
+    if ((DETACHED_ACTIONS as readonly string[]).includes(type)) {
+      const busy = await tx.agentAction.findFirst({ where: { type: { in: [...DETACHED_ACTIONS] }, status: { in: ["PENDING", "RUNNING"] } }, select: { id: true } });
+      if (busy) return { error: "Boshqa deploy/qaytarish hozir bajarilmoqda — tugashini kuting", id: busy.id };
+    }
     const row = await tx.agentAction.create({ data: { type, params: p as Prisma.InputJsonValue, requestedById: a.id, incidentId: incident } });
     return { ok: true, id: row.id };
   });

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Archive, Ban, Bot, CheckCircle2, DatabaseBackup, Eye, Lock, Power, RefreshCw, Rocket, RotateCcw, ScanSearch, Trash2, Wrench, X, XCircle } from "lucide-react";
 import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
 import { IPV4_RE, UNIT_RE } from "@/lib/control/monitor/contract";
-import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
+import { actionLabel, confirmPhrase, needsReauth } from "@/lib/control/monitor/shared";
 import { DB_ACTION_DESCR } from "@/lib/control/dbtraffic/contract";
 import { INFRA_ACTION_DESCR } from "@/lib/control/infra/contract";
 import { ackIncident, enqueueAction, resolveIncident } from "../monitor-actions";
@@ -34,6 +34,18 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Xavfli amal uchun joriy parolni qayta kiritish (REAUTH_ACTIONS). Qiymat faqat server action argumenti sifatida ketadi
+ * va dialog yopilganda tozalanadi — hech qayerda saqlanmaydi.
+ */
+export function PasswordBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <Field label="Joriy parolingiz" hint="Xavfli amal — shaxsingizni tasdiqlash uchun parolni qayta kiriting">
+      <Input type="password" value={value} onChange={(e) => onChange(e.target.value)} autoComplete="current-password" required maxLength={200} />
+    </Field>
   );
 }
 
@@ -70,19 +82,22 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState<string>();
   const [done, setDone] = useState<string>();
   const [pending, start] = useTransition();
+  const reauth = needsReauth(type);
   const needs: "ip" | "unit" | null = type === "BLOCK_IP" || type === "UNBLOCK_IP" ? (typeof params.ip === "string" ? null : "ip") : type === "RESTART_UNIT" ? (typeof params.unit === "string" ? null : "unit") : null;
   const full = needs ? { ...params, [needs]: input.trim() } : params;
   const phrase = confirmPhrase(type, full);
   const inputOk = !needs || (needs === "ip" ? IPV4_RE : UNIT_RE).test(input.trim());
-  const canSend = inputOk && (phrase === null || (phrase !== "" && confirm.trim() === phrase));
+  const canSend = inputOk && (phrase === null || (phrase !== "" && confirm.trim() === phrase)) && (!reauth || password.length > 0);
 
-  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); };
+  const close = () => { setOpen(false); setErr(undefined); setDone(undefined); setConfirm(""); setPassword(""); };
   const send = () => start(async () => {
     setErr(undefined);
-    const r = await enqueueAction(type, full, incidentId ?? null, phrase === null ? null : confirm);
+    const r = await enqueueAction(type, full, incidentId ?? null, phrase === null ? null : confirm, reauth ? password : null);
+    setPassword("");
     if (r.error) { setErr(r.error); return; }
     setDone("Navbatga qo'yildi — agent bir necha soniyada bajaradi. Natija «Amallar» sahifasida.");
     router.refresh();
@@ -113,6 +128,7 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
               <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="Tasdiqlash matni" autoComplete="off" spellCheck={false} disabled={!phrase} />
             </div>
           )}
+          {reauth && <PasswordBox value={password} onChange={setPassword} />}
           <FormError error={err} />
           {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> {done}</p>}
           <div className="flex flex-wrap justify-end gap-2 pt-1">
