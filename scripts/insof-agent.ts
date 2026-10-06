@@ -46,6 +46,8 @@ import type {
   CheckResult, CheckStatusT, Finding, FindingSeverity, SecurityCtx, SecurityModule, SuggestedAction, TenantRef,
 } from "@/lib/control/monitor/types";
 import { isTestMode } from "@/lib/test-mode";
+import { DETACHED_ACTIONS, isDevopsAction } from "@/lib/control/devops/contract";
+import { devopsExecute, devopsTick, initDevops } from "./agent/devops";
 
 /* ───────────────────────── Sozlama ───────────────────────── */
 
@@ -912,7 +914,8 @@ const runningActions = new Map<string, string>(); // id → type
 const MAX_PARALLEL_ACTIONS = 3;
 const PRIVILEGED: ActionType[] = ["RESTART_UNIT", "RELOAD_NGINX", "RUN_BACKUP", "RENEW_CERT", "BLOCK_IP", "UNBLOCK_IP"];
 
-type ActionOutcome = { status: "DONE" | "FAILED" | "REJECTED"; output: string };
+// RUNNING — ajratilgan jarayon (DEPLOY/ROLLBACK) boshlandi, yakunini devopsTick yozadi; limit — chiqish chegarasi (LOG_TAIL 64 KB)
+type ActionOutcome = { status: "DONE" | "FAILED" | "REJECTED" | "RUNNING"; output: string; limit?: number };
 
 function fmt(cmd: string[], r: RunResult): string {
   const head = `$ ${cmd.join(" ")}\n`;
@@ -1025,6 +1028,8 @@ async function execute(type: ActionType, params: { unit?: string; ip?: string },
     }
     case "RUN_AI_ANALYSIS":
       return { status: "DONE", output: await aiAnalysis("manual", requestedById ?? undefined) };
+    default:
+      return { status: "REJECTED", output: `${type}: bajaruvchi yo'q` };
   }
 }
 
@@ -1036,11 +1041,12 @@ async function processAction(a: { id: string; type: string; params: Prisma.JsonV
     outcome = { status: "REJECTED", output: v.reason };
   } else {
     log(`amal: ${v.type} ${JSON.stringify(v.params)} (${a.id})`);
-    try { outcome = await execute(v.type, v.params, a.requestedById); }
+    try { outcome = isDevopsAction(v.type) ? await devopsExecute(a.id, v.type, v.params) : await execute(v.type, v.params, a.requestedById); }
     catch (e) { outcome = { status: "FAILED", output: e instanceof Error ? e.message : String(e) }; }
   }
   try {
-    await control.agentAction.update({ where: { id: a.id }, data: { status: outcome.status, finishedAt: new Date(), output: trimOutput(outcome.output) } });
+    if (outcome.status === "RUNNING") await control.agentAction.updateMany({ where: { id: a.id, status: "RUNNING" }, data: { output: trimOutput(outcome.output) } });
+    else await control.agentAction.update({ where: { id: a.id }, data: { status: outcome.status, finishedAt: new Date(), output: trimOutput(outcome.output, outcome.limit) } });
   } catch (e) { warnLog(`amal natijasini yozib bo'lmadi (${a.id}): ${errMsg(e)}`); }
   log(`amal ${a.type} → ${outcome.status}`);
   runningActions.delete(a.id);
@@ -1063,6 +1069,8 @@ async function actionsBody(): Promise<string> {
   return `${started} ta boshlandi`;
 }
 const actions = new Loop("actions", ACTION_POLL_MS, actionsBody, 30_000);
+/** DevOps: ishlayotgan deploy logi/yakuni, relizlar holati (scripts/agent/devops.ts). */
+const devops = new Loop("devops", ACTION_POLL_MS, devopsTick, 120_000);
 
 /* ───────────────────────── Ishga tushirish va to'xtatish ───────────────────────── */
 
@@ -1071,7 +1079,7 @@ async function shutdown(reason: string, code = 0) {
   if (shuttingDown) return;
   shuttingDown = true; stopping = true;
   log(`to'xtatilmoqda (${reason})`);
-  for (const l of [fast, slow, ai, retention, hb, actions]) l.stop();
+  for (const l of [fast, slow, ai, retention, hb, actions, devops]) l.stop();
   for (const c of running) c.kill("SIGTERM");
   await Promise.race([
     Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait()]),
@@ -1112,14 +1120,20 @@ async function main() {
   process.on("uncaughtException", (e) => warnLog(`uncaughtException: ${errMsg(e)}`));
 
   // Oldingi nusxa amal o'rtasida o'lgan bo'lsa — RUNNING qolib ketmasin
-  const stuck = await control.agentAction.updateMany({ where: { status: "RUNNING" }, data: { status: "FAILED", finishedAt: new Date(), output: "agent qayta ishga tushdi — natija noma'lum" } });
+  // DEPLOY/ROLLBACK bundan mustasno: ular ajratilgan jarayonda davom etadi, natijani devopsTick yakunlaydi
+  const stuck = await control.agentAction.updateMany({ where: { status: "RUNNING", type: { notIn: [...DETACHED_ACTIONS] } }, data: { status: "FAILED", finishedAt: new Date(), output: "agent qayta ishga tushdi — natija noma'lum" } });
   if (stuck.count) warnLog(`${stuck.count} ta yakunlanmagan amal FAILED deb belgilandi`);
 
+  initDevops({
+    control, appDir: APP_DIR, linux: LINUX, test: TEST, childEnv: CHILD_ENV, hasSystemd, releaseVersion: () => releaseVersion(), log, warn: warnLog,
+    requestSelfRestart: (reason) => void shutdown(reason, 0),
+  });
   log(`ishga tushdi: ${HOST}, versiya ${releaseVersion() ?? "dev"}, APP_DIR=${APP_DIR}, linux=${LINUX}, systemd=${await hasSystemd()}, test=${TEST}`);
   await heartbeat().catch((e) => warnLog(`heartbeat: ${errMsg(e)}`));
   hb.start(FAST_MS);
   fast.start(0);
   actions.start(500);
+  devops.start(2_000);
   slow.start(5_000);
   retention.start(60_000);
   ai.start(10 * 60_000); // ishga tushgandan 10 daqiqa keyin (oxirgi rejali hisobot 6 soatdan eski bo'lsa)

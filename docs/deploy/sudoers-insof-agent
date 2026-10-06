@@ -16,6 +16,9 @@
 # Ubuntu 22.04 dagi sudo 1.9.9 da regex yo'q, shuning uchun himoyaning asosiy qatlami — agentdagi qat'iy tekshiruv
 # (src/lib/control/monitor/parse.ts → validateAction); bu yerda faqat restart/reload/deny kabi zararsiz fe'llar.
 
+# IT panel → Relizlar (DEPLOY/ROLLBACK) uchun qo'shimcha qator YO'Q: deploy.sh deploy ostida ishlaydi va faqat
+# INSOF_RESTART dagi restartlarni chaqiradi; journalctl va nginx loglari — systemd-journal/adm guruhlari orqali (sudo'siz).
+
 Cmnd_Alias INSOF_RESTART = /usr/bin/systemctl restart insof-erp@*, \
                            /usr/bin/systemctl restart insof-control, \
                            /usr/bin/systemctl restart insof-eco, \

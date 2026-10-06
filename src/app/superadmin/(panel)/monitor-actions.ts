@@ -9,6 +9,7 @@ import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "@/lib/control/m
 import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
 import { invalidateMonitorSnapshot } from "@/lib/control/monitor/snapshot";
 import { ipFromHeaders } from "@/lib/login-guard";
+import { DEVOPS_PARAMS } from "@/lib/control/devops/params";
 import { Prisma } from "@/generated/control";
 
 /**
@@ -31,6 +32,7 @@ const PARAMS: Record<ActionType, z.ZodType<Record<string, string>>> = {
   RUN_HEALTH_CHECK: EMPTY,
   RUN_SECURITY_SCAN: EMPTY,
   RUN_AI_ANALYSIS: EMPTY,
+  ...DEVOPS_PARAMS,
 };
 const ID = z.string().regex(/^[a-z0-9]{10,40}$/i);
 

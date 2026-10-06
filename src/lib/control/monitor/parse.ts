@@ -4,6 +4,7 @@
  */
 import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "./contract";
 import type { CheckStatusT, FindingSeverity } from "./types";
+import { isDevopsAction, validateDevops, type DevopsParams } from "../devops/contract";
 
 /* ───────────────────────── /proc parserlari ───────────────────────── */
 
@@ -270,7 +271,7 @@ export function decideIncident(hasOpen: boolean, okStreak: number, status: Check
 /* ───────────────────────── Amallar: tekshiruv va tozalash ───────────────────────── */
 
 export type ValidAction =
-  | { ok: true; type: ActionType; params: { unit?: string; ip?: string } }
+  | { ok: true; type: ActionType; params: { unit?: string; ip?: string } & DevopsParams }
   | { ok: false; reason: string };
 
 /** Hech qachon bloklanmaydigan manzillar: loopback, 0.0.0.0/8, broadcast (o'zimizni qulflamaslik). */
@@ -295,6 +296,10 @@ export function validateAction(type: string, params: unknown): ValidAction {
     if (typeof ip !== "string" || !IPV4_RE.test(ip)) return { ok: false, reason: "ip noto'g'ri (faqat IPv4)" };
     if (type === "BLOCK_IP" && forbiddenIp(ip)) return { ok: false, reason: `${ip} ni bloklash taqiqlangan (loopback/maxsus manzil)` };
     return { ok: true, type, params: { ip } };
+  }
+  if (isDevopsAction(type)) {
+    const d = validateDevops(type, p);
+    return d.ok ? { ok: true, type, params: d.params } : d;
   }
   return { ok: true, type, params: {} };
 }

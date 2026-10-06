@@ -24,6 +24,9 @@
 #   SKIP_RESTART=1  faqat build + migratsiya + symlink (birinchi ko'chishda — PLATFORMA.md)
 #   KEEP_RELEASES=3 nechta reliz saqlansin
 #   ROLLBACK=1      xizmatlarni oldingi relizga qaytarish (build qilmasdan)
+#   SKIP_AGENT_RESTART=1  insof-agent ni qayta ishga tushirmaslik (agent deploy'ni o'zi ishga tushirgan va o'zi qayta
+#                   ishga tushadi — scripts/agent/devops.ts, «detached» rejim)
+#   DEPLOY_LOCK     bir vaqtda bitta deploy: flock qulf fayli (standart $APP_DIR/.deploy.lock)
 #   DEPLOY_REF=<tag|sha>  HEAD o'rniga aniq commit/teg build qilish (standart HEAD)
 #   APP_DIR, REPO_DIR (git manbasi, standart APP_DIR), RELEASES_DIR, CONTROL_PORT (3100), HEALTH_TIMEOUT (60 s)
 #
@@ -85,6 +88,12 @@ if [ "$(id -u)" = "0" ]; then
   die "root bilan ishga tushirmang — node_modules egaligi buziladi. Avval: su - deploy"
 fi
 cd "$APP_DIR"
+
+# ── Bir vaqtda faqat bitta deploy/rollback (qo'lda ham, IT paneldan ham) — flock, jarayon tugashi bilan qulf bo'shaydi ──
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"${DEPLOY_LOCK:-$APP_DIR/.deploy.lock}"
+  flock -n 9 || die "Boshqa deploy/rollback hozir ishlayapti (${DEPLOY_LOCK:-$APP_DIR/.deploy.lock}) — tugashini kuting"
+fi
 
 # ── Korxonalar ro'yxati (tenants/*.env) ──
 TENANTS=()
@@ -305,6 +314,8 @@ if [ "$HAS_CONTROL" = 1 ]; then
     echo "  [DRY_RUN] restart insof-agent (o'tkazib yuborildi)"
   elif [ "${SKIP_RESTART:-0}" = "1" ]; then
     AGENT_STATUS="SKIP_RESTART=1"
+  elif [ "${SKIP_AGENT_RESTART:-0}" = "1" ]; then
+    AGENT_STATUS="deploy'ni agent boshlagan — u natijani yozib, o'zi qayta ishga tushadi"
   elif systemctl is-enabled --quiet insof-agent 2>/dev/null; then
     step "insof-agent qayta ishga tushirish"
     if sudo systemctl restart insof-agent; then

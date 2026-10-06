@@ -33,3 +33,7 @@ scratchpad/
 
 # Claude agent worktree papkalari
 .claude/worktrees/
+
+# IT panel deploy (scripts/agent/devops.ts, scripts/deploy.sh)
+/.deploy-state.json
+/.deploy.lock

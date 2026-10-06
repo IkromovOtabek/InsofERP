@@ -88,6 +88,9 @@ export const ACTION_LABEL: Record<ActionType, string> = {
   RUN_HEALTH_CHECK: "Hozir tekshirish",
   RUN_SECURITY_SCAN: "Xavfsizlik skaneri",
   RUN_AI_ANALYSIS: "AI xavfsizlik tahlili",
+  DEPLOY: "Deploy (yangi reliz)",
+  ROLLBACK: "Oldingi relizga qaytarish",
+  LOG_TAIL: "Log o'qish",
 };
 export const SOURCE_LABEL: Record<string, string> = { monitor: "Monitoring", security: "Xavfsizlik skaneri", ai: "AI tahlil" };
 export const CATEGORY_LABEL: Record<string, string> = {
@@ -104,6 +107,7 @@ export const actionLabel = (t: string) => (ACTION_LABEL as Record<string, string
 export function confirmPhrase(type: string, params: Record<string, unknown>): string | null {
   if (type === "BLOCK_IP") return typeof params.ip === "string" ? params.ip : "";
   if (type === "RENEW_CERT") return "SSL";
+  if (type === "DEPLOY" || type === "ROLLBACK") return "TASDIQLAYMAN";
   if (type === "RESTART_UNIT" && typeof params.unit === "string" && params.unit.startsWith("insof-erp@")) return params.unit.slice("insof-erp@".length);
   return null;
 }

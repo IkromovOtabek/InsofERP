@@ -398,6 +398,54 @@ pg advisory lock — ikkinchisi `exit 3` bilan chiqadi.
 Qo'lda (sinov uchun) ishga tushirish: `cd /var/www/insof-erp/current && CONTROL_ENV_FILE=/var/www/insof-erp/control.env node_modules/.bin/tsx scripts/insof-agent.ts`
 (xizmat to'xtatilgan bo'lsin — aks holda qulf).
 
+### Relizlar va loglar paneli (DEPLOY, ROLLBACK, LOG_TAIL)
+
+Panel → **Relizlar** (`/superadmin/relizlar`) va **Loglar** (`/superadmin/loglar`). Panel GitHub'ga ham, serverga ham
+bormaydi: agent har 5 daqiqada `git fetch origin main` qiladi va `ServiceCheck release:info` ga yozadi (joriy reliz —
+`current → releases/<sha>` va `RELEASE`, serverdagi relizlar, origin/main, joriydan keyingi commitlar ≤ 50). Har korxona va
+panelning `/api/health` versiyasi joriy reliz bilan solishtiriladi. Kod: `scripts/agent/devops.ts`, `src/lib/control/devops/`.
+
+| Tur | Nima qiladi |
+|---|---|
+| `DEPLOY {ref}` | `ref`: faqat `main` (→ `DEPLOY_REF=origin/main`) yoki 7–40 belgili hex sha. `scripts/deploy.sh` agentdan **ajratilgan** holda ishga tushadi |
+| `ROLLBACK` | `ROLLBACK=1 scripts/deploy.sh` (oldingi reliz, build'siz). Migratsiyalar qaytmaydi |
+| `LOG_TAIL {source, lines, filter?, priority?}` | oq ro'yxat: `insof-erp@<slug>`, `insof-control`, `insof-eco`, `insof-agent`, `nginx` (journalctl `-u`, `-p`); fayllar: nginx `error.log`/`access.log`, `insof-backup.log`, `insof-restore-test.log`, `insof-deploy.log`. ≤ 500 qator, ≤ 64 KB, filtr — oddiy matn (regex emas, agentda), sirlar yashiriladi. Chiqish matni 24 soatdan keyin o'chiriladi (amal yozuvi qoladi) |
+
+DEPLOY/ROLLBACK uchun UI'da `TASDIQLAYMAN` yoziladi (server action ham tekshiradi). Bir vaqtda faqat bittasi: panel
+(navbatda/bajarilayotgan bo'lsa rad), agent (`$APP_DIR/.deploy-state.json`), `deploy.sh` ning o'zi (`flock $APP_DIR/.deploy.lock` —
+qo'lda ishga tushirilgan deploy bilan ham to'qnashmaydi).
+
+**Nega ajratilgan:** `deploy.sh` oxirida `insof-agent` ni qayta ishga tushiradi, `KillMode=mixed` esa agent cgroup'idagi
+bolalarni ham o'ldiradi. Agent:
+1. `systemd-run --user --unit insof-deploy-<id>` — deploy foydalanuvchisining user manager'ida (agentning MemoryMax/CPUQuota
+   cheklovlarisiz), chiqish `append:/var/log/insof-deploy.log`. Agent qayta ishga tushsa ham deploy davom etadi; yangi agent
+   nusxasi logdagi `@@INSOF_DEPLOY_END <id> <kod>` qatori va `current/RELEASE` bo'yicha amalni `DONE`/`FAILED` qiladi.
+   Jarayon END yozmay o'lsa — `FAILED`; 90 daqiqadan oshsa — to'xtatiladi.
+2. user manager bo'lmasa — detached bola jarayon (`setsid`) + `SKIP_AGENT_RESTART=1`: deploy.sh agentga tegmaydi, agent natijani
+   yozib, o'zi chiqadi va systemd (`Restart=always`) uni yangi relizdan ko'taradi. **Diqqat:** bu rejimda build agentning
+   `MemoryMax=400M` chegarasida — `next build` OOM bo'lishi mumkin (xavfsiz: build xatosida xizmatlarga tegilmaydi), npm keshi
+   `/var/cache/insof-agent/npm` (ProtectHome=read-only). Shuning uchun 1-rejimni yoqing.
+
+Agent ishlayotgan deploy logini har ~3 s `AgentAction.output` ga yozadi (≤ 16 KB oxiri) — panel 2.5 s da yangilaydi.
+
+O'rnatish (bir marta; sudoers'ga **hech narsa qo'shilmaydi** — deploy.sh mavjud `systemctl restart` qatorlaridan foydalanadi):
+```bash
+sudo loginctl enable-linger deploy                                     # deploy user manager (systemd-run --user)
+sudo install -o deploy -g deploy -m 640 /dev/null /var/log/insof-deploy.log
+sudo usermod -aG systemd-journal,adm deploy                            # journalctl va nginx loglari (avval qilingan bo'lsa — shart emas)
+sudo systemctl restart insof-agent                                     # yangi guruhlar va yangi kod
+```
+
+Tekshirish (deploy ostida): `XDG_RUNTIME_DIR=/run/user/$(id -u) systemd-run --user --wait --collect /bin/true && echo ok`;
+panel → Relizlar: «Tekshirildi» 5 daqiqa ichida, commitlar ro'yxati; Loglar → `insof-agent` → «Yangilash» → qatorlar keladi.
+Deploy paytida: `tail -f /var/log/insof-deploy.log`, `systemctl --user list-units 'insof-deploy-*'`.
+
+Muammolar: «… ga yozib bo'lmaydi» → log faylini yuqoridagi `install` bilan yarating; natijada «systemd-run --user ishlamadi …
+detached rejim» → `enable-linger`; «Deploy qulfi band» → boshqa deploy ishlayapti (`fuser -v /var/www/insof-erp/.deploy.lock`);
+«deploy holati topilmadi» → `.deploy-state.json` yo'qolgan, natijani `insof-deploy.log` dan ko'ring.
+Qaytarish: kodni oldingi relizga qaytarish kifoya (DEPLOY/ROLLBACK/LOG_TAIL amallari yo'qoladi, `release:info` 1 soatda o'chadi);
+`sudo loginctl disable-linger deploy` ixtiyoriy. Lokal sinov: `npx tsx scripts/qa/d-devops.mts`.
+
 ## Go-live ro'yxati (tartib bilan)
 
 1. **Server:** `docs/server-xavfsizlik.md` 3.1–3.5 (3000/3010 yopiq, SSH faqat kalit, fail2ban, avtomatik yangilanish, Postgres faqat localhost).

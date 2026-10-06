@@ -13,6 +13,10 @@ export const ACTION_TYPES = [
   "RUN_HEALTH_CHECK",    // {}
   "RUN_SECURITY_SCAN",   // {}
   "RUN_AI_ANALYSIS",     // {}
+  // DevOps (src/lib/control/devops/contract.ts, scripts/agent/devops.ts)
+  "DEPLOY",              // { ref?: "main" | <hex sha> } — ajratilgan jarayon, keyingi agent nusxasi yakunlaydi
+  "ROLLBACK",            // {}
+  "LOG_TAIL",            // { source, lines, filter?, priority? }
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
 
