@@ -159,6 +159,8 @@ export type FleetTruck = {
   status?: string;
   qty?: string;
   dest?: { lat: number; lng: number } | null;
+  /** Mahsulot(lar) nomi — "Beton M300 (B22.5)" */
+  product?: string | null;
 };
 
 /** Xaritadagi bitta mashina. `km` — reys boshidan beri GPS izi bo'yicha yurilgan yo'l. */

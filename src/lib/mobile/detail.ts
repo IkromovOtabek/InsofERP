@@ -528,7 +528,7 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
 // ───────────────────────── Reys / nakladnoy ─────────────────────────
 
 async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
-  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, site: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } }, driver: true, vehicle: true, issues: { orderBy: { createdAt: "desc" } } } });
+  const t = await db.trip.findUnique({ where: { id }, include: { order: { include: { customer: true, site: true, items: { select: { qtyM3: true, product: { select: { unit: true, name: true } } } } } }, driver: true, vehicle: true, issues: { orderBy: { createdAt: "desc" } } } });
   if (!t) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
   const phase = tripPhase(t);
   const planned = tripPlannedAt(t, t.order);
@@ -600,6 +600,8 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Haydovchi", value: t.driver.fullName },
       { label: "Telefon", value: t.driver.phone ?? "—", tone: t.driver.phone ? undefined : "danger" },
       { label: "Mashina", value: t.vehicle.plate },
+      // Nima olib ketyapti — zayavkadagi mahsulot(lar)
+      { label: "Mahsulot", value: [...new Set(t.order.items.map((i) => i.product.name))].join(", ") || "—" },
       // Reys miqdori zayavkadagi mahsulot birligida
       { label: "Hajm", value: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))) },
       { label: "Bosqich", value: TRIP_PHASE[phase].label, tone: (phase === "CLOSED" || phase === "DELIVERED" ? "success" : "info") as Tone },

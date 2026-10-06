@@ -24,9 +24,11 @@ export async function toFleet(d: Dash, live: LiveTruck[]): Promise<FleetTruck[]>
   const { TRIP_PHASE, minutesLabel } = await import("@/lib/logistics");
   const byRef = new Map(live.map((l) => [l.ref, l]));
   const active = d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status));
+  const orders = await db.order.findMany({ where: { id: { in: [...new Set(active.map((t) => t.orderId))] } }, select: { id: true, lat: true, lng: true, site: { select: { lat: true, lng: true } }, items: { select: { product: { select: { name: true } } } } } });
+  // Reys nima olib ketyapti — zayavka mahsulotlari
+  const products = new Map(orders.map((o) => [o.id, [...new Set(o.items.map((i) => i.product.name))].join(", ")]));
   const dest = new Map(
-    (await db.order.findMany({ where: { id: { in: [...new Set(active.map((t) => t.orderId))] } }, select: { id: true, lat: true, lng: true, site: { select: { lat: true, lng: true } } } }))
-      .map((o) => [o.id, o.lat != null && o.lng != null ? { lat: o.lat, lng: o.lng } : o.site?.lat != null && o.site?.lng != null ? { lat: o.site.lat, lng: o.site.lng } : null]),
+    orders.map((o) => [o.id, o.lat != null && o.lng != null ? { lat: o.lat, lng: o.lng } : o.site?.lat != null && o.site?.lng != null ? { lat: o.site.lat, lng: o.site.lng } : null]),
   );
   return active.map((t) => {
     const l = byRef.get(t.noteNo);
@@ -46,6 +48,7 @@ export async function toFleet(d: Dash, live: LiveTruck[]): Promise<FleetTruck[]>
       orderId: t.orderId, orderNo: t.orderNo, status: t.status,
       qty: `${t.qty % 1 ? t.qty.toFixed(1) : t.qty} ${t.unit === "m3" ? "m³" : t.unit}`,
       dest: dest.get(t.orderId) ?? null,
+      product: products.get(t.orderId) || null,
     };
   });
 }
