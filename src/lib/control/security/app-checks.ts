@@ -117,7 +117,7 @@ export type ControlEventRow = { action: string; createdAt: Date; ip: string | nu
 export function evaluateControlActivity(events: ControlEventRow[], panelLocks: { loginLocks: number; ipLocks: string[] } | null): Finding[] {
   const out: Finding[] = [];
   const off = events.filter((e) => (e.action === "SSO" || e.action === "ADMIN_LOGIN") && offHours(e.createdAt));
-  const adminChanges = events.filter((e) => e.action === "ADMIN_CREATE" || e.action === "ADMIN_PASSWORD" || e.action === "ADMIN_TOGGLE");
+  const adminChanges = events.filter((e) => e.action === "ADMIN_CREATE" || e.action === "ADMIN_PASSWORD" || e.action === "ADMIN_TOGGLE" || e.action === "ADMIN_ECO_LINK" || e.action === "ADMIN_ECO_UNLINK");
   const detail = {
     window: "24h",
     logins: events.filter((e) => e.action === "ADMIN_LOGIN").length,
@@ -147,7 +147,7 @@ export async function checkControlActivity(ctx: SecurityCtx): Promise<Finding[]>
   let events: ControlEventRow[];
   try {
     const rows = await withTimeout(control.controlEvent.findMany({
-      where: { createdAt: { gte: since }, action: { in: ["SSO", "ADMIN_LOGIN", "ADMIN_CREATE", "ADMIN_PASSWORD", "ADMIN_TOGGLE"] } },
+      where: { createdAt: { gte: since }, action: { in: ["SSO", "ADMIN_LOGIN", "ADMIN_CREATE", "ADMIN_PASSWORD", "ADMIN_TOGGLE", "ADMIN_ECO_LINK", "ADMIN_ECO_UNLINK"] } },
       select: { action: true, createdAt: true, ip: true, tenant: { select: { slug: true } } },
       orderBy: { createdAt: "desc" }, take: 1000,
     }), 15_000, "control baza");

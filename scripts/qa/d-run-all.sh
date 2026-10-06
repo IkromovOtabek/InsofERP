@@ -31,6 +31,7 @@ run "deploy: HEAD qayta (build qayta ishlatiladi)" /bin/bash "$Q/d-deploy-test.s
 run "deploy: yo'q baza migratsiyasi" /bin/bash "$Q/d-deploy-test.sh" migfail
 run "deploy: himoyalar" /bin/bash "$Q/d-deploy-test.sh" guard
 run "kiberxavfsizlik moduli (fixture'lar + stub AI, baza insof_test_ctl_sec)" npx tsx "$Q/d-security.mts"
+run "IT panelga ECO orqali kirish (soxta ECO, baza insof_test_ctl_eco)" npx tsx "$Q/d-eco-login.mts"
 run "bash -n (barcha skriptlar)" /bin/bash -c 'for f in scripts/*.sh scripts/qa/*.sh; do /bin/bash -n "$f" || exit 1; done'
 if [ "$(uname)" = "Darwin" ] || ! command -v systemctl >/dev/null; then
   out="$(/bin/bash scripts/tenant-up.sh alfa 2>&1)"; code=$?

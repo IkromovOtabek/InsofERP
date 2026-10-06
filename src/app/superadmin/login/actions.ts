@@ -1,7 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { adminLogin, adminLogout } from "@/lib/control/auth";
+import { adminLogin, adminLogout, issueAdminSession } from "@/lib/control/auth";
+import { ecoAdminLogin } from "@/lib/control/eco-login";
 import { logEvent } from "@/lib/control/events";
 import { checkLogin, clientIp, failDelay, lockedMessage, recordFailure, recordSuccess } from "@/lib/login-guard";
 
@@ -22,6 +23,15 @@ export async function adminLoginAction(_prev: { error?: string } | undefined, fd
   }
   recordSuccess(key);
   await logEvent(a.id, "ADMIN_LOGIN", null);
+  redirect("/superadmin");
+}
+
+/** Insof ECO ilovasi orqali: telefon + ilova paroli (tekshiruv va qulf — eco-login.ts). */
+export async function adminEcoLoginAction(_prev: { error?: string } | undefined, fd: FormData) {
+  if (process.env.INSOF_MODE !== "control") return { error: "Panel bu serverda yoqilmagan" };
+  const r = await ecoAdminLogin(String(fd.get("phone") ?? "").trim(), String(fd.get("password") ?? ""), await clientIp());
+  if (!r.ok) return { error: r.error };
+  await issueAdminSession(r.admin);
   redirect("/superadmin");
 }
 

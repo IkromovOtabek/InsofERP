@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getAdmin } from "@/lib/control/auth";
+import { adminEcoEnabled } from "@/lib/control/eco-login";
 import { AdminLoginForm } from "./login-form";
 
 // Rejim (INSOF_MODE) va sessiya ishga tushganda aniqlanadi — build vaqtida statik qotib qolmasin
@@ -14,7 +15,7 @@ export default async function AdminLoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <AdminLoginForm />
+        <AdminLoginForm eco={adminEcoEnabled()} />
       </div>
     </div>
   );
