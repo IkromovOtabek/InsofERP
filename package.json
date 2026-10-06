@@ -24,7 +24,8 @@
     "security:check": "tsx scripts/security-check.ts",
     "control:migrate": "prisma migrate deploy --schema prisma/control/schema.prisma",
     "control:admin": "tsx scripts/control-admin.ts",
-    "tenant": "tsx scripts/tenant.ts"
+    "tenant": "tsx scripts/tenant.ts",
+    "agent": "tsx scripts/insof-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
