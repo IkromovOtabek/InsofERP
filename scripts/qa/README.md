@@ -3,7 +3,7 @@
 ## To'liq regressiya — deploy oldidan bitta buyruq
 
 ```bash
-bash scripts/qa/run-all.sh                      # a, b, pages, c, geo, d — ketma-ket, ~25–40 daqiqa
+bash scripts/qa/run-all.sh                      # a, b, pages, c, geo, dm, d — ketma-ket, ~25–40 daqiqa
 QA_ONLY="a pages" bash scripts/qa/run-all.sh    # faqat tanlanganlar
 QA_KEEP=1 bash scripts/qa/run-all.sh            # ish papkasi va insof_test_r_* bazalari saqlanadi (tahlil uchun)
 QA_DB_PREFIX=insof_test_x_ QA_PORT=3241 QA_WORK=/tmp/qa-x bash scripts/qa/run-all.sh   # parallel yugurish: alohida bazalar, port va papka
@@ -22,6 +22,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
+| dm | IT panel monitoring va kiberxavfsizlik UI: SSE oqimi (login'siz rad, jonli yangilanish), amallar navbati (oq ro'yxat, yozma tasdiq, takror, 10/daq), hodisa ack/yopish, sahifalar, bo'sh holat | d-monitor-ui.mts + d-monitor-seed.mts (`insof_test_r_ctl_ui`, `INSOF_MODE=control`) |
 | d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch | d-run-all.sh (git HEAD klonida, portlar 3214–3216) |
 
 `d` to'plami `git archive HEAD` bilan ishlaydi — commit qilinmagan o'zgarishlar unga kirmaydi.

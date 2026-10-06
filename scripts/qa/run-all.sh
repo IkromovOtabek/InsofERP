@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # To'liq regressiya (deploy oldidan): barcha QA to'plamlari ketma-ket, har biri TOZA test bazasida.
 #
-#   bash scripts/qa/run-all.sh                 hammasi: a b pages c d
-#   QA_ONLY="a c" bash scripts/qa/run-all.sh   faqat tanlanganlar (a, b, pages, c, geo, d)
+#   bash scripts/qa/run-all.sh                 hammasi: a b pages c geo dm d
+#   QA_ONLY="a c" bash scripts/qa/run-all.sh   faqat tanlanganlar (a, b, pages, c, geo, dm, d)
 #   QA_SKIP_BUILD=1 ...                        oldingi build'ni qayta ishlatish (ish papkasi saqlangan bo'lsa)
 #   QA_DB_PREFIX=insof_test_x_ ...             test bazalari prefiksi (standart insof_test_r_; parallel ishga tushirish uchun)
 #   QA_KEEP=1 ...                              oxirida ish papkasi va bazalarni o'chirmaslik (tahlil uchun)
@@ -18,6 +18,7 @@
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
 #        geo   — mobil geofence "yoqilgan" rejimi (MOBILE_SITE_COORDS_REQUIRED=true)
+#        dm    — IT panel monitoring/xavfsizlik UI: SSE oqimi, amallar navbati, hodisalar (d-monitor-ui.mts, control rejim)
 #        d     — ko'p korxonali platforma (d-run-all.sh) — git HEAD ning toza klonida (commit qilinmagan o'zgarishlar kirmaydi!)
 #   4. Natija jadvali; biror to'plam yiqilsa exit 1.
 #
@@ -30,7 +31,7 @@ WORK="${WORK%/}"
 PORT="${QA_PORT:-3210}"
 PG="${QA_PG:-postgresql://$(id -un)@localhost:5432}"
 GOLDEN="${QA_GOLDEN:-insof_test_golden}"
-ONLY="${QA_ONLY:-a b pages c geo d}"
+ONLY="${QA_ONLY:-a b pages c geo dm d}"
 PFX="${QA_DB_PREFIX:-insof_test_r_}"
 case "$PFX" in insof_test_*) ;; *) printf '[qa] QA_DB_PREFIX insof_test_ bilan boshlansin\n' >&2; exit 2 ;; esac
 [ "$PFX" = "insof_test_" ] && { printf '[qa] QA_DB_PREFIX juda umumiy\n' >&2; exit 2; }
@@ -152,6 +153,21 @@ fi
 if want geo; then
   fresh_db geo; start_server geo MOBILE_SITE_COORDS_REQUIRED=true
   suite "c/geofence-on" env DATABASE_URL="$DBURL" QA_BASE="http://localhost:$PORT" QA_GEOFENCE=on npx tsx scripts/qa/c-mobile-scope.ts
+  stop_server
+fi
+if want dm; then
+  # IT panel: monitoring va kiberxavfsizlik UI — alohida test control bazasi (seed), panel INSOF_MODE=control
+  CTLURL="$PG/${PFX}ctl_ui"
+  psql "$PG/postgres" -qAtc "drop database if exists \"${PFX}ctl_ui\" with (force)"
+  psql "$PG/postgres" -qAtc "create database \"${PFX}ctl_ui\"" || die "createdb ${PFX}ctl_ui"
+  DM_PASS="Qm-$(openssl rand -hex 8)-A1"
+  ( cd "$APP" && CONTROL_DATABASE_URL="$CTLURL" npx prisma migrate deploy --schema prisma/control/schema.prisma >"$LOGS/dm-migrate.log" 2>&1 \
+    && CONTROL_ENV_FILE=/nonexistent INSOF_ENV=test CONTROL_DATABASE_URL="$CTLURL" CONTROL_ADMIN_PASSWORD="$DM_PASS" \
+       npx tsx scripts/control-admin.ts qa.mon "QA Monitor" >>"$LOGS/dm-migrate.log" 2>&1 ) || { tail -20 "$LOGS/dm-migrate.log"; die "${PFX}ctl_ui tayyorlanmadi"; }
+  DBURL="$CTLURL"
+  start_server dm INSOF_MODE=control CONTROL_DATABASE_URL="$CTLURL" TENANT_DATABASE_URL="$PG/{db}"
+  suite "dm/monitor-ui" env CONTROL_DATABASE_URL="$CTLURL" QA_PANEL="http://127.0.0.1:$PORT" QA_APP="$APP" \
+    QA_ADMIN_LOGIN=qa.mon QA_ADMIN_PASSWORD="$DM_PASS" QA_SERVER_LOG="$SLOG" npx tsx scripts/qa/d-monitor-ui.mts
   stop_server
 fi
 if want d; then

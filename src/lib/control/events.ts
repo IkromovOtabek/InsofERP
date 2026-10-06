@@ -21,4 +21,7 @@ export const EVENT_LABEL: Record<string, string> = {
   ADMIN_CREATE: "Superadmin qo'shildi",
   ADMIN_TOGGLE: "Superadmin bloklandi/yoqildi",
   ADMIN_PASSWORD: "Superadmin paroli almashdi",
+  AGENT_ACTION: "Serverga amal so'rovi (agent)",
+  INCIDENT_ACK: "Hodisa ko'rildi",
+  INCIDENT_RESOLVE: "Hodisa qo'lda yopildi",
 };
