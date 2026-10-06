@@ -13,6 +13,7 @@ import { LeadForm } from "./lead-form";
 import { Showreel, type Clip } from "./showreel";
 import { Catalog, type CatalogGroup, type CatalogProduct } from "./catalog";
 import { PlantLocation } from "./plant-map";
+import { PlantAerial } from "./plant-aerial";
 import { GrowLine, Lift, Reveal, StatValue } from "./motion";
 import { AggregateIcon, IconTile, MixerIcon, SlabIcon } from "./icons";
 import { VolumeCalculator } from "./calculator";
@@ -292,6 +293,9 @@ export default async function LandingPage() {
             text="Tugun, tayyor mahsulot maydoni va xomashyo bazasi — hammasi bitta hududda."
             dark
           />
+          <Reveal delay={0.1} className="mt-12">
+            <PlantAerial />
+          </Reveal>
           <Reveal delay={0.1} className="mt-12">
             <Showreel clips={CLIPS} />
           </Reveal>
