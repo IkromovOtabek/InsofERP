@@ -111,7 +111,7 @@ export type SelfAttendance = {
 type Row = { date: Date; status: AttendanceStatus; checkIn: string | null; checkOut: string | null };
 
 /** Ochiq (ketilmagan) yozuv: bugungi, bo'lmasa kechagi tungi smena (16 soatdan oshmagan). */
-async function openRecord(employeeId: string, iso: string) {
+export async function openRecord(employeeId: string, iso: string) {
   const [t, y] = await Promise.all([
     db.attendance.findUnique({ where: { employeeId_date: { employeeId, date: dayUtc(iso) } } }),
     db.attendance.findUnique({ where: { employeeId_date: { employeeId, date: dayUtc(shiftDay(iso, -1)) } } }),
@@ -120,7 +120,7 @@ async function openRecord(employeeId: string, iso: string) {
 }
 
 /** Kecha kelgan, hali ketmagan va hozir 16 soatdan oshmagan — tungi smena: "Ketdim" kechagi yozuvga tushadi. */
-function nightOpen(y: Row | null, now: string) {
+export function nightOpen(y: Row | null, now: string) {
   if (!y || y.status !== "PRESENT" || !y.checkIn || y.checkOut) return false;
   const w = workedMinutes(y.checkIn, now);
   const a = toMinutes(y.checkIn), b = toMinutes(now);

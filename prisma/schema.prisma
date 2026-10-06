@@ -491,6 +491,9 @@ model Employee {
   /// Ishlab chiqarishdagi brigadasi — direktor taqsimlaydi (Bosh sahifa → Ishlab chiqarish → Xodimlarni taqsimlash).
   /// Brigadaga biriktirilgan xodim sex tarkibida sanaladi (lavozimi boshqa bo'lim bo'lsa ham).
   brigadeId        String?
+  /// Yuz ma'lumotini (Face ID davomat) saqlashga xodim roziligi qayd etilgan vaqt — ro'yxatga olishda qo'yiladi,
+  /// yuz o'chirilsa tozalanadi. Namunalarning o'zi — `FaceTemplate`.
+  faceConsentAt    DateTime?
 
   userId      String?   @unique // tizimga kiradigan xodim uchun login
   ecoUserId   String?   @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
@@ -507,6 +510,7 @@ model Employee {
   documents        EmployeeDocument[]
   hrDocs           HrDocument[]
   attendance       Attendance[]
+  faceTemplates    FaceTemplate[]
   deletionRequests AccountDeletionRequest[]
   fuelLogs         FuelLog[]
   transportCosts   TransportExpense[]
@@ -585,8 +589,11 @@ model Attendance {
   // Qo'lda belgilangan yozuvda ikkalasi ham bo'sh — tabelda farqi ko'rinadi.
   facePhoto        String?
   faceVerifiedAt   DateTime?
+  /// "Ketdi" ham yuz bilan (Face ID skaneri) belgilangan bo'lsa — o'sha kadr (`uploads/employees/`)
+  checkOutPhoto    String?
   // ── Xodimning o'zi telefonidan belgilagani ("Keldim" / "Ketdim", `lib/self-attendance.ts`) ──
-  // `source`: null — qo'lda (sex boshlig'i / HR), "SELF_BIOMETRIC" — xodim o'zi, Face ID / barmoq izi + GPS.
+  // `source`: null — qo'lda (sex boshlig'i / HR), "SELF_BIOMETRIC" — xodim o'zi, Face ID / barmoq izi + GPS,
+  // "FACE_ID" — ERP'ning o'z yuz skaneri (Bosh sahifa → Davomat, `lib/face-id.ts`).
   // Biometriya faqat telefon egasini tasdiqlaydi — shuning uchun qurilma id va nuqta ham saqlanadi.
   source           String?
   checkInLat       Float?
@@ -610,6 +617,26 @@ model Attendance {
 
   @@unique([employeeId, date])
   @@index([date])
+}
+
+/// Xodim yuzining namunasi — ERP'ning o'z Face ID skaneri uchun (`lib/face-id.ts`).
+/// Rasm emas: brauzerdagi neyron tarmoq (face-api, ResNet-34) yuzdan hisoblagan 128 sonli vektor.
+/// Bir xodimda bir nechta namuna (to'g'ri, ikki yonga burilgan) — solishtirishda eng yaqini olinadi.
+/// Vektorlar brauzerga qaytib berilmaydi: solishtirish faqat serverda.
+model FaceTemplate {
+  id          String   @id @default(cuid())
+  employeeId  String
+  descriptor  Float[] // 128 son
+  /// Ro'yxatga olishdagi kadr (`uploads/employees/`) — bitta namunada, otdel kadr ko'rishi uchun
+  photo       String?
+  /// Yuz aniqlash ishonchi (0..1) — sifat nazorati uchun
+  score       Float?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
 }
 
 /// Tabeldagi belgilar. `PRESENT` dan boshqasida soat yozilmaydi.

@@ -29,6 +29,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
     "@prisma/client": "^6.16.0",
+    "@vladmandic/face-api": "1.7.15",
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

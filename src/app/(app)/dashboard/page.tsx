@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers } from "lucide-react";
+import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers, ScanFace } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { customerMarks } from "@/lib/finance";
@@ -8,7 +8,7 @@ import { CustomerName } from "@/components/customer-name";
 import { materialOutlook, mixerStatus, todayTrips } from "@/lib/dashboard";
 import { money, qty, fmtNum, pct } from "@/lib/format";
 import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
-import { Badge, Callout, Card, Empty, Progress, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { TripStatusBadge } from "../trips/status";
 import { LiveDrivers } from "../trips/live-drivers";
 import { ecoEnabled } from "@/lib/eco/client";
@@ -23,6 +23,7 @@ import { MechanicHome } from "./mechanic-home";
 import { HrHome } from "./hr-home";
 import { MECHANIC_HOME_ROLES } from "@/lib/sklad-logistika";
 import { parseDay } from "@/lib/logistics";
+import { faceScope } from "@/lib/face-id";
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
@@ -46,11 +47,16 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const hrView = !!s && (s.role === "HR" || (isDirector && view === "hr"));
   const ownerView = isDirector && !productionView && !procurementView && !logisticsView && !mechanicView && !hrView && view !== "operations";
   const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : ownerView ? "" : "operations";
+  // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri
+  const faceAttendance = !!s && !!faceScope(s);
   const header = (
     <>
-      <div className="mb-6 animate-fade-up">
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
+        </div>
+        {faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>}
       </div>
       {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
