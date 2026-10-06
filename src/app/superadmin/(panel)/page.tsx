@@ -7,6 +7,8 @@ import { Button, Card, Empty, LinkButton, PageHeader, StatCard, Table, Td, Th, T
 import { TenantStatusBadge, Health, ago } from "./status";
 import { SsoButton } from "./forms";
 import { refreshStatsAction } from "./actions";
+import { HealthStrip } from "./_monitor/bits";
+import { loadMonitorSnapshot } from "@/lib/control/monitor/snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +16,11 @@ export const dynamic = "force-dynamic";
 export default async function Overview() {
   // Har ochilishda jonli: jarayon/baza/ECO tekshiruvi parallel (bir korxona — ~0.1–4 s)
   const live = await collectAll();
-  const [tenants, server] = await Promise.all([
+  const [tenants, server, monitor] = await Promise.all([
     control.tenant.findMany({ orderBy: [{ status: "asc" }, { name: "asc" }] }),
     serverStats(),
+    // Monitoring jadvallari hali bo'lmasa ham (migratsiya qilinmagan) bosh sahifa ochilsin
+    loadMonitorSnapshot().catch(() => null),
   ]);
   const st = (id: string, last: unknown) => live.get(id) ?? (last as TenantStats | null);
   const all = tenants.map((t) => ({ t, s: st(t.id, t.lastStats) }));
@@ -31,6 +35,8 @@ export default async function Overview() {
         subtitle={`ERP va ECO — ${tenants.length} ta korxona. Tekshiruv: hozir.`}
         action={<div className="flex gap-2"><form action={refreshStatsAction.bind(null, undefined)}><Button variant="secondary"><RefreshCw size={16} /> Yangilash</Button></form><LinkButton href="/superadmin/korxonalar/yangi">Yangi korxona</LinkButton></div>}
       />
+
+      <HealthStrip initial={monitor} />
 
       {down.length > 0 && <Callout tone="danger" title="Ishlamayotgan korxonalar">{down.map((x) => `${x.t.name}: ${!x.s!.web.up ? `veb (${x.s!.web.error ?? "javob yo'q"})` : ""} ${!x.s!.db.ok ? `baza (${x.s!.db.error ?? ""})` : ""}`).join(" · ")}</Callout>}
       {ecoDown.length > 0 && <Callout tone="warning" title="ECO javob bermayapti">{ecoDown.map((x) => `${x.t.name} (${x.t.ecoApiUrl})`).join(" · ")}</Callout>}
