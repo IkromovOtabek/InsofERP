@@ -15,6 +15,7 @@ import { dataUrlFile } from "@/lib/procurement";
 import { ListError } from "@/lib/mobile/list";
 import type { MobileUser } from "@/lib/mobile/auth";
 import type { AttendanceStatus } from "@/generated/prisma";
+import { notifyLateAfter } from "@/lib/attendance-late";
 
 /**
  * Xodimning o'zi telefonidan davomat belgilashi — "Keldim" / "Ketdim" (mobil bosh sahifa kartasi).
@@ -277,6 +278,8 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId: emp.id, date } }, create: { employeeId: emp.id, date, ...data }, update: data });
       await audit(tx, user.id, "UPDATE", "Attendance", a.id, t ? { status: t.status, checkIn: t.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
     });
+    // Kechikkan bo'lsa — HR va direktorga alohida xabar (xodim/kun bo'yicha bir marta)
+    notifyLateAfter(user.id, { employeeId: emp.id, checkIn: now, lateMinutes: late, iso });
     text = `${shortName(emp.fullName)} ${now} da keldi${late ? ` (${late} daq kechikdi)` : ""}${newDevice ? " · yangi telefondan" : ""}`;
   } else {
     // Ketish: bugungi ochiq yozuv, bo'lmasa kechagi tungi smena
