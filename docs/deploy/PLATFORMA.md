@@ -300,6 +300,104 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
 - Panel bosh sahifasi har ochilganda jonli tekshiradi (ERP javobi, baza, ECO `/v1/health`) va kunlik suratni saqlaydi.
 - To'xtatilgan korxona: xodimlar veb/mobilda darhol chiqariladi, sabab login sahifasida ko'rinadi; IT kira oladi.
 
+## Monitoring agenti (insof-agent)
+
+Panel serverga tegmaydi (`NoNewPrivileges`, `ProtectSystem=strict`). Serverdagi alohida `insof-agent` xizmati
+(`scripts/insof-agent.ts`) metrikalarni yig'adi, tekshiradi va control bazaga yozadi (`HostSnapshot`, `ServiceCheck`,
+`Incident`, `AgentHeartbeat`); panel faqat o'qiydi va `AgentAction` navbatiga so'rov qo'yadi. Agent `health-watch.sh`
+ning o'rnini bosadi (o'sha cron qatorini o'chiring yoki zaxira sifatida har 5 daqiqaga o'tkazing).
+
+### O'rnatish (bir marta, `deploy` + sudo)
+
+```bash
+cd /var/www/insof-erp
+bash scripts/deploy.sh                                     # monitoring jadvallari migratsiyasi (control baza) — avval
+sudo usermod -aG systemd-journal,adm deploy                # journald (unit xatolari, ssh) va nginx loglari
+# sudoers: eski /etc/sudoers.d/insof-deploy ni yangi fayl bilan almashtirish (restart qatorlari ham ichida)
+sudo install -m 440 -o root -g root docs/deploy/sudoers-insof-agent /etc/sudoers.d/insof-deploy.new
+sudo visudo -cf /etc/sudoers.d/insof-deploy.new && sudo mv /etc/sudoers.d/insof-deploy.new /etc/sudoers.d/insof-deploy
+sudo visudo -c && sudo -l -U deploy                        # "parsed OK"; ro'yxatda nginx -t, certbot renew, ufw ...
+sudo install -m 644 docs/deploy/insof-agent.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemctl enable --now insof-agent
+```
+Telegram: `ALERT_TG_BOT_TOKEN` / `ALERT_TG_CHAT_ID` — `control.env` da yoki `/etc/insof/backup.env` da (agent faqat shu
+ikki kalit va `OUT_DIR` ni o'qiydi). AI tahlil uchun `ANTHROPIC_API_KEY` — `control.env` da.
+
+Tekshirish:
+- `systemctl status insof-agent` → active; `journalctl -u insof-agent -n 30` — `[agent] ishga tushdi: … linux=true, systemd=true`;
+- `psql "<control URL>" -c 'SELECT "lastSeenAt", version FROM "AgentHeartbeat"'` — 15 s ichida yangilanadi;
+- panel → Monitoring: host grafigi, xizmatlar ro'yxati; «Tekshirish» (RUN_HEALTH_CHECK) → DONE;
+- sudo: `sudo -n /usr/sbin/nginx -t` (deploy ostida) parol so'ramasin.
+
+Qaytarish: `sudo systemctl disable --now insof-agent && sudo rm /etc/systemd/system/insof-agent.service`
+(jadvallar qoladi, panel «Agent javob bermayapti» ko'rsatadi). `deploy.sh` agent yoqilgan bo'lsa uni har relizdan keyin
+qayta ishga tushiradi va yakunda holati + heartbeat yoshini chiqaradi.
+
+### Nima tekshiriladi
+
+| Har | Tekshiruv | Kalit (`ServiceCheck.key`) | WARN / CRIT |
+|---|---|---|---|
+| 15 s | CPU (`/proc/stat` farqi) | `host:cpu` | ketma-ket 3 namuna ≥ 85% / ≥ 95% |
+| 15 s | xotira (`MemTotal − MemAvailable`) | `host:memory` | ≥ 85% / ≥ 95% |
+| 15 s | load1 / yadro | `host:load` | ≥ 1.5 / ≥ 3 |
+| 15 s | disk `/` va `/var` (statfs) | `host:disk` | ≥ 80% / ≥ 90% |
+| 15 s | systemd: har ACTIVE `insof-erp@<slug>`, `insof-control`, `insof-eco`, `nginx`, `postgresql@14-main` (+`AGENT_EXTRA_UNITS`) | `unit:<unit>` | activating/restart oshgan (10 daq) / failed, inactive |
+| 15 s | korxona `127.0.0.1:<port>/api/health`, panel `:3100` | `http:tenant:<slug>`, `http:control` | > 2 s yoki eski reliz versiyasi / 503, javob yo'q |
+| 15 s | ECO `/v1/health` | `http:eco` | sekin / javob yo'q |
+| 15 s | Postgres: ulanishlar/`max_connections`, eng uzun so'rov, baza hajmlari; korxona bazasi bormi | `db:postgres`, `db:tenant:<slug>` | ≥ 80% yoki ≥ 300 s / ≥ 95% yoki ≥ 1800 s; baza yo'q |
+| 5 daq | SSL (TLS, servername): korxona domenlari + admin + api | `ssl:<domen>` | < 21 kun / < 7 kun yoki ishonchsiz |
+| 5 daq | zaxira: oxirgi `/var/backups/insof/<sana>`, `SHA256SUMS`, `insof-backup.log` oxirgi qatori | `backup:latest` | SHA yo'q / logda xato / > 26 soat |
+| 5 daq | journald `-p err` oxirgi 5 daqiqa, har unit | `journal:<unit>` | ≥ 10 / ≥ 50 qator |
+| 5 daq | `/var/run/reboot-required` | `host:reboot` | bor (WARN) |
+| 5 daq | xavfsizlik moduli (`runSecurityChecks`): ssh, ufw, portlar, sir fayllari, apt, npm audit … | `security:<nom>`, `security:scan` | topilma og'irligi bo'yicha |
+| 6 soat | AI tahlil (`runAiAnalysis`) → `SecurityReport` | — | — |
+
+Hamma HostSnapshot 15 s da (CPU, load, xotira, swap, disk, uptime, tarmoq rx/tx B/s, jarayonlar soni, xotira bo'yicha top 5).
+Tozalash (soatiga): surat > 7 kun, RESOLVED hodisa > 90 kun, amal > 90 kun, 1 soatdan beri tekshirilmagan kalitlar
+(o'chirilgan korxona/domen) — ServiceCheck o'chadi, ochiq hodisasi yopiladi.
+
+**Hodisalar:** WARN → MEDIUM, CRIT → HIGH (korxona/panel/nginx/postgres/baza/disk — CRITICAL). Bir kalit — bitta ochiq hodisa
+(`count`, `lastSeenAt` oshadi); ketma-ket **2 marta OK** → avtomatik RESOLVED; UNKNOWN na ochadi, na yopadi. Xavfsizlik:
+INFO yoki `detail.status` OK/UNKNOWN hodisa ochmaydi, kalit OK qaytsa (yoki qaytmasa) 2 skanerdan keyin yopiladi;
+`source "ai"` hodisalarini AI modul o'zi yuritadi. **Telegram:** yangi HIGH/CRITICAL (monitor — kamida 2 marta ko'rilgan,
+ya'ni restart paytidagi bir martalik xato emas) va xabar berilgan hodisaning yopilishi; `notifiedAt` bilan takrorlanmaydi,
+soatiga ≤ 30 xabar, matndan sirlar tozalanadi.
+
+### Amallar (panel → AgentAction)
+
+Agent har 3 s da `PENDING` ni atomar oladi (`PENDING → RUNNING`), turini oq ro'yxatdan, parametrlarni regex bilan tekshiradi
+(noto'g'ri → `REJECTED`), shell'siz, qat'iy argv va vaqt cheklovi bilan bajaradi; natija — `DONE`/`FAILED`, chiqishning
+oxirgi 8 KB i (parol, token, `KEY=…`, URL ichidagi parol yashirilgan). Bir turdagi amal bir vaqtda bittadan, jami ≤ 3.
+
+| Tur | Buyruq |
+|---|---|
+| `RESTART_UNIT {unit}` | `sudo -n systemctl restart <insof-erp@slug \| insof-control \| insof-eco>` → 60 s gacha unit + /api/health qayta tekshiriladi |
+| `RELOAD_NGINX` | `sudo -n nginx -t` → faqat o'tsa `sudo -n systemctl reload nginx` |
+| `RUN_BACKUP` | `bash scripts/server-backup.sh` (APP_DIR dan, 3 soat cheklov; muhitga control.env sirlari berilmaydi) |
+| `RENEW_CERT` | `sudo -n certbot renew --quiet` → `nginx -t` → reload |
+| `FIX_SECRET_PERMS` | `control.env`, `build.env`, `tenants/*.env` → 600, `tenants/` → 700 (sudo'siz), nima o'zgargani hisobotda |
+| `BLOCK_IP` / `UNBLOCK_IP {ip}` | `sudo -n ufw insert 1 deny from <ip>` / `ufw delete deny from <ip>` (faqat IPv4; 127.x, 0.x bloklanmaydi) |
+| `RUN_HEALTH_CHECK` / `RUN_SECURITY_SCAN` / `RUN_AI_ANALYSIS` | tegishli siklni darhol ishga tushiradi |
+
+Agent qayta ishga tushsa, `RUNNING` qolib ketgan amallar `FAILED` («natija noma'lum») bo'ladi. Bitta nusxa: control bazada
+pg advisory lock — ikkinchisi `exit 3` bilan chiqadi.
+
+### Muammolar
+
+| Belgi | Sabab / yechim |
+|---|---|
+| amal `FAILED`: «a password is required» / «sudoers ruxsati yo'q» | sudoers fayli o'rnatilmagan yoki yo'l boshqa (`command -v certbot`) — yuqoridagi `install` + `visudo -c` |
+| `sudo: … no new privileges` | unit'ga `NoNewPrivileges` yoki uni yashirin yoqadigan direktiva qo'shilgan (ro'yxat — unit fayl izohida) |
+| `journal:*` hammasi 0 yoki `journalctl xato` | `deploy` `systemd-journal` guruhida emas → `usermod -aG` + `systemctl restart insof-agent` |
+| `backup:latest` CRIT «papka yo'q» | `/var/backups/insof` yo'q yoki `OUT_DIR` boshqa (backup.env) |
+| `ssl:*` WARN «ulanib bo'lmadi» | DNS hali ulanmagan yoki 443 yopiq; sertifikat muddati — CRIT < 7 kun → «Sertifikatni yangilash» |
+| `security:scan` UNKNOWN «modul hali o'rnatilmagan» | `src/lib/control/security` relizda yo'q — kod yangilanishi kerak |
+| panel «Agent javob bermayapti» | `systemctl status insof-agent`, `journalctl -u insof-agent -n 80`; baza ulanishi (`CONTROL_DATABASE_URL`) |
+| `boshqa insof-agent allaqachon ishlayapti` | qo'lda ishga tushirilgan nusxa bor — `pgrep -af insof-agent` |
+
+Qo'lda (sinov uchun) ishga tushirish: `cd /var/www/insof-erp/current && CONTROL_ENV_FILE=/var/www/insof-erp/control.env node_modules/.bin/tsx scripts/insof-agent.ts`
+(xizmat to'xtatilgan bo'lsin — aks holda qulf).
+
 ## Go-live ro'yxati (tartib bilan)
 
 1. **Server:** `docs/server-xavfsizlik.md` 3.1–3.5 (3000/3010 yopiq, SSH faqat kalit, fail2ban, avtomatik yangilanish, Postgres faqat localhost).
@@ -352,5 +450,6 @@ D_ROOT=/tmp/insof-qa-d bash scripts/qa/d-run-all.sh        # sozlash → deploy 
 | `d-platform.ts` | panel login/qulf, «beta» panel formasi orqali, SSO (takror, boshqa korxona, muddati o'tgan, soxta aud), direktor va IT hisobi, izolyatsiya, to'xtatish, statistika |
 | `d-backup-test.sh` | `server-backup.sh` (rclone/restic yo'q → exit 1, `OFFSITE=local`, yo'q baza, qulf) va `restore-test.sh` (butun, bitta, buzilgan) |
 | `d-health-test.sh` | `health-watch.sh`: korxona yiqilishi, ogohlantirish chegarasi, takrorlanmaslik, tiklanish |
+| `d-agent.mts` | insof-agent: parserlar/chegaralar/hodisa/amal tekshiruvi (unit) + lokal integratsiya (`insof_test_ctl_agent`) |
 | `d-svc.sh` | systemd o'rnida `next start` (deploy'ning `RESTART_CMD`) |
 | `d-cleanup.sh` | jarayonlar, test bazalari, `D_ROOT` ni o'chiradi |

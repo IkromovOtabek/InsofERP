@@ -1,0 +1,33 @@
+# /etc/sudoers.d/insof-deploy — `deploy` foydalanuvchisiga parolsiz ruxsat etilgan buyruqlar (deploy.sh va insof-agent).
+# Mavjud /etc/sudoers.d/insof-deploy (PLATFORMA.md 1-qadam) shu fayl bilan ALMASHTIRILADI — eski 3 ta restart qatori shu yerda bor.
+#
+# O'rnatish (avval tekshirib, keyin joyiga — buzuq sudoers butun sudo'ni o'chirib qo'yadi):
+#   sudo install -m 440 -o root -g root docs/deploy/sudoers-insof-agent /etc/sudoers.d/insof-deploy.new
+#   sudo visudo -cf /etc/sudoers.d/insof-deploy.new && sudo mv /etc/sudoers.d/insof-deploy.new /etc/sudoers.d/insof-deploy
+#   sudo visudo -c                       # butun konfiguratsiya: "parsed OK"
+#   sudo -l -U deploy                    # ro'yxat shu fayldagi bilan bir xil
+# Fayl nomida nuqta bo'lmasin — sudo "insof-deploy.new" kabi nuqtali fayllarni o'qimaydi (vaqtinchalik nom shuning uchun xavfsiz).
+#
+# Yo'llar Ubuntu 22.04 uchun (`command -v systemctl nginx ufw certbot` bilan tekshiring). Agent buyruqlarni aynan shu
+# to'liq yo'llar bilan, `sudo -n` (parol so'ramasdan) va shell'siz chaqiradi; argumentlar agentda regex bilan tekshiriladi
+# (unit: insof-erp@<slug>|insof-control|insof-eco, ip: faqat IPv4).
+#
+# Eslatma: sudoers'dagi `*` bo'sh joyni ham qamraydi (masalan `systemctl restart insof-erp@a nginx` ham mos keladi).
+# Ubuntu 22.04 dagi sudo 1.9.9 da regex yo'q, shuning uchun himoyaning asosiy qatlami — agentdagi qat'iy tekshiruv
+# (src/lib/control/monitor/parse.ts → validateAction); bu yerda faqat restart/reload/deny kabi zararsiz fe'llar.
+
+Cmnd_Alias INSOF_RESTART = /usr/bin/systemctl restart insof-erp@*, \
+                           /usr/bin/systemctl restart insof-control, \
+                           /usr/bin/systemctl restart insof-eco, \
+                           /usr/bin/systemctl restart insof-agent
+Cmnd_Alias INSOF_NGINX   = /usr/sbin/nginx -t, \
+                           /usr/bin/systemctl reload nginx
+# certbot: apt paketi /usr/bin/certbot, snap — /snap/bin/certbot (qaysi biri o'rnatilgan bo'lsa, agent o'shani chaqiradi)
+Cmnd_Alias INSOF_CERT    = /usr/bin/certbot renew --quiet, \
+                           /snap/bin/certbot renew --quiet
+Cmnd_Alias INSOF_UFW     = /usr/sbin/ufw insert 1 deny from *, \
+                           /usr/sbin/ufw delete deny from *, \
+                           /usr/sbin/ufw status, \
+                           /usr/sbin/ufw status verbose
+
+deploy ALL=(root) NOPASSWD: INSOF_RESTART, INSOF_NGINX, INSOF_CERT, INSOF_UFW

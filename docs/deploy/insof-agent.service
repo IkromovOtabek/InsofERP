@@ -1,0 +1,70 @@
+# insof-agent — server monitoringi va xavfsizlik agenti (scripts/insof-agent.ts), docs/deploy/PLATFORMA.md → «Monitoring agenti».
+# O'rnatish: sudo install -m 644 docs/deploy/insof-agent.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#            sudo systemctl enable --now insof-agent
+# Tekshirish: systemctl status insof-agent; journalctl -u insof-agent -n 50
+[Unit]
+Description=Insof platforma — monitoring va xavfsizlik agenti
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Restart=always bilan cheksiz qayta urinish (baza vaqtincha yo'q bo'lsa ham agent o'zi tiklanadi)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/var/www/insof-erp/current
+# CONTROL_DATABASE_URL va boshqalar; Telegram (ALERT_TG_*) shu yerda yoki /etc/insof/backup.env da
+EnvironmentFile=/var/www/insof-erp/control.env
+Environment=CONTROL_ENV_FILE=/var/www/insof-erp/control.env
+Environment=AGENT_APP_DIR=/var/www/insof-erp
+# Xavfsizlik moduli keshi (apt / npm audit natijalari): systemd /var/cache/insof-agent ni yaratadi, egasi deploy,
+# ProtectSystem ostida ham yoziladi
+CacheDirectory=insof-agent
+CacheDirectoryMode=0700
+Environment=INSOF_SECURITY_CACHE_DIR=/var/cache/insof-agent
+# tsx — relizning o'z node_modules idan (deploy.sh har relizga npm ci qiladi; boshqa skriptlar kabi)
+ExecStart=/usr/bin/node node_modules/tsx/dist/cli.mjs scripts/insof-agent.ts
+Restart=always
+RestartSec=10
+# SIGTERM → agent joriy siklni tugatadi, RUNNING amallarni FAILED deb yozadi, bazadan uziladi (≤ ~15 s)
+TimeoutStopSec=30
+KillMode=mixed
+MemoryMax=400M
+CPUQuota=50%
+Nice=5
+UMask=0077
+
+# ── Xavfsizlik qatlami — sudo bilan MOS keladigan darajada ──
+#
+# NoNewPrivileges YO'Q: agent oq ro'yxatdagi buyruqlarni `sudo -n` bilan bajaradi (docs/deploy/sudoers-insof-agent).
+# Muhim: systemd quyidagilarni yozsangiz NoNewPrivileges=yes ni JIMGINA yoqadi (root bo'lmagan User= uchun) va sudo
+# "no new privileges" xatosi bilan ishlamay qoladi — shuning uchun ular ATAYLAB yo'q:
+#   SystemCallFilter, SystemCallArchitectures, RestrictAddressFamilies, RestrictNamespaces, PrivateDevices,
+#   ProtectKernelTunables, ProtectKernelModules, ProtectKernelLogs, ProtectClock, MemoryDenyWriteExecute,
+#   RestrictRealtime, RestrictSUIDSGID, LockPersonality.
+# CapabilityBoundingSet ham yo'q: u sudo orqali ishga tushgan root jarayonlarini ham cheklaydi (ufw/iptables CAP_NET_ADMIN,
+# certbot, nginx -t) — bu buyruqlar agentning mount-namespace'ida ishlaydi va quyidagi cheklovlarni meros oladi.
+#
+# ProtectSystem=true (strict/full EMAS): /usr va /boot faqat o'qish uchun. "full" /etc ni ham yopadi — certbot
+#   (/etc/letsencrypt) va ufw (/etc/ufw/user.rules) yozolmay qoladi; "strict" butun / ni (jumladan /var/log/nginx,
+#   /var/lib/letsencrypt, /var/backups) yopadi va `nginx -t`, certbot, server-backup.sh buziladi.
+ProtectSystem=true
+# Uy papkalari faqat o'qish uchun: server-backup.sh (RUN_BACKUP) deploy'ning rclone sozlamasini o'qiydi;
+# rclone token yangilasa yoki kesh yozsa — quyidagi ikki papka ochiq ("-": bo'lmasa xato emas).
+ProtectHome=read-only
+ReadWritePaths=-/home/deploy/.config/rclone -/home/deploy/.cache
+# Shaxsiy /tmp (tsx keshi, certbot vaqtinchalik fayllari) — boshqa xizmatlar bilan aralashmaydi
+PrivateTmp=true
+# cgroup daraxti faqat o'qish uchun — `systemctl show/restart` D-Bus orqali PID1 ga boradi, bunga ta'sir qilmaydi
+ProtectControlGroups=true
+ProtectHostname=true
+# /proc: barcha jarayonlar ko'rinishi kerak (top jarayonlar, /proc/<pid>/status) — ProtectProc/ProcSubset YO'Q.
+# journald: deploy `systemd-journal` guruhida (sudo usermod -aG systemd-journal deploy) — systemd User= ning
+# qo'shimcha guruhlarini o'zi qo'shadi; /var/log/journal o'qiladi.
+# nginx loglari (xavfsizlik moduli: skanerlar, 5xx/429): deploy `adm` guruhida (sudo usermod -aG adm deploy).
+# /var/backups/insof, /var/log/insof-*.log — deploy egasi, ProtectSystem=true ostida yoziladi/o'qiladi.
+# Guruh qo'shilgandan keyin: sudo systemctl restart insof-agent (yangi guruhlar faqat qayta ishga tushganda kuchga kiradi).
+
+[Install]
+WantedBy=multi-user.target

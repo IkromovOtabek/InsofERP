@@ -29,6 +29,11 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 
 `d` to'plami `git archive HEAD` bilan ishlaydi — commit qilinmagan o'zgarishlar unga kirmaydi.
 
+`d-agent.mts` (d ichida, alohida ham): `npx tsx scripts/qa/d-agent.mts` — insof-agent parserlari, chegaralar, hodisa
+hayot sikli, amal tekshiruvi/sir tozalash (unit) va ~70 s lokal integratsiya: vaqtinchalik `insof_test_ctl_agent`
+(boshida qayta yaratiladi, oxirida o'chiriladi), yopiq portdagi soxta korxona → CRIT hodisa → tiklanish → RESOLVED,
+amallar navbati, qulf, SIGTERM, xavfsizlik moduli stub'i. `AGENT_QA_UNIT_ONLY=1` — faqat unit (bazasiz).
+
 ## Sotuv / moliya to'plami (a) — qo'lda
 
 Faqat **test bazasida** ishlaydi (nomi `insof_test…`, `insof_test_golden` emas — skriptlar boshqasida to'xtaydi).

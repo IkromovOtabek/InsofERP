@@ -36,3 +36,19 @@ export function loadEnv(file = process.env.ENV_FILE || ".env") {
   // Haqiqiy muhit o'zgaruvchisi .env dan ustun (prodda sozlama serverdan beriladi)
   for (const [k, v] of fromFile) if (process.env[k] === undefined) process.env[k] = v;
 }
+
+/**
+ * Fayldan faqat so'ralgan kalitlarni o'qiydi (process.env ga yozmaydi). Fayl yo'q/o'qib bo'lmasa — bo'sh.
+ * insof-agent /etc/insof/backup.env dan faqat ALERT_TG_* va OUT_DIR ni oladi — qolgan sirlar jarayonga kirmaydi.
+ */
+export function readEnvKeys(file: string, keys: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  let raw: string;
+  try { raw = readFileSync(file, "utf8"); } catch { return out; }
+  for (const line of raw.split("\n")) {
+    if (line.trimStart().startsWith("#")) continue;
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (m && keys.includes(m[1])) out[m[1]] = parseValue(m[2]);
+  }
+  return out;
+}

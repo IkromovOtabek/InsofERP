@@ -8,6 +8,11 @@
 # Sozlama: /etc/insof/backup.env dagi ALERT_TG_BOT_TOKEN / ALERT_TG_CHAT_ID (zaxira nusxa bilan umumiy).
 # Cron (deploy ostida):
 #   * * * * * /var/www/insof-erp/scripts/health-watch.sh >> /var/log/insof-health.log 2>&1
+#
+# ESLATMA: insof-agent (scripts/insof-agent.ts, docs/deploy/insof-agent.service) buning o'rnini bosadi — har 15 s
+# /api/health + systemd + Postgres + SSL + zaxira, hodisalar panelda, Telegram ogohlantirishi o'zida. Agent yoqilgach bu
+# cron qatorini o'chiring (aks holda bir yiqilish uchun ikki xabar keladi). Skript ishlashda qoladi — agentsiz
+# muhit yoki agentning o'zi to'xtaganini sezish uchun zaxira kuzatuv sifatida (masalan har 5 daqiqada) qoldirish mumkin.
 set -uo pipefail
 
 BACKUP_ENV="${BACKUP_ENV:-/etc/insof/backup.env}"

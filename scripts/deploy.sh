@@ -170,7 +170,7 @@ restart_all() { # restart_all <unit|port>... — bittadan, har biri health bilan
 unit_check() { # repodagi unit fayllar o'rnatilganidan farq qilsa — ogohlantirish
   local name
   [ "$DRY_RUN" = "1" ] && return 0
-  for name in "insof-erp@.service" "insof-control.service"; do
+  for name in "insof-erp@.service" "insof-control.service" "insof-agent.service"; do
     [ -f "/etc/systemd/system/$name" ] || continue
     cmp -s "$APP_DIR/docs/deploy/$name" "/etc/systemd/system/$name" \
       || warn "/etc/systemd/system/$name repodagidan farq qiladi: sudo install -m 644 docs/deploy/$name /etc/systemd/system/ && sudo systemctl daemon-reload"
@@ -294,6 +294,28 @@ else
   fi
 fi
 
+# ───────────── Monitoring agenti (insof-agent) ─────────────
+# Control migratsiyasidan (monitoring jadvallari) va symlink almashgandan KEYIN — agent yangi relizdan ishga tushsin.
+# Agent yiqilsa deploy qaytarilmaydi (foydalanuvchilarga ta'sir qilmaydi) — faqat ogohlantirish.
+# sudoers: /usr/bin/systemctl restart insof-agent (docs/deploy/sudoers-insof-agent).
+AGENT_STATUS="o'rnatilmagan"
+if [ "$HAS_CONTROL" = 1 ]; then
+  if [ "$DRY_RUN" = "1" ]; then
+    AGENT_STATUS="[DRY_RUN] qayta ishga tushirilmadi"
+    echo "  [DRY_RUN] restart insof-agent (o'tkazib yuborildi)"
+  elif [ "${SKIP_RESTART:-0}" = "1" ]; then
+    AGENT_STATUS="SKIP_RESTART=1"
+  elif systemctl is-enabled --quiet insof-agent 2>/dev/null; then
+    step "insof-agent qayta ishga tushirish"
+    if sudo systemctl restart insof-agent; then
+      sleep 3
+      if systemctl is-active --quiet insof-agent; then AGENT_STATUS="active"; ok "insof-agent"; else AGENT_STATUS="ishlamayapti"; warn "insof-agent ishga tushmadi: journalctl -u insof-agent -n 50"; fi
+    else
+      AGENT_STATUS="restart xato"; warn "insof-agent qayta ishga tushmadi (sudoers? docs/deploy/sudoers-insof-agent)"
+    fi
+  fi
+fi
+
 # ───────────── 5. Eski relizlarni tozalash ─────────────
 step "Eski relizlar (saqlanadi: $KEEP_RELEASES)"
 find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -name '*.tmp' -mmin +120 -exec rm -rf {} +
@@ -333,6 +355,12 @@ fi
 step "Tekshiruv"
 if [ "$HAS_CONTROL" = 1 ]; then
   (cd "$CURRENT" && CONTROL_ENV_FILE="$APP_DIR/control.env" npm run -s tenant -- stats) || warn "tenant stats xato"
+  # Agent heartbeat (AgentHeartbeat "main") — necha soniya oldin yozilgan
+  HB=""
+  if command -v psql >/dev/null && [ -n "${CTRL_URL:-}" ]; then
+    HB="$(psql "${CTRL_URL%%\?*}" -qAtX -c "SELECT version || ', ' || EXTRACT(EPOCH FROM now() - \"lastSeenAt\")::int || ' s oldin' FROM \"AgentHeartbeat\" WHERE id = 'main'" 2>/dev/null || true)"
+  fi
+  echo "insof-agent: $AGENT_STATUS${HB:+ (heartbeat: $HB)}"
 fi
 APK="$(env_get "$APP_DIR/tenants/insof.env" APK_PATH 2>/dev/null || true)"; APK="${APK:-$APP_DIR/uploads/app/insof-eco.apk}"
 if [ -f "$APK" ]; then echo "Android APK: $(du -h "$APK" | cut -f1)"; else echo "Android APK yo'q: $APK"; fi
