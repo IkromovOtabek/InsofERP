@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { dayUtc, isAttendanceStatus, shiftProblem, toMinutes, validDay, workedMinutes } from "@/lib/davomat";
+import { lateBy, shiftOf } from "@/lib/attendance-time";
+import { notifyLateAfter, type LateEvent } from "@/lib/attendance-late";
 import type { ActionState } from "@/lib/action";
 import type { AttendanceStatus } from "@/generated/prisma";
 
@@ -35,6 +37,8 @@ function readRows(fd: FormData): { rows: Row[] } | { error: string } {
     // Soat faqat ishga chiqqan kunda saqlanadi — qolgan belgilarda kerak emas
     const checkIn = status === "PRESENT" ? clean(fd.get(`in:${employeeId}`)) : null;
     const checkOut = status === "PRESENT" ? clean(fd.get(`out:${employeeId}`)) : null;
+    // "Keldi" — kelgan vaqti har doim yoziladi (ish haqi soatdan hisoblanadi)
+    if (status === "PRESENT" && !checkIn) return { error: "«Keldi» uchun kelgan vaqtini kiriting" };
     if (checkIn && toMinutes(checkIn) === null) return { error: "Kelgan vaqt noto'g'ri — SS:DD ko'rinishida yozing" };
     if (checkOut && toMinutes(checkOut) === null) return { error: "Ketgan vaqt noto'g'ri — SS:DD ko'rinishida yozing" };
     const tooLong = shiftProblem(checkIn, checkOut);
@@ -68,7 +72,9 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
 
   const date = dayUtc(day);
   // Xodim mavjud bo'lsin (eskirgan id FK xatosi — 500 berardi) va o'sha kuni hali ishdan bo'shamagan bo'lsin
-  const emps = await db.employee.findMany({ where: { id: { in: r.rows.map((x) => x.employeeId) } }, select: { id: true, fullName: true, firedAt: true } });
+  const emps = await db.employee.findMany({ where: { id: { in: r.rows.map((x) => x.employeeId) } }, select: { id: true, fullName: true, firedAt: true, workSchedule: true } });
+  const schedOf = new Map(emps.map((e) => [e.id, e.workSchedule]));
+  const lateEvents: LateEvent[] = [];
   if (emps.length !== r.rows.length) return { error: "Ro'yxatdagi xodim topilmadi — sahifani yangilang" };
   const fired = emps.filter((e) => e.firedAt && e.firedAt.toLocaleDateString("sv-SE") < day && r.rows.some((x) => x.employeeId === e.id && x.status));
   if (fired.length) return { error: `Ishdan bo'shagan xodimga davomat qo'yilmaydi: ${fired.map((e) => e.fullName).join(", ")}` };
@@ -90,7 +96,10 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
         cleared++;
         continue;
       }
-      const data = { status: x.status, checkIn: x.checkIn, checkOut: x.checkOut, note: x.note, markedById: s.userId };
+      // Kechikish xodim smenasi bo'yicha saqlanadi (sex va o'zi belgilagandagi qoida)
+      const lateMinutes = x.status === "PRESENT" ? lateBy(x.checkIn, shiftOf(schedOf.get(x.employeeId)).start) : null;
+      const data = { status: x.status, checkIn: x.checkIn, checkOut: x.checkOut, note: x.note, markedById: s.userId, lateMinutes };
+      if (lateMinutes && x.checkIn !== a?.checkIn) lateEvents.push({ employeeId: x.employeeId, checkIn: x.checkIn, lateMinutes, iso: day });
       await tx.attendance.upsert({
         where: { employeeId_date: { employeeId: x.employeeId, date } },
         create: { employeeId: x.employeeId, date, ...data },
@@ -106,6 +115,7 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
     return { marked, cleared, skipped, hours };
   });
 
+  notifyLateAfter(s.userId, lateEvents);
   revalidatePath("/otdel-kadr");
   const parts = [
     res.marked ? `${res.marked} ta xodim belgilandi` : null,

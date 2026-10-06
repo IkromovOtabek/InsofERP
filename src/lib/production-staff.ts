@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { DEFAULT_SHIFT, dayUtc, markOf, shiftProblem, toMinutes, today } from "@/lib/davomat";
+import { lateBy, lateText, shiftOf } from "@/lib/attendance-time";
+import { notifyLateAfter } from "@/lib/attendance-late";
 import type { AttendanceStatus } from "@/generated/prisma";
 
 /**
@@ -115,15 +117,19 @@ export async function markProductionAttendance(userId: string, employeeId: strin
   const tooLong = shiftProblem(checkIn, checkOut);
   if (tooLong) return { error: `${e.fullName}: ${tooLong}` };
   const date = dayUtc(iso);
+  // Kechikish — xodim kartasidagi smena bo'yicha (o'zi belgilagandagi qoida bilan bir xil), tabel va ish haqi uchun saqlanadi
+  const sched = await db.employee.findUnique({ where: { id: employeeId }, select: { workSchedule: true } });
+  const lateMinutes = present ? lateBy(checkIn, shiftOf(sched?.workSchedule).start) : null;
   const data = {
-    status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId,
+    status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId, lateMinutes,
     ...(m.facePhoto ? { facePhoto: m.facePhoto, faceVerifiedAt: new Date(), faceConfidence: m.faceConfidence ?? null } : {}),
   };
   await db.$transaction(async (tx) => {
     const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId, date } }, create: { employeeId, date, ...data }, update: data });
     await audit(tx, userId, "UPDATE", "Attendance", a.id, e.status ? { status: e.status, checkIn: e.checkIn, checkOut: e.checkOut } : undefined, { xodim: e.fullName, ...data, ...(m.facePhoto ? { yuz: "tasdiqlandi" } : {}) });
   });
-  return { ok: true, text: `${e.fullName} — ${markOf(m.status).label.toLowerCase()}${checkIn ? ` ${checkIn}` : ""}${checkOut ? `–${checkOut}` : ""}` };
+  notifyLateAfter(userId, { employeeId, checkIn, lateMinutes, iso });
+  return { ok: true, text: `${e.fullName} — ${markOf(m.status).label.toLowerCase()}${checkIn ? ` ${checkIn}` : ""}${checkOut ? `–${checkOut}` : ""}${lateMinutes ? ` (${lateText(lateMinutes)} kechikdi)` : ""}` };
 }
 
 /**
@@ -170,16 +176,20 @@ export async function markAllPresent(userId: string, iso = today(), brigadeIds?:
   const now = nowHHMM();
   const checkIn = iso === today() ? ((toMinutes(now) ?? 0) < (toMinutes(DEFAULT_SHIFT.checkIn) ?? 0) ? DEFAULT_SHIFT.checkIn : now) : DEFAULT_SHIFT.checkIn;
   const date = dayUtc(iso);
+  const scheds = new Map((await db.employee.findMany({ where: { id: { in: left.map((m) => m.id) } }, select: { id: true, workSchedule: true } })).map((x) => [x.id, x.workSchedule]));
+  const lateOf = (id: string) => lateBy(checkIn, shiftOf(scheds.get(id)).start);
   await db.$transaction(async (tx) => {
     for (const m of left) {
+      const lateMinutes = lateOf(m.id);
       await tx.attendance.upsert({
         where: { employeeId_date: { employeeId: m.id, date } },
-        create: { employeeId: m.id, date, status: "PRESENT", checkIn, markedById: userId },
-        update: { status: "PRESENT", checkIn, markedById: userId },
+        create: { employeeId: m.id, date, status: "PRESENT", checkIn, markedById: userId, lateMinutes },
+        update: { status: "PRESENT", checkIn, markedById: userId, lateMinutes },
       });
     }
     await audit(tx, userId, "UPDATE", "Attendance", iso, undefined, { sex: "hammasi keldi", soni: left.length, checkIn });
   });
+  notifyLateAfter(userId, left.map((m) => ({ employeeId: m.id, checkIn, lateMinutes: lateOf(m.id), iso })));
   return { ok: true, count: left.length } as const;
 }
 

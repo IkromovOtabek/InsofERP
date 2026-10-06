@@ -11,6 +11,7 @@ import {
 import { NewPositionForm, PositionRow, SyncPositionsButton } from "./position-forms";
 import { OrgChart, type OrgEmployee } from "./org-chart";
 import { DavomatKun, type KunRow } from "./davomat-kun";
+import { shiftOf, sourceLabel } from "@/lib/attendance-time";
 import { DavomatOy, type OyRow } from "./davomat-oy";
 import { DismissButton, RestoreButton } from "../employees/dismiss-form";
 
@@ -102,14 +103,17 @@ export default async function OtdelKadrPage({ searchParams }: {
   } else if (davomat) {
     const day = dayUtc(kunIso);
     const [list, marks] = await Promise.all([
-      db.employee.findMany({ where: inWindow(day, day), orderBy: tabelOrder, select: { id: true, fullName: true, position: true, photo: true } }),
+      db.employee.findMany({ where: inWindow(day, day), orderBy: tabelOrder, select: { id: true, fullName: true, position: true, photo: true, workSchedule: true } }),
       db.attendance.findMany({ where: { date: day } }),
     ]);
+    const markers = new Map((await db.user.findMany({ where: { id: { in: [...new Set(marks.map((m) => m.markedById).filter((x): x is string => !!x))] } }, select: { id: true, role: true } })).map((u) => [u.id, u.role]));
     const byEmp = new Map(marks.map((m) => [m.employeeId, m]));
     kunRows = list.map((e) => {
       const m = byEmp.get(e.id);
       return {
         id: e.id, fullName: e.fullName, position: e.position, photo: !!e.photo,
+        shiftStart: shiftOf(e.workSchedule).start,
+        source: m ? sourceLabel(m.source, { face: !!m.facePhoto, markerRole: m.markedById ? markers.get(m.markedById) ?? null : null }) : null,
         status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
         ver: m?.updatedAt.toISOString() ?? "",
       } satisfies KunRow;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { notifyLateAfter } from "@/lib/attendance-late";
 import { audit } from "@/lib/audit";
 import { hit } from "@/lib/rate-limit";
 import { canDo } from "@/lib/permissions";
@@ -216,6 +217,7 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
       await audit(tx, s.userId, "UPDATE", "Attendance", a.id, t ? { status: t.status, checkIn: t.checkIn } : undefined, { ...meta, keldi: now });
       return a;
     });
+    notifyLateAfter(s.userId, { employeeId: e.id, checkIn: now, lateMinutes: late, iso });
     // Kun ichida qayta "Keldi" (avval Kelmadi deb belgilangan) — eski kadr diskda qolmasin
     if (t?.facePhoto && stored && t.facePhoto !== stored) await removeEmployeeFile(t.facePhoto);
     return { ok: true, kind: "in", employee: who, time: now, text: `Keldi ${now}`, hint: late ? `${late} daq kechikdi` : "O'z vaqtida", similarity: sim, attendanceId: a.id };

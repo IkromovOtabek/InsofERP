@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarCheck, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarCheck, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { ATTENDANCE_MARKS, hoursShort, hoursText, markOf, monthDays, monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { cn } from "@/lib/utils";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -43,7 +43,11 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
           Jami <span className="font-semibold text-slate-900 tabular">{grand.days}</span> ish kuni · <span className="font-semibold text-slate-900 tabular">{hoursText(grand.min)}</span>
           {grand.absent > 0 && <> · <span className="font-semibold text-red-600 tabular">{grand.absent}</span> kelmagan kun</>}
         </span>
-        <Link href={dayHref(now.startsWith(ym) ? now : `${ym}-01`)} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+        {/* Ish haqi asosi: jami soat, kechikish, kunlik keldi/ketdi va haydovchilar reyslari */}
+        <a href={`/otdel-kadr/davomat-excel?oy=${ym}`} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+          <Download size={14} /> Excel
+        </a>
+        <Link href={dayHref(now.startsWith(ym) ? now : `${ym}-01`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
           <CalendarCheck size={14} /> Kunlik belgilash
         </Link>
       </div>

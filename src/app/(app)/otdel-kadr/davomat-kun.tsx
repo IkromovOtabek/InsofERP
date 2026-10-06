@@ -9,12 +9,17 @@ import { Badge, Button, FormError, Input, Select, Table, Td, Th, Tr, Empty } fro
 import {
   ATTENDANCE_MARKS, DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayTitle, hoursShort, hoursText, monthOf, shiftDay, today, workedMinutes,
 } from "@/lib/davomat";
+import { lateBy, lateText } from "@/lib/attendance-time";
 import { cn } from "@/lib/utils";
 import type { AttendanceStatus } from "@/generated/prisma";
 
 export type KunRow = {
   id: string; fullName: string; position: string; photo: boolean;
   status: AttendanceStatus | null; checkIn: string | null; checkOut: string | null; note: string | null;
+  /** Xodim smenasining boshlanishi ("Ish grafigi", bo'lmasa 08:00) — kechikish shundan hisoblanadi. */
+  shiftStart: string;
+  /** Belgini kim/qanday qo'ygan: "O'zi · yuz", "Rahbar", "Qo'lda"... (yozuv bo'lmasa null). */
+  source: string | null;
   /** Sahifa ochilgandagi yozuv versiyasi (`updatedAt` ISO, yozuv yo'q bo'lsa bo'sh) — boshqa joyda o'zgargan bo'lsa server ustidan yozmaydi. */
   ver: string;
 };
@@ -96,6 +101,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
               <Th className="w-[110px]">Keldi</Th>
               <Th className="w-[110px]">Ketdi</Th>
               <Th right className="w-[80px]">Soat</Th>
+              <Th right className="w-[90px]">Kechikdi</Th>
               <Th className="w-[180px]">Izoh</Th>
             </tr>
           </thead>
@@ -104,6 +110,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
             {rows.map((r) => {
               const v = vals[r.id];
               const min = v.status === "PRESENT" ? workedMinutes(v.checkIn, v.checkOut) : null;
+              const late = v.status === "PRESENT" ? lateBy(v.checkIn, r.shiftStart) : null;
               const changed = isChanged(r.id);
               return (
                 <Tr key={r.id} className={cn(!v.status && "bg-slate-50/40", changed && "bg-amber-50/50")}>
@@ -120,7 +127,10 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                       <Link href={`/employees/${r.id}`} className="hover:underline">{r.fullName}</Link>
                     </span>
                   </Td>
-                  <Td className="text-xs text-slate-500">{r.position}</Td>
+                  <Td className="text-xs text-slate-500">
+                    {r.position}
+                    {r.source && <span className="block text-[11px] text-slate-400">{r.source}</span>}
+                  </Td>
                   <Td>
                     <Select
                       name={`st:${r.id}`} aria-label={`${r.fullName}: davomat belgisi`} value={v.status} className="h-9 text-sm"
@@ -146,6 +156,11 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                     {min !== null
                       ? <span title={min > MAX_SHIFT_MINUTES ? `${MAX_SHIFT_MINUTES / 60} soatdan uzun — saqlanmaydi, vaqtni tekshiring` : undefined}
                           className={cn("font-semibold", min > MAX_SHIFT_MINUTES ? "text-red-600" : min > 12 * 60 ? "text-amber-600" : "text-slate-900")}>{hoursShort(min)}</span>
+                      : <span className="text-slate-300">—</span>}
+                  </Td>
+                  <Td right className="text-sm">
+                    {late
+                      ? <span title={`Smena ${r.shiftStart} da boshlanadi`} className="font-semibold text-red-600">{lateText(late)}</span>
                       : <span className="text-slate-300">—</span>}
                   </Td>
                   <Td>
