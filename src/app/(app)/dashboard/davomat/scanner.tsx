@@ -27,12 +27,12 @@ const TONE_PILL: Record<Tone, string> = {
 const MIN_FACE = 0.16;
 /** Natija ekranda turadigan vaqt. */
 const RESULT_MS = 3500;
-/** Muvaffaqiyatdan keyin shu odam kadrdan chiqmaguncha (yoki shuncha vaqt) qayta skaner qilinmaydi. */
+/** Tanilgan xodim kadrdan chiqmaguncha (yoki shuncha vaqt) qayta skaner qilinmaydi. */
 const LEAVE_MS = 6000;
 /** Ko'z yumib ochilgandan keyin vektor shu vaqt ichida olinsin — aks holda jonlilik qaytadan. */
 const BLINK_VALID_MS = 4000;
 
-type LogItem = { key: string; kind: "in" | "out" | "already" | "fail"; time: string; name: string; position: string; text: string; img: string | null };
+type LogItem = { key: string; kind: "in" | "out" | "fail"; time: string; name: string; position: string; text: string; img: string | null };
 
 const hhmm = () => new Date().toTimeString().slice(0, 5);
 const PREFS = "faceid-kiosk";
@@ -158,12 +158,14 @@ export function FaceScanner({ initialLog, enrolled, total, canEnroll }: { initia
       if (stopped) return;
       if (prefsRef.current.sound) beep(r.ok);
       setResult({ r, img: photo });
+      // Jurnalga faqat o'zgarish (keldi/ketdi) va tanilgan xodimning rad etilishi; "allaqachon" — faqat ekranda
       const item: LogItem | null = r.ok
-        ? { key: `${Date.now()}`, kind: r.kind, time: r.time ?? hhmm(), name: r.employee.fullName, position: r.employee.position, text: r.text, img: photo }
+        ? r.kind === "already" ? null : { key: `${Date.now()}`, kind: r.kind, time: r.time ?? hhmm(), name: r.employee.fullName, position: r.employee.position, text: r.text, img: photo }
         : r.employee ? { key: `${Date.now()}`, kind: "fail", time: hhmm(), name: r.employee.fullName, position: r.employee.position, text: r.error, img: photo } : null;
-      if (item) setLog((l) => [item, ...l].slice(0, 200));
+      if (item) setLog((l) => (l[0]?.kind === item.kind && l[0].name === item.name && l[0].text === item.text ? l : [item, ...l].slice(0, 200)));
       st.until = performance.now() + RESULT_MS;
-      if (r.ok) { st.leave = true; st.leaveAt = st.until; }
+      // Xodim tanilgan bo'lsa (natija qanday bo'lmasin) — u kadrdan chiqmaguncha qayta so'ralmaydi: javob o'zgarmaydi
+      if (r.ok || r.employee) { st.leave = true; st.leaveAt = st.until; }
       say(r.ok ? "ok" : "fail", r.ok ? `${r.employee.fullName} — ${r.text}` : r.error);
       draw([], r.ok ? "ok" : "fail");
       next(200);
@@ -287,7 +289,7 @@ export function FaceScanner({ initialLog, enrolled, total, canEnroll }: { initia
                   <span className={cn("block truncate text-xs", l.kind === "fail" ? "text-red-600" : "text-slate-500")}>{l.text}</span>
                 </span>
                 <span className="shrink-0">
-                  {l.kind === "in" ? <Badge color="green">Keldi</Badge> : l.kind === "out" ? <Badge color="blue">Ketdi</Badge> : l.kind === "already" ? <Badge>Avval</Badge> : <Badge color="red">Rad</Badge>}
+                  {l.kind === "in" ? <Badge color="green">Keldi</Badge> : l.kind === "out" ? <Badge color="blue">Ketdi</Badge> : <Badge color="red">Rad</Badge>}
                 </span>
               </li>
             ))}

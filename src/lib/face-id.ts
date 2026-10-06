@@ -5,7 +5,7 @@ import { hit } from "@/lib/rate-limit";
 import { canDo } from "@/lib/permissions";
 import { faceImage } from "@/lib/ai/face";
 import { removeEmployeeFile, saveEmployeeFile } from "@/lib/uploads";
-import { MAX_SHIFT_MINUTES, dayUtc, hoursText, markOf, today, workedMinutes } from "@/lib/davomat";
+import { MAX_SHIFT_MINUTES, dayUtc, hoursText, markOf, toMinutes, today, workedMinutes } from "@/lib/davomat";
 import { nowHHMM, productionStaff } from "@/lib/production-staff";
 import { earlyBy, lateBy, nightOpen, openRecord, shiftOf } from "@/lib/self-attendance";
 import {
@@ -144,6 +144,16 @@ const ScanBody = z.object({
 
 const fail = (code: FaceScanFail["code"], error: string, employee?: FaceScanFail["employee"]): FaceScanFail => ({ ok: false, code, error, ...(employee ? { employee } : {}) });
 
+/**
+ * Kelgandan beri o'tgan daqiqa. `workedMinutes` teng vaqtni (08:12 → 08:12) tungi smena deb 24 soat hisoblaydi —
+ * skaner oldida bir daqiqada qayta turish odatiy, shuning uchun bugungi yozuvda oddiy ayirma; kechagisida — tungi smena.
+ */
+function sinceCheckIn(checkIn: string | null, now: string, sameDay: boolean): number | null {
+  if (!sameDay) return workedMinutes(checkIn, now);
+  const a = toMinutes(checkIn), b = toMinutes(now);
+  return a === null || b === null ? null : Math.max(0, b - a);
+}
+
 export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult> {
   const scope = faceScope(s);
   if (!scope) return fail("FORBIDDEN", "Davomat skaneri sizning lavozimingiz uchun ochilmagan");
@@ -181,7 +191,7 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
   let kind: "in" | "out";
   if (mode !== "auto") kind = mode;
   else if (open) {
-    const since = workedMinutes(open.checkIn, now);
+    const since = sinceCheckIn(open.checkIn, now, open === t);
     if (since !== null && since < AUTO_OUT_AFTER_MIN) return already(`Bugun ${open.checkIn} da kelgan`, `«Ketdi» kelgandan ${AUTO_OUT_AFTER_MIN} daqiqa o'tgach belgilanadi`, open.checkIn);
     kind = "out";
   } else if (t?.status === "PRESENT" && t.checkOut) return already(`Bugun ${t.checkIn ?? "—"}–${t.checkOut}`, "Kelish va ketish belgilangan", t.checkOut);
@@ -217,7 +227,9 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
     if (t && t.status !== "PRESENT") return fail("MARKED_OTHER", `${e.fullName}: bugun «${markOf(t.status).label}» deb belgilangan`, who);
     return fail("NO_CHECKIN", `${e.fullName}: bugun kelgani belgilanmagan — avval «Keldi» (yoki «Avto») rejimida skaner qiling`, who);
   }
-  const w = workedMinutes(open.checkIn, now);
+  const w = sinceCheckIn(open.checkIn, now, open === t);
+  // Bir daqiqada kelib-ketish: tabelda "08:12–08:12" 24 soat bo'lib hisoblanardi — yozilmaydi
+  if (w === 0) return already(`Hozirgina (${open.checkIn}) kelgan`, "Ketishni bir daqiqadan keyin belgilang", open.checkIn);
   if (w !== null && w > MAX_SHIFT_MINUTES) {
     return fail("SHIFT_TOO_LONG", `${e.fullName}: smena ${MAX_SHIFT_MINUTES / 60} soatdan uzun bo'lib qoldi (${open.checkIn} da kelgan) — ketish vaqtini otdel kadr qo'yadi`, who);
   }
@@ -229,7 +241,7 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
   const early = earlyBy(now, shift.end);
   return {
     ok: true, kind: "out", employee: who, time: now, text: `Ketdi ${now}`,
-    hint: [`Keldi ${open.checkIn}`, w !== null ? hoursText(w) : null, early ? `${early} daq erta` : null].filter(Boolean).join(" · "),
+    hint: [`Keldi ${open.checkIn}`, w === null ? null : w < 60 ? `${w} daq` : hoursText(w), early ? `${early} daq erta` : null].filter(Boolean).join(" · "),
     similarity: sim, attendanceId: open.id,
   };
 }

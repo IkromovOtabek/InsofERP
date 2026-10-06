@@ -40,7 +40,8 @@ export function loadFaceApi(): Promise<FaceApi> {
       ]);
       return api;
     })();
-    loading.catch(() => { loading = null; }); // tarmoq xatosidan keyin qayta urinish mumkin bo'lsin
+    // Tarmoq xatosidan keyin qayta urinish mumkin bo'lsin; sababi konsolda (WebGL yo'q, model 404...)
+    loading.catch((e) => { console.error("[face-id] model yuklanmadi:", e); loading = null; });
   }
   return loading;
 }
