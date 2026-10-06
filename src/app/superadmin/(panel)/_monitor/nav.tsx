@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, LayoutDashboard, ListChecks, Plus, ScrollText, ShieldAlert, Siren, Users } from "lucide-react";
+import { Activity, Database, Globe, LayoutDashboard, ListChecks, Plus, ScrollText, ShieldAlert, Siren, Users } from "lucide-react";
 import { useLiveMonitor } from "./live";
 
 const NAV = [
   { href: "/superadmin", label: "Umumiy holat", icon: LayoutDashboard, exact: true },
   { href: "/superadmin/monitoring", label: "Server", icon: Activity },
   { href: "/superadmin/hodisalar", label: "Hodisalar", icon: Siren, alerts: true },
+  { href: "/superadmin/baza", label: "Baza", icon: Database },
+  { href: "/superadmin/trafik", label: "Trafik", icon: Globe },
   { href: "/superadmin/xavfsizlik", label: "Xavfsizlik", icon: ShieldAlert },
   { href: "/superadmin/amallar", label: "Amallar", icon: ListChecks },
   { href: "/superadmin/korxonalar/yangi", label: "Yangi korxona", icon: Plus },

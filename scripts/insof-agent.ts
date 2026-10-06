@@ -12,6 +12,7 @@
  *   5 min  SSL muddati, zaxira nusxa yangiligi, journald xatolari, reboot-required, xavfsizlik moduli (runSecurityChecks)
  *   6 soat AI xavfsizlik tahlili (runAiAnalysis) — panel RUN_AI_ANALYSIS bilan ham
  *   3 s    AgentAction navbati;  1 soat  eski yozuvlarni tozalash
+ *   5 min  Postgres statistikasi (db:stats);  60 s  nginx trafik (traffic:*) — scripts/agent/dbtraffic.ts
  * Hodisa: WARN/CRIT → Incident ochiladi/yangilanadi, ketma-ket 2 marta OK → avtomatik RESOLVED.
  * Telegram: yangi HIGH/CRITICAL hodisa va uning yopilishi (ALERT_TG_BOT_TOKEN / ALERT_TG_CHAT_ID).
  *
@@ -40,12 +41,14 @@ import {
   levelAbove, levelBelow, loadStatus, memStatus, netBps, parseLoadavg, parseMeminfo, parseNetDev, parseProcStat,
   parseProcStatus, parseSystemctlShow, parseUptime, restartsIncreased, scrubSecrets, severityFor, sevRank,
   statusForSeverity, topByRss, findingCheckStatus, findingIsProblem, trimOutput, unitStatus, validateAction, worst,
-  type CpuTimes, type NetTotals, type UnitInfo,
+  type ActionParams, type CpuTimes, type NetTotals, type UnitInfo,
 } from "@/lib/control/monitor/parse";
 import type {
   CheckResult, CheckStatusT, Finding, FindingSeverity, SecurityCtx, SecurityModule, SuggestedAction, TenantRef,
 } from "@/lib/control/monitor/types";
 import { isTestMode } from "@/lib/test-mode";
+import { isDbActionType } from "@/lib/control/dbtraffic/contract";
+import { closeDbClients, dbStatsChecks, executeDbAction, trafficChecks, type DbtCtx } from "./agent/dbtraffic";
 
 /* ───────────────────────── Sozlama ───────────────────────── */
 
@@ -64,6 +67,7 @@ const FAST_MS = ms("AGENT_FAST_MS", 15_000);
 const SLOW_MS = ms("AGENT_SLOW_MS", 5 * 60_000);
 const AI_MS = ms("AGENT_AI_MS", 6 * 3600_000);
 const ACTION_POLL_MS = ms("AGENT_ACTION_POLL_MS", 3_000);
+const TRAFFIC_MS = ms("AGENT_TRAFFIC_MS", 60_000);
 const RETENTION_MS = 3600_000;
 const TEST = isTestMode();
 const TG_TOKEN = TEST ? "" : process.env.ALERT_TG_BOT_TOKEN || backupCfg.ALERT_TG_BOT_TOKEN || "";
@@ -873,6 +877,20 @@ const slow = new Loop("slow", SLOW_MS, slowBody, 4 * 60_000);
 const ai = new Loop("ai", AI_MS, () => aiAnalysis("scheduled"), 11 * 60_000);
 const retention = new Loop("retention", RETENTION_MS, retentionBody, 5 * 60_000);
 
+/* Baza statistikasi va nginx trafik (scripts/agent/dbtraffic.ts) — o'z sikllari, xavfsizlik skaneriga bog'liq emas */
+async function dbtCtx(): Promise<DbtCtx> {
+  const ecoPort = ECO_URL ? Number(/:(\d{2,5})\//.exec(ECO_URL)?.[1]) || null : null;
+  return { control, tenants: await tenants(), appDir: APP_DIR, controlPort: CONTROL_PORT, ecoPort, linux: LINUX, log };
+}
+async function dbtBody(job: (c: DbtCtx) => Promise<CheckResult[]>, name: string, timeoutMs: number): Promise<string> {
+  const { results, failed } = await collect({ [name]: async () => job(await dbtCtx()) }, timeoutMs);
+  await applyChecks(results, "monitor");
+  await notifyIncidents();
+  return summarize(results, failed);
+}
+const dbStats = new Loop("dbstats", SLOW_MS, () => dbtBody(dbStatsChecks, "dbstats", 90_000), 2 * 60_000);
+const traffic = new Loop("traffic", TRAFFIC_MS, () => dbtBody(trafficChecks, "traffic", 60_000), 90_000);
+
 /* ───────────────────────── Heartbeat va qulf ───────────────────────── */
 
 async function ensureLock(): Promise<boolean> {
@@ -972,8 +990,13 @@ async function fixSecretPerms(): Promise<string> {
   return lines.join("\n");
 }
 
-async function execute(type: ActionType, params: { unit?: string; ip?: string }, requestedById: string | null): Promise<ActionOutcome> {
+async function execute(type: ActionType, params: ActionParams, requestedById: string | null): Promise<ActionOutcome> {
   if (TEST && PRIVILEGED.includes(type)) return { status: "FAILED", output: `[test-mode] ${type} test rejimida bajarilmaydi (sudo/tizim buyruqlari)` };
+  if (isDbActionType(type)) {
+    const r = await executeDbAction(type, { db: params.db!, pid: params.pid, table: params.table }, await dbtCtx());
+    void dbStats.run(); // sahifa darhol yangilansin
+    return r;
+  }
   switch (type) {
     case "RESTART_UNIT": {
       const unit = params.unit!;
@@ -1015,9 +1038,9 @@ async function execute(type: ActionType, params: { unit?: string; ip?: string },
       return { status: r.ok ? "DONE" : "FAILED", output: r.text };
     }
     case "RUN_HEALTH_CHECK": {
-      const [a, b] = await Promise.all([fast.run(), slow.run()]);
+      const [a, b, c, d] = await Promise.all([fast.run(), slow.run(), dbStats.run(), traffic.run()]);
       const failed = a.startsWith("xato") || b.startsWith("xato");
-      return { status: failed ? "FAILED" : "DONE", output: `15 s tekshiruvlar: ${a}\n5 daq tekshiruvlar: ${b}` };
+      return { status: failed ? "FAILED" : "DONE", output: `15 s tekshiruvlar: ${a}\n5 daq tekshiruvlar: ${b}\nPostgres statistikasi: ${c}\nNginx trafik: ${d}` };
     }
     case "RUN_SECURITY_SCAN": {
       const s = await withTimeout(securityScan(), 4 * 60_000, "security");
@@ -1071,10 +1094,10 @@ async function shutdown(reason: string, code = 0) {
   if (shuttingDown) return;
   shuttingDown = true; stopping = true;
   log(`to'xtatilmoqda (${reason})`);
-  for (const l of [fast, slow, ai, retention, hb, actions]) l.stop();
+  for (const l of [fast, slow, ai, retention, hb, actions, dbStats, traffic]) l.stop();
   for (const c of running) c.kill("SIGTERM");
   await Promise.race([
-    Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait()]),
+    Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait(), dbStats.wait(), traffic.wait()]),
     new Promise((r) => setTimeout(r, 10_000)),
   ]);
   try {
@@ -1083,7 +1106,7 @@ async function shutdown(reason: string, code = 0) {
     }
     await control.agentHeartbeat.update({ where: { id: "main" }, data: { lastSeenAt: new Date(), info: { stopped: true, reason, at: new Date().toISOString(), loops: stats } as Prisma.InputJsonValue } }).catch(() => {});
   } catch { /* baza yo'q bo'lsa ham chiqamiz */ }
-  await Promise.allSettled([control?.$disconnect(), lockDb?.$disconnect()]);
+  await Promise.allSettled([control?.$disconnect(), lockDb?.$disconnect(), closeDbClients()]);
   log("to'xtadi");
   process.exit(code);
 }
@@ -1122,6 +1145,8 @@ async function main() {
   actions.start(500);
   slow.start(5_000);
   retention.start(60_000);
+  traffic.start(10_000);
+  dbStats.start(20_000);
   ai.start(10 * 60_000); // ishga tushgandan 10 daqiqa keyin (oxirgi rejali hisobot 6 soatdan eski bo'lsa)
 }
 

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { control } from "../db";
 import { AGENT_STALE_MS } from "./contract";
+import { HEAVY_CHECK_KEYS } from "../dbtraffic/contract";
 import { asSuggested, dataField, type ActionView, type MonitorSnapshot, type SeriesView } from "./shared";
 
 /**
@@ -79,7 +80,8 @@ async function build(): Promise<MonitorSnapshot> {
     series,
     checks: checks.map((c) => ({
       key: c.key, kind: c.kind, target: c.target, tenantId: c.tenantId, status: c.status, message: c.message,
-      latencyMs: c.latencyMs, data: c.data ?? null, checkedAt: c.checkedAt.toISOString(), changedAt: c.changedAt.toISOString(),
+      // Baza/trafik statistikasining katta data'si oqimga qo'shilmaydi — /superadmin/baza va /trafik o'zi o'qiydi
+      latencyMs: c.latencyMs, data: HEAVY_CHECK_KEYS.includes(c.key) ? null : c.data ?? null, checkedAt: c.checkedAt.toISOString(), changedAt: c.changedAt.toISOString(),
     })),
     incidents: incidents.map((i) => ({
       id: i.id, key: i.key, source: i.source, category: i.category, severity: i.severity, status: i.status, title: i.title,

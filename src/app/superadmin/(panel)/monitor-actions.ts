@@ -7,6 +7,7 @@ import { control } from "@/lib/control/db";
 import { logEvent } from "@/lib/control/events";
 import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "@/lib/control/monitor/contract";
 import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
+import { PG_DB_RE, PG_PID_RE, PG_TABLE_RE } from "@/lib/control/dbtraffic/contract";
 import { invalidateMonitorSnapshot } from "@/lib/control/monitor/snapshot";
 import { ipFromHeaders } from "@/lib/login-guard";
 import { Prisma } from "@/generated/control";
@@ -31,6 +32,10 @@ const PARAMS: Record<ActionType, z.ZodType<Record<string, string>>> = {
   RUN_HEALTH_CHECK: EMPTY,
   RUN_SECURITY_SCAN: EMPTY,
   RUN_AI_ANALYSIS: EMPTY,
+  // Baza amallari: qiymatlar agentda bazadan qayta tekshiriladi (o'z roli, holat, pg_class)
+  PG_CANCEL: z.object({ db: z.string().regex(PG_DB_RE, "Baza nomi noto'g'ri"), pid: z.string().regex(PG_PID_RE, "pid noto'g'ri") }).strict(),
+  PG_TERMINATE: z.object({ db: z.string().regex(PG_DB_RE, "Baza nomi noto'g'ri"), pid: z.string().regex(PG_PID_RE, "pid noto'g'ri") }).strict(),
+  VACUUM_ANALYZE: z.object({ db: z.string().regex(PG_DB_RE, "Baza nomi noto'g'ri"), table: z.string().regex(PG_TABLE_RE, "Jadval nomi noto'g'ri").optional() }).strict() as z.ZodType<Record<string, string>>,
 };
 const ID = z.string().regex(/^[a-z0-9]{10,40}$/i);
 

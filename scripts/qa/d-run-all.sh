@@ -24,6 +24,7 @@ run "HTTP: panel, SSO, izolyatsiya, to'xtatish" env D_ROOT="$D_ROOT" npx tsx "$Q
 run "zaxira + tiklash" /bin/bash "$Q/d-backup-test.sh"
 run "health-watch" /bin/bash "$Q/d-health-test.sh"
 run "insof-agent (parserlar + lokal integratsiya, baza insof_test_ctl_agent)" npx tsx "$Q/d-agent.mts"
+run "baza va trafik (SQL niqob, nginx loglari, PG amallari; bazalar insof_test_ctl_dbt, insof_test_dbt_t1)" npx tsx "$Q/d-dbtraffic.mts"
 run "deploy: buzuq reliz → avtomatik qaytarish ($FAIL_REF)" /bin/bash "$Q/d-deploy-test.sh" fail "$FAIL_REF"
 run "deploy: ROLLBACK=1" /bin/bash "$Q/d-deploy-test.sh" rollback
 run "deploy: HEAD qayta (build qayta ishlatiladi)" /bin/bash "$Q/d-deploy-test.sh" again
