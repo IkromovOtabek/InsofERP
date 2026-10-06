@@ -655,6 +655,54 @@ Panel va agentdagi qo'shimcha himoyalar:
 - **Bir vaqtda bitta deploy**: holat fayli atomar (`O_EXCL`) yaratiladi; panelda «band» tekshiruvi AgentAction yaratish bilan
   bitta tranzaksiyada (advisory lock).
 
+## IT panelga ECO orqali kirish
+
+Login sahifasida ikkinchi tab — «ECO ilovasi (telefon)»: superadmin Insof ECO ilovasidagi telefon va parol bilan kiradi.
+Parolni ECO tekshiradi (`POST /v1/erp/auth/verify`, `eco.verifyCredentials`, timeout 8 s), panel faqat «bu ECO hisobi qaysi
+superadminga ulangan» ni hal qiladi (`SuperAdmin.ecoUserId`). Hisob avtomatik YARATILMAYDI, rol berilmaydi; login/parol bilan
+kirish o'zgarmaydi va ECO ishlamasa ham ishlayveradi. Kod: `src/lib/control/eco-login.ts`, sinov: `scripts/qa/d-eco-login.mts`.
+
+### 1. ECO'da integratsiya kaliti (ECO serverida, bir marta)
+ECO `auth/verify` faqat kalit bog'langan ZAVOD (PLANT) a'zolari va shu zavod mijozlari a'zolarini taniydi — superadminlarning
+ECO hisoblari shu zavodga a'zo bo'lishi kerak (masalan Insof zavodi). ERP kalitini almashtirib yubormaslik uchun **alohida nom** bering
+(bir xil nomdagi eski kalit o'chiriladi — rotatsiya):
+```bash
+cd <ECO repo> && yarn workspace @insof/api integration:create -- --org <zavod INN> --name "Insof IT panel"
+# chiqqan API kalit BIR MARTA ko'rsatiladi — webhook kerak emas
+```
+
+### 2. control.env (`/var/www/insof-erp/control.env`, chmod 600)
+```bash
+ECO_API_URL=https://<eco-api-manzil>      # masalan http://127.0.0.1:<eco-port> (shu serverda bo'lsa)
+ECO_API_KEY=<1-qadamdagi kalit>
+```
+Ikkalasi bo'sh — telefon tabi umuman ko'rinmaydi. Keyin migratsiya va qayta ishga tushirish (odatdagi `deploy.sh` ham buni qiladi):
+```bash
+cd /var/www/insof-erp/current
+set -a; . /var/www/insof-erp/control.env; set +a
+npx prisma migrate deploy --schema prisma/control/schema.prisma   # 20261006120000_superadmin_eco: 2 ustun + unique indeks, faqat qo'shimcha
+sudo -n /usr/local/sbin/insof-restart insof-control
+```
+Tekshirish: login sahifasida ikkita tab; noto'g'ri raqam/parol → «Telefon yoki parol noto'g'ri».
+
+### 3. Bog'lash (har superadmin O'ZI)
+IT jamoasi → «Mening hisobim» → «Insof ECO ilovasi orqali kirish»: ECO telefoni + ECO paroli + JORIY panel paroli → «Ulash».
+Uzish — «Uzish» (joriy panel paroli bilan). Boshqa admin uchun ulab bo'lmaydi (admin id faqat sessiyadan), bitta ECO hisobi —
+bitta admin (`ecoUserId` unique). Jadvalda ulangan adminlar «ECO» belgisi bilan; telefon faqat maskalangan holda saqlanadi.
+
+### Xavfsizlik
+- **Superadminning ECO paroli kuchli bo'lsin** — ulangach u panel kaliti ham. ECO buzilsa (baza, `auth/verify`, ECO_API_KEY sizsa)
+  panel ham xavfda; shuning uchun bog'lash ixtiyoriy va har kirish jurnalda (`ADMIN_LOGIN` `{ via: "eco" }`).
+- Qulf: `admin-eco:<telefon>` + IP (login-guard, 5 xato → 15 daq; IP bo'yicha 30) — ECO so'rovidan OLDIN; ECO'ning o'z
+  limiti ham bor (telefon bo'yicha 10 / 15 daq, ERP login bilan umumiy).
+- Xato parol, ulanmagan ECO hisobi, bloklangan admin — javob va kechikish bir xil; sabab faqat jurnalda (`ADMIN_LOGIN_ECO_FAIL`).
+- Jurnal: `ADMIN_ECO_LINK`, `ADMIN_ECO_UNLINK`, `ADMIN_ECO_LINK_DENIED`; xavfsizlik tekshiruvi («control-activity») ulash/uzishni
+  superadmin hisobi o'zgarishi sifatida ko'rsatadi (MEDIUM). Telegram xabari yo'q (panel jarayonida Telegram yordamchisi yo'q).
+- Shubha bo'lsa: control.env dan `ECO_API_KEY` ni olib tashlang va `insof-restart insof-control` — telefon bilan kirish darhol o'chadi;
+  ECO'da kalitni o'chirish/almashtirish: `integration:create ... --name "Insof IT panel"` qayta.
+
+Qaytarish: control.env dan ECO_* ni o'chirish yetarli (ustunlar qoladi, zararsiz). To'liq: `UPDATE "SuperAdmin" SET "ecoUserId"=NULL, "ecoPhone"=NULL;`.
+
 ## Go-live ro'yxati (tartib bilan)
 
 1. **Server:** `docs/server-xavfsizlik.md` 3.1–3.5 (3000/3010 yopiq, SSH faqat kalit, fail2ban, avtomatik yangilanish, Postgres faqat localhost).

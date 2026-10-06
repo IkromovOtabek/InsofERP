@@ -4,6 +4,8 @@ import { dateTime } from "@/lib/format";
 import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { NewAdminForm, OwnPasswordForm } from "../forms";
 import { toggleAdminAction } from "../actions";
+import { adminEcoEnabled } from "@/lib/control/eco-login";
+import { OwnEcoForm } from "./eco-form";
 
 export const metadata = { title: "IT jamoasi" };
 
@@ -19,14 +21,20 @@ export default async function AdminsPage() {
         <tbody>{admins.map((a) => (
           <Tr key={a.id}>
             <Td>{a.fullName}{a.id === me.id && <span className="ml-2 text-xs text-slate-400">(siz)</span>}</Td>
-            <Td><code className="text-xs">{a.login}</code></Td>
+            <Td><code className="text-xs">{a.login}</code>{a.ecoUserId && <span className="ml-2"><Badge color="violet" dot={false}>ECO</Badge></span>}</Td>
             <Td><Badge color={a.isActive ? "green" : "red"}>{a.isActive ? "Faol" : "Bloklangan"}</Badge></Td>
             <Td>{a.lastLoginAt ? dateTime(a.lastLoginAt) : "—"}</Td>
             <Td>{a.id !== me.id && <form action={toggleAdminAction.bind(null, a.id)}><Button variant="secondary" size="sm">{a.isActive ? "Bloklash" : "Yoqish"}</Button></form>}</Td>
           </Tr>
         ))}</tbody>
       </Table>
-      <Card><div className="mb-3 font-semibold">Mening parolim</div><OwnPasswordForm /></Card>
+      <Card>
+        <div className="mb-3 font-semibold">Mening hisobim</div>
+        <div className="mb-2 text-sm font-medium text-slate-700">Parol</div>
+        <OwnPasswordForm />
+        <div className="mb-2 mt-6 border-t border-slate-100 pt-4 text-sm font-medium text-slate-700">Insof ECO ilovasi orqali kirish</div>
+        <OwnEcoForm linkedPhone={admins.find((x) => x.id === me.id)?.ecoPhone ?? null} enabled={adminEcoEnabled()} />
+      </Card>
     </div>
   );
 }

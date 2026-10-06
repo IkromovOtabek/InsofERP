@@ -35,6 +35,11 @@ model SuperAdmin {
   sessionVersion Int       @default(0)
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
+  /// Insof ECO ilovasi hisobi (ECO User.id) — telefon + ilova paroli bilan panelga kirish. Bo'sh — ulanmagan.
+  /// Faqat admin O'ZI (joriy panel paroli bilan) ulaydi; bitta ECO hisobi — bitta admin.
+  ecoUserId      String?   @unique
+  /// Ulangan telefon — faqat ko'rsatish uchun, maskalangan (+998 90 *** ** 67)
+  ecoPhone       String?
 
   events ControlEvent[]
 }

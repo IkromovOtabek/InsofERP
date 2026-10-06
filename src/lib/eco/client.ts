@@ -169,7 +169,7 @@ export function ecoEnabled() {
 }
 export const ecoUrl = () => (process.env.ECO_API_URL ?? "").replace(/\/+$/, "");
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, timeoutMs = 10_000): Promise<T> {
   if (!ecoEnabled()) throw new EcoError("ECO_DISABLED", "ECO ulanmagan: .env da ECO_API_URL va ECO_API_KEY yo'q", 503);
   let res: Response;
   try {
@@ -177,7 +177,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       method,
       headers: { "content-type": "application/json", "x-api-key": process.env.ECO_API_KEY! },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
   } catch (e) {
@@ -229,8 +229,11 @@ export const eco = {
   unlinkedCustomers: (q?: string) => call<EcoUnlinkedCustomer[]>("GET", `/customers/unlinked${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   /** ERP mijozini ilova tashkilotiga ulash (ECO'da ikkitasi bo'lsa — birlashtiradi). */
   linkCustomer: (externalRef: string, orgId: string) => call<EcoCustomerApp>("POST", `/customers/${encodeURIComponent(externalRef)}/link`, { orgId }),
-  /** ERP login: ilovadagi telefon + parol. Noto'g'ri bo'lsa EcoError status 401. */
-  verifyCredentials: (phone: string, password: string) => call<{ userId: string; phone: string; fullName: string | null }>("POST", "/auth/verify", { phone, password }),
+  /**
+   * ERP / IT panel login: ilovadagi telefon + parol. Noto'g'ri bo'lsa EcoError status 401.
+   * Timeout 8 s — login sahifasi ECO javob bermasa uzoq osilib qolmasin.
+   */
+  verifyCredentials: (phone: string, password: string) => call<{ userId: string; phone: string; fullName: string | null }>("POST", "/auth/verify", { phone, password }, 8_000),
   /** Ilovada ro'yxatdan o'tgan barcha foydalanuvchilar — ism / telefon / tashkilot bo'yicha izlash. */
   appUsers: (q?: string) => call<EcoAppUser[]>("GET", `/app-users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   upsertMix: (p: EcoMixPayload) => call<{ id: string; grade: string; name: string; unitPrice: string; isActive: boolean }>("PUT", "/mixes", p),
