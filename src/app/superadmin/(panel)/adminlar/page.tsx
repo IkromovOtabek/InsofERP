@@ -1,7 +1,8 @@
 import { control } from "@/lib/control/db";
 import { requireAdmin } from "@/lib/control/auth";
 import { dateTime } from "@/lib/format";
-import { Badge, Button, Card, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Card, Table, Td, Th, Tr } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import { NewAdminForm, OwnPasswordForm } from "../forms";
 import { toggleAdminAction } from "../actions";
 import { adminEcoEnabled } from "@/lib/control/eco-login";

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { control } from "@/lib/control/db";
 import { EVENT_LABEL } from "@/lib/control/events";
 import { dateTime } from "@/lib/format";
-import { Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Empty, Table, Td, Th, Tr } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 
 export const metadata = { title: "Jurnal" };
 export const dynamic = "force-dynamic";

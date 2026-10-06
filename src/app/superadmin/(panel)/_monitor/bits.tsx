@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Bot, CircleCheck, CircleAlert, CircleX, CircleHelp } from "lucide-react";
-import { Badge } from "@/components/ui";
+import { Dot, Tag, tagFromColor, type TagTone } from "../../_ui";
 import {
-  ACTION_STATUS, CHECK_STATUS, INCIDENT_STATUS, SEVERITY, dt, overall, since,
-  type ActionStatusT, type AgentView, type CheckStatusT, type IncidentStatusT, type MonitorSnapshot, type SeverityT,
+  ACTION_STATUS, CHECK_STATUS, INCIDENT_STATUS, SEVERITY, dt, since,
+  type ActionStatusT, type AgentView, type CheckStatusT, type IncidentStatusT, type SeverityT,
 } from "@/lib/control/monitor/shared";
-import { useLiveMonitor } from "./live";
 
 /** Joriy vaqt (har 10 s yangilanadi) — "5 daq oldin" matnlari jonli bo'lsin. */
 export function useNow(ms = 10_000) {
@@ -24,13 +22,15 @@ export function Ago({ iso, bare, className }: { iso: string | null | undefined; 
   return <time dateTime={iso ?? undefined} title={iso ? dt(iso) : undefined} className={className} suppressHydrationWarning>{bare ? t.replace(/ oldin$/, "") : t}</time>;
 }
 
-export const CheckBadge = ({ s }: { s: CheckStatusT }) => <Badge color={CHECK_STATUS[s].color}>{CHECK_STATUS[s].label}</Badge>;
-export const SeverityBadge = ({ s }: { s: SeverityT }) => <Badge color={SEVERITY[s].color}>{SEVERITY[s].label}</Badge>;
-export const IncidentStatusBadge = ({ s }: { s: IncidentStatusT }) => <Badge color={INCIDENT_STATUS[s].color}>{INCIDENT_STATUS[s].label}</Badge>;
-export const ActionStatusBadge = ({ s }: { s: ActionStatusT }) => <Badge color={ACTION_STATUS[s]?.color ?? "slate"}>{ACTION_STATUS[s]?.label ?? s}</Badge>;
+/* Holat teglari — Status Board `Tag` (rang + matn; kritik — to'liq qizil). */
+const SEV_TONE: Record<SeverityT, TagTone> = { CRITICAL: "crit", HIGH: "high", MEDIUM: "warn", LOW: "info", INFO: "mut" };
+export const CheckBadge = ({ s }: { s: CheckStatusT }) => <Tag tone={tagFromColor(CHECK_STATUS[s].color)}>{CHECK_STATUS[s].label}</Tag>;
+export const SeverityBadge = ({ s }: { s: SeverityT }) => <Tag tone={SEV_TONE[s]}>{SEVERITY[s].label}</Tag>;
+export const IncidentStatusBadge = ({ s }: { s: IncidentStatusT }) => <Tag tone={s === "OPEN" ? "high" : tagFromColor(INCIDENT_STATUS[s].color)}>{INCIDENT_STATUS[s].label}</Tag>;
+export const ActionStatusBadge = ({ s }: { s: ActionStatusT }) => <Tag tone={tagFromColor(ACTION_STATUS[s]?.color ?? "slate")}>{ACTION_STATUS[s]?.label ?? s}</Tag>;
 
 const STATUS_ICON = { OK: CircleCheck, WARN: CircleAlert, CRIT: CircleX, UNKNOWN: CircleHelp };
-const STATUS_TEXT = { OK: "text-emerald-700", WARN: "text-amber-700", CRIT: "text-red-600", UNKNOWN: "text-slate-500" };
+const STATUS_TEXT = { OK: "text-emerald-600", WARN: "text-amber-600", CRIT: "text-red-600", UNKNOWN: "text-slate-500" };
 /** Holat ikonkasi + matn (rang yolg'iz ma'no tashimaydi). */
 export function StatusIcon({ s, size = 16 }: { s: CheckStatusT; size?: number }) {
   const I = STATUS_ICON[s];
@@ -39,9 +39,9 @@ export function StatusIcon({ s, size = 16 }: { s: CheckStatusT; size?: number })
 
 /** Agent holati: yashil — ishlayapti, qizil — "Agent javob bermayapti" (o'rnatish ko'rsatmasi bilan). */
 export function AgentBadge({ agent }: { agent: AgentView | null }) {
-  if (!agent) return <Badge color="slate">Agent o&apos;rnatilmagan</Badge>;
-  if (agent.stale) return <Badge color="red">Agent javob bermayapti · <Ago iso={agent.lastSeenAt} /></Badge>;
-  return <Badge color="green">Agent ishlayapti · <span data-no-translit>v{agent.version}</span></Badge>;
+  if (!agent) return <Tag tone="mut"><Dot tone="unk" /> Agent o&apos;rnatilmagan</Tag>;
+  if (agent.stale) return <Tag tone="crit">Agent javob bermayapti · <Ago iso={agent.lastSeenAt} /></Tag>;
+  return <Tag tone="ok"><Dot tone="ok" live /> Agent ishlayapti · <span data-no-translit>v{agent.version}</span></Tag>;
 }
 
 export function AgentHint({ agent }: { agent: AgentView | null }) {
@@ -63,28 +63,6 @@ export function AgentHint({ agent }: { agent: AgentView | null }) {
         )}
       </div>
     </div>
-  );
-}
-
-const OVERALL = {
-  OK: { t: "Hammasi joyida", c: "border-emerald-200 bg-emerald-50 text-emerald-900" },
-  WARN: { t: "E'tibor talab qiladi", c: "border-amber-200 bg-amber-50 text-amber-900" },
-  CRIT: { t: "Muammo bor", c: "border-red-200 bg-red-50 text-red-900" },
-  UNKNOWN: { t: "Monitoring ma'lumoti yo'q", c: "border-slate-200 bg-white text-slate-700" },
-};
-
-/** Bosh sahifadagi ixcham holat qatori — monitoringga havola. */
-export function HealthStrip({ initial }: { initial: MonitorSnapshot | null }) {
-  const { data } = useLiveMonitor(initial);
-  const o = overall(data);
-  const hot = data ? data.counts.critical + data.counts.high : 0;
-  return (
-    <Link href="/superadmin/monitoring" className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-(--radius-card) border px-4 py-3 text-sm transition hover:shadow-md ${OVERALL[o].c}`}>
-      <span className="flex items-center gap-2 font-semibold"><StatusIcon s={o} size={18} /> {OVERALL[o].t}</span>
-      <span>Ochiq kritik/yuqori hodisa: <b className="tabular">{hot}</b>{data && data.counts.open + data.counts.acked > hot ? <span className="opacity-75"> (jami ochiq {data.counts.open + data.counts.acked})</span> : null}</span>
-      <AgentBadge agent={data?.agent ?? null} />
-      <span className="ml-auto text-xs underline-offset-2 hover:underline">Server va xizmatlar →</span>
-    </Link>
   );
 }
 

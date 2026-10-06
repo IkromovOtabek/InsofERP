@@ -1,40 +1,19 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Archive, Ban, Bot, CheckCircle2, DatabaseBackup, Eye, Lock, Power, RefreshCw, Rocket, RotateCcw, ScanSearch, Trash2, Wrench, X, XCircle } from "lucide-react";
+import { AlertTriangle, Archive, Ban, Bot, CheckCircle2, DatabaseBackup, Eye, Lock, Power, RefreshCw, Rocket, RotateCcw, ScanSearch, Trash2, Wrench, XCircle } from "lucide-react";
 import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
 import { IPV4_RE, UNIT_RE } from "@/lib/control/monitor/contract";
 import { actionLabel, confirmPhrase, needsReauth } from "@/lib/control/monitor/shared";
 import { DB_ACTION_DESCR } from "@/lib/control/dbtraffic/contract";
 import { INFRA_ACTION_DESCR } from "@/lib/control/infra/contract";
+import { BottomSheet } from "../../_ui/sheet";
 import { ackIncident, enqueueAction, resolveIncident } from "../monitor-actions";
 
-/** Sahifa ichidagi modal oyna (window.confirm emas): Esc yopadi, fokus ichkariga o'tadi va qaytadi. */
+/** Sahifa ichidagi dialog (window.confirm emas): kompyuterda oyna, telefonda pastdan varaq (_ui/sheet). */
 export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
-  const titleId = useId();
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    const t = setTimeout(() => (box.current?.querySelector<HTMLElement>("input,textarea,button[data-autofocus]") ?? box.current)?.focus(), 0);
-    return () => { document.removeEventListener("keydown", onKey); clearTimeout(t); prev?.focus?.(); };
-  }, [open, onClose]);
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
-        className={`max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 shadow-(--shadow-pop) outline-none sm:rounded-2xl ${wide ? "sm:max-w-2xl" : "sm:max-w-md"}`}>
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <h2 id={titleId} className="text-base font-semibold text-slate-900">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
+  return <BottomSheet open={open} onClose={onClose} title={title} wide={wide}>{children}</BottomSheet>;
 }
 
 /**
@@ -131,7 +110,7 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
           {reauth && <PasswordBox value={password} onChange={setPassword} />}
           <FormError error={err} />
           {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> {done}</p>}
-          <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <div className="sa-sheet-acts flex flex-wrap justify-end gap-2 pt-1">
             <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
             <Button type="submit" variant={phrase !== null ? "danger" : "primary"} disabled={!canSend || pending || !!done} data-autofocus>{pending ? "Yuborilmoqda…" : "Bajarish"}</Button>
           </div>
@@ -178,7 +157,7 @@ export function ResolveButton({ id, onDone }: { id: string; onDone?: () => void 
           <p className="text-sm text-slate-600">Muammo bartaraf etilgan bo&apos;lsa yoping. Agent yana shu nosozlikni ko&apos;rsa, yangi hodisa ochiladi.</p>
           <Field label="Izoh (nima qilindi) *"><Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} required minLength={3} maxLength={1000} /></Field>
           <FormError error={err} />
-          <div className="flex justify-end gap-2">
+          <div className="sa-sheet-acts flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
             <Button type="submit" disabled={pending || note.trim().length < 3}>{pending ? "…" : "Yopish"}</Button>
           </div>

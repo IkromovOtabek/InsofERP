@@ -56,13 +56,13 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
           </p>
           <fieldset className="space-y-2 text-sm">
             <legend className="mb-1 font-medium text-slate-800">Qachon</legend>
-            <label className="flex items-center gap-2"><input type="radio" name="when" checked={mode === "at"} onChange={() => setMode("at")} /> Belgilangan vaqtda</label>
+            <label className="flex items-center gap-2 pointer-coarse:min-h-11"><input type="radio" name="when" checked={mode === "at"} onChange={() => setMode("at")} /> Belgilangan vaqtda</label>
             {mode === "at" && (
               <Field label="Vaqt (server vaqti, 24 soat)" hint={atOk ? `Rejalashtiriladi: ${when}` : "HH:MM"} error={time && !atOk ? "Format noto'g'ri" : undefined}>
                 <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required aria-invalid={!atOk} />
               </Field>
             )}
-            <label className="flex items-center gap-2"><input type="radio" name="when" checked={mode === "now"} onChange={() => setMode("now")} /> Hozir (1 daqiqadan keyin)</label>
+            <label className="flex items-center gap-2 pointer-coarse:min-h-11"><input type="radio" name="when" checked={mode === "now"} onChange={() => setMode("now")} /> Hozir (1 daqiqadan keyin)</label>
           </fieldset>
           <div className="rounded-lg border border-red-200 bg-red-50 p-3">
             <p className="mb-2 flex items-start gap-1.5 text-sm text-red-800"><AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
@@ -72,7 +72,7 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
           <PasswordBox value={password} onChange={setPassword} />
           <FormError error={err} />
           {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> {done}</p>}
-          <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <div className="sa-sheet-acts flex flex-wrap justify-end gap-2 pt-1">
             <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
             <Button type="submit" variant="danger" disabled={!canSend || pending || !!done}>{pending ? "Yuborilmoqda…" : `Qayta yuklash (${when})`}</Button>
           </div>

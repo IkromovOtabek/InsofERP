@@ -1,18 +1,21 @@
 import Link from "next/link";
-import { Building2, Users, ClipboardList, Wallet, Server, RefreshCw, Database, Bot, MessageSquare, Smartphone } from "lucide-react";
+import { Building2, Plus, RefreshCw } from "lucide-react";
 import { control } from "@/lib/control/db";
 import { collectAll, serverStats, type TenantStats } from "@/lib/control/stats";
 import { moneyShort, fmtNum } from "@/lib/format";
-import { Button, Card, Empty, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr, Callout } from "@/components/ui";
-import { TenantStatusBadge, Health, ago } from "./status";
+import { loadMonitorSnapshot } from "@/lib/control/monitor/snapshot";
+import { PageHeader, Section, Tag, Dot, tagFromColor, type Tone } from "../_ui";
+import { TENANT_STATUS, ago } from "./status";
 import { SsoButton } from "./forms";
 import { refreshStatsAction } from "./actions";
-import { HealthStrip } from "./_monitor/bits";
-import { loadMonitorSnapshot } from "@/lib/control/monitor/snapshot";
+import { BoardActions, BoardBanner, BoardChart, BoardIncidents, BoardServices, BoardTiles, type TenantTile } from "./_monitor/board";
 
 export const dynamic = "force-dynamic";
 
-/** Umumiy holat: barcha korxonalar (ERP + ECO) jonli tekshiruv bilan, platforma bo'yicha yig'indilar. */
+/**
+ * Umumiy holat — «Status Board»: kritik banner, 6 svetofor plitka, xizmatlar, hodisalar, korxona kartalari, grafik, amallar.
+ * Korxona tekshiruvi (jarayon/baza/ECO) har ochilishda jonli; monitoring qismi SSE oqimi bilan yangilanadi.
+ */
 export default async function Overview() {
   // Har ochilishda jonli: jarayon/baza/ECO tekshiruvi parallel (bir korxona — ~0.1–4 s)
   const live = await collectAll();
@@ -25,68 +28,95 @@ export default async function Overview() {
   const st = (id: string, last: unknown) => live.get(id) ?? (last as TenantStats | null);
   const all = tenants.map((t) => ({ t, s: st(t.id, t.lastStats) }));
   const sum = (f: (s: TenantStats) => number) => all.reduce((a, x) => a + (x.s ? f(x.s) : 0), 0);
-  const down = all.filter((x) => x.t.status === "ACTIVE" && x.s && (!x.s.web.up || !x.s.db.ok));
+  const active = all.filter((x) => x.t.status === "ACTIVE");
+  const down = active.filter((x) => x.s && (!x.s.web.up || !x.s.db.ok));
   const ecoDown = all.filter((x) => x.s?.eco.configured && x.s.eco.up === false);
+  const problems = down.map((x) => `${x.t.name}: ${!x.s!.web.up ? `veb (${x.s!.web.error ?? "javob yo'q"})` : ""} ${!x.s!.db.ok ? `baza (${x.s!.db.error ?? ""})` : ""}`.trim());
+
+  const tTone: Tone = active.length === 0 ? "unk" : down.length ? "crit" : ecoDown.length || tenants.some((t) => t.status === "SUSPENDED") ? "warn" : "ok";
+  const tenantTile: TenantTile = {
+    tone: tTone, up: active.length - down.length, total: active.length,
+    sub: down.length ? `${down.map((x) => x.t.name).join(", ")} ishlamayapti`
+      : ecoDown.length ? `ECO javob bermayapti: ${ecoDown.map((x) => x.t.name).join(", ")}`
+        : active.length === 1 ? `${active[0].t.name} ishlayapti` : active.length ? "Hammasi ishlayapti" : "Hali korxona yo'q",
+  };
+  const versions = new Map((monitor?.tenants ?? []).map((v) => [v.id, v.version]));
+  const footer = `${server.memTotalGb} GB RAM · ${server.disk ? `${server.disk.totalGb} GB disk · ` : ""}ishlash vaqti ${server.uptimeH} soat · Node ${server.node}${server.commit ? ` · reliz ${server.commit}` : ""}`;
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-(--gap)">
       <PageHeader
         title="Platforma holati"
-        subtitle={`ERP va ECO — ${tenants.length} ta korxona. Tekshiruv: hozir.`}
-        action={<div className="flex gap-2"><form action={refreshStatsAction.bind(null, undefined)}><Button variant="secondary"><RefreshCw size={16} /> Yangilash</Button></form><LinkButton href="/superadmin/korxonalar/yangi">Yangi korxona</LinkButton></div>}
+        subtitle={`ERP va ECO — ${tenants.length} ta korxona · tekshiruv: hozir`}
+        action={<>
+          <form action={refreshStatsAction.bind(null, undefined)}><button className="sa-btn"><RefreshCw size={16} aria-hidden /> Yangilash</button></form>
+          <Link href="/superadmin/korxonalar/yangi" className="sa-btn pri"><Plus size={16} aria-hidden /> Yangi korxona</Link>
+        </>}
       />
 
-      <HealthStrip initial={monitor} />
+      <BoardBanner initial={monitor} tenantProblems={problems} />
+      <BoardTiles initial={monitor} tenants={tenantTile} server={server} />
 
-      {down.length > 0 && <Callout tone="danger" title="Ishlamayotgan korxonalar">{down.map((x) => `${x.t.name}: ${!x.s!.web.up ? `veb (${x.s!.web.error ?? "javob yo'q"})` : ""} ${!x.s!.db.ok ? `baza (${x.s!.db.error ?? ""})` : ""}`).join(" · ")}</Callout>}
-      {ecoDown.length > 0 && <Callout tone="warning" title="ECO javob bermayapti">{ecoDown.map((x) => `${x.t.name} (${x.t.ecoApiUrl})`).join(" · ")}</Callout>}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Korxonalar" value={tenants.length} hint={`${tenants.filter((t) => t.status === "ACTIVE").length} faol · ${tenants.filter((t) => t.status === "SUSPENDED").length} to'xtatilgan`} icon={Building2} />
-        <StatCard label="Faol foydalanuvchi" value={fmtNum(sum((s) => s.users.active))} hint={`24 soatda ishlagan: ${sum((s) => s.users.active24h)}`} icon={Users} tone="info" />
-        <StatCard label="Zayavkalar (oy)" value={fmtNum(sum((s) => s.orders.month))} hint={`bugun: ${sum((s) => s.orders.today)}`} icon={ClipboardList} />
-        <StatCard label="Aylanma (oy)" value={moneyShort(sum((s) => s.orders.revenueMonth))} hint={`to'lovlar: ${moneyShort(sum((s) => s.payments.month))}`} icon={Wallet} tone="success" />
-        <StatCard label="Mobil qurilmalar" value={fmtNum(sum((s) => s.users.mobileDevices))} hint={`ECO bilan bog'langan: ${sum((s) => s.users.ecoLinked)}`} icon={Smartphone} />
-        <StatCard label="AI so'rovlar (30 kun)" value={fmtNum(sum((s) => s.usage.ai30d))} icon={Bot} />
-        <StatCard label="Bildirishnomalar (30 kun)" value={fmtNum(sum((s) => s.usage.notifications30d))} icon={MessageSquare} />
-        <StatCard label="Bazalar hajmi" value={`${fmtNum(sum((s) => s.db.sizeMb ?? 0))} MB`} icon={Database} />
+      <div className="sa-grid2">
+        <BoardServices initial={monitor} hostname={server.host} />
+        <BoardIncidents initial={monitor} />
       </div>
 
-      <Card>
-        <div className="mb-3 flex items-center gap-2 font-semibold"><Server size={16} /> Server</div>
-        <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3 lg:grid-cols-6">
-          <div>Host: <b>{server.host}</b></div>
-          <div>Ishlash: <b>{server.uptimeH} soat</b></div>
-          <div>Yuklama: <b>{server.load.join(" / ")}</b> ({server.cpus} CPU)</div>
-          <div>Xotira: <b>{server.memFreeGb} / {server.memTotalGb} GB</b> bo&apos;sh</div>
-          <div>Disk: <b>{server.disk ? `${server.disk.freeGb} / ${server.disk.totalGb} GB` : "—"}</b> bo&apos;sh</div>
-          <div>Node {server.node}{server.commit ? ` · ${server.commit}` : ""}</div>
-        </div>
-      </Card>
+      <Section id="korxonalar" title="Korxonalar" icon={Building2} sub={`${tenants.length} ta · ${active.length} faol · bazalar ${fmtNum(sum((s) => s.db.sizeMb ?? 0))} MB`}
+        more={{ href: "/superadmin/korxonalar/yangi", label: "Yangi korxona →" }}>
+        {tenants.length === 0 ? (
+          <p className="sa-sub">Hali korxona yo&apos;q — «Yangi korxona» yoki mavjud o&apos;rnatishni <code>npm run tenant -- register</code> bilan qo&apos;shing.</p>
+        ) : (
+          <div className="sa-tcards">
+            {all.map(({ t, s }) => {
+              const ver = versions.get(t.id);
+              return (
+                <article key={t.id} className="sa-card sa-tcard" style={{ background: "var(--soft)", borderColor: s && t.status === "ACTIVE" && (!s.web.up || !s.db.ok) ? "var(--crit)" : undefined }} aria-labelledby={`t-${t.id}`}>
+                  <div className="hd">
+                    <Tag tone={tagFromColor(TENANT_STATUS[t.status].color)}>{TENANT_STATUS[t.status].label}</Tag>
+                    <span className="sa-sub" data-no-translit>{t.domain ?? `${t.slug} · domen yo'q`} · :{t.port}</span>
+                  </div>
+                  <Link href={`/superadmin/korxonalar/${t.slug}`} className="nm" id={`t-${t.id}`}>{t.name}</Link>
+                  <div className="sa-checks">
+                    <Check up={s?.web.up} label={s?.web.ms != null ? `ERP ${s.web.ms} ms` : "ERP"} />
+                    <Check up={s?.db.ok} label="Baza" />
+                    <Check up={s?.eco.configured ? s.eco.up : null} label="ECO" />
+                  </div>
+                  <div className="row">
+                    <div className="cell" style={{ background: "var(--card)" }}><b>{s ? fmtNum(s.users.active) : "—"}</b><span>xodim (24 s: {s?.users.active24h ?? "—"})</span></div>
+                    <div className="cell" style={{ background: "var(--card)" }}><b>{s ? fmtNum(s.orders.today) : "—"}</b><span>zayavka bugun / oy {s ? fmtNum(s.orders.month) : "—"}</span></div>
+                    <div className="cell" style={{ background: "var(--card)" }}><b>{s?.db.sizeMb != null ? fmtNum(s.db.sizeMb) : "—"}</b><span>MB baza</span></div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="sa-sub">{ver ? <>Versiya <span data-no-translit>{ver}</span> · </> : null}oxirgi faollik {ago(s?.lastActivityAt)}{s ? ` · aylanma ${moneyShort(s.orders.revenueMonth)}` : ""}</span>
+                    <SsoButton slug={t.slug} disabled={!t.domain || t.status === "ARCHIVED"} />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {tenants.length > 0 && (
+          <div className="sa-kpis" style={{ marginTop: "var(--gap)" }} aria-label="Platforma bo'yicha yig'indilar">
+            <div><b>{fmtNum(sum((s) => s.users.active))}</b><span>faol foydalanuvchi · 24 s: {sum((s) => s.users.active24h)}</span></div>
+            <div><b>{fmtNum(sum((s) => s.orders.month))}</b><span>zayavka (oy) · bugun {sum((s) => s.orders.today)}</span></div>
+            <div><b>{moneyShort(sum((s) => s.orders.revenueMonth))}</b><span>aylanma (oy) · to&apos;lov {moneyShort(sum((s) => s.payments.month))}</span></div>
+            <div><b>{fmtNum(sum((s) => s.users.mobileDevices))}</b><span>mobil qurilma · ECO {sum((s) => s.users.ecoLinked)}</span></div>
+            <div><b>{fmtNum(sum((s) => s.usage.ai30d))}</b><span>AI so&apos;rov (30 kun)</span></div>
+            <div><b>{fmtNum(sum((s) => s.usage.notifications30d))}</b><span>bildirishnoma (30 kun)</span></div>
+          </div>
+        )}
+      </Section>
 
-      {tenants.length === 0 ? <Card><Empty text="Hali korxona yo'q — «Yangi korxona» yoki mavjud o'rnatishni `npm run tenant -- register` bilan qo'shing" /></Card> : (
-        <Table>
-          <thead><tr><Th>Korxona</Th><Th>Holat</Th><Th>Tekshiruv</Th><Th right>Xodim</Th><Th right>Zayavka (bugun/oy)</Th><Th right>Aylanma (oy)</Th><Th right>Baza</Th><Th>Oxirgi faollik</Th><Th /></tr></thead>
-          <tbody>
-            {all.map(({ t, s }) => (
-              <Tr key={t.id}>
-                <Td>
-                  <Link href={`/superadmin/korxonalar/${t.slug}`} className="hover:underline">{t.name}</Link>
-                  <div className="text-xs font-normal text-slate-500">{t.domain ?? `${t.slug} · domen yo'q`} · :{t.port}</div>
-                </Td>
-                <Td><TenantStatusBadge s={t.status} /></Td>
-                <Td><div className="flex flex-wrap gap-1"><Health up={s?.web.up} label={s?.web.ms != null ? `ERP ${s.web.ms}ms` : "ERP"} /><Health up={s?.db.ok} label="Baza" /><Health up={s?.eco.configured ? s.eco.up : null} label="ECO" /></div></Td>
-                <Td right>{s ? `${s.users.active} (${s.users.active24h})` : "—"}</Td>
-                <Td right>{s ? `${s.orders.today} / ${s.orders.month}` : "—"}</Td>
-                <Td right>{s ? moneyShort(s.orders.revenueMonth) : "—"}</Td>
-                <Td right>{s?.db.sizeMb != null ? `${s.db.sizeMb} MB` : "—"}</Td>
-                <Td className="whitespace-nowrap text-xs">{ago(s?.lastActivityAt)}</Td>
-                <Td><SsoButton slug={t.slug} disabled={!t.domain || t.status === "ARCHIVED"} /></Td>
-              </Tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
+      <div className="sa-grid2">
+        <BoardChart initial={monitor} footer={footer} />
+        <BoardActions initial={monitor} />
+      </div>
     </div>
   );
+}
+
+function Check({ up, label }: { up: boolean | null | undefined; label: string }) {
+  const tone: Tone = up == null ? "unk" : up ? "ok" : "crit";
+  return <span className="sa-chk"><Dot tone={tone} />{label}<span className="sa-sr">: {up == null ? "tekshirilmagan" : up ? "ishlayapti" : "nosoz"}</span></span>;
 }

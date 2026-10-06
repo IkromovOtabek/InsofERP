@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/control/auth";
 import { loadReleasesView, type ReleasesView } from "@/lib/control/devops/data";
-import { Callout, PageHeader } from "@/components/ui";
+import { Callout } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import { ReleasesClient } from "./view";
 
 export const metadata = { title: "Relizlar" };

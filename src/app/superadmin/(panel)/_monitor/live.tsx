@@ -128,22 +128,29 @@ export function RefreshOn({ what }: { what: "incidents" | "actions" | "security"
   return null;
 }
 
-/** Ulanish holati — sarlavha yonida kichik belgi. */
-export function ConnBadge() {
+/**
+ * Ulanish holati — Status Board «pill»: nuqta (jonli bo'lsa miltillaydi) + matn.
+ * `compact` — shapkada telefonda faqat nuqta va qisqa yozuv.
+ */
+export function ConnBadge({ compact }: { compact?: boolean }) {
   const { conn, at, problem } = useLiveMonitor();
   const map = {
-    live: { t: "Jonli", c: "text-emerald-700 bg-emerald-50 ring-emerald-200", I: Radio },
-    connecting: { t: "Ulanmoqda…", c: "text-slate-600 bg-slate-100 ring-slate-200", I: RefreshCw },
-    polling: { t: "Har 5 s yangilanadi", c: "text-amber-700 bg-amber-50 ring-amber-200", I: RefreshCw },
-    offline: { t: "Aloqa yo'q", c: "text-red-700 bg-red-50 ring-red-200", I: WifiOff },
-    auth: { t: "Sessiya tugadi — qayta kiring", c: "text-red-700 bg-red-50 ring-red-200", I: LogIn },
+    live: { t: "Jonli", short: "Jonli", tone: "ok", I: Radio },
+    connecting: { t: "Ulanmoqda…", short: "…", tone: "unk", I: RefreshCw },
+    polling: { t: "Har 5 s yangilanadi", short: "5 s", tone: "warn", I: RefreshCw },
+    offline: { t: "Aloqa yo'q", short: "Aloqa yo'q", tone: "crit", I: WifiOff },
+    auth: { t: "Sessiya tugadi — qayta kiring", short: "Qayta kiring", tone: "crit", I: LogIn },
   }[conn];
+  const text = compact ? map.short : map.t;
   return (
-    <span role="status" aria-live="polite" title={at ? `Oxirgi yangilanish: ${new Date(at).toLocaleTimeString()}` : undefined}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${map.c}`}>
-      <map.I size={12} className={conn === "live" ? "animate-pulse" : undefined} aria-hidden />
-      {conn === "auth" ? <a href="/superadmin/login" className="underline">{map.t}</a> : map.t}
-      {problem && <span className="sr-only">Baza xatosi: {problem}</span>}
+    <span role="status" aria-live="polite" title={at ? `Oxirgi yangilanish: ${new Date(at).toLocaleTimeString()}` : map.t}
+      className={`sa-pill ${map.tone === "crit" ? "crit" : map.tone === "warn" ? "warn" : ""}`} style={{ fontSize: 13 }}>
+      {map.tone === "ok" || map.tone === "unk"
+        ? <span className={`sa-dot ${map.tone === "ok" ? "ok sa-live" : ""}`} aria-hidden />
+        : <map.I size={14} aria-hidden />}
+      {conn === "auth" ? <a href="/superadmin/login" className="underline">{text}</a> : text}
+      {compact && text !== map.t && <span className="sa-sr">{map.t}</span>}
+      {problem && <span className="sa-sr">Baza xatosi: {problem}</span>}
     </span>
   );
 }
