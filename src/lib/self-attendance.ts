@@ -8,6 +8,10 @@ import { getCompany } from "@/lib/company";
 import { DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayUtc, hoursText, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, toMinutes, today, validMonth, workedMinutes } from "@/lib/davomat";
 import { nowHHMM, productionStaff } from "@/lib/production-staff";
 import { knownPoint } from "@/lib/mobile/geofence";
+import { faceCheckEnabled } from "@/lib/ai/face";
+import { verifyEmployeeFace } from "@/lib/face-verify";
+import { saveEmployeeFile } from "@/lib/uploads";
+import { dataUrlFile } from "@/lib/procurement";
 import { ListError } from "@/lib/mobile/list";
 import type { MobileUser } from "@/lib/mobile/auth";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -15,21 +19,28 @@ import type { AttendanceStatus } from "@/generated/prisma";
 /**
  * Xodimning o'zi telefonidan davomat belgilashi — "Keldim" / "Ketdim" (mobil bosh sahifa kartasi).
  *
- * Oqim (ilovada): Face ID / barmoq izi (OS oynasi, kamera ochilmaydi, rasm yuborilmaydi) → yangi GPS nuqta →
+ * Oqim (ilovada): yangi GPS nuqta → ilova ichidagi yuz skaneri (old kamera, avtomatik kadr) →
  * `POST /api/mobile/attendance/self`. Server bu yerda hammasini qaytadan tekshiradi — ilovaga ishonilmaydi:
  *   · login xodim kartasiga bog'langanmi (`Employee.userId`);
  *   · nuqta zavod nuqtasidan (`CompanySettings.lat/lng`) `attendanceRadiusM` ichidami — nuqta sozlanmagan
  *     bo'lsa rad etiladi (jim qabul qilinmaydi);
  *   · GPS aniqligi, telefon soati, soxta joylashuv (Android mock) belgisi;
  *   · takror bosish — bir kun/bir tur uchun bitta yozuv (idempotent: ikkinchi bosish mavjud natijani qaytaradi);
- *   · so'rovlar soni cheklangan.
+ *   · so'rovlar soni cheklangan;
+ *   · kadr xodimning profil surati bilan solishtiriladi (`lib/face-verify.ts`, rahbar skaneri bilan bir xil qoida) —
+ *     mos kelsa kadr dalil sifatida saqlanadi (`facePhoto` / `checkOutPhoto`) va ishonch foizi yoziladi.
+ *     Arzon tekshiruvlar (geofence, takror) AI chaqiruvidan OLDIN — keraksiz so'rov ketmasin.
  * Yozuv HR tabeli va sex davomatidagi aynan o'sha `Attendance` (employeeId + date) — alohida jadval yo'q.
  *
- * Cheklov: biometriya faqat TELEFON EGASINI tasdiqlaydi (ERP xodimning yuzini ko'rmaydi). Shuning uchun
- * qurilma id saqlanadi va xodim boshqa telefondan belgilasa `newDevice` bilan rahbarlarga aytiladi.
+ * Qurilma id ham saqlanadi: xodim boshqa telefondan belgilasa `newDevice` bilan rahbarlarga aytiladi.
  */
 
-export const SELF_SOURCE = "SELF_BIOMETRIC";
+export const SELF_SOURCE = "SELF_FACE";
+/** Eski yozuvlar (1.0.3 gacha sinov: telefon Face ID / barmoq izi) — "o'zi belgilagan" deb hisoblanadi. */
+export const SELF_SOURCE_LEGACY = "SELF_BIOMETRIC";
+export const SELF_SOURCES = [SELF_SOURCE, SELF_SOURCE_LEGACY];
+/** Kadr data-URL uzunligi chegarasi (~4,5 MB base64) — ilova ~1,5 MB gacha yuboradi. */
+const MAX_PHOTO_CHARS = 6_000_000;
 /** GPS aniqligi bundan yomon bo'lsa nuqtaga ishonilmaydi. */
 export const MAX_ACCURACY_M = 150;
 /** Telefon soati server soatidan shuncha farq qilsa — so'rov eskirgan yoki soat noto'g'ri. */
@@ -163,9 +174,8 @@ const Body = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   accuracy: z.number().min(0).max(100_000).nullable().optional(),
-  biometric: z.literal(true, { message: "Avval Face ID / barmoq izi bilan tasdiqlang" }),
-  /** Ilova OS dan olgan usul: face / fingerprint / iris / passcode — faqat auditga. */
-  method: z.string().trim().max(20).optional(),
+  /** Yuz skaneri kadri: `data:image/jpeg;base64,...` — profil surati bilan solishtiriladi. */
+  photo: z.string({ message: "Yuzingizni skaner qiling" }).min(100, "Yuzingizni skaner qiling").max(MAX_PHOTO_CHARS, "Kadr juda katta — qayta skaner qiling"),
   deviceId: z.string().trim().min(8, "Qurilma aniqlanmadi").max(128),
   /** Ilova bosilgan vaqt (ISO). Server o'z soatini yozadi, bu faqat eskirgan/qayta yuborilgan so'rovni ushlash uchun. */
   at: z.string().trim().max(40).refine((v) => Number.isFinite(Date.parse(v)), "Vaqt noto'g'ri"),
@@ -183,9 +193,15 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
   if (!hit(`att-self:m:${user.id}`, 6, 60_000) || !hit(`att-self:h:${user.id}`, 30, 3_600_000)) {
     fail("RATE_LIMITED", "Juda ko'p urinish. Bir daqiqadan keyin qayta urinib ko'ring", 429);
   }
+  // 1.0.3 sinov build'i (telefon Face ID, kadrsiz) — endi qabul qilinmaydi
+  const r0 = (raw ?? {}) as { biometric?: unknown; photo?: unknown };
+  if (r0.biometric === true && !r0.photo) fail("APP_OUTDATED", "Ilovani yangilang — davomat endi ilova ichidagi yuz skaneri orqali belgilanadi", 400);
   const p = Body.safeParse(raw);
   if (!p.success) fail("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri");
   const b = p.data!;
+  if (!faceCheckEnabled()) fail("FACE_DISABLED", "Yuz skaneri sozlanmagan (AI kaliti yo'q) — administratorga murojaat qiling", 409);
+  const photo = dataUrlFile(b.photo, "yuz");
+  if (!photo) fail("BAD_REQUEST", "Kadr o'qilmadi — qayta skaner qiling");
 
   const e = await linkedEmployee(user.id);
   if (!e) fail("NOT_LINKED", "Loginingiz xodim kartasiga bog'lanmagan — otdel kadrga murojaat qiling", 403);
@@ -214,7 +230,7 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
 
   // Qurilma: xodim avval boshqa telefondan belgilagan bo'lsa — "yangi qurilma" (rahbarga aytiladi)
   const prior = await db.attendance.findMany({
-    where: { employeeId: emp.id, source: SELF_SOURCE, OR: [{ checkInDeviceId: { not: null } }, { checkOutDeviceId: { not: null } }] },
+    where: { employeeId: emp.id, source: { in: SELF_SOURCES }, OR: [{ checkInDeviceId: { not: null } }, { checkOutDeviceId: { not: null } }] },
     orderBy: { date: "desc" }, take: 30, select: { checkInDeviceId: true, checkOutDeviceId: true },
   });
   const known = prior.some((r) => r.checkInDeviceId === b.deviceId || r.checkOutDeviceId === b.deviceId);
@@ -224,7 +240,22 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     [`check${k}Lat`]: b.lat, [`check${k}Lng`]: b.lng, [`check${k}Accuracy`]: b.accuracy ?? null,
     [`check${k}Distance`]: Math.round(distance), [`check${k}DeviceId`]: b.deviceId,
   });
-  const auditMeta = { usul: b.method ?? "biometric", masofa: Math.round(distance), aniqlik: b.accuracy ?? null, qurilma: b.deviceId, yangiQurilma: newDevice };
+  /**
+   * Yuz: kadr profil surati bilan solishtiriladi; mos kelsa kadr dalil sifatida saqlanadi (rahbar skaneri kabi).
+   * Mos kelmasa hech narsa yozilmaydi — faqat auditda urinish qoladi.
+   */
+  const face = async () => {
+    const v = await verifyEmployeeFace(emp.id, "Sizning", photo!);
+    if (!v.ok) {
+      if (v.mismatch) await audit(db, user.id, "UPDATE", "Attendance", emp.id, undefined, { xodim: emp.fullName, ozi: true, yuz: "tasdiqlanmadi", ishonch: v.confidence, sabab: v.reason });
+      fail(v.mismatch ? "FACE_MISMATCH" : "FACE_ERROR", v.error, v.mismatch ? 403 : 409);
+    }
+    const ok = v as Extract<typeof v, { ok: true }>;
+    const saved = await saveEmployeeFile(emp.id, photo, { imageOnly: true });
+    if (!saved || "error" in saved) fail("FACE_ERROR", saved?.error ?? "Kadr saqlanmadi — qayta urining", 500);
+    return { stored: (saved as { stored: string }).stored, confidence: ok.confidence };
+  };
+  const auditMeta = { usul: "yuz", masofa: Math.round(distance), aniqlik: b.accuracy ?? null, qurilma: b.deviceId, yangiQurilma: newDevice };
 
   let text: string;
   if (b.kind === "in") {
@@ -235,12 +266,16 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     if (t && t.status !== "PRESENT" && t.status !== "ABSENT") {
       fail("MARKED_OTHER", `Bugun «${markOf(t.status).label}» deb belgilangan — o'zgartirish uchun otdel kadrga ayting`, 409);
     }
+    const f = await face();
     const late = lateBy(now, shift.start);
-    const data = { status: "PRESENT" as const, checkIn: now, checkOut: null, markedById: user.id, source: SELF_SOURCE, lateMinutes: late, newDevice, ...geo("In") };
+    const data = {
+      status: "PRESENT" as const, checkIn: now, checkOut: null, markedById: user.id, source: SELF_SOURCE, lateMinutes: late, newDevice, ...geo("In"),
+      facePhoto: f.stored, faceVerifiedAt: new Date(), faceConfidence: f.confidence,
+    };
     const date = dayUtc(iso);
     await db.$transaction(async (tx) => {
       const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId: emp.id, date } }, create: { employeeId: emp.id, date, ...data }, update: data });
-      await audit(tx, user.id, "UPDATE", "Attendance", a.id, t ? { status: t.status, checkIn: t.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ...auditMeta });
+      await audit(tx, user.id, "UPDATE", "Attendance", a.id, t ? { status: t.status, checkIn: t.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
     });
     text = `${shortName(emp.fullName)} ${now} da keldi${late ? ` (${late} daq kechikdi)` : ""}${newDevice ? " · yangi telefondan" : ""}`;
   } else {
@@ -257,10 +292,11 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     }
     const w = workedMinutes(r.checkIn, now);
     if (w !== null && w > MAX_SHIFT_MINUTES) fail("SHIFT_TOO_LONG", `Smena ${MAX_SHIFT_MINUTES / 60} soatdan uzun bo'lib qoldi — ketish vaqtini sex boshlig'i qo'yadi`, 409);
-    const data = { checkOut: now, ...geo("Out"), ...(newDevice ? { newDevice: true } : {}) };
+    const f = await face();
+    const data = { checkOut: now, ...geo("Out"), checkOutPhoto: f.stored, checkOutFaceConfidence: f.confidence, ...(newDevice ? { newDevice: true } : {}) };
     await db.$transaction(async (tx) => {
       await tx.attendance.update({ where: { id: r.id }, data });
-      await audit(tx, user.id, "UPDATE", "Attendance", r.id, { checkOut: null }, { xodim: emp.fullName, ketdi: now, ozi: true, ...auditMeta });
+      await audit(tx, user.id, "UPDATE", "Attendance", r.id, { checkOut: null }, { xodim: emp.fullName, ketdi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
     });
     const early = earlyBy(now, shift.end);
     text = `${shortName(emp.fullName)} ${now} da ketdi${w !== null ? ` (${hoursText(w)}${early ? `, ${early} daq erta` : ""})` : ""}${newDevice ? " · yangi telefondan" : ""}`;
@@ -335,7 +371,7 @@ export async function myAttendanceMonth(user: Pick<MobileUser, "id">, rawMonth?:
       checkIn: present ? r!.checkIn : null, checkOut: present ? r!.checkOut : null,
       minutes: present ? workedMinutes(r!.checkIn, r!.checkOut) : null,
       lateMin: present ? lateBy(r!.checkIn, shift.start) : null,
-      self: r?.source === SELF_SOURCE,
+      self: !!r?.source && SELF_SOURCES.includes(r.source),
     };
   });
   const cnt = (s: AttendanceStatus) => out.filter((d) => d.status === s).length;

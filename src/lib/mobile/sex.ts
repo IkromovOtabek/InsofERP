@@ -8,6 +8,7 @@ import { buildReport, loadReport, reportHistory, reportSummary, stockHighlights,
 import { unitLabel } from "@/lib/unit";
 import { myBrigades } from "@/lib/brigades";
 import { faceCheckEnabled } from "@/lib/ai/face";
+import { SELF_SOURCE, SELF_SOURCES } from "@/lib/self-attendance";
 import { day, inUnit, num, pctText, sum, time, totalsText } from "./fmt";
 import { dashRange, type DashRange } from "./dashboard";
 import { periodAttendance, periodPlan } from "@/lib/period-stats";
@@ -349,9 +350,8 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
   if (m && (canWork(user) || own)) {
     // "Keldi" — yuz bilan (AI kaliti bo'lsa): old kamera kadri profil surati bilan solishtiriladi, mos kelmasa
     // yozilmaydi. Kalit bo'lmasa — eskicha bir tugma. Vaqtni tuzatish/boshqa belgi pastdagi formada qoladi.
-    // "Keldi" — telefonning Face ID / barmoq izi skaneri bilan (kamera ochilmaydi, rasm olinmaydi):
-    // ilova OS oynasida tasdiqlatib, `biometric: true` yuboradi
-    if (m.status !== "PRESENT") actions.push({ id: "att.face", label: "Keldi — Face ID", tone: "success" });
+    // "Keldi" — ilova ichidagi yuz skaneri: kamera xodimga qaratiladi, kadr avtomatik olinib `photo` bilan yuboriladi
+    if (m.status !== "PRESENT") actions.push({ id: "att.face", label: "Keldi — yuz skaneri", tone: "success" });
     if (m.status === "PRESENT" && !m.checkOut) actions.push({ id: "att.checkout", label: "Ketdi (hozir)", tone: "brand" });
     if (m.status !== "ABSENT") actions.push({ id: "att.absent", label: "Kelmadi", tone: "danger", confirm: `${m.fullName} bugun kelmadi deb belgilansinmi?` });
     // Vaqtni faqat sex boshlig'i tuzatadi. Brigadir esa yuz tekshiruvi yoqiq bo'lsa "Keldi" ni bu
@@ -384,9 +384,9 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
       f("Brigada", m?.brigade ?? UNASSIGNED, m?.brigade ? undefined : "warning"),
       f("Bugun", mk ? mk.label : "belgilanmagan", m?.status ? STATUS_TONE[m.status] : "warning"),
       f("Keldi", m?.checkIn ?? "—"),
-      ...(m?.status === "PRESENT" ? [todayRow?.source === "SELF_BIOMETRIC"
-        // Xodim o'zi telefonidan: Face ID / barmoq izi + GPS (`lib/self-attendance.ts`); yangi telefon — ogohlantirish
-        ? f("Belgiladi", `o'zi · Face ID${todayRow.checkInDistance != null ? ` · ${Math.round(todayRow.checkInDistance)} m` : ""}${todayRow.newDevice ? " · yangi telefon" : ""}`, todayRow.newDevice ? "warning" : "success")
+      ...(m?.status === "PRESENT" ? [todayRow?.source && SELF_SOURCES.includes(todayRow.source)
+        // Xodim o'zi telefonidan: yuz skaneri + GPS (`lib/self-attendance.ts`); yangi telefon — ogohlantirish
+        ? f("Belgiladi", `o'zi · ${todayRow.source === SELF_SOURCE ? `yuz${todayRow.faceConfidence != null ? ` ${todayRow.faceConfidence}%` : ""}` : "Face ID"}${todayRow.checkInDistance != null ? ` · ${Math.round(todayRow.checkInDistance)} m` : ""}${todayRow.newDevice ? " · yangi telefon" : ""}`, todayRow.newDevice ? "warning" : "success")
         : f("Yuz tekshiruvi", todayRow?.faceVerifiedAt ? `tasdiqlangan ${time(todayRow.faceVerifiedAt)}` : "qo'lda belgilangan", todayRow?.faceVerifiedAt ? "success" : "warning")] : []),
       f("Ketdi", m?.checkOut ?? "—"),
       ...(m?.note ? [f("Izoh", m.note)] : []),

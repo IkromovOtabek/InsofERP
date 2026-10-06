@@ -94,6 +94,8 @@ type Mark = {
   status: AttendanceStatus; checkIn?: string | null; checkOut?: string | null; note?: string | null;
   /** "Keldi" yuz bilan tasdiqlangan — kadr fayli (`uploads/employees/`). Qo'lda belgilashda berilmaydi va o'zgarmaydi. */
   facePhoto?: string;
+  /** Model ishonchi (0–100) — faqat `facePhoto` bilan birga. */
+  faceConfidence?: number;
 };
 
 /**
@@ -115,7 +117,7 @@ export async function markProductionAttendance(userId: string, employeeId: strin
   const date = dayUtc(iso);
   const data = {
     status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId,
-    ...(m.facePhoto ? { facePhoto: m.facePhoto, faceVerifiedAt: new Date() } : {}),
+    ...(m.facePhoto ? { facePhoto: m.facePhoto, faceVerifiedAt: new Date(), faceConfidence: m.faceConfidence ?? null } : {}),
   };
   await db.$transaction(async (tx) => {
     const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId, date } }, create: { employeeId, date, ...data }, update: data });
@@ -130,41 +132,22 @@ export async function markProductionAttendance(userId: string, employeeId: strin
  * faqat auditda urinish qoladi (kim, kimni, nima sababdan o'tmadi).
  */
 export async function markAttendanceByFace(userId: string, employeeId: string, photo: File, iso = today()): Promise<{ error: string } | { ok: true; text: string; confidence: number }> {
-  const { faceCheckEnabled, compareFaces } = await import("@/lib/ai/face");
-  const { employeeFilePath, saveEmployeeFile } = await import("@/lib/uploads");
-  const { readFile } = await import("fs/promises");
+  const { faceCheckEnabled } = await import("@/lib/ai/face");
+  const { saveEmployeeFile } = await import("@/lib/uploads");
   if (!faceCheckEnabled()) return { error: "Yuz tekshiruvi sozlanmagan (AI kaliti yo'q) — davomatni sex boshlig'i qo'lda belgilaydi" };
   const staff = await productionStaff(iso);
   const e = staff.members.find((x) => x.id === employeeId);
   if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };
   if (e.status === "PRESENT") return { error: `${e.fullName} bugun allaqachon "Keldi" deb belgilangan` };
-  const emp = await db.employee.findUnique({ where: { id: employeeId }, select: { photo: true } });
-  const refPath = emp?.photo ? employeeFilePath(emp.photo) : null;
-  if (!refPath) return { error: `${e.fullName} ning profil surati yo'q — otdel kadr avval kartasiga rasm yuklaydi` };
-  let reference: Buffer;
-  try { reference = await readFile(refPath); } catch { return { error: "Profil surati diskda topilmadi — otdel kadr qayta yuklasin" }; }
-  const probe = Buffer.from(await photo.arrayBuffer());
-  // HEIC (iPhone) serverda o'qilmaydi (sharp 0.33 — HEIF dekoderi o'chiq): umumiy "vaqtincha ishlamadi" o'rniga aniq sabab
-  const { sniffFileKind } = await import("@/lib/uploads");
-  if (sniffFileKind(reference) === "heic") return { error: `${e.fullName} ning profil surati HEIC formatida — yuz tekshiruvi uni o'qiy olmaydi. Otdel kadr suratni JPG yoki PNG qilib qayta yuklasin` };
-  const probeKind = sniffFileKind(probe);
-  if (probeKind === "heic") return { error: "Kamera kadri HEIC formatida — telefon sozlamalarida Kamera → Formatlar → «Eng mos» (JPG) ni tanlang va qayta suratga oling" };
-  if (probeKind !== "jpg" && probeKind !== "png" && probeKind !== "webp") return { error: "Kadr rasm emas — JPG, PNG yoki WEBP surat yuboring" };
-
-  let r: Awaited<ReturnType<typeof compareFaces>>;
-  try { r = await compareFaces(reference, probe); } catch (err) {
-    // Provayder xatosi (limit, tarmoq) — ichki matn (org id, URL) ilovaga chiqmasin
-    const msg = (err as Error).message ?? "";
-    console.error("[face] tekshiruv xatosi:", msg);
-    return { error: /rate limit/i.test(msg) ? "AI tekshiruvi band (bepul tarif limiti) — bir daqiqadan keyin qayta urining" : "Yuz tekshiruvi vaqtincha ishlamadi — qayta urining yoki sex boshlig'i qo'lda belgilasin" };
-  }
-  if (!r.match) {
-    await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: "tasdiqlanmadi", ishonch: r.confidence, sabab: r.reason });
-    return { error: `Yuz tasdiqlanmadi (${r.confidence}%): ${r.reason}` };
+  const { verifyEmployeeFace } = await import("@/lib/face-verify");
+  const r = await verifyEmployeeFace(employeeId, `${e.fullName} ning`, photo);
+  if (!r.ok) {
+    if (r.mismatch) await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: "tasdiqlanmadi", ishonch: r.confidence, sabab: r.reason });
+    return { error: r.error };
   }
   const saved = await saveEmployeeFile(employeeId, photo, { imageOnly: true });
   if (!saved || "error" in saved) return { error: saved?.error ?? "Kadr saqlanmadi" };
-  const m = await markProductionAttendance(userId, employeeId, { status: "PRESENT", facePhoto: saved.stored }, iso);
+  const m = await markProductionAttendance(userId, employeeId, { status: "PRESENT", facePhoto: saved.stored, faceConfidence: r.confidence }, iso);
   if ("error" in m) return m;
   return { ok: true, text: `${m.text} · yuz tasdiqlandi (${r.confidence}%)`, confidence: r.confidence };
 }

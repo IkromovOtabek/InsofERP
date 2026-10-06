@@ -577,41 +577,46 @@ model HrDocument {
 /// Bir xodimning bir kunlik davomati — otdel kadr "Davomat" tabidan belgilaydi.
 /// Yozuv yo'q kun = belgilanmagan (tabelda bo'sh katak).
 model Attendance {
-  id               String           @id @default(cuid())
-  employeeId       String
-  date             DateTime         @db.Date // kun, soatsiz
-  status           AttendanceStatus @default(PRESENT)
-  checkIn          String? // keldi, "HH:MM" — faqat ishga chiqqan kun uchun
-  checkOut         String? // ketdi, "HH:MM"; kelishdan oldin bo'lsa tungi smena deb hisoblanadi
-  note             String?
-  markedById       String? // kim belgilagani (User.id) — auditda ham qoladi
+  id                     String           @id @default(cuid())
+  employeeId             String
+  date                   DateTime         @db.Date // kun, soatsiz
+  status                 AttendanceStatus @default(PRESENT)
+  checkIn                String? // keldi, "HH:MM" — faqat ishga chiqqan kun uchun
+  checkOut               String? // ketdi, "HH:MM"; kelishdan oldin bo'lsa tungi smena deb hisoblanadi
+  note                   String?
+  markedById             String? // kim belgilagani (User.id) — auditda ham qoladi
   // "Keldi" yuz bilan tasdiqlangan bo'lsa: kamera kadri (`uploads/employees/`) va tasdiq vaqti.
   // Qo'lda belgilangan yozuvda ikkalasi ham bo'sh — tabelda farqi ko'rinadi.
-  facePhoto        String?
-  faceVerifiedAt   DateTime?
+  facePhoto              String?
+  faceVerifiedAt         DateTime?
+  /// Yuz mosligi ishonchi (0–100, AI modeli) — "Keldi" kadri uchun (mobil yuz skaneri)
+  faceConfidence         Int?
   /// "Ketdi" ham yuz bilan (Face ID skaneri) belgilangan bo'lsa — o'sha kadr (`uploads/employees/`)
-  checkOutPhoto    String?
+  checkOutPhoto          String?
+  /// "Ketdi" kadrining yuz mosligi ishonchi (0–100) — xodim o'zi "Ketdim" bosganda
+  checkOutFaceConfidence Int?
   // ── Xodimning o'zi telefonidan belgilagani ("Keldim" / "Ketdim", `lib/self-attendance.ts`) ──
-  // `source`: null — qo'lda (sex boshlig'i / HR), "SELF_BIOMETRIC" — xodim o'zi, Face ID / barmoq izi + GPS,
+  // `source`: null — qo'lda (sex boshlig'i / HR), "SELF_FACE" — xodim o'zi, ilova ichidagi yuz skaneri + GPS
+  // (kadr profil surati bilan solishtiriladi), "SELF_BIOMETRIC" — eski yozuvlar (telefon Face ID / barmoq izi + GPS),
   // "FACE_ID" — ERP'ning o'z yuz skaneri (Bosh sahifa → Davomat, `lib/face-id.ts`).
   // Biometriya faqat telefon egasini tasdiqlaydi — shuning uchun qurilma id va nuqta ham saqlanadi.
-  source           String?
-  checkInLat       Float?
-  checkInLng       Float?
-  checkInAccuracy  Float? // GPS aniqligi, m
-  checkInDistance  Float? // ish joyigacha masofa, m
-  checkInDeviceId  String?
-  checkOutLat      Float?
-  checkOutLng      Float?
-  checkOutAccuracy Float?
-  checkOutDistance Float?
-  checkOutDeviceId String?
+  source                 String?
+  checkInLat             Float?
+  checkInLng             Float?
+  checkInAccuracy        Float? // GPS aniqligi, m
+  checkInDistance        Float? // ish joyigacha masofa, m
+  checkInDeviceId        String?
+  checkOutLat            Float?
+  checkOutLng            Float?
+  checkOutAccuracy       Float?
+  checkOutDistance       Float?
+  checkOutDeviceId       String?
   /// Smena boshidan necha daqiqa kech keldi (o'zi belgilaganda yoziladi)
-  lateMinutes      Int?
+  lateMinutes            Int?
   /// Xodim avval boshqa telefondan belgilagan bo'lsa — yangi qurilmadan belgilandi (rahbarga xabarda ham aytiladi)
-  newDevice        Boolean          @default(false)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  newDevice              Boolean          @default(false)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
