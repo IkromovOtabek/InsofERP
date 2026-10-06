@@ -43,7 +43,9 @@ section("SMS kanali olib tashlangan (statik)");
 const files: string[] = [];
 walk(join(ROOT, "src"), files);
 walk(join(ROOT, "scripts"), files);
-const targets = files.filter((f) => relative(ROOT, f) !== SELF);
+// platform-init-env.sh eski SMS kalitlarini .env nusxasidan OLIB TASHLAYDI (grep -v) — bu iz emas, tozalash
+const ALLOW = new Set([SELF, "scripts/platform-init-env.sh"]);
+const targets = files.filter((f) => !ALLOW.has(relative(ROOT, f)));
 // Env namunalari ham — server .env ga eski kalitlar qaytib yozilmasin
 for (const f of [".env.example", ".env.test.example", "build.env.example", "docs/deploy/control.env.example"]) {
   if (existsSync(join(ROOT, f))) targets.push(join(ROOT, f));

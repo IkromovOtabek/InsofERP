@@ -30,7 +30,10 @@ mkdir -p "$D_DATA/alfa/uploads/contracts"; echo "qa shartnoma" > "$D_DATA/alfa/u
 echo "── server-backup.sh ──"
 # 1. OFFSITE=rclone, rclone yo'q → mahalliy nusxa olinadi, lekin exit 1 + ogohlantirish
 if command -v rclone >/dev/null; then echo "  (rclone o'rnatilgan — «yo'q» sinovi PATH'siz)"; fi
-backup rclone-missing PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$(command -v pg_dump)")"; code=$?
+# Postgres vositalari alohida papkaga symlink — Homebrew'da rclone ham pg_dump bilan bir papkada bo'ladi
+PGBIN="$LOGS/pgbin"; mkdir -p "$PGBIN"
+for t in pg_dump pg_restore psql createdb dropdb; do command -v "$t" >/dev/null && ln -sf "$(command -v "$t")" "$PGBIN/$t"; done
+backup rclone-missing PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PGBIN"; code=$?
 [ "$code" != 0 ] && pass "rclone yo'q → exit $code (jim muvaffaqiyat emas)" || fail "rclone yo'q, lekin exit 0"
 grep -q "rclone o'rnatilmagan" "$LOGS/rclone-missing.log" && pass "logda aniq sabab: rclone o'rnatilmagan" || fail "sabab logda yo'q"
 grep -q "(ALERT)" "$LOGS/rclone-missing.log" && pass "ogohlantirish urinishi logda (Telegram sozlanmagan — no-op)" || fail "ALERT yozuvi yo'q"
