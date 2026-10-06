@@ -22,7 +22,10 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
-| d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch | d-run-all.sh (git HEAD klonida, portlar 3214–3216) |
+| d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch, kiberxavfsizlik moduli (fixture'lar + stub AI) | d-run-all.sh (git HEAD klonida, portlar 3214–3216), d-security.mts |
+
+`d-security.mts` alohida ham ishlaydi (server shart emas): `npx tsx scripts/qa/d-security.mts` — vaqtinchalik
+`insof_test_ctl_sec` bazasini ochadi va oxirida o'chiradi; haqiqiy Claude API chaqirilmaydi (test rejimi stub).
 
 `d` to'plami `git archive HEAD` bilan ishlaydi — commit qilinmagan o'zgarishlar unga kirmaydi.
 

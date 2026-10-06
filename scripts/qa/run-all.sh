@@ -18,7 +18,8 @@
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
 #        geo   — mobil geofence "yoqilgan" rejimi (MOBILE_SITE_COORDS_REQUIRED=true)
-#        d     — ko'p korxonali platforma (d-run-all.sh) — git HEAD ning toza klonida (commit qilinmagan o'zgarishlar kirmaydi!)
+#        d     — ko'p korxonali platforma (d-run-all.sh) — git HEAD ning toza klonida (commit qilinmagan o'zgarishlar kirmaydi!);
+#                ichida kiberxavfsizlik moduli ham (d-security.mts: fixture'lar, stub AI, vaqtinchalik insof_test_ctl_sec)
 #   4. Natija jadvali; biror to'plam yiqilsa exit 1.
 #
 # Talab: lokal Postgres (joriy foydalanuvchi, CREATEDB), insof_test_golden bazasi, node_modules, portlar

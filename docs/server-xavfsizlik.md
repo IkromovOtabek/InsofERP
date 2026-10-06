@@ -483,3 +483,87 @@ Mac'da: 2.9 dagi port tekshiruvi + 3.7 dagi tiklash sinovi.
 
 Belgilar: `lastb` keskin oshsa — hujum, IP'ni `sudo ufw deny from <ip>`; `security:check` qizil bersa — deploy qilmang;
 `ss` ro'yxatida yangi `0.0.0.0` port paydo bo'lsa — kim ochganini aniqlang (`sudo ss -tlnp` da `users:`).
+
+## 6. CyberSecurity agent (avtomatik tekshiruv + AI tahlil)
+
+`insof-agent` xizmati (scripts/insof-agent.ts) davriy ravishda `src/lib/control/security` modulini chaqiradi:
+`runSecurityChecks()` topilmalarni qaytaradi → agent ularni `Incident` (source `security`) va `ServiceCheck` ga yozadi;
+`runAiAnalysis()` Claude orqali qisqa hisobot (`SecurityReport`) tuzadi. Panel (IT superadmin) faqat o'qiydi va
+oq ro'yxatdagi amallarni (`BLOCK_IP`, `FIX_SECRET_PERMS`, ...) navbatga qo'yadi — o'zi serverga tegmaydi.
+
+### 6.1 Nima tekshiriladi
+
+| Kalit (`security:…`) | Manba | Daraja |
+|---|---|---|
+| `ssh-bruteforce` | `journalctl -u ssh` (1 soat): "Failed password"/"Invalid user" IP bo'yicha | ≥10/soat bitta IP → HIGH + `BLOCK_IP` (faqat ommaviy IPv4) |
+| `ssh-login` | `journalctl` (24 soat): "Accepted …" | yangi IP dan parol bilan → MEDIUM, kalit bilan → LOW; brute force IP'dan kirish → CRITICAL |
+| `sshd-config` | `sshd -T` (root bo'lsa) yoki `/etc/ssh/sshd_config` + `sshd_config.d/*.conf` | `PermitRootLogin yes` → HIGH, `PasswordAuthentication yes` → MEDIUM, `MaxAuthTries` yo'q → LOW |
+| `firewall` | `ufw status` → `sudo -n ufw status` → `/etc/ufw/ufw.conf` | o'chirilgan → HIGH |
+| `fail2ban` | `systemctl is-active fail2ban` | yo'q → MEDIUM |
+| `open-ports` | `ss -Htlnp` | 0.0.0.0/:: da 22/80/443 dan boshqa port → HIGH (3000–3199, 5432, 6379 faqat 127.0.0.1) |
+| `secret-perms` | control.env, build.env, tenants/*.env, /etc/insof/backup.env rejimi | 600/640 dan ochiq → HIGH + `FIX_SECRET_PERMS` |
+| `root-env` | ildizdagi `.env` | bor → MEDIUM (platformaga o'tish tugamagan) |
+| `tenant-secrets` | tenants/*.env (faqat uzunlik/mavjudlik, qiymat chiqmaydi) | `AUTH_SECRET` < 32 yoki yo'q, `CONTROL_SECRET` korxona faylida → HIGH |
+| `http-headers` | `https://<domen>/login`, `https://admin…/superadmin/login` | HSTS / CSP / X-Content-Type-Options yo'q → MEDIUM |
+| `nginx-scanners`, `nginx-errors` | `/var/log/nginx/access.log` oxirgi 10 000 qator | `/.env`, `/wp-admin`, `/.git` … skanerlari → MEDIUM + `BLOCK_IP`; 5xx ≥ 5% → MEDIUM; 429 ko'p → LOW |
+| `app-privileges` | har korxona bazasi (faqat o'qish): `User`, `AuditLog` 24 soat | yangi DIRECTOR/IT hisobi yoki rol ko'tarilishi → MEDIUM; ko'p ruxsat/parol o'zgarishi → LOW |
+| `app-logins` | `journalctl -u insof-erp@<slug>` dagi `[login-guard] qulf` | IP qulflari / ko'p hisob qulfi → LOW/MEDIUM (+ `BLOCK_IP`) |
+| `control-activity` | control `ControlEvent` + `journalctl -u insof-control` | yangi superadmin / parol almashuvi / panel login qulfi → MEDIUM; 08:00–20:00 dan tashqari SSO/kirish → LOW |
+| `os-updates`, `reboot-required` | `apt list --upgradable` (soatiga bir marta, kesh), `/var/run/reboot-required` | xavfsizlik yangilanishi → MEDIUM (openssl/openssh/kernel yoki ≥10 → HIGH); reboot → LOW |
+| `npm-audit`, `npm-accepted-risk` | `npm audit --omit=dev --json` (`current/`, kuniga bir marta, kesh) | critical → CRITICAL, high → HIGH; `sharp` 0.33.5 — qabul qilingan xavf (LOW, yumshatish matni bilan) |
+
+Har tekshiruv alohida (timeout bilan): vosita yo'q yoki huquq yetmasa — `INFO` topilma, `detail.status = "UNKNOWN"` va
+`detail.reason` da sabab (masalan "journalctl yo'q", "deploy'ni adm guruhiga qo'shing"). Holat yaxshi bo'lsa ham shu kalit
+bilan `INFO` (`status: "OK"`) qaytadi — agent ochiq hodisani yopadi. Topilmalarda sir qiymatlari hech qachon bo'lmaydi.
+
+Login xatolari bazada saqlanmaydi (login-guard xotirada) — shuning uchun faqat **qulflar** jurnaldan sanaladi.
+
+### 6.2 Serverda kerakli huquqlar (bir marta)
+
+```bash
+# journald (SSH, insof-erp@*, insof-control jurnallari) — odatda allaqachon bor
+id deploy | grep -q systemd-journal || sudo usermod -aG systemd-journal deploy
+# nginx loglari (/var/log/nginx — root:adm 640) va /var/log/auth.log
+id deploy | grep -q '(adm)' || sudo usermod -aG adm deploy
+sudo systemctl restart insof-agent          # guruh yangi jarayonda kuchga kiradi
+
+# (ixtiyoriy) ufw qoidalarini ko'rish — faqat shu bitta buyruq, parolsiz
+echo 'deploy ALL=(root) NOPASSWD: /usr/sbin/ufw status' | sudo tee /etc/sudoers.d/insof-ufw-status >/dev/null \
+  && sudo chmod 440 /etc/sudoers.d/insof-ufw-status && sudo visudo -c
+```
+
+sudoers qatori bo'lmasa agent `/etc/ufw/ufw.conf` dagi `ENABLED=` dan xulosa qiladi (kamroq aniq).
+Qaytarish: `sudo rm /etc/sudoers.d/insof-ufw-status`; `sudo gpasswd -d deploy adm`.
+
+**fail2ban** (tavsiya, SSH parol bilan ochiq turganda ayniqsa):
+
+```bash
+sudo apt install -y fail2ban
+printf '[sshd]\nenabled = true\nmaxretry = 5\nfindtime = 10m\nbantime = 1h\n' | sudo tee /etc/fail2ban/jail.d/sshd.local
+sudo systemctl enable --now fail2ban && sudo fail2ban-client status sshd
+```
+
+Kesh (apt/npm audit) — `INSOF_SECURITY_CACHE_DIR` (standart `$TMPDIR/insof-security-cache`); xizmatda `ProtectSystem=strict`
+bo'lsa shu papka `ReadWritePaths` da bo'lsin yoki `PrivateTmp=yes` qoldirilsin. Chegara: `SECURITY_SSH_FAIL_THRESHOLD` (standart 10).
+
+### 6.3 AI tahlil (Claude)
+
+- `control.env`: `ANTHROPIC_API_KEY` (bo'sh — AI tahlil o'chiq, tekshiruvlar baribir ishlaydi), `CONTROL_AI_MODEL`
+  (standart `claude-sonnet-5-5`). Refusal bo'lsa server tomonidagi zaxira model (`fallbacks: "default"`) ishlatiladi;
+  o'chirish: `CONTROL_AI_FALLBACK=0`.
+- Kirish: ochiq hodisalar + so'nggi tekshiruv natijalari + host holati, ≤ 20 000 belgi. Sirlar, URL ichidagi parollar,
+  uzun tokenlar, telefon va e-pochtalar yashiriladi; IP'lar qoladi.
+- Natija: `SecurityReport` — baho **A** (yaxshi) … **F** (xavfli), o'zbekcha qisqa xulosa (≤ 600 belgi), tavsiyalar
+  (`title`, `severity`, `why` — nega xavfli, `fix` — nima qilish, ixtiyoriy `actionType`). HIGH/CRITICAL tavsiya, agar
+  xuddi shunday ochiq hodisa bo'lmasa, `source = "ai"` hodisa sifatida ochiladi (parametrsiz amallargina biriktiriladi).
+- Test rejimida (`INSOF_ENV=test`) haqiqiy API chaqirilmaydi — deterministik stub (`model = "stub-test"`).
+
+### 6.4 Hisobotni qanday o'qish
+
+1. Avval **baho** va xulosa. D/F — shu kuni choralar; C — hafta ichida; A/B — oylik tartib (5-bo'lim) yetarli.
+2. **CRITICAL/HIGH** hodisalar: `ssh-login` CRITICAL — darhol `last -n 20`, `sudo lastb | head`, parolni almashtiring,
+   kalitlarni (`~/.ssh/authorized_keys`) tekshiring; `open-ports` HIGH — 3.1-bo'lim; `secret-perms` — panelda «Tuzatish»
+   (`FIX_SECRET_PERMS`); `tenant-secrets` — 3.5-bo'lim (sirni almashtirish).
+3. `BLOCK_IP` takliflari — avval IP o'zingizniki/mijozniki emasligini tekshiring (detail'dagi so'rovlar soni va yo'llar).
+4. `UNKNOWN` holatlar — xato emas, huquq yetishmasligi: 6.2 dagi buyruqlar bilan yoping.
+5. `npm-accepted-risk` (sharp) — ataylab qabul qilingan; CPU almashtirilganda `sharp` yangilanadi va topilma yo'qoladi.
