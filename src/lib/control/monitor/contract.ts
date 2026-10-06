@@ -17,6 +17,10 @@ export const ACTION_TYPES = [
   "DEPLOY",              // { ref?: "main" | <hex sha> } — ajratilgan jarayon, keyingi agent nusxasi yakunlaydi
   "ROLLBACK",            // {}
   "LOG_TAIL",            // { source, lines, filter?, priority? }
+  // Baza amallari (src/lib/control/dbtraffic/contract.ts — tekshiruv va tasdiq so'zi shu yerda)
+  "PG_CANCEL",           // { db, pid }
+  "PG_TERMINATE",        // { db, pid } — faqat idle in transaction > 10 daq
+  "VACUUM_ANALYZE",      // { db, table? }
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
 

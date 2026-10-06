@@ -6,6 +6,7 @@ import { AlertTriangle, Archive, Ban, Bot, CheckCircle2, Eye, Lock, RefreshCw, R
 import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
 import { IPV4_RE, UNIT_RE } from "@/lib/control/monitor/contract";
 import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
+import { DB_ACTION_DESCR } from "@/lib/control/dbtraffic/contract";
 import { ackIncident, enqueueAction, resolveIncident } from "../monitor-actions";
 
 /** Sahifa ichidagi modal oyna (window.confirm emas): Esc yopadi, fokus ichkariga o'tadi va qaytadi. */
@@ -46,6 +47,7 @@ const DESCR: Record<string, string> = {
   RUN_HEALTH_CHECK: "Agent barcha tekshiruvlarni navbatdan tashqari bajaradi.",
   RUN_SECURITY_SCAN: "Ochiq portlar, SSH, fayl huquqlari, yangilanishlar va loglar tekshiriladi.",
   RUN_AI_ANALYSIS: "Topilmalar AI'ga beriladi va baho (A–F) bilan hisobot tuziladi.",
+  ...DB_ACTION_DESCR,
 };
 
 /** Ikonka nomi bilan (server sahifadan komponent funksiyasini klientga berib bo'lmaydi). */

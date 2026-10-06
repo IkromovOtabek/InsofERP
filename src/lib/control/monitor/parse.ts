@@ -3,6 +3,7 @@
  * Fayl/jarayon bilan ishlash scripts/insof-agent.ts da; bu yerda faqat matn → raqam → holat.
  */
 import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "./contract";
+import { validateDbAction } from "../dbtraffic/contract";
 import type { CheckStatusT, FindingSeverity } from "./types";
 import { isDevopsAction, validateDevops, type DevopsParams } from "../devops/contract";
 
@@ -270,8 +271,9 @@ export function decideIncident(hasOpen: boolean, okStreak: number, status: Check
 
 /* ───────────────────────── Amallar: tekshiruv va tozalash ───────────────────────── */
 
+export type ActionParams = { unit?: string; ip?: string; db?: string; pid?: string; table?: string };
 export type ValidAction =
-  | { ok: true; type: ActionType; params: { unit?: string; ip?: string } & DevopsParams }
+  | { ok: true; type: ActionType; params: ActionParams & DevopsParams }
   | { ok: false; reason: string };
 
 /** Hech qachon bloklanmaydigan manzillar: loopback, 0.0.0.0/8, broadcast (o'zimizni qulflamaslik). */
@@ -286,6 +288,8 @@ function forbiddenIp(ip: string): boolean {
 export function validateAction(type: string, params: unknown): ValidAction {
   if (!isActionType(type)) return { ok: false, reason: `Noma'lum amal turi: ${String(type).slice(0, 40)}` };
   const p = params && typeof params === "object" && !Array.isArray(params) ? (params as Record<string, unknown>) : {};
+  const dbv = validateDbAction(type, p);
+  if (dbv) return dbv;
   if (type === "RESTART_UNIT") {
     const unit = p.unit;
     if (typeof unit !== "string" || !UNIT_RE.test(unit)) return { ok: false, reason: "unit noto'g'ri (faqat insof-erp@<slug>, insof-control, insof-eco)" };

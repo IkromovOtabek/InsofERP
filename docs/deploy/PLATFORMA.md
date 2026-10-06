@@ -446,6 +446,74 @@ detached rejim» → `enable-linger`; «Deploy qulfi band» → boshqa deploy is
 Qaytarish: kodni oldingi relizga qaytarish kifoya (DEPLOY/ROLLBACK/LOG_TAIL amallari yo'qoladi, `release:info` 1 soatda o'chadi);
 `sudo loginctl disable-linger deploy` ixtiyoriy. Lokal sinov: `npx tsx scripts/qa/d-devops.mts`.
 
+## Baza va trafik (IT panel → «Baza», «Trafik»)
+
+`insof-agent` ning ikki qo'shimcha sikli (`scripts/agent/dbtraffic.ts`, sof mantiq — `src/lib/control/dbtraffic/`).
+sudo va root skript KERAK EMAS: baza — `insof` roli bilan (superuser emas), loglar — `adm` guruhi orqali o'qiladi.
+
+| Har | Nima | Kalit | WARN / CRIT |
+|---|---|---|---|
+| 5 daq | Postgres: har baza hajmi + kunlik/7 kunlik o'sish (tarix `data.history` da, 35 kun), har ma'lum baza (control + korxonalar) ichida eng katta 10 jadval (hajm, qator taxmini, o'lik qator %, oxirgi autovacuum/analyze), o'lik qatorlar ulushi eng yuqori 5 jadval; ulanishlar holat/baza bo'yicha, `max_connections` ga nisbat; uzoq tranzaksiyalar (> 1 daq), uzoq so'rovlar (> 30 s), qulf kutayotganlar (kim to'sayapti); cache hit; `pg_stat_statements` bo'lsa — eng og'ir 10 so'rov | `db:stats` (kind `db`) | 10+ daq «idle in transaction», 1+ daq qulf kutish, cache hit < 90%, jadvalda o'lik qator ≥ 20% va ≥ 10 000 / — |
+| 60 s | nginx `access.log` oxirgi 5/60 daqiqa: domen bo'yicha so'rov/daq, 4xx/5xx ulushi, 429, eng sekin yo'llar, eng faol 10 IP; `error.log`: upstream xatolari domen bo'yicha (refused/timeout…), `limit_req` zonalari | `traffic:nginx` (kind `traffic`) | — / 5 daqiqada ≥ 20 so'rov bo'lsa 5xx ≥ 5% WARN, ≥ 20% CRIT |
+| 60 s | upstream xatosi bo'lgan har domen (oxirgi 60 daq) | `traffic:upstream:<domen>` | 5 daqiqada ≥ 3 / ≥ 20 xato yoki ≥ 5 «Connection refused» (masalan `files.insof-erp.uz → 127.0.0.1:9010` ishlamayapti). Port korxona/panel/ECO niki bo'lsa hodisada «qayta ishga tushirish» tugmasi |
+
+Shaxsiy ma'lumot chiqmaydi: so'rov matnidagi satr/son literallari `'?'`/`?` ga almashtiriladi va 300 belgigacha
+qisqartiriladi; log yo'llarida query string tashlanadi, id/raqam/uuid → `:id`; user-agent, referer saqlanmaydi.
+Loglar butun holda o'qilmaydi — fayl oxiridan 256 KB bo'laklab orqaga, 60 daqiqadan eski qatorga yetganda to'xtaydi
+(kunlik rotatsiyadan keyin `access.log.1` ham; chegara 512 MB). Katta `data` monitoring SSE oqimiga qo'shilmaydi.
+
+**Amallar** (panelda qayta tasdiq bilan; agent har birini bazadan qayta tekshiradi, natija — `AgentAction.output`):
+
+| Tur | Nima qiladi | Tasdiq so'zi | Cheklov |
+|---|---|---|---|
+| `PG_CANCEL {db, pid}` | `pg_cancel_backend(pid)` | pid | faqat agent roli (`insof`) ning FAOL so'rovi, shu bazada; boshqa rol (postgres) → `REJECTED` |
+| `PG_TERMINATE {db, pid}` | `pg_terminate_backend(pid)` | `TASDIQLAYMAN` | faqat o'z rolining **10 daqiqadan ortiq «idle in transaction»** ulanishi; faol so'rov → `REJECTED` |
+| `VACUUM_ANALYZE {db, table?}` | `VACUUM (ANALYZE)` jadval yoki butun baza | baza nomi | `db` — control yoki korxona bazasi; jadval — `public` sxemadagi mavjud nom (`pg_class`), identifikator `format('%I.%I')` bilan; egasi bo'lmasa xato |
+
+Holat tekshiruvi va bajarish bitta SQL da (`… FROM pg_stat_activity WHERE pid=… AND usename=current_user AND state=…`) —
+oraliqda pid boshqa jarayonga o'tsa ham noto'g'ri ulanish to'xtatilmaydi. `insof` superuser emas, shuning uchun Postgres
+o'zi ham boshqa rollarning jarayonlariga signal yuborishga ruxsat bermaydi.
+
+### O'rnatish / yangilash (bir marta)
+
+```bash
+# 1) nginx loglari: deploy adm guruhida (Monitoring agenti o'rnatilganda qilingan bo'lsa — o'tkazib yuboring)
+id deploy | grep -q '(adm)' || { sudo usermod -aG adm deploy && sudo systemctl restart insof-agent; }
+sudo -u deploy head -c 100 /var/log/nginx/access.log >/dev/null && echo "o'qiydi"
+
+# 2) access.log formatiga $host va $request_time (domen bo'yicha va eng sekin yo'llar uchun; ixtiyoriy, lekin tavsiya)
+sudo install -m 644 docs/deploy/nginx-log.conf /etc/nginx/conf.d/insof-log.conf
+grep -n 'access_log' /etc/nginx/nginx.conf               # standart qator: access_log /var/log/nginx/access.log;
+sudo sed -i 's|^\(\s*\)access_log /var/log/nginx/access.log;|\1# insof-log.conf ga ko'\''chirildi: access_log /var/log/nginx/access.log;|' /etc/nginx/nginx.conf
+sudo nginx -t && sudo systemctl reload nginx
+tail -n1 /var/log/nginx/access.log                        # oxirida: host=… rt=0.012 urt="0.011"
+# Qaytarish: sudo rm /etc/nginx/conf.d/insof-log.conf; nginx.conf dagi izohni olib tashlang; nginx -t && reload
+
+# 3) control.env da TENANT_DATABASE_URL (panel uchun allaqachon bor) — agent korxona bazalariga shu shablon bilan ulanadi.
+#    Bo'lmasa tenants/<slug>.env dagi DATABASE_URL ishlatiladi.
+
+# 4) pg_stat_statements (ixtiyoriy; panel O'ZI YOQMAYDI — Postgres qayta ishga tushadi, 5–10 s UZILISH, kam yuklama paytida):
+sudo -u postgres psql -c "SHOW shared_preload_libraries"  # bo'sh bo'lmasa — mavjud ro'yxatga vergul bilan qo'shing
+sudo -u postgres psql -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'"
+sudo systemctl restart postgresql@14-main
+sudo -u postgres psql -d insof_control -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"
+sudo -u postgres psql -c "GRANT pg_read_all_stats TO insof"   # boshqa bazalardagi so'rov matnlari ham ko'rinsin
+# Qaytarish: DROP EXTENSION pg_stat_statements; ALTER SYSTEM RESET shared_preload_libraries; restart
+```
+Agent yangi kod bilan `deploy.sh` dan keyin o'zi qayta ishga tushadi. Ixtiyoriy muhit: `AGENT_TRAFFIC_MS` (60000),
+`AGENT_NGINX_ACCESS_LOG`, `AGENT_NGINX_ERROR_LOG`.
+
+Tekshirish: panel → «Baza» — bazalar jadvali va «Eng katta jadvallar» to'ladi (5 daq ichida); «Trafik» — 1 daqiqada.
+`journalctl -u insof-agent | grep -E 'dbstats|traffic'` — xato bo'lmasin. Sinov: `npx tsx scripts/qa/d-dbtraffic.mts` (lokal).
+
+| Belgi | Sabab / yechim |
+|---|---|
+| «Trafik»: `access.log: o'qishga ruxsat yo'q` | `deploy` `adm` guruhida emas → 1-qadam |
+| domen ustunida faqat `(noma'lum)`, «eng sekin yo'llar» bo'sh | log formatida `$host`/`$request_time` yo'q → 2-qadam |
+| «Baza»: korxona bazasi «o'qib bo'lmadi» | `TENANT_DATABASE_URL` yo'q/noto'g'ri yoki `tenants/<slug>.env` o'qilmaydi |
+| `PG_CANCEL` → `REJECTED` «boshqa rol» | jarayon `postgres` yoki boshqa rolniki — serverda `sudo -u postgres psql -c "SELECT pg_cancel_backend(<pid>)"` |
+| `VACUUM_ANALYZE` → «jadval egasi bu rol emas» | jadval boshqa rol yaratgan — `sudo -u postgres vacuumdb -z -t '"Jadval"' <baza>` |
+
 ## Go-live ro'yxati (tartib bilan)
 
 1. **Server:** `docs/server-xavfsizlik.md` 3.1–3.5 (3000/3010 yopiq, SSH faqat kalit, fail2ban, avtomatik yangilanish, Postgres faqat localhost).

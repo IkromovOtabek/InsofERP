@@ -4,6 +4,7 @@
  * Ma'lumot manbai — snapshot.ts (server) va /superadmin/api/stream (SSE).
  */
 import { UNIT_RE, type ActionType } from "./contract";
+import { DB_ACTION_LABEL, dbConfirmPhrase } from "../dbtraffic/contract";
 
 export type CheckStatusT = "OK" | "WARN" | "CRIT" | "UNKNOWN";
 export type SeverityT = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -91,6 +92,7 @@ export const ACTION_LABEL: Record<ActionType, string> = {
   DEPLOY: "Deploy (yangi reliz)",
   ROLLBACK: "Oldingi relizga qaytarish",
   LOG_TAIL: "Log o'qish",
+  ...DB_ACTION_LABEL,
 };
 export const SOURCE_LABEL: Record<string, string> = { monitor: "Monitoring", security: "Xavfsizlik skaneri", ai: "AI tahlil" };
 export const CATEGORY_LABEL: Record<string, string> = {
@@ -105,6 +107,8 @@ export const actionLabel = (t: string) => (ACTION_LABEL as Record<string, string
  * Qaytadi: yozilishi kerak bo'lgan matn yoki null (oddiy tasdiq yetarli).
  */
 export function confirmPhrase(type: string, params: Record<string, unknown>): string | null {
+  const db = dbConfirmPhrase(type, params);
+  if (db !== undefined) return db;
   if (type === "BLOCK_IP") return typeof params.ip === "string" ? params.ip : "";
   if (type === "RENEW_CERT") return "SSL";
   if (type === "DEPLOY" || type === "ROLLBACK") return "TASDIQLAYMAN";
