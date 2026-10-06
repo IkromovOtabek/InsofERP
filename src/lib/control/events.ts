@@ -25,6 +25,7 @@ export const EVENT_LABEL: Record<string, string> = {
   ADMIN_ECO_UNLINK: "ECO hisobi uzildi",
   ADMIN_ECO_LINK_DENIED: "ECO hisobini ulash rad etildi",
   ADMIN_LOGIN_ECO_FAIL: "ECO orqali kirish rad etildi",
+  ADMIN_PREFS: "Panel mavzusi o'zgardi",
   AGENT_ACTION: "Serverga amal so'rovi (agent)",
   INCIDENT_ACK: "Hodisa ko'rildi",
   INCIDENT_RESOLVE: "Hodisa qo'lda yopildi",

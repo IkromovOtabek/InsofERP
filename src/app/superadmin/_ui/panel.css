@@ -8,8 +8,9 @@
       `@/components/ui` (Card, Table, Badge, Button, Input) va eski sahifa sinflari avtomatik shu palitraga o'tadi.
       ERP'dagi `.dark`, `.site`, `.paper` bilan bir xil usul.
 
-   Rang rejimi: tizim sozlamasi (prefers-color-scheme), `<html data-theme="light|dark">` uni bosib o'tadi
-   (panel menyusidagi almashtirgich, localStorage "insof-sa-theme"). Skript `.dark` sinfini ham moslaydi.
+   Rang rejimi: tizim sozlamasi (prefers-color-scheme); `.sa[data-theme="light|dark"]` uni bosib o'tadi — server
+   admin prefs'idan yozadi (Sozlamalar → Mavzu), shuning uchun birinchi bo'yoqdayoq to'g'ri. `.sa[data-mobile]` —
+   telefon ko'rinishi (widgets | pro), faqat ≤ 760px da ta'sir qiladi; kompyuter Status Board o'zgarmaydi.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .sa {
@@ -54,7 +55,7 @@
 
 /* ── Qorong'i: tizim sozlamasi bo'yicha (agar foydalanuvchi "yorug'" tanlamagan bo'lsa) va majburiy ── */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .sa {
+  .sa:not([data-theme="light"]) {
     --bg: #07090c; --card: #12161c; --soft: #1a1f27; --line: #252b35; --line-soft: #1d222b; --fg: #f3f5f8; --muted: #97a1ae;
     --side-bg: #0c0f14; --side-fg: #aeb6c2; --side-muted: #7d8694; --side-hover: #161b22; --side-active-bg: #f3f5f8; --side-active-fg: #07090c;
     --accent: #f3f5f8; --accent-fg: #07090c; --link: #7aa7ff; --focus: #7aa7ff;
@@ -78,7 +79,7 @@
     color-scheme: dark;
   }
 }
-:root[data-theme="dark"] .sa {
+.sa[data-theme="dark"] {
   --bg: #07090c; --card: #12161c; --soft: #1a1f27; --line: #252b35; --line-soft: #1d222b; --fg: #f3f5f8; --muted: #97a1ae;
   --side-bg: #0c0f14; --side-fg: #aeb6c2; --side-muted: #7d8694; --side-hover: #161b22; --side-active-bg: #f3f5f8; --side-active-fg: #07090c;
   --accent: #f3f5f8; --accent-fg: #07090c; --link: #7aa7ff; --focus: #7aa7ff;
@@ -104,8 +105,8 @@
 
 /* Sahifa foni (overscroll, iOS "rubber band") ham panel rangida */
 html:has(.sa), html:has(.sa) body { background: #e9ecf0; }
-@media (prefers-color-scheme: dark) { html:not([data-theme="light"]):has(.sa), html:not([data-theme="light"]):has(.sa) body { background: #07090c; } }
-html[data-theme="dark"]:has(.sa), html[data-theme="dark"]:has(.sa) body { background: #07090c; }
+@media (prefers-color-scheme: dark) { html:has(.sa:not([data-theme="light"])), html:has(.sa:not([data-theme="light"])) body { background: #07090c; } }
+html:has(.sa[data-theme="dark"]), html:has(.sa[data-theme="dark"]) body { background: #07090c; }
 
 /* To'liq rangli tugmalar qorong'ida ham oq matn bilan o'qilsin (ERP .dark qoidalari bilan bir xil) */
 .sa .bg-red-600.text-white { background-color: #c81e1e; }

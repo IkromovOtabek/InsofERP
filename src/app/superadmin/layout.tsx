@@ -1,15 +1,23 @@
 import type { Viewport } from "next";
-import { Outfit } from "next/font/google";
+import { cookies } from "next/headers";
+import { IBM_Plex_Sans, JetBrains_Mono, Outfit } from "next/font/google";
+import { getAdmin } from "@/lib/control/auth";
+import { decodeUiCookie, UI_PREFS_COOKIE, type UiPrefs } from "@/lib/control/ui-prefs";
+import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
 import "./_ui/panel.css";
+import "./_ui/mobile.css";
 
 /**
  * IT panelning umumiy ildizi (login + panel): «Status Board» dizayn tizimi.
  * Tokenlar `.sa` elementiga bog'langan (_ui/panel.css) — ERP sahifalariga ta'sir qilmaydi.
- * Outfit faqat shu yerda yuklanadi (next/font — o'z serverimizdan, CSP font-src 'self').
+ * Shriftlar next/font orqali (o'z serverimizdan, CSP font-src 'self'): Outfit — asosiy; IBM Plex Sans va
+ * JetBrains Mono — faqat telefondagi «Zich Pro» ko'rinishi uchun (oldindan yuklanmaydi).
  */
 const outfit = Outfit({ subsets: ["latin", "latin-ext"], variable: "--font-outfit", display: "swap" });
+const plex = IBM_Plex_Sans({ subsets: ["latin", "latin-ext"], weight: ["400", "500", "600", "700"], variable: "--font-plex", display: "swap", preload: false });
+const mono = JetBrains_Mono({ subsets: ["latin", "latin-ext"], variable: "--font-jbm", display: "swap", preload: false });
 
-// viewportFit=cover — telefonda env(safe-area-inset-*) ishlashi uchun (pastki tab bar, varaqlar)
+// viewportFit=cover — telefonda env(safe-area-inset-*) ishlashi uchun (pastki dock, varaqlar)
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -21,14 +29,24 @@ export const viewport: Viewport = {
 };
 
 /**
- * Panel rang rejimi birinchi bo'yoqdan oldin: localStorage "insof-sa-theme" (light|dark), bo'lmasa tizim.
- * `data-theme` panel tokenlarini, `.dark` esa ERP komponentlaridagi qorong'i tuzatishlarni yoqadi — ikkalasi mos turadi.
+ * Rang rejimi serverda `.sa[data-theme]` ga yoziladi (prefs: baza, sessiyasiz — cookie) — birinchi bo'yoqdayoq to'g'ri,
+ * miltillamaydi. Bu skript faqat ERP komponentlaridagi `html.dark` qoidalarini panel rejimiga moslaydi (bo'yoqdan oldin).
  */
-const SA_THEME = `(function(){try{var d=document.documentElement,t=localStorage.getItem("insof-sa-theme");if(t!=="light"&&t!=="dark"){d.removeAttribute("data-theme");t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}else d.setAttribute("data-theme",t);d.classList.toggle("dark",t==="dark")}catch(e){}})();`;
+const SA_THEME = `(function(){try{var s=document.currentScript.parentNode,t=s.getAttribute("data-theme"),d=document.documentElement;var k=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);d.classList.toggle("dark",k);try{t?localStorage.setItem("insof-sa-theme",t):localStorage.removeItem("insof-sa-theme")}catch(e){}}catch(e){}})();`;
 
-export default function SuperadminRoot({ children }: { children: React.ReactNode }) {
+export default async function SuperadminRoot({ children }: { children: React.ReactNode }) {
+  let prefs: UiPrefs;
+  try {
+    // Panel faqat control rejimida; boshqa rejimda (korxona jarayoni) control bazaga tegilmaydi
+    const admin = process.env.INSOF_MODE === "control" ? await getAdmin() : null;
+    prefs = admin ? await loadUiPrefs(admin.id) : decodeUiCookie((await cookies()).get(UI_PREFS_COOKIE)?.value);
+  } catch {
+    // Migratsiya hali qo'llanmagan bo'lsa ham panel ochilsin
+    prefs = decodeUiCookie((await cookies()).get(UI_PREFS_COOKIE)?.value);
+  }
   return (
-    <div className={`sa ${outfit.variable}`}>
+    <div className={`sa ${outfit.variable} ${plex.variable} ${mono.variable}`}
+      data-theme={prefs.colorMode === "system" ? undefined : prefs.colorMode} data-mobile={prefs.mobileLayout}>
       <script dangerouslySetInnerHTML={{ __html: SA_THEME }} />
       {children}
     </div>

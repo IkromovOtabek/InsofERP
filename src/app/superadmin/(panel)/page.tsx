@@ -9,6 +9,10 @@ import { TENANT_STATUS, ago } from "./status";
 import { SsoButton } from "./forms";
 import { refreshStatsAction } from "./actions";
 import { BoardActions, BoardBanner, BoardChart, BoardIncidents, BoardServices, BoardTiles, type TenantTile } from "./_monitor/board";
+import { ProHome, WidgetsHome, type MobileHomeProps } from "./_monitor/mobile-home";
+import { getAdmin } from "@/lib/control/auth";
+import { DEFAULT_UI_PREFS } from "@/lib/control/ui-prefs";
+import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +45,22 @@ export default async function Overview() {
         : active.length === 1 ? `${active[0].t.name} ishlayapti` : active.length ? "Hammasi ishlayapti" : "Hali korxona yo'q",
   };
   const versions = new Map((monitor?.tenants ?? []).map((v) => [v.id, v.version]));
+  // Telefon ko'rinishi — admin prefs'i (layout bilan bir xil manba; getAdmin so'rov ichida keshlangan)
+  const me = await getAdmin();
+  const prefs = me ? await loadUiPrefs(me.id).catch(() => DEFAULT_UI_PREFS) : DEFAULT_UI_PREFS;
+  const mobile: MobileHomeProps = {
+    initial: monitor, server, hostname: server.host, commit: server.commit,
+    tenants: all.filter((x) => x.t.status !== "ARCHIVED").map(({ t, s }) => ({
+      id: t.id, slug: t.slug, name: t.name, status: t.status, up: s ? s.web.up : null, ms: s?.web.ms ?? null, users: s ? s.users.active : null, dbOk: s ? s.db.ok : null,
+    })),
+  };
   const footer = `${server.memTotalGb} GB RAM · ${server.disk ? `${server.disk.totalGb} GB disk · ` : ""}ishlash vaqti ${server.uptimeH} soat · Node ${server.node}${server.commit ? ` · reliz ${server.commit}` : ""}`;
 
   return (
-    <div className="grid gap-(--gap)">
+    <>
+    {/* Telefon (≤ 760px): tanlangan ko'rinish; kompyuterda yashirin */}
+    <div className="sa-mhome">{prefs.mobileLayout === "pro" ? <ProHome {...mobile} /> : <WidgetsHome {...mobile} />}</div>
+    <div className="sa-desk grid gap-(--gap)">
       <PageHeader
         title="Platforma holati"
         subtitle={`ERP va ECO — ${tenants.length} ta korxona · tekshiruv: hozir`}
@@ -113,6 +129,7 @@ export default async function Overview() {
         <BoardActions initial={monitor} />
       </div>
     </div>
+    </>
   );
 }
 
