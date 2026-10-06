@@ -25,5 +25,27 @@ export async function apkInfo(): Promise<ApkInfo> {
   }
 }
 
+/** iPhone ilovasi faqat shu manzillardan o'rnatiladi. */
+const IOS_HOSTS = ["testflight.apple.com", "apps.apple.com"];
+
+/**
+ * iPhone ilovasi havolasi — `IOS_APP_URL`.
+ *
+ * iOS ilovani fayldan o'rnatmaydi (APK kabi serverga qo'yib bo'lmaydi): faqat TestFlight yoki App Store.
+ * Hozir — TestFlight ochiq havolasi (`https://testflight.apple.com/join/…`), App Store'ga chiqqach —
+ * ilova sahifasi (`https://apps.apple.com/app/id…`). Havola almashsa deploy shart emas, `.env` va qayta ishga
+ * tushirish kifoya. Bo'sh yoki Apple'ning boshqa manzili bo'lsa tugma ko'rinmaydi.
+ */
+export function iosAppUrl(): string | null {
+  const raw = process.env.IOS_APP_URL?.trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && IOS_HOSTS.includes(u.hostname) ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 36700160 → "35 MB" */
 export const apkSize = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
