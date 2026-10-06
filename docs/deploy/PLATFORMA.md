@@ -160,7 +160,11 @@ Qaytarish: `sudo systemctl disable --now insof-control`; `sudo rm /etc/nginx/sit
 cd /var/www/insof-erp
 sudo systemctl disable --now insof-erp                    # eski yagona xizmat
 mv .env .env.pre-platform                                 # ildizda .env qolmasin (skriptlar uni o'qimasin); qaytarish uchun saqlanadi
-sudo bash scripts/tenant-up.sh insof                      # insof-erp@insof: current/ dan, port 3000, /api/health kutadi
+# root egaligidagi insof-tenant-up va shablonlari (bir marta + har yangilanishda — «Infratuzilma» bo'limi)
+sudo install -o root -g root -m 755 scripts/tenant-up.sh /usr/local/sbin/insof-tenant-up
+sudo install -d -o root -g root -m 755 /usr/local/share/insof
+sudo install -o root -g root -m 644 docs/deploy/insof-erp@.service docs/deploy/nginx-tenant.conf docs/deploy/nginx-limits.conf /usr/local/share/insof/
+sudo insof-tenant-up insof                                # insof-erp@insof: current/ dan, port 3000, /api/health kutadi
 ```
 Tekshirish:
 - `systemctl is-active insof-erp@insof` → active; `curl -s 127.0.0.1:3000/api/health` → `ok:true`, `version` = `cat current/RELEASE` boshi;
@@ -178,7 +182,7 @@ sudo systemctl enable --now insof-erp                     # eski unit va repo il
 ### 8. nginx (insof domeni)
 
 Mavjud `/etc/nginx/sites-available/insof-erp` 3000-portga yo'naltirgani uchun ishlashda davom etadi. Yangi shablonga
-(X-Real-IP, limit_req, 16m, `/api/health` yopiq) o'tish: `sudo bash scripts/tenant-up.sh insof insof-erp.uz`
+(X-Real-IP, limit_req, 16m, `/api/health` yopiq) o'tish: `sudo insof-tenant-up insof insof-erp.uz`
 (`insof-insof` sayt faylini yaratadi, certbot 443 qismini qo'shadi) → eski faylni `sites-enabled` dan olib tashlang → `sudo nginx -t && sudo systemctl reload nginx`.
 Tekshirish: Mac'dan `curl -sI https://insof-erp.uz/login` → 200; `curl -sI https://insof-erp.uz/api/health` → 403.
 Qaytarish: eski sayt faylini `sites-enabled` ga qaytarib, `insof-insof` ni olib tashlang, `reload`.
@@ -211,7 +215,9 @@ Tekshirish: `✓ Deploy tugadi`; «Go-live ro'yxati» 9-band (demo/test ma'lumot
    «Asosiy sklad» + direktor + `tenants/sharq.env` (AUTH_SECRET, CONTROL_SSO_KEY, TELEGRAM_WEBHOOK_SECRET va
    ECO_WEBHOOK_SECRET tasodifiy yaratiladi).
 2. DNS: `sharq.insof-erp.uz` → server IP.
-3. Serverda: `sudo bash scripts/tenant-up.sh sharq sharq.insof-erp.uz` (systemd, /api/health, nginx, SSL).
+3. Panel → korxona sahifasi → **«Serverda ishga tushirish»** (TENANT_UP; tasdiq — qisqa nomni yozish) yoki serverda
+   `sudo insof-tenant-up sharq sharq.insof-erp.uz` (systemd, /api/health, nginx, SSL). Domen `TENANT_BASE_DOMAIN` ostida
+   yoki `TENANT_DOMAINS` ro'yxatida bo'lishi shart («Infratuzilma»).
 4. Panelda «Tekshirish» → holat «Faol». Direktorga manzil va login/parolni bering.
 5. Integratsiyalar (ixtiyoriy) — `tenants/sharq.env` ga kalitlarni yozib `sudo systemctl restart insof-erp@sharq`:
    - **Telegram bot** — har korxonaning O'Z boti (@BotFather). `TELEGRAM_BOT_TOKEN` yozilgach webhook:
@@ -513,6 +519,92 @@ Tekshirish: panel → «Baza» — bazalar jadvali va «Eng katta jadvallar» to
 | «Baza»: korxona bazasi «o'qib bo'lmadi» | `TENANT_DATABASE_URL` yo'q/noto'g'ri yoki `tenants/<slug>.env` o'qilmaydi |
 | `PG_CANCEL` → `REJECTED` «boshqa rol» | jarayon `postgres` yoki boshqa rolniki — serverda `sudo -u postgres psql -c "SELECT pg_cancel_backend(<pid>)"` |
 | `VACUUM_ANALYZE` → «jadval egasi bu rol emas» | jadval boshqa rol yaratgan — `sudo -u postgres vacuumdb -z -t '"Jadval"' <baza>` |
+
+## Infratuzilma (zaxira, server tizimi, korxonani ishga tushirish)
+
+IT panel → **Zaxira** (`/superadmin/zaxira`) va **Tizim** (`/superadmin/server`), korxona sahifasida «Serverda ishga tushirish».
+Agent tomoni — `scripts/agent/infra.ts`, panel — `src/lib/control/infra/*`, `src/app/superadmin/(panel)/{zaxira,server,_infra}`.
+Ma'lumotni agent alohida «infra» siklida (5 daqiqa) yig'adi: og'ir qismlar keshlanadi — `rclone lsf/about` va `du` 30 daqiqada,
+`apt list --upgradable` soatda bir (xavfsizlik moduli bilan umumiy kesh).
+
+| Kalit (`ServiceCheck`) | Nima | WARN / CRIT |
+|---|---|---|
+| `backup:inventory` (kind `backup`) | `/var/backups/insof/<sana>`: hajm, fayllar, SHA256SUMS; `insof-backup.log` va `insof-restore-test.log` dagi oxirgi ishga tushish (✓/✗ qatori, oxirgi ≤ 40 qator); masofa (`rclone lsf --dirs-only`, `rclone about --json`; `OFFSITE=local` — papka); disk prognozi (bo'sh joy, `KEEP_DAYS` × o'rtacha nusxa, `HostSnapshot` bo'yicha o'sish/kun → necha kunda to'ladi) | backup/tiklash sinovi xato, sinov > 8 kun, masofa xatosi yoki oxirgi nusxa masofada yo'q (> 3 soat), SHA yo'q, eski `.partial`, disk < 14 kun / < 3 kun |
+| `host:system` (kind `host`) | OS, yadro va `/boot` dagi yangiroq yadro, `reboot-required(.pkgs)`, rejalashtirilgan `shutdown`, uptime, yangilanishlar (jami / xavfsizlik), `apt update` vaqti, unattended-upgrades (paket, systemd, `20auto-upgrades`, oxirgi log), eng katta papkalar (`releases/` va har reliz, `/var/backups/insof`, jurnal, `/var/lib/insof`, `uploads`, `/var/log`) | unattended-upgrades yo'q/o'chiq (WARN). Reboot kerakligi — mavjud `host:reboot` |
+
+Log qatorlari va xato matnlari agentda sirlardan tozalanadi (`scrubSecrets`) va JSON'ni buzadigan belgilar almashtiriladi.
+
+### Amallar
+
+| Tur | Buyruq | Tasdiq |
+|---|---|---|
+| `RUN_RESTORE_TEST` | `bash scripts/restore-test.sh` (deploy, sudo'siz, 2 soat); chiqish `/var/log/insof-restore-test.log` ga ham qo'shiladi (panel «oxirgi natija» ni shundan o'qiydi) | oddiy |
+| `REBOOT {at?: now\|HH:MM}` | avval Telegram xabari, keyin `sudo -n /usr/sbin/shutdown -r +1` («hozir» — 1 daqiqadan keyin: natija yoziladi va bekor qilish mumkin) yoki `-r HH:MM` (o'tgan bo'lsa — ertaga). Zaxira/tiklash/korxona sozlanayotgan bo'lsa yoki 3 soatdan yangi `.partial` bo'lsa — rad | `TASDIQLAYMAN` |
+| `REBOOT_CANCEL` | `sudo -n /usr/sbin/shutdown -c` + Telegram | oddiy |
+| `CLEAN_RELEASES` | deploy huquqida (sudo yo'q) `releases/` dan: eng yangi 3 (mtime) va `current` dan boshqasi, 2 soatdan eski `*.tmp`. `current` aniqlanmasa yoki yangi `*.tmp` bo'lsa (deploy ketmoqda) — hech narsa o'chirilmaydi | `TASDIQLAYMAN` |
+| `JOURNAL_VACUUM` | `sudo -n /usr/bin/journalctl --vacuum-time=14d` (oldin/keyin hajm) | `TASDIQLAYMAN` |
+| `TENANT_UP {slug, domain?}` | `sudo -n /usr/local/sbin/insof-tenant-up <slug> [domen]` (15 daq) → `RESULT systemd=… health=… nginx=… certbot=…`; health 200 bo'lsa PROVISIONING → ACTIVE | korxona slug'i |
+
+Tekshiruv qatlamlari: panel (zod + `infraPreflight`: korxona bor, holati PROVISIONING/ACTIVE, domen aynan korxona yozuvidagi va
+siyosatga mos) → agent (`validateAction` regex + bazadan qayta tekshirish) → root skript (regex, argumentlar ≤ 2,
+ixtiyoriy `/etc/insof/tenant-up.conf`). Domen siyosati: `control.env` da `TENANT_BASE_DOMAIN=insof-erp.uz` (uning o'zi va
+`*.insof-erp.uz`) va/yoki `TENANT_DOMAINS=zavod2.insof.uz,boshqa.uz` (aniq ro'yxat); ikkalasi bo'sh — domenli ishga tushirish rad.
+
+**Nega APT upgrade paneldan qilinmaydi** (faqat ko'rsatiladi): `apt upgrade` root huquqida paketlarning ixtiyoriy
+maintainer-skriptlarini bajaradi — buni deploy'dan chaqirish deploy→root eskalatsiyasining o'zi bo'lardi (sudoers'da `apt`
+= to'liq root). Bundan tashqari u uzoq davom etadi, dpkg konfiguratsiya savollari so'raydi, nginx/postgres/node'ni qayta
+ishga tushirib butun platformani to'xtatishi mumkin, yarim qolsa (agent to'xtasa) tizim buzuq holatda qoladi. Xavfsizlik
+yangilanishlarini `unattended-upgrades` o'zi qo'yadi (sahifada holati ko'rinadi); qolganini rejali oynada SSH orqali
+(`sudo apt update && sudo apt upgrade`) kuzatib turib qiling, keyin paneldan qayta yuklang.
+
+### O'rnatish va yangilash (root, bir marta + `deploy.sh` ogohlantirsa)
+
+```bash
+cd /var/www/insof-erp
+# 1) root egaligidagi skript va shablonlar — insof-tenant-up FAQAT shularni o'qiydi (repo'dan hech narsa root sifatida o'qilmaydi)
+sudo install -o root -g root -m 755 scripts/tenant-up.sh /usr/local/sbin/insof-tenant-up
+sudo install -d -o root -g root -m 755 /usr/local/share/insof
+sudo install -o root -g root -m 644 docs/deploy/insof-erp@.service docs/deploy/nginx-tenant.conf docs/deploy/nginx-limits.conf /usr/local/share/insof/
+# 2) /var/lib/insof — root egaligida (ichidagi <slug> papkalar deploy'niki)
+sudo install -d -o root -g root -m 755 /var/lib/insof
+# 3) ixtiyoriy: root tomonidagi domen siyosati (panel va agent control.env bo'yicha ham tekshiradi)
+printf 'TENANT_BASE_DOMAIN=insof-erp.uz\nTENANT_DOMAINS=\n' | sudo install -o root -g root -m 644 /dev/stdin /etc/insof/tenant-up.conf
+# 4) sudoers (yangi qatorlar: shutdown, journalctl --vacuum-time=14d, insof-tenant-up)
+sudo install -m 440 -o root -g root docs/deploy/sudoers-insof-agent /etc/sudoers.d/insof-deploy.new
+sudo visudo -cf /etc/sudoers.d/insof-deploy.new && sudo mv /etc/sudoers.d/insof-deploy.new /etc/sudoers.d/insof-deploy
+sudo visudo -c && sudo -l -U deploy
+# 5) agent yangi kod bilan (deploy.sh o'zi qayta ishga tushiradi)
+bash scripts/deploy.sh
+```
+`deploy.sh` har relizda `scripts/tenant-up.sh` va shablonlarni o'rnatilgan nusxa bilan solishtiradi va farq bo'lsa
+yuqoridagi `install` buyrug'ini ogohlantirishda chiqaradi (o'zi root nusxaga yozmaydi).
+
+Xavfsizlik invarianti: `insof-tenant-up` o'zini (agar `/usr/local/sbin` dan chaqirilsa) va shablonlarni tekshiradi —
+egasi root, guruh/boshqalar yoza olmaydi, symlink emas — aks holda to'xtaydi. Joylar (`/var/www/insof-erp`, `/var/lib/insof`,
+`deploy`) qotirilgan, muhitdan olinmaydi; `tenants/<slug>.env` va fayllar papkasi bilan faqat `runuser -u deploy` orqali
+ishlaydi (root `chown -R`/`chmod` qilmaydi — symlink orqali `/etc` ga yo'naltirib bo'lmaydi); `PORT` faqat raqam,
+`UPLOADS_DIR` faqat `/var/lib/insof/<slug>/uploads` (yoki eski `/var/www/insof-erp/uploads`). Mavjud, certbot sozlagan
+nginx sayti (domen va port mos) qayta yozilmaydi; `nginx -t` o'tmasa oldingi sayt qaytariladi.
+
+Tekshirish:
+- `ls -l /usr/local/sbin/insof-tenant-up /usr/local/share/insof/` → `root root`, `-rwxr-xr-x` / `-rw-r--r--`;
+- `sudo -n -l -U deploy | grep -E 'shutdown|journalctl|insof-tenant-up'`;
+- deploy ostida: `sudo -n /usr/local/sbin/insof-tenant-up insof` → oxirida `RESULT systemd=active health=200 …`;
+- panel → Zaxira: nusxalar ro'yxati, masofa «Ulanish bor»; «Tiklash sinovi» → DONE; panel → Tizim: yadro, yangilanishlar, papkalar.
+
+Qaytarish: `sudo rm /usr/local/sbin/insof-tenant-up && sudo rm -r /usr/local/share/insof /etc/insof/tenant-up.conf`, sudoers'ning
+oldingi nusxasini qaytaring (`git show <oldingi>:docs/deploy/sudoers-insof-agent`); panel amallari `FAILED` («o'rnatilmagan» /
+«sudoers ruxsati yo'q») bo'ladi, qolgan monitoring ishlayveradi. Qo'lda ishga tushirish: `sudo bash scripts/tenant-up.sh <slug> [domen]`
+(shablonlar o'rnatilgan bo'lishi shart).
+
+| Belgi | Sabab / yechim |
+|---|---|
+| TENANT_UP `FAILED`: «/usr/local/sbin/insof-tenant-up o'rnatilmagan» | yuqoridagi 1-qadam |
+| «… egasi root emas» / «guruh/boshqalar yoza oladi» | `sudo chown root:root …; sudo chmod go-w …` (shablon yoki papka) |
+| «UPLOADS_DIR ruxsat etilmagan» | `tenants/<slug>.env` da `UPLOADS_DIR=/var/lib/insof/<slug>/uploads` |
+| REBOOT/JOURNAL_VACUUM: «sudoers ruxsati yo'q» | sudoers yangilanmagan (4-qadam) |
+| Zaxira: «masofadagi nusxa: rclone lsf xato» | `rclone lsf gdrive:insof-backup/prod` (deploy ostida); Google Drive tokeni eskirgan → `rclone config reconnect gdrive:` |
+| Zaxira: «tiklash sinovi logi yo'q» | cron'dagi `restore-test.sh` qatori yoki paneldan «Tiklash sinovi» |
 
 ## Go-live ro'yxati (tartib bilan)
 

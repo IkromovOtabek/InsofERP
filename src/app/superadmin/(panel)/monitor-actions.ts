@@ -9,6 +9,7 @@ import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "@/lib/control/m
 import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
 import { PG_DB_RE, PG_PID_RE, PG_TABLE_RE } from "@/lib/control/dbtraffic/contract";
 import { invalidateMonitorSnapshot } from "@/lib/control/monitor/snapshot";
+import { INFRA_PARAMS, infraPreflight } from "@/lib/control/infra/preflight";
 import { ipFromHeaders } from "@/lib/login-guard";
 import { DEVOPS_PARAMS } from "@/lib/control/devops/params";
 import { Prisma } from "@/generated/control";
@@ -38,6 +39,7 @@ const PARAMS: Record<ActionType, z.ZodType<Record<string, string>>> = {
   PG_CANCEL: z.object({ db: z.string().regex(PG_DB_RE, "Baza nomi noto'g'ri"), pid: z.string().regex(PG_PID_RE, "pid noto'g'ri") }).strict(),
   PG_TERMINATE: z.object({ db: z.string().regex(PG_DB_RE, "Baza nomi noto'g'ri"), pid: z.string().regex(PG_PID_RE, "pid noto'g'ri") }).strict(),
   VACUUM_ANALYZE: z.object({ db: z.string().regex(PG_DB_RE, "Baza nomi noto'g'ri"), table: z.string().regex(PG_TABLE_RE, "Jadval nomi noto'g'ri").optional() }).strict() as z.ZodType<Record<string, string>>,
+  ...INFRA_PARAMS,
 };
 const ID = z.string().regex(/^[a-z0-9]{10,40}$/i);
 
@@ -57,6 +59,8 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
   }
   const phrase = confirmPhrase(type, p);
   if (phrase !== null && (confirm ?? "").trim() !== phrase) return { error: `Tasdiqlash uchun «${phrase}» deb yozing` };
+  const pre = await infraPreflight(type, p);
+  if (pre) return { error: pre };
 
   let incident: string | null = null;
   if (incidentId) {

@@ -21,7 +21,7 @@ import { closeSync, existsSync, openSync } from "node:fs";
 import { access, constants, open, readFile, readdir, readlink, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Prisma, PrismaClient } from "@/generated/control";
-import { scrubSecrets, trimOutput } from "@/lib/control/monitor/parse";
+import { scrubJson, scrubSecrets, trimOutput } from "@/lib/control/monitor/parse";
 import {
   DEPLOY_MARK, DETACHED_ACTIONS, LOG_FILES, LOG_MAX_BYTES, LOG_MAX_LINES, LOG_PRIORITIES, LOG_UNIT_RE, RELEASE_CHECK_KEY,
   isLogFile, isLogPriority, type DevopsAction, type DevopsParams, type ReleaseCommit, type ReleaseDir, type ReleaseInfo,
@@ -406,7 +406,7 @@ async function writeReleaseCheck(info: ReleaseInfo) {
   const now = new Date();
   const status = info.fetchError ? "UNKNOWN" : "OK";
   const message = scrubSecrets(`joriy ${info.current?.slice(0, 12) ?? "—"}; origin/main ${info.originMain?.slice(0, 12) ?? "—"}${info.ahead != null ? ` (+${info.ahead} commit)` : ""}${info.fetchError ? `; ${info.fetchError}` : ""}`).slice(0, 500);
-  const data = JSON.parse(scrubSecrets(JSON.stringify(info))) as Prisma.InputJsonValue;
+  const data = JSON.parse(JSON.stringify(scrubJson(info))) as Prisma.InputJsonValue;
   const prev = await ctx.control.serviceCheck.findUnique({ where: { key: RELEASE_CHECK_KEY }, select: { status: true, changedAt: true } });
   const row = { kind: "release", target: "Relizlar", tenantId: null, status, message, latencyMs: null, data, checkedAt: now, changedAt: prev && prev.status === status ? prev.changedAt : now } as const;
   await ctx.control.serviceCheck.upsert({ where: { key: RELEASE_CHECK_KEY }, create: { key: RELEASE_CHECK_KEY, ...row }, update: row });

@@ -5,6 +5,7 @@
  */
 import { UNIT_RE, type ActionType } from "./contract";
 import { DB_ACTION_LABEL, dbConfirmPhrase } from "../dbtraffic/contract";
+import { INFRA_ACTION_LABEL, infraConfirmPhrase } from "../infra/contract";
 
 export type CheckStatusT = "OK" | "WARN" | "CRIT" | "UNKNOWN";
 export type SeverityT = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -93,6 +94,7 @@ export const ACTION_LABEL: Record<ActionType, string> = {
   ROLLBACK: "Oldingi relizga qaytarish",
   LOG_TAIL: "Log o'qish",
   ...DB_ACTION_LABEL,
+  ...INFRA_ACTION_LABEL,
 };
 export const SOURCE_LABEL: Record<string, string> = { monitor: "Monitoring", security: "Xavfsizlik skaneri", ai: "AI tahlil" };
 export const CATEGORY_LABEL: Record<string, string> = {
@@ -109,6 +111,8 @@ export const actionLabel = (t: string) => (ACTION_LABEL as Record<string, string
 export function confirmPhrase(type: string, params: Record<string, unknown>): string | null {
   const db = dbConfirmPhrase(type, params);
   if (db !== undefined) return db;
+  const infra = infraConfirmPhrase(type, params);
+  if (infra !== undefined) return infra;
   if (type === "BLOCK_IP") return typeof params.ip === "string" ? params.ip : "";
   if (type === "RENEW_CERT") return "SSL";
   if (type === "DEPLOY" || type === "ROLLBACK") return "TASDIQLAYMAN";

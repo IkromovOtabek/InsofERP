@@ -6,6 +6,7 @@ import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "./contract";
 import { validateDbAction } from "../dbtraffic/contract";
 import type { CheckStatusT, FindingSeverity } from "./types";
 import { isDevopsAction, validateDevops, type DevopsParams } from "../devops/contract";
+import { isInfraActionType, validateInfraParams } from "../infra/contract";
 
 /* ───────────────────────── /proc parserlari ───────────────────────── */
 
@@ -305,6 +306,10 @@ export function validateAction(type: string, params: unknown): ValidAction {
     const d = validateDevops(type, p);
     return d.ok ? { ok: true, type, params: d.params } : d;
   }
+  if (isInfraActionType(type)) {
+    const v = validateInfraParams(type, p);
+    return v.ok ? { ok: true, type, params: v.params } : { ok: false, reason: v.reason };
+  }
   return { ok: true, type, params: {} };
 }
 
@@ -323,6 +328,27 @@ export function scrubSecrets(text: string): string {
     .replace(/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-***")
     // 40+ belgili base64/hex bo'laklari (kalitlar, imzolar)
     .replace(/[A-Za-z0-9+/_-]{40,}={0,2}/g, "***");
+}
+
+const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|PASS|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|SSO_KEY)/i;
+
+/**
+ * JSON qiymatni tuzilmasi bo'yicha tozalaydi (matn sifatida emas): sir nomli kalitning qiymati butunlay "***",
+ * qolgan satrlar — scrubSecrets. `scrubSecrets(JSON.stringify(x))` qo'shtirnoqsiz qiymatda (`"authSecret":true`)
+ * yaroqsiz JSON berardi — shuning uchun bazaga yoziladigan Json maydonlar shu funksiyadan o'tadi.
+ */
+export function scrubJson<T>(value: T): T {
+  const walk = (v: unknown, key?: string): unknown => {
+    if (key && SECRET_KEY_RE.test(key) && v !== null && typeof v !== "object") return "***";
+    if (typeof v === "string") return scrubSecrets(v);
+    if (Array.isArray(v)) return v.map((x) => walk(x));
+    if (v && typeof v === "object") {
+      if (v instanceof Date) return v;
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x, k)]));
+    }
+    return v;
+  };
+  return walk(value) as T;
 }
 
 export const OUTPUT_LIMIT = 8 * 1024;

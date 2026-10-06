@@ -34,3 +34,15 @@ Cmnd_Alias INSOF_UFW     = /usr/sbin/ufw insert 1 deny from *, \
                            /usr/sbin/ufw status verbose
 
 deploy ALL=(root) NOPASSWD: INSOF_RESTART, INSOF_NGINX, INSOF_CERT, INSOF_UFW
+
+# ── Infratuzilma (scripts/agent/infra.ts; PLATFORMA.md → «Infratuzilma») ──
+# Qayta yuklash: "now" → +1 daqiqa (natija yozilsin, bekor qilish imkoni qolsin), yoki HH:MM; bekor qilish -c.
+# Jurnal: faqat 14 kundan eskisini o'chirish. Korxonani ishga tushirish: FAQAT root egaligidagi /usr/local/sbin nusxasi
+# (repo'dagi scripts/tenant-up.sh EMAS — uni deploy o'zgartira oladi); argumentlarni skript regex bilan tekshiradi.
+Cmnd_Alias INSOF_REBOOT  = /usr/sbin/shutdown -r +1, \
+                           /usr/sbin/shutdown -r [0-2][0-9]\:[0-5][0-9], \
+                           /usr/sbin/shutdown -c
+Cmnd_Alias INSOF_JOURNAL = /usr/bin/journalctl --vacuum-time=14d
+Cmnd_Alias INSOF_TENANT  = /usr/local/sbin/insof-tenant-up [a-z]*
+
+deploy ALL=(root) NOPASSWD: INSOF_REBOOT, INSOF_JOURNAL, INSOF_TENANT

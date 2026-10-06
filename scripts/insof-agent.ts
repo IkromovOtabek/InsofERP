@@ -39,7 +39,7 @@ import { checkKey, type ActionType } from "@/lib/control/monitor/contract";
 import {
   THRESHOLDS, countJournalLines, cpuPctFromDelta, cpuSustainedStatus, decideIncident, diskStatus, latestBackupDir,
   levelAbove, levelBelow, loadStatus, memStatus, netBps, parseLoadavg, parseMeminfo, parseNetDev, parseProcStat,
-  parseProcStatus, parseSystemctlShow, parseUptime, restartsIncreased, scrubSecrets, severityFor, sevRank,
+  parseProcStatus, parseSystemctlShow, parseUptime, restartsIncreased, scrubJson, scrubSecrets, severityFor, sevRank,
   statusForSeverity, topByRss, findingCheckStatus, findingIsProblem, trimOutput, unitStatus, validateAction, worst,
   type ActionParams, type CpuTimes, type NetTotals, type UnitInfo,
 } from "@/lib/control/monitor/parse";
@@ -51,6 +51,7 @@ import { DETACHED_ACTIONS, isDevopsAction } from "@/lib/control/devops/contract"
 import { devopsExecute, devopsTick, initDevops } from "./agent/devops";
 import { isDbActionType } from "@/lib/control/dbtraffic/contract";
 import { closeDbClients, dbStatsChecks, executeDbAction, trafficChecks, type DbtCtx } from "./agent/dbtraffic";
+import { createInfra, INFRA_PRIVILEGED, isInfraActionType } from "./agent/infra";
 
 /* ───────────────────────── Sozlama ───────────────────────── */
 
@@ -60,6 +61,7 @@ const BACKUP_ENV = process.env.BACKUP_ENV || "/etc/insof/backup.env";
 const backupCfg = readEnvKeys(BACKUP_ENV, ["OUT_DIR", "ALERT_TG_BOT_TOKEN", "ALERT_TG_CHAT_ID"]);
 const BACKUP_DIR = process.env.AGENT_BACKUP_DIR || backupCfg.OUT_DIR || "/var/backups/insof";
 const BACKUP_LOG = process.env.AGENT_BACKUP_LOG || "/var/log/insof-backup.log";
+const RESTORE_LOG = process.env.AGENT_RESTORE_LOG || "/var/log/insof-restore-test.log";
 const CONTROL_PORT = Number(process.env.CONTROL_PORT || 3100);
 const ECO_URL = process.env.AGENT_ECO_URL ?? "http://127.0.0.1:3010/v1/health";
 const SSL_DOMAINS = (process.env.AGENT_SSL_DOMAINS ?? "admin.insof-erp.uz,api.insof-erp.uz").split(",").map((s) => s.trim()).filter(Boolean);
@@ -632,7 +634,7 @@ async function securityScan(): Promise<string> {
     if (!findingIsProblem(f)) { if (!statusByKey.has(key)) statusByKey.set(key, findingCheckStatus(f)); continue; }
     statusByKey.set(key, "CRIT");
     secOkStreak.set(key, 0);
-    const detail = JSON.parse(scrubSecrets(JSON.stringify(f.detail ?? {}))) as Prisma.InputJsonValue;
+    const detail = JSON.parse(JSON.stringify(scrubJson(f.detail ?? {}))) as Prisma.InputJsonValue;
     const suggested = (f.suggestedActions ?? []).filter((a) => validateAction(a.type, a.params ?? {}).ok) as unknown as Prisma.InputJsonValue;
     const title = scrubSecrets(f.title).slice(0, 300);
     const ex = openByKey.get(key);
@@ -674,7 +676,7 @@ type PrevCheck = { status: string; changedAt: Date } | undefined;
 
 async function upsertOne(r: CheckResult, p: PrevCheck, now: Date) {
   const message = r.message ? scrubSecrets(r.message).slice(0, 500) : null;
-  const data = (r.data ? JSON.parse(scrubSecrets(JSON.stringify(r.data))) : undefined) as Prisma.InputJsonValue | undefined;
+  const data = (r.data ? JSON.parse(JSON.stringify(scrubJson(r.data))) : undefined) as Prisma.InputJsonValue | undefined;
   const row = {
     kind: r.kind, target: r.target, tenantId: r.tenantId ?? null, status: r.status, message,
     latencyMs: r.latencyMs ?? null, data, checkedAt: now, changedAt: p && p.status === r.status ? p.changedAt : now,
@@ -930,7 +932,7 @@ const hb = new Loop("heartbeat", FAST_MS, async () => { await heartbeat(); retur
 
 const runningActions = new Map<string, string>(); // id → type
 const MAX_PARALLEL_ACTIONS = 3;
-const PRIVILEGED: ActionType[] = ["RESTART_UNIT", "RELOAD_NGINX", "RUN_BACKUP", "RENEW_CERT", "BLOCK_IP", "UNBLOCK_IP"];
+const PRIVILEGED: ActionType[] = ["RESTART_UNIT", "RELOAD_NGINX", "RUN_BACKUP", "RENEW_CERT", "BLOCK_IP", "UNBLOCK_IP", ...INFRA_PRIVILEGED];
 
 // RUNNING — ajratilgan jarayon (DEPLOY/ROLLBACK) boshlandi, yakunini devopsTick yozadi; limit — chiqish chegarasi (LOG_TAIL 64 KB)
 type ActionOutcome = { status: "DONE" | "FAILED" | "REJECTED" | "RUNNING"; output: string; limit?: number };
@@ -949,6 +951,20 @@ async function sudo(args: string[], timeoutMs: number): Promise<{ ok: boolean; t
   }
   return { ok: r.code === 0, text };
 }
+
+/* Infratuzilma (zaxira inventari, server tizimi, reboot, relizlar, jurnal, korxonani ishga tushirish) — scripts/agent/infra.ts */
+const infra = createInfra({
+  get control() { return control; }, run, sudo, fmt, telegram, log, linux: LINUX, test: TEST, hasSystemd,
+  appDir: APP_DIR, backupDir: BACKUP_DIR, backupEnv: BACKUP_ENV, backupLog: BACKUP_LOG, restoreLog: RESTORE_LOG,
+  childEnv: CHILD_ENV, host: HOST, bin: { systemctl: BIN.systemctl, journalctl: BIN.journalctl, bash: BIN.bash },
+  runningTypes: () => [...runningActions.values()],
+  afterChange: (what) => { if (what === "tenants") tenantsCache = null; void fast.run(); void infraLoop.run(); },
+});
+const infraLoop = new Loop("infra", SLOW_MS, async () => {
+  const results = await infra.collect();
+  await applyChecks(results, "monitor");
+  return summarize(results, []);
+}, 3 * 60_000);
 
 async function afterRestart(unit: string): Promise<string> {
   const lines: string[] = [];
@@ -1017,9 +1033,12 @@ async function execute(type: ActionType, params: ActionParams, requestedById: st
       const script = path.join(APP_DIR, "scripts", "server-backup.sh");
       if (!existsSync(script)) return { status: "FAILED", output: `${script} topilmadi` };
       const env = { ...CHILD_ENV, ...(process.env.BACKUP_ENV ? { BACKUP_ENV: process.env.BACKUP_ENV } : {}) };
+      const started = new Date();
       const r = await run(BIN.bash, [script], { timeoutMs: 3 * 3600_000, cwd: APP_DIR, env });
-      void slow.run();
-      return { status: r.code === 0 ? "DONE" : "FAILED", output: fmt(["bash", "scripts/server-backup.sh"], r) };
+      const note = await infra.appendRunLog("backup", started, r.out); // Zaxira sahifasi «oxirgi natija» ni logdan o'qiydi
+      infra.invalidate();
+      void slow.run(); void infraLoop.run();
+      return { status: r.code === 0 ? "DONE" : "FAILED", output: fmt(["bash", "scripts/server-backup.sh"], r) + note };
     }
     case "RENEW_CERT": {
       const c = await sudo([BIN.certbot, "renew", "--quiet"], 10 * 60_000);
@@ -1052,6 +1071,7 @@ async function execute(type: ActionType, params: ActionParams, requestedById: st
     case "RUN_AI_ANALYSIS":
       return { status: "DONE", output: await aiAnalysis("manual", requestedById ?? undefined) };
     default:
+      if (isInfraActionType(type)) return infra.execute(type, params as Record<string, string>, requestedById);
       return { status: "REJECTED", output: `${type}: bajaruvchi yo'q` };
   }
 }
@@ -1102,10 +1122,10 @@ async function shutdown(reason: string, code = 0) {
   if (shuttingDown) return;
   shuttingDown = true; stopping = true;
   log(`to'xtatilmoqda (${reason})`);
-  for (const l of [fast, slow, ai, retention, hb, actions, devops, dbStats, traffic]) l.stop();
+  for (const l of [fast, slow, ai, retention, hb, actions, devops, dbStats, traffic, infraLoop]) l.stop();
   for (const c of running) c.kill("SIGTERM");
   await Promise.race([
-    Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait(), dbStats.wait(), traffic.wait()]),
+    Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait(), dbStats.wait(), traffic.wait(), infraLoop.wait()]),
     new Promise((r) => setTimeout(r, 10_000)),
   ]);
   try {
@@ -1161,6 +1181,7 @@ async function main() {
   retention.start(60_000);
   traffic.start(10_000);
   dbStats.start(20_000);
+  infraLoop.start(20_000);
   ai.start(10 * 60_000); // ishga tushgandan 10 daqiqa keyin (oxirgi rejali hisobot 6 soatdan eski bo'lsa)
 }
 
