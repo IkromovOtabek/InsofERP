@@ -175,6 +175,15 @@ unit_check() { # repodagi unit fayllar o'rnatilganidan farq qilsa — ogohlantir
     cmp -s "$APP_DIR/docs/deploy/$name" "/etc/systemd/system/$name" \
       || warn "/etc/systemd/system/$name repodagidan farq qiladi: sudo install -m 644 docs/deploy/$name /etc/systemd/system/ && sudo systemctl daemon-reload"
   done
+  # Root egaligidagi insof-tenant-up va uning shablonlari (PLATFORMA.md → «Infratuzilma») — faqat ogohlantirish, root talab qilinmaydi
+  if [ -f /usr/local/sbin/insof-tenant-up ]; then
+    cmp -s "$APP_DIR/scripts/tenant-up.sh" /usr/local/sbin/insof-tenant-up \
+      || warn "/usr/local/sbin/insof-tenant-up repodagidan farq qiladi: sudo install -o root -g root -m 755 scripts/tenant-up.sh /usr/local/sbin/insof-tenant-up"
+    for name in "insof-erp@.service" "nginx-tenant.conf" "nginx-limits.conf"; do
+      cmp -s "$APP_DIR/docs/deploy/$name" "/usr/local/share/insof/$name" \
+        || warn "/usr/local/share/insof/$name repodagidan farq qiladi: sudo install -o root -g root -m 644 docs/deploy/$name /usr/local/share/insof/"
+    done
+  fi
   return 0
 }
 

@@ -11,6 +11,7 @@ import { Button, Callout, Card, DL, Empty, PageHeader, StatCard, Table, Td, Th, 
 import { TenantStatusBadge, Health, ago } from "../../status";
 import { DirectorForm, EditTenantForm, SsoButton, SuspendForm } from "../../forms";
 import { refreshStatsAction, resumeTenantAction } from "../../actions";
+import { TenantUpPanel } from "../../_infra/tenant-up";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,9 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
       {(yangi || t.status === "PROVISIONING") && (
         <Callout tone={yangi ? "success" : "warning"} title={yangi ? "Korxona yaratildi — endi serverda ishga tushiring" : "Jarayon hali ishga tushirilmagan"}>
           <ol className="ml-4 list-decimal space-y-1">
-            <li>Serverda: <code className="rounded bg-white/70 px-1">sudo bash scripts/tenant-up.sh {t.slug}{t.domain ? ` ${t.domain}` : ""}</code> — systemd xizmati, nginx va SSL.</li>
+            <li>Serverda ishga tushiring — systemd xizmati, /api/health, nginx va SSL (natija shu yerda ko&apos;rinadi; qo&apos;lda: <code className="rounded bg-white/70 px-1">sudo insof-tenant-up {t.slug}{t.domain ? ` ${t.domain}` : ""}</code>):
+              {t.status === "PROVISIONING" && <div className="my-2"><TenantUpPanel slug={t.slug} domain={t.domain} /></div>}
+            </li>
             <li>Kerak bo&apos;lsa korxonaning o&apos;z kalitlarini (ECO, AI, Telegram) <code className="rounded bg-white/70 px-1">{envPathFor(t.slug)}</code> fayliga yozing va qayta ishga tushiring.</li>
             <li>DNS: <code className="rounded bg-white/70 px-1">{t.domain ?? `${t.slug}.<domen>`}</code> → shu server IP.</li>
             <li>Direktorga manzil va login/parolni bering ({t.directorLogin ?? "login berilmagan"}). Jarayon javob bergach holat o&apos;zi «Faol» bo&apos;ladi.</li>
@@ -115,6 +118,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
           { k: "Yaratilgan", v: dateTime(t.createdAt) },
           { k: "Oxirgi javob", v: t.lastSeenAt ? dateTime(t.lastSeenAt) : "—" },
         ]} />
+        {t.status === "ACTIVE" && <div className="mt-3 border-t border-slate-100 pt-3"><TenantUpPanel slug={t.slug} domain={t.domain} compact /></div>}
       </Card>
 
       <Card>

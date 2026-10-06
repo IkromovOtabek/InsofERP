@@ -2,6 +2,8 @@
  * insof-agent ↔ IT panel shartnomasi: tekshiruv kalitlari va oq ro'yxatdagi amallar.
  * Panel faqat shu turdagi AgentAction qo'yadi; agent boshqasini REJECTED qiladi.
  */
+import { INFRA_ACTION_TYPES } from "../infra/contract";
+
 export const ACTION_TYPES = [
   "RESTART_UNIT",        // { unit: "insof-erp@<slug>" | "insof-control" | "insof-eco" }
   "RELOAD_NGINX",        // {}
@@ -13,6 +15,8 @@ export const ACTION_TYPES = [
   "RUN_HEALTH_CHECK",    // {}
   "RUN_SECURITY_SCAN",   // {}
   "RUN_AI_ANALYSIS",     // {}
+  // Infratuzilma (zaxira, server tizimi, korxonani ishga tushirish) — src/lib/control/infra/contract.ts
+  ...INFRA_ACTION_TYPES,
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, LayoutDashboard, ListChecks, Plus, ScrollText, ShieldAlert, Siren, Users } from "lucide-react";
+import { Activity, DatabaseBackup, HardDrive, LayoutDashboard, ListChecks, Plus, ScrollText, ShieldAlert, Siren, Users } from "lucide-react";
 import { useLiveMonitor } from "./live";
 
 const NAV = [
@@ -10,6 +10,8 @@ const NAV = [
   { href: "/superadmin/monitoring", label: "Server", icon: Activity },
   { href: "/superadmin/hodisalar", label: "Hodisalar", icon: Siren, alerts: true },
   { href: "/superadmin/xavfsizlik", label: "Xavfsizlik", icon: ShieldAlert },
+  { href: "/superadmin/zaxira", label: "Zaxira", icon: DatabaseBackup },
+  { href: "/superadmin/server", label: "Tizim", icon: HardDrive },
   { href: "/superadmin/amallar", label: "Amallar", icon: ListChecks },
   { href: "/superadmin/korxonalar/yangi", label: "Yangi korxona", icon: Plus },
   { href: "/superadmin/adminlar", label: "IT jamoasi", icon: Users },

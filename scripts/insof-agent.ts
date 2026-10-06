@@ -46,6 +46,7 @@ import type {
   CheckResult, CheckStatusT, Finding, FindingSeverity, SecurityCtx, SecurityModule, SuggestedAction, TenantRef,
 } from "@/lib/control/monitor/types";
 import { isTestMode } from "@/lib/test-mode";
+import { createInfra, INFRA_PRIVILEGED, isInfraActionType } from "./agent/infra";
 
 /* ───────────────────────── Sozlama ───────────────────────── */
 
@@ -55,6 +56,7 @@ const BACKUP_ENV = process.env.BACKUP_ENV || "/etc/insof/backup.env";
 const backupCfg = readEnvKeys(BACKUP_ENV, ["OUT_DIR", "ALERT_TG_BOT_TOKEN", "ALERT_TG_CHAT_ID"]);
 const BACKUP_DIR = process.env.AGENT_BACKUP_DIR || backupCfg.OUT_DIR || "/var/backups/insof";
 const BACKUP_LOG = process.env.AGENT_BACKUP_LOG || "/var/log/insof-backup.log";
+const RESTORE_LOG = process.env.AGENT_RESTORE_LOG || "/var/log/insof-restore-test.log";
 const CONTROL_PORT = Number(process.env.CONTROL_PORT || 3100);
 const ECO_URL = process.env.AGENT_ECO_URL ?? "http://127.0.0.1:3010/v1/health";
 const SSL_DOMAINS = (process.env.AGENT_SSL_DOMAINS ?? "admin.insof-erp.uz,api.insof-erp.uz").split(",").map((s) => s.trim()).filter(Boolean);
@@ -910,7 +912,7 @@ const hb = new Loop("heartbeat", FAST_MS, async () => { await heartbeat(); retur
 
 const runningActions = new Map<string, string>(); // id → type
 const MAX_PARALLEL_ACTIONS = 3;
-const PRIVILEGED: ActionType[] = ["RESTART_UNIT", "RELOAD_NGINX", "RUN_BACKUP", "RENEW_CERT", "BLOCK_IP", "UNBLOCK_IP"];
+const PRIVILEGED: ActionType[] = ["RESTART_UNIT", "RELOAD_NGINX", "RUN_BACKUP", "RENEW_CERT", "BLOCK_IP", "UNBLOCK_IP", ...INFRA_PRIVILEGED];
 
 type ActionOutcome = { status: "DONE" | "FAILED" | "REJECTED"; output: string };
 
@@ -928,6 +930,20 @@ async function sudo(args: string[], timeoutMs: number): Promise<{ ok: boolean; t
   }
   return { ok: r.code === 0, text };
 }
+
+/* Infratuzilma (zaxira inventari, server tizimi, reboot, relizlar, jurnal, korxonani ishga tushirish) — scripts/agent/infra.ts */
+const infra = createInfra({
+  get control() { return control; }, run, sudo, fmt, telegram, log, linux: LINUX, test: TEST, hasSystemd,
+  appDir: APP_DIR, backupDir: BACKUP_DIR, backupEnv: BACKUP_ENV, backupLog: BACKUP_LOG, restoreLog: RESTORE_LOG,
+  childEnv: CHILD_ENV, host: HOST, bin: { systemctl: BIN.systemctl, journalctl: BIN.journalctl, bash: BIN.bash },
+  runningTypes: () => [...runningActions.values()],
+  afterChange: (what) => { if (what === "tenants") tenantsCache = null; void fast.run(); void infraLoop.run(); },
+});
+const infraLoop = new Loop("infra", SLOW_MS, async () => {
+  const results = await infra.collect();
+  await applyChecks(results, "monitor");
+  return summarize(results, []);
+}, 3 * 60_000);
 
 async function afterRestart(unit: string): Promise<string> {
   const lines: string[] = [];
@@ -972,7 +988,7 @@ async function fixSecretPerms(): Promise<string> {
   return lines.join("\n");
 }
 
-async function execute(type: ActionType, params: { unit?: string; ip?: string }, requestedById: string | null): Promise<ActionOutcome> {
+async function execute(type: ActionType, params: Record<string, string>, requestedById: string | null): Promise<ActionOutcome> {
   if (TEST && PRIVILEGED.includes(type)) return { status: "FAILED", output: `[test-mode] ${type} test rejimida bajarilmaydi (sudo/tizim buyruqlari)` };
   switch (type) {
     case "RESTART_UNIT": {
@@ -991,9 +1007,12 @@ async function execute(type: ActionType, params: { unit?: string; ip?: string },
       const script = path.join(APP_DIR, "scripts", "server-backup.sh");
       if (!existsSync(script)) return { status: "FAILED", output: `${script} topilmadi` };
       const env = { ...CHILD_ENV, ...(process.env.BACKUP_ENV ? { BACKUP_ENV: process.env.BACKUP_ENV } : {}) };
+      const started = new Date();
       const r = await run(BIN.bash, [script], { timeoutMs: 3 * 3600_000, cwd: APP_DIR, env });
-      void slow.run();
-      return { status: r.code === 0 ? "DONE" : "FAILED", output: fmt(["bash", "scripts/server-backup.sh"], r) };
+      const note = await infra.appendRunLog("backup", started, r.out); // Zaxira sahifasi «oxirgi natija» ni logdan o'qiydi
+      infra.invalidate();
+      void slow.run(); void infraLoop.run();
+      return { status: r.code === 0 ? "DONE" : "FAILED", output: fmt(["bash", "scripts/server-backup.sh"], r) + note };
     }
     case "RENEW_CERT": {
       const c = await sudo([BIN.certbot, "renew", "--quiet"], 10 * 60_000);
@@ -1025,6 +1044,9 @@ async function execute(type: ActionType, params: { unit?: string; ip?: string },
     }
     case "RUN_AI_ANALYSIS":
       return { status: "DONE", output: await aiAnalysis("manual", requestedById ?? undefined) };
+    default:
+      if (isInfraActionType(type)) return infra.execute(type, params, requestedById);
+      return { status: "REJECTED", output: `${type}: bajaruvchi yo'q` };
   }
 }
 
@@ -1071,10 +1093,10 @@ async function shutdown(reason: string, code = 0) {
   if (shuttingDown) return;
   shuttingDown = true; stopping = true;
   log(`to'xtatilmoqda (${reason})`);
-  for (const l of [fast, slow, ai, retention, hb, actions]) l.stop();
+  for (const l of [fast, slow, ai, retention, hb, actions, infraLoop]) l.stop();
   for (const c of running) c.kill("SIGTERM");
   await Promise.race([
-    Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait()]),
+    Promise.allSettled([fast.wait(), slow.wait(), hb.wait(), actions.wait(), infraLoop.wait()]),
     new Promise((r) => setTimeout(r, 10_000)),
   ]);
   try {
@@ -1122,6 +1144,7 @@ async function main() {
   actions.start(500);
   slow.start(5_000);
   retention.start(60_000);
+  infraLoop.start(20_000);
   ai.start(10 * 60_000); // ishga tushgandan 10 daqiqa keyin (oxirgi rejali hisobot 6 soatdan eski bo'lsa)
 }
 

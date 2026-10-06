@@ -2,10 +2,11 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Archive, Ban, Bot, CheckCircle2, Eye, Lock, RefreshCw, RotateCcw, ScanSearch, Wrench, X, XCircle } from "lucide-react";
+import { AlertTriangle, Archive, Ban, Bot, CheckCircle2, DatabaseBackup, Eye, Lock, Power, RefreshCw, Rocket, RotateCcw, ScanSearch, Trash2, Wrench, X, XCircle } from "lucide-react";
 import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
 import { IPV4_RE, UNIT_RE } from "@/lib/control/monitor/contract";
 import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
+import { INFRA_ACTION_DESCR } from "@/lib/control/infra/contract";
 import { ackIncident, enqueueAction, resolveIncident } from "../monitor-actions";
 
 /** Sahifa ichidagi modal oyna (window.confirm emas): Esc yopadi, fokus ichkariga o'tadi va qaytadi. */
@@ -46,10 +47,11 @@ const DESCR: Record<string, string> = {
   RUN_HEALTH_CHECK: "Agent barcha tekshiruvlarni navbatdan tashqari bajaradi.",
   RUN_SECURITY_SCAN: "Ochiq portlar, SSH, fayl huquqlari, yangilanishlar va loglar tekshiriladi.",
   RUN_AI_ANALYSIS: "Topilmalar AI'ga beriladi va baho (A–F) bilan hisobot tuziladi.",
+  ...INFRA_ACTION_DESCR,
 };
 
 /** Ikonka nomi bilan (server sahifadan komponent funksiyasini klientga berib bo'lmaydi). */
-const ICONS = { archive: Archive, ban: Ban, bot: Bot, lock: Lock, refresh: RefreshCw, restart: RotateCcw, scan: ScanSearch, wrench: Wrench };
+const ICONS = { archive: Archive, ban: Ban, bot: Bot, lock: Lock, refresh: RefreshCw, restart: RotateCcw, scan: ScanSearch, wrench: Wrench, database: DatabaseBackup, power: Power, rocket: Rocket, trash: Trash2 };
 export type ActionIcon = keyof typeof ICONS;
 
 /**

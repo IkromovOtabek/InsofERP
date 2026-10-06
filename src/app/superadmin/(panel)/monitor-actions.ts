@@ -8,6 +8,7 @@ import { logEvent } from "@/lib/control/events";
 import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "@/lib/control/monitor/contract";
 import { actionLabel, confirmPhrase } from "@/lib/control/monitor/shared";
 import { invalidateMonitorSnapshot } from "@/lib/control/monitor/snapshot";
+import { INFRA_PARAMS, infraPreflight } from "@/lib/control/infra/preflight";
 import { ipFromHeaders } from "@/lib/login-guard";
 import { Prisma } from "@/generated/control";
 
@@ -31,6 +32,7 @@ const PARAMS: Record<ActionType, z.ZodType<Record<string, string>>> = {
   RUN_HEALTH_CHECK: EMPTY,
   RUN_SECURITY_SCAN: EMPTY,
   RUN_AI_ANALYSIS: EMPTY,
+  ...INFRA_PARAMS,
 };
 const ID = z.string().regex(/^[a-z0-9]{10,40}$/i);
 
@@ -50,6 +52,8 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
   }
   const phrase = confirmPhrase(type, p);
   if (phrase !== null && (confirm ?? "").trim() !== phrase) return { error: `Tasdiqlash uchun «${phrase}» deb yozing` };
+  const pre = await infraPreflight(type, p);
+  if (pre) return { error: pre };
 
   let incident: string | null = null;
   if (incidentId) {
