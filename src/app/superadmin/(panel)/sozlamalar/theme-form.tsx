@@ -9,6 +9,7 @@ import { Section } from "../../_ui";
 import { applyUiPrefs } from "../../_ui/prefs-client";
 import { useLiveMonitor } from "../_monitor/live";
 import { saveUiPrefs } from "./actions";
+import { HelpButton } from "../_help/help";
 
 const LAYOUTS: { v: MobileLayout; t: string; d: string; I: typeof LayoutGrid }[] = [
   { v: "widgets", t: "Vidjetlar", d: "Turli o'lchamdagi kartalar, gorizontal sahifalar va pastki dock. Bir qarashda holat.", I: LayoutGrid },
@@ -44,7 +45,7 @@ export function ThemeForm({ initial }: { initial: UiPrefs }) {
     <Section id="mavzu" title="Mavzu" sub="Kompyuterda «Status Board» o'zgarmaydi">
       <div className="grid gap-5">
         <fieldset className="sa-fs">
-          <legend>Telefon ko&apos;rinishi <span className="sa-sub">(ekran ≤ 760px)</span></legend>
+          <legend>Telefon ko&apos;rinishi <span className="sa-sub">(ekran ≤ 760px)</span> <HelpButton topic="settings:mobile" /></legend>
           <div className="sa-choice-grid">
             {LAYOUTS.map((l) => (
               <label key={l.v} className="sa-choice">
@@ -57,7 +58,7 @@ export function ThemeForm({ initial }: { initial: UiPrefs }) {
           </div>
         </fieldset>
         <fieldset className="sa-fs">
-          <legend>Rang rejimi</legend>
+          <legend>Rang rejimi <HelpButton topic="settings:color" /></legend>
           <div className="sa-seg3">
             {MODES.map((m) => (
               <label key={m.v}>

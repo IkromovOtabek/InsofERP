@@ -12,6 +12,7 @@ import { ActionButton } from "../_monitor/action-dialog";
 import { Ago, CheckBadge } from "../_monitor/bits";
 import { RefreshOnChecks } from "../baza/refresh";
 import { PerMinute } from "./chart";
+import { HelpButton, PageHelp } from "../_help/help";
 
 export const metadata = { title: "Trafik (nginx)" };
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function TrafficPage() {
     <div className="space-y-6">
       <RefreshOnChecks prefixes={["traffic:"]} actions={["BLOCK_IP", "UNBLOCK_IP", "RESTART_UNIT", "RUN_HEALTH_CHECK"]} />
       <PageHeader
-        title={<>Trafik (nginx) <ConnBadge /></>}
+        title={<>Trafik (nginx) <ConnBadge /> <PageHelp topic="page:trafik" /></>}
         subtitle={<span className="inline-flex flex-wrap items-center gap-2">access.log va error.log ning oxirgi 5 / 60 daqiqasi, har daqiqada.{row && <> Oxirgi: <Ago iso={row.checkedAt.toISOString()} /> <CheckBadge s={row.status} /></>}</span>}
         action={<ActionButton type="RUN_HEALTH_CHECK" label="Hozir yangilash" icon="refresh" />}
       />
@@ -78,7 +79,7 @@ export default async function TrafficPage() {
           </div>
 
           <Card>
-            <CardHeader title="So'nggi 60 daqiqa" description="Daqiqalik so'rovlar va 5xx javoblar" icon={Globe} />
+            <CardHeader title="So'nggi 60 daqiqa" help={<HelpButton topic="tr:minutes" />} description="Daqiqalik so'rovlar va 5xx javoblar" icon={Globe} />
             <div className="grid gap-4 sm:grid-cols-2">
               <div><div className="mb-1 text-xs text-slate-500">So&apos;rovlar / daq</div><PerMinute label="So'rovlar" values={d.perMinute.map((p) => p.n)} times={d.perMinute.map((p) => p.t)} /></div>
               <div><div className="mb-1 text-xs text-slate-500">5xx / daq</div><PerMinute label="5xx" tone="danger" values={d.perMinute.map((p) => p.e5)} times={d.perMinute.map((p) => p.t)} /></div>
@@ -87,7 +88,7 @@ export default async function TrafficPage() {
 
           {/* ── Upstream xatolari ── */}
           <Card>
-            <CardHeader title="Upstream xatolari (error.log)" description="nginx orqadagi xizmatga ulana olmagan so'rovlar — domen bo'yicha" icon={Network} />
+            <CardHeader title="Upstream xatolari (error.log)" help={<HelpButton topic="tr:upstream" />} description="nginx orqadagi xizmatga ulana olmagan so'rovlar — domen bo'yicha" icon={Network} />
             {upRows.length === 0 && d.upstream.length === 0 ? <p className="text-sm text-slate-500">Oxirgi 60 daqiqada upstream xatosi yo&apos;q.</p> : (
               <ul className="divide-y divide-slate-100">
                 {d.upstream.map((u) => {
@@ -116,7 +117,7 @@ export default async function TrafficPage() {
 
           {/* ── Domenlar ── */}
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="Domenlar" description={d.format.hasHost ? "So'rovlar/daq (5 va 60 daq), xato ulushlari — 60 daqiqa" : "Log formatida $host yo'q — barcha so'rovlar bitta guruhda"} icon={Globe} /></div>
+            <div className="p-5 pb-0"><CardHeader title="Domenlar" help={<HelpButton topic="tr:domains" />} description={d.format.hasHost ? "So'rovlar/daq (5 va 60 daq), xato ulushlari — 60 daqiqa" : "Log formatida $host yo'q — barcha so'rovlar bitta guruhda"} icon={Globe} /></div>
             <Table className="rounded-none border-0 shadow-none">
               <thead><tr><Th>Domen</Th><Th right>/daq (5)</Th><Th right>/daq (60)</Th><Th right>Jami (60)</Th><Th right>4xx</Th><Th right>5xx</Th><Th right>429</Th><Th right>O&apos;rtacha javob</Th></tr></thead>
               <tbody>
@@ -137,7 +138,7 @@ export default async function TrafficPage() {
           <div className="grid gap-4 xl:grid-cols-2">
             {/* ── IP'lar ── */}
             <Card padded={false}>
-              <div className="p-5 pb-0"><CardHeader title="Eng faol 10 IP (60 daq)" description="Shubhali manzilni bloklash — ufw (BLOCK_IP), tasdiq bilan" icon={Ban} /></div>
+              <div className="p-5 pb-0"><CardHeader title="Eng faol 10 IP (60 daq)" help={<HelpButton topic="tr:ips" />} description="Shubhali manzilni bloklash — ufw (BLOCK_IP), tasdiq bilan" icon={Ban} /></div>
               <Table className="rounded-none border-0 shadow-none">
                 <thead><tr><Th>IP</Th><Th right>So&apos;rov</Th><Th right>5 daq</Th><Th right>4xx</Th><Th right>5xx</Th><Th right>429</Th><Th /></tr></thead>
                 <tbody>
@@ -159,7 +160,7 @@ export default async function TrafficPage() {
 
             {/* ── Sekin yo'llar ── */}
             <Card padded={false}>
-              <div className="p-5 pb-0"><CardHeader title="Eng sekin yo'llar (60 daq)" description="O'rtacha javob vaqti ($request_time), kamida 3 so'rov; id/raqamlar :id ga guruhlangan" icon={Snail} /></div>
+              <div className="p-5 pb-0"><CardHeader title="Eng sekin yo'llar (60 daq)" help={<HelpButton topic="tr:slow" />} description="O'rtacha javob vaqti ($request_time), kamida 3 so'rov; id/raqamlar :id ga guruhlangan" icon={Snail} /></div>
               {!d.format.hasRequestTime ? <p className="px-5 pb-5 text-sm text-slate-500">Log formatida $request_time yo&apos;q — yuqoridagi ko&apos;rsatma bo&apos;yicha qo&apos;shing.</p> : (
                 <Table className="rounded-none border-0 shadow-none">
                   <thead><tr><Th>Yo&apos;l</Th><Th right>So&apos;rov</Th><Th right>O&apos;rtacha</Th><Th right>Eng uzoq</Th><Th right>5xx</Th></tr></thead>
@@ -181,7 +182,7 @@ export default async function TrafficPage() {
 
           {d.limitZones.length > 0 && (
             <Card>
-              <CardHeader title="Tezlik cheklovi (limit_req) — error.log" description="Zona bo'yicha cheklangan so'rovlar (insof_auth — login, insof_pub — ochiq API, insof_ai — AI)" icon={ShieldAlert} />
+              <CardHeader title="Tezlik cheklovi (limit_req) — error.log" help={<HelpButton topic="tr:limit" />} description="Zona bo'yicha cheklangan so'rovlar (insof_auth — login, insof_pub — ochiq API, insof_ai — AI)" icon={ShieldAlert} />
               <ul className="divide-y divide-slate-100 text-sm">
                 {d.limitZones.map((z) => <li key={z.zone} className="flex justify-between py-1.5"><code data-no-translit>{z.zone}</code><span>5 daq: <b>{z.n5}</b> · 60 daq: <b>{z.n60}</b></span></li>)}
               </ul>

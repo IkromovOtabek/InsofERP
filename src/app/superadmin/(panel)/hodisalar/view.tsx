@@ -13,6 +13,7 @@ import {
 import { ConnBadge, RefreshOn } from "../_monitor/live";
 import { AckButton, ActionButton, ResolveButton } from "../_monitor/action-dialog";
 import { ActionOutput, ActionStatusBadge, Ago, IncidentStatusBadge, ParamsText, SeverityBadge } from "../_monitor/bits";
+import { CheckHelpInline, HelpButton, PageHelp, WithHelp } from "../_help/help";
 
 export type IncidentFull = IncidentView & {
   detail: unknown; resolvedAt: string | null; ackedAt: string | null; ackedBy: string | null; notifiedAt: string | null;
@@ -43,7 +44,16 @@ export function IncidentsView({ incidents, openId, filters, options }: {
   return (
     <div className="space-y-4">
       <RefreshOn what="incidents" />
-      <PageHeader title={<>Hodisalar <ConnBadge /></>} subtitle="Monitoring, xavfsizlik skaneri va AI tahlili topgan muammolar. Bir xil muammo takrorlansa — yangi qator emas, hisoblagich oshadi." />
+      <PageHeader title={<>Hodisalar <ConnBadge /> <PageHelp topic="page:hodisalar" /></>} subtitle="Monitoring, xavfsizlik skaneri va AI tahlili topgan muammolar. Bir xil muammo takrorlansa — yangi qator emas, hisoblagich oshadi." />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500" aria-label="Belgilar ma'nosi">
+        <WithHelp topic="inc:severity">Daraja</WithHelp>
+        <WithHelp topic="inc:status">Holat</WithHelp>
+        <WithHelp topic="inc:source">Manba</WithHelp>
+        <WithHelp topic="inc:category">Toifa</WithHelp>
+        <WithHelp topic="inc:count">×N — takror</WithHelp>
+        <WithHelp topic="inc:auto">Avtomatik yopilish va Telegram</WithHelp>
+        <WithHelp topic="inc:filters">Filtrlar</WithHelp>
+      </div>
 
       <form ref={form} method="get" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap" aria-label="Hodisalar filtri">
         <FilterSelect name="status" label="Holat" value={filters.status} opts={STATUS_OPTS} onPick={() => form.current?.requestSubmit()} />
@@ -132,7 +142,7 @@ function Drawer({ i, onClose }: { i: IncidentFull; onClose: () => void }) {
         className="flex h-full w-full flex-col overflow-y-auto bg-white shadow-(--shadow-pop) outline-none sm:max-w-xl">
         <div className="sticky top-0 z-10 flex items-start gap-3 border-b border-slate-200 bg-white px-5 py-4">
           <div className="min-w-0 flex-1">
-            <div className="mb-1 flex flex-wrap gap-1.5"><SeverityBadge s={i.severity} /><IncidentStatusBadge s={i.status} /></div>
+            <div className="mb-1 flex flex-wrap items-center gap-1.5"><SeverityBadge s={i.severity} /><HelpButton topic="inc:severity" /><IncidentStatusBadge s={i.status} /><HelpButton topic="inc:status" /></div>
             <h2 id={titleId} className="text-base font-semibold text-slate-900 [overflow-wrap:anywhere]">{i.title}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
@@ -145,19 +155,20 @@ function Drawer({ i, onClose }: { i: IncidentFull; onClose: () => void }) {
               <ResolveButton id={i.id} />
             </div>
           )}
+          <CheckHelpInline checkKey={i.key} />
           {resolution?.note && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"><b>Yopish izohi{resolution.byName ? ` (${resolution.byName})` : ""}:</b> {resolution.note}</div>}
 
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-            <dt className="text-slate-500">Manba</dt><dd>{SOURCE_LABEL[i.source] ?? i.source}</dd>
-            <dt className="text-slate-500">Toifa</dt><dd>{CATEGORY_LABEL[i.category] ?? i.category}</dd>
+            <dt className="text-slate-500"><WithHelp topic="inc:source">Manba</WithHelp></dt><dd>{SOURCE_LABEL[i.source] ?? i.source}</dd>
+            <dt className="text-slate-500"><WithHelp topic="inc:category">Toifa</WithHelp></dt><dd>{CATEGORY_LABEL[i.category] ?? i.category}</dd>
             <dt className="text-slate-500">Korxona</dt><dd>{i.tenant ? <Link className="hover:underline" href={`/superadmin/korxonalar/${i.tenant.slug}`}>{i.tenant.name}</Link> : "—"}</dd>
             <dt className="text-slate-500">Kalit</dt><dd><code className="text-xs [overflow-wrap:anywhere]">{i.key}</code></dd>
-            <dt className="text-slate-500">Takror</dt><dd className="tabular">{i.count} marta</dd>
+            <dt className="text-slate-500"><WithHelp topic="inc:count">Takror</WithHelp></dt><dd className="tabular">{i.count} marta</dd>
           </dl>
 
           {fixes.length > 0 && i.status !== "RESOLVED" && (
             <section aria-label="Tavsiya etilgan tuzatishlar">
-              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-900"><Wrench size={14} aria-hidden /> Tuzatish</h3>
+              <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-900"><Wrench size={14} aria-hidden /> Tuzatish <HelpButton topic="inc:fix" /></h3>
               <div className="flex flex-wrap gap-2">
                 {fixes.map((f, k) => <ActionButton key={k} type={f.type} params={f.params} incidentId={i.id} label={f.label ?? actionLabel(f.type)} icon="wrench" variant="primary" />)}
               </div>
@@ -165,7 +176,7 @@ function Drawer({ i, onClose }: { i: IncidentFull; onClose: () => void }) {
           )}
 
           <section aria-label="Vaqt chizig'i">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Vaqt chizig&apos;i</h3>
+            <h3 className="mb-2 flex items-center gap-1 text-sm font-semibold text-slate-900">Vaqt chizig&apos;i <HelpButton topic="inc:timeline" /></h3>
             <ol className="relative space-y-2 border-l border-slate-200 pl-4">
               {timeline.map((e, k) => (
                 <li key={k} className="text-sm">
@@ -178,14 +189,14 @@ function Drawer({ i, onClose }: { i: IncidentFull; onClose: () => void }) {
           </section>
 
           <section aria-label="Tafsilot">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Tafsilot</h3>
+            <h3 className="mb-2 flex items-center gap-1 text-sm font-semibold text-slate-900">Tafsilot <HelpButton topic="inc:detail" /></h3>
             {i.detail == null ? <p className="text-sm text-slate-500">—</p> : (
               <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-800">{JSON.stringify(i.detail, null, 2)}</pre>
             )}
           </section>
 
           <section aria-label="Bog'liq amallar">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Bog&apos;liq amallar</h3>
+            <h3 className="mb-2 flex items-center gap-1 text-sm font-semibold text-slate-900">Bog&apos;liq amallar <HelpButton topic="act:status" /></h3>
             {i.actions.length === 0 ? <p className="text-sm text-slate-500">Hali amal bajarilmagan.</p> : (
               <ul className="space-y-3">
                 {i.actions.map((a) => (

@@ -10,6 +10,7 @@ import { ActionButton } from "../_monitor/action-dialog";
 import { Ago, AgentHint, CheckBadge } from "../_monitor/bits";
 import { InfraRefresh, RebootButton } from "../_infra/client";
 import { RecentActions } from "../_infra/recent";
+import { HelpButton, PageHelp } from "../_help/help";
 
 export const metadata = { title: "Server tizimi" };
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export default async function ServerPage() {
     <div className="space-y-6">
       <InfraRefresh keys={[infraKey.system(), "host:reboot"]} types={TYPES} />
       <PageHeader
-        title={<>Server tizimi <ConnBadge /></>}
+        title={<>Server tizimi <ConnBadge /> <PageHelp topic="page:server" /></>}
         subtitle="Operatsion tizim, yadro, yangilanishlar va disk. Ma'lumotni insof-agent yig'adi (disk o'lchami 30 daqiqada, apt — soatda bir)."
         action={chk ? <span className="flex items-center gap-2 text-xs text-slate-500"><CheckBadge s={chk.status} /> <Ago iso={chk.checkedAt} /></span> : undefined}
       />
@@ -47,7 +48,7 @@ export default async function ServerPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Tizim" icon={Cpu} />
+              <CardHeader title="Tizim" icon={Cpu} help={<HelpButton topic="srv:system" />} />
               <DL items={[
                 { k: "Server", v: <span data-no-translit>{host?.hostname ?? v.snap.agent?.hostname ?? "—"}</span> },
                 { k: "OS", v: s.os ?? "—" },
@@ -58,7 +59,7 @@ export default async function ServerPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Qayta yuklash" icon={Power}
+              <CardHeader title="Qayta yuklash" icon={Power} help={<HelpButton topic="srv:reboot" />}
                 action={<div className="flex flex-wrap gap-2">
                   {s.scheduledShutdown && <ActionButton type="REBOOT_CANCEL" label="Bekor qilish" icon="ban" disabled={running.includes("REBOOT_CANCEL")} />}
                   <RebootButton hostname={host?.hostname ?? v.snap.agent?.hostname ?? null} disabled={running.includes("REBOOT")} />
@@ -81,7 +82,7 @@ export default async function ServerPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Yangilanishlar (apt)" icon={PackageCheck} description={s.updates?.checkedAt ? `apt list --upgradable · ${dt(s.updates.checkedAt)}` : undefined} />
+              <CardHeader title="Yangilanishlar (apt)" help={<HelpButton topic="srv:updates" />} icon={PackageCheck} description={s.updates?.checkedAt ? `apt list --upgradable · ${dt(s.updates.checkedAt)}` : undefined} />
               {s.updates ? (
                 <>
                   {s.updates.error && <Callout tone="danger">{s.updates.error}</Callout>}
@@ -102,7 +103,7 @@ export default async function ServerPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Avtomatik xavfsizlik yangilanishlari" icon={ShieldCheck} action={s.unattended ? (unattendedOk ? <Badge color="green">Yoqilgan</Badge> : <Badge color="red">O&apos;chiq</Badge>) : undefined} />
+              <CardHeader title="Avtomatik xavfsizlik yangilanishlari" help={<HelpButton topic="srv:unattended" />} icon={ShieldCheck} action={s.unattended ? (unattendedOk ? <Badge color="green">Yoqilgan</Badge> : <Badge color="red">O&apos;chiq</Badge>) : undefined} />
               {s.unattended ? (
                 <DL items={[
                   { k: "unattended-upgrades o'rnatilgan", v: s.unattended.installed ? "ha" : "yo'q" },
@@ -117,7 +118,7 @@ export default async function ServerPage() {
           </div>
 
           <Card>
-            <CardHeader title="Disk: eng katta papkalar" icon={HardDrive}
+            <CardHeader title="Disk: eng katta papkalar" icon={HardDrive} help={<HelpButton topic="srv:dirs" />}
               description={host ? `/ — ${bytes(host.diskUsed)} / ${bytes(host.diskTotal)}` : undefined}
               action={<div className="flex flex-wrap gap-2">
                 <ActionButton type="JOURNAL_VACUUM" icon="trash" disabled={running.includes("JOURNAL_VACUUM")} label={`Jurnalni tozalash (${JOURNAL_KEEP.replace("d", " kun")})`} />
@@ -138,7 +139,7 @@ export default async function ServerPage() {
           </Card>
 
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title={`Relizlar (${s.releases.length})`} description={`Eng yangi ${KEEP_RELEASES} ta va joriy (current) saqlanadi — orqaga qaytarish (ROLLBACK) uchun. Qolgani «Eski relizlarni o'chirish» bilan o'chadi.`} /></div>
+            <div className="p-5 pb-0"><CardHeader title={`Relizlar (${s.releases.length})`} help={<HelpButton topic="srv:releases" />} description={`Eng yangi ${KEEP_RELEASES} ta va joriy (current) saqlanadi — orqaga qaytarish (ROLLBACK) uchun. Qolgani «Eski relizlarni o'chirish» bilan o'chadi.`} /></div>
             {s.releases.length === 0 ? <div className="p-5"><Empty text="releases/ bo'sh yoki topilmadi" /></div> : (
               <Table>
                 <thead><tr><Th>Reliz</Th><Th>Sana</Th><Th right>Hajm</Th><Th>Holat</Th></tr></thead>

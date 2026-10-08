@@ -18,7 +18,8 @@
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
 #        geo   — mobil geofence "yoqilgan" rejimi (MOBILE_SITE_COORDS_REQUIRED=true)
-#        dm    — IT panel monitoring/xavfsizlik UI: SSE oqimi, amallar navbati, hodisalar (d-monitor-ui.mts, control rejim)
+#        dm    — IT panel monitoring/xavfsizlik UI: SSE oqimi, amallar navbati, hodisalar (d-monitor-ui.mts, control rejim),
+#                yordam lug'ati («?» tugmalari: d-help.mts)
 #        d     — ko'p korxonali platforma (d-run-all.sh) — git HEAD ning toza klonida (commit qilinmagan o'zgarishlar kirmaydi!);
 #                ichida kiberxavfsizlik moduli ham (d-security.mts: fixture'lar, stub AI, vaqtinchalik insof_test_ctl_sec)
 #   4. Natija jadvali; biror to'plam yiqilsa exit 1.
@@ -157,6 +158,8 @@ if want geo; then
   stop_server
 fi
 if want dm; then
+  # IT panel yordam lug'ati (server/baza shart emas): har amal va agent/xavfsizlik kaliti uchun tushuntirish bor
+  suite "dm/help" npx tsx scripts/qa/d-help.mts
   # IT panel: monitoring va kiberxavfsizlik UI — alohida test control bazasi (seed), panel INSOF_MODE=control
   CTLURL="$PG/${PFX}ctl_ui"
   psql "$PG/postgres" -qAtc "drop database if exists \"${PFX}ctl_ui\" with (force)"

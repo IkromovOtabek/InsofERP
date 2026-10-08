@@ -30,7 +30,7 @@ export function Card({ children, className, padded = true }: { children: React.R
   return <div className={cn("rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)", padded && "p-5", className)}>{children}</div>;
 }
 
-export function CardHeader({ title, description, action, icon: Icon }: { title: string; description?: string; action?: React.ReactNode; icon?: LucideIcon }) {
+export function CardHeader({ title, description, action, icon: Icon, help }: { title: string; description?: string; action?: React.ReactNode; icon?: LucideIcon; help?: React.ReactNode }) {
   return (
     <div className="mb-4 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
       {/* basis-64: sarlavha uchun mo'ljallangan en. Amal tugmalari shu enga sig'masa
@@ -38,7 +38,7 @@ export function CardHeader({ title, description, action, icon: Icon }: { title: 
       <div className="flex min-w-0 flex-1 basis-64 items-start gap-2.5">
         {Icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon size={16} /></div>}
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
+          <h2 className="text-[15px] font-semibold text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}</h2>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
         </div>
       </div>
@@ -119,14 +119,17 @@ export function IconButton({ icon: Icon, label, className, ...p }: React.ButtonH
 
 /* ═══════════════════════ Form ═══════════════════════ */
 
-export function Field({ label, children, hint, error, className }: { label: string; children: React.ReactNode; hint?: string; error?: string; className?: string }) {
-  return (
-    <label className={cn("block", className)}>
-      <span className="mb-1.5 block text-[13px] font-medium text-slate-700">{label}</span>
+export function Field({ label, children, hint, error, className, help }: { label: string; children: React.ReactNode; hint?: string; error?: string; className?: string; help?: React.ReactNode }) {
+  const body = (
+    <label className={cn("block", !help && className)}>
+      <span className={cn("mb-1.5 block text-[13px] font-medium text-slate-700", help && "pr-9")}>{label}</span>
       {children}
       {error ? <span role="alert" className="mt-1 block text-xs font-medium text-red-600">{error}</span> : hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
     </label>
   );
+  if (!help) return body;
+  // Yordam tugmasi <label> dan TASHQARIDA: label ichidagi birinchi tugma label'ning "boshqariladigan" elementi bo'lib qoladi
+  return <div className={cn("relative", className)}>{body}<span className="absolute -top-0.5 right-0">{help}</span></div>;
 }
 
 /* Fokus — amber chegara + yumshoq halqa: qaysi maydonga yozilayotgani uzoqdan ham ko'rinadi

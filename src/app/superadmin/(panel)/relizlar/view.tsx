@@ -10,6 +10,7 @@ import { actionLabel, dt, msBetween, type ActionView } from "@/lib/control/monit
 import { Modal, PasswordBox } from "../_monitor/action-dialog";
 import { ActionOutput, ActionStatusBadge, Ago, StatusIcon } from "../_monitor/bits";
 import { deployStatus, requestDeploy, requestRollback } from "./actions";
+import { HelpButton } from "../_help/help";
 
 const PHRASE = "TASDIQLAYMAN";
 const short = (s: string | null | undefined, n = 12) => (s ? s.slice(0, n) : "—");
@@ -30,11 +31,11 @@ export function ReleasesClient({ view }: { view: ReleasesView }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader icon={GitBranch} title="Joriy reliz" description={info ? undefined : "Agent hali relizlar holatini yozmagan (5 daqiqagacha)."}
+          <CardHeader icon={GitBranch} title="Joriy reliz" help={<HelpButton topic="rel:current" />} description={info ? undefined : "Agent hali relizlar holatini yozmagan (5 daqiqagacha)."}
             action={
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => setDeployRef("main")} disabled={busy}><Rocket size={14} aria-hidden /> Deploy</Button>
-                <Button size="sm" variant="secondary" onClick={() => setRollback(true)} disabled={busy || !rollbackTarget}><Undo2 size={14} aria-hidden /> Oldingi relizga qaytarish</Button>
+                <span className="inline-flex items-center gap-0.5"><Button size="sm" onClick={() => setDeployRef("main")} disabled={busy}><Rocket size={14} aria-hidden /> Deploy</Button><HelpButton topic="action:DEPLOY" /></span>
+                <span className="inline-flex items-center gap-0.5"><Button size="sm" variant="secondary" onClick={() => setRollback(true)} disabled={busy || !rollbackTarget}><Undo2 size={14} aria-hidden /> Oldingi relizga qaytarish</Button><HelpButton topic="action:ROLLBACK" /></span>
               </div>
             } />
           <DL items={[
@@ -50,7 +51,7 @@ export function ReleasesClient({ view }: { view: ReleasesView }) {
         </Card>
 
         <Card>
-          <CardHeader icon={Server} title="Xizmatlar versiyasi" description="Har jarayon /api/health javobidagi versiya joriy reliz bilan mosmi" />
+          <CardHeader icon={Server} title="Xizmatlar versiyasi" help={<HelpButton topic="rel:versions" />} description="Har jarayon /api/health javobidagi versiya joriy reliz bilan mosmi" />
           {stale.length > 0 && <Callout tone="warning">{stale.length} ta xizmat eski relizda ishlayapti (qayta ishga tushmagan?).</Callout>}
           <ul className="divide-y divide-slate-100 text-sm">
             {view.services.map((s) => (
@@ -68,7 +69,7 @@ export function ReleasesClient({ view }: { view: ReleasesView }) {
       <DeployProgress active={live.active} last={live.last} />
 
       <Card>
-        <CardHeader icon={GitCommitHorizontal} title={`GitHub (origin/main) dagi yangi commitlar${info?.ahead ? ` — ${info.ahead}` : ""}`}
+        <CardHeader icon={GitCommitHorizontal} help={<HelpButton topic="rel:commits" />} title={`GitHub (origin/main) dagi yangi commitlar${info?.ahead ? ` — ${info.ahead}` : ""}`}
           description="Joriy relizdan keyin qo'shilgan commitlar (eng yangisi tepada, merge'larsiz, ≤ 50)." />
         {!info?.commits.length ? (
           <p className="text-sm text-slate-500">{info?.ahead === 0 ? "Server GitHub'dagi oxirgi holatda." : "Ma'lumot yo'q."}</p>
@@ -87,7 +88,7 @@ export function ReleasesClient({ view }: { view: ReleasesView }) {
       </Card>
 
       <Card>
-        <CardHeader icon={History} title="Serverdagi relizlar" description="releases/<sha> — eng yangisi tepada (deploy.sh oxirgi 3 tasini saqlaydi)" />
+        <CardHeader icon={History} title="Serverdagi relizlar" help={<HelpButton topic="srv:releases" />} description="releases/<sha> — eng yangisi tepada (deploy.sh oxirgi 3 tasini saqlaydi)" />
         {!info?.releases.length ? <p className="text-sm text-slate-500">Ma&apos;lumot yo&apos;q.</p> : (
           <ul className="divide-y divide-slate-100">
             {info.releases.map((r) => (
@@ -105,7 +106,7 @@ export function ReleasesClient({ view }: { view: ReleasesView }) {
       </Card>
 
       <Card>
-        <CardHeader icon={RotateCcw} title="Deploy tarixi" description="Kim, qachon, qaysi ref, natija (log oxiri, sirlarsiz)" />
+        <CardHeader icon={RotateCcw} title="Deploy tarixi" help={<HelpButton topic="rel:history" />} description="Kim, qachon, qaysi ref, natija (log oxiri, sirlarsiz)" />
         {view.history.length === 0 ? <p className="text-sm text-slate-500">Hali panel orqali deploy qilinmagan.</p> : (
           <ul className="space-y-2">
             {view.history.map((a) => (

@@ -8,6 +8,7 @@ import { CONFIRM_WORD, REBOOT_AT_RE, rebootWhen } from "@/lib/control/infra/cont
 import { Modal, PasswordBox } from "../_monitor/action-dialog";
 import { useRefreshOn } from "../_monitor/live";
 import { enqueueAction } from "../monitor-actions";
+import { HelpButton } from "../_help/help";
 
 /** Jonli oqimda shu sahifaga tegishli tekshiruv yoki amal holati o'zgarsa sahifani qayta so'raydi. */
 export function InfraRefresh({ keys, types }: { keys: string[]; types: string[] }) {
@@ -47,7 +48,7 @@ export function RebootButton({ hostname, disabled }: { hostname: string | null; 
   });
   return (
     <>
-      <Button type="button" variant="danger" size="sm" disabled={disabled} onClick={() => setOpen(true)}><Power size={14} aria-hidden /> Qayta yuklash</Button>
+      <span className="inline-flex items-center gap-0.5"><Button type="button" variant="danger" size="sm" disabled={disabled} onClick={() => setOpen(true)}><Power size={14} aria-hidden /> Qayta yuklash</Button><HelpButton topic="action:REBOOT" /></span>
       <Modal open={open} onClose={close} title="Serverni qayta yuklash">
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (canSend && !pending) send(); }}>
           <p className="text-sm text-slate-600">

@@ -7,6 +7,7 @@ import { LOG_FILTER_MAX, LOG_PRIORITIES } from "@/lib/control/devops/contract";
 import { ACTION_STATUS, dt, type ActionStatusT } from "@/lib/control/monitor/shared";
 import { ActionStatusBadge } from "../_monitor/bits";
 import { logResult, requestLogs } from "./actions";
+import { HelpButton } from "../_help/help";
 
 export type SourceOpt = { value: string; label: string; group: string; unit: boolean };
 const LINES = ["50", "100", "200", "500"];
@@ -68,7 +69,7 @@ export function LogsClient({ sources, initial }: { sources: SourceOpt[]; initial
     <div className="space-y-4">
       <Card>
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.4fr_2fr_auto] lg:items-end" onSubmit={(e) => { e.preventDefault(); void load(); }}>
-          <Field label="Manba">
+          <Field label="Manba" help={<HelpButton topic="log:source" />}>
             <Select value={source} onChange={(e) => setSource(e.target.value)}>
               {groups.map((g) => (
                 <optgroup key={g} label={g}>
@@ -80,16 +81,16 @@ export function LogsClient({ sources, initial }: { sources: SourceOpt[]; initial
           <Field label="Qatorlar">
             <Select value={lines} onChange={(e) => setLines(e.target.value)}>{LINES.map((l) => <option key={l} value={l}>{l}</option>)}</Select>
           </Field>
-          <Field label="Daraja (journald)">
+          <Field label="Daraja (journald)" help={<HelpButton topic="log:priority" />}>
             <Select value={priority} onChange={(e) => setPriority(e.target.value)} disabled={!isUnit}>
               <option value="">Hammasi</option>
               {Object.entries(LOG_PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </Select>
           </Field>
-          <Field label="Filtr (agentda, oddiy matn)">
+          <Field label="Filtr (agentda, oddiy matn)" help={<HelpButton topic="log:filter" />}>
             <Input value={filter} onChange={(e) => setFilter(e.target.value)} maxLength={LOG_FILTER_MAX} placeholder="masalan: error, 502, POST /api" autoComplete="off" spellCheck={false} />
           </Field>
-          <Button type="submit" disabled={loading} className="sm:col-span-2 lg:col-span-1"><RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden /> {loading ? "Yuklanmoqda…" : "Yangilash"}</Button>
+          <span className="flex items-center gap-0.5 sm:col-span-2 lg:col-span-1"><Button type="submit" disabled={loading} className="flex-1"><RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden /> {loading ? "Yuklanmoqda…" : "Yangilash"}</Button><HelpButton topic="action:LOG_TAIL" /></span>
         </form>
         <FormError error={err} />
       </Card>

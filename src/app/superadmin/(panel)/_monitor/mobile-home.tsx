@@ -15,6 +15,7 @@ import { useLiveMonitor } from "./live";
 import { Ago } from "./bits";
 import { AckButton, ActionButton } from "./action-dialog";
 import type { ServerFallback } from "./board";
+import { CheckHelpInline, HelpButton, WithHelp } from "../_help/help";
 
 /**
  * Telefon bosh sahifasi — admin prefs'i bo'yicha: M4 «Vidjetlar» yoki M5 «Zich Pro».
@@ -206,6 +207,7 @@ export function WidgetsHome({ initial, tenants, server, hostname, commit }: Mobi
           </Link>
         </div>
       </div>
+      <p className="sa-sub" style={{ margin: "6px 0 0", textAlign: "center" }}><WithHelp topic="mobile:widgets">Vidjetlar nimani ko&apos;rsatadi?</WithHelp></p>
       <div className="m4-dots" role="group" aria-label="Vidjet sahifasi">
         {Array.from({ length: PAGES }, (_, i) => (
           <button key={i} type="button" onClick={() => go(i)} aria-label={`${i + 1}-sahifa`} aria-current={page === i}><i /></button>
@@ -242,7 +244,7 @@ function IncidentSheet({ incident: i, onClose, checks }: { incident: IncidentVie
           </div>
           {fixes.length > 0 && (
             <fieldset className="m4-opts">
-              <legend>Amal tanlang</legend>
+              <legend>Amal tanlang <HelpButton topic="inc:fix" /></legend>
               {fixes.map((x, k) => (
                 <label key={k} className="m4-opt">
                   <RefreshCw size={20} aria-hidden />
@@ -253,6 +255,7 @@ function IncidentSheet({ incident: i, onClose, checks }: { incident: IncidentVie
               ))}
             </fieldset>
           )}
+          <CheckHelpInline checkKey={i.key} collapsed />
           {f && <ActionButton type={f.type} params={f.params} incidentId={i.id} label={f.label ?? actionLabel(f.type)} icon="wrench" variant="danger" size="md" className="w-full" />}
           <div className="grid grid-cols-2 gap-2">
             {i.status === "OPEN" ? <AckButton id={i.id} /> : <span />}
@@ -305,7 +308,7 @@ export function ProHome({ initial, tenants, server, commit }: MobileHomeProps) {
         <div className="m5-alert" role="alert"><b>CRIT</b> {down.map((t) => `${t.name}: ${t.up === false ? "veb" : "baza"} ishlamayapti`).join(" · ")}</div>
       )}
 
-      <div className="m5-cap">Xizmatlar <span>{okN}/{services.length} · javob · up 24s</span></div>
+      <div className="m5-cap"><div className="inline-flex items-center gap-1">Xizmatlar<HelpButton topic="mobile:pro" /></div> <span>{okN}/{services.length} · javob · up 24s</span></div>
       {services.length === 0 ? <p className="m5-empty">Tekshiruv natijasi yo&apos;q — insof-agent ishga tushgach chiqadi.</p> : (
         <div className="m5-tbl" role="table" aria-label="Xizmatlar: holat, javob vaqti, 24 soatlik uptime">
           <div className="m5-tr m5-th" role="row">
@@ -326,7 +329,7 @@ export function ProHome({ initial, tenants, server, commit }: MobileHomeProps) {
         </div>
       )}
 
-      <div className="m5-cap">Ochiq hodisalar <span>{s ? s.counts.open + s.counts.acked : 0}</span></div>
+      <div className="m5-cap"><div className="inline-flex items-center gap-1">Ochiq hodisalar<HelpButton topic="inc:severity" /></div> <span>{s ? s.counts.open + s.counts.acked : 0}</span></div>
       {(s?.incidents.length ?? 0) === 0 ? <p className="m5-empty">Ochiq hodisa yo&apos;q.</p> : (
         <ul className="m5-incs">
           {s!.incidents.slice(0, 8).map((i) => (
@@ -362,6 +365,7 @@ function ServiceMenu({ check: c, onClose }: { check: CheckView | null; onClose: 
         <div className="grid gap-2">
           <code className="m5-cmd" data-no-translit>{c.kind} · {c.status}{c.latencyMs != null ? ` · ${c.latencyMs} ms` : ""}{c.message ? ` · ${c.message}` : ""}</code>
           <p className="sa-sub" style={{ margin: 0 }}>Holatda: <Ago iso={c.changedAt} bare /> · tekshirildi <Ago iso={c.checkedAt} /></p>
+          <p className="sa-sub" style={{ margin: 0 }}><WithHelp checkKey={c.key}>Bu nima va qanday tuzatiladi?</WithHelp></p>
           <div className="m5-menu" role="group" aria-label="Xizmat amallari">
             {unit
               ? <ActionButton type="RESTART_UNIT" params={{ unit }} label="Qayta ishga tushirish" icon="restart" variant={c.status === "CRIT" ? "danger" : "secondary"} size="md" className="w-full justify-start" />

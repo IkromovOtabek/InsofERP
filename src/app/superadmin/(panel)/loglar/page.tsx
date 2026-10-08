@@ -3,6 +3,7 @@ import { control } from "@/lib/control/db";
 import { LOG_FILES } from "@/lib/control/devops/contract";
 import { PageHeader } from "../../_ui";
 import { LogsClient, type SourceOpt } from "./view";
+import { PageHelp } from "../_help/help";
 
 export const metadata = { title: "Loglar" };
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function LogsPage({ searchParams }: { searchParams: Promise
   const initial = sources.some((s) => s.value === sp.source) ? sp.source! : sources[0]?.value ?? "insof-control";
   return (
     <div className="space-y-4">
-      <PageHeader title="Loglar" subtitle="Agent oq ro'yxatdagi manbaning oxirgi qatorlarini o'qiydi (≤ 500 qator, ≤ 64 KB, parol/token yashirilgan). Har so'rov «Amallar» jurnaliga yoziladi." />
+      <PageHeader title={<>Loglar <PageHelp topic="page:loglar" /></>} subtitle="Agent oq ro'yxatdagi manbaning oxirgi qatorlarini o'qiydi (≤ 500 qator, ≤ 64 KB, parol/token yashirilgan). Har so'rov «Amallar» jurnaliga yoziladi." />
       <LogsClient sources={sources} initial={initial} />
     </div>
   );

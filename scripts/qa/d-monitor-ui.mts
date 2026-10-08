@@ -323,6 +323,25 @@ async function main() {
   const xs = await req("/superadmin/xavfsizlik", jar);
   check(!xs.text.includes("198.51.100.8"), "blokdan chiqarilgan IP ro'yxatda yo'q");
 
+  // 6b. Yordam tugmalari («?») — har sahifada; «Bu sahifa haqida»; hodisa tafsilotida oddiy tildagi yordam
+  const helpPages = ["/superadmin", "/superadmin/monitoring", "/superadmin/hodisalar", "/superadmin/xavfsizlik", "/superadmin/amallar",
+    "/superadmin/adminlar", "/superadmin/jurnal", "/superadmin/korxonalar/yangi", "/superadmin/korxonalar/beta", "/superadmin/baza",
+    "/superadmin/trafik", "/superadmin/zaxira", "/superadmin/server", "/superadmin/relizlar", "/superadmin/loglar", "/superadmin/sozlamalar"];
+  for (const p of helpPages) {
+    const r = await req(p, jar);
+    const n = (r.text.match(/aria-label="Yordam: /g) ?? []).length;
+    check(r.status === 200 && n > 0 && r.text.includes("Bu sahifa haqida"), `yordam tugmalari: ${p}`, `${r.status}, ${n} ta`);
+  }
+  const mon = await req("/superadmin/monitoring", jar);
+  check(/aria-label="Yordam: Korxona xizmati: beta"/.test(mon.text) && mon.text.includes('aria-label="Yordam: Xizmatni qayta ishga tushirish"'),
+    "monitoring: xizmat kartasi va amal tugmasi yonida «?»");
+  const det = await req(`/superadmin/hodisalar?id=${beta!.id}`, jar);
+  check(det.text.includes("Oddiy tilda") && det.text.includes("Qanday tuzatiladi?"), "hodisa tafsilotida oddiy tildagi yordam");
+  const yd = await req("/superadmin/yordam", jar);
+  check(yd.status === 200 && yd.text.includes("Atamalar lug") && yd.text.includes("IP bloklash"), "«Yordam» sahifasi (lug'at)", String(yd.status));
+  const home = await req("/superadmin", jar);
+  check(!home.text.includes("window.confirm") && home.text.includes("Plitka ranglari") && home.text.includes("Vidjetlar nimani"), "bosh sahifa: holat qatori yordam bilan");
+
   // 7. Bo'sh holat (agent hech ishlamagan)
   spawnSync("npx", ["tsx", path.join(HERE, "d-monitor-seed.mts"), "--empty"], { env: process.env, encoding: "utf8" });
   await sleep(3000); // snapshot keshi (2.5 s)

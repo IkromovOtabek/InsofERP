@@ -10,6 +10,7 @@ import {
 import { Banner, Dot, Section, ServiceRow, StatusTile, type Tone } from "../../_ui";
 import { useLiveMonitor } from "./live";
 import { Ago, SeverityBadge } from "./bits";
+import { HelpButton } from "../_help/help";
 
 /**
  * Bosh sahifa «Status Board» — jonli qismlar (SSE oqimidan): banner, svetofor plitkalari, xizmatlar,
@@ -32,7 +33,7 @@ export function BoardBanner({ initial, tenantProblems }: { initial: MonitorSnaps
   if (!s || !s.agent) {
     if (tenantProblems.length) return <Banner tone="crit" title="Muammo bor — korxona ishlamayapti">{tenantProblems.join(" · ")}</Banner>;
     return (
-      <Banner tone="unk" title="Monitoring ma'lumoti yo'q" action={<Link href="/superadmin/monitoring" className="sa-btn">Server va xizmatlar →</Link>}>
+      <Banner tone="unk" title="Monitoring ma'lumoti yo'q" action={<span className="inline-flex items-center gap-1"><Link href="/superadmin/monitoring" className="sa-btn">Server va xizmatlar →</Link><HelpButton topic="agent:status" /></span>}>
         insof-agent o&apos;rnatilmagan yoki hali signal bermagan — PLATFORMA.md → Monitoring agenti.
       </Banner>
     );
@@ -42,7 +43,7 @@ export function BoardBanner({ initial, tenantProblems }: { initial: MonitorSnaps
   const warn = s.checks.filter((c) => c.status === "WARN");
   const open = s.counts.open + s.counts.acked;
   const top = hot[0] ?? s.incidents[0];
-  const incLink = top ? <Link href={`/superadmin/hodisalar?id=${top.id}`} className="sa-btn">Hodisani ochish</Link> : <Link href="/superadmin/monitoring" className="sa-btn">Server va xizmatlar →</Link>;
+  const incLink = <span className="inline-flex items-center gap-1">{top ? <Link href={`/superadmin/hodisalar?id=${top.id}`} className="sa-btn">Hodisani ochish</Link> : <Link href="/superadmin/monitoring" className="sa-btn">Server va xizmatlar →</Link>}{top ? <HelpButton checkKey={top.key} /> : <HelpButton topic="home:health" />}</span>;
   const topText = top ? <>{top.title} · <Ago iso={top.firstSeenAt} /> boshlangan{top.count > 1 ? ` · ${top.count} marta takrorlandi` : ""}</> : null;
 
   if (hot.length || crit.length || s.agent.stale || tenantProblems.length) {
@@ -123,7 +124,7 @@ export function BoardServices({ initial, hostname }: { initial: MonitorSnapshot 
   const { data: s } = useLiveMonitor(initial);
   const services = (s?.checks ?? []).filter(isService).sort((a, b) => RANK[a.status] - RANK[b.status] || a.target.localeCompare(b.target));
   return (
-    <Section id="b-svc" title={<>Xizmatlar — <span data-no-translit>{s?.host?.hostname ?? hostname}</span></>} icon={Server} sub="har 3 soniyada"
+    <Section id="b-svc" title={<>Xizmatlar — <span data-no-translit>{s?.host?.hostname ?? hostname}</span> <HelpButton topic="mon:services" /></>} icon={Server} sub="har 3 soniyada"
       more={{ href: "/superadmin/monitoring", label: "Server va xizmatlar →" }}>
       {services.length === 0 ? <p className="sa-sub">Tekshiruv natijalari yo&apos;q — insof-agent ishga tushgach xizmatlar shu yerda chiqadi.</p> : (
         <ul className="sa-svc">
@@ -143,7 +144,7 @@ export function BoardIncidents({ initial }: { initial: MonitorSnapshot | null })
   const list = (s?.incidents ?? []).slice(0, 6);
   const open = s ? s.counts.open + s.counts.acked : 0;
   return (
-    <Section id="b-inc" title="Ochiq hodisalar" icon={Siren} sub={open ? `${open} ta` : undefined} more={{ href: "/superadmin/hodisalar", label: "Hammasi →" }}>
+    <Section id="b-inc" title={<>Ochiq hodisalar <HelpButton topic="home:hot" /></>} icon={Siren} sub={open ? `${open} ta` : undefined} more={{ href: "/superadmin/hodisalar", label: "Hammasi →" }}>
       {list.length === 0 ? <p className="sa-sub">Ochiq hodisa yo&apos;q.</p> : (
         <ul className="sa-ilist">
           {list.map((i) => (
@@ -175,7 +176,7 @@ export function BoardActions({ initial }: { initial: MonitorSnapshot | null }) {
   const list = (s?.actions ?? []).slice(0, 6);
   const hm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
   return (
-    <Section id="b-act" title="So'nggi amallar" icon={ListChecks} more={{ href: "/superadmin/amallar", label: "Amallar →" }}>
+    <Section id="b-act" title={<>So&apos;nggi amallar <HelpButton topic="act:status" /></>} icon={ListChecks} more={{ href: "/superadmin/amallar", label: "Amallar →" }}>
       {list.length === 0 ? <p className="sa-sub">Hali amal so&apos;ralmagan.</p> : (
         <ul className="sa-alist">
           {list.map((a) => {
@@ -202,7 +203,7 @@ export function BoardChart({ initial, footer }: { initial: MonitorSnapshot | nul
   const n = sr?.cpu.length ?? 0;
   const span = n > 1 ? (sr!.t[n - 1] - sr!.t[0]) / 1000 : 0;
   return (
-    <Section id="b-ch" title={<>CPU va RAM{span > 0 ? ` — so'nggi ${duration(span)}` : ""}</>} icon={Activity}
+    <Section id="b-ch" title={<>CPU va RAM{span > 0 ? ` — so'nggi ${duration(span)}` : ""} <HelpButton topic="board:chart" /></>} icon={Activity}
       action={<div className="sa-legend" aria-hidden><span><i style={{ background: "var(--c1)" }} />CPU, %</span><span><i style={{ background: "var(--c2)" }} />RAM, %</span></div>}>
       {n < 2 ? <p className="sa-sub">Grafik uchun ma&apos;lumot yetarli emas — agent har daqiqada surat yozadi.</p> : <LineChart t={sr!.t} a={sr!.cpu} b={sr!.mem} />}
       <div className="sa-sub" style={{ marginTop: 8 }}>{footer}</div>

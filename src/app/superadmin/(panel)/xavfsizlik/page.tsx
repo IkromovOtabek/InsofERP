@@ -8,6 +8,7 @@ import { PageHeader } from "../../_ui";
 import { ConnBadge, RefreshOn } from "../_monitor/live";
 import { ActionButton } from "../_monitor/action-dialog";
 import { Ago, IncidentStatusBadge, SeverityBadge } from "../_monitor/bits";
+import { HelpButton, PageHelp, WithHelp } from "../_help/help";
 
 export const metadata = { title: "Kiberxavfsizlik" };
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export default async function SecurityPage() {
     control.incident.findMany({
       where: { OR: [{ source: { in: ["security", "ai"] } }, { category: "security" }], status: { in: ["OPEN", "ACKED"] } },
       orderBy: [{ severity: "desc" }, { lastSeenAt: "desc" }], take: 200,
-      select: { id: true, title: true, severity: true, status: true, category: true, source: true, count: true, lastSeenAt: true },
+      select: { id: true, key: true, title: true, severity: true, status: true, category: true, source: true, count: true, lastSeenAt: true },
     }),
     control.agentAction.findMany({ where: { type: { in: ["BLOCK_IP", "UNBLOCK_IP"] }, status: "DONE" }, orderBy: [{ finishedAt: "asc" }, { requestedAt: "asc" }] }),
   ]);
@@ -71,7 +72,7 @@ export default async function SecurityPage() {
     <div className="space-y-6">
       <RefreshOn what="security" />
       <PageHeader
-        title={<>Kiberxavfsizlik <ConnBadge /></>}
+        title={<>Kiberxavfsizlik <ConnBadge /> <PageHelp topic="page:xavfsizlik" /></>}
         subtitle="Xavfsizlik skaneri topilmalari va AI tahlili. Tuzatish tugmalari faqat oq ro'yxatdagi amallarni agent navbatiga qo'yadi."
         action={
           <div className="flex flex-wrap gap-2">
@@ -80,6 +81,13 @@ export default async function SecurityPage() {
           </div>
         }
       />
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500" aria-label="Maslahatlar">
+        <WithHelp topic="sec:ssh">SSH: parol yoki kalit</WithHelp>
+        <WithHelp topic="sec:ufw">Firewall (ufw)</WithHelp>
+        <WithHelp topic="sec:fail2ban">fail2ban</WithHelp>
+        <WithHelp topic="sec:ai">AI tahlil nima yuboradi</WithHelp>
+      </div>
 
       {!latest ? (
         <EmptyState icon={ShieldCheck} title="Hali AI hisobot yo'q" text="«AI tahlilni hozir boshlash» ni bosing yoki rejalashtirilgan tahlilni kuting. Agent o'rnatilmagan bo'lsa — PLATFORMA.md → Monitoring agenti." />
@@ -92,15 +100,18 @@ export default async function SecurityPage() {
             </div>
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <WithHelp topic="sec:grade">Baho {latest.grade}</WithHelp>
                 <span data-no-translit>{dt(latest.createdAt.toISOString())}</span>
                 <Badge color={latest.trigger === "manual" ? "violet" : "slate"}>{latest.trigger === "manual" ? "Qo'lda" : "Rejali"}</Badge>
                 <code className="text-[11px]">{latest.model}</code>
+                <HelpButton topic="sec:ai" />
               </div>
               <p className="whitespace-pre-line text-sm text-slate-800">{latest.summary}</p>
             </div>
           </div>
-          {its.length > 0 && (
-            <ol className="mt-5 space-y-3">
+          {its.length > 0 && (<>
+            <div className="mt-5 flex items-center gap-1 text-sm font-semibold text-slate-900">Tavsiyalar <HelpButton topic="sec:recs" /></div>
+            <ol className="mt-2 space-y-3">
               {its.map((it, k) => (
                 <li key={k} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -113,14 +124,14 @@ export default async function SecurityPage() {
                   {it.fix && <p className="mt-1 text-sm text-slate-600"><b className="font-medium text-slate-700">Nima qilish kerak:</b> {it.fix}</p>}
                 </li>
               ))}
-            </ol>
+            </ol></>
           )}
         </Card>
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Xavfsizlik hodisalari" description="Ochiq va ko'rilgan — toifa bo'yicha" icon={ShieldAlert} action={<Link href="/superadmin/hodisalar?source=security" className="text-sm font-medium text-slate-600 hover:underline">Hodisalar →</Link>} />
+          <CardHeader title="Xavfsizlik hodisalari" description="Ochiq va ko'rilgan — toifa bo'yicha" icon={ShieldAlert} help={<HelpButton topic="sec:incidents" />} action={<Link href="/superadmin/hodisalar?source=security" className="text-sm font-medium text-slate-600 hover:underline">Hodisalar →</Link>} />
           {incidents.length === 0 ? <p className="text-sm text-slate-500">Ochiq xavfsizlik hodisasi yo&apos;q.</p> : (
             <div className="space-y-4">
               {[...groups].map(([cat, list]) => (
@@ -130,7 +141,7 @@ export default async function SecurityPage() {
                     {list.map((i) => (
                       <li key={i.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                         <SeverityBadge s={i.severity} /><IncidentStatusBadge s={i.status} />
-                        <Link href={`/superadmin/hodisalar?id=${i.id}`} className="min-w-0 flex-1 basis-48 hover:underline [overflow-wrap:anywhere]">{i.title}</Link>
+                        <span className="flex min-w-0 flex-1 basis-48 items-center gap-1"><Link href={`/superadmin/hodisalar?id=${i.id}`} className="min-w-0 hover:underline [overflow-wrap:anywhere]">{i.title}</Link><HelpButton checkKey={i.key} /></span>
                         <span className="text-xs text-slate-500">{SOURCE_LABEL[i.source] ?? i.source}{i.count > 1 ? ` · ×${i.count}` : ""} · <Ago iso={i.lastSeenAt.toISOString()} /></span>
                       </li>
                     ))}
@@ -142,7 +153,7 @@ export default async function SecurityPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Bloklangan IP'lar" icon={Ban} action={<ActionButton type="BLOCK_IP" label="IP bloklash" icon="ban" variant="danger" />} />
+          <CardHeader title="Bloklangan IP'lar" icon={Ban} help={<HelpButton topic="sec:blocked" />} action={<ActionButton type="BLOCK_IP" label="IP bloklash" icon="ban" variant="danger" />} />
           {blocked.size === 0 ? <p className="text-sm text-slate-500">Bloklangan manzil yo&apos;q.</p> : (
             <ul className="divide-y divide-slate-100">
               {[...blocked].map(([ip, b]) => (
@@ -160,7 +171,7 @@ export default async function SecurityPage() {
       </div>
 
       <Card>
-        <CardHeader title="Hisobotlar tarixi" icon={History} />
+        <CardHeader title="Hisobotlar tarixi" icon={History} help={<HelpButton topic="sec:history" />} />
         {reports.length === 0 ? <p className="text-sm text-slate-500">Hisobot yo&apos;q.</p> : (
           <ul className="divide-y divide-slate-100">
             {reports.map((r) => (

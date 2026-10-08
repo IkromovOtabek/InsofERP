@@ -4,6 +4,7 @@ import { EVENT_LABEL } from "@/lib/control/events";
 import { dateTime } from "@/lib/format";
 import { Empty, Table, Td, Th, Tr } from "@/components/ui";
 import { PageHeader } from "../../_ui";
+import { PageHelp, WithHelp } from "../_help/help";
 
 export const metadata = { title: "Jurnal" };
 export const dynamic = "force-dynamic";
@@ -15,10 +16,10 @@ export default async function EventsPage() {
   });
   return (
     <div className="space-y-4">
-      <PageHeader title="Jurnal" subtitle="Superadminlar amallari: kim, qachon, qaysi korxonada. Parollar yozilmaydi." />
+      <PageHeader title={<>Jurnal <PageHelp topic="page:jurnal" /></>} subtitle="Superadminlar amallari: kim, qachon, qaysi korxonada. Parollar yozilmaydi." />
       {events.length === 0 ? <Empty text="Yozuv yo'q" /> : (
         <Table>
-          <thead><tr><Th>Vaqt</Th><Th>Kim</Th><Th>Amal</Th><Th>Korxona</Th><Th>Tafsilot</Th><Th>IP</Th></tr></thead>
+          <thead><tr><Th>Vaqt</Th><Th><WithHelp topic="jur:columns">Kim</WithHelp></Th><Th><WithHelp topic="jur:events">Amal</WithHelp></Th><Th>Korxona</Th><Th><WithHelp topic="jur:columns">Tafsilot</WithHelp></Th><Th><WithHelp topic="term:ip">IP</WithHelp></Th></tr></thead>
           <tbody>{events.map((e) => (
             <Tr key={e.id}>
               <Td className="whitespace-nowrap">{dateTime(e.createdAt)}</Td>

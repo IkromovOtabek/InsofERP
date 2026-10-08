@@ -13,6 +13,7 @@ import { ProHome, WidgetsHome, type MobileHomeProps } from "./_monitor/mobile-ho
 import { getAdmin } from "@/lib/control/auth";
 import { DEFAULT_UI_PREFS } from "@/lib/control/ui-prefs";
 import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
+import { FirstVisitHint, HelpButton, PageHelp, WithHelp } from "./_help/help";
 
 export const dynamic = "force-dynamic";
 
@@ -62,23 +63,34 @@ export default async function Overview() {
     <div className="sa-mhome">{prefs.mobileLayout === "pro" ? <ProHome {...mobile} /> : <WidgetsHome {...mobile} />}</div>
     <div className="sa-desk grid gap-(--gap)">
       <PageHeader
-        title="Platforma holati"
+        title={<>Platforma holati <PageHelp topic="page:home" /></>}
         subtitle={`ERP va ECO — ${tenants.length} ta korxona · tekshiruv: hozir`}
         action={<>
-          <form action={refreshStatsAction.bind(null, undefined)}><button className="sa-btn"><RefreshCw size={16} aria-hidden /> Yangilash</button></form>
-          <Link href="/superadmin/korxonalar/yangi" className="sa-btn pri"><Plus size={16} aria-hidden /> Yangi korxona</Link>
+          <form action={refreshStatsAction.bind(null, undefined)} className="inline-flex items-center gap-0.5"><button className="sa-btn"><RefreshCw size={16} aria-hidden /> Yangilash</button><HelpButton topic="tenant:refresh" /></form>
+          <span className="inline-flex items-center gap-0.5"><Link href="/superadmin/korxonalar/yangi" className="sa-btn pri"><Plus size={16} aria-hidden /> Yangi korxona</Link><HelpButton topic="tenant:new-btn" /></span>
         </>}
       />
 
+      <FirstVisitHint />
       <BoardBanner initial={monitor} tenantProblems={problems} />
       <BoardTiles initial={monitor} tenants={tenantTile} server={server} />
+      {/* Plitkalar havola — ichiga tugma qo'yib bo'lmaydi, shuning uchun ostida izoh qatori */}
+      <div className="sa-sub flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Plitkalar nimani bildiradi">
+        <WithHelp topic="board:tiles">Plitka ranglari</WithHelp>
+        <WithHelp topic="board:tenants">Korxonalar</WithHelp>
+        <WithHelp topic="board:services">Xizmatlar</WithHelp>
+        <WithHelp topic="mon:cpu">CPU</WithHelp>
+        <WithHelp topic="mon:ram">RAM</WithHelp>
+        <WithHelp topic="mon:disk">Disk</WithHelp>
+        <WithHelp topic="board:backup">Zaxira</WithHelp>
+      </div>
 
       <div className="sa-grid2">
         <BoardServices initial={monitor} hostname={server.host} />
         <BoardIncidents initial={monitor} />
       </div>
 
-      <Section id="korxonalar" title="Korxonalar" icon={Building2} sub={`${tenants.length} ta · ${active.length} faol · bazalar ${fmtNum(sum((s) => s.db.sizeMb ?? 0))} MB`}
+      <Section id="korxonalar" title={<>Korxonalar <HelpButton topic="tenant:columns" /></>} icon={Building2} sub={`${tenants.length} ta · ${active.length} faol · bazalar ${fmtNum(sum((s) => s.db.sizeMb ?? 0))} MB`}
         more={{ href: "/superadmin/korxonalar/yangi", label: "Yangi korxona →" }}>
         {tenants.length === 0 ? (
           <p className="sa-sub">Hali korxona yo&apos;q — «Yangi korxona» yoki mavjud o&apos;rnatishni <code>npm run tenant -- register</code> bilan qo&apos;shing.</p>
@@ -89,7 +101,7 @@ export default async function Overview() {
               return (
                 <article key={t.id} className="sa-card sa-tcard" style={{ background: "var(--soft)", borderColor: s && t.status === "ACTIVE" && (!s.web.up || !s.db.ok) ? "var(--crit)" : undefined }} aria-labelledby={`t-${t.id}`}>
                   <div className="hd">
-                    <Tag tone={tagFromColor(TENANT_STATUS[t.status].color)}>{TENANT_STATUS[t.status].label}</Tag>
+                    <span className="inline-flex items-center gap-0.5"><Tag tone={tagFromColor(TENANT_STATUS[t.status].color)}>{TENANT_STATUS[t.status].label}</Tag><HelpButton topic="tenant:status" /></span>
                     <span className="sa-sub" data-no-translit>{t.domain ?? `${t.slug} · domen yo'q`} · :{t.port}</span>
                   </div>
                   <Link href={`/superadmin/korxonalar/${t.slug}`} className="nm" id={`t-${t.id}`}>{t.name}</Link>
@@ -97,6 +109,7 @@ export default async function Overview() {
                     <Check up={s?.web.up} label={s?.web.ms != null ? `ERP ${s.web.ms} ms` : "ERP"} />
                     <Check up={s?.db.ok} label="Baza" />
                     <Check up={s?.eco.configured ? s.eco.up : null} label="ECO" />
+                    <HelpButton topic="tenant:check" />
                   </div>
                   <div className="row">
                     <div className="cell" style={{ background: "var(--card)" }}><b>{s ? fmtNum(s.users.active) : "—"}</b><span>xodim (24 s: {s?.users.active24h ?? "—"})</span></div>
@@ -113,7 +126,10 @@ export default async function Overview() {
           </div>
         )}
         {tenants.length > 0 && (
-          <div className="sa-kpis" style={{ marginTop: "var(--gap)" }} aria-label="Platforma bo'yicha yig'indilar">
+          <div className="sa-sub" style={{ marginTop: "var(--gap)" }}><WithHelp topic="home:stats">Platforma bo&apos;yicha yig&apos;indilar</WithHelp></div>
+          )}
+        {tenants.length > 0 && (
+          <div className="sa-kpis" style={{ marginTop: 8 }} aria-label="Platforma bo'yicha yig'indilar">
             <div><b>{fmtNum(sum((s) => s.users.active))}</b><span>faol foydalanuvchi · 24 s: {sum((s) => s.users.active24h)}</span></div>
             <div><b>{fmtNum(sum((s) => s.orders.month))}</b><span>zayavka (oy) · bugun {sum((s) => s.orders.today)}</span></div>
             <div><b>{moneyShort(sum((s) => s.orders.revenueMonth))}</b><span>aylanma (oy) · to&apos;lov {moneyShort(sum((s) => s.payments.month))}</span></div>

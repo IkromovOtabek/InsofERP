@@ -10,6 +10,8 @@ import { DB_ACTION_DESCR } from "@/lib/control/dbtraffic/contract";
 import { INFRA_ACTION_DESCR } from "@/lib/control/infra/contract";
 import { BottomSheet } from "../../_ui/sheet";
 import { ackIncident, enqueueAction, resolveIncident } from "../monitor-actions";
+import { actionHelpId } from "@/lib/control/help-content";
+import { HelpButton } from "../_help/help";
 
 /** Sahifa ichidagi dialog (window.confirm emas): kompyuterda oyna, telefonda pastdan varaq (_ui/sheet). */
 export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
@@ -66,6 +68,8 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
   const [done, setDone] = useState<string>();
   const [pending, start] = useTransition();
   const reauth = needsReauth(type);
+  // To'liq enli tugma (telefon varag'ida) — «?» yonida, tugma qolgan joyni egallaydi
+  const fullW = !!className?.split(/\s+/).includes("w-full");
   const needs: "ip" | "unit" | null = type === "BLOCK_IP" || type === "UNBLOCK_IP" ? (typeof params.ip === "string" ? null : "ip") : type === "RESTART_UNIT" ? (typeof params.unit === "string" ? null : "unit") : null;
   const full = needs ? { ...params, [needs]: input.trim() } : params;
   const phrase = confirmPhrase(type, full);
@@ -86,9 +90,13 @@ export function ActionButton({ type, params = {}, incidentId, label, icon, varia
   const paramText = Object.entries(full).filter(([, v]) => v !== "").map(([k, v]) => `${k}: ${String(v)}`).join(", ");
   return (
     <>
-      <Button type="button" variant={variant} size={size} disabled={disabled} className={className} onClick={() => setOpen(true)}>
-        {Icon && <Icon size={14} aria-hidden />} {label ?? actionLabel(type)}
-      </Button>
+      {/* Har amal tugmasi yonida «?» — nima qiladi, xavfi, qachon ishlatish kerak (lib/control/help-content.ts) */}
+      <span className={fullW ? "flex w-full items-center gap-0.5" : "inline-flex items-center gap-0.5"}>
+        <Button type="button" variant={variant} size={size} disabled={disabled} className={fullW ? className!.replace("w-full", "min-w-0 flex-1") : className} onClick={() => setOpen(true)}>
+          {Icon && <Icon size={14} aria-hidden />} {label ?? actionLabel(type)}
+        </Button>
+        <HelpButton topic={actionHelpId(type) ?? undefined} />
+      </span>
       <Modal open={open} onClose={close} title={label ?? actionLabel(type)}>
         <form onSubmit={(e) => { e.preventDefault(); if (canSend && !pending) send(); }} className="space-y-3">
           <p className="text-sm text-slate-600">{DESCR[type] ?? "Amal insof-agent navbatiga qo'yiladi."}</p>
@@ -126,10 +134,13 @@ export function AckButton({ id }: { id: string }) {
   const [pending, start] = useTransition();
   return (
     <span className="inline-flex flex-col">
-      <Button type="button" size="sm" variant="secondary" disabled={pending}
-        onClick={() => start(async () => { const r = await ackIncident(id); if (r.error) setErr(r.error); else router.refresh(); })}>
-        <Eye size={14} aria-hidden /> Ko&apos;rdim
-      </Button>
+      <span className="inline-flex items-center gap-0.5">
+        <Button type="button" size="sm" variant="secondary" disabled={pending}
+          onClick={() => start(async () => { const r = await ackIncident(id); if (r.error) setErr(r.error); else router.refresh(); })}>
+          <Eye size={14} aria-hidden /> Ko&apos;rdim
+        </Button>
+        <HelpButton topic="inc:ack" />
+      </span>
       {err && <span className="mt-1 text-xs text-red-600">{err}</span>}
     </span>
   );
@@ -144,7 +155,10 @@ export function ResolveButton({ id, onDone }: { id: string; onDone?: () => void 
   const close = () => { setOpen(false); setErr(undefined); };
   return (
     <>
-      <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}><XCircle size={14} aria-hidden /> Yopish</Button>
+      <span className="inline-flex items-center gap-0.5">
+        <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}><XCircle size={14} aria-hidden /> Yopish</Button>
+        <HelpButton topic="inc:resolve" />
+      </span>
       <Modal open={open} onClose={close} title="Hodisani qo'lda yopish">
         <form className="space-y-3" onSubmit={(e) => {
           e.preventDefault();

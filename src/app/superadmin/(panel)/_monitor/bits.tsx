@@ -7,6 +7,7 @@ import {
   ACTION_STATUS, CHECK_STATUS, INCIDENT_STATUS, SEVERITY, dt, since,
   type ActionStatusT, type AgentView, type CheckStatusT, type IncidentStatusT, type SeverityT,
 } from "@/lib/control/monitor/shared";
+import { HelpButton } from "../_help/help";
 
 /** Joriy vaqt (har 10 s yangilanadi) — "5 daq oldin" matnlari jonli bo'lsin. */
 export function useNow(ms = 10_000) {
@@ -52,12 +53,12 @@ export function AgentHint({ agent }: { agent: AgentView | null }) {
       <div className="space-y-1">
         {!agent ? (
           <>
-            <div className="font-semibold">insof-agent o&apos;rnatilmagan — ma&apos;lumot hali kelmagan</div>
+            <div className="font-semibold">insof-agent o&apos;rnatilmagan — ma&apos;lumot hali kelmagan <HelpButton topic="agent:status" /></div>
             <p>Server metrikalari, tekshiruvlar va amallar serverdagi alohida <code>insof-agent</code> xizmati orqali ishlaydi. O&apos;rnatish: <b>docs/deploy/PLATFORMA.md → Monitoring agenti</b>.</p>
           </>
         ) : (
           <>
-            <div className="font-semibold">Agent javob bermayapti (oxirgi signal: <Ago iso={agent.lastSeenAt} />)</div>
+            <div className="font-semibold">Agent javob bermayapti (oxirgi signal: <Ago iso={agent.lastSeenAt} />) <HelpButton topic="agent:status" /></div>
             <p>Ko&apos;rsatkichlar eskirgan, navbatdagi amallar bajarilmaydi. Serverda tekshiring: <code>sudo systemctl status insof-agent</code> va <code>journalctl -u insof-agent -n 50</code> (PLATFORMA.md → Monitoring agenti).</p>
           </>
         )}
@@ -72,7 +73,7 @@ export function ActionOutput({ output, open }: { output: string | null; open?: b
   const lines = output.split("\n").length;
   return (
     <details open={open} className="text-xs">
-      <summary className="cursor-pointer select-none text-slate-600 hover:text-slate-900">Natija ({lines} qator)</summary>
+      <summary className="cursor-pointer select-none text-slate-600 hover:text-slate-900">Natija ({lines} qator) <HelpButton topic="act:output" /></summary>
       <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-800">{output}</pre>
     </details>
   );

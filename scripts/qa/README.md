@@ -22,11 +22,16 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
-| dm | IT panel monitoring va kiberxavfsizlik UI: SSE oqimi (login'siz rad, jonli yangilanish), amallar navbati (oq ro'yxat, yozma tasdiq, takror, 10/daq), hodisa ack/yopish, sahifalar, bo'sh holat | d-monitor-ui.mts + d-monitor-seed.mts (`insof_test_r_ctl_ui`, `INSOF_MODE=control`) |
+| dm | IT panel monitoring va kiberxavfsizlik UI: SSE oqimi (login'siz rad, jonli yangilanish), amallar navbati (oq ro'yxat, yozma tasdiq, takror, 10/daq), hodisa ack/yopish, sahifalar, bo'sh holat, har sahifada «?» yordam tugmalari; yordam lug'ati (har amal, agent va xavfsizlik kalitlari uchun tushuntirish) | d-help.mts, d-monitor-ui.mts + d-monitor-seed.mts (`insof_test_r_ctl_ui`, `INSOF_MODE=control`) |
 | d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch, kiberxavfsizlik moduli (fixture'lar + stub AI) | d-run-all.sh (git HEAD klonida, portlar 3214–3216), d-security.mts |
 
 `d-security.mts` alohida ham ishlaydi (server shart emas): `npx tsx scripts/qa/d-security.mts` — vaqtinchalik
 `insof_test_ctl_sec` bazasini ochadi va oxirida o'chiradi; haqiqiy Claude API chaqirilmaydi (test rejimi stub).
+
+`d-help.mts` (dm ichida, alohida ham, server/baza shart emas): `npx tsx scripts/qa/d-help.mts` — IT panel yordam
+lug'ati (`src/lib/control/help-content.ts`): har `ACTION_TYPES` amali uchun to'liq yordam; `helpForCheckKey` agent
+(`scripts/insof-agent.ts`, `scripts/agent/*.ts`) va xavfsizlik moduli yozadigan har kalit uchun maxsus javob beradi —
+kalitlar manba koddan avtomatik yig'iladi, yangi kalit yordamsiz qolsa test yiqiladi; panel kodidagi har `topic="…"` lug'atda bor.
 
 `d` to'plami `git archive HEAD` bilan ishlaydi — commit qilinmagan o'zgarishlar unga kirmaydi.
 

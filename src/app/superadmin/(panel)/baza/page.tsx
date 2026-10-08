@@ -10,6 +10,7 @@ import { ConnBadge } from "../_monitor/live";
 import { ActionButton } from "../_monitor/action-dialog";
 import { Ago, CheckBadge } from "../_monitor/bits";
 import { RefreshOnChecks } from "./refresh";
+import { HelpButton, PageHelp } from "../_help/help";
 
 export const metadata = { title: "Baza (PostgreSQL)" };
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export default async function DbPage() {
     <div className="space-y-6">
       <RefreshOnChecks prefixes={[DBT_KEYS.dbStats]} actions={["PG_CANCEL", "PG_TERMINATE", "VACUUM_ANALYZE", "RUN_HEALTH_CHECK"]} />
       <PageHeader
-        title={<>Baza (PostgreSQL) <ConnBadge /></>}
+        title={<>Baza (PostgreSQL) <ConnBadge /> <PageHelp topic="page:baza" /></>}
         subtitle={<span className="inline-flex flex-wrap items-center gap-2">insof-agent har 5 daqiqada yig&apos;adi.{row && <> Oxirgi: <Ago iso={row.checkedAt.toISOString()} /> <CheckBadge s={row.status} /></>}</span>}
         action={<ActionButton type="RUN_HEALTH_CHECK" label="Hozir yangilash" icon="refresh" />}
       />
@@ -68,7 +69,7 @@ export default async function DbPage() {
 
           {/* ── Bazalar ── */}
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="Bazalar" description="Hajm va kunlik o'sish (agent har kuni yozadi), ulanishlar, cache hit, o'lik qatorlar" icon={Database} /></div>
+            <div className="p-5 pb-0"><CardHeader title="Bazalar" help={<HelpButton topic="db:databases" />} description="Hajm va kunlik o'sish (agent har kuni yozadi), ulanishlar, cache hit, o'lik qatorlar" icon={Database} /></div>
             <Table className="rounded-none border-0 shadow-none">
               <thead><tr><Th>Baza</Th><Th right>Hajm</Th><Th right>1 kun</Th><Th right>7 kun</Th><Th right>Ulanish</Th><Th right>Cache hit</Th><Th right>O&apos;lik qator</Th><Th right>Deadlock</Th><Th /></tr></thead>
               <tbody>
@@ -92,7 +93,7 @@ export default async function DbPage() {
           {/* ── Ulanishlar ── */}
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Ulanishlar holat bo'yicha" description={`Mijoz ulanishlari; fon jarayonlari (autovacuum, wal…): ${d.connections.background}`} icon={Activity} />
+              <CardHeader title="Ulanishlar holat bo'yicha" help={<HelpButton topic="db:connections" />} description={`Mijoz ulanishlari; fon jarayonlari (autovacuum, wal…): ${d.connections.background}`} icon={Activity} />
               <ul className="divide-y divide-slate-100 text-sm">
                 {Object.entries(d.connections.byState).sort((a, b) => b[1] - a[1]).map(([s, n]) => (
                   <li key={s} className="flex items-center justify-between gap-3 py-1.5"><span><code className="text-xs" data-no-translit>{s}</code> <span className="text-slate-500">{STATE_LABEL[s] ?? ""}</span></span><b className="tabular">{n}</b></li>
@@ -100,7 +101,7 @@ export default async function DbPage() {
               </ul>
             </Card>
             <Card>
-              <CardHeader title="Ulanishlar baza bo'yicha" icon={Database} />
+              <CardHeader title="Ulanishlar baza bo'yicha" help={<HelpButton topic="db:connections" />} icon={Database} />
               <ul className="divide-y divide-slate-100 text-sm">
                 {Object.entries(d.connections.byDb).sort((a, b) => b[1] - a[1]).map(([db, n]) => (
                   <li key={db} className="flex items-center justify-between gap-3 py-1.5"><code className="text-xs" data-no-translit>{db}</code><b className="tabular">{n}</b></li>
@@ -115,13 +116,13 @@ export default async function DbPage() {
 
           {/* ── Jadvallar ── */}
           <section aria-labelledby="tables-h" className="space-y-3">
-            <h2 id="tables-h" className="flex items-center gap-2 text-base font-semibold text-slate-900"><Table2 size={16} aria-hidden /> Eng katta jadvallar</h2>
+            <h2 id="tables-h" className="flex items-center gap-2 text-base font-semibold text-slate-900"><Table2 size={16} aria-hidden /> Eng katta jadvallar <HelpButton topic="db:tables" /></h2>
             {d.databases.filter((x) => x.detail).map((x, i) => <DbTables key={x.name} db={x} open={i === 0} />)}
           </section>
 
           {/* ── pg_stat_statements ── */}
           <Card>
-            <CardHeader title="Eng og'ir so'rovlar (pg_stat_statements)" description="Jami bajarilish vaqti bo'yicha top 10 — qiymatlar yashirilgan" icon={Zap} />
+            <CardHeader title="Eng og'ir so'rovlar (pg_stat_statements)" help={<HelpButton topic="db:statements" />} description="Jami bajarilish vaqti bo'yicha top 10 — qiymatlar yashirilgan" icon={Zap} />
             {d.statements.state === "ok" ? (
               d.statements.list.length === 0 ? <p className="text-sm text-slate-500">Hali statistika yo&apos;q.</p> : (
                 <ol className="space-y-3">
@@ -152,7 +153,7 @@ export default async function DbPage() {
 function SessionList({ title, icon, empty, list, showBlockers }: { title: string; icon: typeof Clock; empty: string; list: PgSession[]; showBlockers?: boolean }) {
   return (
     <Card>
-      <CardHeader title={title} icon={icon} description={list.length ? "So'rov matnidagi qiymatlar (satr, son) yashirilgan" : undefined} />
+      <CardHeader title={title} icon={icon} help={<HelpButton topic="db:long" />} description={list.length ? "So'rov matnidagi qiymatlar (satr, son) yashirilgan" : undefined} />
       {list.length === 0 ? <p className="text-sm text-slate-500">{empty}</p> : (
         <ul className="divide-y divide-slate-100">
           {list.map((s) => (

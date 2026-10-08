@@ -8,6 +8,8 @@ import { EmptyState, Tabs } from "@/components/ui";
 import { PageHeader } from "../../_ui";
 import { ConnBadge, RefreshOn } from "../_monitor/live";
 import { ActionOutput, ActionStatusBadge, ParamsText } from "../_monitor/bits";
+import { HelpButton, PageHelp, WithHelp } from "../_help/help";
+import { actionHelpId } from "@/lib/control/help-content";
 
 export const metadata = { title: "Amallar" };
 export const dynamic = "force-dynamic";
@@ -37,11 +39,16 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="space-y-4">
       <RefreshOn what="actions" />
-      <PageHeader title={<>Amallar <ConnBadge /></>} subtitle="Panel so'ragan va insof-agent bajargan amallar. Natija — agent yozgan stdout/stderr (oxirgi ~8 KB, sirlarsiz)." />
+      <PageHeader title={<>Amallar <ConnBadge /> <PageHelp topic="page:amallar" /></>} subtitle="Panel so'ragan va insof-agent bajargan amallar. Natija — agent yozgan stdout/stderr (oxirgi ~8 KB, sirlarsiz)." />
       <Tabs current={status ?? "all"} items={[
         { key: "all", label: "Hammasi", href: href(), count: total },
         ...STATUSES.map((s) => ({ key: s, label: ACTION_STATUS[s].label, href: href(s), count: cnt(s) })),
       ]} />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500" aria-label="Belgilar ma'nosi">
+        <WithHelp topic="act:status">Holatlar (Navbatda … Rad etildi)</WithHelp>
+        <WithHelp topic="act:timing">Kim / Kutish / Bajarilish</WithHelp>
+        <WithHelp topic="act:output">Natija</WithHelp>
+      </div>
       {type && <p className="text-sm text-slate-600">Tur: <b>{actionLabel(type)}</b> · <Link href={href(status)} className="underline">filtrni olib tashlash</Link></p>}
 
       {rows.length === 0 ? (
@@ -54,7 +61,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
               <li key={a.id} className="rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)">
                 <div className="flex flex-wrap items-center gap-2">
                   <ActionStatusBadge s={a.status} />
-                  <Link href={`/superadmin/amallar?type=${a.type}`} className="font-medium text-slate-900 hover:underline">{actionLabel(a.type)}</Link>
+                  <span className="inline-flex items-center gap-0.5"><Link href={`/superadmin/amallar?type=${a.type}`} className="font-medium text-slate-900 hover:underline">{actionLabel(a.type)}</Link><HelpButton topic={actionHelpId(a.type) ?? undefined} /></span>
                   <ParamsText params={a.params} />
                   <span className="ml-auto text-xs text-slate-500 tabular" data-no-translit>{dt(a.requestedAt)}</span>
                 </div>

@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, useTransition } from "r
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Activity, ChevronDown, Database, DatabaseBackup, FileText, Globe, HardDrive, LayoutDashboard, ListChecks, LogOut, Menu, Monitor, Moon,
+  Activity, ChevronDown, CircleHelp, Database, DatabaseBackup, FileText, Globe, HardDrive, LayoutDashboard, ListChecks, LogOut, Menu, Monitor, Moon,
   MoreHorizontal, Plus, Rocket, ScrollText, Settings, ShieldAlert, Siren, Sun, Users, type LucideIcon,
 } from "lucide-react";
 import type { ColorMode, MobileLayout, UiPrefs } from "@/lib/control/ui-prefs";
@@ -31,6 +31,7 @@ const NAV: Item[] = [
   { href: "/superadmin/adminlar", label: "IT jamoasi", icon: Users },
   { href: "/superadmin/jurnal", label: "Jurnal", icon: ScrollText },
   { href: "/superadmin/sozlamalar", label: "Sozlamalar", icon: Settings },
+  { href: "/superadmin/yordam", label: "Yordam", icon: CircleHelp },
 ];
 /** Telefon «Vidjetlar» dock'i: 4 asosiy bo'lim + «Ko'proq» (qolganlari varaqda). */
 const TABS: { href: string; label: string }[] = [

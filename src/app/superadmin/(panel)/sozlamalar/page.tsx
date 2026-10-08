@@ -3,6 +3,7 @@ import { DEFAULT_UI_PREFS, type UiPrefs } from "@/lib/control/ui-prefs";
 import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
 import { PageHeader } from "../../_ui";
 import { ThemeForm } from "./theme-form";
+import { PageHelp } from "../_help/help";
 
 export const metadata = { title: "Sozlamalar" };
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export default async function SettingsPage() {
   try { prefs = await loadUiPrefs(me.id); } catch { /* migratsiya qo'llanmagan */ }
   return (
     <div className="grid gap-(--gap)">
-      <PageHeader title="Sozlamalar" subtitle="Faqat sizning hisobingiz uchun — tanlov bazada saqlanadi va barcha qurilmalaringizda amal qiladi." />
+      <PageHeader title={<>Sozlamalar <PageHelp topic="page:sozlamalar" /></>} subtitle="Faqat sizning hisobingiz uchun — tanlov bazada saqlanadi va barcha qurilmalaringizda amal qiladi." />
       <ThemeForm initial={prefs} />
     </div>
   );

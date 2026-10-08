@@ -11,6 +11,7 @@ import { ActionButton } from "../_monitor/action-dialog";
 import { Ago, AgentHint, CheckBadge } from "../_monitor/bits";
 import { InfraRefresh } from "../_infra/client";
 import { LogTail, RecentActions } from "../_infra/recent";
+import { HelpButton, PageHelp } from "../_help/help";
 
 export const metadata = { title: "Zaxira nusxa" };
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export default async function BackupPage() {
     <div className="space-y-6">
       <InfraRefresh keys={[infraKey.backup(), checkKey.backup()]} types={TYPES} />
       <PageHeader
-        title={<>Zaxira nusxa <ConnBadge /></>}
+        title={<>Zaxira nusxa <ConnBadge /> <PageHelp topic="page:zaxira" /></>}
         subtitle="Har kecha server-backup.sh (cron) → /var/backups/insof va server tashqarisiga (rclone). Tiklash sinovi — har yakshanba. Ma'lumotni insof-agent har 5 daqiqada yig'adi."
         action={
           <div className="flex flex-wrap gap-2">
@@ -81,7 +82,7 @@ export default async function BackupPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Masofadagi nusxa (server tashqarisida)" icon={CloudUpload}
+              <CardHeader title="Masofadagi nusxa (server tashqarisida)" help={<HelpButton topic="zx:remote" />} icon={CloudUpload}
                 description="rclone lsf / rclone about — 30 daqiqada bir tekshiriladi" />
               {remote ? (
                 <>
@@ -101,7 +102,7 @@ export default async function BackupPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Disk va prognoz" icon={HardDrive} description={disk ? `${inv.dir} joylashgan disk` : undefined} />
+              <CardHeader title="Disk va prognoz" help={<HelpButton topic="zx:disk" />} icon={HardDrive} description={disk ? `${inv.dir} joylashgan disk` : undefined} />
               {disk ? (
                 <>
                   <div className="mb-3">
@@ -122,7 +123,7 @@ export default async function BackupPage() {
           </div>
 
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title={`Mahalliy nusxalar (${inv.copies.length})`} description={inv.dir} icon={DatabaseBackup} /></div>
+            <div className="p-5 pb-0"><CardHeader title={`Mahalliy nusxalar (${inv.copies.length})`} help={<HelpButton topic="zx:copies" />} description={inv.dir} icon={DatabaseBackup} /></div>
             {inv.copies.length === 0 ? <div className="p-5"><Empty text="Hali birorta nusxa yo'q" /></div> : (
               <Table>
                 <thead><tr><Th>Sana</Th><Th right>Hajm</Th><Th>Fayllar</Th><Th>SHA256SUMS</Th><Th>Masofada</Th></tr></thead>
@@ -149,12 +150,12 @@ export default async function BackupPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader title="Oxirgi zaxira jarayoni" description="/var/log/insof-backup.log" action={<RunBadge r={inv.lastBackup} />} />
+              <CardHeader title="Oxirgi zaxira jarayoni" help={<HelpButton topic="zx:runs" />} description="/var/log/insof-backup.log" action={<RunBadge r={inv.lastBackup} />} />
               <p className="mb-2 text-sm text-slate-600 [overflow-wrap:anywhere]">{inv.lastBackup.summary ?? "—"}</p>
               <LogTail lines={inv.lastBackup.tail} label="Log" />
             </Card>
             <Card>
-              <CardHeader title="Oxirgi tiklash sinovi" description="/var/log/insof-restore-test.log" action={<RunBadge r={inv.lastRestoreTest} />} />
+              <CardHeader title="Oxirgi tiklash sinovi" help={<HelpButton topic="zx:runs" />} description="/var/log/insof-restore-test.log" action={<RunBadge r={inv.lastRestoreTest} />} />
               <p className="mb-2 text-sm text-slate-600 [overflow-wrap:anywhere]">{inv.lastRestoreTest.summary ?? "—"}</p>
               <LogTail lines={inv.lastRestoreTest.tail} label="Log" />
             </Card>

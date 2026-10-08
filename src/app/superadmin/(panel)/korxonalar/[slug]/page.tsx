@@ -13,6 +13,7 @@ import { TenantStatusBadge, Health, ago } from "../../status";
 import { DirectorForm, EditTenantForm, SsoButton, SuspendForm } from "../../forms";
 import { refreshStatsAction, resumeTenantAction } from "../../actions";
 import { TenantUpPanel } from "../../_infra/tenant-up";
+import { HelpButton, PageHelp, WithHelp } from "../../_help/help";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,9 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
     <div className="space-y-6">
       <PageHeader
         back={{ href: "/superadmin", label: "Umumiy holat" }}
-        title={<>{t.name} <TenantStatusBadge s={t.status} /></>}
-        subtitle={`${t.domain ?? "domen ulanmagan"} · baza ${t.dbName} · port ${t.port} · tarif ${t.plan}`}
-        action={<div className="flex flex-wrap items-start gap-2"><form action={refreshStatsAction.bind(null, t.slug)}><Button variant="secondary" size="sm"><RefreshCw size={14} /> Tekshirish</Button></form><SsoButton slug={t.slug} disabled={!t.domain || t.status === "ARCHIVED"} /></div>}
+        title={<>{t.name} <TenantStatusBadge s={t.status} /><HelpButton topic="tenant:status" /> <PageHelp topic="page:korxona" /></>}
+        subtitle={<span className="inline-flex flex-wrap items-center gap-x-1">{t.domain ?? "domen ulanmagan"} <HelpButton topic="form:domain" /> · <WithHelp topic="tenant:db">baza {t.dbName}</WithHelp> · <WithHelp topic="tenant:port">port {t.port}</WithHelp> · tarif {t.plan}</span>}
+        action={<div className="flex flex-wrap items-start gap-2"><form action={refreshStatsAction.bind(null, t.slug)} className="inline-flex items-center gap-0.5"><Button variant="secondary" size="sm"><RefreshCw size={14} /> Tekshirish</Button><HelpButton topic="tenant:refresh" /></form><SsoButton slug={t.slug} disabled={!t.domain || t.status === "ARCHIVED"} /></div>}
       />
 
       {(yangi || t.status === "PROVISIONING") && (
@@ -52,7 +53,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
 
       {s ? (
         <>
-          <div className="flex flex-wrap gap-2 text-sm"><Health up={s.web.up} label={`ERP ${s.web.ms ?? "—"}ms`} /><Health up={s.db.ok} label={`Baza ${s.db.sizeMb ?? "—"} MB`} /><Health up={s.eco.configured ? s.eco.up : null} label={`ECO ${s.eco.ms ?? "—"}ms`} /><span className="text-slate-500">tekshirildi {ago(s.at)} · oxirgi faollik {ago(s.lastActivityAt)}</span></div>
+          <div className="flex flex-wrap items-center gap-2 text-sm"><HelpButton topic="tenant:check" /><Health up={s.web.up} label={`ERP ${s.web.ms ?? "—"}ms`} /><Health up={s.db.ok} label={`Baza ${s.db.sizeMb ?? "—"} MB`} /><Health up={s.eco.configured ? s.eco.up : null} label={`ECO ${s.eco.ms ?? "—"}ms`} /><span className="text-slate-500">tekshirildi {ago(s.at)} · oxirgi faollik {ago(s.lastActivityAt)}</span></div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Foydalanuvchilar" value={s.users.active} hint={`24 soatda: ${s.users.active24h} · jami ${s.users.total}`} />
             <StatCard label="Xodimlar / mijozlar" value={`${s.employees} / ${s.customers}`} />
@@ -84,22 +85,22 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <div className="mb-1 font-semibold">Direktor login/paroli</div>
+          <div className="mb-1 flex items-center gap-1 font-semibold">Direktor login/paroli <HelpButton topic="tenant:director" /></div>
           <p className="mb-3 text-sm text-slate-500">Yangi direktor ochiladi yoki mavjudining paroli almashtiriladi (eski sessiyalari tugaydi). Hozirgi: <b>{t.directorLogin ?? "—"}</b></p>
           <DirectorForm slug={t.slug} login={t.directorLogin} />
         </Card>
         <Card>
-          <div className="mb-3 font-semibold">Korxona ma&apos;lumotlari</div>
+          <div className="mb-3 flex items-center gap-1 font-semibold">Korxona ma&apos;lumotlari <HelpButton topic="tenant:edit" /></div>
           <EditTenantForm t={t} />
         </Card>
       </div>
 
       <Card>
-        <div className="mb-1 font-semibold">To&apos;xtatish</div>
+        <div className="mb-1 flex items-center gap-1 font-semibold">To&apos;xtatish <HelpButton topic="tenant:suspend" /></div>
         {t.status === "SUSPENDED" ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="text-red-700">To&apos;xtatilgan: {t.suspendedAt ? dateTime(t.suspendedAt) : ""} — {t.suspendReason}</span>
-            <form action={resumeTenantAction.bind(null, t.slug)}><Button variant="success" size="sm"><Play size={14} /> Qayta yoqish</Button></form>
+            <form action={resumeTenantAction.bind(null, t.slug)} className="inline-flex items-center gap-0.5"><Button variant="success" size="sm"><Play size={14} /> Qayta yoqish</Button><HelpButton topic="tenant:resume" /></form>
           </div>
         ) : (
           <>
@@ -110,7 +111,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
       </Card>
 
       <Card>
-        <div className="mb-3 font-semibold">Texnik</div>
+        <div className="mb-3 flex items-center gap-1 font-semibold">Texnik <HelpButton topic="tenant:tech" /></div>
         <DL items={[
           { k: "Ichki manzil", v: <code>{t.internalUrl}</code> },
           { k: "Baza", v: <code>{t.dbName}</code> },
@@ -123,7 +124,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
       </Card>
 
       <Card>
-        <div className="mb-3 font-semibold">Jurnal</div>
+        <div className="mb-3 flex items-center gap-1 font-semibold">Jurnal <HelpButton topic="tenant:journal" /></div>
         {events.length === 0 ? <Empty text="Yozuv yo'q" /> : (
           <ul className="divide-y divide-slate-100 text-sm">
             {events.map((e) => <li key={e.id} className="flex flex-wrap gap-x-3 py-1.5"><span className="text-slate-500">{dateTime(e.createdAt)}</span><b>{EVENT_LABEL[e.action] ?? e.action}</b><span className="text-slate-500">{e.admin?.fullName ?? "skript"}</span></li>)}

@@ -3,6 +3,7 @@ import { loadReleasesView, type ReleasesView } from "@/lib/control/devops/data";
 import { Callout } from "@/components/ui";
 import { PageHeader } from "../../_ui";
 import { ReleasesClient } from "./view";
+import { PageHelp } from "../_help/help";
 
 export const metadata = { title: "Relizlar" };
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default async function ReleasesPage() {
   }
   return (
     <div className="space-y-4">
-      <PageHeader title="Relizlar" subtitle="Ma'lumotni serverdagi insof-agent yig'adi (git fetch — har 5 daqiqada). Deploy va qaytarish agent orqali, scripts/deploy.sh bilan." />
+      <PageHeader title={<>Relizlar <PageHelp topic="page:relizlar" /></>} subtitle="Ma'lumotni serverdagi insof-agent yig'adi (git fetch — har 5 daqiqada). Deploy va qaytarish agent orqali, scripts/deploy.sh bilan." />
       {view ? <ReleasesClient view={view} /> : <Callout tone="danger" title="Ma'lumot yuklanmadi">{error ?? "control baza javob bermadi"}</Callout>}
     </div>
   );
