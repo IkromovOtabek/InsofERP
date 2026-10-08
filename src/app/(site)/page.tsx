@@ -2,12 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight, Boxes, Calculator, CalendarClock, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
-  Mail, MapPin, Phone, Presentation, QrCode, Ruler, ShieldCheck, Timer, Truck, Wallet,
+  Download, Mail, MapPin, Phone, Presentation, QrCode, Ruler, ShieldCheck, Smartphone, Timer, Truck, Wallet,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { fmtNum } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
+import { apkInfo, apkSize, iosAppUrl } from "@/lib/apk";
 import { SiteHeader } from "./site-header";
 import { LeadForm } from "./lead-form";
 import { Showreel, type Clip } from "./showreel";
@@ -67,7 +68,7 @@ function safeJsonLd(data: unknown): string {
 }
 
 export default async function LandingPage() {
-  const [company, groups, products] = await Promise.all([
+  const [company, groups, products, apk] = await Promise.all([
     getCompany(),
     db.productGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
     db.product.findMany({
@@ -75,7 +76,15 @@ export default async function LandingPage() {
       orderBy: [{ groupId: "asc" }, { name: "asc" }],
       select: { id: true, code: true, name: true, unit: true, strengthClass: true, price: true, groupId: true },
     }),
+    apkInfo(),
   ]);
+
+  // Insof ECO mobil ilovasi: Android — serverdagi APK, iPhone — TestFlight / App Store havolasi.
+  // Fayl yoki havola bo'lmasa o'sha tugma (ikkalasi bo'lmasa butun bo'lim) ko'rinmaydi.
+  const androidSize = apk.exists ? apkSize(apk.size) : null;
+  const iosUrl = iosAppUrl();
+  const iosTestFlight = iosUrl?.includes("testflight.apple.com") ?? false;
+  const hasApp = androidSize !== null || iosUrl !== null;
 
   const phone = company.phone?.trim() || null;
   const email = company.email?.trim() || null;
@@ -146,7 +155,7 @@ export default async function LandingPage() {
       {/* JSON-LD xavfsiz satrga aylantiriladi (safeJsonLd): sozlamalardagi matnda "</script>" bo'lsa ham
           skript tegi yopilib, sahifaga HTML/JS kiritib bo'lmasin */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
-      <SiteHeader phone={phone} email={email} hours={hours} />
+      <SiteHeader phone={phone} email={email} hours={hours} app={hasApp} />
 
       {/* ───────── Hero banneri ───────── */}
       {/* Balandlik: ekran bo'yi minus sarlavha (xizmat qatori 2.5rem + panel 5rem).
@@ -415,6 +424,61 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* ───────── Mobil ilova ───────── */}
+      {hasApp && (
+        <section id="ilova" className="grain relative isolate scroll-mt-24 overflow-hidden bg-insof-900 py-20 lg:py-24">
+          <div className="blueprint-dark absolute inset-0 -z-10" aria-hidden />
+          <div className="absolute -top-40 left-1/2 -z-10 h-[32rem] w-[48rem] -translate-x-1/2 rounded-full bg-insof-500/25 blur-3xl" aria-hidden />
+          <div className="relative z-10 mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
+            <Heading
+              eyebrow="Mobil ilova"
+              title="Insof ECO — buyurtma va yetkazib berish telefoningizda"
+              text="Buyurtma bering, mashina qayerdaligini xaritada kuzating, QR-nakladnoyni ilovada tekshiring."
+              dark
+            />
+            <Reveal delay={0.1} className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              {androidSize !== null && (
+                <a
+                  href="/api/public/app/android"
+                  download
+                  className="group inline-flex h-16 items-center gap-4 rounded-2xl bg-signal pr-6 pl-5 text-white transition-[background-color,transform] duration-200 hover:bg-signal-600 active:scale-[0.98]"
+                >
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20"><Download size={20} /></span>
+                  <span className="min-w-0 text-left">
+                    <span className="block text-base font-semibold">Android uchun yuklab olish</span>
+                    <span className="block text-[13px] text-white/75">APK fayl · {androidSize}</span>
+                  </span>
+                </a>
+              )}
+              {iosUrl !== null && (
+                <a
+                  href={iosUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-16 items-center gap-4 rounded-2xl glass-dark pr-6 pl-5 text-white transition-colors duration-200 hover:bg-white/15"
+                >
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15"><Smartphone size={20} /></span>
+                  <span className="min-w-0 text-left">
+                    <span className="block text-base font-semibold">iPhone uchun o&apos;rnatish</span>
+                    <span className="block text-[13px] text-white/65">{iosTestFlight ? "TestFlight orqali" : "App Store"}</span>
+                  </span>
+                </a>
+              )}
+            </Reveal>
+            <Reveal delay={0.15}>
+              <ul className="mt-6 max-w-3xl space-y-1.5 text-[14px] leading-relaxed text-white/55">
+                {androidSize !== null && (
+                  <li>Android: faylni ochganda telefon «noma&apos;lum manbadan o&apos;rnatish»ga ruxsat so&apos;raydi — ruxsat bering.</li>
+                )}
+                {iosTestFlight && (
+                  <li>iPhone: havola avval Apple&apos;ning bepul TestFlight ilovasini o&apos;rnatishni taklif qiladi, so&apos;ng Insof ECO o&apos;rnatiladi.</li>
+                )}
+              </ul>
+            </Reveal>
+          </div>
+        </section>
+      )}
+
       {/* ───────── Joylashuv ───────── */}
       <section className="relative overflow-hidden border-t border-beton-200 bg-beton-100 py-20 lg:py-24">
         <div className="blueprint absolute inset-0" aria-hidden />
@@ -454,6 +518,7 @@ export default async function LandingPage() {
                   <a href="#jarayon" className="block transition-colors hover:text-white">Ish tartibi</a>
                   <a href="#kalkulyator" className="block transition-colors hover:text-white">Kalkulyator</a>
                   <a href="#aloqa" className="block transition-colors hover:text-white">Aloqa</a>
+                  {hasApp && <a href="#ilova" className="block transition-colors hover:text-white">Mobil ilova</a>}
                 </div>
               </div>
               <div>

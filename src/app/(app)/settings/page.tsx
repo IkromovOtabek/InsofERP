@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck } from "lucide-react";
+import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
@@ -19,12 +19,14 @@ import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
 import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
 import { DeletionRow } from "./deletion-forms";
+import { SelfAccountPanel } from "../hisobim/panel";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
 import { DEFAULT_PAYABLES_SINCE } from "@/lib/receipt-payables";
 import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 import { txSign } from "@/lib/cash-tx";
 
 const TABS = [
+  ["account", "Mening hisobim", UserRound],
   ["company", "Zavod rekvizitlari", Building2],
   ["products", "Beton markalari", Package],
   ["materials", "Xomashyo", Layers],
@@ -66,6 +68,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Sozlamalar" subtitle="Faqat direktor uchun. Har bir o'zgarish audit jurnaliga tushadi." />
       <Tabs current={tab} className="mb-6" items={TABS.map(([k, label, Icon]) => ({ key: k, label, href: `/settings?tab=${k}`, icon: Icon, count: k === "deletions" && pendingDeletions ? pendingDeletions : undefined }))} />
 
+      {tab === "account" && <SelfAccountPanel s={s} />}
       {tab === "company" && <CompanyTab />}
       {tab === "products" && <ProductsTab />}
       {tab === "materials" && <MaterialsTab />}

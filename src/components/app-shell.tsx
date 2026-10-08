@@ -129,7 +129,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
 function SidebarInner({ items, user, brand, apk, ios, onNavigate, collapsed, onToggle }:
   { items: NavItem[]; user: User; brand: string; apk?: string | null; ios?: string | null; onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
-    <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-white text-slate-700 dark:bg-[#0e1115]">
+    <div className="relative flex h-full flex-col border-r border-slate-200/80 bg-(--sidebar) text-slate-700">
       {/* Yig'ish/yoyish strelkasi — chekkaga osilgan dumaloq tugma. Strelka yo'nalishini CSS buradi. */}
       {onToggle && (
         <button type="button" onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? "Menyuni yoyish" : "Menyuni yig'ish"}
@@ -184,11 +184,14 @@ function SidebarInner({ items, user, brand, apk, ios, onNavigate, collapsed, onT
           </a>
         )}
         <div className="sb-user flex items-center gap-3 rounded-lg px-2 py-2">
-          <Avatar name={user.fullName} className="h-8 w-8 shrink-0 text-xs" />
-          <div className="sb-fade min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium text-slate-900">{user.fullName}</div>
-            <div className="truncate text-[11px] text-slate-500">{user.roleLabel}</div>
-          </div>
+          {/* Ism — "Mening hisobim" (login/parolni o'zi o'zgartirish), har qanday rolga ochiq */}
+          <Link href="/hisobim" onClick={onNavigate} title="Mening hisobim — login va parol" className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 transition hover:bg-slate-100">
+            <Avatar name={user.fullName} className="h-8 w-8 shrink-0 text-xs" />
+            <div className="sb-fade min-w-0 flex-1">
+              <div className="truncate text-[13px] font-medium text-slate-900">{user.fullName}</div>
+              <div className="truncate text-[11px] text-slate-500">{user.roleLabel} · Mening hisobim</div>
+            </div>
+          </Link>
           <form action="/api/logout" method="post">
             <button title="Chiqish" aria-label="Chiqish" data-tour="logout" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-600 pointer-coarse:h-11 pointer-coarse:w-11"><LogOut size={15} /></button>
           </form>

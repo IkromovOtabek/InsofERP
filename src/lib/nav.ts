@@ -96,6 +96,13 @@ export const NAV: NavItem[] = [
  * Vebda faqat bitta sahifasi bor rollar — asosiy ish joyi Insof ECO ilovasi.
  * Middleware shu jadval bo'yicha yo'naltiradi, menyu esa umumiy bandlarni olib tashlaydi.
  */
+/**
+ * Har qanday rolga (shu jumladan "faqat o'z sahifasi" rollariga) ochiq yo'llar:
+ * qo'llanma va "Mening hisobim" (login/parolni o'zi o'zgartirish).
+ */
+export const ALWAYS_OPEN = ["/qollanma", "/hisobim"] as const;
+export const alwaysOpen = (pathname: string) => ALWAYS_OPEN.some((p) => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(`${p}?`));
+
 export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
   DRIVER: "/mening-reyslarim",
   BRIGADIER: "/mening-topshiriqlarim",
@@ -138,8 +145,8 @@ export function pathAllowed(pathname: string, role: Role, perms?: Perms) {
   if (lvl) return lvl !== "none";
   const item = NAV.filter((i) => pathname.startsWith(i.href)).sort((a, b) => b.href.length - a.href.length)[0];
   // Default-deny: NAV'da ro'yxatga olinmagan yo'l faqat direktorga ochiq (fail-open emas).
-  // Istisno — qo'llanma har kimga ochiq. Yangi sahifa qo'shilganda uni NAV'ga kiritish shart.
-  if (!item) return pathname.startsWith("/qollanma");
+  // Istisno — ALWAYS_OPEN (qo'llanma, o'z hisobi). Yangi sahifa qo'shilganda uni NAV'ga kiritish shart.
+  if (!item) return alwaysOpen(pathname);
   return item.roles === "all" || item.roles.includes(role);
 }
 

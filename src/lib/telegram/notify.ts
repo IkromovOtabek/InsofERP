@@ -37,6 +37,17 @@ async function send(userId: string, text: string): Promise<BotDelivery> {
   }
 }
 
+/** "Mening hisobim": login/parolni o'zgartirishni tasdiqlash kodi — xodimning o'z chatiga. */
+export const sendAccountChangeCodeToBot = (userId: string, code: string) =>
+  send(userId, [
+    "*Insof ERP — login yoki parolni o'zgartirish*",
+    "",
+    `Kod: \`${code}\``,
+    "",
+    "Kod 5 daqiqa amal qiladi.",
+    "Kodni hech kimga bermang. O'zgartirishni siz boshlamagan bo'lsangiz — parolingizni almashtiring va direktorga xabar bering.",
+  ].join("\n"));
+
 /** Parolni tiklash kodi — xodimning o'z chatiga. */
 export const sendResetCodeToBot = (userId: string, code: string) =>
   send(userId, [

@@ -1,5 +1,7 @@
 import path from "path";
+import { createReadStream } from "fs";
 import { stat } from "fs/promises";
+import { Readable } from "stream";
 
 /**
  * Android ilovasining o'rnatish fayli (APK).
@@ -45,6 +47,27 @@ export function iosAppUrl(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * APK faylini yuklab olish javobi — `/api/app/android` (xodim) va `/api/public/app/android` (sayt) uchun umumiy.
+ * Fayl oqim bilan uzatiladi: 35 MB ni xotiraga to'liq yuklash serverni band qilardi.
+ */
+export async function apkResponse(): Promise<Response> {
+  const info = await apkInfo();
+  if (!info.exists) {
+    return Response.json({ error: "Ilova fayli serverga hali yuklanmagan" }, { status: 404 });
+  }
+  const name = `insof-eco-${info.updatedAt.toISOString().slice(0, 10)}.apk`;
+  const stream = Readable.toWeb(createReadStream(APK_PATH)) as ReadableStream;
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/vnd.android.package-archive",
+      "Content-Length": String(info.size),
+      "Content-Disposition": `attachment; filename="${name}"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
 }
 
 /** 36700160 → "35 MB" */

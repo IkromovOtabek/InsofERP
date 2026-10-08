@@ -24,9 +24,9 @@ export const viewport: Viewport = {
   ],
 };
 
-// localStorage'dagi tanlov, bo'lmasa tizim sozlamasi. Sidebar holati ham shu yerda —
+// localStorage'dagi tanlov, bo'lmasa tizim sozlamasi. Fon (palitra) va sidebar holati ham shu yerda —
 // ikkalasi ham birinchi bo'yoqdan oldin qo'llanishi kerak, aks holda sahifa sakrab ochiladi.
-const THEME_SCRIPT = `(function(){try{var d=document.documentElement;var t=localStorage.getItem("insof-theme");if(t!=="dark"&&t!=="light"){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}if(t==="dark")d.classList.add("dark");if(localStorage.getItem("insof-sidebar")==="1")d.classList.add("sb-collapsed")}catch(e){}})();`;
+const THEME_SCRIPT = `(function(){try{var d=document.documentElement;var t=localStorage.getItem("insof-theme");if(t!=="dark"&&t!=="light"){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}if(t==="dark")d.classList.add("dark");var p=localStorage.getItem("insof-palette");if(p==="safir")d.setAttribute("data-palette",p);if(localStorage.getItem("insof-sidebar")==="1")d.classList.add("sb-collapsed")}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -271,6 +271,35 @@
 }
 .dark *::-webkit-scrollbar-thumb { background: #46505e; }
 
+/* ───────── Fon (palitra) — har bir foydalanuvchi o'zi tanlaydi ─────────
+   "Mening hisobim" → Fon. <html data-palette="..."> (localStorage "insof-palette",
+   layout'dagi inline skript birinchi bo'yoqdan oldin qo'yadi). Atribut yo'q — joriy (amber).
+   Safir: ko'k brend, yorug' rejimda fon ko'kish tuslangan, kartalar oq qoladi. */
+:root { --sidebar: #fff; }
+.dark { --sidebar: #0e1115; }
+html[data-palette="safir"]:not(.dark) {
+  --background: #e3ebfa;
+  --sidebar: #eef3fd;
+  --color-white: #fff;
+  --color-slate-50: #f1f5fe; --color-slate-100: #e8eefa; --color-slate-200: #d6e0f2; --color-slate-300: #cdd5e0;
+  --color-slate-400: #8391a7; --color-slate-500: #5f6d84; --color-slate-600: #475569; --color-slate-700: #334155;
+  --color-slate-800: #1e293b; --color-slate-900: #0f172a;
+  --color-brand-50: #eff4ff; --color-brand-100: #dbe6fe; --color-brand-200: #bfd3fe; --color-brand-300: #93b4fd;
+  --color-brand-400: #3b82f6; --color-brand-500: #2563eb; --color-brand-600: #1d4ed8; --color-brand-700: #1e40af; --color-brand-800: #1e3a8a;
+}
+html.dark[data-palette="safir"] {
+  --background: #0d1117;
+  --sidebar: #0a0e14;
+  --color-white: #161b24;
+  --color-slate-50: #1c2330; --color-slate-100: #232b3a; --color-slate-200: #2e3748; --color-slate-300: #3e495d;
+  --color-slate-400: #8792a6; --color-slate-500: #a2acbd; --color-slate-600: #bec7d4; --color-slate-700: #d4dae4;
+  --color-slate-800: #e6eaf0; --color-slate-900: #f2f5f9;
+  --color-brand-50: rgb(59 130 246 / 0.16); --color-brand-100: rgb(59 130 246 / 0.28);
+  --color-brand-400: #60a5fa; --color-brand-500: #3b82f6; --color-brand-600: #6ea4ff; --color-brand-700: #9cc1ff; --color-brand-800: #c4dbff;
+}
+/* Amber ustida qora matn edi — ko'k brend ustida oq */
+html[data-palette="safir"] .bg-brand-500.text-slate-950 { color: #fff; }
+
 /* Tokenlar teskari bo'lganda ham to'g'ri ko'rinishi kerak bo'lgan holatlar */
 .dark .text-white { color: #fff; }                                    /* rangli fonlardagi oq matn */
 .dark .text-slate-950 { color: #111418; }                             /* brend (amber) tugma/avatar matni */

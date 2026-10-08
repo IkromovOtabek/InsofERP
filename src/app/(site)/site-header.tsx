@@ -12,6 +12,7 @@ const LINKS = [
   ["nega-biz", "Nega biz"],
   ["jarayon", "Ish tartibi"],
   ["aloqa", "Aloqa"],
+  ["ilova", "Ilova"],
 ] as const;
 
 /**
@@ -22,7 +23,9 @@ const LINKS = [
  *  · Qaysi bo'limda turganimiz kuzatiladi (IntersectionObserver) va menyuda
  *    to'q sariq chiziq bilan belgilanadi — uzun sahifada o'quvchi yo'qolmaydi.
  */
-export function SiteHeader({ phone, email, hours }: { phone: string | null; email: string | null; hours: string | null }) {
+export function SiteHeader({ phone, email, hours, app = false }: { phone: string | null; email: string | null; hours: string | null; app?: boolean }) {
+  // "Ilova" bandi — faqat sahifada mobil ilova bo'limi bo'lsa (APK yoki iPhone havolasi bor)
+  const links = app ? LINKS : LINKS.filter(([id]) => id !== "ilova");
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<string>("");
@@ -90,7 +93,7 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
           </Link>
 
           <nav className="ml-auto hidden items-center gap-1 lg:flex xl:gap-2">
-            {LINKS.map(([id, label]) => (
+            {links.map(([id, label]) => (
               <a
                 key={id}
                 href={`#${id}`}
@@ -162,7 +165,7 @@ export function SiteHeader({ phone, email, hours }: { phone: string | null; emai
             className="overflow-hidden border-b border-beton-200 bg-white/90 backdrop-blur-xl lg:hidden"
           >
             <div className="px-4 pt-2 pb-8 sm:px-6">
-              {LINKS.map(([id, label]) => (
+              {links.map(([id, label]) => (
                 <a
                   key={id}
                   href={`#${id}`}

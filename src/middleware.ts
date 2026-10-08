@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { OWN_PAGE_ONLY, pathAllowed } from "@/lib/nav";
+import { OWN_PAGE_ONLY, alwaysOpen, pathAllowed } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { redirectUrl } from "@/lib/redirect-url";
@@ -59,7 +59,7 @@ export async function middleware(req: NextRequest) {
   if (!role) return NextResponse.redirect(redirectUrl(req, "/login"));
   // Haydovchi va brigadir vebda faqat o'z sahifasini ko'radi (asosiy ish joyi — ilova)
   const ownPage = OWN_PAGE_ONLY[role];
-  if (ownPage && !pathname.startsWith(ownPage) && !pathname.startsWith("/qollanma") && !pathname.startsWith("/api/")) {
+  if (ownPage && !pathname.startsWith(ownPage) && !alwaysOpen(pathname) && !pathname.startsWith("/api/")) {
     return NextResponse.redirect(redirectUrl(req, ownPage));
   }
   // API marshrutlari ruxsatni o'zi tekshiradi (getSession + rol/canDo) — sahifa qoidasi (NAV) ularga qo'llanmaydi,
