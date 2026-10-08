@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ChevronDown } from "lucide-react";
 import { fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { pickProduct, scrollToForm } from "./lead-bus";
@@ -25,11 +25,19 @@ export type CatalogGroup = { id: string; name: string; count: number };
  * Qurilishchi mahsulotni suratdan emas, kod va sinf bo'yicha qidiradi: shuning
  * uchun ma'lumot zich jadvalda, mono shriftda beriladi. Papka bo'yicha filtr
  * sahifani yangilamaydi, "So'rash" esa formaga shu mahsulotni olib o'tadi.
+ * Dastlab PREVIEW ta qator ko'rinadi, qolgani pastdagi strelka bilan ochiladi.
  */
+const PREVIEW = 10;
+
 export function Catalog({ products, groups, showPrices }: { products: CatalogProduct[]; groups: CatalogGroup[]; showPrices: boolean }) {
   const [group, setGroup] = useState<string>("all");
+  const [expanded, setExpanded] = useState(false);
 
   const rows = useMemo(() => (group === "all" ? products : products.filter((p) => p.groupId === group)), [products, group]);
+  const hidden = rows.length - PREVIEW;
+  const shown = expanded || hidden <= 0 ? rows : rows.slice(0, PREVIEW);
+  // Papka almashganda ro'yxat yana qisqa holatdan boshlanadi
+  const pickGroup = (g: string) => { setGroup(g); setExpanded(false); };
 
   const request = (id: string) => {
     pickProduct(id);
@@ -40,9 +48,9 @@ export function Catalog({ products, groups, showPrices }: { products: CatalogPro
     <div>
       {groups.length > 1 && (
         <div className="mb-6 flex flex-wrap gap-2">
-          <Chip label="Hammasi" count={products.length} active={group === "all"} onClick={() => setGroup("all")} />
+          <Chip label="Hammasi" count={products.length} active={group === "all"} onClick={() => pickGroup("all")} />
           {groups.map((g) => (
-            <Chip key={g.id} label={g.name} count={g.count} active={group === g.id} onClick={() => setGroup(g.id)} />
+            <Chip key={g.id} label={g.name} count={g.count} active={group === g.id} onClick={() => pickGroup(g.id)} />
           ))}
         </div>
       )}
@@ -57,7 +65,7 @@ export function Catalog({ products, groups, showPrices }: { products: CatalogPro
           <span className="text-right">Narx</span>
         </div>
 
-        {rows.map((p, i) => {
+        {shown.map((p, i) => {
           // "Hammasi" tanlanganda papka nomi jadval ichida ajratgich qator bo'lib turadi
           const newGroup = group === "all" && (i === 0 || rows[i - 1].groupName !== p.groupName);
           return (
@@ -101,6 +109,18 @@ export function Catalog({ products, groups, showPrices }: { products: CatalogPro
             </div>
           );
         })}
+
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="flex w-full items-center justify-center gap-2 py-4 text-sm font-semibold text-insof-700 transition-colors hover:bg-beton-50"
+          >
+            {expanded ? "Yig'ish" : `Yana ${hidden} ta mahsulot`}
+            <ChevronDown size={18} className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+          </button>
+        )}
       </div>
 
       <p className="mt-4 font-mono text-[11px] text-beton-500">

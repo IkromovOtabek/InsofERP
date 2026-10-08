@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
-import { LogIn, Mail, Menu, Phone, Presentation, X } from "lucide-react";
+import { LogIn, Menu, Phone, Presentation, X } from "lucide-react";
 
 const LINKS = [
   ["mahsulotlar", "Mahsulotlar"],
@@ -18,12 +18,10 @@ const LINKS = [
 /**
  * Sayt sarlavhasi — logotip oq fonda turadi, xuddi brend kitobidagidek.
  *
- *  · Tepada ko'k xizmat qatori: telefon, pochta, ish vaqti va xodimlar kirishi.
- *    Sahifa siljiganda u yig'iladi, faqat oq panel qoladi.
  *  · Qaysi bo'limda turganimiz kuzatiladi (IntersectionObserver) va menyuda
  *    to'q sariq chiziq bilan belgilanadi — uzun sahifada o'quvchi yo'qolmaydi.
  */
-export function SiteHeader({ phone, email, hours, app = false }: { phone: string | null; email: string | null; hours: string | null; app?: boolean }) {
+export function SiteHeader({ phone, app = false }: { phone: string | null; app?: boolean }) {
   // "Ilova" bandi — faqat sahifada mobil ilova bo'limi bo'lsa (APK yoki iPhone havolasi bor)
   const links = app ? LINKS : LINKS.filter(([id]) => id !== "ilova");
   const [scrolled, setScrolled] = useState(false);
@@ -59,25 +57,6 @@ export function SiteHeader({ phone, email, hours, app = false }: { phone: string
 
   return (
     <header className="sticky top-0 z-50">
-      {/* Xizmat qatori — siljiganda yig'iladi, shunda ekranda mahsulot qoladi */}
-      <div className={`overflow-hidden bg-insof-900 transition-[height] duration-300 ${scrolled ? "h-0" : "h-10"}`}>
-        <div className="mx-auto flex h-10 max-w-[1680px] items-center gap-6 px-4 text-[13px] text-white/65 sm:px-6 lg:px-8">
-          {tel && (
-            <a href={tel} className="inline-flex items-center gap-2 transition-colors hover:text-white">
-              <Phone size={13} className="text-signal" />
-              <span className="font-mono tabular-nums">{phone}</span>
-            </a>
-          )}
-          {email && (
-            <a href={`mailto:${email}`} className="hidden items-center gap-2 transition-colors hover:text-white sm:inline-flex">
-              <Mail size={13} className="text-signal" />
-              {email}
-            </a>
-          )}
-          {hours && <span className="ml-auto hidden lg:inline">{hours}</span>}
-        </div>
-      </div>
-
       {/* Siljiganda panel shishaga aylanadi — orqadagi surat xira ko'rinib turadi */}
       <div className={`border-b transition-[background-color,box-shadow,border-color] duration-300 ${scrolled ? "border-white/60 bg-white/80 shadow-[0_8px_32px_-12px_rgba(27,42,76,0.25)] backdrop-blur-xl" : "border-beton-200 bg-white"}`}>
         <div className={`mx-auto flex max-w-[1680px] items-center gap-4 px-4 transition-all duration-300 sm:px-6 lg:gap-6 lg:px-8 ${scrolled ? "h-16" : "h-20"}`}>
