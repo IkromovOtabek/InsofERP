@@ -5,7 +5,7 @@
 #   QA_GEOFENCE=on npx tsx scripts/qa/c-mobile-scope.ts
 cd "$(dirname "$0")/../.."
 fail=0
-for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-integrations; do
+for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations; do
   echo "════════ $t"
   npx tsx "scripts/qa/$t.ts" || fail=1
 done

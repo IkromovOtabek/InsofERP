@@ -20,7 +20,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | a | sotuv / moliya, Excel importlari, INN tekshiruvi, kassa ⇄ bank o'tkazmalari, yagona debitorka | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, prepay-gate.mts, transfers.mts, receivables.mts |
 | b | sklad / ishlab chiqarish / logistika / ta'minot / kadr, kirim QQS (b-vat.mts) | b-all.sh |
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
-| c | mobil API (jti, refresh rotatsiya, rollar, pul), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
+| c | mobil API (jti, refresh rotatsiya, rollar, pul, kassa: to'lov / kirim-chiqim / o'tkazma — c-mobile-cash.ts), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
 | dm | IT panel monitoring va kiberxavfsizlik UI: SSE oqimi (login'siz rad, jonli yangilanish), amallar navbati (oq ro'yxat, yozma tasdiq, takror, 10/daq), hodisa ack/yopish, sahifalar, bo'sh holat, har sahifada «?» yordam tugmalari; yordam lug'ati (har amal, agent va xavfsizlik kalitlari uchun tushuntirish) | d-help.mts, d-monitor-ui.mts + d-monitor-seed.mts (`insof_test_r_ctl_ui`, `INSOF_MODE=control`) |
 | d | ko'p korxonali platforma: panel, SSO, deploy DRY_RUN, zaxira, health-watch, kiberxavfsizlik moduli (fixture'lar + stub AI) | d-run-all.sh (git HEAD klonida, portlar 3214–3216), d-security.mts |

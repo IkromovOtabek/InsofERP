@@ -9,11 +9,9 @@ import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "
 import { cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { money } from "@/lib/format";
+import { createCashEntry } from "@/lib/cash-entry";
 
 class CashError extends Error {}
-
-/** Bir xil yozuv shu oraliqda qayta kelsa — ikki marta bosilgan deb hisoblanadi (to'lovlardagi kabi). */
-const DUPLICATE_WINDOW_MS = 60_000;
 
 const schema = z.object({
   type: z.enum(["INCOME", "EXPENSE"]),
@@ -32,42 +30,9 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   const s = await requireAction("cashflow", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const { receiptId, ...d } = r.data;
-  if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
-  const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
-  if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
-  const res = await db.$transaction(async (tx) => {
-    // Hisob bo'yicha navbat: dublikat va qoldiq tekshiruvi parallel so'rovlarda ham to'g'ri ishlasin
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + d.cashAccountId}))`;
-    // Kirim hujjatiga bog'langan to'lov: kirim qulfi ostida qolgan summa tekshiriladi — "To'lash" tugmasi
-    // va qo'lda chiqim bir kirimni ikki marta to'lab yubormasin (qisman to'lov mumkin, ortiqchasi yo'q)
-    let link: { refType: string; refId: string; supplierId: string; counterparty: string } | null = null;
-    if (receiptId) {
-      await lockReceipt(tx, receiptId);
-      const st = await receiptPayState(tx, receiptId);
-      if (!st) throw new CashError("Kirim hujjati topilmadi");
-      if (st.cancelled) throw new CashError(`${st.docNo} storno qilingan — unga to'lov yozilmaydi`);
-      if (st.fromSupply) throw new CashError(`${st.docNo} ta'minot zayavkasidan — uning puli ta'minot zanjirida to'langan`);
-      if (d.supplierId && d.supplierId !== st.supplierId) throw new CashError(`${st.docNo} boshqa yetkazuvchiniki (${st.supplierName})`);
-      if (st.left <= 0.005) throw new CashError(`${st.docNo} to'liq to'langan (${money(st.paid)})`);
-      if (d.amount > st.left + 0.005) throw new CashError(`${st.docNo} bo'yicha qolgan to'lov ${money(st.left)} — ${money(d.amount)} ortiqcha`);
-      link = { refType: "GoodsReceipt", refId: st.id, supplierId: st.supplierId, counterparty: d.counterparty ?? st.supplierName };
-    }
-    const dup = await tx.cashTransaction.findFirst({
-      where: { type: d.type, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category, createdById: s.userId, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) } },
-      select: { id: true },
-    });
-    if (dup) throw new CashError("Aynan shu yozuv hozirgina saqlandi — ikki marta bosilgan bo'lishi mumkin. Rostdan ikkinchisi bo'lsa, bir daqiqadan keyin qayta kiriting");
-    // Naqd kassa minusga tushmasin
-    if (d.type === "EXPENSE") {
-      const err = await cashOutflowError(tx, d.cashAccountId, d.amount);
-      if (err) throw new CashError(err);
-    }
-    const t = await tx.cashTransaction.create({ data: { ...d, ...(link ?? {}), date: new Date(d.date), createdById: s.userId } });
-    await audit(tx, s.userId, "CREATE", "CashTransaction", t.id, undefined, t);
-    return { ok: true as const };
-  }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
-  if ("error" in res) return res;
+  // Qoida `lib/cash-entry.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
+  const res = await createCashEntry({ ...r.data, date: new Date(r.data.date) }, s.userId);
+  if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/");
   return { ok: true };
 }
