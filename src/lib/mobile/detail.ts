@@ -50,6 +50,8 @@ export type FormOption = {
   label: string;
   /** Tanlanganda boshqa maydonlarni to'ldirish uchun (masalan mahsulot narxi). */
   extra?: Record<string, string>;
+  /** Variant ostidagi kichik izoh (qoldiq, sana) — ilova `Select` ida ikkinchi qator. */
+  hint?: string;
 };
 export type FormField = {
   name: string;
@@ -69,6 +71,12 @@ export type FormField = {
   options?: FormOption[];
   /** Shart: boshqa maydon shu qiymatda bo'lsagina ko'rinadi. */
   showIf?: { field: string; equals: string };
+  /**
+   * `select` uchun: variantlar boshqa maydonga bog'liq — faqat `option.extra[dependsOn]` shu maydon qiymatiga
+   * teng bo'lganlari ko'rinadi (u bo'sh bo'lsa — hammasi). Masalan mijozning schyotlari. Eski ilova buni
+   * bilmaydi va hamma variantni ko'rsatadi — moslikni server baribir tekshiradi.
+   */
+  dependsOn?: string;
   /** `photo` uchun: qaysi kamera ochilsin (yuz — old kamera) va galereyadan tanlashga yo'l qo'ymaslik (faqat jonli kadr). */
   camera?: "front" | "back";
   cameraOnly?: boolean;
@@ -800,9 +808,9 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   }
   if (open && can(user, "task.progress")) {
     actions.push({
-      id: "task.progress", label: "Fakt kiritish (qisman bajarildi)", tone: "success",
+      id: "task.progress", label: "Faktni kiritish", tone: "success",
       form: [
-        { name: "qty", label: `Bajarilgan miqdor (${unit}) — qoldiq ${num(left)}`, type: "number", required: true, value: String(left) },
+        { name: "qty", label: `Bajarilgan miqdor (${unit}) — qoldiq ${num(left)}`, type: "number", required: true, value: String(left), hint: "Qisman bajarilgan bo'lsa — bajarilganini yozing" },
         ...defectFields,
         { name: "note", label: "Izoh", type: "text" },
       ],
@@ -1128,10 +1136,11 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
         { name: `factPrice_${i.id}`, label: `${i.name} — haqiqiy narx (1 ${i.unit})`, type: "number" as const, required: true, value: String(Math.round(i.factPrice != null ? sum(i.factPrice) : sum(i.price))), hint: "Narx o'zgarsa zayavka qayta tasdiqqa qaytadi" },
       ]),
       { name: "deliveryFactCost", label: "Dostavka — haqiqatda (so'm)", type: "number", value: String(Math.round(sum(r.deliveryFactCost ?? r.deliveryCost))) },
-      { name: "note", label: "Izoh", type: "text" },
     ];
-    if (can(user, "supply.receive")) actions.push({ id: "supply.receive", label: "Qabul qildim — skladga kirim", tone: "success", form: factForm });
-    if (can(user, "supply.fact")) actions.push({ id: "supply.fact", label: "Faktni saqlash (hali qabul emas)", tone: "brand", form: factForm });
+    // Tugma yorlig'i qisqa (telefonda bir-ikki qatorga sig'sin) — ma'nosi izoh maydonining ostida
+    const noteWith = (hint: string): FormField => ({ name: "note", label: "Izoh", type: "text", hint });
+    if (can(user, "supply.receive")) actions.push({ id: "supply.receive", label: "Skladga kirim qilish", tone: "success", form: [...factForm, noteWith("Mol keldi va qabul qilindi — skladga kirim yoziladi")] });
+    if (can(user, "supply.fact")) actions.push({ id: "supply.fact", label: "Faktni saqlash", tone: "brand", form: [...factForm, noteWith("Hali qabul emas — faqat kelgan miqdor va narx saqlanadi")] });
   }
   // Bekor qilish — har bosqichda, zanjirdagi o'z bo'limi
   // ── Snabjeniye TZ ──
@@ -1185,7 +1194,7 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
   if (isOpenSupply(st) && can(user, "supply.meta")) {
     const people = await responsibleOptions();
     actions.push({
-      id: "supply.meta", label: "Rekvizitlar (bo'lim, ustuvorlik, mas'ul)", tone: "brand",
+      id: "supply.meta", label: "Rekvizitlar", tone: "brand",
       form: [
         { name: "department", label: "Bo'lim", type: "select", options: DEPARTMENTS.map((d) => ({ value: d, label: d })), value: r.department ?? undefined },
         { name: "priority", label: "Ustuvorlik", type: "select", required: true, options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] })), value: r.priority },

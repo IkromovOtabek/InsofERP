@@ -253,11 +253,11 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
   if (mine) {
     if (!s) actions.push({ id: "shift.open", label: "Smenani boshlash", tone: "success", confirm: `${b.name} — bugungi smena ochilsinmi? Ochilgan vaqt ish vaqtining boshi hisoblanadi.` });
     // Yuz tekshiruvi yoqiq bo'lsa hammani birdan "Keldi" qilib bo'lmaydi — har biri yuz bilan
-    if (members.some((m) => !m.status) && !faceCheckEnabled()) actions.push({ id: "att.all", label: "Belgilanmaganlar — hammasi keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
+    if (members.some((m) => !m.status) && !faceCheckEnabled()) actions.push({ id: "att.all", label: "Qolganlari keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
     actions.push(...issueActions(open.map((t) => ({ id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name }))));
     const products = [...new Map(open.map((t) => [t.orderItem.product.id, t.orderItem.product])).values()];
     if (products.length) actions.push(defectAction("shift.defect", products));
-    if (s) actions.push({ id: "shift.close", label: "Smenani yopish va hisobot yuborish", tone: "brand", form: [noteField("Brigadir izohi", false, "kechikish sabablari, ertangi reja...")] });
+    if (s) actions.push({ id: "shift.close", label: "Smenani yopish", tone: "brand", form: [noteField("Brigadir izohi", false, "kechikish sabablari, ertangi reja...")] });
   }
   return {
     key: "brig-shift", id: `${TODAY_PREFIX}${brigadeId}`, title: `Smena — ${day(now)}`, subtitle: b.name,
