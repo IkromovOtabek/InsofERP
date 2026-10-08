@@ -3,7 +3,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Siren, Wrench, X } from "lucide-react";
-import { Button, EmptyState, PageHeader, Select } from "@/components/ui";
+import { Button, EmptyState, Select } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import { isActionType } from "@/lib/control/monitor/contract";
 import {
   CATEGORY_LABEL, SOURCE_LABEL, actionLabel, dt,

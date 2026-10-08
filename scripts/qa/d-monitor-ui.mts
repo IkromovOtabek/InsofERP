@@ -10,13 +10,15 @@
  * Skript boshida d-monitor-seed.mts ni ishga tushiradi (monitoring jadvallari qayta yoziladi).
  * Sinovlar: login'siz oqim/amal → rad; login → SSE text/event-stream + ma'lumot; yangi HostSnapshot oqimda ≤10 s
  * ichida ko'rinadi; ?once=1 JSON; enqueueAction tekshiruvlari (tur, unit, IP, qat'iy parametr, yozma tasdiq,
- * takror, chastota chegarasi, jurnal); ack/resolve; barcha sahifalar 200 va server logida xato yo'q; bo'sh holat.
+ * takror, chastota chegarasi, jurnal); ack/resolve; mavzu (uiPrefs: faqat o'z prefs'i, qat'iy tekshiruv, jurnal, layout atributlari);
+ * barcha sahifalar 200 va server logida xato yo'q; bo'sh holat.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "../../src/generated/control/index.js";
+import { PrismaClient, Prisma } from "../../src/generated/control/index.js";
+import { decodeUiCookie, readUiPrefs } from "../../src/lib/control/ui-prefs";
 
 const PANEL = (process.env.QA_PANEL ?? "http://127.0.0.1:3260").replace(/\/$/, "");
 const APP = process.env.QA_APP ?? process.cwd();
@@ -250,6 +252,55 @@ async function main() {
   check(!!again.error, "yopilgan hodisani ack qilib bo'lmaydi");
   const evs = await db.controlEvent.count({ where: { action: { in: ["INCIDENT_ACK", "INCIDENT_RESOLVE"] } } });
   check(evs === 2, "ControlEvent INCIDENT_ACK/RESOLVE", String(evs));
+
+  // 5b. Mavzu (Sozlamalar → Mavzu, SuperAdmin.uiPrefs): faqat O'Z prefs'i, zod qat'iy tekshiruv, jurnal, layout atributlari
+  check(readUiPrefs({ mobileLayout: "matrix", colorMode: 1 }).mobileLayout === "widgets" && readUiPrefs(null).colorMode === "system", "uiPrefs: buzuq Json → standart");
+  check(decodeUiCookie("pro.dark").mobileLayout === "pro" && decodeUiCookie("pro.dark").colorMode === "dark" && decodeUiCookie("<x>.y").mobileLayout === "widgets", "uiPrefs cookie: o'qish va buzuq qiymat");
+  const meRow = await db.superAdmin.findUniqueOrThrow({ where: { login: LOGIN } });
+  await db.superAdmin.update({ where: { id: meRow.id }, data: { uiPrefs: Prisma.DbNull } });
+  const otherPrefs = { mobileLayout: "widgets", colorMode: "light" };
+  const other = await db.superAdmin.upsert({
+    where: { login: "qa.other.prefs" }, update: { uiPrefs: otherPrefs },
+    create: { login: "qa.other.prefs", fullName: "QA Boshqa admin", passwordHash: "-", isActive: true, uiPrefs: otherPrefs },
+  });
+  // JSONB kalit tartibini o'zgartiradi — qiymatlar bo'yicha solishtiramiz
+  const samePrefs = (v: unknown, m: string, c: string) => { const o = (v ?? {}) as Record<string, unknown>; return Object.keys(o).length === 2 && o.mobileLayout === m && o.colorMode === c; };
+  const pe0 = await db.controlEvent.count({ where: { action: "ADMIN_PREFS" } });
+  const anonPrefs = await call("saveUiPrefs", [{ mobileLayout: "pro" }], null, "/superadmin/sozlamalar");
+  check(anonPrefs.ok !== true && (await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } })).uiPrefs === null, "login'siz saveUiPrefs → yozilmaydi", `${anonPrefs.http}`);
+  const badPrefs: [string, unknown][] = [
+    ["noma'lum ko'rinish", { mobileLayout: "matrix" }],
+    ["noma'lum rang rejimi", { colorMode: "blue" }],
+    ["bo'sh obyekt", {}],
+    ["boshqa admin (adminId)", { mobileLayout: "pro", adminId: other.id }],
+    ["boshqa admin (id)", { colorMode: "dark", id: other.id }],
+    ["ortiqcha kalit", { mobileLayout: "pro", isActive: false }],
+    ["massiv", ["pro"]],
+    ["satr", "pro"],
+  ];
+  for (const [name, input] of badPrefs) {
+    const r = await call("saveUiPrefs", [input], jar, "/superadmin/sozlamalar");
+    check(!!r.error && !r.ok, `uiPrefs rad: ${name}`, r.error ?? r.raw);
+  }
+  const meAfterBad = await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } });
+  check(meAfterBad.uiPrefs === null, "rad etilganlar o'z prefs'ini ham o'zgartirmadi");
+  const okPrefs = await call("saveUiPrefs", [{ mobileLayout: "pro", colorMode: "dark" }], jar, "/superadmin/sozlamalar");
+  const meP = await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } });
+  const otherP = await db.superAdmin.findUniqueOrThrow({ where: { id: other.id } });
+  check(!okPrefs.error && samePrefs(meP.uiPrefs, "pro", "dark"), "saveUiPrefs → o'z prefs'i yozildi", okPrefs.error ?? okPrefs.raw);
+  check(samePrefs(otherP.uiPrefs, "widgets", "light"), "boshqa adminning prefs'i o'zgarmadi");
+  check((await db.controlEvent.count({ where: { action: "ADMIN_PREFS", adminId: meRow.id } })) === pe0 + 1, "ControlEvent ADMIN_PREFS yozildi");
+  await call("saveUiPrefs", [{ colorMode: "dark" }], jar, "/superadmin/sozlamalar");
+  check((await db.controlEvent.count({ where: { action: "ADMIN_PREFS" } })) === pe0 + 1, "o'zgarishsiz saqlash jurnalga yozilmaydi");
+  const homeP = await req("/superadmin", jar);
+  check(homeP.status === 200 && homeP.text.includes('data-mobile="pro"') && homeP.text.includes('data-theme="dark"'), "layout: .sa[data-mobile=pro][data-theme=dark] serverda (miltillamaydi)");
+  const merge = await call("saveUiPrefs", [{ mobileLayout: "widgets" }], jar, "/superadmin/sozlamalar");
+  const meM = await db.superAdmin.findUniqueOrThrow({ where: { id: meRow.id } });
+  check(!merge.error && samePrefs(meM.uiPrefs, "widgets", "dark"), "qisman yangilash: rang rejimi saqlanib qoldi");
+  const st = await req("/superadmin/sozlamalar", jar);
+  check(st.status === 200 && ["Mavzu", "Vidjetlar", "Zich Pro", "Rang rejimi", "Qorong"].every((n) => st.text.includes(n)), "sahifa /superadmin/sozlamalar");
+  await db.superAdmin.update({ where: { id: meRow.id }, data: { uiPrefs: Prisma.DbNull } });
+  await db.superAdmin.delete({ where: { id: other.id } });
 
   // 6. Sahifalar
   const ip7 = "198.51.100.7";

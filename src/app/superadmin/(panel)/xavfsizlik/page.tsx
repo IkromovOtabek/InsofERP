@@ -3,7 +3,8 @@ import { Ban, History, ShieldAlert, ShieldCheck } from "lucide-react";
 import { control } from "@/lib/control/db";
 import { isActionType } from "@/lib/control/monitor/contract";
 import { CATEGORY_LABEL, SEVERITY, SOURCE_LABEL, actionLabel, dt, type SeverityT } from "@/lib/control/monitor/shared";
-import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import { ConnBadge, RefreshOn } from "../_monitor/live";
 import { ActionButton } from "../_monitor/action-dialog";
 import { Ago, IncidentStatusBadge, SeverityBadge } from "../_monitor/bits";
@@ -129,7 +130,7 @@ export default async function SecurityPage() {
                     {list.map((i) => (
                       <li key={i.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                         <SeverityBadge s={i.severity} /><IncidentStatusBadge s={i.status} />
-                        <Link href={`/superadmin/hodisalar?id=${i.id}`} className="min-w-0 flex-1 hover:underline [overflow-wrap:anywhere]">{i.title}</Link>
+                        <Link href={`/superadmin/hodisalar?id=${i.id}`} className="min-w-0 flex-1 basis-48 hover:underline [overflow-wrap:anywhere]">{i.title}</Link>
                         <span className="text-xs text-slate-500">{SOURCE_LABEL[i.source] ?? i.source}{i.count > 1 ? ` · ×${i.count}` : ""} · <Ago iso={i.lastSeenAt.toISOString()} /></span>
                       </li>
                     ))}

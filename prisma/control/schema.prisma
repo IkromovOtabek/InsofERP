@@ -40,6 +40,9 @@ model SuperAdmin {
   ecoUserId      String?   @unique
   /// Ulangan telefon — faqat ko'rsatish uchun, maskalangan (+998 90 *** ** 67)
   ecoPhone       String?
+  /// Panel ko'rinishi (faqat admin o'zi o'zgartiradi): { mobileLayout: "widgets"|"pro", colorMode: "system"|"light"|"dark" }.
+  /// Tuzilma src/lib/control/ui-prefs.ts dagi zod sxemasi bilan tekshiriladi; bo'sh — standart.
+  uiPrefs        Json?
 
   events ControlEvent[]
 }

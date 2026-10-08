@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { Activity, Cpu, Database, HardDrive, MemoryStick, Network, Server, ShieldCheck, Siren, Timer } from "lucide-react";
-import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, Table, Td, Th, Tr } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import {
   backupAgeHours, bps, bytes, duration, restartableUnit, sslDaysLeft, tenantCheckKeys,
   type CheckView, type MonitorSnapshot,
@@ -135,7 +136,7 @@ export function MonitoringView({ initial, loadError }: { initial: MonitorSnapsho
             {s!.incidents.slice(0, 6).map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                 <SeverityBadge s={i.severity} />
-                <Link href={`/superadmin/hodisalar?id=${i.id}`} className="min-w-0 flex-1 hover:underline">{i.title}</Link>
+                <Link href={`/superadmin/hodisalar?id=${i.id}`} className="min-w-0 flex-1 basis-48 hover:underline">{i.title}</Link>
                 <span className="text-xs text-slate-500">{i.count > 1 ? `${i.count} marta · ` : ""}<Ago iso={i.lastSeenAt} /></span>
               </li>
             ))}

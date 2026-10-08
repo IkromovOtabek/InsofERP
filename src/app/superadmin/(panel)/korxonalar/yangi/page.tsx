@@ -1,4 +1,5 @@
-import { Card, PageHeader, Callout } from "@/components/ui";
+import { Card, Callout } from "@/components/ui";
+import { PageHeader } from "../../../_ui";
 import { NewTenantForm } from "../../forms";
 
 export const metadata = { title: "Yangi korxona" };

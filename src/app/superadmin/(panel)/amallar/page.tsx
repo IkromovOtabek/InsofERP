@@ -4,7 +4,8 @@ import { control } from "@/lib/control/db";
 import { toActionView } from "@/lib/control/monitor/snapshot";
 import { ACTION_TYPES } from "@/lib/control/monitor/contract";
 import { ACTION_STATUS, actionLabel, dt, msBetween, type ActionStatusT } from "@/lib/control/monitor/shared";
-import { EmptyState, PageHeader, Tabs } from "@/components/ui";
+import { EmptyState, Tabs } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import { ConnBadge, RefreshOn } from "../_monitor/live";
 import { ActionOutput, ActionStatusBadge, ParamsText } from "../_monitor/bits";
 

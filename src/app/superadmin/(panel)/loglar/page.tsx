@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/control/auth";
 import { control } from "@/lib/control/db";
 import { LOG_FILES } from "@/lib/control/devops/contract";
-import { PageHeader } from "@/components/ui";
+import { PageHeader } from "../../_ui";
 import { LogsClient, type SourceOpt } from "./view";
 
 export const metadata = { title: "Loglar" };

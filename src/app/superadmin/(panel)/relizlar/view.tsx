@@ -216,7 +216,7 @@ function DeployDialog({ refValue, onClose, current, onStarted }: { refValue: str
         <PasswordBox value={password} onChange={setPassword} />
         <FormError error={err} />
         {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> Navbatga qo&apos;yildi — jarayon shu sahifada ko&apos;rinadi.</p>}
-        <div className="flex flex-wrap justify-end gap-2 pt-1">
+        <div className="sa-sheet-acts flex flex-wrap justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
           <Button type="submit" variant="danger" disabled={!refOk || confirm.trim() !== PHRASE || !password || pending || done}>{pending ? "Yuborilmoqda…" : "Deploy qilish"}</Button>
         </div>
@@ -252,7 +252,7 @@ function RollbackDialog({ open, onClose, current, target, onStarted }: { open: b
         <PasswordBox value={password} onChange={setPassword} />
         <FormError error={err} />
         {done && <p role="status" className="flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 size={16} aria-hidden /> Navbatga qo&apos;yildi.</p>}
-        <div className="flex flex-wrap justify-end gap-2 pt-1">
+        <div className="sa-sheet-acts flex flex-wrap justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>Bekor qilish</Button>
           <Button type="submit" variant="danger" disabled={confirm.trim() !== PHRASE || !password || pending || done}>{pending ? "Yuborilmoqda…" : "Qaytarish"}</Button>
         </div>
