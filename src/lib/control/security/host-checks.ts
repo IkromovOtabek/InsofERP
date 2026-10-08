@@ -19,7 +19,8 @@ const SSH_FAIL_THRESHOLD = Number(process.env.SECURITY_SSH_FAIL_THRESHOLD ?? 10)
 
 /* ═════════════════════════ 1. SSH brute force ═════════════════════════ */
 
-export function evaluateSsh(events: SshEvent[], nowMs: number): Finding[] {
+/** `passwordAuth === false` — sshd'da parol bilan kirish yopiq: urinishlar qoladi (botlar), lekin parol taxmini xavf emas. */
+export function evaluateSsh(events: SshEvent[], nowMs: number, passwordAuth?: boolean): Finding[] {
   const hourAgo = nowMs - 3600_000;
   const fails = events.filter((e): e is Extract<SshEvent, { kind: "fail" }> => e.kind === "fail" && (e.ts == null || e.ts >= hourAgo));
   const accepts = events.filter((e): e is Extract<SshEvent, { kind: "accept" }> => e.kind === "accept");
@@ -32,7 +33,11 @@ export function evaluateSsh(events: SshEvent[], nowMs: number): Finding[] {
     windowMin: 60, failedTotal: fails.length, uniqueIps: perIp.size, threshold: SSH_FAIL_THRESHOLD,
     topIps: topN(perIp, 10).map((x) => ({ ip: x.key, count: x.count })),
   };
-  if (offenders.length) {
+  if (offenders.length && passwordAuth === false) {
+    out.push(finding("ssh-bruteforce", "security", "LOW",
+      `SSH: ${offenders.length} ta IP parol taxmin qilmoqda (1 soatda ${fails.length} ta urinish) — parol bilan kirish yopiq, xavf yo'q`,
+      { ...detail, passwordAuthentication: "no" }));
+  } else if (offenders.length) {
     const actions = offenders.filter((o) => blockable(o.key)).slice(0, 5).map((o) => blockIpAction(o.key, `${o.count} ta xato SSH urinishi / soat`));
     out.push(finding("ssh-bruteforce", "security", "HIGH", `SSH: ${offenders.length} ta IP dan parol taxmin qilish (1 soatda ${fails.length} ta xato urinish)`, detail, actions));
   } else {
@@ -92,7 +97,9 @@ export async function checkSsh(ctx: SecurityCtx): Promise<Finding[]> {
     const hourAgo = ctx.now.getTime() - 3600_000;
     events.push(...parseSshJournal(d1.text).filter((e) => e.ts != null && e.ts < hourAgo));
   }
-  return evaluateSsh(events, ctx.now.getTime());
+  const eff = await sshdEffective();
+  const pw = eff && "config" in eff ? eff.config.passwordauthentication?.toLowerCase() : undefined;
+  return evaluateSsh(events, ctx.now.getTime(), pw === "no" ? false : pw === "yes" ? true : undefined);
 }
 
 /* ═════════════════════════ 2. sshd sozlamasi ═════════════════════════ */
@@ -143,19 +150,26 @@ export function readSshdFiles(main = "/etc/ssh/sshd_config"): string[] {
   return out;
 }
 
-export async function checkSshd(): Promise<Finding[]> {
-  // Avval sshd -T (eng aniq; ko'pincha root talab qiladi), bo'lmasa fayllar
+/** sshd'ning amaldagi sozlamasi: avval `sshd -T` (eng aniq; ko'pincha root talab qiladi), bo'lmasa fayllar. */
+async function sshdEffective(): Promise<{ config: Record<string, string>; source: string } | { error: string } | null> {
   for (const bin of ["/usr/sbin/sshd", "sshd"]) {
     const r = await run(bin, ["-T"], { timeoutMs: 5000 });
-    if (r.ok && /permitrootlogin/i.test(r.stdout)) return [evaluateSshd(parseSshdT(r.stdout), "sshd -T")];
+    if (r.ok && /permitrootlogin/i.test(r.stdout)) return { config: parseSshdT(r.stdout), source: "sshd -T" };
     if (!r.missing) break;
   }
-  if (!existsSync("/etc/ssh/sshd_config")) return [unknown("sshd-config", "config", "SSH sozlamasi", "/etc/ssh/sshd_config yo'q")];
+  if (!existsSync("/etc/ssh/sshd_config")) return null;
   try {
-    return [evaluateSshd(parseSshdConfig(readSshdFiles()), "/etc/ssh/sshd_config (+ sshd_config.d)")];
+    return { config: parseSshdConfig(readSshdFiles()), source: "/etc/ssh/sshd_config (+ sshd_config.d)" };
   } catch (e) {
-    return [unknown("sshd-config", "config", "SSH sozlamasi", `o'qib bo'lmadi: ${(e as Error).message.slice(0, 120)}`)];
+    return { error: `o'qib bo'lmadi: ${(e as Error).message.slice(0, 120)}` };
   }
+}
+
+export async function checkSshd(): Promise<Finding[]> {
+  const eff = await sshdEffective();
+  if (!eff) return [unknown("sshd-config", "config", "SSH sozlamasi", "/etc/ssh/sshd_config yo'q")];
+  if ("error" in eff) return [unknown("sshd-config", "config", "SSH sozlamasi", eff.error)];
+  return [evaluateSshd(eff.config, eff.source)];
 }
 
 /* ═════════════════════════ 3. Firewall va fail2ban ═════════════════════════ */

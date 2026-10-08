@@ -75,6 +75,9 @@ try {
   const blocked = (bf.suggestedActions ?? []).map((a) => a.params?.ip);
   check(blocked.includes("203.0.113.7") && blocked.includes("198.51.100.9") && !blocked.includes("10.0.0.5"), "ssh: BLOCK_IP faqat ommaviy IP'lar (10.0.0.5 — xususiy, taklif qilinmaydi)", JSON.stringify(blocked));
   check(byKey(fs, "ssh-login")!.severity === "INFO", "ssh: tanish IP dan kalit bilan kirish → INFO", byKey(fs, "ssh-login")!.severity);
+  const bfOff = byKey(H.evaluateSsh(ev, now, false), "ssh-bruteforce")!;
+  check(bfOff.severity === "LOW" && !(bfOff.suggestedActions ?? []).length, "ssh: PasswordAuthentication no → urinishlar LOW, blok taklifi yo'q", bfOff.severity);
+  check(byKey(H.evaluateSsh(ev, now, true), "ssh-bruteforce")!.severity === "HIGH", "ssh: PasswordAuthentication yes → HIGH");
 
   const newIp = P.parseSshJournal(`${t(3)} vps sshd[1]: Accepted password for deploy from 192.0.2.99 port 1 ssh2`);
   fs = H.evaluateSsh([...ev, ...newIp], now);
