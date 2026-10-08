@@ -125,6 +125,7 @@ Serverga **faqat kalit bilan** kiriladi: parol bilan kirish va `root` kirishi o'
 | `PermitRootLogin` | `no` | `/etc/ssh/sshd_config.d/00-insof-hardening.conf` |
 | `PasswordAuthentication` | `no` | o'sha fayl |
 | `KbdInteractiveAuthentication` | `no` | o'sha fayl |
+| `MaxAuthTries` | `3` | o'sha fayl |
 | Ruxsat etilgan kalit | `otabek-mac` (ed25519) | `/home/deploy/.ssh/authorized_keys` |
 
 Mac'dan kirish (`~/.ssh/config` da `Host insof` yozilgan):
@@ -297,7 +298,8 @@ Kutilgan natija (2026-10-08 dagi holat):
 - fail2ban o'rnatildi (sshd, `backend = systemd`).
 - Zaxira tiklash sinovi qo'lda o'tkazildi — muvaffaqiyatli (control 11 jadval, insof 73 jadval).
 
-**Ochiq qolgan (2026-10-08):**
-- ECO API `*:3010` da tinglaydi — tuzatish `InsofECO/apps/api/src/main.ts` da (prod'da `127.0.0.1`), ECO bilan deploy kerak.
-- npm audit: 7 ta HIGH (`next`, `postcss`, `source-map-js`, `deepmerge-ts`, `sharp` — sharp ataylab qotirilgan).
-- Server qayta yuklashni kutmoqda (yadro 191 → 198): xizmatlar `enabled` ekanini tekshirib, `sudo reboot`.
+- `MaxAuthTries 3` qo'shildi.
+- Deploy `d623ce5` (ECO bilan): `next` 15.5.27, `postcss`/`source-map-js`/`deepmerge-ts` yangilandi — npm audit'da faqat
+  qabul qilingan `sharp` qoldi; ECO API endi faqat `127.0.0.1:3010` da (tashqaridan yopiq).
+- Server qayta yuklandi — yadro `5.15.0-198`, barcha xizmatlar o'zi ko'tarildi.
+- Tashqaridan ochiq portlar: faqat 22, 80, 443.
