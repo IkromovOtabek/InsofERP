@@ -28,7 +28,20 @@ export const ACTION_TYPES = [
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
 
-export const UNIT_RE = /^(insof-erp@[a-z0-9-]{2,30}|insof-control|insof-eco)$/;
+/**
+ * Navbatda eskirgan xavfli amal: shundan ko'p PENDING turgan bo'lsa agent bajarmaydi — REJECTED («muddati o'tdi»).
+ * Sabab: agent to'xtab qolgan paytda qo'yilgan REBOOT/DEPLOY/PG_TERMINATE va h.k. u qayta ishga tushganda kutilmagan
+ * paytda (kim so'raganini hech kim eslamaganda) bajarilib ketmasin; PG pid'lar esa shu orada boshqa ulanishga o'tadi.
+ */
+export const PENDING_TTL_MS = 10 * 60_000;
+export const EXPIRING_ACTIONS: readonly string[] = [
+  "RESTART_UNIT", "RENEW_CERT", "BLOCK_IP", "UNBLOCK_IP",
+  "DEPLOY", "ROLLBACK",
+  "PG_CANCEL", "PG_TERMINATE", "VACUUM_ANALYZE",
+  "REBOOT", "REBOOT_CANCEL", "CLEAN_RELEASES", "JOURNAL_VACUUM", "TENANT_UP",
+];
+
+export const UNIT_RE =/^(insof-erp@[a-z0-9-]{2,30}|insof-control|insof-eco)$/;
 export const IPV4_RE = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
 
 export function isActionType(t: string): t is ActionType {

@@ -9,7 +9,7 @@ import { actionLabel, confirmPhrase, needsReauth } from "@/lib/control/monitor/s
 import { DB_ACTION_DESCR } from "@/lib/control/dbtraffic/contract";
 import { INFRA_ACTION_DESCR } from "@/lib/control/infra/contract";
 import { BottomSheet } from "../../_ui/sheet";
-import { ackIncident, enqueueAction, resolveIncident } from "../monitor-actions";
+import { ackIncident, cancelAction, enqueueAction, resolveIncident } from "../monitor-actions";
 import { actionHelpId } from "@/lib/control/help-content";
 import { HelpButton } from "../_help/help";
 
@@ -143,6 +143,37 @@ export function AckButton({ id }: { id: string }) {
       </span>
       {err && <span className="mt-1 text-xs text-red-600">{err}</span>}
     </span>
+  );
+}
+
+/** Navbatdagi (PENDING) amalni olib tashlash — agent hali olmagan bo'lsa (server: cancelAction, jurnalga yoziladi). */
+export function CancelActionButton({ id }: { id: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState<string>();
+  const [pending, start] = useTransition();
+  const close = () => { setOpen(false); setErr(undefined); };
+  return (
+    <>
+      <span className="inline-flex items-center gap-0.5">
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}><XCircle size={14} aria-hidden /> Navbatdan olish</Button>
+        <HelpButton topic="act:cancel" />
+      </span>
+      <Modal open={open} onClose={close} title="Amalni navbatdan olish">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Amal bajarilmaydi va «Bekor qilindi» holatiga o&apos;tadi. Agent uni allaqachon olgan bo&apos;lsa, bekor qilib bo&apos;lmaydi.</p>
+          <FormError error={err} />
+          <div className="sa-sheet-acts flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={close}>Yopish</Button>
+            <Button type="button" variant="danger" disabled={pending} data-autofocus onClick={() => start(async () => {
+              const r = await cancelAction(id);
+              if (r.error) { setErr(r.error); router.refresh(); return; }
+              close(); router.refresh();
+            })}>{pending ? "…" : "Navbatdan olish"}</Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

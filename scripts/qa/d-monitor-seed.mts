@@ -35,6 +35,8 @@ async function main() {
 
   const admin = await db.superAdmin.findFirst({ orderBy: { createdAt: "asc" } });
   const tenants = [];
+  // Soxta korxonalar — bazasi ATAYLAB yaratilmaydi: panel yo'q bazani (P1003) jimgina «baza mavjud emas» deb ko'rsatishi
+  // sinaladi (d-monitor-ui.mts 6c; server logida prisma:error bo'lmasligi kerak)
   for (const [i, slug, name, status] of [[0, "alfa", "Alfa Beton MChJ", "ACTIVE"], [1, "beta", "Beta Qurilish", "ACTIVE"]] as const) {
     tenants.push(await db.tenant.upsert({
       where: { slug },

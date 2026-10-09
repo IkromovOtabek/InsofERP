@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import Link from "next/link";
 import { control } from "@/lib/control/db";
 import { EVENT_LABEL } from "@/lib/control/events";
@@ -10,6 +11,7 @@ export const metadata = { title: "Jurnal" };
 export const dynamic = "force-dynamic";
 
 export default async function EventsPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const events = await control.controlEvent.findMany({
     orderBy: { createdAt: "desc" }, take: 300,
     include: { admin: { select: { fullName: true, login: true } }, tenant: { select: { name: true, slug: true } } },

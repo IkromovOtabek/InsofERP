@@ -10,7 +10,7 @@ import { INFRA_ACTION_LABEL, infraConfirmPhrase } from "../infra/contract";
 export type CheckStatusT = "OK" | "WARN" | "CRIT" | "UNKNOWN";
 export type SeverityT = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type IncidentStatusT = "OPEN" | "ACKED" | "RESOLVED";
-export type ActionStatusT = "PENDING" | "RUNNING" | "DONE" | "FAILED" | "REJECTED";
+export type ActionStatusT = "PENDING" | "RUNNING" | "DONE" | "FAILED" | "REJECTED" | "CANCELLED";
 
 export type SuggestedAction = { type: string; params?: Record<string, unknown>; label?: string };
 
@@ -78,6 +78,7 @@ export const ACTION_STATUS: Record<ActionStatusT, { label: string; color: Color 
   DONE: { label: "Bajarildi", color: "green" },
   FAILED: { label: "Xato", color: "red" },
   REJECTED: { label: "Rad etildi", color: "slate" },
+  CANCELLED: { label: "Bekor qilindi", color: "slate" },
 };
 export const ACTION_LABEL: Record<ActionType, string> = {
   RESTART_UNIT: "Xizmatni qayta ishga tushirish",
@@ -116,7 +117,11 @@ export function confirmPhrase(type: string, params: Record<string, unknown>): st
   if (type === "BLOCK_IP") return typeof params.ip === "string" ? params.ip : "";
   if (type === "RENEW_CERT") return "SSL";
   if (type === "DEPLOY" || type === "ROLLBACK") return "TASDIQLAYMAN";
-  if (type === "RESTART_UNIT" && typeof params.unit === "string" && params.unit.startsWith("insof-erp@")) return params.unit.slice("insof-erp@".length);
+  if (type === "RESTART_UNIT" && typeof params.unit === "string") {
+    // Korxona — slug; panelning o'zi (insof-control) va ECO — xizmat nomi to'liq (bir bosishda o'chirib qo'ymaslik)
+    if (params.unit.startsWith("insof-erp@")) return params.unit.slice("insof-erp@".length);
+    if (params.unit === "insof-control" || params.unit === "insof-eco") return params.unit;
+  }
   return null;
 }
 

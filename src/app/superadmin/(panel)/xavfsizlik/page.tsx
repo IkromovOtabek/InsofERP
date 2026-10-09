@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import Link from "next/link";
 import { Ban, History, ShieldAlert, ShieldCheck } from "lucide-react";
 import { control } from "@/lib/control/db";
@@ -41,6 +42,7 @@ const gradeCls = (g: string) => GRADE[g.trim().toUpperCase().charAt(0)] ?? "bg-s
 
 /** Kiberxavfsizlik: AI hisobot (baho A–F), ustuvor tavsiyalar, xavfsizlik hodisalari, bloklangan IP'lar. */
 export default async function SecurityPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const [reports, incidents, ipActions] = await Promise.all([
     control.securityReport.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
     control.incident.findMany({

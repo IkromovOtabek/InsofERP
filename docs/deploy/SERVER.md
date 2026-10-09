@@ -73,7 +73,7 @@ Boshqa xizmatlar uchun ham xuddi shunday — nomini almashtiring (`insof-control
 | `/var/www/insof-erp/.env.pre-platform` | **eski** `.env` — faqat qaytarish uchun saqlangan |
 | `/usr/local/sbin/insof-tenant-up` | korxonani ishga tushirish skripti (root egaligida) |
 | `/usr/local/share/insof/` | systemd va nginx shablonlari (root egaligida) |
-| `/etc/insof/tenant-up.conf` | ruxsat etilgan domenlar siyosati |
+| `/etc/insof/tenant-up.conf` | ruxsat etilgan domenlar siyosati (root, 644). **Majburiy** domenli `insof-tenant-up` uchun — yo'q bo'lsa rad (default-deny) |
 
 Joriy relizni bilish:
 ```bash

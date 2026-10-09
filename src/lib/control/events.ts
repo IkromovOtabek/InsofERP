@@ -27,6 +27,7 @@ export const EVENT_LABEL: Record<string, string> = {
   ADMIN_LOGIN_ECO_FAIL: "ECO orqali kirish rad etildi",
   ADMIN_PREFS: "Panel mavzusi o'zgardi",
   AGENT_ACTION: "Serverga amal so'rovi (agent)",
+  AGENT_ACTION_CANCEL: "Amal navbatdan olindi (bekor qilindi)",
   INCIDENT_ACK: "Hodisa ko'rildi",
   INCIDENT_RESOLVE: "Hodisa qo'lda yopildi",
 };

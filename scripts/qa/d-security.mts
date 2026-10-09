@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PGUSER = process.env.D_PGUSER || os.userInfo().username;
 const PG = `postgresql://${PGUSER}@127.0.0.1:5432`;
-const DB = "insof_test_ctl_sec";
+const DB = `${process.env.D_DB_PREFIX || "insof_test_"}ctl_sec`; // d-env.sh D_DB_PREFIX — parallel yugurishlar uchun
 const TMP = mkdtempSync(path.join(os.tmpdir(), "insof-sec-"));
 
 // Test muhiti — modullar import qilinishidan OLDIN (db.ts import paytida tekshiradi)
@@ -287,6 +287,12 @@ try {
   const { redact, gatherInput, saveReport, aiIncidentKey } = await import("../../src/lib/control/security/ai");
   const red = redact('url postgresql://insof:Parol123@127.0.0.1/x AUTH_SECRET=abcdef tel +998901234567 tok sk-ant-api03-zzz ' + "Q".repeat(40) + " ip 203.0.113.7 /var/www/insof-erp/current/package-lock.json");
   check(!/Parol123|abcdef|901234567|api03|QQQQ/.test(red) && red.includes("203.0.113.7") && red.includes("package-lock.json"), "AI: redact — parol/kalit/telefon/token yashirildi, IP va yo'l qoldi", red);
+  // Qo'shtirnoqli / kichik harfli JSON kalitlari (oldin o'tib ketardi): "password":"…", "db_pass": …, apiToken=…
+  const red2 = redact(`{"password":"Hunter2x","db_pass": "Pw-77a","apiToken":"tok9988","session": "s3ss","note":"ok","ip":"203.0.113.8"} smtp_password=Zz12 x-api-key: kk55`);
+  check(!/Hunter2x|Pw-77a|tok9988|s3ss|Zz12|kk55/.test(red2) && red2.includes('"note":"ok"') && red2.includes("203.0.113.8"), "AI: redact — qo'shtirnoqli/kichik harfli kalitlar yashirildi, boshqasi qoldi", red2);
+  const { clip } = await import("../../src/lib/control/security/ai");
+  const cl = String(clip({ db: { password: { nested: "Deep-123" }, user: "insof" }, credentials: ["a1", "b2"], tokens: 42, msg: "secret=abc777" }, 500));
+  check(!/Deep-123|"a1"|abc777|42/.test(cl) && cl.includes('"user":"insof"'), "AI: clip — sir kalit ostidagi ichki obyekt/massiv/son (scrubJson) butunlay ***", cl);
 
   await control.incident.create({ data: { key: "security:ssh-bruteforce", source: "security", category: "security", severity: "HIGH", title: "SSH: parol taxmin qilish", detail: { secretLike: "AUTH_SECRET=zzzzzz", big: "x".repeat(5000) } } });
   for (let i = 0; i < 120; i++) {

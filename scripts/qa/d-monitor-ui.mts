@@ -11,12 +11,16 @@
  * Sinovlar: login'siz oqim/amal → rad; login → SSE text/event-stream + ma'lumot; yangi HostSnapshot oqimda ≤10 s
  * ichida ko'rinadi; ?once=1 JSON; enqueueAction tekshiruvlari (tur, unit, IP, qat'iy parametr, yozma tasdiq,
  * takror, chastota chegarasi, jurnal); ack/resolve; mavzu (uiPrefs: faqat o'z prefs'i, qat'iy tekshiruv, jurnal, layout atributlari);
- * barcha sahifalar 200 va server logida xato yo'q; bo'sh holat.
+ * barcha sahifalar 200 va server logida xato yo'q; bo'sh holat. Xavfsizlik regressiyalari: insof-control/insof-eco
+ * qayta ishga tushirish tasdiqsiz rad; PENDING amalni navbatdan olish (cancelAction: faqat PENDING, jurnal);
+ * bloklangan admin sahifalardan va ochiq SSE oqimidan chiqariladi (event: logout ≤ ~35 s); korxona bazasi yo'q
+ * (P1003) — «baza mavjud emas», server logida prisma:error yo'q.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import bcrypt from "bcryptjs";
 import { PrismaClient, Prisma } from "../../src/generated/control/index.js";
 import { decodeUiCookie, readUiPrefs } from "../../src/lib/control/ui-prefs";
 
@@ -135,6 +139,45 @@ async function readStream(jar: Jar, until: (ev: { at: string; data: Record<strin
   return res;
 }
 
+/** SSE: `event: logout` kelguncha (yoki oqim yopilguncha / vaqt tugaguncha) o'qish. */
+async function readUntilLogout(jar: Jar, timeoutMs: number, onOpen?: () => Promise<void>) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  const t0 = Date.now();
+  const r = await fetch(`${PANEL}/superadmin/api/stream`, { headers: { cookie: jar.header(), accept: "text/event-stream" }, signal: ac.signal, redirect: "manual" });
+  const res = { status: r.status, logout: false, ended: false, ms: 0, events: 0 };
+  if (r.status !== 200 || !r.body) { clearTimeout(t); ac.abort(); return res; }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let opened = false;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) { res.ended = true; break; }
+      buf += dec.decode(value, { stream: true });
+      let k: number;
+      while ((k = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, k); buf = buf.slice(k + 2);
+        if (block.split("\n").some((l) => l.startsWith("data: ") && l !== "data: {}")) { res.events++; if (!opened && onOpen) { opened = true; await onOpen(); } }
+        if (block.split("\n").includes("event: logout")) res.logout = true;
+      }
+    }
+  } catch { /* abort — vaqt tugadi */ }
+  clearTimeout(t);
+  res.ms = Date.now() - t0;
+  return res;
+}
+
+async function loginJar(login: string, password: string): Promise<Jar> {
+  const j = new Jar();
+  const lp = await req("/superadmin/login", j);
+  const f = new FormData();
+  for (const [k, v] of Object.entries({ ...hiddenFields(lp.text, 'name="password"'), login, password })) f.append(k, v);
+  await req("/superadmin/login", j, { method: "POST", body: f, headers: { origin: PANEL } });
+  return j;
+}
+
 async function main() {
   // 0. Seed
   const seed = spawnSync("npx", ["tsx", path.join(HERE, "d-monitor-seed.mts")], { env: process.env, encoding: "utf8" });
@@ -200,6 +243,10 @@ async function main() {
     ["BLOCK_IP noto'g'ri tasdiq", ["BLOCK_IP", { ip: "203.0.113.45" }, null, "203.0.113.4"]],
     ["RENEW_CERT tasdiqsiz", ["RENEW_CERT", {}]],
     ["RESTART_UNIT korxona tasdiqsiz", ["RESTART_UNIT", { unit: "insof-erp@beta" }]],
+    ["RESTART_UNIT insof-control tasdiqsiz", ["RESTART_UNIT", { unit: "insof-control" }]],
+    ["RESTART_UNIT insof-eco tasdiqsiz", ["RESTART_UNIT", { unit: "insof-eco" }]],
+    ["RESTART_UNIT insof-eco noto'g'ri tasdiq", ["RESTART_UNIT", { unit: "insof-eco" }, null, "eco"]],
+    ["CLEAN_RELEASES tasdiqsiz", ["CLEAN_RELEASES", {}]],
     ["RUN_BACKUP parametr bilan", ["RUN_BACKUP", { x: 1 }]],
     ["yo'q hodisa", ["RUN_HEALTH_CHECK", {}, "ckzzzzzzzzzzzzzzzzzzzzzzz"]],
     ["takror (seed PENDING RUN_SECURITY_SCAN)", ["RUN_SECURITY_SCAN", {}]],
@@ -216,7 +263,7 @@ async function main() {
     ["RUN_HEALTH_CHECK", {}, null, null],
     ["BLOCK_IP", { ip: "203.0.113.45" }, null, "203.0.113.45"],
     ["RESTART_UNIT", { unit: "insof-erp@beta" }, beta!.id, "beta"],
-    ["RESTART_UNIT", { unit: "insof-control" }, null, null],
+    ["RESTART_UNIT", { unit: "insof-control" }, null, "insof-control"],
     ["RENEW_CERT", {}, null, "SSL"],
   ] as const;
   for (const args of good) {
@@ -237,6 +284,24 @@ async function main() {
     if (r.ok) accepted++; else { limited = r; break; }
   }
   check(accepted === 5 && !!limited?.error && /Juda ko'p/.test(limited.error), "chastota chegarasi: 10/daqiqa", `accepted=${accepted} ${limited?.error}`);
+
+  // 4b. Navbatdan olish (cancelAction): faqat PENDING, jurnal, login'siz rad
+  const cert = await db.agentAction.findFirst({ where: { type: "RENEW_CERT", status: "PENDING" }, orderBy: { requestedAt: "desc" } });
+  const anonCancel = await call("cancelAction", [cert!.id], null, "/superadmin/amallar");
+  check(anonCancel.ok !== true && (await db.agentAction.findUnique({ where: { id: cert!.id } }))?.status === "PENDING", "login'siz cancelAction → o'zgarmaydi", `${anonCancel.http}`);
+  const cev0 = await db.controlEvent.count({ where: { action: "AGENT_ACTION_CANCEL" } });
+  const cancel = await call("cancelAction", [cert!.id], jar, "/superadmin/amallar");
+  const certRow = await db.agentAction.findUnique({ where: { id: cert!.id } });
+  check(cancel.ok && certRow?.status === "CANCELLED" && !!certRow.finishedAt && /navbatdan olindi/.test(certRow.output ?? ""), "cancelAction: PENDING → CANCELLED", cancel.error ?? cancel.raw);
+  const cev = await db.controlEvent.findMany({ where: { action: "AGENT_ACTION_CANCEL" } });
+  check(cev.length === cev0 + 1 && (cev.at(-1)?.detail as any)?.actionId === cert!.id && (cev.at(-1)?.detail as any)?.type === "RENEW_CERT" && !!cev.at(-1)?.adminId, "cancelAction: jurnal AGENT_ACTION_CANCEL");
+  const cancel2 = await call("cancelAction", [cert!.id], jar, "/superadmin/amallar");
+  check(!!cancel2.error && !cancel2.ok, "bekor qilinganni qayta bekor qilib bo'lmaydi", cancel2.error);
+  const running = await db.agentAction.findFirst({ where: { status: "RUNNING" } });
+  const cancelRun = await call("cancelAction", [running!.id], jar, "/superadmin/amallar");
+  check(!!cancelRun.error && /boshlagan/.test(cancelRun.error) && (await db.agentAction.findUnique({ where: { id: running!.id } }))?.status === "RUNNING", "RUNNING amalni bekor qilib bo'lmaydi", cancelRun.error);
+  const cancelBad = await call("cancelAction", ["x'; DROP"], jar, "/superadmin/amallar");
+  check(!!cancelBad.error, "cancelAction: noto'g'ri id rad", cancelBad.error);
 
   // 5. Hodisa: ko'rdim / yopish
   const sec = await db.incident.findFirst({ where: { key: "security:ssh-bruteforce" } });
@@ -312,7 +377,8 @@ async function main() {
     ["/superadmin/hodisalar?source=ai", ["SSH parol bilan kirish"]],
     [`/superadmin/hodisalar?id=${beta!.id}`, ["Vaqt chizig", "Bog&#x27;liq amallar", "Job failed"]],
     ["/superadmin/xavfsizlik", ["Kiberxavfsizlik", "AI tahlilni hozir boshlash", "Xavfsizlik skanerini ishga tushirish", ip7, "Hisobotlar tarixi"]],
-    ["/superadmin/amallar", ["Amallar", "Challenge failed", "oq ro&#x27;yxatda yo&#x27;q"]],
+    ["/superadmin/amallar", ["Amallar", "Challenge failed", "oq ro&#x27;yxatda yo&#x27;q", "Navbatdan olish", "Bekor qilindi"]],
+    ["/superadmin/amallar?status=CANCELLED", ["SSL yangilash", "navbatdan olindi"]],
     ["/superadmin/amallar?status=FAILED", ["SSL yangilash"]],
   ];
   for (const [p, needles] of pages) {
@@ -342,6 +408,38 @@ async function main() {
   const home = await req("/superadmin", jar);
   check(!home.text.includes("window.confirm") && home.text.includes("Plitka ranglari") && home.text.includes("Vidjetlar nimani"), "bosh sahifa: holat qatori yordam bilan");
 
+  // 6c. Korxona bazasi yo'q (seed: alfa/beta bazasiz) — bosh sahifa jimgina «baza mavjud emas» (P1003, prisma:error yo'q)
+  const alfaT = await db.tenant.findUnique({ where: { slug: "alfa" } });
+  check(/mavjud emas/.test(alfaT?.lastError ?? "") && (alfaT?.lastStats as any)?.db?.ok === false, "yo'q korxona bazasi → «baza mavjud emas»", alfaT?.lastError ?? "");
+
+  // 6d. Bloklangan admin: har panel sahifasidan va OCHIQ SSE oqimidan chiqariladi
+  const BL_PASS = "QaBlock-2026-x9";
+  const bl = await db.superAdmin.upsert({
+    where: { login: "qa.block" }, update: { isActive: true, passwordHash: await bcrypt.hash(BL_PASS, 4) },
+    create: { login: "qa.block", fullName: "QA Bloklanadigan", passwordHash: await bcrypt.hash(BL_PASS, 4), isActive: true },
+  });
+  const bj = await loginJar("qa.block", BL_PASS);
+  check(bj.c.has("insof_admin"), "qa.block login");
+  const blPages = ["/superadmin", "/superadmin/monitoring", "/superadmin/hodisalar", "/superadmin/xavfsizlik", "/superadmin/amallar",
+    "/superadmin/jurnal", "/superadmin/yordam", "/superadmin/korxonalar/yangi", "/superadmin/korxonalar/beta", "/superadmin/adminlar"];
+  const okBefore = await req("/superadmin/jurnal", bj);
+  check(okBefore.status === 200, "qa.block: blokdan oldin sahifa ochiladi", String(okBefore.status));
+  // Oqim ochiq turganda bloklaymiz → ≤ 30 s qayta tekshiruv + 3 s tik ichida `event: logout` va oqim yopiladi
+  const sse = await readUntilLogout(bj, 50_000, async () => {
+    await db.superAdmin.update({ where: { id: bl.id }, data: { isActive: false, sessionVersion: { increment: 1 } } });
+  });
+  check(sse.status === 200 && sse.logout && sse.ended && sse.ms < 45_000, "bloklangan admin: ochiq SSE oqimi `event: logout` bilan yopildi", JSON.stringify(sse));
+  for (const p of blPages) {
+    const r = await req(p, bj);
+    check([307, 302, 303].includes(r.status) && r.location.includes("/superadmin/login"), `bloklangan admin: ${p} → login`, `${r.status} ${r.location}`);
+  }
+  const blAct = await call("enqueueAction", ["RUN_HEALTH_CHECK", {}, null, null], bj);
+  check(blAct.ok !== true, "bloklangan admin: amal qo'yolmaydi");
+  const blSse = await req("/superadmin/api/stream", bj);
+  check(blSse.status !== 200, "bloklangan admin: oqimga qayta ulanib bo'lmaydi", String(blSse.status));
+  await db.controlEvent.deleteMany({ where: { adminId: bl.id } });
+  await db.superAdmin.delete({ where: { id: bl.id } });
+
   // 7. Bo'sh holat (agent hech ishlamagan)
   spawnSync("npx", ["tsx", path.join(HERE, "d-monitor-seed.mts"), "--empty"], { env: process.env, encoding: "utf8" });
   await sleep(3000); // snapshot keshi (2.5 s)
@@ -359,6 +457,8 @@ async function main() {
     const log = readFileSync(process.env.QA_SERVER_LOG, "utf8").slice(logStart);
     const bad = log.split("\n").filter((l) => /⨯|Unhandled|\[monitoring\]|TypeError|ReferenceError|Hydration/.test(l));
     check(bad.length === 0, "server logida xato yo'q", bad.slice(0, 3).join(" | "));
+    const prismaErr = log.split("\n").filter((l) => /prisma:error/.test(l));
+    check(prismaErr.length === 0, "server logida prisma:error yo'q (yo'q korxona bazasi — jim)", `${prismaErr.length} ta: ${prismaErr.slice(0, 2).join(" | ")}`);
   }
 
   // Keyingi qo'lda ko'rish uchun ma'lumotni qaytaramiz

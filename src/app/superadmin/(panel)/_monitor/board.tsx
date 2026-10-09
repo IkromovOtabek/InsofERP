@@ -168,8 +168,8 @@ export function BoardIncidents({ initial }: { initial: MonitorSnapshot | null })
 }
 
 /* ───────── So'nggi amallar ───────── */
-const ACT_TONE: Record<ActionStatusT, Tone> = { DONE: "ok", FAILED: "crit", REJECTED: "unk", RUNNING: "warn", PENDING: "unk" };
-const ACT_WORD: Record<ActionStatusT, string> = { DONE: "Bajarildi", FAILED: "Xato", REJECTED: "Rad etildi", RUNNING: "Bajarilmoqda", PENDING: "Navbatda" };
+const ACT_TONE: Record<ActionStatusT, Tone> = { DONE: "ok", FAILED: "crit", REJECTED: "unk", RUNNING: "warn", PENDING: "unk", CANCELLED: "unk" };
+const ACT_WORD: Record<ActionStatusT, string> = { DONE: "Bajarildi", FAILED: "Xato", REJECTED: "Rad etildi", RUNNING: "Bajarilmoqda", PENDING: "Navbatda", CANCELLED: "Bekor qilindi" };
 
 export function BoardActions({ initial }: { initial: MonitorSnapshot | null }) {
   const { data: s } = useLiveMonitor(initial);

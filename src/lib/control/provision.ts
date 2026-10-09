@@ -35,8 +35,14 @@ export const tenantsDir = () => process.env.TENANTS_DIR || path.join(process.cwd
  * Korxona bazasi nomi. Test rejimida (INSOF_ENV=test — lib/test-mode.ts) prefiks `insof_test_t_`:
  * test himoyasi faqat `insof_test…` bazalarini qabul qiladi. Prodda test rejimi yoqilmaydi (server real
  * kalitlar yoki test bo'lmagan baza bilan ishga tushmaydi), shuning uchun bu tarmoq prodga ta'sir qilmaydi.
+ * Parallel QA yugurishlari (scripts/qa/d-env.sh D_DB_PREFIX) bir-birining bazasiga tegmasligi uchun test rejimida
+ * prefiksni TEST_TENANT_DB_PREFIX bilan almashtirish mumkin — faqat `insof_test_…_` shaklida, aks holda standart.
  */
-export const dbNameFor = (slug: string) => `${isTestMode() ? "insof_test_t_" : "insof_t_"}${slug.replace(/-/g, "_")}`;
+const testTenantPrefix = () => {
+  const p = process.env.TEST_TENANT_DB_PREFIX?.trim() ?? "";
+  return /^insof_test_([a-z0-9]+_)+$/.test(p) && !p.startsWith("insof_test_golden") ? p : "insof_test_t_";
+};
+export const dbNameFor = (slug: string) => `${isTestMode() ? testTenantPrefix() : "insof_t_"}${slug.replace(/-/g, "_")}`;
 export const envPathFor = (slug: string) => path.join(tenantsDir(), `${slug}.env`);
 
 export type NewTenantInput = {

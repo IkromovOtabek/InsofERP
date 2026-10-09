@@ -2,7 +2,7 @@
  * insof-agent: sof (side-effect'siz) parserlar, chegaralar va tekshiruvlar — scripts/qa/d-agent.mts shularni sinaydi.
  * Fayl/jarayon bilan ishlash scripts/insof-agent.ts da; bu yerda faqat matn → raqam → holat.
  */
-import { IPV4_RE, UNIT_RE, isActionType, type ActionType } from "./contract";
+import { EXPIRING_ACTIONS, IPV4_RE, PENDING_TTL_MS, UNIT_RE, isActionType, type ActionType } from "./contract";
 import { validateDbAction } from "../dbtraffic/contract";
 import type { CheckStatusT, FindingSeverity } from "./types";
 import { isDevopsAction, validateDevops, type DevopsParams } from "../devops/contract";
@@ -277,6 +277,19 @@ export type ValidAction =
   | { ok: true; type: ActionType; params: ActionParams & DevopsParams }
   | { ok: false; reason: string };
 
+/**
+ * Navbatdagi amal eskirganmi: xavfli tur (EXPIRING_ACTIONS) va PENDING_TTL_MS dan ko'p kutgan. Agent bunday amalni
+ * olmaydi — REJECTED qiladi (pendingExpiredMessage). Xavfsiz turlar (tekshiruv, zaxira, log) eskirsa ham bajariladi.
+ */
+export function pendingExpired(type: string, requestedAt: Date | string, now = Date.now()): boolean {
+  if (!EXPIRING_ACTIONS.includes(type)) return false;
+  const t = new Date(requestedAt).getTime();
+  return !Number.isFinite(t) || now - t > PENDING_TTL_MS;
+}
+export const pendingExpiredMessage = (requestedAt: Date | string, now = Date.now()) =>
+  `muddati o'tdi: navbatda ${Math.max(0, Math.round((now - new Date(requestedAt).getTime()) / 60_000))} daqiqa turdi — xavfli amal ` +
+  `${PENDING_TTL_MS / 60_000} daqiqadan keyin bajarilmaydi. Kerak bo'lsa paneldan qayta so'rang.`;
+
 /** Hech qachon bloklanmaydigan manzillar: loopback, 0.0.0.0/8, broadcast (o'zimizni qulflamaslik). */
 function forbiddenIp(ip: string): boolean {
   return /^(127|0)\./.test(ip) || ip === "255.255.255.255";
@@ -321,6 +334,12 @@ const SECRET_WORDS = "SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_
 const SECRET_NAME = `[A-Za-z0-9_]*(?:${SECRET_WORDS})[A-Za-z0-9_]*|(?:[A-Za-z0-9_]*_)?PASS(?:_[A-Za-z0-9_]*)?|[A-Za-z0-9_]*_KEY|KEY`;
 const SECRET_ASSIGN_RE = new RegExp(`\\b(${SECRET_NAME})(["']?\\s*[=:]\\s*["']?)[^\\s"'&,;]+`, "gi");
 const SECRET_KEY_RE = new RegExp(`^(?:${SECRET_NAME})$|${SECRET_WORDS}`, "i");
+
+/**
+ * Faqat `NOM=qiymat` / `"nom": "qiymat"` shaklidagi sirlar (kalit nomi bo'yicha, katta-kichik harf farqsiz, qo'shtirnoqli
+ * JSON kalitlari ham). scrubSecrets'ning bir qismi — uzun bo'laklarni kesmasdan (AI kirishida fayl yo'llari qolsin).
+ */
+export const scrubSecretAssignments = (text: string) => text.replace(SECRET_ASSIGN_RE, "$1$2***");
 
 /** Sirga o'xshagan hamma narsani yashiradi: URL ichidagi parol, bot tokenlari, KEY=qiymat, Bearer, uzun kalitlar. */
 export function scrubSecrets(text: string): string {

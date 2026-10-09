@@ -14,6 +14,7 @@ import { z } from "zod";
 import { control } from "../db";
 import { ACTION_TYPES, isActionType, type ActionType } from "../monitor/contract";
 import { isTestMode } from "../../test-mode";
+import { scrubJson, scrubSecretAssignments } from "../monitor/parse";
 import { parseEnv } from "./parsers";
 import { errMsg } from "./util";
 
@@ -71,9 +72,13 @@ const OUTPUT_SCHEMA = {
 
 /* ───────────────────────── Kirishni yig'ish (sirlarsiz) ───────────────────────── */
 
-/** Sir yoki shaxsiy ma'lumot bo'lishi mumkin bo'lgan narsalarni yashirish (IP'lar qoladi). */
+/**
+ * Sir yoki shaxsiy ma'lumot bo'lishi mumkin bo'lgan narsalarni yashirish (IP'lar qoladi). Kalit nomi bo'yicha qidiruv
+ * katta-kichik harf farqsiz va qo'shtirnoqli JSON kalitlarini ham ushlaydi (`"password":"…"`, `db_pass=…`) — agentdagi
+ * scrubSecrets bilan bir xil ro'yxat (monitor/parse.ts SECRET_ASSIGN_RE).
+ */
 export function redact(s: string): string {
-  return s
+  return scrubSecretAssignments(s)
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/:@"]+:[^\s/@"]+@/gi, "$1***:***@") // URL ichidagi login:parol
     .replace(/\b(AUTH_SECRET|CONTROL_SECRET|CONTROL_SSO_KEY|[A-Z_]*(?:TOKEN|KEY|PASSWORD|SECRET))\s*[=:]\s*("?)[^\s",}]+\2/g, "$1=***")
     .replace(/\bsk-ant-[A-Za-z0-9_-]+/g, "sk-ant-***")
@@ -82,9 +87,13 @@ export function redact(s: string): string {
     .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "***@***"); // e-pochta
 }
 
-function clip(v: unknown, max: number): unknown {
+/**
+ * Qisqartirish + tozalash. Obyekt/massiv avval tuzilmasi bo'yicha (scrubJson: sir nomli kalit ostidagi HAR QANDAY qiymat —
+ * ichki obyekt, son, massiv ham — "***"), keyin matn sifatida redact'dan o'tadi.
+ */
+export function clip(v: unknown, max: number): unknown {
   if (v == null) return undefined;
-  const s = redact(typeof v === "string" ? v : JSON.stringify(v));
+  const s = redact(typeof v === "string" ? v : JSON.stringify(scrubJson(v)));
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 

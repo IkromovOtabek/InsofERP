@@ -68,14 +68,14 @@ case "$phase" in
   migfail)
     # Bitta korxona bazasi migratsiya qilinmasa — symlink almashmaydi, xizmatlarga tegilmaydi
     before="$(cur)"
-    printf 'PORT=3299\nDATABASE_URL=%s/insof_test_t_missing\n' "$D_PG" > "$D_APP/tenants/zbroken.env"
+    printf 'PORT=3299\nDATABASE_URL=%s/%smissing\n' "$D_PG" "$TEST_TENANT_DB_PREFIX" > "$D_APP/tenants/zbroken.env"
     out="$(run_deploy 2>&1)"; code=$?
     rm -f "$D_APP/tenants/zbroken.env"
     [ "$code" != 0 ] && [[ "$out" == *"zbroken bazasi migratsiyasi xato"* ]] && pass "migratsiya xatosi → exit $code, aniq sabab" || fail "migfail: exit $code"
     [ "$(cur)" = "$before" ] && pass "current o'zgarmadi ($before)" || fail "current=$(cur)"
     [[ "$out" != *"[d-svc]"* ]] && pass "xizmatlar qayta ishga tushirilmadi" || fail "xizmatlarga tegildi"
-    [ -z "$(psql "$D_PG/postgres" -Atc "SELECT 1 FROM pg_database WHERE datname = 'insof_test_t_missing'")" ] \
-      && pass "yo'q baza jim yaratilmadi (prisma migrate deploy o'zi yaratardi)" || fail "insof_test_t_missing yaratilib qoldi"
+    [ -z "$(psql "$D_PG/postgres" -Atc "SELECT 1 FROM pg_database WHERE datname = '${TEST_TENANT_DB_PREFIX}missing'")" ] \
+      && pass "yo'q baza jim yaratilmadi (prisma migrate deploy o'zi yaratardi)" || fail "${TEST_TENANT_DB_PREFIX}missing yaratilib qoldi"
     all_healthy && pass "hammasi 200" || fail "health"
     ;;
   guard)

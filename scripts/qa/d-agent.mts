@@ -215,6 +215,23 @@ section("Redaksiya: kalit ro'yxati (_KEY, KEY, COOKIE, SESSION, CREDENTIAL; PASS
   check("scrubJson: oddiy satrdagi password= → ***", j.note === "password=***" && j.list[0] === "ok", j);
 }
 
+section("Eskirgan PENDING amallar (muddati o'tdi)");
+{
+  const { EXPIRING_ACTIONS, PENDING_TTL_MS } = await import("../../src/lib/control/monitor/contract");
+  const now = Date.now();
+  check("TTL = 10 daqiqa", PENDING_TTL_MS === 600_000);
+  check("xavfli turlar ro'yxatda: REBOOT, DEPLOY, ROLLBACK, TENANT_UP, PG_TERMINATE, PG_CANCEL, RESTART_UNIT, BLOCK_IP, CLEAN_RELEASES",
+    ["REBOOT", "DEPLOY", "ROLLBACK", "TENANT_UP", "PG_TERMINATE", "PG_CANCEL", "RESTART_UNIT", "BLOCK_IP", "CLEAN_RELEASES"].every((t) => EXPIRING_ACTIONS.includes(t)));
+  check("11 daq oldingi REBOOT → eskirgan", P.pendingExpired("REBOOT", new Date(now - 11 * 60_000), now));
+  check("9 daq oldingi REBOOT → hali yaroqli", !P.pendingExpired("REBOOT", new Date(now - 9 * 60_000), now));
+  check("11 daq oldingi RUN_HEALTH_CHECK / LOG_TAIL → eskirmaydi (xavfsiz)", !P.pendingExpired("RUN_HEALTH_CHECK", new Date(now - 11 * 60_000), now) && !P.pendingExpired("LOG_TAIL", new Date(now - 60 * 60_000), now));
+  check("buzuq sana → eskirgan deb hisoblanadi (xavfsiz tomonga)", P.pendingExpired("DEPLOY", "yo'q", now));
+  check("xabar: «muddati o'tdi … 11 daqiqa»", /muddati o'tdi: navbatda 11 daqiqa/.test(P.pendingExpiredMessage(new Date(now - 11 * 60_000), now)));
+  const ag = (await import("node:fs")).readFileSync(path.join(REPO, "scripts/insof-agent.ts"), "utf8");
+  const body = ag.slice(ag.indexOf("async function actionsBody"), ag.indexOf("const actions = new Loop"));
+  check("agent: eskirganlik tekshiruvi olishdan (RUNNING) OLDIN", body.indexOf("pendingExpired(") > 0 && body.indexOf("pendingExpired(") < body.indexOf('status: "RUNNING"'));
+}
+
 section("Qayta autentifikatsiya (xavfli amallar)");
 {
   const { REAUTH_ACTIONS, needsReauth } = await import("../../src/lib/control/monitor/shared");
@@ -224,15 +241,23 @@ section("Qayta autentifikatsiya (xavfli amallar)");
   const { verifyReauth } = await import("../../src/lib/control/reauth");
   const hash = await bcrypt.hash("To'g'riParol1", 4);
   const ip = "198.51.100.77";
-  check("to'g'ri parol → null", (await verifyReauth({ login: "qa-reauth", hash, password: "To'g'riParol1", ip })) === null);
-  check("bo'sh parol → «kiriting» (hisobga olinmaydi)", /kiriting/.test((await verifyReauth({ login: "qa-reauth", hash, password: "", ip })) ?? ""));
-  check("noto'g'ri parol → «Parol noto'g'ri»", (await verifyReauth({ login: "qa-reauth", hash, password: "xato", ip })) === "Parol noto'g'ri");
-  check("hash yo'q (admin faol emas) → rad", (await verifyReauth({ login: "qa-reauth2", hash: null, password: "To'g'riParol1", ip })) === "Parol noto'g'ri");
-  for (let i = 0; i < 4; i++) await verifyReauth({ login: "qa-reauth", hash, password: `xato${i}`, ip });
-  const locked = await verifyReauth({ login: "qa-reauth", hash, password: "To'g'riParol1", ip });
-  check("5 ta xato → qulf (to'g'ri parol ham rad, login bilan umumiy hisob)", !!locked && /Juda ko'p/.test(locked), locked);
-  const { checkLogin } = await import("../../src/lib/login-guard");
-  check("qulf login sahifasiga ham ta'sir qiladi (admin:<login> kaliti)", !checkLogin("admin:qa-reauth", "203.0.113.200").ok);
+  check("to'g'ri parol → null", (await verifyReauth({ adminId: "qa-reauth", hash, password: "To'g'riParol1", ip })) === null);
+  check("bo'sh parol → «kiriting» (hisobga olinmaydi)", /kiriting/.test((await verifyReauth({ adminId: "qa-reauth", hash, password: "", ip })) ?? ""));
+  check("noto'g'ri parol → «Parol noto'g'ri»", (await verifyReauth({ adminId: "qa-reauth", hash, password: "xato", ip })) === "Parol noto'g'ri");
+  check("hash yo'q (admin faol emas) → rad", (await verifyReauth({ adminId: "qa-reauth2", hash: null, password: "To'g'riParol1", ip })) === "Parol noto'g'ri");
+  for (let i = 0; i < 4; i++) await verifyReauth({ adminId: "qa-reauth", hash, password: `xato${i}`, ip });
+  const locked = await verifyReauth({ adminId: "qa-reauth", hash, password: "To'g'riParol1", ip });
+  check("5 ta xato → qulf (to'g'ri parol ham rad)", !!locked && /Juda ko'p/.test(locked), locked);
+  const { checkLogin, recordFailure } = await import("../../src/lib/login-guard");
+  const { reauthKey } = await import("../../src/lib/control/reauth");
+  check("qayta parol kaliti alohida: reauth:<adminId>", reauthKey("abc") === "reauth:abc");
+  check("reauth qulfi login sahifasiga ta'sir QILMAYDI (admin:<login> kaliti ochiq)", checkLogin("admin:qa-reauth", "203.0.113.200").ok);
+  // Aksincha: login'ni 5 marta xato terish (tashqi hujumchi) ishlayotgan adminning qayta parolini bloklamaydi
+  for (let i = 0; i < 5; i++) recordFailure("admin:qa-login-only", "203.0.113.201");
+  check("login qulfi qo'yildi (admin:qa-login-only)", !checkLogin("admin:qa-login-only", "203.0.113.202").ok);
+  check("login qulfi qayta parolga ta'sir QILMAYDI", (await verifyReauth({ adminId: "qa-login-only", hash, password: "To'g'riParol1", ip: "203.0.113.203" })) === null);
+  const reSrc = (await import("node:fs")).readFileSync(path.join(REPO, "src/lib/control/reauth.ts"), "utf8");
+  check("reauth.ts: admin:<login> kaliti ishlatilmaydi", !/`admin:\$\{/.test(reSrc) && /reauthKey\(o\.adminId\)/.test(reSrc));
   const src = (await import("node:fs")).readFileSync(path.join(REPO, "src/app/superadmin/(panel)/monitor-actions.ts"), "utf8");
   check("enqueueAction: parol params/jurnalga tushmaydi (create va logEvent faqat p bilan)", /agentAction\.create\(\{ data: \{ type, params: p as/.test(src) && /logEvent\(a\.id, "AGENT_ACTION", null, \{ actionId: res\.id, type, label: actionLabel\(type\), params: p,/.test(src) && !/params:\s*\{[^}]*password/.test(src));
 }
@@ -284,7 +309,7 @@ if (process.env.AGENT_QA_UNIT_ONLY === "1") finish();
 
 /* ═════════════════════════ 2. Integratsiya (lokal) ═════════════════════════ */
 
-const DB = "insof_test_ctl_agent";
+const DB = `${process.env.D_DB_PREFIX || "insof_test_"}ctl_agent`; // d-env.sh D_DB_PREFIX — parallel yugurishlar uchun
 const PGUSER = process.env.D_PGUSER || os.userInfo().username;
 const PG = `postgresql://${PGUSER}@localhost:5432`;
 const URL_ = `${PG}/${DB}`;
@@ -421,8 +446,15 @@ export async function runAiAnalysis(trigger) { return { id: "stub-" + trigger };
     check("journal / reboot = UNKNOWN", (await db.serviceCheck.findUnique({ where: { key: "journal:all" } }))?.status === "UNKNOWN" && (await db.serviceCheck.findUnique({ where: { key: "host:reboot" } }))?.status === "UNKNOWN");
 
     section("Integratsiya: amallar navbati");
-    const q = (type: string, params: object = {}) => db.agentAction.create({ data: { type, params } });
+    const q = (type: string, params: object = {}, extra: { requestedAt?: Date; status?: "CANCELLED"; finishedAt?: Date } = {}) => db.agentAction.create({ data: { type, params, ...extra } });
+    const old11 = new Date(Date.now() - 11 * 60_000);
     const acts = {
+      // Eskirgan PENDING: xavfli tur → REJECTED «muddati o'tdi» (bajarilmaydi); xavfsiz tur → baribir bajariladi
+      staleUnit: await q("RESTART_UNIT", { unit: "insof-erp@fake" }, { requestedAt: old11 }),
+      staleReboot: await q("REBOOT", { at: "now" }, { requestedAt: old11 }),
+      staleHealth: await q("RUN_HEALTH_CHECK", {}, { requestedAt: old11 }),
+      // Panel navbatdan olgan (CANCELLED) — agent tegmaydi
+      cancelled: await q("RELOAD_NGINX", {}, { status: "CANCELLED", finishedAt: new Date() }),
       health: await q("RUN_HEALTH_CHECK"),
       bogus: await q("DROP_DATABASE", { name: "insof_erp" }),
       badUnit: await q("RESTART_UNIT", { unit: "sshd; rm -rf /" }),
@@ -441,10 +473,14 @@ export async function runAiAnalysis(trigger) { return { id: "stub-" + trigger };
     check("RESTART_UNIT yomon unit → REJECTED", g("badUnit")?.status === "REJECTED", g("badUnit"));
     check("RESTART_UNIT test rejimida → FAILED [test-mode] (sudo chaqirilmaydi)", g("okUnitTest")?.status === "FAILED" && /test-mode/.test(g("okUnitTest")?.output ?? ""), g("okUnitTest"));
     check("BLOCK_IP 127.0.0.1 → REJECTED", g("loopback")?.status === "REJECTED", g("loopback"));
+    check("eskirgan (11 daq) RESTART_UNIT → REJECTED «muddati o'tdi», bajarilmadi", g("staleUnit")?.status === "REJECTED" && /muddati o'tdi/.test(g("staleUnit")?.output ?? "") && !g("staleUnit")?.startedAt, g("staleUnit"));
+    check("eskirgan (11 daq) REBOOT → REJECTED «muddati o'tdi»", g("staleReboot")?.status === "REJECTED" && /muddati o'tdi/.test(g("staleReboot")?.output ?? ""), g("staleReboot"));
+    check("eskirgan xavfsiz amal (RUN_HEALTH_CHECK) → baribir DONE", g("staleHealth")?.status === "DONE", g("staleHealth"));
+    check("CANCELLED amalga agent tegmaydi", g("cancelled")?.status === "CANCELLED" && !g("cancelled")?.startedAt, g("cancelled"));
     const mode = statSync(path.join(WORK, "app/tenants/fake.env")).mode & 0o777;
     check("FIX_SECRET_PERMS → DONE, fake.env 644 → 600", g("perms")?.status === "DONE" && mode === 0o600 && /644 → 600/.test(g("perms")?.output ?? ""), { mode: mode.toString(8), out: g("perms")?.output });
     check("RUN_SECURITY_SCAN (modul yo'q) → FAILED", g("sec")?.status === "FAILED", g("sec"));
-    check("finishedAt / startedAt yozilgan", [...(finished?.values() ?? [])].every((r) => r.finishedAt && (r.status === "REJECTED" || r.startedAt)));
+    check("finishedAt / startedAt yozilgan", [...(finished?.values() ?? [])].every((r) => r.finishedAt && (r.status === "REJECTED" || r.status === "CANCELLED" || r.startedAt)));
 
     section("Integratsiya: tiklanish → RESOLVED");
     const srv = http.createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: true, version: null })); });

@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { Card, Callout } from "@/components/ui";
 import { PageHeader } from "../../../_ui";
 import { NewTenantForm } from "../../forms";
@@ -5,7 +6,8 @@ import { HelpButton, PageHelp } from "../../_help/help";
 
 export const metadata = { title: "Yangi korxona" };
 
-export default function NewTenantPage() {
+export default async function NewTenantPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const ok = !!process.env.TENANT_DATABASE_URL?.includes("{db}");
   return (
     <div className="max-w-4xl">

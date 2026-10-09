@@ -171,8 +171,9 @@ if (process.env.DBT_QA_UNIT_ONLY) finish();
 
 /* ═════════════════════════ 2. Integratsiya ═════════════════════════ */
 
-const CTL = "insof_test_ctl_dbt";
-const T1 = "insof_test_dbt_t1";
+const D_PFX = process.env.D_DB_PREFIX || "insof_test_"; // d-env.sh D_DB_PREFIX — parallel yugurishlar uchun
+const CTL = `${D_PFX}ctl_dbt`;
+const T1 = `${D_PFX}dbt_t1`;
 const PGUSER = process.env.D_PGUSER || os.userInfo().username;
 const PG = `postgresql://${PGUSER}@localhost:5432`;
 const TSX = path.join(REPO, "node_modules/tsx/dist/cli.mjs");

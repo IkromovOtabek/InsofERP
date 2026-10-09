@@ -11,7 +11,7 @@ set -uo pipefail
 
 for db in $(d_test_dbs); do
   case "$db" in
-    insof_test_ctl|insof_test_t_*|insof_test_restore_*) ;;
+    "$D_CTL_DB"|"$TEST_TENANT_DB_PREFIX"*|"${D_RESTORE_PREFIX}_"*) ;;
     *) d_die "kutilmagan baza: $db" ;;
   esac
   psql "$D_PG/postgres" -qAtX -c "DROP DATABASE IF EXISTS \"$db\" WITH (FORCE)" && d_log "o'chirildi: $db"

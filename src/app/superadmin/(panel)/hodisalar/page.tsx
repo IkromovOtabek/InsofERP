@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { control } from "@/lib/control/db";
 import { toActionView } from "@/lib/control/monitor/snapshot";
 import { asSuggested, type IncidentStatusT, type SeverityT } from "@/lib/control/monitor/shared";
@@ -13,6 +14,7 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 
 /** Hodisalar: filtrlar (URL'da — havolani ulashish mumkin), tafsilot oynasi, tuzatish/ko'rdim/yopish. */
 export default async function IncidentsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const sp = await searchParams;
   const status = (STATUSES as readonly string[]).includes(one(sp.status)) ? one(sp.status) : "active";
   const severity = SEVERITIES.includes(one(sp.severity) as SeverityT) ? (one(sp.severity) as SeverityT) : "";

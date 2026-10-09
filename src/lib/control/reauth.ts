@@ -3,12 +3,14 @@ import { checkLogin, failDelay, lockedMessage, recordFailure, recordSuccess } fr
 
 /**
  * Xavfli amal oldidan superadmin parolini qayta tekshirish (monitor-actions.ts → enqueueAction, REAUTH_ACTIONS).
- * Urinishlar hisobi login bilan UMUMIY (`admin:<login>` kaliti, login-guard): 5 ta xato → 15 daqiqa qulf, IP bo'yicha 30.
+ * Urinishlar hisobi login'dan ALOHIDA: `reauth:<adminId>` kaliti (login-guard) — 5 ta xato → 15 daqiqa qulf, IP bo'yicha 30
+ * (IP hisobi umumiy). Login kaliti (`admin:<login>`) bilan umumiy bo'lsa, tashqaridagi hujumchi login'ni 5 marta xato terib
+ * ishlayotgan adminning xavfli amallarini (qayta parol) bloklab qo'yardi va aksincha — shuning uchun ajratilgan.
  * Parol hech qayerga yozilmaydi (na AgentAction.params, na jurnal, na log) — faqat bcrypt.compare ga beriladi.
  * Qaytaradi: xato matni yoki null (to'g'ri).
  */
-export async function verifyReauth(o: { login: string; hash: string | null | undefined; password: unknown; ip: string }): Promise<string | null> {
-  const key = `admin:${o.login}`;
+export async function verifyReauth(o: { adminId: string; hash: string | null | undefined; password: unknown; ip: string }): Promise<string | null> {
+  const key = reauthKey(o.adminId);
   const guard = checkLogin(key, o.ip);
   if (!guard.ok) return lockedMessage(guard.retryAfterSec);
   const pw = typeof o.password === "string" ? o.password : "";
@@ -21,3 +23,6 @@ export async function verifyReauth(o: { login: string; hash: string | null | und
   recordSuccess(key);
   return null;
 }
+
+/** Qayta parol qulfi kaliti — login qulfidan (`admin:<login>`) alohida. */
+export const reauthKey = (adminId: string) => `reauth:${adminId}`;

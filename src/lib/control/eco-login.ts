@@ -34,6 +34,8 @@ export function maskPhone(phone: string): string {
 }
 
 export const ECO_RATE_LIMITED = "Juda ko'p urinish. Birozdan keyin qayta urinib ko'ring.";
+/** Rad javobining eng kam vaqti (urinish boshidan, ECO so'rovi bilan birga) — barcha rad sabablari bir xil vaqtda qaytadi. */
+export const ECO_FAIL_FLOOR_MS = 1200;
 
 /**
  * ECO javobi "telefon/parol noto'g'ri" mi. ECO (`erp.service.verifyCredentials`) hisob yo'q / parolsiz / o'chirilgan /
@@ -62,21 +64,27 @@ export async function ecoAdminLogin(phoneRaw: string, password: string, ip: stri
   const guard = checkLogin(key, ip);
   if (!guard.ok) return { ok: false, error: lockedMessage(guard.retryAfterSec) };
 
-  const fail = async (reason: string | null, extra?: Record<string, unknown>): Promise<EcoLoginResult> => {
+  // Vaqt farqi orqali ham oshkor bo'lmasin: xato parol (ECO rad etdi), bog'lanmagan hisob va bloklangan admin
+  // (ECO qabul qildi + baza so'rovi) — hammasi bir xil ketma-ketlikda (qulf hisobi → jurnal) va urinish boshidan
+  // kamida ECO_FAIL_FLOOR_MS o'tgach qaytadi. Baza/jurnal tezligi javob vaqtiga ta'sir qilmaydi.
+  const t0 = Date.now();
+  const fail = async (reason: string, extra?: Record<string, unknown>, error = ECO_LOGIN_FAIL): Promise<EcoLoginResult> => {
     recordFailure(key, ip);
-    if (reason) await logEvent(null, "ADMIN_LOGIN_ECO_FAIL", null, { reason, phone: maskPhone(phone), ...extra }).catch(() => {});
+    await logEvent(null, "ADMIN_LOGIN_ECO_FAIL", null, { reason, phone: maskPhone(phone), ...extra }).catch(() => {});
     await failDelay();
-    return { ok: false, error: ECO_LOGIN_FAIL };
+    const rest = t0 + ECO_FAIL_FLOOR_MS - Date.now();
+    if (rest > 0) await new Promise((r) => setTimeout(r, rest));
+    return { ok: false, error };
   };
 
   let eu: { userId: string; phone: string; fullName: string | null };
   try {
-    if (password.length > 200) return fail(null);
+    if (password.length > 200) return fail("noto'g'ri telefon yoki parol");
     eu = await eco.verifyCredentials(phone, password);
   } catch (e) {
-    if (isBadCredentials(e)) return fail(null);
+    if (isBadCredentials(e)) return fail("noto'g'ri telefon yoki parol");
     // ECO'ning o'z limiti (telefon bo'yicha 10 / 15 daq) — ulangan-ulanmaganidan qat'i nazar bir xil
-    if (isRateLimited(e)) { recordFailure(key, ip); await failDelay(); return { ok: false, error: ECO_RATE_LIMITED }; }
+    if (isRateLimited(e)) return fail("ECO urinishlar chegarasi", undefined, ECO_RATE_LIMITED);
     console.error("[admin-eco-login]", ecoErrLog(e));
     return { ok: false, error: ECO_UNAVAILABLE };
   }
@@ -102,7 +110,7 @@ export async function linkOwnEco(adminId: string, input: LinkInput, ip: string):
   if (!adminEcoEnabled()) return { error: "ECO sozlanmagan (control.env: ECO_API_URL, ECO_API_KEY)" };
   const me = await control.superAdmin.findUnique({ where: { id: adminId } });
   if (!me || !me.isActive) return { error: "Hisob topilmadi" };
-  const reauth = await verifyReauth({ login: me.login, hash: me.passwordHash, password: input.currentPassword, ip });
+  const reauth = await verifyReauth({ adminId: me.id, hash: me.passwordHash, password: input.currentPassword, ip });
   if (reauth) return { error: reauth === "Parol noto'g'ri" ? "Joriy panel paroli noto'g'ri" : reauth };
 
   const phone = normalizePhone(input.phone);
@@ -123,7 +131,7 @@ export async function linkOwnEco(adminId: string, input: LinkInput, ip: string):
       await failDelay();
       return { error: "ECO telefoni yoki paroli noto'g'ri" };
     }
-    if (isRateLimited(e)) return { error: ECO_RATE_LIMITED };
+    if (isRateLimited(e)) { recordFailure(key, ip); await failDelay(); return { error: ECO_RATE_LIMITED }; }
     console.error("[admin-eco-link]", ecoErrLog(e));
     return { error: ECO_UNAVAILABLE.replace(" — login va parol bilan kiring", ", birozdan keyin urinib ko'ring") };
   }
@@ -150,7 +158,7 @@ export async function unlinkOwnEco(adminId: string, currentPassword: unknown, ip
   const me = await control.superAdmin.findUnique({ where: { id: adminId } });
   if (!me || !me.isActive) return { error: "Hisob topilmadi" };
   if (!me.ecoUserId) return { error: "ECO hisobi ulanmagan" };
-  const reauth = await verifyReauth({ login: me.login, hash: me.passwordHash, password: currentPassword, ip });
+  const reauth = await verifyReauth({ adminId: me.id, hash: me.passwordHash, password: currentPassword, ip });
   if (reauth) return { error: reauth === "Parol noto'g'ri" ? "Joriy panel paroli noto'g'ri" : reauth };
   await control.superAdmin.update({ where: { id: me.id }, data: { ecoUserId: null, ecoPhone: null } });
   await logEvent(me.id, "ADMIN_ECO_UNLINK", null, { phone: me.ecoPhone });

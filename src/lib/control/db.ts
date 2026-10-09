@@ -45,8 +45,19 @@ export function tenantDb(dbName: string): TenantClient {
     // Har korxonaga kichik pul: panel faqat o'qiydi va kamdan-kam yozadi
     const url = new URL(tenantDbUrl(dbName));
     if (!url.searchParams.has("connection_limit")) url.searchParams.set("connection_limit", "2");
-    c = new TenantClient({ datasourceUrl: url.toString(), log: ["error"] });
+    const cl = new TenantClient({ datasourceUrl: url.toString(), log: [{ emit: "event", level: "error" }] });
+    // Baza yo'q (P1003 — korxona hali yaratilmagan / o'chirilgan) — chaqiruvchi «mavjud emas» deb ko'rsatadi;
+    // har so'rov uchun logni prisma:error bilan to'ldirmaymiz. Qolgan xatolar avvalgidek logga.
+    cl.$on("error", (e) => { if (!isDbMissingMessage(e.message)) console.error(`prisma:error ${e.message}`); });
+    c = cl as unknown as TenantClient;
     clients.set(dbName, c);
   }
   return c;
+}
+
+/** Prisma xatosi «baza mavjud emas» (P1003) mi. */
+export const isDbMissingMessage = (m: string) => /P1003|Database [`'"]?[^\s`'"]+[`'"]? does not exist/i.test(m);
+export function isDbMissing(e: unknown): boolean {
+  const code = (e as { code?: unknown; errorCode?: unknown } | null)?.code ?? (e as { errorCode?: unknown } | null)?.errorCode;
+  return code === "P1003" || isDbMissingMessage(e instanceof Error ? e.message : String(e));
 }

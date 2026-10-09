@@ -23,19 +23,24 @@ run "deploy DRY_RUN: birinchi reliz" /bin/bash "$Q/d-deploy-test.sh" first
 run "HTTP: panel, SSO, izolyatsiya, to'xtatish" env D_ROOT="$D_ROOT" npx tsx "$Q/d-platform.ts"
 run "zaxira + tiklash" /bin/bash "$Q/d-backup-test.sh"
 run "health-watch" /bin/bash "$Q/d-health-test.sh"
-run "insof-agent (parserlar + lokal integratsiya, baza insof_test_ctl_agent)" npx tsx "$Q/d-agent.mts"
-run "baza va trafik (SQL niqob, nginx loglari, PG amallari; bazalar insof_test_ctl_dbt, insof_test_dbt_t1)" npx tsx "$Q/d-dbtraffic.mts"
+run "insof-agent (parserlar + lokal integratsiya, baza ${D_DB_PREFIX}ctl_agent)" npx tsx "$Q/d-agent.mts"
+run "baza va trafik (SQL niqob, nginx loglari, PG amallari; bazalar ${D_DB_PREFIX}ctl_dbt, ${D_DB_PREFIX}dbt_t1)" npx tsx "$Q/d-dbtraffic.mts"
 run "deploy: buzuq reliz → avtomatik qaytarish ($FAIL_REF)" /bin/bash "$Q/d-deploy-test.sh" fail "$FAIL_REF"
 run "deploy: ROLLBACK=1" /bin/bash "$Q/d-deploy-test.sh" rollback
 run "deploy: HEAD qayta (build qayta ishlatiladi)" /bin/bash "$Q/d-deploy-test.sh" again
 run "deploy: yo'q baza migratsiyasi" /bin/bash "$Q/d-deploy-test.sh" migfail
 run "deploy: himoyalar" /bin/bash "$Q/d-deploy-test.sh" guard
-run "kiberxavfsizlik moduli (fixture'lar + stub AI, baza insof_test_ctl_sec)" npx tsx "$Q/d-security.mts"
-run "IT panelga ECO orqali kirish (soxta ECO, baza insof_test_ctl_eco)" npx tsx "$Q/d-eco-login.mts"
+run "kiberxavfsizlik moduli (fixture'lar + stub AI, baza ${D_DB_PREFIX}ctl_sec)" npx tsx "$Q/d-security.mts"
+run "IT panelga ECO orqali kirish (soxta ECO, baza ${D_DB_PREFIX}ctl_eco)" npx tsx "$Q/d-eco-login.mts"
 run "bash -n (barcha skriptlar)" /bin/bash -c 'for f in scripts/*.sh scripts/qa/*.sh; do /bin/bash -n "$f" || exit 1; done'
 if [ "$(uname)" = "Darwin" ] || ! command -v systemctl >/dev/null; then
   out="$(/bin/bash scripts/tenant-up.sh alfa 2>&1)"; code=$?
   run "tenant-up.sh: root'siz aniq xato" test "$code" != 0 -a -n "$(printf '%s' "$out" | grep 'sudo bilan')"
+fi
+# Domen siyosati fayli (/etc/insof/tenant-up.conf) yo'q → domenli ishga tushirish rad (default-deny), root tekshiruvidan oldin
+if [ ! -e /etc/insof/tenant-up.conf ]; then
+  out="$(/bin/bash scripts/tenant-up.sh alfa alfa.insof.test 2>&1)"; code=$?
+  run "tenant-up.sh: tenant-up.conf yo'q + domen → rad (default-deny)" test "$code" != 0 -a -n "$(printf '%s' "$out" | grep "domen siyosati fayli yo'q")"
 fi
 
 if [ "${D_KEEP:-0}" != "1" ]; then /bin/bash "$Q/d-cleanup.sh"; fi
