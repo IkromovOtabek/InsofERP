@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import type { MobileUser } from "./auth";
 import { FLEET_ROLES } from "./fleet";
 import { driverEmployeeId, ListError } from "./list";
-import { isFinishedStatus, saveTripSummarySafe, tripTrackDetail } from "@/lib/trip-summary";
+import { isFinishedStatus, saveTripSummarySafe, tripTrackDetail, tripTrackSummaries } from "@/lib/trip-summary";
 import { decodePolyline, type LatLng } from "@/lib/trip-track";
 
 /**
@@ -83,4 +83,44 @@ export async function mobileTripTrack(user: MobileUser, tripId: string): Promise
     arrivedAt: t.arrivedAt?.toISOString() ?? null,
     deliveredAt: t.deliveredAt?.toISOString() ?? null,
   };
+}
+
+/** Ro'yxat ekrani uchun bitta reys yakuni (chiziqsiz) — `trip-track` raqamlari bilan bir xil. */
+export type TripTrackSummaryItem = {
+  distanceKm: number;
+  totalSec: number;
+  movingSec: number;
+  avgSpeedKmh: number | null;
+  maxSpeedKmh: number | null;
+  final: boolean;
+  status: string;
+};
+
+/** Bir so'rovda ko'pi bilan shuncha reys. */
+export const SUMMARY_MAX_IDS = 100;
+
+/**
+ * `GET /api/mobile/trip-track/summary?ids=a,b,c` (yoki `POST {ids: [...]}`) — bir nechta reys yakuni bitta so'rovda.
+ * "Mening reyslarim" ro'yxati oyda 60 reys uchun 60 ta `trip-track` so'ramasin.
+ *
+ * Ruxsat `mobileTripTrack` bilan bir xil: haydovchi faqat o'z reyslari, xarita rollari hammasi.
+ * Ruxsatsiz yoki mavjud bo'lmagan id javobda shunchaki yo'q (bori-yo'qligi oshkor qilinmaydi).
+ */
+export async function mobileTripTrackSummary(user: MobileUser, raw: unknown): Promise<{ items: Record<string, TripTrackSummaryItem> }> {
+  const list = typeof raw === "string" ? raw.split(",") : Array.isArray(raw) ? raw : null;
+  if (!list) throw new ListError("BAD_REQUEST", "Reyslar ro'yxati (ids) kerak", 400);
+  const ids = [...new Set(list.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter((x) => x.length > 0 && x.length <= 64))];
+  if (ids.length === 0) throw new ListError("BAD_REQUEST", "Reys tanlanmagan", 400);
+  if (ids.length > SUMMARY_MAX_IDS) throw new ListError("BAD_REQUEST", `Bir so'rovda ko'pi bilan ${SUMMARY_MAX_IDS} ta reys`, 400);
+  const isDriver = user.role === "DRIVER";
+  if (!isDriver && !(FLEET_ROLES as readonly string[]).includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  const stats = await tripTrackSummaries(ids, isDriver ? await driverEmployeeId(user.id) : undefined);
+  const items: Record<string, TripTrackSummaryItem> = {};
+  for (const [id, d] of stats) {
+    items[id] = {
+      distanceKm: d.distanceKm, totalSec: d.totalSec, movingSec: d.movingSec,
+      avgSpeedKmh: d.avgSpeedKmh, maxSpeedKmh: d.maxSpeedKmh, final: isFinishedStatus(d.status), status: d.status,
+    };
+  }
+  return { items };
 }
