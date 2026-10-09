@@ -17,7 +17,7 @@ export async function GET(req: Request) {
 /**
  * POST /api/mobile/attendance/self — "Keldim" / "Ketdim" (ilova ichidagi yuz skaneridan keyin).
  * Body: { kind: "in"|"out", lat, lng, accuracy, photo: "data:image/jpeg;base64,...", deviceId, at, mocked? }.
- * Geofence, takror, soat va yuz (profil surati bilan) tekshiruvi serverda — `lib/self-attendance.ts`.
+ * Geofence, takror, soat va yuz (ERP Face ID namunasi, yo'q bo'lsa profil surati) tekshiruvi serverda — `lib/self-attendance.ts`.
  */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);

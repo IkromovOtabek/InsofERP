@@ -348,7 +348,7 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
   const mk = m?.status ? markOf(m.status) : null;
   const actions: DetailAction[] = [];
   if (m && (canWork(user) || own)) {
-    // "Keldi" — yuz bilan (AI kaliti bo'lsa): old kamera kadri profil surati bilan solishtiriladi, mos kelmasa
+    // "Keldi" — yuz bilan: old kamera kadri Face ID namunasi (yo'q bo'lsa — AI kaliti bilan profil surati) bilan solishtiriladi, mos kelmasa
     // yozilmaydi. Kalit bo'lmasa — eskicha bir tugma. Vaqtni tuzatish/boshqa belgi pastdagi formada qoladi.
     // "Keldi" — ilova ichidagi yuz skaneri: kamera xodimga qaratiladi, kadr avtomatik olinib `photo` bilan yuboriladi
     if (m.status !== "PRESENT") actions.push({ id: "att.face", label: "Keldi — yuz skaneri", tone: "success" });

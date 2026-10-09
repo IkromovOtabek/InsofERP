@@ -174,7 +174,7 @@ const Body = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   accuracy: z.number().min(0).max(100_000).nullable().optional(),
-  /** Yuz skaneri kadri: `data:image/jpeg;base64,...` — profil surati bilan solishtiriladi. */
+  /** Yuz skaneri kadri: `data:image/jpeg;base64,...` — Face ID namunasi (yo'q bo'lsa profil surati) bilan solishtiriladi. */
   photo: z.string({ message: "Yuzingizni skaner qiling" }).min(100, "Yuzingizni skaner qiling").max(MAX_PHOTO_CHARS, "Kadr juda katta — qayta skaner qiling"),
   deviceId: z.string().trim().min(8, "Qurilma aniqlanmadi").max(128),
   /** Ilova bosilgan vaqt (ISO). Server o'z soatini yozadi, bu faqat eskirgan/qayta yuborilgan so'rovni ushlash uchun. */

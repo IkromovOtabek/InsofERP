@@ -303,7 +303,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Yuz tekshiruvi yoqiq bo'lsa brigadir "Keldi" ni faqat `att.face` bilan qo'yadi: att.present/att.all va
   // att.status orqali PRESENT rad etiladi, vaqtni esa faqat sex boshlig'i tuzatadi (`lib/mobile/actions.ts`)
   "att.present": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
-  // "Keldi" yuz bilan: kamera kadri profil surati bilan solishtiriladi (`lib/ai/face.ts`), mos kelmasa yozilmaydi
+  // "Keldi" yuz bilan: kamera kadri Face ID namunasi (yo'q bo'lsa profil surati) bilan solishtiriladi (`lib/face-verify.ts`), mos kelmasa yozilmaydi
   "att.face": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "att.checkout": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "att.absent": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
