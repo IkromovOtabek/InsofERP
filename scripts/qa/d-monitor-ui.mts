@@ -159,7 +159,7 @@ async function readUntilLogout(jar: Jar, timeoutMs: number, onOpen?: () => Promi
       let k: number;
       while ((k = buf.indexOf("\n\n")) >= 0) {
         const block = buf.slice(0, k); buf = buf.slice(k + 2);
-        if (block.startsWith("data: ")) { res.events++; if (!opened && onOpen) { opened = true; await onOpen(); } }
+        if (block.split("\n").some((l) => l.startsWith("data: ") && l !== "data: {}")) { res.events++; if (!opened && onOpen) { opened = true; await onOpen(); } }
         if (block.split("\n").includes("event: logout")) res.logout = true;
       }
     }
