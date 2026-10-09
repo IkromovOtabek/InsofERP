@@ -506,6 +506,9 @@ const TransferBody = z.object({
   fee: z.preprocess((v) => (v === "" || v == null ? undefined : typeof v === "string" ? v.replace(/\s/g, "").replace(",", ".") : v), z.coerce.number({ message: "Komissiya raqam bo'lsin" }).min(0, "Komissiya manfiy bo'lolmaydi").max(MAX_AMOUNT).optional()),
   date: zDay,
   note: z.string().trim().max(500).optional(),
+  // Ixtiyoriy bir martalik kalit (ilova forma ochilganda UUID yaratadi): tarmoq uzilib qayta yuborilsa — o'sha hujjat qaytadi.
+  // G'alati qiymat e'tiborsiz (veb `tokenOf` bilan bir xil qoida) — eski ilova kalitsiz ham ishlayveradi.
+  clientToken: z.preprocess((v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v.trim()) ? v.trim() : undefined), z.string().optional()),
 });
 
 /**
@@ -520,9 +523,6 @@ function cashDate(v: string | undefined): Date {
   if (Number.isNaN(d.getTime()) || v > today || d < min) throw new Error("Sana bugundan oldingi 30 kun ichida bo'lsin");
   return d;
 }
-
-/** Bir xil o'tkazma shu oraliqda qayta kelsa — ikki marta bosilgan (veb formadagi `clientToken` o'rniga). */
-const TRANSFER_DUP_MS = 60_000;
 
 export type CreateResult = { key: string; id: string; message: string };
 
@@ -647,16 +647,12 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
       const fee = d.fee && d.fee > 0 ? d.fee : null;
-      const recent = await db.cashTransfer.findFirst({
-        where: { createdById: user.id, fromAccountId: d.fromAccountId, toAccountId: d.toAccountId, amount: Math.round(d.amount * 100) / 100, cancelledAt: null, createdAt: { gte: new Date(Date.now() - TRANSFER_DUP_MS) } },
-        select: { docNo: true },
-      });
-      if (recent) throw new Error(`${recent.docNo} hozirgina saqlandi — ikki marta bosilgan bo'lishi mumkin. Rostdan ikkinchisi bo'lsa, bir daqiqadan keyin qayta kiriting`);
-      const r = await createTransfer({ date: cashDate(d.date), fromAccountId: d.fromAccountId, toAccountId: d.toAccountId, amount: d.amount, fee, note: d.note || null }, user.id);
+      // Qoidalar (qulf, qoldiq, dublikat: kalit bo'yicha va 60 s oynasi — qulf ichida) — veb bilan bitta joyda: `createTransfer`
+      const r = await createTransfer({ date: cashDate(d.date), fromAccountId: d.fromAccountId, toAccountId: d.toAccountId, amount: d.amount, fee, note: d.note || null, clientToken: d.clientToken ?? null }, user.id);
       if (r.error || !r.id) throw new Error(r.error ?? "Saqlanmadi");
       // Kartochka — manba hisobdagi yozuv (Kirim-chiqim kartochkasi o'tkazmani ko'rsatadi)
       const out = await db.cashTransaction.findFirst({ where: { refType: TRANSFER_REF, refId: r.id, type: "TRANSFER_OUT" }, select: { id: true } });
-      return { key: "cashflow", id: out?.id ?? r.id, message: `${r.docNo} saqlandi: ${money(d.amount)}` };
+      return { key: "cashflow", id: out?.id ?? r.id, message: r.duplicate ? `${r.docNo} allaqachon saqlangan (qayta yuborildi)` : `${r.docNo} saqlandi: ${money(d.amount)}` };
     }
 
     const p = TripBody.safeParse(payload);
@@ -670,6 +666,18 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
     return { key: "trips", id: r.id, message: `${r.deliveryNoteNo} ochildi va haydovchi ilovasiga yuborildi` };
   } catch (e) {
     if (e instanceof ListError) throw e;
+    // Prisma xatosi (so'rov, ustun, constraint tafsiloti) mijozga ko'rsatilmaydi — faqat jurnalga.
+    // Biznes xatolari (`throw new Error("...")`, PaymentError va sh.k.) matni o'zgarmay qaytadi.
+    if (isPrismaError(e)) {
+      console.error("[mobile-create]", key, e);
+      throw new ListError("CREATE_FAILED", "Saqlanmadi — ma'lumotni tekshirib, qayta urinib ko'ring", 400);
+    }
     throw new ListError("CREATE_FAILED", (e as Error).message, 400);
   }
+}
+
+/** Prisma mijoz xatolari: `PrismaClient*Error` sinflari yoki `P1234` kodi. */
+function isPrismaError(e: unknown): boolean {
+  const x = e as { name?: unknown; code?: unknown } | null;
+  return !!x && ((typeof x.name === "string" && x.name.startsWith("PrismaClient")) || (typeof x.code === "string" && /^P\d{4}$/.test(x.code)));
 }
