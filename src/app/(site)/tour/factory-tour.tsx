@@ -82,7 +82,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
       setCardOn(false);
       swapRef.current = setTimeout(() => { setShown(scRef.current.active); setCardOn(true); }, 320);
     }
-    if (active !== s.active || Math.abs(p - s.p) > 0.02 || ostep !== s.ostep || Math.abs(ofrac - s.ofrac) > 0.04 || Math.abs(ui - s.ui) > 0.02 || vw !== s.vw || vh !== s.vh) {
+    if (active !== s.active || Math.abs(p - s.p) > 0.02 || ostep !== s.ostep || Math.abs(ofrac - s.ofrac) > 0.04 || Math.abs(ui - s.ui) > 0.02 || (ui === 0) !== (s.ui === 0) || vw !== s.vw || vh !== s.vh) {
       const next = { active, p, f, ostep, ofrac, ui, vw, vh };
       scRef.current = next;
       setSc(next);
@@ -159,7 +159,9 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
     <div ref={rootRef} className="it-root">
       <div className="it-ui">
         {/* Sahna */}
-        <div ref={stageRef} aria-hidden style={{ position: "fixed", inset: 0, zIndex: 0, background: "var(--bg)" }}>
+        {/* Sayt bo'limlari sahnani to'liq yopganda (ui = 0) sahna yashiriladi: o'lchami 0 bo'lgan konteynerda
+            `insof-world.js` chizmaydi — GPU bo'shaydi va pastdagi bo'limlar skroll paytida "yo'qolib" qolmaydi */}
+        <div ref={stageRef} aria-hidden style={{ position: "fixed", inset: 0, zIndex: 0, background: "var(--bg)", display: ui === 0 ? "none" : "block" }}>
           {noGl && <Image src="/media/hero.jpg" alt="" fill priority sizes="100vw" style={{ objectFit: "cover" }} />}
         </div>
         <div aria-hidden style={{ position: "fixed", inset: 0, zIndex: 1, pointerEvents: "none", background: "radial-gradient(ellipse 85% 80% at 55% 45%, rgba(8,12,18,0) 60%, rgba(8,12,18,0.2) 100%)" }} />
@@ -295,7 +297,10 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
       </div>
 
       {/* Saytning qolgan qismi sahna ustidan chiqadi */}
-      <main style={{ position: "relative", zIndex: 5, borderRadius: "28px 28px 0 0", overflow: "hidden", boxShadow: "0 -20px 60px var(--shadow)" }}>
+      {/* `overflow: hidden` YO'Q: ~9000px balandlikdagi blokni yumaloq burchak bilan qirqish butun blokni GPU niqobiga
+          aylantiradi — orqada 3D sahna chizilayotganda skroll paytida bo'limlar bir lahza bo'sh chiqardi.
+          Yumaloq tepa — birinchi bo'limning o'zida (page.tsx: yugurma lenta). */}
+      <main style={{ position: "relative", zIndex: 5, borderRadius: "28px 28px 0 0", boxShadow: "0 -20px 60px var(--shadow)" }}>
         {children}
       </main>
     </div>

@@ -152,7 +152,7 @@ export default async function LandingPage() {
       {/* ───────── Zavod bo'ylab 3D tur (sahna + sarlavha + bekat kartasi); saytning qolgan bo'limlari uning ustidan chiqadi ───────── */}
       <FactoryTour fontFamily={archivo.style.fontFamily}>
       {/* ───────── Yugurma lenta ───────── */}
-      <div className="marka overflow-hidden border-y border-white/10 bg-insof-900 py-3.5" aria-hidden>
+      <div className="marka overflow-hidden rounded-t-[28px] border-y border-white/10 bg-insof-900 py-3.5" aria-hidden>
         <div className="marka-run flex w-max whitespace-nowrap font-mono text-[12px] tracking-[0.16em] text-white/55 uppercase">
           {[...ticker, ...ticker].map((t, i) => (
             <span key={i} className="flex items-center">
