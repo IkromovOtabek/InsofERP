@@ -5,6 +5,7 @@ import { customerCredit } from "@/lib/finance";
 import { money, qty, date, fmtNum, deliveryAt } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 
 /** Bo'sh katak — mijoz qo'lda to'ldiradi. Qiymat bo'lsa chiziq ustida ko'rsatiladi. */
@@ -27,6 +28,7 @@ export default async function GuaranteePage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-[13px] leading-relaxed text-black print:p-4">
+      <BackLink href={`/orders/${id}`} label="Zayavka" className="mb-3" />
       {credit.blacklisted && (
         <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 print:hidden"><b>Diqqat: mijoz qora ro'yxatda.</b> Kredit limiti to'liq ishlatilgan — kafolat xatini berishdan oldin direktor bilan kelishing.</div>
       )}

@@ -5,6 +5,7 @@ import { getCompany } from "@/lib/company";
 import { date, dateTime } from "@/lib/format";
 import { ROLE_LABELS } from "@/lib/nav";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 import { AutoPrint } from "@/components/auto-print";
 
 /**
@@ -40,6 +41,7 @@ export default async function EmployeeSheetPage({ params, searchParams }: {
 
   return (
     <div className="paper mx-auto max-w-3xl rounded-sm bg-white p-8 text-[13px] text-black print:max-w-none print:rounded-none print:p-4 print:shadow-none">
+      <BackLink href={`/employees/${id}`} label="Xodim kartasi" className="mb-3" />
       <style>{`@media print { @page { size: A4; margin: 14mm } aside, nav { display: none } body { background: #fff } }`}</style>
       <AutoPrint enabled={print === "1"} />
 

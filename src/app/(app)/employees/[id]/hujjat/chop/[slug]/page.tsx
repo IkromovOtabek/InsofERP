@@ -5,6 +5,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { HIRING_DOCS, HIRING_SLUG, HR_DOC_BY_SLUG } from "@/lib/hr-docs";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 import { AutoPrint } from "@/components/auto-print";
 import { DOC_COMPONENTS, type DocProps } from "./documents";
 
@@ -68,6 +69,7 @@ export default async function HrDocPrintPage({ params, searchParams }: {
 
       <div className="mx-auto mb-4 flex max-w-[210mm] flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
+          <BackLink href={`/employees/${e.id}`} label="Xodim kartasi" />
           <div className="text-xs text-slate-500">
             <Link href={`/employees/${e.id}`} className="hover:underline">{e.fullName}</Link> · kadr hujjati
           </div>

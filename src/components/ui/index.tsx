@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { Inbox, Check } from "lucide-react";
+import { Inbox, Check, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { EmptySlot } from "./empty-slot";
@@ -9,13 +9,28 @@ export { PasswordInput } from "./password-input";
 
 /* ═══════════════════════ Layout ═══════════════════════ */
 
+/** Ichki (detail/yangi/chop) sahifadan ota sahifaga qaytish tugmasi.
+ *  Brauzer tarixiga emas, aniq `href` ga tayanadi — to'g'ridan-to'g'ri havola
+ *  bilan kirilganda ham ishlaydi. `label` — ota sahifa nomi (standart «Ortga»). */
+export function BackLink({ href, label = "Ortga", className }: { href: string; label?: string; className?: string }) {
+  return (
+    <Link href={href} title={label === "Ortga" ? "Ortga" : `Ortga: ${label}`}
+      className={cn("-ml-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-brand-500 pointer-coarse:min-h-11 pointer-coarse:text-sm print:hidden", className)}>
+      <ArrowLeft size={14} className="shrink-0" aria-hidden />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
 export function PageHeader({ title, subtitle, eyebrow, action, back }: {
-  title: React.ReactNode; subtitle?: React.ReactNode; eyebrow?: string; action?: React.ReactNode; back?: { href: string; label: string };
+  title: React.ReactNode; subtitle?: React.ReactNode; eyebrow?: string; action?: React.ReactNode;
+  /** Ichki sahifalar uchun: ota sahifa havolasi (label standart «Ortga») */
+  back?: { href: string; label?: string };
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4 animate-fade-up">
       <div className="min-w-0">
-        {back && <Link href={back.href} className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900 pointer-coarse:min-h-9 pointer-coarse:text-sm">← {back.label}</Link>}
+        {back && <BackLink href={back.href} label={back.label} className="mb-1" />}
         {eyebrow && !back && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
         <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}

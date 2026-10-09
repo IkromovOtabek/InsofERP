@@ -27,7 +27,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div>
-      <PageHeader title={`Zames ${b.batchNo}`} subtitle={`${date(b.date)} · ${b.shift}-smena · ${b.createdBy.fullName}`}
+      <PageHeader back={{ href: "/production", label: "Ishlab chiqarish" }} title={`Zames ${b.batchNo}`} subtitle={`${date(b.date)} · ${b.shift}-smena · ${b.createdBy.fullName}`}
         action={canStorno ? <ConfirmButton action={stornoBatch.bind(null, b.id)} label="Storno" question={`${b.batchNo} storno qilinsinmi? Xomashyo skladga qaytadi, ${qty(b.qtyM3)} ${unitLabel(b.product.unit)} mahsulot qoldiqdan chiqariladi`} reason="required" okText="Storno qilindi" className="h-9 px-3 text-sm" /> : undefined} />
       {b.cancelledAt && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
