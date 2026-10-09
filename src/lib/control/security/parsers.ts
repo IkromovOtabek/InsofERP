@@ -279,6 +279,9 @@ export const ACCEPTED_RISK: Record<string, string> = {
   sharp:
     "sharp 0.33.5 ataylab qotirilgan (serverning CPU'si yangi libvips'ni qo'llamaydi). Yumshatish: sharp faqat ichki yuklangan rasmlarni o'lchaydi, " +
     "fayl hajmi chegaralangan, tashqi URL'dan rasm olinmaydi; CPU almashtirilganda yangilanadi.",
+  "sprintf-js":
+    "@tensorflow/tfjs (Face ID — serverda yuz vektori) → argparse ichida, faqat tfjs CLI vositalari uchun; ilova uni chaqirmaydi. " +
+    "Tuzatilgan versiyasi yo'q (barcha versiyalar).",
 };
 
 export type AuditSummary = {

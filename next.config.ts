@@ -46,6 +46,9 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false, // "X-Powered-By: Next.js" — texnologiyani oshkor qilmaymiz
+  // Serverdagi Face ID vektori (`lib/face-descriptor.ts`): bundle qilinmaydi — tfjs WASM fayli va face-api modellari
+  // node_modules'dagi joyidan o'qiladi
+  serverExternalPackages: ["@vladmandic/face-api", "@tensorflow/tfjs", "@tensorflow/tfjs-backend-wasm"],
   experimental: {
     serverActions: { bodySizeLimit: "16mb" }, // imzolangan shartnoma fayli (15 MB gacha) server action orqali yuklanadi
     // Middleware so'rov tanasini sukut bo'yicha 10 MB da kesadi — 10–15 MB fayl server action'ga

@@ -133,19 +133,18 @@ export async function markProductionAttendance(userId: string, employeeId: strin
 }
 
 /**
- * "Keldi" — yuz bilan (mobil `att.face`). Kamera kadri xodimning profil surati bilan solishtiriladi
- * (`lib/ai/face.ts`); mos kelsa kadr saqlanib davomat yoziladi, aks holda hech narsa yozilmaydi —
+ * "Keldi" — yuz bilan (mobil `att.face`). Kamera kadri xodimning ERP'dagi Face ID namunasi bilan (yo'q bo'lsa —
+ * profil surati bilan AI orqali) solishtiriladi (`lib/face-verify.ts`); mos kelsa kadr saqlanib davomat yoziladi, aks holda hech narsa yozilmaydi —
  * faqat auditda urinish qoladi (kim, kimni, nima sababdan o'tmadi).
  */
 export async function markAttendanceByFace(userId: string, employeeId: string, photo: File, iso = today()): Promise<{ error: string } | { ok: true; text: string; confidence: number }> {
-  const { faceCheckEnabled } = await import("@/lib/ai/face");
   const { saveEmployeeFile } = await import("@/lib/uploads");
-  if (!faceCheckEnabled()) return { error: "Yuz tekshiruvi sozlanmagan (AI kaliti yo'q) — davomatni sex boshlig'i qo'lda belgilaydi" };
+  const { faceVerifyAvailable, verifyEmployeeFace } = await import("@/lib/face-verify");
+  if (!(await faceVerifyAvailable(employeeId))) return { error: "Xodimning yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ERP → Davomat bo'limida ro'yxatga olsin yoki davomatni sex boshlig'i qo'lda belgilaydi" };
   const staff = await productionStaff(iso);
   const e = staff.members.find((x) => x.id === employeeId);
   if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };
   if (e.status === "PRESENT") return { error: `${e.fullName} bugun allaqachon "Keldi" deb belgilangan` };
-  const { verifyEmployeeFace } = await import("@/lib/face-verify");
   const r = await verifyEmployeeFace(employeeId, `${e.fullName} ning`, photo);
   if (!r.ok) {
     if (r.mismatch) await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: "tasdiqlanmadi", ishonch: r.confidence, sabab: r.reason });

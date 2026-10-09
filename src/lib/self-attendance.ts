@@ -8,8 +8,7 @@ import { getCompany } from "@/lib/company";
 import { DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayUtc, hoursText, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, toMinutes, today, validMonth, workedMinutes } from "@/lib/davomat";
 import { nowHHMM, productionStaff } from "@/lib/production-staff";
 import { knownPoint } from "@/lib/mobile/geofence";
-import { faceCheckEnabled } from "@/lib/ai/face";
-import { verifyEmployeeFace } from "@/lib/face-verify";
+import { faceVerifyAvailable, verifyEmployeeFace } from "@/lib/face-verify";
 import { saveEmployeeFile } from "@/lib/uploads";
 import { dataUrlFile } from "@/lib/procurement";
 import { ListError } from "@/lib/mobile/list";
@@ -200,13 +199,16 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
   const p = Body.safeParse(raw);
   if (!p.success) fail("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri");
   const b = p.data!;
-  if (!faceCheckEnabled()) fail("FACE_DISABLED", "Yuz skaneri sozlanmagan (AI kaliti yo'q) — administratorga murojaat qiling", 409);
   const photo = dataUrlFile(b.photo, "yuz");
   if (!photo) fail("BAD_REQUEST", "Kadr o'qilmadi — qayta skaner qiling");
 
   const e = await linkedEmployee(user.id);
   if (!e) fail("NOT_LINKED", "Loginingiz xodim kartasiga bog'lanmagan — otdel kadrga murojaat qiling", 403);
   const emp = e!;
+  // Yuz tekshiruvi: ERP'da Face ID ro'yxatga olingan bo'lsa — shu namuna, bo'lmasa AI kaliti bilan profil surati
+  if (!(await faceVerifyAvailable(emp.id))) {
+    fail("FACE_DISABLED", "Yuzingiz Face ID'da ro'yxatga olinmagan — otdel kadrga ayting: ERP → Davomat bo'limida ro'yxatga olsin", 409);
+  }
 
   if (Math.abs(Date.now() - Date.parse(b.at)) > MAX_CLOCK_SKEW_MS) {
     fail("CLOCK_SKEW", "Telefon soati noto'g'ri yoki so'rov eskirgan — soatni avtomatik qilib qayta urining");
@@ -242,7 +244,8 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     [`check${k}Distance`]: Math.round(distance), [`check${k}DeviceId`]: b.deviceId,
   });
   /**
-   * Yuz: kadr profil surati bilan solishtiriladi; mos kelsa kadr dalil sifatida saqlanadi (rahbar skaneri kabi).
+   * Yuz: kadr ERP'dagi Face ID namunasi bilan (yo'q bo'lsa — profil surati bilan) solishtiriladi (`lib/face-verify.ts`);
+   * mos kelsa kadr dalil sifatida saqlanadi (rahbar skaneri kabi).
    * Mos kelmasa hech narsa yozilmaydi — faqat auditda urinish qoladi.
    */
   const face = async () => {
