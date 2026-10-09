@@ -23,7 +23,7 @@ export default async function NewReceipt() {
   const avg = costs;
   return (
     <div>
-      <PageHeader title="Yangi kirim" subtitle="Saqlanganda sklad qoldig'i darhol oshadi" />
+      <PageHeader back={{ href: "/receipts", label: "Kirim" }} title="Yangi kirim" subtitle="Saqlanganda sklad qoldig'i darhol oshadi" />
       <ReceiptForm suppliers={suppliers.map((x) => ({ id: x.id, name: x.name, vatPayer: x.vatPayer }))} warehouses={warehouses.map((x) => ({ id: x.id, name: x.name }))} materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, price: avg.get(m.id) ?? 0, balance: bal.get(m.id) ?? 0 }))} groups={groups} canCreate={canEditMaterials(s.role)} accounts={s.role === "DIRECTOR" ? accounts : []} clientToken={crypto.randomUUID()} companyVatPayer={vatPayer} />
     </div>
   );

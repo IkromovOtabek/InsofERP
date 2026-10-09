@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
@@ -6,6 +5,7 @@ import { PRODUCTION_HOME_ROLES } from "@/lib/production-day";
 import { loadReport, reportHistory } from "@/lib/production-report";
 import { dateTime } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 import { ReportSheet } from "../report-sheet";
 import { ReportHistory } from "../history";
 
@@ -22,7 +22,7 @@ export default async function SavedReportPage({ params }: { params: Promise<{ id
       <div className="paper min-w-0 rounded-sm bg-white p-4 sm:p-8 text-[12.5px] text-black print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav, header, .no-print { display: none !important } body { background: #fff } }`}</style>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-          <Link href="/dashboard/hisobot" className="text-sm text-slate-500 hover:text-slate-900">← Jonli hisobot</Link>
+          <BackLink href="/dashboard/hisobot" label="Jonli hisobot" />
           <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">Qayd etilgan · {dateTime(rep.createdAt)}</span>
           <PrintButton />
         </div>

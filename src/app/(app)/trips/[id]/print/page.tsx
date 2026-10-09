@@ -5,6 +5,7 @@ import { qty, date, dateTime, money } from "@/lib/format";
 import { tripLine } from "@/lib/trips";
 import { DRUM_MAX_MIN } from "@/lib/logistics";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 import { getCompany } from "@/lib/company";
 import { publicOrigin } from "@/lib/public-url";
 import { unitLabel } from "@/lib/unit";
@@ -34,6 +35,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="paper mx-auto max-w-3xl rounded-sm bg-white p-8 text-[13px] text-black print:max-w-none print:rounded-none print:p-4 print:shadow-none">
+      <BackLink href={`/trips/${id}`} label="Reys" className="mb-3" />
       <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav { display: none } body { background: #fff } }`}</style>
       {!fromEnv && (
         <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">

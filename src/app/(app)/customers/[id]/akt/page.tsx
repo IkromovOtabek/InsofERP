@@ -6,6 +6,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { customerStatement } from "@/lib/invoices";
 import { date, fmtNum, isoDate } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 
 /**
  * Akt sverki — mijoz bilan o'zaro hisob-kitoblarni solishtirish dalolatnomasi (chop etish uchun).
@@ -36,7 +37,7 @@ export default async function AktSverki({ params, searchParams }: { params: Prom
           <button className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium hover:bg-slate-50">Ko&apos;rsatish</button>
         </form>
         <div className="flex items-center gap-3">
-          <Link href={`/customers/${id}`} className="text-sm text-slate-500 hover:underline">← Mijoz kartasi</Link>
+          <BackLink href={`/customers/${id}`} label="Mijoz kartasi" />
           <PrintButton />
         </div>
       </div>

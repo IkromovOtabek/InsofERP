@@ -6,7 +6,7 @@ export default async function NewCustomer() {
   const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"], { module: "customers", actions: ["edit"] });
   return (
     <div>
-      <PageHeader title="Yangi mijoz" />
+      <PageHeader back={{ href: "/customers", label: "Mijozlar" }} title="Yangi mijoz" />
       <CustomerForm customer={null} canEditLimit={["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)} />
     </div>
   );

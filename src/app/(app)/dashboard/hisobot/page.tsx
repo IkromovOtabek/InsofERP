@@ -8,6 +8,7 @@ import { buildReport, reportHistory } from "@/lib/production-report";
 import { dayTitle, shiftDay, today, validDay } from "@/lib/davomat";
 import { dateTime } from "@/lib/format";
 import { PrintButton } from "@/components/print-button";
+import { BackLink } from "@/components/ui";
 import { ReportSheet } from "./report-sheet";
 import { SaveReportForm } from "../production-forms";
 import { ReportHistory } from "./history";
@@ -31,7 +32,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         <style>{`@media print { @page { size: A4; margin: 12mm } aside, nav, header, .no-print { display: none !important } body { background: #fff } }`}</style>
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-          <Link href="/dashboard" className="text-sm text-slate-500 hover:text-slate-900">← Bosh sahifa</Link>
+          <BackLink href="/dashboard" label="Bosh sahifa" />
           <div className="flex items-center gap-1 text-sm">
             <Link href={`?kun=${shiftDay(iso, -1)}`} className="rounded-md p-1.5 hover:bg-slate-100" aria-label="Oldingi kun"><ChevronLeft size={16} /></Link>
             <span className="px-2 font-medium">{dayTitle(iso)}</span>

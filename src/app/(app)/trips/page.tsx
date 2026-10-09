@@ -5,7 +5,7 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { qty } from "@/lib/format";
 import { unitLabel, soleUnit } from "@/lib/unit";
-import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { BackLink, Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { TRIP_STATUS } from "./status";
 import { tripPhase, VEHICLE_TYPE } from "@/lib/logistics";
 import { tripLine } from "@/lib/trips";
@@ -43,7 +43,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
         <Tabs current="tarix" items={tabItems} />
         {driver ? (
           <>
-            <Link href="/trips?status=tarix" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">← Haydovchilar ro&apos;yxati</Link>
+            <BackLink href="/trips?status=tarix" label="Haydovchilar ro'yxati" className="mb-3" />
             <DriverTrips driverId={driver} />
           </>
         ) : <DriverList />}

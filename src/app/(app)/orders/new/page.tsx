@@ -72,6 +72,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
   return (
     <div>
       <PageHeader
+        back={{ href: tur === "sklad" || !canSale ? "/orders?tur=sklad" : "/orders", label: "Zayavkalar" }}
         title="Yangi zayavka"
         subtitle={canSale
           ? "Mijoz uchun — sotuv zayavkasi; Sklad uchun — zaxiraga ishlab chiqarish. Saqlangandan keyin “Qabul qilish” bosiladi."

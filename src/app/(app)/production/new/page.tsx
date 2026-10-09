@@ -60,7 +60,7 @@ export default async function NewBatch() {
 
   return (
     <div>
-      <PageHeader title="Yangi zames" subtitle="Saqlanganda retsept bo'yicha xomashyo skladdan avtomatik yozib olinadi" />
+      <PageHeader back={{ href: "/production", label: "Ishlab chiqarish" }} title="Yangi zames" subtitle="Saqlanganda retsept bo'yicha xomashyo skladdan avtomatik yozib olinadi" />
       <BatchForm
         orders={orderOpts}
         products={catalog.products}
