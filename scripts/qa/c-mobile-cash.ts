@@ -88,6 +88,23 @@ async function main() {
   check("qolgan 600 000 → schyot yopildi", r.status === 200 && /schyot yopildi/.test(r.json?.message ?? ""), r.json);
   check("schyot holati PAID", (await db.invoice.findUnique({ where: { id: bq.id } }))?.status === "PAID");
 
+  section("To'lov: mijoz tekshiruvi");
+  const looksInternal = (s: string) => /prisma|invocation|constraint|foreign key|P20\d\d|\.js:\d/i.test(s);
+  const ghost = `nope-${stamp}`;
+  r = await create(kassa, "payments", { customerId: ghost, amount: 1000, cashAccountId: cash.id });
+  check("mavjud bo'lmagan mijoz → 400 «Mijoz topilmadi»", r.status === 400 && r.json?.message === "Mijoz topilmadi", r.json);
+  check("javobda Prisma/ichki tafsilot yo'q", !looksInternal(r.text), r.text.slice(0, 200));
+  check("yozuv yaratilmadi", (await db.payment.count({ where: { customerId: ghost } })) === 0);
+  const internalCust = await db.customer.create({ data: { name: `QA ichki ${stamp}`, isInternal: true } });
+  r = await create(kassa, "payments", { customerId: internalCust.id, amount: 1000, cashAccountId: cash.id });
+  check("ichki (tizim) mijoz → 400, yozuv yo'q", r.status === 400 && /Ichki/.test(r.json?.message ?? "") && (await db.payment.count({ where: { customerId: internalCust.id } })) === 0, r.json);
+  const inactiveCust = await db.customer.create({ data: { name: `QA nofaol ${stamp}`, isActive: false } });
+  r = await create(kassa, "payments", { customerId: inactiveCust.id, amount: 1500, cashAccountId: cash.id });
+  check("nofaol mijozdan to'lov qabul qilinadi (eski qarz) → 200", r.status === 200 && (await db.payment.count({ where: { customerId: inactiveCust.id } })) === 1, r.json);
+  // Prisma xatosi (bu yerda — mavjud bo'lmagan yetkazuvchi, foreign key) mijozga umumiy xabar bilan qaytadi
+  r = await create(kassa, "cashflow", { type: "EXPENSE", cashAccountId: cash.id, amount: 1_234, categoryExpense: "Xomashyo", supplierId: `nope-${stamp}` });
+  check("Prisma xatosi → 400 «Saqlanmadi», tafsilot yo'q", r.status === 400 && /^Saqlanmadi/.test(r.json?.message ?? "") && !looksInternal(r.text), r.json);
+
   section("Kirim / chiqim");
   const bal = async () => (await accountBalances(undefined, [cash.id])).get(cash.id) ?? 0;
   const b0 = await bal();
@@ -127,6 +144,29 @@ async function main() {
   check("kassa qoldig'idan katta o'tkazma → 400", r.status === 400, r.json);
   r = await create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: cash.id, amount: 1000 });
   check("bir xil hisob → 400", r.status === 400, r.json);
+
+  // Regressiya: dublikat tekshiruvi qulfdan tashqarida edi — 5 parallel bir xil o'tkazma 5 ta OT hujjat ochardi
+  const trAll = () => db.cashTransfer.count({ where: { fromAccountId: cash.id, toAccountId: bank.id } });
+  let n0 = await trAll();
+  const par = await Promise.all(Array.from({ length: 5 }, () => create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: bank.id, amount: 7_000, note: "QA parallel" })));
+  const parOk = par.filter((x) => x.status === 200).length;
+  check("5 parallel bir xil o'tkazma → bitta hujjat", (await trAll()) === n0 + 1, { docs: (await trAll()) - n0 });
+  check("5 parallel: bittasi 200, qolganlari 400 «hozirgina saqlandi»", parOk === 1 && par.filter((x) => x.status === 400 && /hozirgina saqlandi/.test(x.text)).length === 4, par.map((x) => x.status));
+
+  // clientToken: tarmoq uzilib qayta yuborilgan so'rov o'sha hujjatni qaytaradi (yangisini ochmaydi)
+  const ctok = crypto.randomUUID();
+  n0 = await trAll();
+  const same = await Promise.all(Array.from({ length: 3 }, () => create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: bank.id, amount: 8_000, clientToken: ctok })));
+  const again = await create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: bank.id, amount: 8_000, clientToken: ctok });
+  check("clientToken bilan 3 parallel + 1 takror → bitta hujjat", (await trAll()) === n0 + 1, { docs: (await trAll()) - n0 });
+  check("clientToken takrorlari hammasi 200, bitta id", [...same, again].every((x) => x.status === 200) && new Set([...same, again].map((x) => x.json?.id)).size === 1, [...same, again].map((x) => x.status));
+  check("takror javobida «allaqachon saqlangan»", /allaqachon saqlangan/.test(again.json?.message ?? ""), again.json);
+  const tdoc = await db.cashTransfer.findUnique({ where: { clientToken: ctok } });
+  check("hujjatda clientToken saqlandi", !!tdoc && Number(tdoc.amount) === 8_000, tdoc);
+  r = await create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: bank.id, amount: 8_000, clientToken: crypto.randomUUID() });
+  check("boshqa kalit, lekin 60 s ichida aynan shu o'tkazma → 400 (oyna)", r.status === 400 && /hozirgina saqlandi/.test(r.text) && (await trAll()) === n0 + 1, r.json);
+  r = await create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: bank.id, amount: 9_000, clientToken: "<script>" });
+  check("g'alati clientToken e'tiborsiz → 200 (kalitsiz saqlanadi)", r.status === 200, r.json);
 
   section("Ruxsatlar");
   for (const [login, key] of [["test.sotuv", "payments"], ["test.haydovchi", "payments"], ["test.sklad", "cashflow"], ["test.snab", "transfer"], ["test.direktor", "payments"]] as const) {

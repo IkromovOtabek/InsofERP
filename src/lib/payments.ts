@@ -73,6 +73,12 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
   const res = await db.$transaction(async (tx) => {
     // Mijoz bo'yicha navbat: bir vaqtdagi ikki to'lov qoldiqni ham, dublikatni ham to'g'ri ko'rsin
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.customerId}))`;
+    // Mijoz: mavjud bo'lmasa — tushunarli xato (ilgari foreign key xatosi Prisma matni bilan chiqardi);
+    // ichki "mijoz" (sklad zaxirasi) — haqiqiy mijoz emas, unga pul tushmaydi.
+    // Nofaol (isActive: false) mijozdan to'lov ATAYLAB qabul qilinadi — yopilgan mijozning eski qarzini yig'ish uchun.
+    const cust = await tx.customer.findUnique({ where: { id: input.customerId }, select: { isInternal: true } });
+    if (!cust) throw new PaymentError("Mijoz topilmadi");
+    if (cust.isInternal) throw new PaymentError("Ichki (tizim) mijoziga to'lov qabul qilinmaydi");
     const acc = await tx.cashAccount.findUnique({ where: { id: input.cashAccountId }, select: { isActive: true } });
     if (!acc?.isActive) throw new PaymentError("Kassa/hisob topilmadi yoki yopilgan");
     if (input.invoiceId) {

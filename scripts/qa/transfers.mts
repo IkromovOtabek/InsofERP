@@ -168,6 +168,21 @@ r = await storno(dir, t2.id);
 check("T57 ikkinchi storno — rad", /allaqachon storno/.test(r.result?.error ?? ""), r.result);
 check("T58 mobil jami qoldiq = DB formulasi (o'tkazmalar bilan)", Math.abs((await mobileTotal()) - (await expectedTotal())) <= 1);
 
+// ───────── Dublikat oynasi (qulf ichida, veb va mobil uchun bitta joy: createTransfer) ─────────
+console.log("\nDublikat oynasi");
+{
+  const n = countTransfers();
+  const par = await Promise.all([1, 2, 3].map(() => transfer(kassa, { fromAccountId: K, toAccountId: B, amount: "11000" })));
+  check("T70 kalitsiz 3 parallel bir xil o'tkazma — bitta hujjat, qolganlari «hozirgina saqlandi»", countTransfers() === n + 1 && par.filter((x) => x.result?.ok).length === 1 && par.filter((x) => /hozirgina saqlandi/.test(x.result?.error ?? "")).length === 2, par.map((x) => x.result));
+  const tk = crypto.randomUUID();
+  const [b1, b2] = await Promise.all([transfer(kassa, { fromAccountId: K, toAccountId: B, amount: "12000", clientToken: tk }), transfer(kassa, { fromAccountId: K, toAccountId: B, amount: "12000", clientToken: tk })]);
+  check("T71 kalit bilan parallel — ikkalasi ok, bittasi «allaqachon saqlangan» (veb clientToken mantig'i o'zgarmadi)", countTransfers() === n + 2 && b1.result?.ok && b2.result?.ok && [b1, b2].some((x) => /allaqachon/.test(x.result?.note ?? "")), { b1: b1.result, b2: b2.result });
+  r = await transfer(kassa, { fromAccountId: K, toAccountId: B, amount: "12000", clientToken: crypto.randomUUID() });
+  check("T72 yangi kalit, lekin 60 s ichida aynan shu o'tkazma — rad", /hozirgina saqlandi/.test(r.result?.error ?? "") && countTransfers() === n + 2, r.result);
+  r = await transfer(buh, { fromAccountId: K, toAccountId: B, amount: "12000" });
+  check("T73 boshqa foydalanuvchining aynan shunday o'tkazmasi — dublikat emas (saqlandi)", r.result?.ok === true && countTransfers() === n + 3, r.result);
+}
+
 // ───────── Mobil ro'yxat ─────────
 const ml = await mob("GET", "/api/mobile/list?key=cashflow&q=O'tkazma", finTok);
 check("T60 mobil Kirim-Chiqim ro'yxatida o'tkazma qatorlari", ml.status === 200 && ml.text.includes("O'tkazma"), ml.status);
