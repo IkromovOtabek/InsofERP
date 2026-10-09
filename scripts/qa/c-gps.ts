@@ -235,6 +235,30 @@ async function main() {
   r = await api("GET", `/api/mobile/trip-track`, { token: lg });
   check("id'siz → 400", r.status === 400, r.status);
 
+  section("GET/POST /api/mobile/trip-track/summary — ro'yxat uchun bitta so'rov");
+  const pick = (j: any) => ({ distanceKm: j?.distanceKm, totalSec: j?.totalSec, movingSec: j?.movingSec, avgSpeedKmh: j?.avgSpeedKmh, maxSpeedKmh: j?.maxSpeedKmh, final: j?.final, status: j?.status }); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const one = async (id: string) => pick((await api("GET", `/api/mobile/trip-track?id=${id}`, { token: lg })).json);
+  r = await api("GET", `/api/mobile/trip-track/summary?ids=${F.id},${A.id},${E.id},yoq-${stamp}`, { token: drv });
+  const drvItems = r.json?.items ?? {};
+  check("haydovchi → 200, o'z reyslari (F yopilgan, A ochiq) bor", r.status === 200 && !!drvItems[F.id] && !!drvItems[A.id], msg(r));
+  check("begona reys (E) va mavjud bo'lmagan id javobda yo'q", !(E.id in drvItems) && Object.keys(drvItems).length === 2, Object.keys(drvItems));
+  check("chiziq yo'q (line/polyline/points emas)", !("line" in (drvItems[F.id] ?? {})) && !("polyline" in (drvItems[F.id] ?? {})), drvItems[F.id]);
+  const [oneF, oneA] = [await one(F.id), await one(A.id)];
+  check("yopilgan reys (F): qiymatlar trip-track bilan bir xil", JSON.stringify(pick(drvItems[F.id])) === JSON.stringify(oneF) && oneF.final === true && oneF.status === "DELIVERED", { s: drvItems[F.id], t: oneF });
+  check("ochiq reys (A): qiymatlar trip-track bilan bir xil", JSON.stringify(pick(drvItems[A.id])) === JSON.stringify(oneA) && oneA.final === false, { s: drvItems[A.id], t: oneA });
+  r = await api("POST", "/api/mobile/trip-track/summary", { token: lg, body: { ids: [F.id, A.id, E.id, F.id] } });
+  check("logistika (POST) → hammasi, E ham (takror id bir marta)", r.status === 200 && Object.keys(r.json?.items ?? {}).length === 3 && !!r.json.items[E.id], msg(r));
+  r = await api("GET", `/api/mobile/trip-track/summary?ids=${F.id}`, { token: sotuv });
+  check("sotuv → 403", r.status === 403, r.status);
+  r = await api("GET", `/api/mobile/trip-track/summary?ids=${Array.from({ length: 101 }, (_, i) => `x${i}`).join(",")}`, { token: lg });
+  check("101 ta id → 400", r.status === 400, msg(r));
+  r = await api("POST", "/api/mobile/trip-track/summary", { token: lg, body: { ids: Array.from({ length: 100 }, (_, i) => (i === 0 ? F.id : `x${i}`)) } });
+  check("100 ta id → 200 (chegara)", r.status === 200 && Object.keys(r.json?.items ?? {}).length === 1, msg(r));
+  r = await api("GET", "/api/mobile/trip-track/summary", { token: lg });
+  check("ids'siz → 400", r.status === 400, r.status);
+  r = await api("POST", "/api/mobile/trip-track/summary", { token: lg, body: { ids: "a" } });
+  check("POST ids massiv emas → 400", r.status === 400, r.status);
+
   // ─────────────────────────────────────────────────────────────
   section("Fleet: haqiqiy gps.at, tezlik, trail, stale");
   await track(A.id, [pt(north(BASE, 5200), ago(90_000), { speedKmh: 47.4, heading: 12.6 })]);

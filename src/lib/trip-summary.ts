@@ -198,12 +198,14 @@ export async function tripPayKm(trips: { id: string; distanceKm?: number | null;
 /** Saqlangan rejadagi yo'l. */
 export const plannedLine = (s: string | null | undefined) => decodePolyline(s);
 
-export type TrackDetail = {
+/** Reys raqamlari (chiziqsiz). */
+export type TrackNumbers = {
   final: boolean;
   meters: number; distanceKm: number; totalSec: number; movingSec: number;
   avgSpeedKmh: number | null; maxSpeedKmh: number | null; points: number;
-  line: LatLng[]; polyline: string;
 };
+
+export type TrackDetail = TrackNumbers & { line: LatLng[]; polyline: string };
 
 const lineMemo = new Map<string, { raw: number; line: LatLng[]; polyline: string }>();
 
@@ -214,15 +216,8 @@ const lineMemo = new Map<string, { raw: number; line: LatLng[]; polyline: string
 export async function tripTrackDetail(tripId: string): Promise<TrackDetail | null> {
   const t = await db.trip.findUnique({ where: { id: tripId }, select: TRIP_COLS });
   if (!t) return null;
-  if (t.summaryAt) {
-    return {
-      final: true, meters: Math.round((t.distanceKm ?? 0) * 1000), distanceKm: t.distanceKm ?? 0, totalSec: t.totalSec ?? 0, movingSec: t.movingSec ?? 0,
-      avgSpeedKmh: t.avgSpeedKmh, maxSpeedKmh: t.maxSpeedKmh != null ? Math.round(t.maxSpeedKmh) : null, points: t.trackPoints ?? 0,
-      line: decodePolyline(t.trackLine), polyline: t.trackLine ?? "",
-    };
-  }
+  if (t.summaryAt) return { ...closedNumbers(t), line: decodePolyline(t.trackLine), polyline: t.trackLine ?? "" };
   const acc = await accumulator(tripId, t.lastSeenAt?.getTime() ?? 0);
-  const s = acc.summary();
   let memo = lineMemo.get(tripId);
   if (!memo || memo.raw !== acc.raw) {
     const line = simplifyLine(acc.kept, LINE_TOLERANCE_M).map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -230,8 +225,42 @@ export async function tripTrackDetail(tripId: string): Promise<TrackDetail | nul
     if (lineMemo.size >= CACHE_MAX) lineMemo.delete(lineMemo.keys().next().value!);
     lineMemo.set(tripId, memo);
   }
+  return { ...openNumbers(acc), line: memo.line, polyline: memo.polyline };
+}
+
+/** Yopilgan reys raqamlari — Trip ustunlaridan (`trip-track` va `trip-track/summary` bir xil). */
+function closedNumbers(t: TripCols): TrackNumbers {
+  return {
+    final: true, meters: Math.round((t.distanceKm ?? 0) * 1000), distanceKm: t.distanceKm ?? 0, totalSec: t.totalSec ?? 0, movingSec: t.movingSec ?? 0,
+    avgSpeedKmh: t.avgSpeedKmh, maxSpeedKmh: t.maxSpeedKmh != null ? Math.round(t.maxSpeedKmh) : null, points: t.trackPoints ?? 0,
+  };
+}
+
+/** Ochiq reys raqamlari — keshlangan yig'uvchidan. */
+function openNumbers(acc: TrackAccumulator): TrackNumbers {
+  const s = acc.summary();
   return {
     final: false, meters: s.meters, distanceKm: s.distanceKm, totalSec: s.totalSec, movingSec: s.movingSec,
-    avgSpeedKmh: s.avgSpeedKmh, maxSpeedKmh: s.maxSpeedKmh, points: s.rawPoints, line: memo.line, polyline: memo.polyline,
+    avgSpeedKmh: s.avgSpeedKmh, maxSpeedKmh: s.maxSpeedKmh, points: s.rawPoints,
   };
+}
+
+/**
+ * Bir nechta reys raqamlari (chiziqsiz) — ro'yxat ekrani uchun ("Mening reyslarim").
+ * Bitta `findMany`: yopilganlari Trip ustunlaridan (nuqtalar o'qilmaydi), ochiqlari keshlangan yig'uvchidan.
+ * `driverId` berilsa — faqat shu haydovchining reyslari (begona id natijada shunchaki bo'lmaydi).
+ * Iz yo'q reys ham natijada (nol qiymatlar bilan) — `tripTrackDetail` bilan bir xil.
+ */
+export async function tripTrackSummaries(tripIds: string[], driverId?: string): Promise<Map<string, TrackNumbers & { status: string }>> {
+  const out = new Map<string, TrackNumbers & { status: string }>();
+  if (tripIds.length === 0) return out;
+  const trips = await db.trip.findMany({
+    where: { id: { in: [...new Set(tripIds)] }, ...(driverId ? { driverId } : {}) },
+    select: TRIP_COLS,
+  });
+  await Promise.all(trips.map(async (t) => {
+    const n = t.summaryAt ? closedNumbers(t) : openNumbers(await accumulator(t.id, t.lastSeenAt?.getTime() ?? 0));
+    out.set(t.id, { ...n, status: t.status });
+  }));
+  return out;
 }
