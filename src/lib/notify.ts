@@ -67,7 +67,7 @@ export async function notifyUsers(userIds: (string | null | undefined)[], n: Not
   const badge = new Map(unread.map((u) => [u.userId, u._count._all]));
 
   const byUser = new Map<string, string[]>();
-  for (const d of devices) byUser.set(d.userId, [...(byUser.get(d.userId) ?? []), d.expoPushToken]);
+  for (const d of devices) { const l = byUser.get(d.userId); if (l) l.push(d.expoPushToken); else byUser.set(d.userId, [d.expoPushToken]); }
 
   await Promise.all([...byUser].map(([userId, tokens]) =>
     sendPush(tokens, {

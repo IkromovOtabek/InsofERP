@@ -17,6 +17,8 @@ type BadgeColor = "slate" | "green" | "amber" | "red" | "blue" | "violet";
 export type LogisticsSettings = {
   lateWarnMin: number; lateCritMin: number; gpsSilentMin: number; loadedWarnMin: number;
   assignLeadMin: number; shiftStartHour: number; shiftEndHour: number; avgSpeedKmh: number;
+  /** GPS davriy tekshiruvi: shuncha daqiqa bir joyda tursa / rejadagi yo'ldan shuncha metr chiqsa — xabar. */
+  stopAlertMin: number; offRouteM: number;
   plant: { lat: number; lng: number } | null;
 };
 
@@ -26,6 +28,7 @@ export async function logisticsSettings(): Promise<LogisticsSettings> {
     lateWarnMin: s?.lateWarnMin ?? 15, lateCritMin: s?.lateCritMin ?? 45, gpsSilentMin: s?.gpsSilentMin ?? 15,
     loadedWarnMin: s?.loadedWarnMin ?? 30, assignLeadMin: s?.assignLeadMin ?? 60,
     shiftStartHour: s?.shiftStartHour ?? 8, shiftEndHour: s?.shiftEndHour ?? 20, avgSpeedKmh: s?.avgSpeedKmh ?? 35,
+    stopAlertMin: s?.stopAlertMin ?? 20, offRouteM: s?.offRouteM ?? 500,
     plant: s?.lat != null && s?.lng != null ? { lat: s.lat, lng: s.lng } : null,
   };
 }

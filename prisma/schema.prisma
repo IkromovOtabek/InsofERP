@@ -144,6 +144,12 @@ model CompanySettings {
   shiftStartHour      Int       @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
   shiftEndHour        Int       @default(20) // smena tugashi
   avgSpeedKmh         Int       @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
+  stopAlertMin        Int       @default(20) // yo'ldagi mashina bir joyda shuncha daqiqa tursa — dispetcherga xabar
+  offRouteM           Int       @default(500) // rejadagi yo'ldan shuncha metr chetga chiqsa — dispetcherga xabar
+  /// GPS davriy tekshiruvi (lib/gps-watch.ts) oxirgi marta qachon ishlagani — bir nechta jarayon bitta bazada ikki marta ishlamasin
+  gpsWatchAt          DateTime?
+  /// Eski GPS nuqtalarini tozalash (kuniga bir marta) oxirgi marta qachon bo'lgani
+  gpsCleanupAt        DateTime?
   // ── Snabjeniye: shu summadan (so'm) katta xarid avval direktor tasdig'idan o'tadi; 0 — cheklov yo'q ──
   supplyDirectorLimit Decimal   @default(50000000) @db.Decimal(18, 2)
   /// "To'lanmagan kirimlar" shu sanadan keyingi kirimlarni ko'rsatadi (bo'sh — 2026-09-30); eski chiqimsiz kirimlar to'lov kutmaydi
@@ -1401,6 +1407,31 @@ model Trip {
   /// kalitsiz raqamlarni terib butun mijozlar ro'yxatini yig'ib bo'lmasin. Eski reyslarda bo'sh.
   verifyToken String? @unique
 
+  // ── GPS kuzatuvi (lib/trip-track.ts, lib/trip-summary.ts) ──
+  // Oxirgi nuqta — har /api/mobile/track da yangilanadi: xarita har 12 s da butun izni o'qimasin
+  lastLat      Float?
+  lastLng      Float?
+  lastSpeedKmh Float?
+  lastHeading  Float?
+  lastAt       DateTime? // oxirgi nuqtaning qurilmadagi vaqti
+  lastSeenAt   DateTime? // telefondan oxirgi aloqa (nuqta yoki nuqtasiz "tirikman") — "GPS jim" shundan
+  gpsPlatform  String? // ios | android — iOS turgan telefonda nuqta bermaydi, "GPS jim" chegarasi uzoqroq
+  // Reys yakuni — yetkazilganda/yopilganda hisoblanadi; hisobot va haydovchi km shu yerdan
+  distanceKm   Float? // GPS izi bo'yicha bosib o'tilgan yo'l (null — iz yo'q)
+  movingSec    Int? // harakatda o'tgan vaqt (turishlar va aloqa uzilishlari chiqarilgan)
+  totalSec     Int? // birinchi nuqtadan oxirgisigacha
+  maxSpeedKmh  Float?
+  avgSpeedKmh  Float? // distanceKm / movingSec
+  trackLine    String? // soddalashtirilgan iz — Google encoded polyline (5 xona)
+  trackPoints  Int? // xom nuqtalar soni
+  summaryAt    DateTime? // yakun hisoblangan vaqt (bo'lsa — eski nuqtalar 90 kundan keyin o'chirilishi mumkin)
+  // Rejadagi yo'l — haydovchi ilovasi marshrut so'raganda (trip-route) qurilgan yo'l
+  plannedRoute   String? // encoded polyline — "yo'ldan chiqdi" shu bo'yicha tekshiriladi
+  plannedKm      Float? // birinchi qurilgan yo'l uzunligi (reja)
+  plannedMin     Int? // shu yo'lning taxminiy vaqti
+  plannedRouteAt DateTime?
+  arrivalNotifiedAt DateTime? // obyektga 300 m ichiga kirgani haqida logistikaga xabar ketgan vaqt (bir marta)
+
   order     Order              @relation(fields: [orderId], references: [id])
   vehicle   Vehicle            @relation(fields: [vehicleId], references: [id])
   driver    Employee           @relation("TripDriver", fields: [driverId], references: [id])
@@ -1408,6 +1439,7 @@ model Trip {
   issues    TripIssue[]
   fuelLogs  FuelLog[]
   expenses  TransportExpense[]
+  alerts    TripAlert[]
 
   @@index([status, createdAt])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
@@ -1563,13 +1595,36 @@ model TripPosition {
   lng       Float
   speedKmh  Float?
   heading   Float?
+  /// GPS aniqligi, metr (eski ilova yubormaydi — null). 100 m dan yomoni qabul qilinmaydi
+  accuracy  Float?
   /// Qurilmadagi vaqt — nuqtalar aloqa uzilganda buferda turib, keyin to'p-to'p keladi
   at        DateTime
   createdAt DateTime @default(now())
 
   trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
-  @@index([tripId, at])
+  /// Bufer qayta yuborilganda bir nuqta ikki marta yozilmasin (createMany skipDuplicates)
+  @@unique([tripId, at])
+  @@index([at])
+}
+
+/// Yo'ldagi reys bo'yicha avtomatik ogohlantirish (lib/gps-watch.ts): GPS jim, uzoq turibdi, yo'ldan chiqdi.
+/// Holat boshlanganda ochiladi va dispetcherga BIR MARTA xabar ketadi; holat o'tgach o'zi yopiladi (closedAt).
+/// Bir reysda bir turdan faqat bitta ochiq yozuv bo'ladi (davriy tekshiruv advisory lock ostida ishlaydi).
+model TripAlert {
+  id       String    @id @default(cuid())
+  tripId   String
+  kind     String // SILENT | STOP | OFF_ROUTE
+  openedAt DateTime  @default(now())
+  closedAt DateTime?
+  /// Holat boshlangan payt (masalan turish boshlangan vaqt) — xabar matni uchun
+  since    DateTime?
+  info     String?
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, closedAt])
+  @@index([closedAt])
 }
 
 // ───────────────────────── Moliya: schyot / to'lov / kassa ─────────────────────────

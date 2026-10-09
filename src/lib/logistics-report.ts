@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { trackStats } from "@/lib/trips";
+import { tripKmMap } from "@/lib/trip-summary";
 import { delayLevel, logisticsSettings, tripDelayMin } from "@/lib/logistics";
 
 /**
@@ -30,14 +30,9 @@ export async function logisticsReport(from: Date, to: Date) {
     db.transportExpense.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true, vehicleId: true, driverId: true } }),
     db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true, type: true } }),
   ]);
-  // Yurilgan km — zavod haydovchilari GPS izidan (pudratchi izi ECO'da, bu yerga kirmaydi)
-  const pts = await db.tripPosition.findMany({ where: { tripId: { in: trips.map((t) => t.id) } }, orderBy: { at: "asc" }, select: { tripId: true, lat: true, lng: true, at: true } });
-  const kmByTrip = new Map<string, number>();
-  {
-    const g = new Map<string, { lat: number; lng: number; at: Date }[]>();
-    for (const p of pts) g.set(p.tripId, [...(g.get(p.tripId) ?? []), p]);
-    for (const [id, list] of g) kmByTrip.set(id, trackStats(list).meters / 1000);
-  }
+  // Yurilgan km — zavod haydovchilari GPS izidan (pudratchi izi ECO'da, bu yerga kirmaydi).
+  // Yopilgan reys — saqlangan yakundan (`Trip.distanceKm`), yakunsizi hisoblanib saqlanadi, ochig'i — keshdan
+  const kmByTrip = await tripKmMap(trips.filter((t) => t.status !== "CANCELLED").map((t) => t.id));
 
   const total = empty();
   const byDay = new Map<string, ReportRow>();

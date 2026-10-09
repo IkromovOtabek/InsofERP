@@ -263,6 +263,9 @@ const int = (min: number, max: number) => z.coerce.number().int("butun son").min
 const settingsSchema = z.object({
   lateWarnMin: int(1, 600), lateCritMin: int(1, 1440), gpsSilentMin: int(3, 240), loadedWarnMin: int(5, 600),
   assignLeadMin: int(10, 1440), shiftStartHour: int(0, 23), shiftEndHour: int(1, 24), avgSpeedKmh: int(5, 120),
+  // GPS ogohlantirishlari (lib/gps-watch.ts): 5 daqiqadan kam turish — svetofor/tirbandlik; 100 m dan yaqin — GPS xatosi
+  stopAlertMin: z.coerce.number().int("Uzoq turish: butun son").min(5, "Uzoq turish kamida 5 daqiqa").max(240, "Uzoq turish ko'pi bilan 240 daqiqa"),
+  offRouteM: z.coerce.number().int("Yo'ldan chiqish: butun son").min(100, "Yo'ldan chiqish kamida 100 m").max(5000, "Yo'ldan chiqish ko'pi bilan 5000 m"),
 });
 
 export async function saveLogisticsSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {

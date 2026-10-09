@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { haversineMeters } from "@/lib/geo";
 import { trackStats, type TrackPoint } from "@/lib/trips";
 import { logisticsDashboard } from "@/lib/logistics-dashboard";
+import { findStops as findStopsIn, groupBy } from "@/lib/trip-track";
 
 /**
  * GPS / Monitoring (TZ 9): tezlik, to'xtashlar, ETA, kechikish, harakat tarixi.
@@ -15,19 +15,9 @@ const STOP_MIN_MS = 5 * 60_000;
 
 export type Stop = { lat: number; lng: number; from: Date; to: Date; minutes: number };
 
+/** To'xtashlar — bir o'tishda, O(n) (`lib/trip-track.ts`). */
 export function findStops(points: TrackPoint[]): Stop[] {
-  const out: Stop[] = [];
-  let i = 0;
-  while (i < points.length) {
-    const a = points[i];
-    let j = i + 1;
-    while (j < points.length && haversineMeters(a.lat, a.lng, points[j].lat, points[j].lng) <= STOP_RADIUS_M) j++;
-    const last = points[j - 1];
-    const ms = last.at.getTime() - a.at.getTime();
-    if (ms >= STOP_MIN_MS) out.push({ lat: a.lat, lng: a.lng, from: a.at, to: last.at, minutes: Math.round(ms / 60000) });
-    i = j > i + 1 ? j : i + 1;
-  }
-  return out;
+  return findStopsIn(points, STOP_RADIUS_M, STOP_MIN_MS);
 }
 
 export type MonitorRow = Awaited<ReturnType<typeof logisticsDashboard>>["trips"][number] & {
@@ -42,8 +32,10 @@ export async function monitorRows(): Promise<{ rows: MonitorRow[]; gpsSilentMin:
     select: { tripId: true, lat: true, lng: true, at: true, speedKmh: true },
   });
   const now = Date.now();
+  // Reys bo'yicha guruhlash bir o'tishda — ilgari har reys uchun butun ro'yxat filtrlanardi (reyslar × nuqtalar)
+  const byTrip = groupBy(pts, (p) => p.tripId);
   const rows = active.map((t) => {
-    const mine = pts.filter((p) => p.tripId === t.id);
+    const mine = byTrip.get(t.id) ?? [];
     const track = mine.map((p) => ({ lat: p.lat, lng: p.lng, at: p.at }));
     const { meters, movingMs } = trackStats(track);
     const stops = findStops(track);
@@ -51,7 +43,8 @@ export async function monitorRows(): Promise<{ rows: MonitorRow[]; gpsSilentMin:
     const lastPt = mine[mine.length - 1];
     // Hozir turibdimi: oxirgi to'xtash oxirgi nuqtagacha davom etgan
     const stopNowMin = lastStop && lastPt && lastStop.to.getTime() === lastPt.at.getTime() ? Math.round((now - lastStop.from.getTime()) / 60000) : null;
-    const fixAt = t.fix?.at ?? lastPt?.at ?? null;
+    // "GPS jim" — telefondan oxirgi aloqa (nuqtasiz "tirikman" ham), bo'lmasa oxirgi nuqta
+    const fixAt = t.lastSeenAt ?? t.fix?.at ?? lastPt?.at ?? null;
     return {
       ...t,
       speedKmh: lastPt?.speedKmh != null ? Math.round(lastPt.speedKmh) : null,

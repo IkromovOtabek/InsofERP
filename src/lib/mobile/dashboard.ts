@@ -18,6 +18,7 @@ import { dayUtc } from "@/lib/davomat";
 import { periodId } from "./sex";
 import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
 import { lineTotal } from "@/lib/receipt-vat";
+import { tripPayKm } from "@/lib/trip-summary";
 import type { MobileUser } from "./auth";
 import type { CardFilter, HomeCard, HomeRow, HomeSection, SectionChart, Tone } from "./home";
 
@@ -854,13 +855,15 @@ async function driver(user: MobileUser, r: DashRange): Promise<RoleDashboard | n
   const me = await db.employee.findFirst({ where: { userId: user.id }, select: { id: true } });
   if (!me) return null;
   const [delivered, prev, created, fuel, issues] = await Promise.all([
-    db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { deliveredAt: true, qtyM3: true, order: { select: { distanceKm: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
+    db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { id: true, deliveredAt: true, qtyM3: true, distanceKm: true, summaryAt: true, order: { select: { distanceKm: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
     db.trip.aggregate({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { qtyM3: true } }),
     db.trip.groupBy({ by: ["status"], where: { driverId: me.id, createdAt: { gte: r.from, lt: r.to } }, _count: true }),
     db.fuelLog.aggregate({ where: { driverId: me.id, date: { gte: r.from, lt: r.to } }, _sum: { amount: true, liters: true } }),
     db.tripIssue.count({ where: { createdAt: { gte: r.from, lt: r.to }, trip: { driverId: me.id } } }),
   ]);
-  const rows = delivered.map((t) => ({ date: t.deliveredAt!, qty: t.qtyM3, unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", customer: t.order.customer.name, km: sum(t.order.distanceKm) * 2 }));
+  // Km — GPS izi bo'yicha (bir tomon × 2), iz yo'q bo'lsa zayavkadagi taxminiy masofa (`tripPayKm`)
+  const kms = await tripPayKm(delivered);
+  const rows = delivered.map((t) => ({ date: t.deliveredAt!, qty: t.qtyM3, unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", customer: t.order.customer.name, km: kms.get(t.id) ?? 0 }));
   const qty = rows.reduce((s, x) => s + sum(x.qty), 0);
   const km = rows.reduce((s, x) => s + x.km, 0);
   const total = created.reduce((s, c) => s + c._count, 0), cancelled = created.find((c) => c.status === "CANCELLED")?._count ?? 0;

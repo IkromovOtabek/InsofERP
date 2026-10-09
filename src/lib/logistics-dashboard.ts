@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { haversineMeters } from "@/lib/geo";
 import { liveTrips } from "@/lib/live";
+import { groupBy } from "@/lib/trip-track";
 import { transportCosts } from "@/lib/logistics-costs";
 import {
   ACTIVE_TRIP, dayRange, delayLevel, DRUM_MAX_MIN, expiryLevel, isConcreteTrip, ISSUE_KIND, logisticsSettings, minutesLabel, orderLogistics, tripDelayMin, tripPhase,
@@ -22,6 +23,8 @@ export type DashTrip = {
   qty: number; unit: string;
   plannedAt: Date | null; loadedAt: Date | null; departedAt: Date | null; arrivedAt: Date | null; deliveredAt: Date | null;
   delayMin: number | null; level: Level; fix: LiveFix | null; openIssues: number;
+  /** Telefondan oxirgi aloqa (nuqta yoki "tirikman"; ECO reysida — oxirgi nuqta) — "GPS jim" shundan. */
+  lastSeenAt: Date | null;
   /** Beton (m³) reysi — mikserda, baraban vaqti va qotish xavfi faqat shunga tegishli */
   concrete: boolean;
   /** Yuklangandan beri daqiqa (yetkazilmagan beton reysi uchun), aks holda null */
@@ -149,6 +152,7 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
       qty: Number(t.qtyM3), unit: unitOf(t.order.items),
       plannedAt: tripPlannedAt(t, t.order), loadedAt: t.loadedAt, departedAt: t.departedAt, arrivedAt: t.arrivedAt, deliveredAt: t.deliveredAt,
       delayMin: delay, level: delayLevel(delay, settings), fix, openIssues: t.issues.filter((i) => !i.resolvedAt).length,
+      lastSeenAt: t.lastSeenAt && (!fix || t.lastSeenAt > fix.at) ? t.lastSeenAt : fix?.at ?? null,
       concrete: isConcreteTrip(t),
       drumMin: isConcreteTrip(t) && t.loadedAt && (t.status === "LOADED" || t.status === "ON_ROAD") ? mins(t.loadedAt, now) : null,
     };
@@ -168,8 +172,9 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
   const shiftMin = Math.max(60, (settings.shiftEndHour - settings.shiftStartHour) * 60);
   const shiftStart = new Date(from); shiftStart.setHours(settings.shiftStartHour, 0, 0, 0);
   const shiftEnd = new Date(from); shiftEnd.setHours(settings.shiftEndHour, 0, 0, 0);
+  const tripsByVehicle = groupBy(trips, (t) => t.vehicleId);
   const dashVehicles: DashVehicle[] = vehicles.map((v) => {
-    const vt = trips.filter((t) => t.vehicleId === v.id);
+    const vt = tripsByVehicle.get(v.id) ?? [];
     const liveState = vehicleLive(v, vt, now);
     const current = vt.find((t) => ACTIVE_TRIP.includes(t.status)) ?? null;
     const inRange = (x: Date | null) => !!x && x >= from && x < to;
@@ -226,9 +231,10 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
         alerts.push({ level: t.level, title: `${t.noteNo} kechikmoqda`, text: `${t.plate} · ${t.driver} · +${minutesLabel(t.delayMin)}`, href: `/trips/${t.id}` });
       }
       if (t.status === "ON_ROAD" && !t.arrivedAt) {
-        const age = t.fix ? mins(t.fix.at, now) : t.departedAt ? mins(t.departedAt, now) : null;
+        // Oxirgi aloqa: nuqta yoki nuqtasiz "tirikman" (turgan mashina ham 60 s da yuboradi)
+        const age = t.lastSeenAt ? mins(t.lastSeenAt, now) : t.departedAt ? mins(t.departedAt, now) : null;
         if (age != null && age >= settings.gpsSilentMin) {
-          alerts.push({ level: "crit", title: `${t.plate}: GPS jim`, text: `${t.fix ? `oxirgi nuqta ${minutesLabel(age)} oldin` : `yo'lga chiqqaniga ${minutesLabel(age)}, nuqta yo'q`} · ${t.driver}`, href: `/trips/${t.id}` });
+          alerts.push({ level: "crit", title: `${t.plate}: GPS jim`, text: `${t.lastSeenAt ? `oxirgi signal ${minutesLabel(age)} oldin` : `yo'lga chiqqaniga ${minutesLabel(age)}, nuqta yo'q`} · ${t.driver}`, href: `/trips/${t.id}` });
         }
       }
       if (t.status === "LOADED" && t.loadedAt && mins(t.loadedAt, now) >= settings.loadedWarnMin) {
@@ -247,9 +253,10 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
         });
       }
     }
+    const rawOrders = new Map(orders.map((x) => [x.id, x]));
     for (const o of dashOrders) {
       if (o.status === "CANCELLED" || o.status === "DELIVERED" || o.status === "CLOSED") continue;
-      const raw = orders.find((x) => x.id === o.id);
+      const raw = rawOrders.get(o.id);
       if (raw && raw.lat == null) alerts.push({ level: "warn", title: `${o.orderNo}: obyekt nuqtasi yo'q`, text: `${o.customer} — navigatsiya va ETA ishlamaydi`, href: `/orders/${o.id}` });
     }
     for (const t of trips) {
@@ -278,8 +285,9 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
     if (ACTIVE_TRIP.includes(t.status as never)) d.active = true;
     drv.set(t.driverId, d);
   }
+  const deliveredByDriver = groupBy(delivered, (t) => t.driverId);
   for (const d of drv.values()) {
-    const ds = delivered.filter((t) => t.driverId === d.id && t.loadedAt && t.deliveredAt).map((t) => mins(t.loadedAt!, t.deliveredAt!));
+    const ds = (deliveredByDriver.get(d.id) ?? []).filter((t) => t.loadedAt && t.deliveredAt).map((t) => mins(t.loadedAt!, t.deliveredAt!));
     d.avgMin = ds.length ? Math.round(ds.reduce((a, b) => a + b, 0) / ds.length) : null;
   }
 

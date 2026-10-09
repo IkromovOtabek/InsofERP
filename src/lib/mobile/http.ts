@@ -15,7 +15,9 @@ const CORS = {
 };
 
 export const jsonOk = <T>(data: T) => NextResponse.json(data, { headers: CORS });
-export const jsonErr = (code: string, message: string, status: number) => NextResponse.json({ code, message }, { status, headers: CORS });
+/** `extra` — qo'shimcha maydonlar (masalan GPS izida `stop: true`); eski ilova faqat `code`/`message` ni o'qiydi. */
+export const jsonErr = (code: string, message: string, status: number, extra?: Record<string, unknown>) =>
+  NextResponse.json({ ...extra, code, message }, { status, headers: CORS });
 
 export function preflight() {
   return new NextResponse(null, { status: 204, headers: CORS });
@@ -27,7 +29,7 @@ export async function handle<T>(fn: () => Promise<T>) {
     return jsonOk(await fn());
   } catch (e) {
     if (e instanceof MobileAuthError) return jsonErr(e.code, e.message, e.status);
-    if (e instanceof ListError) return jsonErr(e.code, e.message, e.status);
+    if (e instanceof ListError) return jsonErr(e.code, e.message, e.status, e.extra);
     // Prisma "yozuv topilmadi" (findUniqueOrThrow / update mavjud bo'lmagan id bilan) — mijoz yuborgan
     // noto'g'ri id, server xatosi emas: 404. Aks holda har bir begona/eskirgan id 500 bo'lib jurnalni to'ldirardi.
     if ((e as { code?: unknown })?.code === "P2025") return jsonErr("NOT_FOUND", "Hujjat topilmadi", 404);

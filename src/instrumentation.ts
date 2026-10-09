@@ -12,6 +12,7 @@ export async function register() {
   // Test rejimi (INSOF_ENV=test): lokal test bazasi va real kalitsiz muhitdan boshqasida server ishlamasin.
   // `next dev` instrumentation xatosini faqat log qilib ishlashda davom etadi — shuning uchun exit.
   const { isTestMode, assertSafeTestEnv } = await import("./lib/test-mode");
+  startWatchers(isTestMode());
   if (!isTestMode()) return;
   try {
     assertSafeTestEnv();
@@ -20,4 +21,17 @@ export async function register() {
     console.error(e instanceof Error ? e.message : e);
     process.exit(1);
   }
+}
+
+/**
+ * Davriy ishlar — korxona jarayonida (har korxona alohida `insof-erp@<slug>` va alohida baza):
+ * GPS tekshiruvi har daqiqada (`lib/gps-watch.ts`; ikki jarayon bitta bazada — advisory lock).
+ * Markaziy panelda (INSOF_MODE=control) va build paytida ishlamaydi. `GPS_WATCH=off` — o'chirish;
+ * test rejimida sukut bo'yicha o'chiq (QA tekshiruvni o'zi chaqiradi), `GPS_WATCH=on` — yoqish.
+ */
+function startWatchers(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.GPS_WATCH ?? "").trim().toLowerCase();
+  if (flag === "off" || (test && flag !== "on")) return;
+  void import("./lib/gps-watch").then((m) => m.startGpsWatch()).catch((e) => console.error("[gps-watch] ishga tushmadi", e));
 }

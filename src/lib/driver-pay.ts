@@ -5,13 +5,16 @@ import { dayTimes, shiftOf } from "@/lib/attendance-time";
 import { employeesInWindow, normMonth } from "@/lib/attendance-report";
 import { soleUnit } from "@/lib/unit";
 import { totalsText } from "@/lib/mobile/fmt";
+import { tripPayKm } from "@/lib/trip-summary";
+import { groupBy } from "@/lib/trip-track";
 
 /**
  * Haydovchilar: reyslar va davomat — haydovchi ish haqining asosi (asosan yetkazilgan reyslar soni).
  *
  * Reys oyga yetkazilgan kuni bo'yicha tushadi (`deliveredAt`, server vaqti — Asia/Tashkent), faqat DELIVERED.
  * Hajm — reys miqdori zayavka mahsuloti birligida (m³ va dona qo'shilmaydi).
- * Km — taxminiy: zavod → obyekt → zavod (`Order.distanceKm × 2`), haydovchi bosh sahifasidagi bilan bir xil.
+ * Km — zavod → obyekt → zavod: GPS izi bo'yicha bir tomon × 2 (`Trip.distanceKm`, `tripPayKm`), iz yo'q yoki
+ * to'liq bo'lmasa — taxminiy `Order.distanceKm × 2`; haydovchi bosh sahifasidagi bilan bir xil.
  * Ish kuni — davomatda "Keldi" bo'lgan YOKI shu kuni reys bilan ishlagan kun (haydovchi har doim ham "Keldim"
  * bosmaydi): reys faolligi birinchi yuklash/yo'lga chiqishdan oxirgi yetkazish/qaytishgacha.
  */
@@ -28,6 +31,7 @@ function monthRange(month: string) {
 
 const TRIP_SELECT = {
   id: true, deliveryNoteNo: true, driverId: true, qtyM3: true, loadedAt: true, departedAt: true, deliveredAt: true, returnedAt: true,
+  distanceKm: true, summaryAt: true,
   vehicle: { select: { plate: true } },
   order: { select: { distanceKm: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true, name: true } } } } } },
 } as const;
@@ -35,12 +39,12 @@ const TRIP_SELECT = {
 type TripRow = {
   id: string; deliveryNoteNo: string; driverId: string; qtyM3: unknown;
   loadedAt: Date | null; departedAt: Date | null; deliveredAt: Date | null; returnedAt: Date | null;
+  distanceKm: number | null; summaryAt: Date | null;
   vehicle: { plate: string };
   order: { distanceKm: unknown; customer: { name: string }; items: { qtyM3: unknown; product: { unit: string; name: string } }[] };
 };
 
 const unitOf = (t: TripRow) => soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: String(i.qtyM3) }))) ?? "m3";
-const kmOf = (t: TripRow) => Number(t.order.distanceKm ?? 0) * 2;
 const qtyRows = (list: TripRow[]) => list.map((t) => ({ unit: unitOf(t), qty: Number(t.qtyM3) }));
 
 /** Haydovchi lavozimidagi (Otdel kadr belgilagan) yoki shu oyda reys qilgan xodimlar. */
@@ -77,6 +81,8 @@ export async function driversMonth(rawMonth?: string | null): Promise<DriversMon
   const { from, to } = monthRange(month);
   const days = monthDays(month);
   const trips = (await db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to } }, select: TRIP_SELECT })) as TripRow[];
+  const kms = await tripPayKm(trips);
+  const kmOf = (t: TripRow) => kms.get(t.id) ?? 0;
   const drivers = await driversFor(month, [...new Set(trips.map((t) => t.driverId))]);
   const att = await db.attendance.findMany({
     where: { employeeId: { in: drivers.map((d) => d.id) }, date: { gte: dayUtc(days[0]!.iso), lte: dayUtc(days[days.length - 1]!.iso) } },
@@ -137,10 +143,11 @@ export async function driverMonth(employeeId: string, rawMonth?: string | null):
     db.trip.findMany({ where: { driverId: employeeId, status: "DELIVERED", deliveredAt: { gte: from, lt: to } }, orderBy: { deliveredAt: "asc" }, select: TRIP_SELECT }) as Promise<TripRow[]>,
     db.attendance.findMany({ where: { employeeId, date: { gte: dayUtc(days[0]!.iso), lte: dayUtc(days[days.length - 1]!.iso) } }, select: { date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true } }),
   ]);
+  const kms = await tripPayKm(trips);
+  const kmOf = (t: TripRow) => kms.get(t.id) ?? 0;
   const shift = shiftOf(d.workSchedule);
   const attBy = new Map(att.map((a) => [isoDay(a.date), a]));
-  const tripsBy = new Map<string, TripRow[]>();
-  for (const t of trips) { const k = localDay(t.deliveredAt!); tripsBy.set(k, [...(tripsBy.get(k) ?? []), t]); }
+  const tripsBy = groupBy(trips, (t) => localDay(t.deliveredAt!));
   const now = today();
   const out: DriverDay[] = days.filter((x) => x.iso <= now).reverse().flatMap((x) => {
     const list = tripsBy.get(x.iso) ?? [];

@@ -20,6 +20,7 @@
     "ai": "tsx scripts/ai-ask.ts",
     "bot:webhook": "tsx scripts/telegram-webhook.ts",
     "eco:sync": "tsx scripts/eco-sync.ts",
+    "gps:watch": "tsx scripts/gps-watch.ts",
     "gateway": "tsx scripts/telegram-gateway.ts",
     "security:check": "tsx scripts/security-check.ts",
     "control:migrate": "prisma migrate deploy --schema prisma/control/schema.prisma",

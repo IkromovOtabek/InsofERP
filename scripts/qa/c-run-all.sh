@@ -7,7 +7,7 @@
 #   QA_FACE_NONCE=on npx tsx scripts/qa/c-face.ts   (run-all.sh da "geo" to'plami ichida)
 cd "$(dirname "$0")/../.."
 fail=0
-for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations c-face; do
+for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations c-face c-gps; do
   echo "════════ $t"
   npx tsx "scripts/qa/$t.ts" || fail=1
 done

@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { eco, ecoEnabled, type EcoLiveTrip, type EcoOdometer, type EcoStatus, type EcoTrack } from "@/lib/eco/client";
 import { visibleTrips, type Viewer } from "@/lib/eco/visibility";
-import { trackStats, tripTrack, tripTrackStats, type TrackPoint } from "@/lib/trips";
+import { trackStats, tripTrack, type TrackPoint } from "@/lib/trips";
+import { tripStats } from "@/lib/trip-summary";
 
 /**
  * Xaritadagi mashinalar — IKKI manbadan.
@@ -38,12 +39,13 @@ async function erpLive(): Promise<EcoLiveTrip[]> {
     take: 200,
   });
   if (trips.length === 0) return [];
-  const stats = await tripTrackStats(trips.map((t) => t.id));
+  // Ochiq reys statistikasi keshdan (`lib/trip-summary.ts`) — xarita har 12 s da butun izni qayta o'qimaydi
+  const stats = await tripStats(trips.map((t) => t.id));
   return trips
-    .filter((t) => stats.has(t.id))
+    .filter((t) => stats.get(t.id)?.last)
     .map((t) => {
       const st = stats.get(t.id)!;
-      const p = st.last;
+      const p = st.last!;
       return {
         ref: t.deliveryNoteNo,
         deliveryId: t.ecoDeliveryId ?? t.id,
@@ -60,14 +62,18 @@ async function erpLive(): Promise<EcoLiveTrip[]> {
         plannedAt: (t.plannedAt ?? t.order.deliveryDate).toISOString(),
         departedAt: (t.departedAt ?? t.loadedAt)?.toISOString() ?? null,
         slaBreached: false,
-        position: { deliveryId: t.ecoDeliveryId ?? t.id, lat: p.lat, lng: p.lng, at: p.at.toISOString(), etaMin: null },
+        // `at` — oxirgi nuqtaning haqiqiy (qurilma) vaqti; tezlik va yo'nalish Trip'dagi oxirgi nuqtadan
+        position: {
+          deliveryId: t.ecoDeliveryId ?? t.id, lat: p.lat, lng: p.lng, at: p.at.toISOString(), etaMin: null,
+          ...(t.lastSpeedKmh != null ? { speedKmh: t.lastSpeedKmh } : {}), ...(t.lastHeading != null ? { heading: t.lastHeading } : {}),
+        },
         // Yurilgan yo'l shu yerda hisoblanadi: ro'yxatda ham, kartochkada ham bir xil raqam
         odometer: {
           meters: Math.round(st.meters),
           points: st.points,
           movingMinutes: st.minutes,
           avgSpeedKmh: st.minutes > 0 ? Math.round((st.meters / 1000) / (st.minutes / 60)) : null,
-          maxSpeedKmh: null,
+          maxSpeedKmh: st.maxSpeedKmh,
         },
       } satisfies EcoLiveTrip;
     });

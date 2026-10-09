@@ -135,7 +135,7 @@ export function listsFor(role: Role, perms?: MobileUser["perms"]) {
 }
 
 export class ListError extends Error {
-  constructor(readonly code: string, message: string, readonly status: number) { super(message); }
+  constructor(readonly code: string, message: string, readonly status: number, readonly extra?: Record<string, unknown>) { super(message); }
 }
 
 const sum = (n: unknown) => Number(n ?? 0);

@@ -161,6 +161,17 @@ export type FleetTruck = {
   dest?: { lat: number; lng: number } | null;
   /** Mahsulot(lar) nomi — "Beton M300 (B22.5)" */
   product?: string | null;
+  /** Oxirgi nuqtadagi tezlik (km/soat) va yo'nalish (0–360°) — `./fleet.ts`. */
+  speedKmh?: number | null;
+  heading?: number | null;
+  /** GPS eskirgan: telefondan oxirgi aloqa `gpsSilentMin` daqiqadan eski (xaritada kulrang). */
+  stale?: boolean;
+  /** Telefondan oxirgi aloqa (nuqta yoki "tirikman"), ISO. */
+  lastSeenAt?: string | null;
+  /** So'nggi 15 daqiqadagi iz (soddalashtirilgan) — mashina orqasidagi "dum". */
+  trail?: { lat: number; lng: number }[];
+  /** Ochiq avtomatik ogohlantirishlar: GPS jim, uzoq turibdi, yo'ldan chiqdi (`lib/gps-watch.ts`). */
+  alerts?: { kind: string; title: string; info: string | null; since: string | null; openedAt: string }[];
 };
 
 /** Xaritadagi bitta mashina. `km` — reys boshidan beri GPS izi bo'yicha yurilgan yo'l. */
@@ -176,6 +187,10 @@ export type LiveTruck = {
   status: string;
   km: number;
   etaMin: number | null;
+  /** Oxirgi nuqtaning haqiqiy vaqti (ISO), tezligi va yo'nalishi. */
+  at?: string;
+  speedKmh?: number | null;
+  heading?: number | null;
 };
 
 /** Har bir rolning "ishchi" ro'yxati — `lib/mobile/list.ts` dagi kalit. */
@@ -783,6 +798,9 @@ export async function liveTrucks(user: MobileUser): Promise<LiveTruck[]> {
         status: ecoLabel(t.status)?.label ?? t.status,
         km: Math.round(t.odometer.meters / 100) / 10,
         etaMin: t.position!.etaMin,
+        at: t.position!.at,
+        speedKmh: t.position!.speedKmh ?? null,
+        heading: t.position!.heading ?? null,
       }));
   } catch {
     return [];

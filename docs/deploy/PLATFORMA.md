@@ -305,6 +305,13 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
 - `/api/health` — login'siz, 200 `{"ok":true,"version":"<sha>"}` yoki 503; nginx shablonlarida tashqaridan yopiq.
 - Panel bosh sahifasi har ochilganda jonli tekshiradi (ERP javobi, baza, ECO `/v1/health`) va kunlik suratni saqlaydi.
 - To'xtatilgan korxona: xodimlar veb/mobilda darhol chiqariladi, sabab login sahifasida ko'rinadi; IT kira oladi.
+- **GPS davriy tekshiruvi** (`src/lib/gps-watch.ts`) — har korxona jarayoni (`insof-erp@<slug>`) o'zi, har daqiqada:
+  yo'ldagi reyslarda «GPS jim» / «uzoq turibdi» / «yo'ldan chiqdi» → logistikaga bir marta push (`TripAlert`, holat
+  o'tgach o'zi yopiladi); kuniga bir marta 90 kundan eski `TripPosition` o'chiriladi (avval reys yakuni saqlanadi).
+  Cron/systemd timer kerak emas; deploy paytida eski va yangi jarayon bir bazada — Postgres advisory lock +
+  `CompanySettings.gpsWatchAt` (daqiqasiga bir marta). O'chirish: `tenants/<slug>.env` da `GPS_WATCH=off`.
+  Qo'lda: `cd /var/www/insof-erp/current && ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npm run -s gps:watch -- --force`
+  (`--cleanup` — tozalash ham hozir). Jurnal: `journalctl -u insof-erp@<slug> | grep gps-watch`.
 
 ## Monitoring agenti (insof-agent)
 

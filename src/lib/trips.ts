@@ -11,6 +11,8 @@ import { lockStock } from "@/lib/stock-lock";
 import { driverPositionNames } from "@/lib/positions";
 import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
 import { prepayShortError } from "@/lib/payments";
+import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
+import { saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -250,6 +252,8 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
   }));
   if (delivered === null) return { changed: false, orderId: t.orderId };
   await checkFastDelivery(id, userId);
+  // Reys yakuni (km, vaqt, iz). Kech kelgan bufer nuqtalari bo'lsa `recordTrack` qayta hisoblaydi
+  await saveTripSummarySafe(id);
 
   // Zayavkani kiritgan sotuvchi mijozga javob beradi; logistika keyingi reysni rejalashtiradi
   const done = delivered >= total - 0.001;
@@ -379,6 +383,8 @@ export async function tripClosed(id: string, userId: string, q?: DeliveryQty): P
     }
     return { warning: undefined };
   }));
+  // Yopilganda yakun yangilanadi — yetkazilgandan keyin kelgan nuqtalar ham kirsin
+  if (ok) await saveTripSummarySafe(id);
   if (ok?.warning && ok.warning.startsWith("Diqqat")) {
     const w = ok.warning;
     notifyAfter(() => notifyRoles(["SALES", "ACCOUNTING"], { type: "TRIP_DELIVERED", title: `Zayavka ${t.order.orderNo}: qabul kamaydi`, body: w, link: { key: "orders", id: t.orderId } }, { except: userId }));
@@ -440,69 +446,43 @@ export type TrackPoint = { lat: number; lng: number; at: Date };
  * ikkala manbani qo'shib ko'rsatadi (`lib/eco/client.ts`).
  */
 export async function tripTrack(tripId: string): Promise<TrackPoint[]> {
-  return db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true } });
+  const pts = await db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true } });
+  if (pts.length) return pts;
+  // Nuqtalar 90 kundan keyin o'chiriladi (`lib/gps-watch.ts`) — xaritaga saqlangan soddalashtirilgan iz
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: { trackLine: true, lastAt: true } });
+  const at = t?.lastAt ?? new Date(0);
+  return decodePolyline(t?.trackLine).map((p) => ({ ...p, at }));
 }
 
 /** Bitta reys bo'yicha iz xulosasi — oxirgi joylashuv va bosib o'tilgan yo'l. */
 export type TripTrackStat = { last: TrackPoint; meters: number; points: number; minutes: number };
 
 /**
- * GPS "titrashi": turgan mashina ham nuqtadan nuqtaga 2-10 metr sakrab turadi.
- * Shundan kichik siljishni yo'lga qo'shsak, hovlida tunagan mikser ertalabgacha
- * "10 km yurgan" bo'lib chiqardi.
- */
-const JITTER_M = 12;
-/**
- * Ikki nuqta orasidagi tanaffus shundan uzun bo'lsa — mashina yurmagan, shunchaki
- * ilova yopilgan yoki telefon o'chgan. Bunday tanaffus "yo'lda o'tgan vaqt" ga
- * qo'shilmaydi: aks holda tunab qolgan reys "17 soat yurgan" bo'lib ko'rinardi.
- */
-const GAP_MS = 5 * 60_000;
-
-/**
- * Nuqtalar ketma-ketligidan yo'l va harakat vaqti.
+ * Nuqtalar ketma-ketligidan yo'l va harakat vaqti — Insof ECO bilan bir xil algoritm (`lib/trip-track.ts`):
+ * 15 m dan kichik siljish (titrash) va 180 km/soat dan tez sakrash tashlanadi, 4 km/soat dan sekin
+ * oraliq va 5 daqiqadan uzun tanaffus harakat vaqtiga kirmaydi.
  *
  * Bitta joyda: ilovadagi raqam ham, vebdagi raqam ham shu yerdan chiqadi
  * (`lib/live.ts` ham shuni chaqiradi) — ikki joyda ikki xil hisoblansa ajralib ketardi.
  */
 export function trackStats(points: TrackPoint[]): { meters: number; movingMs: number } {
-  let meters = 0, movingMs = 0;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i];
-    if (!a || !b) continue;
-    const d = haversineMeters(a.lat, a.lng, b.lat, b.lng);
-    if (d < JITTER_M) continue;
-    const dt = b.at.getTime() - a.at.getTime();
-    if (dt > GAP_MS) continue; // tanaffus — na yo'l, na vaqt
-    meters += d;
-    movingMs += Math.max(0, dt);
-  }
-  return { meters: Math.round(meters), movingMs };
+  const s = summarizeTrack(points);
+  return { meters: s.meters, movingMs: s.movingSec * 1000 };
 }
 
 /**
  * Bir nechta reysning oxirgi nuqtasi VA yurilgan masofasi.
  *
- * Masofa to'g'ri chiziq emas — nuqtadan nuqtaga qo'shib boriladi, ya'ni haqiqiy yo'l.
- * Hisob bu yerda, bitta so'rovda: xaritadagi ro'yxat ham, reys kartochkasi ham, haydovchining
- * o'z ekrani ham bir xil raqamni ko'rsatishi kerak — ikki joyda hisoblansa ular ajralib ketardi.
+ * Yopilgan reys — saqlangan yakundan; ochiq reys — keshlangan hisobdan (`lib/trip-summary.ts`),
+ * ya'ni xarita har 12 s da so'raganda butun iz qayta o'qilmaydi. Xaritadagi ro'yxat ham, reys
+ * kartochkasi ham, haydovchining o'z ekrani ham bir xil raqamni ko'rsatadi.
  */
 export async function tripTrackStats(tripIds: string[]): Promise<Map<string, TripTrackStat>> {
-  if (tripIds.length === 0) return new Map();
-  const rows = await db.tripPosition.findMany({
-    where: { tripId: { in: tripIds } },
-    orderBy: { at: "asc" },
-    select: { tripId: true, lat: true, lng: true, at: true },
-  });
-  const byTrip = new Map<string, TrackPoint[]>();
-  for (const r of rows) byTrip.set(r.tripId, [...(byTrip.get(r.tripId) ?? []), { lat: r.lat, lng: r.lng, at: r.at }]);
-
+  const stats = await tripStats(tripIds);
   const out = new Map<string, TripTrackStat>();
-  for (const [tripId, pts] of byTrip) {
-    const last = pts[pts.length - 1];
-    if (!last) continue;
-    const { meters, movingMs } = trackStats(pts);
-    out.set(tripId, { last, meters, points: pts.length, minutes: Math.round(movingMs / 60000) });
+  for (const [id, s] of stats) {
+    if (!s.last) continue;
+    out.set(id, { last: { lat: s.last.lat, lng: s.last.lng, at: s.last.at }, meters: s.meters, points: s.points, minutes: s.minutes });
   }
   return out;
 }

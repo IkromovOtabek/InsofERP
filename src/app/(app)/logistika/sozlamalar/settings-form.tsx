@@ -4,12 +4,14 @@ import { useActionState } from "react";
 import { saveLogisticsSettings } from "../actions";
 import { Button, Field, FormActions, FormError, FormSuccess, Input } from "@/components/ui";
 
-type V = { lateWarnMin: number; lateCritMin: number; gpsSilentMin: number; loadedWarnMin: number; assignLeadMin: number; shiftStartHour: number; shiftEndHour: number; avgSpeedKmh: number };
+type V = { lateWarnMin: number; lateCritMin: number; gpsSilentMin: number; loadedWarnMin: number; assignLeadMin: number; shiftStartHour: number; shiftEndHour: number; avgSpeedKmh: number; stopAlertMin: number; offRouteM: number };
 
 const FIELDS: [keyof V, string, string][] = [
   ["lateWarnMin", "Kechikish — e'tibor, daq", "Reys rejadagi vaqtdan shuncha kechiksa sariq"],
   ["lateCritMin", "Kechikish — kritik, daq", "Shuncha kechiksa qizil"],
-  ["gpsSilentMin", "GPS jim, daq", "Yo'ldagi mashinadan nuqta kelmasa ogohlantirish"],
+  ["gpsSilentMin", "GPS jim, daq", "Yo'ldagi mashinadan signal kelmasa — xabar (3–240)"],
+  ["stopAlertMin", "Uzoq turish, daq", "Yo'lda bir joyda shuncha tursa — xabar (5–240)"],
+  ["offRouteM", "Yo'ldan chiqish, m", "Rejadagi yo'ldan shuncha uzoqlashsa — xabar (100–5000)"],
   ["loadedWarnMin", "Yuklangan, chiqmagan, daq", "Beton qotish xavfi (×3 — kritik)"],
   ["assignLeadMin", "Reyssiz zayavka, daq", "Yetkazishga shuncha qolganda transport yo'q — kritik"],
   ["avgSpeedKmh", "O'rtacha tezlik, km/soat", "GPS ETA bermasa — masofa ÷ shu tezlik"],

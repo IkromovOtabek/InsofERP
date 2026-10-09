@@ -1,0 +1,237 @@
+import type { Prisma } from "@/generated/prisma";
+import { db } from "@/lib/db";
+import {
+  decodePolyline, encodePolyline, LINE_TOLERANCE_M, simplifyLine, summarizeTrack, TrackAccumulator,
+  type GpsPoint, type LatLng, type TrackSummary,
+} from "@/lib/trip-track";
+
+/**
+ * Reys izi bazada: yakun (km, vaqt, soddalashtirilgan iz) va ochiq reys uchun keshlangan hisob.
+ *
+ *  - Yopilgan reys (`summaryAt` bor) — hamma raqam Trip ustunlaridan, nuqtalar o'qilmaydi
+ *    (90 kundan keyin nuqtalar o'chiriladi — yakun qoladi).
+ *  - Ochiq reys — `TrackAccumulator` jarayon xotirasida: har so'rovda faqat yangi kelgan nuqtalar
+ *    qo'shiladi. Har korxona alohida jarayon, shuning uchun kesh korxonalar orasida aralashmaydi.
+ */
+
+/** Hisob uchun kerakli Trip ustunlari. */
+const TRIP_COLS = {
+  id: true, status: true, lastLat: true, lastLng: true, lastAt: true, lastSeenAt: true, lastSpeedKmh: true, lastHeading: true,
+  distanceKm: true, movingSec: true, totalSec: true, maxSpeedKmh: true, avgSpeedKmh: true, trackLine: true, trackPoints: true, summaryAt: true,
+} as const;
+
+export type TripStat = {
+  last: GpsPoint | null;
+  meters: number;
+  points: number;
+  /** Harakat vaqti, daqiqa (eski `TripTrackStat.minutes` bilan mos). */
+  minutes: number;
+  movingSec: number;
+  totalSec: number;
+  maxSpeedKmh: number | null;
+  avgSpeedKmh: number | null;
+  /** Yakundan olinganmi (yopilgan reys) yoki hozir hisoblanganmi. */
+  final: boolean;
+};
+
+type Entry = { rev: number; acc: TrackAccumulator; maxCreated: Date; builtAt: number };
+const cache = new Map<string, Entry>();
+/** Kesh shundan eski bo'lsa to'liq qayta quriladi (to'g'ridan-to'g'ri bazaga yozilgan nuqtalar ham ko'rinsin). */
+const CACHE_FULL_MS = 2 * 60_000;
+const CACHE_MAX = 500;
+
+const SELECT_POINT = { lat: true, lng: true, at: true, speedKmh: true, createdAt: true } as const;
+
+/**
+ * Ochiq reysning yig'uvchisi — keshdan, yangi nuqtalar qo'shilgan holda.
+ * `rev` — Trip.lastSeenAt: telefon nimadir yuborgandagina o'zgaradi, aks holda bazaga murojaat yo'q.
+ */
+async function accumulator(tripId: string, rev: number): Promise<TrackAccumulator> {
+  const e = cache.get(tripId);
+  const now = Date.now();
+  if (e && e.rev === rev && now - e.builtAt < CACHE_FULL_MS) return e.acc;
+  if (e && now - e.builtAt < CACHE_FULL_MS) {
+    const fresh = await db.tripPosition.findMany({ where: { tripId, createdAt: { gt: e.maxCreated } }, orderBy: { at: "asc" }, select: SELECT_POINT });
+    const lastAt = e.acc.last?.at.getTime() ?? -Infinity;
+    // Hammasi oxirgi nuqtadan keyin — davom ettiramiz; eski bufer kelgan bo'lsa (vaqt orqada) — to'liq qayta
+    if (fresh.every((p) => p.at.getTime() > lastAt)) {
+      for (const p of fresh) e.acc.push(p);
+      if (fresh.length) e.maxCreated = fresh.reduce((m, p) => (p.createdAt > m ? p.createdAt : m), e.maxCreated);
+      e.rev = rev;
+      return e.acc;
+    }
+  }
+  const all = await db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: SELECT_POINT });
+  const acc = new TrackAccumulator();
+  let maxCreated = new Date(0);
+  for (const p of all) { acc.push(p); if (p.createdAt > maxCreated) maxCreated = p.createdAt; }
+  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);
+  cache.set(tripId, { rev, acc, maxCreated, builtAt: now });
+  return acc;
+}
+
+/** Keshni tashlash — reys yopilganda (yakun endi bazada) yoki test. */
+export function forgetTrack(tripId?: string) {
+  if (tripId) { cache.delete(tripId); lineMemo.delete(tripId); } else { cache.clear(); lineMemo.clear(); }
+}
+
+type TripCols = Prisma.TripGetPayload<{ select: typeof TRIP_COLS }>;
+
+function fromSummary(t: TripCols): TripStat {
+  return {
+    last: t.lastLat != null && t.lastLng != null && t.lastAt ? { lat: t.lastLat, lng: t.lastLng, at: t.lastAt, speedKmh: t.lastSpeedKmh } : null,
+    meters: Math.round((t.distanceKm ?? 0) * 1000),
+    points: t.trackPoints ?? 0,
+    minutes: Math.round((t.movingSec ?? 0) / 60),
+    movingSec: t.movingSec ?? 0, totalSec: t.totalSec ?? 0,
+    maxSpeedKmh: t.maxSpeedKmh, avgSpeedKmh: t.avgSpeedKmh, final: true,
+  };
+}
+
+function fromAcc(acc: TrackAccumulator): TripStat {
+  const s = acc.summary();
+  return {
+    last: acc.last, meters: s.meters, points: s.rawPoints, minutes: s.movingMinutes, movingSec: s.movingSec, totalSec: s.totalSec,
+    maxSpeedKmh: s.maxSpeedKmh, avgSpeedKmh: s.avgSpeedKmh, final: false,
+  };
+}
+
+/**
+ * Bir nechta reys statistikasi: yopilganlari yakundan, ochiqlari keshlangan hisobdan.
+ * Iz yo'q reys natijada bo'lmaydi (eski `tripTrackStats` bilan bir xil xulq).
+ */
+export async function tripStats(tripIds: string[]): Promise<Map<string, TripStat>> {
+  const out = new Map<string, TripStat>();
+  if (tripIds.length === 0) return out;
+  const trips = await db.trip.findMany({ where: { id: { in: [...new Set(tripIds)] } }, select: TRIP_COLS });
+  await Promise.all(trips.map(async (t) => {
+    if (t.summaryAt) {
+      if (t.trackPoints) out.set(t.id, fromSummary(t));
+      return;
+    }
+    const acc = await accumulator(t.id, t.lastSeenAt?.getTime() ?? 0);
+    if (acc.raw > 0 && acc.last) out.set(t.id, fromAcc(acc));
+  }));
+  return out;
+}
+
+/** Saqlanadigan yakun: statistika + soddalashtirilgan iz. */
+export type StoredSummary = TrackSummary & { line: LatLng[]; polyline: string };
+
+export function buildSummary(points: GpsPoint[]): StoredSummary {
+  const s = summarizeTrack(points);
+  const line = simplifyLine(s.kept, LINE_TOLERANCE_M).map((p) => ({ lat: p.lat, lng: p.lng }));
+  return { ...s, line, polyline: encodePolyline(line) };
+}
+
+/**
+ * Reys yakunini hisoblab saqlash — yetkazilganda, yopilganda, kech kelgan nuqtalardan keyin va
+ * tozalashdan oldin. Iz bo'lmasa ham `summaryAt` qo'yiladi (distanceKm = null) — qayta-qayta hisoblanmasin.
+ */
+export async function saveTripSummary(tripId: string): Promise<StoredSummary | null> {
+  const pts = await db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true, speedKmh: true, heading: true } });
+  const s = buildSummary(pts);
+  const last = pts[pts.length - 1];
+  await db.trip.update({
+    where: { id: tripId },
+    data: {
+      distanceKm: pts.length ? s.distanceKm : null,
+      movingSec: pts.length ? s.movingSec : null,
+      totalSec: pts.length ? s.totalSec : null,
+      maxSpeedKmh: s.maxSpeedKmh,
+      avgSpeedKmh: s.avgSpeedKmh,
+      trackLine: pts.length ? s.polyline : null,
+      trackPoints: pts.length,
+      summaryAt: new Date(),
+      ...(last ? { lastLat: last.lat, lastLng: last.lng, lastAt: last.at, lastSpeedKmh: last.speedKmh, lastHeading: last.heading } : {}),
+    },
+  });
+  forgetTrack(tripId);
+  return pts.length ? s : null;
+}
+
+/** Xato yakun hisobini to'xtatmasin — holat o'tishi (yetkazildi/yopildi) muhimroq. */
+export async function saveTripSummarySafe(tripId: string) {
+  try { await saveTripSummary(tripId); } catch (e) { console.error("[trip-summary]", tripId, e); }
+}
+
+/**
+ * Yakuni yo'q yetkazilgan reyslarga yakun hisoblash (hisobot, haydovchi km, tozalash oldidan).
+ * Bir chaqiruvda `limit` tadan — eski bazada minglab reys bo'lsa so'rov cho'zilib ketmasin.
+ */
+export async function ensureTripSummaries(tripIds: string[], limit = 200): Promise<number> {
+  if (tripIds.length === 0) return 0;
+  const missing = await db.trip.findMany({ where: { id: { in: tripIds }, status: "DELIVERED", summaryAt: null }, select: { id: true }, take: limit });
+  for (const t of missing) await saveTripSummarySafe(t.id);
+  return missing.length;
+}
+
+/** Reys km (GPS izi bo'yicha) — yakundan, bo'lmasa hisoblab. Iz yo'q — null. */
+export async function tripKmMap(tripIds: string[]): Promise<Map<string, number>> {
+  await ensureTripSummaries(tripIds, 500);
+  const stats = await tripStats(tripIds);
+  return new Map([...stats].map(([id, s]) => [id, s.meters / 1000]));
+}
+
+/**
+ * Haydovchi km (ish haqi, haydovchi ekrani): zavod → obyekt → zavod = bir tomon × 2.
+ * Bir tomon — GPS izi bo'yicha (`Trip.distanceKm`; yakunsiz yetkazilgan reysga hozir hisoblanadi).
+ * Iz yo'q yoki taxminiy masofaning yarmidan kam bo'lsa (telefon yo'lda o'chgan — iz to'liq emas) —
+ * zayavkadagi taxminiy masofa (`Order.distanceKm`), avvalgidek.
+ */
+export async function tripPayKm(trips: { id: string; distanceKm?: number | null; summaryAt?: Date | null; order: { distanceKm: unknown } }[]): Promise<Map<string, number>> {
+  const need = trips.filter((t) => !t.summaryAt).map((t) => t.id);
+  const fresh = new Map<string, number | null>();
+  if (need.length) {
+    await ensureTripSummaries(need, 500);
+    for (const r of await db.trip.findMany({ where: { id: { in: need } }, select: { id: true, distanceKm: true } })) fresh.set(r.id, r.distanceKm);
+  }
+  const out = new Map<string, number>();
+  for (const t of trips) {
+    const gps = fresh.has(t.id) ? fresh.get(t.id) : t.distanceKm;
+    const est = Number(t.order.distanceKm ?? 0);
+    out.set(t.id, (gps != null && gps > 0 && gps >= est / 2 ? gps : est) * 2);
+  }
+  return out;
+}
+
+/** Saqlangan rejadagi yo'l. */
+export const plannedLine = (s: string | null | undefined) => decodePolyline(s);
+
+export type TrackDetail = {
+  final: boolean;
+  meters: number; distanceKm: number; totalSec: number; movingSec: number;
+  avgSpeedKmh: number | null; maxSpeedKmh: number | null; points: number;
+  line: LatLng[]; polyline: string;
+};
+
+const lineMemo = new Map<string, { raw: number; line: LatLng[]; polyline: string }>();
+
+/**
+ * Bitta reysning izi (soddalashtirilgan) va statistikasi: yopilgan reysda saqlangan yakundan,
+ * ochiqda keshlangan yig'uvchidan (soddalashtirish ham nuqtalar soni o'zgarmaguncha keshda).
+ */
+export async function tripTrackDetail(tripId: string): Promise<TrackDetail | null> {
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: TRIP_COLS });
+  if (!t) return null;
+  if (t.summaryAt) {
+    return {
+      final: true, meters: Math.round((t.distanceKm ?? 0) * 1000), distanceKm: t.distanceKm ?? 0, totalSec: t.totalSec ?? 0, movingSec: t.movingSec ?? 0,
+      avgSpeedKmh: t.avgSpeedKmh, maxSpeedKmh: t.maxSpeedKmh != null ? Math.round(t.maxSpeedKmh) : null, points: t.trackPoints ?? 0,
+      line: decodePolyline(t.trackLine), polyline: t.trackLine ?? "",
+    };
+  }
+  const acc = await accumulator(tripId, t.lastSeenAt?.getTime() ?? 0);
+  const s = acc.summary();
+  let memo = lineMemo.get(tripId);
+  if (!memo || memo.raw !== acc.raw) {
+    const line = simplifyLine(acc.kept, LINE_TOLERANCE_M).map((p) => ({ lat: p.lat, lng: p.lng }));
+    memo = { raw: acc.raw, line, polyline: encodePolyline(line) };
+    if (lineMemo.size >= CACHE_MAX) lineMemo.delete(lineMemo.keys().next().value!);
+    lineMemo.set(tripId, memo);
+  }
+  return {
+    final: false, meters: s.meters, distanceKm: s.distanceKm, totalSec: s.totalSec, movingSec: s.movingSec,
+    avgSpeedKmh: s.avgSpeedKmh, maxSpeedKmh: s.maxSpeedKmh, points: s.rawPoints, line: memo.line, polyline: memo.polyline,
+  };
+}

@@ -171,7 +171,7 @@ async function main() {
   r = await api("POST", "/api/mobile/track", { token: drv, body: { tripId: trip!.id, points: [{ lat: DEST.lat, lng: DEST.lng, at: new Date().toISOString() }] } });
   check("o'z reysiga iz → 200", r.status === 200 && r.json?.ok, r.json);
   r = await api("POST", "/api/mobile/track", { token: drv, body: { tripId: trip!.id, points: [{ lat: 999, lng: 0, at: new Date().toISOString() }] } });
-  check("noto'g'ri nuqta → 400 yoki rejected", r.status === 400 || (r.status === 200 && r.json?.rejected >= 1), r.json);
+  check("noto'g'ri nuqta → tashlanadi (dropped), to'p rad etilmaydi", r.status === 400 || (r.status === 200 && (r.json?.rejected >= 1 || r.json?.dropped >= 1)), r.json);
   r = await api("POST", "/api/mobile/track", { token: await tok("test.logistika"), body: { tripId: trip!.id, points: [] } });
   check("logist iz yubora olmaydi → 400/403", r.status === 403 || r.status === 400, r.status);
 

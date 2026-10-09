@@ -16,6 +16,7 @@ import { BRIGADE_ISSUE, dayPlan, taskPhase } from "@/lib/brigade-shift";
 import { day, inUnit, money, num, pctText, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
 import { ATT_LABEL, INVOICE_LABEL, MOVE_LABEL, ORDER_LABEL, asOf, dashRange, monthShares, procRange, staffAt, type DashRange } from "./dashboard";
 import { parsePeriod } from "./sex";
+import { tripPayKm } from "@/lib/trip-summary";
 import { lineTotal } from "@/lib/receipt-vat";
 import { ownerCached } from "./owner-cache";
 import { webList } from "./problems";
@@ -389,8 +390,8 @@ async function brigadierIssues(r: DashRange, ids: string[]): Promise<Part> {
 
 // ───────────────────────── Logistika / haydovchi ─────────────────────────
 
-const TRIP_SELECT = { id: true, deliveryNoteNo: true, qtyM3: true, status: true, createdAt: true, plannedAt: true, loadedAt: true, departedAt: true, deliveredAt: true, driver: { select: { id: true, fullName: true } }, vehicle: { select: { plate: true } }, order: { select: { distanceKm: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } as const;
-type TripRow = { id: string; deliveryNoteNo: string; qtyM3: unknown; status: string; createdAt: Date; plannedAt: Date | null; loadedAt: Date | null; departedAt: Date | null; deliveredAt: Date | null; driver: { id: string; fullName: string }; vehicle: { plate: string }; order: { distanceKm: unknown; customer: { name: string }; items: { qtyM3: unknown; product: { unit: string } }[] } };
+const TRIP_SELECT = { id: true, deliveryNoteNo: true, qtyM3: true, status: true, createdAt: true, plannedAt: true, loadedAt: true, departedAt: true, deliveredAt: true, distanceKm: true, summaryAt: true, driver: { select: { id: true, fullName: true } }, vehicle: { select: { plate: true } }, order: { select: { distanceKm: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } as const;
+type TripRow = { id: string; deliveryNoteNo: string; qtyM3: unknown; status: string; createdAt: Date; plannedAt: Date | null; loadedAt: Date | null; departedAt: Date | null; deliveredAt: Date | null; distanceKm: number | null; summaryAt: Date | null; driver: { id: string; fullName: string }; vehicle: { plate: string }; order: { distanceKm: unknown; customer: { name: string }; items: { qtyM3: unknown; product: { unit: string } }[] } };
 const tripUnit = (t: TripRow) => t.order.items[0]?.product.unit ?? "m3";
 const tripMinutes = (t: TripRow) => (t.deliveredAt ? (t.deliveredAt.getTime() - (t.departedAt ?? t.loadedAt ?? t.createdAt).getTime()) / 60_000 : null);
 const tripLateMin = (t: TripRow) => (t.plannedAt && t.deliveredAt ? Math.round((t.deliveredAt.getTime() - t.plannedAt.getTime()) / 60_000) : 0);
@@ -532,15 +533,17 @@ async function tripIssues(r: DashRange, driverId: string | null): Promise<Part> 
 async function driverKm({ user, r }: Ctx): Promise<Part> {
   const me = await driverEmployeeId(user.id);
   const rows = await db.trip.findMany({ where: { driverId: me, status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, orderBy: { deliveredAt: "desc" }, select: TRIP_SELECT });
-  const km = (t: TripRow) => sum(t.order.distanceKm) * 2;
+  // GPS izi bo'yicha (bir tomon × 2), iz yo'q bo'lsa — zayavkadagi taxminiy masofa (`tripPayKm`)
+  const kms = await tripPayKm(rows);
+  const km = (t: TripRow) => kms.get(t.id) ?? 0;
   const total = sumBy(rows, km);
   return {
     title: "Yo'l (taxminan)", subtitle: `${period(r)} · zavod → obyekt → zavod`,
-    fields: [f("Jami", `${Math.round(total)} km`), f("Reyslar", cnt(rows.length, "ta")), f("O'rtacha reys", rows.length ? `${Math.round(total / rows.length)} km` : "—"), f("Masofasi noma'lum", String(rows.filter((t) => !sum(t.order.distanceKm)).length))],
+    fields: [f("Jami", `${Math.round(total)} km`), f("Reyslar", cnt(rows.length, "ta")), f("O'rtacha reys", rows.length ? `${Math.round(total / rows.length)} km` : "—"), f("Masofasi noma'lum", String(rows.filter((t) => !km(t)).length))],
     sections: pick(
       breakdown("Mijozlar bo'yicha", rows, (t) => t.order.customer.name, km, (v) => `${Math.round(v)} km`, { icon: "users", unitWord: "reys" }),
       byDays(r, rows, (t) => t.deliveredAt!, (l) => `${Math.round(sumBy(l, km))} km`, (l) => cnt(l.length, "reys")),
-      sec("Reyslar", rows.slice(0, 50).map((t) => tripRow(t, { right: sum(t.order.distanceKm) ? `${Math.round(km(t))} km` : "—", withDriver: false })), { target: "trips", empty: "Bu davrda reys yo'q" }),
+      sec("Reyslar", rows.slice(0, 50).map((t) => tripRow(t, { right: km(t) ? `${Math.round(km(t))} km` : "—", withDriver: false })), { target: "trips", empty: "Bu davrda reys yo'q" }),
     ),
   };
 }
