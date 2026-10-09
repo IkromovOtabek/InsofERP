@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Moon, Sun } from "lucide-react";
+import { LogIn, Moon, Sun } from "lucide-react";
 import type { World } from "./insof-world";
 import { MODES, STN, THEMES, type Mode, type ThemeName } from "./content";
 import "./tour.css";
@@ -146,7 +146,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
   const { active, ui, vw, vh } = sc;
   const step = active === 1 ? sc.ostep : phase.step, frac = active === 1 ? sc.ofrac : phase.frac;
   const c = STN[shown]!, live = STN[active]!;
-  // wide — dizayndagi 4 bo'lim havolasi; xwide — qo'shimcha "Taqdimot" va "Kirish" (sig'magan joyda yashirin)
+  // wide — dizayndagi 4 bo'lim havolasi; xwide — qo'shimcha "Taqdimot" (sig'magan joyda yashirin). Kirish — doim ikonka
   const compact = vh < 620, tall = vh >= 760, wide = vw >= 1240, xwide = vw >= 1520;
   // Telefon: sarlavha bitta qatorda (logo + "Narx so'rash"), karta tavsifsiz — sarlavha bilan ustma-ust tushmasin
   const narrow = vw < 640;
@@ -155,6 +155,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
   const isLast = shown === STN.length - 1;
   const mono: CSSProperties = { fontFamily: "var(--font-jet-mono), 'JetBrains Mono', monospace" };
   const pill: CSSProperties = { background: "var(--surface)", borderRadius: 12, boxShadow: "0 6px 24px var(--shadow)" };
+  const iconBtn: CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: narrow ? 36 : 40, height: narrow ? 36 : 40, borderRadius: 8, color: "var(--ink)" };
 
   return (
     <div ref={rootRef} className="it-root">
@@ -181,9 +182,9 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
 
         {/* Sarlavha — butun sahifada yuqorida turadi */}
         <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "16px clamp(14px,3vw,32px)", pointerEvents: "none", flexWrap: "wrap" }}>
-          <a href="#top" aria-label="INSOF.JBI — bosh sahifa" style={{ ...pill, pointerEvents: "auto", display: "flex", alignItems: "center", padding: "10px 16px" }}>
+          <a href="#top" aria-label="INSOF.JBI — bosh sahifa" style={{ ...pill, pointerEvents: "auto", display: "flex", alignItems: "center", padding: narrow ? "12px 12px" : "10px 16px" }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- logotip kichik, o'lchami CSS da (balandlik 32px) */}
-            <img src={mode === "dark" ? "/media/tour/insof-logo-dark.png" : "/media/tour/insof-logo.png"} alt="INSOF.JBI — Temir beton mahsulotlari" style={{ height: 32, width: "auto", display: "block" }} />
+            <img src={mode === "dark" ? "/media/tour/insof-logo-dark.png" : "/media/tour/insof-logo.png"} alt="INSOF.JBI — Temir beton mahsulotlari" style={{ height: narrow ? 20 : 32, width: "auto", display: "block" }} />
           </a>
           <div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <nav aria-label="Asosiy menyu" style={{ ...pill, display: "flex", alignItems: "center", gap: 2, padding: 6 }}>
@@ -191,14 +192,17 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
                 <a key={href} href={href} style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>{label}</a>
               ))}
               {xwide && <Link href="/taqdimot" style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>Taqdimot</Link>}
-              {xwide && <Link href="/login" style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>Kirish</Link>}
-              <a href="#ariza" className="it-cta" style={{ padding: "10px 15px", fontSize: 14, fontWeight: 600, borderRadius: 8, background: "var(--acc)", whiteSpace: "nowrap" }}>Narx so&apos;rash</a>
+              {/* Kirish va yorug'/qorong'i rejim — ikonka tugmalar, har qanday ekranda (telefonda ham) menyu ichida */}
+              <Link href="/login" aria-label="Tizimga kirish" title="Tizimga kirish" style={iconBtn}>
+                <LogIn size={18} aria-hidden />
+              </Link>
+              <button type="button" onClick={() => setMode(mode === "dark" ? "light" : "dark")}
+                aria-label={mode === "dark" ? "Yorug' rejimga o'tish" : "Qorong'i rejimga o'tish"} title={mode === "dark" ? "Yorug' rejim" : "Qorong'i rejim"}
+                style={{ ...iconBtn, border: 0, background: "transparent", padding: 0, cursor: "pointer" }}>
+                {mode === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
+              </button>
+              <a href="#ariza" className="it-cta" style={{ padding: narrow ? "9px 11px" : "10px 15px", fontSize: narrow ? 13 : 14, fontWeight: 600, borderRadius: 8, background: "var(--acc)", whiteSpace: "nowrap" }}>Narx so&apos;rash</a>
             </nav>
-            <button type="button" onClick={() => setMode(mode === "dark" ? "light" : "dark")}
-              aria-label={mode === "dark" ? "Yorug' rejimga o'tish" : "Qorong'i rejimga o'tish"} title={mode === "dark" ? "Yorug' rejim" : "Qorong'i rejim"}
-              style={{ ...pill, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, padding: 0, cursor: "pointer", color: "var(--ink)" }}>
-              {mode === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
-            </button>
           </div>
         </header>
 

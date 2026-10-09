@@ -25,7 +25,7 @@ export function RegisterForm({ positions }: { positions: string[] }) {
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       <BrandPanel />
 
-      <section className="flex items-center justify-center bg-(--background) p-6">
+      <section className="flex items-center justify-center bg-(--background) p-6 pt-20 lg:pt-6">
         <div className="w-full max-w-sm animate-fade-up">
           <div className="mb-6 lg:hidden">
             <Logo className="h-12" />
