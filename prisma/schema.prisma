@@ -658,6 +658,8 @@ model FaceNonce {
   userId    String
   expiresAt DateTime
   usedAt    DateTime?
+  /// Jonlilik topshirig'i (BLINK / TURN_LEFT / TURN_RIGHT, `lib/face-liveness.ts`); eski nonce'larda null.
+  task      String?
   createdAt DateTime  @default(now())
 
   @@index([userId])

@@ -312,6 +312,16 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
   `CompanySettings.gpsWatchAt` (daqiqasiga bir marta). O'chirish: `tenants/<slug>.env` da `GPS_WATCH=off`.
   Qo'lda: `cd /var/www/insof-erp/current && ENV_FILE=/var/www/insof-erp/tenants/<slug>.env npm run -s gps:watch -- --force`
   (`--cleanup` — tozalash ham hozir). Jurnal: `journalctl -u insof-erp@<slug> | grep gps-watch`.
+- **Mobil yuz skaneri — nonce va jonlilik** (`src/lib/face-replay.ts`, `src/lib/face-liveness.ts`; `tenants/<slug>.env`):
+  - `MOBILE_FACE_NONCE_REQUIRED=true` — challenge nonce'siz «Keldim/Ketdim» / `att.face` rad (ECO `fix/face-nonce` hammada bo'lgach).
+  - `MOBILE_FACE_LIVENESS_REQUIRED=true` — challenge topshirig'i (boshni chapga/o'ngga burish) va 3 kadr (`frames`) majburiy;
+    eski bitta kadrli ilova `400 LIVENESS_REQUIRED` («Ilovani yangilang») oladi, nonce ham majburiy bo'ladi. Sukut `false`:
+    yangi ilova frames yuborsa tekshiriladi (`LIVENESS_FAILED` — «Topshiriq bajarilmadi»), eski ilova eskicha ishlaydi.
+    Tartib: migratsiya `20261009200000_yuz_jonlilik_topshirigi` (deploy.sh o'zi) → ECO `feat/face-liveness` relizi →
+    telefonlarda sinash → hamma yangilagach `true` + `sudo systemctl restart insof-erp@<slug>`.
+  - `MOBILE_FACE_LIVENESS_TASKS` — topshiriqlar (sukut `TURN_LEFT,TURN_RIGHT`; `BLINK` faqat telefonda sinab qo'shiladi).
+  - `MOBILE_FACE_LIVENESS_ANY_SIDE=true` — biror telefonda kadr ko'zgu-aks bo'lib to'g'ri burgan odam rad etilsa, burilish
+    yo'nalishi tekshirilmaydi (faqat kattaligi). Muvaffaqiyatsiz urinishlar o'lchovlari auditda (`yuz: "jonlilik o'tmadi"`).
 
 ## Monitoring agenti (insof-agent)
 

@@ -8,11 +8,9 @@ import { getCompany } from "@/lib/company";
 import { DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayUtc, hoursText, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, toMinutes, today, validMonth, workedMinutes } from "@/lib/davomat";
 import { lockEmployeeAttendance, nowHHMM, productionStaff } from "@/lib/production-staff";
 import { knownPoint } from "@/lib/mobile/geofence";
-import { faceVerifyAvailable, saveFacePhoto, verifyEmployeeFace } from "@/lib/face-verify";
-import { requireFaceNonce } from "@/lib/face-replay";
+import { type FaceInput, faceInput, faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } from "@/lib/face-verify";
 import { MAX_FACE_PHOTO_CHARS } from "@/lib/face-id-const";
 import { removeEmployeeFile } from "@/lib/uploads";
-import { dataUrlFile } from "@/lib/procurement";
 import { ListError } from "@/lib/mobile/list";
 import type { MobileUser } from "@/lib/mobile/auth";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -32,6 +30,8 @@ import { notifyLateAfter } from "@/lib/attendance-late";
  *     ikkinchisining kadri diskda qolmaydi;
  *   · qayta yuborish: bir martalik challenge (`nonce`, `lib/face-replay.ts`; `MOBILE_FACE_NONCE_REQUIRED=true` da majburiy)
  *     va kadr xeshi (aynan o'sha kadr ikkinchi marta — rad);
+ *   · jonlilik: challenge topshirig'i (bosh burish / ko'z yumish) va 3 kadr (`frames`, `lib/face-liveness.ts`;
+ *     `MOBILE_FACE_LIVENESS_REQUIRED=true` da majburiy, aks holda eski bitta kadr ham qabul qilinadi);
  *   · so'rovlar soni cheklangan;
  *   · kadr xodimning profil surati bilan solishtiriladi (`lib/face-verify.ts`, rahbar skaneri bilan bir xil qoida) —
  *     mos kelsa kadr dalil sifatida saqlanadi (`facePhoto` / `checkOutPhoto`) va ishonch foizi yoziladi.
@@ -179,7 +179,12 @@ const Body = z.object({
   lng: z.number().min(-180).max(180),
   accuracy: z.number().min(0).max(100_000).nullable().optional(),
   /** Yuz skaneri kadri: `data:image/jpeg;base64,...` — Face ID namunasi (yo'q bo'lsa profil surati) bilan solishtiriladi. */
-  photo: z.string({ message: "Yuzingizni skaner qiling" }).min(100, "Yuzingizni skaner qiling").max(MAX_FACE_PHOTO_CHARS, "Kadr juda katta — qayta skaner qiling"),
+  photo: z.string({ message: "Yuzingizni skaner qiling" }).min(100, "Yuzingizni skaner qiling").max(MAX_FACE_PHOTO_CHARS, "Kadr juda katta — qayta skaner qiling").optional(),
+  /**
+   * Jonlilik ketma-ketligi (yangi ilova): 3 kadr data-URL — [0] topshiriqdan oldin, [1]–[2] topshiriq paytida
+   * (`lib/face-liveness.ts`). Kelsa `photo` o'rniga shu tekshiriladi; hajm chegaralari `faceInput` da.
+   */
+  frames: z.array(z.string({ message: "Kadr o'qilmadi — qayta skaner qiling" })).max(10, "Kadrlar soni noto'g'ri").optional(),
   /** Bir martalik challenge (`GET /api/mobile/attendance/challenge`). Eski ilovada yo'q. */
   nonce: z.string().max(100).optional(),
   deviceId: z.string().trim().min(8, "Qurilma aniqlanmadi").max(128),
@@ -200,13 +205,14 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     fail("RATE_LIMITED", "Juda ko'p urinish. Bir daqiqadan keyin qayta urinib ko'ring", 429);
   }
   // 1.0.3 sinov build'i (telefon Face ID, kadrsiz) — endi qabul qilinmaydi
-  const r0 = (raw ?? {}) as { biometric?: unknown; photo?: unknown };
-  if (r0.biometric === true && !r0.photo) fail("APP_OUTDATED", "Ilovani yangilang — davomat endi ilova ichidagi yuz skaneri orqali belgilanadi", 400);
+  const r0 = (raw ?? {}) as { biometric?: unknown; photo?: unknown; frames?: unknown };
+  if (r0.biometric === true && !r0.photo && !r0.frames) fail("APP_OUTDATED", "Ilovani yangilang — davomat endi ilova ichidagi yuz skaneri orqali belgilanadi", 400);
   const p = Body.safeParse(raw);
   if (!p.success) fail("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri");
   const b = p.data!;
-  const photo = dataUrlFile(b.photo, "yuz");
-  if (!photo) fail("BAD_REQUEST", "Kadr o'qilmadi — qayta skaner qiling");
+  const fi = faceInput(b);
+  if ("error" in fi) fail("BAD_REQUEST", fi.missing ? "Yuzingizni skaner qiling" : fi.error);
+  const input = (fi as { input: FaceInput }).input;
 
   const e = await linkedEmployee(user.id);
   if (!e) fail("NOT_LINKED", "Loginingiz xodim kartasiga bog'lanmagan — otdel kadrga murojaat qiling", 403);
@@ -253,18 +259,21 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
    * Yuz: avval bir martalik challenge (yuborilgan bo'lsa), keyin kadr ERP'dagi Face ID namunasi bilan (yo'q bo'lsa —
    * profil surati bilan) solishtiriladi (`lib/face-verify.ts`); mos kelsa kadr metadata'siz (EXIF/GPS) qayta kodlanib
    * dalil sifatida saqlanadi (rahbar skaneri kabi). Mos kelmasa hech narsa yozilmaydi — faqat auditda urinish qoladi.
+   * Jonlilik ketma-ketligi (`frames`) bo'lsa — topshiriq ham tekshiriladi, saqlanadigan kadr — birinchisi
+   * (`verifyFaceRequest`); bajarilmagan topshiriq o'lchovlari auditga yoziladi (chegarani moslash uchun).
    */
   const face = async () => {
-    await requireFaceNonce(user.id, b.nonce);
-    const v = await verifyEmployeeFace(emp.id, "Sizning", photo!, { userId: user.id });
+    const v = await verifyFaceRequest(emp.id, "Sizning", input, b.nonce, { userId: user.id });
     if (!v.ok) {
-      if (v.mismatch) await audit(db, user.id, "UPDATE", "Attendance", emp.id, undefined, { xodim: emp.fullName, ozi: true, yuz: "tasdiqlanmadi", ishonch: v.confidence, sabab: v.reason });
-      fail(v.replay ? "FACE_REPLAY" : v.mismatch ? "FACE_MISMATCH" : "FACE_ERROR", v.error, v.mismatch ? 403 : 409);
+      if (v.mismatch || v.code === "LIVENESS_FAILED") {
+        await audit(db, user.id, "UPDATE", "Attendance", emp.id, undefined, { xodim: emp.fullName, ozi: true, yuz: v.mismatch ? "tasdiqlanmadi" : "jonlilik o'tmadi", ishonch: v.confidence, sabab: v.reason });
+      }
+      fail(v.code, v.error, v.status);
     }
     const ok = v as Extract<typeof v, { ok: true }>;
-    const saved = await saveFacePhoto(emp.id, photo!);
+    const saved = await saveFacePhoto(emp.id, ok.photo);
     if ("error" in saved) fail("FACE_ERROR", saved.error, 500);
-    return { stored: (saved as { stored: string }).stored, confidence: ok.confidence };
+    return { stored: (saved as { stored: string }).stored, confidence: ok.confidence, liveness: ok.liveness };
   };
   /** Qulf ostidagi yozuv yiqilsa yoki yozilmasa — saqlangan kadr diskda yetim qolmasin. */
   const dropOnFail = <T,>(stored: string, p: Promise<T>) => p.catch(async (err) => { await removeEmployeeFile(stored); throw err; });
@@ -292,7 +301,7 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       const c = await tx.attendance.findUnique({ where: { employeeId_date: { employeeId: emp.id, date } }, select: { status: true, checkIn: true } });
       if (c && (c.status === "PRESENT" ? !!c.checkIn : c.status !== "ABSENT")) return c;
       const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId: emp.id, date } }, create: { employeeId: emp.id, date, ...data }, update: data });
-      await audit(tx, user.id, "UPDATE", "Attendance", a.id, c ? { status: c.status, checkIn: c.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
+      await audit(tx, user.id, "UPDATE", "Attendance", a.id, c ? { status: c.status, checkIn: c.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ishonch: f.confidence, jonlilik: f.liveness, ...auditMeta });
       return null;
     }));
     if (cur) {
@@ -325,7 +334,7 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       const c = await tx.attendance.findUnique({ where: { id: r.id }, select: { checkOut: true } });
       if (c?.checkOut) return c.checkOut;
       await tx.attendance.update({ where: { id: r.id }, data });
-      await audit(tx, user.id, "UPDATE", "Attendance", r.id, { checkOut: null }, { xodim: emp.fullName, ketdi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
+      await audit(tx, user.id, "UPDATE", "Attendance", r.id, { checkOut: null }, { xodim: emp.fullName, ketdi: now, ozi: true, ishonch: f.confidence, jonlilik: f.liveness, ...auditMeta });
       return null;
     }));
     if (doneAt) {

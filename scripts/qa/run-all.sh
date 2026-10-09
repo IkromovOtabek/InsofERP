@@ -17,7 +17,8 @@
 #        b     — sklad/ishlab chiqarish/logistika/ta'minot/kadr, kirim QQS (b-vat): b-all.sh (+ b-pages)
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
-#        geo   — mobil geofence "yoqilgan" rejimi (MOBILE_SITE_COORDS_REQUIRED=true) va yuz skaneri nonce majburiy (MOBILE_FACE_NONCE_REQUIRED=true)
+#        geo   — mobil geofence "yoqilgan" rejimi (MOBILE_SITE_COORDS_REQUIRED=true), yuz skaneri nonce majburiy (MOBILE_FACE_NONCE_REQUIRED=true)
+#                va jonlilik majburiy (MOBILE_FACE_LIVENESS_REQUIRED=true, alohida server)
 #        dm    — IT panel monitoring/xavfsizlik UI: SSE oqimi, amallar navbati, hodisalar (d-monitor-ui.mts, control rejim),
 #                yordam lug'ati («?» tugmalari: d-help.mts)
 #        d     — ko'p korxonali platforma (d-run-all.sh) — git HEAD ning toza klonida (commit qilinmagan o'zgarishlar kirmaydi!);
@@ -156,6 +157,9 @@ if want geo; then
   fresh_db geo; start_server geo MOBILE_SITE_COORDS_REQUIRED=true MOBILE_FACE_NONCE_REQUIRED=true
   suite "c/geofence-on" env DATABASE_URL="$DBURL" QA_BASE="http://localhost:$PORT" QA_GEOFENCE=on npx tsx scripts/qa/c-mobile-scope.ts
   suite "c/face-nonce-on" env DATABASE_URL="$DBURL" QA_BASE="http://localhost:$PORT" QA_FACE_NONCE=on npx tsx scripts/qa/c-face.ts
+  # Jonlilik majburiy rejimi — alohida server (bitta kadrli face-nonce-on sinovi bu bayroq bilan o'tmaydi)
+  start_server geo-live MOBILE_FACE_LIVENESS_REQUIRED=true
+  suite "c/face-liveness-on" env DATABASE_URL="$DBURL" QA_BASE="http://localhost:$PORT" QA_FACE_LIVENESS=on npx tsx scripts/qa/c-liveness.ts
   stop_server
 fi
 if want dm; then

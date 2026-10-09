@@ -4,6 +4,7 @@ import { DEFAULT_SHIFT, dayUtc, markOf, shiftProblem, toMinutes, today } from "@
 import { lateBy, lateText, shiftOf } from "@/lib/attendance-time";
 import { notifyLateAfter } from "@/lib/attendance-late";
 import type { AttendanceStatus, Prisma } from "@/generated/prisma";
+import type { FaceInput } from "@/lib/face-verify";
 
 /**
  * Sex (ishlab chiqarish) tarkibi va uning davomati — veb bosh sahifa, kunlik hisobot va
@@ -155,24 +156,26 @@ export async function markProductionAttendance(userId: string, employeeId: strin
  * faqat auditda urinish qoladi (kim, kimni, nima sababdan o'tmadi).
  */
 export async function markAttendanceByFace(
-  userId: string, employeeId: string, photo: File, iso = today(), opts: { nonce?: unknown } = {},
-): Promise<{ error: string; code?: string } | { ok: true; text: string; confidence: number }> {
+  userId: string, employeeId: string, input: FaceInput, iso = today(), opts: { nonce?: unknown } = {},
+): Promise<{ error: string; code?: string; status?: number } | { ok: true; text: string; confidence: number }> {
   const { removeEmployeeFile } = await import("@/lib/uploads");
-  const { faceVerifyAvailable, saveFacePhoto, verifyEmployeeFace } = await import("@/lib/face-verify");
-  const { consumeFaceNonce } = await import("@/lib/face-replay");
+  const { faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } = await import("@/lib/face-verify");
   if (!(await faceVerifyAvailable(employeeId))) return { error: "Xodimning yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ERP → Davomat bo'limida ro'yxatga olsin yoki davomatni sex boshlig'i qo'lda belgilaydi" };
   const staff = await productionStaff(iso);
   const e = staff.members.find((x) => x.id === employeeId);
   if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };
   if (e.status === "PRESENT") return { error: `${e.fullName} bugun allaqachon "Keldi" deb belgilangan` };
-  // Bir martalik challenge (yuborilgan bo'lsa — har doim; majburiyligi MOBILE_FACE_NONCE_REQUIRED bilan)
-  const n = await consumeFaceNonce(userId, opts.nonce);
-  if (!n.ok) return { error: n.error, code: n.code };
-  const r = await verifyEmployeeFace(employeeId, `${e.fullName} ning`, photo, { userId });
+  // Challenge (nonce; majburiyligi MOBILE_FACE_NONCE_REQUIRED bilan), jonlilik topshirig'i (`frames`;
+  // MOBILE_FACE_LIVENESS_REQUIRED bilan majburiy) va yuz — `verifyFaceRequest`
+  const r = await verifyFaceRequest(employeeId, `${e.fullName} ning`, input, opts.nonce, { userId });
   if (!r.ok) {
-    if (r.mismatch) await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: "tasdiqlanmadi", ishonch: r.confidence, sabab: r.reason });
-    return { error: r.error, ...(r.replay ? { code: "FACE_REPLAY" } : {}) };
+    if (r.mismatch || r.code === "LIVENESS_FAILED") {
+      await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: r.mismatch ? "tasdiqlanmadi" : "jonlilik o'tmadi", ishonch: r.confidence, sabab: r.reason });
+    }
+    // Eski xulq: kadr mos kelmasa/ishlamasa — kodsiz 400 (ilova matnni ko'rsatadi); boshqalari — aniq kod bilan
+    return r.code === "FACE_MISMATCH" || r.code === "FACE_ERROR" ? { error: r.error } : { error: r.error, code: r.code, status: r.status };
   }
+  const photo = r.photo;
   // Kadr metadata'siz (EXIF/GPS) qayta kodlanib saqlanadi
   const saved = await saveFacePhoto(employeeId, photo);
   if ("error" in saved) return { error: saved.error };
