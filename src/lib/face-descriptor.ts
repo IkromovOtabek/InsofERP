@@ -99,11 +99,11 @@ function release() {
 }
 
 /** `fn` ni navbat orqali bajaradi (bir vaqtda `CONCURRENCY` ta). */
-async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+async function withSlot<T>(fn: () => Promise<T>, runTimeoutMs = RUN_TIMEOUT_MS): Promise<T> {
   await acquire();
   const run = fn().finally(release);
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new FaceBusyError(BUSY)), RUN_TIMEOUT_MS); });
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new FaceBusyError(BUSY)), runTimeoutMs); });
   run.catch(() => { /* kech tugagan hisob xatosi — javob allaqachon qaytgan */ });
   try { return await Promise.race([run, timeout]); } finally { clearTimeout(timer); }
 }
@@ -114,6 +114,17 @@ export const faceQueueState = () => ({ active: gate.active, waiting: gate.queue.
 // ───────────────────────── Vektor ─────────────────────────
 
 export type FaceVector = { descriptor: number[]; score: number };
+/**
+ * Vektor + yuz qutisi va 68 nuqta (face-api `faceLandmark68Net`: 0–16 jag', 27–35 burun, 36–41 va 42–47 ko'zlar —
+ * kadrdagi tartibda). Koordinatalar kichraytirilgan kadr pikselida (hoshiya ayirilgan); jonlilik tekshiruvi
+ * (`lib/face-liveness.ts`) faqat nisbatlardan foydalanadi, shuning uchun kadr o'lchami ahamiyatsiz.
+ */
+export type FaceAnalysis = FaceVector & {
+  box: { x: number; y: number; width: number; height: number };
+  landmarks: [number, number][];
+  /** Ko'z sohasining nisbiy kontrasti (`eyeContrast`) — ochiq ko'zda katta, yumuqda kichik; aniqlab bo'lmasa null. */
+  eyeContrast: number | null;
+};
 
 /**
  * Kadrdagi (JPEG/PNG/WEBP) eng aniq yuzning vektori; yuz topilmasa — null.
@@ -121,7 +132,23 @@ export type FaceVector = { descriptor: number[]; score: number };
  */
 export async function faceDescriptor(image: Buffer): Promise<FaceVector | null> {
   await checkFaceImage(image);
-  return withSlot(() => describe(image));
+  const r = await withSlot(() => describe(image));
+  return r ? { descriptor: r.descriptor, score: r.score } : null;
+}
+
+/**
+ * Bir nechta kadr (jonlilik ketma-ketligi, odatda 3 ta) — BITTA navbat o'rnida ketma-ket hisoblanadi: har kadr uchun
+ * alohida navbatga turilsa, band paytda kutish kadrlar soniga ko'payib ilovaning 20 s chegarasidan oshardi; bitta
+ * o'rinda so'rov bir marta kutadi (`QUEUE_WAIT_MS`). Hisob vaqti chegarasi kadrlar soniga qarab kengayadi
+ * (`RUN_TIMEOUT_MS` + 5 s har qo'shimcha kadrga). Natija tartibi kirish bilan bir xil; yuz topilmagan kadr — null.
+ */
+export async function faceAnalyses(images: Buffer[]): Promise<(FaceAnalysis | null)[]> {
+  for (const img of images) await checkFaceImage(img);
+  return withSlot(async () => {
+    const out: (FaceAnalysis | null)[] = [];
+    for (const img of images) out.push(await describe(img));
+    return out;
+  }, RUN_TIMEOUT_MS + 5_000 * Math.max(0, images.length - 1));
 }
 
 /**
@@ -136,7 +163,7 @@ const PASSES = [
   { pad: 0, threshold: 0.3 },
 ] as const;
 
-async function describe(image: Buffer): Promise<FaceVector | null> {
+async function describe(image: Buffer): Promise<FaceAnalysis | null> {
   const api = await load();
   let raw: { data: Buffer; info: sharp.OutputInfo };
   try {
@@ -149,20 +176,69 @@ async function describe(image: Buffer): Promise<FaceVector | null> {
   if (info.channels !== 3 || data.length !== info.width * info.height * 3) throw new FaceImageError("Kadr ranglari o'qilmadi — qayta skaner qiling");
   const plain = api.tf.tensor3d(new Uint8Array(data), [info.height, info.width, 3], "int32");
   let padded: typeof plain | null = null;
+  let px = 0;
   try {
     for (const p of PASSES) {
       if (p.pad && !padded) {
-        const px = Math.round(Math.max(info.width, info.height) * p.pad);
+        px = Math.round(Math.max(info.width, info.height) * p.pad);
         padded = api.tf.pad(plain, [[px, px], [px, px], [0, 0]]) as typeof plain;
       }
       const input = p.pad ? padded! : plain;
       const r = await api.detectSingleFace(input as never, new api.TinyFaceDetectorOptions({ inputSize: INPUT_SIZE, scoreThreshold: p.threshold }))
         .withFaceLandmarks().withFaceDescriptor();
-      if (r && r.descriptor.length === FACE_DIM) return { descriptor: Array.from(r.descriptor), score: r.detection.score };
+      if (r && r.descriptor.length === FACE_DIM) {
+        // Hoshiyali o'tishda koordinatalar hoshiya qadar siljigan — asl kadrga qaytariladi
+        const off = p.pad ? px : 0;
+        const b = r.detection.box;
+        const landmarks = r.landmarks.positions.map((pt) => [pt.x - off, pt.y - off] as [number, number]);
+        return {
+          descriptor: Array.from(r.descriptor),
+          score: r.detection.score,
+          box: { x: b.x - off, y: b.y - off, width: b.width, height: b.height },
+          landmarks,
+          eyeContrast: eyeContrast(data, info.width, info.height, landmarks),
+        };
+      }
     }
     return null;
   } finally {
     plain.dispose();
     padded?.dispose();
   }
+}
+
+/**
+ * Ko'z ochiqligining piksel o'lchovi: ikkala ko'z sohasidagi yorqinlik tarqalishi (standart og'ish) / butun yuz
+ * sohasidagi tarqalish. Ochiq ko'zda qorachiq (qora) va oqi (oq) yonma-yon — tarqalish katta; yumuq ko'zda faqat
+ * qovoq terisi va kiprik chizig'i — sezilarli kichik. Yuz bo'yicha normallashtirilgani uchun yorug'lik va kontrast
+ * o'zgarishiga chidamli. 68 nuqta modeli (face-api) qovoqni deyarli kuzatmaydi — yumuq ko'zda ham ochiq ko'z shaklini
+ * chizadi (sinovda EAR atigi ~5–10% kamaydi), shuning uchun ko'z joyi nuqtalardan, holati esa piksellardan olinadi.
+ * Soha kadrdan chiqsa — null.
+ */
+function eyeContrast(rgb: Buffer, W: number, H: number, lm: [number, number][]): number | null {
+  const stdIn = (x0: number, y0: number, x1: number, y1: number) => {
+    const a = Math.max(0, Math.floor(x0)), b = Math.min(W, Math.ceil(x1)), c = Math.max(0, Math.floor(y0)), d = Math.min(H, Math.ceil(y1));
+    if (b - a < 3 || d - c < 3) return null;
+    let n = 0, s = 0, s2 = 0;
+    for (let y = c; y < d; y++) for (let x = a; x < b; x++) {
+      const i = (y * W + x) * 3;
+      const g = 0.299 * rgb[i]! + 0.587 * rgb[i + 1]! + 0.114 * rgb[i + 2]!;
+      n++; s += g; s2 += g * g;
+    }
+    return Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2));
+  };
+  const eye = (st: number) => {
+    const pts = lm.slice(st, st + 6);
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const w = x1 - x0, h = Math.max(w * 0.45, Math.max(...ys) - Math.min(...ys));
+    // Faqat ko'z kesimi (qosh va ko'z osti soyasi kirmasin): kenglik bo'yicha 10% ichkariga, balandlik ~ko'z ochig'i
+    return stdIn(x0 + w * 0.1, cy - h / 2, x1 - w * 0.1, cy + h / 2);
+  };
+  const all = lm.slice(17); // qoshlardan iyakkacha (jag' chizig'isiz — fon kirmasin)
+  const fx = all.map((q) => q[0]), fy = all.map((q) => q[1]);
+  const face = stdIn(Math.min(...fx), Math.min(...fy), Math.max(...fx), Math.max(...fy));
+  const l = eye(36), r = eye(42);
+  if (face === null || l === null || r === null || face < 1) return null;
+  return (l + r) / 2 / face;
 }

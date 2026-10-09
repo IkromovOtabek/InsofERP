@@ -5,9 +5,11 @@
 #   QA_GEOFENCE=on npx tsx scripts/qa/c-mobile-scope.ts
 # Yuz skaneri challenge'i majburiy rejimi: server MOBILE_FACE_NONCE_REQUIRED=true bilan, keyin
 #   QA_FACE_NONCE=on npx tsx scripts/qa/c-face.ts   (run-all.sh da "geo" to'plami ichida)
+# Jonlilik majburiy rejimi: server MOBILE_FACE_LIVENESS_REQUIRED=true bilan, keyin
+#   QA_FACE_LIVENESS=on npx tsx scripts/qa/c-liveness.ts   (run-all.sh da "geo" ichida, alohida server)
 cd "$(dirname "$0")/../.."
 fail=0
-for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations c-face c-gps; do
+for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations c-face c-gps c-liveness; do
   echo "════════ $t"
   npx tsx "scripts/qa/$t.ts" || fail=1
 done

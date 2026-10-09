@@ -27,7 +27,7 @@ import type { MobileUser } from "./auth";
 import type { AttendanceStatus } from "@/generated/prisma";
 import { dayUtc, isAttendanceStatus, today } from "@/lib/davomat";
 import { faceCheckEnabled } from "@/lib/ai/face";
-import { facePhotoFile, faceVerifyAvailable } from "@/lib/face-verify";
+import { type FaceInput, faceInput, faceVerifyAvailable } from "@/lib/face-verify";
 import { assignEmployeeBrigade, markAllPresent, markAttendanceByFace, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
 import { submitReport } from "@/lib/production-report";
 import { addProductDefect } from "@/lib/defects";
@@ -660,11 +660,12 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       // Ilova ichidagi yuz skaneri kadri (data-URL); solishtirish va qoida — `lib/production-staff.ts`.
       // Kadrsiz (telefon Face ID'si bilan, 1.0.3 sinov build'i) endi qabul qilinmaydi
       // Kadr hajmi — "Keldim" bilan bir xil chegara (`MAX_FACE_PHOTO_CHARS`), dekoderga yetib borishdan oldin
-      const ph = facePhotoFile(payload?.photo);
-      if (!ph.file) fail(ph.tooBig ? "Kadr juda katta — qayta skaner qiling" : payload?.biometric === true ? "Ilovani yangilang — \"Keldi\" endi yuz skaneri bilan belgilanadi" : "Xodimning yuzini skaner qiling");
-      const r = await markAttendanceByFace(user.id, id, ph.file!, today(), { nonce: payload?.nonce });
+      // Yangi ilova: `frames` (3 kadr, jonlilik topshirig'i — `lib/face-liveness.ts`), eski: bitta `photo`
+      const fi = faceInput({ photo: payload?.photo, frames: payload?.frames });
+      if ("error" in fi) fail(fi.missing ? (payload?.biometric === true ? "Ilovani yangilang — \"Keldi\" endi yuz skaneri bilan belgilanadi" : "Xodimning yuzini skaner qiling") : fi.error);
+      const r = await markAttendanceByFace(user.id, id, (fi as { input: FaceInput }).input, today(), { nonce: payload?.nonce });
       if ("error" in r) {
-        if (r.code) throw new ListError(r.code, r.error, r.code === "FACE_REPLAY" ? 409 : 400);
+        if (r.code) throw new ListError(r.code, r.error, r.status ?? 400);
         fail(r.error);
       }
       clearDashCache();
