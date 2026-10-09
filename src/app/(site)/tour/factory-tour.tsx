@@ -1,0 +1,310 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import type { World } from "./insof-world";
+import { MODES, STN, THEMES, type Mode, type ThemeName } from "./content";
+import "./tour.css";
+
+/**
+ * Bosh sahifa tepasi — zavod bo'ylab skroll bilan boshqariladigan 3D tur (dizayn: design_handoff_insof_landing, README).
+ *
+ *   · sahna (`insof-world.js`, three.js) `position:fixed` — kamera skroll bo'yicha 7 bekat bo'ylab uchadi;
+ *   · ustida: 3D belgi (sahna har kadr uni faol qadam nuqtasiga siljitadi), bekat kartasi, "pastga aylantiring";
+ *   · 950vh bo'sh "trek" skrollni beradi; undan keyin `children` (saytning haqiqiy bo'limlari) sahna ustidan chiqadi.
+ *
+ * Skroll → kamera xaritasi README'dagidek aniq (DW — ofis ichida qo'shimcha skroll). Holat faqat bekat almashganda,
+ * ofis qadamida va 250 ms dagi faza so'rovida yangilanadi — har kadrda setState yo'q (sahna o'z rAF'ida aylanadi).
+ * WebGL yo'q bo'lsa — sahna o'rnida statik zavod surati, qolgan hammasi ishlayveradi.
+ */
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const LS = "insof-theme-v3";
+const DW = 2.5, TOTAL = 6 + DW;
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+type Scroll = { active: number; p: number; f: number; ostep: number; ofrac: number; ui: number; vw: number; vh: number };
+
+export function FactoryTour({ fontFamily, children }: { fontFamily: string; children: ReactNode }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const markerRef = useRef<HTMLDivElement>(null);
+  const worldRef = useRef<World | null>(null);
+
+  const [sc, setSc] = useState<Scroll>({ active: 0, p: 0, f: 0, ostep: 0, ofrac: 0, ui: 1, vw: 1400, vh: 900 });
+  const scRef = useRef(sc); scRef.current = sc;
+  const [shown, setShown] = useState(0);
+  const [cardOn, setCardOn] = useState(true);
+  const [phase, setPhase] = useState({ step: 0, frac: 0 });
+  const phaseRef = useRef(phase); phaseRef.current = phase;
+  const [theme, setTheme] = useState<ThemeName>("Insof");
+  const [mode, setMode] = useState<Mode>("light");
+  const [noGl, setNoGl] = useState(false);
+
+  // Saqlangan mavzu (Kun/Tun va rang) — birinchi chizishdan keyin
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS) || "{}") as { theme?: ThemeName; mode?: Mode };
+      if (saved.theme && saved.theme in THEMES) setTheme(saved.theme);
+      if (saved.mode === "light" || saved.mode === "dark") setMode(saved.mode);
+    } catch { /* shaxsiy rejimda localStorage yopiq bo'lishi mumkin */ }
+  }, []);
+
+  // Mavzu → CSS o'zgaruvchilari (faqat shu ildizda) va sahna rangi/kayfiyati
+  useEffect(() => {
+    const t = THEMES[theme], m = MODES[mode], r = rootRef.current?.style;
+    if (r) {
+      r.setProperty("--acc", t.acc); r.setProperty("--acc-ink", t.ink); r.setProperty("--acc-text", mode === "dark" ? t.light : t.acc);
+      for (const [k, v] of Object.entries(m)) r.setProperty(`--${k}`, v);
+    }
+    worldRef.current?.setAccent(t.acc);
+    worldRef.current?.setMood(mode === "dark" ? "night" : "day");
+    try { localStorage.setItem(LS, JSON.stringify({ theme, mode })); } catch { /* yuqoridagidek */ }
+  }, [theme, mode]);
+
+  const range = useCallback(() => Math.max(1, (trackRef.current?.offsetHeight ?? innerHeight * 9.5) - innerHeight), []);
+
+  const swapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollNow = useCallback(() => {
+    const R = range(), y = window.scrollY;
+    const p = clamp01(y / R) * TOTAL;
+    const f = p < 1 ? p : p < 1 + DW ? 1 : p - DW;
+    const ou = p < 1 ? 0 : p < 1 + DW ? (p - 1) / DW : 1;
+    const ostep = Math.min(4, Math.floor(ou * 5)), ofrac = clamp01(ou * 5 - ostep);
+    const ui = 1 - clamp01((y - R) / (innerHeight * 0.35));
+    worldRef.current?.setProgress(f);
+    worldRef.current?.setOffice(ou);
+    const active = Math.round(f), s = scRef.current, vw = innerWidth, vh = innerHeight;
+    if (active !== s.active) {
+      if (swapRef.current) clearTimeout(swapRef.current);
+      setCardOn(false);
+      swapRef.current = setTimeout(() => { setShown(scRef.current.active); setCardOn(true); }, 320);
+    }
+    if (active !== s.active || Math.abs(p - s.p) > 0.02 || ostep !== s.ostep || Math.abs(ofrac - s.ofrac) > 0.04 || Math.abs(ui - s.ui) > 0.02 || vw !== s.vw || vh !== s.vh) {
+      const next = { active, p, f, ostep, ofrac, ui, vw, vh };
+      scRef.current = next;
+      setSc(next);
+    }
+  }, [range]);
+
+  useEffect(() => {
+    let raf = 0, dead = false;
+    const onScroll = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; scrollNow(); }); };
+    addEventListener("scroll", onScroll, { passive: true });
+    addEventListener("resize", onScroll);
+    const ro = new ResizeObserver(onScroll); ro.observe(document.documentElement);
+    scrollNow(); // birinchi o'lchov darhol (rAF kutmasdan) — telefonda bir lahza kompyuter tartibi chiqmasin
+
+    // Sahna — faqat brauzerda, alohida chunk (three.js ~600 KB faqat bosh sahifada yuklanadi)
+    (async () => {
+      try {
+        // Kanvas yozuvlari Archivo bilan chizilsin — shrift yuklanib bo'lgach
+        await document.fonts?.load(`700 32px ${fontFamily}`).catch(() => undefined);
+        const m = await import("./insof-world");
+        if (dead || !stageRef.current) return;
+        const w = m.mountWorld(stageRef.current, { font: fontFamily });
+        worldRef.current = w;
+        w.setMarker(markerRef.current);
+        w.setAccent(THEMES[theme].acc);
+        w.setMood(mode === "dark" ? "night" : "day");
+        onScroll();
+      } catch (e) {
+        console.error("[tur] 3D sahna ishga tushmadi:", e);
+        if (!dead) setNoGl(true);
+      }
+    })();
+
+    const poll = setInterval(() => {
+      const w = worldRef.current;
+      if (!w) return;
+      const ph = w.getPhase(), cur = phaseRef.current;
+      if (ph.step !== cur.step || Math.abs(ph.frac - cur.frac) > 0.1) setPhase(ph);
+    }, 250);
+
+    return () => {
+      dead = true;
+      removeEventListener("scroll", onScroll);
+      removeEventListener("resize", onScroll);
+      ro.disconnect(); cancelAnimationFrame(raf); clearInterval(poll);
+      if (swapRef.current) clearTimeout(swapRef.current);
+      worldRef.current?.dispose(); worldRef.current = null;
+    };
+    // Sahna bir marta yaratiladi; mavzu alohida effektda qo'llanadi
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollNow, fontFamily]);
+
+  const goTo = (i: number) => {
+    const p = i <= 1 ? i : i + DW;
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: (range() * p) / TOTAL, behavior: reduce ? "auto" : "smooth" });
+  };
+
+  // ── Ko'rsatish qiymatlari (dizayndagi renderVals) ──
+  const { active, ui, vw, vh } = sc;
+  const step = active === 1 ? sc.ostep : phase.step, frac = active === 1 ? sc.ofrac : phase.frac;
+  const c = STN[shown]!, live = STN[active]!;
+  // wide — dizayndagi 4 bo'lim havolasi; xwide — qo'shimcha "Taqdimot" va "Kirish" (sig'magan joyda yashirin)
+  const compact = vh < 620, tall = vh >= 760, wide = vw >= 1240, xwide = vw >= 1520;
+  // Telefon: sarlavha bitta qatorda (logo + "Narx so'rash"), karta tavsifsiz — sarlavha bilan ustma-ust tushmasin
+  const narrow = vw < 640;
+  const markerLabel = (live.steps[step] ?? live.steps[0]!)[0];
+  const h1Size = vh < 620 ? "24px" : vh < 760 ? "clamp(26px,2.8vw,34px)" : "clamp(32px,3.5vw,50px)";
+  const isLast = shown === STN.length - 1;
+  const mono: CSSProperties = { fontFamily: "var(--font-jet-mono), 'JetBrains Mono', monospace" };
+  const pill: CSSProperties = { background: "var(--surface)", borderRadius: 12, boxShadow: "0 6px 24px var(--shadow)" };
+
+  return (
+    <div ref={rootRef} className="it-root">
+      <div className="it-ui">
+        {/* Sahna */}
+        <div ref={stageRef} aria-hidden style={{ position: "fixed", inset: 0, zIndex: 0, background: "var(--bg)" }}>
+          {noGl && <Image src="/media/hero.jpg" alt="" fill priority sizes="100vw" style={{ objectFit: "cover" }} />}
+        </div>
+        <div aria-hidden style={{ position: "fixed", inset: 0, zIndex: 1, pointerEvents: "none", background: "radial-gradient(ellipse 85% 80% at 55% 45%, rgba(8,12,18,0) 60%, rgba(8,12,18,0.2) 100%)" }} />
+
+        {/* 3D belgi — sahna har kadr siljitadi */}
+        <div aria-hidden style={{ position: "fixed", inset: 0, zIndex: 2, pointerEvents: "none", overflow: "hidden", opacity: ui }}>
+          <div ref={markerRef} style={{ position: "absolute", left: 0, top: 0, willChange: "transform", opacity: 0, transition: "opacity .3s" }}>
+            <div className="it-pulse" style={{ position: "absolute", left: -9, top: -9, width: 18, height: 18, borderRadius: "50%", background: "var(--acc)", opacity: 0.5 }} />
+            <div style={{ position: "absolute", left: -6, top: -6, width: 12, height: 12, borderRadius: "50%", background: "var(--acc)", border: "2px solid #ffffff", boxSizing: "border-box" }} />
+            <div style={{ position: "absolute", left: 14, top: -15, display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", color: "var(--ink)", padding: "2px 0", fontSize: 13, fontWeight: 700, textShadow: "var(--halo)" }}>
+              <span style={{ ...mono, fontSize: 10, color: "var(--acc)" }}>{pad(step + 1)}</span>
+              <span>{markerLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Sarlavha — butun sahifada yuqorida turadi */}
+        <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "16px clamp(14px,3vw,32px)", pointerEvents: "none", flexWrap: "wrap" }}>
+          <a href="#top" aria-label="INSOF.JBI — bosh sahifa" style={{ ...pill, pointerEvents: "auto", display: "flex", alignItems: "center", padding: "10px 16px" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- logotip kichik, o'lchami CSS da (balandlik 32px) */}
+            <img src={mode === "dark" ? "/media/tour/insof-logo-dark.png" : "/media/tour/insof-logo.png"} alt="INSOF.JBI — Temir beton mahsulotlari" style={{ height: 32, width: "auto", display: "block" }} />
+          </a>
+          <div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <nav aria-label="Asosiy menyu" style={{ ...pill, display: "flex", alignItems: "center", gap: 2, padding: 6 }}>
+              {wide && NAV.map(([href, label]) => (
+                <a key={href} href={href} style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>{label}</a>
+              ))}
+              {xwide && <Link href="/taqdimot" style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>Taqdimot</Link>}
+              {xwide && <Link href="/login" style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>Kirish</Link>}
+              <a href="#ariza" className="it-cta" style={{ padding: "10px 15px", fontSize: 14, fontWeight: 600, borderRadius: 8, background: "var(--acc)", whiteSpace: "nowrap" }}>Narx so&apos;rash</a>
+            </nav>
+            {!narrow && <div style={{ ...pill, display: "flex", alignItems: "center", gap: 8, padding: "6px 6px 6px 10px" }}>
+              <div role="radiogroup" aria-label="Rang" style={{ display: "flex", gap: 5 }}>
+                {(Object.keys(THEMES) as ThemeName[]).map((name) => (
+                  <button key={name} type="button" role="radio" aria-checked={name === theme} title={name} aria-label={name} onClick={() => setTheme(name)}
+                    style={{ width: 22, height: 22, borderRadius: "50%", cursor: "pointer", padding: 0, background: THEMES[name].acc, border: "2px solid var(--surface)", boxShadow: `0 0 0 2px ${name === theme ? THEMES[name].acc : "transparent"}` }} />
+                ))}
+              </div>
+              <div style={{ width: 1, height: 22, background: "var(--line)" }} />
+              <div role="radiogroup" aria-label="Kun yoki tun" style={{ display: "flex", gap: 2, padding: 3, background: "var(--surface2)", borderRadius: 8 }}>
+                {([["light", "Kun"], ["dark", "Tun"]] as const).map(([k, label]) => (
+                  <button key={k} type="button" role="radio" aria-checked={k === mode} onClick={() => setMode(k)}
+                    style={{ ...mono, border: 0, cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 11, background: k === mode ? "var(--ink)" : "transparent", color: k === mode ? "var(--bg)" : "var(--muted)" }}>{label}</button>
+                ))}
+              </div>
+            </div>}
+          </div>
+        </header>
+
+        {/* Bekat kartasi */}
+        <div style={{ position: "fixed", left: "clamp(14px,3vw,32px)", bottom: "clamp(14px,3vw,26px)", zIndex: 10, display: "flex", flexDirection: "column", gap: 10, width: "min(470px, calc(100vw - 28px))", opacity: ui, pointerEvents: ui > 0.2 ? "auto" : "none", visibility: ui <= 0.01 ? "hidden" : "visible" }}>
+          <div className="it-card" aria-live="polite" style={{
+            display: "flex", flexDirection: "column", gap: 14, padding: "0 4px 6px", maxHeight: narrow ? "calc(100svh - 300px)" : "calc(100vh - 230px)", overflowY: "auto", boxSizing: "border-box", minHeight: 0, textShadow: "var(--halo)",
+            transition: "opacity .5s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1), filter .5s ease",
+            opacity: cardOn ? 1 : 0, transform: cardOn ? "translateY(0)" : "translateY(14px)", filter: cardOn ? "blur(0px)" : "blur(5px)", willChange: "opacity, transform, filter",
+          }}>
+            {tall ? (
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
+                <span style={{ fontSize: "clamp(56px,6vw,84px)", lineHeight: 0.78, fontWeight: 800, letterSpacing: "-.06em", color: "var(--acc-text)" }}>{pad(shown + 1)}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingBottom: 4 }}>
+                  <span style={{ ...mono, fontSize: 11, letterSpacing: ".14em", color: "var(--ink)", opacity: 0.7 }}>/ 07</span>
+                  <span style={{ ...mono, fontSize: 11.5, fontWeight: 500, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink)", whiteSpace: "nowrap" }}>{c.label}</span>
+                </div>
+              </div>
+            ) : (
+              <span style={{ ...mono, fontSize: 11, fontWeight: 500, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink)", whiteSpace: "nowrap" }}>
+                <span style={{ color: "var(--acc-text)" }}>{pad(shown + 1)}</span> / 07 · {c.label}
+              </span>
+            )}
+            {/* Sahifaning asosiy sarlavhasi — birinchi bekatda kompaniya tavsifi */}
+            <h1 style={{ margin: 0, fontSize: h1Size, lineHeight: 0.98, fontWeight: 800, letterSpacing: "-.04em", color: "var(--ink)", textWrap: "balance" }}>{c.title}</h1>
+            {tall && !narrow && <p style={{ margin: 0, fontSize: 16, lineHeight: 1.5, fontWeight: 500, color: "var(--ink)", opacity: 0.88, maxWidth: 400, textWrap: "pretty" }}>{c.text}</p>}
+            {!!c.quote && vh >= 760 && (
+              <figure style={{ margin: 0, display: "flex", gap: 10, maxWidth: 400 }}>
+                <span style={{ fontSize: 44, lineHeight: 0.8, fontWeight: 800, color: "var(--acc-text)" }}>“</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <blockquote style={{ margin: 0, fontSize: 16, lineHeight: 1.45, fontStyle: "italic", fontWeight: 500, color: "var(--ink)" }}>{c.quote}</blockquote>
+                  <figcaption style={{ ...mono, fontSize: 10.5, letterSpacing: ".08em", color: "var(--ink)", opacity: 0.75 }}>{c.author}</figcaption>
+                </div>
+              </figure>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", paddingTop: 6 }}>
+              {tall && <span style={{ ...mono, fontSize: 10.5, letterSpacing: ".16em", color: "var(--acc-text)", fontWeight: 500, paddingBottom: 8 }}>{c.processTitle}</span>}
+              {c.steps.map(([name, text], i) => {
+                const on = i === step;
+                return (
+                  <div key={name} style={{ display: "flex", gap: 14, padding: compact ? "2px 0" : "5px 0" }}>
+                    <div style={{ width: 3, flex: "0 0 auto", borderRadius: 2, background: "var(--line)", overflow: "hidden", position: "relative" }}>
+                      <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: `${i < step ? 100 : on ? Math.round(frac * 100) : 0}%`, background: "var(--acc)", transition: "height .5s linear" }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "2px 0" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                        <span style={{ ...mono, fontSize: 11, fontWeight: 500, color: on || i < step ? "var(--acc-text)" : "var(--ink)" }}>{pad(i + 1)}</span>
+                        <span style={{ fontSize: on ? (compact ? 16 : 19) : (compact ? 13 : 15), fontWeight: on ? 800 : 600, letterSpacing: "-.015em", color: "var(--ink)", opacity: on ? 1 : 0.72, whiteSpace: "nowrap", transition: "font-size .25s" }}>{name}</span>
+                      </div>
+                      {on && !compact && <span style={{ fontSize: 14, lineHeight: 1.45, fontWeight: 500, color: "var(--ink)", opacity: 0.85, paddingLeft: 27, maxWidth: 360 }}>{text}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", flex: "0 0 auto", textShadow: "none" }}>
+            {isLast ? (
+              <a href="#ariza" className="it-cta" style={{ padding: "12px 18px", borderRadius: 999, background: "var(--acc)", fontSize: 14, fontWeight: 700, boxShadow: "0 8px 24px var(--shadow)" }}>Narx so&apos;rash →</a>
+            ) : (
+              <button type="button" onClick={() => goTo(Math.min(active + 1, STN.length - 1))} style={{ border: 0, cursor: "pointer", padding: "12px 18px", borderRadius: 999, background: "var(--acc)", color: "var(--acc-ink)", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 8px 24px var(--shadow)" }}>
+                Keyingi: {STN[Math.min(shown + 1, STN.length - 1)]!.short} →
+              </button>
+            )}
+            <a href="#mahsulotlar" style={{ padding: "12px 18px", borderRadius: 999, border: "1.5px solid var(--ink)", color: "var(--ink)", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap" }}>Mahsulotlar</a>
+          </div>
+          <div className="it-chips" style={{ display: "flex", gap: 4, overflowX: "auto", padding: 4, background: "var(--glass)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderRadius: 12, boxShadow: "0 6px 24px var(--shadow)" }}>
+            {STN.map((s, i) => (
+              <button key={s.short} type="button" aria-current={i === active ? "step" : undefined} onClick={() => goTo(i)}
+                style={{ flex: "0 0 auto", border: 0, cursor: "pointer", padding: "8px 11px", borderRadius: 8, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", background: i === active ? "var(--acc)" : "transparent", color: i === active ? "var(--acc-ink)" : "var(--ink)" }}>{s.short}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* "Pastga aylantiring" + jarayon chizig'i (tor ekranda karta bilan ustma-ust tushmasin — yashirin) */}
+        {vw >= 760 && (
+          <div aria-hidden style={{ ...pill, position: "fixed", right: "clamp(14px,3vw,32px)", bottom: "clamp(14px,3vw,26px)", zIndex: 10, display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", opacity: ui, visibility: ui <= 0.01 ? "hidden" : "visible" }}>
+            <span style={{ ...mono, fontSize: 11, letterSpacing: ".08em", color: "var(--muted)", whiteSpace: "nowrap" }}>PASTGA AYLANTIRING</span>
+            <div style={{ width: 90, height: 3, background: "var(--line)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ height: "100%", background: "var(--acc)", width: `${(sc.p / TOTAL) * 100}%`, transition: "width .3s ease-out" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Skroll treki — kamerani boshqaradi */}
+        <div id="top" ref={trackRef} style={{ height: "950vh", position: "relative", zIndex: 1, pointerEvents: "none" }} />
+      </div>
+
+      {/* Saytning qolgan qismi sahna ustidan chiqadi */}
+      <main style={{ position: "relative", zIndex: 5, borderRadius: "28px 28px 0 0", overflow: "hidden", boxShadow: "0 -20px 60px var(--shadow)" }}>
+        {children}
+      </main>
+    </div>
+  );
+}
+
+const NAV: [string, string][] = [
+  ["#top", "Ishlab chiqarish"],
+  ["#partners", "Hamkorlik"],
+  ["#mahsulotlar", "Mahsulotlar"],
+  ["#aloqa", "Aloqa"],
+];

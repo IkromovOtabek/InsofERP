@@ -1,0 +1,31 @@
+/* Zavod bo'ylab 3D tur (bosh sahifa tepasi) — dizayn paketidan (design_handoff_insof_landing). Ranglar `.it-root` dagi
+   o'zgaruvchilardan (mavzu va Kun/Tun almashtirgichi shu yerda qayta yozadi) — ERP/sayt tokenlariga ta'sir qilmaydi. */
+.it-root {
+  --acc: #2a4aa7; --acc-ink: #ffffff; --acc-text: #2a4aa7; --halo: 0 0 2px rgba(255,255,255,.55);
+  --bg: #eceee9; --surface: #ffffff; --surface2: #f2f3ef; --ink: #16181a; --muted: #50555a; --line: #d9dbd5;
+  --glass: rgba(255,255,255,.86); --shadow: rgba(20,24,28,.12);
+}
+/* Shrift va havola rangi faqat tur interfeysi va dizayn bo'limlarida — saytning mavjud bo'limlariga tegmaydi */
+.it-ui {
+  font-family: var(--font-archivo), Archivo, Helvetica, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility; font-kerning: normal; font-feature-settings: 'kern' 1, 'liga' 1; font-optical-sizing: auto;
+}
+.it-ui a { color: var(--ink); text-decoration: none; }
+.it-ui a:hover { color: var(--acc); }
+.it-ui button { font: inherit; }
+.it-mono { font-family: var(--font-jet-mono), 'JetBrains Mono', monospace; }
+.it-ui a.it-cta, .it-ui a.it-cta:hover { color: var(--acc-ink); }
+.it-ui :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.it-card { scrollbar-width: none; }
+.it-card::-webkit-scrollbar { display: none; }
+.it-chips { scrollbar-width: none; }
+.it-chips::-webkit-scrollbar { display: none; }
+@keyframes insofPulse { 0% { transform: scale(.6); opacity: .9 } 100% { transform: scale(2.4); opacity: 0 } }
+.it-pulse { animation: insofPulse 1.6s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .it-pulse { animation: none; } }
+
+/* Pastdagi dizayn bo'limlari (Hamkorlik, Eksport) */
+.it-promise { transition: background .25s; }
+.it-promise:hover { background: var(--surface2) !important; }

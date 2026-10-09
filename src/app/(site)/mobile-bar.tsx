@@ -9,14 +9,15 @@ import { Phone } from "lucide-react";
  * Katta ekranda sarlavhadagi tugmalar yetarli, telefonda esa ular menyu ichida
  * yo'qoladi — mijoz sahifaning qayerida bo'lmasin, ikki tugma qo'l ostida
  * turadi. Ariza formasi ko'rinib turganda panel yashirinadi (formaning
- * yuborish tugmasini to'sib qo'ymasin), hero'da ham ko'rinmaydi — u yerda
+ * yuborish tugmasini to'sib qo'ymasin), 3D tur davomida ham ko'rinmaydi — u yerda
  * o'z tugmalari bor.
  */
 export function MobileBar({ phone }: { phone: string | null }) {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    const hero = document.getElementById("hero");
+    // 3D tur treki (950vh) — u ekranda bo'lsa (tur kartasi va tugmalari ko'rinib turadi) panel kerak emas
+    const hero = document.getElementById("top");
     const form = document.getElementById("ariza");
     let heroVisible = true, formVisible = false;
     const io = new IntersectionObserver((entries) => {
@@ -25,7 +26,7 @@ export function MobileBar({ phone }: { phone: string | null }) {
         if (e.target === form) formVisible = e.isIntersecting;
       }
       setShow(!heroVisible && !formVisible);
-    }, { threshold: 0.15 });
+    }, { threshold: [0, 0.15] });
     if (hero) io.observe(hero);
     if (form) io.observe(form);
     return () => io.disconnect();

@@ -1,15 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
-  ArrowRight, Boxes, Calculator, CalendarClock, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
-  Download, Mail, MapPin, Phone, Presentation, QrCode, Ruler, ShieldCheck, Smartphone, Timer, Truck, Wallet,
+  Boxes, CalendarClock, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
+  Download, Mail, MapPin, Phone, QrCode, Ruler, ShieldCheck, Smartphone, Timer, Truck, Wallet,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { fmtNum } from "@/lib/format";
 import { SITE_URL } from "@/lib/site";
 import { apkInfo, apkSize, iosAppUrl } from "@/lib/apk";
-import { SiteHeader } from "./site-header";
+import { FactoryTour } from "./tour/factory-tour";
+import { archivo } from "./tour/font";
+import { PartnersSection } from "./tour/sections";
 import { LeadForm } from "./lead-form";
 import { Showreel, type Clip } from "./showreel";
 import { Catalog, type CatalogGroup, type CatalogProduct } from "./catalog";
@@ -18,16 +20,10 @@ import { GrowLine, Lift, Reveal, StatValue } from "./motion";
 import { AggregateIcon, IconTile, MixerIcon, SlabIcon } from "./icons";
 import { VolumeCalculator } from "./calculator";
 import { MobileBar } from "./mobile-bar";
-import HERO_IMAGE from "../../../public/media/hero.jpg";
 
 /** Narxlar saytda ko'rsatilmaydi — mijoz hajm va manzilga qarab narx so'raydi.
  *  Ko'rsatish kerak bo'lsa shu yerni `true` qilish kifoya. */
 const SHOW_PRICES = false;
-
-/* Hero banneri (`public/media/hero.jpg`) yuqorida statik import qilingan: surat
- * almashsa URL'dagi hash ham almashadi va `/_next/image` keshi eski suratni bermaydi
- * (oddiy "/media/hero.jpg" yo'lida kesh kaliti o'zgarmay, serverda eski rasm qolib ketgan).
- * Almashtirish uchun shu fayl ustiga yozib, qayta build qilish kifoya. */
 
 const CLIPS: Clip[] = [
   { src: "/media/zavod.mp4", poster: "/media/zavod.jpg", title: "Zavod va mikser parki", text: "Avtomatlashtirilgan tugun, o'z transportimiz", meta: "Tugun · mikser parki" },
@@ -153,85 +149,8 @@ export default async function LandingPage() {
       {/* JSON-LD xavfsiz satrga aylantiriladi (safeJsonLd): sozlamalardagi matnda "</script>" bo'lsa ham
           skript tegi yopilib, sahifaga HTML/JS kiritib bo'lmasin */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
-      <SiteHeader phone={phone} app />
-
-      {/* ───────── Hero banneri ───────── */}
-      {/* Balandlik: ekran bo'yi minus sarlavha (xizmat qatori 2.5rem + panel 5rem).
-          `svh` — telefon brauzerining pastki paneli hisobga olinadi. */}
-      <section id="hero" className="relative isolate flex min-h-[calc(100svh-7.5rem)] items-center overflow-hidden bg-insof-900">
-        {/* Surat butun bannerni to'ldiradi. Telefonda kadr o'ngroqdan olinadi —
-           tor ekranda kran va ishchi ko'rinib tursin. Sifat 100 — Next uni
-           qayta siqib yumshatmasin. */}
-        <Image src={HERO_IMAGE} alt="" fill priority quality={100} sizes="100vw" className="-z-20 object-cover object-[78%_center] sm:object-center" />
-        {/* Soya faqat matn ortida — o'rtadan o'ngga qarab butunlay so'nadi. */}
-        <div className="absolute inset-0 -z-10 bg-linear-to-r from-insof-900/85 via-insof-900/25 via-45% to-transparent to-70%" />
-        <div className="absolute inset-0 -z-10 bg-linear-to-t from-insof-900/70 via-insof-900/10 via-45% to-transparent to-60%" />
-
-        <div className="mx-auto w-full max-w-[1680px] px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-20">
-          <div className="max-w-3xl [text-shadow:0_2px_16px_rgba(6,18,42,0.7)]">
-            {/* Holat tasmasi — "jonli" nuqta bilan: zavod ishlayotganini bildiradi */}
-            <Reveal mode="mount" y={12}>
-              <div className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full glass-dark px-4 py-2 text-[13px] text-white/85 [text-shadow:none]">
-                <span className="live-dot relative inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                <span>{hours ? `Ish vaqti: ${hours}` : "Zavod ishlayapti"}</span>
-                <span className="hidden text-white/35 sm:inline">·</span>
-                <span className="hidden sm:inline">Yangiyo&apos;l, Toshkent viloyati</span>
-              </div>
-            </Reveal>
-
-            <Reveal mode="mount" y={18} delay={0.06}>
-              <h1 className="mt-6 font-display text-[1.9rem] leading-[1.1] font-bold text-balance text-white sm:text-[2.75rem] lg:text-[3.4rem]">
-                Tayyor beton va temir-beton mahsulotlari
-              </h1>
-            </Reveal>
-
-            {/* Markalar — mijoz birinchi bo'lib shuni qidiradi: shisha chiplar */}
-            {markalar.length > 0 && (
-              <Reveal mode="mount" delay={0.16}>
-                <div className="mt-6 flex flex-wrap gap-2">
-                  {markalar.map((m) => (
-                    <span key={m} className="inline-flex h-9 items-center rounded-full glass-dark px-4 font-mono text-[15px] font-semibold text-white [text-shadow:none]">
-                      {m}
-                    </span>
-                  ))}
-                  {capacity && (
-                    <span className="inline-flex h-9 items-center gap-2 rounded-full bg-signal px-4 font-mono text-[15px] font-semibold text-white [text-shadow:none]">
-                      {capacity} m³<span className="text-white/70">/kun</span>
-                    </span>
-                  )}
-                </div>
-              </Reveal>
-            )}
-
-            <Reveal mode="mount" delay={0.22}>
-              <ul className="mt-7 space-y-3">
-                <HeroPoint icon={ShieldCheck} text="Rasmiy shartnoma, schyot-faktura va bank orqali hisob-kitob" />
-                <HeroPoint icon={QrCode} text="Har bir yukda QR-nakladnoy — hajm va markani telefondan tekshirasiz" />
-                <HeroPoint icon={FlaskConical} text="Har partiya tasdiqlangan retsept bo'yicha, laboratoriya nazorati bilan" />
-              </ul>
-            </Reveal>
-
-            <Reveal mode="mount" delay={0.32}>
-              <div className="mt-8 flex flex-wrap gap-3 sm:mt-10">
-                <a href="#ariza" className="group inline-flex h-13 items-center gap-3 rounded-full bg-signal pr-2 pl-7 text-base font-semibold text-white transition-[background-color,transform] duration-200 hover:bg-signal-600 active:scale-[0.98] sm:h-14">
-                  Narx-taklif olish
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/20 transition-transform duration-200 group-hover:translate-x-0.5">
-                    <ArrowRight size={18} />
-                  </span>
-                </a>
-                <a href="#kalkulyator" className="inline-flex h-13 items-center gap-2.5 rounded-full glass-dark px-7 text-base font-semibold text-white transition-colors duration-200 hover:bg-white/15 sm:h-14">
-                  <Calculator size={18} strokeWidth={1.75} /> Hajmni hisoblash
-                </a>
-                {/* Taqdimot — PPT ning veb ko'rinishi (23 slayd, animatsiya bilan) */}
-                <Link href="/taqdimot" className="inline-flex h-13 items-center gap-2.5 rounded-full glass-dark px-7 text-base font-semibold text-white transition-colors duration-200 hover:bg-white/15 sm:h-14">
-                  <Presentation size={18} strokeWidth={1.75} /> Taqdimot
-                </Link>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
+      {/* ───────── Zavod bo'ylab 3D tur (sahna + sarlavha + bekat kartasi); saytning qolgan bo'limlari uning ustidan chiqadi ───────── */}
+      <FactoryTour fontFamily={archivo.style.fontFamily}>
       {/* ───────── Yugurma lenta ───────── */}
       <div className="marka overflow-hidden border-y border-white/10 bg-insof-900 py-3.5" aria-hidden>
         <div className="marka-run flex w-max whitespace-nowrap font-mono text-[12px] tracking-[0.16em] text-white/55 uppercase">
@@ -255,6 +174,9 @@ export default async function LandingPage() {
           </dl>
         </div>
       </section>
+
+      {/* ───────── Hamkorlik (dizayndan) ───────── */}
+      <PartnersSection />
 
       {/* ───────── Yo'nalishlar ───────── */}
       <Section id="mahsulotlar" eyebrow="Nima ishlab chiqaramiz" title="Uch yo'nalish — bitta zavod" grid>
@@ -545,21 +467,14 @@ export default async function LandingPage() {
         </div>
       </footer>
 
+      </FactoryTour>
+
       <MobileBar phone={phone} />
     </>
   );
 }
 
 /* ───────── Kichik bo'laklar ───────── */
-
-function HeroPoint({ icon: Icon, text }: { icon: typeof QrCode; text: string }) {
-  return (
-    <li className="flex items-center gap-3.5 text-[15px] leading-snug text-white sm:text-base">
-      <IconTile tone="glass" size="sm" className="[text-shadow:none]"><Icon size={16} strokeWidth={1.75} /></IconTile>
-      {text}
-    </li>
-  );
-}
 
 function Stat({ icon: Icon, value, suffix = "", fallback, label, delay = 0, accent = false }: {
   icon: typeof Factory; value: number | null; suffix?: string; fallback: string; label: string; delay?: number; accent?: boolean;

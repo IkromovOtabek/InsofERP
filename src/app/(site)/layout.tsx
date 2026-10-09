@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Unbounded, Onest, JetBrains_Mono } from "next/font/google";
 import { getCompany } from "@/lib/company";
 import { SITE_URL } from "@/lib/site";
+import { archivo } from "./tour/font";
 
 /** Har korxona o'z bazasidan o'qiydi — build paytida statik tayyorlanmasin (aks holda bitta
  *  korxonaning ma'lumoti hammasiga chiqadi va build bazaga ulanishni talab qiladi). */
@@ -20,7 +21,8 @@ export const dynamic = "force-dynamic";
  *    kvadratsimon "INSOF" harflariga eng yaqin shakl. O'zgaruvchan shrift,
  *    og'irlik alohida yuklanmaydi;
  *  · Onest — matn. Zamonaviy neytral sans, ekranda tekis o'qiladi;
- *  · JetBrains Mono — marka, raqam, teg: nakladnoy va pult yozuvi.
+ *  · JetBrains Mono — marka, raqam, teg: nakladnoy va pult yozuvi;
+ *  · Archivo — bosh sahifa tepasidagi 3D zavod turi (dizayn paketidan, `tour/font.ts`).
  * Uchalasi ham kirillni qo'llab-quvvatlaydi — ruscha taqdimot uchun alohida
  * shrift kerak emas.
  */
@@ -78,7 +80,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`site ${unbounded.variable} ${onest.variable} ${jetMono.variable} min-h-screen bg-beton-100 text-beton-900`}>
+    <div className={`site ${unbounded.variable} ${onest.variable} ${jetMono.variable} ${archivo.variable} min-h-screen bg-beton-100 text-beton-900`}>
       {children}
     </div>
   );
