@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { employeeMonth, staffDay } from "@/lib/attendance-report";
 import { driverMonth, driversMonth } from "@/lib/driver-pay";
+import { productionStaff } from "@/lib/production-staff";
 import type { MobileUser } from "./auth";
 import { ListError, moduleClosed } from "./list";
 
@@ -10,7 +11,8 @@ import { ListError, moduleClosed } from "./list";
  *   · GET /api/mobile/attendance/employee?id=&month=      — bitta xodim, oy;
  *   · GET /api/mobile/driver-trips?month=                 — barcha haydovchilar, oy;
  *   · GET /api/mobile/driver-trips?id=<employeeId|me>&month= — bitta haydovchi, kunlar.
- * Ko'rish huquqi: davomat — otdel kadr, direktor, ishlab chiqarish, ish boshqaruvchi;
+ * Ko'rish huquqi: davomat — otdel kadr, direktor (hamma xodim); ishlab chiqarish, ish boshqaruvchi — faqat sex
+ * xodimlari (`productionStaff()`, veb Face ID skanerining `faceScope === "sex"` qoidasi bilan bir xil);
  * haydovchilar — direktor, otdel kadr, logistika; haydovchi faqat o'zinikini.
  * Direktor modulni ("employees" / "trips") yopgan bo'lsa — ochilmaydi.
  */
@@ -24,14 +26,24 @@ function canTable(user: MobileUser) {
   return (ATTENDANCE_TABLE_ROLES as readonly string[]).includes(user.role) && !moduleClosed(user, "employees");
 }
 
+/** Sex boshliqlari (ishlab chiqarish, ish boshqaruvchi) — faqat sex xodimlari; boshqalarga null (cheklovsiz). */
+async function sexScope(user: MobileUser): Promise<string[] | null> {
+  if (user.role !== "PRODUCTION" && user.role !== "SUPERVISOR") return null;
+  return (await productionStaff()).members.map((m) => m.id);
+}
+
 export async function mobileStaffDay(user: MobileUser, date: string | null) {
   if (!canTable(user)) deny();
-  return staffDay(date);
+  const only = await sexScope(user);
+  return staffDay(date, only ? { employeeIds: only } : {});
 }
 
 export async function mobileEmployeeMonth(user: MobileUser, id: string | null, month: string | null) {
   if (!canTable(user)) deny();
   if (!id) throw new ListError("BAD_REQUEST", "Xodim tanlanmagan", 400);
+  const only = await sexScope(user);
+  // Sex tarkibida bo'lmagan xodim — "topilmadi" (borligi ham oshkor bo'lmasin)
+  if (only && !only.includes(id)) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
   const r = await employeeMonth(id, month);
   if (!r) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
   return r;

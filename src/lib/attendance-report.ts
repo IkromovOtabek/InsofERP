@@ -65,14 +65,15 @@ function srcOf(a: AttRow | undefined, roles: Map<string, Role>) {
   return sourceLabel(a.source, { face: !!a.facePhoto, markerRole: a.markedById ? roles.get(a.markedById) ?? null : null });
 }
 
-/** Bir kun — barcha xodimlar jadvali. */
-export async function staffDay(rawDate?: string | null): Promise<StaffDay> {
+/** Bir kun — barcha xodimlar jadvali (`employeeIds` berilsa — faqat shu xodimlar, masalan sex boshlig'iga sex tarkibi). */
+export async function staffDay(rawDate?: string | null, opts: { employeeIds?: string[] } = {}): Promise<StaffDay> {
   const now = today();
   const iso = validDay(rawDate ?? undefined) && rawDate! <= now ? rawDate! : now;
   const day = dayUtc(iso);
+  const only = opts.employeeIds ? { id: { in: opts.employeeIds } } : {};
   const [emps, marks, depts] = await Promise.all([
-    db.employee.findMany({ where: employeesInWindow(day, day), orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, workSchedule: true } }),
-    db.attendance.findMany({ where: { date: day }, select: ATT_SELECT }),
+    db.employee.findMany({ where: { ...employeesInWindow(day, day), ...only }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, workSchedule: true } }),
+    db.attendance.findMany({ where: { date: day, ...(opts.employeeIds ? { employeeId: { in: opts.employeeIds } } : {}) }, select: ATT_SELECT }),
     deptByPosition(),
   ]);
   const roles = await markerRoles(marks.map((m) => m.markedById));

@@ -644,6 +644,30 @@ model FaceTemplate {
   @@index([employeeId])
 }
 
+/// Mobil yuz skaneri: bir martalik challenge (`GET /api/mobile/attendance/challenge`) — login egasiga bog'langan,
+/// qisqa muddatli, bir marta ishlatiladi (`lib/face-replay.ts`). Eski so'rovni qayta yuborib bo'lmaydi.
+model FaceNonce {
+  id        String    @id @default(cuid())
+  nonce     String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Mobil yuz skaneriga yuborilgan kadrlarning sha256 xeshi — aynan o'sha kadr qayta yuborilsa rad etiladi (`lib/face-replay.ts`).
+model FacePhotoHash {
+  hash       String   @id // sha256, hex
+  employeeId String
+  userId     String
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 /// Tabeldagi belgilar. `PRESENT` dan boshqasida soat yozilmaydi.
 enum AttendanceStatus {
   PRESENT // keldi

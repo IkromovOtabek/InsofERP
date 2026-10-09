@@ -7,7 +7,7 @@ import { REP, repId, reportCut } from "./report-detail";
 import { buildReport, loadReport, reportHistory, reportSummary, stockHighlights, stockStatus, STOCK_LEVEL_LABEL, type ReportSnapshot } from "@/lib/production-report";
 import { unitLabel } from "@/lib/unit";
 import { myBrigades } from "@/lib/brigades";
-import { faceCheckEnabled } from "@/lib/ai/face";
+import { faceVerifyAvailable } from "@/lib/face-verify";
 import { SELF_SOURCE, SELF_SOURCES } from "@/lib/self-attendance";
 import { day, inUnit, num, pctText, sum, time, totalsText } from "./fmt";
 import { dashRange, type DashRange } from "./dashboard";
@@ -354,10 +354,10 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
     if (m.status !== "PRESENT") actions.push({ id: "att.face", label: "Keldi — yuz skaneri", tone: "success" });
     if (m.status === "PRESENT" && !m.checkOut) actions.push({ id: "att.checkout", label: "Ketdi (hozir)", tone: "brand" });
     if (m.status !== "ABSENT") actions.push({ id: "att.absent", label: "Kelmadi", tone: "danger", confirm: `${m.fullName} bugun kelmadi deb belgilansinmi?` });
-    // Vaqtni faqat sex boshlig'i tuzatadi. Brigadir esa yuz tekshiruvi yoqiq bo'lsa "Keldi" ni bu
-    // formadan qo'ya olmaydi (aks holda kamerasiz belgilab yuborardi) — server ham rad etadi
+    // Vaqtni faqat sex boshlig'i tuzatadi. Brigadir esa xodim uchun yuz tekshiruvi mumkin bo'lsa (Face ID namunasi
+    // bor yoki AI kaliti sozlangan) "Keldi" ni bu formadan qo'ya olmaydi (aks holda kamerasiz belgilab yuborardi) — server ham rad etadi
     const editor = canWork(user);
-    const noPresent = !editor && faceCheckEnabled() && m.status !== "PRESENT";
+    const noPresent = !editor && m.status !== "PRESENT" && (await faceVerifyAvailable(m.id));
     const opts = noPresent ? statusOptions.filter((o) => o.value !== "PRESENT") : statusOptions;
     actions.push({
       id: "att.status", label: editor ? "Boshqa belgi / vaqtni tuzatish" : "Boshqa belgi", tone: "warning",

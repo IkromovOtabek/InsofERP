@@ -4,7 +4,8 @@ import { notifyLateAfter } from "@/lib/attendance-late";
 import { audit } from "@/lib/audit";
 import { hit } from "@/lib/rate-limit";
 import { canDo } from "@/lib/permissions";
-import { faceImage } from "@/lib/ai/face";
+import { FaceImageError, faceImage } from "@/lib/ai/face";
+import { FaceBusyError, faceDescriptor } from "@/lib/face-descriptor";
 import { removeEmployeeFile, saveEmployeeFile } from "@/lib/uploads";
 import { MAX_SHIFT_MINUTES, dayUtc, hoursText, markOf, toMinutes, today, workedMinutes } from "@/lib/davomat";
 import { nowHHMM, productionStaff } from "@/lib/production-staff";
@@ -31,7 +32,10 @@ import type { Session } from "@/lib/auth";
  *     bir-biriga juda yaqin bo'lsa ("aniq emas") — hech narsa yozilmaydi;
  *   · jonlilik (ko'z yumib ochish) skanerda tekshiriladi — chop etilgan surat bilan o'tib bo'lmaydi;
  *     yozilgan har bir belgining kadri saqlanadi (otdel kadr keyin ko'radi);
- *   · ro'yxatga olishda yuz boshqa xodim kartasidagi yuzga mos kelsa rad etiladi (bir odam — ikki karta).
+ *   · ro'yxatga olishda yuz boshqa xodim kartasidagi yuzga mos kelsa rad etiladi (bir odam — ikki karta);
+ *   · mijoz yuborgan vektorga ko'r-ko'rona ishonilmaydi: server dalil-kadrdan vektorni o'zi qayta hisoblaydi
+ *     (`lib/face-descriptor.ts`) va u yuborilgan vektorlardan biriga yaqin bo'lishi shart (`PHOTO_PROBE_MAX`) —
+ *     aks holda (yoki kadrda yuz topilmasa) hech narsa yozilmaydi.
  *
  * Yozuv — HR tabeli va sex davomatidagi aynan o'sha `Attendance` (employeeId + date), manba `FACE_ID`.
  */
@@ -50,6 +54,11 @@ export const MATCH_MIN_MARGIN = 0.06;
 export const DUPLICATE_DISTANCE = 0.42;
 /** Ro'yxatga olish namunalari o'zaro shundan uzoq bo'lmasin — kadrga boshqa odam kirib qolmagan. */
 const ENROLL_SELF_MAX = 0.62;
+/**
+ * Dalil-kadrdan server hisoblagan vektor yuborilgan vektorlarning eng yaqiniga shundan uzoq bo'lmasin. Kadr skanerda
+ * birinchi vektor olingan aynan o'sha video kadrdan kesiladi — bir kadr qayta kodlanganda masofa odatda < 0,15.
+ */
+export const PHOTO_PROBE_MAX = 0.35;
 
 // ───────────────────────── Ruxsat ─────────────────────────
 
@@ -81,14 +90,45 @@ export const similarity = (d: number) => Math.round(100 / (1 + Math.exp((d - 0.5
 
 type Candidate = { employeeId: string; descriptors: number[][] };
 
+// ───────────────────────── Namunalar keshi ─────────────────────────
+
+export type TemplateRow = { employeeId: string; descriptor: number[]; active: boolean };
+type TemplateCache = { sig: string; at: number; rows: TemplateRow[] };
+/** Kesh muddati — imzo o'zgarmasa ham shundan keyin qayta o'qiladi (ehtiyot uchun). */
+const TEMPLATE_TTL_MS = 60_000;
+const TC = globalThis as unknown as { __insofFaceTemplates?: TemplateCache };
+
+/**
+ * Barcha yuz namunalari (128 sonli vektorlar) — qisqa muddatli kesh bilan: har skaner/tekshiruvda butun jadval
+ * o'qilmasin. Har chaqiruvda arzon "imzo" so'rovi (namunalar soni, eng yangi namuna vaqti, faol xodimlarnikining soni)
+ * olinadi: namuna qo'shilsa/o'chirilsa yoki xodim bo'shatilsa imzo o'zgaradi va kesh darhol yangilanadi.
+ * `active` — xodim faol va bo'shatilmagan.
+ */
+export async function faceTemplates(): Promise<TemplateRow[]> {
+  const [s] = await db.$queryRaw<{ n: number; at: Date | null; act: number }[]>`
+    SELECT count(*)::int AS n, max(t."createdAt") AS at,
+           (count(*) FILTER (WHERE e."isActive" AND e."firedAt" IS NULL))::int AS act
+    FROM "FaceTemplate" t JOIN "Employee" e ON e.id = t."employeeId"`;
+  const sig = `${s?.n ?? 0}:${s?.at ? new Date(s.at).getTime() : 0}:${s?.act ?? 0}`;
+  const c = TC.__insofFaceTemplates;
+  if (c && c.sig === sig && Date.now() - c.at < TEMPLATE_TTL_MS) return c.rows;
+  const rows = (await db.faceTemplate.findMany({ select: { employeeId: true, descriptor: true, employee: { select: { isActive: true, firedAt: true } } } }))
+    .filter((r) => r.descriptor.length === FACE_DIM)
+    .map((r) => ({ employeeId: r.employeeId, descriptor: r.descriptor, active: r.employee.isActive && !r.employee.firedAt }));
+  TC.__insofFaceTemplates = { sig, at: Date.now(), rows };
+  return rows;
+}
+
+/** Namunalar o'zgardi (ro'yxatga olish / o'chirish) — kesh darhol bekor. */
+export function invalidateFaceTemplates() { TC.__insofFaceTemplates = undefined; }
+
 /** Faol (bo'shatilmagan) xodimlarning namunalari, xodim bo'yicha guruhlangan. */
 async function candidates(excludeEmployeeId?: string): Promise<Candidate[]> {
-  const rows = await db.faceTemplate.findMany({
-    where: { employee: { isActive: true, firedAt: null }, ...(excludeEmployeeId ? { employeeId: { not: excludeEmployeeId } } : {}) },
-    select: { employeeId: true, descriptor: true },
-  });
   const by = new Map<string, number[][]>();
-  for (const r of rows) if (r.descriptor.length === FACE_DIM) by.set(r.employeeId, [...(by.get(r.employeeId) ?? []), r.descriptor]);
+  for (const r of await faceTemplates()) {
+    if (!r.active || r.employeeId === excludeEmployeeId) continue;
+    by.set(r.employeeId, [...(by.get(r.employeeId) ?? []), r.descriptor]);
+  }
   return [...by].map(([employeeId, descriptors]) => ({ employeeId, descriptors }));
 }
 
@@ -122,6 +162,25 @@ async function snapshotFile(dataUrl: string): Promise<File> {
   const raw = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
   const img = await faceImage(raw);
   return new File([new Uint8Array(Buffer.from(img.base64, "base64"))], "yuz.jpg", { type: "image/jpeg" });
+}
+
+/**
+ * Dalil-kadr va yuborilgan vektorlar bir yuzmi: server kadrdan vektorni o'zi hisoblaydi (brauzerdagi bilan bir xil
+ * model) va eng yaqin yuborilgan vektorgacha masofani oladi. Kadrda yuz topilmasa yoki masofa katta bo'lsa — rad:
+ * skript bilan boshqa odamning vektorini va o'zining kadrini yuborib bo'lmaydi.
+ */
+async function photoMatchesProbes(dataUrl: string, probes: number[][]): Promise<{ ok: true; d: number } | { ok: false; error: string }> {
+  const raw = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
+  let v: Awaited<ReturnType<typeof faceDescriptor>>;
+  try { v = await faceDescriptor(raw); } catch (e) {
+    if (e instanceof FaceImageError || e instanceof FaceBusyError) return { ok: false, error: e.message };
+    console.error("[face-id] kadr vektori hisoblanmadi:", (e as Error).message);
+    return { ok: false, error: "Yuz tekshiruvi vaqtincha ishlamadi — qayta urining" };
+  }
+  if (!v) return { ok: false, error: "Kadrda yuz topilmadi — kameraga to'g'ri qarab, yorug' joyda qayta urining" };
+  const d = Math.min(...probes.map((p) => distance(v!.descriptor, p)));
+  if (!(d <= PHOTO_PROBE_MAX)) return { ok: false, error: "Kadr va yuz ma'lumoti bir-biriga mos emas — qayta urining" };
+  return { ok: true, d };
 }
 
 async function saveSnapshot(employeeId: string, dataUrl: string): Promise<string | null> {
@@ -165,6 +224,11 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
   const { probes, photo, mode } = p.data;
 
   const m = await matchFace(probes);
+  // Server tekshiruvi (kadr ↔ vektor) — faqat kimdir topilganda (bo'sh bazada/tanilmaganda hisob keraksiz)
+  if (m.kind === "match" || m.kind === "ambiguous") {
+    const pc = await photoMatchesProbes(photo, probes);
+    if (!pc.ok) return fail("PHOTO_MISMATCH", pc.error);
+  }
   if (m.kind === "empty") return fail("NO_TEMPLATES", "Hali hech kimning yuzi ro'yxatga olinmagan — otdel kadr «Yuzlarni ro'yxatga olish» bo'limida xodimlarni qo'shadi");
   if (m.kind === "none") return fail("NO_MATCH", "Yuz tanilmadi — ro'yxatga olinmagan yoki kadr sifatsiz. Yaqinroq kelib, kameraga to'g'ri qarang");
   if (m.kind === "ambiguous") {
@@ -275,6 +339,8 @@ export async function enrollFace(s: Session, raw: unknown): Promise<EnrollResult
   for (let i = 0; i < vecs.length; i++) for (let j = i + 1; j < vecs.length; j++) {
     if (distance(vecs[i]!, vecs[j]!) > ENROLL_SELF_MAX) return { ok: false, error: "Namunalar bir-biriga mos emas — kadrga boshqa odam kirib qolgan bo'lishi mumkin. Qayta urining (kadrda faqat xodimning o'zi tursin)" };
   }
+  const pc = await photoMatchesProbes(photo, vecs);
+  if (!pc.ok) return { ok: false, error: pc.error };
   const [dup] = rank(vecs, await candidates(e.id));
   if (dup && dup.d < DUPLICATE_DISTANCE) {
     const other = await db.employee.findUnique({ where: { id: dup.employeeId }, select: { fullName: true } });
@@ -292,6 +358,7 @@ export async function enrollFace(s: Session, raw: unknown): Promise<EnrollResult
     await audit(tx, s.userId, old.length ? "UPDATE" : "CREATE", "FaceTemplate", e.id, old.length ? { namuna: old.length } : undefined, { xodim: e.fullName, namuna: samples.length, rozilik: true });
     return old;
   });
+  invalidateFaceTemplates();
   await Promise.all(old.map((o) => removeEmployeeFile(o.photo)));
   return { ok: true, count: samples.length, note: `${e.fullName}: yuz ro'yxatga olindi (${samples.length} namuna)` };
 }
@@ -308,6 +375,7 @@ export async function deleteFace(s: Session, employeeId: string): Promise<{ ok: 
     await audit(tx, s.userId, "DELETE", "FaceTemplate", e.id, { namuna: old.length }, { xodim: e.fullName });
     return old;
   });
+  invalidateFaceTemplates();
   await Promise.all(old.map((o) => removeEmployeeFile(o.photo)));
   return { ok: true, note: old.length ? `${e.fullName}: yuz ma'lumoti o'chirildi` : "O'chiriladigan yuz ma'lumoti yo'q" };
 }

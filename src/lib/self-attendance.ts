@@ -6,10 +6,12 @@ import { hit } from "@/lib/rate-limit";
 import { notifyAfter, notifyUsers } from "@/lib/notify";
 import { getCompany } from "@/lib/company";
 import { DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayUtc, hoursText, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, toMinutes, today, validMonth, workedMinutes } from "@/lib/davomat";
-import { nowHHMM, productionStaff } from "@/lib/production-staff";
+import { lockEmployeeAttendance, nowHHMM, productionStaff } from "@/lib/production-staff";
 import { knownPoint } from "@/lib/mobile/geofence";
-import { faceVerifyAvailable, verifyEmployeeFace } from "@/lib/face-verify";
-import { saveEmployeeFile } from "@/lib/uploads";
+import { faceVerifyAvailable, saveFacePhoto, verifyEmployeeFace } from "@/lib/face-verify";
+import { requireFaceNonce } from "@/lib/face-replay";
+import { MAX_FACE_PHOTO_CHARS } from "@/lib/face-id-const";
+import { removeEmployeeFile } from "@/lib/uploads";
 import { dataUrlFile } from "@/lib/procurement";
 import { ListError } from "@/lib/mobile/list";
 import type { MobileUser } from "@/lib/mobile/auth";
@@ -26,6 +28,10 @@ import { notifyLateAfter } from "@/lib/attendance-late";
  *     bo'lsa rad etiladi (jim qabul qilinmaydi);
  *   · GPS aniqligi, telefon soati, soxta joylashuv (Android mock) belgisi;
  *   · takror bosish — bir kun/bir tur uchun bitta yozuv (idempotent: ikkinchi bosish mavjud natijani qaytaradi);
+ *     parallel ikki so'rov xodim bo'yicha qulf (`lockEmployeeAttendance`) ostida ketma-ket — faqat bittasi yozadi,
+ *     ikkinchisining kadri diskda qolmaydi;
+ *   · qayta yuborish: bir martalik challenge (`nonce`, `lib/face-replay.ts`; `MOBILE_FACE_NONCE_REQUIRED=true` da majburiy)
+ *     va kadr xeshi (aynan o'sha kadr ikkinchi marta — rad);
  *   · so'rovlar soni cheklangan;
  *   · kadr xodimning profil surati bilan solishtiriladi (`lib/face-verify.ts`, rahbar skaneri bilan bir xil qoida) —
  *     mos kelsa kadr dalil sifatida saqlanadi (`facePhoto` / `checkOutPhoto`) va ishonch foizi yoziladi.
@@ -39,8 +45,6 @@ export const SELF_SOURCE = "SELF_FACE";
 /** Eski yozuvlar (1.0.3 gacha sinov: telefon Face ID / barmoq izi) — "o'zi belgilagan" deb hisoblanadi. */
 export const SELF_SOURCE_LEGACY = "SELF_BIOMETRIC";
 export const SELF_SOURCES = [SELF_SOURCE, SELF_SOURCE_LEGACY];
-/** Kadr data-URL uzunligi chegarasi (~4,5 MB base64) — ilova ~1,5 MB gacha yuboradi. */
-const MAX_PHOTO_CHARS = 6_000_000;
 /** GPS aniqligi bundan yomon bo'lsa nuqtaga ishonilmaydi. */
 export const MAX_ACCURACY_M = 150;
 /** Telefon soati server soatidan shuncha farq qilsa — so'rov eskirgan yoki soat noto'g'ri. */
@@ -175,7 +179,9 @@ const Body = z.object({
   lng: z.number().min(-180).max(180),
   accuracy: z.number().min(0).max(100_000).nullable().optional(),
   /** Yuz skaneri kadri: `data:image/jpeg;base64,...` — Face ID namunasi (yo'q bo'lsa profil surati) bilan solishtiriladi. */
-  photo: z.string({ message: "Yuzingizni skaner qiling" }).min(100, "Yuzingizni skaner qiling").max(MAX_PHOTO_CHARS, "Kadr juda katta — qayta skaner qiling"),
+  photo: z.string({ message: "Yuzingizni skaner qiling" }).min(100, "Yuzingizni skaner qiling").max(MAX_FACE_PHOTO_CHARS, "Kadr juda katta — qayta skaner qiling"),
+  /** Bir martalik challenge (`GET /api/mobile/attendance/challenge`). Eski ilovada yo'q. */
+  nonce: z.string().max(100).optional(),
   deviceId: z.string().trim().min(8, "Qurilma aniqlanmadi").max(128),
   /** Ilova bosilgan vaqt (ISO). Server o'z soatini yozadi, bu faqat eskirgan/qayta yuborilgan so'rovni ushlash uchun. */
   at: z.string().trim().max(40).refine((v) => Number.isFinite(Date.parse(v)), "Vaqt noto'g'ri"),
@@ -244,21 +250,24 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     [`check${k}Distance`]: Math.round(distance), [`check${k}DeviceId`]: b.deviceId,
   });
   /**
-   * Yuz: kadr ERP'dagi Face ID namunasi bilan (yo'q bo'lsa — profil surati bilan) solishtiriladi (`lib/face-verify.ts`);
-   * mos kelsa kadr dalil sifatida saqlanadi (rahbar skaneri kabi).
-   * Mos kelmasa hech narsa yozilmaydi — faqat auditda urinish qoladi.
+   * Yuz: avval bir martalik challenge (yuborilgan bo'lsa), keyin kadr ERP'dagi Face ID namunasi bilan (yo'q bo'lsa —
+   * profil surati bilan) solishtiriladi (`lib/face-verify.ts`); mos kelsa kadr metadata'siz (EXIF/GPS) qayta kodlanib
+   * dalil sifatida saqlanadi (rahbar skaneri kabi). Mos kelmasa hech narsa yozilmaydi — faqat auditda urinish qoladi.
    */
   const face = async () => {
-    const v = await verifyEmployeeFace(emp.id, "Sizning", photo!);
+    await requireFaceNonce(user.id, b.nonce);
+    const v = await verifyEmployeeFace(emp.id, "Sizning", photo!, { userId: user.id });
     if (!v.ok) {
       if (v.mismatch) await audit(db, user.id, "UPDATE", "Attendance", emp.id, undefined, { xodim: emp.fullName, ozi: true, yuz: "tasdiqlanmadi", ishonch: v.confidence, sabab: v.reason });
-      fail(v.mismatch ? "FACE_MISMATCH" : "FACE_ERROR", v.error, v.mismatch ? 403 : 409);
+      fail(v.replay ? "FACE_REPLAY" : v.mismatch ? "FACE_MISMATCH" : "FACE_ERROR", v.error, v.mismatch ? 403 : 409);
     }
     const ok = v as Extract<typeof v, { ok: true }>;
-    const saved = await saveEmployeeFile(emp.id, photo, { imageOnly: true });
-    if (!saved || "error" in saved) fail("FACE_ERROR", saved?.error ?? "Kadr saqlanmadi — qayta urining", 500);
+    const saved = await saveFacePhoto(emp.id, photo!);
+    if ("error" in saved) fail("FACE_ERROR", saved.error, 500);
     return { stored: (saved as { stored: string }).stored, confidence: ok.confidence };
   };
+  /** Qulf ostidagi yozuv yiqilsa yoki yozilmasa — saqlangan kadr diskda yetim qolmasin. */
+  const dropOnFail = <T,>(stored: string, p: Promise<T>) => p.catch(async (err) => { await removeEmployeeFile(stored); throw err; });
   const auditMeta = { usul: "yuz", masofa: Math.round(distance), aniqlik: b.accuracy ?? null, qurilma: b.deviceId, yangiQurilma: newDevice };
 
   let text: string;
@@ -277,10 +286,21 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       facePhoto: f.stored, faceVerifiedAt: new Date(), faceConfidence: f.confidence,
     };
     const date = dayUtc(iso);
-    await db.$transaction(async (tx) => {
+    // Parallel ikkinchi "Keldim" shu qulfda kutadi va birinchisining yozuvini ko'radi — yozmaydi
+    const cur = await dropOnFail(f.stored, db.$transaction(async (tx) => {
+      await lockEmployeeAttendance(tx, emp.id);
+      const c = await tx.attendance.findUnique({ where: { employeeId_date: { employeeId: emp.id, date } }, select: { status: true, checkIn: true } });
+      if (c && (c.status === "PRESENT" ? !!c.checkIn : c.status !== "ABSENT")) return c;
       const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId: emp.id, date } }, create: { employeeId: emp.id, date, ...data }, update: data });
-      await audit(tx, user.id, "UPDATE", "Attendance", a.id, t ? { status: t.status, checkIn: t.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
-    });
+      await audit(tx, user.id, "UPDATE", "Attendance", a.id, c ? { status: c.status, checkIn: c.checkIn } : undefined, { xodim: emp.fullName, keldi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
+      return null;
+    }));
+    if (cur) {
+      await removeEmployeeFile(f.stored);
+      if (cur.status !== "PRESENT") fail("MARKED_OTHER", `Bugun «${markOf(cur.status).label}» deb belgilangan — o'zgartirish uchun otdel kadrga ayting`, 409);
+      const fresh = await openRecord(emp.id, iso);
+      return { ok: true, already: true, message: `Bugun allaqachon ${cur.checkIn} da kelgansiz`, attendance: statusOf(emp, iso, fresh.today, fresh.yesterday, place) };
+    }
     // Kechikkan bo'lsa — HR va direktorga alohida xabar (xodim/kun bo'yicha bir marta)
     notifyLateAfter(user.id, { employeeId: emp.id, checkIn: now, lateMinutes: late, iso });
     text = `${shortName(emp.fullName)} ${now} da keldi${late ? ` (${late} daq kechikdi)` : ""}${newDevice ? " · yangi telefondan" : ""}`;
@@ -300,10 +320,19 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     if (w !== null && w > MAX_SHIFT_MINUTES) fail("SHIFT_TOO_LONG", `Smena ${MAX_SHIFT_MINUTES / 60} soatdan uzun bo'lib qoldi — ketish vaqtini sex boshlig'i qo'yadi`, 409);
     const f = await face();
     const data = { checkOut: now, ...geo("Out"), checkOutPhoto: f.stored, checkOutFaceConfidence: f.confidence, ...(newDevice ? { newDevice: true } : {}) };
-    await db.$transaction(async (tx) => {
+    const doneAt = await dropOnFail(f.stored, db.$transaction(async (tx) => {
+      await lockEmployeeAttendance(tx, emp.id);
+      const c = await tx.attendance.findUnique({ where: { id: r.id }, select: { checkOut: true } });
+      if (c?.checkOut) return c.checkOut;
       await tx.attendance.update({ where: { id: r.id }, data });
       await audit(tx, user.id, "UPDATE", "Attendance", r.id, { checkOut: null }, { xodim: emp.fullName, ketdi: now, ozi: true, ishonch: f.confidence, ...auditMeta });
-    });
+      return null;
+    }));
+    if (doneAt) {
+      await removeEmployeeFile(f.stored);
+      const fresh = await openRecord(emp.id, iso);
+      return { ok: true, already: true, message: `Bugun allaqachon ${doneAt} da ketgansiz`, attendance: statusOf(emp, iso, fresh.today, fresh.yesterday, place) };
+    }
     const early = earlyBy(now, shift.end);
     text = `${shortName(emp.fullName)} ${now} da ketdi${w !== null ? ` (${hoursText(w)}${early ? `, ${early} daq erta` : ""})` : ""}${newDevice ? " · yangi telefondan" : ""}`;
   }

@@ -3,7 +3,7 @@ import { audit } from "@/lib/audit";
 import { DEFAULT_SHIFT, dayUtc, markOf, shiftProblem, toMinutes, today } from "@/lib/davomat";
 import { lateBy, lateText, shiftOf } from "@/lib/attendance-time";
 import { notifyLateAfter } from "@/lib/attendance-late";
-import type { AttendanceStatus } from "@/generated/prisma";
+import type { AttendanceStatus, Prisma } from "@/generated/prisma";
 
 /**
  * Sex (ishlab chiqarish) tarkibi va uning davomati — veb bosh sahifa, kunlik hisobot va
@@ -89,6 +89,14 @@ export async function productionStaff(iso = today()) {
 }
 export type ProductionStaff = Awaited<ReturnType<typeof productionStaff>>;
 
+/**
+ * Bir xodimning davomat yozuvi bo'yicha navbat (tranzaksiya oxirigacha): bir vaqtda kelgan ikki "Keldi"
+ * (ikki marta bosish, rahbar skaneri + xodimning o'zi) ketma-ket bajariladi — ikkinchisi birinchisining natijasini ko'radi.
+ */
+export async function lockEmployeeAttendance(tx: Prisma.TransactionClient, employeeId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"attendance:" + employeeId}))`;
+}
+
 /** Hozirgi soat "HH:MM" (server mahalliy vaqti). */
 export const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
@@ -98,6 +106,8 @@ type Mark = {
   facePhoto?: string;
   /** Model ishonchi (0–100) — faqat `facePhoto` bilan birga. */
   faceConfidence?: number;
+  /** true — yozishdan oldin (qulf ostida) bugun allaqachon "Keldi" bo'lsa, yozilmaydi (`already` qaytadi). */
+  onlyIfNotPresent?: boolean;
 };
 
 /**
@@ -105,7 +115,7 @@ type Mark = {
  * (otdel kadr tabelidagi yozuvning aynan o'zi: `employeeId + date`).
  * Soat faqat "Keldi" da saqlanadi; kelgan soati berilmasa — hozirgi vaqt.
  */
-export async function markProductionAttendance(userId: string, employeeId: string, m: Mark, iso = today()): Promise<{ error: string } | { ok: true; text: string }> {
+export async function markProductionAttendance(userId: string, employeeId: string, m: Mark, iso = today()): Promise<{ error: string; already?: boolean } | { ok: true; text: string }> {
   const staff = await productionStaff(iso);
   const e = staff.members.find((x) => x.id === employeeId);
   if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };
@@ -124,10 +134,17 @@ export async function markProductionAttendance(userId: string, employeeId: strin
     status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId, lateMinutes,
     ...(m.facePhoto ? { facePhoto: m.facePhoto, faceVerifiedAt: new Date(), faceConfidence: m.faceConfidence ?? null } : {}),
   };
-  await db.$transaction(async (tx) => {
+  const written = await db.$transaction(async (tx) => {
+    await lockEmployeeAttendance(tx, employeeId);
+    if (m.onlyIfNotPresent) {
+      const cur = await tx.attendance.findUnique({ where: { employeeId_date: { employeeId, date } }, select: { status: true } });
+      if (cur?.status === "PRESENT") return false;
+    }
     const a = await tx.attendance.upsert({ where: { employeeId_date: { employeeId, date } }, create: { employeeId, date, ...data }, update: data });
     await audit(tx, userId, "UPDATE", "Attendance", a.id, e.status ? { status: e.status, checkIn: e.checkIn, checkOut: e.checkOut } : undefined, { xodim: e.fullName, ...data, ...(m.facePhoto ? { yuz: "tasdiqlandi" } : {}) });
+    return true;
   });
+  if (!written) return { error: `${e.fullName} bugun allaqachon "Keldi" deb belgilangan`, already: true };
   notifyLateAfter(userId, { employeeId, checkIn, lateMinutes, iso });
   return { ok: true, text: `${e.fullName} — ${markOf(m.status).label.toLowerCase()}${checkIn ? ` ${checkIn}` : ""}${checkOut ? `–${checkOut}` : ""}${lateMinutes ? ` (${lateText(lateMinutes)} kechikdi)` : ""}` };
 }
@@ -137,23 +154,32 @@ export async function markProductionAttendance(userId: string, employeeId: strin
  * profil surati bilan AI orqali) solishtiriladi (`lib/face-verify.ts`); mos kelsa kadr saqlanib davomat yoziladi, aks holda hech narsa yozilmaydi —
  * faqat auditda urinish qoladi (kim, kimni, nima sababdan o'tmadi).
  */
-export async function markAttendanceByFace(userId: string, employeeId: string, photo: File, iso = today()): Promise<{ error: string } | { ok: true; text: string; confidence: number }> {
-  const { saveEmployeeFile } = await import("@/lib/uploads");
-  const { faceVerifyAvailable, verifyEmployeeFace } = await import("@/lib/face-verify");
+export async function markAttendanceByFace(
+  userId: string, employeeId: string, photo: File, iso = today(), opts: { nonce?: unknown } = {},
+): Promise<{ error: string; code?: string } | { ok: true; text: string; confidence: number }> {
+  const { removeEmployeeFile } = await import("@/lib/uploads");
+  const { faceVerifyAvailable, saveFacePhoto, verifyEmployeeFace } = await import("@/lib/face-verify");
+  const { consumeFaceNonce } = await import("@/lib/face-replay");
   if (!(await faceVerifyAvailable(employeeId))) return { error: "Xodimning yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ERP → Davomat bo'limida ro'yxatga olsin yoki davomatni sex boshlig'i qo'lda belgilaydi" };
   const staff = await productionStaff(iso);
   const e = staff.members.find((x) => x.id === employeeId);
   if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };
   if (e.status === "PRESENT") return { error: `${e.fullName} bugun allaqachon "Keldi" deb belgilangan` };
-  const r = await verifyEmployeeFace(employeeId, `${e.fullName} ning`, photo);
+  // Bir martalik challenge (yuborilgan bo'lsa — har doim; majburiyligi MOBILE_FACE_NONCE_REQUIRED bilan)
+  const n = await consumeFaceNonce(userId, opts.nonce);
+  if (!n.ok) return { error: n.error, code: n.code };
+  const r = await verifyEmployeeFace(employeeId, `${e.fullName} ning`, photo, { userId });
   if (!r.ok) {
     if (r.mismatch) await audit(db, userId, "UPDATE", "Attendance", employeeId, undefined, { xodim: e.fullName, yuz: "tasdiqlanmadi", ishonch: r.confidence, sabab: r.reason });
-    return { error: r.error };
+    return { error: r.error, ...(r.replay ? { code: "FACE_REPLAY" } : {}) };
   }
-  const saved = await saveEmployeeFile(employeeId, photo, { imageOnly: true });
-  if (!saved || "error" in saved) return { error: saved?.error ?? "Kadr saqlanmadi" };
-  const m = await markProductionAttendance(userId, employeeId, { status: "PRESENT", facePhoto: saved.stored, faceConfidence: r.confidence }, iso);
-  if ("error" in m) return m;
+  // Kadr metadata'siz (EXIF/GPS) qayta kodlanib saqlanadi
+  const saved = await saveFacePhoto(employeeId, photo);
+  if ("error" in saved) return { error: saved.error };
+  // Parallel ikkinchi "Keldi" qulf ostida ko'radi va yozmaydi — kadri diskda yetim qolmasin
+  const m = await markProductionAttendance(userId, employeeId, { status: "PRESENT", facePhoto: saved.stored, faceConfidence: r.confidence, onlyIfNotPresent: true }, iso)
+    .catch(async (err) => { await removeEmployeeFile(saved.stored); throw err; });
+  if ("error" in m) { await removeEmployeeFile(saved.stored); return m; }
   return { ok: true, text: `${m.text} · yuz tasdiqlandi (${r.confidence}%)`, confidence: r.confidence };
 }
 
@@ -166,12 +192,21 @@ export async function markProductionCheckout(userId: string, employeeId: string,
   return markProductionAttendance(userId, employeeId, { status: "PRESENT", checkIn: e.checkIn, checkOut: at }, iso);
 }
 
-/** Belgilanmagan sex xodimlarini (yoki faqat berilgan brigadalarnikini) "Keldi" qilish — kelgan vaqti hozir (yoki smena boshi, agar undan oldin bo'lsa). */
-export async function markAllPresent(userId: string, iso = today(), brigadeIds?: string[]) {
+/**
+ * Belgilanmagan sex xodimlarini (yoki faqat berilgan brigadalarnikini) "Keldi" qilish — kelgan vaqti hozir (yoki smena boshi, agar undan oldin bo'lsa).
+ * `skipFaceId` — Face ID namunasi bor xodimlar o'tkazib yuboriladi (brigadir: ular faqat yuz bilan "Keldi"); soni `skipped` da.
+ */
+export async function markAllPresent(userId: string, iso = today(), brigadeIds?: string[], opts: { skipFaceId?: boolean } = {}) {
   const staff = await productionStaff(iso);
   // Brigadir faqat o'z brigadasini belgilaydi
-  const left = staff.members.filter((m) => !m.status && (!brigadeIds || (m.brigadeId != null && brigadeIds.includes(m.brigadeId))));
-  if (!left.length) return { ok: true, count: 0 } as const;
+  let left = staff.members.filter((m) => !m.status && (!brigadeIds || (m.brigadeId != null && brigadeIds.includes(m.brigadeId))));
+  let skipped = 0;
+  if (opts.skipFaceId && left.length) {
+    const withFace = new Set((await db.faceTemplate.findMany({ where: { employeeId: { in: left.map((m) => m.id) } }, select: { employeeId: true }, distinct: ["employeeId"] })).map((t) => t.employeeId));
+    skipped = left.filter((m) => withFace.has(m.id)).length;
+    left = left.filter((m) => !withFace.has(m.id));
+  }
+  if (!left.length) return { ok: true, count: 0, skipped } as const;
   const now = nowHHMM();
   const checkIn = iso === today() ? ((toMinutes(now) ?? 0) < (toMinutes(DEFAULT_SHIFT.checkIn) ?? 0) ? DEFAULT_SHIFT.checkIn : now) : DEFAULT_SHIFT.checkIn;
   const date = dayUtc(iso);
@@ -186,10 +221,10 @@ export async function markAllPresent(userId: string, iso = today(), brigadeIds?:
         update: { status: "PRESENT", checkIn, markedById: userId, lateMinutes },
       });
     }
-    await audit(tx, userId, "UPDATE", "Attendance", iso, undefined, { sex: "hammasi keldi", soni: left.length, checkIn });
+    await audit(tx, userId, "UPDATE", "Attendance", iso, undefined, { sex: "hammasi keldi", soni: left.length, checkIn, ...(skipped ? { faceIdOtkazildi: skipped } : {}) });
   });
   notifyLateAfter(userId, left.map((m) => ({ employeeId: m.id, checkIn, lateMinutes: lateOf(m.id), iso })));
-  return { ok: true, count: left.length } as const;
+  return { ok: true, count: left.length, skipped } as const;
 }
 
 /** Direktor: xodimni sex brigadasiga biriktiradi (null — sexdan chiqaradi / taqsimlanmagan). */

@@ -45,16 +45,42 @@ Qoidalar:
  *  · `limitInputPixels` — "dekompressiya bombasi" (kichik fayl, ulkan o'lcham) xotirani yeb qo'ymasin;
  *  · `failOn: "error"` — buzuq fayl jimgina "tuzatilib" o'qilmaydi, rad etiladi.
  */
-const FACE_FORMATS = new Set(["jpeg", "png", "webp"]);
-const SHARP_OPTS = { failOn: "error", limitInputPixels: 40_000_000 } as const;
+export const FACE_FORMATS = new Set(["jpeg", "png", "webp"]);
+export const SHARP_OPTS = { failOn: "error", limitInputPixels: 40_000_000 } as const;
 
-/** Rasmni modelga mos o'lchamga keltiradi (JPEG, uzun tomoni ≤ 512 px). Faqat JPEG/PNG/WEBP qabul qilinadi. */
-export async function faceImage(input: Buffer): Promise<ScanImage> {
+/** Kadr qabul qilinmadi (format, o'lcham, buzuq fayl) — `message` foydalanuvchiga ko'rsatiladi. */
+export class FaceImageError extends Error {}
+
+const FORMAT_ERROR = "Rasm formati qo'llab-quvvatlanmaydi — faqat JPEG, PNG yoki WEBP";
+
+/**
+ * Yuz kadri uchun kirish tekshiruvi (sharp dekoderiga yetib borishdan oldin): fayl boshidagi baytlar (magic bytes) va
+ * sharp o'zi aniqlagan format faqat JPEG/PNG/WEBP; o'lcham `limitInputPixels` dan oshmaydi.
+ * AVIF/HEIF, SVG, TIFF, GIF va boshqalar — rad (`FaceImageError`).
+ */
+export async function checkFaceImage(input: Buffer) {
   const kind = sniffFileKind(input);
-  if (kind !== "jpg" && kind !== "png" && kind !== "webp") throw new Error("Rasm formati qo'llab-quvvatlanmaydi — faqat JPEG, PNG yoki WEBP");
-  const meta = await sharp(input, SHARP_OPTS).metadata();
-  if (!meta.format || !FACE_FORMATS.has(meta.format)) throw new Error("Rasm formati qo'llab-quvvatlanmaydi — faqat JPEG, PNG yoki WEBP");
-  const buf = await sharp(input, SHARP_OPTS).rotate().resize(SIDE, SIDE, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+  if (kind !== "jpg" && kind !== "png" && kind !== "webp") throw new FaceImageError(FORMAT_ERROR);
+  let meta: sharp.Metadata;
+  // Faqat sarlavha o'qiladi (piksellar dekodlanmaydi) — o'lcham chegarasi pastda aniq xabar bilan tekshiriladi
+  try { meta = await sharp(input, { ...SHARP_OPTS, limitInputPixels: false }).metadata(); } catch { throw new FaceImageError("Kadr o'qilmadi (buzuq fayl) — qayta skaner qiling"); }
+  if (!meta.format || !FACE_FORMATS.has(meta.format)) throw new FaceImageError(FORMAT_ERROR);
+  if (!meta.width || !meta.height || meta.width * meta.height > SHARP_OPTS.limitInputPixels) throw new FaceImageError("Kadr o'lchami juda katta — qayta skaner qiling");
+  return meta;
+}
+
+/**
+ * Rasmni JPEG qilib qayta kodlaydi (uzun tomoni ≤ `side` px). Faqat JPEG/PNG/WEBP qabul qilinadi.
+ * Natijada EXIF (GPS, qurilma), ICC va boshqa metadata YO'Q — sharp sukut bo'yicha yozmaydi; yo'nalish `rotate()` bilan
+ * piksellarga o'tkaziladi. Kulrang / 16-bit PNG ham sRGB 8-bit ga keltiriladi.
+ */
+export async function faceImage(input: Buffer, side = SIDE, quality = 82): Promise<ScanImage> {
+  await checkFaceImage(input);
+  let buf: Buffer;
+  try {
+    buf = await sharp(input, SHARP_OPTS).rotate().resize(side, side, { fit: "inside", withoutEnlargement: true })
+      .toColourspace("srgb").jpeg({ quality }).toBuffer();
+  } catch { throw new FaceImageError("Kadr o'qilmadi (buzuq fayl) — qayta skaner qiling"); }
   return { mime: "image/jpeg", base64: buf.toString("base64") };
 }
 

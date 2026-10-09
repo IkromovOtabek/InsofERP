@@ -27,6 +27,7 @@ import type { MobileUser } from "./auth";
 import type { AttendanceStatus } from "@/generated/prisma";
 import { dayUtc, isAttendanceStatus, today } from "@/lib/davomat";
 import { faceCheckEnabled } from "@/lib/ai/face";
+import { facePhotoFile, faceVerifyAvailable } from "@/lib/face-verify";
 import { assignEmployeeBrigade, markAllPresent, markAttendanceByFace, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
 import { submitReport } from "@/lib/production-report";
 import { addProductDefect } from "@/lib/defects";
@@ -635,10 +636,11 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const status = action === "att.present" ? "PRESENT" : action === "att.absent" ? "ABSENT" : textOf(payload, "status");
       if (!employeeId) fail("Xodim tanlanmagan");
       if (!isAttendanceStatus(status)) fail("Holatni tanlang");
-      // Brigadir: yuz tekshiruvi yoqiq bo'lsa "Keldi" faqat `att.face` orqali (kamerasiz belgilab yuborilmasin);
+      // Brigadir: xodim uchun yuz tekshiruvi mumkin bo'lsa (ERP Face ID namunasi bor yoki AI kaliti sozlangan)
+      // "Keldi" faqat `att.face` orqali (kamerasiz belgilab yuborilmasin);
       // kelgan/ketgan vaqtni esa faqat sex boshlig'i (PRODUCTION/SUPERVISOR) tuzatadi
       const brig = user.role === "BRIGADIER";
-      if (brig && status === "PRESENT" && faceCheckEnabled()) {
+      if (brig && status === "PRESENT" && (await faceVerifyAvailable(employeeId!))) {
         const cur = await db.attendance.findUnique({ where: { employeeId_date: { employeeId: employeeId!, date: dayUtc(today()) } }, select: { status: true } });
         if (cur?.status !== "PRESENT") fail("Yuz tekshiruvi yoqilgan — \"Keldi\" ni faqat yuz bilan tasdiqlang", 403);
       }
@@ -657,10 +659,14 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "att.face": {
       // Ilova ichidagi yuz skaneri kadri (data-URL); solishtirish va qoida — `lib/production-staff.ts`.
       // Kadrsiz (telefon Face ID'si bilan, 1.0.3 sinov build'i) endi qabul qilinmaydi
-      const photo = dataUrlFile(textOf(payload, "photo"), "yuz");
-      if (!photo) fail(payload?.biometric === true ? "Ilovani yangilang — \"Keldi\" endi yuz skaneri bilan belgilanadi" : "Xodimning yuzini skaner qiling");
-      const r = await markAttendanceByFace(user.id, id, photo!);
-      if ("error" in r) fail(r.error);
+      // Kadr hajmi — "Keldim" bilan bir xil chegara (`MAX_FACE_PHOTO_CHARS`), dekoderga yetib borishdan oldin
+      const ph = facePhotoFile(payload?.photo);
+      if (!ph.file) fail(ph.tooBig ? "Kadr juda katta — qayta skaner qiling" : payload?.biometric === true ? "Ilovani yangilang — \"Keldi\" endi yuz skaneri bilan belgilanadi" : "Xodimning yuzini skaner qiling");
+      const r = await markAttendanceByFace(user.id, id, ph.file!, today(), { nonce: payload?.nonce });
+      if ("error" in r) {
+        if (r.code) throw new ListError(r.code, r.error, r.code === "FACE_REPLAY" ? 409 : 400);
+        fail(r.error);
+      }
       clearDashCache();
       return { ok: true, message: (r as { text: string }).text };
     }
@@ -672,12 +678,16 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     }
     case "att.all": {
       // Brigadir — faqat o'z brigadasi (smena kartasidan, id `b~<brigadeId>`)
-      // Yuz tekshiruvi yoqiq bo'lsa brigadir hammani birdan "Keldi" qila olmaydi — har biri yuz bilan
-      if (user.role === "BRIGADIER" && faceCheckEnabled()) fail("Yuz tekshiruvi yoqilgan — har bir a'zoni yuz bilan \"Keldi\" qiling", 403);
-      const only = user.role === "BRIGADIER" ? [(await brigadeOf(user, id)).brigadeId] : undefined;
-      const r = await markAllPresent(user.id, today(), only);
+      // AI yuz tekshiruvi yoqiq bo'lsa brigadir hammani birdan "Keldi" qila olmaydi — har biri yuz bilan.
+      // Aks holda Face ID namunasi bor a'zolar o'tkazib yuboriladi (ular faqat yuz skaneri bilan), qolganlari belgilanadi
+      const brig = user.role === "BRIGADIER";
+      if (brig && faceCheckEnabled()) fail("Yuz tekshiruvi yoqilgan — har bir a'zoni yuz bilan \"Keldi\" qiling", 403);
+      const only = brig ? [(await brigadeOf(user, id)).brigadeId] : undefined;
+      const r = await markAllPresent(user.id, today(), only, { skipFaceId: brig });
+      if (!r.count && r.skipped) fail(`Belgilanmagan a'zolarning hammasi (${r.skipped}) Face ID'da ro'yxatga olingan — har birini yuz skaneri bilan "Keldi" qiling`, 403);
       clearDashCache();
-      return { ok: true, message: r.count ? `${r.count} kishi "Keldi" deb belgilandi` : "Hamma allaqachon belgilangan" };
+      const rest = r.skipped ? ` · ${r.skipped} kishi Face ID'da — ularni yuz skaneri bilan belgilang` : "";
+      return { ok: true, message: r.count ? `${r.count} kishi "Keldi" deb belgilandi${rest}` : "Hamma allaqachon belgilangan" };
     }
     case "report.submit": {
       const r = await submitReport(user.id, today(), textOf(payload, "note") || null);

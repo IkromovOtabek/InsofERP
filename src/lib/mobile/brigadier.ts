@@ -252,8 +252,13 @@ async function todayShift(user: MobileUser, brigadeId: string): Promise<MobileDe
   const actions: DetailAction[] = [];
   if (mine) {
     if (!s) actions.push({ id: "shift.open", label: "Smenani boshlash", tone: "success", confirm: `${b.name} — bugungi smena ochilsinmi? Ochilgan vaqt ish vaqtining boshi hisoblanadi.` });
-    // Yuz tekshiruvi yoqiq bo'lsa hammani birdan "Keldi" qilib bo'lmaydi — har biri yuz bilan
-    if (members.some((m) => !m.status) && !faceCheckEnabled()) actions.push({ id: "att.all", label: "Qolganlari keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
+    // Yuz tekshiruvi yoqiq bo'lsa hammani birdan "Keldi" qilib bo'lmaydi — har biri yuz bilan.
+    // Face ID namunasi bor a'zolar ham faqat yuz bilan — tugma faqat namunasiz belgilanmagan a'zo bo'lsa (server ularni o'tkazib yuboradi)
+    const unmarked = members.filter((m) => !m.status);
+    const withFace = unmarked.length && !faceCheckEnabled()
+      ? new Set((await db.faceTemplate.findMany({ where: { employeeId: { in: unmarked.map((m) => m.id) } }, select: { employeeId: true }, distinct: ["employeeId"] })).map((t) => t.employeeId))
+      : new Set<string>();
+    if (unmarked.some((m) => !withFace.has(m.id)) && !faceCheckEnabled()) actions.push({ id: "att.all", label: "Qolganlari keldi", tone: "success", confirm: "Belgilanmagan brigada a'zolari \"Keldi\" deb belgilansinmi?" });
     actions.push(...issueActions(open.map((t) => ({ id: t.id, taskNo: t.taskNo, product: t.orderItem.product.name }))));
     const products = [...new Map(open.map((t) => [t.orderItem.product.id, t.orderItem.product])).values()];
     if (products.length) actions.push(defectAction("shift.defect", products));

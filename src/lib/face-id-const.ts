@@ -17,6 +17,13 @@ export const ENROLL_MAX_SAMPLES = 8;
 export const SNAPSHOT_MAX_CHARS = 600_000;
 
 /**
+ * Mobil yuz skaneri kadri (data-URL) chegarasi — "Keldim/Ketdim" (`lib/self-attendance.ts`) va rahbarning `att.face`.
+ * Ilova (ECO `face-scan.tsx`) base64'ni ≤ 2 000 000 belgida ushlaydi (oshsa past sifat bilan qayta oladi);
+ * `data:image/jpeg;base64,` prefiksi va zaxira bilan 2,1 M. Kattarog'i — rad (sharp'ga yetib bormaydi).
+ */
+export const MAX_FACE_PHOTO_CHARS = 2_100_000;
+
+/**
  * Skaner rejimi: "auto" — bugun kelmagan bo'lsa "Keldi", kelgan bo'lsa (AUTO_OUT_AFTER_MIN dan keyin) "Ketdi";
  * "in" / "out" — faqat kelish yoki faqat ketish (smena boshida/oxirida navbat bo'lganda qulay).
  */
@@ -48,7 +55,7 @@ export type FaceScanOk = {
 };
 export type FaceScanFail = {
   ok: false;
-  code: "NO_MATCH" | "AMBIGUOUS" | "NO_TEMPLATES" | "OUT_OF_SCOPE" | "MARKED_OTHER" | "NO_CHECKIN" | "SHIFT_TOO_LONG" | "RATE_LIMITED" | "BAD_REQUEST" | "FORBIDDEN";
+  code: "NO_MATCH" | "AMBIGUOUS" | "PHOTO_MISMATCH" | "NO_TEMPLATES" | "OUT_OF_SCOPE" | "MARKED_OTHER" | "NO_CHECKIN" | "SHIFT_TOO_LONG" | "RATE_LIMITED" | "BAD_REQUEST" | "FORBIDDEN";
   error: string;
   employee?: { id: string; fullName: string; position: string };
 };
