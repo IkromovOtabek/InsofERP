@@ -17,7 +17,7 @@ import {
 /** Hisob uchun kerakli Trip ustunlari. */
 const TRIP_COLS = {
   id: true, status: true, lastLat: true, lastLng: true, lastAt: true, lastSeenAt: true, lastSpeedKmh: true, lastHeading: true,
-  distanceKm: true, movingSec: true, totalSec: true, maxSpeedKmh: true, avgSpeedKmh: true, trackLine: true, trackPoints: true, summaryAt: true,
+  distanceKm: true, movingSec: true, totalSec: true, maxSpeedKmh: true, avgSpeedKmh: true, trackLine: true, trackPoints: true, summaryAt: true, trackFirstAt: true,
 } as const;
 
 export type TripStat = {
@@ -138,6 +138,7 @@ export async function saveTripSummary(tripId: string): Promise<StoredSummary | n
       distanceKm: pts.length ? s.distanceKm : null,
       movingSec: pts.length ? s.movingSec : null,
       totalSec: pts.length ? s.totalSec : null,
+      trackFirstAt: s.firstAt,
       maxSpeedKmh: s.maxSpeedKmh,
       avgSpeedKmh: s.avgSpeedKmh,
       trackLine: pts.length ? s.polyline : null,
@@ -164,6 +165,28 @@ export async function ensureTripSummaries(tripIds: string[], limit = 200): Promi
   const missing = await db.trip.findMany({ where: { id: { in: tripIds }, status: "DELIVERED", summaryAt: null }, select: { id: true }, take: limit });
   for (const t of missing) await saveTripSummarySafe(t.id);
   return missing.length;
+}
+
+/** Yakunlangan holatlar: yetkazilgan yoki bekor qilingan reysning izi endi o'zgarmaydi (`final`). */
+export const FINISHED_STATUSES = ["DELIVERED", "CANCELLED"] as const;
+export const isFinishedStatus = (status: string) => (FINISHED_STATUSES as readonly string[]).includes(status);
+
+/**
+ * Yakuni saqlanmay qolgan yakunlangan reyslar (yetkazishdagi `saveTripSummarySafe` xatoga uchragan) —
+ * davriy tekshiruv (`lib/gps-watch.ts`) har daqiqada qayta urinadi. Iz yo'q reysga ham `summaryAt`
+ * qo'yiladi, shuning uchun har reys bir marta ko'riladi; xato bo'lsa keyingi tekshiruvda yana.
+ * Faqat izi bor (`lastSeenAt`/`lastAt`) reyslar — GPS'dan oldingi eski reyslar navbatni egallamasin.
+ */
+export async function freezeMissingSummaries(limit = 20): Promise<number> {
+  const missing = await db.trip.findMany({
+    where: { status: { in: [...FINISHED_STATUSES] }, summaryAt: null, OR: [{ lastAt: { not: null } }, { lastSeenAt: { not: null } }] },
+    orderBy: { createdAt: "desc" }, select: { id: true }, take: limit,
+  });
+  let ok = 0;
+  for (const t of missing) {
+    try { await saveTripSummary(t.id); ok++; } catch (e) { console.error("[trip-summary] qayta", t.id, e); }
+  }
+  return ok;
 }
 
 /** Reys km (GPS izi bo'yicha) — yakundan, bo'lmasa hisoblab. Iz yo'q — null. */
@@ -199,7 +222,11 @@ export async function tripPayKm(trips: { id: string; distanceKm?: number | null;
 export const plannedLine = (s: string | null | undefined) => decodePolyline(s);
 
 export type TrackDetail = {
+  /** Yakun saqlanganmi (`summaryAt`). Javobdagi `final` esa reys holatidan (`lib/mobile/trip-track.ts`). */
   final: boolean;
+  /** Izning birinchi va oxirgi nuqtasi vaqti (nuqta yo'q — null). */
+  firstAt: Date | null;
+  lastAt: Date | null;
   meters: number; distanceKm: number; totalSec: number; movingSec: number;
   avgSpeedKmh: number | null; maxSpeedKmh: number | null; points: number;
   line: LatLng[]; polyline: string;
@@ -216,7 +243,8 @@ export async function tripTrackDetail(tripId: string): Promise<TrackDetail | nul
   if (!t) return null;
   if (t.summaryAt) {
     return {
-      final: true, meters: Math.round((t.distanceKm ?? 0) * 1000), distanceKm: t.distanceKm ?? 0, totalSec: t.totalSec ?? 0, movingSec: t.movingSec ?? 0,
+      final: true, firstAt: t.trackPoints ? await summaryFirstAt(t) : null, lastAt: t.trackPoints ? t.lastAt : null,
+      meters: Math.round((t.distanceKm ?? 0) * 1000), distanceKm: t.distanceKm ?? 0, totalSec: t.totalSec ?? 0, movingSec: t.movingSec ?? 0,
       avgSpeedKmh: t.avgSpeedKmh, maxSpeedKmh: t.maxSpeedKmh != null ? Math.round(t.maxSpeedKmh) : null, points: t.trackPoints ?? 0,
       line: decodePolyline(t.trackLine), polyline: t.trackLine ?? "",
     };
@@ -231,7 +259,19 @@ export async function tripTrackDetail(tripId: string): Promise<TrackDetail | nul
     lineMemo.set(tripId, memo);
   }
   return {
-    final: false, meters: s.meters, distanceKm: s.distanceKm, totalSec: s.totalSec, movingSec: s.movingSec,
+    final: false, firstAt: s.firstAt, lastAt: s.lastAt, meters: s.meters, distanceKm: s.distanceKm, totalSec: s.totalSec, movingSec: s.movingSec,
     avgSpeedKmh: s.avgSpeedKmh, maxSpeedKmh: s.maxSpeedKmh, points: s.rawPoints, line: memo.line, polyline: memo.polyline,
   };
+}
+
+/**
+ * Yakundagi izning birinchi nuqtasi vaqti. Ustun bo'sh bo'lsa (ustundan oldingi yakun) — nuqtalardan,
+ * ular ham o'chirilgan bo'lsa oxirgi nuqta − umumiy vaqt; topilgani saqlab qo'yiladi (keyingi so'rov ustundan).
+ */
+async function summaryFirstAt(t: TripCols): Promise<Date | null> {
+  if (t.trackFirstAt) return t.trackFirstAt;
+  const p = await db.tripPosition.findFirst({ where: { tripId: t.id }, orderBy: { at: "asc" }, select: { at: true } });
+  const at = p?.at ?? (t.lastAt && t.totalSec != null ? new Date(t.lastAt.getTime() - t.totalSec * 1000) : null);
+  if (at) await db.trip.updateMany({ where: { id: t.id, trackFirstAt: null }, data: { trackFirstAt: at } }).catch(() => undefined);
+  return at;
 }

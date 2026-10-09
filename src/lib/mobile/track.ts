@@ -22,6 +22,9 @@ import { knownPoint, SITE_RADIUS_M } from "./geofence";
  * Bitta noto'g'ri nuqta butun to'pni rad ETMAYDI: koordinatasi buzuq, aniqligi 100 m dan yomon yoki reys
  * vaqtidan tashqari nuqta tashlanadi (`dropped`), noto'g'ri tezlik/yo'nalish esa null qilinadi.
  * `points: []` (yoki `heartbeat`/`ping`) — nuqtasiz "tirikman": mashina turganda ham oxirgi aloqa yangilanadi.
+ * `ping` — telefon so'rovni tuzgan payt (ISO): oxirgi aloqa shu vaqt bilan yoziladi (kelajakda emas, `PING_MAX_AGE_MS`
+ * va reys oynasidan eski emas — `pingSeenAt`). `ping`siz so'rov (eski ilova, `heartbeat: true` yoki faqat nuqtalar) — server vaqti.
+ * Oxirgi aloqa faqat oldinga suriladi: kech yetib kelgan eski so'rov uni orqaga qaytarmaydi.
  *
  * Javob: { ok, accepted, dropped, duplicates, rejected?, stop?, reason? }. `stop: true` — reys yopilgan,
  * bekor qilingan yoki boshqa haydovchiga o'tgan: ilova kuzatuvni to'xtatib, buferni tozalaydi.
@@ -69,6 +72,20 @@ const TRACKABLE = ["LOADED", "ON_ROAD", "DELIVERED"];
 /** Telefon soati server soatidan shuncha farq qilishi mumkin; reys oynasi chegaralari ham shu zaxira bilan. */
 export const CLOCK_SKEW_MS = 2 * 60_000;
 
+/** `ping` server vaqtidan shuncha orqada bo'lsa ham qabul (tarmoq kechikishi, telefon soati farqi), eskisi — shu chegaraga. */
+export const PING_MAX_AGE_MS = 5 * 60_000;
+
+/**
+ * "Tirikman" vaqti: `ping` bo'lsa — min(ping, hozir), pastdan reys oynasi boshi va `PING_MAX_AGE_MS` bilan
+ * cheklangan; yaroqsiz yoki yo'q bo'lsa — hozir. Sof funksiya (QA `c-gps.ts` tekshiradi).
+ */
+export function pingSeenAt(ping: string | null | undefined, now: number, windowFrom = -Infinity): Date {
+  const ms = ping ? new Date(ping).getTime() : NaN;
+  if (!Number.isFinite(ms)) return new Date(now);
+  const lower = Math.max(windowFrom, now - PING_MAX_AGE_MS);
+  return new Date(Math.min(now, Math.max(lower, ms)));
+}
+
 const num = (v: unknown): number | null => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
   return Number.isFinite(n) ? n : null;
@@ -110,12 +127,12 @@ function parsePoint(tripId: string, x: unknown, now: number): Row | null {
 export async function recordTrack(user: MobileUser, body: unknown): Promise<TrackResult> {
   const p = Batch.safeParse(body);
   if (!p.success) throw new ListError("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri", 400);
-  const { tripId, points, platform } = p.data;
+  const { tripId, points, platform, ping } = p.data;
 
   const trip = await db.trip.findUnique({
     where: { id: tripId },
     select: {
-      driverId: true, status: true, loadedAt: true, departedAt: true, deliveredAt: true, closedAt: true, lastAt: true,
+      driverId: true, status: true, loadedAt: true, departedAt: true, deliveredAt: true, closedAt: true, lastAt: true, lastSeenAt: true, gpsPlatform: true,
       arrivedAt: true, arrivalNotifiedAt: true, deliveryNoteNo: true, pickupLat: true, pickupLng: true,
       order: { select: { lat: true, lng: true, orderNo: true, site: { select: { lat: true, lng: true } } } },
       vehicle: { select: { plate: true } }, driver: { select: { fullName: true } },
@@ -152,11 +169,14 @@ export async function recordTrack(user: MobileUser, body: unknown): Promise<Trac
   }
   let rows = [...byAt.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  // "Tirikman": har qanday so'rov (nuqtali yoki nuqtasiz) oxirgi aloqani yangilaydi. Yetkazilgan reysda kerak emas
-  const seen = new Date(now);
+  // "Tirikman": har qanday so'rov (nuqtali yoki nuqtasiz, `heartbeat`/`ping` bilan yoki ularsiz) oxirgi aloqani
+  // yangilaydi — `ping` bo'lsa uning vaqti bilan. Faqat oldinga: parallel/kech so'rov orqaga surmaydi. Yetkazilgan reysda kerak emas
+  let seen = pingSeenAt(ping, now, from);
   if (!done) {
     const pf = platform === "ios" || platform === "android" ? platform : undefined;
-    await db.trip.update({ where: { id: tripId }, data: { lastSeenAt: seen, ...(pf ? { gpsPlatform: pf } : {}) } });
+    await db.trip.updateMany({ where: { id: tripId, OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: seen } }] }, data: { lastSeenAt: seen } });
+    if (pf && pf !== trip.gpsPlatform) await db.trip.update({ where: { id: tripId }, data: { gpsPlatform: pf } });
+    if (trip.lastSeenAt && trip.lastSeenAt > seen) seen = trip.lastSeenAt;
   }
 
   // Allaqachon saqlangan nuqtalar (bufer qayta yuborilgan — javob telefonga yetib bormagan) tezlik tekshiruviga ham kirmaydi

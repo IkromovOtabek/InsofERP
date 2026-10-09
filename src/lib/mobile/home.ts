@@ -21,7 +21,8 @@ import { ownerCached } from "./owner-cache";
 import { periodId } from "./sex";
 import { hasDashDetail } from "./dash-detail";
 import { brigadierHome } from "./brigadier";
-import { toFleet } from "./fleet";
+import { gpsStale, toFleet } from "./fleet";
+import { logisticsSettings } from "@/lib/logistics";
 import { webList } from "./problems";
 import { lineTotal } from "@/lib/receipt-vat";
 import type { MobileUser } from "./auth";
@@ -119,6 +120,8 @@ export type MobileHome = {
    * o'zi ochgan zayavkalarning reyslari. Bo'sh bo'lsa ilova xaritani chizmaydi.
    */
   live: LiveTruck[];
+  /** "GPS eskirgan" chegarasi, daqiqa (logistika sozlamasi `gpsSilentMin`) — `live[].stale` shu bo'yicha (fleet bilan bir xil). */
+  staleMin?: number;
   /**
    * Logistika: BARCHA faol reyslar — GPS'i yo'qlari ham. Ilova xarita + ro'yxat qilib chizadi,
    * qator bosilganda xarita shu mashinaga yaqinlashadi. Bo'lsa ilova `live` o'rniga shuni ko'rsatadi.
@@ -191,6 +194,10 @@ export type LiveTruck = {
   at?: string;
   speedKmh?: number | null;
   heading?: number | null;
+  /** GPS eskirgan: telefondan oxirgi aloqa `gpsSilentMin` daqiqadan eski — fleet `stale` bilan bir xil qoida. */
+  stale?: boolean;
+  /** Telefondan oxirgi aloqa (nuqta yoki "tirikman"), bo'lmasa oxirgi nuqta vaqti, ISO. */
+  lastSeenAt?: string | null;
 };
 
 /** Har bir rolning "ishchi" ro'yxati — `lib/mobile/list.ts` dagi kalit. */
@@ -750,8 +757,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       else sections.unshift(...dash.charts);
     }
   }
-  const [selfAtt, manage] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null)]);
-  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage };
+  const [selfAtt, manage, settings] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null), logisticsSettings().catch(() => null)]);
+  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage };
 }
 
 /**
@@ -782,26 +789,36 @@ export async function liveTrucks(user: MobileUser): Promise<LiveTruck[]> {
   try {
     const trips = (await liveTrips({ userId: user.id, role: user.role })).trips.filter((t) => t.position);
     // ECO `ref` = ERP nakladnoy raqami; kartochka esa Trip.id bo'yicha ochiladi
-    const ids = new Map(
-      (await db.trip.findMany({ where: { deliveryNoteNo: { in: trips.map((t) => t.ref) } }, select: { id: true, deliveryNoteNo: true } }))
-        .map((t) => [t.deliveryNoteNo, t.id]),
-    );
+    const [rows, settings] = await Promise.all([
+      db.trip.findMany({ where: { deliveryNoteNo: { in: trips.map((t) => t.ref) } }, select: { id: true, deliveryNoteNo: true, lastSeenAt: true } }),
+      logisticsSettings(),
+    ]);
+    const byRef = new Map(rows.map((t) => [t.deliveryNoteNo, t]));
+    const now = new Date();
     return trips
-      .map((t) => ({
-        ref: t.ref,
-        tripId: ids.get(t.ref) ?? null,
-        lat: t.position!.lat,
-        lng: t.position!.lng,
-        plate: t.plate ?? "—",
-        driver: t.driver ?? "haydovchi yo'q",
-        customer: t.customer,
-        status: ecoLabel(t.status)?.label ?? t.status,
-        km: Math.round(t.odometer.meters / 100) / 10,
-        etaMin: t.position!.etaMin,
-        at: t.position!.at,
-        speedKmh: t.position!.speedKmh ?? null,
-        heading: t.position!.heading ?? null,
-      }));
+      .map((t) => {
+        // Eskirganlik fleet bilan bir xil: telefondan oxirgi aloqa ("tirikman" ham), bo'lmasa oxirgi nuqta vaqti
+        const r = byRef.get(t.ref);
+        const at = t.position!.at ? new Date(t.position!.at) : null;
+        const seen = r?.lastSeenAt ?? (at && Number.isFinite(at.getTime()) ? at : null);
+        return {
+          ref: t.ref,
+          tripId: r?.id ?? null,
+          lat: t.position!.lat,
+          lng: t.position!.lng,
+          plate: t.plate ?? "—",
+          driver: t.driver ?? "haydovchi yo'q",
+          customer: t.customer,
+          status: ecoLabel(t.status)?.label ?? t.status,
+          km: Math.round(t.odometer.meters / 100) / 10,
+          etaMin: t.position!.etaMin,
+          at: t.position!.at,
+          speedKmh: t.position!.speedKmh ?? null,
+          heading: t.position!.heading ?? null,
+          stale: gpsStale(seen, now, settings.gpsSilentMin),
+          lastSeenAt: seen?.toISOString() ?? null,
+        };
+      });
   } catch {
     return [];
   }

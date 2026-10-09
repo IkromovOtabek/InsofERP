@@ -17,6 +17,9 @@ const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON
 /** Xaritani kim ko'radi: direktor, logistika va mexanik (vebda ham logistika paneli shularga ochiq). */
 export const FLEET_ROLES = ["DIRECTOR", "LOGISTICS", "MECHANIC"] as const;
 
+/** GPS eskirganmi: oxirgi aloqa `silentMin` daqiqadan eski. Bosh sahifa `live` ham shu bilan (`./home.ts`). */
+export const gpsStale = (seen: Date | null, now: Date, silentMin: number) => !!seen && now.getTime() - seen.getTime() >= silentMin * 60_000;
+
 type Dash = Awaited<ReturnType<typeof import("@/lib/logistics-dashboard").logisticsDashboard>>;
 
 /** Panel reyslari + jonli nuqtalar → ilova qatorlari. Obyekt nuqtasi (navigator uchun) zayavkadan. */
@@ -25,7 +28,6 @@ export async function toFleet(d: Dash, live: LiveTruck[], now = new Date()): Pro
   const byRef = new Map(live.map((l) => [l.ref, l]));
   const active = d.trips.filter((t) => ["PLANNED", "LOADED", "ON_ROAD"].includes(t.status));
   const g = await gpsExtras(active.map((t) => t.id), now);
-  const silentMs = d.settings.gpsSilentMin * 60_000;
   const orders = await db.order.findMany({ where: { id: { in: [...new Set(active.map((t) => t.orderId))] } }, select: { id: true, lat: true, lng: true, site: { select: { lat: true, lng: true } }, items: { select: { product: { select: { name: true } } } } } });
   // Reys nima olib ketyapti — zayavka mahsulotlari
   const products = new Map(orders.map((o) => [o.id, [...new Set(o.items.map((i) => i.product.name))].join(", ")]));
@@ -57,7 +59,7 @@ export async function toFleet(d: Dash, live: LiveTruck[], now = new Date()): Pro
       product: products.get(t.orderId) || null,
       speedKmh: x?.lastSpeedKmh != null ? Math.round(x.lastSpeedKmh) : l?.speedKmh != null ? Math.round(l.speedKmh) : null,
       heading: x?.lastHeading != null ? Math.round(x.lastHeading) : l?.heading != null ? Math.round(l.heading) : null,
-      stale: t.status !== "PLANNED" && !!seen && now.getTime() - seen.getTime() >= silentMs,
+      stale: t.status !== "PLANNED" && gpsStale(seen, now, d.settings.gpsSilentMin),
       lastSeenAt: seen?.toISOString() ?? null,
       trail: g.trail.get(t.id) ?? [],
       alerts: g.alerts.get(t.id) ?? [],

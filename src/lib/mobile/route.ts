@@ -71,16 +71,23 @@ export async function tripRoute(
   // Kartochkadagi qoida bilan bir xil: begona reys "topilmadi" deb qaytadi (`lib/mobile/detail.ts`)
   if (!t) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
   if (user.role === "DRIVER" && t.driverId !== (await driverEmployeeId(user.id))) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
+  // Shu yergacha yetgan haydovchi — reysning o'z haydovchisi (begonasi yuqorida 404 oldi)
+  const isDriver = user.role === "DRIVER";
+  const finished = ["DELIVERED", "CANCELLED"].includes(t.status);
 
   const dest = t.order.lat != null && t.order.lng != null ? { lat: t.order.lat, lng: t.order.lng } : null;
 
-  // Marshrut mashinaning HOZIRGI joyidan boshlanadi — ilova o'z koordinatasini yuboradi.
-  // Yubormasa (GPS hali tutmagan): yuk olingan joy, u ham bo'lmasa zavod nuqtasi.
-  const here = Pos.safeParse(raw);
+  // Marshrut mashinaning HOZIRGI joyidan boshlanadi. Haydovchi ilovasi o'z koordinatasini yuboradi —
+  // faqat SHU qabul qilinadi: logistika/direktor ekrani ochganda ularning joyi mashina joyi emas
+  // (ilgari shundan "rejadagi yo'l" saqlanib, yo'ldan chiqish tekshiruvi buzilardi). Boshqa rollarga —
+  // mashinaning oxirgi ma'lum nuqtasi (Trip.lastLat/lastLng). Bo'lmasa: yuk olingan joy, keyin zavod.
+  const here = isDriver ? Pos.safeParse(raw) : null;
+  const herePos = here?.success ? here.data : null;
+  const truck = !isDriver && t.lastLat != null && t.lastLng != null ? { lat: t.lastLat, lng: t.lastLng } : null;
   const pickup = t.pickupLat != null && t.pickupLng != null ? { lat: t.pickupLat, lng: t.pickupLng } : null;
-  const company = pickup ? null : await getCompany();
+  const company = pickup || herePos || truck ? null : await getCompany();
   const plant = company?.lat != null && company?.lng != null ? { lat: company.lat, lng: company.lng } : null;
-  const origin = here.success ? here.data : (pickup ?? plant);
+  const origin = herePos ?? truck ?? pickup ?? plant;
 
   /**
    * Chiziqni qayta qurish shartmi.
@@ -91,14 +98,16 @@ export async function tripRoute(
    * shuning uchun ilova "menda bor" deb aytsa (`line=skip`), qurilmaydi.
    */
   // Pullik marshrut xizmati (Yandex) — foydalanuvchiga daqiqasiga 20 ta qurish; oshsa chiziqsiz javob (ilova eski chiziqni ko'rsatadi)
-  const keep = raw.line === "skip" || !hit(`route:line:${user.id}`, 20, 60_000);
+  // Yakunlangan reys (yetkazilgan/bekor) — yo'l qurilmaydi (pullik xizmat), saqlangan reja qaytadi
+  const keep = raw.line === "skip" || (!finished && !hit(`route:line:${user.id}`, 20, 60_000));
   const [line, stats, arrival] = await Promise.all([
-    dest && origin && !keep ? routeLine(origin, dest) : Promise.resolve(null),
+    keep || !dest ? Promise.resolve(null) : finished ? Promise.resolve(storedLine(t)) : origin ? routeLine(origin, dest) : Promise.resolve(null),
     tripTrackStats([t.id]),
     tripArrival(t.id),
   ]);
   const st = stats.get(t.id);
-  if (line && dest) await savePlannedRoute(t, line, here.success ? here.data : null).catch((e) => console.error("[trip-route] reja", e));
+  // Rejadagi yo'l faqat haydovchining o'z joyidan qurilgani saqlanadi
+  if (line && dest && isDriver && !finished) await savePlannedRoute(t, line, herePos).catch((e) => console.error("[trip-route] reja", e));
 
   return {
     tripId: t.id,
@@ -121,6 +130,13 @@ export async function tripRoute(
     deliverHint: arrival.reason,
     deliverForm: RECEIVER_FORM,
   };
+}
+
+/** Saqlangan rejadagi yo'l (yakunlangan reys uchun) — bo'lmasa null, ilova chiziqsiz ko'rsatadi. */
+function storedLine(t: { plannedRoute: string | null; plannedKm: number | null; plannedMin: number | null }): RouteLine | null {
+  const points = decodePolyline(t.plannedRoute);
+  if (points.length < 2) return null;
+  return { points, meters: Math.round((t.plannedKm ?? 0) * 1000), seconds: (t.plannedMin ?? 0) * 60, source: "ROUTE" };
 }
 
 /**

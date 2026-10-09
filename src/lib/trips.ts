@@ -445,14 +445,18 @@ export type TrackPoint = { lat: number; lng: number; at: Date };
  * haydovchilar Insof ECO ilovasidan yuradi va ularning izi ECO'da qoladi — xarita
  * ikkala manbani qo'shib ko'rsatadi (`lib/eco/client.ts`).
  */
-export async function tripTrack(tripId: string): Promise<TrackPoint[]> {
+export async function tripTrack(tripId: string): Promise<TrackLinePoint[]> {
   const pts = await db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true } });
   if (pts.length) return pts;
-  // Nuqtalar 90 kundan keyin o'chiriladi (`lib/gps-watch.ts`) — xaritaga saqlangan soddalashtirilgan iz
-  const t = await db.trip.findUnique({ where: { id: tripId }, select: { trackLine: true, lastAt: true } });
-  const at = t?.lastAt ?? new Date(0);
-  return decodePolyline(t?.trackLine).map((p) => ({ ...p, at }));
+  // Nuqtalar 90 kundan keyin o'chiriladi (`lib/gps-watch.ts`) — xaritaga saqlangan soddalashtirilgan iz.
+  // Uning nuqtalari vaqtsiz: soxta vaqt qo'yilmaydi (hammasiga bir xil vaqt — masofa/tezlik hisobini buzardi),
+  // statistika esa yakun ustunlaridan olinadi (`tripStats`)
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: { trackLine: true } });
+  return decodePolyline(t?.trackLine).map((p) => ({ ...p, at: null }));
 }
+
+/** Xaritadagi iz nuqtasi: xom nuqta (vaqti bor) yoki yakundagi soddalashtirilgan izdan (vaqti yo'q). */
+export type TrackLinePoint = { lat: number; lng: number; at: Date | null };
 
 /** Bitta reys bo'yicha iz xulosasi — oxirgi joylashuv va bosib o'tilgan yo'l. */
 export type TripTrackStat = { last: TrackPoint; meters: number; points: number; minutes: number };

@@ -1420,6 +1420,7 @@ model Trip {
   distanceKm   Float? // GPS izi bo'yicha bosib o'tilgan yo'l (null — iz yo'q)
   movingSec    Int? // harakatda o'tgan vaqt (turishlar va aloqa uzilishlari chiqarilgan)
   totalSec     Int? // birinchi nuqtadan oxirgisigacha
+  trackFirstAt DateTime? // izning birinchi nuqtasi vaqti (oxirgisi — lastAt): nuqtalar 90 kundan keyin o'chsa ham reys boshi/oxiri qoladi
   maxSpeedKmh  Float?
   avgSpeedKmh  Float? // distanceKm / movingSec
   trackLine    String? // soddalashtirilgan iz — Google encoded polyline (5 xona)

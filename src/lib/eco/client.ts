@@ -152,7 +152,8 @@ export type EcoTrack = {
   ref: string;
   deliveryId: string;
   status: EcoStatus;
-  points: { lat: number; lng: number; at: string; speedKmh: number | null }[];
+  /** `at` null — ERP yakunidagi soddalashtirilgan iz (xom nuqtalar 90 kundan keyin o'chirilgan, vaqti noma'lum). */
+  points: { lat: number; lng: number; at: string | null; speedKmh: number | null }[];
   odometer: EcoOdometer;
 };
 

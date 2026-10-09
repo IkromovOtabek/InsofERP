@@ -111,13 +111,19 @@ export async function trackByRef(ref: string): Promise<{ track: EcoTrack | null;
   if (trip) {
     const points = await tripTrack(trip.id);
     if (points.length > 0) {
+      // Xom nuqtalar o'chirilgan (yakundagi iz, vaqtsiz) — raqamlar yakun ustunlaridan
+      const raw = points.every((p) => p.at) ? (points as TrackPoint[]) : null;
+      const st = raw ? null : (await tripStats([trip.id])).get(trip.id);
       return {
         track: {
           ref,
           deliveryId: trip.ecoDeliveryId ?? trip.id,
           status: TO_ECO_STATUS[trip.status] ?? "EN_ROUTE",
-          points: points.map((p) => ({ lat: p.lat, lng: p.lng, at: p.at.toISOString(), speedKmh: null })),
-          odometer: odometer(points),
+          points: points.map((p) => ({ lat: p.lat, lng: p.lng, at: p.at?.toISOString() ?? null, speedKmh: null })),
+          odometer: raw ? odometer(raw) : {
+            meters: st?.meters ?? 0, points: st?.points ?? points.length, movingMinutes: st?.minutes ?? 0,
+            avgSpeedKmh: st?.avgSpeedKmh != null ? Math.round(st.avgSpeedKmh) : null, maxSpeedKmh: st?.maxSpeedKmh ?? null,
+          },
         },
         error: null,
       };

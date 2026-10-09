@@ -14,7 +14,8 @@ import { haversineMeters } from "@/lib/geo";
 import { decodePolyline, encodePolyline, simplifyLine, summarizeTrack } from "@/lib/trip-track";
 import { saveTripSummary, tripKmMap, tripPayKm } from "@/lib/trip-summary";
 import { tripDelivered, tripTrack } from "@/lib/trips";
-import { cleanupPositions, gpsWatchTick } from "@/lib/gps-watch";
+import { cleanupPositions, gpsWatchTick, outsideLoadingZone } from "@/lib/gps-watch";
+import { PING_MAX_AGE_MS, pingSeenAt } from "@/lib/mobile/track";
 
 // Push himoyasi test rejimiga tayanadi (`lib/push.ts` → externalAllowed) — skript ham test rejimida
 process.env.INSOF_ENV = "test";
@@ -148,6 +149,27 @@ async function main() {
   r = await api("POST", "/api/mobile/track", { token: drv, body: { tripId: A.id } });
   check("points'siz (faqat tripId) → «tirikman», 200", r.status === 200 && r.json?.accepted === 0, msg(r));
 
+  section("track: ping — oxirgi aloqa telefon vaqti bilan (cheklangan)");
+  {
+    const now = Date.now();
+    check("pingSeenAt: yo'q / buzuq → hozir", pingSeenAt(undefined, now).getTime() === now && pingSeenAt("abc", now).getTime() === now);
+    check("pingSeenAt: kelajak → hozir", pingSeenAt(new Date(now + 10 * MIN).toISOString(), now).getTime() === now);
+    check("pingSeenAt: 2 daq oldin → o'sha", pingSeenAt(new Date(now - 2 * MIN).toISOString(), now).getTime() === now - 2 * MIN);
+    check("pingSeenAt: 1 soat oldin → PING_MAX_AGE chegarasi", pingSeenAt(new Date(now - 60 * MIN).toISOString(), now).getTime() === now - PING_MAX_AGE_MS);
+    check("pingSeenAt: reys oynasidan oldin → oyna boshi", pingSeenAt(new Date(now - 4 * MIN).toISOString(), now, now - MIN).getTime() === now - MIN);
+  }
+  const P = await mkTrip({});
+  r = await track(P.id, [], { heartbeat: true, ping: ago(3 * MIN).toISOString() });
+  let tP = await db.trip.findUniqueOrThrow({ where: { id: P.id } });
+  check("ping 3 daq oldin → lastSeenAt ≈ ping", r.status === 200 && !!tP.lastSeenAt && Math.abs(tP.lastSeenAt.getTime() - ago(3 * MIN).getTime()) < 5000, { seen: tP.lastSeenAt, r: msg(r) });
+  r = await track(P.id, [], { ping: new Date(Date.now() + 30 * MIN).toISOString() });
+  tP = await db.trip.findUniqueOrThrow({ where: { id: P.id } });
+  check("kelajakdagi ping → hozir (kelajakka yozilmaydi)", !!tP.lastSeenAt && tP.lastSeenAt.getTime() <= Date.now() && Date.now() - tP.lastSeenAt.getTime() < 10_000, tP.lastSeenAt);
+  const seenNow = tP.lastSeenAt!.getTime();
+  r = await track(P.id, [], { heartbeat: true, ping: ago(2 * MIN).toISOString() });
+  tP = await db.trip.findUniqueOrThrow({ where: { id: P.id } });
+  check("eski ping oxirgi aloqani orqaga surmaydi", tP.lastSeenAt?.getTime() === seenNow && Date.parse(r.json?.lastSeenAt) === seenNow, { seen: tP.lastSeenAt, r: r.json?.lastSeenAt });
+
   section("track: stop — yopilgan / bekor / boshqa haydovchi");
   const C = await mkTrip({ status: "CANCELLED" });
   r = await track(C.id, [pt(a(1), ago(5 * MIN))]);
@@ -222,6 +244,17 @@ async function main() {
   r = await api("GET", `/api/mobile/trip-track?id=${F.id}`, { token: drv });
   check("haydovchi o'z yopilgan reysi → 200, final, km 10", r.status === 200 && r.json?.final === true && Math.abs(r.json?.distanceKm - 10) <= 0.1 && r.json?.movingSec === 600 && r.json?.totalSec === 600, msg(r));
   check("javobda line[], polyline, avg/max tezlik, oxirgi nuqta", Array.isArray(r.json?.line) && r.json.line.length >= 2 && typeof r.json?.polyline === "string" && r.json?.maxSpeedKmh === 72 && r.json?.avgSpeedKmh > 59 && r.json?.last?.lat != null, msg(r));
+  check("yopilgan reys: startedAt = departedAt, endedAt = deliveredAt, durationMinutes", r.json?.startedAt === tF.departedAt?.toISOString() && r.json?.endedAt === tF.deliveredAt?.toISOString() && r.json?.durationMinutes === Math.round((tF.deliveredAt!.getTime() - tF.departedAt!.getTime()) / MIN), { s: r.json?.startedAt, e: r.json?.endedAt, d: r.json?.durationMinutes });
+  check("yakunda trackFirstAt = birinchi nuqta vaqti", tF.trackFirstAt?.getTime() === Date.parse(fPts[0]!.at), { first: tF.trackFirstAt, want: fPts[0]!.at });
+  r = await api("GET", `/api/mobile/trip-track?id=${A.id}`, { token: lg });
+  check("ochiq reys: startedAt bor, endedAt null, durationMinutes hozirgacha", r.json?.startedAt === A.departedAt?.toISOString() && r.json?.endedAt === null && r.json?.durationMinutes >= 55, { s: r.json?.startedAt, e: r.json?.endedAt, d: r.json?.durationMinutes });
+  // Yakun saqlanmay qolgan yetkazilgan reys (xato) — trip-track qayta hisoblaydi va final = true
+  const R = await mkTrip({ status: "DELIVERED", departedAt: null, loadedAt: null, deliveredAt: ago(MIN), lastAt: ago(3 * MIN) });
+  await db.tripPosition.createMany({ data: [0, 1, 2].map((i) => ({ tripId: R.id, ...north(BASE, i * 1000), at: ago(6 * MIN - i * MIN) })) });
+  r = await api("GET", `/api/mobile/trip-track?id=${R.id}`, { token: lg });
+  const tR = await db.trip.findUniqueOrThrow({ where: { id: R.id } });
+  check("yakunsiz DELIVERED: final true, yakun saqlandi (2 km)", r.json?.final === true && !!tR.summaryAt && tR.distanceKm === 2, { final: r.json?.final, km: tR.distanceKm });
+  check("loadedAt/departedAt yo'q — startedAt = birinchi nuqta", r.json?.startedAt === tR.trackFirstAt?.toISOString() && !!tR.trackFirstAt, { s: r.json?.startedAt, f: tR.trackFirstAt });
   r = await api("GET", `/api/mobile/trip-track?id=${A.id}`, { token: lg });
   check("logistika ochiq reys → 200, final false, km > 0", r.status === 200 && r.json?.final === false && r.json?.distanceKm > 0 && r.json?.points >= 10, msg(r));
   const kmOpen1 = r.json?.meters;
@@ -251,6 +284,35 @@ async function main() {
   truck = (r.json?.trucks ?? []).find((t: { tripId: string }) => t.tripId === A.id);
   check("40 daqiqa signal yo'q → stale true", truck?.stale === true, { stale: truck?.stale, seen: truck?.lastSeenAt });
   await db.trip.update({ where: { id: A.id }, data: { lastSeenAt: new Date() } });
+
+  section("Bosh sahifa live: server stale (fleet bilan bir xil)");
+  r = await api("GET", "/api/mobile/home", { token: lg });
+  let lv = (r.json?.live ?? []).find((t: { tripId: string }) => t.tripId === A.id);
+  check("home live: stale false, lastSeenAt, staleMin", r.status === 200 && lv?.stale === false && typeof lv?.lastSeenAt === "string" && typeof r.json?.staleMin === "number", { lv, staleMin: r.json?.staleMin });
+  await db.trip.update({ where: { id: A.id }, data: { lastSeenAt: ago(40 * MIN) } });
+  r = await api("GET", "/api/mobile/home", { token: lg });
+  lv = (r.json?.live ?? []).find((t: { tripId: string }) => t.tripId === A.id);
+  check("home live: 40 daqiqa signal yo'q → stale true", lv?.stale === true, lv);
+  await db.trip.update({ where: { id: A.id }, data: { lastSeenAt: new Date() } });
+
+  section("trip-route: rejadagi yo'l faqat haydovchi joyidan, yakunlangan reysga qurilmaydi");
+  {
+    const truckAt = north(BASE, 3000);
+    const RT = await mkTrip({ lastLat: truckAt.lat, lastLng: truckAt.lng, lastAt: ago(MIN) });
+    r = await api("GET", `/api/mobile/trip-route?id=${RT.id}&lat=${BASE.lat + 1}&lng=${BASE.lng + 1}`, { token: lg });
+    check("logistika: lat/lng e'tiborsiz, origin = mashinaning oxirgi nuqtasi", r.status === 200 && r.json?.origin?.lat === truckAt.lat && r.json?.origin?.lng === truckAt.lng, msg(r));
+    const tRT = await db.trip.findUniqueOrThrow({ where: { id: RT.id } });
+    check("logistika so'rovi plannedRoute saqlamadi", tRT.plannedRoute == null, tRT.plannedRoute);
+    r = await api("GET", `/api/mobile/trip-route?id=${RT.id}&lat=${north(BASE, 100).lat}&lng=${BASE.lng}`, { token: drv });
+    check("haydovchi: origin = yuborgan joyi", r.status === 200 && Math.abs(r.json?.origin?.lat - north(BASE, 100).lat) < 1e-9, msg(r));
+    const stored = [BASE, north(BASE, 2000), east(north(BASE, 2000), 2000)];
+    const RD = await mkTrip({ status: "DELIVERED", deliveredAt: ago(MIN), plannedRoute: encodePolyline(stored), plannedKm: 4, plannedMin: 9 });
+    r = await api("GET", `/api/mobile/trip-route?id=${RD.id}`, { token: lg });
+    check("yetkazilgan reys: saqlangan reja qaytdi (4 km, 3 nuqta)", r.status === 200 && r.json?.lineIncluded === true && r.json?.line?.length === 3 && r.json?.routeMeters === 4000, msg(r));
+    const RC = await mkTrip({ status: "CANCELLED" });
+    r = await api("GET", `/api/mobile/trip-route?id=${RC.id}`, { token: lg });
+    check("bekor reys, reja yo'q: chiziq qurilmadi", r.status === 200 && r.json?.lineIncluded === false && r.json?.line?.length === 0, msg(r));
+  }
 
   // ─────────────────────────────────────────────────────────────
   section("Obyektga yetib kelish (300 m) — xabar bir marta");
@@ -345,6 +407,29 @@ async function main() {
   await db.trip.update({ where: { id: W1.id }, data: { arrivedAt: new Date() } });
   await gpsWatchTick({ force: true, cleanup: false });
   check("obyektga yetib kelgan reysning ochiq holati yopildi", (await db.tripAlert.count({ where: { tripId: W1.id, closedAt: null } })) === 0);
+
+  section("Davriy tekshiruv: LOADED reyslar va yakunni qayta saqlash");
+  check("outsideLoadingZone: pickup 300 m radius, joy noma'lum — false",
+    !outsideLoadingZone(north(BASE, 100), BASE, null) && outsideLoadingZone(north(BASE, 1000), BASE, null) && !outsideLoadingZone(null, BASE, null) && !outsideLoadingZone(north(BASE, 1000), null, null)
+    && outsideLoadingZone(north(BASE, 1000), null, { ...BASE, radiusM: 500 }) && !outsideLoadingZone(north(BASE, 400), null, { ...BASE, radiusM: 500 }));
+  const L1 = await mkTrip({ status: "LOADED", departedAt: null, lastSeenAt: ago(30 * MIN) });
+  const L2 = await mkTrip({ status: "LOADED", departedAt: null, lastSeenAt: new Date() });
+  await db.tripPosition.createMany({ data: Array.from({ length: 16 }, (_, i) => ({ tripId: L2.id, lat: BASE.lat + ((i % 3) - 1) * 0.00008, lng: BASE.lng, at: ago(30 * MIN - i * 2 * MIN) })) });
+  const B4 = north(BASE, 25_000);
+  const L3 = await mkTrip({ status: "LOADED", departedAt: null, lastSeenAt: new Date() });
+  await db.tripPosition.createMany({ data: Array.from({ length: 16 }, (_, i) => ({ tripId: L3.id, lat: B4.lat + ((i % 3) - 1) * 0.00008, lng: B4.lng, at: ago(30 * MIN - i * 2 * MIN) })) });
+  const S1 = await mkTrip({ status: "DELIVERED", deliveredAt: ago(MIN), lastAt: ago(2 * MIN), lastSeenAt: ago(2 * MIN) });
+  await db.tripPosition.createMany({ data: [0, 1].map((i) => ({ tripId: S1.id, ...north(BASE, i * 1000), at: ago(4 * MIN - i * MIN) })) });
+  const rep4 = await gpsWatchTick({ force: true, cleanup: false });
+  const op4 = (id: string, k: string) => !!rep4?.opened.some((o) => o.tripId === id && o.kind === k);
+  check("LOADED + jim → GPS jim ochildi", op4(L1.id, "SILENT"), rep4?.opened.filter((o) => o.tripId === L1.id));
+  check("LOADED zavodda (yuklash joyida) uzoq turibdi → STOP yo'q", !op4(L2.id, "STOP") && !op4(L2.id, "SILENT"), rep4?.opened.filter((o) => o.tripId === L2.id));
+  check("LOADED zavoddan tashqarida uzoq turibdi → STOP ochildi", op4(L3.id, "STOP"), rep4?.opened.filter((o) => o.tripId === L3.id));
+  const tS1 = await db.trip.findUniqueOrThrow({ where: { id: S1.id } });
+  check("yakuni saqlanmagan DELIVERED reysga yakun qayta saqlandi (1 km)", !!tS1.summaryAt && tS1.distanceKm === 1 && (rep4?.frozen ?? 0) >= 1, { km: tS1.distanceKm, frozen: rep4?.frozen });
+  const rep5 = await gpsWatchTick({ force: true, cleanup: false });
+  check("LOADED: qayta tekshiruvda takror ochilish yo'q", !rep5?.opened.some((o) => [L1.id, L2.id, L3.id].includes(o.tripId)), rep5?.opened);
+  await db.trip.updateMany({ where: { id: { in: [L1.id, L2.id, L3.id] } }, data: { status: "CANCELLED" } });
   globalThis.fetch = realFetch;
   console.log = realLog;
   await db.mobileDevice.deleteMany({ where: { deviceId: `qa-gps-${stamp}` } });
@@ -394,6 +479,9 @@ async function main() {
   check("o'chirilgandan keyin xaritada saqlangan iz (polyline)", xTrack.length === 2, xTrack.length);
   r = await api("GET", `/api/mobile/trip-track?id=${X.id}`, { token: lg });
   check("trip-track: nuqtalarsiz ham yakundan (5 km, final)", r.status === 200 && r.json?.final && r.json?.distanceKm === 5 && r.json?.line?.length === 2, msg(r));
+  check("trip-track: nuqtalarsiz — startedAt/endedAt reys vaqtlaridan", r.json?.startedAt === tX.departedAt?.toISOString() && r.json?.endedAt === tX.deliveredAt?.toISOString() && r.json?.durationMinutes === Math.round((tX.deliveredAt!.getTime() - tX.departedAt!.getTime()) / MIN), { s: r.json?.startedAt, e: r.json?.endedAt, d: r.json?.durationMinutes });
+  check("tripTrack: nuqtalarsiz iz vaqtsiz (soxta vaqt yo'q)", xTrack.every((p) => p.at === null), xTrack);
+  check("yakunda trackFirstAt saqlangan (tozalashdan oldin)", !!tX.trackFirstAt && Math.abs(tX.trackFirstAt.getTime() - old(100, 0).getTime()) < 5000, tX.trackFirstAt);
   const cl2 = await gpsWatchTick({ force: true, cleanup: true });
   check("davriy ish ichida tozalash ishlaydi (cleanup hisoboti)", !!cl2?.cleanup, cl2?.cleanup);
 
