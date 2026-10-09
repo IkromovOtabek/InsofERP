@@ -273,7 +273,12 @@ section("scripts/tenant-up.sh");
   check("bash -n", spawnSync("bash", ["-n", sh]).status === 0);
   const r = spawnSync("bash", [sh, "alfa"], { encoding: "utf8" });
   check("root'siz → aniq xato", r.status !== 0 && r.stderr.includes("sudo bilan"), r.stderr);
+  if (!existsSync("/etc/insof/tenant-up.conf")) {
+    const d = spawnSync("bash", [sh, "alfa", "alfa.insof-erp.uz"], { encoding: "utf8" });
+    check("domen + /etc/insof/tenant-up.conf yo'q → rad (default-deny), aniq xabar", d.status !== 0 && d.stderr.includes("domen siyosati fayli yo'q"), d.stderr);
+  }
   const src = readFileSync(sh, "utf8");
+  check("siyosat fayli majburiy (yo'q bo'lsa rad, ixtiyoriy emas)", !/\[ -n "\$DOMAIN" \] && \[ -e "\$POLICY" \]/.test(src) && src.includes('[ ! -e "$POLICY" ]'));
   check("shablonlar repo'dan EMAS, /usr/local/share/insof dan", src.includes("TPL_DIR=/usr/local/share/insof") && !/\$APP\/docs\/deploy/.test(src));
   check("root egaligi tekshiruvi (root_only)", /root_only "\$TPL_DIR\/insof-erp@\.service"/.test(src) && src.includes("8#022"));
   check("deploy joylari faqat runuser bilan (root chown -R yo'q)", !/chown -R/.test(src) && src.includes("runuser -u"));

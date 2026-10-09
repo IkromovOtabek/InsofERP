@@ -39,7 +39,7 @@ import { checkKey, type ActionType } from "@/lib/control/monitor/contract";
 import {
   THRESHOLDS, countJournalLines, cpuPctFromDelta, cpuSustainedStatus, decideIncident, diskStatus, latestBackupDir,
   levelAbove, levelBelow, loadStatus, memStatus, netBps, parseLoadavg, parseMeminfo, parseNetDev, parseProcStat,
-  parseProcStatus, parseSystemctlShow, parseUptime, restartsIncreased, scrubJson, scrubSecrets, severityFor, sevRank,
+  parseProcStatus, parseSystemctlShow, parseUptime, pendingExpired, pendingExpiredMessage, restartsIncreased, scrubJson, scrubSecrets, severityFor, sevRank,
   statusForSeverity, topByRss, findingCheckStatus, findingIsProblem, trimOutput, unitStatus, validateAction, worst,
   type ActionParams, type CpuTimes, type NetTotals, type UnitInfo,
 } from "@/lib/control/monitor/parse";
@@ -1110,6 +1110,15 @@ async function actionsBody(): Promise<string> {
   let started = 0;
   for (const a of pending) {
     if (stopping || runningActions.size >= MAX_PARALLEL_ACTIONS) break;
+    // Eskirgan xavfli amal (agent to'xtab turgan paytda qo'yilgan REBOOT, DEPLOY …) — bajarilmaydi, REJECTED
+    if (pendingExpired(a.type, a.requestedAt)) {
+      const rej = await control.agentAction.updateMany({
+        where: { id: a.id, status: "PENDING" },
+        data: { status: "REJECTED", finishedAt: new Date(), output: pendingExpiredMessage(a.requestedAt) },
+      });
+      if (rej.count === 1) warnLog(`amal ${a.type} (${a.id}) muddati o'tgan — rad etildi`);
+      continue;
+    }
     // Bir turdagi amal bir vaqtda bittadan (ikki RUN_BACKUP yoki ikki restart parallel ketmasin)
     if ([...runningActions.values()].includes(a.type)) continue;
     // Atomar olish: boshqa jarayon (yoki takroriy so'rov) bir amalni ikki marta bajarmasin

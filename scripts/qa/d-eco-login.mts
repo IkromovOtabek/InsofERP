@@ -21,7 +21,7 @@ import bcrypt from "bcryptjs";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PGUSER = process.env.D_PGUSER || os.userInfo().username;
 const PG = `postgresql://${PGUSER}@127.0.0.1:5432`;
-const DB = "insof_test_ctl_eco";
+const DB = `${process.env.D_DB_PREFIX || "insof_test_"}ctl_eco`; // d-env.sh D_DB_PREFIX — parallel yugurishlar uchun
 const API_KEY = "test-eco-key";
 
 /* ───────── soxta ECO ───────── */
@@ -145,6 +145,22 @@ try {
   L = await E.ecoAdminLogin("+998900000002", "eco-pass-C5", "10.2.0.4");
   check(!L.ok && L.error === msgBad, "bloklangan admin → kira olmaydi, xabar bir xil", L);
   check((await events("ADMIN_LOGIN_ECO_FAIL")).some((e) => (e.detail as { reason?: string })?.reason === "bloklangan admin"), "bloklangan admin urinishi jurnalda");
+
+  // Vaqt farqi yo'q: xato parol (ECO rad etdi), bog'lanmagan va bloklangan (ECO qabul qildi + baza) — bir xil xabar,
+  // hammasi ≥ ECO_FAIL_FLOOR_MS va bir-biridan sezilarli farqsiz; har biri jurnalga (bir xil tartib: qulf → jurnal → kechikish)
+  const timed = async (phone: string, pw: string, ip: string) => { const t = Date.now(); const x = await E.ecoAdminLogin(phone, pw, ip); return { ms: Date.now() - t, x }; };
+  const ev0 = (await events("ADMIN_LOGIN_ECO_FAIL")).length;
+  const tBad = await timed("+998901112233", "noto'g'ri-2", "10.2.1.1");
+  const tUnl = await timed("+998907778899", "eco-pass-X3", "10.2.1.2");
+  const tBlk = await timed("+998900000002", "eco-pass-C5", "10.2.1.3");
+  const tLong = await timed("+998901112233", "x".repeat(201), "10.2.1.4");
+  const all3 = [tBad, tUnl, tBlk, tLong];
+  const spread = Math.max(...all3.map((t) => t.ms)) - Math.min(...all3.map((t) => t.ms));
+  check(all3.every((t) => !t.x.ok && t.x.error === msgBad), "vaqt: to'rt holatda xabar aynan bir xil", all3.map((t) => t.x));
+  check(all3.every((t) => t.ms >= E.ECO_FAIL_FLOOR_MS) && spread < 250, `vaqt: hammasi ≥ ${E.ECO_FAIL_FLOOR_MS} ms, farq ${spread} ms < 250`, all3.map((t) => t.ms));
+  const evs4 = (await events("ADMIN_LOGIN_ECO_FAIL")).slice(ev0).map((e) => (e.detail as { reason?: string })?.reason);
+  check(evs4.length === 4 && evs4[0] === "noto'g'ri telefon yoki parol" && evs4[1] === "bog'lanmagan ECO hisobi bilan urinish" && evs4[2] === "bloklangan admin" && evs4[3] === "noto'g'ri telefon yoki parol",
+    "vaqt: har rad sababi jurnalda (xato parol ham)", evs4);
 
   // Qulf: 5 xato → 6-chi (hatto to'g'ri parol bilan) ECO'ga bormaydi
   for (let i = 0; i < 5; i++) await E.ecoAdminLogin("+998900000001", `xato-${i}`, `10.3.0.${i + 1}`);

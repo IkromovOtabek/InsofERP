@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/control/auth";
+import { adminSessionAlive, requireAdminFull } from "@/lib/control/auth";
 import { loadMonitorSnapshot, snapshotHash } from "@/lib/control/monitor/snapshot";
 
 /**
@@ -8,6 +8,9 @@ import { loadMonitorSnapshot, snapshotHash } from "@/lib/control/monitor/snapsho
  *    aks holda `: hb` izohi (proksi ulanishni uzib qo'ymasin, brauzer esa hech narsa qilmaydi).
  *  - Mijoz uzilsa (req.signal) taymer to'xtaydi. Ulanish 10 daqiqadan keyin server tomonidan yopiladi —
  *    EventSource o'zi qayta ulanadi va sessiya (requireAdmin) yana tekshiriladi.
+ *  - Ochiq oqim ichida ham sessiya har SESSION_RECHECK_MS (30 s) da bazadan qayta tekshiriladi (adminSessionAlive):
+ *    admin bloklansa, paroli almashsa (sessionVersion) yoki token muddati o'tsa — `event: logout` yuborilib oqim yopiladi
+ *    (bloklangan admin 10 daqiqagacha jonli ma'lumot olib turmasin).
  *  - `?once=1` — oqimsiz bitta JSON (EventSource ishlamagan tarmoqlar uchun zaxira so'rov).
  *  - nginx bufer qilmasin: `X-Accel-Buffering: no`.
  * Middleware /superadmin/* ni cookie bo'yicha himoyalaydi; bu yerda to'liq tekshiruv (bazadagi hisob holati).
@@ -17,9 +20,10 @@ export const runtime = "nodejs";
 
 const TICK_MS = 3000;
 const MAX_LIFE_MS = 10 * 60_000;
+const SESSION_RECHECK_MS = 30_000;
 
 export async function GET(req: Request) {
-  await requireAdmin();
+  const me = await requireAdminFull();
 
   if (new URL(req.url).searchParams.get("once") === "1") {
     const snap = await loadMonitorSnapshot();
@@ -30,6 +34,7 @@ export async function GET(req: Request) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   const started = Date.now();
+  let checkedAt = started;
   let lastHash = "";
 
   const stream = new ReadableStream<Uint8Array>({
@@ -50,6 +55,12 @@ export async function GET(req: Request) {
       const tick = async () => {
         if (closed) return;
         if (Date.now() - started > MAX_LIFE_MS) return stop();
+        if (Date.now() - checkedAt >= SESSION_RECHECK_MS) {
+          let alive = true;
+          try { alive = await adminSessionAlive(me); } catch { /* baza vaqtincha yo'q — keyingi tekshiruvda */ }
+          if (!alive) { send(`event: logout\ndata: {}\n\n`); return stop(); }
+          checkedAt = Date.now();
+        }
         try {
           const snap = await loadMonitorSnapshot();
           const json = JSON.stringify(snap);

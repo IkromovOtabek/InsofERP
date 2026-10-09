@@ -70,6 +70,11 @@ export function LiveMonitorProvider({ children }: { children: React.ReactNode })
       es.addEventListener("problem", (e) => {
         try { setState((s) => ({ ...s, problem: (JSON.parse((e as MessageEvent).data) as { error: string }).error })); } catch { /* */ }
       });
+      // Server sessiyani bekor deb topdi (bloklangan, parol almashgan, muddat o'tdi) — oqim yopildi, login sahifasiga
+      es.addEventListener("logout", () => {
+        stopAll("auth");
+        window.location.assign("/superadmin/login");
+      });
       es.onerror = () => {
         // Brauzer o'zi qayta ulanadi (CONNECTING) — faqat yopilib qolsa o'zimiz boshqaramiz
         if (es && es.readyState !== EventSource.CLOSED) { setState((s) => ({ ...s, conn: s.conn === "live" ? "connecting" : s.conn })); return; }

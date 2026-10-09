@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { notFound } from "next/navigation";
 import { RefreshCw, Play } from "lucide-react";
 import { control } from "@/lib/control/db";
@@ -18,6 +19,7 @@ import { HelpButton, PageHelp, WithHelp } from "../../_help/help";
 export const dynamic = "force-dynamic";
 
 export default async function TenantPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ yangi?: string }> }) {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const { slug } = await params;
   const { yangi } = await searchParams;
   const t = await control.tenant.findUnique({ where: { slug } });

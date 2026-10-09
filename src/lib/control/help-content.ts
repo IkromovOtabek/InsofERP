@@ -884,10 +884,17 @@ const BASE = {
   /* ── Amallar jurnali ── */
   "act:status": {
     title: "Amal holati", group: "amal",
-    what: "Navbatda (PENDING) — agent hali olmagan (odatda 3 soniya ichida oladi). Bajarilmoqda (RUNNING) — ishlayapti. Bajarildi (DONE) — muvaffaqiyatli. Xato (FAILED) — bajarildi, lekin xato bilan tugadi. Rad etildi (REJECTED) — agent bajarmadi, chunki amal yoki parametr ruxsat etilmagan.",
+    what: "Navbatda (PENDING) — agent hali olmagan (odatda 3 soniya ichida oladi). Bajarilmoqda (RUNNING) — ishlayapti. Bajarildi (DONE) — muvaffaqiyatli. Xato (FAILED) — bajarildi, lekin xato bilan tugadi. Rad etildi (REJECTED) — agent bajarmadi: amal yoki parametr ruxsat etilmagan yoki xavfli amal navbatda 10 daqiqadan ko'p turib muddati o'tgan. Bekor qilindi (CANCELLED) — superadmin uni navbatdan olgan.",
     normal: "Ko'pchilik «Bajarildi».",
-    steps: ["«Navbatda» uzoq tursa — agent jim (agent holatini tekshiring).", "«Xato» — «Natija» ni o'qing.", "«Rad etildi» — sabab natijada: noto'g'ri IP/xizmat nomi, oq ro'yxatda yo'q amal yoki test rejimi."],
-    keywords: "PENDING RUNNING DONE FAILED REJECTED",
+    steps: ["«Navbatda» uzoq tursa — agent jim (agent holatini tekshiring); keraksiz bo'lsa «Navbatdan olish».", "«Xato» — «Natija» ni o'qing.", "«Rad etildi» — sabab natijada: noto'g'ri IP/xizmat nomi, oq ro'yxatda yo'q amal, test rejimi yoki «muddati o'tdi» (qayta so'rang)."],
+    keywords: "PENDING RUNNING DONE FAILED REJECTED CANCELLED muddati o'tdi",
+  },
+  "act:cancel": {
+    title: "Navbatdan olish", group: "amal",
+    what: "Hali agent olmagan (Navbatda) amalni bekor qiladi — u bajarilmaydi, holati «Bekor qilindi» bo'ladi, jurnalga kim olgani yoziladi. Bajarilayotgan amalni to'xtatib bo'lmaydi.",
+    normal: "Agent ishlayotganda amal 3 soniyada olinadi — tugma odatda faqat agent jim bo'lganda kerak bo'ladi.",
+    steps: ["Agent to'xtab turgan paytda qo'yilgan keraksiz amallarni (masalan qayta yuklash) shu tugma bilan olib tashlang — agent qayta ishga tushganda kutilmaganda bajarilmasin.", "Xavfli amallar baribir 10 daqiqadan keyin avtomatik rad etiladi («muddati o'tdi»)."],
+    keywords: "bekor qilish cancel navbat PENDING CANCELLED",
   },
   "act:output": {
     title: "Natija (output)", group: "amal",

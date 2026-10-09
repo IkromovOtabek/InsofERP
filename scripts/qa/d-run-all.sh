@@ -37,6 +37,11 @@ if [ "$(uname)" = "Darwin" ] || ! command -v systemctl >/dev/null; then
   out="$(/bin/bash scripts/tenant-up.sh alfa 2>&1)"; code=$?
   run "tenant-up.sh: root'siz aniq xato" test "$code" != 0 -a -n "$(printf '%s' "$out" | grep 'sudo bilan')"
 fi
+# Domen siyosati fayli (/etc/insof/tenant-up.conf) yo'q → domenli ishga tushirish rad (default-deny), root tekshiruvidan oldin
+if [ ! -e /etc/insof/tenant-up.conf ]; then
+  out="$(/bin/bash scripts/tenant-up.sh alfa alfa.insof.test 2>&1)"; code=$?
+  run "tenant-up.sh: tenant-up.conf yo'q + domen → rad (default-deny)" test "$code" != 0 -a -n "$(printf '%s' "$out" | grep "domen siyosati fayli yo'q")"
+fi
 
 if [ "${D_KEEP:-0}" != "1" ]; then /bin/bash "$Q/d-cleanup.sh"; fi
 printf '\n\033[1;35m════ NATIJA ════\033[0m\n'

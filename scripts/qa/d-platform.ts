@@ -19,6 +19,8 @@ const APP = path.join(ROOT, "app");
 // Portlar d-env.sh bilan bir xil (D_CTL_PORT / D_FIRST_PORT, standart 3204 / 3205)
 const PANEL = `http://127.0.0.1:${process.env.D_CTL_PORT ?? "3204"}`;
 const BETA_PORT = Number(process.env.D_FIRST_PORT ?? "3205") + 1;
+// Korxona bazalari prefiksi (d-env.sh: D_DB_PREFIX → TEST_TENANT_DB_PREFIX, panel control.env da ham)
+const T_PFX = process.env.TEST_TENANT_DB_PREFIX || "insof_test_t_";
 const REPO = path.resolve(__dirname, "../..");
 
 /* ───────── kichik yordamchilar ───────── */
@@ -190,7 +192,7 @@ async function main() {
   r = await newForm({});
   check(r.status === 303 && r.location.includes("/superadmin/korxonalar/beta"), "beta yaratildi → 303 korxona sahifasiga", `${r.status} ${r.location} ${r.text.match(/text-red[^>]*>([^<]{0,200})/)?.[1] ?? ""}`);
   const beta = await ctl.tenant.findUnique({ where: { slug: "beta" } });
-  check(beta?.dbName === "insof_test_t_beta" && beta.port === BETA_PORT && beta.status === "PROVISIONING", `beta: baza insof_test_t_beta, port ${BETA_PORT}, PROVISIONING`, JSON.stringify(beta));
+  check(beta?.dbName === `${T_PFX}beta` && beta.port === BETA_PORT && beta.status === "PROVISIONING", `beta: baza ${T_PFX}beta, port ${BETA_PORT}, PROVISIONING`, JSON.stringify(beta));
   const benv = tenantEnv("beta"), aenv = tenantEnv("alfa");
   check(benv.CONTROL_SSO_KEY?.length === 64 && benv.CONTROL_SSO_KEY !== aenv.CONTROL_SSO_KEY, "beta.env: o'z CONTROL_SSO_KEY (alfa'nikidan farqli)");
   check(!("CONTROL_SECRET" in benv), "beta.env da global CONTROL_SECRET yo'q");

@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import { loadMonitorSnapshot } from "@/lib/control/monitor/snapshot";
 import type { MonitorSnapshot } from "@/lib/control/monitor/shared";
 import { MonitoringView } from "./view";
@@ -7,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Server va xizmatlar — birinchi holat serverda chiziladi, keyin SSE oqimi (useLiveMonitor) yangilaydi. */
 export default async function MonitoringPage() {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   let initial: MonitorSnapshot | null = null;
   let loadError: string | undefined;
   try {

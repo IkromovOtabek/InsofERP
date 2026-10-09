@@ -1,6 +1,6 @@
 import { statfs } from "node:fs/promises";
 import os from "node:os";
-import { control, tenantDb } from "./db";
+import { control, isDbMissing, tenantDb } from "./db";
 import { releaseVersion } from "./release";
 import type { Tenant } from "@/generated/control";
 
@@ -39,6 +39,11 @@ const n = (v: unknown) => Number(v ?? 0);
 
 async function dbStats(dbName: string) {
   const db = tenantDb(dbName);
+  // Avval bitta yengil so'rov: baza yo'q bo'lsa (P1003) 20+ parallel so'rov bilan logni to'ldirmasdan «mavjud emas»
+  try { await db.$queryRaw`SELECT 1`; } catch (e) {
+    if (isDbMissing(e)) throw new Error("baza mavjud emas");
+    throw e;
+  }
   const now = new Date();
   const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
   const month0 = new Date(now.getFullYear(), now.getMonth(), 1);

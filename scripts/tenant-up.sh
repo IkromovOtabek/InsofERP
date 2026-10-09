@@ -14,7 +14,9 @@
 #   - deploy egaligidagi joylar (tenants/<slug>.env, fayllar papkasi) bilan faqat deploy huquqida ishlanadi (runuser):
 #     root ularga chown/chmod/mkdir qilmaydi (symlink orqali /etc/... ga yo'naltirish hujumi ishlamaydi).
 #   - PORT faqat raqam, UPLOADS_DIR faqat /var/lib/insof/<slug>/uploads (yoki eski /var/www/insof-erp/uploads), slug/domen regex.
-#   - Domen siyosati (ixtiyoriy, root egaligida): /etc/insof/tenant-up.conf — TENANT_BASE_DOMAIN=..., TENANT_DOMAINS=a.uz,b.uz
+#   - Domen siyosati (MAJBURIY, domen berilsa; root egaligida): /etc/insof/tenant-up.conf — TENANT_BASE_DOMAIN=..., TENANT_DOMAINS=a.uz,b.uz
+#     Fayl yo'q bo'lsa domenli ishga tushirish RAD etiladi (default-deny): deploy foydalanuvchisi (sudo -n insof-tenant-up)
+#     panel/agent tekshiruvini chetlab ixtiyoriy domenga nginx sayti va SSL ochib bo'lmasin. Domensiz ishga tushirishga ta'sir yo'q.
 #   - PATH qat'iy, muhitdan sozlama olinmaydi (sudo env_reset ham shuni qiladi).
 # Nima qiladi: .env (bo'lmasa — deploy huquqida yaratadi) → fayl papkasi → systemd insof-erp@<slug> → /api/health → nginx + SSL.
 # Qayta ishga tushirilsa zarari yo'q (idempotent): mavjud .env, sertifikat va certbot sozlagan nginx sayti saqlanadi.
@@ -43,13 +45,18 @@ step() { printf '\n▶ %s\n' "$*"; }
 # setsid: deploy jarayoni root terminaliga ulanmaydi (TIOCSTI orqali buyruq kiritib bo'lmaydi), stdin bo'sh
 as_user() { setsid -w runuser -u "$RUN_AS" -- env -i PATH="$PATH" HOME="/home/$RUN_AS" LANG=C.UTF-8 "$@" </dev/null; }
 
-[ "$(id -u)" = "0" ] || { echo "sudo bilan ishga tushiring: sudo insof-tenant-up $SLUG ${DOMAIN}" >&2; exit 1; }
-command -v systemctl >/dev/null || die "systemctl topilmadi — bu skript faqat systemd'li Linux serverda ishlaydi"
-command -v runuser >/dev/null && command -v setsid >/dev/null || die "runuser/setsid topilmadi (util-linux)"
 [[ "$SLUG" =~ ^[a-z][a-z0-9-]{1,29}$ ]] || die "slug noto'g'ri: $SLUG"
 if [ -n "$DOMAIN" ]; then
   [[ "$DOMAIN" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$ ]] && [ "${#DOMAIN}" -le 253 ] || die "domen noto'g'ri: $DOMAIN"
 fi
+# Domen siyosati fayli bo'lmasa — domen bilan ishga tushirilmaydi (default-deny). Root tekshiruvidan OLDIN (hech narsa
+# o'zgartirilmaydi, faqat aniq xabar) — sudo'siz ham (QA: d-run-all.sh) tekshirsa bo'ladi.
+if [ -n "$DOMAIN" ] && [ ! -e "$POLICY" ]; then
+  die "domen siyosati fayli yo'q: $POLICY — domen bilan ishga tushirish rad etildi. Yaratish (root): sudo install -d -o root -g root -m 755 /etc/insof && printf 'TENANT_BASE_DOMAIN=insof-erp.uz\nTENANT_DOMAINS=\n' | sudo install -o root -g root -m 644 /dev/stdin $POLICY (PLATFORMA.md → «Infratuzilma»). Domensiz: insof-tenant-up $SLUG"
+fi
+[ "$(id -u)" = "0" ] || { echo "sudo bilan ishga tushiring: sudo insof-tenant-up $SLUG ${DOMAIN}" >&2; exit 1; }
+command -v systemctl >/dev/null || die "systemctl topilmadi — bu skript faqat systemd'li Linux serverda ishlaydi"
+command -v runuser >/dev/null && command -v setsid >/dev/null || die "runuser/setsid topilmadi (util-linux)"
 id "$RUN_AS" >/dev/null 2>&1 || die "foydalanuvchi '$RUN_AS' yo'q"
 [ -d "$APP/current" ] || die "$APP/current yo'q — avval bir marta: SKIP_RESTART=1 bash scripts/deploy.sh (deploy foydalanuvchisi)"
 
@@ -75,7 +82,7 @@ case "$0" in
 esac
 
 # ── Domen siyosati (root egaligidagi fayldan; `source` qilinmaydi) ──
-if [ -n "$DOMAIN" ] && [ -e "$POLICY" ]; then
+if [ -n "$DOMAIN" ]; then
   root_only "$POLICY"
   base="$(grep -E '^TENANT_BASE_DOMAIN=' "$POLICY" | tail -n1 | cut -d= -f2- | tr -d '"'"'"' ' || true)"
   list="$(grep -E '^TENANT_DOMAINS=' "$POLICY" | tail -n1 | cut -d= -f2- | tr -d '"'"'"' ' || true)"

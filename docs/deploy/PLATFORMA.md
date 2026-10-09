@@ -391,6 +391,25 @@ oxirgi 8 KB i (parol, token, `KEY=…`, URL ichidagi parol yashirilgan). Bir tur
 Agent qayta ishga tushsa, `RUNNING` qolib ketgan amallar `FAILED` («natija noma'lum») bo'ladi. Bitta nusxa: control bazada
 pg advisory lock — ikkinchisi `exit 3` bilan chiqadi.
 
+**Eskirgan navbat va bekor qilish.** Xavfli turlar (`EXPIRING_ACTIONS`, monitor/contract.ts: `RESTART_UNIT`, `RENEW_CERT`,
+`BLOCK_IP`/`UNBLOCK_IP`, `DEPLOY`, `ROLLBACK`, `PG_CANCEL`, `PG_TERMINATE`, `VACUUM_ANALYZE`, `REBOOT`, `REBOOT_CANCEL`,
+`CLEAN_RELEASES`, `JOURNAL_VACUUM`, `TENANT_UP`) navbatda **10 daqiqadan** ko'p `PENDING` tursa (masalan agent to'xtab
+turgan paytda qo'yilgan), agent ularni bajarmaydi — `REJECTED` («muddati o'tdi …»). Xavfsiz turlar (tekshiruv, zaxira,
+log) eskirsa ham bajariladi. Panel → Amallar: `PENDING` amal yonida «Navbatdan olish» (`cancelAction`, har superadmin,
+jurnal `AGENT_ACTION_CANCEL`) — holat `CANCELLED`; agent allaqachon olgan (`RUNNING`) amalni bekor qilib bo'lmaydi.
+Migratsiya: `prisma/control/migrations/20261009120000_action_cancelled` (`ActionStatus` ga `CANCELLED`).
+
+**Tasdiq va qayta parol.** Yozma tasdiq: `BLOCK_IP` (IP), `RESTART_UNIT` (korxona — slug; `insof-control`/`insof-eco` —
+xizmat nomi to'liq), `RENEW_CERT` (`SSL`), `PG_CANCEL` (pid), `VACUUM_ANALYZE` (baza nomi), `PG_TERMINATE`, `DEPLOY`,
+`ROLLBACK`, `REBOOT`, `CLEAN_RELEASES`, `JOURNAL_VACUUM` (`TASDIQLAYMAN`), `TENANT_UP` (slug). Joriy parol (qayta
+autentifikatsiya): `DEPLOY`, `ROLLBACK`, `REBOOT`, `TENANT_UP`, `PG_TERMINATE`, ECO ulash/uzish, parolni almashtirish.
+Qayta parol urinishlari login qulfidan **alohida** hisoblanadi (`reauth:<adminId>`, 5 xato → 15 daqiqa): tashqaridan
+login'ni xato terish ishlayotgan adminning xavfli amallarini bloklamaydi va aksincha.
+
+**Jonli oqim (SSE) sessiyasi.** `/superadmin/api/stream` ochiq turganda ham sessiyani har 30 s bazadan qayta tekshiradi:
+admin bloklansa, paroli almashsa (`sessionVersion`) yoki token muddati o'tsa — `event: logout`, oqim yopiladi, brauzer
+login sahifasiga o'tadi. Har panel sahifasi ham o'zi `requireAdmin()` qiladi (layout'ga qo'shimcha).
+
 ### Muammolar
 
 | Belgi | Sabab / yechim |
@@ -550,7 +569,8 @@ Log qatorlari va xato matnlari agentda sirlardan tozalanadi (`scrubSecrets`) va 
 
 Tekshiruv qatlamlari: panel (zod + `infraPreflight`: korxona bor, holati PROVISIONING/ACTIVE, domen aynan korxona yozuvidagi va
 siyosatga mos) → agent (`validateAction` regex + bazadan qayta tekshirish) → root skript (regex, argumentlar ≤ 2,
-ixtiyoriy `/etc/insof/tenant-up.conf`). Domen siyosati: `control.env` da `TENANT_BASE_DOMAIN=insof-erp.uz` (uning o'zi va
+`/etc/insof/tenant-up.conf` — domen berilsa MAJBURIY: fayl yo'q bo'lsa domenli ishga tushirish rad etiladi, default-deny;
+domensiz ishga tushirishga ta'sir qilmaydi). Domen siyosati: `control.env` da `TENANT_BASE_DOMAIN=insof-erp.uz` (uning o'zi va
 `*.insof-erp.uz`) va/yoki `TENANT_DOMAINS=zavod2.insof.uz,boshqa.uz` (aniq ro'yxat); ikkalasi bo'sh — domenli ishga tushirish rad.
 
 **Nega APT upgrade paneldan qilinmaydi** (faqat ko'rsatiladi): `apt upgrade` root huquqida paketlarning ixtiyoriy
@@ -570,7 +590,9 @@ sudo install -d -o root -g root -m 755 /usr/local/share/insof
 sudo install -o root -g root -m 644 docs/deploy/insof-erp@.service docs/deploy/nginx-tenant.conf docs/deploy/nginx-limits.conf /usr/local/share/insof/
 # 2) /var/lib/insof — root egaligida (ichidagi <slug> papkalar deploy'niki)
 sudo install -d -o root -g root -m 755 /var/lib/insof
-# 3) ixtiyoriy: root tomonidagi domen siyosati (panel va agent control.env bo'yicha ham tekshiradi)
+# 3) MAJBURIY (domenli korxona uchun): root tomonidagi domen siyosati. Fayl bo'lmasa `insof-tenant-up <slug> <domen>`
+#    «domen siyosati fayli yo'q … rad etildi» bilan to'xtaydi (default-deny; panel va agent control.env bo'yicha ham tekshiradi)
+sudo install -d -o root -g root -m 755 /etc/insof
 printf 'TENANT_BASE_DOMAIN=insof-erp.uz\nTENANT_DOMAINS=\n' | sudo install -o root -g root -m 644 /dev/stdin /etc/insof/tenant-up.conf
 # 4) sudoers (yangi qatorlar: shutdown, journalctl --vacuum-time=14d, insof-tenant-up)
 sudo install -m 440 -o root -g root docs/deploy/sudoers-insof-agent /etc/sudoers.d/insof-deploy.new

@@ -35,6 +35,12 @@ kalitlar manba koddan avtomatik yig'iladi, yangi kalit yordamsiz qolsa test yiqi
 
 `d` to'plami `git archive HEAD` bilan ishlaydi — commit qilinmagan o'zgarishlar unga kirmaydi.
 
+Parallel yugurish (bir mashinada bir nechta worktree/agent): `QA_DB_PREFIX`, `QA_PORT`, `QA_WORK`, `D_CTL_PORT`,
+`D_FIRST_PORT` har biriga alohida. `run-all.sh` d to'plamiga `D_DB_PREFIX="${QA_DB_PREFIX}d_"` beradi — d ning barcha
+bazalari shu prefiks bilan: `<pfx>ctl`, `<pfx>t_<slug>` (panel `TEST_TENANT_DB_PREFIX`, faqat test rejimida),
+`<pfx>restore_*`, `<pfx>ctl_agent`, `<pfx>ctl_dbt`, `<pfx>dbt_t1`, `<pfx>ctl_sec`, `<pfx>ctl_eco`; tozalash ham faqat
+shularni o'chiradi. `d-run-all.sh` ni to'g'ridan ishga tushirganda `D_DB_PREFIX` berilmasa — eski nomlar (`insof_test_ctl` …).
+
 `d-agent.mts` (d ichida, alohida ham): `npx tsx scripts/qa/d-agent.mts` — insof-agent parserlari, chegaralar, hodisa
 hayot sikli, amal tekshiruvi/sir tozalash (unit) va ~70 s lokal integratsiya: vaqtinchalik `insof_test_ctl_agent`
 (boshida qayta yaratiladi, oxirida o'chiriladi), yopiq portdagi soxta korxona → CRIT hodisa → tiklanish → RESOLVED,

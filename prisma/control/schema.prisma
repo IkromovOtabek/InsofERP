@@ -144,7 +144,8 @@ enum ActionStatus {
   RUNNING
   DONE
   FAILED
-  REJECTED // oq ro'yxatda yo'q yoki parametr noto'g'ri
+  REJECTED // oq ro'yxatda yo'q, parametr noto'g'ri yoki navbatda muddati o'tdi (xavfli amal > 10 daq)
+  CANCELLED // superadmin navbatdan oldi (faqat PENDING holatidan)
 }
 
 /// Server holati surati (agent har ~15 s yozadi; 7 kundan eskilari agent tomonidan tozalanadi).

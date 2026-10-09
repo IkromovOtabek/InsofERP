@@ -60,7 +60,7 @@ cleanup() {
     for db in $(psql "$PG/postgres" -Atc "select datname from pg_database where starts_with(datname, '$PFX')"); do
       psql "$PG/postgres" -qAtc "drop database if exists \"$db\" with (force)"
     done
-    [ -d "$WORK/drepo" ] && D_ROOT="$WORK/d" D_CTL_PORT="${D_CTL_PORT:-3214}" D_FIRST_PORT="${D_FIRST_PORT:-3215}" /bin/bash "$WORK/drepo/scripts/qa/d-cleanup.sh" >/dev/null 2>&1
+    [ -d "$WORK/drepo" ] && D_ROOT="$WORK/d" D_DB_PREFIX="${PFX}d_" D_CTL_PORT="${D_CTL_PORT:-3214}" D_FIRST_PORT="${D_FIRST_PORT:-3215}" /bin/bash "$WORK/drepo/scripts/qa/d-cleanup.sh" >/dev/null 2>&1
     # Loglar qoladi (yiqilgan bo'lsa tahlil uchun), ilova nusxasi va klon o'chiriladi
     rm -rf "$APP" "$WORK/drepo" "$WORK/d"
     log "loglar: $LOGS"
@@ -180,7 +180,7 @@ if want d; then
   ( cd "$WORK/drepo" && npx prisma generate >/dev/null 2>&1 && npx prisma generate --schema prisma/control/schema.prisma >/dev/null 2>&1 )
   printf '\n\033[1;35m════ d/platform ════\033[0m\n'
   rm -rf "$WORK/d"
-  ( cd "$WORK/drepo" && env D_ROOT="$WORK/d" D_CTL_PORT="${D_CTL_PORT:-3214}" D_FIRST_PORT="${D_FIRST_PORT:-3215}" \
+  ( cd "$WORK/drepo" && env D_ROOT="$WORK/d" D_DB_PREFIX="${PFX}d_" D_CTL_PORT="${D_CTL_PORT:-3214}" D_FIRST_PORT="${D_FIRST_PORT:-3215}" \
       bash scripts/qa/d-run-all.sh ) 2>&1 | tee "$LOGS/d.log"
   record "d/platform" "${PIPESTATUS[0]}" "$LOGS/d.log"
 fi

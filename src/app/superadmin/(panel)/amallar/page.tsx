@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/control/auth";
 import Link from "next/link";
 import { ListChecks } from "lucide-react";
 import { control } from "@/lib/control/db";
@@ -8,6 +9,7 @@ import { EmptyState, Tabs } from "@/components/ui";
 import { PageHeader } from "../../_ui";
 import { ConnBadge, RefreshOn } from "../_monitor/live";
 import { ActionOutput, ActionStatusBadge, ParamsText } from "../_monitor/bits";
+import { CancelActionButton } from "../_monitor/action-dialog";
 import { HelpButton, PageHelp, WithHelp } from "../_help/help";
 import { actionHelpId } from "@/lib/control/help-content";
 
@@ -18,6 +20,7 @@ const STATUSES = Object.keys(ACTION_STATUS) as ActionStatusT[];
 
 /** Amallar jurnali: panel navbatga qo'ygan va agent bajargan amallar — kim, qachon, qancha vaqt, natija. */
 export default async function ActionsPage({ searchParams }: { searchParams: Promise<{ status?: string; type?: string }> }) {
+  await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin (layout'siz render/qayta foydalanish)
   const sp = await searchParams;
   const status = STATUSES.includes(sp.status as ActionStatusT) ? (sp.status as ActionStatusT) : undefined;
   const type = (ACTION_TYPES as readonly string[]).includes(sp.type ?? "") ? sp.type : undefined;
@@ -64,6 +67,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                   <span className="inline-flex items-center gap-0.5"><Link href={`/superadmin/amallar?type=${a.type}`} className="font-medium text-slate-900 hover:underline">{actionLabel(a.type)}</Link><HelpButton topic={actionHelpId(a.type) ?? undefined} /></span>
                   <ParamsText params={a.params} />
                   <span className="ml-auto text-xs text-slate-500 tabular" data-no-translit>{dt(a.requestedAt)}</span>
+                  {a.status === "PENDING" && <CancelActionButton id={a.id} />}
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                   <span>Kim: <b className="font-medium text-slate-700">{a.requestedBy ?? "agent (avtomatik)"}</b></span>
@@ -71,7 +75,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
                   <span>Bajarilish: <span className="tabular">{msBetween(a.startedAt, a.finishedAt)}</span></span>
                   {r.incident && <span>Hodisa: <Link className="underline" href={`/superadmin/hodisalar?id=${r.incident.id}`}>{r.incident.title}</Link></span>}
                 </div>
-                <div className="mt-2"><ActionOutput output={a.output} open={a.status === "FAILED" || a.status === "REJECTED"} /></div>
+                <div className="mt-2"><ActionOutput output={a.output} open={a.status === "FAILED" || a.status === "REJECTED" || a.status === "CANCELLED"} /></div>
               </li>
             );
           })}

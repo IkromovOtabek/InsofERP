@@ -1,7 +1,7 @@
 /**
  * QA (agent D): korxonani lib orqali yaratish — panel tugmasi chaqiradigan `provisionTenant` ning o'zi.
  *   CONTROL_ENV_FILE=<sinov control.env> npx tsx scripts/qa/d-provision.ts <slug> <domen> <direktor-login> <parol>
- * Faqat test rejimida (INSOF_ENV=test) ishlaydi — baza nomi insof_test_t_<slug>.
+ * Faqat test rejimida (INSOF_ENV=test) ishlaydi — baza nomi insof_test_t_<slug> (yoki TEST_TENANT_DB_PREFIX<slug>, d-env.sh).
  */
 import { loadEnv } from "../env";
 loadEnv(process.env.CONTROL_ENV_FILE || "");

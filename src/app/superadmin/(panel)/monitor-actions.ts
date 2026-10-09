@@ -69,7 +69,7 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
     let ip = "unknown";
     try { ip = ipFromHeaders(await headers()); } catch { /* so'rov yo'q */ }
     const row = await control.superAdmin.findUnique({ where: { id: a.id }, select: { passwordHash: true, isActive: true } });
-    const bad = await verifyReauth({ login: a.login, hash: row?.isActive ? row.passwordHash : null, password, ip });
+    const bad = await verifyReauth({ adminId: a.id, hash: row?.isActive ? row.passwordHash : null, password, ip });
     if (bad) return { error: bad };
   }
   const pre = await infraPreflight(type, p);
@@ -106,6 +106,32 @@ export async function enqueueAction(type: string, params: unknown, incidentId?: 
   await logEvent(a.id, "AGENT_ACTION", null, { actionId: res.id, type, label: actionLabel(type), params: p, incidentId: incident });
   invalidateMonitorSnapshot();
   return res;
+}
+
+/**
+ * Navbatdagi amalni olib tashlash (bekor qilish): faqat PENDING — agent hali olmagan. RUNNING amalni to'xtatib bo'lmaydi
+ * (u allaqachon serverda ishlayapti). Agent bilan poyga: `updateMany where status=PENDING` — agent oldin olgan bo'lsa
+ * (RUNNING) bekor qilish rad etiladi. Har qanday superadmin istalgan PENDING amalni olib tashlay oladi (jurnalga yoziladi).
+ */
+export async function cancelAction(id: string): Promise<MonitorResult> {
+  const a = await requireAdmin();
+  if (typeof id !== "string" || !ID.safeParse(id).success) return { error: "Amal topilmadi" };
+  const row = await control.agentAction.findUnique({
+    where: { id }, select: { id: true, type: true, params: true, status: true, requestedById: true, incidentId: true },
+  });
+  if (!row) return { error: "Amal topilmadi" };
+  if (row.status === "RUNNING") return { error: "Agent amalni allaqachon boshlagan — to'xtatib bo'lmaydi" };
+  if (row.status !== "PENDING") return { error: "Amal navbatda emas (allaqachon yakunlangan)" };
+  const r = await control.agentAction.updateMany({
+    where: { id, status: "PENDING" },
+    data: { status: "CANCELLED", finishedAt: new Date(), output: `navbatdan olindi: ${a.fullName} (${a.login})` },
+  });
+  if (r.count !== 1) return { error: "Agent amalni hozirgina oldi — bekor qilib bo'lmaydi, natijasini kuting" };
+  await logEvent(a.id, "AGENT_ACTION_CANCEL", null, {
+    actionId: id, type: row.type, label: actionLabel(row.type), params: row.params, requestedById: row.requestedById, incidentId: row.incidentId,
+  });
+  invalidateMonitorSnapshot();
+  return { ok: true };
 }
 
 export async function ackIncident(id: string): Promise<MonitorResult> {

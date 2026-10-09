@@ -19,10 +19,10 @@ backup() { # backup <nom> [KALIT=qiymat ...] → exit kodi; log $LOGS/<nom>.log
 latest() { find "$OUT" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' | sort | tail -n1; }
 restore() { # restore <nom> <slug|""> [KALIT=qiymat ...]
   local name="$1" slug="$2"; shift 2
-  env BACKUP_ENV="$D_ROOT/backup.env" RESTORE_DB_URL_TEMPLATE="$D_PG/{db}" RESTORE_DB_PREFIX=insof_test_restore "$@" \
+  env BACKUP_ENV="$D_ROOT/backup.env" RESTORE_DB_URL_TEMPLATE="$D_PG/{db}" RESTORE_DB_PREFIX="$D_RESTORE_PREFIX" "$@" \
     /bin/bash scripts/restore-test.sh ${slug:+"$slug"} > "$LOGS/$name.log" 2>&1
 }
-leftover() { psql "$D_PG/postgres" -Atc "SELECT count(*) FROM pg_database WHERE datname LIKE 'insof\\_test\\_restore\\_%'"; }
+leftover() { psql "$D_PG/postgres" -Atc "SELECT count(*) FROM pg_database WHERE starts_with(datname, '${D_RESTORE_PREFIX}_')"; }
 
 # Fayllar papkasida bitta fayl bo'lsin (tar arxivi bo'sh bo'lmasin)
 mkdir -p "$D_DATA/alfa/uploads/contracts"; echo "qa shartnoma" > "$D_DATA/alfa/uploads/contracts/qa.txt"
@@ -71,7 +71,7 @@ fi
 # 6. Bitta korxona bazasi yo'q → boshqalar olinadi, exit 1
 cat > "$D_APP/tenants/broken.env" <<EOF
 PORT=3299
-DATABASE_URL=$D_PG/insof_test_t_missing
+DATABASE_URL=$D_PG/${TEST_TENANT_DB_PREFIX}missing
 UPLOADS_DIR=$D_DATA/broken/uploads
 EOF
 backup broken OFFSITE=local OFFSITE_DIR="$D_ROOT/offsite"; code=$?
@@ -101,7 +101,7 @@ echo "── restore-test.sh ──"
 restore restore-all ""; code=$?
 [ "$code" = 0 ] && pass "oxirgi nusxa tiklandi va tekshirildi" || { fail "restore exit $code"; tail -15 "$LOGS/restore-all.log"; }
 grep -q "User: 2" "$LOGS/restore-all.log" && grep -q "SuperAdmin: 2" "$LOGS/restore-all.log" && pass "qator sonlari logda (User, SuperAdmin)" || fail "qator sonlari"
-[ "$(leftover)" = 0 ] && pass "vaqtinchalik bazalar o'chirildi" || fail "insof_test_restore_* qoldi"
+[ "$(leftover)" = 0 ] && pass "vaqtinchalik bazalar o'chirildi" || fail "${D_RESTORE_PREFIX}_* qoldi"
 restore restore-one alfa; code=$?
 [ "$code" = 0 ] && grep -q "alfa.dump" "$LOGS/restore-one.log" && ! grep -q "beta.dump" "$LOGS/restore-one.log" && pass "bitta korxona (alfa) tiklash" || fail "restore alfa exit $code"
 

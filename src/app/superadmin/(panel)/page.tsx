@@ -10,7 +10,7 @@ import { SsoButton } from "./forms";
 import { refreshStatsAction } from "./actions";
 import { BoardActions, BoardBanner, BoardChart, BoardIncidents, BoardServices, BoardTiles, type TenantTile } from "./_monitor/board";
 import { ProHome, WidgetsHome, type MobileHomeProps } from "./_monitor/mobile-home";
-import { getAdmin } from "@/lib/control/auth";
+import { requireAdmin } from "@/lib/control/auth";
 import { DEFAULT_UI_PREFS } from "@/lib/control/ui-prefs";
 import { loadUiPrefs } from "@/lib/control/ui-prefs-db";
 import { FirstVisitHint, HelpButton, PageHelp, WithHelp } from "./_help/help";
@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
  * Korxona tekshiruvi (jarayon/baza/ECO) har ochilishda jonli; monitoring qismi SSE oqimi bilan yangilanadi.
  */
 export default async function Overview() {
+  const me = await requireAdmin(); // layout ham tekshiradi; sahifa o'zi ham himoyalangan bo'lsin
   // Har ochilishda jonli: jarayon/baza/ECO tekshiruvi parallel (bir korxona — ~0.1–4 s)
   const live = await collectAll();
   const [tenants, server, monitor] = await Promise.all([
@@ -47,8 +48,7 @@ export default async function Overview() {
   };
   const versions = new Map((monitor?.tenants ?? []).map((v) => [v.id, v.version]));
   // Telefon ko'rinishi — admin prefs'i (layout bilan bir xil manba; getAdmin so'rov ichida keshlangan)
-  const me = await getAdmin();
-  const prefs = me ? await loadUiPrefs(me.id).catch(() => DEFAULT_UI_PREFS) : DEFAULT_UI_PREFS;
+  const prefs = await loadUiPrefs(me.id).catch(() => DEFAULT_UI_PREFS);
   const mobile: MobileHomeProps = {
     initial: monitor, server, hostname: server.host, commit: server.commit,
     tenants: all.filter((x) => x.t.status !== "ARCHIVED").map(({ t, s }) => ({

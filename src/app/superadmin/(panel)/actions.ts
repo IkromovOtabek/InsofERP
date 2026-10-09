@@ -9,6 +9,8 @@ import { logEvent } from "@/lib/control/events";
 import { provisionTenant, setDirector, setSuspended } from "@/lib/control/provision";
 import { collectAll, collectStats } from "@/lib/control/stats";
 import { passwordProblem } from "@/lib/password-policy";
+import { clientIp } from "@/lib/login-guard";
+import { verifyReauth } from "@/lib/control/reauth";
 import type { ActionState } from "@/lib/action";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -142,7 +144,11 @@ export async function changeOwnPasswordAction(_prev: ActionState, fd: FormData):
   const current = String(fd.get("current") ?? "");
   const next = String(fd.get("password") ?? "");
   const me = await control.superAdmin.findUniqueOrThrow({ where: { id: a.id } });
-  if (!(await bcrypt.compare(current, me.passwordHash))) return { error: "Joriy parol noto'g'ri" };
+  // Joriy parol — qayta parol qulfi bilan (reauth:<adminId>): ochiq qolgan sessiyadan parolni taxmin qilib bo'lmasin
+  let ip = "unknown";
+  try { ip = await clientIp(); } catch { /* so'rov yo'q */ }
+  const bad = await verifyReauth({ adminId: me.id, hash: me.isActive ? me.passwordHash : null, password: current, ip });
+  if (bad) return { error: bad === "Parol noto'g'ri" ? "Joriy parol noto'g'ri" : bad };
   const problem = passwordProblem(next);
   if (problem) return { error: problem };
   const u = await control.superAdmin.update({ where: { id: a.id }, data: { passwordHash: await bcrypt.hash(next, 10), sessionVersion: { increment: 1 } } });
