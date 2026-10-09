@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Moon, Sun } from "lucide-react";
 import type { World } from "./insof-world";
 import { MODES, STN, THEMES, type Mode, type ThemeName } from "./content";
 import "./tour.css";
@@ -39,15 +40,15 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
   const [cardOn, setCardOn] = useState(true);
   const [phase, setPhase] = useState({ step: 0, frac: 0 });
   const phaseRef = useRef(phase); phaseRef.current = phase;
-  const [theme, setTheme] = useState<ThemeName>("Insof");
+  // Rang tanlovi olib tashlangan — sayt doim brend rangida; foydalanuvchi faqat yorug'/qorong'i rejimni tanlaydi
+  const theme: ThemeName = "Insof";
   const [mode, setMode] = useState<Mode>("light");
   const [noGl, setNoGl] = useState(false);
 
   // Saqlangan mavzu (Kun/Tun va rang) — birinchi chizishdan keyin
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(LS) || "{}") as { theme?: ThemeName; mode?: Mode };
-      if (saved.theme && saved.theme in THEMES) setTheme(saved.theme);
+      const saved = JSON.parse(localStorage.getItem(LS) || "{}") as { mode?: Mode };
       if (saved.mode === "light" || saved.mode === "dark") setMode(saved.mode);
     } catch { /* shaxsiy rejimda localStorage yopiq bo'lishi mumkin */ }
   }, []);
@@ -61,7 +62,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
     }
     worldRef.current?.setAccent(t.acc);
     worldRef.current?.setMood(mode === "dark" ? "night" : "day");
-    try { localStorage.setItem(LS, JSON.stringify({ theme, mode })); } catch { /* yuqoridagidek */ }
+    try { localStorage.setItem(LS, JSON.stringify({ mode })); } catch { /* yuqoridagidek */ }
   }, [theme, mode]);
 
   const range = useCallback(() => Math.max(1, (trackRef.current?.offsetHeight ?? innerHeight * 9.5) - innerHeight), []);
@@ -193,21 +194,11 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
               {xwide && <Link href="/login" style={{ padding: "9px 13px", fontSize: 14, fontWeight: 500, borderRadius: 8, whiteSpace: "nowrap" }}>Kirish</Link>}
               <a href="#ariza" className="it-cta" style={{ padding: "10px 15px", fontSize: 14, fontWeight: 600, borderRadius: 8, background: "var(--acc)", whiteSpace: "nowrap" }}>Narx so&apos;rash</a>
             </nav>
-            {!narrow && <div style={{ ...pill, display: "flex", alignItems: "center", gap: 8, padding: "6px 6px 6px 10px" }}>
-              <div role="radiogroup" aria-label="Rang" style={{ display: "flex", gap: 5 }}>
-                {(Object.keys(THEMES) as ThemeName[]).map((name) => (
-                  <button key={name} type="button" role="radio" aria-checked={name === theme} title={name} aria-label={name} onClick={() => setTheme(name)}
-                    style={{ width: 22, height: 22, borderRadius: "50%", cursor: "pointer", padding: 0, background: THEMES[name].acc, border: "2px solid var(--surface)", boxShadow: `0 0 0 2px ${name === theme ? THEMES[name].acc : "transparent"}` }} />
-                ))}
-              </div>
-              <div style={{ width: 1, height: 22, background: "var(--line)" }} />
-              <div role="radiogroup" aria-label="Kun yoki tun" style={{ display: "flex", gap: 2, padding: 3, background: "var(--surface2)", borderRadius: 8 }}>
-                {([["light", "Kun"], ["dark", "Tun"]] as const).map(([k, label]) => (
-                  <button key={k} type="button" role="radio" aria-checked={k === mode} onClick={() => setMode(k)}
-                    style={{ ...mono, border: 0, cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 11, background: k === mode ? "var(--ink)" : "transparent", color: k === mode ? "var(--bg)" : "var(--muted)" }}>{label}</button>
-                ))}
-              </div>
-            </div>}
+            <button type="button" onClick={() => setMode(mode === "dark" ? "light" : "dark")}
+              aria-label={mode === "dark" ? "Yorug' rejimga o'tish" : "Qorong'i rejimga o'tish"} title={mode === "dark" ? "Yorug' rejim" : "Qorong'i rejim"}
+              style={{ ...pill, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, padding: 0, cursor: "pointer", color: "var(--ink)" }}>
+              {mode === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
+            </button>
           </div>
         </header>
 
