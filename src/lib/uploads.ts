@@ -1,4 +1,4 @@
-import { mkdir, writeFile, unlink } from "fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "fs/promises";
 import path from "path";
 
 /**
@@ -139,6 +139,7 @@ export async function removeEmployeeFile(stored: string | null | undefined) {
 // ───────────────────────── E-commerce (do'kon) suratlari ─────────────────────────
 
 import { SHOP_TYPES, SHOP_PHOTO_MAX_MB } from "./shop-upload";
+import { shopTemplate } from "./shop-templates";
 export { SHOP_PHOTO_ACCEPT, SHOP_PHOTO_MAX_MB } from "./shop-upload";
 
 /**
@@ -157,6 +158,23 @@ export async function saveShopPhoto(productId: string, file: FormDataEntryValue 
   const stored = `${productId}-${Date.now()}.${f.ext}`;
   await writeFile(path.join(dir, stored), f.buf);
   return { stored, name: file.name || `mahsulot.${f.ext}`, type: f.mime };
+}
+
+/**
+ * Tayyor shablon surati (`public/shop-templates/<key>.webp`, `lib/shop-templates.ts`) → `uploads/shop` ga nusxa.
+ * Nusxalanadi (havola emas): mahsulot surati keyin o'chirilsa ham, shablon almashsa ham boshqa mahsulotlarga ta'sir qilmaydi.
+ */
+export async function saveShopTemplatePhoto(productId: string, key: FormDataEntryValue | null): Promise<SavedFile | null | { error: string }> {
+  if (typeof key !== "string" || !key) return null;
+  const t = shopTemplate(key);
+  if (!t) return { error: "Shablon topilmadi — sahifani yangilang" };
+  let buf: Buffer;
+  try { buf = await readFile(path.join(process.cwd(), "public", "shop-templates", `${t.key}.webp`)); } catch { return { error: "Shablon fayli serverda topilmadi" }; }
+  const dir = path.join(UPLOADS_DIR, "shop");
+  await mkdir(dir, { recursive: true });
+  const stored = `${productId}-${Date.now()}.webp`;
+  await writeFile(path.join(dir, stored), buf);
+  return { stored, name: `${t.key}.webp`, type: "image/webp" };
 }
 
 export function shopPhotoPath(stored: string) {

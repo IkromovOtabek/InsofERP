@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
-import { removeShopPhoto, saveShopPhoto } from "@/lib/uploads";
+import { removeShopPhoto, saveShopPhoto, saveShopTemplatePhoto } from "@/lib/uploads";
 import { audit } from "@/lib/audit";
 import { shopDiff, shopItemSnapshot } from "@/lib/shop-history";
 
@@ -40,7 +40,8 @@ export async function saveShopItem(productId: string, _prev: ActionState, fd: Fo
   const product = await db.product.findUnique({ where: { id: productId }, select: { id: true, name: true } });
   if (!product) return { error: "Mahsulot topilmadi" };
 
-  const saved = await saveShopPhoto(productId, fd.get("photo"));
+  // Yuklangan fayl ustun; bo'lmasa tanlangan tayyor shablon (lib/shop-templates.ts)
+  const saved = (await saveShopPhoto(productId, fd.get("photo"))) ?? (await saveShopTemplatePhoto(productId, fd.get("template")));
   if (saved && "error" in saved) return { error: saved.error };
 
   const prev = await db.shopItem.findUnique({ where: { productId } });
