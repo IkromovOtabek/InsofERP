@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers, ScanFace, Download, Smartphone } from "lucide-react";
+import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers, ScanFace } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { customerMarks } from "@/lib/finance";
@@ -24,7 +24,6 @@ import { HrHome } from "./hr-home";
 import { MECHANIC_HOME_ROLES } from "@/lib/sklad-logistika";
 import { parseDay } from "@/lib/logistics";
 import { faceScope } from "@/lib/face-id";
-import { apkInfo, apkSize, iosAppUrl } from "@/lib/apk";
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
@@ -50,9 +49,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : ownerView ? "" : "operations";
   // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri
   const faceAttendance = !!s && !!faceScope(s);
-  // Direktor kabineti — Insof ECO mobil ilovasi (Android APK / iPhone havolasi); fayl yoki havola bo'lmasa tugma yo'q
-  const apk = isDirector ? await apkInfo() : null;
-  const ios = isDirector ? iosAppUrl() : null;
   const header = (
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
@@ -60,11 +56,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {apk?.exists && <LinkButton href="/api/app/android" download variant="secondary" title={`Insof ECO — Android, ${apkSize(apk.size)}`}><Download size={17} /> ECO ilova</LinkButton>}
-          {ios && <LinkButton href={ios} external variant="secondary" title="Insof ECO — iPhone"><Smartphone size={17} /> ECO · iPhone</LinkButton>}
-          {faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>}
-        </div>
+        {faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>}
       </div>
       {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
