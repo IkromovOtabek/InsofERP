@@ -175,15 +175,32 @@ export async function finishedUnitCosts(): Promise<Map<string, number | null>> {
 }
 
 /**
- * Sotuv qatorlari (zayavka pozitsiyalari) — davr bo'yicha, bekor/qoralama tashqari.
+ * Sotuvchi (reyting, reja, "mening sotuvim"): mijozga biriktirilgan agent; agent yo'q bo'lsa — zayavkani kiritgan xodim.
+ * Ofis menejeri agentning mijoziga zayavka kiritsa ham sotuv agentniki.
+ */
+const SELLER_SELECT = { customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } }, createdById: true, createdBy: { select: { fullName: true } } } as const;
+type SellerSrc = { customer: { name: string; agentId: string | null; agent: { fullName: string } | null }; createdById: string; createdBy: { fullName: string } };
+export const sellerOf = (o: SellerSrc) => (o.customer.agentId && o.customer.agent ? { sellerId: o.customer.agentId, seller: o.customer.agent.fullName } : { sellerId: o.createdById, seller: o.createdBy.fullName });
+
+/**
+ * Sotuv = YETKAZILGAN mahsulot (`loadRevenue`, yetkazilgan sana bo'yicha) — Tahlil, Egasi paneli, mobil va AI'da
+ * bitta raqam chiqishi uchun. Holatlar berilsa (BLOCKED, CANCELLED…) — zayavka sanasi bo'yicha zayavkalar (`loadOrders`):
+ * bloklangan/bekor qilingan hech qachon yetkazilmaydi.
+ */
+export async function loadSales(from: Date, to: Date, statuses?: string[]): Promise<SaleRow[]> {
+  return statuses ? loadOrders(from, to, statuses) : loadRevenue(from, to);
+}
+
+/**
+ * Zayavka pozitsiyalari — zayavka sanasi bo'yicha, berilgan holatlarda.
  * Faqat SALE: sklad zaxirasi zayavkasi (STOCK, narxi 0) sotuv emas — u tushumni, tannarxni,
  * "chegirma"ni va otgruzka rejasini buzardi.
  */
-export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIVE_ORDER): Promise<SaleRow[]> {
+export async function loadOrders(from: Date, to: Date, statuses: string[] = ACTIVE_ORDER): Promise<SaleRow[]> {
   const [items, costs, vatPayer] = await Promise.all([
     db.orderItem.findMany({
       where: { order: { kind: "SALE", date: { gte: from, lt: to }, status: { in: statuses as never } } },
-      include: { order: { select: { id: true, orderNo: true, date: true, status: true, customerId: true, customer: { select: { name: true } }, createdById: true, createdBy: { select: { fullName: true } } } }, product: { select: { name: true, code: true, unit: true, price: true } } },
+      include: { order: { select: { id: true, orderNo: true, date: true, status: true, customerId: true, ...SELLER_SELECT } }, product: { select: { name: true, code: true, unit: true, price: true } } },
     }),
     productCosts(),
     companyVatPayer(),
@@ -192,7 +209,7 @@ export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIV
     const qty = Number(i.qtyM3), price = Number(i.price), c = costs.get(i.productId)?.cost ?? null;
     const netPrice = vatPayer && i.nds ? withoutNds(price) : price;
     return {
-      date: i.order.date, orderId: i.order.id, orderNo: i.order.orderNo, status: i.order.status, customerId: i.order.customerId, customer: i.order.customer.name, sellerId: i.order.createdById, seller: i.order.createdBy.fullName,
+      date: i.order.date, orderId: i.order.id, orderNo: i.order.orderNo, status: i.order.status, customerId: i.order.customerId, customer: i.order.customer.name, ...sellerOf(i.order),
       productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * (c ?? 0),
       net: qty * netPrice, costKnown: c !== null,
     };
@@ -212,7 +229,7 @@ export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIV
  */
 export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
   const orderSelect = {
-    id: true, orderNo: true, date: true, deliveryDate: true, status: true, customerId: true, customer: { select: { name: true } }, createdById: true, createdBy: { select: { fullName: true } },
+    id: true, orderNo: true, date: true, deliveryDate: true, status: true, customerId: true, ...SELLER_SELECT,
     items: { select: { productId: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, code: true, unit: true, price: true } } } },
   } as const;
   const [trips, noTrip, costs, vatPayer] = await Promise.all([
@@ -226,7 +243,7 @@ export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
     const qty = Number(i.qtyM3) * share, price = Number(i.price), c = costs.get(i.productId)?.cost ?? null;
     const netPrice = vatPayer && i.nds ? withoutNds(price) : price;
     return {
-      date, orderId: o.id, orderNo: o.orderNo, status: o.status, customerId: o.customerId, customer: o.customer.name, sellerId: o.createdById, seller: o.createdBy.fullName,
+      date, orderId: o.id, orderNo: o.orderNo, status: o.status, customerId: o.customerId, customer: o.customer.name, ...sellerOf(o),
       productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * (c ?? 0),
       net: qty * netPrice, costKnown: c !== null,
     };

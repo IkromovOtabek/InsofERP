@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { type Range, loadSales, sum, safeDiv, mean, kpi, addDays, startOfDay, WEEKDAYS, monthForecast, goLiveDate, type SaleRow } from "./core";
+import { type Range, loadSales, sum, safeDiv, mean, kpi, addDays, startOfDay, WEEKDAYS, monthForecast, goLiveDate, sellerOf, type SaleRow } from "./core";
 import { NOT_SELLER, SELLER_ROLES } from "./plans";
 import { operationsTab } from "./operations";
 
@@ -21,7 +21,7 @@ export async function agentsTab(r: Range) {
   const today = startOfDay(new Date()), tomorrow = addDays(today, 1);
   const [cur, prev, allCreated, last35, users, plans, ops, tomorrowOrders, vehicles, live] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
-    db.order.findMany({ where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, items: { select: { qtyM3: true, price: true } } } }),
+    db.order.findMany({ where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, createdBy: { select: { fullName: true } }, customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } }, items: { select: { qtyM3: true, price: true } } } }),
     loadSales(addDays(today, -35), tomorrow),
     db.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true } }),
     db.salesPlan.findMany({ where: { year: today.getFullYear(), month: today.getMonth() + 1 } }),
@@ -33,7 +33,7 @@ export async function agentsTab(r: Range) {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthSales = last35.filter((x) => x.date >= monthStart);
   const rev = (rows: SaleRow[]) => sum(rows.map((x) => x.revenue));
-  const sellerIds = new Set<string>([...cur.map((x) => x.sellerId), ...allCreated.map((o) => o.createdById), ...last35.map((x) => x.sellerId), ...users.filter((u) => SELLER_ROLES.has(u.role)).map((u) => u.id)]);
+  const sellerIds = new Set<string>([...cur.map((x) => x.sellerId), ...allCreated.map((o) => sellerOf(o).sellerId), ...last35.map((x) => x.sellerId), ...users.filter((u) => SELLER_ROLES.has(u.role)).map((u) => u.id)]);
   const nameOf = new Map(users.map((u) => [u.id, u]));
   const isSeller = (id: string) => !NOT_SELLER.has(nameOf.get(id)?.role ?? "");
 
@@ -41,7 +41,7 @@ export async function agentsTab(r: Range) {
   const staff: SellerRow[] = [...sellerIds].map((id) => {
     const u = nameOf.get(id); const name = u?.fullName ?? cur.find((x) => x.sellerId === id)?.seller ?? "Noma'lum";
     const rows = cur.filter((x) => x.sellerId === id), prows = prev.filter((x) => x.sellerId === id);
-    const created = allCreated.filter((o) => o.createdById === id);
+    const created = allCreated.filter((o) => sellerOf(o).sellerId === id);
     const cancelled = created.filter((o) => o.status === "CANCELLED"), blocked = created.filter((o) => o.status === "BLOCKED"), drafts = created.filter((o) => o.status === "DRAFT");
     const orders = new Set(rows.map((x) => x.orderId)).size, revenue = rev(rows);
     // Odatiy temp: oxirgi 28 kun (7 kun oldingi) vs oxirgi 7 kun
