@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, CAPITAL_RATE_DAY, type Range } from "./core";
+import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, monthForecast, goLiveDate, grossOf, marginOf, uncostedRevenue, CAPITAL_RATE_DAY, type Range } from "./core";
 import { lossChannels } from "./finance";
 import { customerBase } from "./customers";
 import { materialOverview } from "./stock";
@@ -32,11 +32,13 @@ export async function overviewTab(r: Range) {
   const prevSameEnd = new Date(Math.min(addDays(prevMonthStart, daysPassed).getTime(), monthStart.getTime()));
   const prevSameRevenue = rev(prevMonthS.filter((x) => x.date < prevSameEnd));
   // Prognoz — Egasi dashbordi bilan bitta funksiya (ish kunlari sur'ati)
-  const monthForecastValue = monthForecast(monthRevenue, today);
+  const monthForecastValue = monthForecast(monthRevenue, today, await goLiveDate());
 
   const revenue = rev(cur), prevRevenue = rev(prev);
-  const gross = sum(cur.map((x) => x.revenue - x.cost)), prevGross = sum(prev.map((x) => x.revenue - x.cost));
-  const margin = safeDiv(gross, revenue) * 100, prevMargin = safeDiv(prevGross, prevRevenue) * 100;
+  // Yalpi foyda/marja — faqat tannarxi ma'lum mahsulotlar bo'yicha (retseptsizlari 100% foyda bo'lib ko'rinmasin)
+  const gross = grossOf(cur), prevGross = grossOf(prev);
+  const margin = marginOf(cur), prevMargin = marginOf(prev);
+  const uncosted = uncostedRevenue(cur);
   const cashIn = Number(cashAgg._sum.amount ?? 0), prevCashIn = Number(prevCashAgg._sum.amount ?? 0);
   const receivable = sum(customers.map((c) => c.debt));
   const active = customers.filter((c) => c.recency !== null && c.recency < 30).length;
@@ -60,8 +62,9 @@ export async function overviewTab(r: Range) {
       text: materials.length ? `${materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length} ta xomashyo xavf zonasida` : "Xomashyo spravochnigi bo'sh" },
     { label: "Marja", score: revenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, margin / 25))) : null,
       text: revenue > 0 ? `Yalpi marja ${margin.toFixed(1)}% (maqsad ≥25%)` : "Davr ichida sotuv yo'q" },
-    { label: "Sotuv o'sishi", score: revenue > 0 || prevRevenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, 0.5 + growth))) : null,
-      text: revenue > 0 || prevRevenue > 0 ? `Oldingi davrga nisbatan ${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth * 100).toFixed(1)}%` : "Taqqoslash uchun sotuv yo'q" },
+    // O'tgan davrda sotuv bo'lmasa (tizimga yangi o'tilgan) o'sish yo'q — "+100%" ball bermaydi
+    { label: "Sotuv o'sishi", score: prevRevenue > 0 ? Math.round(20 * Math.min(1, Math.max(0, 0.5 + growth))) : null,
+      text: prevRevenue > 0 ? `Oldingi davrga nisbatan ${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth * 100).toFixed(1)}%` : "Taqqoslash uchun o'tgan davr sotuvi yo'q" },
     { label: "Zayavka oqimi", score: ordersInRange + blockedCount + overdueOrders.length > 0 ? Math.round(20 * (1 - Math.min(1, blockedShare * 3)) * (overdueOrders.length ? 0.6 : 1)) : null,
       text: ordersInRange + blockedCount + overdueOrders.length > 0 ? `${blockedCount} ta bloklangan, ${overdueOrders.length} ta muddati o'tgan zayavka` : "Davr ichida zayavka yo'q" },
   ];
@@ -106,7 +109,7 @@ export async function overviewTab(r: Range) {
   return {
     todayRevenue, yestRevenue, todayDelta: delta(todayRevenue, yestRevenue), todayM3: sum(todayS.filter((x) => x.unit === "m3").map((x) => x.qty)), delivered, tripsToday: tripsToday.filter((t) => t.status !== "CANCELLED").length,
     month: { revenue: monthRevenue, prev: prevSameRevenue, prevFull: prevMonthRevenue, forecast: monthForecastValue, planPerDay, perDay: monthRevenue / daysPassed, daysPassed, daysLeft: daysInMonth - daysPassed, delta: delta(monthRevenue, prevSameRevenue) },
-    kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: kpi(margin, prevMargin), cashIn: kpi(cashIn, prevCashIn), receivable, debtors: customers.filter((c) => c.debt > 0).length, active, total: customers.length, lost: lostCount, activeRate: safeDiv(active, customers.length) * 100 },
+    kpis: { revenue: kpi(revenue, prevRevenue), gross: kpi(gross, prevGross), margin: kpi(margin, prevMargin), uncosted, cashIn: kpi(cashIn, prevCashIn), receivable, debtors: customers.filter((c) => c.debt > 0).length, active, total: customers.length, lost: lostCount, activeRate: safeDiv(active, customers.length) * 100 },
     spark, health, healthLabel, healthBasis: scored.length, components, risk, riskTotal, capitalCost30: riskTotal * CAPITAL_RATE_DAY * 30, loss, tasks: topTasks, goodNews, topProduct, materialsAtRisk: materials.filter((m) => m.zone === "Kritik" || m.zone === "Xavfli").length,
   };
 }

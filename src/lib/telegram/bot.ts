@@ -7,9 +7,13 @@ import { AMBIGUOUS_PHONE_ERROR, staffByPhone } from "@/lib/phone-lookup";
 import { sendChatAction, sendMessage, downloadFile, type TgContact, type TgMessage, type TgUpdate, type TgVoice } from "./api";
 import { transcribe, sttEnabled, SttError } from "./stt";
 import { eco, ecoEnabled } from "@/lib/eco/client";
+import { canDo } from "@/lib/permissions";
+import { parsePerms } from "@/lib/auth";
+import { effectiveRole } from "@/lib/tenant";
+import type { Role } from "@/generated/prisma";
 
-/** Tahlil ma'lumotlari — /api/ai bilan bir xil rollar. */
-const AI_ROLES = new Set(["DIRECTOR", "FINANCE", "ACCOUNTING"]);
+/** Tahlil ma'lumotlari — veb (/api/ai) va mobil bilan bir xil ruxsat: rol + direktor bergan "bi-tahlil → ai" amali. */
+const aiAccess = (u: { role: Role; perms: unknown }) => canDo({ role: effectiveRole(u.role), perms: parsePerms(u.perms) }, "bi-tahlil", "ai");
 
 const HELP = [
   "*Insof AI — Telegram bot*",
@@ -162,8 +166,8 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
   if (account.isBlocked) { await sendMessage(chatId, BLOCKED_TEXT); return; }
   const user = account.user!;
   if (!user.isActive) { await sendMessage(chatId, "Sizning ERP hisobingiz bloklangan — botdan foydalana olmaysiz."); return; }
-  if (!AI_ROLES.has(user.role)) {
-    await sendMessage(chatId, `Sizning rolingizda (${ROLE_LABELS[user.role]}) tahlil ma'lumotlari yopiq. Bot direktor, moliya va buxgalteriya uchun ishlaydi.`);
+  if (!aiAccess(user)) {
+    await sendMessage(chatId, `Sizning rolingizda (${ROLE_LABELS[user.role]}) tahlil ma'lumotlari yopiq. Ruxsat kerak bo'lsa direktordan «Tahlil → Insof AI» ruxsatini so'rang.`);
     return;
   }
 
@@ -296,7 +300,8 @@ async function linkByPhone(accountId: string, chatId: number, contact: TgContact
     db.telegramAccount.update({ where: { id: accountId }, data: { userId: found.user.id, linkedAt: new Date() } }),
   ]);
 
-  const tail = AI_ROLES.has(found.user.role)
+  const perm = await db.user.findUnique({ where: { id: found.user.id }, select: { role: true, perms: true } });
+  const tail = perm && aiAccess(perm)
     ? HELP
     : `Parolni tiklash kodi endi shu yerga keladi (ERP → «Parolni tiklash»).\nTahlil savollari sizning rolingizda (${ROLE_LABELS[found.user.role]}) yopiq.`;
   await sendMessage(chatId, `*Ulandi:* ${found.fullName} (${ROLE_LABELS[found.user.role]})\n\n${tail}`, { keyboard: "remove" });

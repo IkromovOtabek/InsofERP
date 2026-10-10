@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { type Range, type Gran, loadSales, series, kpi, sum, abc, safeDiv, addDays, startOfDay, WEEKDAYS, type SaleRow } from "./core";
+import { type Range, type Gran, loadSales, series, kpi, sum, abc, safeDiv, addDays, startOfDay, WEEKDAYS, grossOf, marginOf, uncostedRevenue, type SaleRow } from "./core";
 
 function groupBy<T, K>(rows: T[], key: (r: T) => K) {
   const m = new Map<K, T[]>();
@@ -16,7 +16,8 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
   const orders = new Set(cur.map((x) => x.orderId)).size, prevOrders = new Set(prev.map((x) => x.orderId)).size;
   const customers = new Set(cur.map((x) => x.customerId)).size, prevCustomers = new Set(prev.map((x) => x.customerId)).size;
-  const gross = sum(cur.map((x) => x.revenue - x.cost)), prevGross = sum(prev.map((x) => x.revenue - x.cost));
+  // Yalpi foyda — faqat tannarxi ma'lum qatorlar (QQS'siz tushum − tannarx)
+  const gross = grossOf(cur), prevGross = grossOf(prev), uncosted = uncostedRevenue(cur);
   const volume = sum(cur.filter((x) => x.unit === "m3").map((x) => x.qty)), prevVolume = sum(prev.filter((x) => x.unit === "m3").map((x) => x.qty));
 
   // Temp / prognoz: joriy oy uchun kunlik o'rtacha × qolgan kunlar
@@ -34,16 +35,17 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
 
   // Mahsulot bo'yicha
   const byProduct = [...groupBy(cur, (x) => x.productId).entries()].map(([id, rows]) => ({
-    id, name: rows[0].product, code: rows[0].code, unit: rows[0].unit, revenue: sum(rows.map((x) => x.revenue)), qty: sum(rows.map((x) => x.qty)), gross: sum(rows.map((x) => x.revenue - x.cost)), orders: new Set(rows.map((x) => x.orderId)).size,
+    id, name: rows[0].product, code: rows[0].code, unit: rows[0].unit, revenue: sum(rows.map((x) => x.revenue)), qty: sum(rows.map((x) => x.qty)), gross: grossOf(rows), margin: marginOf(rows), costKnown: rows.some((x) => x.costKnown), orders: new Set(rows.map((x) => x.orderId)).size,
   })).sort((a, b) => b.revenue - a.revenue);
   const abcMap = abc(byProduct, (p) => p.revenue);
-  const productRows = byProduct.map((p) => ({ ...p, abc: abcMap.get(p) ?? "C", share: safeDiv(p.revenue, revenue) * 100, margin: safeDiv(p.gross, p.revenue) * 100 }));
+  const productRows = byProduct.map((p) => ({ ...p, abc: abcMap.get(p) ?? "C", share: safeDiv(p.revenue, revenue) * 100 }));
   let acc = 0;
   const pareto = productRows.map((p) => { acc += p.revenue; return { label: p.code, value: acc / (revenue || 1) * 100, share: p.share }; });
   const paretoCount = pareto.findIndex((p) => p.value >= 80) + 1;
 
   // Mijoz bo'yicha
-  const byCustomer = [...groupBy(cur, (x) => x.customerId).entries()].map(([id, rows]) => ({ id, name: rows[0].customer, revenue: sum(rows.map((x) => x.revenue)), qty: sum(rows.map((x) => x.qty)), orders: new Set(rows.map((x) => x.orderId)).size })).sort((a, b) => b.revenue - a.revenue);
+  // Hajm — faqat beton (m³): dona/m² mahsulot m³ ga qo'shilmaydi
+  const byCustomer = [...groupBy(cur, (x) => x.customerId).entries()].map(([id, rows]) => ({ id, name: rows[0].customer, revenue: sum(rows.map((x) => x.revenue)), qty: sum(rows.filter((x) => x.unit === "m3").map((x) => x.qty)), orders: new Set(rows.map((x) => x.orderId)).size })).sort((a, b) => b.revenue - a.revenue);
 
   // Nima o'sdi / pasaydi (mahsulot va mijoz kesimida)
   const prevProd = new Map([...groupBy(prev, (x) => x.productId).entries()].map(([id, rows]) => [id, sum(rows.map((x) => x.revenue))]));
@@ -71,8 +73,10 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   for (const x of cur) weekday[x.date.getDay()].value += x.revenue;
 
   // Chegirma: bazaviy narxdan past sotilgan
-  const discountRows = cur.filter((x) => x.basePrice > 0 && x.price < x.basePrice);
-  const discount = sum(discountRows.map((x) => (x.basePrice - x.price) * x.qty));
+  // Bazaviy narx QQS'siz — NDS li qator narxi ham QQS'siz (net) bilan solishtiriladi
+  const netPrice = (x: SaleRow) => safeDiv(x.net, x.qty);
+  const discountRows = cur.filter((x) => x.basePrice > 0 && x.qty > 0 && netPrice(x) < x.basePrice);
+  const discount = sum(discountRows.map((x) => (x.basePrice - netPrice(x)) * x.qty));
 
   // Batafsil tranzaksiyalar
   let detail: SaleRow[] = cur;
@@ -86,7 +90,7 @@ export async function salesTab(r: Range, gran: Gran, page: number, size: number,
   const productOptions = byProduct.map((p) => ({ id: p.id, name: p.code }));
 
   return {
-    kpis: { revenue: kpi(revenue, prevRevenue), avgCheck: kpi(safeDiv(revenue, orders), safeDiv(prevRevenue, prevOrders)), orders: kpi(orders, prevOrders), customers: kpi(customers, prevCustomers), gross: kpi(gross, prevGross), margin: kpi(safeDiv(gross, revenue) * 100, safeDiv(prevGross, prevRevenue) * 100), volume: kpi(volume, prevVolume) },
+    kpis: { revenue: kpi(revenue, prevRevenue), avgCheck: kpi(safeDiv(revenue, orders), safeDiv(prevRevenue, prevOrders)), orders: kpi(orders, prevOrders), customers: kpi(customers, prevCustomers), gross: kpi(gross, prevGross), margin: kpi(marginOf(cur), marginOf(prev)), volume: kpi(volume, prevVolume), uncosted },
     pulse, dyn, dynPrev, dynVol, productRows, pareto, paretoCount, byCustomer, prodMovers, custMovers, lost, opportunity, weekday, discount, discountCount: discountRows.length,
     detail: { rows: pageRows, total, page, size }, customerOptions, productOptions,
   };

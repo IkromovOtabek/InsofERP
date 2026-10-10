@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { type Range, loadSales, sum, safeDiv, mean, kpi, addDays, startOfDay, WEEKDAYS, type SaleRow } from "./core";
+import { type Range, loadSales, sum, safeDiv, mean, kpi, addDays, startOfDay, WEEKDAYS, monthForecast, goLiveDate, type SaleRow } from "./core";
+import { NOT_SELLER, SELLER_ROLES } from "./plans";
 import { operationsTab } from "./operations";
 
 /**
@@ -11,12 +12,14 @@ export type SellerRow = {
   created: number; cancelled: number; cancelledRevenue: number; blocked: number; drafts: number; conversion: number; cancelRate: number;
   prevRevenue: number; delta: number | null; usualPerDay: number; nowPerDay: number; slowdown: number; slowReason: "Kam zayavka" | "Chek tushgan" | "Ikkalasi" | "Sabab noaniq" | null; slowDays: number;
   usualOrdersPerDay: number; nowOrdersPerDay: number; usualCheck: number; nowCheck: number;
-  today: number; todayOrders: number; lastOrderAt: Date | null; offlineDays: number | null; plan: number | null; planPct: number | null; score: number; tier: "TOP" | "YAXSHI" | "O'RTA" | "PAST"; weekday: number[];
+  today: number; todayOrders: number; lastOrderAt: Date | null; offlineDays: number | null; plan: number | null; planPct: number | null;
+  /** Oy oxiri prognozining rejaga nisbati (tizimga o'tish sanasidan sur'at) — Reja nazorati signali bilan bir xil */
+  planFcPct: number | null; score: number; tier: "TOP" | "YAXSHI" | "O'RTA" | "PAST"; weekday: number[];
 };
 
 export async function agentsTab(r: Range) {
   const today = startOfDay(new Date()), tomorrow = addDays(today, 1);
-  const [cur, prev, allCreated, last35, users, plans, ops, tomorrowOrders, vehicles] = await Promise.all([
+  const [cur, prev, allCreated, last35, users, plans, ops, tomorrowOrders, vehicles, live] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
     db.order.findMany({ where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, items: { select: { qtyM3: true, price: true } } } }),
     loadSales(addDays(today, -35), tomorrow),
@@ -25,14 +28,17 @@ export async function agentsTab(r: Range) {
     operationsTab(r, "day"),
     db.order.findMany({ where: { kind: "SALE", deliveryDate: { gte: tomorrow, lt: addDays(tomorrow, 1) }, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: { select: { name: true } }, items: { select: { qtyM3: true } }, trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } } }, orderBy: { deliveryAddress: "asc" } }),
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, select: { capacityM3: true } }),
+    goLiveDate(),
   ]);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthSales = last35.filter((x) => x.date >= monthStart);
   const rev = (rows: SaleRow[]) => sum(rows.map((x) => x.revenue));
-  const sellerIds = new Set<string>([...cur.map((x) => x.sellerId), ...allCreated.map((o) => o.createdById), ...last35.map((x) => x.sellerId), ...users.filter((u) => u.role === "SALES").map((u) => u.id)]);
+  const sellerIds = new Set<string>([...cur.map((x) => x.sellerId), ...allCreated.map((o) => o.createdById), ...last35.map((x) => x.sellerId), ...users.filter((u) => SELLER_ROLES.has(u.role)).map((u) => u.id)]);
   const nameOf = new Map(users.map((u) => [u.id, u]));
+  const isSeller = (id: string) => !NOT_SELLER.has(nameOf.get(id)?.role ?? "");
 
-  const sellers: SellerRow[] = [...sellerIds].map((id) => {
+  // `staff` — zayavka kiritgan hamma (zavod jami shundan), `sellers` — reyting: direktor/IT kirmaydi
+  const staff: SellerRow[] = [...sellerIds].map((id) => {
     const u = nameOf.get(id); const name = u?.fullName ?? cur.find((x) => x.sellerId === id)?.seller ?? "Noma'lum";
     const rows = cur.filter((x) => x.sellerId === id), prows = prev.filter((x) => x.sellerId === id);
     const created = allCreated.filter((o) => o.createdById === id);
@@ -54,16 +60,19 @@ export async function agentsTab(r: Range) {
     const offlineDays = lastOrderAt ? Math.floor((today.getTime() - startOfDay(lastOrderAt).getTime()) / 86400000) : null;
     const plan = plans.find((p) => p.sellerId === id); const monthRev = rev(monthSales.filter((x) => x.sellerId === id));
     const weekday = WEEKDAYS.map((_, wd) => last35.filter((x) => x.sellerId === id && x.date >= addDays(today, -27) && x.date.getDay() === wd).length);
-    const conversion = safeDiv(created.length - cancelled.length - drafts.length, created.length) * 100;
+    // Bloklangan (kredit limit) zayavka hali sotuv emas — konversiyaga kirmaydi
+    const conversion = safeDiv(created.length - cancelled.length - drafts.length - blocked.length, created.length) * 100;
+    const planAmt = plan ? Number(plan.amount) : 0;
     return {
       id, name, role: u?.role ?? "—", orders, revenue, volume: sum(rows.filter((x) => x.unit === "m3").map((x) => x.qty)), customers: new Set(rows.map((x) => x.customerId)).size, avgCheck: safeDiv(revenue, orders),
       created: created.length, cancelled: cancelled.length, cancelledRevenue: sum(cancelled.map((o) => sum(o.items.map((i) => Number(i.qtyM3) * Number(i.price))))), blocked: blocked.length, drafts: drafts.length, conversion, cancelRate: safeDiv(cancelled.length, created.length) * 100,
       prevRevenue: rev(prows), delta: rev(prows) === 0 ? (revenue ? null : 0) : ((revenue - rev(prows)) / rev(prows)) * 100,
       usualPerDay, nowPerDay, slowdown, slowReason, slowDays, usualOrdersPerDay, nowOrdersPerDay, usualCheck, nowCheck,
       today: rev(todayRows), todayOrders: new Set(todayRows.map((x) => x.orderId)).size, lastOrderAt, offlineDays,
-      plan: plan ? Number(plan.amount) : null, planPct: plan && Number(plan.amount) > 0 ? (monthRev / Number(plan.amount)) * 100 : null, score: 0, tier: "O'RTA" as SellerRow["tier"], weekday,
+      plan: plan ? planAmt : null, planPct: planAmt > 0 ? (monthRev / planAmt) * 100 : null, planFcPct: planAmt > 0 ? (monthForecast(monthRev, today, live) / planAmt) * 100 : null, score: 0, tier: "O'RTA" as SellerRow["tier"], weekday,
     };
-  }).filter((s) => s.created > 0 || s.orders > 0 || s.role === "SALES");
+  }).filter((s) => s.created > 0 || s.orders > 0 || SELLER_ROLES.has(s.role));
+  const sellers = staff.filter((s) => isSeller(s.id));
 
   const maxRev = Math.max(1, ...sellers.map((s) => s.revenue));
   for (const s of sellers) {
@@ -82,8 +91,8 @@ export async function agentsTab(r: Range) {
   const reasons = (["Kam zayavka", "Chek tushgan", "Ikkalasi", "Sabab noaniq"] as const).map((k) => ({ key: k, list: slow.filter((s) => s.slowReason === k), loss: sum(slow.filter((s) => s.slowReason === k).map((s) => s.usualPerDay - s.nowPerDay)) }));
 
   // Zayavka sifati (Visit Quality analogi): kiritilgan zayavkalardan nechtasi tasdiqlanib sotuvga aylandi
-  const totalCreated = sum(sellers.map((s) => s.created)), totalCancelled = sum(sellers.map((s) => s.cancelled)), totalDrafts = sum(sellers.map((s) => s.drafts));
-  const quality = { pct: safeDiv(totalCreated - totalCancelled - totalDrafts, totalCreated) * 100, created: totalCreated, converted: totalCreated - totalCancelled - totalDrafts, perOrder: safeDiv(sum(sellers.map((s) => s.revenue)), sum(sellers.map((s) => s.orders))), revenue: sum(sellers.map((s) => s.revenue)) };
+  const totalCreated = sum(staff.map((s) => s.created)), totalLost = sum(staff.map((s) => s.cancelled + s.drafts + s.blocked));
+  const quality = { pct: safeDiv(totalCreated - totalLost, totalCreated) * 100, created: totalCreated, converted: totalCreated - totalLost, perOrder: safeDiv(sum(staff.map((s) => s.revenue)), sum(staff.map((s) => s.orders))), revenue: sum(staff.map((s) => s.revenue)) };
   const qualified = sellers.filter((s) => s.created >= 3);
   const medianConv = qualified.length ? [...qualified.map((s) => s.conversion)].sort((a, b) => a - b)[Math.floor(qualified.length / 2)] : 0;
   const lowQ = qualified.filter((s) => s.conversion < medianConv).sort((a, b) => a.conversion - b.conversion).slice(0, 5);
@@ -92,17 +101,18 @@ export async function agentsTab(r: Range) {
 
   // Reja holati (joriy oy)
   const planned = sellers.filter((s) => s.plan !== null);
-  const planStatus = { withPlan: planned.length, total: sellers.length, done: planned.filter((s) => (s.planPct ?? 0) >= 100).length, behind: planned.filter((s) => (s.planPct ?? 0) < 70).length, pct: safeDiv(sum(planned.map((s) => s.plan! * Math.min(1.5, (s.planPct ?? 0) / 100))), sum(planned.map((s) => s.plan!))) * 100 };
+  const planStatus = { withPlan: planned.length, total: sellers.length, done: planned.filter((s) => (s.planPct ?? 0) >= 100).length, behind: planned.filter((s) => (s.planFcPct ?? 0) < 70).length, pct: safeDiv(sum(planned.map((s) => s.plan! * Math.min(1.5, (s.planPct ?? 0) / 100))), sum(planned.map((s) => s.plan!))) * 100 };
 
   // Ertangi yetkazish rejasi (Route Optimization analogi)
   const cap = mean(vehicles.map((v) => Number(v.capacityM3 ?? 0)).filter((v) => v > 0)) || 8;
   const route = tomorrowOrders.map((o) => { const m3 = sum(o.items.map((i) => Number(i.qtyM3))), planned = sum(o.trips.map((t) => Number(t.qtyM3))); return { id: o.id, orderNo: o.orderNo, customer: o.customer.name, address: o.deliveryAddress, m3, planned, trips: Math.ceil(Math.max(0, m3 - planned) / cap), pump: o.needsPump }; });
   const routeTotal = sum(route.map((x) => x.m3)), routeTrips = sum(route.map((x) => x.trips));
 
+  const prevSellers = new Set(prev.map((x) => x.sellerId).filter(isSeller));
   const kpis = {
-    active: kpi(working.length, new Set(prev.map((x) => x.sellerId)).size), created: totalCreated, converted: quality.converted,
-    revenue: kpi(sum(cur.map((x) => x.revenue)), sum(prev.map((x) => x.revenue))), perAgent: kpi(safeDiv(sum(cur.map((x) => x.revenue)), working.length), safeDiv(sum(prev.map((x) => x.revenue)), new Set(prev.map((x) => x.sellerId)).size)),
-    todayRevenue: sum(sellers.map((s) => s.today)), todayOrders: sum(sellers.map((s) => s.todayOrders)), cancelledRevenue: sum(sellers.map((s) => s.cancelledRevenue)),
+    active: kpi(working.length, prevSellers.size), created: totalCreated, converted: quality.converted,
+    revenue: kpi(sum(cur.map((x) => x.revenue)), sum(prev.map((x) => x.revenue))), perAgent: kpi(safeDiv(sum(working.map((s) => s.revenue)), working.length), safeDiv(sum(prev.filter((x) => prevSellers.has(x.sellerId)).map((x) => x.revenue)), prevSellers.size)),
+    todayRevenue: sum(staff.map((s) => s.today)), todayOrders: sum(staff.map((s) => s.todayOrders)), cancelledRevenue: sum(staff.map((s) => s.cancelledRevenue)),
   };
   const heat = { rows: sellers.slice(0, 10).map((s) => s.name), cols: WEEKDAYS, cells: sellers.slice(0, 10).map((s) => s.weekday) };
   return { sellers, top, bottom, offline, neverActive, avgRevenue, slow, slowLoss, reasons, quality, medianConv, lowQ, highQ, upside, planStatus, route, routeTotal, routeTrips, mixerCap: cap, mixers: ops.mixers.length, drivers: ops.drivers, kpis, heat, best: working[0] ?? null };

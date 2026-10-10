@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Users, CheckCircle2, Star, AlertTriangle, Receipt, FileWarning, PhoneCall } from "lucide-react";
-import { customersTab, SEGMENT_COLOR } from "@/lib/bi/customers";
+import { customersTab, SEGMENT_COLOR, SEGMENT_ORDER } from "@/lib/bi/customers";
 import type { Range } from "@/lib/bi/core";
 import { money, moneyShort, fmtNum, date as fmtDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select, Input, Badge } from "@/components/ui";
@@ -14,10 +14,10 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
   const d = await customersTab(range, { segment: sp.segment, risk: sp.risk, debt: sp.debt, q: sp.q, page, size });
   const c = d.cards;
   const quick = [
-    { title: "Aloqa uzilgan", sub: "14–49 KUN", n: c.silent, text: "2 haftadan beri jim — tezkor qo'ng'iroq", color: "border-orange-400", href: tabHref(range, "customers", { segment: "At Risk" }) },
-    { title: "Xarid to'xtatgan", sub: "50+ KUN", n: c.stopped, text: "50+ kun buyurtma bermagan mijozlar", color: "border-red-400", href: tabHref(range, "customers", { segment: "Lost" }) },
+    { title: "Aloqa uzilgan", sub: "45–89 KUN", n: c.atRiskOnly, text: "Jim qolgan mijozlar (At Risk) — tezkor qo'ng'iroq", color: "border-orange-400", href: tabHref(range, "customers", { segment: "At Risk" }) },
+    { title: "Xarid to'xtatgan", sub: "90+ KUN", n: c.lost, text: "90+ kun buyurtma bermagan mijozlar (Lost)", color: "border-red-400", href: tabHref(range, "customers", { segment: "Lost" }) },
     { title: "Qarzdorlar", sub: money(c.debt), n: c.debtors, text: "Ochiq schyoti bor mijozlar", color: "border-red-400", href: tabHref(range, "customers", { debt: "yes" }) },
-    { title: "At Risk", sub: "SEGMENT", n: c.atRisk, text: "Ketish xavfi ostidagi mijozlar (At Risk + Lost)", color: "border-amber-400", href: tabHref(range, "customers", { risk: "Yuqori" }) },
+    { title: "Eski qarzdorlar", sub: money(c.legacyDebt), n: c.legacyDebtors, text: "Tizimgacha qarzi bor, ERP'da hali zayavkasi yo'q — undirish", color: "border-amber-400", href: tabHref(range, "customers", { segment: "Eski qarzdor" }) },
     { title: "Yangi mijozlar", sub: "30 KUN", n: c.newCount, text: "Oxirgi 30 kunda birinchi buyurtma", color: "border-emerald-400", href: tabHref(range, "customers", { segment: "New" }) },
   ];
   const filterHref = (extra: Record<string, string>) => tabHref(range, "customers", { ...(sp.segment ? { segment: sp.segment } : {}), ...(sp.risk ? { risk: sp.risk } : {}), ...(sp.debt ? { debt: sp.debt } : {}), ...(sp.q ? { q: sp.q } : {}), ...extra });
@@ -26,12 +26,12 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
     <div className="space-y-6">
       {/* Qaror qatlami */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Next Best Action" eyebrow="Mijozlar — qaror qatlami" info="Har mijoz uchun bitta aniq harakat. Pul bo'yicha tartiblangan: muddati o'tgan qarz × 1.5 + kutilayotgan yo'qotish." padded={false}>
+        <Panel title="Next Best Action" eyebrow="Mijozlar — qaror qatlami" info="Har mijoz uchun bitta aniq harakat. Pul bo'yicha tartiblangan: muddati o'tgan qarz × 1.5 + kutilayotgan yo'qotish (eski qarzdorda — butun qarz)." padded={false}>
           {d.nba.length ? <ul className="divide-y divide-slate-100">{d.nba.map((x) => (
             <li key={x.id} className="flex items-start gap-3 px-5 py-2.5 text-[13px]">
               <PhoneCall size={15} className="mt-0.5 shrink-0 text-brand-500" />
               <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><Link href={`/customers/${x.id}`} className="font-semibold hover:underline">{x.name}</Link><span className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white" style={{ background: SEGMENT_COLOR[x.segment] }}>{x.segment}</span>{x.phone && <span className="text-xs text-slate-400">{x.phone}</span>}</div><div className="text-slate-600">{x.action}</div></div>
-              <div className="shrink-0 text-right text-xs"><div className="font-semibold tabular text-red-600">{x.overdueDebt > 0 ? moneyShort(x.overdueDebt) : moneyShort(x.expectedLoss)}</div><div className="text-slate-400">{x.overdueDebt > 0 ? "muddati o'tgan" : "yo'qotish xavfi"}</div></div>
+              <div className="shrink-0 text-right text-xs"><div className="font-semibold tabular text-red-600">{moneyShort(x.overdueDebt > 0 ? x.overdueDebt : x.expectedLoss > 0 ? x.expectedLoss : x.debt)}</div><div className="text-slate-400">{x.overdueDebt > 0 ? "muddati o'tgan" : x.expectedLoss > 0 ? "yo'qotish xavfi" : "eski qarz"}</div></div>
             </li>
           ))}</ul> : <div className="p-5"><Note>Shoshilinch harakat talab qiladigan mijoz yo'q.</Note></div>}
         </Panel>
@@ -62,7 +62,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="RFM segmentatsiya" info="Recency (oxirgi buyurtmadan beri kunlar), Frequency (180 kunda buyurtmalar), Monetary (180 kun tushum). VIP — top 20% tushum, Loyal — 3+ buyurtma, At Risk — 45–89 kun, Lost — 90+ kun.">
+        <Panel title="RFM segmentatsiya" info="Recency (oxirgi buyurtmadan beri kunlar), Frequency (180 kunda buyurtmalar), Monetary (180 kun tushum). VIP — top 20% tushum, Loyal — 3+ buyurtma, At Risk — 45–89 kun, Lost — 90+ kun. Eski qarzdor — ERP'da zayavkasi yo'q, tizimgacha (boshlang'ich) qarzi bor.">
           <DonutChart data={d.segments.filter((s) => s.count).map((s) => ({ label: s.segment, value: s.count, color: s.color }))} formatValue={(v) => `${v} ta`} center={{ value: String(c.total), label: "mijoz" }} />
           <div className="mt-3 overflow-x-auto"><table className="w-full text-xs"><thead><tr><Th>Segment</Th><Th right>Mijoz</Th><Th right>180 kun tushum</Th><Th right>Qarz</Th></tr></thead><tbody>{d.segments.filter((s) => s.count).map((s) => <Tr key={s.segment}><Td><Link href={tabHref(range, "customers", { segment: s.segment })} className="hover:underline">{s.segment}</Link></Td><Td right>{s.count}</Td><Td right>{moneyShort(s.revenue)}</Td><Td right className={s.debt ? "text-red-600" : ""}>{moneyShort(s.debt)}</Td></Tr>)}</tbody></table></div>
         </Panel>
@@ -83,7 +83,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Mijoz oqimi" info="Oy bo'yicha: birinchi buyurtma bergan yangi mijozlar va 90 kun jim qolib Lost bo'lganlar.">
+        <Panel title="Mijoz oqimi" info="Oy bo'yicha: birinchi buyurtma bergan yangi mijozlar (tizimgacha bo'lgan mijozlar kirmaydi) va 90 kun jim qolib Lost bo'lganlar. Tizimga o'tgan oydan boshlab.">
           <LineChart labels={d.flow.map((f) => f.label)} series={[{ name: "Yangi", values: d.flow.map((f) => f.newC), color: "#00cb80" }, { name: "Yo'qotilgan", values: d.flow.map((f) => f.lost), color: "#fa1636" }]} formatValue={(v) => `${v} ta`} height={160} />
         </Panel>
         <Panel title="Churn tahlili" info="Xavf bali: recency (60 ballgacha) + qarz (15) + muddati o'tgan qarz (15) + chastota pasayishi (10). Kutilayotgan yo'qotish = o'rtacha oylik × 12 × bal/100.">
@@ -102,7 +102,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       <Panel title="Harakat markazi — mijozlar ro'yxati" info="Pul bo'yicha saralangan (kutilayotgan yo'qotish + qarz). Filtrlang va eksport qiling." padded={false} action={<ExportLink type="customers" range={range} />}>
         <form method="get" action={ROUTES.customers} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           <input type="hidden" name="period" value={range.period === "custom" ? "month" : range.period} />
-          <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Yangi (xaridsiz)"].map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+          <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{SEGMENT_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}</Select>
           <Select name="risk" aria-label="Xavf darajasi" defaultValue={sp.risk ?? ""} className="h-8 w-36"><option value="">Barcha xavf</option>{["Kritik", "Yuqori", "O'rta", "Past", "Xavfsiz"].map((s) => <option key={s} value={s}>{s}</option>)}</Select>
           <Select name="debt" aria-label="Qarz holati" defaultValue={sp.debt ?? ""} className="h-8 w-32"><option value="">Barchasi</option><option value="yes">Qarzdor</option><option value="no">Qarzsiz</option></Select>
           <Input name="q" aria-label="Qidirish" defaultValue={sp.q ?? ""} placeholder="Mijoz qidirish" className="h-8 w-44" />

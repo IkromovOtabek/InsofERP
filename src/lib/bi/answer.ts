@@ -1,5 +1,5 @@
 import { parseRange, startOfDay, addDays, WEEKDAYS_FULL } from "./core";
-import { aiAnswer, matchQuestion, type Answer } from "./ai";
+import { aiAnswer, questionScope, type Answer } from "./ai";
 import { askLlm, llmEnabled, type LlmTurn } from "@/lib/ai/llm";
 import { appUrl } from "@/lib/ai/tools";
 import { isoDate } from "@/lib/format";
@@ -32,8 +32,10 @@ export async function askInsofAi(
   opts: { sp?: Record<string, string | undefined>; history?: LlmTurn[] } = {},
 ): Promise<AskResult> {
   const sp = opts.sp ?? {};
-  const range = parseRange(sp);
-  const key = matchQuestion(question);
+  // «o'tgan oy» — davr o'tgan oyga o'tadi (aiAnswer ichida ham shu qoida)
+  const scope = questionScope(question, sp);
+  const range = parseRange(scope.sp);
+  const key = scope.key;
   const rule = await aiAnswer(question, sp);
 
   // Kalit yo'q → qoida asosidagi javob (mos kelsa hisob-kitob, bo'lmasa "javob bera olmayman")

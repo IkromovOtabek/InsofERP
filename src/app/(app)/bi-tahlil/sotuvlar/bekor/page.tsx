@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Undo2, Percent, Wallet, Hash, Receipt, Users, CalendarX } from "lucide-react";
 import { biContext, BiPage } from "../../shell";
 import { returnsTab } from "@/lib/bi/returns";
-import { type Gran, autoGran } from "@/lib/bi/core";
-import { money, moneyShort, fmtNum, qty, dateTime } from "@/lib/format";
+import { type Gran, autoGran, addDays } from "@/lib/bi/core";
+import { money, moneyShort, fmtNum, qty, dateTime, isoDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select } from "@/components/ui";
 import { BarChart, DonutChart, HBarList } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Pager, Chip, ExportLink, ROUTES, tabHref } from "../../ui";
@@ -78,7 +78,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
 
         <Panel title="Batafsil bekor qilishlar" info="Bekor qilingan zayavka pozitsiyalari — davr bo'yicha." padded={false} action={<><span>{d.list.total} satr</span><ExportLink type="returns" range={range} /></>}>
           <form method="get" action={ROUTES.returns} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
-            {range.period === "custom" ? <><input type="hidden" name="from" value={range.from.toISOString().slice(0, 10)} /><input type="hidden" name="to" value={new Date(range.to.getTime() - 1).toISOString().slice(0, 10)} /></> : <input type="hidden" name="period" value={range.period} />}
+            {range.period === "custom" ? <><input type="hidden" name="from" value={isoDate(range.from)} /><input type="hidden" name="to" value={isoDate(addDays(range.to, -1))} /></> : <input type="hidden" name="period" value={range.period} />}
             <Select name="product" defaultValue={sp.product ?? ""} className="h-8 w-52"><option value="">Barcha markalar</option>{d.productOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
             <Select name="reason" defaultValue={sp.reason ?? ""} className="h-8 w-48"><option value="">Barcha sabablar</option>{d.reasonOptions.map((x) => <option key={x} value={x}>{x}</option>)}</Select>
             <Select name="seller" defaultValue={sp.seller ?? ""} className="h-8 w-44"><option value="">Barcha sotuvchilar</option>{d.sellerOptions.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select>

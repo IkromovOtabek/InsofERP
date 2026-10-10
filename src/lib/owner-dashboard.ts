@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { lineTotal } from "@/lib/receipt-vat";
 import { getCompany } from "@/lib/company";
-import { loadRevenue, productCosts, materialCosts, sum, safeDiv, addDays, startOfDay, monthForecast, workingDays, type Range, type SaleRow } from "@/lib/bi/core";
+import { loadRevenue, productCosts, materialCosts, sum, safeDiv, addDays, startOfDay, monthForecast, workingDays, goLiveDate, grossOf, marginOf, type Range, type SaleRow } from "@/lib/bi/core";
 import { lossChannels } from "@/lib/bi/finance";
 import { materialOverview } from "@/lib/bi/stock";
 import { MONTHS_SHORT } from "@/lib/bi/plans";
@@ -104,7 +104,8 @@ export async function ownerDashboard() {
   const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86400000);
   const daysPassed = Math.round((today.getTime() - monthStart.getTime()) / 86400000) + 1;
   const wdTotal = workingDays(monthStart, monthEnd), wdPassed = workingDays(monthStart, tomorrow);
-  const project = (fact: number) => monthForecast(fact, today); // oy oxirigacha prognoz — BI va AI chat bilan bitta formula
+  const since = await goLiveDate(); // oy o'rtasida tizimga o'tilgan bo'lsa sur'at o'tish sanasidan
+  const project = (fact: number) => monthForecast(fact, today, since); // oy oxirigacha prognoz — BI va AI chat bilan bitta formula
   const range: Range = { period: "month", from: monthStart, to: tomorrow, prevFrom: prevMonthStart, prevTo: monthStart, days: daysPassed, label: "Joriy oy", prevLabel: "O'tgan oy" };
 
   const [
@@ -164,13 +165,14 @@ export async function ownerDashboard() {
   const revenueExpected = revenuePlan ? (revenuePlan / wdTotal) * wdPassed : null; // shu kungacha bo'lishi kerak edi
 
   // Marja — mahsulot bo'yicha (asosiy yo'nalishlar)
-  const byProduct = new Map<string, { code: string; name: string; unit: string; revenue: number; cost: number; qty: number }>();
+  // Tannarxi noma'lum (retseptsiz) mahsulot marjada ko'rsatilmaydi — 100% foyda bo'lib chiqmasin
+  const byProduct = new Map<string, { code: string; name: string; unit: string; revenue: number; cost: number; qty: number; rows: SaleRow[] }>();
   for (const r of salesMonth) {
-    const cur = byProduct.get(r.productId) ?? { code: r.code, name: r.product, unit: r.unit, revenue: 0, cost: 0, qty: 0 };
-    cur.revenue += r.revenue; cur.cost += r.cost; cur.qty += r.qty; byProduct.set(r.productId, cur);
+    const cur = byProduct.get(r.productId) ?? { code: r.code, name: r.product, unit: r.unit, revenue: 0, cost: 0, qty: 0, rows: [] };
+    cur.revenue += r.revenue; cur.cost += r.cost; cur.qty += r.qty; cur.rows.push(r); byProduct.set(r.productId, cur);
   }
-  const marginByProduct = [...byProduct.entries()].map(([id, p]) => ({ id, ...p, margin: safeDiv(p.revenue - p.cost, p.revenue) * 100, unitCost: costs.get(id)?.cost ?? null, price: costs.get(id)?.price ?? 0 })).sort((a, b) => b.revenue - a.revenue);
-  const marginTotal = safeDiv(revenueMonth - cogsMonth, revenueMonth) * 100;
+  const marginByProduct = [...byProduct.entries()].filter(([, p]) => p.rows.some((r) => r.costKnown)).map(([id, { rows, ...p }]) => ({ id, ...p, margin: marginOf(rows), unitCost: costs.get(id)?.cost ?? null, price: costs.get(id)?.price ?? 0 })).sort((a, b) => b.revenue - a.revenue);
+  const marginTotal = marginOf(salesMonth);
 
   /* ───────────────────────── Xarajatlar va byudjet ───────────────────────── */
   // Toifalar kanonik nomga keltiriladi (eski "Yoqilg'i", "Avans"… → EXPENSE_CATEGORIES); bir toifaga tushgan bir nechta byudjet qo'shiladi
@@ -215,7 +217,7 @@ export async function ownerDashboard() {
   const duplicateSum = sum(duplicates.map((t) => Number(t.amount))) / 2;
 
   /* ───────────────────────── Foyda ───────────────────────── */
-  const grossToday = revenueToday - cogsToday, grossMonth = revenueMonth - cogsMonth;
+  const grossToday = grossOf(salesToday), grossMonth = grossOf(salesMonth);
   const netToday = grossToday - opexToday, netMonth = grossMonth - opexMonth;
   // Foyda rejasi faqat REJALARDAN: sotuv plani − xomashyo byudjeti − operatsion byudjet. Ilgari tannarx rejasi
   // joriy faktdagi tannarx ulushidan olinardi — fakt yomonlashsa reja ham "yomonlashib", manfiy reja chiqardi.

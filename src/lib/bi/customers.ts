@@ -1,16 +1,19 @@
 import { db } from "@/lib/db";
 import { receivablesReport } from "@/lib/receivables";
-import { type Range, addDays, startOfDay, sum, safeDiv, ACTIVE_ORDER, abc, bucketKey, bucketLabel, bucketsFor } from "./core";
+import { type Range, addDays, startOfDay, sum, safeDiv, ACTIVE_ORDER, abc, bucketKey, bucketLabel, bucketsFor, goLiveDate } from "./core";
 
-export type Segment = "VIP" | "Loyal" | "Regular" | "New" | "At Risk" | "Lost" | "Yangi (xaridsiz)";
+/** "Eski qarzdor" — ERP'da zayavkasi yo'q, lekin qarzi (boshlang'ich qoldiq) bor: tizimgacha bo'lgan mijoz, yangi emas. */
+export type Segment = "VIP" | "Loyal" | "Regular" | "New" | "At Risk" | "Lost" | "Eski qarzdor" | "Yangi (xaridsiz)";
 export type Risk = "Kritik" | "Yuqori" | "O'rta" | "Past" | "Xavfsiz";
-export const SEGMENT_ORDER: Segment[] = ["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Yangi (xaridsiz)"];
-export const SEGMENT_COLOR: Record<Segment, string> = { VIP: "#ffa800", Loyal: "#00cb80", Regular: "#0d78ff", New: "#8b2fff", "At Risk": "#ff5c00", Lost: "#fa1636", "Yangi (xaridsiz)": "#93a3bd" };
+export const SEGMENT_ORDER: Segment[] = ["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Eski qarzdor", "Yangi (xaridsiz)"];
+export const SEGMENT_COLOR: Record<Segment, string> = { VIP: "#ffa800", Loyal: "#00cb80", Regular: "#0d78ff", New: "#8b2fff", "At Risk": "#ff5c00", Lost: "#fa1636", "Eski qarzdor": "#b45309", "Yangi (xaridsiz)": "#93a3bd" };
 
 export type CustomerRow = {
   id: string; name: string; phone: string | null; creditLimit: number; createdAt: Date;
   recency: number | null; lastOrder: Date | null; firstOrder: Date | null; frequency: number; monetary: number; lifetime: number; orders: number;
   avgMonthly: number; debt: number; overdueDebt: number; oldestDebtDays: number | null;
+  /** Tizimgacha bo'lgan mijoz: boshlang'ich qoldig'i bor yoki tizimga o'tishdan oldin yaratilgan — "yangi" hisoblanmaydi */
+  legacy: boolean;
   segment: Segment; risk: Risk; riskScore: number; expectedLoss: number; abc: "A" | "B" | "C"; action: string;
 };
 
@@ -18,12 +21,17 @@ const DAY = 86400000;
 
 export async function customerBase(): Promise<CustomerRow[]> {
   const today = startOfDay(new Date()), since180 = addDays(today, -180);
-  const [customers, items, recv] = await Promise.all([
+  const [customers, items, recv, openings, live] = await Promise.all([
     db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, phone: true, creditLimit: true, createdAt: true, isActive: true } }),
-    db.orderItem.findMany({ where: { order: { status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, order: { select: { id: true, date: true, customerId: true } } } }),
+    // Faqat SALE: sklad zaxirasi zayavkasi (STOCK, narxi 0) xarid emas
+    db.orderItem.findMany({ where: { order: { kind: "SALE", status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, order: { select: { id: true, date: true, customerId: true } } } }),
     // Qarz — yagona debitorka (schyotlar − barcha to'lovlar; muddati o'tgan — FIFO, sozlamadagi kun bo'yicha)
     receivablesReport(),
+    // Boshlang'ich qoldig'i bor mijozlar — tizimgacha bo'lgan (eski) mijozlar
+    db.openingBalance.findMany({ where: { kind: "CUSTOMER", cancelledAt: null, customerId: { not: null } }, select: { customerId: true } }),
+    goLiveDate(),
   ]);
+  const hasOpening = new Set(openings.map((o) => o.customerId as string));
 
   const byCust = new Map<string, { orders: Map<string, { date: Date; revenue: number }> }>();
   for (const i of items) {
@@ -41,7 +49,8 @@ export async function customerBase(): Promise<CustomerRow[]> {
     const lifeDays = first ? Math.max(30, (today.getTime() - first.getTime()) / DAY) : 30;
     const avgMonthly = lifetime / (lifeDays / 30);
     const d = debtBy.get(c.id) ?? { debt: 0, overdue: 0, oldest: null };
-    return { id: c.id, name: c.name, phone: c.phone, creditLimit: Number(c.creditLimit), createdAt: c.createdAt, recency, lastOrder: last, firstOrder: first, frequency: recent.length, monetary, lifetime, orders: orders.length, avgMonthly, debt: d.debt, overdueDebt: d.overdue, oldestDebtDays: d.oldest };
+    const legacy = hasOpening.has(c.id) || (live !== null && c.createdAt < live);
+    return { id: c.id, name: c.name, phone: c.phone, creditLimit: Number(c.creditLimit), createdAt: c.createdAt, recency, lastOrder: last, firstOrder: first, frequency: recent.length, monetary, lifetime, orders: orders.length, avgMonthly, debt: d.debt, overdueDebt: d.overdue, oldestDebtDays: d.oldest, legacy };
   });
 
   const monetaryVals = rows.filter((x) => x.monetary > 0).map((x) => x.monetary).sort((a, b) => b - a);
@@ -50,10 +59,12 @@ export async function customerBase(): Promise<CustomerRow[]> {
 
   return rows.map((x) => {
     let segment: Segment;
-    if (x.recency === null) segment = "Yangi (xaridsiz)";
+    // Zayavkasiz, lekin qarzi/boshlang'ich qoldig'i bor — tizimgacha bo'lgan qarzdor, "yangi" emas
+    if (x.recency === null) segment = x.debt > 0 || hasOpening.has(x.id) ? "Eski qarzdor" : "Yangi (xaridsiz)";
     else if (x.recency >= 90) segment = "Lost";
     else if (x.recency >= 45) segment = "At Risk";
-    else if (x.firstOrder && (today.getTime() - x.firstOrder.getTime()) / DAY <= 30) segment = "New";
+    // Eski mijozning ERP'dagi birinchi zayavkasi — "yangi mijoz" emas
+    else if (!x.legacy && x.firstOrder && (today.getTime() - x.firstOrder.getTime()) / DAY <= 30) segment = "New";
     else if (x.monetary >= vipCut && x.frequency >= 2) segment = "VIP";
     else if (x.frequency >= 3) segment = "Loyal";
     else segment = "Regular";
@@ -62,19 +73,20 @@ export async function customerBase(): Promise<CustomerRow[]> {
     if (x.recency !== null) score += Math.min(60, (x.recency / 90) * 60);
     if (x.debt > 0) score += 15; if (x.overdueDebt > 0) score += 15;
     if (x.frequency <= 1 && x.orders > 1) score += 10;
-    if (x.recency === null) score = 0;
+    // Xaridsiz yangi mijozda xavf yo'q; eski qarzdorda qarz ballari qoladi
+    if (segment === "Yangi (xaridsiz)") score = 0;
     const risk: Risk = score >= 80 ? "Kritik" : score >= 60 ? "Yuqori" : score >= 35 ? "O'rta" : score > 10 ? "Past" : "Xavfsiz";
     const expectedLoss = x.avgMonthly * 12 * Math.min(1, score / 100);
-    const action = segment === "Lost" ? (x.debt > 0 ? "Qarzni undirish — qo'ng'iroq qiling" : "Qayta jalb qilish taklifi") : segment === "At Risk" ? "Tezkor qo'ng'iroq — nega to'xtadi?" : x.overdueDebt > 0 ? "Muddati o'tgan qarz — eslatma" : segment === "VIP" ? "Shaxsiy xizmat, ustuvor yetkazish" : segment === "New" ? "Ikkinchi buyurtmaga undash" : segment === "Yangi (xaridsiz)" ? "Birinchi zayavkani rasmiylashtiring" : "Doimiy aloqa";
+    const action = segment === "Eski qarzdor" ? (x.overdueDebt > 0 ? "Eski qarz muddati o'tgan — undirish, qo'ng'iroq qiling" : x.debt > 0 ? "Eski qarzni undirish — to'lov muddatini kelishing" : "Eski qarz yopilgan — yangi zayavka taklif qiling") : segment === "Lost" ? (x.debt > 0 ? "Qarzni undirish — qo'ng'iroq qiling" : "Qayta jalb qilish taklifi") : segment === "At Risk" ? "Tezkor qo'ng'iroq — nega to'xtadi?" : x.overdueDebt > 0 ? "Muddati o'tgan qarz — eslatma" : segment === "VIP" ? "Shaxsiy xizmat, ustuvor yetkazish" : segment === "New" ? "Ikkinchi buyurtmaga undash" : segment === "Yangi (xaridsiz)" ? "Birinchi zayavkani rasmiylashtiring" : "Doimiy aloqa";
     return { ...x, segment, risk, riskScore: Math.round(score), expectedLoss, abc: abcMap.get(x) ?? "C", action };
   });
 }
 
 export async function customersTab(r: Range, filter: { segment?: string; risk?: string; debt?: string; q?: string; page: number; size: number }) {
-  const base = await customerBase();
+  const [base, live] = await Promise.all([customerBase(), goLiveDate()]);
   const today = startOfDay(new Date());
   const active = base.filter((x) => x.recency !== null && x.recency < 30);
-  const cur = await db.orderItem.findMany({ where: { order: { date: { gte: r.from, lt: r.to }, status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, orderId: true, order: { select: { customerId: true, date: true } } } });
+  const cur = await db.orderItem.findMany({ where: { order: { kind: "SALE", date: { gte: r.from, lt: r.to }, status: { in: ACTIVE_ORDER } } }, select: { qtyM3: true, price: true, orderId: true, order: { select: { customerId: true, date: true } } } });
   const revenue = sum(cur.map((x) => Number(x.qtyM3) * Number(x.price)));
   const orderIds = new Set(cur.map((x) => x.orderId)).size;
 
@@ -85,7 +97,9 @@ export async function customersTab(r: Range, filter: { segment?: string; risk?: 
     avgCheck: safeDiv(revenue, orderIds), debt: sum(base.map((x) => x.debt)), debtors: base.filter((x) => x.debt > 0).length,
     silent: base.filter((x) => x.recency !== null && x.recency >= 14 && x.recency < 50).length,
     stopped: base.filter((x) => x.recency !== null && x.recency >= 50).length,
-    newCount: base.filter((x) => x.firstOrder && (today.getTime() - x.firstOrder.getTime()) / DAY <= 30).length,
+    // Tezkor kartalar jadval filtri bilan bir xil sanaydi (segment bo'yicha)
+    atRiskOnly: seg("At Risk").length, lost: seg("Lost").length, legacyDebtors: seg("Eski qarzdor").filter((x) => x.debt > 0).length, legacyDebt: sum(seg("Eski qarzdor").map((x) => x.debt)),
+    newCount: seg("New").length,
     activityRate: safeDiv(active.length, base.length) * 100,
   };
 
@@ -105,20 +119,21 @@ export async function customersTab(r: Range, filter: { segment?: string; risk?: 
   const agingByCust = new Map(recv.rows.map((r) => [r.customerId, { name: r.name, b: r.buckets }]));
   const agingTop = [...agingByCust.entries()].map(([id, c]) => ({ id, name: c.name, b: c.b, total: sum(c.b) })).sort((a, b) => b.total - a.total).slice(0, 10);
 
-  // Mijoz oqimi: oy bo'yicha yangi / yo'qotilgan (oxirgi 6 oy)
-  const from6 = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+  // Mijoz oqimi: oy bo'yicha yangi / yo'qotilgan (oxirgi 6 oy, tizimga o'tgan oydan boshlab — undan oldin ERP'da ma'lumot yo'q)
+  const from6 = new Date(Math.max(new Date(today.getFullYear(), today.getMonth() - 5, 1).getTime(), live ? new Date(live.getFullYear(), live.getMonth(), 1).getTime() : 0));
   const keys = bucketsFor(from6, addDays(today, 1), "month");
   const flow = keys.map((k) => ({ label: bucketLabel(k, "month"), newC: 0, lost: 0 }));
   for (const x of base) {
-    if (x.firstOrder && x.firstOrder >= from6) { const i = keys.indexOf(bucketKey(x.firstOrder, "month")); if (i >= 0) flow[i].newC++; }
+    if (!x.legacy && x.firstOrder && x.firstOrder >= from6) { const i = keys.indexOf(bucketKey(x.firstOrder, "month")); if (i >= 0) flow[i].newC++; }
     if (x.segment === "Lost" && x.lastOrder) { const lostAt = addDays(x.lastOrder, 90); if (lostAt >= from6 && lostAt <= today) { const i = keys.indexOf(bucketKey(lostAt, "month")); if (i >= 0) flow[i].lost++; } }
   }
 
   // CLV scatter: lifetime × monetary(180d), r = frequency
   const clv = base.filter((x) => x.lifetime > 0).sort((a, b) => b.lifetime - a.lifetime).slice(0, 60).map((x) => ({ x: x.lifetime, y: x.monetary, r: x.frequency + 1, label: x.name, color: SEGMENT_COLOR[x.segment] }));
 
-  // Next Best Action: pul bo'yicha eng muhim 8 mijoz
-  const nba = base.filter((x) => x.segment !== "Yangi (xaridsiz)").map((x) => ({ ...x, priority: x.overdueDebt * 1.5 + x.expectedLoss })).sort((a, b) => b.priority - a.priority).slice(0, 8);
+  // Next Best Action: pul bo'yicha eng muhim 8 mijoz. Eski qarzdorda (zayavkasiz) butun qarz — undiriladigan pul
+  const nba = base.filter((x) => x.segment !== "Yangi (xaridsiz)" && (x.segment !== "Eski qarzdor" || x.debt > 0))
+    .map((x) => ({ ...x, priority: x.overdueDebt * 1.5 + x.expectedLoss + (x.segment === "Eski qarzdor" ? x.debt - x.overdueDebt : 0) })).filter((x) => x.priority > 0).sort((a, b) => b.priority - a.priority).slice(0, 8);
 
   // Jadval filtrlari
   let list = base;
@@ -133,7 +148,7 @@ export async function customersTab(r: Range, filter: { segment?: string; risk?: 
     atRisk: base.filter((x) => ["Kritik", "Yuqori", "O'rta"].includes(x.risk)).length,
     expectedLoss: sum(base.filter((x) => ["Kritik", "Yuqori", "O'rta"].includes(x.risk)).map((x) => x.expectedLoss)),
     recoverable: sum(base.filter((x) => x.segment === "At Risk").map((x) => x.avgMonthly * 12)),
-    avgScore: safeDiv(sum(base.filter((x) => x.recency !== null).map((x) => x.riskScore)), base.filter((x) => x.recency !== null).length),
+    avgScore: safeDiv(sum(base.filter((x) => x.segment !== "Yangi (xaridsiz)").map((x) => x.riskScore)), base.filter((x) => x.segment !== "Yangi (xaridsiz)").length),
     zones: (["Kritik", "Yuqori", "O'rta", "Past", "Xavfsiz"] as Risk[]).map((z) => ({ label: z, value: base.filter((x) => x.risk === z).length, loss: sum(base.filter((x) => x.risk === z).map((x) => x.expectedLoss)) })),
     factors: [
       { label: "Uzoq vaqt buyurtma yo'q (45+ kun)", value: base.filter((x) => x.recency !== null && x.recency >= 45).length },

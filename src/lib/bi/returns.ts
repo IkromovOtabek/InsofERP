@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { type Range, type Gran, loadSales, productCosts, sum, safeDiv, kpi, series } from "./core";
+import { type Range, type Gran, loadSales, productCosts, sum, safeDiv, kpi, series, grossOf } from "./core";
 
 /**
  * Bekor qilingan zayavkalar — Team24 "Qaytgan mahsulotlar" sahifasining beton zavodi ekvivalenti.
@@ -12,13 +12,13 @@ export async function returnsTab(r: Range, gran: Gran, filter: { product?: strin
     productCosts(),
   ]);
   const reasonOf = new Map(orders.map((o) => [o.id, (o.note ?? "").trim() || "Ko'rsatilmagan"]));
-  const rows = cur.map((x) => ({ ...x, reason: reasonOf.get(x.orderId) ?? "Ko'rsatilmagan", margin: x.revenue - x.cost }));
+  const rows = cur.map((x) => ({ ...x, reason: reasonOf.get(x.orderId) ?? "Ko'rsatilmagan", margin: x.costKnown ? x.net - x.cost : 0 }));
 
   const total = sum(rows.map((x) => x.revenue)), prevTotal = sum(prev.map((x) => x.revenue));
   const activeRev = sum(active.map((x) => x.revenue)), prevActiveRev = sum(prevActive.map((x) => x.revenue));
   const rate = safeDiv(total, total + activeRev) * 100, prevRate = safeDiv(prevTotal, prevTotal + prevActiveRev) * 100;
   const count = new Set(rows.map((x) => x.orderId)).size, prevCount = new Set(prev.map((x) => x.orderId)).size;
-  const lostMargin = sum(rows.map((x) => x.margin)), prevLostMargin = sum(prev.map((x) => x.revenue - x.cost));
+  const lostMargin = sum(rows.map((x) => x.margin)), prevLostMargin = grossOf(prev);
   const customers = new Set(rows.map((x) => x.customerId)).size;
   const volume = sum(rows.filter((x) => x.unit === "m3").map((x) => x.qty));
 

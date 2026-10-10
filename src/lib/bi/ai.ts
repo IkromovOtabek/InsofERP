@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
-import { moneyShort, fmtNum, date as fmtDate, qty } from "@/lib/format";
-import { type Range, parseRange, loadSales, sum, safeDiv, addDays, startOfDay, WEEKDAYS_FULL } from "./core";
+import { moneyShort, fmtNum, date as fmtDate, qty, isoDate } from "@/lib/format";
+import { type Range, parseRange, loadSales, sum, delta, addDays, startOfDay, WEEKDAYS_FULL } from "./core";
 import { overviewTab } from "./overview";
 import { agentsTab } from "./agents";
 import { plansTab } from "./plans";
 import { materialOverview } from "./stock";
-import { customerBase } from "./customers";
+import { customerBase, SEGMENT_ORDER } from "./customers";
 import { forecastTab, anomaliesTab } from "./forecast";
 import { salesTab } from "./sales";
 import { lossChannels } from "./finance";
@@ -101,7 +101,7 @@ export async function aiReport(type: ReportType): Promise<Report> {
     return {
       title: `Kun yakuni — ${fmtDate(today)}`, sub: "Evening report",
       sections: [
-        { title: "Sotuv", lines: [`Bugun ${M(sum(t.map((x) => x.revenue)))} · ${new Set(t.map((x) => x.orderId)).size} zayavka. Kecha ${M(sum(y.map((x) => x.revenue)))} edi (${pct(safeDiv(sum(t.map((x) => x.revenue)) - sum(y.map((x) => x.revenue)), sum(y.map((x) => x.revenue)) || 1) * 100)}).`] },
+        { title: "Sotuv", lines: [`Bugun ${M(sum(t.map((x) => x.revenue)))} · ${new Set(t.map((x) => x.orderId)).size} zayavka. ${sum(y.map((x) => x.revenue)) > 0 ? `Kecha ${M(sum(y.map((x) => x.revenue)))} edi (${pct(delta(sum(t.map((x) => x.revenue)), sum(y.map((x) => x.revenue))))}).` : "Kecha savdo yo'q edi."}`] },
         { title: "Logistika", lines: [`${delivered.length}/${trips.length} reys yetkazildi · ${qty(sum(delivered.map((x) => Number(x.qtyM3))))} m³.`] },
         { title: "Kassa", lines: [`Bugun kassaga ${M(Number(pay._sum.amount ?? 0))} tushdi.`] },
         { title: "Ertaga", lines: [crit.length ? `${crit.length} ta xomashyo kritik — ertalab birinchi ish buyurtma.` : "Xomashyo bo'yicha shoshilinch ish yo'q."] },
@@ -136,7 +136,7 @@ export async function aiReport(type: ReportType): Promise<Report> {
     title: "Executive brief", sub: `${fmtDate(today)} · biznes salomatligi ${o.health === null ? "—" : `${o.health}/100`} (${o.healthLabel})`,
     sections: [
       { title: "Bitta jumla", lines: [`Oy boshidan ${M(o.month.revenue)} sotildi${pl.companyPlan ? ` (reja ${pct(pl.pct)})` : ""}, xavf ostida ${M(o.riskTotal)}, kuniga ${M(loss.totalPerDay)} yo'qotilmoqda.`] },
-      { title: "Salomatlik komponentlari", lines: o.components.map((c) => `${c.label}: ${c.score}/20 — ${c.text}.`) },
+      { title: "Salomatlik komponentlari", lines: o.components.map((c) => `${c.label}: ${c.score === null ? "ma'lumot yo'q" : `${c.score}/20`} — ${c.text}.`) },
       { title: "Bugungi 3 vazifa", lines: o.tasks.slice(0, 3).map((t) => `${t.n}. ${t.title} — ${t.text}`) },
       { title: "Yaxshi xabar", lines: o.goodNews.length ? o.goodNews : ["Bu davrda alohida ijobiy signal yo'q."] },
     ], hrefs: [{ label: "Rahbar markazi", href: "/bi-tahlil" }, { label: "Insof AI", href: "/bi-tahlil/ai" }],
@@ -215,8 +215,41 @@ export function matchQuestion(q: string): string | null {
   return best && best.score >= 4 ? best.key : null;
 }
 
+/**
+ * Savol davri: «o'tgan oy» — joriy oy emas, o'tgan oy (1-sanadan oxirgi kunigacha). Oy savoli tanlangan davr
+ * javobiga o'tadi ("month" har doim joriy oyni beradi). «bu oy» ham bo'lsa — taqqoslash savoli, o'zgarmaydi.
+ */
+export function questionScope(question: string, sp: Record<string, string | undefined> = {}) {
+  const key = matchQuestion(question), s = question.toLowerCase();
+  if (!/o['ʻ‘’`]?tgan\s+oy/.test(s) || /\bbu\s+oy/.test(s)) return { key, sp };
+  const m0 = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  return { key: key === "month" ? "period" : key, sp: { from: isoDate(new Date(m0.getFullYear(), m0.getMonth() - 1, 1)), to: isoDate(addDays(m0, -1)) } };
+}
+
+/** Savoldagi mijoz nomi (MChJ/OOO kabi shakllarsiz). */
+const custNorm = (v: string) => ` ${v.toLowerCase().replace(/["'«»“”‘’ʻ`.,]/g, " ").replace(/\s+/g, " ").trim()} `.replace(/ (mchj|ooo|xk|yatt|qk|llc|ооо|мчж|чп|ип) /g, " ").replace(/\s+/g, " ");
+
+/** «X mijozning qarzi» — savolda mijoz nomi bo'lsa zavod jami emas, shu mijozning qarzi. */
+async function customerDebt(ctx: AiCtx, question: string): Promise<Answer | null> {
+  const q = custNorm(question);
+  const hit = (await ctx.customers()).map((c) => ({ c, n: custNorm(c.name).trim() })).filter((x) => x.n.length >= 4 && q.includes(` ${x.n}`)).sort((a, b) => b.n.length - a.n.length)[0];
+  if (!hit) return null;
+  const c = hit.c;
+  return {
+    key: "debt",
+    text: c.debt > 0
+      ? `${c.name}: qarz ${M(c.debt)}${c.overdueDebt ? `, shundan muddati o'tgan ${M(c.overdueDebt)}${c.oldestDebtDays !== null ? ` (eng eskisi ${c.oldestDebtDays} kun)` : ""}` : ""}. Segment: ${c.segment}, oxirgi zayavka ${c.lastOrder ? fmtDate(c.lastOrder) : "ERP'da yo'q"}.`
+      : c.debt < 0 ? `${c.name}: qarz yo'q, avans ${M(-c.debt)}.` : `${c.name}: qarz yo'q.`,
+    bullets: [`Tavsiya: ${c.action}`],
+    href: { label: c.name, href: `/customers/${c.id}` },
+  };
+}
+
 export async function aiAnswer(question: string, sp: Record<string, string | undefined> = {}): Promise<Answer> {
-  return answerFor(makeCtx(parseRange(sp)), matchQuestion(question));
+  const scope = questionScope(question, sp);
+  const ctx = makeCtx(parseRange(scope.sp));
+  if (scope.key === "debt") { const one = await customerDebt(ctx, question); if (one) return one; }
+  return answerFor(ctx, scope.key);
 }
 
 /** Bitta kalit uchun javob. ctx ulashilsa (aiSnapshot) baza so'rovlari qayta bajarilmaydi. */
@@ -224,7 +257,7 @@ async function answerFor(ctx: AiCtx, key: string | null): Promise<Answer> {
   const range = ctx.range;
   const L = (label: string, href: string) => ({ label, href });
   switch (key) {
-    case "health": { const o = await ctx.overview(); return { key, text: `Biznes salomatligi ${o.health}/100 — ${o.healthLabel}. Xavf ostidagi pul ${M(o.riskTotal)}, kuniga ${M(o.loss.totalPerDay)} yo'qotilmoqda.`, bullets: o.components.map((c) => `${c.label}: ${c.score}/20 — ${c.text}`), href: L("Rahbar markazi", "/bi-tahlil") }; }
+    case "health": { const o = await ctx.overview(); return { key, text: `${o.health === null ? `Biznes salomatligi hisoblanmadi — ma'lumot hali yetarli emas (${o.healthLabel.toLowerCase()}).` : `Biznes salomatligi ${o.health}/100 — ${o.healthLabel}.`} Xavf ostidagi pul ${M(o.riskTotal)}, kuniga ${M(o.loss.totalPerDay)} yo'qotilmoqda.`, bullets: o.components.map((c) => `${c.label}: ${c.score === null ? "ma'lumot yo'q" : `${c.score}/20`} — ${c.text}`), href: L("Rahbar markazi", "/bi-tahlil") }; }
     case "attention": { const d = await aiDirector(range); return { key, text: d.risks.length ? `Hozir ${d.risks.length} ta xavf bor. Eng kattasi — ${d.risks[0].title} (${d.risks[0].money}).` : "Shoshilinch xavf yo'q.", bullets: d.risks.map((r) => `${r.title} · ${r.money} — ${r.action}`), href: L("Insof AI", "/bi-tahlil/ai") }; }
     case "todo": { const o = await ctx.overview(); return { key, text: o.tasks.length ? `Bugungi ${o.tasks.length} ta vazifa — pul bo'yicha tartiblangan:` : "Bugun uchun shoshilinch vazifa yo'q.", bullets: o.tasks.map((t) => `${t.n}. ${t.title} (${moneyShort(t.money)}) — ${t.text}`), href: L("Vazifalar", "/bi-tahlil/ai") }; }
     case "fresh": return { key, text: `Ma'lumotlar jonli — har sahifa ochilganda bazadan qayta hisoblanadi. Hozir: ${fmtDate(new Date())} ${String(new Date().getHours()).padStart(2, "0")}:${String(new Date().getMinutes()).padStart(2, "0")}. Tanlangan davr: ${range.label}.` };
@@ -239,15 +272,15 @@ async function answerFor(ctx: AiCtx, key: string | null): Promise<Answer> {
     case "stockout": case "order": case "draft": { const m = await ctx.materials(); const q = m.filter((x) => x.suggestQty > 0 && (x.zone === "Kritik" || x.short || x.zone === "Xavfli")).sort((a, b) => b.suggestCost - a.suggestCost); return { key, text: q.length ? `${q.length} ta xomashyoni buyurtma qilish kerak — jami ${M(sum(q.map((x) => x.suggestCost)))}:` : "Xomashyo zaxirasi yetarli — buyurtma shart emas.", bullets: q.slice(0, 8).map((x) => `${x.name}: qoldiq ${qty(x.balance)} ${x.unit}, ${x.days === null ? "sarf yo'q" : `${fmtNum(x.days, 0)} kunga yetadi`} → ${qty(x.suggestQty)} ${x.unit} (${moneyShort(x.suggestCost)})`), href: L("Ombor · buyurtma navbati", "/bi-tahlil/ombor") }; }
     case "stock": { const m = await ctx.materials(); const z = (k: string) => m.filter((x) => x.zone === k).length; return { key, text: `Ombor qiymati ${M(sum(m.map((x) => x.value)))}. ${m.length} xomashyodan ${z("Kritik")} kritik, ${z("Xavfli")} xavfli, ${z("Yaxshi")} yaxshi. Muzlagan: ${m.filter((x) => x.dead).length} pozitsiya (${M(sum(m.filter((x) => x.dead).map((x) => x.value)))}).`, href: L("Ombor", "/bi-tahlil/ombor") }; }
     case "profit": { const s = await ctx.sales(); const k = s.kpis; return { key, text: `Yalpi foyda ${M(k.gross.cur)} (${pct(k.gross.delta)}), marja ${pct(k.margin.cur, 1)} (oldingi davr ${pct(k.margin.prev, 1)}). ${k.margin.cur < 15 ? "Marja past — retsept tannarxi va narx siyosatini ko'ring." : "Marja sog'lom darajada."}`, bullets: s.opportunity.slice(0, 3).map((p) => `${p.code}: marja ${pct(p.margin, 1)}, sotuv ${moneyShort(p.revenue)}`), href: L("Moliya", "/bi-tahlil/moliya") }; }
-    case "debt": { const cs = await ctx.customers(); const d = cs.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt); const overdue = sum(cs.map((c) => c.overdueDebt)); return { key, text: `Jami qarz ${M(sum(d.map((c) => c.debt)))} (${d.length} mijoz), shundan muddati o'tgan ${M(overdue)}. Xarid to'xtatganlarda ${M(sum(d.filter((c) => c.segment === "At Risk" || c.segment === "Lost").map((c) => c.debt)))} — bu eng xavflisi.`, bullets: d.slice(0, 5).map((c) => `${c.name}: ${moneyShort(c.debt)}${c.overdueDebt ? ` (muddati o'tgan ${moneyShort(c.overdueDebt)})` : ""} · ${c.segment}`), href: L("Qarzdorlar", "/bi-tahlil/mijozlar?debt=yes") }; }
+    case "debt": { const cs = await ctx.customers(); const d = cs.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt); const overdue = sum(cs.map((c) => c.overdueDebt)); return { key, text: `Jami qarz ${M(sum(d.map((c) => c.debt)))} (${d.length} mijoz), shundan muddati o'tgan ${M(overdue)}. Xarid to'xtatganlarda ${M(sum(d.filter((c) => c.segment === "At Risk" || c.segment === "Lost").map((c) => c.debt)))} — bu eng xavflisi.${d.some((c) => c.segment === "Eski qarzdor") ? ` Tizimgacha qolgan (ERP'da zayavkasi yo'q) qarz: ${M(sum(d.filter((c) => c.segment === "Eski qarzdor").map((c) => c.debt)))} (${d.filter((c) => c.segment === "Eski qarzdor").length} mijoz).` : ""}`, bullets: d.slice(0, 5).map((c) => `${c.name}: ${moneyShort(c.debt)}${c.overdueDebt ? ` (muddati o'tgan ${moneyShort(c.overdueDebt)})` : ""} · ${c.segment}`), href: L("Qarzdorlar", "/bi-tahlil/mijozlar?debt=yes") }; }
     case "loss": { const l = await ctx.loss(); return { key, text: `Kuniga ${M(l.totalPerDay)} yo'qotilmoqda (oyiga ≈ ${M(l.totalPerDay * 30)}). ${l.biggest ? `Eng katta teshik — ${l.biggest.title}: ${M(l.biggest.perDay)}/kun.` : "Aniqlangan yo'qotish kanali yo'q."} Muzlagan pul ${M(l.frozen)}.`, bullets: l.channels.filter((c) => c.perDay > 0).map((c) => `${c.title}: ${moneyShort(c.perDay)}/kun — ${c.action}`), href: L("Moliya", "/bi-tahlil/moliya") }; }
     case "cash": { const o = await ctx.overview(); return { key, text: `Davrda kassaga ${M(o.kpis.cashIn.cur)} tushdi (${pct(o.kpis.cashIn.delta)}). Debitorka ${M(o.kpis.receivable)} — ${o.kpis.debtors} mijozda. 7 kunlik cash forecast Moliya sahifasida.`, href: L("Cash forecast", "/bi-tahlil/moliya") }; }
-    case "segments": { const cs = await ctx.customers(); const segs = ["VIP", "Loyal", "Regular", "New", "At Risk", "Lost", "Yangi (xaridsiz)"]; return { key, text: `Jami ${cs.length} mijoz. Faol (30 kun): ${cs.filter((c) => c.recency !== null && c.recency < 30).length}.`, bullets: segs.map((s) => `${s}: ${cs.filter((c) => c.segment === s).length} ta · 180 kun tushum ${moneyShort(sum(cs.filter((c) => c.segment === s).map((c) => c.monetary)))}`), href: L("Mijozlar", "/bi-tahlil/mijozlar") }; }
+    case "segments": { const cs = await ctx.customers(); const segs = SEGMENT_ORDER; return { key, text: `Jami ${cs.length} mijoz. Faol (30 kun): ${cs.filter((c) => c.recency !== null && c.recency < 30).length}.`, bullets: segs.map((s) => `${s}: ${cs.filter((c) => c.segment === s).length} ta · 180 kun tushum ${moneyShort(sum(cs.filter((c) => c.segment === s).map((c) => c.monetary)))}`), href: L("Mijozlar", "/bi-tahlil/mijozlar") }; }
     case "churn": { const cs = await ctx.customers(); const r = cs.filter((c) => c.segment === "At Risk").sort((a, b) => b.avgMonthly - a.avgMonthly); return { key, text: `${r.length} ta mijoz ketish arafasida (45–89 kun buyurtma yo'q) — oyiga ${M(sum(r.map((c) => c.avgMonthly)))} olib kelardi. Yana ${cs.filter((c) => c.segment === "Lost").length} tasi yo'qolgan (90+ kun).`, bullets: r.slice(0, 6).map((c) => `${c.name}: ${c.recency} kun sukut · oyiga ${moneyShort(c.avgMonthly)}${c.debt ? ` · qarz ${moneyShort(c.debt)}` : ""} — ${c.action}`), href: L("Churn tahlili", "/bi-tahlil/ml/churn") }; }
     case "active": { const o = await ctx.overview(); const s = await ctx.sales(); return { key, text: `Faol mijozlar (30 kun): ${o.kpis.active} / ${o.kpis.total} (${pct(o.kpis.activeRate)}). Davrda xarid qilganlar ${s.kpis.customers.cur} (${pct(s.kpis.customers.delta)} oldingi davrga). O'zgarish sababi — yangi mijozlar oqimi va At Risk ga o'tganlar; Mijozlar sahifasidagi oqim grafigini ko'ring.`, href: L("Mijoz oqimi", "/bi-tahlil/mijozlar") }; }
     case "agents": { const a = await ctx.agents(); return { key, text: `${a.sellers.filter((s) => s.orders > 0).length} sotuvchi ishladi. Eng yaxshi — ${a.best?.name ?? "—"} (${M(a.best?.revenue ?? 0)}). Zayavka sifati: ${pct(a.quality.pct)} tasdiqlangan.`, bullets: [...a.top.map((s) => `▲ ${s.name}: ${moneyShort(s.revenue)} · ${s.orders} zayavka · konversiya ${pct(s.conversion)}`), ...a.bottom.map((s) => `▼ ${s.name}: ${moneyShort(s.revenue)} · konversiya ${pct(s.conversion)}`)], href: L("Agentlar", "/bi-tahlil/agentlar") }; }
     case "slow": { const a = await ctx.agents(); return { key, text: a.slow.length ? `${a.slow.length} ta sotuvchi odatidan orqada — kuniga ${M(a.slowLoss)} sotuv:` : "Sekinlashgan sotuvchi yo'q — hamma odatiy tempda.", bullets: a.slow.slice(0, 6).map((s) => `${s.name}: odatda ${moneyShort(s.usualPerDay)}/kun → hozir ${moneyShort(s.nowPerDay)}/kun (${pct(s.slowdown * 100)}) · sabab: ${s.slowReason}`), href: L("Agentlar", "/bi-tahlil/agentlar") }; }
-    case "forecast": { const f = await ctx.forecast(); return { key, text: `Keyingi 7 kunda ≈ ${fmtNum(f.next7, 1)} m³ (${M(f.next7Revenue)}), 30 kunda ≈ ${fmtNum(f.next30, 1)} m³ (${M(f.next30Revenue)}). Trend: ${f.slope > 0.05 ? "o'smoqda" : f.slope < -0.05 ? "pasaymoqda" : "barqaror"}. Model aniqligi WAPE ${pct(f.wape, 1)}${f.wape >= 50 ? " — ehtiyot bilan o'qing" : ""}. ${f.zones.critical} ta xomashyo 7 kun ichida tugaydi.`, href: L("Bashorat", "/bi-tahlil/ml") }; }
+    case "forecast": { const f = await ctx.forecast(); if (!f.enough) return { key, text: `Bashorat uchun ma'lumot yetarli emas (${f.histDays} kun tarix, kamida ${f.minDays} kun kerak).`, href: L("Bashorat", "/bi-tahlil/ml") }; return { key, text: `Keyingi 7 kunda ≈ ${fmtNum(f.next7, 1)} m³ (${M(f.next7Revenue)}), 30 kunda ≈ ${fmtNum(f.next30, 1)} m³ (${M(f.next30Revenue)}). Trend: ${f.slope > 0.05 ? "o'smoqda" : f.slope < -0.05 ? "pasaymoqda" : "barqaror"}. Model aniqligi ${f.wape === null ? "noma'lum (ma'lumot yetarli emas)" : `WAPE ${pct(f.wape, 1)}${f.wape >= 50 ? " — ehtiyot bilan o'qing" : ""}`}. ${f.zones.critical} ta xomashyo 7 kun ichida tugaydi.`, href: L("Bashorat", "/bi-tahlil/ml") }; }
     case "anomaly": { const a = await ctx.anomalies(); return { key, text: a.cards.total ? `Oxirgi 30 kunda ${a.cards.total} ta anomaliya: ${a.cards.high} yuqori, ${a.cards.medium} o'rta, ${a.cards.low} past. Ta'sirlangan pul ${M(a.cards.money)}.` : "Oxirgi 30 kunda anomaliya topilmadi.", bullets: a.patterns.sort((x, y) => y.count - x.count).slice(0, 5).map((p) => `${p.pattern}: ${p.count} ta (${p.high} high)`), href: L("Anomaliyalar", "/bi-tahlil/ml/anomaliyalar") }; }
     case "marketing": { const m = await ctx.marketing(); return { key, text: m.has ? `Marketing ${M(m.t.spend)} sarfladi, ${M(m.t.revenue)} sotuv keltirdi — ROAS ${fmtNum(m.t.roas ?? 0, 2)}x, CAC ${M(m.t.cac ?? 0)}, ${m.t.customers} yangi mijoz.` : "Bu davr uchun marketing ma'lumoti kiritilmagan.", bullets: m.verdicts.map((c) => `${c.channel}: ROAS ${fmtNum(c.roas ?? 0, 2)}x — ${c.verdict}`), href: L("Marketing", "/bi-tahlil/marketing") }; }
     case "about": return { key, text: "Insof BI — beton zavodi uchun boshqaruv paneli. Bo'limlar: Rahbar markazi, Sotuvlar, Bekor qilinganlar, Agentlar (sotuvchilar), Mijozlar, Ombor, Mahsulotlar, Ishlab chiqarish, Marketing, Reja nazorati, Moliya, ML tahlil (bashorat, anomaliyalar, churn, klasterlar) va Insof AI.", bullets: ["Sotuv — tasdiqlangan/ishlab chiqarilgan/yetkazilgan/yopilgan zayavkalar tushumi", "Marja — (tushum − retsept tannarxi) / tushum", "RFM — Recency, Frequency, Monetary: mijoz segmentlari", "ABC — tushum ulushi (A 80%, B 95%), XYZ — talab beqarorligi", "Stockout — xomashyo yetmasligidan to'xtagan sotuv", "Dead stock — 90 kun ishlatilmagan xomashyo"] };

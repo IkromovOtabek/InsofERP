@@ -20,7 +20,7 @@ export async function AnomaliesTab({ sp }: { sp: SP }) {
         <Kpi label="Jami anomaliyalar" value={String(a.cards.total)} icon={AlertTriangle} hint={`Oxirgi 7 kun: ${a.cards.last7} ${a.cards.prev7 ? `(${a.cards.last7 >= a.cards.prev7 ? "▲" : "▼"} ${fmtNum(Math.abs(((a.cards.last7 - a.cards.prev7) / a.cards.prev7) * 100), 0)}%)` : ""}`} />
         <Kpi label="Yuqori xavfli" value={String(a.cards.high)} icon={AlertTriangle} tone={a.cards.high ? "danger" : "default"} hint={`Jamining ${a.cards.total ? fmtNum((a.cards.high / a.cards.total) * 100, 0) : 0}%i`} href={href({ level: "High" })} />
         <Kpi label="Ta'sirlangan pul" value={moneyShort(a.cards.money)} icon={Activity} tone="warning" hint="High anomaliyalar summasi" />
-        <Kpi label="Ish vaqtidan tashqari" value={String(a.cards.offHours)} icon={Clock} tone={a.cards.offHours ? "warning" : "default"} hint="20:00–07:00 oralig'ida" href={href({ pattern: "Ish vaqtidan tashqari" })} />
+        <Kpi label="Ish vaqtidan tashqari" value={String(a.cards.offHours)} icon={Clock} tone={a.cards.offHours ? "warning" : "default"} hint="To'lov 20:00–07:00 oralig'ida kiritilgan" href={href({ pattern: "Ish vaqtidan tashqari" })} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -42,7 +42,7 @@ export async function AnomaliesTab({ sp }: { sp: SP }) {
       </div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Panel title="Hafta kuni bo'yicha"><BarChart data={a.byWeekday} tone="slate" formatValue={(v) => `${v} ta`} height={100} /></Panel>
-        <Panel title="Soat bo'yicha (faqat to'lovlar)"><BarChart data={a.byHour.map((h) => ({ ...h, tone: Number(h.label) >= 20 || Number(h.label) < 7 ? ("danger" as const) : ("info" as const) }))} formatValue={(v) => `${v} ta`} height={100} labelEvery={3} /></Panel>
+        <Panel title="Soat bo'yicha (to'lov kiritilgan vaqti)"><BarChart data={a.byHour.map((h) => ({ ...h, tone: Number(h.label) >= 20 || Number(h.label) < 7 ? ("danger" as const) : ("info" as const) }))} formatValue={(v) => `${v} ta`} height={100} labelEvery={3} /></Panel>
       </div>
 
       <Panel title="Anomaliyalar ro'yxati" info="Ball bo'yicha saralangan. Qatorni bosing — hujjat ochiladi." padded={false} action={<span>{a.list.length} qator</span>}>

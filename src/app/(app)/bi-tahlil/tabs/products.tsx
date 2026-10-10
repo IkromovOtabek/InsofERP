@@ -20,8 +20,8 @@ export async function ProductsTab({ range }: { range: Range }) {
         <Kpi label="Jami SKU" value={String(c.sku)} icon={Package} hint="faol markalar" />
         <Kpi label="AX-sinf" value={String(c.aaa)} icon={Award} tone="brand" hint="yuqori tushum + barqaror talab" />
         <Kpi label="O'rt. marja" value={`${fmtNum(c.avgMargin, 1)}%`} icon={Percent} tone={c.avgMargin >= 20 ? "success" : c.avgMargin >= 10 ? "warning" : "danger"} hint={`${c.lowMargin} ta marka <10%`} />
-        <Kpi label="Retseptsiz" value={String(c.noRecipe)} icon={FlaskConical} tone={c.noRecipe ? "warning" : "default"} hint="tannarx hisoblanmaydi" href="/recipes" />
-        <Kpi label="Muzlagan mablag'" value={moneyShort(c.frozen)} icon={Snowflake} tone={c.frozen ? "info" : "default"} hint="tayyor mahsulot (dona) qoldig'i" href="/stock?tab=capacity" />
+        <Kpi label="Tannarxsiz" value={String(c.noRecipe)} icon={FlaskConical} tone={c.noRecipe ? "warning" : "default"} hint="retsept yoki xomashyo narxi yo'q — marjaga kirmaydi" href="/recipes" />
+        <Kpi label="Muzlagan mablag'" value={moneyShort(c.frozen)} icon={Snowflake} tone={c.frozen ? "info" : "default"} hint="band qilinmagan tayyor mahsulot, tannarxda" href="/stock?tab=capacity" />
         <Kpi label="O'sish trendida" value={String(c.growing)} icon={TrendingUp} tone="success" hint="oxirgi 3 oy vs oldingi 3 oy" />
       </div>
 
@@ -79,7 +79,7 @@ export async function ProductsTab({ range }: { range: Range }) {
                 <Td><span className="font-semibold">{p.code}</span> <span className="text-xs text-slate-500">{p.name}</span>{!p.isActive && <span className="ml-1 text-[10px] text-slate-400">nofaol</span>}</Td>
                 <Td className="text-xs">{p.cluster}</Td><Td><Tag>{p.abc}</Tag></Td><Td><Tag>{p.xyz}</Tag></Td>
                 <Td right>{moneyShort(p.revenue)}</Td><Td right>{qty(p.qty)} {p.unit}</Td><Td right>{fmtNum(p.share, 1)}%</Td>
-                <Td right>{moneyShort(p.price)}</Td><Td right>{p.cost === null ? <Link href="/recipes" className="text-amber-600 hover:underline">retsept yo'q</Link> : moneyShort(p.cost)}</Td>
+                <Td right>{moneyShort(p.price)}</Td><Td right>{p.cost === null ? <Link href="/recipes" className="text-amber-600 hover:underline" title="Faol retsept yo'q yoki retseptdagi xomashyo narxi kiritilmagan">tannarx yo'q</Link> : moneyShort(p.cost)}</Td>
                 <Td right className={p.cmUnit !== null && p.cmUnit < 0 ? "text-red-600" : ""}>{p.cmUnit === null ? "—" : moneyShort(p.cmUnit)}</Td>
                 <Td right className={p.revenue > 0 ? (p.margin < 10 ? "text-red-600" : p.margin < 20 ? "text-amber-600" : "text-emerald-700") : "text-slate-400"}>{p.revenue > 0 ? `${fmtNum(p.margin, 1)}%` : "—"}</Td>
                 <Td right className={p.trend > 10 ? "text-emerald-600" : p.trend < -10 ? "text-red-600" : "text-slate-500"}>{p.trend > 10 ? "▲" : p.trend < -10 ? "▼" : "▬"} {fmtNum(Math.abs(p.trend), 0)}%</Td>

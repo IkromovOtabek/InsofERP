@@ -1,14 +1,16 @@
 import { db } from "@/lib/db";
-import { type Range, loadSales, productCosts, sum, safeDiv, abc, xyz, addDays, startOfDay, bucketsFor, bucketKey, bucketLabel, median, ACTIVE_ORDER } from "./core";
+import { finishedStock } from "./stock";
+import { type Range, loadSales, productCosts, sum, safeDiv, abc, xyz, addDays, startOfDay, bucketsFor, bucketKey, bucketLabel, median, grossOf, marginOf, ACTIVE_ORDER } from "./core";
 
 export type Quadrant = "Yulduzlar" | "Barqaror daromad" | "Ixtisoslashgan" | "Kam samarali";
 
 export async function productsTab(r: Range) {
   const today = startOfDay(new Date()), from6 = new Date(today.getFullYear(), today.getMonth() - 5, 1);
-  const [cur, prev, costs, hist, stockSums] = await Promise.all([
+  const [cur, prev, costs, hist, stockSums, finished] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo), productCosts(),
-    db.orderItem.findMany({ where: { order: { date: { gte: from6 }, status: { in: ACTIVE_ORDER } } }, select: { productId: true, qtyM3: true, price: true, order: { select: { date: true } } } }),
+    db.orderItem.findMany({ where: { order: { kind: "SALE", date: { gte: from6 }, status: { in: ACTIVE_ORDER } } }, select: { productId: true, qtyM3: true, price: true, order: { select: { date: true } } } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
+    finishedStock(),
   ]);
   const stock = new Map(stockSums.map((s) => [s.productId as string, Number(s._sum.qty ?? 0)]));
   const months = bucketsFor(from6, addDays(today, 1), "month");
@@ -17,15 +19,16 @@ export async function productsTab(r: Range) {
   const rows = ids.map((id) => {
     const c = costs.get(id)!;
     const cRows = cur.filter((x) => x.productId === id), pRows = prev.filter((x) => x.productId === id);
-    const revenue = sum(cRows.map((x) => x.revenue)), qty = sum(cRows.map((x) => x.qty)), gross = sum(cRows.map((x) => x.revenue - x.cost));
+    const revenue = sum(cRows.map((x) => x.revenue)), qty = sum(cRows.map((x) => x.qty)), gross = grossOf(cRows);
     const prevRevenue = sum(pRows.map((x) => x.revenue));
     const monthly = months.map((m) => sum(hist.filter((h) => h.productId === id && bucketKey(h.order.date, "month") === m).map((h) => Number(h.qtyM3))));
     const monthlyRev = months.map((m) => sum(hist.filter((h) => h.productId === id && bucketKey(h.order.date, "month") === m).map((h) => Number(h.qtyM3) * Number(h.price))));
     const avgPrice = safeDiv(revenue, qty);
     const cmUnit = c.cost === null ? null : (avgPrice || c.price) - c.cost;
     const first = monthly.slice(0, 3), last = monthly.slice(3);
-    const trend = safeDiv(sum(last) - sum(first), sum(first) || sum(last) || 1) * 100;
-    return { id, code: c.code, name: c.name, unit: c.unit, isActive: c.isActive, price: c.price, cost: c.cost, revenue, qty, gross, margin: safeDiv(gross, revenue) * 100, prevRevenue, growth: safeDiv(revenue - prevRevenue, prevRevenue || revenue || 1) * 100, monthly, monthlyRev, xyz: xyz(monthly), cmUnit, avgPrice, trend, stock: stock.get(id) ?? 0, velocity: sum(monthly) / Math.max(1, (today.getTime() - from6.getTime()) / 86400000) };
+    // Avvalgi 3 oyda sotuv yo'q bo'lsa (yangi mahsulot yoki tizimga yangi o'tilgan) trend yo'q — "+100%" emas
+    const trend = sum(first) > 0 ? safeDiv(sum(last) - sum(first), sum(first)) * 100 : 0;
+    return { id, code: c.code, name: c.name, unit: c.unit, isActive: c.isActive, price: c.price, cost: c.cost, revenue, qty, gross, margin: marginOf(cRows), prevRevenue, growth: prevRevenue > 0 ? safeDiv(revenue - prevRevenue, prevRevenue) * 100 : 0, monthly, monthlyRev, xyz: xyz(monthly), cmUnit, avgPrice, trend, stock: stock.get(id) ?? 0, velocity: sum(monthly) / Math.max(1, (today.getTime() - from6.getTime()) / 86400000) };
   });
   const totalRevenue = sum(rows.map((x) => x.revenue));
   const abcMap = abc(rows, (x) => x.revenue);
@@ -35,10 +38,11 @@ export async function productsTab(r: Range) {
   const matrix = (["A", "B", "C"] as const).map((a) => (["X", "Y", "Z", "N"] as const).map((z) => withAbc.filter((x) => x.abc === a && x.xyz === z)));
 
   // Foydalilik kvadrantlari: daromad × marja, mediana bo'yicha
-  const sold = withAbc.filter((x) => x.revenue > 0);
+  // Kvadrant marja bo'yicha — tannarxi noma'lum mahsulot (marja hisoblanmaydi) bu yerga kirmaydi
+  const sold = withAbc.filter((x) => x.revenue > 0 && x.cost !== null);
   const medRev = median(sold.map((x) => x.revenue)), medMargin = median(sold.map((x) => x.margin));
   const quadrant = (x: { revenue: number; margin: number }): Quadrant => x.revenue >= medRev ? (x.margin >= medMargin ? "Yulduzlar" : "Barqaror daromad") : x.margin >= medMargin ? "Ixtisoslashgan" : "Kam samarali";
-  const quadrants = withAbc.map((x) => ({ ...x, quadrant: x.revenue > 0 ? quadrant(x) : null }));
+  const quadrants = withAbc.map((x) => ({ ...x, quadrant: x.revenue > 0 && x.cost !== null ? quadrant(x) : null }));
   const scatter = sold.map((x) => ({ x: x.revenue, y: x.margin, r: x.qty, label: `${x.code} — ${x.name}`, color: { Yulduzlar: "#ffa800", "Barqaror daromad": "#0d78ff", Ixtisoslashgan: "#00cb80", "Kam samarali": "#fa1636" }[quadrant(x)] }));
 
   // Klasterlar (tezlik × barqarorlik) — qoida asosida
@@ -58,7 +62,7 @@ export async function productsTab(r: Range) {
     Dogs: { title: "Dogs", sub: "SEKIN + PAST", advice: "Assortimentdan chiqarish nomzodlari — avval «yo'lakay» sotilishini tekshiring.", color: "#fa1636" },
     Sotilmagan: { title: "Sotilmagan", sub: "DAVRDA SOTUV YO'Q", advice: "Narx yoki talabni qayta ko'rib chiqing.", color: "#93a3bd" },
   };
-  const clusters = Object.keys(CLUSTER_META).map((k) => { const list = withAbc.filter((x) => clusterOf(x) === k); return { key: k, ...CLUSTER_META[k], count: list.length, revenue: sum(list.map((x) => x.revenue)), share: safeDiv(sum(list.map((x) => x.revenue)), totalRevenue) * 100, margin: safeDiv(sum(list.map((x) => x.gross)), sum(list.map((x) => x.revenue))) * 100, products: list.map((x) => x.code) }; }).filter((c) => c.count);
+  const clusters = Object.keys(CLUSTER_META).map((k) => { const list = withAbc.filter((x) => clusterOf(x) === k); return { key: k, ...CLUSTER_META[k], count: list.length, revenue: sum(list.map((x) => x.revenue)), share: safeDiv(sum(list.map((x) => x.revenue)), totalRevenue) * 100, margin: marginOf(cur.filter((s) => list.some((x) => x.id === s.productId))), products: list.map((x) => x.code) }; }).filter((c) => c.count);
 
   // Pareto
   let acc = 0; const pareto = withAbc.filter((x) => x.revenue > 0).map((x) => { acc += x.revenue; return { label: x.code, value: acc / (totalRevenue || 1) * 100 }; });
@@ -69,9 +73,9 @@ export async function productsTab(r: Range) {
 
   const cards = {
     sku: rows.filter((x) => x.isActive).length, aaa: withAbc.filter((x) => x.abc === "A" && x.xyz === "X").length,
-    avgMargin: safeDiv(sum(withAbc.map((x) => x.gross)), totalRevenue) * 100,
+    avgMargin: marginOf(cur),
     noRecipe: rows.filter((x) => x.cost === null && x.isActive).length,
-    frozen: sum(withAbc.filter((x) => x.unit !== "m3" && x.stock > 0).map((x) => x.stock * (x.cost ?? 0))),
+    frozen: sum(finished.map((f) => f.value)),
     growing: withAbc.filter((x) => x.trend > 10 && x.revenue > 0).length,
     lowMargin: withAbc.filter((x) => x.revenue > 0 && x.margin < 10).length,
   };

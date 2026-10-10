@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertOctagon, Wallet, Repeat1, UserPlus, Users, Gauge, PiggyBank, ShieldAlert } from "lucide-react";
 import { biContext, BiPage } from "../../shell";
 import { customerBase, SEGMENT_COLOR, SEGMENT_ORDER, type Risk, type Segment } from "@/lib/bi/customers";
-import { sum, safeDiv, addDays, startOfDay } from "@/lib/bi/core";
+import { sum, safeDiv, addDays, startOfDay, goLiveDate } from "@/lib/bi/core";
 import { money, moneyShort, fmtNum, date as fmtDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select, Input, Badge } from "@/components/ui";
 import { BarChart, HBarList, Scatter } from "@/components/ui/charts";
@@ -16,10 +16,12 @@ const ZONES: Risk[] = ["Kritik", "Yuqori", "O'rta", "Past", "Xavfsiz"];
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePage("/bi-tahlil/ml/churn");
   const { sp, range } = await biContext(searchParams);
-  const base = (await customerBase()).filter((c) => c.segment !== "Yangi (xaridsiz)");
+  // Faqat xaridsiz yangi mijozlar tashqarida; "Eski qarzdor" (tizimgacha qarzi bor) qoladi — qarz ballari bilan
+  const [all, live] = await Promise.all([customerBase(), goLiveDate()]);
+  const base = all.filter((c) => c.segment !== "Yangi (xaridsiz)");
   const today = startOfDay(new Date());
   const page = Math.max(1, Number(sp.page) || 1), size = 25;
-  const href = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ zone: sp.zone, segment: sp.segment, abc: sp.abc, debt: sp.debt, q: sp.q, ...extra })) if (v) p.set(k, v); return `/bi-tahlil/ml/churn?${p}`; };
+  const href = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); for (const [k, v] of Object.entries({ zone: sp.zone, segment: sp.segment, abc: sp.abc, debt: sp.debt, once: sp.once, q: sp.q, ...extra })) if (v) p.set(k, v); return `/bi-tahlil/ml/churn?${p}`; };
 
   const inRisk = base.filter((c) => ["Kritik", "Yuqori", "O'rta"].includes(c.risk));
   const critical = base.filter((c) => c.risk === "Kritik");
@@ -27,7 +29,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const recoverable = sum(inRisk.filter((c) => c.recency !== null && c.recency < 90).map((c) => c.expectedLoss));
   const debtRisk = inRisk.filter((c) => c.debt > 0);
   const oneTime = base.filter((c) => c.orders === 1);
-  const newC = base.filter((c) => c.firstOrder && c.firstOrder >= addDays(today, -30));
+  // Tizimgacha bo'lgan mijozning ERP'dagi birinchi zayavkasi "yangi mijoz" emas
+  const newC = base.filter((c) => !c.legacy && c.firstOrder && c.firstOrder >= addDays(today, -30));
   const active = base.filter((c) => c.recency !== null && c.recency < 30);
   const reactivated = base.filter((c) => c.lastOrder && c.lastOrder >= addDays(today, -30) && c.orders > 1 && c.frequency <= 2 && c.recency !== null && c.recency < 30 && c.firstOrder && (today.getTime() - c.firstOrder.getTime()) / 86400000 > 120);
   const avgScore = safeDiv(sum(base.map((c) => c.riskScore)), base.length);
@@ -49,25 +52,26 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   // Scatter: qiymat × xavf
   const scatter = base.filter((c) => c.avgMonthly > 0).sort((a, b) => b.avgMonthly - a.avgMonthly).slice(0, 120).map((c) => ({ x: c.riskScore, y: c.avgMonthly * 12, r: Math.max(2, Math.min(14, c.debt / 5e6)), label: c.name, color: SEGMENT_COLOR[c.segment] }));
   // Oqim (6 oy): faol mijozlar soni oy bo'yicha — o'sha oyda xarid qilganlar taxminan lastOrder bo'yicha
-  const flow = Array.from({ length: 6 }, (_, i) => { const d = new Date(today.getFullYear(), today.getMonth() - 5 + i, 1), e = new Date(today.getFullYear(), today.getMonth() - 4 + i, 1); return { label: `${["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"][d.getMonth()]}`, value: base.filter((c) => c.lastOrder && c.lastOrder >= d && c.lastOrder < e).length + base.filter((c) => c.lastOrder && c.lastOrder >= e && c.firstOrder && c.firstOrder < e).length }; });
+  const flow = Array.from({ length: 6 }, (_, i) => i).filter((i) => !live || new Date(today.getFullYear(), today.getMonth() - 4 + i, 1) > live).map((i) => { const d = new Date(today.getFullYear(), today.getMonth() - 5 + i, 1), e = new Date(today.getFullYear(), today.getMonth() - 4 + i, 1); return { label: `${["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"][d.getMonth()]}`, value: base.filter((c) => c.lastOrder && c.lastOrder >= d && c.lastOrder < e).length + base.filter((c) => c.lastOrder && c.lastOrder >= e && c.firstOrder && c.firstOrder < e).length }; });
 
   let list = base;
   if (sp.zone) list = list.filter((c) => c.risk === sp.zone);
   if (sp.segment) list = list.filter((c) => c.segment === sp.segment);
   if (sp.abc) list = list.filter((c) => c.abc === sp.abc);
   if (sp.debt === "yes") list = list.filter((c) => c.debt > 0);
+  if (sp.once) list = list.filter((c) => c.orders === 1);
   if (sp.q) { const q = sp.q.toLowerCase(); list = list.filter((c) => c.name.toLowerCase().includes(q)); }
   list = [...list].sort((a, b) => b.expectedLoss - a.expectedLoss);
   const rows = list.slice((page - 1) * size, page * size);
 
   return (
-    <BiPage title="Churn tahlili" subtitle="Kim ketyapti, qancha pul xavf ostida va nima qilish kerak. Gibrid xavf bali: mijozning o'z xarid ritmidan kechikishi + qarz + chastota. Sana filtriga bog'liq emas." eyebrow="ML tahlil" tab="churn" range={range} period={false}>
+    <BiPage title="Churn tahlili" subtitle="Kim ketyapti, qancha pul xavf ostida va nima qilish kerak. Gibrid xavf bali: oxirgi xariddan beri o'tgan kunlar (90 kun — to'liq ball) + qarz + chastota. Sana filtriga bog'liq emas." eyebrow="ML tahlil" tab="churn" range={range} period={false}>
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
-            { title: "Kritik zonada", sub: `${critical.length} MIJOZ`, value: moneyShort(sum(critical.map((c) => c.expectedLoss))), unit: "so'm/yil", text: "o'z xarid ritmidan bir necha barobar kechikkan — zudlik bilan aloqa kerak", href: href({ zone: "Kritik" }), color: "border-red-400", Icon: AlertOctagon },
+            { title: "Kritik zonada", sub: `${critical.length} MIJOZ`, value: moneyShort(sum(critical.map((c) => c.expectedLoss))), unit: "so'm/yil", text: "uzoq vaqt xarid yo'q va qarzi bor — zudlik bilan aloqa kerak", href: href({ zone: "Kritik" }), color: "border-red-400", Icon: AlertOctagon },
             { title: "Qarz + ketish xavfi", sub: `${debtRisk.length} MIJOZ`, value: moneyShort(sum(debtRisk.map((c) => c.debt))), unit: "so'm qarz", text: "ketish xavfidagi mijozlarda turgan qarz — ular ketsa, bu pul ham muzlab qoladi", href: href({ debt: "yes" }), color: "border-amber-400", Icon: Wallet },
-            { title: "Bir martalik xaridor", sub: `${fmtNum(safeDiv(oneTime.length, base.length) * 100, 1)}%`, value: String(oneTime.length), unit: "mijoz", text: "faqat bir marta xarid qilgan — bu ushlab qolish emas, ikkinchi xaridni yaratish vazifasi", href: href({ segment: "New" }), color: "border-blue-400", Icon: Repeat1 },
+            { title: "Bir martalik xaridor", sub: `${fmtNum(safeDiv(oneTime.length, base.length) * 100, 1)}%`, value: String(oneTime.length), unit: "mijoz", text: "faqat bir marta xarid qilgan — bu ushlab qolish emas, ikkinchi xaridni yaratish vazifasi", href: href({ once: "1" }), color: "border-blue-400", Icon: Repeat1 },
             { title: "Saqlab qolish imkoniyati", sub: "YETIB BORISH MUMKIN", value: moneyShort(recoverable), unit: "so'm/yil", text: `yo'qotishning ${fmtNum(safeDiv(recoverable, expected) * 100, 0)}% i hali qaytarilishi mumkin (90 kundan kam sukut)`, href: href({ zone: "Yuqori" }), color: "border-emerald-400", Icon: PiggyBank },
           ].map((c) => <Link key={c.title} href={c.href} className={cn("rounded-(--radius-card) border border-slate-200/80 border-l-4 bg-white p-3.5 shadow-(--shadow-card) transition hover:shadow-md", c.color)}><div className="flex items-center justify-between"><div className="flex items-center gap-1.5 text-[12px] font-semibold"><c.Icon size={14} /> {c.title}</div><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{c.sub}</div></div><div className="mt-1.5 text-2xl font-bold tabular">{c.value}<span className="ml-1 text-xs font-medium text-slate-400">{c.unit}</span></div><div className="mt-1 text-xs text-slate-500">{c.text}</div><div className="mt-1.5 text-xs font-medium text-blue-600">Ro'yxatni ochish →</div></Link>)}
         </div>
@@ -87,13 +91,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <span className="font-medium text-slate-500">Zona:</span>{ZONES.map((z) => <Chip key={z} active={sp.zone === z} href={href({ zone: sp.zone === z ? undefined : z })}>{z} ({base.filter((c) => c.risk === z).length})</Chip>)}
           <span className="ml-2 font-medium text-slate-500">ABC:</span>{["A", "B", "C"].map((a) => <Chip key={a} active={sp.abc === a} href={href({ abc: sp.abc === a ? undefined : a })}>{a}</Chip>)}
           <Chip active={sp.debt === "yes"} href={href({ debt: sp.debt === "yes" ? undefined : "yes" })}>Qarzi bor</Chip>
-          {(sp.zone || sp.segment || sp.abc || sp.debt || sp.q) && <Link href="/bi-tahlil/ml/churn" className="ml-2 text-slate-500 hover:underline">Tozalash</Link>}
+          {(sp.zone || sp.segment || sp.abc || sp.debt || sp.once || sp.q) && <Link href="/bi-tahlil/ml/churn" className="ml-2 text-slate-500 hover:underline">Tozalash</Link>}
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Panel title="Xavf zonalari" info="Segmentni bosing — filtrlanadi."><HBarList data={ZONES.map((z) => ({ label: z, value: base.filter((c) => c.risk === z).length, hint: moneyShort(sum(base.filter((c) => c.risk === z).map((c) => c.expectedLoss))), tone: ({ Kritik: "danger", Yuqori: "warning", "O'rta": "info", Past: "slate", Xavfsiz: "success" } as const)[z] }))} formatValue={(v) => `${v} ta`} /></Panel>
           <Panel title="Xavf bali taqsimoti" info="Ustun — mijoz soni; pastda — kutilayotgan yo'qotish."><BarChart data={dist.map((d) => ({ label: d.label, value: d.value, tone: Number(d.label.split("–")[0]) >= 80 ? ("danger" as const) : Number(d.label.split("–")[0]) >= 60 ? ("warning" as const) : ("info" as const) }))} formatValue={(v) => `${v} mijoz`} height={140} /><div className="mt-2"><BarChart data={dist.map((d) => ({ label: d.label, value: d.loss }))} tone="slate" formatValue={(v) => `${moneyShort(v)} so'm`} height={70} /></div></Panel>
-          <Panel title="Mijoz bazasi harakati" info="Oy bo'yicha faol mijozlar (taxminiy — oxirgi va birinchi xarid sanalari bo'yicha)."><BarChart data={flow} tone="brand" formatValue={(v) => `${v} mijoz`} height={140} /></Panel>
+          <Panel title="Mijoz bazasi harakati" info="Oy bo'yicha faol mijozlar (taxminiy — oxirgi va birinchi xarid sanalari bo'yicha). Tizimga o'tgan oydan boshlab."><BarChart data={flow} tone="brand" formatValue={(v) => `${v} mijoz`} height={140} /></Panel>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -118,7 +122,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
 
         <Panel title="Mijozlar ro'yxati" info="Kutilayotgan yo'qotish bo'yicha saralangan. Qatorni bosing — mijoz kartasi." padded={false} action={<span>{list.length} mijoz</span>}>
           <form method="get" action="/bi-tahlil/ml/churn" className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
-            {sp.zone && <input type="hidden" name="zone" value={sp.zone} />}{sp.abc && <input type="hidden" name="abc" value={sp.abc} />}{sp.debt && <input type="hidden" name="debt" value={sp.debt} />}
+            {sp.zone && <input type="hidden" name="zone" value={sp.zone} />}{sp.abc && <input type="hidden" name="abc" value={sp.abc} />}{sp.debt && <input type="hidden" name="debt" value={sp.debt} />}{sp.once && <input type="hidden" name="once" value={sp.once} />}
             <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{SEGMENT_ORDER.filter((s) => s !== "Yangi (xaridsiz)").map((s) => <option key={s} value={s}>{s}</option>)}</Select>
             <Input name="q" aria-label="Qidirish" defaultValue={sp.q ?? ""} placeholder="Mijoz qidirish" className="h-8 w-44" />
             <button className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-medium text-white">Qo'llash</button>

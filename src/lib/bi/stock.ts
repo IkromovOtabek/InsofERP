@@ -1,6 +1,24 @@
 import { db } from "@/lib/db";
 import { receiptTotal } from "@/lib/receipt-vat";
-import { type Range, type Gran, materialCosts, productCosts, sum, addDays, startOfDay, series, bucketsFor, bucketLabel, bucketKey, abc } from "./core";
+import { ostatkaSummary } from "@/lib/ostatka";
+import { unitLabel } from "@/lib/unit";
+import { type Range, type Gran, materialCosts, finishedUnitCosts, sum, addDays, startOfDay, series, bucketsFor, bucketLabel, bucketKey, abc } from "./core";
+
+/**
+ * Xomashyo sarfi: zames (PRODUCTION_CONSUME) + brigadaga berilgani (BRIGADE_ISSUE, dona mahsulot uchun),
+ * brigadadan qaytgani (BRIGADE_RETURN) ayiriladi. Ishorali yig'indi — storno o'zi chiqib ketadi.
+ */
+const CONSUME_TYPES = ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "BRIGADE_RETURN"] as const;
+const DAY = 86400000;
+
+/** Hovlidagi tayyor mahsulotning erkin (zayavkaga band qilinmagan) qismi va uning tannarx bo'yicha qiymati. */
+export async function finishedStock() {
+  const [rows, costs] = await Promise.all([ostatkaSummary(), finishedUnitCosts()]);
+  return rows.filter((p) => p.free > 0).map((p) => {
+    const cost = costs.get(p.id) ?? null;
+    return { id: p.id, code: p.code, name: p.name, unit: unitLabel(p.unit), qty: p.free, cost, value: cost === null ? 0 : p.free * cost };
+  });
+}
 
 export type MaterialRow = {
   id: string; code: string; name: string; unit: string; minStock: number; balance: number; avgCost: number; value: number;
@@ -10,15 +28,20 @@ export type MaterialRow = {
 
 export async function materialOverview(): Promise<MaterialRow[]> {
   const today = startOfDay(new Date()), since30 = addDays(today, -30), since90 = addDays(today, -90);
-  const [materials, sums, consumed, received, lastConsume, orders, costs] = await Promise.all([
+  const [materials, sums, consumed, received, lastConsume, orders, costs, firstMove] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since30 } }, _sum: { qty: true } }),
+    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: [...CONSUME_TYPES] }, date: { gte: since30 } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "RECEIPT", date: { gte: since30 } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since90 } }, _max: { date: true } }),
+    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["PRODUCTION_CONSUME", "BRIGADE_ISSUE"] }, qty: { lt: 0 }, date: { gte: since90 } }, _max: { date: true } }),
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: { include: { product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } } }),
     materialCosts(),
+    db.stockMove.aggregate({ where: { materialId: { not: null } }, _min: { date: true } }),
   ]);
+  // Tizim yangi ishga tushganda tarix 30 kundan qisqa: o'rtacha sarf haqiqiy kunlar soniga bo'linadi,
+  // "muzlagan" belgisi esa 90 kunlik tarix yig'ilgandan keyingina qo'yiladi.
+  const historyDays = firstMove._min.date ? Math.max(1, Math.ceil((today.getTime() + DAY - startOfDay(firstMove._min.date).getTime()) / DAY)) : 0;
+  const window = Math.min(30, Math.max(1, historyDays));
   const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
   const cons = new Map(consumed.map((x) => [x.materialId, -Number(x._sum.qty ?? 0)]));
   const rec = new Map(received.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
@@ -31,11 +54,11 @@ export async function materialOverview(): Promise<MaterialRow[]> {
     for (const i of o.items) { const share = remaining * (Number(i.qtyM3) / total); for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; need.set(ri.materialId, (need.get(ri.materialId) ?? 0) + share * Number(ri.qtyPerM3)); } }
   }
   const pre = materials.map((m) => {
-    const balance = bal.get(m.id) ?? 0, perDay = (cons.get(m.id) ?? 0) / 30, planned = need.get(m.id) ?? 0, avgCost = costs.get(m.id) ?? 0;
+    const balance = bal.get(m.id) ?? 0, perDay = Math.max(0, cons.get(m.id) ?? 0) / window, planned = need.get(m.id) ?? 0, avgCost = costs.get(m.id) ?? 0;
     const days = perDay > 0 ? balance / perDay : null;
     const zone = days === null ? "Ma'lumot yo'q" : days < 7 ? "Kritik" : days <= 20 ? "Xavfli" : "Yaxshi";
     const lc = last.get(m.id) ?? null;
-    const dead = balance > 0 && (lc === null) && planned === 0;
+    const dead = historyDays >= 90 && balance > 0 && (lc === null) && planned === 0;
     const target = Math.max(planned, perDay * 30, Number(m.minStock));
     const suggestQty = Math.max(0, target - balance);
     return { id: m.id, code: m.code, name: m.name, unit: m.unit, minStock: Number(m.minStock), balance, avgCost, value: balance * avgCost, perDay, days, planned, short: balance < planned, zone, overstock: days !== null && days > 90, dead, lastConsume: lc, suggestQty, suggestCost: suggestQty * avgCost, consumed30: cons.get(m.id) ?? 0, received30: rec.get(m.id) ?? 0 } as Omit<MaterialRow, "abc">;
@@ -46,23 +69,18 @@ export async function materialOverview(): Promise<MaterialRow[]> {
 
 export async function stockTab(r: Range, gran: Gran) {
   const today = startOfDay(new Date());
-  const [materials, moves, writeOffs, receipts, products, productSums, pCosts] = await Promise.all([
+  const [materials, moves, writeOffs, receipts, finished] = await Promise.all([
     materialOverview(),
     db.stockMove.findMany({ where: { date: { gte: addDays(today, -180) }, materialId: { not: null } }, select: { date: true, type: true, qty: true, materialId: true } }),
     db.stockMove.findMany({ where: { type: "WRITE_OFF", date: { gte: addDays(today, -180) } }, select: { date: true, qty: true, materialId: true, productId: true, note: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, include: { supplier: true, items: true } }),
-    db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, select: { id: true, code: true, name: true, price: true } }),
-    db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
-    productCosts(),
+    finishedStock(),
   ]);
   const costOf = new Map(materials.map((m) => [m.id, m.avgCost]));
   const value = sum(materials.map((m) => m.value));
   const consumed30Value = sum(materials.map((m) => m.consumed30 * m.avgCost));
   const turnoverDays = consumed30Value > 0 ? value / (consumed30Value / 30) : null;
 
-  // Tayyor mahsulot (dona) qoldig'i — muzlagan
-  const pBal = new Map(productSums.map((s) => [s.productId as string, Number(s._sum.qty ?? 0)]));
-  const finished = products.map((p) => ({ id: p.id, code: p.code, name: p.name, qty: pBal.get(p.id) ?? 0, value: (pBal.get(p.id) ?? 0) * (pCosts.get(p.id)?.cost ?? Number(p.price)) })).filter((p) => p.qty > 0);
 
   // Write-off (davr) va oylik
   const woInRange = writeOffs.filter((w) => w.date >= r.from && w.date < r.to);
@@ -73,7 +91,7 @@ export async function stockTab(r: Range, gran: Gran) {
   // Kirim / chiqim balansi (qiymatda)
   const inRange = moves.filter((m) => m.date >= r.from && m.date < r.to);
   const inflow = series(inRange.filter((m) => m.type === "RECEIPT"), r.from, r.to, gran, (m) => m.date, (m) => Number(m.qty) * (costOf.get(m.materialId!) ?? 0));
-  const outflow = series(inRange.filter((m) => m.type === "PRODUCTION_CONSUME" || m.type === "WRITE_OFF"), r.from, r.to, gran, (m) => m.date, (m) => -Number(m.qty) * (costOf.get(m.materialId!) ?? 0));
+  const outflow = series(inRange.filter((m) => (CONSUME_TYPES as readonly string[]).includes(m.type) || m.type === "WRITE_OFF"), r.from, r.to, gran, (m) => m.date, (m) => -Number(m.qty) * (costOf.get(m.materialId!) ?? 0));
   const totalIn = sum(inflow.map((x) => x.value)), totalOut = sum(outflow.map((x) => x.value));
 
   // Zaxira qiymati trendi — 180 kun, haftalik (joriy qiymatdan orqaga hisoblab)

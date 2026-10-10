@@ -27,21 +27,22 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        <Kpi label="Ishlab chiqarildi" value={`${qty(k.produced.cur)} m³`} delta={k.produced.delta} icon={Factory} tone="brand" hint={`${fmtNum(k.perDay, 1)} m³/kun`} />
-        <Kpi label="Zameslar" value={String(k.batches.cur)} delta={k.batches.delta} icon={Layers} hint={`${d.noOrderCount} ta zayavkasiz`} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+        <Kpi label="Beton ishlab chiqarildi" value={`${qty(k.produced.cur)} m³`} delta={k.produced.delta} icon={Factory} tone="brand" hint={`${fmtNum(k.perDay, 1)} m³/kun`} />
+        <Kpi label="Dona mahsulot" value={k.hasPieces ? k.pieces : "0"} icon={Layers} hint={`oldingi davr: ${k.piecesPrev}`} />
+        <Kpi label="Beton zameslari" value={String(k.batches.cur)} delta={k.batches.delta} icon={Layers} hint={`${d.noOrderCount} ta zayavkasiz`} />
         <Kpi label="Reyslar" value={String(k.trips.cur)} delta={k.trips.delta} icon={Truck} tone="info" hint={`${k.cancelled} ta bekor`} />
-        <Kpi label="Yetkazildi" value={`${qty(k.deliveredM3.cur)} m³`} delta={k.deliveredM3.delta} icon={PackageCheck} tone="success" />
+        <Kpi label="Beton yetkazildi" value={`${qty(k.deliveredM3.cur)} m³`} delta={k.deliveredM3.delta} icon={PackageCheck} tone="success" />
         <Kpi label="Yetkazish darajasi" value={`${fmtNum(k.deliveryRate.cur, 0)}%`} delta={k.deliveryRate.cur - k.deliveryRate.prev} deltaLabel="p.p." icon={CheckCircle2} tone={k.deliveryRate.cur >= 90 ? "success" : "warning"} />
         <Kpi label="O'rtacha reys vaqti" value={k.avgMinutes.cur ? `${fmtNum(k.avgMinutes.cur, 0)} daq` : "—"} delta={k.avgMinutes.delta} invert icon={Timer} hint="yuklashdan topshirishgacha" />
         <Kpi label="O'z vaqtida" value={`${fmtNum(k.onTime.cur, 0)}%`} icon={Target} tone={k.onTime.cur >= 90 ? "success" : "danger"} hint={`${d.late} ta kechikkan`} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Panel className="xl:col-span-2" title="Ishlab chiqarish va yetkazish dinamikasi" info="Zames hajmi (m³) va yetkazilgan hajm — davr bo'yicha." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "operations", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
+        <Panel className="xl:col-span-2" title="Ishlab chiqarish va yetkazish dinamikasi" info="Beton: zames hajmi (m³) va mikserda yetkazilgan hajm — davr bo'yicha. Dona mahsulot bu grafikka kirmaydi." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "operations", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
           <LineChart labels={d.prodDyn.map((x) => x.label)} series={[{ name: "Ishlab chiqarildi", values: d.prodDyn.map((x) => x.value), color: "#ffa800" }, { name: "Yetkazildi", values: d.shipDyn.map((x) => x.value), color: "#00cb80" }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={Math.max(1, Math.ceil(d.prodDyn.length / 12))} height={200} />
         </Panel>
-        <Panel title="Smena va marka bo'yicha" info="Zames hajmi taqsimoti.">
+        <Panel title="Smena va marka bo'yicha" info="Beton zameslari hajmi taqsimoti (m³).">
           {d.byShift.length ? <DonutChart data={d.byShift} formatValue={(v) => `${qty(v)} m³`} size={110} /> : <Note>Zames yo'q.</Note>}
           <div className="mt-4 border-t border-slate-100 pt-3">{d.byProduct.length ? <HBarList data={d.byProduct.slice(0, 6).map((p) => ({ label: p.label, value: p.value, hint: `${p.batches} zames` }))} formatValue={(v) => `${qty(v)} m³`} tone="brand" /> : <Note>—</Note>}</div>
         </Panel>
@@ -72,15 +73,15 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
         <Panel title="Haftalik faollik — top 10 haydovchi × hafta kuni" info="So'nggi 7 kun, reyslar soni.">
           {d.heat.rows.length ? <Heatmap rows={d.heat.rows} cols={d.heat.cols} cells={d.heat.cells} formatValue={(v) => String(v)} tone="info" rowLabel="Haydovchi" /> : <Note>So'nggi 7 kunda reys yo'q.</Note>}
         </Panel>
-        <Panel title="Zayavkalar bajarilishi" info="Tasdiqlangan / ishlab chiqarishdagi zayavkalar: ishlab chiqarilgan va jo'natilgan ulush. Qizil — yetkazish sanasi o'tgan." padded={false} action={<span>Qoldiq: <b className="text-slate-800">{qty(d.backlog)} m³</b></span>}>
+        <Panel title="Zayavkalar bajarilishi" info="Tasdiqlangan / ishlab chiqarishdagi zayavkalar: ishlab chiqarilgan va jo'natilgan ulush. Qizil — yetkazish sanasi o'tgan." padded={false} action={<span>Qoldiq: <b className="text-slate-800">{d.backlog}</b></span>}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Zayavka</Th><Th>Mijoz</Th><Th right>Muddat</Th><Th className="w-44">Bajarilishi</Th><Th>Holat</Th></tr></thead>
-            <tbody>{d.orders.length === 0 && <Empty text="Ochiq zayavka yo'q" />}{d.orders.slice(0, 12).map((o) => <Tr key={o.id} className={o.overdue ? "bg-red-50/40" : ""}><Td><Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link></Td><Td className="truncate">{o.customer}</Td><Td right className={o.overdue ? "font-semibold text-red-600" : ""}>{fmtDate(o.deliveryDate)}</Td><Td><div className="space-y-1"><div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{qty(o.done)}/{qty(o.total)}</span></div><ProgressBar value={o.done} max={o.total} tone="slate" /><div className="flex justify-between text-[11px] text-slate-500"><span>Jo'natildi</span><span className="tabular">{qty(o.shipped)}/{qty(o.total)}</span></div><ProgressBar value={o.shipped} max={o.total} tone="success" /></div></Td><Td><OrderStatusBadge status={o.status as never} /></Td></Tr>)}</tbody>
+            <tbody>{d.orders.length === 0 && <Empty text="Ochiq zayavka yo'q" />}{d.orders.slice(0, 12).map((o) => <Tr key={o.id} className={o.overdue ? "bg-red-50/40" : ""}><Td><Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link></Td><Td className="truncate">{o.customer}</Td><Td right className={o.overdue ? "font-semibold text-red-600" : ""}>{fmtDate(o.deliveryDate)}</Td><Td><div className="space-y-1"><div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{o.done} / {o.total}</span></div><ProgressBar value={o.donePct} max={100} tone="slate" /><div className="flex justify-between text-[11px] text-slate-500"><span>Jo'natildi</span><span className="tabular">{o.shipped} / {o.total}</span></div><ProgressBar value={o.shippedPct} max={100} tone="success" /></div></Td><Td><OrderStatusBadge status={o.status as never} /></Td></Tr>)}</tbody>
           </Table>
         </Panel>
       </div>
 
-      <Insight>Davrda {qty(k.produced.cur)} m³ ishlab chiqarildi ({k.batches.cur} zames), {qty(k.deliveredM3.cur)} m³ yetkazildi. Yetkazish darajasi {fmtNum(k.deliveryRate.cur, 0)}%, o'z vaqtida {fmtNum(k.onTime.cur, 0)}%. {d.mixers.filter((m) => m.idle).length ? `${d.mixers.filter((m) => m.idle).length} ta mikser bo'sh turibdi — quvvat ishlatilmayapti.` : "Barcha mikserlar ishlamoqda."} {d.overdue.length ? `${d.overdue.length} ta zayavka muddati o'tgan — mijozga xabar bering.` : ""}</Insight>
+      <Insight>Davrda {qty(k.produced.cur)} m³ beton ishlab chiqarildi ({k.batches.cur} zames){k.hasPieces ? `, dona mahsulot: ${k.pieces}` : ""}, {qty(k.deliveredM3.cur)} m³ beton yetkazildi. Yetkazish darajasi {fmtNum(k.deliveryRate.cur, 0)}%, o'z vaqtida {fmtNum(k.onTime.cur, 0)}%. {d.mixers.filter((m) => m.idle).length ? `${d.mixers.filter((m) => m.idle).length} ta mikser bo'sh turibdi — quvvat ishlatilmayapti.` : "Barcha mikserlar ishlamoqda."} {d.overdue.length ? `${d.overdue.length} ta zayavka muddati o'tgan — mijozga xabar bering.` : ""}</Insight>
       <Why label="Kim sekinlashdi va nega?">
         {bottom5.slice(0, 3).map((x) => <p key={x.id}><b>{x.name}</b>: {x.trips} reys, bajarish {fmtNum(x.rate, 0)}%{x.late ? `, ${x.late} ta kechikish` : ""}{x.cancelled ? `, ${x.cancelled} ta bekor` : ""}. {x.rate < 70 ? "Reyslar yopilmayapti — nakladnoy holatini o'z vaqtida yangilashni tekshiring." : x.avgMinutes > (k.avgMinutes.cur || 0) * 1.3 ? "Reys vaqti o'rtachadan uzoq — marshrut yoki obyektda kutish." : "Hajm past — mikser sig'imi yoki reys soni kam."}</p>)}
         {!bottom5.length && <p>Ma'lumot yo'q.</p>}

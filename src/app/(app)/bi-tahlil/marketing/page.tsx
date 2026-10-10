@@ -31,7 +31,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
               { label: "ROAS", value: x(t.roas), sub: "Reklama qaytimi", text: t.roas !== null ? `Reklamaga sarflangan har 1 so'mga ${fmtNum(t.roas, 2)} so'm sotuv qaytyapti.` : "Xarajat kiritilmagan.", delta: d.deltas.roas, good: true },
               { label: "CAC", value: t.cac !== null ? moneyShort(t.cac) : "—", sub: "Bitta mijoz narxi", text: t.cac !== null ? `Bitta yangi mijozni jalb qilish ${moneyShort(t.cac)} so'mga tushyapti. Birinchi cheki — ${moneyShort(d.firstCheck)} so'm.` : "Mijozlar soni kiritilmagan.", delta: d.deltas.cac, good: false },
               { label: "ROMI", value: t.romi !== null ? `${t.romi >= 0 ? "+" : ""}${fmtNum(t.romi, 0)}%` : "—", sub: "Marketing foydasi", text: t.spend ? `Marketing ${moneyShort(t.spend)} so'm yedi va ${moneyShort(t.revenue)} so'm sotuv keltirdi — farqi ${moneyShort(t.profit)} so'm.` : "—", delta: d.deltas.romi, good: true },
-              { label: "LTV", value: moneyShort(d.ltv), sub: "Mijozning umrlik qiymati", text: `Bitta mijoz umri davomida o'rtacha ${moneyShort(d.ltv)} so'm keltiradi (ERP bazasi). CAC ga nisbati ${d.ltvCac !== null ? `${fmtNum(d.ltvCac, 1)}x` : "—"}.`, delta: null, good: true, badge: "TAXMIN" },
+              { label: "LTV", value: d.ltv !== null ? moneyShort(d.ltv) : "—", sub: "Mijozning umrlik qiymati", text: d.ltv !== null ? `Bitta mijoz umri davomida o'rtacha ${moneyShort(d.ltv)} so'm keltiradi (ERP bazasi). CAC ga nisbati ${d.ltvCac !== null ? `${fmtNum(d.ltvCac, 1)}x` : "—"}.` : "ERP tarixi hali qisqa (tizimga yaqinda o'tilgan) — umrlik qiymatni hisoblash uchun ma'lumot yetarli emas.", delta: null, good: true, badge: "TAXMIN" },
               { label: "Cost per lead", value: t.cpl !== null ? moneyShort(t.cpl) : "—", sub: "Bitta murojaat narxi", text: t.cpl !== null ? `Bitta murojaat ${moneyShort(t.cpl)} so'mga tushyapti. Ulardan ${fmtNum(d.conversion, 0)}% i mijozga aylanyapti.` : "Leadlar kiritilmagan.", delta: d.deltas.cpl, good: false },
             ].map((c) => (
               <div key={c.label} className="rounded-lg border border-slate-200 p-3.5">
@@ -43,7 +43,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             ))}
           </div>
           {d.ltvCac !== null && <div className={cn("mt-3 rounded-lg border px-3.5 py-2.5 text-[13px]", d.ltvCac >= 3 ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900")}>LTV / CAC = {fmtNum(d.ltvCac, 1)}x — {d.ltvCac >= 3 ? "sog'lom nisbat: mijoz o'ziga sarflangan puldan ancha ko'p keltiradi." : "past nisbat: mijozni jalb qilish uning keltiradigan pulidan qimmat."} LTV taxminiy — ERP bazasidagi o'rtacha umrlik tushum.</div>}
-          {d.has && <div className="mt-3"><Insight>Marketing {money(t.spend)} sarfladi va {money(t.revenue)} sotuv keltirdi — har 1 so'mga {x(t.roas)}. {t.customers} ta yangi mijoz keldi{t.cac !== null ? `, har biri ${moneyShort(t.cac)} so'mga tushdi` : ""}. ERP da shu davrda {d.erpNew} ta mijoz birinchi buyurtma bergan.</Insight></div>}
+          {d.has && <div className="mt-3"><Insight>Marketing {money(t.spend)} sarfladi va {money(t.revenue)} sotuv keltirdi — har 1 so'mga {x(t.roas)}. {t.customers} ta yangi mijoz keldi{t.cac !== null ? `, har biri ${moneyShort(t.cac)} so'mga tushdi` : ""}. {d.erpComparable ? `ERP da shu davrda ${d.erpNew} ta yangi mijoz birinchi buyurtma bergan.` : "Davr tizimga o'tishdan oldin boshlangan — ERP bilan taqqoslab bo'lmaydi."}</Insight></div>}
         </Panel>
 
         {/* Byudjet hukmi */}
@@ -69,7 +69,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <div className="grid grid-cols-2 gap-3 xl:col-span-2 md:grid-cols-3">
             <Kpi label="Marketing xarajati" value={moneyShort(t.spend)} delta={d.deltas.spend} invert icon={Wallet} hint={`byudjet ${moneyShort(t.budget)}`} />
             <Kpi label="Leadlar" value={String(t.leads)} delta={d.deltas.leads} icon={Megaphone} tone="info" hint={`konversiya ${fmtNum(d.conversion, 0)}%`} />
-            <Kpi label="Yangi mijozlar" value={String(t.customers)} delta={d.deltas.customers} icon={Users} tone="violet" hint={`ERP: ${d.erpNew} ta birinchi buyurtma`} />
+            <Kpi label="Yangi mijozlar" value={String(t.customers)} delta={d.deltas.customers} icon={Users} tone="violet" hint={d.erpComparable ? `ERP: ${d.erpNew} ta birinchi buyurtma` : "ERP: tizimgacha ma'lumot yo'q"} />
             <Kpi label="Marketing daromadi" value={moneyShort(t.revenue)} delta={d.deltas.revenue} icon={TrendingUp} tone="brand" />
             <Kpi label="ROAS" value={x(t.roas)} delta={d.deltas.roas} icon={Percent} tone={t.roas !== null && t.roas >= 1 ? "success" : "danger"} />
             <Kpi label="CAC" value={t.cac !== null ? moneyShort(t.cac) : "—"} delta={d.deltas.cac} invert icon={Coins} />

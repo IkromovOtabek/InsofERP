@@ -58,36 +58,36 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
 
       {/* Cash forecast */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
-        <Panel title="Cash Forecast — 7 kun" info="Boshlang'ich — barcha kassa/hisoblarga kelib tushgan to'lovlar jami (tizimda xarajat moduli yo'q). Kutilayotgan tushum — so'nggi 30 kun kunlik o'rtacha, ochiq debitorka bilan cheklangan. Yomon/yaxshi stsenariy — ±1σ.">
+        <Panel title="Cash Forecast — 7 kun" info="Boshlang'ich — kassa/hisoblardagi hozirgi qoldiq. Kutilayotgan tushum — so'nggi 30 kun (tizimga o'tilgan bo'lsa o'tish sanasidan) kunlik o'rtacha, ochiq debitorka bilan cheklangan; undan kunlik o'rtacha chiqim ayiriladi. Yomon/yaxshi stsenariy — ±1σ.">
           <div className="grid grid-cols-2 gap-3 text-[13px] md:grid-cols-4">
             <div><div className="text-xs text-slate-400">7 kundan keyin</div><div className="text-lg font-bold tabular text-emerald-600">{moneyShort(cf.after7)}</div></div>
             <div><div className="text-xs text-slate-400">Yomon stsenariy</div><div className="text-lg font-bold tabular">{moneyShort(cf.low7)}</div></div>
-            <div><div className="text-xs text-slate-400">Kutilayotgan tushum</div><div className="text-lg font-bold tabular">+{moneyShort(cf.expectedIn)}</div></div>
+            <div><div className="text-xs text-slate-400">Kutilayotgan tushum / chiqim</div><div className="text-lg font-bold tabular">+{moneyShort(cf.expectedIn)} <span className="text-sm font-normal text-red-600">−{moneyShort(cf.expectedOut)}</span></div></div>
             <div><div className="text-xs text-slate-400">Xavf holati</div><div className={cn("text-lg font-bold", cf.risk === "Yuqori" ? "text-red-600" : cf.risk === "O'rta" ? "text-amber-600" : "text-emerald-600")}>{cf.risk}</div></div>
           </div>
           <div className="mt-3"><LineChart labels={cf.rows.map((r) => r.label)} series={[{ name: "Kutilayotgan", values: cf.rows.map((r) => cf.start + r.base), color: "#0d78ff" }, { name: "Yomon", values: cf.rows.map((r) => cf.start + r.low), color: "#fa1636", dashed: true }, { name: "Yaxshi", values: cf.rows.map((r) => cf.start + r.high), color: "#00cb80", dashed: true }]} formatValue={moneyShort} height={150} area={false} /></div>
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900"><b>Agar hech narsa qilmasangiz:</b> kunlik o'rtacha tushum {moneyShort(cf.perDay)} so'm (σ = {moneyShort(cf.sigma)}). Ochiq debitorka {moneyShort(cf.receivable)} so'm — shu tempda {cf.coverDays === null ? "—" : `${fmtNum(cf.coverDays, 0)} kunda`} undiriladi. {cf.risk === "Yuqori" ? "Tushum juda notekis — yirik chiqimni kutilayotgan to'lov kelgandan keyin rejalashtiring." : "Zaxira barqaror."}</div>
-          <Why label="Prognoz qanday hisoblangan (3 ta taxmin)"><p>1. Kelajak tushum — so'nggi 30 kun o'rtachasi bilan bir xil.</p><p>2. Tushum ochiq debitorkadan oshmaydi.</p><p>3. Tarqoqlik (σ) tarixiy kunlik tushumlardan olingan.</p></Why>
+          <Why label="Prognoz qanday hisoblangan (3 ta taxmin)"><p>1. Kelajak tushum va chiqim — so'nggi {cf.histDays} kun o'rtachasi bilan bir xil.</p><p>2. Tushum ochiq debitorkadan oshmaydi.</p><p>3. Tarqoqlik (σ) tarixiy kunlik tushumlardan olingan.</p>{cf.histDays < 14 && <p className="text-amber-700">Tarix {cf.histDays} kun — prognoz hali ishonchli emas.</p>}</Why>
         </Panel>
         <Panel title="P&L Waterfall" info="Bazaviy tushumdan foydagacha. Tushum — yetkazilgan reyslar bo'yicha (mijoz qabul qilgan miqdor × narx, yetkazilgan kuni). Tannarx — retsept × xomashyo o'rtacha kirim narxi (miqdorga tortilgan). * Ish haqi, energiya, transport xarajatlari bu yerda yo'q — bu yalpi foyda darajasi (to'liq sof foyda — Egasi dashbordida).">
           <div className="overflow-x-auto"><div className="min-w-[420px]"><Waterfall steps={d.waterfall} formatValue={moneyShort} /></div></div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Gross margin</div><div className="text-base font-semibold tabular">{fmtNum(k.margin, 1)}%</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Chegirma</div><div className="text-base font-semibold tabular text-amber-600">{moneyShort(k.discount)}</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Brak</div><div className="text-base font-semibold tabular text-red-600">{moneyShort(k.writeOff)}</div></div></div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Yalpi marja</div><div className="text-base font-semibold tabular">{fmtNum(k.margin, 1)}%</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Chegirma</div><div className="text-base font-semibold tabular text-amber-600">{moneyShort(k.discount)}</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Brak</div><div className="text-base font-semibold tabular text-red-600">{moneyShort(k.writeOff)}</div></div></div>
         </Panel>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8 [&>*]:min-w-0">
         <Kpi label="Jami sotuv tushumi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" />
-        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%`} />
+        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%${k.uncosted > 0 ? ` · tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : ""}`} />
         <Kpi label="Foyda*" value={moneyShort(k.profit)} icon={PiggyBank} tone={k.profit >= 0 ? "success" : "danger"} hint="brakdan keyin" />
-        <Kpi label="Kassa tushumi" value={moneyShort(k.cashIn.cur)} delta={k.cashIn.delta} icon={Landmark} tone="success" />
+        <Kpi label="Kassa tushumi" value={moneyShort(k.cashIn.cur)} delta={k.cashIn.delta} icon={Landmark} tone="success" hint={k.otherIn > 0 ? `shundan boshqa kirimlar ${moneyShort(k.otherIn)}` : "mijoz to'lovlari + boshqa kirimlar"} />
         <Kpi label="Xomashyo xaridi" value={moneyShort(k.purchases.cur)} delta={k.purchases.delta} invert icon={ShoppingCart} tone="info" />
         <Kpi label="Debitorka" value={moneyShort(k.receivable)} icon={FileWarning} tone={k.receivable ? "warning" : "default"} hint={`${k.debtors} qarzdor`} href={tabHref(range, "customers", { debt: "yes" })} />
-        <Kpi label="Kassalardagi pul" value={moneyShort(k.cashTotal)} icon={Percent} hint="tushumlar jami" />
+        <Kpi label="Kassalardagi pul" value={moneyShort(k.cashTotal)} icon={Percent} hint="hisoblardagi hozirgi qoldiq" />
         <Kpi label="Faol mijozlar" value={`${k.activeCustomers} / ${k.totalCustomers}`} icon={Users} tone="violet" hint={`Faollik ${fmtNum(d.activeRate, 0)}%`} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-        <Panel title="Xarajat tuzilmasi" info="Davr ichidagi xomashyo xaridlari yetkazuvchi bo'yicha + brak. Boshqa xarajat turlari tizimda yuritilmaydi.">
+        <Panel title="Xarajat tuzilmasi" info="Davr ichidagi xomashyo xaridlari yetkazuvchi bo'yicha + brak. Boshqa xarajatlar (ish haqi, yoqilg'i…) — Kirim-Chiqim va Egasi panelida.">
           {d.expenses.length ? <DonutChart data={d.expenses.slice(0, 8)} formatValue={moneyShort} center={{ value: moneyShort(d.expenseTotal), label: "jami" }} /> : <Note>Davrda xarid yo'q.</Note>}
         </Panel>
         <Panel className="xl:col-span-2" title="CashFlow trendi" info="Kassa/bank tushumlari va kumulyativ." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "finance", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
@@ -111,7 +111,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-        <Panel title="Kassa balanslari" info="Har kassa/hisob bo'yicha: davr tushumi va jami tushumlar." padded={false}>
+        <Panel title="Kassa balanslari" info="Har kassa/hisob bo'yicha: davr ichidagi mijoz to'lovlari va hozirgi qoldiq." padded={false}>
           <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Kassa / hisob</Th><Th right>Davr</Th><Th right>Jami</Th></tr></thead><tbody>{d.accountRows.length === 0 && <Empty text="Kassa yo'q" />}{d.accountRows.map((a) => <Tr key={a.id}><Td>{a.name} <span className="text-xs text-slate-400">{a.type === "CASH" ? "naqd" : "bank"}</span></Td><Td right>{moneyShort(a.period)}</Td><Td right className="font-semibold">{moneyShort(a.total)}</Td></Tr>)}</tbody></Table>
         </Panel>
         <Panel title="Top 10 to'lov" info="Davr ichidagi eng katta tranzaksiyalar." padded={false}>

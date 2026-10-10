@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { TrendingUp, Receipt, ClipboardList, Users, Wallet, Percent, Boxes } from "lucide-react";
 import { salesTab } from "@/lib/bi/sales";
-import { type Range, type Gran, autoGran } from "@/lib/bi/core";
-import { money, moneyShort, fmtNum, qty, dateTime } from "@/lib/format";
+import { type Range, type Gran, autoGran, addDays } from "@/lib/bi/core";
+import { money, moneyShort, fmtNum, qty, dateTime, isoDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select } from "@/components/ui";
 import { BarChart, DonutChart, HBarList, LineChart } from "@/components/ui/charts";
 import { Kpi, Panel, Why, Insight, Action, Note, Pager, ExportLink, Chip, Tag, tabHref } from "../ui";
@@ -37,8 +37,8 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
         <Kpi label="O'rtacha chek" value={moneyShort(k.avgCheck.cur)} delta={k.avgCheck.delta} icon={Receipt} />
         <Kpi label="Zayavkalar" value={String(k.orders.cur)} delta={k.orders.delta} icon={ClipboardList} tone="info" />
         <Kpi label="Faol mijozlar" value={String(k.customers.cur)} delta={k.customers.delta} icon={Users} tone="violet" />
-        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} />
-        <Kpi label="Marja" value={`${fmtNum(k.margin.cur, 1)}%`} delta={k.margin.cur - k.margin.prev} deltaLabel="p.p." icon={Percent} tone={k.margin.cur >= 20 ? "success" : k.margin.cur >= 10 ? "warning" : "danger"} />
+        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={k.uncosted > 0 ? `tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : undefined} />
+        <Kpi label="Marja" value={`${fmtNum(k.margin.cur, 1)}%`} delta={k.gross.prev ? k.margin.cur - k.margin.prev : null} deltaLabel="p.p." icon={Percent} tone={k.margin.cur >= 20 ? "success" : k.margin.cur >= 10 ? "warning" : "danger"} />
       </div>
 
       <Panel title="Sotuv dinamikasi" info="Ustunlar — joriy davr, och kulrang — oldingi davr (bir xil uzunlikdagi). Ustun ustiga kursor olib boring." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={href({ gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
@@ -51,7 +51,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
           {d.productRows.length ? <DonutChart data={d.productRows.slice(0, 8).map((p) => ({ label: p.code, value: p.revenue }))} formatValue={(v) => moneyShort(v)} center={{ value: String(d.productRows.length), label: "marka" }} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
         <Panel title="Top mijozlar" info="Davr ichidagi tushum bo'yicha." action={<Link href={tabHref(range, "customers")} className="font-medium text-blue-600 hover:underline">Barchasini ko'rish →</Link>}>
-          {d.byCustomer.length ? <HBarList data={d.byCustomer.slice(0, 8).map((c) => ({ label: c.name, value: c.revenue, hint: `${c.orders} zayavka`, sub: `${qty(c.qty)} m³` }))} formatValue={(v) => moneyShort(v)} /> : <Note>Ma'lumot yo'q.</Note>}
+          {d.byCustomer.length ? <HBarList data={d.byCustomer.slice(0, 8).map((c) => ({ label: c.name, value: c.revenue, hint: `${c.orders} zayavka`, sub: c.qty ? `${qty(c.qty)} m³ beton` : undefined }))} formatValue={(v) => moneyShort(v)} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
       </div>
 
@@ -67,7 +67,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
                 <div className="px-4 pt-3 text-xs font-semibold text-slate-500">{title as string}</div>
                 <table className="w-full text-[13px]">
                   <thead><tr><Th>#</Th><Th>Marka</Th><Th>ABC</Th><Th right>Sotuv</Th><Th right>Foyda</Th><Th right>Ulush</Th></tr></thead>
-                  <tbody>{(rows as typeof top10).map((p, i) => <Tr key={p.id}><Td className="text-slate-400">{i + 1}</Td><Td>{p.code}</Td><Td><Tag>{p.abc}</Tag></Td><Td right>{moneyShort(p.revenue)}</Td><Td right className={p.gross < 0 ? "text-red-600" : ""}>{moneyShort(p.gross)}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
+                  <tbody>{(rows as typeof top10).map((p, i) => <Tr key={p.id}><Td className="text-slate-400">{i + 1}</Td><Td>{p.code}</Td><Td><Tag>{p.abc}</Tag></Td><Td right>{moneyShort(p.revenue)}</Td><Td right className={p.gross < 0 ? "text-red-600" : ""}>{p.costKnown ? moneyShort(p.gross) : <span className="text-xs text-slate-400">tannarx yo&apos;q</span>}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
                 </table>
               </div>
             ))}
@@ -127,7 +127,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
       {/* Batafsil tranzaksiyalar */}
       <Panel title="Batafsil tranzaksiyalar" info="Zayavka pozitsiyalari — davr bo'yicha. Filtrlash va eksport." padded={false} action={<ExportLink type="sales" range={range} />}>
         <form method="get" action={ROUTES.sales} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
-          {range.period === "custom" ? <><input type="hidden" name="from" value={range.from.toISOString().slice(0, 10)} /><input type="hidden" name="to" value={new Date(range.to.getTime() - 1).toISOString().slice(0, 10)} /></> : <input type="hidden" name="period" value={range.period} />}{sp.gran && <input type="hidden" name="gran" value={sp.gran} />}
+          {range.period === "custom" ? <><input type="hidden" name="from" value={isoDate(range.from)} /><input type="hidden" name="to" value={isoDate(addDays(range.to, -1))} /></> : <input type="hidden" name="period" value={range.period} />}{sp.gran && <input type="hidden" name="gran" value={sp.gran} />}
           <Select name="customer" aria-label="Mijoz" defaultValue={sp.customer ?? ""} className="h-8 w-56"><option value="">Barcha mijozlar</option>{d.customerOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
           <Select name="product" aria-label="Marka" defaultValue={sp.product ?? ""} className="h-8 w-40"><option value="">Barcha markalar</option>{d.productOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
           <Select name="size" aria-label="Sahifadagi qatorlar" defaultValue={String(size)} className="h-8 w-20"><option value="25">25</option><option value="50">50</option><option value="100">100</option></Select>

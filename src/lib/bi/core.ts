@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
+import { companyVatPayer } from "@/lib/receipt-vat";
+import { withoutNds } from "@/lib/nds";
 
 /* ───────────── Davr ───────────── */
 
@@ -94,7 +96,29 @@ export const ACTIVE_ORDER: ("CONFIRMED" | "IN_PRODUCTION" | "DELIVERED" | "CLOSE
 export type SaleRow = {
   date: Date; orderId: string; orderNo: string; status: string; customerId: string; customer: string; sellerId: string; seller: string;
   productId: string; product: string; code: string; unit: string; qty: number; price: number; basePrice: number; revenue: number; cost: number;
+  /** QQS'siz tushum (QQS to'lovchisi korxonada NDS qatorlar uchun) — marja va chegirma shu bilan, tannarx ham QQS'siz */
+  net: number;
+  /** Tannarx ma'lummi (faol retsept bor va har xomashyoning narxi bor). Bilinmasa marjaga kirmaydi — 100% foyda bo'lib ko'rinmasin */
+  costKnown: boolean;
 };
+
+/* ───────────── Yalpi foyda: faqat tannarxi ma'lum qatorlar bo'yicha ───────────── */
+export const costedRows = (rows: SaleRow[]) => rows.filter((r) => r.costKnown);
+/** Yalpi foyda (QQS'siz tushum − tannarx), tannarxi ma'lum qatorlar bo'yicha */
+export const grossOf = (rows: SaleRow[]) => sum(costedRows(rows).map((r) => r.net - r.cost));
+/** Marja %: yalpi foyda / shu qatorlarning QQS'siz tushumi */
+export const marginOf = (rows: SaleRow[]) => safeDiv(grossOf(rows), sum(costedRows(rows).map((r) => r.net))) * 100;
+/** Tannarxi noma'lum (retsepti yo'q yoki xomashyo narxi kiritilmagan) mahsulotlar tushumi */
+export const uncostedRevenue = (rows: SaleRow[]) => sum(rows.filter((r) => !r.costKnown).map((r) => r.revenue));
+
+/**
+ * Tizimga o'tish sanasi — eng erta faol boshlang'ich qoldiq sanasi (yo'q bo'lsa `null`).
+ * Undan oldingi kunlar "ish bo'lmagan" emas, shunchaki ERP'da yozilmagan: o'rtacha va prognozlar shu sanadan boshlanadi.
+ */
+export async function goLiveDate(): Promise<Date | null> {
+  const r = await db.openingBalance.aggregate({ where: { cancelledAt: null }, _min: { date: true } });
+  return r._min.date ? startOfDay(r._min.date) : null;
+}
 
 /**
  * Xomashyo o'rtacha kirim narxi — miqdorga tortilgan Σ(qty × unitCost) / Σqty. Bitta manba: `avgUnitCosts`
@@ -120,11 +144,33 @@ export async function productCosts() {
   const out = new Map<string, { cost: number | null; price: number; name: string; code: string; unit: string; isActive: boolean }>();
   for (const p of products) {
     const items = p.recipes[0]?.items ?? [];
-    const cost = items.length
+    // Retsept yo'q yoki biror xomashyoning narxi hali kiritilmagan bo'lsa — tannarx noma'lum (0 emas: aks holda marja 100% chiqadi)
+    const known = items.length > 0 && items.every((i) => (i.materialId ? costs.has(i.materialId) : true));
+    const cost = known
       ? sum(items.map((i) => Number(i.qtyPerM3) * (i.materialId ? (costs.get(i.materialId) ?? 0) : (priceOf.get(i.productId!) ?? 0))))
       : null;
     out.set(p.id, { cost, price: Number(p.price), name: p.name, code: p.code, unit: p.unit, isActive: p.isActive });
   }
+  return out;
+}
+
+/**
+ * Tayyor (dona) mahsulotning 1 birlik tannarxi — ombordagi qiymati uchun (Ombor va Mahsulotlar tablari bir xil).
+ * Avval narx bilan kiritilgan kirim/boshlang'ich qoldiq (musbat ADJUSTMENT / PRODUCTION_OUTPUT, miqdorga tortilgan),
+ * bo'lmasa retsept tannarxi (> 0). Sotuv narxi tannarx o'rniga olinmaydi — topilmasa `null`.
+ */
+export async function finishedUnitCosts(): Promise<Map<string, number | null>> {
+  const [rows, recipe] = await Promise.all([
+    db.$queryRaw<{ productId: string; cost: unknown }[]>`
+      SELECT "productId", SUM("qty" * "unitCost") / NULLIF(SUM("qty"), 0) AS "cost"
+      FROM "StockMove"
+      WHERE "productId" IS NOT NULL AND "unitCost" IS NOT NULL AND "qty" > 0 AND "type" IN ('ADJUSTMENT', 'PRODUCTION_OUTPUT')
+      GROUP BY "productId"`,
+    productCosts(),
+  ]);
+  const out = new Map<string, number | null>();
+  for (const [id, c] of recipe) out.set(id, c.cost !== null && c.cost > 0 ? c.cost : null);
+  for (const r of rows) if (r.cost != null && Number(r.cost) > 0) out.set(r.productId, Number(r.cost));
   return out;
 }
 
@@ -134,18 +180,21 @@ export async function productCosts() {
  * "chegirma"ni va otgruzka rejasini buzardi.
  */
 export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIVE_ORDER): Promise<SaleRow[]> {
-  const [items, costs] = await Promise.all([
+  const [items, costs, vatPayer] = await Promise.all([
     db.orderItem.findMany({
       where: { order: { kind: "SALE", date: { gte: from, lt: to }, status: { in: statuses as never } } },
       include: { order: { select: { id: true, orderNo: true, date: true, status: true, customerId: true, customer: { select: { name: true } }, createdById: true, createdBy: { select: { fullName: true } } } }, product: { select: { name: true, code: true, unit: true, price: true } } },
     }),
     productCosts(),
+    companyVatPayer(),
   ]);
   return items.map((i) => {
-    const qty = Number(i.qtyM3), price = Number(i.price), c = costs.get(i.productId)?.cost ?? 0;
+    const qty = Number(i.qtyM3), price = Number(i.price), c = costs.get(i.productId)?.cost ?? null;
+    const netPrice = vatPayer && i.nds ? withoutNds(price) : price;
     return {
       date: i.order.date, orderId: i.order.id, orderNo: i.order.orderNo, status: i.order.status, customerId: i.order.customerId, customer: i.order.customer.name, sellerId: i.order.createdById, seller: i.order.createdBy.fullName,
-      productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * c,
+      productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * (c ?? 0),
+      net: qty * netPrice, costKnown: c !== null,
     };
   });
 }
@@ -164,19 +213,22 @@ export async function loadSales(from: Date, to: Date, statuses: string[] = ACTIV
 export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
   const orderSelect = {
     id: true, orderNo: true, date: true, deliveryDate: true, status: true, customerId: true, customer: { select: { name: true } }, createdById: true, createdBy: { select: { fullName: true } },
-    items: { select: { productId: true, qtyM3: true, price: true, product: { select: { name: true, code: true, unit: true, price: true } } } },
+    items: { select: { productId: true, qtyM3: true, price: true, nds: true, product: { select: { name: true, code: true, unit: true, price: true } } } },
   } as const;
-  const [trips, noTrip, costs] = await Promise.all([
+  const [trips, noTrip, costs, vatPayer] = await Promise.all([
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, order: { kind: "SALE" } }, select: { deliveredAt: true, qtyM3: true, acceptedQty: true, returnedQty: true, order: { select: orderSelect } } }),
     db.order.findMany({ where: { kind: "SALE", status: { in: ["DELIVERED", "CLOSED"] }, deliveryDate: { gte: from, lt: to }, trips: { none: { status: "DELIVERED" } } }, select: orderSelect }),
     productCosts(),
+    companyVatPayer(),
   ]);
   type O = (typeof noTrip)[number];
   const rowsOf = (o: O, date: Date, share: number): SaleRow[] => o.items.map((i) => {
-    const qty = Number(i.qtyM3) * share, price = Number(i.price), c = costs.get(i.productId)?.cost ?? 0;
+    const qty = Number(i.qtyM3) * share, price = Number(i.price), c = costs.get(i.productId)?.cost ?? null;
+    const netPrice = vatPayer && i.nds ? withoutNds(price) : price;
     return {
       date, orderId: o.id, orderNo: o.orderNo, status: o.status, customerId: o.customerId, customer: o.customer.name, sellerId: o.createdById, seller: o.createdBy.fullName,
-      productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * c,
+      productId: i.productId, product: i.product.name, code: i.product.code, unit: i.product.unit, qty, price, basePrice: Number(i.product.price), revenue: qty * price, cost: qty * (c ?? 0),
+      net: qty * netPrice, costKnown: c !== null,
     };
   });
   const out: SaleRow[] = [];
@@ -200,9 +252,13 @@ export function workingDays(from: Date, to: Date) { let n = 0; for (let d = new 
  * Joriy oy oxirigacha prognoz: shu kungacha bo'lgan fakt / o'tgan ish kunlari × oydagi ish kunlari.
  * `today` — hisob kuni (bugun kiradi). O'tgan oy uchun fakt o'zi qaytadi.
  */
-export function monthForecast(fact: number, today: Date = startOfDay(new Date())) {
+export function monthForecast(fact: number, today: Date = startOfDay(new Date()), since: Date | null = null) {
   const mStart = new Date(today.getFullYear(), today.getMonth(), 1), mEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const wdTotal = workingDays(mStart, mEnd), wdPassed = workingDays(mStart, addDays(startOfDay(today), 1));
+  // Oy o'rtasida tizimga o'tilgan bo'lsa (`since` — goLiveDate) sur'at o'tish sanasidan beri hisoblanadi:
+  // aks holda 10-sanada boshlangan sotuv 9 ta "bo'sh" ish kuniga bo'linib, prognoz uch baravar past chiqardi.
+  // Prognoz esa faqat qolgan oy uchun — o'tishdan oldingi kunlar sotuvi ERP'da yo'q.
+  const from = since && since > mStart && since < mEnd ? startOfDay(since) : mStart;
+  const wdTotal = workingDays(from, mEnd), wdPassed = workingDays(from, addDays(startOfDay(today), 1));
   return wdPassed > 0 ? (fact / wdPassed) * wdTotal : 0;
 }
 

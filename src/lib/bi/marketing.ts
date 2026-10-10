@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { type Range, sum, safeDiv, median, delta, startOfDay } from "./core";
+import { type Range, sum, safeDiv, median, delta, startOfDay, addDays, goLiveDate } from "./core";
 import { customerBase } from "./customers";
 import { MONTHS_UZ, MONTHS_SHORT } from "./plans";
 
@@ -23,16 +23,20 @@ function channelStats(list: Entry[]) {
 /** Marketing tahlili — Team24 "Marketing" ekvivalenti. Ma'lumot MarketingEntry (fakt yozuvlari) dan. */
 export async function marketingTab(r: Range) {
   const ms = monthsIn(r.from, r.to), prevMs = monthsIn(r.prevFrom, r.prevTo);
-  const [raw, customers] = await Promise.all([db.marketingEntry.findMany(), customerBase()]);
+  const [raw, customers, live] = await Promise.all([db.marketingEntry.findMany(), customerBase(), goLiveDate()]);
   const all = raw.map(toEntry);
   const cur = all.filter((e) => inMonths(e, ms)), prev = all.filter((e) => inMonths(e, prevMs));
   const t = channelStats(cur), p = channelStats(prev);
-  // LTV — ERP mijozlar bazasidan: o'rtacha umrlik tushum (xarid qilganlar)
+  // LTV — ERP mijozlar bazasidan: o'rtacha umrlik tushum (xarid qilganlar). ERP tarixi 180 kundan qisqa bo'lsa
+  // (oy o'rtasida tizimga o'tilgan) umrlik tushum emas, faqat bir necha kunlik sotuv chiqadi — hisoblanmaydi
   const bought = customers.filter((c) => c.lifetime > 0);
-  const ltv = bought.length ? sum(bought.map((c) => c.lifetime)) / bought.length : 0;
+  const shortHistory = live !== null && live > addDays(startOfDay(new Date()), -180);
+  const ltv = shortHistory ? null : bought.length ? sum(bought.map((c) => c.lifetime)) / bought.length : 0;
   const firstCheck = safeDiv(t.revenue, t.customers);
-  // ERP dan haqiqiy yangi mijozlar (davrda birinchi buyurtma)
-  const erpNew = customers.filter((c) => c.firstOrder && c.firstOrder >= r.from && c.firstOrder < r.to).length;
+  // ERP dan haqiqiy yangi mijozlar (davrda birinchi buyurtma; tizimgacha bo'lgan mijozlar kirmaydi)
+  const erpNew = customers.filter((c) => !c.legacy && c.firstOrder && c.firstOrder >= r.from && c.firstOrder < r.to).length;
+  // Davr tizimga o'tishdan oldin boshlangan bo'lsa ERP yangi mijozlarning bir qismini ko'rmagan — taqqoslab bo'lmaydi
+  const erpComparable = live === null || r.from >= live;
 
   const chans = [...new Set(cur.map((e) => e.channel))].map((ch) => { const s = channelStats(cur.filter((e) => e.channel === ch)); const ps = channelStats(prev.filter((e) => e.channel === ch)); return { channel: ch, ...s, prevRoas: ps.roas, trend: s.roas !== null && ps.roas !== null && ps.roas > 0 ? ((s.roas - ps.roas) / ps.roas) * 100 : null }; }).filter((c) => c.spend > 0 || c.budget > 0).sort((a, b) => (b.roas ?? -1) - (a.roas ?? -1));
   const med = median(chans.filter((c) => c.roas !== null).map((c) => c.roas as number));
@@ -55,12 +59,12 @@ export async function marketingTab(r: Range) {
   if (best && best.roas) signals.push({ level: "success", title: `Eng samarali kanal — ${best.channel}`, text: `ROAS ${best.roas.toFixed(1)}x. Byudjetni shu kanal tomon siljitish mumkin.` });
   for (const c of stop) signals.push({ level: "danger", title: `${c.channel} zarar keltiryapti`, text: `ROAS ${(c.roas ?? 0).toFixed(2)}x — sarflangan puldan kam qaytyapti. To'xtating yoki auditoriyani qayta ko'ring.` });
   for (const c of verdicts.filter((c) => c.verdict === "KAMAYTIRING")) signals.push({ level: "warning", title: `${c.channel} sust ishlayapti`, text: `ROAS ${(c.roas ?? 0).toFixed(1)}x — mediana (${med.toFixed(1)}x) dan past.` });
-  if (t.customers && erpNew && Math.abs(t.customers - erpNew) / Math.max(t.customers, erpNew) > 0.3) signals.push({ level: "info", title: "Marketing hisoboti va ERP farq qilyapti", text: `Marketing ${t.customers} ta yangi mijoz deb yozgan, ERP da davrda ${erpNew} ta mijoz birinchi buyurtma bergan. Manbani tekshiring.` });
+  if (erpComparable && t.customers && erpNew && Math.abs(t.customers - erpNew) / Math.max(t.customers, erpNew) > 0.3) signals.push({ level: "info", title: "Marketing hisoboti va ERP farq qilyapti", text: `Marketing ${t.customers} ta yangi mijoz deb yozgan, ERP da davrda ${erpNew} ta mijoz birinchi buyurtma bergan. Manbani tekshiring.` });
   if (!cur.length) signals.push({ level: "info", title: "Bu davr uchun ma'lumot kiritilmagan", text: "Marketing ma'lumotlari sahifasida oy × kanal bo'yicha fakt yozuvlarini kiriting." });
 
   return {
     has: cur.some((e) => e.kind === "FACT"), months: ms, t, p, deltas: { spend: delta(t.spend, p.spend), revenue: delta(t.revenue, p.revenue), leads: delta(t.leads, p.leads), customers: delta(t.customers, p.customers), roas: t.roas !== null && p.roas !== null ? delta(t.roas, p.roas) : null, cac: t.cac !== null && p.cac !== null ? delta(t.cac, p.cac) : null, cpl: t.cpl !== null && p.cpl !== null ? delta(t.cpl, p.cpl) : null, romi: t.romi !== null && p.romi !== null ? delta(t.romi, p.romi) : null },
-    ltv, ltvCac: t.cac ? ltv / t.cac : null, firstCheck, conversion: safeDiv(t.customers, t.leads) * 100, erpNew, verdicts, med, stop, grow, freed, best, reallocGain, stopLoss, trend, funnel, signals,
+    ltv, ltvCac: t.cac && ltv !== null ? ltv / t.cac : null, erpComparable, firstCheck, conversion: safeDiv(t.customers, t.leads) * 100, erpNew, verdicts, med, stop, grow, freed, best, reallocGain, stopLoss, trend, funnel, signals,
     ctr: safeDiv(t.clicks, t.impressions) * 100, cpm: safeDiv(t.spend, t.impressions) * 1000, cpc: safeDiv(t.spend, t.clicks),
   };
 }
