@@ -1,5 +1,6 @@
 import { selfAttendance, type SelfAttendance } from "@/lib/self-attendance";
 import { faceKioskAccess } from "./face-kiosk";
+import { attendanceAccess, type AttendanceAccess } from "./staff-attendance";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
@@ -137,6 +138,11 @@ export type MobileHome = {
   attendanceManage?: { title: string; subtitle: string; key: string; id: string } | null;
   /** «Davomat» tugmasi (Face ID skaneri, ERP Bosh sahifa → Davomat kabi) — skanerga ruxsati bor lavozimlarga. */
   faceAttendance?: { canEnroll: boolean } | null;
+  /**
+   * «Davomat» tugmasi — HAMMA xodimga (yangi ilova shuni o'qiydi): o'z davomati ("Men"), umumiy jadval (faqat ko'rish),
+   * ruxsat bo'lsa Skaner / Yuzlar. `faceAttendance` eski ilova uchun o'zgarishsiz qoladi (u Davomat ekranida skanerni ochadi).
+   */
+  attendance?: AttendanceAccess;
 };
 
 /** Logistika xaritasidagi bitta reys — GPS bo'lmasa `gps` null, lekin qator ro'yxatda turadi. */
@@ -761,7 +767,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     }
   }
   const [selfAtt, manage, settings] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null), logisticsSettings().catch(() => null)]);
-  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user) };
+  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user), attendance: attendanceAccess(user, !!selfAtt) };
 }
 
 /**

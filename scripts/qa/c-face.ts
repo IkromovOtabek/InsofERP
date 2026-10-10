@@ -224,23 +224,38 @@ async function main() {
   check(`bitta davomat yozuvi, diskda bitta yangi kadr (${after.length - before})`, rows.length === 1 && !!rows[0]?.facePhoto && after.length - before === 1 && after.includes(rows[0]!.facePhoto!), { rows: rows.length, files: after });
 
   // ───────────────────────── 7. Mobil davomat jadvali doirasi ─────────────────────────
-  section("Mobil davomat jadvali: sex boshlig'i faqat sex xodimlarini ko'radi");
+  section("Mobil davomat jadvali: hamma ko'radi (faqat ko'rish), sex boshlig'iga sex xodimlarida to'liq ustunlar");
   const outsider = await db.employee.create({ data: { fullName: `QA-F Hisobchi ${stamp}`, position: "Bosh hisobchi yordamchisi QA" } });
+  await db.attendance.upsert({
+    where: { employeeId_date: { employeeId: outsider.id, date } },
+    create: { employeeId: outsider.id, date, status: "SICK", note: `QA maxfiy izoh ${stamp}` },
+    update: { status: "SICK", note: `QA maxfiy izoh ${stamp}` },
+  });
   const sexIds = new Set((await productionStaff()).members.map((m) => m.id));
   check("tashqi xodim sex tarkibida emas", !sexIds.has(outsider.id));
+  type DayRow = { id: string; source: string | null; note: string | null; status: string };
   for (const login of ["test.ishlab", "test.prorab"]) {
     const t = await tok(login);
     r = await api("GET", "/api/mobile/attendance/day", { token: t });
-    const ids: string[] = (r.json?.rows ?? []).map((x: { id: string }) => x.id);
-    check(`${login}: kunlik jadval faqat sex (${ids.length} qator, sex=${sexIds.size})`, r.status === 200 && ids.length > 0 && ids.every((id) => sexIds.has(id)) && ids.includes(s1.id) && !ids.includes(outsider.id), { s: r.status, n: ids.length });
+    const rows: DayRow[] = r.json?.rows ?? [];
+    const out = rows.find((x) => x.id === outsider.id);
+    const mine = rows.find((x) => x.id === s1.id);
+    check(`${login}: kunlik jadvalda hamma xodim (${rows.length} qator, sex=${sexIds.size}), tashqi xodim holati ko'rinadi`, r.status === 200 && !!mine && out?.status === "SICK", { s: r.status, n: rows.length });
+    check(`${login}: tashqi xodimda manba va izoh yashirilgan, sex xodimida manba bor`, out?.note === null && out?.source === null && !!mine?.source, { out, mine });
     r = await api("GET", `/api/mobile/attendance/employee?id=${outsider.id}`, { token: t });
-    check(`${login}: tashqi xodimning oyi → 404`, r.status === 404, r.status);
+    check(`${login}: tashqi xodimning oyi → 200, telefon va izohsiz`, r.status === 200 && r.json?.employee?.phone === null && (r.json?.days ?? []).every((d: DayRow) => d.note === null && d.source === null), r.status);
     r = await api("GET", `/api/mobile/attendance/employee?id=${s1.id}`, { token: t });
     check(`${login}: sex xodimining oyi → 200`, r.status === 200, r.status);
   }
+  {
+    const t = await tok("test.sotuv");
+    r = await api("GET", "/api/mobile/attendance/day", { token: t });
+    const out = (r.json?.rows ?? []).find((x: DayRow) => x.id === outsider.id);
+    check("sotuvchi: jadval ochiq, izoh yashirilgan", r.status === 200 && out?.status === "SICK" && out?.note === null, { s: r.status, out });
+  }
   const hr = await tok("test.kadr");
   r = await api("GET", "/api/mobile/attendance/day", { token: hr });
-  check("otdel kadr: kunlik jadvalda tashqi xodim ham bor", r.status === 200 && (r.json?.rows ?? []).some((x: { id: string }) => x.id === outsider.id), r.status);
+  check("otdel kadr: kunlik jadvalda tashqi xodim izohi bilan", r.status === 200 && (r.json?.rows ?? []).some((x: { id: string; note: string | null }) => x.id === outsider.id && x.note === `QA maxfiy izoh ${stamp}`), r.status);
   r = await api("GET", `/api/mobile/attendance/employee?id=${outsider.id}`, { token: hr });
   check("otdel kadr: tashqi xodimning oyi → 200", r.status === 200, r.status);
 

@@ -30,6 +30,8 @@ const LISTS: Record<string, string[]> = {
   approvals: [],
   activity: [],
 };
+/** Face ID skaneri doirasi (`faceScope`): otdel kadr darajasi — hamma, sex boshliqlari — sex; qolganlarda skaner yo'q. */
+const SCANNER: Record<string, "all" | "sex" | undefined> = { DIRECTOR: "all", HR: "all", PRODUCTION: "sex", SUPERVISOR: "sex" };
 const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift" };
 const FORMS = ["orders", "trips", "supply", "customers", "suppliers", "brigades"];
 
@@ -63,6 +65,32 @@ async function main() {
       const r = await api("GET", `/api/mobile/home${q}`, { token: t });
       no500(`${login} home${q}`, r.status);
       if (q === "") { check(`home → 200`, r.status === 200, r.json); collect(r.json, opens); }
+      if (q === "") {
+        // «Davomat» — hamma xodimda: o'z davomati + umumiy jadval (faqat ko'rish); skaner faqat ruxsati borlarda
+        const a = r.json?.attendance;
+        const scan = SCANNER[role];
+        check(`home: «Davomat» (jadval, xodim kartasi${scan ? `, skaner ${scan}` : ", skanersiz"})`,
+          a?.canViewTable === true && a?.linked === true && a?.canScan === !!scan && a?.canEnroll === (scan === "all") && !!r.json?.selfAttendance
+          && !!r.json?.faceAttendance === !!scan, { a, face: r.json?.faceAttendance });
+      }
+    }
+    {
+      // Jadval — faqat ko'rish: hamma xodim qatorlari; manba/izoh faqat mas'ullarga
+      const r = await api("GET", "/api/mobile/attendance/day", { token: t });
+      const rows: { id: string; source: string | null; note: string | null }[] = r.json?.rows ?? [];
+      check(`davomat jadvali → 200 (${rows.length} xodim)`, r.status === 200 && rows.length > 0, { s: r.status });
+      if (!SCANNER[role]) check(`jadvalda manba va izoh yashirilgan`, rows.every((x) => x.source === null && x.note === null));
+      const e = rows[0] ? await api("GET", `/api/mobile/attendance/employee?id=${rows[0].id}`, { token: t }) : null;
+      check(`xodimning oylik varag'i → 200`, e?.status === 200, { s: e?.status });
+      if (!SCANNER[role]) {
+        check(`oylik varaqda telefon, manba, izoh yo'q`, e?.json?.employee?.phone === null && (e?.json?.days ?? []).every((d: { source: unknown; note: unknown }) => d.source === null && d.note === null));
+        const f = await api("GET", "/api/mobile/face", { token: t });
+        check(`skaner ma'lumoti (GET /face) → 403`, f.status === 403, { s: f.status });
+        const sc = await api("POST", "/api/mobile/face/scan", { token: t, body: { mode: "auto", photo: "x" } });
+        check(`skaner (POST /face/scan) → rad`, sc.json?.ok === false && sc.json?.code === "FORBIDDEN", { s: sc.status, j: sc.json });
+        const en = await api("POST", "/api/mobile/face/enroll", { token: t, body: { employeeId: rows[0]?.id, consent: true, photo: "x" } });
+        check(`yuz olish (POST /face/enroll) → rad`, en.json?.ok === false && /otdel kadr/.test(en.json?.error ?? ""), { s: en.status, j: en.json });
+      }
     }
     for (const p of ["/api/mobile/notifications", "/api/mobile/account"]) {
       const r = await api("GET", p, { token: t });
