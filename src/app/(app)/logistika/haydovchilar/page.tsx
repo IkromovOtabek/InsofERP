@@ -6,6 +6,7 @@ import { ACTIVE_TRIP, dayRange, delayLevel, driverEmployees, expiryLevel, logist
 import { date, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { TripLink } from "../ui";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export default async function DriversPage() {
 
   return (
     <div>
+      <SectionTabs section="haydovchi" current="/logistika/haydovchilar" />
       <PageHeader title="Haydovchilar" subtitle="Shaxsiy ma'lumot Otdel kadrda; guvohnoma, grafik va transport — shu yerda. Mavjudlik: reys + bugungi davomat" />
       <Card padded={false}>
         <Table>

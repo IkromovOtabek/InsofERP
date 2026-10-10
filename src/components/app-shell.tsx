@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -19,7 +19,13 @@ const ICONS: Record<string, LucideIcon> = {
   "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
   "/payments": Landmark, "/cashflow": ArrowLeftRight, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
   "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=taqvim": CakeSlice,
-  "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo,
+  "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/settings/boshlangich-qoldiq": Scale,
+  "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard,
+  "/logistika/obyektlar": MapPin, "/logistika/monitoring": Radar, "/logistika/nakladnoylar": FileText, "/logistika/yetkazish": PackageCheck,
+  "/logistika/yoqilgi": Fuel, "/logistika/xarajatlar": Wallet, "/logistika/hisobotlar": FileChartColumn, "/logistika/analitika": ChartPie, "/logistika/sozlamalar": SlidersHorizontal,
+  // Ichki bandlar (BI)
+  "/bi-tahlil/sotuvlar/bekor": Ban, "/bi-tahlil/marketing/reja": CalendarRange, "/bi-tahlil/marketing/malumotlar": Database,
+  "/bi-tahlil/ml/anomaliyalar": TriangleAlert, "/bi-tahlil/ml/churn": UserMinus, "/bi-tahlil/ml/klasterlar": Boxes, "/bi-tahlil/ai/chat": MessageSquare, "/bi-tahlil/ai/telegram": Send,
   "/bi-tahlil/sotuvlar": TrendingUp, "/bi-tahlil/agentlar": UserRoundCheck, "/bi-tahlil/mijozlar": Users, "/bi-tahlil/ombor": Warehouse, "/bi-tahlil/mahsulotlar": Package, "/bi-tahlil/ishlab-chiqarish": Factory,
   "/bi-tahlil/marketing": Megaphone, "/bi-tahlil/reja": Target, "/bi-tahlil/moliya": Landmark, "/bi-tahlil/ml": BrainCircuit, "/bi-tahlil/ai": Sparkles,
 };
@@ -106,7 +112,12 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                         return (
                           <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
                             className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] pointer-coarse:py-2.5 pointer-coarse:text-sm", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
-                            <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />
+                            {(() => {
+                              const CIcon = ICONS[c.href];
+                              return CIcon
+                                ? <CIcon size={14} className={cn("shrink-0", ca ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />
+                                : <span className={cn("sb-dot h-1.5 w-1.5 shrink-0 rounded-full", ca ? "bg-brand-500" : "bg-slate-300 group-hover:bg-brand-400")} />;
+                            })()}
                             <span className="truncate">{c.label}</span>
                           </Link>
                         );

@@ -11,6 +11,7 @@ import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
 import { deleteExpense } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
+      <SectionTabs section="transport" current="/logistika/xarajatlar" />
       <PageHeader title="Transport xarajatlari" subtitle={`${r.label} · yoqilg'i + boshqa xarajatlar = logistika tannarxi`} />
       <PeriodTabs base="/logistika/xarajatlar" current={r.period} />
       <RangeForm base="/logistika/xarajatlar" from={r.from} to={r.to} />

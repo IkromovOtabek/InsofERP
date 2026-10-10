@@ -7,6 +7,7 @@ import { date, moneyShort, qty } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { VehicleStatusForm } from "../../drivers/vehicle-status-form";
 import { TripLink, VehicleLiveBadge } from "../ui";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
+      <SectionTabs section="transport" current="/logistika/transport" />
       <PageHeader title="Transport" subtitle="Mikser, nasos va yuk mashinalar — joriy holat, hujjat muddatlari, oy xarajati"
         action={canManage && <LinkButton href="/logistika/transport/new"><Plus size={16} /> Transport qo'shish</LinkButton>} />
 

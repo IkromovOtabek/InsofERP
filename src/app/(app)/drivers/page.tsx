@@ -12,6 +12,7 @@ import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } 
 import { ApproveDriverButton, ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncAllButton, SyncVehiclesButton } from "./buttons";
 import { VehicleStatusBadge, VehicleStatusForm } from "./vehicle-status-form";
 import { TripStatusBadge } from "../trips/status";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ export default async function DriversPage() {
 
   return (
     <div>
+      <SectionTabs section="haydovchi" current="/drivers" />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Haydovchilar (Insof ECO)</h1>

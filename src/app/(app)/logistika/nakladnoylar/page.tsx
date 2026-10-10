@@ -6,6 +6,7 @@ import { tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { PeriodTabs, PhaseBadge, RangeForm, periodRange, unitShort } from "../ui";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
   });
   return (
     <div>
+      <SectionTabs section="reyslar" current="/logistika/nakladnoylar" />
       <PageHeader title="Nakladnoylar" subtitle={`${r.label}: ${trips.length} ta · har biri QR bilan tekshiriladi (mijoz telefonidan ham)`} />
       <PeriodTabs base="/logistika/nakladnoylar" current={r.period} />
       <RangeForm base="/logistika/nakladnoylar" from={r.from} to={r.to} />

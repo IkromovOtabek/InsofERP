@@ -160,7 +160,7 @@ const LOGISTICS_STEPS: TourStep[] = [
   openGroup("Logistika"),
   openPage("/trips", "Reyslar / nakladnoy", "Mikserlarga reys ochish, haydovchi biriktirish va nakladnoy chiqarish shu yerda."),
   onPage("trips-live", "/trips", "Jonli xarita", "Yo'ldagi mikserlar xaritada real vaqtda ko'rinadi — haydovchining ilovasi joylashuvni o'zi yuboradi.", '[data-tour="page-title"]'),
-  openPage("/drivers", "Haydovchilar (ECO)", "Haydovchilar ro'yxati va ularning holati. Haydovchi mobil ilovaga telefon raqami bilan kiradi."),
+  openPage("/logistika/haydovchilar", "Haydovchilar", "Haydovchilar, guvohnoma va grafik. «Haydovchi ilovasi (ECO)» tabida — mobil ilova hisoblari; haydovchi ilovaga telefon raqami bilan kiradi."),
   openGroup("Sotuv"),
   openPage("/orders", "Zayavkalar", "Qaysi zayavkaga qancha hajm, qaysi manzilga va qachon kerakligini shu yerdan ko'rasiz."),
 ];

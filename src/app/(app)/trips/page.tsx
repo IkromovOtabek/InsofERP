@@ -16,6 +16,7 @@ import { LiveDrivers } from "./live-drivers";
 import { DriverList, DriverTrips } from "./driver-history";
 import type { TripStatus } from "@/generated/prisma";
 import { requirePage } from "@/lib/page-guard";
+import { SectionTabs } from "@/components/section-tabs";
 
 export default async function TripsPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; driver?: string }> }) {
   const s = await requirePage("/trips");
@@ -63,6 +64,7 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
   const marks = await customerMarks(trips.map((t) => t.order.customerId));
   return (
     <div>
+      <SectionTabs section="reyslar" current="/trips" />
       <PageHeader title="Reyslar" action={newBtn} />
       {eco && <LiveDrivers />}
       <Tabs current={status ?? ""} items={tabItems} />

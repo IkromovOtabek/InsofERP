@@ -6,6 +6,7 @@ import { ISSUE_KIND, tripPhase } from "@/lib/logistics";
 import { dateTime, qty } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { PeriodTabs, PhaseBadge, periodRange, RangeForm } from "../ui";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
 
   return (
     <div>
+      <SectionTabs section="reyslar" current="/logistika/yetkazish" />
       <PageHeader title="Yetkazib berish" subtitle={`${r.label}: yuklangan va qabul qilingan miqdor, qaytgan beton, muammolar`} />
       <PeriodTabs base="/logistika/yetkazish" current={r.period} />
       <RangeForm base="/logistika/yetkazish" from={r.from} to={r.to} />

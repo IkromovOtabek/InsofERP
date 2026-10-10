@@ -2,8 +2,12 @@ import type { Role } from "@/generated/prisma";
 import type { Perms, Session } from "./auth";
 
 export type NavChild = { href: string; label: string };
-/** `hidden` — menyuda ko'rinmaydi, lekin middleware ruxsatni shu yerdan tekshiradi (havola bo'yicha ochiladi). */
-export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean };
+/**
+ * `hidden` — menyuda ko'rinmaydi, lekin middleware ruxsatni shu yerdan tekshiradi (havola bo'yicha ochiladi).
+ * `menuFor` — menyuda faqat shu rollarga ko'rinadi (direktor ham kirmaydi); boshqalar sahifani bo'lim tablari orqali
+ * ochadi (`components/section-tabs.tsx`). Ruxsat (`roles`) o'zgarmaydi.
+ */
+export type NavItem = { href: string; label: string; roles: Role[] | "all"; group: string; children?: NavChild[]; hidden?: boolean; menuFor?: Role[] };
 
 const BI_ROLES: Role[] = ["DIRECTOR", "FINANCE", "ACCOUNTING"];
 /** Logistika rahbari va dispetcher — bizda bitta LOGISTICS roli (TZ 15: Logistics Director + Dispatcher). */
@@ -33,13 +37,16 @@ export const NAV: NavItem[] = [
   { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: LOGI, group: "Logistika" },
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika" },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika" },
-  { href: "/logistika/nakladnoylar", label: "Nakladnoylar",      roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
-  { href: "/logistika/yetkazish",   label: "Yetkazib berish",    roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  // Bir vazifadagi sahifalar menyuda bitta band, qolganlari shu bandning tablarida (SECTION_TABS):
+  // Reyslar ⇢ Nakladnoylar, Yetkazib berish; Transport ⇢ Yoqilg'i, Xarajatlar; Hisobotlar ⇢ Analitika; Haydovchilar ⇢ ECO ilovasi.
+  // Buxgalteriya Reyslar/Transport'ga kirmaydi — unga o'z bandlari menyuda qoladi.
+  { href: "/logistika/nakladnoylar", label: "Nakladnoylar",      roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
+  { href: "/logistika/yetkazish",   label: "Yetkazib berish",    roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
   // Logistika buxgalteri (TZ 15) — bizda Buxgalteriya roli: yoqilg'i, xarajat, hisobot
-  { href: "/logistika/yoqilgi",     label: "Yoqilg'i",           roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
-  { href: "/logistika/xarajatlar",  label: "Transport xarajatlari", roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/yoqilgi",     label: "Yoqilg'i",           roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
+  { href: "/logistika/xarajatlar",  label: "Transport xarajatlari", roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
   { href: "/logistika/hisobotlar",  label: "Hisobotlar",         roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
-  { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"], group: "Sklad" },
@@ -70,10 +77,11 @@ export const NAV: NavItem[] = [
   { href: "/otdel-kadr?tab=taqvim",     label: "Kadr taqvimi",      roles: ["HR"], group: "Otdel kadr" },
   { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
-  { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika" },
+  { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika", menuFor: ["DRIVER"] },
   // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar
-  { href: "/mening-topshiriqlarim", label: "Mening topshiriqlarim", roles: ["BRIGADIER"], group: "Ishlab chiqarish" },
-  { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika" },
+  { href: "/mening-topshiriqlarim", label: "Mening topshiriqlarim", roles: ["BRIGADIER"], group: "Ishlab chiqarish", menuFor: ["BRIGADIER"] },
+  // Logistika uchun — Haydovchilar tabida; otdel kadrga menyuda qoladi (logistika haydovchilari sahifasi unga yopiq)
+  { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika", menuFor: ["HR"] },
   // ── Tahlil (Team24 BI tuzilmasi) ──
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
@@ -153,6 +161,7 @@ export function pathAllowed(pathname: string, role: Role, perms?: Perms) {
 export function navFor(role: Role, perms?: Perms) {
   const items = NAV.filter((i) => {
     if (i.hidden) return false;
+    if (i.menuFor && !i.menuFor.includes(role)) return false;
     if (i.roles === "all") return true;
     // Modul ruxsati rol o'rniga: granted modul rol ko'rmasa ham menyuda chiqadi, "none" esa yashiriladi
     const mod = moduleForPath(i.href);

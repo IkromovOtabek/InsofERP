@@ -11,6 +11,7 @@ import { FuelForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
 import { deleteFuel } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
+import { SectionTabs } from "@/components/section-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
   }
   return (
     <div>
+      <SectionTabs section="transport" current="/logistika/yoqilgi" />
       <PageHeader title="Yoqilg'i" subtitle={`${r.label} · haydovchi ilovadan ham kiritadi (reys kartasi → "Yoqilg'i")`} />
       <PeriodTabs base="/logistika/yoqilgi" current={r.period} />
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />

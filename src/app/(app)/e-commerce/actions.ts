@@ -4,7 +4,9 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
-import { parseForm, zOpt, type ActionState } from "@/lib/action";
+import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
+import { canEditProducts } from "@/lib/catalog";
+import { PRODUCT_UNITS } from "@/lib/unit";
 import { removeShopPhoto, saveShopPhoto, saveShopTemplatePhoto } from "@/lib/uploads";
 import { audit } from "@/lib/audit";
 import { shopDiff, shopItemSnapshot } from "@/lib/shop-history";
@@ -136,4 +138,72 @@ export async function deleteBanner(id: string): Promise<ActionState> {
   await audit(db, s.userId, "DELETE", "ShopBanner", id, b, undefined);
   revalidatePath("/e-commerce");
   return { ok: true };
+}
+
+/* ───────── Yangi mahsulot — to'g'ridan-to'g'ri vitrinadan ───────── */
+
+const newProductSchema = z.object({
+  name: zStr("Mahsulot nomi kerak"),
+  code: zOpt,
+  unit: z.string().refine((u) => PRODUCT_UNITS.some(([v]) => v === u), "O'lchov birligini tanlang"),
+  price: z.string().trim().transform((v, ctx) => {
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
+    if (!v || !Number.isFinite(n) || n < 0) { ctx.addIssue({ code: "custom", message: "narx raqam bo'lishi kerak" }); return z.NEVER; }
+    return n;
+  }),
+  groupId: zOpt,
+  description: zOpt,
+  badge: zOpt,
+  isPublished: z.string().optional().transform((v) => v === "on"),
+});
+
+/**
+ * Vitrinadan yangi mahsulot: spravochnikka (Product) yoziladi va darhol do'kon qatori (ShopItem) ochiladi — surat
+ * (yuklangan yoki tayyor shablon), tavsif, yorliq bilan. Kod berilmasa spravochnikdagi eng katta raqamdan davom etadi.
+ * Spravochnik yozuvi — sotuv bo'limi ham to'ldira oladi (PRODUCT_CATALOG_ROLES).
+ */
+export async function createShopProduct(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("sales", "ecommerce");
+  if (!canEditProducts(s.role)) return { error: "Mahsulot spravochnigini to'ldirish sizning lavozimingizga berilmagan" };
+  const parsed = parseForm(newProductSchema, fd);
+  if ("error" in parsed) return { error: parsed.error };
+  const d = parsed.data;
+  const code = d.code?.toUpperCase().replace(/\s+/g, "") || null;
+
+  const dup = await db.product.findFirst({
+    where: { OR: [{ name: { equals: d.name, mode: "insensitive" } }, ...(code ? [{ code: { equals: code, mode: "insensitive" as const } }] : [])] },
+    select: { name: true, code: true },
+  });
+  if (dup) return { error: `«${dup.name}» (${dup.code}) spravochnikda bor — ro'yxatdan «Tahrirlash» orqali do'konga chiqaring` };
+  if (d.groupId && !(await db.productGroup.findUnique({ where: { id: d.groupId }, select: { id: true } }))) return { error: "Papka topilmadi — sahifani yangilang" };
+
+  let product: { id: string; name: string };
+  try {
+    product = await db.$transaction(async (tx) => {
+      let c = code;
+      if (!c) {
+        // Kod mahsulot va papka bo'ylab yagona; 1C dagidek eng katta raqamdan davom etadi (catalog-actions bilan bir xil qoida)
+        const all = [...await tx.product.findMany({ select: { code: true } }), ...await tx.productGroup.findMany({ select: { code: true } })];
+        const max = all.map((x) => Number(x.code)).filter((n) => Number.isFinite(n)).reduce((a, b) => Math.max(a, b), 0);
+        c = String(max + 1);
+      }
+      const p = await tx.product.create({ data: { code: c, name: d.name, unit: d.unit, price: d.price, groupId: d.groupId, kind: "Tayyor Mahsulot" } });
+      await audit(tx, s.userId, "CREATE", "Product", p.id, undefined, p);
+      return p;
+    });
+  } catch (e) {
+    if (String(e).includes("Unique constraint")) return { error: "Bu kod bilan mahsulot bor — boshqa kod yozing yoki bo'sh qoldiring" };
+    throw e;
+  }
+
+  // Surat mahsulot yaratilgach (fayl nomi mahsulot id'si bilan); xato bo'lsa mahsulot qoladi, surat keyin qo'yiladi
+  const saved = (await saveShopPhoto(product.id, fd.get("photo"))) ?? (await saveShopTemplatePhoto(product.id, fd.get("template")));
+  const photo = saved && !("error" in saved) ? saved.stored : null;
+  const data = { productId: product.id, isPublished: d.isPublished, description: d.description, badge: d.badge, photo };
+  const item = await db.shopItem.create({ data });
+  await audit(db, s.userId, "CREATE", "ShopItem", item.id, undefined, { product: product.name, isPublished: d.isPublished, description: d.description, badge: d.badge, photo });
+  revalidatePath("/e-commerce");
+  revalidatePath("/settings");
+  if (saved && "error" in saved) return { ok: true, note: `«${product.name}» qo'shildi, lekin surat saqlanmadi: ${saved.error}` };
+  return { ok: true, note: `«${product.name}» qo'shildi${d.isPublished ? " va do'konga chiqarildi" : ""}` };
 }

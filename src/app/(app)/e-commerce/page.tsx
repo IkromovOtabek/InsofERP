@@ -12,6 +12,8 @@ import { BannerForm } from "./banner-form";
 import { ShopHistoryList } from "./history";
 import { shopHistory } from "@/lib/shop-history";
 import { isoDate } from "@/lib/format";
+import { canEditProducts } from "@/lib/catalog";
+import { NewProductForm } from "./new-product-form";
 
 const LEAD_STATUS = {
   NEW: { label: "Yangi", color: "amber" },
@@ -29,7 +31,8 @@ const LEAD_STATUS = {
  * "Sayt arizalari" sahifasidagi bilan bir xil (bog'lanish, mijozga aylantirish).
  */
 export default async function EcommercePage({ searchParams }: { searchParams: Promise<{ tab?: string; p?: string }> }) {
-  await requireRoles(["SALES", "DIRECTOR"], { module: "sales", actions: ["ecommerce"] });
+  const s = await requireRoles(["SALES", "DIRECTOR"], { module: "sales", actions: ["ecommerce"] });
+  const canAdd = canEditProducts(s.role);
   const { tab = "vitrina", p: historyFor } = await searchParams;
 
   const [products, leads, banners] = await Promise.all([
@@ -46,6 +49,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
     }),
     db.shopBanner.findMany({ orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { createdAt: "desc" }] }),
   ]);
+  const groups = canAdd ? await db.productGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [];
 
   // Tarix uchun nomlar: ShopItem id va Product id → mahsulot nomi (reklama mahsuloti ham shu yerdan)
   const names = new Map<string, string>();
@@ -126,6 +130,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
         </Card>
       ) : (
         <div className="space-y-4">
+          {canAdd && <NewProductForm groups={groups} />}
           {published.length === 0 && (
             <Callout tone="warning" title="Do'kon bo'sh">
               Hali birorta mahsulot chiqarilmagan — ilovada "Mahsulot yo'q" ko'rinadi. Quyidagi ro'yxatdan "Chiqarish" tugmasini bosing,
@@ -142,7 +147,7 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
           </Card>
           <Card>
             <h2 className="mb-1 font-semibold">Yashirin mahsulotlar</h2>
-            <p className="mb-2 text-xs text-slate-500">Faol mahsulotlar, lekin do'konda ko'rinmaydi. Yangi mahsulot Sozlamalar → Beton markalarida ochiladi.</p>
+            <p className="mb-2 text-xs text-slate-500">Faol mahsulotlar, lekin do'konda ko'rinmaydi. Yangi mahsulot — yuqoridagi «Mahsulot qo'shish» tugmasi.</p>
             <div className="divide-y divide-slate-100">
               {hidden.length === 0 && <EmptyNote text="Hamma mahsulot do'konda" icon={ShoppingBag} />}
               {hidden.map((p) => <ShopItemForm key={p.id} p={p} />)}
