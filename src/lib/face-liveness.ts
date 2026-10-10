@@ -81,6 +81,14 @@ export const STATIC_MAX_DESCRIPTOR = 0.02;
 export const SEQ_MAX_DISTANCE = 0.55;
 /** Topshiriq kadrining Face ID namunasidan masofasi: `MATCH_MAX_DISTANCE` + shu (bosh burilganda vektor uzoqlashadi). */
 export const POSE_SLACK = 0.12;
+/**
+ * Tanish namunasi (probe) va ro'yxatga olish namunasi faqat TO'G'RI qaragan kadrdan olinadi: [0] — har doim (topshiriqdan
+ * oldin), [2] ("kameraga qarang" dan keyin) — burun o'rni ([0] ga nisbatan, `noseOffset`) shundan kam siljigan bo'lsa.
+ * 0,08: bir suratning o'zgartirilgan nusxalarida (statik shovqin) siljish ≤ 0,044 (to'g'ri), ≤ 0,075 (qiyshiq yuz) —
+ * undan biroz yuqori; burilish deb hisoblanadigan `TURN_MIN_SHIFT` (0,12) dan esa aniq past — jonlilikda "burilgan"
+ * hisoblangan kadr hech qachon namuna bo'lmaydi. [1] (topshiriq: bosh burilgan / ko'z yumuq) — hech qachon.
+ */
+export const FRONTAL_MAX_SHIFT = 0.08;
 
 const flag = (k: string) => (process.env[k] ?? "false").trim().toLowerCase() === "true";
 export const livenessRequired = () => flag("MOBILE_FACE_LIVENESS_REQUIRED");
@@ -120,6 +128,19 @@ export function landmarkMotion(a: P[], b: P[]): number {
   };
   const x = norm(a), y = norm(b);
   return x.reduce((s, p, i) => s + dist2(p, y[i]!), 0) / x.length;
+}
+
+/**
+ * To'g'ri qaragan kadrlar indekslari (tanish va ro'yxatga olish namunalari uchun, `FRONTAL_MAX_SHIFT`):
+ * bitta kadr — [0]; ketma-ketlik — [0] va (to'g'ri bo'lsa) [2]. Yuz topilmagan kadr kirmaydi.
+ */
+export function frontalFrames(f: readonly ({ landmarks: P[] } | null)[]): number[] {
+  const first = f[0];
+  if (!first) return [];
+  const out = [0];
+  const last = f.length >= LIVENESS_FRAMES ? f[LIVENESS_FRAMES - 1] : null;
+  if (last && Math.abs(noseOffset(last.landmarks) - noseOffset(first.landmarks)) <= FRONTAL_MAX_SHIFT) out.push(LIVENESS_FRAMES - 1);
+  return out;
 }
 
 export type LivenessCheck = { ok: true; detail: string } | { ok: false; reason: string; detail: string };

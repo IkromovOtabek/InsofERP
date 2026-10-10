@@ -1,11 +1,11 @@
 import { readFile } from "fs/promises";
 import { db } from "@/lib/db";
-import { FaceImageError, compareFaces, faceCheckEnabled, faceImage } from "@/lib/ai/face";
-import { FaceBusyError, faceAnalyses, faceDescriptor } from "@/lib/face-descriptor";
-import { MATCH_MAX_DISTANCE, MATCH_MIN_MARGIN, distance, faceTemplates, similarity } from "@/lib/face-id";
+import { FaceImageError, compareFaces, faceAiFallbackEnabled, faceImage } from "@/lib/ai/face";
+import { FaceBusyError, faceAnalyses, faceDescriptor, faceVariants } from "@/lib/face-descriptor";
+import { MATCH_MAX_DISTANCE, MATCH_MIN_MARGIN, type Probe, distance, faceTemplates, rank, similarity } from "@/lib/face-id";
 import { MAX_FACE_PHOTO_CHARS } from "@/lib/face-id-const";
 import { claimPhotoHash, consumeFaceNonce, photoHash } from "@/lib/face-replay";
-import { LIVENESS_FRAMES, type LivenessTask, MAX_FACE_FRAMES_TOTAL_CHARS, POSE_SLACK, SEQ_MAX_DISTANCE, checkLiveness, livenessRequired } from "@/lib/face-liveness";
+import { LIVENESS_FRAMES, type LivenessTask, MAX_FACE_FRAMES_TOTAL_CHARS, POSE_SLACK, SEQ_MAX_DISTANCE, checkLiveness, frontalFrames, livenessRequired } from "@/lib/face-liveness";
 import { dataUrlFile } from "@/lib/procurement";
 import { employeeFilePath, saveEmployeeFile, sniffFileKind } from "@/lib/uploads";
 
@@ -15,11 +15,14 @@ import { employeeFilePath, saveEmployeeFile, sniffFileKind } from "@/lib/uploads
  *   · xodim o'zi "Keldim / Ketdim" (`lib/self-attendance.ts`).
  *
  * Etalon:
- *   1. ERP'da Face ID ro'yxatga olingan bo'lsa (Davomat → yuzni ro'yxatga olish, `FaceTemplate`) — FAQAT shu namunalar:
- *      server kadrdan ERP skaneri bilan bir xil model orqali vektor hisoblaydi (`lib/face-descriptor.ts`) va eng yaqin
- *      namunagacha masofani oladi. Chegara ERP skaneri bilan bir xil (`MATCH_MAX_DISTANCE`); kadr boshqa xodimning
+ *   1. ERP'da Face ID ro'yxatga olingan bo'lsa (ERP → Davomat yoki ECO → Davomat → Yuzlar, `FaceTemplate`) — FAQAT shu
+ *      namunalar: server kadrdan ERP skaneri bilan bir xil model orqali vektor hisoblaydi (`lib/face-descriptor.ts`) va
+ *      eng yaqin namunagacha masofani oladi. Probe'lar — faqat to'g'ri qaragan kadrlar (`frontalFrames`) va ularning
+ *      ko'zgu-aksi (namuna boshqa kameradan olingan bo'lishi mumkin), yig'ish "min" — kiosk bilan bir xil
+ *      (`lib/face-id.ts` → `rank`). Chegara ERP skaneri bilan bir xil (`MATCH_MAX_DISTANCE`); kadr boshqa xodimning
  *      namunasiga ancha yaqin bo'lsa — rad etiladi (begona odam). Profil surati ham, AI kaliti ham kerak emas.
- *   2. Ro'yxatga olinmagan bo'lsa — eskicha: profil surati bilan AI solishtiruvi (`compareFaces`, AI kaliti kerak).
+ *   2. Ro'yxatga olinmagan bo'lsa — rad («yuzni ro'yxatga oling»). Profil surati bilan AI solishtiruvi (`compareFaces`)
+ *      faqat `FACE_AI_FALLBACK=true` va AI kaliti bo'lganda (`faceAiFallbackEnabled`).
  *
  * Qayta yuborish: tekshiruvga yetib kelgan har kadrning sha256 xeshi saqlanadi — aynan o'sha kadr ikkinchi marta
  * kelsa rad (`lib/face-replay.ts`). Namunalar qisqa muddatli keshdan (`faceTemplates`).
@@ -40,11 +43,19 @@ export async function hasFaceTemplate(employeeId: string): Promise<boolean> {
   return (await faceTemplates()).some((t) => t.employeeId === employeeId);
 }
 
-/** Shu xodim uchun yuz tekshiruvi ishlaydimi (Face ID namunasi bor yoki AI kaliti sozlangan). */
+/**
+ * Shu xodim uchun yuz tekshiruvi ishlaydimi: Face ID namunasi bor yoki AI zaxirasi yoqilgan (`FACE_AI_FALLBACK=true` +
+ * AI kaliti). Brigadir qoidalari ham shunga tayanadi: tekshiruv mumkin bo'lsa "Keldi" faqat yuz bilan.
+ */
 export async function faceVerifyAvailable(employeeId: string): Promise<boolean> {
-  if (faceCheckEnabled()) return true;
+  if (faceAiFallbackEnabled()) return true;
   return hasFaceTemplate(employeeId);
 }
+
+/** Yuzni qayerda ro'yxatga olish mumkin — barcha "ro'yxatga olinmagan" xabarlarida bir xil. */
+export const FACE_ENROLL_WHERE = "ECO → Davomat → Yuzlar (yoki ERP → Davomat)";
+/** `who` — "Karimov Aziz ning" / "Sizning". */
+export const notEnrolledMsg = (who: string) => `${who} yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ${FACE_ENROLL_WHERE} bo'limida yuzni ro'yxatga olsin`;
 
 /**
  * Mobil yuz skaneri kadri (data-URL) → `File`. Chegaradan (`MAX_FACE_PHOTO_CHARS`) katta yoki data-URL emas — null
@@ -145,10 +156,14 @@ export async function verifyFaceRequest(employeeId: string, who: string, input: 
 /**
  * Jonlilik ketma-ketligi (`lib/face-liveness.ts`): [0] — topshiriqdan oldingi kadr (asosiy, dalil), [1], [2] — topshiriq.
  *   · format, xeshlar har xil (bir kadr nusxasi — rad), har xesh "band" qilinadi (qayta yuborish — FACE_REPLAY);
- *   · uchala kadr bitta navbat o'rnida tahlil qilinadi (`faceAnalyses`);
- *   · asosiy kadr — bitta kadrli oqimdagi AYNAN o'sha qoida (Face ID namunasi yoki AI bilan profil surati);
- *   · topshiriq kadrlari ham shu odam: namunaga `MATCH_MAX_DISTANCE + POSE_SLACK` (bosh burilganda vektor
- *     uzoqlashadi) va asosiy kadrga `SEQ_MAX_DISTANCE` ichida;
+ *   · uchala kadr va to'g'ri qaragan kadrlarning ko'zgu-aksi bitta navbat o'rnida tahlil qilinadi (`faceAnalyses`);
+ *   · tanish — to'g'ri qaragan kadrlar ([0], to'g'ri bo'lsa [2]) va ularning aksi bo'yicha (`matchTemplates`, "min");
+ *     topshiriq kadri [1] tanish namunasi emas (bosh burilgan / ko'z yumuq — vektor uzoqlashadi);
+ *   · topshiriq kadrlari ham shu odam: asosiy kadrga `SEQ_MAX_DISTANCE` ichida va namunaga `MATCH_MAX_DISTANCE +
+ *     POSE_SLACK` (bosh burilganda vektor uzoqlashadi). Namunaga masofa faqat tanish ko'zgu-aksda chiqMAGANDA
+ *     tekshiriladi: aks holda kamera namunaga nisbatan ko'zgu-aks, topshiriq kadrining aksi esa hisoblanmagan
+ *     (navbat vaqti tejaladi) — ~0,26 lik aks farqi qo'shilib o'sha odam rad bo'lardi; u holda kadrning shu odamniki
+ *     ekani `SEQ_MAX_DISTANCE` bilan (kiosk bilan bir xil) tekshiriladi;
  *   · topshiriq bajarilgan va kadrlar qotgan emas (`checkLiveness`).
  */
 export async function verifyEmployeeFaceFrames(employeeId: string, who: string, files: File[], task: LivenessTask, ctx: { userId: string }): Promise<FaceVerify> {
@@ -160,8 +175,11 @@ export async function verifyEmployeeFaceFrames(employeeId: string, who: string, 
     if (!(await claimPhotoHash(b, employeeId, ctx.userId))) return { ok: false, mismatch: false, replay: true, error: "Bu kadr avval yuborilgan — yuzni qayta skaner qiling" };
   }
 
+  const own = (await faceTemplates()).filter((t) => t.employeeId === employeeId).map((t) => t.descriptor);
+  if (!own.length && !faceAiFallbackEnabled()) return { ok: false, mismatch: false, disabled: true, error: notEnrolledMsg(who) };
+
   let an: Awaited<ReturnType<typeof faceAnalyses>>;
-  try { an = await faceAnalyses(bufs); } catch (err) {
+  try { an = await faceAnalyses(bufs, { mirror: own.length ? frontalFrames : undefined }); } catch (err) {
     if (err instanceof FaceImageError || err instanceof FaceBusyError) return { ok: false, mismatch: false, error: err.message };
     console.error("[face] vektor hisoblanmadi:", (err as Error).message);
     return { ok: false, mismatch: false, error: TEMP_FAIL };
@@ -171,20 +189,24 @@ export async function verifyEmployeeFaceFrames(employeeId: string, who: string, 
   if (an.some((a) => !a)) return live("topshiriq kadrida yuz topilmadi");
   const all = an as NonNullable<(typeof an)[number]>[];
 
-  // Asosiy kadr — bitta kadrli oqim qoidasi
-  const own = (await faceTemplates()).filter((t) => t.employeeId === employeeId).map((t) => t.descriptor);
+  // Tanish — to'g'ri qaragan kadrlar (va aksi) bo'yicha; namuna yo'q bo'lsa (AI zaxirasi yoqiq) — asosiy kadr profil surati bilan
+  const frontal = frontalFrames(all);
   let primary: FaceVerify;
-  if (own.length) primary = await matchTemplates(employeeId, who, own, main.descriptor);
-  else if (faceCheckEnabled()) primary = await verifyByProfilePhoto(employeeId, who, bufs[0]!);
-  else return { ok: false, mismatch: false, disabled: true, error: `${who} yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ERP → Davomat bo'limida yuzni ro'yxatga olsin` };
+  let mirrored = false;
+  if (own.length) {
+    const m = await matchTemplates(employeeId, who, own, frontal.map((i) => faceVariants(all[i]!)));
+    primary = m.v;
+    mirrored = m.mirror;
+  } else primary = await verifyByProfilePhoto(employeeId, who, bufs[0]!);
   if (!primary.ok) return primary;
 
   // Topshiriq kadrlari — o'sha odam (boshqa odamning kadri aralashtirilmagan)
   for (let i = 1; i < all.length; i++) {
     const dSeq = distance(all[i]!.descriptor, main.descriptor);
-    const dOwn = own.length ? Math.min(...own.map((t) => distance(all[i]!.descriptor, t))) : 0;
+    const checkOwn = own.length > 0 && !mirrored;
+    const dOwn = checkOwn ? Math.min(...own.map((t) => distance(all[i]!.descriptor, t))) : 0;
     if (dSeq > SEQ_MAX_DISTANCE || dOwn > MATCH_MAX_DISTANCE + POSE_SLACK) {
-      const reason = `${i + 1}-kadr boshqa odamga o'xshaydi (asosiy kadrdan ${dSeq.toFixed(2)}${own.length ? `, namunadan ${dOwn.toFixed(2)}` : ""})`;
+      const reason = `${i + 1}-kadr boshqa odamga o'xshaydi (asosiy kadrdan ${dSeq.toFixed(2)}${checkOwn ? `, namunadan ${dOwn.toFixed(2)}` : ""})`;
       return { ok: false, mismatch: true, error: "Yuz tasdiqlanmadi: kadrlarda boshqa odamning yuzi bor — qayta skaner qiling", confidence: primary.confidence, reason };
     }
   }
@@ -205,9 +227,7 @@ export async function verifyEmployeeFace(employeeId: string, who: string, photo:
 
   const own = (await faceTemplates()).filter((t) => t.employeeId === employeeId).map((t) => t.descriptor);
   if (own.length) return verifyByTemplates(employeeId, who, own, probe);
-  if (!faceCheckEnabled()) {
-    return { ok: false, mismatch: false, disabled: true, error: `${who} yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ERP → Davomat bo'limida yuzni ro'yxatga olsin` };
-  }
+  if (!faceAiFallbackEnabled()) return { ok: false, mismatch: false, disabled: true, error: notEnrolledMsg(who) };
   return verifyByProfilePhoto(employeeId, who, probe);
 }
 
@@ -233,30 +253,38 @@ const TEMP_FAIL = "Yuz tekshiruvi vaqtincha ishlamadi — qayta urining";
 
 async function verifyByTemplates(employeeId: string, who: string, own: number[][], probe: Buffer): Promise<FaceVerify> {
   let face: Awaited<ReturnType<typeof faceDescriptor>>;
-  try { face = await faceDescriptor(probe); } catch (err) {
+  try { face = await faceDescriptor(probe, { mirror: true }); } catch (err) {
     if (err instanceof FaceImageError || err instanceof FaceBusyError) return { ok: false, mismatch: false, error: err.message };
     console.error("[face] vektor hisoblanmadi:", (err as Error).message);
     return { ok: false, mismatch: false, error: TEMP_FAIL };
   }
   if (!face) return { ok: false, mismatch: false, error: NO_FACE };
-  return matchTemplates(employeeId, who, own, face.descriptor);
+  return (await matchTemplates(employeeId, who, own, [faceVariants(face)])).v;
 }
 
-/** Vektor ↔ xodimning Face ID namunalari: chegara va "begona odam" (boshqa xodimga ancha yaqin) qoidasi. */
-async function matchTemplates(employeeId: string, who: string, own: number[][], descriptor: number[]): Promise<FaceVerify> {
-  const d = Math.min(...own.map((t) => distance(descriptor, t)));
+/**
+ * Probe'lar (to'g'ri qaragan kadrlar, har biri [asl, ko'zgu-aksi?]) ↔ xodimning Face ID namunalari: chegara va "begona
+ * odam" (boshqa xodimga ancha yaqin) qoidasi. Masofa ham, boshqa xodimgacha masofa ham — bir xil "min" yig'ish
+ * (kiosk 1:N bilan bir xil, `lib/face-id.ts` → `rank`). `mirror` — eng yaqin masofa ko'zgu-aks variantida chiqdi.
+ */
+async function matchTemplates(employeeId: string, who: string, own: number[][], probes: Probe[]): Promise<{ v: FaceVerify; mirror: boolean }> {
+  const [self] = rank(probes, [{ employeeId, descriptors: own }], "min");
+  const d = self?.d ?? Infinity;
+  const mirror = self?.mirror ?? false;
   const confidence = similarity(d);
-  if (d > MATCH_MAX_DISTANCE) {
-    const reason = `Face ID namunasiga mos emas (masofa ${d.toFixed(2)})`;
-    return { ok: false, mismatch: true, error: `Yuz tasdiqlanmadi (${confidence}%): ${who} Face ID namunasiga mos kelmadi`, confidence, reason };
+  const how = `masofa ${d.toFixed(2)}${mirror ? ", ko'zgu-aks" : ""}, ${probes.length} kadr`;
+  if (!(d <= MATCH_MAX_DISTANCE)) {
+    const reason = `Face ID namunasiga mos emas (${how})`;
+    return { v: { ok: false, mismatch: true, error: `Yuz tasdiqlanmadi (${confidence}%): ${who} Face ID namunasiga mos kelmadi`, confidence, reason }, mirror };
   }
   // Begona odam: kadr boshqa faol xodimning namunasiga o'zinikidan sezilarli yaqin bo'lsa — rad
-  const nearestOther = (await faceTemplates()).reduce((m, t) => (t.active && t.employeeId !== employeeId ? Math.min(m, distance(descriptor, t.descriptor)) : m), Infinity);
+  const others = (await faceTemplates()).filter((t) => t.active && t.employeeId !== employeeId).map((t) => t.descriptor);
+  const nearestOther = others.length ? rank(probes, [{ employeeId: "", descriptors: others }], "min")[0]!.d : Infinity;
   if (nearestOther < d - MATCH_MIN_MARGIN) {
     const reason = `Kadr boshqa xodimning Face ID namunasiga yaqinroq (${nearestOther.toFixed(2)} < ${d.toFixed(2)})`;
-    return { ok: false, mismatch: true, error: "Yuz tasdiqlanmadi: kadrdagi yuz boshqa xodimnikiga ko'proq o'xshaydi", confidence, reason };
+    return { v: { ok: false, mismatch: true, error: "Yuz tasdiqlanmadi: kadrdagi yuz boshqa xodimnikiga ko'proq o'xshaydi", confidence, reason }, mirror };
   }
-  return { ok: true, confidence, reason: `Face ID namunasi bilan mos (masofa ${d.toFixed(2)})`, method: "faceid" };
+  return { v: { ok: true, confidence, reason: `Face ID namunasi bilan mos (${how})`, method: "faceid" }, mirror };
 }
 
 async function verifyByProfilePhoto(employeeId: string, who: string, probe: Buffer): Promise<FaceVerify> {

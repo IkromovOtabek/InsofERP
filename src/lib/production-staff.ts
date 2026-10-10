@@ -152,15 +152,15 @@ export async function markProductionAttendance(userId: string, employeeId: strin
 
 /**
  * "Keldi" — yuz bilan (mobil `att.face`). Kamera kadri xodimning ERP'dagi Face ID namunasi bilan (yo'q bo'lsa —
- * profil surati bilan AI orqali) solishtiriladi (`lib/face-verify.ts`); mos kelsa kadr saqlanib davomat yoziladi, aks holda hech narsa yozilmaydi —
+ * faqat `FACE_AI_FALLBACK=true` da profil surati bilan AI orqali) solishtiriladi (`lib/face-verify.ts`); mos kelsa kadr saqlanib davomat yoziladi, aks holda hech narsa yozilmaydi —
  * faqat auditda urinish qoladi (kim, kimni, nima sababdan o'tmadi).
  */
 export async function markAttendanceByFace(
   userId: string, employeeId: string, input: FaceInput, iso = today(), opts: { nonce?: unknown } = {},
 ): Promise<{ error: string; code?: string; status?: number } | { ok: true; text: string; confidence: number }> {
   const { removeEmployeeFile } = await import("@/lib/uploads");
-  const { faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } = await import("@/lib/face-verify");
-  if (!(await faceVerifyAvailable(employeeId))) return { error: "Xodimning yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ERP → Davomat bo'limida ro'yxatga olsin yoki davomatni sex boshlig'i qo'lda belgilaydi" };
+  const { FACE_ENROLL_WHERE, faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } = await import("@/lib/face-verify");
+  if (!(await faceVerifyAvailable(employeeId))) return { error: `Xodimning yuzi Face ID'da ro'yxatga olinmagan — otdel kadr ${FACE_ENROLL_WHERE} bo'limida ro'yxatga olsin yoki davomatni sex boshlig'i qo'lda belgilaydi` };
   const staff = await productionStaff(iso);
   const e = staff.members.find((x) => x.id === employeeId);
   if (!e) return { error: "Xodim sex tarkibida emas — direktor avval brigadaga taqsimlashi kerak" };

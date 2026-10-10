@@ -348,14 +348,14 @@ export async function sexEmployeeDetail(user: MobileUser, employeeId: string): P
   const mk = m?.status ? markOf(m.status) : null;
   const actions: DetailAction[] = [];
   if (m && (canWork(user) || own)) {
-    // "Keldi" — yuz bilan: old kamera kadri Face ID namunasi (yo'q bo'lsa — AI kaliti bilan profil surati) bilan solishtiriladi, mos kelmasa
+    // "Keldi" — yuz bilan: old kamera kadri Face ID namunasi (yo'q bo'lsa — FACE_AI_FALLBACK=true da AI bilan profil surati) bilan solishtiriladi, mos kelmasa
     // yozilmaydi. Kalit bo'lmasa — eskicha bir tugma. Vaqtni tuzatish/boshqa belgi pastdagi formada qoladi.
     // "Keldi" — ilova ichidagi yuz skaneri: kamera xodimga qaratiladi, kadr avtomatik olinib `photo` bilan yuboriladi
     if (m.status !== "PRESENT") actions.push({ id: "att.face", label: "Keldi — yuz skaneri", tone: "success" });
     if (m.status === "PRESENT" && !m.checkOut) actions.push({ id: "att.checkout", label: "Ketdi (hozir)", tone: "brand" });
     if (m.status !== "ABSENT") actions.push({ id: "att.absent", label: "Kelmadi", tone: "danger", confirm: `${m.fullName} bugun kelmadi deb belgilansinmi?` });
     // Vaqtni faqat sex boshlig'i tuzatadi. Brigadir esa xodim uchun yuz tekshiruvi mumkin bo'lsa (Face ID namunasi
-    // bor yoki AI kaliti sozlangan) "Keldi" ni bu formadan qo'ya olmaydi (aks holda kamerasiz belgilab yuborardi) — server ham rad etadi
+    // bor yoki AI zaxirasi yoqilgan) "Keldi" ni bu formadan qo'ya olmaydi (aks holda kamerasiz belgilab yuborardi) — server ham rad etadi
     const editor = canWork(user);
     const noPresent = !editor && m.status !== "PRESENT" && (await faceVerifyAvailable(m.id));
     const opts = noPresent ? statusOptions.filter((o) => o.value !== "PRESENT") : statusOptions;

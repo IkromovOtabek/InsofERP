@@ -148,6 +148,8 @@ async function main() {
   }
   const sup = await tok("test.ishlab");
   const s1 = await sexMember("att-face", dA);
+  r = await action(sup, "att.face", m2.id, { photo: dataUrl(await face("A")) });
+  check(`att.face namunasiz a'zo → 400 «yuzni ro'yxatga oling» (${msg(r)})`, r.status === 400 && /ECO → Davomat → Yuzlar/.test(msg(r)), { s: r.status, j: r.json });
   r = await action(sup, "att.face", s1.id, { photo: dataUrl(Buffer.alloc(1_650_000, 7)) });
   check(`att.face 2,2 M belgili kadr → 400 (${msg(r)})`, r.status === 400 && /juda katta/.test(msg(r)), { s: r.status, j: r.json });
 
@@ -193,6 +195,9 @@ async function main() {
   // ───────────────────────── 5. Replay: bir xil kadr ─────────────────────────
   section("Kadr xeshi: aynan o'sha kadr qayta — rad");
   const rp = await linked("test.buh");
+  await setTemplate(rp.e.id, null);
+  r = await self(rp.token, body(dataUrl(await face("A"))));
+  check(`Face ID namunasi yo'q (AI zaxirasi o'chiq) → 409 FACE_DISABLED «yuzni ro'yxatga oling» (${msg(r)})`, r.status === 409 && r.json?.code === "FACE_DISABLED" && /ECO → Davomat → Yuzlar/.test(msg(r)), { s: r.status, j: r.json });
   await setTemplate(rp.e.id, dA);
   const gray = dataUrl(await sharp({ create: { width: 480, height: 640, channels: 3, background: { r: 128, g: 128, b: 128 } } }).jpeg().toBuffer());
   r = await self(rp.token, body(gray));

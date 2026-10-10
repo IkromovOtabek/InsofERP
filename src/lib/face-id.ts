@@ -88,7 +88,7 @@ export function distance(a: readonly number[], b: readonly number[]) {
 /** Masofa → ko'rsatish uchun o'xshashlik foizi (logistik egri: 0,3 ≈ 95%, chegara 0,48 ≈ 70%). */
 export const similarity = (d: number) => Math.round(100 / (1 + Math.exp((d - 0.55) * 12)));
 
-type Candidate = { employeeId: string; descriptors: number[][] };
+export type Candidate = { employeeId: string; descriptors: number[][] };
 
 // ───────────────────────── Namunalar keshi ─────────────────────────
 
@@ -132,29 +132,66 @@ async function candidates(excludeEmployeeId?: string): Promise<Candidate[]> {
   return [...by].map(([employeeId, descriptors]) => ({ employeeId, descriptors }));
 }
 
-/** Har xodim uchun: har kadr vektoriga eng yaqin namunasi, kadrlar bo'yicha o'rtacha. O'sish tartibida. */
-function rank(probes: number[][], list: Candidate[]) {
+/**
+ * Solishtirish namunasi (probe) — bitta kadr vektorining variantlari: veb skanerda `[asl]` (brauzer vektori), mobilda
+ * `[asl, ko'zgu-aksi]` (server kadrdan o'zi hisoblaydi, `faceVariants`). Kadrdan namunagacha masofa — variantlarning
+ * eng kichigi: namuna orqa kamerada, tanish old kamerada (ba'zi telefonlarda old kamera kadri ko'zgu-aks) bo'lsa ham
+ * o'sha odam tanilsin.
+ */
+export type Probe = number[][];
+/**
+ * Xodim bo'yicha yig'ish usuli:
+ *   · "mean" — har probe'ga eng yaqin namuna, probe'lar bo'yicha o'rtacha (veb skaner: brauzer bir urinishda bir xil
+ *     holatdagi 3 ketma-ket video kadr yuboradi — o'rtacha shovqinni kamaytiradi);
+ *   · "min" — barcha probe, variant va namunalar bo'yicha eng kichik masofa (mobil: probe'lar faqat to'g'ri qaragan
+ *     1–2 kadr va ularning ko'zgu-aksi — o'rtacha olinsa "noto'g'ri yo'nalishdagi" variant natijani buzardi; kadrlar
+ *     bir odamniki ekani va jonlilik alohida tekshirilgan, chegara va "aniq emas" qoidasi xuddi shu yig'ish bilan).
+ */
+export type Aggregate = "mean" | "min";
+export type Ranked = { employeeId: string; d: number; /** eng yaqin masofa ko'zgu-aks variantida chiqdi */ mirror: boolean };
+
+/** Bitta probe → namunalar: eng kichik masofa va u ko'zgu-aks variantidami. */
+function probeBest(probe: Probe, templates: number[][]) {
+  let d = Infinity, mirror = false;
+  probe.forEach((v, i) => {
+    for (const t of templates) { const x = distance(v, t); if (x < d) { d = x; mirror = i > 0; } }
+  });
+  return { d, mirror };
+}
+
+/** Har xodim uchun probe'lar bo'yicha masofa (`Aggregate`). O'sish tartibida. */
+export function rank(probes: Probe[], list: Candidate[], agg: Aggregate = "mean"): Ranked[] {
   return list
-    .map((c) => ({
-      employeeId: c.employeeId,
-      d: probes.reduce((sum, p) => sum + Math.min(...c.descriptors.map((t) => distance(p, t))), 0) / probes.length,
-    }))
+    .map((c) => {
+      const per = probes.map((p) => probeBest(p, c.descriptors));
+      if (agg === "min") {
+        const best = per.reduce((m, x) => (x.d < m.d ? x : m), { d: Infinity, mirror: false });
+        return { employeeId: c.employeeId, d: best.d, mirror: best.mirror };
+      }
+      return { employeeId: c.employeeId, d: per.reduce((sum, x) => sum + x.d, 0) / per.length, mirror: per.some((x) => x.mirror) };
+    })
     .sort((a, b) => a.d - b.d);
 }
 
+/** `best`/`second` — eng yaqin va ikkinchi xodimgacha masofa (diagnostika, xabardagi o'xshashlik foizi). */
 export type Match =
   | { kind: "empty" }
-  | { kind: "none"; best: number | null }
-  | { kind: "ambiguous"; ids: [string, string]; d: number }
-  | { kind: "match"; employeeId: string; d: number; second: number | null };
+  | { kind: "none"; best: number | null; second: number | null; mirror: boolean }
+  | { kind: "ambiguous"; ids: [string, string]; d: number; second: number; mirror: boolean }
+  | { kind: "match"; employeeId: string; d: number; second: number | null; mirror: boolean };
 
-export async function matchFace(probes: number[][]): Promise<Match> {
-  const list = await candidates();
-  if (!list.length) return { kind: "empty" };
-  const [a, b] = rank(probes, list);
-  if (!a || a.d > MATCH_MAX_DISTANCE) return { kind: "none", best: a?.d ?? null };
-  if (b && b.d - a.d < MATCH_MIN_MARGIN) return { kind: "ambiguous", ids: [a.employeeId, b.employeeId], d: a.d };
-  return { kind: "match", employeeId: a.employeeId, d: a.d, second: b?.d ?? null };
+/**
+ * 1:N tanish — barcha faol xodimlar namunalari orasidan. `exclude` — shu xodimning saqlangan namunalari olinmaydi,
+ * `extra` — qo'shimcha (hali saqlanmagan) nomzodlar: ro'yxatga olishni tasdiqlashda eski namunalar o'rniga yangilari.
+ */
+export async function matchFace(probes: Probe[], opts: { agg?: Aggregate; exclude?: string; extra?: Candidate[] } = {}): Promise<Match> {
+  const list = [...(await candidates(opts.exclude)), ...(opts.extra ?? [])];
+  if (!list.length || !probes.length) return { kind: "empty" };
+  const [a, b] = rank(probes, list, opts.agg);
+  const second = b?.d ?? null;
+  if (!a || a.d > MATCH_MAX_DISTANCE) return { kind: "none", best: a?.d ?? null, second, mirror: a?.mirror ?? false };
+  if (b && b.d - a.d < MATCH_MIN_MARGIN) return { kind: "ambiguous", ids: [a.employeeId, b.employeeId], d: a.d, second: b.d, mirror: a.mirror };
+  return { kind: "match", employeeId: a.employeeId, d: a.d, second, mirror: a.mirror };
 }
 
 /** data-URL → tekshirilgan, qayta kodlangan JPEG fayli (sharp: faqat JPEG/PNG/WEBP, metadata tashlanadi). */
@@ -233,7 +270,7 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
   if (!p.success) return fail("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri");
   const { probes, photo, mode } = p.data;
 
-  const m = await matchFace(probes);
+  const m = await matchFace(probes.map((p) => [p]));
   // Server tekshiruvi (kadr ↔ vektor) — faqat kimdir topilganda (bo'sh bazada/tanilmaganda hisob keraksiz)
   if (m.kind === "match" || m.kind === "ambiguous") {
     const pc = await photoMatchesProbes(photo, probes);
@@ -248,10 +285,13 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
  */
 export async function recordScan(s: FaceActor, scope: FaceScope, m: Match, mode: FaceMode, savePhoto: (employeeId: string) => Promise<string | null>): Promise<FaceScanResult> {
   if (m.kind === "empty") return fail("NO_TEMPLATES", "Hali hech kimning yuzi ro'yxatga olinmagan — otdel kadr «Yuzlarni ro'yxatga olish» bo'limida xodimlarni qo'shadi");
-  if (m.kind === "none") return fail("NO_MATCH", "Yuz tanilmadi — ro'yxatga olinmagan yoki kadr sifatsiz. Yaqinroq kelib, kameraga to'g'ri qarang");
+  if (m.kind === "none") {
+    const near = m.best != null ? ` (eng yaqin o'xshashlik ${similarity(m.best)}%)` : "";
+    return fail("NO_MATCH", `Yuz tanilmadi${near} — ro'yxatga olinmagan yoki kadr sifatsiz. Yaqinroq kelib, kameraga to'g'ri qarang`);
+  }
   if (m.kind === "ambiguous") {
     const names = await db.employee.findMany({ where: { id: { in: m.ids } }, select: { fullName: true } });
-    return fail("AMBIGUOUS", `Aniq emas (${names.map((n) => n.fullName).join(" yoki ")}) — yorug'roq joyda qayta urining`);
+    return fail("AMBIGUOUS", `Aniq emas (${names.map((n) => n.fullName).join(" yoki ")}, o'xshashlik ${similarity(m.d)}%) — yorug'roq joyda qayta urining`);
   }
 
   const e = await db.employee.findUnique({ where: { id: m.employeeId }, select: { id: true, fullName: true, position: true, workSchedule: true } });
@@ -361,24 +401,42 @@ export async function enrollFace(s: Session, raw: unknown): Promise<EnrollResult
 }
 
 /**
- * Namunalarni tekshirib saqlaydi (o'zaro mos, boshqa xodim kartasida yo'q) — veb (brauzer vektorlari, kadr bilan
- * tekshirilgan) va mobil (vektorlar serverda kadrlardan hisoblangan) uchun umumiy. Rozilik chaqiruvchida tekshiriladi.
+ * Boshqa xodim kartasida emasligini tekshirish usuli: sukut — namunalarning o'zi, "mean" (veb); mobil — ko'zgu-aks
+ * variantli probe'lar va "min" (kiosk tanishi bilan bir xil yig'ish: kiosk bu yuzni boshqa xodim deb taniy oladigan
+ * bo'lsa — ro'yxatga olinmaydi).
  */
-export async function saveEnrollment(s: FaceActor, employeeId: string, samples: { descriptor: number[]; score: number }[], savePhoto: (employeeId: string) => Promise<string | null>): Promise<EnrollResult> {
-  if (samples.length < ENROLL_MIN_SAMPLES) return { ok: false, error: `Kamida ${ENROLL_MIN_SAMPLES} ta namuna kerak` };
+export type DupCheck = { probes: Probe[]; agg: Aggregate };
+
+/**
+ * Ro'yxatga olishdan oldingi tekshiruv (namuna soni tekshirilmaydi — chaqiruvchida): xodim faol, namunalar o'zaro mos
+ * (kadrga boshqa odam kirmagan), yuz boshqa faol xodim kartasida yo'q. Mobil ikki bosqichli ro'yxatga olish
+ * (`lib/mobile/face-kiosk.ts`) birinchi bosqichda shuni chaqiradi, saqlashda — `saveEnrollment` qayta tekshiradi.
+ */
+export async function checkEnrollment(employeeId: string, vecs: number[][], dup?: DupCheck): Promise<{ ok: true; employee: { id: string; fullName: string } } | { ok: false; error: string }> {
   const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true, isActive: true, firedAt: true } });
   if (!e) return { ok: false, error: "Xodim topilmadi — sahifani yangilang" };
   if (!e.isActive || e.firedAt) return { ok: false, error: `${e.fullName} faol emas — ishdan bo'shagan xodimning yuzi olinmaydi` };
-
-  const vecs = samples.map((x) => x.descriptor);
   for (let i = 0; i < vecs.length; i++) for (let j = i + 1; j < vecs.length; j++) {
     if (distance(vecs[i]!, vecs[j]!) > ENROLL_SELF_MAX) return { ok: false, error: "Namunalar bir-biriga mos emas — kadrga boshqa odam kirib qolgan bo'lishi mumkin. Qayta urining (kadrda faqat xodimning o'zi tursin)" };
   }
-  const [dup] = rank(vecs, await candidates(e.id));
-  if (dup && dup.d < DUPLICATE_DISTANCE) {
-    const other = await db.employee.findUnique({ where: { id: dup.employeeId }, select: { fullName: true } });
+  const [near] = rank(dup?.probes ?? vecs.map((v) => [v]), await candidates(e.id), dup?.agg ?? "mean");
+  if (near && near.d < DUPLICATE_DISTANCE) {
+    const other = await db.employee.findUnique({ where: { id: near.employeeId }, select: { fullName: true } });
     return { ok: false, error: `Bu yuz «${other?.fullName ?? "boshqa xodim"}» kartasida allaqachon ro'yxatda. Bir odam ikki kartada bo'lmaydi — avval o'sha xodimning yuzini o'chiring` };
   }
+  return { ok: true, employee: { id: e.id, fullName: e.fullName } };
+}
+
+/**
+ * Namunalarni tekshirib saqlaydi (o'zaro mos, boshqa xodim kartasida yo'q) — veb (brauzer vektorlari, kadr bilan
+ * tekshirilgan) va mobil (vektorlar serverda kadrlardan hisoblangan) uchun umumiy. Rozilik chaqiruvchida tekshiriladi.
+ * Xodimning eski namunalari yangilari bilan almashtiriladi; birinchi namunaga dalil-kadr (`savePhoto`) biriktiriladi.
+ */
+export async function saveEnrollment(s: FaceActor, employeeId: string, samples: { descriptor: number[]; score: number }[], savePhoto: (employeeId: string) => Promise<string | null>, dup?: DupCheck): Promise<EnrollResult> {
+  if (samples.length < ENROLL_MIN_SAMPLES) return { ok: false, error: `Kamida ${ENROLL_MIN_SAMPLES} ta namuna kerak` };
+  const c = await checkEnrollment(employeeId, samples.map((x) => x.descriptor), dup);
+  if (!c.ok) return c;
+  const e = c.employee;
 
   const stored = await savePhoto(e.id);
   const old = await db.$transaction(async (tx) => {

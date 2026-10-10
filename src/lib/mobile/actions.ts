@@ -26,7 +26,7 @@ import { ecoEnabled } from "@/lib/eco/client";
 import type { MobileUser } from "./auth";
 import type { AttendanceStatus } from "@/generated/prisma";
 import { dayUtc, isAttendanceStatus, today } from "@/lib/davomat";
-import { faceCheckEnabled } from "@/lib/ai/face";
+import { faceAiFallbackEnabled } from "@/lib/ai/face";
 import { type FaceInput, faceInput, faceVerifyAvailable } from "@/lib/face-verify";
 import { assignEmployeeBrigade, markAllPresent, markAttendanceByFace, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
 import { submitReport } from "@/lib/production-report";
@@ -636,7 +636,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const status = action === "att.present" ? "PRESENT" : action === "att.absent" ? "ABSENT" : textOf(payload, "status");
       if (!employeeId) fail("Xodim tanlanmagan");
       if (!isAttendanceStatus(status)) fail("Holatni tanlang");
-      // Brigadir: xodim uchun yuz tekshiruvi mumkin bo'lsa (ERP Face ID namunasi bor yoki AI kaliti sozlangan)
+      // Brigadir: xodim uchun yuz tekshiruvi mumkin bo'lsa (ERP Face ID namunasi bor yoki AI zaxirasi yoqilgan)
       // "Keldi" faqat `att.face` orqali (kamerasiz belgilab yuborilmasin);
       // kelgan/ketgan vaqtni esa faqat sex boshlig'i (PRODUCTION/SUPERVISOR) tuzatadi
       const brig = user.role === "BRIGADIER";
@@ -679,10 +679,10 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     }
     case "att.all": {
       // Brigadir — faqat o'z brigadasi (smena kartasidan, id `b~<brigadeId>`)
-      // AI yuz tekshiruvi yoqiq bo'lsa brigadir hammani birdan "Keldi" qila olmaydi — har biri yuz bilan.
+      // AI yuz tekshiruvi zaxirasi (FACE_AI_FALLBACK + AI kaliti) yoqiq bo'lsa brigadir hammani birdan "Keldi" qila olmaydi — har biri yuz bilan.
       // Aks holda Face ID namunasi bor a'zolar o'tkazib yuboriladi (ular faqat yuz skaneri bilan), qolganlari belgilanadi
       const brig = user.role === "BRIGADIER";
-      if (brig && faceCheckEnabled()) fail("Yuz tekshiruvi yoqilgan — har bir a'zoni yuz bilan \"Keldi\" qiling", 403);
+      if (brig && faceAiFallbackEnabled()) fail("Yuz tekshiruvi yoqilgan — har bir a'zoni yuz bilan \"Keldi\" qiling", 403);
       const only = brig ? [(await brigadeOf(user, id)).brigadeId] : undefined;
       const r = await markAllPresent(user.id, today(), only, { skipFaceId: brig });
       if (!r.count && r.skipped) fail(`Belgilanmagan a'zolarning hammasi (${r.skipped}) Face ID'da ro'yxatga olingan — har birini yuz skaneri bilan "Keldi" qiling`, 403);

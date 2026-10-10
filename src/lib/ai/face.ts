@@ -86,6 +86,13 @@ export async function faceImage(input: Buffer, side = SIDE, quality = 82): Promi
 
 export const faceCheckEnabled = visionEnabled;
 
+/**
+ * Face ID namunasi yo'q xodim uchun profil surati bilan AI solishtiruvi (mobil "Keldim/Ketdim", `att.face`) — faqat
+ * `FACE_AI_FALLBACK=true` va AI kaliti sozlanganda. Sukut o'chiq: AI ehtimoliy tekshiruv (biometrik emas), xodim yuzini
+ * Face ID'da ro'yxatga olish kerak (ECO → Davomat → Yuzlar yoki ERP → Davomat).
+ */
+export const faceAiFallbackEnabled = () => faceCheckEnabled() && (process.env.FACE_AI_FALLBACK ?? "").trim().toLowerCase() === "true";
+
 /** Etalon (profil) va kamera kadri — bir odammi. Model javobi buzuq bo'lsa — mos emas deb qaytadi, xato tashlamaydi. */
 export async function compareFaces(reference: Buffer, probe: Buffer): Promise<FaceMatch> {
   const [ref, cam] = await Promise.all([faceImage(reference), faceImage(probe)]);

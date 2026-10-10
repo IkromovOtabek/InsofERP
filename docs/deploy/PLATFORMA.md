@@ -322,6 +322,12 @@ fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
   - `MOBILE_FACE_LIVENESS_TASKS` — topshiriqlar (sukut `TURN_LEFT,TURN_RIGHT`; `BLINK` faqat telefonda sinab qo'shiladi).
   - `MOBILE_FACE_LIVENESS_ANY_SIDE=true` — biror telefonda kadr ko'zgu-aks bo'lib to'g'ri burgan odam rad etilsa, burilish
     yo'nalishi tekshirilmaydi (faqat kattaligi). Muvaffaqiyatsiz urinishlar o'lchovlari auditda (`yuz: "jonlilik o'tmadi"`).
+  - `FACE_AI_FALLBACK=true` — Face ID namunasi yo'q xodimning «Keldim/Ketdim» / `att.face` so'rovini profil surati bilan
+    AI orqali solishtirish (AI kaliti ham kerak). Sukut o'chiq: namunasi yo'q xodim «yuzni ro'yxatga oling» xabarini oladi
+    (ECO → Davomat → Yuzlar yoki ERP → Davomat); brigadir bunday xodimni qo'lda «Keldi» qila oladi.
+  - Tanish diagnostikasi: kiosk tanimasa / ro'yxatga olish tasdiqlanmasa jurnalda bitta qator
+    (`journalctl -u insof-erp@<slug> | grep face-kiosk`): kod, eng yaqin va ikkinchi masofa, kadrlar soni, ko'zgu-aks
+    yutganmi (ism va kadr yozilmaydi).
 
 ## Monitoring agenti (insof-agent)
 

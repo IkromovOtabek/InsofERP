@@ -8,7 +8,7 @@ import { getCompany } from "@/lib/company";
 import { DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayUtc, hoursText, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, toMinutes, today, validMonth, workedMinutes } from "@/lib/davomat";
 import { lockEmployeeAttendance, nowHHMM, productionStaff } from "@/lib/production-staff";
 import { knownPoint } from "@/lib/mobile/geofence";
-import { type FaceInput, faceInput, faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } from "@/lib/face-verify";
+import { FACE_ENROLL_WHERE, type FaceInput, faceInput, faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } from "@/lib/face-verify";
 import { MAX_FACE_PHOTO_CHARS } from "@/lib/face-id-const";
 import { removeEmployeeFile } from "@/lib/uploads";
 import { ListError } from "@/lib/mobile/list";
@@ -217,9 +217,10 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
   const e = await linkedEmployee(user.id);
   if (!e) fail("NOT_LINKED", "Loginingiz xodim kartasiga bog'lanmagan — otdel kadrga murojaat qiling", 403);
   const emp = e!;
-  // Yuz tekshiruvi: ERP'da Face ID ro'yxatga olingan bo'lsa — shu namuna, bo'lmasa AI kaliti bilan profil surati
+  // Yuz tekshiruvi: ERP'da Face ID ro'yxatga olingan bo'lsa — shu namuna; bo'lmasa rad (profil surati bilan AI
+  // solishtiruvi faqat FACE_AI_FALLBACK=true da — `faceVerifyAvailable`)
   if (!(await faceVerifyAvailable(emp.id))) {
-    fail("FACE_DISABLED", "Yuzingiz Face ID'da ro'yxatga olinmagan — otdel kadrga ayting: ERP → Davomat bo'limida ro'yxatga olsin", 409);
+    fail("FACE_DISABLED", `Yuzingiz Face ID'da ro'yxatga olinmagan — otdel kadrga ayting: ${FACE_ENROLL_WHERE} bo'limida yuzingizni ro'yxatga olsin`, 409);
   }
 
   if (Math.abs(Date.now() - Date.parse(b.at)) > MAX_CLOCK_SKEW_MS) {

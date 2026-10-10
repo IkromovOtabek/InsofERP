@@ -124,31 +124,64 @@ export type FaceAnalysis = FaceVector & {
   landmarks: [number, number][];
   /** Ko'z sohasining nisbiy kontrasti (`eyeContrast`) — ochiq ko'zda katta, yumuqda kichik; aniqlab bo'lmasa null. */
   eyeContrast: number | null;
+  /**
+   * Shu kadrning gorizontal ko'zgu-aksidan (sharp `.flop()`) olingan vektor — faqat so'ralgan kadrlar uchun
+   * (`faceAnalyses` → `mirror`); so'ralmagan yoki aksda yuz topilmagan bo'lsa yo'q. Ko'zgu-aksning vektori aslidan
+   * ~0,26 uzoq (face-api demo surati) — namunalar boshqa kameradan (orqa ↔ old, ba'zi telefonlarda old kamera kadri
+   * ko'zgu-aks) olingan bo'lsa shu farq yorug'lik/burchak farqiga qo'shilib, o'sha odam tanilmay qolardi.
+   * Solishtirishda masofa = min(asl, aks) (`lib/face-id.ts` → `rank`).
+   */
+  mirror?: number[];
 };
+
+/** Kadr vektorining solishtiriladigan variantlari: [asl, ko'zgu-aksi?]. */
+export const faceVariants = (f: { descriptor: number[]; mirror?: number[] }): number[][] => (f.mirror ? [f.descriptor, f.mirror] : [f.descriptor]);
 
 /**
  * Kadrdagi (JPEG/PNG/WEBP) eng aniq yuzning vektori; yuz topilmasa — null.
  * Format/o'lcham/buzuq fayl — `FaceImageError`, server band — `FaceBusyError` (ikkalasining matni foydalanuvchiga).
  */
-export async function faceDescriptor(image: Buffer): Promise<FaceVector | null> {
+export async function faceDescriptor(image: Buffer, opts: { mirror?: boolean } = {}): Promise<(FaceVector & { mirror?: number[] }) | null> {
   await checkFaceImage(image);
-  const r = await withSlot(() => describe(image));
-  return r ? { descriptor: r.descriptor, score: r.score } : null;
+  // Ko'zgu-aks bilan — o'sha navbat o'rnida, hisob vaqti chegarasi bitta qo'shimcha kadrga kengayadi
+  const r = await withSlot(async () => {
+    const a = await describe(image);
+    if (!a || !opts.mirror) return a;
+    const m = await describe(image, true);
+    return m ? { ...a, mirror: m.descriptor } : a;
+  }, RUN_TIMEOUT_MS + (opts.mirror ? EXTRA_FRAME_MS : 0));
+  return r ? { descriptor: r.descriptor, score: r.score, ...(r.mirror ? { mirror: r.mirror } : {}) } : null;
 }
+
+/** Har qo'shimcha hisob (kadr yoki uning ko'zgu-aksi) uchun hisob vaqti chegarasiga qo'shiladigan vaqt. */
+const EXTRA_FRAME_MS = 5_000;
 
 /**
  * Bir nechta kadr (jonlilik ketma-ketligi, odatda 3 ta) — BITTA navbat o'rnida ketma-ket hisoblanadi: har kadr uchun
  * alohida navbatga turilsa, band paytda kutish kadrlar soniga ko'payib ilovaning 20 s chegarasidan oshardi; bitta
- * o'rinda so'rov bir marta kutadi (`QUEUE_WAIT_MS`). Hisob vaqti chegarasi kadrlar soniga qarab kengayadi
- * (`RUN_TIMEOUT_MS` + 5 s har qo'shimcha kadrga). Natija tartibi kirish bilan bir xil; yuz topilmagan kadr — null.
+ * o'rinda so'rov bir marta kutadi (`QUEUE_WAIT_MS`). Natija tartibi kirish bilan bir xil; yuz topilmagan kadr — null.
+ *
+ * `mirror` — barcha kadrlar tahlil qilingach chaqiriladi va ko'zgu-aksi ham hisoblanadigan kadrlar indekslarini
+ * qaytaradi (odatda to'g'ri qaragan kadrlar — tanish namunalari, `lib/face-liveness.ts` → `frontalFrames`); aks
+ * vektorlari o'sha navbat o'rnida hisoblanib `FaceAnalysis.mirror` ga yoziladi. Hisob vaqti chegarasi eng yomon holatga
+ * qarab kengayadi: `RUN_TIMEOUT_MS` + 5 s har qo'shimcha kadrga va (mirror bo'lsa) har kadr aksiga.
  */
-export async function faceAnalyses(images: Buffer[]): Promise<(FaceAnalysis | null)[]> {
+export async function faceAnalyses(images: Buffer[], opts: { mirror?: (faces: (FaceAnalysis | null)[]) => number[] } = {}): Promise<(FaceAnalysis | null)[]> {
   for (const img of images) await checkFaceImage(img);
+  const extra = Math.max(0, images.length - 1) + (opts.mirror ? images.length : 0);
   return withSlot(async () => {
     const out: (FaceAnalysis | null)[] = [];
     for (const img of images) out.push(await describe(img));
+    if (opts.mirror) {
+      for (const i of new Set(opts.mirror(out))) {
+        const f = out[i];
+        if (!f) continue;
+        const m = await describe(images[i]!, true);
+        if (m) f.mirror = m.descriptor;
+      }
+    }
     return out;
-  }, RUN_TIMEOUT_MS + 5_000 * Math.max(0, images.length - 1));
+  }, RUN_TIMEOUT_MS + EXTRA_FRAME_MS * extra);
 }
 
 /**
@@ -163,11 +196,14 @@ const PASSES = [
   { pad: 0, threshold: 0.3 },
 ] as const;
 
-async function describe(image: Buffer): Promise<FaceAnalysis | null> {
+/** `flop` — kadrning gorizontal ko'zgu-aksi tahlil qilinadi (nuqtalar ham aks kadr koordinatalarida). */
+async function describe(image: Buffer, flop = false): Promise<FaceAnalysis | null> {
   const api = await load();
   let raw: { data: Buffer; info: sharp.OutputInfo };
   try {
-    raw = await sharp(image, SHARP_OPTS).rotate().resize({ width: MAX_WIDTH, withoutEnlargement: true })
+    let img = sharp(image, SHARP_OPTS).rotate();
+    if (flop) img = img.flop();
+    raw = await img.resize({ width: MAX_WIDTH, withoutEnlargement: true })
       .toColourspace("srgb").removeAlpha().raw({ depth: "uchar" }).toBuffer({ resolveWithObject: true });
   } catch {
     throw new FaceImageError("Kadr o'qilmadi (buzuq fayl) — qayta skaner qiling");
