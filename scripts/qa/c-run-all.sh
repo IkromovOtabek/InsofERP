@@ -9,7 +9,7 @@
 #   QA_FACE_LIVENESS=on npx tsx scripts/qa/c-liveness.ts   (run-all.sh da "geo" ichida, alohida server)
 cd "$(dirname "$0")/../.."
 fail=0
-for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations c-face c-gps c-liveness; do
+for t in c-no-sms c-mobile-auth c-mobile-roles c-mobile-scope c-mobile-money c-mobile-cash c-integrations c-face c-gps c-liveness c-face-kiosk; do
   echo "════════ $t"
   npx tsx "scripts/qa/$t.ts" || fail=1
 done

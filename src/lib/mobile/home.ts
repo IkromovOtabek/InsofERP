@@ -1,4 +1,5 @@
 import { selfAttendance, type SelfAttendance } from "@/lib/self-attendance";
+import { faceKioskAccess } from "./face-kiosk";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
@@ -134,6 +135,8 @@ export type MobileHome = {
   selfAttendance?: SelfAttendance | null;
   /** Rahbar: boshqalarning davomatini belgilash kartochkasi — bosh sahifadan bir bosishda. */
   attendanceManage?: { title: string; subtitle: string; key: string; id: string } | null;
+  /** «Davomat» tugmasi (Face ID skaneri, ERP Bosh sahifa → Davomat kabi) — skanerga ruxsati bor lavozimlarga. */
+  faceAttendance?: { canEnroll: boolean } | null;
 };
 
 /** Logistika xaritasidagi bitta reys — GPS bo'lmasa `gps` null, lekin qator ro'yxatda turadi. */
@@ -758,7 +761,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
     }
   }
   const [selfAtt, manage, settings] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null), logisticsSettings().catch(() => null)]);
-  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage };
+  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user) };
 }
 
 /**

@@ -58,7 +58,7 @@ export function facePhotoFile(raw: unknown): { file: File } | { file: null; tooB
 }
 
 /** Kadr formati (magic bytes): JPEG/PNG/WEBP bo'lmasa — xato matni. */
-function probeKindError(probe: Buffer): string | null {
+export function probeKindError(probe: Buffer): string | null {
   const probeKind = sniffFileKind(probe);
   if (probeKind === "heic") return "Kamera kadri HEIC formatida — ilovani yangilang yoki qayta skaner qiling";
   if (probeKind !== "jpg" && probeKind !== "png" && probeKind !== "webp") return "Kadr rasm emas — qayta skaner qiling";

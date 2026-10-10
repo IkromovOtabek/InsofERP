@@ -12,7 +12,7 @@ import { nowHHMM, productionStaff } from "@/lib/production-staff";
 import { earlyBy, lateBy, nightOpen, openRecord, shiftOf } from "@/lib/self-attendance";
 import {
   AUTO_OUT_AFTER_MIN, ENROLL_MAX_SAMPLES, ENROLL_MIN_SAMPLES, FACE_DIM, SCAN_PROBES, SNAPSHOT_MAX_CHARS,
-  type FaceScanFail, type FaceScanResult,
+  type FaceMode, type FaceScanFail, type FaceScanResult,
 } from "@/lib/face-id-const";
 import type { Session } from "@/lib/auth";
 
@@ -142,7 +142,7 @@ function rank(probes: number[][], list: Candidate[]) {
     .sort((a, b) => a.d - b.d);
 }
 
-type Match =
+export type Match =
   | { kind: "empty" }
   | { kind: "none"; best: number | null }
   | { kind: "ambiguous"; ids: [string, string]; d: number }
@@ -214,11 +214,21 @@ function sinceCheckIn(checkIn: string | null, now: string, sameDay: boolean): nu
   return a === null || b === null ? null : Math.max(0, b - a);
 }
 
-export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult> {
+/** Skaner/ro'yxatga olishni bajaruvchi: veb sessiya yoki mobil foydalanuvchi (ECO) — `userId` audit uchun. */
+export type FaceActor = { userId: string; role: Session["role"]; perms?: Session["perms"] };
+
+/** Skaner ruxsati va urinishlar chegarasi — veb skaner va mobil kiosk uchun umumiy. */
+export function scanGate(s: FaceActor): { ok: true; scope: FaceScope } | { ok: false; fail: FaceScanFail } {
   const scope = faceScope(s);
-  if (!scope) return fail("FORBIDDEN", "Davomat skaneri sizning lavozimingiz uchun ochilmagan");
+  if (!scope) return { ok: false, fail: fail("FORBIDDEN", "Davomat skaneri sizning lavozimingiz uchun ochilmagan") };
   // Navbatda turgan 30–40 kishi bir daqiqada o'tadi; skript bilan urinishga qarshi chegara
-  if (!hit(`face-scan:${s.userId}`, 60, 60_000)) return fail("RATE_LIMITED", "Juda ko'p urinish — bir daqiqadan keyin davom eting");
+  if (!hit(`face-scan:${s.userId}`, 60, 60_000)) return { ok: false, fail: fail("RATE_LIMITED", "Juda ko'p urinish — bir daqiqadan keyin davom eting") };
+  return { ok: true, scope };
+}
+
+export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult> {
+  const g = scanGate(s);
+  if (!g.ok) return g.fail;
   const p = ScanBody.safeParse(raw);
   if (!p.success) return fail("BAD_REQUEST", p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri");
   const { probes, photo, mode } = p.data;
@@ -229,6 +239,14 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
     const pc = await photoMatchesProbes(photo, probes);
     if (!pc.ok) return fail("PHOTO_MISMATCH", pc.error);
   }
+  return recordScan(s, g.scope, m, mode, (employeeId) => saveSnapshot(employeeId, photo));
+}
+
+/**
+ * Tanish natijasi → davomat yozuvi (keldi / ketdi / allaqachon). `savePhoto` — dalil-kadrni saqlaydi (veb: data-URL,
+ * mobil: tasdiqlangan kamera kadri); faqat haqiqatan yozilganda chaqiriladi.
+ */
+export async function recordScan(s: FaceActor, scope: FaceScope, m: Match, mode: FaceMode, savePhoto: (employeeId: string) => Promise<string | null>): Promise<FaceScanResult> {
   if (m.kind === "empty") return fail("NO_TEMPLATES", "Hali hech kimning yuzi ro'yxatga olinmagan — otdel kadr «Yuzlarni ro'yxatga olish» bo'limida xodimlarni qo'shadi");
   if (m.kind === "none") return fail("NO_MATCH", "Yuz tanilmadi — ro'yxatga olinmagan yoki kadr sifatsiz. Yaqinroq kelib, kameraga to'g'ri qarang");
   if (m.kind === "ambiguous") {
@@ -270,7 +288,7 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
       return fail("MARKED_OTHER", `${e.fullName}: bugun «${markOf(t.status).label}» deb belgilangan — o'zgartirish otdel kadr tabelida`, who);
     }
     const late = lateBy(now, shift.start);
-    const stored = await saveSnapshot(e.id, photo);
+    const stored = await savePhoto(e.id);
     const data = {
       status: "PRESENT" as const, checkIn: now, checkOut: null, markedById: s.userId, source: FACE_SOURCE, lateMinutes: late,
       ...(stored ? { facePhoto: stored, faceVerifiedAt: new Date() } : {}),
@@ -299,7 +317,7 @@ export async function scanFace(s: Session, raw: unknown): Promise<FaceScanResult
   if (w !== null && w > MAX_SHIFT_MINUTES) {
     return fail("SHIFT_TOO_LONG", `${e.fullName}: smena ${MAX_SHIFT_MINUTES / 60} soatdan uzun bo'lib qoldi (${open.checkIn} da kelgan) — ketish vaqtini otdel kadr qo'yadi`, who);
   }
-  const stored = await saveSnapshot(e.id, photo);
+  const stored = await savePhoto(e.id);
   await db.$transaction(async (tx) => {
     await tx.attendance.update({ where: { id: open.id }, data: { checkOut: now, ...(stored ? { checkOutPhoto: stored } : {}) } });
     await audit(tx, s.userId, "UPDATE", "Attendance", open.id, { checkOut: null }, { ...meta, ketdi: now });
@@ -324,13 +342,30 @@ const EnrollBody = z.object({
 
 export type EnrollResult = { ok: true; count: number; note: string } | { ok: false; error: string };
 
+/** Ro'yxatga olish ruxsati va urinishlar chegarasi — veb va mobil uchun umumiy. */
+export function enrollGate(s: FaceActor): string | null {
+  if (!canEnrollFaces(s)) return "Yuzni ro'yxatga olish — otdel kadr vakolati";
+  if (!hit(`face-enroll:${s.userId}`, 20, 60_000)) return "Juda ko'p urinish — bir daqiqa kuting";
+  return null;
+}
+
 export async function enrollFace(s: Session, raw: unknown): Promise<EnrollResult> {
-  if (!canEnrollFaces(s)) return { ok: false, error: "Yuzni ro'yxatga olish — otdel kadr vakolati" };
-  if (!hit(`face-enroll:${s.userId}`, 20, 60_000)) return { ok: false, error: "Juda ko'p urinish — bir daqiqa kuting" };
+  const denied = enrollGate(s);
+  if (denied) return { ok: false, error: denied };
   const p = EnrollBody.safeParse(raw);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri" };
   const { employeeId, samples, photo } = p.data;
+  const pc = await photoMatchesProbes(photo, samples.map((x) => x.descriptor));
+  if (!pc.ok) return { ok: false, error: pc.error };
+  return saveEnrollment(s, employeeId, samples, (id) => saveSnapshot(id, photo));
+}
 
+/**
+ * Namunalarni tekshirib saqlaydi (o'zaro mos, boshqa xodim kartasida yo'q) — veb (brauzer vektorlari, kadr bilan
+ * tekshirilgan) va mobil (vektorlar serverda kadrlardan hisoblangan) uchun umumiy. Rozilik chaqiruvchida tekshiriladi.
+ */
+export async function saveEnrollment(s: FaceActor, employeeId: string, samples: { descriptor: number[]; score: number }[], savePhoto: (employeeId: string) => Promise<string | null>): Promise<EnrollResult> {
+  if (samples.length < ENROLL_MIN_SAMPLES) return { ok: false, error: `Kamida ${ENROLL_MIN_SAMPLES} ta namuna kerak` };
   const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true, isActive: true, firedAt: true } });
   if (!e) return { ok: false, error: "Xodim topilmadi — sahifani yangilang" };
   if (!e.isActive || e.firedAt) return { ok: false, error: `${e.fullName} faol emas — ishdan bo'shagan xodimning yuzi olinmaydi` };
@@ -339,15 +374,13 @@ export async function enrollFace(s: Session, raw: unknown): Promise<EnrollResult
   for (let i = 0; i < vecs.length; i++) for (let j = i + 1; j < vecs.length; j++) {
     if (distance(vecs[i]!, vecs[j]!) > ENROLL_SELF_MAX) return { ok: false, error: "Namunalar bir-biriga mos emas — kadrga boshqa odam kirib qolgan bo'lishi mumkin. Qayta urining (kadrda faqat xodimning o'zi tursin)" };
   }
-  const pc = await photoMatchesProbes(photo, vecs);
-  if (!pc.ok) return { ok: false, error: pc.error };
   const [dup] = rank(vecs, await candidates(e.id));
   if (dup && dup.d < DUPLICATE_DISTANCE) {
     const other = await db.employee.findUnique({ where: { id: dup.employeeId }, select: { fullName: true } });
     return { ok: false, error: `Bu yuz «${other?.fullName ?? "boshqa xodim"}» kartasida allaqachon ro'yxatda. Bir odam ikki kartada bo'lmaydi — avval o'sha xodimning yuzini o'chiring` };
   }
 
-  const stored = await saveSnapshot(e.id, photo);
+  const stored = await savePhoto(e.id);
   const old = await db.$transaction(async (tx) => {
     const old = await tx.faceTemplate.findMany({ where: { employeeId: e.id }, select: { photo: true } });
     await tx.faceTemplate.deleteMany({ where: { employeeId: e.id } });
@@ -363,7 +396,7 @@ export async function enrollFace(s: Session, raw: unknown): Promise<EnrollResult
   return { ok: true, count: samples.length, note: `${e.fullName}: yuz ro'yxatga olindi (${samples.length} namuna)` };
 }
 
-export async function deleteFace(s: Session, employeeId: string): Promise<{ ok: true; note: string } | { ok: false; error: string }> {
+export async function deleteFace(s: FaceActor, employeeId: string): Promise<{ ok: true; note: string } | { ok: false; error: string }> {
   if (!canEnrollFaces(s)) return { ok: false, error: "Yuzni o'chirish — otdel kadr vakolati" };
   const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true } });
   if (!e) return { ok: false, error: "Xodim topilmadi" };
