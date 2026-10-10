@@ -121,8 +121,13 @@ async function main() {
     const vTask = (await faceDescriptor(frames2[1]!))!.descriptor;
     const near = (v: number[]) => Math.min(...tpl.map((t) => distance(v, t.descriptor)));
     check(`topshiriq (burilgan) kadri namuna emas (eng yaqin namuna ${near(vTask).toFixed(3)}), to'g'ri kadr namuna (${near(vFront).toFixed(3)})`, near(vTask) > 0.05 && near(vFront) < 0.01, { task: near(vTask), front: near(vFront) });
+    // Ilova vaqt chegarasiga yetib "Qayta urinish" bossa — o'sha muvaffaqiyat qaytadi, qayta yozilmaydi
+    const savedAt = tpl.map((t) => t.id).sort().join();
     r = await enroll(dir, { pendingId: pending2, frames: urls(await enrollFrames()), nonce: await nonceAs(dir, "TURN_LEFT") });
-    check(`saqlangandan keyin o'sha pendingId qayta → rad (${msg(r)})`, r.json?.ok === false && r.json?.retry === false, r.json);
+    check(`saqlangandan keyin o'sha pendingId qayta → o'sha natija, qayta yozilmadi (${r.json?.note ?? msg(r)})`,
+      r.json?.ok === true && r.json?.stage === "done" && (await db.faceTemplate.findMany({ where: { employeeId: e.id } })).map((t) => t.id).sort().join() === savedAt, r.json);
+    r = await enroll(kadr, { pendingId: pending2, frames: urls(await enrollFrames()), nonce: await nonceAs(kadr, "TURN_LEFT") });
+    check(`saqlangan pendingId boshqa foydalanuvchiga → rad (${msg(r)})`, r.json?.ok === false && r.json?.retry === false, r.json);
 
     // ───────────────────────── 3. Kiosk ─────────────────────────
     section("Kiosk: kameraga qaragan xodimni tanish");

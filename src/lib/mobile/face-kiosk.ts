@@ -157,14 +157,22 @@ type Pending = {
   samples: { descriptor: number[]; score: number }[];
   /** Shu kadrlarning [asl, ko'zgu-aksi] — faqat "boshqa xodim kartasida yo'q" tekshiruvi uchun. */
   probes: Probe[];
-  /** Namuna kadri (birinchi, to'g'ri qaragan) — saqlashda dalil sifatida. */
-  photo: File;
+  /** Namuna kadri (birinchi, to'g'ri qaragan) — saqlashda dalil sifatida (saqlangach null). */
+  photo: File | null;
   expires: number; attempts: number; busy: boolean;
+  /**
+   * Saqlangan natija — yozuv `PENDING_TTL_MS` gacha shu holda qoladi (namunalar va kadr tashlanadi): ilova server
+   * javobini kutmay vaqt chegarasiga yetib "Qayta urinish" bossa, yuz aslida saqlangan bo'lsa ham "topilmadi —
+   * boshidan boshlang" emas, o'sha muvaffaqiyat qaytsin (qayta yozilmaydi).
+   */
+  done?: Extract<FaceEnrollStep2, { ok: true }>;
 };
 const PENDING_TTL_MS = 5 * 60_000;
 const VERIFY_ATTEMPTS = 3;
 /** Xotira chegarasi — undan ko'p bo'lsa eng eskisi tashlanadi. */
 const PENDING_MAX = 200;
+/** Bitta foydalanuvchining bir vaqtdagi tasdiqlanmagan yozuvlari (har biri kadr saqlaydi) — undan ko'pi eskisidan tashlanadi. */
+const PENDING_PER_USER = 5;
 const PG = globalThis as unknown as { __insofFaceEnrollPending?: Map<string, Pending> };
 
 function pendingStore(): Map<string, Pending> {
@@ -212,6 +220,8 @@ export async function faceKioskEnroll(u: MobileUser, raw: unknown): Promise<Face
   const store = pendingStore();
   // Shu foydalanuvchining shu xodim uchun avvalgi tasdiqlanmagan urinishi — yangisi bilan almashadi
   for (const [k, v] of store) if (v.userId === u.id && v.employeeId === employeeId) store.delete(k);
+  const mine = [...store].filter(([, v]) => v.userId === u.id).map(([k]) => k);
+  for (const k of mine.slice(0, Math.max(0, mine.length - PENDING_PER_USER + 1))) store.delete(k);
   while (store.size >= PENDING_MAX) store.delete(store.keys().next().value!);
   const pendingId = randomBytes(18).toString("base64url");
   store.set(pendingId, { userId: u.id, employeeId, samples, probes: fr.probes, photo: fr.files[0]!, expires: Date.now() + PENDING_TTL_MS, attempts: 0, busy: false });
@@ -229,6 +239,7 @@ async function enrollVerify(u: MobileUser, employeeId: string, body: { pendingId
   if (!p || p.userId !== u.id || p.employeeId !== employeeId) {
     return { ok: false, error: "Tasdiqlash topilmadi yoki muddati o'tgan — yuzni ro'yxatga olishni qaytadan boshlang", retry: false };
   }
+  if (p.done) return p.done;
   if (p.busy) return { ok: false, error: "Tasdiqlash davom etmoqda — biroz kuting", retry: true };
   p.busy = true;
   try {
@@ -262,10 +273,12 @@ async function enrollVerify(u: MobileUser, employeeId: string, body: { pendingId
     // Saqlash: 1-bosqich + tasdiqlash kadrlarining to'g'ri qaraganlari (tasdiqlash kadri — boshqa paytdagi yorug'lik/holat)
     const extra = fr.frontal.map((i) => ({ descriptor: fr.faces[i]!.descriptor, score: fr.faces[i]!.score }));
     const samples = [...p.samples, ...extra].slice(0, ENROLL_MAX_SAMPLES);
-    store.delete(pendingId);
-    const r = await saveEnrollment(actor(u), employeeId, samples, keepPhoto(p.photo), { probes: [...p.probes, ...fr.probes], agg: "min" });
-    if (!r.ok) return { ok: false, error: r.error, retry: false };
-    return { ok: true, stage: "done", count: r.count, note: r.note, similarity: similarity(m.d) };
+    const r = await saveEnrollment(actor(u), employeeId, samples, keepPhoto(p.photo!), { probes: [...p.probes, ...fr.probes], agg: "min" });
+    if (!r.ok) { store.delete(pendingId); return { ok: false, error: r.error, retry: false }; }
+    const done = { ok: true as const, stage: "done" as const, count: r.count, note: r.note, similarity: similarity(m.d) };
+    // Tasdiqlash qayta ishlatilmaydi: namunalar tashlanadi, faqat natija qoladi (kech qayta urinish uchun)
+    p.done = done; p.samples = []; p.probes = []; p.photo = null;
+    return done;
   } finally {
     p.busy = false;
   }
