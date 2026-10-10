@@ -124,8 +124,12 @@ export function Button({ variant = "primary", size = "md", className, ...p }: Re
   return <button className={cn(btnBase, btnSize[size], btnVariant[variant], className)} {...p} />;
 }
 
-export function LinkButton({ href, variant = "primary", size = "md", className, children }: { href: string; variant?: Variant; size?: Size; className?: string; children: React.ReactNode }) {
-  return <Link href={href} className={cn(btnBase, btnSize[size], btnVariant[variant], className)}>{children}</Link>;
+/** `download` — fayl (API marshruti) yuklab olinadi, `external` — tashqi havola yangi oynada; ikkalasida oddiy `<a>`. */
+export function LinkButton({ href, variant = "primary", size = "md", className, download, external, title, children }: { href: string; variant?: Variant; size?: Size; className?: string; download?: boolean; external?: boolean; title?: string; children: React.ReactNode }) {
+  const cls = cn(btnBase, btnSize[size], btnVariant[variant], className);
+  if (download) return <a href={href} download title={title} className={cls}>{children}</a>;
+  if (external) return <a href={href} target="_blank" rel="noopener noreferrer" title={title} className={cls}>{children}</a>;
+  return <Link href={href} title={title} className={cls}>{children}</Link>;
 }
 
 export function IconButton({ icon: Icon, label, className, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string }) {

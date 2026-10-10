@@ -29,3 +29,10 @@
 /* Pastdagi dizayn bo'limlari (Hamkorlik, Eksport) */
 .it-promise { transition: background .25s; }
 .it-promise:hover { background: var(--surface2) !important; }
+
+/* Telefon: 3D tur o'rniga statik hero (factory-tour.tsx → MobileHero) */
+.it-mhero { display: none; }
+@media (max-width: 767px) {
+  .it-3d { display: none; }
+  .it-mhero { display: block; }
+}

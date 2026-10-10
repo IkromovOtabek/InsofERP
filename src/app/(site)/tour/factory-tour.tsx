@@ -18,12 +18,18 @@ import "./tour.css";
  * Skroll → kamera xaritasi README'dagidek aniq (DW — ofis ichida qo'shimcha skroll). Holat faqat bekat almashganda,
  * ofis qadamida va 250 ms dagi faza so'rovida yangilanadi — har kadrda setState yo'q (sahna o'z rAF'ida aylanadi).
  * WebGL yo'q bo'lsa — sahna o'rnida statik zavod surati, qolgan hammasi ishlayveradi.
+ *
+ * Telefonda (≤ 767px) 3D tur umuman yo'q: three.js yuklanmaydi, o'rniga oddiy statik hero (`MobileHero`).
+ * Qaysi biri ko'rinishi CSS media so'rovida (`.it-3d` / `.it-mhero`) — server chizgan HTML'da ham telefonda bir lahza
+ * 3D tartib chiqib qolmaydi.
  */
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const LS = "insof-theme-v3";
 const DW = 2.5, TOTAL = 6 + DW;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+/** tour.css dagi `.it-3d` / `.it-mhero` chegarasi bilan bir xil */
+const MOBILE_Q = "(max-width: 767px)";
 
 type Scroll = { active: number; p: number; f: number; ostep: number; ofrac: number; ui: number; vw: number; vh: number };
 
@@ -98,8 +104,14 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
     const ro = new ResizeObserver(onScroll); ro.observe(document.documentElement);
     scrollNow(); // birinchi o'lchov darhol (rAF kutmasdan) — telefonda bir lahza kompyuter tartibi chiqmasin
 
-    // Sahna — faqat brauzerda, alohida chunk (three.js ~600 KB faqat bosh sahifada yuklanadi)
-    (async () => {
+    // Sahna — faqat brauzerda, alohida chunk (three.js ~600 KB faqat bosh sahifada yuklanadi).
+    // Telefonda yaratilmaydi; ekran kengaysa (planshetni burish, oynani kattalashtirish) o'shanda yaratiladi.
+    const mq = matchMedia(MOBILE_Q);
+    let mounting = false;
+    const mount = async () => {
+      if (mounting || mq.matches) return;
+      mounting = true;
+      mq.removeEventListener("change", mount);
       try {
         // Kanvas yozuvlari Archivo bilan chizilsin — shrift yuklanib bo'lgach
         await document.fonts?.load(`700 32px ${fontFamily}`).catch(() => undefined);
@@ -115,7 +127,9 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
         console.error("[tur] 3D sahna ishga tushmadi:", e);
         if (!dead) setNoGl(true);
       }
-    })();
+    };
+    if (mq.matches) mq.addEventListener("change", mount);
+    else void mount();
 
     const poll = setInterval(() => {
       const w = worldRef.current;
@@ -128,6 +142,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
       dead = true;
       removeEventListener("scroll", onScroll);
       removeEventListener("resize", onScroll);
+      mq.removeEventListener("change", mount);
       ro.disconnect(); cancelAnimationFrame(raf); clearInterval(poll);
       if (swapRef.current) clearTimeout(swapRef.current);
       worldRef.current?.dispose(); worldRef.current = null;
@@ -160,6 +175,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
   return (
     <div ref={rootRef} className="it-root">
       <div className="it-ui">
+        <div className="it-3d">
         {/* Sahna */}
         {/* Sayt bo'limlari sahnani to'liq yopganda (ui = 0) sahna yashiriladi: o'lchami 0 bo'lgan konteynerda
             `insof-world.js` chizmaydi — GPU bo'shaydi va pastdagi bo'limlar skroll paytida "yo'qolib" qolmaydi */}
@@ -180,9 +196,11 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
           </div>
         </div>
 
+        </div>
+
         {/* Sarlavha — butun sahifada yuqorida turadi */}
         <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "16px clamp(14px,3vw,32px)", pointerEvents: "none", flexWrap: "wrap" }}>
-          <a href="#top" aria-label="INSOF.JBI — bosh sahifa" style={{ ...pill, pointerEvents: "auto", display: "flex", alignItems: "center", padding: narrow ? "12px 12px" : "10px 16px" }}>
+          <a href="#" aria-label="INSOF.JBI — bosh sahifa" style={{ ...pill, pointerEvents: "auto", display: "flex", alignItems: "center", padding: narrow ? "12px 12px" : "10px 16px" }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- logotip kichik, o'lchami CSS da (balandlik 32px) */}
             <img src={mode === "dark" ? "/media/tour/insof-logo-dark.png" : "/media/tour/insof-logo.png"} alt="INSOF.JBI — Temir beton mahsulotlari" style={{ height: narrow ? 20 : 32, width: "auto", display: "block" }} />
           </a>
@@ -206,6 +224,7 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
           </div>
         </header>
 
+        <div className="it-3d">
         {/* Bekat kartasi */}
         <div style={{ position: "fixed", left: "clamp(14px,3vw,32px)", bottom: "clamp(14px,3vw,26px)", zIndex: 10, display: "flex", flexDirection: "column", gap: 10, width: "min(470px, calc(100vw - 28px))", opacity: ui, pointerEvents: ui > 0.2 ? "auto" : "none", visibility: ui <= 0.01 ? "hidden" : "visible" }}>
           <div className="it-card" aria-live="polite" style={{
@@ -289,6 +308,9 @@ export function FactoryTour({ fontFamily, children }: { fontFamily: string; chil
 
         {/* Skroll treki — kamerani boshqaradi */}
         <div id="top" ref={trackRef} style={{ height: "950vh", position: "relative", zIndex: 1, pointerEvents: "none" }} />
+        </div>
+
+        <MobileHero />
       </div>
 
       {/* Saytning qolgan qismi sahna ustidan chiqadi */}
@@ -308,3 +330,45 @@ const NAV: [string, string][] = [
   ["#mahsulotlar", "Mahsulotlar"],
   ["#aloqa", "Aloqa"],
 ];
+
+/**
+ * Telefon uchun hero — animatsiyasiz: sarlavha, qisqa tavsif, zavod surati, ikki tugma va
+ * «buyurtmadan obyektgacha» to'rt qadami. Ranglar tur mavzusidan (Kun/Tun almashtirgichi bunga ham ta'sir qiladi).
+ */
+function MobileHero() {
+  const c = STN[0]!;
+  const mono: CSSProperties = { fontFamily: "var(--font-jet-mono), 'JetBrains Mono', monospace" };
+  return (
+    <section className="it-mhero" style={{ position: "relative", zIndex: 1, background: "var(--bg)", padding: "92px 16px 40px" }}>
+      <span style={{ ...mono, display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 500, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--acc-text)" }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)" }} />{c.label}
+      </span>
+      <h1 style={{ margin: "14px 0 0", fontSize: 34, lineHeight: 1.02, fontWeight: 800, letterSpacing: "-.035em", color: "var(--ink)", textWrap: "balance" }}>{c.title}</h1>
+      <p style={{ margin: "14px 0 0", fontSize: 16, lineHeight: 1.5, fontWeight: 500, color: "var(--muted)", textWrap: "pretty" }}>{c.text}</p>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 22 }}>
+        <a href="#ariza" className="it-cta" style={{ flex: 1, textAlign: "center", padding: "14px 16px", borderRadius: 999, background: "var(--acc)", fontSize: 15, fontWeight: 700, boxShadow: "0 8px 24px var(--shadow)" }}>Narx so&apos;rash</a>
+        <a href="#mahsulotlar" style={{ flex: 1, textAlign: "center", padding: "14px 16px", borderRadius: 999, border: "1.5px solid var(--ink)", fontSize: 15, fontWeight: 700 }}>Mahsulotlar</a>
+      </div>
+
+      <div style={{ position: "relative", marginTop: 24, aspectRatio: "4 / 3", borderRadius: 20, overflow: "hidden", boxShadow: "0 16px 40px var(--shadow)" }}>
+        <Image src="/media/hero.jpg" alt="Insof zavodi" fill priority sizes="100vw" style={{ objectFit: "cover" }} />
+      </div>
+
+      <div style={{ marginTop: 28, padding: "18px 18px 8px", background: "var(--surface)", borderRadius: 20, boxShadow: "0 6px 24px var(--shadow)" }}>
+        <span style={{ ...mono, fontSize: 10.5, fontWeight: 500, letterSpacing: ".16em", color: "var(--acc-text)" }}>{c.processTitle}</span>
+        <ol style={{ listStyle: "none", margin: "10px 0 0", padding: 0 }}>
+          {c.steps.map(([name, text], i) => (
+            <li key={name} style={{ display: "flex", gap: 14, padding: "12px 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
+              <span style={{ ...mono, fontSize: 12, fontWeight: 600, color: "var(--acc-text)", paddingTop: 2 }}>{pad(i + 1)}</span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)" }}>{name}</div>
+                <div style={{ marginTop: 3, fontSize: 14, lineHeight: 1.45, color: "var(--muted)" }}>{text}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
