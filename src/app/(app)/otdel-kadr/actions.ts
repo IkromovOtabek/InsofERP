@@ -368,6 +368,7 @@ export async function deleteEmployeeDocument(docId: string) {
 
 const importSchema = z.object({
   rows: z.string(),
+  valueMaps: z.string().optional(),
   defaultPosition: zOpt,
   groupRows: z.string().optional().transform((v) => v === "on"),
   createPositions: z.string().optional().transform((v) => v === "on"),
@@ -387,6 +388,16 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
   let rows: ImportEmployeeRow[];
   try { rows = JSON.parse(d.rows); } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
   if (!Array.isArray(rows) || !rows.length) return { error: "Faylda qator yo'q" };
+  // "Qiymatlarni moslash": { position: { fayldagi: tizimdagi }, subdivision: {...} } — faqat matn juftliklari olinadi
+  const valueMaps: Record<string, Record<string, string>> = {};
+  try {
+    const raw: unknown = d.valueMaps ? JSON.parse(d.valueMaps) : {};
+    for (const key of ["position", "subdivision"]) {
+      const m = (raw as Record<string, unknown>)?.[key];
+      if (!m || typeof m !== "object") continue;
+      valueMaps[key] = Object.fromEntries(Object.entries(m).filter((e): e is [string, string] => typeof e[1] === "string" && e[1].trim() !== ""));
+    }
+  } catch { return { error: "Qiymatlarni moslash ma'lumoti o'qilmadi" }; }
 
   let res;
   try {
@@ -396,6 +407,7 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
       defaultPosition: d.defaultPosition,
       createPositions: d.createPositions,
       updateExisting: d.updateExisting,
+      valueMaps,
     }, s.userId);
   } catch (e) {
     return { error: (e as Error).message };
@@ -416,6 +428,7 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
     note: [
       `${res.created} ta xodim qo'shildi, ${res.updated} tasi yangilandi`,
       res.createdPositions.length ? `yangi lavozim ochildi: ${list(res.createdPositions)}` : "",
+      res.newSubdivisions.length ? `yangi bo'lim / brigada: ${list(res.newSubdivisions)}` : "",
       res.skipped ? `${res.skipped} ta qator o'tkazib yuborildi — bunday xodim bazada bor ("mavjud xodimlar yangilansin"ni belgilang)` : "",
       res.fired ? `${res.fired} tasi nofaol qilindi (ishdan bo'shagan sanasi bor)` : "",
       res.keptPositions.length ? `diqqat: ${res.keptPositions.length} ta login egasining lavozimi o'zgartirilmadi (bo'limi — kartadan "Bo'limni almashtirish" orqali): ${list(res.keptPositions, 3)}` : "",

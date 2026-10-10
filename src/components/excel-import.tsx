@@ -2,10 +2,10 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List } from "lucide-react";
+import { FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle2, Maximize2, Eye, EyeOff, PencilLine, Check, X, ScanLine, Plus, Grid3x3, List, ArrowRightLeft } from "lucide-react";
 import { Button, FormError, FormSuccess, Select, Table, Td, Th, Tr } from "@/components/ui";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
-import { flatName, guessColumn, guessMatrix, headerRowIndex, matrixColumns, maxLen, num, str, trimEmptyRows, unpivotMatrix, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick } from "@/lib/excel";
+import { flatName, guessColumn, guessMatrix, headerRowIndex, matchKey, matrixColumns, maxLen, num, str, trimEmptyRows, unpivotMatrix, valueKey, type ImportField, type MatrixCol, type MatrixGuess, type MatrixPick, type ValueMaps } from "@/lib/excel";
 import { normalizeUnit } from "@/lib/unit";
 import { fmtNum, money } from "@/lib/format";
 import type { ActionState } from "@/lib/action";
@@ -57,6 +57,9 @@ type MatrixCols = { colKey: string; rowKey: string; qtyKey: string; unitKey?: st
 
 /** Matritsa qanday o'qilayotgani: qator/ustun tanlovi, ustunlar ro'yxati va ustun bo'yicha yetkazish sanasi. */
 type MxState = MatrixPick & { cols: MatrixCol[]; dates: Record<number, string> };
+
+/** "Qiymatlarni moslash" jadvalining bitta qatori: fayldagi qiymat, nechta qatorda, taxmin va yakuniy tanlov ("" — yangi). */
+type VmItem = { key: string; value: string; count: number; fromGroup: boolean; suggested: string; choice: string };
 
 const PREVIEW = 15; // sahifada shuncha qator; qolgani "Batafsil ko'rish" modalida
 
@@ -133,6 +136,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [hidden, setHidden] = useState<Set<string>>(new Set()); // «×» bilan olib tashlangan tayyor ustunlar
   const [sheet, setSheet] = useState<unknown[][] | null>(null); // xom varaq — matritsani qayta yoyish uchun saqlanadi
   const [mx, setMx] = useState<MxState | null>(null); // matritsa rejimi tanlovi; null — oddiy ro'yxat
+  // "Qiymatlarni moslash": maydon → fayldagi qiymat (valueKey) → tanlangan tizim qiymati ("" — yangi qo'shiladi)
+  const [vmChoice, setVmChoice] = useState<Record<string, Record<string, string>>>({});
   const formRef = useRef<HTMLFormElement>(null);
   const extraSeq = useRef(0);
   // QQS rejimi: formadagi yetkazuvchi va "Narxlar QQS bilan" belgisi o'zgarsa — oldindan ko'rish qayta hisoblanadi
@@ -150,6 +155,18 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     form.addEventListener("change", read);
     return () => form.removeEventListener("change", read);
   }, [vatCols]);
+
+  // Guruh sarlavhasidan qiymat olish belgilari (masalan "groupRows") — formadagi holati kuzatiladi
+  const toggleNames = fields.map((f) => f.valueMap?.groupRows?.toggle).filter((n): n is string => !!n).join(",");
+  const [toggles, setToggles] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const form = formRef.current;
+    if (!toggleNames || !form) return;
+    const read = () => setToggles(Object.fromEntries(toggleNames.split(",").map((n) => [n, !!(form.elements.namedItem(n) as HTMLInputElement | null)?.checked])));
+    read();
+    form.addEventListener("change", read);
+    return () => form.removeEventListener("change", read);
+  }, [toggleNames]);
 
   // Olib tashlanmagan tayyor ustunlar (majburiysi olib tashlanmaydi)
   const shownFields = useMemo(() => fields.filter((f) => f.required || !hidden.has(f.key)), [fields, hidden]);
@@ -187,7 +204,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
 
   const onFile = async (f: File | undefined) => {
     setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote(""); setSheet(null); setMx(null);
-    setModal(false); setEditing(false); setEdits({}); setOnlyBad(false); setSkipBad(false);
+    setModal(false); setEditing(false); setEdits({}); setOnlyBad(false); setSkipBad(false); setVmChoice({});
     if (!f) return;
     setFileName(f.name);
     try {
@@ -313,6 +330,50 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     const e = edits[`${i}:${f.key}`];
     return [f.key, e !== undefined ? e : map[f.key] ? r[map[f.key]] : ""];
   }))), [rows, map, allFields, edits]);
+
+  // ── Qiymatlarni moslash: ustundagi (va guruh sarlavhasidagi) har xil qiymatlar → tizimdagi qiymat ──
+  const vmFields = useMemo(() => (mx ? [] : shownFields.filter((f) => f.valueMap)), [mx, shownFields]);
+  const vmLists = useMemo(() => {
+    const out: Record<string, VmItem[]> = {};
+    for (const f of vmFields) {
+      const spec = f.valueMap!;
+      const g = spec.groupRows && toggles[spec.groupRows.toggle] ? spec.groupRows : null;
+      const others = allFields.map((x) => x.key).filter((k) => k !== f.key && k !== g?.nameKey);
+      const seen = new Map<string, VmItem>();
+      const add = (raw: string, fromGroup: boolean) => {
+        const value = raw.replace(/\s+/g, " ");
+        const key = valueKey(value);
+        if (!key) return;
+        const cur = seen.get(key);
+        if (cur) { cur.count++; return; }
+        // Taxmin: nomi bir xil (kirill/lotin, katta-kichik harf, belgilarsiz) mavjud qiymat
+        const mk = matchKey(value);
+        const hit = spec.options.find((o) => valueKey(o.value) === key) ?? (mk ? spec.options.find((o) => matchKey(o.value) === mk) : undefined);
+        const suggested = hit?.value ?? "";
+        const picked = vmChoice[f.key]?.[key];
+        seen.set(key, { key, value, count: 1, fromGroup, suggested, choice: picked !== undefined && (picked === "" || spec.options.some((o) => o.value === picked)) ? picked : suggested });
+      };
+      for (const r of mapped) {
+        const v = str(r[f.key]);
+        if (v) { add(v, false); continue; }
+        // Faqat nomi bor, qolgan kataklari bo'sh qator — bo'lim sarlavhasi (server ham shunday ajratadi)
+        if (g && str(r[g.nameKey]) && others.every((k) => str(r[k]) === "")) add(str(r[g.nameKey]), true);
+      }
+      out[f.key] = [...seen.values()];
+    }
+    return out;
+  }, [vmFields, allFields, mapped, toggles, vmChoice]);
+  // Serverga: faqat mavjud qiymatga moslanganlari (nomi farq qilsa); qolgani fayldagicha — yangi bo'lib qo'shiladi
+  const valueMaps: ValueMaps = Object.fromEntries(Object.entries(vmLists).map(([k, items]) => [k,
+    Object.fromEntries(items.filter((x) => x.choice && valueKey(x.choice) !== x.key).map((x) => [x.value, x.choice]))]));
+  const setVm = (field: string, key: string, v: string) => setVmChoice((c) => ({ ...c, [field]: { ...c[field], [key]: v } }));
+  /** Oldindan ko'rishda: moslangan qiymat tizimdagi nomi bilan ko'rinadi. */
+  const shownValue = (field: string, v: string) => {
+    const k = valueKey(v);
+    const x = k ? vmLists[field]?.find((i) => i.key === k) : undefined;
+    return x?.choice && valueKey(x.choice) !== k ? x.choice : "";
+  };
+
   const missingRequired = fields.filter((f) => f.required && !map[f.key]);
   const numericKeys = fields.filter((f) => /qty|price|amount|sum|nds/.test(f.key)).map((f) => f.key);
   const requiredKeys = fields.filter((f) => f.required).map((f) => f.key);
@@ -498,6 +559,9 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
           if (a?.mismatch && ac?.sumKey === f.key) {
             return <Td key={f.key} right className="bg-amber-100/70 font-medium text-amber-800"><span title={`Miqdor × narx = ${fmtNum(num(x.r[ac.qtyKey]) * num(x.r[ac.priceKey]))}`}>{v}</span></Td>;
           }
+          // Tizimdagi qiymatga moslangan katak — tizimdagi nomi ko'rinadi, fayldagisi sarlavhada
+          const target = f.valueMap ? shownValue(f.key, v) : "";
+          if (target) return <Td key={f.key} className="font-medium text-sky-700"><span title={`Faylda: «${v}»`}>{target}</span></Td>;
           return <Td key={f.key} right={right} className={edited ? "font-medium text-emerald-700" : undefined}>{shown || <span className="text-slate-300">—</span>}</Td>;
         })}
       </Tr>
@@ -627,11 +691,58 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     </button>
   );
 
+  /** "Qiymatlarni moslash": har maydon uchun fayldagi har xil qiymatlar va tizimdagi mosi. */
+  const vmPanel = vmFields.some((f) => vmLists[f.key]?.length) && (
+    <div className="space-y-3">
+      {vmFields.map((f) => {
+        const items = vmLists[f.key] ?? [];
+        if (!items.length) return null;
+        const spec = f.valueMap!;
+        const matched = items.filter((x) => x.choice).length;
+        return (
+          <div key={f.key} className="rounded-lg border border-slate-200 p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="inline-flex items-center gap-1.5 font-medium text-slate-700"><ArrowRightLeft size={14} /> Qiymatlarni moslash: {f.label}</span>
+              <span className="text-xs text-slate-500">
+                {items.length} ta har xil qiymat · <span className="text-sky-700">{matched} tasi mavjudlarga moslandi</span> · <span className="text-amber-700">{items.length - matched} tasi yangi qo&apos;shiladi</span>
+              </span>
+            </div>
+            <div className="max-h-80 overflow-auto">
+              <Table>
+                <thead><tr><Th>Fayldagi qiymat</Th><Th right>Qator</Th><Th>Tizimda</Th></tr></thead>
+                <tbody>
+                  {items.map((x) => (
+                    <Tr key={x.key}>
+                      <Td className="whitespace-nowrap">
+                        {x.value}
+                        {x.fromGroup && <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500" title="Jadvaldagi guruh sarlavhasidan olindi">sarlavha</span>}
+                      </Td>
+                      <Td right className="text-slate-500">{x.count}</Td>
+                      <Td className="min-w-64 py-1.5">
+                        <Select value={x.choice} onChange={(e) => setVm(f.key, x.key, e.target.value)} aria-label={`«${x.value}» — tizimdagi qiymat`}
+                          className={cn("h-8 text-xs", x.choice ? "border-sky-300" : "border-amber-300")}>
+                          <option value="">{spec.newLabel ?? "Yangi qo'shiladi"}: «{x.value}»</option>
+                          {spec.options.map((o) => <option key={o.value} value={o.value}>→ {o.label}{o.value === x.suggested ? " (mos keldi)" : ""}</option>)}
+                        </Select>
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+            {spec.note && <p className="mt-1.5 text-[11px] text-slate-500">{spec.note}</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <form ref={formRef} action={formAction} className="space-y-5">
       <FormError error={state?.error} />
       <FormSuccess text={state?.note} />
       <input type="hidden" name="rows" value={JSON.stringify(skipBad ? validRows : allRows)} />
+      {vmFields.length > 0 && <input type="hidden" name="valueMaps" value={JSON.stringify(valueMaps)} />}
       {children}
 
       <div className="rounded-lg border-2 border-dashed border-slate-300 p-4">
@@ -727,6 +838,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
             </div>
             {restoreRow}
           </div>
+
+          {vmPanel}
 
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">

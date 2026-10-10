@@ -4,7 +4,49 @@
  * foydalanuvchi keyin o'zi to'g'rilaydi. Raqamlar "2,5" / "1 200" ko'rinishida kelishi mumkin — `num` tozalaydi.
  */
 
-export type ImportField = { key: string; label: string; required?: boolean; hint?: string; synonyms: readonly string[] };
+export type ImportField = {
+  key: string; label: string; required?: boolean; hint?: string; synonyms: readonly string[];
+  /** Berilsa — ustun tanlangach fayldagi har xil qiymatlar tizimdagi qiymatlarga moslanadi (`ValueMapSpec`). */
+  valueMap?: ValueMapSpec;
+};
+
+/**
+ * "Qiymatlarni moslash": fayldagi qiymat («Формовщик») tizimdagi mavjud qiymatga («Formovshik») moslanadi,
+ * moslanmagani yangi bo'lib qoladi. Server forma bilan `valueMaps` JSON oladi: { maydon: { fayldagi: tizimdagi } }.
+ * `groupRows` — qiymat jadvaldagi guruh sarlavhasidan ham kelishi mumkin («Бригада 1» qatori):
+ * `nameKey` to'ldirilgan, qolgan hamma maydon bo'sh qator; `toggle` — formadagi shu belgi yoqilganda.
+ */
+export type ValueMapSpec = {
+  options: { value: string; label: string }[];
+  /** Moslanmagan qiymat uchun yozuv, masalan "Yangi lavozim ochiladi". */
+  newLabel?: string;
+  /** Jadval tagidagi qisqa izoh. */
+  note?: string;
+  groupRows?: { nameKey: string; toggle: string };
+};
+export type ValueMaps = Record<string, Record<string, string>>;
+
+/** Moslash kaliti: bo'shliqlar bitta, kichik harf — klient va server bir xil hisoblaydi. */
+export const valueKey = (v: unknown) => str(v).replace(/\s+/g, " ").toLowerCase();
+
+/** `valueMaps` JSON'idan bitta maydon uchun qidiruv funksiyasi: moslangan bo'lsa tizimdagi qiymat, aks holda o'zi. */
+export function valueMapper(maps: ValueMaps | undefined, key: string): (v: string) => string {
+  const m = new Map(Object.entries(maps?.[key] ?? {}).map(([k, v]) => [valueKey(k), str(v)]));
+  return (v) => (v && m.get(valueKey(v))) || v;
+}
+
+const CYR_LAT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "j", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m",
+  н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "x", ц: "ts", ч: "ch", ш: "sh", щ: "sh", ъ: "",
+  ы: "i", ь: "", э: "e", ю: "yu", я: "ya", ў: "o", қ: "q", ғ: "g", ҳ: "x", і: "i",
+};
+
+/**
+ * Nomlarni yozuvidan qat'i nazar taqqoslash: kirill → lotin, apostrof va belgilar tashlanadi, h ≈ x.
+ * «Формовщик» = «Formovshik», «Бригада 1» = «Brigada-1», «Ҳайдовчи» = «Haydovchi». Faqat taxmin uchun.
+ */
+export const matchKey = (s: string) =>
+  [...s.toLowerCase()].map((c) => CYR_LAT[c] ?? c).join("").replace(/h/g, "x").replace(/[^a-z0-9]+/g, "");
 
 export const FIELD_SYNONYMS = {
   product: ["mahsulot", "marka", "product", "товар", "марка", "beton", "продукт"],

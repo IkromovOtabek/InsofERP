@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { audit } from "./audit";
-import { flatName, num, parseDate, str } from "./excel";
+import { flatName, num, parseDate, str, valueKey, valueMapper, type ValueMaps } from "./excel";
 import { driverPositionNames, roleForPosition } from "./positions";
 import { normalizePhone } from "./phone";
 
@@ -30,6 +30,12 @@ export type ImportEmployeesInput = {
   createPositions: boolean;
   /** Bazada bor xodimlarning kartasini fayldagi ma'lumot bilan yangilash. */
   updateExisting: boolean;
+  /**
+   * "Qiymatlarni moslash": `position` / `subdivision` bo'yicha fayldagi nom → tizimdagi mavjud nom.
+   * Bo'lim sarlavhasi qatoridan («Бригада 1») kelgan bo'lim ham shu bilan almashtiriladi.
+   * Ro'yxatda yo'q qiymat yangi bo'lib qoladi (lavozim — `createPositions` bo'lsa ochiladi).
+   */
+  valueMaps?: ValueMaps;
 };
 
 export type ImportEmployeesResult = {
@@ -45,7 +51,26 @@ export type ImportEmployeesResult = {
   driverIds: string[];
   /** Lavozimi o'zgartirilmagan login egalari (lavozim bo'limni belgilaydi — importdan o'zgarmaydi). */
   keptPositions: string[];
+  /** Tizimda hali bo'lmagan bo'lim / brigada nomlari (xodim kartasiga yangi bo'lib yozildi). */
+  newSubdivisions: string[];
 };
+
+/**
+ * Tizimdagi bo'lim / brigada nomlari — xodimlar kartasidagi "Bo'lim / brigada" qiymatlari va faol brigadalar.
+ * Excel importidagi "Qiymatlarni moslash" shu ro'yxatni taklif qiladi.
+ */
+export async function knownSubdivisions(): Promise<string[]> {
+  const [used, brigades] = await Promise.all([
+    db.employee.findMany({ where: { subdivision: { not: null } }, distinct: ["subdivision"], select: { subdivision: true } }),
+    db.brigade.findMany({ where: { isActive: true }, select: { name: true } }),
+  ]);
+  const out = new Map<string, string>();
+  for (const n of [...brigades.map((b) => b.name), ...used.map((u) => u.subdivision ?? "")]) {
+    const v = n.trim();
+    if (v && !out.has(valueKey(v))) out.set(valueKey(v), v);
+  }
+  return [...out.values()].sort((a, b) => a.localeCompare(b));
+}
 
 type Prepared = {
   no: number; fullName: string; tabelNo: string | null; position: string; subdivision: string | null;
@@ -61,6 +86,9 @@ function prepare(input: ImportEmployeesInput): { rows: Prepared[]; groups: strin
   const out: Prepared[] = [];
   const groups: string[] = [];
   let group = ""; // oxirgi ko'rilgan bo'lim sarlavhasi
+  // Fayldagi nom → tizimdagi nom (moslanmagani o'zicha qoladi)
+  const mapPosition = valueMapper(input.valueMaps, "position");
+  const mapSubdivision = valueMapper(input.valueMaps, "subdivision");
 
   const dateCell = (v: unknown, what: string, no: number, name: string, minYear: number) => {
     if (str(v) === "") return null;
@@ -72,17 +100,17 @@ function prepare(input: ImportEmployeesInput): { rows: Prepared[]; groups: strin
   for (const [i, x] of input.rows.entries()) {
     const no = i + 1;
     const fullName = str(x.fullName).replace(/\s+/g, " ");
-    const own = str(x.subdivision);
+    const own = mapSubdivision(str(x.subdivision));
     if (!fullName) { if (own) group = own; continue; } // faqat bo'lim yozilgan qator
     // Qolgan hamma katagi bo'sh, faqat ismi bor qator — bu xodim emas, bo'lim sarlavhasi
     const filled = [x.tabelNo, x.position, x.tariffRate, x.hiredAt, x.firedAt, x.phone, x.birthDate].some((v) => str(v) !== "");
     if (input.groupRows && !own && !filled) {
-      group = fullName;
-      if (!groups.includes(fullName)) groups.push(fullName);
+      group = mapSubdivision(fullName);
+      if (!groups.includes(group)) groups.push(group);
       continue;
     }
 
-    const position = str(x.position) || input.defaultPosition || "";
+    const position = mapPosition(str(x.position)) || input.defaultPosition || "";
     if (!position) throw new Error(`${no}-qator (${fullName}): lavozim yo'q — "Должность" ustunini moslang yoki standart lavozimni tanlang`);
 
     let tariffRate: number | null = null;
@@ -122,6 +150,14 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
   const drivers = new Set((await driverPositionNames()).map((n) => n.toLowerCase()));
   const work = await db.workPosition.findMany({ select: { name: true } });
   const known = new Map(work.map((w) => [w.name.trim().toLowerCase(), w.name]));
+  // Moslashda tanlangan lavozim/bo'lim haqiqatan bormi (sahifa ochilgandan beri o'chirilgan bo'lishi mumkin)
+  const badPos = Object.values(input.valueMaps?.position ?? {}).filter((v) => !known.has(str(v).toLowerCase()));
+  if (badPos.length) throw new Error(`Moslash uchun tanlangan lavozim ro'yxatda yo'q: ${cut([...new Set(badPos)])} — sahifani yangilab, qayta tanlang`);
+  const subs = new Set((await knownSubdivisions()).map(valueKey));
+  const badSub = Object.values(input.valueMaps?.subdivision ?? {}).filter((v) => !subs.has(valueKey(v)));
+  if (badSub.length) throw new Error(`Moslash uchun tanlangan bo'lim / brigada topilmadi: ${cut([...new Set(badSub)])} — sahifani yangilab, qayta tanlang`);
+  const newSubdivisions = [...new Map(rows.filter((r) => r.subdivision && !subs.has(valueKey(r.subdivision))).map((r) => [valueKey(r.subdivision), r.subdivision as string])).values()];
+
   const missing = names.filter((n) => !known.has(n.toLowerCase()));
   if (missing.length && !input.createPositions) {
     throw new Error(`Ro'yxatda yo'q lavozim: ${cut(missing)} — "yangi lavozimlarni ochish"ni belgilang yoki Otdel kadr → Ishchi lavozimlar da qo'shing`);
@@ -214,6 +250,6 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
       byName.set(flatName(e.fullName), rec);
     }
 
-    return { created, updated, skipped, createdPositions: missing, groups, fired, driverIds, keptPositions };
+    return { created, updated, skipped, createdPositions: missing, groups, fired, driverIds, keptPositions, newSubdivisions };
   }, { timeout: 120_000, maxWait: 20_000 });
 }

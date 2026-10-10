@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as XLSX from "xlsx";
-import { guessColumn, headerRowIndex, str, trimEmptyRows, type ImportField } from "../../src/lib/excel";
+import { guessColumn, headerRowIndex, matchKey, str, trimEmptyRows, type ImportField } from "../../src/lib/excel";
 import { PARTY_FIELDS } from "../../src/lib/party-fields";
 // @ts-expect-error — .mjs yordamchilari (tipsiz)
 import { Client, fd, check, eq2, summary } from "./client.mjs";
@@ -215,6 +215,56 @@ const formSup = q1(`select id, inn from "Supplier" where name=${lit(`Yetk forma 
 check("4.12 yetkazuvchi formasi: 14 xonali JSHSHIR (bo'sh joyli) saqlandi", r.result?.ok === true && formSup?.inn === inn14(44), { res: r.result, formSup });
 r = await sklad.action("suppliers/actions#updateSupplier", [formSup?.id, undefined, fd({ name: `Yetk forma ${T}`, inn: "12 34" })], `/suppliers/${formSup?.id}`);
 check("4.13 yetkazuvchi tahriri: noto'g'ri INN rad etildi", r.result?.error === INN_MSG, r.result ?? r.status);
+
+// ───────── 5. Xodimlar: qiymatlarni moslash (lavozim / bo'lim) ─────────
+console.log("\n5. Xodimlar importi — qiymatlarni moslash");
+const kadr = new Client("kadr");
+await kadr.login("test.kadr");
+const EMP_FIELDS: ImportField[] = [
+  { key: "fullName", label: "F.I.O.", required: true, synonyms: ["сотрудник", "ф.и.о"] },
+  { key: "tabelNo", label: "Tabel", synonyms: ["табельный"] },
+  { key: "position", label: "Lavozim", synonyms: ["должност"] },
+  { key: "subdivision", label: "Bo'lim", synonyms: ["подразделен"] },
+];
+const formov = `Formovshik ${T}`, svar = `Сварщик ${T}`, brig = "Test brigada (sinov)", brig2 = `Бригада 2 ${T}`;
+exec(`insert into "WorkPosition" (id, name, "sortOrder", "updatedAt") values (${lit(`qa_${T}_formov`)}, ${lit(formov)}, 9990, now()) on conflict (name) do nothing`);
+exec(`insert into "Brigade" (id, name) select ${lit(`qa_${T}_brig`)}, ${lit(brig)} where not exists (select 1 from "Brigade" where name=${lit(brig)})`);
+exec(`update "Brigade" set "isActive"=true where name=${lit(brig)}`);
+check("5.1 taxmin: «Формовщик» = «Formovshik», «Бригада 1» = «Brigada-1» (kirill/lotin, belgilarsiz)",
+  matchKey("Формовщик") === matchKey("Formovshik") && matchKey("Бригада 1") === matchKey("Brigada-1") && matchKey("Сварщик") !== matchKey("Formovshik"));
+const empHeader = ["Сотрудник", "Табельный номер", "Должность", "Подразделение"];
+const tab = (n: number) => `Q${T}${n}`;
+const empRows = xlsxRows("xodimlar-moslash", empHeader, [
+  ["Бригада 1", "", "", ""], // guruh sarlavhasi → mavjud brigadaga moslanadi
+  [`QA Formov ${T}`, tab(1), "Формовщик", ""],
+  [`QA Svarshik ${T}`, tab(2), svar, ""],
+  [brig2, "", "", ""], // moslanmagan sarlavha → yangi bo'lim
+  [`QA Ikkinchi ${T}`, tab(3), "Формовщик", ""],
+], EMP_FIELDS);
+const importEmp = (rows: unknown[], valueMaps: unknown, extra: Record<string, string> = { createPositions: "on" }) =>
+  kadr.action("otdel-kadr/actions#importEmployeesFromExcel", [undefined, fd({ rows: JSON.stringify(rows), valueMaps: JSON.stringify(valueMaps), groupRows: "on", updateExisting: "on", ...extra })], "/otdel-kadr/import");
+const empCount = () => count(`select id from "Employee" where "tabelNo" like ${lit(`Q${T}%`)}`);
+
+// Moslash maqsadi tizimda yo'q — xato, hech narsa yozilmaydi
+r = await importEmp(empRows, { position: { "Формовщик": `Yo'q lavozim ${T}` } });
+check("5.2 moslashda yo'q lavozim tanlansa — tushunarli xato", /Moslash uchun tanlangan lavozim ro'yxatda yo'q/.test(r.result?.error ?? ""), r.result ?? r.status);
+r = await importEmp(empRows, { subdivision: { "Бригада 1": `Yo'q brigada ${T}` } });
+check("5.3 moslashda yo'q bo'lim tanlansa — xato", /bo'lim \/ brigada topilmadi/.test(r.result?.error ?? ""), r.result ?? r.status);
+// «yangi lavozim ochish» o'chiq: moslanmagan «Сварщик» — eski xulq (xato)
+r = await importEmp(empRows, { position: { "Формовщик": formov } }, {});
+check("5.4 createPositions o'chiq — moslanmagan lavozim xato beradi", (r.result?.error ?? "").includes(`Ro'yxatda yo'q lavozim: ${svar}`), r.result ?? r.status);
+check("5.5 xatolarda xodim ham, lavozim ham yozilmadi", empCount() === 0 && count(`select id from "WorkPosition" where name=${lit(svar)}`) === 0);
+
+// To'g'ri: Формовщик → mavjud lavozim, «Сварщик …» → yangi nom bilan (moslash yo'q, o'zi qo'shiladi), Бригада 1 → mavjud brigada
+r = await importEmp(empRows, { position: { "Формовщик": formov }, subdivision: { "бригада 1": brig } });
+const emp = (n: number) => q1(`select position, subdivision from "Employee" where "tabelNo"=${lit(tab(n))}`);
+check("5.6 import bajarildi: 3 xodim, yangi lavozim va yangi bo'lim xabarda", /3 ta xodim qo'shildi/.test(r.result?.note ?? "") && r.result.note.includes(`yangi lavozim ochildi: ${svar}`) && r.result.note.includes(`yangi bo'lim / brigada: ${brig2}`), r.result ?? r.status);
+check("5.7 «Формовщик» → mavjud «Formovshik» lavozimiga tushdi (ikkala qatorda)", emp(1)?.position === formov && emp(3)?.position === formov, [emp(1), emp(3)]);
+check("5.8 moslanmagan «Сварщик» — yangi ishchi lavozim bo'lib ochildi va xodimga yozildi",
+  emp(2)?.position === svar && count(`select id from "WorkPosition" where name=${lit(svar)}`) === 1, emp(2));
+check("5.9 sarlavha «Бригада 1» → mavjud «Test brigada (sinov)» bo'limi", emp(1)?.subdivision === brig && emp(2)?.subdivision === brig, [emp(1), emp(2)]);
+check("5.10 moslanmagan sarlavha — yangi bo'lim nomi o'zicha yozildi", emp(3)?.subdivision === brig2, emp(3));
+check("5.11 yangi lavozim AuditLog'da", count(`select id from "AuditLog" where entity='WorkPosition' and action='CREATE' and after->>'name'=${lit(svar)}`) === 1);
 
 fs.rmSync(DIR, { recursive: true, force: true });
 summary("excel-imports:");

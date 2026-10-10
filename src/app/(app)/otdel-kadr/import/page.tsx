@@ -1,5 +1,6 @@
 import { requireRoles } from "@/lib/page-guard";
 import { workPositions } from "@/lib/positions";
+import { knownSubdivisions } from "@/lib/import-employees";
 import { Card, Checkbox, Field, PageHeader, Select } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { importEmployeesFromExcel } from "../actions";
@@ -9,10 +10,12 @@ import { importEmployeesFromExcel } from "../actions";
  * (Подразделение sarlavhalari ostida Сотрудник, Табельный номер, Должность, Тарифная ставка,
  * Дата приема/увольнения, Телефон, Дата рождения) kartalarga tushadi.
  * Ustun nomlari rus/o'zbek aralash bo'lishi mumkin — mos ustun o'zi topiladi, keyin tekshirib tuzatiladi.
+ * Lavozim va bo'lim nomlari "Qiymatlarni moslash" bilan tizimdagi nomlarga keltiriladi («Формовщик» → «Formovshik»);
+ * moslanmagani yangi bo'lib qo'shiladi.
  */
 export default async function EmployeesImportPage() {
   await requireRoles(["HR"], { module: "employees", actions: ["create"] });
-  const positions = await workPositions();
+  const [positions, subdivisions] = await Promise.all([workPositions(), knownSubdivisions()]);
 
   return (
     <div>
@@ -34,8 +37,23 @@ export default async function EmployeesImportPage() {
           fields={[
             { key: "fullName", label: "F.I.O. (Сотрудник)", required: true, synonyms: ["сотрудник", "ф.и.о", "фио", "работник", "xodim", "ходим", "familiya", "ism", "name"] },
             { key: "tabelNo", label: "Tabel № (Табельный номер)", hint: "shu raqam bo'yicha mavjud xodim topiladi", synonyms: ["табельный", "табел", "tabel", "личный номер", "таб."] },
-            { key: "position", label: "Lavozim (Должность)", hint: "ro'yxatda bo'lmasa yangi ishchi lavozim ochiladi", synonyms: ["должност", "lavozim", "kasb", "position"] },
-            { key: "subdivision", label: "Bo'lim / brigada (Подразделение)", hint: "alohida ustun bo'lmasa jadvaldagi sarlavhadan olinadi", synonyms: ["подразделен", "бригада", "brigada", "цех", "участок", "bo'lim", "bolim", "бўлим"] },
+            {
+              key: "position", label: "Lavozim (Должность)", hint: "ro'yxatda bo'lmasa yangi ishchi lavozim ochiladi", synonyms: ["должност", "lavozim", "kasb", "position"],
+              valueMap: {
+                options: positions.map((p) => ({ value: p.name, label: p.name })),
+                newLabel: "Yangi lavozim ochiladi",
+                note: "Moslanmagan lavozimlar Otdel kadr → Ishchi lavozimlar ro'yxatiga yangi bo'lib qo'shiladi — buning uchun pastdagi «Ro'yxatda yo'q lavozimlarni … ochish» belgisi yoqilgan bo'lsin, aks holda import xato beradi.",
+              },
+            },
+            {
+              key: "subdivision", label: "Bo'lim / brigada (Подразделение)", hint: "alohida ustun bo'lmasa jadvaldagi sarlavhadan olinadi", synonyms: ["подразделен", "бригада", "brigada", "цех", "участок", "bo'lim", "bolim", "бўлим"],
+              valueMap: {
+                options: subdivisions.map((n) => ({ value: n, label: n })),
+                newLabel: "Yangi bo'lim qo'shiladi",
+                note: "Ro'yxatda — xodim kartalaridagi bo'lim/brigada nomlari va faol brigadalar. Moslanmagan nom xodim kartasiga yangi bo'lim bo'lib yoziladi va keyingi safar shu ro'yxatda chiqadi. «sarlavha» — jadvaldagi guruh qatoridan («Бригада 1») olingan nom.",
+                groupRows: { nameKey: "fullName", toggle: "groupRows" },
+              },
+            },
             { key: "tariffRate", label: "Tarif stavka (Тарифная ставка)", synonyms: ["тарифная", "тариф", "ставка", "оклад", "maosh", "ish haqi", "зарплат"] },
             { key: "hiredAt", label: "Ishga kirgan (Дата приема)", hint: "kun.oy.yil", synonyms: ["дата приема", "дата приёма", "приема", "приёма", "принят", "ishga kirgan", "qabul"] },
             { key: "firedAt", label: "Ishdan bo'shagan (Дата увольнения)", hint: "to'ldirilgan bo'lsa xodim nofaol bo'ladi", synonyms: ["увольнен", "уволен", "bo'shagan", "boshagan", "ishdan"] },
