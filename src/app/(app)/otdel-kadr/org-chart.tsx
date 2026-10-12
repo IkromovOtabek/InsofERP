@@ -18,7 +18,7 @@ export type OrgEmployee = {
   id: string; fullName: string; position: string; phone: string | null;
   hiredAt: string | null; photo: boolean; isActive: boolean; login: boolean; docs: number;
 };
-export type OrgPosition = { id: string; name: string; note: string | null; department: string | null; isDriver: boolean };
+export type OrgPosition = { id: string; name: string; note: string | null; department: string | null; loginRole?: string | null; isDriver: boolean };
 
 /* ═══════════════════════ Chizma o'lchamlari ═══════════════════════ */
 

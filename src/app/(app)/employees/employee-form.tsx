@@ -167,8 +167,10 @@ export function DriverFields({ vehicles, defaults, requirePlate = false }: {
  * Ro'yxatdan tanlansa mavjud xodimga login beriladi (dublikat karta ochilmaydi),
  * yangi ism yozilsa yangi xodim qo'shiladi. Lavozimlar ro'yxati Otdel kadrdagi bilan bir xil.
  */
-export function EmployeeForm({ departments, work, drivers, staff, vehicles, canGrant }: {
+export function EmployeeForm({ departments, work, drivers, staff, vehicles, canGrant, templates = {} }: {
   departments: Pos[]; work: string[]; drivers: string[]; staff: StaffOpt[]; vehicles: VehicleOpt[]; canGrant: boolean;
+  /** Tizimga kiradigan ishchi lavozimlar (kichik harfda nomi → asosiy bo'lim) — direktorning login shabloni. */
+  templates?: Record<string, string>;
 }) {
   const [state, action, pending] = useActionState(createEmployee, undefined);
   const ref = useRef<HTMLFormElement>(null);
@@ -190,7 +192,8 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
   const pick = (x: StaffOpt | null) => setPicked(x);
 
   /** Lavozim almashganda "login uchun bo'lim" tanlovi eskirmasin. */
-  const changePosition = (v: string) => { setPosition(v); setLoginRole(""); };
+  const tplRole = templates[position.trim().toLowerCase()] ?? "";
+  const changePosition = (v: string) => { setPosition(v); setLoginRole(templates[v.trim().toLowerCase()] ?? ""); };
 
   return (
     <form ref={ref} action={action} className="space-y-3">
@@ -229,7 +232,10 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
             <option value="DRIVER">Haydovchi (ilova)</option>
             <option value="BRIGADIER">Brigadir (ilova)</option>
           </Select>
-          <span className="text-slate-500">Kadr lavozimi «{position}» bo&apos;lib qoladi.</span>
+          <span className="text-slate-500">
+            Kadr lavozimi «{position}» bo&apos;lib qoladi.
+            {tplRole && loginRole === tplRole && " Direktorning login shabloni: bo'lim va ruxsatlar shablondan olinadi."}
+          </span>
         </div>
       )}
       {/* Tanlangan bo'lim serverga shu maydon bilan ketadi */}

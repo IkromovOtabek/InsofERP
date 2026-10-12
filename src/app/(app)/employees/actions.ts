@@ -16,6 +16,8 @@ import { formatPhone, normalizePhone } from "@/lib/phone";
 import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
+import type { Perms } from "@/lib/auth";
+import { loginTemplateFor } from "@/lib/perm-template";
 
 // Noto'g'ri sana (masalan "31.02.1990" yoki matn) Invalid Date bo'lib Prisma xatosi (500) berardi — forma xatosi bo'lsin
 const zDate = z.string().trim().optional().transform((v, ctx) => {
@@ -168,14 +170,21 @@ async function directorGuard(userId: string | null, callerRole: Role): Promise<s
  * Login yaratadi (tranzaksiya ichida). Rol: bo'lim lavozimi bo'lsa o'sha bo'limning roli,
  * haydovchi lavozimi bo'lsa DRIVER — haydovchi ilovada faqat o'z reyslarini ko'radi.
  */
-async function createLoginFor(tx: Prisma.TransactionClient, callerRole: Role, fullName: string, role: Role | null, login: string, password: string) {
+async function createLoginFor(tx: Prisma.TransactionClient, callerRole: Role, fullName: string, role: Role | null, login: string, password: string, perms?: Perms) {
   if (!role) throw new Error("Bu lavozim uchun tizim roli yo'q");
   if (role === "DIRECTOR" && callerRole !== "DIRECTOR") throw new Error(DIRECTOR_ONLY);
   if (login.length < 3) throw new Error("Login kamida 3 belgi");
   const problem = passwordProblem(password);
   if (problem) throw new Error(problem);
-  return tx.user.create({ data: { login: login.toLowerCase(), fullName, role, passwordHash: await hashPassword(password) } });
+  return tx.user.create({ data: { login: login.toLowerCase(), fullName, role, passwordHash: await hashPassword(password), ...(perms ? { perms } : {}) } });
 }
+
+/**
+ * Lavozimning login shabloni (direktor belgilagan): rol tanlanmagan bo'lsa shablondagi asosiy bo'lim olinadi,
+ * ruxsatlar esa login shablondagi bo'lim bilan ochilsa nusxalanadi (keyin direktor Ruxsatlar'da o'zgartira oladi).
+ */
+const templatePerms = (tpl: { role: Role; perms: Perms | undefined } | null, role: Role | null) =>
+  tpl && role === tpl.role ? tpl.perms : undefined;
 
 export async function createEmployee(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("employees", "create");
@@ -190,7 +199,10 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   // Ro'yxatdan tanlangan xodim allaqachon brigadir bo'lsa — bo'lim tanlanmasa ham BRIGADIER
   const leader = d.employeeId ? await isBrigadeLeader(d.employeeId) : false;
   // Bo'lim lavozimi — login majburiy; haydovchi, brigadir va tanlangan bo'lim — ixtiyoriy (login yozilsa ochiladi)
-  const role: Role | null = deptRole ?? (hasCreds ? (chosen ?? (driver ? "DRIVER" : leader ? "BRIGADIER" : null)) : null);
+  // Tizimga kiradigan ishchi lavozim (login shabloni) — bo'lim tanlanmasa shablondagi bo'lim
+  const tpl = deptRole ? null : await loginTemplateFor(d.position);
+  const role: Role | null = deptRole ?? (hasCreds ? (chosen ?? tpl?.role ?? (driver ? "DRIVER" : leader ? "BRIGADIER" : null)) : null);
+  const perms = templatePerms(tpl, role);
   if (deptRole && !hasCreds) return { error: `"${d.position}" lavozimi tizimga kiradi — login va parol kiriting` };
   if (chosen && !hasCreds) return { error: "Login va parol kiriting yoki bo'limni «login kerak emas» qilib qo'ying" };
   if (role && !["HR", "DIRECTOR"].includes(s.role)) return { error: "Tizimga kiradigan xodimni faqat Otdel kadr yoki direktor qo'sha oladi" };
@@ -213,7 +225,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
     let attachedVehicleId: string | null = null;
     try {
       await db.$transaction(async (tx) => {
-        const user = role && d.login && d.password ? await createLoginFor(tx, s.role, d.fullName, role, d.login, d.password) : null;
+        const user = role && d.login && d.password ? await createLoginFor(tx, s.role, d.fullName, role, d.login, d.password, perms) : null;
         // Texnika faqat raqam yozilgan bo'lsa yangilanadi — bo'sh forma mavjud biriktirishni uzmasin
         const extra = driver && d.plate ? await driverData(tx, s.userId, d) : {};
         const e = await tx.employee.update({
@@ -229,7 +241,7 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
           },
         });
         attachedVehicleId = e.vehicleId;
-        await audit(tx, s.userId, "UPDATE", "Employee", e.id, cur, { ...e, login: user?.login, role, via: "xodimlar-formasi", ...(user && isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
+        await audit(tx, s.userId, "UPDATE", "Employee", e.id, cur, { ...e, login: user?.login, role, via: "xodimlar-formasi", ...(user && perms ? { shablon: d.position } : {}), ...(user && isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
       });
     } catch (e) {
       const m = String(e);
@@ -251,13 +263,13 @@ export async function createEmployee(_prev: ActionState, fd: FormData): Promise<
   let vehicleId: string | null = null;
   try {
     await db.$transaction(async (tx) => {
-      const user = role ? await createLoginFor(tx, s.role, d.fullName, role, d.login!, d.password!) : null;
+      const user = role ? await createLoginFor(tx, s.role, d.fullName, role, d.login!, d.password!, perms) : null;
       // Haydovchi bo'lsa texnikasi ham shu yerda ochiladi/biriktiriladi
       const extra = driver ? await driverData(tx, s.userId, d) : {};
       const e = await tx.employee.create({ data: { fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note, userId: user?.id, ...extra } });
       createdId = e.id;
       vehicleId = e.vehicleId;
-      await audit(tx, s.userId, "CREATE", "Employee", e.id, undefined, { ...e, login: user?.login, role, ...(user && isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
+      await audit(tx, s.userId, "CREATE", "Employee", e.id, undefined, { ...e, login: user?.login, role, ...(user && perms ? { shablon: d.position } : {}), ...(user && isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
     });
   } catch (e) {
     const m = String(e);
@@ -291,16 +303,19 @@ export async function grantLogin(employeeId: string, _prev: ActionState, fd: For
   if (e.userId) return { error: "Bu xodimda login bor" };
   if (!e.isActive) return { error: `${e.fullName} nofaol — avval "Yoqish" tugmasi bilan ro'yxatga qaytaring` };
   const chosen = (LOGIN_ROLES as string[]).includes(wanted) ? (wanted as Role) : null;
+  const tpl = roleForPosition(e.position) ? null : await loginTemplateFor(e.position);
   const role: Role | null = chosen
     ?? roleForPosition(e.position)
+    ?? tpl?.role
     ?? ((await isDriverPosition(e.position)) ? "DRIVER" : (await isBrigadeLeader(employeeId)) ? "BRIGADIER" : null);
+  const perms = templatePerms(tpl, role);
   if (!role) return { error: `"${e.position}" lavozimi tizimga kirmaydi — qaysi bo'lim uchun login kerakligini tanlang` };
   if (role === "DIRECTOR" && s.role !== "DIRECTOR") return { error: DIRECTOR_ONLY };
   try {
     await db.$transaction(async (tx) => {
-      const u = await createLoginFor(tx, s.role, e.fullName, role, login, password);
+      const u = await createLoginFor(tx, s.role, e.fullName, role, login, password, perms);
       await tx.employee.update({ where: { id: employeeId }, data: { userId: u.id } });
-      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, { login: u.login, role: u.role, ...(isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
+      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, undefined, { login: u.login, role: u.role, ...(perms ? { shablon: e.position } : {}), ...(isSensitive(role) ? { sensitiveLogin: true, by: s.role } : {}) });
     });
   } catch (err) {
     const m = String(err);
@@ -419,7 +434,8 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   if (before.userId && newRole !== roleForPosition(before.position)) {
     return { error: "Login berilgan xodimning bo'limi pastdagi \"Tizimga kirish → Bo'limni almashtirish\" orqali o'zgartiriladi" };
   }
-  if (!before.userId && newRole) {
+  // Excel importdan bo'lim lavozimi bilan (loginsiz) kelgan karta tahrirlanaversin — faqat lavozimni bo'limga o'zgartirish taqiqlanadi
+  if (!before.userId && newRole && d.position !== before.position) {
     return { error: `"${d.position}" tizimga kiradigan bo'lim — bu yerdan emas, "Login berish" orqali tayinlanadi` };
   }
 

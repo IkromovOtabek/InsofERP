@@ -33,7 +33,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const [employees, catalog, workRows, staff, vehicles, access] = await Promise.all([
     db.employee.findMany({ where, orderBy: [{ isActive: "desc" }, { fullName: "asc" }], include: { user: true, vehicle: true, _count: { select: { trips: true } } } }),
     positionCatalog(),
-    db.workPosition.findMany({ select: { name: true, department: true } }),
+    db.workPosition.findMany({ select: { name: true, department: true, loginRole: true, isActive: true } }),
     // Formadagi F.I.O. maydoni uchun: ro'yxatdagi xodimlar (Otdel kadr yoki Excel orqali kelganlar ham).
     // Nofaoli ham chiqadi — tanlansa qayta faollashtiriladi, aks holda odam topilmay qoladi.
     db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, phone: true, userId: true, isActive: true, vehicle: true, licenseNo: true, licenseCategory: true, licenseExpiry: true } }),
@@ -47,6 +47,8 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const LOGIN_ROLE_OPTS = LOGIN_ROLE_OPTIONS;
   // Ishchi lavozimga Otdel kadrda belgilangan bo'lim — login berishda taxmin bo'lib turadi
   const deptOf = new Map(workRows.filter((w) => w.department).map((w) => [w.name.trim().toLowerCase(), w.department as string]));
+  // Tizimga kiradigan ishchi lavozim (direktor belgilagan login shabloni) — login shu bo'lim bilan ochiladi, ruxsatlari shablondan
+  const tplOf = new Map(workRows.filter((w) => w.isActive && w.loginRole && w.loginRole !== "DIRECTOR").map((w) => [w.name.trim().toLowerCase(), w.loginRole as string]));
   const staffOpts = staff.map((e) => ({
     id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, hasLogin: !!e.userId, isActive: e.isActive,
     plate: e.vehicle?.plate ?? null, vehicleType: e.vehicle?.type ?? null, capacityM3: e.vehicle?.capacityM3 ? String(e.vehicle.capacityM3) : null,
@@ -77,7 +79,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
             Ro&apos;yxatdan tanlasangiz yangi karta ochilmaydi, shu xodimga login beriladi. To&apos;liq karta (hujjatlar, tabel, tarif) —{" "}
             <Link href="/otdel-kadr?tab=xodimlar" className="font-medium text-slate-700 underline">Otdel kadr → Xodimlar ro&apos;yxati</Link> da.
           </p>
-          <EmployeeForm departments={POSITIONS} work={[...workNames, ...strays]} drivers={drivers} staff={staffOpts} vehicles={vehicleOpts} canGrant={isHR} />
+          <EmployeeForm departments={POSITIONS} work={[...workNames, ...strays]} drivers={drivers} staff={staffOpts} vehicles={vehicleOpts} canGrant={isHR} templates={Object.fromEntries(tplOf)} />
         </Card>
       )}
 
@@ -155,7 +157,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
                       </span>
                     )
                     /* Ishchi lavozimdagi xodim ham login olsin — qaysi bo'lim uchun ekanini kadr tanlaydi */
-                    : isHR && e.isActive ? <GrantLoginForm employeeId={e.id} roles={LOGIN_ROLE_OPTS} defaultRole={role ?? deptOf.get(e.position.trim().toLowerCase()) ?? null} />
+                    : isHR && e.isActive ? <GrantLoginForm employeeId={e.id} roles={LOGIN_ROLE_OPTS} defaultRole={role ?? tplOf.get(e.position.trim().toLowerCase()) ?? deptOf.get(e.position.trim().toLowerCase()) ?? null} />
                     : <span className="text-slate-400">—</span>}
                 </Td>
                 <Td right>{e._count.trips}</Td>

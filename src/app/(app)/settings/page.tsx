@@ -3,8 +3,10 @@ import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, Use
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
-import { ROLE_LABELS, MODULES, NAV, canView } from "@/lib/nav";
-import { actionDef, delegableActions, roleDefaultActions } from "@/lib/permissions";
+import { ROLE_LABELS, MODULES } from "@/lib/nav";
+import { actionDef } from "@/lib/permissions";
+import { BULK_FORM_ID, permModules } from "@/lib/perm-modules";
+import { describePerms, positionTemplates, templateRoleLabel } from "@/lib/perm-template";
 import type { Role } from "@/generated/prisma";
 import { parsePerms } from "@/lib/auth";
 import { dateTime, isoDate, money } from "@/lib/format";
@@ -17,7 +19,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, type PermModule } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
 import { DeletionRow } from "./deletion-forms";
 import { SelfAccountPanel } from "../hisobim/panel";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
@@ -158,12 +160,10 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
     (!q || u.fullName.toLowerCase().includes(q) || u.login.toLowerCase().includes(q)) &&
     (!f.rol || u.role === f.rol) &&
     (f.faqat !== "1" || !!parsePerms(u.perms)));
-  // Modul qaysi menyu guruhiga tegishli (Sotuv, Sklad...) — forma shu bo'yicha bo'linadi
-  const groupOf = (m: (typeof MODULES)[number]) => NAV.find((i) => m.prefixes.some((p) => i.href.startsWith(p)))?.group ?? "Boshqa";
-  const modulesFor = (role: Role): PermModule[] => MODULES.map((m) => ({
-    key: m.key, label: m.label, group: groupOf(m),
-    actions: delegableActions(m.key).map((a) => ({ key: a.key, label: a.label, hint: a.hint })),
-    role: { view: canView({ role }, m.key), actions: canView({ role }, m.key) ? roleDefaultActions(role, m.key) : [] },
+  const modulesFor = (role: Role) => permModules(role);
+  const templates: PermTemplateOpt[] = (await positionTemplates()).map((t) => ({
+    id: t.id, name: t.name, roleLabel: t.loginRole ? templateRoleLabel(t.loginRole) : null,
+    summary: [t.loginRole ? `Asosiy bo'lim: ${templateRoleLabel(t.loginRole)}` : "", ...(Object.keys(t.perms).length ? describePerms(t.perms) : ["Ruxsatlar: rol bo'yicha"])].filter(Boolean).join(" · "),
   }));
   const withPerms = all.filter((u) => parsePerms(u.perms)).length;
   const roles = [...new Set(all.map((u) => u.role))];
@@ -206,6 +206,16 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
         </form>
       </Card>
 
+      {users.length > 0 && (
+        <Card>
+          <h2 className="mb-1 font-semibold">Bir nechta xodimga birdan</h2>
+          <p className="mb-3 text-sm text-slate-500">
+            Pastdagi ro&apos;yxatda xodimlarni belgilang va ularga lavozim shablonini yoki bitta ruxsatlar to&apos;plamini birdan bering. Har xodim uchun alohida audit yoziladi.
+          </p>
+          <BulkPermsBar templates={templates} modules={permModules(null)} total={users.length} />
+        </Card>
+      )}
+
       {users.length === 0 ? <Card><Empty text="Mos foydalanuvchi topilmadi" /></Card> : users.map((u) => {
         const perms = parsePerms(u.perms) ?? {};
         const chips = Object.entries(perms).map(([m, v]) => {
@@ -215,7 +225,9 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
         });
         return (
           <Card key={u.id}>
-            <details open={f.u === u.id || users.length === 1}>
+            <div className="flex items-start gap-3">
+            <input type="checkbox" form={BULK_FORM_ID} name="ids" value={u.id} aria-label={`${u.fullName} — belgilash`} className="mt-1 h-4 w-4 shrink-0 accent-slate-900" />
+            <details open={f.u === u.id || users.length === 1} className="min-w-0 flex-1">
               <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
                 <ShieldCheck size={16} className={chips.length ? "text-amber-500" : "text-slate-300"} />
                 <span className="font-medium">{u.fullName}</span>
@@ -229,6 +241,7 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
                 <UserPermsForm userId={u.id} modules={modulesFor(u.role)} current={perms} />
               </div>
             </details>
+            </div>
           </Card>
         );
       })}

@@ -693,6 +693,10 @@ model WorkPosition {
   note       String? // vazifasi / talab
   department String? // qaysi bo'lim tarkibida turadi (Role kaliti: PRODUCTION, LOGISTICS...) — tashkiliy tuzilma diagrammasi shu bo'yicha chiziladi
   isDriver   Boolean  @default(false) // haydovchi ilovasiga chiqadimi
+  // Login shabloni (faqat direktor belgilaydi): shu lavozimga ochilgan login qaysi asosiy bo'lim roli bilan
+  // kiradi (null — lavozim o'zi tizimga kirmaydi) va qanday modul ruxsatlari bilan (User.perms bilan bir xil shakl)
+  loginRole  Role?
+  perms      Json?
   sortOrder  Int      @default(0)
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())

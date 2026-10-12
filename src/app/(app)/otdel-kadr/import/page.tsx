@@ -1,21 +1,21 @@
 import { requireRoles } from "@/lib/page-guard";
-import { workPositions } from "@/lib/positions";
+import { importPositionOptions } from "@/lib/positions";
 import { knownSubdivisions } from "@/lib/import-employees";
-import { Card, Checkbox, Field, PageHeader, Select } from "@/components/ui";
-import { ExcelImport } from "@/components/excel-import";
-import { importEmployeesFromExcel } from "../actions";
+import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
+import { Card, PageHeader } from "@/components/ui";
+import { EmployeesImport } from "./employees-import";
 
 /**
  * Otdel kadr → "Excel orqali qo'shish": buxgalteriya tabeli ko'rinishidagi xodimlar ro'yxati
  * (Подразделение sarlavhalari ostida Сотрудник, Табельный номер, Должность, Тарифная ставка,
  * Дата приема/увольнения, Телефон, Дата рождения) kartalarga tushadi.
  * Ustun nomlari rus/o'zbek aralash bo'lishi mumkin — mos ustun o'zi topiladi, keyin tekshirib tuzatiladi.
- * Lavozim va bo'lim nomlari "Qiymatlarni moslash" bilan tizimdagi nomlarga keltiriladi («Формовщик» → «Formovshik»);
- * moslanmagani yangi bo'lib qo'shiladi.
+ * Lavozim va bo'lim nomlari "Qiymatlarni moslash" bilan tizimdagi nomlarga keltiriladi («Формовщик» → «Formovshik»,
+ * «КАССИР» → «Kassa / bank»); ro'yxatda yo'q lavozimni shu yerning o'zida «+ Yangi lavozim…» bilan ochish mumkin.
  */
 export default async function EmployeesImportPage() {
-  await requireRoles(["HR"], { module: "employees", actions: ["create"] });
-  const [positions, subdivisions] = await Promise.all([workPositions(), knownSubdivisions()]);
+  const s = await requireRoles(["HR"], { module: "employees", actions: ["create"] });
+  const [options, subdivisions] = await Promise.all([importPositionOptions(), knownSubdivisions()]);
 
   return (
     <div>
@@ -25,64 +25,12 @@ export default async function EmployeesImportPage() {
         subtitle="Tabel jadvalini yuklang — har qator xodim kartasi bo'ladi. Tabel raqami (yoki F.I.O.) bo'yicha bazada bor xodim topilsa, yangi karta ochilmaydi — mavjudi yangilanadi."
       />
       <Card className="max-w-6xl">
-        <ExcelImport
-          action={importEmployeesFromExcel}
-          submitLabel="Xodimlarni qo'shish"
-          templateName="xodimlar-namuna"
-          example={{
-            fullName: "ABDUKARIMOV AZIMJON ORIFJONOVICH", tabelNo: "00401", position: "Formovshik",
-            subdivision: "Brigada 1", tariffRate: 2500000, hiredAt: "10.09.2026", firedAt: "",
-            phone: "+998 90 123 45 67", birthDate: "26.12.1989",
-          }}
-          fields={[
-            { key: "fullName", label: "F.I.O. (Сотрудник)", required: true, synonyms: ["сотрудник", "ф.и.о", "фио", "работник", "xodim", "ходим", "familiya", "ism", "name"] },
-            { key: "tabelNo", label: "Tabel № (Табельный номер)", hint: "shu raqam bo'yicha mavjud xodim topiladi", synonyms: ["табельный", "табел", "tabel", "личный номер", "таб."] },
-            {
-              key: "position", label: "Lavozim (Должность)", hint: "ro'yxatda bo'lmasa yangi ishchi lavozim ochiladi", synonyms: ["должност", "lavozim", "kasb", "position"],
-              valueMap: {
-                options: positions.map((p) => ({ value: p.name, label: p.name })),
-                newLabel: "Yangi lavozim ochiladi",
-                note: "Moslanmagan lavozimlar Otdel kadr → Ishchi lavozimlar ro'yxatiga yangi bo'lib qo'shiladi — buning uchun pastdagi «Ro'yxatda yo'q lavozimlarni … ochish» belgisi yoqilgan bo'lsin, aks holda import xato beradi.",
-              },
-            },
-            {
-              key: "subdivision", label: "Bo'lim / brigada (Подразделение)", hint: "alohida ustun bo'lmasa jadvaldagi sarlavhadan olinadi", synonyms: ["подразделен", "бригада", "brigada", "цех", "участок", "bo'lim", "bolim", "бўлим"],
-              valueMap: {
-                options: subdivisions.map((n) => ({ value: n, label: n })),
-                newLabel: "Yangi bo'lim qo'shiladi",
-                note: "Ro'yxatda — xodim kartalaridagi bo'lim/brigada nomlari va faol brigadalar. Moslanmagan nom xodim kartasiga yangi bo'lim bo'lib yoziladi va keyingi safar shu ro'yxatda chiqadi. «sarlavha» — jadvaldagi guruh qatoridan («Бригада 1») olingan nom.",
-                groupRows: { nameKey: "fullName", toggle: "groupRows" },
-              },
-            },
-            { key: "tariffRate", label: "Tarif stavka (Тарифная ставка)", synonyms: ["тарифная", "тариф", "ставка", "оклад", "maosh", "ish haqi", "зарплат"] },
-            { key: "hiredAt", label: "Ishga kirgan (Дата приема)", hint: "kun.oy.yil", synonyms: ["дата приема", "дата приёма", "приема", "приёма", "принят", "ishga kirgan", "qabul"] },
-            { key: "firedAt", label: "Ishdan bo'shagan (Дата увольнения)", hint: "to'ldirilgan bo'lsa xodim nofaol bo'ladi", synonyms: ["увольнен", "уволен", "bo'shagan", "boshagan", "ishdan"] },
-            { key: "phone", label: "Telefon (Телефон рабочий)", synonyms: ["телефон", "tel", "phone", "моб", "raqam"] },
-            { key: "birthDate", label: "Tug'ilgan sana (Дата рождения)", hint: "«Дней до дня рождения» ustuni kerak emas", synonyms: ["дата рожд", "туғилган", "tug'ilgan", "tugilgan", "birth", "рожден"] },
-          ]}
-        >
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Standart lavozim" hint="Должность ustuni bo'sh qolgan qatorlar uchun">
-              <Select name="defaultPosition" defaultValue="">
-                <option value="">— (bo'sh bo'lsa xato beriladi)</option>
-                {positions.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-              </Select>
-            </Field>
-          </div>
-          <div className="space-y-2">
-            <Checkbox
-              name="groupRows"
-              defaultChecked
-              label="Faqat nomi yozilgan qator — bo'lim sarlavhasi («Бригада 1»): xodim sifatida qo'shilmaydi, undan keyingi xodimlarga bo'lim bo'lib biriktiriladi"
-            />
-            <Checkbox name="createPositions" defaultChecked label="Ro'yxatda yo'q lavozimlarni yangi ishchi lavozim sifatida ochish (Формовщик, Бригадир…)" />
-            <Checkbox name="updateExisting" defaultChecked label="Bazada bor xodimlarning kartasini fayldagi ma'lumot bilan yangilash — bo'sh kataklar eski qiymatni o'chirmaydi" />
-          </div>
-          <p className="text-xs text-slate-500">
-            Surat va hujjat nusxalari Excel&apos;dan kelmaydi — ularni keyin xodim kartasidan yuklaysiz.
-            Tizimga kiradigan bo&apos;lim lavozimlari (Sotuv, Buxgalteriya…) bu yerdan qo&apos;shilmaydi: ular login bilan Xodimlar sahifasida ochiladi.
-          </p>
-        </ExcelImport>
+        <EmployeesImport
+          initialOptions={options}
+          subdivisions={subdivisions}
+          canLogin={s.role === "DIRECTOR"}
+          roles={TEMPLATE_ROLE_OPTIONS}
+        />
       </Card>
     </div>
   );

@@ -3,6 +3,8 @@ import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, FileSpreadsheet
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
+import { parsePerms } from "@/lib/auth";
+import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
 import { date } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import {
@@ -59,6 +61,9 @@ export default async function OtdelKadrPage({ searchParams }: {
   const newHires = employees.filter((e) => e.hiredAt && e.hiredAt >= monthAgo).length;
   const countByPosition = new Map<string, number>();
   for (const e of employees) countByPosition.set(e.position, (countByPosition.get(e.position) ?? 0) + 1);
+  // Lavozimdagi faol login egalari — login shabloni shularga qo'llanadi
+  const loginsByPosition = new Map<string, number>();
+  for (const e of employees) if (e.isActive && e.user?.isActive) loginsByPosition.set(e.position, (loginsByPosition.get(e.position) ?? 0) + 1);
 
   // ── Bo'limlar tabi: tuzilma diagrammasi uchun sodda ma'lumot + etaplardagi jonli sanoq ──
   const orgEmployees: OrgEmployee[] = employees.map((e) => ({
@@ -69,7 +74,7 @@ export default async function OtdelKadrPage({ searchParams }: {
   // Yashirilgan lavozim ham xodimi bo'lsa chizmada qoladi — aks holda odam ko'rinmay qoladi
   const orgPositions = positions
     .filter((p) => p.isActive || (countByPosition.get(p.name) ?? 0) > 0)
-    .map((p) => ({ id: p.id, name: p.name, note: p.note, department: p.department, isDriver: p.isDriver }));
+    .map((p) => ({ id: p.id, name: p.name, note: p.note, department: p.department, loginRole: p.loginRole, isDriver: p.isDriver }));
 
   // ── Davomat: kunlik ro'yxat yoki oylik tabel ──
   // Tabelda xodim ishga kirgan kundan bo'shagan kunigacha turadi; shu oyning eski
@@ -208,7 +213,7 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "lavozimlar" && (
         <div className="space-y-4">
           <Card>
-            <CardHeader title="Yangi ishchi lavozim" description="Login bermaydigan lavozimlar. Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi." icon={BriefcaseBusiness} />
+            <CardHeader title="Yangi ishchi lavozim" description={s.role === "DIRECTOR" ? "Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi. Lavozim tizimga kirsin desangiz — ro'yxatdagi «Login shabloni» orqali asosiy bo'lim va ruxsatlarni belgilang." : "Qo'shilgani darhol Xodimlar sahifasidagi ro'yxatga tushadi. Lavozimni tizimga kiradigan qilishni (login shabloni) direktor belgilaydi."} icon={BriefcaseBusiness} />
             <NewPositionForm nextOrder={(positions.at(-1)?.sortOrder ?? 0) + 10} />
           </Card>
           <Card>
@@ -223,7 +228,13 @@ export default async function OtdelKadrPage({ searchParams }: {
             {positions.length === 0 && <div className="px-3 py-6 text-center text-sm text-slate-500">Lavozim yo&apos;q</div>}
             {positions.map((p) => (
               <div key={p.id} className={p.isActive ? "" : "bg-slate-50/70 opacity-70"}>
-                <PositionRow p={p} used={countByPosition.get(p.name) ?? 0} />
+                <PositionRow
+                  p={{ ...p, perms: parsePerms(p.perms) ?? {} }}
+                  used={countByPosition.get(p.name) ?? 0}
+                  logins={loginsByPosition.get(p.name) ?? 0}
+                  roles={TEMPLATE_ROLE_OPTIONS}
+                  canTemplate={s.role === "DIRECTOR"}
+                />
               </div>
             ))}
           </Card>

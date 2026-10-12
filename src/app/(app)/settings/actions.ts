@@ -9,11 +9,9 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 import { saveDailyOrderLimits as saveDailyOrderLimitsDb } from "@/lib/company";
-import { MODULES } from "@/lib/nav";
 import { parsePerms, type Perms } from "@/lib/auth";
-import { actionDef, delegableActions } from "@/lib/permissions";
-import { notifyAfter, notifyUsers } from "@/lib/notify";
-import { Prisma } from "@/generated/prisma";
+import { applyAccess, applyAccessMany, permsFromForm, positionTemplates, templateRoleLabel } from "@/lib/perm-template";
+import type { Role } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
 
 const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
@@ -357,40 +355,9 @@ export async function saveDailyOrderLimits(_prev: ActionState, fd: FormData): Pr
 
 /* ───────── Modul va amal bo'yicha ruxsat (faqat direktor taqsimlaydi) ───────── */
 
-const MODULE_KEYS = new Set(MODULES.map((m) => m.key));
-
-/** Ruxsatlarni o'qiladigan matnga — audit va bildirishnoma uchun ("Zayavkalar: ochish, qabul qilish"). */
-function describePerms(p: Perms): string[] {
-  return Object.entries(p).map(([m, v]) => {
-    const label = MODULES.find((x) => x.key === m)?.label ?? m;
-    if (Array.isArray(v)) {
-      const names = v.map((a) => actionDef(m, a)?.label ?? a);
-      return `${label}: ko'rish${names.length ? " + " + names.join(", ") : ""}`;
-    }
-    return `${label}: ${v === "none" ? "yopiq" : v === "view" ? "faqat ko'rish" : "to'liq"}`;
-  });
-}
-
-/** Ruxsat o'zgargach: audit + xodimga bildirishnoma (nima o'zgarganini ko'rsin). */
-async function applyPerms(directorId: string, target: { id: string; fullName: string; perms: unknown }, perms: Perms) {
-  const before = parsePerms(target.perms) ?? {};
-  const after = Object.keys(perms).length ? perms : null;
-  if (JSON.stringify(before) === JSON.stringify(after ?? {})) return;
-  // Hammasi "rol bo'yicha" bo'lsa perms ustuni tozalanadi (DbNull) — rol ruxsati o'z holicha qaytadi.
-  // Qayta kirish shart emas: perms tokenga yozilmaydi, `getSession` har so'rovda bazadan yangi qiymatni o'qiydi.
-  await db.user.update({ where: { id: target.id }, data: { perms: after ?? Prisma.DbNull } });
-  await audit(db, directorId, "UPDATE", "User", target.id, { perms: before, ruxsat: describePerms(before) }, { perms: after ?? {}, ruxsat: describePerms(after ?? {}), xodim: target.fullName });
-  notifyAfter(() => notifyUsers([target.id], {
-    type: "PERMS_CHANGED",
-    title: "Ruxsatlaringiz yangilandi",
-    body: after ? describePerms(after).join(" · ").slice(0, 300) : "Ruxsatlar rol bo'yicha holatga qaytarildi",
-  }));
-}
-
 /**
  * Foydalanuvchiga modul/amal bo'yicha ruxsat belgilaydi (rol ustiga ishlaydi). Faqat direktor; har o'zgarish auditda.
- * Forma har modul uchun `perm.<modul>` = "" (rol bo'yicha) | none | view | custom | write yuboradi;
- * "custom" bo'lsa `act.<modul>` — belgilangan amallar (faqat katalogdagi, topshiriladiganlari qabul qilinadi).
+ * Forma — `PermsMatrix` (`permsFromForm` o'qiydi).
  */
 export async function saveUserPerms(userId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
@@ -398,20 +365,7 @@ export async function saveUserPerms(userId: string, _prev: ActionState, fd: Form
   const target = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true, perms: true, fullName: true } });
   if (!target) return { error: "Foydalanuvchi topilmadi" };
   if (target.role === "DIRECTOR" || target.role === "SUPERADMIN") return { error: "Direktor ruxsatlari cheklanmaydi — u doim to'liq huquqli" };
-
-  const perms: Perms = {};
-  for (const m of MODULES) {
-    if (!MODULE_KEYS.has(m.key)) continue;
-    const v = String(fd.get(`perm.${m.key}`) ?? "").trim();
-    if (v === "none" || v === "view" || v === "write") perms[m.key] = v;
-    else if (v === "custom") {
-      const allowed = new Set(delegableActions(m.key).map((a) => a.key));
-      const acts = [...new Set(fd.getAll(`act.${m.key}`).map(String).filter((a) => allowed.has(a)))];
-      // Birorta amal belgilanmagan "tanlangan amallar" — amalda "faqat ko'rish"
-      perms[m.key] = acts.length ? acts : "view";
-    }
-  }
-  await applyPerms(s.userId, target, perms);
+  await applyAccess(s.userId, target, { perms: permsFromForm(fd) }, "ruxsatlar");
   refresh();
   return { ok: true };
 }
@@ -428,9 +382,65 @@ export async function copyUserPerms(targetId: string, _prev: ActionState, fd: Fo
   ]);
   if (!target || !source) return { error: "Foydalanuvchi topilmadi" };
   if (target.role === "DIRECTOR" || target.role === "SUPERADMIN") return { error: "Direktor ruxsatlari cheklanmaydi" };
-  await applyPerms(s.userId, target, parsePerms(source.perms) ?? {});
+  await applyAccess(s.userId, target, { perms: parsePerms(source.perms) ?? {} }, "nusxa");
   refresh();
   return { ok: true };
+}
+
+/* ───────── Bir nechta xodimga birdan: shablon yoki ruxsatlar ───────── */
+
+/** Belgilangan foydalanuvchilar (`ids`) — kamida bittasi. */
+function pickedIds(fd: FormData): string[] {
+  return [...new Set(fd.getAll("ids").map(String).filter((v) => /^[\w-]{1,64}$/.test(v)))];
+}
+
+function bulkNote(r: { changed: number; same: number; skipped: string[] }, what: string) {
+  return [
+    `${r.changed} ta xodimga ${what} qo'llandi`,
+    r.same ? `${r.same} tasida o'zgarish yo'q edi` : "",
+    r.skipped.length ? `direktor hisobi o'tkazib yuborildi: ${r.skipped.slice(0, 5).join(", ")}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+/**
+ * Shablonni qo'llash: `template` = ishchi lavozim id'si (uning ruxsatlari) yoki "role" — "rol bo'yicha"
+ * (qo'shimcha ruxsatlar tozalanadi). `withRole` belgilansa shablondagi asosiy bo'lim ham beriladi — rol
+ * almashgan xodimlar tizimga qayta kiradi. Faqat direktor.
+ */
+export async function applyPermTemplate(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  if (s.role !== "DIRECTOR") return { error: "Faqat direktor" };
+  const ids = pickedIds(fd);
+  if (!ids.length) return { error: "Kamida bitta xodimni belgilang" };
+  const key = String(fd.get("template") ?? "");
+  let next: { perms: Perms; role?: Role | null };
+  let what: string;
+  if (key === "role") {
+    next = { perms: {} };
+    what = "«rol bo'yicha» holat";
+  } else {
+    const t = (await positionTemplates()).find((x) => x.id === key);
+    if (!t) return { error: "Shablonni tanlang" };
+    const withRole = fd.get("withRole") === "on" && !!t.loginRole;
+    next = { perms: t.perms, role: withRole ? t.loginRole : null };
+    what = `«${t.name}» shabloni${withRole && t.loginRole ? ` (bo'lim: ${templateRoleLabel(t.loginRole)})` : ""}`;
+  }
+  const r = await applyAccessMany(s.userId, ids, next, "shablon");
+  if (!r.found) return { error: "Belgilangan xodimlar topilmadi — sahifani yangilang" };
+  refresh(); revalidatePath("/employees"); revalidatePath("/otdel-kadr");
+  return { ok: true, note: bulkNote(r, what) };
+}
+
+/** Bir nechta xodimning ruxsatlarini bitta matritsa bilan almashtirish. Faqat direktor. */
+export async function bulkSaveUserPerms(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  if (s.role !== "DIRECTOR") return { error: "Faqat direktor" };
+  const ids = pickedIds(fd);
+  if (!ids.length) return { error: "Kamida bitta xodimni belgilang" };
+  const r = await applyAccessMany(s.userId, ids, { perms: permsFromForm(fd) }, "ruxsatlar-birdan");
+  if (!r.found) return { error: "Belgilangan xodimlar topilmadi — sahifani yangilang" };
+  refresh();
+  return { ok: true, note: bulkNote(r, "ruxsatlar") };
 }
 
 /* ───────── Hisobni o'chirish so'rovlari (do'kon talabi) ───────── */

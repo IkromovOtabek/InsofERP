@@ -13,7 +13,7 @@
 #   2. prisma generate + next build (bir marta).
 #   3. Har to'plam uchun: insof_test_r_<nom> = insof_test_golden nusxasi → migrate deploy → db:test-users →
 #      next start (QA_PORT) → testlar → server to'xtatiladi.
-#        a     — sotuv/moliya: sales-lifecycle, openings-cash, excel-imports, prepay-gate, transfers, receivables
+#        a     — sotuv/moliya: sales-lifecycle, openings-cash, excel-imports, login-templates, prepay-gate, transfers, receivables
 #        b     — sklad/ishlab chiqarish/logistika/ta'minot/kadr, kirim QQS (b-vat): b-all.sh (+ b-pages)
 #        pages — src/app/(app) dagi barcha sahifalar × 14 rol (pages-all.mjs), server log xatolari
 #        c     — mobil API va integratsiyalar: c-run-all.sh
@@ -133,6 +133,7 @@ if want a; then
   suite "a/sales-lifecycle" node scripts/qa/sales-lifecycle.mjs
   suite "a/openings-cash" node scripts/qa/openings-cash.mjs
   suite "a/excel-imports" npx tsx scripts/qa/excel-imports.mts
+  suite "a/login-templates" npx tsx scripts/qa/login-templates.mts
   suite "a/prepay-gate" env DATABASE_URL="$DBURL" npx tsx scripts/qa/prepay-gate.mts
   suite "a/transfers" env DATABASE_URL="$DBURL" npx tsx scripts/qa/transfers.mts
   suite "a/receivables" env DATABASE_URL="$DBURL" npx tsx scripts/qa/receivables.mts

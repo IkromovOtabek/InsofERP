@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import type { Role } from "@/generated/prisma";
+import { ORG_TREE } from "./orgchart";
+import { matchKey } from "./excel";
 
 /**
  * Bo'lim lavozimlari — rolli, egasi login oladi va faqat o'z bo'limini ko'radi.
@@ -61,6 +63,8 @@ export async function positionCatalog(): Promise<{
   ]);
   const known = new Set<string>([
     ...POSITIONS.map((p) => p.label.trim().toLowerCase()),
+    // Tuzilma tugunlari ("Brigadir") ham lavozim nomi — Excel importda moslanishi mumkin
+    ...ORG_TREE.map((d) => d.label.trim().toLowerCase()),
     ...work.map((w) => w.name.trim().toLowerCase()),
   ]);
   const strays = used
@@ -95,4 +99,55 @@ export async function driverPositionNames(): Promise<string[]> {
 export async function isDriverPosition(position: string): Promise<boolean> {
   const key = position.trim().toLowerCase();
   return (await driverPositionNames()).some((n) => n.toLowerCase() === key);
+}
+
+/**
+ * Excel importidagi «Qiymatlarni moslash» uchun nom taxminlari (taqqoslash `matchKey` bilan: kirill/lotin farqsiz).
+ * Faqat aniq nom mos kelmaganda ishlaydi; oxiridagi raqam tashlab solishtiriladi («БРИГАДИР 1» → Brigadir).
+ */
+const POSITION_ALIASES: Record<string, string[]> = {
+  "Kassa / bank": ["kassir", "kassirka", "kassa", "старший кассир"],
+  "Buxgalteriya": ["бухгалтер", "главный бухгалтер", "бош бухгалтер"],
+  "Sklad": ["skladchi", "кладовщик", "завсклад", "заведующий складом"],
+  "Snabjeniye": ["снабженец", "снабжение", "ta'minotchi"],
+  "Otdel kadr": ["кадровик", "инспектор по кадрам", "отдел кадров"],
+  "Logistika": ["логист", "диспетчер"],
+  "Sotuv": ["sotuvchi", "продавец", "менеджер по продажам"],
+  "Sotuv agenti": ["агент", "торговый агент", "агент по продажам"],
+  "Mexanik": ["главный механик", "бош механик"],
+  "Brigadir": ["бригадир"],
+  "Haydovchi": ["водитель", "шофёр", "шофер", "ҳайдовчи"],
+};
+
+export type ImportPositionOption = { value: string; label: string; group: string; aliases?: string[] };
+export const LOGIN_GROUP = "Tizimga kiradigan lavozimlar";
+export const WORK_GROUP = "Ishchi lavozimlar";
+
+/**
+ * Excel importida lavozimni moslash mumkin bo'lgan barcha mavjud lavozimlar: bo'lim lavozimlari (Direktordan
+ * tashqari), «Brigadir», haydovchi lavozimi va direktor login shabloni bergan ishchi lavozimlar — «Tizimga
+ * kiradigan»; qolgan faol ishchi lavozimlar — «Ishchi». Import login OCHMAYDI: xodim kartasiga lavozim nomi
+ * yoziladi, login keyin Xodimlar sahifasida beriladi (lavozim shabloni bo'lsa bo'lim va ruxsatlar o'zi qo'yiladi).
+ */
+export async function importPositionOptions(): Promise<ImportPositionOption[]> {
+  const [work, drivers] = await Promise.all([workPositions(), driverPositionNames()]);
+  const labelOf = (r: Role) => LOGIN_ROLE_OPTIONS.find((o) => o.value === r)?.label ?? r;
+  const out: ImportPositionOption[] = [];
+  const seen = new Set<string>();
+  const add = (o: ImportPositionOption) => {
+    const k = o.value.trim().toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k);
+    const aliases = POSITION_ALIASES[o.value]?.map(matchKey).filter(Boolean);
+    out.push({ ...o, ...(aliases?.length ? { aliases } : {}) });
+  };
+  for (const p of POSITIONS) if (p.role !== "DIRECTOR") add({ value: p.label, label: p.label, group: LOGIN_GROUP });
+  for (const d of ORG_TREE) if (d.role !== "DIRECTOR") add({ value: d.label, label: d.label, group: LOGIN_GROUP });
+  for (const w of work) {
+    if (w.loginRole && w.loginRole !== "DIRECTOR") add({ value: w.name, label: `${w.name} · ${labelOf(w.loginRole)}`, group: LOGIN_GROUP });
+  }
+  // Haydovchi ilovasi lavozimi — ishchi lavozimlar ro'yxatida bo'lmasa ham (standart «Haydovchi»)
+  for (const n of drivers) if (!work.some((w) => w.name.toLowerCase() === n.toLowerCase())) add({ value: n, label: `${n} (ECO ilova)`, group: LOGIN_GROUP });
+  for (const w of work) add({ value: w.name, label: w.isDriver ? `${w.name} (ECO ilova)` : w.name, group: WORK_GROUP });
+  return out;
 }

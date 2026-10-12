@@ -61,6 +61,16 @@ type MxState = MatrixPick & { cols: MatrixCol[]; dates: Record<number, string> }
 /** "Qiymatlarni moslash" jadvalining bitta qatori: fayldagi qiymat, nechta qatorda, taxmin va yakuniy tanlov ("" — yangi). */
 type VmItem = { key: string; value: string; count: number; fromGroup: boolean; suggested: string; choice: string };
 
+/** «+ Yangi …» tanlovining qiymati — haqiqiy qiymat bilan to'qnashmasin. */
+const CREATE_OPT = "__yangi__";
+
+/** Moslash tanlovlari guruhlari (`optgroup`) — tartib saqlanadi; guruhsizlari bo'sh nom bilan. */
+function vmGroups<T extends { group?: string }>(opts: T[]): [string, T[]][] {
+  const out = new Map<string, T[]>();
+  for (const o of opts) { const g = o.group ?? ""; const l = out.get(g); if (l) l.push(o); else out.set(g, [o]); }
+  return [...out.entries()];
+}
+
 const PREVIEW = 15; // sahifada shuncha qator; qolgani "Batafsil ko'rish" modalida
 
 /** Excel formulasining xatosi ("#VALUE!", "#N/A"…) — ma'lumot emas, bo'sh katak deb olinadi. */
@@ -138,6 +148,8 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [mx, setMx] = useState<MxState | null>(null); // matritsa rejimi tanlovi; null — oddiy ro'yxat
   // "Qiymatlarni moslash": maydon → fayldagi qiymat (valueKey) → tanlangan tizim qiymati ("" — yangi qo'shiladi)
   const [vmChoice, setVmChoice] = useState<Record<string, Record<string, string>>>({});
+  // «+ Yangi …» mini-formasi ochiq turgan qatorlar: `${maydon}:${kalit}`
+  const [vmCreating, setVmCreating] = useState<Record<string, boolean>>({});
   const formRef = useRef<HTMLFormElement>(null);
   const extraSeq = useRef(0);
   // QQS rejimi: formadagi yetkazuvchi va "Narxlar QQS bilan" belgisi o'zgarsa — oldindan ko'rish qayta hisoblanadi
@@ -348,7 +360,12 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         if (cur) { cur.count++; return; }
         // Taxmin: nomi bir xil (kirill/lotin, katta-kichik harf, belgilarsiz) mavjud qiymat
         const mk = matchKey(value);
-        const hit = spec.options.find((o) => valueKey(o.value) === key) ?? (mk ? spec.options.find((o) => matchKey(o.value) === mk) : undefined);
+        // «Бригадир 1» → «Brigadir»: oxiridagi raqam tashlab ham solishtiriladi; `aliases` — «Кассир» → «Kassa / bank»
+        const base = mk.replace(/\d+$/, "");
+        const hit = spec.options.find((o) => valueKey(o.value) === key)
+          ?? (mk ? spec.options.find((o) => matchKey(o.value) === mk) : undefined)
+          ?? (mk ? spec.options.find((o) => o.aliases?.includes(mk)) : undefined)
+          ?? (base && base !== mk ? spec.options.find((o) => matchKey(o.value) === base || o.aliases?.includes(base)) : undefined);
         const suggested = hit?.value ?? "";
         const picked = vmChoice[f.key]?.[key];
         seen.set(key, { key, value, count: 1, fromGroup, suggested, choice: picked !== undefined && (picked === "" || spec.options.some((o) => o.value === picked)) ? picked : suggested });
@@ -719,11 +736,33 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
                       </Td>
                       <Td right className="text-slate-500">{x.count}</Td>
                       <Td className="min-w-64 py-1.5">
-                        <Select value={x.choice} onChange={(e) => setVm(f.key, x.key, e.target.value)} aria-label={`«${x.value}» — tizimdagi qiymat`}
+                        <Select
+                          value={x.choice}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === CREATE_OPT) { setVmCreating((c) => ({ ...c, [`${f.key}:${x.key}`]: true })); return; }
+                            setVm(f.key, x.key, v);
+                          }}
+                          aria-label={`«${x.value}» — tizimdagi qiymat`}
                           className={cn("h-8 text-xs", x.choice ? "border-sky-300" : "border-amber-300")}>
                           <option value="">{spec.newLabel ?? "Yangi qo'shiladi"}: «{x.value}»</option>
-                          {spec.options.map((o) => <option key={o.value} value={o.value}>→ {o.label}{o.value === x.suggested ? " (mos keldi)" : ""}</option>)}
+                          {vmGroups(spec.options).map(([g, opts]) => {
+                            const list = opts.map((o) => <option key={o.value} value={o.value}>→ {o.label}{o.value === x.suggested ? " (mos keldi)" : ""}</option>);
+                            return g ? <optgroup key={g} label={g}>{list}</optgroup> : list;
+                          })}
+                          {spec.create && <option value={CREATE_OPT}>{spec.create.label}</option>}
                         </Select>
+                        {spec.create && vmCreating[`${f.key}:${x.key}`] && (
+                          <div className="mt-1.5">
+                            {spec.create.render({
+                              value: x.value,
+                              done: (created) => {
+                                setVmCreating((c) => ({ ...c, [`${f.key}:${x.key}`]: false }));
+                                if (created) setVm(f.key, x.key, created);
+                              },
+                            })}
+                          </div>
+                        )}
                       </Td>
                     </Tr>
                   ))}

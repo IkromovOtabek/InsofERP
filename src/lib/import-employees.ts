@@ -1,7 +1,8 @@
 import { db } from "./db";
 import { audit } from "./audit";
 import { flatName, num, parseDate, str, valueKey, valueMapper, type ValueMaps } from "./excel";
-import { driverPositionNames, roleForPosition } from "./positions";
+import { driverPositionNames, importPositionOptions, roleForPosition } from "./positions";
+import { deptByLabel } from "./orgchart";
 import { normalizePhone } from "./phone";
 
 /**
@@ -140,16 +141,23 @@ function prepare(input: ImportEmployeesInput): { rows: Prepared[]; groups: strin
 export async function importEmployees(input: ImportEmployeesInput, userId: string): Promise<ImportEmployeesResult> {
   const { rows, groups } = prepare(input);
 
-  // Bo'lim lavozimlari (Sotuv, Buxgalteriya...) login talab qiladi — ular bu yerdan qo'shilmaydi
   const names = [...new Set(rows.map((r) => r.position))];
-  const dept = names.filter((n) => roleForPosition(n));
-  if (dept.length) {
-    throw new Error(`Bu lavozimlar tizimga kiradigan bo'lim: ${cut(dept)} — ularni Xodimlar sahifasida login bilan qo'shing`);
-  }
-
   const drivers = new Set((await driverPositionNames()).map((n) => n.toLowerCase()));
-  const work = await db.workPosition.findMany({ select: { name: true } });
-  const known = new Map(work.map((w) => [w.name.trim().toLowerCase(), w.name]));
+  const [work, options] = await Promise.all([
+    db.workPosition.findMany({ select: { name: true, loginRole: true, isActive: true } }),
+    importPositionOptions(),
+  ]);
+  // Tizimdagi barcha lavozimlar: ishchi lavozimlar + tizimga kiradiganlar (Kassa / bank, Brigadir, Haydovchi…).
+  // Import faqat kartaga lavozim nomini yozadi — login OCHMAYDI (u Xodimlar sahifasida, shablon bilan beriladi)
+  const known = new Map([...work.map((w) => w.name), ...options.map((o) => o.value)].map((n) => [n.trim().toLowerCase(), n]));
+  // Ro'yxatda bo'lmagan bo'lim nomi (Direktor, eski «Finance»…) yangi ishchi lavozim bo'lib ochilmasin
+  const blocked = names.filter((n) => !known.has(n.toLowerCase()) && (roleForPosition(n) || deptByLabel(n)));
+  if (blocked.length) {
+    throw new Error(`Bu lavozimlar importdan berilmaydi: ${cut(blocked)} — ularni Xodimlar sahifasida login bilan qo'shing yoki boshqa lavozimga moslang`);
+  }
+  // Login egasining «bo'limi»: bo'lim lavozimi yoki direktorning login shabloni (tizimga kiradigan ishchi lavozim)
+  const tplRole = new Map(work.filter((w) => w.isActive && w.loginRole).map((w) => [w.name.trim().toLowerCase(), w.loginRole]));
+  const loginDept = (n: string) => roleForPosition(n) ?? tplRole.get(n.trim().toLowerCase()) ?? null;
   // Moslashda tanlangan lavozim/bo'lim haqiqatan bormi (sahifa ochilgandan beri o'chirilgan bo'lishi mumkin)
   const badPos = Object.values(input.valueMaps?.position ?? {}).filter((v) => !known.has(str(v).toLowerCase()));
   if (badPos.length) throw new Error(`Moslash uchun tanlangan lavozim ro'yxatda yo'q: ${cut([...new Set(badPos)])} — sahifani yangilab, qayta tanlang`);
@@ -207,7 +215,7 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
         const firedPatch = r.firedAt ? { firedAt: r.firedAt, isActive: false } : {};
         // Login egasining bo'lim lavozimi (Sotuv, Buxgalteriya…) importdan o'zgarmaydi: lavozim bo'limni
         // (huquqni) bildiradi, uni faqat kartadagi "Bo'limni almashtirish" o'zgartiradi. Eski lavozim qoladi.
-        const keepPosition = !!cur.userId && before.position !== position && roleForPosition(before.position) !== roleForPosition(position);
+        const keepPosition = !!cur.userId && before.position !== position && loginDept(before.position) !== loginDept(position);
         if (keepPosition) keptPositions.push(`${before.fullName} («${before.position}» qoldi, faylda «${position}»)`);
         const e = await tx.employee.update({
           where: { id: cur.id },

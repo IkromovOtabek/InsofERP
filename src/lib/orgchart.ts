@@ -77,9 +77,11 @@ const GUESS: { re: RegExp; dept: Role }[] = [
 
 export const guessDepartment = (name: string): Role | null => GUESS.find((g) => g.re.test(name))?.dept ?? null;
 
-/** Lavozim qaysi bo'limda: otdel kadr belgilagani, bo'lmasa nom bo'yicha taxmin. */
-export const departmentOf = (p: { name: string; department: string | null }): Role | null =>
-  (p.department && isAssignableDept(p.department) ? (p.department as Role) : null) ?? guessDepartment(p.name);
+/** Lavozim qaysi bo'limda: otdel kadr belgilagani, bo'lmasa login shablonidagi asosiy bo'lim, bo'lmasa nom bo'yicha taxmin. */
+export const departmentOf = (p: { name: string; department: string | null; loginRole?: string | null }): Role | null =>
+  (p.department && isAssignableDept(p.department) ? (p.department as Role) : null)
+  ?? (p.loginRole && isAssignableDept(p.loginRole) ? (p.loginRole as Role) : null)
+  ?? guessDepartment(p.name);
 
 /* ═══════════════════════ Ish etaplari ═══════════════════════ */
 

@@ -17,7 +17,16 @@ export type ImportField = {
  * `nameKey` to'ldirilgan, qolgan hamma maydon bo'sh qator; `toggle` — formadagi shu belgi yoqilganda.
  */
 export type ValueMapSpec = {
-  options: { value: string; label: string }[];
+  /**
+   * `group` — tanlovda `optgroup` bo'lib ajraladi; `aliases` — `matchKey` ko'rinishidagi qo'shimcha nomlar
+   * (aniq nom mos kelmasa taxmin shular bo'yicha; oxiridagi raqam tashlab ham solishtiriladi: «Бригадир 1» → Brigadir).
+   */
+  options: { value: string; label: string; group?: string; aliases?: string[] }[];
+  /**
+   * «+ Yangi …» tanlovi (faqat klient komponentdan beriladi): ro'yxat oxirida chiqadi, tanlanganda shu qatorda
+   * `render` ochiladi. `done(value)` — yangi qiymat yaratildi (u `options` ga qo'shilgan bo'lishi kerak) va qatorga tanlanadi.
+   */
+  create?: { label: string; render: (p: { value: string; done: (created?: string) => void }) => React.ReactNode };
   /** Moslanmagan qiymat uchun yozuv, masalan "Yangi lavozim ochiladi". */
   newLabel?: string;
   /** Jadval tagidagi qisqa izoh. */

@@ -9,13 +9,16 @@ import { audit } from "@/lib/audit";
 import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { flatName } from "@/lib/excel";
-import { deptByLabel, guessDepartment } from "@/lib/orgchart";
+import { ORG_TREE, deptByLabel, guessDepartment } from "@/lib/orgchart";
 import { pushEmployeeSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
 import { importEmployees, type ImportEmployeeRow } from "@/lib/import-employees";
 import { saveEmployeeFile, removeEmployeeFile, photoEntry } from "@/lib/uploads";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { parsePerms } from "@/lib/auth";
+import { applyAccessMany, describePerms, isTemplateRole, permsFromForm } from "@/lib/perm-template";
+import { Prisma, type Role } from "@/generated/prisma";
 
 /** Ishchi lavozimlarni faqat otdel kadr (va direktor) yuritadi. */
 // Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
@@ -62,6 +65,8 @@ export async function syncEmployeePositions(): Promise<ActionState> {
   // Kanonik nom: bo'lim lavozimi > ro'yxatdagi lavozim > xodimlarda eng ko'p uchragan yozilish
   const canon = new Map<string, string>();
   for (const p of POSITIONS) canon.set(flatName(p.label), p.label);
+  // Tuzilma tugunlari ("Brigadir") — ishchi lavozim bo'lib ochilmasin, yozilishi shu nomga keltirilsin
+  for (const d of ORG_TREE) if (!canon.has(flatName(d.label))) canon.set(flatName(d.label), d.label);
   for (const w of work) if (!canon.has(flatName(w.name))) canon.set(flatName(w.name), w.name);
 
   // Bir lavozimning hamma yozilishi: `raw` — bazadagi aynan qiymat (yangilashda shu bo'yicha topiladi)
@@ -163,6 +168,84 @@ export async function saveWorkPosition(id: string | null, _prev: ActionState, fd
   }
   refresh();
   return { ok: true };
+}
+
+/**
+ * Lavozimning login shabloni — faqat direktor: «Tizimga kiradi» + asosiy bo'lim (direktordan tashqari) + modul ruxsatlari.
+ * Saqlanganda shu lavozimdagi login egalariga (faol, direktor emas) darhol qo'llanadi: asosiy bo'limi almashgan
+ * xodim tizimga qayta kiradi, faqat ruxsat o'zgarganlar — yo'q. Shablon o'chirilsa mavjud loginlar o'zgarmaydi.
+ */
+export async function savePositionTemplate(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await hr();
+  if (s.role !== "DIRECTOR") return { error: "Login shablonini faqat direktor belgilaydi" };
+  const enabled = fd.get("login") === "on";
+  const wanted = String(fd.get("loginRole") ?? "");
+  if (enabled && !isTemplateRole(wanted)) return { error: "Asosiy bo'limni tanlang" };
+  const loginRole = enabled ? (wanted as Role) : null;
+  const perms = enabled ? permsFromForm(fd) : {};
+
+  const before = await db.workPosition.findUnique({ where: { id } });
+  if (!before) return { error: "Lavozim topilmadi" };
+  const after = await db.$transaction(async (tx) => {
+    const a = await tx.workPosition.update({
+      where: { id },
+      data: {
+        loginRole, perms: Object.keys(perms).length ? perms : Prisma.DbNull,
+        // Tuzilma diagrammasida bo'lim belgilanmagan bo'lsa — asosiy bo'lim tagida turadi
+        ...(loginRole && !before.department && isAssignableDept(loginRole) ? { department: loginRole } : {}),
+      },
+    });
+    await audit(tx, s.userId, "UPDATE", "WorkPosition", id,
+      { loginRole: before.loginRole, perms: before.perms ?? {}, ruxsat: describePerms(parsePerms(before.perms) ?? {}) },
+      { loginRole: a.loginRole, perms: a.perms ?? {}, ruxsat: describePerms(perms), name: a.name });
+    return a;
+  });
+
+  let note = loginRole ? `«${after.name}» shabloni saqlandi.` : `«${after.name}» endi tizimga kiradigan lavozim emas — mavjud loginlar o'zgarmadi.`;
+  if (loginRole) {
+    const holders = await db.employee.findMany({
+      where: { position: after.name, isActive: true, user: { isActive: true } },
+      select: { user: { select: { id: true, fullName: true, role: true, perms: true } } },
+    });
+    const r = await applyAccessMany(s.userId, holders.flatMap((h) => (h.user ? [h.user.id] : [])), { perms, role: loginRole }, `lavozim:${after.name}`);
+    note += ` ${r.changed} ta foydalanuvchiga qo'llandi${r.same ? `, ${r.same} tasida o'zgarish yo'q edi` : ""}${r.skipped.length ? `; direktor hisobi o'tkazib yuborildi: ${r.skipped.join(", ")}` : ""}.`;
+  }
+  refresh();
+  revalidatePath("/settings");
+  return { ok: true, note };
+}
+
+/**
+ * Excel importidagi «+ Yangi lavozim…»: ishchi lavozimni sahifadan chiqmay ochadi. «Tizimga kiradi» (asosiy bo'lim
+ * bilan) — faqat direktor; otdel kadr oddiy ishchi lavozim ochadi. Login bu yerda ochilmaydi.
+ */
+export async function createPositionInline(input: { name: string; loginRole?: string | null }): Promise<ActionState & { name?: string; loginRole?: string | null }> {
+  const s = await hr();
+  const name = String(input?.name ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
+  if (!name) return { error: "Lavozim nomini yozing" };
+  const wanted = String(input?.loginRole ?? "");
+  if (wanted && s.role !== "DIRECTOR") return { error: "Tizimga kiradigan lavozimni faqat direktor belgilaydi" };
+  if (wanted && !isTemplateRole(wanted)) return { error: "Asosiy bo'limni tanlang" };
+  if (clashesWithDepartment(name)) return { error: `«${name}» — bo'lim lavozimi, ro'yxatdan tanlang` };
+  const dup = await db.workPosition.findFirst({ where: { name: { equals: name, mode: "insensitive" } }, select: { name: true, isActive: true } });
+  if (dup) return { error: `«${dup.name}» lavozimi allaqachon bor${dup.isActive ? " — ro'yxatdan tanlang" : " (yashirilgan — Ishchi lavozimlar da qaytaring)"}` };
+  const loginRole = wanted ? (wanted as Role) : null;
+  try {
+    const p = await db.$transaction(async (tx) => {
+      const last = await tx.workPosition.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+      const department = loginRole && isAssignableDept(loginRole) ? loginRole : guessDepartment(name);
+      const created = await tx.workPosition.create({
+        data: { name, loginRole, department, sortOrder: (last?.sortOrder ?? 0) + 10, note: "Excel importda ochildi" },
+      });
+      await audit(tx, s.userId, "CREATE", "WorkPosition", created.id, undefined, created);
+      return created;
+    });
+    refresh();
+    return { ok: true, name: p.name, loginRole: p.loginRole };
+  } catch (e) {
+    if (String(e).includes("Unique constraint")) return { error: "Bunday lavozim allaqachon bor" };
+    throw e;
+  }
 }
 
 /** Lavozimni yoqish/o'chirish. O'chirilgan lavozim yangi xodimga tanlanmaydi, eskilari joyida qoladi. */

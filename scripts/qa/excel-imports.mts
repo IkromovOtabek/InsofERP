@@ -266,5 +266,31 @@ check("5.9 sarlavha «Бригада 1» → mavjud «Test brigada (sinov)» bo'
 check("5.10 moslanmagan sarlavha — yangi bo'lim nomi o'zicha yozildi", emp(3)?.subdivision === brig2, emp(3));
 check("5.11 yangi lavozim AuditLog'da", count(`select id from "AuditLog" where entity='WorkPosition' and action='CREATE' and after->>'name'=${lit(svar)}`) === 1);
 
+// ───────── 6. Tizimga kiradigan lavozimlarga moslash va «+ Yangi lavozim…» ─────────
+console.log("\n6. Lavozimni tizimga kiradigan lavozimga moslash");
+const mkBase = (v: string) => matchKey(v).replace(/\d+$/, "");
+check("6.1 taxmin: «БРИГАДИР 1» → Brigadir (raqam tashlanadi), «КАССИР» → kassir taxallusi",
+  mkBase("БРИГАДИР 1") === matchKey("Brigadir") && matchKey("КАССИР") === matchKey("kassir"));
+const labPos = `Лаборант QA ${T}`;
+r = await kadr.action("otdel-kadr/actions#createPositionInline", [{ name: labPos, loginRole: null }], "/otdel-kadr/import");
+check("6.2 «+ Yangi lavozim…»: kadr import sahifasidan lavozim ochdi", r.result?.ok === true && r.result.name === labPos
+  && count(`select id from "WorkPosition" where name=${lit(labPos)} and "loginRole" is null`) === 1, r.result ?? r.status);
+const lpRows = xlsxRows("xodimlar-login-lavozim", empHeader, [
+  [`QA Kassir ${T}`, tab(11), "КАССИР", ""],
+  [`QA Brigadir ${T}`, tab(12), "БРИГАДИР 1", ""],
+  [`QA Laborant ${T}`, tab(13), "ЛАБОРАНТ", ""],
+], EMP_FIELDS);
+const usersBefore = count(`select id from "User"`);
+const wpBefore = count(`select id from "WorkPosition"`);
+r = await importEmp(lpRows, { position: { "КАССИР": "Kassa / bank", "БРИГАДИР 1": "Brigadir", "ЛАБОРАНТ": labPos } });
+check("6.3 import: tizimga kiradigan lavozimga moslash qabul qilindi", /3 ta xodim qo'shildi/.test(r.result?.note ?? "") || r.redirect?.includes("qoshildi=3"), r.result ?? r.redirect ?? r.status);
+check("6.4 kartalarda lavozim: Kassa / bank, Brigadir, yangi ochilgan lavozim",
+  emp(11)?.position === "Kassa / bank" && emp(12)?.position === "Brigadir" && emp(13)?.position === labPos, [emp(11), emp(12), emp(13)]);
+check("6.5 import login OCHMADI va yangi lavozim yaratmadi",
+  count(`select id from "User"`) === usersBefore && count(`select id from "WorkPosition"`) === wpBefore
+  && count(`select id from "Employee" where "tabelNo" in (${lit(tab(11))}, ${lit(tab(12))}, ${lit(tab(13))}) and "userId" is not null`) === 0);
+r = await importEmp(xlsxRows("xodimlar-direktor", empHeader, [[`QA Dir ${T}`, tab(14), "Direktor", ""]], EMP_FIELDS), {});
+check("6.6 «Direktor» lavozimi importdan berilmaydi", /importdan berilmaydi/.test(r.result?.error ?? "") && !emp(14), r.result ?? r.status);
+
 fs.rmSync(DIR, { recursive: true, force: true });
 summary("excel-imports:");
