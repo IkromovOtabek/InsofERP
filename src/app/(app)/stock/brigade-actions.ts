@@ -8,7 +8,7 @@ import { issueToBrigade, returnFromBrigade } from "@/lib/brigade-stock";
 type Row = { materialId: string; qty: number; brigadeId: string };
 
 const refresh = () => {
-  revalidatePath("/stock"); revalidatePath("/brigades"); revalidatePath("/production"); revalidatePath("/tasks");
+  revalidatePath("/stock"); revalidatePath("/stock/rasxod"); revalidatePath("/brigades"); revalidatePath("/production"); revalidatePath("/tasks");
 };
 
 /**

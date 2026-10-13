@@ -9,7 +9,12 @@ import { customersCredit, customersHistory, STAR_LABELS } from "@/lib/finance";
 import { driverPositionNames } from "@/lib/positions";
 import { ingredientOf } from "@/lib/recipe";
 import { SUPPLY_LABEL, SUPPLY_TABS, totalPlanned } from "@/lib/supply";
-import { unitLabel } from "@/lib/unit";
+import { unitLabel, unitLabelRu } from "@/lib/unit";
+import { dateRu, fmtNum } from "@/lib/format";
+import { prixodJournal, prixodTotals } from "@/lib/receipts";
+import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
+import { materialTurnover, type TurnoverRow } from "@/lib/stock-turnover";
+import { canDo } from "@/lib/permissions";
 import type { MobileUser } from "./auth";
 import { reportRows } from "./sex";
 import { brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
@@ -21,8 +26,8 @@ import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
  * Ruxsat veb ERP'dagi bilan bir xil mantiqda: rol ro'yxatda bo'lsa yoki DIRECTOR bo'lsa.
  */
-/** Ro'yxat ustidagi filtr chipi — `count` ilovada chip ichida ko'rsatiladi. */
-export type ListFilter = { key: string; label: string; count: number; active: boolean };
+/** Ro'yxat ustidagi filtr chipi — `count` ilovada chip ichida ko'rsatiladi (bo'lmasa — faqat yorliq, masalan davr chiplari). */
+export type ListFilter = { key: string; label: string; count?: number; active: boolean };
 export type MobileList = { key: string; title: string; rows: HomeRow[]; filters?: ListFilter[] };
 
 /**
@@ -66,6 +71,10 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   supply: { title: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"] },
   receipts: { title: "Kirimlar", roles: ["PROCUREMENT", "WAREHOUSE", "SALES"] },
   suppliers: { title: "Yetkazuvchilar", roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
+  // Sklad jurnallari — vebdagi Sklad → «Приход», «Расход», «Остатки» (ekran RUSCHA, foydalanuvchi Excel'idagidek; `skladList`)
+  prixod: { title: "Приход", roles: ["WAREHOUSE", "PROCUREMENT"] },
+  rasxod: { title: "Расход", roles: ["WAREHOUSE", "PROCUREMENT"] },
+  ostatki: { title: "Остатки", roles: ["WAREHOUSE", "PROCUREMENT"] },
   // ── Moliya ──
   cashflow: { title: "Kirim-chiqim", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   payments: { title: "To'lovlar", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
@@ -82,7 +91,10 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
 // Ro'yxat kaliti → kartochka kaliti. "brig-issues"/"brig-shifts" ro'yxati qatorlari oddiy id bilan keladi —
 // ilova `/erp/brig-issues/<id>` ni ochadi; bu xaritasiz kartochka "Bunday kartochka yo'q" (brigadirda — "ruxsat yo'q") bo'lardi.
-export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift" };
+// «Приход» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
+// «Расход» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Расход» kartochkasi esa berish hujjati (`rasxod`, id = ref).
+// «Остатки» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
+export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts" };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
@@ -108,6 +120,7 @@ const KEY_MODULE: Record<string, string> = {
   tasks: "tasks", brigades: "tasks",
   trips: "trips", drivers: "trips",
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
+  prixod: "stock", rasxod: "stock", ostatki: "stock",
   supply: "taminot", employees: "employees",
 };
 
@@ -119,17 +132,28 @@ export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: stri
   return !!mod && user.perms?.[mod] === "none";
 }
 
+/**
+ * Sklad jurnallari — ISTISNO (faqat shu 3 kalit): direktor bergan `stock` amali ham ochadi (veb `lib/stock-journal-access.ts`
+ * kabi), rol ACCESS ro'yxatida bo'lmasa ham. Приход — «receipt», Расход — «issue», Остатки — kirim / berish / «Дона сўм»
+ * amallaridan biri (qoldiq va narxni ko'rmay narx qo'yib yoki berib bo'lmaydi). Kartochkalar ham shu qoida (`detail.ts`).
+ */
+const JOURNAL_GRANT: Record<string, readonly string[]> = { prixod: ["receipt"], rasxod: ["issue"], ostatki: ["receipt", "issue", "price"] };
+export function journalGranted(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
+  const acts = Object.hasOwn(JOURNAL_GRANT, key) ? JOURNAL_GRANT[key] : undefined;
+  return !!acts && acts.some((a) => canDo({ role: user.role, perms: user.perms }, "stock", a));
+}
+
 /** Ro'yxatga (va u bilan bog'liq ekranlarga, masalan reys marshrutiga) kira oladimi: rol + direktor yopmagan modul. */
 export function listAllowed(user: Pick<MobileUser, "role" | "perms">, key: string): boolean {
   const meta = Object.hasOwn(ACCESS, key) ? ACCESS[key] : undefined; // "constructor" kabi prototip kalitlari — ro'yxat emas
   if (!meta) return false;
-  return (user.role === "DIRECTOR" || meta.roles.includes(user.role)) && !moduleClosed(user, key);
+  return (user.role === "DIRECTOR" || meta.roles.includes(user.role) || journalGranted(user, key)) && !moduleClosed(user, key);
 }
 
 /** Shu rol kira oladigan barcha ro'yxatlar — bosh ekrandagi tezkor amallar uchun. */
 export function listsFor(role: Role, perms?: MobileUser["perms"]) {
   return Object.entries(ACCESS)
-    .filter(([, m]) => role === "DIRECTOR" || m.roles.includes(role))
+    .filter(([key, m]) => role === "DIRECTOR" || m.roles.includes(role) || journalGranted({ role, perms }, key))
     .filter(([key]) => !moduleClosed({ role, perms }, key))
     .map(([key, m]) => ({ key, title: m.title }));
 }
@@ -153,7 +177,7 @@ const PROD_VIEW: Role[] = ["PRODUCTION", "SUPERVISOR"];
 export async function mobileList(user: MobileUser, key: string, q?: string, filter?: string): Promise<MobileList> {
   const meta = Object.hasOwn(ACCESS, key) ? ACCESS[key] : undefined; // "constructor" kabi prototip kalitlari — ro'yxat emas
   if (!meta) throw new ListError("UNKNOWN_LIST", "Bunday ro'yxat yo'q", 404);
-  if (user.role !== "DIRECTOR" && !meta.roles.includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  if (user.role !== "DIRECTOR" && !meta.roles.includes(user.role) && !journalGranted(user, key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   if (moduleClosed(user, key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   const s = q?.trim() || undefined;
   // Ishlab chiqarish uchun zayavkalar veb "/production" oynasidagidek: filtrlar va brigada holati bilan
@@ -168,6 +192,10 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "sales") return salesOrders(meta.title, s, filter);
   if (key === "brig-issues") return brigIssuesList(user, meta.title, s, filter);
   if (key === "brig-shifts") return brigShiftsList(user, meta.title, s);
+  // Sklad jurnallari (ruscha) — davr chiplari bilan
+  if (key === "prixod") return prixodList(meta.title, s, filter);
+  if (key === "rasxod") return rasxodList(meta.title, s, filter);
+  if (key === "ostatki") return ostatkiList(meta.title, s, filter);
   if (key === "tasks" && user.role === "BRIGADIER") return brigTasksList("Topshiriqlarim", await myBrigadeIds(user.id), s, filter);
   // Haydovchi faqat o'ziga biriktirilgan reyslarni ko'radi
   const driverId = user.role === "DRIVER" ? await driverEmployeeId(user.id) : undefined;
@@ -340,6 +368,143 @@ async function salesOrders(title: string, q?: string, filter?: string): Promise<
     }),
     filters: [{ key: "all", label: "Hammasi", count: by(), active: !st }, ...SALES_STATUSES.map((s) => ({ key: s, label: ORDER_LABEL[s], count: by(s), active: s === st }))],
   };
+}
+
+// ───────────────────────── Sklad: «Приход», «Расход», «Остатки» (ruscha, Excel jurnallaridagidek) ─────────────────────────
+
+/**
+ * Davr chiplari — veb `StockPeriodBar` bilan bir xil chegaralar: mahalliy yarim tun, `to` eksklyuziv, hafta dushanbadan.
+ * Sukut — «Месяц» (joriy oy boshidan bugungacha, vebdagi standart davr).
+ */
+export const SKLAD_PERIODS = [
+  { key: "today", label: "Сегодня" },
+  { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },
+  { key: "prev", label: "Прошлый месяц" },
+] as const;
+export type SkladPeriodKey = (typeof SKLAD_PERIODS)[number]["key"];
+export type SkladPeriod = { key: SkladPeriodKey; label: string; from: Date; to: Date; /** «01.10.2026 — 13.10.2026» (bir kun bo'lsa — sana) */ range: string };
+
+export function skladPeriod(key?: string | null, now = new Date()): SkladPeriod {
+  const p = SKLAD_PERIODS.find((x) => x.key === key) ?? SKLAD_PERIODS[2];
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  let from = today;
+  let to = new Date(today); to.setDate(to.getDate() + 1);
+  if (p.key === "week") { from = new Date(today); from.setDate(today.getDate() - ((today.getDay() + 6) % 7)); }
+  else if (p.key === "month") from = new Date(today.getFullYear(), today.getMonth(), 1);
+  else if (p.key === "prev") { from = new Date(today.getFullYear(), today.getMonth() - 1, 1); to = new Date(today.getFullYear(), today.getMonth(), 1); }
+  const last = new Date(to); last.setDate(last.getDate() - 1);
+  return { key: p.key, label: p.label, from, to, range: from.getTime() === last.getTime() ? dateRu(from) : `${dateRu(from)} — ${dateRu(last)}` };
+}
+
+/** Davr chiplari soni ko'rsatilmaydi (har davr uchun alohida jurnal o'qimaslik uchun) — jami ro'yxat sarlavhasida. */
+const periodFilters = (active: SkladPeriodKey): ListFilter[] => SKLAD_PERIODS.map((p) => ({ key: p.key, label: p.label, active: p.key === active }));
+
+/** «Деньги»: П-р — perechisleniye (bank), Н-к — naqd (kassa). */
+export const PAY_RU = { BANK: "П-р", CASH: "Н-к" } as const;
+
+/** Qisqa summa ruscha: «12,3 млн», «1,25 млрд», «350 тыс». Intl'siz (`fmtNum`). */
+export function shortRu(v: number): string {
+  const a = Math.abs(v), s = v < 0 ? "−" : "";
+  if (a >= 1e9) return `${s}${fmtNum(a / 1e9, a >= 1e10 ? 1 : 2)} млрд`;
+  if (a >= 1e6) return `${s}${fmtNum(a / 1e6, a >= 1e8 ? 0 : 1)} млн`;
+  if (a >= 1e3) return `${s}${fmtNum(a / 1e3, 0)} тыс`;
+  return `${s}${fmtNum(a, 0)}`;
+}
+
+/** Miqdor + ruscha birlik: «12,5 тн». */
+export const qtyRu = (q: number, unit: string) => `${fmtNum(q, 3)} ${unitLabelRu(unit)}`;
+
+/** Sarlavhada davr jami: 60 qatordan ko'pi ko'rsatilmaydi, lekin jami summa va qatorlar soni — butun davr bo'yicha. */
+const journalTitle = (title: string, n: number, total: number) => (n ? `${title} · ${shortRu(total)} · ${n} стр.` : title);
+
+/**
+ * «Приход» — kirimlarning har qatori (`lib/receipts.ts#prixodJournal`, storno qilingani belgi bilan + storno qatori), yangisi tepada.
+ * Qator: «Наименование · К-во ед» / «dd.mm.yyyy · От Кого · ТТН · П-р/Н-к» / «+Итого». Kartochka — kirim (`receipts`).
+ */
+async function prixodList(title: string, q?: string, filter?: string): Promise<MobileList> {
+  const p = skladPeriod(filter);
+  const all = await prixodJournal({ from: p.from, to: p.to, q });
+  const t = prixodTotals(all);
+  const rows = all.slice(-TAKE).reverse().map((r): HomeRow => ({
+    id: `${r.receiptId}~${r.id}`,
+    title: `${r.material} · ${qtyRu(r.qty, r.unit)}`,
+    subtitle: [dateRu(r.date), r.supplier, r.waybillNo ? `ТТН ${r.waybillNo}` : null, r.payment ? PAY_RU[r.payment] : null].filter(Boolean).join(" · "),
+    // Storno qilingan kirim o'z sanasida «отменён», storno sanasida manfiy qator (jurnal = «Остатки» Приход)
+    right: r.storno ? `−${fmtNum(Math.abs(r.total))}` : `+${fmtNum(r.total)}`,
+    tone: r.storno ? "danger" : "success",
+    ...(r.storno ? { status: "сторно" } : r.cancelled ? { status: "отменён" } : {}),
+  }));
+  return { key: "prixod", title: journalTitle(title, all.length, t.total), rows, filters: periodFilters(p.key) };
+}
+
+/**
+ * «Расход» — `lib/stock-issue.ts#rasxodJournal` (Кому'ga berish, brigada, zames, spisanie, inventarizatsiya), yangisi tepada.
+ * Qator: «Наименование · К-во ед» / «dd.mm.yyyy · Кому · П-р/Н-к» / «−Итого» (≈ — narxi taxminiy). Zames qatorlari
+ * (Excel'dagi ko'k) — `info` rangida; brigadadan qaytish — «+». Bosilsa xomashyo kartochkasi (`stock:<id>~<n>`, id noyob bo'lsin).
+ */
+async function rasxodList(title: string, q?: string, filter?: string): Promise<MobileList> {
+  const p = skladPeriod(filter);
+  const s = q?.toLowerCase();
+  const all = (await rasxodJournal({ from: p.from, to: p.to })).filter((r) => !s || r.material.toLowerCase().includes(s) || r.to.toLowerCase().includes(s));
+  const t = rasxodTotals(all);
+  const rows = all.map((r, i) => ({ r, i })).slice(-TAKE).reverse().map(({ r, i }): HomeRow => {
+    const back = r.qty < 0;
+    const noPrice = r.price == null && Math.abs(r.total) < 0.005;
+    return {
+      id: `stock:${r.materialId}~${i}`,
+      title: `${r.material} · ${qtyRu(Math.abs(r.qty), r.unit)}`,
+      subtitle: [dateRu(r.date), r.to, r.payment ? PAY_RU[r.payment] : null].filter(Boolean).join(" · "),
+      right: noPrice ? "без цены" : `${r.priceApprox ? "≈" : ""}${back ? "+" : "−"}${fmtNum(Math.abs(r.total))}`,
+      tone: back ? "success" : r.kind === "prod" ? "info" : "danger",
+      ...(r.kind === "storno" ? { status: "сторно" } : r.cancelled ? { status: "отменён" } : {}),
+    };
+  });
+  return { key: "rasxod", title: journalTitle(title, all.length, t.total), rows, filters: periodFilters(p.key) };
+}
+
+/** «Остатки» jami qatorining id prefiksi: `jami~<davr>` — kartochkasi `detail.ts` da (`ostatki`). */
+export const OSTATKI_SUM = "jami~";
+/** Minimumdan kam (davr oxiridagi qoldiq bo'yicha) — veb «Остатки» va mobil «Sklad» ro'yxati bilan bir xil qoida. */
+export const turnoverLow = (m: TurnoverRow) => m.close.q < m.minStock - 0.0005;
+/** «Остатки» summalari yig'indisi (К-во birliklari har xil — qo'shilmaydi). */
+export function turnoverSums(rows: TurnoverRow[]) {
+  const r2 = (v: number) => Math.round(v * 100) / 100 || 0;
+  const s = (f: (m: TurnoverRow) => number) => r2(rows.reduce((a, m) => a + f(m), 0));
+  return { open: s((m) => m.open.s), in: s((m) => m.in.s), out: s((m) => m.out.s), close: s((m) => m.close.s), approx: rows.some((m) => m.approx) };
+}
+
+/**
+ * «Остатки» — xomashyo aylanmasi (`lib/stock-turnover.ts`, veb Sklad → Остатки bilan bir manba). Birinchi qator — jami
+ * (summalar; bosilsa jami kartochkasi), keyin har xomashyo: «Наименование (ед)» / «Нач · Приход · Расход» + «Дона сўм · Итого» /
+ * davr oxiridagi qoldiq, minimumdan kam bo'lsa «мало».
+ */
+async function ostatkiList(title: string, q?: string, filter?: string): Promise<MobileList> {
+  const p = skladPeriod(filter);
+  const s = q?.toLowerCase();
+  const all = (await materialTurnover({ from: p.from, to: p.to })).filter((m) => !s || m.name.toLowerCase().includes(s) || m.code.toLowerCase().includes(s));
+  const sums = turnoverSums(all);
+  const low = all.filter(turnoverLow).length;
+  const ap = sums.approx ? "≈" : "";
+  const head: HomeRow = {
+    id: `${OSTATKI_SUM}${p.key}`,
+    title: `Итого · ${all.length} поз. · ${p.label}`,
+    subtitle: `Нач ${shortRu(sums.open)} · Приход ${shortRu(sums.in)}\nРасход ${shortRu(sums.out)} · Итого ${ap}${shortRu(sums.close)}`,
+    right: `${ap}${shortRu(sums.close)}`,
+    ...(low ? { status: `мало: ${low}`, tone: "warning" as Tone } : {}),
+  };
+  const rows = all.slice(0, TAKE - 1).map((m): HomeRow => {
+    const price = m.unitPrice ?? m.avgCost;
+    const priceText = price == null ? "—" : `${m.unitPrice == null ? "≈" : ""}${fmtNum(price, 2)}`;
+    return {
+      id: m.id,
+      title: `${m.name} (${unitLabelRu(m.unit)})`,
+      subtitle: `Нач ${fmtNum(m.open.q, 3)} · Приход ${fmtNum(m.in.q, 3)} · Расход ${fmtNum(m.out.q, 3)}\nДона сўм ${priceText} · Итого ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
+      right: qtyRu(m.close.q, m.unit),
+      ...(turnoverLow(m) ? { status: "мало", tone: "danger" as Tone } : {}),
+    };
+  });
+  return { key: "ostatki", title, rows: [head, ...rows], filters: periodFilters(p.key) };
 }
 
 /** Login qilgan haydovchining xodim kartasi — reyslar shu id bo'yicha filtrlanadi. */

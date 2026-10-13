@@ -129,7 +129,7 @@ export async function ownerDashboard() {
     // Debitorka — yagona hisob (schyotlar − barcha to'lovlar, FIFO aging), overdue chegarasi sozlamadan
     getCompany().then((c) => receivablesReport({ edges: OWNER_EDGES, overdueDays: c.overdueDays })),
     db.supplyRequest.findMany({ where: { status: { in: ["PRICED", "APPROVED"] } }, include: { items: { select: { qty: true, price: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: monthStart, lt: tomorrow } } }, select: { qty: true, price: true, vatAmount: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: monthStart, lt: tomorrow } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
     db.productionPlan.findMany({ where: { year: y, month: m + 1 }, include: { product: { select: { id: true, code: true, name: true, unit: true } } } }),
     db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: from3, lt: tomorrow } }, select: { date: true, qtyM3: true, productId: true, product: { select: { unit: true } } } }),
     db.stockMove.findMany({ where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: monthStart, lt: tomorrow } }, select: { productId: true, qty: true, date: true } }),

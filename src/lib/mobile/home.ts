@@ -12,7 +12,10 @@ import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
 import { liveTrips } from "@/lib/live";
 import { CREATE_ROLES, canCreate } from "./create";
-import { listsFor } from "./list";
+import { listAllowed, listsFor, skladPeriod } from "./list";
+import { prixodJournal, prixodTotals } from "@/lib/receipts";
+import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
+import { fmtNum } from "@/lib/format";
 import { prodFilter } from "@/lib/production";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
 import { soleUnit } from "@/lib/unit";
@@ -235,6 +238,7 @@ const LIST_ICON: Record<string, string> = {
   production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check",
   trips: "bus", drivers: "id-card",
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
+  prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
   approvals: "circle-check", activity: "activity",
 };
@@ -253,6 +257,27 @@ async function supplySection(title: string, empty: string, status: ("NEW" | "PRI
     })),
   };
 }
+
+/**
+ * «Сегодня: Приход / Расход» — Sklad jurnallarining bugungi jami (ruscha, vebdagi Sklad ekranlari bilan bir manba).
+ * Bo'limda `target` yo'q: har qatorning `open`i ro'yxatni ochadi (`/erp/list/prixod`, `/erp/list/rasxod`).
+ */
+async function skladToday(): Promise<HomeSection> {
+  const p = skladPeriod("today");
+  const [inc, out] = await Promise.all([prixodJournal({ from: p.from, to: p.to }), rasxodJournal({ from: p.from, to: p.to })]);
+  const a = prixodTotals(inc), b = rasxodTotals(out);
+  const docs = new Set(inc.map((r) => r.receiptId)).size;
+  const zames = out.filter((r) => r.kind === "prod").length;
+  return {
+    title: "Сегодня: Приход / Расход", empty: "", icon: "arrow-up-down",
+    rows: [
+      { id: "prixod", title: "Приход", subtitle: inc.length ? `${docs} док. · ${inc.length} стр.` : "сегодня прихода нет", right: `+${fmtNum(a.total)}`, tone: "success", open: "prixod" },
+      { id: "rasxod", title: "Расход", subtitle: out.length ? `${out.length} стр.${zames ? ` · замес ${zames}` : ""}` : "сегодня расхода нет", right: `−${fmtNum(b.total)}`, tone: "danger", open: "rasxod" },
+    ],
+  };
+}
+/** Bosh sahifasida «Сегодня: Приход / Расход» bo'limi bor rollar (ro'yxat ruxsati ham kerak — `listAllowed`). */
+const SKLAD_TODAY_ROLES: Role[] = ["WAREHOUSE", "PROCUREMENT", "DIRECTOR"];
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const startOfMonth = () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; };
@@ -739,6 +764,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       sections.push(...b.sections);
       break;
     }
+  }
+
+  // Sklad jurnallari bugun: sklad/snabjeniyeda — ro'yxatlar boshida, direktorda — oxirida. Xato bosh sahifani buzmaydi.
+  if (SKLAD_TODAY_ROLES.includes(user.role) && listAllowed(user, "prixod") && listAllowed(user, "rasxod")) {
+    const s = await skladToday().catch((e) => { console.error("[mobile-home] sklad", e); return null; });
+    if (s) { if (user.role === "DIRECTOR") sections.push(s); else sections.unshift(s); }
   }
 
   // Rol dashboardi (davr filtri, KPI, diagrammalar) — direktordan tashqari hammaga; bosh ko'rsatkich

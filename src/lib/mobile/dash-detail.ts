@@ -557,8 +557,8 @@ async function driverKm({ user, r }: Ctx): Promise<Part> {
 
 async function goodsReceipts(r: DashRange, title: string): Promise<Part> {
   const [rows, prev] = await Promise.all([
-    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, vatAmount: true, material: { select: { id: true, name: true, unit: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true } }),
+    db.goodsReceipt.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true, material: { select: { id: true, name: true, unit: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
   ]);
   const amt = (x: (typeof rows)[number]) => sumBy(x.items, (i) => lineTotal(i));
   const amount = sumBy(rows, amt), prevAmount = sumBy(prev, (i) => lineTotal(i));

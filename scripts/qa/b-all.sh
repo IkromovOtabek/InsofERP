@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # QA (B) — sklad / ishlab chiqarish / logistika / ta'minot / kadr skriptlarini ketma-ket ishga tushiradi
-# (materials-delete.mts — Sklad → Xomashyo qoldig'i: belgilab o'chirish; client.mjs/db.mjs yordamchilari bilan).
+# (materials-delete.mts — Sklad → Xomashyo qoldig'i: belgilab o'chirish; sklad-journals.mts — Sklad → Приход / Расход / Остатки,
+#  «Дона сўм», «Кому» va mobil ro'yxat/forma; ikkalasi client.mjs/db.mjs yordamchilari bilan).
 # Talab: test serveri ishlayapti (QA_BASE, standart http://localhost:3202), baza — insof_test… (QA_DB).
 #   QA_DB=postgresql://otabek@localhost:5432/insof_test_b QA_BASE=http://localhost:3202 bash scripts/qa/b-all.sh [server.log]
 # Toza bazada ishlating: createdb -T insof_test_golden insof_test_b && npx prisma migrate deploy && npm run db:test-users
@@ -8,14 +9,14 @@ set -u
 cd "$(dirname "$0")/../.."
 export QA_DB="${QA_DB:-postgresql://otabek@localhost:5432/insof_test_b}"
 export DATABASE_URL="$QA_DB"
-# client.mjs / db.mjs (materials-delete.mts) QA_BASE va QA_DATABASE_URL o'qiydi — run-all.sh a to'plamida eksport qilgan
+# client.mjs / db.mjs (materials-delete.mts, sklad-journals.mts) QA_BASE va QA_DATABASE_URL o'qiydi — run-all.sh a to'plamida eksport qilgan
 # QA_DATABASE_URL a bazasiga qaraydi, shuning uchun b bazasiga qayta yo'naltiriladi
 export QA_BASE="${QA_BASE:-http://localhost:3202}"
 export QA_DATABASE_URL="$QA_DB"
 # 1-argument (ixtiyoriy): server log fayli — b-pages undagi yangi xatolarni tekshiradi
 if [ $# -ge 1 ]; then export QA_LOG="$1"; fi
 fail=0
-for t in b-supply.mjs b-receipts.mts b-vat.mts b-production.mts b-logistics.mts b-hr.mts b-mobile.mts materials-delete.mts b-pages.mjs; do
+for t in b-supply.mjs b-receipts.mts b-vat.mts b-production.mts b-logistics.mts b-hr.mts b-mobile.mts materials-delete.mts sklad-journals.mts b-pages.mjs; do
   echo "=== $t"
   if [[ "$t" == *.mts ]]; then npx tsx "scripts/qa/$t" || fail=1; else node "scripts/qa/$t" || fail=1; fi
 done

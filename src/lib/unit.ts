@@ -4,6 +4,10 @@ import { qty } from "@/lib/format";
 export const unitLabel = (u: string) => (u === "m3" ? "m³" : u);
 export const isStocked = (u: string) => u !== "m3";
 
+/** Ruscha birlik yorlig'i — Sklad → «Приход», «Расход», «Остатки» jadvallari (foydalanuvchi Excel'idagidek). */
+const UNIT_RU: Record<string, string> = { kg: "кг", t: "тн", l: "л", m3: "м³", m2: "м²", m: "м", dona: "шт" };
+export const unitLabelRu = (u: string) => UNIT_RU[u] ?? u;
+
 /** Mahsulot birliklari (Sozlamalar → Beton markalari, zayavkadagi mahsulot tanlagichi). */
 export const PRODUCT_UNITS: [string, string][] = [
   ["m3", "m³ — tayyor beton"],

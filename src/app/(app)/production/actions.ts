@@ -11,6 +11,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { qty as fq } from "@/lib/format";
 import { ingredientOf, balanceOf } from "@/lib/recipe";
 import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
+import { issuePrices } from "@/lib/stock-price";
 import { cancelBatch } from "@/lib/storno";
 
 class ShortError extends Error {}
@@ -88,6 +89,9 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
       throw new ShortError("Yetarli emas: " + lacking.map((x) => `${x.ing.name} (kerak ${fq(x.need)}, bor ${fq(x.have)} ${x.ing.unit})`).join("; "));
     }
 
+    // Xomashyo sarfi «Дона сўм» bilan baholanadi (snapshot) — Расход jurnalidagi zames qatorlari shu narxda.
+    // Mahsulot-ingredient (FBS blok) narxsiz qoladi — avvalgidek
+    const prices = await issuePrices(materialIds, tx);
     const b = await tx.productionBatch.create({
       data: {
         batchNo: await nextNo(tx, "productionBatch", "ZM"),
@@ -104,7 +108,8 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
             type: "PRODUCTION_CONSUME" as const, warehouseId: d.warehouseId,
             materialId: ing.kind === "material" ? ing.key : null,
             productId: ing.kind === "product" ? ing.key : null,
-            qty: -(ing.qtyPerM3 * d.qtyM3), refType: "ProductionBatch", refId: b.id, createdById: s.userId,
+            qty: -(ing.qtyPerM3 * d.qtyM3), unitCost: ing.kind === "material" ? prices.get(ing.key) ?? null : null,
+            refType: "ProductionBatch", refId: b.id, createdById: s.userId,
           };
         }),
         { type: "PRODUCTION_OUTPUT" as const, warehouseId: d.warehouseId, productId: d.productId, qty: d.qtyM3, refType: "ProductionBatch", refId: b.id, createdById: s.userId },

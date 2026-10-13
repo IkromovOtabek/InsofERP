@@ -11,19 +11,13 @@ import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "
 import { num, numMoney, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
 import { toMaterialUnit } from "@/lib/unit";
-import { cashOutflowError } from "@/lib/payments";
 import { cancelReceipt } from "@/lib/storno";
 import { Prisma } from "@/generated/prisma";
-import { companyVatPayer, isVatRate, supplierVatRate, vatLine, receiptTotal, type VatRate } from "@/lib/receipt-vat";
-
-/** Tranzaksiya ichidan foydalanuvchiga ko'rinadigan xato (kassa yetmaydi va h.k.). */
-class ReceiptError extends Error {}
+import { companyVatPayer, supplierVatRate, vatLine } from "@/lib/receipt-vat";
+import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
 
 /** Formadagi bir martalik kalit (brauzer yaratadi): bo'sh yoki g'alati bo'lsa — e'tiborga olinmaydi. */
-const tokenOf = (v: FormDataEntryValue | null) => {
-  const t = typeof v === "string" ? v.trim() : "";
-  return /^[A-Za-z0-9-]{16,64}$/.test(t) ? t : null;
-};
+const tokenOf = (v: FormDataEntryValue | null) => receiptTokenOf(v);
 
 const schema = z.object({
   supplierId: zStr("Yetkazuvchi tanlanmagan"),
@@ -32,7 +26,7 @@ const schema = z.object({
   cashAccountId: zOpt,
   date: zStr("Sana kerak"),
   note: zOpt,
-  // Nakladnoy rekvizitlari va tarozi (sxemada alohida ustun yo'q — izohga tuzilgan holda yoziladi)
+  // Nakladnoy rekvizitlari va tarozi: ТТН alohida ustunda ham, hammasi izohga tuzilgan holda (`receiptNote`)
   waybillNo: zOpt,
   vehicle: zOpt,
   gross: zOpt,
@@ -47,120 +41,31 @@ const schema = z.object({
 const kg = (v: string | null) => (v ? Number(v.replace(/\s+/g, "").replace(",", ".")) : null);
 
 /**
- * Nakladnoy raqami, mashina va tarozi (brutto − tara = netto) — kirim izohiga bir xil tuzilishda yoziladi:
- * "Nakladnoy № 123 · Mashina 01A123BC · Tarozi: brutto 32 500, tara 12 300, netto 20 200 kg · <izoh>".
- * Sxemaga tegmasdan qidirish va chop etishda o'qiladi.
- */
-function receiptNote(d: { note: string | null; waybillNo: string | null; vehicle: string | null; gross: string | null; tare: string | null }): { note: string | null } | { error: string } {
-  const gross = kg(d.gross), tare = kg(d.tare);
-  if (gross != null && !(Number.isFinite(gross) && gross > 0 && gross <= MAX_AMOUNT)) return { error: "Brutto og'irligi noto'g'ri" };
-  if (tare != null && !(Number.isFinite(tare) && tare >= 0 && tare <= MAX_AMOUNT)) return { error: "Tara og'irligi noto'g'ri" };
-  if ((gross == null) !== (tare == null)) return { error: "Tarozi: brutto va tara ikkalasini ham kiriting" };
-  if (gross != null && tare != null && tare >= gross) return { error: "Tara bruttodan kichik bo'lishi kerak" };
-  const parts = [
-    d.waybillNo ? `Nakladnoy № ${d.waybillNo}` : null,
-    d.vehicle ? `Mashina ${d.vehicle.toUpperCase()}` : null,
-    gross != null && tare != null ? `Tarozi: brutto ${gross}, tara ${tare}, netto ${Math.round((gross - tare) * 1000) / 1000} kg` : null,
-    d.note,
-  ].filter(Boolean);
-  return { note: parts.length ? parts.join(" · ") : null };
-}
-
-/**
  * Kirim: GoodsReceipt + har qator uchun StockMove RECEIPT (+qty, unitCost).
  * Narx QQS'siz kiritiladi; qatorga QQS (0/12%) qo'shiladi — to'lanadigan summa QQS bilan (`lib/receipt-vat.ts`).
+ * Mantiq `lib/receipts.ts#createGoodsReceipt` da (Sklad → «Приход» formasi bilan bitta qoida).
  */
 export async function createReceipt(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "receipt");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
-  if (!validDate(d.date)) return { error: "Sana noto'g'ri — 2000-yildan bugungacha bo'lsin" };
-  const date = new Date(d.date);
-  const raw = d.materialId.map((materialId, i) => ({ materialId, qty: d.qty[i], price: d.price[i], rate: d.vatRate?.[i] })).filter((i) => i.materialId);
-  if (!raw.length) return { error: "Kamida bitta qator kerak" };
-  if (raw.some((i) => !(i.qty > 0) || !(i.price >= 0))) return { error: "Har qatorda miqdor va narx bo'lsin" };
-  if (raw.some((i) => i.rate != null && i.rate !== "" && !isVatRate(Number(i.rate)))) return { error: "QQS stavkasi 0 yoki 12% bo'lsin" };
-  const n = receiptNote(d);
-  if ("error" in n) return { error: n.error };
-
-  // Ikki marta bosilgan "Saqlash" (yoki tarmoq qayta yuborgan so'rov) ikkinchi kirim ochmasin:
-  // shu kalit bilan kirim allaqachon bor bo'lsa — o'shanga qaytamiz. Poyga holati — `clientToken` unique.
-  const clientToken = tokenOf(fd.get("clientToken"));
-  if (clientToken) {
-    const dup = await db.goodsReceipt.findUnique({ where: { clientToken }, select: { id: true } });
-    if (dup) redirect(`/receipts/${dup.id}`);
+  const rates = d.vatRate ?? [];
+  let res: Awaited<ReturnType<typeof createGoodsReceipt>>;
+  try {
+    res = await createGoodsReceipt({
+      supplierId: d.supplierId, warehouseId: d.warehouseId, date: d.date, note: d.note, cashAccountId: d.cashAccountId,
+      waybillNo: d.waybillNo, vehicle: d.vehicle, gross: kg(d.gross), tare: kg(d.tare), clientToken: tokenOf(fd.get("clientToken")),
+      items: d.materialId.map((materialId, i) => {
+        const rate = rates[i];
+        return { materialId, qty: d.qty[i], price: d.price[i], vatRate: rate != null && rate !== "" ? (Number(rate) as 0 | 12) : null };
+      }),
+    }, { userId: s.userId, role: s.role });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Kirim saqlanmadi" };
   }
-
-  // Sklad, yetkazuvchi, xomashyo va hisob — mavjud va faol bo'lsin (aks holda bazada FK xatosi → 500)
-  const ids = [...new Set(raw.map((i) => i.materialId))];
-  const [wh, sup, mats, acc] = await Promise.all([
-    db.warehouse.findFirst({ where: { id: d.warehouseId, isActive: true }, select: { id: true } }),
-    db.supplier.findUnique({ where: { id: d.supplierId }, select: { id: true, name: true, isActive: true, vatPayer: true } }),
-    db.material.findMany({ where: { id: { in: ids } }, select: { id: true, isActive: true } }),
-    d.cashAccountId && s.role === "DIRECTOR" ? db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
-  ]);
-  if (!wh) return { error: "Sklad topilmadi yoki yopilgan" };
-  if (!sup) return { error: "Yetkazuvchi topilmadi" };
-  if (!sup.isActive) return { error: `"${sup.name}" yopilgan — avval Yetkazuvchilar bo'limida faollashtiring` };
-  if (mats.length !== ids.length) return { error: "Xomashyo topilmadi — sahifani yangilang" };
-  if (mats.some((m) => !m.isActive)) return { error: "Yopilgan xomashyoga kirim qilinmaydi" };
-  if (d.cashAccountId && s.role === "DIRECTOR" && !acc) return { error: "To'lov hisobi topilmadi yoki yopilgan" };
-
-  // QQS: QQS to'lovchisi bo'lmagan yetkazuvchi QQS bermaydi — stavka majburan 0.
-  // QQS to'lovchisida qator stavkasi (0 — QQS'dan ozod tovar yoki 12), berilmasa 12.
-  const vatPayer = await companyVatPayer();
-  const defRate = supplierVatRate(sup.vatPayer);
-  const items = raw.map((i) => {
-    const rate: VatRate = !sup.vatPayer ? 0 : i.rate != null && i.rate !== "" ? (Number(i.rate) as VatRate) : defRate;
-    return { materialId: i.materialId, ...vatLine(i.qty, i.price, rate, vatPayer) };
-  });
-  const total = receiptTotal(items);
-  if (total > MAX_AMOUNT) return { error: "Kirim summasi juda katta" };
-
-  const id = await db.$transaction(async (tx) => {
-    const rec = await tx.goodsReceipt.create({
-      data: {
-        docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: s.userId, clientToken,
-        items: { create: items.map((i) => ({ materialId: i.materialId, qty: i.qty, price: i.price, vatRate: i.vatRate, vatAmount: i.vatAmount })) },
-      },
-    });
-    await tx.stockMove.createMany({
-      data: items.map((i) => ({
-        type: "RECEIPT" as const, date, warehouseId: wh.id, materialId: i.materialId,
-        qty: i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
-      })),
-    });
-    // Kirim summasi (QQS bilan — yetkazuvchiga shuncha to'lanadi) — hisobdan chiqim. Sklad/snabjeniye kassadan pul chiqara olmaydi: bunday kirim
-    // Kirim-Chiqimda "To'lanmagan kirimlar" ro'yxatiga tushadi va moliya to'laydi (`payReceipt`).
-    // Direktor esa hisobni tanlab, shu zahoti to'langan deb yozishi mumkin.
-    if (total > 0 && acc) {
-      // Naqd kassa minusga tushmasin (qulf ostida) — bankdan to'lash yoki to'lovni moliyaga qoldirish kerak
-      const cashErr = await cashOutflowError(tx, acc.id, total);
-      if (cashErr) throw new ReceiptError(`${cashErr}. Hisobni o'zgartiring yoki to'lovsiz saqlang — moliya keyin to'laydi`);
-      const cashTx = await tx.cashTransaction.create({
-        data: {
-          type: "EXPENSE", date, cashAccountId: acc.id, amount: total,
-          category: "Xomashyo", supplierId: sup.id, counterparty: sup.name,
-          note: `Kirim ${rec.docNo} · ${items.length} qator`,
-          refType: "GoodsReceipt", refId: rec.id, createdById: s.userId,
-        },
-      });
-      await audit(tx, s.userId, "CREATE", "CashTransaction", cashTx.id, undefined, cashTx);
-    }
-    await audit(tx, s.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items });
-    return rec.id;
-  }).catch(async (e: Error) => {
-    // Bir vaqtda kelgan ikki bir xil yuborish: ikkinchisi unique kalitga urildi — birinchisining kirimi ochiladi
-    if (clientToken && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      const dup = await db.goodsReceipt.findUnique({ where: { clientToken }, select: { id: true } });
-      if (dup) return dup.id;
-    }
-    return { error: e.message };
-  });
-  if (typeof id === "object") return { error: id.error };
-  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/suppliers");
-  redirect(`/receipts/${id}`);
+  if (!res.existed) { revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/suppliers"); }
+  redirect(`/receipts/${res.id}`);
 }
 
 const importSchema = z.object({

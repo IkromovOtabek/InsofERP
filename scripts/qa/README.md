@@ -18,7 +18,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 | To'plam | Nima | Fayllar |
 |---|---|---|
 | a | sotuv / moliya, Excel importlari, INN tekshiruvi, lavozim login shabloni va ruxsat shablonlari (mobil login bilan), Sozlamalar → Limitlar (standart va mijozlar kredit limiti, kunlik zayavka limiti blokdan chiqarishda ham, davomat radiusi), kassa ⇄ bank o'tkazmalari, yagona debitorka | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, login-templates.mts, limits.mts, prepay-gate.mts, transfers.mts, receivables.mts |
-| b | sklad / ishlab chiqarish / logistika / ta'minot / kadr, kirim QQS (b-vat.mts), Sklad → Xomashyo qoldig'i: belgilab o'chirish (materials-delete.mts — qoldiqsiz va o'zi kiritgan boshlang'ich qoldiqli butunlay o'chadi; ishlatilgani qoldig'i 0 bo'lsa arxivga, qoldig'i bor bo'lsa o'zgarmaydi; boshqa xodim kiritgani / kassaga chiqim bo'lgani o'chmaydi; ruxsat, sahifadagi panel) | b-all.sh |
+| b | sklad / ishlab chiqarish / logistika / ta'minot / kadr, kirim QQS (b-vat.mts), Sklad → Xomashyo qoldig'i: belgilab o'chirish (materials-delete.mts — qoldiqsiz va o'zi kiritgan boshlang'ich qoldiqli butunlay o'chadi; ishlatilgani qoldig'i 0 bo'lsa arxivga, qoldig'i bor bo'lsa o'zgarmaydi; boshqa xodim kiritgani / kassaga chiqim bo'lgani o'chmaydi; ruxsat, sahifadagi panel), Sklad → Приход / Расход / Остатки (sklad-journals.mts — pastda) | b-all.sh |
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul, kassa: to'lov / kirim-chiqim / o'tkazma — c-mobile-cash.ts), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
 | geo | mobil geofence yoqilgan rejim (`MOBILE_SITE_COORDS_REQUIRED=true`) | c-mobile-scope.ts |
@@ -45,6 +45,34 @@ shularni o'chiradi. `d-run-all.sh` ni to'g'ridan ishga tushirganda `D_DB_PREFIX`
 hayot sikli, amal tekshiruvi/sir tozalash (unit) va ~70 s lokal integratsiya: vaqtinchalik `insof_test_ctl_agent`
 (boshida qayta yaratiladi, oxirida o'chiriladi), yopiq portdagi soxta korxona → CRIT hodisa → tiklanish → RESOLVED,
 amallar navbati, qulf, SIGTERM, xavfsizlik moduli stub'i. `AGENT_QA_UNIT_ONLY=1` — faqat unit (bazasiz).
+
+## Sklad jurnallari — `sklad-journals.mts` (b ichida)
+
+Sklad → «Приход», «Расход», «Остатки» (ekranlar ruscha, Excel jurnallaridagidek), «Дона сўм», «Кому» ro'yxati va mobil:
+
+- **«Кому»** (`stock/rasxod/actions` saveRecipient / toggleRecipient): sklad qo'shadi, takror nom (registrsiz, nofaol ham) — xato,
+  snabjeniye tahrirlaydi, nofaol qilinadi (o'chirilmaydi), sotuvchi — 403; `/stock/rasxod/new` da faqat faollar.
+- **«Приход»** (`stock/prixod/actions#createPrixod`): П-р kirim 2 qator (biri dostavka bilan) — ТТН, Деньги, Кому, Адрес,
+  Снабженец, Почему, `deliveryCost`; `StockMove.unitCost` = narx (+QQS, korxona QQS to'lovchisi bo'lmasa) + dostavka / qty;
+  Н-к — QQS 0; takror `clientToken`; ruscha xatolar; `prixodJournal`, `/stock/prixod` sahifasi, yetkazuvchi qarzi dostavka bilan.
+- **«Дона сўм»** (`stock/price-actions#saveMaterialPrice`): faqat snabjeniye, audit; narx o'zgargach keyingi spisanie / brigadaga
+  berish yangi narxda, eski chiqim o'zgarmaydi.
+- **«Расход»** (`stock/rasxod/actions#createRasxod`): oluvchiga `ISSUE`, brigadaga `BRIGADE_ISSUE` + `BrigadeMove`, qoldiqdan
+  oshsa hech narsa yozilmaydi, takror kalit, sana chegaralari; `rasxodJournal` (Деньги / НДС oxirgi kirimdan, «Кому» filtri),
+  zames — kun + xomashyo + sklad bo'yicha bitta qator (test bazasida zames bo'lsa).
+- **«Остатки»** (`materialTurnover`, `/stock?tab=balance&from&to`): test xomashyosi bo'yicha aniq qiymatlar, har xomashyo uchun
+  oxirgi = boshlang'ich + приход − расход va SQL qoldig'i bilan moslik, «Расход» ustuni = Расход jurnali.
+- **Mobil**: `/api/mobile/list?key=prixod|rasxod|ostatki`, `/api/mobile/form?key=prixod|rasxod` (sklad — 200, sotuvchi — 403),
+  `/api/mobile/create` rasxod (payload forma tavsifidan yig'iladi) va takror kalit.
+
+O'z ma'lumotini `T` qo'shimchasi bilan ochadi (yetkazuvchi, 2 xomashyo, oluvchilar, brigada); oxirida brigada qoldig'i qaytariladi,
+test xomashyosi qoldig'i hisobdan chiqarilib arxivga olinadi, «Дона сўм» qaytariladi, oluvchi / brigada / yetkazuvchi nofaol
+bo'ladi. Boshqa xomashyolar narxiga tegmaydi (`fillPricesFromAvg` chaqirilmaydi). Lib funksiyalari (faqat o'qish) ham chaqiriladi —
+skript `DATABASE_URL` ni `QA_DATABASE_URL` ga tenglaydi (db.mjs uni `insof_test…` ekanini tekshiradi).
+
+```bash
+QA_BASE=http://localhost:3202 QA_DATABASE_URL=postgresql://otabek@localhost:5432/insof_test_b npx tsx scripts/qa/sklad-journals.mts
+```
 
 ## Sotuv / moliya to'plami (a) — qo'lda
 

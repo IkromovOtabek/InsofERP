@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { lockStock, STOCK_EPS } from "@/lib/stock-lock";
 import { avgUnitCosts } from "@/lib/stock";
+import { issuePrices } from "@/lib/stock-price";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { money } from "@/lib/format";
 import { DIRECTOR_NOTIFY_SUM, WRITE_OFF_REASONS } from "./adjust-const";
@@ -29,7 +30,7 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const text = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
 function refresh() {
-  revalidatePath("/stock"); revalidatePath("/stock/inventarizatsiya"); revalidatePath("/stock/spisanie");
+  revalidatePath("/stock"); revalidatePath("/stock/inventarizatsiya"); revalidatePath("/stock/spisanie"); revalidatePath("/stock/rasxod");
   revalidatePath("/dashboard"); revalidatePath("/snabjeniye");
 }
 
@@ -70,7 +71,10 @@ export async function saveInventory(_prev: ActionState, fd: FormData): Promise<A
     if (moved.length) {
       return { error: `Sanoq paytida qoldiq o'zgardi: ${moved.slice(0, 5).map((x) => meta.get(x.materialId)?.name).join(", ")} — sahifani yangilab, shu qatorlarni qayta kiriting` };
     }
-    const costs = await avgUnitCosts(ids, tx);
+    // Kamomad (−) — chiqim: «Дона сўм» bilan (Расход jurnalidagi «Инвентаризация (недостача)» shu narxda).
+    // Ortiqcha (+) — avvalgidek o'rtacha tannarx: musbat ADJUSTMENT `avgUnitCosts` manbaiga kiradi,
+    // unga Snabjeniye narxi aralashmasin
+    const [costs, prices] = await Promise.all([avgUnitCosts(ids, tx), issuePrices(ids, tx)]);
     const diffs = rows
       .map((x) => ({ ...x, diff: r3(x.actual - (bal.get(x.materialId) ?? 0)) }))
       .filter((x) => Math.abs(x.diff) > STOCK_EPS);
@@ -79,7 +83,7 @@ export async function saveInventory(_prev: ActionState, fd: FormData): Promise<A
     const lines: string[] = [];
     for (const x of diffs) {
       const m = meta.get(x.materialId)!;
-      const cost = costs.get(x.materialId) ?? null;
+      const cost = (x.diff < 0 ? prices : costs).get(x.materialId) ?? null;
       await tx.stockMove.create({
         data: {
           type: "ADJUSTMENT", warehouseId: wh.id, materialId: x.materialId, qty: x.diff, unitCost: cost,
@@ -150,7 +154,8 @@ export async function saveWriteOff(_prev: ActionState, fd: FormData): Promise<Ac
     const short = [...wanted.entries()].filter(([id, q]) => (bal.get(id) ?? 0) < q - STOCK_EPS)
       .map(([id, q]) => `${meta.get(id)!.name} (${wh.name}da ${r3(bal.get(id) ?? 0)}, chiqarilmoqda ${r3(q)} ${meta.get(id)!.unit})`);
     if (short.length) return { error: `Qoldiqdan ko'p chiqarib bo'lmaydi: ${short.join(", ")}` };
-    const costs = await avgUnitCosts(ids, tx);
+    // Narx — «Дона сўм» snapshot (Snabjeniye belgilagan; bo'lmasa o'rtacha tannarx)
+    const costs = await issuePrices(ids, tx);
     let sum = 0;
     for (const [id, q] of wanted) {
       const cost = costs.get(id) ?? null;

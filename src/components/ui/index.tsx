@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { EmptySlot } from "./empty-slot";
 
 export { PasswordInput } from "./password-input";
+export { Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot, type SheetTone } from "./sheet";
 
 /* ═══════════════════════ Layout ═══════════════════════ */
 

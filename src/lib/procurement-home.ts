@@ -86,7 +86,7 @@ export async function procurementHome(f: ProcFilters = {}) {
     }),
     db.goodsReceipt.findMany({
       where: { cancelledAt: null, date: { gte: from, lt: to } }, // storno qilingan kirim xarid summasiga kirmaydi
-      select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, items: { select: { qty: true, price: true, vatAmount: true } } },
+      select: { id: true, docNo: true, date: true, supplier: { select: { id: true, name: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true } } },
       orderBy: { date: "asc" },
     }),
     db.expenseBudget.findFirst({ where: { year: y, month: m + 1, category: CATEGORY } }),

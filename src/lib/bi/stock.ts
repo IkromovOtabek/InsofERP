@@ -5,10 +5,12 @@ import { unitLabel } from "@/lib/unit";
 import { type Range, type Gran, materialCosts, finishedUnitCosts, sum, addDays, startOfDay, series, bucketsFor, bucketLabel, bucketKey, abc } from "./core";
 
 /**
- * Xomashyo sarfi: zames (PRODUCTION_CONSUME) + brigadaga berilgani (BRIGADE_ISSUE, dona mahsulot uchun),
- * brigadadan qaytgani (BRIGADE_RETURN) ayiriladi. Ishorali yig'indi — storno o'zi chiqib ketadi.
+ * Xomashyo sarfi: zames (PRODUCTION_CONSUME) + brigadaga berilgani (BRIGADE_ISSUE, dona mahsulot uchun)
+ * + Sklad → «Расход» orqali oluvchilarga berilgani (ISSUE: shafyorlar, svarchiklar…), brigadadan qaytgani
+ * (BRIGADE_RETURN) ayiriladi. Ishorali yig'indi — storno o'zi chiqib ketadi.
+ * Snabjeniye hisobotidagi sarf ham shu ro'yxatdan (`lib/procurement-report.ts`) — bitta ta'rif.
  */
-const CONSUME_TYPES = ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "BRIGADE_RETURN"] as const;
+export const CONSUME_TYPES = ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "ISSUE", "BRIGADE_RETURN"] as const;
 const DAY = 86400000;
 
 /** Hovlidagi tayyor mahsulotning erkin (zayavkaga band qilinmagan) qismi va uning tannarx bo'yicha qiymati. */
@@ -33,7 +35,7 @@ export async function materialOverview(): Promise<MaterialRow[]> {
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: [...CONSUME_TYPES] }, date: { gte: since30 } }, _sum: { qty: true } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "RECEIPT", date: { gte: since30 } }, _sum: { qty: true } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["PRODUCTION_CONSUME", "BRIGADE_ISSUE"] }, qty: { lt: 0 }, date: { gte: since90 } }, _max: { date: true } }),
+    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "ISSUE"] }, qty: { lt: 0 }, date: { gte: since90 } }, _max: { date: true } }),
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { items: { include: { product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } } }),
     materialCosts(),
     db.stockMove.aggregate({ where: { materialId: { not: null } }, _min: { date: true } }),

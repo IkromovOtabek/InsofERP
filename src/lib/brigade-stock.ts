@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { audit } from "./audit";
 import { avgUnitCosts } from "./stock";
+import { issuePrices } from "./stock-price";
 import { notifyAfter, notifyRoles } from "./notify";
 
 /**
@@ -110,6 +111,44 @@ export type IssueRow = { materialId: string; qty: number };
 export type IssueResult = { ok?: boolean; error?: string; note?: string };
 
 /**
+ * Skladdan brigadaga berishning YOZUV qismi (tekshiruvsiz): har qator uchun StockMove BRIGADE_ISSUE (−)
+ * va BrigadeMove ISSUE (+). Qoldiq tekshiruvi — chaqiruvchida, SHU tranzaksiyada `lockStock` ostida
+ * (`issueToBrigade`, Sklad → «Расход» `issueStock`). Narx — «Дона сўм» snapshot (`issuePrices`).
+ * `refType`/`refId` berilmasa — avvalgidek "Brigade"/brigada id'si; `clientToken` birinchi qatorga yoziladi.
+ */
+export async function writeBrigadeIssue(
+  tx: Prisma.TransactionClient,
+  p: {
+    brigade: { id: string; name: string }; warehouseId: string; rows: IssueRow[]; userId: string;
+    note?: string | null; refType?: string; refId?: string; date?: Date; clientToken?: string | null;
+  },
+): Promise<{ count: number; sum: number }> {
+  const prices = await issuePrices(p.rows.map((r) => r.materialId), tx);
+  let sum = 0;
+  for (const [i, r] of p.rows.entries()) {
+    const cost = prices.get(r.materialId) ?? null;
+    const move = await tx.stockMove.create({
+      data: {
+        type: "BRIGADE_ISSUE", warehouseId: p.warehouseId, materialId: r.materialId, brigadeId: p.brigade.id,
+        qty: -r.qty, unitCost: cost, refType: p.refType ?? "Brigade", refId: p.refId ?? p.brigade.id,
+        note: `${p.brigade.name} brigadasiga berildi${p.note ? ` · ${p.note}` : ""}`, createdById: p.userId,
+        ...(p.date ? { date: p.date } : {}),
+        ...(i === 0 && p.clientToken ? { clientToken: p.clientToken } : {}),
+      },
+    });
+    await tx.brigadeMove.create({
+      data: {
+        type: "ISSUE", brigadeId: p.brigade.id, materialId: r.materialId, qty: r.qty, unitCost: cost,
+        refType: "StockMove", refId: move.id, note: p.note ?? null, createdById: p.userId,
+        ...(p.date ? { date: p.date } : {}),
+      },
+    });
+    sum += r.qty * (cost ?? 0);
+  }
+  return { count: p.rows.length, sum };
+}
+
+/**
  * Skladdan brigadaga berish. Ikki jurnalga yoziladi:
  * sklad qoldig'i kamayadi (StockMove BRIGADE_ISSUE, −), brigada qoldig'i oshadi (BrigadeMove ISSUE, +).
  * Skladda yetmasa — berilmaydi (qaysi xomashyo qancha yetmagani aytiladi).
@@ -128,10 +167,7 @@ export async function issueToBrigade(
   if (!wh) return { error: "Sklad tanlanmagan" };
 
   const ids = [...new Set(rows.map((r) => r.materialId))];
-  const [materials, costs] = await Promise.all([
-    db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } }),
-    avgCosts(ids),
-  ]);
+  const materials = await db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } });
   const meta = new Map(materials.map((m) => [m.id, m]));
   // Bir xomashyo bir necha qatorda bo'lsa yig'indisi tekshiriladi — 2 t qoldiqdan 4 t berilmaydi
   const wanted = new Map<string, number>();
@@ -146,27 +182,54 @@ export async function issueToBrigade(
       .filter(([id, q]) => (bal.get(id) ?? 0) < q - STOCK_EPS)
       .map(([id, q]) => `${meta.get(id)?.name ?? "?"} (${wh.name}da ${fmt(bal.get(id) ?? 0)}, so'ralgan ${fmt(q)} ${meta.get(id)?.unit ?? ""})`);
     if (short.length) return { error: `Skladda yetmaydi: ${short.join(", ")}` };
-    for (const r of rows) {
-      const cost = costs.get(r.materialId) ?? null;
-      const move = await tx.stockMove.create({
-        data: {
-          type: "BRIGADE_ISSUE", warehouseId: wh.id, materialId: r.materialId, brigadeId: brigade.id,
-          qty: -r.qty, unitCost: cost, refType: "Brigade", refId: brigade.id,
-          note: `${brigade.name} brigadasiga berildi${input.note ? ` · ${input.note}` : ""}`, createdById: userId,
-        },
-      });
-      await tx.brigadeMove.create({
-        data: {
-          type: "ISSUE", brigadeId: brigade.id, materialId: r.materialId, qty: r.qty, unitCost: cost,
-          refType: "StockMove", refId: move.id, note: input.note ?? null, createdById: userId,
-        },
-      });
-    }
+    // Narx — «Дона сўм» (Snabjeniye belgilagan; bo'lmasa o'rtacha tannarx), qulf ostida olinadi
+    await writeBrigadeIssue(tx, { brigade, warehouseId: wh.id, rows, userId, note: input.note });
     await audit(tx, userId, "CREATE", "BrigadeMove", brigade.id, undefined, { brigade: brigade.name, rows, warehouse: wh.name });
     return null;
   });
   if (res) return res;
   return { ok: true, note: `${brigade.name}: ${rows.length} ta xomashyo berildi` };
+}
+
+/**
+ * Brigada qo'lidagi xomashyoning o'rtacha narxi (brigada × xomashyo) — `BrigadeMove` jurnali bo'yicha harakatlanuvchi o'rtacha
+ * (sana, keyin yozilish tartibida):
+ *  · berish (ISSUE, +; qo'lda va topshiriq uchun avtomatik) — o'z narxi bilan qo'shiladi; narxi yozilmagan eski qatorda
+ *    `fallback` (joriy «Дона сўм»);
+ *  · sarf / qaytish / spisanie (−) — o'rtacha narxda chiqadi, o'rtacha o'zgarmaydi;
+ *  · berish stornosi (ISSUE, −) — o'z narxi bilan ayiriladi (asl berishni aynan yo'qqa chiqaradi);
+ *  · qo'lda hech narsa qolmagan (yoki minusda) bo'lsa — keyingi berish narxi yangi o'rtacha.
+ * Brigadadan qaytish shu narxda baholanadi: Расход jurnalidagi minus qator berilgan narxga teng chiqadi va «Дона сўм»
+ * o'zgargandan keyin qaytsa ham «Остатки» summasida yo'q qiymat paydo bo'lmaydi. Aniqlanmasa — Map'da yo'q.
+ */
+async function brigadeHoldCosts(
+  tx: Prisma.TransactionClient,
+  brigadeId: string,
+  materialIds: string[],
+  fallback: Map<string, number>,
+): Promise<Map<string, number>> {
+  const moves = await tx.brigadeMove.findMany({
+    where: { brigadeId, materialId: { in: [...new Set(materialIds)] } },
+    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+    select: { materialId: true, type: true, qty: true, unitCost: true },
+  });
+  const st = new Map<string, { held: number; avg: number | null }>();
+  for (const m of moves) {
+    const s = st.get(m.materialId) ?? { held: 0, avg: null };
+    const q = Number(m.qty);
+    const c = m.unitCost == null ? null : Number(m.unitCost);
+    if (q > 0) {
+      const cost = c ?? fallback.get(m.materialId) ?? s.avg;
+      if (cost != null) s.avg = s.held > STOCK_EPS && s.avg != null ? (s.held * s.avg + q * cost) / (s.held + q) : cost;
+    } else if (m.type === "ISSUE" && c != null && s.avg != null && s.held + q > STOCK_EPS) {
+      s.avg = (s.held * s.avg + q * c) / (s.held + q);
+    }
+    s.held += q;
+    st.set(m.materialId, s);
+  }
+  const out = new Map<string, number>();
+  for (const [id, s] of st) if (s.avg != null && Number.isFinite(s.avg)) out.set(id, Math.round(s.avg * 100) / 100);
+  return out;
 }
 
 /** Brigadadan skladga qaytarish — ishlatilmagan xomashyo. */
@@ -196,16 +259,22 @@ export async function returnFromBrigade(
       .filter(([id, q]) => (bal.get(id) ?? 0) < q - STOCK_EPS)
       .map(([id, q]) => `${meta.get(id) ?? "?"} (brigadada ${fmt(bal.get(id) ?? 0)}, so'ralgan ${fmt(q)})`);
     if (short.length) return { error: `Brigadada yo'q: ${short.join(", ")}` };
+    // Qaytish brigadaga BERILGAN narxda baholanadi (qo'lidagi qoldiqning o'rtachasi), joriy «Дона сўм» da emas —
+    // narx o'zgargan bo'lsa ham Расход jurnalidagi minus qator va «Остатки» summasi berilgani bilan mos qoladi.
+    // Brigadaga narxsiz berilgan bo'lsa — «Дона сўм»
+    const prices = await issuePrices(ids, tx);
+    const held = await brigadeHoldCosts(tx, brigade.id, ids, prices);
     for (const r of rows) {
+      const cost = held.get(r.materialId) ?? prices.get(r.materialId) ?? null;
       const move = await tx.stockMove.create({
         data: {
           type: "BRIGADE_RETURN", warehouseId: wh.id, materialId: r.materialId, brigadeId: brigade.id,
-          qty: r.qty, refType: "Brigade", refId: brigade.id,
+          qty: r.qty, unitCost: cost, refType: "Brigade", refId: brigade.id,
           note: `${brigade.name} brigadasidan qaytdi${input.note ? ` · ${input.note}` : ""}`, createdById: userId,
         },
       });
       await tx.brigadeMove.create({
-        data: { type: "RETURN", brigadeId: brigade.id, materialId: r.materialId, qty: -r.qty, refType: "StockMove", refId: move.id, note: input.note ?? null, createdById: userId },
+        data: { type: "RETURN", brigadeId: brigade.id, materialId: r.materialId, qty: -r.qty, unitCost: cost, refType: "StockMove", refId: move.id, note: input.note ?? null, createdById: userId },
       });
     }
     await audit(tx, userId, "CREATE", "BrigadeMove", brigade.id, undefined, { brigade: brigade.name, returned: rows });
@@ -274,7 +343,7 @@ export async function consumeForTask(
     const [whSums, warehouses, costs] = await Promise.all([
       tx.stockMove.groupBy({ by: ["warehouseId", "materialId"], where: { materialId: { in: [...lack.keys()] } }, _sum: { qty: true } }),
       tx.warehouse.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
-      avgUnitCosts([...lack.keys()], tx),
+      issuePrices([...lack.keys()], tx), // «Дона сўм» snapshot — qo'lda berish bilan bir narx
     ]);
     const active = new Set(warehouses.map((w) => w.id));
     for (const [materialId, missing] of lack) {

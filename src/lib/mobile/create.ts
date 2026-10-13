@@ -22,8 +22,14 @@ import { DEPARTMENTS, PRIORITIES, PRIORITY_LABEL } from "@/lib/procurement-const
 import type { MobileUser } from "./auth";
 import type { DayCell, FormField, FormOption } from "./detail";
 import { ListError } from "./list";
-import { unitLabel } from "@/lib/unit";
+import { unitLabel, unitLabelRu } from "@/lib/unit";
 import { canDo } from "@/lib/permissions";
+import { dateRu, fmtNum } from "@/lib/format";
+import { createGoodsReceipt, receiptNote, receiptTokenOf } from "@/lib/receipts";
+import { ISSUE_STORNO, IssueError, issueDate, issueStock, issueToken, parseIssueTarget, type IssueTarget } from "@/lib/stock-issue";
+import { activeRecipients } from "@/lib/stock-recipients";
+import { issuePrices } from "@/lib/stock-price";
+import { STOCK_EPS } from "@/lib/stock-lock";
 import type { Role } from "@/generated/prisma";
 
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
@@ -88,9 +94,17 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   payments: { roles: ["CASHIER", "ACCOUNTING", "FINANCE"], title: "To'lov qabul qilish", label: "To'lov qabul qilish" },
   cashflow: { roles: ["CASHIER", "ACCOUNTING", "FINANCE"], title: "Kirim / chiqim", label: "Kirim / chiqim" },
   transfer: { roles: ["CASHIER", "ACCOUNTING", "FINANCE"], title: "Kassa ⇄ bank o'tkazma", label: "Kassa ⇄ bank" },
+  // Sklad → «Приход» / «Расход» (forma RUSCHA — veb Sklad ekranlaridagidek). Qoida `lib/receipts.ts` va `lib/stock-issue.ts` da.
+  // ISTISNO: quyidagi «direktor hujjat ochmaydi» qoidasidan — foydalanuvchi direktorga ham ilovadan kiritishni aniq so'ragan
+  // (vebda ham `requireAction("stock", "receipt" | "issue")` direktorni o'tkazadi). Ro'yxat oxirida: "+" tugmasi tanlovi o'zgarmasin.
+  prixod: { roles: ["WAREHOUSE", "PROCUREMENT", "DIRECTOR"], title: "Новый приход", label: "Приход" },
+  rasxod: { roles: ["WAREHOUSE", "PROCUREMENT", "DIRECTOR"], title: "Новый расход", label: "Расход" },
 };
 
-// Direktor hujjat ochmaydi — zayavka sotuvchining, reys dispetcherning ishi; u nazorat qiladi.
+/** Ruscha formalar (Sklad ekranlari tili) — ruxsat va umumiy xato matnlari ham ruscha. */
+const RU_FORMS = new Set(["prixod", "rasxod"]);
+
+// Direktor hujjat ochmaydi — zayavka sotuvchining, reys dispetcherning ishi; u nazorat qiladi (istisno: prixod/rasxod, yuqorida).
 // Direktor bergan ruxsat (`User.perms`) vebdagi kabi ishlaydi: modul "yo'q"/"ko'rish" yoki amal ro'yxatda bo'lmasa — forma ham,
 // yaratish ham rad etiladi; amal berilgan bo'lsa — rol ro'yxatida bo'lmasa ham ochadi (masalan Ish boshqaruvchi zayavka ochadi).
 // `strict` — vebdagi `requireAction(module, action)` bilan aynan bir xil: `canDo` (rol standarti + direktor ruxsati).
@@ -105,6 +119,8 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
   payments: { module: "payments", action: "create", strict: true },
   cashflow: { module: "cashflow", action: "create", strict: true },
   transfer: { module: "cashflow", action: "transfer", strict: true },
+  prixod: { module: "stock", action: "receipt", strict: true },
+  rasxod: { module: "stock", action: "issue", strict: true },
 };
 
 export const canCreate = (user: MobileUser, key: string) => {
@@ -131,8 +147,10 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export async function mobileForm(user: MobileUser, key: string): Promise<CreateForm> {
   if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
-  if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
+  if (!canCreate(user, key)) throw new ListError("FORBIDDEN", RU_FORMS.has(key) ? "Нет доступа к этому документу" : "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
   switch (key) {
+    case "prixod": return prixodForm();
+    case "rasxod": return rasxodForm();
     case "orders": return orderForm(user);
     case "trips": return tripForm();
     case "supply": return supplyForm(user);
@@ -273,6 +291,132 @@ async function transferForm(): Promise<CreateForm> {
       { name: "fee", label: "Bank komissiyasi (so'm)", type: "number", placeholder: "0", hint: "Bo'lsa — bank tomonidan «Bank xizmati» chiqimi bo'lib yoziladi" },
       dateField(),
       { name: "note", label: "Izoh", type: "text" },
+    ],
+  };
+}
+
+// ───────────────────────── Sklad: «Приход» va «Расход» (ruscha) ─────────────────────────
+
+const RU_WEEKDAYS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+/** Oxirgi `n` kun — «Число» tanlovi (ilovaning `date` maydoni faqat kelajak kunlarni ko'rsatadi). */
+function ruDays(n: number): FormOption[] {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    return { value: ymd(d), label: i === 0 ? "Сегодня" : i === 1 ? "Вчера" : `${dateRu(d)} · ${RU_WEEKDAYS[d.getDay()]}` };
+  });
+}
+/** Sana tanlovida necha kun orqaga (Расход qoidasi 31 kungacha — ro'yxat ixcham bo'lsin, eskirog'i vebdan). */
+const SKLAD_DAYS = 14;
+const skladDate = (): FormField => ({ name: "date", label: "Число", type: "select", required: true, value: ymd(new Date()), options: ruDays(SKLAD_DAYS) });
+
+/** Faol skladlar — asosiysi birinchi (sukut qiymat). Bitta bo'lsa ham ko'rinadi: qayerga yozilayotgani aniq bo'lsin. */
+async function skladField(): Promise<FormField> {
+  const ws = await db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } });
+  return { name: "warehouseId", label: "Склад", type: "select", required: true, value: ws[0]?.id, options: ws.map((w) => ({ value: w.id, label: w.name })) };
+}
+
+/** Umumiy qoldiq (barcha skladlar) — tanlovda ko'rsatish uchun; berishda server tanlangan sklad bo'yicha tekshiradi. */
+async function stockBalances(): Promise<Map<string, number>> {
+  const rows = await db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } });
+  return new Map(rows.map((b) => [b.materialId!, Number(b._sum.qty ?? 0)]));
+}
+
+/**
+ * «Новый приход» — veb Sklad → Приход formasi bilan bir xil maydonlar (Снабженец — Snabjeniye o'zi, Оплачено со счёта — faqat vebda).
+ * «Цена» avtomatik to'ldirilmaydi: ilova `extra` ni faqat BO'SH katakka yozadi — xomashyo almashtirilsa eski xomashyoning
+ * narxi qolib ketardi. O'rniga «Наименование» izohida «Дона сўм» (bo'lmasa «≈» o'rtacha tannarx) ko'rinadi, «Цена» bo'sh
+ * qoldirilsa server saqlashda aynan shu narxni oladi (`mobileCreate` → `prixod`); yozilgan narx (0 ham) o'zgarmaydi.
+ */
+async function prixodForm(): Promise<CreateForm> {
+  const [suppliers, warehouse, materials, recipients, bal] = await Promise.all([
+    db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, vatPayer: true } }),
+    skladField(),
+    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, unitPrice: true } }),
+    activeRecipients(),
+    stockBalances(),
+  ]);
+  const prices = await issuePrices(materials.map((m) => m.id));
+  return {
+    key: "prixod", title: "Новый приход", submitLabel: "Сохранить приход",
+    fields: [
+      skladDate(),
+      { name: "supplierId", label: "От Кого", type: "select", required: true, options: suppliers.map((s) => ({ value: s.id, label: s.name, hint: s.vatPayer ? undefined : "не плательщик НДС — НДС 0" })) },
+      warehouse,
+      {
+        name: "payment", label: "Деньги", type: "select", required: true, value: "BANK",
+        options: [
+          { value: "BANK", label: "П-р — перечисление", hint: "НДС 12% (если поставщик — плательщик НДС)" },
+          { value: "CASH", label: "Н-к — наличные", hint: "НДС 0 во всех строках" },
+        ],
+      },
+      { name: "waybillNo", label: "ТТН", type: "text", placeholder: "№ накладной" },
+      { name: "recipientId", label: "Кому", type: "select", options: recipients.map((r) => ({ value: r.id, label: r.name })), hint: "Не выбрано — на склад" },
+      { name: "address", label: "Адрес", type: "text", placeholder: "Откуда / куда доставлено" },
+      { name: "purpose", label: "Почему", type: "text", placeholder: "Для чего куплено" },
+      {
+        name: "items", label: "Наименование", type: "items", required: true,
+        columns: [
+          {
+            name: "materialId", label: "Наименование", type: "select", required: true,
+            options: materials.map((m) => {
+              const u = unitLabelRu(m.unit), p = prices.get(m.id);
+              // Narx `extra` da emas (yuqoridagi izoh) — faqat ko'rsatiladi; «Цена» bo'sh bo'lsa server shuni oladi
+              const price = p == null ? "" : ` · ${m.unitPrice == null ? "≈ ср. себест." : "Дона сўм"} ${fmtNum(p, 2)}`;
+              return { value: m.id, label: `${m.name} · ${u}`, hint: `${m.code} · ост. ${fmtNum(bal.get(m.id) ?? 0, 3)} ${u}${price}`, extra: { unit: u } };
+            }),
+          },
+          { name: "qty", label: "К-во", type: "number", required: true, placeholder: "0" },
+          { name: "price", label: "Цена (без НДС)", type: "number", placeholder: "пусто — по «Дона сўм»" },
+          { name: "deliveryCost", label: "Доставка", type: "number", placeholder: "0" },
+        ],
+      },
+      { name: "note", label: "Примечание", type: "text", placeholder: "Состояние, доп. информация" },
+    ],
+  };
+}
+
+/**
+ * «Новый расход» — skladdan oluvchiga («Получатель») yoki brigadaga berish (veb Sklad → Расход bilan bitta qoida).
+ * Tanlovda faqat qoldig'i bor xomashyo, yorliqda qoldiq va «Дона сўм» (bo'lmasa o'rtacha tannarx, «≈»).
+ */
+async function rasxodForm(): Promise<CreateForm> {
+  const [warehouse, recipients, brigades, materials, bal] = await Promise.all([
+    skladField(),
+    activeRecipients(),
+    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, unitPrice: true } }),
+    stockBalances(),
+  ]);
+  const inStock = materials.filter((m) => (bal.get(m.id) ?? 0) > STOCK_EPS);
+  const prices = await issuePrices(inStock.map((m) => m.id));
+  return {
+    key: "rasxod", title: "Новый расход", submitLabel: "Сохранить расход",
+    fields: [
+      skladDate(),
+      warehouse,
+      {
+        name: "to", label: "Кому", type: "select", required: true,
+        options: [
+          ...recipients.map((r) => ({ value: `r:${r.id}`, label: `Получатель: ${r.name}` })),
+          ...brigades.map((b) => ({ value: `b:${b.id}`, label: `Бригада: ${b.name}` })),
+        ],
+        hint: recipients.length ? undefined : "Список получателей ведётся на сайте: Склад → Расход → Получатели",
+      },
+      {
+        name: "items", label: "Наименование", type: "items", required: true,
+        columns: [
+          {
+            name: "materialId", label: "Наименование", type: "select", required: true,
+            options: inStock.map((m) => {
+              const u = unitLabelRu(m.unit), p = prices.get(m.id);
+              const price = p == null ? "без цены" : `${m.unitPrice == null ? "≈" : ""}${fmtNum(p, 2)} сўм`;
+              return { value: m.id, label: `${m.name} — ост. ${fmtNum(bal.get(m.id) ?? 0, 3)} ${u} · ${price}`, hint: `${m.code}${m.unitPrice == null && p != null ? " · цена — средняя себестоимость" : ""}` };
+            }),
+          },
+          { name: "qty", label: "К-во", type: "number", required: true, placeholder: "0" },
+        ],
+      },
+      { name: "note", label: "Примечание", type: "text", placeholder: "Для чего / какой объект" },
     ],
   };
 }
@@ -517,6 +661,133 @@ const TransferBody = z.object({
   clientToken: z.preprocess((v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v.trim()) ? v.trim() : undefined), z.string().optional()),
 });
 
+// Sklad formalari (ruscha xatolar). Raqam maydoni ilovadan satr bo'lib keladi: "1 250,5" ham qabul qilinadi (`zMoney` uslubi).
+const numText = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, "").replace(",", ".") : v);
+const zRuNum = (msg: string, min: "positive" | "nonneg") => z.preprocess(numText, (min === "positive" ? z.coerce.number({ message: msg }).positive(msg) : z.coerce.number({ message: msg }).min(0, msg)).max(MAX_AMOUNT, "Слишком большое значение"));
+const zRuText = (max: number, label: string) => z.string({ message: `«${label}» — текст` }).trim().max(max, `«${label}»: не более ${max} символов`).optional();
+/** Majburiy tanlov/satr: yo'q bo'lsa ham (`undefined`) o'z ruscha matni bilan. */
+const zRuReq = (msg: string) => z.string({ message: msg }).trim().min(1, msg);
+const PrixodBody = z.object({
+  date: z.string({ message: "Укажите дату («Число»)" }).regex(/^\d{4}-\d{2}-\d{2}$/, "Укажите дату («Число»)"),
+  supplierId: zRuReq("Выберите поставщика («От Кого»)"),
+  warehouseId: zRuReq("Выберите склад"),
+  payment: z.enum(["BANK", "CASH"], { message: "Выберите «Деньги»: П-р или Н-к" }),
+  waybillNo: zRuText(60, "ТТН"),
+  recipientId: z.string({ message: "Неверный получатель («Кому»)" }).trim().optional(),
+  address: zRuText(300, "Адрес"),
+  purpose: zRuText(300, "Почему"),
+  note: zRuText(1000, "Примечание"),
+  clientToken: z.unknown().optional(),
+  items: z.array(z.object({
+    materialId: zRuReq("Выберите наименование"),
+    qty: zRuNum("К-во должно быть больше 0", "positive"),
+    // Bo'sh «Цена» — server «Дона сўм» ni oladi (`prixodForm` izohi); "0" — yozilgan narx, o'zgarmaydi
+    price: z.preprocess((v) => { const t = numText(v); return t === "" || t == null ? undefined : t; }, z.coerce.number({ message: "Цена — число не меньше 0" }).min(0, "Цена — число не меньше 0").max(MAX_AMOUNT, "Слишком большое значение").optional()),
+    deliveryCost: z.preprocess((v) => (v === "" || v == null ? undefined : numText(v)), z.coerce.number({ message: "Доставка — число" }).min(0, "Доставка не может быть отрицательной").max(MAX_AMOUNT, "Слишком большое значение").optional()),
+  }), { message: "Добавьте хотя бы одну строку" }).min(1, "Добавьте хотя бы одну строку"),
+});
+const RasxodBody = z.object({
+  date: z.string({ message: "Неверная дата расхода" }).regex(/^\d{4}-\d{2}-\d{2}$/, "Неверная дата расхода").optional(),
+  warehouseId: zRuReq("Выберите склад"),
+  to: zRuReq("Выберите, кому выдаётся (Кому)"),
+  note: zRuText(300, "Примечание"),
+  clientToken: z.unknown().optional(),
+  items: z.array(z.object({
+    materialId: zRuReq("Выберите наименование"),
+    qty: zRuNum("К-во должно быть больше 0", "positive"),
+  }), { message: "Добавьте хотя бы одну строку" }).min(1, "Добавьте хотя бы одну строку"),
+});
+
+/** zod xatosi → ruscha matn; qator xatosida «Строка N: …». */
+function ruIssue(e: z.ZodError): string {
+  const i = e.issues[0];
+  // zod'ning o'z (inglizcha) matni — noto'g'ri shakl (payload obyekt emas, qator obyekt emas): umumiy ruscha matn
+  const msg = !i || /^(Invalid|Expected|Required)/.test(i.message) ? "Данные заполнены не полностью" : i.message;
+  return i && i.path[0] === "items" && typeof i.path[1] === "number" ? `Строка ${i.path[1] + 1}: ${msg}` : msg;
+}
+
+/**
+ * Takror himoyasi (evristika) oynasi: ilova so'rovi 60 s da uziladi — javob yo'qolib, foydalanuvchi qayta bossa ham shu
+ * oynada ushlansin. Faqat yaroqli `clientToken` KELMAGANDA ishlaydi: kalit bo'lsa server himoyasi (unique) yetarli —
+ * ilova clientToken yuborsa (OTA'dan keyin) bu evristika o'chadi.
+ */
+const DUP_WINDOW_MS = 3 * 60_000;
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+const r2 = (n: number) => Math.round(n * 100) / 100;
+/** Matn maydoni bazaga qanday yozilsa (`lib/receipts.ts` `clean`): trim, kesish, bo'sh — null. */
+const txt = (v: string | null | undefined, max = 300) => { const t = (v ?? "").trim(); return t ? t.slice(0, max) : null; };
+
+type PrixodSig = {
+  supplierId: string; warehouseId: string; date: string; payment: "BANK" | "CASH";
+  waybillNo?: string; recipientId?: string; address?: string; purpose?: string; note?: string;
+};
+
+/**
+ * Shu xodim oxirgi 3 daqiqada AYNAN shunday kirim yozganmi — bo'lsa o'sha kirim. Imzo: yetkazuvchi, sklad, sana, Деньги,
+ * ТТН, Кому, Адрес, Почему, izoh va qatorlar (xomashyo | К-во | Цена | Доставка). ТТН yoki dostavka boshqa — boshqa kirim.
+ * Ilova «Приход» formasida bir martalik kalit yubormaydi; tarmoq uzilib qayta yuborilsa ikkinchi kirim ochilmasin.
+ */
+async function recentPrixod(userId: string, d: PrixodSig, items: { materialId: string; qty: number; price: number; deliveryCost: number }[]) {
+  const date = new Date(d.date);
+  if (!Number.isFinite(date.getTime())) return null; // noto'g'ri sana — `createGoodsReceipt` o'zi rad etadi
+  // `createGoodsReceipt` yozgandek: ТТН alohida ustunda ham, izohda ham («Nakladnoy № …», `receiptNote`)
+  const waybillNo = txt(d.waybillNo, 60);
+  const n = receiptNote({ note: txt(d.note, 1000), waybillNo });
+  if ("error" in n) return null;
+  const sig = (xs: { materialId: string; qty: number; price: number; deliveryCost: number }[]) =>
+    xs.map((i) => `${i.materialId}|${r3(i.qty)}|${r2(i.price)}|${i.deliveryCost > 0 ? r2(i.deliveryCost) : 0}`).sort().join(";");
+  const want = sig(items);
+  const recent = await db.goodsReceipt.findMany({
+    where: {
+      createdById: userId, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) }, cancelledAt: null,
+      supplierId: d.supplierId, warehouseId: d.warehouseId, date, payment: d.payment,
+      waybillNo, recipientId: txt(d.recipientId, 64), address: txt(d.address), purpose: txt(d.purpose), note: n.note,
+    },
+    select: { id: true, docNo: true, items: { select: { materialId: true, qty: true, price: true, deliveryCost: true } } },
+  });
+  return recent.find((r) => sig(r.items.map((i) => ({ materialId: i.materialId, qty: Number(i.qty), price: Number(i.price), deliveryCost: Number(i.deliveryCost) }))) === want) ?? null;
+}
+
+/** Berish izohi StockMove'da: oluvchiga — o'zi, brigadaga — «<brigada> brigadasiga berildi · <izoh>» (`writeBrigadeIssue`). */
+function issueNoteOf(kind: IssueTarget["kind"], raw: string | null): string | null {
+  if (kind === "recipient") return raw;
+  const m = /^[\s\S]*? brigadasiga berildi(?: · ([\s\S]*))?$/.exec(raw ?? "");
+  return m ? (m[1] ?? null) : raw;
+}
+
+/**
+ * Shu xodim oxirgi 3 daqiqada AYNAN shunday berish yozganmi — bo'lsa o'sha berish (ref). Imzo: sklad, «Кому», sana (kun —
+ * `issueDate` bilan, `issueStock` dagidek), izoh (trim, 300 belgi) va qatorlar (xomashyo | jami К-во). Storno qilingani hisobga
+ * olinmaydi — xato berishni bekor qilib, qaytadan yozgan xodimning yangi Расход'i yozilsin.
+ */
+async function recentIssue(userId: string, d: { warehouseId: string; date?: string; note?: string }, to: IssueTarget, items: { materialId: string; qty: number }[]): Promise<string | null> {
+  let at: Date;
+  try { at = issueDate(d.date); } catch { return null; } // noto'g'ri sana — `issueStock` o'zi rad etadi
+  const from = new Date(at); from.setHours(0, 0, 0, 0);
+  const till = new Date(from); till.setDate(till.getDate() + 1);
+  const note = d.note?.trim() ? d.note.trim().slice(0, 300) : null;
+  const want = new Map<string, number>();
+  for (const i of items) want.set(i.materialId, r3((want.get(i.materialId) ?? 0) + i.qty));
+  const moves = await db.stockMove.findMany({
+    where: {
+      refType: "Issue", createdById: userId, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) }, warehouseId: d.warehouseId,
+      date: { gte: from, lt: till }, ...(to.kind === "recipient" ? { recipientId: to.id } : { brigadeId: to.id }),
+    },
+    select: { refId: true, materialId: true, qty: true, note: true },
+  });
+  const byRef = new Map<string, { note: string | null; rows: Map<string, number> }>();
+  for (const m of moves) {
+    if (!m.refId || !m.materialId) continue;
+    const g = byRef.get(m.refId) ?? { note: issueNoteOf(to.kind, m.note), rows: new Map<string, number>() };
+    g.rows.set(m.materialId, r3((g.rows.get(m.materialId) ?? 0) - Number(m.qty)));
+    byRef.set(m.refId, g);
+  }
+  const same = [...byRef].filter(([, g]) => g.note === note && g.rows.size === want.size && [...want].every(([id, q]) => g.rows.get(id) === q)).map(([ref]) => ref);
+  if (!same.length) return null;
+  const cancelled = new Set((await db.stockMove.findMany({ where: { refType: ISSUE_STORNO, refId: { in: same } }, select: { refId: true } })).map((m) => m.refId));
+  return same.find((ref) => !cancelled.has(ref)) ?? null;
+}
+
 /**
  * Kassa sanasi: bugun — hozirgi vaqt; o'tgan kun — vebdagi kabi `new Date("YYYY-MM-DD")`.
  * Kelajak va 30 kundan eski sana rad etiladi (vebda ham sana bugundan oshmaydi).
@@ -534,9 +805,54 @@ export type CreateResult = { key: string; id: string; message: string };
 
 export async function mobileCreate(user: MobileUser, key: string, payload: unknown): Promise<CreateResult> {
   if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
-  if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
+  const ru = RU_FORMS.has(key);
+  if (!canCreate(user, key)) throw new ListError("FORBIDDEN", ru ? "Нет доступа к этому документу" : "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
 
   try {
+    // ── Sklad → «Приход»: kirim — `createGoodsReceipt` (veb Kirim va «Приход» formalari bilan bitta qoida, xatolar ruscha) ──
+    if (key === "prixod") {
+      const p = PrixodBody.safeParse(payload);
+      if (!p.success) throw new Error(ruIssue(p.error));
+      const d = p.data;
+      // «Цена» bo'sh — «Дона сўм» (bo'lmasa o'rtacha tannarx): formadagi izoh bilan bir manba (`issuePrices`)
+      const blank = d.items.flatMap((i, n) => (i.price == null ? [n] : []));
+      const auto = blank.length ? await issuePrices(blank.map((n) => d.items[n].materialId)) : new Map<string, number>();
+      const miss = blank.find((n) => { const v = auto.get(d.items[n].materialId); return v == null || v < 0; });
+      if (miss != null) throw new Error(`Строка ${miss + 1}: укажите цену — у наименования нет «Дона сўм»`);
+      const items = d.items.map((i) => ({ materialId: i.materialId, qty: i.qty, price: i.price ?? r2(auto.get(i.materialId) ?? 0), deliveryCost: i.deliveryCost ?? 0 }));
+      const token = receiptTokenOf(d.clientToken);
+      // Yaroqli kalit bo'lsa — faqat server himoyasi (`createGoodsReceipt`, unique); yo'q bo'lsa — 3 daqiqalik evristika
+      const dup = token ? null : await recentPrixod(user.id, d, items);
+      if (dup) return { key: "receipts", id: dup.id, message: `${dup.docNo}: такой же приход уже сохранён только что — повторно не записан` };
+      const r = await createGoodsReceipt({
+        supplierId: d.supplierId, warehouseId: d.warehouseId, date: d.date, payment: d.payment,
+        waybillNo: d.waybillNo || null, recipientId: d.recipientId || null, address: d.address || null, purpose: d.purpose || null, note: d.note || null,
+        // Снабженец — kiritgan Snabjeniye xodimining o'zi (veb formadagi sukut); boshqa rolda bo'sh — jurnalda kiritgan xodim
+        buyerId: user.role === "PROCUREMENT" ? user.id : null,
+        clientToken: token, items,
+      }, { userId: user.id, role: user.role }, { lang: "ru" });
+      return {
+        key: "receipts", id: r.id,
+        message: r.existed ? `${r.docNo} уже сохранён` : `Приход ${r.docNo} сохранён — остаток на складе увеличен${blank.length ? ` · цена по «Дона сўм»: ${blank.length} стр.` : ""}`,
+      };
+    }
+    // ── Sklad → «Расход»: oluvchiga yoki brigadaga berish — `issueStock` (lockStock, qoldiq tanlangan sklad bo'yicha) ──
+    if (key === "rasxod") {
+      const p = RasxodBody.safeParse(payload);
+      if (!p.success) throw new Error(ruIssue(p.error));
+      const d = p.data;
+      const to = parseIssueTarget(d.to);
+      if (!to) throw new IssueError("Выберите, кому выдаётся (Кому)");
+      const items = d.items.map((i) => ({ materialId: i.materialId, qty: i.qty }));
+      const token = issueToken(d.clientToken);
+      // Yaroqli kalit bo'lsa — faqat server himoyasi (`issueStock`, unique); yo'q bo'lsa — 3 daqiqalik evristika
+      const dup = token ? null : await recentIssue(user.id, d, to, items);
+      // Kartochka — berish hujjati (`detail.ts` → `rasxod`, id = ref): nima, kimga, qancha, qaysi narxda
+      if (dup) return { key: "rasxod", id: dup, message: "Такой же расход уже сохранён только что — повторно не записан" };
+      const r = await issueStock({ warehouseId: d.warehouseId, date: d.date || null, to, items, note: d.note || null, clientToken: token }, { userId: user.id, role: user.role });
+      return { key: "rasxod", id: r.ref, message: r.existed ? "Этот расход уже сохранён" : `Расход сохранён: ${r.count} поз. — остаток на складе уменьшен` };
+    }
+
     if (key === "orders") {
       const p = OrderBody.safeParse(payload);
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
@@ -677,7 +993,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
     // Biznes xatolari (`throw new Error("...")`, PaymentError va sh.k.) matni o'zgarmay qaytadi.
     if (isPrismaError(e)) {
       console.error("[mobile-create]", key, e);
-      throw new ListError("CREATE_FAILED", "Saqlanmadi — ma'lumotni tekshirib, qayta urinib ko'ring", 400);
+      throw new ListError("CREATE_FAILED", ru ? "Не сохранено — проверьте данные и попробуйте ещё раз" : "Saqlanmadi — ma'lumotni tekshirib, qayta urinib ko'ring", 400);
     }
     throw new ListError("CREATE_FAILED", (e as Error).message, 400);
   }

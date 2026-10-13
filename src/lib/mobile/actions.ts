@@ -39,6 +39,7 @@ import { clearDashCache } from "./dashboard";
 import { problemAction } from "./problems";
 import { assertAtSite, knownPoint } from "./geofence";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
+import { MaterialPriceError, setMaterialPrice } from "@/lib/material-price";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
 /**
@@ -582,6 +583,23 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const r = await saveLeadNote(id, textOf(payload, "note") || null);
       if (!r.ok) fail(r.error);
       return { ok: true, message: "Izoh saqlandi" };
+    }
+
+    // ── Xomashyo «Дона сўм» (chiqim narxi) — qoida `lib/material-price.ts` da (veb Sklad → Остатки bilan bir xil) ──
+    case "material.price": {
+      // Kartochka «Расход» ro'yxatidan ochilgan bo'lsa id `<materialId>~<n>` — `~` dan keyingisi faqat ro'yxat kaliti
+      const materialId = id.split("~")[0];
+      const raw = textOf(payload, "price").replace(/\s+/g, "").replace(",", ".");
+      if (!raw) fail("Укажите цену («Дона сўм»)");
+      const price = Number(raw);
+      if (!Number.isFinite(price) || price < 0) fail("Цена — число не меньше 0");
+      try {
+        const r = await setMaterialPrice(materialId, price, { userId: user.id, role: user.role });
+        return { ok: true, message: r.changed ? `«Дона сўм» сохранена: ${fmtNum(r.after ?? 0, 2)} сўм` : "Цена не изменилась" };
+      } catch (e) {
+        if (e instanceof MaterialPriceError) fail(e.message);
+        throw e;
+      }
     }
 
     // ── Spravochniklar: yopish/ochish (veb sahifadagi tugma bilan bir xil) ──

@@ -21,8 +21,12 @@ import {
 } from "@/lib/procurement-const";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
-import { DETAIL_KEY, driverEmployeeId, moduleClosed, myBrigadeIds, ListError } from "./list";
-import { unitLabel, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
+import { DETAIL_KEY, OSTATKI_SUM, PAY_RU, driverEmployeeId, journalGranted, listAllowed, moduleClosed, myBrigadeIds, qtyRu, shortRu, skladPeriod, turnoverLow, turnoverSums, ListError } from "./list";
+import { unitLabel, unitLabelRu, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
+import { dateRu, fmtNum } from "@/lib/format";
+import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
+import { materialTurnover } from "@/lib/stock-turnover";
+import { ISSUE_STORNO } from "@/lib/stock-issue";
 import { ingredientOf } from "@/lib/recipe";
 import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
 import { repDetail } from "./report-detail";
@@ -162,6 +166,11 @@ const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const dt = (d: Date) => `${day(d)} ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
+/**
+ * Ro'yxat qatori id'sidagi `~` dan keyingi qism — faqat React kaliti noyob bo'lishi uchun (bir kirimning bir nechta
+ * qatori «Приход» da, bir xomashyoning bir nechta harakati «Расход» da). Kirim va xomashyo id'larida `~` bo'lmaydi.
+ */
+const baseId = (id: string) => id.split("~")[0];
 /** Tarixdagi vaqt — o'ng ustunga sig'ishi uchun qisqa: `23.09 14:05`. */
 const shortDt = (d: Date) => `${d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })} ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
 
@@ -315,6 +324,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Egasi qarori (dashboard "Muammolar") — mas'ul bo'limga topshirish va qarorni qayd etish (`problemDetail`)
   "problem.assign": ["DIRECTOR"],
   "problem.note": ["DIRECTOR"],
+  // «Дона сўм» — xomashyo chiqim narxi (Material.unitPrice): Snabjeniye belgilaydi (`stock` → `price`), direktor ham
+  "material.price": ["PROCUREMENT", "DIRECTOR"],
 };
 
 /**
@@ -360,6 +371,7 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "supplier.toggle": { module: "stock", action: "suppliers" },
   "report.submit": { module: "production", action: "report" },
   "att.form": { module: "production", action: "report" },
+  "material.price": { module: "stock", action: "price" },
 };
 const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["lead.", { module: "sales", action: "leads" }],
@@ -404,6 +416,10 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   invoices: ["ACCOUNTING", "FINANCE", "SALES", "CASHIER"],
   // Yetkazuvchi rekvizitlari va qarzi
   suppliers: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
+  // Sklad jurnallari (ruscha): «Расход» berish hujjati va «Остатки» jami — ro'yxatlari bilan bir xil (`list.ts` ACCESS).
+  // Direktor bergan `stock` amali (Расход — «issue», Остатки — kirim/berish/narx) ham ochadi: `mobileDetail` → `journalGranted`
+  rasxod: ["WAREHOUSE", "PROCUREMENT"],
+  ostatki: ["WAREHOUSE", "PROCUREMENT"],
 };
 
 const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"];
@@ -424,7 +440,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   if (refKey) return mobileDetail(user, refKey, refId);
   const card = DETAIL_KEY[key] ?? key;
   const allowed = DETAIL_ROLES[card];
-  if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  // Istisno: o'zi yozgan «Расход» kartochkasi — direktor «issue» ruxsatini bergan boshqa rol xodimiga ham (ro'yxat bilan bir qoida)
+  if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role) && !journalGranted(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Direktor modulni "yo'q" qilgan bo'lsa kartochka ham ochilmaydi (veb sahifa kabi) — id qo'lda yuborilsa ham
   if (moduleClosed(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   if (key === "activity") {
@@ -436,10 +453,13 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "trips": return tripDetail(user, id);
     case "invoices": return invoiceDetail(user, id);
     case "payments": return paymentDetail(id);
-    case "receipts": return receiptDetail(id);
+    case "receipts": return receiptDetail(baseId(id));
     case "tasks": return taskDetail(user, id);
     case "production": return batchDetail(id);
-    case "stock": return materialDetail(id);
+    case "stock": return materialDetail(user, baseId(id));
+    // «Расход» — berish hujjati (id = ref, `lib/stock-issue.ts`); «Остатки» — jami qatori yoki xomashyo
+    case "rasxod": return issueDetail(id);
+    case "ostatki": return id.startsWith(OSTATKI_SUM) ? ostatkiDetail(id) : materialDetail(user, baseId(id));
     case "employees": return employeeDetail(user, id);
     case "cashflow": return cashflowDetail(id);
     case "supply": return supplyDetail(user, id);
@@ -739,14 +759,29 @@ async function paymentDetail(id: string): Promise<MobileDetail> {
 }
 
 async function receiptDetail(id: string): Promise<MobileDetail> {
-  const r = await db.goodsReceipt.findUnique({ where: { id }, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
+  const r = await db.goodsReceipt.findUnique({
+    where: { id },
+    include: { supplier: true, warehouse: true, createdBy: true, recipient: { select: { name: true } }, buyer: { select: { fullName: true } }, items: { include: { material: true } } },
+  });
   if (!r) throw new ListError("NOT_FOUND", "Kirim topilmadi", 404);
-  const { base, vat, total } = receiptAmounts(r.items);
+  const { base, vat, total, delivery } = receiptAmounts(r.items);
+  // «Приход» ustunlari (Excel jurnalidagi nomlar bilan): ТТН, Деньги, Кому, Адрес, Снабженец, Почему, Доставка.
+  // Деньги — kirimdagi belgi, bo'lmasa bog'langan to'lov hisobining turi (jurnal bilan bir qoida — `resolveReceiptPayments`)
+  const pay = (await resolveReceiptPayments([{ id: r.id, payment: r.payment }])).get(r.id) ?? null;
+  const waybill = r.waybillNo ?? waybillFromNote(r.note);
   const fields: DetailField[] = [
     { label: "Hujjat", value: r.docNo },
     { label: "Sana", value: day(r.date) },
     { label: "Yetkazuvchi", value: r.supplier.name },
     { label: "Ombor", value: r.warehouse.name },
+    ...(waybill ? [{ label: "ТТН", value: waybill }] : []),
+    ...(pay ? [{ label: "Деньги", value: pay === "BANK" ? `${PAY_RU.BANK} · перечисление` : `${PAY_RU.CASH} · наличные` }] : []),
+    ...(r.recipient ? [{ label: "Кому", value: r.recipient.name }] : []),
+    ...(r.address ? [{ label: "Адрес", value: r.address }] : []),
+    ...(r.buyer ? [{ label: "Снабженец", value: r.buyer.fullName }] : []),
+    ...(r.purpose ? [{ label: "Почему", value: r.purpose }] : []),
+    // Доставка QQS'siz, «Общие» (QQS'siz) summasi ichida
+    ...(delivery > 0 ? [{ label: "Доставка", value: money(delivery) }] : []),
     { label: "QQS'siz", value: money(base) },
     { label: "QQS", value: money(vat) },
     { label: "Jami (QQS bilan)", value: money(total) },
@@ -759,7 +794,7 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
     ...(r.cancelledAt ? { status: "Storno" } : {}),
     fields: fields.slice(1),
-    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
+    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}${sum(i.deliveryCost) > 0 ? ` + доставка ${money(sum(i.deliveryCost))}` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [],
     // Xarid — pul chiqib ketgan hujjat, chekda qizil
     receipt: {
@@ -767,7 +802,7 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
       status: r.cancelledAt
         ? { label: "Storno qilingan · qoldiqqa kirmaydi", tone: "warning", at: r.cancelledAt.toISOString() }
         : { label: "Xarid · omborga kirim", tone: "danger", at: r.date.toISOString() },
-      rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" })),
+      rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" || f.label === "ТТН" })),
     },
   };
 }
@@ -889,26 +924,81 @@ async function batchDetail(id: string): Promise<MobileDetail> {
   };
 }
 
-async function materialDetail(id: string): Promise<MobileDetail> {
-  const m = await db.material.findUnique({ where: { id } });
+/**
+ * Xomashyo kartochkasi. Ruscha qism (Sklad ekranlari tilida): «Дона сўм» (kim/qachon belgilagan) va joriy oy bo'yicha
+ * «Остатки» (Нач / Приход / Расход / Итого — veb Sklad → Остатки bilan bir manba, `materialTurnover`).
+ * «Дона сўм» tugmasi — `material.price` (Snabjeniye / direktor, `actions.ts` → `setMaterialPrice`).
+ * Narx va summalar (ruscha qism) — faqat ko'rish huquqi borlarga: direktor, «Остатки» ro'yxati ochiqlar yoki «Дона сўм»
+ * qo'ya oladiganlar. Kartochkani ochadigan boshqa rollarga (sotuv, logistika, mexanik…) qolgan qismi avvalgidek.
+ */
+async function materialDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const m = await db.material.findUnique({ where: { id }, include: { unitPriceBy: { select: { fullName: true } } } });
   if (!m) throw new ListError("NOT_FOUND", "Xomashyo topilmadi", 404);
-  const [agg, moves, outlook] = await Promise.all([
+  const month = skladPeriod("month");
+  const seePrice = user.role === "DIRECTOR" || listAllowed(user, "ostatki") || can(user, "material.price");
+  const [agg, moves, outlook, turnover] = await Promise.all([
     db.stockMove.aggregate({ where: { materialId: id }, _sum: { qty: true } }),
-    db.stockMove.findMany({ where: { materialId: id }, orderBy: { date: "desc" }, take: 20, include: { createdBy: true } }),
+    db.stockMove.findMany({
+      where: { materialId: id }, orderBy: { date: "desc" }, take: 20,
+      include: { createdBy: true, recipient: { select: { name: true } }, brigade: { select: { name: true } } },
+    }),
     materialOutlook(),
+    seePrice ? materialTurnover({ from: month.from, to: month.to }) : Promise.resolve([]),
   ]);
   const balance = sum(agg._sum.qty);
   const o = outlook.find((x) => x.id === id);
   const n = (v: number) => `${num(v)} ${m.unit}`;
   const need = o ? Math.max(0, o.planned - balance, sum(m.minStock) - balance) : 0;
-  const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Chiqim", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", TRANSFER: "Ko'chirish" };
-  // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin
-  const moveLabel = (mv: { type: string; note: string | null }) => `${mv.note?.startsWith("Storno ") ? "Storno · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}`;
+  const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Chiqim", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", TRANSFER: "Ko'chirish", ISSUE: "Расход" };
+  // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin. Расход — «Кому» bilan, brigada — nomi bilan
+  const moveLabel = (mv: { type: string; note: string | null; recipient: { name: string } | null; brigade: { name: string } | null }) => {
+    const whom = mv.type === "ISSUE" ? ` → ${mv.recipient?.name ?? "—"}` : (mv.type === "BRIGADE_ISSUE" || mv.type === "BRIGADE_RETURN") && mv.brigade ? ` · ${mv.brigade.name}` : "";
+    return `${mv.note?.startsWith("Storno ") ? "Storno · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}${whom}`;
+  };
+
+  // «Дона сўм»: Snabjeniye belgilagan narx; bo'lmasa chiqimlar o'rtacha tannarx bilan baholanadi («≈»)
+  const u = unitLabelRu(m.unit);
+  const tr = turnover.find((x) => x.id === id);
+  const own = m.unitPrice == null ? null : Number(m.unitPrice);
+  const avg = tr?.avgCost ?? null;
+  const priceFields: DetailField[] = !seePrice ? [] : [
+    {
+      label: "Дона сўм",
+      value: own != null ? `${fmtNum(own, 2)} сўм / ${u}` : avg != null ? `не задана · ≈ ${fmtNum(avg, 2)} (средняя себестоимость)` : "не задана",
+      ...(own == null ? { tone: "warning" as Tone } : {}),
+    },
+    ...(own != null && (m.unitPriceBy || m.unitPriceAt) ? [{ label: "Дона сўм задал", value: [m.unitPriceBy?.fullName, m.unitPriceAt ? dateRu(m.unitPriceAt) : null].filter(Boolean).join(" · ") }] : []),
+  ];
+  const sumText = (s: number) => `Сумма ${tr?.approx ? "≈" : ""}${fmtNum(s)} сўм`;
+  const turnoverSection: HomeSection[] = tr ? [{
+    title: `Остатки · ${month.range}`, empty: "", icon: "warehouse",
+    rows: [
+      { id: "t-open", title: "Остаток на начало", subtitle: sumText(tr.open.s), right: qtyRu(tr.open.q, m.unit) },
+      { id: "t-in", title: "Приход", subtitle: sumText(tr.in.s), right: `${tr.in.q ? "+" : ""}${qtyRu(tr.in.q, m.unit)}`, tone: "success" as Tone },
+      { id: "t-out", title: "Расход", subtitle: sumText(tr.out.s), right: `${tr.out.q ? "−" : ""}${qtyRu(tr.out.q, m.unit)}`, tone: "danger" as Tone },
+      { id: "t-close", title: "Итого (остаток)", subtitle: sumText(tr.close.s), right: qtyRu(tr.close.q, m.unit), ...(turnoverLow(tr) ? { status: "мало", tone: "danger" as Tone } : {}) },
+    ],
+  }] : [];
+
+  const actions: DetailAction[] = [];
+  if (can(user, "material.price")) {
+    actions.push({
+      id: "material.price", label: "Дона сўм", tone: "brand",
+      form: [{
+        name: "price", label: `Дона сўм за 1 ${u}`, type: "number", required: true, placeholder: "0",
+        // Narx yo'q bo'lsa — o'rtacha tannarx taklif qilinadi (vebdagi «заполнить из средней» kabi)
+        value: own != null ? String(own) : avg != null ? String(Math.round(avg * 100) / 100) : undefined,
+        hint: "По этой цене считаются Расход, выдача бригаде и списание. Убрать цену — на сайте (Склад → Остатки)",
+      }],
+    });
+  }
+
   return {
     key: "stock", id: m.id, title: m.name, subtitle: m.code,
     fields: [
       { label: "Qoldiq", value: `${balance.toFixed(1)} ${m.unit}`, tone: balance < sum(m.minStock) ? "danger" : "success" },
       { label: "Minimum", value: `${sum(m.minStock)} ${m.unit}` },
+      ...priceFields,
       ...(o ? [
         { label: "Zayavkalarga kerak", value: o.planned > 0 ? `${n(o.planned)} · ${o.orders.length} ta zayavka` : "yo'q" },
         { label: "Zayavkaga yetmaydi", value: o.orderGap > 0 ? n(o.orderGap) : "yetadi", tone: (o.orderGap > 0 ? "danger" : "success") as Tone },
@@ -917,7 +1007,7 @@ async function materialDetail(id: string): Promise<MobileDetail> {
       ] : []),
       { label: "Holat", value: m.isActive ? "Faol" : "Nofaol" },
     ],
-    sections: [...(o && o.orders.length ? [{
+    sections: [...turnoverSection, ...(o && o.orders.length ? [{
       title: `Zayavkalar bo'yicha kerak · ${o.orders.length}`, empty: "", target: "orders", icon: "clipboard-list",
       rows: (() => {
         // Yetkazish sanasi bo'yicha navbat: qoldiq qaysi zayavkagacha yetadi
@@ -929,8 +1019,103 @@ async function materialDetail(id: string): Promise<MobileDetail> {
       })(),
     }] : []), {
       title: "So'nggi harakatlar", empty: "Harakat yo'q",
-      rows: moves.map((mv) => ({ id: mv.id, title: moveLabel(mv), subtitle: `${day(mv.date)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
+      rows: moves.map((mv) => ({ id: mv.id, title: moveLabel(mv), subtitle: `${day(mv.date)}${mv.createdBy ? ` · ${mv.createdBy.fullName}` : ""}${mv.type === "ISSUE" && mv.note ? ` · ${mv.note}` : ""}`, right: `${sum(mv.qty) > 0 ? "+" : ""}${sum(mv.qty).toFixed(1)} ${m.unit}`, tone: sum(mv.qty) > 0 ? ("success" as Tone) : ("danger" as Tone) })),
     }],
+    actions,
+  };
+}
+
+/**
+ * «Расход» — bitta berish hujjati (Sklad → Расход, `lib/stock-issue.ts#issueStock`): `refType "Issue"`, id = ref.
+ * Ilova yangi «Расход» saqlangach shu kartochkani ochadi. Narx — yozilgan paytdagi «Дона сўм» (snapshot).
+ */
+async function issueDetail(ref: string): Promise<MobileDetail> {
+  const moves = await db.stockMove.findMany({
+    where: { refType: "Issue", refId: ref },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true, date: true, qty: true, unitCost: true, note: true, materialId: true,
+      material: { select: { name: true, unit: true } }, warehouse: { select: { name: true } },
+      recipient: { select: { name: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
+    },
+  });
+  if (!moves.length) throw new ListError("NOT_FOUND", "Расход не найден", 404);
+  // Storno qilingan berish (`cancelIssue`: teskari harakatlar `refType "IssueStorno"`, `refId = ref`) — kartochkada belgisi bilan
+  const storno = await db.stockMove.findFirst({ where: { refType: ISSUE_STORNO, refId: ref }, select: { createdAt: true, note: true, createdBy: { select: { fullName: true } } } });
+  const first = moves[0];
+  const to = first.recipient?.name ?? (first.brigade ? `Бригада: ${first.brigade.name}` : "—");
+  const lines = moves.map((mv) => {
+    const q = -sum(mv.qty), cost = mv.unitCost == null ? null : sum(mv.unitCost);
+    return { mv, q, cost, total: cost == null ? 0 : Math.round(q * cost * 100) / 100 };
+  });
+  const total = Math.round(lines.reduce((a, l) => a + l.total, 0) * 100) / 100;
+  const noPrice = lines.some((l) => l.cost == null);
+  const fields: DetailField[] = [
+    { label: "Число", value: `${dateRu(first.date)} ${String(first.date.getHours()).padStart(2, "0")}:${String(first.date.getMinutes()).padStart(2, "0")}` },
+    { label: "От Кого", value: first.warehouse.name },
+    { label: "Кому", value: to },
+    { label: "Позиций", value: String(lines.length) },
+    { label: "Общие Сумма", value: `${fmtNum(total)} сўм${noPrice ? " (без цены — часть строк)" : ""}`, ...(noPrice ? { tone: "warning" as Tone } : {}) },
+    { label: "Выдал", value: first.createdBy.fullName },
+    ...(first.note ? [{ label: "Примечание", value: first.note }] : []),
+    ...(storno ? [{ label: "Сторно", value: [storno.note?.replace(/^Сторно:\s*/, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
+  ];
+  return {
+    key: "rasxod", id: ref, title: "Расход", subtitle: `${dateRu(first.date)} · ${to}`,
+    ...(storno ? { status: "Сторно" } : {}),
+    fields,
+    sections: [{
+      title: "Наименования", empty: "", target: "stock", icon: "package",
+      rows: lines.map((l) => ({
+        id: l.mv.materialId ?? l.mv.id,
+        title: l.mv.material?.name ?? "—",
+        subtitle: `${qtyRu(l.q, l.mv.material?.unit ?? "")} × ${l.cost == null ? "без цены" : `${fmtNum(l.cost, 2)} сўм`}`,
+        right: `−${fmtNum(l.total)}`, tone: "danger" as Tone,
+      })),
+    }],
+    actions: [],
+    receipt: {
+      headline: `−${fmtNum(total)} сўм`, caption: to,
+      status: storno
+        ? { label: "Сторно · возвращено на склад", tone: "warning", at: storno.createdAt.toISOString() }
+        : { label: "Расход со склада", tone: "danger", at: first.date.toISOString() },
+      rows: fields.filter((f) => f.label !== "Кому").map((f) => ({ label: f.label, value: f.value })),
+    },
+  };
+}
+
+/**
+ * «Остатки» jami qatori (`jami~<davr>`, `list.ts`): davr summalari, minimumdan kam qolganlar va eng ko'p sarflanganlar.
+ * Qatorlar bosilsa — xomashyo kartochkasi.
+ */
+async function ostatkiDetail(id: string): Promise<MobileDetail> {
+  const p = skladPeriod(id.slice(OSTATKI_SUM.length));
+  const rows = await materialTurnover({ from: p.from, to: p.to });
+  const s = turnoverSums(rows);
+  const ap = s.approx ? "≈" : "";
+  const money = (v: number) => `${ap}${fmtNum(v)} сўм`;
+  const low = rows.filter(turnoverLow);
+  const top = rows.filter((m) => m.out.s > 0.005).sort((a, b) => b.out.s - a.out.s).slice(0, 10);
+  const matRow = (m: (typeof rows)[number], right: string) => ({
+    id: m.id, title: `${m.name} (${unitLabelRu(m.unit)})`, right,
+    subtitle: `Остаток ${fmtNum(m.close.q, 3)} · минимум ${fmtNum(m.minStock, 3)} · Итого ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
+  });
+  return {
+    key: "ostatki", id, title: "Остатки — итого", subtitle: `${p.label} · ${p.range}`,
+    fields: [
+      { label: "Период", value: p.range },
+      { label: "Позиций", value: String(rows.length) },
+      { label: "Остаток на начало", value: money(s.open) },
+      { label: "Приход", value: money(s.in), tone: "success" },
+      { label: "Расход", value: money(s.out), tone: "danger" },
+      { label: "Итого (остаток)", value: money(s.close) },
+      { label: "Мало (ниже минимума)", value: String(low.length), tone: low.length ? "danger" : "success" },
+      ...(s.approx ? [{ label: "≈", value: "Часть движений без цены — оценены по «Дона сўм» или средней себестоимости" }] : []),
+    ],
+    sections: [
+      ...(low.length ? [{ title: `Мало · ${low.length}`, empty: "", target: "stock", icon: "triangle-alert", rows: low.slice(0, 30).map((m) => ({ ...matRow(m, qtyRu(m.close.q, m.unit)), status: "мало", tone: "danger" as Tone })) }] : []),
+      { title: "Больше всего расхода", empty: "Расхода за период не было", target: "stock", icon: "circle-arrow-up", rows: top.map((m) => matRow(m, `−${shortRu(m.out.s)}`)) },
+    ],
     actions: [],
   };
 }
@@ -1429,7 +1614,7 @@ async function supplierDetail(user: MobileUser, id: string): Promise<MobileDetai
     },
   });
   if (!s) throw new ListError("NOT_FOUND", "Yetkazuvchi topilmadi", 404);
-  const spent = (await db.goodsReceipt.findMany({ where: { cancelledAt: null, supplierId: id }, select: { items: { select: { qty: true, price: true, vatAmount: true } } } }))
+  const spent = (await db.goodsReceipt.findMany({ where: { cancelledAt: null, supplierId: id }, select: { items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true } } } }))
     .reduce((a, r) => a + r.items.reduce((x, i) => x + lineTotal(i), 0), 0);
   const actions: DetailAction[] = [];
   if (can(user, "supplier.toggle")) {

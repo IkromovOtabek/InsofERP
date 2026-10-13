@@ -87,8 +87,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     db.cashAccount.findMany({ where: { isActive: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
     receivablesReport(), // yagona debitorka (schyotlar − barcha to'lovlar, FIFO aging)
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, vatAmount: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.from, lt: r.to } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { supplier: { select: { name: true } } } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
     customerBase(),
     writeOffValue(r.from, r.to),
     // Hajm ko'rsatkichlari — faqat beton (m³): dona zameslari va yuk mashinadagi dona reyslar m³ ga qo'shilmaydi
@@ -150,7 +150,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const from6 = new Date(today.getFullYear(), today.getMonth() - 5, 1);
   const [sales6, rec6, pay6, inc6] = await Promise.all([
     loadRevenue(from6, addDays(today, 1)),
-    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, vatAmount: true, receipt: { select: { date: true } } } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { date: true } } } }),
     db.payment.findMany({ where: { date: { gte: from6 } }, select: { date: true, amount: true } }),
     db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: from6 } }, select: { date: true, amount: true } }),
   ]);

@@ -2,6 +2,7 @@ import type { SupplyIncidentKind } from "@/generated/prisma";
 import { db } from "./db";
 import { lineTotal } from "./receipt-vat";
 import { totalFact } from "./supply";
+import { CONSUME_TYPES } from "./bi/stock";
 
 /**
  * Snabjeniye hisoboti (TZ 4.13): xaridlar, sarf, yetkazib berish, kechikish va yetkazib beruvchilar — davr bo'yicha.
@@ -26,9 +27,11 @@ export async function procurementReport(p: { from?: string; to?: string }) {
     }),
     db.goodsReceiptItem.findMany({
       where: { receipt: { cancelledAt: null, date: { gte: from, lt: to } } },
-      select: { qty: true, price: true, vatAmount: true, material: { select: { id: true, name: true, unit: true } }, receipt: { select: { supplier: { select: { id: true, name: true } } } } },
+      select: { qty: true, price: true, vatAmount: true, deliveryCost: true, material: { select: { id: true, name: true, unit: true } }, receipt: { select: { supplier: { select: { id: true, name: true } } } } },
     }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: from, lt: to }, materialId: { not: null } }, _sum: { qty: true } }),
+    // Sarf — skladdan ishlatishga chiqqani: zames + brigadaga berilgan (qaytgani ayiriladi) + «Расход» (ISSUE).
+    // Ta'rif BI bilan bitta (`CONSUME_TYPES`): Snabjeniye "qancha sotib oldik / qancha ishlatildi" ni to'liq ko'rsin
+    db.stockMove.groupBy({ by: ["materialId"], where: { type: { in: [...CONSUME_TYPES] }, date: { gte: from, lt: to }, materialId: { not: null } }, _sum: { qty: true } }),
     db.supplyIncident.findMany({ where: { createdAt: { gte: from, lt: to } }, select: { kind: true, resolvedAt: true, request: { select: { supplierId: true } } } }),
     db.supplyRequest.count({ where: { status: "REJECTED", updatedAt: { gte: from, lt: to } } }),
   ]);

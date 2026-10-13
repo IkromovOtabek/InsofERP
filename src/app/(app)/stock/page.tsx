@@ -1,17 +1,23 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { qty, money, dateTime } from "@/lib/format";
-import { avgUnitCosts, lastInboundMoves } from "@/lib/stock";
+import { qty, money, dateTime, dateRu, fmtNum } from "@/lib/format";
+import { lastInboundMoves } from "@/lib/stock";
+import { materialTurnover } from "@/lib/stock-turnover";
 import { productionCapacity } from "@/lib/production-capacity";
 import { ostatkaSummary } from "@/lib/ostatka";
-import { unitLabel } from "@/lib/unit";
+import { unitLabel, unitLabelRu } from "@/lib/unit";
+import { canSeePrixod, canSeeRasxod } from "@/lib/stock-journal-access";
 import { requirePage } from "@/lib/page-guard";
-import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { canDo } from "@/lib/permissions";
+import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight, ClipboardList, HardHat, ShoppingBasket, ScanLine, PackageMinus } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, ScanLine, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse } from "lucide-react";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
+import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
 import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
 import { MaterialBulkBar } from "./material-bulk";
+import { FillPricesButton, PriceCell } from "./price-cell";
+import { ExcelButton } from "../logistika/excel-button";
 import { moduleWriteAllowed } from "@/lib/auth";
 import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
 import { Card, CardHeader } from "@/components/ui";
@@ -19,39 +25,80 @@ import { Card, CardHeader } from "@/components/ui";
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
   SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish",
-  BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi",
+  BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", ISSUE: "Расход",
 };
+const EPS = 0.0005;
+/** «Остатки» kataklari: К-во — 3 kasrgacha, Сумма — butun so'm («so'm» qo'shilmaydi). Nol — bo'sh (Excel'dagidek). */
+const cellQ = (v: number) => (Math.abs(v) < EPS ? "" : fmtNum(v, 3));
+const cellS = (v: number) => (Math.abs(v) < 0.5 ? "" : fmtNum(v, 0));
+const r2 = (v: number) => Math.round(v * 100) / 100;
 /** Xomashyo qoldig'i jadvalidagi belgilar shu formaga tegishli (`MaterialBulkBar`). */
 const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string }> }) {
-  const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string }> }) {
   const s = await requirePage("/stock");
+  const sp = await searchParams;
+  const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   // Belgilab o'chirish — xomashyo spravochnigi bilan bir xil huquq (`deleteMaterials` → requireModuleWrite)
   const canDelete = moduleWriteAllowed(s, "stock", MATERIAL_CATALOG_ROLES) === true;
-  const [materials, mSums, last, whSums, allWarehouses] = await Promise.all([
-    db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    lastInboundMoves(),
-    db.stockMove.groupBy({ by: ["materialId", "warehouseId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { id: "asc" }], select: { id: true, name: true, isActive: true } }),
+  // «Дона сўм» — Snabjeniye (stock → "price"), direktor va u ruxsat bergan xodim
+  const canPrice = canDo(s, "stock", "price");
+  // «Остатки» va xomashyo harakatlari davri (?from&to, standart — joriy oy); sklad filtri (?wh)
+  const period = stockPeriod(sp);
+  const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
+  const [materials, mSums, whSums, allWarehouses] = await Promise.all([
+    tab === "brigades" ? db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }) : [],
+    tab === "balance" || tab === "brigades" ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
+    tab === "balance" ? db.stockMove.groupBy({ by: ["materialId", "warehouseId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
+    tab === "balance" || tab === "moves" ? db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { id: "asc" }], select: { id: true, name: true, isActive: true } }) : [],
   ]);
+  // Joriy (butun, davrdan qat'i nazar) qoldiq — brigadaga berish formasi va o'chirish tasdig'i (`data-stock`) uchun
   const mb = new Map(mSums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
-  // Bir nechta sklad bo'lsa — qoldiq har sklad bo'yicha ham ko'rsatiladi: zames, brigadaga berish va spisanie
+  // Bir nechta sklad bo'lsa — «Остатки» sklad bo'yicha ham ko'riladi: zames, brigadaga berish va spisanie
   // AYNAN tanlangan skladdan yechadi, faqat jami ko'rinsa "qoldiq bor, lekin yetmaydi" chalkashligi chiqardi
-  const mwb = new Map(whSums.map((x) => [`${x.materialId}|${x.warehouseId}`, Number(x._sum.qty ?? 0)]));
-  const shownWarehouses = allWarehouses.filter((w) => w.isActive || whSums.some((x) => x.warehouseId === w.id && Math.abs(Number(x._sum.qty ?? 0)) > 0.0005));
+  const shownWarehouses = allWarehouses.filter((w) => w.isActive || whSums.some((x) => x.warehouseId === w.id && Math.abs(Number(x._sum.qty ?? 0)) > EPS));
   const perWarehouse = shownWarehouses.length > 1;
+  const wh = allWarehouses.find((w) => w.id === sp.wh) ?? null;
 
-  // O'rtacha tannarx: miqdorga tortilgan (kirimlar; kirimi yo'q bo'lsa — narxli boshlang'ich qoldiq)
-  const avgCost: Map<string | null, number> = await avgUnitCosts();
+  // «Остатки» — xomashyo aylanmasi (Excel XOMASHYO jadvali) va oxirgi kirim (kim, qachon — nom ustida)
+  const [turnover, last] = tab === "balance"
+    ? await Promise.all([materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id }), lastInboundMoves()])
+    : [[], null] as [Awaited<ReturnType<typeof materialTurnover>>, null];
+  const activeRows = turnover.filter((r) => r.isActive).length;
+  const noPrice = turnover.filter((r) => r.isActive && r.unitPrice == null && (r.avgCost ?? 0) > 0).length;
+  const tot = turnover.reduce((a, r) => ({ open: a.open + r.open.s, in: a.in + r.in.s, out: a.out + r.out.s, close: a.close + r.close.s, approx: a.approx || r.approx }), { open: 0, in: 0, out: 0, close: 0, approx: false });
+  // Excel — barcha ustunlar (ekrandagi kabi) + «Итого» qatori; raqamlar raqam bo'lib (Excel'da qo'shib bo'lsin)
+  const openH = `Остаток на ${dateRu(period.from)}`, closeH = `Остаток на конец ${dateRu(toIncl)}`;
+  const excelRows: Record<string, string | number | null>[] = turnover.map((r, i) => ({
+    "№": i + 1, "Наименование": r.name, "Код": r.code, "Ед Изм": unitLabelRu(r.unit),
+    "Дона сўм": r.unitPrice, "Ср. себестоимость": r.avgCost == null ? null : r2(r.avgCost),
+    [`${openH}, К-во`]: r.open.q, [`${openH}, Сумма`]: r.open.s,
+    "Приход, К-во": r.in.q, "Приход, Сумма": r.in.s,
+    "Расход, К-во": r.out.q, "Расход, Сумма": r.out.s,
+    [`${closeH}, К-во`]: r.close.q, [`${closeH}, Итого Сумма`]: r.close.s,
+    "Мин. остаток": r.minStock, "Оценка": r.approx ? "≈ часть без цены" : "", "Статус": r.isActive ? "" : "архив",
+  }));
+  if (turnover.length) excelRows.push({
+    "№": null, "Наименование": "Итого", "Код": "", "Ед Изм": "", "Дона сўм": null, "Ср. себестоимость": null,
+    [`${openH}, К-во`]: null, [`${openH}, Сумма`]: r2(tot.open), "Приход, К-во": null, "Приход, Сумма": r2(tot.in),
+    "Расход, К-во": null, "Расход, Сумма": r2(tot.out), [`${closeH}, К-во`]: null, [`${closeH}, Итого Сумма`]: r2(tot.close),
+    "Мин. остаток": null, "Оценка": tot.approx ? "≈" : "", "Статус": "",
+  });
+  const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...extra }).toString();
 
-  // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi)
+  // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi);
+  // `material` — «Остатки» qatoridan: shu xomashyoning davrdagi harakatlari (sklad tanlangan bo'lsa — shu skladda)
+  const moveMaterial = tab === "moves" && !ref && material
+    ? await db.material.findUnique({ where: { id: material }, select: { id: true, name: true, unit: true } })
+    : null;
+  const movesWhere = ref ? { refId: ref }
+    : moveMaterial ? { materialId: moveMaterial.id, ...(sp.from || sp.to ? { date: { gte: period.from, lt: period.to } } : {}), ...(wh ? { warehouseId: wh.id } : {}) }
+    : undefined;
   const moves = tab === "moves"
-    ? await db.stockMove.findMany({ where: ref ? { refId: ref } : undefined, orderBy: { createdAt: "desc" }, take: ref ? 500 : 300, include: { material: true, product: true, warehouse: true, createdBy: true } })
+    ? await db.stockMove.findMany({ where: movesWhere, orderBy: moveMaterial ? { date: "desc" } : { createdAt: "desc" }, take: ref || moveMaterial ? 500 : 300, include: { material: true, product: true, warehouse: true, createdBy: true, recipient: { select: { name: true } } } })
     : [];
   // Ishlab chiqarish imkoni: hozirgi xomashyo qoldig'i bilan har mahsulotdan qancha chiqadi;
   // shu yerda hovlida turgan dona mahsulot (erkin/band) va tayyor beton qoldig'i ham ko'rsatiladi
@@ -65,8 +112,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     : [[], [], [], []] as [Awaited<ReturnType<typeof productionCapacity>>, Awaited<ReturnType<typeof ostatkaSummary>>, [], []];
   const cb = new Map(cSums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
   // Yangi kelgan ta'minot (oxirgi 7 kun): "yangi mahsulotlar keldi" belgisi va brigadaga taqsimlash taklifi
-  // Kelgan, lekin hali brigadalarga berilmagan mahsulotlar — "Brigadalar" yozuvi oldidagi raqam
-  const undistributed = await undistributedMaterials();
+  // Kelgan, lekin hali brigadalarga berilmagan mahsulotlar — Brigadalar ko'rinishi sarlavhasida
+  const undistributed = tab === "brigades" ? await undistributedMaterials() : { count: 0, names: [] as string[] };
   const arrivals = await db.supplyRequest.findMany({
     where: { status: "RECEIVED", updatedAt: { gte: new Date(Date.now() - 7 * 864e5) } },
     orderBy: { updatedAt: "desc" }, take: 5,
@@ -86,26 +133,30 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   return (
     <div>
       <PageHeader title="Sklad" subtitle="Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."
-        action={canAdd ? (
+        action={
           <div className="flex flex-wrap gap-2">
-            <LinkButton href="/snabjeniye" variant="ghost"><ShoppingBasket size={16} /> Snabjeniye oynasi</LinkButton>
+            {/* «Приход» / «Расход» jurnallari (Excel'dagidek, ruscha) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
+            {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span lang="ru">Приход</span></LinkButton>}
+            {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span lang="ru">Расход</span></LinkButton>}
+            {canAdd && <>
             {/* Zaxiraga ishlab chiqarish: mijozsiz zayavka — tayyor mahsulot hovlida erkin qoldiq bo'lib turadi */}
             <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
-            <LinkButton href="/stock/products/new" variant="secondary"><Plus size={16} /> Tayyor mahsulot qo&apos;shish</LinkButton>
             <LinkButton href="/stock/materials/new" variant="secondary"><PackagePlus size={16} /> Xomashyo qo&apos;shish</LinkButton>
             {/* Qoldiqni faqat hujjat bilan o'zgartirish: sanab chiqish farqi va hisobdan chiqarish (sabab majburiy) */}
             <LinkButton href="/stock/inventarizatsiya" variant="secondary"><ScanLine size={16} /> Inventarizatsiya</LinkButton>
             <LinkButton href="/stock/spisanie" variant="secondary"><PackageMinus size={16} /> Hisobdan chiqarish</LinkButton>
             {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}
             <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Kerakli mahsulotlar</LinkButton>
+            </>}
           </div>
-        ) : undefined} />
-      <Tabs current={tab} items={[{ key: "balance", label: "Qoldiqlar", href: "/stock?tab=balance", icon: Boxes }, { key: "capacity", label: "Ishlab chiqarish imkoni", href: "/stock?tab=capacity", icon: Factory }, { key: "brigades", href: "/stock?tab=brigades", icon: HardHat,
-          label: undistributed.count > 0
-            ? <>Brigadalar <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[11px] font-bold text-red-700">{undistributed.count}</span></>
-            : "Brigadalar" }, { key: "moves", label: "Harakat jurnali", href: "/stock?tab=moves", icon: History }]} />
+        } />
+      {/* Sklad kabinetida faqat «Остатки». «Ishlab chiqarish imkoni», «Brigadalar» va harakatlar ko'rinishi tab sifatida
+          olib tashlangan, lekin boshqa bo'limlardagi havolalar (Brigadalar, Ta'minot, Zayavka, BI, xomashyo qatori) uchun ochiladi */}
+      {tab !== "balance" && !(tab === "moves" && (ref || moveMaterial)) && (
+        <Link href="/stock" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span lang="ru">Остатки</span></Link>
+      )}
       {added != null && (
-        <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`} <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkonini ko&apos;rish</Link></Callout>
+        <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`}</Callout>
       )}
 
       {arrivals.length > 0 && (tab === "balance" || tab === "brigades") && (
@@ -119,7 +170,6 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               </li>
             ))}
           </ul>
-          {tab !== "brigades" && <Link href="/stock?tab=brigades" className="mt-1 inline-block font-medium underline">Brigadalarga taqsimlash →</Link>}
         </Callout>
       )}
 
@@ -292,50 +342,140 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       )}
 
       {tab === "balance" && (
-        <div>
-          <h2 className="mb-3 font-semibold">Xomashyo</h2>
-          {canDelete && <MaterialBulkBar formId={MATERIAL_FORM} total={materials.length} />}
-          <Table>
-            <thead><tr>{canDelete && <Th className="w-10"><span className="sr-only">Belgilash</span></Th>}<Th>Nomi</Th><Th>Kodi</Th><Th right>Qoldiq</Th>{perWarehouse && shownWarehouses.map((w) => <Th key={w.id} right>{w.name}{!w.isActive && " (yopiq)"}</Th>)}<Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
-            <tbody>
-              {materials.length === 0 && <Empty text="Xomashyo kiritilmagan — «Xomashyo qo'shish» tugmasi orqali kiriting" icon={Boxes} />}
-              {materials.map((m) => {
-                const b = mb.get(m.id) ?? 0, c = avgCost.get(m.id) ?? 0, l = last.materials.get(m.id);
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div lang="ru">
+              <h2 className="text-lg font-semibold text-slate-900">Остатки сырья</h2>
+              <p className="text-sm text-slate-500">{period.label}{wh ? ` · ${wh.name}` : perWarehouse ? " · все склады" : ""}</p>
+            </div>
+            <div lang="ru" className="flex flex-wrap items-center gap-2">
+              {canPrice && <FillPricesButton count={noPrice} />}
+              <ExcelButton file={`Остатки ${period.fromStr} — ${period.toStr}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} sheets={[{ name: "Остатки", rows: excelRows }]} />
+            </div>
+          </div>
+          <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...(wh ? { wh: wh.id } : {}) }} />
+          {perWarehouse && (
+            <div lang="ru" className="flex flex-wrap items-center gap-1">
+              <Warehouse size={15} className="mr-1 text-slate-400" aria-hidden />
+              {[null, ...shownWarehouses].map((w) => {
+                const active = (w?.id ?? null) === (wh?.id ?? null);
+                const qs = new URLSearchParams({ tab: "balance", from: period.fromStr, to: period.toStr, ...(w ? { wh: w.id } : {}) });
                 return (
-                  <Tr key={m.id} className="[&>td]:py-4 [&>td]:text-[15px]">
+                  <Link key={w?.id ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
+                    className={cn("inline-flex h-8 items-center rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
+                    {w ? `${w.name}${w.isActive ? "" : " (закрыт)"}` : "Все склады"}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+          {canDelete && <MaterialBulkBar formId={MATERIAL_FORM} total={activeRows} />}
+          <Sheet>
+            <SheetHead>
+              <tr>
+                {canDelete && <SheetTh rowSpan={2} tone="plain" className="w-10"><span className="sr-only">Belgilash</span></SheetTh>}
+                <SheetTh rowSpan={2} tone="yellow" className="w-10">№</SheetTh>
+                <SheetTh rowSpan={2} tone="yellow" className="min-w-56">Наименование</SheetTh>
+                <SheetTh rowSpan={2} tone="blue">Ед Изм</SheetTh>
+                <SheetTh rowSpan={2} tone="blue" className="min-w-28" title="Цена за единицу — устанавливает Снабжение; по ней оценивается расход">Дона сўм</SheetTh>
+                <SheetTh colSpan={2} tone="gray">Остатка<span className="block text-[11px] font-normal text-slate-600">на {dateRu(period.from)}</span></SheetTh>
+                <SheetTh colSpan={2} tone="green">Приход</SheetTh>
+                <SheetTh colSpan={2} tone="red">Расход</SheetTh>
+                <SheetTh colSpan={2} tone="gray">Остатка<span className="block text-[11px] font-normal text-slate-600">на конец {dateRu(toIncl)}</span></SheetTh>
+              </tr>
+              <tr>
+                <SheetTh tone="gray">К-во</SheetTh><SheetTh tone="gray">Сумма</SheetTh>
+                <SheetTh tone="green">К-во</SheetTh><SheetTh tone="green">Сумма</SheetTh>
+                <SheetTh tone="red">К-во</SheetTh><SheetTh tone="red">Сумма</SheetTh>
+                <SheetTh tone="gray">К-во</SheetTh><SheetTh tone="gray">Итого Сумма</SheetTh>
+              </tr>
+            </SheetHead>
+            <tbody>
+              {turnover.length === 0 && (
+                <tr><SheetTd colSpan={canDelete ? 13 : 12} center muted className="py-10">Сырьё не добавлено — кнопка «Xomashyo qo&apos;shish»</SheetTd></tr>
+              )}
+              {turnover.map((r, i) => {
+                const b = mb.get(r.id) ?? 0, l = last?.materials.get(r.id);
+                const low = r.minStock > 0 && r.close.q < r.minStock;
+                const zero = Math.abs(r.close.q) < EPS;
+                return (
+                  <SheetTr key={r.id} className={cn(!r.isActive && "text-slate-500")}>
                     {canDelete && (
-                      <Td className="w-10">
-                        {/* data-stock — tasdiq oynasi qoldig'i borlarini alohida aytadi (qoldiq bilan o'chishi mumkin) */}
-                        <label className="-m-2 flex cursor-pointer items-center p-2 pointer-coarse:min-h-11">
-                          <input type="checkbox" form={MATERIAL_FORM} name="ids" value={m.id} data-stock={Math.abs(b) > 0.0005 ? "1" : "0"} aria-label={`${m.name} — belgilash`} className="h-4 w-4 cursor-pointer accent-slate-900 pointer-coarse:h-5 pointer-coarse:w-5" />
-                        </label>
-                      </Td>
+                      <SheetTd center className="w-10">
+                        {/* Faqat faol xomashyo belgilanadi. data-stock — JORIY (davrdan qat'i nazar) qoldiq: tasdiq oynasi qoldig'i borlarini alohida aytadi */}
+                        {r.isActive && (
+                          <label className="-m-2 flex cursor-pointer items-center justify-center p-2 pointer-coarse:min-h-11">
+                            <input type="checkbox" form={MATERIAL_FORM} name="ids" value={r.id} data-stock={Math.abs(b) > EPS ? "1" : "0"} aria-label={`${r.name} — belgilash`} className="h-4 w-4 cursor-pointer accent-slate-900 pointer-coarse:h-5 pointer-coarse:w-5" />
+                          </label>
+                        )}
+                      </SheetTd>
                     )}
-                    <Td className="font-medium text-slate-900">{m.name}</Td>
-                    <Td className="text-slate-500">{m.code}</Td>
-                    <Td right className={cn("font-semibold", b < 0 && "text-red-600")}>{qty(b)} {m.unit}</Td>
-                    {perWarehouse && shownWarehouses.map((w) => {
-                      const wb = mwb.get(`${m.id}|${w.id}`) ?? 0;
-                      return <Td key={w.id} right className={cn("text-slate-600", wb < 0 && "font-semibold text-red-600")}>{qty(wb)}</Td>;
-                    })}
-                    <Td right className="text-slate-500">{qty(m.minStock)}</Td>
-                    <Td right>{c ? money(c) : "—"}</Td>
-                    <Td right>{money(b * c)}</Td>
-                    <Td>{b < Number(m.minStock) ? <Badge color="red">Kam qoldi</Badge> : <Badge color="green">Yetarli</Badge>}</Td>
-                    <Td className="text-slate-600">{l ? <><span className="font-medium text-slate-800">{l.by}</span><span className="text-slate-400"> · {dateTime(l.date)}</span></> : "—"}</Td>
-                  </Tr>
+                    <SheetTd center muted>{i + 1}</SheetTd>
+                    <SheetTd tone="yellow">
+                      <Link href={`/stock?tab=moves&${periodQs({ material: r.id })}`} prefetch={false}
+                        title={l ? `Последний приход: ${l.by} · ${dateTime(l.date)} — движения за период` : "Движения за период"}
+                        className={cn("font-medium hover:underline", r.isActive ? "text-slate-900" : "text-slate-500")}>{r.name}</Link>
+                      <span className="ml-1.5 text-[11px] text-slate-400">{r.code}</span>
+                      {!r.isActive && <span className="ml-1.5 inline-block align-middle"><Badge dot={false}>архив</Badge></span>}
+                    </SheetTd>
+                    <SheetTd center tone="blue" className="text-slate-600">{unitLabelRu(r.unit)}</SheetTd>
+                    <SheetTd right tone="blue"><PriceCell materialId={r.id} name={r.name} price={r.unitPrice} avg={r.avgCost} canEdit={canPrice && r.isActive} /></SheetTd>
+                    <SheetTd right tone="gray">{cellQ(r.open.q)}</SheetTd>
+                    <SheetTd right tone="gray">{cellS(r.open.s)}</SheetTd>
+                    <SheetTd right tone="green">{cellQ(r.in.q)}</SheetTd>
+                    <SheetTd right tone="green">{cellS(r.in.s)}</SheetTd>
+                    <SheetTd right tone="red">{cellQ(r.out.q)}</SheetTd>
+                    <SheetTd right tone="red">{cellS(r.out.s)}</SheetTd>
+                    <SheetTd right tone={zero ? "gray" : undefined} muted={zero}
+                      className={cn(!zero && "font-semibold", r.close.q > EPS && "bg-emerald-100 text-emerald-900", r.close.q < -EPS && "bg-red-100 text-red-700")}>
+                      {low && <span className="mr-1.5 inline-block align-middle" title={`Меньше минимального остатка (${fmtNum(r.minStock, 3)})`}><Badge color="amber" dot={false}>мало</Badge></span>}
+                      {zero ? "0" : fmtNum(r.close.q, 3)}
+                    </SheetTd>
+                    <SheetTd right tone="gray" strong>
+                      {r.approx && <span className="mr-0.5 font-normal text-amber-600" title="Часть движений без цены — оценена по текущей цене (Дона сўм или средняя себестоимость)">≈</span>}
+                      {cellS(r.close.s) || "0"}
+                    </SheetTd>
+                  </SheetTr>
                 );
               })}
             </tbody>
-          </Table>
-          <p className="mt-2 text-xs text-slate-500">Beton oldindan tayyorlanmaydi — zakaz olingandan keyin ishlab chiqariladi, shuning uchun bu yerda xomashyo qoldig&apos;i asosiy. Retsept bo&apos;yicha qaysi betondan qancha chiqishini <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkoni</Link> ko&apos;rsatadi. Hovlida turgan dona mahsulot va tayyor beton qoldig&apos;i — <Link href="/stock?tab=capacity" className="underline">Ishlab chiqarish imkoni</Link> bo&apos;limida.</p>
+            {turnover.length > 0 && (
+              <SheetFoot>
+                <tr>
+                  <SheetTd colSpan={canDelete ? 5 : 4} right>Итого <span className="font-normal text-slate-500">· {turnover.length} поз.</span></SheetTd>
+                  <SheetTd /><SheetTd right>{fmtNum(tot.open, 0)}</SheetTd>
+                  <SheetTd /><SheetTd right className="text-emerald-800">{fmtNum(tot.in, 0)}</SheetTd>
+                  <SheetTd /><SheetTd right className="text-red-700">{fmtNum(tot.out, 0)}</SheetTd>
+                  <SheetTd /><SheetTd right>{tot.approx && <span className="mr-0.5 font-normal text-amber-600">≈</span>}{fmtNum(tot.close, 0)}</SheetTd>
+                </tr>
+              </SheetFoot>
+            )}
+          </Sheet>
+          <p lang="ru" className="text-xs text-slate-500">
+            Сумма = количество × цена движения: приход — по цене закупки (с доставкой), расход — по «Дона сўм» на момент выдачи.
+            «≈» — есть старые движения без цены, они оценены по текущей цене («Дона сўм» или средняя себестоимость).
+            Количество в «Итого» не суммируется — единицы разные. Нажмите на наименование — движения за период.
+          </p>
         </div>
       )}
 
       {tab === "moves" && ref && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
           <span className="text-slate-600">Bitta hujjat bo&apos;yicha: <b className="text-slate-900">{moves.length} qator</b>, jami <b className="text-slate-900">{money(moves.reduce((x, m) => x + Number(m.qty) * Number(m.unitCost ?? 0), 0))}</b></span>
-          <Link href="/stock?tab=moves" className="font-medium text-slate-600 hover:text-slate-900 hover:underline">Barcha harakatlar →</Link>
+          <Link href="/stock" className="font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span lang="ru">Остатки</span></Link>
+        </div>
+      )}
+      {tab === "moves" && moveMaterial && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
+          <span className="text-slate-600">
+            <b className="text-slate-900">{moveMaterial.name}</b> harakatlari{sp.from || sp.to ? ` · ${period.label}` : ""}{wh ? ` · ${wh.name}` : ""}:{" "}
+            <b className="text-slate-900">{moves.length}{moves.length >= 500 ? "+" : ""} qator</b>
+            {" · "}kirim <b className="text-emerald-700">+{qty(moves.reduce((x, m) => x + Math.max(0, Number(m.qty)), 0))}</b>
+            {" · "}chiqim <b className="text-red-600">{qty(moves.reduce((x, m) => x + Math.min(0, Number(m.qty)), 0))}</b> {unitLabel(moveMaterial.unit)}
+          </span>
+          <span className="flex flex-wrap gap-4">
+            <Link href={`/stock?tab=balance&${periodQs()}`} className="font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span lang="ru">Остатки</span></Link>
+          </span>
         </div>
       )}
       {tab === "moves" && (
@@ -350,7 +490,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>
-                <Td>{m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
+                <Td>{m.recipient ? <span lang="ru">Кому: <span className="font-medium text-slate-800">{m.recipient.name}</span></span> : m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
                 <Td>{m.createdBy.fullName}</Td>
               </Tr>
             ))}

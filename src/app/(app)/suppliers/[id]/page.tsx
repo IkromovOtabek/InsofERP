@@ -29,7 +29,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
     supplierPrices(id),
     db.goodsReceipt.findMany({
       where: { supplierId: id }, orderBy: { date: "desc" }, take: 20,
-      include: { items: { select: { qty: true, price: true, vatAmount: true } }, warehouse: { select: { name: true } } },
+      include: { items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }, warehouse: { select: { name: true } } },
     }),
     db.supplyRequest.findMany({ where: { supplierId: id }, orderBy: { date: "desc" }, take: 10, include: { items: { select: { qty: true, price: true } } } }),
   ]);

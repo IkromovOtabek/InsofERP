@@ -14,7 +14,7 @@ type Client = Prisma.TransactionClient | typeof db;
  * "Kirim hujjati" ni tanlab. Ta'minot zanjiridan kelgan kirimning chiqimi moliya pul ajratganda
  * yozilgan va qabulda shu kirimga bog'lanadi — shuning uchun u bu ro'yxatga tushmaydi.
  * Storno qilingan kirim to'lov kutmaydi.
- * Kirim summasi — QQS bilan (yetkazuvchiga aynan shuncha to'lanadi, `lib/receipt-vat.ts`).
+ * Kirim summasi — QQS va dostavka bilan (yetkazuvchiga aynan shuncha to'lanadi, `lib/receipt-vat.ts`).
  */
 export type UnpaidReceipt = { id: string; docNo: string; date: Date; supplier: string; supplierId: string; total: number; paid: number; left: number; lines: number };
 
@@ -49,7 +49,7 @@ export type ReceiptPayState = { id: string; docNo: string; supplierId: string; s
 export async function receiptPayState(client: Client, receiptId: string): Promise<ReceiptPayState | null> {
   const rec = await client.goodsReceipt.findUnique({
     where: { id: receiptId },
-    select: { id: true, docNo: true, supplierId: true, cancelledAt: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true } }, supply: { select: { id: true } } },
+    select: { id: true, docNo: true, supplierId: true, cancelledAt: true, supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }, supply: { select: { id: true } } },
   });
   if (!rec) return null;
   const total = receiptTotal(rec.items);
@@ -68,7 +68,7 @@ export async function unpaidReceipts(): Promise<UnpaidReceipt[]> {
     // Ta'minot zanjiridan kelgan kirim bu yerga tushmaydi — uning puli zanjirda ajratilgan
     where: { createdAt: { gte: since }, supply: { is: null }, cancelledAt: null },
     orderBy: { date: "asc" },
-    include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true } } },
+    include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true } } },
   });
   if (!recs.length) return [];
   const paid = await receiptPaidMap(db, recs.map((r) => r.id));
@@ -101,7 +101,7 @@ export type SupplierLedger = {
  */
 export async function supplierLedger(supplierId: string): Promise<SupplierLedger> {
   const [items, txs, unpaidAll, supply, openings] = await Promise.all([
-    db.goodsReceiptItem.findMany({ where: { receipt: { supplierId, cancelledAt: null } }, select: { qty: true, price: true, vatAmount: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { supplierId, cancelledAt: null } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
     db.cashTransaction.groupBy({ by: ["type"], where: { supplierId }, _sum: { amount: true } }),
     unpaidReceipts(),
     db.supplyRequest.findMany({

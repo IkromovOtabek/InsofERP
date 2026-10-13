@@ -88,6 +88,9 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   stock: [
     { key: "receipt",   label: "Kirim (xomashyo qabul qilish)",  roles: ["PROCUREMENT", "WAREHOUSE"] },
     { key: "receipt_storno", label: "Kirimni storno qilish",    roles: [], hint: "Sklad harakatlari teskari yoziladi — odatda faqat direktor" },
+    { key: "issue",     label: "Расход — skladdan berish (Кому)", roles: ["WAREHOUSE", "PROCUREMENT"], hint: "Shafyorlar, svarchiklar, brigadalarga xomashyo berish va «Кому» ro'yxati" },
+    { key: "price",     label: "«Дона сўм» — xomashyo narxini belgilash", roles: ["PROCUREMENT"], hint: "Расход, brigadaga berish va spisanie shu narx bilan baholanadi" },
+    { key: "issue_storno", label: "Расход'ni storno qilish (bekor qilish)", roles: [], hint: "Berilgan xomashyo skladga teskari yoziladi — odatda faqat direktor" },
     { key: "adjust",    label: "Inventarizatsiya va spisanie",   roles: ["WAREHOUSE"] },
     { key: "brigade",   label: "Brigadaga berish / qaytarish",   roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"] },
     { key: "products",  label: "Tayyor mahsulot qoldig'ini kiritish", roles: ["WAREHOUSE", "PRODUCTION"] },
