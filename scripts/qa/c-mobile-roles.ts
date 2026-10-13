@@ -15,12 +15,12 @@ const LISTS: Record<string, string[]> = {
   tasks: ["SUPERVISOR", "PRODUCTION", "SALES", "LOGISTICS", "BRIGADIER"],
   brigades: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"],
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
-  "brig-issues": ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "WAREHOUSE", "PROCUREMENT", "HR"],
+  "brig-issues": ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "HR"], // sklad — faqat bildirishnomadan (detail ISSUE_RESOLVERS)
   "brig-shifts": ["BRIGADIER", "PRODUCTION", "SUPERVISOR"],
   trips: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC"],
   drivers: ["LOGISTICS", "HR"],
   stock: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"],
-  snabjeniye: ["WAREHOUSE", "PROCUREMENT"],
+  snabjeniye: ["PROCUREMENT"], // sklad ilovasida snabjeniye oynasi yo'q
   supply: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"],
   receipts: ["PROCUREMENT", "WAREHOUSE", "SALES"],
   suppliers: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],

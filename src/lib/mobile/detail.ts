@@ -85,6 +85,11 @@ export type FormField = {
   camera?: "front" | "back";
   cameraOnly?: boolean;
   columns?: FormField[];
+  /**
+   * `select` uchun: qidiruv yonidagi "+" — spravochnikda yo'q yozuvni shu yerning o'zida qo'shish. Ilova `fields` ni
+   * varaqda chizadi, `/api/mobile/create` ga `key` bilan yuboradi va javobdagi `option` ni tanlaydi. Eski ilova e'tiborsiz qoldiradi.
+   */
+  create?: { key: string; label: string; fields: FormField[] };
   /** `date` maydoni uchun — veb "10 kunlik ish tartibi" bilan bir xil kunlik yuklama (`lib/mobile/create.ts` `dayCells`). */
   cells?: DayCell[];
 };

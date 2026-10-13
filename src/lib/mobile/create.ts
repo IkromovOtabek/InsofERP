@@ -22,7 +22,8 @@ import { DEPARTMENTS, PRIORITIES, PRIORITY_LABEL } from "@/lib/procurement-const
 import type { MobileUser } from "./auth";
 import type { DayCell, FormField, FormOption } from "./detail";
 import { ListError } from "./list";
-import { unitLabel, unitLabelRu } from "@/lib/unit";
+import { MATERIAL_UNITS, unitLabel, unitLabelRu } from "@/lib/unit";
+import { codeFromName } from "@/lib/excel";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum } from "@/lib/format";
 import { createGoodsReceipt, receiptNote, receiptTokenOf } from "@/lib/receipts";
@@ -88,6 +89,8 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   supply: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Ta'minot so'rovi", label: "Ta'minot so'rash" },
   customers: { roles: ["SALES", "ACCOUNTING", "FINANCE"], title: "Yangi mijoz", label: "Mijoz qo'shish" },
   suppliers: { roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], title: "Yangi yetkazuvchi", label: "Yetkazuvchi qo'shish" },
+  // Xomashyo spravochnigiga yangi nom — ta'minot so'rovidagi xomashyo tanlovining "+" tugmasi ham shu kalitga yuboradi
+  materials: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Yangi xomashyo", label: "Xomashyo qo'shish" },
   brigades: { roles: ["SUPERVISOR", "PRODUCTION", "HR"], title: "Yangi brigada", label: "Brigada ochish" },
   // Kassa: veb `/payments` va `/cashflow` formalari bilan bir xil qoida (`lib/payments.ts`, `lib/cash-entry.ts`,
   // `lib/cash-transfer.ts`). Rol ro'yxati — kim formani ko'rishi mumkinligi; aniq ruxsat `CREATE_PERM` (strict) da.
@@ -115,6 +118,7 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
   supply: { module: "taminot" },
   customers: { module: "customers", action: "edit" },
   suppliers: { module: "stock", action: "suppliers" },
+  materials: { module: "stock", action: "import", strict: true }, // veb «Xomashyo qo'shish» (`importMaterials`) bilan bir xil
   brigades: { module: "tasks", action: "brigade" },
   payments: { module: "payments", action: "create", strict: true },
   cashflow: { module: "cashflow", action: "create", strict: true },
@@ -156,6 +160,7 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
     case "supply": return supplyForm(user);
     case "customers": return customerForm();
     case "suppliers": return supplierForm();
+    case "materials": return materialForm();
     case "payments": return paymentForm();
     case "cashflow": return cashForm();
     case "transfer": return transferForm();
@@ -440,12 +445,14 @@ async function supplyForm(user: MobileUser): Promise<CreateForm> {
         name: "items", label: "Kerakli mahsulotlar", type: "items", required: true,
         columns: [
           // Qoldiq nom yonida — kam qolganini ko'rib so'raydi. Birlik xomashyodan olinadi (`extra`).
-          { name: "materialId", label: "Xomashyo", type: "select", required: true, options: materials.map((m) => ({ value: m.id, label: `${m.name} · qoldiq ${(bal.get(m.id) ?? 0).toFixed(1)} ${m.unit}${(bal.get(m.id) ?? 0) < Number(m.minStock) ? " · kam qolgan" : ""}`, extra: { unit: m.unit } })) },
+          // `create` — qidiruv yonidagi "+": spravochnikda yo'q xomashyoni shu yerning o'zida qo'shib, darhol tanlaydi
+          { name: "materialId", label: "Xomashyo", type: "select", required: true, options: materials.map((m) => supplyMaterialOption(m, bal.get(m.id) ?? 0)),
+            ...(canCreate(user, "materials") ? { create: { key: "materials", label: "Yangi xomashyo", fields: materialFields() } } : {}) },
           { name: "qty", label: "Miqdor", type: "number", required: true, placeholder: "0" },
           { name: "note", label: "Izoh (marka, o'lcham…)", type: "text" },
         ],
       },
-      { name: "note", label: "Izoh", type: "text", hint: "Spravochnikda yo'q mahsulotni vebdagi Sklad bo'limidan so'rang" },
+      { name: "note", label: "Izoh", type: "text", hint: canCreate(user, "materials") ? "Spravochnikda yo'q xomashyoni tanlovdagi «+» tugmasi bilan qo'shing" : "Spravochnikda yo'q mahsulotni vebdagi Sklad bo'limidan so'rang" },
     ],
   };
 }
@@ -468,9 +475,24 @@ async function supplierForm(): Promise<CreateForm> {
     fields: [
       { name: "name", label: "Nomi", type: "text", required: true },
       { name: "phone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67" },
-      { name: "inn", label: "INN", type: "text", placeholder: "9 raqam" },
+      { name: "address", label: "Manzil", type: "text", placeholder: "Shahar, ko'cha, uy" },
     ],
   };
+}
+
+/** Ta'minot so'rovidagi xomashyo varianti: qoldiq nom yonida (kam qolganini ko'rib so'raydi), birlik `extra` da. */
+const supplyMaterialOption = (m: { id: string; name: string; unit: string; minStock: unknown }, balance: number): FormOption =>
+  ({ value: m.id, label: `${m.name} · qoldiq ${balance.toFixed(1)} ${m.unit}${balance < Number(m.minStock) ? " · kam qolgan" : ""}`, extra: { unit: m.unit } });
+
+/** Yangi xomashyo maydonlari — alohida forma ham, tanlov ichidagi "+" varag'i ham shuni ishlatadi. */
+const materialFields = (): FormField[] => [
+  { name: "name", label: "Nomi", type: "text", required: true, placeholder: "Sement M400" },
+  { name: "unit", label: "Birlik", type: "select", required: true, value: "kg", options: MATERIAL_UNITS.map((u) => ({ value: u, label: unitLabel(u) })) },
+  { name: "minStock", label: "Minimal qoldiq", type: "number", placeholder: "0", hint: "Qoldiq shundan kam bo'lsa «kam qolgan» deb belgilanadi" },
+];
+
+async function materialForm(): Promise<CreateForm> {
+  return { key: "materials", title: "Yangi xomashyo", submitLabel: "Saqlash", fields: materialFields() };
 }
 
 async function brigadeForm(): Promise<CreateForm> {
@@ -621,7 +643,12 @@ const SupplyBody = z.object({
   })).min(1, "Kamida bitta qator kerak"),
 });
 const CustomerBody = z.object({ name: z.string().trim().min(2, "Mijoz nomi kerak"), phone: z.string().trim().optional(), inn: z.string().trim().optional(), address: z.string().trim().optional() });
-const SupplierBody = z.object({ name: z.string().trim().min(2, "Yetkazuvchi nomi kerak"), phone: z.string().trim().optional(), inn: z.string().trim().optional() });
+const SupplierBody = z.object({ name: z.string().trim().min(2, "Yetkazuvchi nomi kerak"), phone: z.string().trim().optional(), address: z.string().trim().max(300).optional() });
+const MaterialBody = z.object({
+  name: z.string().trim().min(2, "Xomashyo nomi kerak").max(120, "Nomi juda uzun"),
+  unit: z.enum(MATERIAL_UNITS, { message: "Birlik tanlanmagan" }),
+  minStock: z.coerce.number().min(0, "Minimal qoldiq manfiy bo'lmasin").max(MAX_AMOUNT).optional(),
+});
 const BrigadeBody = z.object({ name: z.string().trim().min(1, "Brigada nomi kerak"), leaderId: z.string().trim().optional(), phone: z.string().trim().optional(), note: z.string().trim().optional() });
 
 /** Pul maydoni: "1 000 000,50" ham qabul qilinadi. */
@@ -801,7 +828,8 @@ function cashDate(v: string | undefined): Date {
   return d;
 }
 
-export type CreateResult = { key: string; id: string; message: string };
+/** `option` — tanlov ichidagi "+" dan yaratilganda: ilova uni ro'yxatga qo'shib, darhol tanlaydi. */
+export type CreateResult = { key: string; id: string; message: string; option?: FormOption };
 
 export async function mobileCreate(user: MobileUser, key: string, payload: unknown): Promise<CreateResult> {
   if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
@@ -909,10 +937,33 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const p = SupplierBody.safeParse(payload);
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
-      if (d.inn && (await db.supplier.findUnique({ where: { inn: d.inn } }))) throw new Error("Bu INN bilan yetkazuvchi bor");
-      const sup = await db.supplier.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null } });
+      const sup = await db.supplier.create({ data: { name: d.name, phone: d.phone || null, address: d.address || null } });
       await audit(db, user.id, "CREATE", "Supplier", sup.id, undefined, sup);
       return { key: "suppliers", id: sup.id, message: `${sup.name} qo'shildi` };
+    }
+    if (key === "materials") {
+      const p = MaterialBody.safeParse(payload);
+      if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const d = p.data;
+      // Bir nom — bitta xomashyo: bor bo'lsa (arxivda bo'lsa — tiklab) o'shani qaytaramiz, dublikat ochilmaydi
+      const same = await db.material.findFirst({ where: { name: { equals: d.name, mode: "insensitive" } } });
+      let m = same;
+      if (same && !same.isActive) {
+        m = await db.material.update({ where: { id: same.id }, data: { isActive: true } });
+        await audit(db, user.id, "UPDATE", "Material", same.id, { isActive: false }, { isActive: true, via: "mobile" });
+      }
+      if (!m) {
+        const base = codeFromName(d.name);
+        let code = base;
+        for (let n = 2; await db.material.findUnique({ where: { code }, select: { id: true } }); n++) code = `${base.slice(0, 13)}-${n}`;
+        m = await db.material.create({ data: { code, name: d.name, unit: d.unit, minStock: d.minStock ?? 0, isActive: true } });
+        await audit(db, user.id, "CREATE", "Material", m.id, undefined, { ...m, via: "mobile" });
+      }
+      const bal = same ? Number((await db.stockMove.aggregate({ where: { materialId: m.id }, _sum: { qty: true } }))._sum.qty ?? 0) : 0;
+      return {
+        key: "stock", id: m.id, option: supplyMaterialOption(m, bal),
+        message: same ? `${m.name} spravochnikda bor edi${same.isActive ? "" : " — arxivdan tiklandi"}` : `${m.name} qo'shildi`,
+      };
     }
     if (key === "brigades") {
       const p = BrigadeBody.safeParse(payload);
