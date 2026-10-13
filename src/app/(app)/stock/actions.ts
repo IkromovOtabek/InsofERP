@@ -75,6 +75,9 @@ export async function importMaterials(_prev: ActionState, fd: FormData): Promise
       let m = byKey.get(str(x.code).toLowerCase()) ?? byKey.get(key);
       if (m) {
         const patch = {
+          // Arxivdagi (ro'yxatdan olib tashlangan) xomashyo qayta kiritilsa — tiklanadi, aks holda qoldiq
+          // ko'rinmaydigan xomashyoga yozilib, Sklad jadvalida chiqmasdi
+          ...(!m.isActive ? { isActive: true } : {}),
           ...(minStock != null && Number(m.minStock) !== minStock ? { minStock } : {}),
           ...(groupId && m.groupId !== groupId ? { groupId } : {}),
         };

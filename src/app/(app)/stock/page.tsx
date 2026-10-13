@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight, ClipboardList, HardHat, ShoppingBasket, ScanLine, PackageMinus } from "lucide-react";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
+import { MaterialBulkBar } from "./material-bulk";
+import { moduleWriteAllowed } from "@/lib/auth";
+import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
 import { Card, CardHeader } from "@/components/ui";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -18,6 +21,8 @@ const TYPE_LABEL: Record<string, string> = {
   SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish",
   BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi",
 };
+/** Xomashyo qoldig'i jadvalidagi belgilar shu formaga tegishli (`MaterialBulkBar`). */
+const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
@@ -25,6 +30,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
   const s = await requirePage("/stock");
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
+  // Belgilab o'chirish — xomashyo spravochnigi bilan bir xil huquq (`deleteMaterials` → requireModuleWrite)
+  const canDelete = moduleWriteAllowed(s, "stock", MATERIAL_CATALOG_ROLES) === true;
   const [materials, mSums, last, whSums, allWarehouses] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
@@ -287,15 +294,24 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {tab === "balance" && (
         <div>
           <h2 className="mb-3 font-semibold">Xomashyo</h2>
+          {canDelete && <MaterialBulkBar formId={MATERIAL_FORM} total={materials.length} />}
           <Table>
-            <thead><tr><Th>Nomi</Th><Th>Kodi</Th><Th right>Qoldiq</Th>{perWarehouse && shownWarehouses.map((w) => <Th key={w.id} right>{w.name}{!w.isActive && " (yopiq)"}</Th>)}<Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
+            <thead><tr>{canDelete && <Th className="w-10"><span className="sr-only">Belgilash</span></Th>}<Th>Nomi</Th><Th>Kodi</Th><Th right>Qoldiq</Th>{perWarehouse && shownWarehouses.map((w) => <Th key={w.id} right>{w.name}{!w.isActive && " (yopiq)"}</Th>)}<Th right>Minimal</Th><Th right>O'rt. narx</Th><Th right>Qiymati</Th><Th>Holat</Th><Th>Oxirgi kirim (kim)</Th></tr></thead>
             <tbody>
               {materials.length === 0 && <Empty text="Xomashyo kiritilmagan — «Xomashyo qo'shish» tugmasi orqali kiriting" icon={Boxes} />}
               {materials.map((m) => {
                 const b = mb.get(m.id) ?? 0, c = avgCost.get(m.id) ?? 0, l = last.materials.get(m.id);
                 return (
                   <Tr key={m.id} className="[&>td]:py-4 [&>td]:text-[15px]">
-                    <Td className="font-medium">{m.name}</Td>
+                    {canDelete && (
+                      <Td className="w-10">
+                        {/* data-stock — tasdiq oynasi qoldig'i borlarini alohida aytadi (qoldiq bilan o'chishi mumkin) */}
+                        <label className="-m-2 flex cursor-pointer items-center p-2 pointer-coarse:min-h-11">
+                          <input type="checkbox" form={MATERIAL_FORM} name="ids" value={m.id} data-stock={Math.abs(b) > 0.0005 ? "1" : "0"} aria-label={`${m.name} — belgilash`} className="h-4 w-4 cursor-pointer accent-slate-900 pointer-coarse:h-5 pointer-coarse:w-5" />
+                        </label>
+                      </Td>
+                    )}
+                    <Td className="font-medium text-slate-900">{m.name}</Td>
                     <Td className="text-slate-500">{m.code}</Td>
                     <Td right className={cn("font-semibold", b < 0 && "text-red-600")}>{qty(b)} {m.unit}</Td>
                     {perWarehouse && shownWarehouses.map((w) => {
