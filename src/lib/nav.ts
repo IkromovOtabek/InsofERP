@@ -50,10 +50,12 @@ export const NAV: NavItem[] = [
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"], group: "Sklad" },
-  // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi
-  { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad" },
-  // Ta'minot zayavkalari — ma'sul (zayavka) xodim tasdiqlaydi; zanjirdagi boshqa bo'limlar holatini ko'radi
-  { href: "/taminot",     label: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], group: "Sklad" },
+  // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi.
+  // Sklad kabinetining menyusida yo'q (`menuFor`), lekin ruxsat qoladi: sklad kelgan molni qabul qiladi, havolalar ochiladi
+  { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT", "DIRECTOR"] },
+  // Ta'minot zayavkalari — ma'sul (zayavka) xodim tasdiqlaydi; zanjirdagi boshqa bo'limlar holatini ko'radi.
+  // Sklad menyusida yo'q — u so'rovni Sklad → «Kerakli mahsulotlar» dan jo'natadi, hujjatga bildirishnoma/havoladan kiradi
+  { href: "/taminot",     label: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], group: "Sklad", menuFor: ["PROCUREMENT", "PRODUCTION", "DIRECTOR"] },
   // Hujjatning o'zi zanjirdagi hamma bo'limga ochiq (Zayavkalar va Kirim-Chiqimdagi "To'liq hujjat" havolasi)
   { href: "/taminot/",    label: "Ta'minot hujjati",     roles: ["SALES", "WAREHOUSE", "PROCUREMENT", "PRODUCTION", "FINANCE", "ACCOUNTING", "CASHIER"], group: "Sklad", hidden: true },
   { href: "/receipts",    label: "Kirim",              roles: ["WAREHOUSE", "PROCUREMENT", "SALES"], group: "Sklad" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)

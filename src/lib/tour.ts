@@ -165,13 +165,20 @@ const LOGISTICS_STEPS: TourStep[] = [
   openPage("/orders", "Zayavkalar", "Qaysi zayavkaga qancha hajm, qaysi manzilga va qachon kerakligini shu yerdan ko'rasiz."),
 ];
 
-const WAREHOUSE_STEPS: TourStep[] = [
+// Sklad menyusida «Ta'minot zayavkalari» va «Snabjeniye» yo'q (`nav.ts` menuFor) — ular faqat snabjeniye yo'riqnomasida
+const SKLAD_STEPS = {
+  stock: openPage("/stock", "Sklad", "Xomashyo qoldig'i — asosiy ish oynangiz. Qoldiq kamayganda «Kerakli mahsulotlar» tugmasi bilan ta'minot zayavkasi ochiladi."),
+  receipts: openPage("/receipts", "Kirim", "Kelgan mol qabul qilinadi. Nakladnoyni kamerada suratga olsangiz, AI raqamlarni o'zi o'qib beradi."),
+  suppliers: openPage("/suppliers", "Yetkazuvchilar", "Yetkazuvchilar bazasi va ular bilan hisob-kitob holati."),
+};
+const WAREHOUSE_STEPS: TourStep[] = [openGroup("Sklad"), SKLAD_STEPS.stock, SKLAD_STEPS.receipts, SKLAD_STEPS.suppliers];
+const PROCUREMENT_STEPS: TourStep[] = [
   openGroup("Sklad"),
-  openPage("/stock", "Sklad", "Xomashyo qoldig'i — asosiy ish oynangiz. Qoldiq kamayganda shu yerdan ta'minot zayavkasi ochiladi."),
+  SKLAD_STEPS.stock,
   openPage("/taminot", "Ta'minot zayavkalari", "Ochilgan zayavkalar va ularning holati: narx qo'yildimi, tasdiqlandimi, to'landimi."),
   openPage("/snabjeniye", "Snabjeniye", "Zayavkaga narx qo'yish va yetkazuvchini tanlash. Narx o'zgarsa hujjat qayta tasdiqlashga ketadi."),
-  openPage("/receipts", "Kirim", "Kelgan mol qabul qilinadi. Nakladnoyni kamerada suratga olsangiz, AI raqamlarni o'zi o'qib beradi."),
-  openPage("/suppliers", "Yetkazuvchilar", "Yetkazuvchilar bazasi va ular bilan hisob-kitob holati."),
+  SKLAD_STEPS.receipts,
+  SKLAD_STEPS.suppliers,
 ];
 
 const ACCOUNTING_STEPS: TourStep[] = [
@@ -297,7 +304,7 @@ const BY_ROLE: Record<Role, TourStep[]> = {
   SUPERVISOR: SUPERVISOR_STEPS,
   LOGISTICS: LOGISTICS_STEPS,
   WAREHOUSE: WAREHOUSE_STEPS,
-  PROCUREMENT: WAREHOUSE_STEPS,
+  PROCUREMENT: PROCUREMENT_STEPS,
   ACCOUNTING: ACCOUNTING_STEPS,
   FINANCE: FINANCE_STEPS,
   HR: HR_STEPS,
