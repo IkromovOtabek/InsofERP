@@ -279,5 +279,6 @@ export async function saveLogisticsSettings(_prev: ActionState, fd: FormData): P
   await db.companySettings.upsert({ where: { id: "main" }, create: { id: "main", ...d }, update: d });
   await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ? Object.fromEntries(Object.keys(d).map((k) => [k, before[k as keyof typeof before]])) : undefined, d);
   refresh();
+  revalidatePath("/settings"); // forma Sozlamalar → Limitlar da ham turadi
   return { ok: true };
 }

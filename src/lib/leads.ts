@@ -6,6 +6,7 @@ import { botEnabled, sendMessage } from "./telegram/api";
 import { unitLabel } from "./unit";
 import { phoneTail, samePhone } from "./phone-lookup";
 import { syncCustomerLater } from "./eco/customers";
+import { defaultCreditLimit } from "./finance";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 
 /**
@@ -153,7 +154,8 @@ export async function convertLead(leadId: string, input: { name: string; inn?: s
     const claimed = await tx.lead.updateMany({ where: { id: leadId, status: { not: "CONVERTED" } }, data: { status: "CONVERTED", handledById: userId, handledAt: new Date() } });
     if (claimed.count !== 1) return null;
     const existing = byInn ?? byPhone;
-    const customer = existing ?? await tx.customer.create({ data: { name, phone: lead.phone, inn, address: lead.address } });
+    // Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar)
+    const customer = existing ?? await tx.customer.create({ data: { name, phone: lead.phone, inn, address: lead.address, creditLimit: await defaultCreditLimit(tx) } });
     const after = await tx.lead.update({ where: { id: leadId }, data: { customerId: customer.id } });
     await audit(tx, userId, "STATUS_CHANGE", "Lead", leadId, lead, after);
     if (!existing) await audit(tx, userId, "CREATE", "Customer", customer.id, undefined, customer);

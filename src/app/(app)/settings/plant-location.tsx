@@ -59,7 +59,7 @@ export function PlantLocation({ lat, lng }: { lat: number | null; lng: number | 
       <p className="mb-3 text-sm text-slate-500">
         Xaritadan zavod turgan joyni bosib belgilang. Zayavkadagi &quot;zavoddan necha km&quot; va
         haydovchining marshruti shu nuqtadan hisoblanadi. Xodimlar ilovada «Keldim / Ketdim» (Face ID) bosganda
-        shu nuqtadan «Davomat radiusi» ichida bo&apos;lishi shart — nuqta belgilanmasa o&apos;zi belgilash ishlamaydi.
+        shu nuqtadan «Davomat radiusi» (Sozlamalar → Limitlar) ichida bo&apos;lishi shart — nuqta belgilanmasa o&apos;zi belgilash ishlamaydi.
       </p>
       <div className="relative isolate overflow-hidden rounded-lg border border-slate-200">
         <div ref={el} className="h-[260px] w-full bg-slate-50" />

@@ -3,7 +3,7 @@ import { Card, Checkbox, PageHeader } from "@/components/ui";
 import { ExcelImport } from "@/components/excel-import";
 import { importCustomersFromExcel } from "../actions";
 import { PARTY_FIELDS } from "@/lib/party-fields";
-import { DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
+import { defaultCreditLimit } from "@/lib/finance";
 import { money } from "@/lib/format";
 
 /**
@@ -13,8 +13,9 @@ import { money } from "@/lib/format";
 export default async function CustomersImportPage() {
   const s = await requireRoles(["SALES", "ACCOUNTING", "FINANCE"], { module: "customers", actions: ["edit"] });
   const canLimit = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
-  // Standart limit `lib/finance.ts` dan (hozir 0 — yangi mijoz naqd/avans bilan ishlaydi): matnda qattiq raqam yozilmasin
-  const def = DEFAULT_CREDIT_LIMIT > 0 ? money(DEFAULT_CREDIT_LIMIT) : "0 (qarzga berilmaydi)";
+  // Standart limit — direktor Sozlamalar → Limitlar'da belgilaydi (0 — yangi mijoz naqd/avans bilan ishlaydi)
+  const limit = await defaultCreditLimit();
+  const def = limit > 0 ? money(limit) : "0 (qarzga berilmaydi)";
   return (
     <div>
       <PageHeader

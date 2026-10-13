@@ -7,8 +7,13 @@ import { MoneyInput } from "@/components/money-input";
 
 type C = { id: string; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson?: string | null; creditLimit: string; isActive: boolean } | null;
 
-export function CustomerForm({ customer, canEditLimit }: { customer: C; canEditLimit: boolean }) {
+/** `defaultLimit` — yangi mijoz formasidagi boshlang'ich limit (Sozlamalar → Limitlar, sahifa server'da o'qiydi). */
+export function CustomerForm({ customer, canEditLimit, defaultLimit = 0 }: { customer: C; canEditLimit: boolean; defaultLimit?: number }) {
   const [state, action, pending] = useActionState(saveCustomer.bind(null, customer?.id ?? null), undefined);
+  const limitHint = [
+    canEditLimit ? "0 = faqat oldindan to'lov (naqd / avans). Qarz berish uchun limit kiriting" : "Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi",
+    customer ? "" : "Standart limit — Sozlamalar → Limitlar",
+  ].filter(Boolean).join(". ");
   return (
     <form action={action} className="max-w-xl space-y-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-6 shadow-(--shadow-card)">
       <FormError error={state?.error} />
@@ -19,8 +24,11 @@ export function CustomerForm({ customer, canEditLimit }: { customer: C; canEditL
       </div>
       <Field label="Manzil"><Textarea name="address" defaultValue={customer?.address ?? ""} /></Field>
       <Field label="Mas'ul shaxs" hint="F.I.O., lavozimi — kim bilan gaplashiladi"><Input name="contactPerson" defaultValue={customer?.contactPerson ?? ""} /></Field>
-      <Field label="Kredit limit" hint={canEditLimit ? "Standart 0 = faqat oldindan to'lov (naqd / avans). Qarz berish uchun limit kiriting" : "Standart 0 (qarzga berilmaydi). Faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi"}>
-        <MoneyInput name="creditLimit" defaultValue={customer?.creditLimit ?? "0"} readOnly={!canEditLimit} />
+      <Field label="Kredit limit" hint={limitHint}>
+        {/* decimals=2: kasrli limit (Excel'dan 1 250 000,50) tahrirda kesilmasin — aks holda sotuvchiga «faqat Buxgalteriya…» xatosi chiqardi */}
+        <MoneyInput name="creditLimit" defaultValue={customer?.creditLimit ?? String(defaultLimit)} readOnly={!canEditLimit} decimals={2} />
+        {/* Forma ochilgandagi limit: tegilmagan bo'lsa server uni yozmaydi (boshqa joyda o'zgargan limit saqlanadi) */}
+        {customer && <input type="hidden" name="creditLimitWas" value={customer.creditLimit} />}
       </Field>
       <Checkbox name="isActive" defaultChecked={customer?.isActive ?? true} label="Faol" />
       <FormActions>

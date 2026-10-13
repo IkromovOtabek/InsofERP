@@ -2,9 +2,9 @@ import { db } from "@/lib/db";
 import { ensureSite } from "@/lib/logistics";
 import { audit } from "@/lib/audit";
 import { canDoByUserId } from "@/lib/auth";
-import { customerCredit, DEFAULT_CREDIT_LIMIT } from "@/lib/finance";
+import { customerCredit, defaultCreditLimit } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
-import { money } from "@/lib/format";
+import { date, fmtNum, money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
@@ -26,16 +26,31 @@ export type OrderResult = { changed: boolean; status?: string; error?: string };
 const concreteM3 = (items: { qtyM3: unknown; product: { unit: string } }[]) =>
   items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0);
 
+/** Kunlik limit xatosidan keyingi maslahat: qabul qiluvchi (sotuvchi) uchun — sukut; blok ochuvchi direktor uchun — o'zi;
+ *  direktor ruxsati bilan blok ochuvchi boshqa xodim uchun — direktorga yo'llanma (Sozlamalar unga yopiq). */
+const DAILY_LIMIT_HINT_SELLER = "Boshqa yetkazish kuniga zayavka oching yoki direktor limitni Sozlamalar → Limitlar'da oshirsin";
+const DAILY_LIMIT_HINT_DIRECTOR = "Limitni Sozlamalar → Limitlar'da oshiring yoki yetkazish sanasini o'zgartiring (zayavkani bekor qilib, boshqa kunga qayta oching)";
+const DAILY_LIMIT_HINT_UNBLOCKER = "Zayavkani boshqa yetkazish kuniga qayta oching yoki direktor kunlik limitni Sozlamalar → Limitlar'da oshirsin";
+
 /**
- * Kunlik zayavka limiti tekshiruvi (qabul qilishda). Shu yetkazish kuniga tasdiqlangan SALE zayavkalar
- * (CONFIRMED/IN_PRODUCTION/DELIVERED/CLOSED) hajmi va soni hisoblanadi; shu zayavka qo'shilganda
- * direktor qo'ygan chegaradan oshsa — o'zbekcha xato qaytadi. 0/bo'sh chegara — cheklov yo'q.
+ * Kunlik zayavka limiti tekshiruvi (qabul qilishda va blokni ochishda). Shu yetkazish kuniga tasdiqlangan SALE
+ * zayavkalar (CONFIRMED/IN_PRODUCTION/DELIVERED/CLOSED) hajmi va soni hisoblanadi; shu zayavka qo'shilganda
+ * direktor qo'ygan chegaradan (Sozlamalar → Limitlar) oshsa — o'zbekcha xato qaytadi. 0/bo'sh chegara — cheklov yo'q.
+ * DRAFT/BLOCKED/CANCELLED sanoqqa kirmaydi — shuning uchun blok ochilganda ham qayta tekshiriladi.
+ *
+ * Chegarada: limitga AYNAN TENG bo'lsa — ruxsat, oshsa — rad.
+ *   · son:  tasdiqlangan + 1 ≤ maxCount → ruxsat;
+ *   · hajm: tasdiqlangan m³ + shu zayavka m³ ≤ maxM3 + 0.001 → ruxsat (0.001 — float yig'indisi xatosi uchun
+ *     zaxira: 0.1 + 0.2 kabi yig'indi teng holatni rad etmasin; shu sabab 0.001 m³ gacha ortiqcha ham o'tadi).
+ * Kasr m³: `qtyM3` (Decimal 18,3) `Number()` bilan aniq songa o'tadi (7.5 → 7.5), yaxlitlanmaydi.
+ * Hajmga faqat m³ birligidagi qatorlar kiradi (`concreteM3`), son esa barcha SALE zayavkalarni sanaydi.
  */
 async function dailyOrderLimitError(
   client: Prisma.TransactionClient | typeof db,
   orderId: string,
   deliveryDate: Date,
   items: { qtyM3: unknown; product: { unit: string } }[],
+  hint: string = DAILY_LIMIT_HINT_SELLER,
 ): Promise<string | null> {
   const c = await client.companySettings.findUnique({ where: { id: "main" }, select: { dailyOrderMaxM3: true, dailyOrderMaxCount: true } });
   const maxM3 = Number(c?.dailyOrderMaxM3 ?? 0);
@@ -48,19 +63,32 @@ async function dailyOrderLimitError(
     where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED", "CLOSED"] }, deliveryDate: { gte: dayStart, lt: dayEnd }, id: { not: orderId } },
     select: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } },
   });
-  const dayStr = dayStart.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const dayStr = date(dayStart);
 
   if (maxCount > 0 && confirmed.length + 1 > maxCount) {
-    return `${dayStr} kuniga kunlik zayavka soni chegarasi (${maxCount} ta) to'lgan — allaqachon ${confirmed.length} ta tasdiqlangan. Boshqa kun tanlang yoki direktorga murojaat qiling`;
+    return `${dayStr} kuniga kunlik zayavka soni limiti to'lgan: limit ${fmtNum(maxCount)} ta, allaqachon ${fmtNum(confirmed.length)} ta tasdiqlangan. ${hint}`;
   }
   if (maxM3 > 0) {
     const existing = confirmed.reduce((s, ord) => s + concreteM3(ord.items), 0);
     const mine = concreteM3(items);
     if (existing + mine > maxM3 + 0.001) {
-      return `${dayStr} kuniga kunlik hajm chegarasi (${maxM3} m³) oshib ketadi: tasdiqlangan ${existing} m³ + bu zayavka ${mine} m³. Boshqa kun tanlang yoki direktorga murojaat qiling`;
+      return `${dayStr} kuniga kunlik hajm limiti oshib ketadi: limit ${fmtNum(maxM3, 3)} m³, tasdiqlangan ${fmtNum(existing, 3)} m³ + bu zayavka ${fmtNum(mine, 3)} m³ = ${fmtNum(existing + mine, 3)} m³. ${hint}`;
     }
   }
   return null;
+}
+
+/**
+ * Zayavka qabul qilish va blokni ochishdagi qulflar — tartib DOIM bir xil: avval mijoz (`credit:`), keyin
+ * yetkazish kuni (`orderday:`). `orderConfirm` ham, `orderUnblock` ham shu yerdan oladi: tartib yoki kalit
+ * ikki joyda farq qilsa, ikki tranzaksiya bir-birining qulfini kutib qoladi (deadlock) yoki navbat ishlamaydi.
+ */
+async function lockCreditAndDay(tx: Prisma.TransactionClient, customerId: string, deliveryDate: Date) {
+  // Mijoz bo'yicha navbat: bir vaqtda qabul qilingan ikki zayavka limitni birga oshirib yubormasin.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"credit:" + customerId}))`;
+  // Kun bo'yicha navbat: turli mijozlarning ikki zayavkasi bir vaqtda qabul qilinsa ham kunlik limit oshmaydi.
+  const day = new Date(deliveryDate); day.setHours(0, 0, 0, 0);
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"orderday:" + day.toISOString()}))`;
 }
 
 /**
@@ -89,15 +117,12 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   // kutilayotgan, hali kelmagan qismi kredit limitiga yuklanmaydi — limitga faqat qolgan (qarzga ketadigan) qism tushadi.
   const required = o.onCredit ? 0 : expectedAdvance(o);
   const res = await db.$transaction(async (tx) => {
-    // Mijoz bo'yicha navbat: bir vaqtda qabul qilingan ikki zayavka limitni birga oshirib yubormasin.
+    // Qulflar (avval mijoz, keyin kun — `lockCreditAndDay`): mijoz bo'yicha va yetkazish kuni bo'yicha navbat.
     // Shu zayavkaga olingan avans (u hali DRAFT) mijozning umumiy to'lovi sifatida `used` dan ayirilgan.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"credit:" + o.customerId}))`;
-    // ── Kunlik zayavka limiti (Sozlamalar → direktor) ──
+    await lockCreditAndDay(tx, o.customerId, o.deliveryDate);
+    // ── Kunlik zayavka limiti (Sozlamalar → Limitlar, direktor) ──
     // Shu yetkazish kuniga allaqachon tasdiqlangan SALE zayavkalar hajmi (m³) yoki soni chegaradan oshsa — qabul
     // qilinmaydi. `dailyCapacityM3` (kalendar rangi) bilan ARALASHTIRILMAYDI: bu — direktor qo'ygan qattiq cheklov.
-    // Kun bo'yicha qulf ostida: turli mijozlarning ikki zayavkasi bir vaqtda qabul qilinsa ham chegara oshmaydi.
-    const day = new Date(o.deliveryDate); day.setHours(0, 0, 0, 0);
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"orderday:" + day.toISOString()}))`;
     const limitErr = await dailyOrderLimitError(tx, o.id, o.deliveryDate, o.items);
     if (limitErr) return { error: limitErr };
     const credit = await customerCredit(o.customerId);
@@ -137,18 +162,35 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   return { changed: true, status };
 }
 
-/** BLOCKED → CONFIRMED. Faqat direktor (ruxsat chaqiruvchida tekshiriladi). */
+/**
+ * BLOCKED → CONFIRMED. Faqat direktor (ruxsat chaqiruvchida tekshiriladi).
+ * Direktor faqat KREDIT limitini chetlab o'tadi; kunlik zayavka limiti (hajm/son) qayta tekshiriladi: BLOCKED zayavka
+ * qabul paytida kunlik sanoqqa kirmagan, shu orada o'sha kun boshqa zayavkalar bilan to'lgan bo'lishi mumkin.
+ * Sklad (STOCK) zayavkasi kunlik limitga kirmaydi (limit faqat SALE).
+ */
 export async function orderUnblock(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } } });
   if (o.status !== "BLOCKED") return { changed: false, error: "Zayavka bloklanmagan" };
-  // Holat sharti bilan: ikki marta bosilsa ikkinchisi hech narsa yozmaydi (audit va bildirishnoma ham takrorlanmaydi)
-  const changed = await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    if (o.kind === "SALE") {
+      // `orderConfirm` bilan bir xil qulf tartibi (avval mijoz, keyin kun) — deadlock bo'lmasin; blok ochilishi
+      // mijozning ochiq zayavkalarini ham oshiradi, shuning uchun mijoz navbati ham kerak.
+      await lockCreditAndDay(tx, o.customerId, o.deliveryDate);
+      // Blokni direktor bergan ruxsat bilan boshqa xodim ham ochishi mumkin — Sozlamalar esa faqat direktorga ochiq,
+      // shuning uchun maslahat kim ochayotganiga qarab
+      const opener = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+      const isDirector = opener?.role === "DIRECTOR" || opener?.role === "SUPERADMIN";
+      const limitErr = await dailyOrderLimitError(tx, o.id, o.deliveryDate, o.items, isDirector ? DAILY_LIMIT_HINT_DIRECTOR : DAILY_LIMIT_HINT_UNBLOCKER);
+      if (limitErr) return { error: `Blok ochilmadi — ${limitErr}` };
+    }
+    // Holat sharti bilan: ikki marta bosilsa ikkinchisi hech narsa yozmaydi (audit va bildirishnoma ham takrorlanmaydi)
     const r = await tx.order.updateMany({ where: { id, status: "BLOCKED" }, data: { status: "CONFIRMED" } });
-    if (r.count === 0) return false;
+    if (r.count === 0) return null;
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: "BLOCKED" }, { status: "CONFIRMED", by: "director" });
-    return true;
+    return { ok: true as const };
   });
-  if (!changed) return { changed: false, error: "Zayavka bloklanmagan" };
+  if (!res) return { changed: false, error: "Zayavka bloklanmagan" };
+  if ("error" in res) return { changed: false, error: res.error };
   // Zayavkani kiritgan sotuvchi kutib turibdi — javobni o'zi so'ramasin
   notifyAfter(async () => {
     await notifyUsers([o.createdById], { type: "ORDER_UNBLOCKED", title: `Blok ochildi — ${o.orderNo}`, body: "Direktor zayavkani tasdiqladi", link: { key: "orders", id } });
@@ -297,7 +339,7 @@ export async function createOrder(
     let customerId = input.customerId!;
     if (input.newCustomer) {
       const c = await tx.customer.create({
-        data: { name: input.newCustomer.name, phone: input.newCustomer.phone ?? undefined, inn: input.newCustomer.inn ?? undefined, address: input.newCustomer.address ?? undefined, creditLimit: DEFAULT_CREDIT_LIMIT },
+        data: { name: input.newCustomer.name, phone: input.newCustomer.phone ?? undefined, inn: input.newCustomer.inn ?? undefined, address: input.newCustomer.address ?? undefined, creditLimit: await defaultCreditLimit(tx) },
       });
       await audit(tx, userId, "CREATE", "Customer", c.id, undefined, { ...c, via: "order-form" });
       customerId = c.id;

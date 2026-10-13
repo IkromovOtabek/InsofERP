@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, RotateCcw, Save, UserPlus } from "lucide-react";
-import { createUser, resetPassword, saveSupplyDirectorLimit, saveDailyOrderLimits, savePayablesSince, saveVatPayer, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
+import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, saveVatPayer, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select } from "@/components/ui";
 import { BULK_FORM_ID, type PermModule } from "@/lib/perm-modules";
@@ -66,7 +66,7 @@ export function ToggleUserButton({ userId, name, active }: { userId: string; nam
   );
 }
 
-/** "Katta xarid" chegarasi — Byudjet sahifasidagi chegaralar bilan bitta maydon (`supplyDirectorLimit`). */
+/** "Katta xarid" chegarasi (`supplyDirectorLimit`) — Sozlamalar → Limitlar. */
 export function SupplyLimitForm({ value }: { value: number }) {
   const [state, action, pending] = useActionState(saveSupplyDirectorLimit, undefined);
   return (
@@ -107,18 +107,6 @@ export function VatPayerForm({ value }: { value: boolean }) {
   );
 }
 
-/** Kunlik zayavka limiti —bir yetkazish kuniga qabul qilinadigan hajm (m³) va soni. 0/bo'sh — cheklov yo'q. */
-export function DailyOrderLimitForm({ m3, count }: { m3: number; count: number }) {
-  const [state, action, pending] = useActionState(saveDailyOrderLimits, undefined);
-  return (
-    <form action={action} className="flex flex-wrap items-end gap-3">
-      <Field label="Kunlik hajm chegarasi, m³"><Input name="dailyOrderMaxM3" type="number" min={0} step="1" defaultValue={m3 || ""} placeholder="cheklov yo'q" className="w-44" /></Field>
-      <Field label="Kunlik zayavka soni"><Input name="dailyOrderMaxCount" type="number" min={0} step="1" defaultValue={count || ""} placeholder="cheklov yo'q" className="w-44" /></Field>
-      <Button disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
-      <FormError error={state?.error} />
-    </form>
-  );
-}
 
 export type { PermModule };
 

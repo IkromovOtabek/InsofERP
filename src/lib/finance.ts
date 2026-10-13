@@ -3,10 +3,16 @@ import type { Prisma } from "@/generated/prisma";
 import { customerBalances, balanceOf } from "./receivables";
 
 /**
- * Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm): 0 — yangi mijoz qarzga olmaydi,
- * naqd/avans bilan ishlaydi. Qarz berish kerak bo'lsa direktor/moliya mijoz kartasida limitni oshiradi.
+ * Har bir yangi mijozga ajratiladigan standart kredit limiti (so'm) — direktor Sozlamalar → Limitlar'da belgilaydi
+ * (`CompanySettings.defaultCreditLimit`). 0 — yangi mijoz qarzga olmaydi, naqd/avans bilan ishlaydi; qarz berish
+ * kerak bo'lsa direktor/moliya mijoz kartasida limitni oshiradi. Faqat YANGI mijozga qo'llanadi.
+ * Mijoz yaratiladigan har joy (forma, Excel, zayavka/ariza/realizatsiyadan yangi mijoz, mobil) shu yerdan oladi.
+ * Ichki "Sklad" kartochkasi (`stock-orders.ts`) bundan mustasno — unga doim 0.
  */
-export const DEFAULT_CREDIT_LIMIT = 0;
+export async function defaultCreditLimit(client: Pick<Prisma.TransactionClient, "companySettings"> = db): Promise<number> {
+  const s = await client.companySettings.findUnique({ where: { id: "main" }, select: { defaultCreditLimit: true } });
+  return s ? Number(s.defaultCreditLimit) : 0;
+}
 
 /**
  * Qarz va limit — hisob qoidasi (bitta joyda):

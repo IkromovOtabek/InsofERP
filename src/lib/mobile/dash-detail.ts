@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { FLOW_ONLY, balanceFromGroups } from "@/lib/cash-tx";
 import { receivablesReport, OWNER_EDGES } from "@/lib/receivables";
 import { loadSales, type SaleRow } from "@/lib/bi/core";
-import { EXPENSE_KIND, FUEL_TYPE, ISSUE_KIND } from "@/lib/logistics";
+import { EXPENSE_KIND, FUEL_TYPE, ISSUE_KIND, logisticsSettings } from "@/lib/logistics";
+import { getCompany } from "@/lib/company";
 import { SUPPLY_LABEL } from "@/lib/supply";
 import { procurementHome } from "@/lib/procurement-home";
 import { skladLogistika } from "@/lib/sklad-logistika";
@@ -403,19 +404,20 @@ const tripRow = (t: TripRow, o: { right?: string; withDriver?: boolean } = {}): 
 const tripsQty = (list: TripRow[]) => totalsText(list.map((t) => ({ unit: tripUnit(t), qty: sum(t.qtyM3) })));
 
 async function deliveredTrips(r: DashRange, driverId: string | null, title = "Yetkazilgan reyslar"): Promise<Part> {
-  const [rows, prev] = await Promise.all([
+  const [rows, prev, { lateWarnMin }] = await Promise.all([
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to }, ...(driverId ? { driverId } : {}) }, orderBy: { deliveredAt: "desc" }, select: TRIP_SELECT }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.prevFrom, lt: r.prevTo }, ...(driverId ? { driverId } : {}) }, select: { qtyM3: true } }),
+    logisticsSettings(), // kechikish chegarasi (standart 15 daq) — dashboard "Kechikkan" kartasi bilan bir xil
   ]);
   const qty = sumBy(rows, (t) => sum(t.qtyM3)), prevQty = sumBy(prev, (t) => sum(t.qtyM3));
   const mins = rows.map(tripMinutes).filter((m): m is number => m != null && m > 0);
-  const late = rows.filter((t) => tripLateMin(t) > 15).length;
+  const late = rows.filter((t) => tripLateMin(t) > lateWarnMin).length;
   return {
     title, subtitle: period(r),
     fields: [
       f("Reyslar", cnt(rows.length, "ta")), f("Hajm", tripsQty(rows)),
       f("O'rtacha yetkazish", mins.length ? `${Math.round(sumBy(mins, (m) => m) / mins.length)} daq` : "—"),
-      f("Kechikkan (>15 daq)", `${late} · ${share(late, rows.length)}`, late ? "danger" : "success"),
+      f(`Kechikkan (>${lateWarnMin} daq)`, `${late} · ${share(late, rows.length)}`, late ? "danger" : "success"),
       prevField(qty, prevQty, r, (v) => inUnit(v, rows[0] ? tripUnit(rows[0]) : "m3")),
     ],
     sections: pick(
@@ -459,10 +461,13 @@ async function tripDurations({ r }: Ctx): Promise<Part> {
 }
 
 async function lateTrips({ r }: Ctx): Promise<Part> {
-  const all = await db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: TRIP_SELECT });
-  const rows = all.map((t) => ({ t, late: tripLateMin(t) })).filter((x) => x.late > 15).sort((a, b) => b.late - a.late);
+  const [all, { lateWarnMin }] = await Promise.all([
+    db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: TRIP_SELECT }),
+    logisticsSettings(),
+  ]);
+  const rows = all.map((t) => ({ t, late: tripLateMin(t) })).filter((x) => x.late > lateWarnMin).sort((a, b) => b.late - a.late);
   return {
-    title: "Kechikkan reyslar", subtitle: `${period(r)} · rejadan 15 daqiqadan ko'p kech`,
+    title: "Kechikkan reyslar", subtitle: `${period(r)} · rejadan ${lateWarnMin} daqiqadan ko'p kech`,
     fields: [f("Kechikkan", `${rows.length} / ${all.length} · ${share(rows.length, all.length)}`, rows.length ? "danger" : "success"), f("O'rtacha kechikish", rows.length ? `${Math.round(sumBy(rows, (x) => x.late) / rows.length)} daq` : "—"), f("Eng katta kechikish", rows.length ? `${rows[0]!.late} daq` : "—")],
     sections: pick(
       breakdown("Haydovchilar bo'yicha", rows, (x) => x.t.driver.fullName, () => 1, (v) => cnt(v, "reys"), { icon: "id-card", unitWord: "reys", target: "employees", id: (l) => l[0]!.t.driver.id }),
@@ -947,11 +952,14 @@ async function payablesDetail(): Promise<Part> {
 async function budgetDetail(r: DashRange): Promise<Part> {
   // Oylik byudjet tanlangan davrga bo'linadi (hafta ≈ 7/30), fakt — shu davr chiqimi
   const shares = monthShares(r);
-  const [budgets, spent, top] = await Promise.all([
+  const [budgets, spent, top, company] = await Promise.all([
     db.expenseBudget.findMany({ where: { OR: shares.map(({ year, month }) => ({ year, month })) }, orderBy: { amount: "desc" } }),
     db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
     db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: r.from, lt: r.to } }, orderBy: { amount: "desc" }, take: 15, select: TX_SELECT }),
+    getCompany(),
   ]);
+  // Rang chegaralari — `alertWarnPct` / `alertCritPct` (standart 90 / 100, Sozlamalar → Limitlar)
+  const warn = company.alertWarnPct, crit = company.alertCritPct;
   const fact = (cat: string) => sum(spent.find((x) => x.category === cat)?._sum.amount);
   const share = (b: { year: number; month: number }) => shares.find((m) => m.year === b.year && m.month === b.month)?.share ?? 0;
   const rows = groupBy(budgets, (b) => b.category).map(([cat, list]) => {
@@ -964,9 +972,9 @@ async function budgetDetail(r: DashRange): Promise<Part> {
   const over = rows.filter((x) => x.pct != null && x.pct > 100);
   return {
     title: `Byudjet — ${period(r)}`, subtitle: "plan / fakt · oylik byudjet davrga bo'lingan",
-    fields: [f("Byudjet", money(planTotal)), f("Sarflandi", `${money(factTotal)} · ${pctText(planTotal > 0 ? (factTotal / planTotal) * 100 : null)}`, factTotal > planTotal ? "danger" : factTotal > planTotal * 0.9 ? "warning" : "success"), f("Oshgan kategoriyalar", String(over.length), over.length ? "danger" : "success"), f("Byudjetsiz xarajat", money(sumBy(unplanned, (u) => sum(u._sum.amount))), unplanned.length ? "warning" : undefined)],
+    fields: [f("Byudjet", money(planTotal)), f("Sarflandi", `${money(factTotal)} · ${pctText(planTotal > 0 ? (factTotal / planTotal) * 100 : null)}`, factTotal > planTotal * (crit / 100) ? "danger" : factTotal > planTotal * (warn / 100) ? "warning" : "success"), f("Oshgan kategoriyalar", String(over.length), over.length ? "danger" : "success"), f("Byudjetsiz xarajat", money(sumBy(unplanned, (u) => sum(u._sum.amount))), unplanned.length ? "warning" : undefined)],
     sections: [
-      sec("Kategoriyalar", [...rows.sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0)).map((x) => ({ id: x.id, title: x.category, subtitle: `fakt ${short(x.fact)} · plan ${short(x.plan)}${x.limit ? ` · limit ${short(x.limit)}` : ""}`, right: pctText(x.pct), tone: (x.pct == null ? "info" : x.pct > 100 ? "danger" : x.pct > 90 ? "warning" : "success") as Tone })),
+      sec("Kategoriyalar", [...rows.sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0)).map((x) => ({ id: x.id, title: x.category, subtitle: `fakt ${short(x.fact)} · plan ${short(x.plan)}${x.limit ? ` · limit ${short(x.limit)}` : ""}`, right: pctText(x.pct), tone: (x.pct == null ? "info" : x.pct > crit ? "danger" : x.pct > warn ? "warning" : "success") as Tone })),
         ...unplanned.map((u, i) => ({ id: `u${i}`, title: u.category, subtitle: "byudjet belgilanmagan", right: short(sum(u._sum.amount)), tone: "warning" as Tone }))], { icon: "square-check", empty: "Bu davrga byudjet belgilanmagan" }),
       sec(`Eng katta chiqimlar (${period(r)})`, top.map(txRow), { target: "cashflow", empty: "Bu davrda chiqim yo'q" }),
     ],

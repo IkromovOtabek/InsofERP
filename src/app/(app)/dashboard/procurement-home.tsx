@@ -283,7 +283,7 @@ export async function ProcurementHome({ filters = {}, base = "/dashboard" }: { f
             </div>
           </Card>
 
-          {d.limit > 0 && <p className="px-1 text-xs text-slate-500">{money(d.limit)} dan katta xarid avval direktor tasdig&apos;idan o&apos;tadi (Sozlamalar).</p>}
+          {d.limit > 0 && <p className="px-1 text-xs text-slate-500">{money(d.limit)} dan katta xarid avval direktor tasdig&apos;idan o&apos;tadi (chegarani direktor Sozlamalar → Limitlar&apos;da belgilaydi).</p>}
         </aside>
       </div>
     </div>

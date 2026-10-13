@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound } from "lucide-react";
+import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound, Gauge, Wallet, ClipboardList, Truck, MapPin, ShoppingCart, BarChart3, ArrowRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
@@ -11,7 +11,7 @@ import type { Role } from "@/generated/prisma";
 import { parsePerms } from "@/lib/auth";
 import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
-import { Badge, Button, Card, Empty, Input, PageHeader, Select, Table, Td, Th, Tr, Tabs } from "@/components/ui";
+import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { ProductExcelPanel } from "@/components/product-excel-import";
 import { ProductMatrixPanel } from "@/components/product-matrix-add";
@@ -19,7 +19,14 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, DailyOrderLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
+import { AttendanceRadiusForm, CustomerLimitsTable, DailyLimitsForm, DefaultCreditLimitForm, type CustomerLimitRow } from "./limits-forms";
+import { ThresholdForm } from "../dashboard/byudjet/budget-form";
+import { SettingsForm as LogisticsSettingsForm } from "../logistika/sozlamalar/settings-form";
+import { customersCredit } from "@/lib/finance";
+import { logisticsSettings, DRUM_MAX_MIN } from "@/lib/logistics";
+import { today } from "@/lib/davomat";
+import { fmtNum } from "@/lib/format";
 import { DeletionRow } from "./deletion-forms";
 import { SelfAccountPanel } from "../hisobim/panel";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
@@ -30,6 +37,7 @@ import { txSign } from "@/lib/cash-tx";
 const TABS = [
   ["account", "Mening hisobim", UserRound],
   ["company", "Zavod rekvizitlari", Building2],
+  ["limits", "Limitlar", Gauge],
   ["products", "Beton markalari", Package],
   ["materials", "Xomashyo", Layers],
   ["warehouses", "Skladlar", Warehouse],
@@ -45,6 +53,7 @@ const ACTION_LABEL: Record<string, string> = { CREATE: "Yaratdi", UPDATE: "O'zga
 const ENTITY_LABEL: Record<string, string> = {
   Customer: "Mijoz", Supplier: "Yetkazuvchi", Order: "Zayavka", ProductionBatch: "Zames", Recipe: "Retsept", GoodsReceipt: "Kirim",
   Trip: "Reys", Invoice: "Schyot", Payment: "To'lov", Employee: "Xodim", Vehicle: "Texnika", User: "Foydalanuvchi",
+  CustomerCreditLimit: "Mijoz kredit limiti",
   Product: "Mahsulot (marka)", Material: "Xomashyo", Warehouse: "Sklad", CashAccount: "Kassa/hisob", CompanySettings: "Sozlamalar / rekvizitlar", StockMove: "Sklad harakati",
   Brigade: "Brigada", BrigadeTask: "Brigada topshirig'i", TaskProgress: "Bajarilganlik", CashTransaction: "Kirim-chiqim", WorkPosition: "Ishchi lavozim", EmployeeDocument: "Xodim hujjati",
   Attendance: "Davomat", BrigadeIssue: "Brigadaga berish", BrigadeMove: "Brigada harakati", BrigadeShift: "Brigada smenasi", ExpenseBudget: "Xarajat byudjeti",
@@ -72,6 +81,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       {tab === "account" && <SelfAccountPanel s={s} />}
       {tab === "company" && <CompanyTab />}
+      {tab === "limits" && <LimitsTab />}
       {tab === "products" && <ProductsTab />}
       {tab === "materials" && <MaterialsTab />}
       {tab === "warehouses" && <WarehousesTab />}
@@ -80,6 +90,102 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "permissions" && <PermissionsTab f={sp} />}
       {tab === "deletions" && <DeletionsTab />}
       {tab === "audit" && <AuditTab f={sp} />}
+    </div>
+  );
+}
+
+/**
+ * Limitlar — tizimdagi barcha biznes limitlari bitta joyda (faqat direktor): mijozlar kredit limiti (standart va
+ * har mijozniki), kunlik zayavka limiti va quvvat, katta xarid chegarasi, dashbord chegaralari, logistika
+ * chegaralari, davomat radiusi. Har forma o'z server action'i bilan saqlanadi va auditga yoziladi. Dashbord va
+ * logistika chegaralari o'z sahifalaridagi formaning o'zi (bitta action) — qaysi joyda o'zgartirilsa ham bir xil.
+ */
+async function LimitsTab() {
+  const [year, month] = today().slice(0, 7).split("-").map(Number);
+  const [c, credit, customers, blocked, logi, budget] = await Promise.all([
+    getCompany(),
+    customersCredit(),
+    db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.order.groupBy({ by: ["customerId"], where: { kind: "SALE", status: "BLOCKED" }, _count: { _all: true } }),
+    logisticsSettings(),
+    db.expenseBudget.aggregate({ where: { year, month }, _sum: { amount: true }, _count: { _all: true } }),
+  ]);
+  const blockedBy = new Map(blocked.map((b) => [b.customerId, b._count._all]));
+  const rows: CustomerLimitRow[] = customers.map((m) => {
+    const k = credit.get(m.id);
+    return { id: m.id, name: m.name, limit: k?.limit ?? 0, debt: k?.debt ?? 0, open: k?.open ?? 0, used: k?.used ?? 0, blacklisted: k?.blacklisted ?? false, blocked: blockedBy.get(m.id) ?? 0 };
+  });
+  const blockedTotal = blocked.reduce((s, b) => s + b._count._all, 0);
+  const blackTotal = rows.filter((r) => r.blacklisted).length;
+  const defLimit = Number(c.defaultCreditLimit);
+  const maxM3 = c.dailyOrderMaxM3 != null ? Number(c.dailyOrderMaxM3) : null;
+  const dailyText = [maxM3 ? `${fmtNum(maxM3, 2)} m³` : "", c.dailyOrderMaxCount ? `${c.dailyOrderMaxCount} ta` : ""].filter(Boolean).join(" · ") || "cheklanmagan";
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Yangi mijozga standart limit" value={money(defLimit)} hint={defLimit > 0 ? "shu summagacha qarzga oladi" : "yangi mijoz faqat naqd / avans"} icon={Wallet} />
+        <StatCard label="Qora ro'yxatda" value={`${blackTotal} ta mijoz`} icon={Users} tone={blackTotal ? "danger" : "default"} href="/customers?tab=black" />
+        <StatCard label="Limit tufayli bloklangan" value={`${blockedTotal} ta zayavka`} icon={ClipboardList} tone={blockedTotal ? "warning" : "default"} href="/orders?status=BLOCKED" />
+        <StatCard label="Kunlik zayavka limiti" value={dailyText} icon={Gauge} />
+      </div>
+
+      <Card>
+        <CardHeader icon={Wallet} title="Mijozlar kredit limiti"
+          description="Limit — mijoz qarzga ola oladigan eng ko'p summa. Ishlatilgan = qarz + schyot yozilmagan ochiq zayavkalar. Limit to'lsa mijoz qora ro'yxatga tushadi: yangi zayavka faqat oldindan to'lov bilan, qarzga zayavka qabul qilishda bloklanadi. 0 — faqat naqd/avans." />
+        <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+          <DefaultCreditLimitForm value={defLimit} />
+          <p className="mt-1.5 text-xs text-slate-500">Bundan keyin ochiladigan har yangi mijozga (forma, Excel, zayavka va arizadan, mobil ilova) shu limit beriladi. Mavjud mijozlarning limiti o&apos;zgarmaydi — ularni pastdagi jadvalda bering.</p>
+        </div>
+        <CustomerLimitsTable rows={rows} />
+        <p className="mt-3 text-xs text-slate-500">
+          Jadvalda faol mijozlar. Limitni mijoz kartasida Buxgalteriya va Finance ham o&apos;zgartiradi — har o&apos;zgarish audit jurnalida («Mijoz kredit limiti»).
+          Limit oshirilganda bloklangan zayavka o&apos;zi ochilmaydi: uni zayavka kartasida «Blokdan chiqarish» bilan ochasiz. Bu huquqni boshqa xodimga{" "}
+          <Link href="/settings?tab=permissions" className="underline">Ruxsatlar</Link> → Zayavkalar → «Limitdan oshgan zayavka blokini ochish» orqali berish mumkin.
+        </p>
+      </Card>
+
+      <Card>
+        <CardHeader icon={ClipboardList} title="Kunlik zayavka limiti va quvvat"
+          description="Kunlik quvvat — yumshoq ko'rsatkich, hech narsani bloklamaydi: Zayavkalar taqvimining rangi (unga bekor qilinmagan barcha zayavkalar, sklad zayavkalari ham kiradi), egasi dashbordidagi quvvat foizi va ommaviy saytdagi «Kunlik ishlab chiqarish quvvati». Hajm va son chegarasi — qattiq: bir yetkazish kuniga tasdiqlangan mijoz zayavkalari (sklad, qoralama va bloklanganlar kirmaydi) shundan oshsa, zayavka qabul qilinmaydi va blokdan chiqarilmaydi. 0 yoki bo'sh — cheklov yo'q." />
+        <DailyLimitsForm capacity={c.dailyCapacityM3 != null ? Number(c.dailyCapacityM3) : null} m3={maxM3} count={c.dailyOrderMaxCount} />
+      </Card>
+
+      <Card>
+        <CardHeader icon={ShoppingCart} title="Katta xarid — direktor tasdig'i"
+          description={`Summasi shu chegaradan katta ta'minot zayavkasi ma'sul xodim tasdig'idan oldin direktor tasdig'idan o'tadi va bosh sahifadagi «Sizning tasdig'ingiz kutilmoqda» navbatida chiqadi. 0 — cheklov yo'q. Hozir: ${Number(c.supplyDirectorLimit) > 0 ? money(Number(c.supplyDirectorLimit)) : "cheklov yo'q"}.`} />
+        <SupplyLimitForm value={Number(c.supplyDirectorLimit)} />
+      </Card>
+
+      <Card>
+        <CardHeader icon={BarChart3} title="Dashbord chegaralari"
+          description="Bosh sahifa va mobil ilovadagi sariq (e'tibor) va qizil (kritik) holatlar: xarajat byudjetidan oshish foizi, xomashyo necha kunga yetishi, muddati o'tgan qarz."
+          action={<LinkButton href="/dashboard/byudjet" variant="secondary" size="sm">Xarajat byudjeti <ArrowRight size={14} /></LinkButton>} />
+        <ThresholdForm t={{ alertWarnPct: c.alertWarnPct, alertCritPct: c.alertCritPct, stockWarnDays: c.stockWarnDays, stockCritDays: c.stockCritDays, overdueDays: c.overdueDays }} />
+        <p className="mt-3 text-xs text-slate-500">
+          Xarajat byudjeti (oy × kategoriya bo&apos;yicha limit) — Byudjet sahifasida. Joriy oy: {budget._count._all ? <><b>{budget._count._all} ta kategoriya</b>, jami {money(Number(budget._sum.amount ?? 0))}</> : "byudjet kiritilmagan"}.
+        </p>
+      </Card>
+
+      <Card>
+        <CardHeader icon={Truck} title="Logistika chegaralari"
+          description="Reys kechikishi, GPS signali, uzoq turish va yo'ldan chiqish, yuklangan betonning kutishi, smena. Logistika rahbari ham o'z Sozlamalar sahifasida o'zgartiradi — qiymatlar bitta." />
+        <LogisticsSettingsForm v={{
+          lateWarnMin: logi.lateWarnMin, lateCritMin: logi.lateCritMin, gpsSilentMin: logi.gpsSilentMin, loadedWarnMin: logi.loadedWarnMin,
+          assignLeadMin: logi.assignLeadMin, shiftStartHour: logi.shiftStartHour, shiftEndHour: logi.shiftEndHour, avgSpeedKmh: logi.avgSpeedKmh,
+          stopAlertMin: logi.stopAlertMin, offRouteM: logi.offRouteM,
+        }} />
+        <p className="mt-3 text-xs text-slate-500">Baraban vaqti (yuklangandan quyilishigacha): <b>{DRUM_MAX_MIN} daqiqa</b> — o&apos;zgarmas texnologik qoida.</p>
+      </Card>
+
+      <Card>
+        <CardHeader icon={MapPin} title="Davomat radiusi"
+          description="Xodim ilovada «Keldim / Ketdim» bosganda zavod nuqtasidan shu masofa ichida bo'lishi shart. Shu radius zavodning GPS hududi ham: yuklangan mashina shu doirada tursa «uzoq turish» ogohlantirishi berilmaydi — radiusni juda kichraytirsangiz logistikaga ortiqcha xabar keladi." />
+        <AttendanceRadiusForm value={c.attendanceRadiusM} />
+        {(c.lat == null || c.lng == null) && (
+          <p className="mt-2 text-xs text-amber-700">Zavod nuqtasi belgilanmagan — radius tekshirilmaydi. Nuqtani <Link href="/settings?tab=company" className="underline">Zavod rekvizitlari</Link> → «Zavod joyi» xaritasida belgilang.</p>
+        )}
+      </Card>
     </div>
   );
 }
@@ -101,7 +207,6 @@ async function CompanyTab() {
         { name: "email", label: "E-mail", defaultValue: c.email },
         { name: "workingHours", label: "Ish vaqti", defaultValue: c.workingHours },
         { name: "foundedYear", label: "Tashkil topgan yil", type: "number", defaultValue: c.foundedYear },
-        { name: "dailyCapacityM3", label: "Kunlik quvvat (m³)", type: "number", step: "1", defaultValue: c.dailyCapacityM3 ? Number(c.dailyCapacityM3) : "", placeholder: "200" },
         { name: "address", label: "Manzil", defaultValue: c.address, className: "sm:col-span-3" },
         { name: "bankName", label: "Bank", defaultValue: c.bankName },
         { name: "bankAccount", label: "Hisob raqam", defaultValue: c.bankAccount },
@@ -113,21 +218,14 @@ async function CompanyTab() {
         { name: "sameDayCutoffHour", label: "Bugun yetkazish uchun oxirgi soat", type: "number", step: "1", defaultValue: c.sameDayCutoffHour, required: true },
         { name: "telegram", label: "Telegram (mijozlar uchun)", defaultValue: c.telegram, placeholder: "@insof_beton" },
         { name: "workSunday", label: "Yakshanba ham ishlaymiz", type: "checkbox", defaultValue: c.workSunday },
-        // Ilovadagi "Keldim / Ketdim" (Face ID): xodim pastdagi "Zavod joyi" nuqtasidan shu masofada bo'lishi shart
-        { name: "attendanceRadiusM", label: "Davomat radiusi (m)", type: "number", step: "10", defaultValue: c.attendanceRadiusM, required: true, placeholder: "300" },
+        // Kunlik quvvat, kunlik zayavka limiti, katta xarid chegarasi va davomat radiusi — «Limitlar» bo'limida
       ]} />
       </Card>
       <PlantLocation lat={c.lat} lng={c.lng} />
-      <Card>
-        <h2 className="mb-1 font-semibold">Katta xarid — direktor tasdig&apos;i</h2>
-        <p className="mb-3 text-sm text-slate-500">Summasi shu chegaradan katta ta&apos;minot zayavkasi ma&apos;sul xodim tasdig&apos;idan oldin direktor tasdig&apos;idan o&apos;tadi va bosh sahifadagi «Sizning tasdig&apos;ingiz kutilmoqda» navbatida chiqadi. 0 — cheklov yo&apos;q. Hozir: <b>{Number(c.supplyDirectorLimit) > 0 ? money(Number(c.supplyDirectorLimit)) : "cheklov yo'q"}</b>.</p>
-        <SupplyLimitForm value={Number(c.supplyDirectorLimit)} />
-      </Card>
-      <Card>
-        <h2 className="mb-1 font-semibold">Kunlik zayavka limiti</h2>
-        <p className="mb-3 text-sm text-slate-500">Bir yetkazish kuniga qabul qilinadigan eng ko&apos;p beton hajmi (m³) va zayavkalar soni. Chegaradan oshsa zayavka <b>qabul qilinmaydi</b> (tasdiqlashda tekshiriladi). 0 yoki bo&apos;sh — cheklov yo&apos;q. Bu «Kunlik quvvat» (kalendar rangi) dan alohida qattiq cheklov. Hozir: <b>{Number(c.dailyOrderMaxM3) > 0 ? `${Number(c.dailyOrderMaxM3)} m³` : "hajm cheklanmagan"}</b>, <b>{c.dailyOrderMaxCount ? `${c.dailyOrderMaxCount} ta` : "son cheklanmagan"}</b>.</p>
-        <DailyOrderLimitForm m3={Number(c.dailyOrderMaxM3 ?? 0)} count={Number(c.dailyOrderMaxCount ?? 0)} />
-      </Card>
+      <Callout tone="info" title="Limitlar alohida bo'limda">
+        Mijozlar kredit limiti, kunlik zayavka limiti va quvvat, katta xarid chegarasi, davomat radiusi va boshqa chegaralar —{" "}
+        <Link href="/settings?tab=limits" className="font-medium underline">Sozlamalar → Limitlar</Link>.
+      </Callout>
       <Card>
         <h2 className="mb-1 font-semibold">To&apos;lanmagan kirimlar — boshlanish sanasi</h2>
         <p className="mb-3 text-sm text-slate-500">Kirim-Chiqimdagi «To&apos;lanmagan kirimlar» ro&apos;yxati va yetkazuvchi qarzi shu sanadan keyin kiritilgan kirimlardan hisoblanadi. Undan oldingi chiqimsiz kirimlar (Excel import, dastlabki ma&apos;lumot) to&apos;lov kutmaydi.</p>

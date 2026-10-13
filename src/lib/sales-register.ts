@@ -2,6 +2,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import type { Prisma } from "@/generated/prisma";
 import { cashOutflowError } from "./payments";
+import { defaultCreditLimit } from "./finance";
 
 /**
  * Realizatsiya jurnali — buxgalteriya Excel'da yuritadigan kunlik jo'natma jadvali
@@ -44,6 +45,8 @@ export async function resolveCustomers(tx: Tx, names: string[], createMissing: b
   const result = new Map<string, { id: string; name: string }>();
   const missing: string[] = [];
   const created: string[] = [];
+  // Standart limit (Sozlamalar → Limitlar) — birinchi yangi mijozda bir marta o'qiladi
+  let defLimit: number | undefined;
   for (const raw of names) {
     const name = raw.trim();
     const key = flat(name);
@@ -51,7 +54,8 @@ export async function resolveCustomers(tx: Tx, names: string[], createMissing: b
     const found = byKey.get(key);
     if (found) { result.set(key, found); continue; }
     if (!createMissing) { missing.push(name); continue; }
-    const c = await tx.customer.create({ data: { name }, select: { id: true, name: true } });
+    defLimit ??= await defaultCreditLimit(tx);
+    const c = await tx.customer.create({ data: { name, creditLimit: defLimit }, select: { id: true, name: true } });
     byKey.set(key, c); result.set(key, c); created.push(c.name);
   }
   return { result, missing: [...new Set(missing)], created };

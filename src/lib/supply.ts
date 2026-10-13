@@ -280,7 +280,7 @@ export async function priceSupplyRequest(
       { status: "PRICED", total, delivery, items: rows.map((r) => ({ id: r.itemId, name: byId.get(r.itemId)!.name, askedQty: Number(byId.get(r.itemId)!.qty), qty: r.qty, price: r.price })) });
   }).catch((e: Error) => ({ error: e.message }));
   if (res && "error" in res) return { error: res.error };
-  // Katta xarid (Sozlamalardagi chegaradan oshsa) — avval direktor tasdiqlaydi, sotuv keyin
+  // Katta xarid (Sozlamalar → Limitlar dagi chegaradan oshsa) — avval direktor tasdiqlaydi, sotuv keyin
   const limit = Number((await getCompany()).supplyDirectorLimit);
   if (limit > 0 && total >= limit) {
     notifyAfter(() => notifyRoles(["DIRECTOR"], {

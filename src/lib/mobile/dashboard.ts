@@ -3,7 +3,8 @@ import { FLOW_ONLY, balanceFromGroups } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
 import { loadSales } from "@/lib/bi/core";
 import { myBrigades } from "@/lib/brigades";
-import { ISSUE_KIND } from "@/lib/logistics";
+import { ISSUE_KIND, logisticsSettings } from "@/lib/logistics";
+import { getCompany } from "@/lib/company";
 import { SUPPLY_LABEL } from "@/lib/supply";
 import { payables } from "./payables";
 import { procurementHome } from "@/lib/procurement-home";
@@ -184,10 +185,15 @@ function groupSum<T>(rows: T[], label: (r: T) => string, value: (r: T) => number
 const count = () => 1;
 
 type ProgressItem = Extract<SectionChart, { kind: "progress" }>["items"][number];
-/** Plan/fakt qatori — foiz va rang (norma ≥ 90 %, e'tibor ≥ 60 %, kritik past). `invert` — oshishi yomon (xarajat). */
-function progressItem(label: string, fact: number, plan: number | null, fmt: (v: number) => string, invert = false, open?: string): ProgressItem {
+/** Byudjet foizi chegaralari — `CompanySettings.alertWarnPct` / `alertCritPct` (Sozlamalar → Limitlar). */
+type BudgetPct = { warn: number; crit: number };
+/**
+ * Plan/fakt qatori — foiz va rang (norma ≥ 90 %, e'tibor ≥ 60 %, kritik past).
+ * `invert` — oshishi yomon (xarajat): `budget.warn` dan oshsa e'tibor, `budget.crit` dan oshsa kritik (standart 90 / 100).
+ */
+function progressItem(label: string, fact: number, plan: number | null, fmt: (v: number) => string, invert = false, open?: string, budget: BudgetPct = { warn: 90, crit: 100 }): ProgressItem {
   const pct = plan && plan > 0 ? Math.round((fact / plan) * 100) : null;
-  const tone: Tone = pct == null ? "info" : invert ? (pct > 100 ? "danger" : pct > 90 ? "warning" : "success") : pct >= 90 ? "success" : pct >= 60 ? "warning" : "danger";
+  const tone: Tone = pct == null ? "info" : invert ? (pct > budget.crit ? "danger" : pct > budget.warn ? "warning" : "success") : pct >= 90 ? "success" : pct >= 60 ? "warning" : "danger";
   return { label, pct, fact: fmt(fact), plan: plan == null ? null : fmt(plan), tone, invert, open };
 }
 const progressRows = (items: ProgressItem[]): HomeRow[] =>
@@ -528,7 +534,7 @@ async function brigadier(r: DashRange, brigadeIds: string[]): Promise<RoleDashbo
 }
 
 async function logistics(r: DashRange): Promise<RoleDashboard> {
-  const [delivered, prevDelivered, created, fuel, expenses, issues, vehicles] = await Promise.all([
+  const [delivered, prevDelivered, created, fuel, expenses, issues, vehicles, settings] = await Promise.all([
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { vehicle: { select: { plate: true } }, deliveredAt: true, departedAt: true, loadedAt: true, plannedAt: true, createdAt: true, qtyM3: true, driver: { select: { fullName: true } }, order: { select: { customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true } }),
     db.trip.groupBy({ by: ["status"], where: { createdAt: { gte: r.from, lt: r.to } }, _count: true }),
@@ -536,10 +542,11 @@ async function logistics(r: DashRange): Promise<RoleDashboard> {
     db.transportExpense.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
     db.tripIssue.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { kind: true, resolvedAt: true } }),
     db.vehicle.groupBy({ by: ["status"], where: { isActive: true }, _count: true }),
+    logisticsSettings(), // kechikish chegarasi — `lateWarnMin` (Logistika sozlamalari / Sozlamalar → Limitlar)
   ]);
   const rows = delivered.map((t) => ({ plate: t.vehicle.plate, date: t.deliveredAt!, qty: t.qtyM3, unit: soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) ?? "m3", driver: t.driver.fullName, customer: t.order.customer.name,
     minutes: (t.deliveredAt!.getTime() - (t.departedAt ?? t.loadedAt ?? t.createdAt).getTime()) / 60_000,
-    late: !!t.plannedAt && t.deliveredAt!.getTime() - t.plannedAt.getTime() > 15 * 60_000 }));
+    late: !!t.plannedAt && t.deliveredAt!.getTime() - t.plannedAt.getTime() > settings.lateWarnMin * 60_000 }));
   const qty = rows.reduce((s, x) => s + sum(x.qty), 0), prevQty = prevDelivered.reduce((s, x) => s + sum(x.qtyM3), 0);
   const total = created.reduce((s, c) => s + c._count, 0), cancelled = created.find((c) => c.status === "CANCELLED")?._count ?? 0;
   const avgMin = rows.length ? rows.reduce((s, x) => s + Math.max(0, x.minutes), 0) / rows.length : null;
@@ -769,17 +776,19 @@ async function accounting(r: DashRange): Promise<RoleDashboard> {
 
 async function finance(r: DashRange): Promise<RoleDashboard> {
   const months = monthShares(r).map(({ year, month }) => ({ year, month }));
-  const [flow, accounts, budgets] = await Promise.all([
+  const [flow, accounts, budgets, company] = await Promise.all([
     moneyFlow(r), accountBalances(asOf(r)),
     db.expenseBudget.findMany({ where: { OR: months } }),
+    getCompany(),
   ]);
+  const B: BudgetPct = { warn: company.alertWarnPct, crit: company.alertCritPct };
   // Byudjet — oylik byudjet davrga bo'lingan; fakt — shu davr chiqimi (kategoriya bo'yicha)
   const cats = [...new Set(budgets.map((b) => b.category))];
   const spentOf = (cat: string) => flow.flows.filter((x) => x.dir === "out" && x.category === cat).reduce((a, x) => a + x.amount, 0);
   const planOf = (cat: string) => scaled(budgets.filter((b) => b.category === cat), r, (b) => sum(b.amount));
   const net = flow.inSum - flow.outSum, prevNet = flow.prevIn - flow.prevOut;
   const balance = accounts.reduce((s, a) => s + a.value, 0);
-  const budgetItems = cats.map((c) => progressItem(c, spentOf(c), planOf(c), short, true, "cashflow"));
+  const budgetItems = cats.map((c) => progressItem(c, spentOf(c), planOf(c), short, true, "cashflow", B));
   const budgetTotal = cats.reduce((a, c) => a + planOf(c), 0);
   const spentTotal = cats.reduce((a, c) => a + spentOf(c), 0);
   const budgetPct = budgetTotal > 0 ? (spentTotal / budgetTotal) * 100 : null;
@@ -789,7 +798,7 @@ async function finance(r: DashRange): Promise<RoleDashboard> {
       { key: "in", label: "Kirim", value: short(flow.inSum), hint: deltaText(flow.inSum, flow.prevIn, r) ?? undefined, tone: "success", icon: "arrow-down-circle" },
       { key: "out", label: "Chiqim", value: short(flow.outSum), hint: deltaText(flow.outSum, flow.prevOut, r) ?? undefined, tone: "warning", icon: "arrow-up-circle" },
       { key: "balance", label: asOf(r) ? `Kassa qoldig'i (${r.label} oxirida)` : "Kassa qoldig'i", value: shortSigned(balance), hint: cnt(accounts.length, "hisob"), tone: balance >= 0 ? "info" : "danger", icon: "wallet" },
-      { key: "budget", label: `Byudjet (${r.label})`, value: pctText(budgetPct), hint: budgets.length ? `${short(spentTotal)} / ${short(budgetTotal)}` : "byudjet belgilanmagan", tone: budgetPct == null ? "info" : budgetPct > 100 ? "danger" : budgetPct > 90 ? "warning" : "success", icon: "square-check" },
+      { key: "budget", label: `Byudjet (${r.label})`, value: pctText(budgetPct), hint: budgets.length ? `${short(spentTotal)} / ${short(budgetTotal)}` : "byudjet belgilanmagan", tone: budgetPct == null ? "info" : budgetPct > B.crit ? "danger" : budgetPct > B.warn ? "warning" : "success", icon: "square-check" },
     ],
     charts: pick(
       chartSection("Pul oqimi", flow.bars, barsRows(flow.bars, [short, short]), "chart-column"),

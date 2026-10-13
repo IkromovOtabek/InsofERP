@@ -9,8 +9,8 @@ import { money, pct } from "@/lib/format";
 
 export type BudgetRow = { cat: string; amount: number | null; limit: number | null; fact: number; forecast: number; histAvg: number | null; /** fakt byudjetdan yoki limitdan katta (`isOverBudget`) */ over: boolean };
 
-/** Oy byudjeti jadvali: har kategoriya — byudjet, limit, fakt, prognoz, o'tgan 3 oy o'rtachasi. */
-export function BudgetForm({ month, rows, prevMonth }: { month: string; rows: BudgetRow[]; prevMonth: string }) {
+/** Oy byudjeti jadvali: har kategoriya — byudjet, limit, fakt, prognoz, o'tgan 3 oy o'rtachasi. `warnPct` — `CompanySettings.alertWarnPct` (sariq holat). */
+export function BudgetForm({ month, rows, prevMonth, warnPct = 90 }: { month: string; rows: BudgetRow[]; prevMonth: string; warnPct?: number }) {
   const [state, action, pending] = useActionState(saveBudgets.bind(null, month), undefined);
   const [copying, startCopy] = useTransition();
   const total = rows.reduce((s, r) => s + (r.amount ?? 0), 0), fact = rows.reduce((s, r) => s + r.fact, 0);
@@ -29,7 +29,7 @@ export function BudgetForm({ month, rows, prevMonth }: { month: string; rows: Bu
                 <Td right><MoneyInput name={`lim:${r.cat}`} defaultValue={r.limit ? String(r.limit) : ""} placeholder="= byudjet" suffix={null} className="py-1.5 text-right text-sm" /></Td>
                 <Td right className={`tabular ${r.over ? "font-semibold text-red-600" : ""}`}>{money(r.fact)}</Td>
                 <Td right className={`tabular ${r.amount && r.forecast > r.amount ? "text-amber-700" : "text-slate-500"}`}>{money(r.forecast)}</Td>
-                <Td right className="tabular">{p === null ? <span className="text-slate-400">byudjet yo&apos;q</span> : <span className={r.over ? "font-semibold text-red-600" : p >= 90 ? "text-amber-700" : "text-emerald-700"}>{pct(p, 0)}</span>}</Td>
+                <Td right className="tabular">{p === null ? <span className="text-slate-400">byudjet yo&apos;q</span> : <span className={r.over ? "font-semibold text-red-600" : p >= warnPct ? "text-amber-700" : "text-emerald-700"}>{pct(p, 0)}</span>}</Td>
               </Tr>
             );
           })}
@@ -47,19 +47,19 @@ export function BudgetForm({ month, rows, prevMonth }: { month: string; rows: Bu
   );
 }
 
-export function ThresholdForm({ t }: { t: { alertWarnPct: number; alertCritPct: number; stockWarnDays: number; stockCritDays: number; overdueDays: number; supplyDirectorLimit: number } }) {
+/** Holat chegaralari (byudjet foizi, xomashyo kunlari, muddati o'tgan qarz). Byudjet sahifasida ham, Sozlamalar → Limitlar da ham turadi. */
+export function ThresholdForm({ t }: { t: { alertWarnPct: number; alertCritPct: number; stockWarnDays: number; stockCritDays: number; overdueDays: number } }) {
   const [state, action, pending] = useActionState(saveThresholds, undefined);
   const F = ({ name, label, value, hint }: { name: string; label: string; value: number; hint: string }) => (
     <label className="block"><span className="mb-1 block text-xs font-medium text-slate-600">{label}</span><Input name={name} type="number" defaultValue={value} className="py-1.5 text-sm" required /><span className="mt-0.5 block text-[11px] text-slate-400">{hint}</span></label>
   );
   return (
-    <form action={action} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3 xl:grid-cols-7">
+    <form action={action} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3 xl:grid-cols-6">
       <F name="alertWarnPct" label="E'tibor, % byudjetdan" value={t.alertWarnPct} hint="sariq holat" />
       <F name="alertCritPct" label="Kritik, % byudjetdan" value={t.alertCritPct} hint="qizil holat" />
       <F name="stockWarnDays" label="Xomashyo e'tibor, kun" value={t.stockWarnDays} hint="shuncha kunga yetsa — sariq" />
       <F name="stockCritDays" label="Xomashyo kritik, kun" value={t.stockCritDays} hint="to'xtash xavfi — qizil" />
       <F name="overdueDays" label="Muddati o'tgan qarz, kun" value={t.overdueDays} hint="schyot shundan eski bo'lsa" />
-      <F name="supplyDirectorLimit" label="Katta xarid, so'm" value={t.supplyDirectorLimit} hint="shundan katta xaridni direktor tasdiqlaydi; 0 — yo'q" />
       <div className="flex h-full flex-col justify-end gap-1"><Button type="submit" disabled={pending}>Saqlash</Button>{state?.ok && <span className="text-xs text-emerald-700">Saqlandi</span>}<FormError error={state?.error} /></div>
     </form>
   );

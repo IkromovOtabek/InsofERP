@@ -7,7 +7,7 @@ import { fmtUnitTotals } from "@/lib/unit";
 /**
  * 10 kunlik ish tartibi uchun ma'lumot: qaysi kunga qancha hajm olingan va qanday zayavkalar bor.
  * Ko'rinish — `calendar-view.tsx` (klient): kun tanlanganda sahifa yangilanmaydi.
- * Kunlik quvvat: Sozlamalar → «Kunlik quvvat (m³)» (sukut 200).
+ * Kunlik quvvat: Sozlamalar → Limitlar → «Kunlik quvvat (m³)» (sukut 200).
  */
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 

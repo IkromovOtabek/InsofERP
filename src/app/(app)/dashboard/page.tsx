@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers, ScanFace } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getCompany } from "@/lib/company";
 import { customerMarks } from "@/lib/finance";
 import { receivablesReport } from "@/lib/receivables";
 import { CustomerName } from "@/components/customer-name";
@@ -70,7 +71,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (ownerView) return <div>{header}<OwnerHome /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 
-  const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming] = await Promise.all([
+  const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming, company] = await Promise.all([
     db.order.findMany({ where: { deliveryDate: { gte: today, lt: tomorrow }, status: { notIn: ["CANCELLED", "DRAFT"] } }, include: { items: { include: { product: true } } } }),
     db.productionBatch.aggregate({ where: { cancelledAt: null, date: { gte: today }, product: { unit: "m3" } }, _sum: { qtyM3: true } }),
     receivablesReport(), // yagona debitorka: schyotlar − barcha to'lovlar (avans ham)
@@ -79,6 +80,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     mixerStatus(),
     todayTrips(),
     db.order.findMany({ where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: true } }, batches: { include: { product: true } }, trips: true }, orderBy: { deliveryDate: "asc" }, take: 8 }),
+    getCompany(), // xomashyo chegaralari (necha kunga yetadi): stockCritDays / stockWarnDays
   ]);
   const debts = receivableRows.rows.map((c) => ({ id: c.customerId, name: c.name, debt: c.debt }));
   const marks = await customerMarks([...debts.map((c) => c.id), ...trips.map((t) => t.order.customerId), ...upcoming.map((o) => o.customerId), ...mixers.map((m) => m.active?.customerId).filter((x): x is string => !!x)]);
@@ -186,7 +188,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <thead><tr><Th>Xomashyo</Th><Th right>Qoldiq</Th><Th right>Kunlik sarf</Th><Th className="w-48">Yetadi</Th><Th right>Rejadagi ehtiyoj</Th><Th>Holat</Th></tr></thead>
               <tbody>
                 {materials.map((m) => {
-                  const level = m.short || (m.days !== null && m.days < 3) || m.balance < m.minStock ? "danger" : m.days !== null && m.days < 7 ? "warning" : "success";
+                  const level = m.short || (m.days !== null && m.days < company.stockCritDays) || m.balance < m.minStock ? "danger" : m.days !== null && m.days < company.stockWarnDays ? "warning" : "success";
                   const badge = { danger: "red", warning: "amber", success: "green" } as const;
                   const label = m.short ? "Zayavkalarga yetmaydi" : m.balance < m.minStock ? "Minimaldan kam" : level === "warning" ? "Buyurtma bering" : "Yetarli";
                   return (

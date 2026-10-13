@@ -41,7 +41,7 @@ const show = (raw: string) => {
  * holat qolib ketardi: ekranda ham, yashirin maydonda ham eski summa turar va keyingi
  * saqlashda ikkinchi marta yozilardi.
  */
-export function MoneyInput({ name, value, onChange, defaultValue, className, placeholder, required, disabled, readOnly, decimals = 0, suffix = "so'm" }: {
+export function MoneyInput({ name, value, onChange, defaultValue, className, placeholder, required, disabled, readOnly, decimals = 0, suffix = "so'm", ariaLabel }: {
   name?: string;
   value?: string;
   onChange?: (raw: string) => void;
@@ -53,6 +53,8 @@ export function MoneyInput({ name, value, onChange, defaultValue, className, pla
   readOnly?: boolean;
   decimals?: number;
   suffix?: string | null;
+  /** Ekran o'quvchi uchun nom — maydon `Field` (label) ichida bo'lmasa (masalan jadval qatorida) */
+  ariaLabel?: string;
 }) {
   const [inner, setInner] = useState(parse(defaultValue ?? "", decimals));
   const controlled = value !== undefined;
@@ -98,6 +100,7 @@ export function MoneyInput({ name, value, onChange, defaultValue, className, pla
         required={required}
         disabled={disabled}
         readOnly={readOnly}
+        aria-label={ariaLabel}
         className={cn(inputCls, "tabular", suffix && "pr-12", className)}
       />
       {suffix && <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-500">{suffix}</span>}

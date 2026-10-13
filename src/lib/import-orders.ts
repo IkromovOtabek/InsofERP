@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { audit } from "./audit";
-import { DEFAULT_CREDIT_LIMIT } from "./finance";
+import { defaultCreditLimit } from "./finance";
 import { createOrder } from "./orders";
 import { flatName, num, str } from "./excel";
 
@@ -75,9 +75,11 @@ export async function importOrders(input: ImportOrdersInput, userId: string): Pr
     throw new Error(`Bunday mijoz yo'q: ${cut(unknownCustomers)}. "Ro'yxatda yo'q mijozlarni yaratish" ni belgilang yoki nomini to'g'rilang.`);
   }
   const createdCustomers: string[] = [];
+  // Yangi mijozga standart limit (Sozlamalar → Limitlar) — sikldan oldin bir marta
+  const defLimit = unknownCustomers.length ? await defaultCreditLimit() : 0;
   for (const name of unknownCustomers) {
     const c = await db.$transaction(async (tx) => {
-      const created = await tx.customer.create({ data: { name, creditLimit: DEFAULT_CREDIT_LIMIT }, select: { id: true, name: true, address: true } });
+      const created = await tx.customer.create({ data: { name, creditLimit: defLimit }, select: { id: true, name: true, address: true } });
       await audit(tx, userId, "CREATE", "Customer", created.id, undefined, { ...created, via: "excel-import" });
       return created;
     });

@@ -473,7 +473,7 @@ function ApprovalQueue({ q }: { q: DirectorQueue }) {
   return (
     <Panel
       title={<span className="inline-flex items-center gap-2"><ShieldAlert size={16} className="text-amber-500" /> Sizning tasdig&apos;ingiz kutilmoqda · {q.total}</span>}
-      info={`Bloklangan zayavka — kredit limiti yetmagan. «Limit endi yetadi» — mijoz to'lov qilgan yoki limiti oshirilgan: zayavka hozir qabul qilinsa bloklanmasdi. Katta xarid — narx qo'yilgan, summasi ${moneyShort(q.limit)} so'mdan katta ta'minot zayavkasi (chegara Sozlamalar / Byudjet sahifasida).`}
+      info={`Bloklangan zayavka — kredit limiti yetmagan. «Limit endi yetadi» — mijoz to'lov qilgan yoki limiti oshirilgan: zayavka hozir qabul qilinsa bloklanmasdi. Katta xarid — narx qo'yilgan, summasi ${moneyShort(q.limit)} so'mdan katta ta'minot zayavkasi (chegara Sozlamalar → Limitlar).`}
       padded={false}
       className="border-amber-200"
     >

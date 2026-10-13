@@ -9,10 +9,12 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, zDec, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { approveRequest, rejectRequest } from "@/lib/account-deletion";
 import { saveDailyOrderLimits as saveDailyOrderLimitsDb } from "@/lib/company";
+import { setCustomerCreditLimits } from "@/lib/customer-limits";
 import { parsePerms, type Perms } from "@/lib/auth";
 import { applyAccess, applyAccessMany, permsFromForm, positionTemplates, templateRoleLabel } from "@/lib/perm-template";
 import type { Role } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
+import { fmtNum } from "@/lib/format";
 
 const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
@@ -28,23 +30,21 @@ const companySchema = z.object({
   name: zStr("Nomi kerak"), legalName: zOpt, inn: zOpt, address: zOpt, phone: zOpt, phone2: zOpt, email: zOpt,
   bankName: zOpt, bankAccount: zOpt, mfo: zOpt, directorName: zOpt, about: zOpt, workingHours: zOpt,
   foundedYear: z.coerce.number().int().min(1900).max(2100).optional().or(z.literal("").transform(() => undefined)),
-  // Kunlik ishlab chiqarish quvvati — Zayavkalar taqvimi shu chegaraga qarab rang beradi
-  dailyCapacityM3: z.coerce.number().min(1).max(100000).optional().or(z.literal("").transform(() => undefined)),
   // Mijoz ilovasi "bugungi holat": ochiqmi, bugun yetkaziladimi
   openHour: z.coerce.number().int().min(0).max(23),
   closeHour: z.coerce.number().int().min(1).max(24),
   sameDayCutoffHour: z.coerce.number().int().min(0).max(24),
   workSunday: zBool,
   telegram: zOpt,
-  // Xodim o'zi "Keldim/Ketdim" bosganda zavod nuqtasidan shu radius ichida bo'lishi shart (`lib/self-attendance.ts`)
-  attendanceRadiusM: z.coerce.number().int().min(50, "Davomat radiusi kamida 50 m").max(5000, "Davomat radiusi ko'pi bilan 5000 m"),
+  // Kunlik quvvat va davomat radiusi bu formada yo'q — Sozlamalar → Limitlar'da alohida saqlanadi (saveDailyOrderLimits,
+  // saveAttendanceRadius). Bu yerga qaytarilmasin: forma maydoni yo'q bo'lsa saqlashda qiymat null/standartga tushib qoladi.
 }).refine((v) => v.closeHour > v.openHour, { message: "Yopilish soati ochilishdan keyin bo'lsin", path: ["closeHour"] });
 
 export async function saveCompany(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(companySchema, fd);
   if ("error" in r) return { error: r.error };
-  const data = { ...r.data, foundedYear: r.data.foundedYear ?? null, dailyCapacityM3: r.data.dailyCapacityM3 ?? null };
+  const data = { ...r.data, foundedYear: r.data.foundedYear ?? null };
   const before = await db.companySettings.findUnique({ where: { id: "main" } });
   const after = await db.companySettings.upsert({ where: { id: "main" }, update: data, create: { id: "main", ...data } });
   await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before, after);
@@ -278,7 +278,7 @@ export async function savePlantLocation(lat: number, lng: number): Promise<Actio
 }
 
 /** "Katta xarid" chegarasi — shundan katta ta'minot zayavkasi avval direktor tasdig'idan o'tadi (0 — cheklov yo'q).
- *  Xuddi shu maydon Byudjet sahifasidagi "Holat chegaralari" formasida ham bor. */
+ *  Yagona tahrir joyi — Sozlamalar → Limitlar. */
 const supplyLimitSchema = z.object({
   supplyDirectorLimit: z.string().trim().transform((v) => Number(v.replace(/[\s,]/g, ""))).refine((v) => Number.isFinite(v) && v >= 0 && v <= MAX_AMOUNT, "Summa noto'g'ri"),
 });
@@ -333,24 +333,105 @@ export async function saveVatPayer(_prev: ActionState, fd: FormData): Promise<Ac
   return { ok: true, note: "Saqlandi" };
 }
 
-/* ───────── Kunlik zayavka limiti (direktor) ───────── */
+/* ───────── Limitlar (direktor): kunlik zayavka va quvvat, standart va mijozlar kredit limiti, davomat radiusi ───────── */
+
+/** Bo'sh yoki 0 — cheklov yo'q (`undefined`). Probel/vergul bilan yozilgan son ham qabul qilinadi. */
+const zLimit = (max: number, label: string, int = false) =>
+  z.string().optional().transform((v, ctx) => {
+    const t = (v ?? "").trim().replace(/\s/g, "").replace(",", ".");
+    if (!t) return undefined;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > max || (int && !Number.isInteger(n))) {
+      ctx.addIssue({ code: "custom", message: `${label}: 0 dan ${fmtNum(max)} gacha ${int ? "butun " : ""}son kiriting` });
+      return z.NEVER;
+    }
+    return n > 0 ? Math.round(n * 100) / 100 : undefined;
+  });
 
 const dailyLimitSchema = z.object({
-  // 0 yoki bo'sh — cheklov yo'q
-  dailyOrderMaxM3: z.coerce.number().min(0).max(1_000_000).optional().or(z.literal("").transform(() => undefined)),
-  dailyOrderMaxCount: z.coerce.number().int().min(0).max(100000).optional().or(z.literal("").transform(() => undefined)),
+  dailyCapacityM3: zLimit(100_000, "Kunlik quvvat"),
+  dailyOrderMaxM3: zLimit(1_000_000, "Kunlik hajm chegarasi"),
+  dailyOrderMaxCount: zLimit(100_000, "Kunlik zayavka soni", true),
 });
 
-/** Bir yetkazish kuniga tasdiqlanadigan zayavkalarning eng ko'p hajmi (m³) va soni. 0/bo'sh — cheklov yo'q. */
+/**
+ * Kunlik ishlab chiqarish quvvati (taqvim rangi) va qattiq kunlik zayavka limiti — hajm (m³) va soni.
+ * 0/bo'sh — cheklov yo'q. Hajm limiti tasdiqlashda va blokdan chiqarishda tekshiriladi (`lib/orders.ts`).
+ */
 export async function saveDailyOrderLimits(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession(["DIRECTOR"]);
   const r = parseForm(dailyLimitSchema, fd);
   if ("error" in r) return { error: r.error };
-  const m3 = r.data.dailyOrderMaxM3 && r.data.dailyOrderMaxM3 > 0 ? r.data.dailyOrderMaxM3 : null;
-  const count = r.data.dailyOrderMaxCount && r.data.dailyOrderMaxCount > 0 ? r.data.dailyOrderMaxCount : null;
-  await saveDailyOrderLimitsDb(s.userId, m3, count);
-  refresh(); revalidatePath("/orders");
-  return { ok: true };
+  const changed = await saveDailyOrderLimitsDb(s.userId, {
+    capacityM3: r.data.dailyCapacityM3 ?? null, maxM3: r.data.dailyOrderMaxM3 ?? null, maxCount: r.data.dailyOrderMaxCount ?? null,
+  });
+  if (!changed) return { ok: true, note: "O'zgarish yo'q" };
+  refresh(); revalidatePath("/orders"); revalidatePath("/orders/tarix"); revalidatePath("/orders/new");
+  return { ok: true, note: "Saqlandi" };
+}
+
+const moneySchema = (field: string) => z.object({
+  [field]: z.string().trim().transform((v) => Number(v.replace(/[\s,]/g, ""))).refine((v) => Number.isFinite(v) && v >= 0 && v <= MAX_AMOUNT, "Summa noto'g'ri"),
+});
+
+/**
+ * Yangi mijozga standart kredit limiti (`CompanySettings.defaultCreditLimit`). Faqat bundan keyin ochiladigan
+ * mijozlarga qo'llanadi — mavjud mijozlarning limiti o'zgarmaydi (ular pastdagi jadvalda alohida beriladi).
+ */
+export async function saveDefaultCreditLimit(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(moneySchema("defaultCreditLimit"), fd);
+  if ("error" in r) return { error: r.error };
+  const value = Math.round(Number(r.data.defaultCreditLimit) * 100) / 100;
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { defaultCreditLimit: true } });
+  if (before && Number(before.defaultCreditLimit) === value) return { ok: true, note: "O'zgarish yo'q" };
+  await db.companySettings.upsert({ where: { id: "main" }, update: { defaultCreditLimit: value }, create: { id: "main", defaultCreditLimit: value } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", { defaultCreditLimit: before ? Number(before.defaultCreditLimit) : 0 }, { defaultCreditLimit: value });
+  revalidatePath("/settings"); revalidatePath("/customers/new"); revalidatePath("/customers/import");
+  return { ok: true, note: "Saqlandi" };
+}
+
+const radiusSchema = z.object({
+  attendanceRadiusM: z.coerce.number({ message: "Radiusni kiriting" }).int("Radius butun son bo'lsin").min(50, "Davomat radiusi kamida 50 m").max(5000, "Davomat radiusi ko'pi bilan 5000 m"),
+});
+
+/** Xodim o'zi "Keldim/Ketdim" bosganda zavod nuqtasidan shu radius ichida bo'lishi shart (`lib/self-attendance.ts`). */
+export async function saveAttendanceRadius(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(radiusSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const v = r.data.attendanceRadiusM;
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { attendanceRadiusM: true } });
+  if (before && before.attendanceRadiusM === v) return { ok: true, note: "O'zgarish yo'q" };
+  await db.companySettings.upsert({ where: { id: "main" }, update: { attendanceRadiusM: v }, create: { id: "main", attendanceRadiusM: v } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", { attendanceRadiusM: before?.attendanceRadiusM ?? null }, { attendanceRadiusM: v });
+  revalidatePath("/settings");
+  return { ok: true, note: "Saqlandi" };
+}
+
+const limitChangesSchema = z.array(z.object({
+  id: z.string().min(1).max(64),
+  limit: z.number().finite().min(0, "Limit manfiy bo'lmasin").max(MAX_AMOUNT, "Limit juda katta"),
+  expected: z.number().finite(),
+})).min(1, "O'zgarish yo'q").max(5000, "Bir martada ko'pi bilan 5000 ta mijoz");
+
+/**
+ * Mijozlar kredit limiti jadvali — bir nechta mijozga birdan (faqat direktor). Har mijoz `credit:<id>` qulfi ostida,
+ * jadval ochilgandan beri boshqa joyda o'zgargan limit ustidan yozilmaydi (`lib/customer-limits.ts`).
+ */
+export async function saveCustomerLimits(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  let raw: unknown;
+  try { raw = JSON.parse(String(fd.get("changes") ?? "[]")); } catch { return { error: "Ma'lumot noto'g'ri — sahifani yangilab qayta urinib ko'ring" }; }
+  const r = limitChangesSchema.safeParse(raw);
+  if (!r.success) return { error: r.error.issues[0]?.message ?? "Limit noto'g'ri" };
+  const res = await setCustomerCreditLimits({ userId: s.userId, role: s.role }, r.data.map((c) => ({ ...c, limit: Math.round(c.limit * 100) / 100 })));
+  revalidatePath("/settings"); revalidatePath("/customers"); revalidatePath("/orders"); revalidatePath("/orders/new"); revalidatePath("/dashboard");
+  const parts = [res.changed ? `${res.changed} ta mijoz limiti yangilandi` : "", res.same ? `${res.same} ta o'zgarmagan` : "", res.missing ? `${res.missing} ta topilmadi` : ""].filter(Boolean);
+  if (res.conflicts.length) {
+    return { error: `${res.conflicts.slice(0, 5).join(", ")}${res.conflicts.length > 5 ? ` va yana ${res.conflicts.length - 5} ta` : ""} — limit shu orada boshqa joyda o'zgartirilgan, saqlanmadi. Sahifani yangilab, qayta tekshiring.${parts.length ? ` (${parts.join(", ")})` : ""}` };
+  }
+  return { ok: true, note: parts.join(", ") || "O'zgarish yo'q" };
 }
 
 /* ───────── Modul va amal bo'yicha ruxsat (faqat direktor taqsimlaydi) ───────── */

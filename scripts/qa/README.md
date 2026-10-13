@@ -17,7 +17,7 @@ yiqilsa exit 1, loglar `$QA_WORK/logs` da qoladi.
 
 | To'plam | Nima | Fayllar |
 |---|---|---|
-| a | sotuv / moliya, Excel importlari, INN tekshiruvi, lavozim login shabloni va ruxsat shablonlari (mobil login bilan), kassa ⇄ bank o'tkazmalari, yagona debitorka | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, login-templates.mts, prepay-gate.mts, transfers.mts, receivables.mts |
+| a | sotuv / moliya, Excel importlari, INN tekshiruvi, lavozim login shabloni va ruxsat shablonlari (mobil login bilan), Sozlamalar → Limitlar (standart va mijozlar kredit limiti, kunlik zayavka limiti blokdan chiqarishda ham, davomat radiusi), kassa ⇄ bank o'tkazmalari, yagona debitorka | sales-lifecycle.mjs, openings-cash.mjs, excel-imports.mts, login-templates.mts, limits.mts, prepay-gate.mts, transfers.mts, receivables.mts |
 | b | sklad / ishlab chiqarish / logistika / ta'minot / kadr, kirim QQS (b-vat.mts) | b-all.sh |
 | pages | `src/app/(app)` dagi barcha sahifalar × 14 rol, server log xatolari | pages-all.mjs |
 | c | mobil API (jti, refresh rotatsiya, rollar, pul, kassa: to'lov / kirim-chiqim / o'tkazma — c-mobile-cash.ts), integratsiyalar, SMS kanali yo'qligi (statik) | c-run-all.sh (c-no-sms.ts …) |
@@ -59,6 +59,7 @@ export QA_DATABASE_URL=postgresql://otabek@localhost:5432/insof_test_a   # QA_BA
 node scripts/qa/sales-lifecycle.mjs     # zayavka → avans → schyot → to'lov/ortiqcha/storno, limit/blok, qora ro'yxat, 403
 node scripts/qa/openings-cash.mjs       # boshlang'ich qoldiq (4 tur) qo'lda + bank overdraft nazorati + yetkazuvchi to'lovi stornosi
 npx tsx scripts/qa/login-templates.mts  # lavozim login shabloni: kadr/direktor huquqi, login shablon bilan, mobil, bir nechta xodimga birdan
+npx tsx scripts/qa/limits.mts           # Sozlamalar → Limitlar: faqat direktor, standart kredit limiti, kunlik limit (blokdan chiqarishda ham), radius, mijozlar limiti jadvali
 npx tsx scripts/qa/excel-imports.mts    # haqiqiy .xlsx: mijoz/yetkazuvchi (1000 qator), qoldiqlar importi, yomon qatorlar, INN (9/14 raqam) forma+import
 DATABASE_URL=$QA_DATABASE_URL npx tsx scripts/qa/prepay-gate.mts   # bosh to'lov darvozasi (Order.prepayAmount)
 DATABASE_URL=$QA_DATABASE_URL npx tsx scripts/qa/transfers.mts     # o'tkazma: kassa→bank, komissiya, overdraft, takror bosish, storno, P&L, mobil qoldiq

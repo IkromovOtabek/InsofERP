@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { productCatalog, groupPath } from "@/lib/product-catalog";
 import { createOrder } from "@/lib/orders";
 import { createTrip, READINESS_INCLUDE, orderReadiness } from "@/lib/trips";
-import { customersCredit, blacklistedIds, customerMarks, markedName } from "@/lib/finance";
+import { customersCredit, blacklistedIds, customerMarks, markedName, defaultCreditLimit } from "@/lib/finance";
 import { ADVANCE_ORDER_STATUSES, accountBalances, addPayment, expectedAdvance } from "@/lib/payments";
 import { createCashEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
@@ -32,7 +32,7 @@ const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 /**
  * 10 kunlik ish tartibi — veb `orders/load-calendar.tsx` bilan bir xil hisob, faqat
  * ro'yxatsiz (mobilda kartochka ochilmaydi, faqat rang va hajm — sana tanlashda yo'l ko'rsatadi).
- * Kunlik quvvat: Sozlamalar → «Kunlik quvvat (m³)» (sukut 200).
+ * Kunlik quvvat: Sozlamalar → Limitlar → «Kunlik quvvat, m³» (sukut 200).
  */
 async function dayCells(days = 10): Promise<DayCell[]> {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -583,7 +583,8 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
       if (d.inn && (await db.customer.findUnique({ where: { inn: d.inn } }))) throw new Error("Bu INN bilan mijoz allaqachon bor");
-      const c = await db.customer.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null, address: d.address || null } });
+      // Mobil formada limit maydoni yo'q — yangi mijozga standart limit (Sozlamalar → Limitlar)
+      const c = await db.customer.create({ data: { name: d.name, phone: d.phone || null, inn: d.inn || null, address: d.address || null, creditLimit: await defaultCreditLimit() } });
       await audit(db, user.id, "CREATE", "Customer", c.id, undefined, c);
       syncCustomerLater(c.id);
       return { key: "customers", id: c.id, message: `${c.name} qo'shildi` };

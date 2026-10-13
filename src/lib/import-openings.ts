@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { audit } from "./audit";
 import { flatName, num, numMoney, str } from "./excel";
-import { DEFAULT_CREDIT_LIMIT } from "./finance";
+import { defaultCreditLimit } from "./finance";
 import { INN_ERROR, parseInn } from "./inn";
 import { createOpeningTx, activeKeyOf, OpeningError, type OpeningInput } from "./opening-balances";
 import type { OpeningKind } from "@/generated/prisma";
@@ -114,11 +114,13 @@ export async function importOpenings(
     let created = 0;
     const skipped: string[] = [];
     const createdEntities: string[] = [];
+    // Yangi mijozga standart limit (Sozlamalar → Limitlar) — bir marta, faqat ochiladigan mijoz bo'lsa o'qiladi
+    const defLimit = kind === "CUSTOMER" && plans.some((p) => p.create) ? await defaultCreditLimit(tx) : 0;
     for (const p of plans) {
       // Yangi mijoz/yetkazuvchi — import davomida ochiladi (faqat nomi va INN; qolganini keyin kartadan)
       if (p.create) {
         const c = kind === "CUSTOMER"
-          ? await tx.customer.create({ data: { name: p.create.name, inn: p.create.inn, creditLimit: DEFAULT_CREDIT_LIMIT } })
+          ? await tx.customer.create({ data: { name: p.create.name, inn: p.create.inn, creditLimit: defLimit } })
           : await tx.supplier.create({ data: { name: p.create.name, inn: p.create.inn } });
         await audit(tx, userId, "CREATE", kind === "CUSTOMER" ? "Customer" : "Supplier", c.id, undefined, { ...c, via: "opening-import" });
         if (kind === "CUSTOMER") p.input.customerId = c.id; else p.input.supplierId = c.id;

@@ -61,7 +61,7 @@ export async function linkedEmployee(userId: string) {
 }
 type LinkedEmployee = NonNullable<Awaited<ReturnType<typeof linkedEmployee>>>;
 
-/** Ish joyi: zavod nuqtasi (Sozlamalar → "Zavod joyi") va radius (Sozlamalar → "Davomat radiusi"). */
+/** Ish joyi: zavod nuqtasi (Sozlamalar → "Zavod joyi") va radius (Sozlamalar → Limitlar → "Davomat radiusi"). */
 export async function workplace() {
   const c = await getCompany();
   const point = knownPoint(c.lat, c.lng);

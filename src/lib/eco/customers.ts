@@ -95,6 +95,29 @@ export function syncCustomerLater(customerId: string): void {
   });
 }
 
+/** ECO API daqiqasiga ~120 so'rov qabul qiladi (ThrottlerGuard): ko'p mijozda shu oraliq bilan yuboriladi. */
+const BULK_PACE_MS = 550;
+const BULK_PACE_FROM = 100;
+
+/**
+ * Ko'p mijozni birdan (Excel import, Sozlamalar → Limitlar jadvali) ECO'ga yuborish — bitta fon vazifada, ketma-ket.
+ * Har biriga alohida `syncCustomerLater` ming qatorli importda ming so'rovni bir vaqtda ochib, ECO cheklovidan
+ * o'tib ketardi (ortiqchasi rad etiladi, boshqa mijozlarning pushlari ham shu daqiqada qaytariladi).
+ */
+export function syncCustomersLater(customerIds: string[]): void {
+  const ids = [...new Set(customerIds)];
+  if (!ids.length || !ecoEnabled()) return;
+  notifyAfter(async () => {
+    let failed = 0;
+    for (const id of ids) {
+      const r = await pushCustomer(id);
+      if (!r.ok && !r.skipped) failed++;
+      if (ids.length >= BULK_PACE_FROM) await new Promise((res) => setTimeout(res, BULK_PACE_MS));
+    }
+    if (failed) console.warn(`[eco] ${failed}/${ids.length} ta mijoz yuborilmadi — keyingi \`npm run eco:sync\` da qayta yuboriladi`);
+  });
+}
+
 /** ECO webhook: ERP'dan taklif qilingan mijoz ilovada parol qo'ydi → sotuvchilarga bildirishnoma. */
 export async function applyEcoCustomerRegistered(p: { externalRef: string; phone: string; fullName: string | null }): Promise<{ applied: boolean }> {
   const c = await db.customer.findUnique({ where: { id: p.externalRef }, select: { id: true, name: true } });

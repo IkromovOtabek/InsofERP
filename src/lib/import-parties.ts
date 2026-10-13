@@ -2,7 +2,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { flatName, numMoney, str } from "./excel";
 import { normalizePhone } from "./phone";
-import { DEFAULT_CREDIT_LIMIT } from "./finance";
+import { defaultCreditLimit } from "./finance";
 import { INN_ERROR, parseInn } from "./inn";
 
 /**
@@ -15,7 +15,8 @@ import { INN_ERROR, parseInn } from "./inn";
  */
 export type PartyRow = { name?: unknown; inn?: unknown; phone?: unknown; address?: unknown; contactPerson?: unknown; creditLimit?: unknown };
 export type PartyKind = "customer" | "supplier";
-export type ImportPartiesResult = { created: number; updated: number; skipped: number; dupInFile: number; samples: string[] };
+/** `ids` — yangi ochilgan va yangilangan kartalar (ECO'ga yuborish uchun). */
+export type ImportPartiesResult = { created: number; updated: number; skipped: number; dupInFile: number; samples: string[]; ids: string[] };
 
 type Prepared = { no: number; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson: string | null; creditLimit: number | null };
 
@@ -52,11 +53,14 @@ function prepare(rows: PartyRow[], kind: PartyKind): Prepared[] {
   return out;
 }
 
-export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { updateExisting: boolean; canSetLimit: boolean }, userId: string): Promise<ImportPartiesResult> {
+/** `role` — limit o'zgarishi audit yozuvi uchun (qo'lda saqlangandagi `CustomerCreditLimit` formati). */
+export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { updateExisting: boolean; canSetLimit: boolean; role?: string }, userId: string): Promise<ImportPartiesResult> {
   const list = prepare(rows, kind);
   const entity = kind === "customer" ? "Customer" : "Supplier";
 
   return db.$transaction(async (tx) => {
+    // Standart limit (Sozlamalar → Limitlar) bir marta o'qiladi — limitsiz yoki huquqsiz qatordagi yangi mijozga
+    const defLimit = kind === "customer" ? await defaultCreditLimit(tx) : 0;
     type Found = { id: string; name: string; inn: string | null; phone: string | null };
     const all: Found[] = kind === "customer"
       ? await tx.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, inn: true, phone: true } })
@@ -72,6 +76,7 @@ export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { u
 
     let created = 0, updated = 0, skipped = 0, dupInFile = 0;
     const touched = new Set<string>();
+    const ids = new Set<string>();
     const samples: string[] = [];
     for (const r of list) {
       // INN bor bo'lsa — faqat INN bo'yicha (boshqa INN li namesake — boshqa korxona); aks holda telefon, keyin nom
@@ -94,7 +99,12 @@ export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { u
           const before = kind === "customer" ? await tx.customer.findUniqueOrThrow({ where: { id: cur.id } }) : await tx.supplier.findUniqueOrThrow({ where: { id: cur.id } });
           const after = kind === "customer" ? await tx.customer.update({ where: { id: cur.id }, data: patch }) : await tx.supplier.update({ where: { id: cur.id }, data: patch });
           await audit(tx, userId, "UPDATE", entity, cur.id, before, { ...after, via: "excel" });
+          // Limit o'zgarishi alohida yozuv — kartadan saqlangandagi kabi tekshiruvda tez topilsin
+          if ("creditLimit" in before && "creditLimit" in after && Number(before.creditLimit) !== Number(after.creditLimit)) {
+            await audit(tx, userId, "UPDATE", "CustomerCreditLimit", cur.id, { creditLimit: before.creditLimit, role: opts.role }, { creditLimit: after.creditLimit, role: opts.role, via: "excel" });
+          }
           if (!touched.has(cur.id)) updated++;
+          ids.add(cur.id);
           index({ id: after.id, name: after.name, inn: after.inn, phone: after.phone });
         } else if (!touched.has(cur.id)) skipped++;
         touched.add(cur.id);
@@ -103,13 +113,14 @@ export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { u
       const base = { name: r.name, inn: r.inn, phone: r.phone, address: r.address, contactPerson: r.contactPerson };
       const c = kind === "customer"
         // Limitni faqat buxgalteriya/finance/direktor belgilaydi — boshqalar uchun standart limit
-        ? await tx.customer.create({ data: { ...base, creditLimit: opts.canSetLimit && r.creditLimit != null ? r.creditLimit : DEFAULT_CREDIT_LIMIT } })
+        ? await tx.customer.create({ data: { ...base, creditLimit: opts.canSetLimit && r.creditLimit != null ? r.creditLimit : defLimit } })
         : await tx.supplier.create({ data: base });
       await audit(tx, userId, "CREATE", entity, c.id, undefined, { ...c, via: "excel" });
       created++;
       touched.add(c.id);
+      ids.add(c.id);
       index({ id: c.id, name: c.name, inn: c.inn, phone: c.phone });
     }
-    return { created, updated, skipped, dupInFile, samples };
+    return { created, updated, skipped, dupInFile, samples, ids: [...ids] };
   }, { timeout: 120_000, maxWait: 20_000 });
 }

@@ -125,7 +125,7 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
 /** Sayt arizasidan (`/leads` → "Zayavka ochish") kelgan boshlang'ich ma'lumot. */
 export type OrderPrefill = { productId?: string | null; qty?: number | null; address?: string | null; note?: string | null };
 
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, contractAccept, geoSearch, prefill }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, contractAccept, geoSearch, prefill, newCustomerLimit = 0 }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi
@@ -258,7 +258,12 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               <Field label="INN"><Input name="newInn" /></Field>
               <Field label="Manzil"><Input name="newAddress" /></Field>
             </div>
-            <p className="text-xs text-slate-500">Yangi mijozning kredit limiti <b>0</b> — qarzga zayavka qabul qilinganda bloklanadi (direktor ochadi yoki limit beradi). Mijoz zayavka bilan birga saqlanadi.</p>
+            <p className="text-xs text-slate-500">
+              {newCustomerLimit > 0
+                ? <>Yangi mijozga standart kredit limiti <b>{money(newCustomerLimit)}</b> beriladi — undan oshgan qarz zayavkasi qabul qilinganda bloklanadi (direktor ochadi yoki limitni oshiradi).</>
+                : <>Yangi mijozning kredit limiti <b>0</b> — qarzga zayavka qabul qilinganda bloklanadi (direktor ochadi yoki limit beradi).</>}
+              {" "}Mijoz zayavka bilan birga saqlanadi.
+            </p>
             {appHint && (
               <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-xs text-emerald-800">
                 <Smartphone size={14} className="mt-0.5 shrink-0" />

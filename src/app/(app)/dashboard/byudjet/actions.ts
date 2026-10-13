@@ -77,10 +77,12 @@ const ThresholdSchema = z.object({
   stockWarnDays: z.coerce.number().int().min(1).max(365),
   stockCritDays: z.coerce.number().int().min(0).max(365),
   overdueDays: z.coerce.number().int().min(1).max(365),
-  supplyDirectorLimit: z.coerce.number().min(0).max(1e13),
 });
 
-/** Norma / e'tibor / kritik chegaralari — TZ §16: administrator sozlaydi. */
+/**
+ * Norma / e'tibor / kritik chegaralari — TZ §16: administrator sozlaydi.
+ * Katta xarid chegarasi (`supplyDirectorLimit`) bu yerda emas — yagona joyi Sozlamalar → Limitlar.
+ */
 export async function saveThresholds(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireSession([]);
   const r = parseForm(ThresholdSchema, fd);
@@ -91,5 +93,6 @@ export async function saveThresholds(_prev: ActionState, fd: FormData): Promise<
   const after = await db.companySettings.upsert({ where: { id: "main" }, update: r.data, create: { id: "main", ...r.data } });
   await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before, after);
   refresh();
+  revalidatePath("/settings"); // forma Sozlamalar → Limitlar da ham turadi
   return { ok: true };
 }

@@ -60,13 +60,15 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
 
       <Card padded={false} className="mb-6">
         <div className="px-5 pt-5"><CardHeader title={`Byudjet — ${monthTitle(ym)}`} description="Limit bo'sh qolsa byudjetning o'zi limit hisoblanadi. Fakt — Kirim-Chiqimdagi chiqimlar (ta'minot zayavkasidan avtomatik yozilganlar ham)." icon={Wallet} /></div>
-        <div className="px-5 pb-5"><BudgetForm month={ym} rows={rows} prevMonth={shiftMonth(ym, -1)} /></div>
+        <div className="px-5 pb-5"><BudgetForm month={ym} rows={rows} prevMonth={shiftMonth(ym, -1)} warnPct={company.alertWarnPct} /></div>
       </Card>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader title="Holat chegaralari" description="Norma / e'tibor / kritik qoidalari — dashborddagi ranglar shu qiymatlardan hisoblanadi (TZ §16)." icon={SlidersHorizontal} />
-          <ThresholdForm t={{ alertWarnPct: company.alertWarnPct, alertCritPct: company.alertCritPct, stockWarnDays: company.stockWarnDays, stockCritDays: company.stockCritDays, overdueDays: company.overdueDays, supplyDirectorLimit: Number(company.supplyDirectorLimit) }} />
+          <ThresholdForm t={{ alertWarnPct: company.alertWarnPct, alertCritPct: company.alertCritPct, stockWarnDays: company.stockWarnDays, stockCritDays: company.stockCritDays, overdueDays: company.overdueDays }} />
+          {/* Sahifa faqat direktorga ochiq (yuqorida redirect) — havola ham faqat unga ko'rinadi */}
+          <p className="mt-3 text-xs text-slate-500">Katta xarid chegarasi, kunlik zayavka va mijoz limitlari — <Link href="/settings?tab=limits" className="font-medium text-slate-700 underline hover:text-slate-900">Sozlamalar → Limitlar</Link></p>
         </Card>
         <Card>
           <CardHeader title="O'zgarishlar tarixi" description="Shu oy byudjetini kim va qachon o'zgartirgani" icon={History} />

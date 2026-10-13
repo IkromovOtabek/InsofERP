@@ -165,7 +165,7 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
           })}
         </tbody>
       </Table>
-      <p className="mt-2 text-xs text-slate-500">Bandlik — kunlik quvvatga nisbatan hajm (Sozlamalar → kunlik quvvat: {fmtNum(capacity)} m³). Sanani bosib, o&apos;sha kungi zayavkalarni ko&apos;rasiz.</p>
+      <p className="mt-2 text-xs text-slate-500">Bandlik — kunlik quvvatga nisbatan hajm (Sozlamalar → Limitlar → kunlik quvvat: {fmtNum(capacity)} m³). Sanani bosib, o&apos;sha kungi zayavkalarni ko&apos;rasiz.</p>
     </div>
   );
 }

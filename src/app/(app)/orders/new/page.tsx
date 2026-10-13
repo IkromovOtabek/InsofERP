@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
-import { customersCredit, customersHistory, contractedIds } from "@/lib/finance";
+import { customersCredit, customersHistory, contractedIds, defaultCreditLimit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
@@ -83,7 +83,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
           <NewOrderMode
             initial={tur === "sklad" || !canSale ? "stock" : "sale"}
             sale={canSale ? (
-              <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} />
+              <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
             ) : null}
             stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} /> : null}
           />
