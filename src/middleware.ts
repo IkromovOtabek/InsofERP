@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { OWN_PAGE_ONLY, alwaysOpen, pathAllowed } from "@/lib/nav";
+import { OWN_PAGE_ONLY, alwaysOpen, moduleForPath, pathAllowed } from "@/lib/nav";
 import type { Role } from "@/generated/prisma";
 import { authSecret, JWT_ALGS } from "@/lib/secret";
 import { redirectUrl } from "@/lib/redirect-url";
@@ -65,7 +65,11 @@ export async function middleware(req: NextRequest) {
   // API marshrutlari ruxsatni o'zi tekshiradi (getSession + rol/canDo) — sahifa qoidasi (NAV) ularga qo'llanmaydi,
   // aks holda direktor bo'lmagan rollar uchun /api/geo, /api/ai, /api/scan bloklanib qoladi.
   if (pathname.startsWith("/api/")) return NextResponse.next();
-  if (!pathAllowed(pathname, role)) return NextResponse.redirect(redirectUrl(req, "/dashboard?denied=1"));
+  // Direktor bergan modul ruxsati (User.perms) tokenda yo'q — u bazada, o'zgarsa qayta kirmasdan kuchga kiradi.
+  // Shuning uchun rol ko'rmaydigan MODUL yo'lini sahifaning o'ziga o'tkazamiz: modul sahifalarining har biri
+  // `requirePage`/`requireRoles` bilan perms'ni bazadan tekshiradi (aks holda Ish boshqaruvchiga berilgan
+  // "Sotuv: ko'rish" shu yerda rad etilardi). Modulga kirmagan yo'llar — avvalgidek faqat rol bo'yicha.
+  if (!pathAllowed(pathname, role) && !moduleForPath(pathname)) return NextResponse.redirect(redirectUrl(req, "/dashboard?denied=1"));
   return NextResponse.next();
 }
 

@@ -4,7 +4,7 @@ import { Printer, PackageCheck, XCircle, Truck, Package, Clock, MapPin, MapPinne
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { cancelTrip } from "../actions";
@@ -31,7 +31,7 @@ const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} soat ${m % 60} daq` 
 
 export default async function TripPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const s = await getSession();
+  const s = await requirePage("/trips");
   const t = await db.trip.findUnique({
     where: { id },
     include: {

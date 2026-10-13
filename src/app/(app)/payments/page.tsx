@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { customerMarks, markedName } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { money, date, fmtNum, isoDate } from "@/lib/format";
 import { Badge, Button, Callout, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { LinkPaymentForm, PaymentForm, type InvOpt, type OrderOpt } from "./payment-form";
@@ -20,7 +20,7 @@ import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/
  */
 export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string; skipped?: string; unknown?: string; paid?: string }> }) {
   const sp = await searchParams;
-  const s = await getSession();
+  const s = await requirePage("/payments");
   const role = s?.role ?? "";
   // Ruxsatlar server action'lariga mos: kim nima qila olmasa, tugmasi ham ko'rinmaydi
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);

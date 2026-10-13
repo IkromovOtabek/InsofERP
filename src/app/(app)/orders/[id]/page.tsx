@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
+import { pathAllowed } from "@/lib/nav";
 import { customerCredit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
 import { money, date, qty, deliveryAt } from "@/lib/format";
@@ -38,7 +39,7 @@ const STOCK_STEPS = [
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ guarantee?: string; contract?: string }> }) {
   const { id } = await params;
   const { guarantee, contract: justContracted } = await searchParams;
-  const s = await getSession();
+  const s = await requirePage("/orders");
   const o = await db.order.findUnique({
     where: { id },
     include: {
@@ -107,7 +108,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   return (
     <div>
       <PageHeader
-        back={isStock ? { href: "/orders?tur=sklad", label: "Zayavkalar" } : accepted ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
+        back={isStock ? { href: "/orders?tur=sklad", label: "Zayavkalar" } : accepted && pathAllowed("/sales", s.role, s.perms) ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
         title={`${isStock ? "Sklad zayavkasi" : "Zayavka"} ${o.orderNo}`}
         subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
         action={

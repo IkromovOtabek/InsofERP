@@ -3,7 +3,7 @@ import { Plus, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { money, date } from "@/lib/format";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs, StatCard } from "@/components/ui";
 import { ConfirmButton } from "../payments/confirm-button";
@@ -14,7 +14,7 @@ import { receivablesReport } from "@/lib/receivables";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams;
-  const s = await getSession();
+  const s = await requirePage("/invoices");
   const [invoices, recv] = await Promise.all([
     db.invoice.findMany({
       where: status && status in INVOICE_STATUS ? { status: status as InvoiceStatus } : undefined,

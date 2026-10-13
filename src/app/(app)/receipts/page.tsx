@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Plus, ScanLine } from "lucide-react";
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { date, money } from "@/lib/format";
 import { receiptAmounts, receiptTotal } from "@/lib/receipt-vat";
 import { Badge, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 
 export default async function ReceiptsPage() {
-  const s = await getSession();
+  const s = await requirePage("/receipts");
   const canCreate = ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"].includes(s?.role ?? "");
   const receipts = await db.goodsReceipt.findMany({ orderBy: { date: "desc" }, take: 200, include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } } } });
   return (

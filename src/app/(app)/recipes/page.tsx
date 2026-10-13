@@ -3,13 +3,13 @@ import { qty } from "@/lib/format";
 import { ingredientOf } from "@/lib/recipe";
 import { FileSpreadsheet } from "lucide-react";
 import { Callout, LinkButton, PageHeader } from "@/components/ui";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { RecipesTable } from "./recipes-table";
 
 export default async function RecipesPage({ searchParams }: { searchParams: Promise<{ imported?: string }> }) {
   const { imported } = await searchParams;
   // Sahifa ruxsati avvalgidek (middleware); o'chirish esa faqat ishlab chiqarish va direktorda
-  const session = await getSession();
+  const session = await requirePage("/recipes");
   const canDelete = !!session && ["PRODUCTION", "DIRECTOR"].includes(session.role);
   const products = await db.product.findMany({
     where: { isActive: true },

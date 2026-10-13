@@ -5,7 +5,7 @@ import { avgUnitCosts, lastInboundMoves } from "@/lib/stock";
 import { productionCapacity } from "@/lib/production-capacity";
 import { ostatkaSummary } from "@/lib/ostatka";
 import { unitLabel } from "@/lib/unit";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { Boxes, History, Factory, PackagePlus, Plus, ChevronRight, ClipboardList, HardHat, ShoppingBasket, ScanLine, PackageMinus } from "lucide-react";
@@ -23,7 +23,7 @@ const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBat
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string }> }) {
   const { tab = "balance", added, updated, moved, guessed, ref } = await searchParams;
-  const s = await getSession();
+  const s = await requirePage("/stock");
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   const [materials, mSums, last, whSums, allWarehouses] = await Promise.all([
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),

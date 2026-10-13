@@ -3,7 +3,7 @@ import { Wallet, CheckCircle2, Clock, FileText } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
-import { getSession } from "@/lib/auth";
+import { requirePage } from "@/lib/page-guard";
 import { money, deliveryAt, isoDate } from "@/lib/format";
 import { fmtUnitTotals } from "@/lib/unit";
 import { Button, Empty, Input, PageHeader, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
@@ -14,7 +14,7 @@ import { receivablesReport } from "@/lib/receivables";
 
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; from?: string; to?: string }> }) {
   const { status, customer, from: fromQ, to: toQ } = await searchParams;
-  const s = await getSession();
+  const s = await requirePage("/sales");
   const st = status && SALES_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
   // Davr — zayavka sanasi bo'yicha; sukut: joriy oy
   const now = new Date();
