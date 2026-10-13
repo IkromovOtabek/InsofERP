@@ -46,12 +46,13 @@ function builtin(text: string): string | null {
   const words = text.toLowerCase().match(/[a-z']+/g) ?? [];
   if (!words.length || !words.every((w) => w in MONTH || w in WORD)) return null;
   return text
-    .replace(/(\d{1,2})-([A-Za-z]+)/g, (m, d: string, w: string) => (MONTH[w.toLowerCase()] ? `${d} ${MONTH[w.toLowerCase()][1]}` : m))
+    .replace(/(\d{1,2})-([A-Za-z]+)/g, (m, d: string, w: string) => { const mo = MONTH[w.toLowerCase()]; return mo ? `${d} ${mo[1]}` : m; })
     .replace(/[A-Za-z']+/g, (w) => {
       const k = w.toLowerCase();
       const r = MONTH[k]?.[0] ?? WORD[k];
       if (!r) return w;
-      return w[0] === w[0].toUpperCase() && w[0] !== w[0].toLowerCase() ? r[0].toUpperCase() + r.slice(1) : r;
+      const f = w.charAt(0);
+      return f === f.toUpperCase() && f !== f.toLowerCase() ? r.charAt(0).toUpperCase() + r.slice(1) : r;
     });
 }
 
@@ -104,7 +105,7 @@ export function makeTranslator(dict: RuDict) {
         // O'rniga butun qatorning bir necha bo'lagi tushib qolmasin ("ishda {0}/{1}" ← "9/10 · chiqarildi …")
         if (caps.some((c) => SEPS.some((x) => !p.seps.includes(x) && c.includes(x)))) continue;
         const vals: string[] = [];
-        p.slots.forEach((slot, i) => { vals[slot] = translatePart(caps[i], depth + 1); });
+        p.slots.forEach((slot, i) => { vals[slot] = translatePart(caps[i] ?? "", depth + 1); });
         return p.out.replace(/\{(\d+)\}/g, (_, n) => vals[Number(n)] ?? "");
       }
     }
