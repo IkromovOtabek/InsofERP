@@ -189,13 +189,14 @@ export function toCyrillic(text: string): string {
   return res;
 }
 
-export type Yozuv = "lotin" | "kiril";
+/** `rus` — rus tili: matn lug'at bo'yicha tarjima qilinadi (`lib/ru-translate.ts`), transliteratsiya emas. */
+export type Yozuv = "lotin" | "kiril" | "rus";
 export const YOZUV_COOKIE = "yozuv";
 
 /**
- * <head> uchun: cookie kirill bo'lsa birinchi bo'yoqdan oldin `data-yozuv` qo'yiladi va
+ * <head> uchun: cookie kirill yoki rus bo'lsa birinchi bo'yoqdan oldin `data-yozuv` qo'yiladi va
  * body qisqa vaqt yashiriladi (lotin matn "lip" etib ko'rinmasligi uchun). Birinchi o'tish
- * tugaganda yoki eng ko'pi DOMContentLoaded'dan 250 ms keyin ochiladi.
+ * tugaganda yoki eng ko'pi DOMContentLoaded'dan 250 ms (rusda — lug'at yuklanishi uchun 1500 ms) keyin ochiladi.
  */
-export const YOZUV_SCRIPT = `(function(){try{var d=document.documentElement;if(/(?:^|;\\s*)${YOZUV_COOKIE}=kiril(?:;|$)/.test(document.cookie)){d.setAttribute("data-yozuv","kiril");d.lang="uz-Cyrl";d.classList.add("yozuv-wait");var f=function(){setTimeout(function(){d.classList.remove("yozuv-wait")},250)};if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",f);else f()}}catch(e){}})();`;
+export const YOZUV_SCRIPT = `(function(){try{var d=document.documentElement;var m=/(?:^|;\\s*)${YOZUV_COOKIE}=(kiril|rus)(?:;|$)/.exec(document.cookie);if(m){var y=m[1];d.setAttribute("data-yozuv",y);d.lang=y==="rus"?"ru":"uz-Cyrl";d.classList.add("yozuv-wait");var f=function(){setTimeout(function(){d.classList.remove("yozuv-wait")},y==="rus"?1500:250)};if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",f);else f()}}catch(e){}})();`;
 export const YOZUV_STYLE = "html.yozuv-wait body{visibility:hidden}";

@@ -2,9 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { toCyrillic, YOZUV_COOKIE, type Yozuv } from "@/lib/translit";
+import type { RuDict } from "@/lib/ru-translate";
 
 /**
- * Yozuv (lotin ⇄ kirill) almashtirgich.
+ * Yozuv (lotin ⇄ kirill) va til (rus) almashtirgich.
+ *
+ * Rus tili ham shu mexanizm bilan: `conv` — kirillda transliteratsiya, rusda lug'at bo'yicha tarjima
+ * (`lib/ru-translate.ts`, lug'at `i18n/ru.json` — faqat rus tanlanganda alohida bo'lak bo'lib yuklanadi).
  *
  * Tizimdagi barcha matn lotinda yozilgan, shuning uchun kirill tanlanganda DOM'dagi matn
  * tugunlari va ko'rinadigan atributlar (placeholder, title, aria-label, alt) joyida
@@ -22,6 +26,17 @@ const HARD_SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "IFRAME", 
 const SKIP_SEL = "script,style,noscript,template,iframe,code,pre,kbd,samp,textarea,[data-no-translit],.notranslate,[contenteditable]:not([contenteditable='false'])";
 
 type Rec = { orig: string; out: string };
+/** Joriy o'giruvchi: kirill — transliteratsiya, rus — lug'at (yuklangach). */
+let conv: (s: string) => string = toCyrillic;
+let ruConv: ((s: string) => string) | null = null;
+/** Rus lug'ati bir marta yuklanadi (≈ 1 MB JSON, alohida bo'lak) */
+async function loadRu() {
+  if (!ruConv) {
+    const [{ makeTranslator }, d] = await Promise.all([import("@/lib/ru-translate"), import("@/i18n/ru.json")]);
+    ruConv = makeTranslator((d as unknown as { default: RuDict }).default ?? (d as unknown as RuDict));
+  }
+  return ruConv;
+}
 const textMap = new WeakMap<Text, Rec>();
 const attrMap = new WeakMap<Element, Map<string, Rec>>();
 
@@ -102,7 +117,7 @@ function convertText(t: Text, force = false) {
   const cur = t.data;
   const r = textMap.get(t);
   if (r && r.out === cur) return; // allaqachon o'girilgan (o'zimizning yozuvimiz)
-  const out = toCyrillic(cur);
+  const out = conv(cur);
   if (out === cur) { if (r) textMap.delete(t); return; }
   // value atributisiz <option> qiymati — uning matni: o'girsak forma kirillcha qiymat yuboradi
   // ("Kritik" o'rniga "Критик"). Asl lotin qiymatni atributga mahkamlab qo'yamiz.
@@ -119,7 +134,7 @@ function convertAttrs(el: Element) {
     let m = attrMap.get(el);
     const r = m?.get(a);
     if (r && r.out === cur) continue;
-    const out = toCyrillic(cur);
+    const out = conv(cur);
     if (out === cur) { m?.delete(a); continue; }
     if (!m) { m = new Map(); attrMap.set(el, m); }
     m.set(a, { orig: cur, out });
@@ -265,8 +280,12 @@ export function ScriptProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const d = document.documentElement;
-    if (d.dataset.yozuv === "kiril") { setState("kiril"); enable(); }
-    else reveal();
+    if (d.dataset.yozuv === "kiril") { setState("kiril"); conv = toCyrillic; enable(); }
+    else if (d.dataset.yozuv === "rus") {
+      setState("rus");
+      // Lug'at kelmasa (tarmoq) — sahifa o'zbekcha ochiladi, bo'sh qolmaydi
+      loadRu().then((t) => { if (d.dataset.yozuv === "rus") { conv = t; enable(); } }).catch(reveal);
+    } else reveal();
     return () => { if (active) disable(); };
   }, []);
 
@@ -274,8 +293,11 @@ export function ScriptProvider({ children }: { children: React.ReactNode }) {
     const d = document.documentElement;
     document.cookie = `${YOZUV_COOKIE}=${y}; path=/; max-age=31536000; samesite=lax`;
     d.dataset.yozuv = y;
-    d.lang = y === "kiril" ? "uz-Cyrl" : "uz";
-    if (y === "kiril") enable(); else disable();
+    d.lang = y === "kiril" ? "uz-Cyrl" : y === "rus" ? "ru" : "uz";
+    // Avval asl (lotin) matn tiklanadi, keyin yangi rejimda qayta o'giriladi
+    if (active) disable();
+    if (y === "kiril") { conv = toCyrillic; enable(); }
+    else if (y === "rus") loadRu().then((t) => { if (d.dataset.yozuv === "rus") { conv = t; enable(); } }).catch(() => {});
     setState(y);
   }, []);
 
