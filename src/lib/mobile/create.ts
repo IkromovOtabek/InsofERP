@@ -91,8 +91,8 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
 };
 
 // Direktor hujjat ochmaydi — zayavka sotuvchining, reys dispetcherning ishi; u nazorat qiladi.
-// Direktor bergan ruxsat (`User.perms`) faqat CHEKLAYDI: modul "yo'q"/"ko'rish" yoki amal ro'yxatda bo'lmasa — vebdagi
-// kabi forma ham, yaratish ham rad etiladi. (Ilgari faqat rol tekshirilardi — "faqat ko'rish" sotuvchi ilovadan zayavka ochardi.)
+// Direktor bergan ruxsat (`User.perms`) vebdagi kabi ishlaydi: modul "yo'q"/"ko'rish" yoki amal ro'yxatda bo'lmasa — forma ham,
+// yaratish ham rad etiladi; amal berilgan bo'lsa — rol ro'yxatida bo'lmasa ham ochadi (masalan Ish boshqaruvchi zayavka ochadi).
 // `strict` — vebdagi `requireAction(module, action)` bilan aynan bir xil: `canDo` (rol standarti + direktor ruxsati).
 // Masalan Moliya (FINANCE) vebda to'lov qabul qilmaydi — ilovada ham, direktor `payments: create` bermaguncha.
 const CREATE_PERM: Record<string, { module: string; action?: string; strict?: boolean }> = {
@@ -108,13 +108,19 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
 };
 
 export const canCreate = (user: MobileUser, key: string) => {
-  if (!Object.hasOwn(CREATE_ROLES, key) || !CREATE_ROLES[key].roles.includes(user.role)) return false; // prototip kalitlari ("constructor") — forma emas
+  if (!Object.hasOwn(CREATE_ROLES, key)) return false; // prototip kalitlari ("constructor") — forma emas
+  const roleOk = CREATE_ROLES[key].roles.includes(user.role);
   const p = CREATE_PERM[key];
-  if (p?.strict && p.action) return canDo({ role: user.role, perms: user.perms }, p.module, p.action);
   const lvl = p && user.perms?.[p.module];
-  if (!lvl) return true; // direktor bu modulga alohida ruxsat bermagan — rol bo'yicha
+  if (!p || !lvl) { // direktor bu modulga alohida ruxsat bermagan — rol bo'yicha
+    if (!roleOk) return false;
+    return p?.strict && p.action ? canDo({ role: user.role, perms: user.perms }, p.module, p.action) : true;
+  }
   if (lvl === "none" || lvl === "view") return false;
-  return p.action ? canDo({ role: user.role, perms: user.perms }, p.module, p.action) : true;
+  // Direktor bergan ruxsat rol ro'yxatidan USTUN — vebdagi `requireAction` bilan bir xil: Ish boshqaruvchiga
+  // Zayavkalarda "To'liq" yoki "Mijoz zayavkasini ochish" berilsa, ilovada ham zayavka ochadi.
+  if (p.action) return canDo({ role: user.role, perms: user.perms }, p.module, p.action);
+  return lvl === "write" || roleOk;
 };
 
 const NEW_CUSTOMER = "__new__";
