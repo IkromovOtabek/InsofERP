@@ -1,8 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PRODUCTS as SEO_PRODUCTS } from "@/lib/seo-content/products";
+import { articlePath, productPath } from "@/lib/seo-content/lang";
 import {
   Boxes, CalendarClock, ClipboardList, Factory, FileCheck2, FlaskConical, LogIn,
-  Download, Mail, MapPin, Phone, QrCode, Ruler, ShieldCheck, Smartphone, Timer, Truck, Wallet,
+  Download, Mail, MapPin, Phone, QrCode, Ruler, ShieldCheck, Smartphone, Timer, Truck, Wallet, ArrowUpRight,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
@@ -202,6 +204,18 @@ export default async function LandingPage() {
             </Reveal>
           ))}
         </div>
+
+        {/* Mahsulot sahifalari (SEO): GOST jadvallari, kalkulyator, savol-javob — uz va ru */}
+        <nav aria-label="Mahsulot sahifalari" className="mt-10 flex flex-wrap gap-2">
+          {SEO_PRODUCTS.map((p) => (
+            <Link key={p.slug} href={productPath("uz", p.slug)} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-beton-800 ring-1 ring-beton-200 transition hover:text-insof-700 hover:ring-insof-500">
+              {p.name.uz} <ArrowUpRight size={14} />
+            </Link>
+          ))}
+          <Link href={articlePath("uz")} className="inline-flex items-center gap-2 rounded-full bg-insof-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-insof-700">
+            Maqolalar <ArrowUpRight size={14} />
+          </Link>
+        </nav>
 
         {catalogProducts.length > 0 && (
           <div className="mt-14">
