@@ -269,6 +269,12 @@ function disable() {
   }
 }
 
+/**
+ * Joriy yozuv/tilda matn (DOM'dan tashqaridagi natija uchun: Excel sarlavhalari, fayl nomi).
+ * Lotinda — o'zgarmaydi; kirill/rus — sahifadagi bilan bir xil o'giruvchi (rus lug'ati yuklangan bo'lsa).
+ */
+export const uiText = (s: string) => (active ? conv(s) : s);
+
 /* ─────────────── React konteksti ─────────────── */
 
 const Ctx = createContext<{ yozuv: Yozuv; setYozuv: (y: Yozuv) => void }>({ yozuv: "lotin", setYozuv: () => {} });

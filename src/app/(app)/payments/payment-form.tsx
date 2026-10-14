@@ -11,8 +11,10 @@ export type InvOpt = { id: string; invoiceNo: string; customerId: string; remain
 /** Avans qabul qilinadigan zayavka: schyoti hali yo'q. `expected` — sotuvchi yozgan kutilayotgan avans. */
 export type OrderOpt = { id: string; orderNo: string; customerId: string; total: number; paid: number; expected: number };
 type Opt = { id: string; name: string };
+/** Kassa/bank hisobi: tanlovda turi ham ko'rinadi — «Asosiy hisob (bank)», «Kassa (naqd)». */
+type AccOpt = Opt & { type: "CASH" | "BANK" };
 
-export function PaymentForm({ customers, invoices, orders, accounts }: { customers: Opt[]; invoices: InvOpt[]; orders: OrderOpt[]; accounts: Opt[] }) {
+export function PaymentForm({ customers, invoices, orders, accounts }: { customers: Opt[]; invoices: InvOpt[]; orders: OrderOpt[]; accounts: AccOpt[] }) {
   const [state, action, pending] = useActionState(createPayment, undefined);
   // Saqlangandan keyin maydonlar qayta mount qilinadi — summa, sana, izoh to'liq tozalanadi
   const [formKey, setFormKey] = useState(0);
@@ -65,7 +67,7 @@ export function PaymentForm({ customers, invoices, orders, accounts }: { custome
             ))}
           </Select>
         </Field>
-        <Field label="Kassa / hisob *"><Select name="cashAccountId" defaultValue={accounts[0]?.id}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select></Field>
+        <Field label="Kassa / hisob *"><Select name="cashAccountId" defaultValue={accounts[0]?.id}>{accounts.map((a) => <option key={a.id} value={a.id}>{`${a.name} (${a.type === "CASH" ? "naqd" : "bank"})`}</option>)}</Select></Field>
         <Field label="Summa *"><MoneyInput name="amount" value={amount} onChange={setAmount} required /></Field>
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} max={isoDate()} required /></Field>
         <Field label="Izoh" className="sm:col-span-2"><Textarea name="note" className="min-h-11" placeholder="Platyojka №, kim topshirdi…" /></Field>

@@ -5,14 +5,14 @@ import { MAX_AMOUNT } from "./action";
 import { avgUnitCosts } from "./stock";
 
 /**
- * «Дона сўм» — xomashyo birlik narxi (Material.unitPrice). Snabjeniye (stock → "price" amali) belgilaydi; skladdan
- * chiqimlar (Расход, brigada, spisanie, zames) shu narx bilan `StockMove.unitCost` bo'lib yoziladi (`lib/stock-price.ts`).
- * Veb (Sklad → Остатки) va mobil bitta joydan o'tadi. Ruxsatni CHAQIRUVCHI tekshiradi (veb: `requireAction("stock",
+ * «Dona narxi» (avval «Дона сўм») — xomashyo birlik narxi (Material.unitPrice). Snabjeniye (stock → "price" amali) belgilaydi; skladdan
+ * chiqimlar (Chiqim, brigada, spisanie, zames) shu narx bilan `StockMove.unitCost` bo'lib yoziladi (`lib/stock-price.ts`).
+ * Veb (Sklad → Qoldiqlar) va mobil bitta joydan o'tadi. Ruxsatni CHAQIRUVCHI tekshiradi (veb: `requireAction("stock",
  * "price")`, mobil: `can()`); `actor.role` — chaqiruvchi kontekstida qaror qabul qilish uchun, bu yerda ishlatilmaydi.
  * Har o'zgarish AuditLog'da (entity "Material", before/after `{ unitPrice }`).
  */
 
-/** Foydalanuvchiga ko'rsatiladigan xato (ruscha — «Остатки» ekrani tili). Boshqa xatolar — kutilmagan. */
+/** Foydalanuvchiga ko'rsatiladigan xato (o'zbekcha; «Рус» rejimida lug'at bo'yicha o'giriladi). Boshqa xatolar — kutilmagan. */
 export class MaterialPriceError extends Error {}
 
 export type MaterialPriceActor = { userId: string; role: Role };
@@ -25,12 +25,12 @@ export async function setMaterialPrice(
   actor: MaterialPriceActor,
 ): Promise<{ changed: boolean; before: number | null; after: number | null }> {
   if (price != null && (!Number.isFinite(price) || price < 0 || price > MAX_AMOUNT)) {
-    throw new MaterialPriceError("Неверная цена: нужно число от 0 до 1 000 000 000 000 000");
+    throw new MaterialPriceError("Narx noto'g'ri: 0 dan 1 000 000 000 000 000 gacha son kiriting");
   }
   const after = price == null ? null : r2(price);
   return db.$transaction(async (tx) => {
     const m = await tx.material.findUnique({ where: { id: materialId }, select: { id: true, unitPrice: true } });
-    if (!m) throw new MaterialPriceError("Сырьё не найдено — обновите страницу");
+    if (!m) throw new MaterialPriceError("Xomashyo topilmadi — sahifani yangilang");
     const before = m.unitPrice == null ? null : Number(m.unitPrice);
     if (before === after) return { changed: false, before, after };
     // Shartli yozuv: oraliqda boshqa xodim narxni o'zgartirgan bo'lsa — eski qiymat ustiga yozilmaydi, audit to'g'ri qoladi
@@ -38,14 +38,14 @@ export async function setMaterialPrice(
       where: { id: m.id, unitPrice: m.unitPrice },
       data: { unitPrice: after, unitPriceAt: new Date(), unitPriceById: actor.userId },
     });
-    if (upd.count === 0) throw new MaterialPriceError("Цену только что изменил другой пользователь — обновите страницу");
+    if (upd.count === 0) throw new MaterialPriceError("Narxni hozirgina boshqa xodim o'zgartirdi — sahifani yangilang");
     await audit(tx, actor.userId, "UPDATE", "Material", m.id, { unitPrice: before }, { unitPrice: after });
     return { changed: true, before, after };
   });
 }
 
 /**
- * Narxi belgilanmagan faol xomashyolarga o'rtacha tannarxni (`avgUnitCosts`, 2 kasr) «Дона сўм» qilib qo'yadi.
+ * Narxi belgilanmagan faol xomashyolarga o'rtacha tannarxni (`avgUnitCosts`, 2 kasr) «Dona narxi» qilib qo'yadi.
  * Tannarxi yo'q (kirimi bo'lmagan) yoki 0 bo'lganlari o'tkazib yuboriladi. Har biri shartli (`unitPrice IS NULL`)
  * — oraliqda qo'lda qo'yilgan narx ustiga yozilmaydi; har biri auditda.
  */

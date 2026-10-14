@@ -12,7 +12,8 @@ import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
 import { liveTrips } from "@/lib/live";
 import { CREATE_ROLES, KIRIM_FORMS, canCreate } from "./create";
-import { listAllowed, listsFor, skladPeriod } from "./list";
+import { listAllowed, listsFor, payreqRow, skladPeriod } from "./list";
+import { listPaymentRequests, methodsFor } from "@/lib/payment-requests";
 import { prixodJournal, prixodTotals } from "@/lib/receipts";
 import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
 import { fmtNum } from "@/lib/format";
@@ -242,7 +243,7 @@ const LIST_ICON: Record<string, string> = {
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
   prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
-  approvals: "circle-check", activity: "activity", kirim: "wrench",
+  approvals: "circle-check", activity: "activity", kirim: "wrench", payreq: "hand-coins",
 };
 const SUPPLY_TONE: Record<string, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
 
@@ -281,7 +282,28 @@ async function kirimSection(title: string, empty: string, status: MechanicReques
 }
 
 /**
- * «Сегодня: Приход / Расход» — Sklad jurnallarining bugungi jami (ruscha, vebdagi Sklad ekranlari bilan bir manba).
+ * Pul qabul qilish (zayavka bosh to'lovi) — kassirda naqd, buxgalterda perechisleniye: ochiq so'rovlar, muddati o'tgani
+ * tepada (muddat bo'yicha saralangan). Bitta so'rov bilan karta (soni, qolgan summa) va bo'lim (birinchi 10 tasi) olinadi.
+ * Rol ro'yxatga kira olmasa yoki direktor bu usulni qabul qilish amalini olib qo'ygan bo'lsa — null.
+ */
+async function payreqQueue(user: MobileUser, method: "CASH" | "BANK", title: string) {
+  if (!listAllowed(user, "payreq") || !methodsFor(user).includes(method)) return null;
+  const rows = await listPaymentRequests("open", [method], { take: 200 });
+  const left = rows.reduce((s, r) => s + r.left, 0);
+  const overdue = rows.filter((r) => r.overdue).length;
+  const card: HomeCard = {
+    key: "payreq", label: "Pul qabul qilish", value: String(rows.length),
+    hint: rows.length ? `${short(left)} so'm${overdue ? ` · muddati o'tgan ${overdue}` : ""}` : "navbat bo'sh",
+    tone: overdue ? "danger" : rows.length ? "warning" : "success", icon: "hand-coins", open: { key: "payreq" },
+  };
+  const section: HomeSection | null = rows.length
+    ? { title, empty: "", target: "payreq", icon: "hand-coins", rows: rows.slice(0, 10).map(payreqRow) }
+    : null;
+  return { card, section };
+}
+
+/**
+ * «Bugun: kirim / chiqim» — Sklad jurnallarining bugungi jami (vebdagi Sklad ekranlari bilan bir manba).
  * Bo'limda `target` yo'q: har qatorning `open`i ro'yxatni ochadi (`/erp/list/prixod`, `/erp/list/rasxod`).
  */
 async function skladToday(): Promise<HomeSection> {
@@ -291,14 +313,14 @@ async function skladToday(): Promise<HomeSection> {
   const docs = new Set(inc.map((r) => r.receiptId)).size;
   const zames = out.filter((r) => r.kind === "prod").length;
   return {
-    title: "Сегодня: Приход / Расход", empty: "", icon: "arrow-up-down",
+    title: "Bugun: kirim / chiqim", empty: "", icon: "arrow-up-down",
     rows: [
-      { id: "prixod", title: "Приход", subtitle: inc.length ? `${docs} док. · ${inc.length} стр.` : "сегодня прихода нет", right: `+${fmtNum(a.total)}`, tone: "success", open: "prixod" },
-      { id: "rasxod", title: "Расход", subtitle: out.length ? `${out.length} стр.${zames ? ` · замес ${zames}` : ""}` : "сегодня расхода нет", right: `−${fmtNum(b.total)}`, tone: "danger", open: "rasxod" },
+      { id: "prixod", title: "Kirim", subtitle: inc.length ? `${docs} hujjat · ${inc.length} qator` : "Bugun kirim yo'q", right: `+${fmtNum(a.total)}`, tone: "success", open: "prixod" },
+      { id: "rasxod", title: "Chiqim", subtitle: out.length ? `${out.length} qator${zames ? ` · zames ${zames}` : ""}` : "Bugun chiqim yo'q", right: `−${fmtNum(b.total)}`, tone: "danger", open: "rasxod" },
     ],
   };
 }
-/** Bosh sahifasida «Сегодня: Приход / Расход» bo'limi bor rollar (ro'yxat ruxsati ham kerak — `listAllowed`). */
+/** Bosh sahifasida «Bugun: kirim / chiqim» bo'limi bor rollar (ro'yxat ruxsati ham kerak — `listAllowed`). */
 const SKLAD_TODAY_ROLES: Role[] = ["WAREHOUSE", "PROCUREMENT", "DIRECTOR"];
 
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -685,6 +707,9 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: "tasdiq kutmoqda", tone: "warning", icon: "clipboard-list", open: { key: "supply" } });
         sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
       }
+      // Zayavka bosh to'lovi perechisleniye bilan — bankka tushganini buxgalter tasdiqlaydi
+      const bankQueue = await payreqQueue(user, "BANK", "Perechisleniye kutilmoqda");
+      if (bankQueue?.section) sections.push(bankQueue.section);
       sections.push({ title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" : "danger" }; }) });
       break;
     }
@@ -746,6 +771,10 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "count", label: "Bugungi to'lovlar", value: String(todayPay._count), tone: "brand", icon: "swap-horizontal", open: { key: "dash", id: "payments.day" } },
         { key: "balance", label: "Kassa qoldig'i", value: short(balance), hint: `${accounts} hisob`, tone: "info", icon: "wallet" },
       );
+      // Zayavka bosh to'lovi naqd — mijoz kassaga olib keladi: karta (soni, qolgan summa) va ro'yxat eng tepada
+      const cashQueue = await payreqQueue(user, "CASH", "Pul qabul qilish — naqd");
+      if (cashQueue) cards.push(cashQueue.card);
+      if (cashQueue?.section) sections.push(cashQueue.section);
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
       // Mexanik so'rovlari: ish boshqaruvchi tasdiqlagan — pul berish kerak

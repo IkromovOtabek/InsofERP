@@ -6,7 +6,7 @@ import { issuePrices } from "./stock-price";
 import { writeBrigadeIssue } from "./brigade-stock";
 import { MAX_AMOUNT } from "./action";
 import { fmtNum, isoDate } from "./format";
-import { unitLabelRu } from "./unit";
+import { unitShort } from "./unit";
 import { companyVatPayer } from "./receipt-vat";
 
 /**
@@ -17,11 +17,11 @@ import { companyVatPayer } from "./receipt-vat";
  *  · brigada → mavjud brigada qoldig'i mantig'i: StockMove BRIGADE_ISSUE (−) + BrigadeMove ISSUE (+).
  * Narx — «Дона сўм» snapshot (`issuePrices`): Snabjeniye narxni keyin o'zgartirsa ham o'tgan qatorlar o'zgarmaydi.
  * Bitta berish hujjati — `refType "Issue"`, `refId = ref`. Veb (Sklad → Расход) va mobil/ECO shu funksiyadan o'tadi;
- * ruxsat (`stock` → `issue`) chaqiruvchida. Xato matnlari ruscha (ekran tili) — `IssueError`.
+ * ruxsat (`stock` → `issue`) chaqiruvchida. Xato matnlari o'zbekcha («Рус» rejimida lug'at bo'yicha) — `IssueError`.
  * Bekor qilish — `cancelIssue` (storno): teskari harakatlar `refType "IssueStorno"`, `refId = ref`.
  */
 
-/** Foydalanuvchiga ko'rinadigan xato (ruscha). Kutilmagan (baza) xatolari oddiy `Error` bo'lib qoladi. */
+/** Foydalanuvchiga ko'rinadigan xato (o'zbekcha). Kutilmagan (baza) xatolari oddiy `Error` bo'lib qoladi. */
 export class IssueError extends Error {}
 
 export type IssueTarget = { kind: "recipient" | "brigade"; id: string };
@@ -65,13 +65,13 @@ export function parseIssueTarget(v: unknown): IssueTarget | null {
 export function issueDate(s?: string | null, now = new Date()): Date {
   const v = (s ?? "").trim();
   if (!v) return now;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new IssueError("Неверная дата расхода");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new IssueError("Chiqim sanasi noto'g'ri");
   const day = new Date(`${v}T00:00:00`);
-  if (!Number.isFinite(day.getTime()) || isoDate(day) !== v) throw new IssueError("Неверная дата расхода");
+  if (!Number.isFinite(day.getTime()) || isoDate(day) !== v) throw new IssueError("Chiqim sanasi noto'g'ri");
   const today = new Date(now); today.setHours(0, 0, 0, 0);
-  if (day > today) throw new IssueError("Дата расхода не может быть в будущем");
+  if (day > today) throw new IssueError("Chiqim sanasi kelajakda bo'lishi mumkin emas");
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
-  if (day < min) throw new IssueError(`Дата расхода — не раньше чем ${ISSUE_BACK_DAYS} дн. назад`);
+  if (day < min) throw new IssueError(`Chiqim sanasi ${ISSUE_BACK_DAYS} kundan eski bo'lmasin`);
   if (day.getTime() === today.getTime()) return now;
   const d = new Date(day); d.setHours(12, 0, 0, 0);
   return d;
@@ -88,18 +88,18 @@ async function byToken(token: string): Promise<IssueStockResult | null> {
 
 /** «Кому» — faol oluvchi yoki faol brigada. */
 async function resolveTarget(to: IssueTarget | null | undefined): Promise<{ kind: "recipient" | "brigade"; id: string; name: string }> {
-  if (!to?.id) throw new IssueError("Выберите, кому выдаётся (Кому)");
+  if (!to?.id) throw new IssueError("Kimga berilishini tanlang (Kimga)");
   if (to.kind === "recipient") {
     const r = await db.stockRecipient.findUnique({ where: { id: to.id }, select: { id: true, name: true, isActive: true } });
-    if (!r || !r.isActive) throw new IssueError("Получатель не найден или неактивен — обновите страницу");
+    if (!r || !r.isActive) throw new IssueError("Oluvchi topilmadi yoki nofaol — sahifani yangilang");
     return { kind: "recipient", id: r.id, name: r.name };
   }
   if (to.kind === "brigade") {
     const b = await db.brigade.findUnique({ where: { id: to.id }, select: { id: true, name: true, isActive: true } });
-    if (!b || !b.isActive) throw new IssueError("Бригада не найдена или неактивна — обновите страницу");
+    if (!b || !b.isActive) throw new IssueError("Brigada topilmadi yoki nofaol — sahifani yangilang");
     return { kind: "brigade", id: b.id, name: b.name };
   }
-  throw new IssueError("Выберите, кому выдаётся (Кому)");
+  throw new IssueError("Kimga berilishini tanlang (Kimga)");
 }
 
 /**
@@ -120,13 +120,13 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
     const id = String(it?.materialId ?? "").trim();
     if (!id) continue;
     const q = Number(it.qty);
-    if (!Number.isFinite(q) || q <= 0 || q > MAX_AMOUNT) throw new IssueError("Количество должно быть числом больше 0");
+    if (!Number.isFinite(q) || q <= 0 || q > MAX_AMOUNT) throw new IssueError("Miqdor 0 dan katta son bo'lishi kerak");
     wanted.set(id, (wanted.get(id) ?? 0) + q);
   }
-  if (!wanted.size) throw new IssueError("Добавьте хотя бы одну строку: наименование и количество");
-  if (wanted.size > MAX_ROWS) throw new IssueError(`Слишком много строк (до ${MAX_ROWS})`);
+  if (!wanted.size) throw new IssueError("Kamida bitta qator qo'shing: nomi va miqdori");
+  if (wanted.size > MAX_ROWS) throw new IssueError(`Qatorlar juda ko'p (ko'pi bilan ${MAX_ROWS})`);
   const rows = [...wanted.entries()].map(([materialId, q]) => ({ materialId, qty: r3(q) }));
-  if (rows.some((r) => r.qty <= 0 || r.qty > MAX_AMOUNT)) throw new IssueError("Количество должно быть не меньше 0,001");
+  if (rows.some((r) => r.qty <= 0 || r.qty > MAX_AMOUNT)) throw new IssueError("Miqdor kamida 0,001 bo'lishi kerak");
 
   const ids = rows.map((r) => r.materialId);
   const [wh, mats, target] = await Promise.all([
@@ -134,8 +134,8 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
     db.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, unit: true } }),
     resolveTarget(input.to),
   ]);
-  if (!wh) throw new IssueError("Склад не выбран или закрыт");
-  if (mats.length !== ids.length) throw new IssueError("Наименование не найдено — обновите страницу");
+  if (!wh) throw new IssueError("Sklad tanlanmagan yoki yopilgan");
+  if (mats.length !== ids.length) throw new IssueError("Xomashyo topilmadi — sahifani yangilang");
   const meta = new Map(mats.map((m) => [m.id, m]));
   const ref = crypto.randomUUID();
 
@@ -149,10 +149,10 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
         .filter((r) => (bal.get(r.materialId) ?? 0) < r.qty - STOCK_EPS)
         .map((r) => {
           const m = meta.get(r.materialId)!;
-          const u = unitLabelRu(m.unit);
-          return `${m.name} — есть ${fmtNum(Math.max(0, bal.get(r.materialId) ?? 0), 3)} ${u}, нужно ${fmtNum(r.qty, 3)} ${u}`;
+          const u = unitShort(m.unit);
+          return `${m.name} — bor ${fmtNum(Math.max(0, bal.get(r.materialId) ?? 0), 3)} ${u}, kerak ${fmtNum(r.qty, 3)} ${u}`;
         });
-      if (short.length) throw new IssueError(`Недостаточно на складе «${wh.name}»: ${short.join("; ")}`);
+      if (short.length) throw new IssueError(`«${wh.name}» skladida yetarli emas: ${short.join("; ")}`);
 
       let sum = 0;
       if (target.kind === "recipient") {
@@ -193,10 +193,12 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
 
 /** Расход stornosi teskari harakatlarining `refType` i; `refId` — asl berish hujjati (`ref`). */
 export const ISSUE_STORNO = "IssueStorno";
+/** Storno izohining boshi: yangi «Storno: », eski yozuvlarda «Сторно: » — sababni ajratish uchun. */
+export const STORNO_NOTE_RE = /^(?:Storno|Сторно):\s*/;
 
 /**
  * Расход hujjatini storno qilish (`refType "Issue"`, `refId = ref`). Yozuvlar o'chirilmaydi: har harakatga teskari StockMove
- * (o'sha tur, sklad, narx, oluvchi / brigada; qty teskari; `refType "IssueStorno"`, `refId = ref`, izoh «Сторно: <sabab>»).
+ * (o'sha tur, sklad, narx, oluvchi / brigada; qty teskari; `refType "IssueStorno"`, `refId = ref`, izoh «Storno: <sabab>»).
  * Brigadaga berilgan qatorlarda BrigadeMove ham teskari yoziladi (ISSUE, −, o'sha narx) — brigada qo'lida shuncha xomashyo
  * qolmagan bo'lsa (sarflangan / qaytarilgan) rad etiladi. Takror storno — rad. Bitta tranzaksiya, `lockStock` ostida.
  * Sabab majburiy (3+ belgi). Ruxsat (`stock` → `issue_storno`: direktor yoki u ruxsat bergan xodim) — chaqiruvchida.
@@ -204,13 +206,13 @@ export const ISSUE_STORNO = "IssueStorno";
 export async function cancelIssue(ref: string, reason: string, actor: { userId: string; role: Role }): Promise<{ ref: string; count: number }> {
   const id = String(ref ?? "").trim();
   const why = String(reason ?? "").trim().slice(0, 300);
-  if (!id) throw new IssueError("Расход не найден — обновите страницу");
-  if (why.length < 3) throw new IssueError("Укажите причину сторно (не короче 3 символов)");
+  if (!id) throw new IssueError("Chiqim topilmadi — sahifani yangilang");
+  if (why.length < 3) throw new IssueError("Storno sababini yozing (kamida 3 belgi)");
 
   return db.$transaction(async (tx) => {
     // Qulf: ikki storno (yoki storno + brigada sarfi) bir vaqtda kelsa, ikkinchisi birinchisining natijasini ko'radi
     await lockStock(tx);
-    if (await tx.stockMove.count({ where: { refType: ISSUE_STORNO, refId: id } })) throw new IssueError("Этот расход уже отменён (сторно)");
+    if (await tx.stockMove.count({ where: { refType: ISSUE_STORNO, refId: id } })) throw new IssueError("Bu chiqim allaqachon bekor qilingan (storno)");
     const moves = await tx.stockMove.findMany({
       where: { refType: "Issue", refId: id },
       orderBy: { createdAt: "asc" },
@@ -219,7 +221,7 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
         material: { select: { name: true, unit: true } },
       },
     });
-    if (!moves.length) throw new IssueError("Расход не найден — обновите страницу");
+    if (!moves.length) throw new IssueError("Chiqim topilmadi — sahifani yangilang");
 
     // Brigadaga berilgani: brigada qo'lida hali shuncha bormi (sarflangan / qaytarilgan bo'lsa storno qoldiqni minusga tushiradi)
     const toBrigade = moves.filter((m) => m.type === "BRIGADE_ISSUE" && m.brigadeId && m.materialId);
@@ -245,13 +247,14 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
       const short = [...need.entries()]
         .filter(([k, n]) => (held.get(k) ?? 0) < n.qty - STOCK_EPS)
         .map(([k, n]) => {
-          const u = unitLabelRu(n.unit);
-          return `${n.name} — у бригады «${brName.get(n.brigadeId) ?? "?"}» ${fmtNum(Math.max(0, held.get(k) ?? 0), 3)} ${u}, нужно вернуть ${fmtNum(n.qty, 3)} ${u}`;
+          const u = unitShort(n.unit);
+          return `${n.name} — «${brName.get(n.brigadeId) ?? "?"}» brigadasida ${fmtNum(Math.max(0, held.get(k) ?? 0), 3)} ${u}, qaytarish kerak ${fmtNum(n.qty, 3)} ${u}`;
         });
-      if (short.length) throw new IssueError(`Сторно невозможно: бригада уже израсходовала или вернула часть сырья (${short.join("; ")})`);
+      if (short.length) throw new IssueError(`Storno mumkin emas: brigada xomashyoning bir qismini sarflagan yoki qaytargan (${short.join("; ")})`);
     }
 
-    const note = `Сторно: ${why}`;
+    // Izoh bazaga yoziladi: eski yozuvlarda «Сторно: …», yangilarida «Storno: …» (`STORNO_NOTE_RE` ikkalasini ham taniydi)
+    const note = `Storno: ${why}`;
     let sum = 0;
     for (const m of moves) {
       const back = await tx.stockMove.create({
@@ -345,7 +348,7 @@ export type RasxodRow = {
   date: Date;
   material: string;
   materialId: string;
-  /** Birlik kodi (kg, t, dona…) — ekranda `unitLabelRu` */
+  /** Birlik kodi (kg, t, dona…) — ekranda `unitShort` */
   unit: string;
   /** Chiqim musbat; brigadadan qaytish, Расход stornosi (va shu kunning zames stornosi ko'p bo'lsa) — manfiy */
   qty: number;
@@ -377,26 +380,19 @@ export type RasxodRow = {
   /** «Кому» filtri kaliti: "r:<id>" | "b:<id>" | "prod" | "writeoff" | "inventory" */
   toKey: string;
   warehouseId: string;
-  /** Расход (ISSUE) izohi; storno qatorida — «Сторно: <sabab>» */
+  /** Chiqim (ISSUE) izohi; storno qatorida — «Storno: <sabab>» (eski yozuvlarda «Сторно: <sabab>») */
   note?: string | null;
   /** Расход hujjati (`refType "Issue"` → `refId`): oluvchi / brigada qatorlarida (storno tugmasi), storno qatorida — asl hujjat */
   ref?: string | null;
-  /** Shu Расход hujjati storno qilingan («отменён») — asl qatorlarda */
+  /** Shu chiqim hujjati storno qilingan («bekor qilingan») — asl qatorlarda */
   cancelled?: boolean;
 };
 
-/** Spisanie sabablari (`stock/adjust-const.ts` WRITE_OFF_REASONS) — ruscha jurnal uchun. */
-const WRITE_OFF_RU: Record<string, string> = {
-  "Brak (sifatsiz)": "брак",
-  "Yo'qotish / tabiiy kamayish": "потеря / естественная убыль",
-  "Muddati o'tgan": "истёк срок",
-  "Shikastlangan (tashishda, saqlashda)": "повреждение",
-  "Boshqa": "прочее",
-};
+/** Hisobdan chiqarish sababi (`stock/adjust-const.ts` WRITE_OFF_REASONS) — izohning birinchi bo'lagi, o'zbekcha; «Рус» rejimida lug'atdan. */
 function writeOffReason(note: string | null): string {
   const body = (note ?? "").replace(/^Hisobdan chiqarildi:\s*/, "");
   const kind = body.split(" · ")[0]?.trim() ?? "";
-  return WRITE_OFF_RU[kind] ?? (kind || "—");
+  return kind || "—";
 }
 
 const INVENTORY_SHORT: Prisma.StockMoveWhereInput = { type: "ADJUSTMENT", refType: "Inventory", qty: { lt: 0 } };
@@ -423,12 +419,12 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * Расход jurnali (Sklad → «Расход»), manba — StockMove (xomashyo, davr `[from, to)`):
  *  · ISSUE — oluvchiga (Кому = oluvchi);
  *  · BRIGADE_ISSUE — brigadaga (Кому = brigada; topshiriq uchun avtomatik berilgani `auto`);
- *  · BRIGADE_RETURN — brigadadan qaytdi: manfiy qator («— возврат»);
- *  · Расход stornosi (`refType "IssueStorno"`, ISSUE / BRIGADE_ISSUE teskarisi) — manfiy qator «Сторно: <Кому>», Деньги/НДС
- *    asl berish sanasidagi kirimdan (asl qatorni aynan yo'qqa chiqaradi); asl qatorlar `cancelled` («отменён»);
- *  · PRODUCTION_CONSUME — zames: KUN + XOMASHYO + SKLAD bo'yicha bitta qator («Производство (замес)», ko'k);
+ *  · BRIGADE_RETURN — brigadadan qaytdi: manfiy qator («— qaytarish»);
+ *  · Chiqim stornosi (`refType "IssueStorno"`, ISSUE / BRIGADE_ISSUE teskarisi) — manfiy qator «Storno: <Kimga>», To'lov turi/QQS
+ *    asl berish sanasidagi kirimdan (asl qatorni aynan yo'qqa chiqaradi); asl qatorlar `cancelled` («bekor qilingan»);
+ *  · PRODUCTION_CONSUME — zames: KUN + XOMASHYO + SKLAD bo'yicha bitta qator («Ishlab chiqarish (zames)», ko'k);
  *    storno teskari qatorlari ishorasi bilan qo'shiladi (ayiriladi), to'liq storno bo'lgan kun qatori chiqmaydi;
- *  · WRITE_OFF — «Списание: <sabab>»; ADJUSTMENT (qty < 0, Inventory) — «Инвентаризация (недостача)».
+ *  · WRITE_OFF — «Hisobdan chiqarish: <sabab>»; ADJUSTMENT (qty < 0, Inventory) — «Inventarizatsiya (kamomad)».
  * Tartib: sana bo'yicha, kun ichida zames qatorlari oxirida (Excel'dagidek).
  */
 export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: string | null; to_?: string | null }): Promise<RasxodRow[]> {
@@ -498,12 +494,12 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
       const key = `${isoDate(day)}|${materialId}|${m.warehouseId}`;
       const cur = prodBy.get(key);
       if (cur) { cur.row.qty += out; cur.known += known; cur.unknownQty += unknownQty; continue; }
-      const d: Draft = { row: { ...base, id: `prod:${key}`, date: day, to: "Производство (замес)", kind: "prod", toKey: "prod" }, known, unknownQty, prod: true };
+      const d: Draft = { row: { ...base, id: `prod:${key}`, date: day, to: "Ishlab chiqarish (zames)", kind: "prod", toKey: "prod" }, known, unknownQty, prod: true };
       prodBy.set(key, d);
       drafts.push(d);
       continue;
     }
-    const brigade = (m.brigadeId && brName.get(m.brigadeId)) || "Бригада";
+    const brigade = (m.brigadeId && brName.get(m.brigadeId)) || "Brigada";
     const brKey = m.brigadeId ? `b:${m.brigadeId}` : "b";
     const recipient = (m.recipientId && recName.get(m.recipientId)) || "—";
     const recKey = m.recipientId ? `r:${m.recipientId}` : "r";
@@ -513,13 +509,13 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     let termsDate: Date | undefined;
     if (m.refType === ISSUE_STORNO && (m.type === "ISSUE" || m.type === "BRIGADE_ISSUE")) {
       const isRec = m.type === "ISSUE";
-      row = { ...base, id: m.id, date: m.date, to: `Сторно: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note, ref: m.refId };
+      row = { ...base, id: m.id, date: m.date, to: `Storno: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note, ref: m.refId };
       termsDate = origDate.get(`${m.refId}|${materialId}`);
     } else if (m.type === "ISSUE") row = { ...base, id: m.id, date: m.date, to: recipient, kind: "issue", toKey: recKey, note: m.note, ...doc };
     else if (m.type === "BRIGADE_ISSUE") row = { ...base, id: m.id, date: m.date, to: brigade, kind: "brigade", toKey: brKey, auto: m.refType === "BrigadeTask", ...doc };
-    else if (m.type === "BRIGADE_RETURN") row = { ...base, id: m.id, date: m.date, to: `${brigade} — возврат`, kind: "return", toKey: brKey };
-    else if (m.type === "WRITE_OFF") row = { ...base, id: m.id, date: m.date, to: `Списание: ${writeOffReason(m.note)}`, kind: "writeoff", toKey: "writeoff" };
-    else if (m.type === "ADJUSTMENT") row = { ...base, id: m.id, date: m.date, to: "Инвентаризация (недостача)", kind: "inventory", toKey: "inventory" };
+    else if (m.type === "BRIGADE_RETURN") row = { ...base, id: m.id, date: m.date, to: `${brigade} — qaytarish`, kind: "return", toKey: brKey };
+    else if (m.type === "WRITE_OFF") row = { ...base, id: m.id, date: m.date, to: `Hisobdan chiqarish: ${writeOffReason(m.note)}`, kind: "writeoff", toKey: "writeoff" };
+    else if (m.type === "ADJUSTMENT") row = { ...base, id: m.id, date: m.date, to: "Inventarizatsiya (kamomad)", kind: "inventory", toKey: "inventory" };
     if (row) drafts.push({ row, known, unknownQty, prod: false, termsDate });
   }
 

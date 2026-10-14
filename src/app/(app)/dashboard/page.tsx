@@ -23,6 +23,9 @@ import { LogisticsHome } from "./logistics-home";
 import { MechanicHome } from "./mechanic-home";
 import { HrHome } from "./hr-home";
 import { SalesStatusSection } from "./sales-status";
+import { PulQabulSection } from "./pul-qabul-section";
+import { methodsFor } from "@/lib/payment-requests";
+import { pathAllowed } from "@/lib/nav";
 import { MECHANIC_HOME_ROLES } from "@/lib/sklad-logistika";
 import { parseDay } from "@/lib/logistics";
 import { faceScope } from "@/lib/face-id";
@@ -92,10 +95,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const busyMixers = mixers.filter((m) => m.active).length;
   // Buxgalteriya kabinetida Logistika yo'q: jonli xarita, mikserlar va bugungi reyslar bloklari chiqmaydi
   const showLogistics = s?.role !== "ACCOUNTING";
+  // Kassir va buxgalter — tepada «Pul qabul qilish» (zayavka bosh to'lovi so'rovlari): kassir naqdni, buxgalter perechisleniyeni
+  const payReqMethods = s && (s.role === "CASHIER" || s.role === "ACCOUNTING") && pathAllowed("/pul-qabul", s.role, s.perms) ? methodsFor(s) : [];
 
   return (
     <div>
       {header}
+
+      {payReqMethods.length > 0 && <PulQabulSection methods={payReqMethods} />}
 
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard label="Bugungi zayavkalar" value={`${ordersToday.length}`} hint={`${todayPlan} rejada`} icon={ClipboardList} tone="info" href="/orders" />

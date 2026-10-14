@@ -21,12 +21,12 @@ import {
 } from "@/lib/procurement-const";
 import type { MobileUser } from "./auth";
 import type { HomeSection, Tone } from "./home";
-import { DETAIL_KEY, OSTATKI_SUM, PAY_RU, driverEmployeeId, journalGranted, listAllowed, moduleClosed, myBrigadeIds, qtyRu, shortRu, skladPeriod, turnoverLow, turnoverSums, ListError } from "./list";
-import { unitLabel, unitLabelRu, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
+import { DETAIL_KEY, OSTATKI_SUM, PAY_LABEL, driverEmployeeId, journalGranted, listAllowed, moduleClosed, myBrigadeIds, payreqMethods, qtyUnit, shortSum, skladPeriod, turnoverLow, turnoverSums, ListError } from "./list";
+import { unitLabel, unitShort, unitTotals, soleUnit, donePercent, type UnitRow } from "@/lib/unit";
 import { dateRu, fmtNum } from "@/lib/format";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
 import { materialTurnover } from "@/lib/stock-turnover";
-import { ISSUE_STORNO } from "@/lib/stock-issue";
+import { ISSUE_STORNO, STORNO_NOTE_RE } from "@/lib/stock-issue";
 import { ingredientOf } from "@/lib/recipe";
 import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
 import { repDetail } from "./report-detail";
@@ -42,6 +42,8 @@ import { lineTotal, receiptAmounts } from "@/lib/receipt-vat";
 import type { Role, SupplyStatus } from "@/generated/prisma";
 import { MECH_REF, MECH_STATUS_LABEL, MECH_STATUS_TONE, TARGET_LABEL, mechSubject, mechanicRequest, payAccounts } from "@/lib/mechanic-requests";
 import { VEHICLE_TYPE } from "@/lib/logistics";
+import { OPEN_STATUSES, PAY_METHOD_LABEL, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, getPaymentRequest, methodsFor, receiveAccounts } from "@/lib/payment-requests";
+import { accountBalances } from "@/lib/payments";
 
 /**
  * Bitta hujjat kartochkasi — ro'yxatdagi qator bosilganda ochiladi.
@@ -180,7 +182,7 @@ const dt = (d: Date) => `${day(d)} ${d.toLocaleTimeString("ru-RU", { hour: "2-di
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 /**
  * Ro'yxat qatori id'sidagi `~` dan keyingi qism — faqat React kaliti noyob bo'lishi uchun (bir kirimning bir nechta
- * qatori «Приход» da, bir xomashyoning bir nechta harakati «Расход» da). Kirim va xomashyo id'larida `~` bo'lmaydi.
+ * qatori «Kirim» da, bir xomashyoning bir nechta harakati «Chiqim» da). Kirim va xomashyo id'larida `~` bo'lmaydi.
  */
 const baseId = (id: string) => id.split("~")[0];
 /** Tarixdagi vaqt — o'ng ustunga sig'ishi uchun qisqa: `23.09 14:05`. */
@@ -319,6 +321,10 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "kirim.reject": ["SUPERVISOR", "DIRECTOR"],
   "kirim.pay": ["CASHIER", "DIRECTOR"],
   "kirim.cancel": ["MECHANIC"],
+  // Pul qabul qilish (zayavka bosh to'lovi, `lib/payment-requests.ts`): naqd — kassa, perechisleniye — buxgalter, direktor ikkalasi.
+  // Aniq qoida usulga bog'liq — `can` da `methodsFor` (payments → receive_cash / receive_bank): direktor amalni boshqa
+  // xodimga (masalan moliyaga) bersa, u ham qabul qiladi; bermasa moliya faqat ko'radi
+  "payreq.receive": ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"],
   // Sayt arizalari — veb `/leads` bilan bir xil (SALES; direktor har doim)
   "lead.progress": ["SALES"],
   "lead.reopen": ["SALES"],
@@ -345,7 +351,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Egasi qarori (dashboard "Muammolar") — mas'ul bo'limga topshirish va qarorni qayd etish (`problemDetail`)
   "problem.assign": ["DIRECTOR"],
   "problem.note": ["DIRECTOR"],
-  // «Дона сўм» — xomashyo chiqim narxi (Material.unitPrice): Snabjeniye belgilaydi (`stock` → `price`), direktor ham
+  // «Dona narxi» — xomashyo chiqim narxi (Material.unitPrice): Snabjeniye belgilaydi (`stock` → `price`), direktor ham
   "material.price": ["PROCUREMENT", "DIRECTOR"],
 };
 
@@ -356,6 +362,9 @@ export const ACTION_ROLES: Record<string, Role[]> = {
  */
 export const can = (user: MobileUser, action: string) => {
   const roleOk = (Object.hasOwn(ACTION_ROLES, action) ? ACTION_ROLES[action] : []).includes(user.role);
+  // Pul qabul qilish — veb bilan bir qoida: kamida bitta usul (`methodsFor`); qaysi so'rov ekani kartochkada va
+  // `receivePaymentRequest` ichida usul bo'yicha yana tekshiriladi
+  if (action === "payreq.receive") return roleOk && methodsFor(user).length > 0;
   if (user.role === "DIRECTOR") return roleOk; // direktor — yuqoridagi izohdagi kabi faqat ro'yxat bo'yicha
   const map = permFor(action);
   const lvl = map && user.perms?.[map.module];
@@ -438,12 +447,14 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   invoices: ["ACCOUNTING", "FINANCE", "SALES", "CASHIER"],
   // Yetkazuvchi rekvizitlari va qarzi
   suppliers: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
-  // Sklad jurnallari (ruscha): «Расход» berish hujjati va «Остатки» jami — ro'yxatlari bilan bir xil (`list.ts` ACCESS).
-  // Direktor bergan `stock` amali (Расход — «issue», Остатки — kirim/berish/narx) ham ochadi: `mobileDetail` → `journalGranted`
+  // Sklad jurnallari: «Chiqim» berish hujjati va «Qoldiqlar» jami — ro'yxatlari bilan bir xil (`list.ts` ACCESS).
+  // Direktor bergan `stock` amali (Chiqim — «issue», Qoldiqlar — kirim/berish/narx) ham ochadi: `mobileDetail` → `journalGranted`
   rasxod: ["WAREHOUSE", "PROCUREMENT"],
   ostatki: ["WAREHOUSE", "PROCUREMENT"],
   // Mexanik so'rovi — mexanikka faqat o'zinikini (`kirimDetail`)
   kirim: ["MECHANIC", "SUPERVISOR", "CASHIER"],
+  // Pul qabul qilish so'rovi — ro'yxati bilan bir xil (`list.ts` ACCESS); usul bo'yicha cheklov `payreqDetail` da
+  payreq: ["CASHIER", "ACCOUNTING", "FINANCE"],
 };
 
 const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"];
@@ -464,7 +475,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   if (refKey) return mobileDetail(user, refKey, refId);
   const card = DETAIL_KEY[key] ?? key;
   const allowed = DETAIL_ROLES[card];
-  // Istisno: o'zi yozgan «Расход» kartochkasi — direktor «issue» ruxsatini bergan boshqa rol xodimiga ham (ro'yxat bilan bir qoida)
+  // Istisno: o'zi yozgan «Chiqim» kartochkasi — direktor «issue» ruxsatini bergan boshqa rol xodimiga ham (ro'yxat bilan bir qoida)
   if (allowed && user.role !== "DIRECTOR" && !allowed.includes(user.role) && !journalGranted(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Direktor modulni "yo'q" qilgan bo'lsa kartochka ham ochilmaydi (veb sahifa kabi) — id qo'lda yuborilsa ham
   if (moduleClosed(user, card)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
@@ -481,13 +492,14 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "tasks": return taskDetail(user, id);
     case "production": return batchDetail(id);
     case "stock": return materialDetail(user, baseId(id));
-    // «Расход» — berish hujjati (id = ref, `lib/stock-issue.ts`); «Остатки» — jami qatori yoki xomashyo
+    // «Chiqim» — berish hujjati (id = ref, `lib/stock-issue.ts`); «Qoldiqlar» — jami qatori yoki xomashyo
     case "rasxod": return issueDetail(id);
     case "ostatki": return id.startsWith(OSTATKI_SUM) ? ostatkiDetail(id) : materialDetail(user, baseId(id));
     case "employees": return employeeDetail(user, id);
     case "cashflow": return cashflowDetail(id);
     case "supply": return supplyDetail(user, id);
     case "kirim": return kirimDetail(user, id);
+    case "payreq": return payreqDetail(user, id);
     case "customers": return customerDetail(user, id);
     case "leads": return leadDetail(user, id);
     case "brigades": return brigadeDetail(user, id);
@@ -790,8 +802,8 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
   });
   if (!r) throw new ListError("NOT_FOUND", "Kirim topilmadi", 404);
   const { base, vat, total, delivery } = receiptAmounts(r.items);
-  // «Приход» ustunlari (Excel jurnalidagi nomlar bilan): ТТН, Деньги, Кому, Адрес, Снабженец, Почему, Доставка.
-  // Деньги — kirimdagi belgi, bo'lmasa bog'langan to'lov hisobining turi (jurnal bilan bir qoida — `resolveReceiptPayments`)
+  // «Kirim» ustunlari (Excel jurnalidagi ТТН, Деньги, Кому, Адрес, Снабженец, Почему, Доставка): TTN, To'lov turi, Kimga,
+  // Manzil, Ta'minotchi, Maqsad, Yetkazib berish. To'lov turi — kirimdagi belgi, bo'lmasa bog'langan to'lov hisobining turi (jurnal bilan bir qoida — `resolveReceiptPayments`)
   const pay = (await resolveReceiptPayments([{ id: r.id, payment: r.payment }])).get(r.id) ?? null;
   const waybill = r.waybillNo ?? waybillFromNote(r.note);
   const fields: DetailField[] = [
@@ -799,14 +811,14 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
     { label: "Sana", value: day(r.date) },
     { label: "Yetkazuvchi", value: r.supplier.name },
     { label: "Ombor", value: r.warehouse.name },
-    ...(waybill ? [{ label: "ТТН", value: waybill }] : []),
-    ...(pay ? [{ label: "Деньги", value: pay === "BANK" ? `${PAY_RU.BANK} · перечисление` : `${PAY_RU.CASH} · наличные` }] : []),
-    ...(r.recipient ? [{ label: "Кому", value: r.recipient.name }] : []),
-    ...(r.address ? [{ label: "Адрес", value: r.address }] : []),
-    ...(r.buyer ? [{ label: "Снабженец", value: r.buyer.fullName }] : []),
-    ...(r.purpose ? [{ label: "Почему", value: r.purpose }] : []),
-    // Доставка QQS'siz, «Общие» (QQS'siz) summasi ichida
-    ...(delivery > 0 ? [{ label: "Доставка", value: money(delivery) }] : []),
+    ...(waybill ? [{ label: "TTN", value: waybill }] : []),
+    ...(pay ? [{ label: "To'lov turi", value: PAY_LABEL[pay] }] : []),
+    ...(r.recipient ? [{ label: "Kimga", value: r.recipient.name }] : []),
+    ...(r.address ? [{ label: "Manzil", value: r.address }] : []),
+    ...(r.buyer ? [{ label: "Ta'minotchi", value: r.buyer.fullName }] : []),
+    ...(r.purpose ? [{ label: "Maqsad", value: r.purpose }] : []),
+    // Yetkazib berish QQS'siz, «QQS'siz» summasi ichida
+    ...(delivery > 0 ? [{ label: "Yetkazib berish", value: money(delivery) }] : []),
     { label: "QQS'siz", value: money(base) },
     { label: "QQS", value: money(vat) },
     { label: "Jami (QQS bilan)", value: money(total) },
@@ -819,7 +831,7 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
     ...(r.cancelledAt ? { status: "Storno" } : {}),
     fields: fields.slice(1),
-    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}${sum(i.deliveryCost) > 0 ? ` + доставка ${money(sum(i.deliveryCost))}` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
+    sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}${sum(i.deliveryCost) > 0 ? ` + yetkazib berish ${money(sum(i.deliveryCost))}` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [],
     // Xarid — pul chiqib ketgan hujjat, chekda qizil
     receipt: {
@@ -827,7 +839,7 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
       status: r.cancelledAt
         ? { label: "Storno qilingan · qoldiqqa kirmaydi", tone: "warning", at: r.cancelledAt.toISOString() }
         : { label: "Xarid · omborga kirim", tone: "danger", at: r.date.toISOString() },
-      rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" || f.label === "ТТН" })),
+      rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" || f.label === "TTN" })),
     },
   };
 }
@@ -950,10 +962,10 @@ async function batchDetail(id: string): Promise<MobileDetail> {
 }
 
 /**
- * Xomashyo kartochkasi. Ruscha qism (Sklad ekranlari tilida): «Дона сўм» (kim/qachon belgilagan) va joriy oy bo'yicha
- * «Остатки» (Нач / Приход / Расход / Итого — veb Sklad → Остатки bilan bir manba, `materialTurnover`).
- * «Дона сўм» tugmasi — `material.price` (Snabjeniye / direktor, `actions.ts` → `setMaterialPrice`).
- * Narx va summalar (ruscha qism) — faqat ko'rish huquqi borlarga: direktor, «Остатки» ro'yxati ochiqlar yoki «Дона сўм»
+ * Xomashyo kartochkasi. Sklad qismi: «Dona narxi» (kim/qachon belgilagan) va joriy oy bo'yicha
+ * «Qoldiqlar» (Boshida / Kirim / Chiqim / Jami — veb Sklad → Qoldiqlar bilan bir manba, `materialTurnover`).
+ * «Dona narxi» tugmasi — `material.price` (Snabjeniye / direktor, `actions.ts` → `setMaterialPrice`).
+ * Narx va summalar (sklad qismi) — faqat ko'rish huquqi borlarga: direktor, «Qoldiqlar» ro'yxati ochiqlar yoki «Dona narxi»
  * qo'ya oladiganlar. Kartochkani ochadigan boshqa rollarga (sotuv, logistika, mexanik…) qolgan qismi avvalgidek.
  */
 async function materialDetail(user: MobileUser, id: string): Promise<MobileDetail> {
@@ -974,46 +986,47 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
   const o = outlook.find((x) => x.id === id);
   const n = (v: number) => `${num(v)} ${m.unit}`;
   const need = o ? Math.max(0, o.planned - balance, sum(m.minStock) - balance) : 0;
-  const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Chiqim", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", TRANSFER: "Ko'chirish", ISSUE: "Расход" };
-  // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin. Расход — «Кому» bilan, brigada — nomi bilan
+  // ISSUE — Sklad → «Chiqim» (oluvchiga berish); SHIPMENT — mahsulot jo'natish (ikkalasi bir xil nomlanmasin)
+  const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Jo'natildi", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", TRANSFER: "Ko'chirish", ISSUE: "Chiqim" };
+  // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin. Chiqim — oluvchi bilan, brigada — nomi bilan
   const moveLabel = (mv: { type: string; note: string | null; recipient: { name: string } | null; brigade: { name: string } | null }) => {
     const whom = mv.type === "ISSUE" ? ` → ${mv.recipient?.name ?? "—"}` : (mv.type === "BRIGADE_ISSUE" || mv.type === "BRIGADE_RETURN") && mv.brigade ? ` · ${mv.brigade.name}` : "";
     return `${mv.note?.startsWith("Storno ") ? "Storno · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}${whom}`;
   };
 
-  // «Дона сўм»: Snabjeniye belgilagan narx; bo'lmasa chiqimlar o'rtacha tannarx bilan baholanadi («≈»)
-  const u = unitLabelRu(m.unit);
+  // «Dona narxi»: Snabjeniye belgilagan narx; bo'lmasa chiqimlar o'rtacha tannarx bilan baholanadi («≈»)
+  const u = unitShort(m.unit);
   const tr = turnover.find((x) => x.id === id);
   const own = m.unitPrice == null ? null : Number(m.unitPrice);
   const avg = tr?.avgCost ?? null;
   const priceFields: DetailField[] = !seePrice ? [] : [
     {
-      label: "Дона сўм",
-      value: own != null ? `${fmtNum(own, 2)} сўм / ${u}` : avg != null ? `не задана · ≈ ${fmtNum(avg, 2)} (средняя себестоимость)` : "не задана",
+      label: "Dona narxi",
+      value: own != null ? `${fmtNum(own, 2)} so'm / ${u}` : avg != null ? `narx belgilanmagan · ≈ ${fmtNum(avg, 2)} (o'rtacha tannarx)` : "narx belgilanmagan",
       ...(own == null ? { tone: "warning" as Tone } : {}),
     },
-    ...(own != null && (m.unitPriceBy || m.unitPriceAt) ? [{ label: "Дона сўм задал", value: [m.unitPriceBy?.fullName, m.unitPriceAt ? dateRu(m.unitPriceAt) : null].filter(Boolean).join(" · ") }] : []),
+    ...(own != null && (m.unitPriceBy || m.unitPriceAt) ? [{ label: "Narxni belgilagan", value: [m.unitPriceBy?.fullName, m.unitPriceAt ? dateRu(m.unitPriceAt) : null].filter(Boolean).join(" · ") }] : []),
   ];
-  const sumText = (s: number) => `Сумма ${tr?.approx ? "≈" : ""}${fmtNum(s)} сўм`;
+  const sumText = (s: number) => `Summa ${tr?.approx ? "≈" : ""}${fmtNum(s)} so'm`;
   const turnoverSection: HomeSection[] = tr ? [{
-    title: `Остатки · ${month.range}`, empty: "", icon: "warehouse",
+    title: `Qoldiqlar · ${month.range}`, empty: "", icon: "warehouse",
     rows: [
-      { id: "t-open", title: "Остаток на начало", subtitle: sumText(tr.open.s), right: qtyRu(tr.open.q, m.unit) },
-      { id: "t-in", title: "Приход", subtitle: sumText(tr.in.s), right: `${tr.in.q ? "+" : ""}${qtyRu(tr.in.q, m.unit)}`, tone: "success" as Tone },
-      { id: "t-out", title: "Расход", subtitle: sumText(tr.out.s), right: `${tr.out.q ? "−" : ""}${qtyRu(tr.out.q, m.unit)}`, tone: "danger" as Tone },
-      { id: "t-close", title: "Итого (остаток)", subtitle: sumText(tr.close.s), right: qtyRu(tr.close.q, m.unit), ...(turnoverLow(tr) ? { status: "мало", tone: "danger" as Tone } : {}) },
+      { id: "t-open", title: "Boshlang'ich qoldiq", subtitle: sumText(tr.open.s), right: qtyUnit(tr.open.q, m.unit) },
+      { id: "t-in", title: "Kirim", subtitle: sumText(tr.in.s), right: `${tr.in.q ? "+" : ""}${qtyUnit(tr.in.q, m.unit)}`, tone: "success" as Tone },
+      { id: "t-out", title: "Chiqim", subtitle: sumText(tr.out.s), right: `${tr.out.q ? "−" : ""}${qtyUnit(tr.out.q, m.unit)}`, tone: "danger" as Tone },
+      { id: "t-close", title: "Jami (qoldiq)", subtitle: sumText(tr.close.s), right: qtyUnit(tr.close.q, m.unit), ...(turnoverLow(tr) ? { status: "Kam", tone: "danger" as Tone } : {}) },
     ],
   }] : [];
 
   const actions: DetailAction[] = [];
   if (can(user, "material.price")) {
     actions.push({
-      id: "material.price", label: "Дона сўм", tone: "brand",
+      id: "material.price", label: "Dona narxi", tone: "brand",
       form: [{
-        name: "price", label: `Дона сўм за 1 ${u}`, type: "number", required: true, placeholder: "0",
-        // Narx yo'q bo'lsa — o'rtacha tannarx taklif qilinadi (vebdagi «заполнить из средней» kabi)
+        name: "price", label: `Dona narxi (1 ${u} uchun)`, type: "number", required: true, placeholder: "0",
+        // Narx yo'q bo'lsa — o'rtacha tannarx taklif qilinadi (vebdagi «o'rtachadan to'ldirish» kabi)
         value: own != null ? String(own) : avg != null ? String(Math.round(avg * 100) / 100) : undefined,
-        hint: "По этой цене считаются Расход, выдача бригаде и списание. Убрать цену — на сайте (Склад → Остатки)",
+        hint: "Chiqim, brigadaga berish va hisobdan chiqarish shu narxda hisoblanadi. Narxni olib tashlash — saytda (Sklad → Qoldiqlar)",
       }],
     });
   }
@@ -1051,8 +1064,8 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
 }
 
 /**
- * «Расход» — bitta berish hujjati (Sklad → Расход, `lib/stock-issue.ts#issueStock`): `refType "Issue"`, id = ref.
- * Ilova yangi «Расход» saqlangach shu kartochkani ochadi. Narx — yozilgan paytdagi «Дона сўм» (snapshot).
+ * «Chiqim» — bitta berish hujjati (Sklad → Chiqim, `lib/stock-issue.ts#issueStock`): `refType "Issue"`, id = ref.
+ * Ilova yangi «Chiqim» saqlangach shu kartochkani ochadi. Narx — yozilgan paytdagi «Dona narxi» (snapshot).
  */
 async function issueDetail(ref: string): Promise<MobileDetail> {
   const moves = await db.stockMove.findMany({
@@ -1064,11 +1077,11 @@ async function issueDetail(ref: string): Promise<MobileDetail> {
       recipient: { select: { name: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
     },
   });
-  if (!moves.length) throw new ListError("NOT_FOUND", "Расход не найден", 404);
+  if (!moves.length) throw new ListError("NOT_FOUND", "Chiqim topilmadi", 404);
   // Storno qilingan berish (`cancelIssue`: teskari harakatlar `refType "IssueStorno"`, `refId = ref`) — kartochkada belgisi bilan
   const storno = await db.stockMove.findFirst({ where: { refType: ISSUE_STORNO, refId: ref }, select: { createdAt: true, note: true, createdBy: { select: { fullName: true } } } });
   const first = moves[0];
-  const to = first.recipient?.name ?? (first.brigade ? `Бригада: ${first.brigade.name}` : "—");
+  const to = first.recipient?.name ?? (first.brigade ? `Brigada: ${first.brigade.name}` : "—");
   const lines = moves.map((mv) => {
     const q = -sum(mv.qty), cost = mv.unitCost == null ? null : sum(mv.unitCost);
     return { mv, q, cost, total: cost == null ? 0 : Math.round(q * cost * 100) / 100 };
@@ -1076,41 +1089,41 @@ async function issueDetail(ref: string): Promise<MobileDetail> {
   const total = Math.round(lines.reduce((a, l) => a + l.total, 0) * 100) / 100;
   const noPrice = lines.some((l) => l.cost == null);
   const fields: DetailField[] = [
-    { label: "Число", value: `${dateRu(first.date)} ${String(first.date.getHours()).padStart(2, "0")}:${String(first.date.getMinutes()).padStart(2, "0")}` },
-    { label: "От Кого", value: first.warehouse.name },
-    { label: "Кому", value: to },
-    { label: "Позиций", value: String(lines.length) },
-    { label: "Общие Сумма", value: `${fmtNum(total)} сўм${noPrice ? " (без цены — часть строк)" : ""}`, ...(noPrice ? { tone: "warning" as Tone } : {}) },
-    { label: "Выдал", value: first.createdBy.fullName },
-    ...(first.note ? [{ label: "Примечание", value: first.note }] : []),
-    ...(storno ? [{ label: "Сторно", value: [storno.note?.replace(/^Сторно:\s*/, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
+    { label: "Sana", value: `${dateRu(first.date)} ${String(first.date.getHours()).padStart(2, "0")}:${String(first.date.getMinutes()).padStart(2, "0")}` },
+    { label: "Kimdan", value: first.warehouse.name },
+    { label: "Kimga", value: to },
+    { label: "Xomashyolar soni", value: String(lines.length) },
+    { label: "Umumiy summa", value: `${fmtNum(total)} so'm${noPrice ? " (ba'zi qatorlar narxsiz)" : ""}`, ...(noPrice ? { tone: "warning" as Tone } : {}) },
+    { label: "Bergan xodim", value: first.createdBy.fullName },
+    ...(first.note ? [{ label: "Izoh", value: first.note }] : []),
+    ...(storno ? [{ label: "Storno", value: [storno.note?.replace(STORNO_NOTE_RE, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
   ];
   return {
-    key: "rasxod", id: ref, title: "Расход", subtitle: `${dateRu(first.date)} · ${to}`,
-    ...(storno ? { status: "Сторно" } : {}),
+    key: "rasxod", id: ref, title: "Chiqim", subtitle: `${dateRu(first.date)} · ${to}`,
+    ...(storno ? { status: "Storno" } : {}),
     fields,
     sections: [{
-      title: "Наименования", empty: "", target: "stock", icon: "package",
+      title: "Xomashyolar", empty: "", target: "stock", icon: "package",
       rows: lines.map((l) => ({
         id: l.mv.materialId ?? l.mv.id,
         title: l.mv.material?.name ?? "—",
-        subtitle: `${qtyRu(l.q, l.mv.material?.unit ?? "")} × ${l.cost == null ? "без цены" : `${fmtNum(l.cost, 2)} сўм`}`,
+        subtitle: `${qtyUnit(l.q, l.mv.material?.unit ?? "")} × ${l.cost == null ? "narxsiz" : `${fmtNum(l.cost, 2)} so'm`}`,
         right: `−${fmtNum(l.total)}`, tone: "danger" as Tone,
       })),
     }],
     actions: [],
     receipt: {
-      headline: `−${fmtNum(total)} сўм`, caption: to,
+      headline: `−${fmtNum(total)} so'm`, caption: to,
       status: storno
-        ? { label: "Сторно · возвращено на склад", tone: "warning", at: storno.createdAt.toISOString() }
-        : { label: "Расход со склада", tone: "danger", at: first.date.toISOString() },
-      rows: fields.filter((f) => f.label !== "Кому").map((f) => ({ label: f.label, value: f.value })),
+        ? { label: "Storno · skladga qaytarildi", tone: "warning", at: storno.createdAt.toISOString() }
+        : { label: "Skladdan chiqim", tone: "danger", at: first.date.toISOString() },
+      rows: fields.filter((f) => f.label !== "Kimga").map((f) => ({ label: f.label, value: f.value })),
     },
   };
 }
 
 /**
- * «Остатки» jami qatori (`jami~<davr>`, `list.ts`): davr summalari, minimumdan kam qolganlar va eng ko'p sarflanganlar.
+ * «Qoldiqlar» jami qatori (`jami~<davr>`, `list.ts`): davr summalari, minimumdan kam qolganlar va eng ko'p sarflanganlar.
  * Qatorlar bosilsa — xomashyo kartochkasi.
  */
 async function ostatkiDetail(id: string): Promise<MobileDetail> {
@@ -1118,28 +1131,28 @@ async function ostatkiDetail(id: string): Promise<MobileDetail> {
   const rows = await materialTurnover({ from: p.from, to: p.to });
   const s = turnoverSums(rows);
   const ap = s.approx ? "≈" : "";
-  const money = (v: number) => `${ap}${fmtNum(v)} сўм`;
+  const money = (v: number) => `${ap}${fmtNum(v)} so'm`;
   const low = rows.filter(turnoverLow);
   const top = rows.filter((m) => m.out.s > 0.005).sort((a, b) => b.out.s - a.out.s).slice(0, 10);
   const matRow = (m: (typeof rows)[number], right: string) => ({
-    id: m.id, title: `${m.name} (${unitLabelRu(m.unit)})`, right,
-    subtitle: `Остаток ${fmtNum(m.close.q, 3)} · минимум ${fmtNum(m.minStock, 3)} · Итого ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
+    id: m.id, title: `${m.name} (${unitShort(m.unit)})`, right,
+    subtitle: `Qoldiq ${fmtNum(m.close.q, 3)} · Minimum ${fmtNum(m.minStock, 3)} · Jami ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
   });
   return {
-    key: "ostatki", id, title: "Остатки — итого", subtitle: `${p.label} · ${p.range}`,
+    key: "ostatki", id, title: "Qoldiqlar — jami", subtitle: `${p.label} · ${p.range}`,
     fields: [
-      { label: "Период", value: p.range },
-      { label: "Позиций", value: String(rows.length) },
-      { label: "Остаток на начало", value: money(s.open) },
-      { label: "Приход", value: money(s.in), tone: "success" },
-      { label: "Расход", value: money(s.out), tone: "danger" },
-      { label: "Итого (остаток)", value: money(s.close) },
-      { label: "Мало (ниже минимума)", value: String(low.length), tone: low.length ? "danger" : "success" },
-      ...(s.approx ? [{ label: "≈", value: "Часть движений без цены — оценены по «Дона сўм» или средней себестоимости" }] : []),
+      { label: "Davr", value: p.range },
+      { label: "Xomashyolar soni", value: String(rows.length) },
+      { label: "Boshlang'ich qoldiq", value: money(s.open) },
+      { label: "Kirim", value: money(s.in), tone: "success" },
+      { label: "Chiqim", value: money(s.out), tone: "danger" },
+      { label: "Jami (qoldiq)", value: money(s.close) },
+      { label: "Kam (minimumdan past)", value: String(low.length), tone: low.length ? "danger" : "success" },
+      ...(s.approx ? [{ label: "≈", value: "Ba'zi harakatlar narxsiz — «Dona narxi» yoki o'rtacha tannarx bo'yicha baholandi" }] : []),
     ],
     sections: [
-      ...(low.length ? [{ title: `Мало · ${low.length}`, empty: "", target: "stock", icon: "triangle-alert", rows: low.slice(0, 30).map((m) => ({ ...matRow(m, qtyRu(m.close.q, m.unit)), status: "мало", tone: "danger" as Tone })) }] : []),
-      { title: "Больше всего расхода", empty: "Расхода за период не было", target: "stock", icon: "circle-arrow-up", rows: top.map((m) => matRow(m, `−${shortRu(m.out.s)}`)) },
+      ...(low.length ? [{ title: `Kam · ${low.length}`, empty: "", target: "stock", icon: "triangle-alert", rows: low.slice(0, 30).map((m) => ({ ...matRow(m, qtyUnit(m.close.q, m.unit)), status: "Kam", tone: "danger" as Tone })) }] : []),
+      { title: "Eng ko'p chiqim", empty: "Davr ichida chiqim bo'lmadi", target: "stock", icon: "circle-arrow-up", rows: top.map((m) => matRow(m, `−${shortSum(m.out.s)}`)) },
     ],
     actions: [],
   };
@@ -1587,6 +1600,82 @@ async function kirimDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     ],
     actions,
     ...(r.photo ? { photo: { url: `/api/mobile/kirim/photo?id=${r.id}`, title: "Muammo surati" } } : {}),
+  };
+}
+
+// ───────────────────────── Pul qabul qilish (zayavka bosh to'lovi) ─────────────────────────
+
+/** Qabul sanasi tanlovi: bugun va oldingi 6 kun (ilovaning `date` chipi faqat bugundan oldinga ko'rsatadi). */
+const RECEIVE_DAYS = 7;
+const receiveDayOptions = (): FormOption[] => Array.from({ length: RECEIVE_DAYS }, (_, i) => {
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+  return { value: ymd(d), label: i === 0 ? `Bugun · ${day(d)}` : i === 1 ? `Kecha · ${day(d)}` : day(d) };
+});
+
+/**
+ * So'rov kartochkasi (ro'yxat qatori va bildirishnoma havolasi `{ key: "payreq", id }`). Foydalanuvchi ko'radigan usulda
+ * bo'lmasa — «topilmadi» (kassirga perechisleniye, buxgalterga naqd ko'rinmaydi). «Qabul qilish» — faqat shu usulni
+ * qabul qila oladiganga; pul `receivePaymentRequest` → `addPayment` orqali (hisob qoldig'i, Kirim-Chiqim, debitorka).
+ */
+async function payreqDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const r = await getPaymentRequest(id, payreqMethods(user));
+  if (!r) throw new ListError("NOT_FOUND", "So'rov topilmadi", 404);
+  const st = r.status;
+  const open = OPEN_STATUSES.includes(st);
+  const isCash = r.method === "CASH";
+
+  const actions: DetailAction[] = [];
+  if (open && can(user, "payreq.receive") && methodsFor(user).includes(r.method)) {
+    const [accounts, bal] = await Promise.all([receiveAccounts(r.method), accountBalances()]);
+    if (!accounts.length) {
+      actions.push({ id: "payreq.receive", label: "Pulni qabul qilish", tone: "success", disabled: true, hint: isCash ? "Faol kassa hisobi yo'q — vebda Kassa/bank bo'limida qo'shing" : "Faol bank hisobi yo'q — vebda Kassa/bank bo'limida qo'shing" });
+    } else {
+      actions.push({
+        id: "payreq.receive", label: isCash ? "Pulni qabul qilish" : "Tushumni tasdiqlash", tone: "success",
+        form: [
+          {
+            name: "cashAccountId", label: isCash ? "Qaysi kassaga" : "Qaysi bank hisobiga", type: "select", required: true, value: accounts[0].id,
+            options: accounts.map((a) => ({ value: a.id, label: a.name, hint: `qoldiq ${money(bal.get(a.id) ?? 0)}` })),
+            hint: "Summa shu hisobga kirim bo'lib yoziladi",
+          },
+          { name: "amount", label: "Summa (so'm)", type: "number", required: true, value: String(r.left), hint: `Qolgan bosh to'lov ${money(r.left)} · qisman ham qabul qilinadi` },
+          { name: "date", label: "Sana", type: "select", required: true, value: ymd(new Date()), options: receiveDayOptions() },
+          ...(isCash ? [] : [{ name: "docRef", label: "To'lov topshiriqnomasi №", type: "text" as const, placeholder: "Bank ko'chirmasidagi raqam" }]),
+          { name: "note", label: "Izoh", type: "text" },
+        ],
+      });
+    }
+  }
+
+  const due = `${day(r.dueDate)}${r.order.deliveryTime ? ` ${r.order.deliveryTime}` : ""}`;
+  const fields: DetailField[] = [
+    { label: "Holat", value: PAYREQ_STATUS_LABEL[st], tone: PAYREQ_STATUS_TONE[st] },
+    { label: "Usul", value: PAY_METHOD_LABEL[r.method] },
+    { label: "Bosh to'lov", value: money(r.amount), tone: "brand" },
+    { label: "Tushgan", value: money(r.received), tone: r.received > 0 ? "success" : undefined },
+    ...(st !== "CANCELLED" ? [{ label: "Qolgan", value: money(r.left), tone: (r.left > 0.005 ? "danger" : "success") as Tone }] : []),
+    { label: "Muddat (yetkazish)", value: r.overdue ? `${due} · muddati o'tdi` : due, tone: r.overdue ? "danger" : undefined },
+    { label: "Zayavka", value: `${r.order.orderNo} · ${r.order.products || "—"} · ${money(r.order.total)}` },
+    { label: "Mijoz", value: r.customer.name },
+    ...(r.customer.phone ? [{ label: "Telefon", value: r.customer.phone }] : []),
+    { label: "Kim ochgan", value: `${r.createdBy} · ${dt(r.createdAt)}` },
+    ...(r.closedAt ? [{ label: st === "CANCELLED" ? "Bekor qilindi" : "Yopildi", value: dt(r.closedAt), tone: (st === "CANCELLED" ? "info" : "success") as Tone }] : []),
+  ];
+
+  // Zayavka va mijoz kartochkasi — rol ocha olsa (direktor modulni yopmagan; mijoz — `DETAIL_ROLES.customers`)
+  const custOk = (user.role === "DIRECTOR" || (DETAIL_ROLES.customers ?? []).includes(user.role)) && !moduleClosed(user, "customers");
+  const sections: HomeSection[] = [
+    {
+      title: "To'lovlar tarixi", empty: "Hali to'lov tushmagan", target: "payments", icon: "banknote",
+      rows: [...r.payments].reverse().map((p) => ({ id: p.id, title: `+${money(p.amount)}`, subtitle: [shortDt(p.date), p.account, p.by].filter(Boolean).join(" · "), right: `+${money(p.amount)}`, tone: "success" as Tone })),
+    },
+    ...(!moduleClosed(user, "orders") ? [{ title: "Zayavka", empty: "", target: "orders", rows: [{ id: r.order.id, title: `${r.order.orderNo} · ${r.customer.name}`, subtitle: `${r.order.products || "—"} · yetkazish ${due}`, right: money(r.order.total), tone: "brand" as Tone }] }] : []),
+    ...(custOk ? [{ title: "Mijoz", empty: "", target: "customers", rows: [{ id: r.customer.id, title: r.customer.name, subtitle: r.customer.phone ?? undefined }] }] : []),
+  ];
+
+  return {
+    key: "payreq", id: r.id, title: `${r.docNo} · ${r.customer.name}`, subtitle: `${r.order.orderNo} · ${PAY_METHOD_LABEL[r.method]}`, status: PAYREQ_STATUS_LABEL[st],
+    fields, sections, actions,
   };
 }
 

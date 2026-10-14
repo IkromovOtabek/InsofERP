@@ -48,7 +48,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
       <Card className="mb-6 max-w-2xl">
         <DL items={[
           { k: "Nakladnoy (TTN)", v: r.waybillNo ?? waybillFromNote(r.note) ?? "—" },
-          { k: "To'lov turi", v: payment ? <Badge color={payment === "BANK" ? "blue" : "amber"} dot={false}>{payment === "BANK" ? "O'tkazma (П-р)" : "Naqd (Н-к)"}</Badge> : "—" },
+          { k: "To'lov turi", v: payment ? <Badge color={payment === "BANK" ? "blue" : "amber"} dot={false}>{payment === "BANK" ? "O'tkazma (bank)" : "Naqd (kassa)"}</Badge> : "—" },
           { k: "Kimga", v: r.recipient?.name ?? r.warehouse.name },
           { k: "Manzil", v: r.address ?? "—" },
           { k: "Snabjenets", v: r.buyer?.fullName ?? r.createdBy?.fullName ?? "—" },

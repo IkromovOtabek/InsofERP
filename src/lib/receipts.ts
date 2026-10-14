@@ -7,10 +7,11 @@ import { Prisma, type ReceiptPayment, type Role } from "@/generated/prisma";
 import { companyVatPayer, isVatRate, receiptTotal, supplierVatRate, vatLine, type VatRate } from "./receipt-vat";
 
 /**
- * Kirim (GoodsReceipt) — yagona yaratish qoidasi va «Приход» jurnali (Sklad → Приход).
+ * Kirim (GoodsReceipt) — yagona yaratish qoidasi va «Kirim» jurnali (Sklad → Kirim, avval «Приход»).
  *
- * `createGoodsReceipt` ni chaqiradiganlar: Kirim formasi (`receipts/actions.ts#createReceipt`, o'zbekcha),
- * Sklad → «Приход» formasi (`stock/prixod/actions.ts`, ruscha). Ruxsat (`requireAction("stock", "receipt")`)
+ * `createGoodsReceipt` ni chaqiradiganlar: Kirim formasi (`receipts/actions.ts#createReceipt`),
+ * Sklad → «Kirim» formasi (`stock/prixod/actions.ts`) va ECO ilova. Xato matnlari o'zbekcha («Рус» rejimida lug'atdan).
+ * Ruxsat (`requireAction("stock", "receipt")`)
  * chaqiruvchida tekshiriladi; bu yerda faqat direktor hisobi (to'lov) qoidasi.
  *
  * Summalar `lib/receipt-vat.ts` da: narx QQS'siz, QQS (0/6/12%) faqat tovarga, «Доставка» QQS'siz va
@@ -46,6 +47,7 @@ export type ReceiptInput = {
   items: { materialId: string; qty: number; price: number; vatRate?: VatRate | null; deliveryCost?: number | null }[];
 };
 
+/** @deprecated Xatolar doim o'zbekcha (ruschasi — «Рус» rejimida lug'atdan); parametr eski chaqiruvlar buzilmasligi uchun qoldi. */
 export type ReceiptLang = "uz" | "ru";
 
 /** Formadagi bir martalik kalit: bo'sh yoki g'alati bo'lsa — e'tiborga olinmaydi. */
@@ -72,14 +74,12 @@ const clean =(v: string | null | undefined, max = 300) => {
  */
 export function receiptNote(
   d: { note?: string | null; waybillNo?: string | null; vehicle?: string | null; gross?: number | null; tare?: number | null },
-  lang: ReceiptLang = "uz",
 ): { note: string | null } | { error: string } {
-  const t = (uz: string, ru: string) => (lang === "ru" ? ru : uz);
   const gross = d.gross ?? null, tare = d.tare ?? null;
-  if (gross != null && !(Number.isFinite(gross) && gross > 0 && gross <= MAX_AMOUNT)) return { error: t("Brutto og'irligi noto'g'ri", "Неверный вес брутто") };
-  if (tare != null && !(Number.isFinite(tare) && tare >= 0 && tare <= MAX_AMOUNT)) return { error: t("Tara og'irligi noto'g'ri", "Неверный вес тары") };
-  if ((gross == null) !== (tare == null)) return { error: t("Tarozi: brutto va tara ikkalasini ham kiriting", "Весы: укажите и брутто, и тару") };
-  if (gross != null && tare != null && tare >= gross) return { error: t("Tara bruttodan kichik bo'lishi kerak", "Тара должна быть меньше брутто") };
+  if (gross != null && !(Number.isFinite(gross) && gross > 0 && gross <= MAX_AMOUNT)) return { error: "Brutto og'irligi noto'g'ri" };
+  if (tare != null && !(Number.isFinite(tare) && tare >= 0 && tare <= MAX_AMOUNT)) return { error: "Tara og'irligi noto'g'ri" };
+  if ((gross == null) !== (tare == null)) return { error: "Tarozi: brutto va tara ikkalasini ham kiriting" };
+  if (gross != null && tare != null && tare >= gross) return { error: "Tara bruttodan kichik bo'lishi kerak" };
   const parts = [
     d.waybillNo ? `Nakladnoy № ${d.waybillNo}` : null,
     d.vehicle ? `Mashina ${d.vehicle.toUpperCase()}` : null,
@@ -95,33 +95,32 @@ export function receiptNote(
  * (berilmasa 12). Direktor hisob tanlasa — shu zahoti chiqim (naqd kassa minusga tushmasin), aks holda
  * kirim «To'lanmagan kirimlar» ga tushadi va moliya to'laydi.
  *
- * Xato bo'lsa `Error` tashlaydi (matn `lang` tilida). `clientToken` bilan kirim allaqachon bo'lsa — o'shani
+ * Xato bo'lsa `Error` tashlaydi (matn o'zbekcha; `opts.lang` e'tiborsiz — eski chaqiruvlar uchun). `clientToken` bilan kirim allaqachon bo'lsa — o'shani
  * `existed: true` bilan qaytaradi (ikki marta bosish yoki parallel yuborish, P2002).
  */
 export async function createGoodsReceipt(
   input: ReceiptInput,
   actor: { userId: string; role: Role },
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- eski chaqiruvlar (`{ lang: "ru" }`) buzilmasin
   opts: { lang?: ReceiptLang } = {},
 ): Promise<{ id: string; docNo: string; existed: boolean }> {
-  const lang = opts.lang ?? "uz";
-  const t = (uz: string, ru: string) => (lang === "ru" ? ru : uz);
-  function fail(uz: string, ru: string): never { throw new Error(t(uz, ru)); }
+  function fail(msg: string): never { throw new Error(msg); }
 
-  if (!input.date || !validDate(input.date)) fail("Sana noto'g'ri — 2000-yildan bugungacha bo'lsin", "Неверная дата — с 2000 года по сегодня");
+  if (!input.date || !validDate(input.date)) fail("Sana noto'g'ri — 2000-yildan bugungacha bo'lsin");
   const date = new Date(input.date);
   const raw = (input.items ?? []).filter((i) => i && i.materialId);
-  if (!raw.length) fail("Kamida bitta qator kerak", "Нужна хотя бы одна строка");
+  if (!raw.length) fail("Kamida bitta qator kerak");
   if (raw.some((i) => !(Number.isFinite(i.qty) && i.qty > 0 && i.qty <= MAX_AMOUNT) || !(Number.isFinite(i.price) && i.price >= 0 && i.price <= MAX_AMOUNT))) {
-    fail("Har qatorda miqdor va narx bo'lsin", "В каждой строке укажите количество и цену");
+    fail("Har qatorda miqdor va narx bo'lsin");
   }
-  if (raw.some((i) => r3(i.qty) < 0.001)) fail("Miqdor juda kichik — kamida 0,001", "Количество слишком мало — минимум 0,001");
-  if (raw.some((i) => i.vatRate != null && !isVatRate(Number(i.vatRate)))) fail("QQS stavkasi 0, 6 yoki 12% bo'lsin", "Ставка НДС — 0, 6 или 12%");
+  if (raw.some((i) => r3(i.qty) < 0.001)) fail("Miqdor juda kichik — kamida 0,001");
+  if (raw.some((i) => i.vatRate != null && !isVatRate(Number(i.vatRate)))) fail("QQS stavkasi 0, 6 yoki 12% bo'lsin");
   if (raw.some((i) => i.deliveryCost != null && !(Number.isFinite(i.deliveryCost) && i.deliveryCost >= 0 && i.deliveryCost <= MAX_AMOUNT))) {
-    fail("Dostavka summasi manfiy bo'lmasin", "Сумма доставки не может быть отрицательной");
+    fail("Dostavka summasi manfiy bo'lmasin");
   }
   const payment: ReceiptPayment | null = input.payment ?? null;
-  if (payment != null && payment !== "BANK" && payment !== "CASH") fail("To'lov turi noto'g'ri", "Неверный способ оплаты");
-  const n = receiptNote({ note: clean(input.note, 1000), waybillNo: clean(input.waybillNo, 60), vehicle: clean(input.vehicle, 30), gross: input.gross, tare: input.tare }, lang);
+  if (payment != null && payment !== "BANK" && payment !== "CASH") fail("To'lov turi noto'g'ri");
+  const n = receiptNote({ note: clean(input.note, 1000), waybillNo: clean(input.waybillNo, 60), vehicle: clean(input.vehicle, 30), gross: input.gross, tare: input.tare });
   if ("error" in n) throw new Error(n.error);
 
   // Ikki marta bosilgan "Saqlash" (yoki tarmoq qayta yuborgan so'rov) ikkinchi kirim ochmasin:
@@ -145,17 +144,17 @@ export async function createGoodsReceipt(
     recipientId ? db.stockRecipient.findFirst({ where: { id: recipientId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
     buyerId ? db.user.findFirst({ where: { id: buyerId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
   ]);
-  if (!wh) fail("Sklad topilmadi yoki yopilgan", "Склад не найден или закрыт");
-  if (!sup) fail("Yetkazuvchi topilmadi", "Поставщик не найден");
-  if (!sup.isActive) fail(`"${sup.name}" yopilgan — avval Yetkazuvchilar bo'limida faollashtiring`, `«${sup.name}» закрыт — сначала активируйте его в разделе поставщиков`);
-  if (mats.length !== ids.length) fail("Xomashyo topilmadi — sahifani yangilang", "Материал не найден — обновите страницу");
-  if (mats.some((m) => !m.isActive)) fail("Yopilgan xomashyoga kirim qilinmaydi", "На закрытый материал приход не оформляется");
-  if (accId && !acc) fail("To'lov hisobi topilmadi yoki yopilgan", "Счёт оплаты не найден или закрыт");
+  if (!wh) fail("Sklad topilmadi yoki yopilgan");
+  if (!sup) fail("Yetkazuvchi topilmadi");
+  if (!sup.isActive) fail(`"${sup.name}" yopilgan — avval Yetkazuvchilar bo'limida faollashtiring`);
+  if (mats.length !== ids.length) fail("Xomashyo topilmadi — sahifani yangilang");
+  if (mats.some((m) => !m.isActive)) fail("Yopilgan xomashyoga kirim qilinmaydi");
+  if (accId && !acc) fail("To'lov hisobi topilmadi yoki yopilgan");
   if (acc && payment && acc.type !== payment) {
-    fail(payment === "CASH" ? "Naqd (Н-к) kirim — naqd kassadan to'lanadi" : "O'tkazma (П-р) kirim — bank hisobidan to'lanadi", payment === "CASH" ? "Н-к — оплата только из кассы (наличные)" : "П-р — оплата только с банковского счёта");
+    fail(payment === "CASH" ? "Naqd pul kirimi — faqat naqd kassadan to'lanadi" : "Bank o'tkazma kirimi — faqat bank hisobidan to'lanadi");
   }
-  if (recipientId && !recipient) fail("Oluvchi (Кому) topilmadi yoki yopilgan", "Получатель («Кому») не найден или закрыт");
-  if (buyerId && !buyer) fail("Snabjenets topilmadi yoki ishdan bo'shagan", "Снабженец не найден или уволен");
+  if (recipientId && !recipient) fail("Oluvchi («Kimga») topilmadi yoki yopilgan");
+  if (buyerId && !buyer) fail("Snabjenets topilmadi yoki ishdan bo'shagan");
 
   // QQS: QQS to'lovchisi bo'lmagan yetkazuvchi va naqd (Н-к) kirim QQS bermaydi — stavka majburan 0.
   // Aks holda qator stavkasi (0 — QQS'dan ozod tovar yoki 12), berilmasa 12.
@@ -167,7 +166,7 @@ export async function createGoodsReceipt(
     return { materialId: i.materialId, ...vatLine(r3(i.qty), i.price, rate, vatPayer, false, i.deliveryCost ?? 0) };
   });
   const total = receiptTotal(items);
-  if (total > MAX_AMOUNT) fail("Kirim summasi juda katta", "Сумма прихода слишком большая");
+  if (total > MAX_AMOUNT) fail("Kirim summasi juda katta");
 
   try {
     return await db.$transaction(async (tx) => {
@@ -190,7 +189,7 @@ export async function createGoodsReceipt(
       if (total > 0 && acc) {
         // Naqd kassa minusga tushmasin (qulf ostida) — bankdan to'lash yoki to'lovni moliyaga qoldirish kerak
         const cashErr = await cashOutflowError(tx, acc.id, total);
-        if (cashErr) throw new ReceiptError(t(`${cashErr}. Hisobni o'zgartiring yoki to'lovsiz saqlang — moliya keyin to'laydi`, `${cashErr}. Выберите другой счёт или сохраните без оплаты — оплатит финотдел`));
+        if (cashErr) throw new ReceiptError(`${cashErr}. Hisobni o'zgartiring yoki to'lovsiz saqlang — moliya keyin to'laydi`);
         const cashTx = await tx.cashTransaction.create({
           data: {
             type: "EXPENSE", date, cashAccountId: acc.id, amount: total,

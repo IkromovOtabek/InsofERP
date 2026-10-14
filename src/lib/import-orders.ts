@@ -131,6 +131,7 @@ export async function importOrders(input: ImportOrdersInput, userId: string): Pr
           deliveryAddress: g.customer.address?.trim() || g.label,
           items,
           onCredit: input.onCredit,
+          // Bosh to'lov yo'q — pul qabul so'rovi ochilmaydi; usul berilmasa createOrder o'zi hal qiladi (naqd yoki qarzga — null)
           note: [input.note?.trim(), "Excel'dan import"].filter(Boolean).join(" · "),
         },
         userId,

@@ -9,8 +9,8 @@ import { customersCredit, customersHistory, STAR_LABELS } from "@/lib/finance";
 import { driverPositionNames } from "@/lib/positions";
 import { ingredientOf } from "@/lib/recipe";
 import { SUPPLY_LABEL, SUPPLY_TABS, totalPlanned } from "@/lib/supply";
-import { unitLabel, unitLabelRu } from "@/lib/unit";
-import { dateRu, fmtNum } from "@/lib/format";
+import { unitLabel, unitShort } from "@/lib/unit";
+import { dateRu, fmtNum, moneyShort } from "@/lib/format";
 import { prixodJournal, prixodTotals } from "@/lib/receipts";
 import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
 import { materialTurnover, type TurnoverRow } from "@/lib/stock-turnover";
@@ -19,9 +19,10 @@ import type { MobileUser } from "./auth";
 import { reportRows } from "./sex";
 import { brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
 import type { HomeRow, Tone } from "./home";
-import type { LeadStatus, OrderStatus, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
+import type { LeadStatus, OrderStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
+import { OPEN_STATUSES, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, PAYREQ_TABS, listPaymentRequests, methodsFor, payReqCounts, payReqTab, type PayReqRow } from "@/lib/payment-requests";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -75,15 +76,17 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   supply: { title: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"] },
   receipts: { title: "Kirimlar", roles: ["PROCUREMENT", "WAREHOUSE", "SALES"] },
   suppliers: { title: "Yetkazuvchilar", roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
-  // Sklad jurnallari — vebdagi Sklad → «Приход», «Расход», «Остатки» (ekran RUSCHA, foydalanuvchi Excel'idagidek; `skladList`)
-  prixod: { title: "Приход", roles: ["WAREHOUSE", "PROCUREMENT"] },
-  rasxod: { title: "Расход", roles: ["WAREHOUSE", "PROCUREMENT"] },
-  ostatki: { title: "Остатки", roles: ["WAREHOUSE", "PROCUREMENT"] },
+  // Sklad jurnallari — vebdagi Sklad → «Kirim», «Chiqim», «Qoldiqlar» (foydalanuvchi Excel'idagi ustunlar bilan; `skladList`)
+  prixod: { title: "Kirim", roles: ["WAREHOUSE", "PROCUREMENT"] },
+  rasxod: { title: "Chiqim", roles: ["WAREHOUSE", "PROCUREMENT"] },
+  ostatki: { title: "Qoldiqlar", roles: ["WAREHOUSE", "PROCUREMENT"] },
   // ── Moliya ──
   cashflow: { title: "Kirim-chiqim", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   payments: { title: "To'lovlar", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   // Mexanik so'rovlari ("Kirim"): mexanik — faqat o'zinikini (`kirimList`), ish boshqaruvchi va kassa — hammasini
   kirim: { title: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"] },
+  // Zayavka bosh to'lovi (`lib/payment-requests.ts`): kassir — naqd, buxgalter — perechisleniye, moliya — ikkalasi faqat ko'rish
+  payreq: { title: "Pul qabul qilish", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   // ── Boshqaruv ──
   // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
   employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
@@ -97,9 +100,9 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
 // Ro'yxat kaliti → kartochka kaliti. "brig-issues"/"brig-shifts" ro'yxati qatorlari oddiy id bilan keladi —
 // ilova `/erp/brig-issues/<id>` ni ochadi; bu xaritasiz kartochka "Bunday kartochka yo'q" (brigadirda — "ruxsat yo'q") bo'lardi.
-// «Приход» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
-// «Расход» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Расход» kartochkasi esa berish hujjati (`rasxod`, id = ref).
-// «Остатки» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
+// «Kirim» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
+// «Chiqim» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Chiqim» kartochkasi esa berish hujjati (`rasxod`, id = ref).
+// «Qoldiqlar» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
 export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts" };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
@@ -127,7 +130,7 @@ const KEY_MODULE: Record<string, string> = {
   trips: "trips", drivers: "trips",
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
   prixod: "stock", rasxod: "stock", ostatki: "stock",
-  supply: "taminot", employees: "employees", kirim: "mexanik",
+  supply: "taminot", employees: "employees", kirim: "mexanik", payreq: "payments",
 };
 
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
@@ -140,7 +143,7 @@ export function moduleClosed(user: Pick<MobileUser, "role" | "perms">, key: stri
 
 /**
  * Sklad jurnallari — ISTISNO (faqat shu 3 kalit): direktor bergan `stock` amali ham ochadi (veb `lib/stock-journal-access.ts`
- * kabi), rol ACCESS ro'yxatida bo'lmasa ham. Приход — «receipt», Расход — «issue», Остатки — kirim / berish / «Дона сўм»
+ * kabi), rol ACCESS ro'yxatida bo'lmasa ham. Kirim — «receipt», Chiqim — «issue», Qoldiqlar — kirim / berish / «Dona narxi»
  * amallaridan biri (qoldiq va narxni ko'rmay narx qo'yib yoki berib bo'lmaydi). Kartochkalar ham shu qoida (`detail.ts`).
  */
 const JOURNAL_GRANT: Record<string, readonly string[]> = { prixod: ["receipt"], rasxod: ["issue"], ostatki: ["receipt", "issue", "price"] };
@@ -197,6 +200,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "kirim") return kirimList(user, s, filter);
+  if (key === "payreq") return payreqList(user, meta.title, s, filter);
   if (key === "snabjeniye") return snabjeniye(meta.title, s, filter);
   if (key === "leads") return leads(meta.title, s, filter);
   if (key === "sales") return salesOrders(meta.title, s, filter);
@@ -321,6 +325,43 @@ async function kirimList(user: MobileUser, q?: string, filter?: string): Promise
 }
 
 /**
+ * Pul qabul qilish so'rovlari qaysi usulda ko'rinadi: qabul qila oladigani (`methodsFor` — kassir naqd, buxgalter bank,
+ * direktor ikkalasi). Bo'sh bo'lsa (moliya yoki direktor amalni olib qo'ygan) — ikkala usul, faqat ko'rish (tugma chiqmaydi).
+ */
+export const payreqMethods = (user: Pick<MobileUser, "role" | "perms">): PayMethod[] => {
+  const m = methodsFor(user);
+  return m.length ? m : ["CASH", "BANK"];
+};
+const PAYREQ_METHOD_SHORT: Record<PayMethod, string> = { CASH: "Naqd", BANK: "Perechisleniye" };
+
+/**
+ * So'rov qatori — ro'yxat va bosh sahifa bir xil: «PS-… · Mijoz» / «Z-… · Naqd · muddat dd.mm» / qolgan summa.
+ * Ochiqda o'ngda qolgan bosh to'lov, yopilganda tushgan (bekor qilinganda — so'ralgan) summa. Muddati o'tgan — qizil.
+ */
+export const payreqRow = (r: PayReqRow): HomeRow => {
+  const open = OPEN_STATUSES.includes(r.status);
+  return {
+    id: r.id,
+    title: `${r.docNo} · ${r.customer.name}`,
+    subtitle: `${r.order.orderNo} · ${PAYREQ_METHOD_SHORT[r.method]} · muddat ${day(r.dueDate)}${r.overdue ? " · muddati o'tdi" : ""}`,
+    right: money(open ? r.left : r.status === "RECEIVED" ? r.received : r.amount),
+    status: PAYREQ_STATUS_LABEL[r.status],
+    tone: r.overdue ? "danger" : PAYREQ_STATUS_TONE[r.status],
+  };
+};
+
+/** «Pul qabul qilish» — veb kabinetdagi tablar bilan bir xil filtr chiplari (sonlari bilan), sukut «Ochiq». */
+async function payreqList(user: MobileUser, title: string, q?: string, filter?: string): Promise<MobileList> {
+  const methods = payreqMethods(user);
+  const tab = payReqTab(filter);
+  const [rows, counts] = await Promise.all([listPaymentRequests(tab, methods, { q, take: TAKE }), payReqCounts(methods)]);
+  return {
+    key: "payreq", title, rows: rows.map(payreqRow),
+    filters: PAYREQ_TABS.map((t) => ({ key: t.key, label: t.label, count: counts[t.key], active: t.key === tab })),
+  };
+}
+
+/**
  * Snabjeniye: narx qo'yiladigan (NEW/PRICED) va qabul qilinadigan (FUNDED) so'rovlar — vebdagi `/snabjeniye`,
  * ustiga TZ filtrlari: shoshilinch, tasdiqda, yo'lda, kechikkan, muammoli.
  */
@@ -402,17 +443,17 @@ async function salesOrders(title: string, q?: string, filter?: string): Promise<
   };
 }
 
-// ───────────────────────── Sklad: «Приход», «Расход», «Остатки» (ruscha, Excel jurnallaridagidek) ─────────────────────────
+// ───────────────────────── Sklad: «Kirim», «Chiqim», «Qoldiqlar» (Excel jurnallaridagidek) ─────────────────────────
 
 /**
  * Davr chiplari — veb `StockPeriodBar` bilan bir xil chegaralar: mahalliy yarim tun, `to` eksklyuziv, hafta dushanbadan.
- * Sukut — «Месяц» (joriy oy boshidan bugungacha, vebdagi standart davr).
+ * Sukut — «Oy» (joriy oy boshidan bugungacha, vebdagi standart davr).
  */
 export const SKLAD_PERIODS = [
-  { key: "today", label: "Сегодня" },
-  { key: "week", label: "Неделя" },
-  { key: "month", label: "Месяц" },
-  { key: "prev", label: "Прошлый месяц" },
+  { key: "today", label: "Bugun" },
+  { key: "week", label: "Hafta" },
+  { key: "month", label: "Oy" },
+  { key: "prev", label: "O'tgan oy" },
 ] as const;
 export type SkladPeriodKey = (typeof SKLAD_PERIODS)[number]["key"];
 export type SkladPeriod = { key: SkladPeriodKey; label: string; from: Date; to: Date; /** «01.10.2026 — 13.10.2026» (bir kun bo'lsa — sana) */ range: string };
@@ -432,27 +473,24 @@ export function skladPeriod(key?: string | null, now = new Date()): SkladPeriod 
 /** Davr chiplari soni ko'rsatilmaydi (har davr uchun alohida jurnal o'qimaslik uchun) — jami ro'yxat sarlavhasida. */
 const periodFilters = (active: SkladPeriodKey): ListFilter[] => SKLAD_PERIODS.map((p) => ({ key: p.key, label: p.label, active: p.key === active }));
 
-/** «Деньги»: П-р — perechisleniye (bank), Н-к — naqd (kassa). */
-export const PAY_RU = { BANK: "П-р", CASH: "Н-к" } as const;
+/** To'lov turi: bank o'tkazma (perechisleniye) yoki naqd pul (kassa); Excel'dagi «П-р» / «Н-к». */
+export const PAY_LABEL = { BANK: "Bank o'tkazma", CASH: "Naqd pul" } as const;
 
-/** Qisqa summa ruscha: «12,3 млн», «1,25 млрд», «350 тыс». Intl'siz (`fmtNum`). */
-export function shortRu(v: number): string {
-  const a = Math.abs(v), s = v < 0 ? "−" : "";
-  if (a >= 1e9) return `${s}${fmtNum(a / 1e9, a >= 1e10 ? 1 : 2)} млрд`;
-  if (a >= 1e6) return `${s}${fmtNum(a / 1e6, a >= 1e8 ? 0 : 1)} млн`;
-  if (a >= 1e3) return `${s}${fmtNum(a / 1e3, 0)} тыс`;
-  return `${s}${fmtNum(a, 0)}`;
-}
+/** Qisqa summa: «12,3 mln», «1,25 mlrd», «350 ming» (`moneyShort`, manfiyda «−»). */
+export const shortSum = (v: number) => `${v < 0 ? "−" : ""}${moneyShort(Math.abs(v))}`;
 
-/** Miqdor + ruscha birlik: «12,5 тн». */
-export const qtyRu = (q: number, unit: string) => `${fmtNum(q, 3)} ${unitLabelRu(unit)}`;
-
-/** Sarlavhada davr jami: 60 qatordan ko'pi ko'rsatilmaydi, lekin jami summa va qatorlar soni — butun davr bo'yicha. */
-const journalTitle = (title: string, n: number, total: number) => (n ? `${title} · ${shortRu(total)} · ${n} стр.` : title);
+/** Miqdor + qisqa birlik: «12,5 t». */
+export const qtyUnit = (q: number, unit: string) => `${fmtNum(q, 3)} ${unitShort(unit)}`;
 
 /**
- * «Приход» — kirimlarning har qatori (`lib/receipts.ts#prixodJournal`, storno qilingani belgi bilan + storno qatori), yangisi tepada.
- * Qator: «Наименование · К-во ед» / «dd.mm.yyyy · От Кого · ТТН · П-р/Н-к» / «+Итого». Kartochka — kirim (`receipts`).
+ * Sarlavhada davr jami: 60 qatordan ko'pi ko'rsatilmaydi, lekin jami summa va qatorlar soni — butun davr bo'yicha.
+ * Tartib «Kirim · 15 qator · 12,3 mln»: summa oxirida — rus tarjimasida «{0} · {1} qator» shabloni summani yutib yubormasin.
+ */
+const journalTitle = (title: string, n: number, total: number) => (n ? `${title} · ${n} qator · ${shortSum(total)}` : title);
+
+/**
+ * «Kirim» — kirimlarning har qatori (`lib/receipts.ts#prixodJournal`, storno qilingani belgi bilan + storno qatori), yangisi tepada.
+ * Qator: «Xomashyo · miqdor birlik» / «dd.mm.yyyy · Kimdan · TTN · to'lov turi» / «+Jami». Kartochka — kirim (`receipts`).
  */
 async function prixodList(title: string, q?: string, filter?: string): Promise<MobileList> {
   const p = skladPeriod(filter);
@@ -460,19 +498,19 @@ async function prixodList(title: string, q?: string, filter?: string): Promise<M
   const t = prixodTotals(all);
   const rows = all.slice(-TAKE).reverse().map((r): HomeRow => ({
     id: `${r.receiptId}~${r.id}`,
-    title: `${r.material} · ${qtyRu(r.qty, r.unit)}`,
-    subtitle: [dateRu(r.date), r.supplier, r.waybillNo ? `ТТН ${r.waybillNo}` : null, r.payment ? PAY_RU[r.payment] : null].filter(Boolean).join(" · "),
-    // Storno qilingan kirim o'z sanasida «отменён», storno sanasida manfiy qator (jurnal = «Остатки» Приход)
+    title: `${r.material} · ${qtyUnit(r.qty, r.unit)}`,
+    subtitle: [dateRu(r.date), r.supplier, r.waybillNo ? `TTN ${r.waybillNo}` : null, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
+    // Storno qilingan kirim o'z sanasida «Bekor qilindi», storno sanasida manfiy qator (jurnal = «Qoldiqlar» Kirim)
     right: r.storno ? `−${fmtNum(Math.abs(r.total))}` : `+${fmtNum(r.total)}`,
     tone: r.storno ? "danger" : "success",
-    ...(r.storno ? { status: "сторно" } : r.cancelled ? { status: "отменён" } : {}),
+    ...(r.storno ? { status: "Storno" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
   }));
   return { key: "prixod", title: journalTitle(title, all.length, t.total), rows, filters: periodFilters(p.key) };
 }
 
 /**
- * «Расход» — `lib/stock-issue.ts#rasxodJournal` (Кому'ga berish, brigada, zames, spisanie, inventarizatsiya), yangisi tepada.
- * Qator: «Наименование · К-во ед» / «dd.mm.yyyy · Кому · П-р/Н-к» / «−Итого» (≈ — narxi taxminiy). Zames qatorlari
+ * «Chiqim» — `lib/stock-issue.ts#rasxodJournal` (oluvchiga berish, brigada, zames, spisanie, inventarizatsiya), yangisi tepada.
+ * Qator: «Xomashyo · miqdor birlik» / «dd.mm.yyyy · Kimga · to'lov turi» / «−Jami» (≈ — narxi taxminiy). Zames qatorlari
  * (Excel'dagi ko'k) — `info` rangida; brigadadan qaytish — «+». Bosilsa xomashyo kartochkasi (`stock:<id>~<n>`, id noyob bo'lsin).
  */
 async function rasxodList(title: string, q?: string, filter?: string): Promise<MobileList> {
@@ -485,21 +523,21 @@ async function rasxodList(title: string, q?: string, filter?: string): Promise<M
     const noPrice = r.price == null && Math.abs(r.total) < 0.005;
     return {
       id: `stock:${r.materialId}~${i}`,
-      title: `${r.material} · ${qtyRu(Math.abs(r.qty), r.unit)}`,
-      subtitle: [dateRu(r.date), r.to, r.payment ? PAY_RU[r.payment] : null].filter(Boolean).join(" · "),
-      right: noPrice ? "без цены" : `${r.priceApprox ? "≈" : ""}${back ? "+" : "−"}${fmtNum(Math.abs(r.total))}`,
+      title: `${r.material} · ${qtyUnit(Math.abs(r.qty), r.unit)}`,
+      subtitle: [dateRu(r.date), r.to, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
+      right: noPrice ? "narxsiz" : `${r.priceApprox ? "≈" : ""}${back ? "+" : "−"}${fmtNum(Math.abs(r.total))}`,
       tone: back ? "success" : r.kind === "prod" ? "info" : "danger",
-      ...(r.kind === "storno" ? { status: "сторно" } : r.cancelled ? { status: "отменён" } : {}),
+      ...(r.kind === "storno" ? { status: "Storno" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
     };
   });
   return { key: "rasxod", title: journalTitle(title, all.length, t.total), rows, filters: periodFilters(p.key) };
 }
 
-/** «Остатки» jami qatorining id prefiksi: `jami~<davr>` — kartochkasi `detail.ts` da (`ostatki`). */
+/** «Qoldiqlar» jami qatorining id prefiksi: `jami~<davr>` — kartochkasi `detail.ts` da (`ostatki`). */
 export const OSTATKI_SUM = "jami~";
-/** Minimumdan kam (davr oxiridagi qoldiq bo'yicha) — veb «Остатки» va mobil «Sklad» ro'yxati bilan bir xil qoida. */
+/** Minimumdan kam (davr oxiridagi qoldiq bo'yicha) — veb «Qoldiqlar» va mobil «Sklad» ro'yxati bilan bir xil qoida. */
 export const turnoverLow = (m: TurnoverRow) => m.close.q < m.minStock - 0.0005;
-/** «Остатки» summalari yig'indisi (К-во birliklari har xil — qo'shilmaydi). */
+/** «Qoldiqlar» summalari yig'indisi (miqdor birliklari har xil — qo'shilmaydi). */
 export function turnoverSums(rows: TurnoverRow[]) {
   const r2 = (v: number) => Math.round(v * 100) / 100 || 0;
   const s = (f: (m: TurnoverRow) => number) => r2(rows.reduce((a, m) => a + f(m), 0));
@@ -507,9 +545,10 @@ export function turnoverSums(rows: TurnoverRow[]) {
 }
 
 /**
- * «Остатки» — xomashyo aylanmasi (`lib/stock-turnover.ts`, veb Sklad → Остатки bilan bir manba). Birinchi qator — jami
- * (summalar; bosilsa jami kartochkasi), keyin har xomashyo: «Наименование (ед)» / «Нач · Приход · Расход» + «Дона сўм · Итого» /
- * davr oxiridagi qoldiq, minimumdan kam bo'lsa «мало».
+ * «Qoldiqlar» — xomashyo aylanmasi (`lib/stock-turnover.ts`, veb Sklad → Qoldiqlar bilan bir manba). Birinchi qator — jami
+ * (summalar; bosilsa jami kartochkasi), keyin har xomashyo: «Nomi (birlik)» / «Boshida · Kirim · Chiqim» + «Dona narxi · Jami» /
+ * davr oxiridagi qoldiq, minimumdan kam bo'lsa «Kam».
+ * Ikki qatorli izohda qator ko'chishi « ·\n» bilan: rus tarjimasi matnni « · » bo'yicha bo'laklaydi (bo'shliqlar bittaga yig'iladi).
  */
 async function ostatkiList(title: string, q?: string, filter?: string): Promise<MobileList> {
   const p = skladPeriod(filter);
@@ -520,20 +559,20 @@ async function ostatkiList(title: string, q?: string, filter?: string): Promise<
   const ap = sums.approx ? "≈" : "";
   const head: HomeRow = {
     id: `${OSTATKI_SUM}${p.key}`,
-    title: `Итого · ${all.length} поз. · ${p.label}`,
-    subtitle: `Нач ${shortRu(sums.open)} · Приход ${shortRu(sums.in)}\nРасход ${shortRu(sums.out)} · Итого ${ap}${shortRu(sums.close)}`,
-    right: `${ap}${shortRu(sums.close)}`,
-    ...(low ? { status: `мало: ${low}`, tone: "warning" as Tone } : {}),
+    title: `Jami · ${all.length} ta xomashyo · ${p.label}`,
+    subtitle: `Boshida ${shortSum(sums.open)} · Kirim ${shortSum(sums.in)} ·\nChiqim ${shortSum(sums.out)} · Jami ${ap}${shortSum(sums.close)}`,
+    right: `${ap}${shortSum(sums.close)}`,
+    ...(low ? { status: `Kam: ${low}`, tone: "warning" as Tone } : {}),
   };
   const rows = all.slice(0, TAKE - 1).map((m): HomeRow => {
     const price = m.unitPrice ?? m.avgCost;
-    const priceText = price == null ? "—" : `${m.unitPrice == null ? "≈" : ""}${fmtNum(price, 2)}`;
+    const priceText = price == null ? "Dona narxi yo'q" : `Dona narxi ${m.unitPrice == null ? "≈" : ""}${fmtNum(price, 2)}`;
     return {
       id: m.id,
-      title: `${m.name} (${unitLabelRu(m.unit)})`,
-      subtitle: `Нач ${fmtNum(m.open.q, 3)} · Приход ${fmtNum(m.in.q, 3)} · Расход ${fmtNum(m.out.q, 3)}\nДона сўм ${priceText} · Итого ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
-      right: qtyRu(m.close.q, m.unit),
-      ...(turnoverLow(m) ? { status: "мало", tone: "danger" as Tone } : {}),
+      title: `${m.name} (${unitShort(m.unit)})`,
+      subtitle: `Boshida ${fmtNum(m.open.q, 3)} · Kirim ${fmtNum(m.in.q, 3)} · Chiqim ${fmtNum(m.out.q, 3)} ·\n${priceText} · Jami ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
+      right: qtyUnit(m.close.q, m.unit),
+      ...(turnoverLow(m) ? { status: "Kam", tone: "danger" as Tone } : {}),
     };
   });
   return { key: "ostatki", title, rows: [head, ...rows], filters: periodFilters(p.key) };

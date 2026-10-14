@@ -4,7 +4,7 @@ import { dateRu, isoDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
- * Sklad jadvallari (Приход / Расход / Остатки) uchun davr: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (ikkalasi ham kun ichida).
+ * Sklad jadvallari (Kirim / Chiqim / Qoldiqlar) uchun davr: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (ikkalasi ham kun ichida).
  * Standart — joriy oyning 1-kunidan bugungacha. Sana Toshkent mahalliy yarim tuni (`T00:00:00`) — StockMove.date
  * timestamp bo'lgani uchun `dayUtc` / `new Date("YYYY-MM-DD")` (UTC) ishlatilmaydi: kun chegarasi 05:00 ga siljirdi.
  * `to` — eksklyuziv (oxirgi kun ertasi 00:00), so'rovlarda `lt` bilan. Ko'pi bilan 400 kun.
@@ -37,14 +37,14 @@ export function StockPeriodBar({ base, period, hidden = {} }: { base: string; pe
   const weekStart = new Date(today); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const yearStart = new Date(today.getFullYear(), 0, 1);
   const presets: [string, Date, Date][] = [
-    ["Сегодня", today, today],
-    ["Неделя", weekStart, today],
-    ["Этот месяц", monthStart, today],
-    ["Прошлый месяц", prevStart, prevEnd],
-    ["С начала года", yearStart, today],
+    ["Bugun", today, today],
+    ["Hafta", weekStart, today],
+    ["Joriy oy", monthStart, today],
+    ["O'tgan oy", prevStart, prevEnd],
+    ["Yil boshidan", yearStart, today],
   ];
   return (
-    <div lang="ru" className="flex flex-wrap items-end gap-2">
+    <div className="flex flex-wrap items-end gap-2">
       <div className="flex flex-wrap gap-1">
         {presets.map(([label, f, t]) => {
           const active = isoDate(f) === period.fromStr && isoDate(t) === period.toStr;
@@ -58,9 +58,9 @@ export function StockPeriodBar({ base, period, hidden = {} }: { base: string; pe
       </div>
       <form action={base} className="flex flex-wrap items-end gap-2">
         {Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-        <label className="text-xs text-slate-500">с<input type="date" name="from" defaultValue={period.fromStr} className="mt-0.5 block h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900" /></label>
-        <label className="text-xs text-slate-500">по<input type="date" name="to" defaultValue={period.toStr} className="mt-0.5 block h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900" /></label>
-        <button className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"><CalendarDays size={15} /> Показать</button>
+        <label className="text-xs text-slate-500">Dan<input type="date" name="from" defaultValue={period.fromStr} className="mt-0.5 block h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900" /></label>
+        <label className="text-xs text-slate-500">Gacha<input type="date" name="to" defaultValue={period.toStr} className="mt-0.5 block h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900" /></label>
+        <button className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"><CalendarDays size={15} /> Ko&apos;rsatish</button>
       </form>
     </div>
   );

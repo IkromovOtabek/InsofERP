@@ -79,6 +79,8 @@ export const NAV: NavItem[] = [
   { href: "/suppliers",   label: "Yetkazuvchilar",     roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], group: "Sklad" },
   // Schyotlar menyudan olib tashlandi — sahifa va eski schyotlar joyida (to'lovlar shularga bog'langan)
   { href: "/invoices",    label: "Schyotlar",          roles: ["ACCOUNTING", "FINANCE", "SALES"], group: "Sotuv", hidden: true },
+  // Zayavka bosh to'lovi so'rovlari (PS-…): naqd — kassir, perechisleniye — buxgalter qabul qiladi; Finance faqat ko'radi
+  { href: "/pul-qabul",   label: "Pul qabul qilish",   roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Kirim QQS reyestri (oy va yetkazuvchi kesimida QQS'siz summa, QQS, jami) — buxgalteriya hisobotlari uchun
@@ -214,7 +216,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers"] },
   { key: "taminot",   label: "Ta'minot zayavkalari",  prefixes: ["/taminot"] },
   { key: "mexanik",   label: "Mexanik so'rovlari",    prefixes: ["/mexanik-sorovlar"] },
-  { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices"] },
+  { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices", "/pul-qabul"] },
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },

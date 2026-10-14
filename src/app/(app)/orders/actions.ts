@@ -31,6 +31,9 @@ const schema = z.object({
   needsDelivery: z.string().optional().transform((v) => v === "on"),
   isUrgent: z.string().optional().transform((v) => v === "on"),
   payment: z.enum(["prepay", "credit"]).default("prepay"),
+  // Bosh to'lov qanday keladi: CASH — naqd (so'rov Kassa xodimiga), BANK — perechisleniye (Buxgalterga).
+  // Qarzga zayavkada bosh to'lovsiz yuborilmaydi — createOrder o'zi hal qiladi.
+  payMethod: z.enum(["CASH", "BANK"], { message: "To'lov usuli noto'g'ri" }).optional(),
   // Kutilayotgan bosh to'lov (0 — yo'q). Pul kassaga yozilmaydi — kassir `/payments` da qabul qiladi
   prepayAmount: z.coerce.number({ message: "Bosh to'lov raqam bo'lsin" }).min(0, "Bosh to'lov manfiy bo'lmasin").max(MAX_AMOUNT, "Bosh to'lov juda katta").default(0),
   hasContract: z.string().optional().transform((v) => v === "on"), // "Shartnoma qilish" belgilangan
@@ -93,6 +96,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         isUrgent: d.isUrgent,
         onCredit: d.payment === "credit",
         prepay: d.prepayAmount > 0 ? { amount: d.prepayAmount } : undefined,
+        payMethod: d.payMethod,
         contractAmount,
         note: d.note,
       },

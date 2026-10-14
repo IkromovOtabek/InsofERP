@@ -9,7 +9,7 @@
 //    prixodJournal / prixodTotals va /stock/prixod sahifasi (sotuvchiga yopiq → /stock); yetkazuvchi qarzi (supplierLedger)
 //    dostavka bilan; lastReceiptTerms; storno qilingan kirim — asl qator o'z sanasida (ustidan chizilgan) + manfiy «Сторно»
 //    qatori, Σ К-во = «Остатки» Приход;
-//  · «Дона сўм» (stock/price-actions#saveMaterialPrice): faqat snabjeniye, audit, «Без изменений», noto'g'ri narx;
+//  · «Дона сўм» (stock/price-actions#saveMaterialPrice): faqat snabjeniye, audit, «O'zgarish yo'q», noto'g'ri narx;
 //  · «Расход» (stock/rasxod/actions#createRasxod → lib/stock-issue issueStock): oluvchiga ISSUE (recipientId, unitCost =
 //    Дона сўм, narxsizda — o'rtacha tannarx), brigadaga BRIGADE_ISSUE + BrigadeMove; bir xomashyo ikki qatorda — bitta harakat;
 //    qoldiqdan oshsa hech narsa yozilmaydi; takror kalit; sana chegaralari; sotuvchi — 403; rasxodJournal (Деньги/НДС
@@ -115,13 +115,15 @@ const toggleRec = (c: C, id: string, on: boolean): Promise<ActionRes> => c.actio
 /** Расход stornosi: cancelRasxod(ref, sabab) — sahifadagi «Сторно» tugmasi (stock/rasxod/storno-button.tsx) kabi. */
 const cancelRx = (c: C, ref: string, reason: string): Promise<ActionRes> => c.action(`${RX}#cancelRasxod`, [ref, reason], RX_PAGE);
 /** «Сторно» tugmasining title'i — sahifada tugma bor-yo'qligi shu bo'yicha tekshiriladi. */
-const STORNO_BTN = `title="Сторно — отменить расход"`;
+const STORNO_BTN = `title="Storno — chiqimni bekor qilish"`;
 /** Korxona QQS to'lovchisi (settings/actions#saveVatPayer — faqat direktor; b-vat.mts dagidek). */
 const setCompanyVat = (v: "1" | "0"): Promise<ActionRes> => dir.action("settings/actions#saveVatPayer", [undefined, fd({ vatPayer: v })], "/settings");
 const vatPayerNow = () => q1(`select "vatPayer" as v from "CompanySettings" where id='main'`)?.v !== false;
 /** Sklad → Brigadalar: brigadadan skladga qaytarish (brigade-actions#returnToStock). */
 const returnBr = (c: C, materialId: string, qty: string): Promise<ActionRes> =>
   c.action("stock/brigade-actions#returnToStock", [brId, undefined, fd({ materialId, qty, warehouseId: wh.id })], "/stock?tab=brigades");
+/** Sahifada «Dona narxi» qalamchasi bormi: IconButton `aria-label` — HTML'da tutuq belgisi `&#x27;` bo'lib keladi. */
+const priceEditable = (html: string, name: string) => ["'", "&#x27;", "&#39;"].some((q) => html.includes(`Narxni o${q}zgartirish: ${name}`));
 /** «Дона сўм» katagi: saveMaterialPrice(materialId, prev, fd{price}) — bo'sh = narxni olib tashlash. */
 const setPrice = (c: C, id: string, price: string): Promise<ActionRes> => c.action("stock/price-actions#saveMaterialPrice", [id, undefined, fd({ price })], BAL);
 const writeOff = (c: C, rows: { materialId: string; qty: number }[], kind = "Brak (sifatsiz)"): Promise<ActionRes> =>
@@ -205,37 +207,37 @@ try {
   r = await saveRec(sklad, { name: `  QA SJ   Шофёры ${T} `, note: "водители миксеров" });
   const rec1 = recOf(R1n);
   R1 = rec1?.id ?? "";
-  check("1.1 sklad oluvchi qo'shdi — «Получатель добавлен», nomdagi ortiqcha bo'shliqlar olib tashlandi, faol, audit CREATE",
-    r.result?.ok === true && r.result.note === "Получатель добавлен" && rec1?.active === true && rec1.note === "водители миксеров" && recAudits(R1, "CREATE") === 1, [r.result ?? r.status, rec1]);
+  check("1.1 sklad oluvchi qo'shdi — «Oluvchi qo'shildi», nomdagi ortiqcha bo'shliqlar olib tashlandi, faol, audit CREATE",
+    r.result?.ok === true && r.result.note === "Oluvchi qo'shildi" && rec1?.active === true && rec1.note === "водители миксеров" && recAudits(R1, "CREATE") === 1, [r.result ?? r.status, rec1]);
   r = await saveRec(sklad, { name: `qa sj шофёры ${T.toUpperCase()}` });
-  check("1.2 takror nom (boshqa registr) — «уже есть» xatosi, ikkinchi yozuv yo'q",
-    /^Получатель «.+» уже есть/.test(r.result?.error ?? "") && n(`select id from "StockRecipient" where lower(name)=lower(${lit(R1n)})`) === 1, r.result ?? r.status);
+  check("1.2 takror nom (boshqa registr) — «allaqachon bor» xatosi, ikkinchi yozuv yo'q",
+    /^«.+» oluvchisi allaqachon bor/.test(r.result?.error ?? "") && n(`select id from "StockRecipient" where lower(name)=lower(${lit(R1n)})`) === 1, r.result ?? r.status);
   r = await saveRec(snab, { id: R1, name: R1n, note: "водители" });
-  check("1.3 snabjeniye (Расход huquqi bor) izohni tahrirladi — «Сохранено», audit UPDATE",
-    r.result?.ok === true && r.result.note === "Сохранено" && recOf(R1n)?.note === "водители" && recAudits(R1, "UPDATE") === 1, r.result ?? r.status);
+  check("1.3 snabjeniye (Расход huquqi bor) izohni tahrirladi — «Saqlandi», audit UPDATE",
+    r.result?.ok === true && r.result.note === "Saqlandi" && recOf(R1n)?.note === "водители" && recAudits(R1, "UPDATE") === 1, r.result ?? r.status);
   r = await saveRec(sklad, { name: R2n });
   R2 = recOf(R2n)?.id ?? "";
   const t1 = await toggleRec(sklad, R2, false);
   const t2 = await toggleRec(sklad, R2, false);
-  check("1.4 ikkinchi oluvchi nofaol qilindi (o'chirilmadi) — «скрыт», audit STATUS_CHANGE bitta (qayta bosish o'zgartirmaydi)",
-    !!R2 && t1.result?.ok === true && /скрыт из списка «Кому»/.test(t1.result.note ?? "") && t2.result?.ok === true
+  check("1.4 ikkinchi oluvchi nofaol qilindi (o'chirilmadi) — «yashirildi», audit STATUS_CHANGE bitta (qayta bosish o'zgartirmaydi)",
+    !!R2 && t1.result?.ok === true && /«Kimga» ro'yxatidan yashirildi/.test(t1.result.note ?? "") && t2.result?.ok === true
     && recOf(R2n)?.active === false && recAudits(R2, "STATUS_CHANGE") === 1, [t1.result ?? t1.status, t2.result ?? t2.status]);
   r = await saveRec(sklad, { name: R2n.toUpperCase() });
-  check("1.5 nofaol oluvchi nomini qayta qo'shish — «уже есть (неактивен — включите…)»", /уже есть \(неактивен/.test(r.result?.error ?? ""), r.result ?? r.status);
+  check("1.5 nofaol oluvchi nomini qayta qo'shish — «allaqachon bor (nofaol — … yoqing)»", /allaqachon bor \(nofaol/.test(r.result?.error ?? ""), r.result ?? r.status);
   const forbiddenName = `QA SJ Чужой ${T}`;
   const s1 = await saveRec(sotuv, { name: forbiddenName });
   const s2 = await toggleRec(sotuv, R1, false);
   check("1.6 sotuvchi oluvchi qo'sha ham, yashira ham olmaydi (403), hech narsa o'zgarmadi",
     denied(s1) && denied(s2) && !recOf(forbiddenName) && recOf(R1n)?.active === true, [s1.status, s2.status]);
   let pg = await sklad.get(RX_PAGE);
-  check("1.7 /stock/rasxod (sklad): «Получатели (Кому)» bo'limi, ikkala oluvchi (nofaoli ham) ko'rinadi",
-    pg.status === 200 && pg.text.includes("Получатели (Кому)") && pg.text.includes(R1n) && pg.text.includes(R2n), pg.status);
+  check("1.7 /stock/rasxod (sklad): «Oluvchilar (Kimga)» bo'limi, ikkala oluvchi (nofaoli ham) ko'rinadi",
+    pg.status === 200 && pg.text.includes("Oluvchilar (Kimga)") && pg.text.includes(R1n) && pg.text.includes(R2n), pg.status);
   pg = await sklad.get(RX_NEW);
   check("1.8 /stock/rasxod/new: «Кому» ro'yxatida faol oluvchi va brigada bor, nofaoli yo'q",
     pg.status === 200 && pg.text.includes(R1n) && pg.text.includes(brName) && !pg.text.includes(R2n), pg.status);
   pg = await sotuv.get(RX_PAGE);
-  check("1.9 sotuvchiga «Расход» jurnali ochilmaydi (narx va summalar) — /stock ga yo'naltiriladi, «Получатели» ko'rinmaydi",
-    [303, 307, 308].includes(pg.status) && /\/stock(?:$|[?#])/.test(pg.location ?? "") && !pg.text.includes("Получатели (Кому)") && !pg.text.includes(R1n),
+  check("1.9 sotuvchiga «Расход» jurnali ochilmaydi (narx va summalar) — /stock ga yo'naltiriladi, «Oluvchilar» ko'rinmaydi",
+    [303, 307, 308].includes(pg.status) && /\/stock(?:$|[?#])/.test(pg.location ?? "") && !pg.text.includes("Oluvchilar (Kimga)") && !pg.text.includes(R1n),
     `${pg.status} ${pg.location ?? ""}`);
 
   // ───────── 2. «Приход» ─────────
@@ -288,19 +290,19 @@ try {
   check("2.8 snabjeniye ham Приход qiladi: Н-к, QQS 0, Снабженец tanlanmagan (null)",
     !!docC && recC?.createdById === uSnab.id && recC.buyerId === null && recC.payment === "CASH" && itC.length === 1 && itC[0].rate === 0 && eq2(itC[0].vat, 0), [r.redirect, r.result, recC]);
 
-  // Xatolar — ruscha (ekran tili), hech narsa yozilmaydi
+  // Xatolar — o'zbekcha (ruschasi «Рус» rejimida lug'atdan), hech narsa yozilmaydi
   const recCount = () => n(`select id from "GoodsReceipt" where "supplierId"=${lit(supId)}`);
   const c0 = recCount();
   const e1 = await prixod(sklad, { payment: "", lines: [{ m: M1, qty: "1", price: "1" }] });
   const e2 = await prixod(sklad, { lines: [{ m: M1, qty: "1", price: "1", delivery: "-100" }] });
   const e3 = await prixod(sklad, { recipientId: R2, lines: [{ m: M1, qty: "1", price: "1" }] });
   const e4 = await prixod(sklad, { lines: [{ m: M1, qty: "0", price: "1" }] });
-  check("2.9 ruscha xatolar: «Деньги» tanlanmagan, manfiy dostavka, nofaol «Кому», miqdor 0",
-    /Деньги/.test(e1.result?.error ?? "") && /доставки/.test(e2.result?.error ?? "") && /Получатель/.test(e3.result?.error ?? "") && /Количество/.test(e4.result?.error ?? "")
-    && [e1, e2, e3, e4].every((e) => cyr(e.result?.error)), [e1.result, e2.result, e3.result, e4.result]);
+  check("2.9 o'zbekcha xatolar: «To'lov turi» tanlanmagan, manfiy dostavka, nofaol «Kimga», miqdor 0",
+    /To'lov turini tanlang/.test(e1.result?.error ?? "") && /yetkazib berish summasi/.test(e2.result?.error ?? "") && /Oluvchi/.test(e3.result?.error ?? "") && /Miqdor/.test(e4.result?.error ?? "")
+    && [e1, e2, e3, e4].every((e) => !!e.result?.error && !cyr(e.result.error)), [e1.result, e2.result, e3.result, e4.result]);
   if (bankAcc) {
     const e5 = await prixod(dir, { payment: "CASH", cashAccountId: bankAcc, lines: [{ m: M1, qty: "1", price: "1" }] });
-    check("2.10 direktor: Н-к kirimni bank hisobidan to'lab bo'lmaydi — «Н-к — оплата только из кассы»", /Н-к — оплата только из кассы/.test(e5.result?.error ?? ""), e5.result ?? e5.status);
+    check("2.10 direktor: naqd kirimni bank hisobidan to'lab bo'lmaydi — «Naqd pul kirimi — faqat naqd kassadan to'lanadi»", /Naqd pul kirimi — faqat naqd kassadan/.test(e5.result?.error ?? ""), e5.result ?? e5.status);
   }
   const tokS = crypto.randomUUID();
   const e6 = await prixod(sotuv, { token: tokS, lines: [{ m: M1, qty: "1", price: "1" }] });
@@ -325,12 +327,13 @@ try {
   check("2.16 prixodTotals: 4 qator, Доставка 5 000, Общие 286 000, НДС 24 000, Итого 310 000",
     pt.rows === 4 && eq2(pt.delivery, 5000) && eq2(pt.sum, 286000) && eq2(pt.vat, 24000) && eq2(pt.total, 310000), pt);
   pg = await sklad.get(`/stock/prixod?from=${yesterday}&to=${today}`);
-  check("2.17 /stock/prixod (davr bilan) 200: ruscha ustunlar, hujjatlar, ТТН, П-р / Н-к, summalar, Кому, Адрес, Снабженец, Почему",
-    pg.status === 200 && ["ТТН", "Ед Изм", "От Кого", "Деньги", "Доставка", "Общие Сумма", "НДС 12%", "Итого Сумма", "Снабженец", "Почему",
-      docA, docB, docC, TTN, TTN_B, "П-р", "Н-к", "105 000", "117 000", "112 000", R1n, ADDR, PURP, supName, M1n, M2n, uSnab.name].every((s) => pg.text.includes(s)), pg.status);
+  // Sahifa matni o'zbekcha (ruschasi — «Рус» rejimida lug'atdan); apostrofli so'zlar HTML'da &#x27; — ular tekshirilmaydi
+  check("2.17 /stock/prixod (davr bilan) 200: o'zbekcha ustunlar, hujjatlar, TTN, Bank o'tkazma / Naqd pul, summalar, Kimga, Manzil, Maqsad",
+    pg.status === 200 && ["TTN", "Birlik", "Kimdan", "Kimga", "Yetkazib berish", "Umumiy summa", "QQS stavkasi", "Jami summa", "Manzil", "Maqsad",
+      docA, docB, docC, TTN, TTN_B, "Bank o", "Naqd pul", "105 000", "117 000", "112 000", R1n, ADDR, PURP, supName, M1n, M2n, uSnab.name].every((s) => pg.text.includes(s)), pg.status);
   pg = await sklad.get(`/stock/prixod?from=${yesterday}&to=${today}&q=${encodeURIComponent(supName)}&saved=${encodeURIComponent(docA)}`);
-  check("2.18 qidiruv (От Кого) bo'yicha «Итого»: 286 000 / 24 000 / 310 000; «Приход сохранён» xabari",
-    pg.status === 200 && ["286 000", "24 000", "310 000", "Приход сохранён"].every((s) => pg.text.includes(s)), pg.status);
+  check("2.18 qidiruv (Kimdan) bo'yicha «Jami»: 286 000 / 24 000 / 310 000; «Kirim saqlandi» xabari",
+    pg.status === 200 && ["286 000", "24 000", "310 000", "Kirim saqlandi"].every((s) => pg.text.includes(s)), pg.status);
   // Jurnalda xarid narxlari va yetkazuvchilar — sotuvchiga ochilmaydi (lib/stock-journal-access canSeePrixod) → /stock
   pg = await sotuv.get(`/stock/prixod?from=${yesterday}&to=${today}`);
   check("2.19 sotuvchiga «Приход» jurnali ochilmaydi — /stock ga yo'naltiriladi, hujjatlar ko'rinmaydi",
@@ -366,8 +369,8 @@ try {
   check("2.23 «Остатки» Приход (M2, bugun) = Приход jurnali Σ К-во storno bilan: 40 + 10 + 5 − 5 = 50",
     !!tD && near(tD.in.q, 50) && near(pxM2, 50) && near(bal(M2), 50), { in: tD?.in, pxM2, bal: bal(M2) });
   pg = await sklad.get(`/stock/prixod?from=${today}&to=${today}&q=${encodeURIComponent(supName)}`);
-  check("2.24 /stock/prixod: storno qilingan qator ustidan chizilgan («сторно» belgisi), «Сторно <docNo>» qatori minus bilan",
-    pg.status === 200 && pg.text.includes(`Сторно ${docD}`) && pg.text.includes("line-through") && pg.text.includes(">сторно<") && pg.text.includes("-15 000"), pg.status);
+  check("2.24 /stock/prixod: storno qilingan qator ustidan chizilgan («storno» belgisi), «Storno <docNo>» qatori minus bilan",
+    pg.status === 200 && pg.text.includes(`Storno ${docD}`) && pg.text.includes("line-through") && pg.text.includes(">storno<") && pg.text.includes("-15 000"), pg.status);
 
   // ───────── 3. «Дона сўм» ─────────
   console.log("\n3. «Дона сўм»: narxni faqat snabjeniye belgilaydi");
@@ -375,14 +378,14 @@ try {
   check("3.1 sklad (price huquqi yo'q) narx qo'ya olmaydi — 403, narx yo'q", r.status === 403 && priceOf(M1)?.p === null && priceAudits(M1).length === 0, r.status);
   r = await setPrice(snab, M1, "1 200");
   const pa1 = priceAudits(M1);
-  check("3.2 snabjeniye «1 200» → 1200: «Цена сохранена», kim/qachon yozildi, audit {unitPrice: null} → {unitPrice: 1200}",
-    r.result?.ok === true && /^Цена сохранена/.test(r.result.note ?? "") && priceOf(M1)?.p === 1200 && priceOf(M1)?.by === uSnab.id && priceOf(M1)?.at === true
+  check("3.2 snabjeniye «1 200» → 1200: «Narx saqlandi», kim/qachon yozildi, audit {unitPrice: null} → {unitPrice: 1200}",
+    r.result?.ok === true && /^Narx saqlandi/.test(r.result.note ?? "") && priceOf(M1)?.p === 1200 && priceOf(M1)?.by === uSnab.id && priceOf(M1)?.at === true
     && pa1.length === 1 && pa1[0].before?.unitPrice === null && Number(pa1[0].after?.unitPrice) === 1200 && pa1[0].u === uSnab.id, [r.result ?? r.status, pa1]);
   r = await setPrice(snab, M1, "1200");
-  check("3.3 o'sha narx qayta — «Без изменений», audit qo'shilmadi", r.result?.ok === true && r.result.note === "Без изменений" && priceAudits(M1).length === 1, r.result ?? r.status);
+  check("3.3 o'sha narx qayta — «O'zgarish yo'q», audit qo'shilmadi", r.result?.ok === true && r.result.note === "O'zgarish yo'q" && priceAudits(M1).length === 1, r.result ?? r.status);
   const ep1 = await setPrice(snab, M1, "-5"), ep2 = await setPrice(snab, M1, "abc");
-  check("3.4 manfiy / raqam emas — «Неверная цена», narx o'zgarmadi",
-    /Неверная цена/.test(ep1.result?.error ?? "") && /Неверная цена/.test(ep2.result?.error ?? "") && priceOf(M1)?.p === 1200, [ep1.result, ep2.result]);
+  check("3.4 manfiy / raqam emas — «Narx noto'g'ri», narx o'zgarmadi",
+    /Narx noto'g'ri/.test(ep1.result?.error ?? "") && /Narx noto'g'ri/.test(ep2.result?.error ?? "") && priceOf(M1)?.p === 1200, [ep1.result, ep2.result]);
   r = await setPrice(sotuv, M2, "999");
   check("3.5 sotuvchi ham qo'ya olmaydi (403)", r.status === 403 && priceOf(M2)?.p === null, r.status);
 
@@ -415,17 +418,17 @@ try {
   const issueCount = () => n(`select id from "StockMove" where "materialId" in (${lit(M1)}, ${lit(M2)}) and type in ('ISSUE', 'BRIGADE_ISSUE')`);
   const ic0 = issueCount();
   r = await rasxod(sklad, { to: `r:${R1}`, rows: [[M1, "10"], [M2, "1000"]] });
-  check("4.7 qoldiqdan oshsa — «Недостаточно на складе» (qaysi xomashyo, bor/kerak), M1 ham yozilmadi",
-    /^Недостаточно на складе «.+»: /.test(r.result?.error ?? "") && (r.result?.error ?? "").includes(M2n) && (r.result?.error ?? "").includes("нужно 1 000 кг")
+  check("4.7 qoldiqdan oshsa — «skladida yetarli emas» (qaysi xomashyo, bor/kerak), M1 ham yozilmadi",
+    /^«.+» skladida yetarli emas: /.test(r.result?.error ?? "") && (r.result?.error ?? "").includes(M2n) && (r.result?.error ?? "").includes("kerak 1 000 kg")
     && issueCount() === ic0 && near(bal(M1), 95) && near(bal(M2), 45), r.result ?? r.status);
   const x1 = await rasxod(sklad, { to: `r:${R2}`, rows: [[M1, "1"]] });
   const x2 = await rasxod(sklad, { to: `r:${R1}`, rows: [[M1, "1"]], date: tomorrow });
   const x3 = await rasxod(sklad, { to: `r:${R1}`, rows: [[M1, "1"]], date: old40 });
   const x4 = await rasxod(sklad, { to: `r:${R1}`, rows: [[M1, "0"]] });
   const x5 = await rasxod(sklad, { to: "", rows: [[M1, "1"]] });
-  check("4.8 nofaol oluvchi, ertangi / 40 kun oldingi sana, miqdor 0, «Кому» tanlanmagan — ruscha xato, hech narsa yozilmadi",
-    /Получатель не найден или неактивен/.test(x1.result?.error ?? "") && /будущем/.test(x2.result?.error ?? "") && /не раньше/.test(x3.result?.error ?? "")
-    && /больше 0/.test(x4.result?.error ?? "") && /Кому/.test(x5.result?.error ?? "") && issueCount() === ic0,
+  check("4.8 nofaol oluvchi, ertangi / 40 kun oldingi sana, miqdor 0, «Kimga» tanlanmagan — o'zbekcha xato, hech narsa yozilmadi",
+    /Oluvchi topilmadi yoki nofaol/.test(x1.result?.error ?? "") && /kelajakda/.test(x2.result?.error ?? "") && /kundan eski/.test(x3.result?.error ?? "")
+    && /0 dan katta/.test(x4.result?.error ?? "") && /Kimga/.test(x5.result?.error ?? "") && issueCount() === ic0,
     [x1.result, x2.result, x3.result, x4.result, x5.result]);
   r = await rasxod(sotuv, { to: `r:${R1}`, rows: [[M1, "1"]] });
   check("4.9 sotuvchi Расход qila olmaydi (403), qoldiq o'zgarmadi", denied(r) && issueCount() === ic0 && near(bal(M1), 95), r.status);
@@ -452,9 +455,9 @@ try {
   check("4.13 «Кому» filtri: r:<oluvchi> — faqat shu oluvchi, b:<brigada> — faqat shu brigada",
     fr.length === 2 && fr.every((x) => x.kind === "issue" && x.toKey === `r:${R1}`) && fb.length === 1 && fb[0].kind === "brigade" && fb[0].toKey === `b:${brId}`, [fr.length, fb.length]);
   pg = await sklad.get(`/stock/rasxod?from=${today}&to=${today}`);
-  check(`4.14 /stock/rasxod (davr bilan) 200: ruscha ustunlar, Кому (oluvchi va brigada), П-р / Н-к, Итого ${cv ? "53 760" : "48 000"}; sklad — «Сторно» tugmasi yo'q`,
-    pg.status === 200 && ["Число", "Наименование", "Ед Изм", "От Кого", "Кому", "Деньги", "Доставка", "Цена", "Общие Сумма", "НДС 12%", "Итого Сумма",
-      R1n, brName, M1n, M2n, cv ? "53 760" : "48 000", "48 000", "П-р", "Н-к"].every((s) => pg.text.includes(s)) && !pg.text.includes(STORNO_BTN), pg.status);
+  check(`4.14 /stock/rasxod (davr bilan) 200: o'zbekcha ustunlar, Kimga (oluvchi va brigada), bank / naqd, Итого ${cv ? "53 760" : "48 000"}; sklad — «Сторно» tugmasi yo'q`,
+    pg.status === 200 && ["Sana", "Nomi", "Birlik", "Kimdan", "Kimga", "Yetkazib berish", "Narx", "Umumiy summa", "QQS", "Jami summa",
+      R1n, brName, M1n, M2n, cv ? "53 760" : "48 000", "48 000", "Bank o", "Naqd pul"].every((s) => pg.text.includes(s)) && !pg.text.includes(STORNO_BTN), pg.status);
 
   // Zames: kun + xomashyo + sklad bo'yicha bitta (ko'k) qator, storno ayiriladi — test bazasida zames bo'lsa
   const lastProd = q1(`select date from "StockMove" where type='PRODUCTION_CONSUME' and "materialId" is not null order by date desc limit 1`)?.date as string | undefined;
@@ -468,12 +471,12 @@ try {
       and date >= ${tsLit(pFrom)} and date < ${tsLit(pTo)} group by 1, 2`) as { m: string; w: string; s: number }[];
     const live = groups.filter((g) => Math.abs(g.s) > 0.0005);
     const sumRows = prod.reduce((a, x) => a + x.qty, 0), sumSql = -groups.reduce((a, g) => a + g.s, 0);
-    check(`4.15 zames (${d}): xomashyo+sklad bo'yicha bitta qator «Производство (замес)», К-во = Σ sarf (storno ayirilgan)`,
-      prod.length > 0 && prod.length === live.length && new Set(keys).size === keys.length && prod.every((x) => x.kind === "prod" && x.to === "Производство (замес)" && x.toKey === "prod")
+    check(`4.15 zames (${d}): xomashyo+sklad bo'yicha bitta qator «Ishlab chiqarish (zames)», К-во = Σ sarf (storno ayirilgan)`,
+      prod.length > 0 && prod.length === live.length && new Set(keys).size === keys.length && prod.every((x) => x.kind === "prod" && x.to === "Ishlab chiqarish (zames)" && x.toKey === "prod")
       && Math.abs(sumRows - sumSql) < 0.001 * (prod.length + 1), { rows: prod.length, groups: live.length, sumRows, sumSql });
     pg = await sklad.get(`/stock/rasxod?from=${d}&to=${d}&komu=prod`);
     // «Кому» filtrida ham shu matnli variant bor — jadval qatori (title'siz <span>) bo'yicha tekshiriladi
-    check("4.16 /stock/rasxod?komu=prod — zames qatorlari ko'rinadi", pg.status === 200 && pg.text.includes("<span>Производство (замес)</span>"), pg.status);
+    check("4.16 /stock/rasxod?komu=prod — zames qatorlari ko'rinadi", pg.status === 200 && pg.text.includes("<span>Ishlab chiqarish (zames)</span>"), pg.status);
   }
 
   // ───────── 5. Narx o'zgargach ─────────
@@ -492,8 +495,8 @@ try {
   const oldB = movesWhere(`type='BRIGADE_ISSUE' and "brigadeId"=${lit(brId)} and "refType"='Issue'`)[0];
   const rx5 = (await rasxodJournal({ from: rxFrom, to: rxTo })).filter((x) => x.materialId === M1);
   const w5 = rx5.find((x) => x.kind === "writeoff"), j5 = rx5.find((x) => x.kind === "issue");
-  check("5.4 eski chiqimlar narxi o'zgarmadi (1200); jurnalda: oluvchi — 1200 / 48 000, spisanie «Списание: брак» — 1300 / 2 600",
-    eq2(oldR?.cost, 1200) && eq2(oldB?.cost, 1200) && eq2(j5?.price, 1200) && eq2(j5?.sum, 48000) && w5?.to === "Списание: брак" && eq2(w5.price, 1300) && eq2(w5.sum, 2600),
+  check("5.4 eski chiqimlar narxi o'zgarmadi (1200); jurnalda: oluvchi — 1200 / 48 000, spisanie «Hisobdan chiqarish: Brak (sifatsiz)» — 1300 / 2 600",
+    eq2(oldR?.cost, 1200) && eq2(oldB?.cost, 1200) && eq2(j5?.price, 1200) && eq2(j5?.sum, 48000) && w5?.to === "Hisobdan chiqarish: Brak (sifatsiz)" && eq2(w5.price, 1300) && eq2(w5.sum, 2600),
     { oldR: oldR?.cost, oldB: oldB?.cost, j5, w5 });
 
   // ───────── 6. «Остатки» ─────────
@@ -533,11 +536,11 @@ try {
     && near(t1m.in.q, sumBy(px6, M1, (x) => x.qty)) && near(t2m.in.q, sumBy(px6, M2, (x) => x.qty)),
     { m1: [t1m?.out, sumBy(rx6, M1, (x) => x.qty), sumBy(rx6, M1, (x) => x.sum)], m2: [t2m?.out, sumBy(rx6, M2, (x) => x.qty)] });
   pg = await sklad.get(`/stock?tab=balance&from=${today}&to=${today}`);
-  check("6.7 /stock?tab=balance&from&to 200 (sklad): ruscha sarlavhalar (Остатка, Приход, Расход, Дона сўм, Итого), xomashyo, narx 1 300; sklad narxni tahrirlay olmaydi",
-    pg.status === 200 && ["Остатка", "Приход", "Расход", "Дона сўм", "Итого", "Наименование", M1n, M2n, "1 300"].every((s) => pg.text.includes(s))
-    && !pg.text.includes(`Изменить цену: ${M1n}`), pg.status);
+  check("6.7 /stock?tab=balance&from&to 200 (sklad): sarlavhalar (Qoldiq, Kirim, Chiqim, Dona narxi, Jami), xomashyo, narx 1 300; sklad narxni tahrirlay olmaydi",
+    pg.status === 200 && ["Qoldiq", "Kirim", "Chiqim", "Dona narxi", "Jami", "Nomi", M1n, M2n, "1 300"].every((s) => pg.text.includes(s))
+    && !priceEditable(pg.text, M1n), pg.status);
   pg = await snab.get(`/stock?tab=balance&from=${today}&to=${today}`);
-  check("6.8 snabjeniye sahifasida «Дона сўм» katagi tahrirlanadi («Изменить цену»)", pg.status === 200 && pg.text.includes(`Изменить цену: ${M1n}`), pg.status);
+  check("6.8 snabjeniye sahifasida «Dona narxi» katagi tahrirlanadi («Narxni o'zgartirish»)", pg.status === 200 && priceEditable(pg.text, M1n), pg.status);
   pg = await sklad.get(`/stock?tab=moves&material=${M1}&from=${today}&to=${today}`);
   check("6.9 /stock?tab=moves&material=<id>&from&to — xomashyo harakatlari 200", pg.status === 200 && pg.text.includes(M1n), pg.status);
 
@@ -552,8 +555,8 @@ try {
       r.result?.ok === true && vatPayerNow() === flip && !!jv && eq2(jv.sum, 48000) && eq2(jv.vat, 48000 * vrF) && eq2(jv.total, 48000 * (1 + vrF)),
       [r.result ?? r.status, jv]);
     pg = await sklad.get(`/stock/rasxod?from=${today}&to=${today}`);
-    check(`R.2 /stock/rasxod: «не плательщик НДС» izohi ${flip ? "yo'q, Итого 53 760" : "bor"}`,
-      pg.status === 200 && pg.text.includes("не плательщик НДС") === !flip && (!flip || pg.text.includes("53 760")), pg.status);
+    check(`R.2 /stock/rasxod: «QQS to'lovchisi emas» izohi ${flip ? "yo'q, Итого 53 760" : "bor"}`,
+      pg.status === 200 && pg.text.includes("QQS 0: korxona QQS") === !flip && (!flip || pg.text.includes("53 760")), pg.status);
   } finally {
     r = await setCompanyVat(cv ? "1" : "0");
   }
@@ -571,8 +574,8 @@ try {
     r.result?.ok === true && rtM.length === 1 && near(rtM[0].qty, 6) && eq2(rtM[0].cost, avgBr) && rtB.length === 1 && near(rtB[0].qty, -6) && eq2(rtB[0].cost, avgBr)
     && near(bal(M1), b0 + 6) && near(brHeld(), 12), [r.result ?? r.status, rtM, rtB]);
   const jr = (await rasxodJournal({ from: rxFrom, to: rxTo, to_: `b:${brId}` })).find((x) => x.kind === "return" && x.materialId === M1);
-  check(`R.5 jurnalda qaytish — manfiy qator «— возврат»: К-во −6, Цена ${avgBr}, Общие ${r2(-6 * avgBr)}`,
-    !!jr && near(jr.qty, -6) && eq2(jr.price, avgBr) && eq2(jr.sum, r2(-6 * avgBr)) && jr.to === `${brName} — возврат`, jr);
+  check(`R.5 jurnalda qaytish — manfiy qator «— qaytarish»: К-во −6, Цена ${avgBr}, Общие ${r2(-6 * avgBr)}`,
+    !!jr && near(jr.qty, -6) && eq2(jr.price, avgBr) && eq2(jr.sum, r2(-6 * avgBr)) && jr.to === `${brName} — qaytarish`, jr);
 
   // R.6–R.11: oluvchiga berilgan Расход stornosi
   const stornoMoves = (ref: string) => movesWhere(`"refType"='IssueStorno' and "refId"=${lit(ref)}`);
@@ -586,23 +589,23 @@ try {
   check("R.7 sklad va snabjeniye storno qila olmaydi (stock → issue_storno: direktor / ruxsat berilgan) — 403, hech narsa yozilmadi",
     denied(d1) && denied(d2) && stornoMoves(refS).length === 0 && near(bal(M1), bS - 5), [d1.status, d2.status]);
   const d3 = await cancelRx(dir, refS, "  ab ");
-  check("R.8 sabab 3 belgidan kam — «Укажите причину сторно», hech narsa yozilmadi",
-    /Укажите причину сторно/.test(d3.result?.error ?? "") && stornoMoves(refS).length === 0, d3.result ?? d3.status);
+  check("R.8 sabab 3 belgidan kam — «Storno sababini yozing», hech narsa yozilmadi",
+    /Storno sababini yozing/.test(d3.result?.error ?? "") && stornoMoves(refS).length === 0, d3.result ?? d3.status);
   r = await cancelRx(dir, refS, WHY);
   const sm = stornoMoves(refS);
-  check("R.9 direktor storno qildi: teskari ISSUE +5 (o'sha narx 1300, oluvchi, sklad), «Сторно: <sabab>», qoldiq qaytdi, audit STATUS_CHANGE",
-    r.result?.ok === true && /Расход отменён/.test(r.result.note ?? "") && sm.length === 1 && sm[0].type === "ISSUE" && near(sm[0].qty, 5) && eq2(sm[0].cost, 1300)
-    && sm[0].rec === R1 && sm[0].wh === wh.id && sm[0].note === `Сторно: ${WHY}` && near(bal(M1), bS)
+  check("R.9 direktor storno qildi: teskari ISSUE +5 (o'sha narx 1300, oluvchi, sklad), «Storno: <sabab>», qoldiq qaytdi, audit STATUS_CHANGE",
+    r.result?.ok === true && /Chiqim bekor qilindi/.test(r.result.note ?? "") && sm.length === 1 && sm[0].type === "ISSUE" && near(sm[0].qty, 5) && eq2(sm[0].cost, 1300)
+    && sm[0].rec === R1 && sm[0].wh === wh.id && sm[0].note === `Storno: ${WHY}` && near(bal(M1), bS)
     && n(`select id from "AuditLog" where entity='StockMove' and "entityId"=${lit(refS)} and action='STATUS_CHANGE' and after->>'reason'=${lit(WHY)}`) === 1,
     [r.result ?? r.status, sm]);
   const d4 = await cancelRx(dir, refS, WHY);
-  check("R.10 takror storno — «уже отменён», ikkinchi teskari harakat yo'q",
-    /уже отменён/.test(d4.result?.error ?? "") && stornoMoves(refS).length === 1 && near(bal(M1), bS), d4.result ?? d4.status);
+  check("R.10 takror storno — «allaqachon bekor qilingan», ikkinchi teskari harakat yo'q",
+    /allaqachon bekor qilingan/.test(d4.result?.error ?? "") && stornoMoves(refS).length === 1 && near(bal(M1), bS), d4.result ?? d4.status);
   const rxS = (await rasxodJournal({ from: rxFrom, to: rxTo, to_: `r:${R1}` })).filter((x) => x.ref === refS);
   const so = rxS.find((x) => x.kind === "issue"), sn = rxS.find((x) => x.kind === "storno");
-  check("R.11 jurnal: asl qator «отменён», storno — manfiy qator «Сторно: <oluvchi>» −5 / −6 500, Деньги / НДС / Итого asl qatorga teskari",
+  check("R.11 jurnal: asl qator «bekor qilingan», storno — manfiy qator «Storno: <oluvchi>» −5 / −6 500, Деньги / НДС / Итого asl qatorga teskari",
     rxS.length === 2 && !!so && so.cancelled === true && near(so.qty, 5) && eq2(so.sum, 6500) && !!sn && near(sn.qty, -5) && eq2(sn.price, 1300) && eq2(sn.sum, -6500)
-    && eq2(sn.vat, -so.vat) && eq2(sn.total, -so.total) && sn.payment === so.payment && sn.to === `Сторно: ${R1n}` && sn.note === `Сторно: ${WHY}` && sn.toKey === `r:${R1}`, rxS);
+    && eq2(sn.vat, -so.vat) && eq2(sn.total, -so.total) && sn.payment === so.payment && sn.to === `Storno: ${R1n}` && sn.note === `Storno: ${WHY}` && sn.toKey === `r:${R1}`, rxS);
 
   // R.12–R.13: brigadaga berilgan Расход stornosi — brigada qoldig'i ham qaytadi; brigada sarflagan bo'lsa — rad
   const tokS2 = crypto.randomUUID();
@@ -623,13 +626,13 @@ try {
   const rb = await returnBr(sklad, M1, String(Math.round((brHeld() - 3) * 1000) / 1000)); // brigadada 3 kg qoladi (< 4)
   const bS3 = bal(M1);
   const d5 = await cancelRx(dir, refB2, WHY);
-  check("R.13 brigada qo'lida berilganidan kam qolgan (3 < 4) — «Сторно невозможно» (xomashyo nomi bilan), hech narsa yozilmadi",
-    !!refB2 && rb.result?.ok === true && /^Сторно невозможно/.test(d5.result?.error ?? "") && (d5.result?.error ?? "").includes(M1n)
+  check("R.13 brigada qo'lida berilganidan kam qolgan (3 < 4) — «Storno mumkin emas» (xomashyo nomi bilan), hech narsa yozilmadi",
+    !!refB2 && rb.result?.ok === true && /^Storno mumkin emas/.test(d5.result?.error ?? "") && (d5.result?.error ?? "").includes(M1n)
     && stornoMoves(refB2).length === 0 && near(bal(M1), bS3) && near(brHeld(), 3), [rb.result ?? rb.status, d5.result ?? d5.status, brHeld()]);
 
   pg = await dir.get(`/stock/rasxod?from=${today}&to=${today}`);
-  check("R.14 /stock/rasxod (direktor): «Сторно» tugmasi bor, storno qatori «Сторно: <oluvchi>» va sababi, asl qatorda «отменён»",
-    pg.status === 200 && pg.text.includes(STORNO_BTN) && pg.text.includes(`Сторно: ${R1n}`) && pg.text.includes(WHY) && pg.text.includes("отменён"), pg.status);
+  check("R.14 /stock/rasxod (direktor): «Storno» tugmasi bor, storno qatori «Storno: <oluvchi>» va sababi, asl qatorda «bekor qilingan»",
+    pg.status === 200 && pg.text.includes(STORNO_BTN) && pg.text.includes(`Storno: ${R1n}`) && pg.text.includes(WHY) && pg.text.includes("bekor qilingan"), pg.status);
   // «Остатки» ayniyati qaytish va storno bilan ham: Расход ustuni = Расход jurnali, oxirgi = SQL qoldig'i
   const turnR = (await materialTurnover({ from: oFrom, to: oTo })).find((x) => x.id === M1);
   const rxR = (await rasxodJournal({ from: oFrom, to: oTo })).filter((x) => x.materialId === M1);
@@ -676,12 +679,12 @@ try {
   const pxMat = JSON.stringify(pxItems?.columns?.find((c) => c.name === "materialId") ?? {});
   check("7.8 mobil Приход formasi: «Цена» majburiy emas, xomashyo `extra` sida narx yo'q",
     !!pxPrice && !pxPrice.required && !/"extra":\{[^}]*"price"/.test(pxMat), { price: pxPrice, mat: pxMat.slice(0, 200) });
-  // Xomashyo kartochkasi: «Дона сўм» va oylik «Остатки» summalari — faqat ko'rish huquqi borlarga (sklad — bor, sotuvchi — yo'q)
+  // Xomashyo kartochkasi: «Dona narxi» va oylik «Qoldiqlar» summalari — faqat ko'rish huquqi borlarga (sklad — bor, sotuvchi — yo'q)
   const cardSklad = await mobile("GET", `/api/mobile/detail?key=stock&id=${encodeURIComponent(M1)}`, mt);
   const cardSotuv = await mobile("GET", `/api/mobile/detail?key=stock&id=${encodeURIComponent(M1)}`, mtSotuv);
-  check("7.9 mobil xomashyo kartochkasi: sklad — «Дона сўм» va «Остатки» bor; sotuvchi — 200, narx va summalar yo'q",
-    cardSklad.status === 200 && cardSklad.text.includes("Дона сўм") && cardSklad.text.includes("Остатки")
-      && cardSotuv.status === 200 && !cardSotuv.text.includes("Дона сўм") && !cardSotuv.text.includes("Остатки"),
+  check("7.9 mobil xomashyo kartochkasi: sklad — «Dona narxi» va «Qoldiqlar» bor; sotuvchi — 200, narx va summalar yo'q",
+    cardSklad.status === 200 && cardSklad.text.includes("Dona narxi") && cardSklad.text.includes("Qoldiqlar")
+      && cardSotuv.status === 200 && !cardSotuv.text.includes("Dona narxi") && !cardSotuv.text.includes("Qoldiqlar"),
     { sklad: cardSklad.status, sotuv: `${cardSotuv.status} ${cardSotuv.text.slice(0, 160)}` });
 } catch (e) {
   check("kutilmagan xato", false, String((e as Error)?.stack ?? e));

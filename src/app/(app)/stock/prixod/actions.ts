@@ -9,16 +9,16 @@ import { isoDate } from "@/lib/format";
 import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
 import type { VatRate } from "@/lib/receipt-vat";
 
-/** Ruscha forma — xato matnlari ham ruscha (ekran tilida). */
+/** Xato matnlari o'zbekcha — «Рус» rejimida lug'atdan o'giriladi. */
 const req = (msg: string) => z.string().trim().min(1, msg);
 const opt = z.string().trim().optional().transform((v) => (v ? v : null));
 const numStr = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, "").replace(",", ".") : v);
 
 const schema = z.object({
-  supplierId: req("Выберите поставщика («От Кого»)"),
-  warehouseId: req("Выберите склад"),
-  date: req("Укажите дату («Число»)"),
-  payment: z.enum(["BANK", "CASH"], { message: "Выберите «Деньги»: П-р или Н-к" }),
+  supplierId: req("Yetkazuvchini tanlang («Kimdan»)"),
+  warehouseId: req("Skladni tanlang"),
+  date: req("Sanani kiriting"),
+  payment: z.enum(["BANK", "CASH"], { message: "To'lov turini tanlang: bank o'tkazma yoki naqd pul" }),
   waybillNo: opt,
   recipientId: opt,
   address: opt,
@@ -26,21 +26,21 @@ const schema = z.object({
   purpose: opt,
   note: opt,
   cashAccountId: opt,
-  // Строки без материала форма не отправляет; пустой список — проверка ниже (своё сообщение)
+  // Xomashyosiz qatorlarni forma yubormaydi; bo'sh ro'yxat — pastda tekshiriladi (o'z xabari bilan)
   materialId: z.array(z.string()).optional(),
-  qty: z.array(z.preprocess(numStr, z.coerce.number({ message: "Количество — число" }).positive("Количество должно быть больше 0").max(MAX_AMOUNT, "Слишком большое значение"))).optional(),
-  price: z.array(z.preprocess(numStr, z.coerce.number({ message: "Цена — число" }).min(0, "Цена не может быть отрицательной").max(MAX_AMOUNT, "Слишком большое значение"))).optional(),
+  qty: z.array(z.preprocess(numStr, z.coerce.number({ message: "Miqdor son bo'lishi kerak" }).positive("Miqdor 0 dan katta bo'lishi kerak").max(MAX_AMOUNT, "Qiymat juda katta"))).optional(),
+  price: z.array(z.preprocess(numStr, z.coerce.number({ message: "Narx son bo'lishi kerak" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Qiymat juda katta"))).optional(),
   deliveryCost: z.array(z.string()).optional(),
   vatRate: z.array(z.string()).optional(),
 });
 
 const LIMITS: [keyof z.infer<typeof schema>, number, string][] = [
-  ["waybillNo", 60, "ТТН"], ["address", 300, "Адрес"], ["purpose", 300, "Почему"], ["note", 1000, "Примечание"],
+  ["waybillNo", 60, "TTN"], ["address", 300, "Manzil"], ["purpose", 300, "Maqsad"], ["note", 1000, "Izoh"],
 ];
 
 /**
- * Sklad → «Приход»: yangi kirim (GoodsReceipt) — `lib/receipts.ts#createGoodsReceipt` (Kirim formasi bilan bitta qoida).
- * Muvaffaqiyatda jurnalga (kirim sanasi oyi → bugun) «сохранён» xabari bilan qaytadi.
+ * Sklad → «Kirim»: yangi kirim (GoodsReceipt) — `lib/receipts.ts#createGoodsReceipt` (Kirim formasi bilan bitta qoida).
+ * Muvaffaqiyatda jurnalga (kirim sanasi oyi → bugun) «Kirim saqlandi» xabari bilan qaytadi.
  */
 export async function createPrixod(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "receipt");
@@ -49,21 +49,21 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   const d = r.data;
   for (const [k, max, label] of LIMITS) {
     const v = d[k];
-    if (typeof v === "string" && v.length > max) return { error: `«${label}»: не более ${max} символов` };
+    if (typeof v === "string" && v.length > max) return { error: `«${label}»: ${max} belgidan oshmasin` };
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { error: "Неверная дата" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { error: "Sana noto'g'ri" };
   const mats = d.materialId ?? [], qtys = d.qty ?? [], prices = d.price ?? [], deliveries = d.deliveryCost ?? [], rates = d.vatRate ?? [];
   const items: { materialId: string; qty: number; price: number; deliveryCost: number; vatRate: VatRate | null }[] = [];
   for (const [i, materialId] of mats.entries()) {
     if (!materialId) continue;
-    if (qtys[i] == null || prices[i] == null) return { error: `Строка ${i + 1}: укажите количество и цену` };
+    if (qtys[i] == null || prices[i] == null) return { error: `${i + 1}-qator: miqdor va narxni kiriting` };
     const raw = String(numStr(deliveries[i] ?? "") ?? "");
     const delivery = raw === "" ? 0 : Number(raw);
-    if (!Number.isFinite(delivery) || delivery < 0) return { error: `Строка ${i + 1}: неверная сумма доставки` };
+    if (!Number.isFinite(delivery) || delivery < 0) return { error: `${i + 1}-qator: yetkazib berish summasi noto'g'ri` };
     const rate = rates[i];
     items.push({ materialId, qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null });
   }
-  if (!items.length) return { error: "Выберите материал хотя бы в одной строке" };
+  if (!items.length) return { error: "Kamida bitta qatorda xomashyoni tanlang" };
 
   let res: Awaited<ReturnType<typeof createGoodsReceipt>>;
   try {
@@ -71,9 +71,9 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
       supplierId: d.supplierId, warehouseId: d.warehouseId, date: d.date, payment: d.payment,
       waybillNo: d.waybillNo, recipientId: d.recipientId, address: d.address, buyerId: d.buyerId, purpose: d.purpose, note: d.note,
       cashAccountId: d.cashAccountId, clientToken: receiptTokenOf(fd.get("clientToken")), items,
-    }, { userId: s.userId, role: s.role }, { lang: "ru" });
+    }, { userId: s.userId, role: s.role });
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Приход не сохранён" };
+    return { error: e instanceof Error ? e.message : "Kirim saqlanmadi" };
   }
   if (!res.existed) {
     revalidatePath("/stock"); revalidatePath("/stock/prixod"); revalidatePath("/receipts"); revalidatePath("/sales"); revalidatePath("/orders/new");

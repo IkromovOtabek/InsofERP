@@ -79,6 +79,7 @@ model User {
   salesRegister          SalesRegister[]          @relation("SalesRegisterCreatedBy")
   devices                MobileDevice[]
   mechanicRequests       MechanicRequest[]        @relation("MechReqBy")
+  paymentRequests        PaymentRequest[]         @relation("PayReqBy")
   notifications          Notification[]
   deletionRequests       AccountDeletionRequest[] @relation("DeletionRequestUser")
   deletionHandled        AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
@@ -191,13 +192,14 @@ model Customer {
   updatedAt     DateTime @updatedAt
   sites         Site[]
 
-  orders   Order[]
-  invoices Invoice[]
-  payments Payment[]
-  leads    Lead[]
-  register SalesRegister[]
-  agent    User?            @relation("CustomerAgent", fields: [agentId], references: [id])
-  openings OpeningBalance[]
+  orders      Order[]
+  invoices    Invoice[]
+  payments    Payment[]
+  payRequests PaymentRequest[]
+  leads       Lead[]
+  register    SalesRegister[]
+  agent       User?            @relation("CustomerAgent", fields: [agentId], references: [id])
+  openings    OpeningBalance[]
 
   @@index([agentId])
 }
@@ -1130,6 +1132,9 @@ model Order {
   /// Naqd to'lovli zayavkada shu summa kassaga tushmaguncha reys ochilmaydi/yuklanmaydi (`prepayShortError`).
   /// Ilgari izohga "Kutilayotgan avans: N so'm" qatori bo'lib yozilardi — migratsiya o'shandan to'ldirgan.
   prepayAmount     Decimal?    @db.Decimal(18, 2)
+  /// Bosh to'lov qanday keladi: CASH — naqd (kassa xodimi qabul qiladi), BANK — perechisleniye (buxgalter tasdiqlaydi).
+  /// Bosh to'lov bo'lsa `PaymentRequest` shu usul bilan ochiladi. Eski zayavkalarda bo'sh.
+  payMethod        PayMethod?
   guaranteeAt      DateTime? // mijoz imzolagan kafolat xati qabul qilingan sana
   contractNo       String?     @unique // shartnoma raqami (SH-YYYY-00001) — "Shartnoma qilish" belgilanganda
   contractAmount   Decimal?    @db.Decimal(18, 2) // shartnoma summasi; mahsulot summasi shundan ayiriladi (qoldiq)
@@ -1143,15 +1148,16 @@ model Order {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  customer  Customer          @relation(fields: [customerId], references: [id])
-  site      Site?             @relation(fields: [siteId], references: [id])
-  createdBy User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
-  items     OrderItem[]
-  batches   ProductionBatch[]
-  trips     Trip[]
-  invoices  Invoice[]
-  tasks     BrigadeTask[]
-  payments  Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
+  customer   Customer          @relation(fields: [customerId], references: [id])
+  site       Site?             @relation(fields: [siteId], references: [id])
+  createdBy  User              @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  items      OrderItem[]
+  batches    ProductionBatch[]
+  trips      Trip[]
+  invoices   Invoice[]
+  tasks      BrigadeTask[]
+  payments   Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
+  payRequest PaymentRequest? // bosh to'lovni qabul qilish so'rovi (kassa yoki buxgalteriyaga)
 
   @@index([deliveryDate])
   @@index([siteId])
@@ -2455,4 +2461,48 @@ model MarketingMessage {
   createdAt DateTime      @default(now())
 
   @@index([chatId, createdAt])
+}
+
+/**
+ * ───────────────────────── Pul qabul qilish so'rovi (zayavka bosh to'lovi) ─────────────────────────
+ * Zayavka bosh to'lov bilan ochilsa avtomatik yaratiladi (`lib/payment-requests.ts`):
+ * CASH — Kassa xodimiga «naqd pul keladi, qabul qiling», BANK — Buxgalterga «perechisleniye tushishi kutilmoqda».
+ * `received` va holat — zayavkaga tushgan haqiqiy to'lovlardan (avans + zayavka schyotlari) qayta hisoblanadi
+ * (`syncPaymentRequest`): pul qaysi yo'l bilan kiritilmasin (shu bo'lim, Kassa/bank formasi, ECO, storno) — holat to'g'ri.
+ * Pulning o'zi `Payment` bo'lib yoziladi (hisob qoldig'i, Kirim-Chiqim, debitorka — bitta manba).
+ */
+enum PayMethod {
+  CASH // naqd — kassa
+  BANK // perechisleniye — bank hisobi
+}
+
+enum PaymentRequestStatus {
+  PENDING // pul kutilmoqda
+  PARTIAL // qisman tushdi
+  RECEIVED // to'liq qabul qilindi
+  CANCELLED // zayavka bekor qilindi
+}
+
+model PaymentRequest {
+  id          String               @id @default(cuid())
+  docNo       String               @unique // PS-YYYY-00001
+  orderId     String               @unique
+  customerId  String
+  method      PayMethod
+  amount      Decimal              @db.Decimal(18, 2) // kutilayotgan bosh to'lov
+  received    Decimal              @default(0) @db.Decimal(18, 2) // tushgani (to'lovlardan qayta hisoblanadi)
+  status      PaymentRequestStatus @default(PENDING)
+  dueDate     DateTime // muddat — zayavkaning yetkazish sanasi; o'tsa «Muddati o'tgan»
+  createdById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  closedAt    DateTime? // to'liq qabul qilingan / bekor qilingan payt
+
+  order     Order    @relation(fields: [orderId], references: [id])
+  customer  Customer @relation(fields: [customerId], references: [id])
+  createdBy User     @relation("PayReqBy", fields: [createdById], references: [id])
+
+  @@index([method, status, dueDate])
+  @@index([status, closedAt])
+  @@index([customerId])
 }

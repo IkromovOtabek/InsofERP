@@ -2,8 +2,9 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { money } from "@/lib/format";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
-import type { Prisma } from "@/generated/prisma";
+import type { PayMethod, Prisma } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
+import { syncPaymentRequest } from "@/lib/payment-requests";
 
 type Tx = Prisma.TransactionClient;
 
@@ -21,6 +22,11 @@ export type PaymentInput = {
   amount: number;
   date: Date;
   note?: string | null;
+  /**
+   * «Pul qabul qilish» so'rovi orqali (`lib/payment-requests.ts`): shu tranzaksiyada so'rov ochiqligi, usul ↔ hisob turi
+   * (naqd → kassa, perechisleniye → bank) va summa qolgan bosh to'lovdan oshmasligi tekshiriladi.
+   */
+  request?: { id: string; method: PayMethod };
 };
 
 class PaymentError extends Error {}
@@ -79,8 +85,18 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
     const cust = await tx.customer.findUnique({ where: { id: input.customerId }, select: { isInternal: true } });
     if (!cust) throw new PaymentError("Mijoz topilmadi");
     if (cust.isInternal) throw new PaymentError("Ichki (tizim) mijoziga to'lov qabul qilinmaydi");
-    const acc = await tx.cashAccount.findUnique({ where: { id: input.cashAccountId }, select: { isActive: true } });
+    const acc = await tx.cashAccount.findUnique({ where: { id: input.cashAccountId }, select: { isActive: true, type: true } });
     if (!acc?.isActive) throw new PaymentError("Kassa/hisob topilmadi yoki yopilgan");
+    if (input.request) {
+      // So'rov qulf ostida qayta o'qiladi: ikki xodim bir vaqtda qabul qilsa, ikkinchisi yopilgan so'rovni ko'radi
+      if (acc.type !== input.request.method) throw new PaymentError(input.request.method === "CASH" ? "Naqd pul faqat kassa hisobiga qabul qilinadi" : "Perechisleniye faqat bank hisobiga qabul qilinadi");
+      const rq = await tx.paymentRequest.findUnique({ where: { id: input.request.id }, select: { docNo: true, orderId: true, status: true, amount: true } });
+      if (!rq) throw new PaymentError("So'rov topilmadi");
+      if (rq.status !== "PENDING" && rq.status !== "PARTIAL") throw new PaymentError(rq.status === "RECEIVED" ? `${rq.docNo} allaqachon to'liq qabul qilingan` : `${rq.docNo} bekor qilingan`);
+      const paid = await tx.payment.aggregate({ where: { OR: [{ orderId: rq.orderId }, { invoice: { orderId: rq.orderId } }] }, _sum: { amount: true } });
+      const left = r2(Number(rq.amount) - Number(paid._sum.amount ?? 0));
+      if (input.amount > left + 0.005) throw new PaymentError(`Qolgan bosh to'lov ${money(Math.max(0, left))}. Ortig'ini Kassa/bank → To'lovlar orqali avans qilib kiriting`);
+    }
     if (input.invoiceId) {
       // Schyot shu mijozniki, ochiq va summa qoldiqdan oshmasin (mobil ilovadagi qoida bilan bir xil).
       // Aks holda A mijozning puli B ning schyotini yopishi yoki bekor qilingan schyot qayta "to'landi" bo'lishi mumkin edi.
@@ -127,6 +143,9 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
     });
     await audit(tx, userId, "CREATE", "Payment", p.id, undefined, p);
 
+    // Bosh to'lov so'rovi (bo'lsa) — zayavkaga tushgan to'lovlardan qayta hisoblanadi
+    const orderOf = input.orderId ?? (input.invoiceId ? (await tx.invoice.findUnique({ where: { id: input.invoiceId }, select: { orderId: true } }))?.orderId : null);
+    await syncPaymentRequest(tx, orderOf, userId);
     if (!input.invoiceId) return { id: p.id };
     const status = await recalcInvoice(tx, input.invoiceId, userId);
     return { id: p.id, invoiceStatus: status };
@@ -188,6 +207,9 @@ export async function linkPaymentToInvoice(paymentId: string, invoiceId: string,
       await audit(tx, userId, "CREATE", "Payment", q.id, undefined, { ...q, splitFrom: p.id });
     }
     const status = await recalcInvoice(tx, inv.id, userId);
+    // Avanssiz to'lov zayavka schyotiga bog'landi — shu zayavkaning bosh to'lov so'rovi yangilanadi
+    await syncPaymentRequest(tx, inv.orderId, userId);
+    if (p.orderId && p.orderId !== inv.orderId) await syncPaymentRequest(tx, p.orderId, userId);
     return { linked, rest, invoiceStatus: status };
   }).catch((e: Error) => { if (e instanceof PaymentError) return { error: e.message }; throw e; });
 }
@@ -212,6 +234,9 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
     await tx.payment.delete({ where: { id: p.id } });
     await audit(tx, userId, "DELETE", "Payment", p.id, { ...p, register: undefined }, { reversed: true, reason: reason.trim() });
     if (p.invoiceId) await recalcInvoice(tx, p.invoiceId, userId);
+    // Storno — bosh to'lov so'rovi yana ochiq (qisman) bo'ladi
+    const orderOf = p.orderId ?? (p.invoiceId ? (await tx.invoice.findUnique({ where: { id: p.invoiceId }, select: { orderId: true } }))?.orderId : null);
+    await syncPaymentRequest(tx, orderOf, userId);
     return {};
   }).catch((e: Error) => { if (e instanceof PaymentError) return { error: e.message }; throw e; });
 }

@@ -56,6 +56,7 @@ export async function createAgentOrder(_prev: ActionState, fd: FormData): Promis
         items: d.productId.map((productId, i) => ({ productId, qtyM3: d.qtyM3[i]!, price: d.price[i]! })).filter((i) => i.productId),
         needsPump: d.needsPump,
         isUrgent: d.isUrgent,
+        // To'lov usuli va bosh to'lov yo'q: createOrder usulni naqd (CASH) qiladi, pul qabul so'rovi ochilmaydi
         note: d.note,
       },
       s.userId,

@@ -82,7 +82,7 @@ export async function OwnerHome() {
         <Card className="py-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500"><span>Ishlab chiqarish</span><Dot level={L.production} /></div>
           <div className="mt-1 text-lg font-semibold tabular">{qty(S.production.concreteMonth)} m³{S.production.concretePlan ? <span className="text-sm font-normal text-slate-500"> / {qty(S.production.concretePlan)}</span> : ""}</div>
-          <div className="truncate text-xs text-slate-500">{S.production.pieces.length ? S.production.pieces.map((p) => `${p.code} ${qty(p.fact)}/${qty(p.plan)}`).join(" · ") : "ЖБИ plani yo'q"}{S.production.capacityPct !== null && <> · quvvat bugun {pct(S.production.capacityPct, 0)}</>}</div>
+          <div className="truncate text-xs text-slate-500">{S.production.pieces.length ? S.production.pieces.map((p) => `${p.code} ${qty(p.fact)}/${qty(p.plan)}`).join(" · ") : "Temir-beton plani yo'q"}{S.production.capacityPct !== null && <> · quvvat bugun {pct(S.production.capacityPct, 0)}</>}</div>
         </Card>
         <Card className="py-3">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500"><span>Otgruzka (beton)</span><Dot level={S.shipment.plan ? (S.shipment.month / S.shipment.plan >= 0.9 ? "ok" : S.shipment.month / S.shipment.plan >= 0.7 ? "warn" : "crit") : "ok"} /></div>
@@ -269,7 +269,7 @@ export async function OwnerHome() {
 
       {/* ── 7. Ishlab chiqarish | 8. Voronka ── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
-        <Panel className="min-w-0" title="Ishlab chiqarish" info="Plan — direktor belgilagan oylik plan (Ishlab chiqarish bosh sahifasi). Fakt — zames (beton) va brigada qaydlari (ЖБИ). Tannarx va marja — retsept bo'yicha." padded={false} action={more("/dashboard?view=production", "Ishlab chiqarish")}>
+        <Panel className="min-w-0" title="Ishlab chiqarish" info="Plan — direktor belgilagan oylik plan (Ishlab chiqarish bosh sahifasi). Fakt — zames (beton) va brigada qaydlari (temir-beton). Tannarx va marja — retsept bo'yicha." padded={false} action={more("/dashboard?view=production", "Ishlab chiqarish")}>
           <Scroll><table className="w-full min-w-[520px] text-sm">
             <thead><tr><Th>Mahsulot</Th><Th right>Bugun</Th><Th right>Oy fakt</Th><Th right>Plan</Th><Th right>Orqada</Th><Th className="w-32">Bajarilish</Th></tr></thead>
             <tbody>

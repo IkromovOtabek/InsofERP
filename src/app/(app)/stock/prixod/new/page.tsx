@@ -9,7 +9,7 @@ import { isoDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui";
 import { PrixodForm } from "../prixod-form";
 
-/** Sklad → «Приход» → yangi kirim (ruscha forma, Excel jurnali ustunlari bilan). */
+/** Sklad → «Kirim» → yangi kirim (Excel jurnali ustunlari bilan). */
 export default async function NewPrixodPage() {
   const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   // Rol mos, lekin direktor bu amalni olib qo'ygan bo'lsa — forma ochilmaydi (saqlashda baribir rad bo'lardi)
@@ -26,12 +26,12 @@ export default async function NewPrixodPage() {
     db.user.findMany({ where: { isActive: true, role: "PROCUREMENT" }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true } }),
     companyVatPayer(),
   ]);
-  // Tanlanganda qatorga tushadigan narx: «Дона сўм» (Snabjeniye belgilagan), bo'lmasa o'rtacha tannarx
+  // Tanlanganda qatorga tushadigan narx: «Dona narxi» (Snabjeniye belgilagan), bo'lmasa o'rtacha tannarx
   const prices = await issuePrices(materials.map((m) => m.id));
   const bal = new Map(balances.map((b) => [b.materialId, Number(b._sum.qty ?? 0)]));
   return (
-    <div lang="ru">
-      <PageHeader back={{ href: "/stock/prixod", label: "Приход" }} title="Новый приход" subtitle="После сохранения остаток на складе сразу увеличится" />
+    <div>
+      <PageHeader back={{ href: "/stock/prixod", label: "Kirim" }} title="Yangi kirim" subtitle="Saqlangandan keyin skladdagi qoldiq darhol oshadi" />
       <PrixodForm
         today={isoDate()}
         suppliers={suppliers}

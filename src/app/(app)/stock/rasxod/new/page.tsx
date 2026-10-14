@@ -10,8 +10,8 @@ import { Callout, Card, PageHeader } from "@/components/ui";
 import { RasxodForm } from "../rasxod-form";
 
 /**
- * Sklad → «Расход» → Новый расход (ekran ruscha): skladdan oluvchiga yoki brigadaga xomashyo berish.
- * Narx — «Дона сўм» (Snabjeniye belgilagan; bo'lmasa o'rtacha tannarx, «≈»). Qoldiq — tanlangan sklad bo'yicha.
+ * Sklad → «Chiqim» → Yangi chiqim: skladdan oluvchiga yoki brigadaga xomashyo berish.
+ * Narx — «Dona narxi» («Дона сўм») (Snabjeniye belgilagan; bo'lmasa o'rtacha tannarx, «≈»). Qoldiq — tanlangan sklad bo'yicha.
  */
 export default async function NewRasxodPage({ searchParams }: { searchParams: Promise<{ to?: string }> }) {
   const s = await requireRoles(["WAREHOUSE", "PROCUREMENT"], { module: "stock", actions: ["issue"] });
@@ -41,11 +41,11 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
     ? sp.to : "";
 
   return (
-    <div lang="ru">
-      <PageHeader back={{ href: "/stock/rasxod", label: "Расход" }} title="Новый расход"
-        subtitle="Выдача сырья со склада. Остаток уменьшается сразу; цена — «Дона сўм», заданная снабжением." />
+    <div>
+      <PageHeader back={{ href: "/stock/rasxod", label: "Chiqim" }} title="Yangi chiqim"
+        subtitle="Skladdan xomashyo berish. Qoldiq darhol kamayadi; narx — ta'minot belgilagan «Dona narxi»." />
       {warehouses.length === 0 ? (
-        <Callout tone="warning" title="Нет склада">Сначала откройте склад в Настройках.</Callout>
+        <Callout tone="warning" title="Sklad yo'q">Avval Sozlamalarda sklad oching.</Callout>
       ) : (
         <Card>
           <RasxodForm

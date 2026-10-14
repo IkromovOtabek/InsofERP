@@ -220,8 +220,8 @@ export const ORDER_LABEL: Record<string, string> = { DRAFT: "Qoralama", BLOCKED:
 export const INVOICE_LABEL: Record<string, string> = { OPEN: "Ochiq", PARTIAL: "Qisman", PAID: "To'langan", CANCELLED: "Bekor" };
 const VEHICLE_LABEL: Record<string, string> = { ACTIVE: "Saflda", REPAIR: "Ta'mirda", IDLE: "Bekor turibdi" };
 export const ATT_LABEL: Record<string, string> = { PRESENT: "Keldi", ABSENT: "Kelmadi", LEAVE: "Ta'til", SICK: "Kasal", DAYOFF: "Dam olish" };
-// ISSUE — Sklad → «Расход»: oluvchiga («Кому» — shafyorlar, svarchiklar…) berish (`lib/stock-issue.ts`); nomi Excel jurnalidagidek
-export const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames sarfi", PRODUCTION_OUTPUT: "Tayyor mahsulot", SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", ISSUE: "Расход" };
+// ISSUE — Sklad → «Chiqim»: oluvchiga («Kimga» — shafyorlar, svarchiklar…) berish (`lib/stock-issue.ts`); nomi Excel jurnalidagidek
+export const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames sarfi", PRODUCTION_OUTPUT: "Tayyor mahsulot", SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", ISSUE: "Chiqim" };
 
 export type RoleDashboard = { hero: HomeCard; tiles: HomeCard[]; charts: HomeSection[] };
 const pick = (...s: (HomeSection | null)[]) => s.filter((x): x is HomeSection => !!x);

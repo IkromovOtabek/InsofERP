@@ -10,9 +10,9 @@ import { upsertRecipient, setRecipientActive } from "@/lib/stock-recipients";
 import { isoDate } from "@/lib/format";
 
 /**
- * Sklad → «Расход» (ekran ruscha — xato matnlari ham ruscha).
+ * Sklad → «Chiqim» (avval «Расход»). Xato matnlari o'zbekcha, «Рус» rejimida lug'atdan.
  * Kim: `stock` → `issue` amali (lib/permissions.ts) — Sklad, Snabjeniye, direktor va u ruxsat bergan xodim.
- * Mantiq `lib/stock-issue.ts` (berish) va `lib/stock-recipients.ts` («Кому» ro'yxati) da — mobil/ECO ham shulardan.
+ * Mantiq `lib/stock-issue.ts` (berish) va `lib/stock-recipients.ts` («Kimga» ro'yxati) da — mobil/ECO ham shulardan.
  */
 
 const refresh = () => {
@@ -21,32 +21,32 @@ const refresh = () => {
 };
 
 const schema = z.object({
-  warehouseId: zStr("Выберите склад"),
-  to: zStr("Выберите, кому выдаётся (Кому)"),
+  warehouseId: zStr("Skladni tanlang"),
+  to: zStr("Kimga berilishini tanlang (Kimga)"),
   date: zOpt,
   note: zOpt,
   clientToken: zOpt,
-  materialId: z.array(z.string(), { message: "Добавьте хотя бы одну строку" }).min(1, "Добавьте хотя бы одну строку"),
-  qty: z.array(z.string(), { message: "Укажите количество" }),
+  materialId: z.array(z.string(), { message: "Kamida bitta qator qo'shing" }).min(1, "Kamida bitta qator qo'shing"),
+  qty: z.array(z.string(), { message: "Miqdorni kiriting" }),
 });
 
-/** Новый расход: qatorlar `materialId[]` + `qty[]`, «Кому» — "r:<id>" | "b:<id>". Muvaffaqiyatda → /stock/rasxod. */
+/** Yangi chiqim: qatorlar `materialId[]` + `qty[]`, «Kimga» — "r:<id>" | "b:<id>". Muvaffaqiyatda → /stock/rasxod. */
 export async function createRasxod(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "issue");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
   const d = r.data;
   const to = parseIssueTarget(d.to);
-  if (!to) return { error: "Выберите, кому выдаётся (Кому)" };
+  if (!to) return { error: "Kimga berilishini tanlang (Kimga)" };
   const items: { materialId: string; qty: number }[] = [];
   for (const [i, materialId] of d.materialId.entries()) {
     if (!materialId.trim()) continue;
     const raw = String(d.qty[i] ?? "").replace(/\s+/g, "").replace(",", ".");
     const qty = Number(raw);
-    if (!raw || !Number.isFinite(qty) || qty <= 0) return { error: `Строка ${i + 1}: укажите количество больше 0` };
+    if (!raw || !Number.isFinite(qty) || qty <= 0) return { error: `${i + 1}-qator: miqdorni 0 dan katta kiriting` };
     items.push({ materialId, qty });
   }
-  if (!items.length) return { error: "Добавьте хотя бы одну строку: наименование и количество" };
+  if (!items.length) return { error: "Kamida bitta qator qo'shing: nomi va miqdori" };
 
   let res;
   try {
@@ -56,7 +56,7 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
     throw e;
   }
   refresh();
-  // Davr standart — joriy oy: o'tgan oyga yozilgan расход ham ro'yxatda ko'rinsin
+  // Davr standart — joriy oy: o'tgan oyga yozilgan chiqim ham ro'yxatda ko'rinsin
   const now = new Date();
   const monthStart = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
   const q = new URLSearchParams({ saved: String(res.count) });
@@ -65,7 +65,7 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
 }
 
 /**
- * Расход stornosi (bekor qilish): hujjatning barcha qatorlari skladga teskari yoziladi (`lib/stock-issue` cancelIssue).
+ * Chiqim stornosi (bekor qilish): hujjatning barcha qatorlari skladga teskari yoziladi (`lib/stock-issue` cancelIssue).
  * Kim: `stock` → `issue_storno` — direktor yoki u ruxsat bergan xodim. Sabab majburiy.
  */
 export async function cancelRasxod(ref: string, reason: string): Promise<ActionState> {
@@ -73,7 +73,7 @@ export async function cancelRasxod(ref: string, reason: string): Promise<ActionS
   try {
     const r = await cancelIssue(String(ref ?? ""), String(reason ?? ""), { userId: s.userId, role: s.role });
     refresh();
-    return { ok: true, note: `Расход отменён (сторно): строк ${r.count}` };
+    return { ok: true, note: `Chiqim bekor qilindi (storno): ${r.count} qator` };
   } catch (e) {
     if (e instanceof IssueError) return { error: e.message };
     throw e;
@@ -82,29 +82,29 @@ export async function cancelRasxod(ref: string, reason: string): Promise<ActionS
 
 const recipientSchema = z.object({
   id: zOpt,
-  name: zStr("Введите имя получателя"),
+  name: zStr("Oluvchining ismini kiriting"),
   note: zOpt,
   sortOrder: zOpt,
 });
 
-/** «Кому» ro'yxati: yangi oluvchi yoki nomini/izohini o'zgartirish (`id` bilan). */
+/** «Kimga» ro'yxati: yangi oluvchi yoki nomini/izohini o'zgartirish (`id` bilan). */
 export async function saveRecipient(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "issue");
   const r = parseForm(recipientSchema, fd);
   if ("error" in r) return { error: r.error };
   const sortOrder = r.data.sortOrder == null ? null : Number(r.data.sortOrder);
-  if (sortOrder != null && !Number.isFinite(sortOrder)) return { error: "Порядок — число" };
+  if (sortOrder != null && !Number.isFinite(sortOrder)) return { error: "Tartib raqami son bo'lishi kerak" };
   const res = await upsertRecipient({ id: r.data.id, name: r.data.name, note: r.data.note, sortOrder }, s.userId);
   if ("error" in res) return { error: res.error };
   revalidatePath("/stock/rasxod"); revalidatePath("/stock/rasxod/new");
-  return { ok: true, note: res.created ? "Получатель добавлен" : "Сохранено" };
+  return { ok: true, note: res.created ? "Oluvchi qo'shildi" : "Saqlandi" };
 }
 
-/** Faol / nofaol (o'chirish yo'q — eski Расход qatorlarida nomi qoladi). */
+/** Faol / nofaol (o'chirish yo'q — eski chiqim qatorlarida nomi qoladi). */
 export async function toggleRecipient(id: string, isActive: boolean): Promise<ActionState> {
   const s = await requireAction("stock", "issue");
   const res = await setRecipientActive(String(id ?? ""), isActive === true, s.userId);
   if ("error" in res) return { error: res.error };
   revalidatePath("/stock/rasxod"); revalidatePath("/stock/rasxod/new");
-  return { ok: true, note: isActive ? `«${res.name}» снова активен` : `«${res.name}» скрыт из списка «Кому»` };
+  return { ok: true, note: isActive ? `«${res.name}» yana faol` : `«${res.name}» «Kimga» ro'yxatidan yashirildi` };
 }

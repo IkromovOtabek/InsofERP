@@ -87,7 +87,7 @@ async function PaymentsTab({ role }: { role: string }) {
       orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 200,
       include: { customer: true, invoice: true, cashAccount: true, order: { select: { orderNo: true } }, createdBy: { select: { fullName: true } }, register: { select: { id: true } } },
     }),
-    db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
+    db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true, type: true } }),
     db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     // Eng eski schyot birinchi — kassir FIFO bo'yicha yopadi
     db.invoice.findMany({ where: { status: { in: ["OPEN", "PARTIAL"] } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], include: { payments: { select: { amount: true } } } }),
@@ -119,10 +119,11 @@ async function PaymentsTab({ role }: { role: string }) {
         <Callout tone="warning" title={`Avans kutilmoqda — ${waiting.length} ta zayavka`}>
           <ul className="space-y-0.5">
             {waiting.slice(0, 8).map((o) => (
-              <li key={o.id}><Link href={`/orders/${o.id}`} className="font-medium underline">{o.orderNo}</Link> · {custName.get(o.customerId) ?? "—"} · {money(o.expected - o.paid)}</li>
+              <li key={o.id}><Link href={`/pul-qabul?tab=all&q=${encodeURIComponent(o.orderNo)}`} className="font-medium underline">{o.orderNo}</Link> · {custName.get(o.customerId) ?? "—"} · {money(o.expected - o.paid)}</li>
             ))}
           </ul>
-          <p className="mt-1 text-xs">Pulni qabul qilganda formada mijoz va «Zayavka (avans)» ni tanlang.</p>
+          {/* Kassir zayavka sahifasini ocha olmaydi — bosh to'lov so'rovlari «Pul qabul qilish» bo'limida */}
+          <p className="mt-1 text-xs">Bosh to&apos;lovni <Link href="/pul-qabul" className="font-medium underline">Pul qabul qilish</Link> bo&apos;limida bir bosishda qabul qiling (so&apos;rovi yo&apos;q eski zayavkalar uchun — formada mijoz va «Zayavka (avans)» ni tanlang).</p>
         </Callout>
       )}
       {canPay && (
@@ -188,7 +189,7 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
           Shu partiyadagi {totals.rows} ta qator ko&apos;rsatilmoqda.{" "}
           {skipped > 0 && <>{skipped} ta qator jurnalda allaqachon bor edi — qayta yozilmadi.{" "}</>}
           {paid != null && <>{paid > 0 ? `${paid} ta qator kassaga kirim bo'lib yozildi.` : "Kassaga kirim yozilmadi (faqat jurnal)."}{" "}</>}
-          {unknown > 0 && <b className="text-amber-800">{unknown} ta qatorda to&apos;lov turi («Деньги») tanilmadi{paid ? " — naqd kassaga yozildi" : ""}, tekshiring.{" "}</b>}
+          {unknown > 0 && <b className="text-amber-800">{unknown} ta qatorda to&apos;lov turi tanilmadi{paid ? " — naqd kassaga yozildi" : ""}, tekshiring.{" "}</b>}
           <Link href="/payments?tab=jurnal" className="font-medium underline">Butun jurnalni ko&apos;rish</Link>
           {canUndo(batch) && (
             <div className="mt-2">

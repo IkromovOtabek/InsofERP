@@ -42,6 +42,7 @@ import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
 import { MaterialPriceError, setMaterialPrice } from "@/lib/material-price";
 import { approveMechanicRequest, cancelMechanicRequest, payMechanicRequest, rejectMechanicRequest } from "@/lib/mechanic-requests";
 import { setAttendanceAnywhere } from "@/lib/self-attendance";
+import { receivePaymentRequest } from "@/lib/payment-requests";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
 /**
@@ -599,6 +600,32 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: r.note ?? "So'rov bekor qilindi" };
     }
 
+    // ── Pul qabul qilish (zayavka bosh to'lovi) — qoida `lib/payment-requests.ts` → `addPayment` da:
+    //    usul ↔ hisob turi, qolgan summadan oshmaslik, so'rov ochiqligi (mijoz qulfi ostida) ──
+    case "payreq.receive": {
+      const amount = numOf(payload, "amount");
+      if (!(amount > 0)) fail("Summa 0 dan katta bo'lsin");
+      const cashAccountId = textOf(payload, "cashAccountId");
+      if (!cashAccountId) fail("Hisob tanlanmagan");
+      // Sana — `YYYY-MM-DD` (kartochkadagi tanlov): bugun — hozirgi vaqt, oldingi kun — o'sha kun (kelajak va 31 kundan eskisi yo'q)
+      const ds = textOf(payload, "date");
+      let date = new Date();
+      if (ds) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) fail("Sanani tanlang");
+        const d = new Date(`${ds}T12:00:00`);
+        const start = new Date(); start.setHours(0, 0, 0, 0);
+        if (!Number.isFinite(d.getTime()) || d.getTime() >= start.getTime() + 86400000) fail("Kelajakdagi sana bilan qabul qilib bo'lmaydi");
+        if (d.getTime() < start.getTime() - 31 * 86400000) fail("Sana juda eski — 31 kundan oldingi kun tanlanmaydi");
+        if (d.getTime() < start.getTime()) date = d;
+      }
+      const r = await receivePaymentRequest(
+        { requestId: id, cashAccountId, amount, date, note: textOf(payload, "note") || null, docRef: textOf(payload, "docRef") || null },
+        { userId: user.id, role: user.role, perms: user.perms },
+      );
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.status === "PARTIAL" ? `${r.docNo} qabul qilindi — qisman, qolgani kutilmoqda` : `${r.docNo} qabul qilindi` };
+    }
+
     // ── Sayt arizalari — qoida `lib/leads.ts` da ──
     case "lead.progress":
     case "lead.reopen":
@@ -619,17 +646,17 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       return { ok: true, message: "Izoh saqlandi" };
     }
 
-    // ── Xomashyo «Дона сўм» (chiqim narxi) — qoida `lib/material-price.ts` da (veb Sklad → Остатки bilan bir xil) ──
+    // ── Xomashyo «Dona narxi» (chiqim narxi) — qoida `lib/material-price.ts` da (veb Sklad → Qoldiqlar bilan bir xil) ──
     case "material.price": {
-      // Kartochka «Расход» ro'yxatidan ochilgan bo'lsa id `<materialId>~<n>` — `~` dan keyingisi faqat ro'yxat kaliti
+      // Kartochka «Chiqim» ro'yxatidan ochilgan bo'lsa id `<materialId>~<n>` — `~` dan keyingisi faqat ro'yxat kaliti
       const materialId = id.split("~")[0];
       const raw = textOf(payload, "price").replace(/\s+/g, "").replace(",", ".");
-      if (!raw) fail("Укажите цену («Дона сўм»)");
+      if (!raw) fail("Narxni kiriting («Dona narxi»)");
       const price = Number(raw);
-      if (!Number.isFinite(price) || price < 0) fail("Цена — число не меньше 0");
+      if (!Number.isFinite(price) || price < 0) fail("Narx 0 yoki undan katta son bo'lsin");
       try {
         const r = await setMaterialPrice(materialId, price, { userId: user.id, role: user.role });
-        return { ok: true, message: r.changed ? `«Дона сўм» сохранена: ${fmtNum(r.after ?? 0, 2)} сўм` : "Цена не изменилась" };
+        return { ok: true, message: r.changed ? `«Dona narxi» saqlandi: ${fmtNum(r.after ?? 0, 2)} so'm` : "Narx o'zgarmadi" };
       } catch (e) {
         if (e instanceof MaterialPriceError) fail(e.message);
         throw e;

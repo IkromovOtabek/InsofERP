@@ -90,7 +90,7 @@ export async function importSalesRegisterFromExcel(_prev: ActionState, fd: FormD
     const date = parseDate(x.date, monthFirst);
     if (!date) return { error: `${no}-qator: sana o'qilmadi ("${str(x.date)}") — "Sana tartibi"ni tekshiring` };
     const customer = str(x.customer);
-    if (!customer) return { error: `${no}-qator: mijoz (Кому) bo'sh` };
+    if (!customer) return { error: `${no}-qator: mijoz (Kimga) bo'sh` };
     const productName = str(x.productName);
     if (!productName) return { error: `${no}-qator (${customer}): mahsulot nomi bo'sh` };
     const qty = num(x.qty);

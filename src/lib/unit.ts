@@ -4,9 +4,12 @@ import { qty } from "@/lib/format";
 export const unitLabel = (u: string) => (u === "m3" ? "m³" : u);
 export const isStocked = (u: string) => u !== "m3";
 
-/** Ruscha birlik yorlig'i — Sklad → «Приход», «Расход», «Остатки» jadvallari (foydalanuvchi Excel'idagidek). */
-const UNIT_RU: Record<string, string> = { kg: "кг", t: "тн", l: "л", m3: "м³", m2: "м²", m: "м", dona: "шт" };
-export const unitLabelRu = (u: string) => UNIT_RU[u] ?? u;
+/**
+ * Sklad jadvallaridagi qisqa birlik yorlig'i (Kirim, Chiqim, Qoldiqlar). Matn o'zbekcha — «Рус» tanlansa
+ * lug'at (`i18n/ru.json`) «кг», «тн», «шт.» qiladi, «Кирилл» esa transliteratsiya.
+ */
+const UNIT_SHORT: Record<string, string> = { m3: "m³", m2: "m²", t: "tn" }; // «t» — Рус lug'ati 1 harfli matnni o'girmaydi
+export const unitShort = (u: string) => UNIT_SHORT[u] ?? u;
 
 /** Mahsulot birliklari (Sozlamalar → Beton markalari, zayavkadagi mahsulot tanlagichi). */
 export const PRODUCT_UNITS: [string, string][] = [

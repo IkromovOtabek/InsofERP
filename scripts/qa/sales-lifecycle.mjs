@@ -43,7 +43,8 @@ check("A4 yangi mijoz limiti 0", eq2(ordA.creditLimit, 0));
 r = await sotuv.action("orders/actions#confirmOrder", [oA], `/orders/${oA}`);
 check("A5 to'liq oldindan to'lovli zayavka qabul qilindi (BLOCKED emas)", q1(`select status from "Order" where id=${lit(oA)}`).status === "CONFIRMED", r.text.slice(-300));
 let page = await sotuv.get(`/orders/${oA}`);
-check("A6 zayavka sahifasida kutilayotgan avans", page.status === 200 && html(page.text).includes("Kutilayotgan avans") && hasMoney(page.text, 6500000));
+// Bosh to'lov endi «Pul qabul qilish» so'rovi (PS-…) bo'lib ko'rinadi — naqd: Kassa xodimi qabul qiladi
+check("A6 zayavka sahifasida bosh to'lov so'rovi (PS-…, kutilmoqda)", page.status === 200 && html(page.text).includes("Bosh to'lov so'rovi") && /PS-\d{4}-\d{5}/.test(page.text) && hasMoney(page.text, 6500000));
 // Avans: qisman, ortiqcha urinish, qolgani
 r = await kassa.action("payments/actions#createPayment", [undefined, fd({ customerId: ordA.cid, orderId: oA, cashAccountId: KASSA, amount: 2000000, date: today })], "/payments");
 check("A7 avans 2 000 000 qabul qilindi", r.result?.ok === true, r.result);

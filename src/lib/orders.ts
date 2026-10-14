@@ -9,7 +9,8 @@ import { routeDistance, type Distance } from "@/lib/geo";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { expectedAdvance } from "@/lib/payments";
-import type { Prisma } from "@/generated/prisma";
+import type { PayMethod, Prisma } from "@/generated/prisma";
+import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest } from "@/lib/payment-requests";
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
 
@@ -211,6 +212,8 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
     const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: { cancelledAt: null } }, trips: { none: {} } }, data: { status: "CANCELLED" } });
     if (r.count !== 1) return false;
     await tx.brigadeTask.updateMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, data: { status: "CANCELLED" } });
+    // Bosh to'lov so'rovi kassir/buxgalter ro'yxatidan tushadi (tushgan avans mijozda ortiqcha to'lov bo'lib qoladi)
+    await cancelPaymentRequestTx(tx, id, userId);
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CANCELLED" });
     return true;
   });
@@ -245,10 +248,15 @@ export type NewOrderInput = {
    * `cashAccountId` — eski mijozlar (mobil ilova) uchun qoldirilgan, e'tiborga olinmaydi.
    */
   prepay?: { amount: number; cashAccountId?: string };
+  /**
+   * Bosh to'lov qanday keladi: CASH — naqd (so'rov Kassa xodimiga), BANK — perechisleniye (so'rov Buxgalterga).
+   * Berilmasa — CASH (eski mijozlar: agent kabineti, Excel importi, eski mobil ilova).
+   */
+  payMethod?: PayMethod | null;
   contractAmount?: number;
   note?: string | null;
 };
-export type NewOrderResult = { id: string; orderNo: string; customerId: string; onCredit: boolean; contractNo: string | null };
+export type NewOrderResult = { id: string; orderNo: string; customerId: string; onCredit: boolean; contractNo: string | null; requestId?: string | null };
 
 /**
  * Zayavka ochish — veb "Yangi zayavka" formasi ham, mobil ilova ham shu yerdan.
@@ -310,6 +318,8 @@ export async function createOrder(
     if (!Number.isFinite(prepay.amount) || prepay.amount > total + 0.005) throw new Error(`Oldindan to'lov ${money(prepay.amount)} zayavka summasidan ${money(total)} katta`);
   }
   const prepayAmount = prepay ? Math.round(prepay.amount * 100) / 100 : null;
+  // To'lov usuli: bosh to'lovli yoki oldindan to'lovli zayavkada — naqd yoki perechisleniye (sukut naqd)
+  const payMethod: PayMethod | null = input.payMethod === "BANK" || input.payMethod === "CASH" ? input.payMethod : prepayAmount || !onCredit ? "CASH" : null;
   const note = input.note?.trim() || null;
 
   // ── Mijoz ──
@@ -364,6 +374,7 @@ export async function createOrder(
         isUrgent: !!input.isUrgent,
         onCredit,
         prepayAmount,
+        payMethod,
         note: note ?? undefined,
         createdById: userId,
         items: { create: items },
@@ -372,20 +383,11 @@ export async function createOrder(
       },
     });
     await audit(tx, userId, "CREATE", "Order", o.id, undefined, { ...o, items, contractAmount });
-    return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo };
+    // Bosh to'lov — «Pul qabul qilish» so'rovi: naqd — Kassa xodimiga, perechisleniye — Buxgalterga
+    const rq = prepayAmount && prepayAmount > 0 && o.kind === "SALE" ? await createPaymentRequestTx(tx, o, payMethod ?? "CASH", prepayAmount, userId) : null;
+    return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo, requestId: rq?.id ?? null };
   });
-  // Kutilayotgan avans: kassir va buxgalter pulni qabul qilib, to'lov formasida shu zayavkani tanlaydi
-  if (prepay) {
-    notifyAfter(async () => {
-      const c = await db.customer.findUnique({ where: { id: res.customerId }, select: { name: true } });
-      await notifyRoles(["CASHIER", "ACCOUNTING"], {
-        type: "ADVANCE_EXPECTED",
-        title: `${res.orderNo} bo'yicha ${money(prepay.amount)} avans kutilmoqda`,
-        body: `${c?.name ?? "Mijoz"} · pulni Kassa/bank → «Zayavka (avans)» orqali qabul qiling`,
-        link: { key: "orders", id: res.id },
-      }, { except: userId });
-    });
-  }
+  if (res.requestId) notifyNewPaymentRequest(res.requestId, userId);
   // Yangi mijoz ilovaga ham yetsin — telefoni ilovada ro'yxatdan o'tgan bo'lsa hisobi o'sha yerda ulanadi
   if (input.newCustomer) syncCustomerLater(res.customerId);
   return res;

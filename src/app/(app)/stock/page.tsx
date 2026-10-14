@@ -5,7 +5,7 @@ import { lastInboundMoves } from "@/lib/stock";
 import { materialTurnover } from "@/lib/stock-turnover";
 import { productionCapacity } from "@/lib/production-capacity";
 import { ostatkaSummary } from "@/lib/ostatka";
-import { unitLabel, unitLabelRu } from "@/lib/unit";
+import { unitLabel, unitShort } from "@/lib/unit";
 import { canSeePrixod, canSeeRasxod } from "@/lib/stock-journal-access";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -25,10 +25,10 @@ import { Card, CardHeader } from "@/components/ui";
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
   SHIPMENT: "Jo'natish", ADJUSTMENT: "Inventarizatsiya", WRITE_OFF: "Hisobdan chiqarish",
-  BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", ISSUE: "Расход",
+  BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", ISSUE: "Chiqim",
 };
 const EPS = 0.0005;
-/** «Остатки» kataklari: К-во — 3 kasrgacha, Сумма — butun so'm («so'm» qo'shilmaydi). Nol — bo'sh (Excel'dagidek). */
+/** «Qoldiqlar» kataklari: miqdor — 3 kasrgacha, summa — butun so'm («so'm» qo'shilmaydi). Nol — bo'sh (Excel'dagidek). */
 const cellQ = (v: number) => (Math.abs(v) < EPS ? "" : fmtNum(v, 3));
 const cellS = (v: number) => (Math.abs(v) < 0.5 ? "" : fmtNum(v, 0));
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -44,9 +44,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const canAdd = ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"].includes(s?.role ?? "");
   // Belgilab o'chirish — xomashyo spravochnigi bilan bir xil huquq (`deleteMaterials` → requireModuleWrite)
   const canDelete = moduleWriteAllowed(s, "stock", MATERIAL_CATALOG_ROLES) === true;
-  // «Дона сўм» — Snabjeniye (stock → "price"), direktor va u ruxsat bergan xodim
+  // «Dona narxi» — Snabjeniye (stock → "price"), direktor va u ruxsat bergan xodim
   const canPrice = canDo(s, "stock", "price");
-  // «Остатки» va xomashyo harakatlari davri (?from&to, standart — joriy oy); sklad filtri (?wh)
+  // «Qoldiqlar» va xomashyo harakatlari davri (?from&to, standart — joriy oy); sklad filtri (?wh)
   const period = stockPeriod(sp);
   const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
   const [materials, mSums, whSums, allWarehouses] = await Promise.all([
@@ -57,40 +57,41 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   ]);
   // Joriy (butun, davrdan qat'i nazar) qoldiq — brigadaga berish formasi va o'chirish tasdig'i (`data-stock`) uchun
   const mb = new Map(mSums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
-  // Bir nechta sklad bo'lsa — «Остатки» sklad bo'yicha ham ko'riladi: zames, brigadaga berish va spisanie
+  // Bir nechta sklad bo'lsa — «Qoldiqlar» sklad bo'yicha ham ko'riladi: zames, brigadaga berish va spisanie
   // AYNAN tanlangan skladdan yechadi, faqat jami ko'rinsa "qoldiq bor, lekin yetmaydi" chalkashligi chiqardi
   const shownWarehouses = allWarehouses.filter((w) => w.isActive || whSums.some((x) => x.warehouseId === w.id && Math.abs(Number(x._sum.qty ?? 0)) > EPS));
   const perWarehouse = shownWarehouses.length > 1;
   const wh = allWarehouses.find((w) => w.id === sp.wh) ?? null;
 
-  // «Остатки» — xomashyo aylanmasi (Excel XOMASHYO jadvali) va oxirgi kirim (kim, qachon — nom ustida)
+  // «Qoldiqlar» — xomashyo aylanmasi (Excel XOMASHYO jadvali) va oxirgi kirim (kim, qachon — nom ustida)
   const [turnover, last] = tab === "balance"
     ? await Promise.all([materialTurnover({ from: period.from, to: period.to, warehouseId: wh?.id }), lastInboundMoves()])
     : [[], null] as [Awaited<ReturnType<typeof materialTurnover>>, null];
   const activeRows = turnover.filter((r) => r.isActive).length;
   const noPrice = turnover.filter((r) => r.isActive && r.unitPrice == null && (r.avgCost ?? 0) > 0).length;
   const tot = turnover.reduce((a, r) => ({ open: a.open + r.open.s, in: a.in + r.in.s, out: a.out + r.out.s, close: a.close + r.close.s, approx: a.approx || r.approx }), { open: 0, in: 0, out: 0, close: 0, approx: false });
-  // Excel — barcha ustunlar (ekrandagi kabi) + «Итого» qatori; raqamlar raqam bo'lib (Excel'da qo'shib bo'lsin)
-  const openH = `Остаток на ${dateRu(period.from)}`, closeH = `Остаток на конец ${dateRu(toIncl)}`;
+  // Excel — barcha ustunlar (ekrandagi kabi) + «Jami» qatori; raqamlar raqam bo'lib (Excel'da qo'shib bo'lsin).
+  // Sarlavha va matnlar o'zbekcha — ExcelButton ularni ekrandagi tilga o'giradi
+  const openH = `${dateRu(period.from)} holatiga qoldiq`, closeH = `${dateRu(toIncl)} oxiridagi qoldiq`;
   const excelRows: Record<string, string | number | null>[] = turnover.map((r, i) => ({
-    "№": i + 1, "Наименование": r.name, "Код": r.code, "Ед Изм": unitLabelRu(r.unit),
-    "Дона сўм": r.unitPrice, "Ср. себестоимость": r.avgCost == null ? null : r2(r.avgCost),
-    [`${openH}, К-во`]: r.open.q, [`${openH}, Сумма`]: r.open.s,
-    "Приход, К-во": r.in.q, "Приход, Сумма": r.in.s,
-    "Расход, К-во": r.out.q, "Расход, Сумма": r.out.s,
-    [`${closeH}, К-во`]: r.close.q, [`${closeH}, Итого Сумма`]: r.close.s,
-    "Мин. остаток": r.minStock, "Оценка": r.approx ? "≈ часть без цены" : "", "Статус": r.isActive ? "" : "архив",
+    "№": i + 1, "Nomi": r.name, "Kod": r.code, "Birlik": unitShort(r.unit),
+    "Dona narxi": r.unitPrice, "O'rtacha tannarx": r.avgCost == null ? null : r2(r.avgCost),
+    [`${openH}, miqdor`]: r.open.q, [`${openH}, summa`]: r.open.s,
+    "Kirim, miqdor": r.in.q, "Kirim, summa": r.in.s,
+    "Chiqim, miqdor": r.out.q, "Chiqim, summa": r.out.s,
+    [`${closeH}, miqdor`]: r.close.q, [`${closeH}, jami summa`]: r.close.s,
+    "Minimal qoldiq": r.minStock, "Baholash": r.approx ? "≈ narxsiz qismi bor" : "", "Holat": r.isActive ? "" : "arxiv",
   }));
   if (turnover.length) excelRows.push({
-    "№": null, "Наименование": "Итого", "Код": "", "Ед Изм": "", "Дона сўм": null, "Ср. себестоимость": null,
-    [`${openH}, К-во`]: null, [`${openH}, Сумма`]: r2(tot.open), "Приход, К-во": null, "Приход, Сумма": r2(tot.in),
-    "Расход, К-во": null, "Расход, Сумма": r2(tot.out), [`${closeH}, К-во`]: null, [`${closeH}, Итого Сумма`]: r2(tot.close),
-    "Мин. остаток": null, "Оценка": tot.approx ? "≈" : "", "Статус": "",
+    "№": null, "Nomi": "Jami", "Kod": "", "Birlik": "", "Dona narxi": null, "O'rtacha tannarx": null,
+    [`${openH}, miqdor`]: null, [`${openH}, summa`]: r2(tot.open), "Kirim, miqdor": null, "Kirim, summa": r2(tot.in),
+    "Chiqim, miqdor": null, "Chiqim, summa": r2(tot.out), [`${closeH}, miqdor`]: null, [`${closeH}, jami summa`]: r2(tot.close),
+    "Minimal qoldiq": null, "Baholash": tot.approx ? "≈" : "", "Holat": "",
   });
   const periodQs = (extra: Record<string, string> = {}) => new URLSearchParams({ from: period.fromStr, to: period.toStr, ...(wh ? { wh: wh.id } : {}), ...extra }).toString();
 
   // `ref` berilsa — faqat shu hujjat/partiya qatorlari (Kirim-Chiqimdan "batafsil" shu yerga olib keladi);
-  // `material` — «Остатки» qatoridan: shu xomashyoning davrdagi harakatlari (sklad tanlangan bo'lsa — shu skladda)
+  // `material` — «Qoldiqlar» qatoridan: shu xomashyoning davrdagi harakatlari (sklad tanlangan bo'lsa — shu skladda)
   const moveMaterial = tab === "moves" && !ref && material
     ? await db.material.findUnique({ where: { id: material }, select: { id: true, name: true, unit: true } })
     : null;
@@ -135,9 +136,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       <PageHeader title="Sklad" subtitle="Xomashyo qoldig'i — ishlab chiqarishning asosi: retseptlar shu xomashyolardan tuziladi, imkoniyat qoldiqqa qarab hisoblanadi."
         action={
           <div className="flex flex-wrap gap-2">
-            {/* «Приход» / «Расход» jurnallari (Excel'dagidek, ruscha) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
-            {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span lang="ru">Приход</span></LinkButton>}
-            {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span lang="ru">Расход</span></LinkButton>}
+            {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
+            {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span>Kirim</span></LinkButton>}
+            {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
             {canAdd && <>
             {/* Zaxiraga ishlab chiqarish: mijozsiz zayavka — tayyor mahsulot hovlida erkin qoldiq bo'lib turadi */}
             <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
@@ -150,10 +151,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             </>}
           </div>
         } />
-      {/* Sklad kabinetida faqat «Остатки». «Ishlab chiqarish imkoni», «Brigadalar» va harakatlar ko'rinishi tab sifatida
+      {/* Sklad kabinetida faqat «Qoldiqlar». «Ishlab chiqarish imkoni», «Brigadalar» va harakatlar ko'rinishi tab sifatida
           olib tashlangan, lekin boshqa bo'limlardagi havolalar (Brigadalar, Ta'minot, Zayavka, BI, xomashyo qatori) uchun ochiladi */}
       {tab !== "balance" && !(tab === "moves" && (ref || moveMaterial)) && (
-        <Link href="/stock" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span lang="ru">Остатки</span></Link>
+        <Link href="/stock" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span>Qoldiqlar</span></Link>
       )}
       {added != null && (
         <Callout tone="success" title="Xomashyo qo'shildi">Yangi: {added} ta · yangilandi: {updated ?? 0} ta · boshlang&apos;ich qoldiq yozildi: {moved ?? 0} ta.{Number(guessed) > 0 && ` ${guessed} ta xomashyoning birligi faylda tanilmadi — "dona" qo'yildi, Sozlamalardan tuzatsangiz bo'ladi.`}</Callout>
@@ -344,18 +345,18 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {tab === "balance" && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div lang="ru">
-              <h2 className="text-lg font-semibold text-slate-900">Остатки сырья</h2>
-              <p className="text-sm text-slate-500">{period.label}{wh ? ` · ${wh.name}` : perWarehouse ? " · все склады" : ""}</p>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Xomashyo qoldiqlari</h2>
+              <p className="text-sm text-slate-500">{`${period.label}${wh ? ` · ${wh.name}` : perWarehouse ? " · barcha skladlar" : ""}`}</p>
             </div>
-            <div lang="ru" className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {canPrice && <FillPricesButton count={noPrice} />}
-              <ExcelButton file={`Остатки ${period.fromStr} — ${period.toStr}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} sheets={[{ name: "Остатки", rows: excelRows }]} />
+              <ExcelButton file={`Qoldiqlar ${period.fromStr} — ${period.toStr}${wh ? ` (${wh.name.replace(/[\\/:*?"<>|]/g, " ")})` : ""}`} sheets={[{ name: "Qoldiqlar", rows: excelRows }]} />
             </div>
           </div>
           <StockPeriodBar base="/stock" period={period} hidden={{ tab: "balance", ...(wh ? { wh: wh.id } : {}) }} />
           {perWarehouse && (
-            <div lang="ru" className="flex flex-wrap items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <Warehouse size={15} className="mr-1 text-slate-400" aria-hidden />
               {[null, ...shownWarehouses].map((w) => {
                 const active = (w?.id ?? null) === (wh?.id ?? null);
@@ -363,7 +364,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 return (
                   <Link key={w?.id ?? "all"} href={`/stock?${qs.toString()}`} prefetch={false}
                     className={cn("inline-flex h-8 items-center rounded-lg border px-3 text-sm transition pointer-coarse:h-11", active ? "border-slate-900 bg-slate-900 font-semibold text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900")}>
-                    {w ? `${w.name}${w.isActive ? "" : " (закрыт)"}` : "Все склады"}
+                    {w ? `${w.name}${w.isActive ? "" : " (yopilgan)"}` : "Barcha skladlar"}
                   </Link>
                 );
               })}
@@ -375,24 +376,24 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <tr>
                 {canDelete && <SheetTh rowSpan={2} tone="plain" className="w-10"><span className="sr-only">Belgilash</span></SheetTh>}
                 <SheetTh rowSpan={2} tone="yellow" className="w-10">№</SheetTh>
-                <SheetTh rowSpan={2} tone="yellow" className="min-w-56">Наименование</SheetTh>
-                <SheetTh rowSpan={2} tone="blue">Ед Изм</SheetTh>
-                <SheetTh rowSpan={2} tone="blue" className="min-w-28" title="Цена за единицу — устанавливает Снабжение; по ней оценивается расход">Дона сўм</SheetTh>
-                <SheetTh colSpan={2} tone="gray">Остатка<span className="block text-[11px] font-normal text-slate-600">на {dateRu(period.from)}</span></SheetTh>
-                <SheetTh colSpan={2} tone="green">Приход</SheetTh>
-                <SheetTh colSpan={2} tone="red">Расход</SheetTh>
-                <SheetTh colSpan={2} tone="gray">Остатка<span className="block text-[11px] font-normal text-slate-600">на конец {dateRu(toIncl)}</span></SheetTh>
+                <SheetTh rowSpan={2} tone="yellow" className="min-w-56">Nomi</SheetTh>
+                <SheetTh rowSpan={2} tone="blue">Birlik</SheetTh>
+                <SheetTh rowSpan={2} tone="blue" className="min-w-28" title="Birlik narxi — Ta'minot belgilaydi; chiqim shu narx bo'yicha baholanadi">Dona narxi</SheetTh>
+                <SheetTh colSpan={2} tone="gray">Qoldiq<span className="block text-[11px] font-normal text-slate-600">{`${dateRu(period.from)} holatiga`}</span></SheetTh>
+                <SheetTh colSpan={2} tone="green">Kirim</SheetTh>
+                <SheetTh colSpan={2} tone="red">Chiqim</SheetTh>
+                <SheetTh colSpan={2} tone="gray">Qoldiq<span className="block text-[11px] font-normal text-slate-600">{`${dateRu(toIncl)} oxiriga`}</span></SheetTh>
               </tr>
               <tr>
-                <SheetTh tone="gray">К-во</SheetTh><SheetTh tone="gray">Сумма</SheetTh>
-                <SheetTh tone="green">К-во</SheetTh><SheetTh tone="green">Сумма</SheetTh>
-                <SheetTh tone="red">К-во</SheetTh><SheetTh tone="red">Сумма</SheetTh>
-                <SheetTh tone="gray">К-во</SheetTh><SheetTh tone="gray">Итого Сумма</SheetTh>
+                <SheetTh tone="gray">Miqdor</SheetTh><SheetTh tone="gray">Summa</SheetTh>
+                <SheetTh tone="green">Miqdor</SheetTh><SheetTh tone="green">Summa</SheetTh>
+                <SheetTh tone="red">Miqdor</SheetTh><SheetTh tone="red">Summa</SheetTh>
+                <SheetTh tone="gray">Miqdor</SheetTh><SheetTh tone="gray">Jami summa</SheetTh>
               </tr>
             </SheetHead>
             <tbody>
               {turnover.length === 0 && (
-                <tr><SheetTd colSpan={canDelete ? 13 : 12} center muted className="py-10">Сырьё не добавлено — кнопка «Xomashyo qo&apos;shish»</SheetTd></tr>
+                <tr><SheetTd colSpan={canDelete ? 13 : 12} center muted className="py-10">Xomashyo qo&apos;shilmagan — «Xomashyo qo&apos;shish» tugmasini bosing</SheetTd></tr>
               )}
               {turnover.map((r, i) => {
                 const b = mb.get(r.id) ?? 0, l = last?.materials.get(r.id);
@@ -413,12 +414,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                     <SheetTd center muted>{i + 1}</SheetTd>
                     <SheetTd tone="yellow">
                       <Link href={`/stock?tab=moves&${periodQs({ material: r.id })}`} prefetch={false}
-                        title={l ? `Последний приход: ${l.by} · ${dateTime(l.date)} — движения за период` : "Движения за период"}
+                        title={l ? `Oxirgi kirim: ${l.by} · ${dateTime(l.date)} — davrdagi harakatlar` : "Davrdagi harakatlar"}
                         className={cn("font-medium hover:underline", r.isActive ? "text-slate-900" : "text-slate-500")}>{r.name}</Link>
                       <span className="ml-1.5 text-[11px] text-slate-400">{r.code}</span>
-                      {!r.isActive && <span className="ml-1.5 inline-block align-middle"><Badge dot={false}>архив</Badge></span>}
+                      {!r.isActive && <span className="ml-1.5 inline-block align-middle"><Badge dot={false}>arxiv</Badge></span>}
                     </SheetTd>
-                    <SheetTd center tone="blue" className="text-slate-600">{unitLabelRu(r.unit)}</SheetTd>
+                    <SheetTd center tone="blue" className="text-slate-600">{unitShort(r.unit)}</SheetTd>
                     <SheetTd right tone="blue"><PriceCell materialId={r.id} name={r.name} price={r.unitPrice} avg={r.avgCost} canEdit={canPrice && r.isActive} /></SheetTd>
                     <SheetTd right tone="gray">{cellQ(r.open.q)}</SheetTd>
                     <SheetTd right tone="gray">{cellS(r.open.s)}</SheetTd>
@@ -428,11 +429,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                     <SheetTd right tone="red">{cellS(r.out.s)}</SheetTd>
                     <SheetTd right tone={zero ? "gray" : undefined} muted={zero}
                       className={cn(!zero && "font-semibold", r.close.q > EPS && "bg-emerald-100 text-emerald-900", r.close.q < -EPS && "bg-red-100 text-red-700")}>
-                      {low && <span className="mr-1.5 inline-block align-middle" title={`Меньше минимального остатка (${fmtNum(r.minStock, 3)})`}><Badge color="amber" dot={false}>мало</Badge></span>}
+                      {low && <span className="mr-1.5 inline-block align-middle" title={`Minimal qoldiqdan kam (${fmtNum(r.minStock, 3)})`}><Badge color="amber" dot={false}>Kam</Badge></span>}
                       {zero ? "0" : fmtNum(r.close.q, 3)}
                     </SheetTd>
                     <SheetTd right tone="gray" strong>
-                      {r.approx && <span className="mr-0.5 font-normal text-amber-600" title="Часть движений без цены — оценена по текущей цене (Дона сўм или средняя себестоимость)">≈</span>}
+                      {r.approx && <span className="mr-0.5 font-normal text-amber-600" title="Harakatlarning bir qismi narxsiz — joriy narx bo'yicha baholangan («Dona narxi» yoki o'rtacha tannarx)">≈</span>}
                       {cellS(r.close.s) || "0"}
                     </SheetTd>
                   </SheetTr>
@@ -442,7 +443,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {turnover.length > 0 && (
               <SheetFoot>
                 <tr>
-                  <SheetTd colSpan={canDelete ? 5 : 4} right>Итого <span className="font-normal text-slate-500">· {turnover.length} поз.</span></SheetTd>
+                  <SheetTd colSpan={canDelete ? 5 : 4} right>Jami <span className="font-normal text-slate-500">· {`${turnover.length} ta xomashyo`}</span></SheetTd>
                   <SheetTd /><SheetTd right>{fmtNum(tot.open, 0)}</SheetTd>
                   <SheetTd /><SheetTd right className="text-emerald-800">{fmtNum(tot.in, 0)}</SheetTd>
                   <SheetTd /><SheetTd right className="text-red-700">{fmtNum(tot.out, 0)}</SheetTd>
@@ -451,10 +452,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               </SheetFoot>
             )}
           </Sheet>
-          <p lang="ru" className="text-xs text-slate-500">
-            Сумма = количество × цена движения: приход — по цене закупки (с доставкой), расход — по «Дона сўм» на момент выдачи.
-            «≈» — есть старые движения без цены, они оценены по текущей цене («Дона сўм» или средняя себестоимость).
-            Количество в «Итого» не суммируется — единицы разные. Нажмите на наименование — движения за период.
+          <p className="text-xs text-slate-500">
+            Summa = miqdor × harakat narxi: kirim — xarid narxida (yetkazib berish bilan), chiqim — berilgan paytdagi «Dona narxi» bo&apos;yicha.
+            «≈» — narxsiz eski harakatlar bor, ular joriy narx bo&apos;yicha baholangan («Dona narxi» yoki o&apos;rtacha tannarx).
+            «Jami» qatorida miqdor qo&apos;shilmaydi — birliklar har xil. Nomini bosing — davrdagi harakatlar.
           </p>
         </div>
       )}
@@ -462,7 +463,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {tab === "moves" && ref && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
           <span className="text-slate-600">Bitta hujjat bo&apos;yicha: <b className="text-slate-900">{moves.length} qator</b>, jami <b className="text-slate-900">{money(moves.reduce((x, m) => x + Number(m.qty) * Number(m.unitCost ?? 0), 0))}</b></span>
-          <Link href="/stock" className="font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span lang="ru">Остатки</span></Link>
+          <Link href="/stock" className="font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span>Qoldiqlar</span></Link>
         </div>
       )}
       {tab === "moves" && moveMaterial && (
@@ -474,7 +475,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {" · "}chiqim <b className="text-red-600">{qty(moves.reduce((x, m) => x + Math.min(0, Number(m.qty)), 0))}</b> {unitLabel(moveMaterial.unit)}
           </span>
           <span className="flex flex-wrap gap-4">
-            <Link href={`/stock?tab=balance&${periodQs()}`} className="font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span lang="ru">Остатки</span></Link>
+            <Link href={`/stock?tab=balance&${periodQs()}`} className="font-medium text-slate-600 hover:text-slate-900 hover:underline">← <span>Qoldiqlar</span></Link>
           </span>
         </div>
       )}
@@ -490,7 +491,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>
-                <Td>{m.recipient ? <span lang="ru">Кому: <span className="font-medium text-slate-800">{m.recipient.name}</span></span> : m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
+                <Td>{m.recipient ? <span>Kimga: <span className="font-medium text-slate-800">{m.recipient.name}</span></span> : m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
                 <Td>{m.createdBy.fullName}</Td>
               </Tr>
             ))}

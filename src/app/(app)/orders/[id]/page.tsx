@@ -23,6 +23,7 @@ import { contractedIds } from "@/lib/finance";
 import { NDS_LABEL, ndsPart } from "@/lib/nds";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { expectedAdvance } from "@/lib/payments";
+import { PAY_METHOD_LABEL, PAYREQ_STATUS_COLOR, PAYREQ_STATUS_LABEL } from "@/lib/payment-requests";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ActionButton } from "@/components/action-button";
 
@@ -83,7 +84,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const prepaid = o.payments.reduce((sum, x) => sum + Number(x.amount), 0);
   // Sotuvchi zayavka ochganda yozgan kutilayotgan avans — pulni kassir qabul qiladi
   const expected = expectedAdvance(o);
-  const [credit, contractedSet, snapshot] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot()]);
+  const [credit, contractedSet, snapshot, payReq] = await Promise.all([customerCredit(o.customerId), contractedIds([o.customerId]), stockSnapshot(), db.paymentRequest.findUnique({ where: { orderId: id } })]);
+  // Bosh to'lov so'rovi (PS-…): naqd — Kassa xodimi, perechisleniye — Buxgalter qabul qiladi. Eski zayavkalarda so'rov yo'q — «Kutilayotgan avans»
+  const payReqLeft = payReq ? Math.max(0, Number(payReq.amount) - Number(payReq.received)) : 0;
+  const payReqHref = payReq && pathAllowed("/pul-qabul", s.role, s.perms) ? `/pul-qabul?tab=all&q=${encodeURIComponent(payReq.docNo)}` : null;
   // Zayavkani qabul qilishdan oldin: har mahsulot bo'yicha tayyor qoldiq va xomashyodan yana qancha chiqishi
   const stockByProduct = new Map([...snapshot.pieces, ...snapshot.concrete].map((x) => [x.id, x]));
   const contracted = contractedSet.has(o.customerId); // mijozning boshqa shartnomali zayavkasi ham bo'lishi mumkin
@@ -314,6 +318,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             { k: "Dastavka", v: o.needsDelivery ? "Kerak" : "Mijoz o'zi olib ketadi" },
             { k: "Ustuvorlik", v: o.isUrgent ? <Badge color="red"><Zap size={11} /> Zarur</Badge> : "Oddiy" },
             { k: "To'lov", v: o.onCredit ? "Qarzga (kafolat xati)" : "Oldindan" },
+            ...(o.payMethod ? [{ k: "To'lov usuli", v: PAY_METHOD_LABEL[o.payMethod] }] : []),
             ...(hasContract ? [
               { k: "Shartnoma", v: <span className="inline-flex items-center gap-1.5"><ContractMark short /><span className="font-medium">{o.contractNo}</span>{hasFile ? <a href={fileHref} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-xs text-blue-700 underline"><Paperclip size={12} /> fayl</a> : <span className="text-xs text-amber-700">fayl yuklanmagan</span>}</span> },
               { k: "Shartnoma summasi", v: <span className="font-semibold">{money(contractAmount)}</span> },
@@ -322,7 +327,24 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             ...(!o.onCredit ? [{ k: "Oldindan olindi", v: prepaid > 0
               ? <span className="inline-flex flex-wrap items-center justify-end gap-2"><span className="whitespace-nowrap font-semibold text-emerald-700">{money(prepaid)}</span><span className="text-xs text-slate-500">{o.payments.map((x) => x.cashAccount.name).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</span>{total - paid > 0.005 ? <Badge color="amber">qoldiq {money(total - paid)}</Badge> : <Badge color="green">to&apos;liq</Badge>}</span>
               : <span className="text-slate-400">hali olinmagan</span> }] : []),
-            ...(expected > 0 && prepaid + 0.005 < expected && !["CANCELLED", "CLOSED"].includes(o.status) ? [{ k: "Kutilayotgan avans", v: <span className="inline-flex flex-wrap items-center justify-end gap-2"><span className="whitespace-nowrap font-semibold text-amber-700">{money(expected - prepaid)}</span><span className="text-xs text-slate-500">kassir qabul qiladi</span></span> }] : []),
+            ...(payReq ? [{
+              k: "Bosh to'lov so'rovi",
+              v: (
+                <span className="inline-flex flex-col items-end gap-1">
+                  <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                    {payReqHref ? <Link href={payReqHref} className="font-medium text-blue-700 hover:underline">{payReq.docNo}</Link> : <span className="font-medium">{payReq.docNo}</span>}
+                    <span className="text-xs text-slate-500">{PAY_METHOD_LABEL[payReq.method]}</span>
+                    <Badge color={PAYREQ_STATUS_COLOR[payReq.status]}>{PAYREQ_STATUS_LABEL[payReq.status]}</Badge>
+                  </span>
+                  <span className="inline-flex flex-wrap justify-end gap-x-2 text-xs text-slate-500">
+                    <span>tushgan <b className="text-emerald-700">{money(Number(payReq.received))}</b> / {money(Number(payReq.amount))}</span>
+                    {payReq.status !== "CANCELLED" && payReqLeft > 0.005 && <span>qolgan <b className="text-amber-700">{money(payReqLeft)}</b></span>}
+                    {["PENDING", "PARTIAL"].includes(payReq.status) && <span>{payReq.method === "CASH" ? "Kassa xodimi qabul qiladi" : "Buxgalter qabul qiladi"}</span>}
+                  </span>
+                </span>
+              ),
+            }] : []),
+            ...(!payReq && expected > 0 && prepaid + 0.005 < expected && !["CANCELLED", "CLOSED"].includes(o.status) ? [{ k: "Kutilayotgan avans", v: <span className="inline-flex flex-wrap items-center justify-end gap-2"><span className="whitespace-nowrap font-semibold text-amber-700">{money(expected - prepaid)}</span><span className="text-xs text-slate-500">kassir qabul qiladi</span></span> }] : []),
             { k: "Kredit limit", v: <span className="inline-flex items-center gap-1.5"><CreditCard size={14} className="text-slate-400" />{money(credit.limit)}</span> },
             { k: "Bo'sh limit", v: <span className={credit.free <= 0 ? "font-semibold text-red-600" : "font-semibold text-emerald-700"}>{money(credit.free)}{credit.blacklisted && <BlacklistMark className="ml-1.5" />}</span> },
             ...(o.note ? [{ k: "Izoh", v: o.note }] : []),

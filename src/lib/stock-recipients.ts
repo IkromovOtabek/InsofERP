@@ -40,8 +40,8 @@ export async function upsertRecipient(
   userId: string,
 ): Promise<{ id: string; created: boolean } | { error: string }> {
   const name = cleanName(input.name ?? "");
-  if (!name) return { error: "Введите имя получателя" };
-  if (name.length > 80) return { error: "Имя получателя слишком длинное (до 80 символов)" };
+  if (!name) return { error: "Oluvchining ismini kiriting" };
+  if (name.length > 80) return { error: "Oluvchining ismi juda uzun (ko'pi bilan 80 belgi)" };
   const note = input.note?.trim() ? input.note.trim().slice(0, 200) : null;
   const sortOrder = input.sortOrder != null && Number.isFinite(input.sortOrder) ? Math.max(0, Math.min(9999, Math.trunc(input.sortOrder))) : null;
 
@@ -49,12 +49,12 @@ export async function upsertRecipient(
     where: { name: { equals: name, mode: "insensitive" }, ...(input.id ? { NOT: { id: input.id } } : {}) },
     select: { name: true, isActive: true },
   });
-  if (dup) return { error: `Получатель «${dup.name}» уже есть${dup.isActive ? "" : " (неактивен — включите его в списке)"}` };
+  if (dup) return { error: `«${dup.name}» oluvchisi allaqachon bor${dup.isActive ? "" : " (nofaol — ro'yxatda uni yoqing)"}` };
 
   try {
     if (input.id) {
       const before = await db.stockRecipient.findUnique({ where: { id: input.id } });
-      if (!before) return { error: "Получатель не найден — обновите страницу" };
+      if (!before) return { error: "Oluvchi topilmadi — sahifani yangilang" };
       const after = await db.$transaction(async (tx) => {
         const r = await tx.stockRecipient.update({
           where: { id: before.id },
@@ -75,7 +75,7 @@ export async function upsertRecipient(
     return { id: created.id, created: true };
   } catch (e) {
     // Bir vaqtda ikki xil oynadan bir xil nom — unique indeks ushlaydi
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: `Получатель «${name}» уже есть` };
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: `«${name}» oluvchisi allaqachon bor` };
     throw e;
   }
 }
@@ -90,6 +90,6 @@ export async function setRecipientActive(id: string, isActive: boolean, userId: 
     if (u.count) await audit(tx, userId, "STATUS_CHANGE", "StockRecipient", id, { isActive: cur.isActive }, { isActive });
     return cur;
   });
-  if (!r) return { error: "Получатель не найден — обновите страницу" };
+  if (!r) return { error: "Oluvchi topilmadi — sahifani yangilang" };
   return { ok: true, name: r.name };
 }

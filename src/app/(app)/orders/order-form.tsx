@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload, Check, Smartphone } from "lucide-react";
+import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Zap, Star, Wallet, FileText, Upload, Check, Smartphone, Banknote, Landmark, CreditCard } from "lucide-react";
 import { AddressPicker } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState } from "react";
@@ -136,7 +136,11 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
     void lookupAppByPhone(phone).then((r) => setAppHint(r && r.registered ? r : null)).catch(() => setAppHint(null));
   };
   const [customer, setCustomer] = useState<CustomerOpt | null>(customers.find((c) => c.id === preselectCustomer) ?? null);
-  const [payment, setPayment] = useState<"prepay" | "credit">("prepay");
+  // To'lov turi: naqd (kassa) / perechisleniye (bank) — oldindan to'lov (`payment=prepay`), qarzga — kredit limitdan
+  const [kind, setKind] = useState<"cash" | "bank" | "credit">("cash");
+  const payment: "prepay" | "credit" = kind === "credit" ? "credit" : "prepay";
+  // Qarzga zayavkadagi bosh to'lov qanday keladi (sukut — naqd)
+  const [depMethod, setDepMethod] = useState<"CASH" | "BANK">("CASH");
   const [prepay, setPrepay] = useState("");
   // Bosh to'lov: null — hali so'ralmagan, false — yo'q, true — bor
   const [hasDeposit, setHasDeposit] = useState<boolean | null>(null);
@@ -160,14 +164,21 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   /**
-   * To'lov turi tanlanishi: naqd to'lovda NDS hisoblanmaydi — belgilangan qatorlardan
-   * soliq olib tashlanadi. Bu majburiy emas: kerak bo'lsa qatordagi "NDS 12%" tugmasi
-   * yoki pastdagi "Hammasiga NDS 12%" belgisi bilan qo'lda qaytarib yoqiladi.
+   * To'lov turi tanlanishi: naqd to'lovda NDS hisoblanmaydi — barcha qatorlardan soliq olib tashlanadi;
+   * perechisleniyeda esa barcha qatorlarga NDS 12% yoqiladi. Bu majburiy emas: qatordagi "NDS 12%" tugmasi
+   * yoki pastdagi "Hammasiga NDS 12%" belgisi bilan qo'lda o'zgartiriladi. Qarzga — NDS o'zgarmaydi.
    */
-  const pickPayment = (v: "prepay" | "credit") => {
-    setPayment(v);
-    if (v === "prepay") setRows((rs) => (rs.some((r) => r.nds) ? rs.map((r) => ({ ...r, nds: false })) : rs));
+  const pickPayment = (v: "cash" | "bank" | "credit") => {
+    setKind(v);
+    if (v !== "credit") {
+      const on = v === "bank";
+      setRows((rs) => (rs.some((r) => r.nds !== on) ? rs.map((r) => ({ ...r, nds: on })) : rs));
+    }
   };
+  // Server uchun bosh to'lov usuli: naqd/perechisleniye — o'zi; qarzga — bosh to'lov bo'lsa tanlangani, bo'lmasa yuborilmaydi
+  const payMethod = kind === "cash" ? "CASH" : kind === "bank" ? "BANK" : hasDeposit && Number(prepay) > 0 ? depMethod : null;
+  // Izohlar uchun: bosh to'lov qaysi yo'l bilan keladi (summa hali kiritilmagan bo'lsa ham)
+  const depBank = kind === "bank" || (kind === "credit" && depMethod === "BANK");
   /** Hamma qatorga birdan NDS qo'yish/olib tashlash. */
   const allNds = rows.length > 0 && rows.every((r) => r.nds);
   const setAllNds = (on: boolean) => setRows((rs) => rs.map((r) => ({ ...r, nds: on })));
@@ -209,7 +220,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             <CustomerPicker customers={customers} value={customer} onChange={(c) => {
               setCustomer(c);
               // Kredit limiti yo'q mijoz: to'lov turi darhol "naqd" va bosh to'lov ochiq — sotuvchi summani kiritadi
-              if (c?.blacklisted) { pickPayment("prepay"); setHasDeposit(true); }
+              if (c?.blacklisted) { if (kind === "credit") pickPayment("cash"); setHasDeposit(true); }
             }} />
             {customer && (
               <div className={cn("mt-2 rounded-lg border p-3 text-xs", customer.blacklisted ? "border-red-200 bg-red-50/60" : "border-slate-100 bg-slate-50/60")}>
@@ -310,23 +321,39 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         )}
       </div>
 
-      {/* ── To'lov turi: oldindan yoki qarzga (kafolat xati) ── */}
+      {/* ── To'lov turi: naqd (kassa) / perechisleniye (bank) — oldindan; yoki qarzga (kafolat xati) ── */}
       <div>
         <div className="mb-2 text-[13px] font-medium text-slate-700">To&apos;lov *</div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {([["prepay", "Naqd to'lov", "Mijoz pulni kassaga to'laydi — kassir qabul qiladi"], ["credit", "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"]] as const).map(([v, l, h]) => (
-            <label key={v} className={cn("flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm transition", payment === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300")}>
-              <input type="radio" name="payment" value={v} checked={payment === v} disabled={v === "credit" && noCredit} onChange={() => pickPayment(v)} className="mt-0.5 accent-slate-900" />
-              <span><span className="font-medium text-slate-900">{l}</span><span className="block text-xs text-slate-500">{h}</span></span>
-            </label>
-          ))}
+        <input type="hidden" name="payment" value={payment} />
+        {payMethod && <input type="hidden" name="payMethod" value={payMethod} />}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {([
+            ["cash", Banknote, "Naqd (kassa)", "Mijoz pulni kassaga to'laydi — Kassa xodimi qabul qiladi"],
+            ["bank", Landmark, "Perechisleniye (bank)", "Mijoz hisob raqamga o'tkazadi — Buxgalter tasdiqlaydi"],
+            ["credit", CreditCard, "Qarzga (kredit limitdan)", "Kafolat xati chop etiladi — mijoz to'ldirib imzolaydi"],
+          ] as const).map(([v, Icon, l, h]) => {
+            const off = v === "credit" && noCredit;
+            return (
+              <button key={v} type="button" aria-pressed={kind === v} disabled={off} onClick={() => pickPayment(v)}
+                className={cn("flex items-start gap-2.5 rounded-lg border p-3 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50",
+                  kind === v ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300")}>
+                <Icon size={18} className={cn("mt-0.5 shrink-0", kind === v ? "text-slate-900" : "text-slate-400")} />
+                <span><span className="font-medium text-slate-900">{l}</span><span className="block text-xs text-slate-500">{h}</span></span>
+              </button>
+            );
+          })}
         </div>
-        {payment === "prepay" && (
+        {kind === "cash" && (
           <p className="mt-2 text-xs text-slate-500">
             Naqd to&apos;lovda {NDS_LABEL} hisoblanmaydi. Kerak bo&apos;lsa mahsulot qatoridagi «{NDS_LABEL}» tugmasi yoki jami ostidagi belgi bilan o&apos;zingiz yoqasiz.
           </p>
         )}
-        {payment === "credit" && (
+        {kind === "bank" && (
+          <p className="mt-2 text-xs text-slate-500">
+            {`Perechisleniyeda barcha qatorlarga ${NDS_LABEL} qo'shildi. Kerak bo'lmasa qatordagi «${NDS_LABEL}» tugmasi bilan o'chirasiz.`}
+          </p>
+        )}
+        {kind === "credit" && (
           <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-700"><FileSignature size={14} /> Saqlangach “Kafolat xati” ochiladi: mijoz rekvizitlari, summa va muddat kataklarini mijoz to&apos;ldirib, imzo va muhr qo&apos;yadi.</p>
         )}
         {/* Bosh to'lov ikkala to'lov turida ham bo'lishi mumkin: qarzga olganda ham
@@ -353,14 +380,29 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               <p className="mt-2 text-xs text-slate-500">
                 {payment === "credit"
                   ? "Bosh to'lov olinmadi — zayavka summasi to'liq qarzga yoziladi."
-                  : "Bosh to'lov yo'q — pul keyin kassir tomonidan Kassa/bank bo'limida qabul qilinadi."}
+                  : kind === "bank"
+                    ? "Bosh to'lov yo'q — pul hisob raqamga tushgach buxgalter Kassa/bank bo'limida qabul qiladi."
+                    : "Bosh to'lov yo'q — pul keyin kassir tomonidan Kassa/bank bo'limida qabul qilinadi."}
               </p>
             )}
 
             {hasDeposit === true && (
               <>
+                {kind === "credit" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-slate-500">Bosh to&apos;lov qanday keladi:</span>
+                    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+                      {([["CASH", Banknote, "Naqd"], ["BANK", Landmark, "Perechisleniye"]] as const).map(([m, Icon, l]) => (
+                        <button key={m} type="button" aria-pressed={depMethod === m} onClick={() => setDepMethod(m)}
+                          className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition", depMethod === m ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>
+                          <Icon size={13} /> {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr]">
-                  <Field label="Kutilayotgan bosh to'lov" hint="Mijoz qancha avans to'laydi — pulni kassir qabul qiladi">
+                  <Field label="Kutilayotgan bosh to'lov" hint={depBank ? "Mijoz qancha avans o'tkazadi — tushganini buxgalter tasdiqlaydi" : "Mijoz qancha avans to'laydi — pulni kassir qabul qiladi"}>
                     <MoneyInput name="prepayAmount" value={prepay} onChange={setPrepay} />
                   </Field>
                   <div className="flex flex-col justify-end gap-1 pb-1 text-xs">
@@ -381,7 +423,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                       className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40">{pc}%</button>
                   ))}
                   {prepayN > 0 && <button type="button" onClick={() => setPrepay("")} className="px-2 py-0.5 text-[11px] text-slate-500 hover:underline">tozalash</button>}
-                  <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Wallet size={13} /> Sotuvchi kassaga pul yozmaydi: kassir va buxgalterga «avans kutilmoqda» xabari boradi, pulni ular qabul qiladi</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500"><Wallet size={13} /> {depBank ? "Buxgalterga «bankka tushum kutilmoqda» so'rovi boradi" : "Kassa xodimiga «pul keladi» so'rovi boradi"}</span>
                 </div>
                 {total > 0 && prepayN > total + 0.005 && <p className="mt-1 text-xs text-red-600">Bosh to&apos;lov zayavka summasidan katta!</p>}
               </>
@@ -501,14 +543,14 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             );
           })}
         </div>
-        <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: false }])} className="mt-2 text-sm font-medium text-slate-700 hover:underline">
+        <button type="button" onClick={() => setRows((rs) => [...rs, { key: Date.now(), productId: products[0]?.id ?? "", qtyM3: "", price: products[0]?.price ?? "0", nds: kind === "bank" }])} className="mt-2 text-sm font-medium text-slate-700 hover:underline">
           <span className="inline-flex items-center gap-1"><Plus size={14} /> Qator qo&apos;shish</span>
         </button>
         {/* NDS ixtiyoriy: naqd to'lovda o'zi o'chadi, lekin shu belgidan (yoki qator tugmasidan) qaytarib yoqiladi */}
         <label className="mt-3 flex cursor-pointer items-center justify-end gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={allNds} onChange={(e) => setAllNds(e.target.checked)} className="h-4 w-4 rounded border-slate-300 accent-slate-900" />
           Hamma qatorga {NDS_LABEL}
-          {payment === "prepay" && ndsSum > 0 && <span className="text-xs text-amber-700">· naqd to&apos;lovda odatda hisoblanmaydi</span>}
+          {kind === "cash" && ndsSum > 0 && <span className="text-xs text-amber-700">· naqd to&apos;lovda odatda hisoblanmaydi</span>}
         </label>
 
         {/* Jami: NDS belgilangan qator bo'lsa soliq alohida qator bo'lib ko'rinadi */}
