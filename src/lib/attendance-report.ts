@@ -4,6 +4,9 @@ import {
   dayTitle, dayUtc, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, today, validDay, validMonth,
 } from "@/lib/davomat";
 import { dayTimes, shiftOf, sourceLabel, type Shift } from "@/lib/attendance-time";
+import { faceScope } from "@/lib/face-id";
+import { productionStaff } from "@/lib/production-staff";
+import type { Session } from "@/lib/auth";
 import type { AttendanceStatus, Prisma, Role } from "@/generated/prisma";
 
 /**
@@ -19,12 +22,22 @@ import type { AttendanceStatus, Prisma, Role } from "@/generated/prisma";
 
 export type AttStatusKey = AttendanceStatus | "NONE";
 
+/**
+ * Ish hududidan tashqaridagi belgi (xodimga `attendanceAnywhere` ruxsati berilgan): turgan nuqtasi, zavodgacha masofa
+ * va joy rasmi. `photoUrl` — mobil API yo'li (`/api/mobile/attendance/place-photo`, kirish qoidasi yuz kadri bilan bir xil).
+ * Hudud ichidagi yoki qo'lda qo'yilgan belgida — null.
+ */
+export type OutsideMark = { lat: number; lng: number; distanceM: number | null; photoUrl: string | null };
+
 export type StaffDayRow = {
   id: string; fullName: string; position: string; dept: string | null;
   status: AttStatusKey; statusLabel: string;
   checkIn: string | null; checkOut: string | null;
   minutes: number | null; lateMin: number | null; earlyMin: number | null;
   source: string | null; note: string | null; shift: Shift;
+  /** Xodimga ish hududidan tashqarida belgilash ruxsati berilgan. */
+  anywhere: boolean;
+  outsideIn: OutsideMark | null; outsideOut: OutsideMark | null;
 };
 
 export type StaffDay = {
@@ -57,8 +70,35 @@ async function markerRoles(ids: (string | null)[]) {
 const ATT_SELECT = {
   employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, source: true,
   facePhoto: true, markedById: true, note: true,
+  id: true, checkInLat: true, checkInLng: true, checkInDistance: true, checkInOutside: true, checkInPlacePhoto: true,
+  checkOutLat: true, checkOutLng: true, checkOutDistance: true, checkOutOutside: true, checkOutPlacePhoto: true,
 } as const;
 type AttRow = Prisma.AttendanceGetPayload<{ select: typeof ATT_SELECT }>;
+
+/** Hududdan tashqaridagi "keldi" / "ketdi" belgisi (`OutsideMark`). */
+function outsideOf(a: AttRow | undefined, kind: "in" | "out"): OutsideMark | null {
+  if (!a || a.status !== "PRESENT") return null;
+  const [on, lat, lng, dist, photo] = kind === "in"
+    ? [a.checkInOutside, a.checkInLat, a.checkInLng, a.checkInDistance, a.checkInPlacePhoto]
+    : [a.checkOutOutside, a.checkOutLat, a.checkOutLng, a.checkOutDistance, a.checkOutPlacePhoto];
+  if (!on || lat == null || lng == null) return null;
+  return { lat, lng, distanceM: dist == null ? null : Math.round(dist), photoUrl: photo ? `/api/mobile/attendance/place-photo?id=${encodeURIComponent(a.id)}&kind=${kind}` : null };
+}
+const outsideBoth = (a: AttRow | undefined) => ({ outsideIn: outsideOf(a, "in"), outsideOut: outsideOf(a, "out") });
+
+/**
+ * Joy rasmi (hududdan tashqaridagi belgi) fayli — kirish qoidasi yuz kadri bilan bir xil (`facePhotoFor`, `faceScope`):
+ * otdel kadr / direktor — hammaniki, sex boshliqlari — faqat sex tarkibiniki, boshqalar — yo'q (null).
+ * Veb (`/otdel-kadr/joy-rasmi`) va mobil (`/api/mobile/attendance/place-photo`) shu yerdan o'qiydi.
+ */
+export async function placePhotoFor(s: Pick<Session, "role" | "perms">, id: string | null, kind: string | null): Promise<string | null> {
+  const scope = faceScope(s);
+  if (!scope || !id || (kind !== "in" && kind !== "out")) return null;
+  const a = await db.attendance.findUnique({ where: { id }, select: { employeeId: true, checkInPlacePhoto: true, checkOutPlacePhoto: true } });
+  if (!a) return null;
+  if (scope === "sex" && !(await productionStaff()).members.some((m) => m.id === a.employeeId)) return null;
+  return kind === "out" ? a.checkOutPlacePhoto : a.checkInPlacePhoto;
+}
 
 function srcOf(a: AttRow | undefined, roles: Map<string, Role>) {
   if (!a) return null;
@@ -72,7 +112,7 @@ export async function staffDay(rawDate?: string | null, opts: { employeeIds?: st
   const day = dayUtc(iso);
   const only = opts.employeeIds ? { id: { in: opts.employeeIds } } : {};
   const [emps, marks, depts] = await Promise.all([
-    db.employee.findMany({ where: { ...employeesInWindow(day, day), ...only }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, workSchedule: true } }),
+    db.employee.findMany({ where: { ...employeesInWindow(day, day), ...only }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true, workSchedule: true, attendanceAnywhere: true } }),
     db.attendance.findMany({ where: { date: day, ...(opts.employeeIds ? { employeeId: { in: opts.employeeIds } } : {}) }, select: ATT_SELECT }),
     deptByPosition(),
   ]);
@@ -87,6 +127,7 @@ export async function staffDay(rawDate?: string | null, opts: { employeeIds?: st
       status: a?.status ?? "NONE", statusLabel: a ? markOf(a.status).label : "Belgilanmagan",
       checkIn: a?.status === "PRESENT" ? a.checkIn : null, checkOut: a?.status === "PRESENT" ? a.checkOut : null,
       ...t, source: srcOf(a, roles), note: a?.note ?? null, shift,
+      anywhere: e.attendanceAnywhere, ...outsideBoth(a),
     };
   });
   const cnt = (s: AttStatusKey) => rows.filter((r) => r.status === s).length;
@@ -113,6 +154,7 @@ export type EmployeeMonthDay = {
   status: AttStatusKey; statusLabel: string | null;
   checkIn: string | null; checkOut: string | null; minutes: number | null; lateMin: number | null; earlyMin: number | null;
   source: string | null; note: string | null;
+  outsideIn: OutsideMark | null; outsideOut: OutsideMark | null;
 };
 export type MonthTotals = {
   present: number; absent: number; sick: number; leave: number; dayoff: number; notMarked: number;
@@ -120,7 +162,7 @@ export type MonthTotals = {
 };
 export type EmployeeMonth = {
   month: string; title: string; prev: string; next: string | null;
-  employee: { id: string; fullName: string; position: string; dept: string | null; phone: string | null };
+  employee: { id: string; fullName: string; position: string; dept: string | null; phone: string | null; anywhere: boolean };
   shift: Shift; totals: MonthTotals; days: EmployeeMonthDay[];
 };
 
@@ -144,7 +186,7 @@ export function monthTotals(days: { status: AttStatusKey; minutes: number | null
 /** Bitta xodimning oylik varag'i — kunlar (yangisi tepada) va jami. */
 export async function employeeMonth(employeeId: string, rawMonth?: string | null): Promise<EmployeeMonth | null> {
   const month = normMonth(rawMonth);
-  const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true, position: true, phone: true, workSchedule: true } });
+  const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true, position: true, phone: true, workSchedule: true, attendanceAnywhere: true } });
   if (!e) return null;
   const days = monthDays(month);
   const [rows, depts] = await Promise.all([
@@ -162,12 +204,12 @@ export async function employeeMonth(employeeId: string, rawMonth?: string | null
       date: d.iso, day: d.day, weekday: WD[dayUtc(d.iso).getUTCDay()]!, weekend: d.weekend,
       status: a?.status ?? "NONE", statusLabel: a ? markOf(a.status).label : null,
       checkIn: present ? a!.checkIn : null, checkOut: present ? a!.checkOut : null,
-      ...dayTimes(a, shift), source: srcOf(a, roles), note: a?.note ?? null,
+      ...dayTimes(a, shift), source: srcOf(a, roles), note: a?.note ?? null, ...outsideBoth(a),
     };
   });
   return {
     month, title: monthTitle(month), prev: shiftMonth(month, -1), next: month < now.slice(0, 7) ? shiftMonth(month, 1) : null,
-    employee: { id: e.id, fullName: e.fullName, position: e.position, dept: depts.get(e.position.trim().toLowerCase()) ?? null, phone: e.phone },
+    employee: { id: e.id, fullName: e.fullName, position: e.position, dept: depts.get(e.position.trim().toLowerCase()) ?? null, phone: e.phone, anywhere: e.attendanceAnywhere },
     shift, totals: monthTotals(out), days: out,
   };
 }
@@ -199,7 +241,7 @@ export async function staffMonth(rawMonth?: string | null): Promise<{ month: str
         date: d.iso, day: d.day, weekday: WD[dayUtc(d.iso).getUTCDay()]!, weekend: d.weekend,
         status: a?.status ?? "NONE", statusLabel: a ? markOf(a.status).label : null,
         checkIn: present ? a!.checkIn : null, checkOut: present ? a!.checkOut : null,
-        ...dayTimes(a, shift), source: srcOf(a, roles), note: a?.note ?? null,
+        ...dayTimes(a, shift), source: srcOf(a, roles), note: a?.note ?? null, ...outsideBoth(a),
       };
     });
     return { id: e.id, fullName: e.fullName, position: e.position, shift, totals: monthTotals(list), days: new Map(list.map((d) => [d.date, d])) };

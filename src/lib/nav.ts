@@ -39,6 +39,8 @@ export const NAV: NavItem[] = [
   { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "MECHANIC"], group: "Logistika" },
   { href: "/logistika/kalendar",    label: "Dispetcher kalendari", roles: LOGI, group: "Logistika" },
   { href: "/logistika/transport",   label: "Transport",          roles: [...LOGI, "MECHANIC"], group: "Logistika" },
+  // Mexanik so'rovlari ("Kirim"): mexanik pul so'raydi → ish boshqaruvchi tasdiqlaydi → kassa beradi (`lib/mechanic-requests.ts`)
+  { href: "/mexanik-sorovlar",      label: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"], group: "Logistika" },
   { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: LOGI, group: "Logistika" },
   // Sotuvda mijoz obyekti mijoz kartasidan ochiladi; GPS — logistika ishi (sex Reyslar'dagi jonli xaritani ko'radi)
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika", menuHide: ["SALES"] },
@@ -201,6 +203,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "logistika", label: "Logistika",             prefixes: ["/logistika"] },
   { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers"] },
   { key: "taminot",   label: "Ta'minot zayavkalari",  prefixes: ["/taminot"] },
+  { key: "mexanik",   label: "Mexanik so'rovlari",    prefixes: ["/mexanik-sorovlar"] },
   { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices"] },
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },

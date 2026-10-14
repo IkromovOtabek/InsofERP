@@ -11,13 +11,15 @@ import { driverPositionNames } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { ecoLabel } from "@/lib/eco/labels";
 import { liveTrips } from "@/lib/live";
-import { CREATE_ROLES, canCreate } from "./create";
+import { CREATE_ROLES, KIRIM_FORMS, canCreate } from "./create";
 import { listAllowed, listsFor, skladPeriod } from "./list";
 import { prixodJournal, prixodTotals } from "@/lib/receipts";
 import { rasxodJournal, rasxodTotals } from "@/lib/stock-issue";
 import { fmtNum } from "@/lib/format";
 import { prodFilter } from "@/lib/production";
 import { SUPPLY_LABEL, totalPlanned } from "@/lib/supply";
+import { MECH_STATUS_SHORT, MECH_STATUS_TONE, mechSubject } from "@/lib/mechanic-requests";
+import type { MechanicRequestStatus } from "@/generated/prisma";
 import { soleUnit } from "@/lib/unit";
 import { day, inUnit, money, num, short, shortSigned, sum, time, totalsText, tripQty } from "./fmt";
 import { dashRange, roleDashboard } from "./dashboard";
@@ -240,7 +242,7 @@ const LIST_ICON: Record<string, string> = {
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
   prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
-  approvals: "circle-check", activity: "activity",
+  approvals: "circle-check", activity: "activity", kirim: "wrench",
 };
 const SUPPLY_TONE: Record<string, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
 
@@ -254,6 +256,26 @@ async function supplySection(title: string, empty: string, status: ("NEW" | "PRI
       subtitle: `${day(r.date)} · ${r.items.length} qator${r.supplier ? ` · ${r.supplier.name}` : ""}`,
       right: r.status === "NEW" ? `${r.items.length} nom` : money(totalPlanned(r)),
       status: SUPPLY_LABEL[r.status], tone: SUPPLY_TONE[r.status],
+    })),
+  };
+}
+
+/**
+ * Mexanik so'rovlari ("Kirim") — ish boshqaruvchida tasdiq kutayotganlar, kassada pul kutayotganlar,
+ * mexanikda o'zining ochiq so'rovlari. Qator bosilsa — so'rov kartochkasi (`kirim`).
+ */
+async function kirimSection(title: string, empty: string, status: MechanicRequestStatus[], createdById?: string): Promise<HomeSection> {
+  const rows = await db.mechanicRequest.findMany({
+    where: { status: { in: status }, ...(createdById ? { createdById } : {}) },
+    orderBy: [{ urgent: "desc" }, { createdAt: "asc" }], take: 10,
+    include: { vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } } },
+  });
+  return {
+    title, empty, target: "kirim", icon: "wrench",
+    rows: rows.map((r) => ({
+      id: r.id, title: `${mechSubject(r)}${r.urgent ? " · shoshilinch" : ""}`,
+      subtitle: `${r.problem} · ${r.docNo} · ${day(r.createdAt)}${createdById ? "" : ` · ${r.createdBy.fullName}`}`,
+      right: money(sum(r.amount)), status: MECH_STATUS_SHORT[r.status], tone: r.urgent && r.status === "NEW" ? "danger" : MECH_STATUS_TONE[r.status],
     })),
   };
 }
@@ -316,7 +338,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
   const list = ROLE_LIST[user.role];
   // "+" tugmasi — rolning asosiy hujjati; qolgan formalar va ro'yxatlar "Tezkor amallar" to'rida.
   // To'r cheklanmaydi: vebda ko'ringan har bir bo'lim ilovada ham turadi (`lib/mobile/list.ts` — `ACCESS`).
-  const creatables = Object.keys(CREATE_ROLES).filter((k) => canCreate(user, k));
+  // Mexanik so'rovi formalari to'rda yo'q — ilova ularni o'zining Kirim ekranidan ochadi (`KIRIM_FORMS`)
+  const creatables = Object.keys(CREATE_ROLES).filter((k) => !KIRIM_FORMS.has(k) && canCreate(user, k));
   const creatable = creatables.find((k) => k === list.key) ?? creatables[0];
   const quick: QuickAction[] = [
     ...creatables.map((k) => ({ key: k, label: CREATE_ROLES[k].label, icon: "add", kind: "new" as const })),
@@ -551,6 +574,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "overdue", label: "Kechikkan", value: String(overdue), hint: overdue ? "muddati o'tgan" : undefined, icon: "alarm", tone: overdue ? "danger" : "success" },
         { key: "today", label: "Bugun bajarildi", value: totalsText(todayProgress.map((p) => ({ unit: p.task.orderItem.product.unit, qty: p.qty }))), icon: "checkmark-done", tone: "success" },
       );
+      // Mexanik pul so'rovlari — tasdig'ingizni kutmoqda (bo'lsa — ro'yxatlar boshida)
+      if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "NEW" } }))) sections.push(await kirimSection("Mexanik so'rovlari — tasdiq kutilmoqda", "", ["NEW"]));
       sections.push(
         { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
         { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
@@ -723,6 +748,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
+      // Mexanik so'rovlari: ish boshqaruvchi tasdiqlagan — pul berish kerak
+      if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "APPROVED" } }))) sections.push(await kirimSection("Mexanik so'rovlari — pul berish kerak", "", ["APPROVED"]));
       sections.push(
         // Kassir shu yerdan schyotni ochib to'lovni qabul qiladi
         { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: openInvoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PARTIAL" ? "warning" as Tone : "danger" as Tone }; }) },
@@ -753,6 +780,14 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { title: "Ochiq reyslarim", empty: "Ochiq reys yo'q", target: "trips", rows: active.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.order.deliveryAddress} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: TRIP_TONE[t.status] })) },
         { title: "Yaqinda yetkazganlarim", empty: "Hali yetkazilgan reys yo'q", target: "trips", rows: upcoming.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.deliveredAt ? day(t.deliveredAt) : ""} · ${t.vehicle.plate}`, right: tripQty(t), status: t.status, tone: "success" })) },
       );
+      break;
+    }
+
+    // Mexanik: o'zining ochiq pul so'rovlari (tasdiq yoki kassa kutayotgan) — bo'lsa
+    case "MECHANIC": {
+      if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { createdById: user.id, status: { in: ["NEW", "APPROVED"] } } }))) {
+        sections.push(await kirimSection("Mening so'rovlarim", "", ["NEW", "APPROVED"], user.id));
+      }
       break;
     }
 

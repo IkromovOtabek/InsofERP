@@ -31,6 +31,9 @@ import { ISSUE_STORNO, IssueError, issueDate, issueStock, issueToken, parseIssue
 import { activeRecipients } from "@/lib/stock-recipients";
 import { issuePrices } from "@/lib/stock-price";
 import { STOCK_EPS } from "@/lib/stock-lock";
+import { createMechanicRequest, FACTORY_OBJECTS, FACTORY_PROBLEMS, PROBLEMS } from "@/lib/mechanic-requests";
+import { VEHICLE_TYPE } from "@/lib/logistics";
+import { dataUrlFile } from "@/lib/procurement";
 import type { Role } from "@/generated/prisma";
 
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
@@ -102,7 +105,15 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   // (vebda ham `requireAction("stock", "receipt" | "issue")` direktorni o'tkazadi). Ro'yxat oxirida: "+" tugmasi tanlovi o'zgarmasin.
   prixod: { roles: ["WAREHOUSE", "PROCUREMENT", "DIRECTOR"], title: "Новый приход", label: "Приход" },
   rasxod: { roles: ["WAREHOUSE", "PROCUREMENT", "DIRECTOR"], title: "Новый расход", label: "Расход" },
+  // Mexanik so'rovi ("Kirim") — pul so'rash: ish boshqaruvchi tasdiqlaydi, kassa beradi (`lib/mechanic-requests.ts`).
+  // ECO ilovasi ularni o'zining Kirim ekranidan ochadi (`/erp/new/<key>`) — bosh sahifa to'rida yo'q (`KIRIM_FORMS`)
+  "kirim-transport": { roles: ["MECHANIC"], title: "Transport uchun so'rov", label: "Transport uchun so'rov" },
+  "kirim-zavod": { roles: ["MECHANIC"], title: "Zavod uchun so'rov", label: "Zavod uchun so'rov" },
+  "kirim-boshqa": { roles: ["MECHANIC"], title: "Boshqa xarajat so'rovi", label: "Boshqa xarajat so'rovi" },
 };
+
+/** Mexanik so'rovi formalari — bosh sahifadagi "+" va tezkor amallar to'rida ko'rsatilmaydi (ilova o'z ekranidan ochadi). */
+export const KIRIM_FORMS: ReadonlySet<string> = new Set(["kirim-transport", "kirim-zavod", "kirim-boshqa"]);
 
 /** Ruscha formalar (Sklad ekranlari tili) — ruxsat va umumiy xato matnlari ham ruscha. */
 const RU_FORMS = new Set(["prixod", "rasxod"]);
@@ -125,6 +136,9 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
   transfer: { module: "cashflow", action: "transfer", strict: true },
   prixod: { module: "stock", action: "receipt", strict: true },
   rasxod: { module: "stock", action: "issue", strict: true },
+  "kirim-transport": { module: "mexanik" },
+  "kirim-zavod": { module: "mexanik" },
+  "kirim-boshqa": { module: "mexanik" },
 };
 
 export const canCreate = (user: MobileUser, key: string) => {
@@ -164,6 +178,9 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
     case "payments": return paymentForm();
     case "cashflow": return cashForm();
     case "transfer": return transferForm();
+    case "kirim-transport": return kirimTransportForm();
+    case "kirim-zavod": return kirimZavodForm();
+    case "kirim-boshqa": return kirimBoshqaForm();
     default: return brigadeForm();
   }
 }
@@ -457,6 +474,57 @@ async function supplyForm(user: MobileUser): Promise<CreateForm> {
   };
 }
 
+// ───────────────────────── Mexanik so'rovi (Kirim) ─────────────────────────
+
+const VEHICLE_STATUS_HINT: Record<string, string> = { REPAIR: "ta'mirda", IDLE: "bekor turibdi" };
+/** Umumiy maydonlar: summa, tavsif, shoshilinch, surat (orqa kamera). */
+const kirimTail = (): FormField[] => [
+  { name: "amount", label: "Summa (so'm)", type: "number", required: true, placeholder: "0" },
+  { name: "note", label: "Muammo tavsifi — nima buzildi, nima kerak", type: "text", required: true },
+  { name: "urgent", label: "Shoshilinch", type: "switch", value: "false" },
+  { name: "photo", label: "Surat (muammo yoki chek)", type: "photo", camera: "back", hint: "Ixtiyoriy" },
+];
+
+async function kirimTransportForm(): Promise<CreateForm> {
+  const vehicles = await db.vehicle.findMany({ where: { isActive: true }, orderBy: { plate: "asc" }, select: { id: true, plate: true, type: true, brand: true, model: true, status: true } });
+  return {
+    key: "kirim-transport", title: "Transport uchun so'rov", submitLabel: "So'rov yuborish",
+    fields: [
+      {
+        name: "vehicleId", label: "Mashina", type: "select", required: true,
+        options: vehicles.map((v) => ({
+          value: v.id, label: v.plate,
+          hint: [[VEHICLE_TYPE[v.type] ?? v.type, [v.brand, v.model].filter(Boolean).join(" ")].filter(Boolean).join(" · "), VEHICLE_STATUS_HINT[v.status]].filter(Boolean).join(" · "),
+        })),
+      },
+      { name: "problem", label: "Muammo turi", type: "select", required: true, options: PROBLEMS.map((p) => ({ value: p, label: p })) },
+      ...kirimTail(),
+    ],
+  };
+}
+
+async function kirimZavodForm(): Promise<CreateForm> {
+  return {
+    key: "kirim-zavod", title: "Zavod uchun so'rov", submitLabel: "So'rov yuborish",
+    fields: [
+      { name: "object", label: "Obyekt", type: "select", required: true, options: FACTORY_OBJECTS.map((o) => ({ value: o, label: o })) },
+      { name: "objectNote", label: "Qaysi obyekt", type: "text", required: true, placeholder: "Masalan: tarozi, ombor darvozasi", showIf: { field: "object", equals: "Boshqa" } },
+      { name: "problem", label: "Muammo turi", type: "select", required: true, options: FACTORY_PROBLEMS.map((p) => ({ value: p, label: p })) },
+      ...kirimTail(),
+    ],
+  };
+}
+
+async function kirimBoshqaForm(): Promise<CreateForm> {
+  return {
+    key: "kirim-boshqa", title: "Boshqa xarajat so'rovi", submitLabel: "So'rov yuborish",
+    fields: [
+      { name: "object", label: "Nima uchun", type: "text", required: true, placeholder: "Masalan: asbob-uskuna, kanselyariya" },
+      ...kirimTail(),
+    ],
+  };
+}
+
 async function customerForm(): Promise<CreateForm> {
   return {
     key: "customers", title: "Yangi mijoz", submitLabel: "Mijozni saqlash",
@@ -688,6 +756,19 @@ const TransferBody = z.object({
   clientToken: z.preprocess((v) => (typeof v === "string" && /^[A-Za-z0-9-]{16,64}$/.test(v.trim()) ? v.trim() : undefined), z.string().optional()),
 });
 
+// Mexanik so'rovi: `vehicleId` / `object` turiga qarab `mobileCreate` da tekshiriladi, qoida — `lib/mechanic-requests.ts`
+const KirimBody = z.object({
+  vehicleId: z.string().trim().optional(),
+  object: z.string().trim().max(200, "Obyekt nomi juda uzun").optional(),
+  objectNote: z.string().trim().max(150, "Obyekt izohi juda uzun").optional(),
+  problem: z.string().trim().optional(),
+  amount: zMoney("Summa 0 dan katta bo'lsin"),
+  note: z.string({ message: "Muammo tavsifini yozing" }).trim().min(3, "Muammo tavsifini yozing — nima buzildi, nima kerak").max(500, "Tavsif juda uzun"),
+  urgent: z.preprocess((v) => v === true || v === "true" || v === "1", z.boolean()).optional(),
+  photo: z.string().optional(),
+  clientToken: z.unknown().optional(),
+});
+
 // Sklad formalari (ruscha xatolar). Raqam maydoni ilovadan satr bo'lib keladi: "1 250,5" ham qabul qilinadi (`zMoney` uslubi).
 const numText = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, "").replace(",", ".") : v);
 const zRuNum = (msg: string, min: "positive" | "nonneg") => z.preprocess(numText, (min === "positive" ? z.coerce.number({ message: msg }).positive(msg) : z.coerce.number({ message: msg }).min(0, msg)).max(MAX_AMOUNT, "Слишком большое значение"));
@@ -881,6 +962,25 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       return { key: "rasxod", id: r.ref, message: r.existed ? "Этот расход уже сохранён" : `Расход сохранён: ${r.count} поз. — остаток на складе уменьшен` };
     }
 
+    // ── Mexanik so'rovi ("Kirim"): transport / zavod / boshqa — `createMechanicRequest` (veb bilan bitta qoida) ──
+    if (KIRIM_FORMS.has(key)) {
+      const p = KirimBody.safeParse(payload);
+      if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
+      const d = p.data;
+      const target = key === "kirim-transport" ? "TRANSPORT" : key === "kirim-zavod" ? "FACTORY" : "OTHER";
+      // Zavod: "Boshqa" obyekt — izohi bilan bitta matn ("Boshqa: tarozi")
+      const object = target === "FACTORY" && d.object === "Boshqa" ? (d.objectNote ? `Boshqa: ${d.objectNote}` : "") : d.object;
+      if (target === "FACTORY" && d.object === "Boshqa" && !d.objectNote) throw new Error("Qaysi obyekt ekanini yozing");
+      const photo = d.photo ? dataUrlFile(d.photo, "surat") : null;
+      if (d.photo && !photo) throw new Error("Surat o'qilmadi — qayta oling");
+      const r = await createMechanicRequest({
+        target, vehicleId: d.vehicleId || null, object: object || null, problem: d.problem || null,
+        amount: d.amount, note: d.note, urgent: !!d.urgent, photo, clientToken: typeof d.clientToken === "string" ? d.clientToken : null,
+      }, user.id);
+      if (r.error || !r.id) throw new Error(r.error ?? "Saqlanmadi");
+      return { key: "kirim", id: r.id, message: r.existed ? `${r.docNo} allaqachon yuborilgan` : "So'rov yuborildi — ish boshqaruvchi tasdig'ini kutmoqda" };
+    }
+
     if (key === "orders") {
       const p = OrderBody.safeParse(payload);
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
@@ -1029,6 +1129,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       return { key: "cashflow", id: out?.id ?? r.id, message: r.duplicate ? `${r.docNo} allaqachon saqlangan (qayta yuborildi)` : `${r.docNo} saqlandi: ${money(d.amount)}` };
     }
 
+    if (key !== "trips") throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
     const p = TripBody.safeParse(payload);
     if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
     const r = await createTrip(p.data, user.id);

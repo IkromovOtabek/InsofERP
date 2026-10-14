@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -16,7 +16,7 @@ import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/leads": Inbox, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
-  "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
+  "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
   "/payments": Landmark, "/cashflow": ArrowLeftRight, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
   "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=taqvim": CakeSlice,
   "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/settings/boshlangich-qoldiq": Scale,

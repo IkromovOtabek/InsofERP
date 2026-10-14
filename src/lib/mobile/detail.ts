@@ -40,6 +40,8 @@ import { canDo } from "@/lib/permissions";
 import { pctText } from "./fmt";
 import { lineTotal, receiptAmounts } from "@/lib/receipt-vat";
 import type { Role, SupplyStatus } from "@/generated/prisma";
+import { MECH_REF, MECH_STATUS_LABEL, MECH_STATUS_TONE, TARGET_LABEL, mechSubject, mechanicRequest, payAccounts } from "@/lib/mechanic-requests";
+import { VEHICLE_TYPE } from "@/lib/logistics";
 
 /**
  * Bitta hujjat kartochkasi — ro'yxatdagi qator bosilganda ochiladi.
@@ -155,6 +157,11 @@ export type MobileDetail = {
   sections: HomeSection[];
   actions: DetailAction[];
   receipt?: DetailReceipt;
+  /**
+   * Hujjat surati (mexanik so'rovi): `url` — mobil API yo'li, Bearer token bilan GET → `{ data: "data:image/...;base64,..." }`
+   * (`/api/mobile/face/photo` bilan bir xil shakl). Eski ilova bilmaydi — e'tiborsiz qoldiradi.
+   */
+  photo?: { url: string; title: string };
 };
 
 const sum = (n: unknown) => Number(n ?? 0);
@@ -279,6 +286,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Brigadir — veb "Brigadalar" sahifasidagi bilan bir xil ruxsat
   "employee.brigade": [...TASK_ROLES.brigadeEdit],
   "employee.brigade.clear": [...TASK_ROLES.brigadeEdit],
+  // Ish hududidan tashqarida "Keldim/Ketdim" ruxsati — faqat otdel kadr va direktor (`setAttendanceAnywhere`)
+  "employee.anywhere": ["HR", "DIRECTOR"],
   "brigade.toggle": [...TASK_ROLES.brigadeEdit],
   // Ta'minot zanjiri — `lib/supply-actions.ts` dagi bilan bir xil bo'linish:
   // sklad so'raydi → snabjeniye narxlaydi → sotuv tasdiqlaydi → moliya pul ajratadi → snabjeniye qabul qiladi.
@@ -303,6 +312,13 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supply.incident": ["PROCUREMENT", "WAREHOUSE", "PRODUCTION"],
   "supply.incident.resolve": ["PROCUREMENT", "WAREHOUSE"],
   "supply.doc": ["PROCUREMENT", "WAREHOUSE", "ACCOUNTING", "FINANCE"],
+  // Mexanik so'rovi ("Kirim", `lib/mechanic-requests.ts`): ish boshqaruvchi tasdiqlaydi/rad etadi, kassa pul beradi,
+  // mexanik o'z so'rovini tasdiqdan oldin bekor qiladi (egalik `runMobileAction` da). Direktor — ta'minotdagi kabi
+  // "Tasdiqlar" tabidan tasdiq, rad va to'lov (vebda ham direktor bajaradi)
+  "kirim.approve": ["SUPERVISOR", "DIRECTOR"],
+  "kirim.reject": ["SUPERVISOR", "DIRECTOR"],
+  "kirim.pay": ["CASHIER", "DIRECTOR"],
+  "kirim.cancel": ["MECHANIC"],
   // Sayt arizalari — veb `/leads` bilan bir xil (SALES; direktor har doim)
   "lead.progress": ["SALES"],
   "lead.reopen": ["SALES"],
@@ -381,6 +397,7 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
 const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["lead.", { module: "sales", action: "leads" }],
   ["supply.", { module: "taminot" }],
+  ["kirim.", { module: "mexanik" }],
   ["trip.", { module: "trips" }],
   ["task.", { module: "tasks" }],
   ["shift.", { module: "tasks" }],
@@ -425,6 +442,8 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Direktor bergan `stock` amali (Расход — «issue», Остатки — kirim/berish/narx) ham ochadi: `mobileDetail` → `journalGranted`
   rasxod: ["WAREHOUSE", "PROCUREMENT"],
   ostatki: ["WAREHOUSE", "PROCUREMENT"],
+  // Mexanik so'rovi — mexanikka faqat o'zinikini (`kirimDetail`)
+  kirim: ["MECHANIC", "SUPERVISOR", "CASHIER"],
 };
 
 const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"];
@@ -468,6 +487,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "employees": return employeeDetail(user, id);
     case "cashflow": return cashflowDetail(id);
     case "supply": return supplyDetail(user, id);
+    case "kirim": return kirimDetail(user, id);
     case "customers": return customerDetail(user, id);
     case "leads": return leadDetail(user, id);
     case "brigades": return brigadeDetail(user, id);
@@ -1164,6 +1184,17 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
       ],
     });
   }
+  // Hududdan tashqarida davomat: qiymat formadagi kalitdan aniq yuboriladi (`on`), almashtirilmaydi
+  if (can(user, "employee.anywhere")) {
+    actions.push({
+      id: "employee.anywhere",
+      label: e.attendanceAnywhere ? "Hududdan tashqarida davomat: yoqilgan" : "Hududdan tashqarida davomat",
+      form: [{
+        name: "on", label: "Hududdan tashqarida davomat", type: "switch", value: e.attendanceAnywhere ? "true" : "false",
+        hint: "Komandirovka / obyektda ishlovchi: ish hududidan tashqarida ham Keldim/Ketdim belgilay oladi (yuz + joy rasmi bilan)",
+      }],
+    });
+  }
   if (led.length && can(user, "employee.brigade.clear")) {
     actions.push({ id: "employee.brigade.clear", label: "Brigadirlikdan olish", tone: "danger", confirm: `${e.fullName} ${led.map((b) => b.name).join(", ")} brigadirligidan olinsinmi? Brigada o'chmaydi, brigadirsiz qoladi.` });
   }
@@ -1174,6 +1205,7 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
       { label: "Telefon", value: e.phone ?? "—" },
       { label: "Brigada", value: led.length ? `${led.map((b) => b.name).join(", ")} brigadiri` : "—", tone: led.length ? "success" : undefined },
       { label: "Tizim logini", value: e.user ? e.user.login : "yo'q" },
+      { label: "Davomat joyi", value: e.attendanceAnywhere ? "Hududdan tashqarida ham" : "Faqat ish hududida", tone: e.attendanceAnywhere ? "warning" : undefined },
       { label: "Haydovchi ilovasi", value: e.ecoUserId ? (e.ecoActive ? "Ulangan" : "Nofaol") : "Ulanmagan", tone: e.ecoUserId && e.ecoActive ? "success" : e.ecoError ? "danger" : "info" },
       ...(e.ecoError ? [{ label: "ECO xatosi", value: e.ecoError, tone: "danger" as Tone }] : []),
       { label: "Ishga olingan", value: day(e.createdAt) },
@@ -1206,6 +1238,7 @@ async function cashflowDetail(id: string): Promise<MobileDetail> {
     ...(t.counterparty ? [{ label: out ? "Kimga" : "Kimdan", value: t.counterparty }] : []),
     ...(t.supplier ? [{ label: "Yetkazuvchi", value: t.supplier.name }] : []),
     ...(t.refType === "SupplyRequest" && t.refId ? [{ label: "Talabnoma", value: t.refId }] : []),
+    ...(t.refType === MECH_REF && t.refId ? [{ label: "Mexanik so'rovi", value: (await db.mechanicRequest.findUnique({ where: { id: t.refId }, select: { docNo: true } }))?.docNo ?? t.refId }] : []),
     { label: "Kim kiritdi", value: t.createdBy.fullName },
     ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
   ];
@@ -1479,6 +1512,81 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
       ...(r.receipt ? [{ title: "Kirim hujjati", empty: "", target: "receipts", rows: [{ id: r.receipt.id, title: r.receipt.docNo, subtitle: "Skladga kirim", tone: "success" as Tone }] }] : []),
     ],
     actions,
+  };
+}
+
+// ───────────────────────── Mexanik so'rovi (Kirim) ─────────────────────────
+
+/**
+ * Mexanik so'rovi kartochkasi: nima uchun, qancha, surat, kim qachon tasdiqlagan / pul bergan.
+ * Tugmalar holat + rolga bog'liq: NEW — ish boshqaruvchi (tasdiq/rad), mexanik (bekor); APPROVED — kassa (pul berish).
+ */
+async function kirimDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const r = await mechanicRequest(id);
+  if (!r) throw new ListError("NOT_FOUND", "So'rov topilmadi", 404);
+  if (user.role === "MECHANIC" && r.createdById !== user.id) throw new ListError("FORBIDDEN", "Bu so'rov sizniki emas", 403);
+  const st = r.status;
+  const amount = sum(r.amount);
+  const subject = mechSubject(r);
+
+  const actions: DetailAction[] = [];
+  if (st === "NEW" && can(user, "kirim.approve")) {
+    actions.push({ id: "kirim.approve", label: "Tasdiqlash", tone: "success", confirm: `${money(amount)} so'rovni tasdiqlaysizmi? Kassa pul beradi` });
+  }
+  if (st === "NEW" && can(user, "kirim.reject")) {
+    actions.push({ id: "kirim.reject", label: "Rad etish", tone: "danger", form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega rad etilmoqda" }] });
+  }
+  if (st === "APPROVED" && can(user, "kirim.pay")) {
+    const accounts = await payAccounts();
+    actions.push({
+      id: "kirim.pay", label: "Pul berish", tone: "success",
+      form: [
+        {
+          name: "cashAccountId", label: "Qaysi kassadan", type: "select", required: true,
+          value: accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id,
+          options: accounts.map((a) => ({ value: a.id, label: `${a.name} · ${a.type === "CASH" ? "naqd kassa" : "bank"}`, hint: `qoldiq ${money(a.balance)}${a.type === "BANK" && a.allowOverdraft ? " · overdraft ruxsat" : ""}` })),
+          hint: `${money(amount)} shu hisobdan chiqim bo'lib yoziladi`,
+        },
+        { name: "note", label: "Izoh", type: "text" },
+      ],
+    });
+  }
+  if (st === "NEW" && r.createdById === user.id && can(user, "kirim.cancel")) {
+    actions.push({ id: "kirim.cancel", label: "Bekor qilish", tone: "danger", confirm: "So'rovni bekor qilasizmi?" });
+  }
+
+  const v = r.vehicle;
+  const steps = [
+    { id: "created", title: "So'rov yuborildi", subtitle: r.createdBy.fullName, at: r.createdAt, tone: "info" as Tone },
+    ...(r.decidedAt && st !== "CANCELLED" ? [{ id: "decided", title: st === "REJECTED" ? "Rad etildi" : "Tasdiqlandi", subtitle: `${r.decidedBy ?? "—"}${r.rejectReason ? ` · ${r.rejectReason}` : ""}`, at: r.decidedAt, tone: (st === "REJECTED" ? "danger" : "success") as Tone }] : []),
+    ...(st === "CANCELLED" && r.decidedAt ? [{ id: "cancelled", title: "Bekor qilindi", subtitle: r.createdBy.fullName, at: r.decidedAt, tone: "info" as Tone }] : []),
+    ...(r.paidAt ? [{ id: "paid", title: "Pul berildi", subtitle: `${r.paidBy ?? "—"}${r.cashAccount ? ` · ${r.cashAccount.name}` : ""}`, at: r.paidAt, tone: "success" as Tone }] : []),
+  ];
+
+  return {
+    key: "kirim", id: r.id, title: `${subject}${r.urgent ? " · shoshilinch" : ""}`, subtitle: `${r.docNo} · ${TARGET_LABEL[r.target]}`, status: MECH_STATUS_LABEL[st],
+    fields: [
+      { label: "Holat", value: MECH_STATUS_LABEL[st], tone: MECH_STATUS_TONE[st] },
+      { label: "Summa", value: money(amount), tone: "brand" },
+      { label: "Turi", value: TARGET_LABEL[r.target] },
+      ...(v ? [{ label: "Mashina", value: `${v.plate} · ${VEHICLE_TYPE[v.type] ?? v.type}${v.brand || v.model ? ` · ${[v.brand, v.model].filter(Boolean).join(" ")}` : ""}` }] : []),
+      ...(r.object ? [{ label: r.target === "OTHER" ? "Nima uchun" : "Obyekt", value: r.object }] : []),
+      { label: "Muammo", value: r.problem },
+      ...(r.note ? [{ label: "Tavsif", value: r.note }] : []),
+      ...(r.urgent ? [{ label: "Shoshilinch", value: "Ha", tone: "danger" as Tone }] : []),
+      { label: "Kim so'radi", value: `${r.createdBy.fullName} · ${dt(r.createdAt)}` },
+      ...(r.decidedAt && st !== "CANCELLED" ? [{ label: st === "REJECTED" ? "Rad etdi" : "Tasdiqladi", value: `${r.decidedBy ?? "—"} · ${dt(r.decidedAt)}`, tone: (st === "REJECTED" ? "danger" : "success") as Tone }] : []),
+      ...(r.rejectReason ? [{ label: "Rad sababi", value: r.rejectReason, tone: "danger" as Tone }] : []),
+      ...(r.paidAt ? [{ label: "Pul berdi", value: `${r.paidBy ?? "—"} · ${dt(r.paidAt)}`, tone: "success" as Tone }] : []),
+      ...(r.cashAccount ? [{ label: "Kassa", value: r.cashAccount.name }] : []),
+      ...(r.photo ? [{ label: "Surat", value: "Biriktirilgan" }] : []),
+    ],
+    sections: [
+      { title: "Bosqichlar", empty: "", icon: "clock", rows: steps.map((x) => ({ id: x.id, title: x.title, subtitle: x.subtitle, right: shortDt(x.at), tone: x.tone })) },
+      ...(r.cashTxId && ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(user.role) ? [{ title: "Kirim-chiqim yozuvi", empty: "", target: "cashflow", rows: [{ id: r.cashTxId, title: `−${money(amount)}`, subtitle: r.cashAccount?.name ?? "Chiqim", tone: "danger" as Tone }] }] : []),
+    ],
+    actions,
+    ...(r.photo ? { photo: { url: `/api/mobile/kirim/photo?id=${r.id}`, title: "Muammo surati" } } : {}),
   };
 }
 

@@ -40,6 +40,8 @@ import { problemAction } from "./problems";
 import { assertAtSite, knownPoint } from "./geofence";
 import { ACTION_ROLES, NEW_BRIGADE, can } from "./detail";
 import { MaterialPriceError, setMaterialPrice } from "@/lib/material-price";
+import { approveMechanicRequest, cancelMechanicRequest, payMechanicRequest, rejectMechanicRequest } from "@/lib/mechanic-requests";
+import { setAttendanceAnywhere } from "@/lib/self-attendance";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 
 /**
@@ -454,6 +456,15 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       if (r.error) fail(r.error);
       return { ok: true, message: `Brigadirlikdan olindi — ${r.freed} brigadirsiz qoldi` };
     }
+    // Hududdan tashqarida davomat ruxsati: `payload.on` — true/false (switch) yoki "true"/"false"
+    case "employee.anywhere": {
+      const raw = payload.on;
+      if (raw !== true && raw !== false && raw !== "true" && raw !== "false") fail("Ruxsat holatini tanlang");
+      const on = raw === true || raw === "true";
+      const r = await setAttendanceAnywhere({ userId: user.id, role: user.role }, id, on);
+      if ("error" in r) fail(r.error, r.error === "Xodim topilmadi" ? 404 : 403);
+      return { ok: true, message: on ? "Ruxsat berildi — ish hududidan tashqarida ham belgilay oladi" : "Ruxsat olindi — faqat ish hududida belgilaydi" };
+    }
 
     // ── Ta'minot zanjiri — qoida `lib/supply.ts` da, veb bilan bir xil ──
     case "supply.items": {
@@ -563,6 +574,29 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const r = await addSupplyDocument(id, textOf(payload, "kind"), file, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: r.note ?? "Hujjat biriktirildi" };
+    }
+
+    // ── Mexanik so'rovi ("Kirim") — qoida `lib/mechanic-requests.ts` da (shartli holat o'tishi, kassa qoldig'i) ──
+    case "kirim.approve": {
+      const r = await approveMechanicRequest(id, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Tasdiqlandi — kassa pul beradi" };
+    }
+    case "kirim.reject": {
+      const r = await rejectMechanicRequest(id, textOf(payload, "reason"), user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "So'rov rad etildi" };
+    }
+    case "kirim.pay": {
+      const r = await payMechanicRequest(id, { cashAccountId: textOf(payload, "cashAccountId"), note: textOf(payload, "note") || null }, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "Pul berildi" };
+    }
+    case "kirim.cancel": {
+      // Egalik `cancelMechanicRequest` ichida: faqat o'z so'rovi va faqat tasdiqdan oldin
+      const r = await cancelMechanicRequest(id, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: r.note ?? "So'rov bekor qilindi" };
     }
 
     // ── Sayt arizalari — qoida `lib/leads.ts` da ──

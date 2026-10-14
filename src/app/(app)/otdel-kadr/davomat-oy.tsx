@@ -4,7 +4,8 @@ import { ATTENDANCE_MARKS, hoursShort, hoursText, markOf, monthDays, monthTitle,
 import { cn } from "@/lib/utils";
 import type { AttendanceStatus } from "@/generated/prisma";
 
-export type OyCell = { status: AttendanceStatus; min: number | null; note: string | null };
+/** `out` — hududdan tashqarida belgilangan bo'lsa izoh matni ("Hududdan tashqarida: keldi 2,4 km"), aks holda null. */
+export type OyCell = { status: AttendanceStatus; min: number | null; note: string | null; out: string | null };
 export type OyRow = { id: string; fullName: string; position: string; cells: Record<string, OyCell> };
 
 const monthHref = (ym: string) => `/otdel-kadr?tab=davomat&oy=${ym}`;
@@ -89,10 +90,11 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
                     <td key={d.iso} className={cn("border-b border-slate-100 p-0.5 text-center", d.weekend && "bg-slate-50/70")}>
                       <Link
                         href={dayHref(d.iso)}
-                        title={`${d.day}-kun · ${m.label}${c.min !== null ? ` · ${hoursText(c.min)}` : ""}${c.note ? ` · ${c.note}` : ""}`}
-                        className={cn("flex h-7 items-center justify-center rounded text-[11px] font-semibold ring-1 ring-inset tabular", m.cell)}
+                        title={`${d.day}-kun · ${m.label}${c.min !== null ? ` · ${hoursText(c.min)}` : ""}${c.out ? ` · ${c.out}` : ""}${c.note ? ` · ${c.note}` : ""}`}
+                        className={cn("relative flex h-7 items-center justify-center rounded text-[11px] font-semibold ring-1 ring-inset tabular", m.cell)}
                       >
                         {c.min !== null ? hoursShort(c.min) : m.short}
+                        {c.out && <span aria-label="Hududdan tashqarida" className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-violet-500" />}
                       </Link>
                     </td>
                   );
@@ -115,6 +117,7 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
           </span>
         ))}
         <span className="text-xs text-slate-400">· ishga chiqqan kunda harf o&apos;rniga ishlagan soat turadi</span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> hududdan tashqarida belgilangan</span>
       </div>
     </div>
   );

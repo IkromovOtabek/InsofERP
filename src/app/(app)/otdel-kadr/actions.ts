@@ -20,6 +20,7 @@ import { parsePerms } from "@/lib/auth";
 import { applyAccessMany, describePerms, isTemplateRole, permsFromForm } from "@/lib/perm-template";
 import { Prisma, type Role } from "@/generated/prisma";
 import { buildSchedule, normTime, parseSchedule, scheduleProblem } from "@/lib/attendance-time";
+import { setAttendanceAnywhere } from "@/lib/self-attendance";
 
 /** Ishchi lavozimlarni faqat otdel kadr (va direktor) yuritadi. */
 // Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
@@ -283,6 +284,18 @@ export async function setEmployeeSchedule(employeeId: string, _prev: ActionState
   });
   revalidatePath("/otdel-kadr"); revalidatePath(`/employees/${employeeId}`);
   return { ok: true };
+}
+
+/**
+ * Hududdan tashqarida davomat ruxsati (komandirovka / obyektda ishlovchi) — xodim kartasidagi kalit.
+ * Faqat otdel kadr va direktor: modulga yozish ruxsati yetmaydi, rol ham shart (`setAttendanceAnywhere`).
+ */
+export async function setEmployeeAnywhere(employeeId: string, on: boolean): Promise<ActionState> {
+  const s = await hr();
+  const r = await setAttendanceAnywhere({ userId: s.userId, role: s.role }, employeeId, on);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/otdel-kadr"); revalidatePath("/employees"); revalidatePath(`/employees/${employeeId}`);
+  return { ok: true, note: on ? "Ruxsat berildi — xodim ish hududidan tashqarida ham belgilay oladi" : "Ruxsat olindi — faqat ish hududida belgilaydi" };
 }
 
 const bulkScheduleSchema = z.object({

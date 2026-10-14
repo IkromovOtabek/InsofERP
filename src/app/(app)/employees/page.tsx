@@ -133,6 +133,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
                 <Td className="font-medium">
                   {isHR ? <Link href={`/employees/${e.id}`} className="hover:underline">{e.fullName}</Link> : e.fullName}
                   {e.note && <div className="text-xs text-slate-500">{e.note}</div>}
+                  {e.attendanceAnywhere && <div className="mt-0.5"><Badge color="violet">Hududdan tashqarida davomat</Badge></div>}
                 </Td>
                 <Td>
                   {e.position}

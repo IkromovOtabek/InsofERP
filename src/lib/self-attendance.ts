@@ -11,6 +11,10 @@ import { knownPoint } from "@/lib/mobile/geofence";
 import { FACE_ENROLL_WHERE, type FaceInput, faceInput, faceVerifyAvailable, saveFacePhoto, verifyFaceRequest } from "@/lib/face-verify";
 import { MAX_FACE_PHOTO_CHARS } from "@/lib/face-id-const";
 import { removeEmployeeFile } from "@/lib/uploads";
+import { claimPhotoHash } from "@/lib/face-replay";
+import { checkFaceImage } from "@/lib/ai/face";
+import { dataUrlFile } from "@/lib/procurement";
+import { distanceText, zoneDecision } from "@/lib/attendance-zone";
 import { ListError } from "@/lib/mobile/list";
 import type { MobileUser } from "@/lib/mobile/auth";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -36,6 +40,9 @@ import { notifyLateAfter } from "@/lib/attendance-late";
  *   · kadr xodimning profil surati bilan solishtiriladi (`lib/face-verify.ts`, rahbar skaneri bilan bir xil qoida) —
  *     mos kelsa kadr dalil sifatida saqlanadi (`facePhoto` / `checkOutPhoto`) va ishonch foizi yoziladi.
  *     Arzon tekshiruvlar (geofence, takror) AI chaqiruvidan OLDIN — keraksiz so'rov ketmasin.
+ *   · hududdan tashqarida: faqat otdel kadr / direktor ruxsat bergan xodim (`Employee.attendanceAnywhere`, komandirovka,
+ *     obyektda ishlovchi) — yuzdan tashqari joy rasmi (`placePhoto`, orqa kamera) majburiy; belgi `checkInOutside` /
+ *     `checkOutOutside` bilan yoziladi, rasm `checkInPlacePhoto` / `checkOutPlacePhoto` (`lib/attendance-zone.ts`).
  * Yozuv HR tabeli va sex davomatidagi aynan o'sha `Attendance` (employeeId + date) — alohida jadval yo'q.
  *
  * Qurilma id ham saqlanadi: xodim boshqa telefondan belgilasa `newDevice` bilan rahbarlarga aytiladi.
@@ -56,7 +63,7 @@ const MAX_CLOCK_SKEW_MS = 5 * 60_000;
 export async function linkedEmployee(userId: string) {
   return db.employee.findFirst({
     where: { userId, isActive: true, firedAt: null },
-    select: { id: true, fullName: true, position: true, workSchedule: true, brigadeId: true, brigade: { select: { leader: { select: { userId: true } } } } },
+    select: { id: true, fullName: true, position: true, workSchedule: true, attendanceAnywhere: true, brigadeId: true, brigade: { select: { leader: { select: { userId: true } } } } },
   });
 }
 type LinkedEmployee = NonNullable<Awaited<ReturnType<typeof linkedEmployee>>>;
@@ -121,6 +128,11 @@ export type SelfAttendance = {
   shift: { start: string; end: string };
   /** Ish joyi sozlanmagan bo'lsa null — ilova tugmani bosishdan oldin ogohlantiradi. */
   workplace: { lat: number; lng: number; radiusM: number } | null;
+  /**
+   * Xodimga ish hududidan tashqarida ham belgilash ruxsati berilgan (`Employee.attendanceAnywhere`). true bo'lsa ilova
+   * masofa bo'yicha o'zi rad etmaydi: tashqarida yuzdan keyin joy rasmini (orqa kamera) so'rab `placePhoto` bilan yuboradi.
+   */
+  anywhere: boolean;
 };
 
 type Row = { date: Date; status: AttendanceStatus; checkIn: string | null; checkOut: string | null };
@@ -144,7 +156,7 @@ export function nightOpen(y: Row | null, now: string) {
 
 function statusOf(e: LinkedEmployee, iso: string, t: Row | null, y: Row | null, wp: SelfAttendance["workplace"]): SelfAttendance {
   const shift = shiftOf(e.workSchedule);
-  const base = { linked: true, date: iso, shift, workplace: wp };
+  const base = { linked: true, date: iso, shift, workplace: wp, anywhere: e.attendanceAnywhere };
   if (!t && nightOpen(y, nowHHMM())) {
     return { ...base, state: "in", label: `Keldingiz ${y!.checkIn} (kecha)`, hint: "Tungi smena — ketishda «Ketdim» ni bosing", checkIn: y!.checkIn, checkOut: null, lateMin: null, next: "out" };
   }
@@ -185,6 +197,11 @@ const Body = z.object({
    * (`lib/face-liveness.ts`). Kelsa `photo` o'rniga shu tekshiriladi; hajm chegaralari `faceInput` da.
    */
   frames: z.array(z.string({ message: "Kadr o'qilmadi — qayta skaner qiling" })).max(10, "Kadrlar soni noto'g'ri").optional(),
+  /**
+   * Joy rasmi (orqa kamera, `data:image/jpeg;base64,...`) — faqat ish hududidan tashqarida va xodimga ruxsat berilgan
+   * bo'lsa talab qilinadi (`PLACE_PHOTO_REQUIRED`); hudud ichida e'tiborsiz qoldiriladi.
+   */
+  placePhoto: z.string().max(MAX_FACE_PHOTO_CHARS, "Joy rasmi juda katta — qayta oling").nullable().optional(),
   /** Bir martalik challenge (`GET /api/mobile/attendance/challenge`). Eski ilovada yo'q. */
   nonce: z.string().max(100).optional(),
   deviceId: z.string().trim().min(8, "Qurilma aniqlanmadi").max(128),
@@ -197,7 +214,6 @@ const Body = z.object({
 export type SelfMarkResult = { ok: true; already: boolean; message: string; attendance: SelfAttendance };
 
 const fail = (code: string, message: string, status = 400): never => { throw new ListError(code, message, status); };
-const meters = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 
 export async function markSelfAttendance(user: MobileUser, raw: unknown): Promise<SelfMarkResult> {
   // Cheklov: daqiqasiga 6, soatiga 30 — tugmani qayta-qayta bosish va skript bilan urinishga qarshi
@@ -236,8 +252,15 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
   }
   const distance = haversineMeters(b.lat, b.lng, place.lat, place.lng);
   if (!Number.isFinite(distance)) fail("BAD_REQUEST", "Joylashuv noto'g'ri");
-  if (distance > place.radiusM) {
-    fail("OUT_OF_RANGE", `Siz ish joyidan ${meters(distance)} uzoqdasiz (ruxsat: ${place.radiusM} m). Ish joyiga kelib qayta urining`, 403);
+  // Hududdan tashqarida — faqat ruxsat berilgan xodim va joy rasmi bilan (`lib/attendance-zone.ts`)
+  const zone = zoneDecision(distance, place.radiusM, emp.attendanceAnywhere, !!b.placePhoto);
+  if (!zone.ok) fail(zone.code, zone.message, zone.status);
+  const outside = zone.ok && zone.outside;
+  const placeFile = outside ? dataUrlFile(b.placePhoto, "joy") : null;
+  if (outside) {
+    // Arzon tekshiruv (faqat sarlavha) AI'dan oldin: format va o'lcham
+    if (!placeFile) fail("BAD_REQUEST", "Joy rasmi o'qilmadi — qayta oling");
+    await checkFaceImage(Buffer.from(await placeFile!.arrayBuffer())).catch((err: Error) => fail("BAD_REQUEST", `Joy rasmi: ${err.message}`));
   }
 
   const iso = today();
@@ -276,9 +299,25 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     if ("error" in saved) fail("FACE_ERROR", saved.error, 500);
     return { stored: (saved as { stored: string }).stored, confidence: ok.confidence, liveness: ok.liveness };
   };
-  /** Qulf ostidagi yozuv yiqilsa yoki yozilmasa — saqlangan kadr diskda yetim qolmasin. */
-  const dropOnFail = <T,>(stored: string, p: Promise<T>) => p.catch(async (err) => { await removeEmployeeFile(stored); throw err; });
-  const auditMeta = { usul: "yuz", masofa: Math.round(distance), aniqlik: b.accuracy ?? null, qurilma: b.deviceId, yangiQurilma: newDevice };
+  /**
+   * Hududdan tashqarida: joy rasmi yuz tasdiqlangandan KEYIN saqlanadi (yuz kabi metadata'siz qayta kodlanadi —
+   * EXIF/GPS diskka tushmaydi). Aynan o'sha rasm ikkinchi marta — rad. Xato bo'lsa saqlangan yuz kadri ham o'chadi.
+   */
+  const placeShot = async (faceStored: string): Promise<string | null> => {
+    if (!placeFile) return null;
+    if (!(await claimPhotoHash(Buffer.from(await placeFile.arrayBuffer()), emp.id, user.id))) {
+      await removeEmployeeFile(faceStored);
+      fail("PLACE_PHOTO_REPLAY", "Bu joy rasmi avval yuborilgan — yangi rasm oling");
+    }
+    const saved = await saveFacePhoto(emp.id, placeFile);
+    if ("error" in saved) { await removeEmployeeFile(faceStored); fail("BAD_REQUEST", `Joy rasmi: ${saved.error}`); }
+    return (saved as { stored: string }).stored;
+  };
+  /** Qulf ostidagi yozuv yiqilsa yoki yozilmasa — saqlangan kadr(lar) diskda yetim qolmasin. */
+  const dropAll = (files: (string | null)[]) => Promise.all(files.map((f) => removeEmployeeFile(f)));
+  const dropOnFail = <T,>(files: (string | null)[], p: Promise<T>) => p.catch(async (err) => { await dropAll(files); throw err; });
+  const auditMeta = { usul: "yuz", masofa: Math.round(distance), aniqlik: b.accuracy ?? null, qurilma: b.deviceId, yangiQurilma: newDevice, hududdanTashqarida: outside };
+  const outsideText = outside ? ` · hududdan tashqarida (${distanceText(distance)})` : "";
 
   let text: string;
   if (b.kind === "in") {
@@ -290,14 +329,16 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       fail("MARKED_OTHER", `Bugun «${markOf(t.status).label}» deb belgilangan — o'zgartirish uchun otdel kadrga ayting`, 409);
     }
     const f = await face();
+    const placeIn = await placeShot(f.stored);
     const late = lateBy(now, shift.start);
     const data = {
       status: "PRESENT" as const, checkIn: now, checkOut: null, markedById: user.id, source: SELF_SOURCE, lateMinutes: late, newDevice, ...geo("In"),
       facePhoto: f.stored, faceVerifiedAt: new Date(), faceConfidence: f.confidence,
+      checkInOutside: outside, checkInPlacePhoto: placeIn,
     };
     const date = dayUtc(iso);
     // Parallel ikkinchi "Keldim" shu qulfda kutadi va birinchisining yozuvini ko'radi — yozmaydi
-    const cur = await dropOnFail(f.stored, db.$transaction(async (tx) => {
+    const cur = await dropOnFail([f.stored, placeIn], db.$transaction(async (tx) => {
       await lockEmployeeAttendance(tx, emp.id);
       const c = await tx.attendance.findUnique({ where: { employeeId_date: { employeeId: emp.id, date } }, select: { status: true, checkIn: true } });
       if (c && (c.status === "PRESENT" ? !!c.checkIn : c.status !== "ABSENT")) return c;
@@ -306,14 +347,14 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       return null;
     }));
     if (cur) {
-      await removeEmployeeFile(f.stored);
+      await dropAll([f.stored, placeIn]);
       if (cur.status !== "PRESENT") fail("MARKED_OTHER", `Bugun «${markOf(cur.status).label}» deb belgilangan — o'zgartirish uchun otdel kadrga ayting`, 409);
       const fresh = await openRecord(emp.id, iso);
       return { ok: true, already: true, message: `Bugun allaqachon ${cur.checkIn} da kelgansiz`, attendance: statusOf(emp, iso, fresh.today, fresh.yesterday, place) };
     }
     // Kechikkan bo'lsa — HR va direktorga alohida xabar (xodim/kun bo'yicha bir marta)
     notifyLateAfter(user.id, { employeeId: emp.id, checkIn: now, lateMinutes: late, iso });
-    text = `${shortName(emp.fullName)} ${now} da keldi${late ? ` (${late} daq kechikdi)` : ""}${newDevice ? " · yangi telefondan" : ""}`;
+    text = `${shortName(emp.fullName)} ${now} da keldi${late ? ` (${late} daq kechikdi)` : ""}${outsideText}${newDevice ? " · yangi telefondan" : ""}`;
   } else {
     // Ketish: bugungi ochiq yozuv, bo'lmasa kechagi tungi smena
     const rec = t?.status === "PRESENT" && t.checkIn ? t : !t && nightOpen(y, now) ? y : null;
@@ -329,8 +370,12 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     const w = workedMinutes(r.checkIn, now);
     if (w !== null && w > MAX_SHIFT_MINUTES) fail("SHIFT_TOO_LONG", `Smena ${MAX_SHIFT_MINUTES / 60} soatdan uzun bo'lib qoldi — ketish vaqtini sex boshlig'i qo'yadi`, 409);
     const f = await face();
-    const data = { checkOut: now, ...geo("Out"), checkOutPhoto: f.stored, checkOutFaceConfidence: f.confidence, ...(newDevice ? { newDevice: true } : {}) };
-    const doneAt = await dropOnFail(f.stored, db.$transaction(async (tx) => {
+    const placeOut = await placeShot(f.stored);
+    const data = {
+      checkOut: now, ...geo("Out"), checkOutPhoto: f.stored, checkOutFaceConfidence: f.confidence, ...(newDevice ? { newDevice: true } : {}),
+      checkOutOutside: outside, checkOutPlacePhoto: placeOut,
+    };
+    const doneAt = await dropOnFail([f.stored, placeOut], db.$transaction(async (tx) => {
       await lockEmployeeAttendance(tx, emp.id);
       const c = await tx.attendance.findUnique({ where: { id: r.id }, select: { checkOut: true } });
       if (c?.checkOut) return c.checkOut;
@@ -339,15 +384,15 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
       return null;
     }));
     if (doneAt) {
-      await removeEmployeeFile(f.stored);
+      await dropAll([f.stored, placeOut]);
       const fresh = await openRecord(emp.id, iso);
       return { ok: true, already: true, message: `Bugun allaqachon ${doneAt} da ketgansiz`, attendance: statusOf(emp, iso, fresh.today, fresh.yesterday, place) };
     }
     const early = earlyBy(now, shift.end);
-    text = `${shortName(emp.fullName)} ${now} da ketdi${w !== null ? ` (${hoursText(w)}${early ? `, ${early} daq erta` : ""})` : ""}${newDevice ? " · yangi telefondan" : ""}`;
+    text = `${shortName(emp.fullName)} ${now} da ketdi${w !== null ? ` (${hoursText(w)}${early ? `, ${early} daq erta` : ""})` : ""}${outsideText}${newDevice ? " · yangi telefondan" : ""}`;
   }
 
-  notifyAfter(() => notifyStaff(user.id, emp, text));
+  notifyAfter(() => notifyStaff(user.id, emp, text, outside));
   const fresh = await openRecord(emp.id, iso);
   const s = statusOf(emp, iso, fresh.today, fresh.yesterday, place);
   return { ok: true, already: false, message: b.kind === "in" ? `Qabul qilindi: keldingiz ${now}` : `Qabul qilindi: ketdingiz ${now}`, attendance: s };
@@ -355,13 +400,14 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
 
 /**
  * Kelish/ketish vaqti tegishli rahbarlarga: brigadiri, ishlab chiqarish boshlig'i va ish boshqaruvchi (sex xodimi
- * bo'lsa), otdel kadr. Xodimning o'ziga yuborilmaydi. Ovozsiz kanal — ma'lumot uchun.
+ * bo'lsa), otdel kadr. Hududdan tashqarida belgilangan bo'lsa — direktor ham (ruxsatni u yoki otdel kadr bergan).
+ * Xodimning o'ziga yuborilmaydi. Ovozsiz kanal — ma'lumot uchun.
  */
-async function notifyStaff(selfUserId: string, e: LinkedEmployee, body: string) {
+async function notifyStaff(selfUserId: string, e: LinkedEmployee, body: string, outside = false) {
   const inSex = (await productionStaff()).members.some((m) => m.id === e.id);
   const [prodUsers, hrUsers] = await Promise.all([
     inSex ? db.user.findMany({ where: { role: { in: ["PRODUCTION", "SUPERVISOR"] }, isActive: true }, select: { id: true } }) : Promise.resolve([]),
-    db.user.findMany({ where: { role: "HR", isActive: true }, select: { id: true } }),
+    db.user.findMany({ where: { role: { in: outside ? ["HR", "DIRECTOR"] : ["HR"] }, isActive: true }, select: { id: true } }),
   ]);
   const not = (id: string | null | undefined) => !!id && id !== selfUserId;
   const sexIds = [e.brigade?.leader?.userId, ...prodUsers.map((u) => u.id)].filter(not);
@@ -372,6 +418,28 @@ async function notifyStaff(selfUserId: string, e: LinkedEmployee, body: string) 
     sexIds.length ? notifyUsers(sexIds, { ...n, link: { key: "sex-emp", id: e.id } }) : null,
     hrIds.length ? notifyUsers(hrIds, { ...n, link: { key: "employees", id: e.id } }) : null,
   ]);
+}
+
+// ───────────────────────── Hududdan tashqarida ruxsati ─────────────────────────
+
+/** Ruxsatni kim beradi: faqat otdel kadr va direktor (SUPERADMIN korxona ichida direktor sifatida keladi). */
+export const ANYWHERE_ROLES = ["HR", "DIRECTOR"] as const;
+
+/**
+ * Xodimga ish hududidan tashqarida "Keldim/Ketdim" ruxsatini berish/olish (veb xodim kartasi va mobil xodim kartochkasi).
+ * Qiymat aniq beriladi (`on`), almashtirilmaydi — ikki marta bosish natijani buzmaydi. Holat o'tishi shartli
+ * `updateMany` bilan (poyga bo'lmasin), o'zgarsa auditga yoziladi.
+ */
+export async function setAttendanceAnywhere(actor: { userId: string; role: string }, employeeId: string, on: boolean): Promise<{ error: string } | { ok: true; changed: boolean; fullName: string }> {
+  if (!(ANYWHERE_ROLES as readonly string[]).includes(actor.role)) return { error: "Bu ruxsatni faqat otdel kadr yoki direktor beradi" };
+  const e = await db.employee.findUnique({ where: { id: employeeId }, select: { fullName: true, attendanceAnywhere: true } });
+  if (!e) return { error: "Xodim topilmadi" };
+  const changed = await db.$transaction(async (tx) => {
+    const u = await tx.employee.updateMany({ where: { id: employeeId, attendanceAnywhere: !on }, data: { attendanceAnywhere: on } });
+    if (u.count) await audit(tx, actor.userId, "UPDATE", "Employee", employeeId, { attendanceAnywhere: !on }, { attendanceAnywhere: on, xodim: e.fullName });
+    return u.count > 0;
+  });
+  return { ok: true, changed, fullName: e.fullName };
 }
 
 // ───────────────────────── Mening davomatim (oy) ─────────────────────────

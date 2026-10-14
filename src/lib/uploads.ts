@@ -136,6 +136,39 @@ export async function removeEmployeeFile(stored: string | null | undefined) {
   try { await unlink(p); } catch { /* fayl allaqachon yo'q */ }
 }
 
+// ───────────────────────── Mexanik so'rovi surati ─────────────────────────
+
+export const REQUEST_PHOTO_MAX_MB = 10;
+
+/**
+ * Mexanik so'rovidagi muammo / chek surati — `uploads/requests/` ga yoziladi, faqat login talab qiladigan
+ * marshrut orqali beriladi (veb `/mexanik-sorovlar/[id]/surat`, ilova `/api/mobile/kirim/photo`).
+ * Faqat rasm: turi mazmunidan (magic bytes) aniqlanadi.
+ */
+export async function saveRequestPhoto(file: File | null): Promise<SavedFile | null | { error: string }> {
+  if (!file || file.size === 0) return null;
+  if (file.size > REQUEST_PHOTO_MAX_MB * 1024 * 1024) return { error: `Surat ${REQUEST_PHOTO_MAX_MB} MB dan katta` };
+  const f = await readUpload(file, ["jpg", "png", "webp", "heic"]);
+  if (!f) return { error: "Surat JPG, PNG, WEBP yoki HEIC bo'lishi kerak" };
+  const dir = path.join(UPLOADS_DIR, "requests");
+  await mkdir(dir, { recursive: true });
+  const stored = `mx-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${f.ext}`;
+  await writeFile(path.join(dir, stored), f.buf);
+  return { stored, name: file.name || `surat.${f.ext}`, type: f.mime };
+}
+
+export function requestPhotoPath(stored: string) {
+  if (!/^[\w-]+\.(jpg|png|webp|heic)$/.test(stored)) return null;
+  return path.join(UPLOADS_DIR, "requests", stored);
+}
+
+/** Saqlanmay qolgan so'rov surati (tranzaksiya yiqildi) — diskdan olib tashlanadi; bo'lmasa indamay o'tadi. */
+export async function removeRequestPhoto(stored: string | null | undefined) {
+  const p = stored ? requestPhotoPath(stored) : null;
+  if (!p) return;
+  try { await unlink(p); } catch { /* fayl allaqachon yo'q */ }
+}
+
 // ───────────────────────── E-commerce (do'kon) suratlari ─────────────────────────
 
 import { SHOP_TYPES, SHOP_PHOTO_MAX_MB } from "./shop-upload";

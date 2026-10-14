@@ -17,7 +17,8 @@ import { ListError, moduleClosed } from "./list";
  * Ustunlar ko'rish darajasiga qarab (`viewLevel`):
  *   · "full" — direktor, otdel kadr: hamma ustun (manba — kim belgilagani, izoh, telefon);
  *   · "sex"  — ishlab chiqarish, ish boshqaruvchi: sex xodimlarida "full", qolganlarda "public";
- *   · "public" — boshqa xodimlar: ism, lavozim/bo'lim, holat, keldi/ketdi, soat, kechikish; manba, izoh va telefon yashiriladi.
+ *   · "public" — boshqa xodimlar: ism, lavozim/bo'lim, holat, keldi/ketdi, soat, kechikish; manba, izoh, telefon va
+ *     hududdan tashqaridagi nuqta/joy rasmi (`outsideIn` / `outsideOut`) yashiriladi.
  * Haydovchilar — direktor, otdel kadr, logistika; haydovchi faqat o'zinikini.
  * Direktor xodimga modulni ("employees" / "trips") yopgan bo'lsa — ochilmaydi.
  */
@@ -65,7 +66,7 @@ export async function mobileStaffDay(user: MobileUser, date: string | null) {
   const [day, full] = await Promise.all([staffDay(date), fullFor(user)]);
   if (full === true) return day;
   // Faqat ko'rish: kim belgilagani (manba) va izoh (kasallik sababi va h.k.) — faqat mas'ullarga
-  return { ...day, rows: day.rows.map((r) => (isFull(full, r.id) ? r : { ...r, source: null, note: null })) };
+  return { ...day, rows: day.rows.map((r) => (isFull(full, r.id) ? r : { ...r, source: null, note: null, outsideIn: null, outsideOut: null })) };
 }
 
 export async function mobileEmployeeMonth(user: MobileUser, id: string | null, month: string | null) {
@@ -74,7 +75,7 @@ export async function mobileEmployeeMonth(user: MobileUser, id: string | null, m
   const [r, full] = await Promise.all([employeeMonth(id, month), fullFor(user)]);
   if (!r) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
   if (isFull(full, id)) return r;
-  return { ...r, employee: { ...r.employee, phone: null }, days: r.days.map((d) => ({ ...d, source: null, note: null })) };
+  return { ...r, employee: { ...r.employee, phone: null }, days: r.days.map((d) => ({ ...d, source: null, note: null, outsideIn: null, outsideOut: null })) };
 }
 
 export async function mobileDriverTrips(user: MobileUser, id: string | null, month: string | null) {

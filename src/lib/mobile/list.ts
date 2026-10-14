@@ -21,6 +21,7 @@ import { brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
 import type { HomeRow, Tone } from "./home";
 import type { LeadStatus, OrderStatus, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
+import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -80,6 +81,8 @@ const ACCESS: Record<string, { title: string; roles: Role[] }> = {
   // ── Moliya ──
   cashflow: { title: "Kirim-chiqim", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   payments: { title: "To'lovlar", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
+  // Mexanik so'rovlari ("Kirim"): mexanik — faqat o'zinikini (`kirimList`), ish boshqaruvchi va kassa — hammasini
+  kirim: { title: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"] },
   // ── Boshqaruv ──
   // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
   employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
@@ -123,7 +126,7 @@ const KEY_MODULE: Record<string, string> = {
   trips: "trips", drivers: "trips",
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
   prixod: "stock", rasxod: "stock", ostatki: "stock",
-  supply: "taminot", employees: "employees",
+  supply: "taminot", employees: "employees", kirim: "mexanik",
 };
 
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
@@ -189,6 +192,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "prod-report") return { key, title: meta.title, rows: await reportRows() };
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
+  if (key === "kirim") return kirimList(user, s, filter);
   if (key === "snabjeniye") return snabjeniye(meta.title, s, filter);
   if (key === "leads") return leads(meta.title, s, filter);
   if (key === "sales") return salesOrders(meta.title, s, filter);
@@ -287,6 +291,28 @@ async function supplyRequests(title: string, q?: string, filter?: string): Promi
   return {
     key: "supply", title, rows: rows.map(supplyRow),
     filters: SUPPLY_TABS.map((t) => ({ key: t.key, label: t.label, count: by(t.status), active: t.key === tab.key })),
+  };
+}
+
+/**
+ * Mexanik so'rovlari ("Kirim") — holat chiplari, sukut: hammasi, yangisi tepada. Mexanik faqat o'zinikini ko'radi.
+ * Qator: sarlavha — mashina raqami yoki obyekt (shoshilinch belgisi bilan), o'ngda summa, holat — rangli.
+ */
+async function kirimList(user: MobileUser, q?: string, filter?: string): Promise<MobileList> {
+  const own = user.role === "MECHANIC" ? user.id : null;
+  const tab = mechTab(filter);
+  const [rows, c] = await Promise.all([mechanicList({ status: tab.status, createdById: own, q, take: TAKE }), mechanicCounts(own)]);
+  return {
+    key: "kirim", title: own ? "Mening so'rovlarim" : "Mexanik so'rovlari",
+    rows: rows.map((r) => ({
+      id: r.id,
+      title: `${mechSubject(r)}${r.urgent ? " · shoshilinch" : ""}`,
+      subtitle: `${r.problem} · ${r.docNo} · ${day(r.createdAt)}${own ? "" : ` · ${r.createdBy.fullName}`}`,
+      right: money(sum(r.amount)),
+      status: MECH_STATUS_SHORT[r.status],
+      tone: r.urgent && r.status === "NEW" ? "danger" : MECH_STATUS_TONE[r.status],
+    })),
+    filters: MECH_TABS.map((t) => ({ key: t.key, label: t.label, count: tabCount(c.counts, t), active: t.key === tab.key })),
   };
 }
 

@@ -98,6 +98,9 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "suppliers", label: "Yetkazuvchilar",                 roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
   ],
   taminot: [],
+  // Mexanik so'rovlari — ta'minot kabi: amal rol bo'yicha (mexanik so'raydi, ish boshqaruvchi tasdiqlaydi, kassa beradi),
+  // direktor modulni "yo'q" / "ko'rish" / "yozish" qilib cheklaydi yoki beradi (`requireModuleWrite`)
+  mexanik: [],
   "kirim-qqs": [], // faqat ko'rish (hisobot)
   payments: [
     { key: "create", label: "To'lov qabul qilish / bog'lash",   roles: ["CASHIER", "ACCOUNTING"] },

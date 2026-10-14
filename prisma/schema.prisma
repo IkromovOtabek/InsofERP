@@ -77,6 +77,7 @@ model User {
   leads                  Lead[]                   @relation("LeadHandledBy")
   salesRegister          SalesRegister[]          @relation("SalesRegisterCreatedBy")
   devices                MobileDevice[]
+  mechanicRequests       MechanicRequest[]        @relation("MechReqBy")
   notifications          Notification[]
   deletionRequests       AccountDeletionRequest[] @relation("DeletionRequestUser")
   deletionHandled        AccountDeletionRequest[] @relation("DeletionRequestHandledBy")
@@ -446,6 +447,7 @@ model Vehicle {
   fuelLogs FuelLog[]
   expenses TransportExpense[]
   services VehicleService[]
+  requests MechanicRequest[]
 }
 
 /// Texnik xizmat jurnali (mexanik): moy almashtirish, ta'mir, shina, ko'rik — keyingi xizmat muddati bilan
@@ -491,26 +493,29 @@ model Employee {
   isActive    Boolean   @default(true)
 
   // ── Kadr kartasi (otdel kadr to'ldiradi; shaxsiy varaqa va hujjat nusxalari) ──
-  photo            String? // 3x4 surat — uploads/employees/ ichidagi nom
-  passportSeries   String? // passport seriya va raqam, masalan AA 1234567
-  pinfl            String? // JSHSHIR (14 raqam)
-  passportIssuedBy String? // kim bergan (IIB)
-  passportIssuedAt DateTime? // berilgan sana
-  address          String? // yashash manzili
-  education        String? // ma'lumoti
-  maritalStatus    String? // oilaviy holati
+  photo              String? // 3x4 surat — uploads/employees/ ichidagi nom
+  passportSeries     String? // passport seriya va raqam, masalan AA 1234567
+  pinfl              String? // JSHSHIR (14 raqam)
+  passportIssuedBy   String? // kim bergan (IIB)
+  passportIssuedAt   DateTime? // berilgan sana
+  address            String? // yashash manzili
+  education          String? // ma'lumoti
+  maritalStatus      String? // oilaviy holati
   // ── Haydovchi kartasi (lavozimi haydovchi bo'lganda to'ldiriladi) ──
-  licenseNo        String? // haydovchilik guvohnomasi raqami
-  licenseCategory  String? // guvohnoma toifalari, masalan "B, C, CE"
-  licenseExpiry    DateTime? // guvohnoma amal qilish muddati
-  vehicleId        String? // biriktirilgan texnika (mikser/nasos)
-  workSchedule     String? // ish grafigi: "08:00–20:00, 2/2", "Tungi smena" — dispetcher uchun
+  licenseNo          String? // haydovchilik guvohnomasi raqami
+  licenseCategory    String? // guvohnoma toifalari, masalan "B, C, CE"
+  licenseExpiry      DateTime? // guvohnoma amal qilish muddati
+  vehicleId          String? // biriktirilgan texnika (mikser/nasos)
+  workSchedule       String? // ish grafigi: "08:00–20:00, 2/2", "Tungi smena" — dispetcher uchun
   /// Ishlab chiqarishdagi brigadasi — direktor taqsimlaydi (Bosh sahifa → Ishlab chiqarish → Xodimlarni taqsimlash).
   /// Brigadaga biriktirilgan xodim sex tarkibida sanaladi (lavozimi boshqa bo'lim bo'lsa ham).
-  brigadeId        String?
+  brigadeId          String?
   /// Yuz ma'lumotini (Face ID davomat) saqlashga xodim roziligi qayd etilgan vaqt — ro'yxatga olishda qo'yiladi,
   /// yuz o'chirilsa tozalanadi. Namunalarning o'zi — `FaceTemplate`.
-  faceConsentAt    DateTime?
+  faceConsentAt      DateTime?
+  /// Ish hududidan tashqarida ham "Keldim/Ketdim" belgilashi mumkin (komandirovka, obyektda ishlovchi) —
+  /// ruxsatni faqat otdel kadr yoki direktor beradi. Bunday belgida yuzdan tashqari joy rasmi ham olinadi.
+  attendanceAnywhere Boolean   @default(false)
 
   userId      String?   @unique // tizimga kiradigan xodim uchun login
   ecoUserId   String?   @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
@@ -632,6 +637,12 @@ model Attendance {
   lateMinutes            Int?
   /// Xodim avval boshqa telefondan belgilagan bo'lsa — yangi qurilmadan belgilandi (rahbarga xabarda ham aytiladi)
   newDevice              Boolean          @default(false)
+  /// Ish hududidan tashqarida belgilandi (xodimga `Employee.attendanceAnywhere` ruxsati berilgan) —
+  /// joy rasmi (orqa kamera, `uploads/employees/`) rahbar tekshirishi uchun saqlanadi
+  checkInOutside         Boolean          @default(false)
+  checkInPlacePhoto      String?
+  checkOutOutside        Boolean          @default(false)
+  checkOutPlacePhoto     String?
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
 
@@ -2266,4 +2277,54 @@ model AccessRequest {
 
   @@index([status, createdAt])
   @@index([phone])
+}
+
+/// Mexanik pul so'rovi (ECO → Mexanik → «Kirim»): transport, zavod yoki boshqa muammo uchun pul kerak.
+/// Snabjeniye kabi: so'rov darhol ish boshqaruvchi va kassaga ko'rinadi, lekin kassa faqat tasdiqdan keyin pul beradi.
+/// Oqim: NEW → APPROVED (ish boshqaruvchi; vebda direktor ham) → PAID (kassir kassadan beradi: CashTransaction EXPENSE, transport bo'lsa
+/// TransportExpense ham) | REJECTED; mexanik o'z NEW so'rovini CANCELLED qiladi. O'chirilmaydi, har qadam AuditLog'da.
+model MechanicRequest {
+  id                 String                @id @default(cuid())
+  docNo              String                @unique // MX-YYYY-00001
+  target             MechanicTarget
+  vehicleId          String? // TRANSPORT bo'lsa — qaysi mashina
+  object             String? // FACTORY / OTHER — nima uchun (uskuna, bino, ...)
+  problem            String // muammo turi: "Ta'mir", "Ehtiyot qism", "Shina"...
+  amount             Decimal               @db.Decimal(18, 2) // so'ralgan summa
+  note               String? // muammo tavsifi
+  photo              String? // muammo / chek rasmi — `uploads/requests/`
+  urgent             Boolean               @default(false)
+  status             MechanicRequestStatus @default(NEW)
+  clientToken        String?               @unique // mobil qayta yuborishda dublikat bo'lmasin
+  createdById        String
+  createdAt          DateTime              @default(now())
+  decidedById        String? // ish boshqaruvchi / direktor (tasdiq / rad)
+  decidedAt          DateTime?
+  rejectReason       String?
+  paidById           String? // kassir
+  paidAt             DateTime?
+  cashAccountId      String?
+  cashTxId           String?               @unique
+  transportExpenseId String?               @unique
+
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
+  createdBy User     @relation("MechReqBy", fields: [createdById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([createdById, createdAt])
+  @@index([vehicleId])
+}
+
+enum MechanicTarget {
+  TRANSPORT // mashina (davlat raqami bilan)
+  FACTORY // zavod: uskuna, elektr, bino
+  OTHER // boshqalar
+}
+
+enum MechanicRequestStatus {
+  NEW // ish boshqaruvchi tasdig'ini kutmoqda
+  APPROVED // tasdiqlandi — endi kassa pul beradi
+  PAID // pul berildi
+  REJECTED // rad etildi
+  CANCELLED // mexanik o'zi bekor qildi
 }

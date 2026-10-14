@@ -83,6 +83,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount),
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
         : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
+        : t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}`
         : undefined,
       // Hujjatga bog'langanini bu yerdan o'chirib bo'lmaydi — hujjatning o'zidan tuzatiladi. Istisno: kirim hujjatiga
       // to'lov (o'chirish = to'lov storno, kirim yana "to'lanmagan" bo'ladi), ta'minot zanjirinikidan tashqari

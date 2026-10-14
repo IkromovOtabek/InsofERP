@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileSignature, FileText, KeyRound, Paperclip } from "lucide-react";
+import { FileSignature, FileText, KeyRound, MapPin, Paperclip } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog } from "@/lib/positions";
@@ -17,6 +17,8 @@ import { DismissButton, RestoreButton } from "../dismiss-form";
 import { DeleteDocument, DocumentForms } from "./document-forms";
 import { HrDocsPanel, type HrDocRow } from "./hr-doc-forms";
 import { EmployeePhotoForm } from "./photo-form";
+import { AnywhereSwitch } from "./anywhere-form";
+import { ANYWHERE_ROLES } from "@/lib/self-attendance";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
   const s = await requireRoles(["HR"], { module: "employees" });
@@ -134,6 +136,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
           </div>
         </Card>
 
+        <div className="space-y-4">
         <Card>
           <CardHeader title="Tizim va faoliyat" />
           <DL items={[
@@ -158,6 +161,16 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             ...(e.ecoError ? [{ k: "ECO xatosi", v: <span className="text-red-600">{e.ecoError}</span> }] : []),
           ]} />
         </Card>
+
+        <Card>
+          <CardHeader
+            title="Hududdan tashqarida davomat"
+            description="Komandirovka / obyektda ishlovchi: ish hududidan tashqarida ham Keldim/Ketdim belgilay oladi (yuz + joy rasmi bilan)"
+            icon={MapPin}
+          />
+          <AnywhereSwitch employeeId={e.id} on={e.attendanceAnywhere} canEdit={(ANYWHERE_ROLES as readonly string[]).includes(s.role)} />
+        </Card>
+        </div>
 
         {e.user && (
           <Card className="lg:col-span-2">

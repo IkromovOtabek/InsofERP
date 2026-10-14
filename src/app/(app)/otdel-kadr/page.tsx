@@ -12,11 +12,13 @@ import {
 } from "@/lib/davomat";
 import { NewPositionForm, PositionRow, SyncPositionsButton } from "./position-forms";
 import { OrgChart, type OrgEmployee } from "./org-chart";
-import { DavomatKun, type KunRow } from "./davomat-kun";
+import { DavomatKun, type KunOutside, type KunRow } from "./davomat-kun";
 import { parseSchedule, shiftOf, sourceLabel } from "@/lib/attendance-time";
 import { IshVaqti, type IshVaqtiRow } from "./ish-vaqti";
 import { DavomatOy, type OyRow } from "./davomat-oy";
 import { DismissButton, RestoreButton } from "../employees/dismiss-form";
+import { distanceText } from "@/lib/attendance-zone";
+import { faceScope } from "@/lib/face-id";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -103,18 +105,31 @@ export default async function OtdelKadrPage({ searchParams }: {
     const byEmp = new Map<string, OyRow["cells"]>();
     for (const m of marks) {
       const cells = byEmp.get(m.employeeId) ?? {};
-      cells[isoDay(m.date)] = { status: m.status, min: workedMinutes(m.checkIn, m.checkOut), note: m.note };
+      // Hududdan tashqaridagi belgi — katakda nuqta, izohda masofa
+      const km = (d: number | null) => (d == null ? "" : ` ${distanceText(d)}`);
+      const outs = m.status === "PRESENT" ? [m.checkInOutside && `keldi${km(m.checkInDistance)}`, m.checkOutOutside && `ketdi${km(m.checkOutDistance)}`].filter(Boolean) : [];
+      cells[isoDay(m.date)] = { status: m.status, min: workedMinutes(m.checkIn, m.checkOut), note: m.note, out: outs.length ? `Hududdan tashqarida: ${outs.join(", ")}` : null };
       byEmp.set(m.employeeId, cells);
     }
     oyRows = list.map((e) => ({ ...e, cells: byEmp.get(e.id) ?? {} }));
   } else if (davomat) {
     const day = dayUtc(kunIso);
     const [list, marks] = await Promise.all([
-      db.employee.findMany({ where: inWindow(day, day), orderBy: tabelOrder, select: { id: true, fullName: true, position: true, photo: true, workSchedule: true } }),
+      db.employee.findMany({ where: inWindow(day, day), orderBy: tabelOrder, select: { id: true, fullName: true, position: true, photo: true, workSchedule: true, attendanceAnywhere: true } }),
       db.attendance.findMany({ where: { date: day } }),
     ]);
     const markers = new Map((await db.user.findMany({ where: { id: { in: [...new Set(marks.map((m) => m.markedById).filter((x): x is string => !!x))] } }, select: { id: true, role: true } })).map((u) => [u.id, u.role]));
     const byEmp = new Map(marks.map((m) => [m.employeeId, m]));
+    // Hududdan tashqaridagi belgi: nuqta, masofa va joy rasmi (rasmni yuz kadri kabi faqat skaner huquqi borlar ochadi)
+    const photos = !!faceScope(s);
+    const outside = (m: (typeof marks)[number] | undefined, k: "in" | "out"): KunOutside | null => {
+      if (!m || m.status !== "PRESENT") return null;
+      const [on, lat, lng, dist, photo] = k === "in"
+        ? [m.checkInOutside, m.checkInLat, m.checkInLng, m.checkInDistance, m.checkInPlacePhoto]
+        : [m.checkOutOutside, m.checkOutLat, m.checkOutLng, m.checkOutDistance, m.checkOutPlacePhoto];
+      if (!on || lat == null || lng == null) return null;
+      return { lat, lng, distanceM: dist == null ? null : Math.round(dist), photo: photos && photo ? `/otdel-kadr/joy-rasmi?a=${m.id}&k=${k}` : null };
+    };
     kunRows = list.map((e) => {
       const m = byEmp.get(e.id);
       return {
@@ -123,6 +138,7 @@ export default async function OtdelKadrPage({ searchParams }: {
         source: m ? sourceLabel(m.source, { face: !!m.facePhoto, markerRole: m.markedById ? markers.get(m.markedById) ?? null : null }) : null,
         status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
         ver: m?.updatedAt.toISOString() ?? "",
+        anywhere: e.attendanceAnywhere, outsideIn: outside(m, "in"), outsideOut: outside(m, "out"),
       } satisfies KunRow;
     });
   }
@@ -192,6 +208,7 @@ export default async function OtdelKadrPage({ searchParams }: {
                   <Td className="font-medium">
                     <Link href={`/employees/${e.id}`} className="hover:underline">{e.fullName}</Link>
                     {e.tabelNo && <div className="text-xs font-normal text-slate-500">Tabel № {e.tabelNo}</div>}
+                    {e.attendanceAnywhere && <div className="mt-0.5 font-normal"><Badge color="violet">Hududdan tashqarida davomat</Badge></div>}
                   </Td>
                   <Td>
                     {e.position}

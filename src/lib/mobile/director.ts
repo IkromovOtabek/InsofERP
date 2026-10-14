@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma";
 import type { HomeRow, HomeSection, Tone } from "./home";
 import { ListError, type ListFilter, type MobileList } from "./list";
 import type { MobileDetail } from "./detail";
+import { mechSubject } from "@/lib/mechanic-requests";
 
 /**
  * Direktor ilovasi uchun maxsus ro'yxatlar:
@@ -29,7 +30,7 @@ export function splitRef(id: string): [string | null, string] {
 
 export async function approvalsList(title: string, q?: string, filter?: string): Promise<MobileList> {
   const like = (s: string): Prisma.StringFilter => ({ contains: s, mode: "insensitive" });
-  const [blocked, supply] = await Promise.all([
+  const [blocked, supply, kirim] = await Promise.all([
     db.order.findMany({
       where: { status: "BLOCKED", ...(q ? { OR: [{ orderNo: like(q) }, { customer: { name: like(q) } }] } : {}) },
       orderBy: { date: "desc" }, take: 50,
@@ -40,6 +41,12 @@ export async function approvalsList(title: string, q?: string, filter?: string):
       where: { status: { in: ["PRICED", "APPROVED"] }, ...(q ? { OR: [{ docNo: like(q) }, { supplier: { name: like(q) } }] } : {}) },
       orderBy: { createdAt: "desc" }, take: 50,
       include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true } }, createdBy: { select: { fullName: true } } },
+    }),
+    // Mexanik pul so'rovlari: tasdiq kutayotgan va tasdiqlangan, lekin kassa hali bermagan
+    db.mechanicRequest.findMany({
+      where: { status: { in: ["NEW", "APPROVED"] }, ...(q ? { OR: [{ docNo: like(q) }, { object: like(q) }, { vehicle: { plate: like(q) } }] } : {}) },
+      orderBy: { createdAt: "desc" }, take: 50,
+      include: { vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } } },
     }),
   ]);
 
@@ -56,10 +63,18 @@ export async function approvalsList(title: string, q?: string, filter?: string):
     status: r.status === "PRICED" ? "Tasdiq" : "To'lov", tone: r.status === "PRICED" ? "warning" : "info",
   }));
 
+  const kirimRows: HomeRow[] = kirim.map((r) => ({
+    id: `kirim:${r.id}`, title: `${r.docNo} · ${mechSubject(r)}${r.urgent ? " · shoshilinch" : ""}`,
+    subtitle: `${r.status === "NEW" ? "Mexanik so'rovi — tasdiq kutmoqda" : "Tasdiqlangan — kassa kutmoqda"} · ${r.createdBy.fullName}`,
+    right: money(Number(r.amount)),
+    status: r.status === "NEW" ? "Tasdiq" : "To'lov", tone: r.status === "NEW" ? "warning" : "info",
+  }));
+
   const tabs = [
-    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows] },
+    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows] },
     { key: "orders", label: "Bloklangan zayavka", rows: orderRows },
     { key: "supply", label: "Ta'minot", rows: supplyRows },
+    { key: "kirim", label: "Mexanik so'rovlari", rows: kirimRows },
   ];
   const tab = tabs.find((t) => t.key === filter) ?? tabs[0];
   const rows = [...tab.rows];

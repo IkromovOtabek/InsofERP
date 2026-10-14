@@ -3,15 +3,19 @@
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, ChevronLeft, ChevronRight, Eraser, User, UserCheck } from "lucide-react";
+import { CalendarDays, Camera, ChevronLeft, ChevronRight, Eraser, MapPin, User, UserCheck } from "lucide-react";
 import { saveAttendance } from "./davomat-actions";
-import { Badge, Button, FormError, Input, Select, Table, Td, Th, Tr, Empty } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, FormError, Input, Select, Table, Td, Th, Tr, Empty } from "@/components/ui";
 import {
   ATTENDANCE_MARKS, DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayTitle, hoursShort, hoursText, monthOf, shiftDay, today, workedMinutes,
 } from "@/lib/davomat";
 import { lateBy, lateText } from "@/lib/attendance-time";
+import { distanceText, mapUrl } from "@/lib/attendance-zone";
 import { cn } from "@/lib/utils";
 import type { AttendanceStatus } from "@/generated/prisma";
+
+/** Ish hududidan tashqarida qo'yilgan "keldi" / "ketdi": nuqta, zavodgacha masofa, joy rasmi (`/otdel-kadr/joy-rasmi`, huquq bo'lmasa null). */
+export type KunOutside = { lat: number; lng: number; distanceM: number | null; photo: string | null };
 
 export type KunRow = {
   id: string; fullName: string; position: string; photo: boolean;
@@ -23,6 +27,10 @@ export type KunRow = {
   source: string | null;
   /** Sahifa ochilgandagi yozuv versiyasi (`updatedAt` ISO, yozuv yo'q bo'lsa bo'sh) — boshqa joyda o'zgargan bo'lsa server ustidan yozmaydi. */
   ver: string;
+  /** Xodimga ish hududidan tashqarida belgilash ruxsati berilgan (xodim kartasi). */
+  anywhere: boolean;
+  outsideIn: KunOutside | null;
+  outsideOut: KunOutside | null;
 };
 
 type Val = { status: string; checkIn: string; checkOut: string; note: string };
@@ -63,6 +71,10 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
   const totalMin = list.reduce((n, v) => n + (v.status === "PRESENT" ? workedMinutes(v.checkIn, v.checkOut) ?? 0 : 0), 0);
   const unmarked = list.filter((v) => !v.status).length;
   const isToday = iso === today();
+  const outsiders = rows.flatMap((r) => [
+    ...(r.outsideIn ? [{ r, kind: "Keldi", time: r.checkIn, o: r.outsideIn }] : []),
+    ...(r.outsideOut ? [{ r, kind: "Ketdi", time: r.checkOut, o: r.outsideOut }] : []),
+  ]);
 
   return (
     <div className="space-y-3">
@@ -91,6 +103,36 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
         {unmarked > 0 && <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-slate-500 ring-1 ring-inset ring-slate-300">Belgilanmagan <span className="tabular">{unmarked}</span></span>}
         <span className="ml-auto text-xs text-slate-500">Jami <span className="font-semibold text-slate-900 tabular">{hoursText(totalMin)}</span></span>
       </div>
+
+      {/* ── Ish hududidan tashqarida belgilaganlar (ruxsat berilgan xodimlar): nuqta xaritada va joy rasmi ── */}
+      {outsiders.length > 0 && (
+        <Card padded={false}>
+          <div className="border-b border-slate-100 px-4 pt-4">
+            <CardHeader title="Hududdan tashqaridagilar" description="Ish hududidan tashqarida «Keldim / Ketdim» bosgan xodimlar — turgan joyi va o'zi olgan joy rasmi" icon={MapPin} />
+          </div>
+          <Table>
+            <thead><tr><Th>Xodim</Th><Th>Belgi</Th><Th>Masofa</Th><Th>Joylashuv</Th><Th>Joy rasmi</Th></tr></thead>
+            <tbody>
+              {outsiders.map(({ r, kind, time, o }) => (
+                <Tr key={`${r.id}:${kind}`}>
+                  <Td className="font-medium"><Link href={`/employees/${r.id}`} className="hover:underline">{r.fullName}</Link><div className="text-xs font-normal text-slate-500">{r.position}</div></Td>
+                  <Td>{kind} {time ?? ""}</Td>
+                  <Td><OutsideBadge o={o} /></Td>
+                  <Td><MapLink o={o} /></Td>
+                  <Td>
+                    {o.photo
+                      ? <a href={o.photo} target="_blank" rel="noreferrer" className="inline-block h-12 w-16 overflow-hidden rounded border border-slate-200 bg-slate-50" title="Joy rasmini ochish">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={o.photo} alt={`${r.fullName}: joy rasmi`} className="h-full w-full object-cover" loading="lazy" />
+                        </a>
+                      : <span className="text-slate-300">—</span>}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
 
       <form action={act}>
         <Table>
@@ -126,12 +168,21 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                         {r.photo ? <img src={`/employees/${r.id}/surat`} alt="" className="h-full w-full object-cover" /> : <User size={14} />}
                       </span>
                       <Link href={`/employees/${r.id}`} className="hover:underline">{r.fullName}</Link>
+                      {r.anywhere && <span title="Ish hududidan tashqarida ham belgilay oladi" className="text-violet-500"><MapPin size={13} aria-label="Hududdan tashqarida ruxsat" /></span>}
                     </span>
                   </Td>
                   <Td className="text-xs text-slate-500">
                     {r.position}
                     <span className="block text-[11px] text-slate-400">Smena {r.shiftStart}–{r.shiftEnd}</span>
                     {r.source && <span className="block text-[11px] text-slate-400">{r.source}</span>}
+                    {[r.outsideIn, r.outsideOut].map((o, i) => o && (
+                      <span key={i} className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-slate-500">{i ? "Ketdi" : "Keldi"}:</span>
+                        <OutsideBadge o={o} />
+                        <MapLink o={o} />
+                        {o.photo && <a href={o.photo} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:underline"><Camera size={12} /> rasm</a>}
+                      </span>
+                    ))}
                   </Td>
                   <Td>
                     <Select
@@ -198,5 +249,18 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
         Ketish vaqti kelishdan oldin bo&apos;lsa tungi smena deb hisoblanadi: 20:00 → 06:00 = 10 soat.
       </p>
     </div>
+  );
+}
+
+function OutsideBadge({ o }: { o: KunOutside }) {
+  return <Badge color="violet">Hududdan tashqarida{o.distanceM != null ? ` · ${distanceText(o.distanceM)}` : ""}</Badge>;
+}
+
+/** Nuqtani Yandex xaritada ochish (`mapUrl` — loyihada hamma joyda bir xil). */
+function MapLink({ o }: { o: KunOutside }) {
+  return (
+    <a href={mapUrl(o.lat, o.lng)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:underline">
+      <MapPin size={12} /> xarita
+    </a>
   );
 }
