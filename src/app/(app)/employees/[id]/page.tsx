@@ -122,6 +122,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
                   capacityM3: e.vehicle?.capacityM3 ? String(e.vehicle.capacityM3) : null,
                   licenseNo: e.licenseNo, licenseCategory: e.licenseCategory,
                   licenseExpiry: e.licenseExpiry ? isoDate(e.licenseExpiry) : null,
+                  workSchedule: e.workSchedule,
                 }}
                 departments={POSITIONS}
                 work={[...new Set([...work, ...drivers])]}

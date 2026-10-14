@@ -16,8 +16,9 @@ import type { AttendanceStatus } from "@/generated/prisma";
 export type KunRow = {
   id: string; fullName: string; position: string; photo: boolean;
   status: AttendanceStatus | null; checkIn: string | null; checkOut: string | null; note: string | null;
-  /** Xodim smenasining boshlanishi ("Ish grafigi", bo'lmasa 08:00) — kechikish shundan hisoblanadi. */
+  /** Xodim smenasi (Otdel kadr → Ish vaqti, bo'lmasa zavod standarti) — kechikish boshlanishidan hisoblanadi. */
   shiftStart: string;
+  shiftEnd: string;
   /** Belgini kim/qanday qo'ygan: "O'zi · yuz", "Rahbar", "Qo'lda"... (yozuv bo'lmasa null). */
   source: string | null;
   /** Sahifa ochilgandagi yozuv versiyasi (`updatedAt` ISO, yozuv yo'q bo'lsa bo'sh) — boshqa joyda o'zgargan bo'lsa server ustidan yozmaydi. */
@@ -129,6 +130,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                   </Td>
                   <Td className="text-xs text-slate-500">
                     {r.position}
+                    <span className="block text-[11px] text-slate-400">Smena {r.shiftStart}–{r.shiftEnd}</span>
                     {r.source && <span className="block text-[11px] text-slate-400">{r.source}</span>}
                   </Td>
                   <Td>

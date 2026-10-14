@@ -7,6 +7,8 @@ import { createEmployee, grantLogin, updateEmployee } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select, Textarea } from "@/components/ui";
 import { EDUCATION, LICENSE_CATEGORIES, MARITAL, VEHICLE_TYPES } from "@/lib/kadr";
 import { MoneyInput } from "@/components/money-input";
+import { parseSchedule } from "@/lib/attendance-time";
+import { DEFAULT_SHIFT } from "@/lib/davomat";
 
 export type Pos = { label: string; role: string | null };
 
@@ -282,6 +284,7 @@ export type EmployeeCard = {
   address: string | null; education: string | null; maritalStatus: string | null;
   plate: string | null; vehicleType: string | null; capacityM3: string | null;
   licenseNo: string | null; licenseCategory: string | null; licenseExpiry: string | null;
+  workSchedule: string | null;
 };
 
 /** Xodim kartasi — otdel kadr tahrirlaydi. */
@@ -299,6 +302,7 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
   const [showVehicle, setShowVehicle] = useState(drivers.includes(employee.position) || !!employee.plate);
   // Ro'yxatdan chiqarilgan eski lavozim ham tanlov sifatida qolsin, aks holda saqlashda almashib ketadi
   const workList = work.includes(employee.position) || departments.some((d) => d.label === employee.position) ? work : [employee.position, ...work];
+  const shift = parseSchedule(employee.workSchedule);
 
   return (
     <form action={action} className="space-y-3">
@@ -313,6 +317,13 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
         <Field label="Tabel №" hint="Buxgalteriya tabelidagi raqam"><Input name="tabelNo" defaultValue={employee.tabelNo ?? ""} placeholder="00401" autoComplete="off" /></Field>
         <Field label="Bo'lim / brigada"><Input name="subdivision" defaultValue={employee.subdivision ?? ""} placeholder="Brigada 1" autoComplete="off" /></Field>
         <Field label="Tarif stavka"><MoneyInput name="tariffRate" defaultValue={employee.tariffRate ?? ""} placeholder="2 500 000" /></Field>
+        <Field label="Ish boshlanishi" hint={shift.start ? "Kechikish shundan hisoblanadi" : `Bo'sh — zavod standarti ${DEFAULT_SHIFT.checkIn}`}>
+          <Input name="workStart" type="time" defaultValue={shift.start ?? ""} />
+        </Field>
+        <Field label="Ish tugashi" hint={shift.end ? "Erta ketish shundan hisoblanadi" : `Bo'sh — zavod standarti ${DEFAULT_SHIFT.checkOut}`}>
+          <Input name="workEnd" type="time" defaultValue={shift.end ?? ""} />
+        </Field>
+        <Field label="Ish grafigi" hint="Ixtiyoriy: 5/2, 2/2, tungi smena"><Input name="workNote" defaultValue={shift.note} placeholder="5/2" autoComplete="off" /></Field>
         <Field label="Ishdan bo'shagan sana" hint="To'ldirilsa xodim nofaol bo'ladi"><Input name="firedAt" type="date" defaultValue={employee.firedAt ?? ""} /></Field>
         <Field label="Ma'lumoti">
           <Select name="education" defaultValue={employee.education ?? ""}><option value="">—</option>{EDUCATION.map((e) => <option key={e} value={e}>{e}</option>)}</Select>

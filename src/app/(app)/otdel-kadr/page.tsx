@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -8,12 +8,13 @@ import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
 import { date } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import {
-  dayUtc, isoDay, monthDays, monthOf, today, validDay, validMonth, workedMinutes,
+  DEFAULT_SHIFT, dayUtc, isoDay, monthDays, monthOf, today, validDay, validMonth, workedMinutes,
 } from "@/lib/davomat";
 import { NewPositionForm, PositionRow, SyncPositionsButton } from "./position-forms";
 import { OrgChart, type OrgEmployee } from "./org-chart";
 import { DavomatKun, type KunRow } from "./davomat-kun";
-import { shiftOf, sourceLabel } from "@/lib/attendance-time";
+import { parseSchedule, shiftOf, sourceLabel } from "@/lib/attendance-time";
+import { IshVaqti, type IshVaqtiRow } from "./ish-vaqti";
 import { DavomatOy, type OyRow } from "./davomat-oy";
 import { DismissButton, RestoreButton } from "../employees/dismiss-form";
 
@@ -22,6 +23,7 @@ const TABS = [
   ["lavozimlar", "Ishchi lavozimlar", BriefcaseBusiness],
   ["bolimlar", "Bo'limlar", Building2],
   ["davomat", "Davomat", CalendarCheck],
+  ["ish-vaqti", "Ish vaqti", Clock],
   ["taqvim", "Kadr taqvimi", CakeSlice],
 ] as const;
 
@@ -117,13 +119,20 @@ export default async function OtdelKadrPage({ searchParams }: {
       const m = byEmp.get(e.id);
       return {
         id: e.id, fullName: e.fullName, position: e.position, photo: !!e.photo,
-        shiftStart: shiftOf(e.workSchedule).start,
+        shiftStart: shiftOf(e.workSchedule).start, shiftEnd: shiftOf(e.workSchedule).end,
         source: m ? sourceLabel(m.source, { face: !!m.facePhoto, markerRole: m.markedById ? markers.get(m.markedById) ?? null : null }) : null,
         status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
         ver: m?.updatedAt.toISOString() ?? "",
       } satisfies KunRow;
     });
   }
+
+  // ── Ish vaqti tabi: faol xodimlar smenasi (lavozim, keyin F.I.O. tartibida) ──
+  const ishVaqtiRows: IshVaqtiRow[] = tab === "ish-vaqti"
+    ? active
+      .map((e) => ({ id: e.id, fullName: e.fullName, position: e.position, ...parseSchedule(e.workSchedule) }))
+      .sort((a, b) => a.position.localeCompare(b.position) || a.fullName.localeCompare(b.fullName))
+    : [];
 
   const oc = new Map(orderStages.map((r) => [String(r.status), Number(r._count)]));
   const tc = new Map(tripStages.map((r) => [String(r.status), Number(r._count)]));
@@ -254,6 +263,8 @@ export default async function OtdelKadrPage({ searchParams }: {
       {davomat && (oyParam
         ? <DavomatOy ym={oyIso} rows={oyRows} />
         : <DavomatKun key={kunIso} iso={kunIso} rows={kunRows} />)}
+
+      {tab === "ish-vaqti" && <IshVaqti rows={ishVaqtiRows} std={{ start: DEFAULT_SHIFT.checkIn, end: DEFAULT_SHIFT.checkOut }} />}
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
     </div>

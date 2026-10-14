@@ -20,6 +20,47 @@ export function shiftOf(workSchedule: string | null | undefined): Shift {
   return { start: m[0] ?? DEFAULT_SHIFT.checkIn, end: m[1] ?? DEFAULT_SHIFT.checkOut };
 }
 
+const HHMM_ONE = /^([01]?\d|2[0-3])[:.]([0-5]\d)$/;
+/** "8:00" / "08.00" → "08:00"; vaqt bo'lmasa null. */
+export function normTime(v: string | null | undefined): string | null {
+  const m = HHMM_ONE.exec((v ?? "").trim());
+  return m ? `${m[1]!.padStart(2, "0")}:${m[2]}` : null;
+}
+
+/**
+ * Ish vaqti formasi uchun: "08:00–17:00, 5/2" → { start: "08:00", end: "17:00", note: "5/2" }.
+ * Vaqt yozilmagan bo'lsa start/end — null (davomat zavod standartini oladi), izohda vaqt oralig'i takrorlanmaydi.
+ */
+export function parseSchedule(workSchedule: string | null | undefined): { start: string | null; end: string | null; note: string } {
+  const ws = workSchedule ?? "";
+  const m = [...ws.matchAll(HHMM_RE)].map((x) => `${x[1]!.padStart(2, "0")}:${x[2]}`);
+  const note = ws
+    .replace(/([01]?\d|2[0-3])[:.]([0-5]\d)\s*[–—-]\s*([01]?\d|2[0-3])[:.]([0-5]\d)/g, "")
+    .replace(/^[\s,;–—-]+|[\s,;–—-]+$/g, "")
+    .replace(/\s{2,}/g, " ");
+  return { start: m[0] ?? null, end: m[1] ?? null, note };
+}
+
+/** Formadan: boshlanishi, tugashi va izoh → "08:00–17:00, 5/2" (`shiftOf` shu matndan o'qiydi). Hammasi bo'sh — null. */
+export function buildSchedule(start: string | null, end: string | null, note: string | null): string | null {
+  const range = start && end ? `${start}–${end}` : "";
+  return [range, (note ?? "").trim()].filter(Boolean).join(", ") || null;
+}
+
+/**
+ * Ish vaqti maydonlarini tekshiradi: ikkalasi birga yoziladi, bir xil bo'lmaydi.
+ * Tugashi boshlanishidan oldin bo'lsa — tungi smena (masalan 20:00–08:00), bu ruxsat.
+ */
+export function scheduleProblem(start: string | null | undefined, end: string | null | undefined): string | null {
+  const s = (start ?? "").trim(), e = (end ?? "").trim();
+  if (!s && !e) return null;
+  if (!s || !e) return "Ish vaqtining boshlanishi va tugashini birga kiriting";
+  const a = normTime(s), b = normTime(e);
+  if (!a || !b) return "Ish vaqtini SS:DD ko'rinishida kiriting (masalan 08:00)";
+  if (a === b) return "Ish vaqtining boshlanishi va tugashi bir xil bo'lmasin";
+  return null;
+}
+
 /** Kechikish (daqiqa): smena boshidan keyin kelgan bo'lsa; 8 soatdan ortiq farq — boshqa smena, hisoblanmaydi. */
 export function lateBy(checkIn: string | null | undefined, start: string): number | null {
   const a = toMinutes(checkIn), s = toMinutes(start);

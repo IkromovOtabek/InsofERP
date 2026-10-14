@@ -18,6 +18,7 @@ import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
 import type { Perms } from "@/lib/auth";
 import { loginTemplateFor } from "@/lib/perm-template";
+import { buildSchedule, normTime, scheduleProblem } from "@/lib/attendance-time";
 
 // Noto'g'ri sana (masalan "31.02.1990" yoki matn) Invalid Date bo'lib Prisma xatosi (500) berardi — forma xatosi bo'lsin
 const zDate = z.string().trim().optional().transform((v, ctx) => {
@@ -136,6 +137,10 @@ const cardSchema = schema.omit({ login: true, password: true }).extend({
   address: zOpt,
   education: zOpt,
   maritalStatus: zOpt,
+  // Ish vaqti (smena): davomatda kechikish va erta ketish shundan hisoblanadi
+  workStart: zOpt,
+  workEnd: zOpt,
+  workNote: zOpt,
 });
 
 /**
@@ -454,6 +459,13 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
     const open = await db.trip.findMany({ where: { driverId: id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
     if (open.length) return { error: `Haydovchida ochiq reys bor: ${open.map((t) => t.deliveryNoteNo).join(", ")} — avval yakunlang yoki bekor qiling` };
   }
+  // Ish vaqti faqat formada maydoni bo'lsa yoziladi — boshqa chaqiruv mavjud grafikni o'chirib yubormasin
+  let workSchedule: string | null | undefined;
+  if (fd.has("workStart")) {
+    const bad = scheduleProblem(d.workStart, d.workEnd);
+    if (bad) return { error: bad };
+    workSchedule = buildSchedule(normTime(d.workStart), normTime(d.workEnd), d.workNote);
+  }
   const after = await db.$transaction(async (tx) => {
     const extra = firing ? { vehicleId: null } : vehicleSent ? await driverData(tx, s.userId, d) : {};
     const e = await tx.employee.update({
@@ -463,6 +475,7 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
         tabelNo: d.tabelNo, subdivision: d.subdivision, tariffRate: d.tariffRate, firedAt: d.firedAt, isActive,
         passportSeries: d.passportSeries, pinfl: d.pinfl, passportIssuedBy: d.passportIssuedBy, passportIssuedAt: d.passportIssuedAt,
         address: d.address, education: d.education, maritalStatus: d.maritalStatus,
+        ...(workSchedule !== undefined ? { workSchedule } : {}),
         ...extra,
       },
     });

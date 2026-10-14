@@ -74,6 +74,26 @@ check(r.ok && n1(`select "tariffRate" from "Employee" where id='${emp}'`) === 3_
 r = await kadr.action(`${EA}#updateEmployee`, [emp, undefined, fd({ fullName: name1, position: posName, phone: empPhone, hiredAt: "garbage" })], `/employees/${emp}`);
 check(/Sana/.test(r.error ?? "") && !r.forbidden, "tahrirda noto'g'ri sana — forma xatosi", r.error);
 
+// ── 2b) Ish vaqti (smena): kadr va direktor belgilaydi; davomatda kechikish shundan hisoblanadi ──
+const ws = () => q1(`select "workSchedule" from "Employee" where id='${emp}'`);
+r = await kadr.action(`${EA}#updateEmployee`, [emp, undefined, fd({ fullName: name1, position: posName, phone: empPhone, workStart: "07:30", workEnd: "16:30", workNote: "5/2" })], `/employees/${emp}`);
+check(r.ok && ws() === "07:30–16:30, 5/2", "kartada ish vaqti 07:30–16:30, 5/2 saqlandi", r.error ?? ws());
+r = await kadr.action(`${EA}#updateEmployee`, [emp, undefined, fd({ fullName: name1, position: posName, phone: empPhone })], `/employees/${emp}`);
+check(r.ok && ws() === "07:30–16:30, 5/2", "ish vaqti maydonisiz tahrir grafikni o'chirmadi", r.error ?? ws());
+r = await kadr.action(`${EA}#updateEmployee`, [emp, undefined, fd({ fullName: name1, position: posName, phone: empPhone, workStart: "09:00", workEnd: "" })], `/employees/${emp}`);
+check(/birga/.test(r.error ?? "") && ws() === "07:30–16:30, 5/2", "faqat boshlanish vaqti — rad etildi", r.error);
+r = await kadr.action(`${OK}#setEmployeeSchedule`, [emp, undefined, fd({ start: "08:00", end: "08:00" })], "/otdel-kadr?tab=ish-vaqti");
+check(/bir xil/.test(r.error ?? ""), "boshlanish = tugash rad etildi", r.error);
+r = await kadr.action(`${OK}#setScheduleBulk`, [undefined, fd({ position: posName, start: "20:00", end: "08:00" })], "/otdel-kadr?tab=ish-vaqti");
+check(r.ok && /1 ta xodimga/.test(r.text) && ws() === "20:00–08:00, 5/2", "lavozim bo'yicha tungi smena, izoh saqlandi", r.error ?? ws());
+r = await kadr.action(`${OK}#setScheduleBulk`, [undefined, fd({ position: posName, start: "06:00", end: "15:00", onlyEmpty: "on" })], "/otdel-kadr?tab=ish-vaqti");
+check(r.ok && ws() === "20:00–08:00, 5/2", "«faqat belgilanmaganlarga» mavjud vaqtga tegmadi", r.error ?? ws());
+check(n1(`select count(*) from "AuditLog" where entity='Employee' and "entityId"='${emp}' and after::text like '%ish-vaqti-ommaviy%'`) === 1, "ommaviy belgilash auditga yozildi");
+r = await sklad.action(`${OK}#setEmployeeSchedule`, [emp, undefined, fd({ start: "10:00", end: "19:00" })], "/otdel-kadr?tab=ish-vaqti");
+check(!r.ok && ws() === "20:00–08:00, 5/2", "sklad ish vaqtini o'zgartira olmaydi");
+r = await dir.action(`${OK}#setEmployeeSchedule`, [emp, undefined, fd({ start: "", end: "", note: "" })], "/otdel-kadr?tab=ish-vaqti");
+check(r.ok && ws() === null, "direktor ish vaqtini tozaladi (zavod standarti)", r.error ?? ws());
+
 // ── 3) Davomat ──
 const today = new Date().toLocaleDateString("sv-SE");
 const att = fd({ "emp[]": emp, [`st:${emp}`]: "PRESENT", [`in:${emp}`]: "08:00", [`out:${emp}`]: "18:30", [`ver:${emp}`]: "" });
@@ -123,7 +143,7 @@ if (drv) {
 } else console.log("   info: ochiq reysli haydovchi yo'q — tekshiruv o'tkazib yuborildi");
 
 // Sahifalar
-for (const p of ["/employees", `/employees/${emp}`, `/employees/${emp}/varaqa`, `/employees/${emp}/hujjat/chop/toplam`, "/otdel-kadr", "/otdel-kadr?tab=davomat", "/otdel-kadr?tab=lavozimlar", "/otdel-kadr?tab=taqvim", "/otdel-kadr?tab=bolimlar"]) {
+for (const p of ["/employees", `/employees/${emp}`, `/employees/${emp}/varaqa`, `/employees/${emp}/hujjat/chop/toplam`, "/otdel-kadr", "/otdel-kadr?tab=davomat", "/otdel-kadr?tab=ish-vaqti", "/otdel-kadr?tab=lavozimlar", "/otdel-kadr?tab=taqvim", "/otdel-kadr?tab=bolimlar"]) {
   for (const [nm, c] of [["kadr", kadr], ["direktor", dir]] as const) { const x = await c.get(p); check(x.status === 200, `${nm} ${p} → ${x.status}`); }
 }
 summary("b-hr");

@@ -19,6 +19,7 @@ import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { parsePerms } from "@/lib/auth";
 import { applyAccessMany, describePerms, isTemplateRole, permsFromForm } from "@/lib/perm-template";
 import { Prisma, type Role } from "@/generated/prisma";
+import { buildSchedule, normTime, parseSchedule, scheduleProblem } from "@/lib/attendance-time";
 
 /** Ishchi lavozimlarni faqat otdel kadr (va direktor) yuritadi. */
 // Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
@@ -257,6 +258,75 @@ export async function toggleWorkPosition(id: string) {
     await audit(tx, s.userId, "UPDATE", "WorkPosition", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
   });
   refresh();
+}
+
+/* ───────── Ish vaqti (smena) — otdel kadr va direktor belgilaydi ─────────
+ * Xodim kartasidagi `workSchedule` ("08:00–17:00, 5/2"): davomatda kechikish va erta ketish shundan hisoblanadi
+ * (veb tabel, yuz skaneri, xodimning o'zi "Keldim", sex boshlig'i belgisi). Belgilanmagan xodimga — zavod standarti. */
+
+const scheduleSchema = z.object({ start: zOpt, end: zOpt, note: zOpt });
+
+/** Bitta xodimning ish vaqti — Otdel kadr → Ish vaqti jadvalidagi qatordan. Hammasi bo'sh — standartga qaytadi. */
+export async function setEmployeeSchedule(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await hr();
+  const r = parseForm(scheduleSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const bad = scheduleProblem(r.data.start, r.data.end);
+  if (bad) return { error: bad };
+  const value = buildSchedule(normTime(r.data.start), normTime(r.data.end), r.data.note);
+  const before = await db.employee.findUnique({ where: { id: employeeId }, select: { workSchedule: true } });
+  if (!before) return { error: "Xodim topilmadi" };
+  if ((before.workSchedule ?? null) === value) return { ok: true };
+  await db.$transaction(async (tx) => {
+    await tx.employee.update({ where: { id: employeeId }, data: { workSchedule: value } });
+    await audit(tx, s.userId, "UPDATE", "Employee", employeeId, { workSchedule: before.workSchedule }, { workSchedule: value });
+  });
+  revalidatePath("/otdel-kadr"); revalidatePath(`/employees/${employeeId}`);
+  return { ok: true };
+}
+
+const bulkScheduleSchema = z.object({
+  position: zOpt, // bo'sh — barcha faol xodimlar
+  start: zStr("Ish boshlanish vaqtini kiriting"),
+  end: zStr("Ish tugash vaqtini kiriting"),
+  note: zOpt,
+  onlyEmpty: z.string().optional().transform((v) => v === "on"),
+});
+
+/**
+ * Ish vaqtini birdan bir nechta xodimga: lavozim bo'yicha yoki barcha faol xodimlarga.
+ * "Faqat belgilanmaganlarga" — vaqti yozilgan xodim tegilmaydi. Izoh bo'sh bo'lsa xodimdagi mavjud izoh (5/2...) saqlanadi.
+ */
+export async function setScheduleBulk(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await hr();
+  const r = parseForm(bulkScheduleSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  const bad = scheduleProblem(d.start, d.end);
+  if (bad) return { error: bad };
+  const start = normTime(d.start)!, end = normTime(d.end)!;
+
+  const list = await db.employee.findMany({
+    where: { isActive: true, ...(d.position ? { position: d.position } : {}) },
+    select: { id: true, workSchedule: true },
+  });
+  const changes = list
+    .filter((e) => !d.onlyEmpty || !parseSchedule(e.workSchedule).start)
+    .map((e) => ({ id: e.id, before: e.workSchedule, after: buildSchedule(start, end, d.note ?? parseSchedule(e.workSchedule).note) }))
+    .filter((c) => (c.before ?? null) !== c.after);
+  if (changes.length === 0) return { ok: true, note: "O'zgaradigan xodim yo'q — hammasida shu vaqt turibdi" };
+
+  await db.$transaction(async (tx) => {
+    for (const c of changes) await tx.employee.update({ where: { id: c.id }, data: { workSchedule: c.after } });
+    await tx.auditLog.createMany({
+      data: changes.map((c) => ({
+        userId: s.userId, action: "UPDATE" as const, entity: "Employee", entityId: c.id,
+        before: { workSchedule: c.before }, after: { workSchedule: c.after, via: "ish-vaqti-ommaviy" },
+      })),
+    });
+  });
+  revalidatePath("/otdel-kadr"); revalidatePath("/employees");
+  return { ok: true, note: `${changes.length} ta xodimga ish vaqti ${start}–${end} belgilandi` };
 }
 
 /** Hech kimga berilmagan lavozimni butunlay o'chirish. */
