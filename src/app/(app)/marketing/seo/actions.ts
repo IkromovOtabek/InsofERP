@@ -12,10 +12,13 @@ const optInt = z.string().trim().transform((v) => (v === "" ? null : Number(v)))
 
 /** Chastota (Wordstat) va pozitsiyalar (Webmaster / Search Console) — haftalik yozuv. */
 export async function savePositions(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  await requireAction("marketing", "seo");
+  const s = await requireAction("marketing", "seo");
   const r = parseForm(z.object({ frequency: optInt, posYandex: optInt, posGoogle: optInt }), fd);
   if ("error" in r) return { error: r.error };
-  await db.seoKeyword.update({ where: { id }, data: { ...r.data, checkedAt: new Date() } });
+  const before = await db.seoKeyword.findUnique({ where: { id } });
+  if (!before) return { error: "So'rov topilmadi — sahifani yangilang" };
+  const after = await db.seoKeyword.update({ where: { id }, data: { ...r.data, checkedAt: new Date() } });
+  await audit(db, s.userId, "UPDATE", "SeoKeyword", id, before, after);
   revalidatePath("/marketing/seo");
   return { ok: true };
 }

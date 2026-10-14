@@ -9,6 +9,7 @@ import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
 import { canDo } from "@/lib/permissions";
+import { canView } from "@/lib/nav";
 import type { Session } from "@/lib/auth";
 import { campaignStats } from "@/lib/marketing";
 
@@ -38,6 +39,8 @@ const CONTENT_STATUS = ["IDEA", "SCRIPT", "FILMED", "EDITING", "PUBLISHED", "CAN
 
 export function marketingTools(s: Session) {
   const canWriteContent = canDo(s, "marketing", "content");
+  // Arizalar — Sotuv moduli ma'lumoti: direktor yopib qo'ygan bo'lsa agent ham ko'rsatmaydi
+  const canSeeLeads = canView(s, "sales");
 
   const company = betaZodTool({
     name: "get_company",
@@ -58,27 +61,33 @@ export function marketingTools(s: Session) {
 
   const overview = betaZodTool({
     name: "get_overview",
-    description: "Oxirgi N kun: arizalar holat va manba (utm) bo'yicha, mijozga aylanganlar, reklama xarajati va kliklar, CPL, kontent holati.",
+    description: "Oxirgi N kun: arizalar holat va manba (utm) bo'yicha, kontent holati. Reklama (xarajat, klik, CPL) — butun davr bo'yicha, ro'yxatdagi kampaniyalar; kampaniya kesimi uchun list_campaigns.",
     inputSchema: z.object({ days: z.number().int().min(1).max(365).describe("Oxirgi necha kun, masalan 30") }),
     run: async ({ days }) => {
       const from = since(days);
       const [byStatus, bySource, ads, content] = await Promise.all([
-        db.lead.groupBy({ by: ["status"], where: { createdAt: { gte: from } }, _count: true }),
-        db.lead.groupBy({ by: ["utmSource", "utmCampaign"], where: { createdAt: { gte: from } }, _count: true }),
-        db.adCampaign.aggregate({ _sum: { spend: true, clicks: true, impressions: true } }),
+        canSeeLeads ? db.lead.groupBy({ by: ["status"], where: { createdAt: { gte: from } }, _count: true }) : Promise.resolve([]),
+        canSeeLeads ? db.lead.groupBy({ by: ["utmSource", "utmCampaign"], where: { createdAt: { gte: from } }, _count: true }) : Promise.resolve([]),
+        db.adCampaign.findMany({ select: { spend: true, clicks: true, impressions: true, utmCampaign: true } }),
         db.marketingContent.groupBy({ by: ["status"], _count: true, _sum: { views: true, leads: true } }),
       ]);
-      const leads = byStatus.reduce((a, x) => a + x._count, 0);
-      const spend = Number(ads._sum.spend ?? 0);
+      // CPL: xarajat va arizalar bir xil davr (butun davr) va bir xil kampaniyalar bo'yicha
+      const keys = ads.map((c) => c.utmCampaign).filter((k): k is string => !!k);
+      const adLeadsAllTime = keys.length ? await db.lead.count({ where: { utmCampaign: { in: keys } } }) : 0;
+      const spend = ads.reduce((a, c) => a + Number(c.spend), 0);
       return json({
         period_days: days,
-        leads_total: leads,
+        leads_visible: canSeeLeads,
+        leads_total: byStatus.reduce((a, x) => a + x._count, 0),
         leads_by_status: Object.fromEntries(byStatus.map((x) => [x.status, x._count])),
         leads_by_source: bySource.map((x) => ({ utm_source: x.utmSource, utm_campaign: x.utmCampaign, count: x._count })),
-        ads_spend_total_uzs: spend,
-        ads_clicks_total: ads._sum.clicks ?? 0,
-        ads_impressions_total: ads._sum.impressions ?? 0,
-        cpl_uzs: leads ? Math.round(spend / leads) : null,
+        ads_all_time: {
+          spend_uzs: spend,
+          clicks: ads.reduce((a, c) => a + c.clicks, 0),
+          impressions: ads.reduce((a, c) => a + c.impressions, 0),
+          leads_from_campaigns: adLeadsAllTime,
+          cpl_uzs: adLeadsAllTime ? Math.round(spend / adLeadsAllTime) : null,
+        },
         content_by_status: content.map((x) => ({ status: x.status, count: x._count, views: x._sum.views, leads: x._sum.leads })),
       });
     },
@@ -93,6 +102,7 @@ export function marketingTools(s: Session) {
       limit: z.number().int().min(1).max(100).optional(),
     }),
     run: async ({ days, status, limit }) => {
+      if (!canSeeLeads) return "Xato: foydalanuvchida Sotuv (arizalar) bo'limini ko'rish ruxsati yo'q.";
       const rows = await db.lead.findMany({
         where: { createdAt: { gte: since(days) }, ...(status ? { status } : {}) },
         orderBy: { createdAt: "desc" },

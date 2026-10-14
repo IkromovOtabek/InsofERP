@@ -9,6 +9,7 @@ import { unitLabel } from "@/lib/unit";
 export type LeadProduct = { id: string; name: string; unit: string };
 
 const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
+const UTM_STORE = "insof-utm";
 
 const field =
   "h-12 w-full rounded-xl bg-beton-50 px-4 text-[15px] text-beton-900 ring-1 ring-beton-200 transition-shadow placeholder:text-beton-400 focus:ring-2 focus:ring-insof-500 focus:outline-none";
@@ -22,12 +23,24 @@ export function LeadForm({ products }: { products: LeadProduct[] }) {
   const nameRef = useRef<HTMLInputElement>(null);
   // Reklama manbai: manzildagi UTM va sahifa — arizaga qo'shib yuboriladi (Marketing > Reklama hisobi uchun)
   const [utm, setUtm] = useState<Record<string, string>>({});
+  // Mehmon reklamadan bosh sahifaga kirib, keyin mahsulot sahifasida ariza qoldirsa ham manba yo'qolmasin —
+  // manzildagi UTM sessiya davomida saqlanadi (yangi UTM kelsa, eskisining o'rnini oladi)
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    const v: Record<string, string> = { landingPage: window.location.pathname };
+    let saved: Record<string, string> = {};
+    const fromUrl: Record<string, string> = {};
     for (const k of UTM_KEYS) {
       const x = q.get(k);
-      if (x) v[k] = x.slice(0, 120);
+      if (x) fromUrl[k] = x.slice(0, 120);
+    }
+    try {
+      if (Object.keys(fromUrl).length) sessionStorage.setItem(UTM_STORE, JSON.stringify(fromUrl));
+      else saved = JSON.parse(sessionStorage.getItem(UTM_STORE) || "{}") as Record<string, string>;
+    } catch { /* xotira yopiq (maxfiy rejim) — faqat manzildagisi */ }
+    const v: Record<string, string> = { landingPage: window.location.pathname };
+    for (const k of UTM_KEYS) {
+      const x = fromUrl[k] ?? (typeof saved[k] === "string" ? saved[k].slice(0, 120) : undefined);
+      if (x) v[k] = x;
     }
     setUtm(v);
   }, []);

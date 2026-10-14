@@ -17,8 +17,8 @@ function inline(text: string, key = 0): ReactNode[] {
     else if (m[3]) out.push(<code key={k} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[13px]">{m[3]}</code>);
     else if (m[4]) {
       const href = m[5]!;
-      const safe = /^(https?:\/\/|\/)/.test(href) ? href : "#";
-      out.push(<a key={k} href={safe} target={safe.startsWith("/") ? undefined : "_blank"} rel="noreferrer" className="text-blue-700 underline">{m[4]}</a>);
+      const safe = /^(https?:\/\/|\/(?!\/))/.test(href) ? href : "#";
+      out.push(<a key={k} href={safe} target={/^\/(?!\/)/.test(safe) ? undefined : "_blank"} rel="noreferrer" className="text-blue-700 underline">{m[4]}</a>);
     } else if (m[6] || m[7]) out.push(<em key={k}>{m[6] ?? m[7]}</em>);
     last = m.index + m[0].length;
   }

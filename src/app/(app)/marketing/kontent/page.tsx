@@ -62,6 +62,17 @@ export default async function ContentPlanPage() {
           );
         })}
       </div>
+
+      {cancelled > 0 && (
+        <details className="mt-4 rounded-xl bg-slate-100/80 p-3">
+          <summary className="cursor-pointer text-sm text-slate-600">Bekor qilinganlar ({cancelled})</summary>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {items.filter((i) => i.status === "CANCELLED").map((i) => (
+              <li key={i.id}><Link href={`/marketing/kontent/${i.id}`} className="inline-block rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:border-slate-400">{i.title}</Link></li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarRange, Inbox, Megaphone, Search, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
+import { canView } from "@/lib/nav";
 import { date, dateTime, fmtNum, money, pct } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { CONTENT_STATUS, CONTENT_TYPE, campaignStats, ratio } from "@/lib/marketing";
@@ -9,7 +10,9 @@ import { Badge, Card, CardHeader, Empty, PageHeader, StatCard } from "@/componen
 
 /** Marketing — bosh ko'rinish: joriy oy lidlari, reklama xarajati va natijasi, yaqin nashrlar. */
 export default async function MarketingHome() {
-  await requirePage("/marketing");
+  const s = await requirePage("/marketing");
+  // Arizalar (telefon raqami bilan) — Sotuv moduli ma'lumoti: direktor uni yopib qo'ygan bo'lsa ko'rsatilmaydi
+  const seeLeads = canView(s, "sales");
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
   const since30 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
@@ -18,18 +21,21 @@ export default async function MarketingHome() {
   const [leadsMonth, convertedMonth, ads, stats, content, upcoming, recent, bySource, last30] = await Promise.all([
     db.lead.count({ where: { createdAt: { gte: from } } }),
     db.lead.count({ where: { createdAt: { gte: from }, status: "CONVERTED" } }),
-    db.adCampaign.aggregate({ _sum: { spend: true, clicks: true } }),
+    db.adCampaign.findMany({ select: { spend: true, clicks: true, utmCampaign: true } }),
     campaignStats(),
     db.marketingContent.groupBy({ by: ["status"], where: { publishDate: { gte: from } }, _count: true }),
     db.marketingContent.findMany({ where: { publishDate: { gte: today }, status: { notIn: ["PUBLISHED", "CANCELLED"] } }, orderBy: { publishDate: "asc" }, take: 5 }),
-    db.lead.findMany({ orderBy: { createdAt: "desc" }, take: 6, select: { id: true, name: true, phone: true, utmSource: true, utmCampaign: true, createdAt: true, status: true } }),
+    seeLeads ? db.lead.findMany({ orderBy: { createdAt: "desc" }, take: 6, select: { id: true, name: true, phone: true, utmSource: true, utmCampaign: true, createdAt: true, status: true } }) : Promise.resolve([]),
     db.lead.groupBy({ by: ["utmSource"], where: { createdAt: { gte: from } }, _count: true }),
     db.lead.findMany({ where: { createdAt: { gte: since30 } }, select: { createdAt: true } }),
   ]);
 
-  const spend = Number(ads._sum.spend ?? 0);
-  const utmLeads = [...stats.values()].reduce((a, s) => a + s.leads, 0);
-  const revenue = [...stats.values()].reduce((a, s) => a + s.revenue, 0);
+  // Reklama ko'rsatkichlari — faqat ro'yxatdagi kampaniyalar (bepul bio/Reels havolalari kirmaydi), butun davr; «Reklama» sahifasi bilan bir xil
+  const spend = ads.reduce((a, c) => a + Number(c.spend), 0);
+  const clicks = ads.reduce((a, c) => a + c.clicks, 0);
+  const keys = ads.map((c) => c.utmCampaign).filter((k): k is string => !!k);
+  const utmLeads = keys.reduce((a, k) => a + (stats.get(k)?.leads ?? 0), 0);
+  const revenue = keys.reduce((a, k) => a + (stats.get(k)?.revenue ?? 0), 0);
   const published = content.find((c) => c.status === "PUBLISHED")?._count ?? 0;
   const planned = content.filter((c) => c.status !== "CANCELLED").reduce((a, c) => a + c._count, 0);
   const romi = ratio(revenue - spend, spend);
@@ -49,8 +55,8 @@ export default async function MarketingHome() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Arizalar (oy)" value={fmtNum(leadsMonth)} hint={`Mijoz bo'ldi: ${convertedMonth}`} icon={Inbox} href="/leads" />
-        <StatCard label="Reklama xarajati" value={money(spend)} hint={`Klik: ${fmtNum(ads._sum.clicks ?? 0)}`} icon={Wallet} href="/marketing/reklama" />
-        <StatCard label="Lid narxi (CPL)" value={utmLeads ? money(spend / utmLeads) : "—"} hint={`ROMI: ${romi === null ? "—" : pct(romi)}`} icon={Megaphone} tone="info" />
+        <StatCard label="Reklama xarajati" value={money(spend)} hint={`Jami davr · klik: ${fmtNum(clicks)}`} icon={Wallet} href="/marketing/reklama" />
+        <StatCard label="Lid narxi (CPL)" value={utmLeads ? money(spend / utmLeads) : "—"} hint={`Jami davr · ROMI: ${romi === null ? "—" : pct(romi)}`} icon={Megaphone} tone="info" />
         <StatCard label="Kontent (oy)" value={`${published} / ${planned}`} hint="chiqdi / rejada" icon={CalendarRange} href="/marketing/kontent" />
       </div>
 
@@ -83,7 +89,7 @@ export default async function MarketingHome() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card padded={false}>
+        {seeLeads && <Card padded={false}>
           <div className="p-4 pb-0"><CardHeader title="Oxirgi arizalar" action={<Link href="/leads" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">Sayt arizalari <ArrowRight size={14} /></Link>} /></div>
           {recent.length === 0 ? <Empty text="Ariza yo'q" /> : (
             <ul className="divide-y divide-slate-100">
@@ -100,7 +106,7 @@ export default async function MarketingHome() {
               ))}
             </ul>
           )}
-        </Card>
+        </Card>}
         <Card padded={false}>
           <div className="p-4 pb-0"><CardHeader title="Yaqin nashrlar" action={<Link href="/marketing/kontent" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">Kontent reja <ArrowRight size={14} /></Link>} /></div>
           {upcoming.length === 0 ? <Empty text="Rejada nashr yo'q" icon={Search} /> : (
