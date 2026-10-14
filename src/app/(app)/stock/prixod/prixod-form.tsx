@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button, Card, Field, FormActions, FormError, Input, LinkButton, Select } from "@/components/ui";
 import { MaterialField, type MaterialGroup, type MaterialRow } from "@/components/material-picker";
 import { MoneyInput } from "@/components/money-input";
+import { RecipientAdd, SupplierAdd, WithAdd } from "@/components/quick-add";
 import { createPrixod } from "./actions";
 
 type Opt = { id: string; name: string };
@@ -38,16 +39,18 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * «Kirim» formasi (avval «Приход») — foydalanuvchi Excel jurnalidagi ustunlar bilan. Matn o'zbekcha, «Рус» rejimida lug'atdan.
  * Narx QQS'siz; QQS (12% yoki 6%, qatorda tanlanadi) faqat tovarga (naqd pul — 0), «Yetkazib berish» QQS'siz Umumiy/Jami summaga va tannarxga qo'shiladi.
  * `clientToken` — ikki marta bosilgan «Kirimni saqlash» ikkinchi kirim ochmaydi.
+ * «Ta'minotchi» (xaridni qilgan snabjenets) alohida maydon emas — «Kimdan» bilan adashtirilardi; Snabjeniye o'zi
+ * kiritganda u avtomatik yoziladi (`defaultBuyerId`). «Kimdan» va «Kimga» ichidagi «+» — ro'yxatda yo'qini shu yerda qo'shish.
  */
-export function PrixodForm({ today, suppliers, warehouses, materials, groups = [], canCreate = false, recipients, buyers, defaultBuyerId, accounts, clientToken, companyVatPayer = true }: {
+export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, recipients: initRecipients, defaultBuyerId, accounts, clientToken, companyVatPayer = true }: {
   today: string;
   suppliers: SupplierOpt[];
   warehouses: Opt[];
   materials: MaterialRow[];
   groups?: MaterialGroup[];
   canCreate?: boolean;
+  canAddSupplier?: boolean;
   recipients: Opt[];
-  buyers: Opt[];
   defaultBuyerId: string;
   accounts: Account[];
   clientToken: string;
@@ -57,7 +60,10 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
   // <form action> o'rniga qo'lda yuboriladi: React 19 action tugagach formani reset qiladi — server xato qaytarganda
   // narx/dostavka (MoneyInput), sana, sklad va boshqa maydonlar bo'shab qolardi. Muvaffaqiyatda server redirect qiladi.
   const [, startTransition] = useTransition();
+  const [suppliers, setSuppliers] = useState(initSuppliers);
+  const [recipients, setRecipients] = useState(initRecipients);
   const [supplierId, setSupplierId] = useState("");
+  const [recipientId, setRecipientId] = useState("");
   const [payment, setPayment] = useState<Payment>("BANK");
   const [accountId, setAccountId] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow(1)]);
@@ -99,15 +105,21 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
         <FormError error={state?.error} />
         <input type="hidden" name="clientToken" value={clientToken} />
         {warehouses.length === 1 && <input type="hidden" name="warehouseId" value={warehouses[0].id} />}
+        {defaultBuyerId && <input type="hidden" name="buyerId" value={defaultBuyerId} />}
 
         {/* Hujjat rekvizitlari — Excel jurnali ustunlari */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Sana *"><Input name="date" type="date" defaultValue={today} max={today} required /></Field>
-          <Field label="Kimdan *" hint={supplierId && !supVat ? "Yetkazuvchi QQS to'lovchisi emas — QQS 0" : undefined}>
-            <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
-              <option value="" disabled>Yetkazuvchini tanlang…</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.vatPayer ? "" : " (QQS'siz)"}</option>)}
-            </Select>
+          <Field label="Kimdan (yetkazuvchi) *" hint={supplierId && !supVat ? "Yetkazuvchi QQS to'lovchisi emas — QQS 0" : undefined}>
+            <WithAdd add={canAddSupplier && <SupplierAdd onCreated={(x) => {
+              setSuppliers((l) => [...l, { id: x.id, name: x.name, vatPayer: x.vatPayer ?? true }].sort((a, b) => a.name.localeCompare(b.name)));
+              setSupplierId(x.id);
+            }} />}>
+              <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
+                <option value="" disabled>Yetkazuvchini tanlang…</option>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.vatPayer ? "" : " (QQS'siz)"}</option>)}
+              </Select>
+            </WithAdd>
           </Field>
           {warehouses.length > 1 && (
             <Field label="Sklad *">
@@ -127,18 +139,14 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
           </Field>
           <Field label="TTN"><Input name="waybillNo" placeholder="Nakladnoy №" autoComplete="off" maxLength={60} /></Field>
           <Field label="Kimga">
-            <Select name="recipientId" defaultValue="">
-              <option value="">— (sklad)</option>
-              {recipients.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Select>
+            <WithAdd add={<RecipientAdd onCreated={(x) => { setRecipients((l) => [...l, { id: x.id, name: x.name }]); setRecipientId(x.id); }} />}>
+              <Select name="recipientId" value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
+                <option value="">— (sklad)</option>
+                {recipients.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </Select>
+            </WithAdd>
           </Field>
           <Field label="Manzil"><Input name="address" placeholder="Qayerdan / qayerga yetkazildi" autoComplete="off" maxLength={300} /></Field>
-          <Field label="Ta'minotchi">
-            <Select name="buyerId" defaultValue={defaultBuyerId}>
-              <option value="">—</option>
-              {buyers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </Select>
-          </Field>
           <Field label="Maqsad" className="sm:col-span-2"><Input name="purpose" placeholder="Nima uchun sotib olindi" autoComplete="off" maxLength={300} /></Field>
           <Field label="Izoh" className="sm:col-span-2"><Input name="note" placeholder="Holati, qo'shimcha ma'lumot…" autoComplete="off" maxLength={1000} /></Field>
         </div>

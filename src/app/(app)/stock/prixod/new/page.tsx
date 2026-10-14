@@ -14,7 +14,7 @@ export default async function NewPrixodPage() {
   const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   // Rol mos, lekin direktor bu amalni olib qo'ygan bo'lsa — forma ochilmaydi (saqlashda baribir rad bo'lardi)
   if (!canDo(s, "stock", "receipt")) redirect("/stock/prixod");
-  const [suppliers, warehouses, materials, groups, accounts, balances, recipients, buyers, vatPayer] = await Promise.all([
+  const [suppliers, warehouses, materials, groups, accounts, balances, recipients, vatPayer] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, vatPayer: true } }),
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true } }),
@@ -23,7 +23,6 @@ export default async function NewPrixodPage() {
     // Qoldiq — spravochnikda ko'rinadi
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     db.stockRecipient.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
-    db.user.findMany({ where: { isActive: true, role: "PROCUREMENT" }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true } }),
     companyVatPayer(),
   ]);
   // Tanlanganda qatorga tushadigan narx: «Dona narxi» (Snabjeniye belgilagan), bo'lmasa o'rtacha tannarx
@@ -39,9 +38,10 @@ export default async function NewPrixodPage() {
         materials={materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, price: prices.get(m.id) ?? 0, balance: bal.get(m.id) ?? 0 }))}
         groups={groups}
         canCreate={canEditMaterials(s.role)}
+        canAddSupplier={canDo(s, "stock", "suppliers")}
         recipients={recipients}
-        buyers={buyers.map((b) => ({ id: b.id, name: b.fullName }))}
-        defaultBuyerId={s.role === "PROCUREMENT" && buyers.some((b) => b.id === s.userId) ? s.userId : ""}
+        // «Ta'minotchi» (xaridni qilgan snabjenets) — formada alohida maydon yo'q: Snabjeniye kiritsa o'zi yoziladi
+        defaultBuyerId={s.role === "PROCUREMENT" ? s.userId : ""}
         accounts={accounts}
         clientToken={crypto.randomUUID()}
         companyVatPayer={vatPayer}

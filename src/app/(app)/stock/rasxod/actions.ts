@@ -3,11 +3,15 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { cancelIssue, issueStock, IssueError, parseIssueTarget } from "@/lib/stock-issue";
 import { upsertRecipient, setRecipientActive } from "@/lib/stock-recipients";
 import { isoDate } from "@/lib/format";
+import { num, str } from "@/lib/excel";
+import { resolveMaterials } from "@/lib/import-materials";
+import { toMaterialUnit } from "@/lib/unit";
 
 /**
  * Sklad → «Chiqim» (avval «Расход»). Xato matnlari o'zbekcha, «Рус» rejimida lug'atdan.
@@ -56,12 +60,69 @@ export async function createRasxod(_prev: ActionState, fd: FormData): Promise<Ac
     throw e;
   }
   refresh();
-  // Davr standart — joriy oy: o'tgan oyga yozilgan chiqim ham ro'yxatda ko'rinsin
+  redirect(savedUrl(res.count, d.date));
+}
+
+/** Saqlangandan keyin jurnal. Davr standart — joriy oy: o'tgan oyga yozilgan chiqim ham ro'yxatda ko'rinsin. */
+function savedUrl(count: number, date: string | null | undefined) {
   const now = new Date();
   const monthStart = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const q = new URLSearchParams({ saved: String(res.count) });
-  if (d.date && d.date < monthStart) q.set("from", d.date);
-  redirect(`/stock/rasxod?${q.toString()}`);
+  const q = new URLSearchParams({ saved: String(count) });
+  if (date && date < monthStart) q.set("from", date);
+  return `/stock/rasxod?${q.toString()}`;
+}
+
+const importSchema = z.object({
+  warehouseId: zStr("Skladni tanlang"),
+  to: zStr("Kimga berilishini tanlang (Kimga)"),
+  date: zOpt,
+  note: zOpt,
+  clientToken: zOpt,
+  rows: z.string(),
+});
+type ImportRow = { material?: unknown; code?: unknown; unit?: unknown; qty?: unknown };
+
+/**
+ * Excel'dan chiqim: fayldagi qatorlar (nomi/kodi, miqdor, birlik) bitta chiqim hujjati bo'lib yoziladi — qo'lda chiqim bilan
+ * bitta qoida (`issueStock`: qoldiq qulf ostida tekshiriladi, yetmasa hech narsa yozilmaydi). Yangi xomashyo yaratilmaydi:
+ * skladda yo'q narsani berib bo'lmaydi. Birlik farq qilsa faqat kg ↔ t o'giriladi.
+ */
+export async function importRasxodFromExcel(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("stock", "issue");
+  const r = parseForm(importSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  const to = parseIssueTarget(d.to);
+  if (!to) return { error: "Kimga berilishini tanlang (Kimga)" };
+  let rows: ImportRow[];
+  try { rows = JSON.parse(d.rows); } catch { return { error: "Excel ma'lumotlari o'qilmadi" }; }
+  if (!Array.isArray(rows)) return { error: "Excel ma'lumotlari o'qilmadi" };
+  rows = rows.filter((x) => str(x.material) || str(x.code));
+  if (!rows.length) return { error: "Faylda qator yo'q" };
+  for (const [i, x] of rows.entries()) {
+    if (!(num(x.qty) > 0)) return { error: `${i + 1}-qator (${str(x.material) || str(x.code)}): miqdor 0 dan katta raqam bo'lsin` };
+  }
+  // Faqat qidiruv (createMissing = false) — tranzaksiya ichida, chunki `resolveMaterials` tx kutadi
+  const names = rows.map((x) => ({ name: str(x.material) || str(x.code), code: str(x.code), unit: str(x.unit) }));
+  const { result, missing } = await db.$transaction((tx) => resolveMaterials(tx, names, false));
+  if (missing.length) return { error: `Spravochnikda yo'q: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "…" : ""} — nomini yoki kodini tuzating` };
+  const items: { materialId: string; qty: number }[] = [];
+  for (const [i, x] of rows.entries()) {
+    const m = result.get(names[i].name.toLowerCase().trim())!;
+    const conv = toMaterialUnit(num(x.qty), 0, x.unit, m.unit);
+    if (!conv) return { error: `«${m.name}»: faylda birlik «${str(x.unit)}», spravochnikda «${m.unit}» — o'girib bo'lmaydi. Faylni tuzating` };
+    items.push({ materialId: m.id, qty: conv.qty });
+  }
+
+  let res;
+  try {
+    res = await issueStock({ warehouseId: d.warehouseId, date: d.date, to, items, note: d.note ?? "Excel'dan", clientToken: d.clientToken }, { userId: s.userId, role: s.role });
+  } catch (e) {
+    if (e instanceof IssueError) return { error: e.message };
+    throw e;
+  }
+  refresh();
+  redirect(savedUrl(res.count, d.date));
 }
 
 /**

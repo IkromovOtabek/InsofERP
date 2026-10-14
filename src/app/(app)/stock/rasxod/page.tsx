@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
+import { FileUp, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -96,6 +96,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
         action={
           <>
             <ExcelButton file={`Chiqim ${period.fromStr} — ${period.toStr}`} sheets={[{ name: "Chiqim", rows: excelRows }]} />
+            {canIssue && <LinkButton href="/stock/rasxod/import" variant="secondary"><FileUp size={16} /> Excel'dan yuklash</LinkButton>}
             {canIssue && <LinkButton href="/stock/rasxod/new"><Plus size={16} /> Yangi chiqim</LinkButton>}
           </>
         }

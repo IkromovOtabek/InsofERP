@@ -161,7 +161,9 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
     const read = () => {
       const sup = form.elements.namedItem(vatCols.supplierName) as HTMLSelectElement | null;
       const inc = form.elements.namedItem(vatCols.inclusiveName) as HTMLInputElement | null;
-      setVatForm({ rate: sup?.value ? vatCols.supplierRates[sup.value] ?? 12 : 12, inclusive: !!inc?.checked });
+      // Forma ichida «+» bilan hozirgina qo'shilgan yetkazuvchi `supplierRates` da yo'q — stavka tanlovning `data-vat-rate` sidan
+      const own = sup?.selectedOptions?.[0]?.dataset.vatRate;
+      setVatForm({ rate: own ? Number(own) : sup?.value ? vatCols.supplierRates[sup.value] ?? 12 : 12, inclusive: !!inc?.checked });
     };
     read();
     form.addEventListener("change", read);

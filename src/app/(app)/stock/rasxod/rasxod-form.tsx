@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { AlertTriangle, PackageMinus, Plus, Trash2 } from "lucide-react";
 import { createRasxod } from "./actions";
 import { MaterialField, type MaterialGroup } from "@/components/material-picker";
+import { TargetSelect } from "./target-select";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
@@ -32,6 +32,7 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * yakuniy tekshiruv serverda, qulf ostida (`issueStock`).
  * Yuborish — `onSubmit` + `startTransition(() => action(formData))`: `<form action>` bo'lsa React 19 xato bilan qaytgan
  * action'dan keyin formani reset qiladi va boshqariladigan Sklad / Kimga select'lari ko'rinishda standartga qaytib qoladi.
+ * «Kimga» ichidagi «+» — yangi oluvchini shu yerda qo'shib, darhol tanlash (brigadalar — Brigadalar bo'limida).
  */
 export function RasxodForm({ warehouses, recipients, brigades, materials, groups, balances, clientToken, today, minDate, defaultTo }: {
   warehouses: Opt[]; recipients: Opt[]; brigades: Opt[]; materials: Mat[]; groups: MaterialGroup[];
@@ -92,22 +93,7 @@ export function RasxodForm({ warehouses, recipients, brigades, materials, groups
           </Select>
         </Field>
         <Field label="Kimga *">
-          <Select name="to" value={to} onChange={(e) => setTo(e.target.value)} required aria-invalid={!to && state?.error ? true : undefined}>
-            <option value="">— tanlang —</option>
-            {recipients.length > 0 && (
-              <optgroup label="Oluvchilar">
-                {recipients.map((r) => <option key={r.id} value={`r:${r.id}`}>{r.name}</option>)}
-              </optgroup>
-            )}
-            {brigades.length > 0 && (
-              <optgroup label="Brigadalar">
-                {brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
-              </optgroup>
-            )}
-          </Select>
-          <Link href="/stock/rasxod#recipients" className="mt-1 inline-block text-xs text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline">
-            Ro'yxatda yo'qmi? Oluvchi qo'shing
-          </Link>
+          <TargetSelect recipients={recipients} brigades={brigades} value={to} onChange={setTo} invalid={!to && !!state?.error} />
         </Field>
       </div>
 

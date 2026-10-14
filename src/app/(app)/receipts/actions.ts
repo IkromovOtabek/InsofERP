@@ -11,6 +11,7 @@ import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "
 import { num, numMoney, str } from "@/lib/excel";
 import { resolveMaterials } from "@/lib/import-materials";
 import { toMaterialUnit } from "@/lib/unit";
+import { isoDate } from "@/lib/format";
 import { cancelReceipt } from "@/lib/storno";
 import { Prisma } from "@/generated/prisma";
 import { companyVatPayer, supplierVatRate, vatLine, type VatRate } from "@/lib/receipt-vat";
@@ -165,7 +166,14 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
     return { error: e.message };
   });
   if (typeof out === "object") return out;
-  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/suppliers");
+  revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/stock/prixod"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/suppliers");
+  // Sklad → Kirim → «Excel orqali» dan kelgan bo'lsa — qo'lda kirimdagidek jurnalga «Kirim saqlandi» bilan qaytadi
+  if (fd.get("back") === "prixod") {
+    const rec = await db.goodsReceipt.findUnique({ where: { id: out }, select: { docNo: true } });
+    const today = isoDate();
+    const qs = new URLSearchParams({ from: `${d.date.slice(0, 7)}-01`, to: d.date > today ? d.date : today, saved: rec?.docNo ?? "" });
+    redirect(`/stock/prixod?${qs.toString()}`);
+  }
   redirect(`/receipts/${out}`);
 }
 
