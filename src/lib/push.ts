@@ -44,7 +44,21 @@ export type PushMessage = {
   channel?: PushChannel;
 };
 
-type ExpoTicket = { status: "ok" | "error"; details?: { error?: string } };
+type ExpoTicket = { status: "ok" | "error"; message?: string; details?: { error?: string } };
+
+/**
+ * Expo xatosi (kalit yo'q — `InvalidCredentials`, juda ko'p so'rov va h.k.) jurnalga yoziladi — aks holda
+ * push umuman ketmasa ham sezilmasdi (2026-10-14: iOS uchun APNs kaliti Expo'da yo'q edi, xabar faqat
+ * ilova ichidagi ro'yxatda turardi). Bir xil xato soatiga bir marta yoziladi — jurnal to'lib ketmasin.
+ */
+const warned = new Map<string, number>();
+function warnTicket(t: ExpoTicket) {
+  const key = t.details?.error ?? t.message ?? "unknown";
+  const now = Date.now();
+  if ((warned.get(key) ?? 0) > now - 3600_000) return;
+  warned.set(key, now);
+  console.warn(`[push] Expo rad etdi: ${key} — ${t.message ?? ""}`);
+}
 
 /**
  * Tokenlarga xabar yuborish.
@@ -88,7 +102,9 @@ export async function sendPush(tokens: string[], msg: PushMessage): Promise<void
       });
       if (!res.ok) { console.warn("[push] Expo", res.status); continue; }
       const j = (await res.json()) as { data?: ExpoTicket[] };
-      const dead = (j.data ?? [])
+      const tickets = j.data ?? [];
+      for (const t of tickets) if (t.status === "error" && t.details?.error !== "DeviceNotRegistered") warnTicket(t);
+      const dead = tickets
         .map((t, k) => (t.status === "error" && t.details?.error === "DeviceNotRegistered" ? part[k] : null))
         .filter((t): t is string => !!t);
       if (dead.length) await db.mobileDevice.deleteMany({ where: { expoPushToken: { in: dead } } });
