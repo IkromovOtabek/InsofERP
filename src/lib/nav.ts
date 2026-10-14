@@ -31,13 +31,13 @@ export const NAV: NavItem[] = [
   // Insof ECO ilovasidagi do'kon: qaysi mahsulot ko'rinadi, surat/narx, ilovadan tushgan buyurtmalar
   { href: "/e-commerce",  label: "E-commerce",         roles: ["SALES"], group: "Sotuv" },
   // Marketing (21 Agency bilan): kontent reja, reklama (CPL/ROMI — Lead.utmCampaign orqali), SEO, UTM, AI agent
-  { href: "/marketing",          label: "Marketing",       roles: ["SALES"], group: "Marketing", children: [
-    { href: "/marketing/kontent", label: "Kontent reja" },
-    { href: "/marketing/reklama", label: "Reklama" },
-    { href: "/marketing/seo",     label: "SEO" },
-    { href: "/marketing/utm",     label: "UTM generator" },
-    { href: "/marketing/agent",   label: "AI agent" },
-  ] },
+  // Guruh nomi «Marketing» — bandlar ichma-ich emas, to'g'ridan-to'g'ri (aks holda menyuda «Marketing → Marketing»)
+  { href: "/marketing",          label: "Ko'rsatkichlar",  roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/kontent",  label: "Kontent reja",    roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/reklama",  label: "Reklama",         roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/seo",      label: "SEO",             roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/utm",      label: "UTM generator",   roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/agent",    label: "AI agent",        roles: ["SALES"], group: "Marketing" },
   { href: "/production",  label: "Ishlab chiqarish",   roles: ["PRODUCTION", "SUPERVISOR"], group: "Ishlab chiqarish" },
   { href: "/recipes",     label: "Retseptlar",         roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
   // Sotuv, Logistika va Otdel kadr kabinetida Ishlab chiqarish guruhi yo'q (ruxsat ECO ilovasi va havolalar uchun)
