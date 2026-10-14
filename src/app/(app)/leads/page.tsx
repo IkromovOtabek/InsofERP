@@ -99,6 +99,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                   {l.message && (
                     <div className="flex gap-2"><dt className="w-24 shrink-0 text-slate-500">Izoh</dt><dd className="text-slate-700">{l.message}</dd></div>
                   )}
+                  {(l.utmSource || l.utmCampaign) && (
+                    <div className="flex gap-2">
+                      <dt className="w-24 shrink-0 text-slate-500">Reklama</dt>
+                      <dd className="font-mono text-xs text-slate-600">{[l.utmSource, l.utmMedium, l.utmCampaign].filter(Boolean).join(" / ")}</dd>
+                    </div>
+                  )}
                   {l.customer && (
                     <div className="flex gap-2">
                       <dt className="w-24 shrink-0 text-slate-500">Mijoz</dt>

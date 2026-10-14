@@ -8,6 +8,8 @@ import { unitLabel } from "@/lib/unit";
 
 export type LeadProduct = { id: string; name: string; unit: string };
 
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
+
 const field =
   "h-12 w-full rounded-xl bg-beton-50 px-4 text-[15px] text-beton-900 ring-1 ring-beton-200 transition-shadow placeholder:text-beton-400 focus:ring-2 focus:ring-insof-500 focus:outline-none";
 const label = "mb-1.5 block font-mono text-[10px] tracking-[0.16em] text-beton-500 uppercase";
@@ -18,6 +20,17 @@ export function LeadForm({ products }: { products: LeadProduct[] }) {
   const [productId, setProductId] = useState("");
   const [qty, setQty] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
+  // Reklama manbai: manzildagi UTM va sahifa — arizaga qo'shib yuboriladi (Marketing > Reklama hisobi uchun)
+  const [utm, setUtm] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const v: Record<string, string> = { landingPage: window.location.pathname };
+    for (const k of UTM_KEYS) {
+      const x = q.get(k);
+      if (x) v[k] = x.slice(0, 120);
+    }
+    setUtm(v);
+  }, []);
 
   // Katalogdagi "So'rash" bosilsa mahsulot shu yerda tanlangan bo'ladi
   useEffect(() => onPickProduct((id) => {
@@ -54,6 +67,7 @@ export function LeadForm({ products }: { products: LeadProduct[] }) {
     <form action={action} className="space-y-6">
       {/* Honeypot — ekranda ko'rinmaydi, faqat botlar to'ldiradi */}
       <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
+      {Object.entries(utm).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
 
       <div className="grid gap-6 sm:grid-cols-2">
         <div>

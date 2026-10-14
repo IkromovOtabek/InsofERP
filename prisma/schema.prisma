@@ -75,6 +75,7 @@ model User {
   supplyDocuments        SupplyDocument[]         @relation("SupplyDocBy")
   brigadeMoves           BrigadeMove[]            @relation("BrigadeMoveBy")
   leads                  Lead[]                   @relation("LeadHandledBy")
+  marketingChats         MarketingChat[]
   salesRegister          SalesRegister[]          @relation("SalesRegisterCreatedBy")
   devices                MobileDevice[]
   mechanicRequests       MechanicRequest[]        @relation("MechReqBy")
@@ -2149,6 +2150,13 @@ model Lead {
   customerId  String? // CONVERTED bo'lganda — yaratilgan/topilgan mijoz
   handledById String?
   handledAt   DateTime?
+  // Reklama manbai (sayt manzilidagi UTM) — Marketing > Reklama bo'limi CPL/ROMI shu bilan hisoblaydi
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  landingPage String? // ariza yuborilgan sahifa
   createdAt   DateTime   @default(now())
 
   product   Product?  @relation(fields: [productId], references: [id])
@@ -2158,6 +2166,7 @@ model Lead {
   @@index([status, createdAt])
   @@index([phone])
   @@index([customerId])
+  @@index([utmCampaign])
 }
 
 enum DeletionRequestSource {
@@ -2327,4 +2336,123 @@ enum MechanicRequestStatus {
   PAID // pul berildi
   REJECTED // rad etildi
   CANCELLED // mexanik o'zi bekor qildi
+}
+
+/**
+ * ───────────────────────── Marketing (Sotuv kabineti) ─────────────────────────
+ * Kontent reja (Reels/post), reklama kampaniyalari, SEO semantik yadro va AI agent suhbatlari.
+ * Lidlar alohida jadval emas — `Lead` (sayt arizalari) UTM maydonlari orqali kampaniyaga bog'lanadi.
+ */
+
+enum MarketingContentType {
+  REELS
+  POST
+  STORIES
+  ARTICLE
+}
+
+enum MarketingContentStatus {
+  IDEA // g'oya
+  SCRIPT // ssenariy tayyor
+  FILMED // suratga olindi
+  EDITING // montaj
+  PUBLISHED // chiqdi
+  CANCELLED // bekor (o'chirilmaydi)
+}
+
+model MarketingContent {
+  id          String                 @id @default(cuid())
+  title       String
+  type        MarketingContentType   @default(REELS)
+  rubric      String? // «01 Завод изнутри» va h.k.
+  status      MarketingContentStatus @default(IDEA)
+  publishDate DateTime?              @db.Date
+  hook        String?
+  script      String? // ssenariy / matn (markdown)
+  caption     String?
+  url         String? // nashrdan keyingi havola
+  views       Int                    @default(0)
+  likes       Int                    @default(0)
+  saves       Int                    @default(0)
+  leads       Int                    @default(0)
+  createdBy   String? // xodim ismi yoki "AI agent (…)"
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([publishDate])
+  @@index([status])
+}
+
+enum AdChannel {
+  YANDEX
+  GOOGLE
+  INSTAGRAM
+  TELEGRAM
+  OTHER
+}
+
+enum AdCampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  FINISHED
+}
+
+model AdCampaign {
+  id          String           @id @default(cuid())
+  name        String
+  channel     AdChannel
+  status      AdCampaignStatus @default(DRAFT)
+  utmCampaign String?          @unique // Lead.utmCampaign bilan bog'lanish kaliti
+  budget      Decimal          @default(0) @db.Decimal(18, 2) // oylik byudjet, so'm
+  spend       Decimal          @default(0) @db.Decimal(18, 2) // sarflangan, so'm
+  impressions Int              @default(0)
+  clicks      Int              @default(0)
+  startDate   DateTime?        @db.Date
+  endDate     DateTime?        @db.Date
+  note        String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model SeoKeyword {
+  id        String    @id @default(cuid())
+  phrase    String
+  cluster   String
+  lang      String    @default("ru")
+  url       String? // mos sayt sahifasi
+  intent    String?
+  frequency Int? // Wordstat chastotasi
+  posYandex Int?
+  posGoogle Int?
+  checkedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([phrase, lang])
+  @@index([cluster])
+}
+
+model MarketingChat {
+  id        String             @id @default(cuid())
+  title     String
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  messages  MarketingMessage[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+model MarketingMessage {
+  id        String        @id @default(cuid())
+  chatId    String
+  chat      MarketingChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  role      String // user | assistant
+  content   String
+  tools     String[]      @default([]) // agent ishlatgan vositalar
+  createdAt DateTime      @default(now())
+
+  @@index([chatId, createdAt])
 }

@@ -31,7 +31,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 // Tartib: Bosh sahifa → Tahlil (BI) → operatsion modullar (Sotuv … Moliya) → Otdel kadr → Boshqaruv (Xodimlar, Sozlamalar).
 // Otdel kadr alohida bo'lim: kadr ishlari boshqaruv bandlari bilan aralashib ketmasin.
-const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Otdel kadr", "Boshqaruv"];
+const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Marketing", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Otdel kadr", "Boshqaruv"];
 
 type User = { fullName: string; roleLabel: string };
 

@@ -49,6 +49,12 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "invoice",   label: "Schyot yozish",                  roles: ["ACCOUNTING", "SALES"] },
     { key: "invoice_cancel", label: "Schyotni bekor qilish",     roles: ["ACCOUNTING"] },
   ],
+  marketing: [
+    { key: "content", label: "Kontent reja (Reels, post)",        roles: ["SALES"] },
+    { key: "ads",     label: "Reklama kampaniyalari va xarajat",  roles: ["SALES"] },
+    { key: "seo",     label: "SEO kalit so'zlar va pozitsiyalar", roles: ["SALES"] },
+    { key: "agent",   label: "AI marketing agenti",               roles: ["SALES"], hint: "Kontent rejaga yozish ham shu ruxsat bilan" },
+  ],
   customers: [
     { key: "edit",     label: "Mijoz qo'shish / tahrirlash",  roles: ["SALES", "ACCOUNTING", "FINANCE"] },
     { key: "sites",    label: "Mijoz obyektlari",             roles: ["SALES", "ACCOUNTING", "FINANCE"] },

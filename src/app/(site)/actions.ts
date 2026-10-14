@@ -14,6 +14,8 @@ import { publicLeadAllowedFromAction, RATE_LIMITED } from "@/lib/rate-limit";
  *  · raqam normallashtiriladi, yaroqsiz bo'lsa qabul qilinmaydi.
  */
 
+const utmField = z.string().trim().max(120).optional().transform((v) => (v ? v : null));
+
 const schema = z.object({
   name: z.string().trim().min(2, "ism to'liq yozilsin").max(80),
   phone: z.string().trim().min(1, "telefon raqami kerak"),
@@ -25,6 +27,13 @@ const schema = z.object({
   address: z.string().trim().max(200).optional().transform((v) => (v ? v : null)),
   message: z.string().trim().max(1000).optional().transform((v) => (v ? v : null)),
   website: z.string().optional(), // honeypot
+  // Reklama manbai (UTM) — ixtiyoriy, uzunligi cheklangan
+  utm_source: utmField,
+  utm_medium: utmField,
+  utm_campaign: utmField,
+  utm_content: utmField,
+  utm_term: utmField,
+  landingPage: z.string().trim().max(200).optional().transform((v) => (v && v.startsWith("/") ? v : null)),
 });
 
 export async function submitLead(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -36,7 +45,11 @@ export async function submitLead(_prev: ActionState, fd: FormData): Promise<Acti
   if (d.website) return { ok: true };
   if (!(await publicLeadAllowedFromAction())) return { error: RATE_LIMITED };
 
-  const res = await createLead(d);
+  const res = await createLead({
+    name: d.name, phone: d.phone, productId: d.productId, qty: d.qty, address: d.address, message: d.message,
+    utm: { source: d.utm_source, medium: d.utm_medium, campaign: d.utm_campaign, content: d.utm_content, term: d.utm_term },
+    landingPage: d.landingPage,
+  });
   if (!res.ok) return { error: res.error };
   return res.duplicate
     ? { ok: true, note: "Arizangiz allaqachon qabul qilingan — tez orada bog'lanamiz." }

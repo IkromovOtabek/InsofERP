@@ -30,6 +30,14 @@ export const NAV: NavItem[] = [
   { href: "/leads",       label: "Sayt arizalari",     roles: ["SALES"], group: "Sotuv" },
   // Insof ECO ilovasidagi do'kon: qaysi mahsulot ko'rinadi, surat/narx, ilovadan tushgan buyurtmalar
   { href: "/e-commerce",  label: "E-commerce",         roles: ["SALES"], group: "Sotuv" },
+  // Marketing (21 Agency bilan): kontent reja, reklama (CPL/ROMI — Lead.utmCampaign orqali), SEO, UTM, AI agent
+  { href: "/marketing",          label: "Marketing",       roles: ["SALES"], group: "Marketing", children: [
+    { href: "/marketing/kontent", label: "Kontent reja" },
+    { href: "/marketing/reklama", label: "Reklama" },
+    { href: "/marketing/seo",     label: "SEO" },
+    { href: "/marketing/utm",     label: "UTM generator" },
+    { href: "/marketing/agent",   label: "AI agent" },
+  ] },
   { href: "/production",  label: "Ishlab chiqarish",   roles: ["PRODUCTION", "SUPERVISOR"], group: "Ishlab chiqarish" },
   { href: "/recipes",     label: "Retseptlar",         roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
   // Sotuv, Logistika va Otdel kadr kabinetida Ishlab chiqarish guruhi yo'q (ruxsat ECO ilovasi va havolalar uchun)
@@ -197,6 +205,7 @@ export function navFor(role: Role, perms?: Perms) {
 export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "orders",    label: "Zayavkalar",            prefixes: ["/orders"] },
   { key: "sales",     label: "Sotuv va arizalar",     prefixes: ["/sales", "/leads", "/e-commerce"] },
+  { key: "marketing", label: "Marketing",             prefixes: ["/marketing"] },
   { key: "customers", label: "Mijozlar",              prefixes: ["/customers"] },
   { key: "production",label: "Ishlab chiqarish",      prefixes: ["/production", "/recipes"] },
   { key: "tasks",     label: "Topshiriq / brigada",   prefixes: ["/tasks", "/brigades"] },

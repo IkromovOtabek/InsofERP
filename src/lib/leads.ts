@@ -25,6 +25,8 @@ export type NewLead = {
   address?: string | null;
   message?: string | null;
   source?: string;
+  utm?: { source?: string | null; medium?: string | null; campaign?: string | null; content?: string | null; term?: string | null };
+  landingPage?: string | null;
 };
 
 export type LeadResult = { ok: true; duplicate?: boolean } | { ok: false; error: string };
@@ -48,6 +50,12 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
       address: input.address ?? null,
       message: input.message ?? null,
       source: input.source ?? "landing",
+      utmSource: input.utm?.source ?? null,
+      utmMedium: input.utm?.medium ?? null,
+      utmCampaign: input.utm?.campaign ?? null,
+      utmContent: input.utm?.content ?? null,
+      utmTerm: input.utm?.term ?? null,
+      landingPage: input.landingPage ?? null,
     },
     include: { product: { select: { name: true, unit: true } } },
   });
