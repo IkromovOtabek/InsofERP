@@ -187,7 +187,7 @@ const ACCOUNTING_STEPS: TourStep[] = [
   openPage("/cashflow", "Kirim-Chiqim", "Kassa va bank bo'yicha barcha harakat. Ta'minot hujjatlari to'lovga shu yerda tasdiqlanadi."),
   openGroup("Sotuv"),
   openPage("/orders", "Zayavkalar", "Zayavka va unga bog'langan schyot-faktura holati."),
-  openPage("/customers", "Mijozlar", "Mijozning qarzi, kredit limiti va qora ro'yxat holati shu yerda ko'rinadi."),
+  openPage("/sales", "Sotuv", "Qabul qilingan zayavkalar holat bo'yicha: summa, to'langan va qoldiq."),
 ];
 
 const CASHIER_STEPS: TourStep[] = [

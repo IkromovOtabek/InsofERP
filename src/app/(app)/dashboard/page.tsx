@@ -22,6 +22,7 @@ import { ProcurementHome } from "./procurement-home";
 import { LogisticsHome } from "./logistics-home";
 import { MechanicHome } from "./mechanic-home";
 import { HrHome } from "./hr-home";
+import { SalesStatusSection } from "./sales-status";
 import { MECHANIC_HOME_ROLES } from "@/lib/sklad-logistika";
 import { parseDay } from "@/lib/logistics";
 import { faceScope } from "@/lib/face-id";
@@ -89,6 +90,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const todayPlan = fmtUnitTotals(ordersToday.flatMap((o) => o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))));
   const deliveredToday = trips.filter((t) => t.status === "DELIVERED" && t.deliveredAt && t.deliveredAt >= today).reduce((x, t) => x + Number(t.qtyM3), 0);
   const busyMixers = mixers.filter((m) => m.active).length;
+  // Buxgalteriya kabinetida Logistika yo'q: jonli xarita, mikserlar va bugungi reyslar bloklari chiqmaydi
+  const showLogistics = s?.role !== "ACCOUNTING";
 
   return (
     <div>
@@ -97,15 +100,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard label="Bugungi zayavkalar" value={`${ordersToday.length}`} hint={`${todayPlan} rejada`} icon={ClipboardList} tone="info" href="/orders" />
         <StatCard label="Ishlab chiqarildi" value={`${qty(producedToday._sum.qtyM3 ?? 0)} m³`} hint="bugun" icon={Factory} tone="brand" href="/production" />
-        <StatCard label="Yetkazildi" value={`${qty(deliveredToday)} m³`} hint={`${busyMixers} / ${mixers.length} mikser yo'lda`} icon={Truck} tone="success" href="/trips" />
+        <StatCard label="Yetkazildi" value={`${qty(deliveredToday)} m³`} hint={`${busyMixers} / ${mixers.length} mikser yo'lda`} icon={Truck} tone="success" href={showLogistics ? "/trips" : undefined} />
         <StatCard label="Debitorka" value={money(receivable)} hint={debts.length ? `${debts.length} ta qarzdor` : "qarz yo'q"} icon={Wallet} tone={receivable > 0 ? "warning" : "default"} href="/invoices" />
         <StatCard label="Bloklangan" value={String(blocked)} hint="kredit limit" icon={ShieldAlert} tone={blocked > 0 ? "danger" : "default"} href="/orders?status=BLOCKED" />
       </div>
 
+      {/* Buxgalteriya kabineti: qabul qilingan zayavkalar holat bo'yicha — summa, to'langan, qoldiq */}
+      {(s?.role === "ACCOUNTING" || s?.role === "FINANCE") && <SalesStatusSection />}
+
       {/* Yo'ldagi mashinalar — bir qarashda. Ruxsatni server hal qiladi: sotuvchiga faqat
           o'zi ochgan zayavkalarning reyslari ko'rinadi, yo'lda hech kim bo'lmasa blok chiqmaydi. */}
-      {ecoEnabled() && <LiveDrivers title="Hozir yo'lda" compact />}
+      {showLogistics && ecoEnabled() && <LiveDrivers title="Hozir yo'lda" compact />}
 
+      {showLogistics && (
       <Section title="Mikserlar" action={<Link href="/drivers" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Haydovchilar <ArrowRight size={14} /></Link>}>
         {mixers.length === 0 ? (
           <Card className="text-sm text-slate-500">Texnika kiritilmagan — Xodimlar sahifasida haydovchi qo'shsangiz, mikser ham shu yerda ochiladi.</Card>
@@ -130,8 +137,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </div>
         )}
       </Section>
+      )}
 
-      <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className={"mt-8 grid grid-cols-1 gap-6" + (showLogistics ? " xl:grid-cols-2" : "")}>
+        {showLogistics && (
         <Section title="Bugungi reyslar" className="mt-0" action={<Link href="/trips" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Hammasi <ArrowRight size={14} /></Link>}>
           <Table>
             <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Mikser</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
@@ -146,6 +155,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </tbody>
           </Table>
         </Section>
+        )}
 
         <Section title="Navbatdagi zayavkalar" className="mt-0" action={<Link href="/orders" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Hammasi <ArrowRight size={14} /></Link>}>
           <Table>

@@ -13,7 +13,7 @@ import { MoneyInput } from "@/components/money-input";
 type Opt = { id: string; name: string };
 type SupplierOpt = Opt & { vatPayer: boolean };
 type Material = MaterialRow;
-/** `vat` — qator QQS stavkasi ("12" yoki "0" — QQS'dan ozod tovar). QQS to'lovchisi bo'lmagan yetkazuvchida doim 0. */
+/** `vat` — qator QQS stavkasi ("12", "6" yoki "0" — QQS'dan ozod tovar). QQS to'lovchisi bo'lmagan yetkazuvchida doim 0. */
 type Row = { key: number; materialId: string; qty: string; price: string; vat: string };
 
 type Account = Opt & { type: "CASH" | "BANK" };
@@ -95,6 +95,7 @@ export function ReceiptForm({ suppliers, warehouses, materials, groups = [], can
                   <MoneyInput name="price[]" value={r.price} onChange={(v) => update(r.key, { price: v })} placeholder={`Narx / ${unit}`} suffix={null} required />
                   <Select aria-label="QQS stavkasi" value={supVat ? r.vat : "0"} disabled={!supVat} onChange={(e) => update(r.key, { vat: e.target.value })} title={vatOf(r) > 0 ? `QQS ${fmtNum(vatOf(r))} so'm` : "QQS'siz"}>
                     <option value="12">QQS 12%</option>
+                    <option value="6">QQS 6%</option>
                     <option value="0">QQS 0%</option>
                   </Select>
                   <button type="button" aria-label="Qatorni o'chirish" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((x) => x.key !== r.key) : rs)} className="flex h-10 w-10 items-center justify-center text-slate-400 hover:text-red-600 sm:h-auto sm:w-auto"><X size={16} /></button>

@@ -76,7 +76,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     // O'tkazma: umumiy ko'rinishda bitta qator (chiqish tomoni "Kassa → Bank"); hisob tanlansa — shu hisob tomoni (+/−)
     ...txs.filter((t) => acc || t.type !== "TRANSFER_IN").map((t): Row => t.type === "TRANSFER_OUT" || t.type === "TRANSFER_IN" ? {
       id: t.id, date: t.date, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(),
-      category: "O'tkazma", who: "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), deletable: false,
+      category: acc ? (t.type === "TRANSFER_OUT" ? "Perekit · chiqdi" : "Perekit · kirdi") : "Perekit (hisoblararo)", who: "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), deletable: false,
     } : {
       id: t.id, date: t.date, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name,
       category: t.refType && t.refType !== TRANSFER_REF ? `Kirim · ${t.category}` : t.category,
@@ -89,7 +89,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       // to'lov (o'chirish = to'lov storno, kirim yana "to'lanmagan" bo'ladi), ta'minot zanjirinikidan tashqari
       deletable: !t.refType || (t.refType === "GoodsReceipt" && !supplyTxIds.has(t.id)),
     }),
-  ].filter((r) => (tab === "all" || r.kind === tab) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`))).sort((a, b) => b.date.getTime() - a.date.getTime());
+  ].filter((r) => (tab === "all" || r.kind === tab || (r.kind === "TRANSFER" && (tab === "EXPENSE" ? r.sign !== 1 : tab === "INCOME" && r.sign === 1))) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`))).sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const inc = rows.filter((r) => r.kind === "INCOME").reduce((x, r) => x + r.amount, 0);
   const exp = rows.filter((r) => r.kind === "EXPENSE").reduce((x, r) => x + r.amount, 0);
@@ -144,7 +144,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={INCOME_CATEGORIES} expenseCats={EXPENSE_CATEGORIES} />
+          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={INCOME_CATEGORIES} expenseCats={EXPENSE_CATEGORIES} />
         </Card>
         <Card className="lg:col-span-2">
           <h2 className="mb-3 font-semibold">Chiqimlar kategoriya bo&apos;yicha</h2>
@@ -160,7 +160,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
       {/* Hisoblararo o'tkazma: kassa → bank (inkassatsiya), bank → kassa (naqdlashtirish), kassa → kassa */}
       <Card className="mb-6">
-        <h2 className="mb-1 flex items-center gap-2 font-semibold"><ArrowRightLeft size={16} /> O&apos;tkazma</h2>
+        <h2 className="mb-1 flex items-center gap-2 font-semibold"><ArrowRightLeft size={16} /> Perekit — o&apos;z hisoblararo o&apos;tkazma</h2>
         <p className="mb-3 text-sm text-slate-500">Pul bir hisobdan boshqasiga o&apos;tadi — kirim ham, chiqim ham emas (P&amp;L ga kirmaydi). Bank komissiyasi «Bank xizmati» chiqimi bo&apos;lib yoziladi.</p>
         {canTransfer && accounts.length >= 2 && (
           <TransferForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, balance: balance.get(a.id) ?? 0 }))} clientToken={crypto.randomUUID()} />
@@ -189,7 +189,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       </Card>
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <Tabs current={tab} className="mb-0" items={[{ key: "all", label: "Hammasi", href: qs("all") }, { key: "INCOME", label: "Kirim", href: qs("INCOME") }, { key: "EXPENSE", label: "Chiqim", href: qs("EXPENSE") }, { key: "TRANSFER", label: "O'tkazma", href: qs("TRANSFER") }]} />
+        <Tabs current={tab} className="mb-0" items={[{ key: "all", label: "Hammasi", href: qs("all") }, { key: "INCOME", label: "Kirim", href: qs("INCOME") }, { key: "EXPENSE", label: "Chiqim", href: qs("EXPENSE") }, { key: "TRANSFER", label: "Perekit", href: qs("TRANSFER") }]} />
         <form className="flex flex-wrap items-center gap-2 text-sm">
           <input type="hidden" name="tab" value={tab} />
           {cat && <input type="hidden" name="category" value={cat} />}
@@ -207,7 +207,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
           {rows.map((r) => (
             <Tr key={r.id}>
               <Td>{date(r.date)}</Td>
-              <Td>{r.kind === "TRANSFER" ? <Badge color="blue">O&apos;tkazma</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
+              <Td>{r.kind === "TRANSFER" ? <Badge color="blue">Perekit</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
               <Td>{r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.category} →</Link> : r.category}</Td>
               <Td><CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.href} /></Td>
               <Td className="text-slate-500">{r.account}</Td>

@@ -13,7 +13,7 @@ import { resolveMaterials } from "@/lib/import-materials";
 import { toMaterialUnit } from "@/lib/unit";
 import { cancelReceipt } from "@/lib/storno";
 import { Prisma } from "@/generated/prisma";
-import { companyVatPayer, supplierVatRate, vatLine } from "@/lib/receipt-vat";
+import { companyVatPayer, supplierVatRate, vatLine, type VatRate } from "@/lib/receipt-vat";
 import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
 
 /** Formadagi bir martalik kalit (brauzer yaratadi): bo'sh yoki g'alati bo'lsa — e'tiborga olinmaydi. */
@@ -58,7 +58,7 @@ export async function createReceipt(_prev: ActionState, fd: FormData): Promise<A
       waybillNo: d.waybillNo, vehicle: d.vehicle, gross: kg(d.gross), tare: kg(d.tare), clientToken: tokenOf(fd.get("clientToken")),
       items: d.materialId.map((materialId, i) => {
         const rate = rates[i];
-        return { materialId, qty: d.qty[i], price: d.price[i], vatRate: rate != null && rate !== "" ? (Number(rate) as 0 | 12) : null };
+        return { materialId, qty: d.qty[i], price: d.price[i], vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null };
       }),
     }, { userId: s.userId, role: s.role });
   } catch (e) {

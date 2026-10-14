@@ -36,13 +36,14 @@ export type MobileList = { key: string; title: string; rows: HomeRow[]; filters?
  * vebda bo'lim ko'ringan xodim ilovada ham shu bo'limni ko'radi. Farqlar izohda.
  * Tartib — bosh ekrandagi "Tezkor amallar" to'rining tartibi.
  */
-const ACCESS: Record<string, { title: string; roles: Role[] }> = {
+const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }> = {
   // ── Sotuv ──
   // AGENT — faqat o'zi kiritgan zayavkalar (ownership `mobileList` da filtrlanadi)
   orders: { title: "Zayavkalar", roles: ["AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
   sales: { title: "Sotuv", roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"] },
-  // AGENT — faqat o'ziga biriktirilgan mijozlar (ownership `mobileList` da filtrlanadi)
-  customers: { title: "Mijozlar", roles: ["AGENT", "SALES", "ACCOUNTING", "FINANCE"] },
+  // AGENT — faqat o'ziga biriktirilgan mijozlar (ownership `mobileList` da filtrlanadi).
+  // Buxgalteriya kabinetida Mijozlar bo'limi yo'q (`menuHide`, vebda ham): ruxsat qoladi — qarzdorlar «Barchasi», schyot va to'lovdan ochiladi
+  customers: { title: "Mijozlar", roles: ["AGENT", "SALES", "ACCOUNTING", "FINANCE"], menuHide: ["ACCOUNTING"] },
   leads: { title: "Sayt arizalari", roles: ["SALES"] },
   // CASHIER veb ERP'da schyotlar sahifasiga kirmaydi, lekin to'lov aynan schyot ustida olinadi —
   // mobil ilovada kassir schyotni ochib, shu yerdan to'lovni kiritadi.
@@ -155,10 +156,13 @@ export function listAllowed(user: Pick<MobileUser, "role" | "perms">, key: strin
   return (user.role === "DIRECTOR" || meta.roles.includes(user.role) || journalGranted(user, key)) && !moduleClosed(user, key);
 }
 
-/** Shu rol kira oladigan barcha ro'yxatlar — bosh ekrandagi tezkor amallar uchun. */
+/**
+ * Shu rol kira oladigan barcha ro'yxatlar — bosh ekrandagi tezkor amallar uchun.
+ * `menuHide` — shu rollarning to'rida ko'rinmaydi (veb `lib/nav.ts` dagi kabi), lekin ruxsat (`listAllowed`) qoladi.
+ */
 export function listsFor(role: Role, perms?: MobileUser["perms"]) {
   return Object.entries(ACCESS)
-    .filter(([key, m]) => role === "DIRECTOR" || m.roles.includes(role) || journalGranted({ role, perms }, key))
+    .filter(([key, m]) => role === "DIRECTOR" || (m.roles.includes(role) && !m.menuHide?.includes(role)) || journalGranted({ role, perms }, key))
     .filter(([key]) => !moduleClosed({ role, perms }, key))
     .map(([key, m]) => ({ key, title: m.title }));
 }

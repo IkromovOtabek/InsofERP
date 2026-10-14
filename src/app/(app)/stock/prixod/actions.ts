@@ -7,6 +7,7 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
 import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
+import type { VatRate } from "@/lib/receipt-vat";
 
 /** Ruscha forma — xato matnlari ham ruscha (ekran tilida). */
 const req = (msg: string) => z.string().trim().min(1, msg);
@@ -52,7 +53,7 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { error: "Неверная дата" };
   const mats = d.materialId ?? [], qtys = d.qty ?? [], prices = d.price ?? [], deliveries = d.deliveryCost ?? [], rates = d.vatRate ?? [];
-  const items: { materialId: string; qty: number; price: number; deliveryCost: number; vatRate: 0 | 12 | null }[] = [];
+  const items: { materialId: string; qty: number; price: number; deliveryCost: number; vatRate: VatRate | null }[] = [];
   for (const [i, materialId] of mats.entries()) {
     if (!materialId) continue;
     if (qtys[i] == null || prices[i] == null) return { error: `Строка ${i + 1}: укажите количество и цену` };
@@ -60,7 +61,7 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
     const delivery = raw === "" ? 0 : Number(raw);
     if (!Number.isFinite(delivery) || delivery < 0) return { error: `Строка ${i + 1}: неверная сумма доставки` };
     const rate = rates[i];
-    items.push({ materialId, qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as 0 | 12) : null });
+    items.push({ materialId, qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null });
   }
   if (!items.length) return { error: "Выберите материал хотя бы в одной строке" };
 

@@ -10,6 +10,8 @@ import { cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { money } from "@/lib/format";
 import { createCashEntry } from "@/lib/cash-entry";
+import { createTransfer } from "@/lib/cash-transfer";
+import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 
 class CashError extends Error {}
 
@@ -24,12 +26,25 @@ const schema = z.object({
   // Chiqim qaysi kirim hujjati (yetkazuvchidan olingan mol) uchun — bog'lansa kirim "to'langan" summasiga qo'shiladi
   receiptId: zOpt,
   note: zOpt,
+  // «Perekit» tanlanganda: pul qaysi o'z hisobimizga o'tadi
+  toAccountId: zOpt,
+  clientToken: zOpt,
 });
 
 export async function createCashTx(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireAction("cashflow", "create");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
+  // «Perekit» — chiqim emas: o'z hisoblararo o'tkazma hujjati (ikkala hisob tarixida ±, P&L ga kirmaydi)
+  if (r.data.type === "EXPENSE" && r.data.category === PEREKIT_CATEGORY) {
+    const s = await requireAction("cashflow", "transfer");
+    if (!r.data.toAccountId) return { error: "Perekit: pul qaysi hisobga o'tishini tanlang («Qayerga»)" };
+    const t = r.data.clientToken && /^[A-Za-z0-9-]{16,64}$/.test(r.data.clientToken) ? r.data.clientToken : null;
+    const res = await createTransfer({ date: new Date(r.data.date), fromAccountId: r.data.cashAccountId, toAccountId: r.data.toAccountId, amount: r.data.amount, note: r.data.note, clientToken: t }, s.userId);
+    if (res.error) return { error: res.error };
+    revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/");
+    return { ok: true, note: res.duplicate ? `${res.docNo} allaqachon saqlangan (qayta bosildi)` : `Perekit ${res.docNo} saqlandi` };
+  }
+  const s = await requireAction("cashflow", "create");
   // Qoida `lib/cash-entry.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
   const res = await createCashEntry({ ...r.data, date: new Date(r.data.date) }, s.userId);
   if (res.error) return { error: res.error };

@@ -7,7 +7,7 @@ import { NDS_RATE } from "./nds";
  *
  * Kelishuv (`GoodsReceiptItem`):
  *  · `price`     — birlik narxi QQS'SIZ;
- *  · `vatRate`   — 0 yoki 12 (yetkazuvchi QQS to'lovchisi bo'lsa 12, aks holda 0);
+ *  · `vatRate`   — 0, 6 yoki 12 (yetkazuvchi QQS to'lovchisi bo'lsa standart 12, aks holda 0; 6 — qo'lda tanlanadi);
  *  · `vatAmount` — qator QQS summasi (so'm);
  *  · `deliveryCost` — «Доставка», qator yetkazib berish summasi (QQS'siz, QQS unga hisoblanmaydi).
  *  QQS'siz summa («Общие сумма») = qty × price + deliveryCost.
@@ -24,8 +24,8 @@ import { NDS_RATE } from "./nds";
  * o'qisin (select'da bo'lmasa 0 deb olinadi va dostavkali kirim summasi kam chiqadi).
  */
 
-/** Ruxsat etilgan stavkalar, %. */
-export const VAT_RATES = [0, 12] as const;
+/** Ruxsat etilgan stavkalar, %. 6% — kamaytirilgan stavkali tovar/yetkazuvchi uchun, qatorda qo'lda tanlanadi. */
+export const VAT_RATES = [0, 6, 12] as const;
 export type VatRate = (typeof VAT_RATES)[number];
 /** Standart stavka (QQS to'lovchisi yetkazuvchi uchun), % — `lib/nds.ts` dagi 12% bilan bir xil. */
 export const VAT_RATE_DEFAULT: VatRate = Math.round(NDS_RATE * 100) as VatRate;

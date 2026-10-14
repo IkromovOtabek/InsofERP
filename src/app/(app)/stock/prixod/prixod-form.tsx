@@ -15,7 +15,9 @@ type SupplierOpt = Opt & { vatPayer: boolean };
 type Account = Opt & { type: "CASH" | "BANK" };
 type Payment = "BANK" | "CASH";
 /** `vat` — qator QQS stavkasi; Н-к yoki QQS to'lovchisi bo'lmagan yetkazuvchida doim 0. */
-type Row = { key: number; materialId: string; qty: string; price: string; delivery: string; vat: "12" | "0" };
+type Vat = "12" | "6" | "0";
+type Row = { key: number; materialId: string; qty: string; price: string; delivery: string; vat: Vat };
+const VATS: Vat[] = ["12", "6", "0"];
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: string) => { const n = Number(v.replace(/\s+/g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
@@ -34,7 +36,7 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
 
 /**
  * «Приход» formasi — foydalanuvchi Excel jurnalidagi ustunlar bilan (ruscha).
- * Narx QQS'siz; QQS 12% faqat tovarga (Н-к — 0), «Доставка» QQS'siz Общие/Итого ga va tannarxga qo'shiladi.
+ * Narx QQS'siz; QQS (12% yoki 6%, qatorda tanlanadi) faqat tovarga (Н-к — 0), «Доставка» QQS'siz Общие/Итого ga va tannarxga qo'shiladi.
  * `clientToken` — ikki marta bosilgan «Сохранить» ikkinchi kirim ochmaydi.
  */
 export function PrixodForm({ today, suppliers, warehouses, materials, groups = [], canCreate = false, recipients, buyers, defaultBuyerId, accounts, clientToken, companyVatPayer = true }: {
@@ -79,6 +81,9 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
   };
   // Jami — faqat Наименование tanlangan qatorlardan (yuboriladiganlari ham shular)
   const totals = rows.filter((r) => r.materialId).reduce((t, r) => { const c = calc(r); return { sum: t.sum + c.sum, delivery: t.delivery + c.delivery, vat: t.vat + c.vat, total: t.total + c.total }; }, { sum: 0, delivery: 0, vat: 0, total: 0 });
+  // Jamidagi НДС yorlig'i: qatorlarda ishlatilgan stavkalar ("12%", "6%" yoki "12% / 6%")
+  const usedRates = [...new Set(rows.filter((r) => r.materialId).map((r) => calc(r).rate).filter((x) => x > 0))].sort((a, b) => b - a);
+  const totalsRates = usedRates.map((x) => `${x}%`).join(" / ");
   // Raqam kiritilgan-u, Наименование tanlanmagan qator yuborilmaydi — jimgina tushib qolmasin: saqlash yopiladi
   const orphans = rows.flatMap((r, idx) => (!r.materialId && (r.qty.trim() || r.price.trim() || r.delivery.trim()) ? [idx + 1] : []));
   const payAccounts = accounts.filter((a) => a.type === payment);
@@ -109,7 +114,7 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
               <Select name="warehouseId" defaultValue={warehouses[0]?.id} required>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
             </Field>
           )}
-          <Field label="Деньги *" hint={payment === "CASH" ? "Наличные — НДС 0 во всех строках" : "Перечисление — НДС 12% (по строкам)"}>
+          <Field label="Деньги *" hint={payment === "CASH" ? "Наличные — НДС 0 во всех строках" : "Перечисление — НДС 12% или 6% (по строкам)"}>
             <div role="radiogroup" aria-label="Деньги" className="grid h-10 grid-cols-2 gap-0.5 rounded-lg border border-slate-300 bg-slate-50 p-0.5 pointer-coarse:h-11">
               {(["BANK", "CASH"] as const).map((p) => (
                 <label key={p} className={cn("flex cursor-pointer items-center justify-center rounded-md text-sm font-semibold transition select-none",
@@ -210,9 +215,8 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
                   </div>
                   <div>
                     <Lbl>НДС</Lbl>
-                    <Select aria-label="Ставка НДС" value={noVat ? "0" : r.vat} disabled={noVat} onChange={(e) => update(r.key, { vat: e.target.value === "0" ? "0" : "12" })}>
-                      <option value="12">12%</option>
-                      <option value="0">0%</option>
+                    <Select aria-label="Ставка НДС" value={noVat ? "0" : r.vat} disabled={noVat} onChange={(e) => update(r.key, { vat: VATS.find((v) => v === e.target.value) ?? "12" })}>
+                      {VATS.map((v) => <option key={v} value={v}>{v}%</option>)}
                     </Select>
                   </div>
                   {/* Jonli hisob: Общие (tovar + dostavka), НДС, Итого */}
@@ -236,7 +240,7 @@ export function PrixodForm({ today, suppliers, warehouses, materials, groups = [
           <div className="mt-3 ml-auto max-w-sm space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm tabular">
             <div className="flex justify-between gap-4 text-slate-600"><span>Общие сумма</span><span>{money(totals.sum)}</span></div>
             {totals.delivery > 0 && <div className="flex justify-between gap-4 text-xs text-slate-500"><span>в т.ч. доставка</span><span>{money(totals.delivery)}</span></div>}
-            <div className="flex justify-between gap-4 text-slate-600"><span>НДС 12%</span><span>{money(totals.vat)}</span></div>
+            <div className="flex justify-between gap-4 text-slate-600"><span>НДС{totalsRates ? ` ${totalsRates}` : ""}</span><span>{money(totals.vat)}</span></div>
             <div className="flex justify-between gap-4 border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900"><span>Итого сумма</span><span>{money(totals.total)}</span></div>
             <div className="pt-1 text-xs text-slate-500">Себестоимость на складе: {companyVatPayer ? "без НДС" : "с НДС"} + доставка</div>
           </div>

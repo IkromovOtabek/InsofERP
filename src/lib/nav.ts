@@ -20,7 +20,8 @@ export const NAV: NavItem[] = [
   { href: "/dashboard",   label: "Bosh sahifa",        roles: "all", group: "Asosiy" },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
-  { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
+  // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
+  { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
   // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z mijoziga zayavka. AGENT uchun yagona sahifa
   // (DRIVER/BRIGADIER kabi). DIRECTOR/HR/SALES — mijozni agentga biriktirish uchun shu sahifaga kiradi.
   // Otdel kadr kabinetida Sotuv guruhi yo'q — ruxsat ilova (ECO) va havolalar uchun qoladi.
@@ -47,13 +48,13 @@ export const NAV: NavItem[] = [
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika", menuHide: ["PRODUCTION", "SUPERVISOR"] },
   // Bir vazifadagi sahifalar menyuda bitta band, qolganlari shu bandning tablarida (SECTION_TABS):
   // Reyslar ⇢ Nakladnoylar, Yetkazib berish; Transport ⇢ Yoqilg'i, Xarajatlar; Hisobotlar ⇢ Analitika; Haydovchilar ⇢ ECO ilovasi.
-  // Buxgalteriya Reyslar/Transport'ga kirmaydi — unga o'z bandlari menyuda qoladi.
-  { href: "/logistika/nakladnoylar", label: "Nakladnoylar",      roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
-  { href: "/logistika/yetkazish",   label: "Yetkazib berish",    roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
+  // Buxgalteriya kabinetida Logistika guruhi yo'q (veb va ECO): ruxsat qoladi — sahifalar havola va bo'lim tablari orqali ochiladi.
+  { href: "/logistika/nakladnoylar", label: "Nakladnoylar",      roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
+  { href: "/logistika/yetkazish",   label: "Yetkazib berish",    roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
   // Logistika buxgalteri (TZ 15) — bizda Buxgalteriya roli: yoqilg'i, xarajat, hisobot
-  { href: "/logistika/yoqilgi",     label: "Yoqilg'i",           roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
-  { href: "/logistika/xarajatlar",  label: "Transport xarajatlari", roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: ["ACCOUNTING"] },
-  { href: "/logistika/hisobotlar",  label: "Hisobotlar",         roles: [...LOGI, "ACCOUNTING"], group: "Logistika" },
+  { href: "/logistika/yoqilgi",     label: "Yoqilg'i",           roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
+  { href: "/logistika/xarajatlar",  label: "Transport xarajatlari", roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
+  { href: "/logistika/hisobotlar",  label: "Hisobotlar",         roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuHide: ["ACCOUNTING"] },
   { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)

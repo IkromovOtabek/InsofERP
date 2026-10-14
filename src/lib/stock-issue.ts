@@ -367,6 +367,8 @@ export type RasxodRow = {
    * sklad tannarxi va o'rtacha narx QQS ICHIDA (`lib/receipt-vat` stockUnitCost), ustiga yana QQS qo'shilmaydi.
    */
   vat: number;
+  /** «Ставка НДС», % — oxirgi kirim qatorining stavkasi (0, 6, 12); korxona QQS to'lovchisi bo'lmasa 0 */
+  vatRate: number;
   /** «Итого Сумма» = Общие + НДС */
   total: number;
   priceApprox: boolean;
@@ -476,7 +478,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
 
   // Qator + narx hisobi uchun yordamchi: `known` — narxi yozilgan qism summasi, `unknownQty` — narxsiz miqdor,
   // `termsDate` — Деньги / НДС qaysi sanadagi kirimdan (storno — asl berish sanasi)
-  type Draft = { row: Omit<RasxodRow, "payment" | "vat" | "total" | "sum" | "price" | "priceApprox">; known: number; unknownQty: number; prod: boolean; termsDate?: Date };
+  type Draft = { row: Omit<RasxodRow, "payment" | "vat" | "vatRate" | "total" | "sum" | "price" | "priceApprox">; known: number; unknownQty: number; prod: boolean; termsDate?: Date };
   const drafts: Draft[] = [];
   const prodBy = new Map<string, Draft>();
 
@@ -533,7 +535,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     const t = termsAt(terms.get(d.row.materialId), dayEnd(d.termsDate ?? d.row.date));
     // QQS dostavkaga hisoblanmaydi. Korxona QQS to'lovchisi bo'lmasa narx (tannarx / «Дона сўм») QQS ichida — НДС 0
     const vat = vatPayer ? r2(goods * (t?.vatRate ?? 0) / 100) : 0;
-    out.push({ row: { ...d.row, qty: r3(d.row.qty), payment: t?.payment ?? null, price, sum, vat, total: r2(sum + vat), priceApprox: approx }, prod: d.prod });
+    out.push({ row: { ...d.row, qty: r3(d.row.qty), payment: t?.payment ?? null, price, sum, vat, vatRate: vatPayer ? (t?.vatRate ?? 0) : 0, total: r2(sum + vat), priceApprox: approx }, prod: d.prod });
   }
   out.sort((a, b) => {
     const da = isoDate(a.row.date), dbb = isoDate(b.row.date);

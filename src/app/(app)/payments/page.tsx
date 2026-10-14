@@ -56,7 +56,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           <Card key={a.id}>
             <div className="text-sm text-slate-500">{a.name} <span className="text-xs">({a.type === "CASH" ? "naqd" : "bank"})</span></div>
             <div className={`mt-1 text-xl font-semibold ${(balances.get(a.id) ?? 0) < 0 ? "text-red-600" : ""}`}>{money(balances.get(a.id) ?? 0)}</div>
-            <div className="text-xs text-slate-500">qoldiq (kirim − chiqim)</div>
+            <div className="text-xs text-slate-500">qoldiq (kirim − chiqim ± perekit)</div>
+            {/* Hisob tarixi: shu hisobning barcha kirim, chiqim va perekitlari (+ kirdi / − chiqdi), davr boshi-oxiri qoldig'i */}
+            <Link href={`/cashflow?account=${a.id}`} className="mt-2 inline-block text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline">Hisob tarixi →</Link>
           </Card>
         ))}
       </div>

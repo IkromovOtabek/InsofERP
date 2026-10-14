@@ -90,7 +90,8 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   trips: { roles: ["LOGISTICS", "PRODUCTION"], title: "Yangi reys", label: "Reys ochish" },
   // Ta'minot so'rovi — sklad kerakli mahsulotlar jadvalini tuzadi (veb `/stock/supply/new`)
   supply: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Ta'minot so'rovi", label: "Ta'minot so'rash" },
-  customers: { roles: ["SALES", "ACCOUNTING", "FINANCE"], title: "Yangi mijoz", label: "Mijoz qo'shish" },
+  // Buxgalteriya kabinetida Mijozlar bo'limi yo'q — mijozni Sotuv qo'shadi
+  customers: { roles: ["SALES", "FINANCE"], title: "Yangi mijoz", label: "Mijoz qo'shish" },
   suppliers: { roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], title: "Yangi yetkazuvchi", label: "Yetkazuvchi qo'shish" },
   // Xomashyo spravochnigiga yangi nom — ta'minot so'rovidagi xomashyo tanlovining "+" tugmasi ham shu kalitga yuboradi
   materials: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Yangi xomashyo", label: "Xomashyo qo'shish" },

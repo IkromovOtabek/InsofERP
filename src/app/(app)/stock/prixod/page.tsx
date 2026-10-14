@@ -17,6 +17,8 @@ import { ExcelButton } from "../../logistika/excel-button";
 /** Sahifada ko'rinadigan qatorlar chegarasi (jami va Excel — hamma qatorlardan). */
 const MAX_ROWS = 2000;
 const PAY_LABEL: Record<PrixodPayment, string> = { BANK: "П-р", CASH: "Н-к" };
+/** Excel'da «Деньги» to'liq: naqd yoki perechisleniye ekani qisqartmasiz ham tushunarli bo'lsin. */
+const PAY_EXCEL: Record<PrixodPayment, string> = { BANK: "Перечисление (П-р)", CASH: "Наличные (Н-к)" };
 
 const money = (v: number) => fmtNum(v, 2);
 /** Kartalardagi jami summalar — Расход jurnalidagi kabi butun so'mda («… сум»). */
@@ -66,10 +68,10 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   const excel = [
     ...rows.map((r) => ({
       "Число": dateRu(r.date), "Документ": docLabel(r), "Наименование": r.material, "ТТН": r.waybillNo ?? "", "Ед Изм": unitLabelRu(r.unit), "К-во": r.qty,
-      "От Кого": r.supplier, "Кому": r.recipient, "Деньги": r.payment ? PAY_LABEL[r.payment] : "", "Доставка": r.delivery, "Цена": r.price,
-      "Общие Сумма": r.sum, "НДС 12%": r.vat, "Итого Сумма": r.total, "Адрес": r.address ?? "", "Снабженец": r.buyer ?? "", "Почему": r.purpose ?? "",
+      "От Кого": r.supplier, "Кому": r.recipient, "Деньги": r.payment ? PAY_EXCEL[r.payment] : "Не указано", "Доставка": r.delivery, "Цена": r.price,
+      "Общие Сумма": r.sum, "Ставка НДС": `${r.vatRate}%`, "НДС": r.vat, "Итого Сумма": r.total, "Адрес": r.address ?? "", "Снабженец": r.buyer ?? "", "Почему": r.purpose ?? "",
     })),
-    ...(rows.length ? [{ "Число": "Итого", "Документ": "", "Наименование": "", "ТТН": "", "Ед Изм": "", "К-во": null, "От Кого": "", "Кому": "", "Деньги": "", "Доставка": tot.delivery, "Цена": null, "Общие Сумма": tot.sum, "НДС 12%": tot.vat, "Итого Сумма": tot.total, "Адрес": "", "Снабженец": "", "Почему": "" }] : []),
+    ...(rows.length ? [{ "Число": "Итого", "Документ": "", "Наименование": "", "ТТН": "", "Ед Изм": "", "К-во": null, "От Кого": "", "Кому": "", "Деньги": "", "Доставка": tot.delivery, "Цена": null, "Общие Сумма": tot.sum, "Ставка НДС": "", "НДС": tot.vat, "Итого Сумма": tot.total, "Адрес": "", "Снабженец": "", "Почему": "" }] : []),
   ];
 
   return (
@@ -113,7 +115,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Строк" value={fmtNum(tot.rows)} icon={Rows3} hint={`${new Set(rows.map((r) => r.receiptId)).size} документов`} />
         <StatCard label="Общие сумма" value={sumRu(tot.sum)} icon={Wallet} hint={tot.delivery > 0 ? `в т.ч. доставка ${sumRu(tot.delivery)}` : "без НДС"} />
-        <StatCard label="НДС 12%" value={sumRu(tot.vat)} icon={Percent} tone="info" />
+        <StatCard label="НДС" value={sumRu(tot.vat)} icon={Percent} tone="info" />
         <StatCard label="Итого сумма" value={sumRu(tot.total)} icon={Sigma} tone="success" hint="с НДС и доставкой" />
       </div>
 
@@ -141,7 +143,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
             <SheetTh right>Доставка</SheetTh>
             <SheetTh right>Цена</SheetTh>
             <SheetTh right>Общие Сумма</SheetTh>
-            <SheetTh right>НДС 12%</SheetTh>
+            <SheetTh right>НДС</SheetTh>
             <SheetTh right>Итого Сумма</SheetTh>
             <SheetTh>Адрес</SheetTh>
             <SheetTh>Снабженец</SheetTh>
@@ -192,7 +194,7 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
       <SheetTd tone={tone} right muted={!r.delivery}>{r.delivery ? money(r.delivery) : "—"}</SheetTd>
       <SheetTd tone={tone} right>{money(r.price)}</SheetTd>
       <SheetTd tone={tone} right>{money(r.sum)}</SheetTd>
-      <SheetTd tone={tone} right muted={!r.vat}>{money(r.vat)}</SheetTd>
+      <SheetTd tone={tone} right muted={!r.vat}>{money(r.vat)}{r.vatRate > 0 && <span className="ml-1 text-[11px] text-slate-400">{r.vatRate}%</span>}</SheetTd>
       <SheetTd tone={tone} right strong>{money(r.total)}</SheetTd>
       <SheetTd tone={tone}><Clip text={r.address} /></SheetTd>
       <SheetTd tone={tone} className="whitespace-nowrap">{r.buyer ?? <span className="text-slate-400">—</span>}</SheetTd>

@@ -20,7 +20,8 @@ import { cancelRasxod } from "./actions";
 
 /**
  * Sklad → «Расход» — skladdan chiqim jurnali, foydalanuvchi Excel'idagi ustunlar bilan (ekran ruscha):
- * Число | Наименование | Ед Изм | К-во | От Кого | Кому | Деньги | Доставка | Цена | Общие Сумма | НДС 12% | Итого Сумма.
+ * Число | Наименование | Ед Изм | К-во | От Кого | Кому | Деньги | Доставка | Цена | Общие Сумма | НДС | Итого Сумма
+ * (Excel'da yana «Ставка НДС»: 0, 6 yoki 12% — oxirgi kirimdan; «Деньги» to'liq: Перечисление / Наличные).
  * Manba — StockMove (`rasxodJournal`): oluvchilarga va brigadalarga berish, qaytishlar, zames (kunlik, ko'k qator),
  * spisanie, inventarizatsiya kamomadi. Narx — harakatdagi «Дона сўм» snapshot.
  * Kim ko'radi — `canSeeRasxod` (lib/stock-journal-access): jurnalda narxlar va summalar bor. НДС — faqat korxona QQS
@@ -32,6 +33,8 @@ const PAY: Record<"BANK" | "CASH", { label: string; color: "blue" | "amber"; tit
   BANK: { label: "П-р", color: "blue", title: "Перечисление (банк) — по последнему приходу" },
   CASH: { label: "Н-к", color: "amber", title: "Наличные — по последнему приходу" },
 };
+/** Excel'da «Деньги» to'liq yoziladi — naqd yoki perechisleniye ekani qisqartmasiz ham tushunarli bo'lsin. */
+const PAY_EXCEL: Record<"BANK" | "CASH", string> = { BANK: "Перечисление (П-р)", CASH: "Наличные (Н-к)" };
 
 export default async function RasxodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; wh?: string; komu?: string; saved?: string }> }) {
   const s = await requirePage("/stock");
@@ -71,15 +74,16 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
     "К-во": r.qty,
     "От Кого": r.from,
     "Кому": `${r.to}${r.auto ? " (авто)" : ""}${r.cancelled ? " (отменён)" : ""}${r.kind === "storno" && r.note ? ` · ${r.note}` : ""}`,
-    "Деньги": r.payment ? PAY[r.payment].label : "",
+    "Деньги": r.payment ? PAY_EXCEL[r.payment] : "Не указано",
     "Доставка": r.delivery,
     "Цена": r.price,
     "Общие Сумма": r.sum,
-    "НДС 12%": r.vat,
+    "Ставка НДС": `${r.vatRate}%`,
+    "НДС": r.vat,
     "Итого Сумма": r.total,
   }));
   if (rows.length) {
-    excelRows.push({ "Число": "Итого", "Наименование": "", "Ед Изм": "", "К-во": null, "От Кого": "", "Кому": "", "Деньги": "", "Доставка": t.delivery, "Цена": null, "Общие Сумма": t.sum, "НДС 12%": t.vat, "Итого Сумма": t.total });
+    excelRows.push({ "Число": "Итого", "Наименование": "", "Ед Изм": "", "К-во": null, "От Кого": "", "Кому": "", "Деньги": "", "Доставка": t.delivery, "Цена": null, "Общие Сумма": t.sum, "Ставка НДС": "", "НДС": t.vat, "Итого Сумма": t.total });
   }
 
   return (
@@ -128,7 +132,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
             <SheetTh right>Доставка</SheetTh>
             <SheetTh right>Цена</SheetTh>
             <SheetTh right>Общие Сумма</SheetTh>
-            <SheetTh right>НДС 12%</SheetTh>
+            <SheetTh right>НДС</SheetTh>
             <SheetTh right>Итого Сумма</SheetTh>
             {canStorno && <SheetTh title="Сторно — отменить расход (директор или по разрешению)" />}
           </tr>
@@ -216,7 +220,7 @@ function Row({ r, storno }: { r: RasxodRow; storno?: React.ReactNode }) {
           : <span title={r.priceApprox ? "Цена не была зафиксирована — текущая «Дона сўм»" : undefined}>{r.priceApprox && <span className="mr-0.5 text-slate-400">≈</span>}{fmtNum(r.price, 2)}</span>}
       </SheetTd>
       <SheetTd tone={tone} right>{fmtNum(r.sum)}</SheetTd>
-      <SheetTd tone={tone} right muted={!r.vat}>{r.vat ? fmtNum(r.vat) : "0"}</SheetTd>
+      <SheetTd tone={tone} right muted={!r.vat}>{r.vat ? fmtNum(r.vat) : "0"}{r.vatRate > 0 && <span className="ml-1 text-[11px] text-slate-400">{r.vatRate}%</span>}</SheetTd>
       <SheetTd tone={tone} right strong>{fmtNum(r.total)}</SheetTd>
       {storno !== undefined && <SheetTd tone={tone} center>{storno}</SheetTd>}
     </SheetTr>

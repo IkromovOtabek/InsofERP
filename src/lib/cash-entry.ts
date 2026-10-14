@@ -3,6 +3,7 @@ import { audit } from "@/lib/audit";
 import { money } from "@/lib/format";
 import { cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
+import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 
 /**
  * Qo'lda kirim/chiqim yozish — yagona joy: veb "Kirim-Chiqim" formasi ham (`cashflow/actions.ts`),
@@ -39,6 +40,8 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
   const { receiptId, ...d } = { ...input, amount: r2(input.amount) };
   if (!(d.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
   if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
+  // Perekit — o'tkazma hujjati (`lib/cash-transfer.ts`), oddiy chiqim bo'lib yozilmaydi
+  if (d.category === PEREKIT_CATEGORY) return { error: "Perekit — hisoblararo o'tkazma: «Kassa ⇄ bank» orqali yozing" };
   const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
   if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
   return db.$transaction(async (tx) => {

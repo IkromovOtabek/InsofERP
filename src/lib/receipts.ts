@@ -13,7 +13,7 @@ import { companyVatPayer, isVatRate, receiptTotal, supplierVatRate, vatLine, typ
  * Sklad → «Приход» formasi (`stock/prixod/actions.ts`, ruscha). Ruxsat (`requireAction("stock", "receipt")`)
  * chaqiruvchida tekshiriladi; bu yerda faqat direktor hisobi (to'lov) qoidasi.
  *
- * Summalar `lib/receipt-vat.ts` da: narx QQS'siz, QQS (0/12%) faqat tovarga, «Доставка» QQS'siz va
+ * Summalar `lib/receipt-vat.ts` da: narx QQS'siz, QQS (0/6/12%) faqat tovarga, «Доставка» QQS'siz va
  * Общие/Итого ga hamda sklad tannarxiga (birlikka bo'lib) qo'shiladi.
  */
 
@@ -43,7 +43,7 @@ export type ReceiptInput = {
   cashAccountId?: string | null;
   /** Formadagi bir martalik kalit — ikki marta yuborish ikkinchi kirim ochmaydi */
   clientToken?: string | null;
-  items: { materialId: string; qty: number; price: number; vatRate?: 0 | 12 | null; deliveryCost?: number | null }[];
+  items: { materialId: string; qty: number; price: number; vatRate?: VatRate | null; deliveryCost?: number | null }[];
 };
 
 export type ReceiptLang = "uz" | "ru";
@@ -115,7 +115,7 @@ export async function createGoodsReceipt(
     fail("Har qatorda miqdor va narx bo'lsin", "В каждой строке укажите количество и цену");
   }
   if (raw.some((i) => r3(i.qty) < 0.001)) fail("Miqdor juda kichik — kamida 0,001", "Количество слишком мало — минимум 0,001");
-  if (raw.some((i) => i.vatRate != null && !isVatRate(Number(i.vatRate)))) fail("QQS stavkasi 0 yoki 12% bo'lsin", "Ставка НДС — 0 или 12%");
+  if (raw.some((i) => i.vatRate != null && !isVatRate(Number(i.vatRate)))) fail("QQS stavkasi 0, 6 yoki 12% bo'lsin", "Ставка НДС — 0, 6 или 12%");
   if (raw.some((i) => i.deliveryCost != null && !(Number.isFinite(i.deliveryCost) && i.deliveryCost >= 0 && i.deliveryCost <= MAX_AMOUNT))) {
     fail("Dostavka summasi manfiy bo'lmasin", "Сумма доставки не может быть отрицательной");
   }
@@ -248,7 +248,7 @@ export type PrixodRow = {
   vatRate: number;
   /** Общие сумма: qty × price + delivery */
   sum: number;
-  /** НДС 12% */
+  /** НДС (qator stavkasi bo'yicha: 0, 6 yoki 12%) */
   vat: number;
   /** Итого сумма: sum + vat */
   total: number;
