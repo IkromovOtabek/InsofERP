@@ -18,7 +18,20 @@ export type RuDict = { e: Record<string, string>; t: [string, string][] };
 export const normKey = (s: string) => s.replace(/[ʻ‘’`ʼ]/g, "'").replace(/\s+/g, " ").trim();
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const TAIL = /^(.*?)(\s*(?::|\*|…|\.\.\.|!|\?)\s*)$/s;
+/** Oxiridagi «:», «*», «…», «!», «?» (bo'shliqlar bilan) — regex'siz: Hermes uzun matnda regex stekidan yiqiladi. */
+const TAIL_CH = new Set([":", "*", "…", "!", "?"]);
+function splitTail(text: string): [string, string] | null {
+  let i = text.length;
+  while (i > 0 && /\s/.test(text.charAt(i - 1))) i--;
+  const end = i;
+  if (text.endsWith("...", end)) i -= 3;
+  else if (i > 0 && TAIL_CH.has(text.charAt(i - 1))) i--;
+  if (i === end) return null;
+  while (i > 0 && /\s/.test(text.charAt(i - 1))) i--;
+  return i > 0 ? [text.slice(0, i), text.slice(i)] : null;
+}
+/** Shablon izlanadigan eng uzun matn: undan uzuni (maqola, izoh) — faqat aniq moslik va bo'laklash. */
+const MAX_PATTERN_LEN = 400;
 
 type Pattern = { re: RegExp; out: string; slots: number[]; anchor: string; weight: number; seps: string };
 
@@ -39,10 +52,12 @@ const WORD: Record<string, string> = {
   mln: "млн", mlrd: "млрд", ming: "тыс.", "so'm": "сум", dona: "шт.", ta: "шт.", kun: "дн.", soat: "ч", daq: "мин", daqiqa: "мин",
   yil: "г.", oy: "мес.", reys: "рейс.", bugun: "сегодня", kecha: "вчера", ertaga: "завтра",
 };
-const DATE_RE = /^[\s\d.,:/+\-−–—()%«»']*(?:[a-z']+[\s\d.,:/+\-−–—()%«»']*)+$/i;
+// Bitta belgi sinfi, ichma-ich kvantifikatorsiz — chiziqli (avval `(?:[a-z']+[...]*)+` edi: Hermes'da
+// «Maximum regex stack depth reached» bilan ekran yiqilardi)
+const DATE_RE = /^[\s\d.,:/+\-−–—()%«»'a-z]*$/i;
 /** Faqat raqam + sana/birlik so'zlaridan iborat matn ("29-sentabr, seshanba", "2,4 mlrd so'm"). */
 function builtin(text: string): string | null {
-  if (!DATE_RE.test(text)) return null;
+  if (text.length > 60 || !DATE_RE.test(text)) return null;
   const words = text.toLowerCase().match(/[a-z']+/g) ?? [];
   if (!words.length || !words.every((w) => w in MONTH || w in WORD)) return null;
   return text
@@ -58,7 +73,21 @@ function builtin(text: string): string | null {
 
 export function makeTranslator(dict: RuDict) {
   const exact = new Map<string, string>();
-  for (const [k, v] of Object.entries(dict.e)) if (v) exact.set(normKey(k), v);
+  // Katta-kichik harf farqi zaxirasi: "Kirim-chiqim" ↔ lug'atdagi "Kirim-Chiqim" (birinchi harf registri saqlanadi)
+  const lower = new Map<string, string>();
+  for (const [k, v] of Object.entries(dict.e)) {
+    if (!v) continue;
+    const n = normKey(k);
+    exact.set(n, v);
+    if (!lower.has(n.toLowerCase())) lower.set(n.toLowerCase(), v);
+  }
+  const caseHit = (text: string): string | undefined => {
+    const v = lower.get(text.toLowerCase());
+    if (v === undefined) return undefined;
+    if (text === text.toUpperCase()) return v.toUpperCase(); // "SKLAD" → "СКЛАД"
+    const f = text.charAt(0);
+    return f === f.toLowerCase() ? v.charAt(0).toLowerCase() + v.slice(1) : v.charAt(0).toUpperCase() + v.slice(1);
+  };
 
   // Shablon → RegExp. Bucket — eng uzun doimiy bo'lakning birinchi so'zi bo'yicha (tez saralash)
   const buckets = new Map<string, Pattern[]>();
@@ -85,14 +114,15 @@ export function makeTranslator(dict: RuDict) {
   const cache = new Map<string, string | null>();
 
   function core(text: string, depth: number): string | null {
-    const hit = exact.get(text);
+    const hit = exact.get(text) ?? caseHit(text);
     if (hit !== undefined) return hit;
     // "Izoh:" / "Nomi *" — lug'atda "Izoh" bo'lsa
-    const m = TAIL.exec(text);
-    if (m && m[1]) { const h = exact.get(m[1]); if (h !== undefined) return h + m[2]; }
+    const m = splitTail(text);
+    if (m) { const h = exact.get(m[0]); if (h !== undefined) return h + m[1]; }
     if (depth > 3 || !/[A-Za-z]{2,}/.test(text)) return null;
     const b = builtin(text);
     if (b !== null) return b;
+    if (text.length > MAX_PATTERN_LEN) return splitSeps(text, depth);
     const words = new Set(text.toLowerCase().match(/[a-z'][a-z']*/g) ?? []);
     for (const w of words) {
       const list = buckets.get(w);
@@ -109,7 +139,11 @@ export function makeTranslator(dict: RuDict) {
         return p.out.replace(/\{(\d+)\}/g, (_, n) => vals[Number(n)] ?? "");
       }
     }
-    // Butun qator topilmadi — ajratgichlar bo'yicha bo'laklab ("ishda 9/10 · chiqarildi 16 m³ · brak 1 ta")
+    return splitSeps(text, depth);
+  }
+
+  /** Butun qator topilmadi — ajratgichlar bo'yicha bo'laklab ("ishda 9/10 · chiqarildi 16 m³ · brak 1 ta"). */
+  function splitSeps(text: string, depth: number): string | null {
     for (const sep of SPLIT) {
       if (!text.includes(sep)) continue;
       const parts = text.split(sep);
@@ -132,8 +166,8 @@ export function makeTranslator(dict: RuDict) {
     if (!text || !/[A-Za-z]{2,}/.test(text)) return text;
     let r = cache.get(text);
     if (r === undefined) {
-      const k = normKey(text);
-      r = k ? core(k, 0) : null;
+      // Tarjima hech qachon ekranni yiqitmasin: kutilmagan xato (regex, juda uzun matn) — matn o'zgarishsiz
+      try { const k = normKey(text); r = k ? core(k, 0) : null; } catch { r = null; }
       if (cache.size > 50000) cache.clear();
       cache.set(text, r);
     }
