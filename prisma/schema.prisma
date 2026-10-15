@@ -2367,26 +2367,191 @@ enum MarketingContentStatus {
 }
 
 model MarketingContent {
-  id          String                 @id @default(cuid())
-  title       String
-  type        MarketingContentType   @default(REELS)
-  rubric      String? // «01 Завод изнутри» va h.k.
-  status      MarketingContentStatus @default(IDEA)
-  publishDate DateTime?              @db.Date
-  hook        String?
-  script      String? // ssenariy / matn (markdown)
-  caption     String?
-  url         String? // nashrdan keyingi havola
-  views       Int                    @default(0)
-  likes       Int                    @default(0)
-  saves       Int                    @default(0)
-  leads       Int                    @default(0)
-  createdBy   String? // xodim ismi yoki "AI agent (…)"
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  id             String                 @id @default(cuid())
+  title          String
+  type           MarketingContentType   @default(REELS)
+  rubric         String? // «01 Завод изнутри» va h.k.
+  status         MarketingContentStatus @default(IDEA)
+  publishDate    DateTime?              @db.Date
+  hook           String?
+  script         String? // ssenariy / matn (markdown)
+  caption        String?
+  url            String? // nashrdan keyingi havola
+  views          Int                    @default(0)
+  likes          Int                    @default(0)
+  saves          Int                    @default(0)
+  leads          Int                    @default(0)
+  createdBy      String? // xodim ismi yoki "AI agent (…)"
+  // SMM: qaysi tarmoqlarga, aniq qachon, qaysi tilda; nashrdan oldin tasdiqlanadi
+  channels       SmmChannel[]           @default([])
+  scheduledAt    DateTime? // aniq chiqish vaqti (Toshkent); tasdiqlangan post shu vaqtda o'zi chiqadi
+  captionUz      String? // o'zbekcha matn (caption — ruscha/asosiy)
+  hashtags       String?
+  approval       SmmApproval            @default(DRAFT)
+  approvalNote   String? // rad etish sababi yoki izoh
+  approvedById   String?
+  approvedByName String?
+  approvedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  media        MarketingContentMedia[]
+  publications SmmPublication[]
+  boosts       SmmBoost[]
 
   @@index([publishDate])
   @@index([status])
+  @@index([approval, scheduledAt])
+}
+
+enum SmmChannel {
+  INSTAGRAM
+  FACEBOOK
+  TELEGRAM
+}
+
+enum SmmApproval {
+  DRAFT // tayyorlanmoqda
+  PENDING // tasdiqlashga yuborildi
+  APPROVED // tasdiqlandi — vaqti kelganda chiqadi
+  REJECTED // rad etildi (approvalNote — sabab)
+}
+
+enum SmmMediaKind {
+  IMAGE
+  VIDEO
+}
+
+/**
+ * Media kutubxona: zavod, obyekt, mahsulot surat va videolari (fayl — UPLOADS_DIR/smm/)
+ */
+model SmmMedia {
+  id           String                  @id @default(cuid())
+  kind         SmmMediaKind
+  fileName     String // UPLOADS_DIR/smm/<fileName>
+  mime         String
+  size         Int
+  title        String
+  tags         String[]                @default([])
+  uploadedById String?
+  uploadedBy   String? // ism (tarix uchun)
+  createdAt    DateTime                @default(now())
+  contents     MarketingContentMedia[]
+
+  @@index([createdAt])
+}
+
+model MarketingContentMedia {
+  contentId String
+  mediaId   String
+  sort      Int              @default(0)
+  content   MarketingContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  media     SmmMedia         @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@id([contentId, mediaId])
+  @@index([mediaId])
+}
+
+enum SmmPublicationStatus {
+  PENDING // navbatda
+  PUBLISHING // yuborilmoqda (ikki jarayon bir postni ikki marta chiqarmasin)
+  PUBLISHED
+  FAILED
+  SIMULATED // kalit yo'q yoki sinov rejimi — tarmoqqa yuborilmadi
+}
+
+/**
+ * Har tarmoqdagi nashr: holat, tashqi id/havola va statistika (tarmoqdan tortiladi)
+ */
+model SmmPublication {
+  id          String               @id @default(cuid())
+  contentId   String
+  channel     SmmChannel
+  status      SmmPublicationStatus @default(PENDING)
+  externalId  String?
+  permalink   String?
+  error       String?
+  attempts    Int                  @default(0)
+  publishedAt DateTime?
+  views       Int?
+  reach       Int?
+  likes       Int?
+  comments    Int?
+  shares      Int?
+  saves       Int?
+  statsAt     DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  content     MarketingContent     @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, channel])
+  @@index([status])
+}
+
+enum SmmBoostObjective {
+  REACH // ko'proq odam ko'rsin
+  MESSAGES // Direct'ga yozishsin
+  LEADS // ariza formasi (Lead Ads) → Sayt arizalari
+}
+
+enum SmmBoostStatus {
+  PENDING_APPROVAL
+  REJECTED
+  LAUNCHING
+  ACTIVE
+  PAUSED
+  COMPLETED
+  FAILED
+  SIMULATED // kalit yo'q — Meta'ga yuborilmadi, pul sarflanmadi
+}
+
+/**
+ * Target: chiqqan postni Meta'da reklama qilish. Tasdiqlanmaguncha va limitdan oshsa ishga tushmaydi.
+ */
+model SmmBoost {
+  id              String            @id @default(cuid())
+  contentId       String
+  objective       SmmBoostObjective @default(REACH)
+  audience        String // auditoriya shabloni kaliti (lib/smm/audiences.ts)
+  dailyBudget     Decimal           @db.Decimal(18, 2) // reklama kabineti valyutasida (MarketingSettings.adCurrency)
+  days            Int
+  status          SmmBoostStatus    @default(PENDING_APPROVAL)
+  requestedById   String?
+  requestedByName String?
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  note            String?
+  metaCampaignId  String?
+  metaAdSetId     String?
+  metaAdId        String?
+  error           String?
+  startAt         DateTime?
+  endAt           DateTime?
+  spend           Decimal           @default(0) @db.Decimal(18, 2)
+  impressions     Int               @default(0)
+  reach           Int               @default(0)
+  clicks          Int               @default(0)
+  results         Int               @default(0) // xabarlar yoki arizalar (maqsadga qarab)
+  statsAt         DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  content         MarketingContent  @relation(fields: [contentId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([contentId])
+}
+
+/**
+ * Korxona marketing sozlamalari (bitta yozuv, id = "main"): reklama limitlari va standart heshteglar
+ */
+model MarketingSettings {
+  id              String   @id @default("main")
+  adCurrency      String   @default("USD") // Meta reklama kabineti valyutasi
+  boostDailyCap   Decimal  @default(20) @db.Decimal(18, 2) // bitta reklamaning kunlik maksimal byudjeti
+  boostMonthlyCap Decimal  @default(300) @db.Decimal(18, 2) // oy bo'yicha jami rejalashtirilgan byudjet chegarasi
+  defaultHashtags String?
+  updatedAt       DateTime @updatedAt
 }
 
 enum AdChannel {

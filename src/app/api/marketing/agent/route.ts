@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { canDo } from "@/lib/permissions";
 import { aiAllowed } from "@/lib/rate-limit";
 import { MARKETING_MODEL, MARKETING_SYSTEM, marketingTools } from "@/lib/ai/marketing-agent";
+import { aiErrorText } from "@/lib/ai/smm-writer";
 
 /**
  * Marketing AI agenti — oqimli javob (NDJSON):
@@ -88,10 +89,7 @@ export async function POST(req: Request) {
         }
         send({ type: "done" });
       } catch (e) {
-        let message = "Agent javob bera olmadi. Birozdan keyin qayta urinib ko'ring.";
-        if (e instanceof Anthropic.AuthenticationError) message = "AI kaliti noto'g'ri: ANTHROPIC_API_KEY ni tekshiring.";
-        else if (e instanceof Anthropic.RateLimitError) message = "AI xizmati chegarasi — bir daqiqadan keyin qayta urinib ko'ring.";
-        else if (e instanceof Anthropic.APIError) message = `AI xizmati xatosi (${e.status ?? "tarmoq"}).`;
+        const message = e instanceof Anthropic.APIError ? aiErrorText(e) : "Agent javob bera olmadi. Birozdan keyin qayta urinib ko'ring.";
         console.error("[marketing-agent]", e instanceof Error ? e.message : e);
         send({ type: "error", message });
       } finally {

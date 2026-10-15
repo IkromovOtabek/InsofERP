@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { Save } from "lucide-react";
 import type { AdCampaignStatus, AdChannel } from "@/generated/prisma";
-import { CAMPAIGN_STATUS, CHANNEL } from "@/lib/marketing";
+import { CAMPAIGN_STATUS, CHANNEL } from "@/lib/marketing-labels";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { saveCampaign } from "./actions";
 

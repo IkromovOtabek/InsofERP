@@ -4,42 +4,9 @@
  * Lid manbai — `Lead.utmCampaign` (saytdagi formaga manzildagi UTM yoziladi). Kampaniya shu kalit bilan
  * bog'lanadi: lidlar, mijozga aylanganlar va ular ochgan zayavkalar summasi (bekor qilinmagan) → CPL, ROMI.
  */
-import type { AdCampaignStatus, AdChannel, MarketingContentStatus, MarketingContentType } from "@/generated/prisma";
-import type { BadgeColor } from "@/components/ui";
 import { db } from "./db";
 
-export const CONTENT_STATUS: Record<MarketingContentStatus, { label: string; color: BadgeColor }> = {
-  IDEA: { label: "G'oya", color: "slate" },
-  SCRIPT: { label: "Ssenariy", color: "blue" },
-  FILMED: { label: "Suratga olindi", color: "violet" },
-  EDITING: { label: "Montaj", color: "amber" },
-  PUBLISHED: { label: "Chiqdi", color: "green" },
-  CANCELLED: { label: "Bekor", color: "red" },
-};
-/** Kanban ustunlari (bekor qilinganlar alohida) */
-export const CONTENT_FLOW: MarketingContentStatus[] = ["IDEA", "SCRIPT", "FILMED", "EDITING", "PUBLISHED"];
-
-export const CONTENT_TYPE: Record<MarketingContentType, string> = {
-  REELS: "Reels",
-  POST: "Post",
-  STORIES: "Stories",
-  ARTICLE: "Maqola",
-};
-
-export const CHANNEL: Record<AdChannel, string> = {
-  YANDEX: "Yandex",
-  GOOGLE: "Google",
-  INSTAGRAM: "Instagram",
-  TELEGRAM: "Telegram",
-  OTHER: "Boshqa",
-};
-
-export const CAMPAIGN_STATUS: Record<AdCampaignStatus, { label: string; color: BadgeColor }> = {
-  DRAFT: { label: "Qoralama", color: "slate" },
-  ACTIVE: { label: "Faol", color: "green" },
-  PAUSED: { label: "To'xtatilgan", color: "amber" },
-  FINISHED: { label: "Tugagan", color: "slate" },
-};
+export { CONTENT_STATUS, CONTENT_FLOW, CONTENT_TYPE, CHANNEL, CAMPAIGN_STATUS } from "./marketing-labels";
 
 export type CampaignStat = { leads: number; converted: number; revenue: number };
 

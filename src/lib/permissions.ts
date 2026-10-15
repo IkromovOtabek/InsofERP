@@ -54,6 +54,9 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "ads",     label: "Reklama kampaniyalari va xarajat",  roles: ["SALES"] },
     { key: "seo",     label: "SEO kalit so'zlar va pozitsiyalar", roles: ["SALES"] },
     { key: "agent",   label: "AI marketing agenti",               roles: ["SALES"], hint: "Agent kontent rejaga yozishi uchun «Kontent reja» ruxsati ham kerak" },
+    { key: "publish", label: "Postni tasdiqlash va tarmoqqa chiqarish", roles: [], hint: "Instagram, Telegram, Facebook — kompaniya nomidan chiqadi; odatda direktor" },
+    { key: "boost",   label: "Target (reklama) so'rovi yuborish",  roles: ["SALES"], hint: "Faqat so'rov — pul tasdiqlangandan keyin sarflanadi" },
+    { key: "boost_approve", label: "Targetni tasdiqlash va ishga tushirish", roles: [], hint: "Real pul sarflanadi — limitlar Target sahifasida" },
   ],
   customers: [
     { key: "edit",     label: "Mijoz qo'shish / tahrirlash",  roles: ["SALES", "ACCOUNTING", "FINANCE"] },

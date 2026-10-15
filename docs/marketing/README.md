@@ -20,6 +20,7 @@ lekin xaridor ko'pincha "tanigan joyidan" oladi. Demak vazifa — ishonch va tan
 | `04-seo-semantik-yadro.md` | Semantik yadro, klaster → sahifa, title/description (RU+UZ), 12 ta maqola, texnik SEO | Agentlik (SEO), dasturchi (sayt) |
 | `05-reklama.md` | Yandex Direct, Google Ads, Instagram/Facebook kampaniyalari tuzilmasi, matnlar, konversiya maqsadlari | Agentlik (sozlaydi), INSOF (byudjetni tasdiqlaydi) |
 | `06-hisobot-shabloni.md` | Oylik hisobot shabloni: metrikalar, Reels, reklama, SEO, ERP'dagi lidlar, xulosa | Agentlik (har oy to'ldiradi), INSOF (qabul qiladi) |
+| `07-smm-ulash.md` | SMM: tasdiqlash oqimi, Instagram/Facebook/Telegram va Target kalitlarini ulash | Direktor, dasturchi |
 
 ## Muhim belgilar
 

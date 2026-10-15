@@ -2,34 +2,74 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { isoDate } from "@/lib/format";
-import { Card, PageHeader } from "@/components/ui";
-import { ContentForm, EMPTY_CONTENT } from "../content-form";
+import { getCompany } from "@/lib/company";
+import { dateTime } from "@/lib/format";
+import { aiReady } from "@/lib/ai/smm-writer";
+import { AUDIENCES } from "@/lib/smm/audiences";
+import { marketingSettings } from "@/lib/smm/boosts";
+import { Badge, Callout, PageHeader } from "@/components/ui";
+import { APPROVAL } from "@/lib/smm/labels";
+import { ContentForm, EMPTY_CONTENT, type MediaItem } from "../content-form";
+import { ApprovalPanel, BoostRequest } from "../post-panel";
 
-export default async function ContentEditPage({ params }: { params: Promise<{ id: string }> }) {
+/** datetime-local qiymati (server vaqti — Toshkent) */
+const local = (d: Date) => {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+export default async function ContentEditPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saqlandi?: string }> }) {
   const s = await requirePage("/marketing/kontent");
   const { id } = await params;
-  const item = id === "new" ? null : await db.marketingContent.findUnique({ where: { id } });
+  const { saqlandi } = await searchParams;
+  const [item, library, company, settings] = await Promise.all([
+    id === "new" ? null : db.marketingContent.findUnique({
+      where: { id },
+      include: { media: { orderBy: { sort: "asc" }, include: { media: { select: { id: true, kind: true, title: true } } } }, publications: true, boosts: { orderBy: { createdAt: "desc" }, take: 3 } },
+    }),
+    db.smmMedia.findMany({ orderBy: { createdAt: "desc" }, take: 120, select: { id: true, kind: true, title: true } }),
+    getCompany(),
+    marketingSettings(),
+  ]);
   if (id !== "new" && !item) notFound();
 
   const v = item
     ? {
         title: item.title, type: item.type, rubric: item.rubric ?? "", status: item.status,
-        // @db.Date UTC yarim tunda saqlanadi — sana UTC bo'yicha olinadi
-        publishDate: item.publishDate ? item.publishDate.toISOString().slice(0, 10) : "",
-        hook: item.hook ?? "", script: item.script ?? "", caption: item.caption ?? "", url: item.url ?? "",
+        scheduledAt: item.scheduledAt ? local(item.scheduledAt) : "", channels: item.channels,
+        media: item.media.map((m) => m.media as MediaItem),
+        hook: item.hook ?? "", script: item.script ?? "", caption: item.caption ?? "", captionUz: item.captionUz ?? "", hashtags: item.hashtags ?? "", url: item.url ?? "",
         views: item.views, likes: item.likes, saves: item.saves, leads: item.leads,
       }
-    : { ...EMPTY_CONTENT, publishDate: isoDate() };
+    : EMPTY_CONTENT;
+
+  const canEdit = canDo(s, "marketing", "content");
+  const igOut = item?.publications.find((p) => p.channel === "INSTAGRAM" && (p.status === "PUBLISHED" || p.status === "SIMULATED"));
 
   return (
     <div>
       <PageHeader
         back={{ href: "/marketing/kontent", label: "Kontent reja" }}
-        title={item ? item.title : "Yangi kontent"}
-        subtitle={item?.createdBy ? `Muallif: ${item.createdBy}` : undefined}
+        title={<>{item ? item.title : "Yangi post"}{item && <Badge color={APPROVAL[item.approval].color}>{APPROVAL[item.approval].label}</Badge>}</>}
+        subtitle={item?.createdBy ? `Muallif: ${item.createdBy}` : "Matn, media va tarmoqlarni tanlang — AI yordamchi ssenariy va izohni yozib beradi"}
       />
-      <Card><ContentForm id={item?.id ?? null} v={v} canEdit={canDo(s, "marketing", "content")} /></Card>
+      {saqlandi && <div className="mb-4"><Callout tone="success">Saqlandi</Callout></div>}
+      <div className="grid gap-6 2xl:grid-cols-[1fr_300px]">
+        <ContentForm id={item?.id ?? null} v={v} canEdit={canEdit} canAi={canDo(s, "marketing", "agent") && aiReady()} library={library as MediaItem[]} brand={company.name} />
+        {item && (
+          <div className="space-y-4">
+            <ApprovalPanel
+              id={item.id} approval={item.approval} note={item.approvalNote} approvedBy={item.approvedByName}
+              canSubmit={canEdit} canPublish={canDo(s, "marketing", "publish")}
+              scheduled={item.scheduledAt ? dateTime(item.scheduledAt) : null}
+              pubs={item.publications.map((p) => ({ channel: p.channel, status: p.status, permalink: p.permalink, error: p.error, views: p.views, likes: p.likes, comments: p.comments }))}
+            />
+            {igOut && canDo(s, "marketing", "boost") && (
+              <BoostRequest contentId={item.id} audiences={AUDIENCES.map(({ key, label, hint }) => ({ key, label, hint }))} currency={settings.adCurrency} dailyCap={Number(settings.boostDailyCap)} />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

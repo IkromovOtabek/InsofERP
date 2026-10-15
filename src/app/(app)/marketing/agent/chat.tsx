@@ -9,11 +9,11 @@ import { Markdown } from "./markdown";
 export type ChatMsg = { role: "user" | "assistant"; content: string; tools: string[] };
 
 const SUGGESTIONS = [
-  "Oxirgi 30 kun natijalarini tahlil qil va 3 ta tavsiya ber",
-  "Kontent rejadagi keyingi Reels uchun ssenariyni yaxshila",
-  "Yandex Direct uchun FBS bloklar bo'yicha 3 ta e'lon matni yoz",
-  "Toshkentda plita va FBS sotadigan raqobatchilarni internetdan top",
-  "SEO: qaysi klasterlarda sahifa yoki maqola yetishmaydi?",
+  "Keyingi oy uchun 8 ta Reels'dan iborat kontent reja tuz (qoralama qilib)",
+  "Media kutubxonadagi videolardan foydalanib «Завод изнутри» Reels posti tayyorla",
+  "O'tgan 30 kun postlari va targetini tahlil qil: nima ishladi, nima ishlamadi?",
+  "Eng ko'p ko'rilgan post uchun target taklif qil (byudjet va auditoriya bilan)",
+  "Toshkentda plita va FBS sotadigan raqobatchilarning Instagram'ini internetdan o'rgan",
 ];
 
 /** Agent bilan chat: javob oqim bilan keladi, ishlatilgan vositalar belgi bo'lib ko'rinadi. */
@@ -80,7 +80,7 @@ export function Chat({ chatId: initialId, initial, labels, canUse }: { chatId?: 
           <div className="mx-auto max-w-xl py-8 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-brand-400"><Sparkles size={22} /></span>
             <h2 className="mt-4 text-lg font-semibold">Marketing agenti</h2>
-            <p className="mt-1.5 text-sm text-slate-500">Arizalar, reklama, kontent reja va SEO ma&apos;lumotini o&apos;qiydi; Reels ssenariysi va e&apos;lon matnlarini yozadi; raqobatchilarni internetdan qidiradi.</p>
+            <p className="mt-1.5 text-sm text-slate-500">Oylik kontent reja tuzadi, Reels ssenariysi va postlarni (RU/UZ) yozadi, media biriktiradi, statistikani tahlil qiladi va target taklif qiladi. Tasdiqlash va nashr — sizda.</p>
             {canUse ? (
               <div className="mt-6 flex flex-col gap-2">
                 {SUGGESTIONS.map((x) => (

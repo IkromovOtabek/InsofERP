@@ -15,7 +15,7 @@ import { campaignStats } from "@/lib/marketing";
 
 export const MARKETING_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
 
-export const MARKETING_SYSTEM = `Sen — beton va temir-beton zavodining marketing agentisan. ERP ichidagi Sotuv bo'limi (Marketing) xodimlari va reklama agentligi bilan ishlaysan.
+export const MARKETING_SYSTEM = `Sen — beton va temir-beton zavodining SMM va marketing agentisan. ERP ichidagi Sotuv bo'limi (Marketing) xodimlari va reklama agentligi bilan ishlaysan: kontent reja, Reels ssenariylari, Instagram/Telegram/Facebook postlari, target va tahlil.
 
 ## Ma'lumot manbai
 - Korxona nomi, telefoni, manzili, tavsifi va mahsulot katalogi — get_company vositasida. Javob yoki matn yozishdan oldin kerak bo'lsa avval shuni chaqir.
@@ -28,7 +28,11 @@ export const MARKETING_SYSTEM = `Sen — beton va temir-beton zavodining marketi
 - Reels ssenariysi formati: davomiylik, hook (0–2 s), kadrlar ro'yxati, ovoz matni, ekrandagi matn, izoh va heshteglar, CTA.
 - Reklama e'loni: sarlavha (56 belgigacha), matn (81 belgigacha), tavsiya etilgan kalit so'zlar va minus-so'zlar.
 - Tahlilda: avval raqamlar (vositadan), keyin 2–3 ta aniq tavsiya. CPL = xarajat / ariza, ROMI = (zayavkalar − xarajat) / xarajat.
-- create_content faqat foydalanuvchi so'rasa yoki rozilik bersa — o'zboshimchalik bilan yaratma.
+- create_post, update_post, plan_month va propose_boost faqat foydalanuvchi so'rasa yoki rozilik bersa — o'zboshimchalik bilan yaratma.
+- Sen yaratgan post doim QORALAMA: tasdiqlash, tarmoqqa chiqarish va reklamani ishga tushirish — faqat odam (direktor) qiladi. Buni foydalanuvchiga ayt va havolani ber (/marketing/kontent/<id>).
+- Postga media biriktirishdan oldin list_media bilan mavjud fayllarni ko'r; mos media bo'lmasa, qanday kadr kerakligini yoz (suratga olish ro'yxati).
+- Kontent tahlilida list_content natijalari (ko'rish, layk, nashr holati) va target natijalariga (list_boosts) tayan.
+- Target taklif qilganda: maqsad, auditoriya, kunlik byudjet va kun sonini asoslab ber; limitdan oshmasin (list_boosts limitni ko'rsatadi).
 - Raqobatchi yoki bozor haqida so'ralsa — web qidiruv, manbalarni ko'rsat.
 - Qisqa yoz: natija, keyin keyingi qadam. Jadval kerak bo'lsa — markdown jadval.`;
 
@@ -137,7 +141,7 @@ export function marketingTools(s: Session) {
     run: async ({ status }) => json(await db.marketingContent.findMany({
       where: status ? { status } : {},
       orderBy: { publishDate: "asc" },
-      select: { id: true, title: true, type: true, rubric: true, status: true, publishDate: true, hook: true, views: true, likes: true, saves: true, leads: true, url: true },
+      select: { id: true, title: true, type: true, rubric: true, status: true, approval: true, channels: true, scheduledAt: true, publishDate: true, hook: true, views: true, likes: true, saves: true, leads: true, url: true, publications: { select: { channel: true, status: true, views: true, likes: true, comments: true, reach: true } }, _count: { select: { media: true } } },
     })),
   });
 
@@ -151,30 +155,147 @@ export function marketingTools(s: Session) {
     },
   });
 
-  const createContent = betaZodTool({
-    name: "create_content",
-    description: "Kontent rejaga yangi element qo'shadi (holat «Ssenariy»). Faqat foydalanuvchi so'raganda yoki rozilik berganda.",
-    inputSchema: z.object({
-      title: z.string().min(2).max(160),
-      type: z.enum(["REELS", "POST", "STORIES", "ARTICLE"]),
-      rubric: z.string().max(80).optional(),
-      publish_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("YYYY-MM-DD"),
-      hook: z.string().max(500).optional(),
-      script: z.string().max(20_000),
-      caption: z.string().max(4000).optional(),
-    }),
+  const postFields = {
+    rubric: z.string().max(80).optional(),
+    scheduled_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).optional().describe("Chiqish vaqti YYYY-MM-DDTHH:MM (Toshkent)"),
+    channels: z.array(z.enum(["INSTAGRAM", "TELEGRAM", "FACEBOOK"])).optional().describe("Standart: INSTAGRAM, TELEGRAM"),
+    hook: z.string().max(500).optional(),
+    script: z.string().max(20_000).optional(),
+    caption: z.string().max(2200).optional().describe("Asosiy izoh (rus tilida)"),
+    caption_uz: z.string().max(2200).optional(),
+    hashtags: z.string().max(500).optional(),
+    media_ids: z.array(z.string()).max(10).optional().describe("list_media dagi id lar, tartib bilan"),
+  };
+  const when = (v?: string) => (v ? { scheduledAt: new Date(v), publishDate: new Date(`${v.slice(0, 10)}T00:00:00Z`) } : {});
+  async function validMedia(ids?: string[]): Promise<string[] | string> {
+    if (!ids?.length) return [];
+    const uniq = [...new Set(ids)];
+    const n = await db.smmMedia.count({ where: { id: { in: uniq } } });
+    return n === uniq.length ? uniq : "Xato: media id lardan biri topilmadi — list_media bilan tekshir";
+  }
+
+  const createPost = betaZodTool({
+    name: "create_post",
+    description: "Kontent rejaga QORALAMA post qo'shadi (tasdiqlanmagan — hech qayerga chiqmaydi). Faqat foydalanuvchi so'raganda yoki rozilik berganda.",
+    inputSchema: z.object({ title: z.string().min(2).max(160), type: z.enum(["REELS", "POST", "STORIES", "ARTICLE"]), ...postFields }),
     run: async (i) => {
       if (!canWriteContent) return "Xato: foydalanuvchida kontent rejaga yozish ruxsati yo'q.";
+      const media = await validMedia(i.media_ids);
+      if (typeof media === "string") return media;
       const row = await db.marketingContent.create({
         data: {
-          title: i.title, type: i.type, rubric: i.rubric ?? null, status: "SCRIPT",
-          publishDate: i.publish_date ? new Date(`${i.publish_date}T00:00:00Z`) : null,
-          hook: i.hook ?? null, script: i.script, caption: i.caption ?? null, createdBy: `AI agent (${s.fullName})`,
+          title: i.title, type: i.type, rubric: i.rubric ?? null, status: i.script ? "SCRIPT" : "IDEA",
+          hook: i.hook ?? null, script: i.script ?? null, caption: i.caption ?? null, captionUz: i.caption_uz ?? null, hashtags: i.hashtags ?? null,
+          channels: i.channels ?? ["INSTAGRAM", "TELEGRAM"], ...when(i.scheduled_at), createdBy: `AI agent (${s.fullName})`,
+          media: { create: media.map((mediaId, sort) => ({ mediaId, sort })) },
         },
       });
       const { audit } = await import("@/lib/audit");
-      await audit(db, s.userId, "CREATE", "MarketingContent", row.id, undefined, row);
-      return json({ created: true, id: row.id, link: `/marketing/kontent/${row.id}` });
+      await audit(db, s.userId, "CREATE", "MarketingContent", row.id, undefined, { title: row.title, ai: true });
+      return json({ created: true, id: row.id, link: `/marketing/kontent/${row.id}`, note: "Qoralama — tasdiqlash uchun odam ko'rib chiqadi" });
+    },
+  });
+
+  const updatePost = betaZodTool({
+    name: "update_post",
+    description: "Qoralama yoki rad etilgan postni tahrirlaydi (matn, ssenariy, vaqt, tarmoqlar, media). Tasdiqlangan/chiqqan postni o'zgartirmaydi.",
+    inputSchema: z.object({ id: z.string().min(1), title: z.string().min(2).max(160).optional(), ...postFields }),
+    run: async (i) => {
+      if (!canWriteContent) return "Xato: foydalanuvchida kontent rejaga yozish ruxsati yo'q.";
+      const c = await db.marketingContent.findUnique({ where: { id: i.id }, select: { approval: true, status: true } });
+      if (!c) return "Topilmadi";
+      if (c.approval === "APPROVED" || c.approval === "PENDING" || c.status === "PUBLISHED") return "Xato: post tasdiqlashda yoki tasdiqlangan — faqat odam o'zgartiradi";
+      const media = await validMedia(i.media_ids);
+      if (typeof media === "string") return media;
+      const data: Record<string, unknown> = { ...when(i.scheduled_at) };
+      if (i.title) data.title = i.title;
+      if (i.rubric !== undefined) data.rubric = i.rubric;
+      if (i.hook !== undefined) data.hook = i.hook;
+      if (i.script !== undefined) data.script = i.script;
+      if (i.caption !== undefined) data.caption = i.caption;
+      if (i.caption_uz !== undefined) data.captionUz = i.caption_uz;
+      if (i.hashtags !== undefined) data.hashtags = i.hashtags;
+      if (i.channels) data.channels = i.channels;
+      await db.$transaction(async (tx) => {
+        if (i.media_ids) {
+          await tx.marketingContentMedia.deleteMany({ where: { contentId: i.id } });
+          if (media.length) await tx.marketingContentMedia.createMany({ data: media.map((mediaId, sort) => ({ contentId: i.id, mediaId, sort })) });
+        }
+        await tx.marketingContent.update({ where: { id: i.id }, data });
+      });
+      const { audit } = await import("@/lib/audit");
+      await audit(db, s.userId, "UPDATE", "MarketingContent", i.id, undefined, { ai: true, fields: Object.keys(data) });
+      return json({ updated: true, link: `/marketing/kontent/${i.id}` });
+    },
+  });
+
+  const planMonthTool = betaZodTool({
+    name: "plan_month",
+    description: "Tanlangan oy uchun kontent reja tuzadi va QORALAMA postlar yaratadi (ssenariy, izoh RU/UZ, heshteg, vaqt). Faqat so'ralganda; 1–2 daqiqa ishlaydi.",
+    inputSchema: z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).describe("YYYY-MM"), count: z.number().int().min(1).max(16), focus: z.string().max(300).optional() }),
+    run: async ({ month, count, focus }) => {
+      if (!canWriteContent) return "Xato: foydalanuvchida kontent rejaga yozish ruxsati yo'q.";
+      const { planMonth } = await import("./smm-writer");
+      const [y, m] = month.split("-").map(Number) as [number, number];
+      const plan = await planMonth({ year: y, month: m, count, focus });
+      const ids: string[] = [];
+      for (const p of plan.posts.slice(0, count)) {
+        const okWhen = /^\d{4}-\d{2}-\d{2}$/.test(p.date) && /^\d{2}:\d{2}$/.test(p.time) ? `${p.date}T${p.time}` : undefined;
+        const row = await db.marketingContent.create({
+          data: {
+            title: p.title.slice(0, 160), type: p.type, rubric: p.rubric.slice(0, 80), status: "SCRIPT", hook: p.hook, script: p.script,
+            caption: p.caption.slice(0, 2200), captionUz: p.captionUz.slice(0, 2200), hashtags: p.hashtags, channels: ["INSTAGRAM", "TELEGRAM"],
+            ...when(okWhen), createdBy: `AI reja (${s.fullName})`,
+          },
+        });
+        ids.push(row.id);
+      }
+      const { audit } = await import("@/lib/audit");
+      await audit(db, s.userId, "CREATE", "MarketingContentPlan", month, undefined, { ai: true, count: ids.length });
+      return json({ created: ids.length, posts: plan.posts.map((p, k) => ({ id: ids[k], title: p.title, date: p.date, time: p.time, rubric: p.rubric })), link: "/marketing/kontent" });
+    },
+  });
+
+  const listMedia = betaZodTool({
+    name: "list_media",
+    description: "Media kutubxona: rasm va videolar (id, nomi, teglari, turi, nechta postda ishlatilgan).",
+    inputSchema: z.object({ tag: z.string().optional(), kind: z.enum(["IMAGE", "VIDEO"]).optional() }),
+    run: async ({ tag, kind }) => json((await db.smmMedia.findMany({
+      where: { ...(tag ? { tags: { has: tag.toLowerCase() } } : {}), ...(kind ? { kind } : {}) },
+      orderBy: { createdAt: "desc" }, take: 80,
+      select: { id: true, kind: true, title: true, tags: true, createdAt: true, _count: { select: { contents: true } } },
+    })).map((m) => ({ id: m.id, kind: m.kind, title: m.title, tags: m.tags, used_in_posts: m._count.contents }))),
+  });
+
+  const listBoosts = betaZodTool({
+    name: "list_boosts",
+    description: "Target reklamalar: post, maqsad, auditoriya, byudjet, holat, sarflangan pul, qamrov, natija; va limitlar (kunlik, oylik, shu oy band).",
+    inputSchema: z.object({}),
+    run: async () => {
+      const { marketingSettings, monthCommitted } = await import("@/lib/smm/boosts");
+      const [rows, st, used] = await Promise.all([
+        db.smmBoost.findMany({ orderBy: { createdAt: "desc" }, take: 50, include: { content: { select: { id: true, title: true } } } }),
+        marketingSettings(), monthCommitted(),
+      ]);
+      return json({
+        limits: { currency: st.adCurrency, daily_cap: Number(st.boostDailyCap), monthly_cap: Number(st.boostMonthlyCap), month_committed: used },
+        boosts: rows.map((b) => ({ id: b.id, post: b.content.title, post_id: b.content.id, objective: b.objective, audience: b.audience, daily: Number(b.dailyBudget), days: b.days, status: b.status, spend: Number(b.spend), reach: b.reach, clicks: b.clicks, results: b.results })),
+      });
+    },
+  });
+
+  const proposeBoost = betaZodTool({
+    name: "propose_boost",
+    description: "Instagram'da chiqqan post uchun target SO'ROVI yaratadi (pul sarflanmaydi — direktor tasdiqlaydi). Auditoriya: toshkent | yetkazish | quruvchi | ozbekiston.",
+    inputSchema: z.object({
+      post_id: z.string().min(1), objective: z.enum(["REACH", "MESSAGES", "LEADS"]), audience: z.enum(["toshkent", "yetkazish", "quruvchi", "ozbekiston"]),
+      daily_budget: z.number().positive(), days: z.number().int().min(1).max(30), reason: z.string().max(300).optional(),
+    }),
+    run: async (i) => {
+      if (!canDo(s, "marketing", "boost")) return "Xato: foydalanuvchida target so'rovi yuborish ruxsati yo'q.";
+      const { requestBoost } = await import("@/lib/smm/boosts");
+      const r = await requestBoost({ contentId: i.post_id, objective: i.objective, audience: i.audience, dailyBudget: i.daily_budget, days: i.days, note: i.reason ? `AI: ${i.reason}` : "AI taklifi" }, { userId: s.userId, name: `AI agent (${s.fullName})` });
+      return r.ok ? json({ requested: true, id: r.id, note: "Direktor tasdiqlashi kerak — /marketing/target" }) : `Xato: ${r.error}`;
     },
   });
 
@@ -189,7 +310,7 @@ export function marketingTools(s: Session) {
     })),
   });
 
-  return [company, overview, leads, campaigns, listContent, getContent, createContent, keywords];
+  return [company, overview, leads, campaigns, listContent, getContent, createPost, updatePost, planMonthTool, listMedia, listBoosts, proposeBoost, keywords];
 }
 
 /** Vosita nomlari — chat oynasidagi belgilar uchun */
@@ -200,7 +321,12 @@ export const MARKETING_TOOL_LABELS: Record<string, string> = {
   list_campaigns: "Kampaniyalar",
   list_content: "Kontent reja",
   get_content: "Ssenariy",
-  create_content: "Kontent rejaga qo'shildi",
+  create_post: "Post qoralamasi yaratildi",
+  update_post: "Post tahrirlandi",
+  plan_month: "Oylik reja tuzildi",
+  list_media: "Media kutubxona",
+  list_boosts: "Target",
+  propose_boost: "Target so'rovi yuborildi",
   list_keywords: "SEO yadro",
   web_search: "Internetdan qidiruv",
 };

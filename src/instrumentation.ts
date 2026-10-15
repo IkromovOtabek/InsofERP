@@ -13,6 +13,7 @@ export async function register() {
   // `next dev` instrumentation xatosini faqat log qilib ishlashda davom etadi — shuning uchun exit.
   const { isTestMode, assertSafeTestEnv } = await import("./lib/test-mode");
   startWatchers(isTestMode());
+  startSmmWatch(isTestMode());
   if (!isTestMode()) return;
   try {
     assertSafeTestEnv();
@@ -34,4 +35,15 @@ function startWatchers(test: boolean) {
   const flag = (process.env.GPS_WATCH ?? "").trim().toLowerCase();
   if (flag === "off" || (test && flag !== "on")) return;
   void import("./lib/gps-watch").then((m) => m.startGpsWatch()).catch((e) => console.error("[gps-watch] ishga tushmadi", e));
+}
+
+/** SMM: rejalashtirilgan postlarni chiqarish va statistika (`lib/smm/watch.ts`). `SMM_WATCH=off` — o'chirish. */
+function startSmmWatch(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.SMM_WATCH ?? "").trim().toLowerCase();
+  if (flag === "off" || (test && flag !== "on")) return;
+  // NEXT_RUNTIME build paytida literalga almashadi — edge yig'ilishida bu tarmoq (fs ishlatadigan modul) tushib qoladi
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    void import("./lib/smm/watch").then((m) => m.startSmmWatch()).catch((e) => console.error("[smm-watch] ishga tushmadi", e));
+  }
 }

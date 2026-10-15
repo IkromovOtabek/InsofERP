@@ -34,6 +34,8 @@ export const NAV: NavItem[] = [
   // Guruh nomi «Marketing» — bandlar ichma-ich emas, to'g'ridan-to'g'ri (aks holda menyuda «Marketing → Marketing»)
   { href: "/marketing",          label: "Ko'rsatkichlar",  roles: ["SALES"], group: "Marketing" },
   { href: "/marketing/kontent",  label: "Kontent reja",    roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/media",    label: "Media kutubxona", roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/target",   label: "Target",          roles: ["SALES"], group: "Marketing" },
   { href: "/marketing/reklama",  label: "Reklama",         roles: ["SALES"], group: "Marketing" },
   { href: "/marketing/seo",      label: "SEO",             roles: ["SALES"], group: "Marketing" },
   { href: "/marketing/utm",      label: "UTM generator",   roles: ["SALES"], group: "Marketing" },
