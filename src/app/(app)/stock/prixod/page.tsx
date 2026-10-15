@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileUp, Plus, Rows3, Wallet, Percent, Sigma, Search } from "lucide-react";
+import { FileSpreadsheet, FileUp, Plus, Rows3, Wallet, Percent, Sigma, Search } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -83,6 +83,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
         action={<>
           <ExcelButton file={`kirim_${period.fromStr}_${period.toStr}`} sheets={[{ name: "Kirim", rows: excel }]} />
           {canCreate && <LinkButton href="/stock/prixod/import" variant="secondary"><FileUp size={16} /> Excel'dan yuklash</LinkButton>}
+          {canCreate && <LinkButton href="/stock/prixod/jurnal" variant="secondary"><FileSpreadsheet size={16} /> Excel jurnal</LinkButton>}
           {canCreate && <LinkButton href="/stock/prixod/new"><Plus size={16} /> Yangi kirim</LinkButton>}
         </>}
       />
