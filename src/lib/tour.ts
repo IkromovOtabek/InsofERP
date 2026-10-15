@@ -165,18 +165,19 @@ const LOGISTICS_STEPS: TourStep[] = [
   openPage("/orders", "Zayavkalar", "Qaysi zayavkaga qancha hajm, qaysi manzilga va qachon kerakligini shu yerdan ko'rasiz."),
 ];
 
-// Sklad menyusida «Ta'minot zayavkalari» va «Snabjeniye» yo'q (`nav.ts` menuFor) — ular faqat snabjeniye yo'riqnomasida
+// Sklad menyusida «Ta'minot zayavkalari» yo'q (`nav.ts` menuFor) — u faqat snabjeniye yo'riqnomasida
 const SKLAD_STEPS = {
+  snab: openPage("/snabjeniye", "Snabjeniye", "Zayavkaga narx qo'yish va yetkazuvchini tanlash. Narx o'zgarsa hujjat qayta tasdiqlashga ketadi."),
   stock: openPage("/stock", "Sklad", "Xomashyo qoldig'i — asosiy ish oynangiz. Qoldiq kamayganda «Kerakli mahsulotlar» tugmasi bilan ta'minot zayavkasi ochiladi."),
   receipts: openPage("/receipts", "Kirim", "Kelgan mol qabul qilinadi. Nakladnoyni kamerada suratga olsangiz, AI raqamlarni o'zi o'qib beradi."),
   suppliers: openPage("/suppliers", "Yetkazuvchilar", "Yetkazuvchilar bazasi va ular bilan hisob-kitob holati."),
 };
-const WAREHOUSE_STEPS: TourStep[] = [openGroup("Sklad"), SKLAD_STEPS.stock, SKLAD_STEPS.receipts, SKLAD_STEPS.suppliers];
+const WAREHOUSE_STEPS: TourStep[] = [openGroup("Sklad"), SKLAD_STEPS.stock, SKLAD_STEPS.snab, SKLAD_STEPS.receipts, SKLAD_STEPS.suppliers];
 const PROCUREMENT_STEPS: TourStep[] = [
   openGroup("Sklad"),
   SKLAD_STEPS.stock,
   openPage("/taminot", "Ta'minot zayavkalari", "Ochilgan zayavkalar va ularning holati: narx qo'yildimi, tasdiqlandimi, to'landimi."),
-  openPage("/snabjeniye", "Snabjeniye", "Zayavkaga narx qo'yish va yetkazuvchini tanlash. Narx o'zgarsa hujjat qayta tasdiqlashga ketadi."),
+  SKLAD_STEPS.snab,
   SKLAD_STEPS.receipts,
   SKLAD_STEPS.suppliers,
 ];
