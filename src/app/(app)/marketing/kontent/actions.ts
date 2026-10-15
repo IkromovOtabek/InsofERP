@@ -9,6 +9,7 @@ import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { composeText, publishContent } from "@/lib/smm/publish";
 import { marketingSettings } from "@/lib/smm/boosts";
+import { aiAllowed } from "@/lib/rate-limit";
 import { aiErrorText, aiReady, planMonth, translateCaption, writeCaption, writeScript, type PostTextT } from "@/lib/ai/smm-writer";
 
 const zInt = z.coerce.number({ message: "raqam bo'lishi kerak" }).int("butun son bo'lsin").min(0).max(1_000_000_000);
@@ -28,6 +29,8 @@ const schema = z.object({
   captionUz: z.string().trim().max(2200).optional().transform((v) => (v ? v : null)),
   hashtags: zOpt,
   url: zOpt.refine((v) => !v || /^https?:\/\//.test(v), "havola http(s):// bilan boshlansin"),
+  locationName: z.string().trim().max(120).optional().transform((v) => (v ? v : null)),
+  locationId: z.string().trim().optional().transform((v) => (v && /^\d{3,25}$/.test(v) ? v : null)),
   views: zInt,
   likes: zInt,
   saves: zInt,
@@ -59,10 +62,13 @@ export async function saveContent(id: string | null, _prev: ActionState, fd: For
   if (id) {
     const before = await db.marketingContent.findUnique({ where: { id }, include: { media: true } });
     if (!before) return { error: "Post topilmadi" };
-    const changed = ["caption", "captionUz", "hashtags", "scheduledAt", "channels"].some((k) => JSON.stringify((before as Record<string, unknown>)[k]) !== JSON.stringify((data as Record<string, unknown>)[k]))
+    // «Chiqdi» holatini tarmoqqa chiqargan nashr dvigateli qo'yadi; qo'lda — faqat tarmoqsiz (tashqarida chiqqan) post uchun
+    if (data.status === "PUBLISHED" && before.status !== "PUBLISHED" && data.channels.length) return { error: "«Chiqdi» holati tarmoqqa chiqqanda o'zi qo'yiladi — tasdiqlash va nashr orqali chiqaring" };
+    const changed = ["caption", "captionUz", "hashtags", "scheduledAt", "channels", "locationId"].some((k) => JSON.stringify((before as Record<string, unknown>)[k]) !== JSON.stringify((data as Record<string, unknown>)[k]))
       || JSON.stringify(before.media.map((m) => m.mediaId).sort()) !== JSON.stringify([...mediaIds].sort());
     // Tasdiqlashda yoki tasdiqlangan post o'zgarsa — qoralamaga qaytadi: direktor ko'rmagan matn chiqib ketmasin
-    const reapprove = (before.approval === "APPROVED" || before.approval === "PENDING") && changed && before.status !== "PUBLISHED";
+    // Chiqqan post ham: yangi tarmoq qo'shilsa yoki matn o'zgarsa, qolgan nashrlar faqat qayta tasdiqdan keyin chiqadi
+    const reapprove = (before.approval === "APPROVED" || before.approval === "PENDING") && changed;
     const reset = reapprove
       ? { approval: "DRAFT" as const, approvalNote: before.approval === "APPROVED" ? "Tasdiqdan keyin o'zgartirildi — qayta tasdiqlash kerak" : "Tasdiqlashga yuborilgandan keyin o'zgartirildi — qayta yuboring", approvedAt: null, approvedById: null, approvedByName: null }
       : {};
@@ -82,6 +88,7 @@ export async function saveContent(id: string | null, _prev: ActionState, fd: For
     }
     await audit(db, s.userId, before.status !== after.status ? "STATUS_CHANGE" : "UPDATE", "MarketingContent", id, before, after);
   } else {
+    if (data.status === "PUBLISHED" && data.channels.length) return { error: "«Chiqdi» holati tarmoqqa chiqqanda o'zi qo'yiladi — tasdiqlash va nashr orqali chiqaring" };
     const created = await db.marketingContent.create({
       data: { ...data, createdBy: s.fullName, media: { create: mediaIds.map((mediaId, sort) => ({ mediaId, sort })) } },
     });
@@ -94,10 +101,11 @@ export async function saveContent(id: string | null, _prev: ActionState, fd: For
 
 /* ───────── Tasdiqlash oqimi ───────── */
 
-export async function submitForApproval(id: string): Promise<ActionState> {
-  const s = await requireAction("marketing", "content");
+/** Nashrga tayyorlik: tasdiqlashga yuborishda ham, direktor to'g'ridan-to'g'ri tasdiqlaganda ham tekshiriladi */
+async function readyError(id: string): Promise<{ error: string } | { c: { approval: string; status: string } }> {
   const c = await db.marketingContent.findUnique({ where: { id }, include: { _count: { select: { media: true } } } });
   if (!c) return { error: "Post topilmadi" };
+  if (c.status === "CANCELLED") return { error: "Post bekor qilingan" };
   if (!c.channels.length) return { error: "Kamida bitta tarmoq tanlang" };
   if (!c.caption && !c.captionUz) return { error: "Post matni (izoh) bo'sh" };
   if (c.channels.some((ch) => ch !== "TELEGRAM") && c._count.media === 0) return { error: "Instagram/Facebook uchun rasm yoki video biriktiring" };
@@ -107,6 +115,14 @@ export async function submitForApproval(id: string): Promise<ActionState> {
     if (text.length > 2200) return { error: `Instagram uchun matn juda uzun: ${text.length} belgi (RU + UZ izoh va heshteglar birga 2200 dan oshmasin)` };
     if ((text.match(/#[^\s#]+/g) ?? []).length > 30) return { error: "Instagram'da 30 tadan ko'p heshteg bo'lmaydi" };
   }
+  return { c };
+}
+
+export async function submitForApproval(id: string): Promise<ActionState> {
+  const s = await requireAction("marketing", "content");
+  const chk = await readyError(id);
+  if ("error" in chk) return chk;
+  const { c } = chk;
   const r = await db.marketingContent.updateMany({ where: { id, approval: { in: ["DRAFT", "REJECTED"] } }, data: { approval: "PENDING", approvalNote: null } });
   if (r.count === 0) return { error: "Post allaqachon tasdiqlashda yoki tasdiqlangan" };
   await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, { approval: c.approval }, { approval: "PENDING" });
@@ -119,8 +135,10 @@ export async function approveContent(id: string, version: string): Promise<Actio
   const s = await requireAction("marketing", "publish");
   const seen = new Date(version);
   if (Number.isNaN(seen.getTime())) return { error: "Sahifani yangilang" };
+  const chk = await readyError(id);
+  if ("error" in chk) return chk;
   const r = await db.marketingContent.updateMany({
-    where: { id, approval: { in: ["PENDING", "DRAFT"] }, updatedAt: seen },
+    where: { id, approval: { in: ["PENDING", "DRAFT"] }, status: { not: "CANCELLED" }, updatedAt: seen },
     data: { approval: "APPROVED", approvedById: s.userId, approvedByName: s.fullName, approvedAt: new Date(), approvalNote: null },
   });
   if (r.count === 0) return { error: "Post ko'rib chiqilgan yoki shu orada o'zgargan — sahifani yangilab qayta tekshiring" };
@@ -134,7 +152,7 @@ export async function rejectContent(id: string, _prev: ActionState, fd: FormData
   const s = await requireAction("marketing", "publish");
   const r0 = parseForm(z.object({ note: zStr("rad etish sababini yozing").pipe(z.string().max(500)) }), fd);
   if ("error" in r0) return { error: r0.error };
-  const r = await db.marketingContent.updateMany({ where: { id, approval: { in: ["PENDING", "APPROVED"] }, status: { not: "PUBLISHED" } }, data: { approval: "REJECTED", approvalNote: r0.data.note, approvedAt: null } });
+  const r = await db.marketingContent.updateMany({ where: { id, approval: { in: ["PENDING", "APPROVED"] }, status: { not: "PUBLISHED" } }, data: { approval: "REJECTED", approvalNote: r0.data.note, approvedAt: null, approvedById: null, approvedByName: null } });
   if (r.count === 0) return { error: "Holat o'zgargan — sahifani yangilang" };
   await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, undefined, { approval: "REJECTED", note: r0.data.note });
   revalidatePath("/marketing", "layout");
@@ -161,9 +179,22 @@ export async function publishNow(id: string): Promise<ActionState> {
 export type AiState = ({ ok?: boolean; error?: string } & Partial<PostTextT>) | undefined;
 
 /** Formadagi joriy qiymatlardan AI natija — formaga qaytariladi (bazaga yozilmaydi, xodim tekshirib saqlaydi) */
-export async function aiWrite(kind: "script" | "caption" | "translate", input: { title: string; type: string; rubric?: string; hook?: string; script?: string; caption?: string }): Promise<AiState> {
-  await requireAction("marketing", "agent");
-  if (!aiReady()) return { error: "AI kaliti sozlanmagan (ANTHROPIC_API_KEY)" };
+const aiInput = z.object({
+  title: z.string().max(300),
+  type: z.string().max(20),
+  rubric: z.string().max(120).optional(),
+  hook: z.string().max(2000).optional(),
+  script: z.string().max(20_000).optional(),
+  caption: z.string().max(5000).optional(),
+});
+
+export async function aiWrite(kind: "script" | "caption" | "translate", raw: z.input<typeof aiInput>): Promise<AiState> {
+  const s = await requireAction("marketing", "agent");
+  if (!aiReady()) return { error: "AI ulanmagan — administratorga murojaat qiling" };
+  const p = aiInput.safeParse(raw);
+  if (!p.success) return { error: "Matn juda uzun — qisqartirib qayta urinib ko'ring" };
+  if (!aiAllowed(s.userId)) return { error: "AI so'rovlari chegarasi — birozdan keyin qayta urinib ko'ring" };
+  const input = p.data;
   try {
     if (kind === "script") {
       if (!input.title.trim()) return { error: "Avval sarlavha yoki g'oyani yozing" };
@@ -184,7 +215,8 @@ export async function aiWrite(kind: "script" | "caption" | "translate", input: {
 export async function aiPlanMonth(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("marketing", "content");
   await requireAction("marketing", "agent");
-  if (!aiReady()) return { error: "AI kaliti sozlanmagan (ANTHROPIC_API_KEY)" };
+  if (!aiReady()) return { error: "AI ulanmagan — administratorga murojaat qiling" };
+  if (!aiAllowed(s.userId)) return { error: "AI so'rovlari chegarasi — birozdan keyin qayta urinib ko'ring" };
   const r = parseForm(z.object({
     month: z.string().regex(/^\d{4}-\d{2}$/, "oy noto'g'ri"),
     count: z.coerce.number().int().min(1, "kamida 1 ta").max(16, "ko'pi bilan 16 ta"),

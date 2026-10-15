@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Eye, Facebook, Heart, Instagram, Plus, Send, UserPlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Facebook, Heart, Instagram, Lightbulb, Plus, Send, Sparkles, UserPlus } from "lucide-react";
 import type { SmmChannel } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
@@ -9,7 +9,9 @@ import { CONTENT_FLOW, CONTENT_STATUS, CONTENT_TYPE } from "@/lib/marketing";
 import { APPROVAL } from "@/lib/smm/labels";
 import { aiReady } from "@/lib/ai/smm-writer";
 import { cn } from "@/lib/utils";
-import { Badge, LinkButton, PageHeader, StatCard, Tabs } from "@/components/ui";
+import { analytics } from "@/lib/smm/insights";
+import { WEEKDAY } from "@/lib/smm/labels";
+import { Badge, Card, CardHeader, LinkButton, PageHeader, StatCard, Tabs } from "@/components/ui";
 import { PlanAi } from "./plan-ai";
 
 const CH_ICON: Record<SmmChannel, typeof Instagram> = { INSTAGRAM: Instagram, TELEGRAM: Send, FACEBOOK: Facebook };
@@ -29,6 +31,14 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
   const next = new Date(y, mo, 1);
   const prev = new Date(y, mo - 2, 1);
 
+  const [stats, report] = await Promise.all([
+    analytics(90, now),
+    db.smmInsightReport.findFirst({ orderBy: { createdAt: "desc" }, select: { ideas: true, createdAt: true } }),
+  ]);
+  // Statistika bo'yicha eng ko'p ko'riladigan 2 kun (kamida 2 ta post bo'lgan) — kalendarda belgilanadi
+  const goodDays = new Set([...stats.byWeekday].filter((d) => d.posts >= 2).sort((a, b) => b.avgViews - a.avgViews).slice(0, 2).map((d) => d.day));
+  const bestHour = [...stats.byHour].filter((h) => h.posts >= 2).sort((a, b) => b.avgViews - a.avgViews)[0];
+  const ideas = ((Array.isArray(report?.ideas) ? report.ideas : []) as { title: string; format: string; hook: string; brief: string }[]).slice(0, 3);
   const items = await db.marketingContent.findMany({
     orderBy: [{ scheduledAt: "asc" }, { publishDate: "asc" }, { createdAt: "asc" }],
     include: { media: { take: 1, orderBy: { sort: "asc" }, include: { media: { select: { id: true, kind: true } } } } },
@@ -64,6 +74,7 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
         action={canEdit ? (
           <>
             {canDo(s, "marketing", "agent") && aiReady() && <PlanAi defaultMonth={ym(first)} />}
+            <LinkButton href="/marketing/studiya" variant="secondary"><Sparkles size={15} /> AI studiya</LinkButton>
             <LinkButton href="/marketing/kontent/new"><Plus size={15} /> Yangi post</LinkButton>
           </>
         ) : undefined}
@@ -74,6 +85,25 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
         <StatCard label="Ko'rishlar" value={fmtNum(sum("views"))} hint={`Layk: ${fmtNum(sum("likes"))}`} />
         <StatCard label="Kontentdan lid" value={fmtNum(sum("leads"))} />
       </div>
+
+      {(ideas.length > 0 || goodDays.size > 0) && (
+        <Card className="mt-6">
+          <CardHeader title="AI tavsiyalari" icon={Lightbulb}
+            description={goodDays.size ? `Auditoriya eng faol: ${[...goodDays].map((d) => WEEKDAY[d]).join(" va ")}${bestHour ? `, soat ${bestHour.hour}:00 atrofida` : ""} — kalendarda belgilangan` : undefined}
+            action={<LinkButton href="/marketing" size="sm" variant="ghost">Batafsil tahlil</LinkButton>} />
+          {ideas.length > 0 ? (
+            <ul className="grid gap-3 md:grid-cols-3">
+              {ideas.map((i) => (
+                <li key={i.title} className="rounded-xl border border-slate-200 p-3">
+                  <p className="text-sm font-medium">{i.title}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-slate-500">{i.hook}</p>
+                  {canEdit && <LinkButton size="sm" variant="secondary" className="mt-2" href={`/marketing/studiya?g=${encodeURIComponent(i.brief.slice(0, 1500))}`}><Sparkles size={13} /> Yaratish</LinkButton>}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-sm text-slate-500">G&apos;oyalar uchun Statistika sahifasida «AI tahlil»ni ishga tushiring.</p>}
+        </Card>
+      )}
 
       <Tabs className="mt-6" current={view} items={[
         { key: "kalendar", label: "Kalendar", href: `/marketing/kontent?m=${ym(first)}` },
@@ -91,12 +121,12 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
             <div className="grid min-w-[760px] grid-cols-7 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 gap-px">
               {WEEK.map((w) => <div key={w} className="bg-slate-50 px-2 py-1.5 text-center text-xs font-medium text-slate-500">{w}</div>)}
               {cells.map((d, i) => (
-                <div key={i} className={cn("min-h-28 bg-white p-1.5", !d && "bg-slate-50/60")}>
+                <div key={i} className={cn("min-h-28 bg-white p-1.5", !d && "bg-slate-50/60", d && goodDays.has(new Date(y, mo - 1, d).getDay()) && "bg-brand-50/40")}>
                   {d && (
                     <>
                       <div className="flex items-center justify-between">
                         <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded-full text-xs", d === today ? "bg-slate-900 font-semibold text-white" : "text-slate-500")}>{d}</span>
-                        {canEdit && <Link href="/marketing/kontent/new" className="text-slate-300 hover:text-slate-700" aria-label="Post qo'shish"><Plus size={13} /></Link>}
+                        {canEdit && <Link href={`/marketing/kontent/new?sana=${y}-${pad(mo)}-${pad(d)}`} className="text-slate-300 hover:text-slate-700" aria-label="Shu kunga post qo'shish"><Plus size={13} /></Link>}
                       </div>
                       <ul className="mt-1 space-y-1">
                         {(byDay.get(d) ?? []).map((p) => {
@@ -133,6 +163,7 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-200" /> Tasdiq kutmoqda</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-200" /> Tasdiqlangan — o&apos;zi chiqadi</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-200" /> Chiqdi</span>
+            {goodDays.size > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-brand-100" /> Tavsiya etilgan kun</span>}
           </div>
           {unscheduled.length > 0 && (
             <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-3">

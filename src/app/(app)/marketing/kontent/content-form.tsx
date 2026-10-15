@@ -2,7 +2,7 @@
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Check, Clapperboard, Facebook, Hash, Heart, Instagram, Languages, Loader2, MessageCircle, Plus, Save, Send, Sparkles, Upload, X } from "lucide-react";
+import { Check, Clapperboard, Facebook, Hash, Heart, Instagram, Languages, Loader2, MapPin, MessageCircle, Plus, Save, Send, Sparkles, Upload, X } from "lucide-react";
 import type { MarketingContentStatus, MarketingContentType, SmmChannel } from "@/generated/prisma";
 import { CONTENT_STATUS, CONTENT_TYPE } from "@/lib/marketing-labels";
 import { Button, Field, FormActions, FormError, Input, Select, Textarea } from "@/components/ui";
@@ -10,17 +10,18 @@ import { cn } from "@/lib/utils";
 import { aiWrite, saveContent } from "./actions";
 
 export type MediaItem = { id: string; kind: "IMAGE" | "VIDEO"; title: string };
+export type PlaceItem = { name: string; locationId?: string | null };
 
 export type ContentValues = {
   title: string; type: MarketingContentType; rubric: string; status: MarketingContentStatus; scheduledAt: string;
   channels: SmmChannel[]; media: MediaItem[];
-  hook: string; script: string; caption: string; captionUz: string; hashtags: string; url: string;
+  hook: string; script: string; caption: string; captionUz: string; hashtags: string; url: string; location: string;
   views: number; likes: number; saves: number; leads: number;
 };
 
 export const EMPTY_CONTENT: ContentValues = {
   title: "", type: "REELS", rubric: "", status: "IDEA", scheduledAt: "", channels: ["INSTAGRAM", "TELEGRAM"], media: [],
-  hook: "", script: "", caption: "", captionUz: "", hashtags: "", url: "", views: 0, likes: 0, saves: 0, leads: 0,
+  hook: "", script: "", caption: "", captionUz: "", hashtags: "", url: "", location: "", views: 0, likes: 0, saves: 0, leads: 0,
 };
 
 const CH: { key: SmmChannel; label: string; icon: typeof Instagram; tone: string }[] = [
@@ -37,8 +38,8 @@ function Thumb({ m, className }: { m: MediaItem; className?: string }) {
 }
 
 /** Post muharriri: matn, media, tarmoqlar, vaqt + AI yordamchi va jonli Instagram ko'rinishi */
-export function ContentForm({ id, v, canEdit, canAi, library, brand }: {
-  id: string | null; v: ContentValues; canEdit: boolean; canAi: boolean; library: MediaItem[]; brand: string;
+export function ContentForm({ id, v, canEdit, canAi, library, brand, places = [], defaultTags = "" }: {
+  id: string | null; v: ContentValues; canEdit: boolean; canAi: boolean; library: MediaItem[]; brand: string; places?: PlaceItem[]; defaultTags?: string;
 }) {
   const [state, action, pending] = useActionState(saveContent.bind(null, id), undefined);
   const formRef = useRef<HTMLFormElement>(null);
@@ -70,6 +71,11 @@ export function ContentForm({ id, v, canEdit, canAi, library, brand }: {
 
   const available = useMemo(() => library.filter((m) => !media.some((x) => x.id === m.id)), [library, media]);
   const previewText = [caption, hashtags].filter(Boolean).join("\n\n");
+  // Instagram chegarasi butun matnga: ikkala izoh + heshteglar + doimiy heshteglar (server ham shunday tekshiradi)
+  const fullText = [caption.trim(), captionUz.trim(), [hashtags, defaultTags].filter(Boolean).join(" ").trim()].filter(Boolean).join("\n\n");
+  const tagTotal = (fullText.match(/#[^\s#]+/g) ?? []).length;
+  const [place, setPlace] = useState(v.location);
+  const placeId = places.find((p) => p.name === place)?.locationId ?? "";
 
   return (
     <form ref={formRef} action={action} className="grid gap-6 xl:grid-cols-[1fr_360px]">
@@ -102,6 +108,19 @@ export function ContentForm({ id, v, canEdit, canAi, library, brand }: {
             </div>
             <Field label="Chiqish vaqti"><Input type="datetime-local" name="scheduledAt" defaultValue={v.scheduledAt} /></Field>
           </div>
+          {(places.length > 0 || v.location) && (
+            <Field label="Joylashuv" hint="Instagram postida manzil ko'rinadi (joylar — Sozlamalar'da)">
+              <div className="relative max-w-sm">
+                <MapPin size={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" />
+                <Select name="locationName" value={place} onChange={(e) => setPlace(e.target.value)} className="pl-8">
+                  <option value="">Joylashuvsiz</option>
+                  {v.location && !places.some((p) => p.name === v.location) && <option value={v.location}>{v.location}</option>}
+                  {places.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </Select>
+                <input type="hidden" name="locationId" value={placeId} />
+              </div>
+            </Field>
+          )}
 
           {/* Media */}
           <div>
@@ -118,7 +137,7 @@ export function ContentForm({ id, v, canEdit, canAi, library, brand }: {
                   <span className="absolute bottom-1 left-1.5 text-[10px] font-semibold text-white drop-shadow">{i + 1}</span>
                   {canEdit && (
                     <button type="button" onClick={() => setMedia(media.filter((x) => x.id !== m.id))} aria-label="Olib tashlash"
-                      className="absolute top-1 right-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex"><X size={13} /></button>
+                      className="absolute top-1 right-1 hidden h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white group-hover:flex pointer-coarse:flex"><X size={13} /></button>
                   )}
                 </div>
               ))}
@@ -161,7 +180,7 @@ export function ContentForm({ id, v, canEdit, canAi, library, brand }: {
           )}
 
           <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
-            <Field label="Rubrika"><Input name="rubric" defaultValue={v.rubric} placeholder="01 Завод изнутри" /></Field>
+            <Field label="Rubrika"><Input name="rubric" defaultValue={v.rubric} placeholder="Zavod ichidan" /></Field>
             <Field label="Hook (birinchi 2 soniya)"><Input name="hook" defaultValue={v.hook} /></Field>
           </div>
           <Field label="Ssenariy (kadrlar, ovoz, ekrandagi matn)"><Textarea name="script" rows={10} defaultValue={v.script} className="font-mono text-[13px] leading-relaxed" /></Field>
@@ -204,8 +223,8 @@ export function ContentForm({ id, v, canEdit, canAi, library, brand }: {
           </p>
         </div>
         <ul className="mx-auto mt-3 max-w-[320px] space-y-1 text-xs text-slate-500">
-          <li className="flex items-center gap-1.5"><Check size={12} className={caption.length <= 2200 ? "text-emerald-600" : "text-red-600"} /> Instagram izohi ≤ 2200 belgi</li>
-          <li className="flex items-center gap-1.5"><Check size={12} className={(hashtags.match(/#/g)?.length ?? 0) <= 30 ? "text-emerald-600" : "text-red-600"} /> Heshteglar ≤ 30 ({hashtags.match(/#/g)?.length ?? 0})</li>
+          <li className="flex items-center gap-1.5"><Check size={12} className={fullText.length <= 2200 ? "text-emerald-600" : "text-red-600"} /> Instagram matni ≤ 2200 belgi ({fullText.length}: ikkala izoh va heshteglar)</li>
+          <li className="flex items-center gap-1.5"><Check size={12} className={tagTotal <= 30 ? "text-emerald-600" : "text-red-600"} /> Heshteglar ≤ 30 ({tagTotal}, doimiylari bilan)</li>
           <li className="flex items-center gap-1.5"><Check size={12} className={media.length ? "text-emerald-600" : "text-amber-500"} /> Instagram/Facebook uchun media kerak</li>
         </ul>
       </aside>

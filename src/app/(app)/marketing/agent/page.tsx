@@ -21,7 +21,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
 
   return (
     <div>
-      <PageHeader title="AI agent" subtitle="Claude: korxona bazasidagi arizalar, reklama, kontent va SEO ma'lumoti asosida ishlaydi." />
+      <PageHeader back={{ href: "/marketing/studiya", label: "AI studiya" }} title="AI bilan suhbat" subtitle="Marketing bo'yicha istalgan savol: g'oya, ssenariy, tahlil, raqobatchilar. Arizalar, kontent reja va target ma'lumotiga tayanadi." />
       <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
         <aside className="order-2 space-y-2 lg:order-1">
           <Link href="/marketing/agent" className="flex h-10 items-center justify-center gap-1.5 rounded-lg bg-slate-900 text-sm font-medium text-white hover:bg-slate-800"><Plus size={15} /> Yangi suhbat</Link>

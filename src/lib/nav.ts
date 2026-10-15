@@ -30,16 +30,14 @@ export const NAV: NavItem[] = [
   { href: "/leads",       label: "Sayt arizalari",     roles: ["SALES"], group: "Sotuv" },
   // Insof ECO ilovasidagi do'kon: qaysi mahsulot ko'rinadi, surat/narx, ilovadan tushgan buyurtmalar
   { href: "/e-commerce",  label: "E-commerce",         roles: ["SALES"], group: "Sotuv" },
-  // Marketing (21 Agency bilan): kontent reja, reklama (CPL/ROMI — Lead.utmCampaign orqali), SEO, UTM, AI agent
+  // Marketing: statistika va AI tavsiyalar, kontent reja, AI studiya (g'oya → ssenariy, matn, video), media, target, sozlamalar
   // Guruh nomi «Marketing» — bandlar ichma-ich emas, to'g'ridan-to'g'ri (aks holda menyuda «Marketing → Marketing»)
-  { href: "/marketing",          label: "Ko'rsatkichlar",  roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/kontent",  label: "Kontent reja",    roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/media",    label: "Media kutubxona", roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/target",   label: "Target",          roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/reklama",  label: "Reklama",         roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/seo",      label: "SEO",             roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/utm",      label: "UTM generator",   roles: ["SALES"], group: "Marketing" },
-  { href: "/marketing/agent",    label: "AI agent",        roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing",            label: "Statistika",      roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/kontent",    label: "Kontent reja",    roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/studiya",    label: "AI studiya",      roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/media",      label: "Media kutubxona", roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/target",     label: "Target",          roles: ["SALES"], group: "Marketing" },
+  { href: "/marketing/sozlamalar", label: "Sozlamalar",      roles: ["SALES"], group: "Marketing" },
   { href: "/production",  label: "Ishlab chiqarish",   roles: ["PRODUCTION", "SUPERVISOR"], group: "Ishlab chiqarish" },
   { href: "/recipes",     label: "Retseptlar",         roles: ["PRODUCTION"], group: "Ishlab chiqarish" },
   // Sotuv, Logistika va Otdel kadr kabinetida Ishlab chiqarish guruhi yo'q (ruxsat ECO ilovasi va havolalar uchun)

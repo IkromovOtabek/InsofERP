@@ -58,7 +58,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "agent",   label: "AI marketing agenti",               roles: ["SALES"], hint: "Agent kontent rejaga yozishi uchun «Kontent reja» ruxsati ham kerak" },
     { key: "publish", label: "Postni tasdiqlash va tarmoqqa chiqarish", roles: [], explicit: true, hint: "Instagram, Telegram, Facebook — kompaniya nomidan chiqadi; odatda direktor" },
     { key: "boost",   label: "Target (reklama) so'rovi yuborish",  roles: ["SALES"], hint: "Faqat so'rov — pul tasdiqlangandan keyin sarflanadi" },
-    { key: "boost_approve", label: "Targetni tasdiqlash va ishga tushirish", roles: [], explicit: true, hint: "Real pul sarflanadi — limitlar Target sahifasida" },
+    { key: "boost_approve", label: "Targetni tasdiqlash va ishga tushirish", roles: [], explicit: true, hint: "Real pul sarflanadi — limitlar Sozlamalar sahifasida" },
+    { key: "settings", label: "Ijtimoiy tarmoq profillarini ulash", roles: [], explicit: true, hint: "Instagram, Facebook, Telegram va reklama kabineti — kompaniya nomidan ishlaydi; odatda direktor" },
   ],
   customers: [
     { key: "edit",     label: "Mijoz qo'shish / tahrirlash",  roles: ["SALES", "ACCOUNTING", "FINANCE"] },

@@ -3,7 +3,8 @@
  *
  * Har tarmoq — alohida `SmmPublication`. Ikki marta chiqib ketmasligi uchun yozuv shartli `updateMany`
  * bilan «egallanadi» (PENDING/FAILED → PUBLISHING); egallay olmagan jarayon o'tkazib yuboradi.
- * Kalit yo'q yoki sinov rejimi — natija SIMULATED (tarmoqqa hech narsa yuborilmaydi).
+ * Sinov rejimi — natija SIMULATED (tarmoqqa hech narsa yuborilmaydi). Kalit yo'q bo'lsa — FAILED:
+ * profil ulangach «Qayta urinish» bilan chiqariladi (jimgina «chiqdi» bo'lib qolmaydi).
  * Xato bo'lgan nashr avtomatik qayta yuborilmaydi (tarmoq tomonida chiqib ulgurgan bo'lishi mumkin) —
  * xodim «Qayta urinish» bosadi.
  */
@@ -36,6 +37,7 @@ export async function publishContent(contentId: string, userId: string | null): 
   });
   if (!c) throw new Error("Post topilmadi");
   if (c.approval !== "APPROVED") throw new Error("Post tasdiqlanmagan");
+  if (c.status === "CANCELLED") throw new Error("Post bekor qilingan");
   if (!c.channels.length) throw new Error("Post uchun tarmoq tanlanmagan");
   const settings = await db.marketingSettings.findUnique({ where: { id: "main" } });
   const text = composeText(c, settings?.defaultHashtags);
@@ -65,17 +67,23 @@ export async function publishContent(contentId: string, userId: string | null): 
     });
     if (claim.count === 0) { out.push({ channel, status: "SKIPPED", message: "allaqachon chiqarilgan yoki yuborilmoqda" }); continue; }
 
-    if (smmDryRun() || !channelReady(channel)) {
-      const reason = smmDryRun() ? "Sinov rejimi — tarmoqqa yuborilmadi" : `${CHANNEL_LABEL[channel]} kalitlari sozlanmagan — yuborilmadi`;
+    if (smmDryRun()) {
+      const reason = "Sinov rejimi — tarmoqqa yuborilmadi";
       await db.smmPublication.update({ where: { id: pub.id }, data: { status: "SIMULATED", error: reason, publishedAt: new Date() } });
       out.push({ channel, status: "SIMULATED", message: reason });
+      continue;
+    }
+    if (!(await channelReady(channel))) {
+      const reason = `${CHANNEL_LABEL[channel]} ulanmagan — Marketing → Sozlamalar'da profilni ulab, qayta yuboring`;
+      await db.smmPublication.update({ where: { id: pub.id }, data: { status: "FAILED", error: reason } });
+      out.push({ channel, status: "FAILED", message: reason });
       continue;
     }
     try {
       if (channel !== "TELEGRAM" && !files.length) throw new Error(`${CHANNEL_LABEL[channel]} uchun kamida bitta rasm yoki video kerak`);
       const metaMedia = files.map((f) => ({ kind: f.kind, url: publicMediaUrl(c.media.find((m) => mediaPath(m.media.fileName) === f.file)!.media.id) }));
       const r = channel === "TELEGRAM" ? await publishTelegram(text, files)
-        : channel === "INSTAGRAM" ? await publishInstagram(text, metaMedia)
+        : channel === "INSTAGRAM" ? await publishInstagram(text, metaMedia, { locationId: c.locationId })
         : await publishFacebook(text, metaMedia);
       await db.smmPublication.update({ where: { id: pub.id }, data: { status: "PUBLISHED", externalId: r.externalId, permalink: r.permalink, publishedAt: new Date(), error: null } });
       out.push({ channel, status: "PUBLISHED" });
@@ -91,7 +99,9 @@ export async function publishContent(contentId: string, userId: string | null): 
   const finished = pubs.filter((p) => c.channels.includes(p.channel)).every((p) => p.status === "PUBLISHED" || p.status === "SIMULATED");
   if (finished) {
     const link = pubs.find((p) => p.status === "PUBLISHED" && p.permalink)?.permalink ?? c.url;
-    const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    // Mahalliy (Toshkent) sana: UTC bo'yicha olinsa, 00:00–05:00 da kechagi kun yozilardi
+    const d = new Date();
+    const today = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     await db.marketingContent.update({ where: { id: contentId }, data: { status: "PUBLISHED", url: link, publishDate: c.publishDate ?? today } });
   }
   // Avtomatik nashr (rejalashtiruvchi) — postni tasdiqlagan xodim nomidan yoziladi
@@ -103,15 +113,18 @@ export async function publishContent(contentId: string, userId: string | null): 
 /** Vaqti kelgan tasdiqlangan postlar (rejalashtiruvchi chaqiradi) */
 export async function publishDue(now = new Date()): Promise<number> {
   const due = await db.marketingContent.findMany({
-    where: { approval: "APPROVED", scheduledAt: { lte: now }, status: { notIn: ["PUBLISHED", "CANCELLED"] }, NOT: { channels: { isEmpty: true } } },
-    select: { id: true, publications: { select: { status: true } } },
+    // Xato bilan to'xtagan post avtomatik qayta yuborilmaydi — so'rovning o'zida chiqariladi,
+    // aks holda 20 ta eski xato post navbatni egallab, yangilari hech qachon chiqmasdi
+    where: {
+      approval: "APPROVED", scheduledAt: { lte: now }, status: { notIn: ["PUBLISHED", "CANCELLED"] }, NOT: { channels: { isEmpty: true } },
+      publications: { none: { status: { in: ["FAILED", "PUBLISHING"] } } },
+    },
+    select: { id: true },
     take: 20,
     orderBy: { scheduledAt: "asc" },
   });
   let n = 0;
   for (const c of due) {
-    // Xato bilan to'xtagan post avtomatik qayta yuborilmaydi
-    if (c.publications.some((p) => p.status === "FAILED" || p.status === "PUBLISHING")) continue;
     try { await publishContent(c.id, null); n++; } catch (e) { console.error("[smm] nashr", c.id, e instanceof Error ? e.message : e); }
   }
   return n;
@@ -129,7 +142,7 @@ export async function syncPublicationStats(now = new Date()): Promise<number> {
   });
   let n = 0;
   for (const p of pubs) {
-    if (!channelReady(p.channel)) continue;
+    if (!(await channelReady(p.channel))) continue;
     try {
       const s: PostStats = p.channel === "INSTAGRAM" ? await instagramStats(p.externalId!) : await facebookStats(p.externalId!);
       await db.smmPublication.update({ where: { id: p.id }, data: { ...s, statsAt: now } });

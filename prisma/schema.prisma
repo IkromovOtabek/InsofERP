@@ -2392,12 +2392,16 @@ model MarketingContent {
   approvedById   String?
   approvedByName String?
   approvedAt     DateTime?
+  brief          String? // AI studiyaga aytilgan g'oya (qanday post kerakligi)
+  locationName   String? // joylashuv nomi (masalan, «Zavod — Chirchiq»)
+  locationId     String? // Instagram joylashuvi: Facebook sahifa/joy id (location_id)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
   media        MarketingContentMedia[]
   publications SmmPublication[]
   boosts       SmmBoost[]
+  videoJobs    SmmVideoJob[]
 
   @@index([publishDate])
   @@index([status])
@@ -2551,7 +2555,166 @@ model MarketingSettings {
   boostDailyCap   Decimal  @default(20) @db.Decimal(18, 2) // bitta reklamaning kunlik maksimal byudjeti
   boostMonthlyCap Decimal  @default(300) @db.Decimal(18, 2) // oy bo'yicha jami rejalashtirilgan byudjet chegarasi
   defaultHashtags String?
+  // Brend profili — AI shu ma'lumotga tayanib yozadi
+  brandAbout      String? // zavod haqida: nima ishlab chiqaradi, afzalliklari, xizmat hududi
+  brandTone       String? // ohang: «ishonchli, aniq raqamlar bilan, ortiqcha reklamasiz»
+  audience        String? // maqsadli auditoriya
+  languages       String   @default("ru,uz") // post tillari (birinchisi — asosiy)
+  locations       Json? // [{ name, locationId? }] — postga qo'yiladigan joylashuvlar
+  adAccountId     String? // Meta reklama kabineti (act_…)
+  leadFormId      String? // Lead Ads formasi
   updatedAt       DateTime @updatedAt
+}
+
+enum SmmConnectMethod {
+  OAUTH // «Meta bilan ulash» tugmasi
+  MANUAL // token qo'lda kiritilgan
+}
+
+enum SmmAccountStatus {
+  ACTIVE
+  ERROR // oxirgi tekshiruvda xato
+  EXPIRED // token muddati tugagan — qayta ulash kerak
+  DISCONNECTED // uzilgan (tarix uchun qoladi)
+}
+
+/**
+ * Ulangan ijtimoiy tarmoq profillari (Marketing → Sozlamalar). Tokenlar shifrlangan (lib/smm/vault.ts).
+ * Har tarmoqda bitta asosiy (isPrimary) profil — nashr va statistika shundan.
+ */
+model SmmAccount {
+  id              String            @id @default(cuid())
+  channel         SmmChannel
+  externalId      String // Instagram business id / Facebook sahifa id / Telegram chat id
+  name            String
+  username        String?
+  pictureUrl      String?
+  method          SmmConnectMethod  @default(MANUAL)
+  tokenEnc        String? // sahifa yoki bot tokeni
+  userTokenEnc    String? // Meta foydalanuvchi tokeni (reklama va yangilash uchun)
+  tokenExpiresAt  DateTime?
+  pageId          String? // Instagram profili bog'langan Facebook sahifa
+  isPrimary       Boolean           @default(false)
+  status          SmmAccountStatus  @default(ACTIVE)
+  lastError       String?
+  checkedAt       DateTime?
+  followers       Int?
+  connectedById   String?
+  connectedByName String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  daily           SmmAccountDaily[]
+  posts           SmmPost[]
+
+  @@unique([channel, externalId])
+}
+
+/**
+ * Profilning kunlik ko'rsatkichlari (har kuni tarmoqdan tortiladi)
+ */
+model SmmAccountDaily {
+  accountId     String
+  date          DateTime   @db.Date
+  followers     Int?
+  reach         Int?
+  views         Int?
+  profileViews  Int?
+  websiteClicks Int?
+  interactions  Int?
+  account       SmmAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, date])
+}
+
+/**
+ * Profildagi postlar (ERP'dan tashqarida chiqqanlari ham) — tahlil va AI tavsiyalari uchun
+ */
+model SmmPost {
+  id           String     @id @default(cuid())
+  accountId    String
+  externalId   String
+  mediaType    String // REELS, IMAGE, CAROUSEL_ALBUM, VIDEO, TEXT
+  caption      String?
+  permalink    String?
+  thumbnailUrl String?
+  postedAt     DateTime
+  views        Int?
+  reach        Int?
+  likes        Int?
+  comments     Int?
+  shares       Int?
+  saves        Int?
+  avgWatchSec  Decimal?   @db.Decimal(10, 2)
+  statsAt      DateTime?
+  createdAt    DateTime   @default(now())
+  account      SmmAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, externalId])
+  @@index([postedAt])
+}
+
+/**
+ * Raqobatchilar (Instagram Business Discovery — ochiq ko'rsatkichlar)
+ */
+model SmmCompetitor {
+  id          String    @id @default(cuid())
+  username    String    @unique
+  name        String?
+  followers   Int?
+  mediaCount  Int?
+  avgLikes    Int?
+  avgComments Int?
+  topPosts    Json? // [{ permalink, caption, likes, comments, mediaType, postedAt }]
+  checkedAt   DateTime?
+  lastError   String?
+  createdAt   DateTime  @default(now())
+}
+
+/**
+ * AI tahlil hisobotlari: nima ishladi, nima ishlamadi, g'oyalar
+ */
+model SmmInsightReport {
+  id            String   @id @default(cuid())
+  periodFrom    DateTime @db.Date
+  periodTo      DateTime @db.Date
+  summary       String // markdown
+  ideas         Json // [{ title, format, hook, why }]
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+enum SmmVideoStatus {
+  QUEUED // navbatda
+  GENERATING // AI kadrlar va ovoz tayyorlanmoqda
+  RENDERING // montaj (ffmpeg)
+  DONE
+  FAILED
+  CANCELLED
+}
+
+/**
+ * AI studiya: Reels montaj navbati. `spec` — sahnalar (matn, ovoz, kadr: media kutubxonadan yoki AI yaratadi).
+ * Tayyor video media kutubxonaga tushadi va postga biriktiriladi.
+ */
+model SmmVideoJob {
+  id            String            @id @default(cuid())
+  contentId     String?
+  status        SmmVideoStatus    @default(QUEUED)
+  spec          Json
+  progress      Int               @default(0)
+  outputMediaId String?
+  error         String?
+  attempts      Int               @default(0)
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  content       MarketingContent? @relation(fields: [contentId], references: [id], onDelete: SetNull)
+
+  @@index([status])
 }
 
 enum AdChannel {

@@ -76,17 +76,23 @@ export async function requestBoost(p: { contentId: string; objective: SmmBoostOb
 export async function approveBoost(id: string, actor: Actor): Promise<Res> {
   const b = await db.smmBoost.findUnique({ where: { id }, include: { content: { select: { title: true } } } });
   if (!b) return { ok: false, error: "Reklama topilmadi" };
-  const cap = await checkCaps(Number(b.dailyBudget), b.days, b.id);
-  if (cap) return { ok: false, error: cap };
-  const claim = await db.smmBoost.updateMany({ where: { id, status: "PENDING_APPROVAL" }, data: { status: "LAUNCHING", approvedById: actor.userId, approvedByName: actor.name, approvedAt: new Date() } });
-  if (claim.count === 0) return { ok: false, error: "Reklama allaqachon ko'rib chiqilgan" };
+  // Limit tekshiruvi va egallash bitta qulf ostida: ikki target bir vaqtda tasdiqlansa, ikkalasi limitdan o'tib ketmasin
+  const gate = await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('smm_boost_caps'))`;
+    const cap = await checkCaps(Number(b.dailyBudget), b.days, b.id);
+    if (cap) return cap;
+    const claim = await tx.smmBoost.updateMany({ where: { id, status: "PENDING_APPROVAL" }, data: { status: "LAUNCHING", approvedById: actor.userId, approvedByName: actor.name, approvedAt: new Date() } });
+    return claim.count === 0 ? "Reklama allaqachon ko'rib chiqilgan" : null;
+  });
+  if (gate) return { ok: false, error: gate };
 
   const start = new Date(Date.now() + 10 * 60_000);
   const end = new Date(start.getTime() + b.days * 86_400_000);
   const ig = await db.smmPublication.findUnique({ where: { contentId_channel: { contentId: b.contentId, channel: "INSTAGRAM" } } });
 
-  if (smmDryRun() || !adsReady() || ig?.status !== "PUBLISHED" || !ig.externalId) {
-    const why = smmDryRun() ? "Sinov rejimi" : !adsReady() ? "Meta reklama kalitlari sozlanmagan" : "Post Instagram'da haqiqatda chiqmagan (sinov nashri)";
+  const ready = await adsReady();
+  if (smmDryRun() || !ready || ig?.status !== "PUBLISHED" || !ig.externalId) {
+    const why = smmDryRun() ? "Sinov rejimi" : !ready ? "Meta reklama kabineti ulanmagan (Sozlamalar)" : "Post Instagram'da haqiqatda chiqmagan (sinov nashri)";
     await db.smmBoost.update({ where: { id }, data: { status: "SIMULATED", error: `${why} — Meta'ga yuborilmadi, pul sarflanmadi`, startAt: start, endAt: end } });
     await audit(db, actor.userId, "STATUS_CHANGE", "SmmBoost", id, b, { status: "SIMULATED" });
     return { ok: true, note: `${why}: reklama sinov rejimida belgilandi, pul sarflanmadi` };
@@ -94,7 +100,7 @@ export async function approveBoost(id: string, actor: Actor): Promise<Res> {
   try {
     const a = audienceByKey(b.audience)!;
     const r = await launchBoost({
-      name: `INSOF · ${b.content.title}`.slice(0, 120), igMediaId: ig.externalId, objective: b.objective, targeting: a.targeting, dailyBudget: Number(b.dailyBudget), start, end,
+      name: `INSOF · ${b.content.title}`.slice(0, 120), igMediaId: ig.externalId, objective: b.objective, targeting: a.targeting, dailyBudget: Number(b.dailyBudget), currency: (await marketingSettings()).adCurrency, start, end,
       saved: async (ids) => { await db.smmBoost.update({ where: { id }, data: { metaCampaignId: ids.campaignId, metaAdSetId: ids.adSetId, metaAdId: ids.adId, startAt: start, endAt: end } }); },
     });
     await db.smmBoost.update({ where: { id }, data: { status: "ACTIVE", metaCampaignId: r.campaignId, metaAdSetId: r.adSetId, metaAdId: r.adId, startAt: start, endAt: end, error: null } });

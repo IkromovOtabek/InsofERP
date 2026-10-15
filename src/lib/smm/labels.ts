@@ -1,4 +1,4 @@
-import type { SmmApproval, SmmBoostObjective, SmmBoostStatus, SmmChannel, SmmPublicationStatus } from "@/generated/prisma";
+import type { SmmAccountStatus, SmmApproval, SmmBoostObjective, SmmBoostStatus, SmmChannel, SmmPublicationStatus, SmmVideoStatus } from "@/generated/prisma";
 import type { BadgeColor } from "@/components/ui";
 
 export const CHANNELS: SmmChannel[] = ["INSTAGRAM", "TELEGRAM", "FACEBOOK"];
@@ -23,7 +23,7 @@ export const PUB_STATUS: Record<SmmPublicationStatus, { label: string; color: Ba
 export const BOOST_OBJECTIVE: Record<SmmBoostObjective, { label: string; hint: string }> = {
   REACH: { label: "Ko'proq odam ko'rsin", hint: "Qamrov — brendni tanitish" },
   MESSAGES: { label: "Direct'ga yozishsin", hint: "Instagram Direct xabarlari" },
-  LEADS: { label: "Ariza qoldirishsin", hint: "Lead forma → Sayt arizalari" },
+  LEADS: { label: "Ariza qoldirishsin", hint: "Meta Lead forma (arizalar Meta Ads Manager'da)" },
 };
 
 export const BOOST_STATUS: Record<SmmBoostStatus, { label: string; color: BadgeColor }> = {
@@ -39,3 +39,26 @@ export const BOOST_STATUS: Record<SmmBoostStatus, { label: string; color: BadgeC
 
 /** Oylik limitga kiradigan holatlar (rad etilgan, xato va sinov kirmaydi) */
 export const BOOST_COUNTED: SmmBoostStatus[] = ["PENDING_APPROVAL", "LAUNCHING", "ACTIVE", "PAUSED", "COMPLETED"];
+
+export const ACCOUNT_STATUS: Record<SmmAccountStatus, { label: string; color: BadgeColor }> = {
+  ACTIVE: { label: "Ulangan", color: "green" },
+  ERROR: { label: "Xato", color: "red" },
+  EXPIRED: { label: "Qayta ulash kerak", color: "amber" },
+  DISCONNECTED: { label: "Uzilgan", color: "slate" },
+};
+
+export const VIDEO_STATUS: Record<SmmVideoStatus, { label: string; color: BadgeColor }> = {
+  QUEUED: { label: "Navbatda", color: "slate" },
+  GENERATING: { label: "Kadrlar va ovoz tayyorlanmoqda", color: "blue" },
+  RENDERING: { label: "Montaj qilinmoqda", color: "blue" },
+  DONE: { label: "Tayyor", color: "green" },
+  FAILED: { label: "Xato", color: "red" },
+  CANCELLED: { label: "Bekor qilingan", color: "slate" },
+};
+
+/** Instagram media turlari (profil tahlili) */
+export const MEDIA_TYPE_LABEL: Record<string, string> = {
+  REELS: "Reels", IMAGE: "Rasm", CAROUSEL_ALBUM: "Karusel", VIDEO: "Video", TEXT: "Matn", STORY: "Stories",
+};
+
+export const WEEKDAY: string[] = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
