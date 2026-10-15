@@ -11,8 +11,8 @@ import { requestBoostAction } from "../target/actions";
 type Pub = { channel: SmmChannel; status: SmmPublicationStatus; permalink: string | null; error: string | null; views: number | null; likes: number | null; comments: number | null };
 
 /** Tasdiqlash oqimi + tarmoqlardagi nashr holati */
-export function ApprovalPanel({ id, approval, note, approvedBy, canSubmit, canPublish, scheduled, pubs }: {
-  id: string; approval: SmmApproval; note: string | null; approvedBy: string | null; canSubmit: boolean; canPublish: boolean; scheduled: string | null; pubs: Pub[];
+export function ApprovalPanel({ id, version, approval, note, approvedBy, canSubmit, canPublish, scheduled, pubs }: {
+  id: string; version: string; approval: SmmApproval; note: string | null; approvedBy: string | null; canSubmit: boolean; canPublish: boolean; scheduled: string | null; pubs: Pub[];
 }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ error?: string; note?: string } | null>(null);
@@ -42,7 +42,7 @@ export function ApprovalPanel({ id, approval, note, approvedBy, canSubmit, canPu
             <Button size="sm" disabled={pending} onClick={() => run(() => submitForApproval(id))}><Send size={14} /> Tasdiqlashga yuborish</Button>
           )}
           {canPublish && (approval === "PENDING" || approval === "DRAFT") && (
-            <Button size="sm" variant="success" disabled={pending} onClick={() => run(() => approveContent(id))}><Check size={14} /> Tasdiqlash</Button>
+            <Button size="sm" variant="success" disabled={pending} onClick={() => run(() => approveContent(id, version))}><Check size={14} /> Tasdiqlash</Button>
           )}
           {canPublish && (approval === "PENDING" || (approval === "APPROVED" && !allOut)) && !rejecting && (
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => setRejecting(true)}><X size={14} /> Rad etish</Button>

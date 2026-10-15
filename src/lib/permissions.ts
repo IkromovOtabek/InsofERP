@@ -28,6 +28,8 @@ export type ActionDef = {
   hint?: string;
   /** false — faqat direktor (boshqaga berib bo'lmaydi) */
   delegable?: boolean;
+  /** true — modulga «write» berilgani yetmaydi, amal aniq belgilanishi kerak (pul sarfi, kompaniya nomidan nashr) */
+  explicit?: boolean;
 };
 
 const STOCK_ORDER: readonly Role[] = ["SALES", "PRODUCTION", "SUPERVISOR", "WAREHOUSE"];
@@ -54,9 +56,9 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "ads",     label: "Reklama kampaniyalari va xarajat",  roles: ["SALES"] },
     { key: "seo",     label: "SEO kalit so'zlar va pozitsiyalar", roles: ["SALES"] },
     { key: "agent",   label: "AI marketing agenti",               roles: ["SALES"], hint: "Agent kontent rejaga yozishi uchun «Kontent reja» ruxsati ham kerak" },
-    { key: "publish", label: "Postni tasdiqlash va tarmoqqa chiqarish", roles: [], hint: "Instagram, Telegram, Facebook — kompaniya nomidan chiqadi; odatda direktor" },
+    { key: "publish", label: "Postni tasdiqlash va tarmoqqa chiqarish", roles: [], explicit: true, hint: "Instagram, Telegram, Facebook — kompaniya nomidan chiqadi; odatda direktor" },
     { key: "boost",   label: "Target (reklama) so'rovi yuborish",  roles: ["SALES"], hint: "Faqat so'rov — pul tasdiqlangandan keyin sarflanadi" },
-    { key: "boost_approve", label: "Targetni tasdiqlash va ishga tushirish", roles: [], hint: "Real pul sarflanadi — limitlar Target sahifasida" },
+    { key: "boost_approve", label: "Targetni tasdiqlash va ishga tushirish", roles: [], explicit: true, hint: "Real pul sarflanadi — limitlar Target sahifasida" },
   ],
   customers: [
     { key: "edit",     label: "Mijoz qo'shish / tahrirlash",  roles: ["SALES", "ACCOUNTING", "FINANCE"] },
@@ -159,7 +161,7 @@ export function canDo(who: Who, module: string, action: string, fallbackRoles?: 
   if (def?.delegable === false) return false;
   const lvl = who.perms?.[module];
   if (lvl === "none" || lvl === "view") return false;
-  if (lvl === "write") return true;
+  if (lvl === "write") return !def?.explicit;
   if (Array.isArray(lvl)) return lvl.includes(action);
   return (def?.roles ?? fallbackRoles ?? []).includes(who.role);
 }

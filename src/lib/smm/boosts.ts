@@ -16,17 +16,31 @@ import { BOOST_COUNTED } from "./labels";
 import { boostStats, launchBoost, setCampaignStatus } from "./meta";
 
 export async function marketingSettings() {
-  return db.marketingSettings.upsert({ where: { id: "main" }, create: { id: "main" }, update: {} });
+  // Birinchi ochilishda ikki so'rov bir vaqtda yaratmoqchi bo'lsa — biri P2002 oladi, mavjud yozuv qaytariladi
+  return db.marketingSettings.upsert({ where: { id: "main" }, create: { id: "main" }, update: {} })
+    .catch(() => db.marketingSettings.findUniqueOrThrow({ where: { id: "main" } }));
 }
 
-/** Joriy oyda rejalashtirilgan jami byudjet (kunlik × kun) */
+/**
+ * Joriy oyga tushadigan jami byudjet (kunlik × kun). Ishga tushganlari — faqat shu oyga to'g'ri kelgan kunlari
+ * (o'tgan oyda boshlanib davom etayotgani ham); hali tasdiqlanmagan/yuborilayotgani — to'liq.
+ */
 export async function monthCommitted(excludeId?: string, now = new Date()): Promise<number> {
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const rows = await db.smmBoost.findMany({
-    where: { status: { in: BOOST_COUNTED }, createdAt: { gte: from }, ...(excludeId ? { id: { not: excludeId } } : {}) },
-    select: { dailyBudget: true, days: true },
+    where: {
+      status: { in: BOOST_COUNTED },
+      OR: [{ startAt: null }, { startAt: { lt: to }, endAt: { gt: from } }],
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { dailyBudget: true, days: true, startAt: true, endAt: true },
   });
-  return rows.reduce((a, r) => a + Number(r.dailyBudget) * r.days, 0);
+  return rows.reduce((a, r) => {
+    if (!r.startAt || !r.endAt) return a + Number(r.dailyBudget) * r.days;
+    const ms = Math.min(r.endAt.getTime(), to.getTime()) - Math.max(r.startAt.getTime(), from.getTime());
+    return a + Number(r.dailyBudget) * Math.min(r.days, Math.max(0, Math.ceil(ms / 86_400_000)));
+  }, 0);
 }
 
 type Actor = { userId: string; name: string };
@@ -79,15 +93,32 @@ export async function approveBoost(id: string, actor: Actor): Promise<Res> {
   }
   try {
     const a = audienceByKey(b.audience)!;
-    const r = await launchBoost({ name: `INSOF · ${b.content.title}`.slice(0, 120), igMediaId: ig.externalId, objective: b.objective, targeting: a.targeting, dailyBudget: Number(b.dailyBudget), start, end });
+    const r = await launchBoost({
+      name: `INSOF · ${b.content.title}`.slice(0, 120), igMediaId: ig.externalId, objective: b.objective, targeting: a.targeting, dailyBudget: Number(b.dailyBudget), start, end,
+      saved: async (ids) => { await db.smmBoost.update({ where: { id }, data: { metaCampaignId: ids.campaignId, metaAdSetId: ids.adSetId, metaAdId: ids.adId, startAt: start, endAt: end } }); },
+    });
     await db.smmBoost.update({ where: { id }, data: { status: "ACTIVE", metaCampaignId: r.campaignId, metaAdSetId: r.adSetId, metaAdId: r.adId, startAt: start, endAt: end, error: null } });
     await audit(db, actor.userId, "STATUS_CHANGE", "SmmBoost", id, b, { status: "ACTIVE", ...r });
     return { ok: true, note: "Reklama Meta'da ishga tushirildi" };
   } catch (e) {
-    const message = (e instanceof Error ? e.message : String(e)).slice(0, 500);
-    await db.smmBoost.update({ where: { id }, data: { status: "FAILED", error: message } });
-    await audit(db, actor.userId, "STATUS_CHANGE", "SmmBoost", id, b, { status: "FAILED", error: message });
-    return { ok: false, error: message };
+    const message = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+    // Kampaniya yaratilgan bo'lsa (yoqish so'rovi Meta'da bajarilgan bo'lishi ham mumkin) — darhol to'xtatamiz
+    const cur = await db.smmBoost.findUnique({ where: { id }, select: { metaCampaignId: true } });
+    let status: "FAILED" | "ACTIVE" = "FAILED";
+    let error = message;
+    if (cur?.metaCampaignId) {
+      try {
+        await setCampaignStatus(cur.metaCampaignId, "PAUSED");
+        error = `${message} (Meta'dagi kampaniya to'xtatildi)`;
+      } catch {
+        // To'xtatib bo'lmadi — ishlayotgan deb hisoblaymiz: limitga kiradi, statistika tortiladi, «To'xtatish» tugmasi chiqadi
+        status = "ACTIVE";
+        error = `${message} — kampaniya to'xtatilmadi, Meta Ads Manager'da tekshiring yoki «To'xtatish»ni bosing`;
+      }
+    }
+    await db.smmBoost.update({ where: { id }, data: { status, error } });
+    await audit(db, actor.userId, "STATUS_CHANGE", "SmmBoost", id, b, { status, error });
+    return { ok: false, error };
   }
 }
 
@@ -133,7 +164,5 @@ export async function syncBoosts(now = new Date()): Promise<number> {
       console.error("[smm] reklama statistikasi", b.id, e instanceof Error ? e.message : e);
     }
   }
-  // Sinov reklamalari muddati tugasa yopiladi
-  await db.smmBoost.updateMany({ where: { status: "SIMULATED", endAt: { lt: now } }, data: { status: "COMPLETED" } });
   return n;
 }

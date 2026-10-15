@@ -216,13 +216,17 @@ export function marketingTools(s: Session) {
       if (i.caption_uz !== undefined) data.captionUz = i.caption_uz;
       if (i.hashtags !== undefined) data.hashtags = i.hashtags;
       if (i.channels) data.channels = i.channels;
-      await db.$transaction(async (tx) => {
+      const ok = await db.$transaction(async (tx) => {
+        // Shartli: tekshiruvdan keyin post tasdiqlashga ketgan bo'lsa — tegilmaydi
+        const u = await tx.marketingContent.updateMany({ where: { id: i.id, approval: { in: ["DRAFT", "REJECTED"] }, status: { not: "PUBLISHED" } }, data });
+        if (u.count === 0) return false;
         if (i.media_ids) {
           await tx.marketingContentMedia.deleteMany({ where: { contentId: i.id } });
           if (media.length) await tx.marketingContentMedia.createMany({ data: media.map((mediaId, sort) => ({ contentId: i.id, mediaId, sort })) });
         }
-        await tx.marketingContent.update({ where: { id: i.id }, data });
+        return true;
       });
+      if (!ok) return "Xato: post shu orada tasdiqlashga yuborildi — faqat odam o'zgartiradi";
       const { audit } = await import("@/lib/audit");
       await audit(db, s.userId, "UPDATE", "MarketingContent", i.id, undefined, { ai: true, fields: Object.keys(data) });
       return json({ updated: true, link: `/marketing/kontent/${i.id}` });

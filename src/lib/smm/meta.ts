@@ -133,14 +133,20 @@ export type BoostLaunch = { campaignId: string; adSetId: string; adId: string };
 /** Valyuta minimal birligida (sent): Meta byudjetni shunday qabul qiladi */
 const minor = (amount: number) => Math.round(amount * 100);
 
+/**
+ * `saved` — har bir obyekt yaratilishi bilan id larni bazaga yozish uchun: keyingi qadam xato bersa ham
+ * Meta'da qolgan kampaniya ERP'dan ko'rinadi va to'xtatiladi.
+ */
 export async function launchBoost(p: {
   name: string; igMediaId: string; objective: SmmBoostObjective; targeting: Json; dailyBudget: number; start: Date; end: Date;
+  saved: (ids: Partial<BoostLaunch>) => Promise<void>;
 }): Promise<BoostLaunch> {
   const act = smmEnv.adAccount();
   const o = OBJECTIVE[p.objective];
   if (p.objective === "LEADS" && !smmEnv.leadFormId()) throw new Error("Ariza maqsadi uchun Meta'da Lead forma yarating va META_LEAD_FORM_ID ni sozlang");
 
   const campaign = await graph<{ id: string }>(`${act}/campaigns`, { name: p.name, objective: o.objective, status: "PAUSED", special_ad_categories: [] }, "POST");
+  await p.saved({ campaignId: campaign.id });
   const adSet = await graph<{ id: string }>(`${act}/adsets`, {
     name: p.name, campaign_id: campaign.id, status: "PAUSED",
     daily_budget: minor(p.dailyBudget), billing_event: "IMPRESSIONS", optimization_goal: o.optimization, bid_strategy: "LOWEST_COST_WITHOUT_CAP",
@@ -149,11 +155,13 @@ export async function launchBoost(p: {
     promoted_object: p.objective === "LEADS" ? { page_id: smmEnv.pageId() } : undefined,
     ...o.extra,
   }, "POST");
+  await p.saved({ campaignId: campaign.id, adSetId: adSet.id });
   const creative = await graph<{ id: string }>(`${act}/adcreatives`, {
     name: p.name, object_id: smmEnv.pageId(), instagram_user_id: smmEnv.igUserId(), source_instagram_media_id: p.igMediaId,
     ...(p.objective === "LEADS" ? { call_to_action: { type: "SIGN_UP", value: { lead_gen_form_id: smmEnv.leadFormId() } } } : {}),
   }, "POST");
   const ad = await graph<{ id: string }>(`${act}/ads`, { name: p.name, adset_id: adSet.id, creative: { creative_id: creative.id }, status: "PAUSED" }, "POST");
+  await p.saved({ campaignId: campaign.id, adSetId: adSet.id, adId: ad.id });
   // Hammasi yaratildi — endi yoqamiz (yarim yaratilgan reklama pul sarflamasin)
   for (const id of [campaign.id, adSet.id, ad.id]) await graph(id, { status: "ACTIVE" }, "POST");
   return { campaignId: campaign.id, adSetId: adSet.id, adId: ad.id };

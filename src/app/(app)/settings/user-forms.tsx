@@ -202,7 +202,12 @@ export function PermsMatrix({ modules, current, onChange, footer }: {
                     </div>
                   )}
                   {lvl === "write" && m.actions.length > 0 && (
-                    <div className="mt-1.5 text-xs text-emerald-700">Barcha amallar: {m.actions.map((a) => a.label).join(", ")}</div>
+                    <div className="mt-1.5 text-xs text-emerald-700">
+                      Barcha amallar: {m.actions.filter((a) => !a.explicit).map((a) => a.label).join(", ")}
+                      {m.actions.some((a) => a.explicit) && (
+                        <span className="block text-slate-500">Kirmaydi (faqat «Tanlangan amallar» orqali beriladi): {m.actions.filter((a) => a.explicit).map((a) => a.label).join(", ")}</span>
+                      )}
+                    </div>
                   )}
                 </div>
               );

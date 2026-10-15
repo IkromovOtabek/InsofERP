@@ -50,6 +50,7 @@ export function mediaPath(fileName: string): string | null {
 }
 
 const ID_RE = /^[a-z0-9]{16,40}$/;
+const MAX_OPEN_UPLOADS = 40;
 
 export type ChunkResult =
   | { done: false }
@@ -68,6 +69,11 @@ export async function writeChunk(uploadId: string, index: number, total: number,
   if (index < total - 1 && data.byteLength !== CHUNK_BYTES) return { error: "Bo'lak hajmi noto'g'ri" };
 
   const dir = path.join(TMP_DIR, uploadId);
+  if (index === 0 || !(await stat(dir).catch(() => null))) {
+    // Yangi yuklash: bir vaqtdagi chala yuklashlar soni cheklangan (har biri 300 MB gacha — disk to'lmasin)
+    const busy = await readdir(TMP_DIR).catch(() => [] as string[]);
+    if (!busy.includes(uploadId) && busy.length >= MAX_OPEN_UPLOADS) return { error: "Hozir juda ko'p fayl yuklanmoqda — birozdan keyin qayta urinib ko'ring" };
+  }
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, `${index}.part`), data);
 
@@ -99,6 +105,18 @@ export async function writeChunk(uploadId: string, index: number, total: number,
   if (!type) {
     await rm(dir, { recursive: true, force: true });
     return { error: "Faqat rasm (JPG, PNG, WEBP) yoki video (MP4, MOV) yuklash mumkin" };
+  }
+  // Instagram rasm sifatida faqat JPEG qabul qiladi — PNG/WEBP shu yerda JPEG ga aylantiriladi
+  if (type.kind === "IMAGE" && type.ext !== "jpg") {
+    const jpg = path.join(dir, "merged.jpg");
+    try {
+      const { default: sharp } = await import("sharp");
+      await sharp(out).rotate().flatten({ background: "#ffffff" }).jpeg({ quality: 90, mozjpeg: true }).toFile(jpg);
+    } catch {
+      await rm(dir, { recursive: true, force: true });
+      return { error: "Rasmni o'qib bo'lmadi — boshqa faylni tanlang" };
+    }
+    return { done: true, tmpFile: jpg, size: (await stat(jpg)).size, type: { kind: "IMAGE", ext: "jpg", mime: "image/jpeg" } };
   }
   const size = (await stat(out)).size;
   return { done: true, tmpFile: out, size, type };

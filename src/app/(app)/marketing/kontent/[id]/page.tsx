@@ -59,7 +59,7 @@ export default async function ContentEditPage({ params, searchParams }: { params
         {item && (
           <div className="space-y-4">
             <ApprovalPanel
-              id={item.id} approval={item.approval} note={item.approvalNote} approvedBy={item.approvedByName}
+              id={item.id} version={item.updatedAt.toISOString()} approval={item.approval} note={item.approvalNote} approvedBy={item.approvedByName}
               canSubmit={canEdit} canPublish={canDo(s, "marketing", "publish")}
               scheduled={item.scheduledAt ? dateTime(item.scheduledAt) : null}
               pubs={item.publications.map((p) => ({ channel: p.channel, status: p.status, permalink: p.permalink, error: p.error, views: p.views, likes: p.likes, comments: p.comments }))}

@@ -10,7 +10,7 @@ export type PermModule = {
   key: string;
   label: string;
   group: string;
-  actions: { key: string; label: string; hint?: string }[];
+  actions: { key: string; label: string; hint?: string; explicit?: boolean }[];
   /** Rol bo'yicha (direktor bermagan holatda): ko'radimi va qaysi amallarni bajaradi. `null` — rol noma'lum (bir nechta xodim). */
   role: { view: boolean; actions: string[] } | null;
 };
@@ -22,7 +22,7 @@ const groupOf = (m: (typeof MODULES)[number]) => NAV.find((i) => m.prefixes.some
 export function permModules(role: Role | null): PermModule[] {
   return MODULES.map((m) => ({
     key: m.key, label: m.label, group: groupOf(m),
-    actions: delegableActions(m.key).map((a) => ({ key: a.key, label: a.label, hint: a.hint })),
+    actions: delegableActions(m.key).map((a) => ({ key: a.key, label: a.label, hint: a.hint, explicit: a.explicit })),
     role: role ? { view: canView({ role }, m.key), actions: canView({ role }, m.key) ? roleDefaultActions(role, m.key) : [] } : null,
   }));
 }

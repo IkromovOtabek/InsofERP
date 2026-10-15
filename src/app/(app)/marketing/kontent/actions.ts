@@ -7,7 +7,8 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
-import { publishContent } from "@/lib/smm/publish";
+import { composeText, publishContent } from "@/lib/smm/publish";
+import { marketingSettings } from "@/lib/smm/boosts";
 import { aiErrorText, aiReady, planMonth, translateCaption, writeCaption, writeScript, type PostTextT } from "@/lib/ai/smm-writer";
 
 const zInt = z.coerce.number({ message: "raqam bo'lishi kerak" }).int("butun son bo'lsin").min(0).max(1_000_000_000);
@@ -32,6 +33,8 @@ const schema = z.object({
   saves: zInt,
   leads: zInt,
 });
+
+class StaleError extends Error {}
 
 /** Postni saqlash. Tasdiqlangan post o'zgarsa — qayta tasdiqlash kerak (matn tasdiqlanganidan farq qilmasin). */
 export async function saveContent(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -58,12 +61,25 @@ export async function saveContent(id: string | null, _prev: ActionState, fd: For
     if (!before) return { error: "Post topilmadi" };
     const changed = ["caption", "captionUz", "hashtags", "scheduledAt", "channels"].some((k) => JSON.stringify((before as Record<string, unknown>)[k]) !== JSON.stringify((data as Record<string, unknown>)[k]))
       || JSON.stringify(before.media.map((m) => m.mediaId).sort()) !== JSON.stringify([...mediaIds].sort());
-    const reapprove = before.approval === "APPROVED" && changed && before.status !== "PUBLISHED";
-    const after = await db.$transaction(async (tx) => {
-      await tx.marketingContentMedia.deleteMany({ where: { contentId: id } });
-      if (mediaIds.length) await tx.marketingContentMedia.createMany({ data: mediaIds.map((mediaId, sort) => ({ contentId: id, mediaId, sort })) });
-      return tx.marketingContent.update({ where: { id }, data: { ...data, ...(reapprove ? { approval: "DRAFT", approvalNote: "Tasdiqdan keyin o'zgartirildi — qayta tasdiqlash kerak", approvedAt: null, approvedById: null, approvedByName: null } : {}) } });
-    });
+    // Tasdiqlashda yoki tasdiqlangan post o'zgarsa — qoralamaga qaytadi: direktor ko'rmagan matn chiqib ketmasin
+    const reapprove = (before.approval === "APPROVED" || before.approval === "PENDING") && changed && before.status !== "PUBLISHED";
+    const reset = reapprove
+      ? { approval: "DRAFT" as const, approvalNote: before.approval === "APPROVED" ? "Tasdiqdan keyin o'zgartirildi — qayta tasdiqlash kerak" : "Tasdiqlashga yuborilgandan keyin o'zgartirildi — qayta yuboring", approvedAt: null, approvedById: null, approvedByName: null }
+      : {};
+    let after;
+    try {
+      after = await db.$transaction(async (tx) => {
+        // Shartli yozuv: o'qish va yozish orasida post tasdiqlangan/o'zgargan bo'lsa — saqlanmaydi
+        const u = await tx.marketingContent.updateMany({ where: { id, updatedAt: before.updatedAt }, data: { ...data, ...reset } });
+        if (u.count === 0) throw new StaleError();
+        await tx.marketingContentMedia.deleteMany({ where: { contentId: id } });
+        if (mediaIds.length) await tx.marketingContentMedia.createMany({ data: mediaIds.map((mediaId, sort) => ({ contentId: id, mediaId, sort })) });
+        return tx.marketingContent.findUniqueOrThrow({ where: { id } });
+      });
+    } catch (e) {
+      if (e instanceof StaleError) return { error: "Post shu orada o'zgardi (tasdiqlandi yoki boshqa xodim saqladi) — sahifani yangilab qayta kiriting" };
+      throw e;
+    }
     await audit(db, s.userId, before.status !== after.status ? "STATUS_CHANGE" : "UPDATE", "MarketingContent", id, before, after);
   } else {
     const created = await db.marketingContent.create({
@@ -85,6 +101,12 @@ export async function submitForApproval(id: string): Promise<ActionState> {
   if (!c.channels.length) return { error: "Kamida bitta tarmoq tanlang" };
   if (!c.caption && !c.captionUz) return { error: "Post matni (izoh) bo'sh" };
   if (c.channels.some((ch) => ch !== "TELEGRAM") && c._count.media === 0) return { error: "Instagram/Facebook uchun rasm yoki video biriktiring" };
+  if (c.channels.includes("INSTAGRAM")) {
+    // Instagram chegarasi butun matnga: izoh RU + UZ + heshteglar (+ standart heshteglar) birga
+    const text = composeText(c, (await marketingSettings()).defaultHashtags);
+    if (text.length > 2200) return { error: `Instagram uchun matn juda uzun: ${text.length} belgi (RU + UZ izoh va heshteglar birga 2200 dan oshmasin)` };
+    if ((text.match(/#[^\s#]+/g) ?? []).length > 30) return { error: "Instagram'da 30 tadan ko'p heshteg bo'lmaydi" };
+  }
   const r = await db.marketingContent.updateMany({ where: { id, approval: { in: ["DRAFT", "REJECTED"] } }, data: { approval: "PENDING", approvalNote: null } });
   if (r.count === 0) return { error: "Post allaqachon tasdiqlashda yoki tasdiqlangan" };
   await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, { approval: c.approval }, { approval: "PENDING" });
@@ -92,13 +114,16 @@ export async function submitForApproval(id: string): Promise<ActionState> {
   return { ok: true, note: "Tasdiqlashga yuborildi" };
 }
 
-export async function approveContent(id: string): Promise<ActionState> {
+/** `version` — direktor ko'rgan postning `updatedAt` qiymati: shundan keyin o'zgargan post tasdiqlanmaydi */
+export async function approveContent(id: string, version: string): Promise<ActionState> {
   const s = await requireAction("marketing", "publish");
+  const seen = new Date(version);
+  if (Number.isNaN(seen.getTime())) return { error: "Sahifani yangilang" };
   const r = await db.marketingContent.updateMany({
-    where: { id, approval: { in: ["PENDING", "DRAFT"] } },
+    where: { id, approval: { in: ["PENDING", "DRAFT"] }, updatedAt: seen },
     data: { approval: "APPROVED", approvedById: s.userId, approvedByName: s.fullName, approvedAt: new Date(), approvalNote: null },
   });
-  if (r.count === 0) return { error: "Post allaqachon ko'rib chiqilgan" };
+  if (r.count === 0) return { error: "Post ko'rib chiqilgan yoki shu orada o'zgargan — sahifani yangilab qayta tekshiring" };
   await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, undefined, { approval: "APPROVED" });
   revalidatePath("/marketing", "layout");
   const c = await db.marketingContent.findUnique({ where: { id }, select: { scheduledAt: true } });

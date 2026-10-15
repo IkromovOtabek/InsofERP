@@ -25,7 +25,8 @@ export function composeText(c: { caption: string | null; captionUz: string | nul
 
 export type PublishOutcome = { channel: SmmChannel; status: "PUBLISHED" | "FAILED" | "SIMULATED" | "SKIPPED"; message?: string };
 
-const STUCK_MS = 15 * 60_000;
+// Eng uzun holat: 10 ta videoli karusel (har konteyner 5 daqiqagacha kutiladi) — undan katta zaxira bilan
+const STUCK_MS = 90 * 60_000;
 
 /** Bitta postni chiqarish. `userId` — kim bosgani (avtomatik nashrda null). */
 export async function publishContent(contentId: string, userId: string | null): Promise<PublishOutcome[]> {
