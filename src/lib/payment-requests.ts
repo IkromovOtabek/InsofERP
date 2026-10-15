@@ -229,6 +229,15 @@ export async function receivePaymentRequest(input: ReceiveInput, s: { userId: st
       body: `${r.order.orderNo} · ${r.customer.name} · ${r.method === "CASH" ? "kassaga naqd" : "bankka perechisleniye"} · ${after?.status === "RECEIVED" ? "bosh to'lov to'liq yopildi, reys ochish mumkin" : `qolgan bosh to'lov ${money(left)}`}`,
       link: { key: "orders", id: r.orderId },
     });
+    // Bosh to'lov to'liq yopildi — reys ochish mumkin; reysni logistika ochadi, u ham bilsin
+    if (after?.status === "RECEIVED") {
+      await notifyRoles(["LOGISTICS"], {
+        type: "PAYMENT_REQUEST_RECEIVED",
+        title: `Bosh to'lov yopildi — ${r.order.orderNo}`,
+        body: `${r.customer.name} · reys ochish mumkin`,
+        link: { key: "orders", id: r.orderId },
+      }, { except: s.userId });
+    }
   });
   return { status: after?.status ?? null, docNo: r.docNo };
 }

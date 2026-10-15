@@ -271,6 +271,18 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
       link: { key: "trips", id },
       channel: "oddiy",
     }, { except: userId });
+    // To'liq yetkazildi, schyot yo'q — buxgalteriya yozmasa zayavka hech qachon yopilmaydi
+    if (done) {
+      const invoiced = await db.invoice.count({ where: { orderId: t.orderId, status: { not: "CANCELLED" } } });
+      if (invoiced === 0) {
+        await notifyRoles(["ACCOUNTING"], {
+          type: "ORDER_DELIVERED",
+          title: `Yetkazildi, schyot kerak — ${t.order.orderNo}`,
+          body: `Zayavka to'liq yetkazildi · qabul qildi: ${receiverName}`,
+          link: { key: "orders", id: t.orderId },
+        }, { except: userId });
+      }
+    }
   });
   return { changed: true, orderId: t.orderId };
 }

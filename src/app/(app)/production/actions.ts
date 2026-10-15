@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
+import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { nextNo } from "@/lib/numbering";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { qty as fq } from "@/lib/format";
@@ -120,6 +121,20 @@ export async function createBatch(_prev: ActionState, fd: FormData): Promise<Act
     return b.id;
   }).catch((e: Error) => { if (e instanceof ShortError) return { error: e.message }; throw e; });
   if (typeof id !== "string") return id;
+  // Zayavka uchun beton tayyor — reysni logistika ochadi (xabarsiz zames reyssiz turib qolardi)
+  if (d.orderId) {
+    const orderId = d.orderId, qtyM3 = d.qtyM3;
+    notifyAfter(async () => {
+      const o = await db.order.findUnique({ where: { id: orderId }, select: { orderNo: true, kind: true, customer: { select: { name: true } } } });
+      if (!o || o.kind !== "SALE") return;
+      await notifyRoles(["LOGISTICS"], {
+        type: "BATCH_READY",
+        title: `Beton tayyor — ${o.orderNo}`,
+        body: `${fq(qtyM3)} m³${o.customer ? ` · ${o.customer.name}` : ""} · reys ochish mumkin`,
+        link: { key: "orders", id: orderId },
+      }, { except: s.userId });
+    });
+  }
   revalidatePath("/production"); revalidatePath("/orders"); revalidatePath("/");
   redirect(`/production/${id}`);
 }

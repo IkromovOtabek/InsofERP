@@ -125,6 +125,17 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
       body: `${fq(Number(t.qty))} ${unitLabel(product.unit)} ${product.name}${res.closed ? " · zaxira zayavkasi yopildi" : ""}`,
       link: { key: "tasks", id: taskId },
     }, { except: userId }));
+    // Mijoz zayavkasi tayyor — reysni logistika ochadi; xabarsiz tayyor mahsulot reyssiz turib qolardi
+    notifyAfter(async () => {
+      const o = await db.order.findUnique({ where: { id: t.orderId }, select: { kind: true, orderNo: true, status: true, customer: { select: { name: true } } } });
+      if (!o || o.kind !== "SALE" || o.status === "CANCELLED" || o.status === "CLOSED") return;
+      await notifyRoles(["LOGISTICS"], {
+        type: "TASK_DONE",
+        title: `Mahsulot tayyor — ${o.orderNo}`,
+        body: `${fq(Number(t.qty))} ${unitLabel(product.unit)} ${product.name}${o.customer ? ` · ${o.customer.name}` : ""} · reys ochish mumkin`,
+        link: { key: "orders", id: t.orderId },
+      }, { except: userId });
+    });
   }
   return { changed: true, orderId: t.orderId, status, note: hints.length ? hints.join(" · ") : undefined };
 }

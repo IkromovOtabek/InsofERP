@@ -388,6 +388,23 @@ export async function createOrder(
     return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo, requestId: rq?.id ?? null };
   });
   if (res.requestId) notifyNewPaymentRequest(res.requestId, userId);
+  // Agent (yoki sotuvdan boshqa xodim) ochgan qoralama — uni sotuv qabul qiladi; xabarsiz DRAFT'da unutilib qolardi.
+  // Sotuvchining o'zi ochgani hamkasblariga yuborilmaydi (shovqin), Excel importi ham.
+  if (!opts?.viaImport) {
+    notifyAfter(async () => {
+      const [u, c] = await Promise.all([
+        db.user.findUnique({ where: { id: userId }, select: { role: true, fullName: true } }),
+        db.customer.findUnique({ where: { id: res.customerId }, select: { name: true } }),
+      ]);
+      if (!u || u.role === "SALES" || u.role === "DIRECTOR" || u.role === "SUPERADMIN") return;
+      await notifyRoles(["SALES"], {
+        type: "ORDER_NEW",
+        title: `Yangi zayavka ${res.orderNo} — qabul qilish kerak`,
+        body: `${c?.name ?? "Mijoz"} · ochdi: ${u.fullName}`,
+        link: { key: "orders", id: res.id },
+      }, { except: userId });
+    });
+  }
   // Yangi mijoz ilovaga ham yetsin — telefoni ilovada ro'yxatdan o'tgan bo'lsa hisobi o'sha yerda ulanadi
   if (input.newCustomer) syncCustomerLater(res.customerId);
   return res;
