@@ -1975,6 +1975,21 @@ model AuditLog {
   @@index([entity, entityId])
 }
 
+// ───────────────────────── Maydon xotirasi ─────────────────────────
+
+/// Formalarda qo'lda yozilgan qiymatlar — keyingi safar shu maydonda taklif qilinadi
+/// (Google Sheets'dagi avto-to'ldirish kabi). Butun korxona uchun umumiy.
+model InputMemory {
+  id         String   @id @default(cuid())
+  key        String   @db.VarChar(160) // "stock/prixod:purpose" — sahifa + maydon nomi
+  value      String   @db.VarChar(200)
+  count      Int      @default(1) // necha marta kiritilgan
+  lastUsedAt DateTime @default(now())
+
+  @@unique([key, value])
+  @@index([key, lastUsedAt])
+}
+
 // ───────────────────────── BI: reja va marketing ─────────────────────────
 
 /// Oylik sotuv rejasi. sellerId = null — butun zavod rejasi; sellerId — sotuvchi (User) rejasi.

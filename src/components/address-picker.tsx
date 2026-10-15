@@ -200,6 +200,7 @@ export function AddressPicker({
           placeholder={placeholder ?? (searchEnabled ? "Ko'cha, mo'ljal yoki obyekt nomini yozing…" : "Ko'cha, mo'ljal, obyekt nomi")}
           required={required}
           autoComplete="off"
+          data-no-memory // o'z takliflar ro'yxati (xarita qidiruvi) bor
           className={`${inputCls} pr-9`}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
