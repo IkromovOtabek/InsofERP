@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { notifyAfter, notifyEmployees } from "@/lib/notify";
 
 /**
  * Brigadir biriktirish — yagona joy (veb "Brigadalar" sahifasi ham, mobil "Xodimlar" ham).
@@ -73,6 +74,10 @@ export async function setBrigadeLeader(input: Assign, userId: string): Promise<L
     }
     return brigade;
   });
+  // Yangi brigadir ilovada o'z topshiriqlarini ko'radi — tayinlanganini bilsin
+  notifyAfter(() => notifyEmployees([emp.id], {
+    type: "BRIGADE_LEADER", title: `Siz brigadir etib tayinlandingiz — ${res.name}`, body: "Topshiriqlar va smena ilovadagi «Topshiriqlarim» bo'limida",
+  }));
 
   return {
     brigadeId: res.id,

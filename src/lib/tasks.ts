@@ -3,7 +3,7 @@ import { audit } from "@/lib/audit";
 import { consumeForTask } from "@/lib/brigade-stock";
 import { qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
-import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import type { Role } from "@/generated/prisma";
 import { defaultWarehouse } from "@/lib/warehouse";
 
@@ -155,6 +155,11 @@ export async function taskCancel(taskId: string, userId: string): Promise<TaskRe
     const r = await tx.brigadeTask.updateMany({ where: { id: taskId, status: { notIn: ["DONE", "CANCELLED"] } }, data: { status: "CANCELLED" } });
     if (r.count !== 1) return;
     await audit(tx, userId, "STATUS_CHANGE", "BrigadeTask", taskId, { status: t.status }, { status: "CANCELLED" });
+  });
+  // Brigadir sexda ishni davom ettirmasin
+  notifyAfter(async () => {
+    const b = await db.brigade.findUnique({ where: { id: t.brigadeId }, select: { leaderId: true } });
+    await notifyEmployees([b?.leaderId], { type: "TASK_CANCELLED", title: `Topshiriq bekor qilindi — ${t.taskNo}`, body: "Ishni to'xtating", link: { key: "tasks", id: taskId } });
   });
   return { changed: true, orderId: t.orderId, status: "CANCELLED" };
 }

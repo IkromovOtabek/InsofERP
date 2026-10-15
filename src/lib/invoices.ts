@@ -1,5 +1,7 @@
 import { db } from "./db";
 import { audit } from "./audit";
+import { money } from "./format";
+import { notifyAfter, notifyRoles } from "./notify";
 import { nextNo } from "./numbering";
 import { customerBalance } from "./receivables";
 
@@ -13,7 +15,7 @@ export type InvoiceResult = { id?: string; invoiceNo?: string; status?: string; 
 export async function createInvoice(input: { orderId: string; amount: number; date: Date }, userId: string): Promise<InvoiceResult> {
   if (!(input.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
 
-  return db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
     // Zayavka qulflanadi va BARCHA tekshiruvlar qulf ostida o'qiladi: ikki marta bosish (yoki veb + ilova)
     // ikkita schyot ochmasin, shu payt bekor qilingan / o'zgargan zayavkaga schyot yozilmasin
     await tx.$executeRaw`SELECT 1 FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
@@ -38,6 +40,18 @@ export async function createInvoice(input: { orderId: string; amount: number; da
     }
     return { id: inv.id, invoiceNo: inv.invoiceNo, status };
   });
+  // Pul kutiladigan hujjat — buxgalteriya (bank) va kassa (naqd) bilsin; to'liq to'langan bo'lsa xabar shart emas
+  const { id, invoiceNo } = res;
+  if (id && res.status !== "PAID") {
+    notifyAfter(async () => {
+      const o = await db.order.findUnique({ where: { id: input.orderId }, select: { orderNo: true, customer: { select: { name: true } } } });
+      await notifyRoles(["ACCOUNTING", "CASHIER"], {
+        type: "INVOICE_NEW", title: `Yangi schyot — ${invoiceNo}`,
+        body: `${o?.customer.name ?? ""} · ${o?.orderNo ?? ""} · ${money(input.amount)}`, link: { key: "invoices", id }, channel: "oddiy",
+      }, { except: userId });
+    });
+  }
+  return res;
 }
 
 // ───────────────────────── Akt sverki (mijoz bilan solishtirma dalolatnoma) ─────────────────────────

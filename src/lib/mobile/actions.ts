@@ -34,6 +34,8 @@ import { addProductDefect } from "@/lib/defects";
 import { BRIGADE_ISSUE, closeShift, isIssueKind, openShift, reportBrigadeIssue, resolveBrigadeIssue, canResolveIssue, startTask } from "@/lib/brigade-shift";
 import { productionStaff } from "@/lib/production-staff";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { approveContentLib, rejectContentLib } from "@/lib/smm/approval";
+import { approveBoost, rejectBoost } from "@/lib/smm/boosts";
 import { TODAY_PREFIX } from "./brigadier";
 import { clearDashCache } from "./dashboard";
 import { problemAction } from "./problems";
@@ -84,7 +86,7 @@ const Leader = z.object({
   newNote: z.string().trim().optional(),
 });
 
-const fail = (m: string, status = 400) => { throw new ListError("ACTION_FAILED", m, status); };
+const fail = (m: string, status = 400): never => { throw new ListError("ACTION_FAILED", m, status); };
 
 // Forma maydonlari ilovadan satr bo'lib keladi ("12 500", "12,5") — vebdagi `num()` bilan bir xil o'qiladi
 const textOf = (p: Record<string, unknown>, key: string) => String(p[key] ?? "").trim();
@@ -582,6 +584,29 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const r = await approveMechanicRequest(id, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: r.note ?? "Tasdiqlandi — kassa pul beradi" };
+    }
+    // ── Marketing: post va target (direktor) ──
+    case "smm.approve": {
+      const r = await approveContentLib(id, new Date(Number(textOf(payload, "seen"))), { userId: user.id, name: user.fullName });
+      if (!r.ok) return fail(r.error);
+      return { ok: true, message: r.note ?? "Post tasdiqlandi" };
+    }
+    case "smm.reject": {
+      const note = textOf(payload, "note").trim();
+      if (!note) fail("Rad etish sababini yozing");
+      const r = await rejectContentLib(id, note.slice(0, 500), { userId: user.id, name: user.fullName });
+      if (!r.ok) fail(r.error);
+      return { ok: true, message: "Post rad etildi — sotuv bo'limiga xabar ketdi" };
+    }
+    case "boost.approve": {
+      const r = await approveBoost(id, { userId: user.id, name: user.fullName });
+      if (!r.ok) return fail(r.error);
+      return { ok: true, message: r.note ?? "Target tasdiqlandi" };
+    }
+    case "boost.reject": {
+      const r = await rejectBoost(id, textOf(payload, "note").trim().slice(0, 500) || null, { userId: user.id, name: user.fullName });
+      if (!r.ok) fail(r.error);
+      return { ok: true, message: "Target rad etildi" };
     }
     case "kirim.reject": {
       const r = await rejectMechanicRequest(id, textOf(payload, "reason"), user.id);

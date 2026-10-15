@@ -264,6 +264,10 @@ export async function rejectMechanicRequest(id: string, reason: string, userId: 
   notifyAfter(() => notifyUsers([r.createdById === userId ? null : r.createdById], {
     type: "KIRIM_REJECTED", title: `So'rov rad etildi — ${r.docNo}`, body: `${mechSubject(r)} · ${money(Number(r.amount))} — sabab: ${why}`, link: { key: "kirim", id },
   }));
+  // Kassaga yaratilganda «tasdiq kutilmoqda» xabari ketgan — endi pul berilmasligini bilsin
+  notifyAfter(() => notifyRoles(["CASHIER"], {
+    type: "KIRIM_REJECTED", title: `So'rov rad etildi — ${r.docNo}`, body: `${mechSubject(r)} · pul berilmaydi`, link: { key: "kirim", id }, channel: "oddiy",
+  }, { except: userId }));
   return { id, docNo: r.docNo, note: "So'rov rad etildi" };
 }
 
@@ -314,6 +318,10 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
   notifyAfter(() => notifyUsers([r.createdById === userId ? null : r.createdById], {
     type: "KIRIM_PAID", title: `Pul berildi — ${r.docNo}`, body: `${subject} · ${money(amount)} · ${acc.name}`, link: { key: "kirim", id },
   }));
+  // Tasdiqlagan ish boshqaruvchi — so'rov yopilganini bilsin
+  notifyAfter(() => notifyUsers([r.decidedById === userId ? null : r.decidedById], {
+    type: "KIRIM_PAID", title: `Pul berildi — ${r.docNo}`, body: `${subject} · ${money(amount)}`, link: { key: "kirim", id }, channel: "oddiy",
+  }));
   return { id, docNo: r.docNo, note: `Pul berildi: ${money(amount)} · ${acc.name}` };
 }
 
@@ -333,6 +341,9 @@ export async function cancelMechanicRequest(id: string, userId: string): Promise
   if (res && "error" in res) return { error: res.error };
   notifyAfter(() => notifyRoles(["SUPERVISOR"], {
     type: "KIRIM_CANCELLED", title: `So'rov bekor qilindi — ${r.docNo}`, body: `${mechSubject(r)} · ${money(Number(r.amount))} — mexanik o'zi bekor qildi`, link: { key: "kirim", id }, channel: "oddiy",
+  }, { except: userId }));
+  notifyAfter(() => notifyRoles(["CASHIER"], {
+    type: "KIRIM_CANCELLED", title: `So'rov bekor qilindi — ${r.docNo}`, body: `${mechSubject(r)} · pul berilmaydi`, link: { key: "kirim", id }, channel: "oddiy",
   }, { except: userId }));
   return { id, docNo: r.docNo, note: "So'rov bekor qilindi" };
 }

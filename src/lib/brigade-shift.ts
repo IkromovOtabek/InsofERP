@@ -23,11 +23,12 @@ type Tone = "brand" | "success" | "warning" | "danger" | "info";
  */
 export const BRIGADE_ISSUE: Record<BrigadeIssueKind, { label: string; owner: Role[]; blocks?: string }> = {
   DELAY: { label: "Kechikish", owner: ["PRODUCTION", "SUPERVISOR"] },
-  EQUIPMENT: { label: "Uskuna nosozligi", owner: ["PRODUCTION", "SUPERVISOR"], blocks: "Uskuna to'xtagan" },
+  // Mexanik — uskunani tuzatadigan odam; ilgari nosozlikdan umuman xabar olmasdi
+  EQUIPMENT: { label: "Uskuna nosozligi", owner: ["PRODUCTION", "SUPERVISOR", "MECHANIC"], blocks: "Uskuna to'xtagan" },
   MATERIAL: { label: "Material yetishmasligi", owner: ["WAREHOUSE", "PROCUREMENT"], blocks: "Material yetishmaydi" },
   STAFF: { label: "Qo'shimcha ishchi kerak", owner: ["PRODUCTION", "HR"] },
   QUALITY: { label: "Sifat muammosi", owner: ["PRODUCTION", "SUPERVISOR"], blocks: "Sifat nazoratida" },
-  OTHER: { label: "Boshqa", owner: ["PRODUCTION"] },
+  OTHER: { label: "Boshqa", owner: ["PRODUCTION", "SUPERVISOR"] },
 };
 export const ISSUE_KINDS = Object.keys(BRIGADE_ISSUE) as BrigadeIssueKind[];
 export const isIssueKind = (v: string): v is BrigadeIssueKind => v in BRIGADE_ISSUE;

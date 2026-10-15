@@ -135,9 +135,12 @@ export async function problemAction(user: MobileUser, action: string, key: strin
     const role = String(payload.role ?? "") as Role;
     if (!Object.hasOwn(ROLE_LABELS, role) || role === "SUPERADMIN" || role === "DIRECTOR") throw new ListError("ACTION_FAILED", "Bo'lim tanlanmagan", 400);
     await audit(db, user.id, "UPDATE", ENTITY, key, undefined, { kind: "assign", to: ROLE_LABELS[role], role, note, problem: x.problem });
+    // Masala aniq hujjatga (zayavka, mijoz, reys…) tegishli bo'lsa — xabar o'sha kartochkani ochadi
+    const t = webTarget(x.href);
     notifyAfter(() => notifyRoles([role], {
       type: "OWNER_DECISION", title: `Direktor topshirig'i: ${x.problem}`.slice(0, 120),
       body: `${note}${x.amount ? ` · ${short(Math.abs(x.amount))} so'm` : ""} · muddat ${x.due}`,
+      link: t && "key" in t ? { key: t.key, id: t.id } : undefined,
     }));
     return `${ROLE_LABELS[role]} bo'limiga topshirildi`;
   }

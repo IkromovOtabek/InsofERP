@@ -473,7 +473,7 @@ export type QueueSupply = { id: string; docNo: string; supplier: string; by: str
 export async function directorQueue() {
   const company = await getCompany();
   const limit = Number(company.supplyDirectorLimit);
-  const [blocked, priced] = await Promise.all([
+  const [blocked, priced, posts, boosts] = await Promise.all([
     db.order.findMany({
       where: { kind: "SALE", status: "BLOCKED" }, orderBy: { date: "asc" }, take: 50,
       select: { id: true, orderNo: true, date: true, deliveryDate: true, customerId: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qtyM3: true, price: true } } },
@@ -484,7 +484,14 @@ export async function directorQueue() {
         select: { id: true, docNo: true, needBy: true, createdAt: true, deliveryCost: true, items: { select: { qty: true, price: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
       })
       : Promise.resolve([]),
+    // Marketing: post nashri va reklama puli — direktor qarori
+    db.marketingContent.findMany({ where: { approval: "PENDING", status: { notIn: ["CANCELLED", "PUBLISHED"] } }, orderBy: { updatedAt: "asc" }, take: 20, select: { id: true, title: true, createdBy: true, scheduledAt: true } }),
+    db.smmBoost.findMany({ where: { status: "PENDING_APPROVAL" }, orderBy: { createdAt: "asc" }, take: 20, select: { id: true, dailyBudget: true, days: true, requestedByName: true, content: { select: { id: true, title: true } } } }),
   ]);
+  const smm = [
+    ...posts.map((c) => ({ id: c.id, href: `/marketing/kontent/${c.id}`, title: c.title, kind: "Post" as const, by: c.createdBy ?? "—", amount: null as number | null, at: c.scheduledAt })),
+    ...boosts.map((b) => ({ id: b.id, href: `/marketing/target`, title: b.content.title, kind: "Target" as const, by: b.requestedByName ?? "—", amount: Number(b.dailyBudget) * b.days, at: null as Date | null })),
+  ];
   const credit = blocked.length ? await customersCredit([...new Set(blocked.map((o) => o.customerId))], { includeInternal: true }) : new Map<string, CustomerCredit>();
   const orders: QueueOrder[] = blocked.map((o) => {
     const amount = sum(o.items.map((i) => Number(i.qtyM3) * Number(i.price)));
@@ -495,6 +502,6 @@ export async function directorQueue() {
   const supply: QueueSupply[] = priced
     .map((r) => ({ id: r.id, docNo: r.docNo, supplier: r.supplier?.name ?? "—", by: r.createdBy.fullName, amount: totalPlanned(r), needBy: r.needBy, createdAt: r.createdAt }))
     .filter((r) => needsDirector(r.amount, limit));
-  return { orders, supply, limit, total: orders.length + supply.length };
+  return { orders, supply, smm, limit, total: orders.length + supply.length + smm.length };
 }
 export type DirectorQueue = Awaited<ReturnType<typeof directorQueue>>;

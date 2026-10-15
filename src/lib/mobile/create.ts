@@ -27,6 +27,7 @@ import { codeFromName } from "@/lib/excel";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum } from "@/lib/format";
 import { createGoodsReceipt, receiptNote, receiptTokenOf } from "@/lib/receipts";
+import { scanAllowed, scanEnabled } from "./scan";
 import { ISSUE_STORNO, IssueError, issueDate, issueStock, issueToken, parseIssueTarget, type IssueTarget } from "@/lib/stock-issue";
 import { activeRecipients } from "@/lib/stock-recipients";
 import { issuePrices } from "@/lib/stock-price";
@@ -81,7 +82,11 @@ async function dayCells(days = 10): Promise<DayCell[]> {
  * dolzarb bo'ladi va qoidalar (qora ro'yxat, qoldiq, sig'im) bitta joyda — `lib/orders.ts`,
  * `lib/trips.ts` da — tekshiriladi.
  */
-export type CreateForm = { key: string; title: string; submitLabel: string; fields: FormField[] };
+/**
+ * `scan` — formaning tepasida «Nakladnoyni skanerlash» tugmasi: ilova suratni shu yo'lga yuboradi va
+ * qaytgan `values` ni formaga qo'yadi (`lib/mobile/scan.ts`). Eski ilova bu maydonni e'tiborsiz qoldiradi.
+ */
+export type CreateForm = { key: string; title: string; submitLabel: string; fields: FormField[]; scan?: { path: string; label: string; hint: string } };
 
 /** Kim qaysi hujjatni ocha oladi — veb ERP bilan bir xil. */
 export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label: string }> = {
@@ -165,7 +170,12 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
   if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
   switch (key) {
-    case "prixod": return prixodForm();
+    case "prixod": {
+      const f = await prixodForm();
+      return scanEnabled() && scanAllowed(user)
+        ? { ...f, scan: { path: "/scan/receipt", label: "Nakladnoyni skanerlash", hint: "Suratga oling — yetkazuvchi, TTN va xomashyo qatorlari o'zi to'ldiriladi, siz tekshirasiz" } }
+        : f;
+    }
     case "rasxod": return rasxodForm();
     case "orders": return orderForm(user);
     case "trips": return tripForm();

@@ -10,10 +10,22 @@ import { Prisma } from "@/generated/prisma";
 import type { SmmBoostObjective } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { fmtNum } from "@/lib/format";
+import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { adsReady, smmDryRun } from "./config";
 import { audienceByKey } from "./audiences";
 import { BOOST_COUNTED } from "./labels";
 import { boostStats, launchBoost, setCampaignStatus } from "./meta";
+
+const fmtMoney = (n: number) => `${fmtNum(n, 2)}`;
+
+/** Target so'ragan xodimga — qaror haqida */
+function notifyRequester(id: string, title: string, body: string) {
+  notifyAfter(async () => {
+    const b = await db.smmBoost.findUnique({ where: { id }, select: { requestedById: true, content: { select: { title: true } } } });
+    if (b?.requestedById) await notifyUsers([b.requestedById], { type: "BOOST_DECIDED", title, body: `${b.content.title} · ${body}`, link: { key: "boost", id } });
+  });
+}
 
 export async function marketingSettings() {
   // Birinchi ochilishda ikki so'rov bir vaqtda yaratmoqchi bo'lsa — biri P2002 oladi, mavjud yozuv qaytariladi
@@ -70,6 +82,14 @@ export async function requestBoost(p: { contentId: string; objective: SmmBoostOb
     },
   });
   await audit(db, actor.userId, "CREATE", "SmmBoost", b.id, undefined, b);
+  // Pul sarflanadigan so'rov — direktor bilmasa kutib qoladi
+  notifyAfter(async () => {
+    const c = await db.marketingContent.findUnique({ where: { id: p.contentId }, select: { title: true } });
+    await notifyRoles(["DIRECTOR"], {
+      type: "BOOST_PENDING", title: `Target so'rovi — ${fmtMoney(p.dailyBudget * p.days)}`,
+      body: `${c?.title ?? "Post"} · ${p.days} kun × ${fmtMoney(p.dailyBudget)} · so'radi: ${actor.name}`, link: { key: "boost", id: b.id },
+    }, { except: actor.userId });
+  });
   return { ok: true, id: b.id };
 }
 
@@ -105,6 +125,7 @@ export async function approveBoost(id: string, actor: Actor): Promise<Res> {
     });
     await db.smmBoost.update({ where: { id }, data: { status: "ACTIVE", metaCampaignId: r.campaignId, metaAdSetId: r.adSetId, metaAdId: r.adId, startAt: start, endAt: end, error: null } });
     await audit(db, actor.userId, "STATUS_CHANGE", "SmmBoost", id, b, { status: "ACTIVE", ...r });
+    notifyRequester(id, "Target ishga tushdi", "Reklama Meta'da faol");
     return { ok: true, note: "Reklama Meta'da ishga tushirildi" };
   } catch (e) {
     const message = (e instanceof Error ? e.message : String(e)).slice(0, 400);
@@ -132,6 +153,7 @@ export async function rejectBoost(id: string, reason: string | null, actor: Acto
   const r = await db.smmBoost.updateMany({ where: { id, status: "PENDING_APPROVAL" }, data: { status: "REJECTED", error: reason, approvedById: actor.userId, approvedByName: actor.name, approvedAt: new Date() } });
   if (r.count === 0) return { ok: false, error: "Reklama allaqachon ko'rib chiqilgan" };
   await audit(db, actor.userId, "STATUS_CHANGE", "SmmBoost", id, undefined, { status: "REJECTED", reason });
+  notifyRequester(id, "Target so'rovi rad etildi", reason ? `Sabab: ${reason}` : "Direktor rad etdi");
   return { ok: true };
 }
 

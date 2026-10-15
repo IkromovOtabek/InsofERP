@@ -310,6 +310,11 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supply.quote": ["PROCUREMENT", "WAREHOUSE"],
   "supply.quote.choose": ["PROCUREMENT", "WAREHOUSE"],
   "supply.director": ["DIRECTOR"],
+  // Marketing (veb «Kontent reja» / «Target»): post nashri va reklama puli — direktor qarori (`lib/smm/approval.ts`, `lib/smm/boosts.ts`)
+  "smm.approve": ["DIRECTOR"],
+  "smm.reject": ["DIRECTOR"],
+  "boost.approve": ["DIRECTOR"],
+  "boost.reject": ["DIRECTOR"],
   "supply.delivery": ["PROCUREMENT", "WAREHOUSE"],
   "supply.incident": ["PROCUREMENT", "WAREHOUSE", "PRODUCTION"],
   "supply.incident.resolve": ["PROCUREMENT", "WAREHOUSE"],
@@ -407,6 +412,8 @@ const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["lead.", { module: "sales", action: "leads" }],
   ["supply.", { module: "taminot" }],
   ["kirim.", { module: "mexanik" }],
+  ["smm.", { module: "marketing", action: "publish" }],
+  ["boost.", { module: "marketing", action: "boost_approve" }],
   ["trip.", { module: "trips" }],
   ["task.", { module: "tasks" }],
   ["shift.", { module: "tasks" }],
@@ -451,6 +458,9 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Direktor bergan `stock` amali (Chiqim — «issue», Qoldiqlar — kirim/berish/narx) ham ochadi: `mobileDetail` → `journalGranted`
   rasxod: ["WAREHOUSE", "PROCUREMENT"],
   ostatki: ["WAREHOUSE", "PROCUREMENT"],
+  // Marketing posti va target so'rovi — direktor qarori (vebda ham «publish» / «boost_approve» faqat unda)
+  smm: [],
+  boost: [],
   // Mexanik so'rovi — mexanikka faqat o'zinikini (`kirimDetail`)
   kirim: ["MECHANIC", "SUPERVISOR", "CASHIER"],
   // Pul qabul qilish so'rovi — ro'yxati bilan bir xil (`list.ts` ACCESS); usul bo'yicha cheklov `payreqDetail` da
@@ -499,6 +509,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "cashflow": return cashflowDetail(id);
     case "supply": return supplyDetail(user, id);
     case "kirim": return kirimDetail(user, id);
+    case "smm": return smmDetail(user, id);
+    case "boost": return boostDetail(user, id);
     case "payreq": return payreqDetail(user, id);
     case "customers": return customerDetail(user, id);
     case "leads": return leadDetail(user, id);
@@ -1866,3 +1878,76 @@ async function recipeDetail(id: string): Promise<MobileDetail> {
     actions: [],
   };
 }
+
+// ───────────────────────── Marketing: post va target (direktor qarori) ─────────────────────────
+
+const SMM_CH: Record<string, string> = { INSTAGRAM: "Instagram", FACEBOOK: "Facebook", TELEGRAM: "Telegram" };
+const SMM_APPROVAL: Record<string, string> = { DRAFT: "Qoralama", PENDING: "Tasdiq kutilmoqda", APPROVED: "Tasdiqlangan", REJECTED: "Rad etilgan" };
+const clip = (t: string | null, n: number) => (t && t.length > n ? `${t.slice(0, n)}…` : t ?? "");
+const hm2 = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+async function smmDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const c = await db.marketingContent.findUnique({ where: { id }, include: { media: { include: { media: { select: { kind: true } } } } } });
+  if (!c) throw new ListError("NOT_FOUND", "Post topilmadi", 404);
+  const actions: DetailAction[] = [];
+  const open = c.status !== "CANCELLED" && c.status !== "PUBLISHED";
+  if (open && (c.approval === "PENDING" || c.approval === "DRAFT") && can(user, "smm.approve")) {
+    actions.push({
+      id: "smm.approve", label: "Tasdiqlash", tone: "success",
+      // Direktor ko'rgan versiya: shundan keyin matn o'zgargan bo'lsa server rad etadi (vebdagi qoida)
+      form: [{ name: "seen", label: "Matn", type: "select", required: true, value: String(c.updatedAt.getTime()), options: [{ value: String(c.updatedAt.getTime()), label: "Oxirgi matnni ko'rdim — chiqarishga ruxsat" }] }],
+    });
+  }
+  if (open && (c.approval === "PENDING" || c.approval === "APPROVED") && can(user, "smm.reject")) {
+    actions.push({ id: "smm.reject", label: "Rad etish", tone: "danger", form: [{ name: "note", label: "Sabab", type: "text", required: true, placeholder: "Nimani o'zgartirish kerak" }] });
+  }
+  const photos = c.media.filter((m) => m.media.kind === "IMAGE").length, videos = c.media.length - photos;
+  return {
+    key: "smm", id: c.id, title: c.title, subtitle: `${c.type === "REELS" ? "Reels" : c.type === "STORIES" ? "Stories" : "Post"}${c.createdBy ? ` · ${c.createdBy}` : ""}`,
+    status: SMM_APPROVAL[c.approval],
+    fields: [
+      { label: "Holat", value: SMM_APPROVAL[c.approval], tone: c.approval === "PENDING" ? "warning" : c.approval === "APPROVED" ? "success" : c.approval === "REJECTED" ? "danger" : "info" },
+      { label: "Tarmoqlar", value: c.channels.map((x) => SMM_CH[x] ?? x).join(", ") || "—" },
+      { label: "Chiqish vaqti", value: c.scheduledAt ? hm2(c.scheduledAt) : "belgilanmagan" },
+      { label: "Media", value: c.media.length ? `${videos ? `${videos} video` : ""}${videos && photos ? ", " : ""}${photos ? `${photos} rasm` : ""}` : "yo'q" },
+      ...(c.locationName ? [{ label: "Joylashuv", value: c.locationName }] : []),
+      ...(c.approvalNote ? [{ label: "Izoh", value: c.approvalNote, tone: "danger" as Tone }] : []),
+      { label: "Matn (asosiy)", value: clip(c.caption, 900) || "—" },
+      ...(c.captionUz ? [{ label: "Matn (ikkinchi til)", value: clip(c.captionUz, 600) }] : []),
+      ...(c.hashtags ? [{ label: "Heshteglar", value: c.hashtags }] : []),
+    ],
+    sections: [],
+    actions,
+  };
+}
+
+async function boostDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  const b = await db.smmBoost.findUnique({ where: { id }, include: { content: { select: { title: true } } } });
+  if (!b) throw new ListError("NOT_FOUND", "Target so'rovi topilmadi", 404);
+  const st = await db.marketingSettings.findUnique({ where: { id: "main" }, select: { adCurrency: true } });
+  const cur = st?.adCurrency ?? "USD";
+  const total = Number(b.dailyBudget) * b.days;
+  const actions: DetailAction[] = [];
+  if (b.status === "PENDING_APPROVAL" && can(user, "boost.approve")) {
+    actions.push({ id: "boost.approve", label: "Tasdiqlash va ishga tushirish", tone: "success", confirm: `Reklamani ishga tushirasizmi? Jami ${fmtNum(total, 2)} ${cur} gacha sarflanadi` });
+  }
+  if (b.status === "PENDING_APPROVAL" && can(user, "boost.reject")) {
+    actions.push({ id: "boost.reject", label: "Rad etish", tone: "danger", form: [{ name: "note", label: "Sabab", type: "text", placeholder: "Ixtiyoriy" }] });
+  }
+  const OBJ: Record<string, string> = { REACH: "Ko'proq odam ko'rsin", MESSAGES: "Direct'ga yozishsin", LEADS: "Ariza qoldirishsin" };
+  return {
+    key: "boost", id: b.id, title: `Target · ${b.content.title}`, subtitle: b.requestedByName ? `So'radi: ${b.requestedByName}` : undefined,
+    status: b.status === "PENDING_APPROVAL" ? "Tasdiq kutilmoqda" : b.status,
+    fields: [
+      { label: "Maqsad", value: OBJ[b.objective] ?? b.objective },
+      { label: "Kunlik byudjet", value: `${fmtNum(Number(b.dailyBudget), 2)} ${cur}` },
+      { label: "Muddat", value: `${b.days} kun` },
+      { label: "Jami", value: `${fmtNum(total, 2)} ${cur}`, tone: "brand" },
+      ...(b.note ? [{ label: "Izoh", value: b.note }] : []),
+      ...(b.error ? [{ label: "Natija", value: b.error }] : []),
+    ],
+    sections: [],
+    actions,
+  };
+}
+

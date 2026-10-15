@@ -443,6 +443,10 @@ export async function tripCancelled(id: string, userId: string, note?: string): 
   const r = await db.trip.updateMany({ where: { id, status: "PLANNED" }, data: { status: "CANCELLED" } });
   if (!r.count) return { changed: false, orderId: t.orderId, error: "Faqat rejalashtirilgan reys bekor qilinadi" };
   await audit(db, userId, "STATUS_CHANGE", "Trip", id, { status: "PLANNED" }, { status: "CANCELLED", note });
+  // Haydovchi zavodga yo'lga chiqib qolmasin (ECO haydovchisiga status ECO orqali ketadi)
+  notifyAfter(() => notifyEmployees([t.driverId], {
+    type: "TRIP_CANCELLED", title: `Reys bekor qilindi — ${t.deliveryNoteNo}`, body: note ? `Sabab: ${note}` : "Dispetcher reysni bekor qildi", link: { key: "trips", id },
+  }));
   return { changed: true, orderId: t.orderId };
 }
 

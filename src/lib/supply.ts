@@ -462,6 +462,12 @@ export async function receiveSupplyRequest(
       await audit(tx, userId, "STATUS_CHANGE", "SupplyRequest", id, { status: req.status, planTotal }, { status: "PRICED", reason: qtyGrew.length && !priceMoved.length ? "qty-grew" : "price-changed", factTotal });
     }).catch((e: Error) => ({ error: e.message }));
     if (res && "error" in res) return { error: res.error };
+    // Qayta tasdiq jim o'tmasin: sotuv tasdiqlaydi, katta summa bo'lsa direktor ham (directorOkAt tozalandi)
+    notifyAfter(async () => {
+      const lim = Number((await getCompany()).supplyDirectorLimit);
+      const n = { type: "SUPPLY_RECHECK", title: `Qayta tasdiq kerak — ${req.docNo}`, body: `Qabulda summa o'zgardi, yangi jami ${ROUND(factTotal)} so'm`, link: { key: "supply", id } };
+      await notifyRoles(lim > 0 && factTotal > lim ? ["SALES", "DIRECTOR"] : ["SALES"], n, { except: userId });
+    });
     return {
       id, docNo: req.docNo,
       note: `${priceMoved.length || deliveryMoved ? "Narx" : "Miqdor"} o'zgardi — zayavka Sotuv va Moliya tasdig'iga qaytdi (yangi jami ${ROUND(factTotal)} so'm). Tasdiqlangach qabul qilasiz.`,
@@ -542,6 +548,10 @@ export async function receiveSupplyRequest(
   }).catch((e: Error) => ({ error: e.message }));
 
   if ("error" in out) return { error: out.error };
+  // So'rovni ochgan xodim (sex, sklad) mol kelganini bilsin — u shu xomashyoni kutyapti
+  notifyAfter(() => notifyUsers([req.createdById].filter((u) => u !== userId), {
+    type: "SUPPLY_RECEIVED", title: `Mol keldi — ${req.docNo}`, body: `Kirim ${out.docNo} skladga yozildi`, link: { key: "supply", id }, channel: "oddiy",
+  }));
   // Qabul qilingan miqdor buyurtmadan farq qilsa — snabjeniye va sklad bilsin (2% tarozi zaxirasi)
   const short = lines.filter((l) => l.qty < Number(l.item.qty) / QTY_TOLERANCE - 0.001);
   if (short.length) {

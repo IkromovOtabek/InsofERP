@@ -14,6 +14,7 @@ export async function register() {
   const { isTestMode, assertSafeTestEnv } = await import("./lib/test-mode");
   startWatchers(isTestMode());
   startSmmWatch(isTestMode());
+  startReminderWatch(isTestMode());
   if (!isTestMode()) return;
   try {
     assertSafeTestEnv();
@@ -45,5 +46,18 @@ function startSmmWatch(test: boolean) {
   // NEXT_RUNTIME build paytida literalga almashadi — edge yig'ilishida bu tarmoq (fs ishlatadigan modul) tushib qoladi
   if (process.env.NEXT_RUNTIME === "nodejs") {
     void import("./lib/smm/watch").then((m) => m.startSmmWatch()).catch((e) => console.error("[smm-watch] ishga tushmadi", e));
+  }
+}
+
+/**
+ * Eslatmalar (`lib/reminders.ts`): muddati o'tib ham ko'rib chiqilmagan zayavka, ta'minot, so'rov — mas'ulga qayta xabar.
+ * `REMINDERS=off` — o'chirish; test rejimida sukut bo'yicha o'chiq (`REMINDERS=on` — yoqish).
+ */
+function startReminderWatch(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.REMINDERS ?? "").trim().toLowerCase();
+  if (flag === "off" || (test && flag !== "on")) return;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    void import("./lib/reminders").then((m) => m.startReminders()).catch((e) => console.error("[reminders] ishga tushmadi", e));
   }
 }

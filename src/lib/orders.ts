@@ -6,7 +6,7 @@ import { customerCredit, defaultCreditLimit } from "@/lib/finance";
 import { nextNo } from "@/lib/numbering";
 import { date, fmtNum, money } from "@/lib/format";
 import { routeDistance, type Distance } from "@/lib/geo";
-import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
+import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
 import { syncCustomerLater } from "@/lib/eco/customers";
 import { expectedAdvance } from "@/lib/payments";
 import type { PayMethod, Prisma } from "@/generated/prisma";
@@ -160,6 +160,15 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
         body: `${o.customer.name} · ${o.deliveryAddress}`,
         link,
       }, { except: userId }));
+  // Agent (yoki boshqa xodim) ochgan zayavka qabul qilindi/bloklandi — muallif mijozga javob beradi
+  if (o.createdById !== userId) {
+    notifyAfter(() => notifyUsers([o.createdById], {
+      type: status === "BLOCKED" ? "ORDER_BLOCKED" : "ORDER_CONFIRMED",
+      title: status === "BLOCKED" ? `Zayavka bloklandi — ${o.orderNo}` : `Zayavka qabul qilindi — ${o.orderNo}`,
+      body: status === "BLOCKED" ? "Kredit limiti oshgan — direktor qarorini kutmoqda" : `${o.customer.name} · ishlab chiqarishga o'tdi`,
+      link,
+    }));
+  }
   return { changed: true, status };
 }
 
@@ -208,6 +217,8 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
   // Schyot qolib ketsa mijoz yetkazilmagan mahsulot uchun qarzdor bo'lib turardi — avval schyot bekor qilinadi.
   // Avans esa yo'qolmaydi: bekor qilingan zayavkadagi to'lov mijozning ortiqcha to'lovi bo'lib qarz/limitni kamaytiradi.
   if (o.invoices.length) return { changed: false, error: `Schyot bor (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — avval uni bekor qiling` };
+  // Bekor qilinadigan topshiriqlar brigadirlari — ular sexda ishni boshlab qo'ymasin
+  const openTasks = await db.brigadeTask.findMany({ where: { orderId: id, status: { in: ["NEW", "IN_PROGRESS"] } }, select: { brigade: { select: { leaderId: true } } } });
   const done = await db.$transaction(async (tx) => {
     const r = await tx.order.updateMany({ where: { id, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED"] }, batches: { none: { cancelledAt: null } }, trips: { none: {} } }, data: { status: "CANCELLED" } });
     if (r.count !== 1) return false;
@@ -218,6 +229,14 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
     return true;
   });
   if (!done) return { changed: false, error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
+  // Tasdiqlangan zayavkani sex va logistika rejalashtirgan bo'lishi mumkin — bekor qilingani darhol bilinsin
+  notifyAfter(async () => {
+    const n = { type: "ORDER_CANCELLED", title: `Zayavka bekor qilindi — ${o.orderNo}`, body: o.status === "CONFIRMED" ? "Ishlab chiqarish va reys rejalashtirmang" : "Qoralama bekor qilindi", link: { key: "orders", id } };
+    if (o.status === "CONFIRMED") await notifyRoles(["PRODUCTION", "LOGISTICS"], n, { except: userId });
+    await notifyUsers([o.createdById].filter((u) => u !== userId), n);
+    const leaders = openTasks.map((t) => t.brigade.leaderId);
+    if (leaders.length) await notifyEmployees(leaders, { ...n, title: `Topshiriq bekor qilindi — ${o.orderNo}`, body: "Zayavka bekor qilindi, ishni to'xtating" });
+  });
   return { changed: true, status: "CANCELLED" };
 }
 

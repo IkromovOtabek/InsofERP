@@ -58,8 +58,9 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // Qayd etilgan kunlik hisobotlar — sex yozadi, direktor o'qiydi (`./sex.ts`)
   "prod-report": { title: "Ishlab chiqarish hisobotlari", roles: ["PRODUCTION", "SUPERVISOR"] },
   // Brigadir bildirgan muammolar — har bo'lim o'zi mas'ul turlarni ko'radi (`lib/brigade-shift.ts` BRIGADE_ISSUE).
-  // Sklad ro'yxatsiz: ilovadagi bo'limlaridan olib tashlangan; o'ziga tegishli muammo bildirishnomadan ochiladi (`detail.ts` ISSUE_RESOLVERS)
-  "brig-issues": { title: "Brigada muammolari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "HR"] },
+  // Sklad ro'yxatsiz: ilovadagi bo'limlaridan olib tashlangan; o'ziga tegishli muammo bildirishnomadan ochiladi (`detail.ts` ISSUE_RESOLVERS).
+  // Mexanik — uskuna nosozligining egasi (`BRIGADE_ISSUE.EQUIPMENT`)
+  "brig-issues": { title: "Brigada muammolari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "MECHANIC", "HR"] },
   // Brigadir yopgan smena hisobotlari (`./brigadier.ts`)
   "brig-shifts": { title: "Smena hisobotlari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR"] },
   // ── Logistika ──
@@ -68,8 +69,9 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // ── Sklad ──
   stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"] },
   // Snabjeniye oynasi: narx kutayotgan va qabul kutayotgan so'rovlar (vebdagi `/snabjeniye`).
-  // Sklad ilovasida yo'q — sklad so'rovlarni «Ta'minot zayavkalari» (`supply`) va bosh sahifadan ochadi
-  snabjeniye: { title: "Snabjeniye", roles: ["PROCUREMENT"] },
+  // Sklad ham snabjeniye amallarini bajaradi (narx, yetkazish, qabul — `supply.*` ruxsatlari), vebda ham /snabjeniye ochiq;
+  // 2026-10-13 da olib tashlangan edi, 2026-10-16 foydalanuvchi qaytarishni so'radi
+  snabjeniye: { title: "Snabjeniye", roles: ["PROCUREMENT", "WAREHOUSE"] },
   // Ta'minot zayavkalari: vebda ro'yxat sklad/snabjeniye/ishlab chiqarishga, hujjatning o'zi esa
   // zanjirdagi hammaga ochiq (`/taminot/[id]`). Ilovada ro'yxat ham zanjirdagi hammaga — sotuvchi
   // tasdiq kutayotganlarni, moliya pul kutayotganlarni shu yerdan ochadi (vebdagi tasdiq kartalari o'rnida).

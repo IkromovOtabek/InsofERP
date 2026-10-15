@@ -7,8 +7,8 @@ import { requireAction } from "@/lib/auth";
 import { parseForm, zOpt, zStr, type ActionState } from "@/lib/action";
 import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
-import { composeText, publishContent } from "@/lib/smm/publish";
-import { marketingSettings } from "@/lib/smm/boosts";
+import { publishContent } from "@/lib/smm/publish";
+import { approveContentLib, rejectContentLib, submitContent } from "@/lib/smm/approval";
 import { aiAllowed } from "@/lib/rate-limit";
 import { aiErrorText, aiReady, planMonth, translateCaption, writeCaption, writeScript, type PostTextT } from "@/lib/ai/smm-writer";
 
@@ -101,60 +101,29 @@ export async function saveContent(id: string | null, _prev: ActionState, fd: For
 
 /* ───────── Tasdiqlash oqimi ───────── */
 
-/** Nashrga tayyorlik: tasdiqlashga yuborishda ham, direktor to'g'ridan-to'g'ri tasdiqlaganda ham tekshiriladi */
-async function readyError(id: string): Promise<{ error: string } | { c: { approval: string; status: string } }> {
-  const c = await db.marketingContent.findUnique({ where: { id }, include: { _count: { select: { media: true } } } });
-  if (!c) return { error: "Post topilmadi" };
-  if (c.status === "CANCELLED") return { error: "Post bekor qilingan" };
-  if (!c.channels.length) return { error: "Kamida bitta tarmoq tanlang" };
-  if (!c.caption && !c.captionUz) return { error: "Post matni (izoh) bo'sh" };
-  if (c.channels.some((ch) => ch !== "TELEGRAM") && c._count.media === 0) return { error: "Instagram/Facebook uchun rasm yoki video biriktiring" };
-  if (c.channels.includes("INSTAGRAM")) {
-    // Instagram chegarasi butun matnga: izoh RU + UZ + heshteglar (+ standart heshteglar) birga
-    const text = composeText(c, (await marketingSettings()).defaultHashtags);
-    if (text.length > 2200) return { error: `Instagram uchun matn juda uzun: ${text.length} belgi (RU + UZ izoh va heshteglar birga 2200 dan oshmasin)` };
-    if ((text.match(/#[^\s#]+/g) ?? []).length > 30) return { error: "Instagram'da 30 tadan ko'p heshteg bo'lmaydi" };
-  }
-  return { c };
-}
-
 export async function submitForApproval(id: string): Promise<ActionState> {
   const s = await requireAction("marketing", "content");
-  const chk = await readyError(id);
-  if ("error" in chk) return chk;
-  const { c } = chk;
-  const r = await db.marketingContent.updateMany({ where: { id, approval: { in: ["DRAFT", "REJECTED"] } }, data: { approval: "PENDING", approvalNote: null } });
-  if (r.count === 0) return { error: "Post allaqachon tasdiqlashda yoki tasdiqlangan" };
-  await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, { approval: c.approval }, { approval: "PENDING" });
+  const r = await submitContent(id, { userId: s.userId, name: s.fullName });
+  if (!r.ok) return { error: r.error };
   revalidatePath("/marketing", "layout");
-  return { ok: true, note: "Tasdiqlashga yuborildi" };
+  return { ok: true, note: r.note };
 }
 
 /** `version` — direktor ko'rgan postning `updatedAt` qiymati: shundan keyin o'zgargan post tasdiqlanmaydi */
 export async function approveContent(id: string, version: string): Promise<ActionState> {
   const s = await requireAction("marketing", "publish");
-  const seen = new Date(version);
-  if (Number.isNaN(seen.getTime())) return { error: "Sahifani yangilang" };
-  const chk = await readyError(id);
-  if ("error" in chk) return chk;
-  const r = await db.marketingContent.updateMany({
-    where: { id, approval: { in: ["PENDING", "DRAFT"] }, status: { not: "CANCELLED" }, updatedAt: seen },
-    data: { approval: "APPROVED", approvedById: s.userId, approvedByName: s.fullName, approvedAt: new Date(), approvalNote: null },
-  });
-  if (r.count === 0) return { error: "Post ko'rib chiqilgan yoki shu orada o'zgargan — sahifani yangilab qayta tekshiring" };
-  await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, undefined, { approval: "APPROVED" });
+  const r = await approveContentLib(id, new Date(version), { userId: s.userId, name: s.fullName });
+  if (!r.ok) return { error: r.error };
   revalidatePath("/marketing", "layout");
-  const c = await db.marketingContent.findUnique({ where: { id }, select: { scheduledAt: true } });
-  return { ok: true, note: c?.scheduledAt ? "Tasdiqlandi — belgilangan vaqtda o'zi chiqadi" : "Tasdiqlandi — chiqish vaqtini belgilang yoki «Hozir chiqarish»ni bosing" };
+  return { ok: true, note: r.note };
 }
 
 export async function rejectContent(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("marketing", "publish");
   const r0 = parseForm(z.object({ note: zStr("rad etish sababini yozing").pipe(z.string().max(500)) }), fd);
   if ("error" in r0) return { error: r0.error };
-  const r = await db.marketingContent.updateMany({ where: { id, approval: { in: ["PENDING", "APPROVED"] }, status: { not: "PUBLISHED" } }, data: { approval: "REJECTED", approvalNote: r0.data.note, approvedAt: null, approvedById: null, approvedByName: null } });
-  if (r.count === 0) return { error: "Holat o'zgargan — sahifani yangilang" };
-  await audit(db, s.userId, "STATUS_CHANGE", "MarketingContent", id, undefined, { approval: "REJECTED", note: r0.data.note });
+  const r = await rejectContentLib(id, r0.data.note, { userId: s.userId, name: s.fullName });
+  if (!r.ok) return { error: r.error };
   revalidatePath("/marketing", "layout");
   return { ok: true };
 }

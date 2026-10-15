@@ -30,7 +30,7 @@ export function splitRef(id: string): [string | null, string] {
 
 export async function approvalsList(title: string, q?: string, filter?: string): Promise<MobileList> {
   const like = (s: string): Prisma.StringFilter => ({ contains: s, mode: "insensitive" });
-  const [blocked, supply, kirim] = await Promise.all([
+  const [blocked, supply, kirim, posts, boosts] = await Promise.all([
     db.order.findMany({
       where: { status: "BLOCKED", ...(q ? { OR: [{ orderNo: like(q) }, { customer: { name: like(q) } }] } : {}) },
       orderBy: { date: "desc" }, take: 50,
@@ -47,6 +47,15 @@ export async function approvalsList(title: string, q?: string, filter?: string):
       where: { status: { in: ["NEW", "APPROVED"] }, ...(q ? { OR: [{ docNo: like(q) }, { object: like(q) }, { vehicle: { plate: like(q) } }] } : {}) },
       orderBy: { createdAt: "desc" }, take: 50,
       include: { vehicle: { select: { plate: true } }, createdBy: { select: { fullName: true } } },
+    }),
+    // Marketing: tasdiq kutayotgan post va reklama (pul) so'rovlari — vebda «Kontent reja» / «Target»
+    db.marketingContent.findMany({
+      where: { approval: "PENDING", status: { notIn: ["CANCELLED", "PUBLISHED"] }, ...(q ? { title: like(q) } : {}) },
+      orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, title: true, type: true, channels: true, scheduledAt: true, createdBy: true },
+    }),
+    db.smmBoost.findMany({
+      where: { status: "PENDING_APPROVAL", ...(q ? { content: { title: like(q) } } : {}) },
+      orderBy: { createdAt: "desc" }, take: 50, include: { content: { select: { title: true } } },
     }),
   ]);
 
@@ -70,11 +79,26 @@ export async function approvalsList(title: string, q?: string, filter?: string):
     status: r.status === "NEW" ? "Tasdiq" : "To'lov", tone: r.status === "NEW" ? "warning" : "info",
   }));
 
+  const smmRows: HomeRow[] = [
+    ...posts.map((c) => ({
+      id: `smm:${c.id}`, title: c.title,
+      subtitle: `Post tasdiq kutmoqda · ${c.channels.join(", ").toLowerCase() || "tarmoqsiz"}${c.scheduledAt ? ` · ${dayLabel(c.scheduledAt)} ${hm(c.scheduledAt)}` : ""}${c.createdBy ? ` · ${c.createdBy}` : ""}`,
+      status: "Post", tone: "warning" as Tone,
+    })),
+    ...boosts.map((b) => ({
+      id: `boost:${b.id}`, title: `Target · ${b.content.title}`,
+      subtitle: `${b.days} kun × ${Number(b.dailyBudget)} · so'radi: ${b.requestedByName ?? "—"}`,
+      right: String(Number(b.dailyBudget) * b.days),
+      status: "Reklama", tone: "warning" as Tone,
+    })),
+  ];
+
   const tabs = [
-    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows] },
+    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows, ...smmRows] },
     { key: "orders", label: "Bloklangan zayavka", rows: orderRows },
     { key: "supply", label: "Ta'minot", rows: supplyRows },
     { key: "kirim", label: "Mexanik so'rovlari", rows: kirimRows },
+    { key: "smm", label: "Marketing", rows: smmRows },
   ];
   const tab = tabs.find((t) => t.key === filter) ?? tabs[0];
   const rows = [...tab.rows];

@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { notifyRoles } from "@/lib/notify";
 import { audit } from "./audit";
 import { nextNo } from "./numbering";
 import { MAX_AMOUNT, validDate } from "./action";
@@ -169,7 +170,7 @@ export async function createGoodsReceipt(
   if (total > MAX_AMOUNT) fail("Kirim summasi juda katta");
 
   try {
-    return await db.$transaction(async (tx) => {
+    const created = await db.$transaction(async (tx) => {
       const rec = await tx.goodsReceipt.create({
         data: {
           docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: actor.userId, clientToken,
@@ -203,6 +204,10 @@ export async function createGoodsReceipt(
       await audit(tx, actor.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items });
       return { id: rec.id, docNo: rec.docNo, existed: false };
     });
+    // To'lanmagan kirim — yetkazuvchiga pulni moliya/buxgalteriya to'laydi; xabarsiz u faqat ro'yxatda turardi.
+    // Ta'minot zanjiridan kelgan kirim (pul allaqachon ajratilgan) bu yerdan o'tmaydi (`lib/supply.ts`).
+    if (!created.existed) queueUnpaidNotice(created.id, actor.userId);
+    return created;
   } catch (e) {
     // Bir vaqtda kelgan ikki bir xil yuborish: ikkinchisi unique kalitga urildi — birinchisining kirimi qaytariladi
     if (clientToken && e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -212,6 +217,32 @@ export async function createGoodsReceipt(
     if (e instanceof ReceiptError) throw new Error(e.message);
     throw e;
   }
+}
+
+/**
+ * To'lanmagan kirim haqida moliya/buxgalteriyaga xabar — 30 soniyalik oynada guruhlanadi:
+ * Excel jurnal importi o'nlab kirim yaratsa, o'nlab push emas, bitta «N ta kirim» xabari ketadi.
+ */
+const unpaidQueue = new Map<string, { ids: string[]; timer: ReturnType<typeof setTimeout> }>();
+function queueUnpaidNotice(receiptId: string, userId: string) {
+  const q = unpaidQueue.get(userId);
+  if (q) { q.ids.push(receiptId); return; }
+  const timer = setTimeout(() => {
+    const ids = unpaidQueue.get(userId)?.ids ?? [];
+    unpaidQueue.delete(userId);
+    void (async () => {
+      const paid = new Set((await db.cashTransaction.findMany({ where: { refType: "GoodsReceipt", refId: { in: ids } }, select: { refId: true } })).map((t) => t.refId));
+      const open = await db.goodsReceipt.findMany({ where: { id: { in: ids.filter((i) => !paid.has(i)) } }, select: { id: true, docNo: true, supplier: { select: { name: true } } } });
+      if (!open.length) return;
+      const one = open.length === 1 ? open[0]! : null;
+      await notifyRoles(["FINANCE", "ACCOUNTING"], one
+        ? { type: "RECEIPT_UNPAID", title: `Kirim to'lanmagan — ${one.docNo}`, body: `${one.supplier.name} · yetkazuvchiga to'lov kerak`, link: { key: "receipts", id: one.id }, channel: "oddiy" }
+        : { type: "RECEIPT_UNPAID", title: `${open.length} ta kirim to'lanmagan`, body: `Yetkazuvchilarga to'lov kerak: ${[...new Set(open.map((r) => r.supplier.name))].slice(0, 4).join(", ")}`, channel: "oddiy" },
+      { except: userId });
+    })().catch((e) => console.error("[notify] kirim", e));
+  }, 30_000);
+  timer.unref?.();
+  unpaidQueue.set(userId, { ids: [receiptId], timer });
 }
 
 // ───────────────────────── «Приход» jurnali ─────────────────────────

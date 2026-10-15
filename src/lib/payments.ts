@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { money } from "@/lib/format";
-import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import type { PayMethod, Prisma } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
 import { syncPaymentRequest } from "@/lib/payment-requests";
@@ -237,6 +237,16 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
     // Storno — bosh to'lov so'rovi yana ochiq (qisman) bo'ladi
     const orderOf = p.orderId ?? (p.invoiceId ? (await tx.invoice.findUnique({ where: { id: p.invoiceId }, select: { orderId: true } }))?.orderId : null);
     await syncPaymentRequest(tx, orderOf, userId);
+    return { amount: Number(p.amount), customerId: p.customerId, orderId: orderOf ?? null };
+  }).then((r) => {
+    // Kassadagi pul va mijoz qarzi o'zgardi — kassir hisobni, sotuvchi mijoz bilan gaplashishni bilsin
+    notifyAfter(async () => {
+      const c = await db.customer.findUnique({ where: { id: r.customerId }, select: { name: true } });
+      const o = r.orderId ? await db.order.findUnique({ where: { id: r.orderId }, select: { orderNo: true, createdById: true } }) : null;
+      const n = { type: "PAYMENT_REVERSED", title: `To'lov storno qilindi — ${money(r.amount)}`, body: `${c?.name ?? ""}${o ? ` · ${o.orderNo}` : ""} · sabab: ${reason.trim()}`, link: o && r.orderId ? { key: "orders", id: r.orderId } : undefined };
+      await notifyRoles(["CASHIER", "ACCOUNTING"], n, { except: userId });
+      if (o?.createdById && o.createdById !== userId) await notifyUsers([o.createdById], n);
+    });
     return {};
   }).catch((e: Error) => { if (e instanceof PaymentError) return { error: e.message }; throw e; });
 }

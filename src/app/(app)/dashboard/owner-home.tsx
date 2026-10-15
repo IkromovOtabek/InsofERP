@@ -524,6 +524,25 @@ function ApprovalQueue({ q }: { q: DirectorQueue }) {
           )}
         </div>
       </div>
+      {q.smm.length > 0 && (
+        <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Marketing — post va target ({q.smm.length})</div>
+          <ul className="grid gap-2 text-sm lg:grid-cols-2">
+            {q.smm.slice(0, 8).map((r) => (
+              <li key={`${r.kind}-${r.id}`} className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link href={r.href} className="font-medium hover:underline">{r.title}</Link>
+                  <div className="text-[11px] text-slate-500">{r.kind === "Post" ? "Post nashri" : "Reklama (target) puli"} · {r.by}{r.at && <> · chiqish {date(r.at)}</>}</div>
+                </div>
+                <div className="shrink-0 text-right">
+                  {r.amount != null && <div className="font-semibold tabular">{fmtNum(r.amount, 2)}</div>}
+                  <Link href={r.href} className="text-xs font-medium text-brand-600 hover:underline">Ko&apos;rib chiqish →</Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Panel>
   );
 }
