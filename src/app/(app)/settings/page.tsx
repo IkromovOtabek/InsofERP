@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound, Gauge, Wallet, ClipboardList, Truck, MapPin, ShoppingCart, BarChart3, ArrowRight } from "lucide-react";
+import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound, Gauge, Wallet, ClipboardList, Truck, MapPin, ShoppingCart, BarChart3, ArrowRight, AlarmClock } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
@@ -31,6 +31,7 @@ import { DeletionRow } from "./deletion-forms";
 import { SelfAccountPanel } from "../hisobim/panel";
 import { SOURCE_LABEL } from "@/lib/account-deletion";
 import { DEFAULT_PAYABLES_SINCE } from "@/lib/receipt-payables";
+import { fineText, getLateFine } from "@/lib/hr/late-fine";
 import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 import { txSign } from "@/lib/cash-tx";
 
@@ -102,13 +103,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
  */
 async function LimitsTab() {
   const [year, month] = today().slice(0, 7).split("-").map(Number);
-  const [c, credit, customers, blocked, logi, budget] = await Promise.all([
+  const [c, credit, customers, blocked, logi, budget, lateFine] = await Promise.all([
     getCompany(),
     customersCredit(),
     db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.order.groupBy({ by: ["customerId"], where: { kind: "SALE", status: "BLOCKED" }, _count: { _all: true } }),
     logisticsSettings(),
     db.expenseBudget.aggregate({ where: { year, month }, _sum: { amount: true }, _count: { _all: true } }),
+    getLateFine(),
   ]);
   const blockedBy = new Map(blocked.map((b) => [b.customerId, b._count._all]));
   const rows: CustomerLimitRow[] = customers.map((m) => {
@@ -185,6 +187,13 @@ async function LimitsTab() {
         {(c.lat == null || c.lng == null) && (
           <p className="mt-2 text-xs text-amber-700">Zavod nuqtasi belgilanmagan — radius tekshirilmaydi. Nuqtani <Link href="/settings?tab=company" className="underline">Zavod rekvizitlari</Link> → «Zavod joyi» xaritasida belgilang.</p>
         )}
+      </Card>
+
+      <Card>
+        <CardHeader icon={AlarmClock} title="Kechikish jarimasi"
+          description="Kechikkan xodimdan ushlanadigan summa — otdel kadr yoki direktor belgilaydi (Sozlamalar → Davomat). Tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi."
+          action={<LinkButton href="/settings/davomat" variant="secondary" size="sm">Sozlash <ArrowRight size={14} /></LinkButton>} />
+        <p className="text-sm text-slate-700">Joriy qoida: <b>{fineText(lateFine)}</b></p>
       </Card>
     </div>
   );

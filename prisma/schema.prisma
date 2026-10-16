@@ -298,6 +298,8 @@ model Product {
   strengthClass String? // B22.5
   unit          String   @default("m3")
   price         Decimal  @default(0) @db.Decimal(18, 2) // bazaviy narx (1 m3)
+  /// Sdelka (ishbay) narxi — brigada shu mahsulotning 1 birligini ishlab chiqarsa ish haqi fondiga qo'shiladi, so'm
+  pieceRate     Decimal? @db.Decimal(18, 2)
   kind          String? // "Tovar turi": Tayyor mahsulot, Tovar, Yarim tayyor...
   groupId       String? // papka; bo'sh bo'lsa ro'yxat ildizida turadi
   note          String?
@@ -521,6 +523,9 @@ model Employee {
   /// Ish hududidan tashqarida ham "Keldim/Ketdim" belgilashi mumkin (komandirovka, obyektda ishlovchi) —
   /// ruxsatni faqat otdel kadr yoki direktor beradi. Bunday belgida yuzdan tashqari joy rasmi ham olinadi.
   attendanceAnywhere Boolean   @default(false)
+  /// Ish haqi qanday hisoblanadi (`lib/hr/payroll.ts`): oklad — `tariffRate` oylik; kunbay/soatbay — `tariffRate` kunlik/soatlik
+  /// stavka; sdelka — brigada ishlab chiqargan mahsulot × `Product.pieceRate`, brigada a'zolariga ishlagan soati bo'yicha bo'linadi
+  payType            PayType   @default(SALARY)
 
   userId      String?   @unique // tizimga kiradigan xodim uchun login
   ecoUserId   String?   @unique // Insof ECO foydalanuvchi id (haydovchi ilovasi)
@@ -541,6 +546,10 @@ model Employee {
   deletionRequests AccountDeletionRequest[]
   fuelLogs         FuelLog[]
   transportCosts   TransportExpense[]
+  shiftDays        ShiftAssignment[]
+  hrRequests       HrRequest[]
+  payAdjustments   PayAdjustment[]
+  payrollLines     PayrollLine[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -2936,4 +2945,253 @@ model RentTx {
 
   @@index([month, shopId])
   @@index([date])
+}
+
+// ───────────────────────── Otdel kadr: smena grafigi, arizalar, jarima/bonus, ish haqi ─────────────────────────
+
+/// Ish haqi turi (xodim kartasida).
+enum PayType {
+  SALARY // oklad: oylik × ishlagan kun / norma kun
+  DAILY // kunbay: kunlik stavka × kelgan kun
+  HOURLY // soatbay: soatlik stavka × ishlagan soat
+  PIECE // sdelka: brigada mahsuloti × sdelka narxi, a'zolarga soat bo'yicha
+}
+
+/// Smena shabloni — grafikda katakka qo'yiladigan smena ("Kunduzgi 08:00–17:00", "Tungi 20:00–08:00").
+model ShiftTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  start     String // "HH:MM"
+  end       String // "HH:MM"; boshlanishidan oldin bo'lsa — tungi smena
+  color     String? // grafik katagining rangi (slate, sky, amber…)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  days ShiftAssignment[]
+}
+
+/// Grafik katagi: xodimning bir kunlik smenasi yoki dam olish kuni. Yozuv yo'q kun — kartadagi ish grafigi (`workSchedule`).
+/// Kechikish, norma kun va ish haqi shu bo'yicha hisoblanadi (`lib/hr/shifts.ts`).
+model ShiftAssignment {
+  id          String   @id @default(cuid())
+  employeeId  String
+  date        DateTime @db.Date
+  templateId  String?
+  start       String? // shablonsiz qo'lda vaqt ("HH:MM")
+  end         String?
+  off         Boolean  @default(false) // dam olish kuni
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  template ShiftTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+enum HrRequestKind {
+  VACATION // mehnat ta'tili (haq to'lanadi)
+  UNPAID // o'z hisobidan ta'til
+  SICK // kasallik varaqasi
+  DAYOFF // dam olish kuni (smenani almashtirish, oilaviy sabab)
+  ADVANCE // avans so'rash
+  LATE_REASON // kechikish sababi
+  ABSENCE_REASON // kelmaslik sababi
+  OTHER // boshqa ariza
+}
+
+enum HrRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Xodim arizasi — mobil ilova yoki vebdan (Mening hisobim) yuboriladi, otdel kadr (yoki direktor) hal qiladi.
+/// Tasdiqlangan ta'til / kasallik / dam olish davomatga o'zi tushadi; avans — alohida vedomost bo'lib kassaga chiqadi.
+model HrRequest {
+  id           String          @id @default(cuid())
+  docNo        String          @unique // AR-2026-0001
+  employeeId   String
+  kind         HrRequestKind
+  dateFrom     DateTime?       @db.Date
+  dateTo       DateTime?       @db.Date
+  amount       Decimal?        @db.Decimal(18, 2) // avans summasi
+  reason       String
+  status       HrRequestStatus @default(PENDING)
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String?
+  /// Tasdiqdan keyin davomatga yozilgan kunlar soni (ta'til/kasallik/dam olish) yoki avans vedomosti id
+  appliedDays  Int?
+  payrollRunId String?
+  createdById  String
+  clientToken  String?         @unique
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, createdAt])
+  @@index([status, kind])
+}
+
+enum PayAdjKind {
+  BONUS
+  PENALTY
+}
+
+/// Avtomatik qoida nimaga qaraydi (davomatdan hisoblanadi — hamma uchun bir xil).
+enum PayRuleTrigger {
+  LATE // har kechikish (yoki har daqiqa) uchun
+  ABSENT // har sababsiz kelmagan kun uchun
+  EARLY_LEAVE // har erta ketish uchun
+  NO_LATE_MONTH // oy davomida kechikish va sababsiz kelmaslik yo'q — bonus
+  FULL_MONTH // oy normasini to'liq ishlagan — bonus
+}
+
+/// Jarima / bonus qoidasi — "bir xil qoida hamma uchun". `position` berilsa — faqat shu lavozimga.
+model PayRule {
+  id           String         @id @default(cuid())
+  name         String
+  kind         PayAdjKind
+  trigger      PayRuleTrigger
+  amount       Decimal        @db.Decimal(18, 2) // so'm: bir holat uchun (yoki daqiqa uchun)
+  perMinute    Boolean        @default(false) // LATE / EARLY_LEAVE: summa × daqiqa
+  graceMinutes Int            @default(0) // shuncha daqiqagacha hisoblanmaydi
+  maxPerMonth  Decimal?       @db.Decimal(18, 2) // oyiga eng ko'pi
+  position     String?
+  isActive     Boolean        @default(true)
+  note         String?
+  createdById  String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  adjustments PayAdjustment[]
+}
+
+/// Qo'lda yozilgan jarima / bonus (yoki KPI mukofoti) — shu oyning ish haqiga qo'shiladi / ushlanadi.
+/// O'chirilmaydi: bekor qilinsa `cancelledAt` (sababi bilan), auditda qoladi.
+model PayAdjustment {
+  id            String     @id @default(cuid())
+  employeeId    String
+  month         String // "2026-10"
+  kind          PayAdjKind
+  amount        Decimal    @db.Decimal(18, 2)
+  reason        String
+  date          DateTime?  @db.Date
+  ruleId        String?
+  source        String     @default("MANUAL") // MANUAL | KPI
+  createdById   String
+  cancelledAt   DateTime?
+  cancelReason  String?
+  cancelledById String?
+  createdAt     DateTime   @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  rule     PayRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, month])
+  @@index([month])
+}
+
+enum PayrollKind {
+  ADVANCE // oy o'rtasidagi avans
+  FINAL // oy yakuni (hisob-kitob)
+  EXTRA // alohida to'lov (xodim avans arizasi)
+}
+
+enum PayrollStatus {
+  DRAFT // kadr hisoblaydi, qayta hisoblash mumkin
+  SUBMITTED // direktor tasdig'ini kutmoqda
+  APPROVED // tasdiqlandi — kassa to'laydi
+  PAID // hamma qatorlar to'landi
+  CANCELLED
+}
+
+/// Ish haqi vedomosti — bir oy uchun avans, yakuniy hisob yoki alohida to'lov.
+model PayrollRun {
+  id            String        @id @default(cuid())
+  docNo         String        @unique // IH-2026-10-A, IH-2026-10-Y, IH-2026-10-X3
+  month         String // "2026-10"
+  kind          PayrollKind
+  status        PayrollStatus @default(DRAFT)
+  gross         Decimal       @default(0) @db.Decimal(18, 2) // hisoblangan
+  deductions    Decimal       @default(0) @db.Decimal(18, 2) // soliq + jarima + avans
+  net           Decimal       @default(0) @db.Decimal(18, 2) // qo'lga
+  paid          Decimal       @default(0) @db.Decimal(18, 2)
+  employerTax   Decimal       @default(0) @db.Decimal(18, 2) // ijtimoiy soliq (ish beruvchi to'laydi, ushlanmaydi)
+  note          String?
+  calculatedAt  DateTime?
+  createdById   String
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectNote    String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  cancelledById String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  lines PayrollLine[]
+
+  @@index([month, kind])
+  @@index([status])
+}
+
+/// Vedomost qatori — bitta xodim. `breakdown` — hisob tafsiloti (kunlar, qoidalar, sdelka) xodimga ko'rsatish uchun.
+model PayrollLine {
+  id              String    @id @default(cuid())
+  runId           String
+  employeeId      String
+  payType         PayType
+  rate            Decimal   @default(0) @db.Decimal(18, 2)
+  normDays        Int       @default(0)
+  workedDays      Int       @default(0)
+  workedMinutes   Int       @default(0)
+  units           Decimal   @default(0) @db.Decimal(18, 3) // sdelka: ulushiga tushgan mahsulot
+  base            Decimal   @default(0) @db.Decimal(18, 2) // asosiy hisoblangan
+  leavePay        Decimal   @default(0) @db.Decimal(18, 2) // ta'til puli
+  sickPay         Decimal   @default(0) @db.Decimal(18, 2) // kasallik nafaqasi
+  bonus           Decimal   @default(0) @db.Decimal(18, 2)
+  penalty         Decimal   @default(0) @db.Decimal(18, 2)
+  gross           Decimal   @default(0) @db.Decimal(18, 2) // base + ta'til + kasallik + bonus
+  incomeTax       Decimal   @default(0) @db.Decimal(18, 2) // JShDS
+  inps            Decimal   @default(0) @db.Decimal(18, 2) // shaxsiy jamg'arib boriladigan pensiya (JShDS ichidan)
+  advanceDeducted Decimal   @default(0) @db.Decimal(18, 2) // shu oy berilgan avanslar
+  net             Decimal   @default(0) @db.Decimal(18, 2) // qo'lga (manfiy bo'lsa — xodim qarzi)
+  employerTax     Decimal   @default(0) @db.Decimal(18, 2)
+  paid            Decimal   @default(0) @db.Decimal(18, 2)
+  paidAt          DateTime?
+  paidById        String?
+  cashTxId        String?
+  breakdown       Json?
+
+  run      PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee Employee   @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+}
+
+/// Ish haqi sozlamalari (bitta yozuv, id "main") — soliq stavkalari, avans foizi, kasallik nafaqasi.
+model PayrollSettings {
+  id           String   @id @default("main")
+  incomeTaxPct Decimal  @default(12) @db.Decimal(5, 2) // JShDS
+  inpsPct      Decimal  @default(0.1) @db.Decimal(5, 2) // INPS shaxsiy hisob — JShDS ichidan o'tkaziladi
+  socialTaxPct Decimal  @default(12) @db.Decimal(5, 2) // ijtimoiy soliq (ish beruvchi)
+  advancePct   Int      @default(40) // avans — oylik (yoki 1–15 kun hisoblangan) summaning foizi
+  advanceDay   Int      @default(15) // avans hisoblanadigan kun (shu kungacha ishlangan)
+  sickPctShort Int      @default(60) // kasallik: staj 8 yilgacha
+  sickPctLong  Int      @default(80) // staj 8 yildan ko'p
+  vacationPaid Boolean  @default(true) // mehnat ta'tili kunlari haq to'lanadimi
+  hoursPerDay  Decimal  @default(8) @db.Decimal(4, 2) // soatbay xodimning ta'til/kasallik kunini hisoblash uchun
+  updatedById  String?
+  updatedAt    DateTime @updatedAt
 }

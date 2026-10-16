@@ -9,8 +9,9 @@ import { FaceBusyError, faceDescriptor } from "@/lib/face-descriptor";
 import { removeEmployeeFile, saveEmployeeFile } from "@/lib/uploads";
 import { MAX_SHIFT_MINUTES, dayUtc, hoursText, markOf, toMinutes, today, workedMinutes } from "@/lib/davomat";
 import { nowHHMM, productionStaff } from "@/lib/production-staff";
-import { earlyBy, nightOpen, openRecord, shiftOf } from "@/lib/self-attendance";
+import { earlyBy, nightOpen, openRecord } from "@/lib/self-attendance";
 import { lateToStore } from "@/lib/attendance-time";
+import { dayPlan } from "@/lib/hr/shifts";
 import {
   AUTO_OUT_AFTER_MIN, ENROLL_MAX_SAMPLES, ENROLL_MIN_SAMPLES, FACE_DIM, SCAN_PROBES, SNAPSHOT_MAX_CHARS,
   type FaceMode, type FaceScanFail, type FaceScanResult,
@@ -305,7 +306,7 @@ export async function recordScan(s: FaceActor, scope: FaceScope, m: Match, mode:
   const sim = similarity(m.d);
   const iso = today();
   const now = nowHHMM();
-  const shift = shiftOf(e.workSchedule);
+  const shift = await dayPlan(e.id, iso); // grafikdagi katak, bo'lmasa kartadagi smena
   const { today: t, yesterday: y } = await openRecord(e.id, iso);
   // Ochiq yozuv: bugun kelgan va ketmagan, bo'lmasa kechagi tungi smena
   const open = t?.status === "PRESENT" && t.checkIn && !t.checkOut ? t : !t && nightOpen(y, now) ? y : null;

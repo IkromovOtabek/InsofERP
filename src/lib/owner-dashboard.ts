@@ -473,7 +473,7 @@ export type QueueSupply = { id: string; docNo: string; supplier: string; by: str
 export async function directorQueue() {
   const company = await getCompany();
   const limit = Number(company.supplyDirectorLimit);
-  const [blocked, priced, posts, boosts] = await Promise.all([
+  const [blocked, priced, posts, boosts, payroll] = await Promise.all([
     db.order.findMany({
       where: { kind: "SALE", status: "BLOCKED" }, orderBy: { date: "asc" }, take: 50,
       select: { id: true, orderNo: true, date: true, deliveryDate: true, customerId: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qtyM3: true, price: true } } },
@@ -487,6 +487,8 @@ export async function directorQueue() {
     // Marketing: post nashri va reklama puli — direktor qarori
     db.marketingContent.findMany({ where: { approval: "PENDING", status: { notIn: ["CANCELLED", "PUBLISHED"] } }, orderBy: { updatedAt: "asc" }, take: 20, select: { id: true, title: true, createdBy: true, scheduledAt: true } }),
     db.smmBoost.findMany({ where: { status: "PENDING_APPROVAL" }, orderBy: { createdAt: "asc" }, take: 20, select: { id: true, dailyBudget: true, days: true, requestedByName: true, content: { select: { id: true, title: true } } } }),
+    // Ish haqi vedomostlari — kassa faqat direktor tasdig'idan keyin to'laydi (`lib/hr/payroll.ts`)
+    db.payrollRun.findMany({ where: { status: "SUBMITTED" }, orderBy: { submittedAt: "asc" }, take: 20, select: { id: true, docNo: true, month: true, kind: true, net: true, note: true, submittedAt: true, _count: { select: { lines: true } } } }),
   ]);
   const smm = [
     ...posts.map((c) => ({ id: c.id, href: `/marketing/kontent/${c.id}`, title: c.title, kind: "Post" as const, by: c.createdBy ?? "—", amount: null as number | null, at: c.scheduledAt })),
@@ -502,6 +504,7 @@ export async function directorQueue() {
   const supply: QueueSupply[] = priced
     .map((r) => ({ id: r.id, docNo: r.docNo, supplier: r.supplier?.name ?? "—", by: r.createdBy.fullName, amount: totalPlanned(r), needBy: r.needBy, createdAt: r.createdAt }))
     .filter((r) => needsDirector(r.amount, limit));
-  return { orders, supply, smm, limit, total: orders.length + supply.length + smm.length };
+  const pay = payroll.map((r) => ({ id: r.id, docNo: r.docNo, month: r.month, kind: r.kind, amount: Number(r.net), lines: r._count.lines, note: r.note, at: r.submittedAt }));
+  return { orders, supply, smm, payroll: pay, limit, total: orders.length + supply.length + smm.length + pay.length };
 }
 export type DirectorQueue = Awaited<ReturnType<typeof directorQueue>>;

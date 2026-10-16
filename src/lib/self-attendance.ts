@@ -20,6 +20,7 @@ import type { MobileUser } from "@/lib/mobile/auth";
 import type { AttendanceStatus } from "@/generated/prisma";
 import { notifyLateAfter } from "@/lib/attendance-late";
 import { dayTimes, lateToStore } from "@/lib/attendance-time";
+import { dayPlan } from "@/lib/hr/shifts";
 
 /**
  * Xodimning o'zi telefonidan davomat belgilashi — "Keldim" / "Ketdim" (mobil bosh sahifa kartasi).
@@ -275,7 +276,8 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
   });
   const known = prior.some((r) => r.checkInDeviceId === b.deviceId || r.checkOutDeviceId === b.deviceId);
   const newDevice = prior.length > 0 && !known;
-  const shift = shiftOf(emp.workSchedule);
+  // Smena — grafikdagi bugungi katak, bo'lmasa kartadagi ish grafigi (`lib/hr/shifts.ts`)
+  const shift = await dayPlan(emp.id, iso);
   const geo = (k: "In" | "Out") => ({
     [`check${k}Lat`]: b.lat, [`check${k}Lng`]: b.lng, [`check${k}Accuracy`]: b.accuracy ?? null,
     [`check${k}Distance`]: Math.round(distance), [`check${k}DeviceId`]: b.deviceId,

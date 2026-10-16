@@ -5,6 +5,8 @@ import { Plus, Truck } from "lucide-react";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createEmployee, grantLogin, updateEmployee } from "./actions";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select, Textarea } from "@/components/ui";
+import { PAY_RATE_HINT, PAY_TYPE_LABEL } from "@/lib/hr/labels";
+import type { PayType } from "@/generated/prisma";
 import { EDUCATION, LICENSE_CATEGORIES, MARITAL, VEHICLE_TYPES } from "@/lib/kadr";
 import { MoneyInput } from "@/components/money-input";
 import { parseSchedule } from "@/lib/attendance-time";
@@ -278,7 +280,7 @@ export function EmployeeForm({ departments, work, drivers, staff, vehicles, canG
 
 export type EmployeeCard = {
   id: string; fullName: string; position: string; phone: string | null;
-  tabelNo: string | null; subdivision: string | null; tariffRate: string | null;
+  tabelNo: string | null; subdivision: string | null; tariffRate: string | null; payType: PayType;
   hiredAt: string | null; firedAt: string | null; birthDate: string | null; note: string | null;
   passportSeries: string | null; pinfl: string | null; passportIssuedBy: string | null; passportIssuedAt: string | null;
   address: string | null; education: string | null; maritalStatus: string | null;
@@ -298,6 +300,7 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
 }) {
   const [state, action, pending] = useActionState(updateEmployee.bind(null, employee.id), undefined);
   const [position, setPosition] = useState(employee.position);
+  const [payType, setPayType] = useState<PayType>(employee.payType);
   // Texnika bo'limi: haydovchi lavozimida yoki texnikasi bo'lganda o'zi ochiq, boshqalarda tugma bilan ochiladi
   const [showVehicle, setShowVehicle] = useState(drivers.includes(employee.position) || !!employee.plate);
   // Ro'yxatdan chiqarilgan eski lavozim ham tanlov sifatida qolsin, aks holda saqlashda almashib ketadi
@@ -316,7 +319,12 @@ export function EmployeeCardForm({ employee, departments, work, drivers, vehicle
         <Field label="Tug'ilgan sana"><Input name="birthDate" type="date" defaultValue={employee.birthDate ?? ""} /></Field>
         <Field label="Tabel №" hint="Buxgalteriya tabelidagi raqam"><Input name="tabelNo" defaultValue={employee.tabelNo ?? ""} placeholder="00401" autoComplete="off" /></Field>
         <Field label="Bo'lim / brigada"><Input name="subdivision" defaultValue={employee.subdivision ?? ""} placeholder="Brigada 1" autoComplete="off" /></Field>
-        <Field label="Tarif stavka"><MoneyInput name="tariffRate" defaultValue={employee.tariffRate ?? ""} placeholder="2 500 000" /></Field>
+        <Field label="Ish haqi turi" hint={PAY_RATE_HINT[payType]}>
+          <Select name="payType" value={payType} onChange={(e) => setPayType(e.target.value as PayType)}>
+            {(Object.keys(PAY_TYPE_LABEL) as PayType[]).map((k) => <option key={k} value={k}>{PAY_TYPE_LABEL[k]}</option>)}
+          </Select>
+        </Field>
+        <Field label="Tarif stavka" hint={payType === "PIECE" ? "Sdelkada shart emas" : undefined}><MoneyInput name="tariffRate" defaultValue={employee.tariffRate ?? ""} placeholder="2 500 000" /></Field>
         <Field label="Ish boshlanishi" hint={shift.start ? "Kechikish shundan hisoblanadi" : `Bo'sh — zavod standarti ${DEFAULT_SHIFT.checkIn}`}>
           <Input name="workStart" type="time" defaultValue={shift.start ?? ""} />
         </Field>

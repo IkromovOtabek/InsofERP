@@ -1,11 +1,17 @@
 import Link from "next/link";
-import { CalendarCheck, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { AlarmClock, CalendarCheck, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { ATTENDANCE_MARKS, hoursShort, hoursText, markOf, monthDays, monthTitle, shiftMonth, today } from "@/lib/davomat";
+import { lateText } from "@/lib/attendance-time";
+import { money } from "@/lib/format";
+import { activeFine, fineText, monthFine, type LateFine } from "@/lib/hr/late-fine";
 import { cn } from "@/lib/utils";
 import type { AttendanceStatus } from "@/generated/prisma";
 
-/** `out` — hududdan tashqarida belgilangan bo'lsa izoh matni ("Hududdan tashqarida: keldi 2,4 km"), aks holda null. */
-export type OyCell = { status: AttendanceStatus; min: number | null; note: string | null; out: string | null };
+/**
+ * `out` — hududdan tashqarida belgilangan bo'lsa izoh matni ("Hududdan tashqarida: keldi 2,4 km"), aks holda null.
+ * `late` — saqlangan kechikish, daqiqa (`Attendance.lateMinutes`; eski yozuvda null).
+ */
+export type OyCell = { status: AttendanceStatus; min: number | null; note: string | null; out: string | null; late: number | null };
 export type OyRow = { id: string; fullName: string; position: string; cells: Record<string, OyCell> };
 
 const monthHref = (ym: string) => `/otdel-kadr?tab=davomat&oy=${ym}`;
@@ -15,22 +21,29 @@ const dayHref = (iso: string) => `/otdel-kadr?tab=davomat&kun=${iso}`;
  * Oylik tabel: qator — xodim, ustun — oy kunlari. Katakda ishlagan soat (yoki belgi harfi)
  * turadi, bosilsa o'sha kunning belgilash oynasi ochiladi. Faqat ko'rish uchun.
  */
-export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
+export function DavomatOy({ ym, rows, fine = null }: { ym: string; rows: OyRow[]; fine?: LateFine | null }) {
   const days = monthDays(ym);
   const now = today();
+  const withFine = !!activeFine(fine);
 
   const totals = rows.map((r) => {
     const cells = Object.values(r.cells);
+    const lateCells = cells.filter((c) => c.late);
     return {
       days: cells.filter((c) => markOf(c.status).worked).length,
       absent: cells.filter((c) => c.status === "ABSENT").length,
       min: cells.reduce((n, c) => n + (c.min ?? 0), 0),
+      lateDays: lateCells.length,
+      lateMin: lateCells.reduce((n, c) => n + (c.late ?? 0), 0),
+      fine: monthFine(lateCells.map((c) => c.late), fine),
     };
   });
   const grand = {
     days: totals.reduce((n, t) => n + t.days, 0),
     absent: totals.reduce((n, t) => n + t.absent, 0),
     min: totals.reduce((n, t) => n + t.min, 0),
+    lateDays: totals.reduce((n, t) => n + t.lateDays, 0),
+    fine: totals.reduce((n, t) => n + t.fine.total, 0),
   };
 
   return (
@@ -43,9 +56,14 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
         <span className="ml-2 text-xs text-slate-500">
           Jami <span className="font-semibold text-slate-900 tabular">{grand.days}</span> ish kuni · <span className="font-semibold text-slate-900 tabular">{hoursText(grand.min)}</span>
           {grand.absent > 0 && <> · <span className="font-semibold text-red-600 tabular">{grand.absent}</span> kelmagan kun</>}
+          {grand.lateDays > 0 && <> · <span className="font-semibold text-amber-700 tabular">{grand.lateDays}</span> kechikish{withFine && <> · jarima <span className="font-semibold text-red-600 tabular">{money(grand.fine)}</span></>}</>}
         </span>
+        {/* Kechikish jarimasi — Sozlamalar → Davomat (otdel kadr va direktor) */}
+        <Link href="/settings/davomat" title={`Kechikish jarimasi: ${fineText(fine)}`} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+          <AlarmClock size={14} /> Jarima
+        </Link>
         {/* Ish haqi asosi: jami soat, kechikish, kunlik keldi/ketdi va haydovchilar reyslari */}
-        <a href={`/otdel-kadr/davomat-excel?oy=${ym}`} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+        <a href={`/otdel-kadr/davomat-excel?oy=${ym}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
           <Download size={14} /> Excel
         </a>
         <Link href={dayHref(now.startsWith(ym) ? now : `${ym}-01`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
@@ -66,11 +84,13 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
               ))}
               <th className="border-b border-l border-slate-200 bg-slate-50/80 px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Kun</th>
               <th className="border-b border-slate-200 bg-slate-50/80 px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Soat</th>
+              <th className="border-b border-slate-200 bg-slate-50/80 px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500" title="Kechikkan kunlar · jami daqiqa">Kechikish</th>
+              {withFine && <th className="border-b border-slate-200 bg-slate-50/80 px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500" title={fineText(fine)}>Jarima</th>}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={days.length + 3} className="px-4 py-12 text-center text-sm text-slate-500">Bu oyda xodim yo&apos;q</td></tr>
+              <tr><td colSpan={days.length + (withFine ? 5 : 4)} className="px-4 py-12 text-center text-sm text-slate-500">Bu oyda xodim yo&apos;q</td></tr>
             )}
             {rows.map((r, i) => (
               <tr key={r.id} className="group">
@@ -90,17 +110,20 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
                     <td key={d.iso} className={cn("border-b border-slate-100 p-0.5 text-center", d.weekend && "bg-slate-50/70")}>
                       <Link
                         href={dayHref(d.iso)}
-                        title={`${d.day}-kun · ${m.label}${c.min !== null ? ` · ${hoursText(c.min)}` : ""}${c.out ? ` · ${c.out}` : ""}${c.note ? ` · ${c.note}` : ""}`}
+                        title={`${d.day}-kun · ${m.label}${c.min !== null ? ` · ${hoursText(c.min)}` : ""}${c.late ? ` · ${lateText(c.late)} kechikdi` : ""}${c.out ? ` · ${c.out}` : ""}${c.note ? ` · ${c.note}` : ""}`}
                         className={cn("relative flex h-7 items-center justify-center rounded text-[11px] font-semibold ring-1 ring-inset tabular", m.cell)}
                       >
                         {c.min !== null ? hoursShort(c.min) : m.short}
                         {c.out && <span aria-label="Hududdan tashqarida" className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-violet-500" />}
+                        {!!c.late && <span aria-label="Kechikdi" className="absolute left-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />}
                       </Link>
                     </td>
                   );
                 })}
                 <td className="border-b border-l border-slate-100 px-2 text-right text-[13px] font-semibold text-slate-900 tabular">{totals[i].days}</td>
                 <td className="border-b border-slate-100 px-2 text-right text-[13px] font-semibold text-slate-900 tabular">{totals[i].min ? hoursShort(totals[i].min) : "—"}</td>
+                <td className={cn("border-b border-slate-100 px-2 text-right text-[12px] tabular whitespace-nowrap", totals[i].lateDays ? "font-semibold text-amber-700" : "text-slate-300")}>{totals[i].lateDays ? `${totals[i].lateDays} · ${lateText(totals[i].lateMin)}` : "—"}</td>
+                {withFine && <td className={cn("border-b border-slate-100 px-2 text-right text-[12px] tabular whitespace-nowrap", totals[i].fine.total ? "font-semibold text-red-600" : "text-slate-300")} title={totals[i].fine.capped ? "Oylik chegaraga yetdi" : undefined}>{totals[i].fine.total ? money(totals[i].fine.total) : "—"}</td>}
               </tr>
             ))}
           </tbody>
@@ -118,6 +141,7 @@ export function DavomatOy({ ym, rows }: { ym: string; rows: OyRow[] }) {
         ))}
         <span className="text-xs text-slate-400">· ishga chiqqan kunda harf o&apos;rniga ishlagan soat turadi</span>
         <span className="inline-flex items-center gap-1.5 text-xs text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> hududdan tashqarida belgilangan</span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> kechikib kelgan</span>
       </div>
     </div>
   );

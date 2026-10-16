@@ -7,6 +7,7 @@ import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog } from "@/lib/positions"
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT, PHOTO_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, money, qty } from "@/lib/format";
+import { PAY_TYPE_LABEL } from "@/lib/hr/labels";
 import { licenseDaysLeft } from "@/lib/kadr";
 import { HR_DOCS, nextOrderNo } from "@/lib/hr-docs";
 import { eco, ecoEnabled } from "@/lib/eco/client";
@@ -115,7 +116,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
                 employee={{
                   id: e.id, fullName: e.fullName, position: e.position, phone: e.phone, note: e.note,
                   tabelNo: e.tabelNo, subdivision: e.subdivision,
-                  tariffRate: e.tariffRate ? String(e.tariffRate) : null,
+                  tariffRate: e.tariffRate ? String(e.tariffRate) : null, payType: e.payType,
                   hiredAt: e.hiredAt ? isoDate(e.hiredAt) : null,
                   firedAt: e.firedAt ? isoDate(e.firedAt) : null,
                   birthDate: e.birthDate ? isoDate(e.birthDate) : null,
@@ -154,7 +155,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
             { k: "Kartaga kiritilgan", v: dateTime(e.createdAt) },
             ...(e.tabelNo ? [{ k: "Tabel №", v: e.tabelNo }] : []),
             ...(e.subdivision ? [{ k: "Bo'lim / brigada", v: e.subdivision }] : []),
-            ...(e.tariffRate ? [{ k: "Tarif stavka", v: money(e.tariffRate) }] : []),
+            { k: "Ish haqi", v: `${PAY_TYPE_LABEL[e.payType]}${e.tariffRate ? ` · ${money(e.tariffRate)}` : ""}` },
             { k: "Ishga kirgan", v: e.hiredAt ? date(e.hiredAt) : "—" },
             ...(e.firedAt ? [{ k: "Ishdan bo'shagan", v: <span className="text-red-600">{date(e.firedAt)}</span> }] : []),
             ...(e.firedReason ? [{ k: "Bo'shatish sababi", v: e.firedReason }] : []),

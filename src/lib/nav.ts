@@ -99,6 +99,13 @@ export const NAV: NavItem[] = [
   { href: "/otdel-kadr?tab=davomat",    label: "Davomat",           roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=ish-vaqti",  label: "Ish vaqti",         roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=taqvim",     label: "Kadr taqvimi",      roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=grafik",     label: "Smena grafigi",     roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=arizalar",   label: "Arizalar",          roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=jarima-bonus", label: "Jarima va bonuslar", roles: ["HR"], group: "Otdel kadr" },
+  // Ish haqi: kadr hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`)
+  { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
+  // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
+  { href: "/settings/davomat",          label: "Davomat sozlamalari", roles: ["HR"], group: "Otdel kadr" },
   { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika", menuFor: ["DRIVER"] },
@@ -226,6 +233,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "arenda",    label: "Arenda",                prefixes: ["/arenda"] },
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
+  { key: "payroll",   label: "Ish haqi",              prefixes: ["/ish-haqi"] },
   { key: "bi-tahlil", label: "BI tahlil",             prefixes: ["/bi-tahlil"] },
   // Sozlamalar ostidagi yagona modul: boshlang'ich qoldiqlar pulga ta'sir qiladi — direktor yopa/ocha olsin
   { key: "opening",   label: "Boshlang'ich qoldiqlar", prefixes: ["/settings/boshlangich-qoldiq"] },

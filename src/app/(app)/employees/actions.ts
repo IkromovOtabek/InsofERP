@@ -129,6 +129,8 @@ const cardSchema = schema.omit({ login: true, password: true }).extend({
   tabelNo: zOpt,
   subdivision: zOpt,
   tariffRate: zMoney,
+  // Ish haqi turi (`lib/hr/payroll.ts`): forma yubormasa — kartadagisi o'zgarmaydi
+  payType: z.enum(["SALARY", "DAILY", "HOURLY", "PIECE"]).optional(),
   firedAt: zDate,
   passportSeries: zOpt,
   pinfl: zPinfl,
@@ -484,6 +486,7 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
       data: {
         fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note,
         tabelNo: d.tabelNo, subdivision: d.subdivision, tariffRate: d.tariffRate, firedAt: d.firedAt, isActive,
+        ...(d.payType ? { payType: d.payType } : {}),
         ...(!d.firedAt && before.firedAt ? { firedReason: null } : {}),
         passportSeries: d.passportSeries, pinfl: d.pinfl, passportIssuedBy: d.passportIssuedBy, passportIssuedAt: d.passportIssuedAt,
         address: d.address, education: d.education, maritalStatus: d.maritalStatus,

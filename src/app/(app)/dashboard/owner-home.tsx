@@ -2,6 +2,8 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, Banknote, Boxes, CheckCircle2, ClipboardList, Factory, FileText, Gauge, Landmark, ShieldAlert, Sliders, TrendingDown, TrendingUp, Truck, Wallet } from "lucide-react";
 import { ownerDashboard, directorQueue, LEVEL_LABEL, type Level, type DirectorQueue } from "@/lib/owner-dashboard";
 import { moneyShort, pct, qty, date, fmtNum } from "@/lib/format";
+import { PAYROLL_KIND_LABEL } from "@/lib/hr/labels";
+import { monthTitle } from "@/lib/davomat";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, Progress, Td, Th, Tr } from "@/components/ui";
 import { Panel } from "../bi-tahlil/ui";
@@ -524,6 +526,25 @@ function ApprovalQueue({ q }: { q: DirectorQueue }) {
           )}
         </div>
       </div>
+      {q.payroll.length > 0 && (
+        <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Ish haqi vedomostlari ({q.payroll.length})</div>
+          <ul className="grid gap-2 text-sm lg:grid-cols-2">
+            {q.payroll.slice(0, 8).map((r) => (
+              <li key={r.id} className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link href={`/ish-haqi/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>
+                  <div className="text-[11px] text-slate-500">{PAYROLL_KIND_LABEL[r.kind]} · {monthTitle(r.month)} · {r.lines} xodim{r.note ? ` · ${r.note}` : ""}</div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-semibold tabular">{moneyShort(r.amount)}</div>
+                  <Link href={`/ish-haqi/${r.id}`} className="text-xs font-medium text-brand-600 hover:underline">Ko&apos;rib chiqish →</Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {q.smm.length > 0 && (
         <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Marketing — post va target ({q.smm.length})</div>

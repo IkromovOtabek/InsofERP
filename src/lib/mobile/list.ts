@@ -24,6 +24,8 @@ import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
 import { arendaJurnalList, arendaShopsList } from "./arenda";
 import { OPEN_STATUSES, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, PAYREQ_TABS, listPaymentRequests, methodsFor, payReqCounts, payReqTab, type PayReqRow } from "@/lib/payment-requests";
+import { HR_ACCESS, HR_KEY_MODULE } from "./hr-access";
+import { hrList } from "./hr";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -101,6 +103,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   approvals: { title: "Tasdiqlar", roles: [] },
   // Bugun kim nima qildi — bosh sahifadagi "Bugungi holat" dan ochiladi
   activity: { title: "Xodimlar faoliyati", roles: [] },
+  // ── Otdel kadr: arizalar, smena grafigi, ish haqi (`./hr.ts`) — o'z arizasi / grafigi / oyligi har bir xodimga ──
+  ...HR_ACCESS,
 };
 
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
@@ -138,6 +142,7 @@ const KEY_MODULE: Record<string, string> = {
   prixod: "stock", rasxod: "stock", ostatki: "stock",
   supply: "taminot", employees: "employees", kirim: "mexanik", payreq: "payments",
   "arenda-jurnal": "arenda", "arenda-shops": "arenda", "arenda-tx": "arenda", "arenda-shop": "arenda",
+  ...HR_KEY_MODULE,
 };
 
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
@@ -204,6 +209,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "approvals") return approvalsList(meta.title, s, filter);
   if (key === "activity") return activityList(meta.title, s);
   if (key === "prod-report") return { key, title: meta.title, rows: await reportRows() };
+  if (Object.hasOwn(HR_ACCESS, key)) return hrList(user, key, s, filter);
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "kirim") return kirimList(user, s, filter);

@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { HR_ACCESS, HR_ACTION_ROLES, SELF_CARDS } from "./hr-access";
+import { hrDetail } from "./hr";
 import { TX_TYPE_LABEL, isTransfer, txSign } from "@/lib/cash-tx";
 import { activityDetail, splitRef } from "./director";
 import { customerCredit } from "@/lib/finance";
@@ -237,6 +239,8 @@ export const closeForm = (loaded: number, accepted: number | null, returned: num
 
 /** Amalga kim haqli — veb ERP'dagi `requireSession([...])` bilan bir xil ro'yxat. */
 export const ACTION_ROLES: Record<string, Role[]> = {
+  // Otdel kadr: ariza qarori, vedomost yuborish / tasdiq / to'lov (`./hr.ts`)
+  ...HR_ACTION_ROLES,
   "order.confirm": ["SALES"],
   "order.unblock": ["DIRECTOR"],
   // Direktor "Tasdiqlar" tabida bloklangan zayavkani rad eta oladi (vebda ham `requireSession` direktorni o'tkazadi)
@@ -477,7 +481,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   "arenda-shop": ["SECRETARY"],
 };
 
-const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"];
+const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash", ...SELF_CARDS];
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
@@ -487,9 +491,9 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   // zayavka, schyot va boshqa hujjatlar unga ro'yxatda ham ko'rinmaydi, id qo'lda yuborilsa ham ochilmaydi.
   if (user.role === "BRIGADIER" && !BRIGADIER_CARDS.includes(DETAIL_KEY[key] ?? key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Haydovchi ilovada faqat reys kartochkasini ochadi — vebda ham unga faqat "Mening reyslarim" ochiq
-  if (user.role === "DRIVER" && key !== "trips" && key !== "dash") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  if (user.role === "DRIVER" && key !== "trips" && key !== "dash" && !SELF_CARDS.includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Sotuv agenti faqat o'z zayavkasi va o'z mijozi kartochkasini ochadi (ownership quyida tekshiriladi)
-  if (user.role === "AGENT" && !["orders", "customers", "dash"].includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
+  if (user.role === "AGENT" && !["orders", "customers", "dash", ...SELF_CARDS].includes(key)) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   // Aralash ro'yxatlar (direktor "Tasdiqlar") qator id'sida kartochka kalitini olib keladi: `orders:<id>`
   const [refKey, refId] = splitRef(id);
   if (refKey) return mobileDetail(user, refKey, refId);
@@ -503,6 +507,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     if (user.role !== "DIRECTOR") throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
     return activityDetail(id);
   }
+  // Otdel kadr: ariza, oylik, vedomost (`./hr.ts`) — egalik / rol kartochka ichida tekshiriladi
+  if (Object.hasOwn(HR_ACCESS, card)) return hrDetail(user, card, id);
   switch (DETAIL_KEY[key] ?? key) {
     case "orders": return orderDetail(user, id);
     case "trips": return tripDetail(user, id);

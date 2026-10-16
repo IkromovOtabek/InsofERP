@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { employeeMonth, staffDay } from "@/lib/attendance-report";
 import { driverMonth, driversMonth } from "@/lib/driver-pay";
-import { productionStaff } from "@/lib/production-staff";
 import type { MobileUser } from "./auth";
 import { faceKioskAccess } from "./face-kiosk";
 import { ListError, moduleClosed } from "./list";
@@ -9,50 +8,35 @@ import { ListError, moduleClosed } from "./list";
 /**
  * Mobil "Davomat" jadvali va "Haydovchilar: reyslar va davomat" — ish haqi asosi.
  *   · GET /api/mobile/attendance/day?date=YYYY-MM-DD      — barcha xodimlar, bir kun;
- *   · GET /api/mobile/attendance/employee?id=&month=      — bitta xodim, oy;
+ *   · GET /api/mobile/attendance/employee?id=&month=      — bitta xodim, oy (`id=me` — o'zi);
  *   · GET /api/mobile/driver-trips?month=                 — barcha haydovchilar, oy;
  *   · GET /api/mobile/driver-trips?id=<employeeId|me>&month= — bitta haydovchi, kunlar.
- * Davomat jadvali — FAQAT KO'RISH, har bir xodimga ochiq (bosh sahifadagi «Davomat» → Jadval): kim keldi, ketdi,
- * soat, kechikish. Belgilash bu yerda yo'q — u skaner (`face-kiosk.ts`, sex boshlig'iga faqat sex) va sex davomatida.
- * Ustunlar ko'rish darajasiga qarab (`viewLevel`):
- *   · "full" — direktor, otdel kadr: hamma ustun (manba — kim belgilagani, izoh, telefon);
- *   · "sex"  — ishlab chiqarish, ish boshqaruvchi: sex xodimlarida "full", qolganlarda "public";
- *   · "public" — boshqa xodimlar: ism, lavozim/bo'lim, holat, keldi/ketdi, soat, kechikish; manba, izoh, telefon va
- *     hududdan tashqaridagi nuqta/joy rasmi (`outsideIn` / `outsideOut`) yashiriladi.
+ * Xodimlar davomati (umumiy jadval, boshqa xodimning oyi) — FAQAT direktor va otdel kadr (`ATTENDANCE_FULL_ROLES`),
+ * barcha ustunlar bilan (manba — kim belgilagani, izoh, telefon, hududdan tashqaridagi nuqta). Qolgan xodimlar ilovada
+ * faqat O'Z davomatini ko'radi: bosh sahifadagi "Keldim / Ketdim" kartasi va "Men" tabi (`/attendance/self`,
+ * `lib/self-attendance.ts`); `/attendance/employee?id=me` ham o'zinikini qaytaradi, boshqa id — 403.
+ * Belgilash bu yerda yo'q — u skaner (`face-kiosk.ts`, sex boshlig'iga faqat sex) va sex davomatida (`sex.ts`).
  * Haydovchilar — direktor, otdel kadr, logistika; haydovchi faqat o'zinikini.
  * Direktor xodimga modulni ("employees" / "trips") yopgan bo'lsa — ochilmaydi.
  */
 
-/** To'liq ustunli jadval (manba, izoh, telefon) — hamma xodim bo'yicha. */
+/** Umumiy davomat jadvali (hamma xodim bo'yicha, to'liq ustunlar). */
 export const ATTENDANCE_FULL_ROLES = ["DIRECTOR", "HR"] as const;
 
 export const DRIVER_PAY_ROLES = ["DIRECTOR", "HR", "LOGISTICS"] as const;
 
 const deny = (): never => { throw new ListError("FORBIDDEN", "Bu bo'lim sizning lavozimingiz uchun ochilmagan", 403); };
 
-/** Jadvalni ko'ra oladimi — har bir xodim, direktor "Xodimlar" modulini yopmagan bo'lsa. */
+/** Umumiy jadvalni ko'ra oladimi — faqat otdel kadr va direktor (direktor "Xodimlar / kadr" modulini yopmagan bo'lsa). */
 export function canViewAttendanceTable(user: Pick<MobileUser, "role" | "perms">) {
-  return !moduleClosed(user, "employees");
+  return (ATTENDANCE_FULL_ROLES as readonly string[]).includes(user.role) && !moduleClosed(user, "employees");
 }
-
-/** Sex boshliqlari (ishlab chiqarish, ish boshqaruvchi) — sex tarkibi (`productionStaff()`, skanerning `faceScope === "sex"` qoidasi). */
-async function sexMembers(): Promise<Set<string>> {
-  return new Set((await productionStaff()).members.map((m) => m.id));
-}
-
-/** Xodim bo'yicha to'liq ustunlarni ko'radimi: `true` — hammada, `Set` — faqat shu xodimlarda, `false` — hech kimda. */
-async function fullFor(user: MobileUser): Promise<true | Set<string> | false> {
-  if ((ATTENDANCE_FULL_ROLES as readonly string[]).includes(user.role)) return true;
-  if (user.role === "PRODUCTION" || user.role === "SUPERVISOR") return sexMembers();
-  return false;
-}
-const isFull = (full: true | Set<string> | false, id: string) => full === true || (full !== false && full.has(id));
 
 /**
  * Bosh sahifa: «Davomat» tugmasi (hamma xodimga). Ilovaning yangi versiyasi shuni o'qiydi; eski versiya `faceAttendance` ni
  * o'qiydi (u faqat skanerga ruxsati borlarga beriladi — eski ilova Davomat ekranida `GET /api/mobile/face` ni chaqiradi).
  *   · canScan / canEnroll — Skaner va Yuzlar tablari (`faceKioskAccess`);
- *   · canViewTable — Jadval (faqat ko'rish);
+ *   · canViewTable — Jadval (hamma xodim) — faqat otdel kadr va direktor; qolganlarda ilova faqat "Men" tabini ko'rsatadi;
  *   · linked — login xodim kartasiga bog'langanmi ("Men" tabi: o'z Keldim/Ketdim; bo'lmasa — otdel kadrga murojaat).
  */
 export type AttendanceAccess = { canScan: boolean; canEnroll: boolean; canViewTable: boolean; linked: boolean };
@@ -61,21 +45,32 @@ export function attendanceAccess(user: MobileUser, linked: boolean): AttendanceA
   return { canScan: !!face, canEnroll: !!face?.canEnroll, canViewTable: canViewAttendanceTable(user), linked };
 }
 
+/** Login egasining xodim kartasi — bo'lmasa 403 (NOT_LINKED). */
+async function myEmployeeId(user: Pick<MobileUser, "id">): Promise<string> {
+  const me = await db.employee.findFirst({ where: { userId: user.id }, select: { id: true } });
+  if (!me) throw new ListError("NOT_LINKED", "Loginingiz xodim kartasiga bog'lanmagan — otdel kadrga murojaat qiling", 403);
+  return me.id;
+}
+
 export async function mobileStaffDay(user: MobileUser, date: string | null) {
   if (!canViewAttendanceTable(user)) deny();
-  const [day, full] = await Promise.all([staffDay(date), fullFor(user)]);
-  if (full === true) return day;
-  // Faqat ko'rish: kim belgilagani (manba) va izoh (kasallik sababi va h.k.) — faqat mas'ullarga
-  return { ...day, rows: day.rows.map((r) => (isFull(full, r.id) ? r : { ...r, source: null, note: null, outsideIn: null, outsideOut: null })) };
+  return staffDay(date);
 }
 
 export async function mobileEmployeeMonth(user: MobileUser, id: string | null, month: string | null) {
-  if (!canViewAttendanceTable(user)) deny();
   if (!id) throw new ListError("BAD_REQUEST", "Xodim tanlanmagan", 400);
-  const [r, full] = await Promise.all([employeeMonth(id, month), fullFor(user)]);
+  let employeeId = id;
+  if (!canViewAttendanceTable(user)) {
+    // Oddiy xodim — faqat o'zining oylik varag'i (to'liq ustunlar bilan: o'z belgisi, o'z izohi)
+    const me = await myEmployeeId(user);
+    if (id !== "me" && id !== me) deny();
+    employeeId = me;
+  } else if (id === "me") {
+    employeeId = await myEmployeeId(user);
+  }
+  const r = await employeeMonth(employeeId, month);
   if (!r) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
-  if (isFull(full, id)) return r;
-  return { ...r, employee: { ...r.employee, phone: null }, days: r.days.map((d) => ({ ...d, source: null, note: null, outsideIn: null, outsideOut: null })) };
+  return r;
 }
 
 export async function mobileDriverTrips(user: MobileUser, id: string | null, month: string | null) {

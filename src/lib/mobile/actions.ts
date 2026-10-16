@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runHrAction } from "./hr";
 import { splitRef } from "./director";
 import { after } from "next/server";
 import { db } from "@/lib/db";
@@ -182,6 +183,9 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (action.startsWith("trip.")) await assertOwnTrip(user, id);
   if (action.startsWith("task.")) await assertOwnTask(user, id);
   if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
+
+  // ── Otdel kadr: ariza qarori / qaytarib olish, ish haqi vedomosti (`./hr.ts`) ──
+  if (action.startsWith("hrreq.") || action.startsWith("payroll.")) return { ok: true, message: await runHrAction(user, action, id, payload) };
 
   switch (action) {
     // ── Egasi qarori (direktor "Muammolar") — id: masala kaliti ──

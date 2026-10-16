@@ -6,6 +6,7 @@ import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { dayUtc, isAttendanceStatus, shiftProblem, toMinutes, validDay, workedMinutes } from "@/lib/davomat";
 import { lateToStore, shiftOf } from "@/lib/attendance-time";
+import { plansFor } from "@/lib/hr/shifts";
 import { notifyLateAfter, type LateEvent } from "@/lib/attendance-late";
 import type { ActionState } from "@/lib/action";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -80,6 +81,8 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
   if (fired.length) return { error: `Ishdan bo'shagan xodimga davomat qo'yilmaydi: ${fired.map((e) => e.fullName).join(", ")}` };
   const notYet = emps.filter((e) => e.hiredAt && day < e.hiredAt.toLocaleDateString("sv-SE") && r.rows.some((x) => x.employeeId === e.id && x.status));
   if (notYet.length) return { error: `Ishga kirgan sanasidan oldingi kunga davomat qo'yilmaydi: ${notYet.map((e) => e.fullName).join(", ")}` };
+  // Kechikish — shu kungi smena grafigi bo'yicha (katak bo'lmasa kartadagi ish grafigi)
+  const plans = await plansFor(r.rows.map((x) => x.employeeId), day);
   const res = await db.$transaction(async (tx) => {
     const cur = await tx.attendance.findMany({ where: { date, employeeId: { in: r.rows.map((x) => x.employeeId) } } });
     const byEmp = new Map(cur.map((a) => [a.employeeId, a]));
@@ -104,7 +107,7 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
         continue;
       }
       // Kechikish xodim smenasi bo'yicha saqlanadi (sex va o'zi belgilagandagi qoida)
-      const lateMinutes = x.status === "PRESENT" ? lateToStore(x.checkIn, shiftOf(schedOf.get(x.employeeId)).start) : null;
+      const lateMinutes = x.status === "PRESENT" ? lateToStore(x.checkIn, plans.get(x.employeeId)?.start ?? shiftOf(schedOf.get(x.employeeId)).start) : null;
       // Tasdiqlangan yozuvning holati yoki kelgan vaqti qo'lda o'zgartirilsa — u endi "qo'lda": manba va yuz tasdig'i
       // olinadi (kadrlar dalil sifatida qoladi), aks holda tabelda "O'zi · yuz" bo'lib turaverardi.
       // Faqat "Ketdi" qo'shilishi (xodim belgilashni unutgan) yuz bilan tasdiqlangan kelishni bekor qilmaydi

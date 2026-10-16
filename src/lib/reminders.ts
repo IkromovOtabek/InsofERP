@@ -85,6 +85,25 @@ const RULES: Rule[] = [
     })).map((l) => ({ id: l.id, link: { key: "leads", id: l.id }, roles: ["SALES"], title: "Javobsiz ariza", body: `${l.name} · ${hrs(l.createdAt, now)} soatdan beri bog'lanilmagan` })),
   },
   {
+    // Xodim arizasi (ta'til, kasallik, avans) — otdel kadr 24 soatda ko'rib chiqmagan bo'lsa
+    type: "REMIND_HR_REQUEST",
+    find: async (now) => (await db.hrRequest.findMany({
+      where: { status: "PENDING", createdAt: { lt: ago(now, 24) } }, take: 50,
+      select: { id: true, docNo: true, createdAt: true, employee: { select: { fullName: true } } },
+    })).map((r) => ({ id: r.id, link: { key: "arizalar", id: r.id }, roles: ["HR"] as Role[], title: `Ariza kutmoqda — ${r.docNo}`, body: `${r.employee.fullName} · ${hrs(r.createdAt, now)} soatdan beri ko'rib chiqilmagan` })),
+  },
+  {
+    // Ish haqi: direktor tasdig'i va kassa to'lovi kutilayotgan vedomostlar
+    type: "REMIND_PAYROLL",
+    find: async (now) => (await db.payrollRun.findMany({
+      where: { OR: [{ status: "SUBMITTED", submittedAt: { lt: ago(now, 12) } }, { status: "APPROVED", approvedAt: { lt: ago(now, 24) } }] }, take: 20,
+      select: { id: true, docNo: true, status: true, submittedAt: true, approvedAt: true },
+    })).map((r) => ({
+      id: r.id, link: { key: "ish-haqi", id: r.id }, roles: (r.status === "SUBMITTED" ? ["DIRECTOR"] : ["CASHIER"]) as Role[],
+      title: `Ish haqi kutmoqda — ${r.docNo}`, body: `${hrs((r.status === "SUBMITTED" ? r.submittedAt : r.approvedAt) ?? now, now)} soatdan beri ${r.status === "SUBMITTED" ? "tasdiqlanmagan" : "to'lanmagan"}`,
+    })),
+  },
+  {
     type: "REMIND_SMM",
     find: async (now) => [
       ...(await db.marketingContent.findMany({

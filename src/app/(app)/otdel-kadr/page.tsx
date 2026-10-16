@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, Inbox, Scale, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -20,6 +20,9 @@ import { DismissButton, RestoreButton } from "../employees/dismiss-form";
 import { distanceText } from "@/lib/attendance-zone";
 import { faceScope } from "@/lib/face-id";
 import { employeesInWindow } from "@/lib/attendance-report";
+import { plansFor } from "@/lib/hr/shifts";
+import { getLateFine } from "@/lib/hr/late-fine";
+import { ArizalarTab, GrafikTab, JarimaTab } from "./hr-tabs";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -28,6 +31,9 @@ const TABS = [
   ["davomat", "Davomat", CalendarCheck],
   ["ish-vaqti", "Ish vaqti", Clock],
   ["taqvim", "Kadr taqvimi", CakeSlice],
+  ["grafik", "Smena grafigi", CalendarRange],
+  ["arizalar", "Arizalar", Inbox],
+  ["jarima-bonus", "Jarima va bonuslar", Scale],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -40,12 +46,12 @@ function daysToAnniversary(d: Date) {
 const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} kundan keyin`);
 
 export default async function OtdelKadrPage({ searchParams }: {
-  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string }>;
+  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; hafta?: string; holat?: string }>;
 }) {
   // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
   await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees" });
-  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy } = await searchParams;
+  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy, hafta, holat } = await searchParams;
 
   // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi
   const oyParam = validMonth(oy);
@@ -105,7 +111,7 @@ export default async function OtdelKadrPage({ searchParams }: {
       // Hududdan tashqaridagi belgi — katakda nuqta, izohda masofa
       const km = (d: number | null) => (d == null ? "" : ` ${distanceText(d)}`);
       const outs = m.status === "PRESENT" ? [m.checkInOutside && `keldi${km(m.checkInDistance)}`, m.checkOutOutside && `ketdi${km(m.checkOutDistance)}`].filter(Boolean) : [];
-      cells[isoDay(m.date)] = { status: m.status, min: workedMinutes(m.checkIn, m.checkOut), note: m.note, out: outs.length ? `Hududdan tashqarida: ${outs.join(", ")}` : null };
+      cells[isoDay(m.date)] = { status: m.status, min: workedMinutes(m.checkIn, m.checkOut), note: m.note, out: outs.length ? `Hududdan tashqarida: ${outs.join(", ")}` : null, late: m.status === "PRESENT" ? m.lateMinutes : null };
       byEmp.set(m.employeeId, cells);
     }
     oyRows = list.map((e) => ({ ...e, cells: byEmp.get(e.id) ?? {} }));
@@ -127,11 +133,13 @@ export default async function OtdelKadrPage({ searchParams }: {
       if (!on || lat == null || lng == null) return null;
       return { lat, lng, distanceM: dist == null ? null : Math.round(dist), photo: photos && photo ? `/otdel-kadr/joy-rasmi?a=${m.id}&k=${k}` : null };
     };
+    const plans = await plansFor(list.map((e) => e.id), kunIso); // smena grafigi (katak bo'lmasa — kartadagi grafik)
     kunRows = list.map((e) => {
       const m = byEmp.get(e.id);
+      const plan = plans.get(e.id) ?? shiftOf(e.workSchedule);
       return {
         id: e.id, fullName: e.fullName, position: e.position, photo: !!e.photo,
-        shiftStart: shiftOf(e.workSchedule).start, shiftEnd: shiftOf(e.workSchedule).end,
+        shiftStart: plan.start, shiftEnd: plan.end,
         source: m ? sourceLabel(m.source, { face: !!m.facePhoto && !!m.faceVerifiedAt, markerRole: m.markedById ? markers.get(m.markedById) ?? null : null }) : null,
         status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
         ver: m?.updatedAt.toISOString() ?? "",
@@ -275,12 +283,15 @@ export default async function OtdelKadrPage({ searchParams }: {
       )}
 
       {davomat && (oyParam
-        ? <DavomatOy ym={oyIso} rows={oyRows} />
+        ? <DavomatOy ym={oyIso} rows={oyRows} fine={await getLateFine()} />
         : <DavomatKun key={kunIso} iso={kunIso} rows={kunRows} />)}
 
       {tab === "ish-vaqti" && <IshVaqti rows={ishVaqtiRows} std={{ start: DEFAULT_SHIFT.checkIn, end: DEFAULT_SHIFT.checkOut }} />}
 
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
+      {tab === "grafik" && <GrafikTab employees={active} hafta={hafta} />}
+      {tab === "arizalar" && <ArizalarTab s={s} employees={active} holat={holat} />}
+      {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
     </div>
   );
 }

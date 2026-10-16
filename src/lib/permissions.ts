@@ -138,6 +138,15 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "create", label: "Xodim qo'shish",                    roles: ["HR", "LOGISTICS"] },
     { key: "edit",   label: "Xodimni tahrirlash / bo'shatish",   roles: ["HR"] },
     { key: "login",  label: "Login berish, parol, rol",          roles: ["HR"], hint: "Rol berish — muhim huquq" },
+    { key: "requests", label: "Arizalarni tasdiqlash (ta'til, kasallik, avans)", roles: ["HR"], hint: "Tasdiqlangan ta'til/kasallik davomatga tushadi, avans — direktor tasdig'iga" },
+    { key: "schedule", label: "Smena grafigini tuzish",          roles: ["HR"] },
+    { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
+  ],
+  payroll: [
+    { key: "calc",     label: "Ish haqini hisoblash, vedomost",  roles: ["HR", "ACCOUNTING"] },
+    { key: "settings", label: "Ish haqi sozlamalari (soliq, avans)", roles: ["HR", "ACCOUNTING"] },
+    { key: "pay",      label: "Ish haqini kassadan to'lash",     roles: ["CASHIER"], explicit: true, hint: "Pul chiqimi — kassir" },
+    { key: "approve",  label: "Vedomostni tasdiqlash",           roles: [], delegable: false, hint: "Faqat direktor" },
   ],
   "bi-tahlil": [
     { key: "ai",        label: "Insof AI (savol, hisobot, Telegram)", roles: BI },

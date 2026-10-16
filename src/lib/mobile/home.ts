@@ -146,8 +146,8 @@ export type MobileHome = {
   /** «Davomat» tugmasi (Face ID skaneri, ERP Bosh sahifa → Davomat kabi) — skanerga ruxsati bor lavozimlarga. */
   faceAttendance?: { canEnroll: boolean } | null;
   /**
-   * «Davomat» tugmasi — HAMMA xodimga (yangi ilova shuni o'qiydi): o'z davomati ("Men"), umumiy jadval (faqat ko'rish),
-   * ruxsat bo'lsa Skaner / Yuzlar. `faceAttendance` eski ilova uchun o'zgarishsiz qoladi (u Davomat ekranida skanerni ochadi).
+   * «Davomat» tugmasi — HAMMA xodimga (yangi ilova shuni o'qiydi): o'z davomati ("Men"); umumiy jadval (`canViewTable`)
+   * faqat otdel kadr va direktorga; ruxsat bo'lsa Skaner / Yuzlar. `faceAttendance` eski ilova uchun o'zgarishsiz qoladi (u Davomat ekranida skanerni ochadi).
    */
   attendance?: AttendanceAccess;
 };

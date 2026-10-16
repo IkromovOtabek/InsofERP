@@ -5,6 +5,7 @@ import type { HomeRow, HomeSection, Tone } from "./home";
 import { ListError, type ListFilter, type MobileList } from "./list";
 import type { MobileDetail } from "./detail";
 import { mechSubject } from "@/lib/mechanic-requests";
+import { payrollApprovalRows } from "./hr";
 
 /**
  * Direktor ilovasi uchun maxsus ro'yxatlar:
@@ -93,11 +94,14 @@ export async function approvalsList(title: string, q?: string, filter?: string):
     })),
   ];
 
+  // Ish haqi vedomostlari — kassa direktor tasdig'idan keyin to'laydi (`./hr.ts`)
+  const payrollRows = await payrollApprovalRows(q);
   const tabs = [
-    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows, ...smmRows] },
+    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows, ...payrollRows, ...smmRows] },
     { key: "orders", label: "Bloklangan zayavka", rows: orderRows },
     { key: "supply", label: "Ta'minot", rows: supplyRows },
     { key: "kirim", label: "Mexanik so'rovlari", rows: kirimRows },
+    { key: "ish-haqi", label: "Ish haqi", rows: payrollRows },
     { key: "smm", label: "Marketing", rows: smmRows },
   ];
   const tab = tabs.find((t) => t.key === filter) ?? tabs[0];

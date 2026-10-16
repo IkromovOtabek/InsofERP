@@ -4,6 +4,7 @@ import {
   dayTitle, dayUtc, isoDay, markOf, monthDays, monthTitle, shiftDay, shiftMonth, today, validDay, validMonth,
 } from "@/lib/davomat";
 import { dayTimes, shiftOf, sourceLabel, type Shift } from "@/lib/attendance-time";
+import { plansFor } from "@/lib/hr/shifts";
 import { faceScope } from "@/lib/face-id";
 import { productionStaff } from "@/lib/production-staff";
 import type { Session } from "@/lib/auth";
@@ -122,9 +123,11 @@ export async function staffDay(rawDate?: string | null, opts: { employeeIds?: st
   ]);
   const roles = await markerRoles(marks.map((m) => m.markedById));
   const by = new Map(marks.map((m) => [m.employeeId, m]));
+  const plans = await plansFor(emps.map((e) => e.id), iso);
   const rows: StaffDayRow[] = emps.map((e) => {
     const a = by.get(e.id);
-    const shift = shiftOf(e.workSchedule);
+    const p = plans.get(e.id);
+    const shift = p ? { start: p.start, end: p.end } : shiftOf(e.workSchedule);
     const t = dayTimes(a, shift);
     return {
       id: e.id, fullName: e.fullName, position: e.position, dept: depts.get(e.position.trim().toLowerCase()) ?? null,
