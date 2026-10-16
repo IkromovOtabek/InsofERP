@@ -22,6 +22,7 @@ import type { HomeRow, Tone } from "./home";
 import type { LeadStatus, OrderStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
+import { arendaJurnalList, arendaShopsList } from "./arenda";
 import { OPEN_STATUSES, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, PAYREQ_TABS, listPaymentRequests, methodsFor, payReqCounts, payReqTab, type PayReqRow } from "@/lib/payment-requests";
 
 /**
@@ -89,6 +90,9 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   kirim: { title: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"] },
   // Zayavka bosh to'lovi (`lib/payment-requests.ts`): kassir — naqd, buxgalter — perechisleniye, moliya — ikkalasi faqat ko'rish
   payreq: { title: "Pul qabul qilish", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
+  // ── Arenda (do'konlar ijarasi, `./arenda.ts`) — sekretar; vebdagi `/arenda` sahifasi bilan bir xil ──
+  "arenda-jurnal": { title: "Kirim-chiqim jurnali", roles: ["SECRETARY"] },
+  "arenda-shops": { title: "Do'konlar", roles: ["SECRETARY"] },
   // ── Boshqaruv ──
   // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
   employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
@@ -105,7 +109,7 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
 // «Kirim» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
 // «Chiqim» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Chiqim» kartochkasi esa berish hujjati (`rasxod`, id = ref).
 // «Qoldiqlar» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
-export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts" };
+export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop" };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
@@ -133,6 +137,7 @@ const KEY_MODULE: Record<string, string> = {
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
   prixod: "stock", rasxod: "stock", ostatki: "stock",
   supply: "taminot", employees: "employees", kirim: "mexanik", payreq: "payments",
+  "arenda-jurnal": "arenda", "arenda-shops": "arenda", "arenda-tx": "arenda", "arenda-shop": "arenda",
 };
 
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
@@ -202,6 +207,8 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "kirim") return kirimList(user, s, filter);
+  if (key === "arenda-jurnal") return arendaJurnalList(s, filter);
+  if (key === "arenda-shops") return arendaShopsList(s, filter);
   if (key === "payreq") return payreqList(user, meta.title, s, filter);
   if (key === "snabjeniye") return snabjeniye(meta.title, s, filter);
   if (key === "leads") return leads(meta.title, s, filter);

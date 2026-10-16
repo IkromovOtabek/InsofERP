@@ -36,6 +36,7 @@ import { createMechanicRequest, FACTORY_OBJECTS, FACTORY_PROBLEMS, PROBLEMS } fr
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { dataUrlFile } from "@/lib/procurement";
 import type { Role } from "@/generated/prisma";
+import { arendaChiqimForm, arendaCreate, arendaKirimForm, arendaShopForm } from "./arenda";
 
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -116,6 +117,10 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   "kirim-transport": { roles: ["MECHANIC"], title: "Transport uchun so'rov", label: "Transport uchun so'rov" },
   "kirim-zavod": { roles: ["MECHANIC"], title: "Zavod uchun so'rov", label: "Zavod uchun so'rov" },
   "kirim-boshqa": { roles: ["MECHANIC"], title: "Boshqa xarajat so'rovi", label: "Boshqa xarajat so'rovi" },
+  // Arenda (do'konlar ijarasi, `./arenda.ts`) — sekretar; veb `/arenda` formalari bilan bir xil qoida (`lib/rent.ts`)
+  "arenda-kirim": { roles: ["SECRETARY"], title: "Arenda kirimi", label: "Arenda kirimi" },
+  "arenda-chiqim": { roles: ["SECRETARY"], title: "Arenda chiqimi", label: "Arenda chiqimi" },
+  "arenda-shop": { roles: ["SECRETARY"], title: "Yangi do'kon", label: "Do'kon qo'shish" },
 };
 
 /** Mexanik so'rovi formalari — bosh sahifadagi "+" va tezkor amallar to'rida ko'rsatilmaydi (ilova o'z ekranidan ochadi). */
@@ -142,6 +147,9 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
   "kirim-transport": { module: "mexanik" },
   "kirim-zavod": { module: "mexanik" },
   "kirim-boshqa": { module: "mexanik" },
+  "arenda-kirim": { module: "arenda", action: "create", strict: true },
+  "arenda-chiqim": { module: "arenda", action: "create", strict: true },
+  "arenda-shop": { module: "arenda", action: "shops", strict: true },
 };
 
 export const canCreate = (user: MobileUser, key: string) => {
@@ -189,6 +197,9 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
     case "kirim-transport": return kirimTransportForm();
     case "kirim-zavod": return kirimZavodForm();
     case "kirim-boshqa": return kirimBoshqaForm();
+    case "arenda-kirim": return arendaKirimForm();
+    case "arenda-chiqim": return arendaChiqimForm();
+    case "arenda-shop": return arendaShopForm();
     default: return brigadeForm();
   }
 }
@@ -930,6 +941,8 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
 
   try {
+    // ── Arenda (sekretar): kirim / chiqim / do'kon — `./arenda.ts` (qoida `lib/rent.ts`) ──
+    if (key.startsWith("arenda-")) return await arendaCreate(user, key, payload);
     // ── Sklad → «Kirim»: kirim — `createGoodsReceipt` (veb Kirim formasi bilan bitta qoida) ──
     if (key === "prixod") {
       const p = PrixodBody.safeParse(payload);

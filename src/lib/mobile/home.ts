@@ -32,6 +32,7 @@ import { brigadierHome } from "./brigadier";
 import { gpsStale, toFleet } from "./fleet";
 import { logisticsSettings } from "@/lib/logistics";
 import { webList } from "./problems";
+import { arendaHome } from "./arenda";
 import { lineTotal } from "@/lib/receipt-vat";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
@@ -232,7 +233,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   MECHANIC: { key: "trips", title: "Reyslar" },
   DRIVER: { key: "trips", title: "Mening reyslarim" },
   BRIGADIER: { key: "tasks", title: "Topshiriqlarim" },
-  SECRETARY: { key: "approvals", title: "Tasdiqlar" }, // mobilga kirmaydi (vebda faqat Arenda) — jadval to'liq bo'lishi uchun
+  SECRETARY: { key: "arenda-jurnal", title: "Kirim-chiqim" }, // Arenda: ilovada «Arenda» tabi (`./arenda.ts`) + jurnal
   SUPERADMIN: { key: "approvals", title: "Tasdiqlar" }, // mobilga kirmaydi (faqat veb SSO) — jadval to'liq bo'lishi uchun
 };
 
@@ -245,6 +246,7 @@ const LIST_ICON: Record<string, string> = {
   prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
   approvals: "circle-check", activity: "activity", kirim: "wrench", payreq: "hand-coins",
+  "arenda-jurnal": "swap-vertical", "arenda-shops": "store",
 };
 const SUPPLY_TONE: Record<string, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
 
@@ -732,6 +734,14 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: fundWait ? "tasdiq kutmoqda" : "navbat bo'sh", tone: fundWait ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
       if (fundWait) sections.push(await supplySection("Ta'minot to'lovlari — tasdiq kutilmoqda", "", ["APPROVED"]));
       sections.push({ title: "So'nggi harakatlar", empty: "Harakat yo'q", target: "cashflow", rows: recent.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.type === "TRANSFER_IN" || t.type === "TRANSFER_OUT" ? "info" : txSign(t.type) < 0 ? "danger" : "success" })) });
+      break;
+    }
+
+    case "SECRETARY": {
+      // Arenda (do'konlar ijarasi) — vebdagi `/arenda` bilan bitta hisob (`lib/rent.ts`)
+      const a = await arendaHome();
+      cards.push(...a.cards);
+      sections.push(...a.sections);
       break;
     }
 

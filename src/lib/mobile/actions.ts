@@ -46,6 +46,7 @@ import { approveMechanicRequest, cancelMechanicRequest, payMechanicRequest, reje
 import { setAttendanceAnywhere } from "@/lib/self-attendance";
 import { receivePaymentRequest } from "@/lib/payment-requests";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
+import { arendaAction } from "./arenda";
 
 /**
  * Mobil ilovadagi tugmalarning ijrosi.
@@ -624,6 +625,13 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       if (r.error) fail(r.error);
       return { ok: true, message: r.note ?? "So'rov bekor qilindi" };
     }
+
+    // ── Arenda (sekretar) — qoida `lib/rent.ts` da, veb `/arenda` tugmalari bilan bir xil ──
+    case "arenda.storno":
+    case "arenda.open-month":
+    case "arenda.shop.toggle":
+    case "arenda.charge":
+      return arendaAction(user, action, id, payload);
 
     // ── Pul qabul qilish (zayavka bosh to'lovi) — qoida `lib/payment-requests.ts` → `addPayment` da:
     //    usul ↔ hisob turi, qolgan summadan oshmaslik, so'rov ochiqligi (mijoz qulfi ostida) ──

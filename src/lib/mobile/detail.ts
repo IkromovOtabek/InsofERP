@@ -44,6 +44,7 @@ import { MECH_REF, MECH_STATUS_LABEL, MECH_STATUS_TONE, TARGET_LABEL, mechSubjec
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { OPEN_STATUSES, PAY_METHOD_LABEL, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, getPaymentRequest, methodsFor, receiveAccounts } from "@/lib/payment-requests";
 import { accountBalances } from "@/lib/payments";
+import { arendaShopDetail, arendaTxDetail } from "./arenda";
 
 /**
  * Bitta hujjat kartochkasi — ro'yxatdagi qator bosilganda ochiladi.
@@ -326,6 +327,11 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "kirim.reject": ["SUPERVISOR", "DIRECTOR"],
   "kirim.pay": ["CASHIER", "DIRECTOR"],
   "kirim.cancel": ["MECHANIC"],
+  // Arenda (`lib/permissions.ts` → arenda: storno / shops): storno — yozuv chizilgan holda qoladi; oy hisobi va do'kon holati
+  "arenda.storno": ["SECRETARY"],
+  "arenda.open-month": ["SECRETARY"],
+  "arenda.shop.toggle": ["SECRETARY"],
+  "arenda.charge": ["SECRETARY"],
   // Pul qabul qilish (zayavka bosh to'lovi, `lib/payment-requests.ts`): naqd — kassa, perechisleniye — buxgalter, direktor ikkalasi.
   // Aniq qoida usulga bog'liq — `can` da `methodsFor` (payments → receive_cash / receive_bank): direktor amalni boshqa
   // xodimga (masalan moliyaga) bersa, u ham qabul qiladi; bermasa moliya faqat ko'radi
@@ -412,6 +418,7 @@ const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["lead.", { module: "sales", action: "leads" }],
   ["supply.", { module: "taminot" }],
   ["kirim.", { module: "mexanik" }],
+  ["arenda.", { module: "arenda" }],
   ["smm.", { module: "marketing", action: "publish" }],
   ["boost.", { module: "marketing", action: "boost_approve" }],
   ["trip.", { module: "trips" }],
@@ -465,6 +472,9 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   kirim: ["MECHANIC", "SUPERVISOR", "CASHIER"],
   // Pul qabul qilish so'rovi — ro'yxati bilan bir xil (`list.ts` ACCESS); usul bo'yicha cheklov `payreqDetail` da
   payreq: ["CASHIER", "ACCOUNTING", "FINANCE"],
+  // Arenda (do'konlar ijarasi) — sekretar (`./arenda.ts`)
+  "arenda-tx": ["SECRETARY"],
+  "arenda-shop": ["SECRETARY"],
 };
 
 const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash"];
@@ -509,6 +519,8 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "cashflow": return cashflowDetail(id);
     case "supply": return supplyDetail(user, id);
     case "kirim": return kirimDetail(user, id);
+    case "arenda-tx": return arendaTxDetail(user, id);
+    case "arenda-shop": return arendaShopDetail(user, id);
     case "smm": return smmDetail(user, id);
     case "boost": return boostDetail(user, id);
     case "payreq": return payreqDetail(user, id);
