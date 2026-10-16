@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, Clock, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
 import { parsePerms } from "@/lib/auth";
 import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
@@ -19,6 +19,7 @@ import { DavomatOy, type OyRow } from "./davomat-oy";
 import { DismissButton, RestoreButton } from "../employees/dismiss-form";
 import { distanceText } from "@/lib/attendance-zone";
 import { faceScope } from "@/lib/face-id";
+import { employeesInWindow } from "@/lib/attendance-report";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -41,6 +42,8 @@ const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} ku
 export default async function OtdelKadrPage({ searchParams }: {
   searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string }>;
 }) {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees" });
   const { tab = "xodimlar", qoshildi, yangilandi, kun, oy } = await searchParams;
 
@@ -83,13 +86,7 @@ export default async function OtdelKadrPage({ searchParams }: {
   // ── Davomat: kunlik ro'yxat yoki oylik tabel ──
   // Tabelda xodim ishga kirgan kundan bo'shagan kunigacha turadi; shu oyning eski
   // kunlarini to'g'rilash uchun bo'shatilganlar ham oynadan tushib qolmaydi.
-  const inWindow = (from: Date, to: Date) => ({
-    AND: [
-      { OR: [{ hiredAt: null }, { hiredAt: { lte: to } }] },
-      { OR: [{ firedAt: null }, { firedAt: { gte: from } }] },
-      { OR: [{ isActive: true }, { firedAt: { not: null } }] },
-    ],
-  });
+  const inWindow = employeesInWindow;
   const tabelOrder = [{ position: "asc" as const }, { fullName: "asc" as const }];
 
   let kunRows: KunRow[] = [];
@@ -135,7 +132,7 @@ export default async function OtdelKadrPage({ searchParams }: {
       return {
         id: e.id, fullName: e.fullName, position: e.position, photo: !!e.photo,
         shiftStart: shiftOf(e.workSchedule).start, shiftEnd: shiftOf(e.workSchedule).end,
-        source: m ? sourceLabel(m.source, { face: !!m.facePhoto, markerRole: m.markedById ? markers.get(m.markedById) ?? null : null }) : null,
+        source: m ? sourceLabel(m.source, { face: !!m.facePhoto && !!m.faceVerifiedAt, markerRole: m.markedById ? markers.get(m.markedById) ?? null : null }) : null,
         status: m?.status ?? null, checkIn: m?.checkIn ?? null, checkOut: m?.checkOut ?? null, note: m?.note ?? null,
         ver: m?.updatedAt.toISOString() ?? "",
         anywhere: e.attendanceAnywhere, outsideIn: outside(m, "in"), outsideOut: outside(m, "out"),
@@ -300,7 +297,8 @@ function KadrTaqvim({ employees }: { employees: Emp[] }) {
 
   const anniversaries = employees
     .filter((e) => e.hiredAt)
-    .map((e) => ({ e, days: daysToAnniversary(e.hiredAt!), years: new Date().getFullYear() - e.hiredAt!.getFullYear() }))
+    // Yil yubiley kunining o'zidan olinadi: dekabrda keyingi yanvardagi yubiley bir yil ko'p to'ladi
+    .map((e) => { const days = daysToAnniversary(e.hiredAt!); return { e, days, years: new Date(Date.now() + days * 86_400_000).getFullYear() - e.hiredAt!.getFullYear() }; })
     .filter((x) => x.days <= 45 && x.years >= 1)
     .sort((a, b) => a.days - b.days);
 

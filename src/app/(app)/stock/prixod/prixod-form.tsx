@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
-import { Plus, X } from "lucide-react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { List, Pencil, Plus, X } from "lucide-react";
 import { fmtNum } from "@/lib/format";
-import { unitShort } from "@/lib/unit";
+import { MATERIAL_UNITS, unitShort } from "@/lib/unit";
+import { scanToPrixod, type ScanMatch } from "@/lib/scan-receipt";
 import { cn } from "@/lib/utils";
-import { Button, Card, Field, FormActions, FormError, Input, LinkButton, Select } from "@/components/ui";
+import { Badge, Button, Callout, Card, Field, FormActions, FormError, Input, LinkButton, Select } from "@/components/ui";
 import { MaterialField, type MaterialGroup, type MaterialRow } from "@/components/material-picker";
+import { DocScan, type ScanResult } from "@/components/doc-scan";
 import { MoneyInput } from "@/components/money-input";
 import { RecipientAdd, SupplierAdd, WithAdd } from "@/components/quick-add";
 import { createPrixod } from "./actions";
@@ -17,13 +19,19 @@ type Account = Opt & { type: "CASH" | "BANK" };
 type Payment = "BANK" | "CASH";
 /** `vat` — qator QQS stavkasi; naqd pul yoki QQS to'lovchisi bo'lmagan yetkazuvchida doim 0. */
 type Vat = "12" | "6" | "0";
-type Row = { key: number; materialId: string; qty: string; price: string; delivery: string; vat: Vat };
+/**
+ * `newName` — spravochnikda yo'q xomashyo (nakladnoydan): saqlashda shu nom va `newUnit` bilan yaratiladi.
+ * `scan` — qator nakladnoydan o'qilgan: undagi yozuv, spravochnik bilan mosligi va ogohlantirish.
+ */
+type Row = { key: number; materialId: string; qty: string; price: string; delivery: string; vat: Vat; newName?: string; newUnit?: string; scan?: { name: string; match: ScanMatch; warn: string } };
 const VATS: Vat[] = ["12", "6", "0"];
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: string) => { const n = Number(v.replace(/\s+/g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 const money = (v: number) => fmtNum(v, 2);
 const newRow = (key: number): Row => ({ key, materialId: "", qty: "", price: "", delivery: "", vat: "12" });
+/** Qator yuboriladi: xomashyo tanlangan yoki yangi xomashyo nomi bor. */
+const filled = (r: Row) => !!r.materialId || !!r.newName?.trim();
 
 /**
  * Jadval-forma ustunlari (keng ekranda): № | Nomi | Birlik | Miqdor | Narx | Yetkazib berish | QQS | Jami summa | ×.
@@ -41,8 +49,12 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * `clientToken` — ikki marta bosilgan «Kirimni saqlash» ikkinchi kirim ochmaydi.
  * «Ta'minotchi» (xaridni qilgan snabjenets) alohida maydon emas — «Kimdan» bilan adashtirilardi; Snabjeniye o'zi
  * kiritganda u avtomatik yoziladi (`defaultBuyerId`). «Kimdan» va «Kimga» ichidagi «+» — ro'yxatda yo'qini shu yerda qo'shish.
+ *
+ * Nakladnoy skaneri (`scan`): rasmdan o'qilgan ma'lumot maydonlarga tushadi (`lib/scan-receipt.ts`) va forma ko'rish
+ * rejimida qulflanadi — «Tahrirlash» ochadi, «Kirimni saqlash» shu holicha saqlaydi. Spravochnikda yo'q xomashyo
+ * saqlashda yaratiladi; yetkazuvchi topilmasa — qo'lda tanlanadi (nakladnoydagi nomi ko'rsatiladi).
  */
-export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, recipients: initRecipients, defaultBuyerId, accounts, clientToken, companyVatPayer = true }: {
+export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, recipients: initRecipients, defaultBuyerId, accounts, clientToken, companyVatPayer = true, scan }: {
   today: string;
   suppliers: SupplierOpt[];
   warehouses: Opt[];
@@ -55,6 +67,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   accounts: Account[];
   clientToken: string;
   companyVatPayer?: boolean;
+  scan?: { enabled: boolean; autoOpen?: boolean };
 }) {
   const [state, action, pending] = useActionState(createPrixod, undefined);
   // <form action> o'rniga qo'lda yuboriladi: React 19 action tugagach formani reset qiladi — server xato qaytarganda
@@ -67,6 +80,15 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   const [payment, setPayment] = useState<Payment>("BANK");
   const [accountId, setAccountId] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow(1)]);
+  const [date, setDate] = useState(today);
+  const [waybillNo, setWaybillNo] = useState("");
+  const [note, setNote] = useState("");
+  // Nakladnoydan to'ldirilgan: `locked` — ko'rish rejimi, `scanned` — nakladnoydagi yetkazuvchi yozuvi va sana o'qildimi
+  const [scanned, setScanned] = useState<{ supplier: string; dateFromDoc: boolean } | null>(null);
+  const [locked, setLocked] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  // Server xato qaytarsa — tuzatish uchun forma ochiladi
+  useEffect(() => { if (state?.error) setLocked(false); }, [state]);
 
   const supVat = suppliers.find((x) => x.id === supplierId)?.vatPayer ?? true;
   const noVat = !supVat || payment === "CASH";
@@ -75,6 +97,28 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   const choosePayment = (p: Payment) => {
     setPayment(p);
     if (accountId && accounts.find((a) => a.id === accountId)?.type !== p) setAccountId("");
+  };
+
+  const applyScan = (res: ScanResult) => {
+    const d = scanToPrixod(res, { materials, suppliers, recipients, today });
+    setDate(d.date); setWaybillNo(d.waybillNo); setNote(d.note);
+    setSupplierId(d.supplierId); setRecipientId(d.recipientId); choosePayment(d.payment);
+    const k = Date.now();
+    setRows(d.rows.map((r, i) => ({
+      key: k + i, materialId: r.materialId, qty: r.qty, price: r.price, delivery: "", vat: r.vat,
+      ...(r.materialId ? {} : { newName: r.newName, newUnit: r.newUnit }),
+      scan: { name: r.scanName, match: r.match, warn: r.warn },
+    })));
+    setScanned({ supplier: d.supplierName, dateFromDoc: d.dateFromDoc });
+    setLocked(true);
+  };
+  // Ko'rish rejimida maydonlar `inert` — brauzer bo'sh majburiy maydonni ko'rsata olmaydi. Shuning uchun avval tekshiriladi:
+  // biror maydon to'lmagan bo'lsa (masalan yetkazuvchi topilmagan) forma tahrirlashga ochiladi va o'sha maydon ko'rsatiladi.
+  const save = () => {
+    const f = formRef.current;
+    if (!f) return;
+    if (!f.checkValidity()) { setLocked(false); setTimeout(() => f.reportValidity(), 0); return; }
+    f.requestSubmit();
   };
 
   const calc = (r: Row) => {
@@ -86,16 +130,19 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
     return { rate, delivery, vat, sum, total: sum + vat };
   };
   // Jami — faqat Nomi (xomashyo) tanlangan qatorlardan (yuboriladiganlari ham shular)
-  const totals = rows.filter((r) => r.materialId).reduce((t, r) => { const c = calc(r); return { sum: t.sum + c.sum, delivery: t.delivery + c.delivery, vat: t.vat + c.vat, total: t.total + c.total }; }, { sum: 0, delivery: 0, vat: 0, total: 0 });
+  const totals = rows.filter(filled).reduce((t, r) => { const c = calc(r); return { sum: t.sum + c.sum, delivery: t.delivery + c.delivery, vat: t.vat + c.vat, total: t.total + c.total }; }, { sum: 0, delivery: 0, vat: 0, total: 0 });
   // Jamidagi QQS yorlig'i: qatorlarda ishlatilgan stavkalar ("12%", "6%" yoki "12% / 6%")
-  const usedRates = [...new Set(rows.filter((r) => r.materialId).map((r) => calc(r).rate).filter((x) => x > 0))].sort((a, b) => b - a);
+  const usedRates = [...new Set(rows.filter(filled).map((r) => calc(r).rate).filter((x) => x > 0))].sort((a, b) => b - a);
   const totalsRates = usedRates.map((x) => `${x}%`).join(" / ");
   // Raqam kiritilgan-u, xomashyo tanlanmagan qator yuborilmaydi — jimgina tushib qolmasin: saqlash yopiladi
-  const orphans = rows.flatMap((r, idx) => (!r.materialId && (r.qty.trim() || r.price.trim() || r.delivery.trim()) ? [idx + 1] : []));
+  const orphans = rows.flatMap((r, idx) => (!filled(r) && (r.qty.trim() || r.price.trim() || r.delivery.trim()) ? [idx + 1] : []));
   const payAccounts = accounts.filter((a) => a.type === payment);
+  const scanRows = rows.filter((r) => r.scan);
+  const newCount = scanRows.filter((r) => !r.materialId && r.newName).length;
+  const checkCount = scanRows.filter((r) => (r.materialId && r.scan?.match === "similar") || r.scan?.warn).length;
 
   return (
-    <form onSubmit={(e) => {
+    <form ref={formRef} onSubmit={(e) => {
       e.preventDefault();
       if (pending || orphans.length) return;
       const fd = new FormData(e.currentTarget);
@@ -104,13 +151,40 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
       <Card className="space-y-5">
         <FormError error={state?.error} />
         <input type="hidden" name="clientToken" value={clientToken} />
-        {warehouses.length === 1 && <input type="hidden" name="warehouseId" value={warehouses[0].id} />}
         {defaultBuyerId && <input type="hidden" name="buyerId" value={defaultBuyerId} />}
 
+        {scan?.enabled && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <DocScan endpoint="/api/scan/receipt" onResult={applyScan} autoOpen={scan.autoOpen} label={scanned ? "Qayta skanerlash" : "Nakladnoyni skanerlash"} />
+            {!scanned && <span className="text-xs text-slate-500">Nakladnoyni suratga oling — sana, yetkazuvchi va qatorlar o&apos;zi to&apos;ldiriladi</span>}
+          </div>
+        )}
+
+        {scanned && (
+          <Callout tone={locked ? "info" : "warning"} title={locked ? "Nakladnoydan to'ldirildi" : "Tahrirlash rejimi"}>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div>{locked ? "Maydonlarni nakladnoy bilan solishtiring. O'zgartirish kerak bo'lsa — «Tahrirlash», hammasi to'g'ri bo'lsa — «Kirimni saqlash»." : "Maydonlarni tuzatib, «Kirimni saqlash» ni bosing."}</div>
+                <div className="text-xs opacity-80">
+                  {`${scanRows.length} ta qator`}
+                  {newCount > 0 && ` · ${newCount} ta yangi xomashyo (saqlashda qo'shiladi)`}
+                  {checkCount > 0 && ` · ${checkCount} ta qatorni tekshiring`}
+                  {!supplierId && " · yetkazuvchini tanlang"}
+                  {!scanned.dateFromDoc && " · sana o'qilmadi — bugungi sana qo'yildi"}
+                </div>
+              </div>
+              {locked && <Button type="button" variant="secondary" size="sm" onClick={() => setLocked(false)}><Pencil size={15} /> Tahrirlash</Button>}
+              <Button type="button" size="sm" disabled={pending || orphans.length > 0} onClick={save}>{pending ? "Saqlanmoqda…" : "Kirimni saqlash"}</Button>
+            </div>
+          </Callout>
+        )}
+
+        {/* Ko'rish rejimida maydonlar qulflanadi (inert), lekin forma bilan birga yuboriladi */}
+        <div inert={locked} className={cn("space-y-5", locked && "[&_input]:bg-slate-50 [&_select]:bg-slate-50")}>
         {/* Hujjat rekvizitlari — Excel jurnali ustunlari */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Sana *"><Input name="date" type="date" defaultValue={today} max={today} required /></Field>
-          <Field label="Kimdan (yetkazuvchi) *" hint={supplierId && !supVat ? "Yetkazuvchi QQS to'lovchisi emas — QQS 0" : undefined}>
+          <Field label="Sana *"><Input name="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} max={today} required /></Field>
+          <Field label="Kimdan (yetkazuvchi) *" hint={supplierId && !supVat ? "Yetkazuvchi QQS to'lovchisi emas — QQS 0" : !supplierId && scanned?.supplier ? `Nakladnoyda: «${scanned.supplier}» — ro'yxatdan tanlang yoki «+» bilan qo'shing` : undefined}>
             <WithAdd add={canAddSupplier && <SupplierAdd onCreated={(x) => {
               setSuppliers((l) => [...l, { id: x.id, name: x.name, vatPayer: x.vatPayer ?? true }].sort((a, b) => a.name.localeCompare(b.name)));
               setSupplierId(x.id);
@@ -121,11 +195,9 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
               </Select>
             </WithAdd>
           </Field>
-          {warehouses.length > 1 && (
-            <Field label="Sklad *">
-              <Select name="warehouseId" defaultValue={warehouses[0]?.id} required>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
-            </Field>
-          )}
+          <Field label="Sklad *">
+            <Select name="warehouseId" defaultValue={warehouses[0]?.id} required>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select>
+          </Field>
           <Field label="To'lov turi *" hint={payment === "CASH" ? "Naqd pul — barcha qatorlarda QQS 0" : "Bank o'tkazma — QQS 12% yoki 6% (qatorlar bo'yicha)"}>
             <div role="radiogroup" aria-label="To'lov turi" className="grid h-10 grid-cols-2 gap-0.5 rounded-lg border border-slate-300 bg-slate-50 p-0.5 pointer-coarse:h-11">
               {(["BANK", "CASH"] as const).map((p) => (
@@ -137,7 +209,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
               ))}
             </div>
           </Field>
-          <Field label="TTN"><Input name="waybillNo" placeholder="Nakladnoy №" autoComplete="off" maxLength={60} /></Field>
+          <Field label="TTN"><Input name="waybillNo" value={waybillNo} onChange={(e) => setWaybillNo(e.target.value)} placeholder="Nakladnoy №" autoComplete="off" maxLength={60} /></Field>
           <Field label="Kimga">
             <WithAdd add={<RecipientAdd onCreated={(x) => { setRecipients((l) => [...l, { id: x.id, name: x.name }]); setRecipientId(x.id); }} />}>
               <Select name="recipientId" value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
@@ -148,7 +220,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
           </Field>
           <Field label="Manzil"><Input name="address" placeholder="Qayerdan / qayerga yetkazildi" autoComplete="off" maxLength={300} /></Field>
           <Field label="Maqsad" className="sm:col-span-2"><Input name="purpose" placeholder="Nima uchun sotib olindi" autoComplete="off" maxLength={300} /></Field>
-          <Field label="Izoh" className="sm:col-span-2"><Input name="note" placeholder="Holati, qo'shimcha ma'lumot…" autoComplete="off" maxLength={1000} /></Field>
+          <Field label="Izoh" className="sm:col-span-2"><Input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Holati, qo'shimcha ma'lumot…" autoComplete="off" maxLength={1000} /></Field>
         </div>
 
         {/* Hisob faqat direktorga beriladi. Boshqalarda to'lovni moliya Kirim-Chiqimdan qiladi */}
@@ -182,15 +254,18 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
           </div>
           <div className="space-y-2 xl:space-y-0 xl:rounded-b-lg xl:border xl:border-slate-300/80">
             {rows.map((r, idx) => {
-              const unit = materials.find((m) => m.id === r.materialId)?.unit;
+              const isNew = !r.materialId && r.newName != null;
+              const unit = materials.find((m) => m.id === r.materialId)?.unit ?? (isNew ? r.newUnit : undefined);
               const u = unit ? unitShort(unit) : "";
               const c = calc(r);
-              const on = !!r.materialId;
+              const on = filled(r);
               const orphan = orphans.includes(idx + 1);
               return (
                 <div key={r.key} className={cn("grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-4", "xl:items-center xl:rounded-none xl:border-0 xl:border-b xl:border-slate-200 xl:px-0 xl:py-1.5 xl:last:border-b-0", GRID)}>
                   {on && <>
                     <input type="hidden" name="materialId[]" value={r.materialId} />
+                    <input type="hidden" name="newMaterial[]" value={r.materialId ? "" : (r.newName ?? "").trim()} />
+                    <input type="hidden" name="newUnit[]" value={r.materialId ? "" : (r.newUnit ?? "")} />
                     <input type="hidden" name="qty[]" value={r.qty} />
                     <input type="hidden" name="price[]" value={r.price} />
                     <input type="hidden" name="deliveryCost[]" value={r.delivery} />
@@ -199,13 +274,35 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
                   {/* Telefonda: qator raqami va o'chirish */}
                   <div className="col-span-2 flex items-center justify-between sm:col-span-4 xl:hidden">
                     <span className="text-xs font-semibold text-slate-500">{`Qator ${idx + 1}`}</span>
-                    <button type="button" aria-label="Qatorni o'chirish" onClick={() => remove(r.key)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
+                    {!locked && <button type="button" aria-label="Qatorni o'chirish" onClick={() => remove(r.key)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>}
                   </div>
                   <div className="hidden text-center text-xs text-slate-400 tabular xl:block">{idx + 1}</div>
-                  <div className="col-span-2 sm:col-span-4 xl:col-span-1">
+                  <div className="col-span-2 min-w-0 sm:col-span-4 xl:col-span-1">
                     <Lbl>Nomi</Lbl>
-                    <MaterialField materials={materials} groups={groups} canCreate={canCreate} value={r.materialId} placeholder="Nomi yoki kodi"
-                      onPick={(m) => update(r.key, { materialId: m.id, price: r.price || (m.price ? String(r2(m.price)) : "") })} />
+                    {isNew ? (
+                      // Spravochnikda yo'q (nakladnoydan): nomi va birligi shu yerda tuzatiladi, saqlashda yaratiladi
+                      <div className="flex items-center gap-1">
+                        <Input aria-label="Yangi xomashyo nomi" value={r.newName} onChange={(e) => update(r.key, { newName: e.target.value })} maxLength={200} required className="min-w-0 flex-1" />
+                        <Select aria-label="Birlik" value={r.newUnit} onChange={(e) => update(r.key, { newUnit: e.target.value })} className="w-20 shrink-0 px-2">
+                          {MATERIAL_UNITS.map((x) => <option key={x} value={x}>{unitShort(x)}</option>)}
+                        </Select>
+                        {!locked && <button type="button" title="Ro'yxatdan tanlash" aria-label="Ro'yxatdan tanlash" onClick={() => update(r.key, { newName: undefined })}
+                          className="flex h-10 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"><List size={16} /></button>}
+                      </div>
+                    ) : (
+                      <MaterialField materials={materials} groups={groups} canCreate={canCreate} value={r.materialId} placeholder="Nomi yoki kodi"
+                        onPick={(m) => update(r.key, { materialId: m.id, newName: undefined, price: r.price || (m.price ? String(r2(m.price)) : "") })} />
+                    )}
+                    {r.scan && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                        {isNew ? <Badge color="blue" dot={false}>Yangi xomashyo</Badge> : r.materialId && r.scan.match === "similar" ? <Badge color="amber" dot={false}>O&apos;xshash — tekshiring</Badge> : null}
+                        {!isNew && <span className="min-w-0 truncate" title={r.scan.name}>{`Nakladnoyda: «${r.scan.name}»`}</span>}
+                        {!locked && !isNew && !r.materialId && (
+                          <button type="button" onClick={() => update(r.key, { newName: r.scan!.name.slice(0, 200), newUnit: r.newUnit ?? "dona" })} className="font-medium text-sky-700 hover:underline">Yangi xomashyo sifatida qo&apos;shish</button>
+                        )}
+                      </div>
+                    )}
+                    {r.scan?.warn && <p className="mt-0.5 text-xs font-medium text-amber-700">{r.scan.warn}</p>}
                     {orphan && <p className="mt-1 text-xs font-medium text-red-600">Xomashyoni tanlang</p>}
                   </div>
                   <div className="hidden text-center text-sm text-slate-600 xl:block">{u || "—"}</div>
@@ -235,15 +332,17 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
                     {on && <div><span className="xl:block">{`Umumiy ${money(c.sum)}`}</span><span className="xl:hidden"> · </span><span className="xl:block">{`QQS ${money(c.vat)}`}</span></div>}
                   </div>
                   <div className="hidden justify-center xl:flex">
-                    <button type="button" aria-label="Qatorni o'chirish" onClick={() => remove(r.key)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>
+                    {!locked && <button type="button" aria-label="Qatorni o'chirish" onClick={() => remove(r.key)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><X size={16} /></button>}
                   </div>
                 </div>
               );
             })}
           </div>
-          <button type="button" onClick={() => setRows((rs) => [...rs, newRow(Date.now())])} className="mt-2 inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900">
-            <Plus size={15} /> Qator
-          </button>
+          {!locked && (
+            <button type="button" onClick={() => setRows((rs) => [...rs, newRow(Date.now())])} className="mt-2 inline-flex h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900">
+              <Plus size={15} /> Qator
+            </button>
+          )}
 
           <div className="mt-3 ml-auto max-w-sm space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm tabular">
             <div className="flex justify-between gap-4 text-slate-600"><span>Umumiy summa</span><span>{money(totals.sum)}</span></div>
@@ -253,6 +352,7 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
             <div className="pt-1 text-xs text-slate-500">{companyVatPayer ? "Skladdagi tannarx: QQS'siz + yetkazib berish" : "Skladdagi tannarx: QQS bilan + yetkazib berish"}</div>
           </div>
         </div>
+        </div>
 
         {orphans.length > 0 && (
           <div className="space-y-0.5 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -261,7 +361,8 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
         )}
 
         <FormActions>
-          <Button disabled={pending || orphans.length > 0}>{pending ? "Saqlanmoqda…" : "Kirimni saqlash"}</Button>
+          <Button type="button" disabled={pending || orphans.length > 0} onClick={save}>{pending ? "Saqlanmoqda…" : "Kirimni saqlash"}</Button>
+          {locked && <Button type="button" variant="secondary" onClick={() => setLocked(false)}><Pencil size={15} /> Tahrirlash</Button>}
           <LinkButton href="/stock/prixod" variant="secondary">Bekor qilish</LinkButton>
         </FormActions>
       </Card>

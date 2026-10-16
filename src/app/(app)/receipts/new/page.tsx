@@ -10,7 +10,7 @@ export default async function NewReceipt() {
   const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   const [suppliers, warehouses, materials, groups, accounts, balances, costs, vatPayer] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    db.warehouse.findMany({ where: { isActive: true } }),
+    db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),

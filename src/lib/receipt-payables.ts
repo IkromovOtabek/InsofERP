@@ -30,6 +30,12 @@ export async function payablesSince(client: Client = db): Promise<Date> {
   return c?.payablesSince ?? DEFAULT_PAYABLES_SINCE;
 }
 
+/**
+ * Sklad → Kirim → «Excel jurnal» da «to'langan» deb yuklangan eski kirimlar shu prefiksli bir martalik kalit bilan
+ * yoziladi (`lib/prixod-journal-import.ts`): puli tizimdan tashqarida to'langan, kassa harakati yo'q — to'lov kutmaydi.
+ */
+export const PAID_IMPORT_TOKEN = "jrnp-";
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Kirim(lar)ga bog'langan chiqimlar yig'indisi (kirim id → to'langan). */
@@ -66,7 +72,10 @@ export async function unpaidReceipts(): Promise<UnpaidReceipt[]> {
   const since = await payablesSince();
   const recs = await db.goodsReceipt.findMany({
     // Ta'minot zanjiridan kelgan kirim bu yerga tushmaydi — uning puli zanjirda ajratilgan
-    where: { createdAt: { gte: since }, supply: { is: null }, cancelledAt: null },
+    where: {
+      createdAt: { gte: since }, supply: { is: null }, cancelledAt: null,
+      OR: [{ clientToken: null }, { NOT: { clientToken: { startsWith: PAID_IMPORT_TOKEN } } }],
+    },
     orderBy: { date: "asc" },
     include: { supplier: { select: { name: true } }, items: { select: { qty: true, price: true, vatAmount: true, deliveryCost: true } } },
   });

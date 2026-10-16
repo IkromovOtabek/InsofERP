@@ -46,12 +46,16 @@ export type StaffDay = {
   rows: StaffDayRow[];
 };
 
-/** Tabelda xodim ishga kirgan kundan bo'shagan kunigacha turadi (veb tabel bilan bir xil oyna). */
+/**
+ * Tabelda xodim ishga kirgan kundan bo'shagan kunigacha turadi (veb tabel bilan bir xil oyna).
+ * "O'chirish" bilan nofaol qilingan (bo'shatish sanasisiz) karta ham shu davrda belgisi bo'lsa qoladi —
+ * aks holda yopilgan oylarning tabeli va jamlari keyinchalik o'zgarib ketardi.
+ */
 export const employeesInWindow = (from: Date, to: Date): Prisma.EmployeeWhereInput => ({
   AND: [
     { OR: [{ hiredAt: null }, { hiredAt: { lte: to } }] },
     { OR: [{ firedAt: null }, { firedAt: { gte: from } }] },
-    { OR: [{ isActive: true }, { firedAt: { not: null } }] },
+    { OR: [{ isActive: true }, { firedAt: { not: null } }, { attendance: { some: { date: { gte: from, lte: to } } } }] },
   ],
 });
 
@@ -69,7 +73,7 @@ async function markerRoles(ids: (string | null)[]) {
 
 const ATT_SELECT = {
   employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true, source: true,
-  facePhoto: true, markedById: true, note: true,
+  facePhoto: true, faceVerifiedAt: true, markedById: true, note: true,
   id: true, checkInLat: true, checkInLng: true, checkInDistance: true, checkInOutside: true, checkInPlacePhoto: true,
   checkOutLat: true, checkOutLng: true, checkOutDistance: true, checkOutOutside: true, checkOutPlacePhoto: true,
 } as const;
@@ -102,7 +106,7 @@ export async function placePhotoFor(s: Pick<Session, "role" | "perms">, id: stri
 
 function srcOf(a: AttRow | undefined, roles: Map<string, Role>) {
   if (!a) return null;
-  return sourceLabel(a.source, { face: !!a.facePhoto, markerRole: a.markedById ? roles.get(a.markedById) ?? null : null });
+  return sourceLabel(a.source, { face: !!a.facePhoto && !!a.faceVerifiedAt, markerRole: a.markedById ? roles.get(a.markedById) ?? null : null });
 }
 
 /** Bir kun — barcha xodimlar jadvali (`employeeIds` berilsa — faqat shu xodimlar, masalan sex boshlig'iga sex tarkibi). */
@@ -171,11 +175,18 @@ export const normMonth = (raw?: string | null) => {
   return validMonth(raw ?? undefined) && raw! <= cur ? raw! : cur;
 };
 
-export function monthTotals(days: { status: AttStatusKey; minutes: number | null; lateMin: number | null; earlyMin: number | null; checkIn: string | null; checkOut: string | null; weekend?: boolean }[]): MonthTotals {
+/** Xodim shu kuni ishdami (ishga kirgan kundan bo'shagan kunigacha) — "belgilanmagan" faqat shu kunlarda sanaladi. */
+export const employedOn = (e: { hiredAt: Date | null; firedAt: Date | null }) => (iso: string) =>
+  (!e.hiredAt || isoDay(e.hiredAt) <= iso) && (!e.firedAt || iso <= isoDay(e.firedAt));
+
+export function monthTotals(
+  days: { date?: string; status: AttStatusKey; minutes: number | null; lateMin: number | null; earlyMin: number | null; checkIn: string | null; checkOut: string | null; weekend?: boolean }[],
+  employed: (iso: string) => boolean = () => true,
+): MonthTotals {
   const cnt = (s: AttStatusKey) => days.filter((d) => d.status === s).length;
   return {
     present: cnt("PRESENT"), absent: cnt("ABSENT"), sick: cnt("SICK"), leave: cnt("LEAVE"), dayoff: cnt("DAYOFF"),
-    notMarked: days.filter((d) => d.status === "NONE" && !d.weekend).length,
+    notMarked: days.filter((d) => d.status === "NONE" && !d.weekend && (!d.date || employed(d.date))).length,
     minutes: days.reduce((s, d) => s + (d.minutes ?? 0), 0),
     lateDays: days.filter((d) => d.lateMin).length, lateMinutes: days.reduce((s, d) => s + (d.lateMin ?? 0), 0),
     earlyDays: days.filter((d) => d.earlyMin).length, earlyMinutes: days.reduce((s, d) => s + (d.earlyMin ?? 0), 0),
@@ -186,7 +197,7 @@ export function monthTotals(days: { status: AttStatusKey; minutes: number | null
 /** Bitta xodimning oylik varag'i — kunlar (yangisi tepada) va jami. */
 export async function employeeMonth(employeeId: string, rawMonth?: string | null): Promise<EmployeeMonth | null> {
   const month = normMonth(rawMonth);
-  const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true, position: true, phone: true, workSchedule: true, attendanceAnywhere: true } });
+  const e = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true, position: true, phone: true, workSchedule: true, attendanceAnywhere: true, hiredAt: true, firedAt: true } });
   if (!e) return null;
   const days = monthDays(month);
   const [rows, depts] = await Promise.all([
@@ -210,7 +221,7 @@ export async function employeeMonth(employeeId: string, rawMonth?: string | null
   return {
     month, title: monthTitle(month), prev: shiftMonth(month, -1), next: month < now.slice(0, 7) ? shiftMonth(month, 1) : null,
     employee: { id: e.id, fullName: e.fullName, position: e.position, dept: depts.get(e.position.trim().toLowerCase()) ?? null, phone: e.phone, anywhere: e.attendanceAnywhere },
-    shift, totals: monthTotals(out), days: out,
+    shift, totals: monthTotals(out, employedOn(e)), days: out,
   };
 }
 
@@ -224,7 +235,7 @@ export async function staffMonth(rawMonth?: string | null): Promise<{ month: str
   const days = monthDays(month);
   const from = dayUtc(days[0]!.iso), to = dayUtc(days[days.length - 1]!.iso);
   const [emps, marks] = await Promise.all([
-    db.employee.findMany({ where: employeesInWindow(from, to), orderBy: [{ position: "asc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, workSchedule: true } }),
+    db.employee.findMany({ where: employeesInWindow(from, to), orderBy: [{ position: "asc" }, { fullName: "asc" }], select: { id: true, fullName: true, position: true, workSchedule: true, hiredAt: true, firedAt: true } }),
     db.attendance.findMany({ where: { date: { gte: from, lte: to } }, select: ATT_SELECT }),
   ]);
   const roles = await markerRoles(marks.map((m) => m.markedById));
@@ -244,7 +255,7 @@ export async function staffMonth(rawMonth?: string | null): Promise<{ month: str
         ...dayTimes(a, shift), source: srcOf(a, roles), note: a?.note ?? null, ...outsideBoth(a),
       };
     });
-    return { id: e.id, fullName: e.fullName, position: e.position, shift, totals: monthTotals(list), days: new Map(list.map((d) => [d.date, d])) };
+    return { id: e.id, fullName: e.fullName, position: e.position, shift, totals: monthTotals(list, employedOn(e)), days: new Map(list.map((d) => [d.date, d])) };
   });
   return { month, title: monthTitle(month), days, rows };
 }

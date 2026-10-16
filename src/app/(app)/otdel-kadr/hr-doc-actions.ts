@@ -19,12 +19,32 @@ import type { HrDocKind, Prisma } from "@/generated/prisma";
 // Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
 const hr = () => requireAction("employees", "edit", ["HR"]);
 
-/** "2026-09-10" → Date; bo'sh bo'lsa null. Noto'g'ri sana ham null bo'ladi (forma tekshiradi). */
-const zDate = z.string().trim().optional().transform((v) => {
+/** "2026-09-10" → Date; bo'sh bo'lsa null. Noto'g'ri sana — forma xatosi (jim null bo'lib, muddat yo'qolmasin). */
+const zDate = z.string().trim().optional().transform((v, ctx) => {
   if (!v) return null;
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 1900 || d.getUTCFullYear() > 2100) { ctx.addIssue({ code: "custom", message: `Sana noto'g'ri: «${v}»` }); return z.NEVER; }
+  return d;
 });
+
+/**
+ * Buyruq raqami («216 K») yil ichida takrorlanmasin. Raqam berish bitta qulf ostida — ikki kadr bir vaqtda
+ * bir xil raqam bera olmaydi. Band bo'lsa — xato matni.
+ */
+async function orderNoProblem(tx: Prisma.TransactionClient, kind: HrDocKind, no: string | null, docDate: Date, selfId?: string): Promise<string | null> {
+  if (!no) return null;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"hrdoc-no:" + kind}))`;
+  const y = docDate.getUTCFullYear();
+  const clash = await tx.hrDocument.findFirst({
+    where: {
+      kind, no: { equals: no.trim(), mode: "insensitive" },
+      docDate: { gte: new Date(Date.UTC(y, 0, 1)), lt: new Date(Date.UTC(y + 1, 0, 1)) },
+      ...(selfId ? { id: { not: selfId } } : {}),
+    },
+    select: { employee: { select: { fullName: true } } },
+  });
+  return clash ? `№ ${no} raqamli hujjat ${y}-yilda allaqachon bor (${clash.employee.fullName}) — boshqa raqam bering` : null;
+}
 
 const KINDS = HIRING_DOCS.map((d) => d.kind).concat("BOSHATISH") as [HrDocKind, ...HrDocKind[]];
 
@@ -76,7 +96,9 @@ export async function saveHrDoc(employeeId: string, _prev: ActionState, fd: Form
     reason: spec.fields.includes("reason") ? d.reason : null,
   } satisfies Omit<Prisma.HrDocumentUncheckedCreateInput, "employeeId">;
 
-  await db.$transaction(async (tx) => {
+  const err = await db.$transaction(async (tx) => {
+    const dup = await orderNoProblem(tx, d.kind, data.no, data.docDate, d.docId ?? undefined);
+    if (dup) return dup;
     if (d.docId) {
       const before = await tx.hrDocument.findUniqueOrThrow({ where: { id: d.docId } });
       if (before.employeeId !== employeeId) throw new Error("FORBIDDEN");
@@ -86,7 +108,9 @@ export async function saveHrDoc(employeeId: string, _prev: ActionState, fd: Form
       const created = await tx.hrDocument.create({ data: { ...data, employeeId, createdById: s.userId } });
       await audit(tx, s.userId, "CREATE", "HrDocument", created.id, undefined, created);
     }
+    return null;
   });
+  if (err) return { error: err };
 
   revalidatePath(`/employees/${employeeId}`);
   return { ok: true };
@@ -122,13 +146,16 @@ export async function prepareHiringSet(employeeId: string, _prev: ActionState, f
   if (!employee) return { error: "Xodim topilmadi" };
   const position = d.position ?? employee.position;
 
-  const exists = new Set(
-    (await db.hrDocument.findMany({ where: { employeeId }, select: { kind: true } })).map((x) => x.kind),
-  );
-  const todo = HIRING_DOCS.filter((spec) => !exists.has(spec.kind));
-  if (todo.length === 0) return { error: "Ishga qabul hujjatlari allaqachon tayyorlangan" };
-
-  await db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
+    // Ikki marta bosilsa (yoki ikki kadr birga) to'plam ikki barobar yaratilmasin: tekshiruv qulf ostida
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"hrdoc-set:" + employeeId}))`;
+    const exists = new Set((await tx.hrDocument.findMany({ where: { employeeId }, select: { kind: true } })).map((x) => x.kind));
+    const todo = HIRING_DOCS.filter((spec) => !exists.has(spec.kind));
+    if (todo.length === 0) return { error: "Ishga qabul hujjatlari allaqachon tayyorlangan" };
+    if (todo.some((spec) => spec.fields.includes("no"))) {
+      const dup = await orderNoProblem(tx, "BUYRUQ", d.no, d.docDate!);
+      if (dup) return { error: dup };
+    }
     for (const spec of todo) {
       const created = await tx.hrDocument.create({
         data: {
@@ -146,10 +173,12 @@ export async function prepareHiringSet(employeeId: string, _prev: ActionState, f
       });
       await audit(tx, s.userId, "CREATE", "HrDocument", created.id, undefined, created);
     }
+    return { count: todo.length };
   });
+  if ("error" in res) return { error: res.error };
 
   revalidatePath(`/employees/${employeeId}`);
-  return { ok: true, note: `${todo.length} ta hujjat tayyorlandi` };
+  return { ok: true, note: `${res.count} ta hujjat tayyorlandi` };
 }
 
 /** Imzolangan nusxani (skaner yoki telefon surati) hujjatga biriktirish. Eski nusxa almashadi. */
@@ -163,16 +192,14 @@ export async function uploadHrDocScan(docId: string, _prev: ActionState, fd: For
   if ("error" in saved) return { error: saved.error };
 
   try {
-    const after = await db.$transaction(async (tx) => {
+    // Almashtirilgan eski imzolangan nusxa diskda qoladi (hujjatlar o'chirilmaydi) — nomi auditda (`before.file`)
+    await db.$transaction(async (tx) => {
       const x = await tx.hrDocument.update({
         where: { id: docId },
         data: { file: saved.stored, fileName: saved.name, fileType: saved.type, signedAt: new Date() },
       });
       await audit(tx, s.userId, "UPDATE", "HrDocument", docId, before, x);
-      return x;
     });
-    // Almashtirilgan eski nusxa diskda qolmasin
-    if (before.file && before.file !== after.file) await removeEmployeeFile(before.file);
   } catch (err) {
     await removeEmployeeFile(saved.stored);
     throw err;
@@ -182,7 +209,10 @@ export async function uploadHrDocScan(docId: string, _prev: ActionState, fd: For
   return { ok: true };
 }
 
-/** Imzolangan nusxani olib tashlash — hujjat yozuvi qoladi, faqat fayl ketadi. */
+/**
+ * Imzolangan nusxani hujjatdan ajratish — hujjat yozuvi qoladi, fayl diskda saqlanadi (hujjatlar o'chirilmaydi):
+ * nomi auditda turadi, kerak bo'lsa qaytariladi.
+ */
 export async function deleteHrDocScan(docId: string): Promise<ActionState> {
   const s = await hr();
   const before = await db.hrDocument.findUnique({ where: { id: docId } });
@@ -195,21 +225,26 @@ export async function deleteHrDocScan(docId: string): Promise<ActionState> {
     });
     await audit(tx, s.userId, "UPDATE", "HrDocument", docId, before, after);
   });
-  await removeEmployeeFile(before.file);
   revalidatePath(`/employees/${before.employeeId}`);
   return { ok: true, note: "Nusxa olib tashlandi" };
 }
 
-/** Tayyorlangan hujjatni butunlay o'chirish (imzolangan nusxasi bilan). */
+/**
+ * Tayyorlangan, hali imzolanmagan hujjat qoralamasini o'chirish. Imzolangan hujjat (shartnoma, buyruq) o'chirilmaydi —
+ * u kuchga kirgan hujjat; xato bo'lsa yangisi tayyorlanadi.
+ */
 export async function deleteHrDoc(docId: string): Promise<ActionState> {
   const s = await hr();
   const before = await db.hrDocument.findUnique({ where: { id: docId } });
   if (!before) return { error: "Hujjat topilmadi" };
-  await db.$transaction(async (tx) => {
-    await tx.hrDocument.delete({ where: { id: docId } });
-    await audit(tx, s.userId, "DELETE", "HrDocument", docId, before, undefined);
+  if (before.file || before.signedAt) return { error: "Imzolangan hujjat o'chirilmaydi — xato bo'lsa yangisini tayyorlang" };
+  const n = await db.$transaction(async (tx) => {
+    // Shu orada imzolangan nusxa yuklangan bo'lsa — o'chirilmaydi
+    const del = await tx.hrDocument.deleteMany({ where: { id: docId, file: null, signedAt: null } });
+    if (del.count) await audit(tx, s.userId, "DELETE", "HrDocument", docId, before, undefined);
+    return del.count;
   });
-  await removeEmployeeFile(before.file);
+  if (!n) return { error: "Imzolangan hujjat o'chirilmaydi — xato bo'lsa yangisini tayyorlang" };
   revalidatePath(`/employees/${before.employeeId}`);
   return { ok: true };
 }

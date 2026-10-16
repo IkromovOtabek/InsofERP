@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { DEFAULT_SHIFT, dayUtc, markOf, shiftProblem, toMinutes, today } from "@/lib/davomat";
-import { lateBy, lateText, shiftOf } from "@/lib/attendance-time";
+import { lateText, lateToStore, shiftOf } from "@/lib/attendance-time";
 import { notifyLateAfter } from "@/lib/attendance-late";
 import type { AttendanceStatus, Prisma } from "@/generated/prisma";
 import type { FaceInput } from "@/lib/face-verify";
@@ -130,7 +130,7 @@ export async function markProductionAttendance(userId: string, employeeId: strin
   const date = dayUtc(iso);
   // Kechikish — xodim kartasidagi smena bo'yicha (o'zi belgilagandagi qoida bilan bir xil), tabel va ish haqi uchun saqlanadi
   const sched = await db.employee.findUnique({ where: { id: employeeId }, select: { workSchedule: true } });
-  const lateMinutes = present ? lateBy(checkIn, shiftOf(sched?.workSchedule).start) : null;
+  const lateMinutes = present ? lateToStore(checkIn, shiftOf(sched?.workSchedule).start) : null;
   const data = {
     status: m.status, checkIn, checkOut, note: m.note === undefined ? e.note : m.note?.trim() || null, markedById: userId, lateMinutes,
     ...(m.facePhoto ? { facePhoto: m.facePhoto, faceVerifiedAt: new Date(), faceConfidence: m.faceConfidence ?? null } : {}),
@@ -214,7 +214,7 @@ export async function markAllPresent(userId: string, iso = today(), brigadeIds?:
   const checkIn = iso === today() ? ((toMinutes(now) ?? 0) < (toMinutes(DEFAULT_SHIFT.checkIn) ?? 0) ? DEFAULT_SHIFT.checkIn : now) : DEFAULT_SHIFT.checkIn;
   const date = dayUtc(iso);
   const scheds = new Map((await db.employee.findMany({ where: { id: { in: left.map((m) => m.id) } }, select: { id: true, workSchedule: true } })).map((x) => [x.id, x.workSchedule]));
-  const lateOf = (id: string) => lateBy(checkIn, shiftOf(scheds.get(id)).start);
+  const lateOf = (id: string) => lateToStore(checkIn, shiftOf(scheds.get(id)).start);
   await db.$transaction(async (tx) => {
     for (const m of left) {
       const lateMinutes = lateOf(m.id);

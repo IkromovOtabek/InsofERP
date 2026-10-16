@@ -13,7 +13,7 @@ import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { num } from "@/lib/excel";
 import { formatPhone, normalizePhone } from "@/lib/phone";
-import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
+import { duplicateProblem, openTripsProblem, releaseOnDismiss, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import type { Prisma } from "@/generated/prisma";
 import type { Perms } from "@/lib/auth";
@@ -339,13 +339,18 @@ export async function toggleEmployee(id: string) {
   const cur = await db.employee.findUniqueOrThrow({ where: { id } });
   const denied = await directorGuard(cur.userId, s.role);
   if (denied) throw new Error(denied);
+  if (cur.userId && cur.userId === s.userId) throw new Error("O'zingizni o'chira olmaysiz"); // UI tugmani ko'rsatmaydi
+  // Ishdan bo'shatilgan xodim faqat kartadagi "Ishga qaytarish" orqali qaytadi (sana va sabab ham tozalanadi) —
+  // aks holda bo'shatilgan holicha logini va ECO kirishi ochilib qolardi
+  if (cur.firedAt) throw new Error("Bo'shatilgan xodim kartadagi «Ishga qaytarish» tugmasi orqali qaytariladi");
   await db.$transaction(async (tx) => {
-    await tx.employee.update({ where: { id }, data: { isActive: !cur.isActive } });
+    const n = await tx.employee.updateMany({ where: { id, isActive: cur.isActive, firedAt: null }, data: { isActive: !cur.isActive } });
+    if (n.count === 0) throw new Error("Xodim holati o'zgargan — sahifani yangilang");
     if (cur.userId) await tx.user.update({ where: { id: cur.userId }, data: { isActive: !cur.isActive } });
     await audit(tx, s.userId, "UPDATE", "Employee", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
   });
   // O'chirilgan haydovchi ilovaga ham kira olmasin; qayta yoqilsa a'zoligi tiklanadi
-  if (await isDriverPosition(cur.position)) pushEmployeeSilently(id);
+  if (cur.ecoUserId || (await isDriverPosition(cur.position))) pushEmployeeSilently(id);
   revalidatePath("/employees"); revalidatePath("/settings"); revalidatePath("/drivers");
 }
 
@@ -383,25 +388,30 @@ export async function dismissEmployee(id: string, _prev: ActionState, fd: FormDa
   if (denied) return { error: denied };
   if (before.firedAt) return { error: "Bu xodim allaqachon ishdan bo'shatilgan" };
   // Yo'ldagi reys egasiz qolmasin: avval reys yakunlanadi yoki bekor qilinadi
-  const open = await db.trip.findMany({ where: { driverId: id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
-  if (open.length) return { error: `Haydovchida ochiq reys bor: ${open.map((t) => t.deliveryNoteNo).join(", ")} — avval yakunlang yoki bekor qiling` };
+  const trips = await openTripsProblem(id);
+  if (trips) return { error: trips };
   if (before.hiredAt && firedAt < before.hiredAt) return { error: "Bo'shatilgan sana ishga kirgan sanadan oldin bo'lishi mumkin emas" };
 
-  const after = await db.$transaction(async (tx) => {
-    const e = await tx.employee.update({
-      where: { id },
-      data: { firedAt, firedReason: reason, isActive: false, vehicleId: null },
-    });
+  const res = await db.$transaction(async (tx) => {
+    // Shartli yozuv: parallel bo'shatish yoki shu orada ochilgan reys holatni buzmasin
+    const n = await tx.employee.updateMany({ where: { id, firedAt: null }, data: { firedAt, firedReason: reason, isActive: false } });
+    if (n.count === 0) return { error: "Bu xodim allaqachon ishdan bo'shatilgan" };
+    const late = await openTripsProblem(id, tx);
+    if (late) throw new Error(late);
+    const freed = await releaseOnDismiss(tx, id);
     if (before.userId) await tx.user.update({ where: { id: before.userId }, data: { isActive: false } });
-    await audit(tx, s.userId, "UPDATE", "Employee", id, before, e);
-    return e;
-  });
+    const e = await tx.employee.findUniqueOrThrow({ where: { id } });
+    await audit(tx, s.userId, "UPDATE", "Employee", id, before, { ...e, ...(freed.brigades.length ? { brigadirlikOlindi: freed.brigades } : {}) });
+    return { e, freed };
+  }).catch((err: Error) => ({ error: err.message }));
+  if ("error" in res) return { error: res.error };
 
   // Haydovchi bo'lsa ilovaga ham kira olmasin; texnikasi bo'shagani ECO'da ham ko'rinsin
-  if (await isDriverPosition(before.position)) pushEmployeeSilently(id);
-  if (before.vehicleId) pushVehicleSilently(before.vehicleId);
-  dismissPaths();
-  return { ok: true, note: `${after.fullName} ishdan bo'shatildi — ${reason}` };
+  pushEmployeeSilently(id);
+  if (res.freed.vehicleId) pushVehicleSilently(res.freed.vehicleId);
+  dismissPaths(); revalidatePath("/brigades");
+  const lead = res.freed.brigades.length ? ` · brigadirligi olindi (${res.freed.brigades.join(", ")}) — yangi brigadir tayinlang` : "";
+  return { ok: true, note: `${res.e.fullName} ishdan bo'shatildi — ${reason}${lead}` };
 }
 
 /** Bo'shatishni bekor qilish: sana va sabab tozalanadi, xodim va logini qaytadi. */
@@ -456,8 +466,8 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
   if (firing) {
     if (before.userId === s.userId) return { error: "O'zingizni ishdan bo'shata olmaysiz" };
     if (before.hiredAt && d.firedAt! < before.hiredAt) return { error: "Bo'shatilgan sana ishga kirgan sanadan oldin bo'lishi mumkin emas" };
-    const open = await db.trip.findMany({ where: { driverId: id, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
-    if (open.length) return { error: `Haydovchida ochiq reys bor: ${open.map((t) => t.deliveryNoteNo).join(", ")} — avval yakunlang yoki bekor qiling` };
+    const trips = await openTripsProblem(id);
+    if (trips) return { error: trips };
   }
   // Ish vaqti faqat formada maydoni bo'lsa yoziladi — boshqa chaqiruv mavjud grafikni o'chirib yubormasin
   let workSchedule: string | null | undefined;
@@ -467,12 +477,14 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
     workSchedule = buildSchedule(normTime(d.workStart), normTime(d.workEnd), d.workNote);
   }
   const after = await db.$transaction(async (tx) => {
+    if (firing) await releaseOnDismiss(tx, id);
     const extra = firing ? { vehicleId: null } : vehicleSent ? await driverData(tx, s.userId, d) : {};
     const e = await tx.employee.update({
       where: { id },
       data: {
         fullName: d.fullName, position: d.position, phone: d.phone, hiredAt: d.hiredAt, birthDate: d.birthDate, note: d.note,
         tabelNo: d.tabelNo, subdivision: d.subdivision, tariffRate: d.tariffRate, firedAt: d.firedAt, isActive,
+        ...(!d.firedAt && before.firedAt ? { firedReason: null } : {}),
         passportSeries: d.passportSeries, pinfl: d.pinfl, passportIssuedBy: d.passportIssuedBy, passportIssuedAt: d.passportIssuedAt,
         address: d.address, education: d.education, maritalStatus: d.maritalStatus,
         ...(workSchedule !== undefined ? { workSchedule } : {}),
@@ -485,9 +497,10 @@ export async function updateEmployee(id: string, _prev: ActionState, fd: FormDat
     return e;
   });
 
-  // Haydovchi bo'lsa ECO kartasi ham yangilansin (telefon — yagona kalit)
-  if (driver || (await isDriverPosition(before.position))) pushEmployeeSilently(id);
+  // Haydovchi bo'lsa (yoki ECO'ga ulangan bo'lsa — lavozimi haydovchidan o'zgargan) ECO kartasi ham yangilansin
+  if (driver || before.ecoUserId || (await isDriverPosition(before.position))) pushEmployeeSilently(id);
   if (after.vehicleId && after.vehicleId !== before.vehicleId) pushVehicleSilently(after.vehicleId);
+  if (firing && before.vehicleId) pushVehicleSilently(before.vehicleId);
   revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/drivers"); revalidatePath("/trips");
   return { ok: true };
 }
@@ -556,7 +569,7 @@ export async function changeEmployeeRole(employeeId: string, _prev: ActionState,
     });
   });
   if (isSensitive(role)) alertDirector(s.role, s.userId, employeeId, `Bo'lim moliyaviy/kadr huquqiga o'tkazildi — ${roleLabel(role)}`, `${t.employee.fullName} · «${roleLabel(t.user.role)}» → «${roleLabel(role)}» · login «${t.user.login}»`);
-  const wasDriver = await isDriverPosition(t.employee.position);
+  const wasDriver = !!t.employee.ecoUserId || (await isDriverPosition(t.employee.position));
   if (wasDriver || (await isDriverPosition(position))) pushEmployeeSilently(employeeId);
   revalidatePath(`/employees/${employeeId}`); revalidatePath("/employees"); revalidatePath("/otdel-kadr"); revalidatePath("/settings");
   const label = LOGIN_ROLE_OPTIONS.find((o) => o.value === role)?.label ?? role;

@@ -33,10 +33,14 @@ const toErpType = (t: string): VehicleType => (t === "MIXER" || t === "PUMP" ? t
 export async function pushEmployeeToEco(employeeId: string): Promise<SyncResult> {
   if (!ecoEnabled()) return { ok: false, skipped: true };
   const e = await db.employee.findUnique({ where: { id: employeeId } });
-  if (!e || !(await isDriverPosition(e.position))) return { ok: false, skipped: true };
+  if (!e) return { ok: false, skipped: true };
+  const driver = await isDriverPosition(e.position);
+  // Haydovchi bo'lmagan va ECO'ga hech ulanmagan xodim — ishimiz yo'q
+  if (!driver && !e.ecoUserId) return { ok: false, skipped: true };
 
-  // ERP'da o'chirilgan xodim — ECO'da ham ilovaga kira olmasin
-  if (!e.isActive) {
+  // ERP'da o'chirilgan xodim yoki haydovchilikdan boshqa lavozimga o'tgan (lavozim nomi o'zgargan,
+  // "haydovchi" belgisi olingan) — ECO'da ham ilovaga kira olmasin
+  if (!e.isActive || !driver) {
     if (!e.ecoUserId) return { ok: true, skipped: true };
     try {
       const r = await eco.deactivateDriver(e.ecoUserId);

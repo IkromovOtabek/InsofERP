@@ -1,4 +1,4 @@
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { importPositionOptions } from "@/lib/positions";
 import { knownSubdivisions } from "@/lib/import-employees";
 import { TEMPLATE_ROLE_OPTIONS } from "@/lib/perm-template";
@@ -14,6 +14,8 @@ import { EmployeesImport } from "./employees-import";
  * «КАССИР» → «Kassa / bank»); ro'yxatda yo'q lavozimni shu yerning o'zida «+ Yangi lavozim…» bilan ochish mumkin.
  */
 export default async function EmployeesImportPage() {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees", actions: ["create"] });
   const [options, subdivisions] = await Promise.all([importPositionOptions(), knownSubdivisions()]);
 

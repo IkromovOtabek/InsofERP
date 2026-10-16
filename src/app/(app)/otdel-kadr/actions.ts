@@ -10,7 +10,7 @@ import { POSITIONS, roleForPosition, isDriverPosition } from "@/lib/positions";
 import { duplicateProblem, zPhone, zPinfl } from "@/lib/kadr-validate";
 import { flatName } from "@/lib/excel";
 import { ORG_TREE, deptByLabel, guessDepartment } from "@/lib/orgchart";
-import { pushEmployeeSilently } from "@/lib/eco/people";
+import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
 import { importEmployees, type ImportEmployeeRow } from "@/lib/import-employees";
@@ -149,15 +149,20 @@ export async function saveWorkPosition(id: string | null, _prev: ActionState, fd
   const d = r.data;
   if (clashesWithDepartment(d.name)) return { error: `"${d.name}" — bo'lim lavozimi, ishchi lavozim sifatida qo'shib bo'lmaydi` };
 
+  let eco: string[] = [];
   try {
     await db.$transaction(async (tx) => {
       if (id) {
         const before = await tx.workPosition.findUniqueOrThrow({ where: { id } });
         const after = await tx.workPosition.update({ where: { id }, data: d });
-        // Nom o'zgarsa — shu lavozimdagi xodimlar kartasi ham yangilanadi (Employee.position matn bilan bog'langan)
-        if (before.name !== after.name) {
-          await tx.employee.updateMany({ where: { position: before.name }, data: { position: after.name } });
+        const holders = await employeesWithPosition(tx, before.name);
+        // Nom o'zgarsa — shu lavozimdagi xodimlar kartasi ham yangilanadi (Employee.position matn bilan bog'langan).
+        // Excel'dan kelgan boshqacha yozilish (katta harf, ortiqcha bo'shliq) ham shu lavozim hisoblanadi
+        if (before.name !== after.name && holders.length) {
+          await tx.employee.updateMany({ where: { id: { in: holders.map((h) => h.id) } }, data: { position: after.name } });
         }
+        // Haydovchi ilovasi a'zoligi lavozimga bog'liq: nom yoki "haydovchi" belgisi o'zgarsa ECO ham yangilanadi
+        if (before.name !== after.name || before.isDriver !== after.isDriver) eco = holders.map((h) => h.id);
         await audit(tx, s.userId, "UPDATE", "WorkPosition", id, before, after);
       } else {
         const created = await tx.workPosition.create({ data: d });
@@ -168,8 +173,16 @@ export async function saveWorkPosition(id: string | null, _prev: ActionState, fd
     if (String(e).includes("Unique constraint")) return { error: "Bunday lavozim allaqachon bor" };
     throw e;
   }
+  for (const eid of eco) pushEmployeeSilently(eid);
   refresh();
   return { ok: true };
+}
+
+/** Lavozim nomi bo'yicha xodimlar — katta-kichik harf va chetdagi bo'shliqlarsiz solishtiriladi. */
+async function employeesWithPosition(tx: Prisma.TransactionClient, name: string) {
+  const key = name.trim().toLowerCase();
+  const list = await tx.employee.findMany({ where: { position: { contains: name.trim(), mode: "insensitive" } }, select: { id: true, position: true } });
+  return list.filter((e) => e.position.trim().toLowerCase() === key);
 }
 
 /**
@@ -346,7 +359,7 @@ export async function setScheduleBulk(_prev: ActionState, fd: FormData): Promise
 export async function deleteWorkPosition(id: string) {
   const s = await hr();
   const cur = await db.workPosition.findUniqueOrThrow({ where: { id } });
-  const used = await db.employee.count({ where: { position: cur.name } });
+  const used = (await employeesWithPosition(db, cur.name)).length;
   if (used > 0) return; // bandi bor — faqat o'chirib qo'yish mumkin
   await db.$transaction(async (tx) => {
     await tx.workPosition.delete({ where: { id } });
@@ -466,6 +479,8 @@ export async function addEmployeeDocument(employeeId: string, _prev: ActionState
   const kind = String(fd.get("kind") ?? "").trim() || OTHER_DOC_KIND;
   const entries = [...fd.getAll("file")].filter((f): f is File => f instanceof File && f.size > 0).map((file) => ({ kind, file }));
   if (entries.length === 0) return { error: "Fayl tanlanmagan" };
+  // Avval karta borligi tekshiriladi — yo'q xodim uchun fayl diskka yozilib, egasiz qolmasin
+  if (!(await db.employee.findUnique({ where: { id: employeeId }, select: { id: true } }))) return { error: "Xodim topilmadi" };
   const docs = await saveDocuments(employeeId, entries);
   if ("error" in docs) return { error: docs.error };
   await db.$transaction(async (tx) => {
@@ -525,7 +540,7 @@ export async function deleteEmployeeDocument(docId: string) {
     await tx.employeeDocument.delete({ where: { id: docId } });
     await audit(tx, s.userId, "DELETE", "EmployeeDocument", docId, doc, undefined);
   });
-  await removeEmployeeFile(doc.file);
+  // Nusxa faylining o'zi diskda qoladi (hujjatlar o'chirilmaydi): nomi auditda, kerak bo'lsa tiklanadi
   revalidatePath(`/employees/${doc.employeeId}`);
 }
 
@@ -581,11 +596,12 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
 
   // Haydovchi lavozimidagilar haydovchi ilovasida ham ko'rinsin (ECO o'chiq bo'lsa jim o'tadi)
   for (const id of res.driverIds) pushEmployeeSilently(id);
+  for (const id of res.freedVehicles) pushVehicleSilently(id);
   refresh();
   revalidatePath("/drivers");
 
   // E'tibor beriladigan joyi bo'lmasa — ro'yxatga qaytadi; bo'lsa sahifada qolib tushuntiradi
-  if (!res.createdPositions.length && !res.skipped && !res.keptPositions.length) {
+  if (!res.createdPositions.length && !res.skipped && !res.keptPositions.length && !res.leaderless.length) {
     redirect(`/otdel-kadr?tab=xodimlar&qoshildi=${res.created}&yangilandi=${res.updated}`);
   }
   const list = (l: string[], n = 5) => `${l.slice(0, n).join(", ")}${l.length > n ? "…" : ""}`;
@@ -597,6 +613,7 @@ export async function importEmployeesFromExcel(_prev: ActionState, fd: FormData)
       res.newSubdivisions.length ? `yangi bo'lim / brigada: ${list(res.newSubdivisions)}` : "",
       res.skipped ? `${res.skipped} ta qator o'tkazib yuborildi — bunday xodim bazada bor ("mavjud xodimlar yangilansin"ni belgilang)` : "",
       res.fired ? `${res.fired} tasi nofaol qilindi (ishdan bo'shagan sanasi bor)` : "",
+      res.leaderless.length ? `brigadiri bo'shatilgan brigadalar: ${list(res.leaderless)} — yangi brigadir tayinlang` : "",
       res.keptPositions.length ? `diqqat: ${res.keptPositions.length} ta login egasining lavozimi o'zgartirilmadi (bo'limi — kartadan "Bo'limni almashtirish" orqali): ${list(res.keptPositions, 3)}` : "",
     ].filter(Boolean).join(" · "),
   };

@@ -219,7 +219,8 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
               <Upload size={14} /> {row.signedAt ? "Almashtirish" : "Nusxa yuklash"}
             </Button>
           )}
-          {row.id && (
+          {/* Imzolangan hujjat o'chirilmaydi — faqat imzolanmagan qoralama */}
+          {row.id && !row.signedAt && !row.fileName && (
             <DeleteButton action={deleteHrDoc} id={row.id} name={row.label} title="Tayyorlangan hujjatni o'chirish" />
           )}
         </div>

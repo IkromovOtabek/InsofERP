@@ -11,7 +11,8 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, ScanLine, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse } from "lucide-react";
+import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
 import { BrigadeDistributeForm, BrigadeReturnForm } from "./brigade-form";
@@ -37,7 +38,7 @@ const MATERIAL_FORM = "material-bulk";
 const REF_LINK: Record<string, string> = { GoodsReceipt: "/receipts", ProductionBatch: "/production", Trip: "/trips" };
 const REF_LABEL: Record<string, string> = { GoodsReceipt: "Kirim", ProductionBatch: "Zames", Trip: "Reys", Manual: "Qo'lda", StockIn: "Sklad kirimi", Brigade: "Brigada", Inventory: "Inventarizatsiya", WriteOff: "Hisobdan chiqarish", BrigadeTask: "Topshiriq" };
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ tab?: string; added?: string; updated?: string; moved?: string; guessed?: string; ref?: string; from?: string; to?: string; wh?: string; material?: string; receipt?: string }> }) {
   const s = await requirePage("/stock");
   const sp = await searchParams;
   const { tab = "balance", added, updated, moved, guessed, ref, material } = sp;
@@ -51,11 +52,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
   const [materials, mSums, whSums, allWarehouses] = await Promise.all([
     tab === "brigades" ? db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }) : [],
-    tab === "balance" || tab === "brigades" ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
-    tab === "balance" ? db.stockMove.groupBy({ by: ["materialId", "warehouseId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
+    tab === "balance" ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
+    tab === "balance" || tab === "brigades" ? db.stockMove.groupBy({ by: ["materialId", "warehouseId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
     tab === "balance" || tab === "moves" ? db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { id: "asc" }], select: { id: true, name: true, isActive: true } }) : [],
   ]);
-  // Joriy (butun, davrdan qat'i nazar) qoldiq — brigadaga berish formasi va o'chirish tasdig'i (`data-stock`) uchun
+  // Joriy (butun, davrdan qat'i nazar) qoldiq — o'chirish tasdig'i (`data-stock`) uchun
   const mb = new Map(mSums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
   // Bir nechta sklad bo'lsa — «Qoldiqlar» sklad bo'yicha ham ko'riladi: zames, brigadaga berish va spisanie
   // AYNAN tanlangan skladdan yechadi, faqat jami ko'rinsa "qoldiq bor, lekin yetmaydi" chalkashligi chiqardi
@@ -124,9 +125,30 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const [brigStocks, warehouses] = tab === "brigades"
     ? await Promise.all([
         brigadeStocks(),
-        db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+        db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
       ])
     : [[], []] as [Awaited<ReturnType<typeof brigadeStocks>>, { id: string; name: string }[]];
+  // Tanlangan skladdagi qoldiq — forma «Skladda» va «Qoladi» ni shu skladdan hisoblaydi (berish ham aynan shu skladdan)
+  const byWh = new Map<string, Record<string, number>>();
+  if (tab === "brigades") for (const x of whSums) {
+    if (!x.materialId) continue;
+    const r = byWh.get(x.materialId) ?? {};
+    r[x.warehouseId] = Number(x._sum.qty ?? 0);
+    byWh.set(x.materialId, r);
+  }
+  // Kirim hujjatidan ochilgan (?receipt=): shu kirim qatorlari oldindan to'ldiriladi — miqdor kelganicha,
+  // lekin shu skladdagi joriy qoldiqdan oshmaydi (bir qismi allaqachon berilgan/sarflangan bo'lishi mumkin)
+  const fromReceipt = tab === "brigades" && sp.receipt
+    ? await db.goodsReceipt.findUnique({ where: { id: sp.receipt }, select: { id: true, docNo: true, warehouseId: true, cancelledAt: true, items: { select: { materialId: true, qty: true } } } })
+    : null;
+  const distributeInitial = fromReceipt && !fromReceipt.cancelledAt && warehouses.some((w) => w.id === fromReceipt.warehouseId)
+    ? {
+        warehouseId: fromReceipt.warehouseId, note: `${fromReceipt.docNo} kirimidan`,
+        qty: Object.fromEntries([...fromReceipt.items.reduce((m, i) => m.set(i.materialId, (m.get(i.materialId) ?? 0) + Number(i.qty)), new Map<string, number>())]
+          .map(([id, q]) => [id, Math.round(Math.min(q, byWh.get(id)?.[fromReceipt.warehouseId] ?? 0) * 1000) / 1000] as const)
+          .filter(([, q]) => q > EPS)),
+      }
+    : undefined;
 
   const canMakeBy = new Map(capacity.map((c) => [c.productId, c]));
   const pieceTotals = pieces.reduce((a, r) => ({ total: a.total + r.total, free: a.free + r.free, owned: a.owned + r.owned }), { total: 0, free: 0, owned: 0 });
@@ -139,6 +161,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
             {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span>Kirim</span></LinkButton>}
             {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
+            {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
+            {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
+            {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}
+            {canSeePrixod(s) && canDo(s, "stock", "receipt") && visionEnabled() && <LinkButton href="/stock/prixod/new?scan=1" variant="secondary" size="lg"><ScanText size={18} /> <span>Nakladnoyni skanerlash</span></LinkButton>}
             {canAdd && <>
             {/* Zaxiraga ishlab chiqarish: mijozsiz zayavka — tayyor mahsulot hovlida erkin qoldiq bo'lib turadi */}
             <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Factory size={16} /> Zaxiraga zayavka</LinkButton>
@@ -174,6 +200,15 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         </Callout>
       )}
 
+      {tab === "brigades" && fromReceipt && (
+        distributeInitial
+          ? <Callout tone="info" title={`${fromReceipt.docNo} kirimi bo'yicha taqsimlash`}>
+              {Object.keys(distributeInitial.qty).length > 0
+                ? <>Kirim qatorlari jadvalga qo&apos;yildi ({Object.keys(distributeInitial.qty).length} ta) — har biriga brigada tanlang, kerak bo&apos;lsa «+» bilan bir nechta brigadaga bo&apos;ling.</>
+                : "Bu kirimdagi xomashyo skladda qolmagan — allaqachon berilgan yoki sarflangan."}
+            </Callout>
+          : <Callout tone="warning" title={`${fromReceipt.docNo} kirimi`}>{fromReceipt.cancelledAt ? "Kirim storno qilingan — taqsimlanmaydi." : "Kirim skladi yopilgan — jadvaldan qo'lda tanlang."}</Callout>
+      )}
       {tab === "brigades" && (
         <div className="space-y-5">
           <Card padded={false}>
@@ -189,9 +224,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <p className="text-sm text-slate-500">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> bo&apos;limida qo&apos;shing.</p>
               ) : (
                 <BrigadeDistributeForm
+                  key={fromReceipt?.id ?? "all"}
                   brigades={brigStocks.map((b) => ({ id: b.id, name: b.name, leader: b.leader }))}
                   warehouses={warehouses}
-                  materials={materials.filter((m) => (mb.get(m.id) ?? 0) > 0.0005).map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, balance: mb.get(m.id) ?? 0 }))}
+                  materials={materials.filter((m) => Object.values(byWh.get(m.id) ?? {}).some((v) => v > EPS)).map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, byWh: byWh.get(m.id) ?? {} }))}
+                  initial={distributeInitial}
                 />
               )}
             </div>

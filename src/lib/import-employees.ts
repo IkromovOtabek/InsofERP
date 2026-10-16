@@ -4,6 +4,7 @@ import { flatName, num, parseDate, str, valueKey, valueMapper, type ValueMaps } 
 import { driverPositionNames, importPositionOptions, roleForPosition } from "./positions";
 import { deptByLabel } from "./orgchart";
 import { normalizePhone } from "./phone";
+import { openTripsProblem, releaseOnDismiss } from "./kadr-validate";
 
 /**
  * Excel'dan xodimlar ro'yxati (buxgalteriya tabeli ko'rinishi):
@@ -54,6 +55,10 @@ export type ImportEmployeesResult = {
   keptPositions: string[];
   /** Tizimda hali bo'lmagan bo'lim / brigada nomlari (xodim kartasiga yangi bo'lib yozildi). */
   newSubdivisions: string[];
+  /** Bo'shatilganlardan bo'shagan texnika — ECO ga jo'natish uchun. */
+  freedVehicles: string[];
+  /** Brigadiri bo'shatilib, boshliqsiz qolgan brigadalar. */
+  leaderless: string[];
 };
 
 /**
@@ -95,7 +100,9 @@ function prepare(input: ImportEmployeesInput): { rows: Prepared[]; groups: strin
     if (str(v) === "") return null;
     const d = parseDate(v, false, minYear);
     if (!d) throw new Error(`${no}-qator (${name}): ${what} o'qilmadi — «${str(v)}»`);
-    return d;
+    // parseDate mahalliy yarim tunni beradi (Toshkentda — oldingi kun 19:00 UTC). Veb formalar va tabel
+    // sanani UTC yarim tun deb saqlaydi — aks holda bo'shatilgan xodim oxirgi ish kunida tabeldan tushib qolardi
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   };
 
   for (const [i, x] of input.rows.entries()) {
@@ -194,6 +201,17 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
     let created = 0, updated = 0, skipped = 0, fired = 0;
     const keptPositions: string[] = [];
     const driverIds: string[] = [];
+    const freedVehicles: string[] = [];
+    const leaderless: string[] = [];
+    // Telefon — Telegram kod bilan kirish va ECO uchun yagona kalit: faol xodimlarda takrorlanmasin
+    const phones = new Map((await tx.employee.findMany({ where: { isActive: true, phone: { not: null } }, select: { id: true, phone: true, fullName: true } }))
+      .map((e) => [normalizePhone(e.phone!) ?? e.phone!, e]));
+    const phoneClash = (r: Prepared, selfId: string | null) => {
+      if (!r.phone || r.firedAt) return;
+      const o = phones.get(r.phone);
+      if (o && o.id !== selfId) throw new Error(`${r.no}-qator (${r.fullName}): telefon ${r.phone} boshqa xodimda bor — ${o.fullName}`);
+    };
+    const notePhone = (id: string, r: Prepared) => { if (r.phone && !r.firedAt) phones.set(r.phone, { id, phone: r.phone, fullName: r.fullName }); };
     for (const r of rows) {
       const position = known.get(r.position.toLowerCase()) ?? r.position;
       const isActive = !r.firedAt;
@@ -212,7 +230,20 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
         if (targetRole === "DIRECTOR") { skipped++; continue; }
         // Fayldagi bo'sh katak kartadagi qiymatni o'chirmaydi — bo'shatish sanasi ham:
         // bo'sh katak ishdan bo'shagan xodimni (va logini) qayta yoqib yubormasin
+        const firing = !!r.firedAt && !before.firedAt;
         const firedPatch = r.firedAt ? { firedAt: r.firedAt, isActive: false } : {};
+        if (r.phone && r.phone !== before.phone) phoneClash(r, cur.id);
+        // Bo'shatish qoidalari "Ishdan bo'shatish" tugmasi bilan bir xil: o'zini bo'shatmaydi, ochiq reysi bor haydovchi
+        // bo'shatilmaydi, texnikasi va brigadirligi bo'shaydi
+        if (firing) {
+          if (cur.userId === userId) throw new Error(`${r.no}-qator (${r.fullName}): o'zingizni ishdan bo'shata olmaysiz`);
+          if (before.hiredAt && r.firedAt! < before.hiredAt) throw new Error(`${r.no}-qator (${r.fullName}): bo'shagan sana ishga kirgan sanadan oldin`);
+          const trips = await openTripsProblem(cur.id, tx);
+          if (trips) throw new Error(`${r.no}-qator (${r.fullName}): ${trips}`);
+          const freed = await releaseOnDismiss(tx, cur.id);
+          if (freed.vehicleId) freedVehicles.push(freed.vehicleId);
+          leaderless.push(...freed.brigades);
+        }
         // Login egasining bo'lim lavozimi (Sotuv, Buxgalteriya…) importdan o'zgarmaydi: lavozim bo'limni
         // (huquqni) bildiradi, uni faqat kartadagi "Bo'limni almashtirish" o'zgartiradi. Eski lavozim qoladi.
         const keepPosition = !!cur.userId && before.position !== position && loginDept(before.position) !== loginDept(position);
@@ -233,14 +264,16 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
         if (cur.userId && r.firedAt && cur.isActive) await tx.user.update({ where: { id: cur.userId }, data: { isActive: false } });
         await audit(tx, userId, "UPDATE", "Employee", e.id, before, { ...e, via: "excel" });
         updated++;
-        if (r.firedAt) fired++;
-        if (drivers.has(e.position.toLowerCase())) driverIds.push(e.id);
+        notePhone(e.id, r);
+        if (firing) fired++;
+        if (drivers.has(e.position.toLowerCase()) || before.ecoUserId) driverIds.push(e.id);
         const rec: Found = { id: e.id, fullName: e.fullName, tabelNo: e.tabelNo, isActive: e.isActive, userId: e.userId };
         if (e.tabelNo) byTabel.set(tabelKey(e.tabelNo), rec);
         byName.set(flatName(e.fullName), rec);
         continue;
       }
 
+      phoneClash(r, null);
       const e = await tx.employee.create({
         data: {
           fullName: r.fullName, position, tabelNo: r.tabelNo, subdivision: r.subdivision,
@@ -250,6 +283,7 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
       });
       await audit(tx, userId, "CREATE", "Employee", e.id, undefined, { ...e, via: "excel" });
       created++;
+      notePhone(e.id, r);
       if (!isActive) fired++;
       if (drivers.has(position.toLowerCase())) driverIds.push(e.id);
       // Faylda bir odam ikki marta kelsa — ikkinchisi yangilanish bo'lib o'tadi
@@ -258,6 +292,6 @@ export async function importEmployees(input: ImportEmployeesInput, userId: strin
       byName.set(flatName(e.fullName), rec);
     }
 
-    return { created, updated, skipped, createdPositions: missing, groups, fired, driverIds, keptPositions, newSubdivisions };
+    return { created, updated, skipped, createdPositions: missing, groups, fired, driverIds, keptPositions, newSubdivisions, freedVehicles, leaderless };
   }, { timeout: 120_000, maxWait: 20_000 });
 }

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { dayUtc, isAttendanceStatus, shiftProblem, toMinutes, validDay, workedMinutes } from "@/lib/davomat";
-import { lateBy, shiftOf } from "@/lib/attendance-time";
+import { lateToStore, shiftOf } from "@/lib/attendance-time";
 import { notifyLateAfter, type LateEvent } from "@/lib/attendance-late";
 import type { ActionState } from "@/lib/action";
 import type { AttendanceStatus } from "@/generated/prisma";
@@ -72,33 +72,47 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
 
   const date = dayUtc(day);
   // Xodim mavjud bo'lsin (eskirgan id FK xatosi — 500 berardi) va o'sha kuni hali ishdan bo'shamagan bo'lsin
-  const emps = await db.employee.findMany({ where: { id: { in: r.rows.map((x) => x.employeeId) } }, select: { id: true, fullName: true, firedAt: true, workSchedule: true } });
+  const emps = await db.employee.findMany({ where: { id: { in: r.rows.map((x) => x.employeeId) } }, select: { id: true, fullName: true, hiredAt: true, firedAt: true, workSchedule: true } });
   const schedOf = new Map(emps.map((e) => [e.id, e.workSchedule]));
   const lateEvents: LateEvent[] = [];
   if (emps.length !== r.rows.length) return { error: "Ro'yxatdagi xodim topilmadi — sahifani yangilang" };
   const fired = emps.filter((e) => e.firedAt && e.firedAt.toLocaleDateString("sv-SE") < day && r.rows.some((x) => x.employeeId === e.id && x.status));
   if (fired.length) return { error: `Ishdan bo'shagan xodimga davomat qo'yilmaydi: ${fired.map((e) => e.fullName).join(", ")}` };
+  const notYet = emps.filter((e) => e.hiredAt && day < e.hiredAt.toLocaleDateString("sv-SE") && r.rows.some((x) => x.employeeId === e.id && x.status));
+  if (notYet.length) return { error: `Ishga kirgan sanasidan oldingi kunga davomat qo'yilmaydi: ${notYet.map((e) => e.fullName).join(", ")}` };
   const res = await db.$transaction(async (tx) => {
     const cur = await tx.attendance.findMany({ where: { date, employeeId: { in: r.rows.map((x) => x.employeeId) } } });
     const byEmp = new Map(cur.map((a) => [a.employeeId, a]));
     const names = new Map((await tx.employee.findMany({ where: { id: { in: r.rows.map((x) => x.employeeId) } }, select: { id: true, fullName: true } })).map((e) => [e.id, e.fullName]));
     const skipped: string[] = [];
+    const kept: string[] = [];
     const changes: { xodim: string; oldin: Snap; keyin: Snap }[] = [];
     let marked = 0, cleared = 0, hours = 0;
     for (const x of r.rows) {
       const a = byEmp.get(x.employeeId);
       // Versiya mos emas: sahifa ochilgandan keyin yozuv paydo bo'lgan, o'zgargan yoki o'chirilgan
       if ((a?.updatedAt.toISOString() ?? "") !== x.ver) { skipped.push(names.get(x.employeeId) ?? "?"); continue; }
+      // Yuz (skaner yoki xodimning o'zi) bilan tasdiqlangan belgi — dalil: tabeldan o'chirilmaydi, kadrlari egasiz qolmasin.
+      // Xato bo'lsa — "Kelmadi" yoki boshqa belgi qo'yiladi (kadr va GPS izi yozuvda qoladi)
+      const verified = !!a && (!!a.source || !!a.faceVerifiedAt);
       if (!x.status) {
         if (!a) continue;
+        if (verified) { kept.push(names.get(x.employeeId) ?? "?"); continue; }
         await tx.attendance.delete({ where: { id: a.id } });
         changes.push({ xodim: names.get(x.employeeId) ?? x.employeeId, oldin: snap(a), keyin: null });
         cleared++;
         continue;
       }
       // Kechikish xodim smenasi bo'yicha saqlanadi (sex va o'zi belgilagandagi qoida)
-      const lateMinutes = x.status === "PRESENT" ? lateBy(x.checkIn, shiftOf(schedOf.get(x.employeeId)).start) : null;
-      const data = { status: x.status, checkIn: x.checkIn, checkOut: x.checkOut, note: x.note, markedById: s.userId, lateMinutes };
+      const lateMinutes = x.status === "PRESENT" ? lateToStore(x.checkIn, shiftOf(schedOf.get(x.employeeId)).start) : null;
+      // Tasdiqlangan yozuvning holati yoki kelgan vaqti qo'lda o'zgartirilsa — u endi "qo'lda": manba va yuz tasdig'i
+      // olinadi (kadrlar dalil sifatida qoladi), aks holda tabelda "O'zi · yuz" bo'lib turaverardi.
+      // Faqat "Ketdi" qo'shilishi (xodim belgilashni unutgan) yuz bilan tasdiqlangan kelishni bekor qilmaydi
+      const handEdited = verified && (a!.status !== x.status || a!.checkIn !== x.checkIn);
+      const data = {
+        status: x.status, checkIn: x.checkIn, checkOut: x.checkOut, note: x.note, markedById: s.userId, lateMinutes,
+        ...(handEdited ? { source: null, faceVerifiedAt: null } : {}),
+      };
       if (lateMinutes && x.checkIn !== a?.checkIn) lateEvents.push({ employeeId: x.employeeId, checkIn: x.checkIn, lateMinutes, iso: day });
       await tx.attendance.upsert({
         where: { employeeId_date: { employeeId: x.employeeId, date } },
@@ -112,7 +126,7 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
     if (changes.length || skipped.length) {
       await audit(tx, s.userId, "UPDATE", "Attendance", day, undefined, { belgilandi: marked, tozalandi: cleared, otkazildi: skipped, ozgarishlar: changes });
     }
-    return { marked, cleared, skipped, hours };
+    return { marked, cleared, skipped, kept, hours };
   });
 
   notifyLateAfter(s.userId, lateEvents);
@@ -121,6 +135,7 @@ export async function saveAttendance(iso: string, _prev: ActionState, fd: FormDa
     res.marked ? `${res.marked} ta xodim belgilandi` : null,
     res.hours ? `jami ${(res.hours / 60).toFixed(1).replace(".0", "")} soat` : null,
     res.cleared ? `${res.cleared} ta katak tozalandi` : null,
+    res.kept.length ? `${res.kept.length} tasi tozalanmadi — yuz bilan tasdiqlangan belgi o'chirilmaydi, kerak bo'lsa «Kelmadi» qo'ying: ${res.kept.join(", ")}` : null,
     res.skipped.length ? `${res.skipped.length} tasi o'tkazib yuborildi — sahifa ochilgandan keyin boshqa joyda o'zgartirilgan: ${res.skipped.join(", ")}. Yangi qiymatni tekshirib, kerak bo'lsa qayta saqlang` : null,
   ].filter(Boolean);
   return { ok: true, note: parts.length ? parts.join(" · ") : "O'zgarish yo'q" };

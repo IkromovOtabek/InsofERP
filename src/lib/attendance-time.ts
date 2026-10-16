@@ -69,6 +69,15 @@ export function lateBy(checkIn: string | null | undefined, start: string): numbe
   return d > 0 && d < 8 * 60 ? d : null;
 }
 
+/**
+ * Bazaga yoziladigan kechikish (`Attendance.lateMinutes`): kelish vaqti bor bo'lsa — kechikmagani 0 bo'lib saqlanadi.
+ * null faqat "noma'lum" (eski yozuv yoki vaqtsiz) degani: shunda tabel joriy smenadan hisoblaydi. Aks holda keyin
+ * ish grafigi o'zgarsa, o'z vaqtida kelgan eski kunlar "kechikdi" bo'lib qolardi.
+ */
+export function lateToStore(checkIn: string | null | undefined, start: string): number | null {
+  return toMinutes(checkIn) === null ? null : lateBy(checkIn, start) ?? 0;
+}
+
 /** Erta ketish (daqiqa): smena tugashidan oldin ketgan bo'lsa. */
 export function earlyBy(checkOut: string | null | undefined, end: string): number | null {
   const a = toMinutes(checkOut), e = toMinutes(end);
@@ -90,7 +99,7 @@ export function dayTimes(
   if (!r || r.status !== "PRESENT") return { minutes: null, lateMin: null, earlyMin: null };
   return {
     minutes: workedMinutes(r.checkIn, r.checkOut),
-    lateMin: r.lateMinutes ?? lateBy(r.checkIn, shift.start),
+    lateMin: r.lateMinutes != null ? r.lateMinutes || null : lateBy(r.checkIn, shift.start),
     earlyMin: r.checkOut ? earlyBy(r.checkOut, shift.end) : null,
   };
 }

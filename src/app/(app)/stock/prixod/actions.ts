@@ -6,6 +6,9 @@ import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { isoDate } from "@/lib/format";
+import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
+import { resolveMaterials } from "@/lib/import-materials";
 import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
 import type { VatRate } from "@/lib/receipt-vat";
 
@@ -28,6 +31,9 @@ const schema = z.object({
   cashAccountId: opt,
   // Xomashyosiz qatorlarni forma yubormaydi; bo'sh ro'yxat — pastda tekshiriladi (o'z xabari bilan)
   materialId: z.array(z.string()).optional(),
+  // Nakladnoy skaneridan: spravochnikda yo'q xomashyo — `materialId` bo'sh, nomi va birligi shu yerda (qatorlar bilan parallel)
+  newMaterial: z.array(z.string()).optional(),
+  newUnit: z.array(z.string()).optional(),
   qty: z.array(z.preprocess(numStr, z.coerce.number({ message: "Miqdor son bo'lishi kerak" }).positive("Miqdor 0 dan katta bo'lishi kerak").max(MAX_AMOUNT, "Qiymat juda katta"))).optional(),
   price: z.array(z.preprocess(numStr, z.coerce.number({ message: "Narx son bo'lishi kerak" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Qiymat juda katta"))).optional(),
   deliveryCost: z.array(z.string()).optional(),
@@ -41,6 +47,8 @@ const LIMITS: [keyof z.infer<typeof schema>, number, string][] = [
 /**
  * Sklad → «Kirim»: yangi kirim (GoodsReceipt) — `lib/receipts.ts#createGoodsReceipt` (Kirim formasi bilan bitta qoida).
  * Muvaffaqiyatda jurnalga (kirim sanasi oyi → bugun) «Kirim saqlandi» xabari bilan qaytadi.
+ * Nakladnoy skaneridan kelgan yangi xomashyolar (`newMaterial[]`) kirimdan oldin yaratiladi — Excel importidagi
+ * `resolveMaterials` bilan: shu nomli xomashyo bo'lsa (ikki marta bosish ham) o'shanisi olinadi, takror yaratilmaydi.
  */
 export async function createPrixod(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "receipt");
@@ -53,24 +61,44 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { error: "Sana noto'g'ri" };
   const mats = d.materialId ?? [], qtys = d.qty ?? [], prices = d.price ?? [], deliveries = d.deliveryCost ?? [], rates = d.vatRate ?? [];
-  const items: { materialId: string; qty: number; price: number; deliveryCost: number; vatRate: VatRate | null }[] = [];
-  for (const [i, materialId] of mats.entries()) {
-    if (!materialId) continue;
+  const newNames = d.newMaterial ?? [], newUnits = d.newUnit ?? [];
+  const items: { materialId: string; newName?: string; qty: number; price: number; deliveryCost: number; vatRate: VatRate | null }[] = [];
+  for (const [i, id] of mats.entries()) {
+    const newName = id ? "" : (newNames[i] ?? "").trim().replace(/\s+/g, " ");
+    if (!id && !newName) continue;
+    if (newName.length > 200) return { error: `${i + 1}-qator: xomashyo nomi 200 belgidan oshmasin` };
     if (qtys[i] == null || prices[i] == null) return { error: `${i + 1}-qator: miqdor va narxni kiriting` };
     const raw = String(numStr(deliveries[i] ?? "") ?? "");
     const delivery = raw === "" ? 0 : Number(raw);
     if (!Number.isFinite(delivery) || delivery < 0) return { error: `${i + 1}-qator: yetkazib berish summasi noto'g'ri` };
     const rate = rates[i];
-    items.push({ materialId, qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null });
+    items.push({ materialId: id, ...(newName ? { newName } : {}), qty: qtys[i], price: prices[i], deliveryCost: delivery, vatRate: rate != null && rate !== "" ? (Number(rate) as VatRate) : null });
   }
   if (!items.length) return { error: "Kamida bitta qatorda xomashyoni tanlang" };
+
+  const fresh = items.filter((x) => x.newName);
+  if (fresh.length) {
+    try {
+      const unitOf = new Map(mats.flatMap((id, i) => (id ? [] : [[(newNames[i] ?? "").trim().replace(/\s+/g, " ").toLowerCase(), newUnits[i] ?? ""] as const])));
+      const res = await db.$transaction(async (tx) => {
+        const r = await resolveMaterials(tx, fresh.map((x) => ({ name: x.newName!, unit: unitOf.get(x.newName!.toLowerCase()) })), true);
+        for (const m of r.created) await audit(tx, s.userId, "CREATE", "Material", m.id, undefined, { ...m, via: "nakladnoy-scan" });
+        return r.result;
+      });
+      for (const x of fresh) x.materialId = res.get(x.newName!.toLowerCase())!.id;
+    } catch (e) {
+      return { error: e instanceof Error ? `Yangi xomashyo qo'shilmadi: ${e.message}` : "Yangi xomashyo qo'shilmadi" };
+    }
+    revalidatePath("/stock/materials"); revalidatePath("/settings");
+  }
 
   let res: Awaited<ReturnType<typeof createGoodsReceipt>>;
   try {
     res = await createGoodsReceipt({
       supplierId: d.supplierId, warehouseId: d.warehouseId, date: d.date, payment: d.payment,
       waybillNo: d.waybillNo, recipientId: d.recipientId, address: d.address, buyerId: d.buyerId, purpose: d.purpose, note: d.note,
-      cashAccountId: d.cashAccountId, clientToken: receiptTokenOf(fd.get("clientToken")), items,
+      cashAccountId: d.cashAccountId, clientToken: receiptTokenOf(fd.get("clientToken")),
+      items: items.map(({ materialId, qty, price, deliveryCost, vatRate }) => ({ materialId, qty, price, deliveryCost, vatRate })),
     }, { userId: s.userId, role: s.role });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Kirim saqlanmadi" };

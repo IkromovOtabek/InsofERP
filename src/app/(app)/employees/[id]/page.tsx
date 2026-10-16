@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileSignature, FileText, KeyRound, MapPin, Paperclip } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { EMPLOYEE_ACCEPT, PHOTO_ACCEPT } from "@/lib/uploads";
@@ -21,6 +21,8 @@ import { AnywhereSwitch } from "./anywhere-form";
 import { ANYWHERE_ROLES } from "@/lib/self-attendance";
 
 export default async function EmployeeCardPage({ params }: { params: Promise<{ id: string }> }) {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/employees");
   const s = await requireRoles(["HR"], { module: "employees" });
   const { id } = await params;
   const [e, catalog, vehicles, orderNos] = await Promise.all([
@@ -37,7 +39,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
     // Buyruq raqami korxona bo'yicha ketma-ket yuradi — shu yildagilardan keyingisi taklif qilinadi
     db.hrDocument.findMany({
-      where: { kind: "BUYRUQ", docDate: { gte: new Date(new Date().getFullYear(), 0, 1) } },
+      where: { kind: "BUYRUQ", docDate: { gte: new Date(Date.UTC(new Date().getFullYear(), 0, 1)) } }, // @db.Date — UTC yarim tun
       select: { no: true },
     }),
   ]);

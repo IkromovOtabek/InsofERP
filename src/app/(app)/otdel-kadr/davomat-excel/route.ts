@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { attendanceMonthXlsx } from "@/lib/attendance-excel";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +7,8 @@ export const runtime = "nodejs";
 
 /** GET /otdel-kadr/davomat-excel?oy=YYYY-MM — oylik davomat va haydovchilar reyslari (.xlsx), ish haqi asosi. */
 export async function GET(req: NextRequest) {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/otdel-kadr");
   await requireRoles(["HR"], { module: "employees" });
   const { file, name } = await attendanceMonthXlsx(req.nextUrl.searchParams.get("oy"));
   return new NextResponse(new Uint8Array(file), {

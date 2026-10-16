@@ -19,6 +19,7 @@ import { ListError } from "@/lib/mobile/list";
 import type { MobileUser } from "@/lib/mobile/auth";
 import type { AttendanceStatus } from "@/generated/prisma";
 import { notifyLateAfter } from "@/lib/attendance-late";
+import { dayTimes, lateToStore } from "@/lib/attendance-time";
 
 /**
  * Xodimning o'zi telefonidan davomat belgilashi — "Keldim" / "Ketdim" (mobil bosh sahifa kartasi).
@@ -330,7 +331,7 @@ export async function markSelfAttendance(user: MobileUser, raw: unknown): Promis
     }
     const f = await face();
     const placeIn = await placeShot(f.stored);
-    const late = lateBy(now, shift.start);
+    const late = lateToStore(now, shift.start);
     const data = {
       status: "PRESENT" as const, checkIn: now, checkOut: null, markedById: user.id, source: SELF_SOURCE, lateMinutes: late, newDevice, ...geo("In"),
       facePhoto: f.stored, faceVerifiedAt: new Date(), faceConfidence: f.confidence,
@@ -470,7 +471,7 @@ export async function myAttendanceMonth(user: Pick<MobileUser, "id">, rawMonth?:
   const days = monthDays(month);
   const rows = await db.attendance.findMany({
     where: { employeeId: emp.id, date: { gte: dayUtc(days[0]!.iso), lte: dayUtc(days[days.length - 1]!.iso) } },
-    select: { date: true, status: true, checkIn: true, checkOut: true, source: true },
+    select: { date: true, status: true, checkIn: true, checkOut: true, source: true, lateMinutes: true },
   });
   const by = new Map(rows.map((r) => [isoDay(r.date), r]));
   const shift = shiftOf(emp.workSchedule);
@@ -483,7 +484,8 @@ export async function myAttendanceMonth(user: Pick<MobileUser, "id">, rawMonth?:
       status: r?.status ?? null, mark: r ? markOf(r.status).label : null,
       checkIn: present ? r!.checkIn : null, checkOut: present ? r!.checkOut : null,
       minutes: present ? workedMinutes(r!.checkIn, r!.checkOut) : null,
-      lateMin: present ? lateBy(r!.checkIn, shift.start) : null,
+      // Otdel kadr tabeli va Excel bilan bir xil: saqlangan kechikish, bo'lmasa joriy smenadan
+      lateMin: dayTimes(r, shift).lateMin,
       self: !!r?.source && SELF_SOURCES.includes(r.source),
     };
   });

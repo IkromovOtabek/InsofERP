@@ -91,6 +91,8 @@ export const EMPLOYEE_MAX_MB = 10;
  */
 export async function saveEmployeeFile(employeeId: string, file: FormDataEntryValue | null, opts?: { imageOnly?: boolean }): Promise<SavedFile | null | { error: string }> {
   if (!(file instanceof File) || file.size === 0) return null;
+  // id fayl nomiga tushadi — server action argumentini klient o'zgartirishi mumkin ("../" bilan papkadan chiqib ketmasin)
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(employeeId)) return { error: "Xodim topilmadi" };
   if (file.size > EMPLOYEE_MAX_MB * 1024 * 1024) return { error: `"${file.name}" — ${EMPLOYEE_MAX_MB} MB dan katta` };
   // Surat (profil, yuz kadri) — HEIC'siz: aks holda saqlanadi-yu, keyin yuz tekshiruvi tushunarsiz xato beradi.
   // Hujjat nusxasi esa HEIC bo'lishi mumkin (faqat saqlanadi va yuklab olinadi)

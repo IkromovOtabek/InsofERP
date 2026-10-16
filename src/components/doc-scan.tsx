@@ -6,7 +6,7 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /** Server qaytaradigan natija (api/scan/receipt). */
-export type ScanResult = { doc: { supplier: string; date: string; docNo: string }; rows: Record<string, string>[]; model?: string; latency?: number };
+export type ScanResult = { doc: { supplier: string; date: string; docNo: string; recipient?: string }; rows: Record<string, string>[]; model?: string; latency?: number };
 
 /** Rasm uzun tomoni shuncha pikselgacha kichraytiriladi — o'qish sifati yetarli, yuklash tez. */
 const MAX_SIDE = 1600;
@@ -36,12 +36,15 @@ function fileToJpeg(f: File): Promise<string> {
  * serverga yuboriladi (api/scan/receipt), model qatorlarni o'qib beradi — natija chaqiruvchiga qaytadi.
  * Hech narsa o'z-o'zidan saqlanmaydi: qatorlar jadvalga tushadi, foydalanuvchi tekshirib tasdiqlaydi.
  */
-export function DocScan({ endpoint, onResult, label = "Kamera bilan skaner qilish" }: {
+export function DocScan({ endpoint, onResult, label = "Kamera bilan skaner qilish", autoOpen = false }: {
   endpoint: string;
   onResult: (r: ScanResult) => void;
   label?: string;
+  /** Sahifa ochilishi bilan oyna ham ochiladi (Sklad → «Nakladnoyni skanerlash» tugmasidan kelganda). */
+  autoOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
+  const autoRef = useRef(autoOpen);
   const [shots, setShots] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -72,6 +75,8 @@ export function DocScan({ endpoint, onResult, label = "Kamera bilan skaner qilis
   };
 
   useEffect(() => { if (!open) stopCam(); return stopCam; }, [open]);
+  // autoOpen: kamera bir marta, birinchi chizilgandan keyin ochiladi
+  useEffect(() => { if (autoRef.current) { autoRef.current = false; void startCam(); } });
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };

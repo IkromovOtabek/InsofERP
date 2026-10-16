@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileSpreadsheet, FileUp, Plus, Rows3, Wallet, Percent, Sigma, Search } from "lucide-react";
+import { FileSpreadsheet, FileUp, HardHat, Plus, Rows3, Wallet, Percent, Sigma, Search, ScanText } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { canSeePrixod } from "@/lib/stock-journal-access";
 import { pathAllowed } from "@/lib/nav";
+import { visionEnabled } from "@/lib/ai/vision";
 import { dateRu, fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   const canCreate = canDo(s, "stock", "receipt");
   // Kirim hujjati sahifasi (/receipts) hamma Sklad rollariga ochiq emas — havola faqat ochiladigan bo'lsa
   const canOpen = pathAllowed("/receipts", s.role, s.perms);
+  const canDistribute = canDo(s, "stock", "brigade");
   const keep: Record<string, string> = { ...(q ? { q } : {}), ...(wh ? { wh } : {}) };
 
   const excel = [
@@ -84,6 +86,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
           <ExcelButton file={`kirim_${period.fromStr}_${period.toStr}`} sheets={[{ name: "Kirim", rows: excel }]} />
           {canCreate && <LinkButton href="/stock/prixod/import" variant="secondary"><FileUp size={16} /> Excel'dan yuklash</LinkButton>}
           {canCreate && <LinkButton href="/stock/prixod/jurnal" variant="secondary"><FileSpreadsheet size={16} /> Excel jurnal</LinkButton>}
+          {canCreate && visionEnabled() && <LinkButton href="/stock/prixod/new?scan=1" variant="secondary"><ScanText size={16} /> Nakladnoyni skanerlash</LinkButton>}
           {canCreate && <LinkButton href="/stock/prixod/new"><Plus size={16} /> Yangi kirim</LinkButton>}
         </>}
       />
@@ -91,6 +94,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
       {saved && (
         <Callout tone="success" title="Kirim saqlandi">
           {"Hujjat "}{savedRec && canOpen ? <Link href={`/receipts/${savedRec.id}`} className="font-semibold underline">{savedRec.docNo}</Link> : <b>{saved}</b>}{" — "}{"skladdagi qoldiq oshdi."}
+          {savedRec && canDistribute && <div className="mt-2"><LinkButton href={`/stock?tab=brigades&receipt=${savedRec.id}`} variant="secondary" size="sm"><HardHat size={15} /> Brigadalarga taqsimlash</LinkButton></div>}
         </Callout>
       )}
 

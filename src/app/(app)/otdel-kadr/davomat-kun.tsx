@@ -7,7 +7,7 @@ import { CalendarDays, Camera, ChevronLeft, ChevronRight, Eraser, MapPin, User, 
 import { saveAttendance } from "./davomat-actions";
 import { Badge, Button, Card, CardHeader, FormError, Input, Select, Table, Td, Th, Tr, Empty } from "@/components/ui";
 import {
-  ATTENDANCE_MARKS, DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayTitle, hoursShort, hoursText, monthOf, shiftDay, today, workedMinutes,
+  ATTENDANCE_MARKS, DEFAULT_SHIFT, MAX_SHIFT_MINUTES, dayTitle, hoursShort, hoursText, monthOf, shiftDay, toMinutes, today, workedMinutes,
 } from "@/lib/davomat";
 import { lateBy, lateText } from "@/lib/attendance-time";
 import { distanceText, mapUrl } from "@/lib/attendance-zone";
@@ -61,9 +61,22 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
 
   const set = (id: string, patch: Partial<Val>) => setVals((v) => ({ ...v, [id]: { ...v[id], ...patch } }));
 
+  /**
+   * "Keldi" uchun standart vaqt — xodimning o'z smenasi (kartadagi ish grafigi), zavod standarti emas: aks holda
+   * 12 soatlik yoki tungi smena ishchisiga 9 soat yozilib qolardi. Bugun smena hali tugamagan bo'lsa "Ketdi" bo'sh qoladi.
+   */
+  const shiftTimes = (r: KunRow) => {
+    const s = toMinutes(r.shiftStart) ?? 0, e = toMinutes(r.shiftEnd) ?? 0;
+    const now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes();
+    const ended = iso !== today() || (e > s && nowMin >= e);
+    return { checkIn: r.shiftStart, checkOut: ended ? r.shiftEnd : "" };
+  };
+  const byId = new Map(rows.map((r) => [r.id, r]));
   /** Belgisi yo'qlarning hammasini "Keldi" qiladi — allaqachon belgilanganiga tegmaydi. */
-  const fillPresent = () => setVals((v) => Object.fromEntries(Object.entries(v).map(([id, x]) =>
-    [id, x.status ? x : { ...x, status: "PRESENT", checkIn: DEFAULT_SHIFT.checkIn, checkOut: DEFAULT_SHIFT.checkOut }])));
+  const fillPresent = () => setVals((v) => Object.fromEntries(Object.entries(v).map(([id, x]) => {
+    const r = byId.get(id);
+    return [id, x.status ? x : { ...x, status: "PRESENT", ...(r ? shiftTimes(r) : { checkIn: DEFAULT_SHIFT.checkIn, checkOut: DEFAULT_SHIFT.checkOut }) }];
+  })));
   const clearAll = () => setVals((v) => Object.fromEntries(Object.keys(v).map((id) => [id, { status: "", checkIn: "", checkOut: "", note: "" }])));
 
   const list = Object.values(vals);
@@ -190,7 +203,7 @@ export function DavomatKun({ iso, rows }: { iso: string; rows: KunRow[] }) {
                       onChange={(e) => set(r.id, {
                         status: e.target.value,
                         // "Keldi" tanlansa vaqt bo'sh qolmasin; boshqa belgida soat yozilmaydi
-                        ...(e.target.value === "PRESENT" && !v.checkIn ? DEFAULT_SHIFT : {}),
+                        ...(e.target.value === "PRESENT" && !v.checkIn ? shiftTimes(r) : {}),
                       })}
                     >
                       <option value="">— belgilanmagan</option>

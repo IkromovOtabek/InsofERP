@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
+import type { Prisma } from "@/generated/prisma";
 
 /**
  * Xodim kartasidagi telefon va PINFL qoidasi — Xodimlar (tezkor forma, karta tahriri) va
@@ -38,4 +39,23 @@ export async function duplicateProblem(selfId: string | null, phone: string | nu
     if (o) return `Bu PINFL boshqa xodim kartasida bor: ${o.fullName}`;
   }
   return null;
+}
+
+/** Haydovchining ochiq reysi bo'lsa — bo'shatish rad etiladi (reys egasiz qolmasin). */
+export async function openTripsProblem(employeeId: string, tx: Prisma.TransactionClient = db): Promise<string | null> {
+  const open = await tx.trip.findMany({ where: { driverId: employeeId, status: { in: ["PLANNED", "LOADED", "ON_ROAD"] } }, select: { deliveryNoteNo: true } });
+  return open.length ? `Haydovchida ochiq reys bor: ${open.map((t) => t.deliveryNoteNo).join(", ")} — avval yakunlang yoki bekor qiling` : null;
+}
+
+/**
+ * Ishdan bo'shatishda xodimdan bo'shatiladigan narsalar (tugma, karta va Excel import bir xil):
+ * biriktirilgan texnika bo'shaydi va brigadirligi olinadi — aks holda brigada bo'shatilgan odamni boshliq deb
+ * ko'rsatib, "Keldi" xabarlari unga ketaverardi. Qaytaradi: bo'shagan texnika id (ECO ga jo'natish uchun).
+ */
+export async function releaseOnDismiss(tx: Prisma.TransactionClient, employeeId: string): Promise<{ vehicleId: string | null; brigades: string[] }> {
+  const e = await tx.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { vehicleId: true } });
+  if (e.vehicleId) await tx.employee.update({ where: { id: employeeId }, data: { vehicleId: null } });
+  const led = await tx.brigade.findMany({ where: { leaderId: employeeId }, select: { id: true, name: true } });
+  if (led.length) await tx.brigade.updateMany({ where: { leaderId: employeeId }, data: { leaderId: null } });
+  return { vehicleId: e.vehicleId, brigades: led.map((b) => b.name) };
 }

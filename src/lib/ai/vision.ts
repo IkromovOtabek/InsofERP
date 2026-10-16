@@ -19,7 +19,7 @@ import { isTestMode } from "@/lib/test-mode";
 
 export type ScanImage = { mime: string; base64: string };
 export type ScanRow = Record<string, string>;
-export type ScanResult = { doc: { supplier: string; date: string; docNo: string }; rows: ScanRow[]; model: string };
+export type ScanResult = { doc: { supplier: string; date: string; docNo: string; recipient: string }; rows: ScanRow[]; model: string };
 
 export type VisionProvider = "claude" | "openai" | "groq";
 const KEY_ENV: Record<VisionProvider, string> = { claude: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", groq: "GROQ_API_KEY" };
@@ -46,20 +46,20 @@ const PROMPT = `Sen — omborchi yordamchisisan. Rasmda kirim hujjati (nakladnoy
 Vazifa: hujjatdagi TOVAR QATORLARINI o'qib, faqat JSON qaytar. Boshqa hech qanday matn yozma.
 
 JSON ko'rinishi:
-{"supplier":"","date":"","docNo":"","rows":[{"material":"","code":"","unit":"","qty":"","price":"","nds":"","sum":"","note":""}]}
+{"supplier":"","recipient":"","date":"","docNo":"","rows":[{"material":"","code":"","unit":"","qty":"","price":"","nds":"","sum":"","note":""}]}
 
 Qoidalar:
 - "material" — tovar nomi hujjatdagidek (tarjima qilma, qisqartirma).
 - "unit" — o'lchov birligi hujjatdagidek ("letr", "тн", "dona", "м3"…). Yo'q bo'lsa bo'sh qoldir.
 - RAQAMLAR (qty, price, nds, sum) — HUJJATDA QANDAY YOZILGAN BO'LSA SHUNDAY, matn sifatida: "4,900", "23.5", "48 109 286". Ajratkichlarni o'zgartirma, hisoblama, yaxlitlama. O'qib bo'lmasa bo'sh qoldir.
 - "date" — hujjat sanasi YYYY-MM-DD ko'rinishida (bo'lmasa bo'sh).
-- "supplier" — yetkazuvchi (kimdan) nomi; "docNo" — hujjat raqami.
+- "supplier" — yetkazuvchi (kimdan) nomi; "recipient" — qabul qiluvchi (kimga) hujjatdagidek; "docNo" — hujjat raqami.
 - "Jami", "Итого", "NDS", "Bo'yicha" kabi YAKUNIY qatorlarni rows ga QO'SHMA — faqat tovar qatorlari.
 - Ishonch bo'lmagan katakni bo'sh qoldir — o'ylab topma. Hujjatda tovar qatori bo'lmasa: {"rows":[]}.
 - Ko'pi bilan ${MAX_ROWS} qator.`;
 
 /** Model javobidan JSON obyektni ajratib oladi (```json bloki yoki matn ichidan). */
-function parseJson(text: string): { supplier?: string; date?: string; docNo?: string; rows?: unknown[] } {
+function parseJson(text: string): { supplier?: string; recipient?: string; date?: string; docNo?: string; rows?: unknown[] } {
   const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
   const raw = fence ? fence[1] : text;
   const i = raw.indexOf("{"), j = raw.lastIndexOf("}");
@@ -70,13 +70,13 @@ function parseJson(text: string): { supplier?: string; date?: string; docNo?: st
 const KEYS = ["material", "code", "unit", "qty", "price", "nds", "sum", "note"] as const;
 const cellText = (v: unknown) => (v == null || typeof v === "object" ? "" : String(v).trim());
 
-function shape(parsed: { supplier?: string; date?: string; docNo?: string; rows?: unknown[] }, model: string): ScanResult {
+function shape(parsed: { supplier?: string; recipient?: string; date?: string; docNo?: string; rows?: unknown[] }, model: string): ScanResult {
   const rows = (Array.isArray(parsed.rows) ? parsed.rows : [])
     .slice(0, MAX_ROWS)
     .map((r) => Object.fromEntries(KEYS.map((k) => [k, cellText((r as Record<string, unknown>)?.[k])])) as ScanRow)
     .filter((r) => r.material !== "");
   return {
-    doc: { supplier: cellText(parsed.supplier), date: cellText(parsed.date), docNo: cellText(parsed.docNo) },
+    doc: { supplier: cellText(parsed.supplier), date: cellText(parsed.date), docNo: cellText(parsed.docNo), recipient: cellText(parsed.recipient) },
     rows,
     model,
   };

@@ -1,10 +1,12 @@
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog } from "@/lib/positions";
 import { EMPLOYEE_ACCEPT, EMPLOYEE_MAX_MB, PHOTO_ACCEPT } from "@/lib/uploads";
 import { PageHeader } from "@/components/ui";
 import { EmployeeCardForm } from "./employee-card-form";
 
 export default async function NewEmployeeCardPage() {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/otdel-kadr");
   await requireRoles(["HR"], { module: "employees", actions: ["create"] });
   // Ro'yxat Xodimlar sahifasidagi bilan bir xil (Excel'dan qolgan lavozimlar ham ko'rinadi)
   const { work, strays } = await positionCatalog();

@@ -332,7 +332,7 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
           {r.status === "RECEIVED" && (
             <Card>
               <CardHeader icon={HardHat} title="Keyingi qadam" description="Kelgan xomashyoni brigadalarga taqsimlang" />
-              <LinkButton href="/stock?tab=brigades" variant="secondary">Brigadalarga taqsimlash</LinkButton>
+              <LinkButton href={r.receipt ? `/stock?tab=brigades&receipt=${r.receipt.id}` : "/stock?tab=brigades"} variant="secondary">Brigadalarga taqsimlash</LinkButton>
             </Card>
           )}
           {r.status === "REJECTED" && (

@@ -137,9 +137,17 @@ export function headerRowIndex(aoa: unknown[][]): number {
   return i;
 }
 
-/** Nomdan xomashyo kodi: "Sement M400" → "SEMENT-M400" (lotin, 16 belgigacha). */
+const CYR: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "j", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p",
+  р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "s", ч: "ch", ш: "sh", щ: "sh", ъ: "", ы: "i", ь: "", э: "e", ю: "yu", я: "ya",
+  ў: "o", қ: "k", ғ: "g", ҳ: "h",
+};
+/** Kirill → lotin, kichik harf bilan: «Веник» → «venik» (kod yasash va nom solishtirish uchun). */
+export const translit = (s: string) => [...s.toLowerCase()].map((c) => CYR[c] ?? c).join("");
+
+/** Nomdan xomashyo kodi: "Sement M400" → "SEMENT-M400", «Веник маленький» → «VENIK-MALENKIY» (lotin, 16 belgigacha). */
 export function codeFromName(name: string) {
-  const s = name.normalize("NFKD").replace(/[^\w\s-]/g, "").trim().toUpperCase().replace(/[\s_]+/g, "-").slice(0, 16);
+  const s = translit(name).normalize("NFKD").replace(/[^\w\s-]/g, "").trim().toUpperCase().replace(/[\s_]+/g, "-").slice(0, 16);
   return s || "MAT";
 }
 

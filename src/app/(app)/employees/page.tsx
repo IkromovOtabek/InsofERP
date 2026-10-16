@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, Search, Truck } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { POSITIONS, LOGIN_ROLE_OPTIONS, positionCatalog, roleForPosition } from "@/lib/positions";
 import { ROLE_LABELS } from "@/lib/nav";
 import { date, isoDate, qty } from "@/lib/format";
@@ -15,6 +15,8 @@ import { pendingAccessRequests } from "@/lib/access-request";
 import type { Prisma } from "@/generated/prisma";
 
 export default async function EmployeesPage({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string; holat?: string; login?: string }> }) {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/employees");
   const s = await requireRoles(["HR", "LOGISTICS"], { module: "employees" });
   const isHR = ["HR", "DIRECTOR"].includes(s.role);
   const { q = "", pos = "", holat = "", login = "" } = await searchParams;
@@ -163,7 +165,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
                 </Td>
                 <Td right>{e._count.trips}</Td>
                 <Td>{e.isActive ? <Badge color="green">Faol</Badge> : <Badge>Nofaol</Badge>}</Td>
-                <Td>{isHR && e.userId !== s.userId && <form action={toggleEmployee.bind(null, e.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{e.isActive ? "O'chirish" : "Yoqish"}</Button></form>}</Td>
+                <Td>{isHR && e.userId !== s.userId && !e.firedAt && <form action={toggleEmployee.bind(null, e.id)}><Button variant="secondary" className="px-2 py-1 text-xs">{e.isActive ? "O'chirish" : "Yoqish"}</Button></form>}</Td>
               </Tr>
             );
           })}

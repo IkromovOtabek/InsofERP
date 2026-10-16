@@ -3,9 +3,11 @@ import { db } from "@/lib/db";
 import { date, dateTime, money, qty } from "@/lib/format";
 import { lineDelivery, lineGoods, lineTotal, receiptAmounts } from "@/lib/receipt-vat";
 import { resolveReceiptPayments, waybillFromNote } from "@/lib/receipts";
-import { Badge, Card, DL, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
+import { HardHat } from "lucide-react";
+import { Badge, Card, DL, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { pathAllowed } from "@/lib/nav";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { stornoReceipt } from "../actions";
 
@@ -29,10 +31,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const hasDelivery = delivery > 0;
   const paidSum = Number(paid._sum.amount ?? 0);
   const canStorno = !r.cancelledAt && !r.supply && canDo(s, "stock", "receipt_storno");
+  // Kelgan xomashyoni shu kirim qatorlari bilan brigadalarga taqsimlash (Sklad → Brigadalarga berish)
+  const canDistribute = !r.cancelledAt && canDo(s, "stock", "brigade") && pathAllowed("/stock", s.role, s.perms);
   return (
     <div>
       <PageHeader back={{ href: "/receipts", label: "Kirim" }} title={`Kirim ${r.docNo}`} subtitle={`${date(r.date)} · ${r.supplier.name} → ${r.warehouse.name}${r.createdBy ? ` · kiritdi: ${r.createdBy.fullName}` : ""}`}
-        action={canStorno ? <ConfirmButton action={stornoReceipt.bind(null, r.id)} label="Storno" question={paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni storno qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} storno qilinsinmi? Xomashyo skladdan qaytariladi`} reason="required" okText="Storno qilindi" className="h-9 px-3 text-sm" /> : undefined} />
+        action={<>
+          {canDistribute && <LinkButton href={`/stock?tab=brigades&receipt=${r.id}`} variant="secondary"><HardHat size={16} /> Brigadalarga taqsimlash</LinkButton>}
+          {canStorno && <ConfirmButton action={stornoReceipt.bind(null, r.id)} label="Storno" question={paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni storno qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} storno qilinsinmi? Xomashyo skladdan qaytariladi`} reason="required" okText="Storno qilindi" className="h-9 px-3 text-sm" />}
+        </>} />
       {r.cancelledAt && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <Badge color="red">Storno</Badge> {dateTime(r.cancelledAt)}{cancelledBy ? ` · ${cancelledBy.fullName}` : ""} — {r.cancelReason}. Sklad harakatlari teskari yozilgan; kirim qoldiq, tannarx va qarzga kirmaydi.

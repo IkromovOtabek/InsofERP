@@ -142,6 +142,42 @@ if (drv) {
   check(/ochiq reys/.test(r.error ?? ""), "ochiq reysli haydovchini kartadan bo'shatish rad etildi", r.error);
 } else console.log("   info: ochiq reysli haydovchi yo'q — tekshiruv o'tkazib yuborildi");
 
+// ── 5) Kadr auditi tuzatishlari ──
+// Bo'shatilgan xodim ro'yxatdagi «Yoqish» (toggleEmployee) bilan qaytmaydi — login yopiq qoladi
+r = await kadr.action(`${EA}#dismissEmployee`, [emp, undefined, fd({ firedAt: today, reason: "QA toggle" })], `/employees/${emp}`);
+r = await kadr.action(`${EA}#toggleEmployee`, [emp], "/employees");
+check(!r.ok && q1(`select u."isActive"::text from "User" u join "Employee" e on e."userId"=u.id where e.id='${emp}'`) === "false"
+  && q1(`select "isActive"::text from "Employee" where id='${emp}'`) === "false", "bo'shatilgan xodimni «Yoqish» qaytarmaydi, login yopiq", r.error);
+r = await kadr.action(`${EA}#restoreEmployee`, [emp], `/employees/${emp}`);
+check(r.ok, "kartadagi «Ishga qaytarish» ishlaydi", r.error);
+// «O'chirish» (sanasiz nofaol) xodim belgisi bor kunlarda tabeldan yo'qolmaydi
+r = await kadr.action(`${EA}#toggleEmployee`, [emp], "/employees");
+const dayPage = await kadr.get(`/otdel-kadr?tab=davomat&kun=${today}`);
+check(q1(`select "isActive"::text from "Employee" where id='${emp}'`) === "false" && dayPage.text.includes(name1), "o'chirilgan xodim belgisi bor kun tabelida qoladi", dayPage.status);
+r = await kadr.action(`${EA}#toggleEmployee`, [emp], "/employees");
+// Xodim id'si orqali papkadan chiqib fayl yozish (path traversal) rad etiladi
+r = await kadr.action(`${OK}#addEmployeeDocument`, ["../../qa-trav", undefined, fd({ kind: "Boshqa", file: file(pdf, "a.pdf", "application/pdf") })], `/employees/${emp}`);
+check(/topilmadi/.test(r.error ?? ""), "yo'q / buzuq xodim id'si bilan hujjat yuklash rad etildi", r.error);
+// Imzolangan kadr hujjati o'chirilmaydi, imzolanmagan qoralama o'chadi
+const signed = q1(`insert into "HrDocument" (id, "employeeId", kind, "docDate", file, "fileName", "fileType", "signedAt", "updatedAt") values ('qa_sig_${tag}', '${emp}', 'SHARTNOMA', current_date, 'x.pdf', 'x.pdf', 'application/pdf', now(), now()) returning id`)!;
+r = await kadr.action("(app)/otdel-kadr/hr-doc-actions#deleteHrDoc", [signed], `/employees/${emp}`);
+check(/Imzolangan/.test(r.error ?? "") && n1(`select count(*) from "HrDocument" where id='${signed}'`) === 1, "imzolangan hujjat o'chirilmadi", r.error);
+const draft = q1(`insert into "HrDocument" (id, "employeeId", kind, "docDate", "updatedAt") values ('qa_drf_${tag}', '${emp}', 'TILXAT', current_date, now()) returning id`)!;
+r = await kadr.action("(app)/otdel-kadr/hr-doc-actions#deleteHrDoc", [draft], `/employees/${emp}`);
+check(r.ok && n1(`select count(*) from "HrDocument" where id='${draft}'`) === 0, "imzolanmagan qoralama o'chdi", r.error);
+// Buyruq raqami yil ichida takrorlanmaydi
+r = await kadr.action("(app)/otdel-kadr/hr-doc-actions#saveHrDoc", [emp, undefined, fd({ kind: "BUYRUQ", docDate: today, effectiveAt: today, no: `Q${tag} K` })], `/employees/${emp}`);
+check(r.ok, "buyruq raqam bilan tayyorlandi", r.error);
+r = await kadr.action("(app)/otdel-kadr/hr-doc-actions#saveHrDoc", [emp, undefined, fd({ kind: "BUYRUQ", docDate: today, effectiveAt: today, no: `q${tag} k` })], `/employees/${emp}`);
+check(/allaqachon bor/.test(r.error ?? ""), "shu yilda takroriy buyruq raqami rad etildi", r.error);
+// Direktor HR uchun «Xodimlar» modulini «yo'q» qilsa — kadr sahifalari va hujjat fayllari yopiq
+const kadrPerms = q1(`select coalesce(perms::text, 'null') from "User" where login='test.kadr'`);
+q(`update "User" set perms='{"employees":"none"}' where login='test.kadr'`);
+const closed = await kadr.get("/otdel-kadr");
+const closedDoc = await kadr.get(`/employees/${emp}/hujjat/${docId}`);
+q(`update "User" set perms=${kadrPerms === "null" ? "null" : `'${kadrPerms}'`} where login='test.kadr'`);
+check(closed.status !== 200 && closedDoc.status === 403, "perms «yo'q» — /otdel-kadr va hujjat fayli yopiq", `${closed.status} ${closedDoc.status}`);
+
 // Sahifalar
 for (const p of ["/employees", `/employees/${emp}`, `/employees/${emp}/varaqa`, `/employees/${emp}/hujjat/chop/toplam`, "/otdel-kadr", "/otdel-kadr?tab=davomat", "/otdel-kadr?tab=ish-vaqti", "/otdel-kadr?tab=lavozimlar", "/otdel-kadr?tab=taqvim", "/otdel-kadr?tab=bolimlar"]) {
   for (const [nm, c] of [["kadr", kadr], ["direktor", dir]] as const) { const x = await c.get(p); check(x.status === 200, `${nm} ${p} → ${x.status}`); }

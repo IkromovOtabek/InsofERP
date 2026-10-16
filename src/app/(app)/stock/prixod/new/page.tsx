@@ -6,11 +6,12 @@ import { canDo } from "@/lib/permissions";
 import { issuePrices } from "@/lib/stock-price";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { isoDate } from "@/lib/format";
+import { visionEnabled } from "@/lib/ai/vision";
 import { PageHeader } from "@/components/ui";
 import { PrixodForm } from "../prixod-form";
 
-/** Sklad → «Kirim» → yangi kirim (Excel jurnali ustunlari bilan). */
-export default async function NewPrixodPage() {
+/** Sklad → «Kirim» → yangi kirim (Excel jurnali ustunlari bilan). `?scan=1` — nakladnoy skaneri darhol ochiladi. */
+export default async function NewPrixodPage({ searchParams }: { searchParams: Promise<{ scan?: string }> }) {
   const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   // Rol mos, lekin direktor bu amalni olib qo'ygan bo'lsa — forma ochilmaydi (saqlashda baribir rad bo'lardi)
   if (!canDo(s, "stock", "receipt")) redirect("/stock/prixod");
@@ -45,6 +46,7 @@ export default async function NewPrixodPage() {
         accounts={accounts}
         clientToken={crypto.randomUUID()}
         companyVatPayer={vatPayer}
+        scan={{ enabled: visionEnabled(), autoOpen: (await searchParams).scan === "1" }}
       />
     </div>
   );

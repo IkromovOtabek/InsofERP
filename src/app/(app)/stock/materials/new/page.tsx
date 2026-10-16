@@ -21,7 +21,7 @@ export default async function StockMaterialsNew({ searchParams }: { searchParams
   const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
   const { mode } = await searchParams;
   const [warehouses, materials, groups, costs, accounts] = await Promise.all([
-    db.warehouse.findMany({ where: { isActive: true } }),
+    db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true, groupId: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     // Narx sifatida miqdorga tortilgan o'rtacha tannarx olinadi (umumiy qoida — `lib/stock.ts`)

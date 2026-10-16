@@ -9,7 +9,8 @@ import { FaceBusyError, faceDescriptor } from "@/lib/face-descriptor";
 import { removeEmployeeFile, saveEmployeeFile } from "@/lib/uploads";
 import { MAX_SHIFT_MINUTES, dayUtc, hoursText, markOf, toMinutes, today, workedMinutes } from "@/lib/davomat";
 import { nowHHMM, productionStaff } from "@/lib/production-staff";
-import { earlyBy, lateBy, nightOpen, openRecord, shiftOf } from "@/lib/self-attendance";
+import { earlyBy, nightOpen, openRecord, shiftOf } from "@/lib/self-attendance";
+import { lateToStore } from "@/lib/attendance-time";
 import {
   AUTO_OUT_AFTER_MIN, ENROLL_MAX_SAMPLES, ENROLL_MIN_SAMPLES, FACE_DIM, SCAN_PROBES, SNAPSHOT_MAX_CHARS,
   type FaceMode, type FaceScanFail, type FaceScanResult,
@@ -327,7 +328,7 @@ export async function recordScan(s: FaceActor, scope: FaceScope, m: Match, mode:
     if (t && t.status !== "PRESENT" && t.status !== "ABSENT") {
       return fail("MARKED_OTHER", `${e.fullName}: bugun «${markOf(t.status).label}» deb belgilangan — o'zgartirish otdel kadr tabelida`, who);
     }
-    const late = lateBy(now, shift.start);
+    const late = lateToStore(now, shift.start);
     const stored = await savePhoto(e.id);
     const data = {
       status: "PRESENT" as const, checkIn: now, checkOut: null, markedById: s.userId, source: FACE_SOURCE, lateMinutes: late,
@@ -500,17 +501,20 @@ export type FaceLogRow = {
   employee: { id: string; fullName: string; position: string }; photo: boolean;
 };
 
-/** Bugun skaner orqali yozilgan kelish/ketishlar (yangisi tepada). Sex boshlig'iga — faqat sex xodimlari. */
+/**
+ * Bugun yuz bilan yozilgan kelish/ketishlar (yangisi tepada): ERP skaneri, ECO kioski va xodimning o'zi
+ * ilovadan «Keldim»/«Ketdim» (SELF_FACE) — hammasi. Sex boshlig'iga — faqat sex xodimlari.
+ */
 export async function todayFaceLog(scope: FaceScope): Promise<FaceLogRow[]> {
   const rows = await db.attendance.findMany({
-    where: { date: dayUtc(today()), OR: [{ source: FACE_SOURCE }, { checkOutPhoto: { not: null } }] },
+    where: { date: dayUtc(today()), OR: [{ source: FACE_SOURCE }, { facePhoto: { not: null } }, { checkOutPhoto: { not: null } }] },
     select: { id: true, source: true, checkIn: true, checkOut: true, facePhoto: true, checkOutPhoto: true, employee: { select: { id: true, fullName: true, position: true } } },
   });
   const sex = scope === "sex" ? new Set((await productionStaff()).members.map((m) => m.id)) : null;
   const out: FaceLogRow[] = [];
   for (const r of rows) {
     if (sex && !sex.has(r.employee.id)) continue;
-    if (r.source === FACE_SOURCE && r.checkIn) out.push({ key: `${r.id}:in`, attendanceId: r.id, kind: "in", time: r.checkIn, employee: r.employee, photo: !!r.facePhoto });
+    if ((r.source === FACE_SOURCE || r.facePhoto) && r.checkIn) out.push({ key: `${r.id}:in`, attendanceId: r.id, kind: "in", time: r.checkIn, employee: r.employee, photo: !!r.facePhoto });
     if (r.checkOutPhoto && r.checkOut) out.push({ key: `${r.id}:out`, attendanceId: r.id, kind: "out", time: r.checkOut, employee: r.employee, photo: true });
   }
   return out.sort((a, b) => b.time.localeCompare(a.time));

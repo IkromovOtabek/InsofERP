@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CalendarRange, FileSpreadsheet, FileUp, HardHat, Package, Truck, Wallet } from "lucide-react";
-import { Button, Callout, Field, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Button, Callout, Checkbox, Field, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { dateRu, fmtNum, moneyShort } from "@/lib/format";
 import { groupJournal, journalMaterials, parseJournal, type JournalDoc, type JournalIssue } from "@/lib/prixod-journal";
 import type { JournalChunkResult } from "@/lib/prixod-journal-import";
@@ -42,6 +42,8 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
   const [data, setData] = useState<Parsed | null>(null);
   const [readError, setReadError] = useState("");
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
+  // Eski daftar odatda allaqachon to'langan — aks holda butun summa yetkazuvchilarga qarz bo'lib tushadi
+  const [paid, setPaid] = useState(true);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [result, setResult] = useState<(JournalChunkResult & { stopped?: string }) | null>(null);
@@ -89,7 +91,7 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
     for (let i = 0; i < data.docs.length; i += CHUNK) {
       const part = data.docs.slice(i, i + CHUNK);
       try {
-        const r = await importJournalChunk({ warehouseId, docs: part, supplierVat: data.supplierVat });
+        const r = await importJournalChunk({ warehouseId, docs: part, supplierVat: data.supplierVat, paid });
         if (r.error) { acc.stopped = r.error; break; }
         acc.created += r.created; acc.existed += r.existed; acc.failed.push(...r.failed);
       } catch {
@@ -119,7 +121,7 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
             <StatCard label="Kirim hujjatlari" value={fmtNum(data.docs.length)} hint={`${fmtNum(stats.rows)} ta qator`} icon={FileSpreadsheet} />
             <StatCard label="Davr" value={<span className="text-base">{day(stats.from)} – {day(stats.to)}</span>} icon={CalendarRange} />
             <StatCard label="Yetkazuvchilar" value={fmtNum(new Set(data.docs.map((d) => d.supplier.toLowerCase())).size)} hint={data.newSuppliers.length ? `${fmtNum(data.newSuppliers.length)} tasi yangi — qo'shiladi` : "hammasi spravochnikda bor"} icon={Truck} />
-            <StatCard label="Jami summa (QQS bilan)" value={moneyShort(stats.total)} hint="to'lanmagan kirim bo'lib tushadi" icon={Wallet} />
+            <StatCard label="Jami summa (QQS bilan)" value={moneyShort(stats.total)} hint={paid ? "to'langan deb yoziladi" : "to'lanmagan kirim bo'lib tushadi"} icon={Wallet} />
           </div>
 
           {data.newMaterials.length > 0 && (
@@ -163,6 +165,10 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
                   </Select>
                 </Field>
               )}
+              <div className="w-full">
+                <Checkbox checked={paid} onChange={(e) => setPaid(e.target.checked)} disabled={busy}
+                  label="Bu kirimlar allaqachon to'langan — «To'lanmagan kirimlar» va yetkazuvchi qarziga tushmasin (kassaga chiqim yozilmaydi)" />
+              </div>
               <Button type="button" onClick={save} disabled={busy || !warehouseId || (data.newSuppliers.length > 0 && !canAddSuppliers)}>
                 <Package size={16} /> {busy ? `Saqlanmoqda… ${fmtNum(done)} / ${fmtNum(data.docs.length)}` : `${fmtNum(data.docs.length)} ta kirimni saqlash`}
               </Button>

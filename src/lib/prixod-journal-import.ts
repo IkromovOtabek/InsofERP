@@ -5,6 +5,7 @@ import { validDate } from "./action";
 import { resolveMaterials } from "./import-materials";
 import { toMaterialUnit } from "./unit";
 import { createGoodsReceipt } from "./receipts";
+import { PAID_IMPORT_TOKEN } from "./receipt-payables";
 import { journalMaterials, journalUnit, type JournalDoc } from "./prixod-journal";
 import type { Role } from "@/generated/prisma";
 
@@ -26,10 +27,12 @@ const MAX_DOCS = 40;
  * Yo'q yetkazuvchi va xomashyolar yaratiladi. Bir martalik kalit hujjat mazmunidan olinadi —
  * xuddi shu fayl qayta yuklansa (yoki ulanish uzilib qayta yuborilsa) ikkinchi kirim ochilmaydi.
  *
+ * `paid` — eski daftar, puli allaqachon to'langan: kirimlar «To'lanmagan kirimlar» ga va yetkazuvchi qarziga tushmaydi
+ * (kalit `PAID_IMPORT_TOKEN` bilan), kassaga chiqim yozilmaydi.
  * `supplierVat` — kichik harfli yetkazuvchi nomi → fayldagi qatorlarida QQS bormi (yangi yetkazuvchining «QQS to'lovchisi» belgisi).
  */
 export async function importJournalDocs(
-  input: { warehouseId: string; docs: JournalDoc[]; supplierVat: Record<string, boolean> },
+  input: { warehouseId: string; docs: JournalDoc[]; supplierVat: Record<string, boolean>; paid?: boolean },
   s: { userId: string; role: Role; canAddSuppliers: boolean },
 ): Promise<JournalChunkResult> {
   const res: JournalChunkResult = { created: 0, existed: 0, failed: [] };
@@ -75,12 +78,15 @@ export async function importJournalDocs(
         if (!conv) throw new Error(`«${r.material}»: birlik «${r.unit}», xomashyoda «${m.unit}» — o'girib bo'lmaydi`);
         return { materialId: m.id, qty: conv.qty, price: conv.price, vatRate: r.vatRate === 12 ? (12 as const) : (0 as const), deliveryCost: Number(r.delivery) || 0 };
       });
-      const token = "jrn-" + createHash("sha256").update(JSON.stringify([wh.id, d.key, d.rows.map((r) => [r.material, r.unit, r.qty, r.price, r.vatRate, r.delivery])])).digest("hex").slice(0, 40);
+      const hash = createHash("sha256").update(JSON.stringify([wh.id, d.key, d.rows.map((r) => [r.material, r.unit, r.qty, r.price, r.vatRate, r.delivery])])).digest("hex").slice(0, 40);
+      const token = (input.paid ? PAID_IMPORT_TOKEN : "jrn-") + hash;
+      // Shu hujjat boshqa rejimda (to'langan / to'lanmagan) yuklangan bo'lsa ham qayta ochilmasin
+      if (await db.goodsReceipt.findFirst({ where: { clientToken: { in: [`jrn-${hash}`, `${PAID_IMPORT_TOKEN}${hash}`] } }, select: { id: true } })) { res.existed++; continue; }
       const out = await createGoodsReceipt({
         supplierId: supId.get(d.supplier.trim().toLowerCase())!, warehouseId: wh.id, date: d.date,
         waybillNo: d.waybillNo || null, payment: d.payment === "BANK" || d.payment === "CASH" ? d.payment : null,
         recipientId: recId.get(String(d.recipient ?? "").trim().toLowerCase()) ?? null, address: d.address || null,
-        note: "Excel jurnaldan", clientToken: token, items,
+        note: input.paid ? "Excel jurnaldan (to'langan)" : "Excel jurnaldan", clientToken: token, items,
       }, { userId: s.userId, role: s.role });
       if (out.existed) res.existed++; else res.created++;
     } catch (e) {

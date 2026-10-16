@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { date, dateTime } from "@/lib/format";
 import { ROLE_LABELS } from "@/lib/nav";
@@ -16,6 +16,8 @@ export default async function EmployeeSheetPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ print?: string }>;
 }) {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/employees");
   await requireRoles(["HR"], { module: "employees" });
   const { id } = await params;
   const { print } = await searchParams;

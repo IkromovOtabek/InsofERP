@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireRoles } from "@/lib/page-guard";
+import { requirePage, requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { HIRING_DOCS, HIRING_SLUG, HR_DOC_BY_SLUG } from "@/lib/hr-docs";
 import { PrintButton } from "@/components/print-button";
@@ -22,6 +22,8 @@ export default async function HrDocPrintPage({ params, searchParams }: {
   params: Promise<{ id: string; slug: string }>;
   searchParams: Promise<{ doc?: string; print?: string }>;
 }) {
+  // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
+  await requirePage("/employees");
   await requireRoles(["HR"], { module: "employees" });
   const { id, slug } = await params;
   const { doc, print } = await searchParams;
