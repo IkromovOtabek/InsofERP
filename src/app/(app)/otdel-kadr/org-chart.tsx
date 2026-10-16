@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Calculator, ChevronRight, Compass, Crown, Factory, Handshake, HardHat, IdCard, Maximize2, Minus, Package,
-  Phone, Plus, ShieldCheck, Truck, User, Users, Wallet, X, Eye, EyeOff, FileText, CircleSlash,
+  Phone, Plus, ShieldCheck, Store, Truck, User, Users, Wallet, X, Eye, EyeOff, FileText, CircleSlash,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@/generated/prisma";
@@ -42,7 +42,7 @@ const TONES: Record<OrgTone, { card: string; icon: string; ring: string; chip: s
 
 const ICONS: Record<string, LucideIcon> = {
   crown: Crown, compass: Compass, factory: Factory, package: Package, truck: Truck,
-  handshake: Handshake, calculator: Calculator, wallet: Wallet, users: Users, shieldCheck: ShieldCheck, hardHat: HardHat,
+  handshake: Handshake, calculator: Calculator, wallet: Wallet, users: Users, shieldCheck: ShieldCheck, hardHat: HardHat, store: Store,
 };
 
 /* ═══════════════════════ Tuzilmani yig'ish ═══════════════════════ */

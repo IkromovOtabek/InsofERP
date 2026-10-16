@@ -18,7 +18,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/leads": Inbox, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
   "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
   "/marketing": Gauge, "/marketing/kontent": CalendarRange, "/marketing/studiya": Sparkles, "/marketing/media": Images, "/marketing/target": Crosshair, "/marketing/sozlamalar": SlidersHorizontal, "/marketing/agent": Bot,
-  "/payments": Landmark, "/pul-qabul": HandCoins, "/cashflow": ArrowLeftRight, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
+  "/payments": Landmark, "/pul-qabul": HandCoins, "/cashflow": ArrowLeftRight, "/arenda": Store, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
   "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=taqvim": CakeSlice,
   "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/settings/boshlangich-qoldiq": Scale,
   "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard,

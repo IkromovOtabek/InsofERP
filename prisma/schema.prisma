@@ -29,6 +29,7 @@ enum Role {
   MECHANIC // mexanik — bosh sahifasi "Sklad & Logistika" nazorati: bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
   BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
+  SECRETARY // sekretar — vebda faqat «Arenda» (do'konlar ijarasi: oylik hisob, kirim-chiqim)
   AGENT // ko'chadagi sotuv agenti — o'z mijozlari, zayavka ochish, mijozlar qarzi (mobil + cheklangan veb)
   SUPERADMIN // IT (platforma egasi) — markaziy paneldan SSO bilan kiradi; korxona ichida direktor huquqi + IT kuzatuv.
   // Direktor bu hisobni ko'rmaydi, o'zgartira olmaydi; login/parol bilan kirib bo'lmaydi (faqat SSO).
@@ -95,6 +96,7 @@ model User {
   vehicleServices        VehicleService[]         @relation("VehicleServiceBy")
   agentCustomers         Customer[]               @relation("CustomerAgent")
   aiChats                AiChat[]                 @relation("AiChatUser")
+  rentTx                 RentTx[]                 @relation("RentTxCreatedBy")
   /// Modul bo'yicha qo'shimcha ruxsat (direktor beradi): { "modul": "view" | "write" }. Rol ustiga qo'shiladi/cheklaydi.
   perms                  Json?
 }
@@ -2848,4 +2850,90 @@ model PaymentRequest {
   @@index([method, status, dueDate])
   @@index([status, closedAt])
   @@index([customerId])
+}
+
+/**
+ * ───────────────────────── Arenda (do'konlar ijarasi) — sekretar yuritadi ─────────────────────────
+ */
+
+/// Ijaraga berilgan do'kon/joy. `location` — guruh (bozor/hudud: «Texno siti bozor», «Makro», «Gulbozor»).
+/// Summalar — andoza: yangi oy ochilganda shu qiymatlar (yoki o'tgan oy hisobi) oylik hisobga ko'chadi.
+model RentShop {
+  id          String   @id @default(cuid())
+  name        String
+  location    String
+  /// Perechisleniye (bank orqali) to'lanadigan oylik summa
+  bankAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  /// Naqd to'lanadigan oylik summa
+  cashAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  /// Svet va biz to'laydigan soliq — ma'lumot uchun (qoldiqqa ta'sir qilmaydi, Excel'dagidek)
+  electricity Decimal  @default(0) @db.Decimal(18, 2)
+  tax         Decimal  @default(0) @db.Decimal(18, 2)
+  note        String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  charges RentCharge[]
+  txs     RentTx[]
+
+  @@unique([location, name])
+}
+
+/// Oylik hisob — Excel'dagi oy varag'ining bitta qatori: shu oy do'kon qancha to'lashi kerak.
+/// Qoldiq = (bankDue + cashDue) − shu oy uchun kirimlar (RentTx INCOME, month bo'yicha).
+model RentCharge {
+  id          String   @id @default(cuid())
+  shopId      String
+  /// Oyning 1-kuni
+  month       DateTime @db.Date
+  bankDue     Decimal  @default(0) @db.Decimal(18, 2)
+  cashDue     Decimal  @default(0) @db.Decimal(18, 2)
+  electricity Decimal  @default(0) @db.Decimal(18, 2)
+  tax         Decimal  @default(0) @db.Decimal(18, 2)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shop RentShop @relation(fields: [shopId], references: [id])
+
+  @@unique([shopId, month])
+  @@index([month])
+}
+
+enum RentTxType {
+  INCOME // ijarachidan tushgan pul
+  EXPENSE // arenda pulidan chiqim (kassaga topshirildi, svet, soliq ...)
+}
+
+enum RentMethod {
+  CASH // naqd
+  BANK // perechisleniye
+}
+
+/// Arenda kassasi jurnali. O'chirilmaydi — faqat storno (cancelledAt), hammasi AuditLog'da.
+model RentTx {
+  id            String     @id @default(cuid())
+  type          RentTxType
+  method        RentMethod
+  date          DateTime
+  /// Kirim qaysi oy arendasi uchun (oyning 1-kuni). Chiqimda — ixtiyoriy
+  month         DateTime?  @db.Date
+  shopId        String?
+  amount        Decimal    @db.Decimal(18, 2)
+  category      String
+  note          String?
+  createdById   String
+  createdAt     DateTime   @default(now())
+  /// Formadagi bir martalik kalit — ikki marta bosilgan «Saqlash» ikkinchi yozuv ochmasin
+  clientToken   String?    @unique
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  shop      RentShop? @relation(fields: [shopId], references: [id])
+  createdBy User      @relation("RentTxCreatedBy", fields: [createdById], references: [id])
+
+  @@index([month, shopId])
+  @@index([date])
 }

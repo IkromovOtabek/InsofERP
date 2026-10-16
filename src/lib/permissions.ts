@@ -114,6 +114,11 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   // direktor modulni "yo'q" / "ko'rish" / "yozish" qilib cheklaydi yoki beradi (`requireModuleWrite`)
   mexanik: [],
   "kirim-qqs": [], // faqat ko'rish (hisobot)
+  arenda: [
+    { key: "create", label: "Arenda kirim-chiqimini yozish",       roles: ["SECRETARY"] },
+    { key: "shops",  label: "Do'konlar va oylik hisobni tahrirlash", roles: ["SECRETARY"] },
+    { key: "storno", label: "Kirim-chiqimni storno qilish",        roles: ["SECRETARY"], hint: "Sabab bilan; yozuv jurnalda chizilgan holda qoladi" },
+  ],
   payments: [
     { key: "create", label: "To'lov qabul qilish / bog'lash",   roles: ["CASHIER", "ACCOUNTING"] },
     // «Pul qabul qilish» so'rovlari (zayavka bosh to'lovi): naqd — kassa, perechisleniye — buxgalteriya (`lib/payment-requests.ts`)

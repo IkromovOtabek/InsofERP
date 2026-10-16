@@ -16,7 +16,7 @@ import type { Role } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
 import { fmtNum } from "@/lib/format";
 
-const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC"] as const;
+const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "SECRETARY"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
 const uniq = (e: unknown, msg: string) => (String(e).includes("Unique constraint") ? { error: msg } : null);
 

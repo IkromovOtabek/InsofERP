@@ -36,6 +36,7 @@ export const ORG_TREE: OrgDept[] = [
   { role: "SALES",      label: "Sotuv",            parent: "DIRECTOR",   tone: "emerald", icon: "handshake",duty: "Mijoz, zayavka, shartnoma", assignable: true },
   { role: "ACCOUNTING", label: "Buxgalteriya",     parent: "DIRECTOR",   tone: "sky",     icon: "calculator", duty: "Schyot, hisob-kitob, hisobot" },
   { role: "CASHIER",    label: "Kassa / bank",     parent: "ACCOUNTING", tone: "sky",     icon: "wallet",   duty: "Pul kirimi va chiqimi", assignable: true },
+  { role: "SECRETARY",  label: "Sekretar",         parent: "DIRECTOR",   tone: "violet",  icon: "store",    duty: "Qabulxona, do'konlar arendasi kirim-chiqimi", assignable: true },
   { role: "HR",         label: "Otdel kadr",       parent: "DIRECTOR",   tone: "violet",  icon: "users",    duty: "Kadr kartasi, hujjat, ma'muriy-xo'jalik", assignable: true },
 ];
 
@@ -70,7 +71,8 @@ const GUESS: { re: RegExp; dept: Role }[] = [
   { re: /snabjen|ta'?minot|xarid|zakupsh/i, dept: "PROCUREMENT" },
   { re: /sklad|ombor|yuk ortuvchi|pogruzchik|ekskavator/i, dept: "WAREHOUSE" },
   { re: /operator|laborant|master|prorab|betonchi|armatura|qolipchi|payvandchi|elektrik|kran|brigadir|ishchi/i, dept: "PRODUCTION" },
-  { re: /qo'?riqchi|farrosh|oshpaz|kotib|kadr|xo'?jalik/i, dept: "HR" },
+  { re: /sekretar|kotib/i, dept: "SECRETARY" },
+  { re: /qo'?riqchi|farrosh|oshpaz|kadr|xo'?jalik/i, dept: "HR" },
   { re: /sotuv|agent|menejer|marketing/i, dept: "SALES" },
   { re: /kassir|kassa/i, dept: "CASHIER" },
 ];

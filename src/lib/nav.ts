@@ -84,6 +84,8 @@ export const NAV: NavItem[] = [
   { href: "/payments",    label: "Kassa / bank",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   { href: "/cashflow",    label: "Kirim-Chiqim",       roles: ["CASHIER", "ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Kirim QQS reyestri (oy va yetkazuvchi kesimida QQS'siz summa, QQS, jami) — buxgalteriya hisobotlari uchun
+  // Arenda (do'konlar ijarasi): oylik hisob jadvali + arenda kassasi kirim-chiqimi. Sekretar uchun yagona sahifa (OWN_PAGE_ONLY)
+  { href: "/arenda",      label: "Arenda",             roles: ["SECRETARY"], group: "Moliya" },
   { href: "/kirim-qqs",   label: "Kirim QQS",          roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — kiritish direktor va buxgalteriya;
   // Finance ko'radi va yetkazuvchining boshlang'ich qarzini to'laydi ("Yetkazuvchiga to'lash" huquqi — shu sahifada).
@@ -138,6 +140,8 @@ export const OWN_PAGE_ONLY: Partial<Record<Role, string>> = {
   BRIGADIER: "/mening-topshiriqlarim",
   // Sotuv agenti ham ko'chada ishlaydi: vebda faqat o'z kabineti (o'z mijozlari + zayavka ochish)
   AGENT: "/agent",
+  // Sekretar vebda faqat arenda bilan ishlaydi: kirgach to'g'ridan-to'g'ri shu sahifa ochiladi
+  SECRETARY: "/arenda",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -154,6 +158,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   HR: "Otdel kadr",
   CASHIER: "Kassa / bank",
   MECHANIC: "Mexanik",
+  SECRETARY: "Sekretar",
   DRIVER: "Haydovchi",
   BRIGADIER: "Brigadir",
   SUPERADMIN: "IT superadmin",
@@ -218,6 +223,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "mexanik",   label: "Mexanik so'rovlari",    prefixes: ["/mexanik-sorovlar"] },
   { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices", "/pul-qabul"] },
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
+  { key: "arenda",    label: "Arenda",                prefixes: ["/arenda"] },
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
   { key: "bi-tahlil", label: "BI tahlil",             prefixes: ["/bi-tahlil"] },

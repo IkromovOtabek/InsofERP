@@ -59,7 +59,7 @@ const KEEP = new Set([
   "IBAN", "SWIFT", "GLONASS", "OSM", "ECO", "ROAS", "ROI", "CTR", "CPC", "CPA", "CPM", "CPL", "LTV", "CAC",
   "RFM", "ABC", "XYZ", "SEO", "SMM", "VIP",
   "DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT",
-  "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DRIVER", "BRIGADIER", "SUPERADMIN",
+  "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "SECRETARY", "DRIVER", "BRIGADIER", "SUPERADMIN",
 ]);
 /** Brend va xorijiy nomlar — registrdan qat'i nazar lotinda qoladi (Excel, Google, E-commerce) */
 const BRANDS = new Set([
