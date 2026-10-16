@@ -31,7 +31,9 @@ const LISTS: Record<string, string[]> = {
   activity: [],
 };
 /** Face ID skaneri doirasi (`faceScope`): otdel kadr darajasi — hamma, sex boshliqlari — sex; qolganlarda skaner yo'q. */
-const SCANNER: Record<string, "all" | "sex" | undefined> = { DIRECTOR: "all", HR: "all", PRODUCTION: "sex", SUPERVISOR: "sex" };
+// Ish boshqaruvchi — barcha xodimlarni davomatdan o'tkazadi (`employees.attendance`), lekin yuz olmaydi (faqat kadr va direktor)
+const SCANNER: Record<string, "all" | "sex" | undefined> = { DIRECTOR: "all", HR: "all", PRODUCTION: "sex", SUPERVISOR: "all" };
+const ENROLL = new Set(["DIRECTOR", "HR"]);
 const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift" };
 const FORMS = ["orders", "trips", "supply", "customers", "suppliers", "brigades"];
 
@@ -74,7 +76,7 @@ async function main() {
         const scan = SCANNER[role];
         const full = role === "DIRECTOR" || role === "HR";
         check(`home: «Davomat» (${full ? "jadval, " : ""}xodim kartasi${scan ? `, skaner ${scan}` : ", skanersiz"})`,
-          a?.canViewTable === full && a?.linked === true && a?.canScan === !!scan && a?.canEnroll === (scan === "all") && !!r.json?.selfAttendance
+          a?.canViewTable === full && a?.linked === true && a?.canScan === !!scan && a?.canEnroll === ENROLL.has(role) && !!r.json?.selfAttendance
           && !!r.json?.faceAttendance === !!scan, { a, face: r.json?.faceAttendance });
       }
     }

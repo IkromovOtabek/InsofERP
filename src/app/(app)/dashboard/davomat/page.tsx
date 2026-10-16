@@ -9,7 +9,7 @@ import { FaceRosterPanel } from "./enroll";
 
 /**
  * Bosh sahifa → «Davomat»: ERP'ning o'z Face ID skaneri (telefonning Face ID'si emas) va yuzlarni ro'yxatga olish.
- * Otdel kadr va direktor — hamma xodim; sex boshliqlari — faqat sex xodimlari (`lib/face-id.ts` → faceScope).
+ * Otdel kadr, direktor va Ish boshqaruvchi — hamma xodim; sex boshliqlari — faqat sex xodimlari (`lib/face-id.ts` → faceScope).
  */
 export default async function FaceAttendancePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const s = await getSession();

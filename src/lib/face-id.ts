@@ -66,15 +66,21 @@ export const PHOTO_PROBE_MAX = 0.35;
 
 export type FaceScope = "all" | "sex";
 
-/** Skanerdan kim foydalanadi: "all" — hamma xodim (otdel kadr, direktor), "sex" — sex boshliqlari, null — hech kim. */
+/**
+ * Skanerdan kim foydalanadi: "all" — hamma xodim (otdel kadr, direktor, Ish boshqaruvchi — `employees.attendance`),
+ * "sex" — sex boshliqlari, null — hech kim.
+ */
 export function faceScope(s: Pick<Session, "role" | "perms">): FaceScope | null {
-  if (canDo(s, "employees", "edit", ["HR"])) return "all";
+  if (canDo(s, "employees", "edit", ["HR"]) || canDo(s, "employees", "attendance")) return "all";
   if (canDo(s, "production", "report")) return "sex";
   return null;
 }
 
-/** Yuzni ro'yxatga olish / o'chirish — biometrik ma'lumot, faqat otdel kadr darajasi. */
-export const canEnrollFaces = (s: Pick<Session, "role" | "perms">) => faceScope(s) === "all";
+/**
+ * Yuzni ro'yxatga olish / o'chirish — biometrik ma'lumot, faqat otdel kadr darajasi. Hamma xodimni davomatdan
+ * o'tkazadigan Ish boshqaruvchi ham yuz olmaydi (skaner ko'lami bilan bog'liq emas).
+ */
+export const canEnrollFaces = (s: Pick<Session, "role" | "perms">) => canDo(s, "employees", "edit", ["HR"]);
 
 // ───────────────────────── Vektor ─────────────────────────
 
@@ -529,7 +535,7 @@ export async function facePhotoFor(s: Pick<Session, "role" | "perms">, q: { a?: 
   const scope = faceScope(s);
   if (!scope) return null;
   if (q.t) {
-    if (scope !== "all") return null;
+    if (!canEnrollFaces(s)) return null; // ro'yxatga olish kadri — faqat yuz oluvchi (otdel kadr)
     const t = await db.faceTemplate.findUnique({ where: { id: q.t }, select: { photo: true } });
     return t?.photo ?? null;
   }

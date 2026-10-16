@@ -141,6 +141,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "requests", label: "Arizalarni tasdiqlash (ta'til, kasallik, avans)", roles: ["HR"], hint: "Tasdiqlangan ta'til/kasallik davomatga tushadi, avans — direktor tasdig'iga" },
     { key: "schedule", label: "Smena grafigini tuzish",          roles: ["HR"] },
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
+    { key: "attendance", label: "Barcha xodimlarni davomatdan o'tkazish (skaner)", roles: ["HR", "SUPERVISOR"], hint: "Davomat sahifasi va ECO skaneri — sexdan tashqari xodimlar ham; yuzni ro'yxatga olish baribir faqat otdel kadrda" },
   ],
   payroll: [
     { key: "calc",     label: "Ish haqini hisoblash, vedomost",  roles: ["HR", "ACCOUNTING"] },

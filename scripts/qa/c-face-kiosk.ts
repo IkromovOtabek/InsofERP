@@ -148,6 +148,16 @@ async function main() {
     r = await scan(dir, { mode: "auto", frames: urls(await goodFrames()), nonce: await nonceAs(dir, "TURN_LEFT") });
     check(`qayta skaner (30 daq ichida) → «allaqachon» (${r.json?.text})`, r.json?.ok === true && r.json?.kind === "already", r.json);
 
+    // Ish boshqaruvchi — barcha xodimlarni davomatdan o'tkazadi (sexda bo'lmagan xodim ham), lekin yuz olmaydi
+    const prorab = await tok("test.prorab");
+    await db.attendance.deleteMany({ where: { employeeId: e.id, date } });
+    r = await scan(prorab, { mode: "auto", frames: urls(await goodFrames()), nonce: await nonceAs(prorab, "TURN_LEFT") });
+    check(`Ish boshqaruvchi — sexda bo'lmagan xodim ham «Keldi» (${r.json?.text ?? msg(r)})`, r.json?.ok === true && r.json?.kind === "in" && r.json?.employee?.id === e.id, r.json);
+    r = await api("GET", `/api/mobile/face/photo?t=${tpl.find((t) => t.photo)?.id}`, { token: prorab });
+    check("ro'yxatga olish kadri → Ish boshqaruvchiga yo'q (404)", r.status === 404, { s: r.status });
+    r = await api("GET", "/api/mobile/face", { token: prorab });
+    check("Ish boshqaruvchi: skaner ochiq, yuz olish yo'q", r.status === 200 && r.json?.scope === "all" && r.json?.canEnroll === false, r.json && { scope: r.json.scope, canEnroll: r.json.canEnroll });
+
     section("Kiosk: ko'zgu-aks kadr (old kamera) — o'sha odam");
     // Ko'zgu-aksda burilish tomoni ham teskari — topshiriq o'ngga. Aksning vektori aslidan ~0,25 uzoq; ko'zgu-aks
     // varianti bilan masofa ~0,06 — o'xshashlik ~100% (aks hisoblanmasa ~97% bo'lardi)
