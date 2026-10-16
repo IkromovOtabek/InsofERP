@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import { cancelHrRequest, createHrRequest, employeeOfUser } from "@/lib/hr/requests";
 import { REQUEST_KINDS } from "@/lib/hr/labels";
+import { saveMyChecklist } from "@/lib/hr/checklists";
 import type { HrRequestKind } from "@/generated/prisma";
 
 /* Xodimning o'z arizalari ("Mening hisobim") — har qanday rol, faqat o'z kartasi nomidan. */
@@ -30,6 +31,17 @@ export async function cancelMyRequest(id: string): Promise<ActionState> {
   const s = await requireSession();
   const r = await cancelHrRequest(id, s.userId);
   if (r.error) return { error: r.error };
+  revalidatePath("/hisobim"); revalidatePath("/otdel-kadr");
+  return { ok: true, note: r.note };
+}
+
+/** Bugungi cheklistni belgilash: `item` — belgilangan bandlar kalitlari (to'liq ro'yxat). */
+export async function saveMyChecklistAction(templateId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession();
+  const emp = await employeeOfUser(s.userId);
+  if (!emp || !emp.isActive) return { error: "Loginingiz xodim kartasiga bog'lanmagan" };
+  const r = await saveMyChecklist(emp, templateId, fd.getAll("item").map(String), s.userId);
+  if ("error" in r) return { error: r.error };
   revalidatePath("/hisobim"); revalidatePath("/otdel-kadr");
   return { ok: true, note: r.note };
 }

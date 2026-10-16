@@ -11,6 +11,7 @@ import { cashOutflowError } from "@/lib/payments";
 import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import { normDaysOf, plansInRange, type DayPlan } from "./shifts";
 import { excusedDays } from "./excused";
+import { kpiMonth } from "./kpi";
 import { PAYROLL_KIND_LABEL } from "./labels";
 
 /**
@@ -95,7 +96,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   });
   if (!emps.length) return [];
   const ids = emps.map((e) => e.id);
-  const [att, plans, excused, rules, manual, advances, piece] = await Promise.all([
+  const [att, plans, excused, rules, manual, advances, piece, kpi] = await Promise.all([
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: { gte: fromD, lte: toD } }, select: { employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true } }),
     plansInRange(emps, from, monthEnd),
     excusedDays(ids, from, to),
@@ -107,6 +108,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       select: { employeeId: true, paid: true, run: { select: { docNo: true } } },
     }),
     piecePools(emps.filter((e) => e.payType === "PIECE"), from, to),
+    // KPI mukofoti — oy yakunida bonus (`lib/hr/kpi.ts`)
+    kind === "FINAL" ? kpiMonth(month, { employeeIds: ids }) : Promise.resolve([]),
   ]);
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
@@ -215,6 +218,10 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
           hits.push({ rule: r.name, kind: r.kind, amount: r0(total), days: n, detail });
           if (r.kind === "BONUS") bonus += total; else penalty += total;
         }
+      }
+      for (const k of kpi.filter((x) => x.employeeId === e.id && x.reward > 0)) {
+        hits.push({ rule: `KPI: ${k.name}`, kind: "BONUS", amount: k.reward, days: 1, detail: `fakt ${k.fact ?? "—"} / reja ${k.target} ${k.unit} = ${k.pct ?? 0}%` });
+        bonus += k.reward;
       }
       for (const m of manual.filter((x) => x.employeeId === e.id)) {
         manualList.push({ id: m.id, kind: m.kind, amount: num(m.amount), reason: m.reason });

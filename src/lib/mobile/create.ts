@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ALL_STAFF } from "./hr-access";
 import { createRequestMobile, requestForm } from "./hr";
+import { createTaskMobile, taskForm } from "./hr-work";
 import { driverPositionNames } from "@/lib/positions";
 import { db } from "@/lib/db";
 import { productCatalog, groupPath } from "@/lib/product-catalog";
@@ -125,6 +126,8 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   "arenda-shop": { roles: ["SECRETARY"], title: "Yangi do'kon", label: "Do'kon qo'shish" },
   // Xodim arizasi (ta'til, kasallik, avans…) — har bir xodim o'zi uchun (`./hr.ts`). Oxirida: rolning "+" tugmasi o'zgarmasin
   ariza: { roles: ALL_STAFF, title: "Ariza yuborish", label: "Ariza yuborish" },
+  // Vazifa — o'ziga yoki (huquqi bo'lsa) boshqa xodimga (`lib/hr/tasks.ts`)
+  vazifa: { roles: ALL_STAFF, title: "Yangi vazifa", label: "Vazifa yozish" },
 };
 
 /** Mexanik so'rovi formalari — bosh sahifadagi "+" va tezkor amallar to'rida ko'rsatilmaydi (ilova o'z ekranidan ochadi). */
@@ -202,6 +205,7 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
     case "kirim-zavod": return kirimZavodForm();
     case "kirim-boshqa": return kirimBoshqaForm();
     case "ariza": return requestForm();
+    case "vazifa": return taskForm(user);
     case "arenda-kirim": return arendaKirimForm();
     case "arenda-chiqim": return arendaChiqimForm();
     case "arenda-shop": return arendaShopForm();
@@ -948,6 +952,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
   try {
     // ── Xodim arizasi — `createHrRequest` (veb "Mening hisobim" bilan bitta qoida) ──
     if (key === "ariza") return await createRequestMobile(user, payload);
+    if (key === "vazifa") return await createTaskMobile(user, payload);
     // ── Arenda (sekretar): kirim / chiqim / do'kon — `./arenda.ts` (qoida `lib/rent.ts`) ──
     if (key.startsWith("arenda-")) return await arendaCreate(user, key, payload);
     // ── Sklad → «Kirim»: kirim — `createGoodsReceipt` (veb Kirim formasi bilan bitta qoida) ──

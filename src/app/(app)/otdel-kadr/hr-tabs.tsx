@@ -8,12 +8,15 @@ import { dayUtc, isoDay, monthOf, monthTitle, shiftDay, shiftMonth, today, valid
 import { plansInRange } from "@/lib/hr/shifts";
 import { listHrRequests, requestCounts, periodText } from "@/lib/hr/requests";
 import { calculate } from "@/lib/hr/payroll";
-import { REQUEST_KIND, REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL, RULE_TRIGGER } from "@/lib/hr/labels";
+import { KPI_SOURCE, REQUEST_KIND, REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL, RULE_TRIGGER } from "@/lib/hr/labels";
 import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { PatternFill, ShiftGrid, ShiftTemplates, type GridDay, type GridRow } from "./grafik";
 import { DecideButtons, RequestForm } from "./arizalar-forms";
 import { createRequestForEmployee, decideRequest } from "./hr-actions";
 import { AdjustmentForm, CancelAdjustment, RuleActions, RuleForm, type RuleRow } from "./jarima-forms";
+import { ChecklistForm, ChecklistRowActions, FactInput, MetricForm, MetricRowActions, type MetricRow, type TplRow } from "./kpi-forms";
+import { checklistDay, itemsOf } from "@/lib/hr/checklists";
+import { kpiMonth } from "@/lib/hr/kpi";
 import type { HrRequestStatus } from "@/generated/prisma";
 
 const WD = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
@@ -240,3 +243,123 @@ export async function JarimaTab({ s, employees, positions, oy }: { s: Session; e
   );
 }
 
+
+// ───────────────────────── Kundalik cheklistlar ─────────────────────────
+
+export async function CheklistTab({ s, positions, kun }: { s: Session; positions: string[]; kun?: string }) {
+  const iso = validDay(kun) && kun! <= today() ? kun! : today();
+  const editable = canDo(s, "employees", "checklists", ["HR"]);
+  const [tpls, day] = await Promise.all([
+    db.checklistTemplate.findMany({ orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }] }),
+    checklistDay(iso),
+  ]);
+  const rows: TplRow[] = tpls.map((t) => ({ id: t.id, name: t.name, position: t.position, items: itemsOf(t.items).map((i) => i.label), isActive: t.isActive }));
+  const done = day.filter((d) => d.doneCount === d.total).length;
+  return (
+    <div className="space-y-4">
+      <Card padded={false}>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Cheklistlar — lavozim majburiyatlari</h2><p className="text-xs text-slate-500">Xodim har kuni o&apos;z ro&apos;yxatini ilovada yoki «Mening hisobim» da belgilaydi. Bajarilganlik KPI&apos;ga ham tushadi</p></div>
+        <Table>
+          <thead><tr><Th>Cheklist</Th><Th>Kimga</Th><Th>Bandlar</Th><Th right /></tr></thead>
+          <tbody>
+            {rows.length === 0 && <Empty text="Cheklist hali yo'q" />}
+            {rows.map((t) => (
+              <Tr key={t.id} className={t.isActive ? "" : "opacity-50"}>
+                <Td className="font-medium">{t.name}</Td>
+                <Td>{t.position ?? "Hamma"}</Td>
+                <Td className="text-xs text-slate-600">{t.items.slice(0, 4).join(" · ")}{t.items.length > 4 ? ` … (${t.items.length})` : ""}</Td>
+                <Td right>{editable && <ChecklistRowActions t={t} positions={positions} />}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+        {editable && <div className="border-t border-slate-100 p-4"><ChecklistForm positions={positions} /></div>}
+      </Card>
+      <Card padded={false}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
+          <Link href={`/otdel-kadr?tab=cheklistlar&kun=${shiftDay(iso, -1)}`} className="rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100">←</Link>
+          <h2 className="text-sm font-semibold">{date(dayUtc(iso))}</h2>
+          {iso < today() && <Link href={`/otdel-kadr?tab=cheklistlar&kun=${shiftDay(iso, 1)}`} className="rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100">→</Link>}
+          <span className="ml-auto text-xs text-slate-500">To&apos;liq bajarilgan: {done} / {day.length}</span>
+        </div>
+        <Table>
+          <thead><tr><Th>Xodim</Th><Th>Cheklist</Th><Th right>Bajarildi</Th><Th>Holat</Th></tr></thead>
+          <tbody>
+            {day.length === 0 && <Empty text="Bu kunga cheklist yo'q" />}
+            {day.map((d) => (
+              <Tr key={`${d.employee.id}-${d.template.id}`}>
+                <Td className="font-medium">{d.employee.fullName}<div className="text-xs font-normal text-slate-500">{d.employee.position}</div></Td>
+                <Td>{d.template.name}</Td>
+                <Td right>{d.doneCount} / {d.total}</Td>
+                <Td>{d.doneCount === d.total ? <Badge color="green">bajarildi</Badge> : d.doneCount ? <Badge color="amber">qisman</Badge> : <Badge color="red">belgilanmagan</Badge>}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
+// ───────────────────────── KPI ─────────────────────────
+
+export async function KpiTab({ s, positions, employees, oy }: { s: Session; positions: string[]; employees: Emp[]; oy?: string }) {
+  const month = validMonth(oy) ?? monthOf(today());
+  const editable = canDo(s, "employees", "kpi", ["HR"]);
+  const [metrics, results] = await Promise.all([
+    db.kpiMetric.findMany({ orderBy: [{ isActive: "desc" }, { createdAt: "asc" }] }),
+    kpiMonth(month),
+  ]);
+  const empName = new Map(employees.map((e) => [e.id, e.fullName]));
+  const mrows: MetricRow[] = metrics.map((m) => ({ id: m.id, name: m.name, source: m.source, unit: m.unit, position: m.position, employeeId: m.employeeId, target: Number(m.target), reward: Number(m.reward), minPct: m.minPct, capPct: m.capPct, note: m.note, isActive: m.isActive }));
+  const empOpts = employees.map((e) => ({ id: e.id, fullName: e.fullName }));
+  const totalReward = results.reduce((x, r) => x + r.reward, 0);
+  return (
+    <div className="space-y-4">
+      <Card padded={false}>
+        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">KPI ko&apos;rsatkichlari</h2><p className="text-xs text-slate-500">Reja va mukofot; fakt avtomatik (davomat, vazifalar, cheklistlar, sotuv, ishlab chiqarish) yoki qo&apos;lda. Mukofot oy yakuni ish haqiga bonus bo&apos;lib qo&apos;shiladi</p></div>
+        <Table>
+          <thead><tr><Th>Ko&apos;rsatkich</Th><Th>Manba</Th><Th right>Reja</Th><Th right>Mukofot</Th><Th>Kimga</Th><Th right /></tr></thead>
+          <tbody>
+            {mrows.length === 0 && <Empty text="Ko'rsatkich hali yo'q" />}
+            {mrows.map((m) => (
+              <Tr key={m.id} className={m.isActive ? "" : "opacity-50"}>
+                <Td className="font-medium">{m.name}{m.note && <div className="text-xs font-normal text-slate-500">{m.note}</div>}</Td>
+                <Td>{KPI_SOURCE[m.source].label}</Td>
+                <Td right>{m.target} {m.unit}</Td>
+                <Td right>{money(m.reward)}<div className="text-xs text-slate-500">{m.minPct}% dan, ko&apos;pi {m.capPct}%</div></Td>
+                <Td>{m.employeeId ? empName.get(m.employeeId) ?? "—" : m.position ?? "Hamma"}</Td>
+                <Td right>{editable && <MetricRowActions m={m} positions={positions} employees={empOpts} />}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+        {editable && <div className="border-t border-slate-100 p-4"><MetricForm positions={positions} employees={empOpts} /></div>}
+      </Card>
+      <Card padded={false}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
+          <Link href={`/otdel-kadr?tab=kpi&oy=${shiftMonth(month, -1)}`} className="rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100">←</Link>
+          <h2 className="text-sm font-semibold">{monthTitle(month)}</h2>
+          {month < monthOf(today()) && <Link href={`/otdel-kadr?tab=kpi&oy=${shiftMonth(month, 1)}`} className="rounded-md px-2 py-1 text-sm text-slate-600 hover:bg-slate-100">→</Link>}
+          <span className="ml-auto text-xs text-slate-500">Jami mukofot: {money(totalReward)}</span>
+        </div>
+        <Table>
+          <thead><tr><Th>Xodim</Th><Th>Ko&apos;rsatkich</Th><Th right>Reja</Th><Th right>Fakt</Th><Th right>Bajarilish</Th><Th right>Mukofot</Th></tr></thead>
+          <tbody>
+            {results.length === 0 && <Empty text="Bu oy uchun KPI yo'q" />}
+            {results.map((r) => (
+              <Tr key={`${r.metricId}-${r.employeeId}`}>
+                <Td className="font-medium">{r.fullName}<div className="text-xs font-normal text-slate-500">{r.position}</div></Td>
+                <Td>{r.name}<div className="text-xs text-slate-500">{KPI_SOURCE[r.source].label}{r.manual ? " · qo'lda" : ""}</div></Td>
+                <Td right>{r.target} {r.unit}</Td>
+                <Td right><FactInput metricId={r.metricId} employeeId={r.employeeId} month={month} fact={r.fact} manual={r.manual} editable={editable} /></Td>
+                <Td right className={r.pct == null ? "text-slate-400" : r.pct >= 100 ? "text-emerald-700" : r.reward ? "text-amber-700" : "text-red-700"}>{r.pct == null ? "—" : `${r.pct}%`}</Td>
+                <Td right className="font-medium">{r.reward ? money(r.reward) : "—"}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+    </div>
+  );
+}

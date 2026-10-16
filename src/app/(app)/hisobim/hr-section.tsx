@@ -1,11 +1,16 @@
-import { CalendarRange, Inbox, Wallet } from "lucide-react";
+import Link from "next/link";
+import { CalendarRange, Inbox, ListChecks, ListTodo, Target, Wallet } from "lucide-react";
+import { db } from "@/lib/db";
+import { myChecklists } from "@/lib/hr/checklists";
+import { kpiMonth } from "@/lib/hr/kpi";
+import { CheckForm } from "./check-form";
 import { date, money } from "@/lib/format";
 import { dayUtc, isoDay, monthTitle, shiftDay, today } from "@/lib/davomat";
 import { employeeOfUser, listHrRequests, periodText } from "@/lib/hr/requests";
 import { plansInRange } from "@/lib/hr/shifts";
 import { breakdownOf, myLines } from "@/lib/hr/payroll";
 import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL, REQUEST_KIND, REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL } from "@/lib/hr/labels";
-import { Badge, Card, CardHeader, Empty, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, Empty, Progress, Table, Td, Th, Tr } from "@/components/ui";
 import { CancelOwnButton, RequestForm } from "../otdel-kadr/arizalar-forms";
 import { cancelMyRequest, sendMyRequest } from "./hr-actions";
 
@@ -19,14 +24,34 @@ export async function MyHrSection({ userId }: { userId: string }) {
   const emp = await employeeOfUser(userId);
   if (!emp || !emp.isActive) return null;
   const from = today(), to = shiftDay(from, 13);
-  const [plans, requests, lines] = await Promise.all([
+  const [plans, requests, lines, checklists, kpi, tasks] = await Promise.all([
     plansInRange([{ id: emp.id, workSchedule: emp.workSchedule }], from, to),
     listHrRequests({ employeeId: emp.id, status: "ALL", take: 20 }),
     myLines(emp.id, 12),
+    myChecklists(emp),
+    kpiMonth(from.slice(0, 7), { employeeIds: [emp.id] }),
+    db.workTask.groupBy({ by: ["status"], where: { assigneeId: emp.id, status: { in: ["TODO", "IN_PROGRESS", "REVIEW"] } }, _count: { _all: true } }),
   ]);
+  const openTasks = tasks.reduce((x, t) => x + t._count._all, 0);
   const plan = plans.get(emp.id)!;
   return (
     <div className="mt-5 grid max-w-5xl grid-cols-1 gap-4 xl:grid-cols-2">
+      {checklists.map((c) => (
+        <Card key={c.templateId}>
+          <CardHeader title={`Bugungi cheklist: ${c.name}`} icon={ListChecks} description={`${c.doneCount} / ${c.total} bajarildi`} />
+          <CheckForm templateId={c.templateId} items={c.items} />
+        </Card>
+      ))}
+      <Card>
+        <CardHeader title={`KPI — ${monthTitle(from.slice(0, 7))}`} icon={Target} description={kpi.length ? `Mukofot: ${money(kpi.reduce((x, k) => x + k.reward, 0))} (oy yakunida ish haqiga)` : "Sizga KPI belgilanmagan"} />
+        {kpi.map((k) => (
+          <div key={k.metricId} className="mb-2">
+            <div className="flex justify-between text-sm"><span>{k.name}</span><span className="tabular text-slate-600">{k.fact ?? "—"} / {k.target} {k.unit}{k.pct != null ? ` · ${k.pct}%` : ""}</span></div>
+            <Progress value={Math.min(k.pct ?? 0, 100)} max={100} tone={(k.pct ?? 0) >= 100 ? "success" : k.reward ? "warning" : "danger"} />
+          </div>
+        ))}
+        <Link href="/vazifalar" className="mt-2 inline-flex items-center gap-1.5 text-sm text-brand-700 hover:underline"><ListTodo size={15} /> Vazifalarim: {openTasks} ta ochiq</Link>
+      </Card>
       <Card>
         <CardHeader title="Smena grafigim" icon={CalendarRange} description="Keyingi 2 hafta — kechikish shu grafik bo'yicha hisoblanadi" />
         <div className="grid grid-cols-7 gap-1 text-center text-xs">

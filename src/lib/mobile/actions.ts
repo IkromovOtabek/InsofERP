@@ -185,7 +185,7 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
   // ── Otdel kadr: ariza qarori / qaytarib olish, ish haqi vedomosti (`./hr.ts`) ──
-  if (action.startsWith("hrreq.") || action.startsWith("payroll.")) return { ok: true, message: await runHrAction(user, action, id, payload) };
+  if (action.startsWith("hrreq.") || action.startsWith("payroll.") || action.startsWith("wtask.") || action === "checklist.save") return { ok: true, message: await runHrAction(user, action, id, payload) };
 
   switch (action) {
     // ── Egasi qarori (direktor "Muammolar") — id: masala kaliti ──

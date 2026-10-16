@@ -18,6 +18,8 @@ const LOGI: Role[] = ["LOGISTICS"];
 
 export const NAV: NavItem[] = [
   { href: "/dashboard",   label: "Bosh sahifa",        roles: "all", group: "Asosiy" },
+  // Umumiy vazifalar — har bir xodim (o'ziga / rahbar beradi), `lib/hr/tasks.ts`
+  { href: "/vazifalar",   label: "Vazifalar",          roles: "all", group: "Asosiy" },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
@@ -102,6 +104,8 @@ export const NAV: NavItem[] = [
   { href: "/otdel-kadr?tab=grafik",     label: "Smena grafigi",     roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=arizalar",   label: "Arizalar",          roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=jarima-bonus", label: "Jarima va bonuslar", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=cheklistlar", label: "Cheklistlar",      roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=kpi",        label: "KPI",               roles: ["HR"], group: "Otdel kadr" },
   // Ish haqi: kadr hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`)
   { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
@@ -234,6 +238,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
   { key: "payroll",   label: "Ish haqi",              prefixes: ["/ish-haqi"] },
+  { key: "vazifalar", label: "Vazifalar",             prefixes: ["/vazifalar"] },
   { key: "bi-tahlil", label: "BI tahlil",             prefixes: ["/bi-tahlil"] },
   // Sozlamalar ostidagi yagona modul: boshlang'ich qoldiqlar pulga ta'sir qiladi — direktor yopa/ocha olsin
   { key: "opening",   label: "Boshlang'ich qoldiqlar", prefixes: ["/settings/boshlangich-qoldiq"] },

@@ -1,4 +1,4 @@
-import type { HrRequestKind, HrRequestStatus, PayAdjKind, PayRuleTrigger, PayType, PayrollKind, PayrollStatus } from "@/generated/prisma";
+import type { HrRequestKind, HrRequestStatus, KpiSource, PayAdjKind, PayRuleTrigger, PayType, PayrollKind, PayrollStatus, WorkTaskPriority, WorkTaskStatus } from "@/generated/prisma";
 
 /**
  * Otdel kadr modullari yorliqlari — veb, mobil va chop etish bir xil yozuvni ko'rsatsin.
@@ -49,3 +49,23 @@ export const PAYROLL_KIND_LABEL: Record<PayrollKind, string> = { ADVANCE: "Avans
 export const PAYROLL_STATUS_LABEL: Record<PayrollStatus, string> = { DRAFT: "Qoralama", SUBMITTED: "Direktor tasdig'ida", APPROVED: "Tasdiqlandi — to'lovga", PAID: "To'landi", CANCELLED: "Bekor qilindi" };
 export const PAYROLL_STATUS_BADGE: Record<PayrollStatus, "slate" | "amber" | "blue" | "green" | "red"> = { DRAFT: "slate", SUBMITTED: "amber", APPROVED: "blue", PAID: "green", CANCELLED: "red" };
 export const PAYROLL_STATUS_TONE: Record<PayrollStatus, "info" | "warning" | "brand" | "success" | "danger"> = { DRAFT: "info", SUBMITTED: "warning", APPROVED: "brand", PAID: "success", CANCELLED: "danger" };
+
+// ───────────────────────── 2-faza: vazifalar, cheklistlar, KPI ─────────────────────────
+
+export const TASK_STATUS_LABEL: Record<WorkTaskStatus, string> = { TODO: "Berildi", IN_PROGRESS: "Bajarilmoqda", REVIEW: "Tekshiruvda", DONE: "Qabul qilindi", CANCELLED: "Bekor qilindi" };
+export const TASK_STATUS_TONE: Record<WorkTaskStatus, "info" | "brand" | "warning" | "success" | "danger"> = { TODO: "info", IN_PROGRESS: "brand", REVIEW: "warning", DONE: "success", CANCELLED: "danger" };
+export const TASK_STATUS_BADGE: Record<WorkTaskStatus, "slate" | "blue" | "amber" | "green" | "red"> = { TODO: "slate", IN_PROGRESS: "blue", REVIEW: "amber", DONE: "green", CANCELLED: "red" };
+export const TASK_COLUMNS: WorkTaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"];
+export const PRIORITY_LABEL: Record<WorkTaskPriority, string> = { LOW: "Past", NORMAL: "Oddiy", HIGH: "Muhim", URGENT: "Shoshilinch" };
+export const PRIORITY_BADGE: Record<WorkTaskPriority, "slate" | "blue" | "amber" | "red"> = { LOW: "slate", NORMAL: "blue", HIGH: "amber", URGENT: "red" };
+export const PRIORITIES = Object.keys(PRIORITY_LABEL) as WorkTaskPriority[];
+
+export const KPI_SOURCE: Record<KpiSource, { label: string; unit: string; hint: string }> = {
+  MANUAL: { label: "Qo'lda", unit: "", hint: "Fakt — otdel kadr har oy kiritadi" },
+  ATTENDANCE: { label: "Davomat", unit: "%", hint: "Kelgan kun / grafikdagi ish kuni" },
+  TASKS: { label: "Vazifalar", unit: "%", hint: "Muddati shu oyda bo'lgan vazifalardan muddatida qabul qilingani" },
+  CHECKLIST: { label: "Cheklistlar", unit: "%", hint: "Ish kunlaridagi cheklist bandlaridan bajarilgani" },
+  SALES_M3: { label: "Sotuv hajmi", unit: "m³", hint: "Xodim kiritgan, shu oyda yetkazilgan zayavkalar" },
+  PRODUCTION: { label: "Ishlab chiqarish", unit: "", hint: "Xodim brigadasi shu oyda bajargan hajm (topshiriqlar)" },
+};
+export const KPI_SOURCES = Object.keys(KPI_SOURCE) as KpiSource[];

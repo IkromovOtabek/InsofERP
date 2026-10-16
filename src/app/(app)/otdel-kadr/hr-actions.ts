@@ -11,7 +11,10 @@ import { validDay, validMonth } from "@/lib/davomat";
 import { fillPattern, saveShiftCells, SHIFT_COLORS, type CellInput } from "@/lib/hr/shifts";
 import { createHrRequest, decideHrRequest } from "@/lib/hr/requests";
 import { REQUEST_KINDS, RULE_TRIGGER } from "@/lib/hr/labels";
-import type { HrRequestKind, PayRuleTrigger } from "@/generated/prisma";
+import type { HrRequestKind, KpiSource, PayRuleTrigger } from "@/generated/prisma";
+import { saveTemplate, toggleTemplate } from "@/lib/hr/checklists";
+import { saveMetric, setFact, toggleMetric } from "@/lib/hr/kpi";
+import { KPI_SOURCES } from "@/lib/hr/labels";
 
 /*
  * Otdel kadr: smena grafigi, arizalar, jarima va bonuslar. Qoidalar — `lib/hr/*`.
@@ -239,4 +242,63 @@ export async function cancelPayAdjustment(id: string, _prev: ActionState, fd: Fo
   if (!n) return { error: "Yozuv allaqachon bekor qilingan" };
   refresh();
   return { ok: true, note: "Bekor qilindi" };
+}
+
+// ───────────────────────── Kundalik cheklistlar ─────────────────────────
+
+export async function saveChecklistTemplate(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("employees", "checklists", ["HR"]);
+  const r = await saveTemplate(id, { name: String(fd.get("name") ?? ""), position: String(fd.get("position") ?? "").trim() || null, text: String(fd.get("items") ?? "") }, s.userId);
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { ok: true, note: "Cheklist saqlandi" };
+}
+
+export async function toggleChecklistTemplate(id: string): Promise<ActionState> {
+  const s = await requireAction("employees", "checklists", ["HR"]);
+  const r = await toggleTemplate(id, s.userId);
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { ok: true };
+}
+
+// ───────────────────────── KPI ─────────────────────────
+
+const metricSchema = z.object({
+  name: zStr("Ko'rsatkich nomi kerak"),
+  source: z.enum(KPI_SOURCES as [KpiSource, ...KpiSource[]], { message: "Fakt manbasini tanlang" }),
+  unit: zOpt, position: zOpt, employeeId: zOpt, note: zOpt,
+  target: z.coerce.number({ message: "Reja raqam bo'lsin" }).positive("Reja musbat bo'lsin").max(1e12),
+  reward: z.coerce.number({ message: "Mukofot raqam bo'lsin" }).min(0).max(MAX_AMOUNT).default(0),
+  minPct: z.coerce.number().int().min(0).max(200).default(80),
+  capPct: z.coerce.number().int().min(100).max(300).default(120),
+});
+
+export async function saveKpiMetric(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("employees", "kpi", ["HR"]);
+  const r = parseForm(metricSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await saveMetric(id, r.data, s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true, note: "Ko'rsatkich saqlandi" };
+}
+
+export async function toggleKpiMetric(id: string): Promise<ActionState> {
+  const s = await requireAction("employees", "kpi", ["HR"]);
+  const r = await toggleMetric(id, s.userId);
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { ok: true };
+}
+
+/** Fakt: bo'sh — qo'lda yozuv olinadi (avtomatik qaytadi). */
+export async function setKpiFact(metricId: string, employeeId: string, month: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("employees", "kpi", ["HR"]);
+  if (!validMonth(month)) return { error: "Oy noto'g'ri" };
+  const raw = String(fd.get("fact") ?? "").replace(/\s/g, "").replace(",", ".");
+  const r = await setFact({ metricId, employeeId, month, fact: raw === "" ? null : Number(raw), note: String(fd.get("note") ?? "").trim() || null }, s.userId);
+  if ("error" in r) return { error: r.error };
+  refresh();
+  return { ok: true, note: "Saqlandi" };
 }

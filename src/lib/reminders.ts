@@ -104,6 +104,21 @@ const RULES: Rule[] = [
     })),
   },
   {
+    // Vazifalar: muddati o'tgan — bajaruvchiga; tekshiruvda 24 soat qolgan — beruvchiga
+    type: "REMIND_WORK_TASK",
+    find: async (now) => {
+      const today0 = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const [late, review] = await Promise.all([
+        db.workTask.findMany({ where: { status: { in: ["TODO", "IN_PROGRESS"] }, dueDate: { lt: today0 } }, take: 50, select: { id: true, docNo: true, title: true, assignee: { select: { userId: true } } } }),
+        db.workTask.findMany({ where: { status: "REVIEW", doneAt: { lt: ago(now, 24) } }, take: 50, select: { id: true, docNo: true, title: true, createdById: true } }),
+      ]);
+      return [
+        ...late.filter((t) => t.assignee.userId).map((t) => ({ id: t.id, link: { key: "vazifalarim", id: t.id }, users: [t.assignee.userId!], title: `Muddati o'tgan vazifa — ${t.docNo}`, body: t.title })),
+        ...review.map((t) => ({ id: t.id, link: { key: "vazifalarim", id: t.id }, users: [t.createdById], title: `Vazifa tekshiruvni kutmoqda — ${t.docNo}`, body: t.title })),
+      ];
+    },
+  },
+  {
     type: "REMIND_SMM",
     find: async (now) => [
       ...(await db.marketingContent.findMany({

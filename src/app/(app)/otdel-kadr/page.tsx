@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, Inbox, Scale, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, Inbox, ListChecks, Scale, Target, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -22,7 +22,7 @@ import { faceScope } from "@/lib/face-id";
 import { employeesInWindow } from "@/lib/attendance-report";
 import { plansFor } from "@/lib/hr/shifts";
 import { getLateFine } from "@/lib/hr/late-fine";
-import { ArizalarTab, GrafikTab, JarimaTab } from "./hr-tabs";
+import { ArizalarTab, CheklistTab, GrafikTab, JarimaTab, KpiTab } from "./hr-tabs";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -34,6 +34,8 @@ const TABS = [
   ["grafik", "Smena grafigi", CalendarRange],
   ["arizalar", "Arizalar", Inbox],
   ["jarima-bonus", "Jarima va bonuslar", Scale],
+  ["cheklistlar", "Cheklistlar", ListChecks],
+  ["kpi", "KPI", Target],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -291,6 +293,8 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "taqvim" && <KadrTaqvim employees={active} />}
       {tab === "grafik" && <GrafikTab employees={active} hafta={hafta} />}
       {tab === "arizalar" && <ArizalarTab s={s} employees={active} holat={holat} />}
+      {tab === "cheklistlar" && <CheklistTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} kun={kun} />}
+      {tab === "kpi" && <KpiTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} employees={active} oy={oy} />}
       {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
     </div>
   );

@@ -141,7 +141,14 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "requests", label: "Arizalarni tasdiqlash (ta'til, kasallik, avans)", roles: ["HR"], hint: "Tasdiqlangan ta'til/kasallik davomatga tushadi, avans — direktor tasdig'iga" },
     { key: "schedule", label: "Smena grafigini tuzish",          roles: ["HR"] },
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
+    { key: "checklists", label: "Kundalik cheklistlar (lavozim majburiyatlari)", roles: ["HR"] },
+    { key: "kpi",      label: "KPI: ko'rsatkichlar va faktlar",   roles: ["HR"], hint: "Mukofot oy yakuni ish haqiga bonus bo'lib qo'shiladi" },
     { key: "attendance", label: "Barcha xodimlarni davomatdan o'tkazish (skaner)", roles: ["HR", "SUPERVISOR"], hint: "Davomat sahifasi va ECO skaneri — sexdan tashqari xodimlar ham; yuzni ro'yxatga olish baribir faqat otdel kadrda" },
+  ],
+  // Umumiy vazifalar (`/vazifalar`, `lib/hr/tasks.ts`): o'ziga — har kim; boshqaga berish — rahbarlar
+  vazifalar: [
+    { key: "assign",   label: "Boshqa xodimga vazifa berish",    roles: ["HR", "SUPERVISOR", "PRODUCTION", "LOGISTICS", "SALES", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE"] },
+    { key: "view_all", label: "Barcha vazifalarni ko'rish",      roles: ["HR"], hint: "Boshqalarning vazifalari, qabul qilish va bekor qilish" },
   ],
   payroll: [
     { key: "calc",     label: "Ish haqini hisoblash, vedomost",  roles: ["HR", "ACCOUNTING"] },

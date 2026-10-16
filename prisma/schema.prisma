@@ -550,6 +550,9 @@ model Employee {
   hrRequests       HrRequest[]
   payAdjustments   PayAdjustment[]
   payrollLines     PayrollLine[]
+  workTasks        WorkTask[]               @relation("WorkTaskAssignee")
+  checklistRuns    ChecklistRun[]
+  kpiResults       KpiResult[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -3194,4 +3197,150 @@ model PayrollSettings {
   hoursPerDay  Decimal  @default(8) @db.Decimal(4, 2) // soatbay xodimning ta'til/kasallik kunini hisoblash uchun
   updatedById  String?
   updatedAt    DateTime @updatedAt
+}
+
+// ───────────────────────── Otdel kadr 2-faza: vazifalar, kundalik cheklistlar, KPI ─────────────────────────
+
+enum WorkTaskStatus {
+  TODO // berildi
+  IN_PROGRESS // bajarilmoqda
+  REVIEW // bajarildi — beruvchi tekshiradi
+  DONE // qabul qilindi
+  CANCELLED
+}
+
+enum WorkTaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+/// Umumiy vazifa (brigada topshirig'idan alohida): rahbar xodimga beradi yoki xodim o'ziga yozadi.
+/// Oqim: berildi → bajarilmoqda → bajarildi (beruvchi tekshiradi) → qabul / qaytarish. O'chirilmaydi — bekor qilinadi.
+model WorkTask {
+  id           String           @id @default(cuid())
+  docNo        String           @unique // VZ-2026-00001
+  title        String
+  description  String?
+  assigneeId   String // Employee — bajaruvchi
+  createdById  String // User — beruvchi
+  dueDate      DateTime?        @db.Date
+  dueTime      String? // "HH:MM"
+  priority     WorkTaskPriority @default(NORMAL)
+  status       WorkTaskStatus   @default(TODO)
+  startedAt    DateTime?
+  doneAt       DateTime? // bajaruvchi "Bajarildi" bosgan vaqt
+  acceptedAt   DateTime?
+  returnNote   String? // qaytarilgan bo'lsa — sababi
+  cancelledAt  DateTime?
+  cancelReason String?
+  clientToken  String?          @unique
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  assignee Employee          @relation("WorkTaskAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  comments WorkTaskComment[]
+
+  @@index([assigneeId, status])
+  @@index([createdById, status])
+  @@index([dueDate])
+}
+
+model WorkTaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+
+  task WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+/// Kundalik cheklist shabloni — lavozim bo'yicha har kungi majburiyatlar (`position` bo'sh — hamma uchun).
+/// `items` — [{ key, label }] (kalit o'zgarmaydi, matn tahrirlansa ham bajarilganlar saqlanadi).
+model ChecklistTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  position    String?
+  items       Json
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs ChecklistRun[]
+}
+
+/// Xodimning bir kunlik cheklisti: `done` — { kalit: "HH:MM" } (belgilangan vaqt).
+model ChecklistRun {
+  id          String    @id @default(cuid())
+  templateId  String
+  employeeId  String
+  date        DateTime  @db.Date
+  done        Json
+  total       Int
+  doneCount   Int
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  employee Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, employeeId, date])
+  @@index([employeeId, date])
+}
+
+/// KPI fakti qayerdan olinadi.
+enum KpiSource {
+  MANUAL // kadr qo'lda kiritadi
+  ATTENDANCE // davomat: kelgan kun / norma, %
+  TASKS // vazifalar: muddatida bajarilgan / muddati shu oyda, %
+  CHECKLIST // cheklistlar: bajarilgan bandlar, %
+  SALES_M3 // sotuv: xodim kiritgan va yetkazilgan zayavkalar, m³
+  PRODUCTION // ishlab chiqarish: xodim brigadasi bajargan hajm
+}
+
+/// KPI ko'rsatkichi: reja (`target`), mukofot (`reward` — 100% bajarilganda), `minPct` dan kam bo'lsa mukofot yo'q,
+/// `capPct` dan oshgani hisoblanmaydi. Kimga: `employeeId` yoki `position`, ikkalasi bo'sh — hamma xodim.
+/// Mukofot oy yakuni ish haqiga bonus bo'lib qo'shiladi (`lib/hr/kpi.ts`, `lib/hr/payroll.ts`).
+model KpiMetric {
+  id          String    @id @default(cuid())
+  name        String
+  source      KpiSource
+  unit        String // "%", "m³", "dona"
+  position    String?
+  employeeId  String?
+  target      Decimal   @db.Decimal(18, 3)
+  reward      Decimal   @default(0) @db.Decimal(18, 2)
+  minPct      Int       @default(80)
+  capPct      Int       @default(120)
+  isActive    Boolean   @default(true)
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  results KpiResult[]
+}
+
+/// Qo'lda kiritilgan KPI fakti (MANUAL) yoki avtomatik faktni kadr tuzatgani — oy bo'yicha.
+model KpiResult {
+  id          String   @id @default(cuid())
+  metricId    String
+  employeeId  String
+  month       String // "2026-10"
+  fact        Decimal  @db.Decimal(18, 3)
+  note        String?
+  updatedById String
+  updatedAt   DateTime @updatedAt
+
+  metric   KpiMetric @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([metricId, employeeId, month])
+  @@index([month])
 }
