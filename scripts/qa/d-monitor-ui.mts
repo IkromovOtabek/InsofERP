@@ -87,7 +87,9 @@ function actionId(name: string): string {
     }
     return null;
   };
-  const id = walk(dir);
+  // Avval IT panel bo'laklari: ERP'da ham bir xil nomli action bor (ish-haqi `cancelAction`) — o'sha topilib qolmasin
+  const panelDir = path.join(dir, "app", "superadmin");
+  const id = (existsSync(panelDir) ? walk(panelDir) : null) ?? walk(dir);
   if (!id) throw new Error(`action id topilmadi: ${name}`);
   idCache.set(name, id);
   return id;

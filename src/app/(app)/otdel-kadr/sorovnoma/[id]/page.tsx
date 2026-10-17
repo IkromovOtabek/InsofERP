@@ -33,7 +33,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
           <CardHeader title={x.q.text} description={`${x.count} javob`} />
           {"nps" in x && (x.nps == null ? <Empty text="Javob yo'q" /> : (
             <div className="space-y-1 text-sm">
-              <div className="text-2xl font-semibold">NPS {x.nps}</div>
+              <div className="text-2xl font-semibold">{`NPS ${x.nps}`}</div>
               <div className="text-slate-600">O&apos;rtacha {x.avg} / 10 · tavsiya qiladi (9–10): {x.pro} · tanqidchi (0–6): {x.det}</div>
             </div>
           ))}
