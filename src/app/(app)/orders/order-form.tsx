@@ -144,6 +144,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [prepay, setPrepay] = useState("");
   // Bosh to'lov: null — hali so'ralmagan, false — yo'q, true — bor
   const [hasDeposit, setHasDeposit] = useState<boolean | null>(null);
+  const [dateKnown, setDateKnown] = useState<boolean | null>(null); // "Sana aniqmi?" — Yo'q bo'lsa qoralamada belgilanadi
   const [contract, setContract] = useState(false); // "Shartnoma qilish" belgilanganmi
   const [contractAmount, setContractAmount] = useState("");
   // Arizadan kelgan mahsulot ro'yxatda bo'lsa — birinchi qator shu bilan to'ldiriladi
@@ -432,7 +433,29 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label="Yetkazish sanasi *"><Input name="deliveryDate" type="date" defaultValue={tomorrow} min={minDate} required /></Field>
+        <Field label="Yetkazish sanasi aniqmi? *">
+          <div className="flex flex-wrap items-center gap-2">
+            {([[true, "Ha"], [false, "Yo'q"]] as const).map(([v, l]) => (
+              <button
+                key={l}
+                type="button"
+                aria-pressed={dateKnown === v}
+                onClick={() => setDateKnown(v)}
+                className={cn("rounded-lg border px-3 py-1.5 text-sm font-medium transition",
+                  dateKnown === v ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50")}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          {dateKnown === true && <Input className="mt-2" name="deliveryDate" type="date" defaultValue={tomorrow} min={minDate} required aria-label="Yetkazish sanasi" />}
+          {dateKnown === false && (
+            <>
+              <input type="hidden" name="dateUnknown" value="1" />
+              <p className="mt-2 text-xs text-slate-500">Zayavka qoralama bo&apos;lib saqlanadi. Sanani zayavka sahifasida belgilaysiz — undan keyin qabul qilinadi.</p>
+            </>
+          )}
+        </Field>
         <AddressPicker searchEnabled={geoSearch} required defaultAddress={prefill?.address ?? ""} />
       </div>
 

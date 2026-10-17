@@ -81,7 +81,7 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
                   <Td right className="tabular">{qty(l.total)} {unitShort(unit)}</Td>
                   <Td right className={`tabular ${l.remaining > 0.001 ? "text-amber-700" : ""}`}>{qty(l.assigned)}</Td>
                   <Td right className="tabular">{qty(l.delivered)}</Td>
-                  <Td className="text-sm tabular">{deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
+                  <Td className="text-sm tabular">{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
                   <Td><OrderLogiBadge status={l.status} late={l.late} problem={l.problem} /></Td>
                   <Td className="text-xs text-slate-500">{o.createdBy.fullName}</Td>
                   <Td>{l.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(l.status) && <Link href={`/trips/new?orderId=${o.id}`} className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline">+ Reys</Link>}</Td>

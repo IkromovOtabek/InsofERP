@@ -103,6 +103,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     return { changed: false, error: "Zayavkani qabul qilishga ruxsatingiz yo'q — direktordan ruxsat so'rang" };
   }
   if (o.status !== "DRAFT") return { changed: false, error: "Faqat qoralama zayavka qabul qilinadi" };
+  if (o.dateUnknown) return { changed: false, error: "Yetkazish sanasi aniq emas — avval sanani belgilang" };
 
   // Sklad zaxirasi zayavkasida mijoz ham, narx ham yo'q — kredit limiti tekshirilmaydi
   if (o.kind === "STOCK") {
@@ -134,7 +135,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     // To'liq oldindan to'lovli zayavka (exposure ≤ 0) limitga hech narsa qo'shmaydi — mijozning eski qarzi bo'lsa ham
     // (qora ro'yxat) qabul qilinadi: pul kassaga tushmaguncha reys baribir ochilmaydi (`prepayShortError`).
     const status = exposure > 0.005 && Math.max(0, credit.net) + exposure > credit.limit && credit.net + exposure > credit.limit ? "BLOCKED" : "CONFIRMED";
-    const r = await tx.order.updateMany({ where: { id, status: "DRAFT" }, data: { status } });
+    const r = await tx.order.updateMany({ where: { id, status: "DRAFT", dateUnknown: false }, data: { status } });
     if (r.count !== 1) return null;
     await audit(tx, userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status, debt: credit.debt, open: credit.open, total, limit: credit.limit, prepayPending: pending });
     return { status };
@@ -170,6 +171,32 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     }));
   }
   return { changed: true, status };
+}
+
+/**
+ * Qoralama zayavkaning yetkazish sanasini belgilash/o'zgartirish ("Sana aniq emas" bo'lib ochilganida ham).
+ * Faqat DRAFT: qabul qilingandan keyin sana ishlab chiqarish va reys rejasiga bog'lanadi.
+ */
+export async function orderSetDate(id: string, deliveryDate: Date, userId: string): Promise<OrderResult> {
+  const o = await db.order.findUnique({ where: { id }, select: { status: true, kind: true, deliveryDate: true, dateUnknown: true } });
+  if (!o) return { changed: false, error: "Zayavka topilmadi" };
+  if (!(await canDoByUserId(userId, "orders", o.kind === "STOCK" ? "stock" : "create"))) {
+    return { changed: false, error: "Zayavkani tahrirlashga ruxsatingiz yo'q — direktordan ruxsat so'rang" };
+  }
+  if (o.status !== "DRAFT") return { changed: false, error: "Sana faqat qoralama zayavkada o'zgartiriladi" };
+  const dd = deliveryDate.getTime();
+  if (!Number.isFinite(dd)) return { changed: false, error: "Yetkazish sanasi noto'g'ri" };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (dd < today.getTime()) return { changed: false, error: "Yetkazish sanasi o'tib ketgan — bugungi yoki keyingi sanani tanlang" };
+  if (dd > Date.now() + 366 * 86_400_000) return { changed: false, error: "Yetkazish sanasi bir yildan uzoq bo'lmasin" };
+  const ok = await db.$transaction(async (tx) => {
+    const r = await tx.order.updateMany({ where: { id, status: "DRAFT" }, data: { deliveryDate, dateUnknown: false } });
+    if (r.count !== 1) return false;
+    await audit(tx, userId, "UPDATE", "Order", id, { deliveryDate: o.deliveryDate, dateUnknown: o.dateUnknown }, { deliveryDate, dateUnknown: false });
+    return true;
+  });
+  if (!ok) return { changed: false, error: "Zayavka shu payt qabul qilindi yoki bekor qilindi" };
+  return { changed: true };
 }
 
 /**
@@ -249,6 +276,8 @@ export type NewOrderInput = {
   customerId?: string;
   newCustomer?: { name: string; phone?: string | null; inn?: string | null; address?: string | null };
   deliveryDate: Date;
+  /** Sana hali aniq emas — `deliveryDate` e'tiborga olinmaydi (bugun yoziladi), qoralamada keyin belgilanadi. */
+  dateUnknown?: boolean;
   /** Soat ("HH:MM") — endi formada so'ralmaydi, eski importlar uchun ixtiyoriy qolgan. */
   deliveryTime?: string | null;
   deliveryAddress: string;
@@ -304,6 +333,9 @@ export async function createOrder(
   if (items.some((i) => !Number.isFinite(i.price) || i.price < 0)) throw new Error("Narx manfiy bo'lmasin");
   if (items.some((i) => i.price > MAX_AMOUNT)) throw new Error("Narx juda katta");
   if (!input.deliveryAddress.trim()) throw new Error("Obyekt manzili kerak");
+  // Sana aniq emas — vaqtinchalik qiymat (bugun); kalendarga tushmaydi, qabul qilishdan oldin belgilanadi
+  const dateUnknown = !!input.dateUnknown;
+  if (dateUnknown) { const t = new Date(); t.setHours(0, 0, 0, 0); input = { ...input, deliveryDate: t }; }
   // Yetkazish sanasi: o'qiladigan va kechagidan oldin emas (o'tgan sanaga zayavka kalendarni buzadi)
   const dd = input.deliveryDate.getTime();
   if (!Number.isFinite(dd)) throw new Error("Yetkazish sanasi noto'g'ri");
@@ -382,6 +414,7 @@ export async function createOrder(
         customerId,
         siteId,
         deliveryDate: input.deliveryDate,
+        dateUnknown,
         deliveryTime: input.deliveryTime ?? null,
         deliveryAddress: input.deliveryAddress,
         lat: input.lat ?? null,

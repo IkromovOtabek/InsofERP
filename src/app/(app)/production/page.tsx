@@ -68,7 +68,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
             <CardHeader
               icon={HardHat}
               title={`Brigada tayinlash · ${selected.orderNo} · ${selected.customer.name}`}
-              description={`Yetkazish ${deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
+              description={`Yetkazish ${selected.dateUnknown ? "sanasi aniq emas" : deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
               action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{!selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
             />
           </div>
@@ -95,7 +95,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
             return (
               <Tr key={o.id} className={cn(soon && "bg-red-50/70 [&>td]:text-red-900", isSel && !soon && "bg-brand-50/60")}>
                 <Td><Link href={`/orders/${o.id}`} className={cn("font-medium hover:underline", soon && "text-red-700")}>{o.orderNo}</Link>{o.isUrgent && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}</Td>
-                <Td><span className={soon ? "font-semibold text-red-700" : ""}>{date(o.deliveryDate)}</span>{o.deliveryTime && <span className={cn("ml-1.5 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums", soon ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700")}>{o.deliveryTime}</span>}{isOpen(o) && (soon ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {due}</div> : <div className="mt-0.5 text-[11px] text-slate-500">{due}</div>)}</Td>
+                <Td>{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : <span className={soon ? "font-semibold text-red-700" : ""}>{date(o.deliveryDate)}</span>}{o.deliveryTime && <span className={cn("ml-1.5 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums", soon ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700")}>{o.deliveryTime}</span>}{isOpen(o) && !o.dateUnknown && (soon ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {due}</div> : <div className="mt-0.5 text-[11px] text-slate-500">{due}</div>)}</Td>
                 <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} /></Td>
                 <Td className="text-slate-600">{o.items.map((i) => i.product.code).join(", ")}{!o.needsDelivery && " · o'zi oladi"}</Td>
                 <Td right className="whitespace-nowrap">{fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))}</Td>

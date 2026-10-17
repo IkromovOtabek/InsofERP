@@ -32,7 +32,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     where: {
       ...(kind ? { kind } : {}),
       ...(day
-        ? { deliveryDate: { gte: day, lt: dayEnd! }, ...(customer ? { customerId: customer } : {}) }
+        ? { deliveryDate: { gte: day, lt: dayEnd! }, dateUnknown: false, ...(customer ? { customerId: customer } : {}) }
         : { status: st ?? { in: PENDING }, ...(customer ? { customerId: customer } : {}) }),
     },
     orderBy: [{ createdAt: "desc" }],
@@ -122,7 +122,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
                 <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td>
                 <Td>{date(o.date)}</Td>
-                <Td>{deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
+                <Td>{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
                 <Td>
                   {o.kind === "STOCK" ? (
                     // Sklad zaxirasi: mijoz yo'q — mahsulot hovlida erkin qoldiq bo'lib qoladi

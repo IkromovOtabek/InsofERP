@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
-import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
+import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderSetDate, orderUnblock } from "@/lib/orders";
 import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
@@ -22,7 +22,9 @@ const schema = z.object({
   newPhone: zOpt,
   newInn: zOpt,
   newAddress: zOpt,
-  deliveryDate: zStr("Yetkazish sanasi kerak").refine((v) => Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
+  // "Sana aniqmi?" — Yo'q bo'lsa sana kelmaydi (`dateUnknown=1`), qoralamada keyin belgilanadi
+  deliveryDate: zOpt.refine((v) => !v || Number.isFinite(new Date(v).getTime()), "Yetkazish sanasi noto'g'ri"),
+  dateUnknown: z.string().optional().transform((v) => v === "1"),
   deliveryAddress: zStr("Obyekt manzili kerak"),
   // Xaritadan belgilangan nuqta; bo'sh bo'lishi mumkin. Masofa serverda hisoblanadi.
   lat: z.coerce.number().optional().catch(undefined),
@@ -65,6 +67,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
   if ("error" in r) return { error: r.error };
   const d = r.data;
 
+  if (!d.dateUnknown && !d.deliveryDate) return { error: "Yetkazish sanasi aniqmi? «Ha» ni tanlab sanani kiriting yoki «Yo'q» ni belgilang" };
   if (d.hasContract && d.contractAmount <= 0) return { error: "Shartnoma summasini kiriting" };
   const contractAmount = d.hasContract ? d.contractAmount : undefined;
 
@@ -80,7 +83,8 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
       {
         customerId: d.customerMode === "existing" ? d.customerId : undefined,
         newCustomer: d.customerMode === "new" ? { name: d.newName ?? "", phone: d.newPhone, inn: d.newInn, address: d.newAddress } : undefined,
-        deliveryDate: new Date(d.deliveryDate),
+        deliveryDate: d.deliveryDate ? new Date(d.deliveryDate) : new Date(),
+        dateUnknown: d.dateUnknown,
         deliveryAddress: d.deliveryAddress,
         lat: Number.isFinite(d.lat) ? d.lat : null,
         lng: Number.isFinite(d.lng) ? d.lng : null,
@@ -164,6 +168,17 @@ export async function confirmOrder(id: string): Promise<ActionState> {
   revalidatePath(`/orders/${id}`);
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers"); revalidatePath("/production"); revalidatePath("/stock");
   return { ok: true, note: r.status === "BLOCKED" ? "Limit yetmadi — zayavka bloklandi, direktor ochadi" : "Qabul qilindi" };
+}
+
+/** Qoralama zayavkaning yetkazish sanasini belgilash/o'zgartirish ("Sana aniq emas" bo'lib ochilgan bo'lsa ham). */
+export async function setOrderDate(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("orders", "create");
+  const v = String(fd.get("deliveryDate") ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return { error: "Yetkazish sanasini tanlang" };
+  const r = await orderSetDate(id, new Date(v), s.userId);
+  if (r.error) return { error: r.error };
+  revalidatePath(`/orders/${id}`); revalidatePath("/orders");
+  return { ok: true, note: "Sana saqlandi" };
 }
 
 /** BLOCKED → CONFIRMED. Direktor (yoki direktor "unblock" ruxsatini bergan xodim). */

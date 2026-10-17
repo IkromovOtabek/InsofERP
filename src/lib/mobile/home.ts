@@ -536,7 +536,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       if (newLeads) cards.push({ key: "leads", label: "Yangi ariza", value: String(newLeads), hint: "saytdan", tone: "brand", icon: "inbox" });
       if (supplyWait) sections.push(await supplySection("Ta'minot — tasdiqingizni kutmoqda", "", ["PRICED"]));
       if (newLeads) sections.push({ title: "Saytdan yangi arizalar", empty: "", target: "leads", rows: leadRows.map((l) => ({ id: l.id, title: `${l.name} · ${l.phone}`, subtitle: `${day(l.createdAt)}${l.product ? ` · ${l.product.name}` : ""}${l.address ? ` · ${l.address}` : ""}`, status: "Yangi", tone: "brand" as Tone })) });
-      sections.push({ title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) });
+      sections.push({ title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${o.dateUnknown ? "Sana aniq emas" : `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) });
       break;
     }
 
@@ -556,7 +556,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       sections.push(
         { title: "Mijozlarim", empty: "Sizga hali mijoz biriktirilmagan", target: "customers", rows: customers.map((c) => { const cr = credit.get(c.id); return { id: c.id, title: c.name, subtitle: `${c.phone ?? "telefonsiz"}${cr?.debt ? ` · qarz ${money(cr.debt)}` : ""}`, right: cr ? money(Math.max(0, cr.limit - cr.used)) : undefined, status: !c.isActive ? "Nofaol" : cr?.blacklisted ? "Qora ro'yxat" : undefined, tone: !c.isActive ? "info" : cr?.blacklisted ? "danger" : cr && cr.debt > 0 ? "warning" : "success" }; }) },
-        { title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) },
+        { title: "Mening zayavkalarim", empty: "Hali zayavka kiritmagansiz", target: "orders", rows: recent.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${o.dateUnknown ? "Sana aniq emas" : day(o.deliveryDate)} · ${o.deliveryAddress}`, right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))), status: o.status, tone: ORDER_TONE[o.status] })) },
       );
       break;
     }
@@ -567,7 +567,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
         db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         // "Zayavkalar" ro'yxatidagi filtrlar bilan bir xil sanoq — `lib/production.ts`
-        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { deliveryDate: "asc" }, take: 400, select: { status: true, deliveryDate: true, isUrgent: true, items: { select: { task: { select: { status: true } } } } } }),
+        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { deliveryDate: "asc" }, take: 400, select: { status: true, deliveryDate: true, dateUnknown: true, isUrgent: true, items: { select: { task: { select: { status: true } } } } } }),
       ]);
       const count = (key: string) => prodOrders.filter(prodFilter(key).test).length;
       const waiting = count("unassigned");

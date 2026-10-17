@@ -1145,6 +1145,9 @@ model Order {
   kind             OrderKind   @default(SALE)
   status           OrderStatus @default(DRAFT)
   deliveryDate     DateTime
+  /// Zayavka ochilganda yetkazish sanasi hali aniq emas. `deliveryDate` vaqtinchalik (ochilgan kun) qiymat bo'ladi.
+  /// Shunday zayavka kalendarga tushmaydi va sana belgilanmaguncha qabul qilinmaydi (qoralamada tahrirlanadi).
+  dateUnknown      Boolean     @default(false)
   deliveryTime     String? // "HH:MM" — soat nechida yetkazish kerak (zayavka kirituvchi kiritadi)
   deliveryAddress  String
   // Obyekt nuqtasi — zayavka formasida xaritadan/qidiruvdan belgilanadi.

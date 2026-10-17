@@ -25,6 +25,8 @@ export const dueLabel = (d: Date) => {
 export type ProdOrder = {
   status: OrderStatus;
   deliveryDate: Date;
+  /** Sana aniq emas (qoralama) — muddat hisoblanmaydi */
+  dateUnknown?: boolean;
   isUrgent: boolean;
   items: { task: { status: string } | null }[];
 };
@@ -37,7 +39,7 @@ export const isOpen = (o: ProdOrder) => OPEN.includes(o.status);
 /** Yopilgan: yetkazilgan/yopilgan yoki barcha topshiriqlari bajarilgan. */
 export const isDone = (o: ProdOrder) => o.status === "DELIVERED" || o.status === "CLOSED" || (assigned(o) && o.items.every((i) => i.task?.status === "DONE"));
 /** Muddati yaqin — ochiq va yetkazishgacha 2 kundan kam qolgan (kechikkanlar ham). */
-export const isSoon = (o: ProdOrder) => isOpen(o) && daysLeft(o.deliveryDate) <= 2;
+export const isSoon = (o: ProdOrder) => isOpen(o) && !o.dateUnknown && daysLeft(o.deliveryDate) <= 2;
 
 export type ProdFilter = { key: string; label: string; test: (o: ProdOrder) => boolean };
 

@@ -263,7 +263,7 @@ async function productionOrders(title: string, q?: string, filter?: string): Pro
     return {
       id: o.id,
       title: `${o.orderNo} · ${o.customer.name}${o.isUrgent ? " · zarur" : ""}`,
-      subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${isOpen(o) ? dueLabel(o.deliveryDate) : o.deliveryAddress}${brigades ? ` · ${brigades}` : ""}`,
+      subtitle: `${o.dateUnknown ? "Sana aniq emas" : `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`} · ${isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : o.deliveryAddress}${brigades ? ` · ${brigades}` : ""}`,
       right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)),
       status: done ? "Tugallandi" : ok ? "Brigada tayinlangan" : partlyAssigned(o) ? "Qisman tayinlangan" : "Brigada kutmoqda",
       tone: (done ? "success" : isSoon(o) ? "danger" : ok ? "brand" : "warning") as Tone,

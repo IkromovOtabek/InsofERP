@@ -17,7 +17,7 @@ export async function OrderLoadCalendar({ days = 10 }: { days?: number }) {
 
   const [orders, settings] = await Promise.all([
     db.order.findMany({
-      where: { status: { not: "CANCELLED" }, deliveryDate: { gte: today, lt: until } },
+      where: { status: { not: "CANCELLED" }, dateUnknown: false, deliveryDate: { gte: today, lt: until } },
       orderBy: [{ deliveryTime: "asc" }],
       select: {
         id: true, orderNo: true, deliveryDate: true, deliveryTime: true, isUrgent: true, status: true,

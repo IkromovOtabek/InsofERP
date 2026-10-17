@@ -6,7 +6,7 @@ import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
 import { customerCredit } from "@/lib/finance";
 import { stockSnapshot } from "@/lib/stock";
-import { money, date, qty, deliveryAt } from "@/lib/format";
+import { money, date, qty, deliveryAt, isoDate } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Progress, StatCard, StatusSteps, Td, Th, Tr } from "@/components/ui";
 import { TaskStatusBadge } from "../../tasks/status";
 import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
@@ -19,6 +19,7 @@ import { confirmOrder, unblockOrder, cancelOrder, toggleGuarantee, closeStockOrd
 import { canDo } from "@/lib/permissions";
 import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
 import { ContractForm } from "./contract-form";
+import { OrderDateForm } from "./date-form";
 import { contractedIds } from "@/lib/finance";
 import { NDS_LABEL, ndsPart } from "@/lib/nds";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
@@ -108,6 +109,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
   // Brigada faqat qabul qilingan zayavkaga tayinlanadi (server ham DRAFT ni rad etadi) — qoralamada tugma yo'q
   const needsAssign = unassigned && o.status !== "DRAFT";
+  // Yetkazish sanasi qoralamada tahrirlanadi; "Sana aniq emas" bo'lsa belgilanmaguncha qabul qilinmaydi
+  const canEditDate = o.status === "DRAFT" && (isStock ? canStock : can("create"));
+  const noDate = o.dateUnknown;
+  const dateText = noDate ? "Aniq emas" : date(o.deliveryDate);
 
   return (
     <div>
@@ -117,7 +122,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
         action={
           <>
-            {o.status === "DRAFT" && canConfirm && <ActionButton action={confirmOrder.bind(null, id)} variant="success"><CheckCircle2 size={16} /> Qabul qilish</ActionButton>}
+            {o.status === "DRAFT" && canConfirm && !noDate && <ActionButton action={confirmOrder.bind(null, id)} variant="success"><CheckCircle2 size={16} /> Qabul qilish</ActionButton>}
             {canClose && <ActionButton action={closeStockOrder.bind(null, id)} variant="success"><Boxes size={16} /> Zaxira tayyor — yopish</ActionButton>}
             {o.status === "BLOCKED" && canUnblock && <ActionButton action={unblockOrder.bind(null, id)} variant="success"><Unlock size={16} /> Blokdan chiqarish</ActionButton>}
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
@@ -128,6 +133,19 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         }
       />
 
+      {o.status === "DRAFT" && noDate && (
+        <Callout tone="warning" title="Yetkazish sanasi aniq emas — sana belgilanmaguncha zayavka qabul qilinmaydi">
+          {canEditDate
+            ? <div className="pt-1"><OrderDateForm orderId={id} min={isoDate()} /></div>
+            : "Sanani zayavka ochgan sotuv xodimi belgilaydi."}
+        </Callout>
+      )}
+      {canEditDate && !noDate && (
+        <details className="mb-5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm">
+          <summary className="cursor-pointer text-slate-600">Yetkazish sanasini o&apos;zgartirish · hozir {date(o.deliveryDate)}</summary>
+          <div className="pt-3"><OrderDateForm orderId={id} current={isoDate(o.deliveryDate)} min={isoDate()} /></div>
+        </details>
+      )}
       {o.status === "BLOCKED" && (
         <Callout tone="danger" title="Kredit limiti yetmadi">
           Limit {money(credit.limit)}, ishlatilgan {money(credit.used)} (qarz {money(credit.debt)} + ochiq zayavkalar {money(credit.open)}), bu zayavka {money(total)}. Faqat direktor blokdan chiqara oladi.
@@ -243,7 +261,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {/* Sklad zayavkasida summa yo'q — o'rniga muddat va zaxira holati */}
             <StatCard label="So'ralgan zaxira" value={fmtUnitTotals(itemRows)} icon={Boxes} hint={o.items.map((i) => i.product.code).join(", ")} />
             <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
-            <StatCard label="Tayyor bo'lish muddati" value={date(o.deliveryDate)} icon={CalendarDays} hint={o.isUrgent ? "zarur — birinchi navbatda" : undefined} />
+            <StatCard label="Tayyor bo'lish muddati" value={dateText} icon={CalendarDays} hint={o.isUrgent ? "zarur — birinchi navbatda" : undefined} />
           </>
         ) : (
           <>
@@ -260,7 +278,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <Card className="lg:col-span-2">
             <CardHeader title="Sklad zayavkasi" icon={Boxes} description="Mijozsiz — zaxiraga ishlab chiqarish" />
             <DL items={[
-              { k: "Tayyor bo'lish muddati", v: <span className="font-medium">{date(o.deliveryDate)}</span> },
+              { k: "Tayyor bo'lish muddati", v: <span className="font-medium">{dateText}</span> },
               { k: "Ustuvorlik", v: o.isUrgent ? <Badge color="red"><Zap size={11} /> Zarur</Badge> : "Oddiy" },
               { k: "Qayerda qoladi", v: o.deliveryAddress },
               { k: "Kim ochdi", v: o.createdBy.fullName },
@@ -277,7 +295,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <DL items={[
             { k: "Mijoz", v: <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} href={`/customers/${o.customerId}`} /> },
             { k: "Telefon", v: o.customer.phone },
-            { k: "Yetkazish", v: <span className="font-medium">{deliveryAt(o.deliveryDate, o.deliveryTime)}</span> },
+            { k: "Yetkazish", v: noDate ? <Badge color="amber"><CalendarDays size={11} /> Sana aniq emas</Badge> : <span className="font-medium">{deliveryAt(o.deliveryDate, o.deliveryTime)}</span> },
             {
               k: "Manzil",
               v: (

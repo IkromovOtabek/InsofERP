@@ -573,7 +573,7 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   const delivered = o.trips.filter((t) => t.status === "DELIVERED").reduce((s, t) => s + sum(t.qtyM3), 0);
 
   const actions: DetailAction[] = [];
-  if (o.status === "DRAFT" && can(user, "order.confirm")) actions.push({ id: "order.confirm", label: "Qabul qilish", tone: "success", confirm: "Zayavka qabul qilinsinmi? Kredit limiti tekshiriladi." });
+  if (o.status === "DRAFT" && !o.dateUnknown && can(user, "order.confirm")) actions.push({ id: "order.confirm", label: "Qabul qilish", tone: "success", confirm: "Zayavka qabul qilinsinmi? Kredit limiti tekshiriladi." });
   // Direktor qarori: "Tasdiqlash" (blokni ochish) — asosiy, "Rad etish" (bekor qilish) — ikkilamchi
   if (o.status === "BLOCKED" && can(user, "order.unblock")) actions.push({ id: "order.unblock", label: "Tasdiqlash", tone: "success", confirm: `Kredit limiti oshgan (${money(credit.used)} / ${money(credit.limit)}). Blok ochilib, zayavka ishlab chiqarishga o'tsinmi?` });
   if (["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && can(user, "order.cancel")) {
@@ -596,7 +596,7 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   return {
     key: "orders", id: o.id, title: o.orderNo, subtitle: o.customer.name, status: o.status,
     fields: [
-      { label: "Yetkazish", value: `${day(o.deliveryDate)}${o.deliveryTime ? ` · ${o.deliveryTime}` : ""}` },
+      { label: "Yetkazish", value: o.dateUnknown ? "Sana aniq emas (vebda belgilanadi)" : `${day(o.deliveryDate)}${o.deliveryTime ? ` · ${o.deliveryTime}` : ""}` },
       { label: "Manzil", value: o.deliveryAddress },
       { label: "Hajm", value: totalsText(itemRows) },
       { label: "Summa", value: money(total) },
