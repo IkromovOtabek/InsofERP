@@ -29,12 +29,14 @@ const DEFAULT_MODEL: Record<VisionProvider, string> = {
   groq: "qwen/qwen3.8-27b", // Groq hisobida rasmni o'qiydigan model; ro'yxat o'zgarsa VISION_MODEL bilan almashtiring
 };
 
-export function visionProvider(): VisionProvider | null {
-  if (isTestMode()) return null; // test rejimida tashqi vision API'ga so'rov ketmaydi
+/** Kaliti bor provayderlar ustuvorlik tartibida; birinchisi ishlamasa keyingisiga o'tiladi. */
+function visionProviders(): VisionProvider[] {
+  if (isTestMode()) return []; // test rejimida tashqi vision API'ga so'rov ketmaydi
   const forced = process.env.VISION_PROVIDER?.trim().toLowerCase() as VisionProvider | undefined;
-  if (forced && forced in KEY_ENV) return process.env[KEY_ENV[forced]] ? forced : null;
-  return (["claude", "openai", "groq"] as const).find((p) => process.env[KEY_ENV[p]]) ?? null;
+  if (forced && forced in KEY_ENV) return process.env[KEY_ENV[forced]] ? [forced] : [];
+  return (["claude", "openai", "groq"] as const).filter((p) => process.env[KEY_ENV[p]]);
 }
+export const visionProvider = (): VisionProvider | null => visionProviders()[0] ?? null;
 export const visionEnabled = () => visionProvider() !== null;
 export const visionModel = (p: VisionProvider) => process.env.VISION_MODEL?.trim() || DEFAULT_MODEL[p];
 
@@ -84,11 +86,8 @@ function shape(parsed: { supplier?: string; recipient?: string; date?: string; d
 
 /** Rasm(lar)dan hujjat qatorlarini o'qiydi. Bir nechta rasm — bitta hujjatning varaqlari. */
 export async function scanInvoice(images: ScanImage[]): Promise<ScanResult> {
-  const provider = visionProvider();
-  if (!provider) throw new Error("Rasmdan o'qish sozlanmagan: ANTHROPIC_API_KEY, OPENAI_API_KEY yoki GROQ_API_KEY kerak.");
   if (!images.length) throw new Error("Rasm yo'q");
-  const model = visionModel(provider);
-  const text = await askVision(images, PROMPT, 8000);
+  const { text, model } = await askVisionWith(images, PROMPT, 8000);
   return shape(parseJson(text), model);
 }
 
@@ -97,10 +96,38 @@ export async function scanInvoice(images: ScanImage[]): Promise<ScanResult> {
  * bitta joydan o'tadi — provayder/model tanlovi bir xil.
  */
 export async function askVision(images: ScanImage[], prompt: string, maxTokens = 2000): Promise<string> {
-  const provider = visionProvider();
-  if (!provider) throw new Error("Rasmdan o'qish sozlanmagan: ANTHROPIC_API_KEY, OPENAI_API_KEY yoki GROQ_API_KEY kerak.");
-  const model = visionModel(provider);
-  return provider === "claude" ? askClaudeVision(images, model, prompt, maxTokens) : askOpenAiVision(images, model, provider, prompt, maxTokens);
+  return (await askVisionWith(images, prompt, maxTokens)).text;
+}
+
+/** Provayderlarni navbat bilan sinaydi: masalan, Claude hisobida mablag' tugasa, Groq kaliti bilan davom etadi. */
+async function askVisionWith(images: ScanImage[], prompt: string, maxTokens: number): Promise<{ text: string; model: string }> {
+  const providers = visionProviders();
+  if (!providers.length) throw new Error("Rasmdan o'qish sozlanmagan: ANTHROPIC_API_KEY, OPENAI_API_KEY yoki GROQ_API_KEY kerak.");
+  let lastError: unknown;
+  for (const provider of providers) {
+    const model = visionModel(provider);
+    try {
+      const text = provider === "claude"
+        ? await askClaudeVision(images, model, prompt, maxTokens)
+        : await askOpenAiVision(images, model, provider, prompt, maxTokens);
+      return { text, model };
+    } catch (e) {
+      console.error(`[vision] ${provider} xatosi:`, e instanceof Error ? e.message : e);
+      lastError = e;
+    }
+  }
+  throw new Error(visionErrorText(lastError));
+}
+
+/** API xatosini foydalanuvchiga o'zbekcha matnga aylantiradi — xom JSON (ERP va ECO ekraniga) chiqmasin. */
+function visionErrorText(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  const status = (e as { status?: number } | null)?.status;
+  if (/credit balance|insufficient_quota|billing/i.test(msg)) return "Rasmni o'qib bo'lmadi: AI hisobida mablag' tugagan. Administrator balansni to'ldirishi kerak.";
+  if (status === 401 || status === 403) return "Rasmni o'qib bo'lmadi: AI kaliti noto'g'ri yoki bloklangan. Administratorga murojaat qiling.";
+  if (status === 429) return "Rasmni o'qib bo'lmadi: AI xizmati band. Bir daqiqadan keyin qayta urinib ko'ring.";
+  if (status) return `Rasmni o'qib bo'lmadi: AI xizmati xatosi (${status}). Birozdan keyin qayta urinib ko'ring.`;
+  return msg.startsWith("Rasmni o'qib bo'lmadi") ? msg : "Rasmni o'qib bo'lmadi: AI xizmatiga ulanib bo'lmadi. Birozdan keyin qayta urinib ko'ring.";
 }
 
 /** Model javobidagi JSON obyekt — hujjat va yuz javoblari uchun umumiy. */
