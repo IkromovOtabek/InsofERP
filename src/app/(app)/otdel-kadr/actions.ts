@@ -12,7 +12,6 @@ import { flatName } from "@/lib/excel";
 import { ORG_TREE, deptByLabel, guessDepartment } from "@/lib/orgchart";
 import { pushEmployeeSilently, pushVehicleSilently } from "@/lib/eco/people";
 import { isAssignableDept } from "@/lib/orgchart";
-import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
 import { importEmployees, type ImportEmployeeRow } from "@/lib/import-employees";
 import { saveEmployeeFile, removeEmployeeFile, photoEntry } from "@/lib/uploads";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
@@ -21,6 +20,10 @@ import { applyAccessMany, describePerms, isTemplateRole, permsFromForm } from "@
 import { Prisma, type Role } from "@/generated/prisma";
 import { buildSchedule, normTime, parseSchedule, scheduleProblem } from "@/lib/attendance-time";
 import { setAttendanceAnywhere } from "@/lib/self-attendance";
+import {
+  addEmployeeDocumentCore, deleteEmployeeDocumentCore, deleteEmployeePhotoCore, documentEntries, saveDocuments, setEmployeeScheduleCore,
+  toggleWorkPositionCore, updateEmployeePhotoCore,
+} from "@/lib/kadr-employee";
 
 /** Ishchi lavozimlarni faqat otdel kadr (va direktor) yuritadi. */
 // Rol (HR) + direktor bergan "employees" moduli ruxsati (yo'q/ko'rish — yozolmaydi)
@@ -266,11 +269,7 @@ export async function createPositionInline(input: { name: string; loginRole?: st
 /** Lavozimni yoqish/o'chirish. O'chirilgan lavozim yangi xodimga tanlanmaydi, eskilari joyida qoladi. */
 export async function toggleWorkPosition(id: string) {
   const s = await hr();
-  const cur = await db.workPosition.findUniqueOrThrow({ where: { id } });
-  await db.$transaction(async (tx) => {
-    await tx.workPosition.update({ where: { id }, data: { isActive: !cur.isActive } });
-    await audit(tx, s.userId, "UPDATE", "WorkPosition", id, { isActive: cur.isActive }, { isActive: !cur.isActive });
-  });
+  await toggleWorkPositionCore(s, id);
   refresh();
 }
 
@@ -278,23 +277,12 @@ export async function toggleWorkPosition(id: string) {
  * Xodim kartasidagi `workSchedule` ("08:00–17:00, 5/2"): davomatda kechikish va erta ketish shundan hisoblanadi
  * (veb tabel, yuz skaneri, xodimning o'zi "Keldim", sex boshlig'i belgisi). Belgilanmagan xodimga — zavod standarti. */
 
-const scheduleSchema = z.object({ start: zOpt, end: zOpt, note: zOpt });
-
 /** Bitta xodimning ish vaqti — Otdel kadr → Ish vaqti jadvalidagi qatordan. Hammasi bo'sh — standartga qaytadi. */
 export async function setEmployeeSchedule(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await hr();
-  const r = parseForm(scheduleSchema, fd);
+  const r = await setEmployeeScheduleCore(s, employeeId, fd); // qoida — `lib/kadr-employee.ts` (mobil ham)
   if ("error" in r) return { error: r.error };
-  const bad = scheduleProblem(r.data.start, r.data.end);
-  if (bad) return { error: bad };
-  const value = buildSchedule(normTime(r.data.start), normTime(r.data.end), r.data.note);
-  const before = await db.employee.findUnique({ where: { id: employeeId }, select: { workSchedule: true } });
-  if (!before) return { error: "Xodim topilmadi" };
-  if ((before.workSchedule ?? null) === value) return { ok: true };
-  await db.$transaction(async (tx) => {
-    await tx.employee.update({ where: { id: employeeId }, data: { workSchedule: value } });
-    await audit(tx, s.userId, "UPDATE", "Employee", employeeId, { workSchedule: before.workSchedule }, { workSchedule: value });
-  });
+  if (r.same) return { ok: true };
   revalidatePath("/otdel-kadr"); revalidatePath(`/employees/${employeeId}`);
   return { ok: true };
 }
@@ -394,30 +382,7 @@ const cardSchema = z.object({
   note: zOpt,
 });
 
-/** Formadagi barcha `doc:<tur>` fayllari — bo'shlari tashlab ketiladi. */
-function documentEntries(fd: FormData) {
-  const out: { kind: string; file: File }[] = [];
-  for (const [key, value] of fd.entries()) {
-    const kind = kindFromField(key);
-    if (!kind || !(value instanceof File) || value.size === 0) continue;
-    out.push({ kind: kind === OTHER_DOC_KIND ? OTHER_DOC_KIND : kind, file: value });
-  }
-  return out;
-}
-
-/** Tanlangan fayllarni diskka yozadi; birortasi xato bo'lsa yozilganlarini qaytarib o'chiradi. */
-async function saveDocuments(employeeId: string, entries: { kind: string; file: File }[]) {
-  const saved: { kind: string; file: string; fileName: string; fileType: string }[] = [];
-  for (const e of entries) {
-    const r = await saveEmployeeFile(employeeId, e.file);
-    if (r && "error" in r) {
-      await Promise.all(saved.map((x) => removeEmployeeFile(x.file)));
-      return { error: r.error };
-    }
-    if (r) saved.push({ kind: e.kind, file: r.stored, fileName: r.name, fileType: r.type });
-  }
-  return { saved };
-}
+// `documentEntries` / `saveDocuments` — `lib/kadr-employee.ts` (mobil ilova ham hujjat nusxasini shu yo'l bilan saqlaydi)
 
 /**
  * Otdel kadr: yangi xodim kartasi — shaxsiy ma'lumotlar, 3x4 surat va hujjat nusxalari.
@@ -476,17 +441,8 @@ export async function createEmployeeCard(_prev: ActionState, fd: FormData): Prom
 /** Mavjud kartaga hujjat nusxasi qo'shish. */
 export async function addEmployeeDocument(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await hr();
-  const kind = String(fd.get("kind") ?? "").trim() || OTHER_DOC_KIND;
-  const entries = [...fd.getAll("file")].filter((f): f is File => f instanceof File && f.size > 0).map((file) => ({ kind, file }));
-  if (entries.length === 0) return { error: "Fayl tanlanmagan" };
-  // Avval karta borligi tekshiriladi — yo'q xodim uchun fayl diskka yozilib, egasiz qolmasin
-  if (!(await db.employee.findUnique({ where: { id: employeeId }, select: { id: true } }))) return { error: "Xodim topilmadi" };
-  const docs = await saveDocuments(employeeId, entries);
-  if ("error" in docs) return { error: docs.error };
-  await db.$transaction(async (tx) => {
-    await tx.employeeDocument.createMany({ data: docs.saved.map((x) => ({ ...x, employeeId })) });
-    await audit(tx, s.userId, "CREATE", "EmployeeDocument", employeeId, undefined, { kind, count: docs.saved.length });
-  });
+  const r = await addEmployeeDocumentCore(s, employeeId, fd);
+  if ("error" in r) return { error: r.error };
   revalidatePath(`/employees/${employeeId}`);
   return { ok: true };
 }
@@ -497,22 +453,8 @@ export async function addEmployeeDocument(employeeId: string, _prev: ActionState
  */
 export async function updateEmployeePhoto(employeeId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await hr();
-  const file = photoEntry(fd);
-  if (!file) return { error: "Surat tanlanmagan" };
-  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { photo: true } });
-  const saved = await saveEmployeeFile(employeeId, file, { imageOnly: true });
-  if (!saved) return { error: "Surat tanlanmagan" };
-  if ("error" in saved) return { error: saved.error };
-  try {
-    await db.$transaction(async (tx) => {
-      await tx.employee.update({ where: { id: employeeId }, data: { photo: saved.stored } });
-      await audit(tx, s.userId, "UPDATE", "Employee", employeeId, { photo: e.photo }, { photo: saved.stored });
-    });
-  } catch (err) {
-    await removeEmployeeFile(saved.stored);
-    throw err;
-  }
-  await removeEmployeeFile(e.photo);
+  const r = await updateEmployeePhotoCore(s, employeeId, fd);
+  if ("error" in r) return { error: r.error };
   refresh();
   revalidatePath(`/employees/${employeeId}`);
   return { ok: true };
@@ -521,13 +463,8 @@ export async function updateEmployeePhoto(employeeId: string, _prev: ActionState
 /** Suratni kartadan olib tashlash — fayl ham diskdan ketadi. */
 export async function deleteEmployeePhoto(employeeId: string): Promise<void> {
   const s = await hr();
-  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { photo: true } });
-  if (!e.photo) return;
-  await db.$transaction(async (tx) => {
-    await tx.employee.update({ where: { id: employeeId }, data: { photo: null } });
-    await audit(tx, s.userId, "DELETE", "Employee", employeeId, { photo: e.photo }, undefined);
-  });
-  await removeEmployeeFile(e.photo);
+  const r = await deleteEmployeePhotoCore(s, employeeId);
+  if ("error" in r || r.same) return;
   refresh();
   revalidatePath(`/employees/${employeeId}`);
 }
@@ -535,13 +472,9 @@ export async function deleteEmployeePhoto(employeeId: string): Promise<void> {
 /** Hujjat nusxasini o'chirish — fayl ham diskdan ketadi. */
 export async function deleteEmployeeDocument(docId: string) {
   const s = await hr();
-  const doc = await db.employeeDocument.findUniqueOrThrow({ where: { id: docId } });
-  await db.$transaction(async (tx) => {
-    await tx.employeeDocument.delete({ where: { id: docId } });
-    await audit(tx, s.userId, "DELETE", "EmployeeDocument", docId, doc, undefined);
-  });
+  const r = await deleteEmployeeDocumentCore(s, docId);
   // Nusxa faylining o'zi diskda qoladi (hujjatlar o'chirilmaydi): nomi auditda, kerak bo'lsa tiklanadi
-  revalidatePath(`/employees/${doc.employeeId}`);
+  if ("id" in r && r.id) revalidatePath(`/employees/${r.id}`);
 }
 
 

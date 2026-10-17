@@ -5,13 +5,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
-import { audit } from "@/lib/audit";
-import { nextNo } from "@/lib/numbering";
-import { createOrder as createOrderDomain, orderCancel, orderConfirm, orderSetDate, orderUnblock } from "@/lib/orders";
+import { createOrder as createOrderDomain, orderConfirm, orderSetDate, orderUnblock } from "@/lib/orders";
+import { cancelOrderWithReason, closeStockOrderLib, setGuarantee, setOrderContract } from "@/lib/order-docs";
 import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
 import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
-import { saveContractFile, removeContractFile } from "@/lib/uploads";
+import { saveContractFile } from "@/lib/uploads";
 import { withNds } from "@/lib/nds";
 
 const schema = z.object({
@@ -191,17 +190,14 @@ export async function unblockOrder(id: string): Promise<ActionState> {
   return { ok: true };
 }
 
-/** Bekor qilish — sabab so'raladi va auditga yoziladi (tasdiq tugmasi `ConfirmButton`). */
+/** Bekor qilish — sabab so'raladi va auditga yoziladi (tasdiq tugmasi `ConfirmButton`). Qoida `lib/order-docs.ts` da — mobil ham shuni chaqiradi. */
 export async function cancelOrder(id: string, reason: string): Promise<ActionState> {
   const ord = await db.order.findUnique({ where: { id }, select: { kind: true } });
   if (!ord) return { error: "Zayavka topilmadi" };
   const kind = ord.kind;
   const s = await requireAction("orders", kind === "STOCK" ? "stock" : "cancel");
-  const why = String(reason ?? "").trim().slice(0, 300);
-  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
-  const r = await orderCancel(id, s.userId);
-  if (r.error) return { error: r.error };
-  await audit(db, s.userId, "UPDATE", "Order", id, undefined, { cancelReason: why });
+  const r = await cancelOrderWithReason(id, reason, s.userId);
+  if (!r.ok) return { error: r.error };
   revalidatePath(`/orders/${id}`); revalidatePath("/tasks"); revalidatePath("/brigades");
   revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
   return { ok: true, note: "Zayavka bekor qilindi" };
@@ -209,35 +205,21 @@ export async function cancelOrder(id: string, reason: string): Promise<ActionSta
 
 /**
  * Sklad zayavkasini yopish: so'ralgan zaxira hovliga chiqarib qo'yilgan.
- * Mijoz zayavkasi bunday yopilmaydi — u schyot/to'lov bo'yicha yopiladi.
+ * Mijoz zayavkasi bunday yopilmaydi — u schyot/to'lov bo'yicha yopiladi. Qoida `lib/order-docs.ts` da.
  */
 export async function closeStockOrder(id: string): Promise<ActionState> {
   const s = await requireAction("orders", "stock");
-  const o = await db.order.findUnique({ where: { id }, select: { kind: true, status: true } });
-  if (!o) return { error: "Zayavka topilmadi" };
-  if (o.kind !== "STOCK") return { error: "Bu tugma faqat sklad zayavkasi uchun" };
-  if (!["CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return { error: "Faqat qabul qilingan sklad zayavkasi yopiladi" };
-  const done = await db.$transaction(async (tx) => {
-    // Holat sharti bilan: ikki marta bosilsa ikkinchisi hech narsa yozmaydi
-    const r = await tx.order.updateMany({ where: { id, status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, data: { status: "CLOSED" } });
-    if (!r.count) return false;
-    await audit(tx, s.userId, "STATUS_CHANGE", "Order", id, { status: o.status }, { status: "CLOSED", kind: "STOCK" });
-    return true;
-  });
-  if (!done) return { error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
+  const r = await closeStockOrderLib(id, s.userId);
+  if (!r.ok) return { error: r.error };
   revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/production"); revalidatePath("/stock");
   return { ok: true };
 }
 
-/** Mijoz imzolagan kafolat xati qabul qilindi / qaytarildi. */
+/** Mijoz imzolagan kafolat xati qabul qilindi / qaytarildi. Qoida `lib/order-docs.ts` da. */
 export async function toggleGuarantee(id: string) {
   const s = await requireAction("orders", "contract");
-  const o = await db.order.findUniqueOrThrow({ where: { id } });
-  const guaranteeAt = o.guaranteeAt ? null : new Date();
-  await db.$transaction(async (tx) => {
-    await tx.order.update({ where: { id }, data: { guaranteeAt } });
-    await audit(tx, s.userId, "UPDATE", "Order", id, { guaranteeAt: o.guaranteeAt }, { guaranteeAt });
-  });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, select: { guaranteeAt: true } });
+  await setGuarantee(id, !o.guaranteeAt, s.userId);
   revalidatePath(`/orders/${id}`);
 }
 
@@ -245,26 +227,14 @@ const contractSchema = z.object({ contractAmount: z.coerce.number().positive("Sh
 
 /**
  * Mavjud zayavkaga shartnoma qo'shish / summasini o'zgartirish / Didox'da imzolangan faylni yuklash (almashtirish).
- * Raqam bir marta beriladi. Fayl `uploads/contracts/` ga yoziladi — isbot uchun tizimda saqlanadi.
+ * Raqam bir marta beriladi. Fayl `uploads/contracts/` ga yoziladi — qoida `lib/order-docs.ts` da (mobil ham shuni chaqiradi).
  */
 export async function setContract(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("orders", "contract");
   const r = parseForm(contractSchema, fd);
   if ("error" in r) return { error: r.error };
-  const o = await db.order.findUnique({ where: { id } });
-  if (!o) return { error: "Zayavka topilmadi" };
-  if (o.status === "CANCELLED") return { error: "Bekor qilingan zayavkaga shartnoma qo'shib bo'lmaydi" };
-  const saved = await saveContractFile(id, fd.get("contractFile"));
-  if (saved && "error" in saved) return { error: saved.error };
-  await db.$transaction(async (tx) => {
-    const data = {
-      contractAmount: r.data.contractAmount, contractAt: o.contractAt ?? new Date(), contractNo: o.contractNo ?? (await nextNo(tx, "contract", "SH")),
-      ...(saved ? { contractFile: saved.stored, contractFileName: saved.name, contractFileType: saved.type, contractFileAt: new Date() } : {}),
-    };
-    await tx.order.update({ where: { id }, data });
-    await audit(tx, s.userId, "UPDATE", "Order", id, { contractAmount: o.contractAmount, contractNo: o.contractNo, contractFile: o.contractFile }, data);
-  });
-  if (saved && o.contractFile && o.contractFile !== saved.stored) await removeContractFile(o.contractFile); // almashtirilgan eski fayl
+  const res = await setOrderContract(id, r.data.contractAmount, fd.get("contractFile"), s.userId);
+  if (!res.ok) return { error: res.error };
   revalidatePath(`/orders/${id}`); revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/customers");
   return { ok: true };
 }

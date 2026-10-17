@@ -19,6 +19,7 @@ import { plansTab } from "@/lib/bi/plans";
 import { aiSnapshot } from "@/lib/bi/ai";
 import { moneyShort, fmtNum, date as fmtDate, dateTime as fmtDateTime } from "@/lib/format";
 import { lineTotal } from "@/lib/receipt-vat";
+import { HR_TOOLS } from "./hr-tools";
 
 export type JsonSchema = {
   type: "object";
@@ -540,7 +541,7 @@ const dashboardSnapshot: Tool = {
   run: () => aiSnapshot(),
 };
 
-export const TOOLS: Tool[] = [salesSummary, ordersList, customerFind, customersList, invoicesList, cashSummary, stockStatus, productionSummary, tripsList, receiptsList, planStatus, employeesList, vehiclesList, logisticsStatus, dashboardSnapshot];
+export const TOOLS: Tool[] = [salesSummary, ordersList, customerFind, customersList, invoicesList, cashSummary, stockStatus, productionSummary, tripsList, receiptsList, planStatus, employeesList, vehiclesList, logisticsStatus, dashboardSnapshot, ...HR_TOOLS];
 
 /** Asbob natijasi juda uzun bo'lsa — kontekstni to'ldirmaslik uchun kesiladi. */
 const MAX_RESULT = 12000;

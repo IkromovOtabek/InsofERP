@@ -1,16 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronLeft, ChevronRight, History, SlidersHorizontal, Wallet } from "lucide-react";
-import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { monthTitle, shiftMonth, today, validMonth } from "@/lib/davomat";
-import { EXPENSE_CATEGORIES } from "@/app/(app)/cashflow/categories";
 import { dateTime, money } from "@/lib/format";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
-import { BudgetForm, ThresholdForm, type BudgetRow } from "./budget-form";
-import { expenseForecast, isOverBudget } from "@/lib/owner-dashboard";
-import { monthForecast } from "@/lib/bi/core";
+import { BudgetForm, ThresholdForm } from "./budget-form";
+import { budgetMonth } from "@/lib/expense-budget";
 
 /**
  * Xarajat byudjeti (TZ §4, §6): har kategoriya uchun oylik byudjet va limit, fakt/prognoz yonida.
@@ -20,32 +17,8 @@ export default async function BudgetPage({ searchParams }: { searchParams: Promi
   const s = await getSession();
   if (s?.role !== "DIRECTOR") redirect("/dashboard?denied=1");
   const ym = validMonth((await searchParams).oy) ?? today().slice(0, 7);
-  const [year, month] = ym.split("-").map(Number);
-  const mStart = new Date(year, month - 1, 1), mEnd = new Date(year, month, 1), hStart = new Date(year, month - 4, 1);
-  const now = new Date();
-  const daysPassed = now >= mEnd ? Math.round((mEnd.getTime() - mStart.getTime()) / 86400000) : now < mStart ? 0 : now.getDate();
-  const daysInMonth = Math.round((mEnd.getTime() - mStart.getTime()) / 86400000);
-
-  const [company, budgets, fact, hist, history] = await Promise.all([
-    getCompany(),
-    db.expenseBudget.findMany({ where: { year, month } }),
-    db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", date: { gte: mStart, lt: mEnd } }, _sum: { amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: hStart, lt: mStart } }, select: { category: true, amount: true, date: true } }),
-    db.auditLog.findMany({ where: { entity: "ExpenseBudget", entityId: ym }, orderBy: { createdAt: "desc" }, take: 10, include: { user: { select: { fullName: true } } } }),
-  ]);
-  const factBy = new Map(fact.map((f) => [f.category, Number(f._sum.amount ?? 0)]));
-  const histBy = new Map<string, Set<string>>(), histSum = new Map<string, number>();
-  for (const h of hist) { histSum.set(h.category, (histSum.get(h.category) ?? 0) + Number(h.amount)); (histBy.get(h.category) ?? histBy.set(h.category, new Set()).get(h.category)!).add(`${h.date.getFullYear()}-${h.date.getMonth()}`); }
-  const cats = [...new Set([...EXPENSE_CATEGORIES, ...budgets.map((b) => b.category), ...fact.map((f) => f.category)])];
-  const rows: BudgetRow[] = cats.map((cat) => {
-    const b = budgets.find((x) => x.category === cat);
-    const f = factBy.get(cat) ?? 0, months = histBy.get(cat)?.size ?? 0;
-    const amount = b ? Number(b.amount) : null, limit = b?.limit ? Number(b.limit) : null;
-    // Prognoz va "oshdi" — Egasi dashbordi bilan bitta qoida: oylik bir martalik toifa (ish haqi, ijara, soliq…) — max(fakt, byudjet),
-    // kunlik toifa — joriy oyda ish kunlari sur'ati bo'yicha; o'tgan oyda fakt o'zi, kelajak oyda 0
-    const project = (x: number) => (daysPassed === 0 ? 0 : daysPassed >= daysInMonth ? x : monthForecast(x));
-    return { cat, amount, limit, fact: f, forecast: daysPassed === 0 ? 0 : expenseForecast(cat, f, amount, project), over: isOverBudget(f, amount, limit), histAvg: months ? (histSum.get(cat) ?? 0) / months : null };
-  });
+  // Byudjet, fakt, prognoz va tarix — `lib/expense-budget.ts` (mobil ilova ham shu hisob)
+  const [company, { rows, history }] = await Promise.all([getCompany(), budgetMonth(ym)]);
 
   return (
     <div>

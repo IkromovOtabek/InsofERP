@@ -9,7 +9,7 @@ import { parseForm, zDec, zOpt, zStr, type ActionState } from "@/lib/action";
 import { today, validDay, validMonth } from "@/lib/davomat";
 import { assignEmployeeBrigade, markAllPresent, markProductionAttendance, markProductionCheckout } from "@/lib/production-staff";
 import { submitReport } from "@/lib/production-report";
-import { addProductDefect } from "@/lib/defects";
+import { addProductDefect, deleteProductDefect } from "@/lib/defects";
 
 const done = () => { revalidatePath("/dashboard"); return { ok: true } as const; };
 
@@ -76,29 +76,11 @@ export async function addDefect(_prev: ActionState, fd: FormData): Promise<Actio
   return done();
 }
 
-/** Xato yozilgan brakni o'chirish: direktor yoki shu kuni o'zi yozgan xodim. Hovli qoldig'i qaytadi. */
+/** Xato yozilgan brakni o'chirish: direktor yoki shu kuni o'zi yozgan xodim. Hovli qoldig'i qaytadi (qoida `lib/defects.ts` da). */
 export async function deleteDefect(id: string): Promise<ActionState> {
   const s = await requireAction("production", "report");
-  const def = await db.productDefect.findUnique({ where: { id } });
-  if (!def) return { error: "Yozuv topilmadi" };
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  if (s.role !== "DIRECTOR" && (def.createdById !== s.userId || def.createdAt < today)) {
-    return { error: "Faqat bugun o'zingiz yozgan brakni o'chira olasiz — qolganini direktor o'chiradi" };
-  }
-  // StockMove o'zgarmas jurnal — brak harakati o'chirilmaydi, teskari yozuv bilan qoldiq qaytariladi
-  const moves = await db.stockMove.findMany({ where: { refType: "ProductDefect", refId: id, type: "WRITE_OFF" } });
-  await db.$transaction(async (tx) => {
-    for (const m of moves) {
-      await tx.stockMove.create({
-        data: {
-          type: "ADJUSTMENT", warehouseId: m.warehouseId, productId: m.productId, brigadeId: m.brigadeId, qty: m.qty.negated(),
-          refType: "ProductDefect", refId: id, note: "Brak yozuvi bekor qilindi", createdById: s.userId,
-        },
-      });
-    }
-    await tx.productDefect.delete({ where: { id } });
-    await audit(tx, s.userId, "DELETE", "ProductDefect", id, def);
-  });
+  const r = await deleteProductDefect(id, s);
+  if ("error" in r) return { error: r.error };
   revalidatePath("/stock");
   return done();
 }

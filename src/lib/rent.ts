@@ -207,3 +207,36 @@ export async function openMonth(month: Date, userId: string): Promise<{ created:
   if (res.count) await audit(db, userId, "CREATE", "RentCharge", monthKey(month), undefined, { month: monthKey(month), created: res.count });
   return { created: res.count };
 }
+
+// ───────────────────────── Do'kon kartasi ─────────────────────────
+
+export type RentShopInput = { name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null };
+
+/**
+ * Do'konni qo'shish (`id` yo'q) yoki tahrirlash — veb `/arenda` formasi (`arenda/actions.ts` → `saveRentShop`) va mobil
+ * do'kon kartochkasi shu yerdan. Qo'shilganda shu oy (`month`) hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi.
+ * Bir joyda bir xil nomli ikkinchi do'kon bo'lmaydi (unique).
+ */
+export async function saveRentShopData(id: string | null, data: RentShopInput, month: Date | null, userId: string): Promise<{ error?: string; id?: string }> {
+  try {
+    if (id) {
+      const before = await db.rentShop.findUnique({ where: { id } });
+      if (!before) return { error: "Do'kon topilmadi" };
+      const after = await db.rentShop.update({ where: { id }, data });
+      await audit(db, userId, "UPDATE", "RentShop", id, before, after);
+      return { id };
+    }
+    const shop = await db.$transaction(async (tx) => {
+      const shop = await tx.rentShop.create({ data });
+      await audit(tx, userId, "CREATE", "RentShop", shop.id, undefined, shop);
+      if (month && (await tx.rentCharge.count({ where: { month } }))) {
+        await tx.rentCharge.create({ data: { shopId: shop.id, month, bankDue: data.bankAmount, cashDue: data.cashAmount, electricity: data.electricity, tax: data.tax } });
+      }
+      return shop;
+    });
+    return { id: shop.id };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: `«${data.location}» da «${data.name}» nomli do'kon allaqachon bor` };
+    throw e;
+  }
+}

@@ -8,7 +8,8 @@ import { REQUEST_KINDS } from "@/lib/hr/labels";
 import { saveMyChecklist } from "@/lib/hr/checklists";
 import { takeTest } from "@/lib/hr/training";
 import { toggleStep } from "@/lib/hr/onboarding";
-import type { HrRequestKind } from "@/generated/prisma";
+import { answerSurvey, createFeedback, replyFeedback } from "@/lib/hr/voice";
+import type { FeedbackKind, HrRequestKind } from "@/generated/prisma";
 
 /* Xodimning o'z arizalari ("Mening hisobim") — har qanday rol, faqat o'z kartasi nomidan. */
 
@@ -68,5 +69,37 @@ export async function myStepAction(stepId: string, done: boolean): Promise<Actio
   const r = await toggleStep(stepId, done, s, false);
   if ("error" in r) return { error: r.error };
   revalidatePath("/hisobim");
+  return { ok: true };
+}
+
+// ───────────────────────── So'rovnoma va murojaatlar (xodimning o'zi) ─────────────────────────
+
+export async function answerSurveyAction(surveyId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession();
+  const emp = await employeeOfUser(s.userId);
+  if (!emp || !emp.isActive) return { error: "Loginingiz xodim kartasiga bog'lanmagan" };
+  const answers: Record<string, string> = {};
+  for (const [k, v] of fd.entries()) if (/^s\d+$/.test(k)) answers[k] = String(v);
+  const r = await answerSurvey(surveyId, emp, answers);
+  if ("error" in r) return { error: r.error as string };
+  revalidatePath("/hisobim");
+  return { ok: true, note: r.note };
+}
+
+export async function sendFeedbackAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession();
+  const kind = String(fd.get("kind") ?? "") as FeedbackKind;
+  if (!["COMPLAINT", "SUGGESTION", "QUESTION", "THANKS"].includes(kind)) return { error: "Turini tanlang" };
+  const r = await createFeedback({ kind, subject: String(fd.get("subject") ?? ""), text: String(fd.get("text") ?? ""), anonymous: fd.get("anonymous") === "on" }, s);
+  if ("error" in r) return { error: r.error as string };
+  revalidatePath("/hisobim");
+  return { ok: true, note: "Murojaat yuborildi — javob «Murojaatlarim»da ko'rinadi" };
+}
+
+export async function myFeedbackReplyAction(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession();
+  const r = await replyFeedback(id, String(fd.get("text") ?? ""), s, false);
+  if ("error" in r) return { error: r.error as string };
+  revalidatePath(`/hisobim/murojaat/${id}`);
   return { ok: true };
 }

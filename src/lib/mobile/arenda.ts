@@ -7,7 +7,7 @@ import { MAX_AMOUNT } from "@/lib/action";
 import { dateRu, fmtNum, money } from "@/lib/format";
 import {
   RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
-  monthSheet, openMonth, parseMonth, rentBalance, shiftMonth, shopDebts,
+  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts,
 } from "@/lib/rent";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
@@ -192,6 +192,21 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
         { name: "electricity", label: "Svet, so'm", type: "number", value: String(n(cur?.electricity ?? s.electricity)), hint: "Ma'lumot uchun — qoldiqqa ta'sir qilmaydi" },
         { name: "tax", label: "Soliq, so'm", type: "number", value: String(n(cur?.tax ?? s.tax)) },
         { name: "note", label: "Izoh", type: "text", value: cur?.note ?? undefined },
+      ],
+    });
+    // Do'kon kartasini tahrirlash — veb `/arenda` do'kon formasi (`saveRentShop` → `lib/rent.ts` `saveRentShopData`)
+    const locs = await db.rentShop.findMany({ distinct: ["location"], select: { location: true }, orderBy: { location: "asc" } });
+    actions.push({
+      id: "arenda.shop.edit", label: "Do'kon ma'lumotlarini tahrirlash", tone: "brand",
+      form: [
+        { name: "name", label: "Do'kon nomi", type: "text", required: true, value: s.name },
+        { name: "location", label: "Joy (bozor)", type: "select", required: true, value: s.location, options: [...locs.map((l) => ({ value: l.location, label: l.location })), { value: NEW_LOCATION, label: "Yangi joy…" }] },
+        { name: "locationNew", label: "Yangi joy nomi", type: "text", showIf: { field: "location", equals: NEW_LOCATION } },
+        { name: "bankAmount", label: "Oylik — perechisleniye, so'm", type: "number", value: String(n(s.bankAmount)) },
+        { name: "cashAmount", label: "Oylik — naqd, so'm", type: "number", value: String(n(s.cashAmount)) },
+        { name: "electricity", label: "Svet, so'm", type: "number", value: String(n(s.electricity)), hint: "Ma'lumot uchun" },
+        { name: "tax", label: "Soliq, so'm", type: "number", value: String(n(s.tax)) },
+        { name: "note", label: "Izoh", type: "text", value: s.note ?? undefined },
       ],
     });
     actions.push({
@@ -399,6 +414,17 @@ export async function arendaAction(user: MobileUser, action: string, id: string,
       const ok = await db.rentShop.updateMany({ where: { id, isActive: shop!.isActive }, data: { isActive: !shop!.isActive } });
       if (ok.count) await audit(db, user.id, "STATUS_CHANGE", "RentShop", id, { isActive: shop!.isActive }, { isActive: !shop!.isActive });
       return { ok: true, message: shop!.isActive ? "Do'kon yopildi" : "Do'kon qayta faollashtirildi" };
+    }
+    case "arenda.shop.edit": {
+      // Andoza summalar keyingi oylar hisobiga tushadi; ochilgan oy hisobi o'zgarmaydi (veb bilan bir xil)
+      const p = ShopBody.safeParse(payload);
+      if (!p.success) fail(issue(p.error));
+      const d = p.data!;
+      const location = d.location === NEW_LOCATION ? (d.locationNew ?? "") : d.location;
+      if (!location) fail("Yangi joy (bozor) nomini yozing");
+      const r = await saveRentShopData(id, { name: d.name, location, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, null, user.id);
+      if (r.error) fail(r.error);
+      return { ok: true, message: "Do'kon saqlandi" };
     }
     case "arenda.charge": {
       const p = ChargeBody.safeParse(payload);

@@ -340,6 +340,13 @@ export async function calculateRun(month: string, kind: Exclude<PayrollKind, "EX
   }, { timeout: 60_000 });
 }
 
+/** Qoralama vedomostni qayta hisoblash (veb «Qayta hisoblash» va mobil kartochka) — alohida to'lov (EXTRA) qayta hisoblanmaydi. */
+export async function recalculateRun(id: string, user: PayrollWho): Promise<{ id?: string; error?: string; note?: string }> {
+  const run = await db.payrollRun.findUnique({ where: { id }, select: { month: true, kind: true } });
+  if (!run || run.kind === "EXTRA") return { error: "Bu vedomost qayta hisoblanmaydi" };
+  return calculateRun(run.month, run.kind, user);
+}
+
 /** Tasdiqlangan avans arizasi → bitta xodimga alohida vedomost (direktor tasdig'ida). Ariza tranzaksiyasi ichida. */
 export async function createAdvancePayout(tx: Prisma.TransactionClient, input: { employeeId: string; amount: number; requestId: string; docNo: string }, userId: string): Promise<string> {
   const month = today().slice(0, 7);

@@ -5,7 +5,6 @@ import { ecoLabel } from "@/lib/eco/labels";
 import { lineTotal } from "@/lib/receipt-vat";
 import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import { myBrigades } from "@/lib/brigades";
-import { customersCredit, customersHistory, STAR_LABELS } from "@/lib/finance";
 import { driverPositionNames } from "@/lib/positions";
 import { ingredientOf } from "@/lib/recipe";
 import { SUPPLY_LABEL, SUPPLY_TABS, totalPlanned } from "@/lib/supply";
@@ -19,13 +18,25 @@ import type { MobileUser } from "./auth";
 import { reportRows } from "./sex";
 import { brigIssuesList, brigShiftsList, brigTasksList } from "./brigadier";
 import type { HomeRow, Tone } from "./home";
-import type { LeadStatus, OrderStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
+import type { LeadStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
 import { arendaJurnalList, arendaShopsList } from "./arenda";
 import { OPEN_STATUSES, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, PAYREQ_TABS, listPaymentRequests, methodsFor, payReqCounts, payReqTab, type PayReqRow } from "@/lib/payment-requests";
 import { HR_ACCESS, HR_KEY_MODULE } from "./hr-access";
 import { hrList } from "./hr";
+import { KADR_ACCESS, KADR_KEY_MODULE } from "./kadr-access";
+import { kadrList } from "./kadr-extra";
+import { SKLAD_ACCESS, SKLAD_DETAIL_KEY, SKLAD_DETAIL_ROLES, SKLAD_KEY_MODULE, SKLAD_LISTS } from "./sklad-extra-access";
+import { parseSkladFilter, skladJournalFilters, skladList } from "./sklad-extra";
+import { DIREKTOR_ACCESS, DIREKTOR_KEY_MODULE } from "./direktor-extra-access";
+import { direktorList } from "./direktor-extra";
+import { LOGI_ACCESS, LOGI_DETAIL_KEY, LOGI_KEY_MODULE } from "./logistika-access";
+import { logiList, tripsList } from "./logistika-extra";
+import { tasksList } from "./sex-extra";
+import { cashflowList, kirimQqsList, openingsList, paymentsList, realizatsiyaList, unpaidReceiptsList } from "./moliya-extra";
+import { SOTUV_ACCESS, SOTUV_DETAIL_KEY, SOTUV_KEY_MODULE } from "./sotuv-access";
+import { sotuvList } from "./sotuv-extra";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -49,6 +60,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // Buxgalteriya kabinetida Mijozlar bo'limi yo'q (`menuHide`, vebda ham): ruxsat qoladi — qarzdorlar «Barchasi», schyot va to'lovdan ochiladi
   customers: { title: "Mijozlar", roles: ["AGENT", "SALES", "ACCOUNTING", "FINANCE"], menuHide: ["ACCOUNTING"] },
   leads: { title: "Sayt arizalari", roles: ["SALES"] },
+  // Tijorat takliflari, e-commerce, marketing (kontent, target, statistika) — `./sotuv-access.ts`
+  ...SOTUV_ACCESS,
   // CASHIER veb ERP'da schyotlar sahifasiga kirmaydi, lekin to'lov aynan schyot ustida olinadi —
   // mobil ilovada kassir schyotni ochib, shu yerdan to'lovni kiritadi.
   invoices: { title: "Schyotlar", roles: ["ACCOUNTING", "FINANCE", "SALES", "CASHIER"] },
@@ -92,6 +105,12 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   kirim: { title: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"] },
   // Zayavka bosh to'lovi (`lib/payment-requests.ts`): kassir — naqd, buxgalter — perechisleniye, moliya — ikkalasi faqat ko'rish
   payreq: { title: "Pul qabul qilish", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
+  // Moliya qo'shimchalari (`./moliya-extra.ts`): to'lanmagan kirimlar (veb Kirim-Chiqim tepasida), Kirim QQS reyestri,
+  // Boshlang'ich qoldiqlar (ko'rish + yetkazuvchi qarzini to'lash), Realizatsiya jurnali (veb Kassa/bank → jurnal tabi)
+  "unpaid-receipts": { title: "To'lanmagan kirimlar", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
+  "kirim-qqs": { title: "Kirim QQS", roles: ["ACCOUNTING", "FINANCE"] },
+  openings: { title: "Boshlang'ich qoldiqlar", roles: ["ACCOUNTING", "FINANCE"] },
+  realizatsiya: { title: "Realizatsiya jurnali", roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   // ── Arenda (do'konlar ijarasi, `./arenda.ts`) — sekretar; vebdagi `/arenda` sahifasi bilan bir xil ──
   "arenda-jurnal": { title: "Kirim-chiqim jurnali", roles: ["SECRETARY"] },
   "arenda-shops": { title: "Do'konlar", roles: ["SECRETARY"] },
@@ -105,6 +124,14 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   activity: { title: "Xodimlar faoliyati", roles: [] },
   // ── Otdel kadr: arizalar, smena grafigi, ish haqi (`./hr.ts`) — o'z arizasi / grafigi / oyligi har bir xodimga ──
   ...HR_ACCESS,
+  // Otdel kadr kabineti (veb `/otdel-kadr` tablari) — `./kadr-extra.ts`
+  ...KADR_ACCESS,
+  // ── Direktor kabineti: BI tahlil (moliya, buxgalteriya ham), ilova foydalanuvchilari, xarajat byudjeti (`./direktor-extra.ts`) ──
+  ...DIREKTOR_ACCESS,
+  // ── Sklad / snabjeniye: tayyor mahsulot, ishlab chiqarish imkoni, brigadalar skladi, «Kimga» oluvchilari (`./sklad-extra.ts`) ──
+  ...SKLAD_ACCESS,
+  // ── Logistika kabineti: buyurtmalar, kalendar, transport, yoqilg'i, xarajat, nakladnoy, yetkazish, hisobot, obyektlar (`./logistika-extra.ts`) ──
+  ...LOGI_ACCESS,
 };
 
 /** Ro'yxat kaliti → kartochka kaliti (bir xil hujjat bir nechta ro'yxatda chiqadi). */
@@ -113,7 +140,7 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
 // «Kirim» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
 // «Chiqim» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Chiqim» kartochkasi esa berish hujjati (`rasxod`, id = ref).
 // «Qoldiqlar» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
-export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop" };
+export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop", ...SKLAD_DETAIL_KEY, ...LOGI_DETAIL_KEY, ...SOTUV_DETAIL_KEY };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
@@ -121,9 +148,6 @@ const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
   PROCUREMENT: "NEW", WAREHOUSE: "open", PRODUCTION: "open",
 };
 
-/** Sotuv bo'limi — qabul qilingan zayavkalar (vebdagi `/sales` bilan bir xil holatlar). */
-const SALES_STATUSES: OrderStatus[] = ["CONFIRMED", "IN_PRODUCTION", "DELIVERED", "CLOSED"];
-const ORDER_LABEL: Record<string, string> = { DRAFT: "Qoralama", BLOCKED: "Bloklangan", CONFIRMED: "Tasdiqlangan", IN_PRODUCTION: "Ishlab chiqarilmoqda", DELIVERED: "Yetkazildi", CLOSED: "Yopilgan", CANCELLED: "Bekor" };
 const LEAD_LABEL: Record<LeadStatus, string> = { NEW: "Yangi", IN_PROGRESS: "Bog'lanildi", CONVERTED: "Mijoz bo'ldi", REJECTED: "Bekor" };
 const LEAD_TONE: Record<LeadStatus, Tone> = { NEW: "brand", IN_PROGRESS: "warning", CONVERTED: "success", REJECTED: "danger" };
 const SUPPLY_TONE: Record<SupplyStatus, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
@@ -135,14 +159,20 @@ const SUPPLY_TONE: Record<SupplyStatus, Tone> = { NEW: "info", PRICED: "warning"
 const KEY_MODULE: Record<string, string> = {
   orders: "orders", sales: "sales", leads: "sales", customers: "customers",
   invoices: "payments", payments: "payments", cashflow: "cashflow",
-  production: "production", recipes: "production", "prod-report": "production",
+  production: "production", recipes: "production", "prod-report": "production", defect: "production",
   tasks: "tasks", brigades: "tasks",
   trips: "trips", drivers: "trips",
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
   prixod: "stock", rasxod: "stock", ostatki: "stock",
   supply: "taminot", employees: "employees", kirim: "mexanik", payreq: "payments",
   "arenda-jurnal": "arenda", "arenda-shops": "arenda", "arenda-tx": "arenda", "arenda-shop": "arenda",
+  "unpaid-receipts": "cashflow", "kirim-qqs": "kirim-qqs", openings: "opening", realizatsiya: "payments",
   ...HR_KEY_MODULE,
+  ...KADR_KEY_MODULE,
+  ...DIREKTOR_KEY_MODULE,
+  ...SKLAD_KEY_MODULE,
+  ...LOGI_KEY_MODULE,
+  ...SOTUV_KEY_MODULE,
 };
 
 /** Modul direktor tomonidan yopilganmi. Haydovchining reyslari va brigadirning topshiriqlari — o'z ishi, yopilmaydi. */
@@ -190,7 +220,6 @@ const sum = (n: unknown) => Number(n ?? 0);
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} so'm`;
 const m3 = (n: number) => `${n.toFixed(n % 1 ? 1 : 0)} m³`;
 const day = (d: Date) => d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CONFIRMED: "brand", IN_PRODUCTION: "warning", DELIVERED: "success", CLOSED: "success", CANCELLED: "danger" };
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
 const TAKE = 60;
@@ -206,33 +235,49 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   const s = q?.trim() || undefined;
   // Ishlab chiqarish uchun zayavkalar veb "/production" oynasidagidek: filtrlar va brigada holati bilan
   if (key === "orders" && PROD_VIEW.includes(user.role)) return productionOrders(meta.title, s, filter);
+  // Sotuv kabineti: zayavka / sotuv / mijoz / schyot filtrlari (agent egaligi bilan), takliflar, e-commerce, marketing (`./sotuv-extra.ts`)
+  const sotuv = await sotuvList(user, key, meta.title, s, filter);
+  if (sotuv) return sotuv;
   if (key === "approvals") return approvalsList(meta.title, s, filter);
   if (key === "activity") return activityList(meta.title, s);
   if (key === "prod-report") return { key, title: meta.title, rows: await reportRows() };
   if (Object.hasOwn(HR_ACCESS, key)) return hrList(user, key, s, filter);
+  if (Object.hasOwn(KADR_ACCESS, key)) return kadrList(user, key, s, filter);
+  if (Object.hasOwn(DIREKTOR_ACCESS, key)) return direktorList(user, key, meta.title, s, filter);
+  if (Object.hasOwn(LOGI_ACCESS, key)) return logiList(user, key, meta.title, s, filter);
+  // Reyslar — veb `/trips` dagi holat tablari va «Tarix» (haydovchidan boshqa rollar; haydovchiga — o'z reyslari)
+  if (key === "trips" && user.role !== "DRIVER") return tripsList(user, meta.title, s, filter);
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "kirim") return kirimList(user, s, filter);
   if (key === "arenda-jurnal") return arendaJurnalList(s, filter);
   if (key === "arenda-shops") return arendaShopsList(s, filter);
   if (key === "payreq") return payreqList(user, meta.title, s, filter);
+  if (key === "payments") return paymentsList(meta.title, s, filter);
+  if (key === "cashflow") return cashflowList(meta.title, s, filter);
+  if (key === "unpaid-receipts") return unpaidReceiptsList(meta.title, s);
+  if (key === "kirim-qqs") return kirimQqsList(meta.title, s, filter);
+  if (key === "openings") return openingsList(meta.title, s, filter);
+  if (key === "realizatsiya") return realizatsiyaList(meta.title, s, filter);
   if (key === "snabjeniye") return snabjeniye(meta.title, s, filter);
   if (key === "leads") return leads(meta.title, s, filter);
-  if (key === "sales") return salesOrders(meta.title, s, filter);
   if (key === "brig-issues") return brigIssuesList(user, meta.title, s, filter);
   if (key === "brig-shifts") return brigShiftsList(user, meta.title, s);
+  // Sklad / snabjeniye qo'shimcha ro'yxatlari (`./sklad-extra.ts`)
+  if (SKLAD_LISTS.has(key)) return skladList(user, key, meta.title, s, filter);
   // Sklad jurnallari (ruscha) — davr chiplari bilan
   if (key === "prixod") return prixodList(meta.title, s, filter);
-  if (key === "rasxod") return rasxodList(meta.title, s, filter);
+  if (key === "rasxod") return rasxodList(user, meta.title, s, filter);
   if (key === "ostatki") return ostatkiList(meta.title, s, filter);
   if (key === "tasks" && user.role === "BRIGADIER") return brigTasksList("Topshiriqlarim", await myBrigadeIds(user.id), s, filter);
+  // Qolganlarga — veb `/tasks` dagi holat tablari va brigada filtri bilan (`./sex-extra.ts`)
+  if (key === "tasks") return tasksList(meta.title, s, filter);
   // Haydovchi faqat o'ziga biriktirilgan reyslarni ko'radi
   const driverId = user.role === "DRIVER" ? await driverEmployeeId(user.id) : undefined;
   // Brigadir faqat o'z brigadasiga tayinlangan topshiriqlarni ko'radi
   const brigadeIds = user.role === "BRIGADIER" ? await myBrigadeIds(user.id) : undefined;
-  // Sotuv agenti faqat o'z mijozlari (customers) va o'zi kiritgan zayavkalarini (orders) ko'radi
-  const agentUserId = user.role === "AGENT" ? user.id : undefined;
-  const rows = await build(key, s, driverId, brigadeIds, agentUserId);
+  // Sotuv agentining zayavka va mijozlar ro'yxati (egalik bilan) — `sotuvList` da
+  const rows = await build(key, s, driverId, brigadeIds);
   const title = user.role === "DRIVER" && key === "trips" ? "Mening reyslarim"
     : user.role === "BRIGADIER" && key === "tasks" ? "Topshiriqlarim"
     : user.role === "AGENT" && key === "orders" ? "Zayavkalarim"
@@ -431,33 +476,6 @@ async function leads(title: string, q?: string, filter?: string): Promise<Mobile
   };
 }
 
-/** Sotuv — qabul qilingan zayavkalar, holat tablari bilan (vebdagi `/sales`). Kartochka — zayavka. */
-async function salesOrders(title: string, q?: string, filter?: string): Promise<MobileList> {
-  const st = SALES_STATUSES.find((s) => s === filter);
-  const [rows, counts] = await Promise.all([
-    db.order.findMany({
-      where: { kind: "SALE", status: st ?? { in: SALES_STATUSES }, ...(q ? { OR: [{ orderNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }] } : {}) },
-      orderBy: { updatedAt: "desc" }, take: TAKE,
-      include: { customer: true, items: { include: { product: true } }, invoices: { where: { status: { not: "CANCELLED" } }, include: { payments: true } } },
-    }),
-    db.order.groupBy({ by: ["status"], where: { kind: "SALE", status: { in: SALES_STATUSES } }, _count: { _all: true } }),
-  ]);
-  const by = (s?: OrderStatus) => (s ? counts.find((c) => c.status === s)?._count._all ?? 0 : counts.reduce((n, c) => n + c._count._all, 0));
-  return {
-    key: "sales", title,
-    rows: rows.map((o) => {
-      const total = o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0);
-      const paid = o.invoices.reduce((s, i) => s + i.payments.reduce((p, x) => p + sum(x.amount), 0), 0);
-      return {
-        id: o.id, title: `${o.orderNo} · ${o.customer.name}`,
-        subtitle: `${day(o.deliveryDate)} · ${o.items.map((i) => i.product.code).join(", ")}${o.invoices.length ? ` · to'langan ${money(paid)}` : " · schyot yo'q"}`,
-        right: money(total), status: ORDER_LABEL[o.status] ?? o.status, tone: ORDER_TONE[o.status],
-      };
-    }),
-    filters: [{ key: "all", label: "Hammasi", count: by(), active: !st }, ...SALES_STATUSES.map((s) => ({ key: s, label: ORDER_LABEL[s], count: by(s), active: s === st }))],
-  };
-}
-
 // ───────────────────────── Sklad: «Kirim», «Chiqim», «Qoldiqlar» (Excel jurnallaridagidek) ─────────────────────────
 
 /**
@@ -485,9 +503,6 @@ export function skladPeriod(key?: string | null, now = new Date()): SkladPeriod 
   return { key: p.key, label: p.label, from, to, range: from.getTime() === last.getTime() ? dateRu(from) : `${dateRu(from)} — ${dateRu(last)}` };
 }
 
-/** Davr chiplari soni ko'rsatilmaydi (har davr uchun alohida jurnal o'qimaslik uchun) — jami ro'yxat sarlavhasida. */
-const periodFilters = (active: SkladPeriodKey): ListFilter[] => SKLAD_PERIODS.map((p) => ({ key: p.key, label: p.label, active: p.key === active }));
-
 /** To'lov turi: bank o'tkazma (perechisleniye) yoki naqd pul (kassa); Excel'dagi «П-р» / «Н-к». */
 export const PAY_LABEL = { BANK: "Bank o'tkazma", CASH: "Naqd pul" } as const;
 
@@ -508,8 +523,10 @@ const journalTitle = (title: string, n: number, total: number) => (n ? `${title}
  * Qator: «Xomashyo · miqdor birlik» / «dd.mm.yyyy · Kimdan · TTN · to'lov turi» / «+Jami». Kartochka — kirim (`receipts`).
  */
 async function prixodList(title: string, q?: string, filter?: string): Promise<MobileList> {
-  const p = skladPeriod(filter);
-  const all = await prixodJournal({ from: p.from, to: p.to, q });
+  // Filtr: davr yoki `<davr>|<sklad>` — skladlar bir nechta bo'lsa sklad chiplari ham (`./sklad-extra.ts`)
+  const { period: p, warehouseId } = parseSkladFilter(filter);
+  const wf = await skladJournalFilters(p.key, warehouseId);
+  const all = await prixodJournal({ from: p.from, to: p.to, q, warehouseId: wf.warehouse?.id });
   const t = prixodTotals(all);
   const rows = all.slice(-TAKE).reverse().map((r): HomeRow => ({
     id: `${r.receiptId}~${r.id}`,
@@ -520,7 +537,7 @@ async function prixodList(title: string, q?: string, filter?: string): Promise<M
     tone: r.storno ? "danger" : "success",
     ...(r.storno ? { status: "Storno" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
   }));
-  return { key: "prixod", title: journalTitle(title, all.length, t.total), rows, filters: periodFilters(p.key) };
+  return { key: "prixod", title: journalTitle(title, all.length, t.total), rows, filters: wf.filters };
 }
 
 /**
@@ -528,16 +545,22 @@ async function prixodList(title: string, q?: string, filter?: string): Promise<M
  * Qator: «Xomashyo · miqdor birlik» / «dd.mm.yyyy · Kimga · to'lov turi» / «−Jami» (≈ — narxi taxminiy). Zames qatorlari
  * (Excel'dagi ko'k) — `info` rangida; brigadadan qaytish — «+». Bosilsa xomashyo kartochkasi (`stock:<id>~<n>`, id noyob bo'lsin).
  */
-async function rasxodList(title: string, q?: string, filter?: string): Promise<MobileList> {
-  const p = skladPeriod(filter);
+async function rasxodList(user: MobileUser, title: string, q?: string, filter?: string): Promise<MobileList> {
+  const { period: p, warehouseId } = parseSkladFilter(filter);
+  const wf = await skladJournalFilters(p.key, warehouseId);
   const s = q?.toLowerCase();
-  const all = (await rasxodJournal({ from: p.from, to: p.to })).filter((r) => !s || r.material.toLowerCase().includes(s) || r.to.toLowerCase().includes(s));
+  const all = (await rasxodJournal({ from: p.from, to: p.to, warehouseId: wf.warehouse?.id })).filter((r) => !s || r.material.toLowerCase().includes(s) || r.to.toLowerCase().includes(s));
   const t = rasxodTotals(all);
+  const oluvchiOk = user.role === "DIRECTOR" || (SKLAD_DETAIL_ROLES.oluvchi ?? []).includes(user.role);
   const rows = all.map((r, i) => ({ r, i })).slice(-TAKE).reverse().map(({ r, i }): HomeRow => {
     const back = r.qty < 0;
     const noPrice = r.price == null && Math.abs(r.total) < 0.005;
     return {
-      id: `stock:${r.materialId}~${i}`,
+      // Berish hujjati (oluvchi / brigada, storno) — «Chiqim» kartochkasi (storno, oluvchi kartasi shu yerda);
+      // brigadadan qaytish — brigada skladi; zames, spisanie, inventarizatsiya — xomashyo kartochkasi
+      id: r.ref && (r.kind === "issue" || r.kind === "brigade" || r.kind === "storno") ? `rasxod:${r.ref}~${i}`
+        : /^b:/.test(r.toKey) && oluvchiOk ? `oluvchi:b~${r.toKey.slice(2)}~${i}`
+        : `stock:${r.materialId}~${i}`,
       title: `${r.material} · ${qtyUnit(Math.abs(r.qty), r.unit)}`,
       subtitle: [dateRu(r.date), r.to, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
       right: noPrice ? "narxsiz" : `${r.priceApprox ? "≈" : ""}${back ? "+" : "−"}${fmtNum(Math.abs(r.total))}`,
@@ -545,7 +568,7 @@ async function rasxodList(title: string, q?: string, filter?: string): Promise<M
       ...(r.kind === "storno" ? { status: "Storno" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
     };
   });
-  return { key: "rasxod", title: journalTitle(title, all.length, t.total), rows, filters: periodFilters(p.key) };
+  return { key: "rasxod", title: journalTitle(title, all.length, t.total), rows, filters: wf.filters };
 }
 
 /** «Qoldiqlar» jami qatorining id prefiksi: `jami~<davr>` — kartochkasi `detail.ts` da (`ostatki`). */
@@ -566,15 +589,16 @@ export function turnoverSums(rows: TurnoverRow[]) {
  * Ikki qatorli izohda qator ko'chishi « ·\n» bilan: rus tarjimasi matnni « · » bo'yicha bo'laklaydi (bo'shliqlar bittaga yig'iladi).
  */
 async function ostatkiList(title: string, q?: string, filter?: string): Promise<MobileList> {
-  const p = skladPeriod(filter);
+  const { period: p, warehouseId } = parseSkladFilter(filter);
+  const wf = await skladJournalFilters(p.key, warehouseId);
   const s = q?.toLowerCase();
-  const all = (await materialTurnover({ from: p.from, to: p.to })).filter((m) => !s || m.name.toLowerCase().includes(s) || m.code.toLowerCase().includes(s));
+  const all = (await materialTurnover({ from: p.from, to: p.to, warehouseId: wf.warehouse?.id })).filter((m) => !s || m.name.toLowerCase().includes(s) || m.code.toLowerCase().includes(s));
   const sums = turnoverSums(all);
   const low = all.filter(turnoverLow).length;
   const ap = sums.approx ? "≈" : "";
   const head: HomeRow = {
-    id: `${OSTATKI_SUM}${p.key}`,
-    title: `Jami · ${all.length} ta xomashyo · ${p.label}`,
+    id: `${OSTATKI_SUM}${p.key}${wf.warehouse ? `|${wf.warehouse.id}` : ""}`,
+    title: `Jami · ${all.length} ta xomashyo · ${p.label}${wf.warehouse ? ` · ${wf.warehouse.name}` : ""}`,
     subtitle: `Boshida ${shortSum(sums.open)} · Kirim ${shortSum(sums.in)} ·\nChiqim ${shortSum(sums.out)} · Jami ${ap}${shortSum(sums.close)}`,
     right: `${ap}${shortSum(sums.close)}`,
     ...(low ? { status: `Kam: ${low}`, tone: "warning" as Tone } : {}),
@@ -590,7 +614,7 @@ async function ostatkiList(title: string, q?: string, filter?: string): Promise<
       ...(turnoverLow(m) ? { status: "Kam", tone: "danger" as Tone } : {}),
     };
   });
-  return { key: "ostatki", title, rows: [head, ...rows], filters: periodFilters(p.key) };
+  return { key: "ostatki", title, rows: [head, ...rows], filters: wf.filters };
 }
 
 /** Login qilgan haydovchining xodim kartasi — reyslar shu id bo'yicha filtrlanadi. */
@@ -610,18 +634,8 @@ export async function myBrigadeIds(userId: string): Promise<string[]> {
   return list.map((b) => b.id);
 }
 
-async function build(key: string, q?: string, driverId?: string, brigadeIds?: string[], agentUserId?: string): Promise<HomeRow[]> {
+async function build(key: string, q?: string, driverId?: string, brigadeIds?: string[]): Promise<HomeRow[]> {
   switch (key) {
-    case "orders": {
-      const list = await db.order.findMany({
-        where: {
-          ...(agentUserId ? { createdById: agentUserId } : {}),
-          ...(q ? { OR: [{ orderNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }] } : {}),
-        },
-        orderBy: { date: "desc" }, take: TAKE, include: { customer: true, items: true },
-      });
-      return list.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""} · ${o.deliveryAddress}`, right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)), status: o.status, tone: ORDER_TONE[o.status] }));
-    }
     case "trips": {
       const list = await db.trip.findMany({
         where: {
@@ -694,16 +708,6 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         ...(r.cancelledAt ? { status: "Storno", tone: "danger" as Tone } : {}),
       }));
     }
-    case "invoices": {
-      const list = await db.invoice.findMany({
-        where: q ? { OR: [{ invoiceNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }] } : undefined,
-        orderBy: { date: "desc" }, take: TAKE, include: { customer: true, payments: true },
-      });
-      return list.map((i) => {
-        const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0);
-        return { id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: i.status === "PAID" ? "success" : i.status === "PARTIAL" ? "warning" : i.status === "CANCELLED" ? "info" : "danger" };
-      });
-    }
     case "cashflow": {
       const list = await db.cashTransaction.findMany({
         // Boshlang'ich qoldiq (OPENING) kirim-chiqim emas — ro'yxatga tushmaydi
@@ -752,28 +756,6 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         status: !e.isActive ? "Nofaol" : e.ecoUserId ? (e.ecoActive ? "Ilova ulangan" : "Ilova nofaol") : "Ilova ulanmagan",
         tone: !e.isActive ? "danger" : e.ecoUserId && e.ecoActive ? "success" : e.ecoError ? "danger" : "warning",
       }));
-    }
-    // Mijozlar — limit, qarz va yulduzcha (vebdagi `/customers` bilan bir xil hisob)
-    case "customers": {
-      const list = await db.customer.findMany({
-        where: { isInternal: false, ...(agentUserId ? { agentId: agentUserId } : {}), ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { inn: { contains: q } }] } : {}) },
-        orderBy: [{ isActive: "desc" }, { name: "asc" }], take: TAKE,
-      });
-      const ids = list.map((c) => c.id);
-      const credit = await customersCredit(ids);
-      const history = await customersHistory(ids, credit);
-      return list.map((c) => {
-        const cr = credit.get(c.id);
-        const h = history.get(c.id);
-        const black = !!cr?.blacklisted;
-        return {
-          id: c.id, title: c.name,
-          subtitle: `${c.phone ?? "telefonsiz"}${h ? ` · ${STAR_LABELS[h.stars]}` : ""}${cr?.debt ? ` · qarz ${money(cr.debt)}` : ""}`,
-          right: cr ? money(Math.max(0, cr.limit - cr.used)) : undefined,
-          status: !c.isActive ? "Nofaol" : black ? "Qora ro'yxat" : undefined,
-          tone: !c.isActive ? "info" : black ? "danger" : cr && cr.debt > 0 ? "warning" : "success",
-        };
-      });
     }
     // Brigadalar — brigadiri va ochiq topshiriqlari (vebdagi `/brigades`)
     case "brigades": {

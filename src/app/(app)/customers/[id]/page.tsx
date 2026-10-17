@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { canDo } from "@/lib/permissions";
 import { notFound } from "next/navigation";
-import { Wallet, ClipboardList, CreditCard, ArrowRight, Plus, Smartphone, FileText, Scale, Building2 } from "lucide-react";
+import { Wallet, ClipboardList, CreditCard, ArrowRight, Plus, Smartphone, FileText, Scale, Building2, FileBadge2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { customerCredit, contractedIds } from "@/lib/finance";
@@ -40,6 +40,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <PageHeader back={{ href: "/customers", label: "Mijozlar" }} title={<><span data-no-translit>{c.name}</span>{blacklisted && <BlacklistMark className="text-xs" />}{contracted.has(id) && <ContractMark className="text-xs" />}</>} subtitle={[c.inn && `INN ${c.inn}`, c.phone].filter(Boolean).join(" · ") || undefined}
         action={<>
           <LinkButton href={`/customers/${id}/akt`} variant="secondary"><Scale size={16} /> Akt sverki</LinkButton>
+          {canDo(s, "offers", "create") && c.isActive && <LinkButton href={`/takliflar/new?customer=${id}`} variant="secondary"><FileBadge2 size={16} /> Tijorat taklifi</LinkButton>}
           {canOrder && <LinkButton href={`/orders/new?customer=${id}`}><Plus size={16} /> Zayavka</LinkButton>}
         </>} />
       {blacklisted && (

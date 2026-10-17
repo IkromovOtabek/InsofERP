@@ -6,8 +6,7 @@ import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { aiAllowed } from "@/lib/rate-limit";
 import { aiErrorText, aiReady, insightReport } from "@/lib/ai/smm-writer";
-import { syncAccountDays, syncCompetitors, syncProfilePosts } from "@/lib/smm/insights";
-import { channelReady } from "@/lib/smm/config";
+import { syncMarketingNow } from "@/lib/smm/insights";
 import { aiRateText } from "@/lib/smm/studio";
 
 type Res = { ok?: boolean; error?: string; note?: string };
@@ -32,18 +31,11 @@ export async function runInsightReport(): Promise<Res> {
   }
 }
 
-/** Statistikani hozir yangilash (odatda har 6 soatda o'zi yangilanadi) */
+/** Statistikani hozir yangilash (odatda har 6 soatda o'zi yangilanadi). Qoida `lib/smm/insights.ts` da — mobil ham shuni chaqiradi */
 export async function syncNow(): Promise<Res> {
   await requireAction("marketing", "content");
-  if (!(await channelReady("INSTAGRAM")) && !(await channelReady("TELEGRAM"))) return { error: "Avval Sozlamalar'da profilni ulang" };
-  try {
-    const now = new Date();
-    const days = await syncAccountDays(now);
-    const posts = await syncProfilePosts(now, 25);
-    await syncCompetitors(now);
-    revalidatePath("/marketing");
-    return { ok: true, note: `Yangilandi: ${days} kun, ${posts} post` };
-  } catch (e) {
-    return { error: (e instanceof Error ? e.message : String(e)).slice(0, 300) };
-  }
+  const r = await syncMarketingNow();
+  if (!r.ok) return { error: r.error };
+  revalidatePath("/marketing");
+  return { ok: true, note: r.note };
 }

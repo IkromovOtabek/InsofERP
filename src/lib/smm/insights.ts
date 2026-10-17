@@ -133,6 +133,22 @@ export async function syncCompetitors(now = new Date()): Promise<number> {
   return n;
 }
 
+/**
+ * Statistikani hozir yangilash (odatda har 6 soatda o'zi yangilanadi) — veb «Yangilash» tugmasi va mobil ilova.
+ * Ruxsat (`marketing` → `content`) chaqiruvchida tekshiriladi.
+ */
+export async function syncMarketingNow(now = new Date()): Promise<{ ok: true; note: string } | { ok: false; error: string }> {
+  if (!(await channelReady("INSTAGRAM")) && !(await channelReady("TELEGRAM"))) return { ok: false, error: "Avval Sozlamalar'da profilni ulang" };
+  try {
+    const days = await syncAccountDays(now);
+    const posts = await syncProfilePosts(now, 25);
+    await syncCompetitors(now);
+    return { ok: true, note: `Yangilandi: ${days} kun, ${posts} post` };
+  } catch (e) {
+    return { ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 300) };
+  }
+}
+
 /* ───────── Tahlil (sahifa va AI uchun) ───────── */
 
 export type FormatRow = { type: string; posts: number; avgViews: number; avgReach: number; engagement: number; avgWatch: number | null };

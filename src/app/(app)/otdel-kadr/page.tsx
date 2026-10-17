@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, GraduationCap, Handshake, Inbox, ListChecks, Scale, Target, UserPlus, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, BarChart3, ClipboardList, GraduationCap, Handshake, MessageSquare, Inbox, ListChecks, Scale, Target, UserPlus, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -24,6 +24,7 @@ import { plansFor } from "@/lib/hr/shifts";
 import { getLateFine } from "@/lib/hr/late-fine";
 import { ArizalarTab, CheklistTab, GrafikTab, JarimaTab, KpiTab } from "./hr-tabs";
 import { MoslashuvTab, OqitishTab, YollashTab } from "./hr3-tabs";
+import { HisobotTab, MurojaatTab, SorovnomaTab } from "./hr4-tabs";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -40,6 +41,9 @@ const TABS = [
   ["yollash", "Yollash", UserPlus],
   ["moslashuv", "Moslashuv", Handshake],
   ["oqitish", "O'qitish", GraduationCap],
+  ["sorovnoma", "So'rovnoma", ClipboardList],
+  ["murojaatlar", "Murojaatlar", MessageSquare],
+  ["hisobotlar", "Hisobotlar", BarChart3],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -298,6 +302,9 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "grafik" && <GrafikTab employees={active} hafta={hafta} />}
       {tab === "arizalar" && <ArizalarTab s={s} employees={active} holat={holat} />}
       {tab === "cheklistlar" && <CheklistTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} kun={kun} />}
+      {tab === "sorovnoma" && <SorovnomaTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} />}
+      {tab === "murojaatlar" && <MurojaatTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} holat={holat} />}
+      {tab === "hisobotlar" && <HisobotTab oy={oy} />}
       {tab === "yollash" && <YollashTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} vakansiya={vakansiya} />}
       {tab === "moslashuv" && <MoslashuvTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} holat={holat} />}
       {tab === "oqitish" && <OqitishTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} />}

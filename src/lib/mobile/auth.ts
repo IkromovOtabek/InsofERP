@@ -165,6 +165,16 @@ export async function mobileLogout(accessToken: string, refreshToken: string): P
   return { userId };
 }
 
+/**
+ * Login/parol o'zgargandan keyin (sessionVersion oshgan) — shu qurilmaga yangi juftlik: boshqa qurilmalar chiqib ketadi,
+ * o'zgartirgan telefon kirgan holda qoladi (veb `revokeSessions(…, { keepCurrent })` bilan bir xil ma'no).
+ */
+export async function mobileReissue(userId: string) {
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user || !user.isActive) throw new MobileAuthError("USER_DISABLED", "Hisob faol emas");
+  return issue(user);
+}
+
 /** `Authorization: Bearer …` sarlavhasidan token (bo'lmasa bo'sh satr). */
 export function bearerToken(req: Request): string {
   const header = req.headers.get("authorization") ?? "";

@@ -16,9 +16,10 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const r = await db.goodsReceipt.findUnique({
     where: { id },
-    include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } }, supply: { select: { id: true } }, recipient: { select: { name: true } }, buyer: { select: { fullName: true } }, autoIssueTo: { select: { name: true } } },
+    include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } }, supply: { select: { id: true } }, recipient: { select: { name: true } }, buyer: { select: { fullName: true } }, autoIssueTo: { select: { name: true } }, autoIssueBrigade: { select: { name: true } }, autoIssueEmployee: { select: { fullName: true } } },
   });
   if (!r) notFound();
+  const autoTo = r.autoIssueTo?.name ?? (r.autoIssueBrigade ? `${r.autoIssueBrigade.name} (brigada)` : null) ?? (r.autoIssueEmployee ? `${r.autoIssueEmployee.fullName} (xodim)` : null);
   const { base, vat, total, delivery } = receiptAmounts(r.items);
   // Storno faqat direktor (yoki direktor bergan amal); to'lov bog'langan bo'lsa server rad etadi va sababini aytadi
   const [paid, cancelledBy, pays] = await Promise.all([
@@ -63,7 +64,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           ...(hasDelivery ? [{ k: "Dostavka", v: money(delivery) }] : []),
           ...(r.carrier ? [{ k: "Mashina (kim olib keldi)", v: r.carrier }] : []),
           ...(r.loadedFrom ? [{ k: "Qayerdan yuklandi", v: r.loadedFrom }] : []),
-          ...(r.autoIssueTo ? [{ k: "Darhol kimga berildi (avto chiqim)", v: <>{r.autoIssueTo.name} <span className="text-xs text-slate-500">— mol skladda qolmagan, Chiqim jurnalida «avto» qatori</span></> }] : []),
+          ...(autoTo ? [{ k: "Kimga (darhol chiqim)", v: <>{autoTo} <span className="text-xs text-slate-500">— mol skladda qolmagan, Chiqim jurnalida «avto» qatori</span></> }] : []),
         ]} />
       </Card>
       <Table>

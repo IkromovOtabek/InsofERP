@@ -8,6 +8,9 @@ import { companyVatPayer } from "@/lib/receipt-vat";
 import { isoDate } from "@/lib/format";
 import { visionEnabled } from "@/lib/ai/vision";
 import { PageHeader } from "@/components/ui";
+import { HoldingsPanel } from "@/components/holdings-panel";
+import { issueTargetOptions } from "@/lib/stock-recipients";
+import { holdingsOverview } from "@/lib/holdings";
 import { PrixodForm } from "../prixod-form";
 
 /** Sklad → «Kirim» → yangi kirim (Excel jurnali ustunlari bilan). `?scan=1` — nakladnoy skaneri darhol ochiladi. */
@@ -15,7 +18,7 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
   const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock", actions: ["receipt"] });
   // Rol mos, lekin direktor bu amalni olib qo'ygan bo'lsa — forma ochilmaydi (saqlashda baribir rad bo'lardi)
   if (!canDo(s, "stock", "receipt")) redirect("/stock/prixod");
-  const [suppliers, warehouses, materials, groups, accounts, balances, recipients, vatPayer] = await Promise.all([
+  const [suppliers, warehouses, materials, groups, accounts, balances, targets, holdings, vatPayer] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, vatPayer: true } }),
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true } }),
@@ -23,7 +26,8 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
     s.role === "DIRECTOR" ? db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }) : Promise.resolve([]),
     // Qoldiq — spravochnikda ko'rinadi
     db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
-    db.stockRecipient.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
+    issueTargetOptions(),
+    holdingsOverview(),
     companyVatPayer(),
   ]);
   // Tanlanganda qatorga tushadigan narx: «Dona narxi» (Snabjeniye belgilagan), bo'lmasa o'rtacha tannarx
@@ -40,7 +44,8 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
         groups={groups}
         canCreate={canEditMaterials(s.role)}
         canAddSupplier={canDo(s, "stock", "suppliers")}
-        recipients={recipients}
+        targets={targets}
+        holdings={holdings}
         // «Ta'minotchi» (xaridni qilgan snabjenets) — formada alohida maydon yo'q: Snabjeniye kiritsa o'zi yoziladi
         defaultBuyerId={s.role === "PROCUREMENT" ? s.userId : ""}
         accounts={accounts}
@@ -48,6 +53,7 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
         companyVatPayer={vatPayer}
         scan={{ enabled: visionEnabled(), autoOpen: (await searchParams).scan === "1" }}
       />
+      <div className="mt-6"><HoldingsPanel holdings={holdings} collapsible /></div>
     </div>
   );
 }

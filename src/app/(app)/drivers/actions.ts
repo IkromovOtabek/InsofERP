@@ -4,26 +4,20 @@ import { driverPositionNames } from "@/lib/positions";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
-import { audit } from "@/lib/audit";
-import { eco, ecoEnabled, EcoError, normalizePhone } from "@/lib/eco/client";
+import { ecoEnabled, EcoError } from "@/lib/eco/client";
+import { approveDriverInEco, linkDriverToEco } from "@/lib/eco/driver-link";
 import { pushTripToEco } from "@/lib/eco/sync";
-import { applyEcoDriver, pushEmployeeToEco, pushVehicleToEco, syncDirectories } from "@/lib/eco/people";
+import { applyEcoDriver, pushVehicleToEco, syncDirectories } from "@/lib/eco/people";
 import type { ActionState } from "@/lib/action";
 
 const msg = (e: unknown) => (e instanceof EcoError ? e.message : String((e as Error)?.message ?? e));
 const guard = () => (ecoEnabled() ? null : { error: "ECO ulanmagan — .env da ECO_API_URL va ECO_API_KEY ni bering" });
 
-/** ERP xodimi (Haydovchi) → ECO'da foydalanuvchi + haydovchi a'zoligi. Telefon +998… bo'lishi shart. */
+/** ERP xodimi (Haydovchi) → ECO'da foydalanuvchi + haydovchi a'zoligi. Qoida — `lib/eco/driver-link.ts` (mobil ham shundan). */
 export async function linkDriver(employeeId: string): Promise<ActionState> {
   const s = await requireAction("trips", "drivers");
-  const off = guard(); if (off) return off;
-  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
-  const phone = normalizePhone(e.phone);
-  if (!phone) return { error: `"${e.fullName}" telefoni +998XXXXXXXXX formatida emas — Xodimlar sahifasida tuzating` };
-  const r = await pushEmployeeToEco(employeeId);
-  if (!r.ok) return { error: r.error ?? "ECO'ga ulanmadi" };
-  const after = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
-  await audit(db, s.userId, "UPDATE", "Employee", employeeId, { ecoUserId: e.ecoUserId }, { ecoUserId: after.ecoUserId, eco: "linked" });
+  const r = await linkDriverToEco(employeeId, s.userId);
+  if ("error" in r) return { error: r.error };
   revalidatePath("/drivers"); revalidatePath("/employees");
   return { ok: true };
 }
@@ -31,14 +25,8 @@ export async function linkDriver(employeeId: string): Promise<ActionState> {
 /** Ilovada o'zi ro'yxatdan o'tgan haydovchini ERP'dan tasdiqlash — Tadbirkor telefonisiz. */
 export async function approveDriver(employeeId: string): Promise<ActionState> {
   const s = await requireAction("trips", "drivers");
-  const off = guard(); if (off) return off;
-  const e = await db.employee.findUniqueOrThrow({ where: { id: employeeId } });
-  if (!e.ecoUserId) return { error: "Avval ECO'ga ulang" };
-  try {
-    const r = await eco.approveDriver(e.ecoUserId);
-    await db.employee.update({ where: { id: employeeId }, data: { ecoActive: r.isActive, ecoSyncedAt: new Date(), ecoError: null } });
-    await audit(db, s.userId, "UPDATE", "Employee", employeeId, { ecoActive: e.ecoActive }, { ecoActive: r.isActive, eco: "approved" });
-  } catch (err) { return { error: msg(err) }; }
+  const r = await approveDriverInEco(employeeId, s.userId);
+  if ("error" in r) return { error: r.error };
   revalidatePath("/drivers"); revalidatePath("/employees");
   return { ok: true };
 }

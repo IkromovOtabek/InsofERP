@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { CalendarRange, GraduationCap, Handshake, Inbox, ListChecks, ListTodo, Target, Wallet } from "lucide-react";
+import { CalendarRange, ClipboardList, GraduationCap, MessageSquare, Handshake, Inbox, ListChecks, ListTodo, Target, Wallet } from "lucide-react";
 import { myCourses } from "@/lib/hr/training";
 import { myPlans, progressOf } from "@/lib/hr/onboarding";
 import { MyStep } from "./step-toggle";
+import { FeedbackForm, SurveyAnswerForm } from "./voice-forms";
+import { listFeedback, mySurveys } from "@/lib/hr/voice";
 import { db } from "@/lib/db";
 import { myChecklists } from "@/lib/hr/checklists";
 import { kpiMonth } from "@/lib/hr/kpi";
@@ -27,7 +29,7 @@ export async function MyHrSection({ userId }: { userId: string }) {
   const emp = await employeeOfUser(userId);
   if (!emp || !emp.isActive) return null;
   const from = today(), to = shiftDay(from, 13);
-  const [plans, requests, lines, checklists, kpi, tasks, courses, onb] = await Promise.all([
+  const [plans, requests, lines, checklists, kpi, tasks, courses, onb, surveys, feedback] = await Promise.all([
     plansInRange([{ id: emp.id, workSchedule: emp.workSchedule }], from, to),
     listHrRequests({ employeeId: emp.id, status: "ALL", take: 20 }),
     myLines(emp.id, 12),
@@ -36,11 +38,33 @@ export async function MyHrSection({ userId }: { userId: string }) {
     db.workTask.groupBy({ by: ["status"], where: { assigneeId: emp.id, status: { in: ["TODO", "IN_PROGRESS", "REVIEW"] } }, _count: { _all: true } }),
     myCourses(emp.id),
     myPlans(emp.id),
+    mySurveys(emp),
+    listFeedback({ authorUserId: userId, status: "ALL" }),
   ]);
   const openTasks = tasks.reduce((x, t) => x + t._count._all, 0);
   const plan = plans.get(emp.id)!;
   return (
     <div className="mt-5 grid max-w-5xl grid-cols-1 gap-4 xl:grid-cols-2">
+      {surveys.filter((x) => !x.answered).map((x) => (
+        <Card key={x.id}>
+          <CardHeader title={`So'rovnoma: ${x.title}`} icon={ClipboardList} description={`${x.anonymous ? "Anonim — javobingiz ismsiz saqlanadi" : "Ismli"}${x.description ? ` · ${x.description}` : ""}`} />
+          <SurveyAnswerForm id={x.id} questions={x.questions} anonymous={x.anonymous} />
+        </Card>
+      ))}
+      <Card>
+        <CardHeader title="Otdel kadrga murojaat" icon={MessageSquare} description="Savol, taklif yoki shikoyat — xohlasangiz anonim" />
+        <FeedbackForm />
+        {feedback.length > 0 && (
+          <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-100 text-sm">
+            {feedback.slice(0, 10).map((f) => (
+              <li key={f.id} className="flex items-center justify-between gap-2 py-2">
+                <Link href={`/hisobim/murojaat/${f.id}`} className="hover:underline">{f.subject}{f.anonymous ? <span className="ml-1 text-xs text-slate-500">· anonim</span> : null}</Link>
+                <Badge color={f.status === "RESOLVED" ? "green" : f.status === "NEW" ? "amber" : "blue"}>{f.status === "RESOLVED" ? "Hal qilindi" : f.status === "NEW" ? "Yangi" : "Javob bor"}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
       {[...(onb.own && (onb.own.status === "ACTIVE" || onb.own.status === "EXTENDED") ? [{ p: onb.own, mine: true }] : []), ...onb.mentees.map((p) => ({ p, mine: false }))].map(({ p, mine }) => (
         <Card key={p.id}>
           <CardHeader title={mine ? "Moslashuv rejam" : `Shogird: ${p.employee.fullName}`} icon={Handshake}

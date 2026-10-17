@@ -31,12 +31,49 @@ function localRange(iso: string) {
 type Sum = Map<string, number>;
 const add = (m: Sum, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
 
+/**
+ * 5. Kunlik yuklash — shu kunga yetkazish sanasi qo'yilgan qabul qilingan zayavkalar va mahsulot bo'yicha jami.
+ * Veb bosh sahifa (`productionDay`) va mobil ilova bosh ekrani shu bitta funksiyadan o'qiydi.
+ */
+export async function dayLoad(from: Date, to: Date) {
+  const loadOrders = await db.order.findMany({
+    where: { kind: "SALE", deliveryDate: { gte: from, lt: to }, status: { in: [...LOAD_STATUSES] } },
+    orderBy: [{ deliveryTime: "asc" }, { orderNo: "asc" }],
+    select: {
+      id: true, orderNo: true, deliveryTime: true, status: true, needsDelivery: true, customerId: true,
+      customer: { select: { name: true } },
+      items: { select: { qtyM3: true, product: { select: { id: true, code: true, name: true, unit: true } } } },
+      trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
+    },
+  });
+  const loadByProduct = new Map<string, { id: string; code: string; name: string; unit: string; need: number; orders: number }>();
+  const loadOrderRows = loadOrders.map((o) => {
+    const need = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
+    const shipped = o.trips.reduce((s, t) => s + Number(t.qtyM3), 0);
+    for (const i of o.items) {
+      const cur = loadByProduct.get(i.product.id) ?? { ...i.product, need: 0, orders: 0 };
+      cur.need += Number(i.qtyM3); cur.orders += 1;
+      loadByProduct.set(i.product.id, cur);
+    }
+    return {
+      id: o.id, orderNo: o.orderNo, time: o.deliveryTime, status: o.status, pickup: !o.needsDelivery, customerId: o.customerId, customer: o.customer.name,
+      items: o.items.map((i) => ({ code: i.product.code, unit: i.product.unit, qty: Number(i.qtyM3) })),
+      need, shipped, left: Math.max(0, need - shipped),
+    };
+  });
+
+  return { products: [...loadByProduct.values()].sort((a, b) => b.need - a.need), orders: loadOrderRows };
+}
+
+/** Bitta kunning yuklashi ("YYYY-MM-DD", mahalliy kun) — mobil bosh ekran uchun. */
+export const todayLoad = (iso: string) => { const { from, to } = localRange(iso); return dayLoad(from, to); };
+
 export async function productionDay(iso: string) {
   const { from, to, monthFrom } = localRange(iso);
   const ym = iso.slice(0, 7);
   const [year, month] = ym.split("-").map(Number);
 
-  const [staff, brigades, progressToday, progressMonth, openTasks, loadOrders, outputs, plans, defects, products] = await Promise.all([
+  const [staff, brigades, progressToday, progressMonth, openTasks, load, outputs, plans, defects, products] = await Promise.all([
     productionStaff(iso),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
     db.taskProgress.findMany({
@@ -46,16 +83,7 @@ export async function productionDay(iso: string) {
     }),
     db.taskProgress.findMany({ where: { date: { gte: monthFrom, lt: to } }, select: { qty: true, task: { select: { brigadeId: true, orderItem: { select: { product: { select: { unit: true } } } } } } } }),
     db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, select: { brigadeId: true, dueDate: true } }),
-    db.order.findMany({
-      where: { kind: "SALE", deliveryDate: { gte: from, lt: to }, status: { in: [...LOAD_STATUSES] } },
-      orderBy: [{ deliveryTime: "asc" }, { orderNo: "asc" }],
-      select: {
-        id: true, orderNo: true, deliveryTime: true, status: true, needsDelivery: true, customerId: true,
-        customer: { select: { name: true } },
-        items: { select: { qtyM3: true, product: { select: { id: true, code: true, name: true, unit: true } } } },
-        trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
-      },
-    }),
+    dayLoad(from, to),
     db.stockMove.findMany({ where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: monthFrom, lt: to } }, select: { productId: true, qty: true, date: true } }),
     db.productionPlan.findMany({ where: { year, month }, include: { product: { select: { id: true, code: true, name: true, unit: true } }, setBy: { select: { fullName: true } } } }),
     db.productDefect.findMany({
@@ -88,23 +116,6 @@ export async function productionDay(iso: string) {
       monthText: fmtUnitTotals(monthRows.map((p) => ({ unit: p.task.orderItem.product.unit, qty: p.qty }))),
       openCount: open.length,
       overdue: open.filter((t) => t.dueDate < from).length,
-    };
-  });
-
-  // ── 5. Bugun yuklanadigan mahsulot ──
-  const loadByProduct = new Map<string, { id: string; code: string; name: string; unit: string; need: number; orders: number }>();
-  const loadOrderRows = loadOrders.map((o) => {
-    const need = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-    const shipped = o.trips.reduce((s, t) => s + Number(t.qtyM3), 0);
-    for (const i of o.items) {
-      const cur = loadByProduct.get(i.product.id) ?? { ...i.product, need: 0, orders: 0 };
-      cur.need += Number(i.qtyM3); cur.orders += 1;
-      loadByProduct.set(i.product.id, cur);
-    }
-    return {
-      id: o.id, orderNo: o.orderNo, time: o.deliveryTime, status: o.status, pickup: !o.needsDelivery, customerId: o.customerId, customer: o.customer.name,
-      items: o.items.map((i) => ({ code: i.product.code, unit: i.product.unit, qty: Number(i.qtyM3) })),
-      need, shipped, left: Math.max(0, need - shipped),
     };
   });
 
@@ -157,7 +168,7 @@ export async function productionDay(iso: string) {
     staff: { total: staff.total, byPosition: [...byPosition].sort((a, b) => b[1] - a[1]), groups: staff.groups, unassigned: staff.unassigned, members: staff.members },
     attendance: { present, away, notMarked, absent: staff.absent, leave: staff.leave, sick: staff.sick, dayoff: staff.dayoff },
     brigades: brigadeRows,
-    load: { products: [...loadByProduct.values()].sort((a, b) => b.need - a.need), orders: loadOrderRows },
+    load,
     plan: { rows: planRows, workDays: wd.length, elapsed },
     produced,
     defects: { today: defectRows.filter((d) => d.date >= from), month: defectRows, byReason: [...byReason].sort((a, b) => b[1] - a[1]) },

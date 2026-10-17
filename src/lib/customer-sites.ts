@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { audit } from "./audit";
 
 /**
  * Mijoz obyektlari (Site) bo'yicha qarz — mijoz kartasidagi "Obyektlar" bo'limi uchun.
@@ -102,4 +103,59 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
     out.push(build(null, null));
   }
   return out;
+}
+
+// ───────────────────────── Obyektni saqlash / o'chirish (mijoz kartasi) ─────────────────────────
+// Veb (`customers/site-actions.ts`) va mobil ilova (`lib/mobile/sotuv-extra.ts`) shu yerdan chaqiradi; ruxsat chaqiruvchida.
+
+export type SiteInput = {
+  name: string;
+  address: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  deliveryHours: string | null;
+  instructions: string | null;
+  isActive: boolean;
+};
+export type SiteResult = { ok: true; id: string } | { ok: false; error: string };
+
+/** Obyekt qo'shish (`id` = null) yoki tahrirlash — tahrirda obyekt shu mijozniki ekani tekshiriladi. */
+export async function saveCustomerSite(customerId: string, id: string | null, d: SiteInput, userId: string): Promise<SiteResult> {
+  if (!d.name.trim()) return { ok: false, error: "Obyekt nomi to'ldirilishi shart" };
+  if (!d.address.trim()) return { ok: false, error: "Manzil to'ldirilishi shart" };
+  const customer = await db.customer.findUnique({ where: { id: customerId }, select: { id: true } });
+  if (!customer) return { ok: false, error: "Mijoz topilmadi" };
+  let savedId = id;
+  try {
+    await db.$transaction(async (tx) => {
+      if (id) {
+        const before = await tx.site.findUnique({ where: { id } });
+        if (!before || before.customerId !== customerId) throw new Error("NOT_OWNER");
+        const after = await tx.site.update({ where: { id }, data: d });
+        await audit(tx, userId, "UPDATE", "Site", id, before, after);
+      } else {
+        const c = await tx.site.create({ data: { ...d, customerId } });
+        await audit(tx, userId, "CREATE", "Site", c.id, undefined, c);
+        savedId = c.id;
+      }
+    });
+  } catch (e) {
+    if (String(e).includes("NOT_OWNER")) return { ok: false, error: "Bu obyekt boshqa mijozga tegishli" };
+    throw e;
+  }
+  return { ok: true, id: savedId! };
+}
+
+/** Faqat zayavkasi yo'q obyektni o'chirsa bo'ladi — aks holda tarix uziladi ("Faol emas" qilinadi). */
+export async function deleteCustomerSite(customerId: string, id: string, userId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const site = await db.site.findUnique({ where: { id }, select: { customerId: true } });
+  if (!site || site.customerId !== customerId) return { ok: false, error: "Obyekt topilmadi" };
+  const orders = await db.order.count({ where: { siteId: id } });
+  if (orders > 0) return { ok: false, error: `Bu obyektda ${orders} ta zayavka bor — o'chirib bo'lmaydi. O'rniga "Faol emas" qiling.` };
+  await db.$transaction(async (tx) => {
+    const before = await tx.site.findUnique({ where: { id } });
+    await tx.site.delete({ where: { id } });
+    await audit(tx, userId, "DELETE", "Site", id, before, undefined);
+  });
+  return { ok: true };
 }

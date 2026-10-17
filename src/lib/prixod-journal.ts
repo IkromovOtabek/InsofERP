@@ -21,6 +21,12 @@ import { normalizeUnit, toMaterialUnit, UNIT_FALLBACK } from "./unit";
 
 export const UNKNOWN_SUPPLIER = "Noma'lum yetkazuvchi";
 
+/** Kirim va Chiqim Excel namunasi ustunlari — foydalanuvchi daftari bilan bir xil tartibda. */
+export const JOURNAL_HEADERS = [
+  "Sana", "Tovar", "TTN №", "O'lchov", "Miqdor", "Ta'minotchi", "Kimga", "To'lov", "Dostavka", "Narx (QQSsiz)", "Summa (QQSsiz)",
+  "QQS 12%", "Jami (QQS bilan)", "Manzil", "Snabjenets", "Izoh", "Mashina (kim olib keldi)", "Qayerdan yuklandi", "Darhol kimga berildi (avto chiqim)",
+] as const;
+
 /** Daftardagi qo'shimcha birlik yozuvlari (`lib/unit.ts` dagilardan tashqari). */
 const EXTRA_UNITS: Record<string, string> = { m4: "m3", "м4": "m3", kam: "dona", kampi: "dona", komp: "dona", "к-т": "dona" };
 export const journalUnit = (v: unknown) => {

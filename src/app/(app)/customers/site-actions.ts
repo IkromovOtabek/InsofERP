@@ -2,9 +2,8 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
-import { audit } from "@/lib/audit";
+import { deleteCustomerSite, saveCustomerSite } from "@/lib/customer-sites";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 
 /** Obyekt (Site) qo'shish/tahrirlash — mijoz kartasidagi kabi rol: SALES, ACCOUNTING, FINANCE (+DIRECTOR). */
@@ -23,46 +22,17 @@ export async function saveSite(customerId: string, id: string | null, _prev: Act
   const s = await requireAction("customers", "sites");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
-
-  // Mijoz bor-yo'qligini tekshir; tahrirda obyekt shu mijozniki ekaniga ishonch hosil qil
-  const customer = await db.customer.findUnique({ where: { id: customerId }, select: { id: true } });
-  if (!customer) return { error: "Mijoz topilmadi" };
-
-  try {
-    await db.$transaction(async (tx) => {
-      if (id) {
-        const before = await tx.site.findUnique({ where: { id } });
-        if (!before || before.customerId !== customerId) throw new Error("NOT_OWNER");
-        const after = await tx.site.update({ where: { id }, data: d });
-        await audit(tx, s.userId, "UPDATE", "Site", id, before, after);
-      } else {
-        const c = await tx.site.create({ data: { ...d, customerId } });
-        await audit(tx, s.userId, "CREATE", "Site", c.id, undefined, c);
-      }
-    });
-  } catch (e) {
-    if (String(e).includes("NOT_OWNER")) return { error: "Bu obyekt boshqa mijozga tegishli" };
-    throw e;
-  }
+  // Qoida `lib/customer-sites.ts` da — mobil ilova (mijoz kartasi) ham shuni chaqiradi
+  const res = await saveCustomerSite(customerId, id, r.data, s.userId);
+  if (!res.ok) return { error: res.error };
   revalidatePath(`/customers/${customerId}`);
   return { ok: true };
 }
 
 export async function deleteSite(customerId: string, id: string): Promise<ActionState> {
   const s = await requireAction("customers", "sites");
-  const site = await db.site.findUnique({ where: { id }, select: { customerId: true } });
-  if (!site || site.customerId !== customerId) return { error: "Obyekt topilmadi" };
-
-  // Faqat zayavkasi yo'q obyektni o'chirsa bo'ladi — aks holda tarix uziladi
-  const orders = await db.order.count({ where: { siteId: id } });
-  if (orders > 0) return { error: `Bu obyektda ${orders} ta zayavka bor — o'chirib bo'lmaydi. O'rniga "Faol emas" qiling.` };
-
-  await db.$transaction(async (tx) => {
-    const before = await tx.site.findUnique({ where: { id } });
-    await tx.site.delete({ where: { id } });
-    await audit(tx, s.userId, "DELETE", "Site", id, before, undefined);
-  });
+  const res = await deleteCustomerSite(customerId, id, s.userId);
+  if (!res.ok) return { error: res.error };
   revalidatePath(`/customers/${customerId}`);
   return { ok: true };
 }

@@ -64,6 +64,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
       reason: d?.reason ?? null,
       fileName: d?.fileName ?? null,
       signedAt: d?.signedAt ? dateTime(d.signedAt) : null,
+      eSign: d?.eSignedAt ? { signer: d.eSigner, at: dateTime(d.eSignedAt), verified: d.eVerified } : null,
     };
   });
   // Lavozim ro'yxati hamma joyda bir xil: bo'limlar + ishchi lavozimlar + Excel'dan qolganlar

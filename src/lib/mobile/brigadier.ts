@@ -16,6 +16,7 @@ import type { MobileUser } from "./auth";
 import type { DetailAction, DetailField, FormField, MobileDetail } from "./detail";
 import type { HomeCard, HomeRow, HomeSection, Tone } from "./home";
 import type { BrigadeIssueKind, Prisma, Role } from "@/generated/prisma";
+import { brigadeStockActions } from "./sklad-extra";
 
 /**
  * Brigadir ish joyi (ECO ilova) — "Brigadir Dashboard" hujjati bo'yicha.
@@ -237,7 +238,9 @@ export async function brigStockDetail(user: MobileUser, brigadeId: string): Prom
       tone: (r.kind === "storno" || r.cancelled ? "danger" : r.kind === "return" ? "info" : undefined) as Tone | undefined,
     })), { empty: "Chiqim yo'q", icon: "list" }),
   ];
-  return { key: "brig-stock", id: brigadeId, title: `Mening skladim — ${c.name}`, subtitle: c.subtitle ?? undefined, fields, sections, actions: [] };
+  // Sklad / ishlab chiqarish uchun: skladdan berish va skladga qaytarish (`./sklad-extra.ts`, `stock` → `brigade`); brigadirga chiqmaydi
+  const actions = user.role === "BRIGADIER" ? [] : await brigadeStockActions(user, brigadeId, b.hand);
+  return { key: "brig-stock", id: brigadeId, title: user.role === "BRIGADIER" ? `Mening skladim — ${c.name}` : `Brigada skladi — ${c.name}`, subtitle: c.subtitle ?? undefined, fields, sections, actions };
 }
 
 // ───────────────────────── Smena kartochkasi ─────────────────────────

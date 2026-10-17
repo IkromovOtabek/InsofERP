@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
 import { importParties, type PartyRow } from "@/lib/import-parties";
 import { parseInn } from "@/lib/inn";
+import { updateSupplierRequisites } from "@/lib/supplier-edit";
 
 // vatPayer: "1" — QQS to'lovchisi (kirimga 12% QQS), "0" — yo'q; berilmasa: yangi kartada "1", tahrirda o'zgarmaydi
 const schema = z.object({ name: zStr("Nomi kerak"), inn: zOpt, phone: zOpt, address: zOpt, contactPerson: zOpt, vatPayer: z.enum(["0", "1"]).optional() });
@@ -39,34 +40,19 @@ export async function toggleSupplier(id: string) {
   revalidatePath("/suppliers"); revalidatePath(`/suppliers/${id}`);
 }
 
-/** Yetkazuvchi rekvizitlarini tahrirlash (nomi, INN, telefon) — har o'zgarish auditda. */
+/** Yetkazuvchi rekvizitlarini tahrirlash (nomi, INN, telefon) — qoida `lib/supplier-edit.ts` da (mobil ilova ham shundan). */
 export async function updateSupplier(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("stock", "suppliers");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const cur = await db.supplier.findUnique({ where: { id } });
-  if (!cur) return { error: "Yetkazuvchi topilmadi" };
-  const data = { name: r.data.name, inn: r.data.inn, phone: r.data.phone, address: r.data.address, contactPerson: r.data.contactPerson, vatPayer: r.data.vatPayer == null ? cur.vatPayer : r.data.vatPayer === "1" };
-  // INN tekshiruvi faqat o'zgartirilganda — eski (noto'g'ri) qiymatli kartaning boshqa maydonlarini saqlash to'silmasin
-  if (data.inn !== cur.inn) {
-    const inn = parseInn(data.inn);
-    if (inn.error !== undefined) return { error: inn.error };
-    data.inn = inn.inn;
-  }
-  if (data.name === cur.name && data.inn === cur.inn && data.phone === cur.phone && data.address === cur.address && data.contactPerson === cur.contactPerson && data.vatPayer === cur.vatPayer) return { ok: true, note: "O'zgarish yo'q" };
-  if (data.inn) {
-    const dup = await db.supplier.findFirst({ where: { inn: data.inn, id: { not: id } }, select: { name: true } });
-    if (dup) return { error: `Bu INN «${dup.name}» da bor` };
-  }
-  try {
-    const after = await db.supplier.update({ where: { id }, data });
-    await audit(db, s.userId, "UPDATE", "Supplier", id, { name: cur.name, inn: cur.inn, phone: cur.phone, address: cur.address, contactPerson: cur.contactPerson, vatPayer: cur.vatPayer }, { name: after.name, inn: after.inn, phone: after.phone, address: after.address, contactPerson: after.contactPerson, vatPayer: after.vatPayer });
-  } catch (e) {
-    if (String(e).includes("Unique constraint")) return { error: "Bu INN bilan yetkazuvchi bor" };
-    throw e;
-  }
+  const res = await updateSupplierRequisites(id, {
+    name: r.data.name, inn: r.data.inn, phone: r.data.phone, address: r.data.address, contactPerson: r.data.contactPerson,
+    vatPayer: r.data.vatPayer == null ? null : r.data.vatPayer === "1",
+  }, s.userId);
+  if ("error" in res) return { error: res.error };
+  if (res.note === "O'zgarish yo'q") return { ok: true, note: res.note };
   revalidatePath("/suppliers"); revalidatePath(`/suppliers/${id}`); revalidatePath("/receipts/new"); revalidatePath("/receipts/import");
-  return { ok: true, note: "Saqlandi" };
+  return { ok: true, note: res.note };
 }
 
 // ───────────────────────── Excel'dan yetkazuvchilar ro'yxati ─────────────────────────

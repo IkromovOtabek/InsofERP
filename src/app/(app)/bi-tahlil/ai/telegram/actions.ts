@@ -1,32 +1,22 @@
 "use server";
 
-import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession, requireAction } from "@/lib/auth";
+import { createTelegramLinkCode } from "@/lib/telegram/link-code";
 
 const PATH = "/bi-tahlil/ai/telegram";
-const CODE_TTL_MIN = 15;
 
 export type CodeState = { error?: string; code?: string; expiresAt?: string } | undefined;
 
 /** Bir martalik 8 xonali kod (kriptografik tasodifiy) — foydalanuvchi uni botga yuboradi. */
 export async function createLinkCode(): Promise<CodeState> {
   const s = await requireAction("bi-tahlil", "ai");
-  const expiresAt = new Date(Date.now() + CODE_TTL_MIN * 60_000);
-
-  // eski ishlatilmagan kodlarni bekor qilamiz — bir vaqtda bitta amaldagi kod bo'lsin
-  await db.telegramLinkCode.deleteMany({ where: { userId: s.userId, usedAt: null } });
-
-  for (let i = 0; i < 5; i++) {
-    const code = String(randomInt(10_000_000, 100_000_000));
-    try {
-      await db.telegramLinkCode.create({ data: { code, userId: s.userId, expiresAt } });
-      revalidatePath(PATH);
-      return { code, expiresAt: expiresAt.toISOString() };
-    } catch { /* kod band — qayta urinamiz */ }
-  }
-  return { error: "Kod yaratilmadi — qayta urinib ko'ring." };
+  // Kod yaratish qoidasi — `lib/telegram/link-code.ts` (mobil ilova ham shu)
+  const r = await createTelegramLinkCode(s.userId);
+  if ("error" in r) return { error: r.error };
+  revalidatePath(PATH);
+  return { code: r.code, expiresAt: r.expiresAt.toISOString() };
 }
 
 /** Chatni uzish: o'zinikini har kim, birovnikini faqat direktor. */

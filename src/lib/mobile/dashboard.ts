@@ -22,6 +22,7 @@ import { lineTotal } from "@/lib/receipt-vat";
 import { tripPayKm } from "@/lib/trip-summary";
 import type { MobileUser } from "./auth";
 import type { CardFilter, HomeCard, HomeRow, HomeSection, SectionChart, Tone } from "./home";
+import { procReportTile } from "./sklad-extra";
 
 /**
  * Rol dashboardi — mobil bosh ekranning "raqamlar va diagrammalar" qismi.
@@ -601,6 +602,8 @@ async function warehouse(r: DashRange): Promise<RoleDashboard> {
       { key: "consume", label: "Zames sarfi", value: cnt(consume.length, "harakat"), hint: topConsumed ? `eng ko'p: ${topConsumed.label}` : undefined, tone: "info", icon: "layers" },
       { key: "adjust", label: "Inventarizatsiya", value: String(moves.filter((m) => m.type === "ADJUSTMENT").length), hint: "tuzatish yozuvi", tone: "info", icon: "clipboard-list" },
       { key: "brigade", label: "Brigadaga berildi", value: String(moves.filter((m) => m.type === "BRIGADE_ISSUE").length), hint: `${moves.filter((m) => m.type === "BRIGADE_RETURN").length} qaytdi`, tone: "info", icon: "hard-hat" },
+      // Snabjeniye hisoboti — veb `/snabjeniye/hisobot` (sklad ham ko'radi); batafsil `dash-detail.ts` → `report`
+      await procReportTile(r),
     ],
     charts: pick(
       chartSection("Kirim dinamikasi", bars, barsRows(bars, [short]), "chart-column"),
@@ -665,6 +668,7 @@ async function procurement(r: DashRange): Promise<RoleDashboard> {
       { key: "transit", label: "Yo'ldagi yuklar", value: String(c.inTransit), hint: "yetkazish: yo'lda", tone: c.inTransit ? "info" : "success", icon: "truck", open: { key: "snabjeniye" } },
       { key: "late", label: "Kechikkanlar", value: String(c.delayed), hint: "kerak sana / ETA o'tgan", tone: c.delayed ? "danger" : "success", icon: "clock", open: { key: "snabjeniye" } },
       { key: "avg", label: "O'rtacha yetkazish", value: avgDays == null ? "—" : `${avgDays.toFixed(1)} kun`, hint: "so'rovdan kirimgacha", tone: avgDays != null && avgDays > 5 ? "warning" : "success", icon: "hourglass" },
+      await procReportTile(r),
     ],
     charts: pick(
       alerts.length ? { title: "Bildirishnomalar", empty: "", icon: "bell", rows: alerts } : null,

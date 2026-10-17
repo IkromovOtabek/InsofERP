@@ -189,8 +189,8 @@ async function main() {
     r = await create(kassa, "cashflow", { type: "INCOME", cashAccountId: cash.id, amount: 1000, categoryIncome: "Boshqa tushum" });
     check("cashflow: view → kirim 403", r.status === 403, r.status);
     const h = await api("GET", "/api/mobile/home", { token: kassa });
-    // «Ariza yuborish», «Vazifa yozish» — xodimning shaxsiy formalari (har bir rolga, kassa moduliga bog'liq emas)
-    check("bosh sahifada kassa yaratish tugmalari yo'q", !(h.json?.quick ?? []).some((q: { kind: string; key: string }) => q.kind === "new" && !["ariza", "vazifa"].includes(q.key)), h.json?.quick);
+    // «Ariza yuborish», «Vazifa yozish», «Murojaat yozish» — xodimning shaxsiy formalari (har bir rolga, kassa moduliga bog'liq emas)
+    check("bosh sahifada kassa yaratish tugmalari yo'q", !(h.json?.quick ?? []).some((q: { kind: string; key: string }) => q.kind === "new" && !["ariza", "vazifa", "murojaat"].includes(q.key)), h.json?.quick);
     await db.user.update({ where: { id: kassaUser.id }, data: { perms: { cashflow: ["create"] } } });
     r = await create(kassa, "transfer", { fromAccountId: cash.id, toAccountId: bank.id, amount: 1000 });
     check("cashflow: [create] → o'tkazma 403 (transfer berilmagan)", r.status === 403, r.status);

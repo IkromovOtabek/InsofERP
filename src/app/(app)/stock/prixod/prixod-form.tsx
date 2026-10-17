@@ -10,8 +10,12 @@ import { Badge, Button, Callout, Card, Field, FormActions, FormError, Input, Lin
 import { MaterialField, type MaterialGroup, type MaterialRow } from "@/components/material-picker";
 import { DocScan, type ScanResult } from "@/components/doc-scan";
 import { MoneyInput } from "@/components/money-input";
-import { RecipientAdd, SupplierAdd, WithAdd } from "@/components/quick-add";
+import { SupplierAdd, WithAdd } from "@/components/quick-add";
 import { NameCombo, type NameComboValue } from "@/components/name-combo";
+import { TargetHoldings } from "@/components/holdings-panel";
+import type { TargetGroups } from "@/lib/issue-target";
+import type { Holding } from "@/lib/holdings";
+import { TargetSelect } from "../rasxod/target-select";
 import { createPrixod } from "./actions";
 
 type Opt = { id: string; name: string };
@@ -53,15 +57,18 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * Narx QQS'siz; QQS (12% yoki 6%, qatorda tanlanadi) faqat tovarga (naqd pul — 0), «Dostavka» QQS'siz Summa/Jami va tannarxga qo'shiladi.
  * `clientToken` — ikki marta bosilgan «Kirimni saqlash» ikkinchi kirim ochmaydi.
  * «Snabjenets» (xaridni qilgan snabjeniye xodimi) alohida maydon emas; Snabjeniye o'zi kiritganda avtomatik yoziladi (`defaultBuyerId`).
- * «Ta'minotchi», «Kimga» va «Darhol kimga berildi» — yozib tanlanadi (`NameCombo`): ro'yxatda yo'q nom saqlashda spravochnikga
- * qo'shiladi va keyingi kirimda ro'yxatda chiqadi. «Ta'minotchi» dagi «+» — INN va QQS belgisi bilan qo'shish.
+ * «Ta'minotchi» — yozib tanlanadi (`NameCombo`): ro'yxatda yo'q nom saqlashda spravochnikga qo'shiladi.
+ * «Ta'minotchi» dagi «+» — INN va QQS belgisi bilan qo'shish.
+ * «Kimga» — darhol chiqim (avvalgi «Darhol kimga berildi» bilan birlashgan): bizning brigadalar → xodimlar → boshqa oluvchilar →
+ * «Qo'lda kiritish…». Tanlansa kirim bilan birga shu yerga chiqim yoziladi, bo'sh — mol skladda qoladi. Tanlangan oluvchida
+ * nima borligi va «Kimda nima bor» paneli formaning o'zida ko'rinadi.
  * «Mashina (kim olib keldi)» va «Qayerdan yuklandi» — matn, avvalgi yozuvlar maydon xotirasidan taklif qilinadi.
  *
  * Nakladnoy skaneri (`scan`): rasmdan o'qilgan ma'lumot maydonlarga tushadi (`lib/scan-receipt.ts`) va forma ko'rish
  * rejimida qulflanadi — «Tahrirlash» ochadi, «Kirimni saqlash» shu holicha saqlaydi. Spravochnikda yo'q xomashyo
  * saqlashda yaratiladi; yetkazuvchi topilmasa — qo'lda tanlanadi (nakladnoydagi nomi ko'rsatiladi).
  */
-export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, recipients: initRecipients, defaultBuyerId, accounts, clientToken, companyVatPayer = true, scan }: {
+export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materials, groups = [], canCreate = false, canAddSupplier = false, targets, holdings, defaultBuyerId, accounts, clientToken, companyVatPayer = true, scan }: {
   today: string;
   suppliers: SupplierOpt[];
   warehouses: Opt[];
@@ -69,7 +76,8 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   groups?: MaterialGroup[];
   canCreate?: boolean;
   canAddSupplier?: boolean;
-  recipients: Opt[];
+  targets: TargetGroups;
+  holdings: Holding[];
   defaultBuyerId: string;
   accounts: Account[];
   clientToken: string;
@@ -81,11 +89,9 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   // narx/dostavka (MoneyInput), sana, sklad va boshqa maydonlar bo'shab qolardi. Muvaffaqiyatda server redirect qiladi.
   const [, startTransition] = useTransition();
   const [suppliers, setSuppliers] = useState(initSuppliers);
-  const [recipients, setRecipients] = useState(initRecipients);
   const [supplier, setSupplier] = useState<NameComboValue>(NONE);
-  const [recipient, setRecipient] = useState<NameComboValue>(NONE);
-  // «Darhol kimga berildi (avto chiqim)» — «Kimga» bilan bitta oluvchilar ro'yxati
-  const [autoTo, setAutoTo] = useState<NameComboValue>(NONE);
+  // «Kimga» — darhol chiqim kaliti ("b:" / "e:" / "r:"), bo'sh — skladda qoladi
+  const [autoKey, setAutoKey] = useState("");
   const [payment, setPayment] = useState<Payment>("BANK");
   const [accountId, setAccountId] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow(1)]);
@@ -100,7 +106,6 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   useEffect(() => { if (state?.error) setLocked(false); }, [state]);
 
   const supVat = suppliers.find((x) => x.id === supplier.id)?.vatPayer ?? true;
-  const pickRecipient = (id: string, fallback = ""): NameComboValue => ({ id, text: recipients.find((r) => r.id === id)?.name ?? fallback });
   const noVat = !supVat || payment === "CASH";
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const remove = (key: number) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [newRow(Date.now())]));
@@ -110,11 +115,12 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
   };
 
   const applyScan = (res: ScanResult) => {
-    const d = scanToPrixod(res, { materials, suppliers, recipients, today });
+    const d = scanToPrixod(res, { materials, suppliers, recipients: targets.recipients, today });
     setDate(d.date); setWaybillNo(d.waybillNo); setNote(d.note);
     // Yetkazuvchi ro'yxatda topilmasa — nakladnoydagi nomi yoziladi: saqlashda yangi yetkazuvchi bo'ladi
     setSupplier({ id: d.supplierId, text: suppliers.find((x) => x.id === d.supplierId)?.name ?? d.supplierName });
-    setRecipient(pickRecipient(d.recipientId)); choosePayment(d.payment);
+    // Nakladnoydagi «Kimga» (odatda o'zimiz) chiqim yozmasin — «Kimga» qo'lda tanlanadi
+    choosePayment(d.payment);
     const k = Date.now();
     setRows(d.rows.map((r, i) => ({
       key: k + i, materialId: r.materialId, qty: r.qty, price: r.price, delivery: "", vat: r.vat,
@@ -219,23 +225,16 @@ export function PrixodForm({ today, suppliers: initSuppliers, warehouses, materi
             </div>
           </Field>
           <Field label="TTN"><Input name="waybillNo" value={waybillNo} onChange={(e) => setWaybillNo(e.target.value)} placeholder="Nakladnoy №" autoComplete="off" maxLength={60} /></Field>
-          <Field label="Kimga" hint={isNew(recipient) ? "Ro'yxatda yo'q — saqlashda «Kimga» ro'yxatiga qo'shiladi" : "Bo'sh — sklad"}>
-            <WithAdd add={<RecipientAdd onCreated={(x) => {
-              setRecipients((l) => [...l, { id: x.id, name: x.name }]);
-              setRecipient({ id: x.id, text: x.name });
-            }} />}>
-              <NameCombo idName="recipientId" textName="recipientName" options={recipients} value={recipient} onChange={setRecipient} placeholder="Insof, Fayzila…" ariaLabel="Kimga" maxLength={80} />
-            </WithAdd>
+          <Field label="Kimga (darhol chiqim)" className="sm:col-span-2" hint={autoKey ? "Kirim bilan birga shu yerga chiqim yoziladi — mol skladda qolmaydi" : "Bo'sh — mol skladda qoladi"}>
+            <TargetSelect targets={targets} value={autoKey} onChange={setAutoKey} name="autoIssueKey" required={false} emptyLabel="— Skladga (chiqimsiz) —" />
           </Field>
           <Field label="Manzil"><Input name="address" placeholder="Yetkazilgan manzil" autoComplete="off" maxLength={300} /></Field>
           <Field label="Qayerdan yuklandi"><Input name="loadedFrom" placeholder="Zavod, bozor, sklad…" autoComplete="off" maxLength={300} /></Field>
           <Field label="Mashina (kim olib keldi)"><Input name="carrier" placeholder="Ta'minotchi o'zi / mashina raqami" autoComplete="off" maxLength={120} /></Field>
-          <Field label="Darhol kimga berildi (avto chiqim)" hint={isNew(autoTo) ? "Ro'yxatda yo'q — saqlashda «Kimga» ro'yxatiga qo'shiladi" : autoTo.text.trim() ? "Kirim bilan birga shu oluvchiga chiqim yoziladi — mol skladda qolmaydi" : "Bo'sh — mol skladda qoladi"}>
-            <NameCombo idName="autoIssueToId" textName="autoIssueToName" options={recipients} value={autoTo} onChange={setAutoTo} placeholder="BRU (umumiy)…" ariaLabel="Darhol kimga berildi" maxLength={80} />
-          </Field>
           <Field label="Maqsad" className="sm:col-span-2"><Input name="purpose" placeholder="Nima uchun sotib olindi" autoComplete="off" maxLength={300} /></Field>
           <Field label="Izoh" className="sm:col-span-2 lg:col-span-4"><Input name="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Holati, qo'shimcha ma'lumot…" autoComplete="off" maxLength={1000} /></Field>
         </div>
+        {autoKey && <TargetHoldings holdings={holdings} targetKey={autoKey} />}
 
         {/* Hisob faqat direktorga beriladi. Boshqalarda to'lovni moliya Kirim-Chiqimdan qiladi */}
         {accounts.length > 0 ? (

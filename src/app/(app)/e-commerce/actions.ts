@@ -10,6 +10,7 @@ import { PRODUCT_UNITS } from "@/lib/unit";
 import { removeShopPhoto, saveShopPhoto, saveShopTemplatePhoto } from "@/lib/uploads";
 import { audit } from "@/lib/audit";
 import { shopDiff, shopItemSnapshot } from "@/lib/shop-history";
+import { setShopItemPublished } from "@/lib/shop-admin";
 
 
 const schema = z.object({
@@ -73,11 +74,9 @@ export async function saveShopItem(productId: string, _prev: ActionState, fd: Fo
 /** Bitta tugma bilan chiqarish/yashirish — ro'yxatda tez ishlash uchun. */
 export async function toggleShopItem(productId: string, on: boolean) {
   const s = await requireAction("sales", "ecommerce");
-  const prev = await db.shopItem.findUnique({ where: { productId }, select: { isPublished: true, product: { select: { name: true } } } });
-  if (prev?.isPublished === on) return;
-  const item = await db.shopItem.upsert({ where: { productId }, create: { productId, isPublished: on }, update: { isPublished: on }, include: { product: { select: { name: true } } } });
-  await audit(db, s.userId, "STATUS_CHANGE", "ShopItem", item.id, { product: item.product.name, isPublished: prev?.isPublished ?? false }, { product: item.product.name, isPublished: on });
-  revalidatePath("/e-commerce");
+  // Qoida `lib/shop-admin.ts` da — mobil ilova ham shuni chaqiradi
+  const r = await setShopItemPublished(productId, on, s.userId);
+  if (r.changed) revalidatePath("/e-commerce");
 }
 
 /** Suratni olib tashlash — ilovada ikonka ko'rinadi. */

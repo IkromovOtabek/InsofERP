@@ -10,6 +10,7 @@ import type { MobileUser } from "./auth";
 import type { Tone } from "./home";
 import type { DetailAction, FormField, MobileDetail } from "./detail";
 import { ListError, type MobileList } from "./list";
+import { kadrCandidateActions } from "./kadr-extra";
 
 /**
  * Mobil — 3-faza: "kurslarim" (material + test), "moslashuvim" (o'z rejasi va shogirdlari), "suhbatlarim"
@@ -116,6 +117,7 @@ export async function peopleDetail(user: MobileUser, key: string, id: string): P
       { name: "reason", label: "Rad etish sababi", type: "text", showIf: { field: "stage", equals: "REJECTED" } },
     ],
   }];
+  actions.push(...(await kadrCandidateActions(user, c))); // suhbat belgilash, ishga qabul (`./kadr-extra.ts`)
   return {
     key, id, title: c.fullName, subtitle: c.vacancy?.title ?? "Vakansiyasiz", status: STAGE_LABEL[c.stage], actions,
     fields: [

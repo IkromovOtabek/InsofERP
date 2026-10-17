@@ -29,8 +29,14 @@ async function me(user: MobileUser) {
 export async function workList(user: MobileUser, key: string, q?: string, filter?: string): Promise<MobileList> {
   if (key === "vazifalarim") {
     const all = canViewAllTasks(who(user));
-    const scope: TaskScope = filter === "given" ? "given" : filter === "all" && all ? "all" : "mine";
-    const rows = await listTasks(who(user), { scope, status: "open", q, take: 80 });
+    // Filtr: `<scope>` yoki `<scope>.<holat>` — holat: ochiq (sukut) / `closed` (qabul qilingan + bekor) / `any` (hammasi)
+    const [sc, st] = (filter ?? "").split(".");
+    const scope: TaskScope = sc === "given" ? "given" : sc === "all" && all ? "all" : "mine";
+    const status = st === "closed" || st === "any" ? st : "open";
+    const rows = status === "closed"
+      ? (await Promise.all((["DONE", "CANCELLED"] as const).map((x) => listTasks(who(user), { scope, status: x, q, take: 80 })))).flat().sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, 80)
+      : await listTasks(who(user), { scope, status: status === "any" ? "ALL" : "open", q, take: 80 });
+    const sfx = status === "open" ? "" : `.${status}`;
     const now = today();
     return {
       key, title: "Vazifalarim",
@@ -43,9 +49,12 @@ export async function workList(user: MobileUser, key: string, q?: string, filter
         };
       }),
       filters: [
-        { key: "mine", label: "Menga", active: scope === "mine" },
-        { key: "given", label: "Men bergan", active: scope === "given" },
-        ...(all ? [{ key: "all", label: "Hammasi", active: scope === "all" }] : []),
+        { key: `mine${sfx}`, label: "Menga", active: scope === "mine" },
+        { key: `given${sfx}`, label: "Men bergan", active: scope === "given" },
+        ...(all ? [{ key: `all${sfx}`, label: "Barcha xodimlar", active: scope === "all" }] : []),
+        { key: scope, label: "Ochiq", active: status === "open" },
+        { key: `${scope}.closed`, label: "Yopilgan", active: status === "closed" },
+        { key: `${scope}.any`, label: "Hammasi", active: status === "any" },
       ],
     };
   }

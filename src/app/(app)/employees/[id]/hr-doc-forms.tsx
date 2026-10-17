@@ -7,6 +7,7 @@ import type { HrDocField } from "@/lib/hr-docs";
 import { oversizeFiles } from "@/lib/kadr";
 import { deleteHrDoc, deleteHrDocScan, prepareHiringSet, saveHrDoc, uploadHrDocScan } from "../../otdel-kadr/hr-doc-actions";
 import { Badge, Button, Field, FormError, Input, Select } from "@/components/ui";
+import { EimzoButton } from "../../otdel-kadr/hr4-forms";
 import { DeleteButton } from "@/components/delete-button";
 import { MoneyInput } from "@/components/money-input";
 
@@ -29,6 +30,8 @@ export type HrDocRow = {
   reason: string | null;
   fileName: string | null;
   signedAt: string | null;
+  /** E-IMZO imzosi (bo'lsa) */
+  eSign: { signer: string | null; at: string; verified: boolean } | null;
 };
 
 export type HrDocDefaults = {
@@ -200,6 +203,7 @@ function DocRow({ employeeId, row, defaults, positions, accept }: {
               />
             </div>
           )}
+          {row.id && <div className="mt-1"><EimzoButton docId={row.id} signed={row.eSign} /></div>}
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">

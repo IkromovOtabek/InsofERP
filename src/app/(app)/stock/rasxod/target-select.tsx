@@ -10,8 +10,10 @@ import { NEW_RECIPIENT, brigadeLabel, type TargetGroups } from "@/lib/issue-targ
  * 3) tizimda yo'q nomlar — oluvchilar ("r:<id>"), 4) eng pastda «Qo'lda kiritish…» — yangi oluvchi oynasi ochiladi,
  * yozilgan nom darhol tanlanadi (brigada va xodim o'z bo'limlarida ochiladi).
  */
-export function TargetSelect({ targets, value, onChange, invalid, canAdd = true }: {
+export function TargetSelect({ targets, value, onChange, invalid, canAdd = true, name = "to", required = true, emptyLabel = "— tanlang —" }: {
   targets: TargetGroups; value: string; onChange: (v: string) => void; invalid?: boolean; canAdd?: boolean;
+  /** Kirim formasida: `autoIssueKey`, majburiy emas, bo'sh — «Skladga (chiqimsiz)» */
+  name?: string; required?: boolean; emptyLabel?: string;
 }) {
   const [recipients, setRecipients] = useState(targets.recipients);
   const [open, setOpen] = useState(false);
@@ -21,8 +23,8 @@ export function TargetSelect({ targets, value, onChange, invalid, canAdd = true 
   };
   return (
     <>
-      <Select name="to" value={value} onChange={(e) => pick(e.target.value)} required aria-invalid={invalid || undefined}>
-        <option value="">— tanlang —</option>
+      <Select name={name} value={value} onChange={(e) => pick(e.target.value)} required={required} aria-invalid={invalid || undefined}>
+        <option value="">{emptyLabel}</option>
         {targets.brigades.length > 0 && (
           <optgroup label="Bizning brigadalar">
             {targets.brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{brigadeLabel(b)}</option>)}

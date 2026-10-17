@@ -128,19 +128,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   const accountRows = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, total: balBy.get(a.id) ?? 0, period: sum(payments.filter((p) => p.cashAccountId === a.id).map((p) => Number(p.amount))) }));
   const cashTotal = sum(accountRows.map((a) => a.total));
 
-  // Cash forecast 7 kun — so'nggi 30 kun (tizimga o'tilgan bo'lsa o'tish sanasidan) kunlik tushum (o'rtacha ± σ)
-  // minus kunlik o'rtacha chiqim. O'tishdan oldingi "bo'sh" kunlar o'rtachani tushirib, σ ni shishirmasin.
-  const fcFrom = since && since > addDays(today, -30) ? since : addDays(today, -30);
-  const fcTo = fcFrom < today ? today : addDays(today, 1); // o'tish bugun bo'lsa — bugungi kun bilan
-  const [last30, last30Inc, last30Exp] = await Promise.all([
-    db.payment.findMany({ where: { date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
-    db.cashTransaction.aggregate({ where: { ...FLOW_ONLY, type: "EXPENSE", date: { gte: fcFrom, lt: fcTo } }, _sum: { amount: true } }),
-  ]);
-  const daily = series([...last30, ...last30Inc], fcFrom, fcTo, "day", (p) => p.date, (p) => Number(p.amount)).map((x) => x.value);
-  const mu = mean(daily), sigma = std(daily), outPerDay = Number(last30Exp._sum.amount ?? 0) / Math.max(1, daily.length);
-  const forecast7 = Array.from({ length: 7 }, (_, i) => ({ label: `${String(addDays(today, i + 1).getDate()).padStart(2, "0")}.${String(addDays(today, i + 1).getMonth() + 1).padStart(2, "0")}`, base: Math.min(receivable, mu * (i + 1)) - outPerDay * (i + 1), low: Math.max(0, (mu - sigma) * (i + 1)) - outPerDay * (i + 1), high: (mu + sigma) * (i + 1) - outPerDay * (i + 1) }));
-  const cashForecast = { start: cashTotal, after7: cashTotal + forecast7[6].base, low7: cashTotal + forecast7[6].low, expectedIn: Math.min(receivable, mu * 7), expectedOut: outPerDay * 7, outPerDay, histDays: daily.length, perDay: mu, sigma, receivable, coverDays: mu > 0 ? receivable / mu : null, risk: sigma > mu ? "Yuqori" : sigma > mu / 2 ? "O'rta" : "Past", rows: forecast7 };
+  const cashForecast = await cashForecast7({ today, since, receivable, cashTotal });
 
   // Cashflow trendi (davr) — tushum + kumulyativ
   const flow = series([...payments.map((p) => ({ date: p.date, amount: p.amount })), ...incomeTx], r.from, r.to, gran, (p) => p.date, (p) => Number(p.amount));
@@ -200,4 +188,23 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     expenses, expenseTotal, aging, topPayments, indicators, list: { rows, total, page, size }, accounts,
     activeRate: safeDiv(cust.filter((c) => c.recency !== null && c.recency < 30).length, cust.length) * 100,
   };
+}
+
+/**
+ * Cash forecast 7 kun — so'nggi 30 kun (tizimga o'tilgan bo'lsa o'tish sanasidan) kunlik tushum (o'rtacha ± σ)
+ * minus kunlik o'rtacha chiqim. O'tishdan oldingi "bo'sh" kunlar o'rtachani tushirib, σ ni shishirmasin.
+ * BI «Moliya» tabi va mobil Moliya kabineti (`lib/mobile/moliya-extra.ts`) shu yerdan.
+ */
+export async function cashForecast7({ today, since, receivable, cashTotal }: { today: Date; since: Date | null; receivable: number; cashTotal: number }) {
+  const fcFrom = since && since > addDays(today, -30) ? since : addDays(today, -30);
+  const fcTo = fcFrom < today ? today : addDays(today, 1); // o'tish bugun bo'lsa — bugungi kun bilan
+  const [last30, last30Inc, last30Exp] = await Promise.all([
+    db.payment.findMany({ where: { date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
+    db.cashTransaction.aggregate({ where: { ...FLOW_ONLY, type: "EXPENSE", date: { gte: fcFrom, lt: fcTo } }, _sum: { amount: true } }),
+  ]);
+  const daily = series([...last30, ...last30Inc], fcFrom, fcTo, "day", (p) => p.date, (p) => Number(p.amount)).map((x) => x.value);
+  const mu = mean(daily), sigma = std(daily), outPerDay = Number(last30Exp._sum.amount ?? 0) / Math.max(1, daily.length);
+  const forecast7 = Array.from({ length: 7 }, (_, i) => ({ label: `${String(addDays(today, i + 1).getDate()).padStart(2, "0")}.${String(addDays(today, i + 1).getMonth() + 1).padStart(2, "0")}`, base: Math.min(receivable, mu * (i + 1)) - outPerDay * (i + 1), low: Math.max(0, (mu - sigma) * (i + 1)) - outPerDay * (i + 1), high: (mu + sigma) * (i + 1) - outPerDay * (i + 1) }));
+  return { start: cashTotal, after7: cashTotal + forecast7[6].base, low7: cashTotal + forecast7[6].low, expectedIn: Math.min(receivable, mu * 7), expectedOut: outPerDay * 7, outPerDay, histDays: daily.length, perDay: mu, sigma, receivable, coverDays: mu > 0 ? receivable / mu : null, risk: sigma > mu ? "Yuqori" : sigma > mu / 2 ? "O'rta" : "Past", rows: forecast7 };
 }

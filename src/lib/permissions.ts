@@ -51,6 +51,12 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "invoice",   label: "Schyot yozish",                  roles: ["ACCOUNTING", "SALES"] },
     { key: "invoice_cancel", label: "Schyotni bekor qilish",     roles: ["ACCOUNTING"] },
   ],
+  // Tijorat taklifi (KP): zayavkadan mustaqil rasmiy narx hujjati — direktor istalgan xodimga «create» beradi
+  offers: [
+    { key: "create",   label: "Tijorat taklifi tuzish va chop etish", roles: ["SALES"], hint: "Zayavka bo'lishi shart emas; hujjat QR bilan chiqadi" },
+    { key: "cancel",   label: "Taklifni bekor qilish / qabul qilindi deb belgilash", roles: ["SALES"] },
+    { key: "settings", label: "Taklif matni, shartlari va rekvizitlari", roles: [], hint: "Hujjat boshidagi matn, shartlar, OKED, QQS raqami — odatda direktor" },
+  ],
   marketing: [
     { key: "content", label: "Kontent reja (Reels, post)",        roles: ["SALES"] },
     { key: "ads",     label: "Reklama kampaniyalari va xarajat",  roles: ["SALES"] },
@@ -146,6 +152,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "recruit",  label: "Yollash: vakansiya, nomzodlar, suhbatlar", roles: ["HR"], hint: "Nomzodni qabul qilish xodim kartasini ochadi" },
     { key: "onboarding", label: "Ishga qabul va moslashuv (sinov muddati)", roles: ["HR"] },
     { key: "training", label: "O'qitish: kurslar, testlar, sertifikatlar", roles: ["HR"] },
+    { key: "voice",    label: "So'rovnoma, murojaatlar (HR chat), ommaviy xabar", roles: ["HR"], hint: "Anonim murojaat muallifi hech kimga ko'rinmaydi" },
     { key: "attendance", label: "Barcha xodimlarni davomatdan o'tkazish (skaner)", roles: ["HR", "SUPERVISOR"], hint: "Davomat sahifasi va ECO skaneri — sexdan tashqari xodimlar ham; yuzni ro'yxatga olish baribir faqat otdel kadrda" },
   ],
   // Umumiy vazifalar (`/vazifalar`, `lib/hr/tasks.ts`): o'ziga — har kim; boshqaga berish — rahbarlar

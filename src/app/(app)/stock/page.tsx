@@ -22,6 +22,8 @@ import { ExcelButton } from "../logistika/excel-button";
 import { moduleWriteAllowed } from "@/lib/auth";
 import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
 import { Card, CardHeader } from "@/components/ui";
+import { HoldingsPanel } from "@/components/holdings-panel";
+import { holdingsOverview } from "@/lib/holdings";
 
 const TYPE_LABEL: Record<string, string> = {
   RECEIPT: "Kirim", PRODUCTION_CONSUME: "Zames chiqimi", PRODUCTION_OUTPUT: "Ishlab chiqarildi",
@@ -50,6 +52,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   // «Qoldiqlar» va xomashyo harakatlari davri (?from&to, standart — joriy oy); sklad filtri (?wh)
   const period = stockPeriod(sp);
   const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
+  // «Kimda nima bor» — brigadalar qo'lida va xodim/oluvchilar shu oy olgani (Qoldiqlar oynasida, yig'ilgan holda)
+  const holdings = tab === "balance" ? await holdingsOverview() : null;
   const [materials, mSums, whSums, allWarehouses] = await Promise.all([
     tab === "brigades" ? db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }) : [],
     tab === "balance" ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
@@ -151,6 +155,10 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     : undefined;
 
   const canMakeBy = new Map(capacity.map((c) => [c.productId, c]));
+  // Ishlab chiqarish imkoni doskalari: eng kam qolgan (chiqarish mumkin bo'lgan) mahsulot tepada
+  const capacitySorted = [...capacity].sort((a, b) => a.canMake - b.canMake || a.product.localeCompare(b.product));
+  const piecesSorted = [...pieces].sort((a, b) => a.free - b.free || a.total - b.total || a.name.localeCompare(b.name));
+  const concreteSorted = [...concrete].sort((a, b) => (canMakeBy.get(a.id)?.canMake ?? Infinity) - (canMakeBy.get(b.id)?.canMake ?? Infinity));
   const pieceTotals = pieces.reduce((a, r) => ({ total: a.total + r.total, free: a.free + r.free, owned: a.owned + r.owned }), { total: 0, free: 0, owned: 0 });
 
   return (
@@ -293,7 +301,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             <thead><tr><Th>Mahsulot</Th><Th>Retsept</Th><Th right>Hozir ishlab chiqarish mumkin</Th><Th right>Zayavkalar ehtiyoji</Th><Th>Cheklovchi ingredient</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {capacity.length === 0 && <Empty text="Faol retseptli mahsulot yo'q — avval Retseptlar bo'limida retsept kiriting" icon={Factory} />}
-              {capacity.map((c) => {
+              {capacitySorted.map((c) => {
                 const ok = c.remaining <= 0 ? c.canMake > 0 : c.canMake >= c.remaining;
                 return (
                   <Tr key={c.productId}>
@@ -314,7 +322,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <thead><tr><Th>Mahsulot</Th><Th>Kod</Th><Th>Birlik</Th><Th right>Jami</Th><Th right>Erkin</Th><Th right>Band</Th><Th>Holat</Th><Th></Th></tr></thead>
               <tbody>
                 {pieces.length === 0 && <Empty text={"Dona mahsulot yo'q — Sozlamalar → Beton markalari bo'limida birligi \"dona\" bo'lgan mahsulot (ustun, blok, bordyur…) qo'shing"} icon={Boxes} />}
-                {pieces.map((r) => (
+                {piecesSorted.map((r) => (
                   <Tr key={r.id} className="[&>td]:py-4 [&>td]:text-[15px]">
                     <Td><Link href={`/stock/products/${r.id}`} className="hover:underline">{r.name}</Link></Td>
                     <Td className="text-slate-500">{r.code}</Td>
@@ -346,7 +354,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <thead><tr><Th>Marka</Th><Th right>Qoldiq</Th><Th right>Xomashyodan chiqadi</Th><Th>Cheklovchi xomashyo</Th></tr></thead>
               <tbody>
                 {concrete.length === 0 && <Empty text="Beton markasi kiritilmagan — Sozlamalar → Beton markalari" icon={Factory} />}
-                {concrete.map((p) => {
+                {concreteSorted.map((p) => {
                   const c = canMakeBy.get(p.id);
                   return (
                     <Tr key={p.id} className="[&>td]:py-4 [&>td]:text-[15px]">
@@ -368,7 +376,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
               <Table>
                 <thead><tr><Th>Mahsulot</Th><Th>Ingredient</Th><Th right>Qoldiq</Th><Th right>Kerak</Th><Th right>Yetishmaydi</Th></tr></thead>
                 <tbody>
-                  {capacity.flatMap((c) => c.items.filter((i) => i.short > 0).map((i) => (
+                  {capacitySorted.flatMap((c) => c.items.filter((i) => i.short > 0).map((i) => (
                     <Tr key={`${c.productId}-${i.name}`}><Td>{c.product}</Td><Td className="font-medium">{i.name}</Td><Td right>{qty(i.balance)} {i.unit}</Td><Td right>{qty(c.remaining * i.perUnit)} {i.unit}</Td><Td right className="font-semibold text-red-600">{qty(i.short)} {i.unit}</Td></Tr>
                   )))}
                 </tbody>
@@ -379,6 +387,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
+      {holdings && <div className="mb-4"><HoldingsPanel holdings={holdings} collapsible /></div>}
       {tab === "balance" && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">

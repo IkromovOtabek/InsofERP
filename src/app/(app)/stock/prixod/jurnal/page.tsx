@@ -6,8 +6,8 @@ import { Card, PageHeader } from "@/components/ui";
 import { JournalImport } from "./journal-import";
 
 /**
- * Sklad → Kirim → «Excel jurnal»: bir necha oylik kirim daftari (har qatorda o'z sanasi, yetkazuvchisi, TTN, to'lov turi)
- * bitta yuklashda kirim hujjatlariga bo'linib saqlanadi. Bitta nakladnoy uchun — «Excel'dan yuklash» (`../import`).
+ * Sklad → Kirim → «Excel'dan yuklash»: kirim daftari (har qatorda o'z sanasi, yetkazuvchisi, TTN, to'lov turi)
+ * bitta yuklashda kirim hujjatlariga bo'linib saqlanadi. Ustunlar — `JOURNAL_HEADERS`. Nakladnoy skaneri — `../new?scan=1`.
  * Brigadalarga chiqim keyin Sklad → «Brigadalar» oynasida taqsimlanadi.
  */
 export default async function PrixodJournalPage() {
@@ -20,8 +20,8 @@ export default async function PrixodJournalPage() {
   ]);
   return (
     <div>
-      <PageHeader back={{ href: "/stock/prixod", label: "Kirim" }} title="Excel jurnal"
-        subtitle="Bir necha kunlik yoki oylik kirim daftarini yuklang: qatorlar sana, yetkazuvchi va TTN bo'yicha alohida kirim hujjatlariga bo'linadi. Saqlashdan oldin hammasini tekshirasiz." />
+      <PageHeader back={{ href: "/stock/prixod", label: "Kirim" }} title="Excel orqali kirim"
+        subtitle="Kirim daftarini yuklang (bir kunlik yoki bir necha oylik): qatorlar sana, ta'minotchi va TTN bo'yicha alohida kirim hujjatlariga bo'linadi. Saqlashdan oldin hammasini tekshirasiz." />
       <Card className="max-w-6xl">
         <JournalImport
           warehouses={warehouses}

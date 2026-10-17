@@ -30,6 +30,8 @@ export const NAV: NavItem[] = [
   { href: "/agent",       label: "Sotuv agentlari",    roles: ["AGENT", "HR", "SALES"], group: "Sotuv", menuHide: ["HR"] },
   // Saytdagi (`/`) formadan tushgan so'rovlar — mijozga aylantirilgandan keyingina Customer yaratiladi
   { href: "/leads",       label: "Sayt arizalari",     roles: ["SALES"], group: "Sotuv" },
+  // Tijorat takliflari (KP) — rasmiy narx hujjati, zayavkasiz ham tuziladi; QR → ommaviy /taklif/<№>. Boshqa xodimga direktor «offers» moduli orqali beradi
+  { href: "/takliflar",   label: "Tijorat takliflari", roles: ["SALES", "ACCOUNTING"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
   // Insof ECO ilovasidagi do'kon: qaysi mahsulot ko'rinadi, surat/narx, ilovadan tushgan buyurtmalar
   { href: "/e-commerce",  label: "E-commerce",         roles: ["SALES"], group: "Sotuv" },
   // Marketing: statistika va AI tavsiyalar, kontent reja, AI studiya (g'oya → ssenariy, matn, video), media, target, sozlamalar
@@ -112,6 +114,9 @@ export const NAV: NavItem[] = [
   { href: "/otdel-kadr?tab=yollash",    label: "Yollash",           roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=moslashuv",  label: "Moslashuv",         roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=oqitish",    label: "O'qitish",          roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=sorovnoma",  label: "So'rovnoma",        roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=murojaatlar", label: "Murojaatlar va xabar", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=hisobotlar", label: "Kadr hisobotlari",  roles: ["HR"], group: "Otdel kadr" },
   // Ish haqi: kadr hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`)
   { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
@@ -229,6 +234,7 @@ export function navFor(role: Role, perms?: Perms) {
 export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "orders",    label: "Zayavkalar",            prefixes: ["/orders"] },
   { key: "sales",     label: "Sotuv va arizalar",     prefixes: ["/sales", "/leads", "/e-commerce"] },
+  { key: "offers",    label: "Tijorat takliflari",    prefixes: ["/takliflar"] },
   { key: "marketing", label: "Marketing",             prefixes: ["/marketing"] },
   { key: "customers", label: "Mijozlar",              prefixes: ["/customers"] },
   { key: "production",label: "Ishlab chiqarish",      prefixes: ["/production", "/recipes"] },

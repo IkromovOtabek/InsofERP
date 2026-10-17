@@ -62,6 +62,7 @@ model User {
   cashTransfers          CashTransfer[]           @relation("CashTransferCreatedBy")
   cashTransfersCancelled CashTransfer[]           @relation("CashTransferCancelledBy")
   auditLogs              AuditLog[]
+  offers                 CommercialOffer[]        @relation("OfferManager")
   employee               Employee?
   marketing              MarketingEntry[]         @relation("MarketingCreatedBy")
   telegram               TelegramAccount[]
@@ -170,6 +171,15 @@ model CompanySettings {
   /// Xodim o'zi "Keldim"/"Ketdim" bosganda zavod nuqtasidan (lat/lng) shu radius ichida bo'lishi shart, metr.
   /// Direktor Sozlamalar → Limitlar'da o'zgartiradi; nuqta — Zavod rekvizitlari → "Zavod joyi" xaritasi.
   attendanceRadiusM   Int       @default(300)
+  // ── Tijorat taklifi (KP) hujjati — rekvizitlar va matnlar (`lib/offers.ts`, /takliflar/sozlamalar) ──
+  oked                String? // OKED kodi — hujjat rekvizitlarida
+  vatRegNo            String? // QQS to'lovchisi ro'yxat raqami (РКП НДС)
+  /// Taklif boshidagi kirish matni (sifat, sertifikat…); bo'sh — `lib/offers.ts` dagi standart matn
+  offerIntro          String?
+  /// Taklif oxiridagi shartlar — har qatori alohida band (quvvat, avtokran, narx o'zgarishi…); bo'sh — standart
+  offerTerms          String?
+  /// Yangi taklifning amal qilish muddati, kun (forma shu kunni taklif qiladi)
+  offerValidDays      Int       @default(7)
   updatedAt           DateTime  @updatedAt
 }
 
@@ -200,8 +210,9 @@ model Customer {
   payRequests PaymentRequest[]
   leads       Lead[]
   register    SalesRegister[]
-  agent       User?            @relation("CustomerAgent", fields: [agentId], references: [id])
+  agent       User?             @relation("CustomerAgent", fields: [agentId], references: [id])
   openings    OpeningBalance[]
+  offers      CommercialOffer[]
 
   @@index([agentId])
 }
@@ -306,9 +317,9 @@ model Product {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
 
-  group       ProductGroup?     @relation(fields: [groupId], references: [id])
+  group       ProductGroup?         @relation(fields: [groupId], references: [id])
   recipes     Recipe[]
-  recipeItems RecipeItem[]      @relation("RecipeIngredientProduct")
+  recipeItems RecipeItem[]          @relation("RecipeIngredientProduct")
   orderItems  OrderItem[]
   batches     ProductionBatch[]
   stockMoves  StockMove[]
@@ -318,6 +329,7 @@ model Product {
   plans       ProductionPlan[]
   defects     ProductDefect[]
   openings    OpeningBalance[]
+  offerItems  CommercialOfferItem[]
 
   @@index([groupId])
 }
@@ -546,6 +558,7 @@ model Employee {
   deletionRequests AccountDeletionRequest[]
   fuelLogs         FuelLog[]
   transportCosts   TransportExpense[]
+  autoReceipts     GoodsReceipt[]           @relation("ReceiptAutoIssueEmployee")
   shiftDays        ShiftAssignment[]
   hrRequests       HrRequest[]
   payAdjustments   PayAdjustment[]
@@ -602,10 +615,16 @@ model HrDocument {
   reason      String? // bo'shatish sababi yoki izoh
 
   // Imzolangan nusxa — skanerdan/telefondan yuklanadi, `uploads/employees/` da saqlanadi
-  file     String?
-  fileName String?
-  fileType String?
-  signedAt DateTime? // imzolangan nusxa yuklangan vaqt
+  file       String?
+  fileName   String?
+  fileType   String?
+  signedAt   DateTime? // imzolangan nusxa yuklangan vaqt
+  /// E-IMZO elektron imzosi (PKCS#7, base64) — kadr «E-IMZO bilan imzolash» bosganda (`lib/hr/eimzo.ts`)
+  eSignature String?
+  eSignedAt  DateTime?
+  eSigner    String? // sertifikatdagi F.I.O. / tashkilot
+  eSignerTin String? // STIR yoki JSHSHIR (sertifikatdan)
+  eVerified  Boolean   @default(false) // E-IMZO server orqali tekshirilgan (sozlama bo'lsa)
 
   createdById String? // kim tayyorlagani (User.id)
   createdAt   DateTime @default(now())
@@ -826,50 +845,56 @@ enum ReceiptPayment {
 // ───────────────────────── Snabjeniye: kirim ─────────────────────────
 
 model GoodsReceipt {
-  id            String          @id @default(cuid())
-  docNo         String          @unique
-  date          DateTime        @default(now())
-  supplierId    String
-  warehouseId   String
-  note          String?
-  createdById   String? // kirimni kiritgan sklad/snabjeniye xodimi — sotuvchi shu ma'lumotga tayanadi
-  createdAt     DateTime        @default(now())
+  id                  String          @id @default(cuid())
+  docNo               String          @unique
+  date                DateTime        @default(now())
+  supplierId          String
+  warehouseId         String
+  note                String?
+  createdById         String? // kirimni kiritgan sklad/snabjeniye xodimi — sotuvchi shu ma'lumotga tayanadi
+  createdAt           DateTime        @default(now())
   /// Formadagi bir martalik kalit — ikki marta bosilgan "Saqlash" ikkinchi kirim ochmasin
-  clientToken   String?         @unique
+  clientToken         String?         @unique
   /// Storno: kirim bekor qilingan (sklad harakatlari teskari yozilgan) — kim, qachon, nima sababdan
-  cancelledAt   DateTime?
-  cancelReason  String?
-  cancelledById String?
+  cancelledAt         DateTime?
+  cancelReason        String?
+  cancelledById       String?
   // ── «Приход» jurnali ustunlari (Sklad → Приход). Eski kirimlarda bo'sh ──
   /// ТТН (yuk xati / nakladnoy raqami). Eskilarida «Nakladnoy № …» note ichida turadi
-  waybillNo     String?
+  waybillNo           String?
   /// Деньги: П-р (BANK) / Н-к (CASH). Н-к da qatorlar QQS'siz yoziladi
-  payment       ReceiptPayment?
+  payment             ReceiptPayment?
   /// Кому — kimga olib kelindi (ixtiyoriy; bo'sh bo'lsa — sklad)
-  recipientId   String?
+  recipientId         String?
   /// Адрес — yuk olingan / yetkazilgan manzil
-  address       String?
+  address             String?
   /// Снабженец — xaridni qilgan snabjeniye xodimi (bo'sh bo'lsa — kiritgan xodim)
-  buyerId       String?
+  buyerId             String?
   /// Почему — nima uchun olindi
-  purpose       String?
+  purpose             String?
   // ── Sklad kirim jurnalining qo'shimcha ustunlari (2026-10-17) ──
   /// «Mashina (kim olib keldi)»: «Ta'minotchi o'zi», transport firma, haydovchi yoki mashina raqami
-  carrier       String?
+  carrier             String?
   /// «Qayerdan yuklandi» — yuk ortilgan joy (zavod, bozor, sklad)
-  loadedFrom    String?
+  loadedFrom          String?
   /// «Darhol kimga berildi (avto chiqim)»: mol skladga tushmay to'g'ri shu oluvchiga ketdi (BRU va h.k.) —
   /// kirim bilan bir tranzaksiyada har qatorga StockMove ISSUE (−qty, refType "GoodsReceipt") yoziladi; storno ikkalasini ham qaytaradi
-  autoIssueToId String?
+  autoIssueToId       String?
+  /// «Kimga» (darhol chiqim) brigadaga: StockMove BRIGADE_ISSUE + BrigadeMove ISSUE, refType "GoodsReceipt" (2026-10-17)
+  autoIssueBrigadeId  String?
+  /// «Kimga» (darhol chiqim) xodimga: StockMove ISSUE (employeeId), refType "GoodsReceipt"
+  autoIssueEmployeeId String?
 
-  supplier    Supplier           @relation(fields: [supplierId], references: [id])
-  warehouse   Warehouse          @relation(fields: [warehouseId], references: [id])
-  createdBy   User?              @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
-  recipient   StockRecipient?    @relation("ReceiptRecipient", fields: [recipientId], references: [id])
-  autoIssueTo StockRecipient?    @relation("ReceiptAutoIssue", fields: [autoIssueToId], references: [id])
-  buyer     User?              @relation("ReceiptBuyer", fields: [buyerId], references: [id])
-  items     GoodsReceiptItem[]
-  supply    SupplyRequest? // shu kirim ta'minot zayavkasidan tug'ilgan bo'lsa
+  supplier          Supplier           @relation(fields: [supplierId], references: [id])
+  warehouse         Warehouse          @relation(fields: [warehouseId], references: [id])
+  createdBy         User?              @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
+  recipient         StockRecipient?    @relation("ReceiptRecipient", fields: [recipientId], references: [id])
+  autoIssueTo       StockRecipient?    @relation("ReceiptAutoIssue", fields: [autoIssueToId], references: [id])
+  autoIssueBrigade  Brigade?           @relation("ReceiptAutoIssueBrigade", fields: [autoIssueBrigadeId], references: [id])
+  autoIssueEmployee Employee?          @relation("ReceiptAutoIssueEmployee", fields: [autoIssueEmployeeId], references: [id])
+  buyer             User?              @relation("ReceiptBuyer", fields: [buyerId], references: [id])
+  items             GoodsReceiptItem[]
+  supply            SupplyRequest? // shu kirim ta'minot zayavkasidan tug'ilgan bo'lsa
 }
 
 model GoodsReceiptItem {
@@ -1194,6 +1219,7 @@ model Order {
   tasks      BrigadeTask[]
   payments   Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
   payRequest PaymentRequest? // bosh to'lovni qabul qilish so'rovi (kassa yoki buxgalteriyaga)
+  offers     CommercialOffer[] // shu zayavka asosida tuzilgan tijorat takliflari
 
   @@index([deliveryDate])
   @@index([siteId])
@@ -1232,15 +1258,16 @@ model Brigade {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  leader     Employee?       @relation("BrigadeLeader", fields: [leaderId], references: [id])
-  members    Employee[]      @relation("BrigadeMembers")
-  items      OrderItem[]
-  tasks      BrigadeTask[]
-  moves      BrigadeMove[]
-  stockMoves StockMove[]
-  defects    ProductDefect[]
-  shifts     BrigadeShift[]
-  issues     BrigadeIssue[]
+  leader       Employee?       @relation("BrigadeLeader", fields: [leaderId], references: [id])
+  members      Employee[]      @relation("BrigadeMembers")
+  items        OrderItem[]
+  tasks        BrigadeTask[]
+  moves        BrigadeMove[]
+  stockMoves   StockMove[]
+  defects      ProductDefect[]
+  shifts       BrigadeShift[]
+  issues       BrigadeIssue[]
+  autoReceipts GoodsReceipt[]  @relation("ReceiptAutoIssueBrigade")
 }
 
 enum TaskStatus {
@@ -2216,9 +2243,10 @@ model Lead {
   landingPage String? // ariza yuborilgan sahifa
   createdAt   DateTime   @default(now())
 
-  product   Product?  @relation(fields: [productId], references: [id])
-  customer  Customer? @relation(fields: [customerId], references: [id])
-  handledBy User?     @relation("LeadHandledBy", fields: [handledById], references: [id])
+  product   Product?          @relation(fields: [productId], references: [id])
+  customer  Customer?         @relation(fields: [customerId], references: [id])
+  handledBy User?             @relation("LeadHandledBy", fields: [handledById], references: [id])
+  offers    CommercialOffer[]
 
   @@index([status, createdAt])
   @@index([phone])
@@ -2601,16 +2629,16 @@ model SmmBoost {
  * Korxona marketing sozlamalari (bitta yozuv, id = "main"): reklama limitlari va standart heshteglar
  */
 model MarketingSettings {
-  id              String   @id @default("main")
-  adCurrency      String   @default("USD") // Meta reklama kabineti valyutasi
-  boostDailyCap   Decimal  @default(20) @db.Decimal(18, 2) // bitta reklamaning kunlik maksimal byudjeti
-  boostMonthlyCap Decimal  @default(300) @db.Decimal(18, 2) // oy bo'yicha jami rejalashtirilgan byudjet chegarasi
+  id              String    @id @default("main")
+  adCurrency      String    @default("USD") // Meta reklama kabineti valyutasi
+  boostDailyCap   Decimal   @default(20) @db.Decimal(18, 2) // bitta reklamaning kunlik maksimal byudjeti
+  boostMonthlyCap Decimal   @default(300) @db.Decimal(18, 2) // oy bo'yicha jami rejalashtirilgan byudjet chegarasi
   defaultHashtags String?
   // Brend profili — AI shu ma'lumotga tayanib yozadi
   brandAbout      String? // zavod haqida: nima ishlab chiqaradi, afzalliklari, xizmat hududi
   brandTone       String? // ohang: «ishonchli, aniq raqamlar bilan, ortiqcha reklamasiz»
   audience        String? // maqsadli auditoriya
-  languages       String   @default("ru,uz") // post tillari (birinchisi — asosiy)
+  languages       String    @default("ru,uz") // post tillari (birinchisi — asosiy)
   locations       Json? // [{ name, locationId? }] — postga qo'yiladigan joylashuvlar
   adAccountId     String? // Meta reklama kabineti (act_…)
   leadFormId      String? // Lead Ads formasi
@@ -2621,7 +2649,7 @@ model MarketingSettings {
   autoRecipients  String[]  @default([]) // User id; bo'sh — barcha faol direktorlar
   autoWeeklyAt    DateTime? // oxirgi ishga tushish (ikki marta ketmasin)
   autoDailyAt     DateTime?
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime  @updatedAt
 }
 
 enum SmmConnectMethod {
@@ -3229,6 +3257,88 @@ model PayrollSettings {
   updatedAt    DateTime @updatedAt
 }
 
+/**
+ * ═══════════════════════ Tijorat taklifi (Kommercheskoe predlojenie) ═══════════════════════
+ */
+
+enum OfferStatus {
+  ACTIVE // tuzilgan, amal qilmoqda (muddati o'tgani sana bo'yicha hisoblanadi — `offerState`)
+  ACCEPTED // mijoz qabul qildi (QR sahifasidan yoki menejer qo'lda belgiladi)
+  CANCELLED // bekor qilingan (sabab bilan); hujjat o'chirilmaydi
+}
+
+/// Mijozga beriladigan rasmiy narx taklifi. Zayavkadan mustaqil: potensial mijozga ham tuziladi
+/// (`customerId` bo'sh, nom/telefon erkin). Chop etiladi (A4 + QR), QR ommaviy `/taklif/<№>?k=<verifyToken>` ni ochadi.
+model CommercialOffer {
+  id            String      @id @default(cuid())
+  offerNo       String      @unique // TK-YYYY-00001 (`lib/numbering.ts`)
+  date          DateTime    @default(now())
+  validUntil    DateTime // shu kungacha narxlar amal qiladi
+  status        OfferStatus @default(ACTIVE)
+  lang          String      @default("uz") // hujjat tili: uz | ru
+  // ── Mijoz: bazadagi karta yoki erkin kiritilgan (hali mijoz emas) ──
+  customerId    String?
+  clientName    String
+  clientPhone   String?
+  clientInn     String?
+  objectName    String? // obyekt (qurilish joyi)
+  deadline      String? // yetkazish muddati — erkin matn («10 kun ichida», «noyabr»)
+  // ── Pul ──
+  /// Narxlarga QQS 12% qo'shiladi (hujjatda alohida ustun). false — QQS'siz (korxona to'lovchi bo'lmasa)
+  withVat       Boolean     @default(true)
+  advance       Decimal     @default(0) @db.Decimal(18, 2) // kutilayotgan avans
+  // ── Matnlar hujjat tuzilgan paytdagi holatida saqlanadi (sozlama keyin o'zgarsa eski hujjat o'zgarmasin) ──
+  intro         String?
+  terms         String?
+  note          String? // ichki izoh (mijoz ko'rmaydi)
+  managerId     String // hujjatdagi menejer (tuzgan xodim)
+  orderId       String? // zayavka asosida tuzilgan bo'lsa
+  leadId        String? // sayt arizasi asosida tuzilgan bo'lsa
+  /// QR havolasidagi tasodifiy kalit — raqam ketma-ket, kalitsiz ommaviy sahifa ochilmaydi
+  verifyToken   String      @unique
+  // ── Mijoz QR orqali ko'rdimi ──
+  viewCount     Int         @default(0)
+  firstViewedAt DateTime?
+  lastViewedAt  DateTime?
+  // ── Qabul / bekor ──
+  acceptedAt    DateTime?
+  acceptedBy    String? // mijoz tomonidan QR sahifasida kiritilgan ism (yoki "menejer qo'lda")
+  acceptedNote  String? // mijoz izohi
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  customer Customer?             @relation(fields: [customerId], references: [id])
+  manager  User                  @relation("OfferManager", fields: [managerId], references: [id])
+  order    Order?                @relation(fields: [orderId], references: [id])
+  lead     Lead?                 @relation(fields: [leadId], references: [id])
+  items    CommercialOfferItem[]
+
+  @@index([status, date])
+  @@index([customerId])
+  @@index([managerId])
+  @@index([orderId])
+}
+
+/// Taklif qatori: katalogdagi mahsulot (`productId`) yoki erkin xizmat (Dostavka, Avtokran — `productId` bo'sh).
+model CommercialOfferItem {
+  id        String  @id @default(cuid())
+  offerId   String
+  productId String?
+  name      String // hujjatdagi nom (mahsulot nomi yoki xizmat)
+  unit      String  @default("dona") // m3 | dona | reys | soat …
+  qty       Decimal @db.Decimal(18, 3)
+  price     Decimal @db.Decimal(18, 2) // QQS'siz narx (1 birlik)
+  sort      Int     @default(0)
+
+  offer   CommercialOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+
+  @@index([offerId])
+  @@index([productId])
+}
+
 // ───────────────────────── Otdel kadr 2-faza: vazifalar, kundalik cheklistlar, KPI ─────────────────────────
 
 enum WorkTaskStatus {
@@ -3570,4 +3680,102 @@ model CourseEnrollment {
 
   @@unique([courseId, employeeId])
   @@index([employeeId])
+}
+
+// ───────────────────────── Otdel kadr 4-faza: so'rovnoma, HR chat (murojaatlar), ommaviy xabar ─────────────────────────
+
+enum SurveyStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+/// So'rovnoma (NPS va boshqa savollar). `anonymous` — javob xodimga bog'lanmaydi (faqat takrorni bloklovchi xesh qoladi).
+/// `questions` — [{ key, text, type: "nps" | "scale5" | "choice" | "text", options? }]; `position` — kimga (bo'sh — hammaga).
+model Survey {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  anonymous   Boolean      @default(true)
+  position    String?
+  questions   Json
+  status      SurveyStatus @default(DRAFT)
+  openedAt    DateTime?
+  closesAt    DateTime?
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  responses SurveyResponse[]
+}
+
+model SurveyResponse {
+  id             String   @id @default(cuid())
+  surveyId       String
+  employeeId     String? // anonim so'rovnomada — null
+  respondentHash String // sha256(maxfiy kalit + so'rovnoma + xodim) — bir kishi bir marta
+  answers        Json
+  createdAt      DateTime @default(now())
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@unique([surveyId, respondentHash])
+  @@index([surveyId])
+}
+
+enum FeedbackKind {
+  COMPLAINT // shikoyat
+  SUGGESTION // taklif
+  QUESTION // savol
+  THANKS // minnatdorchilik
+}
+
+enum FeedbackStatus {
+  NEW
+  IN_REVIEW
+  RESOLVED
+}
+
+/// HR chat: xodimning murojaati (anonim bo'lishi mumkin) va otdel kadr bilan yozishma.
+/// Anonimda `employeeId` yo'q — muallif o'z murojaatlarini `authorHash` orqali ko'radi (kadr kimligini bilmaydi).
+model Feedback {
+  id         String         @id @default(cuid())
+  kind       FeedbackKind
+  subject    String
+  anonymous  Boolean        @default(false)
+  employeeId String?
+  authorHash String
+  status     FeedbackStatus @default(NEW)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  messages FeedbackMessage[]
+
+  @@index([status, createdAt])
+  @@index([authorHash])
+}
+
+model FeedbackMessage {
+  id         String   @id @default(cuid())
+  feedbackId String
+  fromHr     Boolean  @default(false)
+  userId     String? // kadr javobida — kim yozgani; anonim muallifda — null
+  text       String
+  createdAt  DateTime @default(now())
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId])
+}
+
+/// Ommaviy xabar: hammaga yoki lavozimlarga push + bildirishnoma (`Notification.type = BROADCAST`, link id = shu id).
+model Broadcast {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  positions   String[] // bo'sh — hamma xodim
+  important   Boolean  @default(false)
+  sentCount   Int      @default(0)
+  createdById String
+  createdAt   DateTime @default(now())
 }

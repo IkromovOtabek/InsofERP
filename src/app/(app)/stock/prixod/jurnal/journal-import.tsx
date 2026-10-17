@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { CalendarRange, FileSpreadsheet, FileUp, HardHat, Package, Truck, Wallet } from "lucide-react";
 import { Button, Callout, Checkbox, Field, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { dateRu, fmtNum, moneyShort } from "@/lib/format";
+import { JournalTemplateButton } from "@/components/journal-template";
+import { dateRu, fmtNum, isoDate, moneyShort } from "@/lib/format";
 import { groupJournal, journalMaterials, parseJournal, type JournalDoc, type JournalIssue } from "@/lib/prixod-journal";
 import type { JournalChunkResult } from "@/lib/prixod-journal-import";
 import { importJournalChunk } from "./actions";
@@ -111,7 +112,11 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
           <FileUp size={16} /> Excel faylni tanlash
           <input type="file" accept=".xlsx,.xls" className="hidden" disabled={busy} onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar, TTN, O'lchov, Miqdor, Ta'minotchi, Kimga, To'lov, Dostavka, Narx, Summa, QQS, Manzil, Izoh, Mashina, Qayerdan yuklandi, Darhol kimga berildi"}</span>
+        <JournalTemplateButton file="kirim-namuna" example={{
+          "Sana": isoDate().split("-").reverse().join("."), "Tovar": "Sement M400", "TTN №": "123", "O'lchov": "t", "Miqdor": 20, "Ta'minotchi": "Qizilqum sement",
+          "Kimga": "Insof", "To'lov": "P-r", "Dostavka": 0, "Narx (QQSsiz)": 950000, "Summa (QQSsiz)": 19000000, "QQS 12%": 2280000, "Jami (QQS bilan)": 21280000,
+        }} />
+        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar, TTN №, O'lchov, Miqdor, Ta'minotchi, Kimga, To'lov (P-r — perechisleniye, n-q — naqd), Dostavka, Narx (QQSsiz), Summa, QQS 12%, Jami, Manzil, Snabjenets, Izoh, Mashina, Qayerdan yuklandi, Darhol kimga berildi"}</span>
       </div>
       {readError && <Callout tone="danger">{readError}</Callout>}
 

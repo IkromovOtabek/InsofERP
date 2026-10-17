@@ -12,7 +12,11 @@ import { unitLabel } from "@/lib/unit";
 import { Button, inputCls } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-export type MaterialRow = { id: string; name: string; code: string; unit: string; price?: number; balance?: number; groupId?: string | null };
+export type MaterialRow = {
+  id: string; name: string; code: string; unit: string; price?: number; balance?: number; groupId?: string | null;
+  /** Chiqim formasi: shu skladga jami kirim va jami chiqim — ro'yxatda «Kirim · Chiqim · Qoldi» bo'lib ko'rinadi */
+  received?: number; issued?: number;
+};
 export type MaterialGroup = PickerGroup;
 
 /** Nom yoki kod bo'yicha filtr: avval nomi shu harflar bilan boshlanadiganlar. */
@@ -48,6 +52,7 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
   const afterCreate = () => { setPanel(null); router.refresh(); };
   /** Qidiruvga yozilgan nom ro'yxatda bormi — bo'lmasa "«X» ni yangi qo'shish" taklif qilinadi. */
   const isNew = (name: string) => !!name && !materials.some((m) => m.name.trim().toLowerCase() === name.toLowerCase());
+  const flow = materials.some((m) => m.received != null);
 
   return (
     <FolderPicker
@@ -57,12 +62,17 @@ export function MaterialPicker({ open, materials, groups = [], canCreate = false
       nameLabel="Nomi"
       cols={[
         { label: "Birlik", className: "w-24" },
+        ...(flow ? [{ label: "Kirim", className: "w-28", right: true }, { label: "Chiqim", className: "w-28", right: true }] : []),
         { label: "Qoldiq", className: "w-32", right: true },
         { label: "Kod", className: "w-32", right: true },
       ]}
       items={materials.map((m) => ({
         id: m.id, name: m.name, code: m.code, groupId: m.groupId ?? null,
-        cells: [unitLabel(m.unit), m.balance != null ? fmtNum(m.balance, 3) : "—", m.code],
+        cells: [
+          unitLabel(m.unit),
+          ...(flow ? [fmtNum(m.received ?? 0, 3), fmtNum(m.issued ?? 0, 3)] : []),
+          m.balance != null ? fmtNum(m.balance, 3) : "—", m.code,
+        ],
       }))}
       groups={groups}
       initialQuery={initialQuery}
@@ -153,7 +163,16 @@ export function MaterialField({ materials, groups, canCreate, value, onPick, pla
             <button key={m.id} type="button" onMouseEnter={() => setCursor(i)} onClick={() => choose(m)}
               className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm", i === cursor ? "bg-slate-100" : "hover:bg-slate-50")}>
               <Minus size={14} className="shrink-0 text-slate-400" />
-              <span className="min-w-0 flex-1 truncate">{m.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{m.name}</span>
+                {/* Chiqim formasi: kirim qilingan, berilgan va hali skladda qolgan (chiqim qilinadigan) miqdor */}
+                {m.received != null && (
+                  <span className="block text-xs text-slate-500 tabular">
+                    {`Kirim ${fmtNum(m.received, 3)} · Chiqim ${fmtNum(m.issued ?? 0, 3)} · `}
+                    <b className={cn("font-semibold", (m.balance ?? 0) > 0 ? "text-emerald-700" : "text-red-600")}>{`Qoldi ${fmtNum(Math.max(0, m.balance ?? 0), 3)}`}</b>
+                  </span>
+                )}
+              </span>
               <span className="shrink-0 text-xs text-slate-500">{unitLabel(m.unit)}</span>
               <span data-no-translit className="shrink-0 text-xs text-slate-400 tabular">{m.code}</span>
             </button>

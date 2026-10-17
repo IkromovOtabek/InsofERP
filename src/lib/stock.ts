@@ -123,13 +123,18 @@ export async function stockSnapshot(): Promise<StockSnapshot> {
   ]);
   const pb = new Map(pSums.map((x) => [x.productId, Number(x._sum.qty ?? 0)]));
   const make = new Map<string, MakeInfo>(capacity.map((c) => [c.productId, { canMake: c.canMake, limiting: c.limiting }]));
+  // Hamma ro'yxatda eng kam qolgani tepada — zayavka qabul qilayotgan xodim nimani ishlab chiqarishga berishni darhol ko'radi
+  const canMake = (x: SnapshotProduct) => x.make?.canMake ?? Infinity; // retsepti yo'q — oxirida
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   return {
-    materials: mats.map((m) => ({ id: m.id, name: m.name, unit: m.unit, balance: m.balance, minStock: Number(m.minStock), low: m.low, last: last.materials.get(m.id) ?? null })),
-    pieces: pieces.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: p.unit, total: p.total, free: p.free, owned: p.owned, make: make.get(p.id) ?? null, last: last.products.get(p.id) ?? null })),
+    materials: mats.map((m) => ({ id: m.id, name: m.name, unit: m.unit, balance: m.balance, minStock: Number(m.minStock), low: m.low, last: last.materials.get(m.id) ?? null }))
+      .sort((a, b) => Number(b.low) - Number(a.low) || a.balance - b.balance || byName(a, b)),
+    pieces: pieces.map((p) => ({ id: p.id, code: p.code, name: p.name, unit: p.unit, total: p.total, free: p.free, owned: p.owned, make: make.get(p.id) ?? null, last: last.products.get(p.id) ?? null }))
+      .sort((a, b) => a.free - b.free || canMake(a) - canMake(b) || byName(a, b)),
     concrete: concreteProducts.map((p) => {
       const total = pb.get(p.id) ?? 0;
       return { id: p.id, code: p.code, name: p.name, unit: p.unit, total, free: total, owned: 0, make: make.get(p.id) ?? null, last: last.products.get(p.id) ?? null };
-    }),
+    }).sort((a, b) => canMake(a) - canMake(b) || byName(a, b)),
     asOf: new Date(),
   };
 }

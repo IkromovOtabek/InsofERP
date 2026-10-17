@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { saveBrigade as saveBrigadeData } from "@/lib/brigades";
 
 const schema = z.object({
   name: zStr("Brigada nomi kerak"),
@@ -14,25 +15,13 @@ const schema = z.object({
   note: zOpt,
 });
 
+/** Brigada ochish / tahrirlash — qoida `lib/brigades.ts` da (mobil ilova ham shuni chaqiradi). */
 export async function saveBrigade(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("tasks", "brigade");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
-  // Brigadir — mavjud va ishlayotgan xodim (eskirgan id FK xatosi — 500 berardi; bo'shagan xodim brigadir bo'lmasin)
-  if (d.leaderId && !(await db.employee.count({ where: { id: d.leaderId, isActive: true, firedAt: null } }))) {
-    return { error: "Brigadir topilmadi yoki ishdan bo'shagan — ro'yxatdan qayta tanlang" };
-  }
-  await db.$transaction(async (tx) => {
-    if (id) {
-      const before = await tx.brigade.findUniqueOrThrow({ where: { id } });
-      const after = await tx.brigade.update({ where: { id }, data: d });
-      await audit(tx, s.userId, "UPDATE", "Brigade", id, before, after);
-    } else {
-      const b = await tx.brigade.create({ data: d });
-      await audit(tx, s.userId, "CREATE", "Brigade", b.id, undefined, b);
-    }
-  });
+  const res = await saveBrigadeData(id, r.data, s.userId);
+  if ("error" in res) return { error: res.error };
   revalidatePath("/brigades"); revalidatePath("/orders/new");
   return { ok: true };
 }

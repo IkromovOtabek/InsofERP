@@ -67,3 +67,37 @@ export async function addProductDefect(d: DefectInput, userId: string): Promise<
   const id = res.id;
   return { ok: true, id, text: `${fq(d.qty)} ${unitLabel(product.unit)} ${product.name} — brak (${d.reason})` };
 }
+
+/** Brak yozuvini o'chira oladimi: direktor — har doim, boshqalar — faqat bugun o'zi yozganini (veb va mobil bir qoida). */
+export function canDeleteDefect(def: { createdById: string; createdAt: Date }, who: { userId: string; role: string }): boolean {
+  if (who.role === "DIRECTOR") return true;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return def.createdById === who.userId && def.createdAt >= today;
+}
+
+/**
+ * Xato yozilgan brakni o'chirish — yagona joy (veb sex sahifasi ham, mobil ilova ham). Hovli qoldig'i qaytadi:
+ * StockMove o'zgarmas jurnal — brak harakati o'chirilmaydi, teskari yozuv bilan qoldiq qaytariladi.
+ * Ruxsat (`production` → `report`) — chaqiruvchida; kim qaysi yozuvni — shu yerda (`canDeleteDefect`).
+ */
+export async function deleteProductDefect(id: string, who: { userId: string; role: string }): Promise<{ error: string } | { ok: true }> {
+  const def = await db.productDefect.findUnique({ where: { id } });
+  if (!def) return { error: "Yozuv topilmadi" };
+  if (!canDeleteDefect(def, who)) {
+    return { error: "Faqat bugun o'zingiz yozgan brakni o'chira olasiz — qolganini direktor o'chiradi" };
+  }
+  const moves = await db.stockMove.findMany({ where: { refType: "ProductDefect", refId: id, type: "WRITE_OFF" } });
+  await db.$transaction(async (tx) => {
+    for (const m of moves) {
+      await tx.stockMove.create({
+        data: {
+          type: "ADJUSTMENT", warehouseId: m.warehouseId, productId: m.productId, brigadeId: m.brigadeId, qty: m.qty.negated(),
+          refType: "ProductDefect", refId: id, note: "Brak yozuvi bekor qilindi", createdById: who.userId,
+        },
+      });
+    }
+    await tx.productDefect.delete({ where: { id } });
+    await audit(tx, who.userId, "DELETE", "ProductDefect", id, def);
+  });
+  return { ok: true };
+}

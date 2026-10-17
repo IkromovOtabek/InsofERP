@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ExternalLink, FilePlus2, MapPin, MessageSquare, Phone } from "lucide-react";
+import { ExternalLink, FilePlus2, MapPin, MessageSquare, Phone, FileBadge2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 import { dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { unitLabel } from "@/lib/unit";
@@ -23,6 +24,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const s = await requireRoles(["SALES"], { module: "sales", actions: ["leads"] });
   // Bog'lanish/izoh — sotuvchi va direktor
   const canAct = ["SALES", "DIRECTOR"].includes(s.role);
+  const canOffer = canDo(s, "offers", "create");
   const { tab = "new" } = await searchParams;
 
   const leads = await db.lead.findMany({
@@ -120,6 +122,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                       {l.status !== "CONVERTED" && <ConvertLead leadId={l.id} defaultName={l.name} />}
                       {/* Mijozga aylangan ariza — keyingi qadam zayavka: mahsulot, hajm va manzil arizadan to'ldiriladi */}
                       {l.customer && <LinkButton href={`/orders/new?customer=${l.customer.id}&lead=${l.id}`} size="sm"><FilePlus2 size={14} /> Zayavka ochish</LinkButton>}
+                      {/* Arizaga narx taklifi — mijoz kartasi bo'lmasa ham (ism, telefon, mahsulot arizadan) */}
+                      {canOffer && l.status !== "REJECTED" && <LinkButton href={`/takliflar/new?lead=${l.id}`} size="sm" variant="secondary"><FileBadge2 size={14} /> Tijorat taklifi</LinkButton>}
                     </div>
                     <LeadNote leadId={l.id} note={l.note} />
                   </div>

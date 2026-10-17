@@ -34,7 +34,8 @@ const LISTS: Record<string, string[]> = {
 // Ish boshqaruvchi — barcha xodimlarni davomatdan o'tkazadi (`employees.attendance`), lekin yuz olmaydi (faqat kadr va direktor)
 const SCANNER: Record<string, "all" | "sex" | undefined> = { DIRECTOR: "all", HR: "all", PRODUCTION: "sex", SUPERVISOR: "all" };
 const ENROLL = new Set(["DIRECTOR", "HR"]);
-const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift" };
+// Server (`lib/mobile/list.ts` DETAIL_KEY) ro'yxat kalitini o'zi kartochka kalitiga o'giradi — test ro'yxat kalitini yuboradi
+const DETAIL_KEY: Record<string, string> = {};
 const FORMS = ["orders", "trips", "supply", "customers", "suppliers", "brigades"];
 
 type Open = { key: string; id: string };
@@ -59,7 +60,8 @@ async function main() {
   // Umumiy davomat jadvali — faqat otdel kadr va direktor; qolganlar faqat o'zinikini (`id=me`) ko'radi
   const hrDay = await api("GET", "/api/mobile/attendance/day", { token: await tok("test.kadr") });
   const anyEmployeeId: string | undefined = hrDay.json?.rows?.[0]?.id;
-  for (const login of ROLES) {
+  // Sekretar va sotuv agenti — vebda bitta sahifali rollar, ilovada o'z kabineti bor
+  for (const login of [...ROLES, "sekretar", "agent"]) {
     const t = await tok(`test.${login}`);
     const me = await api("GET", "/api/mobile/me", { token: t });
     const role = me.json?.role as string;
@@ -127,6 +129,38 @@ async function main() {
       else check(`list ${key} ruxsatsiz → 403`, false, `${r.status} ${JSON.stringify(r.json).slice(0, 100)}`);
     }
     check(`ro'yxatlar: ${listOk} ochiq, ${listDenied} yopiq, 500 yo'q`, true);
+
+    // Bosh sahifadagi «Tezkor amallar» — rol kira oladigan HAMMA ro'yxat va forma (server o'zi beradi):
+    // har biri 200 qaytarishi, filtr chiplari 500 bermasligi; qatorlar kartochka o'rgimchagiga qo'shiladi
+    const homeJ = (await api("GET", "/api/mobile/home", { token: t })).json;
+    const quick: { key: string; kind: "list" | "new" }[] = [...(homeJ?.quick ?? []), ...(homeJ?.list ? [{ key: homeJ.list.key, kind: "list" as const }] : [])];
+    let qOk = 0;
+    for (const q of quick) {
+      if (q.kind === "new") {
+        const r = await api("GET", `/api/mobile/form?key=${encodeURIComponent(q.key)}`, { token: t });
+        no500(`${login} quick form ${q.key}`, r.status);
+        if (r.status === 200 && Array.isArray(r.json?.fields)) qOk++; else check(`quick form ${q.key} → 200`, false, `${r.status} ${JSON.stringify(r.json).slice(0, 120)}`);
+        continue;
+      }
+      const r = await api("GET", `/api/mobile/list?key=${encodeURIComponent(q.key)}`, { token: t });
+      no500(`${login} quick list ${q.key}`, r.status);
+      if (r.status !== 200) { check(`quick list ${q.key} → 200`, false, `${r.status} ${JSON.stringify(r.json).slice(0, 120)}`); continue; }
+      qOk++;
+      // Ilovada ro'yxatning har qatori bosiladi (`/erp/<ro'yxat kaliti>/<id>`) — birinchi qatorlar kartochkasi ochilishi shart
+      for (const row of (r.json?.rows ?? []).slice(0, 3)) {
+        if (typeof row?.id !== "string") continue;
+        opens.push({ key: q.key, id: row.id });
+        const d = await api("GET", `/api/mobile/detail?key=${encodeURIComponent(q.key)}&id=${encodeURIComponent(row.id)}`, { token: t });
+        no500(`${login} quick detail ${q.key}/${row.id}`, d.status);
+        if (d.status !== 200) check(`ro'yxat ${q.key} qatori → kartochka 200`, false, `${row.id}: ${d.status} ${JSON.stringify(d.json).slice(0, 120)}`);
+      }
+      for (const f of (r.json?.filters ?? []).slice(0, 8)) {
+        const rf = await api("GET", `/api/mobile/list?key=${encodeURIComponent(q.key)}&filter=${encodeURIComponent(f.key)}`, { token: t });
+        no500(`${login} quick list ${q.key} filter=${f.key}`, rf.status);
+        for (const row of (rf.json?.rows ?? []).slice(0, 2)) if (typeof row?.id === "string") opens.push({ key: DETAIL_KEY[q.key] ?? q.key, id: row.id });
+      }
+    }
+    check(`tezkor amallar: ${qOk}/${quick.length} ochildi`, qOk === quick.length);
     const unk = await api("GET", "/api/mobile/list?key=constructor", { token: t });
     check("list key=constructor → 404", unk.status === 404, unk.status);
 

@@ -47,6 +47,11 @@ export type ReceiptInput = {
    * sklad qoldig'i o'zgarmaydi, Chiqim jurnalida «avto» qatori chiqadi, storno ikkalasini ham teskari yozadi
    */
   autoIssueToId?: string | null;
+  /**
+   * «Kimga» (darhol chiqim) — brigada yoki xodim ham bo'lishi mumkin: "b:<id>" | "e:<id>" | "r:<id>" (`autoIssueToId` o'rniga).
+   * Brigadaga — StockMove BRIGADE_ISSUE + BrigadeMove ISSUE (brigada qo'lidagi qoldiqqa), xodimga — ISSUE (employeeId).
+   */
+  autoIssueKey?: string | null;
   note?: string | null;
   vehicle?: string | null;
   /** Tarozi, kg: brutto va tara ikkalasi birga beriladi */
@@ -146,9 +151,13 @@ export async function createGoodsReceipt(
   // Sklad, yetkazuvchi, xomashyo, hisob, oluvchi va snabjenets — mavjud va faol bo'lsin (aks holda FK xatosi → 500)
   const isDirector = actor.role === "DIRECTOR";
   const accId = isDirector ? clean(input.cashAccountId, 64) : null;
-  const recipientId = clean(input.recipientId, 64), buyerId = clean(input.buyerId, 64), autoToId = clean(input.autoIssueToId, 64);
+  const recipientId = clean(input.recipientId, 64), buyerId = clean(input.buyerId, 64);
+  // «Kimga» (darhol chiqim): kalit "b:" / "e:" / "r:" yoki eski `autoIssueToId` (oluvchi)
+  const autoKey = /^([ber]):(.{1,64})$/.exec(clean(input.autoIssueKey, 70) ?? "");
+  const autoToId = autoKey ? (autoKey[1] === "r" ? autoKey[2] : null) : clean(input.autoIssueToId, 64);
+  const autoBrigadeId = autoKey?.[1] === "b" ? autoKey[2] : null, autoEmployeeId = autoKey?.[1] === "e" ? autoKey[2] : null;
   const ids = [...new Set(raw.map((i) => i.materialId))];
-  const [wh, sup, mats, acc, recipient, buyer, autoTo] = await Promise.all([
+  const [wh, sup, mats, acc, recipient, buyer, autoTo, autoBrigade, autoEmployee] = await Promise.all([
     db.warehouse.findFirst({ where: { id: input.warehouseId, isActive: true }, select: { id: true } }),
     db.supplier.findUnique({ where: { id: input.supplierId }, select: { id: true, name: true, isActive: true, vatPayer: true } }),
     db.material.findMany({ where: { id: { in: ids } }, select: { id: true, isActive: true } }),
@@ -156,6 +165,8 @@ export async function createGoodsReceipt(
     recipientId ? db.stockRecipient.findFirst({ where: { id: recipientId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
     buyerId ? db.user.findFirst({ where: { id: buyerId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
     autoToId ? db.stockRecipient.findFirst({ where: { id: autoToId, isActive: true }, select: { id: true, name: true } }) : Promise.resolve(null),
+    autoBrigadeId ? db.brigade.findFirst({ where: { id: autoBrigadeId, isActive: true }, select: { id: true, name: true } }) : Promise.resolve(null),
+    autoEmployeeId ? db.employee.findFirst({ where: { id: autoEmployeeId, isActive: true }, select: { id: true, fullName: true } }) : Promise.resolve(null),
   ]);
   if (!wh) fail("Sklad topilmadi yoki yopilgan");
   if (!sup) fail("Yetkazuvchi topilmadi");
@@ -168,7 +179,9 @@ export async function createGoodsReceipt(
   }
   if (recipientId && !recipient) fail("Oluvchi («Kimga») topilmadi yoki yopilgan");
   if (buyerId && !buyer) fail("Snabjenets topilmadi yoki ishdan bo'shagan");
-  if (autoToId && !autoTo) fail("«Darhol kimga berildi» oluvchisi topilmadi yoki yopilgan");
+  if (autoToId && !autoTo) fail("«Kimga» oluvchisi topilmadi yoki yopilgan");
+  if (autoBrigadeId && !autoBrigade) fail("«Kimga» brigadasi topilmadi yoki nofaol");
+  if (autoEmployeeId && !autoEmployee) fail("«Kimga» xodimi topilmadi yoki ishdan bo'shagan");
 
   // QQS: QQS to'lovchisi bo'lmagan yetkazuvchi va naqd (Н-к) kirim QQS bermaydi — stavka majburan 0.
   // Aks holda qator stavkasi (0 — QQS'dan ozod tovar yoki 12), berilmasa 12.
@@ -189,6 +202,7 @@ export async function createGoodsReceipt(
           docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: actor.userId, clientToken,
           waybillNo: clean(input.waybillNo, 60), payment, recipientId: recipient?.id ?? null, address: clean(input.address), buyerId: buyer?.id ?? null, purpose: clean(input.purpose),
           carrier: clean(input.carrier, 120), loadedFrom: clean(input.loadedFrom), autoIssueToId: autoTo?.id ?? null,
+          autoIssueBrigadeId: autoBrigade?.id ?? null, autoIssueEmployeeId: autoEmployee?.id ?? null,
           items: { create: items.map((i) => ({ materialId: i.materialId, qty: i.qty, price: i.price, vatRate: i.vatRate, vatAmount: i.vatAmount, deliveryCost: i.deliveryCost })) },
         },
       });
@@ -200,14 +214,33 @@ export async function createGoodsReceipt(
       });
       // «Darhol kimga berildi»: mol skladda turmaydi — kirim bilan bir vaqtda o'sha oluvchiga chiqim (o'sha tannarx bilan).
       // Kirim bilan bitta hujjat (refType "GoodsReceipt"): storno ikkalasini ham teskari yozadi, qoldiq jami o'zgarmaydi
-      if (autoTo) {
+      // Oluvchi yoki xodim — ISSUE (sarf); brigada — BRIGADE_ISSUE + BrigadeMove ISSUE (brigada qo'lidagi qoldiqqa o'tadi)
+      if (autoTo || autoEmployee) {
         await tx.stockMove.createMany({
           data: items.map((i) => ({
-            type: "ISSUE" as const, date, warehouseId: wh.id, materialId: i.materialId, recipientId: autoTo.id,
+            type: "ISSUE" as const, date, warehouseId: wh.id, materialId: i.materialId,
+            recipientId: autoTo?.id ?? null, employeeId: autoEmployee?.id ?? null,
             qty: -i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: actor.userId,
-            note: `Avto chiqim: kirim ${rec.docNo} → ${autoTo.name}`,
+            note: `Avto chiqim: kirim ${rec.docNo} → ${autoTo?.name ?? autoEmployee?.fullName}`,
           })),
         });
+      }
+      if (autoBrigade) {
+        for (const i of items) {
+          const move = await tx.stockMove.create({
+            data: {
+              type: "BRIGADE_ISSUE", date, warehouseId: wh.id, materialId: i.materialId, brigadeId: autoBrigade.id,
+              qty: -i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: actor.userId,
+              note: `${autoBrigade.name} brigadasiga berildi · avto chiqim: kirim ${rec.docNo}`,
+            },
+          });
+          await tx.brigadeMove.create({
+            data: {
+              type: "ISSUE", date, brigadeId: autoBrigade.id, materialId: i.materialId, qty: i.qty, unitCost: i.unitCost,
+              refType: "StockMove", refId: move.id, note: `Kirim ${rec.docNo}`, createdById: actor.userId,
+            },
+          });
+        }
       }
       // Kirim summasi (QQS va dostavka bilan — yetkazuvchiga shuncha to'lanadi) — hisobdan chiqim. Sklad/snabjeniye kassadan
       // pul chiqara olmaydi: bunday kirim Kirim-Chiqimda "To'lanmagan kirimlar" ro'yxatiga tushadi va moliya to'laydi (`payReceipt`).
@@ -271,6 +304,10 @@ function queueUnpaidNotice(receiptId: string, userId: string) {
 }
 
 // ───────────────────────── «Приход» jurnali ─────────────────────────
+
+/** «Kimga» (darhol chiqim) nomi: oluvchi, brigada yoki xodim. */
+const autoName = (r: { autoIssueTo: { name: string } | null; autoIssueBrigade: { name: string } | null; autoIssueEmployee: { fullName: string } | null }) =>
+  r.autoIssueTo?.name ?? r.autoIssueBrigade?.name ?? r.autoIssueEmployee?.fullName ?? null;
 
 export type PrixodPayment = "BANK" | "CASH";
 
@@ -377,6 +414,7 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
         select: {
           id: true, docNo: true, date: true, note: true, waybillNo: true, payment: true, address: true, purpose: true, cancelledAt: true,
           carrier: true, loadedFrom: true, autoIssueTo: { select: { name: true } },
+          autoIssueBrigade: { select: { name: true } }, autoIssueEmployee: { select: { fullName: true } },
           supplier: { select: { name: true } }, warehouse: { select: { name: true } }, recipient: { select: { name: true } },
           buyer: { select: { fullName: true } }, createdBy: { select: { fullName: true } },
         },
@@ -398,10 +436,10 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
       id: i.id, receiptId: r.id, docNo: r.docNo, date: r.date,
       material: i.material.name, materialId: i.material.id, unit: i.material.unit,
       waybillNo: r.waybillNo ?? waybillFromNote(r.note), qty,
-      supplier: r.supplier.name, recipient: r.recipient?.name ?? r.warehouse.name,
+      supplier: r.supplier.name, recipient: r.recipient?.name ?? autoName(r) ?? r.warehouse.name,
       payment: pay.get(r.id) ?? null, delivery, price, vatRate: i.vatRate, sum, vat, total: r2(sum + vat),
       address: r.address, buyer: r.buyer?.fullName ?? r.createdBy?.fullName ?? null, purpose: r.purpose,
-      note: r.note, carrier: r.carrier, loadedFrom: r.loadedFrom, autoIssueTo: r.autoIssueTo?.name ?? null,
+      note: r.note, carrier: r.carrier, loadedFrom: r.loadedFrom, autoIssueTo: autoName(r),
     };
     if (inPeriod(r.date)) rows.push(r.cancelledAt ? { ...row, cancelled: true } : row);
     if (inPeriod(r.cancelledAt)) {

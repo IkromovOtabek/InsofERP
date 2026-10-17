@@ -7,6 +7,8 @@ import { issueTargetOptions } from "@/lib/stock-recipients";
 import { ISSUE_BACK_DAYS, issueHints, parseIssueTarget } from "@/lib/stock-issue";
 import { isoDate } from "@/lib/format";
 import { Callout, Card, PageHeader } from "@/components/ui";
+import { HoldingsPanel } from "@/components/holdings-panel";
+import { holdingsOverview } from "@/lib/holdings";
 import { RasxodForm } from "../rasxod-form";
 
 /**
@@ -19,21 +21,31 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
   const sp = await searchParams;
 
-  const [warehouses, targets, hints, materials, groups, sums, avg] = await Promise.all([
+  const [warehouses, targets, hints, materials, groups, sums, avg, holdings] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     issueTargetOptions(),
     issueHints(),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true, unitPrice: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
-    db.stockMove.groupBy({ by: ["warehouseId", "materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
+    db.stockMove.groupBy({ by: ["warehouseId", "materialId", "type"], where: { materialId: { not: null } }, _sum: { qty: true } }),
     avgUnitCosts(),
+    holdingsOverview(),
   ]);
+  // Qoldiq — barcha harakatlar yig'indisi; «Kirim» / «Chiqim» — nom tanlashda ko'rsatish uchun (shu sklad, butun davr):
+  // kirim = RECEIPT, chiqim = oluvchi/xodimga (ISSUE) + brigadaga (BRIGADE_ISSUE − BRIGADE_RETURN), stornolar ichida netlanadi
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
   const balances: Record<string, Record<string, number>> = {};
+  const flows: Record<string, Record<string, { received: number; issued: number }>> = {};
   for (const x of sums) {
-    const q = Math.round(Number(x._sum.qty ?? 0) * 1000) / 1000;
-    if (!x.materialId || Math.abs(q) < 0.0005) continue;
-    (balances[x.warehouseId] ??= {})[x.materialId] = q;
+    if (!x.materialId) continue;
+    const q = Number(x._sum.qty ?? 0);
+    const b = (balances[x.warehouseId] ??= {});
+    b[x.materialId] = r3((b[x.materialId] ?? 0) + q);
+    const f = ((flows[x.warehouseId] ??= {})[x.materialId] ??= { received: 0, issued: 0 });
+    if (x.type === "RECEIPT") f.received = r3(f.received + q);
+    else if (x.type === "ISSUE" || x.type === "BRIGADE_ISSUE" || x.type === "BRIGADE_RETURN") f.issued = r3(f.issued - q);
   }
+  for (const b of Object.values(balances)) for (const [id, q] of Object.entries(b)) if (Math.abs(q) < 0.0005) delete b[id];
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
   // ?to=b:<id> | e:<id> | r:<id> (oluvchi kartasidan «Shu oluvchiga chiqim») — faqat ro'yxatda bor bo'lsa
@@ -60,6 +72,8 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
             })}
             groups={groups}
             balances={balances}
+            flows={flows}
+            holdings={holdings}
             clientToken={crypto.randomUUID()}
             today={isoDate(today)}
             minDate={isoDate(min)}
@@ -67,6 +81,7 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
           />
         </Card>
       )}
+      <div className="mt-6"><HoldingsPanel holdings={holdings} collapsible /></div>
     </div>
   );
 }

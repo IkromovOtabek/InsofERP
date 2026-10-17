@@ -7,6 +7,8 @@ import { toMaterialUnit } from "./unit";
 import { createGoodsReceipt, resolveRecipient } from "./receipts";
 import { PAID_IMPORT_TOKEN } from "./receipt-payables";
 import { journalMaterials, journalUnit, type JournalDoc } from "./prixod-journal";
+import { matchTarget } from "./issue-target";
+import { issueTargetOptions } from "./stock-recipients";
 import type { Role } from "@/generated/prisma";
 
 export type JournalChunkResult = {
@@ -68,6 +70,16 @@ export async function importJournalDocs(
     return recId.get(k) ?? null;
   };
 
+  // «Darhol kimga berildi»: brigada → xodim → oluvchi (Chiqim «Kimga» bilan bir tartib); topilmasa — yangi oluvchi
+  const targets = await issueTargetOptions();
+  const autoKeyOf = async (name: string): Promise<string | null> => {
+    if (!name.trim()) return null;
+    const hit = matchTarget(targets, name);
+    if (hit) return hit.key;
+    const id = await recipientOf(name);
+    return id ? `r:${id}` : null;
+  };
+
   // Xomashyolar: nom bo'yicha topiladi, yo'qlari yaratiladi; birligi mos kelmasa — «Nomi (birlik)» alohida xomashyo
   const allRows = docs.flatMap((d) => d.rows);
   const existing = await db.material.findMany({ select: { name: true, unit: true } });
@@ -97,7 +109,7 @@ export async function importJournalDocs(
         waybillNo: d.waybillNo || null, payment: d.payment === "BANK" || d.payment === "CASH" ? d.payment : null,
         recipientId: await recipientOf(String(d.recipient ?? "")), address: d.address || null,
         carrier: String(d.carrier ?? "") || null, loadedFrom: String(d.loadedFrom ?? "") || null,
-        autoIssueToId: await recipientOf(String(d.autoIssueTo ?? "")),
+        autoIssueKey: await autoKeyOf(String(d.autoIssueTo ?? "")),
         note: note ? `${note.slice(0, 900)} · ${src}` : src, clientToken: token, items,
       }, { userId: s.userId, role: s.role });
       if (out.existed) res.existed++; else res.created++;

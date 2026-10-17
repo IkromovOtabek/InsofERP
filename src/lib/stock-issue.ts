@@ -40,6 +40,8 @@ export type IssueInput = {
   note?: string | null;
   /** Formadagi bir martalik kalit: takror yuborilsa yangi harakat yozilmaydi, mavjud `ref` qaytadi */
   clientToken?: string | null;
+  /** Excel jurnal: 31 kunlik chegara qo'llanmaydi (eski daftar yuklanadi), kelajak baribir rad */
+  anyPastDate?: boolean;
 };
 
 export type IssueStockResult = { ref: string; count: number; existed: boolean };
@@ -65,9 +67,10 @@ export function parseIssueTarget(v: unknown): IssueTarget | null {
 
 /**
  * Расход sanasi: "YYYY-MM-DD" → harakat vaqti. Bugun (yoki bo'sh) — hozirgi vaqt; o'tgan kun — o'sha kun 12:00
- * (server vaqti Asia/Tashkent; davr chegaralari `stockPeriod` da mahalliy yarim tun). Kelajak va 31 kundan eski — rad.
+ * (server vaqti Asia/Tashkent; davr chegaralari `stockPeriod` da mahalliy yarim tun). Kelajak va 31 kundan eski — rad
+ * (`anyPast` — Excel jurnal uchun eski sana ham qabul qilinadi).
  */
-export function issueDate(s?: string | null, now = new Date()): Date {
+export function issueDate(s?: string | null, now = new Date(), anyPast = false): Date {
   const v = (s ?? "").trim();
   if (!v) return now;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new IssueError("Chiqim sanasi noto'g'ri");
@@ -76,7 +79,7 @@ export function issueDate(s?: string | null, now = new Date()): Date {
   const today = new Date(now); today.setHours(0, 0, 0, 0);
   if (day > today) throw new IssueError("Chiqim sanasi kelajakda bo'lishi mumkin emas");
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
-  if (day < min) throw new IssueError(`Chiqim sanasi ${ISSUE_BACK_DAYS} kundan eski bo'lmasin`);
+  if (!anyPast && day < min) throw new IssueError(`Chiqim sanasi ${ISSUE_BACK_DAYS} kundan eski bo'lmasin`);
   if (day.getTime() === today.getTime()) return now;
   const d = new Date(day); d.setHours(12, 0, 0, 0);
   return d;
@@ -122,7 +125,7 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
     const dup = await byToken(token);
     if (dup) return dup;
   }
-  const date = issueDate(input.date);
+  const date = issueDate(input.date, new Date(), input.anyPastDate === true);
   const note = input.note?.trim() ? input.note.trim().slice(0, 300) : null;
 
   const wanted = new Map<string, number>();
@@ -528,7 +531,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
       row = { ...base, id: m.id, date: m.date, to: `Storno: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note, ref: m.refId };
       termsDate = origDate.get(`${m.refId}|${materialId}`);
     } else if (m.type === "ISSUE") row = { ...base, id: m.id, date: m.date, to: recipient, kind: "issue", toKey: recKey, note: m.note, auto: m.refType === "GoodsReceipt", ...doc };
-    else if (m.type === "BRIGADE_ISSUE") row = { ...base, id: m.id, date: m.date, to: brigade, kind: "brigade", toKey: brKey, auto: m.refType === "BrigadeTask", ...doc };
+    else if (m.type === "BRIGADE_ISSUE") row = { ...base, id: m.id, date: m.date, to: brigade, kind: "brigade", toKey: brKey, auto: m.refType === "BrigadeTask" || m.refType === "GoodsReceipt", ...doc };
     else if (m.type === "BRIGADE_RETURN") row = { ...base, id: m.id, date: m.date, to: `${brigade} — qaytarish`, kind: "return", toKey: brKey };
     else if (m.type === "WRITE_OFF") row = { ...base, id: m.id, date: m.date, to: `Hisobdan chiqarish: ${writeOffReason(m.note)}`, kind: "writeoff", toKey: "writeoff" };
     else if (m.type === "ADJUSTMENT") row = { ...base, id: m.id, date: m.date, to: "Inventarizatsiya (kamomad)", kind: "inventory", toKey: "inventory" };

@@ -95,7 +95,7 @@ const WRONG_CODE = "Kod noto'g'ri yoki muddati tugagan. Bir necha marta xato bo'
  * 2-qadam: kod (yoki raqam yo'q bo'lsa — joriy parol) + yangi login va/yoki parol.
  * Parol almashsa boshqa qurilmalardagi sessiyalar kuyadi, joriy brauzer kirgan holda qoladi.
  */
-export async function confirmSelfChange(userId: string, input: SelfChange): Promise<SelfChangeResult> {
+export async function confirmSelfChange(userId: string, input: SelfChange, opts: { web?: boolean } = {}): Promise<SelfChangeResult> {
   const user = await db.user.findUnique({ where: { id: userId }, select: { login: true, passwordHash: true, ecoUserId: true, isActive: true } });
   if (!user || !user.isActive) return { ok: false, error: "Hisob topilmadi" };
   if (user.ecoUserId) return { ok: false, error: "Siz Insof ECO ilovasi hisobi bilan kirasiz — parolni ilovaning o'zida o'zgartiring" };
@@ -146,7 +146,8 @@ export async function confirmSelfChange(userId: string, input: SelfChange): Prom
         selfService: phone ? "telegram-code" : "current-password",
       });
       // Parol yoki login almashdi — boshqa qurilmalar chiqib ketadi, shu brauzer yangi cookie oladi
-      await revokeSessions(tx, userId, { keepCurrent: true });
+      // Mobil ilova (`opts.web === false`) cookie olmaydi — u yangi token juftligini javobda oladi (`/api/mobile/account/credentials`)
+      await revokeSessions(tx, userId, { keepCurrent: opts.web !== false });
       return true;
     });
     if (!done) return { ok: false, error: WRONG_CODE };

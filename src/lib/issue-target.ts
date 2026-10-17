@@ -27,3 +27,22 @@ export function targetName(g: TargetGroups, key: string): string | null {
   if (m[1] === "e") return g.employees.find((x) => x.id === m[2])?.name ?? null;
   return g.recipients.find((x) => x.id === m[2])?.name ?? null;
 }
+
+/** Nomni solishtirish uchun: kichik harf, bitta probel, tire turlari bir xil («Brigada 1 — Ilxom» = «brigada 1 - ilxom»). */
+export const normTargetName = (s: string) => s.toLowerCase().replace(/[‐-―−]/g, "-").replace(/\s+/g, " ").trim();
+
+/**
+ * Excel'dagi «Kimga» matni → kalit, shu tartibda: brigada (nomi, «nomi — brigadir» yoki brigadir ismi) → xodim → oluvchi.
+ * Topilmasa null (server yangi oluvchi yaratadi).
+ */
+export function matchTarget(g: TargetGroups, name: string): { key: string; kind: "brigade" | "employee" | "recipient"; label: string } | null {
+  const k = normTargetName(name);
+  if (!k) return null;
+  const b = g.brigades.find((x) => normTargetName(x.name) === k || normTargetName(brigadeLabel(x)) === k || (!!x.leader && normTargetName(x.leader) === k));
+  if (b) return { key: `b:${b.id}`, kind: "brigade", label: brigadeLabel(b) };
+  const e = g.employees.find((x) => normTargetName(x.name) === k);
+  if (e) return { key: `e:${e.id}`, kind: "employee", label: e.name };
+  const r = g.recipients.find((x) => normTargetName(x.name) === k);
+  if (r) return { key: `r:${r.id}`, kind: "recipient", label: r.name };
+  return null;
+}

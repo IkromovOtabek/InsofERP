@@ -7,9 +7,9 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
-import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripPickup, type DeliveryQty } from "@/lib/trips";
-import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
-import type { FuelType, TransportExpenseKind, TripIssueKind } from "@/generated/prisma";
+import { createTrip as createTripDomain, reportTripIssue, resolveTripIssue, tripCancelled, tripClosed, tripLoaded, tripPickup, type DeliveryQty } from "@/lib/trips";
+import { addTripCostRecord, dispatchDelivered, dispatchOnRoad } from "@/lib/trip-dispatch";
+import type { TripIssueKind } from "@/generated/prisma";
 import { pushTripStatus, pushTripToEco, pullTripFromEco } from "@/lib/eco/sync";
 import { ecoEnabled } from "@/lib/eco/client";
 
@@ -76,16 +76,11 @@ export async function markLoaded(id: string): Promise<ActionState> {
   return { ok: true };
 }
 
-const DISPATCH_NOTE = "Dispetcher belgiladi (veb)";
-
-/** LOADED → ON_ROAD — dispetcher vebdan (haydovchi ilovasi ishlamaganda). */
+/** LOADED → ON_ROAD — dispetcher vebdan (haydovchi ilovasi ishlamaganda). Qoida — `lib/trip-dispatch.ts` (mobil ham). */
 export async function markOnRoad(id: string): Promise<ActionState> {
   const s = await requireAction("trips", "move");
-  const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
-  if (!cur) return { error: "Reys topilmadi" };
-  if (cur.status !== "LOADED") return { error: "Faqat yuklangan reys yo'lga chiqariladi" };
-  const r = await tripOnRoad(id, s.userId, DISPATCH_NOTE);
-  if (r.error) return { error: r.error };
+  const r = await dispatchOnRoad(id, s.userId);
+  if ("error" in r) return { error: r.error };
   if (r.changed && ecoEnabled()) after(() => pushTripStatus(id, "EN_ROUTE"));
   refresh(id, r.orderId);
   return { ok: true };
@@ -95,16 +90,10 @@ export async function markOnRoad(id: string): Promise<ActionState> {
 export async function markDelivered(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("trips", "move");
   const receiverName = String(fd.get("receiverName") ?? "").trim();
-  if (!receiverName) return { error: "Obyektda kim qabul qilganini yozing" };
-  const cur = await db.trip.findUnique({ where: { id }, select: { status: true } });
-  if (!cur) return { error: "Reys topilmadi" };
-  if (!["LOADED", "ON_ROAD"].includes(cur.status)) return { error: "Faqat yuklangan yoki yo'ldagi reys yetkazildi deb belgilanadi" };
   const q = qtyFrom(fd);
-  const r = await tripDelivered(id, s.userId, receiverName, DISPATCH_NOTE, q);
-  if (r.error) return { error: r.error };
-  if (!r.changed) return { error: "Holat o'zgargan — sahifani yangilang" };
-  // Haydovchi tasdig'i ham, GPS ham yo'q — dispetcher qayta ko'rib, hal qilmaguncha reys yopilmaydi
-  await reportTripIssue(id, s.userId, { kind: "OTHER", source: "LOGISTICS", note: `Yetkazildi dispetcher tomonidan belgilandi (haydovchi ilovasisiz, GPS tasdig'isiz) — qabul qildi: ${receiverName}` }).catch(() => undefined);
+  // Haydovchi tasdig'i ham, GPS ham yo'q — reysga muammo yoziladi (`dispatchDelivered`), hal qilinmaguncha yopilmaydi
+  const r = await dispatchDelivered(id, s.userId, receiverName, q);
+  if ("error" in r) return { error: r.error };
   if (ecoEnabled()) after(() => pushTripStatus(id, "COMPLETED", { note: `Qabul qildi: ${receiverName}`, acceptedM3: q.acceptedQty ?? undefined }));
   refresh(id, r.orderId); revalidatePath("/stock");
   return { ok: true };
@@ -187,30 +176,16 @@ export async function resolveIssue(issueId: string, _prev: ActionState, fd: Form
   return { ok: true };
 }
 
-const FUEL_TYPES = ["DIESEL", "PETROL", "METHANE", "PROPANE"] as const;
-const EXPENSE_KINDS = ["DRIVER_PAY", "ROAD", "REPAIR", "PARTS", "PARKING", "FINE", "WASH", "OTHER"] as const;
-
 /** Reys kartasidan yoqilg'i yoki xarajat qo'shish — transport/haydovchi reysdan olinadi. */
 export async function addTripCost(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("trips", "cost");
-  const t = await db.trip.findUnique({ where: { id }, select: { vehicleId: true, driverId: true, orderId: true } });
-  if (!t) return { error: "Reys topilmadi" };
-  const what = String(fd.get("what") ?? "");
-  try {
-    if (what === "FUEL") {
-      const fuelType = String(fd.get("fuelType") ?? "") as FuelType;
-      await addFuelLog({
-        vehicleId: t.vehicleId, driverId: t.driverId, tripId: id,
-        fuelType: (FUEL_TYPES as readonly string[]).includes(fuelType) ? fuelType : null,
-        liters: numOrNull(fd.get("liters")) ?? 0, pricePerL: numOrNull(fd.get("pricePerL")) ?? 0,
-        odometerKm: numOrNull(fd.get("odometerKm")), station: String(fd.get("station") ?? ""), note: String(fd.get("note") ?? ""),
-      }, s.userId);
-    } else {
-      const kind = what as TransportExpenseKind;
-      if (!(EXPENSE_KINDS as readonly string[]).includes(kind)) return { error: "Xarajat turini tanlang" };
-      await addTransportExpense({ kind, amount: numOrNull(fd.get("amount")) ?? 0, tripId: id, note: String(fd.get("note") ?? "") }, s.userId);
-    }
-  } catch (e) { return { error: (e as Error).message }; }
-  refresh(id, t.orderId);
+  const r = await addTripCostRecord(id, {
+    what: String(fd.get("what") ?? ""), fuelType: String(fd.get("fuelType") ?? ""),
+    liters: numOrNull(fd.get("liters")), pricePerL: numOrNull(fd.get("pricePerL")),
+    odometerKm: numOrNull(fd.get("odometerKm")), station: String(fd.get("station") ?? ""),
+    amount: numOrNull(fd.get("amount")), note: String(fd.get("note") ?? ""),
+  }, s.userId);
+  if ("error" in r) return { error: r.error };
+  refresh(id, r.orderId);
   return { ok: true };
 }

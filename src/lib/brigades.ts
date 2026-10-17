@@ -104,6 +104,32 @@ export async function clearBrigadeLeader(employeeId: string, userId: string, bri
   return { freed: list.map((b) => b.name).join(", ") };
 }
 
+/** Brigada rekvizitlari (veb «Brigadalar» formasi va mobil «Brigadani tahrirlash» — bir xil maydonlar). */
+export type BrigadeData = { name: string; leaderId: string | null; phone: string | null; note: string | null };
+
+/**
+ * Brigada ochish (`id` = null) yoki tahrirlash — yagona joy (veb `brigades/actions.ts` ham, mobil ilova ham).
+ * Ruxsat (`tasks` → `brigade`) va `revalidatePath` — chaqiruvchida.
+ */
+export async function saveBrigade(id: string | null, d: BrigadeData, userId: string): Promise<{ error: string } | { ok: true; id: string }> {
+  // Brigadir — mavjud va ishlayotgan xodim (eskirgan id FK xatosi — 500 berardi; bo'shagan xodim brigadir bo'lmasin)
+  if (d.leaderId && !(await db.employee.count({ where: { id: d.leaderId, isActive: true, firedAt: null } }))) {
+    return { error: "Brigadir topilmadi yoki ishdan bo'shagan — ro'yxatdan qayta tanlang" };
+  }
+  const saved = await db.$transaction(async (tx) => {
+    if (id) {
+      const before = await tx.brigade.findUniqueOrThrow({ where: { id } });
+      const after = await tx.brigade.update({ where: { id }, data: d });
+      await audit(tx, userId, "UPDATE", "Brigade", id, before, after);
+      return after.id;
+    }
+    const b = await tx.brigade.create({ data: d });
+    await audit(tx, userId, "CREATE", "Brigade", b.id, undefined, b);
+    return b.id;
+  });
+  return { ok: true, id: saved };
+}
+
 /** Brigadir tanlash ro'yxati uchun — faol brigadalar, brigadiri bilan. */
 export const activeBrigades = () =>
   db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true } });

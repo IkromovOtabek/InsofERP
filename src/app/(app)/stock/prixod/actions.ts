@@ -31,6 +31,8 @@ const schema = z.object({
   recipientName: opt,
   autoIssueToId: opt,
   autoIssueToName: opt,
+  // «Kimga» (darhol chiqim): "b:<id>" brigada | "e:<id>" xodim | "r:<id>" oluvchi; bo'sh — skladda qoladi
+  autoIssueKey: opt,
   address: opt,
   carrier: opt,
   loadedFrom: opt,
@@ -116,7 +118,7 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
     res = await createGoodsReceipt({
       supplierId: sup.id, warehouseId: d.warehouseId, date: d.date, payment: d.payment,
       waybillNo: d.waybillNo, recipientId: rec.id, address: d.address, buyerId: d.buyerId, purpose: d.purpose, note: d.note,
-      carrier: d.carrier, loadedFrom: d.loadedFrom, autoIssueToId: autoTo.id,
+      carrier: d.carrier, loadedFrom: d.loadedFrom, autoIssueToId: autoTo.id, autoIssueKey: d.autoIssueKey,
       cashAccountId: d.cashAccountId, clientToken: receiptTokenOf(fd.get("clientToken")),
       items: items.map(({ materialId, qty, price, deliveryCost, vatRate }) => ({ materialId, qty, price, deliveryCost, vatRate })),
     }, { userId: s.userId, role: s.role });
@@ -126,7 +128,7 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   if (!res.existed) {
     revalidatePath("/stock"); revalidatePath("/stock/prixod"); revalidatePath("/receipts"); revalidatePath("/sales"); revalidatePath("/orders/new");
     revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/suppliers");
-    if (autoTo.id) revalidatePath("/stock/rasxod");
+    if (autoTo.id || d.autoIssueKey) { revalidatePath("/stock/rasxod"); revalidatePath("/brigades"); }
   }
   // Jurnal shu kirim ko'rinadigan davrda ochiladi: kirim oyining 1-kunidan bugungacha (kirim kelajak sanada bo'lsa — o'sha kungacha)
   const today = isoDate();

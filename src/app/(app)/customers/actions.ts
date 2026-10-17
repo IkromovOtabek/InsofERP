@@ -3,15 +3,11 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
-import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, type ActionState } from "@/lib/action";
 import { syncCustomerLater, syncCustomersLater } from "@/lib/eco/customers";
-import { defaultCreditLimit } from "@/lib/finance";
 import { importParties, type PartyRow } from "@/lib/import-parties";
-import { parseInn } from "@/lib/inn";
-import { money } from "@/lib/format";
+import { saveCustomerLib } from "@/lib/customer-admin";
 
 const schema = z.object({
   name: zStr("Nomi to'ldirilishi shart"),
@@ -27,67 +23,11 @@ export async function saveCustomer(id: string | null, _prev: ActionState, fd: Fo
   const s = await requireAction("customers", "edit");
   const r = parseForm(schema, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
-  const cur = id ? await db.customer.findUnique({ where: { id } }) : null;
-  if (id && !cur) return { error: "Mijoz topilmadi" };
-
-  // INN: 9 (STIR) yoki 14 (JSHSHIR) raqam. Tahrirda o'zgartirilmagan eski qiymat qayta tekshirilmaydi
-  if (!(cur && d.inn === cur.inn)) {
-    const inn = parseInn(d.inn);
-    if (inn.error !== undefined) return { error: inn.error };
-    d.inn = inn.inn;
-  }
-
-  // Forma ochilgandagi limit (`creditLimitWas`). Xodim limitga tegmagan bo'lsa, u umuman yozilmaydi: shu orada direktor
-  // (Sozlamalar → Limitlar) yoki buxgalteriya o'zgartirgan limit eski forma bilan orqaga qaytib ketmasin.
-  const wasRaw = String(fd.get("creditLimitWas") ?? "").trim();
-  const was = cur && wasRaw !== "" && Number.isFinite(Number(wasRaw)) ? Number(wasRaw) : null;
-  const limitTouched = !(cur && was !== null && Math.abs(d.creditLimit - was) < 0.005);
-  if (!limitTouched) d.creditLimit = Number(cur!.creditLimit);
-  else if (cur && was !== null && Math.abs(Number(cur.creditLimit) - was) >= 0.005) {
-    return { error: `Kredit limiti shu orada boshqa joyda o'zgartirilgan (hozir ${money(Number(cur.creditLimit))}). Sahifani yangilab, qayta kiriting` };
-  }
-
-  // Kredit limitni faqat buxgalteriya/finance/direktor o'zgartira oladi. Yangi mijozda ham: aks holda sotuvchi
-  // mijozni 10 mlrd limit bilan ochib, qora ro'yxat tekshiruvini chetlab o'tardi. Yangi mijozga — standart limit
-  // (direktor Sozlamalar → Limitlar'da belgilaydi), formadan kelgan qiymat hisobga olinmaydi.
-  if (!["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)) {
-    if (cur) {
-      if (Number(cur.creditLimit) !== d.creditLimit) return { error: "Kredit limitni faqat Buxgalteriya, Finance yoki Direktor o'zgartira oladi" };
-    } else {
-      d.creditLimit = await defaultCreditLimit();
-    }
-  }
-
-  let savedId = id;
-  try {
-    await db.$transaction(async (tx) => {
-      if (id) {
-        // Limit o'zgarsa — zayavka qabul qilish va Limitlar jadvali bilan bir xil `credit:` navbati; limitga tegilmagan bo'lsa
-        // uni yozmaymiz (o'qish va yozish orasida boshqa joyda o'zgargan limit saqlanib qolsin)
-        if (limitTouched) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"credit:" + id}))`;
-        const before = await tx.customer.findUniqueOrThrow({ where: { id } });
-        if (limitTouched && was !== null && Math.abs(Number(before.creditLimit) - was) >= 0.005) throw new Error("LIMIT_CONFLICT");
-        const { creditLimit, ...rest } = d;
-        const after = await tx.customer.update({ where: { id }, data: limitTouched ? { ...rest, creditLimit } : rest });
-        await audit(tx, s.userId, "UPDATE", "Customer", id, before, after);
-        // Limit o'zgarishi alohida yozuv: kim, qachon, qanchadan qanchaga — tekshiruvda tez topilsin
-        if (Number(before.creditLimit) !== Number(after.creditLimit)) {
-          await audit(tx, s.userId, "UPDATE", "CustomerCreditLimit", id, { creditLimit: before.creditLimit, role: s.role }, { creditLimit: after.creditLimit, role: s.role });
-        }
-      } else {
-        const c = await tx.customer.create({ data: d });
-        await audit(tx, s.userId, "CREATE", "Customer", c.id, undefined, c);
-        savedId = c.id;
-      }
-    });
-  } catch (e) {
-    if (String(e).includes("Unique constraint")) return { error: "Bu INN bilan mijoz allaqachon bor" };
-    if (String(e).includes("LIMIT_CONFLICT")) return { error: "Kredit limiti shu orada boshqa joyda o'zgartirilgan. Sahifani yangilab, qayta kiriting" };
-    throw e;
-  }
+  // Qoida (INN, limit to'qnashuvi, kim limitni o'zgartiradi, audit) — `lib/customer-admin.ts`; mobil ham shuni chaqiradi
+  const res = await saveCustomerLib(id, r.data, { userId: s.userId, role: s.role }, String(fd.get("creditLimitWas") ?? ""));
+  if (!res.ok) return { error: res.error };
   // Ilovaga ham yetsin (nom/telefon/limit) — telefoni ilovada bo'lsa hisobi o'sha yerda ulanadi
-  if (savedId) syncCustomerLater(savedId);
+  syncCustomerLater(res.id);
   revalidatePath("/customers");
   redirect("/customers");
 }

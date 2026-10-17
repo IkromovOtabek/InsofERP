@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { runHrAction } from "./hr";
+import { isKadrAction } from "./kadr-access";
+import { runKadrAction } from "./kadr-extra";
+import { DIREKTOR_ACTION_ROLES } from "./direktor-extra-access";
+import { direktorAction } from "./direktor-extra";
 import { splitRef } from "./director";
 import { after } from "next/server";
 import { db } from "@/lib/db";
-import { orderCancel, orderConfirm, orderUnblock } from "@/lib/orders";
+import { orderConfirm, orderUnblock } from "@/lib/orders";
+import { runSotuvAction } from "./sotuv-extra";
 import { reportTripIssue, resolveTripIssue, tripArrival, tripArrived, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripReturned, tripUnloading } from "@/lib/trips";
 import { addFuelLog } from "@/lib/logistics-costs";
 import type { TripIssueKind } from "@/generated/prisma";
@@ -48,6 +53,11 @@ import { setAttendanceAnywhere } from "@/lib/self-attendance";
 import { receivePaymentRequest } from "@/lib/payment-requests";
 import { driverEmployeeId, myBrigadeIds, ListError } from "./list";
 import { arendaAction } from "./arenda";
+import { SKLAD_ACTIONS } from "./sklad-extra-access";
+import { runSkladAction } from "./sklad-extra";
+import { moliyaAction } from "./moliya-extra";
+import { SEX_EXTRA_ACTIONS, sexExtraAction } from "./sex-extra";
+import { LOGI_ACTIONS, runLogiAction } from "./logistika-extra";
 
 /**
  * Mobil ilovadagi tugmalarning ijrosi.
@@ -185,7 +195,21 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
   if (["att.present", "att.face", "att.absent", "att.status", "att.checkout"].includes(action)) await assertOwnMember(user, id);
 
   // ── Otdel kadr: ariza qarori / qaytarib olish, ish haqi vedomosti (`./hr.ts`) ──
-  if (action.startsWith("hrreq.") || action.startsWith("payroll.") || action.startsWith("wtask.") || ["checklist.save", "course.take", "onb.steps", "interview.result", "cand.move"].includes(action)) return { ok: true, message: await runHrAction(user, action, id, payload) };
+  if (action.startsWith("hrreq.") || action.startsWith("payroll.") || action.startsWith("wtask.") || ["checklist.save", "course.take", "onb.steps", "interview.result", "cand.move", "survey.answer", "fb.reply", "fb.hrreply", "fb.resolve"].includes(action)) return { ok: true, message: await runHrAction(user, action, id, payload) };
+  // ── Otdel kadr kabineti: xodim kartasi, lavozim, grafik, KPI, yollash, moslashuv, kurs, so'rovnoma (`./kadr-extra.ts`) ──
+  if (isKadrAction(action)) return { ok: true, message: await runKadrAction(user, action, id, payload) };
+  // ── Direktor kabineti: kirish arizasi, hisobni o'chirish, ilova foydalanuvchisi ERP ruxsati, Telegram kodi (`./direktor-extra.ts`) ──
+  if (Object.hasOwn(DIREKTOR_ACTION_ROLES, action)) return direktorAction(user, action, id, payload);
+  // ── Ishlab chiqarish kabineti: brigada tayinlash, zames storno, retsept versiyasi, brigada tahriri, brak (`./sex-extra.ts`) ──
+  if (SEX_EXTRA_ACTIONS.has(action)) return { ok: true, message: await sexExtraAction(user, action, id, payload) };
+  // ── Logistika kabineti: dispetcher bosqichlari, xarajat, transport, obyekt, haydovchi kartasi (`./logistika-extra.ts`) ──
+  if (LOGI_ACTIONS.has(action)) return { ok: true, message: await runLogiAction(user, action, id, payload) };
+  // ── Sklad / snabjeniye: storno, brigada skladi, «Kimga», narx, xomashyo o'chirish, rekvizitlar, ta'minot hujjati (`./sklad-extra.ts`) ──
+  if (SKLAD_ACTIONS.has(action)) return runSkladAction(user, action, id, payload);
+  // ── Sotuv kabineti: sabab bilan bekor qilish, sklad zayavkasi, kafolat, shartnoma, mijoz, taklif, e-commerce, marketing (`./sotuv-extra.ts`).
+  //    `null` — oddiy yo'l (masalan mijoz zayavkasini qabul qilish quyidagi `order.confirm`) ──
+  const sotuv = await runSotuvAction(user, action, id, payload);
+  if (sotuv) return sotuv;
 
   switch (action) {
     // ── Egasi qarori (direktor "Muammolar") — id: masala kaliti ──
@@ -208,11 +232,6 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       const r = await orderUnblock(id, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: "Blok ochildi" };
-    }
-    case "order.cancel": {
-      const r = await orderCancel(id, user.id);
-      if (r.error) fail(r.error);
-      return { ok: true, message: "Zayavka bekor qilindi" };
     }
 
     // ── Reys ── (holat ECO'ga ham uzatiladi — haydovchi ilovasida bir xil ko'rinadi)
@@ -302,7 +321,10 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "trip.resolve": {
       const resolution = textOf(payload, "resolution");
       if (!resolution) fail("Qanday hal qilinganini yozing");
-      const open = await db.tripIssue.findMany({ where: { tripId: id, resolvedAt: null }, select: { id: true } });
+      // Bitta muammo (forma `issueId`, veb kabi) yoki hammasi ("all" / eski ilova — maydonsiz)
+      const one = textOf(payload, "issueId");
+      const open = await db.tripIssue.findMany({ where: { tripId: id, resolvedAt: null, ...(one && one !== "all" ? { id: one } : {}) }, select: { id: true } });
+      if (!open.length) fail("Ochiq muammo topilmadi");
       for (const i of open) await resolveTripIssue(i.id, user.id, resolution);
       return { ok: true, message: `${open.length} ta muammo yopildi` };
     }
@@ -635,7 +657,17 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "arenda.open-month":
     case "arenda.shop.toggle":
     case "arenda.charge":
+    case "arenda.shop.edit":
       return arendaAction(user, action, id, payload);
+
+    // ── Moliya: to'lov storno / bog'lash, kassa yozuvini o'chirish, kirimni to'lash, schyot bekor, boshlang'ich qarz — `./moliya-extra.ts` ──
+    case "payment.storno":
+    case "payment.link":
+    case "cashflow.delete":
+    case "receipt.pay":
+    case "invoice.cancel":
+    case "supplier.opening.pay":
+      return moliyaAction(user, action, id, payload);
 
     // ── Pul qabul qilish (zayavka bosh to'lovi) — qoida `lib/payment-requests.ts` → `addPayment` da:
     //    usul ↔ hisob turi, qolgan summadan oshmaslik, so'rov ochiqligi (mijoz qulfi ostida) ──

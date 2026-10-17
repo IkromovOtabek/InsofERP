@@ -28,6 +28,7 @@ import { ownerPeriod } from "./owner-period";
 import { ownerCached } from "./owner-cache";
 import { periodId } from "./sex";
 import { hasDashDetail } from "./dash-detail";
+import { financeExtraCards } from "./moliya-extra";
 import { brigadierHome } from "./brigadier";
 import { gpsStale, toFleet } from "./fleet";
 import { logisticsSettings } from "@/lib/logistics";
@@ -36,6 +37,11 @@ import { arendaHome } from "./arenda";
 import { lineTotal } from "@/lib/receipt-vat";
 import type { MobileUser } from "./auth";
 import type { Role } from "@/generated/prisma";
+import { todayLoadSections } from "./sex-extra";
+import { DIREKTOR_LIST_ICON, direktorHomeSections } from "./direktor-extra";
+import { KADR_ICON } from "./kadr-access";
+import { kadrHome } from "./kadr-extra";
+import { logisticsHomeSections, mechanicServiceSection } from "./logistika-extra";
 
 /**
  * Mobil ilova bosh ekrani — rolga qarab. Server nimani ko'rsatishni hal qiladi,
@@ -247,6 +253,12 @@ const LIST_ICON: Record<string, string> = {
   cashflow: "swap-vertical", payments: "cash", employees: "people",
   approvals: "circle-check", activity: "activity", kirim: "wrench", payreq: "hand-coins",
   "arenda-jurnal": "swap-vertical", "arenda-shops": "store",
+  products: "package", capacity: "factory", "brig-stock": "hard-hat", recipients: "users",
+  ...DIREKTOR_LIST_ICON,
+  ...KADR_ICON,
+  // Logistika kabineti (`./logistika-extra.ts`)
+  "logi-orders": "clipboard-list", "logi-day": "calendar-days", vehicles: "truck", fuel: "droplets", expenses: "wallet",
+  waybills: "file-text", deliveries: "package-check", "logi-report": "chart-column", sites: "map-pin",
 };
 const SUPPLY_TONE: Record<string, Tone> = { NEW: "info", PRICED: "warning", APPROVED: "warning", FUNDED: "brand", RECEIVED: "success", REJECTED: "danger" };
 
@@ -582,6 +594,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.status === "NEW" ? "info" : "warning" })) },
         { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },
       );
+      // Veb ishlab chiqarish bosh sahifasidagi «Bugun yuklanadigan mahsulot» — birinchi (`./sex-extra.ts`)
+      sections.unshift(...(await todayLoadSections()));
       break;
     }
 
@@ -642,6 +656,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       fleet = await toFleet(d, live);
       const waiting = d.orders.filter((o) => o.remaining > 0.001 && ["CONFIRMED", "PLANNED", "ASSIGNED", "LOADING", "ON_ROAD"].includes(o.status));
       if (waiting.length) sections.push({ title: "Transport kutayotgan buyurtmalar", empty: "", target: "orders", rows: waiting.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.deliveryTime ?? "soatsiz"} · ${o.address}`, right: `${o.remaining} ${o.unit === "m3" ? "m³" : o.unit}`, tone: o.late ? "danger" as Tone : "warning" as Tone })) });
+      // Veb logistika paneli qolgan bloklari: transport holati / bandlik, bugungi haydovchilar, 14 kun, nasoslar, boshqa kun
+      sections.push(...logisticsHomeSections(d));
       break;
     }
 
@@ -729,6 +745,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "in", label: "Bugungi kirim", value: short(sum(inToday._sum.amount)), tone: "brand", icon: "arrow-down-circle" },
         { key: "out", label: "Bugungi chiqim", value: short(sum(outToday._sum.amount)), tone: "warning", icon: "arrow-up-circle" },
       );
+      // Debitorka, kreditorka, 7 kunlik kassa prognozi (veb BI «Moliya») — `./moliya-extra.ts`; xato bosh sahifani buzmaydi
+      cards.push(...await financeExtraCards().catch((e) => { console.error("[mobile-home] finance", e); return []; }));
       // Vebdagi Kirim-Chiqim tepasidagi "Ta'minot to'lovlari" kartasi
       const fundWait = await db.supplyRequest.count({ where: { status: "APPROVED" } });
       cards.push({ key: "supply", label: "Ta'minot to'lovi", value: String(fundWait), hint: fundWait ? "tasdiq kutmoqda" : "navbat bo'sh", tone: fundWait ? "warning" : "success", icon: "clipboard-list", open: { key: "supply" } });
@@ -761,6 +779,10 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         { key: "brigadiers", label: "Brigadir", value: String(brigades.length - headless), hint: headless ? `${headless} brigada brigadirsiz` : `${brigades.length} brigada`, tone: headless ? "warning" : "success", icon: "construct", open: { key: "brigades" } },
         { key: "inactive", label: "Nofaol", value: String(inactive), tone: inactive ? "warning" : "info", icon: "person-remove", open: { key: "dash", id: "inactive.month" } },
       );
+      // Veb `dashboard/hr-home.tsx`: bugungi davomat, tug'ilgan kunlar, muddati yaqin guvohnoma/shartnoma (`./kadr-extra.ts`)
+      const kh = await kadrHome();
+      cards.push(...kh.cards);
+      sections.push(...kh.sections);
       sections.push(
         // Qator — brigada kartochkasi (a'zolar, brigadir, topshiriqlar); ilgari `target` yo'q edi va bosilmasdi
         { title: "Brigadalar", empty: "Brigada yo'q", target: "brigades", rows: brigades.map((b) => ({ id: b.id, title: b.name, subtitle: b.leader ? `Brigadir: ${b.leader.fullName}${b.leader.phone ? ` · ${b.leader.phone}` : ""}` : "Brigadir biriktirilmagan — Xodimlar kartochkasidan tanlang", right: `${b.tasks.length} topshiriq`, tone: b.leader ? "success" : "warning" })) },
@@ -828,6 +850,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { createdById: user.id, status: { in: ["NEW", "APPROVED"] } } }))) {
         sections.push(await kirimSection("Mening so'rovlarim", "", ["NEW", "APPROVED"], user.id));
       }
+      // Texnik xizmat muddati yaqin / o'tgan texnika (veb `mechanic-home.tsx`) — qator transport kartasini ochadi
+      if (listAllowed(user, "vehicles")) { const due = await mechanicServiceSection(); if (due) sections.unshift(due); }
       break;
     }
 
@@ -840,6 +864,9 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       break;
     }
   }
+
+  // Direktor: Egasi dashbordining batafsil bloklari; moliya/buxgalteriya: BI tahlil (`./direktor-extra.ts`). Xato bosh sahifani buzmaydi
+  sections.push(...await direktorHomeSections(user).catch((e) => { console.error("[mobile-home] direktor-extra", e); return []; }));
 
   // Sklad jurnallari bugun: sklad/snabjeniyeda — ro'yxatlar boshida, direktorda — oxirida. Xato bosh sahifani buzmaydi.
   if (SKLAD_TODAY_ROLES.includes(user.role) && listAllowed(user, "prixod") && listAllowed(user, "rasxod")) {

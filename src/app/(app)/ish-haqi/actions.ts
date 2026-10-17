@@ -8,7 +8,7 @@ import { getSession, requireAction } from "@/lib/auth";
 import { notSignedIn } from "@/lib/access-denied";
 import { audit } from "@/lib/audit";
 import { parseForm, type ActionState } from "@/lib/action";
-import { approveRun, calculateRun, cancelRun, payRun, returnRun, submitRun } from "@/lib/hr/payroll";
+import { approveRun, calculateRun, cancelRun, payRun, recalculateRun, returnRun, submitRun } from "@/lib/hr/payroll";
 import type { PayrollKind } from "@/generated/prisma";
 
 /* Ish haqi vedomostlari — qoidalar `lib/hr/payroll.ts` da (veb va mobil bir xil). */
@@ -37,9 +37,7 @@ export async function calculateAction(_prev: ActionState, fd: FormData): Promise
 
 export async function recalcAction(id: string): Promise<ActionState> {
   const s = await requireAction("payroll", "calc");
-  const run = await db.payrollRun.findUnique({ where: { id }, select: { month: true, kind: true } });
-  if (!run || run.kind === "EXTRA") return { error: "Bu vedomost qayta hisoblanmaydi" };
-  const r = await calculateRun(run.month, run.kind, s);
+  const r = await recalculateRun(id, s);
   refresh(id);
   return asState(r);
 }

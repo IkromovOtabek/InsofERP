@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { ALL_STAFF } from "./hr-access";
+import { KADR_CREATE, KADR_CREATE_PERM } from "./kadr-access";
+import { kadrAriza, kadrCreate, kadrForm, kadrRequestForm } from "./kadr-extra";
 import { createRequestMobile, requestForm } from "./hr";
 import { createTaskMobile, taskForm } from "./hr-work";
+import { createFeedbackMobile, feedbackForm } from "./hr-voice";
 import { driverPositionNames } from "@/lib/positions";
 import { db } from "@/lib/db";
 import { productCatalog, groupPath } from "@/lib/product-catalog";
@@ -40,6 +43,17 @@ import { VEHICLE_TYPE } from "@/lib/logistics";
 import { dataUrlFile } from "@/lib/procurement";
 import type { Role } from "@/generated/prisma";
 import { arendaChiqimForm, arendaCreate, arendaKirimForm, arendaShopForm } from "./arenda";
+import { SKLAD_CREATE_PERM, SKLAD_CREATE_ROLES, SKLAD_FORMS } from "./sklad-extra-access";
+import { prixodExtraFields, skladCreate, skladForm } from "./sklad-extra";
+import { payrollCreate, payrollForm } from "./moliya-extra";
+import { batchForm, createBatchMobile } from "./sex-extra";
+import { LOGI_CREATE } from "./logistika-access";
+import { LOGI_FORMS, logiCreate, logiForm, plannedAtOf, plannedExtra, plannedFields } from "./logistika-extra";
+import { saveBrigade } from "@/lib/brigades";
+import { SOTUV_CREATE_PERM, SOTUV_CREATE_ROLES } from "./sotuv-access";
+import { applyFormDefaults, leadOrderPrefill, offerForm, sotuvCreate, splitFormKey, stockOrderForm } from "./sotuv-extra";
+import { withNds } from "@/lib/nds";
+import { saveContractFile } from "@/lib/uploads";
 
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -105,6 +119,10 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   // Xomashyo spravochnigiga yangi nom — ta'minot so'rovidagi xomashyo tanlovining "+" tugmasi ham shu kalitga yuboradi
   materials: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Yangi xomashyo", label: "Xomashyo qo'shish" },
   brigades: { roles: ["SUPERVISOR", "PRODUCTION", "HR"], title: "Yangi brigada", label: "Brigada ochish" },
+  // Sklad (zaxira) zayavkasi va tijorat taklifi (`./sotuv-access.ts`) — rolning "+" tugmasi o'zgarmasin deb shu yerda
+  ...SOTUV_CREATE_ROLES,
+  // Zames (partiya) — veb `/production/new` (ishlab chiqarish; qoida `lib/production-batch.ts`, `./sex-extra.ts`)
+  production: { roles: ["PRODUCTION"], title: "Yangi zames", label: "Zames yozish" },
   // Kassa: veb `/payments` va `/cashflow` formalari bilan bir xil qoida (`lib/payments.ts`, `lib/cash-entry.ts`,
   // `lib/cash-transfer.ts`). Rol ro'yxati — kim formani ko'rishi mumkinligi; aniq ruxsat `CREATE_PERM` (strict) da.
   payments: { roles: ["CASHIER", "ACCOUNTING", "FINANCE"], title: "To'lov qabul qilish", label: "To'lov qabul qilish" },
@@ -124,10 +142,20 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   "arenda-kirim": { roles: ["SECRETARY"], title: "Arenda kirimi", label: "Arenda kirimi" },
   "arenda-chiqim": { roles: ["SECRETARY"], title: "Arenda chiqimi", label: "Arenda chiqimi" },
   "arenda-shop": { roles: ["SECRETARY"], title: "Yangi do'kon", label: "Do'kon qo'shish" },
+  // Logistika: transport, zapravka, xarajat, obyekt (`./logistika-extra.ts`, qoida `lib/logistics-admin.ts`)
+  ...Object.fromEntries(Object.entries(LOGI_CREATE).map(([k, v]) => [k, { roles: v.roles, title: v.title, label: v.label }])),
   // Xodim arizasi (ta'til, kasallik, avans…) — har bir xodim o'zi uchun (`./hr.ts`). Oxirida: rolning "+" tugmasi o'zgarmasin
   ariza: { roles: ALL_STAFF, title: "Ariza yuborish", label: "Ariza yuborish" },
   // Vazifa — o'ziga yoki (huquqi bo'lsa) boshqa xodimga (`lib/hr/tasks.ts`)
   vazifa: { roles: ALL_STAFF, title: "Yangi vazifa", label: "Vazifa yozish" },
+  // Otdel kadrga murojaat (HR chat) — anonim bo'lishi mumkin (`lib/hr/voice.ts`)
+  murojaat: { roles: ALL_STAFF, title: "Otdel kadrga murojaat", label: "Murojaat yozish" },
+  // Ish haqi vedomosti — oy + tur bo'yicha hisoblash (veb «Ish haqi» → «Hisoblash», `lib/hr/payroll.ts` → `calculateRun`); `./moliya-extra.ts`
+  "ish-haqi": { roles: ["HR", "ACCOUNTING"], title: "Ish haqini hisoblash", label: "Ish haqini hisoblash" },
+  // Otdel kadr kabineti: xodim qo'shish, jarima/bonus, vakansiya, nomzod, ommaviy xabar, kechikish jarimasi (`./kadr-extra.ts`)
+  ...KADR_CREATE,
+  // Sklad: tayyor mahsulot qo'shish, inventarizatsiya, hisobdan chiqarish, «Kimga» oluvchisi (`./sklad-extra.ts`)
+  ...SKLAD_CREATE_ROLES,
 };
 
 /** Mexanik so'rovi formalari — bosh sahifadagi "+" va tezkor amallar to'rida ko'rsatilmaydi (ilova o'z ekranidan ochadi). */
@@ -139,6 +167,7 @@ export const KIRIM_FORMS: ReadonlySet<string> = new Set(["kirim-transport", "kir
 // `strict` — vebdagi `requireAction(module, action)` bilan aynan bir xil: `canDo` (rol standarti + direktor ruxsati).
 // Masalan Moliya (FINANCE) vebda to'lov qabul qilmaydi — ilovada ham, direktor `payments: create` bermaguncha.
 const CREATE_PERM: Record<string, { module: string; action?: string; strict?: boolean }> = {
+  ...KADR_CREATE_PERM,
   orders: { module: "orders", action: "create" },
   trips: { module: "trips", action: "create" },
   supply: { module: "taminot" },
@@ -146,6 +175,7 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
   suppliers: { module: "stock", action: "suppliers" },
   materials: { module: "stock", action: "import", strict: true }, // veb «Xomashyo qo'shish» (`importMaterials`) bilan bir xil
   brigades: { module: "tasks", action: "brigade" },
+  production: { module: "production", action: "batch", strict: true },
   payments: { module: "payments", action: "create", strict: true },
   cashflow: { module: "cashflow", action: "create", strict: true },
   transfer: { module: "cashflow", action: "transfer", strict: true },
@@ -157,6 +187,11 @@ const CREATE_PERM: Record<string, { module: string; action?: string; strict?: bo
   "arenda-kirim": { module: "arenda", action: "create", strict: true },
   "arenda-chiqim": { module: "arenda", action: "create", strict: true },
   "arenda-shop": { module: "arenda", action: "shops", strict: true },
+  // Logistika — veb `requireAction("logistika", …)` bilan aynan bir xil
+  ...Object.fromEntries(Object.entries(LOGI_CREATE).map(([k, v]) => [k, { ...v.perm, strict: true }])),
+  "ish-haqi": { module: "payroll", action: "calc", strict: true },
+  ...SKLAD_CREATE_PERM,
+  ...SOTUV_CREATE_PERM,
 };
 
 export const canCreate = (user: MobileUser, key: string) => {
@@ -181,18 +216,30 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 // ───────────────────────── Forma tavsifi ─────────────────────────
 
-export async function mobileForm(user: MobileUser, key: string): Promise<CreateForm> {
+/**
+ * Kalit oldindan to'ldirish parametrlarini olib kelishi mumkin: `orders~customerId=<id>~lead=<id>` (kartochkadagi
+ * «Zayavka ochish»). Forma asosiy kalit bilan quriladi, parametr — shu nomli maydonning boshlang'ich qiymati (`./sotuv-extra.ts`).
+ */
+export async function mobileForm(user: MobileUser, rawKey: string): Promise<CreateForm> {
+  const { key, defaults } = splitFormKey(rawKey);
+  return applyFormDefaults(await formOf(user, key, defaults), defaults);
+}
+
+async function formOf(user: MobileUser, key: string, defaults: Record<string, string>): Promise<CreateForm> {
   if (!Object.hasOwn(CREATE_ROLES, key)) throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
   if (!canCreate(user, key)) throw new ListError("FORBIDDEN", "Bu hujjatni ochishga ruxsatingiz yo'q", 403);
   switch (key) {
     case "prixod": {
-      const f = await prixodForm();
+      const f = await prixodForm(user);
       return scanEnabled() && scanAllowed(user)
         ? { ...f, scan: { path: "/scan/receipt", label: "Nakladnoyni skanerlash", hint: "Suratga oling — yetkazuvchi, TTN va xomashyo qatorlari o'zi to'ldiriladi, siz tekshirasiz" } }
         : f;
     }
     case "rasxod": return rasxodForm();
-    case "orders": return orderForm(user);
+    case "production": return batchForm();
+    case "orders": return orderForm(user, defaults);
+    case "stock-order": return stockOrderForm();
+    case "offers": return offerForm(defaults);
     case "trips": return tripForm();
     case "supply": return supplyForm(user);
     case "customers": return customerForm();
@@ -204,11 +251,17 @@ export async function mobileForm(user: MobileUser, key: string): Promise<CreateF
     case "kirim-transport": return kirimTransportForm();
     case "kirim-zavod": return kirimZavodForm();
     case "kirim-boshqa": return kirimBoshqaForm();
-    case "ariza": return requestForm();
+    // Otdel kadr — boshida «Kim uchun» (xodim nomidan ariza, veb `createRequestForEmployee`)
+    case "ariza": return kadrRequestForm(user, requestForm());
     case "vazifa": return taskForm(user);
+    case "murojaat": return feedbackForm();
     case "arenda-kirim": return arendaKirimForm();
     case "arenda-chiqim": return arendaChiqimForm();
     case "arenda-shop": return arendaShopForm();
+    case "vehicles": case "fuel": case "expenses": case "sites": return logiForm(user, key);
+    case "ish-haqi": return payrollForm();
+    case "products": case "inventory": case "writeoff": case "recipient": return skladForm(user, key);
+    case "employees": case "jarima-bonus": case "vakansiyalar": case "nomzodlar": case "xabar": case "davomat-sozlama": return kadrForm(user, key);
     default: return brigadeForm();
   }
 }
@@ -376,7 +429,7 @@ async function stockBalances(): Promise<Map<string, number>> {
  * narxi qolib ketardi. O'rniga «Xomashyo» izohida «Dona narxi» (bo'lmasa «≈» o'rtacha tannarx) ko'rinadi, «Narx» bo'sh
  * qoldirilsa server saqlashda aynan shu narxni oladi (`mobileCreate` → `prixod`); yozilgan narx (0 ham) o'zgarmaydi.
  */
-async function prixodForm(): Promise<CreateForm> {
+async function prixodForm(user: MobileUser): Promise<CreateForm> {
   const [suppliers, warehouse, materials, recipients, bal] = await Promise.all([
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, vatPayer: true } }),
     skladField(),
@@ -384,7 +437,7 @@ async function prixodForm(): Promise<CreateForm> {
     activeRecipients(),
     stockBalances(),
   ]);
-  const prices = await issuePrices(materials.map((m) => m.id));
+  const [prices, extra] = await Promise.all([issuePrices(materials.map((m) => m.id)), prixodExtraFields(user, recipients)]);
   return {
     key: "prixod", title: "Yangi kirim", submitLabel: "Kirimni saqlash",
     fields: [
@@ -402,6 +455,8 @@ async function prixodForm(): Promise<CreateForm> {
       { name: "recipientId", label: "Kimga", type: "select", options: recipients.map((r) => ({ value: r.id, label: r.name })), hint: "Tanlanmasa — skladga" },
       { name: "address", label: "Manzil", type: "text", placeholder: "Qayerdan / qayerga yetkazildi" },
       { name: "purpose", label: "Maqsad", type: "text", placeholder: "Nima uchun sotib olindi" },
+      // Qayerdan yuklandi, mashina, darhol kimga berildi, (direktor) to'lov hisobi — veb `prixod-form.tsx` (`./sklad-extra.ts`)
+      ...extra,
       {
         name: "items", label: "Xomashyo", type: "items", required: true,
         columns: [
@@ -605,13 +660,15 @@ async function brigadeForm(): Promise<CreateForm> {
   };
 }
 
-async function orderForm(user: MobileUser): Promise<CreateForm> {
+async function orderForm(user: MobileUser, defaults: Record<string, string> = {}): Promise<CreateForm> {
   // Sotuv agenti faqat o'z mijoziga zayavka ochadi: ro'yxat o'ziga biriktirilganlar, yangi mijoz tugmasi yo'q
   const isAgent = user.role === "AGENT";
-  const [customers, catalog, cells] = await Promise.all([
+  const [customers, catalog, cells, lead] = await Promise.all([
     db.customer.findMany({ where: { isActive: true, isInternal: false, ...(isAgent ? { agentId: user.id } : {}) }, orderBy: { name: "asc" } }),
     productCatalog(), // veb bilan bir xil mahsulot ro'yxati (papka yo'li nom yonida)
     dayCells(),
+    // Sayt arizasidan ochilgan zayavka: mahsulot, hajm va manzil arizadan (veb `/orders/new?lead=`)
+    isAgent ? null : leadOrderPrefill(defaults.lead, defaults.customerId),
   ]);
   // Qora ro'yxatdagi mijoz tanlanmasin — ro'yxatdan chiqarilmaydi, lekin belgilanadi
   const black = await blacklistedIds(customers.map((c) => c.id));
@@ -639,25 +696,36 @@ async function orderForm(user: MobileUser): Promise<CreateForm> {
       { name: "newPhone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "newInn", label: "INN", type: "text", placeholder: "9 raqam", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: ymd(tomorrow), cells, hint: "Ustun rangi shu kunga qancha beton olinganini ko'rsatadi" },
-      { name: "deliveryAddress", label: "Obyekt manzili", type: "text", required: true, placeholder: "Tuman, ko'cha, mo'ljal" },
+      { name: "deliveryAddress", label: "Obyekt manzili", type: "text", required: true, value: lead?.address, placeholder: "Tuman, ko'cha, mo'ljal" },
       {
         name: "items", label: "Mahsulot", type: "items", required: true,
+        ...(isAgent ? {} : { hint: "Narx NDS'siz kiritiladi; «NDS 12%» tanlangan qatorda soliq qo'shib saqlanadi" }),
         columns: [
           // Birlik mahsulot nomi yonida turadi: hajm va narx shu birlikda kiritiladi (beton m³, ustun/blok dona)
-          { name: "productId", label: "Mahsulot", type: "select", required: true, options: catalog.products.map((p) => { const path = groupPath(catalog.groups, p.groupId); return { value: p.id, label: `${path ? `${path} › ` : ""}${p.name} · ${p.unit}`, extra: { price: String(Math.round(Number(p.price))) } }; }) },
-          { name: "qtyM3", label: "Hajmi (mahsulot birligida)", type: "number", required: true, placeholder: "0" },
-          { name: "price", label: "Narx (1 birlik)", type: "number", required: true, placeholder: "0" },
+          { name: "productId", label: "Mahsulot", type: "select", required: true, value: lead?.productId ?? undefined, options: catalog.products.map((p) => { const path = groupPath(catalog.groups, p.groupId); return { value: p.id, label: `${path ? `${path} › ` : ""}${p.name} · ${p.unit}`, extra: { price: String(Math.round(Number(p.price))) } }; }) },
+          { name: "qtyM3", label: "Hajmi (mahsulot birligida)", type: "number", required: true, value: lead?.qty, placeholder: "0" },
+          { name: "price", label: "Narx (1 birlik)", type: "number", required: true, value: lead?.productId ? lead.price : undefined, placeholder: "0" },
+          // Veb formadagi qator «NDS 12%» tugmasi (agent formasida yo'q)
+          ...(isAgent ? [] : [{ name: "nds", label: "NDS 12%", type: "select" as const, value: "0", options: [{ value: "0", label: "NDS'siz" }, { value: "1", label: "NDS 12% qo'shilsin" }] }]),
         ],
       },
       { name: "needsPump", label: "Nasos kerak", type: "switch", value: "false" },
+      ...(isAgent ? [] : [{ name: "needsDelivery", label: "Dastavka kerak", type: "switch" as const, value: "true", hint: "O'chirilsa — mijoz o'zi olib ketadi" }]),
       { name: "isUrgent", label: "Shoshilinch", type: "switch", value: "false" },
-      { name: "onCredit", label: "Qarzga", type: "switch", value: "false", hint: "Belgilansa kafolat xati talab qilinadi; bosh to'lov bo'lsa pastda kiriting — qolgani kredit limitdan" },
-      // To'lov usuli va bosh to'lov — veb formadagidek qarzga zayavkada ham (bir qismi oldindan, qolgani limitdan).
-      // `showIf` faqat bitta tenglik sharti — shuning uchun ikkalasi doim ko'rinadi; server qarzga + bosh to'lovsiz holatda usulni yozmaydi.
-      { name: "payMethod", label: "To'lov usuli", type: "select", required: true, value: "CASH", options: [{ value: "CASH", label: "Naqd (kassa)" }, { value: "BANK", label: "Perechisleniye (bank)" }], hint: "Naqd — Kassa xodimi qabul qiladi, perechisleniye — Buxgalter tasdiqlaydi" },
-      // Sotuvchi kassaga pul yozmaydi: summa "kutilayotgan avans" bo'lib zayavkaga yoziladi, pulni kassir yoki buxgalter qabul qiladi
-      { name: "prepayAmount", label: "Kutilayotgan avans (so'm)", type: "number", placeholder: "0", hint: "Bosh to'lov bo'lsa — qabul qilish so'rovi tanlangan usul bo'yicha yuboriladi" },
-      { name: "note", label: "Izoh", type: "text" },
+      // Sotuv agenti to'lov bilan ishlamaydi (veb `/agent` formasi kabi): zayavka naqd, bosh to'lov so'rovisiz
+      ...(isAgent ? [] : [
+        { name: "onCredit", label: "Qarzga", type: "switch", value: "false", hint: "Belgilansa kafolat xati talab qilinadi; bosh to'lov bo'lsa pastda kiriting — qolgani kredit limitdan" },
+        // To'lov usuli va bosh to'lov — veb formadagidek qarzga zayavkada ham (bir qismi oldindan, qolgani limitdan).
+        // `showIf` faqat bitta tenglik sharti — shuning uchun ikkalasi doim ko'rinadi; server qarzga + bosh to'lovsiz holatda usulni yozmaydi.
+        { name: "payMethod", label: "To'lov usuli", type: "select", required: true, value: "CASH", options: [{ value: "CASH", label: "Naqd (kassa)" }, { value: "BANK", label: "Perechisleniye (bank)" }], hint: "Naqd — Kassa xodimi qabul qiladi, perechisleniye — Buxgalter tasdiqlaydi" },
+        // Sotuvchi kassaga pul yozmaydi: summa "kutilayotgan avans" bo'lib zayavkaga yoziladi, pulni kassir yoki buxgalter qabul qiladi
+        { name: "prepayAmount", label: "Kutilayotgan avans (so'm)", type: "number", placeholder: "0", hint: "Bosh to'lov bo'lsa — qabul qilish so'rovi tanlangan usul bo'yicha yuboriladi" },
+        // Shartnoma — veb formadagi «Shartnoma qilish»: summa va Didox'da imzolangan hujjat surati (raqam saqlashda beriladi)
+        { name: "hasContract", label: "Shartnoma qilish", type: "switch", value: "false" },
+        { name: "contractAmount", label: "Shartnoma summasi (so'm)", type: "number", required: true, placeholder: "0", showIf: { field: "hasContract", equals: "true" } },
+        { name: "contractFile", label: "Imzolangan shartnoma surati", type: "photo", hint: "Ixtiyoriy — keyin zayavka kartochkasidan ham yuklanadi", showIf: { field: "hasContract", equals: "true" } },
+      ] as FormField[]),
+      { name: "note", label: "Izoh", type: "text", value: lead?.note },
     ],
   };
 }
@@ -681,7 +749,7 @@ async function tripForm(): Promise<CreateForm> {
     fields: [
       {
         name: "orderId", label: "Zayavka", type: "select", required: true,
-        options: open.map(({ o, left, sexda, unit }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · tayyor ${left}${unit ? ` ${unitLabel(unit)}` : ""}${sexda > 0 ? ` · sexda ${sexda}` : ""}`, extra: { qtyM3: String(left) } })),
+        options: open.map(({ o, left, sexda, unit }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · tayyor ${left}${unit ? ` ${unitLabel(unit)}` : ""}${sexda > 0 ? ` · sexda ${sexda}` : ""}`, extra: { qtyM3: String(left), ...plannedExtra(o) } })),
         hint: open.length ? "Faqat brigada tayyorlab bergan miqdor reysga beriladi; sexdagisi brigada tasdiqidan keyin" : "Brigada tayyorlagan mahsuloti bor zayavka yo'q — brigada tasdiqini kuting",
       },
       {
@@ -695,6 +763,8 @@ async function tripForm(): Promise<CreateForm> {
         hint: "Haydovchining biriktirilgan texnikasi yonida ko'rsatiladi; telefoni yo'q haydovchi ilovada reysni ko'rmaydi",
       },
       { name: "qtyM3", label: "Hajmi (zayavka birligida)", type: "number", required: true, placeholder: "0" },
+      // Reja vaqti (veb `plannedAt`) — zayavka tanlanganda uning sanasi/soati qo'yiladi; bo'sh — zayavkadagi vaqt
+      ...plannedFields(),
       { name: "note", label: "Izoh", type: "text" },
     ],
   };
@@ -713,8 +783,14 @@ const OrderBody = z.object({
     productId: z.string().trim().min(1, "Marka tanlanmagan"),
     qtyM3: z.coerce.number().positive("Hajm 0 dan katta bo'lsin"),
     price: z.coerce.number().min(0, "Narx manfiy bo'lmasin"),
+    // Eski ilova yubormaydi — NDS'siz
+    nds: z.string().trim().optional(),
   })).min(1, "Kamida bitta mahsulot qatori kerak"),
   needsPump: z.coerce.boolean().optional(),
+  needsDelivery: z.boolean().optional(),
+  hasContract: z.boolean().optional(),
+  contractAmount: z.coerce.number().min(0, "Shartnoma summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Shartnoma summasi juda katta").optional(),
+  contractFile: z.string().optional(),
   isUrgent: z.coerce.boolean().optional(),
   onCredit: z.coerce.boolean().optional(),
   prepayAmount: z.coerce.number().min(0).optional(),
@@ -819,6 +895,10 @@ const PrixodBody = z.object({
   recipientId: z.string({ message: "Oluvchi noto'g'ri («Kimga»)" }).trim().optional(),
   address: zSkText(300, "Manzil"),
   purpose: zSkText(300, "Maqsad"),
+  carrier: zSkText(120, "Mashina (kim olib keldi)"),
+  loadedFrom: zSkText(300, "Qayerdan yuklandi"),
+  autoIssueToId: z.string({ message: "Oluvchi noto'g'ri («Darhol kimga berildi»)" }).trim().optional(),
+  cashAccountId: z.string({ message: "To'lov hisobi noto'g'ri" }).trim().optional(),
   note: zSkText(1000, "Izoh"),
   clientToken: z.unknown().optional(),
   items: z.array(z.object({
@@ -953,10 +1033,21 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
 
   try {
     // ── Xodim arizasi — `createHrRequest` (veb "Mening hisobim" bilan bitta qoida) ──
-    if (key === "ariza") return await createRequestMobile(user, payload);
+    if (key === "ariza") return await kadrAriza(user, payload, () => createRequestMobile(user, payload));
     if (key === "vazifa") return await createTaskMobile(user, payload);
+    if (key === "murojaat") return await createFeedbackMobile(user, payload);
+    if (key === "ish-haqi") return await payrollCreate(user, payload);
+    if (Object.hasOwn(KADR_CREATE, key)) return await kadrCreate(user, key, payload);
     // ── Arenda (sekretar): kirim / chiqim / do'kon — `./arenda.ts` (qoida `lib/rent.ts`) ──
     if (key.startsWith("arenda-")) return await arendaCreate(user, key, payload);
+    // ── Sklad: tayyor mahsulot, inventarizatsiya, hisobdan chiqarish, «Kimga» oluvchisi (`./sklad-extra.ts`) ──
+    if (SKLAD_FORMS.has(key)) return await skladCreate(user, key, payload);
+    // ── Sklad (zaxira) zayavkasi va tijorat taklifi — `./sotuv-extra.ts` (qoida `lib/stock-orders.ts`, `lib/offers.ts`) ──
+    if (key === "stock-order" || key === "offers") return await sotuvCreate(user, key, payload);
+    // ── Logistika: transport, zapravka, xarajat, obyekt (`./logistika-extra.ts`) ──
+    if (LOGI_FORMS.has(key)) return await logiCreate(user, key, payload);
+    // ── Zames — `createProductionBatch` (veb «Yangi zames» bilan bitta qoida) ──
+    if (key === "production") return await createBatchMobile(user, payload);
     // ── Sklad → «Kirim»: kirim — `createGoodsReceipt` (veb Kirim formasi bilan bitta qoida) ──
     if (key === "prixod") {
       const p = PrixodBody.safeParse(payload);
@@ -977,6 +1068,9 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         waybillNo: d.waybillNo || null, recipientId: d.recipientId || null, address: d.address || null, purpose: d.purpose || null, note: d.note || null,
         // Ta'minotchi — kiritgan Snabjeniye xodimining o'zi (veb formadagi sukut); boshqa rolda bo'sh — jurnalda kiritgan xodim
         buyerId: user.role === "PROCUREMENT" ? user.id : null,
+        carrier: d.carrier || null, loadedFrom: d.loadedFrom || null, autoIssueToId: d.autoIssueToId || null,
+        // Darhol to'lash — faqat direktor (`createGoodsReceipt` boshqa rolda e'tiborsiz qoldiradi)
+        cashAccountId: user.role === "DIRECTOR" ? d.cashAccountId || null : null,
         clientToken: token, items,
       }, { userId: user.id, role: user.role });
       return {
@@ -1032,20 +1126,39 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         const c = await db.customer.findUnique({ where: { id: d.customerId }, select: { agentId: true } });
         if (!c || c.agentId !== user.id) throw new Error("Bu mijoz sizga biriktirilmagan — faqat o'z mijozingizga zayavka ocha olasiz");
       }
+      // Shartnoma (veb «Shartnoma qilish»): summa majburiy; imzolangan fayl zayavka id'si bo'yicha saqlanadi — id oldindan
+      const withContract = !isAgent && !!d.hasContract;
+      if (withContract && !(d.contractAmount && d.contractAmount > 0)) throw new Error("Shartnoma summasini kiriting");
+      const orderId = crypto.randomUUID();
+      let contractFile: { stored: string; name: string; type: string } | undefined;
+      if (withContract && d.contractFile) {
+        const f = dataUrlFile(d.contractFile, "shartnoma");
+        if (!f) throw new Error("Shartnoma surati o'qilmadi — qayta oling");
+        const saved = await saveContractFile(orderId, f);
+        if (saved && "error" in saved) throw new Error(saved.error);
+        contractFile = saved ?? undefined;
+      }
       const r = await createOrder({
         customerId: isNew ? undefined : d.customerId,
         newCustomer: isNew ? { name: d.newName ?? "", phone: d.newPhone || undefined, inn: d.newInn || undefined } : undefined,
         deliveryDate: new Date(`${d.deliveryDate}T00:00:00`),
         deliveryAddress: d.deliveryAddress,
-        items: d.items,
+        // Narx NDS'siz kiritiladi; «NDS 12%» tanlangan qatorda soliq qo'shib saqlanadi (veb `createOrder` bilan bir xil)
+        items: d.items.map((i) => {
+          const nds = !isAgent && i.nds === "1";
+          return { productId: i.productId, qtyM3: i.qtyM3, price: nds ? withNds(i.price) : i.price, nds };
+        }),
         needsPump: d.needsPump,
+        needsDelivery: isAgent ? undefined : d.needsDelivery,
         isUrgent: d.isUrgent,
-        onCredit: d.onCredit,
-        prepay: d.prepayAmount ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
+        contractAmount: withContract ? d.contractAmount : undefined,
+        // Agent uchun to'lov maydonlari e'tiborsiz (veb `createAgentOrder` kabi — naqd, pul qabul so'rovi ochilmaydi)
+        onCredit: isAgent ? false : d.onCredit,
+        prepay: !isAgent && d.prepayAmount ? { amount: d.prepayAmount, cashAccountId: d.prepayAccountId ?? "" } : undefined,
         // Qarzga + bosh to'lovsiz — usul yozilmaydi (veb bilan bir xil)
-        payMethod: !d.onCredit || d.prepayAmount ? d.payMethod : undefined,
+        payMethod: isAgent ? undefined : !d.onCredit || d.prepayAmount ? d.payMethod : undefined,
         note: d.note,
-      }, user.id, isAgent ? { viaAgent: true } : undefined);
+      }, user.id, isAgent ? { viaAgent: true } : { id: orderId, contractFile });
       return { key: "orders", id: r.id, message: `${r.orderNo} ochildi — qoralama holatida, qabul qilishni unutmang` };
     }
 
@@ -1110,9 +1223,10 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const p = BrigadeBody.safeParse(payload);
       if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
       const d = p.data;
-      const b = await db.brigade.create({ data: { name: d.name, leaderId: d.leaderId || null, phone: d.phone || null, note: d.note || null } });
-      await audit(db, user.id, "CREATE", "Brigade", b.id, undefined, b);
-      return { key: "brigades", id: b.id, message: `${b.name} ochildi` };
+      // Veb «Brigadalar» formasi bilan bitta qoida (`lib/brigades.ts`): brigadir — ishlayotgan xodim
+      const r = await saveBrigade(null, { name: d.name, leaderId: d.leaderId || null, phone: d.phone || null, note: d.note || null }, user.id);
+      if ("error" in r) throw new Error(r.error);
+      return { key: "brigades", id: r.id, message: `${d.name} ochildi` };
     }
     if (key === "payments") {
       const p = PaymentBody.safeParse(payload);
@@ -1173,7 +1287,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
     if (key !== "trips") throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
     const p = TripBody.safeParse(payload);
     if (!p.success) throw new Error(p.error.issues[0]?.message ?? "Ma'lumot to'liq emas");
-    const r = await createTrip(p.data, user.id);
+    const r = await createTrip({ ...p.data, plannedAt: plannedAtOf(payload as Record<string, unknown>) }, user.id);
     // Haydovchi ilovasiga darhol yuborish — reys kartochkasi ochilganda holat ko'rinsin
     if (ecoEnabled()) {
       const push = await pushTripToEco(r.id);

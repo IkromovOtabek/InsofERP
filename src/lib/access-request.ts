@@ -196,3 +196,30 @@ export async function rejectAccessRequest(requestId: string, reason: string | nu
   await audit(db, byUserId, "STATUS_CHANGE", "AccessRequest", requestId, undefined, { rejected: true, reason });
   return { ok: true };
 }
+
+/** Arizadan login ochiladigan rollar — faqat bo'lim lavozimlari, direktor emas (veb va mobil bir ro'yxat). */
+export const ACCESS_ROLES: Role[] = [...new Set(POSITIONS.filter((p) => p.role !== "DIRECTOR").map((p) => p.role))];
+/** Moliyaviy/kadr loginlar — direktordan boshqa xodim ochsa direktorga xabar ketadi. */
+const SENSITIVE_ROLES: Role[] = ["ACCOUNTING", "CASHIER", "FINANCE", "HR", "PROCUREMENT"];
+
+/**
+ * Arizani tasdiqlash (veb Xodimlar sahifasi va mobil «Tasdiqlar») — rol tekshiruvi, login ochish va
+ * Otdel kadr moliyaviy/kadr login ochsa direktorga xabar. Ruxsat (`employees` → `login`) chaqiruvchida.
+ */
+export async function approveAccessAs(requestId: string, role: Role, actor: { userId: string; role: Role }): Promise<{ ok: true; login: string; employeeId: string } | { ok: false; error: string }> {
+  if (!ACCESS_ROLES.includes(role)) return { ok: false, error: "Bo'limni tanlang" };
+  const r = await approveAccessRequest(requestId, role, actor.userId);
+  if (!r.ok) return r;
+  if (SENSITIVE_ROLES.includes(role) && actor.role !== "DIRECTOR") {
+    notifyAfter(async () => {
+      const who = await db.user.findUnique({ where: { id: actor.userId }, select: { fullName: true } });
+      await notifyRoles(["DIRECTOR"], {
+        type: "SENSITIVE_LOGIN",
+        title: "Arizadan moliyaviy/kadr login ochildi",
+        body: `login «${r.login}» · bajardi: ${who?.fullName ?? "?"}`,
+        link: { key: "employees", id: r.employeeId },
+      });
+    });
+  }
+  return r;
+}

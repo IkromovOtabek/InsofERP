@@ -6,6 +6,7 @@ import { ListError, type ListFilter, type MobileList } from "./list";
 import type { MobileDetail } from "./detail";
 import { mechSubject } from "@/lib/mechanic-requests";
 import { payrollApprovalRows } from "./hr";
+import { accessApprovalRows, deletionApprovalRows } from "./direktor-extra";
 
 /**
  * Direktor ilovasi uchun maxsus ro'yxatlar:
@@ -95,14 +96,17 @@ export async function approvalsList(title: string, q?: string, filter?: string):
   ];
 
   // Ish haqi vedomostlari — kassa direktor tasdig'idan keyin to'laydi (`./hr.ts`)
-  const payrollRows = await payrollApprovalRows(q);
+  // Kirish arizalari (login so'rovi) va hisobni o'chirish so'rovlari — vebda Xodimlar / Sozlamalar (`./direktor-extra.ts`)
+  const [payrollRows, accessRows, deletionRows] = await Promise.all([payrollApprovalRows(q), accessApprovalRows(q), deletionApprovalRows(q)]);
   const tabs = [
-    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows, ...payrollRows, ...smmRows] },
+    { key: "all", label: "Hammasi", rows: [...orderRows, ...supplyRows, ...kirimRows, ...payrollRows, ...smmRows, ...accessRows, ...deletionRows] },
     { key: "orders", label: "Bloklangan zayavka", rows: orderRows },
     { key: "supply", label: "Ta'minot", rows: supplyRows },
     { key: "kirim", label: "Mexanik so'rovlari", rows: kirimRows },
     { key: "ish-haqi", label: "Ish haqi", rows: payrollRows },
     { key: "smm", label: "Marketing", rows: smmRows },
+    { key: "access", label: "Kirish arizalari", rows: accessRows },
+    { key: "deletion", label: "Hisobni o'chirish", rows: deletionRows },
   ];
   const tab = tabs.find((t) => t.key === filter) ?? tabs[0];
   const rows = [...tab.rows];

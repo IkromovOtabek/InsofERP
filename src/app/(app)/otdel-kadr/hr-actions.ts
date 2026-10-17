@@ -15,6 +15,7 @@ import type { HrRequestKind, KpiSource, PayRuleTrigger } from "@/generated/prism
 import { saveTemplate, toggleTemplate } from "@/lib/hr/checklists";
 import { saveMetric, setFact, toggleMetric } from "@/lib/hr/kpi";
 import { KPI_SOURCES } from "@/lib/hr/labels";
+import { addPayAdjustmentCore, cancelPayAdjustmentCore } from "@/lib/kadr-ops";
 
 /*
  * Otdel kadr: smena grafigi, arizalar, jarima va bonuslar. Qoidalar — `lib/hr/*`.
@@ -195,53 +196,22 @@ export async function togglePayRule(id: string): Promise<ActionState> {
   return { ok: true };
 }
 
-const adjSchema = z.object({
-  employeeId: zStr("Xodimni tanlang"),
-  month: zStr("Oyni tanlang"),
-  kind: z.enum(["BONUS", "PENALTY"], { message: "Turini tanlang" }),
-  amount: zDec(0),
-  reason: zStr("Sababini yozing").pipe(z.string().max(300, "Sabab 300 belgidan oshmasin")),
-  date: zOpt,
-});
-
-/** Qo'lda jarima / bonus — shu oyning yakuniy hisobida. */
+/** Qo'lda jarima / bonus — shu oyning yakuniy hisobida. Qoida — `lib/kadr-ops.ts` (mobil ham). */
 export async function addPayAdjustment(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("employees", "payrules", ["HR"]);
-  const r = parseForm(adjSchema, fd);
+  const r = await addPayAdjustmentCore(s.userId, fd);
   if ("error" in r) return { error: r.error };
-  const d = r.data;
-  if (!validMonth(d.month)) return { error: "Oy noto'g'ri" };
-  if (d.amount <= 0) return { error: "Summani kiriting" };
-  const closed = await db.payrollRun.findFirst({ where: { month: d.month, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] } }, select: { docNo: true } });
-  if (closed) return { error: `${d.month} oyining yakuniy vedomosti (${closed.docNo}) allaqachon tasdiqqa yuborilgan — keyingi oyga yozing` };
-  const emp = await db.employee.findUnique({ where: { id: d.employeeId }, select: { id: true } });
-  if (!emp) return { error: "Xodim topilmadi" };
-  const date = d.date && validDay(d.date) ? new Date(`${d.date}T00:00:00.000Z`) : null;
-  await db.$transaction(async (tx) => {
-    const x = await tx.payAdjustment.create({ data: { employeeId: d.employeeId, month: d.month, kind: d.kind, amount: Math.round(d.amount), reason: d.reason, date, createdById: s.userId } });
-    await audit(tx, s.userId, "CREATE", "PayAdjustment", x.id, undefined, x);
-  });
   refresh();
-  return { ok: true, note: `${d.kind === "BONUS" ? "Bonus" : "Jarima"} yozildi` };
+  return { ok: true, note: r.note };
 }
 
 /** Bekor qilish (o'chirilmaydi) — sababi bilan. */
 export async function cancelPayAdjustment(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("employees", "payrules", ["HR"]);
-  const reason = String(fd.get("reason") ?? "").trim();
-  if (reason.length < 3) return { error: "Bekor qilish sababini yozing" };
-  const cur = await db.payAdjustment.findUnique({ where: { id } });
-  if (!cur) return { error: "Yozuv topilmadi" };
-  const closed = await db.payrollRun.findFirst({ where: { month: cur.month, kind: "FINAL", status: { in: ["SUBMITTED", "APPROVED", "PAID"] } }, select: { docNo: true } });
-  if (closed) return { error: `${closed.docNo} tasdiqqa yuborilgan — bu yozuv endi o'zgarmaydi` };
-  const n = await db.$transaction(async (tx) => {
-    const x = await tx.payAdjustment.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: reason, cancelledById: s.userId } });
-    if (x.count) await audit(tx, s.userId, "UPDATE", "PayAdjustment", id, { cancelledAt: null }, { cancelledAt: new Date(), cancelReason: reason });
-    return x.count;
-  });
-  if (!n) return { error: "Yozuv allaqachon bekor qilingan" };
+  const r = await cancelPayAdjustmentCore(s.userId, id, fd);
+  if ("error" in r) return { error: r.error };
   refresh();
-  return { ok: true, note: "Bekor qilindi" };
+  return { ok: true, note: r.note };
 }
 
 // ───────────────────────── Kundalik cheklistlar ─────────────────────────

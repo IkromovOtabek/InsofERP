@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
-import { audit } from "@/lib/audit";
+import { assignCustomerAgentLib } from "@/lib/customer-admin";
 import type { ActionState } from "@/lib/action";
 
 /**
@@ -17,22 +16,9 @@ export async function assignCustomerAgent(_prev: ActionState, fd: FormData): Pro
   const s = await requireAction("customers", "agent");
   const customerId = String(fd.get("customerId") ?? "").trim();
   const agentId = String(fd.get("agentId") ?? "").trim();
-  if (!customerId) return { error: "Mijoz tanlanmagan" };
-
-  const customer = await db.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true, agentId: true } });
-  if (!customer) return { error: "Mijoz topilmadi" };
-
-  let newAgentId: string | null = null;
-  if (agentId) {
-    const agent = await db.user.findUnique({ where: { id: agentId }, select: { id: true, role: true, isActive: true, fullName: true } });
-    if (!agent || !agent.isActive) return { error: "Agent topilmadi yoki nofaol" };
-    if (agent.role !== "AGENT") return { error: "Tanlangan foydalanuvchi sotuv agenti emas" };
-    newAgentId = agent.id;
-  }
-  if (customer.agentId === newAgentId) return { ok: true, note: "O'zgarish yo'q" };
-
-  await db.customer.update({ where: { id: customerId }, data: { agentId: newAgentId } });
-  await audit(db, s.userId, "UPDATE", "Customer", customerId, { agentId: customer.agentId }, { agentId: newAgentId, mijoz: customer.name });
+  // Qoida `lib/customer-admin.ts` da — mobil ilova (mijoz kartasi) ham shuni chaqiradi
+  const r = await assignCustomerAgentLib(customerId, agentId, s.userId);
+  if (!r.ok) return { error: r.error };
   revalidatePath("/agent"); revalidatePath("/employees"); revalidatePath("/customers");
-  return { ok: true, note: newAgentId ? `${customer.name} agentga biriktirildi` : `${customer.name} agentdan uzildi` };
+  return { ok: true, note: r.note };
 }

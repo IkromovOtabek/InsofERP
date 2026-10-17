@@ -5,6 +5,8 @@ import { AlertTriangle, History, PackageMinus, Plus, Trash2 } from "lucide-react
 import { createRasxod } from "./actions";
 import { MaterialField, type MaterialGroup } from "@/components/material-picker";
 import { TargetSelect } from "./target-select";
+import { TargetHoldings } from "@/components/holdings-panel";
+import type { Holding } from "@/lib/holdings";
 import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
@@ -38,9 +40,14 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * Tez tanlash (`hints`, `issueHints`): oxirgi 90 kunda ko'p olganlar tugmacha bo'lib turadi; oluvchi tanlangach — unga oxirgi
  * berilgan tovarlar: bosilsa qator oxirgi miqdori bilan qo'shiladi (miqdor tahrirlanadi). Sklad — oxirgi chiqimdagi sklad.
  */
-export function RasxodForm({ warehouses, targets, hints, materials, groups, balances, clientToken, today, minDate, defaultTo }: {
+export function RasxodForm({ warehouses, targets, hints, materials, groups, balances, flows, holdings, clientToken, today, minDate, defaultTo }: {
   warehouses: Opt[]; targets: TargetGroups; hints: IssueHints; materials: Mat[]; groups: MaterialGroup[];
-  balances: Record<string, Record<string, number>>; clientToken: string; today: string; minDate: string; defaultTo: string;
+  balances: Record<string, Record<string, number>>;
+  /** Sklad → xomashyo → jami kirim va jami chiqim (nom tanlashda «Kirim · Chiqim · Qoldi») */
+  flows: Record<string, Record<string, { received: number; issued: number }>>;
+  /** «Kimga» tanlanganda — unda hozir nima bor (brigada qo'lida / xodim shu oy olgani) */
+  holdings: Holding[];
+  clientToken: string; today: string; minDate: string; defaultTo: string;
 }) {
   const [state, action, pending] = useActionState(createRasxod, undefined);
   // «Qayerdan» eslab qolinadi: oxirgi chiqim yozilgan sklad (faol bo'lsa), bo'lmasa birinchisi
@@ -53,10 +60,15 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
 
   const bal = useMemo(() => balances[whId] ?? {}, [balances, whId]);
   const meta = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
-  const pickerMats = useMemo(
-    () => materials.map((m) => ({ id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, balance: bal[m.id] ?? 0 })),
-    [materials, bal],
-  );
+  const pickerMats = useMemo(() => {
+    const fl = flows[whId] ?? {};
+    // Ro'yxatda avval skladda qolgani bor (hali chiqim qilinadigan) xomashyolar, keyin qolganlari — ikkalasi ham nom bo'yicha
+    const sorted = [...materials].sort((a, b) => Number((bal[b.id] ?? 0) > EPS) - Number((bal[a.id] ?? 0) > EPS));
+    return sorted.map((m) => ({
+      id: m.id, name: m.name, code: m.code, unit: m.unit, groupId: m.groupId, balance: bal[m.id] ?? 0,
+      received: fl[m.id]?.received ?? 0, issued: fl[m.id]?.issued ?? 0,
+    }));
+  }, [materials, bal, flows, whId]);
 
   // Bir xomashyo bir necha qatorda — yig'indisi qoldiq bilan solishtiriladi
   const wanted = new Map<string, number>();
@@ -113,6 +125,7 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
           <TargetSelect targets={targets} value={to} onChange={setTo} invalid={!to && !!state?.error} />
         </Field>
       </div>
+      {to && <TargetHoldings holdings={holdings} targetKey={to} />}
 
       {quickTargets.length > 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-3">
@@ -197,6 +210,12 @@ export function RasxodForm({ warehouses, targets, hints, materials, groups, bala
                 <div className="text-sm tabular xl:px-2 xl:text-right">
                   <Lbl>Qoldiq{u && <>, {u}</>}</Lbl>
                   <span className={cn(have != null && have <= EPS ? "text-red-600" : "text-slate-600")}>{have == null ? "—" : fmtNum(have, 3)}</span>
+                  {/* Shu chiqimdan keyin skladda qancha qoladi — yana shuncha chiqim qilinadi */}
+                  {have != null && q > 0 && (
+                    <span className={cn("block text-xs", have - q < -EPS ? "text-red-600" : "text-slate-400")} title="Shu chiqimdan keyin skladda qoladi">
+                      {`keyin qoladi: ${fmtNum(Math.max(0, have - q), 3)}`}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <Lbl>Miqdor{u && <>, {u}</>}</Lbl>

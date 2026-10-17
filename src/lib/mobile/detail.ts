@@ -1,6 +1,12 @@
 import { db } from "@/lib/db";
 import { HR_ACCESS, HR_ACTION_ROLES, SELF_CARDS } from "./hr-access";
 import { hrDetail } from "./hr";
+import { KADR_ACCESS, KADR_ACTION_ROLES, KADR_CARDS, KADR_PERM } from "./kadr-access";
+import { kadrDetail, kadrEmployeeExtras } from "./kadr-extra";
+import { DIREKTOR_ACTION_ROLES, DIREKTOR_CARDS, DIREKTOR_DETAIL_ROLES, DIREKTOR_PERM } from "./direktor-extra-access";
+import { direktorDetail } from "./direktor-extra";
+import { LOGI_ACTION_ROLES, LOGI_DETAIL_ROLES, LOGI_PERM } from "./logistika-access";
+import { logiDetail, resolveIssueForm, withDriverExtras, withOrderTrip, withTripExtras } from "./logistika-extra";
 import { TX_TYPE_LABEL, isTransfer, txSign } from "@/lib/cash-tx";
 import { activityDetail, splitRef } from "./director";
 import { customerCredit } from "@/lib/finance";
@@ -47,6 +53,12 @@ import { VEHICLE_TYPE } from "@/lib/logistics";
 import { OPEN_STATUSES, PAY_METHOD_LABEL, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, getPaymentRequest, methodsFor, receiveAccounts } from "@/lib/payment-requests";
 import { accountBalances } from "@/lib/payments";
 import { arendaShopDetail, arendaTxDetail } from "./arenda";
+import { CASH_SUM, cashSumDetail, cashflowActions, invoiceCancelActions, kirimQqsDetail, openingDetail, paymentActions, realizatsiyaDetail, receiptPayActions, supplierOpeningExtra } from "./moliya-extra";
+import { SKLAD_ACTION_ROLES, SKLAD_CARDS, SKLAD_DETAIL_ROLES, SKLAD_PERM_EXACT } from "./sklad-extra-access";
+import { brigadeStockLink, materialExtraActions, ostatkiExtraActions, parseSkladFilter, rasxodExtra, receiptExtra, skladDetail, supplierExtra, supplyExtraActions } from "./sklad-extra";
+import { defectCard, withBatchActions, withBrigadeActions, withDefectActions, withOrderActions, withRecipeActions } from "./sex-extra";
+import { SOTUV_ACTION_ROLES, SOTUV_DETAIL_ROLES, SOTUV_PERM_EXACT } from "./sotuv-access";
+import { REASON_FORM, boostExtras, customerExtras, leadExtras, orderExtras, smmExtras, sotuvDetail } from "./sotuv-extra";
 
 /**
  * Bitta hujjat kartochkasi — ro'yxatdagi qator bosilganda ochiladi.
@@ -73,6 +85,8 @@ export type FormField = {
    * Eski ilova `photo` ni bilmaydi — maydon chizilmaydi, server "surat yo'q" deb javob beradi.
    */
   type: "text" | "number" | "date" | "time" | "select" | "switch" | "items" | "photo";
+  /** `text`: maxfiy qiymat (parol) — ilova yulduzcha bilan ko'rsatadi. Eski ilova oddiy matn deb chizadi. */
+  secure?: boolean;
   required?: boolean;
   placeholder?: string;
   /** Boshlang'ich qiymat. Switch uchun "true"/"false". */
@@ -92,6 +106,8 @@ export type FormField = {
   camera?: "front" | "back";
   cameraOnly?: boolean;
   columns?: FormField[];
+  /** `items` uchun: oldindan to'ldirilgan qatorlar (masalan taklif zayavkadan). Eski ilova bilmaydi — birinchi qatorni ustunlar `value` sidan oladi. */
+  rows?: Record<string, string>[];
   /**
    * `select` uchun: qidiruv yonidagi "+" — spravochnikda yo'q yozuvni shu yerning o'zida qo'shish. Ilova `fields` ni
    * varaqda chizadi, `/api/mobile/create` ga `key` bilan yuboradi va javobdagi `option` ni tanlaydi. Eski ilova e'tiborsiz qoldiradi.
@@ -120,6 +136,8 @@ export type ActionEffect = {
   route?: boolean;
   /** Navigatsiya ilovasini shu nuqtaga ochish (koordinata bo'lmasa — yo'q). */
   navigate?: { lat: number; lng: number; label: string };
+  /** Havolani ochish (masalan nakladnoyning QR tekshiruv sahifasi). Eski ilova bilmaydi — e'tiborsiz qoldiradi. */
+  openUrl?: string;
 };
 export type DetailAction = {
   id: string;
@@ -241,6 +259,14 @@ export const closeForm = (loaded: number, accepted: number | null, returned: num
 export const ACTION_ROLES: Record<string, Role[]> = {
   // Otdel kadr: ariza qarori, vedomost yuborish / tasdiq / to'lov (`./hr.ts`)
   ...HR_ACTION_ROLES,
+  // Otdel kadr kabineti: xodim kartasi, lavozim, grafik, KPI, yollash… (`./kadr-extra.ts`)
+  ...KADR_ACTION_ROLES,
+  // Direktor kabineti: kirish arizasi, hisobni o'chirish, ilova foydalanuvchisi ruxsati, Telegram kodi (`./direktor-extra.ts`)
+  ...DIREKTOR_ACTION_ROLES,
+  // Logistika kabineti: dispetcher bosqichlari, xarajat, transport, obyekt, haydovchi kartasi (`./logistika-extra.ts`)
+  ...LOGI_ACTION_ROLES,
+  // Sotuv kabineti (kafolat, shartnoma, sklad zayavkasi, mijoz, taklif, e-commerce, marketing) — `./sotuv-access.ts`
+  ...SOTUV_ACTION_ROLES,
   "order.confirm": ["SALES"],
   "order.unblock": ["DIRECTOR"],
   // Direktor "Tasdiqlar" tabida bloklangan zayavkani rad eta oladi (vebda ham `requireSession` direktorni o'tkazadi)
@@ -257,7 +283,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "trip.route": ["DRIVER"],
   // Dispetcherning o'z ishi: reysni ochish/bekor qilish, ECO'ga yuborish, muammoni hal qilish, yopish
   "trip.cancel": ["LOGISTICS"],
-  "trip.eco": ["LOGISTICS"],
+  // ECO'ga yuborish — veb `syncTripWithEco` (`trips` → `create`): dispetcher va ishlab chiqarish
+  "trip.eco": ["LOGISTICS", "PRODUCTION"],
   // Logistika TZ: obyektga keldi → tushirilmoqda → yetkazildi → zavodga qaytdi (haydovchi) → yopildi (dispetcher)
   "trip.arrived": ["DRIVER"],
   "trip.unloading": ["DRIVER"],
@@ -347,7 +374,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "lead.convert": ["SALES"],
   "lead.note": ["SALES"],
   // Yetkazuvchini yopish/ochish — veb `/suppliers`
-  "supplier.toggle": ["WAREHOUSE", "PROCUREMENT"],
+  "supplier.toggle": ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
   // Sex (mobil ishlab chiqarish bosh ekrani): davomatni sex boshlig'i belgilaydi (`lib/production-staff.ts`),
   // kunlik hisobotni u qayd etadi; xodimni brigadaga direktor taqsimlaydi
   // Brigadir smena boshida faqat O'Z brigadasi a'zolarini belgilaydi (`assertOwnMember`).
@@ -368,6 +395,27 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "problem.note": ["DIRECTOR"],
   // «Dona narxi» — xomashyo chiqim narxi (Material.unitPrice): Snabjeniye belgilaydi (`stock` → `price`), direktor ham
   "material.price": ["PROCUREMENT", "DIRECTOR"],
+  // Moliya (`./moliya-extra.ts`) — veb `requireAction` bilan bir xil (`PERM_EXACT`). Storno, o'chirish va schyot bekor qilish —
+  // nazorat amali, vebdagidek direktor ham; to'lov/bog'lash — kassa va buxgalteriyaning ishi
+  "payment.storno": ["ACCOUNTING", "DIRECTOR"],
+  "payment.link": ["CASHIER", "ACCOUNTING"],
+  "cashflow.delete": ["ACCOUNTING", "FINANCE", "DIRECTOR"],
+  "receipt.pay": ["FINANCE", "ACCOUNTING"],
+  "invoice.cancel": ["ACCOUNTING", "DIRECTOR"],
+  "supplier.opening.pay": ["FINANCE", "ACCOUNTING"],
+  "payroll.recalc": ["HR", "ACCOUNTING"],
+  "arenda.shop.edit": ["SECRETARY"],
+  // Ishlab chiqarish kabineti (`./sex-extra.ts`) — veb `requireAction` bilan bir xil (`PERM_EXACT`):
+  // zayavka qatorlarini brigadalarga taqsimlash, zames storno (odatda faqat direktor), retsept versiyasi, brigada tahriri, brak
+  "order.assign": ["PRODUCTION"],
+  "batch.storno": ["DIRECTOR"],
+  "recipe.version": ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"],
+  "brigade.edit": [...TASK_ROLES.brigadeEdit],
+  "defect.add": ["PRODUCTION", "SUPERVISOR"],
+  // Xato yozilgan brak: direktor — har qandayini, boshqalar — bugun o'zi yozganini (`canDeleteDefect`)
+  "defect.delete": ["PRODUCTION", "SUPERVISOR", "DIRECTOR"],
+  // Sklad / snabjeniye qo'shimchalari: storno, brigada skladi, «Kimga», narx, o'chirish, rekvizitlar (`./sklad-extra-access.ts`)
+  ...SKLAD_ACTION_ROLES,
 };
 
 /**
@@ -396,6 +444,7 @@ export const can = (user: MobileUser, action: string) => {
  * "faqat ko'rish" qilsa, ilovada ham tugma chiqmaydi va server rad etadi (veb bilan bir xil).
  */
 const PERM_EXACT: Record<string, { module: string; action?: string }> = {
+  ...KADR_PERM,
   "order.confirm": { module: "orders", action: "confirm" },
   "order.cancel": { module: "orders", action: "cancel" },
   "order.unblock": { module: "orders", action: "unblock" },
@@ -404,9 +453,10 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "trip.loaded": { module: "trips", action: "load" },
   "trip.cancel": { module: "trips", action: "cancel" },
   "trip.close": { module: "trips", action: "move" },
-  "trip.eco": { module: "trips", action: "move" },
+  "trip.eco": { module: "trips", action: "create" },
   "trip.problem": { module: "trips", action: "issue" },
-  "trip.resolve": { module: "trips", action: "issue" },
+  // Veb `resolveIssue` — `trips` → `move`
+  "trip.resolve": { module: "trips", action: "move" },
   "task.progress": { module: "tasks", action: "progress" },
   "task.finish": { module: "tasks", action: "progress" },
   "task.cancel": { module: "tasks", action: "cancel" },
@@ -417,6 +467,24 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "report.submit": { module: "production", action: "report" },
   "att.form": { module: "production", action: "report" },
   "material.price": { module: "stock", action: "price" },
+  "payment.storno": { module: "payments", action: "storno" },
+  "payment.link": { module: "payments", action: "create" },
+  "cashflow.delete": { module: "cashflow", action: "delete" },
+  "receipt.pay": { module: "cashflow", action: "pay" },
+  "invoice.cancel": { module: "sales", action: "invoice_cancel" },
+  "supplier.opening.pay": { module: "cashflow", action: "pay" },
+  "payroll.recalc": { module: "payroll", action: "calc" },
+  "arenda.shop.edit": { module: "arenda", action: "shops" },
+  "order.assign": { module: "production", action: "assign" },
+  "batch.storno": { module: "production", action: "batch_storno" },
+  "recipe.version": { module: "production", action: "recipe" },
+  "brigade.edit": { module: "tasks", action: "brigade" },
+  "defect.add": { module: "production", action: "report" },
+  "defect.delete": { module: "production", action: "report" },
+  ...DIREKTOR_PERM,
+  ...SKLAD_PERM_EXACT,
+  ...LOGI_PERM,
+  ...SOTUV_PERM_EXACT,
 };
 const PERM_PREFIX: [string, { module: string; action?: string }][] = [
   ["lead.", { module: "sales", action: "leads" }],
@@ -447,7 +515,8 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Sotuvchi schyot kartasidan to'lovni ochadi
   payments: ["CASHIER", "ACCOUNTING", "FINANCE", "SALES"],
   // Kassir to'lovni mijoz ustida oladi
-  customers: ["SALES", "ACCOUNTING", "FINANCE", "CASHIER"],
+  // Sotuv agenti — faqat o'ziga biriktirilgan mijoz (egalik `customerDetail` da tekshiriladi)
+  customers: ["SALES", "ACCOUNTING", "FINANCE", "CASHIER", "AGENT"],
   // Brigada kartasidan brigadirni ochadiganlar (SALES) ham
   employees: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR", "SALES"],
   // Sex statistikasi, sex xodimi va kunlik hisobot (`./sex.ts`)
@@ -472,8 +541,9 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   rasxod: ["WAREHOUSE", "PROCUREMENT"],
   ostatki: ["WAREHOUSE", "PROCUREMENT"],
   // Marketing posti va target so'rovi — direktor qarori (vebda ham «publish» / «boost_approve» faqat unda)
-  smm: [],
-  boost: [],
+  // Sotuv ham ochadi: tasdiqqa yuborish, target so'rovi (veb «Kontent reja» / «Target»); qarorlar baribir direktorda
+  smm: ["SALES"],
+  boost: ["SALES"],
   // Mexanik so'rovi — mexanikka faqat o'zinikini (`kirimDetail`)
   kirim: ["MECHANIC", "SUPERVISOR", "CASHIER"],
   // Pul qabul qilish so'rovi — ro'yxati bilan bir xil (`list.ts` ACCESS); usul bo'yicha cheklov `payreqDetail` da
@@ -481,6 +551,18 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Arenda (do'konlar ijarasi) — sekretar (`./arenda.ts`)
   "arenda-tx": ["SECRETARY"],
   "arenda-shop": ["SECRETARY"],
+  // Moliya qo'shimchalari — ro'yxatlari bilan bir xil (`list.ts` ACCESS, `./moliya-extra.ts`)
+  "kirim-qqs": ["ACCOUNTING", "FINANCE"],
+  openings: ["ACCOUNTING", "FINANCE"],
+  realizatsiya: ["CASHIER", "ACCOUNTING", "FINANCE"],
+  // Bitta brak yozuvi (sex «Brak» kartochkasidan) — o'chirish tugmasi bilan (`./sex-extra.ts`)
+  defect: ["PRODUCTION", "SUPERVISOR"],
+  // BI tahlil, ilova foydalanuvchilari, byudjet, Egasi paneli bloklari, kirish arizasi, o'chirish so'rovi (`./direktor-extra-access.ts`)
+  ...DIREKTOR_DETAIL_ROLES,
+  // Tayyor mahsulot, imkoniyat, oluvchi kartasi, ta'minot hujjati (`./sklad-extra-access.ts`)
+  ...SKLAD_DETAIL_ROLES,
+  ...LOGI_DETAIL_ROLES,
+  ...SOTUV_DETAIL_ROLES,
 };
 
 const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "brig-stock", "sex-emp", "dash", ...SELF_CARDS];
@@ -511,35 +593,46 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   }
   // Otdel kadr: ariza, oylik, vedomost (`./hr.ts`) — egalik / rol kartochka ichida tekshiriladi
   if (Object.hasOwn(HR_ACCESS, card)) return hrDetail(user, card, id);
+  // Otdel kadr kabineti — rol / ruxsat kartochka ichida (`listAllowed`, hujjat — faqat kadr va direktor)
+  if (Object.hasOwn(KADR_ACCESS, card) || KADR_CARDS.includes(card)) return kadrDetail(user, card, id);
+  if (DIREKTOR_CARDS.includes(card)) return direktorDetail(user, card, id);
+  if (SKLAD_CARDS.has(card)) return skladDetail(user, card, id);
+  // Logistika kartochkalari: transport, zapravka, xarajat, obyekt, davr hisoboti (`./logistika-extra.ts`)
+  if (["vehicles", "fuel", "expenses", "sites", "logi-report"].includes(card)) return logiDetail(user, card, id);
   switch (DETAIL_KEY[key] ?? key) {
-    case "orders": return orderDetail(user, id);
-    case "trips": return tripDetail(user, id);
+    case "orders": return withOrderTrip(user, await withOrderActions(user, await orderDetail(user, id)));
+    case "trips": return withTripExtras(user, await tripDetail(user, id));
     case "invoices": return invoiceDetail(user, id);
-    case "payments": return paymentDetail(id);
-    case "receipts": return receiptDetail(baseId(id));
+    case "payments": return paymentDetail(user, id);
+    case "receipts": return receiptDetail(user, baseId(id));
     case "tasks": return taskDetail(user, id);
-    case "production": return batchDetail(id);
+    case "production": return withBatchActions(user, await batchDetail(id));
     case "stock": return materialDetail(user, baseId(id));
     // «Chiqim» — berish hujjati (id = ref, `lib/stock-issue.ts`); «Qoldiqlar» — jami qatori yoki xomashyo
-    case "rasxod": return issueDetail(id);
-    case "ostatki": return id.startsWith(OSTATKI_SUM) ? ostatkiDetail(id) : materialDetail(user, baseId(id));
-    case "employees": return employeeDetail(user, id);
-    case "cashflow": return cashflowDetail(id);
+    case "rasxod": return issueDetail(user, baseId(id));
+    case "ostatki": return id.startsWith(OSTATKI_SUM) ? ostatkiDetail(user, id) : materialDetail(user, baseId(id));
+    case "employees": return withDriverExtras(user, await employeeDetail(user, id));
+    case "cashflow": return id.startsWith(CASH_SUM) ? cashSumDetail(id) : cashflowDetail(user, id);
+    case "kirim-qqs": return kirimQqsDetail(user, id);
+    case "openings": return openingDetail(user, id);
+    case "realizatsiya": return realizatsiyaDetail(id);
     case "supply": return supplyDetail(user, id);
     case "kirim": return kirimDetail(user, id);
     case "arenda-tx": return arendaTxDetail(user, id);
     case "arenda-shop": return arendaShopDetail(user, id);
+    case "offers": case "shop": case "akt": case "csite": case "mstat": return sotuvDetail(user, card, id);
     case "smm": return smmDetail(user, id);
     case "boost": return boostDetail(user, id);
     case "payreq": return payreqDetail(user, id);
     case "customers": return customerDetail(user, id);
     case "leads": return leadDetail(user, id);
-    case "brigades": return brigadeDetail(user, id);
+    case "brigades": return withBrigadeActions(user, await brigadeDetail(user, id));
     case "suppliers": return supplierDetail(user, id);
-    case "recipes": return recipeDetail(id);
+    case "recipes": return withRecipeActions(user, await recipeDetail(id));
+    case "defect": return defectCard(user, id);
     // Dashboard kartasi bosilganda — davr bo'yicha batafsil (`./dash-detail.ts`), rol foydalanuvchidan
     case "dash": return dashDetail(user, id);
-    case "sex": return sexDetail(user, id);
+    case "sex": return id.startsWith("defect") ? withDefectActions(user, await sexDetail(user, id)) : sexDetail(user, id);
     case "sex-emp": return sexEmployeeDetail(user, id);
     case "prod-report": return savedReportDetail(user, id);
     case "rep": return repDetail(user, id);
@@ -573,13 +666,16 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   const delivered = o.trips.filter((t) => t.status === "DELIVERED").reduce((s, t) => s + sum(t.qtyM3), 0);
 
   const actions: DetailAction[] = [];
-  if (o.status === "DRAFT" && !o.dateUnknown && can(user, "order.confirm")) actions.push({ id: "order.confirm", label: "Qabul qilish", tone: "success", confirm: "Zayavka qabul qilinsinmi? Kredit limiti tekshiriladi." });
+  // Sklad (zaxira) zayavkasi — o'z tugmalari, `stock` ruxsati bilan (`orderExtras`)
+  const sale = o.kind !== "STOCK";
+  if (sale && o.status === "DRAFT" && !o.dateUnknown && can(user, "order.confirm")) actions.push({ id: "order.confirm", label: "Qabul qilish", tone: "success", confirm: "Zayavka qabul qilinsinmi? Kredit limiti tekshiriladi." });
   // Direktor qarori: "Tasdiqlash" (blokni ochish) — asosiy, "Rad etish" (bekor qilish) — ikkilamchi
   if (o.status === "BLOCKED" && can(user, "order.unblock")) actions.push({ id: "order.unblock", label: "Tasdiqlash", tone: "success", confirm: `Kredit limiti oshgan (${money(credit.used)} / ${money(credit.limit)}). Blok ochilib, zayavka ishlab chiqarishga o'tsinmi?` });
-  if (["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && can(user, "order.cancel")) {
+  // Bekor qilish — veb kabi sabab majburiy (auditga yoziladi), zames/reys bo'lsa tugma yo'q
+  if (sale && ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && o.batches.length === 0 && o.trips.length === 0 && can(user, "order.cancel")) {
     // Direktor faqat bloklangan zayavkani rad etadi (qolganlari — sotuv bo'limining ishi)
-    if (user.role !== "DIRECTOR") actions.push({ id: "order.cancel", label: "Bekor qilish", tone: "danger", confirm: "Zayavka bekor qilinsinmi?" });
-    else if (o.status === "BLOCKED") actions.push({ id: "order.cancel", label: "Rad etish", tone: "danger", confirm: "Bloklangan zayavka rad etilsinmi? U bekor qilinadi." });
+    if (user.role !== "DIRECTOR") actions.push({ id: "order.cancel", label: "Bekor qilish", tone: "danger", form: REASON_FORM });
+    else if (o.status === "BLOCKED") actions.push({ id: "order.cancel", label: "Rad etish", tone: "danger", form: REASON_FORM });
   }
   // Schyot yozish — tasdiqlangan, hali schyoti yo'q zayavkaga (veb `/invoices/new` bilan bir xil qoida)
   const liveInvoices = o.invoices.filter((i) => i.status !== "CANCELLED");
@@ -592,6 +688,9 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       ],
     });
   }
+  // Kafolat xati, shartnoma, sklad zayavkasi, tijorat taklifi — `./sotuv-extra.ts`
+  const extra = await orderExtras(user, o, total);
+  actions.push(...extra.actions);
 
   return {
     key: "orders", id: o.id, title: o.orderNo, subtitle: o.customer.name, status: o.status,
@@ -607,18 +706,21 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       ...(o.isUrgent ? [{ label: "Shoshilinch", value: "Ha", tone: "danger" as Tone }] : []),
       ...(o.onCredit ? [{ label: "Qarzga", value: o.guaranteeAt ? `Kafolat xati bor (${day(o.guaranteeAt)})` : "Kafolat xati yo'q", tone: o.guaranteeAt ? "success" as Tone : "danger" as Tone }] : []),
       ...(o.contractNo ? [{ label: "Shartnoma", value: `${o.contractNo}${o.contractAmount ? ` · ${money(sum(o.contractAmount))}` : ""}` }] : []),
+      ...extra.fields,
       { label: "Kim kiritdi", value: `${o.createdBy.fullName} · ${day(o.date)}` },
       ...(o.note ? [{ label: "Izoh", value: o.note }] : []),
     ],
-    sections: [
+    ...(extra.photo ? { photo: extra.photo } : {}),
+    sections: ([
       { title: "Mahsulotlar", empty: "Qator yo'q", icon: "package", rows: o.items.map((i) => ({ id: i.id, title: i.product.name, subtitle: `${money(sum(i.price))} / ${unitLabel(i.product.unit)}`, right: inUnit(sum(i.qtyM3), i.product.unit) })) },
       { title: "Reyslar", empty: "Reys yo'q", target: "trips", rows: o.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: t.driver.fullName, right: inUnit(sum(t.qtyM3), orderUnit), status: t.status, tone: TRIP_TONE[t.status] })) },
       { title: "Zameslar", empty: "Zames yo'q", target: "production", rows: o.batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: day(b.date), right: inUnit(sum(b.qtyM3), b.product.unit) })) },
       { title: "Schyotlar", empty: "Schyot yo'q", target: "invoices", rows: o.invoices.map((i) => ({ id: i.id, title: i.invoiceNo, subtitle: day(i.date), right: money(sum(i.amount)), status: i.status })) },
-    ]
+    ] as HomeSection[])
       // Schyot kartasi faqat moliya va sotuvga ochiq (DETAIL_ROLES) — boshqalarga ochilmaydigan havola ko'rsatilmaydi
       .filter((s) => s.target !== "invoices" || user.role === "DIRECTOR" || (DETAIL_ROLES.invoices ?? []).includes(user.role))
-      .filter((s) => s.rows.length > 0 || s.title === "Mahsulotlar"),
+      .filter((s) => s.rows.length > 0 || s.title === "Mahsulotlar")
+      .concat(extra.sections),
     actions,
   };
 }
@@ -736,7 +838,7 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     actions: [
       ...actions,
       // Ochiq muammolarni ilovadan hal qilish (logistika)
-      ...(!isDriver && openIssues.length && can(user, "trip.resolve") ? [{ id: "trip.resolve", label: `Muammoni hal qilish (${openIssues.length})`, tone: "success" as const, form: [{ name: "resolution", label: "Qanday hal qilindi", type: "text" as const, required: true }] }] : []),
+      ...(!isDriver && openIssues.length && can(user, "trip.resolve") ? [{ id: "trip.resolve", label: `Muammoni hal qilish (${openIssues.length})`, tone: "success" as const, form: resolveIssueForm(openIssues, ISSUE_KIND) }] : []),
     ],
   };
 }
@@ -776,6 +878,8 @@ async function invoiceDetail(user: MobileUser, id: string): Promise<MobileDetail
       ],
     });
   }
+  // «Bekor qilish» — ochiq, to'lovsiz schyot (`./moliya-extra.ts`, qoida `lib/invoices.ts`)
+  actions.push(...invoiceCancelActions(user, inv, paid));
 
   const fields: DetailField[] = [
     { label: "Schyot", value: inv.invoiceNo },
@@ -805,7 +909,7 @@ async function invoiceDetail(user: MobileUser, id: string): Promise<MobileDetail
 
 // ───────────────────────── Qolganlari — faqat ko'rish ─────────────────────────
 
-async function paymentDetail(id: string): Promise<MobileDetail> {
+async function paymentDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const p = await db.payment.findUnique({ where: { id }, include: { customer: true, cashAccount: true, invoice: true, order: true, createdBy: { select: { fullName: true } } } });
   if (!p) throw new ListError("NOT_FOUND", "To'lov topilmadi", 404);
   const fields: DetailField[] = [
@@ -819,7 +923,8 @@ async function paymentDetail(id: string): Promise<MobileDetail> {
   ];
   return {
     key: "payments", id: p.id, title: `+${money(sum(p.amount))}`, subtitle: p.customer.name,
-    fields, sections: [], actions: [],
+    // Storno va schyotga bog'lash — `./moliya-extra.ts`
+    fields, sections: [], actions: await paymentActions(user, p.id),
     receipt: {
       headline: `+${money(sum(p.amount))}`, caption: p.customer.name,
       status: { label: "To'lov qabul qilindi", tone: "success", at: p.date.toISOString() },
@@ -828,7 +933,7 @@ async function paymentDetail(id: string): Promise<MobileDetail> {
   };
 }
 
-async function receiptDetail(id: string): Promise<MobileDetail> {
+async function receiptDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const r = await db.goodsReceipt.findUnique({
     where: { id },
     include: { supplier: true, warehouse: true, createdBy: true, recipient: { select: { name: true } }, buyer: { select: { fullName: true } }, items: { include: { material: true } } },
@@ -860,12 +965,16 @@ async function receiptDetail(id: string): Promise<MobileDetail> {
     // Storno: sklad harakatlari teskari yozilgan — qoldiq va qarzga kirmaydi
     ...(r.cancelledAt ? [{ label: "Holat", value: `Storno qilingan · ${day(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
   ];
+  // Moliya: to'lanmagan kirim bo'lsa — qolgan summa va «To'lash» (`./moliya-extra.ts`, veb Kirim-Chiqim → «To'lanmagan kirimlar»)
+  const moliya = r.cancelledAt ? null : await receiptPayActions(user, r.id);
+  // Sklad: to'langan summa va «Storno» (`./sklad-extra.ts`, veb `/receipts/[id]`)
+  const sklad = await receiptExtra(user, r);
   return {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
     ...(r.cancelledAt ? { status: "Storno" } : {}),
-    fields: fields.slice(1),
+    fields: [...fields.slice(1), ...sklad.fields, ...(moliya?.fields ?? [])],
     sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}${sum(i.deliveryCost) > 0 ? ` + yetkazib berish ${money(sum(i.deliveryCost))}` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
-    actions: [],
+    actions: [...(moliya?.actions ?? []), ...sklad.actions],
     // Xarid — pul chiqib ketgan hujjat, chekda qizil
     receipt: {
       headline: r.cancelledAt ? `${money(total)} · storno` : `−${money(total)}`, caption: r.supplier.name,
@@ -1059,10 +1168,12 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
         name: "price", label: `Dona narxi (1 ${u} uchun)`, type: "number", required: true, placeholder: "0",
         // Narx yo'q bo'lsa — o'rtacha tannarx taklif qilinadi (vebdagi «o'rtachadan to'ldirish» kabi)
         value: own != null ? String(own) : avg != null ? String(Math.round(avg * 100) / 100) : undefined,
-        hint: "Chiqim, brigadaga berish va hisobdan chiqarish shu narxda hisoblanadi. Narxni olib tashlash — saytda (Sklad → Qoldiqlar)",
+        hint: "Chiqim, brigadaga berish va hisobdan chiqarish shu narxda hisoblanadi",
       }],
     });
   }
+  // «Dona narxi» ni olib tashlash va xomashyoni o'chirish (`./sklad-extra.ts`)
+  actions.push(...materialExtraActions(user, m));
 
   return {
     key: "stock", id: m.id, title: m.name, subtitle: m.code,
@@ -1100,12 +1211,12 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
  * «Chiqim» — bitta berish hujjati (Sklad → Chiqim, `lib/stock-issue.ts#issueStock`): `refType "Issue"`, id = ref.
  * Ilova yangi «Chiqim» saqlangach shu kartochkani ochadi. Narx — yozilgan paytdagi «Dona narxi» (snapshot).
  */
-async function issueDetail(ref: string): Promise<MobileDetail> {
+async function issueDetail(user: MobileUser, ref: string): Promise<MobileDetail> {
   const moves = await db.stockMove.findMany({
     where: { refType: "Issue", refId: ref },
     orderBy: { createdAt: "asc" },
     select: {
-      id: true, date: true, qty: true, unitCost: true, note: true, materialId: true,
+      id: true, date: true, qty: true, unitCost: true, note: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true,
       material: { select: { name: true, unit: true } }, warehouse: { select: { name: true } },
       recipient: { select: { name: true } }, employee: { select: { fullName: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
     },
@@ -1131,6 +1242,8 @@ async function issueDetail(ref: string): Promise<MobileDetail> {
     ...(first.note ? [{ label: "Izoh", value: first.note }] : []),
     ...(storno ? [{ label: "Storno", value: [storno.note?.replace(STORNO_NOTE_RE, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
   ];
+  // Storno tugmasi va oluvchi kartasiga havola (`./sklad-extra.ts`)
+  const sklad = rasxodExtra(user, ref, !!storno, { recipientId: first.recipientId, employeeId: first.employeeId, brigadeId: first.brigadeId, name: to });
   return {
     key: "rasxod", id: ref, title: "Chiqim", subtitle: `${dateRu(first.date)} · ${to}`,
     ...(storno ? { status: "Storno" } : {}),
@@ -1143,8 +1256,8 @@ async function issueDetail(ref: string): Promise<MobileDetail> {
         subtitle: `${qtyUnit(l.q, l.mv.material?.unit ?? "")} × ${l.cost == null ? "narxsiz" : `${fmtNum(l.cost, 2)} so'm`}`,
         right: `−${fmtNum(l.total)}`, tone: "danger" as Tone,
       })),
-    }],
-    actions: [],
+    }, ...sklad.sections],
+    actions: sklad.actions,
     receipt: {
       headline: `−${fmtNum(total)} so'm`, caption: to,
       status: storno
@@ -1159,9 +1272,11 @@ async function issueDetail(ref: string): Promise<MobileDetail> {
  * «Qoldiqlar» jami qatori (`jami~<davr>`, `list.ts`): davr summalari, minimumdan kam qolganlar va eng ko'p sarflanganlar.
  * Qatorlar bosilsa — xomashyo kartochkasi.
  */
-async function ostatkiDetail(id: string): Promise<MobileDetail> {
-  const p = skladPeriod(id.slice(OSTATKI_SUM.length));
-  const rows = await materialTurnover({ from: p.from, to: p.to });
+async function ostatkiDetail(user: MobileUser, id: string): Promise<MobileDetail> {
+  // id: `jami~<davr>` yoki `jami~<davr>|<sklad>` (ro'yxatdagi sklad filtri, `./sklad-extra.ts`)
+  const { period: p, warehouseId } = parseSkladFilter(id.slice(OSTATKI_SUM.length));
+  const wh = warehouseId ? await db.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, name: true } }) : null;
+  const rows = await materialTurnover({ from: p.from, to: p.to, warehouseId: wh?.id });
   const s = turnoverSums(rows);
   const ap = s.approx ? "≈" : "";
   const money = (v: number) => `${ap}${fmtNum(v)} so'm`;
@@ -1172,7 +1287,7 @@ async function ostatkiDetail(id: string): Promise<MobileDetail> {
     subtitle: `Qoldiq ${fmtNum(m.close.q, 3)} · Minimum ${fmtNum(m.minStock, 3)} · Jami ${m.approx ? "≈" : ""}${fmtNum(m.close.s)}`,
   });
   return {
-    key: "ostatki", id, title: "Qoldiqlar — jami", subtitle: `${p.label} · ${p.range}`,
+    key: "ostatki", id, title: "Qoldiqlar — jami", subtitle: `${p.label} · ${p.range}${wh ? ` · ${wh.name}` : ""}`,
     fields: [
       { label: "Davr", value: p.range },
       { label: "Xomashyolar soni", value: String(rows.length) },
@@ -1187,7 +1302,8 @@ async function ostatkiDetail(id: string): Promise<MobileDetail> {
       ...(low.length ? [{ title: `Kam · ${low.length}`, empty: "", target: "stock", icon: "triangle-alert", rows: low.slice(0, 30).map((m) => ({ ...matRow(m, qtyUnit(m.close.q, m.unit)), status: "Kam", tone: "danger" as Tone })) }] : []),
       { title: "Eng ko'p chiqim", empty: "Davr ichida chiqim bo'lmadi", target: "stock", icon: "circle-arrow-up", rows: top.map((m) => matRow(m, `−${shortSum(m.out.s)}`)) },
     ],
-    actions: [],
+    // Narxi yo'q xomashyolarga o'rtacha tannarx (veb «Qoldiqlar» dagi tugma)
+    actions: ostatkiExtraActions(user, rows.filter((m) => m.isActive && m.unitPrice == null && (m.avgCost ?? 0) > 0).length),
   };
 }
 
@@ -1244,8 +1360,12 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
   if (led.length && can(user, "employee.brigade.clear")) {
     actions.push({ id: "employee.brigade.clear", label: "Brigadirlikdan olish", tone: "danger", confirm: `${e.fullName} ${led.map((b) => b.name).join(", ")} brigadirligidan olinsinmi? Brigada o'chmaydi, brigadirsiz qoladi.` });
   }
+  // Otdel kadr: tahrir, login, bo'shatish, surat, hujjatlar… — ruxsati borga (`./kadr-extra.ts`)
+  const kadr = await kadrEmployeeExtras(user, e.id);
+  actions.push(...kadr.actions);
 
   return {
+    ...(kadr.photo ? { photo: kadr.photo } : {}),
     key: "employees", id: e.id, title: e.fullName, subtitle: e.position, status: e.isActive ? "Faol" : "Nofaol",
     fields: [
       { label: "Telefon", value: e.phone ?? "—" },
@@ -1266,12 +1386,13 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
       ...(e.trips.length
         ? [{ title: "So'nggi reyslar", empty: "Reys yo'q", target: "trips", rows: e.trips.map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: day(t.createdAt), right: inUnit(sum(t.qtyM3), soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))), status: t.status, tone: TRIP_TONE[t.status] })) }]
         : []),
+      ...kadr.sections,
     ],
     actions,
   };
 }
 
-async function cashflowDetail(id: string): Promise<MobileDetail> {
+async function cashflowDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const t = await db.cashTransaction.findUnique({ where: { id }, include: { cashAccount: true, supplier: true, createdBy: true } });
   if (!t) throw new ListError("NOT_FOUND", "Yozuv topilmadi", 404);
   // Ishora — txSign (chiqim va o'tkazma-chiqdi manfiy); o'tkazma va boshlang'ich qoldiq — "info"
@@ -1290,7 +1411,8 @@ async function cashflowDetail(id: string): Promise<MobileDetail> {
   ];
   return {
     key: "cashflow", id: t.id, title: `${out ? "−" : "+"}${money(sum(t.amount))}`, subtitle: t.category,
-    fields, sections: [], actions: [],
+    // «O'chirish» — veb Kirim-Chiqim jadvalidagi kabi (`./moliya-extra.ts`)
+    fields, sections: [], actions: await cashflowActions(user, t),
     receipt: {
       headline: `${out ? "−" : "+"}${money(sum(t.amount))}`, caption: t.counterparty ? `${t.category} · ${t.counterparty}` : t.category,
       status: { label: out ? "Chiqim" : "Kirim", tone: out ? "danger" : "success", at: t.date.toISOString() },
@@ -1496,6 +1618,8 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
         { name: "photo", label: "Surat (kamera yoki galereya)", type: "photo", required: true, hint: "PDF bo'lsa — vebdan biriktiring" },
       ] });
   }
+  // Tijorat taklifini o'chirish (`./sklad-extra.ts`)
+  actions.push(...supplyExtraActions(user, r));
   if (isOpenSupply(st) && can(user, "supply.reject") && canRejectSupply(r, user)) {
     // Direktor uchun bu qaror — "Rad etish" (tasdiq kutayotgan hujjat), boshqalarga — "Bekor qilish"
     const rejectLabel = user.role === "DIRECTOR" && (st === "PRICED" || st === "APPROVED") ? "Rad etish" : "Bekor qilish";
@@ -1553,7 +1677,7 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
         id: x.id, title: INCIDENT_LABEL[x.kind], subtitle: `${x.note}${x.resolution ? ` → ${x.resolution}` : ""} · ${x.createdBy.fullName}`,
         right: shortDt(x.createdAt), status: x.resolvedAt ? "Hal qilindi" : "Ochiq", tone: (x.resolvedAt ? "success" : "danger") as Tone,
       })) }] : []),
-      ...(r.documents.length ? [{ title: "Hujjatlar", empty: "", icon: "file-text", rows: r.documents.map((d) => ({ id: d.id, title: d.kind, subtitle: `${d.fileName} · ${d.createdBy.fullName}`, right: shortDt(d.createdAt) })) }] : []),
+      ...(r.documents.length ? [{ title: "Hujjatlar", empty: "", icon: "file-text", target: "supply-doc", rows: r.documents.map((d) => ({ id: d.id, title: d.kind, subtitle: `${d.fileName} · ${d.createdBy.fullName}`, right: shortDt(d.createdAt) })) }] : []),
       { title: "Bosqichlar", empty: "Hali bosqich yozilmagan", icon: "clock", rows: r.events.map((e) => ({ id: e.id, title: STAGE_LABEL[e.stage] ?? SUPPLY_LABEL[e.stage], subtitle: `${e.user.fullName}${e.note ? ` · ${e.note}` : ""}`, right: shortDt(e.createdAt), tone: SUPPLY_TONE[e.stage] })) },
       ...(r.receipt ? [{ title: "Kirim hujjati", empty: "", target: "receipts", rows: [{ id: r.receipt.id, title: r.receipt.docNo, subtitle: "Skladga kirim", tone: "success" as Tone }] }] : []),
     ],
@@ -1728,6 +1852,8 @@ async function customerDetail(user: MobileUser, id: string): Promise<MobileDetai
   const credit = await customerCredit(c.id);
   const history = (await customersHistory([c.id])).get(c.id);
   const ORDER_TONE: Record<string, Tone> = { DRAFT: "info", BLOCKED: "danger", CONFIRMED: "brand", IN_PRODUCTION: "warning", DELIVERED: "success", CLOSED: "success", CANCELLED: "danger" };
+  // Tahrirlash, obyektlar, to'lovlar, akt sverki, ilova hisobi, agent, «Zayavka ochish» — `./sotuv-extra.ts`
+  const extra = await customerExtras(user, c, credit.blacklisted);
   return {
     key: "customers", id: c.id, title: c.name, subtitle: c.phone ?? undefined,
     status: !c.isActive ? "Nofaol" : credit.blacklisted ? "Qora ro'yxat" : history?.label,
@@ -1747,12 +1873,15 @@ async function customerDetail(user: MobileUser, id: string): Promise<MobileDetai
       ...(history?.orders ? [{ label: "Xarid", value: `${money(history.bought)} · ${history.orders} zayavka` }] : []),
       ...(history?.lastOrderAt ? [{ label: "Oxirgi zayavka", value: day(history.lastOrderAt) }] : []),
       { label: "Holat", value: c.isActive ? "Faol" : "Nofaol", tone: c.isActive ? "success" : "danger" },
+      ...extra.fields,
     ],
     sections: [
+      ...extra.sections.filter((x) => x.target === "new"),
       { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: c.invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: i.invoiceNo, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: (i.status === "PARTIAL" ? "warning" : "danger") as Tone }; }) },
       { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: c.orders.map((o) => ({ id: o.id, title: o.orderNo, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: money(o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
+      ...extra.sections.filter((x) => x.target !== "new"),
     ],
-    actions: [],
+    actions: extra.actions,
   };
 }
 
@@ -1793,7 +1922,11 @@ async function leadDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       ...(l.note ? [{ label: "Izoh", value: l.note, tone: "info" as Tone }] : []),
       { label: "Holat", value: LABEL[l.status], tone: TONE[l.status] },
     ],
-    sections: l.customer ? [{ title: "Mijoz", empty: "", target: "customers", rows: [{ id: l.customer.id, title: l.customer.name, subtitle: l.customer.phone ?? undefined, tone: "success" as Tone }] }] : [],
+    sections: [
+      ...(l.customer ? [{ title: "Mijoz", empty: "", target: "customers", rows: [{ id: l.customer.id, title: l.customer.name, subtitle: l.customer.phone ?? undefined, tone: "success" as Tone }] }] : []),
+      // Mijozga aylangandan keyin: «Zayavka ochish» / «Tijorat taklifi» (`./sotuv-extra.ts`)
+      ...leadExtras(user, { id: l.id, status: l.status, customerId: l.customerId }),
+    ],
     actions,
   };
 }
@@ -1832,6 +1965,8 @@ async function brigadeDetail(user: MobileUser, id: string): Promise<MobileDetail
       { title: "Ochiq topshiriqlar", empty: "Ochiq topshiriq yo'q", target: "tasks", rows: open.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: (t.dueDate < today ? "danger" : t.status === "NEW" ? "info" : "warning") as Tone })) },
       { title: "Yaqinda bajarilganlar", empty: "Hali bajarilgan topshiriq yo'q", target: "tasks", rows: done.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`, subtitle: `${t.order.customer.name} · ${day(t.updatedAt)}`, right: inUnit(sum(t.qty), t.orderItem.product.unit), tone: "success" as Tone })) },
       ...(b.leader ? [{ title: "Brigadir", empty: "", target: "employees", rows: [{ id: b.leader.id, title: b.leader.fullName, subtitle: b.leader.phone ?? undefined, tone: "success" as Tone }] }] : []),
+      // Brigada skladi — qo'lidagi xomashyo, berish / qaytarish (`./sklad-extra.ts`)
+      ...brigadeStockLink(user, b.id),
     ],
     actions,
   };
@@ -1857,6 +1992,12 @@ async function supplierDetail(user: MobileUser, id: string): Promise<MobileDetai
       ? { id: "supplier.toggle", label: "Yetkazuvchini yopish", tone: "danger", confirm: "Yopilgan yetkazuvchi kirim va narx formalarida chiqmaydi. Yopilsinmi?" }
       : { id: "supplier.toggle", label: "Qayta ochish", tone: "success" });
   }
+  // Boshlang'ich qarz va uni to'lash (`./moliya-extra.ts`, veb «Boshlang'ich qoldiqlar» → «To'lash»)
+  const opening = await supplierOpeningExtra(user, id);
+  actions.push(...opening.actions);
+  // Rekvizitlar, hisob-kitob, to'lanmagan kirimlar, narxlar tarixi va «Rekvizitlar» tugmasi (`./sklad-extra.ts`)
+  const sklad = await supplierExtra(user, id);
+  actions.unshift(...sklad.actions);
   return {
     key: "suppliers", id: s.id, title: s.name, subtitle: s.phone ?? undefined, status: s.isActive ? undefined : "Nofaol",
     fields: [
@@ -1866,10 +2007,13 @@ async function supplierDetail(user: MobileUser, id: string): Promise<MobileDetai
       { label: "Jami xarid", value: money(spent), tone: "brand" },
       { label: "Holat", value: s.isActive ? "Faol" : "Nofaol", tone: s.isActive ? "success" : "danger" },
       { label: "Qo'shilgan", value: day(s.createdAt) },
+      ...sklad.fields,
     ],
     sections: [
+      ...sklad.sections,
       { title: "Ochiq ta'minot zayavkalari", empty: "Ochiq zayavka yo'q", target: "supply", rows: s.supplyRequests.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.warehouse.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator`, right: money(totalPlanned(r)), status: SUPPLY_LABEL[r.status], tone: SUPPLY_TONE[r.status] })) },
       { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: s.receipts.map((r) => ({ id: r.id, title: r.docNo, subtitle: `${day(r.date)} · ${r.items.length} qator`, right: money(plannedSum(r.items)) })) },
+      ...opening.sections,
     ],
     actions,
   };
@@ -1889,7 +2033,7 @@ async function recipeDetail(id: string): Promise<MobileDetail> {
       { label: "Birlik", value: unit },
       { label: "Bazaviy narx", value: `${money(sum(p.price))} / ${unit}` },
       ...(p.strengthClass ? [{ label: "Sinf", value: p.strengthClass }] : []),
-      { label: "Amaldagi retsept", value: active ? `v${active.version} · ${active.items.length} tarkib · ${active._count.batches} zamesda ishlatilgan` : "Tuzilmagan — vebda Retseptlar bo'limida yarating", tone: active ? "success" : "warning" },
+      { label: "Amaldagi retsept", value: active ? `v${active.version} · ${active.items.length} tarkib · ${active._count.batches} zamesda ishlatilgan` : "Tuzilmagan — «Retsept tuzish» tugmasi bilan yarating", tone: active ? "success" : "warning" },
       ...(active?.note ? [{ label: "Izoh", value: active.note }] : []),
     ],
     sections: [
@@ -1923,6 +2067,9 @@ async function smmDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     actions.push({ id: "smm.reject", label: "Rad etish", tone: "danger", form: [{ name: "note", label: "Sabab", type: "text", required: true, placeholder: "Nimani o'zgartirish kerak" }] });
   }
   const photos = c.media.filter((m) => m.media.kind === "IMAGE").length, videos = c.media.length - photos;
+  // Sotuv: tasdiqqa yuborish, nashr, target so'rovi; nashrlar va so'rovlar (`./sotuv-extra.ts`)
+  const extra = await smmExtras(user, c.id);
+  actions.push(...extra.actions);
   return {
     key: "smm", id: c.id, title: c.title, subtitle: `${c.type === "REELS" ? "Reels" : c.type === "STORIES" ? "Stories" : "Post"}${c.createdBy ? ` · ${c.createdBy}` : ""}`,
     status: SMM_APPROVAL[c.approval],
@@ -1937,7 +2084,7 @@ async function smmDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       ...(c.captionUz ? [{ label: "Matn (ikkinchi til)", value: clip(c.captionUz, 600) }] : []),
       ...(c.hashtags ? [{ label: "Heshteglar", value: c.hashtags }] : []),
     ],
-    sections: [],
+    sections: extra.sections,
     actions,
   };
 }
@@ -1956,6 +2103,9 @@ async function boostDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     actions.push({ id: "boost.reject", label: "Rad etish", tone: "danger", form: [{ name: "note", label: "Sabab", type: "text", placeholder: "Ixtiyoriy" }] });
   }
   const OBJ: Record<string, string> = { REACH: "Ko'proq odam ko'rsin", MESSAGES: "Direct'ga yozishsin", LEADS: "Ariza qoldirishsin" };
+  // Natijalar va to'xtatish / davom ettirish (`./sotuv-extra.ts`)
+  const extra = await boostExtras(user, b.id);
+  actions.push(...extra.actions);
   return {
     key: "boost", id: b.id, title: `Target · ${b.content.title}`, subtitle: b.requestedByName ? `So'radi: ${b.requestedByName}` : undefined,
     status: b.status === "PENDING_APPROVAL" ? "Tasdiq kutilmoqda" : b.status,
@@ -1966,8 +2116,9 @@ async function boostDetail(user: MobileUser, id: string): Promise<MobileDetail> 
       { label: "Jami", value: `${fmtNum(total, 2)} ${cur}`, tone: "brand" },
       ...(b.note ? [{ label: "Izoh", value: b.note }] : []),
       ...(b.error ? [{ label: "Natija", value: b.error }] : []),
+      ...extra.fields,
     ],
-    sections: [],
+    sections: extra.sections,
     actions,
   };
 }

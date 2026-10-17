@@ -21,11 +21,13 @@ import { tripPayKm } from "@/lib/trip-summary";
 import { lineTotal } from "@/lib/receipt-vat";
 import { ownerCached } from "./owner-cache";
 import { webList } from "./problems";
+import { forecastDetail } from "./moliya-extra";
 import { ListError, driverEmployeeId, myBrigadeIds } from "./list";
 import type { MobileUser } from "./auth";
 import type { DetailField, MobileDetail } from "./detail";
 import type { HomeRow, HomeSection, Tone } from "./home";
 import type { BrigadeIssueKind, Role } from "@/generated/prisma";
+import { procReportDetail } from "./sklad-extra";
 
 /**
  * Dashboard kartasi bosilganda ochiladigan "batafsil" kartochka — barcha rollar uchun.
@@ -1301,12 +1303,15 @@ const BUILDERS: Partial<Record<Role, Record<string, Builder>>> = {
     consume: (c) => stockMoves(c.r, ["PRODUCTION_CONSUME"], "Zames sarfi", "retsept bo'yicha xomashyo"),
     adjust: (c) => stockMoves(c.r, ["ADJUSTMENT"], "Inventarizatsiya", "tuzatish yozuvlari"),
     brigade: (c) => stockMoves(c.r, ["BRIGADE_ISSUE", "BRIGADE_RETURN"], "Brigadaga berilgan", "berildi / qaytdi"),
+    // Snabjeniye hisoboti (veb `/snabjeniye/hisobot` — PROCUREMENT, WAREHOUSE) — `./sklad-extra.ts`
+    report: (c) => procReportDetail(c.r),
   },
   PROCUREMENT: {
     purchases: (c) => goodsReceipts(c.r, "Xarid"),
     open: (c) => procOpen(c.r),
     urgent: (c) => procList("urgent", c.r), orders: (c) => procList("orders", c.r), transit: (c) => procList("transit", c.r), late: (c) => procList("late", c.r),
     avg: procAvgDays,
+    report: (c) => procReportDetail(c.r),
   },
   MECHANIC: {
     shipped: (c) => deliveredTrips(c.r, null, "Jo'natildi"),
@@ -1327,6 +1332,10 @@ const BUILDERS: Partial<Record<Role, Record<string, Builder>>> = {
     out: (c) => expenses(c.r),
     balance: balances,
     budget: (c) => budgetDetail(c.r),
+    // Debitorka (aging bilan), kreditorka va 7 kunlik kassa prognozi — bosh sahifadagi kartalar (`./moliya-extra.ts`)
+    receivable: (c) => receivablesDetail(c.r),
+    payable: () => payablesDetail(),
+    forecast: () => forecastDetail(),
   },
   CASHIER: {
     payments: (c) => payments(c.r, "Tushum"),

@@ -2,12 +2,11 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, openMonth, parseMonth } from "@/lib/rent";
+import { RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, openMonth, parseMonth, saveRentShopData } from "@/lib/rent";
 
 const done = () => revalidatePath("/arenda");
 const token = (v: string | null) => (v && /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null);
@@ -102,26 +101,9 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   const r = parseForm(shopSchema, fd);
   if ("error" in r) return { error: r.error };
   const { id, month: key, ...data } = r.data;
-  try {
-    if (id) {
-      const before = await db.rentShop.findUnique({ where: { id } });
-      if (!before) return { error: "Do'kon topilmadi" };
-      const after = await db.rentShop.update({ where: { id }, data });
-      await audit(db, s.userId, "UPDATE", "RentShop", id, before, after);
-    } else {
-      const month = parseMonth(key);
-      await db.$transaction(async (tx) => {
-        const shop = await tx.rentShop.create({ data });
-        await audit(tx, s.userId, "CREATE", "RentShop", shop.id, undefined, shop);
-        if (month && (await tx.rentCharge.count({ where: { month } }))) {
-          await tx.rentCharge.create({ data: { shopId: shop.id, month, bankDue: data.bankAmount, cashDue: data.cashAmount, electricity: data.electricity, tax: data.tax } });
-        }
-      });
-    }
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return { error: `«${data.location}» da «${data.name}» nomli do'kon allaqachon bor` };
-    throw e;
-  }
+  // Qoida `lib/rent.ts` da — mobil do'kon kartochkasi ham shuni chaqiradi
+  const res = await saveRentShopData(id, data, id ? null : parseMonth(key), s.userId);
+  if (res.error) return { error: res.error };
   done();
   return { ok: true, note: id ? "Do'kon saqlandi" : "Do'kon qo'shildi" };
 }

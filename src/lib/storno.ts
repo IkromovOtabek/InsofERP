@@ -22,7 +22,10 @@ export type StornoResult = { ok: true; note: string } | { error: string };
 
 class StornoError extends Error {}
 
-type Move = { warehouseId: string; materialId: string | null; productId: string | null; qty: Prisma.Decimal | number; type: Prisma.StockMoveCreateManyInput["type"]; unitCost: Prisma.Decimal | number | null; brigadeId: string | null };
+type Move = {
+  warehouseId: string; materialId: string | null; productId: string | null; qty: Prisma.Decimal | number; type: Prisma.StockMoveCreateManyInput["type"];
+  unitCost: Prisma.Decimal | number | null; brigadeId: string | null; recipientId?: string | null; employeeId?: string | null;
+};
 
 /**
  * Teskari harakatlardan keyin qoldiq (sklad × xomashyo/mahsulot) minusga tushmasligini tekshiradi.
@@ -52,12 +55,48 @@ async function checkNoNegative(tx: Prisma.TransactionClient, moves: Move[], name
 
 async function reverseMoves(tx: Prisma.TransactionClient, moves: Move[], refType: string, refId: string, note: string, userId: string) {
   if (!moves.length) return;
-  await tx.stockMove.createMany({
-    data: moves.map((m) => ({
-      type: m.type, warehouseId: m.warehouseId, materialId: m.materialId, productId: m.productId, brigadeId: m.brigadeId,
-      qty: -Number(m.qty), unitCost: m.unitCost, refType, refId, note, createdById: userId,
-    })),
-  });
+  // Brigadaga berilgani (kirimdagi «Kimga» = brigada): teskari StockMove + brigada qoldig'idan ayirish (BrigadeMove ISSUE −)
+  const toBrigade = moves.filter((m) => m.type === "BRIGADE_ISSUE" && m.brigadeId && m.materialId);
+  const rest = moves.filter((m) => !toBrigade.includes(m));
+  if (rest.length) {
+    await tx.stockMove.createMany({
+      data: rest.map((m) => ({
+        type: m.type, warehouseId: m.warehouseId, materialId: m.materialId, productId: m.productId, brigadeId: m.brigadeId,
+        recipientId: m.recipientId ?? null, employeeId: m.employeeId ?? null,
+        qty: -Number(m.qty), unitCost: m.unitCost, refType, refId, note, createdById: userId,
+      })),
+    });
+  }
+  for (const m of toBrigade) {
+    const back = await tx.stockMove.create({
+      data: {
+        type: m.type, warehouseId: m.warehouseId, materialId: m.materialId, brigadeId: m.brigadeId,
+        qty: -Number(m.qty), unitCost: m.unitCost, refType, refId, note, createdById: userId,
+      },
+    });
+    await tx.brigadeMove.create({
+      data: { type: "ISSUE", brigadeId: m.brigadeId!, materialId: m.materialId!, qty: Number(m.qty), unitCost: m.unitCost, refType: "StockMove", refId: back.id, note, createdById: userId },
+    });
+  }
+}
+
+/** Kirim bilan brigadaga darhol berilgan xomashyo hali brigada qo'lida bormi (sarflangan / qaytarilgan bo'lsa storno rad). */
+async function checkBrigadeHeld(tx: Prisma.TransactionClient, moves: Move[], names: Map<string, string>) {
+  const need = new Map<string, { brigadeId: string; materialId: string; qty: number }>();
+  for (const m of moves) {
+    if (m.type !== "BRIGADE_ISSUE" || !m.brigadeId || !m.materialId) continue;
+    const k = `${m.brigadeId}|${m.materialId}`;
+    const cur = need.get(k) ?? { brigadeId: m.brigadeId, materialId: m.materialId, qty: 0 };
+    cur.qty += -Number(m.qty);
+    need.set(k, cur);
+  }
+  const short: string[] = [];
+  for (const n of need.values()) {
+    if (n.qty <= STOCK_EPS) continue;
+    const held = Number((await tx.brigadeMove.aggregate({ where: { brigadeId: n.brigadeId, materialId: n.materialId }, _sum: { qty: true } }))._sum.qty ?? 0);
+    if (held < n.qty - STOCK_EPS) short.push(`${names.get(n.materialId) ?? "?"}: brigadada ${fq(Math.max(0, held))}, qaytarish kerak ${fq(n.qty)}`);
+  }
+  if (short.length) throw new StornoError(`Storno mumkin emas: brigada xomashyoning bir qismini sarflagan yoki qaytargan (${short.join("; ")})`);
 }
 
 /** Kirim hujjatini storno qilish. */
@@ -79,6 +118,7 @@ export async function cancelReceipt(id: string, reason: string, userId: string):
     const moves = await tx.stockMove.findMany({ where: { refType: "GoodsReceipt", refId: id } });
     const names = new Map(rec.items.map((i) => [i.material.id, i.material.name]));
     await checkNoNegative(tx, moves, names);
+    await checkBrigadeHeld(tx, moves, names);
     await reverseMoves(tx, moves, "GoodsReceipt", id, `Storno ${rec.docNo}: ${why}`, userId);
     const r = await tx.goodsReceipt.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: why, cancelledById: userId } });
     if (r.count !== 1) throw new StornoError("Kirim shu payt boshqa joyda o'zgardi — sahifani yangilang");

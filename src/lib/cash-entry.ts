@@ -4,6 +4,7 @@ import { money } from "@/lib/format";
 import { cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
+import { MAX_AMOUNT } from "@/lib/action";
 
 /**
  * Qo'lda kirim/chiqim yozish — yagona joy: veb "Kirim-Chiqim" formasi ham (`cashflow/actions.ts`),
@@ -79,5 +80,74 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
     });
     await audit(tx, userId, "CREATE", "CashTransaction", t.id, undefined, t);
     return { id: t.id };
+  }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
+}
+
+/**
+ * Qo'lda yozilgan kirim/chiqimni o'chirish — veb Kirim-Chiqim jadvalidagi o'chirish tugmasi (`cashflow/actions.ts`)
+ * va mobil ilovadagi kassa yozuvi kartochkasi shu yerdan. Yozuv o'chadi, to'liq holati auditda qoladi.
+ *
+ * Hujjatga bog'langan yozuv (sklad kirimi, ta'minot to'lovi) qo'lda o'chirilmaydi — aks holda yo'q yozuvga
+ * ishora qilib qoladi. Istisno — kirim hujjatiga (GoodsReceipt) to'lov: uni o'chirish to'lovni storno qilish,
+ * kirim yana "to'lanmagan" ro'yxatiga qaytadi (kirimni storno qilishdan oldin shu kerak).
+ * Ta'minot zanjirining chiqimi esa zanjirda (moliya) boshqariladi.
+ */
+export async function deleteCashEntry(id: string, userId: string): Promise<{ error?: string }> {
+  const t = await db.cashTransaction.findUnique({ where: { id } });
+  if (!t) return { error: "Yozuv topilmadi (allaqachon o'chirilgan bo'lishi mumkin)" };
+  const why = await cashEntryLocked(t);
+  if (why) return { error: why };
+  return db.$transaction(async (tx) => {
+    // Kirimni o'chirish ham naqd kassani minusga tushirishi mumkin
+    if (t.type === "INCOME") {
+      const err = await cashOutflowError(tx, t.cashAccountId, Number(t.amount));
+      if (err) throw new CashError(`Bu kirim o'chirilsa kassa minusga tushadi. ${err}`);
+    }
+    await tx.cashTransaction.delete({ where: { id } });
+    await audit(tx, userId, "DELETE", "CashTransaction", id, t, undefined);
+    return {};
+  }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
+}
+
+/** Yozuvni qo'lda o'chirib bo'lmasa — sababi (veb jadvalidagi va mobil kartochkadagi tugma shu bilan ko'rinadi). */
+export async function cashEntryLocked(t: { id: string; refType: string | null }): Promise<string | null> {
+  if (t.refType && t.refType !== "GoodsReceipt") return "Hujjatga bog'langan yozuvni o'chirib bo'lmaydi";
+  if (t.refType === "GoodsReceipt" && (await db.supplyRequest.count({ where: { cashTxId: t.id } }))) return "Bu chiqim ta'minot zayavkasining puli — Ta'minot bo'limida boshqariladi";
+  return null;
+}
+
+/**
+ * To'lanmagan kirimni to'lash: moliya hisobni tanlaydi, kirimning QOLGAN summasi (yoki kiritilgan qismi)
+ * chiqim bo'lib yoziladi. To'langan = kirimga bog'langan barcha chiqimlar (qo'lda bog'langan qisman to'lov ham).
+ * Kirim bo'yicha qulf — ikki marta bosilsa ikkinchisi qolgan summani 0 ko'radi (`paid: 0`); ortiqcha to'lov rad etiladi.
+ * Veb Kirim-Chiqim → «To'lanmagan kirimlar» (`cashflow/actions.ts` → `payReceipt`) va mobil kirim kartochkasi shu yerdan.
+ */
+export async function payReceiptEntry(receiptId: string, input: { cashAccountId: string; amount: number | null }, userId: string): Promise<{ error?: string; paid?: number; left?: number }> {
+  const acc = await db.cashAccount.findFirst({ where: { id: input.cashAccountId, isActive: true } });
+  if (!acc) return { error: "Kassa/hisob tanlanmagan" };
+  // Bo'sh — qolgan summaning hammasi; kiritilsa — qisman to'lov
+  const part = input.amount;
+  if (part != null && !(Number.isFinite(part) && part > 0 && part <= MAX_AMOUNT)) return { error: "To'lov summasi noto'g'ri" };
+  return db.$transaction(async (tx) => {
+    await lockReceipt(tx, receiptId);
+    const st = await receiptPayState(tx, receiptId);
+    if (!st) throw new CashError("Kirim hujjati topilmadi");
+    if (st.cancelled) throw new CashError(`${st.docNo} storno qilingan — to'lanmaydi`);
+    if (st.left <= 0.005) return { paid: 0, left: 0 }; // allaqachon to'liq to'langan (ikki marta bosilgan)
+    if (part != null && part > st.left + 0.005) throw new CashError(`${st.docNo} bo'yicha qolgan to'lov ${money(st.left)} — ${money(part)} ortiqcha`);
+    const amount = part ?? st.left;
+    // Naqd kassadan to'lov qoldiqdan oshmasin — bankdan to'lash yoki avval kassani to'ldirish kerak
+    const err = await cashOutflowError(tx, acc.id, amount);
+    if (err) throw new CashError(err);
+    const t = await tx.cashTransaction.create({
+      data: {
+        type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount, category: "Xomashyo",
+        supplierId: st.supplierId, counterparty: st.supplierName,
+        note: `Kirim ${st.docNo} · ${st.lines} qator (moliya to'ladi${amount < st.left - 0.005 ? `, qisman: ${money(amount)} / ${money(st.left)}` : ""})`,
+        refType: "GoodsReceipt", refId: st.id, createdById: userId,
+      },
+    });
+    await audit(tx, userId, "CREATE", "CashTransaction", t.id, undefined, t);
+    return { paid: amount, left: r2(st.left - amount) };
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
 }

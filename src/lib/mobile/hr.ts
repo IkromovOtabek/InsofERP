@@ -16,6 +16,8 @@ import { ListError, type ListFilter, type MobileList } from "./list";
 import { HR_ACCESS } from "./hr-access";
 import { runWorkAction, workDetail, workList } from "./hr-work";
 import { peopleDetail, peopleList, runPeopleAction } from "./hr-people";
+import { runVoiceAction, voiceDetail, voiceList } from "./hr-voice";
+import { payLineFields, payLineIds, payrollRecalc, payrollRecalcActions } from "./moliya-extra";
 
 /**
  * Mobil ilova — otdel kadr modullari (server boshqaradigan ro'yxat / kartochka / forma / amal, ilovani o'zgartirmasdan):
@@ -53,10 +55,12 @@ const REQ_TABS: { key: HrRequestStatus | "ALL"; label: string }[] = [
 
 const WORK_KEYS = ["vazifalarim", "cheklistim", "kpim"];
 const PEOPLE_KEYS = ["kurslarim", "moslashuvim", "suhbatlarim", "nomzodlar"];
+const VOICE_KEYS = ["sorovnomalar", "murojaatlarim", "murojaatlar", "xabarlar"];
 
 export async function hrList(user: MobileUser, key: string, q?: string, filter?: string): Promise<MobileList> {
   if (WORK_KEYS.includes(key)) return workList(user, key, q, filter);
   if (PEOPLE_KEYS.includes(key)) return peopleList(user, key, q, filter);
+  if (VOICE_KEYS.includes(key)) return voiceList(user, key);
   const title = HR_ACCESS[key]!.title;
   if (key === "arizalarim") {
     const e = await myEmployee(user);
@@ -119,10 +123,31 @@ export async function hrList(user: MobileUser, key: string, q?: string, filter?:
 export async function hrDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (WORK_KEYS.includes(key)) return workDetail(user, key, id);
   if (PEOPLE_KEYS.includes(key)) return peopleDetail(user, key, id);
+  if (VOICE_KEYS.includes(key)) return voiceDetail(user, key, id);
   if (key === "arizalarim" || key === "arizalar") return requestDetail(user, key, id);
   if (key === "oyligim") return payslipDetail(user, id);
   if (key === "ish-haqi") return runDetail(user, id);
+  if (key === "grafigim") return shiftDayDetail(user, id);
   throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
+}
+
+/** «Smena grafigim» qatori (id — `YYYY-MM-DD`): ilova ro'yxatning har qatorini ochadi, shu kunning rejasi. */
+async function shiftDayDetail(user: MobileUser, iso: string): Promise<MobileDetail> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || Number.isNaN(dayUtc(iso).getTime())) throw new ListError("NOT_FOUND", "Kun topilmadi", 404);
+  const e = await myEmployee(user);
+  const p = (await plansInRange([{ id: e.id, workSchedule: e.workSchedule }], iso, iso)).get(e.id)?.get(iso);
+  if (!p) throw new ListError("NOT_FOUND", "Kun topilmadi", 404);
+  return {
+    key: "grafigim", id: iso,
+    title: `${WD[dayUtc(iso).getUTCDay()]}, ${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`,
+    subtitle: e.fullName,
+    status: p.off ? "Dam olish kuni" : "Ish kuni", fields: [
+      { label: "Holat", value: p.off ? "Dam olish kuni" : "Ish kuni", tone: (p.off ? "info" : "brand") as Tone },
+      ...(p.off ? [] : [{ label: "Ish vaqti", value: `${p.start}–${p.end}` }]),
+      { label: "Grafik", value: p.label ?? "Kartadagi ish grafigi" },
+    ],
+    sections: [], actions: [],
+  };
 }
 
 async function requestDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
@@ -192,6 +217,7 @@ async function runDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   if (!r) throw new ListError("NOT_FOUND", "Vedomost topilmadi", 404);
   const n = (v: unknown) => Number(v ?? 0);
   const actions: DetailAction[] = [];
+  actions.push(...payrollRecalcActions(user, r)); // qoralamani qayta hisoblash (`./moliya-extra.ts`)
   if (r.status === "DRAFT" && canPayroll(user, "calc")) actions.push({ id: "payroll.submit", label: "Direktor tasdig'iga yuborish", tone: "brand", confirm: "Yuborilgandan keyin qayta hisoblanmaydi. Yuborasizmi?" });
   if (r.status === "SUBMITTED" && canPayroll(user, "approve")) {
     actions.push({ id: "payroll.approve", label: "Tasdiqlash", tone: "success", confirm: `${money(n(r.net))} ish haqini tasdiqlaysizmi? Kassa to'laydi` });
@@ -205,6 +231,7 @@ async function runDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { name: "cashAccountId", label: "Qaysi kassadan", type: "select", required: true, value: accounts.find((a) => a.type === "CASH")?.id ?? accounts[0]?.id,
         options: accounts.map((a) => ({ value: a.id, label: `${a.name} · ${a.type === "CASH" ? "naqd" : "bank"}`, hint: `qoldiq ${money(a.balance)}` })), hint: `Hammaga ${money(left)} — Kirim-Chiqimda «Ish haqi» chiqimi` },
       { name: "note", label: "Izoh", type: "text" },
+      ...payLineFields(unpaid), // kimga to'lanadi — vebdagi kabi tanlab (`./moliya-extra.ts`)
     ];
     actions.push({ id: "payroll.pay", label: `To'lash · ${money(left)}`, tone: "success", form });
   }
@@ -263,6 +290,7 @@ export async function runHrAction(user: MobileUser, action: string, id: string, 
   const out = (r: { error?: string; note?: string }) => { if (r.error) throw new ListError("ACTION_FAILED", r.error, 400); return r.note ?? "Bajarildi"; };
   if (action.startsWith("wtask.") || action === "checklist.save") return runWorkAction(user, action, id, payload);
   if (["course.take", "onb.steps", "interview.result", "cand.move"].includes(action)) return runPeopleAction(user, action, id, payload);
+  if (["survey.answer", "fb.reply", "fb.hrreply", "fb.resolve"].includes(action)) return runVoiceAction(user, action, id, payload);
   switch (action) {
     case "hrreq.approve":
     case "hrreq.reject":
@@ -272,7 +300,8 @@ export async function runHrAction(user: MobileUser, action: string, id: string, 
     case "payroll.submit": return out(await submitRun(id, who));
     case "payroll.approve": return out(await approveRun(id, who));
     case "payroll.return": return out(await returnRun(id, note, who));
-    case "payroll.pay": return out(await payRun(id, { cashAccountId: String(payload.cashAccountId ?? ""), note }, who));
+    case "payroll.pay": return out(await payRun(id, { cashAccountId: String(payload.cashAccountId ?? ""), lineIds: payLineIds(payload), note }, who));
+    case "payroll.recalc": return out(await payrollRecalc(user, id));
   }
   throw new ListError("ACTION_FAILED", "Bunday amal yo'q", 404);
 }

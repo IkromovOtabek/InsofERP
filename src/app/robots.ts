@@ -45,6 +45,8 @@ export default function robots(): MetadataRoute.Robots {
         "/logistika",
         // QR tekshiruv sahifalari (hujjat bo'yicha) va IT panel — qidiruvga chiqmasin
         "/verify",
+        "/taklif/",
+        "/takliflar",
         "/superadmin",
       ],
     },
