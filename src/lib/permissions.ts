@@ -143,6 +143,9 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
     { key: "checklists", label: "Kundalik cheklistlar (lavozim majburiyatlari)", roles: ["HR"] },
     { key: "kpi",      label: "KPI: ko'rsatkichlar va faktlar",   roles: ["HR"], hint: "Mukofot oy yakuni ish haqiga bonus bo'lib qo'shiladi" },
+    { key: "recruit",  label: "Yollash: vakansiya, nomzodlar, suhbatlar", roles: ["HR"], hint: "Nomzodni qabul qilish xodim kartasini ochadi" },
+    { key: "onboarding", label: "Ishga qabul va moslashuv (sinov muddati)", roles: ["HR"] },
+    { key: "training", label: "O'qitish: kurslar, testlar, sertifikatlar", roles: ["HR"] },
     { key: "attendance", label: "Barcha xodimlarni davomatdan o'tkazish (skaner)", roles: ["HR", "SUPERVISOR"], hint: "Davomat sahifasi va ECO skaneri — sexdan tashqari xodimlar ham; yuzni ro'yxatga olish baribir faqat otdel kadrda" },
   ],
   // Umumiy vazifalar (`/vazifalar`, `lib/hr/tasks.ts`): o'ziga — har kim; boshqaga berish — rahbarlar

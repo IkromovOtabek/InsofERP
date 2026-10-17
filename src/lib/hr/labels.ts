@@ -1,4 +1,4 @@
-import type { HrRequestKind, HrRequestStatus, KpiSource, PayAdjKind, PayRuleTrigger, PayType, PayrollKind, PayrollStatus, WorkTaskPriority, WorkTaskStatus } from "@/generated/prisma";
+import type { CandidateStage, EnrollmentStatus, InterviewResult, ProbationStatus, VacancyStatus, HrRequestKind, HrRequestStatus, KpiSource, PayAdjKind, PayRuleTrigger, PayType, PayrollKind, PayrollStatus, WorkTaskPriority, WorkTaskStatus } from "@/generated/prisma";
 
 /**
  * Otdel kadr modullari yorliqlari — veb, mobil va chop etish bir xil yozuvni ko'rsatsin.
@@ -69,3 +69,20 @@ export const KPI_SOURCE: Record<KpiSource, { label: string; unit: string; hint: 
   PRODUCTION: { label: "Ishlab chiqarish", unit: "", hint: "Xodim brigadasi shu oyda bajargan hajm (topshiriqlar)" },
 };
 export const KPI_SOURCES = Object.keys(KPI_SOURCE) as KpiSource[];
+
+// ───────────────────────── 3-faza: yollash, moslashuv, o'qitish ─────────────────────────
+
+export const VACANCY_STATUS_LABEL: Record<VacancyStatus, string> = { OPEN: "Ochiq", PAUSED: "To'xtatilgan", CLOSED: "Yopilgan" };
+export const VACANCY_STATUS_BADGE: Record<VacancyStatus, "green" | "amber" | "slate"> = { OPEN: "green", PAUSED: "amber", CLOSED: "slate" };
+export const STAGE_LABEL: Record<CandidateStage, string> = { NEW: "Yangi", SCREEN: "Saralash", INTERVIEW: "Suhbat", OFFER: "Taklif", HIRED: "Qabul qilindi", REJECTED: "Rad etildi", RESERVE: "Zaxira" };
+export const STAGE_TONE: Record<CandidateStage, "info" | "brand" | "warning" | "success" | "danger"> = { NEW: "info", SCREEN: "brand", INTERVIEW: "warning", OFFER: "warning", HIRED: "success", REJECTED: "danger", RESERVE: "info" };
+export const STAGE_BADGE: Record<CandidateStage, "slate" | "blue" | "amber" | "violet" | "green" | "red"> = { NEW: "slate", SCREEN: "blue", INTERVIEW: "amber", OFFER: "violet", HIRED: "green", REJECTED: "red", RESERVE: "slate" };
+/** Kanban ustunlari (qabul, rad va zaxira — alohida ro'yxatda). */
+export const PIPELINE: CandidateStage[] = ["NEW", "SCREEN", "INTERVIEW", "OFFER"];
+export const STAGES = Object.keys(STAGE_LABEL) as CandidateStage[];
+export const CANDIDATE_SOURCES = ["OLX", "Telegram", "Instagram", "Tavsiya", "Sayt", "HeadHunter", "O'zi keldi", "Boshqa"];
+export const INTERVIEW_RESULT_LABEL: Record<InterviewResult, string> = { PENDING: "Kutilmoqda", PASSED: "O'tdi", FAILED: "O'tmadi", NOSHOW: "Kelmadi" };
+export const PROBATION_LABEL: Record<ProbationStatus, string> = { ACTIVE: "Sinov muddatida", PASSED: "Sinovdan o'tdi", EXTENDED: "Uzaytirildi", FAILED: "O'tmadi" };
+export const PROBATION_BADGE: Record<ProbationStatus, "blue" | "green" | "amber" | "red"> = { ACTIVE: "blue", PASSED: "green", EXTENDED: "amber", FAILED: "red" };
+export const ENROLL_STATUS_LABEL: Record<EnrollmentStatus, string> = { ASSIGNED: "Topshirilmagan", PASSED: "O'tdi", FAILED: "O'tmadi" };
+export const ENROLL_STATUS_BADGE: Record<EnrollmentStatus, "amber" | "green" | "red"> = { ASSIGNED: "amber", PASSED: "green", FAILED: "red" };

@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { CalendarRange, Inbox, ListChecks, ListTodo, Target, Wallet } from "lucide-react";
+import { CalendarRange, GraduationCap, Handshake, Inbox, ListChecks, ListTodo, Target, Wallet } from "lucide-react";
+import { myCourses } from "@/lib/hr/training";
+import { myPlans, progressOf } from "@/lib/hr/onboarding";
+import { MyStep } from "./step-toggle";
 import { db } from "@/lib/db";
 import { myChecklists } from "@/lib/hr/checklists";
 import { kpiMonth } from "@/lib/hr/kpi";
@@ -9,7 +12,7 @@ import { dayUtc, isoDay, monthTitle, shiftDay, today } from "@/lib/davomat";
 import { employeeOfUser, listHrRequests, periodText } from "@/lib/hr/requests";
 import { plansInRange } from "@/lib/hr/shifts";
 import { breakdownOf, myLines } from "@/lib/hr/payroll";
-import { PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL, REQUEST_KIND, REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL } from "@/lib/hr/labels";
+import { ENROLL_STATUS_BADGE, ENROLL_STATUS_LABEL, PROBATION_LABEL, PAYROLL_KIND_LABEL, PAYROLL_STATUS_BADGE, PAYROLL_STATUS_LABEL, REQUEST_KIND, REQUEST_STATUS_BADGE, REQUEST_STATUS_LABEL } from "@/lib/hr/labels";
 import { Badge, Card, CardHeader, Empty, Progress, Table, Td, Th, Tr } from "@/components/ui";
 import { CancelOwnButton, RequestForm } from "../otdel-kadr/arizalar-forms";
 import { cancelMyRequest, sendMyRequest } from "./hr-actions";
@@ -24,18 +27,43 @@ export async function MyHrSection({ userId }: { userId: string }) {
   const emp = await employeeOfUser(userId);
   if (!emp || !emp.isActive) return null;
   const from = today(), to = shiftDay(from, 13);
-  const [plans, requests, lines, checklists, kpi, tasks] = await Promise.all([
+  const [plans, requests, lines, checklists, kpi, tasks, courses, onb] = await Promise.all([
     plansInRange([{ id: emp.id, workSchedule: emp.workSchedule }], from, to),
     listHrRequests({ employeeId: emp.id, status: "ALL", take: 20 }),
     myLines(emp.id, 12),
     myChecklists(emp),
     kpiMonth(from.slice(0, 7), { employeeIds: [emp.id] }),
     db.workTask.groupBy({ by: ["status"], where: { assigneeId: emp.id, status: { in: ["TODO", "IN_PROGRESS", "REVIEW"] } }, _count: { _all: true } }),
+    myCourses(emp.id),
+    myPlans(emp.id),
   ]);
   const openTasks = tasks.reduce((x, t) => x + t._count._all, 0);
   const plan = plans.get(emp.id)!;
   return (
     <div className="mt-5 grid max-w-5xl grid-cols-1 gap-4 xl:grid-cols-2">
+      {[...(onb.own && (onb.own.status === "ACTIVE" || onb.own.status === "EXTENDED") ? [{ p: onb.own, mine: true }] : []), ...onb.mentees.map((p) => ({ p, mine: false }))].map(({ p, mine }) => (
+        <Card key={p.id}>
+          <CardHeader title={mine ? "Moslashuv rejam" : `Shogird: ${p.employee.fullName}`} icon={Handshake}
+            description={`${PROBATION_LABEL[p.status]}${p.probationEnd ? ` · sinov ${date(p.probationEnd)} gacha` : ""} · ${progressOf(p).done}/${progressOf(p).total}`} />
+          <div className="space-y-1.5">{p.steps.map((x) => <MyStep key={x.id} id={x.id} done={!!x.doneAt} label={x.title} />)}</div>
+        </Card>
+      ))}
+      {courses.length > 0 && (
+        <Card padded={false}>
+          <div className="border-b border-slate-100 px-4 py-3"><h2 className="flex items-center gap-2 text-sm font-semibold"><GraduationCap size={15} /> Kurslarim</h2></div>
+          <ul className="divide-y divide-slate-100">
+            {courses.map((c) => (
+              <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                <Link href={`/hisobim/kurs/${c.course.id}`} className="font-medium hover:underline">{c.course.title}{c.course.mandatory && <span className="ml-1 text-xs text-red-600">· majburiy</span>}</Link>
+                <span className="flex items-center gap-2">
+                  {c.dueDate && c.status !== "PASSED" && <span className="text-xs text-slate-500">{date(c.dueDate)} gacha</span>}
+                  <Badge color={c.expired ? "red" : ENROLL_STATUS_BADGE[c.status]}>{c.expired ? "Muddati o'tgan" : ENROLL_STATUS_LABEL[c.status]}{c.bestScore != null ? ` · ${c.bestScore}%` : ""}</Badge>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       {checklists.map((c) => (
         <Card key={c.templateId}>
           <CardHeader title={`Bugungi cheklist: ${c.name}`} icon={ListChecks} description={`${c.doneCount} / ${c.total} bajarildi`} />

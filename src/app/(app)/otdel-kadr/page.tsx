@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, Inbox, ListChecks, Scale, Target, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, CakeSlice, Building2, CalendarCheck, CalendarRange, Clock, GraduationCap, Handshake, Inbox, ListChecks, Scale, Target, UserPlus, FileSpreadsheet, FileText, IdCard, Paperclip, Plus, UserCheck, User, Users, TriangleAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage, requireRoles } from "@/lib/page-guard";
 import { positionCatalog, workPositions } from "@/lib/positions";
@@ -23,6 +23,7 @@ import { employeesInWindow } from "@/lib/attendance-report";
 import { plansFor } from "@/lib/hr/shifts";
 import { getLateFine } from "@/lib/hr/late-fine";
 import { ArizalarTab, CheklistTab, GrafikTab, JarimaTab, KpiTab } from "./hr-tabs";
+import { MoslashuvTab, OqitishTab, YollashTab } from "./hr3-tabs";
 
 const TABS = [
   ["xodimlar", "Xodimlar ro'yxati", Users],
@@ -36,6 +37,9 @@ const TABS = [
   ["jarima-bonus", "Jarima va bonuslar", Scale],
   ["cheklistlar", "Cheklistlar", ListChecks],
   ["kpi", "KPI", Target],
+  ["yollash", "Yollash", UserPlus],
+  ["moslashuv", "Moslashuv", Handshake],
+  ["oqitish", "O'qitish", GraduationCap],
 ] as const;
 
 /** Tug'ilgan kunigacha necha kun qolgani (yilni hisobga olmay). */
@@ -48,12 +52,12 @@ function daysToAnniversary(d: Date) {
 const inDays = (n: number) => (n === 0 ? "bugun" : n === 1 ? "ertaga" : `${n} kundan keyin`);
 
 export default async function OtdelKadrPage({ searchParams }: {
-  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; hafta?: string; holat?: string }>;
+  searchParams: Promise<{ tab?: string; qoshildi?: string; yangilandi?: string; kun?: string; oy?: string; hafta?: string; holat?: string; vakansiya?: string }>;
 }) {
   // Direktor modulni "yo'q" qilib qo'ygan bo'lsa — HR roli bo'lsa ham sahifa yopiq (perms)
   await requirePage("/otdel-kadr");
   const s = await requireRoles(["HR"], { module: "employees" });
-  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy, hafta, holat } = await searchParams;
+  const { tab = "xodimlar", qoshildi, yangilandi, kun, oy, hafta, holat, vakansiya } = await searchParams;
 
   // Davomat tabi: `oy` berilsa oylik tabel, aks holda kunlik belgilash oynasi
   const oyParam = validMonth(oy);
@@ -294,6 +298,9 @@ export default async function OtdelKadrPage({ searchParams }: {
       {tab === "grafik" && <GrafikTab employees={active} hafta={hafta} />}
       {tab === "arizalar" && <ArizalarTab s={s} employees={active} holat={holat} />}
       {tab === "cheklistlar" && <CheklistTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} kun={kun} />}
+      {tab === "yollash" && <YollashTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} vakansiya={vakansiya} />}
+      {tab === "moslashuv" && <MoslashuvTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} holat={holat} />}
+      {tab === "oqitish" && <OqitishTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} />}
       {tab === "kpi" && <KpiTab s={s} positions={[...new Set(active.map((e) => e.position))].sort()} employees={active} oy={oy} />}
       {tab === "jarima-bonus" && <JarimaTab s={s} employees={active} positions={[...new Set(active.map((e) => e.position))].sort()} oy={oy} />}
     </div>

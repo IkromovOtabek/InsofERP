@@ -106,6 +106,9 @@ export const NAV: NavItem[] = [
   { href: "/otdel-kadr?tab=jarima-bonus", label: "Jarima va bonuslar", roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=cheklistlar", label: "Cheklistlar",      roles: ["HR"], group: "Otdel kadr" },
   { href: "/otdel-kadr?tab=kpi",        label: "KPI",               roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=yollash",    label: "Yollash",           roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=moslashuv",  label: "Moslashuv",         roles: ["HR"], group: "Otdel kadr" },
+  { href: "/otdel-kadr?tab=oqitish",    label: "O'qitish",          roles: ["HR"], group: "Otdel kadr" },
   // Ish haqi: kadr hisoblaydi, direktor tasdiqlaydi, kassir to'laydi (`lib/hr/payroll.ts`)
   { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)

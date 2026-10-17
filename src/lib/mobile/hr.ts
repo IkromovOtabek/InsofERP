@@ -15,6 +15,7 @@ import type { DetailAction, DetailField, FormField, MobileDetail } from "./detai
 import { ListError, type ListFilter, type MobileList } from "./list";
 import { HR_ACCESS } from "./hr-access";
 import { runWorkAction, workDetail, workList } from "./hr-work";
+import { peopleDetail, peopleList, runPeopleAction } from "./hr-people";
 
 /**
  * Mobil ilova — otdel kadr modullari (server boshqaradigan ro'yxat / kartochka / forma / amal, ilovani o'zgartirmasdan):
@@ -51,9 +52,11 @@ const REQ_TABS: { key: HrRequestStatus | "ALL"; label: string }[] = [
 ];
 
 const WORK_KEYS = ["vazifalarim", "cheklistim", "kpim"];
+const PEOPLE_KEYS = ["kurslarim", "moslashuvim", "suhbatlarim", "nomzodlar"];
 
 export async function hrList(user: MobileUser, key: string, q?: string, filter?: string): Promise<MobileList> {
   if (WORK_KEYS.includes(key)) return workList(user, key, q, filter);
+  if (PEOPLE_KEYS.includes(key)) return peopleList(user, key, q, filter);
   const title = HR_ACCESS[key]!.title;
   if (key === "arizalarim") {
     const e = await myEmployee(user);
@@ -115,6 +118,7 @@ export async function hrList(user: MobileUser, key: string, q?: string, filter?:
 
 export async function hrDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (WORK_KEYS.includes(key)) return workDetail(user, key, id);
+  if (PEOPLE_KEYS.includes(key)) return peopleDetail(user, key, id);
   if (key === "arizalarim" || key === "arizalar") return requestDetail(user, key, id);
   if (key === "oyligim") return payslipDetail(user, id);
   if (key === "ish-haqi") return runDetail(user, id);
@@ -258,6 +262,7 @@ export async function runHrAction(user: MobileUser, action: string, id: string, 
   const who = { userId: user.id, role: user.role, perms: user.perms };
   const out = (r: { error?: string; note?: string }) => { if (r.error) throw new ListError("ACTION_FAILED", r.error, 400); return r.note ?? "Bajarildi"; };
   if (action.startsWith("wtask.") || action === "checklist.save") return runWorkAction(user, action, id, payload);
+  if (["course.take", "onb.steps", "interview.result", "cand.move"].includes(action)) return runPeopleAction(user, action, id, payload);
   switch (action) {
     case "hrreq.approve":
     case "hrreq.reject":

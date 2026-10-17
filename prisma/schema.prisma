@@ -553,6 +553,8 @@ model Employee {
   workTasks        WorkTask[]               @relation("WorkTaskAssignee")
   checklistRuns    ChecklistRun[]
   kpiResults       KpiResult[]
+  onboarding       OnboardingPlan?
+  enrollments      CourseEnrollment[]
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -3343,4 +3345,201 @@ model KpiResult {
 
   @@unique([metricId, employeeId, month])
   @@index([month])
+}
+
+// ───────────────────────── Otdel kadr 3-faza: yollash, ishga qabul va moslashuv, o'qitish ─────────────────────────
+
+enum VacancyStatus {
+  OPEN // nomzod qidirilmoqda
+  PAUSED // to'xtatilgan
+  CLOSED // yopildi (to'ldi yoki bekor)
+}
+
+/// Vakansiya — qaysi lavozimga nechta odam kerak. Qabul qilingan nomzodlar soni `headcount` ga yetsa — o'zi yopiladi.
+model Vacancy {
+  id           String        @id @default(cuid())
+  title        String
+  position     String
+  headcount    Int           @default(1)
+  description  String?
+  requirements String?
+  salaryFrom   Decimal?      @db.Decimal(18, 2)
+  salaryTo     Decimal?      @db.Decimal(18, 2)
+  status       VacancyStatus @default(OPEN)
+  closedAt     DateTime?
+  createdById  String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  candidates Candidate[]
+
+  @@index([status])
+}
+
+enum CandidateStage {
+  NEW // yangi ariza
+  SCREEN // saralash (telefon suhbati)
+  INTERVIEW // suhbat
+  OFFER // taklif berildi
+  HIRED // ishga qabul qilindi — xodim kartasi ochilgan
+  REJECTED // rad etildi
+  RESERVE // zaxira kadr
+}
+
+/// Nomzod — kanban doskada bosqichma-bosqich yuradi. O'chirilmaydi: rad / zaxira. Qabul qilinganda xodim kartasi
+/// (`employeeId`) va moslashuv rejasi ochiladi (`lib/hr/recruit.ts`).
+model Candidate {
+  id           String         @id @default(cuid())
+  vacancyId    String?
+  fullName     String
+  phone        String?
+  source       String? // OLX, Telegram, tavsiya, sayt…
+  stage        CandidateStage @default(NEW)
+  stageAt      DateTime       @default(now())
+  rating       Int? // 1–5
+  note         String?
+  rejectReason String?
+  file         String? // rezyume (uploads/employees)
+  fileName     String?
+  fileType     String?
+  employeeId   String?        @unique
+  createdById  String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  vacancy    Vacancy?    @relation(fields: [vacancyId], references: [id], onDelete: SetNull)
+  interviews Interview[]
+
+  @@index([stage])
+  @@index([vacancyId])
+}
+
+enum InterviewResult {
+  PENDING
+  PASSED
+  FAILED
+  NOSHOW
+}
+
+model Interview {
+  id            String          @id @default(cuid())
+  candidateId   String
+  at            DateTime
+  place         String?
+  interviewerId String? // User — suhbat o'tkazuvchi (bildirishnoma unga)
+  result        InterviewResult @default(PENDING)
+  feedback      String?
+  createdById   String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([at])
+  @@index([candidateId])
+}
+
+enum ProbationStatus {
+  ACTIVE // sinov muddati davom etmoqda
+  PASSED // sinovdan o'tdi
+  EXTENDED // uzaytirildi
+  FAILED // o'tmadi
+}
+
+/// Moslashuv rejasi: murabbiy, sinov muddati, qadamlar. Bitta xodimga bitta reja.
+model OnboardingPlan {
+  id           String          @id @default(cuid())
+  employeeId   String          @unique
+  mentorId     String? // Employee — murabbiy
+  startDate    DateTime        @db.Date
+  probationEnd DateTime?       @db.Date
+  status       ProbationStatus @default(ACTIVE)
+  result       String?
+  decidedById  String?
+  decidedAt    DateTime?
+  createdById  String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  employee Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  steps    OnboardingStep[]
+
+  @@index([status, probationEnd])
+  @@index([mentorId])
+}
+
+model OnboardingStep {
+  id        String    @id @default(cuid())
+  planId    String
+  title     String
+  dueDay    Int       @default(0) // ishga kirgandan necha kun ichida
+  sortOrder Int       @default(0)
+  doneAt    DateTime?
+  doneById  String?
+
+  plan OnboardingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+/// Moslashuv shabloni — lavozim bo'yicha (bo'sh — hamma uchun) qadamlar: [{ title, dueDay }].
+model OnboardingTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  position  String?
+  steps     Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Kurs: material, test savollari ([{ q, options[], answer }]), o'tish bali, sertifikat muddati.
+/// `position` berilsa — shu lavozimdagi xodimlarga avtomatik biriktiriladi; `mandatory` — majburiy.
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  material    String?
+  contentUrl  String?
+  position    String?
+  mandatory   Boolean  @default(false)
+  questions   Json
+  passScore   Int      @default(70)
+  validMonths Int? // sertifikat amal qilish muddati (bo'sh — muddatsiz)
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrollments CourseEnrollment[]
+}
+
+enum EnrollmentStatus {
+  ASSIGNED
+  PASSED
+  FAILED
+}
+
+/// Xodimning kursi: urinishlar, eng yaxshi ball, sertifikat (raqam, muddat).
+model CourseEnrollment {
+  id            String           @id @default(cuid())
+  courseId      String
+  employeeId    String
+  status        EnrollmentStatus @default(ASSIGNED)
+  dueDate       DateTime?        @db.Date
+  attempts      Int              @default(0)
+  bestScore     Int?
+  lastAt        DateTime?
+  passedAt      DateTime?
+  certificateNo String?          @unique // SR-2026-00001
+  expiresAt     DateTime?        @db.Date
+  assignedById  String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, employeeId])
+  @@index([employeeId])
 }

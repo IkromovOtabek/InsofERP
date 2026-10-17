@@ -119,6 +119,22 @@ const RULES: Rule[] = [
     },
   },
   {
+    // Sinov muddati 7 kun ichida tugaydi (yoki o'tib ketgan) — natijani otdel kadr qayd etsin
+    type: "REMIND_PROBATION",
+    find: async (now) => (await db.onboardingPlan.findMany({
+      where: { status: { in: ["ACTIVE", "EXTENDED"] }, probationEnd: { lte: new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 7)) } }, take: 50,
+      select: { id: true, employeeId: true, probationEnd: true, employee: { select: { fullName: true } } },
+    })).map((p) => ({ id: p.id, link: { key: "employees", id: p.employeeId }, roles: ["HR"] as Role[], title: `Sinov muddati tugaydi — ${p.employee.fullName}`, body: `${p.probationEnd!.toISOString().slice(0, 10)} · natijani qayd eting (o'tdi / uzaytirish / o'tmadi)` })),
+  },
+  {
+    // Majburiy kurs muddati o'tgan, hali topshirilmagan — xodimga
+    type: "REMIND_COURSE",
+    find: async (now) => (await db.courseEnrollment.findMany({
+      where: { status: { not: "PASSED" }, dueDate: { lt: new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) }, course: { isActive: true } }, take: 50,
+      select: { id: true, courseId: true, course: { select: { title: true } }, employee: { select: { userId: true } } },
+    })).filter((e) => e.employee.userId).map((e) => ({ id: e.id, link: { key: "kurslarim", id: e.courseId }, users: [e.employee.userId!], title: "Kurs muddati o'tdi", body: `${e.course.title} — testni topshiring` })),
+  },
+  {
     type: "REMIND_SMM",
     find: async (now) => [
       ...(await db.marketingContent.findMany({
