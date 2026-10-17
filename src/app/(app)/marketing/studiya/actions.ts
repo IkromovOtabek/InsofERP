@@ -7,7 +7,7 @@ import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { aiAllowed } from "@/lib/rate-limit";
 import { aiErrorText, aiReady, studioPackage, type StudioT } from "@/lib/ai/smm-writer";
-import { specSchema } from "@/lib/smm/video";
+import { sceneSchema, specSchema } from "@/lib/smm/video";
 import { kickVideoQueue } from "@/lib/smm/watch";
 import { aiRateText, matchMedia, nextSlot, type MediaPick } from "@/lib/smm/studio";
 
@@ -49,12 +49,9 @@ const saveSchema = z.object({
   hashtags: z.string().trim().max(600),
   location: z.object({ name: z.string().max(120), locationId: z.string().regex(/^\d{3,25}$/).nullish() }).nullish(),
   scheduledAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullish(),
-  scenes: z.array(z.object({
-    durationSec: z.number().min(1).max(15), shot: z.string().max(600), text: z.string().max(140), voice: z.string().max(600),
-    mediaId: z.string().regex(/^[a-z0-9]{16,40}$/).nullish(), useAi: z.boolean(), aiPrompt: z.string().max(800),
-  })).min(1).max(12),
+  accent: z.string().max(7),
+  scenes: z.array(sceneSchema.extend({ shot: z.string().max(600) })).min(1).max(12),
   makeVideo: z.boolean(),
-  voice: z.boolean(),
 });
 
 /** Postni qoralama sifatida saqlash (+ ixtiyoriy video montaj navbatga) — tasdiqlash odatdagidek */
@@ -65,13 +62,10 @@ export async function savePackage(raw: z.input<typeof saveSchema>): Promise<{ er
   const d = p.data;
   const ids = [...new Set(d.scenes.map((sc) => sc.mediaId).filter((x): x is string => !!x))];
   if (ids.length && (await db.smmMedia.count({ where: { id: { in: ids } } })) !== ids.length) return { error: "Tanlangan kadr topilmadi — sahifani yangilang" };
-  if (d.makeVideo && d.format === "REELS" && d.scenes.some((sc) => !sc.mediaId && !sc.useAi)) {
-    return { error: "Har sahnaga kadr tanlang yoki «AI yaratsin» ni belgilang" };
-  }
   const when = d.scheduledAt ? new Date(d.scheduledAt) : null;
   const script = [
     d.hook ? `**Hook:** ${d.hook}` : null,
-    ...d.scenes.map((sc, i) => `${i + 1}. (${sc.durationSec}s) ${sc.shot}${sc.text ? `\n   Ekranda: «${sc.text}»` : ""}${sc.voice ? `\n   Ovoz: ${sc.voice}` : ""}`),
+    ...d.scenes.map((sc, i) => `${i + 1}. (${sc.durationSec}s) ${sc.shot}${sc.text ? `\n   Ekranda: «${sc.text}»` : ""}${sc.sub ? `\n   Qo'shimcha: ${sc.sub}` : ""}`),
     d.music ? `**Musiqa:** ${d.music}` : null,
   ].filter(Boolean).join("\n");
 
@@ -90,10 +84,7 @@ export async function savePackage(raw: z.input<typeof saveSchema>): Promise<{ er
 
   let video = false;
   if (d.makeVideo && d.format === "REELS") {
-    const spec = specSchema.parse({
-      title: d.title, voice: d.voice,
-      scenes: d.scenes.map((sc) => ({ text: sc.text, voice: sc.voice, durationSec: sc.durationSec, mediaId: sc.mediaId || null, aiPrompt: sc.useAi && !sc.mediaId ? sc.aiPrompt : null })),
-    });
+    const spec = specSchema.parse({ title: d.title, accent: d.accent, scenes: d.scenes }); // shot — faqat ssenariy matni uchun, sxema uni tashlab yuboradi
     const job = await db.smmVideoJob.create({ data: { contentId: c.id, spec, createdById: s.userId, createdByName: s.fullName } });
     await audit(db, s.userId, "CREATE", "SmmVideoJob", job.id, undefined, { contentId: c.id });
     kickVideoQueue();

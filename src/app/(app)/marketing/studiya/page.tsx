@@ -7,7 +7,7 @@ import { dateTime } from "@/lib/format";
 import { aiReady } from "@/lib/ai/smm-writer";
 import { marketingSettings } from "@/lib/smm/boosts";
 import { missingChannels } from "@/lib/smm/config";
-import { aiVideoReady, ffmpegReady, ttsReady } from "@/lib/smm/video";
+import { ffmpegReady } from "@/lib/smm/video";
 import { VIDEO_STATUS } from "@/lib/smm/labels";
 import { Badge, Callout, Card, EmptyState, PageHeader, Progress, Tabs } from "@/components/ui";
 import { Studio } from "./studio";
@@ -49,13 +49,13 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
               initialBrief={sp.g?.slice(0, 3000) ?? ""}
               places={places}
               connected={connected.length ? [...connected] : ["INSTAGRAM", "TELEGRAM"]}
-              caps={{ video: ff, tts: ttsReady(), aiVideo: aiVideoReady() }}
+              caps={{ video: ff }}
             />
           </>
         )
       ) : (
         <Card padded={false}>
-          {jobs.length === 0 ? <EmptyState title="Video hali yaratilmagan" text="«Yangi kontent» bo'limida Reels tanlab, «Video yaratish»ni belgilang." /> : (
+          {jobs.length === 0 ? <EmptyState title="Video hali yaratilmagan" text="«Yangi kontent» bo'limida Reels tanlab, g'oyani yozing va «Saqlash va video yaratish»ni bosing." /> : (
             <ul className="divide-y divide-slate-100">
               {jobs.map((j) => (
                 <li key={j.id} className="space-y-2 px-4 py-3">

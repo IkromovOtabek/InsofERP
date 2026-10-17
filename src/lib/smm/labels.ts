@@ -49,7 +49,7 @@ export const ACCOUNT_STATUS: Record<SmmAccountStatus, { label: string; color: Ba
 
 export const VIDEO_STATUS: Record<SmmVideoStatus, { label: string; color: BadgeColor }> = {
   QUEUED: { label: "Navbatda", color: "slate" },
-  GENERATING: { label: "Kadrlar va ovoz tayyorlanmoqda", color: "blue" },
+  GENERATING: { label: "Sahnalar chizilmoqda", color: "blue" },
   RENDERING: { label: "Montaj qilinmoqda", color: "blue" },
   DONE: { label: "Tayyor", color: "green" },
   FAILED: { label: "Xato", color: "red" },
@@ -62,3 +62,25 @@ export const MEDIA_TYPE_LABEL: Record<string, string> = {
 };
 
 export const WEEKDAY: string[] = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
+
+/* AI studiya motion-video: sahna sozlamalari (Claude tanlaydi, foydalanuvchi o'zgartira oladi) */
+export const SCENE_LAYOUTS = ["bottom", "center", "top"] as const;
+export const SCENE_ANIMS = ["fade-up", "stagger", "slide-left", "slide-right", "fade"] as const;
+export const SCENE_CAMERAS = ["push-in", "pull-out", "pan-left", "pan-right", "static"] as const;
+export const SCENE_TRANSITIONS = ["fade", "smoothleft", "smoothup", "slideleft", "slideup", "circleopen", "wipeleft", "fadeblack"] as const;
+export type SceneLayout = (typeof SCENE_LAYOUTS)[number];
+export type SceneAnim = (typeof SCENE_ANIMS)[number];
+export type SceneCamera = (typeof SCENE_CAMERAS)[number];
+export type SceneTransition = (typeof SCENE_TRANSITIONS)[number];
+
+export const LAYOUT_LABEL: Record<SceneLayout, string> = { bottom: "Pastda", center: "O'rtada", top: "Tepada" };
+export const ANIM_LABEL: Record<SceneAnim, string> = {
+  "fade-up": "Pastdan chiqadi", stagger: "Qatorma-qator", "slide-left": "O'ngdan kiradi", "slide-right": "Chapdan kiradi", fade: "Sekin paydo bo'ladi",
+};
+export const CAMERA_LABEL: Record<SceneCamera, string> = {
+  "push-in": "Yaqinlashish", "pull-out": "Uzoqlashish", "pan-left": "Chapga surilish", "pan-right": "O'ngga surilish", static: "Harakatsiz",
+};
+export const TRANSITION_LABEL: Record<SceneTransition, string> = {
+  fade: "Erish", smoothleft: "Silliq chapga", smoothup: "Silliq tepaga", slideleft: "Surish chapga", slideup: "Surish tepaga",
+  circleopen: "Doira ochilishi", wipeleft: "Supurish", fadeblack: "Qora orqali",
+};

@@ -30,13 +30,11 @@ const FORBIDDEN_KEYS = [
   "YANDEX_GEOCODER_KEY",
   "YANDEX_ROUTER_KEY",
   "AMO_BASE_URL",
-  // SMM: Meta ilovasi va tokenlari, AI video va ovoz (pulli)
+  // SMM: Meta ilovasi va tokenlari
   "META_APP_SECRET",
   "META_ACCESS_TOKEN",
   "META_PAGE_ACCESS_TOKEN",
   "SMM_TELEGRAM_BOT_TOKEN",
-  "GEMINI_API_KEY",
-  "ELEVENLABS_API_KEY",
 ] as const;
 
 /** Berilgan bo'lsa faqat lokal manzil bo'lishi mumkin (stub serverlar). */

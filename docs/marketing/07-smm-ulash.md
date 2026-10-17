@@ -67,12 +67,13 @@ Kabinetda to'lov usuli ulangan bo'lishi kerak.
 
 | Nima | Kalit / dastur | Bo'lmasa |
 |---|---|---|
-| Matn, ssenariy, tahlil | `ANTHROPIC_API_KEY` (bor) | AI tugmalari o'chadi |
-| Video montaj | serverda `ffmpeg` (`sudo apt install ffmpeg`), ixtiyoriy `SMM_FFMPEG` | faqat ssenariy va matn saqlanadi |
-| AI kadr (kutubxonada mos video bo'lmasa) | `GEMINI_API_KEY`, ixtiyoriy `SMM_VIDEO_MODEL` (standart `veo-3.0-fast-generate-001`) | sahnaga o'z kadringizni tanlaysiz |
-| AI ovoz (diktor) | `ELEVENLABS_API_KEY`, ixtiyoriy `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | video ovozsiz, ekrandagi matn bilan |
+| Matn, ssenariy, sahna dizayni, tahlil | `ANTHROPIC_API_KEY` (bor) | AI tugmalari o'chadi |
+| Video montaj | serverda `ffmpeg` va shrift (`sudo apt install ffmpeg fonts-dejavu-core`), ixtiyoriy `SMM_FFMPEG` | faqat ssenariy va matn saqlanadi |
 
-Ekrandagi matn sharp orqali chiziladi. Serverda lotin va kirill harflari uchun shrift bo'lishi kerak (`fonts-dejavu-core`, Ubuntu'da odatda bor).
+Marketing bo'limi faqat Claude bilan ishlaydi: rasm, video yoki ovoz yaratuvchi boshqa AI xizmat ulanmaydi.
+Video — motion-grafika: Claude har sahnaga matn, rang, SVG grafika, animatsiya va o'tishni tanlaydi, server esa
+fonni (kutubxonadagi kadr yoki Claude grafikasi) va animatsion matnni ffmpeg bilan yig'adi. Video ovozsiz,
+musiqa Instagram'da qo'yiladi. Ekrandagi matn sharp orqali chiziladi, shuning uchun lotin va kirill shrifti kerak.
 Montaj navbat bilan bitta-bitta bajariladi (2 ta oqim). 30 soniyali Reels taxminan 1–2 daqiqada tayyor bo'ladi.
 
 Instagram videoni ERP serveridan o'zi yuklab oladi (muddatli imzolangan havola), shuning uchun sayt domeni internetdan ochiq bo'lishi kerak.

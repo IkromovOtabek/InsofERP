@@ -11,7 +11,7 @@
  */
 import { check, done, section } from "./c-lib";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { db } from "@/lib/db";
@@ -20,7 +20,7 @@ import { resetSmmCreds, smmCreds, smmDryRun } from "@/lib/smm/config";
 import { publishContent, publishDue } from "@/lib/smm/publish";
 import { matchMedia, nextSlot } from "@/lib/smm/studio";
 import { analytics } from "@/lib/smm/insights";
-import { ffmpegReady, renderScene } from "@/lib/smm/video";
+import { assemble, ffmpegReady, renderScene, safeArt, sceneSchema } from "@/lib/smm/video";
 
 const TAG = `qa-smm-${Date.now()}`;
 
@@ -108,16 +108,20 @@ async function main() {
     try {
       execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:d=4:r=25", "-pix_fmt", "yuv420p", `${dir}/clip.mp4`]);
       execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "smptebars=s=1200x1600", "-frames:v", "1", `${dir}/img.jpg`]);
-      await renderScene({ text: "Sifat nazorati — har partiya", voice: "", durationSec: 2 }, { file: `${dir}/clip.mp4`, kind: "VIDEO" }, null, `${dir}/a.mp4`, dir, 0);
-      await renderScene({ text: "", voice: "", durationSec: 2 }, { file: `${dir}/img.jpg`, kind: "IMAGE" }, null, `${dir}/b.mp4`, dir, 1);
-      writeFileSync(`${dir}/l.txt`, `file '${dir}/a.mp4'\nfile '${dir}/b.mp4'`);
-      execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", `${dir}/l.txt`, "-c", "copy", `${dir}/f.mp4`]);
+      const sa = sceneSchema.parse({ text: "Sifat nazorati — har partiya", kicker: "01", durationSec: 2, transition: "smoothleft" });
+      const sb = sceneSchema.parse({ text: "Buyurtma bering", sub: "+998 90 000 00 00", durationSec: 2, layout: "center", anim: "slide-left" });
+      const sg = sceneSchema.parse({ text: "Grafik fon", durationSec: 2, art: '<circle cx="540" cy="700" r="200" fill="#fff" fill-opacity="0.3"/>' });
+      check("xavfli SVG tashlanadi", safeArt('<image href="file:///etc/passwd"/>') === null && safeArt('<rect fill="url(http://x)"/>') === null && safeArt(sg.art) !== null);
+      const la = await renderScene(sa, { file: `${dir}/clip.mp4`, kind: "VIDEO" }, `${dir}/a.mp4`, dir, 0, { accent: "#f59e0b", lead: 0 });
+      const lb = await renderScene(sb, { file: `${dir}/img.jpg`, kind: "IMAGE" }, `${dir}/b.mp4`, dir, 1, { accent: "#f59e0b", lead: 0.45 });
+      const lg = await renderScene(sg, null, `${dir}/g.mp4`, dir, 2, { accent: "#f59e0b", lead: 0.45 });
+      await assemble([{ file: `${dir}/a.mp4`, len: la, transition: sa.transition }, { file: `${dir}/b.mp4`, len: lb, transition: sb.transition }, { file: `${dir}/g.mp4`, len: lg, transition: sg.transition }], `${dir}/f.mp4`);
       const info = execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,width,height:format=duration", "-of", "json", `${dir}/f.mp4`]).toString();
       const j = JSON.parse(info) as { streams: { codec_name: string; width?: number; height?: number }[]; format: { duration: string } };
       const v = j.streams.find((s) => s.codec_name === "h264");
       check("9:16 H.264", v?.width === 1080 && v?.height === 1920, v);
       check("AAC ovoz yo'lagi bor", j.streams.some((s) => s.codec_name === "aac"));
-      check("davomiylik ≈ 4 s", Math.abs(Number(j.format.duration) - 4) < 0.3, j.format.duration);
+      check("davomiylik ≈ 6 s (o'tishlar sahna vaqtini yemaydi)", Math.abs(Number(j.format.duration) - 6) < 0.3, j.format.duration);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

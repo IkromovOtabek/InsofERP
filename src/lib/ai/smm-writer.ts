@@ -8,6 +8,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod/v4";
 import { db } from "@/lib/db";
 import { getCompany } from "@/lib/company";
+import { SCENE_ANIMS, SCENE_CAMERAS, SCENE_LAYOUTS, SCENE_TRANSITIONS } from "@/lib/smm/labels";
 /** Agent bilan bir xil model (`marketing-agent.ts` → MARKETING_MODEL); aylanma importsiz */
 const MARKETING_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5";
 
@@ -169,14 +170,21 @@ const Studio = z.object({
   title: z.string().describe("Post sarlavhasi (ichki, 3–8 so'z)"),
   rubric: z.string(),
   hook: z.string().describe("Birinchi 2 soniya: nima ko'rinadi va ekranda qaysi matn"),
+  accent: z.string().describe("Videoning urg'u rangi, HEX #RRGGBB: yorliq va chiziq uchun, to'q fonda yorqin ko'rinadigan (masalan sariq, to'q sariq, yashil)"),
   scenes: z.array(z.object({
-    durationSec: z.number().describe("2–6 soniya"),
-    shot: z.string().describe("Kadr tavsifi: nima va qanday suratga olinadi (o'zbekcha)"),
-    text: z.string().describe("Ekrandagi matn, asosiy tilda, 1–7 so'z"),
-    voice: z.string().describe("Ovoz matni, asosiy tilda (bo'sh bo'lishi mumkin)"),
+    durationSec: z.number().describe("2–5 soniya: matn o'qib ulgurilsin (har 3 so'zga ~1 soniya)"),
+    shot: z.string().describe("Kadr tavsifi: nima va qanday suratga olinadi (o'zbekcha) — kutubxonaga kadr qo'shish uchun"),
+    kicker: z.string().describe("Kichik yorliq, 0–3 so'z: «01», «FBS blok», «Narx» (bo'sh bo'lishi mumkin)"),
+    text: z.string().describe("Asosiy ekrandagi matn, asosiy tilda, 2–7 so'z — video ovozsiz, fikr shu matndan to'liq tushunilsin"),
+    sub: z.string().describe("Qo'shimcha qator, 0–12 so'z: raqam, aniqlik, CTA da telefon (bo'sh bo'lishi mumkin)"),
+    layout: z.enum(SCENE_LAYOUTS).describe("Matn joyi: bottom — odatiy, center — hook va CTA, top — kadrning pasti muhim bo'lsa"),
+    anim: z.enum(SCENE_ANIMS).describe("Matn kirishi; sahnalar bo'yicha almashtirib tur"),
+    camera: z.enum(SCENE_CAMERAS).describe("Fon harakati"),
+    transition: z.enum(SCENE_TRANSITIONS).describe("Keyingi sahnaga o'tish (oxirgi sahnada ahamiyatsiz)"),
+    colors: z.array(z.string()).describe("Grafik fon (kutubxonada kadr bo'lmasa): 2 ta HEX rang #RRGGBB, gradient yuqoridan pastga; oq matn o'qilsin — to'q ranglar"),
+    art: z.string().describe("Grafik fon uchun SVG: faqat <svg> ICHIDAGI elementlar (rect, circle, ellipse, line, polyline, polygon, path, g, linearGradient, radialGradient), koordinatalar 1080×1920. Mavzuga oid sodda geometrik illyustratsiya — beton bloklar, ustun, mikser silueti, zavod, chiziq va to'r; yarim shaffof (opacity 0.15–0.45), matn turgan tomon (layout) bo'sh qolsin. Matn, image, use, href, style, script — YO'Q. 2500 belgigacha"),
     mediaTags: z.array(z.string()).describe("Media kutubxonadan mos kadr qidirish uchun 1–3 kalit so'z (o'zbekcha: zavod, mikser, beton, ustun, fbs, yetkazish, obyekt…)"),
-    aiPrompt: z.string().describe("Kutubxonada mos kadr bo'lmasa, AI video uchun inglizcha prompt: realistic, vertical 9:16, concrete plant… (odam yuzi va logotipsiz)"),
-  })).describe("Reels uchun 4–8 sahna, jami 15–40 soniya; Post/Stories uchun 1–3"),
+  })).describe("Reels uchun 5–8 sahna, jami 15–35 soniya; 1-sahna — hook (center), oxirgisi — CTA telefon bilan; Post/Stories uchun 1–3"),
   music: z.string().describe("Musiqa uslubi va temp (Instagram kutubxonasidan tanlash uchun)"),
   caption: z.string().describe("Asosiy tildagi izoh, 600 belgigacha, oxirida CTA"),
   captionUz: z.string().describe("Ikkinchi tildagi izoh (bo'lmasa bo'sh)"),
@@ -192,13 +200,14 @@ export type StudioT = z.infer<typeof Studio>;
 export async function studioPackage(p: { brief: string; format: "REELS" | "POST" | "STORIES"; mediaTags: string[] }): Promise<StudioT> {
   return ask(Studio, `Vazifa: AI studiya. Foydalanuvchi g'oyasidan ${p.format === "REELS" ? "Instagram Reels" : p.format === "POST" ? "Instagram post (rasm/karusel)" : "Stories"} uchun to'liq paket tayyorla.
 Maqsad — ko'p ko'rish va ariza: kuchli hook, tez montaj, bitta aniq fikr, oxirida CTA.
-Media kutubxonadagi mavjud teglar (mediaTags ni shulardan tanlashga harakat qil): ${p.mediaTags.slice(0, 80).join(", ") || "—"}
+${p.format === "REELS" ? `Video server tomonida motion-grafika sifatida yig'iladi: har sahna — fon (kutubxonadagi kadr yoki sen chizgan grafika) ustida animatsion matn, sahnalar orasida o'tishlar. Ovoz YO'Q — hamma ma'no ekrandagi matnda. Sen rejissyor va dizaynersan: sahnalar ritmini, rang palitrasini (bitta video ichida uyg'un), animatsiya va o'tishlarni almashtirib tanla, bir xil narsani takrorlama. Har sahnaga grafika (art) chiz — kutubxonada kadr topilmasa shu ishlatiladi.
+` : ""}Media kutubxonadagi mavjud teglar (mediaTags ni shulardan tanlashga harakat qil): ${p.mediaTags.slice(0, 80).join(", ") || "—"}
 
 Profil statistikasi:
 ${await performance()}
 
 Foydalanuvchi g'oyasi:
-${p.brief}`, 12000);
+${p.brief}`, 32000);
 }
 
 /* ───────── Statistika tahlili va g'oyalar ───────── */

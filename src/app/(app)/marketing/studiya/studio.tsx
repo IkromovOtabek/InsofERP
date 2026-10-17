@@ -2,16 +2,25 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, Clock, Image as ImageIcon, Lightbulb, MapPin, Music, Plus, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Clapperboard, Clock, Image as ImageIcon, Lightbulb, MapPin, Music, Palette, Plus, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button, Card, CardHeader, Checkbox, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { generate, savePackage, type GenState } from "./actions";
 import type { MediaPick } from "@/lib/smm/studio";
+import {
+  ANIM_LABEL, CAMERA_LABEL, LAYOUT_LABEL, SCENE_ANIMS, SCENE_CAMERAS, SCENE_LAYOUTS, SCENE_TRANSITIONS, TRANSITION_LABEL,
+  type SceneAnim, type SceneCamera, type SceneLayout, type SceneTransition,
+} from "@/lib/smm/labels";
 import type { Place } from "../sozlamalar/actions";
 
 type Format = "REELS" | "POST" | "STORIES";
 type Channel = "INSTAGRAM" | "FACEBOOK" | "TELEGRAM";
-type SceneDraft = { durationSec: number; shot: string; text: string; voice: string; mediaId: string | null; useAi: boolean; aiPrompt: string; picks: MediaPick[] };
+type SceneDraft = {
+  durationSec: number; shot: string; kicker: string; text: string; sub: string; layout: SceneLayout; anim: SceneAnim; camera: SceneCamera;
+  transition: SceneTransition; colors: [string, string]; art: string; mediaId: string | null; picks: MediaPick[];
+};
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const pickOf = <T extends string>(list: readonly T[], v: string, d: T): T => (list.includes(v as T) ? (v as T) : d);
 
 const FORMATS: { key: Format; label: string; hint: string }[] = [
   { key: "REELS", label: "Reels", hint: "15–40 soniyali vertikal video — eng ko'p ko'rish" },
@@ -27,7 +36,7 @@ const EXAMPLES = [
 ];
 
 export function Studio({ initialBrief, places, connected, caps }: {
-  initialBrief: string; places: Place[]; connected: Channel[]; caps: { video: boolean; tts: boolean; aiVideo: boolean };
+  initialBrief: string; places: Place[]; connected: Channel[]; caps: { video: boolean };
 }) {
   const router = useRouter();
   const [brief, setBrief] = useState(initialBrief);
@@ -50,7 +59,7 @@ export function Studio({ initialBrief, places, connected, caps }: {
   const [scenes, setScenes] = useState<SceneDraft[]>([]);
   const [channels, setChannels] = useState<Channel[]>(connected);
   const [makeVideo, setMakeVideo] = useState(true);
-  const [voice, setVoice] = useState(caps.tts);
+  const [accent, setAccent] = useState("#f59e0b");
 
   const run = () => start(async () => {
     setErr(null);
@@ -64,8 +73,15 @@ export function Studio({ initialBrief, places, connected, caps }: {
     setWhen(r.slot ?? "");
     setScenes(p.scenes.map((sc, i) => {
       const picks = r.picks?.[i] ?? [];
-      return { durationSec: Math.min(15, Math.max(1, Math.round(sc.durationSec))), shot: sc.shot, text: sc.text, voice: sc.voice, mediaId: picks[0]?.id ?? null, useAi: !picks[0] && caps.aiVideo, aiPrompt: sc.aiPrompt, picks };
+      const [c0, c1] = sc.colors;
+      return {
+        durationSec: Math.min(15, Math.max(1, Math.round(sc.durationSec))), shot: sc.shot, kicker: sc.kicker, text: sc.text, sub: sc.sub,
+        layout: pickOf(SCENE_LAYOUTS, sc.layout, "bottom"), anim: pickOf(SCENE_ANIMS, sc.anim, "fade-up"), camera: pickOf(SCENE_CAMERAS, sc.camera, "push-in"),
+        transition: pickOf(SCENE_TRANSITIONS, sc.transition, "fade"),
+        colors: [c0 && HEX.test(c0) ? c0 : "#0f172a", c1 && HEX.test(c1) ? c1 : "#1e3a8a"], art: sc.art ?? "", mediaId: picks[0]?.id ?? null, picks,
+      };
     }));
+    setAccent(HEX.test(p.accent) ? p.accent : "#f59e0b");
     setMakeVideo(format === "REELS" && caps.video);
   });
 
@@ -79,7 +95,11 @@ export function Studio({ initialBrief, places, connected, caps }: {
     const loc = places.find((x) => x.name === place) ?? null;
     const r = await savePackage({
       brief, format, channels, title, rubric, hook, music, caption, captionUz, hashtags, location: loc, scheduledAt: when || null,
-      scenes: scenes.map((sc) => ({ durationSec: sc.durationSec, shot: sc.shot, text: sc.text, voice: sc.voice, mediaId: sc.mediaId, useAi: sc.useAi, aiPrompt: sc.aiPrompt })), makeVideo: makeVideo && format === "REELS", voice,
+      scenes: scenes.map((sc) => ({
+        durationSec: sc.durationSec, shot: sc.shot, kicker: sc.kicker, text: sc.text, sub: sc.sub, layout: sc.layout, anim: sc.anim,
+        camera: sc.camera, transition: sc.transition, colors: sc.colors, art: sc.art, mediaId: sc.mediaId,
+      })),
+      accent, makeVideo: makeVideo && format === "REELS",
     });
     if (r.error) { setErr(r.error); return; }
     router.push(`/marketing/kontent/${r.id}?saqlandi=1${r.video ? "&video=1" : ""}`);
@@ -117,10 +137,15 @@ export function Studio({ initialBrief, places, connected, caps }: {
         <>
           <Card>
             <CardHeader title={format === "REELS" ? `2. Ssenariy — ${scenes.length} sahna, ${total} soniya` : "2. Kadrlar"} icon={Clapperboard}
-              description="Har sahnani tahrirlang va kadr tanlang: media kutubxonadan yoki AI yaratsin" />
+              description={format === "REELS" ? "Video ovozsiz motion-grafika: har sahnada fon (kutubxonadagi kadr yoki Claude grafikasi) ustida animatsion matn" : "Har sahnani tahrirlang va kutubxonadan kadr tanlang"} />
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
               <Field label="Sarlavha (ichki)"><Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={160} /></Field>
               <Field label="Hook — birinchi 2 soniya"><Input value={hook} onChange={(e) => setHook(e.target.value)} /></Field>
+              {format === "REELS" && (
+                <Field label="Urg'u rangi" hint="Yorliq va chiziq rangi — butun video uchun">
+                  <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-9 w-14 cursor-pointer rounded border border-slate-200" />
+                </Field>
+              )}
             </div>
             <ol className="space-y-3">
               {scenes.map((sc, i) => (
@@ -134,13 +159,31 @@ export function Studio({ initialBrief, places, connected, caps }: {
                     </div>
                   </div>
                   <p className="mb-2 text-xs text-slate-500">Kadr: {sc.shot}</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Field label="Ekrandagi matn"><Input value={sc.text} onChange={(e) => upd(i, { text: e.target.value })} maxLength={140} /></Field>
-                    <Field label="Ovoz matni"><Input value={sc.voice} onChange={(e) => upd(i, { voice: e.target.value })} maxLength={600} /></Field>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <Field label="Yorliq"><Input value={sc.kicker} onChange={(e) => upd(i, { kicker: e.target.value })} maxLength={40} placeholder="01" /></Field>
+                    <Field label="Ekrandagi matn" className="sm:col-span-2"><Input value={sc.text} onChange={(e) => upd(i, { text: e.target.value })} maxLength={140} /></Field>
+                    <Field label="Qo'shimcha qator" className="sm:col-span-3"><Input value={sc.sub} onChange={(e) => upd(i, { sub: e.target.value })} maxLength={200} /></Field>
                   </div>
+                  {format === "REELS" && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <Field label="Matn joyi"><Select value={sc.layout} onChange={(e) => upd(i, { layout: e.target.value as SceneLayout })}>{SCENE_LAYOUTS.map((k) => <option key={k} value={k}>{LAYOUT_LABEL[k]}</option>)}</Select></Field>
+                      <Field label="Animatsiya"><Select value={sc.anim} onChange={(e) => upd(i, { anim: e.target.value as SceneAnim })}>{SCENE_ANIMS.map((k) => <option key={k} value={k}>{ANIM_LABEL[k]}</option>)}</Select></Field>
+                      <Field label="Kamera"><Select value={sc.camera} onChange={(e) => upd(i, { camera: e.target.value as SceneCamera })}>{SCENE_CAMERAS.map((k) => <option key={k} value={k}>{CAMERA_LABEL[k]}</option>)}</Select></Field>
+                      {i < scenes.length - 1 && <Field label="Keyingisiga o'tish"><Select value={sc.transition} onChange={(e) => upd(i, { transition: e.target.value as SceneTransition })}>{SCENE_TRANSITIONS.map((k) => <option key={k} value={k}>{TRANSITION_LABEL[k]}</option>)}</Select></Field>}
+                    </div>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {format === "REELS" && (
+                      <button type="button" onClick={() => upd(i, { mediaId: null })} title="Claude chizgan grafik fon"
+                        style={{ backgroundImage: `linear-gradient(170deg, ${sc.colors[0]}, ${sc.colors[1]})` }}
+                        className={cn("relative flex h-24 w-14 flex-col items-center justify-end overflow-hidden rounded-md pb-1.5 ring-2", sc.mediaId ? "ring-transparent" : "ring-brand-500")}>
+                        <span className="mb-auto mt-2 h-1 w-6 rounded-full" style={{ background: accent }} />
+                        <Palette size={14} className="text-white/80" />
+                        <span className="text-[10px] font-medium text-white/90">Grafika</span>
+                      </button>
+                    )}
                     {sc.picks.map((m) => (
-                      <button key={m.id} type="button" onClick={() => upd(i, { mediaId: m.id, useAi: false })} title={m.title}
+                      <button key={m.id} type="button" onClick={() => upd(i, { mediaId: m.id })} title={m.title}
                         className={cn("relative h-24 w-14 overflow-hidden rounded-md bg-slate-900 ring-2", sc.mediaId === m.id ? "ring-brand-500" : "ring-transparent")}>
                         {m.kind === "VIDEO"
                           ? <video src={`/api/marketing/media/${m.id}#t=0.5`} preload="metadata" muted playsInline className="h-full w-full object-cover" />
@@ -148,16 +191,22 @@ export function Studio({ initialBrief, places, connected, caps }: {
                           : <img src={`/api/marketing/media/${m.id}`} alt="" loading="lazy" className="h-full w-full object-cover" />}
                       </button>
                     ))}
-                    {!sc.picks.length && <span className="inline-flex items-center gap-1 text-xs text-slate-500"><ImageIcon size={13} /> Kutubxonada mos kadr topilmadi</span>}
-                    {caps.aiVideo && (
-                      <Checkbox label="AI yaratsin" checked={sc.useAi && !sc.mediaId} onChange={(e) => upd(i, { useAi: e.target.checked, mediaId: e.target.checked ? null : sc.picks[0]?.id ?? null })} />
+                    {!sc.picks.length && <span className="inline-flex items-center gap-1 text-xs text-slate-500"><ImageIcon size={13} /> Kutubxonada mos kadr topilmadi{format === "REELS" ? " — grafik fon ishlatiladi" : ""}</span>}
+                    {format === "REELS" && !sc.mediaId && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                        Fon ranglari
+                        <input type="color" value={sc.colors[0]} onChange={(e) => upd(i, { colors: [e.target.value, sc.colors[1]] })} className="h-7 w-8 cursor-pointer rounded border border-slate-200" aria-label="Fon rangi (tepa)" />
+                        <input type="color" value={sc.colors[1]} onChange={(e) => upd(i, { colors: [sc.colors[0], e.target.value] })} className="h-7 w-8 cursor-pointer rounded border border-slate-200" aria-label="Fon rangi (past)" />
+                      </span>
                     )}
                   </div>
-                  {sc.useAi && !sc.mediaId && <Textarea value={sc.aiPrompt} onChange={(e) => upd(i, { aiPrompt: e.target.value })} rows={2} className="mt-2 text-xs" aria-label="AI kadr tavsifi" />}
                 </li>
               ))}
             </ol>
-            <Button type="button" size="sm" variant="ghost" className="mt-2" onClick={() => setScenes((xs) => [...xs, { durationSec: 3, shot: "Qo'shimcha kadr", text: "", voice: "", mediaId: null, useAi: caps.aiVideo, aiPrompt: "", picks: [] }])}><Plus size={14} /> Sahna qo&apos;shish</Button>
+            <Button type="button" size="sm" variant="ghost" className="mt-2" onClick={() => setScenes((xs) => [...xs, {
+              durationSec: 3, shot: "Qo'shimcha kadr", kicker: "", text: "", sub: "", layout: "bottom", anim: "fade-up", camera: "push-in", transition: "fade",
+              colors: xs[xs.length - 1]?.colors ?? ["#0f172a", "#1e3a8a"], art: "", mediaId: null, picks: [],
+            }])}><Plus size={14} /> Sahna qo&apos;shish</Button>
             {music && <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-600"><Music size={13} /> Musiqa: {music} (Instagram'da qo&apos;yiladi)</p>}
             {pkg.tips.length > 0 && (
               <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
@@ -207,9 +256,8 @@ export function Studio({ initialBrief, places, connected, caps }: {
             <CardHeader title="4. Saqlash" description="Post qoralama bo'lib Kontent rejaga tushadi — tekshirib, tasdiqlashga yuborasiz" />
             {format === "REELS" && (
               <div className="mb-3 space-y-2">
-                <Checkbox label="Videoni avtomatik montaj qilish (9:16, ekrandagi matn bilan)" checked={makeVideo} disabled={!caps.video} onChange={(e) => setMakeVideo(e.target.checked)} />
-                {!caps.video && <p className="text-xs text-amber-700">Serverda video montaj dasturi o&apos;rnatilmagan — hozircha ssenariy va matn saqlanadi.</p>}
-                {makeVideo && <Checkbox label={caps.tts ? "Ovoz qo'shish (AI diktor)" : "Ovoz qo'shish — AI ovoz xizmati ulanmagan"} checked={voice && caps.tts} disabled={!caps.tts} onChange={(e) => setVoice(e.target.checked)} />}
+                <Checkbox label="Motion-video yaratish (9:16, animatsion matn va o'tishlar bilan, ovozsiz)" checked={makeVideo} disabled={!caps.video} onChange={(e) => setMakeVideo(e.target.checked)} />
+                {!caps.video && <p className="text-xs text-amber-700">Serverda video montaj dasturi (ffmpeg) o&apos;rnatilmagan — hozircha ssenariy va matn saqlanadi. Administrator o&apos;rnatgach, sahifani yangilang.</p>}
               </div>
             )}
             <div className="flex flex-wrap items-center gap-3">
