@@ -8,6 +8,7 @@ import { phoneTail, samePhone } from "./phone-lookup";
 import { syncCustomerLater } from "./eco/customers";
 import { defaultCreditLimit } from "./finance";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { pushLeadLater } from "./amocrm/sync";
 
 /**
  * Saytdan tushgan ariza (`Lead`). Qoida shu yerda — server action ham,
@@ -72,6 +73,8 @@ export async function createLead(input: NewLead): Promise<LeadResult> {
     body: `${lead.name} · ${lead.phone}${lead.product ? ` · ${lead.product.name}` : ""}`,
     link: { key: "leads", id: lead.id },
   }));
+  // amoCRM ulangan bo'lsa — sdelka bo'lib voronkaga tushadi (yiqilsa navbatda qoladi)
+  pushLeadLater(lead.id);
   return { ok: true };
 }
 

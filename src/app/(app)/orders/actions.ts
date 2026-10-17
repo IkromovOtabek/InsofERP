@@ -40,6 +40,7 @@ const schema = z.object({
   hasContract: z.string().optional().transform((v) => v === "on"), // "Shartnoma qilish" belgilangan
   contractAmount: z.coerce.number({ message: "Shartnoma summasi raqam bo'lsin" }).min(0, "Shartnoma summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Shartnoma summasi juda katta").default(0),
   note: zOpt,
+  amoDealId: zOpt,
   productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
   qtyM3: z.array(z.coerce.number({ message: "Miqdor raqam bo'lsin" }).positive("Miqdor 0 dan katta bo'lsin").max(100_000, "Miqdor juda katta (100 000 dan oshmasin)")),
   price: z.array(z.coerce.number({ message: "Narx raqam bo'lsin" }).min(0, "Narx manfiy bo'lmasin").max(MAX_AMOUNT, "Narx juda katta")),
@@ -102,6 +103,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         payMethod: d.payMethod,
         contractAmount,
         note: d.note,
+        amoDealId: d.customerMode === "existing" ? d.amoDealId : null,
       },
       s.userId,
       { id: orderId, contractFile: saved ?? undefined },

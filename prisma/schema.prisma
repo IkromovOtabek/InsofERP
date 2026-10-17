@@ -209,6 +209,7 @@ model Customer {
   payments    Payment[]
   payRequests PaymentRequest[]
   leads       Lead[]
+  amoDeals    AmoDeal[]
   register    SalesRegister[]
   agent       User?             @relation("CustomerAgent", fields: [agentId], references: [id])
   openings    OpeningBalance[]
@@ -1220,12 +1221,16 @@ model Order {
   payments   Payment[] // oldindan to'lov (avans) — zayavka ochilganda olingan pul
   payRequest PaymentRequest? // bosh to'lovni qabul qilish so'rovi (kassa yoki buxgalteriyaga)
   offers     CommercialOffer[] // shu zayavka asosida tuzilgan tijorat takliflari
+  /// amoCRM sdelkasidan ochilgan zayavka (`lib/amocrm`): holati va summasi sdelkaga qaytariladi
+  amoDealId  String?
+  amoDeal    AmoDeal?          @relation(fields: [amoDealId], references: [id])
 
   @@index([deliveryDate])
   @@index([siteId])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([customerId])
   @@index([status, date])
+  @@index([amoDealId])
 }
 
 model OrderItem {
@@ -2247,6 +2252,7 @@ model Lead {
   customer  Customer?         @relation(fields: [customerId], references: [id])
   handledBy User?             @relation("LeadHandledBy", fields: [handledById], references: [id])
   offers    CommercialOffer[]
+  amoDeal   AmoDeal?
 
   @@index([status, createdAt])
   @@index([phone])
@@ -3778,4 +3784,99 @@ model Broadcast {
   sentCount   Int      @default(0)
   createdById String
   createdAt   DateTime @default(now())
+}
+
+// ───────────────────────── amoCRM integratsiyasi (`lib/amocrm`) ─────────────────────────
+// amoCRM — savdo voronkasi (lid, taklif, kelishuv), ERP — zayavka, ishlab chiqarish va pul.
+// Sayt arizasi → amoCRM sdelkasi; sdelka «ERP'ga» bosqichiga o'tsa → ERP'da mijoz va kutilayotgan kelishuv;
+// zayavka holati va summasi sdelka bosqichi va narxiga qaytariladi.
+
+enum AmoAuthMethod {
+  TOKEN // shaxsiy integratsiyaning uzoq muddatli tokeni (qo'lda kiritiladi)
+  OAUTH // client_id/secret + ruxsat oynasi; access token kunda yangilanadi
+}
+
+enum AmoConnStatus {
+  ACTIVE
+  ERROR // so'nggi so'rov xato bilan tugadi (token, tarmoq) — Sozlamalarda ko'rinadi
+  DISCONNECTED
+}
+
+/// Korxonaning amoCRM ulanishi — bitta qator (`id = "main"`). Tokenlar shifrlangan (AES-GCM, `lib/amocrm/vault`).
+model AmoConnection {
+  id              String        @id @default("main")
+  /// Hisob manzili: insof.amocrm.ru (kommo.com ham bo'ladi)
+  domain          String
+  accountId       Int?
+  accountName     String?
+  method          AmoAuthMethod
+  clientId        String?
+  clientSecretEnc String?
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  /// Webhook manzilidagi maxfiy kalit: amoCRM webhook'ni imzolamaydi, kelgan sdelka API orqali qayta o'qiladi
+  webhookKey      String        @unique
+  webhookOk       Boolean       @default(false)
+  /// Ish voronkasi va bosqichlar (amoCRM status_id). Bo'sh bosqich — o'sha hodisada sdelka siljitilmaydi
+  pipelineId      Int?
+  stageNewLead    Int? // sayt arizasi shu bosqichda ochiladi (bo'sh — voronkaning birinchi bosqichi)
+  stageToErp      Int? // sdelka shu bosqichga o'tsa ERP'ga tushadi (mijoz + kutilayotgan kelishuv)
+  stageConfirmed  Int? // zayavka qabul qilindi / ishlab chiqarishda
+  stageDelivered  Int? // hammasi yetkazildi
+  stageClosed     Int? // to'lov yopildi (odatda 142 — «Muvaffaqiyatli»)
+  stageCancelled  Int? // zayavka bekor qilindi
+  /// Sayt arizalarini amoCRM'ga yuborish
+  pushLeads       Boolean       @default(true)
+  status          AmoConnStatus @default(ACTIVE)
+  lastError       String?
+  lastPullAt      DateTime?
+  connectedById   String?
+  connectedByName String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum AmoDealState {
+  PUSHING // ERP sayt arizasi amoCRM'ga yuborilmoqda (xato bo'lsa qayta urinadi)
+  IN_AMO // amoCRM voronkasida — menejer ishlayapti
+  READY // «ERP'ga» bosqichiga o'tdi — zayavka ochilishi kutilmoqda
+  ORDERED // zayavka ochildi
+  DISMISSED // ERP'da kerak emas deb yopildi
+}
+
+/// amoCRM sdelkasi bilan ERP bog'lanishi: sayt arizasi, mijoz va zayavkalar shu orqali topiladi.
+model AmoDeal {
+  id           String       @id @default(cuid())
+  amoLeadId    Int?         @unique // amoCRM sdelka id (yuborilmaguncha bo'sh)
+  leadId       String?      @unique // ERP sayt arizasidan yuborilgan bo'lsa
+  state        AmoDealState @default(IN_AMO)
+  name         String
+  price        Decimal?     @db.Decimal(18, 2) // amoCRM'dagi byudjet
+  contactName  String?
+  phone        String? // normallashtirilgan: +998XXXXXXXXX
+  companyName  String?
+  inn          String?
+  address      String?
+  note         String?
+  responsible  String? // amoCRM'dagi mas'ul menejer
+  customerId   String?
+  // ERP → amoCRM yuborish navbati (sayt arizasi)
+  pushAttempts Int          @default(0)
+  pushError    String?
+  nextPushAt   DateTime?
+  // Zayavka holatidan sdelkaga oxirgi yuborilgan qiymat — o'zgarganda qayta yuboriladi
+  syncedStage  Int?
+  syncedPrice  Decimal?     @db.Decimal(18, 2)
+  syncError    String?
+  readyAt      DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  lead     Lead?     @relation(fields: [leadId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  orders   Order[]
+
+  @@index([state, nextPushAt])
+  @@index([customerId])
 }

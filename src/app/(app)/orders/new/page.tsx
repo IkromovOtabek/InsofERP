@@ -22,20 +22,25 @@ import { canEditProducts } from "@/lib/catalog";
  * `?tur=sklad` bilan to'g'ridan-to'g'ri sklad formasi ochiladi.
  * Sotuvdan tashqari rollar (sklad, ishlab chiqarish) faqat sklad zayavkasini ocha oladi.
  */
-export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string; lead?: string }> }) {
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string; lead?: string; amo?: string }> }) {
   // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
   const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
-  const { customer, tur, lead: leadId } = await searchParams;
+  const { customer: customerParam, tur, lead: leadId, amo: amoId } = await searchParams;
   const canSale = canDo(s, "orders", "create");
   const canStockOrder = canDo(s, "orders", "stock");
 
-  const [catalog, stock, lead] = await Promise.all([
+  const [catalog, stock, lead, amoDeal] = await Promise.all([
     productCatalog(), // hamma joyda bir xil mahsulot ro'yxati
     stockSnapshot(),
     // Sayt arizasidan ochilgan zayavka: mahsulot, hajm va manzil arizadan olinadi
     canSale && leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
+    // amoCRM kelishuvidan: mijoz, manzil va sdelka nomi; zayavka sdelkaga bog'lanadi (`lib/amocrm/sync.ts`)
+    canSale && amoId ? db.amoDeal.findFirst({ where: { id: amoId, state: { in: ["READY", "ORDERED", "IN_AMO"] }, customerId: { not: null } }, select: { id: true, name: true, amoLeadId: true, address: true, customerId: true, lead: { select: { productId: true, qty: true } } } }) : null,
   ]);
-  const prefill: OrderPrefill | undefined = lead && (!customer || lead.customerId === customer)
+  const customer = amoDeal?.customerId ?? customerParam;
+  const prefill: OrderPrefill | undefined = amoDeal
+    ? { productId: amoDeal.lead?.productId, qty: amoDeal.lead?.qty != null ? Number(amoDeal.lead.qty) : null, address: amoDeal.address, note: `amoCRM sdelka #${amoDeal.amoLeadId}: ${amoDeal.name}`, amoDealId: amoDeal.id }
+    : lead && (!customer || lead.customerId === customer)
     ? { productId: lead.productId, qty: lead.qty != null ? Number(lead.qty) : null, address: lead.address, note: ["Sayt arizasidan", lead.message].filter(Boolean).join(": ") }
     : undefined;
 

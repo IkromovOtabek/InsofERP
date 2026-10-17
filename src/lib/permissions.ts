@@ -50,6 +50,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "ecommerce", label: "E-commerce do'konini boshqarish", roles: ["SALES"] },
     { key: "invoice",   label: "Schyot yozish",                  roles: ["ACCOUNTING", "SALES"] },
     { key: "invoice_cancel", label: "Schyotni bekor qilish",     roles: ["ACCOUNTING"] },
+    { key: "amocrm",    label: "amoCRM kelishuvlari bilan ishlash", roles: ["SALES"], hint: "Kelishuvdan zayavka ochish yoki «kerak emas» deb yopish" },
+    { key: "amocrm_settings", label: "amoCRM'ni ulash va voronka sozlamasi", roles: [], explicit: true, hint: "Kompaniya amoCRM hisobiga kalit beradi; odatda direktor" },
   ],
   // Tijorat taklifi (KP): zayavkadan mustaqil rasmiy narx hujjati — direktor istalgan xodimga «create» beradi
   offers: [

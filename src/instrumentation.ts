@@ -15,6 +15,7 @@ export async function register() {
   startWatchers(isTestMode());
   startSmmWatch(isTestMode());
   startReminderWatch(isTestMode());
+  startAmoWatch(isTestMode());
   if (!isTestMode()) return;
   try {
     assertSafeTestEnv();
@@ -59,5 +60,15 @@ function startReminderWatch(test: boolean) {
   if (flag === "off" || (test && flag !== "on")) return;
   if (process.env.NEXT_RUNTIME === "nodejs") {
     void import("./lib/reminders").then((m) => m.startReminders()).catch((e) => console.error("[reminders] ishga tushmadi", e));
+  }
+}
+
+/** amoCRM sinxroni (`lib/amocrm/watch.ts`): ulanmagan korxonada hech narsa qilmaydi. `AMOCRM_WATCH=off` — o'chirish. */
+function startAmoWatch(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.AMOCRM_WATCH ?? "").trim().toLowerCase();
+  if (flag === "off" || (test && flag !== "on")) return;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    void import("./lib/amocrm/watch").then((m) => m.startAmoWatch()).catch((e) => console.error("[amocrm-watch] ishga tushmadi", e));
   }
 }

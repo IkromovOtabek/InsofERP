@@ -30,6 +30,8 @@ export const NAV: NavItem[] = [
   { href: "/agent",       label: "Sotuv agentlari",    roles: ["AGENT", "HR", "SALES"], group: "Sotuv", menuHide: ["HR"] },
   // Saytdagi (`/`) formadan tushgan so'rovlar — mijozga aylantirilgandan keyingina Customer yaratiladi
   { href: "/leads",       label: "Sayt arizalari",     roles: ["SALES"], group: "Sotuv" },
+  // amoCRM — savdo voronkasi; ERP'ga tushgan kelishuvlar va ulanish sozlamasi (`lib/amocrm`)
+  { href: "/amocrm",      label: "amoCRM",             roles: ["SALES"], group: "Sotuv" },
   // Tijorat takliflari (KP) — rasmiy narx hujjati, zayavkasiz ham tuziladi; QR → ommaviy /taklif/<№>. Boshqa xodimga direktor «offers» moduli orqali beradi
   { href: "/takliflar",   label: "Tijorat takliflari", roles: ["SALES", "ACCOUNTING"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
   // Insof ECO ilovasidagi do'kon: qaysi mahsulot ko'rinadi, surat/narx, ilovadan tushgan buyurtmalar
@@ -233,7 +235,7 @@ export function navFor(role: Role, perms?: Perms) {
  */
 export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "orders",    label: "Zayavkalar",            prefixes: ["/orders"] },
-  { key: "sales",     label: "Sotuv va arizalar",     prefixes: ["/sales", "/leads", "/e-commerce"] },
+  { key: "sales",     label: "Sotuv va arizalar",     prefixes: ["/sales", "/leads", "/e-commerce", "/amocrm"] },
   { key: "offers",    label: "Tijorat takliflari",    prefixes: ["/takliflar"] },
   { key: "marketing", label: "Marketing",             prefixes: ["/marketing"] },
   { key: "customers", label: "Mijozlar",              prefixes: ["/customers"] },

@@ -13,6 +13,7 @@ import type { PayMethod, Prisma } from "@/generated/prisma";
 import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest } from "@/lib/payment-requests";
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
+import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -303,6 +304,8 @@ export type NewOrderInput = {
   payMethod?: PayMethod | null;
   contractAmount?: number;
   note?: string | null;
+  /** amoCRM kelishuvidan ochilgan zayavka (`/orders/new?amo=`) — holati sdelkaga qaytariladi */
+  amoDealId?: string | null;
 };
 export type NewOrderResult = { id: string; orderNo: string; customerId: string; onCredit: boolean; contractNo: string | null; requestId?: string | null };
 
@@ -435,6 +438,7 @@ export async function createOrder(
       },
     });
     await audit(tx, userId, "CREATE", "Order", o.id, undefined, { ...o, items, contractAmount });
+    if (input.amoDealId) await linkOrderTx(tx, input.amoDealId, o.id, customerId, userId);
     // Bosh to'lov — «Pul qabul qilish» so'rovi: naqd — Kassa xodimiga, perechisleniye — Buxgalterga
     const rq = prepayAmount && prepayAmount > 0 && o.kind === "SALE" ? await createPaymentRequestTx(tx, o, payMethod ?? "CASH", prepayAmount, userId) : null;
     return { id: o.id, orderNo: o.orderNo, customerId, onCredit, contractNo: o.contractNo, requestId: rq?.id ?? null };
@@ -459,5 +463,6 @@ export async function createOrder(
   }
   // Yangi mijoz ilovaga ham yetsin — telefoni ilovada ro'yxatdan o'tgan bo'lsa hisobi o'sha yerda ulanadi
   if (input.newCustomer) syncCustomerLater(res.customerId);
+  if (input.amoDealId) syncDealLater();
   return res;
 }

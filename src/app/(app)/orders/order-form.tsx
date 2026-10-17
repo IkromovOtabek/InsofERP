@@ -123,7 +123,7 @@ function CustomerPicker({ customers, value, onChange }: { customers: CustomerOpt
 }
 
 /** Sayt arizasidan (`/leads` → "Zayavka ochish") kelgan boshlang'ich ma'lumot. */
-export type OrderPrefill = { productId?: string | null; qty?: number | null; address?: string | null; note?: string | null };
+export type OrderPrefill = { productId?: string | null; qty?: number | null; address?: string | null; note?: string | null; /** amoCRM kelishuvi (`?amo=`) — zayavka unga bog'lanadi */ amoDealId?: string | null };
 
 export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, contractAccept, geoSearch, prefill, newCustomerLimit = 0 }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
@@ -600,6 +600,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
       <Checkbox name="needsPump" label="Nasos kerak" />
       <Field label="Izoh"><Textarea name="note" defaultValue={prefill?.note ?? ""} /></Field>
+      {prefill?.amoDealId ? <input type="hidden" name="amoDealId" value={prefill.amoDealId} /> : null}
       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
         <span className="inline-flex items-center gap-1"><Truck size={13} /> Dastavka va nasos — logistika uchun</span>
         <span className="inline-flex items-center gap-1"><Zap size={13} /> Zarur — brigadalar uchun ustuvorlik</span>
