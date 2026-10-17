@@ -200,7 +200,7 @@ export type StudioT = z.infer<typeof Studio>;
 export async function studioPackage(p: { brief: string; format: "REELS" | "POST" | "STORIES"; mediaTags: string[] }): Promise<StudioT> {
   return ask(Studio, `Vazifa: AI studiya. Foydalanuvchi g'oyasidan ${p.format === "REELS" ? "Instagram Reels" : p.format === "POST" ? "Instagram post (rasm/karusel)" : "Stories"} uchun to'liq paket tayyorla.
 Maqsad — ko'p ko'rish va ariza: kuchli hook, tez montaj, bitta aniq fikr, oxirida CTA.
-${p.format === "REELS" ? `Video server tomonida motion-grafika sifatida yig'iladi: har sahna — fon (kutubxonadagi kadr yoki sen chizgan grafika) ustida animatsion matn, sahnalar orasida o'tishlar. Ovoz YO'Q — hamma ma'no ekrandagi matnda. Sen rejissyor va dizaynersan: sahnalar ritmini, rang palitrasini (bitta video ichida uyg'un), animatsiya va o'tishlarni almashtirib tanla, bir xil narsani takrorlama. Har sahnaga grafika (art) chiz — kutubxonada kadr topilmasa shu ishlatiladi.
+${p.format === "REELS" ? `Video server tomonida motion-grafika sifatida yig'iladi: har sahna — fon (kutubxonadagi kadr yoki sen chizgan grafika) ustida animatsion matn, sahnalar orasida o'tishlar. Ovoz YO'Q — hamma ma'no ekrandagi matnda. Ekrandagi matnda emoji va maxsus belgi (✖, ✔, →, ★) ishlatma — shriftda yo'q; ro'yxat uchun yorliqdan foydalan («Xato 1»). Sen rejissyor va dizaynersan: sahnalar ritmini, rang palitrasini (bitta video ichida uyg'un), animatsiya va o'tishlarni almashtirib tanla, bir xil narsani takrorlama. Har sahnaga grafika (art) chiz — kutubxonada kadr topilmasa shu ishlatiladi.
 ` : ""}Media kutubxonadagi mavjud teglar (mediaTags ni shulardan tanlashga harakat qil): ${p.mediaTags.slice(0, 80).join(", ") || "—"}
 
 Profil statistikasi:

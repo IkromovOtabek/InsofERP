@@ -7,9 +7,8 @@ import { audit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { aiAllowed } from "@/lib/rate-limit";
 import { aiErrorText, aiReady, studioPackage, type StudioT } from "@/lib/ai/smm-writer";
-import { sceneSchema, specSchema } from "@/lib/smm/video";
 import { kickVideoQueue } from "@/lib/smm/watch";
-import { aiRateText, matchMedia, nextSlot, type MediaPick } from "@/lib/smm/studio";
+import { aiRateText, matchMedia, nextSlot, saveStudioPost, studioSaveSchema, type MediaPick } from "@/lib/smm/studio";
 
 export type GenState = { ok?: boolean; error?: string; pkg?: StudioT; picks?: MediaPick[][]; slot?: string } | undefined;
 
@@ -36,62 +35,14 @@ export async function generate(raw: z.input<typeof genSchema>): Promise<GenState
   }
 }
 
-const saveSchema = z.object({
-  brief: z.string().trim().max(3000),
-  format: z.enum(["REELS", "POST", "STORIES"]),
-  channels: z.array(z.enum(["INSTAGRAM", "FACEBOOK", "TELEGRAM"])).min(1, "Kamida bitta tarmoq tanlang"),
-  title: z.string().trim().min(1, "Sarlavha kerak").max(160),
-  rubric: z.string().trim().max(80),
-  hook: z.string().trim().max(2000),
-  music: z.string().trim().max(300),
-  caption: z.string().trim().max(2200, "Izoh 2200 belgidan oshmasin"),
-  captionUz: z.string().trim().max(2200),
-  hashtags: z.string().trim().max(600),
-  location: z.object({ name: z.string().max(120), locationId: z.string().regex(/^\d{3,25}$/).nullish() }).nullish(),
-  scheduledAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullish(),
-  accent: z.string().max(7),
-  scenes: z.array(sceneSchema.extend({ shot: z.string().max(600) })).min(1).max(12),
-  makeVideo: z.boolean(),
-});
-
 /** Postni qoralama sifatida saqlash (+ ixtiyoriy video montaj navbatga) — tasdiqlash odatdagidek */
-export async function savePackage(raw: z.input<typeof saveSchema>): Promise<{ error?: string; id?: string; video?: boolean }> {
+export async function savePackage(raw: z.input<typeof studioSaveSchema>): Promise<{ error?: string; id?: string; video?: boolean }> {
   const s = await requireAction("marketing", "content");
-  const p = saveSchema.safeParse(raw);
+  const p = studioSaveSchema.safeParse(raw);
   if (!p.success) return { error: p.error.issues[0]?.message ?? "Ma'lumot noto'g'ri" };
-  const d = p.data;
-  const ids = [...new Set(d.scenes.map((sc) => sc.mediaId).filter((x): x is string => !!x))];
-  if (ids.length && (await db.smmMedia.count({ where: { id: { in: ids } } })) !== ids.length) return { error: "Tanlangan kadr topilmadi — sahifani yangilang" };
-  const when = d.scheduledAt ? new Date(d.scheduledAt) : null;
-  const script = [
-    d.hook ? `**Hook:** ${d.hook}` : null,
-    ...d.scenes.map((sc, i) => `${i + 1}. (${sc.durationSec}s) ${sc.shot}${sc.text ? `\n   Ekranda: «${sc.text}»` : ""}${sc.sub ? `\n   Qo'shimcha: ${sc.sub}` : ""}`),
-    d.music ? `**Musiqa:** ${d.music}` : null,
-  ].filter(Boolean).join("\n");
-
-  const c = await db.marketingContent.create({
-    data: {
-      title: d.title, type: d.format, rubric: d.rubric || null, status: d.makeVideo && d.format === "REELS" ? "EDITING" : "SCRIPT",
-      hook: d.hook || null, script, caption: d.caption || null, captionUz: d.captionUz || null, hashtags: d.hashtags || null,
-      channels: d.channels, brief: d.brief || null, locationName: d.location?.name || null, locationId: d.location?.locationId || null,
-      scheduledAt: when, publishDate: when ? new Date(Date.UTC(when.getFullYear(), when.getMonth(), when.getDate())) : null,
-      createdBy: `AI studiya (${s.fullName})`,
-      // Video yaratilmasa — tanlangan kadrlar postga biriktiriladi (rasm/karusel uchun)
-      media: d.makeVideo && d.format === "REELS" ? undefined : { create: ids.slice(0, 10).map((mediaId, sort) => ({ mediaId, sort })) },
-    },
-  });
-  await audit(db, s.userId, "CREATE", "MarketingContent", c.id, undefined, { title: c.title, ai: "studiya" });
-
-  let video = false;
-  if (d.makeVideo && d.format === "REELS") {
-    const spec = specSchema.parse({ title: d.title, accent: d.accent, scenes: d.scenes }); // shot — faqat ssenariy matni uchun, sxema uni tashlab yuboradi
-    const job = await db.smmVideoJob.create({ data: { contentId: c.id, spec, createdById: s.userId, createdByName: s.fullName } });
-    await audit(db, s.userId, "CREATE", "SmmVideoJob", job.id, undefined, { contentId: c.id });
-    kickVideoQueue();
-    video = true;
-  }
-  revalidatePath("/marketing", "layout");
-  return { id: c.id, video };
+  const r = await saveStudioPost(p.data, { userId: s.userId, name: s.fullName }, "AI studiya");
+  if (!r.error) revalidatePath("/marketing", "layout");
+  return r;
 }
 
 /** Xato bo'lgan video ishni qayta navbatga qo'yish */

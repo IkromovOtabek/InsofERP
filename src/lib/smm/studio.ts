@@ -1,7 +1,12 @@
 /**
- * AI studiya yordamchilari: sahnaga media kutubxonadan mos kadr topish va tavsiya etilgan chiqish vaqti.
+ * AI studiya yordamchilari: sahnaga media kutubxonadan mos kadr topish, tavsiya etilgan chiqish vaqti
+ * va paketni qoralama post (+ video navbat) qilib saqlash — studiya sahifasi va marketing agenti uchun umumiy.
  */
+import { z } from "zod";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
+import { sceneSchema, specSchema } from "./video";
+import { kickVideoQueue } from "./watch";
 
 export const aiRateText = "AI so'rovlari chegarasi — birozdan keyin qayta urinib ko'ring";
 
@@ -43,4 +48,58 @@ export function nextSlot(weekday: number, time: string, now = new Date()): strin
   if (add === 0 && d.getTime() - now.getTime() < 3 * 3600_000) add = 7;
   d.setDate(d.getDate() + add);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export const studioSaveSchema = z.object({
+  brief: z.string().trim().max(3000),
+  format: z.enum(["REELS", "POST", "STORIES"]),
+  channels: z.array(z.enum(["INSTAGRAM", "FACEBOOK", "TELEGRAM"])).min(1, "Kamida bitta tarmoq tanlang"),
+  title: z.string().trim().min(1, "Sarlavha kerak").max(160),
+  rubric: z.string().trim().max(80),
+  hook: z.string().trim().max(2000),
+  music: z.string().trim().max(300),
+  caption: z.string().trim().max(2200, "Izoh 2200 belgidan oshmasin"),
+  captionUz: z.string().trim().max(2200),
+  hashtags: z.string().trim().max(600),
+  location: z.object({ name: z.string().max(120), locationId: z.string().regex(/^\d{3,25}$/).nullish() }).nullish(),
+  scheduledAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullish(),
+  accent: z.string().max(7),
+  scenes: z.array(sceneSchema.extend({ shot: z.string().max(600) })).min(1).max(12),
+  makeVideo: z.boolean(),
+});
+
+export type StudioSave = z.infer<typeof studioSaveSchema>;
+
+/** Paketni qoralama post qilib saqlaydi; Reels va `makeVideo` bo'lsa — video montaj navbatga qo'yiladi */
+export async function saveStudioPost(d: StudioSave, by: { userId: string; name: string }, source: string): Promise<{ error?: string; id?: string; video?: boolean }> {
+  const ids = [...new Set(d.scenes.map((sc) => sc.mediaId).filter((x): x is string => !!x))];
+  if (ids.length && (await db.smmMedia.count({ where: { id: { in: ids } } })) !== ids.length) return { error: "Tanlangan kadr topilmadi — sahifani yangilang" };
+  const when = d.scheduledAt ? new Date(d.scheduledAt) : null;
+  const script = [
+    d.hook ? `**Hook:** ${d.hook}` : null,
+    ...d.scenes.map((sc, i) => `${i + 1}. (${sc.durationSec}s) ${sc.shot}${sc.text ? `\n   Ekranda: «${sc.text}»` : ""}${sc.sub ? `\n   Qo'shimcha: ${sc.sub}` : ""}`),
+    d.music ? `**Musiqa:** ${d.music}` : null,
+  ].filter(Boolean).join("\n");
+  const video = d.makeVideo && d.format === "REELS";
+
+  const c = await db.marketingContent.create({
+    data: {
+      title: d.title, type: d.format, rubric: d.rubric || null, status: video ? "EDITING" : "SCRIPT",
+      hook: d.hook || null, script, caption: d.caption || null, captionUz: d.captionUz || null, hashtags: d.hashtags || null,
+      channels: d.channels, brief: d.brief || null, locationName: d.location?.name || null, locationId: d.location?.locationId || null,
+      scheduledAt: when, publishDate: when ? new Date(Date.UTC(when.getFullYear(), when.getMonth(), when.getDate())) : null,
+      createdBy: `${source} (${by.name})`,
+      // Video yaratilmasa — tanlangan kadrlar postga biriktiriladi (rasm/karusel uchun)
+      media: video ? undefined : { create: ids.slice(0, 10).map((mediaId, sort) => ({ mediaId, sort })) },
+    },
+  });
+  await audit(db, by.userId, "CREATE", "MarketingContent", c.id, undefined, { title: c.title, ai: source });
+
+  if (video) {
+    const spec = specSchema.parse({ title: d.title, accent: d.accent, scenes: d.scenes }); // shot — faqat ssenariy matni uchun, sxema uni tashlab yuboradi
+    const job = await db.smmVideoJob.create({ data: { contentId: c.id, spec, createdById: by.userId, createdByName: by.name } });
+    await audit(db, by.userId, "CREATE", "SmmVideoJob", job.id, undefined, { contentId: c.id });
+    kickVideoQueue();
+  }
+  return { id: c.id, video };
 }

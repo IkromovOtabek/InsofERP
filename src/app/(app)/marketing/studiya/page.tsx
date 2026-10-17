@@ -36,7 +36,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
       <Tabs current={tab} items={[
         { key: "yangi", label: "Yangi kontent", href: "/marketing/studiya", icon: Sparkles },
         { key: "videolar", label: "Videolar", href: "/marketing/studiya?t=videolar", icon: Clapperboard, count: running || undefined },
-        { key: "suhbat", label: "AI bilan suhbat", href: "/marketing/agent", icon: Bot },
+        { key: "suhbat", label: "AI agentlar", href: "/marketing/agent", icon: Bot },
       ]} />
 
       {tab === "yangi" ? (

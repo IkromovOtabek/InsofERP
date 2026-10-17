@@ -115,6 +115,9 @@ function scrimSvg(layout: Scene["layout"]): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1">${g}</linearGradient></defs><rect width="${W}" height="${H}" fill="url(#s)"/></svg>`;
 }
 
+/** Shriftda yo'q belgilar (emoji, ✖ kabi dingbat) videoda bo'sh to'rtburchak bo'lib chiqadi — olib tashlanadi */
+export const plainText = (t: string) => t.replace(/[\p{Extended_Pictographic}\u2190-\u21FF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]/gu, "").replace(/\s{2,}/g, " ").trim();
+
 /** Uzun matnni qatorlarga bo'lish (so'z bo'yicha) */
 function wrap(text: string, max: number): string[] {
   const out: string[] = [];
@@ -136,24 +139,25 @@ type Block = { svg: string; h: number; mt: number };
 function textBlocks(sc: Scene, accent: string): Block[] {
   const out: Block[] = [];
   const room = W - 2 * PAD_X;
-  const kicker = sc.kicker.toUpperCase();
+  const kicker = plainText(sc.kicker).toUpperCase();
+  const head = plainText(sc.text), sub = plainText(sc.sub);
   if (kicker) {
     const size = 34, h = 66, w = Math.min(room, Math.round(kicker.length * size * 0.74 + 52));
     out.push({ h, mt: 0, svg: box(h, `<rect x="${PAD_X}" y="0" width="${w}" height="${h}" rx="${h / 2}" fill="${accent}"/><text x="${PAD_X + 26}" y="${Math.round(h / 2 + size * 0.36)}" font-family="${FONT}" font-weight="800" font-size="${size}" letter-spacing="2" fill="#0b0f19">${xml(kicker)}</text>`) });
   }
-  if (sc.text) {
+  if (head) {
     // Eng katta o'lchamdan boshlab — 4 qatorga sig'guncha kichraytiriladi
-    let size = 112, lines = wrap(sc.text, Math.floor(room / (size * CHAR)));
+    let size = 112, lines = wrap(head, Math.floor(room / (size * CHAR)));
     while (size > 60 && (lines.length > 4 || Math.max(...lines.map((l) => l.length)) * size * CHAR > room)) {
       size -= 8;
-      lines = wrap(sc.text, Math.floor(room / (size * CHAR)));
+      lines = wrap(head, Math.floor(room / (size * CHAR)));
     }
     const lh = Math.round(size * 1.12);
     lines.slice(0, 5).forEach((l, i) => out.push({ h: lh, mt: i === 0 && out.length ? 30 : 0, svg: box(lh, `<text x="${PAD_X}" y="${Math.round(size * 0.9)}" font-family="${FONT}" font-weight="800" font-size="${size}" fill="#ffffff">${xml(l)}</text>`) }));
     out.push({ h: 10, mt: 26, svg: box(10, `<rect x="${PAD_X}" y="0" width="150" height="10" rx="5" fill="${accent}"/>`) });
   }
-  if (sc.sub) {
-    const size = 42, lh = 58, lines = wrap(sc.sub, Math.floor(room / (size * 0.56))).slice(0, 4);
+  if (sub) {
+    const size = 42, lh = 58, lines = wrap(sub, Math.floor(room / (size * 0.56))).slice(0, 4);
     const h = lines.length * lh + 12;
     out.push({ h, mt: out.length ? 30 : 0, svg: box(h, lines.map((l, i) => `<text x="${PAD_X}" y="${i * lh + size}" font-family="${FONT}" font-weight="500" font-size="${size}" fill="#ffffff" fill-opacity="0.9">${xml(l)}</text>`).join("")) });
   }

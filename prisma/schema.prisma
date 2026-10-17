@@ -2838,6 +2838,7 @@ model MarketingMessage {
 
   @@index([chatId, createdAt])
 }
+  agent     String             @default("umumiy") // agent turi: umumiy | strateg | kontent | analitik | target | raqobatchi
 
 /**
  * ───────────────────────── Pul qabul qilish so'rovi (zayavka bosh to'lovi) ─────────────────────────

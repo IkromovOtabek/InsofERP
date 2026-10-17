@@ -8,16 +8,10 @@ import { Markdown } from "./markdown";
 
 export type ChatMsg = { role: "user" | "assistant"; content: string; tools: string[] };
 
-const SUGGESTIONS = [
-  "Keyingi oy uchun 8 ta Reels'dan iborat kontent reja tuz (qoralama qilib)",
-  "Media kutubxonadagi videolardan foydalanib «Завод изнутри» Reels posti tayyorla",
-  "O'tgan 30 kun postlari va targetini tahlil qil: nima ishladi, nima ishlamadi?",
-  "Eng ko'p ko'rilgan post uchun target taklif qil (byudjet va auditoriya bilan)",
-  "Toshkentda plita va FBS sotadigan raqobatchilarning Instagram'ini internetdan o'rgan",
-];
-
 /** Agent bilan chat: javob oqim bilan keladi, ishlatilgan vositalar belgi bo'lib ko'rinadi. */
-export function Chat({ chatId: initialId, initial, labels, canUse }: { chatId?: string; initial: ChatMsg[]; labels: Record<string, string>; canUse: boolean }) {
+export type AgentInfo = { key: string; label: string; about: string; suggestions: string[] };
+
+export function Chat({ chatId: initialId, agent, initial, labels, canUse }: { chatId?: string; agent: AgentInfo; initial: ChatMsg[]; labels: Record<string, string>; canUse: boolean }) {
   const router = useRouter();
   const [chatId, setChatId] = useState(initialId);
   const [msgs, setMsgs] = useState<ChatMsg[]>(initial);
@@ -40,7 +34,7 @@ export function Chat({ chatId: initialId, initial, labels, canUse }: { chatId?: 
     let newId: string | undefined;
     let failed = false;
     try {
-      const res = await fetch("/api/marketing/agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId, message }) });
+      const res = await fetch("/api/marketing/agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId, message, agent: agent.key }) });
       if (res.status === 401) { window.location.href = "/login"; return; }
       if (!res.ok || !res.body) throw new Error(String(res.status));
       const reader = res.body.getReader();
@@ -79,11 +73,11 @@ export function Chat({ chatId: initialId, initial, labels, canUse }: { chatId?: 
         {msgs.length === 0 ? (
           <div className="mx-auto max-w-xl py-8 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-brand-400"><Sparkles size={22} /></span>
-            <h2 className="mt-4 text-lg font-semibold">Marketing agenti</h2>
-            <p className="mt-1.5 text-sm text-slate-500">Oylik kontent reja tuzadi, Reels ssenariysi va postlarni (RU/UZ) yozadi, media biriktiradi, statistikani tahlil qiladi va target taklif qiladi. Tasdiqlash va nashr — sizda.</p>
+            <h2 className="mt-4 text-lg font-semibold">{agent.label}</h2>
+            <p className="mt-1.5 text-sm text-slate-500">{agent.about}. Agent yaratgan hamma narsa qoralama — tasdiqlash va nashr sizda.</p>
             {canUse ? (
               <div className="mt-6 flex flex-col gap-2">
-                {SUGGESTIONS.map((x) => (
+                {agent.suggestions.map((x) => (
                   <button key={x} type="button" onClick={() => send(x)} className="rounded-lg border border-slate-200 px-4 py-2.5 text-left text-sm transition hover:border-slate-400 hover:bg-slate-50">{x}</button>
                 ))}
               </div>
@@ -121,7 +115,7 @@ export function Chat({ chatId: initialId, initial, labels, canUse }: { chatId?: 
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(input); } }}
             rows={1}
-            placeholder="Agentga yozing… (Shift+Enter — yangi qator)"
+            placeholder={`${agent.label}ga yozing… (Shift+Enter — yangi qator)`}
             className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-[15px] outline-none disabled:cursor-not-allowed"
           />
           <button type="submit" aria-label="Yuborish" disabled={busy || !input.trim() || !canUse} className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition", busy || !input.trim() ? "bg-slate-100 text-slate-400" : "bg-slate-900 text-white hover:bg-slate-800")}>

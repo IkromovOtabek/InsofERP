@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canDo } from "@/lib/permissions";
 import { aiAllowed } from "@/lib/rate-limit";
-import { MARKETING_MODEL, MARKETING_SYSTEM, marketingTools } from "@/lib/ai/marketing-agent";
+import { MARKETING_MODEL, MARKETING_SYSTEM, agentKey, agentSetup } from "@/lib/ai/marketing-agent";
 import { aiErrorText } from "@/lib/ai/smm-writer";
 
 /**
@@ -28,15 +28,17 @@ export async function POST(req: Request) {
     return new Response(ndjson({ type: "error", message: "AI kaliti sozlanmagan: korxona .env fayliga ANTHROPIC_API_KEY qo'shilishi kerak." }), { headers: ndHeaders });
   }
 
-  let body: { chatId?: unknown; message?: unknown };
+  let body: { chatId?: unknown; message?: unknown; agent?: unknown };
   try { body = await req.json(); } catch { return Response.json({ error: "BAD_JSON" }, { status: 400 }); }
   const text = typeof body?.message === "string" ? body.message.trim().slice(0, 8000) : "";
   if (!text) return Response.json({ error: "EMPTY" }, { status: 422 });
 
   // Suhbatni faqat egasi davom ettiradi
   let chat = typeof body.chatId === "string" ? await db.marketingChat.findFirst({ where: { id: body.chatId, userId: s.userId } }) : null;
-  if (!chat) chat = await db.marketingChat.create({ data: { userId: s.userId, title: text.replace(/\s+/g, " ").slice(0, 70) } });
+  // Agent turi suhbat ochilganda tanlanadi va o'zgarmaydi
+  if (!chat) chat = await db.marketingChat.create({ data: { userId: s.userId, title: text.replace(/\s+/g, " ").slice(0, 70), agent: agentKey(body.agent) } });
   const chatId = chat.id;
+  const agent = agentSetup(agentKey(chat.agent), s);
 
   const history = await db.marketingMessage.findMany({ where: { chatId }, orderBy: { createdAt: "desc" }, take: HISTORY_LIMIT });
   await db.marketingMessage.create({ data: { chatId, role: "user", content: text } });
@@ -62,10 +64,11 @@ export async function POST(req: Request) {
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default", // xavfsizlik filtri rad etsa — server mos zaxira modelda davom ettiradi
           output_config: { effort: "medium" },
-          system: [{ type: "text", text: MARKETING_SYSTEM, cache_control: { type: "ephemeral" } }],
+          // Umumiy qoidalar + agent roli; kesh oxirgi blokda — har agentning prefiksi alohida keshlanadi
+          system: [{ type: "text", text: MARKETING_SYSTEM }, { type: "text", text: agent.system, cache_control: { type: "ephemeral" } }],
           tools: [
-            ...marketingTools(s),
-            { type: "web_search_20260209", name: "web_search", max_uses: 5, user_location: { type: "approximate", country: "UZ", city: "Tashkent" } },
+            ...agent.tools,
+            ...(agent.web ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: agent.web, user_location: { type: "approximate" as const, country: "UZ", city: "Tashkent" } }] : []),
           ],
           messages,
           max_iterations: 10,
