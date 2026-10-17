@@ -806,7 +806,9 @@ model StockRecipient {
   createdAt DateTime @default(now())
 
   stockMoves StockMove[]
-  receipts   GoodsReceipt[]
+  receipts   GoodsReceipt[] @relation("ReceiptRecipient")
+  /// Kirimda «Darhol kimga berildi (avto chiqim)» — shu oluvchiga ketgan kirimlar
+  autoIssues GoodsReceipt[] @relation("ReceiptAutoIssue")
 }
 
 /// «Деньги» — kirim qanday to'lanadi: П-р (perechislenie, bank) yoki Н-к (naqd). Н-к da QQS 0.
@@ -845,11 +847,20 @@ model GoodsReceipt {
   buyerId       String?
   /// Почему — nima uchun olindi
   purpose       String?
+  // ── Sklad kirim jurnalining qo'shimcha ustunlari (2026-10-17) ──
+  /// «Mashina (kim olib keldi)»: «Ta'minotchi o'zi», transport firma, haydovchi yoki mashina raqami
+  carrier       String?
+  /// «Qayerdan yuklandi» — yuk ortilgan joy (zavod, bozor, sklad)
+  loadedFrom    String?
+  /// «Darhol kimga berildi (avto chiqim)»: mol skladga tushmay to'g'ri shu oluvchiga ketdi (BRU va h.k.) —
+  /// kirim bilan bir tranzaksiyada har qatorga StockMove ISSUE (−qty, refType "GoodsReceipt") yoziladi; storno ikkalasini ham qaytaradi
+  autoIssueToId String?
 
-  supplier  Supplier           @relation(fields: [supplierId], references: [id])
-  warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
-  createdBy User?              @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
-  recipient StockRecipient?    @relation(fields: [recipientId], references: [id])
+  supplier    Supplier           @relation(fields: [supplierId], references: [id])
+  warehouse   Warehouse          @relation(fields: [warehouseId], references: [id])
+  createdBy   User?              @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
+  recipient   StockRecipient?    @relation("ReceiptRecipient", fields: [recipientId], references: [id])
+  autoIssueTo StockRecipient?    @relation("ReceiptAutoIssue", fields: [autoIssueToId], references: [id])
   buyer     User?              @relation("ReceiptBuyer", fields: [buyerId], references: [id])
   items     GoodsReceiptItem[]
   supply    SupplyRequest? // shu kirim ta'minot zayavkasidan tug'ilgan bo'lsa

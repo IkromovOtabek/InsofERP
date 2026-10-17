@@ -9,7 +9,8 @@ import { isoDate } from "@/lib/format";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { resolveMaterials } from "@/lib/import-materials";
-import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
+import { canDo } from "@/lib/permissions";
+import { createGoodsReceipt, receiptTokenOf, resolveRecipient, resolveSupplier } from "@/lib/receipts";
 import type { VatRate } from "@/lib/receipt-vat";
 
 /** Xato matnlari o'zbekcha — «Рус» rejimida lug'atdan o'giriladi. */
@@ -18,13 +19,21 @@ const opt = z.string().trim().optional().transform((v) => (v ? v : null));
 const numStr = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, "").replace(",", ".") : v);
 
 const schema = z.object({
-  supplierId: req("Yetkazuvchini tanlang («Kimdan»)"),
+  // «Ta'minotchi»: ro'yxatdan tanlangan id yoki yozilgan nom (yangi yetkazuvchi saqlashda yaratiladi — `resolveSupplier`)
+  supplierId: opt,
+  supplierName: opt,
   warehouseId: req("Skladni tanlang"),
   date: req("Sanani kiriting"),
   payment: z.enum(["BANK", "CASH"], { message: "To'lov turini tanlang: bank o'tkazma yoki naqd pul" }),
   waybillNo: opt,
+  // «Kimga» va «Darhol kimga berildi» — id yoki yozilgan nom (`resolveRecipient`)
   recipientId: opt,
+  recipientName: opt,
+  autoIssueToId: opt,
+  autoIssueToName: opt,
   address: opt,
+  carrier: opt,
+  loadedFrom: opt,
   buyerId: opt,
   purpose: opt,
   note: opt,
@@ -42,6 +51,8 @@ const schema = z.object({
 
 const LIMITS: [keyof z.infer<typeof schema>, number, string][] = [
   ["waybillNo", 60, "TTN"], ["address", 300, "Manzil"], ["purpose", 300, "Maqsad"], ["note", 1000, "Izoh"],
+  ["carrier", 120, "Mashina (kim olib keldi)"], ["loadedFrom", 300, "Qayerdan yuklandi"], ["supplierName", 200, "Ta'minotchi"],
+  ["recipientName", 80, "Kimga"], ["autoIssueToName", 80, "Darhol kimga berildi"],
 ];
 
 /**
@@ -76,6 +87,14 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   }
   if (!items.length) return { error: "Kamida bitta qatorda xomashyoni tanlang" };
 
+  // Ta'minotchi va oluvchilar: ro'yxatda yo'q nom shu yerda spravochnikga qo'shiladi — keyingi kirimda ro'yxatdan chiqadi
+  const sup = await resolveSupplier({ id: d.supplierId, name: d.supplierName }, { userId: s.userId, canAdd: canDo(s, "stock", "suppliers") });
+  if ("error" in sup) return sup;
+  const rec = await resolveRecipient({ id: d.recipientId, name: d.recipientName }, s.userId);
+  if ("error" in rec) return { error: `«Kimga»: ${rec.error}` };
+  const autoTo = await resolveRecipient({ id: d.autoIssueToId, name: d.autoIssueToName }, s.userId);
+  if ("error" in autoTo) return { error: `«Darhol kimga berildi»: ${autoTo.error}` };
+
   const fresh = items.filter((x) => x.newName);
   if (fresh.length) {
     try {
@@ -95,8 +114,9 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   let res: Awaited<ReturnType<typeof createGoodsReceipt>>;
   try {
     res = await createGoodsReceipt({
-      supplierId: d.supplierId, warehouseId: d.warehouseId, date: d.date, payment: d.payment,
-      waybillNo: d.waybillNo, recipientId: d.recipientId, address: d.address, buyerId: d.buyerId, purpose: d.purpose, note: d.note,
+      supplierId: sup.id, warehouseId: d.warehouseId, date: d.date, payment: d.payment,
+      waybillNo: d.waybillNo, recipientId: rec.id, address: d.address, buyerId: d.buyerId, purpose: d.purpose, note: d.note,
+      carrier: d.carrier, loadedFrom: d.loadedFrom, autoIssueToId: autoTo.id,
       cashAccountId: d.cashAccountId, clientToken: receiptTokenOf(fd.get("clientToken")),
       items: items.map(({ materialId, qty, price, deliveryCost, vatRate }) => ({ materialId, qty, price, deliveryCost, vatRate })),
     }, { userId: s.userId, role: s.role });
@@ -106,6 +126,7 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   if (!res.existed) {
     revalidatePath("/stock"); revalidatePath("/stock/prixod"); revalidatePath("/receipts"); revalidatePath("/sales"); revalidatePath("/orders/new");
     revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/suppliers");
+    if (autoTo.id) revalidatePath("/stock/rasxod");
   }
   // Jurnal shu kirim ko'rinadigan davrda ochiladi: kirim oyining 1-kunidan bugungacha (kirim kelajak sanada bo'lsa — o'sha kungacha)
   const today = isoDate();

@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { notifyRoles } from "@/lib/notify";
 import { audit } from "./audit";
+import { upsertRecipient } from "./stock-recipients";
 import { nextNo } from "./numbering";
 import { MAX_AMOUNT, validDate } from "./action";
 import { cashOutflowError } from "./payments";
@@ -36,6 +37,16 @@ export type ReceiptInput = {
   buyerId?: string | null;
   /** Почему */
   purpose?: string | null;
+  /** «Mashina (kim olib keldi)»: «Ta'minotchi o'zi», transport firma, haydovchi yoki mashina raqami */
+  carrier?: string | null;
+  /** «Qayerdan yuklandi» — yuk ortilgan joy */
+  loadedFrom?: string | null;
+  /**
+   * «Darhol kimga berildi (avto chiqim)» — faol StockRecipient. Mol skladga tushmay to'g'ri shu oluvchiga ketdi
+   * (sement → BRU): har qatorga kirim bilan bir tranzaksiyada ISSUE (−qty, o'sha tannarx, refType "GoodsReceipt") yoziladi —
+   * sklad qoldig'i o'zgarmaydi, Chiqim jurnalida «avto» qatori chiqadi, storno ikkalasini ham teskari yozadi
+   */
+  autoIssueToId?: string | null;
   note?: string | null;
   vehicle?: string | null;
   /** Tarozi, kg: brutto va tara ikkalasi birga beriladi */
@@ -135,15 +146,16 @@ export async function createGoodsReceipt(
   // Sklad, yetkazuvchi, xomashyo, hisob, oluvchi va snabjenets — mavjud va faol bo'lsin (aks holda FK xatosi → 500)
   const isDirector = actor.role === "DIRECTOR";
   const accId = isDirector ? clean(input.cashAccountId, 64) : null;
-  const recipientId = clean(input.recipientId, 64), buyerId = clean(input.buyerId, 64);
+  const recipientId = clean(input.recipientId, 64), buyerId = clean(input.buyerId, 64), autoToId = clean(input.autoIssueToId, 64);
   const ids = [...new Set(raw.map((i) => i.materialId))];
-  const [wh, sup, mats, acc, recipient, buyer] = await Promise.all([
+  const [wh, sup, mats, acc, recipient, buyer, autoTo] = await Promise.all([
     db.warehouse.findFirst({ where: { id: input.warehouseId, isActive: true }, select: { id: true } }),
     db.supplier.findUnique({ where: { id: input.supplierId }, select: { id: true, name: true, isActive: true, vatPayer: true } }),
     db.material.findMany({ where: { id: { in: ids } }, select: { id: true, isActive: true } }),
     accId ? db.cashAccount.findFirst({ where: { id: accId, isActive: true }, select: { id: true, type: true } }) : Promise.resolve(null),
     recipientId ? db.stockRecipient.findFirst({ where: { id: recipientId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
     buyerId ? db.user.findFirst({ where: { id: buyerId, isActive: true }, select: { id: true } }) : Promise.resolve(null),
+    autoToId ? db.stockRecipient.findFirst({ where: { id: autoToId, isActive: true }, select: { id: true, name: true } }) : Promise.resolve(null),
   ]);
   if (!wh) fail("Sklad topilmadi yoki yopilgan");
   if (!sup) fail("Yetkazuvchi topilmadi");
@@ -156,6 +168,7 @@ export async function createGoodsReceipt(
   }
   if (recipientId && !recipient) fail("Oluvchi («Kimga») topilmadi yoki yopilgan");
   if (buyerId && !buyer) fail("Snabjenets topilmadi yoki ishdan bo'shagan");
+  if (autoToId && !autoTo) fail("«Darhol kimga berildi» oluvchisi topilmadi yoki yopilgan");
 
   // QQS: QQS to'lovchisi bo'lmagan yetkazuvchi va naqd (Н-к) kirim QQS bermaydi — stavka majburan 0.
   // Aks holda qator stavkasi (0 — QQS'dan ozod tovar yoki 12), berilmasa 12.
@@ -175,6 +188,7 @@ export async function createGoodsReceipt(
         data: {
           docNo: await nextNo(tx, "goodsReceipt", "K"), date, supplierId: sup.id, warehouseId: wh.id, note: n.note, createdById: actor.userId, clientToken,
           waybillNo: clean(input.waybillNo, 60), payment, recipientId: recipient?.id ?? null, address: clean(input.address), buyerId: buyer?.id ?? null, purpose: clean(input.purpose),
+          carrier: clean(input.carrier, 120), loadedFrom: clean(input.loadedFrom), autoIssueToId: autoTo?.id ?? null,
           items: { create: items.map((i) => ({ materialId: i.materialId, qty: i.qty, price: i.price, vatRate: i.vatRate, vatAmount: i.vatAmount, deliveryCost: i.deliveryCost })) },
         },
       });
@@ -184,6 +198,17 @@ export async function createGoodsReceipt(
           qty: i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: actor.userId,
         })),
       });
+      // «Darhol kimga berildi»: mol skladda turmaydi — kirim bilan bir vaqtda o'sha oluvchiga chiqim (o'sha tannarx bilan).
+      // Kirim bilan bitta hujjat (refType "GoodsReceipt"): storno ikkalasini ham teskari yozadi, qoldiq jami o'zgarmaydi
+      if (autoTo) {
+        await tx.stockMove.createMany({
+          data: items.map((i) => ({
+            type: "ISSUE" as const, date, warehouseId: wh.id, materialId: i.materialId, recipientId: autoTo.id,
+            qty: -i.qty, unitCost: i.unitCost, refType: "GoodsReceipt", refId: rec.id, createdById: actor.userId,
+            note: `Avto chiqim: kirim ${rec.docNo} → ${autoTo.name}`,
+          })),
+        });
+      }
       // Kirim summasi (QQS va dostavka bilan — yetkazuvchiga shuncha to'lanadi) — hisobdan chiqim. Sklad/snabjeniye kassadan
       // pul chiqara olmaydi: bunday kirim Kirim-Chiqimda "To'lanmagan kirimlar" ro'yxatiga tushadi va moliya to'laydi (`payReceipt`).
       // Direktor esa hisobni tanlab, shu zahoti to'langan deb yozishi mumkin.
@@ -286,6 +311,14 @@ export type PrixodRow = {
   /** Снабженец — buyer, bo'lmasa kiritgan xodim */
   buyer: string | null;
   purpose: string | null;
+  /** Kirim izohi (eski kirimlarda «Nakladnoy № …» ham shu yerda) */
+  note: string | null;
+  /** «Mashina (kim olib keldi)» */
+  carrier: string | null;
+  /** «Qayerdan yuklandi» */
+  loadedFrom: string | null;
+  /** «Darhol kimga berildi (avto chiqim)» — oluvchi nomi */
+  autoIssueTo: string | null;
   /** Kirim keyin storno qilingan — bu asl qator (summalari musbat, ustidan chizib ko'rsatiladi) */
   cancelled?: boolean;
   /** Storno qatori: storno sanasida, summalar manfiy */
@@ -343,6 +376,7 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
       receipt: {
         select: {
           id: true, docNo: true, date: true, note: true, waybillNo: true, payment: true, address: true, purpose: true, cancelledAt: true,
+          carrier: true, loadedFrom: true, autoIssueTo: { select: { name: true } },
           supplier: { select: { name: true } }, warehouse: { select: { name: true } }, recipient: { select: { name: true } },
           buyer: { select: { fullName: true } }, createdBy: { select: { fullName: true } },
         },
@@ -367,6 +401,7 @@ export async function prixodJournal(p: { from: Date; to: Date; warehouseId?: str
       supplier: r.supplier.name, recipient: r.recipient?.name ?? r.warehouse.name,
       payment: pay.get(r.id) ?? null, delivery, price, vatRate: i.vatRate, sum, vat, total: r2(sum + vat),
       address: r.address, buyer: r.buyer?.fullName ?? r.createdBy?.fullName ?? null, purpose: r.purpose,
+      note: r.note, carrier: r.carrier, loadedFrom: r.loadedFrom, autoIssueTo: r.autoIssueTo?.name ?? null,
     };
     if (inPeriod(r.date)) rows.push(r.cancelledAt ? { ...row, cancelled: true } : row);
     if (inPeriod(r.cancelledAt)) {
@@ -405,4 +440,45 @@ export async function lastReceiptTerms(materialIds: string[], before?: Date): Pr
   })))).filter((r) => r != null);
   const pay = await resolveReceiptPayments(rows.map((r) => ({ id: r.receipt.id, payment: r.receipt.payment })));
   return new Map(rows.map((r) => [r.materialId, { payment: pay.get(r.receipt.id) ?? null, vatRate: r.vatRate, receiptId: r.receipt.id, date: r.receipt.date }]));
+}
+
+// ───────────────────────── «Ta'minotchi» va «Kimga» — nom bo'yicha ─────────────────────────
+
+const cleanName = (v: string | null | undefined, max: number) => clean((v ?? "").replace(/\s+/g, " "), max);
+
+/**
+ * Kirim formasidagi «Ta'minotchi»: ro'yxatdan tanlangan (`id`) yoki qo'lda yozilgan nom (`name`).
+ * Nom bo'yicha (katta-kichik harf farqsiz) mavjud yetkazuvchi olinadi; yo'q bo'lsa yangisi yaratiladi va Yetkazuvchilar
+ * spravochnigida qoladi — keyingi kirimda ro'yxatdan chiqadi. Yangi yetkazuvchi QQS to'lovchisi deb yoziladi (naqd kirimda
+ * QQS baribir 0; kerak bo'lsa Yetkazuvchilar bo'limida o'zgartiriladi). Yaratish huquqi — `stock → suppliers` (`canAdd`).
+ */
+export async function resolveSupplier(input: { id?: string | null; name?: string | null }, actor: { userId: string; canAdd: boolean }): Promise<{ id: string } | { error: string }> {
+  const id = clean(input.id, 64);
+  if (id) return { id };
+  const name = cleanName(input.name, 200);
+  if (!name) return { error: "Ta'minotchini tanlang yoki nomini yozing" };
+  const found = await db.supplier.findFirst({ where: { name: { equals: name, mode: "insensitive" } }, select: { id: true, name: true, isActive: true } });
+  if (found) {
+    if (!found.isActive) return { error: `"${found.name}" yopilgan — avval Yetkazuvchilar bo'limida faollashtiring` };
+    return { id: found.id };
+  }
+  if (!actor.canAdd) return { error: `«${name}» yetkazuvchisi spravochnikda yo'q — ro'yxatdan tanlang yoki Yetkazuvchilar bo'limida qo'shing` };
+  const sup = await db.supplier.create({ data: { name, vatPayer: true } });
+  await audit(db, actor.userId, "CREATE", "Supplier", sup.id, undefined, { ...sup, via: "kirim-forma" });
+  return { id: sup.id };
+}
+
+/**
+ * «Kimga» / «Darhol kimga berildi»: tanlangan oluvchi (`id`) yoki yozilgan nom (`name`) — mavjudi olinadi, yo'g'i yaratiladi
+ * (`upsertRecipient`: nom takrorlanmaydi, nofaol bo'lsa xato). Ikkalasi bo'sh — `{ id: null }` (kirim skladga).
+ */
+export async function resolveRecipient(input: { id?: string | null; name?: string | null }, userId: string): Promise<{ id: string | null } | { error: string }> {
+  const id = clean(input.id, 64);
+  if (id) return { id };
+  const name = cleanName(input.name, 80);
+  if (!name) return { id: null };
+  const found = await db.stockRecipient.findFirst({ where: { name: { equals: name, mode: "insensitive" }, isActive: true }, select: { id: true } });
+  if (found) return { id: found.id };
+  const r = await upsertRecipient({ name }, userId);
+  return "error" in r ? r : { id: r.id };
 }

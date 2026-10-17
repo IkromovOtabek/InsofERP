@@ -38,6 +38,8 @@ function Clip({ text, w = "max-w-[200px]" }: { text: string | null; w?: string }
 
 /** «Hujjat» (Excel): storno qatori — «Storno K-…», storno qilingan asl qator — «K-… (storno)». */
 const docLabel = (r: PrixodRow) => (r.storno ? `Storno ${r.docNo}` : r.cancelled ? `${r.docNo} (storno)` : r.docNo);
+/** «Izoh» ustuni: kirim izohi, «Maqsad» (nima uchun olindi) ham shu yerda. */
+const noteText = (r: PrixodRow) => [r.note, r.purpose ? `Maqsad: ${r.purpose}` : null].filter(Boolean).join(" · ") || null;
 
 /**
  * Sklad → «Kirim» (avval «Приход»): kirim jurnali foydalanuvchi Excel'idagi ustunlar bilan (matn o'zbekcha, «Рус» — lug'atdan).
@@ -67,13 +69,15 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   const canDistribute = canDo(s, "stock", "brigade");
   const keep: Record<string, string> = { ...(q ? { q } : {}), ...(wh ? { wh } : {}) };
 
+  // Ustunlar — foydalanuvchi Excel jurnali bilan bir xil (Izoh ichida «Maqsad» ham)
   const excel = [
     ...rows.map((r) => ({
-      "Sana": dateRu(r.date), "Hujjat": docLabel(r), "Nomi": r.material, "TTN": r.waybillNo ?? "", "Birlik": unitShort(r.unit), "Miqdor": r.qty,
-      "Kimdan": r.supplier, "Kimga": r.recipient, "To'lov turi": r.payment ? PAY_EXCEL[r.payment] : "Ko'rsatilmagan", "Yetkazib berish": r.delivery, "Narx": r.price,
-      "Umumiy summa": r.sum, "QQS stavkasi": `${r.vatRate}%`, "QQS": r.vat, "Jami summa": r.total, "Manzil": r.address ?? "", "Ta'minotchi": r.buyer ?? "", "Maqsad": r.purpose ?? "",
+      "Sana": dateRu(r.date), "Hujjat": docLabel(r), "Tovar": r.material, "TTN №": r.waybillNo ?? "", "O'lchov": unitShort(r.unit), "Miqdor": r.qty,
+      "Ta'minotchi": r.supplier, "Kimga": r.recipient, "To'lov": r.payment ? PAY_EXCEL[r.payment] : "Ko'rsatilmagan", "Dostavka": r.delivery, "Narx (QQSsiz)": r.price,
+      "Summa (QQSsiz)": r.sum, "QQS stavkasi": `${r.vatRate}%`, "QQS 12%": r.vat, "Jami (QQS bilan)": r.total, "Manzil": r.address ?? "", "Snabjenets": r.buyer ?? "", "Izoh": noteText(r) ?? "",
+      "Mashina (kim olib keldi)": r.carrier ?? "", "Qayerdan yuklandi": r.loadedFrom ?? "", "Darhol kimga berildi (avto chiqim)": r.autoIssueTo ?? "",
     })),
-    ...(rows.length ? [{ "Sana": "Jami", "Hujjat": "", "Nomi": "", "TTN": "", "Birlik": "", "Miqdor": null, "Kimdan": "", "Kimga": "", "To'lov turi": "", "Yetkazib berish": tot.delivery, "Narx": null, "Umumiy summa": tot.sum, "QQS stavkasi": "", "QQS": tot.vat, "Jami summa": tot.total, "Manzil": "", "Ta'minotchi": "", "Maqsad": "" }] : []),
+    ...(rows.length ? [{ "Sana": "Jami", "Hujjat": "", "Tovar": "", "TTN №": "", "O'lchov": "", "Miqdor": null, "Ta'minotchi": "", "Kimga": "", "To'lov": "", "Dostavka": tot.delivery, "Narx (QQSsiz)": null, "Summa (QQSsiz)": tot.sum, "QQS stavkasi": "", "QQS 12%": tot.vat, "Jami (QQS bilan)": tot.total, "Manzil": "", "Snabjenets": "", "Izoh": "", "Mashina (kim olib keldi)": "", "Qayerdan yuklandi": "", "Darhol kimga berildi (avto chiqim)": "" }] : []),
   ];
 
   return (
@@ -105,7 +109,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
           <input type="hidden" name="to" value={period.toStr} />
           <div className="relative w-full sm:w-80">
             <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" aria-hidden />
-            <Input name="q" defaultValue={q} placeholder="Nomi yoki yetkazuvchi" aria-label="Qidiruv" className="pl-9" />
+            <Input name="q" defaultValue={q} placeholder="Tovar yoki ta'minotchi" aria-label="Qidiruv" className="pl-9" />
           </div>
           {warehouses.length > 1 && (
             <Select name="wh" defaultValue={wh ?? ""} aria-label="Sklad" className="w-auto min-w-44">
@@ -139,21 +143,24 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
         <SheetHead>
           <tr>
             <SheetTh>Sana</SheetTh>
-            <SheetTh className="sticky left-0 z-20 min-w-[180px] text-left">Nomi</SheetTh>
-            <SheetTh>TTN</SheetTh>
-            <SheetTh>Birlik</SheetTh>
+            <SheetTh className="sticky left-0 z-20 min-w-[180px] text-left">Tovar</SheetTh>
+            <SheetTh>TTN №</SheetTh>
+            <SheetTh>O'lchov</SheetTh>
             <SheetTh right>Miqdor</SheetTh>
-            <SheetTh>Kimdan</SheetTh>
-            <SheetTh>Kimga</SheetTh>
-            <SheetTh>To'lov turi</SheetTh>
-            <SheetTh right>Yetkazib berish</SheetTh>
-            <SheetTh right>Narx</SheetTh>
-            <SheetTh right>Umumiy summa</SheetTh>
-            <SheetTh right>QQS</SheetTh>
-            <SheetTh right>Jami summa</SheetTh>
-            <SheetTh>Manzil</SheetTh>
             <SheetTh>Ta'minotchi</SheetTh>
-            <SheetTh>Maqsad</SheetTh>
+            <SheetTh>Kimga</SheetTh>
+            <SheetTh>To'lov</SheetTh>
+            <SheetTh right>Dostavka</SheetTh>
+            <SheetTh right>Narx (QQSsiz)</SheetTh>
+            <SheetTh right>Summa (QQSsiz)</SheetTh>
+            <SheetTh right>QQS 12%</SheetTh>
+            <SheetTh right>Jami (QQS bilan)</SheetTh>
+            <SheetTh>Manzil</SheetTh>
+            <SheetTh>Snabjenets</SheetTh>
+            <SheetTh>Izoh</SheetTh>
+            <SheetTh>Mashina (kim olib keldi)</SheetTh>
+            <SheetTh>Qayerdan yuklandi</SheetTh>
+            <SheetTh>Darhol kimga berildi (avto chiqim)</SheetTh>
           </tr>
         </SheetHead>
         <tbody>
@@ -169,7 +176,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
               <SheetTd right>{money(tot.sum)}</SheetTd>
               <SheetTd right>{money(tot.vat)}</SheetTd>
               <SheetTd right>{money(tot.total)}</SheetTd>
-              <SheetTd colSpan={3} />
+              <SheetTd colSpan={6} />
             </tr>
           </SheetFoot>
         )}
@@ -204,7 +211,10 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
       <SheetTd tone={tone} right strong>{money(r.total)}</SheetTd>
       <SheetTd tone={tone}><Clip text={r.address} /></SheetTd>
       <SheetTd tone={tone} className="whitespace-nowrap">{r.buyer ?? <span className="text-slate-400">—</span>}</SheetTd>
-      <SheetTd tone={tone}><Clip text={r.purpose} w="max-w-[240px]" /></SheetTd>
+      <SheetTd tone={tone}><Clip text={noteText(r)} w="max-w-[240px]" /></SheetTd>
+      <SheetTd tone={tone}><Clip text={r.carrier} w="max-w-[160px]" /></SheetTd>
+      <SheetTd tone={tone}><Clip text={r.loadedFrom} w="max-w-[160px]" /></SheetTd>
+      <SheetTd tone={tone} className="whitespace-nowrap">{r.autoIssueTo ?? <span className="text-slate-400">—</span>}</SheetTd>
     </SheetTr>
   );
 }

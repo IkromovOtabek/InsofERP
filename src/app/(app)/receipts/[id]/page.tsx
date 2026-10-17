@@ -16,7 +16,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const r = await db.goodsReceipt.findUnique({
     where: { id },
-    include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } }, supply: { select: { id: true } }, recipient: { select: { name: true } }, buyer: { select: { fullName: true } } },
+    include: { supplier: true, warehouse: true, createdBy: true, items: { include: { material: true } }, supply: { select: { id: true } }, recipient: { select: { name: true } }, buyer: { select: { fullName: true } }, autoIssueTo: { select: { name: true } } },
   });
   if (!r) notFound();
   const { base, vat, total, delivery } = receiptAmounts(r.items);
@@ -61,6 +61,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           { k: "Snabjenets", v: r.buyer?.fullName ?? r.createdBy?.fullName ?? "—" },
           { k: "Nima uchun", v: r.purpose ?? "—" },
           ...(hasDelivery ? [{ k: "Dostavka", v: money(delivery) }] : []),
+          ...(r.carrier ? [{ k: "Mashina (kim olib keldi)", v: r.carrier }] : []),
+          ...(r.loadedFrom ? [{ k: "Qayerdan yuklandi", v: r.loadedFrom }] : []),
+          ...(r.autoIssueTo ? [{ k: "Darhol kimga berildi (avto chiqim)", v: <>{r.autoIssueTo.name} <span className="text-xs text-slate-500">— mol skladda qolmagan, Chiqim jurnalida «avto» qatori</span></> }] : []),
         ]} />
       </Card>
       <Table>

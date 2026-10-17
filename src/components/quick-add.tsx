@@ -9,12 +9,12 @@ import { quickAddRecipient, quickAddSupplier, type QuickAddResult } from "@/lib/
 export type QuickAdded = { id: string; name: string; vatPayer?: boolean };
 
 /**
- * Tanlash maydoni + uning o'ng tomoniga yopishgan «+» tugmasi (MaterialField'dagi «…» kabi).
- * `add` berilmasa (ruxsat yo'q) — oddiy maydon. Ichidagi `Select` ga `rounded-r-none` ni chaqiruvchi beradi.
+ * Tanlash (yoki yozib tanlash — `NameCombo`) maydoni + uning o'ng tomoniga yopishgan «+» tugmasi (MaterialField'dagi «…» kabi).
+ * `add` berilmasa (ruxsat yo'q) — oddiy maydon.
  */
 export function WithAdd({ add, children }: { add?: React.ReactNode; children: React.ReactNode }) {
   if (!add) return <>{children}</>;
-  return <div className="flex [&>select]:min-w-0 [&>select]:flex-1 [&>select]:rounded-r-none">{children}{add}</div>;
+  return <div className="flex [&>input:not([type=hidden])]:min-w-0 [&>input:not([type=hidden])]:flex-1 [&>input:not([type=hidden])]:rounded-r-none [&>select]:min-w-0 [&>select]:flex-1 [&>select]:rounded-r-none">{children}{add}</div>;
 }
 
 function AddButton({ label, onClick }: { label: string; onClick: () => void }) {

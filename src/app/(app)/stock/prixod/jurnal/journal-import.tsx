@@ -111,7 +111,7 @@ export function JournalImport({ warehouses, materials, suppliers, canAddSupplier
           <FileUp size={16} /> Excel faylni tanlash
           <input type="file" accept=".xlsx,.xls" className="hidden" disabled={busy} onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar nomi, TTN, O'lchov, Miqdor, Kimdan, Kimga, To'lov, Dostavka, Narx, Summa, QQS"}</span>
+        <span className="text-sm text-slate-500">{data?.file ?? "Ustunlar: Sana, Tovar, TTN, O'lchov, Miqdor, Ta'minotchi, Kimga, To'lov, Dostavka, Narx, Summa, QQS, Manzil, Izoh, Mashina, Qayerdan yuklandi, Darhol kimga berildi"}</span>
       </div>
       {readError && <Callout tone="danger">{readError}</Callout>}
 

@@ -208,7 +208,7 @@ function Row({ r, storno }: { r: RasxodRow; storno?: React.ReactNode }) {
       <SheetTd tone={tone} className="whitespace-nowrap">{r.from}</SheetTd>
       <SheetTd tone={tone} className={cn(r.kind === "prod" && "font-medium text-blue-800", (r.kind === "writeoff" || r.kind === "inventory") && "text-amber-800")}>
         <span title={r.note ?? undefined} className={r.kind === "storno" ? "font-medium text-red-700" : undefined}>{r.to}</span>
-        {r.auto && <span className="ml-1.5 rounded bg-slate-100 px-1 py-px text-[11px] font-medium text-slate-600" title="Avtomatik berilgan: topshiriq uchun brigadada yetmadi">avto</span>}
+        {r.auto && <span className="ml-1.5 rounded bg-slate-100 px-1 py-px text-[11px] font-medium text-slate-600" title="Avtomatik berilgan: topshiriq uchun brigadada yetmadi yoki kirimda «Darhol kimga berildi»">avto</span>}
         {r.cancelled && <span className="ml-1.5 rounded bg-red-50 px-1 py-px text-[11px] font-medium text-red-700" title="Bu chiqim storno qilingan — minusli «Storno» qatoriga qarang">bekor qilingan</span>}
         {reason && <span className="block text-[11px] text-slate-500">{`Sabab: ${reason}`}</span>}
       </SheetTd>

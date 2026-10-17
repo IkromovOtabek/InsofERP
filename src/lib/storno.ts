@@ -26,20 +26,20 @@ type Move = { warehouseId: string; materialId: string | null; productId: string 
 
 /**
  * Teskari harakatlardan keyin qoldiq (sklad × xomashyo/mahsulot) minusga tushmasligini tekshiradi.
- * Faqat kamayadigan qatorlar tekshiriladi (asl harakat musbat bo'lganlar).
+ * Hujjat harakatlari sklad × xomashyo bo'yicha jamlanadi (kirim + «Darhol kimga berildi» avto chiqimi bir-birini
+ * yo'qqa chiqaradi) — faqat qoldiqni kamaytiradigan (jami musbat) qatorlar tekshiriladi.
  */
 async function checkNoNegative(tx: Prisma.TransactionClient, moves: Move[], names: Map<string, string>) {
   const need = new Map<string, { warehouseId: string; materialId: string | null; productId: string | null; qty: number }>();
   for (const m of moves) {
-    const q = Number(m.qty);
-    if (q <= 0) continue; // teskarisi qoldiqni oshiradi
     const k = `${m.warehouseId}|${m.materialId ?? ""}|${m.productId ?? ""}`;
     const cur = need.get(k) ?? { warehouseId: m.warehouseId, materialId: m.materialId, productId: m.productId, qty: 0 };
-    cur.qty += q;
+    cur.qty += Number(m.qty);
     need.set(k, cur);
   }
   const short: string[] = [];
   for (const n of need.values()) {
+    if (n.qty <= STOCK_EPS) continue; // teskarisi qoldiqni oshiradi yoki o'zgartirmaydi
     const b = await tx.stockMove.aggregate({
       where: { warehouseId: n.warehouseId, ...(n.materialId ? { materialId: n.materialId } : { productId: n.productId }) },
       _sum: { qty: true },

@@ -4,7 +4,7 @@ import { audit } from "./audit";
 import { validDate } from "./action";
 import { resolveMaterials } from "./import-materials";
 import { toMaterialUnit } from "./unit";
-import { createGoodsReceipt } from "./receipts";
+import { createGoodsReceipt, resolveRecipient } from "./receipts";
 import { PAID_IMPORT_TOKEN } from "./receipt-payables";
 import { journalMaterials, journalUnit, type JournalDoc } from "./prixod-journal";
 import type { Role } from "@/generated/prisma";
@@ -56,9 +56,17 @@ export async function importJournalDocs(
     supId.set(k, sup.id);
   }
 
-  // Oluvchi («Kimga») — faqat mavjudi; spravochnikda yo'q bo'lsa kirim skladga tushadi
-  const recipients = await db.stockRecipient.findMany({ where: { isActive: true }, select: { id: true, name: true } });
-  const recId = new Map(recipients.map((x) => [x.name.trim().toLowerCase(), x.id]));
+  // Oluvchilar («Kimga», «Darhol kimga berildi») — nom bo'yicha; yo'g'i «Kimga» ro'yxatiga qo'shiladi (kirim formasidagi kabi)
+  const recId = new Map<string, string | null>();
+  const recipientOf = async (name: string): Promise<string | null> => {
+    const k = name.trim().toLowerCase();
+    if (!k) return null;
+    if (!recId.has(k)) {
+      const r = await resolveRecipient({ name }, s.userId);
+      recId.set(k, "error" in r ? null : r.id);
+    }
+    return recId.get(k) ?? null;
+  };
 
   // Xomashyolar: nom bo'yicha topiladi, yo'qlari yaratiladi; birligi mos kelmasa — «Nomi (birlik)» alohida xomashyo
   const allRows = docs.flatMap((d) => d.rows);
@@ -82,11 +90,15 @@ export async function importJournalDocs(
       const token = (input.paid ? PAID_IMPORT_TOKEN : "jrn-") + hash;
       // Shu hujjat boshqa rejimda (to'langan / to'lanmagan) yuklangan bo'lsa ham qayta ochilmasin
       if (await db.goodsReceipt.findFirst({ where: { clientToken: { in: [`jrn-${hash}`, `${PAID_IMPORT_TOKEN}${hash}`] } }, select: { id: true } })) { res.existed++; continue; }
+      const src = input.paid ? "Excel jurnaldan (to'langan)" : "Excel jurnaldan";
+      const note = String(d.note ?? "").trim();
       const out = await createGoodsReceipt({
         supplierId: supId.get(d.supplier.trim().toLowerCase())!, warehouseId: wh.id, date: d.date,
         waybillNo: d.waybillNo || null, payment: d.payment === "BANK" || d.payment === "CASH" ? d.payment : null,
-        recipientId: recId.get(String(d.recipient ?? "").trim().toLowerCase()) ?? null, address: d.address || null,
-        note: input.paid ? "Excel jurnaldan (to'langan)" : "Excel jurnaldan", clientToken: token, items,
+        recipientId: await recipientOf(String(d.recipient ?? "")), address: d.address || null,
+        carrier: String(d.carrier ?? "") || null, loadedFrom: String(d.loadedFrom ?? "") || null,
+        autoIssueToId: await recipientOf(String(d.autoIssueTo ?? "")),
+        note: note ? `${note.slice(0, 900)} · ${src}` : src, clientToken: token, items,
       }, { userId: s.userId, role: s.role });
       if (out.existed) res.existed++; else res.created++;
     } catch (e) {

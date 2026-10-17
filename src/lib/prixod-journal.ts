@@ -3,8 +3,9 @@ import { normalizeUnit, toMaterialUnit, UNIT_FALLBACK } from "./unit";
 
 /**
  * Sklad → Kirim → «Excel jurnal»: ko'p sanali, ko'p yetkazuvchili kirim jurnali (bir necha oylik daftar).
- * Ustunlar Sklad → Kirim jurnali bilan bir xil: Sana, Tovar nomi, TTN, O'lchov, Miqdor, Kimdan, Kimga,
- * To'lov (P-r / n-q), Dostavka, Narx, Summa (QQSsiz), QQS, Jami summa, Manzil.
+ * Ustunlar Sklad → Kirim jurnali bilan bir xil: Sana, Tovar, TTN, O'lchov, Miqdor, Ta'minotchi (Kimdan), Kimga,
+ * To'lov (P-r / n-q), Dostavka, Narx, Summa (QQSsiz), QQS, Jami, Manzil, Izoh, Mashina (kim olib keldi), Qayerdan yuklandi,
+ * Darhol kimga berildi (avto chiqim). «Snabjenets» ustuni o'qilmaydi (kiritgan xodim yoziladi).
  *
  * Qatorlar «sana + yetkazuvchi + TTN + to'lov» bo'yicha kirim hujjatlariga guruhlanadi. O'qish brauzerda
  * (oldindan ko'rish uchun) va serverda bir xil — shu fayldagi funksiyalar ikkala tomonda ishlaydi.
@@ -27,7 +28,8 @@ export const journalUnit = (v: unknown) => {
   return normalizeUnit(EXTRA_UNITS[k] ?? k);
 };
 
-type Col = "date" | "material" | "waybill" | "unit" | "qty" | "supplier" | "recipient" | "payment" | "delivery" | "price" | "sum" | "vat" | "total" | "address";
+type Col = "date" | "material" | "waybill" | "unit" | "qty" | "supplier" | "recipient" | "payment" | "delivery" | "price" | "sum" | "vat" | "total" | "address"
+  | "note" | "carrier" | "loadedFrom" | "autoIssue";
 
 /** Sarlavha → ustun. Tartib muhim: «Jami summa» «Summa» dan oldin tekshiriladi. */
 const HEADERS: [Col, RegExp][] = [
@@ -37,7 +39,12 @@ const HEADERS: [Col, RegExp][] = [
   ["unit", /o.?lchov|birlik|ед|изм|unit/],
   ["qty", /miqdor|кол|soni|qty/],
   ["supplier", /kimdan|ta.?minotchi|yetkazuvchi|от кого|постав/],
+  // «Darhol kimga berildi» ham «kimga» ni o'z ichiga oladi — avval shu tekshiriladi
+  ["autoIssue", /darhol|avto.?chiqim|авто/],
   ["recipient", /kimga|кому/],
+  ["carrier", /mashina|машина|kim olib keldi|transport/],
+  ["loadedFrom", /qayerdan|yuklandi|откуда|погруз/],
+  ["note", /^(izoh|примеч|коммент|note)/],
   ["payment", /to.?lov|деньги|оплат/],
   ["delivery", /dostavka|достав/],
   ["price", /^(narx|цена|price)/],
@@ -101,6 +108,13 @@ export type JournalRow = {
   payment: "BANK" | "CASH" | null;
   recipient: string;
   address: string;
+  note: string;
+  /** «Mashina (kim olib keldi)» */
+  carrier: string;
+  /** «Qayerdan yuklandi» */
+  loadedFrom: string;
+  /** «Darhol kimga berildi (avto chiqim)» — oluvchi nomi */
+  autoIssueTo: string;
   /** To'lanadigan summa: Miqdor × Narx + QQS + Dostavka (fayldagi «Jami» emas — u ham xato bo'lishi mumkin) */
   total: number;
 };
@@ -175,6 +189,7 @@ export function parseJournal(aoa: unknown[][]): { rows: JournalRow[]; errors: Jo
       delivery: dlv,
       supplier, waybillNo: waybill === "0" ? "" : waybill, payment: journalPayment(at(r, "payment")),
       recipient: str(at(r, "recipient")), address: str(at(r, "address")),
+      note: str(at(r, "note")), carrier: str(at(r, "carrier")), loadedFrom: str(at(r, "loadedFrom")), autoIssueTo: str(at(r, "autoIssue")),
       total: base + dlv + (vatRate ? Math.round(base * 12) / 100 : 0),
     });
   }
@@ -190,15 +205,26 @@ export type JournalDoc = {
   payment: "BANK" | "CASH" | null;
   recipient: string;
   address: string;
+  note: string;
+  carrier: string;
+  loadedFrom: string;
+  autoIssueTo: string;
   rows: JournalRow[];
 };
 
-/** Kirim hujjatlariga guruhlash: sana + yetkazuvchi + TTN + to'lov turi. Sana bo'yicha tartiblangan. */
+/**
+ * Kirim hujjatlariga guruhlash: sana + yetkazuvchi + TTN + to'lov turi (+ «Darhol kimga berildi», bo'lsa — avto chiqim
+ * hujjat bo'yicha yoziladi). Sana bo'yicha tartiblangan. Kalit eski fayllar uchun o'zgarmagan (qayta yuklash takror ochmasin).
+ */
 export function groupJournal(rows: JournalRow[]): JournalDoc[] {
   const m = new Map<string, JournalDoc>();
   for (const r of rows) {
-    const key = [r.date, r.supplier.toLowerCase(), r.waybillNo, r.payment ?? ""].join("|");
-    const d = m.get(key) ?? { key, date: r.date, supplier: r.supplier, waybillNo: r.waybillNo, payment: r.payment, recipient: r.recipient, address: r.address, rows: [] };
+    const auto = (r.autoIssueTo ?? "").trim();
+    const key = [r.date, r.supplier.toLowerCase(), r.waybillNo, r.payment ?? ""].join("|") + (auto ? `|auto:${auto.toLowerCase()}` : "");
+    const d = m.get(key) ?? {
+      key, date: r.date, supplier: r.supplier, waybillNo: r.waybillNo, payment: r.payment, recipient: r.recipient, address: r.address,
+      note: r.note ?? "", carrier: r.carrier ?? "", loadedFrom: r.loadedFrom ?? "", autoIssueTo: auto, rows: [],
+    };
     d.rows.push(r);
     m.set(key, d);
   }

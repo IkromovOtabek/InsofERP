@@ -328,8 +328,8 @@ try {
     pt.rows === 4 && eq2(pt.delivery, 5000) && eq2(pt.sum, 286000) && eq2(pt.vat, 24000) && eq2(pt.total, 310000), pt);
   pg = await sklad.get(`/stock/prixod?from=${yesterday}&to=${today}`);
   // Sahifa matni o'zbekcha (ruschasi — «Рус» rejimida lug'atdan); apostrofli so'zlar HTML'da &#x27; — ular tekshirilmaydi
-  check("2.17 /stock/prixod (davr bilan) 200: o'zbekcha ustunlar, hujjatlar, TTN, Bank o'tkazma / Naqd pul, summalar, Kimga, Manzil, Maqsad",
-    pg.status === 200 && ["TTN", "Birlik", "Kimdan", "Kimga", "Yetkazib berish", "Umumiy summa", "QQS stavkasi", "Jami summa", "Manzil", "Maqsad",
+  check("2.17 /stock/prixod (davr bilan) 200: Excel ustunlari (Tovar, TTN №, Dostavka, Summa (QQSsiz), Jami (QQS bilan), Snabjenets, Izoh, Mashina, Qayerdan yuklandi, Darhol kimga berildi), hujjatlar, Bank o'tkazma / Naqd pul, summalar, Kimga, Manzil, Maqsad (Izoh ichida)",
+    pg.status === 200 && ["Tovar", "TTN №", "Miqdor", "Kimga", "Dostavka", "Summa (QQSsiz)", "QQS 12%", "Jami (QQS bilan)", "Manzil", "Snabjenets", "Izoh", "Mashina (kim olib keldi)", "Qayerdan yuklandi", "Darhol kimga berildi", "Maqsad:",
       docA, docB, docC, TTN, TTN_B, "Bank o", "Naqd pul", "105 000", "117 000", "112 000", R1n, ADDR, PURP, supName, M1n, M2n, uSnab.name].every((s) => pg.text.includes(s)), pg.status);
   pg = await sklad.get(`/stock/prixod?from=${yesterday}&to=${today}&q=${encodeURIComponent(supName)}&saved=${encodeURIComponent(docA)}`);
   check("2.18 qidiruv (Kimdan) bo'yicha «Jami»: 286 000 / 24 000 / 310 000; «Kirim saqlandi» xabari",
