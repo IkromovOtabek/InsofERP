@@ -149,3 +149,43 @@ export async function saveAds(_prev: ActionState, fd: FormData): Promise<ActionS
   resetSmmCreds();
   return done("Saqlandi");
 }
+
+/* ───────── Avtomatik agentlar (haftalik hisobot, kunlik tekshiruv) ───────── */
+
+export async function saveAutoAgents(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("marketing", "settings");
+  const r = parseForm(z.object({
+    autoWeekly: z.literal("on").optional().transform(Boolean),
+    autoDaily: z.literal("on").optional().transform(Boolean),
+    autoDrafts: z.coerce.number().int().min(0, "0–7").max(7, "0–7"),
+    recipients: z.array(z.string().min(1).max(40)).max(30).optional().default([]),
+  }), fd);
+  if ("error" in r) return { error: r.error };
+  const ids = [...new Set(r.data.recipients)];
+  if (ids.length && (await db.user.count({ where: { id: { in: ids }, isActive: true } })) !== ids.length) return { error: "Tanlangan xodimlardan biri topilmadi — sahifani yangilang" };
+  const before = await marketingSettings();
+  const after = await db.marketingSettings.update({ where: { id: "main" }, data: { autoWeekly: r.data.autoWeekly, autoDaily: r.data.autoDaily, autoDrafts: r.data.autoDrafts, autoRecipients: ids } });
+  const pick = (x: typeof before) => ({ autoWeekly: x.autoWeekly, autoDaily: x.autoDaily, autoDrafts: x.autoDrafts, autoRecipients: x.autoRecipients });
+  await audit(db, s.userId, "UPDATE", "MarketingSettings", "main", pick(before), pick(after));
+  return done("Saqlandi");
+}
+
+/** Hozir yuborish — sinash yoki o'tkazib yuborilgan hisobot uchun (jadvaldagi vaqtga ta'sir qilmaydi) */
+export async function runAutoAgentNow(kind: "weekly" | "daily"): Promise<ActionState> {
+  const s = await requireAction("marketing", "settings");
+  const { aiAllowed } = await import("@/lib/rate-limit");
+  if (!aiAllowed(s.userId)) return { error: "AI so'rovlari chegarasi — birozdan keyin qayta urinib ko'ring" };
+  const { runDaily, runWeekly } = await import("@/lib/smm/auto-agents");
+  try {
+    if (kind === "weekly") {
+      const r = await runWeekly(new Date(), { userId: s.userId, name: s.fullName });
+      return done(`Hisobot tayyor, ${r.drafts} ta g'oya kontent rejada · ${r.users} kishiga, Telegram — ${r.telegram}`);
+    }
+    const r = await runDaily(new Date());
+    await audit(db, s.userId, "CREATE", "MarketingDailyCheck", "main", undefined, { manual: true, users: r.users, telegram: r.telegram });
+    return done(`Yuborildi: ${r.users} kishiga, Telegram — ${r.telegram}`);
+  } catch (e) {
+    const { aiErrorText } = await import("@/lib/ai/smm-writer");
+    return { error: aiErrorText(e) };
+  }
+}

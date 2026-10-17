@@ -1,10 +1,10 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { CheckCircle2, Link2, MapPin, Plus, RefreshCw, Search, Star, Trash2, Unplug } from "lucide-react";
-import { Button, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
+import { CheckCircle2, Link2, MapPin, Play, Plus, RefreshCw, Search, Send, Star, Trash2, Unplug } from "lucide-react";
+import { Button, Checkbox, Field, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 import {
-  accountAction, addCompetitor, connectMetaManual, connectTelegramAction, findPlaces, removeCompetitor, saveAds, saveBrand, saveLocations, type Place,
+  accountAction, addCompetitor, connectMetaManual, connectTelegramAction, findPlaces, removeCompetitor, runAutoAgentNow, saveAds, saveAutoAgents, saveBrand, saveLocations, type Place,
 } from "./actions";
 
 type Msg = { error?: string; note?: string } | null;
@@ -206,5 +206,51 @@ export function AdsForm({ v, disabled }: { v: { adAccountId: string; leadFormId:
       <FormError error={state?.error} />
       <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
     </form>
+  );
+}
+
+/** Avtomatik agentlar: jadval, nechta g'oya qoralamaga, kimga yuboriladi; «Hozir yuborish» — sinash uchun */
+export function AutoAgentsForm({ v, people, disabled }: {
+  v: { autoWeekly: boolean; autoDaily: boolean; autoDrafts: number; recipients: string[] };
+  people: { id: string; name: string; role: string; telegram: boolean }[];
+  disabled?: boolean;
+}) {
+  const [state, action, pending] = useActionState(saveAutoAgents, undefined);
+  const { pending: running, msg, run } = useRun();
+  return (
+    <div className="space-y-4">
+      <form action={action} className="space-y-3">
+        <fieldset disabled={disabled} className="space-y-3">
+          <div className="space-y-1.5">
+            <Checkbox name="autoWeekly" label="Haftalik hisobot va reja — har dushanba 09:00" defaultChecked={v.autoWeekly} />
+            <Checkbox name="autoDaily" label="Kunlik tekshiruv — har kuni 08:30" defaultChecked={v.autoDaily} />
+          </div>
+          <Field label="Haftalik g'oyalardan kontent rejaga" hint="«G'oya» holatida qo'shiladi — studiyada bir bosishda video yoki post qilinadi">
+            <Select name="autoDrafts" defaultValue={String(v.autoDrafts)}>
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n === 0 ? "Qo'shilmasin" : `${n} ta g'oya`}</option>)}
+            </Select>
+          </Field>
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-slate-700">Kimga yuboriladi</span>
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              {people.map((p) => (
+                <Checkbox key={p.id} name="recipients[]" value={p.id} defaultChecked={v.recipients.includes(p.id)} label={`${p.name} · ${p.role}${p.telegram ? "" : " (Telegram ulanmagan)"}`} />
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Hech kim belgilanmasa — barcha direktorlarga. Telegram ulanmagan xodim xabarni faqat ilovada ko&apos;radi (Mening hisobim → Telegram).</p>
+          </div>
+        </fieldset>
+        {!disabled && <Button size="sm" disabled={pending}>Saqlash</Button>}
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
+      </form>
+      {!disabled && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+          <Button size="sm" variant="secondary" disabled={running} onClick={() => run(() => runAutoAgentNow("daily"))}><Send size={14} /> Kunlik tekshiruvni hozir yuborish</Button>
+          <Button size="sm" variant="secondary" disabled={running} onClick={() => run(() => runAutoAgentNow("weekly"))}><Play size={14} /> Haftalik hisobotni hozir tayyorlash</Button>
+          {running ? <span className="text-xs text-slate-500">Bajarilmoqda… (haftalik — 1 daqiqagacha)</span> : <Note msg={msg} />}
+        </div>
+      )}
+    </div>
   );
 }

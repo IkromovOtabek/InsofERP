@@ -2611,6 +2611,13 @@ model MarketingSettings {
   locations       Json? // [{ name, locationId? }] — postga qo'yiladigan joylashuvlar
   adAccountId     String? // Meta reklama kabineti (act_…)
   leadFormId      String? // Lead Ads formasi
+  // Avtomatik agentlar (lib/smm/auto-agents.ts): natija Telegram bot va ilovadagi bildirishnoma orqali
+  autoWeekly      Boolean   @default(false) // dushanba 09:00 — haftalik hisobot va reja
+  autoDaily       Boolean   @default(false) // har kuni 08:30 — kunlik tekshiruv
+  autoDrafts      Int       @default(3) // haftalik g'oyalardan nechta qoralama (g'oya) post yaratiladi
+  autoRecipients  String[]  @default([]) // User id; bo'sh — barcha faol direktorlar
+  autoWeeklyAt    DateTime? // oxirgi ishga tushish (ikki marta ketmasin)
+  autoDailyAt     DateTime?
   updatedAt       DateTime @updatedAt
 }
 

@@ -1,13 +1,15 @@
-import { AtSign, Building2, Megaphone, Settings, Users } from "lucide-react";
+import { AtSign, Bot, Building2, Megaphone, Settings, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { ROLE_LABELS } from "@/lib/nav";
+import { aiReady } from "@/lib/ai/smm-writer";
 import { date, dateTime, fmtNum } from "@/lib/format";
 import { marketingSettings } from "@/lib/smm/boosts";
 import { metaAppReady, smmDryRun } from "@/lib/smm/config";
 import { ACCOUNT_STATUS, CHANNEL_LABEL } from "@/lib/smm/labels";
 import { Badge, Callout, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
-import { AccountButtons, AdsForm, BrandForm, CompetitorForm, CompetitorRemove, LocationsEditor, MetaConnect, MetaManualForm, TelegramForm } from "./forms";
+import { AccountButtons, AdsForm, AutoAgentsForm, BrandForm, CompetitorForm, CompetitorRemove, LocationsEditor, MetaConnect, MetaManualForm, TelegramForm } from "./forms";
 import type { Place } from "./actions";
 
 const ERRORS: Record<string, string> = {
@@ -22,10 +24,15 @@ const ERRORS: Record<string, string> = {
 export default async function MarketingSettingsPage({ searchParams }: { searchParams: Promise<{ ulandi?: string; xato?: string }> }) {
   const s = await requirePage("/marketing/sozlamalar");
   const sp = await searchParams;
-  const [accounts, settings, competitors] = await Promise.all([
+  const [accounts, settings, competitors, people] = await Promise.all([
     db.smmAccount.findMany({ orderBy: [{ status: "asc" }, { channel: "asc" }, { isPrimary: "desc" }, { createdAt: "asc" }] }),
     marketingSettings(),
     db.smmCompetitor.findMany({ orderBy: { followers: { sort: "desc", nulls: "last" } } }),
+    // Avtomatik hisobot qabul qiluvchilari: direktor va sotuv xodimlari
+    db.user.findMany({
+      where: { isActive: true, role: { in: ["DIRECTOR", "SALES"] } }, orderBy: [{ role: "asc" }, { fullName: "asc" }],
+      select: { id: true, fullName: true, role: true, telegram: { where: { isBlocked: false }, select: { id: true }, take: 1 } },
+    }),
   ]);
   const canConnect = canDo(s, "marketing", "settings");
   const canEdit = canDo(s, "marketing", "content");
@@ -126,6 +133,17 @@ export default async function MarketingSettingsPage({ searchParams }: { searchPa
               </ul>
             )}
             {canEdit && <CompetitorForm />}
+          </Card>
+
+          <Card>
+            <CardHeader title="Avtomatik agentlar" icon={Bot} description="Claude o'zi hisobot va reja tayyorlab, Telegram bot va ilovaga yuboradi" />
+            {!aiReady() && <Callout tone="warning">AI ulanmagan — haftalik hisobot ishlamaydi, kunlik tekshiruv faqat faktlar bilan ketadi.</Callout>}
+            <AutoAgentsForm disabled={!canConnect}
+              v={{ autoWeekly: settings.autoWeekly, autoDaily: settings.autoDaily, autoDrafts: settings.autoDrafts, recipients: settings.autoRecipients }}
+              people={people.map((p) => ({ id: p.id, name: p.fullName, role: ROLE_LABELS[p.role], telegram: p.telegram.length > 0 }))} />
+            <p className="mt-3 text-xs text-slate-400">
+              Oxirgi haftalik: {settings.autoWeeklyAt ? dateTime(settings.autoWeeklyAt) : "—"} · oxirgi kunlik: {settings.autoDailyAt ? dateTime(settings.autoDailyAt) : "—"}
+            </p>
           </Card>
 
           <Card>

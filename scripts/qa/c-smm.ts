@@ -5,7 +5,8 @@
  *   · nashr: bekor qilingan post chiqmaydi, xato postlar navbatni to'smaydi, sinov rejimi SIMULATED;
  *   · AI studiya: tavsiya vaqti, kutubxonadan kadr tanlash;
  *   · statistika tahlili (format, kun, eng yaxshi postlar);
- *   · video montaj (ffmpeg bo'lsa): 1080×1920, H.264 + AAC.
+ *   · video montaj (ffmpeg bo'lsa): 1080×1920, H.264 + AAC;
+ *   · avtomatik agentlar: jadval vaqti, bir marta yuborish, Telegram matni.
  *
  *   ENV_FILE=.env.test.example npx tsx scripts/qa/c-smm.ts
  */
@@ -21,6 +22,7 @@ import { publishContent, publishDue } from "@/lib/smm/publish";
 import { matchMedia, nextSlot } from "@/lib/smm/studio";
 import { analytics } from "@/lib/smm/insights";
 import { assemble, ffmpegReady, renderScene, safeArt, sceneSchema } from "@/lib/smm/video";
+import { autoAgentsTick, tgText, weeklyDue } from "@/lib/smm/auto-agents";
 
 const TAG = `qa-smm-${Date.now()}`;
 
@@ -125,6 +127,28 @@ async function main() {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  section("Avtomatik agentlar");
+  {
+    const mon = weeklyDue(new Date(2026, 9, 21, 7, 0)); // chorshanba → shu haftaning dushanbasi
+    check("haftalik vaqt — dushanba 09:00", mon.getDay() === 1 && mon.getDate() === 19 && mon.getHours() === 9, mon);
+    check("yakshanba → o'tgan dushanba", weeklyDue(new Date(2026, 9, 25, 20, 0)).getDate() === 19);
+    check("Telegram matni: qalin, ro'yxat, jadval", tgText("## Xulosa\n**A:** b\n- c\n| x | y |\n|---|---|\n| 1 | 2 |") === "*Xulosa*\n*A:* b\n• c\nx · y\n1 · 2");
+    const prev = await db.marketingSettings.upsert({ where: { id: "main" }, create: { id: "main" }, update: {} });
+    await db.marketingSettings.update({ where: { id: "main" }, data: { autoDaily: true, autoWeekly: false, autoDailyAt: null, autoRecipients: [] } });
+    const before = await db.notification.count({ where: { type: "MARKETING_DAILY" } });
+    const at = new Date(); at.setHours(9, 0, 0, 0);
+    await autoAgentsTick(at);
+    await autoAgentsTick(new Date(at.getTime() + 60_000)); // keyingi daqiqa — qayta ketmasin
+    const sent = (await db.notification.count({ where: { type: "MARKETING_DAILY" } })) - before;
+    const directors = await db.user.count({ where: { role: "DIRECTOR", isActive: true } });
+    check("kunlik tekshiruv bir marta, barcha direktorlarga", directors > 0 && sent === directors, { sent, directors });
+    const early = new Date(at); early.setHours(8, 0, 0, 0);
+    await db.marketingSettings.update({ where: { id: "main" }, data: { autoDailyAt: null } });
+    await autoAgentsTick(early);
+    check("08:30 dan oldin ketmaydi", (await db.notification.count({ where: { type: "MARKETING_DAILY" } })) - before === sent);
+    await db.marketingSettings.update({ where: { id: "main" }, data: { autoDaily: prev.autoDaily, autoWeekly: prev.autoWeekly, autoDailyAt: prev.autoDailyAt, autoRecipients: prev.autoRecipients } });
   }
 
   // Tozalash

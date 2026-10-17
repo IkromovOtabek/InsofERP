@@ -3,7 +3,8 @@
  *   har daqiqada: vaqti kelgan tasdiqlangan postlarni chiqarish;
  *   har 30 daqiqada: nashr statistikasi va faol reklamalar natijasi; chala yuklashlarni tozalash;
  *   har 6 soatda: profil statistikasi, profildagi postlar, raqobatchilar, Meta tokenlarini yangilash;
- *   alohida navbat: AI studiya video montaji (uzun ish — nashrni to'sib qo'ymasin).
+ *   alohida navbat: AI studiya video montaji (uzun ish — nashrni to'sib qo'ymasin);
+ *   avtomatik agentlar: dushanba 09:00 haftalik hisobot va reja, har kuni 08:30 tekshiruv (`auto-agents.ts`).
  * Ikki jarayon bir bazada ishlasa ham post ikki marta chiqmaydi (nashr yozuvi shartli egallanadi).
  * `SMM_WATCH=off` — o'chirish; test rejimida sukut bo'yicha o'chiq (`SMM_WATCH=on` — yoqish).
  */
@@ -63,6 +64,8 @@ export function startSmmWatch(intervalMs = 60_000) {
     running = true;
     smmTick().catch((e) => console.error("[smm-watch]", e)).finally(() => { running = false; });
     void videoTick();
+    // Avtomatik agentlar (haftalik hisobot, kunlik tekshiruv) — o'z vaqtini o'zi tekshiradi, o'z qulfi bor
+    void import("./auto-agents").then((m) => m.autoAgentsTick()).catch((e) => console.error("[smm-watch] auto", e));
   };
   timer = setInterval(run, intervalMs);
   timer.unref?.();

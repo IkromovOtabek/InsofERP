@@ -78,6 +78,20 @@ Montaj navbat bilan bitta-bitta bajariladi (2 ta oqim). 30 soniyali Reels taxmin
 
 Instagram videoni ERP serveridan o'zi yuklab oladi (muddatli imzolangan havola), shuning uchun sayt domeni internetdan ochiq bo'lishi kerak.
 
+## Avtomatik agentlar
+
+Sozlamalar → «Avtomatik agentlar» (direktor yoqadi):
+
+- **Haftalik hisobot va reja** — har dushanba 09:00. Claude profil statistikasi va raqobatchilarni tahlil qiladi,
+  hisobot «Statistika» sahifasida saqlanadi, keyingi hafta uchun g'oyalar beradi; tanlangan sonidagi g'oya kontent
+  rejaga «G'oya» holatida qo'shiladi.
+- **Kunlik tekshiruv** — har kuni 08:30: bugun chiqadigan postlar (tasdiqlanmagani belgilanadi), nashr va montaj
+  xatolari, target so'rovlari, javobsiz arizalar, profil xatolari; Claude ulardan bugungi 3 ta ishni ajratadi.
+
+Natija tanlangan xodimlarga (bo'lmasa — direktorlarga) Telegram bot va ilovadagi bildirishnoma orqali boradi.
+Telegram uchun xodim botni «Mening hisobim»da ulagan bo'lishi kerak; xabarda havola bo'lishi uchun `APP_URL`.
+Server o'chib qolsa, o'tkazib yuborilgan ish yoqilganda bajariladi; «Hozir yuborish» tugmasi — sinash uchun.
+
 ## Tekshirish
 
 - Sozlamalar'da har profil yonida **Tekshirish** tugmasi bor: token ishlayaptimi, obunachilar soni nechta.
