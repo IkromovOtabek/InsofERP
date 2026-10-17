@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { FileUp, Plus } from "lucide-react";
 import { db } from "@/lib/db";
@@ -9,6 +10,7 @@ import { dateRu, fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { rasxodJournal, rasxodTotals, STORNO_NOTE_RE, type RasxodRow } from "@/lib/stock-issue";
 import { recipientList } from "@/lib/stock-recipients";
+import { cardHrefOf } from "@/lib/recipient-card";
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
 import { Badge, Callout, Card, CardHeader, LinkButton, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
@@ -46,14 +48,16 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   const canIssue = canDo(s, "stock", "issue");
   const canStorno = canDo(s, "stock", "issue_storno");
 
-  const [warehouses, recipients, brigades, vatPayer] = await Promise.all([
+  const [warehouses, recipients, brigades, employees, vatPayer] = await Promise.all([
     db.warehouse.findMany({ orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true } }),
     recipientList(),
-    db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true } }),
+    db.brigade.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }], select: { id: true, name: true, isActive: true, leader: { select: { fullName: true } } } }),
+    // Filtrda ishdan bo'shaganlar ham: eski chiqimlari nomi bilan topilsin
+    db.employee.findMany({ orderBy: [{ isActive: "desc" }, { fullName: "asc" }], select: { id: true, fullName: true, isActive: true } }),
     companyVatPayer(),
   ]);
   const wh = warehouses.some((w) => w.id === sp.wh) ? sp.wh! : null;
-  const komu = sp.komu && /^(r:.+|b:.+|prod|writeoff|inventory)$/.test(sp.komu) ? sp.komu : null;
+  const komu = sp.komu && /^(r:.+|b:.+|e:.+|b|e|prod|writeoff|inventory)$/.test(sp.komu) ? sp.komu : null;
   const rows = await rasxodJournal({ from: period.from, to: period.to, warehouseId: wh, to_: komu });
   const t = rasxodTotals(rows);
   const saved = Number(sp.saved);
@@ -108,8 +112,9 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
         <StockPeriodBar base="/stock/rasxod" period={period} hidden={hidden} />
         <RasxodFilters
           warehouses={warehouses.map((w) => ({ id: w.id, name: w.isActive ? w.name : `${w.name} (yopilgan)` }))}
+          brigades={brigades.map((b) => ({ id: b.id, name: `${b.leader ? `${b.name} — ${b.leader.fullName}` : b.name}${b.isActive ? "" : " (nofaol)"}` }))}
+          employees={employees.map((e) => ({ id: e.id, name: e.isActive ? e.fullName : `${e.fullName} (ishdan bo'shagan)` }))}
           recipients={recipients.map((r) => ({ id: r.id, name: r.isActive ? r.name : `${r.name} (yashirilgan)` }))}
-          brigades={brigades.map((b) => ({ id: b.id, name: b.isActive ? b.name : `${b.name} (nofaol)` }))}
           wh={wh} komu={komu} from={period.fromStr} to={period.toStr}
         />
       </div>
@@ -179,7 +184,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
       {canIssue && (
         <Card className="mt-8">
           <div id="recipients" className="scroll-mt-20">
-            <CardHeader title="Oluvchilar (Kimga)" description="Xomashyo kimga beriladi: shofyorlar, ustunchilar, svarshchiklar va h.k. «Brigadalar» bo'limidagi brigadalar «Kimga» ro'yxatida avtomatik bor. Oluvchi o'chirilmaydi — uni yashirish mumkin." />
+            <CardHeader title="Boshqa oluvchilar (Kimga)" description="Tizimda yo'q nomlar: shofyorlar, Traktor, Mexanik / ustaxona va h.k. Brigadalar («Brigadalar» bo'limi) va xodimlar («Xodimlar») «Kimga» ro'yxatida avtomatik bor va birinchi turadi. Oluvchi o'chirilmaydi — uni yashirish mumkin. Nomini bosib kartasini oching." />
             <RecipientsManager list={recipients} />
           </div>
         </Card>
@@ -192,6 +197,19 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
 function stornoQuestion(list: RasxodRow[]): string {
   const r = list[0];
   return `${dateRu(r.date)} sanadagi chiqim — ${r.to}${list.length > 1 ? ` (${list.length} qator)` : ""} bekor qilinsinmi? Xomashyo skladga qaytadi`;
+}
+
+/** «Kimga» nomi: brigada / xodim / oluvchi — kartasiga havola; zames, spisanie, inventarizatsiya — oddiy matn. */
+function KimgaName({ r }: { r: RasxodRow }) {
+  const href = cardHrefOf(r.toKey);
+  const cls = r.kind === "storno" ? "font-medium text-red-700" : undefined;
+  if (!href) return <span title={r.note ?? undefined} className={cls}>{r.to}</span>;
+  return (
+    <Link href={href} prefetch={false} title={r.note ? `${r.note} · kartasini ochish` : "Oluvchi kartasini ochish"}
+      className={cn("underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600", cls)}>
+      {r.to}
+    </Link>
+  );
 }
 
 /** `storno`: undefined — ustun yo'q (ruxsat yo'q); null — bo'sh katak; element — tugma. */
@@ -207,7 +225,7 @@ function Row({ r, storno }: { r: RasxodRow; storno?: React.ReactNode }) {
       <SheetTd tone={tone} right strong className={cn(neg && "text-slate-500")}>{fmtNum(r.qty, 3)}</SheetTd>
       <SheetTd tone={tone} className="whitespace-nowrap">{r.from}</SheetTd>
       <SheetTd tone={tone} className={cn(r.kind === "prod" && "font-medium text-blue-800", (r.kind === "writeoff" || r.kind === "inventory") && "text-amber-800")}>
-        <span title={r.note ?? undefined} className={r.kind === "storno" ? "font-medium text-red-700" : undefined}>{r.to}</span>
+        <KimgaName r={r} />
         {r.auto && <span className="ml-1.5 rounded bg-slate-100 px-1 py-px text-[11px] font-medium text-slate-600" title="Avtomatik berilgan: topshiriq uchun brigadada yetmadi yoki kirimda «Darhol kimga berildi»">avto</span>}
         {r.cancelled && <span className="ml-1.5 rounded bg-red-50 px-1 py-px text-[11px] font-medium text-red-700" title="Bu chiqim storno qilingan — minusli «Storno» qatoriga qarang">bekor qilingan</span>}
         {reason && <span className="block text-[11px] text-slate-500">{`Sabab: ${reason}`}</span>}

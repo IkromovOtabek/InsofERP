@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
-import { AlertTriangle, PackageMinus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, History, PackageMinus, Plus, Trash2 } from "lucide-react";
 import { createRasxod } from "./actions";
 import { MaterialField, type MaterialGroup } from "@/components/material-picker";
 import { TargetSelect } from "./target-select";
@@ -9,6 +9,8 @@ import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
 import { cn } from "@/lib/utils";
+import { targetName, type TargetGroups } from "@/lib/issue-target";
+import type { IssueHints } from "@/lib/stock-issue";
 
 type Opt = { id: string; name: string };
 type Mat = { id: string; name: string; code: string; unit: string; groupId: string | null; price: number | null; approx: boolean };
@@ -32,14 +34,17 @@ const Lbl = ({ children }: { children: React.ReactNode }) => <span className="mb
  * yakuniy tekshiruv serverda, qulf ostida (`issueStock`).
  * Yuborish — `onSubmit` + `startTransition(() => action(formData))`: `<form action>` bo'lsa React 19 xato bilan qaytgan
  * action'dan keyin formani reset qiladi va boshqariladigan Sklad / Kimga select'lari ko'rinishda standartga qaytib qoladi.
- * «Kimga» ichidagi «+» — yangi oluvchini shu yerda qo'shib, darhol tanlash (brigadalar — Brigadalar bo'limida).
+ * «Kimga» ro'yxati: brigadalar → xodimlar → boshqa oluvchilar → «Qo'lda kiritish…» (yangi oluvchi oynasi, darhol tanlanadi).
+ * Tez tanlash (`hints`, `issueHints`): oxirgi 90 kunda ko'p olganlar tugmacha bo'lib turadi; oluvchi tanlangach — unga oxirgi
+ * berilgan tovarlar: bosilsa qator oxirgi miqdori bilan qo'shiladi (miqdor tahrirlanadi). Sklad — oxirgi chiqimdagi sklad.
  */
-export function RasxodForm({ warehouses, recipients, brigades, materials, groups, balances, clientToken, today, minDate, defaultTo }: {
-  warehouses: Opt[]; recipients: Opt[]; brigades: Opt[]; materials: Mat[]; groups: MaterialGroup[];
+export function RasxodForm({ warehouses, targets, hints, materials, groups, balances, clientToken, today, minDate, defaultTo }: {
+  warehouses: Opt[]; targets: TargetGroups; hints: IssueHints; materials: Mat[]; groups: MaterialGroup[];
   balances: Record<string, Record<string, number>>; clientToken: string; today: string; minDate: string; defaultTo: string;
 }) {
   const [state, action, pending] = useActionState(createRasxod, undefined);
-  const [whId, setWhId] = useState(warehouses[0]?.id ?? "");
+  // «Qayerdan» eslab qolinadi: oxirgi chiqim yozilgan sklad (faol bo'lsa), bo'lmasa birinchisi
+  const [whId, setWhId] = useState(warehouses.find((w) => w.id === hints.warehouseId)?.id ?? warehouses[0]?.id ?? "");
   const [to, setTo] = useState(defaultTo);
   const [date, setDate] = useState(today);
   const [note, setNote] = useState("");
@@ -65,6 +70,18 @@ export function RasxodForm({ warehouses, recipients, brigades, materials, groups
 
   const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
   const add = () => setLines((ls) => [...ls, { key: `l${seq.current++}`, materialId: "", qty: "" }]);
+  // Tez tanlash: oluvchining oxirgi tovari — bo'sh qator bo'lsa shunga, bo'lmasa yangi qatorga (oxirgi miqdor bilan)
+  const addPreset = (materialId: string, qty: number) => setLines((ls) => {
+    if (ls.some((l) => l.materialId === materialId)) return ls; // allaqachon bor — ikkinchi marta qo'shilmaydi
+    const line = { materialId, qty: String(qty) };
+    const empty = ls.findIndex((l) => !l.materialId && !l.qty.trim());
+    if (empty >= 0) return ls.map((l, i) => (i === empty ? { ...l, ...line } : l));
+    return [...ls, { key: `l${seq.current++}`, ...line }];
+  });
+  const quickTargets = hints.targets.map((t) => ({ ...t, name: targetName(targets, t.key) })).filter((t) => t.name);
+  const toName = to ? targetName(targets, to) : null;
+  const presets = (to ? hints.materials[to] ?? [] : []).filter((p) => meta.has(p.materialId));
+  const inLines = new Set(lines.map((l) => l.materialId));
   const remove = (key: string) => setLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : [{ key: `l${seq.current++}`, materialId: "", qty: "" }]));
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -93,9 +110,49 @@ export function RasxodForm({ warehouses, recipients, brigades, materials, groups
           </Select>
         </Field>
         <Field label="Kimga *">
-          <TargetSelect recipients={recipients} brigades={brigades} value={to} onChange={setTo} invalid={!to && !!state?.error} />
+          <TargetSelect targets={targets} value={to} onChange={setTo} invalid={!to && !!state?.error} />
         </Field>
       </div>
+
+      {quickTargets.length > 0 && (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/70 p-3">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500"><History size={13} /> Tez tanlash — oxirgi 90 kunda ko&apos;p olganlar</div>
+          <div className="flex flex-wrap gap-1.5">
+            {quickTargets.map((t) => (
+              <button key={t.key} type="button" onClick={() => setTo(t.key)} aria-pressed={to === t.key}
+                title={`${t.count} ta chiqim · oxirgisi ${new Date(t.lastAt).toLocaleDateString("ru-RU")}`}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition",
+                  to === t.key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-slate-500")}>
+                {t.name}<span className={cn("tabular", to === t.key ? "text-white/70" : "text-slate-400")}>{`×${t.count}`}</span>
+              </button>
+            ))}
+          </div>
+          {to && presets.length > 0 && (
+            <div className="mt-3 border-t border-dashed border-slate-300 pt-2.5">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <span><b className="font-medium text-slate-700">{toName}</b> ga oxirgi berilgan tovarlar — bosing, qator oxirgi miqdori bilan qo&apos;shiladi</span>
+                <button type="button" className="font-medium text-slate-700 underline hover:text-slate-900"
+                  onClick={() => presets.forEach((p) => addPreset(p.materialId, p.qty))}>Hammasini qo&apos;shish</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {presets.map((p) => {
+                  const m = meta.get(p.materialId)!;
+                  const done = inLines.has(p.materialId);
+                  return (
+                    <button key={p.materialId} type="button" disabled={done} onClick={() => addPreset(p.materialId, p.qty)}
+                      title={done ? "Qatorlarda bor" : `Oxirgi berilgan: ${fmtNum(p.qty, 3)} ${unitShort(m.unit)} · ${new Date(p.lastAt).toLocaleDateString("ru-RU")}`}
+                      className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition",
+                        done ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-700 hover:border-slate-500")}>
+                      {!done && <Plus size={12} className="text-slate-400" />}{m.name}
+                      <span className="tabular text-slate-500">{`${fmtNum(p.qty, 3)} ${unitShort(m.unit)}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div>
         <div className={cn("hidden overflow-hidden rounded-t-lg border border-b-0 border-slate-300/80 bg-red-50/70 xl:grid xl:items-center xl:gap-2", GRID)}>

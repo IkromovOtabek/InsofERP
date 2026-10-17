@@ -230,8 +230,8 @@ try {
   check("1.6 sotuvchi oluvchi qo'sha ham, yashira ham olmaydi (403), hech narsa o'zgarmadi",
     denied(s1) && denied(s2) && !recOf(forbiddenName) && recOf(R1n)?.active === true, [s1.status, s2.status]);
   let pg = await sklad.get(RX_PAGE);
-  check("1.7 /stock/rasxod (sklad): «Oluvchilar (Kimga)» bo'limi, ikkala oluvchi (nofaoli ham) ko'rinadi",
-    pg.status === 200 && pg.text.includes("Oluvchilar (Kimga)") && pg.text.includes(R1n) && pg.text.includes(R2n), pg.status);
+  check("1.7 /stock/rasxod (sklad): «Boshqa oluvchilar (Kimga)» bo'limi, ikkala oluvchi (nofaoli ham) ko'rinadi",
+    pg.status === 200 && pg.text.includes("Boshqa oluvchilar (Kimga)") && pg.text.includes(R1n) && pg.text.includes(R2n), pg.status);
   pg = await sklad.get(RX_NEW);
   check("1.8 /stock/rasxod/new: «Кому» ro'yxatida faol oluvchi va brigada bor, nofaoli yo'q",
     pg.status === 200 && pg.text.includes(R1n) && pg.text.includes(brName) && !pg.text.includes(R2n), pg.status);

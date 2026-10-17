@@ -7,7 +7,10 @@ import { DEFECT_REASONS } from "@/lib/production-day";
 import { markOf, today } from "@/lib/davomat";
 import { unitLabel } from "@/lib/unit";
 import { faceAiFallbackEnabled } from "@/lib/ai/face";
-import { day, inUnit, num, pctText, sum, time, totalsText } from "./fmt";
+import { brigadeStocks } from "@/lib/brigade-stock";
+import { recipientCard } from "@/lib/recipient-card";
+import { stockPeriod } from "@/components/stock-period";
+import { day, inUnit, money, num, pctText, sum, time, totalsText } from "./fmt";
 import { ListError, type MobileList } from "./list";
 import type { MobileUser } from "./auth";
 import type { DetailAction, DetailField, FormField, MobileDetail } from "./detail";
@@ -99,7 +102,7 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
   const many = mine.length > 1;
   const start = new Date(); start.setHours(0, 0, 0, 0);
   const month = new Date(start); month.setDate(month.getDate() - 30);
-  const [shifts, members, open, issues, equipment, reports, defectsToday, plan] = await Promise.all([
+  const [shifts, members, open, issues, equipment, reports, defectsToday, plan, stocks] = await Promise.all([
     Promise.all(mine.map((b) => shiftOf(b.id))),
     Promise.all(mine.map((b) => brigadeMembers(b.id))),
     db.brigadeTask.findMany({
@@ -111,6 +114,8 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
     db.brigadeShift.findMany({ where: { brigadeId: { in: ids }, closedAt: { not: null } }, orderBy: { date: "desc" }, take: 7, select: { id: true, date: true, summary: true, closedAt: true, brigade: { select: { name: true } } } }),
     db.productDefect.findMany({ where: { brigadeId: { in: ids }, date: { gte: start } }, select: { qty: true, product: { select: { unit: true } } } }),
     dayPlan(ids),
+    // Qo'lidagi xomashyo va qiymati — «Mening skladim» kartasi (batafsil — `brig-stock` kartochkasi)
+    brigadeStocks({ includeInactive: true }),
   ]);
 
   // ── Smena holati (hujjatdagi A blok) — har brigadaga bitta karta, bosilsa smena kartochkasi ──
@@ -124,6 +129,16 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
       tone: !s ? "warning" : s.closedAt ? "success" : "brand", icon: "clock", open: { key: "brig-shift", id: `${TODAY_PREFIX}${b.id}` },
     };
   });
+  // ── Mening skladim: brigada qo'lidagi xomashyo qiymati; bosilsa — berilganlar, qoldiq, samaradorlik ──
+  for (const b of mine) {
+    const st = stocks.find((x) => x.id === b.id);
+    const best = st?.makes.filter((m) => m.canMake > 0).sort((x, y) => y.canMake - x.canMake)[0];
+    cards.push({
+      key: `stock-${b.id}`, label: many ? `Mening skladim — ${b.name}` : "Mening skladim", value: money(st?.value ?? 0),
+      hint: st?.materials.length ? `${st.materials.length} xil xomashyo${best ? ` · ${best.product} ${inUnit(best.canMake, best.unit)} chiqara oladi` : ""} · bosing` : "qo'lda xomashyo yo'q",
+      tone: st?.materials.length ? "info" : "warning", icon: "cube", open: { key: "brig-stock", id: b.id },
+    });
+  }
 
   // ── Muammolar / ogohlantirishlar (F blok va "Bildirishnomalar" bo'limi — ilova ochilganda) ──
   // Qatorlar har xil kartochkani ochadi — id'da kalit: `tasks:<id>`, `brig-issue:<id>` (`splitRef`)
@@ -186,6 +201,43 @@ export async function brigadierHome(user: MobileUser): Promise<{ cards: HomeCard
     section("Smena hisobotlari", reports.map((r) => ({ id: r.id, title: `${day(r.date)}${many ? ` · ${r.brigade.name}` : ""}`, subtitle: r.summary ?? undefined, right: r.closedAt ? time(r.closedAt) : undefined, tone: "success" as Tone })), { empty: "Hali smena yopilmagan", target: "brig-shift", icon: "clipboard-check" }),
   ];
   return { cards, sections };
+}
+
+// ───────────────────────── Sklad kartochkasi («Mening skladim») ─────────────────────────
+
+/**
+ * `brig-stock/<brigadeId>` — brigadaning sklad kartasi (veb `/oluvchi/b/<id>` bilan bir manba — `recipientCard`):
+ * joriy oyda berilgan tovarlar, qo'lidagi xomashyo va qiymati, shu xomashyo bilan qancha chiqara olishi,
+ * ishlab chiqarilgani va 1 birlikka sarf (samaradorlik). Brigadirga faqat o'z brigadasi.
+ */
+export async function brigStockDetail(user: MobileUser, brigadeId: string): Promise<MobileDetail> {
+  await assertBrigade(user, brigadeId);
+  const period = stockPeriod({});
+  const c = await recipientCard("b", brigadeId, period);
+  if (!c || !c.brigade) throw new ListError("NOT_FOUND", "Brigada topilmadi", 404);
+  const b = c.brigade;
+  const q = (n: number, unit: string) => `${num(n)} ${unitLabel(unit)}`;
+  const fields: DetailField[] = [
+    f("Brigadir", b.leader ?? "—"),
+    f("Qo'lidagi xomashyo", money(b.handValue), b.handValue > 0 ? "info" : undefined),
+    f(`Berilgan (${period.label})`, `${money(c.totals.sum)} · ${c.totals.count} qator`),
+    f("Berilgan (barcha vaqt)", `${money(c.allTime.sum)} · ${c.allTime.docs} chiqim`),
+    f("Ishlab chiqarildi (davr)", b.produced.length ? b.produced.map((p) => q(p.qty, p.unit)).join(" · ") : "0"),
+    f("1 birlikka sarf", b.perUnit ? `${money(b.perUnit.value)} / ${unitLabel(b.perUnit.unit)}${b.perUnit.basis === "issued" ? " (taxminiy — berilgan bo'yicha)" : ""}` : "— (mahsulot chiqarilmagan)", b.perUnit ? "brand" : undefined),
+    f("Brak (davr)", b.defects.length ? b.defects.map((p) => q(p.qty, p.unit)).join(" · ") : "0", b.defects.length ? "warning" : "success"),
+    f("Topshiriqlar", `${b.doneTasks} yopildi · ${b.openTasks} ochiq`),
+  ];
+  const sections: HomeSection[] = [
+    section("Qo'limdagi xomashyo", b.hand.map((m) => ({ id: m.materialId, title: m.name, subtitle: money(m.cost), right: q(m.qty, m.unit), tone: m.qty < 0 ? "danger" as Tone : undefined })), { empty: "Qo'lda xomashyo yo'q", icon: "cube" }),
+    section("Shu xomashyo bilan chiqara olaman", b.makes.map((m) => ({ id: m.productId, title: m.product, subtitle: m.limiting ? `avval tugaydi: ${m.limiting.name} (${q(m.limiting.balance, m.limiting.unit)})` : undefined, right: q(m.canMake, m.unit), tone: "success" as Tone })), { empty: "Hozirgi qoldiq bilan retseptli mahsulot chiqmaydi", icon: "construct" }),
+    section(`Davrda olingan tovarlar (${period.label})`, c.byMaterial.map((m) => ({ id: m.materialId, title: m.name, subtitle: `${m.docs} chiqim · oxirgisi ${day(m.lastAt)}`, right: `${q(m.qty, m.unit)} · ${money(m.sum)}` })), { empty: "Bu davrda skladdan olinmagan", icon: "download" }),
+    section("Oxirgi chiqimlar", c.rows.slice(-30).reverse().map((r) => ({
+      id: r.id, title: r.material, subtitle: `${day(r.date)}${r.note ? ` · ${r.note}` : ""}`, right: `${q(r.qty, r.unit)}`,
+      status: r.kind === "storno" ? "Storno" : r.kind === "return" ? "Qaytarish" : r.cancelled ? "Bekor" : undefined,
+      tone: (r.kind === "storno" || r.cancelled ? "danger" : r.kind === "return" ? "info" : undefined) as Tone | undefined,
+    })), { empty: "Chiqim yo'q", icon: "list" }),
+  ];
+  return { key: "brig-stock", id: brigadeId, title: `Mening skladim — ${c.name}`, subtitle: c.subtitle ?? undefined, fields, sections, actions: [] };
 }
 
 // ───────────────────────── Smena kartochkasi ─────────────────────────

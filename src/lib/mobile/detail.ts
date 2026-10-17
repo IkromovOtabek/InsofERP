@@ -34,7 +34,7 @@ import { savedReportDetail, sexDetail, sexEmployeeDetail } from "./sex";
 import { repDetail } from "./report-detail";
 import { dashDetail } from "./dash-detail";
 import { problemDetail } from "./problems";
-import { brigIssueDetail, brigShiftDetail, defectAction, issueActions } from "./brigadier";
+import { brigIssueDetail, brigShiftDetail, defectAction, issueActions, brigStockDetail } from "./brigadier";
 import { BRIGADE_ISSUE, ISSUE_RESOLVERS, taskPhase } from "@/lib/brigade-shift";
 import { DEFECT_REASONS } from "@/lib/production-day";
 import { TASK_ROLES } from "@/lib/tasks";
@@ -456,6 +456,8 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Brigadir smenasi va muammolari (`./brigadier.ts`) — brigadirga faqat o'z brigadasiniki
   "brig-shift": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
   "brig-issue": ["BRIGADIER", ...ISSUE_RESOLVERS],
+  // Brigadaning sklad kartasi: qo'lidagi xomashyo, berilgani, samaradorlik (`./brigadier.ts` → `brigStockDetail`)
+  "brig-stock": ["PRODUCTION", "SUPERVISOR", "BRIGADIER", "WAREHOUSE", "PROCUREMENT"],
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
   // Hisobotdan bosib ochiladigan soat / brigada / mahsulot / brak kartalari — faqat ko'rish (`./report-detail.ts`)
   rep: ["PRODUCTION", "SUPERVISOR"],
@@ -481,7 +483,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   "arenda-shop": ["SECRETARY"],
 };
 
-const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "sex-emp", "dash", ...SELF_CARDS];
+const BRIGADIER_CARDS = ["tasks", "brig-shift", "brig-issue", "brig-stock", "sex-emp", "dash", ...SELF_CARDS];
 
 export async function mobileDetail(user: MobileUser, key: string, id: string): Promise<MobileDetail> {
   if (!id) throw new ListError("BAD_REQUEST", "id yo'q", 400);
@@ -543,6 +545,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "rep": return repDetail(user, id);
     case "brig-shift": return brigShiftDetail(user, id);
     case "brig-issue": return brigIssueDetail(user, id);
+    case "brig-stock": return brigStockDetail(user, id);
     // Egasi qarori kerak bo'lgan masala (direktor dashboardidagi "Muammolar") — `./problems.ts`
     case "problem": return problemDetail(user, id);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
@@ -1007,7 +1010,7 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
     db.stockMove.aggregate({ where: { materialId: id }, _sum: { qty: true } }),
     db.stockMove.findMany({
       where: { materialId: id }, orderBy: { date: "desc" }, take: 20,
-      include: { createdBy: true, recipient: { select: { name: true } }, brigade: { select: { name: true } } },
+      include: { createdBy: true, recipient: { select: { name: true } }, employee: { select: { fullName: true } }, brigade: { select: { name: true } } },
     }),
     materialOutlook(),
     seePrice ? materialTurnover({ from: month.from, to: month.to }) : Promise.resolve([]),
@@ -1019,8 +1022,8 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
   // ISSUE — Sklad → «Chiqim» (oluvchiga berish); SHIPMENT — mahsulot jo'natish (ikkalasi bir xil nomlanmasin)
   const MOVE_LABEL: Record<string, string> = { RECEIPT: "Kirim", PRODUCTION_CONSUME: "Ishlab chiqarishga", PRODUCTION_OUTPUT: "Ishlab chiqarildi", SHIPMENT: "Jo'natildi", ADJUSTMENT: "Tuzatish", WRITE_OFF: "Hisobdan chiqarish", BRIGADE_ISSUE: "Brigadaga berildi", BRIGADE_RETURN: "Brigadadan qaytdi", TRANSFER: "Ko'chirish", ISSUE: "Chiqim" };
   // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin. Chiqim — oluvchi bilan, brigada — nomi bilan
-  const moveLabel = (mv: { type: string; note: string | null; recipient: { name: string } | null; brigade: { name: string } | null }) => {
-    const whom = mv.type === "ISSUE" ? ` → ${mv.recipient?.name ?? "—"}` : (mv.type === "BRIGADE_ISSUE" || mv.type === "BRIGADE_RETURN") && mv.brigade ? ` · ${mv.brigade.name}` : "";
+  const moveLabel = (mv: { type: string; note: string | null; recipient: { name: string } | null; employee: { fullName: string } | null; brigade: { name: string } | null }) => {
+    const whom = mv.type === "ISSUE" ? ` → ${mv.employee?.fullName ?? mv.recipient?.name ?? "—"}` : (mv.type === "BRIGADE_ISSUE" || mv.type === "BRIGADE_RETURN") && mv.brigade ? ` · ${mv.brigade.name}` : "";
     return `${mv.note?.startsWith("Storno ") ? "Storno · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}${whom}`;
   };
 
@@ -1104,14 +1107,14 @@ async function issueDetail(ref: string): Promise<MobileDetail> {
     select: {
       id: true, date: true, qty: true, unitCost: true, note: true, materialId: true,
       material: { select: { name: true, unit: true } }, warehouse: { select: { name: true } },
-      recipient: { select: { name: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
+      recipient: { select: { name: true } }, employee: { select: { fullName: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
     },
   });
   if (!moves.length) throw new ListError("NOT_FOUND", "Chiqim topilmadi", 404);
   // Storno qilingan berish (`cancelIssue`: teskari harakatlar `refType "IssueStorno"`, `refId = ref`) — kartochkada belgisi bilan
   const storno = await db.stockMove.findFirst({ where: { refType: ISSUE_STORNO, refId: ref }, select: { createdAt: true, note: true, createdBy: { select: { fullName: true } } } });
   const first = moves[0];
-  const to = first.recipient?.name ?? (first.brigade ? `Brigada: ${first.brigade.name}` : "—");
+  const to = first.employee ? `Xodim: ${first.employee.fullName}` : first.recipient?.name ?? (first.brigade ? `Brigada: ${first.brigade.name}` : "—");
   const lines = moves.map((mv) => {
     const q = -sum(mv.qty), cost = mv.unitCost == null ? null : sum(mv.unitCost);
     return { mv, q, cost, total: cost == null ? 0 : Math.round(q * cost * 100) / 100 };

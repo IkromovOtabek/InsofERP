@@ -106,16 +106,28 @@ function VatPayerBox() {
   );
 }
 
+/**
+ * Yangi oluvchi oynasi (boshqariladigan): chiqimdagi «Kimga» ro'yxatining eng pastki «Qo'lda kiritish…» bandi ochadi.
+ * Tizimda yo'q nom (shofyorlar, Traktor, Mexanik…) — Oluvchilar ro'yxatiga yoziladi va darhol tanlanadi.
+ */
+export function RecipientAddDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (x: QuickAdded) => void }) {
+  return (
+    <QuickAddDialog title="Yangi oluvchi — qo'lda kiritish" open={open} onClose={onClose} save={quickAddRecipient} onCreated={onCreated}>
+      <Field label="Oluvchi nomi *" hint="Xodim yoki brigada bo'lsa — ro'yxatdan tanlang; bu yerga tizimda yo'q nom yoziladi">
+        <Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Shofyorlar, Traktor, Mexanik / ustaxona" />
+      </Field>
+      <Field label="Izoh"><Input name="note" maxLength={200} autoComplete="off" placeholder="ixtiyoriy" /></Field>
+    </QuickAddDialog>
+  );
+}
+
 /** «Kimga» ichidagi «+»: yangi oluvchi (kirim va chiqimdagi umumiy «Kimga» ro'yxati). */
 export function RecipientAdd({ onCreated }: { onCreated: (x: QuickAdded) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <AddButton label="Yangi oluvchi qo'shish" onClick={() => setOpen(true)} />
-      <QuickAddDialog title="Yangi oluvchi" open={open} onClose={() => setOpen(false)} save={quickAddRecipient} onCreated={onCreated}>
-        <Field label="Oluvchi nomi *"><Input name="name" required maxLength={80} autoFocus autoComplete="off" placeholder="Masalan: Shofyorlar, Svarshchiklar, Sex" /></Field>
-        <Field label="Izoh"><Input name="note" maxLength={200} autoComplete="off" placeholder="ixtiyoriy" /></Field>
-      </QuickAddDialog>
+      <RecipientAddDialog open={open} onClose={() => setOpen(false)} onCreated={onCreated} />
     </>
   );
 }

@@ -19,6 +19,26 @@ export async function activeRecipients(): Promise<RecipientOption[]> {
   return db.stockRecipient.findMany({ where: { isActive: true }, orderBy: ORDER, select: { id: true, name: true } });
 }
 
+export type { TargetGroups } from "./issue-target";
+export { brigadeLabel } from "./issue-target";
+
+/**
+ * «Kimga» ro'yxati — chiqim formasi, jurnal filtri va mobil forma uchun bitta tartib:
+ * 1) bizning brigadalar, 2) barcha xodimlar, 3) erkin oluvchilar. Forma kaliti: "b:<id>" | "e:<id>" | "r:<id>".
+ */
+export async function issueTargetOptions(): Promise<import("./issue-target").TargetGroups> {
+  const [brigades, employees, recipients] = await Promise.all([
+    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, leader: { select: { fullName: true } } } }),
+    db.employee.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, position: true } }),
+    activeRecipients(),
+  ]);
+  return {
+    brigades: brigades.map((b) => ({ id: b.id, name: b.name, leader: b.leader?.fullName ?? null })),
+    employees: employees.map((e) => ({ id: e.id, name: e.fullName, position: e.position })),
+    recipients,
+  };
+}
+
 /** Barcha oluvchilar (nofaollari ham) va har biriga yozilgan Расход qatorlari soni — boshqaruv ro'yxati uchun. */
 export async function recipientList(): Promise<RecipientRow[]> {
   const list = await db.stockRecipient.findMany({

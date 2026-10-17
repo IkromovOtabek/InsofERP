@@ -32,7 +32,7 @@ import { dateRu, fmtNum } from "@/lib/format";
 import { createGoodsReceipt, receiptNote, receiptTokenOf } from "@/lib/receipts";
 import { scanAllowed, scanEnabled } from "./scan";
 import { ISSUE_STORNO, IssueError, issueDate, issueStock, issueToken, parseIssueTarget, type IssueTarget } from "@/lib/stock-issue";
-import { activeRecipients } from "@/lib/stock-recipients";
+import { activeRecipients, brigadeLabel, issueTargetOptions } from "@/lib/stock-recipients";
 import { issuePrices } from "@/lib/stock-price";
 import { STOCK_EPS } from "@/lib/stock-lock";
 import { createMechanicRequest, FACTORY_OBJECTS, FACTORY_PROBLEMS, PROBLEMS } from "@/lib/mechanic-requests";
@@ -429,13 +429,13 @@ async function prixodForm(): Promise<CreateForm> {
  * Tanlovda faqat qoldig'i bor xomashyo, yorliqda qoldiq va «Dona narxi» (bo'lmasa o'rtacha tannarx, «≈»).
  */
 async function rasxodForm(): Promise<CreateForm> {
-  const [warehouse, recipients, brigades, materials, bal] = await Promise.all([
+  const [warehouse, targets, materials, bal] = await Promise.all([
     skladField(),
-    activeRecipients(),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    issueTargetOptions(),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, unitPrice: true } }),
     stockBalances(),
   ]);
+  const { brigades, employees, recipients } = targets;
   const inStock = materials.filter((m) => (bal.get(m.id) ?? 0) > STOCK_EPS);
   const prices = await issuePrices(inStock.map((m) => m.id));
   return {
@@ -445,9 +445,11 @@ async function rasxodForm(): Promise<CreateForm> {
       warehouse,
       {
         name: "to", label: "Kimga", type: "select", required: true,
+        // Tartib vebdagi bilan bir xil: bizning brigadalar → xodimlar → tizimda yo'q nomlar
         options: [
+          ...brigades.map((b) => ({ value: `b:${b.id}`, label: `Brigada: ${brigadeLabel(b)}` })),
+          ...employees.map((e) => ({ value: `e:${e.id}`, label: `Xodim: ${e.name} · ${e.position}` })),
           ...recipients.map((r) => ({ value: `r:${r.id}`, label: `Oluvchi: ${r.name}` })),
-          ...brigades.map((b) => ({ value: `b:${b.id}`, label: `Brigada: ${b.name}` })),
         ],
         hint: recipients.length ? undefined : "Oluvchilar ro'yxati saytda yuritiladi: Sklad → Chiqim → Oluvchilar",
       },
@@ -889,9 +891,9 @@ async function recentPrixod(userId: string, d: PrixodSig, items: { materialId: s
   return recent.find((r) => sig(r.items.map((i) => ({ materialId: i.materialId, qty: Number(i.qty), price: Number(i.price), deliveryCost: Number(i.deliveryCost) }))) === want) ?? null;
 }
 
-/** Berish izohi StockMove'da: oluvchiga — o'zi, brigadaga — «<brigada> brigadasiga berildi · <izoh>» (`writeBrigadeIssue`). */
+/** Berish izohi StockMove'da: oluvchi / xodimga — o'zi, brigadaga — «<brigada> brigadasiga berildi · <izoh>» (`writeBrigadeIssue`). */
 function issueNoteOf(kind: IssueTarget["kind"], raw: string | null): string | null {
-  if (kind === "recipient") return raw;
+  if (kind !== "brigade") return raw;
   const m = /^[\s\S]*? brigadasiga berildi(?: · ([\s\S]*))?$/.exec(raw ?? "");
   return m ? (m[1] ?? null) : raw;
 }
@@ -912,7 +914,7 @@ async function recentIssue(userId: string, d: { warehouseId: string; date?: stri
   const moves = await db.stockMove.findMany({
     where: {
       refType: "Issue", createdById: userId, createdAt: { gte: new Date(Date.now() - DUP_WINDOW_MS) }, warehouseId: d.warehouseId,
-      date: { gte: from, lt: till }, ...(to.kind === "recipient" ? { recipientId: to.id } : { brigadeId: to.id }),
+      date: { gte: from, lt: till }, ...(to.kind === "recipient" ? { recipientId: to.id } : to.kind === "employee" ? { employeeId: to.id } : { brigadeId: to.id }),
     },
     select: { refId: true, materialId: true, qty: true, note: true },
   });

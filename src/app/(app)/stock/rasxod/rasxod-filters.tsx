@@ -5,9 +5,9 @@ import { Select } from "@/components/ui";
 
 type Opt = { id: string; name: string };
 
-/** Chiqim jurnali filtrlari: Sklad va «Kimga» (tanlanishi bilan sahifa yangilanadi, davr saqlanadi). */
-export function RasxodFilters({ warehouses, recipients, brigades, wh, komu, from, to }: {
-  warehouses: Opt[]; recipients: Opt[]; brigades: Opt[];
+/** Chiqim jurnali filtrlari: Sklad va «Kimga» (tanlanishi bilan sahifa yangilanadi, davr saqlanadi). Tartib formadagidek. */
+export function RasxodFilters({ warehouses, brigades, employees, recipients, wh, komu, from, to }: {
+  warehouses: Opt[]; brigades: Opt[]; employees: Opt[]; recipients: Opt[];
   wh: string | null; komu: string | null; from: string; to: string;
 }) {
   const router = useRouter();
@@ -30,16 +30,23 @@ export function RasxodFilters({ warehouses, recipients, brigades, wh, komu, from
         </label>
       )}
       <label className="text-xs text-slate-500">Kimga
-        <Select aria-label="Kimga" value={komu ?? ""} onChange={(e) => go({ komu: e.target.value })} className="mt-0.5 h-9 w-60">
+        <Select aria-label="Kimga" value={komu ?? ""} onChange={(e) => go({ komu: e.target.value })} className="mt-0.5 h-9 w-64">
           <option value="">Barchasi</option>
-          {recipients.length > 0 && (
-            <optgroup label="Oluvchilar">
-              {recipients.map((r) => <option key={r.id} value={`r:${r.id}`}>{r.name}</option>)}
+          {brigades.length > 0 && (
+            <optgroup label="Bizning brigadalar">
+              <option value="b">Barcha brigadalar</option>
+              {brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
             </optgroup>
           )}
-          {brigades.length > 0 && (
-            <optgroup label="Brigadalar">
-              {brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
+          {employees.length > 0 && (
+            <optgroup label="Xodimlar">
+              <option value="e">Barcha xodimlar</option>
+              {employees.map((e) => <option key={e.id} value={`e:${e.id}`}>{e.name}</option>)}
+            </optgroup>
+          )}
+          {recipients.length > 0 && (
+            <optgroup label="Boshqa oluvchilar">
+              {recipients.map((r) => <option key={r.id} value={`r:${r.id}`}>{r.name}</option>)}
             </optgroup>
           )}
           <optgroup label="Boshqa">

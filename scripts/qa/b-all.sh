@@ -16,7 +16,7 @@ export QA_DATABASE_URL="$QA_DB"
 # 1-argument (ixtiyoriy): server log fayli — b-pages undagi yangi xatolarni tekshiradi
 if [ $# -ge 1 ]; then export QA_LOG="$1"; fi
 fail=0
-for t in b-supply.mjs b-receipts.mts b-vat.mts b-production.mts b-logistics.mts b-hr.mts b-payroll.mts b-tasks.mts b-hire.mts b-mobile.mts materials-delete.mts sklad-journals.mts b-pages.mjs; do
+for t in b-supply.mjs b-receipts.mts b-vat.mts b-production.mts b-logistics.mts b-hr.mts b-payroll.mts b-tasks.mts b-hire.mts b-mobile.mts b-oluvchi.mts materials-delete.mts sklad-journals.mts b-pages.mjs; do
   echo "=== $t"
   if [[ "$t" == *.mts ]]; then npx tsx "scripts/qa/$t" || fail=1; else node "scripts/qa/$t" || fail=1; fi
 done

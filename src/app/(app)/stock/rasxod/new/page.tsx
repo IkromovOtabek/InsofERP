@@ -3,8 +3,8 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { avgUnitCosts } from "@/lib/stock";
-import { activeRecipients } from "@/lib/stock-recipients";
-import { ISSUE_BACK_DAYS } from "@/lib/stock-issue";
+import { issueTargetOptions } from "@/lib/stock-recipients";
+import { ISSUE_BACK_DAYS, issueHints, parseIssueTarget } from "@/lib/stock-issue";
 import { isoDate } from "@/lib/format";
 import { Callout, Card, PageHeader } from "@/components/ui";
 import { RasxodForm } from "../rasxod-form";
@@ -19,10 +19,10 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
   const sp = await searchParams;
 
-  const [warehouses, recipients, brigades, materials, groups, sums, avg] = await Promise.all([
+  const [warehouses, targets, hints, materials, groups, sums, avg] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
-    activeRecipients(),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    issueTargetOptions(),
+    issueHints(),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, groupId: true, unitPrice: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, parentId: true } }),
     db.stockMove.groupBy({ by: ["warehouseId", "materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
@@ -36,9 +36,10 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
-  const defaultTo = sp.to && /^[rb]:.+$/.test(sp.to)
-    && (sp.to.startsWith("r:") ? recipients.some((r) => r.id === sp.to!.slice(2)) : brigades.some((b) => b.id === sp.to!.slice(2)))
-    ? sp.to : "";
+  // ?to=b:<id> | e:<id> | r:<id> (oluvchi kartasidan «Shu oluvchiga chiqim») — faqat ro'yxatda bor bo'lsa
+  const t = parseIssueTarget(sp.to);
+  const known = t && (t.kind === "brigade" ? targets.brigades : t.kind === "employee" ? targets.employees : targets.recipients).some((x) => x.id === t.id);
+  const defaultTo = known ? sp.to! : "";
 
   return (
     <div>
@@ -50,8 +51,8 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
         <Card>
           <RasxodForm
             warehouses={warehouses}
-            recipients={recipients}
-            brigades={brigades}
+            targets={targets}
+            hints={hints}
             materials={materials.map((m) => {
               const own = m.unitPrice == null ? null : Number(m.unitPrice);
               const fallback = avg.get(m.id) ?? null;

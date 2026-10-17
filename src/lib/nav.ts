@@ -69,6 +69,9 @@ export const NAV: NavItem[] = [
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
   // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
   { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"], group: "Sklad", menuHide: ["LOGISTICS"] },
+  // Oluvchi kartasi (brigada / xodim / erkin oluvchi): skladdan nima olgan, qo'lida nima bor, samaradorlik. Menyuda yo'q —
+  // Chiqim jurnalidagi «Kimga» nomidan ochiladi. Ish boshqaruvchi ham ko'radi (sklad bo'limining o'zi unga yopiq)
+  { href: "/oluvchi",     label: "Oluvchi kartasi",    roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR", "ACCOUNTING"], group: "Sklad", hidden: true },
   // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi.
   // Sklad kabinetida ham menyuda: sklad xodimi ba'zi mollarni o'zi olib keladi (narx qo'yadi, sotib oladi, qabul qiladi)
   { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"] },
@@ -232,7 +235,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "tasks",     label: "Topshiriq / brigada",   prefixes: ["/tasks", "/brigades"] },
   { key: "trips",     label: "Reyslar / haydovchi",   prefixes: ["/trips", "/drivers"] },
   { key: "logistika", label: "Logistika",             prefixes: ["/logistika"] },
-  { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers"] },
+  { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers", "/oluvchi"] },
   { key: "taminot",   label: "Ta'minot zayavkalari",  prefixes: ["/taminot"] },
   { key: "mexanik",   label: "Mexanik so'rovlari",    prefixes: ["/mexanik-sorovlar"] },
   { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices", "/pul-qabul"] },

@@ -2,39 +2,58 @@
 
 import { useState } from "react";
 import { Select } from "@/components/ui";
-import { RecipientAdd, WithAdd } from "@/components/quick-add";
-
-type Opt = { id: string; name: string };
+import { RecipientAddDialog } from "@/components/quick-add";
+import { NEW_RECIPIENT, brigadeLabel, type TargetGroups } from "@/lib/issue-target";
 
 /**
- * Chiqimdagi «Kimga»: oluvchilar ("r:<id>") va brigadalar ("b:<id>"). Ichidagi «+» — yangi oluvchini shu yerda qo'shib,
- * darhol tanlash (brigada esa Brigadalar bo'limida ochiladi: unda a'zolar va ish haqi bor).
+ * Chiqimdagi «Kimga» — tartib: 1) bizning brigadalar (brigadir ismi bilan, "b:<id>"), 2) barcha xodimlar ("e:<id>"),
+ * 3) tizimda yo'q nomlar — oluvchilar ("r:<id>"), 4) eng pastda «Qo'lda kiritish…» — yangi oluvchi oynasi ochiladi,
+ * yozilgan nom darhol tanlanadi (brigada va xodim o'z bo'limlarida ochiladi).
  */
-export function TargetSelect({ recipients: init, brigades, value, onChange, invalid }: {
-  recipients: Opt[]; brigades: Opt[]; value: string; onChange: (v: string) => void; invalid?: boolean;
+export function TargetSelect({ targets, value, onChange, invalid, canAdd = true }: {
+  targets: TargetGroups; value: string; onChange: (v: string) => void; invalid?: boolean; canAdd?: boolean;
 }) {
-  const [recipients, setRecipients] = useState(init);
+  const [recipients, setRecipients] = useState(targets.recipients);
+  const [open, setOpen] = useState(false);
+  const pick = (v: string) => {
+    if (v === NEW_RECIPIENT) { setOpen(true); return; } // tanlov o'zgarmaydi — oyna yopilsa avvalgi qiymat qoladi
+    onChange(v);
+  };
   return (
-    <WithAdd add={<RecipientAdd onCreated={(x) => { setRecipients((l) => [...l, { id: x.id, name: x.name }]); onChange(`r:${x.id}`); }} />}>
-      <Select name="to" value={value} onChange={(e) => onChange(e.target.value)} required aria-invalid={invalid || undefined}>
+    <>
+      <Select name="to" value={value} onChange={(e) => pick(e.target.value)} required aria-invalid={invalid || undefined}>
         <option value="">— tanlang —</option>
+        {targets.brigades.length > 0 && (
+          <optgroup label="Bizning brigadalar">
+            {targets.brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{brigadeLabel(b)}</option>)}
+          </optgroup>
+        )}
+        {targets.employees.length > 0 && (
+          <optgroup label="Xodimlar">
+            {targets.employees.map((e) => <option key={e.id} value={`e:${e.id}`}>{`${e.name} · ${e.position}`}</option>)}
+          </optgroup>
+        )}
         {recipients.length > 0 && (
-          <optgroup label="Oluvchilar">
+          <optgroup label="Boshqa oluvchilar">
             {recipients.map((r) => <option key={r.id} value={`r:${r.id}`}>{r.name}</option>)}
           </optgroup>
         )}
-        {brigades.length > 0 && (
-          <optgroup label="Brigadalar">
-            {brigades.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
+        {canAdd && (
+          <optgroup label="Ro'yxatda yo'q">
+            <option value={NEW_RECIPIENT}>+ Qo'lda kiritish — yangi oluvchi…</option>
           </optgroup>
         )}
       </Select>
-    </WithAdd>
+      {canAdd && (
+        <RecipientAddDialog open={open} onClose={() => setOpen(false)}
+          onCreated={(x) => { setRecipients((l) => [...l, { id: x.id, name: x.name }]); onChange(`r:${x.id}`); }} />
+      )}
+    </>
   );
 }
 
 /** Excel chiqimi sahifasi uchun: holatni o'zi saqlaydi (server sahifada `useState` yo'q). */
-export function TargetField({ recipients, brigades }: { recipients: Opt[]; brigades: Opt[] }) {
+export function TargetField({ targets }: { targets: TargetGroups }) {
   const [to, setTo] = useState("");
-  return <TargetSelect recipients={recipients} brigades={brigades} value={to} onChange={setTo} />;
+  return <TargetSelect targets={targets} value={to} onChange={setTo} />;
 }

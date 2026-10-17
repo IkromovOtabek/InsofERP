@@ -14,6 +14,7 @@ import { companyVatPayer } from "./receipt-vat";
  *
  * Berish — BITTA tranzaksiya, `lockStock` ostida, qoldiq AYNAN tanlangan sklad bo'yicha tekshiriladi:
  *  · oluvchi (StockRecipient — shafyorlar, svarchiklar…) → StockMove ISSUE (−), sarf deb hisoblanadi;
+ *  · xodim (Employee — brigadir, usta, haydovchi…) → StockMove ISSUE (−, `employeeId`), xodim kartasida ko'rinadi;
  *  · brigada → mavjud brigada qoldig'i mantig'i: StockMove BRIGADE_ISSUE (−) + BrigadeMove ISSUE (+).
  * Narx — «Дона сўм» snapshot (`issuePrices`): Snabjeniye narxni keyin o'zgartirsa ham o'tgan qatorlar o'zgarmaydi.
  * Bitta berish hujjati — `refType "Issue"`, `refId = ref`. Veb (Sklad → Расход) va mobil/ECO shu funksiyadan o'tadi;
@@ -24,7 +25,11 @@ import { companyVatPayer } from "./receipt-vat";
 /** Foydalanuvchiga ko'rinadigan xato (o'zbekcha). Kutilmagan (baza) xatolari oddiy `Error` bo'lib qoladi. */
 export class IssueError extends Error {}
 
-export type IssueTarget = { kind: "recipient" | "brigade"; id: string };
+export type IssueTargetKind = "recipient" | "brigade" | "employee";
+export type IssueTarget = { kind: IssueTargetKind; id: string };
+
+/** Forma / URL kaliti: "r:<id>" — oluvchi, "b:<id>" — brigada, "e:<id>" — xodim. */
+export const targetKey = (t: IssueTarget) => `${t.kind === "recipient" ? "r" : t.kind === "brigade" ? "b" : "e"}:${t.id}`;
 
 export type IssueInput = {
   warehouseId: string;
@@ -50,12 +55,12 @@ export const issueToken = (v: unknown): string | null => {
   return /^[A-Za-z0-9-]{16,64}$/.test(t) ? t : null;
 };
 
-/** Forma qiymati «Кому»: "r:<id>" — oluvchi, "b:<id>" — brigada. Noto'g'ri bo'lsa null. */
+/** Forma qiymati «Кому»: "r:<id>" — oluvchi, "b:<id>" — brigada, "e:<id>" — xodim. Noto'g'ri bo'lsa null. */
 export function parseIssueTarget(v: unknown): IssueTarget | null {
   const s = typeof v === "string" ? v.trim() : "";
-  const m = /^([rb]):(.+)$/.exec(s);
+  const m = /^([rbe]):(.+)$/.exec(s);
   if (!m) return null;
-  return { kind: m[1] === "r" ? "recipient" : "brigade", id: m[2] };
+  return { kind: m[1] === "r" ? "recipient" : m[1] === "b" ? "brigade" : "employee", id: m[2] };
 }
 
 /**
@@ -86,8 +91,8 @@ async function byToken(token: string): Promise<IssueStockResult | null> {
   return { ref, count, existed: true };
 }
 
-/** «Кому» — faol oluvchi yoki faol brigada. */
-async function resolveTarget(to: IssueTarget | null | undefined): Promise<{ kind: "recipient" | "brigade"; id: string; name: string }> {
+/** «Кому» — faol oluvchi, faol brigada yoki ishlayotgan xodim. */
+async function resolveTarget(to: IssueTarget | null | undefined): Promise<{ kind: IssueTargetKind; id: string; name: string }> {
   if (!to?.id) throw new IssueError("Kimga berilishini tanlang (Kimga)");
   if (to.kind === "recipient") {
     const r = await db.stockRecipient.findUnique({ where: { id: to.id }, select: { id: true, name: true, isActive: true } });
@@ -98,6 +103,11 @@ async function resolveTarget(to: IssueTarget | null | undefined): Promise<{ kind
     const b = await db.brigade.findUnique({ where: { id: to.id }, select: { id: true, name: true, isActive: true } });
     if (!b || !b.isActive) throw new IssueError("Brigada topilmadi yoki nofaol — sahifani yangilang");
     return { kind: "brigade", id: b.id, name: b.name };
+  }
+  if (to.kind === "employee") {
+    const e = await db.employee.findUnique({ where: { id: to.id }, select: { id: true, fullName: true, isActive: true } });
+    if (!e || !e.isActive) throw new IssueError("Xodim topilmadi yoki ishdan bo'shagan — sahifani yangilang");
+    return { kind: "employee", id: e.id, name: e.fullName };
   }
   throw new IssueError("Kimga berilishini tanlang (Kimga)");
 }
@@ -155,13 +165,14 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
       if (short.length) throw new IssueError(`«${wh.name}» skladida yetarli emas: ${short.join("; ")}`);
 
       let sum = 0;
-      if (target.kind === "recipient") {
+      if (target.kind === "recipient" || target.kind === "employee") {
         const prices = await issuePrices(ids, tx);
         for (const [i, r] of rows.entries()) {
           const cost = prices.get(r.materialId) ?? null;
           await tx.stockMove.create({
             data: {
-              type: "ISSUE", date, warehouseId: wh.id, materialId: r.materialId, recipientId: target.id,
+              type: "ISSUE", date, warehouseId: wh.id, materialId: r.materialId,
+              recipientId: target.kind === "recipient" ? target.id : null, employeeId: target.kind === "employee" ? target.id : null,
               qty: -r.qty, unitCost: cost, refType: "Issue", refId: ref, note,
               clientToken: i === 0 ? token : null, createdById: actor.userId,
             },
@@ -217,7 +228,7 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
       where: { refType: "Issue", refId: id },
       orderBy: { createdAt: "asc" },
       select: {
-        type: true, warehouseId: true, materialId: true, recipientId: true, brigadeId: true, qty: true, unitCost: true,
+        type: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true, qty: true, unitCost: true,
         material: { select: { name: true, unit: true } },
       },
     });
@@ -259,7 +270,7 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
     for (const m of moves) {
       const back = await tx.stockMove.create({
         data: {
-          type: m.type, warehouseId: m.warehouseId, materialId: m.materialId, recipientId: m.recipientId, brigadeId: m.brigadeId,
+          type: m.type, warehouseId: m.warehouseId, materialId: m.materialId, recipientId: m.recipientId, employeeId: m.employeeId, brigadeId: m.brigadeId,
           qty: m.qty.negated(), unitCost: m.unitCost, refType: ISSUE_STORNO, refId: id, note, createdById: actor.userId,
         },
       });
@@ -276,7 +287,7 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
     }
     await audit(tx, actor.userId, "STATUS_CHANGE", "StockMove", id, { status: "ACTIVE" }, {
       status: "CANCELLED", via: "rasxod", role: actor.role, reason: why, reversedMoves: moves.length,
-      rows: moves.map((m) => ({ materialId: m.materialId, type: m.type, qty: -Number(m.qty), recipientId: m.recipientId, brigadeId: m.brigadeId })),
+      rows: moves.map((m) => ({ materialId: m.materialId, type: m.type, qty: -Number(m.qty), recipientId: m.recipientId, employeeId: m.employeeId, brigadeId: m.brigadeId })),
       sum: Math.round(sum * 100) / 100,
     });
     return { ref: id, count: moves.length };
@@ -377,7 +388,7 @@ export type RasxodRow = {
   priceApprox: boolean;
   /** Brigadaga avtomatik berilgan (topshiriq sarfi uchun yetmagan qism) */
   auto?: boolean;
-  /** «Кому» filtri kaliti: "r:<id>" | "b:<id>" | "prod" | "writeoff" | "inventory" */
+  /** «Кому» filtri kaliti: "r:<id>" | "b:<id>" | "e:<id>" (xodim) | "prod" | "writeoff" | "inventory" */
   toKey: string;
   warehouseId: string;
   /** Chiqim (ISSUE) izohi; storno qatorida — «Storno: <sabab>» (eski yozuvlarda «Сторно: <sabab>») */
@@ -398,10 +409,12 @@ function writeOffReason(note: string | null): string {
 const INVENTORY_SHORT: Prisma.StockMoveWhereInput = { type: "ADJUSTMENT", refType: "Inventory", qty: { lt: 0 } };
 const ALL_TYPES = ["ISSUE", "BRIGADE_ISSUE", "BRIGADE_RETURN", "PRODUCTION_CONSUME", "WRITE_OFF"] as const;
 
-/** «Кому» filtri → so'rov sharti. "r"/"b" — barcha oluvchilar / barcha brigadalar. */
+/** «Кому» filtri → so'rov sharti. "r"/"b"/"e" — barcha oluvchilar / barcha brigadalar / barcha xodimlar. */
 function filterWhere(f: string | null | undefined): Prisma.StockMoveWhereInput[] {
   const v = (f ?? "").trim();
   if (v.startsWith("r:") && v.length > 2) return [{ type: "ISSUE", recipientId: v.slice(2) }];
+  if (v.startsWith("e:") && v.length > 2) return [{ type: "ISSUE", employeeId: v.slice(2) }];
+  if (v === "e") return [{ type: "ISSUE", employeeId: { not: null } }];
   if (v.startsWith("b:") && v.length > 2) return [{ type: { in: ["BRIGADE_ISSUE", "BRIGADE_RETURN"] }, brigadeId: v.slice(2) }];
   if (v === "r") return [{ type: "ISSUE" }];
   if (v === "b") return [{ type: { in: ["BRIGADE_ISSUE", "BRIGADE_RETURN"] } }];
@@ -417,7 +430,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Расход jurnali (Sklad → «Расход»), manba — StockMove (xomashyo, davr `[from, to)`):
- *  · ISSUE — oluvchiga (Кому = oluvchi);
+ *  · ISSUE — oluvchiga (Кому = oluvchi) yoki xodimga (`employeeId`, Кому = xodim F.I.O.);
  *  · BRIGADE_ISSUE — brigadaga (Кому = brigada; topshiriq uchun avtomatik berilgani `auto`);
  *  · BRIGADE_RETURN — brigadadan qaytdi: manfiy qator («— qaytarish»);
  *  · Chiqim stornosi (`refType "IssueStorno"`, ISSUE / BRIGADE_ISSUE teskarisi) — manfiy qator «Storno: <Kimga>», To'lov turi/QQS
@@ -437,7 +450,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     },
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
     select: {
-      id: true, date: true, type: true, warehouseId: true, materialId: true, recipientId: true, brigadeId: true,
+      id: true, date: true, type: true, warehouseId: true, materialId: true, recipientId: true, employeeId: true, brigadeId: true,
       qty: true, unitCost: true, refType: true, refId: true, note: true,
     },
   });
@@ -448,10 +461,11 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
   const noCost = uniq(moves.filter((m) => m.unitCost == null).map((m) => m.materialId));
   const issueRefs = uniq(moves.filter((m) => m.refType === "Issue").map((m) => m.refId));
   const stornoRefs = uniq(moves.filter((m) => m.refType === ISSUE_STORNO).map((m) => m.refId));
-  const [materials, warehouses, recipients, brigades, prices, terms, vatPayer, cancelledRefs, originals] = await Promise.all([
+  const [materials, warehouses, recipients, employees, brigades, prices, terms, vatPayer, cancelledRefs, originals] = await Promise.all([
     db.material.findMany({ where: { id: { in: matIds } }, select: { id: true, name: true, unit: true } }),
     db.warehouse.findMany({ where: { id: { in: uniq(moves.map((m) => m.warehouseId)) } }, select: { id: true, name: true } }),
     db.stockRecipient.findMany({ where: { id: { in: uniq(moves.map((m) => m.recipientId)) } }, select: { id: true, name: true } }),
+    db.employee.findMany({ where: { id: { in: uniq(moves.map((m) => m.employeeId)) } }, select: { id: true, fullName: true } }),
     db.brigade.findMany({ where: { id: { in: uniq(moves.map((m) => m.brigadeId)) } }, select: { id: true, name: true } }),
     issuePrices(noCost),
     receiptTermsByMaterial(matIds),
@@ -468,6 +482,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
   const mat = new Map(materials.map((m) => [m.id, m]));
   const whName = new Map(warehouses.map((w) => [w.id, w.name]));
   const recName = new Map(recipients.map((r) => [r.id, r.name]));
+  const empName = new Map(employees.map((e) => [e.id, e.fullName]));
   const brName = new Map(brigades.map((b) => [b.id, b.name]));
   const cancelled = new Set(cancelledRefs.map((x) => x.refId));
   const origDate = new Map(originals.map((o) => [`${o.refId}|${o.materialId}`, o.date]));
@@ -501,8 +516,9 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     }
     const brigade = (m.brigadeId && brName.get(m.brigadeId)) || "Brigada";
     const brKey = m.brigadeId ? `b:${m.brigadeId}` : "b";
-    const recipient = (m.recipientId && recName.get(m.recipientId)) || "—";
-    const recKey = m.recipientId ? `r:${m.recipientId}` : "r";
+    // ISSUE: oluvchi yoki xodim (ikkalasi bir qatorda bo'lmaydi)
+    const recipient = (m.employeeId && empName.get(m.employeeId)) || (m.recipientId && recName.get(m.recipientId)) || "—";
+    const recKey = m.employeeId ? `e:${m.employeeId}` : m.recipientId ? `r:${m.recipientId}` : "r";
     // Расход hujjati: asl qatorlar — `ref` + «отменён» belgisi; storno qatorlari — alohida tur (manfiy)
     const doc = m.refType === "Issue" && m.refId ? { ref: m.refId, cancelled: cancelled.has(m.refId) } : {};
     let row: Draft["row"] | null = null;
@@ -548,4 +564,52 @@ export function rasxodTotals(rows: RasxodRow[]) {
   let sum = 0, vat = 0, total = 0, delivery = 0;
   for (const r of rows) { sum += r.sum; vat += r.vat; total += r.total; delivery += r.delivery; }
   return { count: rows.length, sum: r2(sum), vat: r2(vat), total: r2(total), delivery: r2(delivery) };
+}
+
+// ───────────────────────── Tez tanlash: eslab qolingan oluvchilar va tovarlar ─────────────────────────
+
+export type IssueHintTarget = { key: string; count: number; lastAt: Date };
+export type IssueHintMaterial = { materialId: string; qty: number; lastAt: Date };
+export type IssueHints = {
+  /** Oxirgi chiqim yozilgan sklad («Qayerdan» eslab qolinadi) */
+  warehouseId: string | null;
+  /** Ko'p ishlatilgan oluvchilar (kaliti "b:"/"e:"/"r:"), ko'pdan kamga; teng bo'lsa — yaqinrog'i oldin */
+  targets: IssueHintTarget[];
+  /** Oluvchi kaliti → shu oluvchiga oxirgi berilgan tovarlar (oxirgi miqdori bilan), yaqinidan boshlab */
+  materials: Record<string, IssueHintMaterial[]>;
+};
+
+/**
+ * «Yangi chiqim» formasidagi tez tanlash tugmalari uchun: oxirgi `days` kundagi chiqim hujjatlaridan (storno emas)
+ * kim ko'p olgan va har oluvchiga qanday tovarlar berilgan. Nomlar chaqiruvchida («Kimga» ro'yxatidan) olinadi.
+ */
+export async function issueHints(opts?: { days?: number; targets?: number; materials?: number }): Promise<IssueHints> {
+  const days = opts?.days ?? 90, maxT = opts?.targets ?? 8, maxM = opts?.materials ?? 12;
+  const since = new Date(); since.setDate(since.getDate() - days);
+  const moves = await db.stockMove.findMany({
+    where: { refType: "Issue", type: { in: ["ISSUE", "BRIGADE_ISSUE"] }, date: { gte: since }, materialId: { not: null } },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    take: 3000,
+    select: { date: true, warehouseId: true, recipientId: true, employeeId: true, brigadeId: true, materialId: true, qty: true, refId: true },
+  });
+  const tCount = new Map<string, IssueHintTarget>();
+  const docs = new Set<string>();
+  const mats = new Map<string, Map<string, IssueHintMaterial>>();
+  for (const m of moves) {
+    const key = m.brigadeId ? `b:${m.brigadeId}` : m.employeeId ? `e:${m.employeeId}` : m.recipientId ? `r:${m.recipientId}` : null;
+    if (!key) continue;
+    // Oluvchi «ko'p ishlatilgan» — hujjatlar soni bo'yicha (bir hujjatda 10 qator — bitta berish)
+    const doc = `${key}|${m.refId}`;
+    const t = tCount.get(key) ?? { key, count: 0, lastAt: m.date };
+    if (!docs.has(doc)) { docs.add(doc); t.count += 1; }
+    if (m.date > t.lastAt) t.lastAt = m.date;
+    tCount.set(key, t);
+    const list = mats.get(key) ?? new Map<string, IssueHintMaterial>();
+    if (!list.has(m.materialId!)) list.set(m.materialId!, { materialId: m.materialId!, qty: Math.round(-Number(m.qty) * 1000) / 1000, lastAt: m.date });
+    mats.set(key, list);
+  }
+  const targets = [...tCount.values()].sort((a, b) => b.count - a.count || b.lastAt.getTime() - a.lastAt.getTime()).slice(0, maxT);
+  const materials: Record<string, IssueHintMaterial[]> = {};
+  for (const [key, list] of mats) materials[key] = [...list.values()].filter((x) => x.qty > 0).slice(0, maxM);
+  return { warehouseId: moves[0]?.warehouseId ?? null, targets, materials };
 }

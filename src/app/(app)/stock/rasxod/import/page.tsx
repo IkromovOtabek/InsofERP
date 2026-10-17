@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { activeRecipients } from "@/lib/stock-recipients";
+import { issueTargetOptions } from "@/lib/stock-recipients";
 import { ISSUE_BACK_DAYS } from "@/lib/stock-issue";
 import { FIELD_SYNONYMS } from "@/lib/excel";
 import { isoDate } from "@/lib/format";
@@ -18,10 +18,9 @@ import { TargetField } from "../target-select";
 export default async function RasxodImportPage() {
   const s = await requireRoles(["WAREHOUSE", "PROCUREMENT"], { module: "stock", actions: ["issue"] });
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
-  const [warehouses, recipients, brigades] = await Promise.all([
+  const [warehouses, targets] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
-    activeRecipients(),
-    db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    issueTargetOptions(),
   ]);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
@@ -52,7 +51,7 @@ export default async function RasxodImportPage() {
               {warehouses.length > 1 ? (
                 <Field label="Sklad (Kimdan) *"><Select name="warehouseId" defaultValue={warehouses[0].id}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</Select></Field>
               ) : <input type="hidden" name="warehouseId" value={warehouses[0].id} />}
-              <Field label="Kimga *"><TargetField recipients={recipients} brigades={brigades} /></Field>
+              <Field label="Kimga *"><TargetField targets={targets} /></Field>
             </div>
             <Field label="Izoh"><Input name="note" maxLength={300} placeholder="Masalan: ta'mirga, obyekt uchun, №… zayavka bo'yicha" autoComplete="off" /></Field>
             {/* Bir martalik kalit: ikki marta bosilgan tugma ikkinchi chiqim yozmaydi */}

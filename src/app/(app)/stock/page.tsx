@@ -100,7 +100,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     : moveMaterial ? { materialId: moveMaterial.id, ...(sp.from || sp.to ? { date: { gte: period.from, lt: period.to } } : {}), ...(wh ? { warehouseId: wh.id } : {}) }
     : undefined;
   const moves = tab === "moves"
-    ? await db.stockMove.findMany({ where: movesWhere, orderBy: moveMaterial ? { date: "desc" } : { createdAt: "desc" }, take: ref || moveMaterial ? 500 : 300, include: { material: true, product: true, warehouse: true, createdBy: true, recipient: { select: { name: true } } } })
+    ? await db.stockMove.findMany({ where: movesWhere, orderBy: moveMaterial ? { date: "desc" } : { createdAt: "desc" }, take: ref || moveMaterial ? 500 : 300, include: { material: true, product: true, warehouse: true, createdBy: true, recipient: { select: { name: true } }, employee: { select: { fullName: true } } } })
     : [];
   // Ishlab chiqarish imkoni: hozirgi xomashyo qoldig'i bilan har mahsulotdan qancha chiqadi;
   // shu yerda hovlida turgan dona mahsulot (erkin/band) va tayyor beton qoldig'i ham ko'rsatiladi
@@ -528,7 +528,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>
-                <Td>{m.recipient ? <span>Kimga: <span className="font-medium text-slate-800">{m.recipient.name}</span></span> : m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
+                <Td>{m.recipient || m.employee ? <span>Kimga: <span className="font-medium text-slate-800">{m.employee?.fullName ?? m.recipient?.name}</span></span> : m.refType && m.refId && REF_LINK[m.refType] ? <Link href={`${REF_LINK[m.refType]}/${m.refId}`} className="hover:underline">{REF_LABEL[m.refType] ?? m.refType}</Link> : m.refType === "StockIn" && m.refId ? <Link href={`/stock?tab=moves&ref=${m.refId}`} className="hover:underline">Sklad kirimi</Link> : m.refType === "Brigade" ? <Link href="/stock?tab=brigades" className="hover:underline">Brigada</Link> : m.refType === "Manual" ? "Qo'lda" : "—"}</Td>
                 <Td>{m.createdBy.fullName}</Td>
               </Tr>
             ))}

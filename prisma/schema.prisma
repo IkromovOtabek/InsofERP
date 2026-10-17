@@ -555,6 +555,8 @@ model Employee {
   kpiResults       KpiResult[]
   onboarding       OnboardingPlan?
   enrollments      CourseEnrollment[]
+  /// Skladdan shu xodimga berilgan xomashyo (Sklad → Chiqim, «Kimga» = xodim)
+  stockIssues      StockMove[]              @relation("MoveEmployee")
 }
 
 /// Xodim hujjatining nusxasi (passport, diplom, tibbiy ma'lumotnoma...).
@@ -770,6 +772,8 @@ model StockMove {
   brigadeId   String? // BRIGADE_ISSUE / BRIGADE_RETURN — qaysi brigada bilan harakat
   /// ISSUE («Расход») — kimga berildi (Кому)
   recipientId String?
+  /// ISSUE — xodimga berildi (Xodimlar ro'yxatidan: brigadir, ustoz, haydovchi…) — recipientId bilan birga emas
+  employeeId  String?
   qty         Decimal       @db.Decimal(18, 3)
   unitCost    Decimal?      @db.Decimal(18, 2) // kirimda — tannarx hisobi uchun
   refType     String? // "GoodsReceipt" | "ProductionBatch" | "Trip"
@@ -785,9 +789,11 @@ model StockMove {
   product   Product?        @relation(fields: [productId], references: [id])
   brigade   Brigade?        @relation(fields: [brigadeId], references: [id])
   recipient StockRecipient? @relation(fields: [recipientId], references: [id])
+  employee  Employee?       @relation("MoveEmployee", fields: [employeeId], references: [id])
   createdBy User            @relation("MoveCreatedBy", fields: [createdById], references: [id])
   opening   OpeningBalance?
 
+  @@index([employeeId, date])
   @@index([warehouseId, materialId, date])
   @@index([warehouseId, productId, date])
   @@index([refType, refId])
