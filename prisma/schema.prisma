@@ -2818,6 +2818,7 @@ model SeoKeyword {
 model MarketingChat {
   id        String             @id @default(cuid())
   title     String
+  agent     String             @default("umumiy") // agent turi: umumiy | strateg | kontent | analitik | target | raqobatchi
   userId    String
   user      User               @relation(fields: [userId], references: [id])
   messages  MarketingMessage[]
@@ -2838,7 +2839,6 @@ model MarketingMessage {
 
   @@index([chatId, createdAt])
 }
-  agent     String             @default("umumiy") // agent turi: umumiy | strateg | kontent | analitik | target | raqobatchi
 
 /**
  * ───────────────────────── Pul qabul qilish so'rovi (zayavka bosh to'lovi) ─────────────────────────
