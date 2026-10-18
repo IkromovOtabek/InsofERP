@@ -7,7 +7,7 @@ import { OFFER_DEFAULT_INTRO, OFFER_DEFAULT_TERMS } from "@/lib/offers";
 import { asOfferLang, offerT } from "@/lib/offer-i18n";
 import { ndsPart } from "@/lib/nds";
 import { soleUnit, unitLabel } from "@/lib/unit";
-import { Logo } from "@/components/logo";
+import { PrintHeaderArt, brandTitle } from "@/components/print-header-art";
 import { PrintButton } from "@/components/print-button";
 import { AutoPrint } from "@/components/auto-print";
 import { BackLink } from "@/components/ui";
@@ -76,25 +76,27 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
       {o.status === "DRAFT" && <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">Diqqat: zayavka hali <b>qoralama</b> — qabul qilinmagan.</div>}
       {o.status === "CANCELLED" && <div className="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800 print:hidden">Diqqat: zayavka <b>bekor qilingan</b>.</div>}
 
-      {/* ── Sarlavha: logotip + rekvizitlar ── */}
-      <div className="flex items-start justify-between gap-6 border-b-2 border-slate-900 pb-3">
-        <div className="shrink-0">
-          <Logo className="h-14 text-slate-900" tagline={false} />
-          <div className="mt-1 text-[13px] font-semibold italic text-sky-700">{company.legalName ?? company.name}</div>
-          <div className="text-[11px] italic text-slate-700">{T.subtitle}</div>
+      {/* ── Sarlavha: nom, kran-bino rasmi + rekvizitlar (eski Excel blankasi kabi) ── */}
+      <div className="border-b-2 border-slate-900 pb-3">
+        <div className="text-center font-serif italic text-[#2f6fc9]">
+          <div className="text-[30px] font-bold leading-none tracking-wide">{brandTitle(company)}</div>
+          <div className="mt-1 text-[17px] font-semibold">{T.subtitle}</div>
         </div>
-        <div className="text-right text-[11px] italic leading-relaxed text-slate-800">
-          {company.address && <div>{company.address}</div>}
-          {company.bankAccount && <div>{T.account} № {company.bankAccount}</div>}
-          {company.bankName && <div>{company.bankName}</div>}
-          <div className="flex flex-wrap justify-end gap-x-3">
-            {company.mfo && <span>{T.mfo}: {company.mfo}</span>}
-            {company.inn && <span>{T.inn}: {company.inn}</span>}
-            {company.oked && <span>{T.oked}: {company.oked}</span>}
+        <div className="mt-2 flex items-center justify-between gap-6">
+          <PrintHeaderArt className="h-auto w-[44%] shrink-0" />
+          <div className="flex-1 text-center text-[12px] italic leading-relaxed text-slate-900">
+            {company.address && <div>{company.address}</div>}
+            {company.bankAccount && <div>{T.account} № {company.bankAccount}</div>}
+            {company.bankName && <div>{company.bankName}</div>}
+            <div className="flex flex-wrap justify-center gap-x-4">
+              {company.mfo && <span>{T.mfo}: {company.mfo}</span>}
+              {company.inn && <span>{T.inn}: {company.inn}</span>}
+              {company.oked && <span>{T.oked}: {company.oked}</span>}
+            </div>
+            {company.vatRegNo && <div>{T.vatReg} {company.vatRegNo}</div>}
+            {phones.map((p) => <div key={p}>{T.phone}: {p}</div>)}
+            {company.email && <div>{company.email}</div>}
           </div>
-          {company.vatRegNo && <div>{T.vatReg} {company.vatRegNo}</div>}
-          {phones.map((p) => <div key={p}>{T.phone}: {p}</div>)}
-          {company.email && <div>{company.email}</div>}
         </div>
       </div>
 

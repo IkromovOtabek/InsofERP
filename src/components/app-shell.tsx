@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, UserPlus, GraduationCap, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, UserPlus, GraduationCap, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -15,11 +15,11 @@ import { Tour, TourTrigger } from "@/components/tour";
 import type { TourStep } from "@/lib/tour";
 
 const ICONS: Record<string, LucideIcon> = {
-  "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/leads": Inbox, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
-  "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/suppliers": Handshake, "/invoices": Receipt,
+  "/dashboard": LayoutDashboard, "/orders": ClipboardList, "/sales": ShoppingCart, "/customers": Users, "/leads": Inbox, "/amocrm": SquareKanban, "/takliflar": FileBadge2, "/e-commerce": Store, "/production": Factory, "/recipes": FlaskConical,
+  "/trips": Truck, "/stock": Warehouse, "/snabjeniye": ShoppingBasket, "/taminot": ClipboardCheck, "/mexanik-sorovlar": Wrench, "/receipts": PackagePlus, "/oluvchi": PackageOpen, "/taminot/": FileText, "/suppliers": Handshake, "/invoices": Receipt,
   "/marketing": Gauge, "/marketing/kontent": CalendarRange, "/marketing/studiya": Sparkles, "/marketing/media": Images, "/marketing/target": Crosshair, "/marketing/sozlamalar": SlidersHorizontal, "/marketing/agent": Bot,
   "/payments": Landmark, "/pul-qabul": HandCoins, "/cashflow": ArrowLeftRight, "/arenda": Store, "/tasks": ListChecks, "/brigades": HardHat, "/employees": Contact, "/drivers": Smartphone, "/bi-tahlil": BarChart3, "/settings": Settings, "/ilova-foydalanuvchilari": UserRoundCheck,
-  "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=taqvim": CakeSlice, "/otdel-kadr?tab=grafik": CalendarRange, "/otdel-kadr?tab=arizalar": Inbox, "/otdel-kadr?tab=jarima-bonus": Scale, "/otdel-kadr?tab=cheklistlar": ListChecks, "/otdel-kadr?tab=kpi": Target, "/otdel-kadr?tab=yollash": UserPlus, "/otdel-kadr?tab=moslashuv": Handshake, "/otdel-kadr?tab=oqitish": GraduationCap, "/otdel-kadr?tab=sorovnoma": ClipboardList, "/otdel-kadr?tab=murojaatlar": MessageSquare, "/otdel-kadr?tab=hisobotlar": BarChart3, "/vazifalar": ListTodo, "/ish-haqi": Wallet,
+  "/otdel-kadr": Users, "/otdel-kadr?tab=lavozimlar": BriefcaseBusiness, "/otdel-kadr?tab=bolimlar": Building2, "/otdel-kadr?tab=davomat": CalendarCheck, "/otdel-kadr?tab=ish-vaqti": Clock, "/otdel-kadr?tab=taqvim": CakeSlice, "/otdel-kadr?tab=grafik": CalendarRange, "/otdel-kadr?tab=arizalar": Inbox, "/otdel-kadr?tab=jarima-bonus": Scale, "/otdel-kadr?tab=cheklistlar": ListChecks, "/otdel-kadr?tab=kpi": Target, "/otdel-kadr?tab=yollash": UserPlus, "/otdel-kadr?tab=moslashuv": Handshake, "/otdel-kadr?tab=oqitish": GraduationCap, "/otdel-kadr?tab=sorovnoma": ClipboardList, "/otdel-kadr?tab=murojaatlar": MessageSquare, "/otdel-kadr?tab=hisobotlar": BarChart3, "/vazifalar": ListTodo, "/ish-haqi": Wallet,
   "/mening-reyslarim": Route, "/mening-topshiriqlarim": ListTodo, "/agent": Briefcase, "/kirim-qqs": Percent, "/settings/boshlangich-qoldiq": Scale, "/settings/davomat": SlidersHorizontal,
   "/logistika/buyurtmalar": PackageCheck, "/logistika/kalendar": CalendarClock, "/logistika/transport": Container, "/logistika/haydovchilar": IdCard,
   "/logistika/obyektlar": MapPin, "/logistika/monitoring": Radar, "/logistika/nakladnoylar": FileText, "/logistika/yetkazish": PackageCheck,
@@ -32,6 +32,11 @@ const ICONS: Record<string, LucideIcon> = {
 };
 // Tartib: Bosh sahifa → Tahlil (BI) → operatsion modullar (Sotuv … Moliya) → Otdel kadr → Boshqaruv (Xodimlar, Sozlamalar).
 // Otdel kadr alohida bo'lim: kadr ishlari boshqaruv bandlari bilan aralashib ketmasin.
+/** Guruh sarlavhalari ikonkasi — yig'ilgan menyuda sarlavha yashiringani uchun faqat keng holatda ko'rinadi. */
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  "Tahlil": ChartLine, "Sotuv": BadgeDollarSign, "Marketing": Megaphone, "Ishlab chiqarish": Factory, "Logistika": Truck,
+  "Sklad": Warehouse, "Moliya": Landmark, "Otdel kadr": Users, "Boshqaruv": ShieldCheck,
+};
 const GROUP_ORDER = ["Asosiy", "Tahlil", "Sotuv", "Marketing", "Ishlab chiqarish", "Logistika", "Sklad", "Moliya", "Otdel kadr", "Boshqaruv"];
 
 type User = { fullName: string; roleLabel: string };
@@ -77,7 +82,10 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                 onClick={() => setOpenGroup(groupOpen ? "" : g)}
                 className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-slate-50 hover:text-slate-700 pointer-coarse:py-2.5 pointer-coarse:text-[11.5px]",
                   groupActive ? "text-slate-700" : "text-slate-500")}>
-                <span>{g}</span>
+                <span className="flex items-center gap-2">
+                  {(() => { const GIcon = GROUP_ICONS[g]; return GIcon && <GIcon size={13} className="shrink-0" />; })()}
+                  {g}
+                </span>
                 <ChevronDown size={13} className={cn("sb-gcaret transition-transform duration-300", groupOpen ? "rotate-180" : "")} />
               </button>
             )}
