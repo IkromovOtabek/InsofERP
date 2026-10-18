@@ -101,7 +101,7 @@ export default async function OfferPrintPage({ params, searchParams }: { params:
       {/* ── Jadval ── */}
       <table className="mt-4 w-full border-collapse text-[11.5px]">
         <thead>
-          <tr className="bg-slate-100 text-center font-semibold italic text-sky-800">
+          <tr className="bg-slate-100 text-center font-bold italic text-black">
             <th className={`${cell} w-8`}>{T.colNo}</th>
             <th className={`${cell} text-left`}>{T.colName}</th>
             <th className={`${cell} w-16`}>{T.colUnit}</th>
@@ -112,7 +112,7 @@ export default async function OfferPrintPage({ params, searchParams }: { params:
             <th className={`${cell} w-28`}>{o.withVat ? T.colTotal : T.colTotalNoVat}</th>
           </tr>
         </thead>
-        <tbody className="italic">
+        <tbody className="italic text-black">
           {t.lines.map((l, i) => (
             <tr key={i}>
               <td className={`${cell} text-center`}>{i + 1}</td>
@@ -128,7 +128,7 @@ export default async function OfferPrintPage({ params, searchParams }: { params:
           {/* bo'sh qator — qo'lda qo'shimcha uchun, asl shaklda bo'lgani kabi */}
           <tr><td className={`${cell} text-center`}>{t.lines.length + 1}</td><td className={cell}>&nbsp;</td><td className={cell} /><td className={cell} /><td className={cell} />{o.withVat && <td className={cell} />}{o.withVat && <td className={cell} />}<td className={cell} /></tr>
         </tbody>
-        <tfoot className="italic">
+        <tfoot className="italic text-black">
           <tr className="font-bold">
             <td className={`${cell} text-right`} colSpan={3}>{T.total}</td>
             <td className={`${cell} text-right tabular-nums`}>{fmtNum(t.qty, 3)}</td>

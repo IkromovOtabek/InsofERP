@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
+import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
+import { publicOrigin } from "@/lib/public-url";
+import { orderPublicPath } from "@/lib/order-qr";
 import { date, fmtNum } from "@/lib/format";
 import { OFFER_DEFAULT_INTRO, OFFER_DEFAULT_TERMS } from "@/lib/offers";
 import { asOfferLang, offerT } from "@/lib/offer-i18n";
@@ -21,7 +24,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
   await requirePage("/orders");
   const { id } = await params;
   const sp = await searchParams;
-  const [o, company] = await Promise.all([
+  const [o, company, { origin, fromEnv }] = await Promise.all([
     db.order.findUnique({
       where: { id },
       include: {
@@ -33,10 +36,14 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
       },
     }),
     getCompany(),
+    publicOrigin(),
   ]);
   if (!o || o.kind === "STOCK") notFound();
   const lang = asOfferLang(sp.lang);
   const T = offerT(lang);
+  // QR — ommaviy `/z/<№>?k=` sahifasi: kim skanerlasa ham hujjat haqiqiyligi va zayavka holatini ko'radi
+  const url = `${origin}${orderPublicPath(o.orderNo, lang)}`;
+  const qr = await QRCode.toString(url, { type: "svg", margin: 2, width: 120, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });
 
   const lines = o.items.map((i) => {
     const q = Number(i.qtyM3);
@@ -73,6 +80,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
           <PrintButton />
         </div>
       </div>
+      {!fromEnv && <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">QR havolasi <b>{origin}</b> ga ishora qiladi — telefon ocha olmasligi mumkin. <code>.env</code> da <code>APP_URL</code> ni tashqi manzil qiling.</div>}
       {o.status === "DRAFT" && <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 print:hidden">Diqqat: zayavka hali <b>qoralama</b> — qabul qilinmagan.</div>}
       {o.status === "CANCELLED" && <div className="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-800 print:hidden">Diqqat: zayavka <b>bekor qilingan</b>.</div>}
 
@@ -123,7 +131,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
       {/* ── Jadval ── */}
       <table className="mt-4 w-full border-collapse text-[11.5px]">
         <thead>
-          <tr className="bg-slate-100 text-center font-semibold italic text-sky-800">
+          <tr className="bg-slate-100 text-center font-bold italic text-black">
             <th className={`${cell} w-8`}>{T.colNo}</th>
             <th className={`${cell} text-left`}>{T.colName}</th>
             <th className={`${cell} w-16`}>{T.colUnit}</th>
@@ -134,7 +142,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
             <th className={`${cell} w-28`}>{withVat ? T.colTotal : T.colTotalNoVat}</th>
           </tr>
         </thead>
-        <tbody className="italic">
+        <tbody className="italic text-black">
           {lines.map((l, i) => (
             <tr key={i}>
               <td className={`${cell} text-center`}>{i + 1}</td>
@@ -150,7 +158,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
           {/* bo'sh qator — qo'lda qo'shimcha uchun, asl shaklda bo'lgani kabi */}
           <tr><td className={`${cell} text-center`}>{lines.length + 1}</td><td className={cell}>&nbsp;</td><td className={cell} /><td className={cell} /><td className={cell} />{withVat && <td className={cell} />}{withVat && <td className={cell} />}<td className={cell} /></tr>
         </tbody>
-        <tfoot className="italic">
+        <tfoot className="italic text-black">
           <tr className="font-bold">
             <td className={`${cell} text-right`} colSpan={3}>{T.total}</td>
             <td className={`${cell} text-right tabular-nums`}>{totalQty != null ? fmtNum(totalQty, 3) : ""}</td>
@@ -168,17 +176,24 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
         </tfoot>
       </table>
 
-      {/* ── Shartlar + imzo ── */}
-      <ul className="mt-4 space-y-0.5 text-center text-[11px] italic leading-relaxed text-slate-800">
-        {terms.map((line, i) => <li key={i} className={i >= terms.length - 2 ? "font-semibold" : ""}>{line}</li>)}
-        {phones.length > 0 && <li className="pt-1">{T.contactFooter}: {phones.join(", ")}</li>}
-      </ul>
+      {/* ── Shartlar + QR + imzo ── */}
+      <div className="mt-4 flex items-start justify-between gap-6">
+        <ul className="flex-1 space-y-0.5 text-center text-[11px] italic leading-relaxed text-slate-800">
+          {terms.map((line, i) => <li key={i} className={i >= terms.length - 2 ? "font-semibold" : ""}>{line}</li>)}
+          {phones.length > 0 && <li className="pt-1">{T.contactFooter}: {phones.join(", ")}</li>}
+        </ul>
+        <div className="flex shrink-0 flex-col items-center">
+          {/* Bosilsa — mijoz QR orqali ko'radigan sahifa yangi oynada ochiladi */}
+          <a href={url} target="_blank" rel="noopener" title="Mijoz ko'radigan sahifani ochish" className="bg-white" dangerouslySetInnerHTML={{ __html: qr }} />
+          <div className="max-w-[150px] text-center text-[9px] leading-tight text-slate-600">{T.orderScanHint}</div>
+        </div>
+      </div>
 
       <div className="mt-6 flex items-end justify-between gap-6 text-[11px]">
         <div>{T.signManager}: <span className="inline-block w-40 border-b border-slate-800 align-baseline" /> {o.createdBy.fullName}</div>
         <div className="text-slate-500">{T.stamp}</div>
       </div>
-      <div className="mt-3 border-t border-slate-300 pt-1 text-[9px] text-slate-500">{T.registered} · {o.orderNo}</div>
+      <div className="mt-3 border-t border-slate-300 pt-1 text-[9px] text-slate-500">{T.registered} · {o.orderNo} · {url.replace(/^https?:\/\//, "").replace(/\?.*$/, "")}</div>
     </div>
   );
 }
