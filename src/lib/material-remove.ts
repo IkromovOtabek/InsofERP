@@ -66,6 +66,7 @@ export async function removeMaterial(id: string, actor: MaterialActor): Promise<
         return archive("boshlang'ich qoldig'ini boshqa xodim kiritgan — qoldiq bilan butunlay o'chirishni direktor yoki kiritgan xodim qiladi");
       }
       const batches = [...new Set(opening.map((x) => x.refId).filter((x): x is string => !!x))];
+      // Bekor qilingan yozuv ham sanaladi (ataylab): u o'chirilmaydi, unga ishora qolishi kerak — material arxivga olinadi
       const paid = batches.length ? await tx.cashTransaction.count({ where: { refType: "StockIn", refId: { in: batches } } }) : 0;
       if (paid) return archive("qo'shish summasi Kirim-Chiqimga chiqim bo'lib yozilgan — pul yozuvi buzilmasin");
       await tx.stockMove.deleteMany({ where: { id: { in: opening.map((x) => x.id) } } });

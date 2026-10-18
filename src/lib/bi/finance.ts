@@ -97,8 +97,8 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     db.trip.findMany({ where: { deliveredAt: { gte: r.from, lt: r.to }, status: "DELIVERED", vehicle: { type: "MIXER" } }, select: { qtyM3: true } }),
     db.trip.findMany({ where: { deliveredAt: { gte: r.prevFrom, lt: r.prevTo }, status: "DELIVERED", vehicle: { type: "MIXER" } }, select: { qtyM3: true } }),
     // Boshqa kirimlar (Kirim-Chiqim → Kirim): kassa tushumi Kirim-Chiqim sahifasi bilan bir xil bo'lsin
-    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: r.prevFrom, lt: r.prevTo } }, select: { amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, select: { amount: true } }),
     goLiveDate(),
   ]);
   const revenue = sum(cur.map((x) => x.revenue)), prevRevenue = sum(prev.map((x) => x.revenue));
@@ -122,7 +122,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
   // Kassa balanslari: mijoz to'lovlari + boshqa kirimlar − chiqimlar (Kirim-Chiqim va direktor paneli bilan bir xil).
   // Ilgari faqat to'lovlar yig'ilardi — qoldiq va 7 kunlik prognoz chiqimlarsiz shishib chiqardi.
   const balBy = new Map(allPay.map((a) => [a.cashAccountId, Number(a._sum.amount ?? 0)]));
-  for (const t of await db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } })) {
+  for (const t of await db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } })) {
     balBy.set(t.cashAccountId, (balBy.get(t.cashAccountId) ?? 0) + txSign(t.type) * Number(t._sum.amount ?? 0));
   }
   const accountRows = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, total: balBy.get(a.id) ?? 0, period: sum(payments.filter((p) => p.cashAccountId === a.id).map((p) => Number(p.amount))) }));
@@ -140,7 +140,7 @@ export async function financeTab(r: Range, gran: Gran, page: number, size: numbe
     loadRevenue(from6, addDays(today, 1)),
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: from6 } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { date: true } } } }),
     db.payment.findMany({ where: { date: { gte: from6 } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: from6 } }, select: { date: true, amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: from6 } }, select: { date: true, amount: true } }),
   ]);
   const rev6 = series(sales6, from6, addDays(today, 1), "month", (x) => x.date, (x) => x.revenue);
   const cost6 = series(rec6, from6, addDays(today, 1), "month", (x) => x.receipt.date, (x) => lineCost(x, vatPayer));
@@ -200,8 +200,8 @@ export async function cashForecast7({ today, since, receivable, cashTotal }: { t
   const fcTo = fcFrom < today ? today : addDays(today, 1); // o'tish bugun bo'lsa — bugungi kun bilan
   const [last30, last30Inc, last30Exp] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
-    db.cashTransaction.aggregate({ where: { ...FLOW_ONLY, type: "EXPENSE", date: { gte: fcFrom, lt: fcTo } }, _sum: { amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: fcFrom, lt: fcTo } }, select: { date: true, amount: true } }),
+    db.cashTransaction.aggregate({ where: { ...FLOW_ONLY, type: "EXPENSE", cancelledAt: null, date: { gte: fcFrom, lt: fcTo } }, _sum: { amount: true } }),
   ]);
   const daily = series([...last30, ...last30Inc], fcFrom, fcTo, "day", (p) => p.date, (p) => Number(p.amount)).map((x) => x.value);
   const mu = mean(daily), sigma = std(daily), outPerDay = Number(last30Exp._sum.amount ?? 0) / Math.max(1, daily.length);

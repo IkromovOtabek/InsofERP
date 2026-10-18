@@ -215,7 +215,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 ? <>Kirim qatorlari jadvalga qo&apos;yildi ({Object.keys(distributeInitial.qty).length} ta) — har biriga brigada tanlang, kerak bo&apos;lsa «+» bilan bir nechta brigadaga bo&apos;ling.</>
                 : "Bu kirimdagi xomashyo skladda qolmagan — allaqachon berilgan yoki sarflangan."}
             </Callout>
-          : <Callout tone="warning" title={`${fromReceipt.docNo} kirimi`}>{fromReceipt.cancelledAt ? "Kirim storno qilingan — taqsimlanmaydi." : "Kirim skladi yopilgan — jadvaldan qo'lda tanlang."}</Callout>
+          : <Callout tone="warning" title={`${fromReceipt.docNo} kirimi`}>{fromReceipt.cancelledAt ? "Kirim bekor qilingan — taqsimlanmaydi." : "Kirim skladi yopilgan — jadvaldan qo'lda tanlang."}</Callout>
       )}
       {tab === "brigades" && (
         <div className="space-y-5">
@@ -533,7 +533,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {moves.map((m) => (
               <Tr key={m.id}>
                 <Td>{dateTime(m.date)}</Td>
-                <Td>{m.refType === "OpeningBalance" || ((m.refType === "Manual" || m.refType === "StockIn") && m.note?.startsWith("Boshlang'ich")) ? "Boshlang'ich qoldiq" : m.note?.startsWith("Storno ") ? `Storno · ${TYPE_LABEL[m.type]}` : TYPE_LABEL[m.type]}</Td>
+                <Td>{m.refType === "OpeningBalance" || ((m.refType === "Manual" || m.refType === "StockIn") && m.note?.startsWith("Boshlang'ich")) ? "Boshlang'ich qoldiq" : (m.note?.startsWith("Storno ") || m.note?.startsWith("Bekor qilish ")) ? `Bekor qilish · ${TYPE_LABEL[m.type]}` : TYPE_LABEL[m.type]}</Td>
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{Number(m.qty) > 0 ? "+" : ""}{qty(m.qty)} {m.material?.unit ?? m.product?.unit}</Td>
                 <Td>{m.warehouse.name}</Td>

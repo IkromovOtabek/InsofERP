@@ -15,10 +15,10 @@ export async function ownerPeriod(r: DashRange) {
   const months = monthShares(r);
   const [sales, tx, budgets, pay, allTx, accounts, recv, batches, trips, pp] = await Promise.all([
     loadRevenue(r.from, r.to), // tushum — yetkazilgan reyslar bo'yicha (vebdagi Egasi dashbordi bilan bir xil)
-    db.cashTransaction.groupBy({ by: ["type", "category"], where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type", "category"], where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
     db.expenseBudget.findMany({ where: { OR: months.map(({ year, month }) => ({ year, month })) } }),
     db.payment.groupBy({ by: ["cashAccountId"], where: until ? { date: { lt: until } } : {}, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: until ? { date: { lt: until } } : {}, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: until ? { cancelledAt: null, date: { lt: until } } : { cancelledAt: null }, _sum: { amount: true } }),
     db.cashAccount.findMany({ select: { id: true, type: true } }), // nofaol hisobning qoldig'i ham pul
     receivables(until),
     db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { qtyM3: true, product: { select: { unit: true } } } }),

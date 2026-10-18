@@ -16,23 +16,23 @@ if (!rec || !bat) { check(false, "storno qilingan kirim va zames kerak — avval
 
 const rl = await mobileList(user, "receipts");
 const rrow = rl.rows.find((x) => x.id === rec);
-check(!!rrow && rrow.status === "Storno" && rrow.right === "storno", "mobil kirimlar ro'yxatida storno belgilangan", rrow);
+check(!!rrow && rrow.status === "Bekor qilingan" && rrow.right === "bekor qilingan", "mobil kirimlar ro'yxatida «Bekor qilingan» belgisi", rrow);
 const okRow = rl.rows.find((x) => x.id !== rec && !x.status);
 check(!okRow || /\d/.test(String(okRow.right)), "oddiy kirim summasi bilan ko'rinadi");
 const rd = await mobileDetail(user, "receipts", rec);
-check(rd.status === "Storno" && rd.fields.some((f) => f.label === "Holat" && /Storno/.test(f.value)) && /storno/.test(rd.receipt?.headline ?? ""), "mobil kirim kartochkasida storno holati", { status: rd.status, headline: rd.receipt?.headline });
+check(rd.status === "Bekor qilingan" && rd.fields.some((f) => f.label === "Holat" && /Bekor qilingan/.test(f.value)) && /bekor qilingan/.test(rd.receipt?.headline ?? ""), "mobil kirim kartochkasida «Bekor qilingan» holati", { status: rd.status, headline: rd.receipt?.headline });
 
 const pl = await mobileList(user, "production");
 const prow = pl.rows.find((x) => x.id === bat);
-check(!!prow && prow.status === "Storno", "mobil zameslar ro'yxatida storno belgilangan", prow);
+check(!!prow && prow.status === "Bekor qilingan", "mobil zameslar ro'yxatida «Bekor qilingan» belgisi", prow);
 const pd = await mobileDetail(user, "production", bat);
-check(pd.status === "Storno" && pd.fields.some((f) => f.label === "Holat" && /Storno/.test(f.value)), "mobil zames kartochkasida storno holati", pd.fields[0]);
+check(pd.status === "Bekor qilingan" && pd.fields.some((f) => f.label === "Holat" && /Bekor qilingan/.test(f.value)), "mobil zames kartochkasida «Bekor qilingan» holati", pd.fields[0]);
 
 // Xomashyo kartochkasi: storno harakati alohida nomlanadi
 const mat = q1(`select "materialId" from "StockMove" where "refId"='${rec}' and qty < 0 limit 1`)!;
 const md = await mobileDetail(user, "stock", mat);
 const moves = md.sections.find((s) => /harakat/i.test(s.title));
-check(!!moves && moves.rows.some((r) => /^Storno/.test(String(r.title))), "xomashyo harakatlarida 'Storno' nomi", moves?.rows.slice(0, 5).map((r) => r.title));
+check(!!moves && moves.rows.some((r) => /^Bekor qilish/.test(String(r.title))), "xomashyo harakatlarida «Bekor qilish» nomi", moves?.rows.slice(0, 5).map((r) => r.title));
 
 // "Oxirgi kirim" storno qilingan hujjatdan olinmaydi
 const last = await lastInboundMoves();

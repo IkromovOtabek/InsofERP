@@ -141,7 +141,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
             <SheetTh right>Umumiy summa</SheetTh>
             <SheetTh right>QQS</SheetTh>
             <SheetTh right>Jami summa</SheetTh>
-            {canStorno && <SheetTh title="Storno — chiqimni bekor qilish (direktor yoki uning ruxsati bilan)" />}
+            {canStorno && <SheetTh title="Chiqimni bekor qilish (direktor yoki uning ruxsati bilan)" />}
           </tr>
         </SheetHead>
         <tbody>
@@ -178,7 +178,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
         <span><b className="text-slate-700">avto</b> — brigadaga topshiriq bo'yicha avtomatik berilgan</span>
         <span>To'lov turi va QQS — shu xomashyoning oxirgi kirimi bo'yicha</span>
         {!vatPayer && <span>QQS 0: korxona QQS to'lovchisi emas — narx (tannarx, «Dona narxi») QQSni o'z ichiga oladi</span>}
-        <span><b className="text-slate-700">Storno</b> — chiqimni bekor qilish: minusli qator, xomashyo skladga qaytdi</span>
+        <span><b className="text-slate-700">Bekor qilish</b> — chiqim bekor qilindi: minusli qator, xomashyo skladga qaytdi</span>
       </div>
 
       {canIssue && (
@@ -227,7 +227,7 @@ function Row({ r, storno }: { r: RasxodRow; storno?: React.ReactNode }) {
       <SheetTd tone={tone} className={cn(r.kind === "prod" && "font-medium text-blue-800", (r.kind === "writeoff" || r.kind === "inventory") && "text-amber-800")}>
         <KimgaName r={r} />
         {r.auto && <span className="ml-1.5 rounded bg-slate-100 px-1 py-px text-[11px] font-medium text-slate-600" title="Avtomatik berilgan: topshiriq uchun brigadada yetmadi yoki kirimda «Darhol kimga berildi»">avto</span>}
-        {r.cancelled && <span className="ml-1.5 rounded bg-red-50 px-1 py-px text-[11px] font-medium text-red-700" title="Bu chiqim storno qilingan — minusli «Storno» qatoriga qarang">bekor qilingan</span>}
+        {r.cancelled && <span className="ml-1.5 rounded bg-red-50 px-1 py-px text-[11px] font-medium text-red-700" title="Bu chiqim bekor qilingan — minusli «Bekor qilish» qatoriga qarang">bekor qilingan</span>}
         {reason && <span className="block text-[11px] text-slate-500">{`Sabab: ${reason}`}</span>}
       </SheetTd>
       <SheetTd tone={tone} center>

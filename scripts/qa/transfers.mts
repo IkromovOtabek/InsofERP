@@ -54,7 +54,7 @@ const mobileTotal = async () => digits(field((await mob("GET", "/api/mobile/deta
 const expectedTotal = async () => {
   const [pay, tx] = await Promise.all([
     db.payment.aggregate({ where: { cashAccount: { isActive: true } }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccount: { isActive: true } }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccount: { isActive: true }, cancelledAt: null }, _sum: { amount: true } }),
   ]);
   return Math.round(Number(pay._sum.amount ?? 0) + tx.reduce((s, t) => s + txSign(t.type) * Number(t._sum.amount ?? 0), 0));
 };
@@ -165,7 +165,7 @@ check("T55 storno'dan keyin: bank 410 000 (295 000 + 10 000 + 100 000 + komissiy
 const fAfter = await flow();
 check("T56 komissiya chiqimi ham qaytdi (chiqim −5 000), kirim o'zgarmadi", fAfter.out === fBefore.out - 5000 && fAfter.in === fBefore.in && fAfter.opex === fBefore.opex - 5000, { fBefore, fAfter });
 r = await storno(dir, t2.id);
-check("T57 ikkinchi storno — rad", /allaqachon storno/.test(r.result?.error ?? ""), r.result);
+check("T57 ikkinchi storno — rad", /allaqachon bekor qilingan/.test(r.result?.error ?? ""), r.result);
 check("T58 mobil jami qoldiq = DB formulasi (o'tkazmalar bilan)", Math.abs((await mobileTotal()) - (await expectedTotal())) <= 1);
 
 // ───────── Dublikat oynasi (qulf ichida, veb va mobil uchun bitta joy: createTransfer) ─────────

@@ -220,7 +220,7 @@ export async function linkPaymentToInvoice(paymentId: string, invoiceId: string,
  * Realizatsiya importidan yozilgan to'lov bu yo'l bilan o'chirilmaydi — partiyani qaytarish kerak.
  */
 export async function reversePayment(paymentId: string, reason: string, userId: string): Promise<{ error?: string }> {
-  if (reason.trim().length < 3) return { error: "Storno sababini yozing" };
+  if (reason.trim().length < 3) return { error: "Bekor qilish sababini yozing" };
   const p0 = await db.payment.findUnique({ where: { id: paymentId }, select: { customerId: true } });
   if (!p0) return { error: "To'lov topilmadi" };
   return db.$transaction(async (tx) => {
@@ -230,7 +230,7 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
     if (p.register) throw new PaymentError("Bu to'lov Excel importidan yozilgan — Realizatsiya jurnalida partiyani qaytaring");
     // Storno kassadan pulni olib tashlaydi — naqd kassa minusga tushmasin (pul allaqachon sarflangan bo'lsa)
     const cashErr = await cashOutflowError(tx, p.cashAccountId, Number(p.amount));
-    if (cashErr) throw new PaymentError(`Storno qilinsa kassa minusga tushadi. ${cashErr}`);
+    if (cashErr) throw new PaymentError(`Bekor qilinsa kassa minusga tushadi. ${cashErr}`);
     await tx.payment.delete({ where: { id: p.id } });
     await audit(tx, userId, "DELETE", "Payment", p.id, { ...p, register: undefined }, { reversed: true, reason: reason.trim() });
     if (p.invoiceId) await recalcInvoice(tx, p.invoiceId, userId);
@@ -243,7 +243,7 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
     notifyAfter(async () => {
       const c = await db.customer.findUnique({ where: { id: r.customerId }, select: { name: true } });
       const o = r.orderId ? await db.order.findUnique({ where: { id: r.orderId }, select: { orderNo: true, createdById: true } }) : null;
-      const n = { type: "PAYMENT_REVERSED", title: `To'lov storno qilindi — ${money(r.amount)}`, body: `${c?.name ?? ""}${o ? ` · ${o.orderNo}` : ""} · sabab: ${reason.trim()}`, link: o && r.orderId ? { key: "orders", id: r.orderId } : undefined };
+      const n = { type: "PAYMENT_REVERSED", title: `To'lov bekor qilindi — ${money(r.amount)}`, body: `${c?.name ?? ""}${o ? ` · ${o.orderNo}` : ""} · sabab: ${reason.trim()}`, link: o && r.orderId ? { key: "orders", id: r.orderId } : undefined };
       await notifyRoles(["CASHIER", "ACCOUNTING"], n, { except: userId });
       if (o?.createdById && o.createdById !== userId) await notifyUsers([o.createdById], n);
     });
@@ -287,7 +287,7 @@ export async function accountBalances(client: Tx = db, ids?: string[]): Promise<
   const byAcc = ids ? { cashAccountId: { in: ids } } : {};
   const [pay, tx] = await Promise.all([
     client.payment.groupBy({ by: ["cashAccountId"], where: byAcc, _sum: { amount: true } }),
-    client.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: byAcc, _sum: { amount: true } }),
+    client.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { ...byAcc, cancelledAt: null }, _sum: { amount: true } }),
   ]);
   const balance = new Map<string, number>();
   for (const p of pay) balance.set(p.cashAccountId, (balance.get(p.cashAccountId) ?? 0) + Number(p._sum.amount ?? 0));

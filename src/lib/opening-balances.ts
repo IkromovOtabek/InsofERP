@@ -77,7 +77,7 @@ async function productStock(tx: Tx, productId: string, warehouseId: string): Pro
 /** Yetkazuvchi qoldig'iga qilingan to'lovlar (chiqim − qaytgan pul). */
 async function supplierOpeningPaid(client: Tx | typeof db, openingIds: string[]): Promise<Map<string, number>> {
   if (!openingIds.length) return new Map();
-  const rows = await client.cashTransaction.groupBy({ by: ["refId", "type"], where: { refType: OPENING_REF, refId: { in: openingIds }, type: { in: ["EXPENSE", "INCOME"] } }, _sum: { amount: true } });
+  const rows = await client.cashTransaction.groupBy({ by: ["refId", "type"], where: { refType: OPENING_REF, refId: { in: openingIds }, type: { in: ["EXPENSE", "INCOME"] }, cancelledAt: null }, _sum: { amount: true } });
   const out = new Map<string, number>();
   for (const r of rows) if (r.refId) out.set(r.refId, (out.get(r.refId) ?? 0) + (r.type === "EXPENSE" ? 1 : -1) * Number(r._sum.amount ?? 0));
   return out;
@@ -345,16 +345,16 @@ export async function paySupplierOpening(id: string, cashAccountId: string, amou
  */
 export async function reverseSupplierOpeningPayment(cashTxId: string, reason: string, userId: string): Promise<{ error?: string }> {
   const why = reason.trim();
-  if (why.length < 3) return { error: "Storno sababini yozing" };
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   return db.$transaction(async (tx) => {
     const t = await tx.cashTransaction.findUnique({ where: { id: cashTxId } });
-    if (!t || t.refType !== OPENING_REF || t.type !== "EXPENSE" || !t.refId) throw new OpeningError("To'lov topilmadi (allaqachon storno qilingan bo'lishi mumkin)");
+    if (!t || t.refType !== OPENING_REF || t.type !== "EXPENSE" || !t.refId) throw new OpeningError("To'lov topilmadi (allaqachon bekor qilingan bo'lishi mumkin)");
     const o = await tx.openingBalance.findUnique({ where: { id: t.refId }, select: { kind: true, activeKey: true } });
     if (!o || o.kind !== "SUPPLIER") throw new OpeningError("Bu yozuv yetkazuvchi qoldig'iga to'lov emas");
     // To'lov bilan navbat (`paySupplierOpening` ham shu qulfni oladi)
     if (o.activeKey) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"opening:" + o.activeKey}))`;
     const r = await tx.cashTransaction.deleteMany({ where: { id: t.id } });
-    if (!r.count) throw new OpeningError("To'lov shu payt storno qilindi");
+    if (!r.count) throw new OpeningError("To'lov shu payt bekor qilindi");
     await audit(tx, userId, "DELETE", "CashTransaction", t.id, t, { reversed: true, by: "opening-supplier-payment", reason: why.slice(0, 300) });
     return {};
   }).catch((e: Error) => { if (e instanceof OpeningError) return { error: e.message }; throw e; });
@@ -364,7 +364,7 @@ export async function reverseSupplierOpeningPayment(cashTxId: string, reason: st
 export async function supplierOpeningPayments(openingIds: string[]) {
   if (!openingIds.length) return new Map<string, { id: string; date: Date; amount: number; account: string }[]>();
   const rows = await db.cashTransaction.findMany({
-    where: { refType: OPENING_REF, refId: { in: openingIds }, type: "EXPENSE" },
+    where: { refType: OPENING_REF, refId: { in: openingIds }, type: "EXPENSE", cancelledAt: null },
     orderBy: { date: "asc" },
     select: { id: true, refId: true, date: true, amount: true, cashAccount: { select: { name: true } } },
   });

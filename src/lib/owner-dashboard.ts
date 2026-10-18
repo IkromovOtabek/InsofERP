@@ -118,12 +118,12 @@ export async function ownerDashboard() {
     loadRevenue(from90 < from3 ? from90 : from3, tomorrow),
     db.salesPlan.findMany({ where: { year: y, month: m + 1 } }),
     db.expenseBudget.findMany({ where: { year: y, month: m + 1 } }),
-    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, date: { gte: monthStart, lt: tomorrow } }, include: { cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true, role: true } } }, orderBy: { amount: "desc" } }),
-    db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: new Date(y, m - 3, 1), lt: monthStart } }, select: { category: true, amount: true, date: true } }),
+    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: monthStart, lt: tomorrow } }, include: { cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true, role: true } } }, orderBy: { amount: "desc" } }),
+    db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: new Date(y, m - 3, 1), lt: monthStart } }, select: { category: true, amount: true, date: true } }),
     db.payment.findMany({ where: { date: { gte: monthStart, lt: tomorrow } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true, type: true } } }, orderBy: { amount: "desc" } }),
     db.payment.findMany({ where: { date: { gte: addDays(today, -30), lt: tomorrow } }, select: { amount: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } }),
     // Nofaol hisob ham olinadi: qoldig'i bor hisob yopilsa pul jami summadan "yo'qolmasin" (pastda faqat qoldig'i borlari ko'rsatiladi)
     db.cashAccount.findMany({ orderBy: { name: "asc" } }),
     // Debitorka — yagona hisob (schyotlar − barcha to'lovlar, FIFO aging), overdue chegarasi sozlamadan

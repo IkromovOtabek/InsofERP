@@ -8,7 +8,7 @@ import type { FuelType, Role, TransportExpenseKind, VehicleStatus, VehicleType }
 
 /**
  * Logistika kabineti yozuvlari: transport kartasi va holati, texnik xizmat jurnali, obyekt,
- * haydovchi kartasi, yoqilg'i va xarajat (qo'shish / xato yozuvni o'chirish).
+ * haydovchi kartasi, yoqilg'i va xarajat (qo'shish / xato yozuvni bekor qilish — o'chirilmaydi).
  *
  * Veb (`app/(app)/logistika/actions.ts`, `drivers/vehicle-status.ts`) ham, mobil ilova
  * (`lib/mobile/logistika-extra.ts`) ham shu funksiyalarni chaqiradi — qoida bitta joyda.
@@ -152,13 +152,13 @@ export async function addVehicleServiceRecord(vehicleId: string, d: ServiceInput
   return row ? { ok: true, id: row.id } : { error: "Saqlanmadi" };
 }
 
-/** Xato yozilgan xizmat yozuvini o'chirish (asl yozuv audit jurnalida qoladi). `id` — o'chgan yozuvning transporti. */
-export async function deleteVehicleServiceRecord(id: string, userId: string): Promise<AdminResult> {
-  const x = await db.vehicleService.findUnique({ where: { id } });
-  if (!x) return { error: "Topilmadi" };
-  await db.vehicleService.delete({ where: { id } });
-  await audit(db, userId, "DELETE", "VehicleService", id, x, undefined);
-  return { ok: true, id: x.vehicleId };
+/**
+ * Xato yozilgan xizmat yozuvini bekor qilish (o'chirilmaydi): yozuv «Bekor qilingan» bo'lib jurnalda qoladi,
+ * keyingi xizmat muddati va hisob-kitoblarga kirmaydi. `id` — yozuvning transporti (sahifani yangilash uchun).
+ */
+export async function cancelVehicleServiceRecord(id: string, reason: string, userId: string): Promise<AdminResult> {
+  const r = await cancelLogisticsRow("VehicleService", id, reason, userId);
+  return "error" in r ? r : { ok: true, id: r.vehicleId ?? id };
 }
 
 // ───────────────────────── Obyekt ─────────────────────────
@@ -247,20 +247,45 @@ export async function addExpenseRecord(role: Role, d: ExpenseFormInput, userId: 
   } catch (e) { return { error: (e as Error).message }; }
 }
 
-/** Xato kiritilgan zapravkani o'chirish (audit jurnalida asl yozuv qoladi). */
-export async function deleteFuelRecord(id: string, userId: string): Promise<AdminResult> {
-  const f = await db.fuelLog.findUnique({ where: { id } });
-  if (!f) return { error: "Topilmadi" };
-  await db.fuelLog.delete({ where: { id } });
-  await audit(db, userId, "DELETE", "FuelLog", id, f, undefined);
-  return { ok: true, id };
+/** Xato kiritilgan zapravkani bekor qilish (o'chirilmaydi — «Bekor qilingan» bo'lib qoladi, jami va hisobotlarga kirmaydi). */
+export async function cancelFuelRecord(id: string, reason: string, userId: string): Promise<AdminResult> {
+  const r = await cancelLogisticsRow("FuelLog", id, reason, userId);
+  return "error" in r ? r : { ok: true, id };
 }
 
-/** Xato kiritilgan xarajatni o'chirish (audit jurnalida asl yozuv qoladi). */
-export async function deleteExpenseRecord(id: string, userId: string): Promise<AdminResult> {
-  const e = await db.transportExpense.findUnique({ where: { id } });
-  if (!e) return { error: "Topilmadi" };
-  await db.transportExpense.delete({ where: { id } });
-  await audit(db, userId, "DELETE", "TransportExpense", id, e, undefined);
-  return { ok: true, id };
+/** Xato kiritilgan xarajatni bekor qilish (o'chirilmaydi — «Bekor qilingan» bo'lib qoladi, jami va hisobotlarga kirmaydi). */
+export async function cancelExpenseRecord(id: string, reason: string, userId: string): Promise<AdminResult> {
+  const r = await cancelLogisticsRow("TransportExpense", id, reason, userId);
+  return "error" in r ? r : { ok: true, id };
+}
+
+// ───────────────────────── Bekor qilish (umumiy) ─────────────────────────
+
+/** Bekor qilish sababi: kamida 3 belgi, 300 gacha (veb va mobil bir xil). */
+export function cancelReasonOf(reason: unknown): string | null {
+  const why = String(reason ?? "").trim();
+  return why.length >= 3 ? why.slice(0, 300) : null;
+}
+
+/**
+ * Zapravka / transport xarajati / xizmat yozuvini bekor qilish: `cancelledAt` shartli `updateMany` bilan
+ * (ikki parallel bosish — ikkinchisi "allaqachon bekor qilingan" ni oladi), sababi bilan, auditga STATUS_CHANGE.
+ */
+async function cancelLogisticsRow(entity: "FuelLog" | "TransportExpense" | "VehicleService", id: string, reason: string, userId: string): Promise<{ error: string } | { vehicleId: string | null }> {
+  const why = cancelReasonOf(reason);
+  if (!why) return { error: "Bekor qilish sababini yozing (kamida 3 belgi)" };
+  return db.$transaction(async (tx) => {
+    const data = { cancelledAt: new Date(), cancelledById: userId, cancelReason: why };
+    const where = { id, cancelledAt: null };
+    const before = entity === "FuelLog" ? await tx.fuelLog.findUnique({ where: { id } })
+      : entity === "TransportExpense" ? await tx.transportExpense.findUnique({ where: { id } })
+      : await tx.vehicleService.findUnique({ where: { id } });
+    if (!before) return { error: "Topilmadi" };
+    const r = entity === "FuelLog" ? await tx.fuelLog.updateMany({ where, data })
+      : entity === "TransportExpense" ? await tx.transportExpense.updateMany({ where, data })
+      : await tx.vehicleService.updateMany({ where, data });
+    if (r.count === 0) return { error: "Bu yozuv allaqachon bekor qilingan" };
+    await audit(tx, userId, "STATUS_CHANGE", entity, id, { cancelledAt: null, record: before }, { cancelledAt: data.cancelledAt, reason: why });
+    return { vehicleId: before.vehicleId };
+  });
 }

@@ -80,7 +80,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "assign",  label: "Brigadalarga taqsimlash",          roles: ["PRODUCTION"] },
     { key: "recipe",  label: "Retsept versiyasi / import",       roles: ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"] },
     { key: "report",  label: "Brak, davomat, smena hisoboti",    roles: ["PRODUCTION", "SUPERVISOR"] },
-    { key: "batch_storno", label: "Zamesni storno qilish",       roles: [], hint: "Xomashyo skladga qaytadi, mahsulot chiqariladi — odatda faqat direktor" },
+    { key: "batch_storno", label: "Zamesni bekor qilish",       roles: [], hint: "Xomashyo skladga qaytadi, mahsulot chiqariladi — odatda faqat direktor" },
   ],
   tasks: [
     { key: "progress", label: "Bajarilgan hajmni qayd qilish",   roles: ["PRODUCTION", "SUPERVISOR"] },
@@ -107,10 +107,10 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   ],
   stock: [
     { key: "receipt",   label: "Kirim (xomashyo qabul qilish)",  roles: ["PROCUREMENT", "WAREHOUSE"] },
-    { key: "receipt_storno", label: "Kirimni storno qilish",    roles: [], hint: "Sklad harakatlari teskari yoziladi — odatda faqat direktor" },
+    { key: "receipt_storno", label: "Kirimni bekor qilish",    roles: [], hint: "Sklad harakatlari teskari yoziladi — odatda faqat direktor" },
     { key: "issue",     label: "Chiqim — skladdan berish (Kimga)", roles: ["WAREHOUSE", "PROCUREMENT"], hint: "Shafyorlar, svarchiklar, brigadalarga xomashyo berish va «Kimga» ro'yxati" },
     { key: "price",     label: "«Dona narxi» — xomashyo narxini belgilash", roles: ["PROCUREMENT"], hint: "Chiqim, brigadaga berish va hisobdan chiqarish shu narx bilan baholanadi" },
-    { key: "issue_storno", label: "Chiqimni storno qilish (bekor qilish)", roles: [], hint: "Berilgan xomashyo skladga teskari yoziladi — odatda faqat direktor" },
+    { key: "issue_storno", label: "Chiqimni bekor qilish", roles: [], hint: "Berilgan xomashyo skladga teskari yoziladi — odatda faqat direktor" },
     { key: "adjust",    label: "Inventarizatsiya va spisanie",   roles: ["WAREHOUSE"] },
     { key: "brigade",   label: "Brigadaga berish / qaytarish",   roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR"] },
     { key: "products",  label: "Tayyor mahsulot qoldig'ini kiritish", roles: ["WAREHOUSE", "PRODUCTION"] },
@@ -125,14 +125,14 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   arenda: [
     { key: "create", label: "Arenda kirim-chiqimini yozish",       roles: ["SECRETARY"] },
     { key: "shops",  label: "Do'konlar va oylik hisobni tahrirlash", roles: ["SECRETARY"] },
-    { key: "storno", label: "Kirim-chiqimni storno qilish",        roles: ["SECRETARY"], hint: "Sabab bilan; yozuv jurnalda chizilgan holda qoladi" },
+    { key: "storno", label: "Kirim-chiqimni bekor qilish",        roles: ["SECRETARY"], hint: "Sabab bilan; yozuv jurnalda chizilgan holda qoladi" },
   ],
   payments: [
     { key: "create", label: "To'lov qabul qilish / bog'lash",   roles: ["CASHIER", "ACCOUNTING"] },
     // «Pul qabul qilish» so'rovlari (zayavka bosh to'lovi): naqd — kassa, perechisleniye — buxgalteriya (`lib/payment-requests.ts`)
     { key: "receive_cash", label: "Naqd bosh to'lovni qabul qilish (kassa)", roles: ["CASHIER"] },
     { key: "receive_bank", label: "Perechisleniyeni tasdiqlash (bank)", roles: ["ACCOUNTING"] },
-    { key: "storno", label: "To'lovni storno qilish",           roles: ["ACCOUNTING"] },
+    { key: "storno", label: "To'lovni bekor qilish",           roles: ["ACCOUNTING"] },
     { key: "import", label: "Sotuv reyestri importi",           roles: ["CASHIER", "ACCOUNTING", "FINANCE"] },
   ],
   cashflow: [
@@ -140,7 +140,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "delete", label: "Yozuvni o'chirish",                roles: ["ACCOUNTING", "FINANCE"] },
     { key: "pay",    label: "Yetkazuvchiga to'lash",            roles: ["FINANCE", "ACCOUNTING"] },
     { key: "transfer", label: "Hisoblararo o'tkazma (kassa ⇄ bank)", roles: ["CASHIER", "ACCOUNTING", "FINANCE"], hint: "Inkassatsiya, naqdlashtirish; kassa qoldig'idan oshmaydi" },
-    { key: "transfer_storno", label: "O'tkazmani storno qilish",  roles: [], delegable: false },
+    { key: "transfer_storno", label: "O'tkazmani bekor qilish",  roles: [], delegable: false },
   ],
   employees: [
     { key: "create", label: "Xodim qo'shish",                    roles: ["HR", "LOGISTICS"] },

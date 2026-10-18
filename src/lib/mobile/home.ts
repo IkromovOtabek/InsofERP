@@ -352,7 +352,7 @@ const taskList = (href: string): string | undefined => webList(href);
 async function cashBalance() {
   const [pay, tx] = await Promise.all([
     db.payment.aggregate({ _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cancelledAt: null }, _sum: { amount: true } }),
   ]);
   // Barcha turlar ishorasi bilan (txSign): kirim, boshlang'ich qoldiq + ; chiqim − ; o'tkazmalar jamida 0 ga chiqadi
   return sum(pay._sum.amount) + tx.reduce((s, t) => s + txSign(t.type) * sum(t._sum.amount), 0);
@@ -703,7 +703,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       sections.push(
         await supplySection("Narx qo'yish kerak", "Narx kutayotgan so'rov yo'q", ["NEW"]),
         ...(needReceive ? [await supplySection("Qabul kutilmoqda — pul ajratilgan", "", ["FUNDED"])] : []),
-        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · storno" : ""}`, right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
+        { title: "So'nggi kirimlar", empty: "Kirim yo'q", target: "receipts", rows: recent.map((r) => ({ id: r.id, title: `${r.docNo} · ${r.supplier.name}`, subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`, right: r.cancelledAt ? "bekor qilingan" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)) })) },
       );
       break;
     }
@@ -737,8 +737,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       const [balance, inToday, outToday, recent] = await Promise.all([
         cashBalance(),
         db.payment.aggregate({ where: { date: { gte: today } }, _sum: { amount: true } }),
-        db.cashTransaction.aggregate({ where: { date: { gte: today }, type: "EXPENSE" }, _sum: { amount: true } }),
-        db.cashTransaction.findMany({ where: { type: { not: "OPENING" } }, orderBy: { date: "desc" }, take: 12, include: { cashAccount: true } }),
+        db.cashTransaction.aggregate({ where: { date: { gte: today }, type: "EXPENSE", cancelledAt: null }, _sum: { amount: true } }),
+        db.cashTransaction.findMany({ where: { type: { not: "OPENING" }, cancelledAt: null }, orderBy: { date: "desc" }, take: 12, include: { cashAccount: true } }),
       ]);
       cards.push(
         { key: "balance", label: "Kassa qoldig'i", value: short(balance), hint: "so'm", tone: balance >= 0 ? "success" : "danger", icon: "wallet" },

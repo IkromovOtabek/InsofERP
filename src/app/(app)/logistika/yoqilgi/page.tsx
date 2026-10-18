@@ -1,15 +1,16 @@
 import Link from "next/link";
-import { Fuel, Coins, Droplets, Gauge } from "lucide-react";
+import { Fuel, Coins, Droplets, Gauge, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { fuelConsumption, lastFuelPrice } from "@/lib/logistics-costs";
 import { FUEL_TYPE } from "@/lib/logistics";
 import { date, fmtNum, money, moneyShort } from "@/lib/format";
-import { Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { DeleteButton } from "@/components/delete-button";
+import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { ConfirmButton } from "../../payments/confirm-button";
+import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { FuelForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
-import { deleteFuel } from "../actions";
+import { cancelFuel } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 
@@ -29,11 +30,14 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
     costOptions(),
     lastFuelPrice(),
   ]);
-  const liters = logs.reduce((a, f) => a + Number(f.liters), 0);
-  const sum = logs.reduce((a, f) => a + Number(f.amount), 0);
+  // Bekor qilingan zapravka ro'yxatda belgisi bilan qoladi, lekin jami va sarf hisobiga kirmaydi
+  const active = logs.filter((f) => !f.cancelledAt);
+  const names = await cancellerNames(logs);
+  const liters = active.reduce((a, f) => a + Number(f.liters), 0);
+  const sum = active.reduce((a, f) => a + Number(f.amount), 0);
   // Transport kesimida: litr, summa va probeg oralig'idan sarf
   const byV = new Map<string, { plate: string; liters: number; sum: number; logs: { liters: unknown; odometerKm: number | null }[]; norm: number | null; count: number }>();
-  for (const f of logs) {
+  for (const f of active) {
     const x = byV.get(f.vehicleId) ?? { plate: f.vehicle.plate, liters: 0, sum: 0, logs: [], norm: f.vehicle.fuelNormL100 ? Number(f.vehicle.fuelNormL100) : null, count: 0 };
     x.liters += Number(f.liters); x.sum += Number(f.amount); x.count++;
     x.logs.push({ liters: f.liters, odometerKm: f.odometerKm });
@@ -46,7 +50,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
       <PeriodTabs base="/logistika/yoqilgi" current={r.period} />
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${logs.length} zapravka`} icon={Droplets} tone="brand" />
+        <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${active.length} zapravka`} icon={Droplets} tone="brand" />
         <StatCard label="Summa" value={moneyShort(sum)} icon={Coins} />
         <StatCard label="O'rtacha narx" value={liters ? `${fmtNum(sum / liters, 0)} so'm/l` : "—"} icon={Fuel} />
         <StatCard label="Transport soni" value={byV.size} icon={Gauge} />
@@ -81,14 +85,14 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
             <tbody>
               {logs.length === 0 && <Empty text="Zapravka yo'q" />}
               {logs.map((f) => (
-                <Tr key={f.id}>
-                  <Td className="text-sm tabular">{date(f.date)}<div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.station ? ` · ${f.station}` : ""}</div></Td>
+                <Tr key={f.id} className={f.cancelledAt ? "bg-slate-50/60 text-slate-400" : undefined}>
+                  <Td className="text-sm tabular">{date(f.date)}<div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.station ? ` · ${f.station}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td>
                   <Td className="text-sm"><span className="tabular">{f.vehicle.plate}</span><div className="text-xs text-slate-500">{f.driver?.fullName ?? ""}{f.trip ? <> · <Link href={`/trips/${f.trip.id}`} className="hover:underline">{f.trip.deliveryNoteNo}</Link></> : null}</div></Td>
                   <Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td>
                   <Td right className="tabular">{fmtNum(Number(f.pricePerL), 0)}</Td>
-                  <Td right className="tabular">{money(Number(f.amount))}</Td>
+                  <Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{money(Number(f.amount))}</Td>
                   <Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td>
-                  <Td><DeleteButton action={deleteFuel} id={f.id} name={`zapravka ${date(f.date)}`} /></Td>
+                  <Td>{!f.cancelledAt && <ConfirmButton action={cancelFuel.bind(null, f.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`Zapravka ${date(f.date)} (${money(Number(f.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
                 </Tr>
               ))}
             </tbody>

@@ -114,8 +114,8 @@ const saveRec = (c: C, form: Record<string, string>): Promise<ActionRes> => c.ac
 const toggleRec = (c: C, id: string, on: boolean): Promise<ActionRes> => c.action(`${RX}#toggleRecipient`, [id, on], RX_PAGE);
 /** Расход stornosi: cancelRasxod(ref, sabab) — sahifadagi «Сторно» tugmasi (stock/rasxod/storno-button.tsx) kabi. */
 const cancelRx = (c: C, ref: string, reason: string): Promise<ActionRes> => c.action(`${RX}#cancelRasxod`, [ref, reason], RX_PAGE);
-/** «Сторно» tugmasining title'i — sahifada tugma bor-yo'qligi shu bo'yicha tekshiriladi. */
-const STORNO_BTN = `title="Storno — chiqimni bekor qilish"`;
+/** «Bekor qilish» tugmasining title'i — sahifada tugma bor-yo'qligi shu bo'yicha tekshiriladi. */
+const STORNO_BTN = `title="Chiqimni bekor qilish"`;
 /** Korxona QQS to'lovchisi (settings/actions#saveVatPayer — faqat direktor; b-vat.mts dagidek). */
 const setCompanyVat = (v: "1" | "0"): Promise<ActionRes> => dir.action("settings/actions#saveVatPayer", [undefined, fd({ vatPayer: v })], "/settings");
 const vatPayerNow = () => q1(`select "vatPayer" as v from "CompanySettings" where id='main'`)?.v !== false;
@@ -369,8 +369,8 @@ try {
   check("2.23 «Остатки» Приход (M2, bugun) = Приход jurnali Σ К-во storno bilan: 40 + 10 + 5 − 5 = 50",
     !!tD && near(tD.in.q, 50) && near(pxM2, 50) && near(bal(M2), 50), { in: tD?.in, pxM2, bal: bal(M2) });
   pg = await sklad.get(`/stock/prixod?from=${today}&to=${today}&q=${encodeURIComponent(supName)}`);
-  check("2.24 /stock/prixod: storno qilingan qator ustidan chizilgan («storno» belgisi), «Storno <docNo>» qatori minus bilan",
-    pg.status === 200 && pg.text.includes(`Storno ${docD}`) && pg.text.includes("line-through") && pg.text.includes(">storno<") && pg.text.includes("-15 000"), pg.status);
+  check("2.24 /stock/prixod: bekor qilingan qator ustidan chizilgan («bekor qilingan» belgisi), «Bekor qilish <docNo>» qatori minus bilan",
+    pg.status === 200 && pg.text.includes(`Bekor qilish ${docD}`) && pg.text.includes("line-through") && pg.text.includes(">bekor qilingan<") && pg.text.includes("-15 000"), pg.status);
 
   // ───────── 3. «Дона сўм» ─────────
   console.log("\n3. «Дона сўм»: narxni faqat snabjeniye belgilaydi");
@@ -455,7 +455,7 @@ try {
   check("4.13 «Кому» filtri: r:<oluvchi> — faqat shu oluvchi, b:<brigada> — faqat shu brigada",
     fr.length === 2 && fr.every((x) => x.kind === "issue" && x.toKey === `r:${R1}`) && fb.length === 1 && fb[0].kind === "brigade" && fb[0].toKey === `b:${brId}`, [fr.length, fb.length]);
   pg = await sklad.get(`/stock/rasxod?from=${today}&to=${today}`);
-  check(`4.14 /stock/rasxod (davr bilan) 200: o'zbekcha ustunlar, Kimga (oluvchi va brigada), bank / naqd, Итого ${cv ? "53 760" : "48 000"}; sklad — «Сторно» tugmasi yo'q`,
+  check(`4.14 /stock/rasxod (davr bilan) 200: o'zbekcha ustunlar, Kimga (oluvchi va brigada), bank / naqd, Итого ${cv ? "53 760" : "48 000"}; sklad — «Bekor qilish» tugmasi yo'q`,
     pg.status === 200 && ["Sana", "Nomi", "Birlik", "Kimdan", "Kimga", "Yetkazib berish", "Narx", "Umumiy summa", "QQS", "Jami summa",
       R1n, brName, M1n, M2n, cv ? "53 760" : "48 000", "48 000", "Bank o", "Naqd pul"].every((s) => pg.text.includes(s)) && !pg.text.includes(STORNO_BTN), pg.status);
 
@@ -589,13 +589,13 @@ try {
   check("R.7 sklad va snabjeniye storno qila olmaydi (stock → issue_storno: direktor / ruxsat berilgan) — 403, hech narsa yozilmadi",
     denied(d1) && denied(d2) && stornoMoves(refS).length === 0 && near(bal(M1), bS - 5), [d1.status, d2.status]);
   const d3 = await cancelRx(dir, refS, "  ab ");
-  check("R.8 sabab 3 belgidan kam — «Storno sababini yozing», hech narsa yozilmadi",
-    /Storno sababini yozing/.test(d3.result?.error ?? "") && stornoMoves(refS).length === 0, d3.result ?? d3.status);
+  check("R.8 sabab 3 belgidan kam — «Bekor qilish sababini yozing», hech narsa yozilmadi",
+    /Bekor qilish sababini yozing/.test(d3.result?.error ?? "") && stornoMoves(refS).length === 0, d3.result ?? d3.status);
   r = await cancelRx(dir, refS, WHY);
   const sm = stornoMoves(refS);
-  check("R.9 direktor storno qildi: teskari ISSUE +5 (o'sha narx 1300, oluvchi, sklad), «Storno: <sabab>», qoldiq qaytdi, audit STATUS_CHANGE",
+  check("R.9 direktor storno qildi: teskari ISSUE +5 (o'sha narx 1300, oluvchi, sklad), «Bekor qilish: <sabab>», qoldiq qaytdi, audit STATUS_CHANGE",
     r.result?.ok === true && /Chiqim bekor qilindi/.test(r.result.note ?? "") && sm.length === 1 && sm[0].type === "ISSUE" && near(sm[0].qty, 5) && eq2(sm[0].cost, 1300)
-    && sm[0].rec === R1 && sm[0].wh === wh.id && sm[0].note === `Storno: ${WHY}` && near(bal(M1), bS)
+    && sm[0].rec === R1 && sm[0].wh === wh.id && sm[0].note === `Bekor qilish: ${WHY}` && near(bal(M1), bS)
     && n(`select id from "AuditLog" where entity='StockMove' and "entityId"=${lit(refS)} and action='STATUS_CHANGE' and after->>'reason'=${lit(WHY)}`) === 1,
     [r.result ?? r.status, sm]);
   const d4 = await cancelRx(dir, refS, WHY);
@@ -603,9 +603,9 @@ try {
     /allaqachon bekor qilingan/.test(d4.result?.error ?? "") && stornoMoves(refS).length === 1 && near(bal(M1), bS), d4.result ?? d4.status);
   const rxS = (await rasxodJournal({ from: rxFrom, to: rxTo, to_: `r:${R1}` })).filter((x) => x.ref === refS);
   const so = rxS.find((x) => x.kind === "issue"), sn = rxS.find((x) => x.kind === "storno");
-  check("R.11 jurnal: asl qator «bekor qilingan», storno — manfiy qator «Storno: <oluvchi>» −5 / −6 500, Деньги / НДС / Итого asl qatorga teskari",
+  check("R.11 jurnal: asl qator «bekor qilingan», storno — manfiy qator «Bekor qilish: <oluvchi>» −5 / −6 500, Деньги / НДС / Итого asl qatorga teskari",
     rxS.length === 2 && !!so && so.cancelled === true && near(so.qty, 5) && eq2(so.sum, 6500) && !!sn && near(sn.qty, -5) && eq2(sn.price, 1300) && eq2(sn.sum, -6500)
-    && eq2(sn.vat, -so.vat) && eq2(sn.total, -so.total) && sn.payment === so.payment && sn.to === `Storno: ${R1n}` && sn.note === `Storno: ${WHY}` && sn.toKey === `r:${R1}`, rxS);
+    && eq2(sn.vat, -so.vat) && eq2(sn.total, -so.total) && sn.payment === so.payment && sn.to === `Bekor qilish: ${R1n}` && sn.note === `Bekor qilish: ${WHY}` && sn.toKey === `r:${R1}`, rxS);
 
   // R.12–R.13: brigadaga berilgan Расход stornosi — brigada qoldig'i ham qaytadi; brigada sarflagan bo'lsa — rad
   const tokS2 = crypto.randomUUID();
@@ -626,13 +626,13 @@ try {
   const rb = await returnBr(sklad, M1, String(Math.round((brHeld() - 3) * 1000) / 1000)); // brigadada 3 kg qoladi (< 4)
   const bS3 = bal(M1);
   const d5 = await cancelRx(dir, refB2, WHY);
-  check("R.13 brigada qo'lida berilganidan kam qolgan (3 < 4) — «Storno mumkin emas» (xomashyo nomi bilan), hech narsa yozilmadi",
-    !!refB2 && rb.result?.ok === true && /^Storno mumkin emas/.test(d5.result?.error ?? "") && (d5.result?.error ?? "").includes(M1n)
+  check("R.13 brigada qo'lida berilganidan kam qolgan (3 < 4) — «Bekor qilib bo'lmaydi» (xomashyo nomi bilan), hech narsa yozilmadi",
+    !!refB2 && rb.result?.ok === true && /^Bekor qilib bo'lmaydi/.test(d5.result?.error ?? "") && (d5.result?.error ?? "").includes(M1n)
     && stornoMoves(refB2).length === 0 && near(bal(M1), bS3) && near(brHeld(), 3), [rb.result ?? rb.status, d5.result ?? d5.status, brHeld()]);
 
   pg = await dir.get(`/stock/rasxod?from=${today}&to=${today}`);
-  check("R.14 /stock/rasxod (direktor): «Storno» tugmasi bor, storno qatori «Storno: <oluvchi>» va sababi, asl qatorda «bekor qilingan»",
-    pg.status === 200 && pg.text.includes(STORNO_BTN) && pg.text.includes(`Storno: ${R1n}`) && pg.text.includes(WHY) && pg.text.includes("bekor qilingan"), pg.status);
+  check("R.14 /stock/rasxod (direktor): «Bekor qilish» tugmasi bor, «Bekor qilish: <oluvchi>» qatori va sababi, asl qatorda «bekor qilingan»",
+    pg.status === 200 && pg.text.includes(STORNO_BTN) && pg.text.includes(`Bekor qilish: ${R1n}`) && pg.text.includes(WHY) && pg.text.includes("bekor qilingan"), pg.status);
   // «Остатки» ayniyati qaytish va storno bilan ham: Расход ustuni = Расход jurnali, oxirgi = SQL qoldig'i
   const turnR = (await materialTurnover({ from: oFrom, to: oTo })).find((x) => x.id === M1);
   const rxR = (await rasxodJournal({ from: oFrom, to: oTo })).filter((x) => x.materialId === M1);

@@ -234,7 +234,7 @@ export async function brigStockDetail(user: MobileUser, brigadeId: string): Prom
     section(`Davrda olingan tovarlar (${period.label})`, c.byMaterial.map((m) => ({ id: m.materialId, title: m.name, subtitle: `${m.docs} chiqim · oxirgisi ${day(m.lastAt)}`, right: `${q(m.qty, m.unit)} · ${money(m.sum)}` })), { empty: "Bu davrda skladdan olinmagan", icon: "download" }),
     section("Oxirgi chiqimlar", c.rows.slice(-30).reverse().map((r) => ({
       id: r.id, title: r.material, subtitle: `${day(r.date)}${r.note ? ` · ${r.note}` : ""}`, right: `${q(r.qty, r.unit)}`,
-      status: r.kind === "storno" ? "Storno" : r.kind === "return" ? "Qaytarish" : r.cancelled ? "Bekor" : undefined,
+      status: r.kind === "storno" ? "Bekor qilish" : r.kind === "return" ? "Qaytarish" : r.cancelled ? "Bekor" : undefined,
       tone: (r.kind === "storno" || r.cancelled ? "danger" : r.kind === "return" ? "info" : undefined) as Tone | undefined,
     })), { empty: "Chiqim yo'q", icon: "list" }),
   ];

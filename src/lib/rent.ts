@@ -164,7 +164,7 @@ export async function createRentTx(input: RentTxInput, userId: string): Promise<
 
 export async function cancelRentTx(id: string, reason: string, userId: string): Promise<{ error?: string }> {
   const why = reason.trim();
-  if (why.length < 3) return { error: "Storno sababini yozing" };
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   try {
     await db.$transaction(async (tx) => {
       await lockKassa(tx);
@@ -174,7 +174,7 @@ export async function cancelRentTx(id: string, reason: string, userId: string): 
       // Kirimni bekor qilish ham kassani minusga tushirishi mumkin (pul allaqachon chiqim qilingan bo'lsa)
       if (t.type === "INCOME") {
         const err = await outflowError(tx, t.method, n(t.amount));
-        if (err) throw new RentError(`Bu kirim storno qilinsa kassa minusga tushadi. ${err}`);
+        if (err) throw new RentError(`Bu kirim bekor qilinsa kassa minusga tushadi. ${err}`);
       }
       const ok = await tx.rentTx.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelledById: userId, cancelReason: why } });
       if (ok.count) await audit(tx, userId, "STATUS_CHANGE", "RentTx", id, { cancelledAt: null }, { cancelledAt: new Date(), cancelReason: why });

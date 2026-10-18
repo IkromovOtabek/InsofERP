@@ -148,7 +148,7 @@ const accSchema = z.object({ name: zStr("Nomi kerak"), type: z.enum(["CASH", "BA
 async function accountBalance(id: string) {
   const [pay, tx] = await Promise.all([
     db.payment.aggregate({ where: { cashAccountId: id }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId: id }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId: id, cancelledAt: null }, _sum: { amount: true } }),
   ]);
   return Number(pay._sum.amount ?? 0) + tx.reduce((x, t) => x + txSign(t.type) * Number(t._sum.amount ?? 0), 0);
 }

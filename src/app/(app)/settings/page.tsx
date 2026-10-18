@@ -440,7 +440,7 @@ async function AccountsTab() {
   const [list, pay, tx] = await Promise.all([
     db.cashAccount.findMany({ orderBy: { name: "asc" } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } }),
   ]);
   // Qoldiq — Kirim-Chiqim va Egasi dashbordi bilan bir xil formula; qoldig'i bor hisob nofaol qilinmaydi
   const bal = new Map<string, number>();

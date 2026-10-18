@@ -90,7 +90,7 @@ export async function procurementHome(f: ProcFilters = {}) {
       orderBy: { date: "asc" },
     }),
     db.expenseBudget.findFirst({ where: { year: y, month: m + 1, category: CATEGORY } }),
-    db.cashTransaction.aggregate({ where: { type: "EXPENSE", category: CATEGORY, date: { gte: monthStart, lt: monthEnd } }, _sum: { amount: true } }),
+    db.cashTransaction.aggregate({ where: { type: "EXPENSE", category: CATEGORY, cancelledAt: null, date: { gte: monthStart, lt: monthEnd } }, _sum: { amount: true } }),
     materialOutlook(),
     db.material.findMany({ where: { isActive: true }, select: { id: true, code: true, groupId: true } }),
     db.materialGroup.findMany({ where: { isActive: true }, select: { id: true, name: true, parentId: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),

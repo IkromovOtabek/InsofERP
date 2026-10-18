@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { createCashEntry, deleteCashEntry, payReceiptEntry } from "@/lib/cash-entry";
+import { cancelCashEntry, createCashEntry, payReceiptEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 
@@ -45,13 +45,16 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   return { ok: true };
 }
 
-/** Qo'lda yozilgan kirim/chiqimni o'chirish — tasdiq tugmasi (`ConfirmButton`) orqali. Qoida `lib/cash-entry.ts` da (mobil ham). */
-export async function deleteCashTx(id: string): Promise<ActionState> {
+/**
+ * Qo'lda yozilgan kirim/chiqimni bekor qilish — sabab bilan (`ConfirmButton reason="required"`). Yozuv o'chirilmaydi,
+ * «Bekor qilingan» bo'lib qoladi. Qoida `lib/cash-entry.ts` da (mobil ham). Ruxsat — avvalgi `cashflow.delete` amali.
+ */
+export async function cancelCashTx(id: string, reason: string): Promise<ActionState> {
   const s = await requireAction("cashflow", "delete");
-  const res = await deleteCashEntry(id, s.userId);
+  const res = await cancelCashEntry(id, String(reason ?? ""), s.userId);
   if (res.error) return { error: res.error };
-  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/");
-  return { ok: true, note: "O'chirildi" };
+  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/receipts", "layout"); revalidatePath("/");
+  return { ok: true, note: "Bekor qilindi" };
 }
 
 /**

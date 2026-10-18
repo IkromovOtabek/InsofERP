@@ -26,8 +26,8 @@ export async function logisticsReport(from: Date, to: Date) {
         vehicle: { select: { plate: true, type: true } }, driver: { select: { fullName: true } }, issues: { select: { id: true } },
       },
     }),
-    db.fuelLog.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true, liters: true, vehicleId: true, driverId: true } }),
-    db.transportExpense.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true, vehicleId: true, driverId: true } }),
+    db.fuelLog.findMany({ where: { date: { gte: from, lt: to }, cancelledAt: null }, select: { date: true, amount: true, liters: true, vehicleId: true, driverId: true } }),
+    db.transportExpense.findMany({ where: { date: { gte: from, lt: to }, cancelledAt: null }, select: { date: true, amount: true, vehicleId: true, driverId: true } }),
     db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true, type: true } }),
   ]);
   // Yurilgan km — zavod haydovchilari GPS izidan (pudratchi izi ECO'da, bu yerga kirmaydi).

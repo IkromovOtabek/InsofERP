@@ -257,7 +257,7 @@ async function productCard(productId: string): Promise<MobileDetail> {
         rows: d.batches.map((b) => ({
           id: b.id, title: b.batchNo,
           subtitle: `${dateRu(b.date)} · ${b.order ? b.order.orderNo : "sklad uchun"} · ${b.createdBy.fullName}`,
-          right: pq(sum(b.qtyM3), u), ...(b.cancelledAt ? { status: "Storno", tone: "danger" as Tone } : {}),
+          right: pq(sum(b.qtyM3), u), ...(b.cancelledAt ? { status: "Bekor qilingan", tone: "danger" as Tone } : {}),
         })),
       },
       {
@@ -337,7 +337,7 @@ async function oluvchiCard(user: MobileUser, rawId: string): Promise<MobileDetai
       rows: c.rows.slice(-30).reverse().map((r, n) => ({
         id: seeDocs && r.ref ? `rasxod:${r.ref}~${n}` : `${r.materialId}~${n}`,
         title: r.material, subtitle: `${dateRu(r.date)}${r.note ? ` · ${r.note}` : ""}`, right: qtyU(r.qty, r.unit),
-        ...(r.kind === "storno" ? { status: "Storno", tone: "danger" as Tone } : r.cancelled ? { status: "Bekor", tone: "danger" as Tone } : {}),
+        ...(r.kind === "storno" ? { status: "Bekor qilish", tone: "danger" as Tone } : r.cancelled ? { status: "Bekor", tone: "danger" as Tone } : {}),
       })),
     },
     ...(c.employee?.leads.length ? [{
@@ -466,16 +466,16 @@ async function supplyDocCard(user: MobileUser, docId: string): Promise<MobileDet
  */
 export async function receiptExtra(user: MobileUser, r: { id: string; docNo: string; cancelledAt: Date | null }): Promise<{ fields: DetailField[]; actions: DetailAction[] }> {
   const [paid, supply] = await Promise.all([
-    db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: r.id }, _sum: { amount: true } }),
+    db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: r.id, cancelledAt: null }, _sum: { amount: true } }),
     db.supplyRequest.findFirst({ where: { receiptId: r.id }, select: { id: true } }),
   ]);
   const paidSum = sum(paid._sum.amount);
   const actions: DetailAction[] = [];
   if (!r.cancelledAt && !supply && can(user, "receipt.storno")) {
     actions.push({
-      id: "receipt.storno", label: "Storno", tone: "danger",
-      confirm: paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni storno qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} storno qilinsinmi? Xomashyo skladdan qaytariladi`,
-      form: [{ name: "reason", label: "Storno sababi", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" }],
+      id: "receipt.storno", label: "Bekor qilish", tone: "danger",
+      confirm: paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni bekor qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} bekor qilinsinmi? Xomashyo skladdan qaytariladi`,
+      form: [{ name: "reason", label: "Bekor qilish sababi", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" }],
     });
   }
   return { fields: [f("To'langan", paidSum > 0.005 ? money(paidSum) : "to'lanmagan", paidSum > 0.005 ? "success" : "warning")], actions };
@@ -486,9 +486,9 @@ export function rasxodExtra(user: MobileUser, ref: string, cancelled: boolean, t
   const actions: DetailAction[] = [];
   if (!cancelled && can(user, "rasxod.storno")) {
     actions.push({
-      id: "rasxod.storno", label: "Storno (bekor qilish)", tone: "danger",
+      id: "rasxod.storno", label: "Bekor qilish", tone: "danger",
       confirm: "Chiqim bekor qilinsinmi? Barcha qatorlar skladga teskari yoziladi.",
-      form: [{ name: "reason", label: "Storno sababi", type: "text", required: true, placeholder: "kamida 3 belgi" }],
+      form: [{ name: "reason", label: "Bekor qilish sababi", type: "text", required: true, placeholder: "kamida 3 belgi" }],
     });
   }
   const card = to.brigadeId ? `b~${to.brigadeId}` : to.employeeId ? `e~${to.employeeId}` : to.recipientId ? `r~${to.recipientId}` : null;
@@ -611,7 +611,7 @@ export async function runSkladAction(user: MobileUser, action: string, rawId: st
     case "rasxod.storno": {
       try {
         const r = await cancelIssue(id, textOf(payload, "reason"), actor);
-        return { ok: true, message: `Chiqim bekor qilindi (storno): ${r.count} qator` };
+        return { ok: true, message: `Chiqim bekor qilindi: ${r.count} qator` };
       } catch (e) {
         if (e instanceof IssueError) fail(e.message);
         throw e;

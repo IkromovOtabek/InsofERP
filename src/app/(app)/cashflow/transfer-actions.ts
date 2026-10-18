@@ -41,5 +41,5 @@ export async function cancelTransferAction(id: string, reason: string): Promise<
   const res = await cancelTransfer(id, String(reason ?? ""), s.userId);
   if (res.error) return { error: res.error };
   revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/");
-  return { ok: true, note: "Storno qilindi" };
+  return { ok: true, note: "Bekor qilindi" };
 }

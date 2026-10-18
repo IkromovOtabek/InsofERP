@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Wallet, Landmark, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Wallet, Landmark, Undo2 } from "lucide-react";
 import { accountBalances } from "@/lib/payments";
 import { ConfirmButton } from "../payments/confirm-button";
 import { PayReceiptForm } from "./pay-receipt-form";
@@ -11,7 +11,8 @@ import { money, date, isoDate } from "@/lib/format";
 import { Badge, Button, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
-import { deleteCashTx } from "./actions";
+import { cancelCashTx } from "./actions";
+import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { unpaidReceipts } from "@/lib/receipt-payables";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./categories";
 import { TransferForm } from "./transfer-form";
@@ -22,13 +23,13 @@ import { canDo } from "@/lib/permissions";
 
 // TRANSFER — hisoblararo o'tkazma: kirim ham, chiqim ham emas (Kirim/Chiqim jamiga kirmaydi), faqat qoldiqni o'zgartiradi.
 // `sign` — hisob ko'chirmasida (hisob tanlanganda) shu hisobga ta'siri: +1 kirdi, −1 chiqdi; 0 — umumiy ko'rinish.
-type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean };
+type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
 
 /** Hisob qoldig'i berilgan sanagacha: mijoz to'lovlari + barcha yozuvlar (kirim, chiqim, boshlang'ich, o'tkazma) ishorasi bilan. */
 async function statementBalance(cashAccountId: string, date: { lt: Date } | { lte: Date }) {
   const [p, t] = await Promise.all([
     db.payment.aggregate({ where: { cashAccountId, date }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId, date }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cashAccountId, date, cancelledAt: null }, _sum: { amount: true } }),
   ]);
   return Number(p._sum.amount ?? 0) + t.reduce((x, g) => x + txSign(g.type) * Number(g._sum.amount ?? 0), 0);
 }
@@ -68,6 +69,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     // Ta'minot zanjirining chiqimlari kirimga bog'langan bo'lsa ham bu yerdan o'chirilmaydi
     db.supplyRequest.findMany({ where: { cashTxId: { in: txs.filter((t) => t.refType === "GoodsReceipt").map((t) => t.id) } }, select: { cashTxId: true } }),
   ]);
+  // Bekor qilingan yozuv jurnalda «Bekor qilingan» belgisi bilan qoladi, lekin kirim/chiqim jamiga kirmaydi
+  const cNames = await cancellerNames(txs);
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
   const rows: Row[] = [
@@ -80,21 +83,21 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     } : {
       id: t.id, date: t.date, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name,
       category: t.refType && t.refType !== TRANSFER_REF ? `Kirim · ${t.category}` : t.category,
-      who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount),
+      who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), cancelled: cancelNote(t, cNames),
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
         : t.refType === "StockIn" && t.refId ? `/stock?tab=moves&ref=${t.refId}`
         : t.refType === "MechanicRequest" && t.refId ? `/mexanik-sorovlar/${t.refId}`
         : undefined,
-      // Hujjatga bog'langanini bu yerdan o'chirib bo'lmaydi — hujjatning o'zidan tuzatiladi. Istisno: kirim hujjatiga
-      // to'lov (o'chirish = to'lov storno, kirim yana "to'lanmagan" bo'ladi), ta'minot zanjirinikidan tashqari
-      deletable: !t.refType || (t.refType === "GoodsReceipt" && !supplyTxIds.has(t.id)),
+      // Hujjatga bog'langanini bu yerdan bekor qilib bo'lmaydi — hujjatning o'zidan tuzatiladi. Istisno: kirim hujjatiga
+      // to'lov (bekor qilinsa kirim yana "to'lanmagan" bo'ladi), ta'minot zanjirinikidan tashqari. Bekor qilingani — tugmasiz
+      deletable: !t.cancelledAt && (!t.refType || (t.refType === "GoodsReceipt" && !supplyTxIds.has(t.id))),
     }),
   ].filter((r) => (tab === "all" || r.kind === tab || (r.kind === "TRANSFER" && (tab === "EXPENSE" ? r.sign !== 1 : tab === "INCOME" && r.sign === 1))) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`))).sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  const inc = rows.filter((r) => r.kind === "INCOME").reduce((x, r) => x + r.amount, 0);
-  const exp = rows.filter((r) => r.kind === "EXPENSE").reduce((x, r) => x + r.amount, 0);
+  const inc = rows.filter((r) => r.kind === "INCOME" && !r.cancelled).reduce((x, r) => x + r.amount, 0);
+  const exp = rows.filter((r) => r.kind === "EXPENSE" && !r.cancelled).reduce((x, r) => x + r.amount, 0);
   const byCat = new Map<string, number>();
-  for (const r of rows.filter((r) => r.kind === "EXPENSE")) byCat.set(r.category, (byCat.get(r.category) ?? 0) + r.amount);
+  for (const r of rows.filter((r) => r.kind === "EXPENSE" && !r.cancelled)) byCat.set(r.category, (byCat.get(r.category) ?? 0) + r.amount);
   const qs = (t: string) => `/cashflow?tab=${t}&from=${isoDate(from)}&to=${isoDate(to)}${acc ? `&account=${acc}` : ""}${cat ? `&category=${encodeURIComponent(cat)}` : ""}`;
 
   return (
@@ -178,9 +181,9 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
                   <Td><span className="text-slate-800">{t.from} → {t.to}</span><span className="block text-xs text-slate-500">{transferKind(t.fromType, t.toType)} · {t.by}</span></Td>
                   <Td right className="font-medium tabular-nums">{money(t.amount)}</Td>
                   <Td right className="tabular-nums text-slate-500">{t.fee > 0 ? money(t.fee) : "—"}</Td>
-                  <Td>{t.cancelledAt ? <Badge color="red">Storno</Badge> : <Badge color="green">O&apos;tkazildi</Badge>}{t.cancelledAt && <span className="block text-xs text-slate-500">{t.cancelReason}{t.cancelledBy ? ` · ${t.cancelledBy}` : ""}</span>}</Td>
+                  <Td>{t.cancelledAt ? <Badge color="red">Bekor qilingan</Badge> : <Badge color="green">O&apos;tkazildi</Badge>}{t.cancelledAt && <span className="block text-xs text-slate-500">{t.cancelReason}{t.cancelledBy ? ` · ${t.cancelledBy}` : ""}</span>}</Td>
                   <Td className="text-slate-500">{t.note ?? ""}</Td>
-                  <Td>{!t.cancelledAt && canStorno && <ConfirmButton action={cancelTransferAction.bind(null, t.id)} reason="required" label="" title="Storno" icon={<Undo2 size={14} />} question={`${t.docNo} (${money(t.amount)}) storno qilinsinmi? Ikkala hisob yozuvi ham bekor bo'ladi.`} okText="Storno qilindi" className="h-7 px-1.5" />}</Td>
+                  <Td>{!t.cancelledAt && canStorno && <ConfirmButton action={cancelTransferAction.bind(null, t.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${t.docNo} (${money(t.amount)}) bekor qilinsinmi? Ikkala hisob yozuvi ham bekor bo'ladi.`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
                 </Tr>
               ))}
             </tbody>
@@ -205,17 +208,17 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         <tbody>
           {rows.length === 0 && <Empty text="Davrda harakat yo'q" />}
           {rows.map((r) => (
-            <Tr key={r.id}>
+            <Tr key={r.id} className={r.cancelled ? "bg-slate-50/60 text-slate-400" : undefined}>
               <Td>{date(r.date)}</Td>
-              <Td>{r.kind === "TRANSFER" ? <Badge color="blue">Perekit</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
+              <Td>{r.kind === "TRANSFER" ? <Badge color="blue">Perekit</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}{r.cancelled && <span className="mt-1 block"><Badge color="slate">Bekor qilingan</Badge></span>}</Td>
               <Td>{r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.category} →</Link> : r.category}</Td>
               <Td><CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.href} /></Td>
               <Td className="text-slate-500">{r.account}</Td>
               {r.kind === "TRANSFER"
                 ? <Td right className="font-medium text-sky-700">{r.sign === 1 ? "+" : r.sign === -1 ? "−" : "⇄ "}{money(r.amount)}</Td>
-                : <Td right className={r.kind === "INCOME" ? "font-medium text-emerald-700" : "font-medium text-red-600"}>{r.kind === "INCOME" ? "+" : "−"}{money(r.amount)}</Td>}
-              <Td className="text-slate-500">{r.note ?? ""}</Td>
-              <Td>{r.deletable && canDelete && <ConfirmButton action={deleteCashTx.bind(null, r.id)} label="" title="O'chirish" icon={<Trash2 size={14} />} question={`${r.kind === "INCOME" ? "Kirim" : "Chiqim"} ${money(r.amount)} o'chirilsinmi?`} okText="O'chirildi" className="h-7 px-1.5" />}</Td>
+                : <Td right className={r.cancelled ? "font-medium text-slate-400 line-through" : r.kind === "INCOME" ? "font-medium text-emerald-700" : "font-medium text-red-600"}>{r.kind === "INCOME" ? "+" : "−"}{money(r.amount)}</Td>}
+              <Td className="text-slate-500">{r.note ?? ""}{r.cancelled && <span className="block text-xs text-red-600">Bekor qilindi: {r.cancelled}</span>}</Td>
+              <Td>{r.deletable && canDelete && <ConfirmButton action={cancelCashTx.bind(null, r.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${r.kind === "INCOME" ? "Kirim" : "Chiqim"} ${money(r.amount)} bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
             </Tr>
           ))}
         </tbody>

@@ -20,8 +20,8 @@ export async function budgetMonth(ym: string) {
 
   const [budgets, fact, hist, history] = await Promise.all([
     db.expenseBudget.findMany({ where: { year, month } }),
-    db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", date: { gte: mStart, lt: mEnd } }, _sum: { amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: hStart, lt: mStart } }, select: { category: true, amount: true, date: true } }),
+    db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", cancelledAt: null, date: { gte: mStart, lt: mEnd } }, _sum: { amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: hStart, lt: mStart } }, select: { category: true, amount: true, date: true } }),
     db.auditLog.findMany({ where: { entity: "ExpenseBudget", entityId: ym }, orderBy: { createdAt: "desc" }, take: 10, include: { user: { select: { fullName: true } } } }),
   ]);
   const factBy = new Map(fact.map((f) => [f.category, Number(f._sum.amount ?? 0)]));

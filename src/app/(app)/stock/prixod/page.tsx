@@ -37,7 +37,7 @@ function Clip({ text, w = "max-w-[200px]" }: { text: string | null; w?: string }
 }
 
 /** «Hujjat» (Excel): storno qatori — «Storno K-…», storno qilingan asl qator — «K-… (storno)». */
-const docLabel = (r: PrixodRow) => (r.storno ? `Storno ${r.docNo}` : r.cancelled ? `${r.docNo} (storno)` : r.docNo);
+const docLabel = (r: PrixodRow) => (r.storno ? `Bekor qilish ${r.docNo}` : r.cancelled ? `${r.docNo} (bekor qilingan)` : r.docNo);
 /** «Izoh» ustuni: kirim izohi, «Maqsad» (nima uchun olindi) ham shu yerda. */
 const noteText = (r: PrixodRow) => [r.note, r.purpose ? `Maqsad: ${r.purpose}` : null].filter(Boolean).join(" · ") || null;
 
@@ -130,7 +130,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
 
       {rows.some((r) => r.cancelled || r.storno) && (
         <p className="mb-3 text-xs text-slate-500">
-          Bekor qilingan (storno) kirim o'z sanasida ustidan chizilgan holda qoladi, bekor qilingan sanada esa minus bilan «Storno» qatori chiqadi. Jamilar storno bilan hisoblanadi, «Qoldiqlar» dagi «Kirim» kabi.
+          Bekor qilingan kirim o'z sanasida ustidan chizilgan holda qoladi, bekor qilingan sanada esa minus bilan «Bekor qilish» qatori chiqadi. Jamilar bekor qilish qatorlari bilan hisoblanadi, «Qoldiqlar» dagi «Kirim» kabi.
         </p>
       )}
 
@@ -192,9 +192,9 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
       <SheetTd tone={tone} className="whitespace-nowrap">
         {canOpen ? <Link href={`/receipts/${r.receiptId}`} title={`${r.docNo} hujjatini ochish`} className="font-medium hover:underline">{dateRu(r.date)}</Link> : <span className="font-medium">{dateRu(r.date)}</span>}
         {r.storno
-          ? <span className="ml-1.5 text-[11px] font-semibold">{`Storno ${r.docNo}`}</span>
+          ? <span className="ml-1.5 text-[11px] font-semibold">{`Bekor qilish ${r.docNo}`}</span>
           : <span className="ml-1.5 text-[11px] text-slate-400">{r.docNo}</span>}
-        {r.cancelled && <span className="ml-1.5" title="Kirim bekor qilingan (storno)"><Badge color="red" dot={false}>storno</Badge></span>}
+        {r.cancelled && <span className="ml-1.5" title="Kirim bekor qilingan"><Badge color="red" dot={false}>bekor qilingan</Badge></span>}
       </SheetTd>
       <SheetTd tone={tone} className="sticky left-0 z-[1] min-w-[180px] bg-white font-medium text-slate-900 group-hover:bg-slate-50">{r.material}</SheetTd>
       <SheetTd tone={tone} center className="whitespace-nowrap">{r.waybillNo ?? <span className="text-slate-400">—</span>}</SheetTd>

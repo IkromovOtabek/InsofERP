@@ -50,7 +50,7 @@ async function checkNoNegative(tx: Prisma.TransactionClient, moves: Move[], name
     const bal = Number(b._sum.qty ?? 0);
     if (bal - n.qty < -STOCK_EPS) short.push(`${names.get(n.materialId ?? n.productId ?? "") ?? "?"}: qoldiq ${fq(Math.max(0, bal))}, qaytarish kerak ${fq(n.qty)}`);
   }
-  if (short.length) throw new StornoError(`Storno qilinsa qoldiq minusga tushadi (allaqachon sarflangan yoki jo'natilgan): ${short.join("; ")}`);
+  if (short.length) throw new StornoError(`Bekor qilinsa qoldiq minusga tushadi (allaqachon sarflangan yoki jo'natilgan): ${short.join("; ")}`);
 }
 
 async function reverseMoves(tx: Prisma.TransactionClient, moves: Move[], refType: string, refId: string, note: string, userId: string) {
@@ -96,48 +96,48 @@ async function checkBrigadeHeld(tx: Prisma.TransactionClient, moves: Move[], nam
     const held = Number((await tx.brigadeMove.aggregate({ where: { brigadeId: n.brigadeId, materialId: n.materialId }, _sum: { qty: true } }))._sum.qty ?? 0);
     if (held < n.qty - STOCK_EPS) short.push(`${names.get(n.materialId) ?? "?"}: brigadada ${fq(Math.max(0, held))}, qaytarish kerak ${fq(n.qty)}`);
   }
-  if (short.length) throw new StornoError(`Storno mumkin emas: brigada xomashyoning bir qismini sarflagan yoki qaytargan (${short.join("; ")})`);
+  if (short.length) throw new StornoError(`Bekor qilib bo'lmaydi: brigada xomashyoning bir qismini sarflagan yoki qaytargan (${short.join("; ")})`);
 }
 
 /** Kirim hujjatini storno qilish. */
 export async function cancelReceipt(id: string, reason: string, userId: string): Promise<StornoResult> {
   const why = reason.trim();
-  if (why.length < 3) return { error: "Storno sababini yozing" };
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   return db.$transaction(async (tx): Promise<StornoResult> => {
     // Kirim qulfi (to'lash bilan navbat) va sklad qulfi (qoldiq tekshiruvi bilan navbat)
     await lockReceipt(tx, id);
     await lockStock(tx);
     const rec = await tx.goodsReceipt.findUnique({ where: { id }, include: { items: { include: { material: { select: { id: true, name: true } } } }, supply: { select: { docNo: true } } } });
     if (!rec) throw new StornoError("Kirim topilmadi");
-    if (rec.cancelledAt) throw new StornoError("Kirim allaqachon storno qilingan");
-    if (rec.supply) throw new StornoError(`Bu kirim ta'minot zayavkasidan (${rec.supply.docNo}) — puli zanjirda ajratilgan. Storno moliya bilan ta'minot bo'limi orqali hal qilinadi`);
-    const paid = await tx.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: id }, _sum: { amount: true }, _count: { _all: true } });
+    if (rec.cancelledAt) throw new StornoError("Kirim allaqachon bekor qilingan");
+    if (rec.supply) throw new StornoError(`Bu kirim ta'minot zayavkasidan (${rec.supply.docNo}) — puli zanjirda ajratilgan. Bekor qilish moliya bilan ta'minot bo'limi orqali hal qilinadi`);
+    const paid = await tx.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: id, cancelledAt: null }, _sum: { amount: true }, _count: { _all: true } });
     if (paid._count._all > 0) {
-      throw new StornoError(`Kirimga ${paid._count._all} ta to'lov bog'langan (${money(Number(paid._sum.amount ?? 0))}). Avval to'lovni storno qiling (Kirim-Chiqim → chiqimni o'chirish), keyin kirimni`);
+      throw new StornoError(`Kirimga ${paid._count._all} ta to'lov bog'langan (${money(Number(paid._sum.amount ?? 0))}). Avval to'lovni bekor qiling (Kirim-Chiqim → chiqimni o'chirish), keyin kirimni`);
     }
     const moves = await tx.stockMove.findMany({ where: { refType: "GoodsReceipt", refId: id } });
     const names = new Map(rec.items.map((i) => [i.material.id, i.material.name]));
     await checkNoNegative(tx, moves, names);
     await checkBrigadeHeld(tx, moves, names);
-    await reverseMoves(tx, moves, "GoodsReceipt", id, `Storno ${rec.docNo}: ${why}`, userId);
+    await reverseMoves(tx, moves, "GoodsReceipt", id, `Bekor qilish ${rec.docNo}: ${why}`, userId);
     const r = await tx.goodsReceipt.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: why, cancelledById: userId } });
     if (r.count !== 1) throw new StornoError("Kirim shu payt boshqa joyda o'zgardi — sahifani yangilang");
     // Audit: hujjat summasi QQS bilan (va alohida QQS) — storno aynan shu summalarni bekor qiladi
     const { base, vat, total } = receiptAmounts(rec.items);
     await audit(tx, userId, "STATUS_CHANGE", "GoodsReceipt", id, { status: "ACTIVE" }, { status: "CANCELLED", reason: why, reversedMoves: moves.length, base, vat, total });
-    return { ok: true, note: `${rec.docNo} storno qilindi: ${moves.length} ta sklad harakati teskari yozildi` };
+    return { ok: true, note: `${rec.docNo} bekor qilindi: ${moves.length} ta sklad harakati teskari yozildi` };
   }).catch((e: Error) => { if (e instanceof StornoError) return { error: e.message }; throw e; });
 }
 
 /** Zamesni storno qilish: xomashyo skladga qaytadi, tayyor mahsulot qoldiqdan chiqariladi. */
 export async function cancelBatch(id: string, reason: string, userId: string): Promise<StornoResult> {
   const why = reason.trim();
-  if (why.length < 3) return { error: "Storno sababini yozing" };
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   return db.$transaction(async (tx): Promise<StornoResult> => {
     await lockStock(tx);
     const b = await tx.productionBatch.findUnique({ where: { id }, include: { product: { select: { id: true, name: true } } } });
     if (!b) throw new StornoError("Zames topilmadi");
-    if (b.cancelledAt) throw new StornoError("Zames allaqachon storno qilingan");
+    if (b.cancelledAt) throw new StornoError("Zames allaqachon bekor qilingan");
     const moves = await tx.stockMove.findMany({ where: { refType: "ProductionBatch", refId: id }, include: { material: { select: { name: true } }, product: { select: { name: true } } } });
     const names = new Map<string, string>();
     for (const m of moves) {
@@ -145,7 +145,7 @@ export async function cancelBatch(id: string, reason: string, userId: string): P
       if (m.productId && m.product) names.set(m.productId, m.product.name);
     }
     await checkNoNegative(tx, moves, names);
-    await reverseMoves(tx, moves, "ProductionBatch", id, `Storno ${b.batchNo}: ${why}`, userId);
+    await reverseMoves(tx, moves, "ProductionBatch", id, `Bekor qilish ${b.batchNo}: ${why}`, userId);
     const r = await tx.productionBatch.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt: new Date(), cancelReason: why, cancelledById: userId } });
     if (r.count !== 1) throw new StornoError("Zames shu payt boshqa joyda o'zgardi — sahifani yangilang");
     // Zayavka faqat shu zames tufayli "Ishlab chiqarilmoqda" bo'lgan bo'lsa — "Tasdiqlangan" ga qaytadi
@@ -161,6 +161,6 @@ export async function cancelBatch(id: string, reason: string, userId: string): P
       }
     }
     await audit(tx, userId, "STATUS_CHANGE", "ProductionBatch", id, { status: "ACTIVE" }, { status: "CANCELLED", reason: why, reversedMoves: moves.length, qty: Number(b.qtyM3), product: b.product.name });
-    return { ok: true, note: `${b.batchNo} storno qilindi: ${moves.length} ta sklad harakati teskari yozildi` };
+    return { ok: true, note: `${b.batchNo} bekor qilindi: ${moves.length} ta sklad harakati teskari yozildi` };
   }).catch((e: Error) => { if (e instanceof StornoError) return { error: e.message }; throw e; });
 }

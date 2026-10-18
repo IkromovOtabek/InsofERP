@@ -207,12 +207,12 @@ export async function issueStock(input: IssueInput, actor: { userId: string; rol
 
 /** Расход stornosi teskari harakatlarining `refType` i; `refId` — asl berish hujjati (`ref`). */
 export const ISSUE_STORNO = "IssueStorno";
-/** Storno izohining boshi: yangi «Storno: », eski yozuvlarda «Сторно: » — sababni ajratish uchun. */
-export const STORNO_NOTE_RE = /^(?:Storno|Сторно):\s*/;
+/** Bekor qilish izohining boshi: yangi «Bekor qilish: », eski yozuvlarda «Storno: » / «Сторно: » — sababni ajratish uchun. */
+export const STORNO_NOTE_RE = /^(?:Storno|Сторно|Bekor qilish):\s*/;
 
 /**
  * Расход hujjatini storno qilish (`refType "Issue"`, `refId = ref`). Yozuvlar o'chirilmaydi: har harakatga teskari StockMove
- * (o'sha tur, sklad, narx, oluvchi / brigada; qty teskari; `refType "IssueStorno"`, `refId = ref`, izoh «Storno: <sabab>»).
+ * (o'sha tur, sklad, narx, oluvchi / brigada; qty teskari; `refType "IssueStorno"`, `refId = ref`, izoh «Bekor qilish: <sabab>»).
  * Brigadaga berilgan qatorlarda BrigadeMove ham teskari yoziladi (ISSUE, −, o'sha narx) — brigada qo'lida shuncha xomashyo
  * qolmagan bo'lsa (sarflangan / qaytarilgan) rad etiladi. Takror storno — rad. Bitta tranzaksiya, `lockStock` ostida.
  * Sabab majburiy (3+ belgi). Ruxsat (`stock` → `issue_storno`: direktor yoki u ruxsat bergan xodim) — chaqiruvchida.
@@ -221,12 +221,12 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
   const id = String(ref ?? "").trim();
   const why = String(reason ?? "").trim().slice(0, 300);
   if (!id) throw new IssueError("Chiqim topilmadi — sahifani yangilang");
-  if (why.length < 3) throw new IssueError("Storno sababini yozing (kamida 3 belgi)");
+  if (why.length < 3) throw new IssueError("Bekor qilish sababini yozing (kamida 3 belgi)");
 
   return db.$transaction(async (tx) => {
     // Qulf: ikki storno (yoki storno + brigada sarfi) bir vaqtda kelsa, ikkinchisi birinchisining natijasini ko'radi
     await lockStock(tx);
-    if (await tx.stockMove.count({ where: { refType: ISSUE_STORNO, refId: id } })) throw new IssueError("Bu chiqim allaqachon bekor qilingan (storno)");
+    if (await tx.stockMove.count({ where: { refType: ISSUE_STORNO, refId: id } })) throw new IssueError("Bu chiqim allaqachon bekor qilingan");
     const moves = await tx.stockMove.findMany({
       where: { refType: "Issue", refId: id },
       orderBy: { createdAt: "asc" },
@@ -264,11 +264,11 @@ export async function cancelIssue(ref: string, reason: string, actor: { userId: 
           const u = unitShort(n.unit);
           return `${n.name} — «${brName.get(n.brigadeId) ?? "?"}» brigadasida ${fmtNum(Math.max(0, held.get(k) ?? 0), 3)} ${u}, qaytarish kerak ${fmtNum(n.qty, 3)} ${u}`;
         });
-      if (short.length) throw new IssueError(`Storno mumkin emas: brigada xomashyoning bir qismini sarflagan yoki qaytargan (${short.join("; ")})`);
+      if (short.length) throw new IssueError(`Bekor qilib bo'lmaydi: brigada xomashyoning bir qismini sarflagan yoki qaytargan (${short.join("; ")})`);
     }
 
-    // Izoh bazaga yoziladi: eski yozuvlarda «Сторно: …», yangilarida «Storno: …» (`STORNO_NOTE_RE` ikkalasini ham taniydi)
-    const note = `Storno: ${why}`;
+    // Izoh bazaga yoziladi: eski yozuvlarda «Сторно: …» / «Storno: …», yangilarida «Bekor qilish: …» (`STORNO_NOTE_RE` hammasini taniydi)
+    const note = `Bekor qilish: ${why}`;
     let sum = 0;
     for (const m of moves) {
       const back = await tx.stockMove.create({
@@ -319,7 +319,7 @@ export async function receiptTermsByMaterial(materialIds: string[]): Promise<Map
   const sids = [...new Set(unpaid.map((i) => i.receipt.supply?.id).filter((x): x is string => !!x))];
   const txs = rids.length || sids.length
     ? await db.cashTransaction.findMany({
-        where: { type: "EXPENSE", OR: [{ refType: "GoodsReceipt", refId: { in: rids } }, ...(sids.length ? [{ refType: "SupplyRequest", refId: { in: sids } }] : [])] },
+        where: { type: "EXPENSE", cancelledAt: null, OR: [{ refType: "GoodsReceipt", refId: { in: rids } }, ...(sids.length ? [{ refType: "SupplyRequest", refId: { in: sids } }] : [])] },
         orderBy: { date: "asc" },
         select: { refType: true, refId: true, cashAccount: { select: { type: true } } },
       })
@@ -436,7 +436,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  *  · ISSUE — oluvchiga (Кому = oluvchi) yoki xodimga (`employeeId`, Кому = xodim F.I.O.);
  *  · BRIGADE_ISSUE — brigadaga (Кому = brigada; topshiriq uchun avtomatik berilgani `auto`);
  *  · BRIGADE_RETURN — brigadadan qaytdi: manfiy qator («— qaytarish»);
- *  · Chiqim stornosi (`refType "IssueStorno"`, ISSUE / BRIGADE_ISSUE teskarisi) — manfiy qator «Storno: <Kimga>», To'lov turi/QQS
+ *  · Chiqim stornosi (`refType "IssueStorno"`, ISSUE / BRIGADE_ISSUE teskarisi) — manfiy qator «Bekor qilish: <Kimga>», To'lov turi/QQS
  *    asl berish sanasidagi kirimdan (asl qatorni aynan yo'qqa chiqaradi); asl qatorlar `cancelled` («bekor qilingan»);
  *  · PRODUCTION_CONSUME — zames: KUN + XOMASHYO + SKLAD bo'yicha bitta qator («Ishlab chiqarish (zames)», ko'k);
  *    storno teskari qatorlari ishorasi bilan qo'shiladi (ayiriladi), to'liq storno bo'lgan kun qatori chiqmaydi;
@@ -528,7 +528,7 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     let termsDate: Date | undefined;
     if (m.refType === ISSUE_STORNO && (m.type === "ISSUE" || m.type === "BRIGADE_ISSUE")) {
       const isRec = m.type === "ISSUE";
-      row = { ...base, id: m.id, date: m.date, to: `Storno: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note, ref: m.refId };
+      row = { ...base, id: m.id, date: m.date, to: `Bekor qilish: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note, ref: m.refId };
       termsDate = origDate.get(`${m.refId}|${materialId}`);
     } else if (m.type === "ISSUE") row = { ...base, id: m.id, date: m.date, to: recipient, kind: "issue", toKey: recKey, note: m.note, auto: m.refType === "GoodsReceipt", ...doc };
     else if (m.type === "BRIGADE_ISSUE") row = { ...base, id: m.id, date: m.date, to: brigade, kind: "brigade", toKey: brKey, auto: m.refType === "BrigadeTask" || m.refType === "GoodsReceipt", ...doc };

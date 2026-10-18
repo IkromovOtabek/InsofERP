@@ -472,17 +472,21 @@ model Vehicle {
 
 /// Texnik xizmat jurnali (mexanik): moy almashtirish, ta'mir, shina, ko'rik — keyingi xizmat muddati bilan
 model VehicleService {
-  id          String    @id @default(cuid())
-  vehicleId   String
-  date        DateTime  @default(now())
-  kind        String // xizmat turi: "Moy almashtirish", "Ta'mir", "Shina", "Texnik ko'rik"...
-  odometerKm  Int? // xizmat paytidagi probeg
-  cost        Decimal?  @db.Decimal(18, 2)
-  note        String?
-  nextDueAt   DateTime? // keyingi xizmat sanasi
-  nextDueKm   Int? // keyingi xizmat probegi
-  createdById String
-  createdAt   DateTime  @default(now())
+  id            String    @id @default(cuid())
+  vehicleId     String
+  date          DateTime  @default(now())
+  kind          String // xizmat turi: "Moy almashtirish", "Ta'mir", "Shina", "Texnik ko'rik"...
+  odometerKm    Int? // xizmat paytidagi probeg
+  cost          Decimal?  @db.Decimal(18, 2)
+  note          String?
+  nextDueAt     DateTime? // keyingi xizmat sanasi
+  nextDueKm     Int? // keyingi xizmat probegi
+  createdById   String
+  createdAt     DateTime  @default(now())
+  // Bekor qilish (o'chirilmaydi): jami, qoldiq va ro'yxatlarga kirmaydi, sababi bilan qoladi, AuditLog'da
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
 
   vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   createdBy User    @relation("VehicleServiceBy", fields: [createdById], references: [id])
@@ -1673,20 +1677,24 @@ model Site {
 
 /// Zapravka — yoqilg'i quyilgani. Haydovchi ilovadan yoki logistika vebdan kiritadi.
 model FuelLog {
-  id          String   @id @default(cuid())
-  date        DateTime @default(now())
-  vehicleId   String
-  driverId    String?
-  tripId      String?
-  fuelType    FuelType
-  liters      Decimal  @db.Decimal(10, 2)
-  pricePerL   Decimal  @db.Decimal(12, 2)
-  amount      Decimal  @db.Decimal(18, 2) // liters × pricePerL
-  odometerKm  Int?
-  station     String? // zapravka nomi
-  note        String?
-  createdById String
-  createdAt   DateTime @default(now())
+  id            String    @id @default(cuid())
+  date          DateTime  @default(now())
+  vehicleId     String
+  driverId      String?
+  tripId        String?
+  fuelType      FuelType
+  liters        Decimal   @db.Decimal(10, 2)
+  pricePerL     Decimal   @db.Decimal(12, 2)
+  amount        Decimal   @db.Decimal(18, 2) // liters × pricePerL
+  odometerKm    Int?
+  station       String? // zapravka nomi
+  note          String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  // Bekor qilish (o'chirilmaydi): jami, qoldiq va ro'yxatlarga kirmaydi, sababi bilan qoladi, AuditLog'da
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
 
   vehicle Vehicle   @relation(fields: [vehicleId], references: [id])
   driver  Employee? @relation(fields: [driverId], references: [id])
@@ -1700,16 +1708,20 @@ model FuelLog {
 /// Transport xarajati (yoqilg'idan tashqari): haydovchi haqi, yo'l, ta'mir, jarima...
 /// Pul harakati emas — logistika tannarxi. Kassadan to'lov Kirim-Chiqimda alohida yuritiladi.
 model TransportExpense {
-  id          String               @id @default(cuid())
-  date        DateTime             @default(now())
-  kind        TransportExpenseKind
-  vehicleId   String?
-  driverId    String?
-  tripId      String?
-  amount      Decimal              @db.Decimal(18, 2)
-  note        String?
-  createdById String
-  createdAt   DateTime             @default(now())
+  id            String               @id @default(cuid())
+  date          DateTime             @default(now())
+  kind          TransportExpenseKind
+  vehicleId     String?
+  driverId      String?
+  tripId        String?
+  amount        Decimal              @db.Decimal(18, 2)
+  note          String?
+  createdById   String
+  createdAt     DateTime             @default(now())
+  // Bekor qilish (o'chirilmaydi): jami, qoldiq va ro'yxatlarga kirmaydi, sababi bilan qoladi, AuditLog'da
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
 
   vehicle Vehicle?  @relation(fields: [vehicleId], references: [id])
   driver  Employee? @relation(fields: [driverId], references: [id])
@@ -1894,6 +1906,10 @@ model CashTransaction {
   refId         String? // shu hujjat id'si — Kirim-Chiqimdan batafsilga o'tish uchun
   createdById   String
   createdAt     DateTime   @default(now())
+  // Bekor qilish (o'chirilmaydi): jami, qoldiq va ro'yxatlarga kirmaydi, sababi bilan qoladi, AuditLog'da
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
 
   cashAccount CashAccount     @relation(fields: [cashAccountId], references: [id])
   supplier    Supplier?       @relation(fields: [supplierId], references: [id])
@@ -1905,6 +1921,7 @@ model CashTransaction {
   @@index([cashAccountId])
   @@index([refType, refId])
   @@index([supplierId])
+  @@index([cancelledAt])
 }
 
 enum OpeningKind {

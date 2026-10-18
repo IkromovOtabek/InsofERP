@@ -178,9 +178,9 @@ export async function withBatchActions(user: MobileUser, d: MobileDetail): Promi
   return {
     ...d,
     actions: [...d.actions, {
-      id: "batch.storno", label: "Storno", tone: "danger",
-      confirm: `${b.batchNo} storno qilinsinmi? Xomashyo skladga qaytadi, ${inUnit(sum(b.qtyM3), b.product.unit)} mahsulot qoldiqdan chiqariladi`,
-      form: [{ name: "reason", label: "Storno sababi", type: "text", required: true, placeholder: "Nega bekor qilinyapti" }],
+      id: "batch.storno", label: "Bekor qilish", tone: "danger",
+      confirm: `${b.batchNo} bekor qilinsinmi? Xomashyo skladga qaytadi, ${inUnit(sum(b.qtyM3), b.product.unit)} mahsulot qoldiqdan chiqariladi`,
+      form: [{ name: "reason", label: "Bekor qilish sababi", type: "text", required: true, placeholder: "Nega bekor qilinyapti" }],
     }],
   };
 }
@@ -331,7 +331,7 @@ export async function sexExtraAction(user: MobileUser, action: string, id: strin
       const r = await cancelBatch(id, textOf(payload, "reason").slice(0, 300), user.id);
       if ("error" in r) fail(r.error);
       clearDashCache();
-      return (r as { note?: string }).note ?? "Storno qilindi";
+      return (r as { note?: string }).note ?? "Bekor qilindi";
     }
     case "recipe.version": {
       const r = await createRecipeVersion(id, recipeRows(payload), textOf(payload, "note") || null, user.id);

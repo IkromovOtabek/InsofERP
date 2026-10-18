@@ -74,7 +74,7 @@ check(Math.abs(debt0 - debt1 - 28_000_000) < 1, `yetkazuvchi qarzi 28 mln (25 ml
 r = await dir.action(`${RA}#stornoReceipt`, [rExp, "QA: yana"], `/receipts/${rExp}`);
 check(/allaqachon/.test(r.error ?? ""), "qayta storno rad etildi", r.error);
 let page = await dir.get(`/receipts/${rExp}`);
-check(page.status === 200 && /Storno/.test(page.text), "kirim sahifasida Storno belgisi");
+check(page.status === 200 && /Bekor qilingan/.test(page.text), "kirim sahifasida «Bekor qilingan» belgisi");
 page = await dir.get(`/receipts`);
 check(page.status === 200, "/receipts ro'yxat");
 

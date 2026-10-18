@@ -32,8 +32,8 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
         select: { id: true, deliveryNoteNo: true, status: true, deliveredAt: true, returnedAt: true, qtyM3: true, createdAt: true },
         orderBy: { createdAt: "desc" },
       },
-      fuelLogs: { where: { date: { gte: monthFrom } }, select: { amount: true, liters: true } },
-      expenses: { where: { date: { gte: monthFrom } }, select: { amount: true } },
+      fuelLogs: { where: { date: { gte: monthFrom }, cancelledAt: null }, select: { amount: true, liters: true } },
+      expenses: { where: { date: { gte: monthFrom }, cancelledAt: null }, select: { amount: true } },
     },
   });
   const rows = vehicles.map((v) => ({ v, live: vehicleLive(v, v.trips) }));

@@ -133,7 +133,7 @@ try {
   // Qoldig'i eng katta faol hisob: naqd kassa / overdraftsiz bank minusga tushmasin (cashOutflowError), summa — 3 000 so'm
   const acc = q1(`select a.id, a.name,
       coalesce((select sum(p.amount) from "Payment" p where p."cashAccountId"=a.id), 0)
-    + coalesce((select sum(case when t.type in ('EXPENSE','TRANSFER_OUT') then -t.amount else t.amount end) from "CashTransaction" t where t."cashAccountId"=a.id), 0) as bal
+    + coalesce((select sum(case when t.type in ('EXPENSE','TRANSFER_OUT') then -t.amount else t.amount end) from "CashTransaction" t where t."cashAccountId"=a.id and t."cancelledAt" is null), 0) as bal
     from "CashAccount" a where a."isActive" order by bal desc limit 1`);
   const nE = nm("E");
   const a3 = await add(dir, [{ name: nE, qty: 2, price: 1500 }], acc?.id ?? "");

@@ -660,10 +660,10 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "arenda.shop.edit":
       return arendaAction(user, action, id, payload);
 
-    // ── Moliya: to'lov storno / bog'lash, kassa yozuvini o'chirish, kirimni to'lash, schyot bekor, boshlang'ich qarz — `./moliya-extra.ts` ──
+    // ── Moliya: to'lov storno / bog'lash, kassa yozuvini bekor qilish, kirimni to'lash, schyot bekor, boshlang'ich qarz — `./moliya-extra.ts` ──
     case "payment.storno":
     case "payment.link":
-    case "cashflow.delete":
+    case "cashflow.cancel":
     case "receipt.pay":
     case "invoice.cancel":
     case "supplier.opening.pay":

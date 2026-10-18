@@ -121,6 +121,34 @@ check(r.ok, "mexanik ta'mir xarajatini yozdi", r.error);
 r = await mex.action("(app)/logistika/actions#addExpense", [undefined, fd({ kind: "FINE", amount: "250000", vehicleId: mixer })], `/logistika/transport/${mixer}`);
 check(/Mexanik/.test(r.error ?? ""), "mexanik jarima yoza olmaydi", r.error);
 
+// Xato yozuvni bekor qilish (o'chirilmaydi): yozuv cancelledAt + sabab bilan qoladi, jami va xizmat muddatiga kirmaydi
+const LA = "(app)/logistika/actions";
+const fuel1 = q1(`select id from "FuelLog" where "tripId"='${t1}' and "cancelledAt" is null limit 1`)!;
+const road1 = q1(`select id from "TransportExpense" where "tripId"='${t1}' and kind='ROAD' and "cancelledAt" is null limit 1`)!;
+const tripText = async () => (await logist.get(`/trips/${t1}`)).text;
+check((await tripText()).includes("Jami: 740 750 so"), "reys xarajatlari jami: yoqilg'i 695 750 + yo'l 45 000");
+r = await logist.action(`${LA}#cancelFuel`, [fuel1, ""], "/logistika/yoqilgi");
+check(/sababini yozing/.test(r.error ?? "") && n1(`select count(*) from "FuelLog" where id='${fuel1}' and "cancelledAt" is null`) === 1, "sababsiz zapravkani bekor qilish — rad", r.error);
+r = await logist.action(`${LA}#cancelFuel`, [fuel1, "QA: xato litr"], "/logistika/yoqilgi");
+check(r.ok && n1(`select count(*) from "FuelLog" where id='${fuel1}' and "cancelledAt" is not null and "cancelReason"='QA: xato litr' and "cancelledById" is not null`) === 1, "zapravka bekor qilindi — yozuv o'chmadi (sabab bilan)", r.error);
+check(n1(`select count(*) from "AuditLog" where entity='FuelLog' and "entityId"='${fuel1}' and action='STATUS_CHANGE'`) === 1, "zapravka bekor qilish auditda (STATUS_CHANGE)");
+let tt = await tripText();
+check(tt.includes("Jami: 45 000 so") && tt.includes("Bekor qilingan"), "bekor qilingan zapravka reys jamiga kirmaydi, ro'yxatda belgisi bilan qoladi");
+r = await logist.action(`${LA}#cancelFuel`, [fuel1, "QA: yana"], "/logistika/yoqilgi");
+check(/allaqachon bekor qilingan/.test(r.error ?? ""), "ikkinchi marta bekor qilish — «allaqachon»", r.error);
+r = await logist.action(`${LA}#cancelExpense`, [road1, "QA: xato xarajat"], "/logistika/xarajatlar");
+tt = await tripText();
+check(r.ok && n1(`select count(*) from "TransportExpense" where id='${road1}' and "cancelledAt" is not null`) === 1 && !tt.includes("Jami: 45 000 so"), "yo'l xarajati bekor qilindi — jamidan chiqdi, yozuv qoldi", r.error);
+// Texnik xizmat: bekor qilingan yozuv «muddati yaqin» ogohlantirishini bermaydi
+const svcKind = `QA xizmat ${Date.now() % 100000}`;
+const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+r = await mex.action(`${LA}#addVehicleService`, [mixer, undefined, fd({ kind: svcKind, date: today, nextDueAt: tomorrow })], `/logistika/transport/${mixer}`);
+const svc = q1(`select id from "VehicleService" where kind='${svcKind}'`);
+check(r.ok && !!svc && (await mex.get(`/logistika/transport/${mixer}`)).text.includes(`${svcKind}: `), "mexanik xizmat yozdi — muddat ogohlantirishi chiqdi", r.error);
+r = await mex.action(`${LA}#cancelVehicleService`, [svc!, "QA: xato yozuv"], `/logistika/transport/${mixer}`);
+const vt0 = (await mex.get(`/logistika/transport/${mixer}`)).text;
+check(r.ok && n1(`select count(*) from "VehicleService" where id='${svc}' and "cancelledAt" is not null`) === 1 && !vt0.includes(`${svcKind}: `) && vt0.includes(svcKind), "xizmat yozuvi bekor qilindi — jurnalda qoldi, muddat ogohlantirishi yo'qoldi", r.error);
+
 // Nakladnoy: chop etish va QR /verify
 page = await logist.get(`/trips/${t1}/print`);
 check(page.status === 200 && page.text.includes(note1), "nakladnoy chop etish sahifasi", page.status);

@@ -43,7 +43,7 @@ export async function receiptPaidMap(client: Client, receiptIds: string[]): Prom
   if (!receiptIds.length) return new Map();
   const g = await client.cashTransaction.groupBy({
     by: ["refId"],
-    where: { type: "EXPENSE", refType: "GoodsReceipt", refId: { in: receiptIds } },
+    where: { type: "EXPENSE", refType: "GoodsReceipt", refId: { in: receiptIds }, cancelledAt: null },
     _sum: { amount: true },
   });
   return new Map(g.map((x) => [x.refId!, Number(x._sum.amount ?? 0)]));
@@ -111,7 +111,7 @@ export type SupplierLedger = {
 export async function supplierLedger(supplierId: string): Promise<SupplierLedger> {
   const [items, txs, unpaidAll, supply, openings] = await Promise.all([
     db.goodsReceiptItem.findMany({ where: { receipt: { supplierId, cancelledAt: null } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], where: { supplierId }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { supplierId, cancelledAt: null }, _sum: { amount: true } }),
     unpaidReceipts(),
     db.supplyRequest.findMany({
       where: { supplierId, cashTxId: { not: null }, status: { in: ["PRICED", "APPROVED", "FUNDED", "REJECTED"] } },
@@ -121,7 +121,7 @@ export async function supplierLedger(supplierId: string): Promise<SupplierLedger
   ]);
   const opening = openings.reduce((s, o) => s + o.left, 0);
   const cash = supply.length
-    ? new Map((await db.cashTransaction.findMany({ where: { id: { in: supply.map((s) => s.cashTxId!) } }, select: { id: true, amount: true } })).map((c) => [c.id, Number(c.amount)]))
+    ? new Map((await db.cashTransaction.findMany({ where: { id: { in: supply.map((s) => s.cashTxId!) }, cancelledAt: null }, select: { id: true, amount: true } })).map((c) => [c.id, Number(c.amount)]))
     : new Map<string, number>();
   const sumOf = (t: "INCOME" | "EXPENSE") => Number(txs.find((x) => x.type === t)?._sum.amount ?? 0);
   const unpaid = unpaidAll.filter((r) => r.supplierId === supplierId);

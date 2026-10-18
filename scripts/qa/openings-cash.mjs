@@ -15,7 +15,7 @@ const cancel = (c, id, why = "QA: xato kiritilgan") => c.action(`${OB}#cancelOpe
 const active = (kind, col, id) => q1(`select * from "OpeningBalance" where kind=${lit(kind)} and ${col}=${lit(id)} and "cancelledAt" is null`);
 const balance = (accId) => Number(q1(`select
   coalesce((select sum(amount) from "Payment" where "cashAccountId"=${lit(accId)}),0)
-  + coalesce((select sum(case when type='EXPENSE' then -amount else amount end) from "CashTransaction" where "cashAccountId"=${lit(accId)}),0) as b`).b);
+  + coalesce((select sum(case when type='EXPENSE' then -amount else amount end) from "CashTransaction" where "cashAccountId"=${lit(accId)} and "cancelledAt" is null),0) as b`).b);
 const cashTx = (o) => dir.action("cashflow/actions#createCashTx", [undefined, fd({ date: today, category: "Boshqa", ...o })], "/cashflow");
 
 // Alohida test hisoblari (boshqa testlarga ta'sir qilmasin)
@@ -55,8 +55,21 @@ r = await cashTx({ type: "INCOME", cashAccountId: BANK, amount: "50000" });
 const inc = q1(`select id from "CashTransaction" where "cashAccountId"=${lit(BANK)} and type='INCOME' order by "createdAt" desc limit 1`);
 r = await cashTx({ type: "EXPENSE", cashAccountId: BANK, amount: "40000" });
 check("C12 overdraft o'chirilgach: kirim 50 000 − chiqim 40 000 o'tdi", r.result?.ok === true && eq2(balance(BANK), 9000), r.result);
-r = await dir.action("cashflow/actions#deleteCashTx", [inc.id], "/cashflow");
-check("C13 kirimni o'chirish bankni minusga tushirsa — rad", /minusga tushadi/.test(r.result?.error ?? ""), r.result);
+const cancelTx = (id, why = "QA: xato yozuv") => dir.action("cashflow/actions#cancelCashTx", [id, why], "/cashflow");
+r = await cancelTx(inc.id);
+check("C13 kirimni bekor qilish bankni minusga tushirsa — rad", /minusga tushadi/.test(r.result?.error ?? "") && q1(`select "cancelledAt" from "CashTransaction" where id=${lit(inc.id)}`).cancelledAt === null, r.result);
+// Chiqimni bekor qilish: yozuv o'chmaydi (cancelledAt + sabab), qoldiqqa kirmaydi; qayta bekor qilish va sababsiz — rad
+const out40 = q1(`select id from "CashTransaction" where "cashAccountId"=${lit(BANK)} and type='EXPENSE' and amount=40000 order by "createdAt" desc limit 1`);
+r = await cancelTx(out40.id, "");
+check("C13a sababsiz bekor qilish — rad", /sababini yozing/.test(r.result?.error ?? ""), r.result);
+r = await cancelTx(out40.id);
+const c40 = q1(`select "cancelledAt", "cancelReason", "cancelledById" from "CashTransaction" where id=${lit(out40.id)}`);
+check("C13b chiqim bekor qilindi: yozuv qoldi (sabab bilan), qoldiq 49 000", r.result?.ok === true && !!c40?.cancelledAt && c40.cancelReason === "QA: xato yozuv" && !!c40.cancelledById && eq2(balance(BANK), 49000), { r: r.result, c40 });
+check("C13c auditga STATUS_CHANGE yozildi", Number(q1(`select count(*) n from "AuditLog" where entity='CashTransaction' and "entityId"=${lit(out40.id)} and action='STATUS_CHANGE'`).n) === 1);
+r = await cancelTx(out40.id);
+check("C13d ikkinchi marta — «allaqachon bekor qilingan»", /allaqachon bekor qilingan/.test(r.result?.error ?? ""), r.result);
+r = await cashTx({ type: "EXPENSE", cashAccountId: BANK, amount: "40000" });
+check("C13e bekor qilingandan keyin xuddi shu chiqim qayta yoziladi (dublikat emas) → qoldiq 9 000", r.result?.ok === true && eq2(balance(BANK), 9000), r.result);
 r = await saveAcc(KASSA, { name: `QA Kassa ${T}`, type: "CASH", allowOverdraft: "on" });
 check("C14 naqd kassaga overdraft belgisi saqlanmaydi", q1(`select "allowOverdraft" from "CashAccount" where id=${lit(KASSA)}`).allowOverdraft === false);
 
@@ -108,8 +121,8 @@ check("C33 finance 300 000 to'ladi (kassadan)", r.result?.ok === true, r.result)
 r = await cancel(dir, ob.id);
 check("C34 to'langan qoldiqni bekor qilish — rad", /to'langan/.test(r.result?.error ?? ""), r.result);
 const sp = q1(`select id from "CashTransaction" where "refType"='OpeningBalance' and "refId"=${lit(ob.id)}`);
-r = await dir.action("cashflow/actions#deleteCashTx", [sp.id], "/cashflow");
-check("C35 Kirim-Chiqimdan o'chirib bo'lmaydi (hujjatga bog'langan)", /bog'langan/.test(r.result?.error ?? ""), r.result);
+r = await cancelTx(sp.id);
+check("C35 Kirim-Chiqimdan bekor qilib bo'lmaydi (hujjatga bog'langan)", /bog'langan/.test(r.result?.error ?? ""), r.result);
 r = await buh.action(`${OB}#reverseSupplierOpeningPaymentAction`, [sp.id, "QA xato to'lov"], PAGE);
 check("C36 buxgalter xato to'lovni storno qila olmaydi (403)", r.status === 403, `${r.status}`);
 const kBefore = balance(KASSA);

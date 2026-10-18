@@ -365,13 +365,14 @@ export function serviceDueLevel(
 export async function vehicleServiceDue(opts: { vehicleId?: string; now?: Date } = {}): Promise<ServiceDue[]> {
   const now = opts.now ?? new Date();
   const rows = await db.vehicleService.findMany({
-    where: { ...(opts.vehicleId ? { vehicleId: opts.vehicleId } : {}), vehicle: { isActive: true }, OR: [{ nextDueAt: { not: null } }, { nextDueKm: { not: null } }] },
+    where: { ...(opts.vehicleId ? { vehicleId: opts.vehicleId } : {}), vehicle: { isActive: true }, cancelledAt: null, OR: [{ nextDueAt: { not: null } }, { nextDueKm: { not: null } }] },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     select: { id: true, vehicleId: true, kind: true, nextDueAt: true, nextDueKm: true, vehicle: { select: { plate: true, odometerKm: true } } },
   });
-  // Har (texnika, tur) uchun eng oxirgi yozuv — undan oldingilari allaqachon bajarilgan
+  // Har (texnika, tur) uchun eng oxirgi yozuv — undan oldingilari allaqachon bajarilgan.
+  // Bekor qilingan yozuv hisobga olinmaydi: u na muddat beradi, na eskisini "bajarildi" qiladi
   const latest = await db.vehicleService.findMany({
-    where: { ...(opts.vehicleId ? { vehicleId: opts.vehicleId } : {}), vehicle: { isActive: true } },
+    where: { ...(opts.vehicleId ? { vehicleId: opts.vehicleId } : {}), vehicle: { isActive: true }, cancelledAt: null },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     distinct: ["vehicleId", "kind"],
     select: { id: true },

@@ -3,7 +3,8 @@ import type { OpeningKind, PayrollKind, Prisma } from "@/generated/prisma";
 import { canDo } from "@/lib/permissions";
 import { dateRu, fmtNum } from "@/lib/format";
 import { accountBalances, linkPaymentToInvoice, reversePayment } from "@/lib/payments";
-import { cashEntryLocked, deleteCashEntry, payReceiptEntry } from "@/lib/cash-entry";
+import { cancelCashEntry, cashEntryLocked, payReceiptEntry } from "@/lib/cash-entry";
+import { CANCELLED_LABEL, cancelNote, cancellerNames } from "@/lib/cancelled";
 import { unpaidReceipts } from "@/lib/receipt-payables";
 import { cancelInvoice } from "@/lib/invoices";
 import { companyVatPayer, inputVatReport } from "@/lib/receipt-vat";
@@ -117,7 +118,7 @@ export async function paymentActions(user: MobileUser, id: string): Promise<Deta
   }
   if (can(user, "payment.storno")) {
     out.push({
-      id: "payment.storno", label: "Storno qilish", tone: "danger",
+      id: "payment.storno", label: "Bekor qilish", tone: "danger",
       form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda", hint: `${money(n(p.amount))} to'lov o'chiriladi, schyot va zayavka holati qayta hisoblanadi; oldingi holati auditda qoladi` }],
     });
   }
@@ -134,7 +135,8 @@ const CF_TYPES = [
 ] as const;
 type CfType = (typeof CF_TYPES)[number]["key"];
 type CfKind = "INCOME" | "EXPENSE" | "TRANSFER";
-type CfRow = { row: HomeRow; kind: CfKind; date: Date; amount: number; category: string; text: string };
+/** `cancelled` — bekor qilingan yozuv: jurnalda «Bekor qilingan» bo'lib ko'rinadi, jamiga kirmaydi. */
+type CfRow = { row: HomeRow; kind: CfKind; date: Date; amount: number; category: string; text: string; cancelled?: boolean };
 
 /** «Kirim-chiqim» ro'yxati jami qatorining id prefiksi — kartochkasi shu faylda (`cashSumDetail`). */
 export const CASH_SUM = "sum~";
@@ -162,6 +164,7 @@ async function cfRows(from: Date, to: Date): Promise<CfRow[]> {
       row: { id: `payments:${p.id}`, title: `${category} · ${p.customer.name}`, subtitle: `${dateRu(p.date)} · ${p.cashAccount.name}`, right: `+${money(n(p.amount))}`, tone: "success" },
     };
   });
+  const cNames = await cancellerNames(txs);
   for (const t of txs) {
     if (t.type === "TRANSFER_OUT") {
       out.push({
@@ -174,9 +177,13 @@ async function cfRows(from: Date, to: Date): Promise<CfRow[]> {
     // Hujjatdan yozilgan yozuv (kirim hujjati, sklad kirimi, ta'minot) — vebdagidek «Kirim · …» belgisi bilan
     const category = t.refType && t.refType !== TRANSFER_REF ? `Kirim · ${t.category}` : t.category;
     const who = t.supplier?.name ?? t.counterparty;
+    const cancel = cancelNote(t, cNames);
     out.push({
-      kind, date: t.date, amount: n(t.amount), category, text: `${category} ${who ?? ""} ${t.cashAccount.name} ${t.note ?? ""}`,
-      row: { id: t.id, title: `${category}${who ? ` · ${who}` : ""}`, subtitle: `${dateRu(t.date)} · ${t.cashAccount.name}`, right: `${kind === "EXPENSE" ? "−" : "+"}${money(n(t.amount))}`, tone: kind === "EXPENSE" ? "danger" : "success" },
+      kind, date: t.date, amount: n(t.amount), category, text: `${category} ${who ?? ""} ${t.cashAccount.name} ${t.note ?? ""}`, cancelled: !!cancel,
+      row: {
+        id: t.id, title: `${category}${who ? ` · ${who}` : ""}`, subtitle: `${dateRu(t.date)} · ${t.cashAccount.name}${cancel ? ` · bekor qilindi: ${cancel}` : ""}`,
+        right: `${kind === "EXPENSE" ? "−" : "+"}${money(n(t.amount))}`, tone: cancel || kind === "EXPENSE" ? "danger" : "success", ...(cancel ? { status: CANCELLED_LABEL } : {}),
+      },
     });
   }
   return out.sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -186,10 +193,10 @@ async function cfRows(from: Date, to: Date): Promise<CfRow[]> {
 const cfMatch = (r: CfRow, type: CfType) => type === "all" || r.kind === type || (type === "EXPENSE" && r.kind === "TRANSFER");
 
 function cfTotals(rows: CfRow[]) {
-  const inc = rows.filter((r) => r.kind === "INCOME").reduce((s, r) => s + r.amount, 0);
-  const exp = rows.filter((r) => r.kind === "EXPENSE").reduce((s, r) => s + r.amount, 0);
+  const inc = rows.filter((r) => r.kind === "INCOME" && !r.cancelled).reduce((s, r) => s + r.amount, 0);
+  const exp = rows.filter((r) => r.kind === "EXPENSE" && !r.cancelled).reduce((s, r) => s + r.amount, 0);
   const byCat = new Map<string, number>();
-  for (const r of rows.filter((x) => x.kind === "EXPENSE")) byCat.set(r.category, (byCat.get(r.category) ?? 0) + r.amount);
+  for (const r of rows.filter((x) => x.kind === "EXPENSE" && !x.cancelled)) byCat.set(r.category, (byCat.get(r.category) ?? 0) + r.amount);
   return { inc, exp, byCat: [...byCat.entries()].sort((a, b) => b[1] - a[1]) };
 }
 
@@ -243,13 +250,19 @@ export async function cashSumDetail(id: string): Promise<MobileDetail> {
   };
 }
 
-/** Kirim-chiqim yozuvi kartochkasidagi «O'chirish» — veb jadvalidagi kabi: qo'lda yozilgan kirim/chiqim yoki kirim hujjatiga to'lov. */
-export async function cashflowActions(user: MobileUser, t: { id: string; type: string; amount: unknown; refType: string | null }): Promise<DetailAction[]> {
-  if (!(t.type === "INCOME" || t.type === "EXPENSE") || !can(user, "cashflow.delete") || (await cashEntryLocked(t))) return [];
+/**
+ * Kirim-chiqim yozuvi kartochkasidagi «Bekor qilish» — veb jadvalidagi kabi: qo'lda yozilgan kirim/chiqim yoki kirim hujjatiga
+ * to'lov. Yozuv o'chirilmaydi — «Bekor qilingan» bo'lib qoladi; bekor qilinganida tugma yo'q (`cashEntryLocked`).
+ */
+export async function cashflowActions(user: MobileUser, t: { id: string; type: string; amount: unknown; refType: string | null; cancelledAt: Date | null }): Promise<DetailAction[]> {
+  if (!(t.type === "INCOME" || t.type === "EXPENSE") || !can(user, "cashflow.cancel") || (await cashEntryLocked(t))) return [];
   const what = `${t.type === "INCOME" ? "Kirim" : "Chiqim"} ${money(n(t.amount))}`;
   return [{
-    id: "cashflow.delete", label: "O'chirish", tone: "danger",
-    confirm: t.refType === "GoodsReceipt" ? `${what} o'chirilsinmi? Bu kirim hujjatiga to'lov — kirim yana «to'lanmagan» bo'ladi.` : `${what} o'chirilsinmi? Yozuv o'chadi, holati auditda qoladi.`,
+    id: "cashflow.cancel", label: "Bekor qilish", tone: "danger",
+    form: [{
+      name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda",
+      hint: t.refType === "GoodsReceipt" ? `${what} bekor qilinadi. Bu kirim hujjatiga to'lov — kirim yana «to'lanmagan» bo'ladi.` : `${what} bekor qilinadi — yozuv «Bekor qilingan» bo'lib qoladi, qoldiq va hisobotlarga kirmaydi; holati auditda.`,
+    }],
   }];
 }
 
@@ -623,7 +636,7 @@ export async function moliyaAction(user: MobileUser, action: string, id: string,
     case "payment.storno": {
       const r = await reversePayment(id, textOf(payload, "reason").slice(0, 300), user.id);
       if (r.error) fail(r.error);
-      return { ok: true, message: "Storno qilindi" };
+      return { ok: true, message: "Bekor qilindi" };
     }
     case "payment.link": {
       const invoiceId = textOf(payload, "invoiceId");
@@ -632,12 +645,12 @@ export async function moliyaAction(user: MobileUser, action: string, id: string,
       if (r.error) fail(r.error);
       return { ok: true, message: r.rest && r.rest > 0 ? `Bog'landi; ortgan ${money(r.rest)} taqsimlanmagan qoldi` : "Schyotga bog'landi" };
     }
-    case "cashflow.delete": {
+    case "cashflow.cancel": {
       const t = await db.cashTransaction.findUnique({ where: { id }, select: { type: true } });
-      if (t && t.type !== "INCOME" && t.type !== "EXPENSE") fail(`${TX_TYPE_LABEL[t.type]} yozuvi bu yerdan o'chirilmaydi`);
-      const r = await deleteCashEntry(id, user.id);
+      if (t && t.type !== "INCOME" && t.type !== "EXPENSE") fail(`${TX_TYPE_LABEL[t.type]} yozuvi bu yerdan bekor qilinmaydi`);
+      const r = await cancelCashEntry(id, textOf(payload, "reason"), user.id);
       if (r.error) fail(r.error);
-      return { ok: true, message: "O'chirildi" };
+      return { ok: true, message: "Bekor qilindi" };
     }
     case "receipt.pay": {
       const amount = numOrNull(payload, "amount");

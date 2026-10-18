@@ -91,15 +91,15 @@ export async function addTransportExpense(input: ExpenseInput, userId: string): 
 
 /** Oxirgi zapravkadagi narx — forma uchun taklif (har safar qo'lda yozmaslik uchun). */
 export async function lastFuelPrice(fuelType?: FuelType | null): Promise<number | null> {
-  const f = await db.fuelLog.findFirst({ where: fuelType ? { fuelType } : {}, orderBy: { date: "desc" }, select: { pricePerL: true } });
+  const f = await db.fuelLog.findFirst({ where: fuelType ? { fuelType, cancelledAt: null } : { cancelledAt: null }, orderBy: { date: "desc" }, select: { pricePerL: true } });
   return f ? Number(f.pricePerL) : null;
 }
 
 /** Davr bo'yicha xarajat: yoqilg'i + boshqa, reys/transport/haydovchi kesimida. */
 export async function transportCosts(from: Date, to: Date) {
   const [fuel, other] = await Promise.all([
-    db.fuelLog.findMany({ where: { date: { gte: from, lt: to } }, select: { amount: true, liters: true, vehicleId: true, driverId: true, tripId: true } }),
-    db.transportExpense.findMany({ where: { date: { gte: from, lt: to } }, select: { amount: true, kind: true, vehicleId: true, driverId: true, tripId: true } }),
+    db.fuelLog.findMany({ where: { date: { gte: from, lt: to }, cancelledAt: null }, select: { amount: true, liters: true, vehicleId: true, driverId: true, tripId: true } }),
+    db.transportExpense.findMany({ where: { date: { gte: from, lt: to }, cancelledAt: null }, select: { amount: true, kind: true, vehicleId: true, driverId: true, tripId: true } }),
   ]);
   const fuelSum = fuel.reduce((s, f) => s + Number(f.amount), 0);
   const liters = fuel.reduce((s, f) => s + Number(f.liters), 0);

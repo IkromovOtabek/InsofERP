@@ -234,9 +234,9 @@ async function moneyFlow(r: DashRange) {
   const [pay, tx, prevPay, prevTx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccountId: true, customerId: true } }),
     // Boshlang'ich qoldiq va hisoblararo o'tkazma — oqim emas
-    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
+    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccountId: true } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
   type Flow = { date: Date; amount: number; dir: "in" | "out"; category: string; accountId: string };
   const flows: Flow[] = [
@@ -275,7 +275,7 @@ async function accountBalances(until: Date | null = null) {
   const [accounts, pay, tx] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], where: d, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: d, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { ...d, cancelledAt: null }, _sum: { amount: true } }),
   ]);
   return accounts.map((a) => ({
     label: a.name,
@@ -540,8 +540,8 @@ async function logistics(r: DashRange): Promise<RoleDashboard> {
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { vehicle: { select: { plate: true } }, deliveredAt: true, departedAt: true, loadedAt: true, plannedAt: true, createdAt: true, qtyM3: true, driver: { select: { fullName: true } }, order: { select: { customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true } }),
     db.trip.groupBy({ by: ["status"], where: { createdAt: { gte: r.from, lt: r.to } }, _count: true }),
-    db.fuelLog.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true, liters: true } }),
-    db.transportExpense.aggregate({ where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
+    db.fuelLog.aggregate({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true, liters: true } }),
+    db.transportExpense.aggregate({ where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
     db.tripIssue.findMany({ where: { createdAt: { gte: r.from, lt: r.to } }, select: { kind: true, resolvedAt: true } }),
     db.vehicle.groupBy({ by: ["status"], where: { isActive: true }, _count: true }),
     logisticsSettings(), // kechikish chegarasi — `lateWarnMin` (Logistika sozlamalari / Sozlamalar → Limitlar)
@@ -872,7 +872,7 @@ async function driver(user: MobileUser, r: DashRange): Promise<RoleDashboard | n
     db.trip.findMany({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { id: true, deliveredAt: true, qtyM3: true, distanceKm: true, summaryAt: true, order: { select: { distanceKm: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { unit: true } } } } } } } }),
     db.trip.aggregate({ where: { driverId: me.id, status: "DELIVERED", deliveredAt: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { qtyM3: true } }),
     db.trip.groupBy({ by: ["status"], where: { driverId: me.id, createdAt: { gte: r.from, lt: r.to } }, _count: true }),
-    db.fuelLog.aggregate({ where: { driverId: me.id, date: { gte: r.from, lt: r.to } }, _sum: { amount: true, liters: true } }),
+    db.fuelLog.aggregate({ where: { driverId: me.id, cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true, liters: true } }),
     db.tripIssue.count({ where: { createdAt: { gte: r.from, lt: r.to }, trip: { driverId: me.id } } }),
   ]);
   // Km — GPS izi bo'yicha (bir tomon × 2), iz yo'q bo'lsa zayavkadagi taxminiy masofa (`tripPayKm`)

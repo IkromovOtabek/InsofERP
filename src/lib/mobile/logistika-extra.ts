@@ -10,9 +10,10 @@ import {
 import type { LogisticsDashboard } from "@/lib/logistics-dashboard";
 import { avgMin, cost as reportCost, logisticsReport, onTimePct } from "@/lib/logistics-report";
 import { fuelConsumption, lastFuelPrice } from "@/lib/logistics-costs";
+import { CANCELLED_LABEL, cancelNote, cancellerNames } from "@/lib/cancelled";
 import {
-  EXPENSE_KINDS, MECHANIC_EXPENSE_KINDS, VEHICLE_STATUSES, addExpenseRecord, addFuelRecord, addVehicleServiceRecord, deleteExpenseRecord,
-  deleteFuelRecord, deleteVehicleServiceRecord, driverCardSchema, expenseSchema, fuelSchema, saveDriverCardRecord, saveSiteRecord,
+  EXPENSE_KINDS, MECHANIC_EXPENSE_KINDS, VEHICLE_STATUSES, addExpenseRecord, addFuelRecord, addVehicleServiceRecord, cancelExpenseRecord,
+  cancelFuelRecord, cancelVehicleServiceRecord, driverCardSchema, expenseSchema, fuelSchema, saveDriverCardRecord, saveSiteRecord,
   saveVehicleRecord, serviceSchema, setVehicleStatusRecord, siteSchema, vehicleSchema, type AdminResult,
 } from "@/lib/logistics-admin";
 import { TRIP_EXPENSE_KINDS, addTripCostRecord, dispatchDelivered, dispatchOnRoad } from "@/lib/trip-dispatch";
@@ -241,8 +242,8 @@ async function vehiclesList(title: string, q?: string, filter?: string): Promise
           select: { deliveryNoteNo: true, status: true, deliveredAt: true, returnedAt: true, createdAt: true },
           orderBy: { createdAt: "desc" },
         },
-        fuelLogs: { where: { date: { gte: monthFrom } }, select: { amount: true } },
-        expenses: { where: { date: { gte: monthFrom } }, select: { amount: true } },
+        fuelLogs: { where: { date: { gte: monthFrom }, cancelledAt: null }, select: { amount: true } },
+        expenses: { where: { date: { gte: monthFrom }, cancelledAt: null }, select: { amount: true } },
       },
     }),
     vehicleServiceDue(),
@@ -288,7 +289,7 @@ async function vehiclesList(title: string, q?: string, filter?: string): Promise
 
 const journalTitle = (title: string, count: number, unitWord: string, total: number) => (count ? `${title} · ${count} ${unitWord} · ${moneyShort(total)}` : title);
 
-/** Yoqilg'i — veb «Yoqilg'i»: davr bo'yicha zapravkalar. Qator → zapravka kartochkasi (o'chirish shu yerda). */
+/** Yoqilg'i — veb «Yoqilg'i»: davr bo'yicha zapravkalar. Qator → zapravka kartochkasi (bekor qilish shu yerda). */
 async function fuelList(title: string, q?: string, filter?: string): Promise<MobileList> {
   const p = logiPeriod(filter, "month");
   const logs = await db.fuelLog.findMany({
@@ -296,17 +297,19 @@ async function fuelList(title: string, q?: string, filter?: string): Promise<Mob
     include: { vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
     orderBy: { date: "desc" },
   });
-  const liters = logs.reduce((a, f) => a + n(f.liters), 0);
-  const total = logs.reduce((a, f) => a + n(f.amount), 0);
+  // Bekor qilingan zapravka ro'yxatda «Bekor qilingan» bo'lib qoladi, lekin jamiga kirmaydi
+  const ok = logs.filter((f) => !f.cancelledAt);
+  const liters = ok.reduce((a, f) => a + n(f.liters), 0);
+  const total = ok.reduce((a, f) => a + n(f.amount), 0);
   return {
     key: "fuel",
-    title: logs.length ? `${title} · ${logs.length} zapravka · ${fmtNum(liters, 0)} l · ${moneyShort(total)}` : title,
+    title: ok.length ? `${title} · ${ok.length} zapravka · ${fmtNum(liters, 0)} l · ${moneyShort(total)}` : title,
     rows: logs.slice(0, TAKE).map((f) => ({
       id: f.id,
       title: `${f.vehicle.plate} · ${fmtNum(n(f.liters), 1)} l`,
       subtitle: [date(f.date), FUEL_TYPE[f.fuelType], f.driver?.fullName, f.station, f.trip?.deliveryNoteNo, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null].filter(Boolean).join(" · "),
       right: money(n(f.amount)),
-      tone: "info" as Tone,
+      ...(f.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : { tone: "info" as Tone }),
     })),
     filters: periodChips(p.key),
   };
@@ -320,16 +323,17 @@ async function expensesList(title: string, q?: string, filter?: string): Promise
     include: { vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
     orderBy: { date: "desc" },
   });
-  const total = rows.reduce((a, e) => a + n(e.amount), 0);
+  const ok = rows.filter((e) => !e.cancelledAt);
+  const total = ok.reduce((a, e) => a + n(e.amount), 0);
   return {
     key: "expenses",
-    title: journalTitle(title, rows.length, "ta", total),
+    title: journalTitle(title, ok.length, "ta", total),
     rows: rows.slice(0, TAKE).map((e) => ({
       id: e.id,
       title: `${EXPENSE_KIND[e.kind]}${e.vehicle ? ` · ${e.vehicle.plate}` : ""}`,
       subtitle: [date(e.date), e.driver?.fullName, e.trip?.deliveryNoteNo, e.note].filter(Boolean).join(" · "),
       right: money(n(e.amount)),
-      tone: "warning" as Tone,
+      ...(e.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : { tone: "warning" as Tone }),
     })),
     filters: periodChips(p.key),
   };
@@ -587,8 +591,8 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
     include: {
       order: { select: { customerId: true, deliveryDate: true, deliveryTime: true, items: { select: { product: { select: { unit: true } } } } } },
       vehicle: { select: { type: true } },
-      fuelLogs: { orderBy: { date: "desc" }, select: { id: true, date: true, fuelType: true, liters: true, amount: true, note: true } },
-      expenses: { orderBy: { date: "desc" }, select: { id: true, date: true, kind: true, amount: true, note: true } },
+      fuelLogs: { orderBy: { date: "desc" }, select: { id: true, date: true, fuelType: true, liters: true, amount: true, note: true, cancelledAt: true, cancelledById: true, cancelReason: true } },
+      expenses: { orderBy: { date: "desc" }, select: { id: true, date: true, kind: true, amount: true, note: true, cancelledAt: true, cancelledById: true, cancelReason: true } },
     },
   });
   const out: TripExtras = { warnings: [], fields: [], sections: [], actions: [] };
@@ -622,18 +626,22 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
   }
   if (t.pickupAddress) out.fields.push({ label: "Yuk olgan joyi", value: t.pickupAddress });
 
-  // ── Xarajatlar (yoqilg'i + boshqa) ──
+  // ── Xarajatlar (yoqilg'i + boshqa) ── bekor qilingani «Bekor qilingan» bo'lib qoladi, jamiga kirmaydi
+  const cNames = await cancellerNames([...t.fuelLogs, ...t.expenses]);
   const costs = [
-    ...t.fuelLogs.map((f) => ({ id: `fuel:${f.id}`, at: f.date, title: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${fmtNum(n(f.liters), 1)} l`, note: f.note, amount: n(f.amount) })),
-    ...t.expenses.map((e) => ({ id: `expenses:${e.id}`, at: e.date, title: EXPENSE_KIND[e.kind], note: e.note, amount: n(e.amount) })),
+    ...t.fuelLogs.map((f) => ({ id: `fuel:${f.id}`, at: f.date, title: `Yoqilg'i · ${FUEL_TYPE[f.fuelType]} ${fmtNum(n(f.liters), 1)} l`, note: f.note, amount: n(f.amount), cancel: cancelNote(f, cNames) })),
+    ...t.expenses.map((e) => ({ id: `expenses:${e.id}`, at: e.date, title: EXPENSE_KIND[e.kind], note: e.note, amount: n(e.amount), cancel: cancelNote(e, cNames) })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
-  const costSum = costs.reduce((a, c) => a + c.amount, 0);
+  const costSum = costs.filter((c) => !c.cancel).reduce((a, c) => a + c.amount, 0);
   if (costs.length) {
     const open = allowed(user, "fuel");
     out.sections.push({
       title: `Reys xarajatlari · ${money(costSum)}${n(t.qtyM3) ? ` · 1 birlikka ${money(costSum / n(t.qtyM3))}` : ""}`,
       empty: "", icon: "wallet", ...(open ? { target: "fuel" } : {}),
-      rows: costs.map((c) => ({ id: open ? c.id : c.id.split(":")[1]!, title: c.title, subtitle: [date(c.at), c.note].filter(Boolean).join(" · "), right: money(c.amount) })),
+      rows: costs.map((c) => ({
+        id: open ? c.id : c.id.split(":")[1]!, title: c.title, subtitle: [date(c.at), c.note, c.cancel ? `bekor qilindi: ${c.cancel}` : null].filter(Boolean).join(" · "), right: money(c.amount),
+        ...(c.cancel ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : {}),
+      })),
     });
   }
 
@@ -879,10 +887,13 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
   if (!v) throw new ListError("NOT_FOUND", "Transport topilmadi", 404);
   const live = vehicleLive(v, v.trips);
   const due = await vehicleServiceDue({ vehicleId: v.id });
-  const per100 = fuelConsumption(v.fuelLogs).per100;
+  // Bekor qilingan yozuvlar ro'yxatda «Bekor qilingan» bo'lib qoladi, lekin sarf, xarajat va muddatga kirmaydi
+  const fuelOk = v.fuelLogs.filter((f) => !f.cancelledAt);
+  const cNames = await cancellerNames([...v.fuelLogs, ...v.expenses, ...v.services]);
+  const per100 = fuelConsumption(fuelOk).per100;
   const norm = v.fuelNormL100 ? n(v.fuelNormL100) : null;
   const monthTrips = v.trips.filter((t) => t.createdAt >= monthFrom && t.status !== "CANCELLED");
-  const monthCost = v.fuelLogs.filter((f) => f.date >= monthFrom).reduce((a, f) => a + n(f.amount), 0) + v.expenses.filter((e) => e.date >= monthFrom).reduce((a, e) => a + n(e.amount), 0);
+  const monthCost = fuelOk.filter((f) => f.date >= monthFrom).reduce((a, f) => a + n(f.amount), 0) + v.expenses.filter((e) => !e.cancelledAt && e.date >= monthFrom).reduce((a, e) => a + n(e.amount), 0);
   const current = v.trips.find((t) => ACTIVE_TRIP.includes(t.status));
   const actions: DetailAction[] = [];
   if (v.isActive && can(user, "vehicle.status")) {
@@ -900,10 +911,14 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
   if (can(user, "vehicle.edit")) {
     actions.push({ id: "vehicle.edit", label: "Kartani tahrirlash", form: await vehicleFields({ ...v, driverId: v.drivers[0]?.id ?? null }) });
   }
-  if (v.services.length && can(user, "vehicle.service.delete")) {
+  const liveServices = v.services.filter((x) => !x.cancelledAt);
+  if (liveServices.length && can(user, "vehicle.service.cancel")) {
     actions.push({
-      id: "vehicle.service.delete", label: "Xizmat yozuvini o'chirish", tone: "danger",
-      form: [{ name: "serviceId", label: "Qaysi yozuv", type: "select", required: true, options: v.services.map((x) => ({ value: x.id, label: `${x.kind} · ${date(x.date)}`, hint: x.note ?? undefined })), hint: "Faqat xato yozilganini o'chiring — asl yozuv audit jurnalida qoladi" }],
+      id: "vehicle.service.cancel", label: "Xizmat yozuvini bekor qilish", tone: "danger",
+      form: [
+        { name: "serviceId", label: "Qaysi yozuv", type: "select", required: true, options: liveServices.map((x) => ({ value: x.id, label: `${x.kind} · ${date(x.date)}`, hint: x.note ?? undefined })), hint: "Faqat xato yozilganini bekor qiling — yozuv jurnalda «Bekor qilingan» bo'lib qoladi" },
+        { name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda" },
+      ],
     });
   }
 
@@ -931,22 +946,28 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
       { title: "Oxirgi reyslar", empty: "Reys yo'q", target: "trips", rows: v.trips.slice(0, 10).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.order.customer.name}`, subtitle: `${t.driver.fullName} · ${t.loadedAt ? dateTime(t.loadedAt) : date(t.createdAt)}`, right: fmtNum(n(t.qtyM3), 1), status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
       {
         title: "Yoqilg'i", empty: "Zapravka yozilmagan", icon: "droplets", ...(fuelOpen ? { target: "fuel" } : {}),
-        rows: v.fuelLogs.slice(0, 10).map((f) => ({ id: f.id, title: `${fmtNum(n(f.liters), 1)} l · ${FUEL_TYPE[f.fuelType]}`, subtitle: [date(f.date), f.driver?.fullName, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null].filter(Boolean).join(" · "), right: money(n(f.amount)) })),
+        rows: v.fuelLogs.slice(0, 10).map((f) => ({
+          id: f.id, title: `${fmtNum(n(f.liters), 1)} l · ${FUEL_TYPE[f.fuelType]}`, subtitle: [date(f.date), f.driver?.fullName, f.odometerKm != null ? `${fmtNum(f.odometerKm)} km` : null, f.cancelledAt ? `bekor qilindi: ${cancelNote(f, cNames)}` : null].filter(Boolean).join(" · "), right: money(n(f.amount)),
+          ...(f.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : {}),
+        })),
       },
       {
         title: "Boshqa xarajatlar", empty: "Xarajat yozilmagan", icon: "wallet", ...(expOpen ? { target: "expenses" } : {}),
-        rows: v.expenses.slice(0, 10).map((e) => ({ id: e.id, title: EXPENSE_KIND[e.kind], subtitle: [date(e.date), e.note].filter(Boolean).join(" · "), right: money(n(e.amount)) })),
+        rows: v.expenses.slice(0, 10).map((e) => ({
+          id: e.id, title: EXPENSE_KIND[e.kind], subtitle: [date(e.date), e.note, e.cancelledAt ? `bekor qilindi: ${cancelNote(e, cNames)}` : null].filter(Boolean).join(" · "), right: money(n(e.amount)),
+          ...(e.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : {}),
+        })),
       },
       {
         title: "Texnik xizmat jurnali", empty: "Xizmat yozilmagan", icon: "wrench",
         rows: v.services.map((x) => {
-          const lv = serviceDueLevel(x, v.odometerKm);
+          const lv = x.cancelledAt ? null : serviceDueLevel(x, v.odometerKm);
           const next = [x.nextDueAt ? date(x.nextDueAt) : null, x.nextDueKm != null ? `${fmtNum(x.nextDueKm)} km` : null].filter(Boolean).join(" / ");
           return {
             id: `s${x.id}`, title: `${x.kind} · ${date(x.date)}`,
-            subtitle: [x.odometerKm != null ? `${fmtNum(x.odometerKm)} km` : null, next ? `keyingisi ${next}` : null, x.note, x.createdBy.fullName].filter(Boolean).join(" · "),
+            subtitle: [x.odometerKm != null ? `${fmtNum(x.odometerKm)} km` : null, next ? `keyingisi ${next}` : null, x.note, x.createdBy.fullName, x.cancelledAt ? `bekor qilindi: ${cancelNote(x, cNames)}` : null].filter(Boolean).join(" · "),
             right: x.cost != null ? money(n(x.cost)) : undefined,
-            ...(lv ? { status: lv.level === "crit" ? "O'tgan" : "Yaqin", tone: (lv.level === "crit" ? "danger" : "warning") as Tone } : {}),
+            ...(x.cancelledAt ? { status: CANCELLED_LABEL, tone: "danger" as Tone } : lv ? { status: lv.level === "crit" ? "O'tgan" : "Yaqin", tone: (lv.level === "crit" ? "danger" : "warning") as Tone } : {}),
           };
         }),
       },
@@ -955,14 +976,20 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
   };
 }
 
-/** Zapravka kartochkasi — yozuv va xato bo'lsa o'chirish (veb «Yoqilg'i» jadvalidagi o'chirish tugmasi). */
+/** Bekor qilish formasi — sabab majburiy (kamida 3 belgi, `cancelReasonOf`). */
+const cancelForm = (hint: string): FormField[] => [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda", hint }];
+
+/** Zapravka kartochkasi — yozuv va xato bo'lsa bekor qilish (veb «Yoqilg'i» jadvalidagi «Bekor qilish» tugmasi). */
 async function fuelDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const f = await db.fuelLog.findUnique({ where: { id }, include: { vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } }, } });
   if (!f) throw new ListError("NOT_FOUND", "Zapravka topilmadi", 404);
   const by = await db.user.findUnique({ where: { id: f.createdById }, select: { fullName: true } });
+  const cancel = cancelNote(f, await cancellerNames([f]));
   return {
     key: "fuel", id: f.id, title: `Zapravka · ${f.vehicle.plate}`, subtitle: date(f.date),
+    ...(cancel ? { status: CANCELLED_LABEL } : {}),
     fields: [
+      ...(cancel ? [{ label: CANCELLED_LABEL, value: cancel, tone: "danger" as Tone }] : []),
       { label: "Summa", value: money(n(f.amount)) },
       { label: "Litr", value: `${fmtNum(n(f.liters), 2)} l · ${FUEL_TYPE[f.fuelType]}` },
       { label: "1 litr narxi", value: money(n(f.pricePerL)) },
@@ -974,7 +1001,7 @@ async function fuelDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Kim yozdi", value: `${by?.fullName ?? "—"} · ${dateTime(f.createdAt)}` },
     ],
     sections: [],
-    actions: can(user, "fuel.delete") ? [{ id: "fuel.delete", label: "O'chirish", tone: "danger", confirm: "Xato kiritilgan zapravka o'chirilsinmi? Asl yozuv audit jurnalida qoladi." }] : [],
+    actions: !cancel && can(user, "fuel.cancel") ? [{ id: "fuel.cancel", label: "Bekor qilish", tone: "danger", form: cancelForm("Xato kiritilgan zapravka bekor qilinadi — yozuv «Bekor qilingan» bo'lib qoladi, jamiga kirmaydi; holati auditda") }] : [],
   };
 }
 
@@ -982,9 +1009,12 @@ async function expenseDetail(user: MobileUser, id: string): Promise<MobileDetail
   const e = await db.transportExpense.findUnique({ where: { id }, include: { vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } } });
   if (!e) throw new ListError("NOT_FOUND", "Xarajat topilmadi", 404);
   const by = await db.user.findUnique({ where: { id: e.createdById }, select: { fullName: true } });
+  const cancel = cancelNote(e, await cancellerNames([e]));
   return {
     key: "expenses", id: e.id, title: EXPENSE_KIND[e.kind], subtitle: date(e.date),
+    ...(cancel ? { status: CANCELLED_LABEL } : {}),
     fields: [
+      ...(cancel ? [{ label: CANCELLED_LABEL, value: cancel, tone: "danger" as Tone }] : []),
       { label: "Summa", value: money(n(e.amount)) },
       ...(e.vehicle ? [{ label: "Transport", value: e.vehicle.plate }] : []),
       ...(e.driver ? [{ label: "Haydovchi", value: e.driver.fullName }] : []),
@@ -993,7 +1023,7 @@ async function expenseDetail(user: MobileUser, id: string): Promise<MobileDetail
       { label: "Kim yozdi", value: `${by?.fullName ?? "—"} · ${dateTime(e.createdAt)}` },
     ],
     sections: [],
-    actions: can(user, "expense.delete") ? [{ id: "expense.delete", label: "O'chirish", tone: "danger", confirm: "Xato kiritilgan xarajat o'chirilsinmi? Asl yozuv audit jurnalida qoladi." }] : [],
+    actions: !cancel && can(user, "expense.cancel") ? [{ id: "expense.cancel", label: "Bekor qilish", tone: "danger", form: cancelForm("Xato kiritilgan xarajat bekor qilinadi — yozuv «Bekor qilingan» bo'lib qoladi, jamiga kirmaydi; holati auditda") }] : [],
   };
 }
 
@@ -1318,12 +1348,13 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       done(await addVehicleServiceRecord(id, parse(serviceSchema, payload), user.id));
       return "Xizmat yozildi";
     }
-    case "vehicle.service.delete": {
+    case "vehicle.service.cancel": {
       const sid = textOf(payload, "serviceId");
+      // By-id tekshiruv (bekor qilinganini ham ko'radi) — "allaqachon bekor qilingan" xatosi `cancelVehicleServiceRecord` da
       const x = sid ? await db.vehicleService.findUnique({ where: { id: sid }, select: { vehicleId: true } }) : null;
       if (!x || x.vehicleId !== id) fail("Yozuv topilmadi");
-      done(await deleteVehicleServiceRecord(sid, user.id));
-      return "Xizmat yozuvi o'chirildi";
+      done(await cancelVehicleServiceRecord(sid, textOf(payload, "reason"), user.id));
+      return "Xizmat yozuvi bekor qilindi";
     }
     case "vehicle.fuel": {
       done(await addFuelRecord(parse(fuelSchema, { ...payload, vehicleId: id }), user.id));
@@ -1333,13 +1364,13 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       done(await addExpenseRecord(user.role, parse(expenseSchema, { ...payload, vehicleId: id }), user.id));
       return "Xarajat yozildi";
     }
-    case "fuel.delete": {
-      done(await deleteFuelRecord(id, user.id));
-      return "Zapravka o'chirildi";
+    case "fuel.cancel": {
+      done(await cancelFuelRecord(id, textOf(payload, "reason"), user.id));
+      return "Zapravka bekor qilindi";
     }
-    case "expense.delete": {
-      done(await deleteExpenseRecord(id, user.id));
-      return "Xarajat o'chirildi";
+    case "expense.cancel": {
+      done(await cancelExpenseRecord(id, textOf(payload, "reason"), user.id));
+      return "Xarajat bekor qilindi";
     }
     case "site.save": {
       const existed = !!(await db.site.count({ where: { id } }));

@@ -23,7 +23,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const { base, vat, total, delivery } = receiptAmounts(r.items);
   // Storno faqat direktor (yoki direktor bergan amal); to'lov bog'langan bo'lsa server rad etadi va sababini aytadi
   const [paid, cancelledBy, pays] = await Promise.all([
-    db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: id }, _sum: { amount: true } }),
+    db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: id, cancelledAt: null }, _sum: { amount: true } }),
     r.cancelledById ? db.user.findUnique({ where: { id: r.cancelledById }, select: { fullName: true } }) : null,
     // To'lov turi (Деньги): kirimda belgilangani, bo'lmasa bog'langan to'lov hisobining turi
     resolveReceiptPayments([{ id: r.id, payment: r.payment }]),
@@ -39,11 +39,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
       <PageHeader back={{ href: "/receipts", label: "Kirim" }} title={`Kirim ${r.docNo}`} subtitle={`${date(r.date)} · ${r.supplier.name} → ${r.warehouse.name}${r.createdBy ? ` · kiritdi: ${r.createdBy.fullName}` : ""}`}
         action={<>
           {canDistribute && <LinkButton href={`/stock?tab=brigades&receipt=${r.id}`} variant="secondary"><HardHat size={16} /> Brigadalarga taqsimlash</LinkButton>}
-          {canStorno && <ConfirmButton action={stornoReceipt.bind(null, r.id)} label="Storno" question={paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni storno qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} storno qilinsinmi? Xomashyo skladdan qaytariladi`} reason="required" okText="Storno qilindi" className="h-9 px-3 text-sm" />}
+          {canStorno && <ConfirmButton action={stornoReceipt.bind(null, r.id)} label="Bekor qilish" question={paidSum > 0.005 ? `Kirimga ${money(paidSum)} to'lov bog'langan — avval to'lovni bekor qiling. Baribir urinib ko'rasizmi?` : `${r.docNo} bekor qilinsinmi? Xomashyo skladdan qaytariladi`} reason="required" okText="Bekor qilindi" className="h-9 px-3 text-sm" />}
         </>} />
       {r.cancelledAt && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          <Badge color="red">Storno</Badge> {dateTime(r.cancelledAt)}{cancelledBy ? ` · ${cancelledBy.fullName}` : ""} — {r.cancelReason}. Sklad harakatlari teskari yozilgan; kirim qoldiq, tannarx va qarzga kirmaydi.
+          <Badge color="red">Bekor qilingan</Badge> {dateTime(r.cancelledAt)}{cancelledBy ? ` · ${cancelledBy.fullName}` : ""} — {r.cancelReason}. Sklad harakatlari teskari yozilgan; kirim qoldiq, tannarx va qarzga kirmaydi.
         </div>
       )}
       {/* QQS'siz summa + QQS = to'lanadigan jami (yetkazuvchi qarzi shu jami bo'yicha) */}

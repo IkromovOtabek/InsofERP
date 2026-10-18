@@ -480,7 +480,7 @@ async function lateTrips({ r }: Ctx): Promise<Part> {
 
 async function fuelLogs(r: DashRange, driverId: string | null): Promise<Part> {
   const rows = await db.fuelLog.findMany({
-    where: { date: { gte: r.from, lt: r.to }, ...(driverId ? { driverId } : {}) }, orderBy: { date: "desc" },
+    where: { date: { gte: r.from, lt: r.to }, cancelledAt: null, ...(driverId ? { driverId } : {}) }, orderBy: { date: "desc" },
     select: { id: true, date: true, liters: true, amount: true, pricePerL: true, fuelType: true, station: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
   });
   const amount = sumBy(rows, (x) => sum(x.amount)), liters = sumBy(rows, (x) => sum(x.liters));
@@ -499,7 +499,7 @@ async function fuelLogs(r: DashRange, driverId: string | null): Promise<Part> {
 
 async function transportCosts({ r }: Ctx): Promise<Part> {
   const rows = await db.transportExpense.findMany({
-    where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" },
+    where: { date: { gte: r.from, lt: r.to }, cancelledAt: null }, orderBy: { date: "desc" },
     select: { id: true, date: true, kind: true, amount: true, note: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, trip: { select: { deliveryNoteNo: true } } },
   });
   const total = sumBy(rows, (x) => sum(x.amount));
@@ -801,8 +801,8 @@ const txSum = (list: TxRow[]) => sumBy(list, (t) => sum(t.amount));
 
 async function expenses(r: DashRange): Promise<Part> {
   const [rows, prev] = await Promise.all([
-    db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: TX_SELECT }),
-    db.cashTransaction.aggregate({ where: { type: "EXPENSE", date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: TX_SELECT }),
+    db.cashTransaction.aggregate({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
   const total = txSum(rows);
   return {
@@ -821,7 +821,7 @@ async function expenses(r: DashRange): Promise<Part> {
 async function income(r: DashRange): Promise<Part> {
   const [pay, tx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: PAY_SELECT }),
-    db.cashTransaction.findMany({ where: { type: "INCOME", date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: TX_SELECT }),
+    db.cashTransaction.findMany({ where: { type: "INCOME", cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: TX_SELECT }),
   ]);
   const p = paySum(pay), o = txSum(tx), total = p + o;
   const flows = [...pay.map((x) => ({ date: x.date, amount: sum(x.amount), account: x.cashAccount.name })), ...tx.map((x) => ({ date: x.date, amount: sum(x.amount), account: x.cashAccount.name }))];
@@ -841,9 +841,9 @@ async function netFlow({ r }: Ctx): Promise<Part> {
   const [pay, tx, prevPay, prevTx] = await Promise.all([
     db.payment.findMany({ where: { date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, cashAccount: { select: { name: true } } } }),
     // Boshlang'ich qoldiq va hisoblararo o'tkazma — oqim emas
-    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccount: { select: { name: true } } } }),
+    db.cashTransaction.findMany({ where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: r.from, lt: r.to } }, select: { date: true, amount: true, type: true, category: true, cashAccount: { select: { name: true } } } }),
     db.payment.aggregate({ where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["type"], where: { cancelledAt: null, date: { gte: r.prevFrom, lt: r.prevTo } }, _sum: { amount: true } }),
   ]);
   type Flow = { date: Date; amount: number; dir: "in" | "out"; category: string; account: string };
   const flows: Flow[] = [
@@ -871,9 +871,9 @@ async function balances({ r }: Ctx): Promise<Part> {
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true, type: true } }),
     // Qoldiq — davr oxirida (joriy davrda — hozir)
     db.payment.groupBy({ by: ["cashAccountId"], where: asOf(r) ? { date: { lt: r.to } } : {}, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: asOf(r) ? { date: { lt: r.to } } : {}, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: asOf(r) ? { cancelledAt: null, date: { lt: r.to } } : { cancelledAt: null }, _sum: { amount: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
-    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
+    db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
   ]);
   const rows = accounts.map((a) => {
     // Boshlang'ich qoldiq (OPENING) va o'tkazmalar (TRANSFER_IN/OUT) qoldiqqa kiradi, davr kirimi/chiqimiga emas
@@ -956,8 +956,8 @@ async function budgetDetail(r: DashRange): Promise<Part> {
   const shares = monthShares(r);
   const [budgets, spent, top, company] = await Promise.all([
     db.expenseBudget.findMany({ where: { OR: shares.map(({ year, month }) => ({ year, month })) }, orderBy: { amount: "desc" } }),
-    db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
-    db.cashTransaction.findMany({ where: { type: "EXPENSE", date: { gte: r.from, lt: r.to } }, orderBy: { amount: "desc" }, take: 15, select: TX_SELECT }),
+    db.cashTransaction.groupBy({ by: ["category"], where: { type: "EXPENSE", cancelledAt: null, date: { gte: r.from, lt: r.to } }, _sum: { amount: true } }),
+    db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: r.from, lt: r.to } }, orderBy: { amount: "desc" }, take: 15, select: TX_SELECT }),
     getCompany(),
   ]);
   // Rang chegaralari — `alertWarnPct` / `alertCritPct` (standart 90 / 100, Sozlamalar → Limitlar)

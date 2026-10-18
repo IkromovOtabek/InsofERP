@@ -25,7 +25,7 @@ export function StornoButton({ action, question }: { action: (reason: string) =>
       setArmed(false); setWhy("");
       router.refresh();
     } catch (e) {
-      setState({ error: isAccessDenied(e) ? "Storno qilishga huquq yo'q — direktorga murojaat qiling" : "Bajarilmadi — sahifani yangilab, qaytadan urinib ko'ring" });
+      setState({ error: isAccessDenied(e) ? "Bekor qilishga huquq yo'q — direktorga murojaat qiling" : "Bajarilmadi — sahifani yangilab, qaytadan urinib ko'ring" });
     }
   });
 
@@ -43,7 +43,7 @@ export function StornoButton({ action, question }: { action: (reason: string) =>
     return (
       <span className="inline-flex min-w-56 flex-wrap items-center gap-1.5 text-xs">
         <span className="text-slate-600">{question}</span>
-        <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Sabab (majburiy)" aria-label="Storno sababi"
+        <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Sabab (majburiy)" aria-label="Bekor qilish sababi"
           className="h-7 w-44 rounded-md border border-slate-300 bg-white px-2 text-xs" autoFocus maxLength={300} />
         <button type="button" onClick={run} disabled={pending || blocked} className="font-semibold text-red-600 hover:underline disabled:opacity-40">
           {pending ? "bajarilmoqda…" : "ha"}
@@ -53,9 +53,9 @@ export function StornoButton({ action, question }: { action: (reason: string) =>
     );
   }
   return (
-    <button type="button" onClick={() => { setState(undefined); setArmed(true); }} title="Storno — chiqimni bekor qilish"
+    <button type="button" onClick={() => { setState(undefined); setArmed(true); }} title="Chiqimni bekor qilish"
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-red-600 transition hover:bg-red-50">
-      <Undo2 size={13} /> Storno
+      <Undo2 size={13} /> Bekor qilish
     </button>
   );
 }

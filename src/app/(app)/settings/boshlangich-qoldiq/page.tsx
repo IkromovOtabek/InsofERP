@@ -199,7 +199,7 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
                     {(supPays.get(r.id) ?? []).map((p: { id: string; date: Date; amount: number; account: string }) => (
                       <div key={p.id} className="mt-1 flex items-center justify-end gap-1 text-xs font-normal text-slate-500">
                         <span>{date(p.date)} · {money(p.amount)} · {p.account}</span>
-                        {isDirector && <ConfirmButton action={reverseSupplierOpeningPaymentAction.bind(null, p.id)} label="Storno" icon={<Ban size={12} />} question="To'lov storno qilinsinmi? Pul hisobga qaytadi, qarz yana ochiladi" reason="required" okText="Storno qilindi" className="h-6 px-1.5 text-[11px]" />}
+                        {isDirector && <ConfirmButton action={reverseSupplierOpeningPaymentAction.bind(null, p.id)} label="Bekor qilish" icon={<Ban size={12} />} question="To'lov bekor qilinsinmi? Pul hisobga qaytadi, qarz yana ochiladi" reason="required" okText="Bekor qilindi" className="h-6 px-1.5 text-[11px]" />}
                       </div>
                     ))}
                   </Td>

@@ -90,7 +90,7 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
       include: { order: { select: { orderNo: true, deliveryAddress: true, customer: { select: { name: true } }, items: { select: { product: { select: { unit: true } } } } } }, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } } },
     }),
     db.payment.findMany({ where: { date: range }, orderBy: { date: "asc" }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } }, invoice: { select: { invoiceNo: true } }, createdBy: { select: { fullName: true } } } }),
-    db.cashTransaction.findMany({ where: { date: range, type: { not: "OPENING" } }, orderBy: { date: "asc" }, include: { cashAccount: { select: { name: true } }, createdBy: { select: { fullName: true } } } }),
+    db.cashTransaction.findMany({ where: { date: range, type: { not: "OPENING" }, cancelledAt: null }, orderBy: { date: "asc" }, include: { cashAccount: { select: { name: true } }, createdBy: { select: { fullName: true } } } }),
     db.tripIssue.findMany({ where: { OR: [{ createdAt: range }, { resolvedAt: range }] }, orderBy: { createdAt: "asc" }, include: { trip: { select: { deliveryNoteNo: true, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } } } } } }),
     db.brigadeIssue.findMany({ where: { OR: [{ createdAt: range }, { resolvedAt: range }] }, orderBy: { createdAt: "asc" }, include: { brigade: { select: { name: true } }, createdBy: { select: { fullName: true } }, resolvedBy: { select: { fullName: true } } } }),
     // Egasi qarorini kutayotgan masalalar — "hozirgi holat", shuning uchun faqat bugungi hisobotda

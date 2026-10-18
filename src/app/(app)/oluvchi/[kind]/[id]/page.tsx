@@ -143,7 +143,7 @@ export default async function OluvchiPage({ params, searchParams }: {
       )}
 
       <Card className="mb-6">
-        <CardHeader title="Davrda berilgan tovarlar" description="Tovar bo'yicha jami: storno va qaytarishlar ayirilgan. Narx — chiqim paytidagi «Dona narxi»." />
+        <CardHeader title="Davrda berilgan tovarlar" description="Tovar bo'yicha jami: bekor qilinganlar va qaytarishlar ayirilgan. Narx — chiqim paytidagi «Dona narxi»." />
         {card.byMaterial.length === 0 ? <p className="text-sm text-slate-500">Tanlangan davrda chiqim yo&apos;q.</p> : (
           <Table>
             <thead><tr><Th>Nomi</Th><Th>Birlik</Th><Th right>Miqdor</Th><Th right>Summa</Th><Th right>Chiqimlar</Th><Th>Oxirgisi</Th></tr></thead>
@@ -181,8 +181,8 @@ export default async function OluvchiPage({ params, searchParams }: {
 
 function HistoryRow({ r }: { r: RecipientCard["rows"][number] }) {
   const dim = r.kind === "return" || r.kind === "storno" || r.cancelled;
-  const state = r.kind === "storno" ? "Storno" : r.kind === "return" ? "Qaytarish" : r.cancelled ? "Bekor qilingan" : r.auto ? "Avto" : null;
-  const note = r.kind === "storno" && r.note ? r.note.replace(/^(?:Storno|Сторно):\s*/, "") : r.note;
+  const state = r.kind === "storno" ? "Bekor qilish" : r.kind === "return" ? "Qaytarish" : r.cancelled ? "Bekor qilingan" : r.auto ? "Avto" : null;
+  const note = r.kind === "storno" && r.note ? r.note.replace(/^(?:Storno|Сторно|Bekor qilish):\s*/, "") : r.note;
   return (
     <Tr className={cn(dim && "text-slate-500")}>
       <Td className="whitespace-nowrap">{dateRu(r.date)}</Td>

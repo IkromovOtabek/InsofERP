@@ -122,7 +122,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {batches.length === 0 && <Empty text="Zameslar yo'q" />}
           {batches.map((b) => (
             <Tr key={b.id}>
-              <Td><Link href={`/production/${b.id}`} className="font-medium hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Storno</Badge></>}</Td>
+              <Td><Link href={`/production/${b.id}`} className="font-medium hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td>
               <Td>{date(b.date)}</Td><Td>{b.shift}</Td><Td>{b.product.name}</Td><Td right>{qty(b.qtyM3)} <span className="text-slate-400">{unitLabel(b.product.unit)}</span></Td>
               <Td>{b.order ? <span className="inline-flex items-center gap-1.5"><Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo} · {b.order.customer.name}</Link>{marks.black.has(b.order.customerId) && <BlacklistMark short />}{marks.contract.has(b.order.customerId) && <ContractMark short />}</span> : <span className="text-slate-400">—</span>}</Td>
               <Td>{b.createdBy.fullName}</Td>

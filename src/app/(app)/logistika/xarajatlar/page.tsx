@@ -1,15 +1,16 @@
 import Link from "next/link";
-import { Coins, Fuel, Route, Truck } from "lucide-react";
+import { Coins, Fuel, Route, Truck, Undo2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { transportCosts } from "@/lib/logistics-costs";
 import { EXPENSE_KIND } from "@/lib/logistics";
 import { date, money, moneyShort, qty } from "@/lib/format";
-import { Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { DeleteButton } from "@/components/delete-button";
+import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { ConfirmButton } from "../../payments/confirm-button";
+import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { ExpenseForm } from "../cost-forms";
 import { costOptions } from "../cost-data";
-import { deleteExpense } from "../actions";
+import { cancelExpense } from "../actions";
 import { PeriodTabs, periodRange, RangeForm } from "../ui";
 import { SectionTabs } from "@/components/section-tabs";
 
@@ -34,6 +35,8 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } }, select: { qtyM3: true, vehicleId: true } }),
     db.vehicle.findMany({ select: { id: true, plate: true } }),
   ]);
+  // Bekor qilingan xarajat ro'yxatda belgisi bilan qoladi; jami (`transportCosts`) uni hisobga olmaydi
+  const names = await cancellerNames(rows);
   const m3 = delivered.reduce((a, t) => a + Number(t.qtyM3), 0);
   const plate = new Map(vehicles.map((v) => [v.id, v.plate]));
   const volByV = new Map<string, number>();
@@ -82,12 +85,12 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             <tbody>
               {rows.length === 0 && <Empty text="Xarajat yo'q" />}
               {rows.map((e) => (
-                <Tr key={e.id}>
+                <Tr key={e.id} className={e.cancelledAt ? "bg-slate-50/60 text-slate-400" : undefined}>
                   <Td className="text-sm tabular">{date(e.date)}</Td>
-                  <Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note && <div className="text-xs text-slate-500">{e.note}</div>}</Td>
+                  <Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note && <div className="text-xs text-slate-500">{e.note}</div>}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td>
                   <Td className="text-sm">{e.vehicle?.plate ?? ""}{e.driver && <span className="text-slate-500"> · {e.driver.fullName}</span>}{e.trip && <> · <Link href={`/trips/${e.trip.id}`} className="hover:underline">{e.trip.deliveryNoteNo}</Link></>}</Td>
-                  <Td right className="tabular">{money(Number(e.amount))}</Td>
-                  <Td><DeleteButton action={deleteExpense} id={e.id} name="xarajat" /></Td>
+                  <Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td>
+                  <Td>{!e.cancelledAt && <ConfirmButton action={cancelExpense.bind(null, e.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`${EXPENSE_KIND[e.kind]} ${date(e.date)} (${money(Number(e.amount))}) bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>
                 </Tr>
               ))}
             </tbody>

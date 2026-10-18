@@ -52,7 +52,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
 
       {/* Umumiy summa — Kirim/Chiqim tugmalari tepasida */}
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Arenda kassasi — umumiy summa" value={money(balance.total)} icon={Wallet} tone={balance.total < 0 ? "danger" : "success"} hint="Barcha kirimlar − chiqimlar (storno hisobga kirmaydi)" />
+        <StatCard label="Arenda kassasi — umumiy summa" value={money(balance.total)} icon={Wallet} tone={balance.total < 0 ? "danger" : "success"} hint="Barcha kirimlar − chiqimlar (bekor qilinganlar hisobga kirmaydi)" />
         <StatCard label="Naqd" value={money(balance.cash)} icon={Banknote} />
         <StatCard label="Perechisleniye" value={money(balance.bank)} icon={Landmark} />
       </div>
@@ -165,7 +165,7 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
   return (
     <Card padded={false}>
       <div className="p-4 pb-2">
-        <CardHeader title="Kirim-chiqim jurnali" description={`Shu oy sanasi bilan yozilgan yozuvlar: kirim ${money(inc)}, chiqim ${money(exp)}. Xato yozuv o'chirilmaydi — sabab bilan storno qilinadi.`} />
+        <CardHeader title="Kirim-chiqim jurnali" description={`Shu oy sanasi bilan yozilgan yozuvlar: kirim ${money(inc)}, chiqim ${money(exp)}. Xato yozuv o'chirilmaydi — sabab bilan bekor qilinadi.`} />
       </div>
       {txs.length === 0 ? <div className="p-6 text-center text-sm text-slate-500">Bu oyda kirim-chiqim yo&apos;q</div> : (
         <Table>
@@ -176,16 +176,16 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
               return (
                 <Tr key={x.id} className={off ? "opacity-55" : undefined}>
                   <Td className="whitespace-nowrap">{date(x.date)}</Td>
-                  <Td>{off ? <Badge color="slate">storno</Badge> : x.type === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
+                  <Td>{off ? <Badge color="slate">bekor qilingan</Badge> : x.type === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
                   <Td className={off ? "line-through" : undefined}>
                     {x.shop ? <><span className="font-medium text-slate-800">{x.shop.name}</span> <span className="text-xs text-slate-500">· {x.shop.location}</span></> : null}
                     <span className="block text-xs text-slate-500">{x.category}{x.month ? ` · ${monthLabel(x.month)} uchun` : ""}</span>
                   </Td>
                   <Td>{RENT_METHOD_LABEL[x.method]}</Td>
                   <Td right className={`font-semibold tabular-nums ${off ? "line-through" : x.type === "INCOME" ? "text-emerald-700" : "text-red-600"}`}>{x.type === "INCOME" ? "+" : "−"}{fmtNum(Number(x.amount))}</Td>
-                  <Td className="max-w-64 whitespace-normal text-xs text-slate-600">{x.note}{off && <span className="block text-slate-500">Storno: {x.cancelReason}</span>}</Td>
+                  <Td className="max-w-64 whitespace-normal text-xs text-slate-600">{x.note}{off && <span className="block text-slate-500">Bekor qilish sababi: {x.cancelReason}</span>}</Td>
                   <Td className="text-xs text-slate-500">{x.createdBy.fullName}</Td>
-                  <Td>{canStorno && !off && <ConfirmButton action={stornoRentTx.bind(null, x.id)} label={<><Undo2 size={13} className="mr-1 inline" />Storno</>} question="Storno qilinsinmi?" reason="required" okText="Storno qilindi" className="text-xs text-slate-500 hover:text-red-600" />}</Td>
+                  <Td>{canStorno && !off && <ConfirmButton action={stornoRentTx.bind(null, x.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question="Bekor qilinsinmi?" reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 hover:text-red-600" />}</Td>
                 </Tr>
               );
             })}

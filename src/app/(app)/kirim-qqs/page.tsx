@@ -105,7 +105,7 @@ export default async function InputVatPage({ searchParams }: { searchParams: Pro
           </tbody>
         </Table>
         {d.docs.length > 300 && <p className="mt-2 text-xs text-slate-500">Oxirgi 300 ta hujjat ko&apos;rsatildi — davrni qisqartiring.</p>}
-        <p className="mt-3 text-xs text-slate-500">Storno qilingan kirimlar reyestrga kirmaydi. 2026-10-05 dan oldingi (QQS kiritilmasdan yozilgan) kirimlarda QQS 0 bo&apos;lib ko&apos;rinadi.</p>
+        <p className="mt-3 text-xs text-slate-500">Bekor qilingan kirimlar reyestrga kirmaydi. 2026-10-05 dan oldingi (QQS kiritilmasdan yozilgan) kirimlarda QQS 0 bo&apos;lib ko&apos;rinadi.</p>
       </Section>
     </div>
   );

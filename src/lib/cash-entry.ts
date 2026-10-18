@@ -54,7 +54,7 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
       await lockReceipt(tx, receiptId);
       const st = await receiptPayState(tx, receiptId);
       if (!st) throw new CashError("Kirim hujjati topilmadi");
-      if (st.cancelled) throw new CashError(`${st.docNo} storno qilingan — unga to'lov yozilmaydi`);
+      if (st.cancelled) throw new CashError(`${st.docNo} bekor qilingan — unga to'lov yozilmaydi`);
       if (st.fromSupply) throw new CashError(`${st.docNo} ta'minot zayavkasidan — uning puli ta'minot zanjirida to'langan`);
       if (d.supplierId && d.supplierId !== st.supplierId) throw new CashError(`${st.docNo} boshqa yetkazuvchiniki (${st.supplierName})`);
       if (st.left <= 0.005) throw new CashError(`${st.docNo} to'liq to'langan (${money(st.paid)})`);
@@ -62,7 +62,7 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
       link = { refType: "GoodsReceipt", refId: st.id, supplierId: st.supplierId, counterparty: d.counterparty ?? st.supplierName };
     }
     const dup = await tx.cashTransaction.findFirst({
-      where: { type: d.type, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category, createdById: userId, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) } },
+      where: { type: d.type, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category, createdById: userId, cancelledAt: null, createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) } },
       select: { id: true },
     });
     if (dup) throw new CashError("Aynan shu yozuv hozirgina saqlandi — ikki marta bosilgan bo'lishi mumkin. Rostdan ikkinchisi bo'lsa, bir daqiqadan keyin qayta kiriting");
@@ -84,34 +84,44 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
 }
 
 /**
- * Qo'lda yozilgan kirim/chiqimni o'chirish — veb Kirim-Chiqim jadvalidagi o'chirish tugmasi (`cashflow/actions.ts`)
- * va mobil ilovadagi kassa yozuvi kartochkasi shu yerdan. Yozuv o'chadi, to'liq holati auditda qoladi.
+ * Qo'lda yozilgan kirim/chiqimni bekor qilish — veb Kirim-Chiqim jadvalidagi «Bekor qilish» tugmasi (`cashflow/actions.ts`)
+ * va mobil ilovadagi kassa yozuvi kartochkasi shu yerdan. Yozuv o'chirilmaydi: `cancelledAt` + sabab bilan qoladi,
+ * jurnalda «Bekor qilingan» bo'lib ko'rinadi, qoldiq, jami, hisobot va dashbordlarga kirmaydi; auditga STATUS_CHANGE.
  *
- * Hujjatga bog'langan yozuv (sklad kirimi, ta'minot to'lovi) qo'lda o'chirilmaydi — aks holda yo'q yozuvga
- * ishora qilib qoladi. Istisno — kirim hujjatiga (GoodsReceipt) to'lov: uni o'chirish to'lovni storno qilish,
- * kirim yana "to'lanmagan" ro'yxatiga qaytadi (kirimni storno qilishdan oldin shu kerak).
- * Ta'minot zanjirining chiqimi esa zanjirda (moliya) boshqariladi.
+ * Hujjatga bog'langan yozuv (sklad kirimi, ta'minot to'lovi) qo'lda bekor qilinmaydi — u hujjat orqali boshqariladi.
+ * Istisno — kirim hujjatiga (GoodsReceipt) to'lov: uni bekor qilish to'lovni qaytarish, kirim yana "to'lanmagan"
+ * ro'yxatiga qaytadi (kirimni bekor qilishdan oldin shu kerak). Ta'minot zanjirining chiqimi zanjirda (moliya) boshqariladi.
  */
-export async function deleteCashEntry(id: string, userId: string): Promise<{ error?: string }> {
+export async function cancelCashEntry(id: string, reason: string, userId: string): Promise<{ error?: string }> {
+  const why = String(reason ?? "").trim();
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing (kamida 3 belgi)" };
   const t = await db.cashTransaction.findUnique({ where: { id } });
-  if (!t) return { error: "Yozuv topilmadi (allaqachon o'chirilgan bo'lishi mumkin)" };
-  const why = await cashEntryLocked(t);
-  if (why) return { error: why };
+  if (!t) return { error: "Yozuv topilmadi" };
+  if (t.cancelledAt) return { error: "Bu yozuv allaqachon bekor qilingan" };
+  const locked = await cashEntryLocked(t);
+  if (locked) return { error: locked };
   return db.$transaction(async (tx) => {
-    // Kirimni o'chirish ham naqd kassani minusga tushirishi mumkin
+    // Hisob bo'yicha navbat (yozish bilan bir xil) — qoldiq tekshiruvi parallel chiqim bilan to'qnashmasin
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + t.cashAccountId}))`;
+    if (t.refType === "GoodsReceipt" && t.refId) await lockReceipt(tx, t.refId);
+    // Kirimni bekor qilish ham naqd kassani minusga tushirishi mumkin
     if (t.type === "INCOME") {
       const err = await cashOutflowError(tx, t.cashAccountId, Number(t.amount));
-      if (err) throw new CashError(`Bu kirim o'chirilsa kassa minusga tushadi. ${err}`);
+      if (err) throw new CashError(`Bu kirim bekor qilinsa kassa minusga tushadi. ${err}`);
     }
-    await tx.cashTransaction.delete({ where: { id } });
-    await audit(tx, userId, "DELETE", "CashTransaction", id, t, undefined);
+    const cancelledAt = new Date();
+    const r = await tx.cashTransaction.updateMany({ where: { id, cancelledAt: null }, data: { cancelledAt, cancelledById: userId, cancelReason: why.slice(0, 300) } });
+    if (r.count === 0) throw new CashError("Bu yozuv allaqachon bekor qilingan");
+    await audit(tx, userId, "STATUS_CHANGE", "CashTransaction", id, { cancelledAt: null, record: t }, { cancelledAt, reason: why.slice(0, 300) });
     return {};
   }).catch((e: Error) => { if (e instanceof CashError) return { error: e.message }; throw e; });
 }
 
-/** Yozuvni qo'lda o'chirib bo'lmasa — sababi (veb jadvalidagi va mobil kartochkadagi tugma shu bilan ko'rinadi). */
-export async function cashEntryLocked(t: { id: string; refType: string | null }): Promise<string | null> {
-  if (t.refType && t.refType !== "GoodsReceipt") return "Hujjatga bog'langan yozuvni o'chirib bo'lmaydi";
+/** Yozuvni qo'lda bekor qilib bo'lmasa — sababi (veb jadvalidagi va mobil kartochkadagi tugma shu bilan ko'rinadi). */
+export async function cashEntryLocked(t: { id: string; refType: string | null; cancelledAt?: Date | null }): Promise<string | null> {
+  if (t.cancelledAt) return "Bu yozuv allaqachon bekor qilingan";
+  if (t.refType && t.refType !== "GoodsReceipt") return "Hujjatga bog'langan yozuvni bekor qilib bo'lmaydi — hujjatning o'zi orqali";
+  // `count` bekor qilingan zayavkani ham ko'radi: zanjir puli zanjirda boshqariladi (xavfsiz tomon)
   if (t.refType === "GoodsReceipt" && (await db.supplyRequest.count({ where: { cashTxId: t.id } }))) return "Bu chiqim ta'minot zayavkasining puli — Ta'minot bo'limida boshqariladi";
   return null;
 }
@@ -132,7 +142,7 @@ export async function payReceiptEntry(receiptId: string, input: { cashAccountId:
     await lockReceipt(tx, receiptId);
     const st = await receiptPayState(tx, receiptId);
     if (!st) throw new CashError("Kirim hujjati topilmadi");
-    if (st.cancelled) throw new CashError(`${st.docNo} storno qilingan — to'lanmaydi`);
+    if (st.cancelled) throw new CashError(`${st.docNo} bekor qilingan — to'lanmaydi`);
     if (st.left <= 0.005) return { paid: 0, left: 0 }; // allaqachon to'liq to'langan (ikki marta bosilgan)
     if (part != null && part > st.left + 0.005) throw new CashError(`${st.docNo} bo'yicha qolgan to'lov ${money(st.left)} — ${money(part)} ortiqcha`);
     const amount = part ?? st.left;

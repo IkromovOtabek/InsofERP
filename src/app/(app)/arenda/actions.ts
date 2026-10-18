@@ -50,7 +50,7 @@ export async function stornoRentTx(id: string, reason: string): Promise<ActionSt
   const res = await cancelRentTx(id, reason, s.userId);
   if (res.error) return { error: res.error };
   done();
-  return { ok: true, note: "Storno qilindi" };
+  return { ok: true, note: "Bekor qilindi" };
 }
 
 /** Oyni ochish — faol do'konlarga o'tgan oy hisobidan (bo'lmasa andozadan) nusxa. */

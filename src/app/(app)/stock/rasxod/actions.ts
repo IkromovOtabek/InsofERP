@@ -77,7 +77,7 @@ export async function cancelRasxod(ref: string, reason: string): Promise<ActionS
   try {
     const r = await cancelIssue(String(ref ?? ""), String(reason ?? ""), { userId: s.userId, role: s.role });
     refresh();
-    return { ok: true, note: `Chiqim bekor qilindi (storno): ${r.count} qator` };
+    return { ok: true, note: `Chiqim bekor qilindi: ${r.count} qator` };
   } catch (e) {
     if (e instanceof IssueError) return { error: e.message };
     throw e;

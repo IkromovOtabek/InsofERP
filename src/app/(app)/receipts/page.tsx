@@ -26,7 +26,7 @@ export default async function ReceiptsPage() {
             const buyer = r.buyer?.fullName;
             return (
               <Tr key={r.id}>
-                <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>{r.cancelledAt && <> <Badge color="red">Storno</Badge></>}</Td>
+                <Td><Link href={`/receipts/${r.id}`} className="font-medium hover:underline">{r.docNo}</Link>{r.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td>
                 <Td>{date(r.date)}</Td><Td>{r.supplier.name}</Td><Td>{r.warehouse.name}</Td>
                 <Td className="text-slate-600">{r.items.map((i) => `${i.material.name} ${Number(i.qty)} ${i.material.unit}`).join(", ")}</Td>
                 <Td className="whitespace-nowrap text-slate-600">{r.waybillNo ?? waybillFromNote(r.note) ?? "—"}</Td>

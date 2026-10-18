@@ -28,10 +28,10 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
   return (
     <div>
       <PageHeader back={{ href: "/production", label: "Ishlab chiqarish" }} title={`Zames ${b.batchNo}`} subtitle={`${date(b.date)} · ${b.shift}-smena · ${b.createdBy.fullName}`}
-        action={canStorno ? <ConfirmButton action={stornoBatch.bind(null, b.id)} label="Storno" question={`${b.batchNo} storno qilinsinmi? Xomashyo skladga qaytadi, ${qty(b.qtyM3)} ${unitLabel(b.product.unit)} mahsulot qoldiqdan chiqariladi`} reason="required" okText="Storno qilindi" className="h-9 px-3 text-sm" /> : undefined} />
+        action={canStorno ? <ConfirmButton action={stornoBatch.bind(null, b.id)} label="Bekor qilish" question={`${b.batchNo} bekor qilinsinmi? Xomashyo skladga qaytadi, ${qty(b.qtyM3)} ${unitLabel(b.product.unit)} mahsulot qoldiqdan chiqariladi`} reason="required" okText="Bekor qilindi" className="h-9 px-3 text-sm" /> : undefined} />
       {b.cancelledAt && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          <Badge color="red">Storno</Badge> {dateTime(b.cancelledAt)}{cancelledBy ? ` · ${cancelledBy.fullName}` : ""} — {b.cancelReason}. Sklad harakatlari teskari yozilgan; zames ishlab chiqarish hisobiga kirmaydi.
+          <Badge color="red">Bekor qilingan</Badge> {dateTime(b.cancelledAt)}{cancelledBy ? ` · ${cancelledBy.fullName}` : ""} — {b.cancelReason}. Sklad harakatlari teskari yozilgan; zames ishlab chiqarish hisobiga kirmaydi.
         </div>
       )}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -49,7 +49,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
             const unit = m.material?.unit ?? m.product?.unit;
             return (
               <Tr key={m.id}>
-                <Td>{m.type === "PRODUCTION_CONSUME" ? (Number(m.qty) < 0 ? "Chiqim" : "Storno (qaytdi)") : (Number(m.qty) > 0 ? "Kirim" : "Storno (chiqarildi)")}</Td>
+                <Td>{m.type === "PRODUCTION_CONSUME" ? (Number(m.qty) < 0 ? "Chiqim" : "Bekor qilish (qaytdi)") : (Number(m.qty) > 0 ? "Kirim" : "Bekor qilish (chiqarildi)")}</Td>
                 <Td>{m.material?.name ?? m.product?.name}</Td>
                 <Td right>{norm ? `${qty(norm.qtyPerM3)} ${unit}` : "—"}</Td>
                 <Td right className={Number(m.qty) < 0 ? "text-red-600" : "text-emerald-700"}>{qty(m.qty)} {unit}</Td>

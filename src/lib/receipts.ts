@@ -289,7 +289,7 @@ function queueUnpaidNotice(receiptId: string, userId: string) {
     const ids = unpaidQueue.get(userId)?.ids ?? [];
     unpaidQueue.delete(userId);
     void (async () => {
-      const paid = new Set((await db.cashTransaction.findMany({ where: { refType: "GoodsReceipt", refId: { in: ids } }, select: { refId: true } })).map((t) => t.refId));
+      const paid = new Set((await db.cashTransaction.findMany({ where: { refType: "GoodsReceipt", refId: { in: ids }, cancelledAt: null }, select: { refId: true } })).map((t) => t.refId));
       const open = await db.goodsReceipt.findMany({ where: { id: { in: ids.filter((i) => !paid.has(i)) } }, select: { id: true, docNo: true, supplier: { select: { name: true } } } });
       if (!open.length) return;
       const one = open.length === 1 ? open[0]! : null;
@@ -382,7 +382,7 @@ export async function resolveReceiptPayments(
   const need = receipts.filter((r) => !r.payment).map((r) => r.id);
   if (need.length) {
     const txs = await client.cashTransaction.findMany({
-      where: { type: "EXPENSE", refType: "GoodsReceipt", refId: { in: need } },
+      where: { type: "EXPENSE", refType: "GoodsReceipt", refId: { in: need }, cancelledAt: null },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
       select: { refId: true, cashAccount: { select: { type: true } } },
     });

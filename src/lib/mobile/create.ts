@@ -122,7 +122,8 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   // Sklad (zaxira) zayavkasi va tijorat taklifi (`./sotuv-access.ts`) — rolning "+" tugmasi o'zgarmasin deb shu yerda
   ...SOTUV_CREATE_ROLES,
   // Zames (partiya) — veb `/production/new` (ishlab chiqarish; qoida `lib/production-batch.ts`, `./sex-extra.ts`)
-  production: { roles: ["PRODUCTION"], title: "Yangi zames", label: "Zames yozish" },
+  // Direktor ham zames yozadi — vebdagidek (egasi qarori, 2026-10-18)
+  production: { roles: ["PRODUCTION", "DIRECTOR"], title: "Yangi zames", label: "Zames yozish" },
   // Kassa: veb `/payments` va `/cashflow` formalari bilan bir xil qoida (`lib/payments.ts`, `lib/cash-entry.ts`,
   // `lib/cash-transfer.ts`). Rol ro'yxati — kim formani ko'rishi mumkinligi; aniq ruxsat `CREATE_PERM` (strict) da.
   payments: { roles: ["CASHIER", "ACCOUNTING", "FINANCE"], title: "To'lov qabul qilish", label: "To'lov qabul qilish" },

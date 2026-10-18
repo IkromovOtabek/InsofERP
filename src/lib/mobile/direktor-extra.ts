@@ -328,7 +328,7 @@ async function budgetDetail(id: string): Promise<MobileDetail> {
   const r = rows.find((x) => x.cat === cat) ?? notFound("Kategoriya topilmadi");
   const [year, month] = ym.split("-").map(Number);
   const tx = await db.cashTransaction.findMany({
-    where: { type: "EXPENSE", category: cat, date: { gte: new Date(year, month - 1, 1), lt: new Date(year, month, 1) } },
+    where: { type: "EXPENSE", category: cat, cancelledAt: null, date: { gte: new Date(year, month - 1, 1), lt: new Date(year, month, 1) } },
     orderBy: { amount: "desc" }, take: 40,
     select: { id: true, date: true, amount: true, counterparty: true, note: true, cashAccount: { select: { name: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true } } },
   });

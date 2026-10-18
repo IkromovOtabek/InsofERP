@@ -8,6 +8,7 @@ import { direktorDetail } from "./direktor-extra";
 import { LOGI_ACTION_ROLES, LOGI_DETAIL_ROLES, LOGI_PERM } from "./logistika-access";
 import { logiDetail, resolveIssueForm, withDriverExtras, withOrderTrip, withTripExtras } from "./logistika-extra";
 import { TX_TYPE_LABEL, isTransfer, txSign } from "@/lib/cash-tx";
+import { CANCELLED_LABEL, cancelNote, cancellerNames } from "@/lib/cancelled";
 import { activityDetail, splitRef } from "./director";
 import { customerCredit } from "@/lib/finance";
 import { materialOutlook } from "@/lib/dashboard";
@@ -399,19 +400,20 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // nazorat amali, vebdagidek direktor ham; to'lov/bog'lash — kassa va buxgalteriyaning ishi
   "payment.storno": ["ACCOUNTING", "DIRECTOR"],
   "payment.link": ["CASHIER", "ACCOUNTING"],
-  "cashflow.delete": ["ACCOUNTING", "FINANCE", "DIRECTOR"],
+  "cashflow.cancel": ["ACCOUNTING", "FINANCE", "DIRECTOR"],
   "receipt.pay": ["FINANCE", "ACCOUNTING"],
   "invoice.cancel": ["ACCOUNTING", "DIRECTOR"],
   "supplier.opening.pay": ["FINANCE", "ACCOUNTING"],
   "payroll.recalc": ["HR", "ACCOUNTING"],
   "arenda.shop.edit": ["SECRETARY"],
   // Ishlab chiqarish kabineti (`./sex-extra.ts`) — veb `requireAction` bilan bir xil (`PERM_EXACT`):
-  // zayavka qatorlarini brigadalarga taqsimlash, zames storno (odatda faqat direktor), retsept versiyasi, brigada tahriri, brak
-  "order.assign": ["PRODUCTION"],
+  // zayavka qatorlarini brigadalarga taqsimlash, zames storno (odatda faqat direktor), retsept versiyasi, brigada tahriri, brak.
+  // Direktor ilovada ham tayinlaydi, retsept va brak yozadi — vebdagidek (egasi qarori, 2026-10-18)
+  "order.assign": ["PRODUCTION", "DIRECTOR"],
   "batch.storno": ["DIRECTOR"],
-  "recipe.version": ["PRODUCTION", "WAREHOUSE", "PROCUREMENT"],
+  "recipe.version": ["PRODUCTION", "WAREHOUSE", "PROCUREMENT", "DIRECTOR"],
   "brigade.edit": [...TASK_ROLES.brigadeEdit],
-  "defect.add": ["PRODUCTION", "SUPERVISOR"],
+  "defect.add": ["PRODUCTION", "SUPERVISOR", "DIRECTOR"],
   // Xato yozilgan brak: direktor — har qandayini, boshqalar — bugun o'zi yozganini (`canDeleteDefect`)
   "defect.delete": ["PRODUCTION", "SUPERVISOR", "DIRECTOR"],
   // Sklad / snabjeniye qo'shimchalari: storno, brigada skladi, «Kimga», narx, o'chirish, rekvizitlar (`./sklad-extra-access.ts`)
@@ -469,7 +471,8 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "material.price": { module: "stock", action: "price" },
   "payment.storno": { module: "payments", action: "storno" },
   "payment.link": { module: "payments", action: "create" },
-  "cashflow.delete": { module: "cashflow", action: "delete" },
+  // Kassa yozuvini bekor qilish — veb `cancelCashTx` bilan bir xil ruxsat (`cashflow` → `delete`)
+  "cashflow.cancel": { module: "cashflow", action: "delete" },
   "receipt.pay": { module: "cashflow", action: "pay" },
   "invoice.cancel": { module: "sales", action: "invoice_cancel" },
   "supplier.opening.pay": { module: "cashflow", action: "pay" },
@@ -963,7 +966,7 @@ async function receiptDetail(user: MobileUser, id: string): Promise<MobileDetail
     ...(r.createdBy ? [{ label: "Kim kiritdi", value: r.createdBy.fullName }] : []),
     ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
     // Storno: sklad harakatlari teskari yozilgan — qoldiq va qarzga kirmaydi
-    ...(r.cancelledAt ? [{ label: "Holat", value: `Storno qilingan · ${day(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
+    ...(r.cancelledAt ? [{ label: "Holat", value: `Bekor qilingan · ${day(r.cancelledAt)}${r.cancelReason ? ` · ${r.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
   ];
   // Moliya: to'lanmagan kirim bo'lsa — qolgan summa va «To'lash» (`./moliya-extra.ts`, veb Kirim-Chiqim → «To'lanmagan kirimlar»)
   const moliya = r.cancelledAt ? null : await receiptPayActions(user, r.id);
@@ -971,15 +974,15 @@ async function receiptDetail(user: MobileUser, id: string): Promise<MobileDetail
   const sklad = await receiptExtra(user, r);
   return {
     key: "receipts", id: r.id, title: r.docNo, subtitle: r.supplier.name,
-    ...(r.cancelledAt ? { status: "Storno" } : {}),
+    ...(r.cancelledAt ? { status: "Bekor qilingan" } : {}),
     fields: [...fields.slice(1), ...sklad.fields, ...(moliya?.fields ?? [])],
     sections: [{ title: "Qatorlar", empty: "Qator yo'q", icon: "package", rows: r.items.map((i) => ({ id: i.id, title: i.material.name, subtitle: `${money(sum(i.price))} / ${i.material.unit}${Number(i.vatAmount) > 0 ? ` + QQS ${i.vatRate}%` : ""}${sum(i.deliveryCost) > 0 ? ` + yetkazib berish ${money(sum(i.deliveryCost))}` : ""}`, right: `${sum(i.qty)} ${i.material.unit}` })) }],
     actions: [...(moliya?.actions ?? []), ...sklad.actions],
     // Xarid — pul chiqib ketgan hujjat, chekda qizil
     receipt: {
-      headline: r.cancelledAt ? `${money(total)} · storno` : `−${money(total)}`, caption: r.supplier.name,
+      headline: r.cancelledAt ? `${money(total)} · bekor qilingan` : `−${money(total)}`, caption: r.supplier.name,
       status: r.cancelledAt
-        ? { label: "Storno qilingan · qoldiqqa kirmaydi", tone: "warning", at: r.cancelledAt.toISOString() }
+        ? { label: "Bekor qilingan · qoldiqqa kirmaydi", tone: "warning", at: r.cancelledAt.toISOString() }
         : { label: "Xarid · omborga kirim", tone: "danger", at: r.date.toISOString() },
       rows: fields.filter((f) => f.label !== "Yetkazuvchi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Hujjat" || f.label === "TTN" })),
     },
@@ -1084,10 +1087,10 @@ async function batchDetail(id: string): Promise<MobileDetail> {
   if (!b) throw new ListError("NOT_FOUND", "Zames topilmadi", 404);
   return {
     key: "production", id: b.id, title: b.batchNo, subtitle: b.product.name,
-    ...(b.cancelledAt ? { status: "Storno" } : {}),
+    ...(b.cancelledAt ? { status: "Bekor qilingan" } : {}),
     fields: [
       // Storno: xomashyo skladga qaytgan, mahsulot qoldiqdan chiqarilgan
-      ...(b.cancelledAt ? [{ label: "Holat", value: `Storno qilingan · ${dt(b.cancelledAt)}${b.cancelReason ? ` · ${b.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
+      ...(b.cancelledAt ? [{ label: "Holat", value: `Bekor qilingan · ${dt(b.cancelledAt)}${b.cancelReason ? ` · ${b.cancelReason}` : ""}`, tone: "danger" as Tone }] : []),
       { label: "Sana", value: dt(b.date) },
       { label: "Smena", value: `${b.shift}-smena` },
       { label: "Hajm", value: inUnit(sum(b.qtyM3), b.product.unit) },
@@ -1096,7 +1099,7 @@ async function batchDetail(id: string): Promise<MobileDetail> {
       { label: "Kim kiritdi", value: b.createdBy.fullName },
     ],
     sections: [{
-      title: b.cancelledAt ? "Retsept bo'yicha (storno — skladga qaytarilgan)" : "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh", icon: "layers",
+      title: b.cancelledAt ? "Retsept bo'yicha (bekor qilingan — skladga qaytarilgan)" : "Sarflangan xomashyo / mahsulot", empty: "Retsept bo'sh", icon: "layers",
       rows: b.recipe.items.map((i) => { const ing = ingredientOf(i); return { id: i.id, title: ing.name, subtitle: `${sum(ing.qtyPerM3)} ${ing.unit} / ${unitLabel(b.product.unit)}`, right: `${(ing.qtyPerM3 * sum(b.qtyM3)).toFixed(1)} ${ing.unit}` }; }),
     }],
     actions: [],
@@ -1133,7 +1136,7 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
   // Storno harakati (teskari yozuv) alohida nom bilan — "Kirim −5 t" chalg'itmasin. Chiqim — oluvchi bilan, brigada — nomi bilan
   const moveLabel = (mv: { type: string; note: string | null; recipient: { name: string } | null; employee: { fullName: string } | null; brigade: { name: string } | null }) => {
     const whom = mv.type === "ISSUE" ? ` → ${mv.employee?.fullName ?? mv.recipient?.name ?? "—"}` : (mv.type === "BRIGADE_ISSUE" || mv.type === "BRIGADE_RETURN") && mv.brigade ? ` · ${mv.brigade.name}` : "";
-    return `${mv.note?.startsWith("Storno ") ? "Storno · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}${whom}`;
+    return `${mv.note?.startsWith("Storno ") || mv.note?.startsWith("Bekor qilish ") ? "Bekor qilish · " : ""}${MOVE_LABEL[mv.type] ?? mv.type}${whom}`;
   };
 
   // «Dona narxi»: Snabjeniye belgilagan narx; bo'lmasa chiqimlar o'rtacha tannarx bilan baholanadi («≈»)
@@ -1240,13 +1243,13 @@ async function issueDetail(user: MobileUser, ref: string): Promise<MobileDetail>
     { label: "Umumiy summa", value: `${fmtNum(total)} so'm${noPrice ? " (ba'zi qatorlar narxsiz)" : ""}`, ...(noPrice ? { tone: "warning" as Tone } : {}) },
     { label: "Bergan xodim", value: first.createdBy.fullName },
     ...(first.note ? [{ label: "Izoh", value: first.note }] : []),
-    ...(storno ? [{ label: "Storno", value: [storno.note?.replace(STORNO_NOTE_RE, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
+    ...(storno ? [{ label: "Bekor qilindi", value: [storno.note?.replace(STORNO_NOTE_RE, ""), storno.createdBy.fullName, dateRu(storno.createdAt)].filter(Boolean).join(" · "), tone: "warning" as Tone }] : []),
   ];
   // Storno tugmasi va oluvchi kartasiga havola (`./sklad-extra.ts`)
   const sklad = rasxodExtra(user, ref, !!storno, { recipientId: first.recipientId, employeeId: first.employeeId, brigadeId: first.brigadeId, name: to });
   return {
     key: "rasxod", id: ref, title: "Chiqim", subtitle: `${dateRu(first.date)} · ${to}`,
-    ...(storno ? { status: "Storno" } : {}),
+    ...(storno ? { status: "Bekor qilingan" } : {}),
     fields,
     sections: [{
       title: "Xomashyolar", empty: "", target: "stock", icon: "package",
@@ -1261,7 +1264,7 @@ async function issueDetail(user: MobileUser, ref: string): Promise<MobileDetail>
     receipt: {
       headline: `−${fmtNum(total)} so'm`, caption: to,
       status: storno
-        ? { label: "Storno · skladga qaytarildi", tone: "warning", at: storno.createdAt.toISOString() }
+        ? { label: "Bekor qilingan · skladga qaytarildi", tone: "warning", at: storno.createdAt.toISOString() }
         : { label: "Skladdan chiqim", tone: "danger", at: first.date.toISOString() },
       rows: fields.filter((f) => f.label !== "Kimga").map((f) => ({ label: f.label, value: f.value })),
     },
@@ -1397,7 +1400,10 @@ async function cashflowDetail(user: MobileUser, id: string): Promise<MobileDetai
   if (!t) throw new ListError("NOT_FOUND", "Yozuv topilmadi", 404);
   // Ishora — txSign (chiqim va o'tkazma-chiqdi manfiy); o'tkazma va boshlang'ich qoldiq — "info"
   const out = txSign(t.type) < 0;
+  // Bekor qilingan yozuv: kartochkada «Bekor qilingan» (sabab, kim, qachon), tugmasiz — `cashflowActions` bo'sh qaytaradi
+  const cancel = cancelNote(t, await cancellerNames([t]));
   const fields: DetailField[] = [
+    ...(cancel ? [{ label: CANCELLED_LABEL, value: cancel, tone: "danger" as const }] : []),
     { label: "Sana", value: dt(t.date) },
     { label: "Turi", value: TX_TYPE_LABEL[t.type], tone: t.type === "OPENING" || isTransfer(t.type) ? "info" : out ? "danger" : "success" },
     { label: "Kategoriya", value: t.category },
@@ -1411,11 +1417,12 @@ async function cashflowDetail(user: MobileUser, id: string): Promise<MobileDetai
   ];
   return {
     key: "cashflow", id: t.id, title: `${out ? "−" : "+"}${money(sum(t.amount))}`, subtitle: t.category,
-    // «O'chirish» — veb Kirim-Chiqim jadvalidagi kabi (`./moliya-extra.ts`)
+    ...(cancel ? { status: CANCELLED_LABEL } : {}),
+    // «Bekor qilish» — veb Kirim-Chiqim jadvalidagi kabi (`./moliya-extra.ts`)
     fields, sections: [], actions: await cashflowActions(user, t),
     receipt: {
       headline: `${out ? "−" : "+"}${money(sum(t.amount))}`, caption: t.counterparty ? `${t.category} · ${t.counterparty}` : t.category,
-      status: { label: out ? "Chiqim" : "Kirim", tone: out ? "danger" : "success", at: t.date.toISOString() },
+      status: cancel ? { label: CANCELLED_LABEL, tone: "warning", at: (t.cancelledAt ?? t.date).toISOString() } : { label: out ? "Chiqim" : "Kirim", tone: out ? "danger" : "success", at: t.date.toISOString() },
       rows: fields.filter((f) => f.label !== "Turi").map((f) => ({ label: f.label, value: f.value, copy: f.label === "Talabnoma" })),
     },
   };

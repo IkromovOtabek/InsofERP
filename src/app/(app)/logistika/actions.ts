@@ -8,7 +8,7 @@ import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, type ActionState } from "@/lib/action";
 import {
-  addExpenseRecord, addFuelRecord, addVehicleServiceRecord, deleteExpenseRecord, deleteFuelRecord, deleteVehicleServiceRecord,
+  addExpenseRecord, addFuelRecord, addVehicleServiceRecord, cancelExpenseRecord, cancelFuelRecord, cancelVehicleServiceRecord,
   driverCardSchema, expenseSchema, fuelSchema, saveDriverCardRecord, saveSiteRecord, saveVehicleRecord, serviceSchema, siteSchema, vehicleSchema,
 } from "@/lib/logistics-admin";
 
@@ -83,21 +83,21 @@ export async function addExpense(_prev: ActionState, fd: FormData): Promise<Acti
   return { ok: true };
 }
 
-/** Xato kiritilgan yozuvni o'chirish (audit jurnalida asl yozuv qoladi). */
-export async function deleteFuel(id: string): Promise<ActionState> {
+/** Xato kiritilgan yozuvni bekor qilish — sabab bilan (`ConfirmButton reason="required"`); yozuv o'chirilmaydi. */
+export async function cancelFuel(id: string, reason: string): Promise<ActionState> {
   const s = await requireAction("logistika", "fuel");
-  const res = await deleteFuelRecord(id, s.userId);
+  const res = await cancelFuelRecord(id, String(reason ?? ""), s.userId);
   if ("error" in res) return { error: res.error };
-  refresh();
-  return { ok: true };
+  refresh(); revalidatePath("/trips", "layout");
+  return { ok: true, note: "Bekor qilindi" };
 }
 
-export async function deleteExpense(id: string): Promise<ActionState> {
+export async function cancelExpense(id: string, reason: string): Promise<ActionState> {
   const s = await requireAction("logistika", "fuel");
-  const res = await deleteExpenseRecord(id, s.userId);
+  const res = await cancelExpenseRecord(id, String(reason ?? ""), s.userId);
   if ("error" in res) return { error: res.error };
-  refresh();
-  return { ok: true };
+  refresh(); revalidatePath("/trips", "layout");
+  return { ok: true, note: "Bekor qilindi" };
 }
 
 // ───────────────────────── Texnik xizmat jurnali (mexanik) ─────────────────────────
@@ -113,12 +113,12 @@ export async function addVehicleService(vehicleId: string, _prev: ActionState, f
   return { ok: true };
 }
 
-export async function deleteVehicleService(id: string): Promise<ActionState> {
+export async function cancelVehicleService(id: string, reason: string): Promise<ActionState> {
   const s = await requireAction("logistika", "service");
-  const res = await deleteVehicleServiceRecord(id, s.userId);
+  const res = await cancelVehicleServiceRecord(id, String(reason ?? ""), s.userId);
   if ("error" in res) return { error: res.error };
   refresh(); revalidatePath(`/logistika/transport/${res.id}`);
-  return { ok: true };
+  return { ok: true, note: "Bekor qilindi" };
 }
 
 // ───────────────────────── Sozlamalar ─────────────────────────

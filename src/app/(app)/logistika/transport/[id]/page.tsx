@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Fuel, Route, Coins, Gauge, Truck, Wrench } from "lucide-react";
+import { Fuel, Route, Coins, Gauge, Truck, Undo2, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { ACTIVE_TRIP, driverEmployees, EXPENSE_KIND, FUEL_TYPE, SERVICE_KINDS, serviceDueLevel, tripPhase, VEHICLE_TYPE, vehicleLive, vehicleServiceDue } from "@/lib/logistics";
 import { fuelConsumption } from "@/lib/logistics-costs";
 import { date, dateTime, fmtNum, isoDate, money, moneyShort, qty } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { DeleteButton } from "@/components/delete-button";
+import { ConfirmButton } from "../../../payments/confirm-button";
+import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { VehicleForm } from "../vehicle-form";
 import { PhaseBadge, TripLink, VehicleLiveBadge } from "../../ui";
 import { VehicleStatusForm } from "../../../drivers/vehicle-status-form";
-import { deleteVehicleService } from "../../actions";
+import { cancelVehicleService } from "../../actions";
 import { ServiceForm, VehicleExpenseForm } from "./service-forms";
 
 export const dynamic = "force-dynamic";
@@ -35,12 +36,15 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
   const drivers = await driverEmployees({ activeOnly: true });
   const live = vehicleLive(v, v.trips);
 
+  // Bekor qilingan yozuvlar jadvalda belgisi bilan qoladi, lekin sarf, xarajat va xizmat muddatiga kirmaydi
+  const fuelOk = v.fuelLogs.filter((f) => !f.cancelledAt);
+  const names = await cancellerNames([...v.fuelLogs, ...v.expenses, ...v.services]);
   // Haqiqiy sarf: yoqilg'i sahifasi bilan bitta funksiya (to'liq bak usuli, birinchi quyish litrisiz)
-  const per100 = fuelConsumption(v.fuelLogs).per100;
+  const per100 = fuelConsumption(fuelOk).per100;
   const due = await vehicleServiceDue({ vehicleId: v.id });
   const norm = v.fuelNormL100 ? Number(v.fuelNormL100) : null;
-  const monthFuel = v.fuelLogs.filter((f) => f.date >= monthFrom);
-  const monthExp = v.expenses.filter((e) => e.date >= monthFrom);
+  const monthFuel = fuelOk.filter((f) => f.date >= monthFrom);
+  const monthExp = v.expenses.filter((e) => !e.cancelledAt && e.date >= monthFrom);
   const monthTrips = v.trips.filter((t) => t.createdAt >= monthFrom && t.status !== "CANCELLED");
   const monthQty = monthTrips.reduce((a, t) => a + Number(t.qtyM3), 0);
   const monthCost = monthFuel.reduce((a, f) => a + Number(f.amount), 0) + monthExp.reduce((a, e) => a + Number(e.amount), 0);
@@ -92,7 +96,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
               <tbody>
                 {v.fuelLogs.length === 0 && <Empty text="Zapravka yozilmagan" />}
                 {v.fuelLogs.slice(0, 10).map((f) => (
-                  <Tr key={f.id}><Td className="text-sm">{date(f.date)}<div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.driver ? ` · ${f.driver.fullName}` : ""}</div></Td><Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td><Td right className="tabular">{moneyShort(Number(f.amount))}</Td><Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td></Tr>
+                  <Tr key={f.id} className={f.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm">{date(f.date)}<div className="text-xs text-slate-500">{FUEL_TYPE[f.fuelType]}{f.driver ? ` · ${f.driver.fullName}` : ""}</div>{f.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(f, names)}</div></div>}</Td><Td right className="tabular">{fmtNum(Number(f.liters), 1)}</Td><Td right className={`tabular ${f.cancelledAt ? "line-through" : ""}`}>{moneyShort(Number(f.amount))}</Td><Td right className="tabular">{f.odometerKm != null ? fmtNum(f.odometerKm) : "—"}</Td></Tr>
                 ))}
               </tbody>
             </Table>
@@ -104,7 +108,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
               <thead><tr><Th>Sana</Th><Th>Turi</Th><Th right>Summa</Th></tr></thead>
               <tbody>
                 {v.expenses.length === 0 && <Empty text="Xarajat yozilmagan" />}
-                {v.expenses.slice(0, 10).map((e) => <Tr key={e.id}><Td className="text-sm">{date(e.date)}</Td><Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note ? <div className="text-xs text-slate-500">{e.note}</div> : null}</Td><Td right className="tabular">{money(Number(e.amount))}</Td></Tr>)}
+                {v.expenses.slice(0, 10).map((e) => <Tr key={e.id} className={e.cancelledAt ? "text-slate-400" : undefined}><Td className="text-sm">{date(e.date)}</Td><Td className="text-sm">{EXPENSE_KIND[e.kind]}{e.note ? <div className="text-xs text-slate-500">{e.note}</div> : null}{e.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 text-xs text-slate-500">{cancelNote(e, names)}</div></div>}</Td><Td right className={`tabular ${e.cancelledAt ? "line-through" : ""}`}>{money(Number(e.amount))}</Td></Tr>)}
               </tbody>
             </Table>
           </Card>
@@ -119,18 +123,18 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
           <tbody>
             {v.services.length === 0 && <Empty text="Xizmat yozilmagan" />}
             {v.services.map((x) => {
-              const lv = serviceDueLevel(x, v.odometerKm);
+              const lv = x.cancelledAt ? null : serviceDueLevel(x, v.odometerKm);
               return (
-                <Tr key={x.id}>
+                <Tr key={x.id} className={x.cancelledAt ? "bg-slate-50/60 text-slate-400" : undefined}>
                   <Td className="text-sm tabular">{date(x.date)}</Td>
-                  <Td className="text-sm">{x.kind}{x.note ? <div className="max-w-xs text-xs text-slate-500">{x.note}</div> : null}</Td>
+                  <Td className="text-sm">{x.kind}{x.note ? <div className="max-w-xs text-xs text-slate-500">{x.note}</div> : null}{x.cancelledAt && <div className="mt-1"><Badge color="red">Bekor qilingan</Badge><div className="mt-0.5 max-w-xs text-xs text-slate-500">{cancelNote(x, names)}</div></div>}</Td>
                   <Td right className="tabular">{x.odometerKm != null ? fmtNum(x.odometerKm) : "—"}</Td>
                   <Td right className="tabular">{x.cost != null ? money(Number(x.cost)) : "—"}</Td>
                   <Td className="text-sm">
                     {x.nextDueAt || x.nextDueKm != null ? <>{[x.nextDueAt ? date(x.nextDueAt) : null, x.nextDueKm != null ? `${fmtNum(x.nextDueKm)} km` : null].filter(Boolean).join(" / ")}{lv && <> <Badge color={lv.level === "crit" ? "red" : "amber"}>{lv.level === "crit" ? "o'tgan" : "yaqin"}</Badge></>}</> : "—"}
                   </Td>
                   <Td className="text-xs text-slate-500">{x.createdBy.fullName}</Td>
-                  {canService && <Td><DeleteButton action={deleteVehicleService} id={x.id} name={`${x.kind} ${date(x.date)}`} /></Td>}
+                  {canService && <Td>{!x.cancelledAt && <ConfirmButton action={cancelVehicleService.bind(null, x.id)} reason="required" label="" title="Bekor qilish" icon={<Undo2 size={14} />} question={`«${x.kind} ${date(x.date)}» bekor qilinsinmi?`} okText="Bekor qilindi" className="h-7 px-1.5" />}</Td>}
                 </Tr>
               );
             })}

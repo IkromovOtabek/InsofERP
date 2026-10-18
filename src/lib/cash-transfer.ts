@@ -124,7 +124,7 @@ export async function createTransfer(input: TransferInput, userId: string): Prom
 
 export async function cancelTransfer(id: string, reason: string, userId: string): Promise<{ error?: string }> {
   const why = reason.trim();
-  if (why.length < 3) return { error: "Storno sababini yozing" };
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing" };
   try {
     return await db.$transaction(async (tx) => {
       const pre = await tx.cashTransfer.findUnique({ where: { id }, select: { fromAccountId: true, toAccountId: true } });
@@ -132,7 +132,8 @@ export async function cancelTransfer(id: string, reason: string, userId: string)
       await lockAccounts(tx, [pre.fromAccountId, pre.toAccountId]);
       // Qulfdan keyin qayta o'qiladi — ikki parallel storno ikkinchisi "allaqachon" ni ko'rsin
       const t = await tx.cashTransfer.findUniqueOrThrow({ where: { id }, include: { toAccount: { select: { name: true } } } });
-      if (t.cancelledAt) throw new TransferError(`${t.docNo} allaqachon storno qilingan`);
+      if (t.cancelledAt) throw new TransferError(`${t.docNo} allaqachon bekor qilingan`);
+      // O'tkazma oyoqlari alohida bekor qilinmaydi (`cashEntryLocked`) — `cancelledAt` filtri kerak emas
       const legs = await tx.cashTransaction.findMany({ where: { refType: TRANSFER_REF, refId: t.id } });
       // Qabul qiluvchi hisobdan pul qaytib chiqadi (u yerdan komissiya yechilgan bo'lsa — u qaytadi)
       const feeOnTo = legs.filter((l) => l.type === "EXPENSE" && l.cashAccountId === t.toAccountId).reduce((s, l) => s + Number(l.amount), 0);
@@ -140,7 +141,7 @@ export async function cancelTransfer(id: string, reason: string, userId: string)
       const outflow = r2(inSum - feeOnTo);
       if (outflow > 0.005) {
         const err = await cashOutflowError(tx, t.toAccountId, outflow);
-        if (err) throw new TransferError(`Storno qilinsa ${t.toAccount.name} minusga tushadi (pul allaqachon sarflangan). ${err}`);
+        if (err) throw new TransferError(`Bekor qilinsa ${t.toAccount.name} minusga tushadi (pul allaqachon sarflangan). ${err}`);
       }
       await tx.cashTransaction.deleteMany({ where: { id: { in: legs.map((l) => l.id) } } });
       for (const l of legs) await audit(tx, userId, "DELETE", "CashTransaction", l.id, l, { reversed: true, by: "transfer-storno", transfer: t.docNo });

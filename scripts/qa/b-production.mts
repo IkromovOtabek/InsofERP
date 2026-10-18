@@ -80,7 +80,7 @@ check(r.ok, "direktor zamesni storno qildi", r.error);
 check(recipe.every(([m]) => Math.abs(mbal(m) - before.get(m)!) < 0.001), "storno: xomashyo to'liq qaytdi");
 check(Math.abs(pbal(M200, main) - p0) < 0.001, "storno: M200 qoldig'i avvalgidek");
 let page = await dir.get(`/production/${b1}`);
-check(page.status === 200 && /Storno/.test(page.text), "zames sahifasida Storno belgisi");
+check(page.status === 200 && /Bekor qilingan/.test(page.text), "zames sahifasida «Bekor qilingan» belgisi");
 page = await dir.get(`/stock/products/${M200}`);
 check(page.status === 200, "/stock/products/M200 ochildi");
 

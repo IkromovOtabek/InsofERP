@@ -292,10 +292,10 @@ const cashSummary: Tool = {
     const p = period(a)!;
     const [pays, txs, accounts, allPay, allTx] = await Promise.all([
       db.payment.findMany({ where: { date: { gte: p.from, lt: p.to } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } } } }),
-      db.cashTransaction.findMany({ where: { date: { gte: p.from, lt: p.to } }, include: { cashAccount: { select: { name: true } } } }),
+      db.cashTransaction.findMany({ where: { cancelledAt: null, date: { gte: p.from, lt: p.to } }, include: { cashAccount: { select: { name: true } } } }),
       db.cashAccount.findMany({ where: { isActive: true } }),
       db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
-      db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], _sum: { amount: true } }),
+      db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } }),
     ]);
     const cashIn = sum(pays.map((x) => Number(x.amount)));
     const income = txs.filter((t) => t.type === "INCOME"), expense = txs.filter((t) => t.type === "EXPENSE");

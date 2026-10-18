@@ -104,7 +104,7 @@ try {
   check(near(led.debt, expDebt) && near(led.received, expDebt), `yetkazuvchi qarzi QQS bilan: ${led.debt} = ${expDebt}`, led);
   check(near((await supplierLedger(s0)).debt, 150000 + 1120), "QQS'siz yetkazuvchi qarzi: 151 120");
   r = await buh.action("(app)/cashflow/actions#payReceipt", [rA, undefined, fd({ cashAccountId: bank })], "/cashflow");
-  const paid = n1(`select coalesce(sum(amount),0) from "CashTransaction" where "refId"='${rA}' and type='EXPENSE'`);
+  const paid = n1(`select coalesce(sum(amount),0) from "CashTransaction" where "refId"='${rA}' and type='EXPENSE' and "cancelledAt" is null`);
   check(!r.error && paid === 112000 && (await ps(rA))?.left === 0, "moliya kirimni to'ladi: chiqim 112 000 (QQS bilan), qoldiq 0", { e: r.error, paid });
   check(near((await supplierLedger(s12)).debt, expDebt - 112000), "to'lovdan keyin qarz 112 000 ga kamaydi");
 

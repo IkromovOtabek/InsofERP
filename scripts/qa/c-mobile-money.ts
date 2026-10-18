@@ -51,7 +51,7 @@ async function main() {
     const before = digits(field(d.json, "Jami"));
     // Kirim summasi QQS bilan (20261005 dan): qty × price + vatAmount
     const total = unpaidRec.items.reduce((s, i) => s + Number(i.qty) * Number(i.price) + Number(i.vatAmount), 0);
-    const paid = Number((await db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: unpaidRec.id }, _sum: { amount: true } }))._sum.amount ?? 0);
+    const paid = Number((await db.cashTransaction.aggregate({ where: { type: "EXPENSE", refType: "GoodsReceipt", refId: unpaidRec.id, cancelledAt: null }, _sum: { amount: true } }))._sum.amount ?? 0);
     await db.goodsReceipt.update({ where: { id: unpaidRec.id }, data: { cancelledAt: new Date(), cancelReason: "QA (C) storno sinovi" } });
     try {
       d = await api("GET", "/api/mobile/detail?key=dash&id=payable.month", { token: buh });
@@ -71,7 +71,7 @@ async function main() {
   const expectedBalance = async () => {
     const [pay, tx] = await Promise.all([
       db.payment.aggregate({ where: { cashAccount: { isActive: true } }, _sum: { amount: true } }),
-      db.cashTransaction.groupBy({ by: ["type"], where: { cashAccount: { isActive: true } }, _sum: { amount: true } }),
+      db.cashTransaction.groupBy({ by: ["type"], where: { cashAccount: { isActive: true }, cancelledAt: null }, _sum: { amount: true } }),
     ]);
     return Math.round(Number(pay._sum.amount ?? 0) + tx.reduce((s, t) => s + txSign(t.type) * Number(t._sum.amount ?? 0), 0));
   };
@@ -109,7 +109,7 @@ async function main() {
     check(`sotuv summasi = ${sales}`, val("Sotuv summasi, so'm") === sales, val("Sotuv summasi, so'm"));
     const pays = await db.payment.aggregate({ where: { date: { gte: from, lt: to } }, _sum: { amount: true }, _count: true });
     check(`mijoz to'lovlari = ${Math.round(Number(pays._sum.amount ?? 0))}`, val("Mijoz to'lovlari, so'm") === Math.round(Number(pays._sum.amount ?? 0)), val("Mijoz to'lovlari, so'm"));
-    const tx = await db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: from, lt: to } }, _sum: { amount: true } });
+    const tx = await db.cashTransaction.groupBy({ by: ["type"], where: { date: { gte: from, lt: to }, cancelledAt: null }, _sum: { amount: true } });
     const inc = Math.round(Number(tx.find((t) => t.type === "INCOME")?._sum.amount ?? 0)), out = Math.round(Number(tx.find((t) => t.type === "EXPENSE")?._sum.amount ?? 0));
     check(`boshqa kirim = ${inc}`, val("Boshqa kirim, so'm") === inc, val("Boshqa kirim, so'm"));
     check(`chiqim = ${out} (OPENING kirmaydi)`, val("Chiqim, so'm") === out, val("Chiqim, so'm"));

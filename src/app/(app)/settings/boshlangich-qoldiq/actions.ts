@@ -143,7 +143,7 @@ export async function reverseSupplierOpeningPaymentAction(cashTxId: string, reas
   const res = await reverseSupplierOpeningPayment(cashTxId, String(reason ?? ""), s.userId);
   if (res.error) return { error: res.error };
   refresh();
-  return { ok: true, note: "To'lov storno qilindi" };
+  return { ok: true, note: "To'lov bekor qilindi" };
 }
 
 /** Yetkazuvchiga boshlang'ich qarzni to'lash — moliyaning "Yetkazuvchiga to'lash" huquqi bilan. */

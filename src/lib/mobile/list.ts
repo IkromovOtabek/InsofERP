@@ -535,7 +535,7 @@ async function prixodList(title: string, q?: string, filter?: string): Promise<M
     // Storno qilingan kirim o'z sanasida «Bekor qilindi», storno sanasida manfiy qator (jurnal = «Qoldiqlar» Kirim)
     right: r.storno ? `−${fmtNum(Math.abs(r.total))}` : `+${fmtNum(r.total)}`,
     tone: r.storno ? "danger" : "success",
-    ...(r.storno ? { status: "Storno" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
+    ...(r.storno ? { status: "Bekor qilish" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
   }));
   return { key: "prixod", title: journalTitle(title, all.length, t.total), rows, filters: wf.filters };
 }
@@ -565,7 +565,7 @@ async function rasxodList(user: MobileUser, title: string, q?: string, filter?: 
       subtitle: [dateRu(r.date), r.to, r.payment ? PAY_LABEL[r.payment] : null].filter(Boolean).join(" · "),
       right: noPrice ? "narxsiz" : `${r.priceApprox ? "≈" : ""}${back ? "+" : "−"}${fmtNum(Math.abs(r.total))}`,
       tone: back ? "success" : r.kind === "prod" ? "info" : "danger",
-      ...(r.kind === "storno" ? { status: "Storno" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
+      ...(r.kind === "storno" ? { status: "Bekor qilish" } : r.cancelled ? { status: "Bekor qilindi" } : {}),
     };
   });
   return { key: "rasxod", title: journalTitle(title, all.length, t.total), rows, filters: wf.filters };
@@ -678,8 +678,8 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
       return list.map((b) => ({
         id: b.id, title: `${b.batchNo} · ${b.product.name}`,
         subtitle: `${day(b.date)} · ${b.order ? b.order.customer.name : "Omborga"}${b.cancelledAt ? " · bekor qilingan" : ""}`,
-        right: b.cancelledAt ? "storno" : m3(sum(b.qtyM3)),
-        status: b.cancelledAt ? "Storno" : `${b.shift}-smena`,
+        right: b.cancelledAt ? "bekor qilingan" : m3(sum(b.qtyM3)),
+        status: b.cancelledAt ? "Bekor qilingan" : `${b.shift}-smena`,
         ...(b.cancelledAt ? { tone: "danger" as Tone } : {}),
       }));
     }
@@ -700,12 +700,12 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         where: q ? { OR: [{ docNo: { contains: q, mode: "insensitive" } }, { supplier: { name: { contains: q, mode: "insensitive" } } }] } : undefined,
         orderBy: { date: "desc" }, take: TAKE, include: { supplier: true, items: true },
       });
-      // Storno qilingan kirim — summasi qoldiq va qarzga kirmaydi, ro'yxatda "Storno" belgisi bilan
+      // Storno qilingan kirim — summasi qoldiq va qarzga kirmaydi, ro'yxatda "Bekor qilingan" belgisi bilan
       return list.map((r) => ({
         id: r.id, title: `${r.docNo} · ${r.supplier.name}`,
         subtitle: `${day(r.date)} · ${r.items.length} qator${r.cancelledAt ? " · bekor qilingan" : ""}`,
-        right: r.cancelledAt ? "storno" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)),
-        ...(r.cancelledAt ? { status: "Storno", tone: "danger" as Tone } : {}),
+        right: r.cancelledAt ? "bekor qilingan" : money(r.items.reduce((s, i) => s + lineTotal(i), 0)),
+        ...(r.cancelledAt ? { status: "Bekor qilingan", tone: "danger" as Tone } : {}),
       }));
     }
     case "cashflow": {
@@ -715,7 +715,8 @@ async function build(key: string, q?: string, driverId?: string, brigadeIds?: st
         orderBy: { date: "desc" }, take: TAKE, include: { cashAccount: true },
       });
       // Hisoblararo o'tkazma ham o'z qatori bilan ko'rinadi (ishora — txSign, rang — "info")
-      return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: isTransfer(t.type) ? "info" : txSign(t.type) < 0 ? "danger" : "success" }));
+      // Bekor qilingan yozuv ro'yxatda qoladi — «Bekor qilingan» holati bilan
+      return list.map((t) => ({ id: t.id, title: `${t.category}${t.counterparty ? ` · ${t.counterparty}` : ""}`, subtitle: `${day(t.date)} · ${t.cashAccount.name}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, right: `${txSign(t.type) < 0 ? "−" : "+"}${money(sum(t.amount))}`, tone: t.cancelledAt ? "danger" : isTransfer(t.type) ? "info" : txSign(t.type) < 0 ? "danger" : "success", ...(t.cancelledAt ? { status: "Bekor qilingan" } : {}) }));
     }
     case "payments": {
       const list = await db.payment.findMany({

@@ -69,13 +69,13 @@ const TX_TONE = (t: { type: RentTxType; cancelledAt: Date | null }): Tone => (t.
 
 function txRow(t: { id: string; type: RentTxType; method: RentMethod; date: Date; month: Date | null; amount: Prisma.Decimal; category: string; note: string | null; cancelledAt: Date | null; cancelReason: string | null; shop: { name: string } | null }): HomeRow {
   const sign = t.type === "INCOME" ? "+" : "−";
-  const parts = [dateRu(t.date), RENT_METHOD_LABEL[t.method], t.note, t.cancelledAt ? `storno: ${t.cancelReason ?? ""}` : null].filter(Boolean);
+  const parts = [dateRu(t.date), RENT_METHOD_LABEL[t.method], t.note, t.cancelledAt ? `bekor qilingan: ${t.cancelReason ?? ""}` : null].filter(Boolean);
   return {
     id: t.id,
     title: t.type === "INCOME" ? `${t.shop?.name ?? "Do'kon"}${t.month ? ` · ${monthLabel(t.month)}` : ""}` : t.category,
     subtitle: parts.join(" · "),
     right: `${sign}${money(n(t.amount))}`,
-    status: t.cancelledAt ? "Storno" : t.type === "INCOME" ? "Kirim" : "Chiqim",
+    status: t.cancelledAt ? "Bekor qilingan" : t.type === "INCOME" ? "Kirim" : "Chiqim",
     tone: TX_TONE(t),
   };
 }
@@ -84,7 +84,7 @@ const JURNAL_TABS = [
   { key: "all", label: "Hammasi", where: {} as Prisma.RentTxWhereInput },
   { key: "income", label: "Kirim", where: { type: "INCOME", cancelledAt: null } as Prisma.RentTxWhereInput },
   { key: "expense", label: "Chiqim", where: { type: "EXPENSE", cancelledAt: null } as Prisma.RentTxWhereInput },
-  { key: "storno", label: "Storno", where: { cancelledAt: { not: null } } as Prisma.RentTxWhereInput },
+  { key: "storno", label: "Bekor qilingan", where: { cancelledAt: { not: null } } as Prisma.RentTxWhereInput },
 ] as const;
 
 /** Arenda kassasi jurnali — oxirgi 200 yozuv, qidiruv do'kon/kategoriya/izoh bo'yicha. */
@@ -142,7 +142,7 @@ export async function arendaTxDetail(user: MobileUser, id: string): Promise<Mobi
   const actions: DetailAction[] = [];
   if (!t.cancelledAt && arendaCan(user, "storno")) {
     actions.push({
-      id: "arenda.storno", label: "Storno qilish", tone: "danger",
+      id: "arenda.storno", label: "Bekor qilish", tone: "danger",
       form: [{ name: "reason", label: "Sabab", type: "text", required: true, placeholder: "Nega bekor qilinmoqda", hint: "Yozuv jurnalda chizilgan holda qoladi, kassa qoldig'i qayta hisoblanadi" }],
     });
   }
@@ -150,7 +150,7 @@ export async function arendaTxDetail(user: MobileUser, id: string): Promise<Mobi
     key: "arenda-tx", id: t.id,
     title: income ? `Kirim · ${t.shop?.name ?? "Do'kon"}` : `Chiqim · ${t.category}`,
     subtitle: `${dateRu(t.date)} · ${RENT_METHOD_LABEL[t.method]}`,
-    status: t.cancelledAt ? "Storno" : income ? "Kirim" : "Chiqim",
+    status: t.cancelledAt ? "Bekor qilingan" : income ? "Kirim" : "Chiqim",
     fields: [
       { label: "Summa", value: `${income ? "+" : "−"}${money(n(t.amount))}`, tone: TX_TONE(t) },
       { label: "Usul", value: RENT_METHOD_LABEL[t.method] },
@@ -159,7 +159,7 @@ export async function arendaTxDetail(user: MobileUser, id: string): Promise<Mobi
       { label: income ? "Turi" : "Chiqim turi", value: t.category },
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
       { label: "Kiritdi", value: `${t.createdBy.fullName} · ${dateRu(t.createdAt)}` },
-      ...(t.cancelledAt ? [{ label: "Storno", value: `${cancelledBy?.fullName ?? "—"} · ${dateRu(t.cancelledAt)}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, tone: "warning" as Tone }] : []),
+      ...(t.cancelledAt ? [{ label: "Bekor qilindi", value: `${cancelledBy?.fullName ?? "—"} · ${dateRu(t.cancelledAt)}${t.cancelReason ? ` · ${t.cancelReason}` : ""}`, tone: "warning" as Tone }] : []),
     ],
     sections: [],
     actions,
@@ -400,7 +400,7 @@ export async function arendaAction(user: MobileUser, action: string, id: string,
     case "arenda.storno": {
       const r = await cancelRentTx(id, String(payload.reason ?? ""), user.id);
       if (r.error) fail(r.error);
-      return { ok: true, message: "Storno qilindi — kassa qoldig'i qayta hisoblandi" };
+      return { ok: true, message: "Bekor qilindi — kassa qoldig'i qayta hisoblandi" };
     }
     case "arenda.open-month": {
       const month = parseMonth(id);

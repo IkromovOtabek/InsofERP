@@ -28,6 +28,13 @@ export const FLOW_TYPES = ["INCOME", "EXPENSE"] as const satisfies readonly Cash
  */
 export const FLOW_ONLY = { type: { in: [...FLOW_TYPES] } };
 
+/**
+ * Bekor qilingan yozuv (`cancelledAt`) — jurnalda «Bekor qilingan» bo'lib ko'rinadi, lekin qoldiq, jami, hisobot,
+ * KPI va dashbordlarga kirmaydi. Hisob-kitob qiladigan har o'qishda `cancelledAt: null` yoziladi (FuelLog,
+ * TransportExpense, VehicleService uchun ham xuddi shunday). Ataylab qoldirilganlari — by-id qidiruvlar
+ * (hujjat zanjiri yozuvi, o'tkazma oyoqlari) va "ishlatilganmi" tekshiruvlari, ular izoh bilan belgilangan.
+ */
+
 /** Jurnal (ro'yxat) uchun: boshlang'ich qoldiqdan tashqari hammasi — o'tkazmalar ham o'z qatori bilan ko'rinadi. */
 export const JOURNAL_ONLY = { type: { not: "OPENING" as const } };
 

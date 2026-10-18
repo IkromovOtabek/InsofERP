@@ -148,7 +148,7 @@ async function PaymentsTab({ role }: { role: string }) {
                 <Td right className="font-medium whitespace-nowrap text-emerald-700">+{money(p.amount)}</Td>
                 <Td className="text-slate-500">{p.createdBy?.fullName ?? <span className="text-slate-300">—</span>}</Td>
                 <Td className="text-slate-500">{p.note ?? ""}</Td>
-                <Td>{canStorno && !p.register && <ConfirmButton action={stornoPayment.bind(null, p.id)} label="Storno" question={`${money(p.amount)} to'lov storno qilinsinmi?`} reason="required" okText="Storno qilindi" className="h-7 px-2 text-xs" />}</Td>
+                <Td>{canStorno && !p.register && <ConfirmButton action={stornoPayment.bind(null, p.id)} label="Bekor qilish" question={`${money(p.amount)} to'lov bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-7 px-2 text-xs" />}</Td>
               </Tr>
             );
           })}

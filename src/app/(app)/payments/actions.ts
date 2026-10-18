@@ -51,7 +51,7 @@ export async function stornoPayment(paymentId: string, reason: string): Promise<
   const r = await reversePayment(paymentId, String(reason ?? "").slice(0, 300), s.userId);
   if (r.error) return { error: r.error };
   revalidatePath("/payments"); revalidatePath("/invoices"); revalidatePath("/orders"); revalidatePath("/sales"); revalidatePath("/cashflow"); revalidatePath("/customers"); revalidatePath("/");
-  return { ok: true, note: "Storno qilindi" };
+  return { ok: true, note: "Bekor qilindi" };
 }
 
 /* ───────── Realizatsiya jurnali (Excel import) ───────── */
