@@ -6,6 +6,7 @@ export type OfferLang = "uz" | "ru";
 
 const UZ = {
   title: "TIJORAT TAKLIFI",
+  orderTitle: "ZAYAVKA",
   subtitle: "Temir-beton mahsulotlari",
   no: "№",
   date: "Sana",
@@ -71,6 +72,7 @@ const UZ = {
 
 const RU: typeof UZ = {
   title: "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ",
+  orderTitle: "ЗАЯВКА",
   subtitle: "Железобетонные изделия",
   no: "№",
   date: "Дата",

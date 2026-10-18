@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2 } from "lucide-react";
+import { CheckCircle2, Unlock, XCircle, Factory, Truck, Wallet, Package, CreditCard, FileSignature, HardHat, Zap, Download, ScrollText, Paperclip, Upload, Boxes, MapPin, TriangleAlert, CalendarDays, FileBadge2, Printer } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { pathAllowed } from "@/lib/nav";
@@ -127,6 +127,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {o.status === "BLOCKED" && canUnblock && <ActionButton action={unblockOrder.bind(null, id)} variant="success"><Unlock size={16} /> Blokdan chiqarish</ActionButton>}
             {needsAssign && isProduction && <LinkButton href={`/production?order=${id}`} variant="secondary"><HardHat size={16} /> Brigada tayinlash</LinkButton>}
             {/* Tijorat taklifi (KP) — zayavka mahsulot va narxlari bilan oldindan to'ldiriladi; ruxsat «offers» moduli bo'yicha */}
+            {/* Zayavka hujjati — tijorat taklifi shaklida A4 (Ctrl+P → PDF) */}
+            {!isStock && <LinkButton href={`/orders/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish / PDF</LinkButton>}
             {!isStock && canDo(s, "offers", "create") && <LinkButton href={`/takliflar/new?order=${id}`} variant="secondary"><FileBadge2 size={16} /> Tijorat taklifi</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
