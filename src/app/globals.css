@@ -564,6 +564,8 @@ table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="numbe
   /* Ichki bandlar va ularning strelkasi — yig'ilganda ko'rinmaydi.
      Ota-band bosilsa o'z sahifasiga o'tadi. */
   .sb-collapsed .sb-sub, .sb-collapsed .sb-caret { display: none; }
+  /* Guruh bandlarining chekinishi va chizig'i — yig'ilgan tor panelda kerak emas */
+  .sb-collapsed .sb-gitems { margin-left: 0; padding-left: 0; border-left-width: 0; }
 
   /* Foydalanuvchi bloki: avatar tepada, chiqish tugmasi ostida */
   .sb-collapsed .sb-user { flex-direction: column; gap: 0.5rem; padding-left: 0; padding-right: 0; }

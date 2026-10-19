@@ -91,7 +91,8 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
             )}
             <div className="sb-gbody" data-open={groupOpen}>
               <div className="min-h-0 overflow-hidden">
-                <div className="space-y-0.5">
+                {/* Guruh ichidagi bandlar sarlavhadan chekinib, chap chiziq bilan ajraladi (sarlavha bilan bir qatorda turmasin) */}
+                <div className={cn("space-y-0.5", hasHeader && "sb-gitems ml-[18px] mt-0.5 border-l border-slate-200 pl-2")}>
             {items.map((i, j) => {
               const Icon = ICONS[i.href];
               const isActive = active === i.href;
