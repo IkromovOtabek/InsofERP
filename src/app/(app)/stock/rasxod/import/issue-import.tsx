@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarRange, FileSpreadsheet, FileUp, PackageMinus, Rows3, Users } from "lucide-react";
+import { CalendarRange, FileSpreadsheet, FileUp, PackageMinus, Rows3, TriangleAlert, Users } from "lucide-react";
 import { Badge, Button, Callout, Field, LinkButton, Progress, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JournalTemplateButton } from "@/components/journal-template";
 import { dateRu, fmtNum, isoDate } from "@/lib/format";
 import { groupIssueJournal, parseIssueJournal, type IssueJournalDoc } from "@/lib/issue-journal";
 import { matchTarget, normTargetName, type TargetGroups } from "@/lib/issue-target";
-import type { JournalIssue } from "@/lib/prixod-journal";
+import { journalUnit, type JournalIssue } from "@/lib/prixod-journal";
+import { toMaterialUnit, unitShort } from "@/lib/unit";
 import type { IssueChunkResult } from "@/lib/issue-journal-import";
 import { importIssueChunk } from "./actions";
 
@@ -33,11 +34,14 @@ function Issues({ title, tone, items }: { title: string; tone: "danger" | "warni
   );
 }
 
+/** Bazadagi xomashyo va uning sklad bo'yicha joriy qoldig'i (warehouseId → miqdor). */
+type Mat = { id: string; code: string; name: string; unit: string; balance: Record<string, number> };
+
 export function IssueImport({ warehouses, targets, materials }: {
   warehouses: { id: string; name: string }[];
   targets: TargetGroups;
-  /** Bazadagi xomashyo nomlari (kichik harf) — topilmaganlarini oldindan ko'rsatish uchun */
-  materials: string[];
+  /** Topilmagan tovarlarni va kirim qoldig'idan ayiriladigan miqdorni oldindan ko'rsatish uchun */
+  materials: Mat[];
 }) {
   const [data, setData] = useState<Parsed | null>(null);
   const [readError, setReadError] = useState("");
@@ -45,6 +49,13 @@ export function IssueImport({ warehouses, targets, materials }: {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [result, setResult] = useState<(IssueChunkResult & { stopped?: string }) | null>(null);
+
+  // Nom yoki kod bo'yicha (server `resolveMaterials` kabi)
+  const matOf = useMemo(() => {
+    const m = new Map<string, Mat>();
+    for (const x of materials) { m.set(x.code, x); m.set(x.name.toLowerCase(), x); }
+    return m;
+  }, [materials]);
 
   async function onFile(f: File | undefined) {
     if (!f) return;
@@ -57,16 +68,33 @@ export function IssueImport({ warehouses, targets, materials }: {
       const p = parseIssueJournal(XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", raw: true }), isoDate());
       if (p.missing.length) { setReadError(`Ustun topilmadi: ${p.missing.join(", ")}. Birinchi qatorda sarlavhalar bo'lsin.`); return; }
       if (!p.rows.length) { setReadError(p.errors.length ? `Saqlanadigan qator yo'q: ${p.errors.slice(0, 3).map((x) => `${x.line}-qator — ${x.text}`).join("; ")}` : "Faylda chiqim qatori topilmadi"); return; }
-      const known = new Set(materials);
       setData({
         file: f.name, docs: groupIssueJournal(p.rows), errors: p.errors, warnings: p.warnings,
         newRecipients: [...new Map(p.rows.filter((r) => !matchTarget(targets, r.recipient)).map((r) => [normTargetName(r.recipient), r.recipient])).values()],
-        unknownMaterials: [...new Set(p.rows.filter((r) => !known.has(r.material.toLowerCase())).map((r) => r.material))],
+        unknownMaterials: [...new Set(p.rows.filter((r) => !matOf.get(r.material.toLowerCase().trim())).map((r) => r.material))],
       });
     } catch (e) {
       setReadError(e instanceof Error ? `Fayl o'qilmadi: ${e.message}` : "Fayl o'qilmadi");
     }
   }
+
+  /** Kirim qoldig'idan ayiriladi: tovar bo'yicha jami chiqim (xomashyo birligida) va tanlangan skladdagi qoldiq; minusga ketganlari tepada. */
+  const deduct = useMemo(() => {
+    if (!data) return [];
+    const acc = new Map<string, { m: Mat; qty: number }>();
+    for (const r of data.docs.flatMap((d) => d.rows)) {
+      const m = matOf.get(r.material.toLowerCase().trim());
+      const conv = m && toMaterialUnit(r.qty, 0, journalUnit(r.unit), m.unit);
+      if (!m || !conv) continue;
+      const a = acc.get(m.id) ?? { m, qty: 0 };
+      a.qty = Math.round((a.qty + conv.qty) * 1000) / 1000;
+      acc.set(m.id, a);
+    }
+    return [...acc.values()]
+      .map(({ m, qty }) => { const have = m.balance[warehouseId] ?? 0; return { id: m.id, name: m.name, unit: m.unit, have, qty, left: Math.round((have - qty) * 1000) / 1000 }; })
+      .sort((a, b) => Number(a.left >= 0) - Number(b.left >= 0) || a.name.localeCompare(b.name));
+  }, [data, matOf, warehouseId]);
+  const minus = deduct.filter((x) => x.left < 0);
 
   const stats = useMemo(() => {
     if (!data) return null;
@@ -133,6 +161,13 @@ export function IssueImport({ warehouses, targets, materials }: {
               <div className="mt-1 text-slate-600">{data.newRecipients.slice(0, 30).join(", ")}</div>
             </Callout>
           )}
+          {minus.length > 0 && (
+            <Callout tone="danger" title={`Kirimdan ko'p chiqim — minusga ketadi: ${fmtNum(minus.length)} tovar`}>
+              Skladdagi qoldiq (kirim − avvalgi chiqimlar) yetmaydi. Bu tovarli chiqimlar qoldiq tugagan joydan saqlanmaydi —
+              avval kirim qiling yoki miqdorni tuzating: {minus.slice(0, 15).map((x) => `${x.name} (${fmtNum(x.left, 3)} ${unitShort(x.unit)})`).join(", ")}
+              {minus.length > 15 ? "…" : ""}
+            </Callout>
+          )}
           <Issues title="Saqlanmaydigan qatorlar (faylni tuzatib qayta yuklang)" tone="danger" items={data.errors} />
           <Issues title="Ogohlantirishlar" tone="warning" items={data.warnings} />
 
@@ -155,6 +190,28 @@ export function IssueImport({ warehouses, targets, materials }: {
             </tbody>
           </Table>
           {data.docs.length > SHOWN && <p className="text-sm text-slate-500">{`Birinchi ${SHOWN} ta hujjat ko'rsatildi, saqlanganda ${fmtNum(data.docs.length)} tasi ham kiradi.`}</p>}
+
+          {deduct.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-slate-800">
+                Kirimdan ayiriladi{warehouses.length > 1 ? ` · ${warehouses.find((w) => w.id === warehouseId)?.name ?? ""}` : ""}
+              </h3>
+              <Table maxHeight={420}>
+                <thead><Tr><Th>Tovar</Th><Th right>Skladda (kirim qoldig&apos;i)</Th><Th right>Chiqim (fayl)</Th><Th right>Qoladi</Th><Th /></Tr></thead>
+                <tbody>
+                  {deduct.map((x) => (
+                    <Tr key={x.id}>
+                      <Td>{x.name}</Td>
+                      <Td right className="tabular whitespace-nowrap">{fmtNum(x.have, 3)} {unitShort(x.unit)}</Td>
+                      <Td right className="tabular whitespace-nowrap text-red-600">−{fmtNum(x.qty, 3)} {unitShort(x.unit)}</Td>
+                      <Td right className={`tabular whitespace-nowrap font-medium ${x.left < 0 ? "text-red-600" : "text-slate-900"}`}>{fmtNum(x.left, 3)} {unitShort(x.unit)}</Td>
+                      <Td>{x.left < 0 && <Badge color="red" dot={false}><TriangleAlert size={12} /> yetmaydi</Badge>}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          )}
 
           {!result && (
             <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">

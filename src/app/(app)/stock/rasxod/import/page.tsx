@@ -13,11 +13,19 @@ import { IssueImport } from "./issue-import";
 export default async function RasxodImportPage() {
   const s = await requireRoles(["WAREHOUSE", "PROCUREMENT"], { module: "stock", actions: ["issue"] });
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
-  const [warehouses, targets, materials] = await Promise.all([
+  const [warehouses, targets, materials, sums] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     issueTargetOptions(),
-    db.material.findMany({ select: { name: true } }),
+    db.material.findMany({ select: { id: true, code: true, name: true, unit: true } }),
+    db.stockMove.groupBy({ by: ["materialId", "warehouseId"], where: { materialId: { not: null } }, _sum: { qty: true } }),
   ]);
+  // Har xomashyoning sklad bo'yicha joriy qoldig'i (kirim − chiqim) — fayldagi chiqim shundan ayirilib oldindan ko'rsatiladi
+  const bal = new Map<string, Record<string, number>>();
+  for (const x of sums) {
+    const m = bal.get(x.materialId!) ?? {};
+    m[x.warehouseId] = Number(x._sum.qty ?? 0);
+    bal.set(x.materialId!, m);
+  }
 
   return (
     <div>
@@ -27,7 +35,8 @@ export default async function RasxodImportPage() {
         <Callout tone="warning" title="Sklad yo'q">Avval Sozlamalarda sklad oching.</Callout>
       ) : (
         <Card className="max-w-6xl">
-          <IssueImport warehouses={warehouses} targets={targets} materials={materials.map((m) => m.name.trim().toLowerCase())} />
+          <IssueImport warehouses={warehouses} targets={targets}
+            materials={materials.map((m) => ({ id: m.id, code: m.code.toLowerCase(), name: m.name.trim(), unit: m.unit, balance: bal.get(m.id) ?? {} }))} />
         </Card>
       )}
     </div>

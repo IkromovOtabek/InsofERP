@@ -7,8 +7,6 @@ import { toMaterialUnit } from "./unit";
 import { createGoodsReceipt, resolveRecipient } from "./receipts";
 import { PAID_IMPORT_TOKEN } from "./receipt-payables";
 import { journalMaterials, journalUnit, type JournalDoc } from "./prixod-journal";
-import { matchTarget } from "./issue-target";
-import { issueTargetOptions } from "./stock-recipients";
 import type { Role } from "@/generated/prisma";
 
 export type JournalChunkResult = {
@@ -26,6 +24,8 @@ const MAX_DOCS = 40;
  * Sklad → Kirim → «Excel jurnal»: brauzer o'qib guruhlagan hujjatlarning bir bo'lagini kirim qiladi
  * (ruxsat chaqiruvchida — `stock/prixod/jurnal/actions.ts`).
  * Har hujjat — oddiy kirim (`createGoodsReceipt`): sklad qoldig'i oshadi, yetkazuvchiga to'lanmagan kirim bo'lib tushadi.
+ * Excel'dan kirim faqat kirim bo'lib qoladi — «Darhol kimga berildi» ustuni avto chiqim yozmaydi, izohga tushadi
+ * (chiqim alohida: Sklad → Chiqim → Excel'dan yuklash).
  * Yo'q yetkazuvchi va xomashyolar yaratiladi. Bir martalik kalit hujjat mazmunidan olinadi —
  * xuddi shu fayl qayta yuklansa (yoki ulanish uzilib qayta yuborilsa) ikkinchi kirim ochilmaydi.
  *
@@ -58,7 +58,7 @@ export async function importJournalDocs(
     supId.set(k, sup.id);
   }
 
-  // Oluvchilar («Kimga», «Darhol kimga berildi») — nom bo'yicha; yo'g'i «Kimga» ro'yxatiga qo'shiladi (kirim formasidagi kabi)
+  // Oluvchilar («Kimga») — nom bo'yicha; yo'g'i «Kimga» ro'yxatiga qo'shiladi (kirim formasidagi kabi)
   const recId = new Map<string, string | null>();
   const recipientOf = async (name: string): Promise<string | null> => {
     const k = name.trim().toLowerCase();
@@ -68,16 +68,6 @@ export async function importJournalDocs(
       recId.set(k, "error" in r ? null : r.id);
     }
     return recId.get(k) ?? null;
-  };
-
-  // «Darhol kimga berildi»: brigada → xodim → oluvchi (Chiqim «Kimga» bilan bir tartib); topilmasa — yangi oluvchi
-  const targets = await issueTargetOptions();
-  const autoKeyOf = async (name: string): Promise<string | null> => {
-    if (!name.trim()) return null;
-    const hit = matchTarget(targets, name);
-    if (hit) return hit.key;
-    const id = await recipientOf(name);
-    return id ? `r:${id}` : null;
   };
 
   // Xomashyolar: nom bo'yicha topiladi, yo'qlari yaratiladi; birligi mos kelmasa — «Nomi (birlik)» alohida xomashyo
@@ -103,13 +93,13 @@ export async function importJournalDocs(
       // Shu hujjat boshqa rejimda (to'langan / to'lanmagan) yuklangan bo'lsa ham qayta ochilmasin
       if (await db.goodsReceipt.findFirst({ where: { clientToken: { in: [`jrn-${hash}`, `${PAID_IMPORT_TOKEN}${hash}`] } }, select: { id: true } })) { res.existed++; continue; }
       const src = input.paid ? "Excel jurnaldan (to'langan)" : "Excel jurnaldan";
-      const note = String(d.note ?? "").trim();
+      const given = String(d.autoIssueTo ?? "").trim();
+      const note = [String(d.note ?? "").trim(), given && `Kimga berildi: ${given}`].filter(Boolean).join(" · ");
       const out = await createGoodsReceipt({
         supplierId: supId.get(d.supplier.trim().toLowerCase())!, warehouseId: wh.id, date: d.date,
         waybillNo: d.waybillNo || null, payment: d.payment === "BANK" || d.payment === "CASH" ? d.payment : null,
         recipientId: await recipientOf(String(d.recipient ?? "")), address: d.address || null,
         carrier: String(d.carrier ?? "") || null, loadedFrom: String(d.loadedFrom ?? "") || null,
-        autoIssueKey: await autoKeyOf(String(d.autoIssueTo ?? "")),
         note: note ? `${note.slice(0, 900)} · ${src}` : src, clientToken: token, items,
       }, { userId: s.userId, role: s.role });
       if (out.existed) res.existed++; else res.created++;

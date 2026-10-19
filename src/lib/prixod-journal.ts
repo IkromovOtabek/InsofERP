@@ -5,7 +5,7 @@ import { normalizeUnit, toMaterialUnit, UNIT_FALLBACK } from "./unit";
  * Sklad → Kirim → «Excel jurnal»: ko'p sanali, ko'p yetkazuvchili kirim jurnali (bir necha oylik daftar).
  * Ustunlar Sklad → Kirim jurnali bilan bir xil: Sana, Tovar, TTN, O'lchov, Miqdor, Ta'minotchi (Kimdan), Kimga,
  * To'lov (P-r / n-q), Dostavka, Narx, Summa (QQSsiz), QQS, Jami, Manzil, Izoh, Mashina (kim olib keldi), Qayerdan yuklandi,
- * Darhol kimga berildi (avto chiqim). «Snabjenets» ustuni o'qilmaydi (kiritgan xodim yoziladi).
+ * Darhol kimga berildi (Excel'dan avto chiqim yozilmaydi — izohga tushadi). «Snabjenets» ustuni o'qilmaydi (kiritgan xodim yoziladi).
  *
  * Qatorlar «sana + yetkazuvchi + TTN + to'lov» bo'yicha kirim hujjatlariga guruhlanadi. O'qish brauzerda
  * (oldindan ko'rish uchun) va serverda bir xil — shu fayldagi funksiyalar ikkala tomonda ishlaydi.
@@ -24,7 +24,7 @@ export const UNKNOWN_SUPPLIER = "Noma'lum yetkazuvchi";
 /** Kirim va Chiqim Excel namunasi ustunlari — foydalanuvchi daftari bilan bir xil tartibda. */
 export const JOURNAL_HEADERS = [
   "Sana", "Tovar", "TTN №", "O'lchov", "Miqdor", "Ta'minotchi", "Kimga", "To'lov", "Dostavka", "Narx (QQSsiz)", "Summa (QQSsiz)",
-  "QQS 12%", "Jami (QQS bilan)", "Manzil", "Snabjenets", "Izoh", "Mashina (kim olib keldi)", "Qayerdan yuklandi", "Darhol kimga berildi (avto chiqim)",
+  "QQS 12%", "Jami (QQS bilan)", "Manzil", "Snabjenets", "Izoh", "Mashina (kim olib keldi)", "Qayerdan yuklandi", "Darhol kimga berildi",
 ] as const;
 
 /** Daftardagi qo'shimcha birlik yozuvlari (`lib/unit.ts` dagilardan tashqari). */
@@ -119,7 +119,7 @@ export type JournalRow = {
   carrier: string;
   /** «Qayerdan yuklandi» */
   loadedFrom: string;
-  /** «Darhol kimga berildi (avto chiqim)» — oluvchi nomi */
+  /** «Darhol kimga berildi» — oluvchi nomi (kirim importida izohga; chiqim importida «Kimga» bo'sh bo'lsa shu olinadi) */
   autoIssueTo: string;
   /** To'lanadigan summa: Miqdor × Narx + QQS + Dostavka (fayldagi «Jami» emas — u ham xato bo'lishi mumkin) */
   total: number;
@@ -219,7 +219,7 @@ export type JournalDoc = {
 };
 
 /**
- * Kirim hujjatlariga guruhlash: sana + yetkazuvchi + TTN + to'lov turi (+ «Darhol kimga berildi», bo'lsa — avto chiqim
+ * Kirim hujjatlariga guruhlash: sana + yetkazuvchi + TTN + to'lov turi (+ «Darhol kimga berildi», bo'lsa — izohi alohida
  * hujjat bo'yicha yoziladi). Sana bo'yicha tartiblangan. Kalit eski fayllar uchun o'zgarmagan (qayta yuklash takror ochmasin).
  */
 export function groupJournal(rows: JournalRow[]): JournalDoc[] {
