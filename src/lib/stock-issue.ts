@@ -569,6 +569,37 @@ export function rasxodTotals(rows: RasxodRow[]) {
   return { count: rows.length, sum: r2(sum), vat: r2(vat), total: r2(total), delivery: r2(delivery) };
 }
 
+export type RasxodTargetItem = { materialId: string; material: string; unit: string; qty: number; total: number };
+export type RasxodTarget = { key: string; name: string; kind: RasxodKind; rows: number; total: number; items: RasxodTargetItem[] };
+
+/** Jadvaldagi «Kimga» nomlari bo'yicha yig'indi (sof: qaytarish va bekor qilish ayiriladi). Avval brigada/xodim/oluvchi, keyin zames, spisanie, inventarizatsiya. */
+export function rasxodByTarget(rows: RasxodRow[]): RasxodTarget[] {
+  const SYS: Record<string, string> = { prod: "Ishlab chiqarish (zames)", writeoff: "Hisobdan chiqarish", inventory: "Inventarizatsiya (kamomad)" };
+  const map = new Map<string, { name: string | null; kind: RasxodKind; rows: number; total: number; items: Map<string, RasxodTargetItem> }>();
+  for (const r of rows) {
+    let g = map.get(r.toKey);
+    if (!g) map.set(r.toKey, g = { name: null, kind: r.kind, rows: 0, total: 0, items: new Map() });
+    // Nom — asl berish qatoridan («Bekor qilish: …» / «… — qaytarish» emas)
+    if (!g.name && (r.kind === "issue" || r.kind === "brigade")) { g.name = r.to; g.kind = r.kind; }
+    g.rows++;
+    g.total += r.total;
+    const it = g.items.get(r.materialId) ?? { materialId: r.materialId, material: r.material, unit: r.unit, qty: 0, total: 0 };
+    it.qty += r.qty;
+    it.total += r.total;
+    g.items.set(r.materialId, it);
+  }
+  const out: RasxodTarget[] = [];
+  for (const [key, g] of map) {
+    const items = [...g.items.values()].filter((x) => Math.abs(x.qty) > STOCK_EPS || Math.abs(x.total) >= 0.005)
+      .map((x) => ({ ...x, qty: r3(x.qty), total: r2(x.total) })).sort((a, b) => b.total - a.total || a.material.localeCompare(b.material));
+    if (!items.length) continue;
+    const name = SYS[key] ?? g.name ?? rows.find((r) => r.toKey === key)!.to.replace(/^Bekor qilish:\s*/, "").replace(/ — qaytarish$/, "");
+    out.push({ key, name, kind: g.kind, rows: g.rows, total: r2(g.total), items });
+  }
+  const sys = (k: string) => (k in SYS ? 1 : 0);
+  return out.sort((a, b) => sys(a.key) - sys(b.key) || b.total - a.total || a.name.localeCompare(b.name));
+}
+
 // ───────────────────────── Tez tanlash: eslab qolingan oluvchilar va tovarlar ─────────────────────────
 
 export type IssueHintTarget = { key: string; count: number; lastAt: Date };

@@ -8,7 +8,7 @@ import { canSeeRasxod } from "@/lib/stock-journal-access";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { dateRu, fmtNum } from "@/lib/format";
 import { unitShort } from "@/lib/unit";
-import { rasxodJournal, rasxodTotals, STORNO_NOTE_RE, type RasxodRow } from "@/lib/stock-issue";
+import { rasxodByTarget, rasxodJournal, rasxodTotals, STORNO_NOTE_RE, type RasxodRow, type RasxodTarget } from "@/lib/stock-issue";
 import { recipientList } from "@/lib/stock-recipients";
 import { cardHrefOf } from "@/lib/recipient-card";
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
@@ -60,6 +60,7 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
   const komu = sp.komu && /^(r:.+|b:.+|e:.+|b|e|prod|writeoff|inventory)$/.test(sp.komu) ? sp.komu : null;
   const rows = await rasxodJournal({ from: period.from, to: period.to, warehouseId: wh, to_: komu });
   const t = rasxodTotals(rows);
+  const targets = rasxodByTarget(rows);
   const saved = Number(sp.saved);
   // Storno tugmasi — har chiqim hujjatining (ref) birinchi ko'rinadigan qatorida, bir marta; storno qilinganida yo'q
   const refRows = new Map<string, RasxodRow[]>();
@@ -189,6 +190,56 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
           </div>
         </Card>
       )}
+
+      {targets.length > 0 && (
+        <Card className="mt-8">
+          <CardHeader title="Kimga berildi" description={`${period.label} · «Kimga» ustunidagi nomlar bo'yicha: qaysi mahsulotdan qancha va necha pullik (Jami summa). Qaytarish va bekor qilish ayirilgan.`} />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {targets.map((g) => <TargetCard key={g.key} g={g} />)}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+const TARGET_KIND = {
+  b: { label: "Brigada", color: "amber" as const },
+  e: { label: "Xodim", color: "blue" as const },
+  r: { label: "Oluvchi", color: "slate" as const },
+};
+
+/** «Kimga berildi» kartasi: nom (kartasiga havola), jami summa, mahsulotlar — miqdor va summa. */
+function TargetCard({ g }: { g: RasxodTarget }) {
+  const href = cardHrefOf(g.key);
+  const k = /^([ber])(:|$)/.exec(g.key)?.[1] as keyof typeof TARGET_KIND | undefined;
+  const K = k ? TARGET_KIND[k] : null;
+  return (
+    <div className="flex flex-col rounded-lg border border-slate-200 p-3">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {href
+            ? <Link href={href} prefetch={false} className="block truncate font-medium text-slate-900 hover:underline" title="Oluvchi kartasini ochish">{g.name}</Link>
+            : <span className={cn("block truncate font-medium", g.kind === "prod" ? "text-blue-800" : "text-slate-900")}>{g.name}</span>}
+          <span className="block text-xs text-slate-500">{`${fmtNum(g.items.length)} xil mahsulot · ${fmtNum(g.rows)} qator`}</span>
+        </div>
+        {K && <Badge color={K.color}>{K.label}</Badge>}
+      </div>
+      <ul className="flex-1 divide-y divide-slate-100 text-sm">
+        {g.items.map((x) => (
+          <li key={x.materialId} className="flex items-baseline justify-between gap-3 py-1">
+            <span className="min-w-0 truncate text-slate-700" title={x.material}>{x.material}</span>
+            <span className="shrink-0 whitespace-nowrap tabular">
+              <b className="font-semibold text-slate-900">{`${fmtNum(x.qty, 3)} ${unitShort(x.unit)}`}</b>
+              <span className="ml-2 text-xs text-slate-500">{money(x.total)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 flex items-baseline justify-between border-t border-slate-200 pt-2 text-sm">
+        <span className="text-slate-500">Jami</span>
+        <b className="tabular font-semibold text-slate-900">{money(g.total)}</b>
+      </div>
     </div>
   );
 }
