@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { ArrowDownLeft, ArrowUpRight, Check, Pencil, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Check, Pencil, Printer, X } from "lucide-react";
 import { Button, Field, FormActions, FormError, FormSuccess, Input, Select, Card, SheetTd, SheetTr } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { fmtNum, isoDate } from "@/lib/format";
@@ -54,6 +54,9 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
     <form action={action} className="space-y-4">
       <FormError error={state?.error} />
       {state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}
+      {state?.ok && state.receiptId && (
+        <a href={`/arenda/kvitansiya/${state.receiptId}?print=1`} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"><Printer size={14} /> Kvitansiyani chop etish</a>
+      )}
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="clientToken" value={token} />
       <div key={formKey} className="grid grid-cols-1 gap-3 sm:grid-cols-3">

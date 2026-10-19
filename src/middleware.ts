@@ -11,7 +11,7 @@ import { redirectUrl } from "@/lib/redirect-url";
  * `lib/mobile/auth.ts`; cookie sessiyasiga tayanmaydi).
  */
 const isPublic = (p: string) =>
-  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/mahsulot/") || p === "/maqolalar" || p.startsWith("/maqolalar/") || p.startsWith("/ru/produkciya/") || p === "/ru/stati" || p.startsWith("/ru/stati/") || p === "/yuklab-olish" || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/taklif/") || p.startsWith("/z/") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/amocrm/webhook/") || p.startsWith("/api/mobile") || p.startsWith("/api/control") || p === "/api/health" || p === "/api/logout";
+  p.startsWith("/taqdimot") || p.startsWith("/maxfiylik") || p.startsWith("/mahsulot/") || p === "/maqolalar" || p.startsWith("/maqolalar/") || p.startsWith("/ru/produkciya/") || p === "/ru/stati" || p.startsWith("/ru/stati/") || p === "/yuklab-olish" || p.startsWith("/login") || p.startsWith("/verify") || p.startsWith("/taklif/") || p.startsWith("/z/") || p.startsWith("/k/") || p.startsWith("/api/public") || p.startsWith("/api/telegram") || p.startsWith("/api/eco") || p.startsWith("/api/amocrm/webhook/") || p.startsWith("/api/mobile") || p.startsWith("/api/control") || p === "/api/health" || p === "/api/logout";
 
 /**
  * Markaziy panel (INSOF_MODE=control, admin.insof.uz): korxona sahifalari yo'q — faqat /superadmin.

@@ -2,6 +2,7 @@ import { Prisma, type RentMethod, type RentTxType } from "@/generated/prisma";
 import { db } from "./db";
 import { audit } from "./audit";
 import { money } from "./format";
+import { notifyAfter } from "./notify";
 
 /**
  * Arenda (do'konlar ijarasi) — sekretar yuritadi, Excel'dagi «Аренда» daftarining o'rnini bosadi.
@@ -137,14 +138,16 @@ export type RentTxInput = {
   amount: number; category: string; note: string | null; clientToken: string | null;
 };
 
-export async function createRentTx(input: RentTxInput, userId: string): Promise<{ error?: string; duplicate?: boolean }> {
+/** Kirim/chiqim yozish. Kirim bo'lsa — ijarachi Telegram'ga ulangan bo'lsa unga «to'lov qabul qilindi» xabari (javobdan keyin). */
+export async function createRentTx(input: RentTxInput, userId: string): Promise<{ error?: string; duplicate?: boolean; id?: string }> {
   const amount = r2(input.amount);
   if (!(amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
   if (input.type === "INCOME" && (!input.shopId || !input.month)) return { error: "Kirim uchun do'kon va oyni tanlang" };
   if (input.shopId && !(await db.rentShop.findUnique({ where: { id: input.shopId }, select: { id: true } }))) return { error: "Do'kon topilmadi" };
-  if (input.clientToken && (await db.rentTx.findUnique({ where: { clientToken: input.clientToken }, select: { id: true } }))) return { duplicate: true };
+  const dup = input.clientToken ? await db.rentTx.findUnique({ where: { clientToken: input.clientToken }, select: { id: true } }) : null;
+  if (dup) return { duplicate: true, id: dup.id };
   try {
-    await db.$transaction(async (tx) => {
+    const id = await db.$transaction(async (tx) => {
       await lockKassa(tx);
       if (input.type === "EXPENSE") {
         const err = await outflowError(tx, input.method, amount);
@@ -152,8 +155,11 @@ export async function createRentTx(input: RentTxInput, userId: string): Promise<
       }
       const t = await tx.rentTx.create({ data: { ...input, amount, createdById: userId } });
       await audit(tx, userId, "CREATE", "RentTx", t.id, undefined, t);
+      return t.id;
     });
-    return {};
+    // Modul aylanmasin (rent-receipt → rent-tenant → rent): xabar moduli kerak bo'lganda yuklanadi
+    if (input.type === "INCOME") notifyAfter(async () => (await import("./rent-receipt")).notifyRentPayment(id));
+    return { id };
   } catch (e) {
     if (e instanceof RentError) return { error: e.message };
     // Bir xil kalit bilan ikki so'rov birga kelsa — ikkinchisi unique xatosi oladi: birinchisi saqlangan

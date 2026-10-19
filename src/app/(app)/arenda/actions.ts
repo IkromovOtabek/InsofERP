@@ -29,8 +29,11 @@ const txSchema = z.object({
   clientToken: zOpt,
 });
 
+/** Kirim saqlangach forma «Kvitansiyani chop etish» havolasini ko'rsatadi. */
+export type RentTxState = (NonNullable<ActionState> & { receiptId?: string }) | undefined;
+
 /** Arenda kassasiga kirim (ijarachidan, qaysi oy uchun) yoki chiqim. */
-export async function saveRentTx(_prev: ActionState, fd: FormData): Promise<ActionState> {
+export async function saveRentTx(_prev: RentTxState, fd: FormData): Promise<RentTxState> {
   const s = await requireAction("arenda", "create");
   const r = parseForm(txSchema, fd);
   if ("error" in r) return { error: r.error };
@@ -48,7 +51,7 @@ export async function saveRentTx(_prev: ActionState, fd: FormData): Promise<Acti
   }, s.userId);
   if (res.error) return { error: res.error };
   done();
-  return { ok: true, note: res.duplicate ? "Allaqachon saqlangan (qayta bosildi)" : d.type === "INCOME" ? "Kirim saqlandi" : "Chiqim saqlandi" };
+  return { ok: true, note: res.duplicate ? "Allaqachon saqlangan (qayta bosildi)" : d.type === "INCOME" ? "Kirim saqlandi" : "Chiqim saqlandi", receiptId: d.type === "INCOME" ? res.id : undefined };
 }
 
 export async function stornoRentTx(id: string, reason: string): Promise<ActionState> {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { Bell, CalendarClock, Link2Off, MessageCircle, Pencil, Phone, QrCode, Send, Wallet } from "lucide-react";
+import { Bell, CalendarClock, FileText, Link2Off, MessageCircle, Pencil, Phone, Printer, QrCode, Send, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -48,7 +48,10 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
         back={{ href: "/arenda?tab=qarzdorlar", label: "Arenda" }}
         title={shop.name}
         subtitle={<>{shop.location}{shop.tenantName ? ` · ${shop.tenantName}` : ""}{!shop.isActive && <> · <Badge color="slate">faolsiz</Badge></>}</>}
-        action={canShops ? <LinkButton href={`/arenda?tab=dokonlar&edit=${id}`} variant="secondary"><Pencil size={16} /> Tahrirlash</LinkButton> : undefined}
+        action={<>
+          <LinkButton href={`/arenda/dokon/${id}/akt`} variant="secondary"><FileText size={16} /> Akt-sverka</LinkButton>
+          {canShops && <LinkButton href={`/arenda?tab=dokonlar&edit=${id}`} variant="secondary"><Pencil size={16} /> Tahrirlash</LinkButton>}
+        </>}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -91,7 +94,7 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
             <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Bekor qilingan yozuv chizilgan holda qoladi." /></div>
             {txs.length === 0 ? <div className="p-5 pt-0"><EmptyState title="To'lov yo'q" text="Arenda sahifasidagi «Kirim» tugmasi bilan yoziladi." /></div> : (
               <Table>
-                <thead><tr><Th>Sana</Th><Th>Qaysi oy uchun</Th><Th>Usul</Th><Th right>Summa</Th><Th>Kim yozdi</Th></tr></thead>
+                <thead><tr><Th>Sana</Th><Th>Qaysi oy uchun</Th><Th>Usul</Th><Th right>Summa</Th><Th>Kim yozdi</Th><Th></Th></tr></thead>
                 <tbody>
                   {txs.map((t) => (
                     <Tr key={t.id} className={t.cancelledAt ? "opacity-50 line-through" : undefined}>
@@ -100,6 +103,7 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
                       <Td>{RENT_METHOD_LABEL[t.method]}</Td>
                       <Td right className={t.type === "INCOME" ? "font-semibold text-emerald-700" : "font-semibold text-red-600"}>{t.type === "INCOME" ? "+" : "−"}{fmtNum(t.amount)}</Td>
                       <Td className="text-xs text-slate-500">{t.createdBy.fullName}{t.note ? ` · ${t.note}` : ""}{t.cancelReason ? ` · bekor: ${t.cancelReason}` : ""}</Td>
+                      <Td>{t.type === "INCOME" && <Link href={`/arenda/kvitansiya/${t.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 no-underline hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}</Td>
                     </Tr>
                   ))}
                 </tbody>

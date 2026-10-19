@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Send, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -203,7 +203,12 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
                   <Td right className={`font-semibold tabular-nums ${off ? "line-through" : x.type === "INCOME" ? "text-emerald-700" : "text-red-600"}`}>{x.type === "INCOME" ? "+" : "−"}{fmtNum(Number(x.amount))}</Td>
                   <Td className="max-w-64 whitespace-normal text-xs text-slate-600">{x.note}{off && <span className="block text-slate-500">Bekor qilish sababi: {x.cancelReason}</span>}</Td>
                   <Td className="text-xs text-slate-500">{x.createdBy.fullName}</Td>
-                  <Td>{canStorno && !off && <ConfirmButton action={stornoRentTx.bind(null, x.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question="Bekor qilinsinmi?" reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 hover:text-red-600" />}</Td>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      {x.type === "INCOME" && x.shop && <Link href={`/arenda/kvitansiya/${x.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}
+                      {canStorno && !off && <ConfirmButton action={stornoRentTx.bind(null, x.id)} label={<><Undo2 size={13} className="mr-1 inline" />Bekor qilish</>} question="Bekor qilinsinmi?" reason="required" okText="Bekor qilindi" className="text-xs text-slate-500 hover:text-red-600" />}
+                    </div>
+                  </Td>
                 </Tr>
               );
             })}
