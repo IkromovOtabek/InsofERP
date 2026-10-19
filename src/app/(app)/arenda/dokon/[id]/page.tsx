@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { Bell, CalendarClock, FileText, Link2Off, MessageCircle, Pencil, Phone, Printer, QrCode, Send, Wallet } from "lucide-react";
+import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileText, Link2Off, MessageCircle, Pencil, Phone, Printer, QrCode, Send, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { RENT_METHOD_LABEL, currentMonth, monthKey, monthLabel } from "@/lib/rent";
+import { RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
 import { reminderText, shopLedger } from "@/lib/rent-tenant";
 import { botEnabled, botUsername } from "@/lib/telegram/api";
 import { Badge, Callout, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -21,20 +21,25 @@ const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
  * Ijarachi (do'kon) kartasi: rekvizitlar, jami qarz, oyma-oy hisob, to'lovlar tarixi, Telegram ulash (QR)
  * va qarz eslatmasi (bot orqali yoki matnni nusxalab). Hisob qoidalari — `lib/rent-tenant.ts`.
  */
-export default async function RentShopPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RentShopPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ oy?: string }> }) {
   const s = await requirePage("/arenda");
   const { id } = await params;
+  const calMonth = parseMonth((await searchParams).oy) ?? currentMonth();
   const shop = await db.rentShop.findUnique({ where: { id } });
   if (!shop) notFound();
   const canShops = canDo(s, "arenda", "shops");
   const canCreate = canDo(s, "arenda", "create");
-  const [ledger, txs, reminders, bot] = await Promise.all([
+  const daily = shop.period === "DAILY";
+  const [ledger, txs, reminders, bot, days] = await Promise.all([
     shopLedger(id),
     db.rentTx.findMany({ where: { shopId: id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 100, include: { createdBy: { select: { fullName: true } } } }),
     db.rentReminder.findMany({ where: { shopId: id }, orderBy: { createdAt: "desc" }, take: 20 }),
     botEnabled() ? botUsername() : Promise.resolve(null),
+    daily ? rentDays(shop, calMonth) : Promise.resolve([] as RentDay[]),
   ]);
   const debt = ledger.debt;
+  // Kunlikda jami qarz oy oxirigacha bo'lgan kunlarni ham o'z ichiga oladi — kartada muddati o'tgani ko'rsatiladi
+  const state = (await rentShopStates([shop])).get(id)!;
   const cur = ledger.months.find((m) => m.key === monthKey(currentMonth()));
   const lastPay = txs.find((t) => t.type === "INCOME" && !t.cancelledAt);
   const linkUrl = bot && shop.tgLinkToken ? `https://t.me/${bot}?start=ijara_${shop.tgLinkToken}` : null;
@@ -55,14 +60,17 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
       />
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Jami qarz" value={debt < -1 ? `avans ${money(-debt)}` : money(Math.max(0, debt))} icon={Wallet} tone={debt > 1 ? "danger" : "success"} hint={`${ledger.unpaid.length} ta oy to'liq to'lanmagan`} />
+        {daily
+          ? <StatCard label="Muddati o'tgan qarz" value={money(state.overdue)} icon={Wallet} tone={state.overdue > 1 ? "danger" : "success"} hint={`${RENT_PAY_STATUS_LABEL[state.status]} · oy oxirigacha hisob ${money(Math.max(0, debt))}`} />
+          : <StatCard label="Jami qarz" value={debt < -1 ? `avans ${money(-debt)}` : money(Math.max(0, debt))} icon={Wallet} tone={debt > 1 ? "danger" : "success"} hint={`${RENT_PAY_STATUS_LABEL[state.status]} · ${ledger.unpaid.length} ta oy to'liq to'lanmagan${shop.payDay ? ` · to'lov kuni ${shop.payDay}-sana` : ""}`} />}
         <StatCard label={`Shu oy (${monthLabel(currentMonth())}) qoldig'i`} value={cur ? money(Math.max(0, cur.left)) : "hisob ochilmagan"} icon={CalendarClock} hint={cur ? `hisob ${money(cur.due)}, tushgan ${money(cur.paid)}` : undefined} />
         <StatCard label="Oxirgi to'lov" value={lastPay ? money(lastPay.amount) : "—"} hint={lastPay ? `${date(lastPay.date)} · ${RENT_METHOD_LABEL[lastPay.method]}` : "to'lov yozilmagan"} />
-        <StatCard label="Oylik summa (andoza)" value={money(Number(shop.bankAmount) + Number(shop.cashAmount))} hint={`perechisleniye ${fmtNum(shop.bankAmount)}, naqd ${fmtNum(shop.cashAmount)}`} />
+        <StatCard label={daily ? "Kunlik summa (andoza)" : "Oylik summa (andoza)"} value={money(Number(shop.bankAmount) + Number(shop.cashAmount))} hint={`perechisleniye ${fmtNum(shop.bankAmount)}, naqd ${fmtNum(shop.cashAmount)}`} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
+          {daily && <DaysCalendar id={id} month={calMonth} days={days} />}
           <Card padded={false}>
             <div className="p-5 pb-0"><CardHeader title="Oyma-oy hisob" description="Har oy: to'lashi kerak (perechisleniye + naqd), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans." /></div>
             {ledger.months.length === 0 ? <div className="p-5 pt-0"><EmptyState title="Hisob yo'q" text="Oy varag'i ochilganda yoki Excel'dan import qilinganda shu yerda chiqadi." /></div> : (
@@ -94,12 +102,12 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
             <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Bekor qilingan yozuv chizilgan holda qoladi." /></div>
             {txs.length === 0 ? <div className="p-5 pt-0"><EmptyState title="To'lov yo'q" text="Arenda sahifasidagi «Kirim» tugmasi bilan yoziladi." /></div> : (
               <Table>
-                <thead><tr><Th>Sana</Th><Th>Qaysi oy uchun</Th><Th>Usul</Th><Th right>Summa</Th><Th>Kim yozdi</Th><Th></Th></tr></thead>
+                <thead><tr><Th>Sana</Th><Th>Qaysi oy / kun uchun</Th><Th>Usul</Th><Th right>Summa</Th><Th>Kim yozdi</Th><Th></Th></tr></thead>
                 <tbody>
                   {txs.map((t) => (
                     <Tr key={t.id} className={t.cancelledAt ? "opacity-50 line-through" : undefined}>
                       <Td>{date(t.date)}</Td>
-                      <Td>{t.month ? monthLabel(t.month) : "—"}{t.type === "EXPENSE" && <span className="ml-1 text-xs text-slate-500">(chiqim: {t.category})</span>}</Td>
+                      <Td>{t.day ? `${date(t.day)} kun` : t.month ? monthLabel(t.month) : "—"}{t.type === "EXPENSE" && <span className="ml-1 text-xs text-slate-500">(chiqim: {t.category})</span>}</Td>
                       <Td>{RENT_METHOD_LABEL[t.method]}</Td>
                       <Td right className={t.type === "INCOME" ? "font-semibold text-emerald-700" : "font-semibold text-red-600"}>{t.type === "INCOME" ? "+" : "−"}{fmtNum(t.amount)}</Td>
                       <Td className="text-xs text-slate-500">{t.createdBy.fullName}{t.note ? ` · ${t.note}` : ""}{t.cancelReason ? ` · bekor: ${t.cancelReason}` : ""}</Td>
@@ -181,5 +189,42 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
     </div>
+  );
+}
+
+/** Kunlik ijara kalendari: qaysi kun to'langan (yashil), qisman (sariq), to'lanmagan (qizil); kelgusi kunlar — kulrang. */
+function DaysCalendar({ id, month, days }: { id: string; month: Date; days: RentDay[] }) {
+  const now = today().getTime();
+  const past = days.filter((d) => d.day.getTime() < now && !d.before);
+  const full = past.filter((d) => d.paid >= d.due - 0.005).length;
+  const unpaid = past.filter((d) => d.paid < 0.005).length;
+  const lead = (days[0].day.getUTCDay() + 6) % 7; // dushanbadan boshlanadi
+  const nav = (n: number) => `/arenda/dokon/${id}?oy=${monthKey(shiftMonth(month, n))}`;
+  return (
+    <Card>
+      <CardHeader title="Kunlar bo'yicha to'lov" icon={CalendarDays}
+        description={`${monthLabel(month)}: o'tgan ${past.length} kundan ${full} tasi to'liq to'langan, ${unpaid} tasi umuman to'lanmagan. Kirimda «Qaysi kun uchun» tanlangan to'lovlar.`}
+        action={<div className="flex items-center gap-1">
+          <Link href={nav(-1)} aria-label="O'tgan oy" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ChevronLeft size={16} /></Link>
+          <Link href={nav(1)} aria-label="Keyingi oy" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ChevronRight size={16} /></Link>
+        </div>} />
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-500">
+        {["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"].map((w) => <div key={w} className="py-1 font-medium">{w}</div>)}
+        {Array.from({ length: lead }, (_, i) => <div key={`e${i}`} />)}
+        {days.map((d) => {
+          const t = d.day.getTime();
+          const tone = d.paid >= d.due - 0.005 && d.paid > 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : d.paid > 0 ? "border-amber-200 bg-amber-50 text-amber-800"
+            : t < now && !d.before ? "border-red-200 bg-red-50 text-red-700"
+            : "border-slate-200 bg-white text-slate-400";
+          return (
+            <div key={t} className={`rounded-lg border px-1 py-1.5 ${tone} ${t === now ? "ring-2 ring-slate-900/20" : ""}`} title={d.paid ? `${fmtNum(d.paid)} so'm` : "to'lanmagan"}>
+              <div className="text-sm font-semibold">{d.day.getUTCDate()}</div>
+              <div className="truncate tabular-nums">{d.paid ? fmtNum(d.paid) : t < now && !d.before ? "—" : ""}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

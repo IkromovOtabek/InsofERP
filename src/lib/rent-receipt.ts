@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { fmtNum, date } from "./format";
 import { qrKey, qrKeyValid } from "./qr-key";
-import { RENT_METHOD_LABEL, monthLabel } from "./rent";
+import { RENT_METHOD_LABEL, rentFor } from "./rent";
 import { shopLedger } from "./rent-tenant";
 import { botEnabled, sendMessage } from "./telegram/api";
 
@@ -56,7 +56,7 @@ export async function notifyRentPayment(txId: string): Promise<void> {
     "",
     `Do'kon: ${r.shop.name} (${r.shop.location})`,
     `Summa: ${fmtNum(r.amount)} so'm (${RENT_METHOD_LABEL[r.tx.method].toLowerCase()})`,
-    ...(r.tx.month ? [`Qaysi oy uchun: ${monthLabel(r.tx.month)}`] : []),
+    ...(rentFor(r.tx) ? [`${rentFor(r.tx)!.label}: ${rentFor(r.tx)!.value}`] : []),
     `Sana: ${date(r.tx.date)} · kvitansiya ${r.no}`,
     "",
     r.debt > 1 ? `Qolgan qarz: ${fmtNum(r.debt)} so'm` : r.debt < -1 ? `Avans (ortiqcha to'lov): ${fmtNum(-r.debt)} so'm` : "Qarzingiz yo'q. Rahmat!",

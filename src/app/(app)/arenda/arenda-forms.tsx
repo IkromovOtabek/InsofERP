@@ -9,7 +9,7 @@ import { fmtNum, isoDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { saveRentCharge, saveRentShop, saveRentTx } from "./actions";
 
-type ShopOpt = { id: string; name: string; location: string };
+type ShopOpt = { id: string; name: string; location: string; daily?: boolean };
 
 /**
  * «Kirim» / «Chiqim» tugmalari (ularning tepasida sahifa arenda kassasining umumiy summasini ko'rsatadi).
@@ -49,6 +49,10 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
   useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setToken(crypto.randomUUID()); } }, [state]);
   const locations = [...new Set(shops.map((s) => s.location))];
   const income = type === "INCOME";
+  // Kunlik ijarali do'kon tanlansa — «Qaysi oy uchun» o'rniga «Qaysi kun uchun»
+  const [shopId, setShopId] = useState("");
+  const daily = income && !!shops.find((s) => s.id === shopId)?.daily;
+  useEffect(() => { if (state?.ok) setShopId(""); }, [state]);
 
   return (
     <form action={action} className="space-y-4">
@@ -63,16 +67,22 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
         {income ? (
           <>
             <Field label="Do'kon *" className="sm:col-span-2">
-              <Select name="shopId" defaultValue="" required>
+              <Select name="shopId" value={shopId} onChange={(e) => setShopId(e.target.value)} required>
                 <option value="" disabled>Do&apos;konni tanlang…</option>
                 {locations.map((l) => (
-                  <optgroup key={l} label={l}>{shops.filter((s) => s.location === l).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>
+                  <optgroup key={l} label={l}>{shops.filter((s) => s.location === l).map((s) => <option key={s.id} value={s.id}>{s.name}{s.daily ? " (kunlik)" : ""}</option>)}</optgroup>
                 ))}
               </Select>
             </Field>
-            <Field label="Qaysi oy uchun *">
-              <Select name="month" defaultValue={month}>{months.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</Select>
-            </Field>
+            {daily ? (
+              <Field label="Qaysi kun uchun *" hint="kunlik ijara — shu kunning to'lovi">
+                <Input name="day" type="date" defaultValue={isoDate()} required />
+              </Field>
+            ) : (
+              <Field label="Qaysi oy uchun *">
+                <Select name="month" defaultValue={month}>{months.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</Select>
+              </Field>
+            )}
           </>
         ) : (
           <>
@@ -108,6 +118,7 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
 
 export type ChargeRowData = {
   shopId: string; name: string; isActive: boolean;
+  period: "MONTHLY" | "DAILY"; days: number | null; bankRate: number; cashRate: number;
   bankDue: number; cashDue: number; due: number; electricity: number; tax: number;
   bankPaid: number; cashPaid: number; paid: number; left: number; note: string | null;
 };
@@ -120,7 +131,8 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
   const [edit, setEdit] = useState(false);
   const [state, action, pending] = useActionState(saveRentCharge.bind(null, row.shopId, month), undefined);
   const [, start] = useTransition();
-  const init = () => ({ bankDue: num(row.bankDue), cashDue: num(row.cashDue), electricity: num(row.electricity), tax: num(row.tax), note: row.note ?? "" });
+  const daily = row.period === "DAILY";
+  const init = () => ({ bankDue: num(row.bankDue), cashDue: num(row.cashDue), electricity: num(row.electricity), tax: num(row.tax), note: row.note ?? "", days: daily ? String(row.days ?? "") : "" });
   const [val, setVal] = useState(init);
   useEffect(() => { if (state?.ok) setEdit(false); }, [state]);
   const leftTone = row.left > 0.005 ? "text-red-600" : row.left < -0.005 ? "text-emerald-700" : "text-slate-400";
@@ -129,7 +141,7 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
     // <tr> ichiga <form> qo'yib bo'lmaydi — qiymatlar holatda, «Saqlash» FormData yig'ib action'ni chaqiradi
     const save = () => {
       const fd = new FormData();
-      for (const [k, v] of Object.entries(val)) fd.set(k, k === "note" ? v : v || "0");
+      for (const [k, v] of Object.entries(val)) if (k !== "days" || daily) fd.set(k, k === "note" || k === "days" ? v : v || "0");
       start(() => action(fd));
     };
     const money = (k: "bankDue" | "cashDue" | "electricity" | "tax", label: string) => (
@@ -141,6 +153,17 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
       <SheetTr className="bg-amber-50/60">
         <SheetTd strong className="sticky left-0 z-[1] bg-white">
           {row.name}
+          {daily && (
+            // Kunlar o'zgarsa summa kunlik andoza bo'yicha qayta hisoblanadi (keyin qo'lda tuzatsa ham bo'ladi)
+            <label className="mt-1 flex items-center gap-1.5 text-xs font-normal text-slate-600">
+              <Input value={val.days} inputMode="numeric" aria-label="Kunlar soni" className="h-7 w-14 text-center text-xs"
+                onChange={(e) => {
+                  const d = e.target.value.replace(/\D/g, "").slice(0, 2), k = Number(d || 0);
+                  setVal((o) => ({ ...o, days: d, bankDue: num(Math.round(row.bankRate * k * 100) / 100), cashDue: num(Math.round(row.cashRate * k * 100) / 100) }));
+                }} />
+              kun × {fmtNum(row.bankRate + row.cashRate)}
+            </label>
+          )}
           {state?.error && <span role="alert" className="block text-xs font-normal text-red-600">{state.error}</span>}
         </SheetTd>
         {money("bankDue", "Perechisleniye summasi")}
@@ -165,7 +188,7 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
   return (
     <SheetTr className={cn(!row.isActive && "opacity-60")}>
-      <SheetTd strong className="sticky left-0 z-[1] max-w-72 whitespace-normal bg-white"><Link href={`/arenda/dokon/${row.shopId}`} className="hover:underline">{row.name}</Link></SheetTd>
+      <SheetTd strong className="sticky left-0 z-[1] max-w-72 whitespace-normal bg-white"><Link href={`/arenda/dokon/${row.shopId}`} className="hover:underline">{row.name}</Link>{daily && <span className="block text-xs font-normal text-slate-500">kunlik · {row.days ?? "?"} kun × {fmtNum(row.bankRate + row.cashRate)}</span>}</SheetTd>
       <SheetTd right>{cell(row.bankDue)}</SheetTd>
       <SheetTd right>{cell(row.cashDue)}</SheetTd>
       <SheetTd right tone="yellow" strong>{cell(row.due)}</SheetTd>
@@ -187,11 +210,13 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
 /** Do'kon qo'shish / tahrirlash. Summalar — andoza: yangi oy ochilganda (o'tgan oy hisobi bo'lmasa) shu qiymatlar olinadi. */
 export function ShopForm({ shop, locations, month, onDoneHref }: {
-  shop?: { id: string; name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null };
+  shop?: { id: string; name: string; location: string; period: "MONTHLY" | "DAILY"; payDay: number | null; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null };
   locations: string[]; month: string; onDoneHref?: string;
 }) {
   const [state, action, pending] = useActionState(saveRentShop, undefined);
   const [formKey, setFormKey] = useState(0);
+  const [period, setPeriod] = useState(shop?.period ?? "MONTHLY");
+  const per = period === "DAILY" ? "kunlik" : "oylik";
   useEffect(() => {
     if (!state?.ok) return;
     if (shop && onDoneHref) window.location.assign(onDoneHref);
@@ -209,12 +234,25 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
           <Input name="location" list="rent-locations" defaultValue={shop?.location} placeholder="Texno siti bozor" required />
           <datalist id="rent-locations">{locations.map((l) => <option key={l} value={l} />)}</datalist>
         </Field>
-        <Field label="Perechisleniye (oylik)"><MoneyInput name="bankAmount" defaultValue={num(shop?.bankAmount ?? 0)} /></Field>
-        <Field label="Naqd (oylik)"><MoneyInput name="cashAmount" defaultValue={num(shop?.cashAmount ?? 0)} /></Field>
+        <Field label="Ijara turi" hint={period === "DAILY" ? "Oy hisobi = kunlik summa × kunlar; kirimda kun so'raladi" : "Har oy bir summa"}>
+          <Select name="period" value={period} onChange={(e) => setPeriod(e.target.value as "MONTHLY" | "DAILY")}>
+            <option value="MONTHLY">Oylik</option><option value="DAILY">Kunlik</option>
+          </Select>
+        </Field>
+        <Field label={`Perechisleniye (${per})`}><MoneyInput name="bankAmount" defaultValue={num(shop?.bankAmount ?? 0)} /></Field>
+        <Field label={`Naqd (${per})`}><MoneyInput name="cashAmount" defaultValue={num(shop?.cashAmount ?? 0)} /></Field>
+        {period === "DAILY" ? <div className="hidden sm:block" /> : (
+          <Field label="To'lov kuni *" hint="har oyning shu sanasigacha">
+            <Select name="payDay" defaultValue={shop?.payDay ? String(shop.payDay) : ""}>
+              <option value="">Tanlang…</option>
+              {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}-sana{i >= 28 ? " (qisqa oyda — oxirgi kun)" : ""}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field label="Svet"><MoneyInput name="electricity" defaultValue={num(shop?.electricity ?? 0)} /></Field>
         <Field label="Biz to'laydigan soliq"><MoneyInput name="tax" defaultValue={num(shop?.tax ?? 0)} /></Field>
         <Field label="Ijarachi (F.I.O. / mas'ul)" className="sm:col-span-2"><Input name="tenantName" defaultValue={shop?.tenantName ?? ""} placeholder="Masalan: Vaxabjanova Nigora" /></Field>
-        <Field label="Telefon" hint="eslatma va bog'lanish uchun"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
+        <Field label="Telefon *" hint="ijaradagi joy uchun shart"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
         <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
         <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Shartnoma, zaklad, kelishuv…" /></Field>
         {!shop && <Checkbox name="vacant" label="Bo'sh joy — hali ijaraga berilmagan (oylik hisobga tushmaydi)" className="sm:col-span-4" />}

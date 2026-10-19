@@ -23,6 +23,8 @@ const txSchema = z.object({
   method: z.enum(["CASH", "BANK"], { message: "To'lov usulini tanlang" }),
   date: zStr("Sana kerak").refine(validDate, "sana noto'g'ri"),
   month: zOpt,
+  // Kunlik ijarali do'kon kirimi — qaysi kun uchun
+  day: zOpt.refine((v) => !v || validDate(v), "kun noto'g'ri"),
   shopId: zOpt,
   amount: z.coerce.number().positive("summa 0 dan katta bo'lsin").max(MAX_AMOUNT, "summa juda katta"),
   category: zOpt,
@@ -42,17 +44,22 @@ export async function saveRentTx(_prev: RentTxState, fd: FormData): Promise<Rent
   const month = d.month ? parseMonth(d.month) : null;
   if (d.month && !month) return { error: "Oy noto'g'ri" };
   if (d.type === "INCOME" && !d.shopId) return { error: "Do'konni tanlang" };
-  if (d.type === "INCOME" && !month) return { error: "Qaysi oy uchun to'lov — oyni tanlang" };
+  const day = d.type === "INCOME" && d.day ? new Date(d.day) : null;
+  if (d.type === "INCOME" && !month && !day) return { error: "Qaysi oy uchun to'lov — oyni tanlang" };
   const category = d.type === "INCOME" ? RENT_INCOME_CATEGORY : d.category;
   if (d.type === "EXPENSE" && !(RENT_EXPENSE_CATEGORIES as readonly string[]).includes(category ?? "")) return { error: "Chiqim turini tanlang" };
   if (d.type === "EXPENSE" && category === "Boshqa" && !d.note) return { error: "«Boshqa» chiqim uchun izoh yozing" };
   const res = await createRentTx({
     type: d.type, method: d.method, date: new Date(d.date), month, shopId: d.shopId, amount: d.amount,
-    category: category!, note: d.note, clientToken: token(d.clientToken),
+    category: category!, note: d.note, clientToken: token(d.clientToken), day,
   }, s.userId);
   if (res.error) return { error: res.error };
   done();
-  return { ok: true, note: res.duplicate ? "Allaqachon saqlangan (qayta bosildi)" : d.type === "INCOME" ? "Kirim saqlandi" : "Chiqim saqlandi", receiptId: d.type === "INCOME" ? res.id : undefined };
+  const note = res.duplicate ? "Allaqachon saqlangan (qayta bosildi)"
+    : d.type === "EXPENSE" ? "Chiqim saqlandi"
+    : res.sameDay ? `Kirim saqlandi. Diqqat: bu kun uchun avval ham ${res.sameDay} ta kirim bor — ikki marta yozilmaganini tekshiring`
+    : "Kirim saqlandi";
+  return { ok: true, note, receiptId: d.type === "INCOME" ? res.id : undefined };
 }
 
 export async function stornoRentTx(id: string, reason: string): Promise<ActionState> {
@@ -75,6 +82,8 @@ export async function openRentMonth(key: string): Promise<ActionState> {
 
 const chargeSchema = z.object({
   bankDue: zDec(), cashDue: zDec(), electricity: zDec(), tax: zDec(), note: zOpt,
+  // Kunlik ijarada — hisoblangan kunlar (bozor yopiq kunlar ayiriladi)
+  days: z.string().optional().transform((v) => (v ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 31), "kunlar 0–31 oralig'ida bo'lsin"),
 });
 
 /** Oy varag'idagi qatorni tahrirlash (do'konning shu oy hisobi). Hisob bo'lmasa — ochiladi. */
@@ -100,6 +109,8 @@ const shopSchema = z.object({
   id: zOpt,
   name: zStr("Do'kon nomini yozing").max(200, "nom juda uzun"),
   location: zStr("Joy (bozor) ni yozing").max(120, "nom juda uzun"),
+  period: z.enum(["MONTHLY", "DAILY"]).default("MONTHLY"),
+  payDay: z.string().optional().transform((v) => (v ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v >= 1 && v <= 31), "to'lov kuni 1–31 oralig'ida bo'lsin"),
   bankAmount: zDec(), cashAmount: zDec(), electricity: zDec(), tax: zDec(),
   note: zOpt,
   tenantName: zOpt,
@@ -117,6 +128,11 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   if ("error" in r) return { error: r.error };
   const { id, month: key, vacant, ...rest } = r.data;
   const data = id ? rest : { ...rest, isActive: !vacant };
+  if (data.period === "DAILY") data.payDay = null; // kunlikda har kuni to'lanadi
+  // Ijaradagi joyda telefon va (oylikda) to'lov kuni shart — eslatma va «Bugun / Muddati o'tgan» filtrlari shunga tayanadi
+  const active = id ? ((await db.rentShop.findUnique({ where: { id }, select: { isActive: true } }))?.isActive ?? true) : !vacant;
+  if (active && !data.phone) return { error: "Ijaradagi joy uchun ijarachi telefonini kiriting" };
+  if (active && data.period === "MONTHLY" && !data.payDay) return { error: "To'lov kunini tanlang — har oyning nechanchi sanasigacha to'laydi" };
   if (data.phone) {
     const p = normalizePhone(data.phone);
     if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67" };

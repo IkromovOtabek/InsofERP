@@ -6,7 +6,7 @@ import { publicOrigin } from "@/lib/public-url";
 import { date, dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { numWords } from "@/lib/num-words";
-import { RENT_METHOD_LABEL, monthLabel } from "@/lib/rent";
+import { RENT_METHOD_LABEL, rentFor } from "@/lib/rent";
 import { rentReceipt, rentReceiptPath } from "@/lib/rent-receipt";
 import { PrintButton } from "@/components/print-button";
 import { AutoPrint } from "@/components/auto-print";
@@ -49,7 +49,7 @@ export default async function RentReceiptPage({ params, searchParams }: { params
             <tbody>
               <tr><td className="w-40 py-0.5 pr-2 text-slate-600">To&apos;lovchi (ijarachi)</td><td className="border-b border-slate-400 py-0.5 font-semibold">{r.shop.tenantName ?? r.shop.name}{r.shop.inn ? ` · INN ${r.shop.inn}` : ""}</td></tr>
               <tr><td className="py-0.5 pr-2 text-slate-600">Do&apos;kon, joy</td><td className="border-b border-slate-400 py-0.5">{r.shop.name} · {r.shop.location}</td></tr>
-              <tr><td className="py-0.5 pr-2 text-slate-600">Qaysi oy uchun</td><td className="border-b border-slate-400 py-0.5">{r.tx.month ? monthLabel(r.tx.month) : "—"}</td></tr>
+              <tr><td className="py-0.5 pr-2 text-slate-600">{rentFor(r.tx)?.label ?? "Qaysi oy uchun"}</td><td className="border-b border-slate-400 py-0.5">{rentFor(r.tx)?.value ?? "—"}</td></tr>
               <tr><td className="py-0.5 pr-2 text-slate-600">To&apos;lov usuli</td><td className="border-b border-slate-400 py-0.5">{RENT_METHOD_LABEL[r.tx.method]}</td></tr>
               <tr><td className="py-0.5 pr-2 text-slate-600">Summa</td><td className="border-b border-slate-400 py-0.5 text-[15px] font-bold tabular-nums">{fmtNum(r.amount, 2)} so&apos;m</td></tr>
               <tr><td className="py-0.5 pr-2 text-slate-600">So&apos;z bilan</td><td className="border-b border-slate-400 py-0.5 italic">{words.charAt(0).toUpperCase() + words.slice(1)} so&apos;m{tiyin ? ` ${tiyin} tiyin` : ""}</td></tr>

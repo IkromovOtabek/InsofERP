@@ -2957,9 +2957,11 @@ model RentShop {
   id          String   @id @default(cuid())
   name        String
   location    String
-  /// Perechisleniye (bank orqali) to'lanadigan oylik summa
+  /// Ijara davri: oylik yoki kunlik. Kunlikda `bankAmount`/`cashAmount` — bir kunlik summa
+  period      RentPeriod @default(MONTHLY)
+  /// Perechisleniye (bank orqali) to'lanadigan summa (oylik yoki kunlik — `period` bo'yicha)
   bankAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  /// Naqd to'lanadigan oylik summa
+  /// Naqd to'lanadigan summa (oylik yoki kunlik — `period` bo'yicha)
   cashAmount  Decimal  @default(0) @db.Decimal(18, 2)
   /// Svet va biz to'laydigan soliq — ma'lumot uchun (qoldiqqa ta'sir qilmaydi, Excel'dagidek)
   electricity Decimal  @default(0) @db.Decimal(18, 2)
@@ -2972,6 +2974,8 @@ model RentShop {
   tenantName  String?
   phone       String?
   inn         String?
+  /// Oylik ijarada — har oyning nechanchi sanasigacha to'lashi kerak (1–31; oy qisqa bo'lsa — oxirgi kun). Kunlikda bo'sh
+  payDay      Int?
   /// Ijarachining Telegram chati — u botga `t.me/<bot>?start=ijara_<tgLinkToken>` havolasi orqali ulanadi
   tgChatId    String?
   tgLinkedAt  DateTime?
@@ -3018,6 +3022,8 @@ model RentCharge {
   cashDue     Decimal  @default(0) @db.Decimal(18, 2)
   electricity Decimal  @default(0) @db.Decimal(18, 2)
   tax         Decimal  @default(0) @db.Decimal(18, 2)
+  /// Kunlik ijarada — hisoblangan kunlar soni (bozor yopiq kunlar ayirilgan bo'lishi mumkin); oylikda bo'sh
+  days        Int?
   note        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -3026,6 +3032,11 @@ model RentCharge {
 
   @@unique([shopId, month])
   @@index([month])
+}
+
+enum RentPeriod {
+  MONTHLY // oylik ijara
+  DAILY // kunlik ijara (bozor joyi): oy hisobi = kunlik summa × kunlar
 }
 
 enum RentTxType {
@@ -3046,6 +3057,8 @@ model RentTx {
   date          DateTime
   /// Kirim qaysi oy arendasi uchun (oyning 1-kuni). Chiqimda — ixtiyoriy
   month         DateTime?  @db.Date
+  /// Kunlik ijarada — kirim qaysi kun uchun (`month` = shu kunning oyi)
+  day           DateTime?  @db.Date
   shopId        String?
   amount        Decimal    @db.Decimal(18, 2)
   category      String
@@ -3062,6 +3075,7 @@ model RentTx {
   createdBy User      @relation("RentTxCreatedBy", fields: [createdById], references: [id])
 
   @@index([month, shopId])
+  @@index([shopId, day])
   @@index([date])
 }
 

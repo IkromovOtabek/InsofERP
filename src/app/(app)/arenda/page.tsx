@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed, AlertTriangle, CalendarClock } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -9,9 +9,9 @@ import { getCompany } from "@/lib/company";
 import { rentDebtors } from "@/lib/rent-tenant";
 import { RemindDayForm } from "./tenant-forms";
 import {
-  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_SHOP_STATUS, currentMonth, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth, shopDebts,
+  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth,
 } from "@/lib/rent";
-import { Badge, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, type BadgeColor, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "../payments/confirm-button";
 import { ExcelButton } from "../logistika/excel-button";
@@ -44,7 +44,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
   // Kirim formasidagi «Qaysi oy uchun»: tanlangan oy atrofida 12 oy orqaga va 2 oy oldinga
   const months = Array.from({ length: 15 }, (_, i) => shiftMonth(now, 2 - i)).map((m) => ({ key: monthKey(m), label: monthLabel(m) }));
   if (!months.some((m) => m.key === key)) months.push({ key, label: monthLabel(month) });
-  const holat = sp.holat === "bosh" || sp.holat === "ijarada" ? sp.holat : undefined;
+  const holat = parseShopFilter(sp.holat);
   const href = (p: { oy?: string; tab?: string; edit?: string; holat?: string }) => {
     const q = new URLSearchParams({ oy: p.oy ?? key, ...(p.tab ?? tab) !== "jadval" ? { tab: p.tab ?? tab } : {}, ...(p.edit ? { edit: p.edit } : {}), ...(p.holat ? { holat: p.holat } : {}) });
     return `/arenda?${q}`;
@@ -73,7 +73,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
         <StatCard label="Naqd" value={money(balance.cash)} icon={Banknote} />
         <StatCard label="Perechisleniye" value={money(balance.bank)} icon={Landmark} />
       </div>
-      <RentTxPanel shops={activeShops.map((x) => ({ id: x.id, name: x.name, location: x.location }))} month={key} months={months} expenseCats={RENT_EXPENSE_CATEGORIES} canCreate={canCreate} />
+      <RentTxPanel shops={activeShops.map((x) => ({ id: x.id, name: x.name, location: x.location, daily: x.period === "DAILY" }))} month={key} months={months} expenseCats={RENT_EXPENSE_CATEGORIES} canCreate={canCreate} />
 
       {/* Oy almashtirgich */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -198,7 +198,7 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
                   <Td>{off ? <Badge color="slate">bekor qilingan</Badge> : x.type === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}</Td>
                   <Td className={off ? "line-through" : undefined}>
                     {x.shop ? <><span className="font-medium text-slate-800">{x.shop.name}</span> <span className="text-xs text-slate-500">· {x.shop.location}</span></> : null}
-                    <span className="block text-xs text-slate-500">{x.category}{x.month ? ` · ${monthLabel(x.month)} uchun` : ""}</span>
+                    <span className="block text-xs text-slate-500">{x.category}{x.day ? ` · ${date(x.day)} kun uchun` : x.month ? ` · ${monthLabel(x.month)} uchun` : ""}</span>
                   </Td>
                   <Td>{RENT_METHOD_LABEL[x.method]}</Td>
                   <Td right className={`font-semibold tabular-nums ${off ? "line-through" : x.type === "INCOME" ? "text-emerald-700" : "text-red-600"}`}>{x.type === "INCOME" ? "+" : "−"}{fmtNum(Number(x.amount))}</Td>
@@ -268,10 +268,18 @@ async function DebtorsTab({ canShops, canCreate }: { canShops: boolean; canCreat
 
 type Shop = Awaited<ReturnType<typeof db.rentShop.findMany>>[number];
 
+/** Do'konlar ro'yxati filtrlari (`?holat=`): to'lov holati, ijara turi va to'liq kiritilmagan ma'lumot. */
+const SHOP_FILTERS = ["muddat", "bugun", "kutilmoqda", "tolagan", "ijarada", "bosh", "kunlik", "toliqemas"] as const;
+type ShopFilter = (typeof SHOP_FILTERS)[number];
+const parseShopFilter = (v?: string): ShopFilter | undefined => (SHOP_FILTERS as readonly string[]).includes(v ?? "") ? (v as ShopFilter) : undefined;
+
+const STATUS_BADGE: Record<RentPayStatus, BadgeColor> = { VACANT: "slate", OVERDUE: "red", TODAY: "amber", PAID: "green", WAITING: "blue" };
+
 async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
-  shops: Shop[]; month: string; editId?: string; holat?: "bosh" | "ijarada"; canShops: boolean; href: (p: { tab?: string; edit?: string; holat?: string }) => string;
+  shops: Shop[]; month: string; editId?: string; holat?: ShopFilter; canShops: boolean; href: (p: { tab?: string; edit?: string; holat?: string }) => string;
 }) {
-  const debts = await shopDebts();
+  const states = await rentShopStates(all);
+  const st = (x: Shop) => states.get(x.id)!;
   const editing = editId ? all.find((x) => x.id === editId) : undefined;
   const locations = [...new Set(all.map((x) => x.location))];
   // Joy bo'yicha: jami / ijarada / bo'sh — qaysi bozorda nechta joyga ijarachi qo'yish kerak
@@ -280,27 +288,44 @@ async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
     const on = xs.filter((x) => x.isActive).length;
     return { location: l, total: xs.length, on, off: xs.length - on };
   });
-  const onAll = all.filter((x) => x.isActive).length, offAll = all.length - onAll;
-  // Saralash: joy (bozor) bo'yicha, ichida — avval bo'sh joylar
-  const shops = all.filter((x) => (holat === "bosh" ? !x.isActive : holat === "ijarada" ? x.isActive : true))
-    .sort((a, b) => locations.indexOf(a.location) - locations.indexOf(b.location) || Number(a.isActive) - Number(b.isActive));
-  const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
+  // Ijaradagi joyda telefon va (oylikda) to'lov kuni bo'lishi shart — yo'qlari «To'liq emas» filtrida
+  const incomplete = (x: Shop) => x.isActive && (!x.phone || (x.period === "MONTHLY" && !x.payDay));
+  const test: Record<ShopFilter, (x: Shop) => boolean> = {
+    muddat: (x) => st(x).status === "OVERDUE", bugun: (x) => st(x).status === "TODAY", kutilmoqda: (x) => st(x).status === "WAITING",
+    tolagan: (x) => st(x).status === "PAID", ijarada: (x) => x.isActive, bosh: (x) => !x.isActive,
+    kunlik: (x) => x.period === "DAILY", toliqemas: incomplete,
+  };
+  const count = (f: ShopFilter) => all.filter(test[f]).length;
+  const overdueSum = all.reduce((s, x) => s + st(x).overdue, 0);
+  const todaySum = all.filter(test.bugun).reduce((s, x) => s + (x.period === "DAILY" ? Number(x.bankAmount) + Number(x.cashAmount) : st(x).monthLeft), 0);
+  // Saralash: muddati o'tganlar — qarz kattasidan; qolganlari — joy (bozor), ichida avval bo'sh joylar
+  const shops = all.filter(holat ? test[holat] : () => true).sort((a, b) => holat === "muddat"
+    ? st(b).overdue - st(a).overdue
+    : locations.indexOf(a.location) - locations.indexOf(b.location) || Number(a.isActive) - Number(b.isActive));
+  const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, period: x.period, payDay: x.payDay, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
+  const f = (k: ShopFilter, label: string) => ({ key: k, label, href: href({ tab: "dokonlar", holat: k }), count: count(k) });
   return (
     <div className="space-y-4">
       {canShops && (
         <Card>
-          <CardHeader title={editing ? `Tahrirlash: ${editing.name}` : "Yangi do'kon"} description="Oylik summalar — andoza: yangi oy ochilganda o'tgan oy hisobi bo'lmasa shu qiymatlar olinadi. Shu oy ochilgan bo'lsa yangi do'kon unga ham qo'shiladi."
+          <CardHeader title={editing ? `Tahrirlash: ${editing.name}` : "Yangi do'kon"} description="Summalar — andoza: yangi oy ochilganda o'tgan oy hisobi bo'lmasa shu qiymatlar olinadi (kunlikda — kunlik summa × kunlar). Shu oy ochilgan bo'lsa yangi do'kon unga ham qo'shiladi."
             action={editing ? <Link href={href({ tab: "dokonlar" })} className="text-sm text-slate-500 hover:text-slate-900">Bekor qilish</Link> : undefined} />
           <ShopForm key={editing?.id ?? "new"} shop={editing ? plain(editing) : undefined} locations={locations} month={month} onDoneHref={href({ tab: "dokonlar" })} />
         </Card>
       )}
       {all.length > 0 && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <StatCard label="Jami joylar" value={all.length} icon={Store} href={href({ tab: "dokonlar" })} />
-            <StatCard label="Ijarada — pul olinadi" value={onAll} icon={CircleCheck} tone="success" href={href({ tab: "dokonlar", holat: "ijarada" })} />
-            <StatCard label="Bo'sh — ijarachi kerak" value={offAll} icon={CircleDashed} tone={offAll ? "warning" : "success"} hint={offAll ? "bosing — bo'sh joylar ro'yxati" : "bo'sh joy yo'q"} href={href({ tab: "dokonlar", holat: "bosh" })} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Muddati o'tgan" value={count("muddat")} icon={AlertTriangle} tone={count("muddat") ? "danger" : "success"} hint={overdueSum > 0.005 ? `qarz ${money(overdueSum)}` : "muddati o'tgan qarz yo'q"} href={href({ tab: "dokonlar", holat: "muddat" })} />
+            <StatCard label="Bugun to'lov kuni" value={count("bugun")} icon={CalendarClock} tone={count("bugun") ? "warning" : "default"} hint={todaySum > 0.005 ? `kutilmoqda ${money(todaySum)}` : undefined} href={href({ tab: "dokonlar", holat: "bugun" })} />
+            <StatCard label="To'laganlar" value={count("tolagan")} icon={CircleCheck} tone="success" hint={`ijarada ${count("ijarada")} ta joydan`} href={href({ tab: "dokonlar", holat: "tolagan" })} />
+            <StatCard label="Bo'sh — ijarachi kerak" value={count("bosh")} icon={CircleDashed} tone={count("bosh") ? "warning" : "success"} hint={`jami ${all.length} ta joy`} href={href({ tab: "dokonlar", holat: "bosh" })} />
           </div>
+          {count("toliqemas") > 0 && (
+            <Callout tone="warning" title={`${count("toliqemas")} ta ijaradagi joyda telefon yoki to'lov kuni kiritilmagan`}>
+              Ularsiz «Bugun» va «Muddati o&apos;tgan» to&apos;g&apos;ri chiqmaydi (to&apos;lov kuni bo&apos;lmasa — oy oxiri olinadi). <Link href={href({ tab: "dokonlar", holat: "toliqemas" })} className="font-medium underline">Ro&apos;yxatni ochish →</Link>
+            </Callout>
+          )}
           {byLoc.length > 1 && (
             <Card padded={false}>
               <Table>
@@ -321,28 +346,41 @@ async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
           )}
           <Tabs current={holat ?? "all"} className="mb-0" items={[
             { key: "all", label: "Hammasi", href: href({ tab: "dokonlar" }), count: all.length },
-            { key: "ijarada", label: RENT_SHOP_STATUS.on, href: href({ tab: "dokonlar", holat: "ijarada" }), count: onAll },
-            { key: "bosh", label: RENT_SHOP_STATUS.off, href: href({ tab: "dokonlar", holat: "bosh" }), count: offAll },
+            f("muddat", "Muddati o'tgan"), f("bugun", "Bugun to'lov"), f("kutilmoqda", "To'lov kuni kelmagan"), f("tolagan", "To'laganlar"),
+            f("ijarada", RENT_SHOP_STATUS.on), f("bosh", "Bo'sh joylar"), f("kunlik", "Kunlik ijara"), f("toliqemas", "Ma'lumoti to'liq emas"),
           ]} />
         </>
       )}
-      {all.length === 0 ? <EmptyState icon={Store} title="Do'konlar yo'q" text="Yuqoridagi forma orqali birinchi do'konni qo'shing." /> : shops.length === 0 ? <EmptyState icon={Store} title={holat === "bosh" ? "Bo'sh joy yo'q" : "Ijaradagi joy yo'q"} text={holat === "bosh" ? "Barcha joylar ijaraga berilgan." : "Hali birorta joy ijaraga berilmagan."} /> : (
+      {all.length === 0 ? <EmptyState icon={Store} title="Do'konlar yo'q" text="Yuqoridagi forma orqali birinchi do'konni qo'shing." /> : shops.length === 0 ? <EmptyState icon={Store} title="Bu filtrda joy yo'q" text="Boshqa filtrni tanlang yoki «Hammasi» ni bosing." /> : (
         <Card padded={false}>
           <Table>
-            <thead><tr><Th>Joy</Th><Th>Do&apos;kon</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th><Th right>Svet</Th><Th right>Soliq</Th><Th right>Umumiy qarz</Th><Th>Holat</Th><Th></Th></tr></thead>
+            <thead><tr><Th>Joy</Th><Th>Do&apos;kon / ijarachi</Th><Th>To&apos;lov kuni</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th><Th right>Svet</Th><Th right>Soliq</Th><Th right>Umumiy qarz</Th><Th>Holat</Th><Th></Th></tr></thead>
             <tbody>
               {shops.map((x) => {
-                const debt = debts.get(x.id) ?? 0;
+                const s = st(x), debt = s.debt;
                 return (
                   <Tr key={x.id} className={x.isActive ? undefined : "bg-amber-50/40"}>
                     <Td className="text-slate-600">{x.location}</Td>
-                    <Td><Link href={`/arenda/dokon/${x.id}`} className="font-medium text-slate-800 hover:underline">{x.name}</Link>{(x.tenantName || x.phone) && <span className="block text-xs text-slate-500">{[x.tenantName, x.phone && formatPhone(x.phone)].filter(Boolean).join(" · ")}</span>}{x.note && <span className="block text-xs text-slate-500">{x.note}</span>}</Td>
+                    <Td>
+                      <Link href={`/arenda/dokon/${x.id}`} className="font-medium text-slate-800 hover:underline">{x.name}</Link>
+                      {(x.tenantName || x.phone) && <span className="block text-xs text-slate-500">{x.tenantName}{x.tenantName && x.phone ? " · " : ""}{x.phone && <a href={`tel:${x.phone}`} className="text-brand-700 hover:underline">{formatPhone(x.phone)}</a>}</span>}
+                      {x.isActive && !x.phone && <span className="block text-xs text-red-600">telefon kiritilmagan</span>}
+                      {x.note && <span className="block text-xs text-slate-500">{x.note}</span>}
+                    </Td>
+                    <Td className="whitespace-nowrap text-sm">
+                      {x.period === "DAILY" ? <Badge color="blue">har kuni</Badge>
+                        : x.payDay ? <>har oy {x.payDay}-sana{s.dueDate && x.isActive && <span className="block text-xs text-slate-500">{date(s.dueDate)}</span>}</>
+                        : x.isActive ? <span className="text-xs text-red-600">kiritilmagan</span> : <span className="text-slate-400">—</span>}
+                    </Td>
                     <Td right>{cell(Number(x.bankAmount))}</Td>
                     <Td right>{cell(Number(x.cashAmount))}</Td>
                     <Td right>{cell(Number(x.electricity))}</Td>
                     <Td right>{cell(Number(x.tax))}</Td>
                     <Td right className={`font-semibold ${debt > 0.005 ? "text-red-600" : debt < -0.005 ? "text-emerald-700" : "text-slate-400"}`} >{debt < -0.005 ? `avans ${fmtNum(-debt)}` : cell(debt)}</Td>
-                    <Td>{x.isActive ? <Badge color="green">{RENT_SHOP_STATUS.on}</Badge> : <Badge color="amber">{RENT_SHOP_STATUS.off}</Badge>}</Td>
+                    <Td>
+                      <Badge color={STATUS_BADGE[s.status]}>{RENT_PAY_STATUS_LABEL[s.status]}</Badge>
+                      {s.status === "OVERDUE" && <span className="block text-xs font-medium text-red-600">{fmtNum(s.overdue)}</span>}
+                    </Td>
                     <Td>
                       {canShops && (
                         <div className="flex items-center gap-2">

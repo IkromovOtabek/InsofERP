@@ -4,7 +4,7 @@ import { Ban, Clock, LogIn, MapPin, Phone, Send, ShieldAlert, ShieldCheck } from
 import { getCompany } from "@/lib/company";
 import { date, dateTime, fmtNum } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { RENT_METHOD_LABEL, monthLabel } from "@/lib/rent";
+import { RENT_METHOD_LABEL, rentFor } from "@/lib/rent";
 import { rentReceipt, rentReceiptValid } from "@/lib/rent-receipt";
 import { LogoMark } from "@/components/logo";
 
@@ -53,7 +53,7 @@ export default async function PublicRentReceiptPage({ params, searchParams }: { 
             <div className={row}><dt className="text-slate-500">Sana</dt><dd>{date(r.tx.date)}</dd></div>
             <div className={row}><dt className="text-slate-500">Do&apos;kon</dt><dd className="text-right font-medium">{r.shop.name} · {r.shop.location}</dd></div>
             {r.shop.tenantName && <div className={row}><dt className="text-slate-500">Ijarachi</dt><dd className="text-right">{r.shop.tenantName}</dd></div>}
-            {r.tx.month && <div className={row}><dt className="text-slate-500">Qaysi oy uchun</dt><dd>{monthLabel(r.tx.month)}</dd></div>}
+            {rentFor(r.tx) && <div className={row}><dt className="text-slate-500">{rentFor(r.tx)!.label}</dt><dd>{rentFor(r.tx)!.value}</dd></div>}
             <div className={row}><dt className="text-slate-500">To&apos;lov usuli</dt><dd>{RENT_METHOD_LABEL[r.tx.method]}</dd></div>
             <div className="flex items-baseline justify-between gap-3 py-2"><dt className="text-slate-500">Summa</dt><dd className={`text-2xl font-bold tabular-nums ${cancelled ? "line-through text-slate-400" : ""}`}>{fmtNum(r.amount)} <span className="text-sm font-medium text-slate-500">so&apos;m</span></dd></div>
           </dl>

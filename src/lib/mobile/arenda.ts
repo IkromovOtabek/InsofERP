@@ -7,13 +7,14 @@ import { MAX_AMOUNT } from "@/lib/action";
 import { dateRu, fmtNum, money } from "@/lib/format";
 import {
   RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
-  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, RENT_SHOP_STATUS, toggleRentShopActive,
+  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentShopStates, toggleRentShopActive, type RentPayStatus,
 } from "@/lib/rent";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
 import type { DetailAction, FormField, FormOption, MobileDetail } from "./detail";
 import type { HomeCard, HomeRow, HomeSection, Tone } from "./home";
 import { ListError, type MobileList } from "./list";
+import { normalizePhone } from "@/lib/phone";
 
 /**
  * Arenda (do'konlar ijarasi) — sekretarning mobil ish joyi. Vebdagi `/arenda` sahifasi bilan bitta qoida:
@@ -103,33 +104,33 @@ export async function arendaJurnalList(q?: string, filter?: string): Promise<Mob
   };
 }
 
-/** Do'konlar — joy (bozor) bo'yicha tartibda, o'ngda umumiy qarz/avans. */
+/** Do'konlar — joy (bozor) bo'yicha tartibda, o'ngda umumiy qarz/avans; filtrlar — to'lov holati va bo'sh joylar (veb bilan bir xil). */
 export async function arendaShopsList(q?: string, filter?: string): Promise<MobileList> {
-  const status: Prisma.RentShopWhereInput = filter === "all" ? {} : { isActive: filter !== "bosh" };
   const search: Prisma.RentShopWhereInput = q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { location: { contains: q, mode: "insensitive" } }] } : {};
-  const [shops, debts, total, active] = await Promise.all([
-    db.rentShop.findMany({ where: { ...search, ...status }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
-    shopDebts(),
-    db.rentShop.count({ where: search }),
-    db.rentShop.count({ where: { ...search, isActive: true } }),
-  ]);
-  const vacant = total - active;
+  const all = await db.rentShop.findMany({ where: search, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
+  const states = await rentShopStates(all);
+  const st = (x: (typeof all)[number]) => states.get(x.id)!;
+  const tests: Record<string, (x: (typeof all)[number]) => boolean> = {
+    active: (x) => x.isActive, muddat: (x) => st(x).status === "OVERDUE", bugun: (x) => st(x).status === "TODAY",
+    tolagan: (x) => st(x).status === "PAID", bosh: (x) => !x.isActive, all: () => true,
+  };
+  const cur = filter && tests[filter] ? filter : "active";
+  const shops = all.filter(tests[cur]);
+  const tone: Record<RentPayStatus, Tone> = { VACANT: "info", OVERDUE: "danger", TODAY: "warning", PAID: "success", WAITING: "info" };
   return {
     key: "arenda-shops", title: "Do'konlar",
     rows: shops.map((s) => {
-      const debt = debts.get(s.id) ?? 0;
+      const x = st(s), debt = x.debt;
+      const pay = s.period === "DAILY" ? "har kuni" : s.payDay ? `to'lov ${s.payDay}-sana` : "to'lov kuni yo'q";
       return {
         id: s.id, title: s.name,
-        subtitle: `${s.location} · bank ${num(n(s.bankAmount))} · naqd ${num(n(s.cashAmount))}`,
+        subtitle: `${s.location} · ${s.isActive ? `${pay}${s.phone ? "" : " · telefon yo'q"}` : "bo'sh joy"}`,
         right: debt > 0.005 ? `qarz ${money(debt)}` : debt < -0.005 ? `avans ${money(-debt)}` : "—",
-        status: s.isActive ? RENT_SHOP_STATUS.on : RENT_SHOP_STATUS.off, tone: !s.isActive ? "info" : debt > 0.005 ? "danger" : "success",
+        status: RENT_PAY_STATUS_LABEL[x.status], tone: tone[x.status],
       };
     }),
-    filters: [
-      { key: "active", label: RENT_SHOP_STATUS.on, count: active, active: filter !== "all" && filter !== "bosh" },
-      { key: "bosh", label: RENT_SHOP_STATUS.off, count: vacant, active: filter === "bosh" },
-      { key: "all", label: "Hammasi", count: total, active: filter === "all" },
-    ],
+    filters: ([["active", RENT_SHOP_STATUS.on], ["muddat", "Muddati o'tgan"], ["bugun", "Bugun"], ["tolagan", "To'laganlar"], ["bosh", "Bo'sh joylar"], ["all", "Hammasi"]] as const)
+      .map(([key, label]) => ({ key, label, count: all.filter(tests[key]).length, active: key === cur })),
   };
 }
 
@@ -157,7 +158,7 @@ export async function arendaTxDetail(user: MobileUser, id: string): Promise<Mobi
       { label: "Summa", value: `${income ? "+" : "−"}${money(n(t.amount))}`, tone: TX_TONE(t) },
       { label: "Usul", value: RENT_METHOD_LABEL[t.method] },
       ...(t.shop ? [{ label: "Do'kon", value: `${t.shop.name} · ${t.shop.location}` }] : []),
-      ...(t.month ? [{ label: "Qaysi oy uchun", value: monthLabel(t.month) }] : []),
+      ...(rentFor(t) ? [rentFor(t)!] : []),
       { label: income ? "Turi" : "Chiqim turi", value: t.category },
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
       { label: "Kiritdi", value: `${t.createdBy.fullName} · ${dateRu(t.createdAt)}` },
@@ -204,8 +205,11 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
         { name: "name", label: "Do'kon nomi", type: "text", required: true, value: s.name },
         { name: "location", label: "Joy (bozor)", type: "select", required: true, value: s.location, options: [...locs.map((l) => ({ value: l.location, label: l.location })), { value: NEW_LOCATION, label: "Yangi joy…" }] },
         { name: "locationNew", label: "Yangi joy nomi", type: "text", showIf: { field: "location", equals: NEW_LOCATION } },
-        { name: "bankAmount", label: "Oylik — perechisleniye, so'm", type: "number", value: String(n(s.bankAmount)) },
-        { name: "cashAmount", label: "Oylik — naqd, so'm", type: "number", value: String(n(s.cashAmount)) },
+        { name: "phone", label: "Ijarachi telefoni", type: "text", value: s.phone ?? undefined, placeholder: "+998 90 123 45 67" },
+        { name: "period", label: "Ijara turi", type: "select", required: true, value: s.period, options: [{ value: "MONTHLY", label: "Oylik" }, { value: "DAILY", label: "Kunlik (bozor joyi)" }] },
+        { name: "payDay", label: "To'lov kuni (har oyning nechanchi sanasi)", type: "select", value: s.payDay ? String(s.payDay) : undefined, options: Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: `${i + 1}-sana` })), hint: "Oylik ijarada — kunlikda kerak emas" },
+        { name: "bankAmount", label: `${RENT_PERIOD_LABEL[s.period]} — perechisleniye, so'm`, type: "number", value: String(n(s.bankAmount)) },
+        { name: "cashAmount", label: `${RENT_PERIOD_LABEL[s.period]} — naqd, so'm`, type: "number", value: String(n(s.cashAmount)) },
         { name: "electricity", label: "Svet, so'm", type: "number", value: String(n(s.electricity)), hint: "Ma'lumot uchun" },
         { name: "tax", label: "Soliq, so'm", type: "number", value: String(n(s.tax)) },
         { name: "note", label: "Izoh", type: "text", value: s.note ?? undefined },
@@ -270,9 +274,11 @@ export async function arendaKirimForm(): Promise<CreateForm> {
     fields: [
       {
         name: "shopId", label: "Do'kon", type: "select", required: true,
-        options: shops.map((s) => { const d = debts.get(s.id) ?? 0; return { value: s.id, label: `${s.name} · ${s.location}`, hint: d > 0.005 ? `qarz ${money(d)}` : d < -0.005 ? `avans ${money(-d)}` : "qarz yo'q" }; }),
+        options: shops.map((s) => { const d = debts.get(s.id) ?? 0; return { value: s.id, label: `${s.name} · ${s.location}${s.period === "DAILY" ? " (kunlik)" : ""}`, hint: d > 0.005 ? `qarz ${money(d)}` : d < -0.005 ? `avans ${money(-d)}` : "qarz yo'q" }; }),
       },
-      { name: "month", label: "Qaysi oy uchun", type: "select", required: true, value: monthKey(now), options: monthOptions(now) },
+      { name: "month", label: "Qaysi oy uchun", type: "select", required: true, value: monthKey(now), options: monthOptions(now), hint: "Kunlik ijarada oy tanlangan kundan olinadi" },
+      // `showIf` do'kon turiga qaray olmaydi — maydon doim ko'rinadi, server faqat kunlik do'konda hisobga oladi
+      { name: "day", label: "Qaysi kun uchun (kunlik ijara)", type: "select", value: ymd(new Date()), options: recentDays(), hint: "Faqat «(kunlik)» do'konlarda" },
       methodField(),
       amountField(),
       dateField(),
@@ -305,8 +311,11 @@ export async function arendaShopForm(): Promise<CreateForm> {
       { name: "name", label: "Do'kon nomi", type: "text", required: true, placeholder: "Masalan: 12-do'kon, Anvar aka" },
       { name: "location", label: "Joy (bozor)", type: "select", required: true, value: locs[0]?.location ?? NEW_LOCATION, options: [...locs.map((l) => ({ value: l.location, label: l.location })), { value: NEW_LOCATION, label: "Yangi joy…" }] },
       { name: "locationNew", label: "Yangi joy nomi", type: "text", showIf: { field: "location", equals: NEW_LOCATION }, placeholder: "Masalan: Texno siti bozor" },
-      { name: "bankAmount", label: "Oylik — perechisleniye, so'm", type: "number", value: "0" },
-      { name: "cashAmount", label: "Oylik — naqd, so'm", type: "number", value: "0" },
+      { name: "phone", label: "Ijarachi telefoni", type: "text", placeholder: "+998 90 123 45 67", hint: "Ijaradagi joy uchun — eslatma va bog'lanish" },
+      { name: "period", label: "Ijara turi", type: "select", required: true, value: "MONTHLY", options: [{ value: "MONTHLY", label: "Oylik" }, { value: "DAILY", label: "Kunlik (bozor joyi)" }] },
+      { name: "payDay", label: "To'lov kuni (har oyning nechanchi sanasi)", type: "select", value: "5", options: Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: `${i + 1}-sana` })), hint: "Oylik ijarada — kunlikda kerak emas" },
+      { name: "bankAmount", label: "Perechisleniye (oylik yoki kunlik), so'm", type: "number", value: "0" },
+      { name: "cashAmount", label: "Naqd (oylik yoki kunlik), so'm", type: "number", value: "0" },
       { name: "electricity", label: "Svet, so'm", type: "number", value: "0", hint: "Ma'lumot uchun" },
       { name: "tax", label: "Soliq, so'm", type: "number", value: "0" },
       { name: "note", label: "Izoh", type: "text" },
@@ -326,6 +335,7 @@ const TxBody = z.object({
   method: z.enum(["CASH", "BANK"], { message: "To'lov usulini tanlang" }),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Sana noto'g'ri"),
   month: z.string().optional(),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Kun noto'g'ri").optional(),
   shopId: z.string().optional(),
   amount: zAmount,
   category: z.string().optional(),
@@ -337,9 +347,21 @@ const ShopBody = z.object({
   name: z.string().trim().min(1, "Do'kon nomini yozing").max(200, "Nom juda uzun"),
   location: z.string().trim().min(1, "Joy (bozor) ni tanlang"),
   locationNew: z.string().trim().max(120, "Nom juda uzun").optional(),
+  // Eski ilova yubormasa — o'zgarmaydi (yangi do'konda — oylik)
+  period: z.enum(["MONTHLY", "DAILY"]).optional(),
+  phone: z.string().trim().max(40).optional(),
+  payDay: z.coerce.number().int().min(1, "To'lov kuni 1–31").max(31, "To'lov kuni 1–31").optional().catch(undefined),
   bankAmount: zDec0, cashAmount: zDec0, electricity: zDec0, tax: zDec0,
   note: zText,
 });
+
+/** Telefon: bo'sh — o'zgarmaydi (eski ilova yubormaydi), noto'g'ri — xato. */
+function shopPhone(v: string | undefined): { phone?: string } {
+  if (!v) return {};
+  const p = normalizePhone(v);
+  if (!p) throw new ListError("ACTION_FAILED", "Telefon raqami noto'g'ri — masalan +998 90 123 45 67", 400);
+  return { phone: p };
+}
 
 const issue = (e: z.ZodError) => e.issues[0]?.message ?? "Ma'lumot to'liq emas";
 
@@ -359,6 +381,7 @@ export async function arendaCreate(user: MobileUser, key: string, payload: unkno
     const r = await createRentTx({
       type, method: d.method, date: new Date(`${d.date}T00:00:00Z`), month, shopId: type === "INCOME" ? d.shopId! : null,
       amount: d.amount, category, note: d.note, clientToken: d.clientToken ?? null,
+      day: type === "INCOME" && d.day ? new Date(`${d.day}T00:00:00Z`) : null,
     }, user.id);
     if (r.error) throw new Error(r.error);
     // Jurnal ro'yxati ochiladi (yangi yozuv birinchi qatorda); bitta yozuv id'si `createRentTx` dan qaytmaydi
@@ -370,23 +393,11 @@ export async function arendaCreate(user: MobileUser, key: string, payload: unkno
     const d = p.data;
     const location = d.location === NEW_LOCATION ? (d.locationNew ?? "") : d.location;
     if (!location) throw new Error("Yangi joy (bozor) nomini yozing");
-    const data = { name: d.name, location, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note };
-    try {
-      const month = currentMonth();
-      const shop = await db.$transaction(async (tx) => {
-        const shop = await tx.rentShop.create({ data });
-        await audit(tx, user.id, "CREATE", "RentShop", shop.id, undefined, shop);
-        // Shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi (vebdagi `saveRentShop` bilan bir xil)
-        if (await tx.rentCharge.count({ where: { month } })) {
-          await tx.rentCharge.create({ data: { shopId: shop.id, month, bankDue: data.bankAmount, cashDue: data.cashAmount, electricity: data.electricity, tax: data.tax } });
-        }
-        return shop;
-      });
-      return { key: "arenda-shop", id: shop.id, message: "Do'kon qo'shildi" };
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new Error(`«${location}» da «${d.name}» nomli do'kon allaqachon bor`);
-      throw e;
-    }
+    // Shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi (vebdagi `saveRentShop` bilan bir xil qoida)
+    const phone = shopPhone(d.phone);
+    const r = await saveRentShopData(null, { name: d.name, location, ...phone, period: d.period, payDay: d.period === "DAILY" ? null : d.payDay, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, currentMonth(), user.id);
+    if (r.error) throw new Error(r.error);
+    return { key: "arenda-shop", id: r.id!, message: "Do'kon qo'shildi" };
   }
   throw new ListError("UNKNOWN_FORM", "Bunday forma yo'q", 404);
 }
@@ -422,7 +433,8 @@ export async function arendaAction(user: MobileUser, action: string, id: string,
       const d = p.data!;
       const location = d.location === NEW_LOCATION ? (d.locationNew ?? "") : d.location;
       if (!location) fail("Yangi joy (bozor) nomini yozing");
-      const r = await saveRentShopData(id, { name: d.name, location, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, null, user.id);
+      const phone = shopPhone(d.phone);
+      const r = await saveRentShopData(id, { name: d.name, location, ...phone, period: d.period, payDay: d.period === "DAILY" ? null : d.payDay, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, null, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: "Do'kon saqlandi" };
     }
