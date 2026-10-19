@@ -45,6 +45,9 @@ export async function getConnection(): Promise<AmoConnection | null> {
 /** Ulangan va ishlashga tayyor (token bor) */
 export const isReady = (c: AmoConnection | null): c is AmoConnection => !!c && !!c.accessTokenEnc && c.status !== "DISCONNECTED";
 
+/** Ulangan — API bilan yoki API'siz (faqat webhook). Kelishuvlar ro'yxati va webhook qabul qilish uchun. */
+export const isActive = (c: AmoConnection | null): c is AmoConnection => !!c && c.status !== "DISCONNECTED" && (!!c.accessTokenEnc || c.method === "WEBHOOK");
+
 /** Sdelka havolasi amoCRM'da */
 export const dealUrl = (domain: string, amoLeadId: number) => `${baseUrl(domain)}/leads/detail/${amoLeadId}`;
 

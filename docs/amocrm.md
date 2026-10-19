@@ -29,6 +29,19 @@ Kod: `src/lib/amocrm/`, sahifa: **Sotuv → amoCRM** (`/amocrm`), test: `scripts
 3. Voronkani va bosqichlarni tanlang. «ERP'ga tushadigan» bosqich majburiy (masalan «Kelishildi»).
    Qolganlari ixtiyoriy: bo'sh qolsa, o'sha hodisada sdelka siljimaydi.
 
+### API kalitisiz: «Faqat webhook» (bir tomonlama)
+
+API kaliti olib bo'lmasa: **Sotuv → amoCRM → Sozlamalar → «Faqat webhook»**, hisob manzilini kiriting va ERP bergan webhook manzilini amoCRM'ga qo'ying:
+- **Raqamli voronka (tavsiya):** voronka → «Avtomatlashtirish» → «ERP'ga» bosqichida «Webhook» triggeri → manzil. ERP'da bosqich ID bo'sh qoladi.
+- **Umumiy webhook:** Sozlamalar → Integratsiyalar → Web hooks → manzil, hodisa «Sdelka bosqichi o'zgardi». Sinov sdelkasini «ERP'ga» bosqichiga o'tkazing,
+  ERP sozlamasidagi «Oxirgi sdelka» qatorida bosqich ID chiqadi — uni «ERP'ga bosqichi ID» ga yozing.
+
+Cheklovlar: sayt arizalari amoCRM'ga ketmaydi, zayavka holati va summasi sdelkaga qaytmaydi, 5 daqiqalik tekshiruv yo'q (o'tkazib yuborilgan xabar qayta olinmaydi).
+Kontakt va kompaniya kartasi kelmaydi: telefon, INN («ИНН/STIR»), kompaniya va manzil faqat **sdelkaning o'z maydonlaridan** (nomi bo'yicha) olinadi.
+Telefon ham INN ham bo'lmasa mijoz avtomatik ochilmaydi — sotuvchi zayavka ochishda mijozni tanlaydi yoki yangisini kiritadi.
+amoCRM webhook'ni imzolamaydi: himoya — manzildagi maxfiy kalit va `account[subdomain]` ulangan hisobga mosligi. Kalit tarqalsa — «Uzish» va qayta ulash.
+Keyinroq API kaliti olinsa, shu sahifadan token yoki OAuth bilan qayta ulanadi (webhook manzili o'zgarmaydi).
+
 Tokenlar bazada shifrlangan holda saqlanadi (`AUTH_SECRET` dan olingan alohida kalit bilan). `AUTH_SECRET` almashtirilsa, amoCRM'ni qayta ulash kerak bo'ladi.
 Ulangach webhook o'zi o'rnatiladi: `https://<domen>/api/amocrm/webhook/<maxfiy kalit>`. U uchun `APP_URL` internetdan ochiq bo'lishi kerak.
 

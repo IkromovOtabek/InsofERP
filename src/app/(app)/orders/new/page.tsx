@@ -35,7 +35,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
     // Sayt arizasidan ochilgan zayavka: mahsulot, hajm va manzil arizadan olinadi
     canSale && leadId ? db.lead.findUnique({ where: { id: leadId }, select: { productId: true, qty: true, address: true, message: true, customerId: true } }) : null,
     // amoCRM kelishuvidan: mijoz, manzil va sdelka nomi; zayavka sdelkaga bog'lanadi (`lib/amocrm/sync.ts`)
-    canSale && amoId ? db.amoDeal.findFirst({ where: { id: amoId, state: { in: ["READY", "ORDERED", "IN_AMO"] }, customerId: { not: null } }, select: { id: true, name: true, amoLeadId: true, address: true, customerId: true, lead: { select: { productId: true, qty: true } } } }) : null,
+    canSale && amoId ? db.amoDeal.findFirst({ where: { id: amoId, state: { in: ["READY", "ORDERED", "IN_AMO"] } }, select: { id: true, name: true, amoLeadId: true, address: true, customerId: true, lead: { select: { productId: true, qty: true } } } }) : null,
   ]);
   const customer = amoDeal?.customerId ?? customerParam;
   const prefill: OrderPrefill | undefined = amoDeal

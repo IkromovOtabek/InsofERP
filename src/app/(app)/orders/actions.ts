@@ -103,7 +103,8 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         payMethod: d.payMethod,
         contractAmount,
         note: d.note,
-        amoDealId: d.customerMode === "existing" ? d.amoDealId : null,
+        // Kelishuvda mijoz bo'lmasa (webhook usuli) — yangi mijoz bilan ham bog'lanadi; boshqa mijoz bo'lsa linkOrderTx rad etadi
+        amoDealId: d.amoDealId ?? null,
       },
       s.userId,
       { id: orderId, contractFile: saved ?? undefined },

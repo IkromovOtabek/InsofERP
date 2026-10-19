@@ -3811,6 +3811,7 @@ model Broadcast {
 enum AmoAuthMethod {
   TOKEN // shaxsiy integratsiyaning uzoq muddatli tokeni (qo'lda kiritiladi)
   OAUTH // client_id/secret + ruxsat oynasi; access token kunda yangilanadi
+  WEBHOOK // API kalitisiz, bir tomonlama: faqat amoCRM webhook'i (sdelka ma'lumoti xabar tanasidan olinadi)
 }
 
 enum AmoConnStatus {
@@ -3848,6 +3849,9 @@ model AmoConnection {
   status          AmoConnStatus @default(ACTIVE)
   lastError       String?
   lastPullAt      DateTime?
+  /// Oxirgi kelgan webhook va undagi sdelka/bosqich (WEBHOOK usulida bosqich ID'sini topish uchun)
+  lastWebhookAt   DateTime?
+  lastWebhookInfo String?
   connectedById   String?
   connectedByName String?
   createdAt       DateTime      @default(now())

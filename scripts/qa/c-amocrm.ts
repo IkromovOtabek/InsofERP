@@ -6,7 +6,9 @@
  *   · «ERP'ga» bosqichi → mijoz (INN/telefon bo'yicha dublsiz), kelishuv READY, ariza «Mijoz bo'ldi»;
  *   · webhook: noto'g'ri kalit 404, to'g'risi sdelkani API'dan qayta o'qiydi;
  *   · zayavka → sdelka bosqichi va byudjeti; o'zgarmasa so'rov ketmaydi; bekor qilinsa — «bekor» bosqichi;
- *   · 401 → ulanish ERROR, tsikl to'xtaydi; OAuth: muddati o'tgan token refresh bilan yangilanadi.
+ *   · 401 → ulanish ERROR, tsikl to'xtaydi; OAuth: muddati o'tgan token refresh bilan yangilanadi;
+ *   · API'siz (WEBHOOK) usul: sdelka xabar tanasidan, mijoz telefon bo'yicha (dublsiz), telefonsiz — mijozsiz kelishuv,
+ *     bosqich filtri, boshqa hisob subdomeni 404, amoCRM'ga hech qanday so'rov ketmaydi.
  *
  *   ENV_FILE=.env.test.example DATABASE_URL=postgresql://…/insof_test_… npx tsx scripts/qa/c-amocrm.ts
  */
@@ -14,9 +16,9 @@ import { check, done, section } from "./c-lib";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { db } from "@/lib/db";
-import { vault, normalizeDomain, AMO_ID, getConnection, isReady, AMO_SYSTEM_LOGIN } from "@/lib/amocrm/store";
+import { vault, normalizeDomain, AMO_ID, getConnection, isActive, isReady, AMO_SYSTEM_LOGIN } from "@/lib/amocrm/store";
 import { seal as smmSeal } from "@/lib/smm/vault";
-import { connectWithToken, saveStages, disconnectAmo } from "@/lib/amocrm/connect";
+import { connectWebhookOnly, connectWithToken, saveStages, saveWebhookStage, disconnectAmo } from "@/lib/amocrm/connect";
 import { amo } from "@/lib/amocrm/client";
 import { amoTick, dealStage, dismissDeal, pullDeal, pullStageDeals, pushPendingLeads, syncOrderStages } from "@/lib/amocrm/sync";
 import { createLead } from "@/lib/leads";
@@ -349,6 +351,56 @@ async function main() {
   check("uzilgandan keyin ulanish yo'q", !isReady(await getConnection()));
   const oldHook = await call(hook!.split("/").pop()!, `leads[status][0][id]=${own}&leads[status][0][status_id]=${S_ERP}`);
   check("eski webhook kaliti endi 404", oldHook.status === 404);
+
+  section("Faqat webhook (API'siz)");
+  await connectWebhookOnly(domain, actor);
+  c = await db.amoConnection.findUnique({ where: { id: AMO_ID } });
+  check("WEBHOOK usulida ulandi, token yo'q", c?.method === "WEBHOOK" && c.status === "ACTIVE" && !c.accessTokenEnc && isActive(c) && !isReady(c));
+  check("yangi webhook kaliti", !!c && c.webhookKey !== hook!.split("/").pop());
+  check("o'sha hisob — API usulidagi «ERP'ga» bosqichi saqlandi", c?.stageToErp === S_ERP && c.pipelineId === P);
+  await saveWebhookStage(null, null, actor);
+  const wReq = st.requests;
+  const wPhone = `+99890${String(Date.now()).slice(-7)}`;
+  const W1 = 880001, W2 = 880002, W3 = 880003;
+  const fieldsBody = (p: string, id: number, statusId: number, extra: string) =>
+    `${p}[id]=${id}&${p}[name]=${encodeURIComponent(`${TAG} webhook ${id}`)}&${p}[status_id]=${statusId}&${p}[pipeline_id]=${P}&${p}[price]=5000000${extra}`;
+  const withPhone = `&leads[status][0][custom_fields][0][id]=1&leads[status][0][custom_fields][0][name]=${encodeURIComponent("Telefon")}&leads[status][0][custom_fields][0][values][0][value]=${encodeURIComponent(wPhone)}`
+    + `&leads[status][0][custom_fields][1][id]=2&leads[status][0][custom_fields][1][name]=${encodeURIComponent("Kompaniya")}&leads[status][0][custom_fields][1][values][0][value]=${encodeURIComponent(`${TAG} MChJ`)}`
+    + `&leads[status][0][custom_fields][2][id]=3&leads[status][0][custom_fields][2][name]=${encodeURIComponent("Адрес")}&leads[status][0][custom_fields][2][values][0][value]=${encodeURIComponent("Sergeli 3")}`;
+  const waitDeal = async (id: number) => { let d = null; for (let i = 0; i < 20 && !d; i++) { await new Promise((r) => setTimeout(r, 150)); d = await db.amoDeal.findUnique({ where: { amoLeadId: id } }); } return d; };
+
+  const evil = await call(c!.webhookKey, `${fieldsBody("leads[status][0]", W1, S_ERP, withPhone)}&account[subdomain]=boshqa`);
+  check("boshqa hisob subdomeni — 404", evil.status === 404);
+  const w1 = await call(c!.webhookKey, fieldsBody("leads[status][0]", W1, S_ERP, withPhone));
+  const d1 = await waitDeal(W1);
+  check("bosqich tanlanmagan — sdelka tanadan READY bo'ldi", w1.status === 200 && d1?.state === "READY" && Number(d1.price) === 5_000_000, d1);
+  const cust1 = d1?.customerId ? await db.customer.findUnique({ where: { id: d1.customerId } }) : null;
+  check("mijoz telefon va kompaniya maydonidan ochildi", cust1?.name === `${TAG} MChJ` && cust1.phone === wPhone && d1?.address === "Sergeli 3", cust1);
+  await call(c!.webhookKey, fieldsBody("leads[status][0]", W1, S_ERP, withPhone));
+  await new Promise((r) => setTimeout(r, 400));
+  check("takror xabar — dubl yo'q", (await db.customer.count({ where: { phone: wPhone } })) === 1 && (await db.amoDeal.count({ where: { amoLeadId: W1 } })) === 1);
+  c = await db.amoConnection.findUnique({ where: { id: AMO_ID } });
+  check("oxirgi xabar va bosqich ID sozlamada ko'rinadi", !!c?.lastWebhookAt && c.lastWebhookInfo?.includes(`bosqich ${S_ERP}`) === true, c?.lastWebhookInfo);
+
+  await call(c!.webhookKey, fieldsBody("leads[add][0]", W2, S_NEW, ""));
+  const d2 = await waitDeal(W2);
+  check("telefon/INN yo'q — kelishuv mijozsiz (sotuvchi tanlaydi)", d2?.state === "READY" && d2.customerId === null, d2);
+
+  await saveWebhookStage(S_ERP, null, actor);
+  await call(c!.webhookKey, fieldsBody("leads[status][0]", W3, S_OFFER, ""));
+  await new Promise((r) => setTimeout(r, 400));
+  check("bosqich tanlangan — boshqa bosqich sdelkasi tushmaydi", !(await db.amoDeal.findUnique({ where: { amoLeadId: W3 } })));
+  await call(c!.webhookKey, fieldsBody("leads[status][0]", W3, S_ERP, ""));
+  check("«ERP'ga» bosqichiga o'tganda tushadi", (await waitDeal(W3))?.state === "READY");
+
+  const wProduct = await db.product.findFirstOrThrow({ where: { isActive: true } });
+  const o2 = await createOrder({
+    newCustomer: { name: `${TAG} yangi mijoz`, phone: null, inn: null, address: null }, deliveryDate: new Date(Date.now() + 86_400_000), deliveryAddress: "X",
+    items: [{ productId: wProduct.id, qtyM3: 1, price: 100 }], prepay: { amount: 100 }, amoDealId: d2!.id,
+  }, sales.id).then((o) => o, (e: Error) => e.message);
+  const d2o = await db.amoDeal.findUniqueOrThrow({ where: { id: d2!.id } });
+  check("mijozsiz kelishuvdan yangi mijoz bilan zayavka — bog'landi", typeof o2 !== "string" && d2o.state === "ORDERED" && !!d2o.customerId, o2);
+  check("tsikl API'ga so'rov yubormaydi", (await amoTick({ force: true })) === null && st.requests === wReq);
 
   server.close();
 }

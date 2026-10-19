@@ -26,6 +26,7 @@ import {
 } from "./api";
 import { AmoError } from "./client";
 import { amoSystemUserId, getConnection, isReady } from "./store";
+import { webhookFieldByName, type WebhookLead } from "./webhook";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
 
@@ -118,6 +119,10 @@ export async function pushPendingLeads(c: AmoConnection): Promise<number> {
 
 const INN_RE = /инн|inn|stir|стир/i;
 const ADDRESS_RE = /адрес|manzil|obyekt|объект/i;
+// Faqat webhook usulida: kontakt/kompaniya kartasi yo'q, shu ma'lumot sdelka maydonlaridan olinadi
+const PHONE_RE = /телефон|telefon|phone/i;
+const COMPANY_RE = /компани|kompaniya|организац|tashkilot|firma|фирма/i;
+const CONTACT_RE = /контакт|kontakt|фио|f\.?i\.?sh|mas'ul shaxs/i;
 
 const userNames = new Map<number, string>();
 async function responsibleName(id: number, c: AmoConnection): Promise<string | null> {
@@ -168,6 +173,9 @@ async function ensureCustomer(tx: Prisma.TransactionClient, d: { name: string; p
   return { id: c.id, created: true };
 }
 
+type DealSnap = { id: number; name: string; price: number | null; statusId: number; pipelineId: number };
+type DealDetails = { contactName: string | null; companyName: string | null; phone: string | null; inn: string | null; address: string | null; responsible: string | null };
+
 /**
  * Sdelkani amoCRM'dan o'qib ERP'ga tushirish. «ERP'ga» bosqichida bo'lmasa — faqat bog'langan qator yangilanadi.
  * Qayta chaqirilsa xavfsiz: mijoz ikkinchi marta ochilmaydi, zayavka ochilgan kelishuv qayta «kutmoqda» bo'lmaydi.
@@ -180,28 +188,55 @@ export async function pullDeal(amoLeadId: number, c: AmoConnection): Promise<"re
     if (e instanceof AmoError && e.status === 404) return "skipped";
     throw e;
   }
+  return landDeal(c, { id: amoLeadId, name: lead.name, price: lead.price ?? null, statusId: lead.status_id, pipelineId: lead.pipeline_id }, () => dealDetails(lead, c));
+}
+
+/**
+ * API'siz usul (WEBHOOK): sdelka ma'lumoti xabar tanasidan olinadi — kontakt va kompaniya kartasi yo'q,
+ * telefon/INN/manzil faqat sdelkaning o'z maydonlaridan (nomi bo'yicha).
+ */
+export function landWebhookLead(c: AmoConnection, l: WebhookLead): Promise<"ready" | "updated" | "skipped"> {
+  const innRaw = webhookFieldByName(l, INN_RE);
+  return landDeal(c, l, async () => ({
+    contactName: webhookFieldByName(l, CONTACT_RE),
+    companyName: webhookFieldByName(l, COMPANY_RE),
+    phone: normalizePhone(webhookFieldByName(l, PHONE_RE)),
+    inn: innRaw ? parseInn(innRaw.replace(/\D+/g, "")).inn ?? null : null,
+    address: webhookFieldByName(l, ADDRESS_RE),
+    responsible: null,
+  }));
+}
+
+/** «ERP'ga» bosqichi: API usulida majburiy; webhook usulida bo'sh bo'lsa — kelgan har sdelka (raqamli voronka triggeri) */
+const inErpStage = (c: AmoConnection, s: DealSnap) =>
+  (c.stageToErp ? s.statusId === c.stageToErp : c.method === "WEBHOOK") && (!c.pipelineId || s.pipelineId === c.pipelineId);
+
+async function landDeal(c: AmoConnection, snap: DealSnap, details: () => Promise<DealDetails>): Promise<"ready" | "updated" | "skipped"> {
+  const amoLeadId = snap.id;
   const existing = await db.amoDeal.findUnique({ where: { amoLeadId } });
-  const inStage = !!c.stageToErp && lead.status_id === c.stageToErp && (!c.pipelineId || lead.pipeline_id === c.pipelineId);
-  if (!inStage) {
-    if (existing) await db.amoDeal.update({ where: { id: existing.id }, data: { name: lead.name, price: lead.price ?? null } });
+  if (!inErpStage(c, snap)) {
+    if (existing) await db.amoDeal.update({ where: { id: existing.id }, data: { name: snap.name, price: snap.price } });
     return existing ? "updated" : "skipped";
   }
   if (existing && (existing.state === "READY" || existing.state === "ORDERED" || existing.state === "DISMISSED")) {
-    await db.amoDeal.update({ where: { id: existing.id }, data: { name: lead.name, price: lead.price ?? null } });
+    await db.amoDeal.update({ where: { id: existing.id }, data: { name: snap.name, price: snap.price } });
     return "updated";
   }
 
-  const d = await dealDetails(lead, c);
+  const d = await details();
   const actorId = await amoSystemUserId();
-  const customerName = d.companyName || d.contactName || lead.name;
+  const customerName = d.companyName || d.contactName || snap.name;
+  const phone = d.phone ?? existing?.phone ?? null;
+  // Webhook usulida telefon ham, INN ham bo'lmasa mijoz ochilmaydi (faqat nom bilan dubl bo'lardi) — sotuvchi zayavkada tanlaydi
+  const autoCustomer = c.method !== "WEBHOOK" || !!(phone || d.inn);
   const res = await db.$transaction(async (tx) => {
     const cust = existing?.customerId
       ? { id: existing.customerId, created: false }
-      : await ensureCustomer(tx, { name: customerName, phone: d.phone ?? existing?.phone ?? null, inn: d.inn, address: d.address }, actorId);
+      : autoCustomer ? await ensureCustomer(tx, { name: customerName, phone, inn: d.inn, address: d.address }, actorId) : null;
     const data = {
-      state: "READY" as const, readyAt: new Date(), name: lead.name, price: lead.price ?? null,
-      contactName: d.contactName, phone: d.phone ?? existing?.phone ?? null, companyName: d.companyName, inn: d.inn,
-      address: d.address ?? existing?.address ?? null, responsible: d.responsible, customerId: cust.id,
+      state: "READY" as const, readyAt: new Date(), name: snap.name, price: snap.price,
+      contactName: d.contactName, phone, companyName: d.companyName, inn: d.inn,
+      address: d.address ?? existing?.address ?? null, responsible: d.responsible, customerId: cust?.id ?? null,
     };
     // Ikki yo'l bir vaqtda (webhook + tekshiruv): holat shartli o'zgaradi, yaratishdagi P2002 — ikkinchisi chiqib ketadi
     let deal: AmoDeal | null = null;
@@ -214,12 +249,12 @@ export async function pullDeal(amoLeadId: number, c: AmoConnection): Promise<"re
     if (!deal) return null;
     await audit(tx, actorId, existing ? "STATUS_CHANGE" : "CREATE", "AmoDeal", deal.id, existing ?? undefined, deal);
     // Saytdan kelgan ariza bo'lsa — u ham «Mijoz bo'ldi»
-    if (deal.leadId) {
+    if (deal.leadId && cust) {
       const before = await tx.lead.findUnique({ where: { id: deal.leadId } });
       const r = await tx.lead.updateMany({ where: { id: deal.leadId, status: { not: "CONVERTED" } }, data: { status: "CONVERTED", customerId: cust.id, handledById: actorId, handledAt: new Date() } });
       if (r.count === 1) await audit(tx, actorId, "STATUS_CHANGE", "Lead", deal.leadId, before, { status: "CONVERTED", customerId: cust.id, via: "amocrm" });
     }
-    return { deal, created: cust.created };
+    return { deal, created: !!cust?.created };
   }).catch((e) => {
     if ((e as { code?: string }).code === "P2002") return null;
     throw e;
@@ -229,7 +264,7 @@ export async function pullDeal(amoLeadId: number, c: AmoConnection): Promise<"re
   notifyAfter(() => notifyRoles(["SALES"], {
     type: "AMO_DEAL_READY",
     title: "amoCRM: kelishuv — zayavka ochish kerak",
-    body: `${customerName}${lead.price ? ` · ${money(lead.price)}` : ""}${d.responsible ? ` · ${d.responsible}` : ""}`,
+    body: `${customerName}${snap.price ? ` · ${money(snap.price)}` : ""}${d.responsible ? ` · ${d.responsible}` : ""}`,
   }));
   return "ready";
 }

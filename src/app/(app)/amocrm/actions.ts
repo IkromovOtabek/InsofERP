@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, type ActionState } from "@/lib/action";
-import { connectWithToken, disconnectAmo, resubscribeWebhook, saveOAuthClient, saveStages } from "@/lib/amocrm/connect";
+import { connectWebhookOnly, connectWithToken, disconnectAmo, resubscribeWebhook, saveOAuthClient, saveStages, saveWebhookStage } from "@/lib/amocrm/connect";
 import { normalizeDomain } from "@/lib/amocrm/store";
 import { amoTick, dismissDeal, restoreDeal } from "@/lib/amocrm/sync";
 
@@ -48,6 +48,34 @@ export async function connectOAuthAction(_prev: ActionState, fd: FormData): Prom
 }
 
 const stage = z.string().optional().transform((v) => (v && /^\d+$/.test(v) ? Number(v) : null));
+
+/** API'siz (bir tomonlama) ulash: faqat hisob manzili, webhook manzilini amoCRM'ga admin qo'yadi */
+export async function connectWebhookAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("sales", "amocrm_settings");
+  const r = parseForm(z.object({ domain: domainField }), fd);
+  if ("error" in r) return { error: r.error };
+  try {
+    await connectWebhookOnly(r.data.domain, actorOf(s));
+    return done("Webhook manzili tayyor — uni amoCRM'ga qo'ying");
+  } catch (e) { return fail(e); }
+}
+
+const stageId = z.string().optional().transform((v, ctx) => {
+  const t = (v ?? "").replace(/\s+/g, "");
+  if (!t) return null;
+  if (!/^\d{1,12}$/.test(t)) { ctx.addIssue({ code: "custom", message: "bosqich ID — faqat raqam" }); return null; }
+  return Number(t);
+});
+
+export async function saveWebhookStageAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("sales", "amocrm_settings");
+  const r = parseForm(z.object({ stageToErp: stageId, pipelineId: stageId }), fd);
+  if ("error" in r) return { error: r.error };
+  try {
+    await saveWebhookStage(r.data.stageToErp, r.data.pipelineId, actorOf(s));
+    return done(r.data.stageToErp ? "Saqlandi: faqat shu bosqichga o'tgan sdelkalar ERP'ga tushadi" : "Saqlandi: webhook yuborgan har sdelka ERP'ga tushadi");
+  } catch (e) { return fail(e); }
+}
 
 export async function saveStagesAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("sales", "amocrm_settings");

@@ -76,6 +76,38 @@ export async function finishOAuth(code: string, referer: string | null, actor: A
   return finish({ domain, method: "OAUTH", access: t.access, refresh: t.refresh, expiresAt: t.expiresAt, clientId: c.clientId, clientSecret: secret }, actor);
 }
 
+/**
+ * API'siz ulash (bir tomonlama): faqat webhook manzili beriladi, uni amoCRM'da admin qo'yadi.
+ * Ishlayotgan API ulanishi bo'lsa — uning o'rniga o'tadi (tokenlar o'chiriladi, webhook kaliti o'zgarmaydi).
+ */
+export async function connectWebhookOnly(domain: string, actor: Actor): Promise<void> {
+  const before = await db.amoConnection.findUnique({ where: { id: AMO_ID } });
+  if (before?.accessTokenEnc) await unsubscribeWebhook(webhookUrl(before.webhookKey), before).catch(() => undefined);
+  const sameAccount = !!before && before.domain === domain;
+  const row = {
+    domain, method: "WEBHOOK" as const, status: "ACTIVE" as const, lastError: null, accountId: null, accountName: null,
+    accessTokenEnc: null, refreshTokenEnc: null, tokenExpiresAt: null, clientId: null, clientSecretEnc: null, webhookOk: false,
+    connectedById: actor.userId, connectedByName: actor.name,
+    // API usulidagi bosqichlar shu hisobniki bo'lsa — «ERP'ga» bosqichi saqlanadi, qolganlari bu usulda ishlatilmaydi
+    ...(sameAccount ? {} : { pipelineId: null, stageToErp: null }),
+    stageNewLead: null, stageConfirmed: null, stageDelivered: null, stageClosed: null, stageCancelled: null, pushLeads: false,
+  };
+  const c = await db.amoConnection.upsert({
+    where: { id: AMO_ID },
+    create: { id: AMO_ID, ...row, webhookKey: newWebhookKey() },
+    update: { ...row, ...(before?.status === "DISCONNECTED" ? { createdAt: new Date(), lastWebhookAt: null, lastWebhookInfo: null } : {}) },
+  });
+  await audit(db, actor.userId, before ? "UPDATE" : "CREATE", "AmoConnection", AMO_ID, safe(before) ?? undefined, safe(c));
+}
+
+/** Webhook usulida «ERP'ga» bosqichi ID'si (bo'sh — kelgan har sdelka; raqamli voronka triggeri uchun) */
+export async function saveWebhookStage(stageToErp: number | null, pipelineId: number | null, actor: Actor): Promise<void> {
+  const c = await getConnection();
+  if (!c || c.method !== "WEBHOOK") throw new Error("amoCRM webhook usulida ulanmagan");
+  const after = await db.amoConnection.update({ where: { id: AMO_ID }, data: { stageToErp, pipelineId } });
+  await audit(db, actor.userId, "UPDATE", "AmoConnection", AMO_ID, safe(c), safe(after));
+}
+
 export async function disconnectAmo(actor: Actor): Promise<void> {
   const c = await getConnection();
   if (!c) return;

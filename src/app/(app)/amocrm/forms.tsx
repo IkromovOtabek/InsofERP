@@ -1,16 +1,17 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { KeyRound, Link2, RefreshCw, RotateCcw, Unplug, X } from "lucide-react";
+import { Check, Copy, KeyRound, Link2, RefreshCw, RotateCcw, Unplug, Webhook, X } from "lucide-react";
 import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 import {
-  connectOAuthAction, connectTokenAction, disconnectAction, dismissAction, restoreAction, saveStagesAction, syncNowAction, webhookAction,
+  connectOAuthAction, connectTokenAction, connectWebhookAction, disconnectAction, dismissAction, restoreAction, saveStagesAction, saveWebhookStageAction, syncNowAction, webhookAction,
 } from "./actions";
 
-/** Ulash: uzoq muddatli token (oddiy yo'l) yoki OAuth (client_id + secret → ruxsat oynasi) */
-export function ConnectForm({ domain, redirectUri }: { domain: string; redirectUri: string }) {
-  const [mode, setMode] = useState<"token" | "oauth">("token");
+/** Ulash: uzoq muddatli token (oddiy yo'l), OAuth (client_id + secret → ruxsat oynasi) yoki API'siz faqat webhook */
+export function ConnectForm({ domain, redirectUri, webhookOnly = true }: { domain: string; redirectUri: string; webhookOnly?: boolean }) {
+  const [mode, setMode] = useState<"token" | "oauth" | "webhook">("token");
+  const [wState, wAction, wPending] = useActionState(connectWebhookAction, undefined);
   const [tState, tAction, tPending] = useActionState(connectTokenAction, undefined);
   const [oState, oAction, oPending] = useActionState(connectOAuthAction, undefined);
   // Kalitlar saqlandi — ruxsat oynasiga to'liq sahifa navigatsiyasi (state cookie brauzerga yozilsin)
@@ -20,8 +21,20 @@ export function ConnectForm({ domain, redirectUri }: { domain: string; redirectU
       <div className="inline-flex rounded-lg border border-slate-200 p-1 text-sm">
         <button type="button" onClick={() => setMode("token")} className={`rounded-md px-3 py-1.5 ${mode === "token" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Uzoq muddatli token</button>
         <button type="button" onClick={() => setMode("oauth")} className={`rounded-md px-3 py-1.5 ${mode === "oauth" ? "bg-slate-900 text-white" : "text-slate-600"}`}>OAuth (client_id)</button>
+        {webhookOnly && <button type="button" onClick={() => setMode("webhook")} className={`rounded-md px-3 py-1.5 ${mode === "webhook" ? "bg-slate-900 text-white" : "text-slate-600"}`}>Faqat webhook</button>}
       </div>
-      {mode === "token" ? (
+      {mode === "webhook" ? (
+        <form action={wAction} className="space-y-3">
+          <p className="text-sm text-slate-600">
+            API kalitisiz, bir tomonlama: amoCRM sdelkani «ERP&apos;ga» bosqichiga o&apos;tkazganda ERP&apos;ga xabar yuboradi va kelishuv shu yerda paydo bo&apos;ladi.
+            Sayt arizalari amoCRM&apos;ga ketmaydi, zayavka holati va summasi sdelkaga qaytmaydi.
+          </p>
+          <Field label="Hisob manzili *" hint="Masalan: insof.amocrm.ru — boshqa hisobdan kelgan xabar qabul qilinmaydi"><Input name="domain" defaultValue={domain} required autoComplete="off" placeholder="kompaniya.amocrm.ru" /></Field>
+          <FormError error={wState?.error} />
+          <FormSuccess text={wState?.note} />
+          <FormActions><Button disabled={wPending}><Webhook size={15} /> Webhook manzilini olish</Button></FormActions>
+        </form>
+      ) : mode === "token" ? (
         <form action={tAction} className="space-y-3">
           <Field label="Hisob manzili *" hint="Masalan: insof.amocrm.ru"><Input name="domain" defaultValue={domain} required autoComplete="off" placeholder="kompaniya.amocrm.ru" /></Field>
           <Field label="Uzoq muddatli token *" hint="amoCRM → Sozlamalar → Integratsiyalar → shaxsiy integratsiya → «Kalitlar va ruxsatlar» → «Uzoq muddatli token»">
@@ -90,6 +103,38 @@ export function StagesForm({ pipelines, values }: { pipelines: PipelineOpt[]; va
       <FormSuccess text={state?.note} />
       <FormActions><Button disabled={pending}>Saqlash</Button></FormActions>
     </form>
+  );
+}
+
+/** Webhook usuli: «ERP'ga» bosqichi ID'si (ixtiyoriy). Bo'sh — kelgan har sdelka (raqamli voronka triggeri). */
+export function WebhookStageForm({ stageToErp, pipelineId }: { stageToErp: number | null; pipelineId: number | null }) {
+  const [state, action, pending] = useActionState(saveWebhookStageAction, undefined);
+  return (
+    <form action={action} className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="«ERP'ga» bosqichi ID" hint="Oddiy webhook uchun shart. Raqamli voronka triggerida bo'sh qoldiring">
+          <Input name="stageToErp" defaultValue={stageToErp ?? ""} inputMode="numeric" autoComplete="off" placeholder="masalan 61234567" />
+        </Field>
+        <Field label="Voronka ID" hint="Ixtiyoriy: faqat shu voronka sdelkalari">
+          <Input name="pipelineId" defaultValue={pipelineId ?? ""} inputMode="numeric" autoComplete="off" />
+        </Field>
+      </div>
+      <FormError error={state?.error} />
+      <FormSuccess text={state?.note} />
+      <FormActions><Button disabled={pending}>Saqlash</Button></FormActions>
+    </form>
+  );
+}
+
+/** Matnni nusxalash tugmasi (webhook manzili) */
+export function CopyButton({ text }: { text: string }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <Button type="button" size="sm" variant="secondary" onClick={() => {
+      navigator.clipboard?.writeText(text).then(() => { setOk(true); setTimeout(() => setOk(false), 1500); }).catch(() => undefined);
+    }}>
+      {ok ? <Check size={14} /> : <Copy size={14} />} {ok ? "Nusxalandi" : "Nusxalash"}
+    </Button>
   );
 }
 

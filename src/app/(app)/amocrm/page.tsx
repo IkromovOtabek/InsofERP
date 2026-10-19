@@ -6,10 +6,10 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { dateTime, money } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { AMO_ID, baseUrl, dealUrl, isReady, oauthRedirectUri, webhookUrl } from "@/lib/amocrm/store";
+import { AMO_ID, baseUrl, dealUrl, isActive, isReady, oauthRedirectUri, webhookUrl } from "@/lib/amocrm/store";
 import { pipelinesSafe } from "@/lib/amocrm/connect";
 import { Badge, Callout, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { ConnectForm, DisconnectButton, DismissButton, RestoreButton, StagesForm, SyncNowButton, WebhookButton } from "./forms";
+import { ConnectForm, CopyButton, DisconnectButton, DismissButton, RestoreButton, StagesForm, SyncNowButton, WebhookButton, WebhookStageForm } from "./forms";
 
 const STATE: Record<AmoDealState, { label: string; color: "amber" | "blue" | "green" | "slate" | "violet" }> = {
   PUSHING: { label: "amoCRM'ga yuborilmoqda", color: "violet" },
@@ -39,8 +39,10 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
   const sp = await searchParams;
 
   const conn = await db.amoConnection.findUnique({ where: { id: AMO_ID } });
+  // ready — API bilan ulangan (ikki tomonlama); active — API'siz webhook usuli ham
   const ready = isReady(conn) ? conn : null;
-  const tab = sp.tab ?? (ready ? "kutmoqda" : "sozlamalar");
+  const active = isActive(conn) ? conn : null;
+  const tab = sp.tab ?? (active ? "kutmoqda" : "sozlamalar");
 
   const [counts, errors] = await Promise.all([
     db.amoDeal.groupBy({ by: ["state"], _count: true }),
@@ -90,7 +92,7 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
 
       {tab === "sozlamalar" && canSettings ? (
         <Settings conn={conn} />
-      ) : !ready ? (
+      ) : !active ? (
         <EmptyState icon={PlugZap} title="amoCRM ulanmagan" text={canSettings ? "Sozlamalar tabida hisobni ulang." : "Ulash uchun direktorga murojaat qiling."} />
       ) : deals.length === 0 ? (
         <EmptyState icon={Inbox} title="Kelishuv yo'q" text={tab === "kutmoqda" ? "amoCRM'da sdelka «ERP'ga» bosqichiga o'tkazilsa, shu yerda paydo bo'ladi." : "Bu ro'yxat bo'sh."} />
@@ -106,7 +108,7 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
                   <Td>
                     <div className="font-medium">{d.name}</div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                      {d.amoLeadId && ready ? <a href={dealUrl(ready.domain, d.amoLeadId)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">#{d.amoLeadId} <ExternalLink size={12} /></a> : null}
+                      {d.amoLeadId ? <a href={dealUrl(active.domain, d.amoLeadId)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">#{d.amoLeadId} <ExternalLink size={12} /></a> : null}
                       {d.lead ? <span>sayt arizasi</span> : null}
                       {d.responsible ? <span>{d.responsible}</span> : null}
                       <span>{dateTime(d.readyAt ?? d.createdAt)}</span>
@@ -134,7 +136,7 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
                   <Td right>
                     {canWork && (
                       <div className="flex flex-wrap justify-end gap-2">
-                        {canOrder && d.customerId && (d.state === "READY" || d.state === "ORDERED") && (
+                        {canOrder && (d.state === "READY" || d.state === "ORDERED") && (
                           <LinkButton href={`/orders/new?amo=${d.id}`} size="sm" variant={d.state === "READY" ? "primary" : "secondary"}><FilePlus2 size={14} /> {d.state === "READY" ? "Zayavka ochish" : "Yana zayavka"}</LinkButton>
                         )}
                         {(d.state === "READY" || d.state === "IN_AMO") && <DismissButton id={d.id} />}
@@ -152,7 +154,10 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
   );
 }
 
-async function Settings({ conn }: { conn: Awaited<ReturnType<typeof db.amoConnection.findUnique>> }) {
+type Conn = Awaited<ReturnType<typeof db.amoConnection.findUnique>>;
+
+async function Settings({ conn }: { conn: Conn }) {
+  if (isActive(conn) && conn.method === "WEBHOOK") return <WebhookSettings conn={conn} />;
   const ready = isReady(conn) ? conn : null;
   const pipes = ready ? await pipelinesSafe(ready) : { list: [] };
   return (
@@ -203,6 +208,64 @@ async function Settings({ conn }: { conn: Awaited<ReturnType<typeof db.amoConnec
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+/** API'siz (bir tomonlama) usul: webhook manzili, amoCRM'da qo'yish yo'riqnomasi va «ERP'ga» bosqichi */
+function WebhookSettings({ conn }: { conn: NonNullable<Conn> }) {
+  const url = webhookUrl(conn.webhookKey);
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <Card>
+        <CardHeader title="Ulanish (faqat webhook)" icon={PlugZap} description="API kalitisiz, bir tomonlama: amoCRM → ERP. Sayt arizalari amoCRM'ga ketmaydi, zayavka holati sdelkaga qaytmaydi." />
+        <div className="space-y-4">
+          <div>
+            <div className="mb-1.5 text-sm font-medium text-slate-700">Webhook manzili</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800">{url}</code>
+              <CopyButton text={url} />
+            </div>
+            <p className="mt-1.5 text-xs text-slate-500">Bu manzil maxfiy: unga ega har kim ERP&apos;ga sdelka yubora oladi. Tarqalib ketsa — «Uzish», keyin qayta ulang (manzil almashadi).</p>
+          </div>
+          <DL items={[
+            { k: "Hisob", v: <a href={baseUrl(conn.domain)} target="_blank" rel="noreferrer" className="hover:underline">{conn.domain}</a> },
+            { k: "Oxirgi xabar", v: conn.lastWebhookAt ? dateTime(conn.lastWebhookAt) : <Badge color="amber">Hali kelmagan</Badge> },
+            { k: "Oxirgi sdelka", v: conn.lastWebhookInfo ?? "—" },
+            { k: "«ERP'ga» bosqichi", v: conn.stageToErp ? `ID ${conn.stageToErp}${conn.pipelineId ? ` · voronka ${conn.pipelineId}` : ""}` : "Tanlanmagan — kelgan har sdelka tushadi" },
+            { k: "Ulagan", v: `${conn.connectedByName ?? "—"} · ${dateTime(conn.updatedAt)}` },
+          ]} />
+          <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4"><DisconnectButton /></div>
+          <details className="text-sm">
+            <summary className="cursor-pointer text-slate-600">API kaliti bilan ulash (ikki tomonlama)</summary>
+            <div className="mt-3"><ConnectForm domain={conn.domain} redirectUri={oauthRedirectUri()} webhookOnly={false} /></div>
+          </details>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="amoCRM'da sozlash" description="Admin bajaradi. Ikki yo'ldan birini tanlang." />
+        <div className="space-y-4 text-sm text-slate-700">
+          <div>
+            <div className="font-medium">1-yo&apos;l (tavsiya): raqamli voronka</div>
+            <ol className="mt-1 list-decimal space-y-1 pl-5 text-slate-600">
+              <li>Sdelkalar → voronka → «Avtomatlashtirish» (Цифровая воронка).</li>
+              <li>«ERP&apos;ga» bosqichi ustunida «+» → «Webhook» (Отправить webhook) → yuqoridagi manzilni qo&apos;ying.</li>
+              <li>Ishga tushishi: «sdelka shu bosqichga o&apos;tganda». Pastdagi bosqich ID maydonini bo&apos;sh qoldiring.</li>
+            </ol>
+          </div>
+          <div>
+            <div className="font-medium">2-yo&apos;l: umumiy webhook</div>
+            <ol className="mt-1 list-decimal space-y-1 pl-5 text-slate-600">
+              <li>Sozlamalar → Integratsiyalar → «Web hooks» → manzilni qo&apos;ying, hodisa: «Sdelka bosqichi o&apos;zgardi» (Смена статуса сделки).</li>
+              <li>Bitta sinov sdelkasini «ERP&apos;ga» bosqichiga o&apos;tkazing — «Oxirgi sdelka» qatorida bosqich ID chiqadi.</li>
+              <li>Shu ID&apos;ni pastga yozib saqlang. Usiz har bosqich o&apos;zgarishi ERP&apos;ga tushib qoladi.</li>
+            </ol>
+          </div>
+          <Callout tone="info">Mijoz sdelka maydonlaridan topiladi: «Telefon», «ИНН/STIR», «Kompaniya», «Manzil». Telefon ham INN ham bo&apos;lmasa, mijozni sotuvchi zayavka ochishda tanlaydi.</Callout>
+          <div className="border-t border-slate-100 pt-4"><WebhookStageForm stageToErp={conn.stageToErp} pipelineId={conn.pipelineId} /></div>
+        </div>
+      </Card>
     </div>
   );
 }
