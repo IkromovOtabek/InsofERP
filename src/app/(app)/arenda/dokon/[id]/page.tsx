@@ -47,7 +47,7 @@ export default async function RentShopPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={{ href: "/arenda?tab=qarzdorlar", label: "Arenda" }}
         title={shop.name}
-        subtitle={<>{shop.location}{shop.tenantName ? ` · ${shop.tenantName}` : ""}{!shop.isActive && <> · <Badge color="slate">faolsiz</Badge></>}</>}
+        subtitle={<>{shop.location}{shop.tenantName ? ` · ${shop.tenantName}` : ""}{!shop.isActive && <> · <Badge color="amber">bo&apos;sh joy</Badge></>}</>}
         action={<>
           <LinkButton href={`/arenda/dokon/${id}/akt`} variant="secondary"><FileText size={16} /> Akt-sverka</LinkButton>
           {canShops && <LinkButton href={`/arenda?tab=dokonlar&edit=${id}`} variant="secondary"><Pencil size={16} /> Tahrirlash</LinkButton>}

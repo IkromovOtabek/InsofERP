@@ -7,7 +7,7 @@ import { MAX_AMOUNT } from "@/lib/action";
 import { dateRu, fmtNum, money } from "@/lib/format";
 import {
   RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
-  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts,
+  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, RENT_SHOP_STATUS, toggleRentShopActive,
 } from "@/lib/rent";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
@@ -105,14 +105,15 @@ export async function arendaJurnalList(q?: string, filter?: string): Promise<Mob
 
 /** Do'konlar — joy (bozor) bo'yicha tartibda, o'ngda umumiy qarz/avans. */
 export async function arendaShopsList(q?: string, filter?: string): Promise<MobileList> {
-  const onlyActive = filter !== "all";
+  const status: Prisma.RentShopWhereInput = filter === "all" ? {} : { isActive: filter !== "bosh" };
   const search: Prisma.RentShopWhereInput = q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { location: { contains: q, mode: "insensitive" } }] } : {};
-  const [shops, debts, total] = await Promise.all([
-    db.rentShop.findMany({ where: { ...search, ...(onlyActive ? { isActive: true } : {}) }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+  const [shops, debts, total, active] = await Promise.all([
+    db.rentShop.findMany({ where: { ...search, ...status }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     shopDebts(),
     db.rentShop.count({ where: search }),
+    db.rentShop.count({ where: { ...search, isActive: true } }),
   ]);
-  const active = onlyActive ? shops.length : shops.filter((s) => s.isActive).length;
+  const vacant = total - active;
   return {
     key: "arenda-shops", title: "Do'konlar",
     rows: shops.map((s) => {
@@ -121,12 +122,13 @@ export async function arendaShopsList(q?: string, filter?: string): Promise<Mobi
         id: s.id, title: s.name,
         subtitle: `${s.location} · bank ${num(n(s.bankAmount))} · naqd ${num(n(s.cashAmount))}`,
         right: debt > 0.005 ? `qarz ${money(debt)}` : debt < -0.005 ? `avans ${money(-debt)}` : "—",
-        status: s.isActive ? "Faol" : "Yopiq", tone: !s.isActive ? "info" : debt > 0.005 ? "danger" : "success",
+        status: s.isActive ? RENT_SHOP_STATUS.on : RENT_SHOP_STATUS.off, tone: !s.isActive ? "info" : debt > 0.005 ? "danger" : "success",
       };
     }),
     filters: [
-      { key: "active", label: "Faol", count: active, active: onlyActive },
-      { key: "all", label: "Hammasi", count: total, active: !onlyActive },
+      { key: "active", label: RENT_SHOP_STATUS.on, count: active, active: filter !== "all" && filter !== "bosh" },
+      { key: "bosh", label: RENT_SHOP_STATUS.off, count: vacant, active: filter === "bosh" },
+      { key: "all", label: "Hammasi", count: total, active: filter === "all" },
     ],
   };
 }
@@ -210,8 +212,8 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
       ],
     });
     actions.push({
-      id: "arenda.shop.toggle", label: s.isActive ? "Do'konni yopish" : "Qayta faollashtirish", tone: s.isActive ? "danger" : "success",
-      confirm: s.isActive ? "Yopilgan do'kon keyingi oylar hisobiga tushmaydi, tarixi joyida qoladi. Yopasizmi?" : "Do'kon keyingi oy ochilganda yana hisobga tushadi. Faollashtirasizmi?",
+      id: "arenda.shop.toggle", label: s.isActive ? "Bo'sh deb belgilash" : "Ijaraga berildi", tone: s.isActive ? "danger" : "success",
+      confirm: s.isActive ? "Bo'sh joy keyingi oylar hisobiga tushmaydi, tarixi joyida qoladi. Bo'sh deb belgilaysizmi?" : "Joy ijaraga berildimi? Shu oy hisobi ochilgan bo'lsa unga ham qo'shiladi.",
     });
   }
 
@@ -224,13 +226,13 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
   };
 
   return {
-    key: "arenda-shop", id: s.id, title: s.name, subtitle: s.location, status: s.isActive ? "Faol" : "Yopiq",
+    key: "arenda-shop", id: s.id, title: s.name, subtitle: s.location, status: s.isActive ? RENT_SHOP_STATUS.on : RENT_SHOP_STATUS.off,
     fields: [
       { label: "Umumiy holat", value: debt > 0.005 ? `qarz ${money(debt)}` : debt < -0.005 ? `avans ${money(-debt)}` : "qarz yo'q", tone: debt > 0.005 ? "danger" : "success" },
       { label: "Oylik (andoza)", value: `bank ${money(n(s.bankAmount))} · naqd ${money(n(s.cashAmount))}` },
       ...(n(s.electricity) || n(s.tax) ? [{ label: "Svet · soliq", value: `${money(n(s.electricity))} · ${money(n(s.tax))}` }] : []),
       ...(s.note ? [{ label: "Izoh", value: s.note }] : []),
-      { label: "Holat", value: s.isActive ? "Faol" : "Yopiq", tone: s.isActive ? "success" : "info" },
+      { label: "Holat", value: s.isActive ? RENT_SHOP_STATUS.on : RENT_SHOP_STATUS.off, tone: s.isActive ? "success" : "info" },
     ],
     sections: [months],
     actions,
@@ -409,11 +411,9 @@ export async function arendaAction(user: MobileUser, action: string, id: string,
       return { ok: true, message: created ? `${created} ta do'kon hisobi ochildi` : "Yangi do'kon yo'q — hisob avvaldan ochilgan" };
     }
     case "arenda.shop.toggle": {
-      const shop = await db.rentShop.findUnique({ where: { id } });
-      if (!shop) fail("Do'kon topilmadi", 404);
-      const ok = await db.rentShop.updateMany({ where: { id, isActive: shop!.isActive }, data: { isActive: !shop!.isActive } });
-      if (ok.count) await audit(db, user.id, "STATUS_CHANGE", "RentShop", id, { isActive: shop!.isActive }, { isActive: !shop!.isActive });
-      return { ok: true, message: shop!.isActive ? "Do'kon yopildi" : "Do'kon qayta faollashtirildi" };
+      const r = await toggleRentShopActive(id, user.id);
+      if (r.error) fail(r.error, 404);
+      return { ok: true, message: r.active ? `Ijaraga berildi${r.charged ? " — shu oy hisobiga qo'shildi" : ""}` : "Bo'sh joy deb belgilandi" };
     }
     case "arenda.shop.edit": {
       // Andoza summalar keyingi oylar hisobiga tushadi; ochilgan oy hisobi o'zgarmaydi (veb bilan bir xil)

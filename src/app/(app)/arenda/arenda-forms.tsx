@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { ArrowDownLeft, ArrowUpRight, Check, Pencil, Printer, X } from "lucide-react";
-import { Button, Field, FormActions, FormError, FormSuccess, Input, Select, Card, SheetTd, SheetTr } from "@/components/ui";
+import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select, Card, SheetTd, SheetTr } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import { fmtNum, isoDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -217,6 +217,7 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
         <Field label="Telefon" hint="eslatma va bog'lanish uchun"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
         <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
         <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Shartnoma, zaklad, kelishuv…" /></Field>
+        {!shop && <Checkbox name="vacant" label="Bo'sh joy — hali ijaraga berilmagan (oylik hisobga tushmaydi)" className="sm:col-span-4" />}
       </div>
       <FormActions>
         <Button disabled={pending}>{pending ? "Saqlanmoqda…" : shop ? "Saqlash" : "Do'kon qo'shish"}</Button>

@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, monthKey, openMonth, parseMonth, saveRentShopData } from "@/lib/rent";
+import { RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, monthKey, openMonth, parseMonth, saveRentShopData, toggleRentShopActive } from "@/lib/rent";
 import { RentImportError, importRentSheet, type RentImportRow } from "@/lib/rent-import";
 import { canDo } from "@/lib/permissions";
 import type { ValueMaps } from "@/lib/excel";
@@ -15,6 +15,7 @@ import { normalizePhone } from "@/lib/phone";
 import { sendRentReminder, shopLinkUrl, unlinkShopTelegram } from "@/lib/rent-tenant";
 
 const done = () => revalidatePath("/arenda");
+const shopDone = (id: string) => { revalidatePath(`/arenda/dokon/${id}`); done(); };
 const token = (v: string | null) => (v && /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null);
 
 const txSchema = z.object({
@@ -106,13 +107,16 @@ const shopSchema = z.object({
   inn: zOpt,
   // Qo'shilganda shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi
   month: zOpt,
+  // Yangi joy: «Bo'sh» — hali ijaraga berilmagan, oy hisobiga tushmaydi
+  vacant: z.string().optional().transform((v) => v === "on"),
 });
 
 export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
   const r = parseForm(shopSchema, fd);
   if ("error" in r) return { error: r.error };
-  const { id, month: key, ...data } = r.data;
+  const { id, month: key, vacant, ...rest } = r.data;
+  const data = id ? rest : { ...rest, isActive: !vacant };
   if (data.phone) {
     const p = normalizePhone(data.phone);
     if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67" };
@@ -124,18 +128,16 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   const res = await saveRentShopData(id, data, id ? null : parseMonth(key), s.userId);
   if (res.error) return { error: res.error };
   done();
-  return { ok: true, note: id ? "Do'kon saqlandi" : "Do'kon qo'shildi" };
+  return { ok: true, note: id ? "Do'kon saqlandi" : vacant ? "Bo'sh joy qo'shildi" : "Do'kon qo'shildi" };
 }
 
-/** Do'konni faolsizlantirish/qaytarish — keyingi oylar ochilganda hisobga tushmaydi, tarix joyida qoladi. */
+/** Joyni «Ijarada» ↔ «Bo'sh» qilish — bo'sh joy keyingi oylar hisobiga tushmaydi, tarix joyida qoladi. */
 export async function toggleRentShop(id: string): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
-  const shop = await db.rentShop.findUnique({ where: { id } });
-  if (!shop) return { error: "Do'kon topilmadi" };
-  const ok = await db.rentShop.updateMany({ where: { id, isActive: shop.isActive }, data: { isActive: !shop.isActive } });
-  if (ok.count) await audit(db, s.userId, "STATUS_CHANGE", "RentShop", id, { isActive: shop.isActive }, { isActive: !shop.isActive });
-  done();
-  return { ok: true, note: shop.isActive ? "Do'kon faolsizlantirildi" : "Do'kon qayta faollashtirildi" };
+  const r = await toggleRentShopActive(id, s.userId);
+  if (r.error) return { error: r.error };
+  shopDone(id);
+  return { ok: true, note: r.active ? `Ijaraga berildi${r.charged ? " — shu oy jadvaliga qo'shildi, summani tekshiring" : ""}` : "Bo'sh joy deb belgilandi" };
 }
 
 const importSchema = z.object({
@@ -177,7 +179,6 @@ export async function importRentFromExcel(_prev: ActionState, fd: FormData): Pro
 
 /* ───────────────────────── Ijarachi: Telegram va qarz eslatmasi (`lib/rent-tenant.ts`) ───────────────────────── */
 
-const shopDone = (id: string) => { revalidatePath(`/arenda/dokon/${id}`); done(); };
 
 /** Ulash havolasi (QR) — kalit yaratiladi; ijarachi botda «Start» bossa chati do'konga ulanadi. */
 export async function createRentTgLink(shopId: string): Promise<ActionState> {

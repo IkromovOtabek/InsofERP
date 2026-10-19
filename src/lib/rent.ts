@@ -216,10 +216,37 @@ export async function openMonth(month: Date, userId: string): Promise<{ created:
 
 // ───────────────────────── Do'kon kartasi ─────────────────────────
 
+/** `isActive` — joy ijarada (pul olinadi); `false` — bo'sh joy (ijarachi topilmagan yoki chiqib ketgan), oy hisobiga tushmaydi. */
+export const RENT_SHOP_STATUS = { on: "Ijarada", off: "Bo'sh" } as const;
+
+/**
+ * Joyni «Ijarada» ↔ «Bo'sh» qilish (veb va mobil). Ijaraga berilganda joriy oy hisobi ochilgan bo'lsa —
+ * joy shu oyga ham tushadi (o'tgan hisobdan, bo'lmasa andozadan), summani jadvalda tuzatsa bo'ladi. Tarix joyida qoladi.
+ */
+export async function toggleRentShopActive(id: string, userId: string): Promise<{ error?: string; active?: boolean; charged?: boolean }> {
+  const shop = await db.rentShop.findUnique({ where: { id } });
+  if (!shop) return { error: "Do'kon topilmadi" };
+  const active = !shop.isActive;
+  let charged = false;
+  await db.$transaction(async (tx) => {
+    const ok = await tx.rentShop.updateMany({ where: { id, isActive: shop.isActive }, data: { isActive: active } });
+    if (!ok.count) return; // parallel bosilgan — boshqa so'rov allaqachon o'zgartirdi
+    await audit(tx, userId, "STATUS_CHANGE", "RentShop", id, { isActive: shop.isActive }, { isActive: active });
+    const month = currentMonth();
+    if (!active || !(await tx.rentCharge.count({ where: { month } }))) return;
+    const p = await tx.rentCharge.findFirst({ where: { shopId: id, month: { lt: month } }, orderBy: { month: "desc" } });
+    const src = p ? { bankDue: p.bankDue, cashDue: p.cashDue, electricity: p.electricity, tax: p.tax } : { bankDue: shop.bankAmount, cashDue: shop.cashAmount, electricity: shop.electricity, tax: shop.tax };
+    charged = (await tx.rentCharge.createMany({ data: [{ shopId: id, month, ...src }], skipDuplicates: true })).count > 0;
+  });
+  return { active, charged };
+}
+
 /** Ijarachi rekvizitlari (`tenantName`, `phone`, `inn`) ixtiyoriy: berilmasa (mobil forma) — o'zgarmaydi. */
 export type RentShopInput = {
   name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null;
   tenantName?: string | null; phone?: string | null; inn?: string | null;
+  /** Faqat yangi joy qo'shilganda: `false` — bo'sh joy (hali ijaraga berilmagan) */
+  isActive?: boolean;
 };
 
 /**
@@ -239,7 +266,7 @@ export async function saveRentShopData(id: string | null, data: RentShopInput, m
     const shop = await db.$transaction(async (tx) => {
       const shop = await tx.rentShop.create({ data });
       await audit(tx, userId, "CREATE", "RentShop", shop.id, undefined, shop);
-      if (month && (await tx.rentCharge.count({ where: { month } }))) {
+      if (shop.isActive && month && (await tx.rentCharge.count({ where: { month } }))) {
         await tx.rentCharge.create({ data: { shopId: shop.id, month, bankDue: data.bankAmount, cashDue: data.cashAmount, electricity: data.electricity, tax: data.tax } });
       }
       return shop;

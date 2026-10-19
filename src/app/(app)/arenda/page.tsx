@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -9,9 +9,9 @@ import { getCompany } from "@/lib/company";
 import { rentDebtors } from "@/lib/rent-tenant";
 import { RemindDayForm } from "./tenant-forms";
 import {
-  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, currentMonth, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth, shopDebts,
+  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_SHOP_STATUS, currentMonth, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth, shopDebts,
 } from "@/lib/rent";
-import { Badge, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "../payments/confirm-button";
 import { ExcelButton } from "../logistika/excel-button";
@@ -24,7 +24,7 @@ const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
  * Arenda — do'konlar ijarasi (sekretar ish joyi). Tepada arenda kassasining umumiy summasi, uning ostida
  * «Kirim» / «Chiqim» tugmalari; pastda Excel'dagi oy varag'i (bozor bo'yicha guruhlangan), jurnal va do'konlar.
  */
-export default async function ArendaPage({ searchParams }: { searchParams: Promise<{ oy?: string; tab?: string; edit?: string; import?: string }> }) {
+export default async function ArendaPage({ searchParams }: { searchParams: Promise<{ oy?: string; tab?: string; edit?: string; import?: string; holat?: string }> }) {
   const s = await requirePage("/arenda");
   const sp = await searchParams;
   const now = currentMonth();
@@ -44,8 +44,9 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
   // Kirim formasidagi «Qaysi oy uchun»: tanlangan oy atrofida 12 oy orqaga va 2 oy oldinga
   const months = Array.from({ length: 15 }, (_, i) => shiftMonth(now, 2 - i)).map((m) => ({ key: monthKey(m), label: monthLabel(m) }));
   if (!months.some((m) => m.key === key)) months.push({ key, label: monthLabel(month) });
-  const href = (p: { oy?: string; tab?: string; edit?: string }) => {
-    const q = new URLSearchParams({ oy: p.oy ?? key, ...(p.tab ?? tab) !== "jadval" ? { tab: p.tab ?? tab } : {}, ...(p.edit ? { edit: p.edit } : {}) });
+  const holat = sp.holat === "bosh" || sp.holat === "ijarada" ? sp.holat : undefined;
+  const href = (p: { oy?: string; tab?: string; edit?: string; holat?: string }) => {
+    const q = new URLSearchParams({ oy: p.oy ?? key, ...(p.tab ?? tab) !== "jadval" ? { tab: p.tab ?? tab } : {}, ...(p.edit ? { edit: p.edit } : {}), ...(p.holat ? { holat: p.holat } : {}) });
     return `/arenda?${q}`;
   };
   const t = sheet.total;
@@ -93,13 +94,13 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
         { key: "jadval", label: "Oylik jadval", href: href({ tab: "jadval" }) },
         { key: "jurnal", label: "Kirim-chiqim jurnali", href: href({ tab: "jurnal" }) },
         { key: "qarzdorlar", label: "Qarzdorlar", href: href({ tab: "qarzdorlar" }) },
-        { key: "dokonlar", label: "Do'konlar", href: href({ tab: "dokonlar" }), count: activeShops.length },
+        { key: "dokonlar", label: "Do'konlar", href: href({ tab: "dokonlar" }), count: shops.length },
       ]} />
 
       {tab === "jadval" && <SheetTab sheet={sheet} month={key} monthName={monthLabel(month)} canShops={canShops} hasShops={shops.length > 0} shopsHref={href({ tab: "dokonlar" })} />}
       {tab === "jurnal" && <JournalTab month={month} canStorno={canStorno} />}
       {tab === "qarzdorlar" && <DebtorsTab canShops={canShops} canCreate={canCreate} />}
-      {tab === "dokonlar" && <ShopsTab shops={shops} month={key} editId={sp.edit} canShops={canShops} href={href} />}
+      {tab === "dokonlar" && <ShopsTab shops={shops} month={key} editId={sp.edit} holat={holat} canShops={canShops} href={href} />}
     </div>
   );
 }
@@ -267,12 +268,22 @@ async function DebtorsTab({ canShops, canCreate }: { canShops: boolean; canCreat
 
 type Shop = Awaited<ReturnType<typeof db.rentShop.findMany>>[number];
 
-async function ShopsTab({ shops, month, editId, canShops, href }: {
-  shops: Shop[]; month: string; editId?: string; canShops: boolean; href: (p: { tab?: string; edit?: string }) => string;
+async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
+  shops: Shop[]; month: string; editId?: string; holat?: "bosh" | "ijarada"; canShops: boolean; href: (p: { tab?: string; edit?: string; holat?: string }) => string;
 }) {
   const debts = await shopDebts();
-  const editing = editId ? shops.find((x) => x.id === editId) : undefined;
-  const locations = [...new Set(shops.map((x) => x.location))];
+  const editing = editId ? all.find((x) => x.id === editId) : undefined;
+  const locations = [...new Set(all.map((x) => x.location))];
+  // Joy bo'yicha: jami / ijarada / bo'sh — qaysi bozorda nechta joyga ijarachi qo'yish kerak
+  const byLoc = locations.map((l) => {
+    const xs = all.filter((x) => x.location === l);
+    const on = xs.filter((x) => x.isActive).length;
+    return { location: l, total: xs.length, on, off: xs.length - on };
+  });
+  const onAll = all.filter((x) => x.isActive).length, offAll = all.length - onAll;
+  // Saralash: joy (bozor) bo'yicha, ichida — avval bo'sh joylar
+  const shops = all.filter((x) => (holat === "bosh" ? !x.isActive : holat === "ijarada" ? x.isActive : true))
+    .sort((a, b) => locations.indexOf(a.location) - locations.indexOf(b.location) || Number(a.isActive) - Number(b.isActive));
   const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
   return (
     <div className="space-y-4">
@@ -283,7 +294,39 @@ async function ShopsTab({ shops, month, editId, canShops, href }: {
           <ShopForm key={editing?.id ?? "new"} shop={editing ? plain(editing) : undefined} locations={locations} month={month} onDoneHref={href({ tab: "dokonlar" })} />
         </Card>
       )}
-      {shops.length === 0 ? <EmptyState icon={Store} title="Do'konlar yo'q" text="Yuqoridagi forma orqali birinchi do'konni qo'shing." /> : (
+      {all.length > 0 && (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <StatCard label="Jami joylar" value={all.length} icon={Store} href={href({ tab: "dokonlar" })} />
+            <StatCard label="Ijarada — pul olinadi" value={onAll} icon={CircleCheck} tone="success" href={href({ tab: "dokonlar", holat: "ijarada" })} />
+            <StatCard label="Bo'sh — ijarachi kerak" value={offAll} icon={CircleDashed} tone={offAll ? "warning" : "success"} hint={offAll ? "bosing — bo'sh joylar ro'yxati" : "bo'sh joy yo'q"} href={href({ tab: "dokonlar", holat: "bosh" })} />
+          </div>
+          {byLoc.length > 1 && (
+            <Card padded={false}>
+              <Table>
+                <thead><tr><Th>Joy (bozor)</Th><Th right>Jami</Th><Th right>Ijarada</Th><Th right>Bo&apos;sh</Th><Th>Bandlik</Th></tr></thead>
+                <tbody>
+                  {byLoc.map((g) => (
+                    <Tr key={g.location}>
+                      <Td className="font-medium text-slate-800">{g.location}</Td>
+                      <Td right>{g.total}</Td>
+                      <Td right className="text-emerald-700">{g.on}</Td>
+                      <Td right className={g.off ? "font-semibold text-amber-700" : "text-slate-400"}>{g.off || "–"}</Td>
+                      <Td className="w-48"><Progress value={g.on} max={g.total} tone="success" /></Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </Card>
+          )}
+          <Tabs current={holat ?? "all"} className="mb-0" items={[
+            { key: "all", label: "Hammasi", href: href({ tab: "dokonlar" }), count: all.length },
+            { key: "ijarada", label: RENT_SHOP_STATUS.on, href: href({ tab: "dokonlar", holat: "ijarada" }), count: onAll },
+            { key: "bosh", label: RENT_SHOP_STATUS.off, href: href({ tab: "dokonlar", holat: "bosh" }), count: offAll },
+          ]} />
+        </>
+      )}
+      {all.length === 0 ? <EmptyState icon={Store} title="Do'konlar yo'q" text="Yuqoridagi forma orqali birinchi do'konni qo'shing." /> : shops.length === 0 ? <EmptyState icon={Store} title={holat === "bosh" ? "Bo'sh joy yo'q" : "Ijaradagi joy yo'q"} text={holat === "bosh" ? "Barcha joylar ijaraga berilgan." : "Hali birorta joy ijaraga berilmagan."} /> : (
         <Card padded={false}>
           <Table>
             <thead><tr><Th>Joy</Th><Th>Do&apos;kon</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th><Th right>Svet</Th><Th right>Soliq</Th><Th right>Umumiy qarz</Th><Th>Holat</Th><Th></Th></tr></thead>
@@ -291,7 +334,7 @@ async function ShopsTab({ shops, month, editId, canShops, href }: {
               {shops.map((x) => {
                 const debt = debts.get(x.id) ?? 0;
                 return (
-                  <Tr key={x.id} className={x.isActive ? undefined : "opacity-60"}>
+                  <Tr key={x.id} className={x.isActive ? undefined : "bg-amber-50/40"}>
                     <Td className="text-slate-600">{x.location}</Td>
                     <Td><Link href={`/arenda/dokon/${x.id}`} className="font-medium text-slate-800 hover:underline">{x.name}</Link>{(x.tenantName || x.phone) && <span className="block text-xs text-slate-500">{[x.tenantName, x.phone && formatPhone(x.phone)].filter(Boolean).join(" · ")}</span>}{x.note && <span className="block text-xs text-slate-500">{x.note}</span>}</Td>
                     <Td right>{cell(Number(x.bankAmount))}</Td>
@@ -299,12 +342,12 @@ async function ShopsTab({ shops, month, editId, canShops, href }: {
                     <Td right>{cell(Number(x.electricity))}</Td>
                     <Td right>{cell(Number(x.tax))}</Td>
                     <Td right className={`font-semibold ${debt > 0.005 ? "text-red-600" : debt < -0.005 ? "text-emerald-700" : "text-slate-400"}`} >{debt < -0.005 ? `avans ${fmtNum(-debt)}` : cell(debt)}</Td>
-                    <Td>{x.isActive ? <Badge color="green">faol</Badge> : <Badge color="slate">faolsiz</Badge>}</Td>
+                    <Td>{x.isActive ? <Badge color="green">{RENT_SHOP_STATUS.on}</Badge> : <Badge color="amber">{RENT_SHOP_STATUS.off}</Badge>}</Td>
                     <Td>
                       {canShops && (
                         <div className="flex items-center gap-2">
                           <Link href={href({ tab: "dokonlar", edit: x.id })} aria-label={`${x.name} — tahrirlash`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil size={14} /></Link>
-                          <ActionButton action={toggleRentShop.bind(null, x.id)} variant="ghost" className="h-7 px-2 text-xs">{x.isActive ? "Faolsizlantirish" : "Faollashtirish"}</ActionButton>
+                          <ActionButton action={toggleRentShop.bind(null, x.id)} variant="ghost" className="h-7 px-2 text-xs">{x.isActive ? "Bo'sh deb belgilash" : "Ijaraga berildi"}</ActionButton>
                         </div>
                       )}
                     </Td>
