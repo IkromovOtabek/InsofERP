@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed, AlertTriangle, CalendarClock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed, AlertTriangle, CalendarClock, ListFilter } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -30,7 +30,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
   const now = currentMonth();
   const month = parseMonth(sp.oy) ?? now;
   const key = monthKey(month);
-  const tab = sp.tab === "jurnal" || sp.tab === "dokonlar" || sp.tab === "qarzdorlar" ? sp.tab : "jadval";
+  const tab = sp.tab === "jurnal" || sp.tab === "dokonlar" || sp.tab === "qarzdorlar" || sp.tab === "filter" ? sp.tab : "jadval";
   const canCreate = canDo(s, "arenda", "create");
   const canShops = canDo(s, "arenda", "shops");
   const canStorno = canDo(s, "arenda", "storno");
@@ -95,12 +95,14 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
         { key: "jurnal", label: "Kirim-chiqim jurnali", href: href({ tab: "jurnal" }) },
         { key: "qarzdorlar", label: "Qarzdorlar", href: href({ tab: "qarzdorlar" }) },
         { key: "dokonlar", label: "Do'konlar", href: href({ tab: "dokonlar" }), count: shops.length },
+        { key: "filter", label: "Filter", href: href({ tab: "filter" }), icon: ListFilter },
       ]} />
 
       {tab === "jadval" && <SheetTab sheet={sheet} month={key} monthName={monthLabel(month)} canShops={canShops} hasShops={shops.length > 0} shopsHref={href({ tab: "dokonlar" })} />}
       {tab === "jurnal" && <JournalTab month={month} canStorno={canStorno} />}
       {tab === "qarzdorlar" && <DebtorsTab canShops={canShops} canCreate={canCreate} />}
-      {tab === "dokonlar" && <ShopsTab shops={shops} month={key} editId={sp.edit} holat={holat} canShops={canShops} href={href} />}
+      {tab === "dokonlar" && <ShopsTab mode="dokonlar" shops={shops} month={key} editId={sp.edit} canShops={canShops} href={href} />}
+      {tab === "filter" && <ShopsTab mode="filter" shops={shops} month={key} holat={holat} canShops={canShops} href={href} />}
     </div>
   );
 }
@@ -275,10 +277,15 @@ const parseShopFilter = (v?: string): ShopFilter | undefined => (SHOP_FILTERS as
 
 const STATUS_BADGE: Record<RentPayStatus, BadgeColor> = { VACANT: "slate", OVERDUE: "red", TODAY: "amber", PAID: "green", WAITING: "blue" };
 
-async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
-  shops: Shop[]; month: string; editId?: string; holat?: ShopFilter; canShops: boolean; href: (p: { tab?: string; edit?: string; holat?: string }) => string;
+/**
+ * «Do'konlar» (`mode="dokonlar"`) — qo'shish/tahrirlash formasi, bozorlar bandligi va to'liq ro'yxat;
+ * «Filter» (`mode="filter"`) — to'lov holati kartalari, filtrlar va saralangan ro'yxat.
+ */
+async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, canShops, href }: {
+  mode: "dokonlar" | "filter"; shops: Shop[]; month: string; editId?: string; holat?: ShopFilter; canShops: boolean; href: (p: { tab?: string; edit?: string; holat?: string }) => string;
 }) {
   const states = await rentShopStates(all);
+  const isFilter = mode === "filter", holat = isFilter ? holatParam : undefined;
   const st = (x: Shop) => states.get(x.id)!;
   const editing = editId ? all.find((x) => x.id === editId) : undefined;
   const locations = [...new Set(all.map((x) => x.location))];
@@ -303,10 +310,10 @@ async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
     ? st(b).overdue - st(a).overdue
     : locations.indexOf(a.location) - locations.indexOf(b.location) || Number(a.isActive) - Number(b.isActive));
   const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, period: x.period, payDay: x.payDay, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
-  const f = (k: ShopFilter, label: string) => ({ key: k, label, href: href({ tab: "dokonlar", holat: k }), count: count(k) });
+  const f = (k: ShopFilter, label: string) => ({ key: k, label, href: href({ tab: "filter", holat: k }), count: count(k) });
   return (
     <div className="space-y-4">
-      {canShops && (
+      {!isFilter && canShops && (
         <Card>
           <CardHeader title={editing ? `Tahrirlash: ${editing.name}` : "Yangi do'kon"} description="Summalar — andoza: yangi oy ochilganda o'tgan oy hisobi bo'lmasa shu qiymatlar olinadi (kunlikda — kunlik summa × kunlar). Shu oy ochilgan bo'lsa yangi do'kon unga ham qo'shiladi."
             action={editing ? <Link href={href({ tab: "dokonlar" })} className="text-sm text-slate-500 hover:text-slate-900">Bekor qilish</Link> : undefined} />
@@ -315,18 +322,18 @@ async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
       )}
       {all.length > 0 && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Muddati o'tgan" value={count("muddat")} icon={AlertTriangle} tone={count("muddat") ? "danger" : "success"} hint={overdueSum > 0.005 ? `qarz ${money(overdueSum)}` : "muddati o'tgan qarz yo'q"} href={href({ tab: "dokonlar", holat: "muddat" })} />
-            <StatCard label="Bugun to'lov kuni" value={count("bugun")} icon={CalendarClock} tone={count("bugun") ? "warning" : "default"} hint={todaySum > 0.005 ? `kutilmoqda ${money(todaySum)}` : undefined} href={href({ tab: "dokonlar", holat: "bugun" })} />
-            <StatCard label="To'laganlar" value={count("tolagan")} icon={CircleCheck} tone="success" hint={`ijarada ${count("ijarada")} ta joydan`} href={href({ tab: "dokonlar", holat: "tolagan" })} />
-            <StatCard label="Bo'sh — ijarachi kerak" value={count("bosh")} icon={CircleDashed} tone={count("bosh") ? "warning" : "success"} hint={`jami ${all.length} ta joy`} href={href({ tab: "dokonlar", holat: "bosh" })} />
-          </div>
+          {isFilter && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Muddati o'tgan" value={count("muddat")} icon={AlertTriangle} tone={count("muddat") ? "danger" : "success"} hint={overdueSum > 0.005 ? `qarz ${money(overdueSum)}` : "muddati o'tgan qarz yo'q"} href={href({ tab: "filter", holat: "muddat" })} />
+            <StatCard label="Bugun to'lov kuni" value={count("bugun")} icon={CalendarClock} tone={count("bugun") ? "warning" : "default"} hint={todaySum > 0.005 ? `kutilmoqda ${money(todaySum)}` : undefined} href={href({ tab: "filter", holat: "bugun" })} />
+            <StatCard label="To'laganlar" value={count("tolagan")} icon={CircleCheck} tone="success" hint={`ijarada ${count("ijarada")} ta joydan`} href={href({ tab: "filter", holat: "tolagan" })} />
+            <StatCard label="Bo'sh — ijarachi kerak" value={count("bosh")} icon={CircleDashed} tone={count("bosh") ? "warning" : "success"} hint={`jami ${all.length} ta joy`} href={href({ tab: "filter", holat: "bosh" })} />
+          </div>}
           {count("toliqemas") > 0 && (
             <Callout tone="warning" title={`${count("toliqemas")} ta ijaradagi joyda telefon yoki to'lov kuni kiritilmagan`}>
-              Ularsiz «Bugun» va «Muddati o&apos;tgan» to&apos;g&apos;ri chiqmaydi (to&apos;lov kuni bo&apos;lmasa — oy oxiri olinadi). <Link href={href({ tab: "dokonlar", holat: "toliqemas" })} className="font-medium underline">Ro&apos;yxatni ochish →</Link>
+              Ularsiz «Bugun» va «Muddati o&apos;tgan» to&apos;g&apos;ri chiqmaydi (to&apos;lov kuni bo&apos;lmasa — oy oxiri olinadi). <Link href={href({ tab: "filter", holat: "toliqemas" })} className="font-medium underline">Ro&apos;yxatni ochish →</Link>
             </Callout>
           )}
-          {byLoc.length > 1 && (
+          {!isFilter && byLoc.length > 1 && (
             <Card padded={false}>
               <Table>
                 <thead><tr><Th>Joy (bozor)</Th><Th right>Jami</Th><Th right>Ijarada</Th><Th right>Bo&apos;sh</Th><Th>Bandlik</Th></tr></thead>
@@ -344,11 +351,11 @@ async function ShopsTab({ shops: all, month, editId, holat, canShops, href }: {
               </Table>
             </Card>
           )}
-          <Tabs current={holat ?? "all"} className="mb-0" items={[
-            { key: "all", label: "Hammasi", href: href({ tab: "dokonlar" }), count: all.length },
+          {isFilter && <Tabs current={holat ?? "all"} className="mb-0" items={[
+            { key: "all", label: "Hammasi", href: href({ tab: "filter" }), count: all.length },
             f("muddat", "Muddati o'tgan"), f("bugun", "Bugun to'lov"), f("kutilmoqda", "To'lov kuni kelmagan"), f("tolagan", "To'laganlar"),
             f("ijarada", RENT_SHOP_STATUS.on), f("bosh", "Bo'sh joylar"), f("kunlik", "Kunlik ijara"), f("toliqemas", "Ma'lumoti to'liq emas"),
-          ]} />
+          ]} />}
         </>
       )}
       {all.length === 0 ? <EmptyState icon={Store} title="Do'konlar yo'q" text="Yuqoridagi forma orqali birinchi do'konni qo'shing." /> : shops.length === 0 ? <EmptyState icon={Store} title="Bu filtrda joy yo'q" text="Boshqa filtrni tanlang yoki «Hammasi» ni bosing." /> : (
