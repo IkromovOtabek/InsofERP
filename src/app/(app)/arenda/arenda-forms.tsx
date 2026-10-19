@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { ArrowDownLeft, ArrowUpRight, Check, Pencil, X } from "lucide-react";
 import { Button, Field, FormActions, FormError, FormSuccess, Input, Select, Card, SheetTd, SheetTr } from "@/components/ui";
@@ -161,7 +162,7 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
   return (
     <SheetTr className={cn(!row.isActive && "opacity-60")}>
-      <SheetTd strong className="sticky left-0 z-[1] max-w-72 whitespace-normal bg-white">{row.name}</SheetTd>
+      <SheetTd strong className="sticky left-0 z-[1] max-w-72 whitespace-normal bg-white"><Link href={`/arenda/dokon/${row.shopId}`} className="hover:underline">{row.name}</Link></SheetTd>
       <SheetTd right>{cell(row.bankDue)}</SheetTd>
       <SheetTd right>{cell(row.cashDue)}</SheetTd>
       <SheetTd right tone="yellow" strong>{cell(row.due)}</SheetTd>
@@ -183,7 +184,7 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
 /** Do'kon qo'shish / tahrirlash. Summalar — andoza: yangi oy ochilganda (o'tgan oy hisobi bo'lmasa) shu qiymatlar olinadi. */
 export function ShopForm({ shop, locations, month, onDoneHref }: {
-  shop?: { id: string; name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null };
+  shop?: { id: string; name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null };
   locations: string[]; month: string; onDoneHref?: string;
 }) {
   const [state, action, pending] = useActionState(saveRentShop, undefined);
@@ -209,7 +210,10 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
         <Field label="Naqd (oylik)"><MoneyInput name="cashAmount" defaultValue={num(shop?.cashAmount ?? 0)} /></Field>
         <Field label="Svet"><MoneyInput name="electricity" defaultValue={num(shop?.electricity ?? 0)} /></Field>
         <Field label="Biz to'laydigan soliq"><MoneyInput name="tax" defaultValue={num(shop?.tax ?? 0)} /></Field>
-        <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Ijarachi, telefon, shartnoma…" /></Field>
+        <Field label="Ijarachi (F.I.O. / mas'ul)" className="sm:col-span-2"><Input name="tenantName" defaultValue={shop?.tenantName ?? ""} placeholder="Masalan: Vaxabjanova Nigora" /></Field>
+        <Field label="Telefon" hint="eslatma va bog'lanish uchun"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
+        <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
+        <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Shartnoma, zaklad, kelishuv…" /></Field>
       </div>
       <FormActions>
         <Button disabled={pending}>{pending ? "Saqlanmoqda…" : shop ? "Saqlash" : "Do'kon qo'shish"}</Button>

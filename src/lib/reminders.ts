@@ -10,6 +10,7 @@
 import type { Role } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { notifyRoles, notifyUsers, type NotifyLink } from "@/lib/notify";
+import { runRentReminders } from "@/lib/rent-tenant";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
@@ -170,6 +171,8 @@ export async function runReminders(now = new Date()): Promise<number> {
       sent++;
     }
   }
+  // Arenda: oyning belgilangan sanasidan qarzdor ijarachilarga Telegram eslatma (oyda bir marta) — `lib/rent-tenant.ts`
+  try { sent += await runRentReminders(now); } catch (e) { console.error("[reminders] arenda", e instanceof Error ? e.message : e); }
   return sent;
 }
 

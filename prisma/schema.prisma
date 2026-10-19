@@ -180,6 +180,8 @@ model CompanySettings {
   offerTerms          String?
   /// Yangi taklifning amal qilish muddati, kun (forma shu kunni taklif qiladi)
   offerValidDays      Int       @default(7)
+  /// Arenda: har oyning shu sanasida qarzdor ijarachilarga Telegram eslatmasi (0 — avtomatik eslatma o'chiq)
+  rentRemindDay       Int       @default(5)
   updatedAt           DateTime  @updatedAt
 }
 
@@ -2966,11 +2968,43 @@ model RentShop {
   sortOrder   Int      @default(0)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
+  /// Ijarachi — mas'ul shaxs (F.I.O.), telefon, INN: ijarachi kartasi va eslatma uchun
+  tenantName  String?
+  phone       String?
+  inn         String?
+  /// Ijarachining Telegram chati — u botga `t.me/<bot>?start=ijara_<tgLinkToken>` havolasi orqali ulanadi
+  tgChatId    String?
+  tgLinkedAt  DateTime?
+  tgLinkToken String?  @unique
 
-  charges RentCharge[]
-  txs     RentTx[]
+  charges   RentCharge[]
+  txs       RentTx[]
+  reminders RentReminder[]
 
   @@unique([location, name])
+  @@index([tgChatId])
+}
+
+/// Ijarachiga yuborilgan qarz eslatmasi (jurnal). Avtomatik — oyda bir marta (`month` + `auto`), qo'lda — istalgancha.
+model RentReminder {
+  id        String   @id @default(cuid())
+  shopId    String
+  /// Eslatma yuborilgan oy (oyning 1-kuni)
+  month     DateTime @db.Date
+  auto      Boolean  @default(false)
+  /// Yuborilgan paytdagi jami qarz
+  debt      Decimal  @db.Decimal(18, 2)
+  /// Telegram'ga yetib bordimi; yo'q bo'lsa — sabab
+  ok        Boolean
+  error     String?
+  /// Qo'lda yuborgan xodim (avtomatikda bo'sh)
+  sentById  String?
+  createdAt DateTime @default(now())
+
+  shop RentShop @relation(fields: [shopId], references: [id])
+
+  @@index([shopId, createdAt])
+  @@index([month, auto])
 }
 
 /// Oylik hisob — Excel'dagi oy varag'ining bitta qatori: shu oy do'kon qancha to'lashi kerak.

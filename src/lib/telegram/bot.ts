@@ -11,6 +11,7 @@ import { canDo } from "@/lib/permissions";
 import { parsePerms } from "@/lib/auth";
 import { effectiveRole } from "@/lib/tenant";
 import type { Role } from "@/generated/prisma";
+import { rentBotMessage } from "@/lib/rent-tenant";
 
 /** Tahlil ma'lumotlari — veb (/api/ai) va mobil bilan bir xil ruxsat: rol + direktor bergan "bi-tahlil → ai" amali. */
 const aiAccess = (u: { role: Role; perms: unknown }) => canDo({ role: effectiveRole(u.role), perms: parsePerms(u.perms) }, "bi-tahlil", "ai");
@@ -107,6 +108,8 @@ export async function handleUpdate(u: TgUpdate): Promise<void> {
 
   // Insof ECO ilovasiga kirish — xodim oqimidan OLDIN va TelegramAccount yaratmasdan (mijoz xodim emas)
   if (await ecoLogin(msg, chatId)) return;
+  // Arenda ijarachisi (`lib/rent-tenant.ts`): `/start ijara_<kalit>` bilan ulanish va qarz holati — u ham xodim emas
+  if (msg.text && await rentBotMessage(msg.text.trim(), chatId)) return;
 
   const upsertAccount = () => db.telegramAccount.upsert({
     where: { chatId: String(chatId) },

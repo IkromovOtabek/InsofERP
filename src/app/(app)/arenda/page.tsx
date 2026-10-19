@@ -1,9 +1,13 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Send, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, fmtNum, money } from "@/lib/format";
+import { formatPhone } from "@/lib/phone";
+import { getCompany } from "@/lib/company";
+import { rentDebtors } from "@/lib/rent-tenant";
+import { RemindDayForm } from "./tenant-forms";
 import {
   RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, currentMonth, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth, shopDebts,
 } from "@/lib/rent";
@@ -12,7 +16,7 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "../payments/confirm-button";
 import { ExcelButton } from "../logistika/excel-button";
 import { ChargeRow, RentTxPanel, ShopForm } from "./arenda-forms";
-import { openRentMonth, stornoRentTx, toggleRentShop } from "./actions";
+import { openRentMonth, sendRentReminderNow, stornoRentTx, toggleRentShop } from "./actions";
 
 const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
 
@@ -26,7 +30,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
   const now = currentMonth();
   const month = parseMonth(sp.oy) ?? now;
   const key = monthKey(month);
-  const tab = sp.tab === "jurnal" || sp.tab === "dokonlar" ? sp.tab : "jadval";
+  const tab = sp.tab === "jurnal" || sp.tab === "dokonlar" || sp.tab === "qarzdorlar" ? sp.tab : "jadval";
   const canCreate = canDo(s, "arenda", "create");
   const canShops = canDo(s, "arenda", "shops");
   const canStorno = canDo(s, "arenda", "storno");
@@ -88,11 +92,13 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
       <Tabs current={tab} className="mb-4" items={[
         { key: "jadval", label: "Oylik jadval", href: href({ tab: "jadval" }) },
         { key: "jurnal", label: "Kirim-chiqim jurnali", href: href({ tab: "jurnal" }) },
+        { key: "qarzdorlar", label: "Qarzdorlar", href: href({ tab: "qarzdorlar" }) },
         { key: "dokonlar", label: "Do'konlar", href: href({ tab: "dokonlar" }), count: activeShops.length },
       ]} />
 
       {tab === "jadval" && <SheetTab sheet={sheet} month={key} monthName={monthLabel(month)} canShops={canShops} hasShops={shops.length > 0} shopsHref={href({ tab: "dokonlar" })} />}
       {tab === "jurnal" && <JournalTab month={month} canStorno={canStorno} />}
+      {tab === "qarzdorlar" && <DebtorsTab canShops={canShops} canCreate={canCreate} />}
       {tab === "dokonlar" && <ShopsTab shops={shops} month={key} editId={sp.edit} canShops={canShops} href={href} />}
     </div>
   );
@@ -208,6 +214,50 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
   );
 }
 
+/* ───────────────────────── Qarzdorlar ───────────────────────── */
+
+/** Qarzi bor ijarachilar: qaysi oylar to'lanmagan, Telegram ulanganmi, oxirgi eslatma — va eslatma yuborish. */
+async function DebtorsTab({ canShops, canCreate }: { canShops: boolean; canCreate: boolean }) {
+  const [debtors, company] = await Promise.all([rentDebtors(), getCompany()]);
+  const total = debtors.reduce((s, d) => s + d.debt, 0);
+  const notLinked = debtors.filter((d) => !d.linked).length;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard label="Qarzdor ijarachilar" value={debtors.length} icon={Users} tone={debtors.length ? "danger" : "success"} />
+        <StatCard label="Jami qarz" value={money(total)} icon={Wallet} tone={total > 1 ? "danger" : "success"} />
+        <StatCard label="Telegram'ga ulanmagan" value={notLinked} icon={MessageCircle} hint="ularga eslatmani kartadan nusxalab yuborasiz" />
+      </div>
+      {canShops && <Card><RemindDayForm day={company.rentRemindDay} /></Card>}
+      {debtors.length === 0 ? <EmptyState icon={Store} title="Qarzdor yo'q" text="Barcha ijarachilar hisobini to'lagan." /> : (
+        <Card padded={false}>
+          <Table>
+            <thead><tr><Th>Do&apos;kon</Th><Th>Ijarachi</Th><Th>To&apos;lanmagan oylar</Th><Th right>Jami qarz</Th><Th>Oxirgi to&apos;lov</Th><Th>Telegram</Th><Th>Oxirgi eslatma</Th><Th></Th></tr></thead>
+            <tbody>
+              {debtors.map((d) => (
+                <Tr key={d.id} className={d.isActive ? undefined : "opacity-60"}>
+                  <Td><Link href={`/arenda/dokon/${d.id}`} className="font-medium text-slate-800 hover:underline">{d.name}</Link><span className="block text-xs text-slate-500">{d.location}</span></Td>
+                  <Td className="text-sm">{d.tenantName ?? <span className="text-slate-400">—</span>}{d.phone && <a href={`tel:${d.phone}`} className="block text-xs text-brand-700 hover:underline">{formatPhone(d.phone)}</a>}</Td>
+                  <Td className="text-xs">{d.unpaid.length ? <>{d.unpaid.length} oy<span className="block text-slate-500">{d.unpaid.slice(0, 3).map((m) => m.label).join(", ")}{d.unpaid.length > 3 ? "…" : ""}</span></> : <span className="text-slate-500">oldingi qoldiq</span>}</Td>
+                  <Td right className="font-semibold text-red-600">{fmtNum(d.debt)}</Td>
+                  <Td className="text-xs text-slate-600">{d.lastPaidAt ? date(d.lastPaidAt) : "—"}</Td>
+                  <Td>{d.linked ? <Badge color="green">ulangan</Badge> : <Badge color="slate">yo&apos;q</Badge>}</Td>
+                  <Td className="text-xs text-slate-600">{d.lastReminder ? <>{date(d.lastReminder.at)}{!d.lastReminder.ok && <span className="block text-red-600">yetmadi</span>}</> : "—"}</Td>
+                  <Td>
+                    {d.linked && canCreate
+                      ? <ActionButton action={sendRentReminderNow.bind(null, d.id)} variant="secondary" className="h-8 px-3 text-xs"><Send size={13} /> Eslatma</ActionButton>
+                      : <Link href={`/arenda/dokon/${d.id}`} className="text-xs font-medium text-brand-700 hover:underline">Matn / QR</Link>}
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────────── Do'konlar ───────────────────────── */
 
 type Shop = Awaited<ReturnType<typeof db.rentShop.findMany>>[number];
@@ -218,7 +268,7 @@ async function ShopsTab({ shops, month, editId, canShops, href }: {
   const debts = await shopDebts();
   const editing = editId ? shops.find((x) => x.id === editId) : undefined;
   const locations = [...new Set(shops.map((x) => x.location))];
-  const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note });
+  const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
   return (
     <div className="space-y-4">
       {canShops && (
@@ -238,7 +288,7 @@ async function ShopsTab({ shops, month, editId, canShops, href }: {
                 return (
                   <Tr key={x.id} className={x.isActive ? undefined : "opacity-60"}>
                     <Td className="text-slate-600">{x.location}</Td>
-                    <Td><span className="font-medium text-slate-800">{x.name}</span>{x.note && <span className="block text-xs text-slate-500">{x.note}</span>}</Td>
+                    <Td><Link href={`/arenda/dokon/${x.id}`} className="font-medium text-slate-800 hover:underline">{x.name}</Link>{(x.tenantName || x.phone) && <span className="block text-xs text-slate-500">{[x.tenantName, x.phone && formatPhone(x.phone)].filter(Boolean).join(" · ")}</span>}{x.note && <span className="block text-xs text-slate-500">{x.note}</span>}</Td>
                     <Td right>{cell(Number(x.bankAmount))}</Td>
                     <Td right>{cell(Number(x.cashAmount))}</Td>
                     <Td right>{cell(Number(x.electricity))}</Td>

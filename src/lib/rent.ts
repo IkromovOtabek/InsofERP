@@ -210,7 +210,11 @@ export async function openMonth(month: Date, userId: string): Promise<{ created:
 
 // ───────────────────────── Do'kon kartasi ─────────────────────────
 
-export type RentShopInput = { name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null };
+/** Ijarachi rekvizitlari (`tenantName`, `phone`, `inn`) ixtiyoriy: berilmasa (mobil forma) — o'zgarmaydi. */
+export type RentShopInput = {
+  name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null;
+  tenantName?: string | null; phone?: string | null; inn?: string | null;
+};
 
 /**
  * Do'konni qo'shish (`id` yo'q) yoki tahrirlash — veb `/arenda` formasi (`arenda/actions.ts` → `saveRentShop`) va mobil

@@ -11,6 +11,8 @@ import { RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRent
 import { RentImportError, importRentSheet, type RentImportRow } from "@/lib/rent-import";
 import { canDo } from "@/lib/permissions";
 import type { ValueMaps } from "@/lib/excel";
+import { normalizePhone } from "@/lib/phone";
+import { sendRentReminder, shopLinkUrl, unlinkShopTelegram } from "@/lib/rent-tenant";
 
 const done = () => revalidatePath("/arenda");
 const token = (v: string | null) => (v && /^[A-Za-z0-9-]{16,64}$/.test(v) ? v : null);
@@ -96,6 +98,9 @@ const shopSchema = z.object({
   location: zStr("Joy (bozor) ni yozing").max(120, "nom juda uzun"),
   bankAmount: zDec(), cashAmount: zDec(), electricity: zDec(), tax: zDec(),
   note: zOpt,
+  tenantName: zOpt,
+  phone: zOpt,
+  inn: zOpt,
   // Qo'shilganda shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi
   month: zOpt,
 });
@@ -105,6 +110,13 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   const r = parseForm(shopSchema, fd);
   if ("error" in r) return { error: r.error };
   const { id, month: key, ...data } = r.data;
+  if (data.phone) {
+    const p = normalizePhone(data.phone);
+    if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67" };
+    data.phone = p;
+  }
+  if (data.inn && !/^\d{9}$|^\d{14}$/.test(data.inn.replace(/\s+/g, ""))) return { error: "INN 9 xonali (JShShIR — 14 xonali) bo'lsin" };
+  if (data.inn) data.inn = data.inn.replace(/\s+/g, "");
   // Qoida `lib/rent.ts` da — mobil do'kon kartochkasi ham shuni chaqiradi
   const res = await saveRentShopData(id, data, id ? null : parseMonth(key), s.userId);
   if (res.error) return { error: res.error };
@@ -158,4 +170,46 @@ export async function importRentFromExcel(_prev: ActionState, fd: FormData): Pro
   }
   done();
   redirect(`/arenda?oy=${monthKey(month)}&import=${res.shops}-${res.newShops}-${res.payments}-${res.replaced}-${res.skipped}`);
+}
+
+/* ───────────────────────── Ijarachi: Telegram va qarz eslatmasi (`lib/rent-tenant.ts`) ───────────────────────── */
+
+const shopDone = (id: string) => { revalidatePath(`/arenda/dokon/${id}`); done(); };
+
+/** Ulash havolasi (QR) — kalit yaratiladi; ijarachi botda «Start» bossa chati do'konga ulanadi. */
+export async function createRentTgLink(shopId: string): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const url = await shopLinkUrl(shopId, s.userId);
+  if (!url) return { error: "Telegram bot sozlanmagan — TELEGRAM_BOT_TOKEN kerak" };
+  shopDone(shopId);
+  return { ok: true };
+}
+
+export async function unlinkRentTg(shopId: string): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  await unlinkShopTelegram(shopId, s.userId);
+  shopDone(shopId);
+  return { ok: true, note: "Telegram uzildi — eski QR endi ishlamaydi" };
+}
+
+/** Qo'lda eslatma — ijarachining ulangan Telegram chatiga (jurnalga yoziladi). */
+export async function sendRentReminderNow(shopId: string): Promise<ActionState> {
+  const s = await requireAction("arenda", "create");
+  const r = await sendRentReminder(shopId, { auto: false, userId: s.userId });
+  shopDone(shopId);
+  return r.ok ? { ok: true, note: "Eslatma yuborildi" } : { error: r.error };
+}
+
+const remindSchema = z.object({ day: z.coerce.number().int("butun son bo'lsin").min(0, "0–28 oralig'ida").max(28, "0–28 oralig'ida") });
+
+/** Avtomatik eslatma kuni (0 — o'chiq). */
+export async function saveRentRemindDay(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(remindSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { rentRemindDay: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, update: { rentRemindDay: r.data.day }, create: { id: "main", rentRemindDay: r.data.day } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ?? undefined, { rentRemindDay: r.data.day });
+  done();
+  return { ok: true, note: r.data.day ? `Har oyning ${r.data.day}-sanasida eslatma yuboriladi` : "Avtomatik eslatma o'chirildi" };
 }
