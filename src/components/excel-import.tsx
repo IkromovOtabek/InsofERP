@@ -112,7 +112,7 @@ function mergeRows(rows: { r: Row; i: number }[], keys: string[], { sum: sumKeys
  * Server action `rows` (JSON, maydon kalitlari bo'yicha) va `children` ichidagi qo'shimcha maydonlarni oladi.
  * Ko'p qator bir vaqtda yuboriladi — bitta hujjat / bitta import.
  */
-export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, allowExtra, onSuccess }: {
+export function ExcelImport({ fields, action, children, submitLabel = "Import qilish", templateName = "namuna", example, amountCols, merge, scan, matrix, allowExtra, onSuccess, pickSheet, onSheet }: {
   fields: ImportField[];
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
   children?: React.ReactNode;
@@ -128,6 +128,10 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   allowExtra?: boolean;
   /** Server action sahifani almashtirmay `ok` qaytarsa chaqiriladi (oyna ichidagi import — ro'yxatni yangilash uchun). */
   onSuccess?: () => void;
+  /** Ko'p varaqli faylda qaysi varaq birinchi ochilsin (sukut — birinchisi). Foydalanuvchi keyin o'zi almashtiradi. */
+  pickSheet?: (names: string[]) => number;
+  /** Varaq o'qilganda chaqiriladi — sahifa varaq nomi/sarlavhasidan qo'shimcha ma'lumot oladi (masalan oy). */
+  onSheet?: (name: string, aoa: unknown[][]) => void;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
   const [fileName, setFileName] = useState("");
@@ -152,6 +156,10 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const [vmCreating, setVmCreating] = useState<Record<string, boolean>>({});
   const formRef = useRef<HTMLFormElement>(null);
   const extraSeq = useRef(0);
+  // Ko'p varaqli fayl: varaq nomlari va tanlangani; kitobning o'zi — varaq almashtirilganda qayta o'qish uchun
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [sheetIdx, setSheetIdx] = useState(0);
+  const bookRef = useRef<{ read: (name: string) => unknown[][] } | null>(null);
   // QQS rejimi: formadagi yetkazuvchi va "Narxlar QQS bilan" belgisi o'zgarsa — oldindan ko'rish qayta hisoblanadi
   const vatCols = amountCols?.vat;
   const [vatForm, setVatForm] = useState<{ rate: number; inclusive: boolean }>({ rate: 12, inclusive: false });
@@ -217,7 +225,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   };
 
   const onFile = async (f: File | undefined) => {
-    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote(""); setSheet(null); setMx(null);
+    setParseErr(""); setRows([]); setHeaders([]); setMap({}); setScanNote(""); setSheet(null); setMx(null); setSheetNames([]); bookRef.current = null;
     setModal(false); setEditing(false); setEdits({}); setOnlyBad(false); setSkipBad(false); setVmChoice({});
     if (!f) return;
     setFileName(f.name);
@@ -227,17 +235,29 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
       // CSV/matn — UTF-8 satr sifatida (kirill sarlavhalar buzilmasin), Excel — baytlar
       const isText = /\.(csv|txt)$/i.test(f.name) || f.type.startsWith("text/");
       const wb = isText ? XLSX.read(await f.text(), { type: "string", raw: true }) : XLSX.read(await f.arrayBuffer(), { type: "array", raw: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
       // Excel varag'ining "ishlatilgan sohasi" ko'pincha jadval tugagach ham davom etadi (formatlangan
       // bo'sh qatorlar) — ularni kesmasak jadval yuz minglab bo'sh qator bo'lib ko'rinadi
-      const aoa = trimEmptyRows(XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", raw: true }));
-      if (!aoa.length) { setParseErr("Fayl bo'sh"); return; }
-      setSheet(aoa);
-      // Kesishma jadval bo'lsa o'zi matritsa rejimida ochiladi; aks holda oddiy ro'yxat
-      const g = matrix ? guessMatrix(aoa) : null;
-      if (g?.ok) applyMatrix(aoa, mxFromGuess(g));
-      else applyList(aoa);
+      bookRef.current = { read: (name) => trimEmptyRows(XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: "", raw: true })) };
+      const names = wb.SheetNames;
+      const pick = pickSheet ? pickSheet(names) : 0;
+      setSheetNames(names);
+      loadSheet(names, pick >= 0 && pick < names.length ? pick : 0);
     } catch (e) { setParseErr(`Faylni o'qib bo'lmadi: ${e instanceof Error ? e.message : String(e)}`); }
+  };
+
+  /** Tanlangan varaqni jadvalga yoyish (fayl ochilganda va varaq almashtirilganda). */
+  const loadSheet = (names: string[], i: number) => {
+    const book = bookRef.current;
+    if (!book) return;
+    setSheetIdx(i); setParseErr(""); setEdits({}); setVmChoice({}); setOnlyBad(false); setSkipBad(false); setModal(false); setEditing(false);
+    const aoa = book.read(names[i]);
+    if (!aoa.length) { setSheet(null); setRows([]); setHeaders([]); setMap({}); setParseErr(names.length > 1 ? `«${names[i]}» varag'i bo'sh` : "Fayl bo'sh"); return; }
+    setSheet(aoa);
+    onSheet?.(names[i], aoa);
+    // Kesishma jadval bo'lsa o'zi matritsa rejimida ochiladi; aks holda oddiy ro'yxat
+    const g = matrix ? guessMatrix(aoa) : null;
+    if (g?.ok) applyMatrix(aoa, mxFromGuess(g));
+    else applyList(aoa);
   };
 
   /** Oddiy ro'yxat: sarlavha qatori (tepadagi nom qatori o'tkazib yuboriladi), qolganlari ma'lumot; ustunlar maydonlarga taxminan moslanadi. */
@@ -300,7 +320,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
   const onScan = (r: ScanResult) => {
     const hdr = fields.map((f) => f.label);
     setFileName(`Skaner${r.doc.docNo ? ` · № ${r.doc.docNo}` : ""}`);
-    setParseErr("");
+    setParseErr(""); setSheetNames([]); bookRef.current = null;
     setHeaders(hdr);
     setRows(r.rows.map((row) => Object.fromEntries(fields.map((f) => [f.label, row[f.key] ?? ""]))));
     setMap(Object.fromEntries(fields.map((f) => [f.key, f.label])));
@@ -376,7 +396,7 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
         const v = str(r[f.key]);
         if (v) { add(v, false); continue; }
         // Faqat nomi bor, qolgan kataklari bo'sh qator — bo'lim sarlavhasi (server ham shunday ajratadi)
-        if (g && str(r[g.nameKey]) && others.every((k) => str(r[k]) === "")) add(str(r[g.nameKey]), true);
+        if (g && str(r[g.nameKey]) && others.every((k) => str(r[k]) === "") && !g.skip?.(str(r[g.nameKey]))) add(str(r[g.nameKey]), true);
       }
       out[f.key] = [...seen.values()];
     }
@@ -795,6 +815,14 @@ export function ExcelImport({ fields, action, children, submitLabel = "Import qi
             </label>
             {scan?.enabled && <DocScan endpoint={scan.endpoint} label={scan.label} onResult={onScan} />}
             <span className="text-sm text-slate-500">{fileName || ".xlsx, .xls yoki .csv"}</span>
+            {sheetNames.length > 1 && (
+              <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+                Varaq:
+                <Select value={String(sheetIdx)} onChange={(e) => loadSheet(sheetNames, Number(e.target.value))} className="h-8 w-auto py-0 text-sm">
+                  {sheetNames.map((n, i) => <option key={i} value={i}>{n}</option>)}
+                </Select>
+              </label>
+            )}
           </div>
           <button type="button" onClick={downloadTemplate} className="inline-flex items-center gap-1 text-xs text-slate-600 hover:underline"><Download size={13} /> Namuna faylni yuklab olish</button>
         </div>

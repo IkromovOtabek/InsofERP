@@ -31,7 +31,8 @@ export type ValueMapSpec = {
   newLabel?: string;
   /** Jadval tagidagi qisqa izoh. */
   note?: string;
-  groupRows?: { nameKey: string; toggle: string };
+  /** `skip` — sarlavha bo'lmaydigan nomlar (masalan «Общий», «Буш»): oldindan ko'rishda guruh bo'lib chiqmaydi. */
+  groupRows?: { nameKey: string; toggle: string; skip?: (name: string) => boolean };
 };
 export type ValueMaps = Record<string, Record<string, string>>;
 
@@ -72,7 +73,8 @@ export const FIELD_SYNONYMS = {
 
 /** Sarlavhalar orasidan maydonga mos ustunni topadi (kichik harf, qism mosligi). */
 export function guessColumn(headers: string[], synonyms: readonly string[], taken: Set<string>): string | "" {
-  const lc = headers.map((h) => h.toLowerCase());
+  // Ko'p qatorli sarlavha («Перечисления\nсуммаси») bitta bo'shliqqa keltiriladi
+  const lc = headers.map((h) => h.toLowerCase().replace(/\s+/g, " "));
   for (const syn of synonyms) {
     const i = lc.findIndex((h, idx) => h.includes(syn) && !taken.has(headers[idx]));
     if (i >= 0) return headers[i];

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -7,7 +7,7 @@ import { date, fmtNum, money } from "@/lib/format";
 import {
   RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, currentMonth, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth, shopDebts,
 } from "@/lib/rent";
-import { Badge, Callout, Card, CardHeader, EmptyState, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "../payments/confirm-button";
 import { ExcelButton } from "../logistika/excel-button";
@@ -20,7 +20,7 @@ const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
  * Arenda — do'konlar ijarasi (sekretar ish joyi). Tepada arenda kassasining umumiy summasi, uning ostida
  * «Kirim» / «Chiqim» tugmalari; pastda Excel'dagi oy varag'i (bozor bo'yicha guruhlangan), jurnal va do'konlar.
  */
-export default async function ArendaPage({ searchParams }: { searchParams: Promise<{ oy?: string; tab?: string; edit?: string }> }) {
+export default async function ArendaPage({ searchParams }: { searchParams: Promise<{ oy?: string; tab?: string; edit?: string; import?: string }> }) {
   const s = await requirePage("/arenda");
   const sp = await searchParams;
   const now = currentMonth();
@@ -45,10 +45,22 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
     return `/arenda?${q}`;
   };
   const t = sheet.total;
+  // Importdan qaytilganda: "do'konlar-yangi-to'lovlar-bekor-o'tkazilgan"
+  const im = /^(\d+)-(\d+)-(\d+)-(\d+)-(\d+)$/.exec(sp.import ?? "");
+  const imported = im ? { shops: +im[1], newShops: +im[2], payments: +im[3], replaced: +im[4], skipped: +im[5] } : null;
 
   return (
     <div>
-      <PageHeader title="Arenda" subtitle="Do'konlar ijarasi: oylik hisob, ijarachilardan tushgan pul va arenda kassasi kirim-chiqimi." />
+      <PageHeader title="Arenda" subtitle="Do'konlar ijarasi: oylik hisob, ijarachilardan tushgan pul va arenda kassasi kirim-chiqimi."
+        action={canShops ? <LinkButton href="/arenda/import" variant="secondary"><FileSpreadsheet size={16} /> Excel&apos;dan import</LinkButton> : undefined} />
+      {imported && (
+        <Callout tone="success" title={`${monthLabel(month)} varag'i import qilindi`}>
+          {imported.shops} ta do&apos;kon hisobi yozildi{imported.newShops ? `, ${imported.newShops} ta yangi do'kon qo'shildi` : ""}
+          {imported.payments ? `, ${imported.payments} ta to'lov kirim qilindi` : ""}
+          {imported.replaced ? `, ${imported.replaced} ta eski import kirimi summa o'zgargani uchun bekor qilindi` : ""}
+          {imported.skipped ? `. O'tkazib yuborilgan qatorlar («Общий», «Буш», izohlar): ${imported.skipped}` : ""}.
+        </Callout>
+      )}
 
       {/* Umumiy summa — Kirim/Chiqim tugmalari tepasida */}
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
