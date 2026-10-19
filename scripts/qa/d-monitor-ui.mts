@@ -16,7 +16,7 @@
  * bloklangan admin sahifalardan va ochiq SSE oqimidan chiqariladi (event: logout ≤ ~35 s); korxona bazasi yo'q
  * (P1003) — «baza mavjud emas», server logida prisma:error yo'q.
  */
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,28 +71,22 @@ function hiddenFields(html: string, marker: string): Record<string, string> {
   throw new Error(`forma topilmadi: ${marker}`);
 }
 
-/** Klient chaqiradigan server action id'si — build'dagi klient bo'laklaridan (createServerReference(..., "nom")). */
+/**
+ * IT panel server action id'si — build'dagi server-reference-manifest.json dan, modul yo'li bo'yicha.
+ * Klient bo'laklaridan nom bo'yicha qidirish beqaror edi: ERP'da ham shu nomli action bor (ish-haqi `cancelAction`),
+ * ikkalasi umumiy bo'laklarga tushadi va readdir tartibiga qarab ba'zan ERP id'si olinardi.
+ */
 const idCache = new Map<string, string>();
+let refManifest: Record<string, { filename?: string; exportedName?: string }> | null = null;
 function actionId(name: string): string {
   if (idCache.has(name)) return idCache.get(name)!;
-  const dir = path.join(APP, ".next", "static", "chunks");
-  const re = new RegExp(`"([0-9a-f]{40,})",\\w+\\.callServer,void 0,\\w+\\.findSourceMapURL,"${name}"`);
-  const walk = (d: string): string | null => {
-    for (const e of readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) { const r = walk(p); if (r) return r; continue; }
-      if (!e.name.endsWith(".js")) continue;
-      const m = re.exec(readFileSync(p, "utf8"));
-      if (m) return m[1];
-    }
-    return null;
-  };
-  // Avval IT panel bo'laklari: ERP'da ham bir xil nomli action bor (ish-haqi `cancelAction`) — o'sha topilib qolmasin
-  const panelDir = path.join(dir, "app", "superadmin");
-  const id = (existsSync(panelDir) ? walk(panelDir) : null) ?? walk(dir);
-  if (!id) throw new Error(`action id topilmadi: ${name}`);
-  idCache.set(name, id);
-  return id;
+  refManifest ??= JSON.parse(readFileSync(path.join(APP, ".next", "server", "server-reference-manifest.json"), "utf8")).node ?? {};
+  const ids = Object.entries(refManifest!)
+    .filter(([, v]) => v.exportedName === name && v.filename?.startsWith("app/superadmin/"))
+    .map(([id]) => id);
+  if (ids.length !== 1) throw new Error(`IT panel action id ${ids.length ? "bir nechta" : "topilmadi"}: ${name}`);
+  idCache.set(name, ids[0]);
+  return ids[0];
 }
 type ActRes = { ok?: boolean; id?: string; error?: string; http: number; raw: string };
 async function call(name: string, args: unknown[], jar: Jar | null, page = "/superadmin/monitoring"): Promise<ActRes> {
