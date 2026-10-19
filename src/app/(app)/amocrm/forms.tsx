@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { KeyRound, Link2, RefreshCw, RotateCcw, Unplug, X } from "lucide-react";
 import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
@@ -13,6 +13,8 @@ export function ConnectForm({ domain, redirectUri }: { domain: string; redirectU
   const [mode, setMode] = useState<"token" | "oauth">("token");
   const [tState, tAction, tPending] = useActionState(connectTokenAction, undefined);
   const [oState, oAction, oPending] = useActionState(connectOAuthAction, undefined);
+  // Kalitlar saqlandi — ruxsat oynasiga to'liq sahifa navigatsiyasi (state cookie brauzerga yozilsin)
+  useEffect(() => { if (oState?.ok) window.location.assign("/api/amocrm/oauth"); }, [oState]);
   return (
     <div className="space-y-4">
       <div className="inline-flex rounded-lg border border-slate-200 p-1 text-sm">
@@ -36,7 +38,8 @@ export function ConnectForm({ domain, redirectUri }: { domain: string; redirectU
           <Field label="Maxfiy kalit (client_secret) *"><Input name="clientSecret" type="password" required autoComplete="off" /></Field>
           <p className="text-xs text-slate-500">Integratsiyadagi «Redirect URI» aynan shu bo&apos;lsin: <span className="font-mono text-slate-700">{redirectUri}</span></p>
           <FormError error={oState?.error} />
-          <FormActions><Button disabled={oPending}><Link2 size={15} /> amoCRM orqali ruxsat berish</Button></FormActions>
+          <FormSuccess text={oState?.note} />
+          <FormActions><Button disabled={oPending || !!oState?.ok}><Link2 size={15} /> amoCRM orqali ruxsat berish</Button></FormActions>
         </form>
       )}
     </div>

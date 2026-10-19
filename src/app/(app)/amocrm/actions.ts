@@ -2,7 +2,6 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { requireAction } from "@/lib/auth";
 import { parseForm, zStr, type ActionState } from "@/lib/action";
 import { connectWithToken, disconnectAmo, resubscribeWebhook, saveOAuthClient, saveStages } from "@/lib/amocrm/connect";
@@ -29,7 +28,11 @@ export async function connectTokenAction(_prev: ActionState, fd: FormData): Prom
   } catch (e) { return fail(e); }
 }
 
-/** OAuth: kalitlar saqlanadi va amoCRM ruxsat oynasiga o'tiladi */
+/**
+ * OAuth: kalitlar saqlanadi, ruxsat oynasiga brauzer o'zi o'tadi (forma `ok` dan keyin to'liq navigatsiya).
+ * Server action ichidagi `redirect()` bu yerda yaramaydi: Next yo'naltirishni serverda bajaradi —
+ * state cookie brauzerga yetmaydi va amoCRM oynasi ochilmaydi.
+ */
 export async function connectOAuthAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("sales", "amocrm_settings");
   const r = parseForm(z.object({
@@ -40,8 +43,8 @@ export async function connectOAuthAction(_prev: ActionState, fd: FormData): Prom
   if ("error" in r) return { error: r.error };
   try {
     await saveOAuthClient(r.data.domain, r.data.clientId.trim(), r.data.clientSecret.trim(), actorOf(s));
+    return { ok: true, note: "amoCRM ruxsat oynasi ochilmoqda…" };
   } catch (e) { return fail(e); }
-  redirect("/api/amocrm/oauth");
 }
 
 const stage = z.string().optional().transform((v) => (v && /^\d+$/.test(v) ? Number(v) : null));
