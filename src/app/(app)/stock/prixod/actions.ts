@@ -11,6 +11,7 @@ import { audit } from "@/lib/audit";
 import { resolveMaterials } from "@/lib/import-materials";
 import { canDo } from "@/lib/permissions";
 import { createGoodsReceipt, receiptTokenOf, resolveRecipient, resolveSupplier } from "@/lib/receipts";
+import { cancelReceipt } from "@/lib/storno";
 import type { VatRate } from "@/lib/receipt-vat";
 
 /** Xato matnlari o'zbekcha — «Рус» rejimida lug'atdan o'giriladi. */
@@ -134,4 +135,32 @@ export async function createPrixod(_prev: ActionState, fd: FormData): Promise<Ac
   const today = isoDate();
   const qs = new URLSearchParams({ from: `${d.date.slice(0, 7)}-01`, to: d.date > today ? d.date : today, saved: res.docNo });
   redirect(`/stock/prixod?${qs.toString()}`);
+}
+
+/** Bir chaqiruvda ko'pi bilan shuncha kirim — so'rov uzoq osilib qolmasin, sahifa jarayonni ko'rsatib tursin. */
+const BULK_STORNO_MAX = 20;
+export type BulkStornoResult = { error?: string; done: number; failed: { docNo: string; error: string }[] };
+
+/**
+ * Kirim jurnali → «Ro'yxatdagi kirimlarni bekor qilish»: bir bo'lak kirimni storno qiladi (har biri `cancelReceipt`
+ * orqali — o'z tranzaksiyasi, to'lov/qoldiq tekshiruvi, avto chiqimi ham teskari yoziladi, AuditLog). Hujjatlar o'chirilmaydi.
+ * Kim: `stock` → `receipt_storno` (direktor yoki u ruxsat bergan xodim). Sabab majburiy.
+ */
+export async function stornoReceipts(ids: string[], reason: string): Promise<BulkStornoResult> {
+  const s = await requireAction("stock", "receipt_storno");
+  const why = String(reason ?? "").trim().slice(0, 300);
+  if (why.length < 3) return { error: "Bekor qilish sababini yozing", done: 0, failed: [] };
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(String))].filter((x) => /^[A-Za-z0-9_-]{1,64}$/.test(x)).slice(0, BULK_STORNO_MAX);
+  const res: BulkStornoResult = { done: 0, failed: [] };
+  for (const id of list) {
+    const r = await cancelReceipt(id, why, s.userId).catch(() => ({ error: "Bajarilmadi — qayta urinib ko'ring" }));
+    if ("error" in r) {
+      const rec = await db.goodsReceipt.findUnique({ where: { id }, select: { docNo: true } });
+      res.failed.push({ docNo: rec?.docNo ?? id, error: r.error });
+    } else res.done++;
+  }
+  if (res.done) {
+    for (const p of ["/receipts", "/stock", "/stock/prixod", "/stock/rasxod", "/brigades", "/cashflow", "/suppliers", "/"]) revalidatePath(p);
+  }
+  return res;
 }

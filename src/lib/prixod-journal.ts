@@ -4,8 +4,9 @@ import { normalizeUnit, toMaterialUnit, UNIT_FALLBACK } from "./unit";
 /**
  * Sklad → Kirim → «Excel jurnal»: ko'p sanali, ko'p yetkazuvchili kirim jurnali (bir necha oylik daftar).
  * Ustunlar Sklad → Kirim jurnali bilan bir xil: Sana, Tovar, TTN, O'lchov, Miqdor, Ta'minotchi (Kimdan), Kimga,
- * To'lov (P-r / n-q), Dostavka, Narx, Summa (QQSsiz), QQS, Jami, Manzil, Izoh, Mashina (kim olib keldi), Qayerdan yuklandi,
- * Darhol kimga berildi (Excel'dan avto chiqim yozilmaydi — izohga tushadi). «Snabjenets» ustuni o'qilmaydi (kiritgan xodim yoziladi).
+ * To'lov (P-r / n-q), Dostavka, Narx, Summa (QQSsiz), QQS, Jami, Manzil, Izoh, Mashina (kim olib keldi), Qayerdan yuklandi.
+ * «Snabjenets» ustuni o'qilmaydi (kiritgan xodim yoziladi). Eski fayllardagi «Darhol kimga berildi» ustuni kirimda e'tiborsiz
+ * qoladi: Excel'dan faqat kirim bo'ladi, chiqim yozilmaydi.
  *
  * Qatorlar «sana + yetkazuvchi + TTN + to'lov» bo'yicha kirim hujjatlariga guruhlanadi. O'qish brauzerda
  * (oldindan ko'rish uchun) va serverda bir xil — shu fayldagi funksiyalar ikkala tomonda ishlaydi.
@@ -24,7 +25,7 @@ export const UNKNOWN_SUPPLIER = "Noma'lum yetkazuvchi";
 /** Kirim va Chiqim Excel namunasi ustunlari — foydalanuvchi daftari bilan bir xil tartibda. */
 export const JOURNAL_HEADERS = [
   "Sana", "Tovar", "TTN №", "O'lchov", "Miqdor", "Ta'minotchi", "Kimga", "To'lov", "Dostavka", "Narx (QQSsiz)", "Summa (QQSsiz)",
-  "QQS 12%", "Jami (QQS bilan)", "Manzil", "Snabjenets", "Izoh", "Mashina (kim olib keldi)", "Qayerdan yuklandi", "Darhol kimga berildi",
+  "QQS 12%", "Jami (QQS bilan)", "Manzil", "Snabjenets", "Izoh", "Mashina (kim olib keldi)", "Qayerdan yuklandi",
 ] as const;
 
 /** Daftardagi qo'shimcha birlik yozuvlari (`lib/unit.ts` dagilardan tashqari). */
@@ -45,7 +46,8 @@ const HEADERS: [Col, RegExp][] = [
   ["unit", /o.?lchov|birlik|ед|изм|unit/],
   ["qty", /miqdor|кол|soni|qty/],
   ["supplier", /kimdan|ta.?minotchi|yetkazuvchi|от кого|постав/],
-  // «Darhol kimga berildi» ham «kimga» ni o'z ichiga oladi — avval shu tekshiriladi
+  // Eski fayllardagi «Darhol kimga berildi» ham «kimga» ni o'z ichiga oladi — avval shu tekshiriladi («Kimga» ga tushmasin).
+  // Kirim uni o'qimaydi; Chiqim importi (`lib/issue-journal.ts`) «Kimga» bo'sh bo'lsa shundan oladi.
   ["autoIssue", /darhol|avto.?chiqim|авто/],
   ["recipient", /kimga|кому/],
   ["carrier", /mashina|машина|kim olib keldi|transport/],
@@ -119,8 +121,8 @@ export type JournalRow = {
   carrier: string;
   /** «Qayerdan yuklandi» */
   loadedFrom: string;
-  /** «Darhol kimga berildi» — oluvchi nomi (kirim importida izohga; chiqim importida «Kimga» bo'sh bo'lsa shu olinadi) */
-  autoIssueTo: string;
+  /** Eski fayllardagi «Darhol kimga berildi» — faqat hujjat kaliti uchun (avval yuklangan fayl qayta yuklansa takror ochilmasin), boshqa joyda ishlatilmaydi */
+  legacyAuto: string;
   /** To'lanadigan summa: Miqdor × Narx + QQS + Dostavka (fayldagi «Jami» emas — u ham xato bo'lishi mumkin) */
   total: number;
 };
@@ -195,7 +197,7 @@ export function parseJournal(aoa: unknown[][]): { rows: JournalRow[]; errors: Jo
       delivery: dlv,
       supplier, waybillNo: waybill === "0" ? "" : waybill, payment: journalPayment(at(r, "payment")),
       recipient: str(at(r, "recipient")), address: str(at(r, "address")),
-      note: str(at(r, "note")), carrier: str(at(r, "carrier")), loadedFrom: str(at(r, "loadedFrom")), autoIssueTo: str(at(r, "autoIssue")),
+      note: str(at(r, "note")), carrier: str(at(r, "carrier")), loadedFrom: str(at(r, "loadedFrom")), legacyAuto: str(at(r, "autoIssue")),
       total: base + dlv + (vatRate ? Math.round(base * 12) / 100 : 0),
     });
   }
@@ -214,22 +216,21 @@ export type JournalDoc = {
   note: string;
   carrier: string;
   loadedFrom: string;
-  autoIssueTo: string;
   rows: JournalRow[];
 };
 
 /**
- * Kirim hujjatlariga guruhlash: sana + yetkazuvchi + TTN + to'lov turi (+ «Darhol kimga berildi», bo'lsa — izohi alohida
- * hujjat bo'yicha yoziladi). Sana bo'yicha tartiblangan. Kalit eski fayllar uchun o'zgarmagan (qayta yuklash takror ochmasin).
+ * Kirim hujjatlariga guruhlash: sana + yetkazuvchi + TTN + to'lov turi. Sana bo'yicha tartiblangan.
+ * Eski fayllarda «Darhol kimga berildi» to'ldirilgan qatorlar kaliti avvalgidek (qayta yuklash takror ochmasin).
  */
 export function groupJournal(rows: JournalRow[]): JournalDoc[] {
   const m = new Map<string, JournalDoc>();
   for (const r of rows) {
-    const auto = (r.autoIssueTo ?? "").trim();
+    const auto = (r.legacyAuto ?? "").trim();
     const key = [r.date, r.supplier.toLowerCase(), r.waybillNo, r.payment ?? ""].join("|") + (auto ? `|auto:${auto.toLowerCase()}` : "");
     const d = m.get(key) ?? {
       key, date: r.date, supplier: r.supplier, waybillNo: r.waybillNo, payment: r.payment, recipient: r.recipient, address: r.address,
-      note: r.note ?? "", carrier: r.carrier ?? "", loadedFrom: r.loadedFrom ?? "", autoIssueTo: auto, rows: [],
+      note: r.note ?? "", carrier: r.carrier ?? "", loadedFrom: r.loadedFrom ?? "", rows: [],
     };
     d.rows.push(r);
     m.set(key, d);

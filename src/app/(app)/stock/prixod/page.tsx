@@ -14,6 +14,7 @@ import { prixodJournal, prixodTotals, type PrixodPayment, type PrixodRow } from 
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
 import { Badge, Button, Callout, Empty, Input, LinkButton, PageHeader, Select, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard } from "@/components/ui";
 import { ExcelButton } from "../../logistika/excel-button";
+import { BulkStorno } from "./bulk-storno";
 
 /** Sahifada ko'rinadigan qatorlar chegarasi (jami va Excel — hamma qatorlardan). */
 const MAX_ROWS = 2000;
@@ -47,7 +48,7 @@ const noteText = (r: PrixodRow) => [r.note, r.purpose ? `Maqsad: ${r.purpose}` :
  * «Storno» qatori (jami «Qoldiqlar» dagi «Kirim» bilan bir xil). Ma'lumot `lib/receipts.ts#prixodJournal` dan, yangi kirim — /stock/prixod/new.
  * Ko'rish ruxsati — `lib/stock-journal-access.ts#canSeePrixod`.
  */
-export default async function PrixodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string; wh?: string; saved?: string }> }) {
+export default async function PrixodPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; q?: string; wh?: string; saved?: string; bekor?: string }> }) {
   const s = await requirePage("/stock");
   // Xarid narxlari, yetkazuvchilar va QQS — /stock ni ko'radigan hamma rolga emas (`lib/stock-journal-access.ts`)
   if (!canSeePrixod(s)) redirect("/stock");
@@ -57,17 +58,27 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   const saved = sp.saved && /^[A-Za-z0-9-]{1,40}$/.test(sp.saved) ? sp.saved : null;
   const warehouses = await db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } });
   const wh = warehouses.find((w) => w.id === sp.wh)?.id ?? null;
-  const [rows, savedRec] = await Promise.all([
+  const [all, savedRec] = await Promise.all([
     prixodJournal({ from: period.from, to: period.to, warehouseId: wh, q }),
     saved ? db.goodsReceipt.findUnique({ where: { docNo: saved }, select: { id: true, docNo: true } }) : Promise.resolve(null),
   ]);
+  // Davr ichida kiritilib, shu davrda bekor qilingan kirim (asl qator + minus qatori, jami 0) standart ko'rinmaydi —
+  // jamilar o'zgarmaydi; «bekor=1» bilan ko'rsatiladi
+  const showCancelled = sp.bekor === "1";
+  const voidIds = new Set(all.filter((r) => r.storno).map((r) => r.receiptId).filter((id) => all.some((r) => r.cancelled && r.receiptId === id)));
+  const rows = showCancelled ? all : all.filter((r) => !voidIds.has(r.receiptId));
   const tot = prixodTotals(rows);
   const shown = rows.slice(0, MAX_ROWS);
   const canCreate = canDo(s, "stock", "receipt");
   // Kirim hujjati sahifasi (/receipts) hamma Sklad rollariga ochiq emas — havola faqat ochiladigan bo'lsa
   const canOpen = pathAllowed("/receipts", s.role, s.perms);
   const canDistribute = canDo(s, "stock", "brigade");
-  const keep: Record<string, string> = { ...(q ? { q } : {}), ...(wh ? { wh } : {}) };
+  const keep: Record<string, string> = { ...(q ? { q } : {}), ...(wh ? { wh } : {}), ...(showCancelled ? { bekor: "1" } : {}) };
+  // «Ro'yxatdagi kirimlarni bekor qilish» — ko'rinib turgan faol kirimlar (yangilari oxirida bekor qilinsin deb — teskari tartibda)
+  const canStorno = canDo(s, "stock", "receipt_storno");
+  const activeIds = [...new Set(rows.filter((r) => !r.cancelled && !r.storno).map((r) => r.receiptId))].reverse();
+  const activeTotal = rows.filter((r) => !r.cancelled && !r.storno).reduce((a, r) => a + r.total, 0);
+  const toggleHref = `/stock/prixod?${new URLSearchParams({ from: period.fromStr, to: period.toStr, ...(q ? { q } : {}), ...(wh ? { wh } : {}), ...(showCancelled ? {} : { bekor: "1" }) }).toString()}`;
 
   // Ustunlar — foydalanuvchi Excel jurnali bilan bir xil (Izoh ichida «Maqsad» ham)
   const excel = [
@@ -75,9 +86,9 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
       "Sana": dateRu(r.date), "Hujjat": docLabel(r), "Tovar": r.material, "TTN №": r.waybillNo ?? "", "O'lchov": unitShort(r.unit), "Miqdor": r.qty,
       "Ta'minotchi": r.supplier, "Kimga": r.recipient, "To'lov": r.payment ? PAY_EXCEL[r.payment] : "Ko'rsatilmagan", "Dostavka": r.delivery, "Narx (QQSsiz)": r.price,
       "Summa (QQSsiz)": r.sum, "QQS stavkasi": `${r.vatRate}%`, "QQS 12%": r.vat, "Jami (QQS bilan)": r.total, "Manzil": r.address ?? "", "Snabjenets": r.buyer ?? "", "Izoh": noteText(r) ?? "",
-      "Mashina (kim olib keldi)": r.carrier ?? "", "Qayerdan yuklandi": r.loadedFrom ?? "", "Darhol kimga berildi (avto chiqim)": r.autoIssueTo ?? "",
+      "Mashina (kim olib keldi)": r.carrier ?? "", "Qayerdan yuklandi": r.loadedFrom ?? "",
     })),
-    ...(rows.length ? [{ "Sana": "Jami", "Hujjat": "", "Tovar": "", "TTN №": "", "O'lchov": "", "Miqdor": null, "Ta'minotchi": "", "Kimga": "", "To'lov": "", "Dostavka": tot.delivery, "Narx (QQSsiz)": null, "Summa (QQSsiz)": tot.sum, "QQS stavkasi": "", "QQS 12%": tot.vat, "Jami (QQS bilan)": tot.total, "Manzil": "", "Snabjenets": "", "Izoh": "", "Mashina (kim olib keldi)": "", "Qayerdan yuklandi": "", "Darhol kimga berildi (avto chiqim)": "" }] : []),
+    ...(rows.length ? [{ "Sana": "Jami", "Hujjat": "", "Tovar": "", "TTN №": "", "O'lchov": "", "Miqdor": null, "Ta'minotchi": "", "Kimga": "", "To'lov": "", "Dostavka": tot.delivery, "Narx (QQSsiz)": null, "Summa (QQSsiz)": tot.sum, "QQS stavkasi": "", "QQS 12%": tot.vat, "Jami (QQS bilan)": tot.total, "Manzil": "", "Snabjenets": "", "Izoh": "", "Mashina (kim olib keldi)": "", "Qayerdan yuklandi": "" }] : []),
   ];
 
   return (
@@ -128,9 +139,18 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
         <StatCard label="Jami summa" value={soum(tot.total)} icon={Sigma} tone="success" hint="QQS va yetkazib berish bilan" />
       </div>
 
-      {rows.some((r) => r.cancelled || r.storno) && (
+      {/* Ro'yxat bo'shab qolsa ham joyida turadi — natija xabari yo'qolmasin (kirim bo'lmasa o'zi hech narsa chizmaydi) */}
+      {canStorno && (activeIds.length > 0 || voidIds.size > 0) && (
+        <div className="mb-3">
+          <BulkStorno ids={activeIds} summary={`${period.label}${wh ? ` · ${warehouses.find((w) => w.id === wh)?.name ?? ""}` : ""}${q ? ` · qidiruv «${q}»` : ""}: ${fmtNum(activeIds.length)} ta hujjat (barcha qatorlari bilan), jami ${soum(activeTotal)}.`} />
+        </div>
+      )}
+
+      {(rows.some((r) => r.cancelled || r.storno) || voidIds.size > 0) && (
         <p className="mb-3 text-xs text-slate-500">
-          Bekor qilingan kirim o'z sanasida ustidan chizilgan holda qoladi, bekor qilingan sanada esa minus bilan «Bekor qilish» qatori chiqadi. Jamilar bekor qilish qatorlari bilan hisoblanadi, «Qoldiqlar» dagi «Kirim» kabi.
+          {rows.some((r) => r.cancelled || r.storno) && "Bekor qilingan kirim o'z sanasida ustidan chizilgan holda qoladi, bekor qilingan sanada esa minus bilan «Bekor qilish» qatori chiqadi. Jamilar bekor qilish qatorlari bilan hisoblanadi, «Qoldiqlar» dagi «Kirim» kabi. "}
+          {voidIds.size > 0 && !showCancelled && `Shu davrda kiritilib bekor qilingan ${fmtNum(voidIds.size)} ta kirim yashirilgan (jamiga ta'siri yo'q). `}
+          {voidIds.size > 0 && <Link href={toggleHref} className="font-medium text-slate-700 underline">{showCancelled ? "Bekor qilinganlarni yashirish" : "Ko'rsatish"}</Link>}
         </p>
       )}
 
@@ -159,7 +179,6 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
             <SheetTh>Izoh</SheetTh>
             <SheetTh>Mashina (kim olib keldi)</SheetTh>
             <SheetTh>Qayerdan yuklandi</SheetTh>
-            <SheetTh>Darhol kimga berildi (avto chiqim)</SheetTh>
           </tr>
         </SheetHead>
         <tbody>
@@ -175,7 +194,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
               <SheetTd right>{money(tot.sum)}</SheetTd>
               <SheetTd right>{money(tot.vat)}</SheetTd>
               <SheetTd right>{money(tot.total)}</SheetTd>
-              <SheetTd colSpan={6} />
+              <SheetTd colSpan={5} />
             </tr>
           </SheetFoot>
         )}
@@ -213,7 +232,6 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
       <SheetTd tone={tone}><Clip text={noteText(r)} w="max-w-[240px]" /></SheetTd>
       <SheetTd tone={tone}><Clip text={r.carrier} w="max-w-[160px]" /></SheetTd>
       <SheetTd tone={tone}><Clip text={r.loadedFrom} w="max-w-[160px]" /></SheetTd>
-      <SheetTd tone={tone} className="whitespace-nowrap">{r.autoIssueTo ?? <span className="text-slate-400">—</span>}</SheetTd>
     </SheetTr>
   );
 }

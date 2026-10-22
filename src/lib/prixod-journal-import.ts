@@ -24,10 +24,10 @@ const MAX_DOCS = 40;
  * Sklad → Kirim → «Excel jurnal»: brauzer o'qib guruhlagan hujjatlarning bir bo'lagini kirim qiladi
  * (ruxsat chaqiruvchida — `stock/prixod/jurnal/actions.ts`).
  * Har hujjat — oddiy kirim (`createGoodsReceipt`): sklad qoldig'i oshadi, yetkazuvchiga to'lanmagan kirim bo'lib tushadi.
- * Excel'dan kirim faqat kirim bo'lib qoladi — «Darhol kimga berildi» ustuni avto chiqim yozmaydi, izohga tushadi
- * (chiqim alohida: Sklad → Chiqim → Excel'dan yuklash).
+ * Excel'dan kirim faqat kirim bo'lib qoladi, chiqim yozilmaydi (chiqim alohida: Sklad → Chiqim → Excel'dan yuklash).
  * Yo'q yetkazuvchi va xomashyolar yaratiladi. Bir martalik kalit hujjat mazmunidan olinadi —
  * xuddi shu fayl qayta yuklansa (yoki ulanish uzilib qayta yuborilsa) ikkinchi kirim ochilmaydi.
+ * Bekor qilingan (storno) kirim kalitni band qilmaydi: uning kaliti `~<id>` qo'shimchasi bilan bo'shatiladi va hujjat qayta yuklanadi.
  *
  * `paid` — eski daftar, puli allaqachon to'langan: kirimlar «To'lanmagan kirimlar» ga va yetkazuvchi qarziga tushmaydi
  * (kalit `PAID_IMPORT_TOKEN` bilan), kassaga chiqim yozilmaydi.
@@ -91,10 +91,14 @@ export async function importJournalDocs(
       const hash = createHash("sha256").update(JSON.stringify([wh.id, d.key, d.rows.map((r) => [r.material, r.unit, r.qty, r.price, r.vatRate, r.delivery])])).digest("hex").slice(0, 40);
       const token = (input.paid ? PAID_IMPORT_TOKEN : "jrn-") + hash;
       // Shu hujjat boshqa rejimda (to'langan / to'lanmagan) yuklangan bo'lsa ham qayta ochilmasin
-      if (await db.goodsReceipt.findFirst({ where: { clientToken: { in: [`jrn-${hash}`, `${PAID_IMPORT_TOKEN}${hash}`] } }, select: { id: true } })) { res.existed++; continue; }
+      const prev = await db.goodsReceipt.findMany({ where: { clientToken: { in: [`jrn-${hash}`, `${PAID_IMPORT_TOKEN}${hash}`] } }, select: { id: true, clientToken: true, cancelledAt: true } });
+      if (prev.some((p) => !p.cancelledAt)) { res.existed++; continue; }
+      // Bekor qilingani kalitni bo'shatadi (hujjat o'zi o'zgarmaydi) — tozalangan fayl qayta yuklanadi
+      for (const p of prev) {
+        await db.goodsReceipt.updateMany({ where: { id: p.id, cancelledAt: { not: null }, clientToken: p.clientToken }, data: { clientToken: `${p.clientToken}~${p.id}` } });
+      }
       const src = input.paid ? "Excel jurnaldan (to'langan)" : "Excel jurnaldan";
-      const given = String(d.autoIssueTo ?? "").trim();
-      const note = [String(d.note ?? "").trim(), given && `Kimga berildi: ${given}`].filter(Boolean).join(" · ");
+      const note = String(d.note ?? "").trim();
       const out = await createGoodsReceipt({
         supplierId: supId.get(d.supplier.trim().toLowerCase())!, warehouseId: wh.id, date: d.date,
         waybillNo: d.waybillNo || null, payment: d.payment === "BANK" || d.payment === "CASH" ? d.payment : null,

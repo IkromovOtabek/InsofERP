@@ -438,6 +438,8 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  *  · BRIGADE_RETURN — brigadadan qaytdi: manfiy qator («— qaytarish»);
  *  · Chiqim stornosi (`refType "IssueStorno"`, ISSUE / BRIGADE_ISSUE teskarisi) — manfiy qator «Bekor qilish: <Kimga>», To'lov turi/QQS
  *    asl berish sanasidagi kirimdan (asl qatorni aynan yo'qqa chiqaradi); asl qatorlar `cancelled` («bekor qilingan»);
+ *  · Kirim bilan yozilgan avto chiqim (`refType "GoodsReceipt"`): kirim bekor qilingan bo'lsa asl qator `cancelled`, teskarisi —
+ *    manfiy «Bekor qilish: <Kimga>»; ikkalasi ham davr ichida bo'lsa (jami 0) — hech biri chiqmaydi;
  *  · PRODUCTION_CONSUME — zames: KUN + XOMASHYO + SKLAD bo'yicha bitta qator («Ishlab chiqarish (zames)», ko'k);
  *    storno teskari qatorlari ishorasi bilan qo'shiladi (ayiriladi), to'liq storno bo'lgan kun qatori chiqmaydi;
  *  · WRITE_OFF — «Hisobdan chiqarish: <sabab>»; ADJUSTMENT (qty < 0, Inventory) — «Inventarizatsiya (kamomad)».
@@ -464,7 +466,8 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
   const noCost = uniq(moves.filter((m) => m.unitCost == null).map((m) => m.materialId));
   const issueRefs = uniq(moves.filter((m) => m.refType === "Issue").map((m) => m.refId));
   const stornoRefs = uniq(moves.filter((m) => m.refType === ISSUE_STORNO).map((m) => m.refId));
-  const [materials, warehouses, recipients, employees, brigades, prices, terms, vatPayer, cancelledRefs, originals] = await Promise.all([
+  const autoMoves = moves.filter((m) => m.refType === "GoodsReceipt" && (m.type === "ISSUE" || m.type === "BRIGADE_ISSUE"));
+  const [materials, warehouses, recipients, employees, brigades, prices, terms, vatPayer, cancelledRefs, originals, cancelledReceipts] = await Promise.all([
     db.material.findMany({ where: { id: { in: matIds } }, select: { id: true, name: true, unit: true } }),
     db.warehouse.findMany({ where: { id: { in: uniq(moves.map((m) => m.warehouseId)) } }, select: { id: true, name: true } }),
     db.stockRecipient.findMany({ where: { id: { in: uniq(moves.map((m) => m.recipientId)) } }, select: { id: true, name: true } }),
@@ -481,6 +484,10 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     stornoRefs.length
       ? db.stockMove.findMany({ where: { refType: "Issue", refId: { in: stornoRefs } }, select: { refId: true, materialId: true, date: true } })
       : Promise.resolve([] as { refId: string | null; materialId: string | null; date: Date }[]),
+    // Avto chiqimi bor kirimlardan bekor qilinganlari
+    autoMoves.length
+      ? db.goodsReceipt.findMany({ where: { id: { in: uniq(autoMoves.map((m) => m.refId)) }, cancelledAt: { not: null } }, select: { id: true } })
+      : Promise.resolve([] as { id: string }[]),
   ]);
   const mat = new Map(materials.map((m) => [m.id, m]));
   const whName = new Map(warehouses.map((w) => [w.id, w.name]));
@@ -489,6 +496,10 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
   const brName = new Map(brigades.map((b) => [b.id, b.name]));
   const cancelled = new Set(cancelledRefs.map((x) => x.refId));
   const origDate = new Map(originals.map((o) => [`${o.refId}|${o.materialId}`, o.date]));
+  // Bekor qilingan kirimning avto chiqimi: asl (qty < 0) va teskari (qty > 0) harakatlari davrda bo'lsa — juftlik yashiriladi
+  const cancelledRec = new Set(cancelledReceipts.map((r) => r.id));
+  const autoOut = new Set(autoMoves.filter((m) => Number(m.qty) < 0).map((m) => m.refId));
+  const voidRec = new Set(autoMoves.filter((m) => Number(m.qty) > 0 && m.refId && cancelledRec.has(m.refId) && autoOut.has(m.refId)).map((m) => m.refId));
 
   // Qator + narx hisobi uchun yordamchi: `known` — narxi yozilgan qism summasi, `unknownQty` — narxsiz miqdor,
   // `termsDate` — Деньги / НДС qaysi sanadagi kirimdan (storno — asl berish sanasi)
@@ -526,12 +537,17 @@ export async function rasxodJournal(p: { from: Date; to: Date; warehouseId?: str
     const doc = m.refType === "Issue" && m.refId ? { ref: m.refId, cancelled: cancelled.has(m.refId) } : {};
     let row: Draft["row"] | null = null;
     let termsDate: Date | undefined;
-    if (m.refType === ISSUE_STORNO && (m.type === "ISSUE" || m.type === "BRIGADE_ISSUE")) {
+    const autoOfCancelled = m.refType === "GoodsReceipt" && m.refId != null && cancelledRec.has(m.refId) && (m.type === "ISSUE" || m.type === "BRIGADE_ISSUE");
+    if (autoOfCancelled && voidRec.has(m.refId)) continue;
+    if (autoOfCancelled && out < 0) {
+      const isRec = m.type === "ISSUE";
+      row = { ...base, id: m.id, date: m.date, to: `Bekor qilish: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note };
+    } else if (m.refType === ISSUE_STORNO && (m.type === "ISSUE" || m.type === "BRIGADE_ISSUE")) {
       const isRec = m.type === "ISSUE";
       row = { ...base, id: m.id, date: m.date, to: `Bekor qilish: ${isRec ? recipient : brigade}`, kind: "storno", toKey: isRec ? recKey : brKey, note: m.note, ref: m.refId };
       termsDate = origDate.get(`${m.refId}|${materialId}`);
-    } else if (m.type === "ISSUE") row = { ...base, id: m.id, date: m.date, to: recipient, kind: "issue", toKey: recKey, note: m.note, auto: m.refType === "GoodsReceipt", ...doc };
-    else if (m.type === "BRIGADE_ISSUE") row = { ...base, id: m.id, date: m.date, to: brigade, kind: "brigade", toKey: brKey, auto: m.refType === "BrigadeTask" || m.refType === "GoodsReceipt", ...doc };
+    } else if (m.type === "ISSUE") row = { ...base, id: m.id, date: m.date, to: recipient, kind: "issue", toKey: recKey, note: m.note, auto: m.refType === "GoodsReceipt", ...doc, ...(autoOfCancelled ? { cancelled: true } : {}) };
+    else if (m.type === "BRIGADE_ISSUE") row = { ...base, id: m.id, date: m.date, to: brigade, kind: "brigade", toKey: brKey, auto: m.refType === "BrigadeTask" || m.refType === "GoodsReceipt", ...doc, ...(autoOfCancelled ? { cancelled: true } : {}) };
     else if (m.type === "BRIGADE_RETURN") row = { ...base, id: m.id, date: m.date, to: `${brigade} — qaytarish`, kind: "return", toKey: brKey };
     else if (m.type === "WRITE_OFF") row = { ...base, id: m.id, date: m.date, to: `Hisobdan chiqarish: ${writeOffReason(m.note)}`, kind: "writeoff", toKey: "writeoff" };
     else if (m.type === "ADJUSTMENT") row = { ...base, id: m.id, date: m.date, to: "Inventarizatsiya (kamomad)", kind: "inventory", toKey: "inventory" };
