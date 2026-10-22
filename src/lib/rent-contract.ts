@@ -6,7 +6,7 @@ import { audit } from "./audit";
 import { fmtNum } from "./format";
 import { notifyRoles } from "./notify";
 import { UPLOADS_DIR, readUpload, type SavedFile } from "./uploads";
-import { currentMonth, monthKey, monthLabel, shiftMonth, today } from "./rent";
+import { RENT_PAID, currentMonth, monthKey, monthLabel, shiftMonth, today } from "./rent";
 
 /**
  * Arenda — shartnoma atrofidagi ishlar (`lib/rent.ts` dagi hisobga qo'shimcha):
@@ -223,13 +223,13 @@ export async function rentCollection(count = 6): Promise<RentMonthStat[]> {
   const now = currentMonth();
   const from = shiftMonth(now, -(count - 1));
   const [charges, paid] = await Promise.all([
-    db.rentCharge.groupBy({ by: ["month"], where: { month: { gte: from, lte: now } }, _sum: { bankDue: true, cashDue: true, elecDue: true } }),
-    db.rentTx.groupBy({ by: ["month"], where: { type: "INCOME", cancelledAt: null, month: { gte: from, lte: now } }, _sum: { amount: true } }),
+    db.rentCharge.groupBy({ by: ["month"], where: { month: { gte: from, lte: now } }, _sum: { bankDue: true, cashDue: true } }),
+    db.rentTx.groupBy({ by: ["month"], where: { ...RENT_PAID, month: { gte: from, lte: now } }, _sum: { amount: true } }),
   ]);
   return Array.from({ length: count }, (_, i) => {
     const m = shiftMonth(from, i), key = monthKey(m);
     const c = charges.find((x) => monthKey(x.month) === key);
-    const due = r2(n(c?._sum.bankDue) + n(c?._sum.cashDue) + n(c?._sum.elecDue));
+    const due = r2(n(c?._sum.bankDue) + n(c?._sum.cashDue));
     const p = r2(n(paid.find((x) => x.month && monthKey(x.month) === key)?._sum.amount));
     return { key, label: monthLabel(m), due, paid: p, rate: due > 0 ? Math.round((p / due) * 100) : null };
   });

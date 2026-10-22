@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { fmtNum, date } from "./format";
 import { qrKey, qrKeyValid } from "./qr-key";
-import { RENT_METHOD_LABEL, monthLabel, rentFor } from "./rent";
+import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, monthLabel, rentFor } from "./rent";
 import { shopLedger } from "./rent-tenant";
 import { botEnabled, sendMessage } from "./telegram/api";
 
@@ -49,7 +49,9 @@ export async function rentReceipt(id: string) {
   const payer = { name: tx.lease?.tenantName ?? tx.shop!.tenantName ?? tx.shop!.name, inn: tx.lease?.inn ?? tx.shop!.inn };
   const months = group.length > 1 ? group.map((g) => (g.month ? monthLabel(g.month) : "")).filter(Boolean) : null;
   const forLabel = months ? { label: `Qaysi oylar uchun (${months.length} oy)`, value: months.join(", ") } : rentFor(tx);
-  return { tx, shop: tx.shop!, no, payer, forLabel, count: group.length, amount: group.reduce((a, g) => a + Number(g.amount), 0), debt: ledger.debt, ledger };
+  // Svet to'lovi — kvitansiya va xabarda svet qarzi; ijara to'lovi — ijara qarzi
+  const elec = tx.category === RENT_ELEC_CATEGORY;
+  return { tx, shop: tx.shop!, no, payer, forLabel, elec, purpose: elec ? "svet to'lovi" : "ijara to'lovi", count: group.length, amount: group.reduce((a, g) => a + Number(g.amount), 0), debt: elec ? ledger.elecDebt : ledger.debt, ledger };
 }
 
 /**
@@ -62,14 +64,14 @@ export async function notifyRentPayment(txId: string): Promise<void> {
   if (!r || !r.shop.tgChatId || r.tx.cancelledAt) return;
   const origin = appUrl();
   await sendMessage(r.shop.tgChatId, [
-    "To'lov qabul qilindi ✅",
+    r.elec ? "Svet to'lovi qabul qilindi ✅" : "To'lov qabul qilindi ✅",
     "",
     `Do'kon: ${r.shop.name} (${r.shop.location})`,
     `Summa: ${fmtNum(r.amount)} so'm (${RENT_METHOD_LABEL[r.tx.method].toLowerCase()})`,
     ...(r.forLabel ? [`${r.forLabel.label}: ${r.forLabel.value}`] : []),
     `Sana: ${date(r.tx.date)} · kvitansiya ${r.no}`,
     "",
-    r.debt > 1 ? `Qolgan qarz: ${fmtNum(r.debt)} so'm` : r.debt < -1 ? `Avans (ortiqcha to'lov): ${fmtNum(-r.debt)} so'm` : "Qarzingiz yo'q. Rahmat!",
+    r.debt > 1 ? `Qolgan ${r.elec ? "svet " : ""}qarz: ${fmtNum(r.debt)} so'm` : r.debt < -1 ? `Avans (ortiqcha to'lov): ${fmtNum(-r.debt)} so'm` : "Qarzingiz yo'q. Rahmat!",
     ...(origin ? ["", `Kvitansiya: ${origin}${rentReceiptPath(r.tx.id)}`] : []),
   ].join("\n"), { markdown: false });
 }

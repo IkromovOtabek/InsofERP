@@ -124,17 +124,21 @@ export function FileUploadForm({ shopId, kinds, accept, maxMb }: { shopId: strin
   );
 }
 
-/** 1 kVt·soat svet narxi — hisoblagich ko'rsatkichidan summa shu narxda hisoblanadi. */
-export function KwhPriceForm({ price }: { price: number }) {
+/** Svet tarifi: 1 kVt·soat narxi va ustama (%) — summasi = farq × narx + ustama. */
+export function KwhPriceForm({ price, markup }: { price: number; markup: number }) {
   const [state, action, pending] = useActionState(saveRentKwhPrice, undefined);
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <label className="text-sm text-slate-600">
-        <span className="mb-1 block text-xs font-medium text-slate-500">Svet tarifi — 1 kVt·soat</span>
+        <span className="mb-1 block text-xs font-medium text-slate-500">1 kVt·soat narxi</span>
         <MoneyInput name="price" defaultValue={num(price)} decimals={2} className="h-9 w-40" />
       </label>
+      <label className="text-sm text-slate-600">
+        <span className="mb-1 block text-xs font-medium text-slate-500">Ustama, %</span>
+        <Input name="markup" type="number" min={0} max={100} step="0.01" defaultValue={markup} className="h-9 w-24" />
+      </label>
       <Button size="sm" variant="secondary" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
-      <span className="basis-full text-xs text-slate-500">Jadvalda qatorni tahrirlab oy boshi va oxiri ko&apos;rsatkichini kiritsangiz, svet summasi (farq × tarif) o&apos;zi hisoblanadi. 0 — summa qo&apos;lda kiritiladi.</span>
+      <span className="basis-full text-xs text-slate-500">Summasi = (hozirgi − avvalgi ko&apos;rsatkich) × narx + ustama %. Ustama hamma ijarachiga bir xil. Tarif o&apos;zgarsa — keyin kiritilgan ko&apos;rsatkichlarga qo&apos;llanadi.</span>
       <div className="basis-full"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}</div>
     </form>
   );

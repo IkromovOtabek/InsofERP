@@ -6,7 +6,7 @@ import { MAX_AMOUNT } from "@/lib/action";
 import { dateRu, fmtNum, money } from "@/lib/format";
 import {
   RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
-  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, chargeDue, leaseDebts, saveRentChargeData, RENT_MAX_MONTHS, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentPerM2, rentShopStates, toggleRentShopActive, type RentPayStatus,
+  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, chargeDue, leaseDebts, saveRentChargeData, RENT_MAX_MONTHS, RENT_ELEC_CATEGORY, RENT_PAID, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentPerM2, rentShopStates, toggleRentShopActive, type RentPayStatus,
 } from "@/lib/rent";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
@@ -178,7 +178,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
   const lid = lease?.id ?? "";
   const [charges, paid, debts] = await Promise.all([
     db.rentCharge.findMany({ where: { leaseId: lid }, orderBy: { month: "desc" }, take: 6 }),
-    db.rentTx.groupBy({ by: ["month"], where: { leaseId: lid, type: "INCOME", cancelledAt: null, month: { not: null } }, _sum: { amount: true } }),
+    db.rentTx.groupBy({ by: ["month"], where: { ...RENT_PAID, leaseId: lid, month: { not: null } }, _sum: { amount: true } }),
     leaseDebts(lid ? [lid] : []),
   ]);
   const paidBy = new Map(paid.map((p) => [monthKey(p.month!), n(p._sum.amount)]));
@@ -281,6 +281,7 @@ export async function arendaKirimForm(): Promise<CreateForm> {
         name: "shopId", label: "Do'kon", type: "select", required: true,
         options: shops.map((s) => { const d = debts.get(s.id) ?? 0; return { value: s.id, label: `${s.name} · ${s.location}${s.period === "DAILY" ? " (kunlik)" : ""}`, hint: d > 0.005 ? `qarz ${money(d)}` : d < -0.005 ? `avans ${money(-d)}` : "qarz yo'q" }; }),
       },
+      { name: "kind", label: "To'lov turi", type: "select", required: true, value: "rent", options: [{ value: "rent", label: "Ijara to'lovi" }, { value: "elec", label: "Svet to'lovi" }], hint: "Svet — alohida hisob (oy bo'yicha)" },
       { name: "month", label: "Qaysi oy uchun", type: "select", required: true, value: monthKey(now), options: monthOptions(now), hint: "Kunlik ijarada oy tanlangan kundan olinadi" },
       // `showIf` do'kon turiga qaray olmaydi — maydon doim ko'rinadi, server faqat kunlik do'konda hisobga oladi
       { name: "day", label: "Qaysi kun uchun (kunlik ijara)", type: "select", value: ymd(new Date()), options: recentDays(), hint: "Faqat «(kunlik)» do'konlarda" },
@@ -349,6 +350,8 @@ const TxBody = z.object({
   note: zText,
   clientToken: zToken,
   months: z.coerce.number().int().min(1).max(RENT_MAX_MONTHS).optional().catch(undefined),
+  // Eski ilova yubormasa — ijara to'lovi
+  kind: z.enum(["rent", "elec"]).optional().catch(undefined),
 });
 
 const ShopBody = z.object({
@@ -386,14 +389,15 @@ export async function arendaCreate(user: MobileUser, key: string, payload: unkno
     const month = d.month ? parseMonth(d.month) : null;
     if (type === "INCOME" && !d.shopId) throw new Error("Do'konni tanlang");
     if (type === "INCOME" && !month) throw new Error("Qaysi oy uchun to'lov — oyni tanlang");
-    const category = type === "INCOME" ? RENT_INCOME_CATEGORY : (d.category ?? "");
+    const elec = type === "INCOME" && d.kind === "elec";
+    const category = type === "INCOME" ? (elec ? RENT_ELEC_CATEGORY : RENT_INCOME_CATEGORY) : (d.category ?? "");
     if (type === "EXPENSE" && !(RENT_EXPENSE_CATEGORIES as readonly string[]).includes(category)) throw new Error("Chiqim turini tanlang");
     if (type === "EXPENSE" && category === "Boshqa" && !d.note) throw new Error("«Boshqa» chiqim uchun izoh yozing");
     const r = await createRentTx({
       type, method: d.method, date: new Date(`${d.date}T00:00:00Z`), month, shopId: type === "INCOME" ? d.shopId! : null,
       amount: d.amount, category, note: d.note, clientToken: d.clientToken ?? null,
-      day: type === "INCOME" && d.day ? new Date(`${d.day}T00:00:00Z`) : null,
-      months: type === "INCOME" ? d.months : undefined,
+      day: type === "INCOME" && d.day && !elec ? new Date(`${d.day}T00:00:00Z`) : null,
+      months: type === "INCOME" && !elec ? d.months : undefined,
     }, user.id);
     if (r.error) throw new Error(r.error);
     // Jurnal ro'yxati ochiladi (yangi yozuv birinchi qatorda); bitta yozuv id'si `createRentTx` dan qaytmaydi

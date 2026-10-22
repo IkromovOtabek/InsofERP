@@ -13,7 +13,7 @@ import { notifyAfter } from "./notify";
  *                 almashsa eskisining qarzi o'z shartnomasida qoladi. Do'konda bir vaqtda bitta amaldagi (ACTIVE);
  *                 ijara oylik yoki kunlik (`period`): kunlikda oy hisobi = kunlik summa × kunlar, kirim — «qaysi kun uchun»;
  *  · RentCharge — oylik hisob (oy varag'ining qatori): perechisleniye + naqd = jami to'lashi kerak;
- *                 svet — do'konda «svetni ijarachi to'laydi» bo'lsa qarzga qo'shiladi (`elecDue`), aks holda ma'lumot uchun;
+ *                 svet — do'kon svet hisobida bo'lsa alohida qarz (`elecDue`, «Svet» varag'i, `lib/rent-elec.ts`), aks holda ma'lumot uchun;
  *                 biz to'laydigan soliq — ma'lumot uchun, qoldiqqa ta'sir qilmaydi (Excel'dagidek);
  *  · RentTx     — arenda kassasi jurnali: kirim (ijarachidan, qaysi oy uchun) va chiqim. O'chirilmaydi, faqat storno.
  *
@@ -26,6 +26,12 @@ type Tx = Prisma.TransactionClient;
 export const RENT_METHOD_LABEL: Record<RentMethod, string> = { CASH: "Naqd", BANK: "Perechisleniye" };
 export const RENT_PERIOD_LABEL: Record<RentPeriod, string> = { MONTHLY: "Oylik", DAILY: "Kunlik" };
 export const RENT_INCOME_CATEGORY = "Arenda to'lovi";
+/** Ijarachidan svet uchun tushgan pul — svet hisobini yopadi, ijara qarziga ta'sir qilmaydi */
+export const RENT_ELEC_CATEGORY = "Svet to'lovi";
+/** Ijara qarzini yopadigan kirimlar (svet to'lovisiz) */
+export const RENT_PAID = { type: "INCOME", cancelledAt: null, category: { not: RENT_ELEC_CATEGORY } } satisfies Prisma.RentTxWhereInput;
+/** Svet qarzini yopadigan kirimlar */
+export const ELEC_PAID = { type: "INCOME", cancelledAt: null, category: RENT_ELEC_CATEGORY } satisfies Prisma.RentTxWhereInput;
 export const RENT_EXPENSE_CATEGORIES = ["Kassaga topshirildi", "Svet", "Soliq", "Ta'mirlash", "Qaytarildi (ijarachiga)", "Boshqa"] as const;
 
 const MONTHS = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"];
@@ -66,9 +72,8 @@ export function today(): Date {
 const n = (v: Prisma.Decimal | number | null | undefined) => Number(v ?? 0);
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-/** Oy hisobi bo'yicha jami to'lashi kerak: perechisleniye + naqd + ijarachidan undiriladigan svet. */
-export const chargeDue = (c: { bankDue: Prisma.Decimal | number; cashDue: Prisma.Decimal | number; elecDue?: Prisma.Decimal | number | null }) =>
-  r2(n(c.bankDue) + n(c.cashDue) + n(c.elecDue));
+/** Oy hisobi bo'yicha ijara (to'lashi kerak): perechisleniye + naqd. Svet — alohida hisob (`lib/rent-elec.ts`). */
+export const chargeDue = (c: { bankDue: Prisma.Decimal | number; cashDue: Prisma.Decimal | number }) => r2(n(c.bankDue) + n(c.cashDue));
 
 // ───────────────────────── Shartnomalar (ijara davrlari) ─────────────────────────
 
@@ -92,15 +97,15 @@ export async function currentLeases(shopIds?: string[], tx: Tx | typeof db = db)
   return m;
 }
 
-/** Shartnomalar bo'yicha qarz (barcha oylar): hisoblangan − tushgan. Musbat — qarz, manfiy — avans. */
+/** Shartnomalar bo'yicha ijara qarzi (barcha oylar, svetsiz): hisoblangan − tushgan. Musbat — qarz, manfiy — avans. */
 export async function leaseDebts(leaseIds?: string[]): Promise<Map<string, number>> {
   const where = leaseIds ? { leaseId: { in: leaseIds } } : {};
   const [due, paid] = await Promise.all([
-    db.rentCharge.groupBy({ by: ["leaseId"], where, _sum: { bankDue: true, cashDue: true, elecDue: true } }),
-    db.rentTx.groupBy({ by: ["leaseId"], where: { ...where, type: "INCOME", cancelledAt: null, leaseId: leaseIds ? { in: leaseIds } : { not: null } }, _sum: { amount: true } }),
+    db.rentCharge.groupBy({ by: ["leaseId"], where, _sum: { bankDue: true, cashDue: true } }),
+    db.rentTx.groupBy({ by: ["leaseId"], where: { ...where, ...RENT_PAID, leaseId: leaseIds ? { in: leaseIds } : { not: null } }, _sum: { amount: true } }),
   ]);
   const m = new Map<string, number>();
-  for (const d of due) m.set(d.leaseId, chargeDue({ bankDue: n(d._sum.bankDue), cashDue: n(d._sum.cashDue), elecDue: n(d._sum.elecDue) }));
+  for (const d of due) m.set(d.leaseId, chargeDue({ bankDue: n(d._sum.bankDue), cashDue: n(d._sum.cashDue) }));
   for (const p of paid) m.set(p.leaseId!, r2((m.get(p.leaseId!) ?? 0) - n(p._sum.amount)));
   return m;
 }
@@ -130,7 +135,7 @@ function sum(rows: SheetRow[]) {
 export async function monthSheet(month: Date) {
   const [charges, paid] = await Promise.all([
     db.rentCharge.findMany({ where: { month }, include: { shop: true, lease: { select: { tenantName: true, status: true } } } }),
-    db.rentTx.groupBy({ by: ["leaseId", "method"], where: { type: "INCOME", month, cancelledAt: null, leaseId: { not: null } }, _sum: { amount: true } }),
+    db.rentTx.groupBy({ by: ["leaseId", "method"], where: { ...RENT_PAID, month, leaseId: { not: null } }, _sum: { amount: true } }),
   ]);
   const paidMap = new Map<string, { CASH: number; BANK: number }>();
   for (const p of paid) {
@@ -148,13 +153,13 @@ export async function monthSheet(month: Date) {
   ].sort((a, b) => a.shop.sortOrder - b.shop.sortOrder || a.shop.createdAt.getTime() - b.shop.createdAt.getTime() || Number(a.lease.status === "ACTIVE") - Number(b.lease.status === "ACTIVE"))
     .map(({ shop, leaseId, lease, c }) => {
       const p = paidMap.get(leaseId) ?? { CASH: 0, BANK: 0 };
-      const bankDue = n(c?.bankDue), cashDue = n(c?.cashDue), elecDue = n(c?.elecDue), due = r2(bankDue + cashDue + elecDue), paidAll = p.BANK + p.CASH;
+      const bankDue = n(c?.bankDue), cashDue = n(c?.cashDue), elecDue = n(c?.elecDue), due = r2(bankDue + cashDue), paidAll = p.BANK + p.CASH;
       return {
         shopId: shop.id, leaseId, chargeId: c?.id ?? null, name: shop.name, location: shop.location, isActive: shop.isActive,
         tenantName: lease.tenantName, former: lease.status !== "ACTIVE",
         period: shop.period, days: c?.days ?? null, bankRate: n(shop.bankAmount), cashRate: n(shop.cashAmount),
         meterStart: c?.meterStart != null ? n(c.meterStart) : null, meterEnd: c?.meterEnd != null ? n(c.meterEnd) : null,
-        elecBilled: c ? n(c.elecDue) > 0 || shop.electricityBilled : shop.electricityBilled,
+        elecBilled: shop.electricityBilled || elecDue > 0,
         bankDue, cashDue, elecDue, due, electricity: n(c?.electricity), tax: n(c?.tax),
         bankPaid: p.BANK, cashPaid: p.CASH, paid: paidAll, left: r2(due - paidAll), note: c?.note ?? null,
       };
@@ -236,8 +241,10 @@ export async function createRentTx(input: RentTxInput, userId: string): Promise<
   const months = Math.max(1, Math.min(RENT_MAX_MONTHS, Math.trunc(input.months ?? 1)));
   let day: Date | null = null;
   let leaseId: string | null = null;
+  const elec = input.type === "INCOME" && input.category === RENT_ELEC_CATEGORY;
+  if (elec && months > 1) return { error: "Svet to'lovi bir oy uchun yoziladi" };
   if (input.type === "INCOME") {
-    if (shop?.period === "DAILY") {
+    if (shop?.period === "DAILY" && !elec) {
       if (!input.day) return { error: "Kunlik ijara — qaysi kun uchun to'lov ekanini tanlang" };
       if (months > 1) return { error: "Kunlik ijarada «necha oyga» to'lov yo'q — har kun alohida yoziladi" };
       day = input.day;
@@ -282,7 +289,7 @@ export async function createRentTx(input: RentTxInput, userId: string): Promise<
     });
     // Modul aylanmasin (rent-receipt → rent-tenant → rent): xabar moduli kerak bo'lganda yuklanadi
     if (input.type === "INCOME") notifyAfter(async () => (await import("./rent-receipt")).notifyRentPayment(id));
-    const sameDay = day ? await db.rentTx.count({ where: { shopId: input.shopId, day, type: "INCOME", cancelledAt: null, id: { not: id } } }) : 0;
+    const sameDay = day ? await db.rentTx.count({ where: { ...RENT_PAID, shopId: input.shopId, day, id: { not: id } } }) : 0;
     return { id, sameDay };
   } catch (e) {
     if (e instanceof RentError) return { error: e.message };
@@ -323,14 +330,8 @@ export async function cancelRentTx(id: string, reason: string, userId: string): 
   }
 }
 
-/** Svet: hisoblagich ko'rsatkichidan summa (tarif 0 yoki ko'rsatkich to'liq bo'lmasa — null, summa qo'lda). */
-export function meterAmount(start: number | null | undefined, end: number | null | undefined, kwhPrice: number): number | null {
-  if (start == null || end == null || !(kwhPrice > 0) || end < start) return null;
-  return Math.round((end - start) * kwhPrice);
-}
-
 type PrevCharge = { bankDue: Prisma.Decimal; cashDue: Prisma.Decimal; electricity: Prisma.Decimal; tax: Prisma.Decimal } | null;
-type ChargeShop = Pick<RentShop, "id" | "period" | "bankAmount" | "cashAmount" | "electricity" | "tax" | "electricityBilled">;
+type ChargeShop = Pick<RentShop, "id" | "period" | "bankAmount" | "cashAmount" | "electricity" | "tax" | "electricityBilled" | "elecFixed">;
 
 /**
  * Shartnomaning yangi oy hisobi. Oylik: shu shartnomaning o'tgan oy hisobidan nusxa (bo'lmasa andoza).
@@ -340,8 +341,13 @@ type ChargeShop = Pick<RentShop, "id" | "period" | "bankAmount" | "cashAmount" |
  * `price` — shu oydan kuchga kirgan yangi narx (o'tgan oy summasi o'rniga).
  */
 function chargeData(s: ChargeShop, leaseId: string, p: PrevCharge, month: Date, opts: { fromToday?: boolean; meterStart?: Prisma.Decimal | null; price?: { bankAmount: Prisma.Decimal; cashAmount: Prisma.Decimal } } = {}) {
-  const electricity = p?.electricity ?? s.electricity;
-  const extra = { electricity, tax: p?.tax ?? s.tax, elecDue: s.electricityBilled ? electricity : 0, meterStart: opts.meterStart ?? null };
+  // Svet hisobidagi joy: yangi oy ko'rsatkichsiz ochiladi (summa — hisoblagich kiritilganda); hisoblagichi yo'q joyda — qat'iy summa
+  const billed = s.electricityBilled;
+  const electricity = billed ? 0 : (p?.electricity ?? s.electricity);
+  const extra = {
+    electricity, tax: p?.tax ?? s.tax, meterStart: opts.meterStart ?? null,
+    elecFixed: billed ? s.elecFixed : 0, elecDue: billed && !opts.meterStart ? s.elecFixed : 0,
+  };
   const rate = opts.price ?? s;
   if (s.period === "DAILY") {
     const t = today();
@@ -430,8 +436,10 @@ export type RentShopInput = RentLeaseInput & {
   period?: RentPeriod;
   /** Oylik ijarada to'lov kuni (1–31); berilmasa — o'zgarmaydi */
   payDay?: number | null;
-  /** Svetni ijarachi to'laydi (qarzga qo'shiladi); berilmasa — o'zgarmaydi */
+  /** Svet hisobida (ijarachi svetni alohida to'laydi); berilmasa — o'zgarmaydi */
   electricityBilled?: boolean;
+  /** Shartnoma bo'yicha oylik svet summasi (qat'iy); berilmasa — o'zgarmaydi */
+  elecFixed?: number;
 };
 
 const leaseFields = (d: RentLeaseInput) => {
@@ -486,10 +494,6 @@ export async function saveRentShopData(id: string | null, data: RentShopInput, m
           if (Object.keys(up).length) {
             const l = await tx.rentLease.update({ where: { id: active.id }, data: up });
             await audit(tx, userId, "UPDATE", "RentLease", l.id, active, l);
-          }
-          if (data.electricityBilled !== undefined && data.electricityBilled !== before.electricityBilled) {
-            const cs = await tx.rentCharge.findMany({ where: { leaseId: active.id, month: { gte: currentMonth() } } });
-            for (const c of cs) await tx.rentCharge.update({ where: { id: c.id }, data: { elecDue: data.electricityBilled ? c.electricity : 0 } });
           }
         }
       });
@@ -611,7 +615,7 @@ export type RentDay = { day: Date; paid: number; due: number; future: boolean; /
  */
 export async function rentDays(shop: Pick<RentShop, "id" | "bankAmount" | "cashAmount">, leaseId: string, month: Date): Promise<RentDay[]> {
   const [g, charge] = await Promise.all([
-    db.rentTx.groupBy({ by: ["day"], where: { leaseId, type: "INCOME", cancelledAt: null, day: monthRange(month) }, _sum: { amount: true } }),
+    db.rentTx.groupBy({ by: ["day"], where: { ...RENT_PAID, leaseId, day: monthRange(month) }, _sum: { amount: true } }),
     db.rentCharge.findUnique({ where: { leaseId_month: { leaseId, month } }, select: { days: true } }),
   ]);
   // Oy o'rtasida boshlangan ijara: hisob oxirgi `days` kunga ochilgan — undan oldingi kunlar qarz emas
@@ -655,9 +659,9 @@ export async function rentShopStates(shops: Pick<RentShop, "id" | "isActive" | "
   const ids = [...cur.values()].map((l) => l.id);
   const [debts, charges, paid, paidToday] = await Promise.all([
     leaseDebts(ids),
-    db.rentCharge.findMany({ where: { month, leaseId: { in: ids } }, select: { leaseId: true, bankDue: true, cashDue: true, elecDue: true } }),
-    db.rentTx.groupBy({ by: ["leaseId"], where: { type: "INCOME", month, cancelledAt: null, leaseId: { in: ids } }, _sum: { amount: true } }),
-    db.rentTx.groupBy({ by: ["leaseId"], where: { type: "INCOME", day: now, cancelledAt: null, leaseId: { in: ids } }, _sum: { amount: true } }),
+    db.rentCharge.findMany({ where: { month, leaseId: { in: ids } }, select: { leaseId: true, bankDue: true, cashDue: true } }),
+    db.rentTx.groupBy({ by: ["leaseId"], where: { ...RENT_PAID, month, leaseId: { in: ids } }, _sum: { amount: true } }),
+    db.rentTx.groupBy({ by: ["leaseId"], where: { ...RENT_PAID, day: now, leaseId: { in: ids } }, _sum: { amount: true } }),
   ]);
   const due = new Map(charges.map((c) => [c.leaseId, chargeDue(c)]));
   const got = new Map(paid.map((p) => [p.leaseId!, n(p._sum.amount)]));
@@ -693,22 +697,16 @@ export async function rentShopStates(shops: Pick<RentShop, "id" | "isActive" | "
   return res;
 }
 
-/** Oy hisobini yozish (veb jadval qatori, mobil kartochka): shartnomaning shu oy hisobi, bo'lmasa — ochiladi.
- *  Svet hisoblagichi ikkala ko'rsatkichi bo'lsa va tarif kiritilgan bo'lsa — svet summasi hisoblanadi;
- *  «svetni ijarachi to'laydi» belgisi bo'lsa — qarzga qo'shiladi. */
+/** Oy hisobini yozish (veb jadval qatori, mobil kartochka): shartnomaning shu oy ijara hisobi, bo'lmasa — ochiladi.
+ *  Svet hisobidagi joyda svet summasi bu yerda o'zgarmaydi — «Svet» varag'ida (`lib/rent-elec.ts`). */
 export async function saveRentChargeData(leaseId: string, month: Date, data: {
   bankDue: number; cashDue: number; electricity: number; tax: number; note: string | null; days?: number | null;
-  meterStart?: number | null; meterEnd?: number | null;
 }, userId: string): Promise<{ error?: string }> {
   const lease = await db.rentLease.findUnique({ where: { id: leaseId }, include: { shop: true } });
   if (!lease) return { error: "Shartnoma topilmadi" };
-  if (data.meterStart != null && data.meterEnd != null && data.meterEnd < data.meterStart) return { error: "Svet: oy oxiri ko'rsatkichi boshidan kichik bo'lmasin" };
-  const kwh = n((await db.companySettings.findUnique({ where: { id: "main" }, select: { rentKwhPrice: true } }))?.rentKwhPrice);
-  const byMeter = meterAmount(data.meterStart, data.meterEnd, kwh);
-  const electricity = byMeter ?? data.electricity;
   const before = await db.rentCharge.findUnique({ where: { leaseId_month: { leaseId, month } } });
-  const billed = before ? n(before.elecDue) > 0 || lease.shop.electricityBilled : lease.shop.electricityBilled;
-  const row = { ...data, electricity, elecDue: billed ? electricity : 0 };
+  const rest = { bankDue: data.bankDue, cashDue: data.cashDue, tax: data.tax, note: data.note, ...(data.days !== undefined ? { days: data.days } : {}) };
+  const row = lease.shop.electricityBilled ? rest : { ...rest, electricity: data.electricity };
   const c = await db.rentCharge.upsert({
     where: { leaseId_month: { leaseId, month } },
     create: { shopId: lease.shopId, leaseId, month, ...row },
@@ -716,4 +714,13 @@ export async function saveRentChargeData(leaseId: string, month: Date, data: {
   });
   await audit(db, userId, before ? "UPDATE" : "CREATE", "RentCharge", c.id, before ?? undefined, c);
   return {};
+}
+
+/** Svet varag'idagi qatorga oy hisobi kerak bo'lsa — ijara hisobi bilan birga ochiladi (o'tgan oydan / andozadan). */
+export async function ensureCharge(tx: Tx, leaseId: string, month: Date) {
+  const c = await tx.rentCharge.findUnique({ where: { leaseId_month: { leaseId, month } } });
+  if (c) return c;
+  const lease = await tx.rentLease.findUniqueOrThrow({ where: { id: leaseId }, include: { shop: true } });
+  const prev = await tx.rentCharge.findFirst({ where: { leaseId, month: { lt: month } }, orderBy: { month: "desc" } });
+  return tx.rentCharge.create({ data: chargeData(lease.shop, leaseId, prev, month, { meterStart: await lastMeter(tx, lease.shopId, month) }) });
 }

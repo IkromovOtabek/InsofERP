@@ -7,7 +7,8 @@ import { fmtNum } from "./format";
 import { formatPhone } from "./phone";
 import { notifyRoles } from "./notify";
 import { botEnabled, botUsername, sendMessage } from "./telegram/api";
-import { chargeDue, currentLeases, currentMonth, monthKey, monthLabel } from "./rent";
+import { RENT_PAID, chargeDue, currentLeases, currentMonth, monthKey, monthLabel } from "./rent";
+import { leaseElecDebts } from "./rent-elec";
 
 /**
  * Arenda — ijarachi (do'kon) kartasi, qarzdorlar va qarz eslatmasi.
@@ -27,7 +28,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 /** 1 so'mdan kam farq — yaxlitlash qoldig'i, qarz emas. */
 const EPS = 1;
 
-export type LedgerMonth = { month: Date; key: string; label: string; bankDue: number; cashDue: number; elecDue: number; due: number; paid: number; left: number; note: string | null };
+export type LedgerMonth = { month: Date; key: string; label: string; bankDue: number; cashDue: number; due: number; paid: number; left: number; note: string | null };
 
 /**
  * Shartnomaning oyma-oy hisobi (yangi oy tepada) va jami qarz. `leaseId` berilmasa — do'konning joriy shartnomasi
@@ -37,23 +38,24 @@ export async function shopLedger(shopId: string, leaseId?: string | null) {
   const lid = leaseId ?? (await currentLeases([shopId])).get(shopId)?.id ?? null;
   const [charges, paid] = lid ? await Promise.all([
     db.rentCharge.findMany({ where: { leaseId: lid }, orderBy: { month: "desc" } }),
-    db.rentTx.groupBy({ by: ["month"], where: { leaseId: lid, type: "INCOME", cancelledAt: null }, _sum: { amount: true } }),
+    db.rentTx.groupBy({ by: ["month"], where: { ...RENT_PAID, leaseId: lid }, _sum: { amount: true } }),
   ]) : [[], []];
   const paidBy = new Map(paid.filter((p) => p.month).map((p) => [monthKey(p.month!), n(p._sum.amount)]));
   const months: LedgerMonth[] = charges.map((c) => {
-    const key = monthKey(c.month), bankDue = n(c.bankDue), cashDue = n(c.cashDue), elecDue = n(c.elecDue), due = chargeDue(c), p = paidBy.get(key) ?? 0;
+    const key = monthKey(c.month), bankDue = n(c.bankDue), cashDue = n(c.cashDue), due = chargeDue(c), p = paidBy.get(key) ?? 0;
     paidBy.delete(key);
-    return { month: c.month, key, label: monthLabel(c.month), bankDue, cashDue, elecDue, due, paid: p, left: r2(due - p), note: c.note };
+    return { month: c.month, key, label: monthLabel(c.month), bankDue, cashDue, due, paid: p, left: r2(due - p), note: c.note };
   });
   // Hisobi ochilmagan oy uchun tushgan pul ham ko'rinsin (avans)
   for (const [key, p] of paidBy) {
     const [y, m] = key.split("-").map(Number);
     const month = new Date(Date.UTC(y, m - 1, 1));
-    months.push({ month, key, label: monthLabel(month), bankDue: 0, cashDue: 0, elecDue: 0, due: 0, paid: p, left: r2(-p), note: null });
+    months.push({ month, key, label: monthLabel(month), bankDue: 0, cashDue: 0, due: 0, paid: p, left: r2(-p), note: null });
   }
   months.sort((a, b) => b.month.getTime() - a.month.getTime());
   const due = months.reduce((s, m) => s + m.due, 0), paidAll = months.reduce((s, m) => s + m.paid, 0);
-  return { leaseId: lid, months, due: r2(due), paid: r2(paidAll), debt: r2(due - paidAll), unpaid: months.filter((m) => m.left > EPS) };
+  const elecDebt = lid ? (await leaseElecDebts([lid])).get(lid) ?? 0 : 0;
+  return { leaseId: lid, months, due: r2(due), paid: r2(paidAll), debt: r2(due - paidAll), elecDebt, unpaid: months.filter((m) => m.left > EPS) };
 }
 
 export type Debtor = {
@@ -62,14 +64,16 @@ export type Debtor = {
   /** Sobiq ijarachi: shartnomasi yopilgan, qarzi qolgan (Telegram eslatmasi ketmaydi) */
   former: boolean; endedAt: Date | null;
   debt: number; unpaid: { key: string; label: string; left: number }[]; lastPaidAt: Date | null; lastReminder: { at: Date; ok: boolean } | null;
+  /** Svet qarzi (ijara qarzidan alohida) */
+  elecDebt: number;
 };
 
 /** Qarzi bor ijarachilar — shartnoma bo'yicha (sobiq ijarachilar ham), jami qarz bo'yicha kamayish tartibida. */
 export async function rentDebtors(): Promise<Debtor[]> {
   const [leases, charges, paid, lastPay, lastRem] = await Promise.all([
     db.rentLease.findMany({ include: { shop: true } }),
-    db.rentCharge.findMany({ select: { leaseId: true, month: true, bankDue: true, cashDue: true, elecDue: true } }),
-    db.rentTx.groupBy({ by: ["leaseId", "month"], where: { type: "INCOME", cancelledAt: null, leaseId: { not: null } }, _sum: { amount: true } }),
+    db.rentCharge.findMany({ select: { leaseId: true, month: true, bankDue: true, cashDue: true } }),
+    db.rentTx.groupBy({ by: ["leaseId", "month"], where: { ...RENT_PAID, leaseId: { not: null } }, _sum: { amount: true } }),
     db.rentTx.groupBy({ by: ["leaseId"], where: { type: "INCOME", cancelledAt: null, leaseId: { not: null } }, _max: { date: true } }),
     db.rentReminder.findMany({ orderBy: { createdAt: "desc" }, distinct: ["shopId"], select: { shopId: true, createdAt: true, ok: true } }),
   ]);
@@ -86,6 +90,7 @@ export async function rentDebtors(): Promise<Debtor[]> {
   }
   const lastPayBy = new Map(lastPay.map((x) => [x.leaseId!, x._max.date]));
   const remBy = new Map(lastRem.map((x) => [x.shopId, { at: x.createdAt, ok: x.ok }]));
+  const elec = await leaseElecDebts();
   return leases
     .sort((a, b) => a.shop.sortOrder - b.shop.sortOrder || a.shop.createdAt.getTime() - b.shop.createdAt.getTime())
     .map((l) => {
@@ -95,16 +100,17 @@ export async function rentDebtors(): Promise<Debtor[]> {
         tenantName: l.tenantName, phone: l.phone, isActive: l.shop.isActive, linked: !former && !!l.shop.tgChatId,
         former, endedAt: l.endedAt,
         debt: r2((dueTotal.get(l.id) ?? 0) - (paidTotal.get(l.id) ?? 0)),
+        elecDebt: elec.get(l.id) ?? 0,
         unpaid: (byLease.get(l.id) ?? []).sort((a, b) => a.month.getTime() - b.month.getTime()).map(({ key, label, left }) => ({ key, label, left })),
         lastPaidAt: lastPayBy.get(l.id) ?? null, lastReminder: former ? null : remBy.get(l.shopId) ?? null,
       };
     })
-    .filter((d) => d.debt > EPS)
-    .sort((a, b) => Number(a.former) - Number(b.former) || b.debt - a.debt);
+    .filter((d) => d.debt > EPS || d.elecDebt > EPS)
+    .sort((a, b) => Number(a.former) - Number(b.former) || b.debt + Math.max(0, b.elecDebt) - a.debt - Math.max(0, a.elecDebt));
 }
 
 /** Eslatma matni — Telegram'ga ham, sekretar nusxa olib yuborishi uchun ham (oddiy matn, belgilarsiz). */
-export async function reminderText(shop: { name: string; location: string; tenantName: string | null }, ledger: { debt: number; unpaid: { label: string; left: number }[] }) {
+export async function reminderText(shop: { name: string; location: string; tenantName: string | null }, ledger: { debt: number; unpaid: { label: string; left: number }[]; elecDebt?: number }) {
   const c = await getCompany();
   const phones = [c.phone, c.phone2].filter(Boolean).map((p) => formatPhone(p!));
   return [
@@ -114,7 +120,8 @@ export async function reminderText(shop: { name: string; location: string; tenan
     "",
     `Do'kon: ${shop.name} (${shop.location})`,
     ...(ledger.unpaid.length ? ["To'lanmagan oylar:", ...ledger.unpaid.slice(-6).map((m) => `• ${m.label}: ${fmtNum(m.left)} so'm`)] : []),
-    `Jami qarz: ${fmtNum(ledger.debt)} so'm`,
+    ...(ledger.debt > EPS ? [`Ijara qarzi: ${fmtNum(ledger.debt)} so'm`] : []),
+    ...((ledger.elecDebt ?? 0) > EPS ? [`Svet qarzi: ${fmtNum(ledger.elecDebt!)} so'm`] : []),
     "",
     "Iltimos, to'lovni imkon qadar tezroq amalga oshiring. To'lagan bo'lsangiz — bu xabarga e'tibor bermang.",
     ...(phones.length ? ["", `Savollar uchun: ${phones.join(", ")}`] : []),
@@ -128,7 +135,7 @@ export async function sendRentReminder(shopId: string, opts: { auto: boolean; us
   const shop = await db.rentShop.findUnique({ where: { id: shopId } });
   if (!shop) return { ok: false, error: "Do'kon topilmadi" };
   const ledger = await shopLedger(shopId);
-  if (ledger.debt <= EPS) return { ok: false, error: "Bu ijarachining qarzi yo'q" };
+  if (ledger.debt <= EPS && ledger.elecDebt <= EPS) return { ok: false, error: "Bu ijarachining qarzi yo'q" };
   if (!shop.tgChatId) return { ok: false, error: "Ijarachi Telegram botga ulanmagan — matnni nusxalab o'zingiz yuboring" };
   if (!botEnabled()) return { ok: false, error: "Telegram bot sozlanmagan (TELEGRAM_BOT_TOKEN)" };
   let error: string | null = null;
@@ -142,7 +149,7 @@ export async function sendRentReminder(shopId: string, opts: { auto: boolean; us
       error = "Ijarachi botni bloklagan yoki chat topilmadi — Telegram uzildi, qayta ulash kerak";
     }
   }
-  await db.rentReminder.create({ data: { shopId, month: currentMonth(), auto: opts.auto, debt: ledger.debt, ok: !error, error, sentById: opts.userId ?? null } });
+  await db.rentReminder.create({ data: { shopId, month: currentMonth(), auto: opts.auto, debt: r2(Math.max(0, ledger.debt) + Math.max(0, ledger.elecDebt)), ok: !error, error, sentById: opts.userId ?? null } });
   return error ? { ok: false, error } : { ok: true };
 }
 
@@ -218,7 +225,8 @@ export async function rentBotMessage(text: string, chatId: number): Promise<bool
       `Siz «${shop.name}» (${shop.location}) ijarachisi sifatida ulandingiz.`,
       "",
       "Ijara to'lovi eslatmalari va qarz haqidagi ma'lumot endi shu yerga keladi.",
-      ledger.debt > EPS ? `Hozirgi qarz: ${fmtNum(ledger.debt)} so'm.` : "Hozircha qarzingiz yo'q.",
+      ledger.debt > EPS ? `Hozirgi ijara qarzi: ${fmtNum(ledger.debt)} so'm.` : "Hozircha ijara qarzingiz yo'q.",
+      ...(ledger.elecDebt > EPS ? [`Svet qarzi: ${fmtNum(ledger.elecDebt)} so'm.`] : []),
       "",
       "Qarzni istalgan payt bilish uchun shu chatga «qarz» deb yozing.",
     ].join("\n"), { markdown: false, keyboard: "remove" });
@@ -232,7 +240,7 @@ export async function rentBotMessage(text: string, chatId: number): Promise<bool
   const lines: string[] = [];
   for (const s of shops) {
     const l = await shopLedger(s.id);
-    lines.push(`${s.name} (${s.location}): ${l.debt > EPS ? `qarz ${fmtNum(l.debt)} so'm` : "qarz yo'q"}`);
+    lines.push(`${s.name} (${s.location}): ${l.debt > EPS ? `ijara qarzi ${fmtNum(l.debt)} so'm` : "ijara qarzi yo'q"}${l.elecDebt > EPS ? `, svet qarzi ${fmtNum(l.elecDebt)} so'm` : ""}`);
   }
   const c = await getCompany();
   const phones = [c.phone, c.phone2].filter(Boolean).map((p) => formatPhone(p!));

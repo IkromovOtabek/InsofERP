@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileSignature, FileText, History, Link2Off, MessageCircle, Paperclip, Pencil, Phone, Printer, QrCode, Send, Trash2, TrendingUp, Wallet } from "lucide-react";
+import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileSignature, FileText, History, Link2Off, MessageCircle, Paperclip, Pencil, Phone, Printer, QrCode, Send, Trash2, TrendingUp, Wallet, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, leaseDebts, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
+import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, leaseDebts, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
+import { elecLedger } from "@/lib/rent-elec";
 import { LEASE_SOON_DAYS, RENT_FILE_ACCEPT, RENT_FILE_KINDS, RENT_FILE_MAX_MB, leaseDaysLeft } from "@/lib/rent-contract";
 import { ConfirmButton } from "../../../payments/confirm-button";
 import { ShopTxForm } from "../../arenda-forms";
@@ -54,7 +55,8 @@ export default async function RentShopPage({ params, searchParams }: { params: P
   const priceMonths = Array.from({ length: 12 }, (_, i) => shiftMonth(now, i + 1)).map((m) => ({ key: monthKey(m), label: monthLabel(m) }));
   const shopOpt = { id, name: shop.name, location: shop.location, daily };
   const left = active ? leaseDaysLeft(active.endDate) : null;
-  const hasElec = ledger.months.some((m) => m.elecDue > 0.005);
+  const elec = curLease ? await elecLedger(curLease.id) : { months: [], debt: 0 };
+  const showElec = shop.electricityBilled || elec.months.length > 0;
   const debt = ledger.debt;
   // Kunlikda jami qarz oy oxirigacha bo'lgan kunlarni ham o'z ichiga oladi — kartada muddati o'tgani ko'rsatiladi
   const state = (await rentShopStates([shop])).get(id)!;
@@ -62,7 +64,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
   const lastPay = txs.find((t) => t.type === "INCOME" && !t.cancelledAt);
   const linkUrl = bot && shop.tgLinkToken ? `https://t.me/${bot}?start=ijara_${shop.tgLinkToken}` : null;
   const qr = linkUrl && !shop.tgChatId ? await QRCode.toString(linkUrl, { type: "svg", margin: 1, width: 168, errorCorrectionLevel: "M" }) : null;
-  const text = debt > 1 ? await reminderText(shop, ledger) : null;
+  const text = debt > 1 || ledger.elecDebt > 1 ? await reminderText(shop, ledger) : null;
   const phone = shop.phone ? formatPhone(shop.phone) : null;
 
   return (
@@ -97,24 +99,23 @@ export default async function RentShopPage({ params, searchParams }: { params: P
           )}
           {daily && days.length > 0 && <DaysCalendar id={id} month={calMonth} days={days} />}
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title={`Oyma-oy hisob${curLease?.tenantName ? ` — ${curLease.tenantName}` : ""}`} description={`Har oy: to'lashi kerak (perechisleniye + naqd${hasElec ? " + svet" : ""}), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans.${former.length ? " Oldingi ijarachilar hisobi — pastda alohida." : ""}`} /></div>
+            <div className="p-5 pb-0"><CardHeader title={`Oyma-oy hisob${curLease?.tenantName ? ` — ${curLease.tenantName}` : ""}`} description={`Har oy: to'lashi kerak (perechisleniye + naqd), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans.${former.length ? " Oldingi ijarachilar hisobi — pastda alohida." : ""}`} /></div>
             {ledger.months.length === 0 ? <div className="p-5 pt-0"><EmptyState title="Hisob yo'q" text="Oy varag'i ochilganda yoki Excel'dan import qilinganda shu yerda chiqadi." /></div> : (
               <Table>
-                <thead><tr><Th>Oy</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th>{hasElec && <Th right>Svet</Th>}<Th right>Jami</Th><Th right>Tushgan</Th><Th right>Qoldiq</Th></tr></thead>
+                <thead><tr><Th>Oy</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th><Th right>Jami</Th><Th right>Tushgan</Th><Th right>Qoldiq</Th></tr></thead>
                 <tbody>
                   {ledger.months.map((m) => (
                     <Tr key={m.key}>
                       <Td><Link href={`/arenda?oy=${m.key}`} className="hover:underline">{m.label}</Link>{m.note && <span className="block text-xs text-slate-500">{m.note}</span>}</Td>
                       <Td right>{cell(m.bankDue)}</Td>
                       <Td right>{cell(m.cashDue)}</Td>
-                      {hasElec && <Td right>{cell(m.elecDue)}</Td>}
                       <Td right className="font-medium">{cell(m.due)}</Td>
                       <Td right className="text-emerald-700">{cell(m.paid)}</Td>
                       <Td right className={`font-semibold ${m.left > 1 ? "text-red-600" : m.left < -1 ? "text-emerald-700" : "text-slate-400"}`}>{m.left < -1 ? `avans ${fmtNum(-m.left)}` : cell(m.left)}</Td>
                     </Tr>
                   ))}
                   <Tr className="bg-slate-50/70">
-                    <Td className="font-semibold">Jami</Td><Td /><Td />{hasElec && <Td />}
+                    <Td className="font-semibold">Jami</Td><Td /><Td />
                     <Td right className="font-semibold">{cell(ledger.due)}</Td>
                     <Td right className="font-semibold text-emerald-700">{cell(ledger.paid)}</Td>
                     <Td right className={`font-bold ${debt > 1 ? "text-red-600" : "text-emerald-700"}`}>{debt < -1 ? `avans ${fmtNum(-debt)}` : cell(debt)}</Td>
@@ -123,6 +124,30 @@ export default async function RentShopPage({ params, searchParams }: { params: P
               </Table>
             )}
           </Card>
+
+          {showElec && (
+            <Card padded={false}>
+              <div className="p-5 pb-0"><CardHeader title="Svet hisobi" icon={Zap}
+                description={`Ijaradan alohida: summasi (hisoblagich × tarif + ustama yoki shartnoma bo'yicha) − berilgan (kassaga svet to'lovi + litsevoyga).${Number(shop.elecFixed) > 0 ? ` Shartnoma bo'yicha oylik: ${money(shop.elecFixed)}.` : ""}`}
+                action={<span className={`text-sm font-semibold tabular-nums ${elec.debt > 1 ? "text-red-600" : "text-emerald-700"}`}>{elec.debt > 1 ? `qarz ${money(elec.debt)}` : elec.debt < -1 ? `avans ${money(-elec.debt)}` : "qarz yo'q"}</span>} /></div>
+              {elec.months.length === 0 ? <div className="p-5 pt-0 text-sm text-slate-500">Hali svet hisobi yo&apos;q — «Arenda → Svet» varag&apos;ida ko&apos;rsatkich kiritiladi.</div> : (
+                <Table>
+                  <thead><tr><Th>Oy</Th><Th right>kVt</Th><Th right>Summasi</Th><Th right>Berilgan</Th><Th right>Qoldiq</Th></tr></thead>
+                  <tbody>
+                    {elec.months.slice(0, 12).map((m) => (
+                      <Tr key={m.key}>
+                        <Td><Link href={`/arenda?tab=svet&oy=${m.key}`} className="hover:underline">{monthLabel(m.month)}</Link></Td>
+                        <Td right>{m.kwh ? fmtNum(m.kwh, 1) : "–"}</Td>
+                        <Td right>{cell(m.sum)}</Td>
+                        <Td right className="text-emerald-700">{cell(m.paid)}</Td>
+                        <Td right className={`font-semibold ${m.left > 1 ? "text-red-600" : m.left < -1 ? "text-emerald-700" : "text-slate-400"}`}>{cell(m.left)}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
+          )}
 
           <Card padded={false}>
             <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Bekor qilingan yozuv chizilgan holda qoladi." /></div>
@@ -133,7 +158,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                   {txs.map((t) => (
                     <Tr key={t.id} className={t.cancelledAt ? "opacity-50 line-through" : undefined}>
                       <Td>{date(t.date)}</Td>
-                      <Td>{t.day ? `${date(t.day)} kun` : t.month ? monthLabel(t.month) : "—"}{t.type === "EXPENSE" && <span className="ml-1 text-xs text-slate-500">(chiqim: {t.category})</span>}</Td>
+                      <Td>{t.day ? `${date(t.day)} kun` : t.month ? monthLabel(t.month) : "—"}{t.type === "EXPENSE" ? <span className="ml-1 text-xs text-slate-500">(chiqim: {t.category})</span> : t.category === RENT_ELEC_CATEGORY && <span className="ml-1"><Badge color="amber">svet</Badge></span>}</Td>
                       <Td>{RENT_METHOD_LABEL[t.method]}</Td>
                       <Td right className={t.type === "INCOME" ? "font-semibold text-emerald-700" : "font-semibold text-red-600"}>{t.type === "INCOME" ? "+" : "−"}{fmtNum(t.amount)}</Td>
                       <Td className="text-xs text-slate-500">{t.createdBy.fullName}{t.lease && t.leaseId !== curLease?.id && t.lease.tenantName ? ` · ${t.lease.tenantName} (sobiq)` : ""}{t.batchId ? " · bir necha oyga" : ""}{t.note ? ` · ${t.note}` : ""}{t.cancelReason ? ` · bekor: ${t.cancelReason}` : ""}</Td>
@@ -166,7 +191,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
               { k: "INN", v: shop.inn ?? <span className="text-slate-400">—</span> },
               { k: "Joy", v: shop.location },
               { k: "Maydoni", v: shop.area ? <>{fmtNum(shop.area, 2)} m²{rentPerM2(shop) ? <span className="text-slate-500"> · 1 m² — {money(rentPerM2(shop)!)} ({RENT_PERIOD_LABEL[shop.period].toLowerCase()})</span> : null}</> : <span className="text-slate-400">kiritilmagan</span> },
-              { k: "Svet", v: shop.electricityBilled ? "ijarachi to'laydi (qarzga qo'shiladi)" : "ma'lumot uchun" },
+              { k: "Svet", v: shop.electricityBilled ? <>alohida hisob{Number(shop.elecFixed) > 0 ? ` · shartnoma bo'yicha ${money(shop.elecFixed)}/oy` : ""}</> : "ijaraga kiritilgan" },
               ...(shop.note ? [{ k: "Izoh", v: shop.note }] : []),
             ]} />
             {canShops && active && (!shop.tenantName || !shop.phone) && <p className="mt-3 text-xs text-slate-500">Ijarachi va telefonni «Tahrirlash» orqali kiriting — eslatma matni shu bilan chiqadi.</p>}

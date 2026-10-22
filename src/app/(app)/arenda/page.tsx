@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed, AlertTriangle, CalendarClock, ListFilter, BarChart3, Ruler, TrendingDown, FileClock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Landmark, Pencil, Store, Undo2, Wallet, Banknote, FileSpreadsheet, MessageCircle, Printer, Send, Users, CircleCheck, CircleDashed, AlertTriangle, CalendarClock, ListFilter, BarChart3, Ruler, TrendingDown, FileClock, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -9,6 +9,8 @@ import { getCompany } from "@/lib/company";
 import { rentDebtors } from "@/lib/rent-tenant";
 import { RemindDayForm } from "./tenant-forms";
 import { BulkPriceForm, KwhPriceForm } from "./contract-forms";
+import { ElecBill, ElecRow } from "./elec-forms";
+import { elecSheet } from "@/lib/rent-elec";
 import { LEASE_SOON_DAYS, leaseDaysLeft, leaseTerm, rentCollection, rentOccupancy } from "@/lib/rent-contract";
 import {
   RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentPerM2, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth,
@@ -32,16 +34,15 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
   const now = currentMonth();
   const month = parseMonth(sp.oy) ?? now;
   const key = monthKey(month);
-  const tab = sp.tab === "jurnal" || sp.tab === "dokonlar" || sp.tab === "qarzdorlar" || sp.tab === "filter" || sp.tab === "tahlil" ? sp.tab : "jadval";
+  const tab = sp.tab === "jurnal" || sp.tab === "dokonlar" || sp.tab === "qarzdorlar" || sp.tab === "filter" || sp.tab === "tahlil" || sp.tab === "svet" ? sp.tab : "jadval";
   const canCreate = canDo(s, "arenda", "create");
   const canShops = canDo(s, "arenda", "shops");
   const canStorno = canDo(s, "arenda", "storno");
 
-  const [balance, sheet, shops, company] = await Promise.all([
+  const [balance, sheet, shops] = await Promise.all([
     rentBalance(),
     monthSheet(month),
     db.rentShop.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
-    getCompany(),
   ]);
   const activeShops = shops.filter((x) => x.isActive);
   // Kirim formasidagi «Qaysi oy uchun»: tanlangan oy atrofida 12 oy orqaga va 2 oy oldinga
@@ -95,6 +96,7 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
 
       <Tabs current={tab} className="mb-4" items={[
         { key: "jadval", label: "Oylik jadval", href: href({ tab: "jadval" }) },
+        { key: "svet", label: "Svet", href: href({ tab: "svet" }), icon: Zap },
         { key: "jurnal", label: "Kirim-chiqim jurnali", href: href({ tab: "jurnal" }) },
         { key: "qarzdorlar", label: "Qarzdorlar", href: href({ tab: "qarzdorlar" }) },
         { key: "dokonlar", label: "Do'konlar", href: href({ tab: "dokonlar" }), count: shops.length },
@@ -102,7 +104,8 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
         { key: "tahlil", label: "Tahlil", href: href({ tab: "tahlil" }), icon: BarChart3 },
       ]} />
 
-      {tab === "jadval" && <SheetTab sheet={sheet} month={key} monthName={monthLabel(month)} canShops={canShops} hasShops={shops.length > 0} shopsHref={href({ tab: "dokonlar" })} kwhPrice={Number(company.rentKwhPrice ?? 0)} />}
+      {tab === "jadval" && <SheetTab sheet={sheet} month={key} monthName={monthLabel(month)} canShops={canShops} hasShops={shops.length > 0} shopsHref={href({ tab: "dokonlar" })} />}
+      {tab === "svet" && <ElecTab month={month} monthName={monthLabel(month)} canShops={canShops} shopsHref={href({ tab: "dokonlar" })} />}
       {tab === "jurnal" && <JournalTab month={month} canStorno={canStorno} />}
       {tab === "qarzdorlar" && <DebtorsTab canShops={canShops} canCreate={canCreate} />}
       {tab === "dokonlar" && <ShopsTab mode="dokonlar" shops={shops} month={key} editId={sp.edit} canShops={canShops} href={href} />}
@@ -114,8 +117,8 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
 
 /* ───────────────────────── Oy varag'i (Excel ko'rinishi) ───────────────────────── */
 
-function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref, kwhPrice }: {
-  sheet: Awaited<ReturnType<typeof monthSheet>>; month: string; monthName: string; canShops: boolean; hasShops: boolean; shopsHref: string; kwhPrice: number;
+function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref }: {
+  sheet: Awaited<ReturnType<typeof monthSheet>>; month: string; monthName: string; canShops: boolean; hasShops: boolean; shopsHref: string;
 }) {
   if (!hasShops) {
     return <EmptyState icon={Store} title="Hali do'kon kiritilmagan" text="Avval «Do'konlar» bo'limida ijaraga berilgan do'konlarni joyi (bozor) bilan kiriting — keyin oylik jadval shu yerda chiqadi." action={canShops ? <Link href={shopsHref} className="text-sm font-medium text-brand-700 hover:underline">Do&apos;kon qo&apos;shish →</Link> : undefined} />;
@@ -155,7 +158,7 @@ function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref, kwhP
             {sheet.groups.map((g) => (
               <tbody key={g.location}>
                 <tr><SheetTd colSpan={11} tone="blue" className="py-2 text-base font-semibold text-slate-900"><span className="sticky left-2.5">{g.location}</span></SheetTd></tr>
-                {g.rows.map((r) => <ChargeRow key={r.leaseId} row={r} month={month} canEdit={canShops} kwhPrice={kwhPrice} showTenant={twice.has(r.shopId)} />)}
+                {g.rows.map((r) => <ChargeRow key={r.leaseId} row={r} month={month} canEdit={canShops} showTenant={twice.has(r.shopId)} />)}
                 <tr>
                   <SheetTd tone="gray" strong className="sticky left-0 z-[1] text-center">Umumiy</SheetTd>
                   {sumCells(g.total).map((v, i) => <SheetTd key={i} right tone="gray" strong className={i === 8 && v > 0.005 ? "text-red-700" : undefined}>{cell(v)}</SheetTd>)}
@@ -173,8 +176,7 @@ function SheetTab({ sheet, month, monthName, canShops, hasShops, shopsHref, kwhP
               </SheetFoot>
             )}
           </Sheet>
-          <p className="text-xs text-slate-500">Qoldiq = jami to&apos;lashi kerak − jami tushgan (qizil — qarz, yashil — ortiqcha to&apos;langan). Svet faqat «svetni ijarachi to&apos;laydi» belgilangan do&apos;konlarda jami summaga qo&apos;shiladi, soliq — ma&apos;lumot uchun. «Tushgan» — shu oy uchun yozilgan kirimlar.</p>
-          {canShops && <Card><KwhPriceForm price={kwhPrice} /></Card>}
+          <p className="text-xs text-slate-500">Qoldiq = jami to&apos;lashi kerak − jami tushgan (qizil — qarz, yashil — ortiqcha to&apos;langan). Svet hisobidagi do&apos;konlar sveti alohida — «Svet» varag&apos;ida, soliq — ma&apos;lumot uchun. «Tushgan» — shu oy uchun yozilgan ijara kirimlari.</p>
         </>
       )}
     </div>
@@ -236,28 +238,30 @@ async function JournalTab({ month, canStorno }: { month: Date; canStorno: boolea
 /** Qarzi bor ijarachilar: qaysi oylar to'lanmagan, Telegram ulanganmi, oxirgi eslatma — va eslatma yuborish. */
 async function DebtorsTab({ canShops, canCreate }: { canShops: boolean; canCreate: boolean }) {
   const [debtors, company] = await Promise.all([rentDebtors(), getCompany()]);
-  const total = debtors.reduce((s, d) => s + d.debt, 0);
+  const total = debtors.reduce((s, d) => s + Math.max(0, d.debt), 0);
+  const elecTotal = debtors.reduce((s, d) => s + Math.max(0, d.elecDebt), 0);
   const notLinked = debtors.filter((d) => !d.linked && !d.former).length;
   const former = debtors.filter((d) => d.former);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Qarzdor ijarachilar" value={debtors.length} icon={Users} tone={debtors.length ? "danger" : "success"} />
-        <StatCard label="Jami qarz" value={money(total)} icon={Wallet} tone={total > 1 ? "danger" : "success"} />
+        <StatCard label="Jami ijara qarzi" value={money(total)} icon={Wallet} tone={total > 1 ? "danger" : "success"} hint={elecTotal > 1 ? `svet qarzi alohida: ${money(elecTotal)}` : undefined} />
         <StatCard label="Telegram'ga ulanmagan" value={notLinked} icon={MessageCircle} hint={former.length ? `sobiq ijarachilar: ${former.length} ta, qarzi ${money(former.reduce((a, d) => a + d.debt, 0))}` : "ularga eslatmani kartadan nusxalab yuborasiz"} />
       </div>
       {canShops && <Card><RemindDayForm day={company.rentRemindDay} /></Card>}
       {debtors.length === 0 ? <EmptyState icon={Store} title="Qarzdor yo'q" text="Barcha ijarachilar hisobini to'lagan." /> : (
         <Card padded={false}>
           <Table>
-            <thead><tr><Th>Do&apos;kon</Th><Th>Ijarachi</Th><Th>To&apos;lanmagan oylar</Th><Th right>Jami qarz</Th><Th>Oxirgi to&apos;lov</Th><Th>Telegram</Th><Th>Oxirgi eslatma</Th><Th></Th></tr></thead>
+            <thead><tr><Th>Do&apos;kon</Th><Th>Ijarachi</Th><Th>To&apos;lanmagan oylar</Th><Th right>Ijara qarzi</Th><Th right>Svet qarzi</Th><Th>Oxirgi to&apos;lov</Th><Th>Telegram</Th><Th>Oxirgi eslatma</Th><Th></Th></tr></thead>
             <tbody>
               {debtors.map((d) => (
                 <Tr key={d.leaseId} className={d.former ? "bg-slate-50/70" : undefined}>
                   <Td><Link href={`/arenda/dokon/${d.id}`} className="font-medium text-slate-800 hover:underline">{d.name}</Link><span className="block text-xs text-slate-500">{d.location}</span>{d.former && <Badge color="slate">sobiq ijarachi{d.endedAt ? ` · ${date(d.endedAt)} gacha` : ""}</Badge>}</Td>
                   <Td className="text-sm">{d.tenantName ?? <span className="text-slate-400">—</span>}{d.phone && <a href={`tel:${d.phone}`} className="block text-xs text-brand-700 hover:underline">{formatPhone(d.phone)}</a>}</Td>
                   <Td className="text-xs">{d.unpaid.length ? <>{d.unpaid.length} oy<span className="block text-slate-500">{d.unpaid.slice(0, 3).map((m) => m.label).join(", ")}{d.unpaid.length > 3 ? "…" : ""}</span></> : <span className="text-slate-500">oldingi qoldiq</span>}</Td>
-                  <Td right className="font-semibold text-red-600">{fmtNum(d.debt)}</Td>
+                  <Td right className={d.debt > 1 ? "font-semibold text-red-600" : "text-slate-400"}>{d.debt > 1 ? fmtNum(d.debt) : "–"}</Td>
+                  <Td right className={d.elecDebt > 1 ? "font-semibold text-amber-700" : "text-slate-400"}>{d.elecDebt > 1 ? fmtNum(d.elecDebt) : "–"}</Td>
                   <Td className="text-xs text-slate-600">{d.lastPaidAt ? date(d.lastPaidAt) : "—"}</Td>
                   <Td>{d.former ? <span className="text-xs text-slate-400">—</span> : d.linked ? <Badge color="green">ulangan</Badge> : <Badge color="slate">yo&apos;q</Badge>}</Td>
                   <Td className="text-xs text-slate-600">{d.lastReminder ? <>{date(d.lastReminder.at)}{!d.lastReminder.ok && <span className="block text-red-600">yetmadi</span>}</> : "—"}</Td>
@@ -333,7 +337,7 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
     const l = leaseOf.get(x.id);
     return {
       id: x.id, name: x.name, location: x.location, period: x.period, payDay: x.payDay, area: x.area ? Number(x.area) : null, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount),
-      electricity: Number(x.electricity), electricityBilled: x.electricityBilled, tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn,
+      electricity: Number(x.electricity), electricityBilled: x.electricityBilled, elecFixed: Number(x.elecFixed), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn,
       lease: l ? { no: l.no, startDate: isoDate(l.startDate), endDate: l.endDate ? isoDate(l.endDate) : null, deposit: Number(l.deposit) } : null,
     };
   };
@@ -518,6 +522,83 @@ async function AnalyticsTab() {
           </tbody>
         </Table>
       </Card>
+    </div>
+  );
+}
+
+/* ───────────────────────── Svet varag'i (Excel «Свет отчёт») ───────────────────────── */
+
+/**
+ * Oyning svet hisobi joy (bozor) bo'yicha: avvalgi / hozirgi ko'rsatkich, farqi, narxi, ustama, summasi, shartnoma bo'yicha
+ * summa, berilgan (kassaga svet to'lovi + litsevoyga), qoldiq va izoh; har joy oxirida jami va «To'lashimiz kerak».
+ * Svet qarzi ijara qarzidan alohida — `lib/rent-elec.ts`.
+ */
+async function ElecTab({ month, monthName, canShops, shopsHref }: { month: Date; monthName: string; canShops: boolean; shopsHref: string }) {
+  const { settings, groups, total, bill } = await elecSheet(month);
+  const key = monthKey(month);
+  const head = ["№", "Do'kon / ijarachi", "Avvalgi ko'rsatkich", "Hozirgi ko'rsatkich", "Farqi, kVt", "Narxi", `Ustama ${fmtNum(settings.markup, 2)}%`, "Summasi", "Shartnoma bo'yicha", "Berilgan", "Qoldiq", "Izoh"];
+  const excelRows = groups.flatMap((g) => [
+    ...g.rows.map((r, i) => ({
+      "Joy": g.location, [head[0]]: i + 1, [head[1]]: r.tenantName ? `${r.name} — ${r.tenantName}` : r.name, [head[2]]: r.meterStart, [head[3]]: r.meterEnd, [head[4]]: r.kwh || null,
+      [head[5]]: r.price || null, [head[6]]: r.extra || null, [head[7]]: r.sum, [head[8]]: r.fixed || null, [head[9]]: r.paid, [head[10]]: r.left, [head[11]]: r.note,
+    })),
+    { "Joy": g.location, [head[1]]: "Jami", [head[4]]: g.total.kwh, [head[5]]: g.total.price, [head[6]]: g.total.extra, [head[7]]: g.total.sum, [head[8]]: g.total.fixed, [head[9]]: g.total.paid, [head[10]]: g.total.left, [head[11]]: g.bill ? `To'lashimiz kerak: ${g.bill}` : null },
+  ]);
+  const totals = (t: typeof total) => [t.kwh, t.price, t.extra, t.sum, t.fixed, t.paid, t.left];
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label={`Svet summasi — ${monthName}`} value={money(total.sum)} icon={Zap} hint={`${fmtNum(total.kwh, 1)} kVt · ${groups.reduce((a, g) => a + g.rows.length, 0)} ta joy`} />
+        <StatCard label="Ijarachilardan olindi" value={money(total.paid)} icon={Wallet} tone="success" hint="kassaga svet to'lovi + litsevoyga" />
+        <StatCard label="Qoldiq" value={money(total.left)} icon={AlertTriangle} tone={total.left > 1 ? "danger" : "success"} hint="manfiy — ortiqcha to'langan" />
+        <StatCard label="To'lashimiz kerak" value={bill ? money(bill) : "—"} icon={Landmark} tone={bill && total.paid < bill ? "warning" : "default"} hint={bill ? `farq (olingan − to'lanadigan) ${money(total.paid - bill)}` : "joy bo'yicha jadvalda kiriting"} />
+      </div>
+      {canShops && <Card><KwhPriceForm price={settings.kwhPrice} markup={settings.markup} /></Card>}
+      {groups.length === 0 ? (
+        <EmptyState icon={Zap} title={`${monthName} — svet hisobi yo'q`}
+          text="Do'kon formasida «Svet hisobida» belgisini qo'ying (hisoblagichsiz joyga shartnoma bo'yicha oylik summa ham). Oy hisobi ochilganda joy shu varaqqa tushadi."
+          action={canShops ? <Link href={shopsHref} className="text-sm font-medium text-brand-700 hover:underline">Do&apos;konlarga o&apos;tish →</Link> : undefined} />
+      ) : (
+        <>
+          <div className="flex justify-end"><ExcelButton file={`Svet ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} /></div>
+          <Sheet lang="uz" maxHeight="75vh">
+            <SheetHead>
+              <tr>{head.map((h, i) => <SheetTh key={h} tone={i === 7 ? "yellow" : i === 9 ? "green" : i === 10 ? "red" : "plain"} className={i === 1 ? "sticky left-0 z-20 min-w-60 text-left" : "whitespace-normal"}>{h}</SheetTh>)}</tr>
+            </SheetHead>
+            {groups.map((g) => (
+              <tbody key={g.location}>
+                <tr><SheetTd colSpan={12} tone="blue" className="py-2 text-base font-semibold text-slate-900"><span className="sticky left-2.5">{g.location}</span></SheetTd></tr>
+                {g.rows.map((r, i) => <ElecRow key={r.chargeId} row={r} no={i + 1} month={key} canEdit={canShops} kwhPrice={settings.kwhPrice} markup={settings.markup} />)}
+                <tr>
+                  <SheetTd tone="gray" />
+                  <SheetTd tone="gray" strong className="sticky left-0 z-[1] text-center">Jami</SheetTd>
+                  <SheetTd tone="gray" /><SheetTd tone="gray" />
+                  {totals(g.total).map((v, i) => <SheetTd key={i} right tone="gray" strong className={i === 6 && v > 0.005 ? "text-red-700" : undefined}>{i === 0 ? (v ? fmtNum(v, 1) : "–") : cell(v)}</SheetTd>)}
+                  <SheetTd tone="gray" className="text-xs">
+                    <span className="block text-slate-500">To&apos;lashimiz kerak</span>
+                    <ElecBill location={g.location} month={key} amount={g.bill} canEdit={canShops} />
+                  </SheetTd>
+                </tr>
+              </tbody>
+            ))}
+            {groups.length > 1 && (
+              <SheetFoot>
+                <tr>
+                  <SheetTd />
+                  <SheetTd className="sticky left-0 z-[1] text-center">Jami ({groups.length} joy)</SheetTd>
+                  <SheetTd /><SheetTd />
+                  {totals(total).map((v, i) => <SheetTd key={i} right>{i === 0 ? (v ? fmtNum(v, 1) : "–") : cell(v)}</SheetTd>)}
+                  <SheetTd className="text-xs">{bill ? `To'lashimiz kerak: ${fmtNum(bill)}` : ""}</SheetTd>
+                </tr>
+              </SheetFoot>
+            )}
+          </Sheet>
+          <p className="text-xs text-slate-500">
+            Svet to&apos;lovini yuqoridagi «Kirim» → «Svet to&apos;lovi» bilan yozing (kvitansiya chiqadi); ijarachi elektr kompaniyasining litsevoy hisobiga o&apos;zi to&apos;lasa — qatorni tahrirlab «litsevoyga» summasini kiriting.
+            Elektr kompaniyasiga to&apos;lovni «Chiqim» → «Svet» bilan yozing. Svet qarzi ijara qarzidan alohida hisoblanadi.
+          </p>
+        </>
+      )}
     </div>
   );
 }

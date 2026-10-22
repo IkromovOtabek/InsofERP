@@ -8,10 +8,11 @@ import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
 import {
-  RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_MAX_MONTHS, cancelRentTx, createRentTx, endRentLease, monthKey, monthLabel, openMonth, parseMonth,
+  RENT_AREA_MAX, RENT_ELEC_CATEGORY, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_MAX_MONTHS, cancelRentTx, createRentTx, endRentLease, monthKey, monthLabel, openMonth, parseMonth,
   saveRentChargeData, saveRentShopData, startRentLease, toggleRentShopActive,
 } from "@/lib/rent";
 import { addPriceChange, addPriceChangeBulk, addRentFiles, cancelPriceChange, removeRentFile } from "@/lib/rent-contract";
+import { saveElecBill, saveRentElecData } from "@/lib/rent-elec";
 import { RentImportError, importRentSheet, type RentImportRow } from "@/lib/rent-import";
 import { canDo } from "@/lib/permissions";
 import type { ValueMaps } from "@/lib/excel";
@@ -38,6 +39,8 @@ const txSchema = z.object({
   leaseId: zOpt,
   // Oylik ijarada bir necha oyga oldindan to'lov
   months: z.coerce.number().int().min(1).max(RENT_MAX_MONTHS).optional().catch(1),
+  // Kirim turi: ijara yoki svet to'lovi
+  incomeKind: z.enum(["rent", "elec"]).optional().catch("rent"),
 });
 
 /** Kirim saqlangach forma «Kvitansiyani chop etish» havolasini ko'rsatadi. */
@@ -52,20 +55,22 @@ export async function saveRentTx(_prev: RentTxState, fd: FormData): Promise<Rent
   const month = d.month ? parseMonth(d.month) : null;
   if (d.month && !month) return { error: "Oy noto'g'ri" };
   if (d.type === "INCOME" && !d.shopId) return { error: "Do'konni tanlang" };
-  const day = d.type === "INCOME" && d.day ? new Date(d.day) : null;
+  const day = d.type === "INCOME" && d.day && d.incomeKind !== "elec" ? new Date(d.day) : null;
   if (d.type === "INCOME" && !month && !day) return { error: "Qaysi oy uchun to'lov — oyni tanlang" };
-  const category = d.type === "INCOME" ? RENT_INCOME_CATEGORY : d.category;
+  const elec = d.type === "INCOME" && d.incomeKind === "elec";
+  const category = d.type === "INCOME" ? (elec ? RENT_ELEC_CATEGORY : RENT_INCOME_CATEGORY) : d.category;
   if (d.type === "EXPENSE" && !(RENT_EXPENSE_CATEGORIES as readonly string[]).includes(category ?? "")) return { error: "Chiqim turini tanlang" };
   if (d.type === "EXPENSE" && category === "Boshqa" && !d.note) return { error: "«Boshqa» chiqim uchun izoh yozing" };
   const res = await createRentTx({
     type: d.type, method: d.method, date: new Date(d.date), month, shopId: d.shopId, amount: d.amount,
     category: category!, note: d.note, clientToken: token(d.clientToken), day,
-    leaseId: d.type === "INCOME" ? d.leaseId : null, months: d.type === "INCOME" ? d.months : 1,
+    leaseId: d.type === "INCOME" ? d.leaseId : null, months: d.type === "INCOME" && !elec ? d.months : 1,
   }, s.userId);
   if (res.error) return { error: res.error };
   if (d.shopId) shopDone(d.shopId); else done();
   const note = res.duplicate ? "Allaqachon saqlangan (qayta bosildi)"
     : d.type === "EXPENSE" ? "Chiqim saqlandi"
+    : elec ? "Svet to'lovi saqlandi"
     : res.sameDay ? `Kirim saqlandi. Diqqat: bu kun uchun avval ham ${res.sameDay} ta kirim bor — ikki marta yozilmaganini tekshiring`
     : (d.months ?? 1) > 1 ? `Kirim saqlandi — ${d.months} oyga bo'lindi, kvitansiya bitta`
     : "Kirim saqlandi";
@@ -95,8 +100,6 @@ const optNum = (max: number, msg: string) => z.string().optional().transform((v)
 
 const chargeSchema = z.object({
   bankDue: zDec(), cashDue: zDec(), electricity: zDec(), tax: zDec(), note: zOpt,
-  // Svet hisoblagichi ko'rsatkichlari (kVt·soat)
-  meterStart: optNum(1e9, "hisoblagich ko'rsatkichi noto'g'ri"), meterEnd: optNum(1e9, "hisoblagich ko'rsatkichi noto'g'ri"),
   // Kunlik ijarada — hisoblangan kunlar (bozor yopiq kunlar ayiriladi)
   days: z.string().optional().transform((v) => (v ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 31), "kunlar 0–31 oralig'ida bo'lsin"),
 });
@@ -150,6 +153,7 @@ const shopSchema = z.object({
   inn: zOpt,
   ...leaseShape,
   electricityBilled: z.string().optional().transform((v) => v === "on"),
+  elecFixed: zDec(),
   // Qo'shilganda shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi
   month: zOpt,
   // Yangi joy: «Bo'sh» — hali ijaraga berilmagan, oy hisobiga tushmaydi
@@ -305,18 +309,53 @@ export async function removeRentFileAction(id: string): Promise<ActionState> {
 
 /* ───────────────────────── Svet tarifi ───────────────────────── */
 
-const kwhSchema = z.object({ price: zDec() });
+const kwhSchema = z.object({ price: zDec(), markup: z.coerce.number({ message: "ustama raqam bo'lsin" }).min(0, "ustama manfiy bo'lmasin").max(100, "ustama 100% dan oshmasin") });
 
-/** 1 kVt·soat narxi — hisoblagich ko'rsatkichidan svet summasi shu narxda hisoblanadi (0 — summa qo'lda). */
+/** 1 kVt·soat narxi va ustama (%) — hisoblagich ko'rsatkichidan svet summasi: farq × narx + %. */
 export async function saveRentKwhPrice(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
   const r = parseForm(kwhSchema, fd);
   if ("error" in r) return { error: r.error };
-  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { rentKwhPrice: true } });
-  await db.companySettings.upsert({ where: { id: "main" }, update: { rentKwhPrice: r.data.price }, create: { id: "main", rentKwhPrice: r.data.price } });
-  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ?? undefined, { rentKwhPrice: r.data.price });
+  const data = { rentKwhPrice: r.data.price, rentElecMarkup: r.data.markup };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { rentKwhPrice: true, rentElecMarkup: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, update: data, create: { id: "main", ...data } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ?? undefined, data);
   done();
-  return { ok: true, note: r.data.price ? `1 kVt·soat — ${r.data.price} so'm` : "Tarif o'chirildi — svet summasi qo'lda kiritiladi" };
+  return { ok: true, note: `1 kVt·soat — ${r.data.price} so'm, ustama ${r.data.markup}%. Keyingi kiritilgan ko'rsatkichlar shu tarifda hisoblanadi` };
+}
+
+/* ───────────────────────── Svet varag'i (`lib/rent-elec.ts`) ───────────────────────── */
+
+const elecSchema = z.object({
+  meterStart: optNum(1e9, "ko'rsatkich noto'g'ri"), meterEnd: optNum(1e9, "ko'rsatkich noto'g'ri"),
+  amount: zDec(), paidDirect: zDec(), note: zOpt,
+});
+
+/** Svet qatori: ko'rsatkichlar, (hisoblagichsiz bo'lsa) summa, litsevoyga to'langan, izoh. */
+export async function saveRentElec(leaseId: string, key: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const month = parseMonth(key);
+  if (!month) return { error: "Oy noto'g'ri" };
+  const r = parseForm(elecSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await saveRentElecData(leaseId, month, r.data, s.userId);
+  if (res.error) return { error: res.error };
+  done();
+  return { ok: true };
+}
+
+const billSchema = z.object({ amount: zDec(), note: zOpt });
+
+/** Joy bo'yicha «To'lashimiz kerak» — elektr kompaniyasiga oylik to'lov (0 — o'chiriladi). */
+export async function saveRentElecBill(location: string, key: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const month = parseMonth(key);
+  if (!month) return { error: "Oy noto'g'ri" };
+  const r = parseForm(billSchema, fd);
+  if ("error" in r) return { error: r.error };
+  await saveElecBill(location, month, r.data.amount, r.data.note, s.userId);
+  done();
+  return { ok: true, note: "Saqlandi" };
 }
 
 const importSchema = z.object({

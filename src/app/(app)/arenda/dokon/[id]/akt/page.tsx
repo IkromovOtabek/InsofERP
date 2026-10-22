@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
 import { date, fmtNum } from "@/lib/format";
-import { RENT_METHOD_LABEL, currentLeases, currentMonth, monthKey, monthLabel, parseMonth, shiftMonth } from "@/lib/rent";
+import { RENT_ELEC_CATEGORY, RENT_METHOD_LABEL, currentLeases, currentMonth, monthKey, monthLabel, parseMonth, shiftMonth } from "@/lib/rent";
 import { receiptNo } from "@/lib/rent-receipt";
 import { PrintButton } from "@/components/print-button";
 import { BackLink } from "@/components/ui";
@@ -32,12 +32,12 @@ export default async function RentAktPage({ params, searchParams }: { params: Pr
 
   const [company, before, charges, paidBefore, payments] = await Promise.all([
     getCompany(),
-    db.rentCharge.aggregate({ where: { leaseId: lease.id, month: { lt: from } }, _sum: { bankDue: true, cashDue: true, elecDue: true } }),
+    db.rentCharge.aggregate({ where: { leaseId: lease.id, month: { lt: from } }, _sum: { bankDue: true, cashDue: true, elecDue: true, elecPaidDirect: true } }),
     db.rentCharge.findMany({ where: { leaseId: lease.id, month: { gte: from, lt: end } }, orderBy: { month: "asc" } }),
     db.rentTx.aggregate({ where: { leaseId: lease.id, type: "INCOME", cancelledAt: null, month: { lt: from } }, _sum: { amount: true } }),
     db.rentTx.findMany({ where: { leaseId: lease.id, type: "INCOME", cancelledAt: null, month: { gte: from, lt: end } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }] }),
   ]);
-  const opening = Number(before._sum.bankDue ?? 0) + Number(before._sum.cashDue ?? 0) + Number(before._sum.elecDue ?? 0) - Number(paidBefore._sum.amount ?? 0);
+  const opening = Number(before._sum.bankDue ?? 0) + Number(before._sum.cashDue ?? 0) + Number(before._sum.elecDue ?? 0) - Number(before._sum.elecPaidDirect ?? 0) - Number(paidBefore._sum.amount ?? 0);
   const nos = await Promise.all(payments.map((p) => receiptNo(p)));
 
   type Line = { date: Date; doc: string; note: string; debit: number; credit: number };
@@ -47,10 +47,12 @@ export default async function RentAktPage({ params, searchParams }: { params: Pr
     const c = charges.find((x) => monthKey(x.month) === key);
     if (c) {
       const bank = Number(c.bankDue), cash = Number(c.cashDue), elec = Number(c.elecDue);
-      if (bank + cash + elec > 0) lines.push({ date: m, doc: `Ijara hisobi — ${monthLabel(m)}`, note: [bank && `perechisleniye ${fmtNum(bank)}`, cash && `naqd ${fmtNum(cash)}`, elec && `svet ${fmtNum(elec)}`].filter(Boolean).join(", "), debit: bank + cash + elec, credit: 0 });
+      if (bank + cash > 0) lines.push({ date: m, doc: `Ijara hisobi — ${monthLabel(m)}`, note: [bank && `perechisleniye ${fmtNum(bank)}`, cash && `naqd ${fmtNum(cash)}`].filter(Boolean).join(", "), debit: bank + cash, credit: 0 });
+      if (elec > 0) lines.push({ date: m, doc: `Svet — ${monthLabel(m)}`, note: c.meterStart != null && c.meterEnd != null ? `${fmtNum(Number(c.meterEnd) - Number(c.meterStart), 1)} kVt` : "shartnoma bo'yicha", debit: elec, credit: 0 });
+      if (Number(c.elecPaidDirect) > 0) lines.push({ date: m, doc: "Svet — litsevoy hisobga to'langan", note: monthLabel(m), debit: 0, credit: Number(c.elecPaidDirect) });
     }
     payments.forEach((p, i) => {
-      if (p.month && monthKey(p.month) === key) lines.push({ date: p.date, doc: `Kvitansiya ${nos[i]}`, note: `${RENT_METHOD_LABEL[p.method].toLowerCase()}, ${monthLabel(m)} uchun`, debit: 0, credit: Number(p.amount) });
+      if (p.month && monthKey(p.month) === key) lines.push({ date: p.date, doc: `Kvitansiya ${nos[i]}`, note: `${p.category === RENT_ELEC_CATEGORY ? "svet, " : ""}${RENT_METHOD_LABEL[p.method].toLowerCase()}, ${monthLabel(m)} uchun`, debit: 0, credit: Number(p.amount) });
     });
   }
   const debit = lines.reduce((s, l) => s + l.debit, 0), credit = lines.reduce((s, l) => s + l.credit, 0);
@@ -132,7 +134,7 @@ export default async function RentAktPage({ params, searchParams }: { params: Pr
             ? <><b>{tenant}</b> tomonidan oldindan to&apos;langan (avans) summa <b>{fmtNum(-closing, 2)} so&apos;m</b>.</>
             : <>tomonlar o&apos;rtasida qarz yo&apos;q.</>}
       </p>
-      <p className="mt-1 text-[11px] text-slate-500 print:hidden">To&apos;lov qaysi oy uchun yozilgan bo&apos;lsa o&apos;sha oyda ko&apos;rinadi. Svet faqat ijarachidan undirilsa (do&apos;konda belgilangan) kiradi, soliq — kirmaydi. Bekor qilingan to&apos;lovlar hisobga olinmaydi.</p>
+      <p className="mt-1 text-[11px] text-slate-500 print:hidden">To&apos;lov qaysi oy uchun yozilgan bo&apos;lsa o&apos;sha oyda ko&apos;rinadi. Ijara va svet birga: svet summasi, svet to&apos;lovlari va litsevoyga to&apos;langani ham kiradi; soliq — kirmaydi. Bekor qilingan to&apos;lovlar hisobga olinmaydi.</p>
 
       <div className="mt-10 grid grid-cols-2 gap-10 text-[12px]">
         <div>

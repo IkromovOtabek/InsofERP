@@ -184,6 +184,8 @@ model CompanySettings {
   rentRemindDay       Int       @default(5)
   /// Arenda: 1 kVt·soat svet narxi — hisoblagich ko'rsatkichidan svet summasini hisoblash uchun (0 — qo'lda kiritiladi)
   rentKwhPrice        Decimal   @default(0) @db.Decimal(18, 2)
+  /// Arenda: svet summasiga ustama, % (hamma ijarachiga bir xil, masalan 8) — summasi = narxi + narxi × %
+  rentElecMarkup      Decimal   @default(0) @db.Decimal(5, 2)
   updatedAt           DateTime  @updatedAt
 }
 
@@ -2984,8 +2986,11 @@ model RentShop {
   tgChatId          String?
   tgLinkedAt        DateTime?
   tgLinkToken       String?    @unique
-  /// Svetni ijarachi to'laydi: oy hisobidagi svet summasi qarzga qo'shiladi (`RentCharge.elecDue`); aks holda — ma'lumot uchun
+  /// Svet hisobida: ijarachi svetni alohida to'laydi — «Svet» varag'ida hisoblagich, summa va qoldiq (`RentCharge.elecDue`).
+  /// Svet qarzi ijara qarzidan alohida yuritiladi (Excel «Свет отчёт» kabi)
   electricityBilled Boolean    @default(false)
+  /// Shartnoma bo'yicha har oy beriladigan svet summasi (qat'iy) — hisoblagichsiz joyda svet summasi shu bo'ladi
+  elecFixed         Decimal    @default(0) @db.Decimal(18, 2)
 
   charges      RentCharge[]
   txs          RentTx[]
@@ -3080,6 +3085,20 @@ model RentFile {
   @@index([shopId, removedAt])
 }
 
+/// Joy (bozor) bo'yicha elektr kompaniyasiga oylik to'lov — «To'lashimiz kerak» (biz uchun xarajat; to'lash — arenda
+/// kassasidan «Svet» chiqimi).
+model RentElecBill {
+  id        String   @id @default(cuid())
+  location  String
+  /// Oyning 1-kuni
+  month     DateTime @db.Date
+  amount    Decimal  @db.Decimal(18, 2)
+  note      String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([location, month])
+}
+
 /// Ijarachiga yuborilgan qarz eslatmasi (jurnal). Avtomatik — oyda bir marta (`month` + `auto`), qo'lda — istalgancha.
 model RentReminder {
   id        String   @id @default(cuid())
@@ -3105,26 +3124,33 @@ model RentReminder {
 /// Oylik hisob — Excel'dagi oy varag'ining bitta qatori: shu oy do'kon qancha to'lashi kerak.
 /// Qoldiq = (bankDue + cashDue) − shu oy uchun kirimlar (RentTx INCOME, month bo'yicha).
 model RentCharge {
-  id          String   @id @default(cuid())
-  shopId      String
+  id             String   @id @default(cuid())
+  shopId         String
   /// Qaysi ijarachi (shartnoma) hisobi
-  leaseId     String
+  leaseId        String
   /// Oyning 1-kuni
-  month       DateTime @db.Date
-  bankDue     Decimal  @default(0) @db.Decimal(18, 2)
-  cashDue     Decimal  @default(0) @db.Decimal(18, 2)
-  electricity Decimal  @default(0) @db.Decimal(18, 2)
-  tax         Decimal  @default(0) @db.Decimal(18, 2)
+  month          DateTime @db.Date
+  bankDue        Decimal  @default(0) @db.Decimal(18, 2)
+  cashDue        Decimal  @default(0) @db.Decimal(18, 2)
+  electricity    Decimal  @default(0) @db.Decimal(18, 2)
+  tax            Decimal  @default(0) @db.Decimal(18, 2)
   /// Kunlik ijarada — hisoblangan kunlar soni (bozor yopiq kunlar ayirilgan bo'lishi mumkin); oylikda bo'sh
-  days        Int?
+  days           Int?
   /// Svet hisoblagichi: oy boshi va oxiri ko'rsatkichi (kVt·soat); ikkalasi bo'lsa svet = farq × `rentKwhPrice`
-  meterStart  Decimal? @db.Decimal(18, 3)
-  meterEnd    Decimal? @db.Decimal(18, 3)
-  /// Ijarachidan undiriladigan svet (qarzga qo'shiladi): do'konda «svetni ijarachi to'laydi» bo'lsa = `electricity`, aks holda 0
-  elecDue     Decimal  @default(0) @db.Decimal(18, 2)
-  note        String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  meterStart     Decimal? @db.Decimal(18, 3)
+  meterEnd       Decimal? @db.Decimal(18, 3)
+  /// Svet summasi (ijarachi to'laydi): narxi (`electricity`) + ustama %; hisoblagichsiz joyda — qat'iy summa.
+  /// Do'kon svet hisobida bo'lmasa 0. Svet qarzi = summasi − svet to'lovlari − litsevoyga to'langani (ijaradan alohida)
+  elecDue        Decimal  @default(0) @db.Decimal(18, 2)
+  /// Shu oy shartnoma bo'yicha beriladigan svet summasi (do'kondan nusxa — ma'lumot uchun)
+  elecFixed      Decimal  @default(0) @db.Decimal(18, 2)
+  /// Ijarachi elektr kompaniyasi litsevoy hisobiga to'g'ridan to'lagani (arenda kassasiga kirmaydi, svet qarzini yopadi)
+  elecPaidDirect Decimal  @default(0) @db.Decimal(18, 2)
+  /// Svet bo'yicha izoh: «kartaga tashagan», «litsevoyga tashadi»
+  elecNote       String?
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   shop  RentShop  @relation(fields: [shopId], references: [id])
   lease RentLease @relation(fields: [leaseId], references: [id])
