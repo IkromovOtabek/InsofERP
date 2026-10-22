@@ -1,18 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileText, Link2Off, MessageCircle, Pencil, Phone, Printer, QrCode, Send, Wallet } from "lucide-react";
+import { Bell, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, FileSignature, FileText, History, Link2Off, MessageCircle, Paperclip, Pencil, Phone, Printer, QrCode, Send, Trash2, TrendingUp, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
+import { RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, leaseDebts, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
+import { LEASE_SOON_DAYS, RENT_FILE_ACCEPT, RENT_FILE_KINDS, RENT_FILE_MAX_MB, leaseDaysLeft } from "@/lib/rent-contract";
+import { ConfirmButton } from "../../../payments/confirm-button";
+import { ShopTxForm } from "../../arenda-forms";
+import { EndLeaseForm, FileUploadForm, LeaseForm, PriceChangeForm } from "../../contract-forms";
 import { reminderText, shopLedger } from "@/lib/rent-tenant";
 import { botEnabled, botUsername } from "@/lib/telegram/api";
 import { Badge, Callout, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
-import { createRentTgLink, sendRentReminderNow, unlinkRentTg } from "../../actions";
+import { cancelRentPriceChange, createRentTgLink, removeRentFileAction, sendRentReminderNow, unlinkRentTg } from "../../actions";
 import { CopyButton } from "../../tenant-forms";
 
 const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
@@ -30,13 +34,27 @@ export default async function RentShopPage({ params, searchParams }: { params: P
   const canShops = canDo(s, "arenda", "shops");
   const canCreate = canDo(s, "arenda", "create");
   const daily = shop.period === "DAILY";
-  const [ledger, txs, reminders, bot, days] = await Promise.all([
-    shopLedger(id),
-    db.rentTx.findMany({ where: { shopId: id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 100, include: { createdBy: { select: { fullName: true } } } }),
+  // Shartnomalar: joriy (amaldagi, bo'lmasa oxirgi) — karta shu bo'yicha; qolganlari «Oldingi ijarachilar»
+  const leases = await db.rentLease.findMany({ where: { shopId: id }, orderBy: [{ startDate: "desc" }, { createdAt: "desc" }] });
+  const active = leases.find((l) => l.status === "ACTIVE") ?? null;
+  const curLease = active ?? leases[0] ?? null;
+  const former = leases.filter((l) => l.id !== curLease?.id);
+  const [ledger, txs, reminders, bot, days, debts, changes, files] = await Promise.all([
+    shopLedger(id, curLease?.id ?? null),
+    db.rentTx.findMany({ where: { shopId: id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 100, include: { createdBy: { select: { fullName: true } }, lease: { select: { tenantName: true } } } }),
     db.rentReminder.findMany({ where: { shopId: id }, orderBy: { createdAt: "desc" }, take: 20 }),
     botEnabled() ? botUsername() : Promise.resolve(null),
-    daily ? rentDays(shop, calMonth) : Promise.resolve([] as RentDay[]),
+    daily && curLease ? rentDays(shop, curLease.id, calMonth) : Promise.resolve([] as RentDay[]),
+    leaseDebts(former.map((l) => l.id)),
+    db.rentPriceChange.findMany({ where: { shopId: id }, orderBy: [{ fromMonth: "desc" }, { createdAt: "desc" }], take: 20 }),
+    db.rentFile.findMany({ where: { shopId: id, removedAt: null }, orderBy: { createdAt: "desc" }, include: { lease: { select: { tenantName: true } } } }),
   ]);
+  const now = currentMonth();
+  const months = Array.from({ length: 15 }, (_, i) => shiftMonth(now, 2 - i)).map((m) => ({ key: monthKey(m), label: monthLabel(m) }));
+  const priceMonths = Array.from({ length: 12 }, (_, i) => shiftMonth(now, i + 1)).map((m) => ({ key: monthKey(m), label: monthLabel(m) }));
+  const shopOpt = { id, name: shop.name, location: shop.location, daily };
+  const left = active ? leaseDaysLeft(active.endDate) : null;
+  const hasElec = ledger.months.some((m) => m.elecDue > 0.005);
   const debt = ledger.debt;
   // Kunlikda jami qarz oy oxirigacha bo'lgan kunlarni ham o'z ichiga oladi — kartada muddati o'tgani ko'rsatiladi
   const state = (await rentShopStates([shop])).get(id)!;
@@ -54,7 +72,8 @@ export default async function RentShopPage({ params, searchParams }: { params: P
         title={shop.name}
         subtitle={<>{shop.location}{shop.tenantName ? ` · ${shop.tenantName}` : ""}{!shop.isActive && <> · <Badge color="amber">bo&apos;sh joy</Badge></>}</>}
         action={<>
-          <LinkButton href={`/arenda/dokon/${id}/akt`} variant="secondary"><FileText size={16} /> Akt-sverka</LinkButton>
+          {curLease && <LinkButton href={`/arenda/dokon/${id}/shartnoma?lease=${curLease.id}`} variant="secondary"><FileSignature size={16} /> Shartnoma</LinkButton>}
+          <LinkButton href={`/arenda/dokon/${id}/akt${curLease ? `?lease=${curLease.id}` : ""}`} variant="secondary"><FileText size={16} /> Akt-sverka</LinkButton>
           {canShops && <LinkButton href={`/arenda?tab=dokonlar&edit=${id}`} variant="secondary"><Pencil size={16} /> Tahrirlash</LinkButton>}
         </>}
       />
@@ -70,25 +89,32 @@ export default async function RentShopPage({ params, searchParams }: { params: P
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          {daily && <DaysCalendar id={id} month={calMonth} days={days} />}
+          {canCreate && active && (
+            <Card>
+              <CardHeader title="To'lov qabul qilish" icon={Wallet} description={daily ? "Kunlik ijara — qaysi kun uchun to'lov ekanini tanlang." : "Oldindan bir necha oyga to'lasa — «Necha oyga» ni tanlang: summa oylarga bo'linadi, kvitansiya bitta."} />
+              <ShopTxForm shop={shopOpt} month={monthKey(now)} months={months} />
+            </Card>
+          )}
+          {daily && days.length > 0 && <DaysCalendar id={id} month={calMonth} days={days} />}
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="Oyma-oy hisob" description="Har oy: to'lashi kerak (perechisleniye + naqd), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans." /></div>
+            <div className="p-5 pb-0"><CardHeader title={`Oyma-oy hisob${curLease?.tenantName ? ` — ${curLease.tenantName}` : ""}`} description={`Har oy: to'lashi kerak (perechisleniye + naqd${hasElec ? " + svet" : ""}), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans.${former.length ? " Oldingi ijarachilar hisobi — pastda alohida." : ""}`} /></div>
             {ledger.months.length === 0 ? <div className="p-5 pt-0"><EmptyState title="Hisob yo'q" text="Oy varag'i ochilganda yoki Excel'dan import qilinganda shu yerda chiqadi." /></div> : (
               <Table>
-                <thead><tr><Th>Oy</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th><Th right>Jami</Th><Th right>Tushgan</Th><Th right>Qoldiq</Th></tr></thead>
+                <thead><tr><Th>Oy</Th><Th right>Perechisleniye</Th><Th right>Naqd</Th>{hasElec && <Th right>Svet</Th>}<Th right>Jami</Th><Th right>Tushgan</Th><Th right>Qoldiq</Th></tr></thead>
                 <tbody>
                   {ledger.months.map((m) => (
                     <Tr key={m.key}>
                       <Td><Link href={`/arenda?oy=${m.key}`} className="hover:underline">{m.label}</Link>{m.note && <span className="block text-xs text-slate-500">{m.note}</span>}</Td>
                       <Td right>{cell(m.bankDue)}</Td>
                       <Td right>{cell(m.cashDue)}</Td>
+                      {hasElec && <Td right>{cell(m.elecDue)}</Td>}
                       <Td right className="font-medium">{cell(m.due)}</Td>
                       <Td right className="text-emerald-700">{cell(m.paid)}</Td>
                       <Td right className={`font-semibold ${m.left > 1 ? "text-red-600" : m.left < -1 ? "text-emerald-700" : "text-slate-400"}`}>{m.left < -1 ? `avans ${fmtNum(-m.left)}` : cell(m.left)}</Td>
                     </Tr>
                   ))}
                   <Tr className="bg-slate-50/70">
-                    <Td className="font-semibold">Jami</Td><Td /><Td />
+                    <Td className="font-semibold">Jami</Td><Td /><Td />{hasElec && <Td />}
                     <Td right className="font-semibold">{cell(ledger.due)}</Td>
                     <Td right className="font-semibold text-emerald-700">{cell(ledger.paid)}</Td>
                     <Td right className={`font-bold ${debt > 1 ? "text-red-600" : "text-emerald-700"}`}>{debt < -1 ? `avans ${fmtNum(-debt)}` : cell(debt)}</Td>
@@ -110,7 +136,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                       <Td>{t.day ? `${date(t.day)} kun` : t.month ? monthLabel(t.month) : "—"}{t.type === "EXPENSE" && <span className="ml-1 text-xs text-slate-500">(chiqim: {t.category})</span>}</Td>
                       <Td>{RENT_METHOD_LABEL[t.method]}</Td>
                       <Td right className={t.type === "INCOME" ? "font-semibold text-emerald-700" : "font-semibold text-red-600"}>{t.type === "INCOME" ? "+" : "−"}{fmtNum(t.amount)}</Td>
-                      <Td className="text-xs text-slate-500">{t.createdBy.fullName}{t.note ? ` · ${t.note}` : ""}{t.cancelReason ? ` · bekor: ${t.cancelReason}` : ""}</Td>
+                      <Td className="text-xs text-slate-500">{t.createdBy.fullName}{t.lease && t.leaseId !== curLease?.id && t.lease.tenantName ? ` · ${t.lease.tenantName} (sobiq)` : ""}{t.batchId ? " · bir necha oyga" : ""}{t.note ? ` · ${t.note}` : ""}{t.cancelReason ? ` · bekor: ${t.cancelReason}` : ""}</Td>
                       <Td>{t.type === "INCOME" && <Link href={`/arenda/kvitansiya/${t.id}`} title="Kvitansiyani chop etish" className="inline-flex items-center gap-1 text-xs text-slate-500 no-underline hover:text-slate-900"><Printer size={13} /> Kvitansiya</Link>}</Td>
                     </Tr>
                   ))}
@@ -121,17 +147,127 @@ export default async function RentShopPage({ params, searchParams }: { params: P
         </div>
 
         <div className="space-y-4">
-          <Card>
-            <CardHeader title="Ijarachi" />
+          <div id="shartnoma" className="scroll-mt-20"><Card>
+            <CardHeader title={active ? "Ijarachi va shartnoma" : "Bo'sh joy"} icon={FileSignature}
+              description={active ? undefined : "Joy hozir ijarada emas — yangi ijarachi bilan shartnoma oching."} />
+            {active && left !== null && left <= LEASE_SOON_DAYS && (
+              <div className="mb-3"><Callout tone={left < 0 ? "danger" : "warning"} title={left < 0 ? `Shartnoma muddati ${-left} kun oldin tugagan` : left === 0 ? "Shartnoma bugun tugaydi" : `Shartnoma tugashiga ${left} kun qoldi`}>
+                Uzaytirish — «Tahrirlash» da tugash sanasini o&apos;zgartiring; ijarachi ketsa — «Joyni bo&apos;shatish».
+              </Callout></div>
+            )}
             <DL items={[
+              ...(active ? [
+                { k: "Shartnoma", v: <>{active.no ? `№ ${active.no} · ` : ""}{date(active.startDate)} — {active.endDate ? date(active.endDate) : "muddatsiz"}</> },
+                ...(Number(active.deposit) > 0 ? [{ k: "Zaklad", v: money(active.deposit) }] : []),
+                ...(active.note ? [{ k: "Kelishuv", v: active.note }] : []),
+              ] : []),
               { k: "F.I.O. / mas'ul", v: shop.tenantName ?? <span className="text-slate-400">kiritilmagan</span> },
               { k: "Telefon", v: phone ? <a href={`tel:${shop.phone}`} className="inline-flex items-center gap-1 text-brand-700 hover:underline"><Phone size={13} /> {phone}</a> : <span className="text-slate-400">kiritilmagan</span> },
               { k: "INN", v: shop.inn ?? <span className="text-slate-400">—</span> },
               { k: "Joy", v: shop.location },
               { k: "Maydoni", v: shop.area ? <>{fmtNum(shop.area, 2)} m²{rentPerM2(shop) ? <span className="text-slate-500"> · 1 m² — {money(rentPerM2(shop)!)} ({RENT_PERIOD_LABEL[shop.period].toLowerCase()})</span> : null}</> : <span className="text-slate-400">kiritilmagan</span> },
+              { k: "Svet", v: shop.electricityBilled ? "ijarachi to'laydi (qarzga qo'shiladi)" : "ma'lumot uchun" },
               ...(shop.note ? [{ k: "Izoh", v: shop.note }] : []),
             ]} />
-            {canShops && (!shop.tenantName || !shop.phone) && <p className="mt-3 text-xs text-slate-500">Ijarachi va telefonni «Tahrirlash» orqali kiriting — eslatma matni shu bilan chiqadi.</p>}
+            {canShops && active && (!shop.tenantName || !shop.phone) && <p className="mt-3 text-xs text-slate-500">Ijarachi va telefonni «Tahrirlash» orqali kiriting — eslatma matni shu bilan chiqadi.</p>}
+            {canShops && (active ? (
+              <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+                <details className="group">
+                  <summary className="cursor-pointer text-sm font-medium text-brand-700 hover:underline">Ijarachini almashtirish</summary>
+                  <div className="pt-3"><LeaseForm shopId={id} replace daily={daily} defaults={{ bankAmount: Number(shop.bankAmount), cashAmount: Number(shop.cashAmount), payDay: shop.payDay }} /></div>
+                </details>
+                <details className="group">
+                  <summary className="cursor-pointer text-sm font-medium text-red-600 hover:underline">Joyni bo&apos;shatish</summary>
+                  <div className="pt-3"><EndLeaseForm shopId={id} /></div>
+                </details>
+              </div>
+            ) : (
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <LeaseForm shopId={id} replace={false} daily={daily} defaults={{ bankAmount: Number(shop.bankAmount), cashAmount: Number(shop.cashAmount), payDay: shop.payDay }} />
+              </div>
+            ))}
+          </Card></div>
+
+          {former.length > 0 && (
+            <div id="oldingi" className="scroll-mt-20"><Card>
+              <CardHeader title="Oldingi ijarachilar" icon={History} description="Har ijarachining hisobi o'z shartnomasida: qarzi bo'lsa shu yerda to'lov qabul qilinadi." />
+              <ul className="divide-y divide-slate-100 text-sm">
+                {former.map((l) => {
+                  const d = debts.get(l.id) ?? 0;
+                  return (
+                    <li key={l.id} className="py-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium text-slate-800">{l.tenantName ?? "Ijarachi ko'rsatilmagan"}</div>
+                          <div className="text-xs text-slate-500">{date(l.startDate)} — {l.endedAt ? date(l.endedAt) : "…"}{l.endReason ? ` · ${l.endReason}` : ""}</div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className={`font-semibold tabular-nums ${d > 1 ? "text-red-600" : "text-slate-400"}`}>{d > 1 ? `qarz ${fmtNum(d)}` : d < -1 ? `avans ${fmtNum(-d)}` : "qarz yo'q"}</div>
+                          <Link href={`/arenda/dokon/${id}/akt?lease=${l.id}`} className="text-xs text-slate-500 hover:text-slate-900">Akt-sverka</Link>
+                        </div>
+                      </div>
+                      {canCreate && d > 1 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs font-medium text-brand-700 hover:underline">Qarzni qabul qilish</summary>
+                          <div className="pt-2"><ShopTxForm shop={shopOpt} leaseId={l.id} month={monthKey(now)} months={months} /></div>
+                        </details>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card></div>
+          )}
+
+          <Card>
+            <CardHeader title="Narx o'zgarishi" icon={TrendingUp} description="Yangi narx tanlangan oy hisobi ochilganda o'zi qo'llanadi (do'kon andozasi ham yangilanadi)." />
+            {changes.length > 0 && (
+              <ul className="mb-3 divide-y divide-slate-100 text-sm">
+                {changes.map((c) => (
+                  <li key={c.id} className={`flex items-start justify-between gap-3 py-2 ${c.cancelledAt ? "opacity-50" : ""}`}>
+                    <div>
+                      <div className="font-medium text-slate-800">{monthLabel(c.fromMonth)} dan — {money(Number(c.bankAmount) + Number(c.cashAmount))}</div>
+                      <div className="text-xs text-slate-500">perechisleniye {fmtNum(c.bankAmount)}, naqd {fmtNum(c.cashAmount)}{c.note ? ` · ${c.note}` : ""}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <Badge color={c.cancelledAt ? "slate" : c.appliedAt ? "green" : "blue"}>{c.cancelledAt ? "bekor qilingan" : c.appliedAt ? "qo'llangan" : "kutilmoqda"}</Badge>
+                      {canShops && !c.appliedAt && !c.cancelledAt && <div className="mt-1"><ConfirmButton action={cancelRentPriceChange.bind(null, c.id)} label="Bekor qilish" question="Narx o'zgarishi bekor qilinsinmi?" okText="Bekor qilindi" className="text-xs text-slate-500 hover:text-red-600" /></div>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canShops && active ? <PriceChangeForm shopId={id} months={priceMonths} daily={daily} current={{ bankAmount: Number(shop.bankAmount), cashAmount: Number(shop.cashAmount) }} />
+              : changes.length === 0 && <p className="text-sm text-slate-500">Rejalashtirilgan o&apos;zgarish yo&apos;q.</p>}
+          </Card>
+
+          <Card>
+            <CardHeader title="Hujjatlar va suratlar" icon={Paperclip} description="Shartnoma skani, pasport nusxasi, do'kon rasmi — faqat Arenda bo'limi xodimlari ko'radi." />
+            {files.length > 0 && (
+              <ul className="mb-3 grid grid-cols-2 gap-2">
+                {files.map((f) => {
+                  const url = `/arenda/dokon/${id}/fayl/${f.id}`;
+                  return (
+                    <li key={f.id} className="overflow-hidden rounded-lg border border-slate-200">
+                      <a href={url} target="_blank" rel="noopener" className="block">
+                        {f.fileType.startsWith("image/")
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={url} alt={f.kind} className="h-24 w-full object-cover" />
+                          : <div className="flex h-24 items-center justify-center bg-slate-50 text-slate-400"><FileText size={28} /></div>}
+                      </a>
+                      <div className="flex items-start justify-between gap-1 p-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-medium text-slate-800">{f.kind}</div>
+                          <div className="truncate text-[11px] text-slate-500" title={f.fileName}>{date(f.createdAt)}{f.lease?.tenantName ? ` · ${f.lease.tenantName}` : ""}</div>
+                        </div>
+                        {canShops && <ConfirmButton action={removeRentFileAction.bind(null, f.id)} label={<Trash2 size={13} />} title="Olib tashlash" question={`«${f.fileName}» ro'yxatdan olib tashlansinmi?`} okText="Olib tashlandi" className="shrink-0 text-slate-400 hover:text-red-600" />}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {canShops ? <FileUploadForm shopId={id} kinds={RENT_FILE_KINDS} accept={RENT_FILE_ACCEPT} maxMb={RENT_FILE_MAX_MB} /> : files.length === 0 && <p className="text-sm text-slate-500">Hujjat yuklanmagan.</p>}
           </Card>
 
           <Card>

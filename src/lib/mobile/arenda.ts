@@ -1,13 +1,12 @@
 import { z } from "zod";
 import { Prisma, type RentMethod, type RentTxType } from "@/generated/prisma";
 import { db } from "@/lib/db";
-import { audit } from "@/lib/audit";
 import { canDo } from "@/lib/permissions";
 import { MAX_AMOUNT } from "@/lib/action";
 import { dateRu, fmtNum, money } from "@/lib/format";
 import {
   RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
-  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentPerM2, rentShopStates, toggleRentShopActive, type RentPayStatus,
+  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, chargeDue, leaseDebts, saveRentChargeData, RENT_MAX_MONTHS, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentPerM2, rentShopStates, toggleRentShopActive, type RentPayStatus,
 } from "@/lib/rent";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
@@ -174,25 +173,28 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
   const s = await db.rentShop.findUnique({ where: { id } });
   if (!s) throw new ListError("NOT_FOUND", "Do'kon topilmadi", 404);
   const now = currentMonth();
+  // Hisob — joriy shartnoma (hozirgi yoki oxirgi ijarachi) bo'yicha
+  const lease = await db.rentLease.findFirst({ where: { shopId: id }, orderBy: [{ status: "asc" }, { startDate: "desc" }, { createdAt: "desc" }] });
+  const lid = lease?.id ?? "";
   const [charges, paid, debts] = await Promise.all([
-    db.rentCharge.findMany({ where: { shopId: id }, orderBy: { month: "desc" }, take: 6 }),
-    db.rentTx.groupBy({ by: ["month"], where: { shopId: id, type: "INCOME", cancelledAt: null, month: { not: null } }, _sum: { amount: true } }),
-    shopDebts(),
+    db.rentCharge.findMany({ where: { leaseId: lid }, orderBy: { month: "desc" }, take: 6 }),
+    db.rentTx.groupBy({ by: ["month"], where: { leaseId: lid, type: "INCOME", cancelledAt: null, month: { not: null } }, _sum: { amount: true } }),
+    leaseDebts(lid ? [lid] : []),
   ]);
   const paidBy = new Map(paid.map((p) => [monthKey(p.month!), n(p._sum.amount)]));
-  const debt = debts.get(id) ?? 0;
+  const debt = debts.get(lid) ?? 0;
   const cur = charges.find((c) => monthKey(c.month) === monthKey(now));
   const canShops = arendaCan(user, "shops");
 
   const actions: DetailAction[] = [];
-  if (canShops) {
+  if (canShops && s.isActive) {
     actions.push({
       id: "arenda.charge", label: cur ? "Shu oy hisobini tahrirlash" : "Shu oy hisobini ochish", tone: "brand",
       form: [
         { name: "month", label: "Oy", type: "select", required: true, value: monthKey(now), options: monthOptions(now) },
         { name: "bankDue", label: "Perechisleniye, so'm", type: "number", required: true, value: String(n(cur?.bankDue ?? s.bankAmount)) },
         { name: "cashDue", label: "Naqd, so'm", type: "number", required: true, value: String(n(cur?.cashDue ?? s.cashAmount)) },
-        { name: "electricity", label: "Svet, so'm", type: "number", value: String(n(cur?.electricity ?? s.electricity)), hint: "Ma'lumot uchun — qoldiqqa ta'sir qilmaydi" },
+        { name: "electricity", label: "Svet, so'm", type: "number", value: String(n(cur?.electricity ?? s.electricity)), hint: s.electricityBilled ? "Ijarachi to'laydi — qarzga qo'shiladi" : "Ma'lumot uchun — qoldiqqa ta'sir qilmaydi" },
         { name: "tax", label: "Soliq, so'm", type: "number", value: String(n(cur?.tax ?? s.tax)) },
         { name: "note", label: "Izoh", type: "text", value: cur?.note ?? undefined },
       ],
@@ -225,7 +227,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
   const months: HomeSection = {
     title: "Oylar bo'yicha hisob", empty: "Hisob hali ochilmagan — «Shu oy hisobini ochish»",
     rows: charges.map((c) => {
-      const due = n(c.bankDue) + n(c.cashDue), p = paidBy.get(monthKey(c.month)) ?? 0, left = r2(due - p);
+      const due = chargeDue(c), p = paidBy.get(monthKey(c.month)) ?? 0, left = r2(due - p);
       return { id: c.id, title: monthLabel(c.month), subtitle: `bank ${num(n(c.bankDue))} · naqd ${num(n(c.cashDue))}`, right: `${num(p)} / ${num(due)}`, status: left > 0.005 ? `qoldiq ${num(left)}` : left < -0.005 ? `avans ${num(-left)}` : "To'liq", tone: left > 0.005 ? "danger" : "success" };
     }),
   };
@@ -235,6 +237,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
     fields: [
       { label: "Umumiy holat", value: debt > 0.005 ? `qarz ${money(debt)}` : debt < -0.005 ? `avans ${money(-debt)}` : "qarz yo'q", tone: debt > 0.005 ? "danger" : "success" },
       { label: "Oylik (andoza)", value: `bank ${money(n(s.bankAmount))} · naqd ${money(n(s.cashAmount))}` },
+      ...(lease ? [{ label: lease.status === "ACTIVE" ? "Shartnoma" : "Oxirgi shartnoma (yopilgan)", value: [lease.no ? `№ ${lease.no}` : null, `${dateRu(lease.startDate)} — ${lease.endDate ? dateRu(lease.endDate) : lease.endedAt ? dateRu(lease.endedAt) : "muddatsiz"}`, lease.tenantName].filter(Boolean).join(" · ") }] : []),
       ...(s.area ? [{ label: "Maydoni", value: `${fmtNum(n(s.area), 2)} m²${rentPerM2(s) ? ` · 1 m² — ${money(rentPerM2(s)!)}` : ""}` }] : []),
       ...(n(s.electricity) || n(s.tax) ? [{ label: "Svet · soliq", value: `${money(n(s.electricity))} · ${money(n(s.tax))}` }] : []),
       ...(s.note ? [{ label: "Izoh", value: s.note }] : []),
@@ -281,6 +284,7 @@ export async function arendaKirimForm(): Promise<CreateForm> {
       { name: "month", label: "Qaysi oy uchun", type: "select", required: true, value: monthKey(now), options: monthOptions(now), hint: "Kunlik ijarada oy tanlangan kundan olinadi" },
       // `showIf` do'kon turiga qaray olmaydi — maydon doim ko'rinadi, server faqat kunlik do'konda hisobga oladi
       { name: "day", label: "Qaysi kun uchun (kunlik ijara)", type: "select", value: ymd(new Date()), options: recentDays(), hint: "Faqat «(kunlik)» do'konlarda" },
+      { name: "months", label: "Necha oyga", type: "select", value: "1", options: Array.from({ length: RENT_MAX_MONTHS }, (_, i) => ({ value: String(i + 1), label: i ? `${i + 1} oyga (summa teng bo'linadi)` : "1 oyga" })), hint: "Oldindan to'lov: tanlangan oydan boshlab" },
       methodField(),
       amountField(),
       dateField(),
@@ -344,6 +348,7 @@ const TxBody = z.object({
   category: z.string().optional(),
   note: zText,
   clientToken: zToken,
+  months: z.coerce.number().int().min(1).max(RENT_MAX_MONTHS).optional().catch(undefined),
 });
 
 const ShopBody = z.object({
@@ -388,6 +393,7 @@ export async function arendaCreate(user: MobileUser, key: string, payload: unkno
       type, method: d.method, date: new Date(`${d.date}T00:00:00Z`), month, shopId: type === "INCOME" ? d.shopId! : null,
       amount: d.amount, category, note: d.note, clientToken: d.clientToken ?? null,
       day: type === "INCOME" && d.day ? new Date(`${d.day}T00:00:00Z`) : null,
+      months: type === "INCOME" ? d.months : undefined,
     }, user.id);
     if (r.error) throw new Error(r.error);
     // Jurnal ro'yxati ochiladi (yangi yozuv birinchi qatorda); bitta yozuv id'si `createRentTx` dan qaytmaydi
@@ -451,11 +457,10 @@ export async function arendaAction(user: MobileUser, action: string, id: string,
       const d = p.data!;
       const month = parseMonth(d.month);
       if (!month) fail("Oy noto'g'ri");
-      const before = await db.rentCharge.findUnique({ where: { shopId_month: { shopId: id, month: month! } } });
-      if (!before && !(await db.rentShop.findUnique({ where: { id }, select: { id: true } }))) fail("Do'kon topilmadi", 404);
-      const data = { bankDue: d.bankDue, cashDue: d.cashDue, electricity: d.electricity, tax: d.tax, note: d.note };
-      const c = await db.rentCharge.upsert({ where: { shopId_month: { shopId: id, month: month! } }, create: { shopId: id, month: month!, ...data }, update: data });
-      await audit(db, user.id, before ? "UPDATE" : "CREATE", "RentCharge", c.id, before ?? undefined, c);
+      const lease = await db.rentLease.findFirst({ where: { shopId: id, status: "ACTIVE" }, select: { id: true } });
+      if (!lease) fail("Bu joy hozir ijarada emas — hisob ochib bo'lmaydi", 400);
+      const r = await saveRentChargeData(lease!.id, month!, { bankDue: d.bankDue, cashDue: d.cashDue, electricity: d.electricity, tax: d.tax, note: d.note }, user.id);
+      if (r.error) fail(r.error);
       return { ok: true, message: `${monthLabel(month!)} hisobi saqlandi` };
     }
   }

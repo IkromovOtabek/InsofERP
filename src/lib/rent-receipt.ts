@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { fmtNum, date } from "./format";
 import { qrKey, qrKeyValid } from "./qr-key";
-import { RENT_METHOD_LABEL, rentFor } from "./rent";
+import { RENT_METHOD_LABEL, monthLabel, rentFor } from "./rent";
 import { shopLedger } from "./rent-tenant";
 import { botEnabled, sendMessage } from "./telegram/api";
 
@@ -34,12 +34,22 @@ export async function receiptNo(tx: { id: string; createdAt: Date }): Promise<st
   return `KV-${y}-${String(seq).padStart(5, "0")}`;
 }
 
-/** Kvitansiya ma'lumoti (chop etish va ommaviy sahifa). Kirim bo'lmasa — null. */
+/**
+ * Kvitansiya ma'lumoti (chop etish va ommaviy sahifa). Kirim bo'lmasa — null. «Necha oyga» to'lov — bitta kvitansiya:
+ * raqam va sana guruhning birinchi yozuvidan, summa — jami, «qaysi oylar uchun» — ro'yxat. To'lovchi — shartnomadagi ijarachi.
+ */
 export async function rentReceipt(id: string) {
-  const tx = await db.rentTx.findUnique({ where: { id }, include: { shop: true, createdBy: { select: { fullName: true } } } });
-  if (!tx || tx.type !== "INCOME" || !tx.shop) return null;
-  const [no, ledger] = await Promise.all([receiptNo(tx), shopLedger(tx.shop.id)]);
-  return { tx, shop: tx.shop, no, amount: Number(tx.amount), debt: ledger.debt, ledger };
+  const one = await db.rentTx.findUnique({ where: { id }, include: { shop: true, lease: true, createdBy: { select: { fullName: true } } } });
+  if (!one || one.type !== "INCOME" || !one.shop) return null;
+  const group = one.batchId
+    ? await db.rentTx.findMany({ where: { batchId: one.batchId }, orderBy: [{ month: "asc" }, { createdAt: "asc" }], include: { shop: true, lease: true, createdBy: { select: { fullName: true } } } })
+    : [one];
+  const tx = group[0];
+  const [no, ledger] = await Promise.all([receiptNo(tx), shopLedger(tx.shop!.id, tx.leaseId)]);
+  const payer = { name: tx.lease?.tenantName ?? tx.shop!.tenantName ?? tx.shop!.name, inn: tx.lease?.inn ?? tx.shop!.inn };
+  const months = group.length > 1 ? group.map((g) => (g.month ? monthLabel(g.month) : "")).filter(Boolean) : null;
+  const forLabel = months ? { label: `Qaysi oylar uchun (${months.length} oy)`, value: months.join(", ") } : rentFor(tx);
+  return { tx, shop: tx.shop!, no, payer, forLabel, count: group.length, amount: group.reduce((a, g) => a + Number(g.amount), 0), debt: ledger.debt, ledger };
 }
 
 /**
@@ -56,7 +66,7 @@ export async function notifyRentPayment(txId: string): Promise<void> {
     "",
     `Do'kon: ${r.shop.name} (${r.shop.location})`,
     `Summa: ${fmtNum(r.amount)} so'm (${RENT_METHOD_LABEL[r.tx.method].toLowerCase()})`,
-    ...(rentFor(r.tx) ? [`${rentFor(r.tx)!.label}: ${rentFor(r.tx)!.value}`] : []),
+    ...(r.forLabel ? [`${r.forLabel.label}: ${r.forLabel.value}`] : []),
     `Sana: ${date(r.tx.date)} · kvitansiya ${r.no}`,
     "",
     r.debt > 1 ? `Qolgan qarz: ${fmtNum(r.debt)} so'm` : r.debt < -1 ? `Avans (ortiqcha to'lov): ${fmtNum(-r.debt)} so'm` : "Qarzingiz yo'q. Rahmat!",

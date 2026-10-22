@@ -7,7 +7,11 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, monthKey, openMonth, parseMonth, saveRentShopData, toggleRentShopActive } from "@/lib/rent";
+import {
+  RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_MAX_MONTHS, cancelRentTx, createRentTx, endRentLease, monthKey, monthLabel, openMonth, parseMonth,
+  saveRentChargeData, saveRentShopData, startRentLease, toggleRentShopActive,
+} from "@/lib/rent";
+import { addPriceChange, addPriceChangeBulk, addRentFiles, cancelPriceChange, removeRentFile } from "@/lib/rent-contract";
 import { RentImportError, importRentSheet, type RentImportRow } from "@/lib/rent-import";
 import { canDo } from "@/lib/permissions";
 import type { ValueMaps } from "@/lib/excel";
@@ -30,6 +34,10 @@ const txSchema = z.object({
   category: zOpt,
   note: zOpt,
   clientToken: zOpt,
+  // Sobiq ijarachi qarzi uchun kirim (do'kon kartasidan); bo'sh — joriy shartnoma
+  leaseId: zOpt,
+  // Oylik ijarada bir necha oyga oldindan to'lov
+  months: z.coerce.number().int().min(1).max(RENT_MAX_MONTHS).optional().catch(1),
 });
 
 /** Kirim saqlangach forma «Kvitansiyani chop etish» havolasini ko'rsatadi. */
@@ -52,12 +60,14 @@ export async function saveRentTx(_prev: RentTxState, fd: FormData): Promise<Rent
   const res = await createRentTx({
     type: d.type, method: d.method, date: new Date(d.date), month, shopId: d.shopId, amount: d.amount,
     category: category!, note: d.note, clientToken: token(d.clientToken), day,
+    leaseId: d.type === "INCOME" ? d.leaseId : null, months: d.type === "INCOME" ? d.months : 1,
   }, s.userId);
   if (res.error) return { error: res.error };
-  done();
+  if (d.shopId) shopDone(d.shopId); else done();
   const note = res.duplicate ? "Allaqachon saqlangan (qayta bosildi)"
     : d.type === "EXPENSE" ? "Chiqim saqlandi"
     : res.sameDay ? `Kirim saqlandi. Diqqat: bu kun uchun avval ham ${res.sameDay} ta kirim bor — ikki marta yozilmaganini tekshiring`
+    : (d.months ?? 1) > 1 ? `Kirim saqlandi — ${d.months} oyga bo'lindi, kvitansiya bitta`
     : "Kirim saqlandi";
   return { ok: true, note, receiptId: d.type === "INCOME" ? res.id : undefined };
 }
@@ -75,34 +85,54 @@ export async function openRentMonth(key: string): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
   const month = parseMonth(key);
   if (!month) return { error: "Oy noto'g'ri" };
-  const { created } = await openMonth(month, s.userId);
+  const { created, priced } = await openMonth(month, s.userId);
   done();
-  return { ok: true, note: created ? `${created} ta do'kon hisobi ochildi` : "Yangi do'kon yo'q — hisob avvaldan ochilgan" };
+  return { ok: true, note: created ? `${created} ta do'kon hisobi ochildi${priced ? `, ${priced} tasida yangi narx qo'llandi` : ""}` : "Yangi do'kon yo'q — hisob avvaldan ochilgan" };
 }
+
+const optNum = (max: number, msg: string) => z.string().optional().transform((v) => (v?.trim() ? Number(v.replace(",", ".")) : null))
+  .refine((v) => v === null || (Number.isFinite(v) && v >= 0 && v <= max), msg);
 
 const chargeSchema = z.object({
   bankDue: zDec(), cashDue: zDec(), electricity: zDec(), tax: zDec(), note: zOpt,
+  // Svet hisoblagichi ko'rsatkichlari (kVt·soat)
+  meterStart: optNum(1e9, "hisoblagich ko'rsatkichi noto'g'ri"), meterEnd: optNum(1e9, "hisoblagich ko'rsatkichi noto'g'ri"),
   // Kunlik ijarada — hisoblangan kunlar (bozor yopiq kunlar ayiriladi)
   days: z.string().optional().transform((v) => (v ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 31), "kunlar 0–31 oralig'ida bo'lsin"),
 });
 
-/** Oy varag'idagi qatorni tahrirlash (do'konning shu oy hisobi). Hisob bo'lmasa — ochiladi. */
-export async function saveRentCharge(shopId: string, key: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+/** Oy varag'idagi qatorni tahrirlash (shartnomaning shu oy hisobi). Hisob bo'lmasa — ochiladi. Qoida — `saveRentChargeData`. */
+export async function saveRentCharge(leaseId: string, key: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
   const month = parseMonth(key);
   if (!month) return { error: "Oy noto'g'ri" };
   const r = parseForm(chargeSchema, fd);
   if ("error" in r) return { error: r.error };
-  const before = await db.rentCharge.findUnique({ where: { shopId_month: { shopId, month } } });
-  if (!before && !(await db.rentShop.findUnique({ where: { id: shopId }, select: { id: true } }))) return { error: "Do'kon topilmadi" };
-  const c = await db.rentCharge.upsert({
-    where: { shopId_month: { shopId, month } },
-    create: { shopId, month, ...r.data },
-    update: r.data,
-  });
-  await audit(db, s.userId, before ? "UPDATE" : "CREATE", "RentCharge", c.id, before ?? undefined, c);
+  const res = await saveRentChargeData(leaseId, month, r.data, s.userId);
+  if (res.error) return { error: res.error };
   done();
   return { ok: true };
+}
+
+const optDate = zOpt.refine((v) => !v || !Number.isNaN(new Date(v).getTime()), "sana noto'g'ri").transform((v) => (v ? new Date(v) : null));
+/** Shartnoma maydonlari (do'kon formasi va «Ijaraga berish / ijarachini almashtirish» formasi). */
+const leaseShape = {
+  contractNo: zOpt,
+  startDate: optDate,
+  endDate: optDate,
+  deposit: optNum(MAX_AMOUNT, "zaklad summasi noto'g'ri"),
+};
+
+/** Telefon va INN tekshiruvi — do'kon va shartnoma formalari uchun bitta qoida. */
+function tenantCheck<T extends { phone: string | null; inn: string | null }>(d: T): { error: string } | T {
+  if (d.phone) {
+    const p = normalizePhone(d.phone);
+    if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67" };
+    d.phone = p;
+  }
+  if (d.inn && !/^\d{9}$|^\d{14}$/.test(d.inn.replace(/\s+/g, ""))) return { error: "INN 9 xonali (JShShIR — 14 xonali) bo'lsin" };
+  if (d.inn) d.inn = d.inn.replace(/\s+/g, "");
+  return d;
 }
 
 const shopSchema = z.object({
@@ -118,6 +148,8 @@ const shopSchema = z.object({
   tenantName: zOpt,
   phone: zOpt,
   inn: zOpt,
+  ...leaseShape,
+  electricityBilled: z.string().optional().transform((v) => v === "on"),
   // Qo'shilganda shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi
   month: zOpt,
   // Yangi joy: «Bo'sh» — hali ijaraga berilmagan, oy hisobiga tushmaydi
@@ -128,21 +160,16 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   const s = await requireAction("arenda", "shops");
   const r = parseForm(shopSchema, fd);
   if ("error" in r) return { error: r.error };
-  const { id, month: key, vacant, ...rest } = r.data;
-  const data = id ? rest : { ...rest, isActive: !vacant };
+  const { id, month: key, vacant, contractNo, ...rest } = r.data;
+  const data = { ...(id ? rest : { ...rest, isActive: !vacant }), no: contractNo };
   if (data.period === "DAILY") data.payDay = null; // kunlikda har kuni to'lanadi
   if (!id && !data.area) return { error: "Do'kon maydonini (m²) kiriting" };
   // Ijaradagi joyda telefon va (oylikda) to'lov kuni shart — eslatma va «Bugun / Muddati o'tgan» filtrlari shunga tayanadi
   const active = id ? ((await db.rentShop.findUnique({ where: { id }, select: { isActive: true } }))?.isActive ?? true) : !vacant;
   if (active && !data.phone) return { error: "Ijaradagi joy uchun ijarachi telefonini kiriting" };
   if (active && data.period === "MONTHLY" && !data.payDay) return { error: "To'lov kunini tanlang — har oyning nechanchi sanasigacha to'laydi" };
-  if (data.phone) {
-    const p = normalizePhone(data.phone);
-    if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67" };
-    data.phone = p;
-  }
-  if (data.inn && !/^\d{9}$|^\d{14}$/.test(data.inn.replace(/\s+/g, ""))) return { error: "INN 9 xonali (JShShIR — 14 xonali) bo'lsin" };
-  if (data.inn) data.inn = data.inn.replace(/\s+/g, "");
+  const chk = tenantCheck(data);
+  if ("error" in chk) return { error: chk.error };
   // Qoida `lib/rent.ts` da — mobil do'kon kartochkasi ham shuni chaqiradi
   const res = await saveRentShopData(id, data, id ? null : parseMonth(key), s.userId);
   if (res.error) return { error: res.error };
@@ -150,13 +177,146 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   return { ok: true, note: id ? "Do'kon saqlandi" : vacant ? "Bo'sh joy qo'shildi" : "Do'kon qo'shildi" };
 }
 
-/** Joyni «Ijarada» ↔ «Bo'sh» qilish — bo'sh joy keyingi oylar hisobiga tushmaydi, tarix joyida qoladi. */
+/* ───────────────────────── Shartnoma: ijaraga berish, almashtirish, bo'shatish ───────────────────────── */
+
+const leaseSchema = z.object({
+  tenantName: zStr("Ijarachi F.I.O. sini yozing").max(200, "juda uzun"),
+  phone: zStr("Ijarachi telefonini kiriting"),
+  inn: zOpt,
+  ...leaseShape,
+  startDate: zStr("Ijara boshlanish sanasini tanlang").refine(validDate, "sana noto'g'ri").transform((v) => new Date(v)),
+  bankAmount: zDec(), cashAmount: zDec(),
+  payDay: z.string().optional().transform((v) => (v ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v >= 1 && v <= 31), "to'lov kuni 1–31 oralig'ida bo'lsin"),
+  leaseNote: zOpt,
+});
+
+/**
+ * «Ijaraga berish» (bo'sh joy) yoki «Ijarachini almashtirish»: amaldagi shartnoma yangi ijara boshlanishidan bir kun oldin
+ * yopiladi (eski ijarachi qarzi o'zida qoladi), yangi shartnoma ochiladi, Telegram ulanishi yangilanadi.
+ */
+export async function startRentLeaseAction(shopId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(leaseSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const chk = tenantCheck(r.data);
+  if ("error" in chk) return { error: chk.error };
+  const d = chk;
+  const shop = await db.rentShop.findUnique({ where: { id: shopId }, select: { period: true } });
+  if (shop?.period === "MONTHLY" && !d.payDay) return { error: "To'lov kunini tanlang — har oyning nechanchi sanasigacha to'laydi" };
+  const res = await startRentLease(shopId, {
+    tenantName: d.tenantName, phone: d.phone, inn: d.inn, no: d.contractNo, startDate: d.startDate, endDate: d.endDate, deposit: d.deposit, leaseNote: d.leaseNote,
+    bankAmount: d.bankAmount, cashAmount: d.cashAmount, payDay: d.payDay,
+  }, s.userId);
+  if (res.error) return { error: res.error };
+  shopDone(shopId);
+  return { ok: true, note: `${res.replaced ? "Ijarachi almashtirildi" : "Ijaraga berildi"}${res.charged ? " — shu oy jadvaliga qo'shildi, summani tekshiring" : ""}${res.replaced ? ". Eski ijarachining shu oy hisobini jadvalda tuzating" : ""}` };
+}
+
+const endLeaseSchema = z.object({
+  endedAt: zStr("Chiqish sanasini tanlang").refine(validDate, "sana noto'g'ri").transform((v) => new Date(v)),
+  reason: zOpt,
+});
+
+/** Joyni bo'shatish: amaldagi shartnoma yopiladi, joy keyingi oylar hisobiga tushmaydi, tarix va qarz joyida qoladi. */
+export async function endRentLeaseAction(shopId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(endLeaseSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await endRentLease(shopId, { endedAt: r.data.endedAt, reason: r.data.reason }, s.userId);
+  if (res.error) return { error: res.error };
+  shopDone(shopId);
+  return { ok: true, note: "Joy bo'shatildi — qarzi bo'lsa «Qarzdorlar» da sobiq ijarachi sifatida qoladi" };
+}
+
+/** Do'konlar ro'yxatidagi tugma: ijaradagi joyni bugungi sana bilan bo'shatish. */
 export async function toggleRentShop(id: string): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
   const r = await toggleRentShopActive(id, s.userId);
   if (r.error) return { error: r.error };
   shopDone(id);
   return { ok: true, note: r.active ? `Ijaraga berildi${r.charged ? " — shu oy jadvaliga qo'shildi, summani tekshiring" : ""}` : "Bo'sh joy deb belgilandi" };
+}
+
+/* ───────────────────────── Narx o'zgarishi ───────────────────────── */
+
+const priceSchema = z.object({
+  fromMonth: zStr("Qaysi oydan — oyni tanlang"),
+  bankAmount: zDec(), cashAmount: zDec(),
+  note: zOpt,
+});
+
+export async function addRentPriceChange(shopId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(priceSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const fromMonth = parseMonth(r.data.fromMonth);
+  if (!fromMonth) return { error: "Oy noto'g'ri" };
+  const res = await addPriceChange(shopId, { fromMonth, bankAmount: r.data.bankAmount, cashAmount: r.data.cashAmount, note: r.data.note }, s.userId);
+  if (res.error) return { error: res.error };
+  shopDone(shopId);
+  return { ok: true, note: `${monthLabel(fromMonth)} hisobi ochilganda yangi narx qo'llanadi` };
+}
+
+const bulkPriceSchema = z.object({
+  location: zStr("Joyni (bozorni) tanlang"),
+  fromMonth: zStr("Qaysi oydan — oyni tanlang"),
+  percent: z.coerce.number({ message: "foiz raqam bo'lsin" }).min(-90, "foiz −90 dan kichik bo'lmasin").max(500, "foiz juda katta"),
+  note: zOpt,
+});
+
+export async function addRentPriceChangeBulk(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(bulkPriceSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const fromMonth = parseMonth(r.data.fromMonth);
+  if (!fromMonth) return { error: "Oy noto'g'ri" };
+  const res = await addPriceChangeBulk(r.data.location, { fromMonth, percent: r.data.percent, note: r.data.note }, s.userId);
+  if (res.error) return { error: res.error };
+  done();
+  return { ok: true, note: `${res.created} ta do'konga ${monthLabel(fromMonth)} dan yangi narx rejalashtirildi${res.skipped ? `; ${res.skipped} tasida shu oy hisobi ochilgan — o'tkazib yuborildi` : ""}` };
+}
+
+export async function cancelRentPriceChange(id: string): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = await cancelPriceChange(id, s.userId);
+  if (r.error) return { error: r.error };
+  shopDone(r.shopId!);
+  return { ok: true, note: "Narx o'zgarishi bekor qilindi" };
+}
+
+/* ───────────────────────── Hujjat va suratlar ───────────────────────── */
+
+export async function uploadRentFiles(shopId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const files = fd.getAll("files").filter((f): f is File => f instanceof File);
+  const r = await addRentFiles(shopId, String(fd.get("kind") ?? ""), files, s.userId);
+  if (r.count) shopDone(shopId);
+  if (r.error) return { error: r.count ? `${r.count} ta fayl saqlandi, keyingisi: ${r.error}` : r.error };
+  return { ok: true, note: `${r.count} ta fayl saqlandi` };
+}
+
+export async function removeRentFileAction(id: string): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = await removeRentFile(id, s.userId);
+  if (r.error) return { error: r.error };
+  shopDone(r.shopId!);
+  return { ok: true, note: "Fayl olib tashlandi" };
+}
+
+/* ───────────────────────── Svet tarifi ───────────────────────── */
+
+const kwhSchema = z.object({ price: zDec() });
+
+/** 1 kVt·soat narxi — hisoblagich ko'rsatkichidan svet summasi shu narxda hisoblanadi (0 — summa qo'lda). */
+export async function saveRentKwhPrice(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(kwhSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { rentKwhPrice: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, update: { rentKwhPrice: r.data.price }, create: { id: "main", rentKwhPrice: r.data.price } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ?? undefined, { rentKwhPrice: r.data.price });
+  done();
+  return { ok: true, note: r.data.price ? `1 kVt·soat — ${r.data.price} so'm` : "Tarif o'chirildi — svet summasi qo'lda kiritiladi" };
 }
 
 const importSchema = z.object({

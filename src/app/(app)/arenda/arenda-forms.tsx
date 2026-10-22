@@ -40,7 +40,20 @@ export function RentTxPanel({ shops, month, months, expenseCats, canCreate }: {
   );
 }
 
-function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | "EXPENSE"; shops: ShopOpt[]; month: string; months: { key: string; label: string }[]; expenseCats: readonly string[] }) {
+/**
+ * Do'kon kartasidagi kirim formasi: do'kon tanlangan, `leaseId` berilsa — o'sha (sobiq) ijarachi qarzi uchun.
+ */
+export function ShopTxForm({ shop, leaseId, month, months }: { shop: ShopOpt; leaseId?: string; month: string; months: { key: string; label: string }[] }) {
+  return <TxForm type="INCOME" shops={[shop]} month={month} months={months} expenseCats={[]} fixed={{ shopId: shop.id, leaseId }} />;
+}
+
+/** «Necha oyga» tanlovi: oylik ijarada summa tanlangan oydan boshlab shuncha oyga teng bo'linadi. */
+const MONTH_COUNTS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+function TxForm({ type, shops, month, months, expenseCats, fixed }: {
+  type: "INCOME" | "EXPENSE"; shops: ShopOpt[]; month: string; months: { key: string; label: string }[]; expenseCats: readonly string[];
+  fixed?: { shopId: string; leaseId?: string };
+}) {
   const [state, action, pending] = useActionState(saveRentTx, undefined);
   // Bir martalik kalit: ikki marta bosilgan «Saqlash» ikkinchi yozuv ochmaydi; saqlangach yangilanadi
   const [token, setToken] = useState("");
@@ -50,9 +63,10 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
   const locations = [...new Set(shops.map((s) => s.location))];
   const income = type === "INCOME";
   // Kunlik ijarali do'kon tanlansa — «Qaysi oy uchun» o'rniga «Qaysi kun uchun»
-  const [shopId, setShopId] = useState("");
+  const [shopId, setShopId] = useState(fixed?.shopId ?? "");
   const daily = income && !!shops.find((s) => s.id === shopId)?.daily;
-  useEffect(() => { if (state?.ok) setShopId(""); }, [state]);
+  const [count, setCount] = useState(1);
+  useEffect(() => { if (state?.ok) { setShopId(fixed?.shopId ?? ""); setCount(1); } }, [state, fixed?.shopId]);
 
   return (
     <form action={action} className="space-y-4">
@@ -63,24 +77,33 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
       )}
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="clientToken" value={token} />
+      {fixed && <input type="hidden" name="shopId" value={fixed.shopId} />}
+      {fixed?.leaseId && <input type="hidden" name="leaseId" value={fixed.leaseId} />}
       <div key={formKey} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {income ? (
           <>
-            <Field label="Do'kon *" className="sm:col-span-2">
+            {!fixed && <Field label="Do'kon *" className="sm:col-span-2">
               <Select name="shopId" value={shopId} onChange={(e) => setShopId(e.target.value)} required>
                 <option value="" disabled>Do&apos;konni tanlang…</option>
                 {locations.map((l) => (
                   <optgroup key={l} label={l}>{shops.filter((s) => s.location === l).map((s) => <option key={s.id} value={s.id}>{s.name}{s.daily ? " (kunlik)" : ""}</option>)}</optgroup>
                 ))}
               </Select>
-            </Field>
+            </Field>}
             {daily ? (
               <Field label="Qaysi kun uchun *" hint="kunlik ijara — shu kunning to'lovi">
                 <Input name="day" type="date" defaultValue={isoDate()} required />
               </Field>
             ) : (
-              <Field label="Qaysi oy uchun *">
+              <Field label={count > 1 ? "Qaysi oydan *" : "Qaysi oy uchun *"}>
                 <Select name="month" defaultValue={month}>{months.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</Select>
+              </Field>
+            )}
+            {!daily && !fixed?.leaseId && (
+              <Field label="Necha oyga" hint={count > 1 ? "summa oylarga teng bo'linadi, kvitansiya bitta" : "oldindan to'lov bo'lsa — oylar sonini tanlang"}>
+                <Select name="months" value={count} onChange={(e) => setCount(Number(e.target.value))}>
+                  {MONTH_COUNTS.map((k) => <option key={k} value={k}>{k === 1 ? "1 oy" : `${k} oy`}</option>)}
+                </Select>
               </Field>
             )}
           </>
@@ -117,22 +140,33 @@ function TxForm({ type, shops, month, months, expenseCats }: { type: "INCOME" | 
 }
 
 export type ChargeRowData = {
-  shopId: string; name: string; isActive: boolean;
+  shopId: string; leaseId: string; name: string; isActive: boolean; tenantName: string | null; former: boolean;
   period: "MONTHLY" | "DAILY"; days: number | null; bankRate: number; cashRate: number;
-  bankDue: number; cashDue: number; due: number; electricity: number; tax: number;
+  meterStart: number | null; meterEnd: number | null; elecBilled: boolean;
+  bankDue: number; cashDue: number; elecDue: number; due: number; electricity: number; tax: number;
   bankPaid: number; cashPaid: number; paid: number; left: number; note: string | null;
 };
 
 const cell = (v: number) => (Math.abs(v) < 0.005 ? "–" : fmtNum(v));
 const num = (v: number) => (v ? String(v) : "");
 
+/** Hisoblagich ko'rsatkichi o'zgarsa — tarif bo'yicha svet summasi qayta hisoblanadi (server ham shu qoidada). */
+function meter<T extends { meterStart: string; meterEnd: string; electricity: string }>(o: T, kwhPrice: number): T {
+  const a = Number(o.meterStart.replace(",", ".")), b = Number(o.meterEnd.replace(",", "."));
+  if (!o.meterStart || !o.meterEnd || !(kwhPrice > 0) || !Number.isFinite(a) || !Number.isFinite(b) || b < a) return o;
+  return { ...o, electricity: String(Math.round((b - a) * kwhPrice)) };
+}
+
 /** Oy varag'ining bitta qatori. Qalam bosilsa — summalar shu qatorning o'zida tahrirlanadi. */
-export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: string; canEdit: boolean }) {
+export function ChargeRow({ row, month, canEdit, kwhPrice, showTenant }: { row: ChargeRowData; month: string; canEdit: boolean; kwhPrice: number; showTenant: boolean }) {
   const [edit, setEdit] = useState(false);
-  const [state, action, pending] = useActionState(saveRentCharge.bind(null, row.shopId, month), undefined);
+  const [state, action, pending] = useActionState(saveRentCharge.bind(null, row.leaseId, month), undefined);
   const [, start] = useTransition();
   const daily = row.period === "DAILY";
-  const init = () => ({ bankDue: num(row.bankDue), cashDue: num(row.cashDue), electricity: num(row.electricity), tax: num(row.tax), note: row.note ?? "", days: daily ? String(row.days ?? "") : "" });
+  const init = () => ({
+    bankDue: num(row.bankDue), cashDue: num(row.cashDue), electricity: num(row.electricity), tax: num(row.tax), note: row.note ?? "", days: daily ? String(row.days ?? "") : "",
+    meterStart: row.meterStart != null ? String(row.meterStart) : "", meterEnd: row.meterEnd != null ? String(row.meterEnd) : "",
+  });
   const [val, setVal] = useState(init);
   useEffect(() => { if (state?.ok) setEdit(false); }, [state]);
   const leftTone = row.left > 0.005 ? "text-red-600" : row.left < -0.005 ? "text-emerald-700" : "text-slate-400";
@@ -141,7 +175,7 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
     // <tr> ichiga <form> qo'yib bo'lmaydi — qiymatlar holatda, «Saqlash» FormData yig'ib action'ni chaqiradi
     const save = () => {
       const fd = new FormData();
-      for (const [k, v] of Object.entries(val)) if (k !== "days" || daily) fd.set(k, k === "note" || k === "days" ? v : v || "0");
+      for (const [k, v] of Object.entries(val)) if (k !== "days" || daily) fd.set(k, k === "note" || k === "days" || k.startsWith("meter") ? v : v || "0");
       start(() => action(fd));
     };
     const money = (k: "bankDue" | "cashDue" | "electricity" | "tax", label: string) => (
@@ -168,8 +202,17 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
         </SheetTd>
         {money("bankDue", "Perechisleniye summasi")}
         {money("cashDue", "Naqd to'lovi")}
-        <SheetTd right tone="yellow" strong>{cell(Number(val.bankDue || 0) + Number(val.cashDue || 0))}</SheetTd>
-        {money("electricity", "Svet")}
+        <SheetTd right tone="yellow" strong>{cell(Number(val.bankDue || 0) + Number(val.cashDue || 0) + (row.elecBilled ? Number(val.electricity || 0) : 0))}</SheetTd>
+        <SheetTd right className="min-w-36 p-1">
+          <MoneyInput value={val.electricity} onChange={(v) => setVal((o) => ({ ...o, electricity: v }))} ariaLabel="Svet" suffix={null} className="h-8 text-right" />
+          {/* Hisoblagich: ikkala ko'rsatkich va tarif bo'lsa summa o'zi hisoblanadi */}
+          <div className="mt-1 flex items-center gap-1">
+            <Input value={val.meterStart} inputMode="decimal" placeholder="boshi" aria-label="Hisoblagich: oy boshi" className="h-7 px-1.5 text-right text-xs"
+              onChange={(e) => setVal((o) => meter({ ...o, meterStart: e.target.value }, kwhPrice))} />
+            <Input value={val.meterEnd} inputMode="decimal" placeholder="oxiri" aria-label="Hisoblagich: oy oxiri" className="h-7 px-1.5 text-right text-xs"
+              onChange={(e) => setVal((o) => meter({ ...o, meterEnd: e.target.value }, kwhPrice))} />
+          </div>
+        </SheetTd>
         {money("tax", "Biz to'laydigan soliq")}
         <SheetTd right>{cell(row.bankPaid)}</SheetTd>
         <SheetTd right>{cell(row.cashPaid)}</SheetTd>
@@ -188,11 +231,19 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
   return (
     <SheetTr className={cn(!row.isActive && "opacity-60")}>
-      <SheetTd strong className="sticky left-0 z-[1] max-w-72 whitespace-normal bg-white"><Link href={`/arenda/dokon/${row.shopId}`} className="hover:underline">{row.name}</Link>{daily && <span className="block text-xs font-normal text-slate-500">kunlik · {row.days ?? "?"} kun × {fmtNum(row.bankRate + row.cashRate)}</span>}</SheetTd>
+      <SheetTd strong className="sticky left-0 z-[1] max-w-72 whitespace-normal bg-white">
+        <Link href={`/arenda/dokon/${row.shopId}`} className="hover:underline">{row.name}</Link>
+        {(showTenant || row.former) && row.tenantName && <span className="block text-xs font-normal text-slate-500">{row.tenantName}{row.former ? " · sobiq ijarachi" : ""}</span>}
+        {daily && <span className="block text-xs font-normal text-slate-500">kunlik · {row.days ?? "?"} kun × {fmtNum(row.bankRate + row.cashRate)}</span>}
+      </SheetTd>
       <SheetTd right>{cell(row.bankDue)}</SheetTd>
       <SheetTd right>{cell(row.cashDue)}</SheetTd>
       <SheetTd right tone="yellow" strong>{cell(row.due)}</SheetTd>
-      <SheetTd right>{cell(row.electricity)}</SheetTd>
+      <SheetTd right>
+        {cell(row.electricity)}
+        {row.elecDue > 0.005 && <span className="block text-[11px] font-medium text-amber-700">qarzga qo&apos;shiladi</span>}
+        {row.meterStart != null && row.meterEnd != null && <span className="block text-[11px] text-slate-500">{fmtNum(row.meterEnd - row.meterStart, 1)} kVt</span>}
+      </SheetTd>
       <SheetTd right>{cell(row.tax)}</SheetTd>
       <SheetTd right tone="green">{cell(row.bankPaid)}</SheetTd>
       <SheetTd right tone="green">{cell(row.cashPaid)}</SheetTd>
@@ -210,12 +261,20 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
 /** Do'kon qo'shish / tahrirlash. Summalar — andoza: yangi oy ochilganda (o'tgan oy hisobi bo'lmasa) shu qiymatlar olinadi. */
 export function ShopForm({ shop, locations, month, onDoneHref }: {
-  shop?: { id: string; name: string; location: string; period: "MONTHLY" | "DAILY"; payDay: number | null; area: number | null; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null };
+  shop?: {
+    id: string; name: string; location: string; period: "MONTHLY" | "DAILY"; payDay: number | null; area: number | null; bankAmount: number; cashAmount: number;
+    electricity: number; electricityBilled: boolean; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null;
+    /** Amaldagi shartnoma (bo'sh joyda — yo'q) */
+    lease: { no: string | null; startDate: string; endDate: string | null; deposit: number } | null;
+  };
   locations: string[]; month: string; onDoneHref?: string;
 }) {
   const [state, action, pending] = useActionState(saveRentShop, undefined);
   const [formKey, setFormKey] = useState(0);
   const [period, setPeriod] = useState(shop?.period ?? "MONTHLY");
+  const [vacant, setVacant] = useState(false);
+  // Shartnoma maydonlari: yangi joyda (bo'sh bo'lmasa) va amaldagi shartnomasi bor joyni tahrirlashda
+  const withLease = shop ? !!shop.lease : !vacant;
   const per = period === "DAILY" ? "kunlik" : "oylik";
   useEffect(() => {
     if (!state?.ok) return;
@@ -254,11 +313,24 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
         )}
         <Field label="Svet"><MoneyInput name="electricity" defaultValue={num(shop?.electricity ?? 0)} /></Field>
         <Field label="Biz to'laydigan soliq"><MoneyInput name="tax" defaultValue={num(shop?.tax ?? 0)} /></Field>
-        <Field label="Ijarachi (F.I.O. / mas'ul)" className="sm:col-span-2"><Input name="tenantName" defaultValue={shop?.tenantName ?? ""} placeholder="Masalan: Vaxabjanova Nigora" /></Field>
-        <Field label="Telefon *" hint="ijaradagi joy uchun shart"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
-        <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
-        <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Shartnoma, zaklad, kelishuv…" /></Field>
-        {!shop && <Checkbox name="vacant" label="Bo'sh joy — hali ijaraga berilmagan (oylik hisobga tushmaydi)" className="sm:col-span-4" />}
+        {withLease && (
+          <>
+            <Field label="Ijarachi (F.I.O. / mas'ul)" className="sm:col-span-2"><Input name="tenantName" defaultValue={shop?.tenantName ?? ""} placeholder="Masalan: Vaxabjanova Nigora" /></Field>
+            <Field label="Telefon *" hint="ijaradagi joy uchun shart"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
+            <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
+          </>
+        )}
+        {withLease && (
+          <>
+            <Field label="Shartnoma №"><Input name="contractNo" defaultValue={shop?.lease?.no ?? ""} placeholder="12/2026" /></Field>
+            <Field label="Ijara boshlanishi"><Input name="startDate" type="date" defaultValue={shop?.lease?.startDate ?? isoDate()} /></Field>
+            <Field label="Shartnoma tugashi" hint="bo'sh — muddatsiz"><Input name="endDate" type="date" defaultValue={shop?.lease?.endDate ?? ""} /></Field>
+            <Field label="Zaklad (garov)" hint="ma'lumot uchun"><MoneyInput name="deposit" defaultValue={num(shop?.lease?.deposit ?? 0)} /></Field>
+          </>
+        )}
+        <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Kelishuv, joy haqida…" /></Field>
+        <Checkbox name="electricityBilled" defaultChecked={shop?.electricityBilled ?? false} label="Svetni ijarachi to'laydi — oy hisobidagi svet summasi qarzga qo'shiladi" className="sm:col-span-4" />
+        {!shop && <Checkbox name="vacant" checked={vacant} onChange={(e) => setVacant(e.target.checked)} label="Bo'sh joy — hali ijaraga berilmagan (oylik hisobga tushmaydi)" className="sm:col-span-4" />}
       </div>
       <FormActions>
         <Button disabled={pending}>{pending ? "Saqlanmoqda…" : shop ? "Saqlash" : "Do'kon qo'shish"}</Button>

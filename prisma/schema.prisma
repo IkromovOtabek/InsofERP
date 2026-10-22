@@ -182,6 +182,8 @@ model CompanySettings {
   offerValidDays      Int       @default(7)
   /// Arenda: har oyning shu sanasida qarzdor ijarachilarga Telegram eslatmasi (0 — avtomatik eslatma o'chiq)
   rentRemindDay       Int       @default(5)
+  /// Arenda: 1 kVt·soat svet narxi — hisoblagich ko'rsatkichidan svet summasini hisoblash uchun (0 — qo'lda kiritiladi)
+  rentKwhPrice        Decimal   @default(0) @db.Decimal(18, 2)
   updatedAt           DateTime  @updatedAt
 }
 
@@ -2954,41 +2956,128 @@ model PaymentRequest {
 /// Ijaraga berilgan do'kon/joy. `location` — guruh (bozor/hudud: «Texno siti bozor», «Makro», «Gulbozor»).
 /// Summalar — andoza: yangi oy ochilganda shu qiymatlar (yoki o'tgan oy hisobi) oylik hisobga ko'chadi.
 model RentShop {
-  id          String   @id @default(cuid())
-  name        String
-  location    String
+  id                String     @id @default(cuid())
+  name              String
+  location          String
   /// Maydoni, m² — 1 m² narxi va jami/bo'sh maydon hisobi uchun (eski joylarda bo'sh bo'lishi mumkin)
-  area        Decimal? @db.Decimal(18, 2)
+  area              Decimal?   @db.Decimal(18, 2)
   /// Ijara davri: oylik yoki kunlik. Kunlikda `bankAmount`/`cashAmount` — bir kunlik summa
-  period      RentPeriod @default(MONTHLY)
+  period            RentPeriod @default(MONTHLY)
   /// Perechisleniye (bank orqali) to'lanadigan summa (oylik yoki kunlik — `period` bo'yicha)
-  bankAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  bankAmount        Decimal    @default(0) @db.Decimal(18, 2)
   /// Naqd to'lanadigan summa (oylik yoki kunlik — `period` bo'yicha)
-  cashAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  cashAmount        Decimal    @default(0) @db.Decimal(18, 2)
   /// Svet va biz to'laydigan soliq — ma'lumot uchun (qoldiqqa ta'sir qilmaydi, Excel'dagidek)
-  electricity Decimal  @default(0) @db.Decimal(18, 2)
-  tax         Decimal  @default(0) @db.Decimal(18, 2)
-  note        String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  electricity       Decimal    @default(0) @db.Decimal(18, 2)
+  tax               Decimal    @default(0) @db.Decimal(18, 2)
+  note              String?
+  sortOrder         Int        @default(0)
+  isActive          Boolean    @default(true)
+  createdAt         DateTime   @default(now())
   /// Ijarachi — mas'ul shaxs (F.I.O.), telefon, INN: ijarachi kartasi va eslatma uchun
-  tenantName  String?
-  phone       String?
-  inn         String?
+  tenantName        String?
+  phone             String?
+  inn               String?
   /// Oylik ijarada — har oyning nechanchi sanasigacha to'lashi kerak (1–31; oy qisqa bo'lsa — oxirgi kun). Kunlikda bo'sh
-  payDay      Int?
+  payDay            Int?
   /// Ijarachining Telegram chati — u botga `t.me/<bot>?start=ijara_<tgLinkToken>` havolasi orqali ulanadi
-  tgChatId    String?
-  tgLinkedAt  DateTime?
-  tgLinkToken String?  @unique
+  tgChatId          String?
+  tgLinkedAt        DateTime?
+  tgLinkToken       String?    @unique
+  /// Svetni ijarachi to'laydi: oy hisobidagi svet summasi qarzga qo'shiladi (`RentCharge.elecDue`); aks holda — ma'lumot uchun
+  electricityBilled Boolean    @default(false)
 
-  charges   RentCharge[]
-  txs       RentTx[]
-  reminders RentReminder[]
+  charges      RentCharge[]
+  txs          RentTx[]
+  reminders    RentReminder[]
+  leases       RentLease[]
+  priceChanges RentPriceChange[]
+  files        RentFile[]
 
   @@unique([location, name])
   @@index([tgChatId])
+}
+
+/// Ijara shartnomasi (ijara davri) — bitta ijarachi bilan. Oy hisoblari va to'lovlar shartnomaga bog'lanadi: ijarachi
+/// almashsa eskisining qarzi o'z shartnomasida qoladi, yangisiga aralashmaydi. Do'konda bir vaqtda faqat bitta ACTIVE
+/// (`lib/rent.ts` qulf ostida tekshiradi). Do'kondagi `tenantName/phone/inn` — joriy shartnomaning nusxasi.
+model RentLease {
+  id           String          @id @default(cuid())
+  shopId       String
+  /// Shartnoma raqami (ixtiyoriy)
+  no           String?
+  tenantName   String?
+  phone        String?
+  inn          String?
+  startDate    DateTime        @db.Date
+  /// Shartnoma muddati tugaydigan sana (bo'sh — muddatsiz)
+  endDate      DateTime?       @db.Date
+  /// Zaklad (garov) summasi — ma'lumot uchun, arenda kassasiga kirmaydi
+  deposit      Decimal         @default(0) @db.Decimal(18, 2)
+  status       RentLeaseStatus @default(ACTIVE)
+  /// Ijarachi chiqib ketgan sana va sabab
+  endedAt      DateTime?       @db.Date
+  endReason    String?
+  /// Muddat ogohlantirishi yuborilgan bosqich (30 / 7 / 0 kun qolganda) — takror yuborilmasin
+  expiryNotice Int?
+  note         String?
+  createdById  String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  shop    RentShop     @relation(fields: [shopId], references: [id])
+  charges RentCharge[]
+  txs     RentTx[]
+  files   RentFile[]
+
+  @@index([shopId, status])
+  @@index([status, endDate])
+}
+
+enum RentLeaseStatus {
+  ACTIVE // amaldagi shartnoma
+  ENDED // ijarachi chiqib ketgan (qarzi bo'lsa — «sobiq ijarachi» sifatida qoladi)
+}
+
+/// Rejalashtirilgan narx o'zgarishi: `fromMonth` oyi ochilganda do'kon andozasi va shu oy hisobi yangi narxdan olinadi.
+model RentPriceChange {
+  id          String    @id @default(cuid())
+  shopId      String
+  /// Qaysi oydan (oyning 1-kuni)
+  fromMonth   DateTime  @db.Date
+  /// Yangi summa (oylik yoki kunlik — do'kon `period` bo'yicha)
+  bankAmount  Decimal   @db.Decimal(18, 2)
+  cashAmount  Decimal   @db.Decimal(18, 2)
+  note        String?
+  appliedAt   DateTime?
+  cancelledAt DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  shop RentShop @relation(fields: [shopId], references: [id])
+
+  @@index([shopId, appliedAt])
+}
+
+/// Do'kon/ijarachi hujjati yoki surati: shartnoma skani, pasport nusxasi, do'kon rasmi. Fayl `uploads/rent/` da,
+/// faqat login talab qiladigan marshrut orqali beriladi. O'chirilmaydi — `removedAt` bilan yashiriladi.
+model RentFile {
+  id          String    @id @default(cuid())
+  shopId      String
+  leaseId     String?
+  kind        String
+  file        String
+  fileName    String
+  fileType    String
+  createdById String
+  createdAt   DateTime  @default(now())
+  removedAt   DateTime?
+  removedById String?
+
+  shop  RentShop   @relation(fields: [shopId], references: [id])
+  lease RentLease? @relation(fields: [leaseId], references: [id])
+
+  @@index([shopId, removedAt])
 }
 
 /// Ijarachiga yuborilgan qarz eslatmasi (jurnal). Avtomatik — oyda bir marta (`month` + `auto`), qo'lda — istalgancha.
@@ -3018,6 +3107,8 @@ model RentReminder {
 model RentCharge {
   id          String   @id @default(cuid())
   shopId      String
+  /// Qaysi ijarachi (shartnoma) hisobi
+  leaseId     String
   /// Oyning 1-kuni
   month       DateTime @db.Date
   bankDue     Decimal  @default(0) @db.Decimal(18, 2)
@@ -3026,13 +3117,20 @@ model RentCharge {
   tax         Decimal  @default(0) @db.Decimal(18, 2)
   /// Kunlik ijarada — hisoblangan kunlar soni (bozor yopiq kunlar ayirilgan bo'lishi mumkin); oylikda bo'sh
   days        Int?
+  /// Svet hisoblagichi: oy boshi va oxiri ko'rsatkichi (kVt·soat); ikkalasi bo'lsa svet = farq × `rentKwhPrice`
+  meterStart  Decimal? @db.Decimal(18, 3)
+  meterEnd    Decimal? @db.Decimal(18, 3)
+  /// Ijarachidan undiriladigan svet (qarzga qo'shiladi): do'konda «svetni ijarachi to'laydi» bo'lsa = `electricity`, aks holda 0
+  elecDue     Decimal  @default(0) @db.Decimal(18, 2)
   note        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  shop RentShop @relation(fields: [shopId], references: [id])
+  shop  RentShop  @relation(fields: [shopId], references: [id])
+  lease RentLease @relation(fields: [leaseId], references: [id])
 
-  @@unique([shopId, month])
+  @@unique([leaseId, month])
+  @@index([shopId, month])
   @@index([month])
 }
 
@@ -3062,6 +3160,10 @@ model RentTx {
   /// Kunlik ijarada — kirim qaysi kun uchun (`month` = shu kunning oyi)
   day           DateTime?  @db.Date
   shopId        String?
+  /// Kirimda — qaysi ijarachi (shartnoma) qarzi uchun
+  leaseId       String?
+  /// «Necha oyga» to'lov: bitta to'lovdan oylarga ajratilgan yozuvlar guruhi — bitta kvitansiya
+  batchId       String?
   amount        Decimal    @db.Decimal(18, 2)
   category      String
   note          String?
@@ -3073,10 +3175,13 @@ model RentTx {
   cancelledById String?
   cancelReason  String?
 
-  shop      RentShop? @relation(fields: [shopId], references: [id])
-  createdBy User      @relation("RentTxCreatedBy", fields: [createdById], references: [id])
+  shop      RentShop?  @relation(fields: [shopId], references: [id])
+  lease     RentLease? @relation(fields: [leaseId], references: [id])
+  createdBy User       @relation("RentTxCreatedBy", fields: [createdById], references: [id])
 
   @@index([month, shopId])
+  @@index([leaseId, month])
+  @@index([batchId])
   @@index([shopId, day])
   @@index([date])
 }

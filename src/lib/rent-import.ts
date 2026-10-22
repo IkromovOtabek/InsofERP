@@ -31,6 +31,22 @@ const tokenPrefix = (month: Date, shopId: string, method: "BANK" | "CASH") => `i
 /** `clientToken` ustuniga sig'sin: prefiks + summa (tiyinda) — xesh bilan qisqartiriladi. */
 const tokenOf = (prefix: string, amount: number) => `${prefix}-${createHash("sha1").update(String(Math.round(amount * 100))).digest("hex").slice(0, 8)}`;
 
+/**
+ * Import qatori qaysi shartnomaga yoziladi: oy davomida amal qilgan shartnoma (boshlanishi oy oxirigacha, tugashi oy boshidan
+ * keyin), bo'lmasa do'konning eng oxirgi shartnomasi. Shartnomasi yo'q joy (yangi yoki bo'sh) uchun shu oydan amaldagi
+ * shartnoma ochiladi va joy «Ijarada» bo'ladi — Excel'da hisobi bor joy ijarada deb olinadi.
+ */
+async function importLease(tx: Prisma.TransactionClient, shopId: string, month: Date, userId: string): Promise<string> {
+  const end = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
+  const leases = await tx.rentLease.findMany({ where: { shopId }, orderBy: [{ startDate: "desc" }, { createdAt: "desc" }] });
+  const inMonth = leases.find((l) => l.startDate <= end && (!l.endedAt || l.endedAt >= month));
+  if (inMonth ?? leases[0]) return (inMonth ?? leases[0]).id;
+  const shop = await tx.rentShop.update({ where: { id: shopId }, data: { isActive: true } });
+  const l = await tx.rentLease.create({ data: { shopId, tenantName: shop.tenantName, phone: shop.phone, inn: shop.inn, startDate: month, createdById: userId, note: "Excel importida ochildi" } });
+  await audit(tx, userId, "CREATE", "RentLease", l.id, undefined, { ...l, source: "excel" });
+  return l.id;
+}
+
 export async function importRentSheet(input: RentImportInput, userId: string): Promise<RentImportResult> {
   const { month } = input;
   const mapLoc = valueMapper(input.valueMaps, "location");
@@ -92,9 +108,12 @@ export async function importRentSheet(input: RentImportInput, userId: string): P
         seen.add(id);
         res.shops++;
 
-        const charge = { bankDue: l.bankDue, cashDue: l.cashDue, electricity: l.electricity, tax: l.tax, note: l.note };
-        const before = await tx.rentCharge.findUnique({ where: { shopId_month: { shopId: id, month } } });
-        const c = await tx.rentCharge.upsert({ where: { shopId_month: { shopId: id, month } }, create: { shopId: id, month, ...charge }, update: charge });
+        // Hisob shartnomaga yoziladi: shu oyda amal qilgan shartnoma, bo'lmasa joriysi; umuman yo'q bo'lsa — shu oydan ochiladi
+        const leaseId = await importLease(tx, id, month, userId);
+        const shopRow = shops.find((s) => s.id === id)!;
+        const charge = { bankDue: l.bankDue, cashDue: l.cashDue, electricity: l.electricity, elecDue: shopRow.electricityBilled ? l.electricity : 0, tax: l.tax, note: l.note };
+        const before = await tx.rentCharge.findUnique({ where: { leaseId_month: { leaseId, month } } });
+        const c = await tx.rentCharge.upsert({ where: { leaseId_month: { leaseId, month } }, create: { shopId: id, leaseId, month, ...charge }, update: charge });
         await audit(tx, userId, before ? "UPDATE" : "CREATE", "RentCharge", c.id, before ?? undefined, { ...c, source: "excel" });
         res.charges++;
 
@@ -113,7 +132,7 @@ export async function importRentSheet(input: RentImportInput, userId: string): P
           // Shu summa allaqachon import qilingan (yoki keyin qo'lda bekor qilingan — qayta tiriltirilmaydi)
           if (await tx.rentTx.findUnique({ where: { clientToken: token }, select: { id: true } })) continue;
           const t = await tx.rentTx.create({
-            data: { type: "INCOME", method, date: txDate, month, shopId: id, amount, category: RENT_INCOME_CATEGORY, note: "Excel'dan import", clientToken: token, createdById: userId },
+            data: { type: "INCOME", method, date: txDate, month, shopId: id, leaseId, amount, category: RENT_INCOME_CATEGORY, note: "Excel'dan import", clientToken: token, createdById: userId },
           });
           await audit(tx, userId, "CREATE", "RentTx", t.id, undefined, t);
           res.payments++;
