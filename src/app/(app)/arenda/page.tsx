@@ -8,7 +8,8 @@ import { formatPhone } from "@/lib/phone";
 import { getCompany } from "@/lib/company";
 import { rentDebtors } from "@/lib/rent-tenant";
 import { RemindDayForm } from "./tenant-forms";
-import { BulkPriceForm, KwhPriceForm } from "./contract-forms";
+import { BulkPriceForm, KwhPriceForm, LessorForm } from "./contract-forms";
+import { getRentLessor } from "@/lib/rent-lessor";
 import { ElecBill, ElecRow } from "./elec-forms";
 import { elecSheet } from "@/lib/rent-elec";
 import { LEASE_SOON_DAYS, leaseDaysLeft, leaseTerm, rentCollection, rentOccupancy } from "@/lib/rent-contract";
@@ -300,9 +301,10 @@ const STATUS_BADGE: Record<RentPayStatus, BadgeColor> = { VACANT: "slate", OVERD
 async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, canShops, href }: {
   mode: "dokonlar" | "filter"; shops: Shop[]; month: string; editId?: string; holat?: ShopFilter; canShops: boolean; href: (p: { tab?: string; edit?: string; holat?: string }) => string;
 }) {
-  const [states, leases] = await Promise.all([
+  const [states, leases, lessor] = await Promise.all([
     rentShopStates(all),
     db.rentLease.findMany({ where: { status: "ACTIVE", shopId: { in: all.map((x) => x.id) } } }),
+    getRentLessor(),
   ]);
   const leaseOf = new Map(leases.map((l) => [l.shopId, l]));
   const term = (x: Shop) => leaseTerm(leaseOf.get(x.id)?.endDate);
@@ -338,7 +340,11 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
     return {
       id: x.id, name: x.name, location: x.location, period: x.period, payDay: x.payDay, area: x.area ? Number(x.area) : null, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount),
       electricity: Number(x.electricity), electricityBilled: x.electricityBilled, elecFixed: Number(x.elecFixed), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn,
-      lease: l ? { no: l.no, startDate: isoDate(l.startDate), endDate: l.endDate ? isoDate(l.endDate) : null, deposit: Number(l.deposit) } : null,
+      address: x.address, cadastre: x.cadastre,
+      lease: l ? {
+        no: l.no, startDate: isoDate(l.startDate), endDate: l.endDate ? isoDate(l.endDate) : null, deposit: Number(l.deposit),
+        tenantRep: l.tenantRep, tenantAddress: l.tenantAddress, tenantAccount: l.tenantAccount, tenantMfo: l.tenantMfo,
+      } : null,
     };
   };
   // Narx o'zgarishi: joriy oydan keyingi 12 oy
@@ -357,6 +363,15 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
           <CardHeader title={editing ? `Tahrirlash: ${editing.name}` : "Yangi do'kon"} description="Summalar — andoza: yangi oy ochilganda o'tgan oy hisobi bo'lmasa shu qiymatlar olinadi (kunlikda — kunlik summa × kunlar). Shu oy ochilgan bo'lsa yangi do'kon unga ham qo'shiladi."
             action={editing ? <Link href={href({ tab: "dokonlar" })} className="text-sm text-slate-500 hover:text-slate-900">Bekor qilish</Link> : undefined} />
           <ShopForm key={editing?.id ?? "new"} shop={editing ? plain(editing) : undefined} locations={locations} month={month} onDoneHref={href({ tab: "dokonlar" })} />
+        </Card>
+      )}
+      {!isFilter && canShops && !editing && (
+        <Card>
+          <details>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-900">Ijaraga beruvchi rekvizitlari (shartnoma uchun)</summary>
+            <p className="mt-1 text-xs text-slate-500">Ijara shartnomasi va dalolatnomalarda «Арендодатель / Ijaraga beruvchi» sifatida chiqadi. Bo&apos;sh maydon korxona rekvizitlaridan olinadi.</p>
+            <div className="mt-3"><LessorForm lessor={lessor} /></div>
+          </details>
         </Card>
       )}
       {!isFilter && canShops && !editing && locations.length > 0 && (

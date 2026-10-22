@@ -13,6 +13,7 @@ import {
 } from "@/lib/rent";
 import { addPriceChange, addPriceChangeBulk, addRentFiles, cancelPriceChange, removeRentFile } from "@/lib/rent-contract";
 import { saveElecBill, saveRentElecData } from "@/lib/rent-elec";
+import { saveRentLessor } from "@/lib/rent-lessor";
 import { RentImportError, importRentSheet, type RentImportRow } from "@/lib/rent-import";
 import { canDo } from "@/lib/permissions";
 import type { ValueMaps } from "@/lib/excel";
@@ -121,6 +122,7 @@ const optDate = zOpt.refine((v) => !v || !Number.isNaN(new Date(v).getTime()), "
 /** Shartnoma maydonlari (do'kon formasi va «Ijaraga berish / ijarachini almashtirish» formasi). */
 const leaseShape = {
   contractNo: zOpt,
+  tenantRep: zOpt, tenantAddress: zOpt, tenantAccount: zOpt, tenantMfo: zOpt,
   startDate: optDate,
   endDate: optDate,
   deposit: optNum(MAX_AMOUNT, "zaklad summasi noto'g'ri"),
@@ -154,6 +156,7 @@ const shopSchema = z.object({
   ...leaseShape,
   electricityBilled: z.string().optional().transform((v) => v === "on"),
   elecFixed: zDec(),
+  address: zOpt, cadastre: zOpt,
   // Qo'shilganda shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi
   month: zOpt,
   // Yangi joy: «Bo'sh» — hali ijaraga berilmagan, oy hisobiga tushmaydi
@@ -209,6 +212,7 @@ export async function startRentLeaseAction(shopId: string, _prev: ActionState, f
   if (shop?.period === "MONTHLY" && !d.payDay) return { error: "To'lov kunini tanlang — har oyning nechanchi sanasigacha to'laydi" };
   const res = await startRentLease(shopId, {
     tenantName: d.tenantName, phone: d.phone, inn: d.inn, no: d.contractNo, startDate: d.startDate, endDate: d.endDate, deposit: d.deposit, leaseNote: d.leaseNote,
+    tenantRep: d.tenantRep, tenantAddress: d.tenantAddress, tenantAccount: d.tenantAccount, tenantMfo: d.tenantMfo,
     bankAmount: d.bankAmount, cashAmount: d.cashAmount, payDay: d.payDay,
   }, s.userId);
   if (res.error) return { error: res.error };
@@ -305,6 +309,28 @@ export async function removeRentFileAction(id: string): Promise<ActionState> {
   if (r.error) return { error: r.error };
   shopDone(r.shopId!);
   return { ok: true, note: "Fayl olib tashlandi" };
+}
+
+/* ───────────────────────── Ijaraga beruvchi rekvizitlari (shartnoma uchun) ───────────────────────── */
+
+const lessorSchema = z.object({
+  kind: z.enum(["person", "company"]).default("company"),
+  name: zStr("Ijaraga beruvchi F.I.O. yoki nomini yozing").max(200, "juda uzun"),
+  basis: zOpt, basisUz: zOpt, address: zOpt, inn: zOpt, bank: zOpt, mfo: zOpt, account: zOpt, card: zOpt, phone: zOpt, city: zOpt,
+  taxPercent: z.coerce.number({ message: "soliq foizi raqam bo'lsin" }).min(0, "0–100").max(100, "0–100").default(0),
+});
+
+export async function saveRentLessorAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("arenda", "shops");
+  const r = parseForm(lessorSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  await saveRentLessor({
+    kind: d.kind, name: d.name, basis: d.basis ?? "", basisUz: d.basisUz ?? "", address: d.address ?? "", inn: d.inn ?? "", bank: d.bank ?? "",
+    mfo: d.mfo ?? "", account: d.account ?? "", card: d.card ?? "", phone: d.phone ?? "", city: d.city ?? "", taxPercent: d.kind === "person" ? d.taxPercent : 0,
+  }, s.userId);
+  done();
+  return { ok: true, note: "Ijaraga beruvchi rekvizitlari saqlandi — shartnomalarda shu ma'lumot chiqadi" };
 }
 
 /* ───────────────────────── Svet tarifi ───────────────────────── */

@@ -186,6 +186,9 @@ model CompanySettings {
   rentKwhPrice        Decimal   @default(0) @db.Decimal(18, 2)
   /// Arenda: svet summasiga ustama, % (hamma ijarachiga bir xil, masalan 8) — summasi = narxi + narxi × %
   rentElecMarkup      Decimal   @default(0) @db.Decimal(5, 2)
+  /// Arenda: ijaraga beruvchi rekvizitlari (ijara shartnomasi uchun) — `lib/rent-lessor.ts` dagi `RentLessor` shakli.
+  /// Bo'sh maydonlar korxona rekvizitlaridan olinadi
+  rentLessor          Json?
   updatedAt           DateTime  @updatedAt
 }
 
@@ -2963,6 +2966,9 @@ model RentShop {
   id                String     @id @default(cuid())
   name              String
   location          String
+  /// Shartnoma uchun: to'liq manzil va kadastr raqami
+  address           String?
+  cadastre          String?
   /// Maydoni, m² — 1 m² narxi va jami/bo'sh maydon hisobi uchun (eski joylarda bo'sh bo'lishi mumkin)
   area              Decimal?   @db.Decimal(18, 2)
   /// Ijara davri: oylik yoki kunlik. Kunlikda `bankAmount`/`cashAmount` — bir kunlik summa
@@ -3009,28 +3015,34 @@ model RentShop {
 /// almashsa eskisining qarzi o'z shartnomasida qoladi, yangisiga aralashmaydi. Do'konda bir vaqtda faqat bitta ACTIVE
 /// (`lib/rent.ts` qulf ostida tekshiradi). Do'kondagi `tenantName/phone/inn` — joriy shartnomaning nusxasi.
 model RentLease {
-  id           String          @id @default(cuid())
-  shopId       String
+  id            String          @id @default(cuid())
+  shopId        String
   /// Shartnoma raqami (ixtiyoriy)
-  no           String?
-  tenantName   String?
-  phone        String?
-  inn          String?
-  startDate    DateTime        @db.Date
+  no            String?
+  tenantName    String?
+  phone         String?
+  inn           String?
+  startDate     DateTime        @db.Date
+  /// Ijarachi rekvizitlari (shartnoma uchun): vakili / asos («direktor …, Ustav asosida» yoki pasport ma'lumoti),
+  /// manzil, hisob raqami va MFO
+  tenantRep     String?
+  tenantAddress String?
+  tenantAccount String?
+  tenantMfo     String?
   /// Shartnoma muddati tugaydigan sana (bo'sh — muddatsiz)
-  endDate      DateTime?       @db.Date
+  endDate       DateTime?       @db.Date
   /// Zaklad (garov) summasi — ma'lumot uchun, arenda kassasiga kirmaydi
-  deposit      Decimal         @default(0) @db.Decimal(18, 2)
-  status       RentLeaseStatus @default(ACTIVE)
+  deposit       Decimal         @default(0) @db.Decimal(18, 2)
+  status        RentLeaseStatus @default(ACTIVE)
   /// Ijarachi chiqib ketgan sana va sabab
-  endedAt      DateTime?       @db.Date
-  endReason    String?
+  endedAt       DateTime?       @db.Date
+  endReason     String?
   /// Muddat ogohlantirishi yuborilgan bosqich (30 / 7 / 0 kun qolganda) — takror yuborilmasin
-  expiryNotice Int?
-  note         String?
-  createdById  String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  expiryNotice  Int?
+  note          String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   shop    RentShop     @relation(fields: [shopId], references: [id])
   charges RentCharge[]

@@ -424,6 +424,8 @@ export function rentPerM2(s: { area: Prisma.Decimal | number | null; bankAmount:
 export type RentLeaseInput = {
   tenantName?: string | null; phone?: string | null; inn?: string | null;
   no?: string | null; startDate?: Date | null; endDate?: Date | null; deposit?: number | null; leaseNote?: string | null;
+  /** Ijarachi rekvizitlari (shartnoma uchun): vakili / asos, manzil, hisob raqami, MFO */
+  tenantRep?: string | null; tenantAddress?: string | null; tenantAccount?: string | null; tenantMfo?: string | null;
 };
 
 /** Ijarachi rekvizitlari va shartnoma maydonlari ixtiyoriy: berilmasa (mobil forma) — o'zgarmaydi. */
@@ -431,6 +433,8 @@ export type RentShopInput = RentLeaseInput & {
   name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null;
   /** Maydoni, m²; berilmasa (eski mobil ilova) — o'zgarmaydi */
   area?: number | null;
+  /** Shartnoma uchun: to'liq manzil va kadastr raqami; berilmasa — o'zgarmaydi */
+  address?: string | null; cadastre?: string | null;
   /** Faqat yangi joy qo'shilganda: `false` — bo'sh joy (hali ijaraga berilmagan, shartnoma ochilmaydi) */
   isActive?: boolean;
   /** Oylik yoki kunlik; berilmasa (eski mobil forma) — o'zgarmaydi / oylik */
@@ -457,6 +461,7 @@ const leaseFields = (d: RentLeaseInput) => {
   if (d.endDate !== undefined) o.endDate = d.endDate;
   if (d.deposit !== undefined && d.deposit !== null) o.deposit = d.deposit;
   if (d.leaseNote !== undefined) o.note = d.leaseNote;
+  for (const k of ["tenantRep", "tenantAddress", "tenantAccount", "tenantMfo"] as const) if (d[k] !== undefined) o[k] = d[k];
   return o;
 };
 const shopTenant = (d: RentLeaseInput) => ({
@@ -481,8 +486,8 @@ function leaseDatesError(d: RentLeaseInput): string | null {
 export async function saveRentShopData(id: string | null, data: RentShopInput, month: Date | null, userId: string): Promise<{ error?: string; id?: string }> {
   const dErr = leaseDatesError(data);
   if (dErr) return { error: dErr };
-  const { tenantName, phone, inn, no, startDate, endDate, deposit, leaseNote, isActive, ...shopData } = data;
-  const lease: RentLeaseInput = { tenantName, phone, inn, no, startDate, endDate, deposit, leaseNote };
+  const { tenantName, phone, inn, no, startDate, endDate, deposit, leaseNote, tenantRep, tenantAddress, tenantAccount, tenantMfo, isActive, ...shopData } = data;
+  const lease: RentLeaseInput = { tenantName, phone, inn, no, startDate, endDate, deposit, leaseNote, tenantRep, tenantAddress, tenantAccount, tenantMfo };
   try {
     if (id) {
       const before = await db.rentShop.findUnique({ where: { id } });

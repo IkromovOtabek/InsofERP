@@ -6,8 +6,9 @@ import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } fro
 import { MoneyInput } from "@/components/money-input";
 import { isoDate } from "@/lib/format";
 import {
-  addRentPriceChange, addRentPriceChangeBulk, endRentLeaseAction, saveRentKwhPrice, startRentLeaseAction, uploadRentFiles,
+  addRentPriceChange, addRentPriceChangeBulk, endRentLeaseAction, saveRentKwhPrice, saveRentLessorAction, startRentLeaseAction, uploadRentFiles,
 } from "./actions";
+import type { RentLessor } from "@/lib/rent-lessor";
 
 type Month = { key: string; label: string };
 const num = (v: number) => (v ? String(v) : "");
@@ -45,6 +46,10 @@ export function LeaseForm({ shopId, replace, daily, defaults }: {
           </Field>
         )}
         <Field label="Izoh" className={daily ? "sm:col-span-2" : undefined}><Input name="leaseNote" placeholder="Kelishuv shartlari…" /></Field>
+        <Field label="Ijarachi vakili / asos" className="sm:col-span-2" hint="shartnomada: «в лице директора …, Устав» yoki pasport ma'lumoti"><Input name="tenantRep" /></Field>
+        <Field label="Ijarachi manzili" className="sm:col-span-2"><Input name="tenantAddress" /></Field>
+        <Field label="Ijarachi h/r"><Input name="tenantAccount" inputMode="numeric" /></Field>
+        <Field label="Ijarachi MFO"><Input name="tenantMfo" inputMode="numeric" /></Field>
       </div>
       <FormActions><Button disabled={pending}>{pending ? "Saqlanmoqda…" : replace ? "Ijarachini almashtirish" : "Ijaraga berish"}</Button></FormActions>
     </form>
@@ -140,6 +145,40 @@ export function KwhPriceForm({ price, markup }: { price: number; markup: number 
       <Button size="sm" variant="secondary" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button>
       <span className="basis-full text-xs text-slate-500">Summasi = (hozirgi − avvalgi ko&apos;rsatkich) × narx + ustama %. Ustama hamma ijarachiga bir xil. Tarif o&apos;zgarsa — keyin kiritilgan ko&apos;rsatkichlarga qo&apos;llanadi.</span>
       <div className="basis-full"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}</div>
+    </form>
+  );
+}
+
+/** Ijaraga beruvchi (Арендодатель) rekvizitlari — shartnoma va dalolatnomalarda chiqadi. Bo'sh maydon — korxona rekvizitidan. */
+export function LessorForm({ lessor }: { lessor: RentLessor }) {
+  const [state, action, pending] = useActionState(saveRentLessorAction, undefined);
+  const [kind, setKind] = useState(lessor.kind);
+  const person = kind === "person";
+  return (
+    <form action={action} className="space-y-3">
+      <FormError error={state?.error} />
+      {state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <Field label="Turi"><Select name="kind" value={kind} onChange={(e) => setKind(e.target.value as RentLessor["kind"])}><option value="company">Tashkilot</option><option value="person">Jismoniy shaxs</option></Select></Field>
+        <Field label={person ? "F.I.O. *" : "Nomi *"} className="sm:col-span-2"><Input name="name" defaultValue={lessor.name} required /></Field>
+        <Field label="Shahar"><Input name="city" defaultValue={lessor.city} placeholder="Ташкент" /></Field>
+        <Field label={person ? "Pasport ma'lumoti (ruscha)" : "Vakil / asos (ruscha)"} className="sm:col-span-2"
+          hint={person ? "«паспорт серии AA 1234567, выдан … от …»" : "«в лице директора …, действующего на основании Устава»"}>
+          <Input name="basis" defaultValue={lessor.basis} />
+        </Field>
+        <Field label={person ? "Pasport ma'lumoti (o'zbekcha)" : "Vakil / asos (o'zbekcha)"} className="sm:col-span-2" hint="bo'sh — ruschasi ishlatiladi">
+          <Input name="basisUz" defaultValue={lessor.basisUz} />
+        </Field>
+        <Field label="Manzil" className="sm:col-span-2"><Input name="address" defaultValue={lessor.address} /></Field>
+        <Field label="INN / JShShIR"><Input name="inn" defaultValue={lessor.inn} /></Field>
+        <Field label="Telefon"><Input name="phone" defaultValue={lessor.phone} /></Field>
+        <Field label="Bank" className="sm:col-span-2"><Input name="bank" defaultValue={lessor.bank} /></Field>
+        <Field label="MFO"><Input name="mfo" defaultValue={lessor.mfo} /></Field>
+        <Field label="Hisob raqami"><Input name="account" defaultValue={lessor.account} /></Field>
+        <Field label="Plastik karta" hint="ijara haqi kartaga o'tkazilsa"><Input name="card" defaultValue={lessor.card} /></Field>
+        {person && <Field label="Daromad solig'i, %" hint="ijarachi ushlab qolib byudjetga to'laydi"><Input name="taxPercent" type="number" min={0} max={100} step="0.01" defaultValue={lessor.taxPercent || 12} /></Field>}
+      </div>
+      <FormActions><Button variant="secondary" disabled={pending}>{pending ? "Saqlanmoqda…" : "Saqlash"}</Button></FormActions>
     </form>
   );
 }

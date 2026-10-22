@@ -261,8 +261,12 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
   shop?: {
     id: string; name: string; location: string; period: "MONTHLY" | "DAILY"; payDay: number | null; area: number | null; bankAmount: number; cashAmount: number;
     electricity: number; electricityBilled: boolean; elecFixed: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null;
+    address: string | null; cadastre: string | null;
     /** Amaldagi shartnoma (bo'sh joyda — yo'q) */
-    lease: { no: string | null; startDate: string; endDate: string | null; deposit: number } | null;
+    lease: {
+      no: string | null; startDate: string; endDate: string | null; deposit: number;
+      tenantRep: string | null; tenantAddress: string | null; tenantAccount: string | null; tenantMfo: string | null;
+    } | null;
   };
   locations: string[]; month: string; onDoneHref?: string;
 }) {
@@ -324,8 +328,16 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
             <Field label="Ijara boshlanishi"><Input name="startDate" type="date" defaultValue={shop?.lease?.startDate ?? isoDate()} /></Field>
             <Field label="Shartnoma tugashi" hint="bo'sh — muddatsiz"><Input name="endDate" type="date" defaultValue={shop?.lease?.endDate ?? ""} /></Field>
             <Field label="Zaklad (garov)" hint="ma'lumot uchun"><MoneyInput name="deposit" defaultValue={num(shop?.lease?.deposit ?? 0)} /></Field>
+            <Field label="Ijarachi vakili / asos" className="sm:col-span-2" hint="shartnomada: «в лице директора …, Устав» yoki pasport ma'lumoti">
+              <Input name="tenantRep" defaultValue={shop?.lease?.tenantRep ?? ""} placeholder="в лице директора Иванова И.И., действующего на основании Устава" />
+            </Field>
+            <Field label="Ijarachi manzili" className="sm:col-span-2"><Input name="tenantAddress" defaultValue={shop?.lease?.tenantAddress ?? ""} /></Field>
+            <Field label="Ijarachi h/r" className="sm:col-span-2"><Input name="tenantAccount" inputMode="numeric" defaultValue={shop?.lease?.tenantAccount ?? ""} placeholder="20208000…" /></Field>
+            <Field label="Ijarachi MFO"><Input name="tenantMfo" inputMode="numeric" defaultValue={shop?.lease?.tenantMfo ?? ""} /></Field>
           </>
         )}
+        <Field label="Joy manzili (shartnoma uchun)" className="sm:col-span-2"><Input name="address" defaultValue={shop?.address ?? ""} placeholder="г. Янгиюль, ул. Самарканд, 113" /></Field>
+        <Field label="Kadastr raqami"><Input name="cadastre" defaultValue={shop?.cadastre ?? ""} placeholder="11:22:01:01:05:1507" /></Field>
         <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Kelishuv, joy haqida…" /></Field>
         <Checkbox name="electricityBilled" checked={billed} onChange={(e) => setBilled(e.target.checked)} label="Svet hisobida — ijarachi svetni alohida to'laydi (hisoblagich, «Svet» varag'i)" className="sm:col-span-3" />
         {billed && <Field label="Shartnoma bo'yicha svet (oylik)" hint="hisoblagichsiz joyda svet summasi shu"><MoneyInput name="elecFixed" defaultValue={num(shop?.elecFixed ?? 0)} /></Field>}
