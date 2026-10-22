@@ -638,6 +638,7 @@ export async function kadrEmployeeExtras(user: MobileUser, employeeId: string): 
       id: "employee.doc", label: "Hujjat nusxasi qo'shish",
       form: [
         { name: "kind", label: "Hujjat turi", type: "select", required: true, value: DOC_KINDS[0], options: [...DOC_KINDS, OTHER_DOC_KIND].map((k) => ({ value: k, label: k })) },
+        { name: "name", label: "Hujjat nomi", type: "text", required: true, placeholder: "Masalan: Bo'shatish buyrug'i №230", showIf: { field: "kind", equals: OTHER_DOC_KIND } },
         { name: "file", label: "Nusxa surati", type: "photo", required: true, camera: "back" },
       ],
     });
@@ -679,6 +680,9 @@ export async function kadrEmployeeExtras(user: MobileUser, employeeId: string): 
           { name: "firedAt", label: "Bo'shatilgan sana (kk.oo.yyyy)", type: "text", required: true, value: d2(dayUtc(today())) },
           { name: "reason", label: "Sabab", type: "select", required: true, options: [...DISMISSAL_REASONS.map((r) => ({ value: r, label: r })), { value: "__other", label: "Boshqa sabab" }] },
           { name: "reasonText", label: "Sababni yozing", type: "text", required: true, showIf: { field: "reason", equals: "__other" } },
+          // Veb bo'shatish oynasidagi kabi: buyruq kadr hujjatlariga tushadi (chop etish — vebda, xodim kartasi → hujjatlar)
+          { name: "makeOrder", label: "Bo'shatish buyrug'ini tayyorlash", type: "switch", value: "true" },
+          { name: "orderNo", label: "Buyruq raqami", type: "text", placeholder: "avtomatik", hint: "Bo'sh qoldirilsa — keyingi bo'sh raqam beriladi", showIf: { field: "makeOrder", equals: "true" } },
         ],
       });
       actions.push({ id: "employee.toggle", label: e.isActive ? "Nofaol qilish" : "Faollashtirish", tone: e.isActive ? "danger" : "success", confirm: e.isActive ? `${e.fullName} nofaol qilinsinmi? Logini ham bloklanadi` : `${e.fullName} faollashtirilsinmi?` });
@@ -771,7 +775,8 @@ export async function runKadrAction(user: MobileUser, action: string, id: string
     case "employee.doc": {
       const file = dataUrlFile(str(payload, "file"), "nusxa");
       if (!file) return fail("Nusxa surati olinmadi");
-      const fd = formData({ kind: str(payload, "kind") });
+      // Yozilgan nom (masalan «Bo'shatish buyrug'i №230») turdan ustun — veb `addEmployeeDocumentCore` bilan bir xil
+      const fd = formData({ kind: str(payload, "kind"), name: str(payload, "name") });
       fd.append("file", file);
       return out(await addEmployeeDocumentCore(s, id, fd));
     }

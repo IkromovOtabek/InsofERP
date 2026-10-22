@@ -658,6 +658,13 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
     case "arenda.shop.toggle":
     case "arenda.charge":
     case "arenda.shop.edit":
+    case "arenda.lease.start":
+    case "arenda.lease.end":
+    case "arenda.price":
+    case "arenda.price.cancel":
+    case "arenda.elec":
+    case "arenda.remind":
+    case "arenda.pay.former":
       return arendaAction(user, action, id, payload);
 
     // ── Moliya: to'lov storno / bog'lash, kassa yozuvini bekor qilish, kirimni to'lash, schyot bekor, boshlang'ich qarz — `./moliya-extra.ts` ──

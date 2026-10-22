@@ -21,7 +21,7 @@ import type { HomeRow, Tone } from "./home";
 import type { LeadStatus, PayMethod, Prisma, Role, SupplyDelivery, SupplyPriority, SupplyStatus } from "@/generated/prisma";
 import { DELIVERY_LABEL, PRIORITY_LABEL } from "@/lib/procurement-const";
 import { MECH_STATUS_SHORT, MECH_STATUS_TONE, MECH_TABS, mechSubject, mechTab, mechanicCounts, mechanicList, tabCount } from "@/lib/mechanic-requests";
-import { arendaJurnalList, arendaShopsList } from "./arenda";
+import { arendaDebtorsList, arendaJurnalList, arendaShopsList, arendaSvetList } from "./arenda";
 import { OPEN_STATUSES, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, PAYREQ_TABS, listPaymentRequests, methodsFor, payReqCounts, payReqTab, type PayReqRow } from "@/lib/payment-requests";
 import { HR_ACCESS, HR_KEY_MODULE } from "./hr-access";
 import { hrList } from "./hr";
@@ -114,6 +114,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // ── Arenda (do'konlar ijarasi, `./arenda.ts`) — sekretar; vebdagi `/arenda` sahifasi bilan bir xil ──
   "arenda-jurnal": { title: "Kirim-chiqim jurnali", roles: ["SECRETARY"] },
   "arenda-shops": { title: "Do'konlar", roles: ["SECRETARY"] },
+  "arenda-debtors": { title: "Qarzdorlar", roles: ["SECRETARY"] },
+  "arenda-svet": { title: "Svet hisobi", roles: ["SECRETARY"] },
   // ── Boshqaruv ──
   // PRODUCTION/SUPERVISOR shu yerdan brigadir biriktiradi (veb "Brigadalar" sahifasidagidek)
   employees: { title: "Xodimlar", roles: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR"] },
@@ -140,7 +142,7 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
 // «Kirim» qatori — kirim kartochkasi (id `<receiptId>~<itemId>`: bir kirimning qatorlari takrorlanmasin, `detail.ts` `~` dan keyingisini tashlaydi).
 // «Chiqim» qatori id'si `stock:<materialId>~<n>` (splitRef — xomashyo kartochkasi), «Chiqim» kartochkasi esa berish hujjati (`rasxod`, id = ref).
 // «Qoldiqlar» qatori — xomashyo kartochkasi (id — xomashyo), birinchi qator — jami (`detail.ts` `ostatki`).
-export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop", ...SKLAD_DETAIL_KEY, ...LOGI_DETAIL_KEY, ...SOTUV_DETAIL_KEY };
+export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye: "supply", drivers: "employees", "brig-issues": "brig-issue", "brig-shifts": "brig-shift", prixod: "receipts", "arenda-jurnal": "arenda-tx", "arenda-shops": "arenda-shop", "arenda-debtors": "arenda-shop", "arenda-svet": "arenda-shop", ...SKLAD_DETAIL_KEY, ...LOGI_DETAIL_KEY, ...SOTUV_DETAIL_KEY };
 
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
@@ -165,7 +167,7 @@ const KEY_MODULE: Record<string, string> = {
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
   prixod: "stock", rasxod: "stock", ostatki: "stock",
   supply: "taminot", employees: "employees", kirim: "mexanik", payreq: "payments",
-  "arenda-jurnal": "arenda", "arenda-shops": "arenda", "arenda-tx": "arenda", "arenda-shop": "arenda",
+  "arenda-jurnal": "arenda", "arenda-shops": "arenda", "arenda-tx": "arenda", "arenda-shop": "arenda", "arenda-debtors": "arenda", "arenda-svet": "arenda",
   "unpaid-receipts": "cashflow", "kirim-qqs": "kirim-qqs", openings: "opening", realizatsiya: "payments",
   ...HR_KEY_MODULE,
   ...KADR_KEY_MODULE,
@@ -252,6 +254,8 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   if (key === "kirim") return kirimList(user, s, filter);
   if (key === "arenda-jurnal") return arendaJurnalList(s, filter);
   if (key === "arenda-shops") return arendaShopsList(s, filter);
+  if (key === "arenda-debtors") return arendaDebtorsList(s, filter);
+  if (key === "arenda-svet") return arendaSvetList(s, filter);
   if (key === "payreq") return payreqList(user, meta.title, s, filter);
   if (key === "payments") return paymentsList(meta.title, s, filter);
   if (key === "cashflow") return cashflowList(meta.title, s, filter);

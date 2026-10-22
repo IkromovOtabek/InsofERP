@@ -54,6 +54,8 @@ import { VEHICLE_TYPE } from "@/lib/logistics";
 import { OPEN_STATUSES, PAY_METHOD_LABEL, PAYREQ_STATUS_LABEL, PAYREQ_STATUS_TONE, getPaymentRequest, methodsFor, receiveAccounts } from "@/lib/payment-requests";
 import { accountBalances } from "@/lib/payments";
 import { arendaShopDetail, arendaTxDetail } from "./arenda";
+import { publicOrigin } from "@/lib/public-url";
+import { orderPublicPath } from "@/lib/order-qr";
 import { CASH_SUM, cashSumDetail, cashflowActions, invoiceCancelActions, kirimQqsDetail, openingDetail, paymentActions, realizatsiyaDetail, receiptPayActions, supplierOpeningExtra } from "./moliya-extra";
 import { SKLAD_ACTION_ROLES, SKLAD_CARDS, SKLAD_DETAIL_ROLES, SKLAD_PERM_EXACT } from "./sklad-extra-access";
 import { brigadeStockLink, materialExtraActions, ostatkiExtraActions, parseSkladFilter, rasxodExtra, receiptExtra, skladDetail, supplierExtra, supplyExtraActions } from "./sklad-extra";
@@ -364,6 +366,14 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "arenda.open-month": ["SECRETARY"],
   "arenda.shop.toggle": ["SECRETARY"],
   "arenda.charge": ["SECRETARY"],
+  // Ijarachi kartasi (veb `/arenda/dokon/[id]`): shartnoma, narx o'zgarishi, svet, eslatma, sobiq ijarachi qarzi
+  "arenda.lease.start": ["SECRETARY"],
+  "arenda.lease.end": ["SECRETARY"],
+  "arenda.price": ["SECRETARY"],
+  "arenda.price.cancel": ["SECRETARY"],
+  "arenda.elec": ["SECRETARY"],
+  "arenda.remind": ["SECRETARY"],
+  "arenda.pay.former": ["SECRETARY"],
   // Pul qabul qilish (zayavka bosh to'lovi, `lib/payment-requests.ts`): naqd — kassa, perechisleniye — buxgalter, direktor ikkalasi.
   // Aniq qoida usulga bog'liq — `can` da `methodsFor` (payments → receive_cash / receive_bank): direktor amalni boshqa
   // xodimga (masalan moliyaga) bersa, u ham qabul qiladi; bermasa moliya faqat ko'radi
@@ -478,6 +488,13 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "supplier.opening.pay": { module: "cashflow", action: "pay" },
   "payroll.recalc": { module: "payroll", action: "calc" },
   "arenda.shop.edit": { module: "arenda", action: "shops" },
+  "arenda.lease.start": { module: "arenda", action: "shops" },
+  "arenda.lease.end": { module: "arenda", action: "shops" },
+  "arenda.price": { module: "arenda", action: "shops" },
+  "arenda.price.cancel": { module: "arenda", action: "shops" },
+  "arenda.elec": { module: "arenda", action: "shops" },
+  "arenda.remind": { module: "arenda", action: "create" },
+  "arenda.pay.former": { module: "arenda", action: "create" },
   "order.assign": { module: "production", action: "assign" },
   "batch.storno": { module: "production", action: "batch_storno" },
   "recipe.version": { module: "production", action: "recipe" },
@@ -694,6 +711,11 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   // Kafolat xati, shartnoma, sklad zayavkasi, tijorat taklifi — `./sotuv-extra.ts`
   const extra = await orderExtras(user, o, total);
   actions.push(...extra.actions);
+  // Chop etilgan zayavkadagi QR olib boradigan ommaviy sahifa (`/z/<№>?k=`) — mijozga havola yuborish uchun
+  if (o.status !== "CANCELLED") {
+    const { origin } = await publicOrigin().catch(() => ({ origin: "" }));
+    if (origin) actions.push({ id: "order.public", label: "Mijoz sahifasi (QR)", local: true, effect: { openUrl: `${origin}${orderPublicPath(o.orderNo)}` } });
+  }
 
   return {
     key: "orders", id: o.id, title: o.orderNo, subtitle: o.customer.name, status: o.status,
