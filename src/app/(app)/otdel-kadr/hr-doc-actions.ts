@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { HIRING_DOCS, HR_DOC_BY_KIND } from "@/lib/hr-docs";
+import { HIRING_DOCS, HR_DOC_BY_KIND, isDismissalDoc } from "@/lib/hr-docs";
+import { orderNoProblem } from "@/lib/hr/order-no";
 import { saveEmployeeFile, removeEmployeeFile } from "@/lib/uploads";
 import { parseForm, zOpt, type ActionState } from "@/lib/action";
 import type { HrDocKind, Prisma } from "@/generated/prisma";
@@ -27,26 +28,7 @@ const zDate = z.string().trim().optional().transform((v, ctx) => {
   return d;
 });
 
-/**
- * Buyruq raqami («216 K») yil ichida takrorlanmasin. Raqam berish bitta qulf ostida — ikki kadr bir vaqtda
- * bir xil raqam bera olmaydi. Band bo'lsa — xato matni.
- */
-async function orderNoProblem(tx: Prisma.TransactionClient, kind: HrDocKind, no: string | null, docDate: Date, selfId?: string): Promise<string | null> {
-  if (!no) return null;
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"hrdoc-no:" + kind}))`;
-  const y = docDate.getUTCFullYear();
-  const clash = await tx.hrDocument.findFirst({
-    where: {
-      kind, no: { equals: no.trim(), mode: "insensitive" },
-      docDate: { gte: new Date(Date.UTC(y, 0, 1)), lt: new Date(Date.UTC(y + 1, 0, 1)) },
-      ...(selfId ? { id: { not: selfId } } : {}),
-    },
-    select: { employee: { select: { fullName: true } } },
-  });
-  return clash ? `№ ${no} raqamli hujjat ${y}-yilda allaqachon bor (${clash.employee.fullName}) — boshqa raqam bering` : null;
-}
-
-const KINDS = HIRING_DOCS.map((d) => d.kind).concat("BOSHATISH") as [HrDocKind, ...HrDocKind[]];
+const KINDS = HIRING_DOCS.map((d) => d.kind).concat("BOSHATISH", "BOSHATISH_BUYRUQ") as [HrDocKind, ...HrDocKind[]];
 
 const docSchema = z.object({
   docId: zOpt,
@@ -62,6 +44,7 @@ const docSchema = z.object({
   termUntil: zDate,
   no: zOpt,
   reason: zOpt,
+  article: zOpt,
 });
 
 /** Hujjat tayyorlash yoki tayyorlangan hujjatning maydonlarini tuzatish. */
@@ -75,7 +58,7 @@ export async function saveHrDoc(employeeId: string, _prev: ActionState, fd: Form
   const spec = HR_DOC_BY_KIND.get(d.kind);
   if (!spec) return { error: "Hujjat turi noma'lum" };
   if (spec.fields.includes("effectiveAt") && !d.effectiveAt) {
-    return { error: d.kind === "BOSHATISH" ? "Bo'shatish sanasini kiriting" : "Ishga qabul sanasini kiriting" };
+    return { error: isDismissalDoc(d.kind) ? "Bo'shatish sanasini kiriting" : "Ishga qabul sanasini kiriting" };
   }
   if (d.fixedTerm && d.termUntil && d.effectiveAt && d.termUntil < d.effectiveAt) {
     return { error: "Shartnoma muddati boshlanish sanasidan oldin tugay olmaydi" };
@@ -94,6 +77,7 @@ export async function saveHrDoc(employeeId: string, _prev: ActionState, fd: Form
     termUntil: spec.fields.includes("term") && d.fixedTerm ? d.termUntil : null,
     no: spec.fields.includes("no") ? d.no : null,
     reason: spec.fields.includes("reason") ? d.reason : null,
+    article: spec.fields.includes("article") ? d.article : null,
   } satisfies Omit<Prisma.HrDocumentUncheckedCreateInput, "employeeId">;
 
   const err = await db.$transaction(async (tx) => {

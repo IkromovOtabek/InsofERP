@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireAction } from "@/lib/auth";
 import type { ActionState } from "@/lib/action";
 import {
@@ -60,7 +61,9 @@ export async function dismissEmployee(id: string, _prev: ActionState, fd: FormDa
   const s = await requireAction("employees", "edit");
   const r = await dismissEmployeeCore(s, id, fd);
   if ("error" in r) return { error: r.error };
-  dismissPaths(); revalidatePath("/brigades");
+  dismissPaths(); revalidatePath("/brigades"); revalidatePath(`/employees/${id}`);
+  // Bo'shatish buyrug'i tayyorlangan bo'lsa — darhol chop etish sahifasi ochiladi
+  if (fd.get("makeOrder") === "on") redirect(`/employees/${id}/hujjat/chop/boshatish-buyruq`);
   return state(r);
 }
 

@@ -19,6 +19,7 @@ export function DismissButton({ employeeId, fullName, compact }: { employeeId: s
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(DISMISSAL_REASONS[0]);
+  const [makeOrder, setMakeOrder] = useState(true);
   const [state, act, pending] = useActionState(dismissEmployee.bind(null, employeeId), undefined);
 
   useEffect(() => { if (state?.ok) { setOpen(false); router.refresh(); } }, [state, router]);
@@ -63,6 +64,16 @@ export function DismissButton({ employeeId, fullName, compact }: { employeeId: s
               {reason === OTHER && (
                 <Field label="Sababni yozing *">
                   <Textarea name="reasonText" rows={2} required placeholder="Masalan: boshqa korxonaga o'tdi" />
+                </Field>
+              )}
+
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="makeOrder" checked={makeOrder} onChange={(e) => setMakeOrder(e.target.checked)} className="size-4 rounded border-slate-300" />
+                Bo&apos;shatish buyrug&apos;ini tayyorlash
+              </label>
+              {makeOrder && (
+                <Field label="Buyruq raqami" hint="Bo'sh qoldirilsa — keyingi bo'sh raqam beriladi. Bo'shatilgach buyruq chop etishga ochiladi.">
+                  <Input name="orderNo" placeholder="avtomatik" />
                 </Field>
               )}
 

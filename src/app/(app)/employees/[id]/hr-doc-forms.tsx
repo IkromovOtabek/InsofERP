@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Download, FileSignature, FileText, Pencil, Printer, Upload, X } from "lucide-react";
-import type { HrDocField } from "@/lib/hr-docs";
+import { DEFAULT_DISMISS_ARTICLE, isDismissalDoc, type HrDocField } from "@/lib/hr-docs";
 import { oversizeFiles } from "@/lib/kadr";
 import { deleteHrDoc, deleteHrDocScan, prepareHiringSet, saveHrDoc, uploadHrDocScan } from "../../otdel-kadr/hr-doc-actions";
 import { Badge, Button, Field, FormError, Input, Select } from "@/components/ui";
@@ -18,6 +18,8 @@ export type HrDocRow = {
   label: string;
   hint: string;
   fields: HrDocField[];
+  /** Ishga qabul to'plamiga kiradimi */
+  hiring: boolean;
   /** Tayyorlangan yozuv id — null bo'lsa hujjat hali tayyorlanmagan */
   id: string | null;
   docDate: string | null;
@@ -28,6 +30,7 @@ export type HrDocRow = {
   termUntil: string | null;
   no: string | null;
   reason: string | null;
+  article: string | null;
   fileName: string | null;
   signedAt: string | null;
   /** E-IMZO imzosi (bo'lsa) */
@@ -41,6 +44,8 @@ export type HrDocDefaults = {
   position: string;
   /** Keyingi buyruq raqami taklifi — «216 K» ko'rinishida */
   nextNo: string;
+  /** Bo'shatish buyrug'idagi «Асос» qatori taklifi */
+  basis: string;
 };
 
 const fileCls =
@@ -60,7 +65,7 @@ export function HrDocsPanel({ employeeId, rows, defaults, positions, accept }: {
   accept: string;
 }) {
   const [bundleOpen, setBundleOpen] = useState(false);
-  const hiring = rows.filter((r) => r.kind !== "BOSHATISH");
+  const hiring = rows.filter((r) => r.hiring);
   const missing = hiring.filter((r) => !r.id);
   const prepared = rows.filter((r) => r.id).length;
 
@@ -256,7 +261,8 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
   const [state, action, pending] = useActionState(saveHrDoc.bind(null, employeeId), undefined);
   const [fixed, setFixed] = useState(row.fixedTerm);
   const has = (f: HrDocField) => row.fields.includes(f);
-  const dismissal = row.kind === "BOSHATISH";
+  const dismissal = isDismissalDoc(row.kind);
+  const order = row.kind === "BOSHATISH_BUYRUQ";
   useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
 
   return (
@@ -286,13 +292,25 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
           </Field>
         )}
 
-        {has("position") && (
+        {has("position") && (order ? (
+          // Buyruqda lavozim gap ichida turadi («…қолипловчиси билан тузилган») — qo'lda tahrirlanadi
+          <Field label="Lavozimi" hint="Buyruq matnidagi ko'rinishda" className="sm:col-span-2">
+            <Input name="position" list={`pos-${row.slug}`} defaultValue={row.position ?? defaults.position} />
+            <datalist id={`pos-${row.slug}`}>{positions.map((p) => <option key={p} value={p} />)}</datalist>
+          </Field>
+        ) : (
           <Field label="Lavozimi">
             <Select name="position" defaultValue={row.position ?? defaults.position}>
               {[...new Set([row.position ?? defaults.position, ...positions])].filter(Boolean).map((p) => (
                 <option key={p} value={p!}>{p}</option>
               ))}
             </Select>
+          </Field>
+        ))}
+
+        {has("article") && (
+          <Field label="Mehnat kodeksi moddasi" hint="«МК нинг 160-моддасига асосан»">
+            <Input name="article" defaultValue={row.article ?? DEFAULT_DISMISS_ARTICLE} />
           </Field>
         )}
 
@@ -314,11 +332,15 @@ function DocForm({ employeeId, row, defaults, positions, onDone }: {
           <Field label="Qaysi sanagacha"><Input name="termUntil" type="date" defaultValue={row.termUntil ?? ""} /></Field>
         )}
 
-        {has("reason") && (
+        {has("reason") && (order ? (
+          <Field label="Asos" hint="Buyruq tagidagi «Асос:» qatori" className="sm:col-span-2">
+            <Input name="reason" defaultValue={row.reason ?? defaults.basis} />
+          </Field>
+        ) : (
           <Field label="Sababi" hint="Ixtiyoriy — arizada qo'shimcha qator bo'lib chiqadi" className="sm:col-span-2">
             <Input name="reason" defaultValue={row.reason ?? ""} placeholder="oilaviy sharoit" />
           </Field>
-        )}
+        ))}
       </div>
 
       <FormError error={state?.error} />

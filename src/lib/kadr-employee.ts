@@ -15,6 +15,9 @@ import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { loginTemplateFor } from "@/lib/perm-template";
 import { buildSchedule, normTime, scheduleProblem } from "@/lib/attendance-time";
 import { kindFromField, OTHER_DOC_KIND } from "@/lib/kadr";
+import { DEFAULT_DISMISS_ARTICLE, dismissBasis } from "@/lib/hr-docs";
+import { allocateOrderNo, orderNoProblem } from "@/lib/hr/order-no";
+import { DISMISSAL_REASONS } from "@/lib/davomat";
 import { saveEmployeeFile, removeEmployeeFile, photoEntry } from "@/lib/uploads";
 import { LOGIN_HINT, LOGIN_RE } from "@/lib/self-account";
 
@@ -376,6 +379,9 @@ const dismissSchema = z.object({
   // Tayyor sabab tanlanadi; "Boshqa sabab" bo'lsa matn maydoni ochiladi va shu ustun turadi
   reason: zOpt,
   reasonText: zOpt,
+  // «Bo'shatish buyrug'ini tayyorlash» belgisi; raqam bo'sh bo'lsa — keyingi bo'sh raqam beriladi
+  makeOrder: z.string().optional().transform((v) => v === "on"),
+  orderNo: zOpt,
 });
 
 /**
@@ -411,7 +417,24 @@ export async function dismissEmployeeCore(s: KadrActor, id: string, fd: FormData
     if (before.userId) await tx.user.update({ where: { id: before.userId }, data: { isActive: false } });
     const e = await tx.employee.findUniqueOrThrow({ where: { id } });
     await audit(tx, s.userId, "UPDATE", "Employee", id, before, { ...e, ...(freed.brigades.length ? { brigadirlikOlindi: freed.brigades } : {}) });
-    return { e, freed };
+
+    // Bo'shatish buyrug'i — kadr hujjatlariga tushadi, chop etiladi, imzolangan nusxasi qaytib yuklanadi
+    let orderNo: string | null = null;
+    if (r.data.makeOrder) {
+      const dup = await orderNoProblem(tx, "BOSHATISH_BUYRUQ", r.data.orderNo, firedAt);
+      if (dup) throw new Error(dup);
+      orderNo = r.data.orderNo ?? await allocateOrderNo(tx, firedAt);
+      const doc = await tx.hrDocument.create({
+        data: {
+          employeeId: id, kind: "BOSHATISH_BUYRUQ", no: orderNo, docDate: firedAt, effectiveAt: firedAt,
+          position: before.position, article: DEFAULT_DISMISS_ARTICLE,
+          reason: reason === DISMISSAL_REASONS[0] ? dismissBasis(before.fullName) : reason,
+          createdById: s.userId,
+        },
+      });
+      await audit(tx, s.userId, "CREATE", "HrDocument", doc.id, undefined, doc);
+    }
+    return { e, freed, orderNo };
   }).catch((err: Error) => ({ error: err.message }));
   if ("error" in res) return { error: res.error ?? "Saqlanmadi" };
 
@@ -419,7 +442,8 @@ export async function dismissEmployeeCore(s: KadrActor, id: string, fd: FormData
   pushEmployeeSilently(id);
   if (res.freed.vehicleId) pushVehicleSilently(res.freed.vehicleId);
   const lead = res.freed.brigades.length ? ` · brigadirligi olindi (${res.freed.brigades.join(", ")}) — yangi brigadir tayinlang` : "";
-  return { ok: true, note: `${res.e.fullName} ishdan bo'shatildi — ${reason}${lead}` };
+  const order = res.orderNo ? ` · buyruq №${res.orderNo} tayyorlandi` : "";
+  return { ok: true, note: `${res.e.fullName} ishdan bo'shatildi — ${reason}${order}${lead}` };
 }
 
 /** Bo'shatishni bekor qilish: sana va sabab tozalanadi, xodim va logini qaytadi. */
@@ -664,7 +688,9 @@ export async function saveDocuments(employeeId: string, entries: { kind: string;
 
 /** Mavjud kartaga hujjat nusxasi qo'shish (`kind` + bir nechta `file`). */
 export async function addEmployeeDocumentCore(s: KadrActor, employeeId: string, fd: FormData): Promise<KadrResult> {
-  const kind = String(fd.get("kind") ?? "").trim() || OTHER_DOC_KIND;
+  // Yozilgan nom (masalan «Bo'shatish buyrug'i №230») tanlangan turdan ustun turadi
+  const name = String(fd.get("name") ?? "").trim().replace(/\s+/g, " ").slice(0, 150);
+  const kind = name || String(fd.get("kind") ?? "").trim() || OTHER_DOC_KIND;
   const entries = [...fd.getAll("file")].filter((f): f is File => f instanceof File && f.size > 0).map((file) => ({ kind, file }));
   if (entries.length === 0) return { error: "Fayl tanlanmagan" };
   // Avval karta borligi tekshiriladi — yo'q xodim uchun fayl diskka yozilib, egasiz qolmasin

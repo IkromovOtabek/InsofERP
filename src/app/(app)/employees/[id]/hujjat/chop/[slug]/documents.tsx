@@ -1,6 +1,6 @@
 import type { CompanySettings, Employee, HrDocument } from "@/generated/prisma";
 import { money } from "@/lib/format";
-import { docDate, docDateCyr, docDateLat, regionLine, shortName } from "@/lib/hr-docs";
+import { DEFAULT_DISMISS_ARTICLE, dismissBasis, docDate, docDateCyr, docDateLat, regionLine, shortName } from "@/lib/hr-docs";
 
 /**
  * Otdel kadr shakllarining matni — qog'ozdagi blankalar bilan bir xil.
@@ -576,14 +576,14 @@ export function Javobgarlik({ e, c, d }: DocProps) {
 
 /* ───────── 6. Buyruq (ishga qabul qilish) ───────── */
 
-export function Buyruq({ e, c, d }: DocProps) {
-  const firm = c.legalName || c.name;
+/** Buyruq blankasi: korxona shapkasi, rekvizitlar, joy va sana, «БУЙРУҚ №…» sarlavhasi. */
+function OrderBlank({ c, d }: Pick<DocProps, "c" | "d">) {
   const rekvizit = [c.address, c.phone ? `Tel: ${c.phone}` : null, c.inn ? `INN ${c.inn}` : null]
     .filter(Boolean)
     .join(". ");
 
   return (
-    <Sheet>
+    <>
       {/* Korxona blankasi */}
       <div className="flex items-start justify-between gap-4 text-center text-[11px] font-semibold leading-tight">
         <div className="w-1/3">
@@ -602,6 +602,29 @@ export function Buyruq({ e, c, d }: DocProps) {
       </div>
 
       <h1 className="mt-10 text-center text-base font-bold">БУЙРУҚ №<F v={d?.no} w={90} /></h1>
+    </>
+  );
+}
+
+/** Buyruq oxiridagi direktor imzosi. */
+function DirectorSign({ c }: Pick<DocProps, "c">) {
+  return (
+    <div className="mt-24 flex items-start justify-between">
+      <div className="font-bold">
+        «{c.legalName || c.name}»
+        <br />Директори
+      </div>
+      <div className="font-bold">{shortName(c.directorName)}</div>
+    </div>
+  );
+}
+
+export function Buyruq({ e, c, d }: DocProps) {
+  const firm = c.legalName || c.name;
+
+  return (
+    <Sheet>
+      <OrderBlank c={c} d={d} />
 
       <P className="indent-0">
         <b>1. {e.fullName.toUpperCase()}</b> – <F v={docDate(d?.effectiveAt ?? e.hiredAt)} w={130} /> йилдан
@@ -619,13 +642,7 @@ export function Buyruq({ e, c, d }: DocProps) {
         <span className="font-bold">{shortName(e.fullName).toUpperCase()}</span>
       </div>
 
-      <div className="mt-24 flex items-start justify-between">
-        <div className="font-bold">
-          «{firm}»
-          <br />Директори
-        </div>
-        <div className="font-bold">{shortName(c.directorName)}</div>
-      </div>
+      <DirectorSign c={c} />
     </Sheet>
   );
 }
@@ -659,6 +676,35 @@ export function Boshatish({ e, c, d }: DocProps) {
   );
 }
 
+/* ───────── 8. Buyruq (ishdan bo'shatish) ───────── */
+
+export function BoshatishBuyruq({ e, c, d }: DocProps) {
+  return (
+    <Sheet>
+      <OrderBlank c={c} d={d} />
+
+      <h2 className="mt-6 text-center text-[13.5px] font-bold">
+        «Ходим билан тузилган меҳнат шартномасини бекор қилиш тўғрисида.»
+      </h2>
+
+      <div className="mt-10 grid grid-cols-[42%_1fr] gap-6">
+        <div className="font-bold">1. {e.fullName.toUpperCase()}</div>
+        <p className="text-justify">
+          <F v={docDate(d?.effectiveAt ?? e.firedAt)} w={110} /> йилдан{" "}
+          <F v={d?.position ?? e.position} w={200} /> билан тузилган меҳнат шартномаси Ўзб Рес МК нинг{" "}
+          <span className="whitespace-nowrap"><F v={d?.article ?? DEFAULT_DISMISS_ARTICLE} w={40} />-моддасига</span> асосан бекор қилинсин.
+        </p>
+      </div>
+
+      <p className="mt-16 text-center">
+        <b>Асос:</b> <F v={d?.reason ?? dismissBasis(e.fullName)} w={300} />.
+      </p>
+
+      <div className="mt-28"><DirectorSign c={c} /></div>
+    </Sheet>
+  );
+}
+
 /* ───────── Slug → komponent ───────── */
 
 export const DOC_COMPONENTS: Record<string, (p: DocProps) => React.ReactNode> = {
@@ -669,4 +715,5 @@ export const DOC_COMPONENTS: Record<string, (p: DocProps) => React.ReactNode> = 
   javobgarlik: Javobgarlik,
   buyruq: Buyruq,
   boshatish: Boshatish,
+  "boshatish-buyruq": BoshatishBuyruq,
 };

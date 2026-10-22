@@ -9,7 +9,7 @@ import { EMPLOYEE_ACCEPT, PHOTO_ACCEPT } from "@/lib/uploads";
 import { date, dateTime, isoDate, money, qty } from "@/lib/format";
 import { PAY_TYPE_LABEL } from "@/lib/hr/labels";
 import { licenseDaysLeft } from "@/lib/kadr";
-import { HR_DOCS, nextOrderNo } from "@/lib/hr-docs";
+import { HR_DOCS, ORDER_KINDS, dismissBasis, nextOrderNo } from "@/lib/hr-docs";
 import { eco, ecoEnabled } from "@/lib/eco/client";
 import { Badge, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { EmployeeCardForm } from "../employee-form";
@@ -40,7 +40,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
     db.vehicle.findMany({ orderBy: { plate: "asc" }, select: { plate: true, type: true, capacityM3: true } }),
     // Buyruq raqami korxona bo'yicha ketma-ket yuradi — shu yildagilardan keyingisi taklif qilinadi
     db.hrDocument.findMany({
-      where: { kind: "BUYRUQ", docDate: { gte: new Date(Date.UTC(new Date().getFullYear(), 0, 1)) } }, // @db.Date — UTC yarim tun
+      where: { kind: { in: ORDER_KINDS }, docDate: { gte: new Date(Date.UTC(new Date().getFullYear(), 0, 1)) } }, // @db.Date — UTC yarim tun
       select: { no: true },
     }),
   ]);
@@ -52,7 +52,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
   const hrRows: HrDocRow[] = HR_DOCS.map((spec) => {
     const d = lastDoc.get(spec.kind) ?? null;
     return {
-      slug: spec.slug, kind: spec.kind, label: spec.label, hint: spec.hint, fields: spec.fields,
+      slug: spec.slug, kind: spec.kind, label: spec.label, hint: spec.hint, fields: spec.fields, hiring: spec.hiring,
       id: d?.id ?? null,
       docDate: d ? isoDate(d.docDate) : null,
       effectiveAt: d?.effectiveAt ? isoDate(d.effectiveAt) : null,
@@ -62,6 +62,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
       termUntil: d?.termUntil ? isoDate(d.termUntil) : null,
       no: d?.no ?? null,
       reason: d?.reason ?? null,
+      article: d?.article ?? null,
       fileName: d?.fileName ?? null,
       signedAt: d?.signedAt ? dateTime(d.signedAt) : null,
       eSign: d?.eSignedAt ? { signer: d.eSigner, at: dateTime(d.eSignedAt), verified: d.eVerified } : null,
@@ -204,7 +205,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
           <div className="border-b border-slate-100 px-5 pt-5">
             <CardHeader
               title="Kadr hujjatlari"
-              description="Ariza, anketa, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq va bo'shatish arizasi — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
+              description="Ariza, anketa, mehnat shartnomasi, tilxat, moddiy javobgarlik, buyruq, bo'shatish arizasi va bo'shatish buyrug'i — tizimda to'ldiriladi, chop etiladi, imzolangan nusxasi qaytib yuklanadi."
               icon={FileSignature}
             />
           </div>
@@ -217,6 +218,7 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
               firedAt: e.firedAt ? isoDate(e.firedAt) : null,
               position: e.position,
               nextNo: nextOrderNo(orderNos.map((x) => x.no)),
+              basis: dismissBasis(e.fullName),
             }}
             positions={[...new Set([...work, ...drivers])]}
             accept={EMPLOYEE_ACCEPT}
@@ -225,13 +227,13 @@ export default async function EmployeeCardPage({ params }: { params: Promise<{ i
 
         <Card className="lg:col-span-2" padded={false}>
           <div className="border-b border-slate-100 px-5 pt-5">
-            <CardHeader title="Hujjat nusxalari" description="Rasm yoki PDF. Fayllar tizimda saqlanadi, tashqariga chiqmaydi." icon={Paperclip} />
+            <CardHeader title="Hujjat nusxalari" description="Rasm yoki PDF. Turini tanlang yoki nomini yozing (buyruq, ariza, ma'lumotnoma…). Fayllar tizimda saqlanadi, tashqariga chiqmaydi." icon={Paperclip} />
           </div>
           <div className="border-b border-slate-100 px-5 py-4">
             <DocumentForms employeeId={e.id} accept={EMPLOYEE_ACCEPT} />
           </div>
           <Table>
-            <thead><tr><Th>Hujjat turi</Th><Th>Fayl</Th><Th>Qabul qilingan</Th><Th></Th></tr></thead>
+            <thead><tr><Th>Hujjat nomi</Th><Th>Fayl</Th><Th>Qabul qilingan</Th><Th></Th></tr></thead>
             <tbody>
               {e.documents.length === 0 && <Empty text="Hujjat nusxasi yuklanmagan" />}
               {e.documents.map((d) => (

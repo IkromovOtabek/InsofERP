@@ -9,7 +9,7 @@ import type { HrDocKind } from "@/generated/prisma";
  */
 
 /** Hujjat tayyorlashda formada ko'rsatiladigan maydonlar. */
-export type HrDocField = "effectiveAt" | "position" | "salary" | "term" | "no" | "reason";
+export type HrDocField = "effectiveAt" | "position" | "salary" | "term" | "no" | "reason" | "article";
 
 export type HrDocSpec = {
   kind: HrDocKind;
@@ -81,7 +81,27 @@ export const HR_DOCS: HrDocSpec[] = [
     hiring: false,
     fields: ["effectiveAt", "reason"],
   },
+  {
+    kind: "BOSHATISH_BUYRUQ",
+    slug: "boshatish-buyruq",
+    label: "Buyruq (ishdan bo'shatish)",
+    hint: "Mehnat shartnomasini bekor qilish buyrug'i — korxona blankasida",
+    hiring: false,
+    fields: ["no", "effectiveAt", "position", "article", "reason"],
+  },
 ];
+
+/** Buyruqlar (ishga qabul va bo'shatish) bitta raqamlar ketma-ketligida yuradi. */
+export const ORDER_KINDS: HrDocKind[] = ["BUYRUQ", "BOSHATISH_BUYRUQ"];
+
+/** Ishdan bo'shatish bilan bog'liq hujjatlar — formada sana «Bo'shatish sanasi» deb so'raladi. */
+export const isDismissalDoc = (kind: string) => kind === "BOSHATISH" || kind === "BOSHATISH_BUYRUQ";
+
+/** Bo'shatish buyrug'idagi Mehnat kodeksi moddasi — odatiy holat (xodimning o'z arizasi). */
+export const DEFAULT_DISMISS_ARTICLE = "160";
+
+/** Bo'shatish buyrug'idagi «Асос» qatori — odatda xodimning arizasi. */
+export const dismissBasis = (fullName: string) => `Ходим ${shortName(fullName)} нинг аризаси`;
 
 export const HR_DOC_BY_SLUG = new Map(HR_DOCS.map((d) => [d.slug, d]));
 export const HR_DOC_BY_KIND = new Map(HR_DOCS.map((d) => [d.kind, d]));

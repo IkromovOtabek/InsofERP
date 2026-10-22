@@ -610,6 +610,7 @@ enum HrDocKind {
   JAVOBGARLIK // to'liq moddiy javobgarlik shartnomasi
   BUYRUQ // ishga qabul qilish buyrug'i
   BOSHATISH // ishdan bo'shatish (o'z xohishi bilan) arizasi
+  BOSHATISH_BUYRUQ // mehnat shartnomasini bekor qilish (ishdan bo'shatish) buyrug'i
 }
 
 model HrDocument {
@@ -623,7 +624,8 @@ model HrDocument {
   salary      Decimal?  @db.Decimal(18, 2) // shartnomadagi oylik ish haqi
   fixedTerm   Boolean   @default(false) // muddatli shartnomami (false — muddatsiz)
   termUntil   DateTime? @db.Date // muddatli bo'lsa — qaysi sanagacha
-  reason      String? // bo'shatish sababi yoki izoh
+  reason      String? // bo'shatish sababi yoki izoh; bo'shatish buyrug'ida — «Асос» qatori
+  article     String? // bo'shatish buyrug'i: Mehnat kodeksining moddasi («160»)
 
   // Imzolangan nusxa — skanerdan/telefondan yuklanadi, `uploads/employees/` da saqlanadi
   file       String?
