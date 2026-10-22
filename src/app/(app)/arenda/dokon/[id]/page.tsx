@@ -7,7 +7,7 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { date, dateTime, fmtNum, money } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
-import { RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
+import { RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_PERIOD_LABEL, rentPerM2, rentShopStates, currentMonth, monthKey, monthLabel, parseMonth, rentDays, shiftMonth, today, type RentDay } from "@/lib/rent";
 import { reminderText, shopLedger } from "@/lib/rent-tenant";
 import { botEnabled, botUsername } from "@/lib/telegram/api";
 import { Badge, Callout, Card, CardHeader, DL, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -128,6 +128,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
               { k: "Telefon", v: phone ? <a href={`tel:${shop.phone}`} className="inline-flex items-center gap-1 text-brand-700 hover:underline"><Phone size={13} /> {phone}</a> : <span className="text-slate-400">kiritilmagan</span> },
               { k: "INN", v: shop.inn ?? <span className="text-slate-400">—</span> },
               { k: "Joy", v: shop.location },
+              { k: "Maydoni", v: shop.area ? <>{fmtNum(shop.area, 2)} m²{rentPerM2(shop) ? <span className="text-slate-500"> · 1 m² — {money(rentPerM2(shop)!)} ({RENT_PERIOD_LABEL[shop.period].toLowerCase()})</span> : null}</> : <span className="text-slate-400">kiritilmagan</span> },
               ...(shop.note ? [{ k: "Izoh", v: shop.note }] : []),
             ]} />
             {canShops && (!shop.tenantName || !shop.phone) && <p className="mt-3 text-xs text-slate-500">Ijarachi va telefonni «Tahrirlash» orqali kiriting — eslatma matni shu bilan chiqadi.</p>}

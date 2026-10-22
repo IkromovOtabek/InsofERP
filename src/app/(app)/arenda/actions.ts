@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { requireAction } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { parseForm, zDec, zStr, zOpt, MAX_AMOUNT, validDate, type ActionState } from "@/lib/action";
-import { RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, monthKey, openMonth, parseMonth, saveRentShopData, toggleRentShopActive } from "@/lib/rent";
+import { RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, cancelRentTx, createRentTx, monthKey, openMonth, parseMonth, saveRentShopData, toggleRentShopActive } from "@/lib/rent";
 import { RentImportError, importRentSheet, type RentImportRow } from "@/lib/rent-import";
 import { canDo } from "@/lib/permissions";
 import type { ValueMaps } from "@/lib/excel";
@@ -112,6 +112,8 @@ const shopSchema = z.object({
   period: z.enum(["MONTHLY", "DAILY"]).default("MONTHLY"),
   payDay: z.string().optional().transform((v) => (v ? Number(v) : null)).refine((v) => v === null || (Number.isInteger(v) && v >= 1 && v <= 31), "to'lov kuni 1–31 oralig'ida bo'lsin"),
   bankAmount: zDec(), cashAmount: zDec(), electricity: zDec(), tax: zDec(),
+  area: z.string().optional().transform((v) => (v?.trim() ? Number(v.replace(",", ".")) : null))
+    .refine((v) => v === null || (Number.isFinite(v) && v > 0 && v <= RENT_AREA_MAX), "maydon (m²) noto'g'ri"),
   note: zOpt,
   tenantName: zOpt,
   phone: zOpt,
@@ -129,6 +131,7 @@ export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<Ac
   const { id, month: key, vacant, ...rest } = r.data;
   const data = id ? rest : { ...rest, isActive: !vacant };
   if (data.period === "DAILY") data.payDay = null; // kunlikda har kuni to'lanadi
+  if (!id && !data.area) return { error: "Do'kon maydonini (m²) kiriting" };
   // Ijaradagi joyda telefon va (oylikda) to'lov kuni shart — eslatma va «Bugun / Muddati o'tgan» filtrlari shunga tayanadi
   const active = id ? ((await db.rentShop.findUnique({ where: { id }, select: { isActive: true } }))?.isActive ?? true) : !vacant;
   if (active && !data.phone) return { error: "Ijaradagi joy uchun ijarachi telefonini kiriting" };

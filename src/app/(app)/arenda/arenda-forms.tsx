@@ -210,7 +210,7 @@ export function ChargeRow({ row, month, canEdit }: { row: ChargeRowData; month: 
 
 /** Do'kon qo'shish / tahrirlash. Summalar — andoza: yangi oy ochilganda (o'tgan oy hisobi bo'lmasa) shu qiymatlar olinadi. */
 export function ShopForm({ shop, locations, month, onDoneHref }: {
-  shop?: { id: string; name: string; location: string; period: "MONTHLY" | "DAILY"; payDay: number | null; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null };
+  shop?: { id: string; name: string; location: string; period: "MONTHLY" | "DAILY"; payDay: number | null; area: number | null; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null; tenantName: string | null; phone: string | null; inn: string | null };
   locations: string[]; month: string; onDoneHref?: string;
 }) {
   const [state, action, pending] = useActionState(saveRentShop, undefined);
@@ -230,9 +230,12 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
       <input type="hidden" name="month" value={month} />
       <div key={formKey} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <Field label="Do'kon nomi *" className="sm:col-span-2"><Input name="name" defaultValue={shop?.name} placeholder="Masalan: Xitoy kiyim do'kon" required /></Field>
-        <Field label="Joy (bozor) *" className="sm:col-span-2" hint="Jadvalda shu nom bo'yicha guruhlanadi">
+        <Field label="Joy (bozor) *" hint="Jadvalda shu nom bo'yicha guruhlanadi">
           <Input name="location" list="rent-locations" defaultValue={shop?.location} placeholder="Texno siti bozor" required />
           <datalist id="rent-locations">{locations.map((l) => <option key={l} value={l} />)}</datalist>
+        </Field>
+        <Field label={shop ? "Maydoni, m²" : "Maydoni, m² *"} hint="1 m² narxi shundan hisoblanadi">
+          <Input name="area" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={shop?.area ?? ""} placeholder="Masalan: 24" required={!shop} />
         </Field>
         <Field label="Ijara turi" hint={period === "DAILY" ? "Oy hisobi = kunlik summa × kunlar; kirimda kun so'raladi" : "Har oy bir summa"}>
           <Select name="period" value={period} onChange={(e) => setPeriod(e.target.value as "MONTHLY" | "DAILY")}>

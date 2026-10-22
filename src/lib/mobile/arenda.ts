@@ -6,8 +6,8 @@ import { canDo } from "@/lib/permissions";
 import { MAX_AMOUNT } from "@/lib/action";
 import { dateRu, fmtNum, money } from "@/lib/format";
 import {
-  RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
-  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentShopStates, toggleRentShopActive, type RentPayStatus,
+  RENT_AREA_MAX, RENT_EXPENSE_CATEGORIES, RENT_INCOME_CATEGORY, RENT_METHOD_LABEL, cancelRentTx, createRentTx, currentMonth, monthKey, monthLabel,
+  monthSheet, openMonth, parseMonth, rentBalance, saveRentShopData, shiftMonth, shopDebts, RENT_SHOP_STATUS, RENT_PERIOD_LABEL, RENT_PAY_STATUS_LABEL, rentFor, rentPerM2, rentShopStates, toggleRentShopActive, type RentPayStatus,
 } from "@/lib/rent";
 import type { MobileUser } from "./auth";
 import type { CreateForm, CreateResult } from "./create";
@@ -205,6 +205,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
         { name: "name", label: "Do'kon nomi", type: "text", required: true, value: s.name },
         { name: "location", label: "Joy (bozor)", type: "select", required: true, value: s.location, options: [...locs.map((l) => ({ value: l.location, label: l.location })), { value: NEW_LOCATION, label: "Yangi joy…" }] },
         { name: "locationNew", label: "Yangi joy nomi", type: "text", showIf: { field: "location", equals: NEW_LOCATION } },
+        { name: "area", label: "Maydoni, m²", type: "number", value: s.area ? String(n(s.area)) : undefined },
         { name: "phone", label: "Ijarachi telefoni", type: "text", value: s.phone ?? undefined, placeholder: "+998 90 123 45 67" },
         { name: "period", label: "Ijara turi", type: "select", required: true, value: s.period, options: [{ value: "MONTHLY", label: "Oylik" }, { value: "DAILY", label: "Kunlik (bozor joyi)" }] },
         { name: "payDay", label: "To'lov kuni (har oyning nechanchi sanasi)", type: "select", value: s.payDay ? String(s.payDay) : undefined, options: Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: `${i + 1}-sana` })), hint: "Oylik ijarada — kunlikda kerak emas" },
@@ -234,6 +235,7 @@ export async function arendaShopDetail(user: MobileUser, id: string): Promise<Mo
     fields: [
       { label: "Umumiy holat", value: debt > 0.005 ? `qarz ${money(debt)}` : debt < -0.005 ? `avans ${money(-debt)}` : "qarz yo'q", tone: debt > 0.005 ? "danger" : "success" },
       { label: "Oylik (andoza)", value: `bank ${money(n(s.bankAmount))} · naqd ${money(n(s.cashAmount))}` },
+      ...(s.area ? [{ label: "Maydoni", value: `${fmtNum(n(s.area), 2)} m²${rentPerM2(s) ? ` · 1 m² — ${money(rentPerM2(s)!)}` : ""}` }] : []),
       ...(n(s.electricity) || n(s.tax) ? [{ label: "Svet · soliq", value: `${money(n(s.electricity))} · ${money(n(s.tax))}` }] : []),
       ...(s.note ? [{ label: "Izoh", value: s.note }] : []),
       { label: "Holat", value: s.isActive ? RENT_SHOP_STATUS.on : RENT_SHOP_STATUS.off, tone: s.isActive ? "success" : "info" },
@@ -311,6 +313,7 @@ export async function arendaShopForm(): Promise<CreateForm> {
       { name: "name", label: "Do'kon nomi", type: "text", required: true, placeholder: "Masalan: 12-do'kon, Anvar aka" },
       { name: "location", label: "Joy (bozor)", type: "select", required: true, value: locs[0]?.location ?? NEW_LOCATION, options: [...locs.map((l) => ({ value: l.location, label: l.location })), { value: NEW_LOCATION, label: "Yangi joy…" }] },
       { name: "locationNew", label: "Yangi joy nomi", type: "text", showIf: { field: "location", equals: NEW_LOCATION }, placeholder: "Masalan: Texno siti bozor" },
+      { name: "area", label: "Maydoni, m²", type: "number", required: true, placeholder: "Masalan: 24", hint: "1 m² narxi shundan hisoblanadi" },
       { name: "phone", label: "Ijarachi telefoni", type: "text", placeholder: "+998 90 123 45 67", hint: "Ijaradagi joy uchun — eslatma va bog'lanish" },
       { name: "period", label: "Ijara turi", type: "select", required: true, value: "MONTHLY", options: [{ value: "MONTHLY", label: "Oylik" }, { value: "DAILY", label: "Kunlik (bozor joyi)" }] },
       { name: "payDay", label: "To'lov kuni (har oyning nechanchi sanasi)", type: "select", value: "5", options: Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: `${i + 1}-sana` })), hint: "Oylik ijarada — kunlikda kerak emas" },
@@ -352,6 +355,9 @@ const ShopBody = z.object({
   phone: z.string().trim().max(40).optional(),
   payDay: z.coerce.number().int().min(1, "To'lov kuni 1–31").max(31, "To'lov kuni 1–31").optional().catch(undefined),
   bankAmount: zDec0, cashAmount: zDec0, electricity: zDec0, tax: zDec0,
+  // Eski ilova yubormasa — o'zgarmaydi
+  area: z.preprocess((v) => (v === "" || v == null ? undefined : typeof v === "string" ? v.replace(",", ".") : v),
+    z.coerce.number({ message: "Maydonni raqamda kiriting" }).positive("Maydon 0 dan katta bo'lsin").max(RENT_AREA_MAX, "Maydon juda katta").optional()),
   note: zText,
 });
 
@@ -393,9 +399,10 @@ export async function arendaCreate(user: MobileUser, key: string, payload: unkno
     const d = p.data;
     const location = d.location === NEW_LOCATION ? (d.locationNew ?? "") : d.location;
     if (!location) throw new Error("Yangi joy (bozor) nomini yozing");
+    if (!d.area) throw new Error("Do'kon maydonini (m²) kiriting");
     // Shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi (vebdagi `saveRentShop` bilan bir xil qoida)
     const phone = shopPhone(d.phone);
-    const r = await saveRentShopData(null, { name: d.name, location, ...phone, period: d.period, payDay: d.period === "DAILY" ? null : d.payDay, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, currentMonth(), user.id);
+    const r = await saveRentShopData(null, { name: d.name, location, ...phone, period: d.period, payDay: d.period === "DAILY" ? null : d.payDay, area: d.area, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, currentMonth(), user.id);
     if (r.error) throw new Error(r.error);
     return { key: "arenda-shop", id: r.id!, message: "Do'kon qo'shildi" };
   }
@@ -434,7 +441,7 @@ export async function arendaAction(user: MobileUser, action: string, id: string,
       const location = d.location === NEW_LOCATION ? (d.locationNew ?? "") : d.location;
       if (!location) fail("Yangi joy (bozor) nomini yozing");
       const phone = shopPhone(d.phone);
-      const r = await saveRentShopData(id, { name: d.name, location, ...phone, period: d.period, payDay: d.period === "DAILY" ? null : d.payDay, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, null, user.id);
+      const r = await saveRentShopData(id, { name: d.name, location, ...phone, period: d.period, payDay: d.period === "DAILY" ? null : d.payDay, area: d.area, bankAmount: d.bankAmount, cashAmount: d.cashAmount, electricity: d.electricity, tax: d.tax, note: d.note }, null, user.id);
       if (r.error) fail(r.error);
       return { ok: true, message: "Do'kon saqlandi" };
     }

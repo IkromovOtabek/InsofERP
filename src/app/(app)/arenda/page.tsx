@@ -9,7 +9,7 @@ import { getCompany } from "@/lib/company";
 import { rentDebtors } from "@/lib/rent-tenant";
 import { RemindDayForm } from "./tenant-forms";
 import {
-  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth,
+  RENT_EXPENSE_CATEGORIES, RENT_METHOD_LABEL, RENT_PAY_STATUS_LABEL, RENT_SHOP_STATUS, currentMonth, rentPerM2, rentShopStates, type RentPayStatus, monthKey, monthLabel, monthRange, monthSheet, parseMonth, rentBalance, shiftMonth,
 } from "@/lib/rent";
 import { Badge, type BadgeColor, Callout, Card, CardHeader, EmptyState, LinkButton, PageHeader, Progress, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { ActionButton } from "@/components/action-button";
@@ -293,8 +293,10 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
   const byLoc = locations.map((l) => {
     const xs = all.filter((x) => x.location === l);
     const on = xs.filter((x) => x.isActive).length;
-    return { location: l, total: xs.length, on, off: xs.length - on };
+    const m2 = (ys: Shop[]) => ys.reduce((s, x) => s + Number(x.area ?? 0), 0);
+    return { location: l, total: xs.length, on, off: xs.length - on, area: m2(xs), offArea: m2(xs.filter((x) => !x.isActive)) };
   });
+  const hasArea = all.some((x) => x.area);
   // Ijaradagi joyda telefon va (oylikda) to'lov kuni bo'lishi shart — yo'qlari «To'liq emas» filtrida
   const incomplete = (x: Shop) => x.isActive && (!x.phone || (x.period === "MONTHLY" && !x.payDay));
   const test: Record<ShopFilter, (x: Shop) => boolean> = {
@@ -309,7 +311,7 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
   const shops = all.filter(holat ? test[holat] : () => true).sort((a, b) => holat === "muddat"
     ? st(b).overdue - st(a).overdue
     : locations.indexOf(a.location) - locations.indexOf(b.location) || Number(a.isActive) - Number(b.isActive));
-  const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, period: x.period, payDay: x.payDay, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
+  const plain = (x: Shop) => ({ id: x.id, name: x.name, location: x.location, period: x.period, payDay: x.payDay, area: x.area ? Number(x.area) : null, bankAmount: Number(x.bankAmount), cashAmount: Number(x.cashAmount), electricity: Number(x.electricity), tax: Number(x.tax), note: x.note, tenantName: x.tenantName, phone: x.phone, inn: x.inn });
   const f = (k: ShopFilter, label: string) => ({ key: k, label, href: href({ tab: "filter", holat: k }), count: count(k) });
   return (
     <div className="space-y-4">
@@ -336,7 +338,7 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
           {!isFilter && byLoc.length > 1 && (
             <Card padded={false}>
               <Table>
-                <thead><tr><Th>Joy (bozor)</Th><Th right>Jami</Th><Th right>Ijarada</Th><Th right>Bo&apos;sh</Th><Th>Bandlik</Th></tr></thead>
+                <thead><tr><Th>Joy (bozor)</Th><Th right>Jami</Th><Th right>Ijarada</Th><Th right>Bo&apos;sh</Th>{hasArea && <Th right>Maydon, m²</Th>}<Th>Bandlik</Th></tr></thead>
                 <tbody>
                   {byLoc.map((g) => (
                     <Tr key={g.location}>
@@ -344,6 +346,7 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
                       <Td right>{g.total}</Td>
                       <Td right className="text-emerald-700">{g.on}</Td>
                       <Td right className={g.off ? "font-semibold text-amber-700" : "text-slate-400"}>{g.off || "–"}</Td>
+                      {hasArea && <Td right>{g.area ? fmtNum(g.area, 2) : "–"}{g.offArea > 0 && <span className="block text-xs text-amber-700">bo&apos;sh {fmtNum(g.offArea, 2)}</span>}</Td>}
                       <Td className="w-48"><Progress value={g.on} max={g.total} tone="success" /></Td>
                     </Tr>
                   ))}
@@ -371,6 +374,7 @@ async function ShopsTab({ mode, shops: all, month, editId, holat: holatParam, ca
                     <Td>
                       <Link href={`/arenda/dokon/${x.id}`} className="font-medium text-slate-800 hover:underline">{x.name}</Link>
                       {(x.tenantName || x.phone) && <span className="block text-xs text-slate-500">{x.tenantName}{x.tenantName && x.phone ? " · " : ""}{x.phone && <a href={`tel:${x.phone}`} className="text-brand-700 hover:underline">{formatPhone(x.phone)}</a>}</span>}
+                      {x.area && <span className="block text-xs text-slate-500">{fmtNum(Number(x.area), 2)} m²{rentPerM2(x) ? ` · 1 m² — ${fmtNum(rentPerM2(x)!)}` : ""}</span>}
                       {x.isActive && !x.phone && <span className="block text-xs text-red-600">telefon kiritilmagan</span>}
                       {x.note && <span className="block text-xs text-slate-500">{x.note}</span>}
                     </Td>

@@ -286,9 +286,20 @@ export async function toggleRentShopActive(id: string, userId: string): Promise<
   return { active, charged };
 }
 
+/** Do'kon maydoni (m²) chegarasi — veb va mobil forma bir xil tekshiradi */
+export const RENT_AREA_MAX = 100_000;
+
+/** 1 m² ijara narxi (oylik yoki kunlik — `period` bo'yicha); maydon kiritilmagan bo'lsa — null */
+export function rentPerM2(s: { area: Prisma.Decimal | number | null; bankAmount: Prisma.Decimal | number; cashAmount: Prisma.Decimal | number }): number | null {
+  const a = Number(s.area ?? 0);
+  return a > 0 ? Math.round(((Number(s.bankAmount) + Number(s.cashAmount)) / a) * 100) / 100 : null;
+}
+
 /** Ijarachi rekvizitlari (`tenantName`, `phone`, `inn`) ixtiyoriy: berilmasa (mobil forma) — o'zgarmaydi. */
 export type RentShopInput = {
   name: string; location: string; bankAmount: number; cashAmount: number; electricity: number; tax: number; note: string | null;
+  /** Maydoni, m²; berilmasa (eski mobil ilova) — o'zgarmaydi */
+  area?: number | null;
   tenantName?: string | null; phone?: string | null; inn?: string | null;
   /** Faqat yangi joy qo'shilganda: `false` — bo'sh joy (hali ijaraga berilmagan) */
   isActive?: boolean;

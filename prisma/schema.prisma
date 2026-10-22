@@ -2957,6 +2957,8 @@ model RentShop {
   id          String   @id @default(cuid())
   name        String
   location    String
+  /// Maydoni, m² — 1 m² narxi va jami/bo'sh maydon hisobi uchun (eski joylarda bo'sh bo'lishi mumkin)
+  area        Decimal? @db.Decimal(18, 2)
   /// Ijara davri: oylik yoki kunlik. Kunlikda `bankAmount`/`cashAmount` — bir kunlik summa
   period      RentPeriod @default(MONTHLY)
   /// Perechisleniye (bank orqali) to'lanadigan summa (oylik yoki kunlik — `period` bo'yicha)
