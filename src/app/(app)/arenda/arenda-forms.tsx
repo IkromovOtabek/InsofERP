@@ -320,7 +320,7 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
         )}
         {withLease && (
           <>
-            <Field label="Shartnoma №"><Input name="contractNo" defaultValue={shop?.lease?.no ?? ""} placeholder="12/2026" /></Field>
+            <Field label="Shartnoma №" hint="bo'sh qoldirilsa — avtomatik"><Input name="contractNo" defaultValue={shop?.lease?.no ?? ""} placeholder="IJ-2026-00001" /></Field>
             <Field label="Ijara boshlanishi"><Input name="startDate" type="date" defaultValue={shop?.lease?.startDate ?? isoDate()} /></Field>
             <Field label="Shartnoma tugashi" hint="bo'sh — muddatsiz"><Input name="endDate" type="date" defaultValue={shop?.lease?.endDate ?? ""} /></Field>
             <Field label="Zaklad (garov)" hint="ma'lumot uchun"><MoneyInput name="deposit" defaultValue={num(shop?.lease?.deposit ?? 0)} /></Field>

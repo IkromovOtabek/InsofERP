@@ -4,6 +4,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { date, money } from "./format";
 import { notifyAfter } from "./notify";
+import { nextNo } from "./numbering";
 
 /**
  * Arenda (do'konlar ijarasi) — sekretar yuritadi, Excel'dagi «Аренда» daftarining o'rnini bosadi.
@@ -442,6 +443,10 @@ export type RentShopInput = RentLeaseInput & {
   elecFixed?: number;
 };
 
+/** Ijara shartnomasi raqami: kiritilmasa — avtomatik «IJ-<yil>-00001» (yil bo'yicha ketma-ket, `lib/numbering.ts`). */
+export const RENT_LEASE_PREFIX = "IJ";
+const leaseNo = (tx: Tx, no: string | null | undefined) => (no?.trim() ? Promise.resolve(no.trim()) : nextNo(tx, "rentLease", RENT_LEASE_PREFIX));
+
 const leaseFields = (d: RentLeaseInput) => {
   const o: Prisma.RentLeaseUncheckedUpdateInput = {};
   if (d.tenantName !== undefined) o.tenantName = d.tenantName;
@@ -488,7 +493,8 @@ export async function saveRentShopData(id: string | null, data: RentShopInput, m
         await audit(tx, userId, "UPDATE", "RentShop", id, before, after);
         const active = await tx.rentLease.findFirst({ where: { shopId: id, status: "ACTIVE" } });
         if (active) {
-          const up = leaseFields(lease);
+          // Raqam bo'sh qoldirilsa — mavjudi saqlanadi, umuman bo'lmasa — avtomatik beriladi
+          const up = leaseFields({ ...lease, no: lease.no?.trim() || active.no || (lease.no !== undefined ? await leaseNo(tx, null) : undefined) });
           // Muddat uzaytirilsa — ogohlantirish qaytadan boshlanadi
           if (lease.endDate !== undefined && (lease.endDate?.getTime() ?? null) !== (active.endDate?.getTime() ?? null)) up.expiryNotice = null;
           if (Object.keys(up).length) {
@@ -503,7 +509,7 @@ export async function saveRentShopData(id: string | null, data: RentShopInput, m
       const shop = await tx.rentShop.create({ data: { ...shopData, ...shopTenant(lease), isActive: isActive ?? true } });
       await audit(tx, userId, "CREATE", "RentShop", shop.id, undefined, shop);
       if (shop.isActive) {
-        const l = await tx.rentLease.create({ data: { ...(leaseFields(lease) as Prisma.RentLeaseUncheckedCreateInput), shopId: shop.id, startDate: data.startDate ?? today(), createdById: userId } });
+        const l = await tx.rentLease.create({ data: { ...(leaseFields(lease) as Prisma.RentLeaseUncheckedCreateInput), no: await leaseNo(tx, lease.no), shopId: shop.id, startDate: data.startDate ?? today(), createdById: userId } });
         await audit(tx, userId, "CREATE", "RentLease", l.id, undefined, l);
         if (month && (await tx.rentCharge.count({ where: { month } }))) {
           await tx.rentCharge.create({ data: chargeData(shop, l.id, null, month, { fromToday: true }) });
@@ -540,7 +546,7 @@ export async function startRentLease(shopId: string, data: RentLeaseInput & { ba
       await audit(tx, userId, "STATUS_CHANGE", "RentLease", old.id, { status: "ACTIVE" }, { status: "ENDED", endedAt, endReason: "Ijarachi almashdi" });
     }
     const l = await tx.rentLease.create({
-      data: { ...(leaseFields(data) as Prisma.RentLeaseUncheckedCreateInput), shopId, startDate: start, createdById: userId },
+      data: { ...(leaseFields(data) as Prisma.RentLeaseUncheckedCreateInput), no: await leaseNo(tx, data.no), shopId, startDate: start, createdById: userId },
     });
     await audit(tx, userId, "CREATE", "RentLease", l.id, undefined, l);
     const price = {

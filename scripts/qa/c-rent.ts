@@ -130,6 +130,10 @@ async function main() {
     const d = await saveRentShopData(null, { name: "B-joy", location: LOC, period: "DAILY", bankAmount: 0, cashAmount: 10_000, electricity: 0, tax: 0, note: null, area: 4, tenantName: "Sobir", phone: "+998901234567" }, null, U);
     const dm = await createRentTx({ type: "INCOME", method: "CASH", date: today(), month: cur, shopId: d.id!, amount: 20_000, category: "Arenda to'lovi", note: null, clientToken: null, day: today(), months: 2 }, U);
     check("kunlik ijarada «necha oyga» rad etildi", !!dm.error, dm);
+    const nb = (await db.rentLease.findFirstOrThrow({ where: { shopId: d.id! } })).no ?? "";
+    const tg2 = (await db.rentLease.findFirstOrThrow({ where: { shopId: A, status: "ACTIVE" } })).no ?? "";
+    check("shartnoma raqami avtomatik: IJ-<yil>-NNNNN, ketma-ket; qo'lda yozilgani saqlanadi", /^IJ-\d{4}-\d{5}$/.test(nb) && /^IJ-\d{4}-\d{5}$/.test(tg2)
+      && Number(nb.slice(-5)) === Number(tg2.slice(-5)) + 1 && l1.no === "1/QA", [tg2, nb, l1.no]);
     const vac = await saveRentShopData(null, { name: "C-bo'sh", location: LOC, bankAmount: 500_000, cashAmount: 0, electricity: 0, tax: 0, note: null, area: 10, isActive: false }, null, U);
     const vx = await createRentTx({ type: "INCOME", method: "CASH", date: today(), month: cur, shopId: vac.id!, amount: 1000, category: "Arenda to'lovi", note: null, clientToken: null }, U);
     check("hech qachon ijaraga berilmagan joyga kirim rad etildi", !!vx.error && (await db.rentLease.count({ where: { shopId: vac.id! } })) === 0, vx);

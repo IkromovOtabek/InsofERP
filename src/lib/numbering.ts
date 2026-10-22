@@ -2,7 +2,7 @@ import type { Prisma } from "@/generated/prisma";
 import { db } from "./db";
 
 type Tx = Prisma.TransactionClient | typeof db;
-type Table = "order" | "productionBatch" | "trip" | "goodsReceipt" | "invoice" | "brigadeTask" | "contract" | "supplyRequest" | "cashTransfer" | "mechanicRequest" | "paymentRequest" | "hrRequest" | "commercialOffer" | "workTask" | "certificate";
+type Table = "order" | "productionBatch" | "trip" | "goodsReceipt" | "invoice" | "brigadeTask" | "contract" | "supplyRequest" | "cashTransfer" | "mechanicRequest" | "paymentRequest" | "hrRequest" | "commercialOffer" | "workTask" | "certificate" | "rentLease";
 
 /** Joriy yil zavod vaqti bo'yicha (server UTC da bo'lsa ham 1-yanvar 00:00–05:00 o'tgan yilga tushmasin). */
 function tashkentYear() {
@@ -28,6 +28,7 @@ async function lastNo(tx: Tx, table: Table, head: string): Promise<string | null
     case "workTask": return (await tx.workTask.findFirst({ where: { docNo: where }, orderBy: { docNo: desc }, select: { docNo: true } }))?.docNo ?? null;
     case "hrRequest": return (await tx.hrRequest.findFirst({ where: { docNo: where }, orderBy: { docNo: desc }, select: { docNo: true } }))?.docNo ?? null;
     case "commercialOffer": return (await tx.commercialOffer.findFirst({ where: { offerNo: where }, orderBy: { offerNo: desc }, select: { offerNo: true } }))?.offerNo ?? null;
+    case "rentLease": return (await tx.rentLease.findFirst({ where: { no: where }, orderBy: { no: desc }, select: { no: true } }))?.no ?? null;
     case "contract": return (await tx.order.findFirst({ where: { contractNo: where }, orderBy: { contractNo: desc }, select: { contractNo: true } }))?.contractNo ?? null;
   }
 }

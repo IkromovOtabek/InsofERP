@@ -32,7 +32,7 @@ export function LeaseForm({ shopId, replace, daily, defaults }: {
         <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" /></Field>
         <Field label="Ijara boshlanishi *" hint={replace ? "eski shartnoma bir kun oldin yopiladi" : undefined}><Input name="startDate" type="date" defaultValue={isoDate()} required /></Field>
         <Field label="Shartnoma tugashi" hint="bo'sh — muddatsiz"><Input name="endDate" type="date" /></Field>
-        <Field label="Shartnoma №"><Input name="contractNo" placeholder="Masalan: 12/2026" /></Field>
+        <Field label="Shartnoma №" hint="bo'sh qoldirilsa — avtomatik (IJ-yil-tartib)"><Input name="contractNo" placeholder="avtomatik" /></Field>
         <Field label="Zaklad (garov)" hint="ma'lumot uchun, kassaga kirmaydi"><MoneyInput name="deposit" /></Field>
         <Field label={`Perechisleniye (${per})`}><MoneyInput name="bankAmount" defaultValue={num(defaults.bankAmount)} /></Field>
         <Field label={`Naqd (${per})`}><MoneyInput name="cashAmount" defaultValue={num(defaults.cashAmount)} /></Field>

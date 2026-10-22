@@ -4,7 +4,8 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { matchKey, str, valueMapper, type ValueMaps } from "./excel";
 import { money } from "./format";
-import { RENT_INCOME_CATEGORY, monthKey, rentBalance } from "./rent";
+import { RENT_INCOME_CATEGORY, RENT_LEASE_PREFIX, monthKey, rentBalance } from "./rent";
+import { nextNo } from "./numbering";
 import { isEmptySpot, isTotalRow, rentMoney } from "./rent-sheet";
 
 /**
@@ -42,7 +43,7 @@ async function importLease(tx: Prisma.TransactionClient, shopId: string, month: 
   const inMonth = leases.find((l) => l.startDate <= end && (!l.endedAt || l.endedAt >= month));
   if (inMonth ?? leases[0]) return (inMonth ?? leases[0]).id;
   const shop = await tx.rentShop.update({ where: { id: shopId }, data: { isActive: true } });
-  const l = await tx.rentLease.create({ data: { shopId, tenantName: shop.tenantName, phone: shop.phone, inn: shop.inn, startDate: month, createdById: userId, note: "Excel importida ochildi" } });
+  const l = await tx.rentLease.create({ data: { shopId, no: await nextNo(tx, "rentLease", RENT_LEASE_PREFIX), tenantName: shop.tenantName, phone: shop.phone, inn: shop.inn, startDate: month, createdById: userId, note: "Excel importida ochildi" } });
   await audit(tx, userId, "CREATE", "RentLease", l.id, undefined, { ...l, source: "excel" });
   return l.id;
 }
