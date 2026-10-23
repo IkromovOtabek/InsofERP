@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, CircleOff, Gauge, IdCard, ShieldAlert, Truck, UserCheck, UserX, Users, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, BellRing, CheckCircle2, CircleOff, Gauge, IdCard, ShieldAlert, Truck, UserCheck, UserX, Users, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
-import { ACTIVE_TRIP, dayRange, driverEmployees, expiryLevel, vehicleLive, vehicleServiceDue, type VehicleLive } from "@/lib/logistics";
-import { date, fmtNum } from "@/lib/format";
+import { ACTIVE_TRIP, dayRange, driverEmployees, expiryLevel, ISSUE_KIND, VEHICLE_ISSUE_KINDS, vehicleLive, vehicleServiceDue, type VehicleLive } from "@/lib/logistics";
+import { unpricedWhere } from "@/lib/driver-trip-pay";
+import { date, dateTime, fmtNum } from "@/lib/format";
 import { Badge, Card, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 
 const more = (href: string, text: string) => (
@@ -20,7 +21,7 @@ export async function DispatcherHome() {
   const { from: today } = dayRange();
   const drivers = await driverEmployees({ activeOnly: true });
   const ids = drivers.map((d) => d.id);
-  const [busy, att, vehicles, service] = await Promise.all([
+  const [busy, att, vehicles, service, unpriced, issues] = await Promise.all([
     db.trip.findMany({ where: { driverId: { in: ids }, status: { in: ACTIVE_TRIP } }, select: { driverId: true } }),
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: today, status: { not: "PRESENT" } }, select: { employeeId: true } }),
     db.vehicle.findMany({
@@ -31,6 +32,12 @@ export async function DispatcherHome() {
       },
     }),
     vehicleServiceDue(),
+    db.trip.count({ where: unpricedWhere() }),
+    // Ochiq transport muammolari (buzilish, avariya) — dispetcher hal qiladi
+    db.tripIssue.findMany({
+      where: { resolvedAt: null, kind: { in: VEHICLE_ISSUE_KINDS } }, orderBy: { createdAt: "desc" }, take: 20,
+      select: { id: true, kind: true, note: true, createdAt: true, trip: { select: { id: true, deliveryNoteNo: true, driver: { select: { fullName: true } }, vehicle: { select: { id: true, plate: true } } } } },
+    }),
   ]);
 
   const onTrip = new Set(busy.map((t) => t.driverId));
@@ -55,6 +62,31 @@ export async function DispatcherHome() {
 
   return (
     <div className="space-y-6">
+      {unpriced > 0 && (
+        <Link href="/logistika/tabel" className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100">
+          <span className="flex items-center gap-2 font-medium"><BellRing size={16} /> Narx belgilanmagan reyslar: {unpriced} ta</span>
+          <span className="inline-flex items-center gap-1">Tabelga o&apos;tish <ArrowRight size={14} /></span>
+        </Link>
+      )}
+      {issues.length > 0 && (
+        <Card padded={false} className="border-red-200">
+          <div className="flex items-center gap-2 px-5 pt-4 text-sm font-semibold text-red-800"><AlertTriangle size={16} /> Ochiq transport muammolari ({issues.length})</div>
+          <Table>
+            <thead><tr><Th>Transport</Th><Th>Muammo</Th><Th>Haydovchi · reys</Th><Th>Qachon</Th></tr></thead>
+            <tbody>
+              {issues.map((i) => (
+                <Tr key={i.id}>
+                  <Td><Link href={`/logistika/transport/${i.trip.vehicle.id}`} className="font-medium tabular hover:underline">{i.trip.vehicle.plate}</Link></Td>
+                  <Td className="text-sm"><Badge color="red">{ISSUE_KIND[i.kind]}</Badge>{i.note && <div className="mt-0.5 text-xs text-slate-600">{i.note}</div>}</Td>
+                  <Td className="text-sm">{i.trip.driver.fullName} · <Link href={`/trips/${i.trip.id}`} className="tabular hover:underline">{i.trip.deliveryNoteNo}</Link></Td>
+                  <Td className="text-sm tabular">{dateTime(i.createdAt)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+          <p className="px-5 pb-3 text-xs text-slate-500">Hal qilish — reys sahifasida «Muammoni hal qilish».</p>
+        </Card>
+      )}
       <Section title="Haydovchilar" className="mt-0" action={more("/logistika/haydovchilar", "Haydovchilar")}>
         <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
           <StatCard label="Faol haydovchi" value={drivers.length} icon={Users} tone="info" href="/logistika/haydovchilar" />

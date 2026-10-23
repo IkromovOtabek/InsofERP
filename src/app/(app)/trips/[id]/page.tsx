@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
+import { payTrips } from "@/lib/driver-trip-pay";
+import { PriceForm } from "../../logistika/tabel/tabel-forms";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
 import { cancelTrip } from "../actions";
@@ -59,6 +62,8 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
   const canLog = ["LOGISTICS", "DIRECTOR"].includes(s.role);
   const canLoad = ["PRODUCTION", "DIRECTOR"].includes(s.role);
   const canPlan = canLog || canLoad;
+  const canResolve = canDo(s, "trips", "resolve");
+  const pay = t.status === "DELIVERED" ? (await payTrips({ id, status: "DELIVERED" }, 1))[0] ?? null : null;
   const driverPhase = ["LOADED", "ON_ROAD"].includes(t.status) || (t.status === "DELIVERED" && !t.returnedAt);
   // Reys miqdori zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, dona mahsulot dona)
   // Aralash zayavkada reysning qatori texnika turidan aniqlanadi (beton — mikser, dona — yuk mashina)
@@ -170,7 +175,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
                     <span className="font-medium">{ISSUE_KIND[i.kind]}{i.note ? <span className="font-normal text-slate-600"> — {i.note}</span> : null}</span>
                     <span className="text-xs text-slate-500 tabular">{dateTime(i.createdAt)} · {i.source === "DRIVER" ? "haydovchi" : i.source === "ECO" ? "ECO" : "dispetcher"}</span>
                   </div>
-                  {i.resolvedAt ? <div className="mt-1 text-xs text-emerald-700">Hal qilindi {dateTime(i.resolvedAt)}: {i.resolution}</div> : canLog && <ResolveIssueForm issueId={i.id} />}
+                  {i.resolvedAt ? <div className="mt-1 text-xs text-emerald-700">Hal qilindi {dateTime(i.resolvedAt)}: {i.resolution}</div> : canResolve && <ResolveIssueForm issueId={i.id} />}
                 </li>
               ))}
             </ul>
@@ -191,6 +196,26 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           </div>
           {t.deliveryComment && <p className="mb-3 text-sm text-slate-600">{t.deliveryComment}</p>}
           {!t.closedAt && canLog && <CloseTripForm tripId={id} loaded={Number(t.qtyM3)} accepted={t.acceptedQty != null ? Number(t.acceptedQty) : null} returned={t.returnedQty != null ? Number(t.returnedQty) : null} />}
+        </Card>
+      )}
+
+      {/* ── Haydovchi tabeli: haydovchi kiritgan soat/aylantirish, kutish, km va dispetcher narxi (`lib/driver-trip-pay.ts`) ── */}
+      {pay && (
+        <Card className="mt-5">
+          <CardHeader title="Haydovchi tabeli" icon={Clock}
+            description={pay.amount == null ? "Narx belgilanmagan — reys haydovchi oyligiga hali tushmagan" : "Narxlangan — oy yakunida Ish haqiga tushadi"}
+            action={pay.amount == null ? <Badge color="amber">Narxsiz</Badge> : <Badge color="green">{money(pay.amount)}</Badge>} />
+          <div className="mb-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+            <div><div className="text-xs text-slate-500">Km (borib-kelish)</div><div className="font-medium tabular">{Math.round(pay.km)}</div></div>
+            <div><div className="text-xs text-slate-500">Obyektda kutish</div><div className="font-medium tabular">{pay.waitMin != null ? `${pay.waitMin} daq` : "—"}</div></div>
+            <div><div className="text-xs text-slate-500">Mikser aylantirildi</div><div className="font-medium tabular">{pay.drumTurns ?? "—"}</div></div>
+            <div><div className="text-xs text-slate-500">Ishlagan soat</div><div className="font-medium tabular">{pay.workHours ?? "—"}</div></div>
+            <div><div className="text-xs text-slate-500">Yoqilg&apos;i normasi</div><div className="font-medium tabular">{pay.fuelNorm != null ? `${pay.fuelNorm} ${pay.fuelUnit}` : "—"}</div></div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-slate-500">Taklif: {money(pay.suggested)} · {pay.suggestText}{pay.note ? ` · ${pay.note}` : ""}</span>
+            {canDo(s, "logistika", "pay") && <PriceForm tripId={id} suggested={pay.suggested} amount={pay.amount} />}
+          </div>
         </Card>
       )}
 

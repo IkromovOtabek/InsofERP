@@ -65,11 +65,12 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
                   <Td className="font-medium">
                     <Link href={`/employees/${l.employee.id}`} className="hover:underline">{l.employee.fullName}</Link>
                     <div className="text-xs font-normal text-slate-500">{l.employee.position}{l.employee.tabelNo ? ` · tabel ${l.employee.tabelNo}` : ""}</div>
-                    {b && (b.warnings.length > 0 || b.rules.length > 0 || b.piece || b.advanceFormula) && (
+                    {b && (b.warnings.length > 0 || b.rules.length > 0 || b.piece || b.trips || b.advanceFormula) && (
                       <details className="mt-1 text-xs font-normal text-slate-600">
                         <summary className="cursor-pointer text-slate-500">Tafsilot</summary>
                         <div className="mt-1 space-y-0.5">
                           {b.advanceFormula && <div>{b.advanceFormula}</div>}
+                          {b.trips && <div>Reyslar: {b.trips.count} ta, {b.trips.km} km — {money(b.trips.sum)} (dispetcher narxi){b.trips.unpriced ? ` · narxsiz ${b.trips.unpriced} ta kirmadi` : ""}</div>}
                           {b.piece && <div>Sdelka · {b.piece.brigade}: fond {money(b.piece.pool)}, ulushi {b.piece.share}% ({b.piece.units.map((u) => `${u.product} ${u.qty} × ${money(u.rate)}`).join("; ")})</div>}
                           {final && <div>Norma {b.normDays} kun · keldi {b.presentDays} · ta&apos;til {b.paidLeaveDays}{b.unpaidLeaveDays ? ` (+${b.unpaidLeaveDays} o'z hisobidan)` : ""} · kasal {b.sickDays} ({b.sickPct}%) · sababsiz {b.absentDays} · kunlik o&apos;rtacha {money(b.dailyAvg)}</div>}
                           {b.rules.map((h) => <div key={h.rule} className={h.kind === "BONUS" ? "text-emerald-700" : "text-red-700"}>{h.rule}: {h.detail} = {money(h.amount)}</div>)}

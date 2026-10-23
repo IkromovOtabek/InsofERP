@@ -93,6 +93,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "move",    label: "Yo'lga chiqdi / yetkazildi / yopish", roles: ["LOGISTICS"] },
     { key: "cancel",  label: "Reysni bekor qilish",               roles: ["LOGISTICS"] },
     { key: "issue",   label: "Muammo yozish",                     roles: ["LOGISTICS", "PRODUCTION"] },
+    { key: "resolve", label: "Reys muammosini hal qilish",        roles: ["LOGISTICS", "DISPATCHER"], hint: "Dispetcher — buzilish, avariya va boshqa transport muammolari" },
     { key: "cost",    label: "Reys xarajati",                     roles: ["LOGISTICS", "ACCOUNTING"] },
     { key: "drivers", label: "Haydovchi ilovasi (ECO) boshqaruvi", roles: ["LOGISTICS", "HR", "DISPATCHER"] },
   ],
@@ -103,6 +104,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "expense",  label: "Transport xarajati kiritish",     roles: ["LOGISTICS", "ACCOUNTING", "MECHANIC"] },
     { key: "sites",    label: "Obyektlar",                       roles: ["LOGISTICS", "SALES"] },
     { key: "drivers",  label: "Haydovchi kartochkasi",           roles: ["LOGISTICS", "DISPATCHER"] },
+    { key: "pay",      label: "Reys narxi va haydovchi tarifi (tabel)", roles: ["DISPATCHER"], hint: "Narxlangan reys oylikka (Ish haqi) tushadi" },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },
   ],
   stock: [

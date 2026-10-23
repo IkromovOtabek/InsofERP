@@ -2,7 +2,7 @@ import { z } from "zod";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import {
-  ACTIVE_TRIP, DRUM_MAX_MIN, EXPENSE_KIND, FUEL_TYPE, ORDER_LOGI, SERVICE_KINDS, TRIP_PHASE, VEHICLE_LIVE, VEHICLE_TYPE,
+  ACTIVE_TRIP, capText, DRUM_MAX_MIN, EXPENSE_KIND, FUEL_TYPE, METHANE_NORM, VEHICLE_FUELS, ORDER_LOGI, SERVICE_KINDS, TRIP_PHASE, VEHICLE_LIVE, VEHICLE_TYPE,
   dayRange, delayLevel, driverEmployees, expiryLevel, isConcreteTrip, logisticsSettings, minutesLabel, orderLogistics, orderPlannedAt,
   serviceDueLevel, tripDelayMin, tripPhase, tripPlannedAt, vehicleLive, vehicleServiceDue,
   type OrderLogiStatus, type VehicleLive,
@@ -35,6 +35,7 @@ import type { HomeRow, HomeSection, SectionChart, Tone } from "./home";
 import { ListError, type ListFilter, type MobileList } from "./list";
 import type { CreateForm, CreateResult } from "./create";
 import { LOGI_ACTION_ROLES, LOGI_CREATE, LOGI_DETAIL_ROLES } from "./logistika-access";
+import { runTripPrice, tripPayDetail, tripPayList } from "./trip-pay";
 
 /**
  * Logistika kabineti — ilovadagi qismi (veb `app/(app)/logistika/*`, `trips/[id]`, `dashboard/logistics-home.tsx`).
@@ -109,6 +110,7 @@ export async function logiList(user: MobileUser, key: string, title: string, q?:
     case "deliveries": return deliveriesList(title, q, filter);
     case "logi-report": return reportList(title);
     case "sites": return sitesList(title, q, filter);
+    case "trip-pay": return tripPayList(title, filter);
     default: throw new ListError("UNKNOWN_LIST", "Bunday ro'yxat yo'q", 404);
   }
 }
@@ -276,7 +278,7 @@ async function vehiclesList(title: string, q?: string, filter?: string): Promise
       const crit = ins === "crit" || sur === "crit" || vd.some((d) => d.level === "crit");
       return {
         id: v.id,
-        title: `${v.plate} · ${VEHICLE_TYPE[v.type] ?? v.type}${v.capacityM3 ? ` · ${fmtNum(n(v.capacityM3), 1)} m³` : ""}`,
+        title: `${v.plate} · ${VEHICLE_TYPE[v.type] ?? v.type}${capText(v) ? ` · ${capText(v)}` : ""}`,
         subtitle: [v.drivers.map((d) => d.fullName).join(", ") || "haydovchi biriktirilmagan", current ? current.deliveryNoteNo : null, v.statusNote, ...warn].filter(Boolean).join(" · "),
         right: costSum ? `${month} reys · ${moneyShort(costSum)}` : `${month} reys`,
         status: VEHICLE_LIVE[live].label,
@@ -688,6 +690,11 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
 }
 
 const fuelTypeOptions: FormOption[] = (Object.keys(FUEL_TYPE) as FuelType[]).map((k) => ({ value: k, label: FUEL_TYPE[k] }));
+/** Transport kartasi: dizel va metan; eski kartadagi benzin/propan o'zgartirilmaguncha ro'yxatda qoladi. */
+const vehicleFuelOptions = (cur?: string | null): FormOption[] => [
+  ...VEHICLE_FUELS.map((k) => ({ value: k, label: FUEL_TYPE[k] })),
+  ...(cur && !(VEHICLE_FUELS as readonly string[]).includes(cur) ? [{ value: cur, label: `${FUEL_TYPE[cur as FuelType]} (eski)` }] : []),
+];
 
 // ───────────────────────── Zayavka kartochkasidan reys ochish ─────────────────────────
 
@@ -698,7 +705,7 @@ async function tripResourceFields(): Promise<FormField[]> {
     db.employee.findMany({ where: { isActive: true, position: { in: await driverPositionNames() } }, orderBy: { fullName: "asc" }, include: { vehicle: { select: { plate: true } } } }),
   ]);
   return [
-    { name: "vehicleId", label: "Texnika", type: "select", required: true, options: vehicles.map((v) => ({ value: v.id, label: `${v.plate} · ${v.type === "MIXER" ? "mikser" : "yuk mashina"}${v.capacityM3 ? ` · ${v.capacityM3} m³` : ""}${v.status === "REPAIR" ? " · ta'mirda" : ""}` })), hint: "Beton — mikser, dona mahsulot — yuk mashina" },
+    { name: "vehicleId", label: "Texnika", type: "select", required: true, options: vehicles.map((v) => ({ value: v.id, label: `${v.plate} · ${v.type === "MIXER" ? "mikser" : "yuk mashina"}${capText(v) ? ` · ${capText(v)}` : ""}${v.status === "REPAIR" ? " · ta'mirda" : ""}` })), hint: "Beton — mikser, dona mahsulot — yuk mashina" },
     { name: "driverId", label: "Haydovchi", type: "select", required: true, options: drivers.map((d) => ({ value: d.id, label: `${d.fullName}${d.vehicle ? ` · ${d.vehicle.plate}` : " · texnikasiz"}${normalizePhone(d.phone) ? "" : " · telefonsiz"}`, extra: d.vehicleId ? { vehicleId: d.vehicleId } : undefined })) },
   ];
 }
@@ -771,6 +778,7 @@ export async function logiDetail(user: MobileUser, key: string, id: string): Pro
     case "expenses": return expenseDetail(user, id);
     case "sites": return siteDetail(user, id);
     case "logi-report": return reportDetail(user, id);
+    case "trip-pay": return tripPayDetail(user, id);
     default: throw new ListError("UNKNOWN_DETAIL", "Bunday kartochka yo'q", 404);
   }
 }
@@ -780,8 +788,8 @@ const expiryTone = (d: Date | null): Tone | undefined => { const l = expiryLevel
 
 /** Transport tahrirlash / qo'shish maydonlari (veb `transport/vehicle-form.tsx`). */
 async function vehicleFields(v?: {
-  plate: string; type: string; brand: string | null; model: string | null; year: number | null; capacityM3: unknown; fuelType: string | null;
-  fuelNormL100: unknown; odometerKm: number | null; hasGps: boolean; inspectionUntil: Date | null; insuranceCompany: string | null;
+  plate: string; type: string; brand: string | null; model: string | null; year: number | null; capacityM3: unknown; capacityUnit: string; fuelType: string | null;
+  fuelNormL100: unknown; idleNormPerHour: unknown; odometerKm: number | null; hasGps: boolean; inspectionUntil: Date | null; insuranceCompany: string | null;
   insurancePolicy: string | null; insuranceUntil: Date | null; isActive: boolean; note: string | null; driverId: string | null;
 }): Promise<FormField[]> {
   const drivers = await driverEmployees({ activeOnly: true });
@@ -789,13 +797,15 @@ async function vehicleFields(v?: {
   return [
     { name: "plate", label: "Davlat raqami", type: "text", required: true, value: v?.plate, placeholder: "01 A 123 BC" },
     { name: "type", label: "Turi", type: "select", required: true, value: v?.type ?? "MIXER", options: Object.entries(VEHICLE_TYPE).map(([value, label]) => ({ value, label })) },
-    { name: "capacityM3", label: "Yuk sig'imi, m³", type: "number", value: s(v?.capacityM3), hint: "Mikser uchun majburiy" },
+    { name: "capacityM3", label: "Yuk sig'imi", type: "number", value: s(v?.capacityM3), hint: "Mikser — m³ (majburiy); yuk mashina — quyidagi birlikda" },
+    { name: "capacityUnit", label: "Yuk mashina sig'imi birligi", type: "select", value: v?.capacityUnit && v.capacityUnit !== "M3" ? v.capacityUnit : "TON", options: [{ value: "TON", label: "Tonna" }, { value: "PIECE", label: "Dona (birlik)" }], showIf: { field: "type", equals: "TRUCK" } },
     { name: "brand", label: "Marka", type: "text", value: v?.brand ?? undefined, placeholder: "Howo, Shacman, Kamaz" },
     { name: "model", label: "Modeli", type: "text", value: v?.model ?? undefined },
     { name: "year", label: "Yili", type: "number", value: s(v?.year) },
     { name: "driverId", label: "Biriktirilgan haydovchi", type: "select", value: v?.driverId ?? "", options: [{ value: "", label: "Biriktirilmagan" }, ...drivers.map((d) => ({ value: d.id, label: d.fullName }))], hint: "Reys ochilganda o'zi tanlanadi" },
-    { name: "fuelType", label: "Yoqilg'i turi", type: "select", value: v?.fuelType ?? "DIESEL", options: fuelTypeOptions },
-    { name: "fuelNormL100", label: "Sarf normasi, l/100 km", type: "number", value: s(v?.fuelNormL100) },
+    { name: "fuelType", label: "Yoqilg'i turi", type: "select", value: v?.fuelType ?? "DIESEL", options: vehicleFuelOptions(v?.fuelType) },
+    { name: "fuelNormL100", label: "Sarf normasi 100 km ga (dizel — l, metan — m³)", type: "number", value: s(v?.fuelNormL100), hint: `Metan bo'sh qolsa — ${METHANE_NORM.per100km} m³` },
+    { name: "idleNormPerHour", label: "Turib ishlash (mikser aylantirish), soatiga", type: "number", value: s(v?.idleNormPerHour), hint: `Metan bo'sh qolsa — ${METHANE_NORM.perHour} m³` },
     { name: "odometerKm", label: "Probeg, km", type: "number", value: s(v?.odometerKm), hint: v?.odometerKm != null ? "Kamaytirib bo'lmaydi — faqat xatoni tuzatish (sababi bilan)" : undefined },
     ...(v?.odometerKm != null ? [{ name: "odometerReason", label: "Probegni kamaytirish sababi", type: "text" as const, hint: "Faqat probeg avvalgisidan kam kiritilsa kerak (auditga yoziladi)" }] : []),
     { name: "hasGps", label: "Doimiy GPS-treker o'rnatilgan", type: "switch", value: v?.hasGps ? "true" : "false" },
@@ -930,7 +940,7 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
       { label: "Joriy holat", value: `${VEHICLE_LIVE[live].label}${v.statusNote ? ` · ${v.statusNote}` : ""}`, tone: COLOR_TONE[VEHICLE_LIVE[live].color] },
       ...(current ? [{ label: "Hozirgi reys", value: current.deliveryNoteNo }] : []),
       { label: "Haydovchi", value: v.drivers.map((d) => d.fullName).join(", ") || "biriktirilmagan", tone: v.drivers.length ? undefined : "warning" },
-      ...(v.capacityM3 ? [{ label: "Sig'im", value: `${fmtNum(n(v.capacityM3), 1)} m³` }] : []),
+      ...(capText(v) ? [{ label: "Sig'im", value: capText(v) }] : []),
       { label: "Yoqilg'i", value: `${v.fuelType ? FUEL_TYPE[v.fuelType] : "—"}${norm ? ` · norma ${fmtNum(norm, 1)} l/100` : ""}` },
       { label: "Haqiqiy sarf", value: per100 != null ? `${fmtNum(per100, 1)} l/100 km` : "—", tone: per100 != null && norm ? (per100 > norm * 1.1 ? "danger" : "success") : undefined },
       { label: "Probeg", value: v.odometerKm != null ? `${fmtNum(v.odometerKm)} km` : "—" },
@@ -1364,6 +1374,7 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       done(await addExpenseRecord(user.role, parse(expenseSchema, { ...payload, vehicleId: id }), user.id));
       return "Xarajat yozildi";
     }
+    case "trip.price": return runTripPrice(user, id, payload);
     case "fuel.cancel": {
       done(await cancelFuelRecord(id, textOf(payload, "reason"), user.id));
       return "Zapravka bekor qilindi";

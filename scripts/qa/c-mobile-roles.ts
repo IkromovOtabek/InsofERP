@@ -17,7 +17,7 @@ const LISTS: Record<string, string[]> = {
   "prod-report": ["PRODUCTION", "SUPERVISOR"],
   "brig-issues": ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "MECHANIC", "HR"], // sklad — faqat bildirishnomadan (detail ISSUE_RESOLVERS); mexanik — uskuna nosozligi
   "brig-shifts": ["BRIGADIER", "PRODUCTION", "SUPERVISOR"],
-  trips: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC"],
+  trips: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC", "DISPATCHER"],
   drivers: ["LOGISTICS", "HR", "DISPATCHER"],
   stock: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"],
   snabjeniye: ["PROCUREMENT", "WAREHOUSE"], // sklad ham snabjeniye amallarini bajaradi (2026-10-16 foydalanuvchi so'rovi)

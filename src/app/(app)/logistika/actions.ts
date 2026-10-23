@@ -11,6 +11,7 @@ import {
   addExpenseRecord, addFuelRecord, addVehicleServiceRecord, cancelExpenseRecord, cancelFuelRecord, cancelVehicleServiceRecord,
   driverCardSchema, expenseSchema, fuelSchema, saveDriverCardRecord, saveSiteRecord, saveVehicleRecord, serviceSchema, siteSchema, vehicleSchema,
 } from "@/lib/logistics-admin";
+import { priceTrip, priceTripsBySuggestion } from "@/lib/driver-trip-pay";
 
 /**
  * Logistika kabineti amallari: transport, obyekt, haydovchi kartasi, yoqilg'i, xarajat, sozlamalar.
@@ -144,5 +145,47 @@ export async function saveLogisticsSettings(_prev: ActionState, fd: FormData): P
   await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ? Object.fromEntries(Object.keys(d).map((k) => [k, before[k as keyof typeof before]])) : undefined, d);
   refresh();
   revalidatePath("/settings"); // forma Sozlamalar → Limitlar da ham turadi
+  return { ok: true };
+}
+
+// ───────────────────────── Haydovchi tabeli: reys narxi va tarif (dispetcher) ─────────────────────────
+
+const priceSchema = z.object({
+  amount: z.coerce.number({ message: "Summani kiriting" }).min(0, "Summa manfiy bo'lmaydi").max(100_000_000, "Summa juda katta"),
+  note: z.string().trim().max(300).optional().transform((v) => v || null),
+});
+
+/** Reys haqini belgilash / tuzatish — `lib/driver-trip-pay.ts` (narxlangandan keyin oylikka tushadi). */
+export async function priceTripAction(tripId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  const r = parseForm(priceSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const res = await priceTrip(tripId, r.data.amount, r.data.note, s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true };
+}
+
+/** Tanlangan narxsiz reyslarga tarif bo'yicha taklifni birdan qo'yish. */
+export async function priceSuggestedAction(tripIds: string[]): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  if (!tripIds.length) return { error: "Reys tanlanmagan" };
+  const r = await priceTripsBySuggestion(tripIds.slice(0, 500), s.userId);
+  refresh();
+  return r.failed ? { error: `${r.done} ta narxlandi, ${r.failed} tasi o'tmadi (vedomost tasdiqlangan yoki reys o'zgargan)` } : { ok: true };
+}
+
+const money0 = z.coerce.number({ message: "Raqam kiriting" }).min(0, "Manfiy bo'lmaydi").max(100_000_000, "Juda katta");
+const tariffSchema = z.object({ drvTripRate: money0, drvKmRate: money0, drvWaitHourRate: money0 });
+
+/** Haydovchi reys haqi tarifi (taklif shu bo'yicha hisoblanadi). Eski reyslardagi taklif o'zgarmaydi. */
+export async function saveDriverTariff(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  const r = parseForm(tariffSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { drvTripRate: true, drvKmRate: true, drvWaitHourRate: true } });
+  await db.companySettings.upsert({ where: { id: "main" }, create: { id: "main", ...r.data }, update: r.data });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", before ?? undefined, r.data);
+  refresh();
   return { ok: true };
 }

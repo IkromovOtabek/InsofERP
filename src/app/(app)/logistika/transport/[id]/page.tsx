@@ -86,7 +86,8 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
           {canEdit ? (
             <VehicleForm drivers={drivers.map((d) => ({ id: d.id, name: d.fullName }))} v={{
               id: v.id, plate: v.plate, type: v.type, brand: v.brand, model: v.model, year: v.year,
-              capacityM3: v.capacityM3 ? Number(v.capacityM3) : null, fuelType: v.fuelType, fuelNormL100: v.fuelNormL100 ? Number(v.fuelNormL100) : null,
+              capacityM3: v.capacityM3 ? Number(v.capacityM3) : null, capacityUnit: v.capacityUnit, fuelType: v.fuelType, fuelNormL100: v.fuelNormL100 ? Number(v.fuelNormL100) : null,
+              idleNormPerHour: v.idleNormPerHour ? Number(v.idleNormPerHour) : null,
               odometerKm: v.odometerKm, hasGps: v.hasGps, inspectionUntil: v.inspectionUntil ? isoDate(v.inspectionUntil) : "",
               insuranceCompany: v.insuranceCompany, insurancePolicy: v.insurancePolicy, insuranceUntil: v.insuranceUntil ? isoDate(v.insuranceUntil) : "",
               isActive: v.isActive, note: v.note, driverId: v.drivers[0]?.id ?? "",

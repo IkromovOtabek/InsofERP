@@ -80,7 +80,7 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // Brigadir yopgan smena hisobotlari (`./brigadier.ts`)
   "brig-shifts": { title: "Smena hisobotlari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR"] },
   // ── Logistika ──
-  trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC"] },
+  trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC", "DISPATCHER"] },
   drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR", "DISPATCHER"] },
   // ── Sklad ──
   stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"] },

@@ -4,7 +4,8 @@ import { audit } from "@/lib/audit";
 import { zStr, zOpt, MAX_AMOUNT } from "@/lib/action";
 import { addFuelLog, addTransportExpense } from "@/lib/logistics-costs";
 import { pushVehicleSilently } from "@/lib/eco/people";
-import type { FuelType, Role, TransportExpenseKind, VehicleStatus, VehicleType } from "@/generated/prisma";
+import type { CapacityUnit, FuelType, Role, TransportExpenseKind, VehicleStatus, VehicleType } from "@/generated/prisma";
+import { METHANE_NORM, VEHICLE_FUELS } from "@/lib/logistics";
 
 /**
  * Logistika kabineti yozuvlari: transport kartasi va holati, texnik xizmat jurnali, obyekt,
@@ -46,9 +47,10 @@ const optEnum = <T extends [string, ...string[]]>(values: T) => z.enum(values).o
 export const vehicleSchema = z.object({
   plate: zStr("Davlat raqamini kiriting").transform((v) => v.toUpperCase().replace(/\s+/g, " ").trim()),
   type: z.enum(["MIXER", "PUMP", "TRUCK"], { message: "Turini tanlang" }),
-  brand: zOpt, model: zOpt, year: numIn(1970, new Date().getFullYear() + 1), capacityM3: numIn(0, 100),
+  brand: zOpt, model: zOpt, year: numIn(1970, new Date().getFullYear() + 1), capacityM3: numIn(0, 100_000),
+  capacityUnit: optEnum(["M3", "TON", "PIECE"]),
   fuelType: optEnum(["DIESEL", "PETROL", "METHANE", "PROPANE"]),
-  fuelNormL100: numIn(0, 300), odometerKm: numIn(0, 3_000_000), hasGps: boolField,
+  fuelNormL100: numIn(0, 300), idleNormPerHour: numIn(0, 100), odometerKm: numIn(0, 3_000_000), hasGps: boolField,
   // Probeg kamaytirilsa (xato kiritilgan raqamni tuzatish) — sabab majburiy, auditga yoziladi
   odometerReason: zOpt,
   inspectionUntil: dayField, insuranceCompany: zOpt, insurancePolicy: zOpt, insuranceUntil: dayField,
@@ -59,6 +61,16 @@ export type VehicleInput = z.infer<typeof vehicleSchema>;
 /** Transport qo'shish (id = null) yoki tahrirlash. Biriktirilgan haydovchi — `Employee.vehicleId`. */
 export async function saveVehicleRecord(id: string | null, d: VehicleInput, userId: string): Promise<AdminResult> {
   if (d.type === "MIXER" && !(d.capacityM3 && d.capacityM3 > 0)) return { error: "Mikser sig'imini (m³) kiriting" };
+  if (d.type !== "TRUCK" && d.capacityM3 != null && d.capacityM3 > 100) return { error: "Sig'im 100 m³ dan oshmaydi" };
+  // Benzin/propan endi tanlanmaydi — eski kartada turgani saqlanadi, yangisiga yoki boshqa turdan o'tishga ruxsat yo'q
+  if (d.fuelType && !(VEHICLE_FUELS as readonly string[]).includes(d.fuelType)) {
+    const cur = id ? await db.vehicle.findUnique({ where: { id }, select: { fuelType: true } }) : null;
+    if (cur?.fuelType !== d.fuelType) return { error: "Yoqilg'i turi: dizel yoki metan" };
+  }
+  // Metan: norma kiritilmagan bo'lsa — odatiy (100 km ga 50 m³, soatiga 5 m³)
+  const methane = d.fuelType === "METHANE";
+  const fuelNorm = d.fuelNormL100 ?? (methane ? METHANE_NORM.per100km : null);
+  const idleNorm = d.idleNormPerHour ?? (methane ? METHANE_NORM.perHour : null);
   // Probeg orqaga ketmaydi: kamaytirish faqat xato tuzatish sifatida, sababi bilan (yoqilg'i sarfi va xizmat muddati shunga tayanadi)
   let odoFix: { from: number; to: number | null; reason: string } | null = null;
   if (id) {
@@ -72,7 +84,8 @@ export async function saveVehicleRecord(id: string | null, d: VehicleInput, user
   }
   const data = {
     plate: d.plate, type: d.type as VehicleType, brand: d.brand, model: d.model, year: d.year ? Math.round(d.year) : null,
-    capacityM3: d.capacityM3, fuelType: (d.fuelType ?? null) as FuelType | null, fuelNormL100: d.fuelNormL100,
+    capacityM3: d.capacityM3, capacityUnit: (d.type === "TRUCK" ? d.capacityUnit ?? "TON" : "M3") as CapacityUnit,
+    fuelType: (d.fuelType ?? null) as FuelType | null, fuelNormL100: fuelNorm, idleNormPerHour: idleNorm,
     odometerKm: d.odometerKm != null ? Math.round(d.odometerKm) : null, hasGps: d.hasGps,
     inspectionUntil: d.inspectionUntil, insuranceCompany: d.insuranceCompany, insurancePolicy: d.insurancePolicy, insuranceUntil: d.insuranceUntil,
     isActive: id ? d.isActive : true, note: d.note,

@@ -238,6 +238,18 @@ export const RECEIVER_FORM: FormField[] = [
   { name: "note", label: "Izoh", type: "text" },
 ];
 
+/**
+ * Haydovchining «Yetkazdim» formasi: qabul ma'lumoti + tabel uchun ishlagan soat va (mikserda) baraban aylantirish soni.
+ * Soat — gaz normasi (turib ishlash, soatiga), aylantirish — dispetcher nazorati (`lib/driver-trip-pay.ts`).
+ */
+export function deliverForm(isMixer: boolean): FormField[] {
+  return [
+    ...RECEIVER_FORM,
+    ...(isMixer ? [{ name: "drumTurns", label: "Mikser necha marta aylantirildi", type: "number" as const, required: true, placeholder: "Masalan: 3" }] : []),
+    { name: "workHours", label: "Necha soat ishladingiz", type: "number", required: true, hint: "Yuklashdan shu paytgacha, masalan 2,5" },
+  ];
+}
+
 /** Haydovchi / dispetcher "Muammo" formasi — turlari `lib/logistics.ts` dagi ro'yxat. */
 export const ISSUE_FORM: FormField[] = [
   { name: "kind", label: "Nima bo'ldi", type: "select", required: true, value: "TRAFFIC", options: Object.entries(ISSUE_KIND).filter(([k]) => k !== "DECLINED").map(([value, label]) => ({ value, label })) },
@@ -297,7 +309,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "trip.fuel": ["DRIVER"],
   "trip.close": ["LOGISTICS"],
   // Reysdagi ochiq muammolarni hal qilindi deb yopish (id — reys)
-  "trip.resolve": ["LOGISTICS"],
+  "trip.resolve": ["LOGISTICS", "DISPATCHER"],
   "invoice.pay": ["CASHIER", "ACCOUNTING"],
   // Schyot yozish — veb `/invoices/new` bilan bir xil
   "order.invoice": ["SALES", "ACCOUNTING"],
@@ -469,7 +481,7 @@ const PERM_EXACT: Record<string, { module: string; action?: string }> = {
   "trip.eco": { module: "trips", action: "create" },
   "trip.problem": { module: "trips", action: "issue" },
   // Veb `resolveIssue` — `trips` → `move`
-  "trip.resolve": { module: "trips", action: "move" },
+  "trip.resolve": { module: "trips", action: "resolve" },
   "task.progress": { module: "tasks", action: "progress" },
   "task.finish": { module: "tasks", action: "progress" },
   "task.cancel": { module: "tasks", action: "cancel" },
@@ -620,7 +632,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
   if (DIREKTOR_CARDS.includes(card)) return direktorDetail(user, card, id);
   if (SKLAD_CARDS.has(card)) return skladDetail(user, card, id);
   // Logistika kartochkalari: transport, zapravka, xarajat, obyekt, davr hisoboti (`./logistika-extra.ts`)
-  if (["vehicles", "fuel", "expenses", "sites", "logi-report"].includes(card)) return logiDetail(user, card, id);
+  if (["vehicles", "fuel", "expenses", "sites", "logi-report", "trip-pay"].includes(card)) return logiDetail(user, card, id);
   switch (DETAIL_KEY[key] ?? key) {
     case "orders": return withOrderTrip(user, await withOrderActions(user, await orderDetail(user, id)));
     case "trips": return withTripExtras(user, await tripDetail(user, id));
@@ -800,7 +812,7 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       // GPS umuman yo'q bo'lsa (`unknown`) tugma ochiq qoladi: bosqichni boshqa hech kim
       // belgilamaydi, reysga esa muammo yoziladi — dispetcher tekshiradi.
       actions.push({
-        id: "trip.delivered", label: "Yetkazdim", tone: "success", form: RECEIVER_FORM, effect: { track: "stop" },
+        id: "trip.delivered", label: "Yetkazdim", tone: "success", form: deliverForm(t.vehicle.type === "MIXER"), effect: { track: "stop" },
         disabled: arrival ? !arrival.near && !arrival.unknown : false, hint: arrival?.reason ?? undefined,
       });
     }

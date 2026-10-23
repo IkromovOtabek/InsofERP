@@ -15,6 +15,8 @@ export const LOGI_ACCESS: Record<string, { title: string; roles: Role[]; menuHid
   "logi-orders": { title: "Buyurtmalar", roles: ["LOGISTICS"] },
   // Veb «Dispetcher kalendari» — ro'yxat ko'rinishida: kun bo'yicha reja, soatsiz va oldingi kundan qolganlar
   "logi-day": { title: "Dispetcher kalendari", roles: ["LOGISTICS"] },
+  // Veb «Haydovchilar tabeli»: narx belgilanmagan reyslar (dispetcher narx qo'yadi, `./trip-pay.ts`)
+  "trip-pay": { title: "Narxsiz reyslar", roles: ["DISPATCHER", "LOGISTICS"] },
   // Veb «Transport» — logistika, mexanik va dispetcher
   vehicles: { title: "Transport", roles: ["LOGISTICS", "MECHANIC", "DISPATCHER"] },
   // Veb Transport ⇢ «Yoqilg'i», «Transport xarajatlari» va Reyslar ⇢ «Nakladnoylar», «Yetkazib berish» —
@@ -40,6 +42,7 @@ export const LOGI_DETAIL_KEY: Record<string, string> = { "logi-orders": "orders"
 /** Maxfiy kartochkalar (id bilan so'ralsa ham) — veb sahifa rollari bilan bir xil. */
 export const LOGI_DETAIL_ROLES: Record<string, Role[]> = {
   vehicles: ["LOGISTICS", "MECHANIC", "DISPATCHER"],
+  "trip-pay": ["DISPATCHER", "LOGISTICS"],
   fuel: ["LOGISTICS", "ACCOUNTING"],
   expenses: ["LOGISTICS", "ACCOUNTING"],
   sites: ["LOGISTICS", "SALES"],
@@ -65,6 +68,7 @@ export const LOGI_PERM: Record<string, { module: string; action: string }> = {
   "expense.cancel": { module: "logistika", action: "fuel" },
   "site.save": { module: "logistika", action: "sites" },
   "driver.card": { module: "logistika", action: "drivers" },
+  "trip.price": { module: "logistika", action: "pay" },
   "driver.link": { module: "trips", action: "drivers" },
   "driver.approve": { module: "trips", action: "drivers" },
 };
@@ -92,6 +96,7 @@ export const LOGI_ACTION_ROLES: Record<string, Role[]> = {
   "expense.cancel": ["LOGISTICS", "ACCOUNTING"],
   "site.save": ["LOGISTICS", "SALES"],
   "driver.card": ["LOGISTICS", "DISPATCHER"],
+  "trip.price": ["DISPATCHER"],
   "driver.link": ["LOGISTICS", "HR", "DISPATCHER"],
   "driver.approve": ["LOGISTICS", "HR", "DISPATCHER"],
 };

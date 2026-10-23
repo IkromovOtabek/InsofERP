@@ -6,13 +6,14 @@ import { haversineMeters } from "@/lib/geo";
 import { notifyAfter, notifyEmployees, notifyRoles, notifyUsers } from "@/lib/notify";
 import { randomBytes } from "node:crypto";
 import { soleUnit, unitLabel } from "@/lib/unit";
-import { ISSUE_KIND, logisticsSettings } from "@/lib/logistics";
+import { ISSUE_KIND, logisticsSettings, VEHICLE_ISSUE_KINDS } from "@/lib/logistics";
 import { lockStock } from "@/lib/stock-lock";
 import { driverPositionNames } from "@/lib/positions";
 import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
 import { prepayShortError } from "@/lib/payments";
 import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
 import { saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
+import { snapshotTripPay } from "@/lib/driver-trip-pay";
 
 /**
  * Reys (nakladnoy) holat o'tishlari — yagona joy. Server action'lar (logist tugma bosganda) ham,
@@ -158,13 +159,16 @@ export async function tripOnRoad(id: string, userId: string, note?: string): Pro
  * Yetkazib berish miqdorlari (TZ "Yetkazib berish moduli"): yuklangan = `qtyM3`,
  * qabul qilingan va qaytarilgan — obyektda aniqlanadi. Berilmasa qabul = yuklangan.
  */
-export type DeliveryQty = { acceptedQty?: number | null; returnedQty?: number | null; comment?: string | null };
+/** `drumTurns`, `workHours` — haydovchi reysni yakunlaganda kiritadi (tabel va gaz normasi, `lib/driver-trip-pay.ts`). */
+export type DeliveryQty = { acceptedQty?: number | null; returnedQty?: number | null; comment?: string | null; drumTurns?: number | null; workHours?: number | null };
 
 function checkQty(loaded: number, q?: DeliveryQty): string | null {
   if (!q) return null;
   const a = q.acceptedQty, r = q.returnedQty;
   if (a != null && (a < 0 || a > loaded + 0.001)) return `Qabul qilingan miqdor 0 … ${loaded} oralig'ida bo'lsin`;
   if (r != null && (r < 0 || r > loaded + 0.001)) return `Qaytarilgan miqdor 0 … ${loaded} oralig'ida bo'lsin`;
+  if (q.drumTurns != null && (q.drumTurns < 0 || q.drumTurns > 500 || !Number.isInteger(q.drumTurns))) return "Mikser aylantirish soni 0 … 500 butun son bo'lsin";
+  if (q.workHours != null && (q.workHours < 0 || q.workHours > 24)) return "Ishlagan soat 0 … 24 oralig'ida bo'lsin";
   if (a != null && r != null && a + r > loaded + 0.001) return `Qabul (${a}) + qaytgan (${r}) yuklangandan (${loaded}) ko'p`;
   return null;
 }
@@ -235,6 +239,8 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
         ...(q?.acceptedQty != null ? { acceptedQty: q.acceptedQty } : {}),
         ...(q?.returnedQty != null ? { returnedQty: q.returnedQty } : {}),
         ...(q?.comment ? { deliveryComment: q.comment } : {}),
+        ...(q?.drumTurns != null ? { drumTurns: q.drumTurns } : {}),
+        ...(q?.workHours != null ? { workHours: q.workHours } : {}),
       },
     }));
     const doneTrips = await tx.trip.findMany({ where: { orderId: t.orderId, status: "DELIVERED" }, select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } });
@@ -254,6 +260,8 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
   await checkFastDelivery(id, userId);
   // Reys yakuni (km, vaqt, iz). Kech kelgan bufer nuqtalari bo'lsa `recordTrack` qayta hisoblaydi
   await saveTripSummarySafe(id);
+  // Haydovchi tabeli: km, kutish, tarif bo'yicha taklif + dispetcherga «narx belgilanmagan» xabari
+  await snapshotTripPay(id).catch((e) => console.error("[trip-pay] snapshot", id, e));
 
   // Zayavkani kiritgan sotuvchi mijozga javob beradi; logistika keyingi reysni rejalashtiradi
   const done = delivered >= total - 0.001;
@@ -416,7 +424,8 @@ export async function reportTripIssue(
   const issue = await db.tripIssue.create({ data: { tripId, kind: input.kind, note, source: input.source ?? "LOGISTICS", createdById: userId } });
   await audit(db, userId, "CREATE", "TripIssue", issue.id, undefined, issue);
   // Dispetcher darhol bilishi kerak — mashina yo'lda turib qolgan bo'lishi mumkin
-  notifyAfter(() => notifyRoles(["LOGISTICS"], {
+  // Transport muammosi (buzilish, avariya) — dispetcher hal qiladi (`VEHICLE_ISSUE_KINDS`)
+  notifyAfter(() => notifyRoles(VEHICLE_ISSUE_KINDS.includes(input.kind) ? ["LOGISTICS", "DISPATCHER"] : ["LOGISTICS"], {
     type: "TRIP_ISSUE",
     title: `Muammo — ${t.deliveryNoteNo}: ${ISSUE_KIND[input.kind]}`,
     body: `${t.driver.fullName} · ${t.vehicle.plate}${note ? ` · ${note}` : ""}`,

@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { notifyRoles, notifyUsers, type NotifyLink } from "@/lib/notify";
 import { runRentReminders } from "@/lib/rent-tenant";
 import { runLeaseExpiry } from "@/lib/rent-contract";
+import { PAY_SINCE, PRICER_ROLES, unpricedWhere } from "@/lib/driver-trip-pay";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
@@ -23,6 +24,19 @@ const ago = (now: Date, hours: number) => new Date(now.getTime() - hours * H);
 const hrs = (from: Date, now: Date) => Math.max(1, Math.round((now.getTime() - from.getTime()) / H));
 
 const RULES: Rule[] = [
+  {
+    // «Propushenniy»: yetkazilgan, lekin dispetcher narx qo'ymagan reyslar — bitta umumiy eslatma, hal bo'lmaguncha takrorlanadi
+    type: "REMIND_TRIP_UNPRICED",
+    find: async (now) => {
+      const where = { ...unpricedWhere(), deliveredAt: { gte: PAY_SINCE, lt: ago(now, 2) } };
+      const [n, oldest] = await Promise.all([
+        db.trip.count({ where }),
+        db.trip.findFirst({ where, orderBy: { deliveredAt: "asc" }, select: { id: true, deliveredAt: true } }),
+      ]);
+      if (!n || !oldest) return [];
+      return [{ id: oldest.id, link: { key: "trip-pay", id: oldest.id }, roles: PRICER_ROLES, title: `Narx belgilanmagan reyslar: ${n} ta`, body: `Eng eskisi ${hrs(oldest.deliveredAt!, now)} soatdan beri kutmoqda — narx qo'yilmaguncha haydovchi tabeli va oyligiga tushmaydi` }];
+    },
+  },
   {
     type: "REMIND_ORDER_DRAFT",
     find: async (now) => (await db.order.findMany({

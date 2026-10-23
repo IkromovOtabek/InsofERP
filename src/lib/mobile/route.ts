@@ -7,7 +7,7 @@ import { hit } from "@/lib/rate-limit";
 import { ARRIVE_RADIUS_M, tripArrival, tripTrackStats } from "@/lib/trips";
 import { SITE_RADIUS_M } from "./geofence";
 import type { MobileUser } from "./auth";
-import { RECEIVER_FORM, type FormField } from "./detail";
+import { deliverForm, type FormField } from "./detail";
 import { driverEmployeeId, listAllowed, ListError } from "./list";
 
 /**
@@ -66,7 +66,7 @@ export async function tripRoute(
   if (!listAllowed(user, "trips")) throw new ListError("FORBIDDEN", "Bu bo'limga ruxsat yo'q", 403);
   const t = await db.trip.findUnique({
     where: { id: tripId },
-    include: { order: { select: { lat: true, lng: true, deliveryAddress: true, customer: { select: { name: true } } } } },
+    include: { order: { select: { lat: true, lng: true, deliveryAddress: true, customer: { select: { name: true } } } }, vehicle: { select: { type: true } } },
   });
   // Kartochkadagi qoida bilan bir xil: begona reys "topilmadi" deb qaytadi (`lib/mobile/detail.ts`)
   if (!t) throw new ListError("NOT_FOUND", "Reys topilmadi", 404);
@@ -128,7 +128,7 @@ export async function tripRoute(
     arriveWithinM: Math.min(ARRIVE_RADIUS_M, SITE_RADIUS_M),
     canDeliver: arrival.near,
     deliverHint: arrival.reason,
-    deliverForm: RECEIVER_FORM,
+    deliverForm: deliverForm(t.vehicle.type === "MIXER"),
   };
 }
 

@@ -1,12 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveVehicle } from "../actions";
 import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select, Textarea } from "@/components/ui";
 
 export type VehicleFormValue = {
   id: string; plate: string; type: string; brand: string | null; model: string | null; year: number | null;
-  capacityM3: number | null; fuelType: string | null; fuelNormL100: number | null; odometerKm: number | null; hasGps: boolean;
+  capacityM3: number | null; capacityUnit: string; fuelType: string | null; fuelNormL100: number | null; idleNormPerHour: number | null; odometerKm: number | null; hasGps: boolean;
   inspectionUntil: string; insuranceCompany: string | null; insurancePolicy: string | null; insuranceUntil: string;
   isActive: boolean; note: string | null; driverId: string;
 };
@@ -14,6 +14,13 @@ export type VehicleFormValue = {
 /** Transport kartasi (TZ 6-bo'lim): ID, raqam, turi, marka/model, sig'im, haydovchi, texnik ko'rik, sug'urta, GPS, yoqilg'i. */
 export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { id: string; name: string; busyWith?: string | null }[] }) {
   const [state, action, pending] = useActionState(saveVehicle.bind(null, v?.id ?? null), undefined);
+  const [type, setType] = useState(v?.type ?? "MIXER");
+  const [fuel, setFuel] = useState(v?.fuelType ?? "DIESEL");
+  const [unit, setUnit] = useState(v?.capacityUnit && v.capacityUnit !== "M3" ? v.capacityUnit : "TON");
+  const truck = type === "TRUCK";
+  const methane = fuel === "METHANE";
+  // Benzin/propan endi tanlanmaydi — eski kartada turgan bo'lsa, o'zgartirilmaguncha ro'yxatda ko'rinadi
+  const legacyFuel = v?.fuelType === "PETROL" ? "Benzin (eski)" : v?.fuelType === "PROPANE" ? "Propan (eski)" : null;
   return (
     <form action={action} className="space-y-5">
       <FormError error={state?.error} />
@@ -21,13 +28,23 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 [&>*]:min-w-0">
         <Field label="Davlat raqami *"><Input name="plate" defaultValue={v?.plate} placeholder="01 A 123 BC" required /></Field>
         <Field label="Turi *">
-          <Select name="type" defaultValue={v?.type ?? "MIXER"}>
+          <Select name="type" value={type} onChange={(e) => setType(e.target.value)}>
             <option value="MIXER">Mikser (beton)</option>
             <option value="PUMP">Beton nasos</option>
             <option value="TRUCK">Yuk mashina (dona mahsulot)</option>
           </Select>
         </Field>
-        <Field label="Yuk sig'imi, m³" hint="Mikser uchun majburiy"><Input name="capacityM3" type="number" step="0.5" min="0" defaultValue={v?.capacityM3 ?? ""} /></Field>
+        {truck ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={`Yuk sig'imi, ${unit === "PIECE" ? "dona" : "tonna"}`}><Input name="capacityM3" type="number" step="any" min="0" defaultValue={v?.capacityM3 ?? ""} /></Field>
+            <Field label="Birligi">
+              <Select name="capacityUnit" value={unit} onChange={(e) => setUnit(e.target.value)}>
+                <option value="TON">Tonna</option>
+                <option value="PIECE">Dona (birlik)</option>
+              </Select>
+            </Field>
+          </div>
+        ) : <Field label="Yuk sig'imi, m³" hint="Mikser uchun majburiy"><Input name="capacityM3" type="number" step="0.5" min="0" defaultValue={v?.capacityM3 ?? ""} /></Field>}
         <Field label="Marka"><Input name="brand" defaultValue={v?.brand ?? ""} placeholder="Howo, Shacman, Kamaz" /></Field>
         <Field label="Modeli"><Input name="model" defaultValue={v?.model ?? ""} /></Field>
         <Field label="Yili"><Input name="year" type="number" min="1970" max={new Date().getFullYear() + 1} defaultValue={v?.year ?? ""} /></Field>
@@ -41,11 +58,17 @@ export function VehicleForm({ v, drivers }: { v?: VehicleFormValue; drivers: { i
           </Select>
         </Field>
         <Field label="Yoqilg'i turi">
-          <Select name="fuelType" defaultValue={v?.fuelType ?? "DIESEL"}>
-            <option value="DIESEL">Dizel</option><option value="PETROL">Benzin</option><option value="METHANE">Metan</option><option value="PROPANE">Propan</option>
+          <Select name="fuelType" value={fuel} onChange={(e) => setFuel(e.target.value)}>
+            <option value="DIESEL">Dizel</option><option value="METHANE">Metan</option>
+            {legacyFuel && <option value={v!.fuelType!}>{legacyFuel}</option>}
           </Select>
         </Field>
-        <Field label="Sarf normasi, l/100 km" hint="Haqiqiy sarf shu bilan solishtiriladi"><Input name="fuelNormL100" type="number" step="0.1" min="0" defaultValue={v?.fuelNormL100 ?? ""} /></Field>
+        <Field label={methane ? "Yurish normasi, m³ / 100 km" : "Sarf normasi, l/100 km"} hint={methane ? "Bo'sh qolsa — 50 m³" : "Haqiqiy sarf shu bilan solishtiriladi"}>
+          <Input name="fuelNormL100" type="number" step="0.1" min="0" defaultValue={v?.fuelNormL100 ?? ""} key={`n${methane}`} placeholder={methane ? "50" : undefined} />
+        </Field>
+        <Field label={methane ? "Turib ishlash, m³ / soat" : "Turib ishlash, l / soat"} hint={methane ? "Mikser aylantirish (motor ishlab turgan soat). Bo'sh qolsa — 5 m³" : "Mikser aylantirish — ixtiyoriy"}>
+          <Input name="idleNormPerHour" type="number" step="0.1" min="0" defaultValue={v?.idleNormPerHour ?? ""} key={`i${methane}`} placeholder={methane ? "5" : undefined} />
+        </Field>
         <Field label="Probeg, km" hint={v?.odometerKm != null ? "Kamaytirib bo'lmaydi — faqat xatoni tuzatish (sababi bilan)" : undefined}><Input name="odometerKm" type="number" min="0" defaultValue={v?.odometerKm ?? ""} /></Field>
         <Field label="Texnik ko'rik muddati"><Input name="inspectionUntil" type="date" defaultValue={v?.inspectionUntil ?? ""} /></Field>
         <div className="flex items-end pb-2"><Checkbox name="hasGps" label="Doimiy GPS-treker o'rnatilgan" defaultChecked={v?.hasGps} /></div>

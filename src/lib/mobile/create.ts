@@ -39,7 +39,7 @@ import { activeRecipients, brigadeLabel, issueTargetOptions } from "@/lib/stock-
 import { issuePrices } from "@/lib/stock-price";
 import { STOCK_EPS } from "@/lib/stock-lock";
 import { createMechanicRequest, FACTORY_OBJECTS, FACTORY_PROBLEMS, PROBLEMS } from "@/lib/mechanic-requests";
-import { VEHICLE_TYPE } from "@/lib/logistics";
+import { capText, VEHICLE_TYPE } from "@/lib/logistics";
 import { dataUrlFile } from "@/lib/procurement";
 import type { Role } from "@/generated/prisma";
 import { arendaChiqimForm, arendaCreate, arendaKirimForm, arendaShopForm } from "./arenda";
@@ -755,7 +755,7 @@ async function tripForm(): Promise<CreateForm> {
       },
       {
         name: "vehicleId", label: "Texnika", type: "select", required: true,
-        options: vehicles.map((v) => ({ value: v.id, label: `${v.plate} · ${v.type === "MIXER" ? "mikser" : "yuk mashina"}${v.capacityM3 ? ` · ${v.capacityM3} m³` : ""}` })),
+        options: vehicles.map((v) => ({ value: v.id, label: `${v.plate} · ${v.type === "MIXER" ? "mikser" : "yuk mashina"}${capText(v) ? ` · ${capText(v)}` : ""}` })),
         hint: "Beton — mikser, dona mahsulot (plita, blok) — yuk mashina",
       },
       {

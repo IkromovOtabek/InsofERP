@@ -4,8 +4,8 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
-import { ACTIVE_TRIP, expiryLevel, FUEL_TYPE, VEHICLE_TYPE, vehicleLive, VEHICLE_LIVE, vehicleServiceDue, type VehicleLive } from "@/lib/logistics";
-import { date, moneyShort, qty } from "@/lib/format";
+import { ACTIVE_TRIP, capText, expiryLevel, FUEL_TYPE, VEHICLE_TYPE, vehicleLive, VEHICLE_LIVE, vehicleServiceDue, type VehicleLive } from "@/lib/logistics";
+import { date, moneyShort } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { VehicleStatusForm } from "../../drivers/vehicle-status-form";
 import { TripLink, VehicleLiveBadge } from "../ui";
@@ -90,7 +90,7 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
                   <Td><VehicleLiveBadge live={live} note={v.statusNote} />{current && <div className="text-xs"><TripLink id={current.id} noteNo={current.deliveryNoteNo} plain={tripsClosed} /></div>}
                     {(dueBy.get(v.id) ?? []).map((d) => <div key={d.serviceId} className={`text-xs ${d.level === "crit" ? "font-medium text-red-700" : "text-amber-700"}`}>{d.text}</div>)}</Td>
                   <Td className="text-sm">{v.drivers.map((d) => <Link key={d.id} href={`/logistika/haydovchilar/${d.id}`} className="block hover:underline">{d.fullName}</Link>)}{v.drivers.length === 0 && <span className="text-xs text-amber-700">biriktirilmagan</span>}</Td>
-                  <Td right className="tabular">{v.capacityM3 ? `${qty(v.capacityM3)} m³` : "—"}</Td>
+                  <Td right className="tabular">{capText(v) || "—"}</Td>
                   <Td>{v.hasGps ? <Badge color="green">treker</Badge> : <span className="text-xs text-slate-500">telefon</span>}</Td>
                   <Td className="text-sm">{docBadge(v.inspectionUntil)}</Td>
                   <Td className="text-sm">{docBadge(v.insuranceUntil)}</Td>

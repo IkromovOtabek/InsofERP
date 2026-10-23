@@ -259,7 +259,14 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       // Hozirgi joylashuv (payload `lat/lng`) obyektdan 300 m ichida bo'lsin — ECO bilan bir xil qoida (`./geofence.ts`)
       assertAtSite(payload, knownPoint(gps.destination?.lat, gps.destination?.lng), "Yetkazdim");
       if (!gps.near && !gps.unknown) fail(gps.reason ?? "Obyektga yetib borilmagan");
-      const q = { acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: p.data!.note || null };
+      const q = {
+        acceptedQty: optNum(payload, "acceptedQty"), returnedQty: optNum(payload, "returnedQty"), comment: p.data!.note || null,
+        drumTurns: optNum(payload, "drumTurns"), workHours: optNum(payload, "workHours"),
+      };
+      // Tabel: ishlagan soat (va mikserda aylantirish soni) — haydovchi yakunlaganda majburiy. Eski ilova maydonni
+      // ko'rsatmaydi va yubormaydi — u holda reys yopiladi, qiymat bo'sh qoladi (dispetcher tabelda ko'radi)
+      if ("workHours" in payload && q.workHours == null) fail("Necha soat ishlaganingizni yozing");
+      if ("drumTurns" in payload && q.drumTurns == null) fail("Mikser necha marta aylantirilganini yozing");
       const r = await tripDelivered(id, user.id, p.data!.receiverName, p.data!.note, q);
       if (r.error) fail(r.error);
       if (!r.changed) fail("Holat mos emas");

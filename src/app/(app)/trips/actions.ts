@@ -167,7 +167,7 @@ export async function reportIssue(id: string, _prev: ActionState, fd: FormData):
 }
 
 export async function resolveIssue(issueId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireAction("trips", "move");
+  const s = await requireAction("trips", "resolve");
   try {
     const r = await resolveTripIssue(issueId, s.userId, String(fd.get("resolution") ?? ""));
     const t = await db.trip.findUniqueOrThrow({ where: { id: r.tripId }, select: { orderId: true } });

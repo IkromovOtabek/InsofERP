@@ -42,6 +42,7 @@ import { DIREKTOR_LIST_ICON, direktorHomeSections } from "./direktor-extra";
 import { KADR_ICON } from "./kadr-access";
 import { kadrHome } from "./kadr-extra";
 import { logisticsHomeSections, mechanicServiceSection } from "./logistika-extra";
+import { tripPaySection } from "./trip-pay";
 
 /**
  * Mobil ilova bosh ekrani — rolga qarab. Server nimani ko'rsatishni hal qiladi,
@@ -858,6 +859,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
 
     // Dispetcher: texnik xizmat muddati yaqin / o'tgan texnika — mexanikdagidek
     case "DISPATCHER": {
+      // «Propushenniy»: narx belgilanmagan reyslar — birinchi
+      if (listAllowed(user, "trip-pay")) { const s = await tripPaySection(); if (s) sections.unshift(s); }
       if (listAllowed(user, "vehicles")) { const due = await mechanicServiceSection(); if (due) sections.push(due); }
       break;
     }

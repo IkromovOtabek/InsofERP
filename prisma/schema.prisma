@@ -158,6 +158,10 @@ model CompanySettings {
   avgSpeedKmh         Int       @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
   stopAlertMin        Int       @default(20) // yo'ldagi mashina bir joyda shuncha daqiqa tursa — dispetcherga xabar
   offRouteM           Int       @default(500) // rejadagi yo'ldan shuncha metr chetga chiqsa — dispetcherga xabar
+  // ── Haydovchi reys haqi tarifi (dispetcher sozlaydi, `lib/driver-trip-pay.ts`): taklif = reys + km × tarif + kutish soati × tarif ──
+  drvTripRate         Decimal   @default(0) @db.Decimal(18, 2) // har reys uchun qat'iy summa
+  drvKmRate           Decimal   @default(0) @db.Decimal(18, 2) // 1 km uchun (zavod → obyekt → zavod)
+  drvWaitHourRate     Decimal   @default(0) @db.Decimal(18, 2) // mikser obyektda kutgan har soati uchun
   /// GPS davriy tekshiruvi (lib/gps-watch.ts) oxirgi marta qachon ishlagani — bir nechta jarayon bitta bazada ikki marta ishlamasin
   gpsWatchAt          DateTime?
   /// Eski GPS nuqtalarini tozalash (kuniga bir marta) oxirgi marta qachon bo'lgani
@@ -449,7 +453,8 @@ model Vehicle {
   id           String        @id @default(cuid())
   plate        String        @unique
   type         VehicleType
-  capacityM3   Decimal?      @db.Decimal(8, 2)
+  capacityM3   Decimal?      @db.Decimal(8, 2) // sig'im — birligi `capacityUnit` da (nom eski: mikser uchun m³)
+  capacityUnit CapacityUnit  @default(M3) // yuk mashina: tonna yoki dona
   isActive     Boolean       @default(true)
   status       VehicleStatus @default(ACTIVE)
   statusNote   String? // ta'mir sababi / bekor turish sababi
@@ -463,7 +468,8 @@ model Vehicle {
   model            String? // modeli
   year             Int? // ishlab chiqarilgan yili
   fuelType         FuelType? // yoqilg'i turi
-  fuelNormL100     Decimal?  @db.Decimal(6, 2) // yoqilg'i normasi, l / 100 km — sarf nazorati uchun
+  fuelNormL100     Decimal?  @db.Decimal(6, 2) // yoqilg'i normasi 100 km ga: dizel — litr, metan — m³ (nom eski)
+  idleNormPerHour  Decimal?  @db.Decimal(6, 2) // turib ishlash (mikser aylantirish) sarfi, soatiga — metan: m³
   odometerKm       Int? // oxirgi ma'lum probeg (zapravkada yoziladi)
   hasGps           Boolean   @default(false) // doimiy GPS-treker o'rnatilgan (telefon GPS'idan tashqari)
   inspectionUntil  DateTime? // texnik ko'rik muddati
@@ -506,9 +512,16 @@ model VehicleService {
 
 enum FuelType {
   DIESEL // dizel
-  PETROL // benzin
+  PETROL // benzin — yangi transportga tanlanmaydi (eski yozuvlar uchun qoladi)
   METHANE // metan
-  PROPANE // propan
+  PROPANE // propan — yangi transportga tanlanmaydi (eski yozuvlar uchun qoladi)
+}
+
+/// Transport sig'imi birligi: mikser/nasos — m³, yuk mashina — tonna yoki dona
+enum CapacityUnit {
+  M3
+  TON
+  PIECE
 }
 
 model Employee {
@@ -1595,6 +1608,17 @@ model Trip {
   plannedRouteAt    DateTime?
   arrivalNotifiedAt DateTime? // obyektga 300 m ichiga kirgani haqida logistikaga xabar ketgan vaqt (bir marta)
 
+  // ── Haydovchi tabeli va reys haqi (`lib/driver-trip-pay.ts`) — reys yetkazilganda to'ladi ──
+  drumTurns    Int? // haydovchi: mikser necha marta aylantirildi
+  workHours    Decimal?  @db.Decimal(5, 2) // haydovchi: reysda necha soat ishladi (motor-soat, gaz normasi shundan)
+  waitMin      Int? // obyektda kutish: kelgandan tushirish boshlanguncha (bo'lmasa — yetkazilguncha)
+  payKm        Decimal?  @db.Decimal(10, 1) // haq hisoblanadigan km (zavod → obyekt → zavod)
+  paySuggested Decimal?  @db.Decimal(18, 2) // tarif bo'yicha taklif
+  payAmount    Decimal?  @db.Decimal(18, 2) // dispetcher tasdiqlagan reys haqi — oylikka shu tushadi
+  pricedAt     DateTime? // null — narx belgilanmagan (dispetcherga eslatma boradi)
+  pricedById   String?
+  payNote      String?
+
   order     Order              @relation(fields: [orderId], references: [id])
   vehicle   Vehicle            @relation(fields: [vehicleId], references: [id])
   driver    Employee           @relation("TripDriver", fields: [driverId], references: [id])
@@ -1605,6 +1629,7 @@ model Trip {
   alerts    TripAlert[]
 
   @@index([status, createdAt])
+  @@index([status, pricedAt])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([orderId])
   @@index([vehicleId])

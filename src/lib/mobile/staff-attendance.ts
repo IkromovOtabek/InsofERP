@@ -23,7 +23,7 @@ import { ListError, moduleClosed } from "./list";
 /** Umumiy davomat jadvali (hamma xodim bo'yicha, to'liq ustunlar). */
 export const ATTENDANCE_FULL_ROLES = ["DIRECTOR", "HR"] as const;
 
-export const DRIVER_PAY_ROLES = ["DIRECTOR", "HR", "LOGISTICS"] as const;
+export const DRIVER_PAY_ROLES = ["DIRECTOR", "HR", "LOGISTICS", "DISPATCHER"] as const;
 
 const deny = (): never => { throw new ListError("FORBIDDEN", "Bu bo'lim sizning lavozimingiz uchun ochilmagan", 403); };
 

@@ -51,13 +51,16 @@ export const NAV: NavItem[] = [
   { href: "/brigades",    label: "Brigadalar",         roles: ["SUPERVISOR", "PRODUCTION", "HR", "SALES"], group: "Ishlab chiqarish", menuHide: ["HR", "SALES"] },
   // ── Logistika kabineti (Biton Logistika TZ, 2-bo'lim). Bosh sahifa — /dashboard (LOGISTICS uchun logistika paneli) ──
   { href: "/logistika/buyurtmalar", label: "Buyurtmalar",        roles: LOGI, group: "Logistika" },
-  { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "MECHANIC"], group: "Logistika" },
+  // Dispetcher — faqat ko'radi va muammoni hal qiladi (reys ochish/yopish logistikada)
+  { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "MECHANIC", "DISPATCHER"], group: "Logistika" },
   { href: "/logistika/kalendar",    label: "Dispetcher kalendari", roles: LOGI, group: "Logistika" },
   // Dispetcher kabineti — faqat haydovchilar va transport (kartochka, holat, texnik xizmat, ECO ilovasi)
   { href: "/logistika/transport",   label: "Transport",          roles: [...LOGI, "MECHANIC", "DISPATCHER"], group: "Logistika" },
   // Mexanik so'rovlari ("Kirim"): mexanik pul so'raydi → ish boshqaruvchi tasdiqlaydi → kassa beradi (`lib/mechanic-requests.ts`)
   { href: "/mexanik-sorovlar",      label: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"], group: "Logistika" },
   { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
+  // Haydovchilar tabeli: yetkazilgan reyslar o'zi tushadi, dispetcher narx qo'yadi → Ish haqi (`lib/driver-trip-pay.ts`)
+  { href: "/logistika/tabel",       label: "Haydovchilar tabeli", roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
   // Sotuvda mijoz obyekti mijoz kartasidan ochiladi; GPS — logistika ishi (sex Reyslar'dagi jonli xaritani ko'radi)
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika", menuHide: ["SALES"] },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika", menuHide: ["PRODUCTION", "SUPERVISOR"] },

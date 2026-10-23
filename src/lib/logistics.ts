@@ -245,7 +245,19 @@ export const ISSUE_KIND: Record<TripIssueKind, string> = {
   OTHER: "Boshqa",
 };
 
+/** Transport muammosi — dispetcher xabar oladi va hal qiladi (reys muammolarining qolgani — logistikada). */
+export const VEHICLE_ISSUE_KINDS: TripIssueKind[] = ["BREAKDOWN", "ACCIDENT"];
+
 export const FUEL_TYPE: Record<FuelType, string> = { DIESEL: "Dizel", PETROL: "Benzin", METHANE: "Metan", PROPANE: "Propan" };
+/** Transport kartasida tanlanadigan yoqilg'i: dizel va metan. Benzin/propan — faqat eski yozuvlarda (tanlanmaydi). */
+export const VEHICLE_FUELS = ["DIESEL", "METHANE"] as const;
+/** Metanli transportning odatiy normasi: yurish — 100 km ga 50 m³, turib ishlash (mikser aylantirish) — soatiga 5 m³. */
+export const METHANE_NORM = { per100km: 50, perHour: 5 } as const;
+/** Sig'im birligi: mikser/nasos — m³, yuk mashina — tonna yoki dona. */
+export const CAPACITY_UNIT: Record<"M3" | "TON" | "PIECE", string> = { M3: "m³", TON: "tonna", PIECE: "dona" };
+/** «8 m³», «10 tonna», «500 dona» — sig'im yo'q bo'lsa bo'sh satr. */
+export const capText = (v: { capacityM3: unknown; capacityUnit?: string | null }) =>
+  v.capacityM3 != null && Number(v.capacityM3) > 0 ? `${Number(v.capacityM3)} ${CAPACITY_UNIT[(v.capacityUnit ?? "M3") as "M3"] ?? "m³"}` : "";
 
 export const EXPENSE_KIND: Record<TransportExpenseKind, string> = {
   DRIVER_PAY: "Haydovchi haqi",

@@ -12,6 +12,7 @@ import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import { normDaysOf, plansInRange, type DayPlan } from "./shifts";
 import { excusedDays } from "./excused";
 import { kpiMonth } from "./kpi";
+import { tripPayByDriver } from "@/lib/driver-trip-pay";
 import { PAYROLL_KIND_LABEL } from "./labels";
 
 /**
@@ -57,6 +58,8 @@ export type LineBreakdown = {
   normDays: number; presentDays: number; paidLeaveDays: number; unpaidLeaveDays: number; sickDays: number; absentDays: number; dayoffDays: number;
   minutes: number; dailyAvg: number; sickPct: number;
   piece?: { brigade: string; pool: number; share: number; units: { product: string; qty: number; rate: number; sum: number }[] };
+  /** Haydovchi: dispetcher narxlagan reyslar (oy yakuni, `lib/driver-trip-pay.ts`); narxsizlari kirmaydi. */
+  trips?: { count: number; km: number; sum: number; unpriced: number };
   rules: RuleHit[];
   manual: { id: string; kind: PayAdjKind; amount: number; reason: string }[];
   advances: { docNo: string; amount: number }[];
@@ -96,7 +99,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
   });
   if (!emps.length) return [];
   const ids = emps.map((e) => e.id);
-  const [att, plans, excused, rules, manual, advances, piece, kpi] = await Promise.all([
+  const [y, m] = month.split("-").map(Number);
+  const [att, plans, excused, rules, manual, advances, piece, kpi, tripPay] = await Promise.all([
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: { gte: fromD, lte: toD } }, select: { employeeId: true, date: true, status: true, checkIn: true, checkOut: true, lateMinutes: true } }),
     plansInRange(emps, from, monthEnd),
     excusedDays(ids, from, to),
@@ -110,6 +114,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     piecePools(emps.filter((e) => e.payType === "PIECE"), from, to),
     // KPI mukofoti — oy yakunida bonus (`lib/hr/kpi.ts`)
     kind === "FINAL" ? kpiMonth(month, { employeeIds: ids }) : Promise.resolve([]),
+    // Haydovchi reys haqi — oy yakunida asosiyga qo'shiladi (avansda emas)
+    kind === "FINAL" ? tripPayByDriver(new Date(y!, m! - 1, 1), new Date(y!, m!, 1), ids) : Promise.resolve(new Map<string, { trips: number; km: number; sum: number; unpriced: number }>()),
   ]);
   const attBy = new Map<string, typeof att>();
   for (const a of att) attBy.set(a.employeeId, [...(attBy.get(a.employeeId) ?? []), a]);
@@ -159,7 +165,9 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       else if (a.status === "ABSENT") { if (!ex?.absent.has(iso)) absent++; }
       else if (a.status === "DAYOFF") dayoff++;
     }
-    if (rate <= 0 && e.payType !== "PIECE") warnings.push("Tarif stavka kiritilmagan — kartada «Tarif stavka» ni to'ldiring");
+    const tp = tripPay.get(e.id);
+    if (rate <= 0 && e.payType !== "PIECE" && !tp?.trips) warnings.push("Tarif stavka kiritilmagan — kartada «Tarif stavka» ni to'ldiring");
+    if (tp?.unpriced) warnings.push(`${tp.unpriced} ta reysga dispetcher narx qo'ymagan — ular oylikka kirmadi`);
 
     // Asosiy
     let base = 0, units = 0;
@@ -183,6 +191,8 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       : e.payType === "DAILY" ? rate
       : e.payType === "HOURLY" ? rate * shiftHours
       : present > 0 ? base / present : 0;
+    // Reys haqi asosiyga qo'shiladi (kunlik o'rtachaga — ta'til/kasallik puliga — ta'sir qilmaydi)
+    if (tp && tp.sum > 0) base += tp.sum;
 
     const tenureYears = e.hiredAt ? (dayUtc(to).getTime() - e.hiredAt.getTime()) / (365.25 * 864e5) : 0;
     const sickPct = tenureYears >= 8 ? st.sickPctLong : st.sickPctShort;
@@ -251,7 +261,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
       breakdown: {
         period: { from: lo, to: hi }, normDays: normMonth, presentDays: present, paidLeaveDays: paidLeave, unpaidLeaveDays: unpaidLeave,
         sickDays: sick, absentDays: absent, dayoffDays: dayoff, minutes, dailyAvg: r0(dailyAvg), sickPct,
-        ...(pieceInfo ? { piece: pieceInfo } : {}), rules: hits, manual: manualList, advances: adv,
+        ...(pieceInfo ? { piece: pieceInfo } : {}), ...(tp ? { trips: { count: tp.trips, km: tp.km, sum: r0(tp.sum), unpriced: tp.unpriced } } : {}), rules: hits, manual: manualList, advances: adv,
         ...(advanceFormula ? { advanceFormula } : {}), warnings,
       },
     });
