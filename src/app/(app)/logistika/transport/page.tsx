@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Plus, Truck, Wrench, Gauge, ShieldAlert, CircleOff } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
+import { pathAllowed } from "@/lib/nav";
 import { ACTIVE_TRIP, expiryLevel, FUEL_TYPE, VEHICLE_TYPE, vehicleLive, VEHICLE_LIVE, vehicleServiceDue, type VehicleLive } from "@/lib/logistics";
 import { date, moneyShort, qty } from "@/lib/format";
 import { Badge, Card, Empty, LinkButton, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
@@ -19,7 +21,7 @@ const docBadge = (d: Date | null) => {
 
 /** Transport moduli (TZ 6): hamma texnika, joriy holati, hujjat muddatlari, oy xarajati. */
 export default async function TransportPage({ searchParams }: { searchParams: Promise<{ type?: string; state?: string }> }) {
-  const s = await requireRoles(["LOGISTICS", "MECHANIC"], { module: "logistika" });
+  const s = await requireRoles(["LOGISTICS", "MECHANIC", "DISPATCHER"], { module: "logistika" });
   const { type, state } = await searchParams;
   const monthFrom = new Date(); monthFrom.setDate(1); monthFrom.setHours(0, 0, 0, 0);
   const vehicles = await db.vehicle.findMany({
@@ -40,9 +42,10 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
   const count = (l: VehicleLive[]) => rows.filter((r) => l.includes(r.live)).length;
   const shown = state ? rows.filter((r) => r.live === state) : rows;
   const docsBad = rows.filter((r) => r.v.isActive && [expiryLevel(r.v.inspectionUntil), expiryLevel(r.v.insuranceUntil)].some((l) => l === "crit" || l === "warn")).length;
-  const canManage = ["LOGISTICS", "DIRECTOR"].includes(s.role);
-  // Holatni (ta'mir / bekor) mexanik ham belgilaydi
-  const canStatus = canManage || s.role === "MECHANIC";
+  const canManage = canDo(s, "logistika", "vehicle");
+  // Holatni (ta'mir / bekor) mexanik va dispetcher ham belgilaydi
+  const canStatus = canManage || canDo(s, "logistika", "service");
+  const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
   const due = await vehicleServiceDue();
   const dueBy = new Map<string, typeof due>();
   for (const d of due) dueBy.set(d.vehicleId, [...(dueBy.get(d.vehicleId) ?? []), d]);
@@ -84,7 +87,7 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
                     <Link href={`/logistika/transport/${v.id}`} className="font-medium tabular hover:underline">{v.plate}</Link>
                     <div className="text-xs text-slate-500">{VEHICLE_TYPE[v.type]}{v.brand ? ` · ${v.brand}${v.model ? ` ${v.model}` : ""}` : ""}{v.fuelType ? ` · ${FUEL_TYPE[v.fuelType]}` : ""}</div>
                   </Td>
-                  <Td><VehicleLiveBadge live={live} note={v.statusNote} />{current && <div className="text-xs"><TripLink id={current.id} noteNo={current.deliveryNoteNo} /></div>}
+                  <Td><VehicleLiveBadge live={live} note={v.statusNote} />{current && <div className="text-xs"><TripLink id={current.id} noteNo={current.deliveryNoteNo} plain={tripsClosed} /></div>}
                     {(dueBy.get(v.id) ?? []).map((d) => <div key={d.serviceId} className={`text-xs ${d.level === "crit" ? "font-medium text-red-700" : "text-amber-700"}`}>{d.text}</div>)}</Td>
                   <Td className="text-sm">{v.drivers.map((d) => <Link key={d.id} href={`/logistika/haydovchilar/${d.id}`} className="block hover:underline">{d.fullName}</Link>)}{v.drivers.length === 0 && <span className="text-xs text-amber-700">biriktirilmagan</span>}</Td>
                   <Td right className="tabular">{v.capacityM3 ? `${qty(v.capacityM3)} m³` : "—"}</Td>

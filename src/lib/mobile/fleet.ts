@@ -14,8 +14,8 @@ import { ListError } from "./list";
 
 const TRIP_TONE: Record<string, Tone> = { PLANNED: "info", LOADED: "warning", ON_ROAD: "brand", DELIVERED: "success", CANCELLED: "danger" };
 
-/** Xaritani kim ko'radi: direktor, logistika va mexanik (vebda ham logistika paneli shularga ochiq). */
-export const FLEET_ROLES = ["DIRECTOR", "LOGISTICS", "MECHANIC"] as const;
+/** Xaritani kim ko'radi: direktor, logistika, mexanik va dispetcher (transport qayerdaligi). */
+export const FLEET_ROLES = ["DIRECTOR", "LOGISTICS", "MECHANIC", "DISPATCHER"] as const;
 
 /** GPS eskirganmi: oxirgi aloqa `silentMin` daqiqadan eski. Bosh sahifa `live` ham shu bilan (`./home.ts`). */
 export const gpsStale = (seen: Date | null, now: Date, silentMin: number) => !!seen && now.getTime() - seen.getTime() >= silentMin * 60_000;

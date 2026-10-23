@@ -18,7 +18,7 @@ const LISTS: Record<string, string[]> = {
   "brig-issues": ["BRIGADIER", "PRODUCTION", "SUPERVISOR", "PROCUREMENT", "MECHANIC", "HR"], // sklad — faqat bildirishnomadan (detail ISSUE_RESOLVERS); mexanik — uskuna nosozligi
   "brig-shifts": ["BRIGADIER", "PRODUCTION", "SUPERVISOR"],
   trips: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC"],
-  drivers: ["LOGISTICS", "HR"],
+  drivers: ["LOGISTICS", "HR", "DISPATCHER"],
   stock: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"],
   snabjeniye: ["PROCUREMENT", "WAREHOUSE"], // sklad ham snabjeniye amallarini bajaradi (2026-10-16 foydalanuvchi so'rovi)
   supply: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"],
@@ -60,8 +60,8 @@ async function main() {
   // Umumiy davomat jadvali — faqat otdel kadr va direktor; qolganlar faqat o'zinikini (`id=me`) ko'radi
   const hrDay = await api("GET", "/api/mobile/attendance/day", { token: await tok("test.kadr") });
   const anyEmployeeId: string | undefined = hrDay.json?.rows?.[0]?.id;
-  // Sekretar va sotuv agenti — vebda bitta sahifali rollar, ilovada o'z kabineti bor
-  for (const login of [...ROLES, "sekretar", "agent"]) {
+  // Sekretar va sotuv agenti — vebda bitta sahifali rollar, ilovada o'z kabineti bor; dispetcher — haydovchi va transport
+  for (const login of [...ROLES, "sekretar", "agent", "dispetcher"]) {
     const t = await tok(`test.${login}`);
     const me = await api("GET", "/api/mobile/me", { token: t });
     const role = me.json?.role as string;
@@ -221,7 +221,7 @@ async function main() {
       no500(`${login} ${m} ${p} ${JSON.stringify(body)}`, r.status);
     }
     const fleet = await api("GET", "/api/mobile/fleet", { token: t });
-    check(`fleet: ${["DIRECTOR", "LOGISTICS", "MECHANIC"].includes(role) ? "200" : "403"}`, fleet.status === (["DIRECTOR", "LOGISTICS", "MECHANIC"].includes(role) ? 200 : 403), fleet.status);
+    check(`fleet: ${["DIRECTOR", "LOGISTICS", "MECHANIC", "DISPATCHER"].includes(role) ? "200" : "403"}`, fleet.status === (["DIRECTOR", "LOGISTICS", "MECHANIC", "DISPATCHER"].includes(role) ? 200 : 403), fleet.status);
     const rep = await api("GET", "/api/mobile/report/daily", { token: t });
     check(`kunlik hisobot: ${role === "DIRECTOR" ? "200" : "403"}`, rep.status === (role === "DIRECTOR" ? 200 : 403), rep.status);
   }

@@ -298,6 +298,12 @@ const MECHANIC_STEPS: TourStep[] = [
   openPage("/logistika/transport", "Transport", "Texnika ro'yxati va holati (saflda / ta'mirda / bekor turibdi) — ertangi transport ehtiyoji shu mashinalar bilan solishtiriladi."),
 ];
 
+const DISPATCHER_STEPS: TourStep[] = [
+  openGroup("Logistika"),
+  openPage("/logistika/haydovchilar", "Haydovchilar", "Haydovchilar ro'yxati: mavjudlik (bo'sh / reysda / kelmadi), guvohnoma muddati, biriktirilgan transport. Ism ustiga bossangiz — haydovchi kartasi (guvohnoma, grafik, transport)."),
+  openPage("/logistika/transport", "Transport", "Hamma texnika va joriy holati: bo'sh, reysda, ta'mirda. Transport qo'shish, kartani tahrirlash, texnik xizmat va hujjat muddatlari shu yerda."),
+];
+
 const SECRETARY_STEPS: TourStep[] = [
   onPage("arenda-page", "/arenda", "Arenda", "Vebda sizga faqat shu sahifa ochiq: tepada arenda kassasidagi umumiy pul, uning ostida «Kirim» va «Chiqim» tugmalari, pastda oylik jadval (Excel'dagi kabi).", '[data-tour="page-title"]'),
   onPage("arenda-month", "/arenda", "Oylik jadval", "Har oy do'konlar qancha to'lashi kerak, qancha tushdi va qancha qoldi — bozor bo'yicha guruhlangan. Yangi oy o'tgan oydan nusxa olib ochiladi."),
@@ -317,6 +323,7 @@ const BY_ROLE: Record<Role, TourStep[]> = {
   HR: HR_STEPS,
   CASHIER: CASHIER_STEPS,
   MECHANIC: MECHANIC_STEPS,
+  DISPATCHER: DISPATCHER_STEPS,
   SECRETARY: SECRETARY_STEPS,
   DRIVER: DRIVER_STEPS,
   BRIGADIER: BRIGADIER_STEPS,

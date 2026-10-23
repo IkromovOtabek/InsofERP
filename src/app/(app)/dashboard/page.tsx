@@ -22,6 +22,7 @@ import { ProcurementHome } from "./procurement-home";
 import { LogisticsHome } from "./logistics-home";
 import { MechanicHome } from "./mechanic-home";
 import { HrHome } from "./hr-home";
+import { DispatcherHome } from "./dispatcher-home";
 import { SalesStatusSection } from "./sales-status";
 import { PulQabulSection } from "./pul-qabul-section";
 import { methodsFor } from "@/lib/payment-requests";
@@ -50,20 +51,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // Direktor (egasi) uchun bosh sahifa — Owner Dashboard (TZ v2.0); eski operatsion ko'rinish alohida tabda
   // Otdel kadr — o'z bosh sahifasi (xodimlar, bugungi davomat, tug'ilgan kunlar, muddati yaqin hujjatlar); direktor tabda ko'radi
   const hrView = !!s && (s.role === "HR" || (isDirector && view === "hr"));
-  const ownerView = isDirector && !productionView && !procurementView && !logisticsView && !mechanicView && !hrView && view !== "operations";
-  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : ownerView ? "" : "operations";
+  // Dispetcher — haydovchilar va transport holati, muddati o'tayotgan hujjat va texnik xizmat
+  const dispatcherView = !!s && (s.role === "DISPATCHER" || (isDirector && view === "dispatcher"));
+  const ownerView = isDirector && !productionView && !procurementView && !logisticsView && !mechanicView && !hrView && !dispatcherView && view !== "operations";
+  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "" : "operations";
   // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri
   const faceAttendance = !!s && !!faceScope(s);
   const header = (
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : dispatcherView ? "Dispetcher · haydovchilar va transport" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
         </div>
         {faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>}
       </div>
-      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
     </>
   );
@@ -72,6 +75,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} /></div>;
   if (mechanicView) return <div>{header}<MechanicHome day={dayParam} base={isDirector ? "/dashboard?view=mechanic" : "/dashboard"} /></div>;
   if (hrView) return <div>{header}<HrHome /></div>;
+  if (dispatcherView) return <div>{header}<DispatcherHome /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 

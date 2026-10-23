@@ -15,8 +15,8 @@ export const LOGI_ACCESS: Record<string, { title: string; roles: Role[]; menuHid
   "logi-orders": { title: "Buyurtmalar", roles: ["LOGISTICS"] },
   // Veb «Dispetcher kalendari» — ro'yxat ko'rinishida: kun bo'yicha reja, soatsiz va oldingi kundan qolganlar
   "logi-day": { title: "Dispetcher kalendari", roles: ["LOGISTICS"] },
-  // Veb «Transport» — logistika va mexanik
-  vehicles: { title: "Transport", roles: ["LOGISTICS", "MECHANIC"] },
+  // Veb «Transport» — logistika, mexanik va dispetcher
+  vehicles: { title: "Transport", roles: ["LOGISTICS", "MECHANIC", "DISPATCHER"] },
   // Veb Transport ⇢ «Yoqilg'i», «Transport xarajatlari» va Reyslar ⇢ «Nakladnoylar», «Yetkazib berish» —
   // logistika va buxgalteriya (TZ 15: logistika buxgalteri). Vebda bo'lim tablaridan ochiladi, ilovada to'rda
   fuel: { title: "Yoqilg'i", roles: ["LOGISTICS", "ACCOUNTING"] },
@@ -39,7 +39,7 @@ export const LOGI_DETAIL_KEY: Record<string, string> = { "logi-orders": "orders"
 
 /** Maxfiy kartochkalar (id bilan so'ralsa ham) — veb sahifa rollari bilan bir xil. */
 export const LOGI_DETAIL_ROLES: Record<string, Role[]> = {
-  vehicles: ["LOGISTICS", "MECHANIC"],
+  vehicles: ["LOGISTICS", "MECHANIC", "DISPATCHER"],
   fuel: ["LOGISTICS", "ACCOUNTING"],
   expenses: ["LOGISTICS", "ACCOUNTING"],
   sites: ["LOGISTICS", "SALES"],
@@ -82,23 +82,23 @@ export const LOGI_ACTION_ROLES: Record<string, Role[]> = {
   // Nakladnoyning ommaviy tekshiruv sahifasi (QR) — ilova ichida havola, holat o'zgarmaydi
   "trip.waybill": ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "MECHANIC", "ACCOUNTING", "DRIVER", "DIRECTOR"],
   "order.trip": ["LOGISTICS", "PRODUCTION"],
-  "vehicle.edit": ["LOGISTICS"],
-  "vehicle.status": ["LOGISTICS", "MECHANIC"],
-  "vehicle.service": ["LOGISTICS", "MECHANIC"],
-  "vehicle.service.cancel": ["LOGISTICS", "MECHANIC"],
+  "vehicle.edit": ["LOGISTICS", "DISPATCHER"],
+  "vehicle.status": ["LOGISTICS", "MECHANIC", "DISPATCHER"],
+  "vehicle.service": ["LOGISTICS", "MECHANIC", "DISPATCHER"],
+  "vehicle.service.cancel": ["LOGISTICS", "MECHANIC", "DISPATCHER"],
   "vehicle.fuel": ["LOGISTICS", "ACCOUNTING"],
   "vehicle.expense": ["LOGISTICS", "ACCOUNTING", "MECHANIC"],
   "fuel.cancel": ["LOGISTICS", "ACCOUNTING"],
   "expense.cancel": ["LOGISTICS", "ACCOUNTING"],
   "site.save": ["LOGISTICS", "SALES"],
-  "driver.card": ["LOGISTICS"],
-  "driver.link": ["LOGISTICS", "HR"],
-  "driver.approve": ["LOGISTICS", "HR"],
+  "driver.card": ["LOGISTICS", "DISPATCHER"],
+  "driver.link": ["LOGISTICS", "HR", "DISPATCHER"],
+  "driver.approve": ["LOGISTICS", "HR", "DISPATCHER"],
 };
 
 /** Yangi hujjat formalari (`create.ts` CREATE_ROLES / CREATE_PERM) — kalit ro'yxat kaliti bilan bir xil ("+" tugmasi). */
 export const LOGI_CREATE: Record<string, { roles: Role[]; title: string; label: string; perm: { module: string; action: string } }> = {
-  vehicles: { roles: ["LOGISTICS"], title: "Yangi transport", label: "Transport qo'shish", perm: { module: "logistika", action: "vehicle" } },
+  vehicles: { roles: ["LOGISTICS", "DISPATCHER"], title: "Yangi transport", label: "Transport qo'shish", perm: { module: "logistika", action: "vehicle" } },
   fuel: { roles: ["LOGISTICS", "ACCOUNTING"], title: "Zapravka", label: "Zapravka qo'shish", perm: { module: "logistika", action: "fuel" } },
   expenses: { roles: ["LOGISTICS", "ACCOUNTING"], title: "Transport xarajati", label: "Xarajat qo'shish", perm: { module: "logistika", action: "expense" } },
   sites: { roles: ["LOGISTICS", "SALES"], title: "Yangi obyekt", label: "Obyekt qo'shish", perm: { module: "logistika", action: "sites" } },

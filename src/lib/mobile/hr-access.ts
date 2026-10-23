@@ -8,7 +8,7 @@ const PAYROLL_ROLES: Role[] = ["HR", "ACCOUNTING", "FINANCE", "CASHIER"];
 const DECIDERS: Role[] = ["HR", "DIRECTOR"];
 
 /** Har bir xodim (login egasi) — o'z arizasi, grafigi va oyligi uchun. */
-export const ALL_STAFF: Role[] = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DRIVER", "BRIGADIER", "SECRETARY", "AGENT"];
+export const ALL_STAFF: Role[] = ["DIRECTOR", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "DRIVER", "BRIGADIER", "SECRETARY", "AGENT"];
 /** O'z ishi kartochkalari — haydovchi, brigadir, agent ham ochadi (ularning ilovasi boshqa bo'limlarni yopadi). */
 export const SELF_CARDS = ["arizalarim", "oyligim", "grafigim", "vazifalarim", "cheklistim", "kpim", "kurslarim", "moslashuvim", "suhbatlarim", "sorovnomalar", "murojaatlarim", "xabarlar"];
 export const HR_ACCESS: Record<string, { title: string; roles: Role[] }> = {

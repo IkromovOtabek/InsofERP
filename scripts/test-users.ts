@@ -36,6 +36,8 @@ const USERS: { login: string; role: Role; fullName: string; position: string }[]
   { login: "test.mexanik",   role: "MECHANIC",    fullName: "Test Mexanik",          position: "Mexanik" },
   { login: "test.sekretar",  role: "SECRETARY",   fullName: "Test Sekretar",         position: "Sekretar" },
   { login: "test.agent",     role: "AGENT",       fullName: "Test Sotuv agenti",     position: "Sotuv agenti" },
+  // Oxirida — oldingi xodimlarning telefon raqami (tartib bo'yicha) siljimasin
+  { login: "test.dispetcher", role: "DISPATCHER", fullName: "Test Dispetcher",       position: "Dispetcher" },
 ];
 
 const phoneOf = (i: number) => `+9989090000${String(i + 1).padStart(2, "0")}`;

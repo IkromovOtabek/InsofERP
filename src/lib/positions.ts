@@ -22,6 +22,8 @@ export const POSITIONS: { label: string; role: Role }[] = [
   { label: "Kassa / bank", role: "CASHIER" },
   // Mexanik — bosh sahifasi "Sklad & Logistika" nazorati (bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport)
   { label: "Mexanik", role: "MECHANIC" },
+  // Dispetcher — kabineti: haydovchilar (kartochka, guvohnoma, grafik, ECO ilovasi) va transport (karta, holat, xizmat)
+  { label: "Dispetcher", role: "DISPATCHER" },
   // Sekretar — vebda faqat «Arenda»: do'konlar ijarasi oylik hisobi va arenda kassasi kirim-chiqimi
   { label: "Sekretar", role: "SECRETARY" },
   { label: "Direktor", role: "DIRECTOR" },

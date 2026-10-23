@@ -53,10 +53,11 @@ export const NAV: NavItem[] = [
   { href: "/logistika/buyurtmalar", label: "Buyurtmalar",        roles: LOGI, group: "Logistika" },
   { href: "/trips",                 label: "Reyslar",            roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "MECHANIC"], group: "Logistika" },
   { href: "/logistika/kalendar",    label: "Dispetcher kalendari", roles: LOGI, group: "Logistika" },
-  { href: "/logistika/transport",   label: "Transport",          roles: [...LOGI, "MECHANIC"], group: "Logistika" },
+  // Dispetcher kabineti — faqat haydovchilar va transport (kartochka, holat, texnik xizmat, ECO ilovasi)
+  { href: "/logistika/transport",   label: "Transport",          roles: [...LOGI, "MECHANIC", "DISPATCHER"], group: "Logistika" },
   // Mexanik so'rovlari ("Kirim"): mexanik pul so'raydi → ish boshqaruvchi tasdiqlaydi → kassa beradi (`lib/mechanic-requests.ts`)
   { href: "/mexanik-sorovlar",      label: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"], group: "Logistika" },
-  { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: LOGI, group: "Logistika" },
+  { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
   // Sotuvda mijoz obyekti mijoz kartasidan ochiladi; GPS — logistika ishi (sex Reyslar'dagi jonli xaritani ko'radi)
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika", menuHide: ["SALES"] },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika", menuHide: ["PRODUCTION", "SUPERVISOR"] },
@@ -129,7 +130,7 @@ export const NAV: NavItem[] = [
   // Brigadir ham xuddi shunday: vebda faqat o'z brigadasiga tayinlangan topshiriqlar
   { href: "/mening-topshiriqlarim", label: "Mening topshiriqlarim", roles: ["BRIGADIER"], group: "Ishlab chiqarish", menuFor: ["BRIGADIER"] },
   // Logistika uchun — Haydovchilar tabida. Otdel kadr kabinetida Logistika guruhi yo'q: ruxsat ECO ilovasi uchun qoladi
-  { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR"], group: "Logistika", menuFor: [] },
+  { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR", "DISPATCHER"], group: "Logistika", menuFor: [] },
   // ── Tahlil (Team24 BI tuzilmasi) ──
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
@@ -182,6 +183,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   HR: "Otdel kadr",
   CASHIER: "Kassa / bank",
   MECHANIC: "Mexanik",
+  DISPATCHER: "Dispetcher",
   SECRETARY: "Sekretar",
   DRIVER: "Haydovchi",
   BRIGADIER: "Brigadir",

@@ -237,6 +237,7 @@ export const ROLE_LIST: Record<Role, { key: string; title: string }> = {
   HR: { key: "employees", title: "Xodimlar" },
   CASHIER: { key: "payments", title: "To'lovlar" },
   MECHANIC: { key: "trips", title: "Reyslar" },
+  DISPATCHER: { key: "drivers", title: "Haydovchilar" },
   DRIVER: { key: "trips", title: "Mening reyslarim" },
   BRIGADIER: { key: "tasks", title: "Topshiriqlarim" },
   SECRETARY: { key: "arenda-jurnal", title: "Kirim-chiqim" }, // Arenda: ilovada «Arenda» tabi (`./arenda.ts`) + jurnal
@@ -852,6 +853,12 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       }
       // Texnik xizmat muddati yaqin / o'tgan texnika (veb `mechanic-home.tsx`) — qator transport kartasini ochadi
       if (listAllowed(user, "vehicles")) { const due = await mechanicServiceSection(); if (due) sections.unshift(due); }
+      break;
+    }
+
+    // Dispetcher: texnik xizmat muddati yaqin / o'tgan texnika — mexanikdagidek
+    case "DISPATCHER": {
+      if (listAllowed(user, "vehicles")) { const due = await mechanicServiceSection(); if (due) sections.push(due); }
       break;
     }
 

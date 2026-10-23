@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requireRoles } from "@/lib/page-guard";
+import { pathAllowed } from "@/lib/nav";
 import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelivery, type EcoVehicle, type EcoMileage } from "@/lib/eco/client";
 import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
@@ -21,10 +22,11 @@ export const dynamic = "force-dynamic";
  * ERP: xodimlar/texnika/nakladnoy manbai. ECO: haydovchi telefoni (qabul, GPS, imzo).
  */
 export default async function DriversPage() {
-  const s = await requireRoles(["LOGISTICS", "HR"], { module: "trips", actions: ["drivers"] });
-  const canManage = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  const s = await requireRoles(["LOGISTICS", "HR", "DISPATCHER"], { module: "trips", actions: ["drivers"] });
+  const canManage = ["LOGISTICS", "DISPATCHER", "DIRECTOR"].includes(s.role);
   // Server sozlamasi (.env, ECO buyruqlari) — faqat direktor/administratorga ko'rinadi
   const isDirector = s.role === "DIRECTOR";
+  const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
   const enabled = ecoEnabled();
 
   const [employees, vehicles, trips] = await Promise.all([
@@ -114,7 +116,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
                       : <Badge>Ulanmagan</Badge>}
                     {e.ecoError && <div className="mt-0.5 max-w-xs text-xs text-red-600">{e.ecoError}</div>}
                   </Td>
-                  <Td>{act ? <span className="text-sm"><Badge color={st!.color}>{st!.label}</Badge> {act.externalRef && <Link href={`/trips?q=${act.externalRef}`} className="text-xs text-slate-500 hover:underline">{act.externalRef}</Link>}</span> : d ? <span className="text-xs text-slate-500">{d.isAvailable ? "bo'sh" : "band"}</span> : "—"}</Td>
+                  <Td>{act ? <span className="text-sm"><Badge color={st!.color}>{st!.label}</Badge> {act.externalRef && (tripsClosed ? <span className="text-xs text-slate-500">{act.externalRef}</span> : <Link href={`/trips?q=${act.externalRef}`} className="text-xs text-slate-500 hover:underline">{act.externalRef}</Link>)}</span> : d ? <span className="text-xs text-slate-500">{d.isAvailable ? "bo'sh" : "band"}</span> : "—"}</Td>
                   <Td right>
                     {(() => {
                       const mi = d ? kmByUser.get(d.userId) : null;
@@ -184,7 +186,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
                 const st = t.ecoStatus ? ECO_STATUS[t.ecoStatus as keyof typeof ECO_STATUS] : null;
                 return (
                   <Tr key={t.id}>
-                    <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link><div className="text-xs text-slate-500"><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} short /></div></Td>
+                    <Td>{tripsClosed ? <span className="font-medium">{t.deliveryNoteNo}</span> : <Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link>}<div className="text-xs text-slate-500"><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} short /></div></Td>
                     <Td>{t.driver.fullName}</Td>
                     <Td><TripStatusBadge status={t.status} /></Td>
                     <Td>{st ? <Badge color={st.color}>{st.label}</Badge> : <span className="text-xs text-slate-400">yuborilmagan</span>}</Td>

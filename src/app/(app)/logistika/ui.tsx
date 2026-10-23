@@ -91,7 +91,9 @@ export function RangeForm({ base, from, to, hidden = {} }: { base: string; from:
   );
 }
 
-export function TripLink({ id, noteNo }: { id: string; noteNo: string }) {
+/** `plain` — reys sahifasi foydalanuvchiga yopiq (dispetcher): raqam havolasiz chiqadi. */
+export function TripLink({ id, noteNo, plain }: { id: string; noteNo: string; plain?: boolean }) {
+  if (plain) return <span className="font-medium tabular">{noteNo}</span>;
   return <Link href={`/trips/${id}`} className="font-medium tabular hover:underline">{noteNo}</Link>;
 }
 

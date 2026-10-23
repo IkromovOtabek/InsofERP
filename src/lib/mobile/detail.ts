@@ -15,6 +15,7 @@ import { materialOutlook } from "@/lib/dashboard";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
 import { activeBrigades } from "@/lib/brigades";
+import { driverPositionNames } from "@/lib/positions";
 import { distanceLabel, tripArrival, tripSteps, tripTrackStats } from "@/lib/trips";
 import { ISSUE_KIND, TRIP_PHASE, tripPhase, tripPlannedAt } from "@/lib/logistics";
 import { lastFuelPrice } from "@/lib/logistics-costs";
@@ -538,7 +539,8 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   // Sotuv agenti — faqat o'ziga biriktirilgan mijoz (egalik `customerDetail` da tekshiriladi)
   customers: ["SALES", "ACCOUNTING", "FINANCE", "CASHIER", "AGENT"],
   // Brigada kartasidan brigadirni ochadiganlar (SALES) ham
-  employees: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR", "SALES"],
+  // Dispetcher — faqat haydovchi lavozimidagi xodim (`employeeDetail` da tekshiriladi)
+  employees: ["HR", "LOGISTICS", "PRODUCTION", "SUPERVISOR", "SALES", "DISPATCHER"],
   // Sex statistikasi, sex xodimi va kunlik hisobot (`./sex.ts`)
   sex: ["PRODUCTION", "SUPERVISOR"],
   "sex-emp": ["PRODUCTION", "SUPERVISOR", "BRIGADIER"],
@@ -1342,6 +1344,7 @@ async function employeeDetail(user: MobileUser, id: string): Promise<MobileDetai
     },
   });
   if (!e) throw new ListError("NOT_FOUND", "Xodim topilmadi", 404);
+  if (user.role === "DISPATCHER" && !(await driverPositionNames()).includes(e.position)) throw new ListError("FORBIDDEN", "Dispetcherga faqat haydovchi kartasi ochiq", 403);
   const led = e.brigades.filter((b) => b.isActive);
   const tasks = led.flatMap((b) => b.tasks.map((t) => ({ ...t, brigadeName: b.name })));
 

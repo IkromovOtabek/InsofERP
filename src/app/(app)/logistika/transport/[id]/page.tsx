@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { Fuel, Route, Coins, Gauge, Truck, Undo2, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
+import { pathAllowed } from "@/lib/nav";
 import { ACTIVE_TRIP, driverEmployees, EXPENSE_KIND, FUEL_TYPE, SERVICE_KINDS, serviceDueLevel, tripPhase, VEHICLE_TYPE, vehicleLive, vehicleServiceDue } from "@/lib/logistics";
 import { fuelConsumption } from "@/lib/logistics-costs";
 import { date, dateTime, fmtNum, isoDate, money, moneyShort, qty } from "@/lib/format";
@@ -19,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 /** Transport kartasi: ma'lumot, oxirgi reyslar, yoqilg'i (haqiqiy sarf vs norma), xarajatlar. */
 export default async function VehiclePage({ params }: { params: Promise<{ id: string }> }) {
-  const s = await requireRoles(["LOGISTICS", "MECHANIC"], { module: "logistika" });
+  const s = await requireRoles(["LOGISTICS", "MECHANIC", "DISPATCHER"], { module: "logistika" });
   const { id } = await params;
   const monthFrom = new Date(); monthFrom.setDate(1); monthFrom.setHours(0, 0, 0, 0);
   const v = await db.vehicle.findUnique({
@@ -49,15 +51,19 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
   const monthQty = monthTrips.reduce((a, t) => a + Number(t.qtyM3), 0);
   const monthCost = monthFuel.reduce((a, f) => a + Number(f.amount), 0) + monthExp.reduce((a, e) => a + Number(e.amount), 0);
   const current = v.trips.find((t) => ACTIVE_TRIP.includes(t.status));
-  const canEdit = ["LOGISTICS", "DIRECTOR"].includes(s.role);
+  const canEdit = canDo(s, "logistika", "vehicle");
   // Mexanik: holat (ta'mir/bekor), texnik xizmat jurnali va ta'mir xarajati. Yoqilg'i/xarajat sahifalari unga yopiq.
-  const canService = ["MECHANIC", "LOGISTICS", "DIRECTOR"].includes(s.role);
+  const canService = canDo(s, "logistika", "service");
   const isMechanic = s.role === "MECHANIC";
+  // Dispetcherga Yoqilg'i / Transport xarajatlari sahifalari yopiq — «Qo'shish» havolasi faqat ruxsat bo'lsa
+  const fuelOpen = !isMechanic && pathAllowed("/logistika/yoqilgi", s.role, s.perms);
+  const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
+  const expenseOpen = !isMechanic && pathAllowed("/logistika/xarajatlar", s.role, s.perms);
 
   return (
     <div>
       <PageHeader back={{ href: "/logistika/transport", label: "Transport" }} title={v.plate}
-        subtitle={<>{VEHICLE_TYPE[v.type]}{v.brand ? ` · ${v.brand} ${v.model ?? ""}` : ""}{v.year ? ` · ${v.year}` : ""} · <VehicleLiveBadge live={live} note={v.statusNote} />{current && <> · <TripLink id={current.id} noteNo={current.deliveryNoteNo} /></>}</>} />
+        subtitle={<>{VEHICLE_TYPE[v.type]}{v.brand ? ` · ${v.brand} ${v.model ?? ""}` : ""}{v.year ? ` · ${v.year}` : ""} · <VehicleLiveBadge live={live} note={v.statusNote} />{current && <> · <TripLink id={current.id} noteNo={current.deliveryNoteNo} plain={tripsClosed} /></>}</>} />
 
       {due.length > 0 && (
         <Callout tone={due.some((d) => d.level === "crit") ? "danger" : "warning"} title="Texnik xizmat muddati">
@@ -90,7 +96,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
 
         <div className="space-y-5 xl:col-span-2">
           <Card padded={false}>
-            <div className="px-5 pt-5"><CardHeader title="Yoqilg'i" icon={Fuel} action={isMechanic ? undefined : <Link href={`/logistika/yoqilgi?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
+            <div className="px-5 pt-5"><CardHeader title="Yoqilg'i" icon={Fuel} action={!fuelOpen ? undefined : <Link href={`/logistika/yoqilgi?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
             <Table>
               <thead><tr><Th>Sana</Th><Th right>Litr</Th><Th right>Summa</Th><Th right>Probeg</Th></tr></thead>
               <tbody>
@@ -102,7 +108,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
             </Table>
           </Card>
           <Card padded={false}>
-            <div className="px-5 pt-5"><CardHeader title="Boshqa xarajatlar" icon={Coins} action={isMechanic ? undefined : <Link href={`/logistika/xarajatlar?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
+            <div className="px-5 pt-5"><CardHeader title="Boshqa xarajatlar" icon={Coins} action={!expenseOpen ? undefined : <Link href={`/logistika/xarajatlar?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
             {isMechanic && <VehicleExpenseForm vehicleId={v.id} />}
             <Table>
               <thead><tr><Th>Sana</Th><Th>Turi</Th><Th right>Summa</Th></tr></thead>
@@ -150,7 +156,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
             {v.trips.length === 0 && <Empty text="Reys yo'q" />}
             {v.trips.map((t) => (
               <Tr key={t.id}>
-                <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} /><div className="text-xs text-slate-500">{t.order.orderNo}</div></Td>
+                <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} plain={tripsClosed} /><div className="text-xs text-slate-500">{t.order.orderNo}</div></Td>
                 <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-xs truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                 <Td className="text-sm">{t.driver.fullName}</Td>
                 <Td right className="tabular">{qty(t.qtyM3)}</Td>

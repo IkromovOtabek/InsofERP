@@ -27,6 +27,7 @@ enum Role {
   HR // otdel kadr
   CASHIER // kassa / bank
   MECHANIC // mexanik — bosh sahifasi "Sklad & Logistika" nazorati: bugun/ertaga zayavka, mahsulot ehtiyoji, qoldiq, transport
+  DISPATCHER // dispetcher — haydovchilar (kartochka, guvohnoma, grafik, ECO ilovasi) va transport (karta, holat, texnik xizmat) boshqaruvi
   DRIVER // haydovchi — ERP login bilan kiradi (mobil ilova: o'z reyslari); vebda faqat "Mening reyslarim"
   BRIGADIER // brigadir — ERP login bilan kiradi (mobil ilova: o'z brigadasi topshiriqlari); vebda faqat "Mening topshiriqlarim"
   SECRETARY // sekretar — vebda faqat «Arenda» (do'konlar ijarasi: oylik hisob, kirim-chiqim)

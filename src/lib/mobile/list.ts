@@ -81,7 +81,7 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   "brig-shifts": { title: "Smena hisobotlari", roles: ["BRIGADIER", "PRODUCTION", "SUPERVISOR"] },
   // ── Logistika ──
   trips: { title: "Reyslar", roles: ["LOGISTICS", "PRODUCTION", "SUPERVISOR", "DRIVER", "MECHANIC"] },
-  drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR"] },
+  drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR", "DISPATCHER"] },
   // ── Sklad ──
   stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"] },
   // Snabjeniye oynasi: narx kutayotgan va qabul kutayotgan so'rovlar (vebdagi `/snabjeniye`).

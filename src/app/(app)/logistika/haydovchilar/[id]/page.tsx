@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AlertTriangle, IdCard, Package, Route, Timer } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
+import { pathAllowed } from "@/lib/nav";
 import { delayLevel, ISSUE_KIND, logisticsSettings, minutesLabel, tripDelayMin, tripPhase } from "@/lib/logistics";
 import { date, dateTime, isoDate, qty } from "@/lib/format";
 import { Badge, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -12,7 +13,8 @@ import { DelayText, PhaseBadge, TripLink } from "../../ui";
 export const dynamic = "force-dynamic";
 
 export default async function DriverPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireRoles(["LOGISTICS"], { module: "logistika" });
+  const s = await requireRoles(["LOGISTICS", "DISPATCHER"], { module: "logistika" });
+  const tripsClosed = !pathAllowed("/trips", s.role, s.perms);
   const { id } = await params;
   const settings = await logisticsSettings();
   const d = await db.employee.findUnique({
@@ -72,7 +74,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
               const dl = tripDelayMin(t, t.order);
               return (
                 <Tr key={t.id}>
-                  <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} /><div className="text-xs text-slate-500">{date(t.createdAt)}</div></Td>
+                  <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} plain={tripsClosed} /><div className="text-xs text-slate-500">{date(t.createdAt)}</div></Td>
                   <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-xs truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                   <Td className="text-sm tabular">{t.vehicle.plate}</Td>
                   <Td right className="tabular">{qty(t.qtyM3)}</Td>
