@@ -30,6 +30,8 @@ const schema = z.object({
   lng: z.coerce.number().optional().catch(undefined),
   needsPump: z.string().optional().transform((v) => v === "on"),
   needsDelivery: z.string().optional().transform((v) => v === "on"),
+  // Dastavka summasi — faqat «Dastavka kerak» belgilanganda hisobga olinadi (createOrder o'zi nolga tushiradi)
+  deliveryFee: z.coerce.number({ message: "Dastavka summasi raqam bo'lsin" }).min(0, "Dastavka summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Dastavka summasi juda katta").default(0),
   isUrgent: z.string().optional().transform((v) => v === "on"),
   payment: z.enum(["prepay", "credit"]).default("prepay"),
   // Bosh to'lov qanday keladi: CASH — naqd (so'rov Kassa xodimiga), BANK — perechisleniye (Buxgalterga).
@@ -97,6 +99,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         }).filter((i) => i.productId),
         needsPump: d.needsPump,
         needsDelivery: d.needsDelivery,
+        deliveryFee: d.needsDelivery ? d.deliveryFee : 0,
         isUrgent: d.isUrgent,
         onCredit: d.payment === "credit",
         prepay: d.prepayAmount > 0 ? { amount: d.prepayAmount } : undefined,

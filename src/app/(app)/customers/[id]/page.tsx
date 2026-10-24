@@ -16,6 +16,7 @@ import { OrderStatusBadge } from "../../orders/status";
 import { customerAppStatus } from "@/lib/eco/customers";
 import { AppAccount } from "../app-account";
 import { receivablesReport } from "@/lib/receivables";
+import { orderTotal } from "@/lib/order-total";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -78,7 +79,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
                 <Tr key={o.id}>
                   <Td><Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link></Td>
                   <Td>{date(o.deliveryDate)}</Td>
-                  <Td right>{money(o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0))}</Td>
+                  <Td right>{money(orderTotal(o))}</Td>
                   <Td><OrderStatusBadge status={o.status} /></Td>
                 </Tr>
               ))}

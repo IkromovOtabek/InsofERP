@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { audit } from "./audit";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Mijoz obyektlari (Site) bo'yicha qarz — mijoz kartasidagi "Obyektlar" bo'limi uchun.
@@ -40,8 +41,6 @@ export type SiteDebt = {
   canDelete: boolean; // obyektda zayavka yo'q bo'lsa o'chirsa bo'ladi
 };
 
-const itemsSum = (items: { qtyM3: unknown; price: unknown }[]) =>
-  items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
 
 /** Mijozning har bir obyekti bo'yicha qarz. Obyektsiz zayavka/to'lov bo'lsa — oxirida "Obyektsiz" guruh. */
 export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
@@ -57,6 +56,7 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
       select: {
         siteId: true,
         status: true,
+        deliveryFee: true,
         items: { select: { qtyM3: true, price: true } },
         invoices: { where: { status: { not: "CANCELLED" } }, select: { amount: true } },
       },
@@ -81,7 +81,7 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
     const inv = o.invoices.reduce((s, i) => s + Number(i.amount), 0);
     add(invoiced, k, inv);
     // Schyot yozilmagan ochiq zayavka — mahsulot summasi (schyotsiz ochiq zayavka)
-    if (o.invoices.length === 0 && (OPEN_STATUSES as readonly string[]).includes(o.status)) add(open, k, itemsSum(o.items));
+    if (o.invoices.length === 0 && (OPEN_STATUSES as readonly string[]).includes(o.status)) add(open, k, orderTotal(o));
   }
   for (const p of payments) {
     const k = p.order?.siteId ?? p.invoice?.order?.siteId ?? null;

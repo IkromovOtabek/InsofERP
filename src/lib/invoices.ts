@@ -4,6 +4,7 @@ import { money } from "./format";
 import { notifyAfter, notifyRoles } from "./notify";
 import { nextNo } from "./numbering";
 import { customerBalance } from "./receivables";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Schyot yozish qoidasi — veb (`app/(app)/invoices/actions.ts`) ham, mobil ilova ham shu
@@ -22,8 +23,8 @@ export async function createInvoice(input: { orderId: string; amount: number; da
     const o = await tx.order.findUnique({ where: { id: input.orderId }, include: { invoices: { where: { status: { not: "CANCELLED" } }, select: { id: true } }, items: { select: { qtyM3: true, price: true } } } });
     if (!o) return { error: "Zayavka topilmadi" };
     // Schyot zayavka summasidan oshmaydi (narxda NDS bor — `lib/nds.ts`): xato raqam mijozni qarzdor/qora ro'yxatga tushirmasin
-    const orderTotal = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0);
-    if (input.amount > orderTotal + 0.005) return { error: `Schyot zayavka summasidan (${Math.round(orderTotal).toLocaleString("ru-RU")} so'm) ko'p bo'lolmaydi` };
+    const total = orderTotal(o);
+    if (input.amount > total + 0.005) return { error: `Schyot zayavka summasidan (${Math.round(total).toLocaleString("ru-RU")} so'm) ko'p bo'lolmaydi` };
     if (["DRAFT", "BLOCKED", "CANCELLED"].includes(o.status)) return { error: "Tasdiqlanmagan zayavkaga schyot yozib bo'lmaydi" };
     if (o.invoices.length) return { error: "Bu zayavkaga schyot allaqachon yozilgan" };
     const inv = await tx.invoice.create({ data: { invoiceNo: await nextNo(tx, "invoice", "S"), date: input.date, customerId: o.customerId, orderId: o.id, amount: input.amount } });

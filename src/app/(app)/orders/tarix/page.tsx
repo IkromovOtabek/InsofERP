@@ -8,6 +8,7 @@ import { BarChart, DonutChart, HBarList } from "@/components/ui/charts";
 import { ORDER_STATUS } from "../status";
 import type { OrderStatus } from "@/generated/prisma";
 import { cn } from "@/lib/utils";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Zayavkalar tarixi: kun bo'yicha nechta zayavka bo'lgan, qanchasi yopilgan,
@@ -34,7 +35,7 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
   ]);
   const capacity = Math.max(1, Number(settings?.dailyCapacityM3 ?? 200));
 
-  const sum = (o: (typeof orders)[number]) => o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+  const sum = (o: (typeof orders)[number]) => orderTotal(o);
   const m3 = (o: (typeof orders)[number]) => o.items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0);
   const keyOf = (o: (typeof orders)[number]) => isoDate(by === "delivery" ? o.deliveryDate : o.date);
 

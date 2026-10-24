@@ -7,6 +7,7 @@ import type { MobileDetail } from "./detail";
 import { mechSubject } from "@/lib/mechanic-requests";
 import { payrollApprovalRows } from "./hr";
 import { accessApprovalRows, deletionApprovalRows } from "./direktor-extra";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Direktor ilovasi uchun maxsus ro'yxatlar:
@@ -64,7 +65,7 @@ export async function approvalsList(title: string, q?: string, filter?: string):
   const orderRows: HomeRow[] = blocked.map((o) => ({
     id: `orders:${o.id}`, title: `${o.orderNo} · ${o.customer.name}`,
     subtitle: `Kredit limiti oshgan · ${dayLabel(o.date)}`,
-    right: money(o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0)),
+    right: money(orderTotal(o)),
     status: "Bloklangan", tone: "danger",
   }));
   const supplyRows: HomeRow[] = supply.map((r) => ({

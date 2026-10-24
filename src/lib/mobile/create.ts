@@ -54,6 +54,7 @@ import { SOTUV_CREATE_PERM, SOTUV_CREATE_ROLES } from "./sotuv-access";
 import { applyFormDefaults, leadOrderPrefill, offerForm, sotuvCreate, splitFormKey, stockOrderForm } from "./sotuv-extra";
 import { withNds } from "@/lib/nds";
 import { saveContractFile } from "@/lib/uploads";
+import { orderTotal } from "@/lib/order-total";
 
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -308,7 +309,7 @@ async function paymentForm(): Promise<CreateForm> {
     db.order.findMany({
       where: { kind: "SALE", status: { in: [...ADVANCE_ORDER_STATUSES] }, invoices: { none: { status: { not: "CANCELLED" } } }, customer: { isInternal: false } },
       orderBy: { date: "asc" },
-      select: { id: true, orderNo: true, customerId: true, prepayAmount: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+      select: { id: true, orderNo: true, customerId: true, prepayAmount: true, customer: { select: { name: true } }, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
     }),
     cashAccountOptions(),
   ]);
@@ -324,7 +325,7 @@ async function paymentForm(): Promise<CreateForm> {
     };
   });
   const ordOpts: FormOption[] = orders.map((o) => {
-    const total = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+    const total = orderTotal(o);
     const paid = o.payments.reduce((s, p) => s + Number(p.amount), 0);
     const expected = expectedAdvance(o);
     // Veb bilan bir xil taklif: sotuvchi yozgan kutilayotgan avans (olinganidan tashqari), aks holda zayavka qoldig'i
@@ -712,7 +713,11 @@ async function orderForm(user: MobileUser, defaults: Record<string, string> = {}
         ],
       },
       { name: "needsPump", label: "Nasos kerak", type: "switch", value: "false" },
-      ...(isAgent ? [] : [{ name: "needsDelivery", label: "Dastavka kerak", type: "switch" as const, value: "true", hint: "O'chirilsa — mijoz o'zi olib ketadi" }]),
+      ...(isAgent ? [] : [
+        { name: "needsDelivery", label: "Dastavka kerak", type: "switch" as const, value: "true", hint: "O'chirilsa — mijoz o'zi olib ketadi" },
+        // Veb formadagi «Dastavka summasi» — zayavka summasiga qo'shiladi (limit, bosh to'lov, schyot shu jami bo'yicha)
+        { name: "deliveryFee", label: "Dastavka summasi (so'm)", type: "number" as const, placeholder: "0", showIf: { field: "needsDelivery", equals: "true" } },
+      ]),
       { name: "isUrgent", label: "Shoshilinch", type: "switch", value: "false" },
       // Sotuv agenti to'lov bilan ishlamaydi (veb `/agent` formasi kabi): zayavka naqd, bosh to'lov so'rovisiz
       ...(isAgent ? [] : [
@@ -790,6 +795,7 @@ const OrderBody = z.object({
   })).min(1, "Kamida bitta mahsulot qatori kerak"),
   needsPump: z.coerce.boolean().optional(),
   needsDelivery: z.boolean().optional(),
+  deliveryFee: z.coerce.number().min(0, "Dastavka summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Dastavka summasi juda katta").optional(),
   hasContract: z.boolean().optional(),
   contractAmount: z.coerce.number().min(0, "Shartnoma summasi manfiy bo'lmasin").max(MAX_AMOUNT, "Shartnoma summasi juda katta").optional(),
   contractFile: z.string().optional(),
@@ -1152,6 +1158,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         }),
         needsPump: d.needsPump,
         needsDelivery: isAgent ? undefined : d.needsDelivery,
+        deliveryFee: isAgent || d.needsDelivery === false ? 0 : d.deliveryFee,
         isUrgent: d.isUrgent,
         contractAmount: withContract ? d.contractAmount : undefined,
         // Agent uchun to'lov maydonlari e'tiborsiz (veb `createAgentOrder` kabi — naqd, pul qabul so'rovi ochilmaydi)

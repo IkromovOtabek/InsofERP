@@ -59,6 +59,7 @@ import { runSkladAction } from "./sklad-extra";
 import { moliyaAction } from "./moliya-extra";
 import { SEX_EXTRA_ACTIONS, sexExtraAction } from "./sex-extra";
 import { LOGI_ACTIONS, runLogiAction } from "./logistika-extra";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Mobil ilovadagi tugmalarning ijrosi.
@@ -883,7 +884,7 @@ export async function orderReceipt(id: string, blocked: boolean): Promise<Receip
     include: { customer: { select: { name: true } }, items: { include: { product: { select: { code: true, name: true } } } } },
   });
   const volume = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-  const total = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+  const total = orderTotal(o);
   const stock = o.kind === "STOCK";
   const extras = [o.needsDelivery ? "dastavka" : "o'zi olib ketadi", o.needsPump ? "nasos" : null, o.isUrgent ? "shoshilinch" : null].filter(Boolean).join(" · ");
   const rows: Receipt["rows"] = [

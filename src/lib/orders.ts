@@ -14,6 +14,7 @@ import { cancelPaymentRequestTx, createPaymentRequestTx, notifyNewPaymentRequest
 import { MAX_AMOUNT } from "@/lib/action";
 import { parseInn } from "@/lib/inn";
 import { linkOrderTx, syncDealLater } from "@/lib/amocrm/sync";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Zayavka holat o'tishlari — yagona joy (reyslar uchun `lib/trips.ts` qanday bo'lsa, shunday).
@@ -115,7 +116,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
     return { changed: true, status: "CONFIRMED" };
   }
 
-  const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
+  const total = orderTotal(o);
   // Naqd to'lovli zayavka: bosh to'lov reys ochish/yuklashdan oldin majburiy (`prepayShortError`), shuning uchun
   // kutilayotgan, hali kelmagan qismi kredit limitiga yuklanmaydi — limitga faqat qolgan (qarzga ketadigan) qism tushadi.
   const required = o.onCredit ? 0 : expectedAdvance(o);
@@ -288,6 +289,8 @@ export type NewOrderInput = {
   items: NewOrderItem[];
   needsPump?: boolean;
   needsDelivery?: boolean;
+  /** Dastavka summasi (so'm) — zayavka summasiga qo'shiladi; `needsDelivery` yo'q bo'lsa e'tiborga olinmaydi. */
+  deliveryFee?: number | null;
   isUrgent?: boolean;
   /** Qarzga — kafolat xati talab qilinadi. Bosh to'lov bunda ham bo'lishi mumkin. */
   onCredit?: boolean;
@@ -357,7 +360,11 @@ export async function createOrder(
   // Soat majburiy emas — berilgan bo'lsa formati tekshiriladi
   if (input.deliveryTime && !/^\d{2}:\d{2}$/.test(input.deliveryTime)) throw new Error("Yetkazish soati formati: 09:30");
 
-  const total = items.reduce((s, i) => s + i.qtyM3 * i.price, 0);
+  // Dastavka summasi — faqat dastavka kerak bo'lsa; mijoz o'zi olib ketsa 0
+  const deliveryFee = (input.needsDelivery ?? true) ? Math.round((Number(input.deliveryFee) || 0) * 100) / 100 : 0;
+  if (!Number.isFinite(deliveryFee) || deliveryFee < 0) throw new Error("Dastavka summasi manfiy bo'lmasin");
+  if (deliveryFee > MAX_AMOUNT) throw new Error("Dastavka summasi juda katta");
+  const total = orderTotal({ items, deliveryFee });
   if (total > MAX_AMOUNT) throw new Error("Zayavka summasi juda katta — miqdor va narxni tekshiring");
   const onCredit = !!input.onCredit;
 
@@ -426,6 +433,7 @@ export async function createOrder(
         ...(dist ? { distanceKm: dist.km, distanceSource: dist.source } : {}),
         needsPump: !!input.needsPump,
         needsDelivery: input.needsDelivery ?? true,
+        deliveryFee,
         isUrgent: !!input.isUrgent,
         onCredit,
         prepayAmount,

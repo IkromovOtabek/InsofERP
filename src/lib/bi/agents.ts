@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { type Range, loadSales, sum, safeDiv, mean, kpi, addDays, startOfDay, WEEKDAYS, monthForecast, goLiveDate, sellerOf, type SaleRow } from "./core";
 import { NOT_SELLER, SELLER_ROLES } from "./plans";
 import { operationsTab } from "./operations";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Agentlar — Team24 "Agentlar" sahifasining beton zavodi ekvivalenti.
@@ -21,7 +22,7 @@ export async function agentsTab(r: Range) {
   const today = startOfDay(new Date()), tomorrow = addDays(today, 1);
   const [cur, prev, allCreated, last35, users, plans, ops, tomorrowOrders, vehicles, live] = await Promise.all([
     loadSales(r.from, r.to), loadSales(r.prevFrom, r.prevTo),
-    db.order.findMany({ where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, createdBy: { select: { fullName: true } }, customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } }, items: { select: { qtyM3: true, price: true } } } }),
+    db.order.findMany({ where: { kind: "SALE", date: { gte: r.from, lt: r.to } }, select: { id: true, status: true, createdById: true, createdBy: { select: { fullName: true } }, customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } }, deliveryFee: true, items: { select: { qtyM3: true, price: true } } } }),
     loadSales(addDays(today, -35), tomorrow),
     db.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true } }),
     db.salesPlan.findMany({ where: { year: today.getFullYear(), month: today.getMonth() + 1 } }),
@@ -65,7 +66,7 @@ export async function agentsTab(r: Range) {
     const planAmt = plan ? Number(plan.amount) : 0;
     return {
       id, name, role: u?.role ?? "—", orders, revenue, volume: sum(rows.filter((x) => x.unit === "m3").map((x) => x.qty)), customers: new Set(rows.map((x) => x.customerId)).size, avgCheck: safeDiv(revenue, orders),
-      created: created.length, cancelled: cancelled.length, cancelledRevenue: sum(cancelled.map((o) => sum(o.items.map((i) => Number(i.qtyM3) * Number(i.price))))), blocked: blocked.length, drafts: drafts.length, conversion, cancelRate: safeDiv(cancelled.length, created.length) * 100,
+      created: created.length, cancelled: cancelled.length, cancelledRevenue: sum(cancelled.map((o) => orderTotal(o))), blocked: blocked.length, drafts: drafts.length, conversion, cancelRate: safeDiv(cancelled.length, created.length) * 100,
       prevRevenue: rev(prows), delta: rev(prows) === 0 ? (revenue ? null : 0) : ((revenue - rev(prows)) / rev(prows)) * 100,
       usualPerDay, nowPerDay, slowdown, slowReason, slowDays, usualOrdersPerDay, nowOrdersPerDay, usualCheck, nowCheck,
       today: rev(todayRows), todayOrders: new Set(todayRows.map((x) => x.orderId)).size, lastOrderAt, offlineDays,

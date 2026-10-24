@@ -27,6 +27,7 @@ import {
 import { AmoError } from "./client";
 import { amoSystemUserId, getConnection, isReady } from "./store";
 import { webhookFieldByName, type WebhookLead } from "./webhook";
+import { orderTotal } from "@/lib/order-total";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
 
@@ -290,12 +291,12 @@ export async function pullStageDeals(c: AmoConnection): Promise<number> {
 // ───────────────────────── 3. Zayavka → sdelka bosqichi ─────────────────────────
 
 type Stage = "CONFIRMED" | "DELIVERED" | "CLOSED" | "CANCELLED";
-type OrderLite = { orderNo: string; status: OrderStatus; items: { qtyM3: Prisma.Decimal; price: Prisma.Decimal }[] };
+type OrderLite = { orderNo: string; status: OrderStatus; deliveryFee: Prisma.Decimal; items: { qtyM3: Prisma.Decimal; price: Prisma.Decimal }[] };
 
 /** Kelishuvning bir nechta zayavkasi bo'lishi mumkin (beton bo'lib-bo'lib): eng orqada qolgani hal qiladi */
 export function dealStage(orders: OrderLite[]): { stage: Stage | null; price: number } {
   const active = orders.filter((o) => o.status !== "CANCELLED");
-  const price = active.reduce((s, o) => s + o.items.reduce((t, i) => t + Number(i.qtyM3) * Number(i.price), 0), 0);
+  const price = active.reduce((s, o) => s + orderTotal(o), 0);
   if (!orders.length) return { stage: null, price: 0 };
   if (!active.length) return { stage: "CANCELLED", price: 0 };
   if (active.every((o) => o.status === "CLOSED")) return { stage: "CLOSED", price };
@@ -334,7 +335,7 @@ async function syncOrderStagesNow(c: AmoConnection, opts?: { full?: boolean }): 
   const since = new Date((full ? 0 : lastCheck) - 5 * 60_000);
   const deals = await db.amoDeal.findMany({
     where: { amoLeadId: { not: null }, state: "ORDERED", orders: { some: full ? {} : { updatedAt: { gte: since } } } },
-    include: { orders: { where: { kind: "SALE" }, select: { orderNo: true, status: true, items: { select: { qtyM3: true, price: true } } } } },
+    include: { orders: { where: { kind: "SALE" }, select: { orderNo: true, status: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } } } } },
     take: 500,
   });
   if (full) lastFull = now;

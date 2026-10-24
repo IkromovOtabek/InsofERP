@@ -14,6 +14,7 @@ import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { ORDER_STATUS, OrderStatusBadge, PENDING_STATUSES as PENDING } from "./status";
 import type { OrderStatus } from "@/generated/prisma";
+import { orderTotal } from "@/lib/order-total";
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; kun?: string; imported?: string; tur?: string }> }) {
   const { status, customer, kun, imported, tur } = await searchParams;
@@ -114,7 +115,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           {groups.flatMap((g) => g.map((o, idx) => {
             // Hajm mahsulot birligida: beton m³, ustun/blok dona — aralashtirib qo'shilmaydi
             const vol = fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
-            const sum = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+            const sum = orderTotal(o);
             // Guruhning birinchi qatori — mijoz nomi, obyekt manzili va nechta zayavka ekani;
             // qolganlari o'sha guruhga tegishli ekani ko'rinib tursin deb ichkariroq chiziladi.
             const first = idx === 0;

@@ -14,6 +14,7 @@ import { needsDirector } from "@/lib/procurement";
 import { moneyShort, qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { txSign, FLOW_ONLY } from "@/lib/cash-tx";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Egasi dashbordi (TZ "Owner Dashboard v2.0") — bitta chaqiruvda hamma blok.
@@ -135,9 +136,9 @@ export async function ownerDashboard() {
     db.stockMove.findMany({ where: { type: "PRODUCTION_OUTPUT", productId: { not: null }, date: { gte: monthStart, lt: tomorrow } }, select: { productId: true, qty: true, date: true } }),
     db.order.findMany({
       where: { kind: "SALE", date: { gte: monthStart, lt: tomorrow }, status: { in: ["CONFIRMED", "IN_PRODUCTION", "DELIVERED", "CLOSED"] } },
-      select: { id: true, orderNo: true, status: true, deliveryDate: true, customerId: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { id: true, amount: true } } } }, payments: { select: { id: true, amount: true } } },
+      select: { id: true, orderNo: true, status: true, deliveryDate: true, customerId: true, deliveryFee: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { id: true, amount: true } } } }, payments: { select: { id: true, amount: true } } },
     }),
-    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, deliveryDate: { lt: today } }, select: { id: true, orderNo: true, deliveryDate: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, price: true } } } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, deliveryDate: { lt: today } }, select: { id: true, orderNo: true, deliveryDate: true, deliveryFee: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, price: true } } } }),
     db.trip.findMany({ where: { OR: [{ createdAt: { gte: today } }, { status: { in: ["LOADED", "ON_ROAD"] } }], status: { not: "CANCELLED" } }, select: { status: true, qtyM3: true, vehicleId: true, deliveredAt: true } }),
     db.trip.findMany({ where: { status: "DELIVERED", deliveredAt: { gte: monthStart, lt: tomorrow } }, select: { qtyM3: true, vehicleId: true } }),
     db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true, type: true, status: true, statusNote: true, statusSince: true } }),
@@ -297,7 +298,7 @@ export async function ownerDashboard() {
   const materialOverspend = sum(normRows.map((r) => r.cost));
 
   /* ───────────────────────── Otgruzka va voronka ───────────────────────── */
-  const orderSum = (o: { items: { qtyM3: unknown; price: unknown }[] }) => sum(o.items.map((i) => Number(i.qtyM3) * Number(i.price)));
+  const orderSum = (o: Parameters<typeof orderTotal>[0]) => orderTotal(o);
   const orderPaid = (o: { invoices: { payments: { id: string; amount: unknown }[] }[]; payments: { id: string; amount: unknown }[] }) => { const seen = new Map<string, number>(); for (const p of [...o.payments, ...o.invoices.flatMap((i) => i.payments)]) seen.set(p.id, Number(p.amount)); return sum([...seen.values()]); };
   const stage = (statuses: string[]) => { const rows = ordersMonth.filter((o) => statuses.includes(o.status)); return { count: rows.length, sum: sum(rows.map(orderSum)) }; };
   const paidOrders = ordersMonth.filter((o) => { const s = orderSum(o); return s > 0 && orderPaid(o) >= s - 1; });
@@ -476,7 +477,7 @@ export async function directorQueue() {
   const [blocked, priced, posts, boosts, payroll] = await Promise.all([
     db.order.findMany({
       where: { kind: "SALE", status: "BLOCKED" }, orderBy: { date: "asc" }, take: 50,
-      select: { id: true, orderNo: true, date: true, deliveryDate: true, customerId: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qtyM3: true, price: true } } },
+      select: { id: true, orderNo: true, date: true, deliveryDate: true, customerId: true, deliveryFee: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } }, items: { select: { qtyM3: true, price: true } } },
     }),
     limit > 0
       ? db.supplyRequest.findMany({
@@ -496,7 +497,7 @@ export async function directorQueue() {
   ];
   const credit = blocked.length ? await customersCredit([...new Set(blocked.map((o) => o.customerId))], { includeInternal: true }) : new Map<string, CustomerCredit>();
   const orders: QueueOrder[] = blocked.map((o) => {
-    const amount = sum(o.items.map((i) => Number(i.qtyM3) * Number(i.price)));
+    const amount = orderTotal(o);
     const c = credit.get(o.customerId);
     const fitsNow = !!c && !(Math.max(0, c.net) + amount > c.limit && c.net + amount > c.limit);
     return { id: o.id, orderNo: o.orderNo, date: o.date, deliveryDate: o.deliveryDate, customerId: o.customerId, customer: o.customer.name, seller: o.createdBy.fullName, amount, limit: c?.limit ?? 0, used: c?.used ?? 0, free: c?.free ?? 0, fitsNow };

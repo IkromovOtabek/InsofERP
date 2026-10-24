@@ -4,6 +4,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { PageHeader } from "@/components/ui";
 import { InvoiceForm } from "../invoice-form";
 import { unitLabel, soleUnit } from "@/lib/unit";
+import { orderTotal } from "@/lib/order-total";
 
 export default async function NewInvoice({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
   await requireRoles(["ACCOUNTING", "SALES"], { module: "sales", actions: ["invoice"] });
@@ -16,7 +17,7 @@ export default async function NewInvoice({ searchParams }: { searchParams: Promi
   const marks = await customerMarks(orders.map((o) => o.customerId));
   const opts = orders.map((o) => {
     const totalM3 = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
-    const totalSum = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+    const totalSum = orderTotal(o);
     // Mijoz qabul qilgan miqdor (bo'lmasa — reysdagi miqdor)
     const deliveredM3 = o.trips.reduce((s, t) => s + Number(t.acceptedQty ?? t.qtyM3), 0);
     // Reysda mahsulot yozilmaydi: bitta mahsulot (yoki hamma qatorda narx bir xil) bo'lsa yetkazilgan summa

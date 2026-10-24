@@ -12,6 +12,7 @@ import { RegisterTable, toView } from "./register-table";
 import { deleteImportBatch, stornoPayment } from "./actions";
 import { ConfirmButton } from "./confirm-button";
 import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/payments";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Kassa / bank — ikki ko'rinish:
@@ -95,7 +96,7 @@ async function PaymentsTab({ role }: { role: string }) {
       ? db.order.findMany({
           where: { kind: "SALE", status: { in: [...ADVANCE_ORDER_STATUSES] }, invoices: { none: { status: { not: "CANCELLED" } } }, customer: { isInternal: false } },
           orderBy: { date: "asc" },
-          select: { id: true, orderNo: true, customerId: true, prepayAmount: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+          select: { id: true, orderNo: true, customerId: true, prepayAmount: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
         })
       : [],
   ]);
@@ -105,7 +106,7 @@ async function PaymentsTab({ role }: { role: string }) {
   const invOpts: InvOpt[] = openInvoices.map((i) => ({ id: i.id, invoiceNo: i.invoiceNo, customerId: i.customerId, date: date(i.date), remaining: Number(i.amount) - i.payments.reduce((s, p) => s + Number(p.amount), 0) }));
   const orderOpts: OrderOpt[] = advOrders.map((o) => ({
     id: o.id, orderNo: o.orderNo, customerId: o.customerId,
-    total: o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0),
+    total: orderTotal(o),
     paid: o.payments.reduce((s, p) => s + Number(p.amount), 0),
     expected: expectedAdvance(o),
   }));

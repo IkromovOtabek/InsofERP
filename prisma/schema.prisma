@@ -1225,6 +1225,9 @@ model Order {
   distanceSource   String?
   needsPump        Boolean     @default(false)
   needsDelivery    Boolean     @default(true) // dastavka kerakmi (yo'q bo'lsa mijoz o'zi olib ketadi)
+  /// Dastavka summasi — zayavka formasida «Dastavka kerak» belgilanganda kiritiladi (o'zi olib ketsa 0).
+  /// Zayavka summasiga qo'shiladi: jami = mahsulot qatorlari + dastavka (`lib/order-total.ts`) — limit, bosh to'lov, schyot shu bo'yicha.
+  deliveryFee      Decimal     @default(0) @db.Decimal(18, 2)
   isUrgent         Boolean     @default(false) // zarur / shoshilinch
   onCredit         Boolean     @default(false) // qarzga — kafolat xati talab qilinadi
   /// Kutilayotgan bosh to'lov (avans) — zayavka formasida sotuvchi kiritadi; pulni kassir qabul qiladi.

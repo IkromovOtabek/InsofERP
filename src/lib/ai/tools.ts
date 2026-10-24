@@ -20,6 +20,7 @@ import { aiSnapshot } from "@/lib/bi/ai";
 import { moneyShort, fmtNum, date as fmtDate, dateTime as fmtDateTime } from "@/lib/format";
 import { lineTotal } from "@/lib/receipt-vat";
 import { HR_TOOLS } from "./hr-tools";
+import { orderTotal } from "@/lib/order-total";
 
 export type JsonSchema = {
   type: "object";
@@ -174,7 +175,7 @@ const ordersList: Tool = {
     ]);
     if (!orders.length) return `Zayavka topilmadi${p ? ` (${p.label})` : ""}${st ? `, holat ${st}` : ""}${str(a.customer) ? `, mijoz «${str(a.customer)}»` : ""}.`;
     const lines = orders.map((o) => {
-      const total = sum(o.items.map((i) => Number(i.qtyM3) * Number(i.price)));
+      const total = orderTotal(o);
       const vol = sum(o.items.map((i) => Number(i.qtyM3)));
       const items = o.items.map((i) => `${i.product.code} ${fmtNum(Number(i.qtyM3), 1)}`).join(", ");
       const delivered = sum(o.trips.filter((t) => t.status === "DELIVERED").map((t) => Number(t.qtyM3)));

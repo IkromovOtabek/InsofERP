@@ -11,6 +11,7 @@ import { ORDER_STATUS, OrderStatusBadge, SALES_STATUSES } from "../orders/status
 import { StockSnapshotCard } from "@/components/stock-snapshot";
 import type { Prisma, OrderStatus } from "@/generated/prisma";
 import { receivablesReport } from "@/lib/receivables";
+import { orderTotal } from "@/lib/order-total";
 
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ status?: string; customer?: string; from?: string; to?: string }> }) {
   const { status, customer, from: fromQ, to: toQ } = await searchParams;
@@ -56,7 +57,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const rows = orders.map((o) => {
     // Hajm mahsulot birligida (beton m³, ustun dona) — zayavka kartochkasi bilan bir xil
     const vol = fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
-    const sum = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+    const sum = orderTotal(o);
     // To'langan = schyot to'lovlari + zayavkaga olingan avans (hali schyotga bog'lanmagan)
     const paid = o.invoices.reduce((s, i) => s + i.payments.reduce((p, x) => p + Number(x.amount), 0), 0)
       + o.payments.reduce((p, x) => p + Number(x.amount), 0);

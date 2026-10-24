@@ -51,6 +51,9 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
     const vat = i.nds ? ndsPart(gross) : 0;
     return { name: i.product.name, unit: i.product.unit, qty: q, price: gross - vat, vat, gross, total: q * gross };
   });
+  // Dastavka — alohida qator (miqdorsiz); jami unga ham qo'shiladi
+  const fee = Number(o.deliveryFee);
+  if (fee > 0) lines.push({ name: T.deliveryFee, unit: "", qty: 0, price: fee, vat: 0, gross: fee, total: fee });
   const withVat = o.items.some((i) => i.nds);
   const total = lines.reduce((s, l) => s + l.total, 0);
   const unit = soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
@@ -148,7 +151,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
               <td className={`${cell} text-center`}>{i + 1}</td>
               <td className={cell}>{l.name}</td>
               <td className={`${cell} text-center`}>{unitLabel(l.unit)}</td>
-              <td className={`${cell} text-right tabular-nums`}>{fmtNum(l.qty, 3)}</td>
+              <td className={`${cell} text-right tabular-nums`}>{l.qty ? fmtNum(l.qty, 3) : ""}</td>
               <td className={`${cell} text-right tabular-nums`}>{fmtNum(l.price)}</td>
               {withVat && <td className={`${cell} text-right tabular-nums`}>{l.vat ? fmtNum(l.vat) : ""}</td>}
               {withVat && <td className={`${cell} text-right tabular-nums`}>{fmtNum(l.gross)}</td>}

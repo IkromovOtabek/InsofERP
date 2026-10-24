@@ -3,6 +3,7 @@ import { isoDate } from "@/lib/format";
 import { ORDER_STATUS } from "./status";
 import { CalendarView, type DayCell } from "./calendar-view";
 import { fmtUnitTotals } from "@/lib/unit";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * 10 kunlik ish tartibi uchun ma'lumot: qaysi kunga qancha hajm olingan va qanday zayavkalar bor.
@@ -22,7 +23,7 @@ export async function OrderLoadCalendar({ days = 10 }: { days?: number }) {
       select: {
         id: true, orderNo: true, deliveryDate: true, deliveryTime: true, isUrgent: true, status: true,
         customer: { select: { name: true } },
-        items: { select: { qtyM3: true, price: true, product: { select: { unit: true } } } },
+        deliveryFee: true, items: { select: { qtyM3: true, price: true, product: { select: { unit: true } } } },
       },
     }),
     db.companySettings.findUnique({ where: { id: "main" }, select: { dailyCapacityM3: true } }),
@@ -39,7 +40,7 @@ export async function OrderLoadCalendar({ days = 10 }: { days?: number }) {
       m3: o.items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0),
       // vol — zayavkaning to'liq hajmi mahsulot birligida ("12 m³ · 500 dona")
       vol: fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))),
-      sum: o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0),
+      sum: orderTotal(o),
     }]);
   }
 

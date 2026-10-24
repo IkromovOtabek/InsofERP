@@ -5,6 +5,7 @@
  * bog'lanadi: lidlar, mijozga aylanganlar va ular ochgan zayavkalar summasi (bekor qilinmagan) → CPL, ROMI.
  */
 import { db } from "./db";
+import { orderTotal } from "@/lib/order-total";
 
 export { CONTENT_STATUS, CONTENT_FLOW, CONTENT_TYPE, CHANNEL, CAMPAIGN_STATUS } from "./marketing-labels";
 
@@ -31,7 +32,7 @@ export async function campaignStats(since?: Date): Promise<Map<string, CampaignS
   if (conv.length) {
     const orders = await db.order.findMany({
       where: { customerId: { in: [...new Set(conv.map((l) => l.customerId!))] }, status: { notIn: ["CANCELLED", "DRAFT"] } },
-      select: { customerId: true, createdAt: true, items: { select: { qtyM3: true, price: true } } },
+      select: { customerId: true, createdAt: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } } },
     });
     // Mijoz bir nechta kampaniyadan kelgan bo'lsa — zayavka eng oxirgi (zayavkadan oldingi) lidga yoziladi
     for (const o of orders) {
@@ -39,7 +40,7 @@ export async function campaignStats(since?: Date): Promise<Map<string, CampaignS
         .filter((l) => l.customerId === o.customerId && l.createdAt <= o.createdAt)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
       if (!lead) continue;
-      const sum = o.items.reduce((a, i) => a + Number(i.qtyM3) * Number(i.price), 0);
+      const sum = orderTotal(o);
       out.get(lead.utmCampaign!)!.revenue += sum;
     }
   }

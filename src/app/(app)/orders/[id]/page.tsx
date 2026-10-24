@@ -27,6 +27,7 @@ import { expectedAdvance } from "@/lib/payments";
 import { PAY_METHOD_LABEL, PAYREQ_STATUS_COLOR, PAYREQ_STATUS_LABEL } from "@/lib/payment-requests";
 import { ConfirmButton } from "../../payments/confirm-button";
 import { ActionButton } from "@/components/action-button";
+import { orderTotal } from "@/lib/order-total";
 
 const STEPS = [
   { key: "DRAFT", label: "Qoralama" }, { key: "CONFIRMED", label: "Tasdiqlangan" }, { key: "IN_PRODUCTION", label: "Ishlab chiqarish" },
@@ -54,7 +55,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     },
   });
   if (!o || !s) notFound();
-  const total = o.items.reduce((sum, i) => sum + Number(i.qtyM3) * Number(i.price), 0);
+  const total = orderTotal(o);
   // "NDS 12%" belgilangan qatorlarda narx soliq bilan saqlanadi — jamida shundan qanchasi soliq ekani ko'rsatiladi
   const ndsTotal = o.items.reduce((sum, i) => sum + (i.nds ? Number(i.qtyM3) * ndsPart(Number(i.price)) : 0), 0);
   // Hajm har doim mahsulot birligida: beton m³, ustun/blok dona. Turli birlik bitta
@@ -337,7 +338,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                 }]
               : []),
             { k: "Nasos", v: o.needsPump ? "Kerak" : "Yo'q" },
-            { k: "Dastavka", v: o.needsDelivery ? "Kerak" : "Mijoz o'zi olib ketadi" },
+            { k: "Dastavka", v: o.needsDelivery ? (Number(o.deliveryFee) > 0 ? `Kerak · ${money(o.deliveryFee)}` : "Kerak") : "Mijoz o'zi olib ketadi" },
             { k: "Ustuvorlik", v: o.isUrgent ? <Badge color="red"><Zap size={11} /> Zarur</Badge> : "Oddiy" },
             { k: "To'lov", v: o.onCredit ? "Qarzga (kafolat xati)" : "Oldindan" },
             ...(o.payMethod ? [{ k: "To'lov usuli", v: PAY_METHOD_LABEL[o.payMethod] }] : []),
@@ -392,6 +393,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                   </Tr>
                 );
               })}
+              {!isStock && Number(o.deliveryFee) > 0 && (
+                <Tr><Td>Dastavka</Td><Td /><Td /><Td right className="font-semibold">{money(o.deliveryFee)}</Td><Td /><Td /></Tr>
+              )}
               <tr className="bg-slate-50/70"><Td className="font-semibold">Jami</Td><Td right className="font-semibold whitespace-nowrap">{fmtUnitTotals(itemRows)}</Td>{!isStock && <><Td /><Td right className="font-semibold">{money(total)}{ndsTotal > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500 whitespace-nowrap">shundan {NDS_LABEL}: {money(ndsTotal)}</div>}</Td></>}<Td colSpan={2} className="text-xs text-slate-500">{unassigned ? <span className="inline-flex items-center gap-1"><HardHat size={13} /> Brigada hali tayinlanmagan — {o.status === "DRAFT" ? "zayavka qabul qilingach" : ""} Ishlab chiqarish bo&apos;limida tayinlanadi</span> : <Link href="/tasks" className="inline-flex items-center gap-1 hover:underline"><HardHat size={13} /> Topshiriqlar</Link>}</Td></tr>
             </tbody>
           </table>

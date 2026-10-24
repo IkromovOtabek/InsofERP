@@ -6,6 +6,7 @@ import { money, date } from "./format";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 import { canDo } from "./permissions";
 import type { Perms } from "./auth";
+import { orderTotal } from "@/lib/order-total";
 
 /**
  * Pul qabul qilish so'rovi (PS-YYYY-00001) — zayavkaning bosh to'lovi uchun.
@@ -104,7 +105,7 @@ export async function listPaymentRequests(tab: PayReqTab, methods: PayMethod[], 
       order: {
         select: {
           id: true, orderNo: true, status: true, deliveryDate: true, deliveryTime: true, onCredit: true,
-          items: { select: { qtyM3: true, price: true, product: { select: { code: true, unit: true } } } },
+          deliveryFee: true, items: { select: { qtyM3: true, price: true, product: { select: { code: true, unit: true } } } },
           payments: { select: { id: true, amount: true, date: true, cashAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } } }, orderBy: { date: "asc" } },
           invoices: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { id: true, amount: true, date: true, cashAccount: { select: { name: true, type: true } }, createdBy: { select: { fullName: true } } } } } },
         },
@@ -113,7 +114,7 @@ export async function listPaymentRequests(tab: PayReqTab, methods: PayMethod[], 
   });
   const { start } = dayBounds();
   return rows.map((r) => {
-    const total = r.order.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+    const total = orderTotal(r.order);
     const amount = Number(r.amount), received = Number(r.received);
     const pays = [...r.order.payments, ...r.order.invoices.flatMap((i) => i.payments)].sort((a, b) => a.date.getTime() - b.date.getTime());
     return {

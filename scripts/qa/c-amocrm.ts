@@ -309,7 +309,7 @@ async function main() {
 
   section("Bosqich hisobi (bir nechta zayavka)");
   const it = (q: number, p: number) => ({ qtyM3: q, price: p }) as unknown as { qtyM3: never; price: never };
-  const ord = (status: string, q = 1, p = 100) => ({ orderNo: "Z", status: status as never, items: [it(q, p)] });
+  const ord = (status: string, q = 1, p = 100) => ({ orderNo: "Z", status: status as never, deliveryFee: 0 as never, items: [it(q, p)] });
   check("zayavka yo'q — siljimaydi", dealStage([]).stage === null);
   check("bittasi yetkazildi, biri ishlab chiqarishda → CONFIRMED", dealStage([ord("DELIVERED"), ord("IN_PRODUCTION")]).stage === "CONFIRMED");
   check("bekor + yetkazildi → DELIVERED, summa bekorsiz", (() => { const r = dealStage([ord("CANCELLED", 5), ord("DELIVERED", 2)]); return r.stage === "DELIVERED" && r.price === 200; })());

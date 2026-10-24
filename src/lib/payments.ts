@@ -5,6 +5,7 @@ import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import type { PayMethod, Prisma } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
 import { syncPaymentRequest } from "@/lib/payment-requests";
+import { orderTotal } from "@/lib/order-total";
 
 type Tx = Prisma.TransactionClient;
 
@@ -111,13 +112,13 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
       // Avans: zayavka shu mijozniki, bekor/yopilmagan va schyoti hali yo'q (bo'lsa — to'lov schyotga yoziladi)
       const o = await tx.order.findUnique({
         where: { id: input.orderId },
-        select: { customerId: true, kind: true, status: true, orderNo: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+        select: { customerId: true, kind: true, status: true, orderNo: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
       });
       if (!o || o.kind !== "SALE") throw new PaymentError("Zayavka topilmadi");
       if (o.customerId !== input.customerId) throw new PaymentError("Zayavka boshqa mijozniki");
       if (!(ADVANCE_ORDER_STATUSES as readonly string[]).includes(o.status)) throw new PaymentError("Bu zayavka yopilgan yoki bekor qilingan");
       if (o.invoices.length) throw new PaymentError(`${o.orderNo} ga schyot yozilgan (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — to'lovni schyotga yozing`);
-      const total = o.items.reduce((x, i) => x + Number(i.qtyM3) * Number(i.price), 0);
+      const total = orderTotal(o);
       const left = total - o.payments.reduce((x, p) => x + Number(p.amount), 0);
       if (input.amount > left + 0.005) throw new PaymentError(`Avans zayavka qoldig'idan ko'p: ${money(Math.max(0, left))}`);
     }

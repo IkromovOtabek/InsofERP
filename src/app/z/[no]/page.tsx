@@ -8,6 +8,7 @@ import { orderQrValid, orderPublicPath } from "@/lib/order-qr";
 import { asOfferLang } from "@/lib/offer-i18n";
 import { donePercent, soleUnit, unitLabel } from "@/lib/unit";
 import { LogoMark } from "@/components/logo";
+import { orderTotal } from "@/lib/order-total";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
@@ -23,7 +24,7 @@ const UZ = {
   status: { DRAFT: "Ko'rib chiqilmoqda", BLOCKED: "Ko'rib chiqilmoqda", CONFIRMED: "Qabul qilingan", IN_PRODUCTION: "Ishlab chiqarilmoqda", DELIVERED: "Yetkazib berilgan", CLOSED: "Yakunlangan", CANCELLED: "Bekor qilingan" } as Record<string, string>,
   steps: ["Qabul qilindi", "Ishlab chiqarish", "Yetkazib berish", "Yakunlandi"],
   client: "Mijoz", object: "Obyekt", delivery: "Yetkazish sanasi", unknown: "Kelishilmoqda", manager: "Menejer",
-  items: "Mahsulotlar", qty: "Soni", sum: "Summa", total: "Jami", paid: "To'langan", rest: "Qoldiq", som: "so'm",
+  items: "Mahsulotlar", qty: "Soni", sum: "Summa", total: "Jami", paid: "To'langan", rest: "Qoldiq", som: "so'm", deliveryFee: "Dastavka",
   trips: "Yetkazib berishlar", tripStatus: { PLANNED: "Rejada", LOADED: "Yuklangan", ON_ROAD: "Yo'lda", DELIVERED: "Yetkazildi" } as Record<string, string>,
   noTrips: "Hali jo'natma yo'q",
   check: "Qog'ozdagi zayavka raqami va jami summa shu sahifadagi bilan bir xil bo'lishi kerak. Farq bo'lsa — hujjat o'zgartirilgan bo'lishi mumkin, menejerga qo'ng'iroq qiling.",
@@ -44,7 +45,7 @@ const RU: typeof UZ = {
   status: { DRAFT: "На рассмотрении", BLOCKED: "На рассмотрении", CONFIRMED: "Принята", IN_PRODUCTION: "В производстве", DELIVERED: "Доставлена", CLOSED: "Завершена", CANCELLED: "Отменена" },
   steps: ["Принята", "Производство", "Доставка", "Завершена"],
   client: "Клиент", object: "Объект", delivery: "Дата доставки", unknown: "Согласовывается", manager: "Менеджер",
-  items: "Товары", qty: "Кол-во", sum: "Сумма", total: "Итого", paid: "Оплачено", rest: "Остаток", som: "сум",
+  items: "Товары", qty: "Кол-во", sum: "Сумма", total: "Итого", paid: "Оплачено", rest: "Остаток", som: "сум", deliveryFee: "Доставка",
   trips: "Отгрузки", tripStatus: { PLANNED: "Запланирован", LOADED: "Загружен", ON_ROAD: "В пути", DELIVERED: "Доставлен" },
   noTrips: "Отгрузок пока нет",
   check: "Номер заявки и итоговая сумма на бумаге должны совпадать с этой страницей. Если есть разница — документ мог быть изменён, позвоните менеджеру.",
@@ -85,7 +86,7 @@ export default async function PublicOrderPage({ params, searchParams }: { params
 
   const itemRows = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
   const unit = soleUnit(itemRows);
-  const total = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+  const total = orderTotal(o);
   const paidMap = new Map<string, number>();
   for (const i of o.invoices) for (const x of i.payments) paidMap.set(x.id, Number(x.amount));
   for (const x of o.payments) paidMap.set(x.id, Number(x.amount));
@@ -188,6 +189,9 @@ export default async function PublicOrderPage({ params, searchParams }: { params
                   <td className="py-2 text-right font-semibold tabular-nums">{fmtNum(Number(i.qtyM3) * Number(i.price))}</td>
                 </tr>
               ))}
+              {Number(o.deliveryFee) > 0 && (
+                <tr><td colSpan={2} className="py-2 pr-2 font-medium">{T.deliveryFee}</td><td className="py-2 text-right font-semibold tabular-nums">{fmtNum(o.deliveryFee)}</td></tr>
+              )}
             </tbody>
             <tfoot>
               <tr><td colSpan={2} className="pr-3 pt-3 text-right font-semibold">{T.total}</td><td className="whitespace-nowrap pt-3 text-right text-lg font-bold tabular-nums">{fmtNum(total)} <span className="text-sm font-medium text-slate-500">{T.som}</span></td></tr>

@@ -147,6 +147,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [dateKnown, setDateKnown] = useState<boolean | null>(null); // "Sana aniqmi?" — Yo'q bo'lsa qoralamada belgilanadi
   const [contract, setContract] = useState(false); // "Shartnoma qilish" belgilanganmi
   const [contractAmount, setContractAmount] = useState("");
+  const [needsDelivery, setNeedsDelivery] = useState(true); // "Dastavka kerak" — belgilansa dastavka summasi so'raladi
+  const [deliveryFee, setDeliveryFee] = useState("");
   // Arizadan kelgan mahsulot ro'yxatda bo'lsa — birinchi qator shu bilan to'ldiriladi
   const firstProduct = products.find((p) => p.id === prefill?.productId) ?? products[0];
   const [rows, setRows] = useState<Row[]>([{ key: 1, productId: firstProduct?.id ?? "", qtyM3: firstProduct && firstProduct.id === prefill?.productId && prefill?.qty ? String(prefill.qty) : "", price: firstProduct?.price ?? "0", nds: false }]);
@@ -189,7 +191,9 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   // Narx katagida NDS'siz narx turadi; "NDS 12%" belgilangan qatorda soliq ustiga qo'shiladi
   const sumNoNds = rows.reduce((s, r) => s + (Number(r.qtyM3) || 0) * (Number(r.price) || 0), 0);
   const ndsSum = rows.reduce((s, r) => s + (r.nds ? (Number(r.qtyM3) || 0) * ndsOf(Number(r.price) || 0) : 0), 0);
-  const total = sumNoNds + ndsSum; // mijoz to'laydigan summa — limit, bosh to'lov va shartnoma shu bo'yicha
+  const productsSum = sumNoNds + ndsSum;
+  const feeN = needsDelivery ? Number(deliveryFee) || 0 : 0; // dastavka summasi zayavka summasiga qo'shiladi
+  const total = productsSum + feeN; // mijoz to'laydigan summa — limit, bosh to'lov va shartnoma shu bo'yicha
   const tomorrow = isoDate(new Date(Date.now() + 86400000));
   const minDate = isoDate(new Date(Date.now() - 86400000)); // server ham kechagidan oldingi sanani qabul qilmaydi
   const prepayN = Number(prepay) || 0;
@@ -304,7 +308,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               </Field>
               <div className="flex flex-col justify-end gap-1 pb-1 text-xs">
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Shartnoma summasi</span><b className="text-slate-900">{money(contractN)}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">− Mahsulot summasi</span><b className="text-slate-900">{money(total)}</b></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">− Zayavka summasi</span><b className="text-slate-900">{money(total)}</b></div>
                 <div className={cn("flex justify-between gap-3 border-t border-blue-200 pt-1", contractLeft < 0 ? "text-red-600" : "text-emerald-700")}>
                   <span>{contractLeft < 0 ? "Shartnomadan oshdi" : "Shartnoma qoldig'i"}</span><b>{money(Math.abs(contractLeft))}</b>
                 </div>
@@ -317,7 +321,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               </Field>
             </div>
             <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-800"><Upload size={14} /> Saqlangach shartnoma raqami beriladi. Didox'da imzolangan shartnoma tizimga isbot sifatida yuklanadi.</p>
-            {contractN > 0 && contractLeft < 0 && <p className="mt-1 text-xs text-red-600">Mahsulot summasi shartnoma summasidan katta — summani tekshiring.</p>}
+            {contractN > 0 && contractLeft < 0 && <p className="mt-1 text-xs text-red-600">Zayavka summasi shartnoma summasidan katta — summani tekshiring.</p>}
           </div>
         )}
       </div>
@@ -461,8 +465,14 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col justify-end gap-2 pb-1">
-          <Checkbox name="needsDelivery" defaultChecked label="Dastavka kerak" />
-          <span className="-mt-1 text-xs text-slate-500">Belgilanmasa — mijoz o&apos;zi olib ketadi</span>
+          <Checkbox name="needsDelivery" checked={needsDelivery} onChange={(e) => setNeedsDelivery(e.target.checked)} label="Dastavka kerak" />
+          {needsDelivery ? (
+            <Field label="Dastavka summasi" hint="Zayavka summasiga qo'shiladi: bosh to'lov, limit va schyot shu jami bo'yicha">
+              <MoneyInput name="deliveryFee" value={deliveryFee} onChange={setDeliveryFee} placeholder="0" ariaLabel="Dastavka summasi" />
+            </Field>
+          ) : (
+            <span className="-mt-1 text-xs text-slate-500">Belgilanmasa — mijoz o&apos;zi olib ketadi</span>
+          )}
         </div>
         <div className="flex flex-col justify-end gap-2 pb-1">
           <Checkbox name="isUrgent" label="Zarur (shoshilinch)" />
@@ -577,11 +587,12 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         </label>
 
         {/* Jami: NDS belgilangan qator bo'lsa soliq alohida qator bo'lib ko'rinadi */}
-        {ndsSum > 0 ? (
+        {ndsSum > 0 || feeN > 0 ? (
           <div className="mt-3 ml-auto w-full max-w-xs space-y-1 text-sm">
-            <div className="flex justify-between gap-3"><span className="text-slate-500">Summa (NDS&apos;siz)</span><b className="text-slate-900">{money(sumNoNds)}</b></div>
-            <div className="flex justify-between gap-3"><span className="text-slate-500">{NDS_LABEL}</span><b className="text-slate-900">{money(ndsSum)}</b></div>
-            <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 text-base font-semibold"><span>Jami ({NDS_LABEL} bilan)</span><span className="whitespace-nowrap">{fmtNum(total)} so&apos;m</span></div>
+            <div className="flex justify-between gap-3"><span className="text-slate-500">{ndsSum > 0 ? "Summa (NDS'siz)" : "Mahsulot"}</span><b className="text-slate-900">{money(sumNoNds)}</b></div>
+            {ndsSum > 0 && <div className="flex justify-between gap-3"><span className="text-slate-500">{NDS_LABEL}</span><b className="text-slate-900">{money(ndsSum)}</b></div>}
+            {feeN > 0 && <div className="flex justify-between gap-3"><span className="inline-flex items-center gap-1 text-slate-500"><Truck size={13} /> Dastavka</span><b className="text-slate-900">{money(feeN)}</b></div>}
+            <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 text-base font-semibold"><span>{ndsSum > 0 ? `Jami (${NDS_LABEL} bilan)` : "Jami"}</span><span className="whitespace-nowrap">{fmtNum(total)} so&apos;m</span></div>
           </div>
         ) : (
           <div className="mt-3 text-right text-base font-semibold">Jami: {fmtNum(total)} so&apos;m</div>

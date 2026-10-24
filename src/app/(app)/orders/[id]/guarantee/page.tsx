@@ -7,6 +7,7 @@ import { unitLabel } from "@/lib/unit";
 import { PrintButton } from "@/components/print-button";
 import { BackLink } from "@/components/ui";
 import { requirePage } from "@/lib/page-guard";
+import { orderTotal } from "@/lib/order-total";
 
 /** Bo'sh katak — mijoz qo'lda to'ldiradi. Qiymat bo'lsa chiziq ustida ko'rsatiladi. */
 function Blank({ value, w = "w-56" }: { value?: string | null; w?: string }) {
@@ -23,7 +24,7 @@ export default async function GuaranteePage({ params }: { params: Promise<{ id: 
   const o = await db.order.findUnique({ where: { id }, include: { customer: true, items: { include: { product: true } } } });
   if (!o) notFound();
   const [company, credit] = await Promise.all([getCompany(), customerCredit(o.customerId)]);
-  const total = o.items.reduce((s, i) => s + Number(i.qtyM3) * Number(i.price), 0);
+  const total = orderTotal(o);
   const c = o.customer;
 
   return (
@@ -81,6 +82,13 @@ export default async function GuaranteePage({ params }: { params: Promise<{ id: 
               <td className="border border-black px-2 py-1 text-right">{money(Number(i.qtyM3) * Number(i.price))}</td>
             </tr>
           ))}
+          {Number(o.deliveryFee) > 0 && (
+            <tr>
+              <td className="border border-black px-2 py-1">{o.items.length + 1}</td>
+              <td className="border border-black px-2 py-1" colSpan={3}>Dastavka</td>
+              <td className="border border-black px-2 py-1 text-right">{money(o.deliveryFee)}</td>
+            </tr>
+          )}
           <tr className="font-semibold"><td colSpan={4} className="border border-black px-2 py-1 text-right">Jami</td><td className="border border-black px-2 py-1 text-right">{money(total)}</td></tr>
         </tbody>
       </table>
