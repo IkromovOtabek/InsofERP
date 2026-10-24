@@ -1,0 +1,776 @@
+<title>Zayavka shablonlari</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: chap — 5 shablon ro'yxati (yorliqlar), o'ng — tanlangan shablonning jonli maketi + kimga mos / afzallik.
+   Insof ERP dizayn tizimi tokenlari: slate neytrallar, amber brend faqat birlamchi tugmada, radius-card 14px. */
+:root {
+  --bg-app:#f5f6f8; --bg-surface:#ffffff; --bg-subtle:#f8fafc; --bg-muted:#f1f5f9;
+  --border:#e2e8f0; --border-strong:#cad5e2; --border-subtle:#f1f5f9;
+  --text-strong:#0f172b; --text-body:#314158; --text-muted:#5f7088; --text-faint:#7f8da5; --text-inverse:#ffffff;
+  --brand:#f59e0b; --brand-600:#d97706; --brand-50:#fffbeb; --brand-100:#fef3c7; --brand-700:#b45309; --on-brand:#0f172b; --ring:#f59e0b80;
+  --ink:#0f172b;
+  --ok-fg:#007a55; --ok-bg:#ecfdf5; --ok-solid:#009966;
+  --warn-fg:#bb4d00; --warn-bg:#fffbeb; --warn-solid:#e17100;
+  --bad-fg:#c10007; --bad-bg:#fef2f2; --bad-solid:#e7000b;
+  --info-fg:#1447e6; --info-bg:#eff6ff;
+  --sky-fg:#0069a8; --sky-bg:#f0f9ff;
+  --track:#f1f5f9;
+  --shadow-card:0 1px 2px 0 #0f172a0a, 0 1px 3px 0 #0f172a0f;
+  --shadow-pop:0 10px 30px -12px #0f172a40;
+  --sans:"Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --r-sm:6px; --r-md:8px; --r-lg:12px; --r-card:14px; --r-xl:16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg-app:#0f172a; --bg-surface:#1e293b; --bg-subtle:#243044; --bg-muted:#2c3a50;
+  --border:#334155; --border-strong:#42536c; --border-subtle:#243044;
+  --text-strong:#f1f5f9; --text-body:#cbd5e1; --text-muted:#94a3b8; --text-faint:#8794a9; --text-inverse:#0f172b;
+  --brand-50:#f59e0b1a; --brand-100:#f59e0b2e; --brand-700:#fcd34d; --ink:#f1f5f9;
+  --ok-fg:#6ee7b7; --ok-bg:#10b9811f; --ok-solid:#34d399;
+  --warn-fg:#fcd34d; --warn-bg:#f59e0b1f; --warn-solid:#fbbf24;
+  --bad-fg:#fca5a5; --bad-bg:#ef44441f; --bad-solid:#f87171;
+  --info-fg:#93c5fd; --info-bg:#3b82f61f; --sky-fg:#7dd3fc; --sky-bg:#0ea5e91f;
+  --track:#2c3a50;
+  --shadow-card:0 1px 2px 0 #00000040, 0 1px 3px 0 #0000004d; --shadow-pop:0 10px 30px -12px #00000099;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"] {
+  --bg-app:#0f172a; --bg-surface:#1e293b; --bg-subtle:#243044; --bg-muted:#2c3a50;
+  --border:#334155; --border-strong:#42536c; --border-subtle:#243044;
+  --text-strong:#f1f5f9; --text-body:#cbd5e1; --text-muted:#94a3b8; --text-faint:#8794a9; --text-inverse:#0f172b;
+  --brand-50:#f59e0b1a; --brand-100:#f59e0b2e; --brand-700:#fcd34d; --ink:#f1f5f9;
+  --ok-fg:#6ee7b7; --ok-bg:#10b9811f; --ok-solid:#34d399;
+  --warn-fg:#fcd34d; --warn-bg:#f59e0b1f; --warn-solid:#fbbf24;
+  --bad-fg:#fca5a5; --bad-bg:#ef44441f; --bad-solid:#f87171;
+  --info-fg:#93c5fd; --info-bg:#3b82f61f; --sky-fg:#7dd3fc; --sky-bg:#0ea5e91f;
+  --track:#2c3a50;
+  --shadow-card:0 1px 2px 0 #00000040, 0 1px 3px 0 #0000004d; --shadow-pop:0 10px 30px -12px #00000099;
+  color-scheme:dark;
+}
+* { box-sizing:border-box; }
+body { background:var(--bg-app); color:var(--text-body); font-family:var(--sans); font-size:14px; line-height:20px; }
+.wrap { max-width:1180px; margin:0 auto; padding-block:28px 48px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+h1,h2,h3 { color:var(--text-strong); margin:0; text-wrap:balance; }
+.eyebrow { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+header.top h1 { font-size:24px; line-height:32px; font-weight:600; letter-spacing:-.02em; margin-top:4px; }
+header.top p { margin:6px 0 0; max-width:68ch; color:var(--text-muted); }
+.new-pill { display:inline-flex; align-items:center; gap:6px; margin-top:14px; padding:6px 10px; border-radius:999px; background:var(--brand-50); color:var(--brand-700); font-size:12px; font-weight:600; border:1px solid var(--brand-100); }
+
+.layout { display:grid; grid-template-columns:260px minmax(0,1fr); gap:24px; margin-top:24px; align-items:start; }
+@media (max-width: 860px) { .layout { grid-template-columns:minmax(0,1fr); } }
+
+nav.list { display:flex; flex-direction:column; gap:6px; position:sticky; top:calc(env(safe-area-inset-top, 0px) + 16px); }
+@media (max-width: 860px) { nav.list { position:static; flex-direction:row; overflow-x:auto; padding-bottom:4px; } nav.list button { min-width:200px; } }
+nav.list button { all:unset; cursor:pointer; display:grid; grid-template-columns:28px 1fr; gap:10px; align-items:start; padding:10px 12px; border-radius:var(--r-lg); border:1px solid transparent; }
+nav.list button:hover { background:var(--bg-muted); }
+nav.list button:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+nav.list button[aria-selected="true"] { background:var(--bg-surface); border-color:var(--border); box-shadow:var(--shadow-card); }
+nav.list .ix { width:28px; height:28px; border-radius:8px; background:var(--bg-muted); display:grid; place-items:center; color:var(--text-muted); }
+nav.list button[aria-selected="true"] .ix { background:var(--ink); color:var(--text-inverse); }
+nav.list .t { font-weight:600; color:var(--text-strong); font-size:14px; }
+nav.list .s { font-size:12px; line-height:16px; color:var(--text-muted); }
+nav.list .tag { display:inline-block; margin-top:4px; font-size:11px; font-weight:600; color:var(--ok-fg); background:var(--ok-bg); padding:1px 7px; border-radius:999px; }
+
+.panel { min-width:0; display:flex; flex-direction:column; gap:16px; }
+.phead { display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px; align-items:end; }
+.phead h2 { font-size:18px; line-height:26px; letter-spacing:-.015em; }
+.phead p { margin:2px 0 0; color:var(--text-muted); max-width:62ch; }
+
+/* ── maket qobig'i ── */
+.stage { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-xl); box-shadow:var(--shadow-card); overflow:hidden; }
+.stage-bar { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg-subtle); font-size:12px; color:var(--text-muted); }
+.stage-bar b { color:var(--text-strong); font-weight:600; }
+.stage-bar .crumb { margin-left:auto; }
+.stage-body { padding:20px; }
+@media (max-width:520px){ .stage-body { padding:14px; } }
+
+.facts { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+@media (max-width:640px){ .facts { grid-template-columns:minmax(0,1fr); } }
+.fact { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-card); padding:14px 16px; }
+.fact h3 { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+.fact ul { margin:8px 0 0; padding-left:18px; }
+.fact li { margin:3px 0; }
+
+/* ── umumiy forma bo'laklari ── */
+.lbl { font-size:13px; font-weight:500; color:var(--text-body); margin-bottom:6px; display:block; }
+.hint { font-size:12px; line-height:16px; color:var(--text-muted); }
+.inp { width:100%; height:40px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--bg-surface); color:var(--text-strong); padding:0 12px; font:inherit; }
+.inp:focus { outline:2px solid var(--ring); outline-offset:0; border-color:var(--brand); }
+.money { position:relative; }
+.money .inp { padding-right:46px; font-variant-numeric:tabular-nums; }
+.money span { position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-faint); pointer-events:none; }
+.row { display:grid; gap:12px; }
+.g2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.g3 { grid-template-columns:repeat(3, minmax(0,1fr)); }
+@media (max-width:560px){ .g2,.g3 { grid-template-columns:minmax(0,1fr); } }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { all:unset; cursor:pointer; padding:6px 12px; border-radius:var(--r-md); border:1px solid var(--border-strong); background:var(--bg-surface); color:var(--text-body); font-size:13px; font-weight:500; }
+.chip:hover { background:var(--bg-muted); }
+.chip:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.chip[aria-pressed="true"] { background:var(--ink); border-color:var(--ink); color:var(--text-inverse); }
+.btn { all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:6px; height:40px; padding:0 16px; border-radius:var(--r-md); font-weight:600; font-size:14px; }
+.btn:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.btn.primary { background:var(--brand); color:var(--on-brand); }
+.btn.primary:hover { background:var(--brand-600); }
+.btn.ghost { border:1px solid var(--border-strong); color:var(--text-body); background:var(--bg-surface); }
+.btn.ghost:hover { background:var(--bg-muted); }
+.btn.sm { height:32px; padding:0 12px; font-size:13px; }
+.switch { display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none; }
+.switch input { appearance:none; width:36px; height:20px; border-radius:999px; background:var(--border-strong); position:relative; cursor:pointer; flex-shrink:0; margin:0; transition:background .15s; }
+.switch input::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .15s; }
+.switch input:checked { background:var(--ok-solid); }
+.switch input:checked::after { transform:translateX(16px); }
+.switch input:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.switch b { color:var(--text-strong); font-weight:600; font-size:14px; }
+.deliv { border:1px solid var(--border); border-radius:var(--r-lg); padding:12px; background:var(--bg-subtle); display:flex; flex-direction:column; gap:10px; }
+.deliv .fee { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:end; }
+.deliv .calc { font-size:12px; color:var(--text-muted); }
+.deliv .calc b { color:var(--text-strong); }
+.new { font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--brand-700); background:var(--brand-50); border:1px solid var(--brand-100); padding:1px 6px; border-radius:999px; }
+.sum { display:flex; flex-direction:column; gap:4px; font-size:13px; }
+.sum div { display:flex; justify-content:space-between; gap:12px; }
+.sum span { color:var(--text-muted); }
+.sum b { color:var(--text-strong); font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.sum .tot { border-top:1px solid var(--border); padding-top:6px; margin-top:2px; font-size:16px; }
+.sum .tot span { color:var(--text-strong); font-weight:600; }
+.badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:500; }
+.badge.ok { background:var(--ok-bg); color:var(--ok-fg); } .badge.warn { background:var(--warn-bg); color:var(--warn-fg); } .badge.info { background:var(--info-bg); color:var(--info-fg); } .badge.bad { background:var(--bad-bg); color:var(--bad-fg); }
+.ico { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+.ico.lg { width:20px; height:20px; }
+.card { border:1px solid var(--border); border-radius:var(--r-card); background:var(--bg-surface); }
+.muted { color:var(--text-muted); }
+
+/* ── 1. Qadamma-qadam ── */
+.steps { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; margin-bottom:18px; }
+.step { all:unset; cursor:pointer; display:flex; flex-direction:column; gap:6px; }
+.step:focus-visible { outline:2px solid var(--ring); outline-offset:4px; border-radius:4px; }
+.step .bar { height:4px; border-radius:4px; background:var(--track); }
+.step.done .bar { background:var(--ok-solid); }
+.step.cur .bar { background:var(--brand); }
+.step .nm { font-size:12px; font-weight:600; color:var(--text-muted); }
+.step.cur .nm, .step.done .nm { color:var(--text-strong); }
+.wiz-foot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; padding:12px 14px; border-radius:var(--r-lg); background:var(--bg-subtle); border:1px solid var(--border); }
+.wiz-foot .total { font-size:13px; color:var(--text-muted); }
+.wiz-foot .total b { display:block; font-size:22px; line-height:28px; color:var(--text-strong); letter-spacing:-.025em; }
+
+/* ── 2. Jonli chek ── */
+.split { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:20px; align-items:start; }
+@media (max-width:760px){ .split { grid-template-columns:minmax(0,1fr); } }
+.receipt { border:1px solid var(--border); border-radius:var(--r-card); background:var(--bg-subtle); padding:16px; display:flex; flex-direction:column; gap:12px; position:sticky; top:12px; }
+.receipt .no { font-family:var(--mono); font-size:12px; color:var(--text-muted); }
+.receipt .line { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; font-size:13px; }
+.receipt .line .n { color:var(--text-body); }
+.receipt .line .n small { display:block; color:var(--text-muted); font-size:12px; }
+.receipt .line .v { font-family:var(--mono); font-size:13px; color:var(--text-strong); text-align:right; }
+.receipt .line.off { opacity:.45; }
+.receipt .line.off .v { text-decoration:line-through; }
+.receipt hr { border:0; border-top:1px dashed var(--border-strong); margin:0; }
+.receipt .big { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.receipt .big span { font-weight:600; color:var(--text-strong); }
+.receipt .big b { font-size:22px; line-height:28px; letter-spacing:-.025em; color:var(--text-strong); white-space:nowrap; }
+.meter { height:8px; border-radius:4px; background:var(--track); overflow:hidden; display:flex; }
+.meter i { display:block; height:100%; }
+.sec { display:flex; flex-direction:column; gap:10px; padding-bottom:16px; margin-bottom:16px; border-bottom:1px solid var(--border-subtle); }
+.sec:last-child { border-bottom:0; margin-bottom:0; padding-bottom:0; }
+.sec h4 { margin:0; font-size:13px; font-weight:600; color:var(--text-strong); display:flex; align-items:center; gap:8px; }
+.sec h4 .n { width:20px; height:20px; border-radius:50%; background:var(--bg-muted); display:grid; place-items:center; font-size:11px; color:var(--text-muted); }
+
+/* ── 3. Takrorlash ── */
+.cust { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:12px 14px; border-radius:var(--r-lg); background:var(--bg-subtle); border:1px solid var(--border); }
+.cust .av { width:40px; height:40px; border-radius:50%; background:var(--brand); color:var(--on-brand); display:grid; place-items:center; font-weight:700; }
+.cust .who { display:flex; gap:12px; align-items:center; }
+.cust .who b { color:var(--text-strong); display:block; }
+.past { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:14px; }
+@media (max-width:700px){ .past { grid-template-columns:minmax(0,1fr); } }
+.past button { all:unset; cursor:pointer; border:1px solid var(--border); border-radius:var(--r-card); padding:12px; display:flex; flex-direction:column; gap:6px; background:var(--bg-surface); }
+.past button:hover { border-color:var(--border-strong); box-shadow:var(--shadow-card); }
+.past button:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.past button[aria-pressed="true"] { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+.past .d { font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; }
+.past .p { font-weight:600; color:var(--text-strong); }
+.past .x { font-size:12px; color:var(--text-muted); }
+.past .go { font-size:12px; font-weight:600; color:var(--brand-700); display:inline-flex; gap:4px; align-items:center; }
+.quick { margin-top:14px; border:1px solid var(--border); border-radius:var(--r-card); padding:14px; display:grid; grid-template-columns:minmax(0,1.3fr) 90px minmax(0,1fr) minmax(0,1.1fr); gap:10px; align-items:end; }
+@media (max-width:760px){ .quick { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+.quick-foot { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:12px; }
+
+/* ── 4. Gap shaklida ── */
+.madlib { font-size:22px; line-height:2.05; color:var(--text-body); letter-spacing:-.01em; max-width:30em; }
+@media (max-width:560px){ .madlib { font-size:18px; } }
+.tok { all:unset; cursor:pointer; display:inline-block; line-height:1.4; padding:0 10px; border-radius:10px; background:var(--bg-muted); color:var(--text-strong); font-weight:600; border-bottom:2px solid var(--border-strong); }
+.tok:hover { background:var(--brand-100); border-bottom-color:var(--brand); }
+.tok:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.tok.fee { background:var(--brand-50); border-bottom-color:var(--brand); }
+.tok-in { all:unset; display:inline-block; width:6.6em; line-height:1.4; padding:0 10px; border-radius:10px; background:var(--brand-50); border-bottom:2px solid var(--brand); color:var(--text-strong); font-weight:600; font-variant-numeric:tabular-nums; }
+.tok-in:focus { outline:2px solid var(--ring); }
+.ml-foot { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+.ml-foot .t { font-size:13px; color:var(--text-muted); }
+.ml-foot .t b { font-size:22px; color:var(--text-strong); letter-spacing:-.025em; margin-left:6px; }
+
+/* ── 5. Kalendar-yuk ── */
+.days { display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:8px; }
+@media (max-width:620px){ .days { grid-template-columns:repeat(4, minmax(0,1fr)); } }
+.day { all:unset; cursor:pointer; border:1px solid var(--border); border-radius:var(--r-lg); padding:10px; display:flex; flex-direction:column; gap:6px; background:var(--bg-surface); }
+.day:hover { border-color:var(--border-strong); }
+.day:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.day[aria-pressed="true"] { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+.day .w { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+.day .dn { font-size:16px; font-weight:600; color:var(--text-strong); }
+.day .m { font-size:11px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.day .meter { height:6px; }
+.legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--text-muted); margin-top:8px; }
+.legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+.alert { display:flex; gap:8px; align-items:flex-start; padding:10px 12px; border-radius:var(--r-lg); font-size:13px; }
+.alert.warn { background:var(--warn-bg); color:var(--warn-fg); }
+.alert.ok { background:var(--ok-bg); color:var(--ok-fg); }
+
+/* ── taqqoslash ── */
+.compare { margin-top:32px; }
+.compare h2 { font-size:18px; line-height:26px; }
+.tbl-wrap { overflow-x:auto; margin-top:12px; border:1px solid var(--border); border-radius:var(--r-card); background:var(--bg-surface); }
+table { border-collapse:collapse; width:100%; min-width:640px; font-size:13px; }
+th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--border-subtle); vertical-align:top; }
+th { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); background:var(--bg-subtle); }
+tr:last-child td { border-bottom:0; }
+td.nm { font-weight:600; color:var(--text-strong); white-space:nowrap; }
+.dots { display:inline-flex; gap:3px; }
+.dots i { width:8px; height:8px; border-radius:50%; background:var(--track); }
+.dots i.on { background:var(--ok-solid); }
+.reco { margin-top:16px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+@media (max-width:760px){ .reco { grid-template-columns:minmax(0,1fr); } }
+.reco .card { padding:16px; }
+.reco h3 { font-size:16px; line-height:24px; }
+.reco p { margin:6px 0 0; }
+.reco ol, .reco ul { margin:8px 0 0; padding-left:18px; }
+.reco li { margin:4px 0; }
+/* ── 6. Hujjat (tijorat taklifi) — qog'oz ko'rinishi ataylab ikkala mavzuda ham oq ── */
+.paper { --p-bg:#ffffff; --p-ink:#111827; --p-blue:#2f6fc9; --p-navy:#25236b; --p-line:#1f2937; --p-head:#e5e7eb; --p-mute:#4b5563;
+  background:var(--p-bg); color:var(--p-ink); border:1px solid var(--border); border-radius:4px; padding:24px; box-shadow:var(--shadow-pop); font-family:"Times New Roman", Georgia, serif; color-scheme:light; }
+@media (max-width:560px){ .paper { padding:14px; } }
+.paper .brand { text-align:center; font-style:italic; color:var(--p-blue); }
+.paper .brand b { display:block; font-size:34px; line-height:1; letter-spacing:.02em; }
+.paper .brand span { display:block; font-size:19px; font-weight:700; margin-top:4px; }
+.paper .req { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:16px; align-items:center; margin-top:8px; }
+@media (max-width:620px){ .paper .req { grid-template-columns:minmax(0,1fr); } }
+.paper .req svg { width:100%; height:auto; max-width:320px; }
+.paper .req .lines { text-align:center; font-style:italic; font-size:13px; line-height:1.55; }
+.paper .intro { text-align:center; font-style:italic; font-size:12px; line-height:1.5; color:var(--p-mute); margin:10px auto 0; max-width:70ch; border-top:2px solid var(--p-line); padding-top:8px; }
+.paper .meta { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:16px; margin-top:16px; }
+.paper .meta h3 { margin:0; font-size:16px; font-style:italic; color:var(--p-ink); }
+.paper .meta .dt { font-size:13px; font-weight:700; font-style:italic; }
+.paper .cl { display:grid; grid-template-columns:auto minmax(0,240px); gap:4px 12px; font-size:13px; align-items:center; }
+.paper .cl label { font-weight:700; font-style:italic; text-align:right; }
+.paper .ul { all:unset; box-sizing:border-box; width:100%; border-bottom:1px solid #9ca3af; padding:2px 4px; font:inherit; color:var(--p-ink); text-align:center; }
+.paper .ul:focus { border-bottom-color:var(--p-blue); background:#eff6ff; }
+.paper .tw { overflow-x:auto; margin-top:14px; }
+.paper table { min-width:720px; font-size:13px; border-collapse:collapse; width:100%; }
+.paper th, .paper td { border:1px solid var(--p-line); padding:4px 6px; vertical-align:middle; }
+.paper th { background:var(--p-head); color:var(--p-blue); font-style:italic; font-weight:700; text-align:center; text-transform:none; letter-spacing:0; font-size:13px; }
+.paper td.n { text-align:right; font-style:italic; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.paper td.c { text-align:center; font-style:italic; }
+.paper td input { all:unset; box-sizing:border-box; width:100%; font:inherit; font-style:italic; color:var(--p-ink); text-align:right; }
+.paper td input.l { text-align:left; }
+.paper td input:focus { background:#eff6ff; outline:1px solid var(--p-blue); }
+.paper .vat { all:unset; cursor:pointer; display:block; width:100%; text-align:right; font-style:italic; }
+.paper .vat.off { color:#6b7280; }
+.paper .vat:focus-visible { outline:1px solid var(--p-blue); }
+.paper tr.tot td { font-weight:700; }
+.paper tr.fee td { background:#fffbeb; }
+.paper tr.fee.off td { background:transparent; }
+.paper .chk { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-style:italic; font-weight:700; color:var(--p-ink); }
+.paper .chk input { appearance:none; -webkit-appearance:none; margin:0; flex-shrink:0; width:18px; height:18px; border:2px solid var(--p-navy); border-radius:4px; background:#fff; display:grid; place-items:center; cursor:pointer; }
+.paper .chk input::after { content:""; width:5px; height:10px; border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg) translate(-1px,-1px); opacity:0; }
+.paper .chk input:checked { background:var(--p-navy); }
+.paper .chk input:checked::after { opacity:1; }
+.paper .chk input:focus-visible { outline:2px solid #f59e0b80; outline-offset:2px; }
+.paper .chk small { font-weight:400; color:#6b7280; }
+.paper .rest { display:grid; grid-template-columns:auto 160px; justify-content:end; gap:2px 16px; margin-top:6px; font-style:italic; font-size:13px; }
+.paper .rest b { text-align:right; font-variant-numeric:tabular-nums; }
+.paper .rest input { all:unset; box-sizing:border-box; text-align:right; border-bottom:1px solid #9ca3af; font:inherit; font-weight:700; }
+.paper .addrow { all:unset; cursor:pointer; color:var(--p-blue); font-style:italic; font-size:12px; }
+.paper .seg { display:inline-flex; border:1px solid #cbd5e1; border-radius:7px; overflow:hidden; font-family:var(--sans); font-style:normal; vertical-align:middle; background:#fff; }
+.paper .seg button { all:unset; cursor:pointer; padding:3px 10px; font-size:12px; font-weight:600; color:#475569; line-height:18px; }
+.paper .seg button + button { border-left:1px solid #cbd5e1; }
+.paper .seg button:hover { background:#f1f5f9; }
+.paper .seg button:focus-visible { outline:2px solid #f59e0b80; outline-offset:-2px; }
+.paper .seg button[aria-pressed="true"] { background:#25236b; color:#fff; }
+.paper .seg.warn button[aria-pressed="true"].hot { background:#c10007; }
+.paper .flags { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:8px; font-family:var(--sans); font-size:12px; color:#475569; }
+.paper .flags > span { display:inline-flex; align-items:center; gap:6px; }
+.paper .mrow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.paper .mrow .ul { flex:1 1 120px; width:auto; min-width:0; }
+.paper .mrow .soft { flex:1 1 120px; text-align:left; }
+.paper .soft { font-style:italic; color:#6b7280; text-align:center; font-size:12px; }
+.paper .pfoot { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,300px); gap:14px 24px; margin-top:10px; align-items:start; }
+@media (max-width:620px){ .paper .pfoot { grid-template-columns:minmax(0,1fr); } }
+.paper .pfoot .lbl2 { font-family:var(--sans); font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; display:block; }
+.paper .pfoot .note { font-family:var(--sans); font-size:12px; color:#6b7280; margin-top:6px; line-height:16px; }
+.paper .sumbox { display:grid; grid-template-columns:auto minmax(0,1fr); gap:6px 12px; font-style:italic; font-size:13px; align-items:center; }
+.paper .sumbox b { text-align:right; font-variant-numeric:tabular-nums; }
+.paper .sumbox .r { justify-self:end; }
+.paper .sumbox input { all:unset; box-sizing:border-box; width:100%; text-align:right; border-bottom:1px solid #9ca3af; font:inherit; font-weight:700; }
+.paper .sumbox input:focus { border-bottom-color:var(--p-blue); background:#eff6ff; }
+.paper .sumbox .big { font-size:15px; font-weight:700; border-top:1px solid var(--p-line); padding-top:6px; }
+.paper .pct { display:flex; justify-content:flex-end; gap:4px; grid-column:1 / -1; }
+.paper .pct button { all:unset; cursor:pointer; font-family:var(--sans); font-size:11px; font-weight:600; color:#475569; border:1px solid #cbd5e1; border-radius:5px; padding:0 6px; }
+.paper .pct button:hover { background:#f1f5f9; }
+.paper .obj { display:flex; flex-direction:column; gap:3px; }
+.paper .paren { display:flex; align-items:center; gap:2px; font-style:italic; color:#4b5563; }
+.paper .paren .ul { text-align:left; font-size:12px; color:#4b5563; }
+.paper .mapbox { margin-top:12px; border:1px solid #cbd5e1; border-radius:6px; overflow:hidden; font-family:var(--sans); font-style:normal; }
+.paper .mapbar { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px 12px; padding:6px 10px; background:#f8fafc; border-bottom:1px solid #cbd5e1; font-size:12px; color:#475569; }
+.paper .mapbar b { color:#0f172a; font-weight:600; }
+.paper .mapbar button { all:unset; cursor:pointer; font-weight:600; color:#2f6fc9; }
+.paper .mapbar button:focus-visible { outline:2px solid #f59e0b80; }
+.paper .mapbox svg { display:block; width:100%; height:auto; cursor:crosshair; background:#eef2e6; }
+.paper .ccard { margin-top:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px 14px; font-family:var(--sans); font-style:normal; font-size:13px; line-height:18px; }
+.paper .ccard .g { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px 16px; }
+@media (max-width:620px){ .paper .ccard .g { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+.paper .ccard .k { color:#5f7088; }
+.paper .ccard .v { font-weight:700; color:#0f172b; font-variant-numeric:tabular-nums; }
+.paper .ccard .v.ok { color:#007a55; } .paper .ccard .v.warn { color:#b45309; }
+.paper .ccard .s { color:#7f8da5; font-size:12px; }
+.paper .ccard .s.bad { color:#c10007; }
+.paper .ccard .ad { margin-top:10px; padding-top:8px; border-top:1px solid #e2e8f0; color:#5f7088; }
+.paper .ccard .ad b { font-weight:500; color:#314158; }
+.paper .ccard.new { color:#5f7088; }
+.doc-actions { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:14px; font-family:var(--sans); }
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-steps" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6M16 12H8M13 16H8"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M17 6.1H3M21 12.1H3M15.1 18H3"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M11.5 2.3a.5.5 0 0 1 1 0l2.3 4.7 5.2.8a.5.5 0 0 1 .3.9l-3.8 3.7.9 5.2a.5.5 0 0 1-.8.5L12 15.6l-4.6 2.5a.5.5 0 0 1-.8-.5l.9-5.2-3.8-3.7a.5.5 0 0 1 .3-.9l5.2-.8Z"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Sotuv · Yangi zayavka</div>
+    <h1>Zayavka sahifasi: 6 ta shablon</h1>
+    <p>Har bir shablon — hozirgi formadagi bir xil ma'lumot (mijoz, mahsulot, sana, manzil, to'lov), faqat boshqacha tartibda. Maketlar jonli: «Dastavka kerak»ni yoqib-o'chiring, summani o'zgartiring — jami qayta hisoblanadi.</p>
+    <span class="new-pill"><svg class="ico"><use href="#i-truck"/></svg> Yangi: «Dastavka kerak» belgilansa — dastavka summasi kiritiladi va jamiga qo'shiladi</span>
+  </header>
+
+  <div class="layout">
+    <nav class="list" role="tablist" aria-label="Shablonlar">
+      <button role="tab" id="tab-1" aria-controls="tpl" aria-selected="true" data-t="1"><span class="ix"><svg class="ico"><use href="#i-steps"/></svg></span><span><span class="t">Qadamma-qadam</span><br><span class="s">4 qadam, pastda jami</span></span></button>
+      <button role="tab" id="tab-2" aria-controls="tpl" aria-selected="false" data-t="2"><span class="ix"><svg class="ico"><use href="#i-receipt"/></svg></span><span><span class="t">Jonli chek</span><br><span class="s">Chapda forma, o'ngda hisob</span><br><span class="tag">Tavsiya</span></span></button>
+      <button role="tab" id="tab-3" aria-controls="tpl" aria-selected="false" data-t="3"><span class="ix"><svg class="ico"><use href="#i-repeat"/></svg></span><span><span class="t">Takroriy zayavka</span><br><span class="s">Doimiy mijozga 1 bosish</span></span></button>
+      <button role="tab" id="tab-4" aria-controls="tpl" aria-selected="false" data-t="4"><span class="ix"><svg class="ico"><use href="#i-text"/></svg></span><span><span class="t">Gap shaklida</span><br><span class="s">Zayavka — bitta jumla</span></span></button>
+      <button role="tab" id="tab-5" aria-controls="tpl" aria-selected="false" data-t="5"><span class="ix"><svg class="ico"><use href="#i-cal"/></svg></span><span><span class="t">Kalendar-yuk</span><br><span class="s">Avval kun, keyin forma</span></span></button>
+      <button role="tab" id="tab-6" aria-controls="tpl" aria-selected="false" data-t="6"><span class="ix"><svg class="ico"><use href="#i-receipt"/></svg></span><span><span class="t">Hujjat ko'rinishi</span><br><span class="s">Tijorat taklifi blankasi kabi</span><br><span class="tag">Sizning namunangiz</span></span></button>
+    </nav>
+
+    <section class="panel" id="tpl" role="tabpanel" aria-live="polite"></section>
+  </div>
+
+  <section class="compare">
+    <div class="eyebrow">Taqqoslash</div>
+    <h2>Qaysi biri kimga mos</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Shablon</th><th>Tezlik</th><th>O'rganish oson</th><th>Xato kam</th><th>Kimga</th><th>Ishlash hajmi</th></tr></thead>
+        <tbody>
+          <tr><td class="nm">1. Qadamma-qadam</td><td><span class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td>Agentlar, yangi xodim, mobil</td><td>O'rtacha — forma bo'laklarga bo'linadi</td></tr>
+          <tr><td class="nm">2. Jonli chek</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td>Sotuv bo'limi, kundalik ish</td><td>Kichik — hozirgi formaga o'ng panel qo'shiladi</td></tr>
+          <tr><td class="nm">3. Takroriy zayavka</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td>Doimiy mijozlar (50%+ zayavka)</td><td>Kichik — mavjud formaga qo'shimcha blok</td></tr>
+          <tr><td class="nm">4. Gap shaklida</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td>Telefondagi tez qabul, direktor</td><td>O'rtacha — yangi komponent</td></tr>
+          <tr><td class="nm">6. Hujjat ko'rinishi</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td>Sotuv bo'limi — mijozga beriladigan blanka bilan bir xil</td><td>O'rtacha — chop etish sahifasi tayyor, uni formaga aylantirish</td></tr>
+          <tr><td class="nm">5. Kalendar-yuk</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td>Mavsum cho'qqisi, ko'p zayavka</td><td>O'rtacha — yuk kalendari tayyor, ulash kerak</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="reco">
+      <div class="card">
+        <div class="eyebrow">Tavsiya</div>
+        <h3>«Jonli chek» asos + «Takrorlash» bloki</h3>
+        <p>Hozirgi forma deyarli shunday tuzilgan, shuning uchun o'zgarish kichik va xavfsiz. O'ngdagi chek sotuvchiga summa, dastavka, NDS, avans va limitni bir qarashda ko'rsatadi. Doimiy mijoz tanlanganda tepada «oxirgi 3 zayavka — Takrorlash» chiqadi.</p>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Dastavka summasi qanday ishlaydi</div>
+        <ul>
+          <li>«Dastavka kerak» yoqilsa — «Dastavka summasi» maydoni chiqadi (majburiy emas, 0 bo'lishi mumkin).</li>
+          <li>Masofa ma'lum bo'lsa, maslahat: reyslar soni × bitta reys narxi.</li>
+          <li>Summa zayavka jamiga qo'shiladi: bosh to'lov, kredit limiti, schyot va qarz shu jami bo'yicha.</li>
+          <li>O'chirilsa — summa nolga tushadi, mijoz o'zi olib ketadi.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ── Namuna ma'lumotlar (misol) ──
+  var PRICE = 720000, QTY = 12, MIXER = 8, TRIP = 300000, KM = 18;
+  var fmt = function (n) { n = Math.round(Number(n) || 0); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); };
+  var num = function (s) { return Number(String(s).replace(/\s+/g, "")) || 0; };
+  var trips = function (q) { return Math.max(1, Math.ceil(q / MIXER)); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+
+  // Har shablon o'z holatini saqlaydi — yorliq almashganda yo'qolmaydi
+  var S = {
+    1: { step: 3, deliv: true, fee: TRIP * trips(QTY), date: "Ertaga", pump: true },
+    2: { deliv: true, fee: TRIP * trips(QTY), qty: QTY, nds: false, pay: "cash", avans: 4000000 },
+    3: { pick: 0, deliv: true, fee: 600000, qty: 12 },
+    4: { deliv: true, fee: TRIP * trips(QTY), qty: QTY, day: "ertaga", pay: "naqd", prod: 0 },
+    5: { day: 2, deliv: true, fee: TRIP * trips(QTY), qty: QTY },
+    6: { cust: 0, deliv: true, fq: 2, fp: 1000000, fv: true, cvat: false, mapOpen: true, pin: { x: 128, y: 78 }, addr: "Mixaylovka qishlog'i, Bog'bon ko'chasi", onote: "", avans: 0, pay: "bank", dep: false, pump: true, urgent: false, dateKnown: true, date: "2026-10-26", rows: [
+      { n: "2ПК 59-12-8 A400", u: "dona", q: 18, p: 1230000, v: true },
+      { n: "2ПК 59-10-8 A400", u: "dona", q: 12, p: 1150000, v: true },
+      { n: "2ПК 33-12-8 A400", u: "dona", q: 10, p: 950000, v: true },
+      { n: "2ПК 33-10-8 A400", u: "dona", q: 17, p: 900000, v: true }
+    ] }
+  };
+
+  function delivBlock(id, st, opts) {
+    opts = opts || {};
+    var t = trips(st.qty || QTY);
+    var h = '<div class="deliv">' +
+      '<label class="switch"><input type="checkbox" id="' + id + '-dv" ' + (st.deliv ? "checked" : "") + '><b>Dastavka kerak</b>' +
+      (st.deliv ? '' : '<span class="hint">— mijoz o\'zi olib ketadi</span>') + '</label>';
+    if (st.deliv) {
+      h += '<div class="fee"><div><label class="lbl" for="' + id + '-fee">Dastavka summasi <span class="new">yangi</span></label>' +
+        '<div class="money"><input class="inp" id="' + id + '-fee" inputmode="numeric" value="' + fmt(st.fee) + '"><span>so\'m</span></div></div>' +
+        '<button class="btn ghost sm" type="button" id="' + id + '-auto" title="Reyslar soni × reys narxi">Hisoblash</button></div>' +
+        '<div class="calc"><svg class="ico" style="vertical-align:-3px"><use href="#i-map"/></svg> ' + KM + ' km · ' + fmt(st.qty || QTY) + ' m³ ÷ ' + MIXER + ' m³ mikser = <b>' + t + ' reys</b> × ' + fmt(TRIP) + ' = <b>' + fmt(t * TRIP) + ' so\'m</b>' + (opts.extra || '') + '</div>';
+    }
+    return h + '</div>';
+  }
+  function bindDeliv(id, st, rerender) {
+    var dv = document.getElementById(id + "-dv");
+    if (dv) dv.addEventListener("change", function () { st.deliv = dv.checked; rerender(); var n = document.getElementById(id + "-dv"); if (n) n.focus(); });
+    var fee = document.getElementById(id + "-fee");
+    if (fee) {
+      fee.addEventListener("input", function () { st.fee = num(fee.value); rerender.soft ? rerender.soft() : null; });
+      fee.addEventListener("blur", function () { fee.value = fmt(st.fee); });
+    }
+    var au = document.getElementById(id + "-auto");
+    if (au) au.addEventListener("click", function () { st.fee = trips(st.qty || QTY) * TRIP; rerender(); });
+  }
+  var feeOf = function (st) { return st.deliv ? st.fee : 0; };
+
+  var panel = document.getElementById("tpl");
+  var META = {
+    1: { name: "Qadamma-qadam", lead: "Forma 4 qadamga bo'linadi. Har qadamda 2–4 maydon, pastda doim jami ko'rinadi. Yangi xodim adashmaydi, telefonda ham qulay.", for: ["Sotuv agentlari va yangi xodimlar", "Mobil ilovadagi «Yangi zayavka»", "Kam zayavka, ko'p tafsilot"], plus: ["Bir ekranda kam narsa — xato kam", "Qadam to'lmasa «Davom etish» yopiq", "Dastavka 3-qadamda, manzil bilan birga"], minus: ["Tajribali sotuvchiga sekin", "Orqaga qaytib tuzatish 1 bosish ko'p"] },
+    2: { name: "Jonli chek", lead: "Hozirgi forma chapda qoladi, o'ngda yopishqoq chek: mahsulot, dastavka, NDS, avans, qoldiq va mijoz limiti. Har o'zgarish darhol chekda ko'rinadi.", for: ["Sotuv bo'limining kundalik ishi", "Kompyuterda ishlaydigan operator", "NDS, avans, shartnoma ko'p bo'lgan zayavkalar"], plus: ["Summa va limit hech qachon ko'zdan yo'qolmaydi", "Dastavka chekda alohida qator — mijozga aytish oson", "Hozirgi kodga eng yaqin: o'zgarish kichik"], minus: ["Telefonda chek pastga tushadi", "Ekran keng bo'lishi kerak"] },
+    3: { name: "Takroriy zayavka", lead: "Mijoz tanlanganda uning oxirgi 3 zayavkasi kartochka bo'lib chiqadi. Bittasini bossangiz — mahsulot, hajm, manzil va dastavka summasi to'ladi, faqat sanani o'zgartirasiz.", for: ["Doimiy mijozlar: qurilish firmalari, pudratchilar", "Telefon orqali «o'tgan safargidek» buyurtma", "Bir obyektga har kuni beton"], plus: ["Zayavka 10 soniyada", "Dastavka summasi o'tgan safardan olinadi", "Manzil va nuqta xaritada qayta qidirilmaydi"], minus: ["Yangi mijozda foydasiz", "Eski narx ko'chib qolishi mumkin — narx yangilanadi"] },
+    4: { name: "Gap shaklida", lead: "Zayavka bitta jumla bo'lib o'qiladi. Rangli so'zni bosib almashtirasiz. Telefonda mijoz gapirayotganda yozish uchun eng tabiiy shakl.", for: ["Telefon orqali qabul qiluvchi operator", "Direktor yoki rahbar — tez ko'rib chiqish", "Oddiy, bitta mahsulotli zayavka"], plus: ["O'qib tekshirish oson: «gap to'g'rimi?»", "Ortiqcha maydon yo'q", "Dastavka summasi gapning o'zida"], minus: ["Ko'p qatorli zayavkaga sig'maydi", "Shartnoma, fayl uchun qo'shimcha blok kerak"] },
+    6: { name: "Hujjat ko'rinishi", lead: "Zayavka mijozga beriladigan blankaning o'zida to'ldiriladi: tepada INSOF rekvizitlari, o'ngda Firma / Telefon / Obyekt / Muddat / Menejer, pastda QQS ustunli jadval. To'lov turi, bosh to'lov, nasos, ustuvorlik va yetkazish sanasi aniqmi — har biri o'z joyida kichik tugma. Nima yozilsa — chop etilganda aynan shunday chiqadi.", for: ["Sotuv bo'limi: mijoz bilan yuzma-yuz yoki telefonda", "Tijorat taklifi bilan ishlashga o'rgangan xodimlar", "Mijozga darhol PDF/qog'oz berish kerak bo'lganda"], plus: ["Excel blankasi bilan bir xil — o'rganish shart emas", "QQS, QQS bilan narx va jami jadvalning o'zida hisoblanadi", "Dastavka jadvalda alohida qator: reys soni × narx, QQS bilan — jamiga qo'shiladi"], minus: ["Jadval keng — telefonda yon tomonga suriladi", "Shartnoma fayli blankaga sig'maydi — saqlash yonida ochiladi"] },
+    5: { name: "Kalendar-yuk", lead: "Avval kun tanlanadi: har kunda zavod yuklamasi (band m³ / imkoniyat). To'lib qolgan kunga zayavka qo'yishdan oldin ogohlantiradi. Keyin ixcham forma.", for: ["Mavsum cho'qqisi, kuniga 20+ zayavka", "Ishlab chiqarish bilan kelishib ishlash", "Nasos va mikser yetishmaydigan kunlar"], plus: ["Ortiqcha yuklangan kun darhol ko'rinadi", "Mijozga bo'sh kunni taklif qilish oson", "Mavjud yuk kalendari (load-calendar) qayta ishlatiladi"], minus: ["Sana aniq bo'lmagan zayavkada bir qadam ortiqcha", "Imkoniyat (m³/kun) sozlamasi kerak"] }
+  };
+
+  function shell(n, bodyHtml) {
+    var m = META[n];
+    return '<div class="phead"><div><div class="eyebrow">Shablon ' + n + ' / 6</div><h2>' + m.name + '</h2><p>' + m.lead + '</p></div></div>' +
+      '<div class="stage"><div class="stage-bar"><b>Insof ERP</b><span>/ Zayavkalar / Yangi zayavka</span><span class="crumb badge info">Misol ma\'lumot</span></div><div class="stage-body" id="body">' + bodyHtml + '</div></div>' +
+      '<div class="facts"><div class="fact"><h3>Kimga mos</h3><ul>' + m.for.map(function (x) { return "<li>" + x + "</li>"; }).join("") + '</ul></div>' +
+      '<div class="fact"><h3>Afzalligi</h3><ul>' + m.plus.map(function (x) { return "<li>" + x + "</li>"; }).join("") + '</ul></div>' +
+      '<div class="fact"><h3>E\'tibor bering</h3><ul>' + m.minus.map(function (x) { return "<li>" + x + "</li>"; }).join("") + '</ul></div></div>';
+  }
+
+  // ── 1. Qadamma-qadam ──
+  function t1() {
+    var st = S[1], names = ["Mijoz", "Mahsulot", "Yetkazish", "To'lov"];
+    var base = PRICE * QTY, total = base + feeOf(st);
+    var steps = '<div class="steps">' + names.map(function (nm, i) {
+      var k = i + 1, cls = k < st.step ? "done" : k === st.step ? "cur" : "";
+      return '<button class="step ' + cls + '" data-s="' + k + '" type="button"><span class="bar"></span><span class="nm">' + k + '. ' + nm + '</span></button>';
+    }).join("") + '</div>';
+    var c = "";
+    if (st.step === 1) c = '<div class="row g2"><div><label class="lbl" for="w-c">Mijoz</label><input class="inp" id="w-c" value="Qurilish Invest MChJ"></div><div><label class="lbl">Ishonch</label><div style="display:flex;gap:8px;align-items:center;height:40px"><span class="badge ok"><svg class="ico"><use href="#i-check"/></svg> Limit bor</span><span class="hint">bo\'sh 42 000 000 so\'m</span></div></div></div>';
+    if (st.step === 2) c = '<div class="row g3"><div><label class="lbl" for="w-p">Mahsulot</label><input class="inp" id="w-p" value="M300 (B22.5) beton"></div><div><label class="lbl" for="w-q">Hajmi</label><div class="money"><input class="inp" id="w-q" value="12"><span>m³</span></div></div><div><label class="lbl" for="w-pr">Narx / m³</label><div class="money"><input class="inp" id="w-pr" value="' + fmt(PRICE) + '"><span>so\'m</span></div></div></div><p class="hint" style="margin-top:8px">Retsept bo\'yicha xomashyodan 46 m³ chiqadi — yetadi.</p>';
+    if (st.step === 3) c = '<div class="row" style="gap:14px"><div><span class="lbl">Qachon</span><div class="chips">' + ["Bugun", "Ertaga", "Indinga", "Sana aniq emas"].map(function (d) { return '<button class="chip" type="button" data-d="' + d + '" aria-pressed="' + (st.date === d) + '">' + d + '</button>'; }).join("") + '</div></div>' +
+      '<div><label class="lbl" for="w-a">Obyekt manzili</label><input class="inp" id="w-a" value="Toshkent, Sergeli, Yangi Sergeli ko\'chasi 14"></div>' +
+      delivBlock("w", st) +
+      '<label class="switch"><input type="checkbox" id="w-pump" ' + (st.pump ? "checked" : "") + '><b>Nasos kerak</b></label></div>';
+    if (st.step === 4) c = '<div class="chips"><button class="chip" aria-pressed="true" type="button">Naqd</button><button class="chip" type="button" aria-pressed="false">Perechisleniye</button><button class="chip" type="button" aria-pressed="false">Qarzga</button></div><div class="sum" style="margin-top:14px;max-width:340px"><div><span>Mahsulot</span><b>' + fmt(base) + '</b></div>' + (st.deliv ? '<div><span>Dastavka</span><b>' + fmt(st.fee) + '</b></div>' : '') + '<div class="tot"><span>Jami</span><b>' + fmt(total) + ' so\'m</b></div></div>';
+    var foot = '<div class="wiz-foot"><div class="total">Jami' + (st.deliv ? ' (dastavka bilan)' : '') + '<b id="w-tot">' + fmt(total) + ' so\'m</b></div><div style="display:flex;gap:8px">' +
+      (st.step > 1 ? '<button class="btn ghost" type="button" id="w-back">Orqaga</button>' : '') +
+      '<button class="btn primary" type="button" id="w-next">' + (st.step < 4 ? 'Davom etish <svg class="ico"><use href="#i-arrow"/></svg>' : 'Saqlash (qoralama)') + '</button></div></div>';
+    render(1, steps + c + foot);
+    var body = document.getElementById("body");
+    body.querySelectorAll(".step").forEach(function (b) { b.addEventListener("click", function () { st.step = +b.dataset.s; t1(); }); });
+    body.querySelectorAll("[data-d]").forEach(function (b) { b.addEventListener("click", function () { st.date = b.dataset.d; t1(); }); });
+    var nx = document.getElementById("w-next"); nx.addEventListener("click", function () { if (st.step < 4) { st.step++; t1(); } });
+    var bk = document.getElementById("w-back"); if (bk) bk.addEventListener("click", function () { st.step--; t1(); });
+    var pm = document.getElementById("w-pump"); if (pm) pm.addEventListener("change", function () { st.pump = pm.checked; });
+    var re = function () { t1(); }; re.soft = function () { document.getElementById("w-tot").textContent = fmt(base + feeOf(st)) + " so'm"; };
+    bindDeliv("w", st, re);
+  }
+
+  // ── 2. Jonli chek ──
+  function t2() {
+    var st = S[2];
+    var base = PRICE * st.qty, nds = st.nds ? base * 0.12 : 0, fee = feeOf(st), total = base + nds + fee;
+    var av = Math.min(st.avans, total), left = Math.max(0, total - av);
+    var LIMIT = 60000000, USED = 18000000, usedPc = USED / LIMIT * 100, thisPc = Math.min(100 - usedPc, total / LIMIT * 100);
+    var form = '<div>' +
+      '<div class="sec"><h4><span class="n">1</span>Mijoz</h4><input class="inp" aria-label="Mijoz" value="Qurilish Invest MChJ · 998 90 123 45 67"></div>' +
+      '<div class="sec"><h4><span class="n">2</span>Mahsulot</h4><div class="row g3"><input class="inp" aria-label="Mahsulot" value="M300 (B22.5) beton"><div class="money"><input class="inp" id="c-q" aria-label="Hajmi" value="' + st.qty + '"><span>m³</span></div><div class="money"><input class="inp" aria-label="Narx" value="' + fmt(PRICE) + '"><span>so\'m</span></div></div>' +
+      '<label class="switch"><input type="checkbox" id="c-nds" ' + (st.nds ? "checked" : "") + '><b style="font-weight:500">NDS 12%</b></label></div>' +
+      '<div class="sec"><h4><span class="n">3</span>Yetkazish</h4><div class="row g2"><input class="inp" aria-label="Sana" value="25.10.2026"><input class="inp" aria-label="Manzil" value="Sergeli, Yangi Sergeli 14"></div>' + delivBlock("c", st) + '</div>' +
+      '<div class="sec"><h4><span class="n">4</span>To\'lov</h4><div class="chips">' + [["cash", "Naqd"], ["bank", "Perechisleniye"], ["credit", "Qarzga"]].map(function (p) { return '<button class="chip" type="button" data-p="' + p[0] + '" aria-pressed="' + (st.pay === p[0]) + '">' + p[1] + '</button>'; }).join("") + '</div>' +
+      '<div><label class="lbl" for="c-av">Bosh to\'lov (avans)</label><div class="money"><input class="inp" id="c-av" inputmode="numeric" value="' + fmt(st.avans) + '"><span>so\'m</span></div></div></div></div>';
+    var rc = '<aside class="receipt" aria-label="Zayavka hisobi"><div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--text-strong)">Zayavka hisobi</b><span class="no">Z-2026-01482</span></div>' +
+      '<div class="line"><span class="n">M300 beton<small>' + fmt(st.qty) + ' m³ × ' + fmt(PRICE) + '</small></span><span class="v">' + fmt(base) + '</span></div>' +
+      (st.nds ? '<div class="line"><span class="n">NDS 12%</span><span class="v">' + fmt(nds) + '</span></div>' : '') +
+      '<div class="line' + (st.deliv ? '' : ' off') + '"><span class="n">Dastavka<small>' + (st.deliv ? trips(st.qty) + ' reys · ' + KM + ' km' : 'mijoz o\'zi olib ketadi') + '</small></span><span class="v">' + fmt(st.deliv ? st.fee : 0) + '</span></div>' +
+      '<hr><div class="big"><span>Jami</span><b>' + fmt(total) + ' so\'m</b></div>' +
+      '<div class="sum"><div><span>Avans (kutilmoqda)</span><b style="color:var(--ok-fg)">' + fmt(av) + '</b></div><div><span>' + (st.pay === "credit" ? "Qarzga qoladi" : "Qoldiq") + '</span><b style="color:var(--warn-fg)">' + fmt(left) + '</b></div></div>' +
+      '<hr><div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span class="muted">Kredit limiti</span><span class="muted">' + fmt(USED + total) + ' / ' + fmt(LIMIT) + '</span></div>' +
+      '<div class="meter"><i style="width:' + usedPc + '%;background:var(--text-faint)"></i><i style="width:' + thisPc + '%;background:' + (USED + total > LIMIT * .8 ? 'var(--warn-solid)' : 'var(--ok-solid)') + '"></i></div>' +
+      '<div class="hint" style="margin-top:6px">Kulrang — mavjud qarz, rangli — shu zayavka</div></div>' +
+      '<button class="btn primary" type="button" style="justify-content:center">Saqlash (qoralama)</button></aside>';
+    render(2, '<div class="split">' + form + rc + '</div>');
+    var body = document.getElementById("body");
+    body.querySelectorAll("[data-p]").forEach(function (b) { b.addEventListener("click", function () { st.pay = b.dataset.p; t2(); }); });
+    document.getElementById("c-nds").addEventListener("change", function (e) { st.nds = e.target.checked; t2(); });
+    var q = document.getElementById("c-q"); q.addEventListener("change", function () { st.qty = Math.max(0.5, num(q.value)); t2(); });
+    var a = document.getElementById("c-av"); a.addEventListener("change", function () { st.avans = num(a.value); t2(); });
+    var re = function () { t2(); }; re.soft = null;
+    bindDeliv("c", st, re);
+    var fee = document.getElementById("c-fee"); if (fee) fee.addEventListener("change", function () { t2(); });
+  }
+
+  // ── 3. Takroriy zayavka ──
+  var PAST = [
+    { d: "21.10", p: "M300 beton", q: 12, a: "Sergeli, Yangi Sergeli 14", fee: 600000, pump: true },
+    { d: "14.10", p: "M250 beton", q: 8, a: "Sergeli, Yangi Sergeli 14", fee: 300000, pump: false },
+    { d: "02.10", p: "FBS 24-4-6 blok", q: 40, a: "Chilonzor, 9-kvartal", fee: 0, pump: false, self: true }
+  ];
+  function t3() {
+    var st = S[3], o = PAST[st.pick];
+    var unit = o.p.indexOf("blok") > -1 ? "dona" : "m³", price = unit === "dona" ? 410000 : PRICE;
+    var total = price * st.qty + feeOf(st);
+    var cards = '<div class="past">' + PAST.map(function (x, i) {
+      return '<button type="button" data-k="' + i + '" aria-pressed="' + (st.pick === i) + '"><span class="d"><span>' + x.d + '.2026</span><span>' + (x.self ? "o'zi oladi" : "dastavka " + fmt(x.fee)) + '</span></span><span class="p">' + x.p + ' · ' + x.q + ' ' + (x.p.indexOf("blok") > -1 ? "dona" : "m³") + '</span><span class="x">' + esc(x.a) + (x.pump ? " · nasos" : "") + '</span><span class="go"><svg class="ico"><use href="#i-repeat"/></svg> Takrorlash</span></button>';
+    }).join("") + '</div>';
+    var h = '<div class="cust"><div class="who"><span class="av">QI</span><span><b>Qurilish Invest MChJ</b><span class="hint">14 zayavka · oxirgisi 3 kun oldin · limit bo\'sh 42 mln</span></span></div><span class="badge ok"><svg class="ico" style="fill:currentColor"><use href="#i-star"/></svg> 5 / 5 ishonch</span></div>' +
+      '<div class="eyebrow" style="margin-top:16px">Oxirgi zayavkalar — bittasini tanlang</div>' + cards +
+      '<div class="quick"><div><label class="lbl">Mahsulot</label><input class="inp" value="' + o.p + '" aria-label="Mahsulot"></div><div><label class="lbl" for="r-q">Hajmi</label><input class="inp" id="r-q" value="' + st.qty + '"></div><div><label class="lbl">Sana</label><input class="inp" value="Ertaga, 25.10" aria-label="Sana"></div><div><label class="lbl">Manzil</label><input class="inp" value="' + esc(o.a) + '" aria-label="Manzil"></div></div>' +
+      '<div style="margin-top:12px">' + delivBlock("r", st, { extra: st.deliv && !o.self ? ' · <span>o\'tgan safar: <b>' + fmt(o.fee) + '</b></span>' : '' }) + '</div>' +
+      '<div class="quick-foot"><span class="hint">Narx bugungi narxlar ro\'yxatidan yangilandi: ' + fmt(price) + ' so\'m / ' + unit + '</span><div style="display:flex;gap:12px;align-items:center"><span>Jami <b style="font-size:18px;color:var(--text-strong)" id="r-tot">' + fmt(total) + ' so\'m</b></span><button class="btn primary" type="button">Saqlash</button></div></div>';
+    render(3, h);
+    document.querySelectorAll("[data-k]").forEach(function (b) { b.addEventListener("click", function () { var x = PAST[+b.dataset.k]; st.pick = +b.dataset.k; st.qty = x.q; st.deliv = !x.self; st.fee = x.fee || TRIP; t3(); }); });
+    var q = document.getElementById("r-q"); q.addEventListener("change", function () { st.qty = Math.max(1, num(q.value)); t3(); });
+    var re = function () { t3(); }; re.soft = function () { document.getElementById("r-tot").textContent = fmt(price * st.qty + feeOf(st)) + " so'm"; };
+    bindDeliv("r", st, re);
+  }
+
+  // ── 4. Gap shaklida ──
+  var PRODS = ["M300 beton", "M250 beton", "M350 beton"], PP = [720000, 680000, 760000];
+  var DAYS = ["bugun", "ertaga", "indinga"], PAYS = ["naqd", "perechisleniye", "qarzga"];
+  function t4() {
+    var st = S[4];
+    var total = PP[st.prod] * st.qty + feeOf(st);
+    var h = '<p class="madlib"><button class="tok" type="button" title="Mijozni almashtirish">Qurilish Invest</button> uchun ' +
+      '<button class="tok" type="button" id="m-qty" title="Bosing: +1 m³, Shift bilan −1">' + st.qty + ' m³</button> ' +
+      '<button class="tok" type="button" id="m-prod">' + PRODS[st.prod] + '</button>, ' +
+      '<button class="tok" type="button" id="m-day">' + st.day + '</button> ' +
+      '<button class="tok" type="button" title="Manzil">Sergeli, Yangi Sergeli 14</button> ga, ' +
+      (st.deliv
+        ? '<button class="tok fee" type="button" id="m-dv">dastavka bilan</button> — <input class="tok-in" id="m-fee" inputmode="numeric" aria-label="Dastavka summasi" value="' + fmt(st.fee) + '"> so\'m, '
+        : '<button class="tok" type="button" id="m-dv">mijoz o\'zi olib ketadi</button>, ') +
+      'to\'lov <button class="tok" type="button" id="m-pay">' + st.pay + '</button>.</p>' +
+      '<p class="hint">Rangli so\'zni bosing — keyingi variantga o\'tadi. Hajm: bosish +1, Shift bilan −1. «Dastavka bilan»ni bossangiz — o\'zi olib ketishga almashadi.</p>' +
+      '<div class="ml-foot"><span class="t">' + (st.deliv ? fmt(PP[st.prod] * st.qty) + ' + dastavka ' + fmt(st.fee) + ' =' : 'Jami') + '<b id="m-tot">' + fmt(total) + ' so\'m</b></span><div style="display:flex;gap:8px"><button class="btn ghost" type="button">Batafsil forma</button><button class="btn primary" type="button">Saqlash</button></div></div>';
+    render(4, h);
+    var cyc = function (arr, v) { return arr[(arr.indexOf(v) + 1) % arr.length]; };
+    document.getElementById("m-qty").addEventListener("click", function (e) { st.qty = Math.max(1, st.qty + (e.shiftKey ? -1 : 1)); t4(); document.getElementById("m-qty").focus(); });
+    document.getElementById("m-prod").addEventListener("click", function () { st.prod = (st.prod + 1) % PRODS.length; t4(); document.getElementById("m-prod").focus(); });
+    document.getElementById("m-day").addEventListener("click", function () { st.day = cyc(DAYS, st.day); t4(); document.getElementById("m-day").focus(); });
+    document.getElementById("m-pay").addEventListener("click", function () { st.pay = cyc(PAYS, st.pay); t4(); document.getElementById("m-pay").focus(); });
+    document.getElementById("m-dv").addEventListener("click", function () { st.deliv = !st.deliv; t4(); document.getElementById("m-dv").focus(); });
+    var f = document.getElementById("m-fee");
+    if (f) { f.addEventListener("input", function () { st.fee = num(f.value); document.getElementById("m-tot").textContent = fmt(PP[st.prod] * st.qty + st.fee) + " so'm"; }); f.addEventListener("change", function () { t4(); }); }
+  }
+
+  // ── 5. Kalendar-yuk ──
+  var CAP = 300;
+  var LOAD = [["Shan", 24, 180], ["Yak", 25, 40], ["Dush", 26, 210], ["Sesh", 27, 292], ["Chor", 28, 150], ["Pay", 29, 260], ["Jum", 30, 90]];
+  function t5() {
+    var st = S[5], L = LOAD[st.day], after = L[2] + st.qty, over = after > CAP;
+    var total = PRICE * st.qty + feeOf(st);
+    var days = '<div class="days">' + LOAD.map(function (d, i) {
+      var pc = Math.min(100, d[2] / CAP * 100), col = pc >= 90 ? "var(--bad-solid)" : pc >= 70 ? "var(--warn-solid)" : "var(--ok-solid)";
+      return '<button class="day" type="button" data-y="' + i + '" aria-pressed="' + (st.day === i) + '"><span class="w">' + d[0] + '</span><span class="dn">' + d[1] + ' okt</span><span class="meter"><i style="width:' + pc + '%;background:' + col + '"></i></span><span class="m">' + d[2] + ' / ' + CAP + ' m³</span></button>';
+    }).join("") + '</div><div class="legend"><span><i style="background:var(--ok-solid)"></i>bo\'sh</span><span><i style="background:var(--warn-solid)"></i>70%+ band</span><span><i style="background:var(--bad-solid)"></i>90%+ — to\'lgan</span></div>';
+    var al = over
+      ? '<div class="alert warn"><svg class="ico"><use href="#i-alert"/></svg><span>' + L[1] + ' oktabrga ' + st.qty + ' m³ qo\'shilsa ' + after + ' / ' + CAP + ' m³ bo\'ladi — imkoniyatdan oshadi. Mijozga 25 yoki 30 oktabrni taklif qiling.</span></div>'
+      : '<div class="alert ok"><svg class="ico"><use href="#i-check"/></svg><span>' + L[1] + ' oktabr: zayavkadan keyin ' + after + ' / ' + CAP + ' m³ — sig\'adi.</span></div>';
+    var form = '<div class="row g3" style="margin-top:16px"><div><label class="lbl">Mijoz</label><input class="inp" aria-label="Mijoz" value="Qurilish Invest MChJ"></div><div><label class="lbl">Mahsulot</label><input class="inp" aria-label="Mahsulot" value="M300 beton"></div><div><label class="lbl" for="k-q">Hajmi, m³</label><input class="inp" id="k-q" value="' + st.qty + '"></div></div>' +
+      '<div style="margin-top:12px">' + delivBlock("k", st) + '</div>' +
+      '<div class="ml-foot"><span class="t">Jami<b id="k-tot">' + fmt(total) + ' so\'m</b></span><button class="btn primary" type="button">Saqlash · ' + L[1] + ' okt</button></div>';
+    render(5, days + '<div style="margin-top:14px">' + al + '</div>' + form);
+    document.querySelectorAll("[data-y]").forEach(function (b) { b.addEventListener("click", function () { st.day = +b.dataset.y; t5(); }); });
+    var q = document.getElementById("k-q"); q.addEventListener("change", function () { st.qty = Math.max(1, num(q.value)); t5(); });
+    var re = function () { t5(); }; re.soft = function () { document.getElementById("k-tot").textContent = fmt(PRICE * st.qty + feeOf(st)) + " so'm"; };
+    bindDeliv("k", st, re);
+  }
+
+  // ── 6. Hujjat ko'rinishi ──
+  var ART = '<svg viewBox="0 0 470 210" role="img" aria-label="Kran va binolar"><g stroke="#25236b" fill="none"><line x1="10" y1="48" x2="225" y2="10" stroke-width="3"/><line x1="10" y1="62" x2="225" y2="24" stroke-width="3"/><polyline stroke-width="1.6" points="10,48 27,59 44,42 61,53 78,36 95,47 112,30 129,41 146,24 163,35 180,18 197,29 214,12"/><path d="M70 48 L78 18 L86 44" stroke-width="2.5"/></g><rect x="70" y="48" width="4" height="152" fill="#25236b"/><rect x="82" y="44" width="4" height="156" fill="#25236b"/><rect x="150" y="120" width="34" height="80" fill="#25236b"/><rect x="196" y="70" width="40" height="130" fill="#8ec5ec"/><rect x="246" y="20" width="22" height="180" fill="#25236b"/><rect x="278" y="70" width="40" height="130" fill="#8ec5ec"/><rect x="328" y="110" width="34" height="90" fill="#25236b"/><rect x="372" y="140" width="24" height="60" fill="#25236b"/><rect x="40" y="198" width="400" height="6" fill="#25236b"/></svg>';
+  // Xarita namunasi: haqiqiy sahifada OpenStreetMap (hozirgi AddressPicker) turadi
+  var PLACES = [
+    { x: 128, y: 78, n: "Mixaylovka qishlog'i, Bog'bon ko'chasi" },
+    { x: 300, y: 58, n: "Yangiyo'l sh., Samarqand ko'chasi 14" },
+    { x: 230, y: 150, n: "Yangiyo'l t., Gulbahor MFY" },
+    { x: 470, y: 112, n: "Zangiota t., Eshonguzar" },
+    { x: 575, y: 40, n: "Toshkent sh., Chilonzor 19-kvartal" },
+    { x: 60, y: 160, n: "Yangiyo'l t., Qirsadoq mahallasi" }
+  ];
+  var PLANT = { x: 380, y: 150 };
+  function mapHtml(st) {
+    var km = Math.round(Math.hypot(st.pin.x - PLANT.x, st.pin.y - PLANT.y) * 0.08 * 10) / 10;
+    var bar = '<div class="mapbar"><span>Obyekt: <b>' + esc(st.addr || "tanlanmagan") + '</b>' + (st.onote ? ' (' + esc(st.onote) + ')' : '') + ' · zavoddan ~' + km + ' km</span><button type="button" id="d-map">' + (st.mapOpen ? "Xaritani yig\'ish" : "Xaritani ochish") + '</button></div>';
+    if (!st.mapOpen) return '<div class="mapbox">' + bar + '</div>';
+    var svg = '<svg id="d-svg" viewBox="0 0 640 190" role="img" aria-label="Xarita: obyekt nuqtasini tanlash uchun bosing">' +
+      '<path d="M0 120 C120 100 200 135 320 112 S520 90 640 104" stroke="#9cc7e8" stroke-width="10" fill="none"/>' +
+      '<g stroke="#ffffff" stroke-width="6" fill="none"><path d="M0 70 L640 46"/><path d="M40 190 L210 0"/><path d="M300 190 L340 0"/><path d="M420 190 L610 0"/><path d="M0 165 L640 140"/></g>' +
+      '<g stroke="#d9dccf" stroke-width="1"><path d="M0 70 L640 46"/><path d="M0 165 L640 140"/></g>' +
+      '<rect x="' + (PLANT.x - 7) + '" y="' + (PLANT.y - 7) + '" width="14" height="14" fill="#25236b" rx="2"/><text x="' + (PLANT.x + 11) + '" y="' + (PLANT.y + 4) + '" font-size="11" fill="#25236b" font-family="sans-serif" font-weight="700">INSOF zavodi</text>' +
+      PLACES.map(function (p) { return '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="#64748b"/><text x="' + (p.x + 6) + '" y="' + (p.y - 5) + '" font-size="10" fill="#475569" font-family="sans-serif">' + esc(p.n.split(",")[0]) + '</text>'; }).join("") +
+      '<line x1="' + PLANT.x + '" y1="' + PLANT.y + '" x2="' + st.pin.x + '" y2="' + st.pin.y + '" stroke="#2f6fc9" stroke-width="1.5" stroke-dasharray="4 3"/>' +
+      '<g transform="translate(' + st.pin.x + ' ' + st.pin.y + ')"><path d="M0 0 C-9 -12 -9 -24 0 -24 C9 -24 9 -12 0 0Z" fill="#c10007"/><circle cy="-16" r="3.5" fill="#fff"/></g></svg>';
+    return '<div class="mapbox">' + bar + svg + '</div>';
+  }
+  function bindMap(st) {
+    var mb = document.getElementById("d-map"); if (mb) mb.addEventListener("click", function () { st.mapOpen = !st.mapOpen; t6(); document.getElementById("d-map").focus(); });
+    var svg = document.getElementById("d-svg");
+    if (svg) svg.addEventListener("click", function (e) {
+      var b = svg.getBoundingClientRect(), x = (e.clientX - b.left) / b.width * 640, y = (e.clientY - b.top) / b.height * 190;
+      st.pin = { x: Math.round(x), y: Math.round(y) };
+      var best = PLACES[0], bd = Infinity;
+      PLACES.forEach(function (p) { var d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = p; } });
+      st.addr = best.n; t6();
+    });
+    var o = document.getElementById("d-o"); if (o) o.addEventListener("change", function () { st.addr = o.value; t6(); });
+    var on = document.getElementById("d-on"); if (on) on.addEventListener("change", function () { st.onote = on.value; t6(); });
+  }
+  // Mijoz tanlangach — hozirgi formadagi ma'lumot kartochkasi (namuna)
+  var CUST = [
+    { n: "Xurshid", ph: "99 494 76 76", bought: 308000000, orders: 1, paid: 0, used: 308000000, free: 192, limit: 500, last: "20/10/2026", ago: "3 kun oldin", ad: "Yangiyo'l" },
+    { n: "Qurilish Invest MChJ", ph: "90 123 45 67", bought: 1240000000, orders: 14, paid: 1100000000, used: 140000000, free: 160, limit: 300, last: "21/10/2026", ago: "3 kun oldin", ad: "Sergeli, Yangi Sergeli 14" },
+    { n: "Akmal Rahimov", ph: "93 578 06 09", bought: 45000000, orders: 3, paid: 45000000, used: 0, free: 0, limit: 0, last: "02/07/2026", ago: "3 oy oldin", ad: "Zangiota, Eshonguzar" }
+  ];
+  function custCard(st) {
+    if (st.cust == null) return st.custText ? '<div class="ccard new">Yangi mijoz — zayavka bilan birga saqlanadi.</div>' : '';
+    var c = CUST[st.cust], pc = c.bought ? Math.round(Math.min(100, c.paid / c.bought * 100)) : 0;
+    return '<div class="ccard"><div class="g">' +
+      '<div><div class="k">Bizdan olgan mahsuloti</div><div class="v">' + fmt(c.bought) + ' so\'m</div><div class="s">' + c.orders + ' ta zayavka</div></div>' +
+      '<div><div class="k">To\'lagan</div><div class="v ok">' + fmt(c.paid) + ' so\'m</div><div class="s">xaridning ' + pc + '%</div></div>' +
+      '<div><div class="k">Qarz (qarz + ochiq)</div><div class="v' + (c.used > 0 ? ' warn' : '') + '">' + fmt(c.used) + ' so\'m</div><div class="s' + (c.free <= 0 && c.limit > 0 ? ' bad' : '') + '">bo\'sh limit ' + c.free + ' / ' + c.limit + ' mln</div></div>' +
+      '<div><div class="k">So\'nggi zayavka</div><div class="v">' + c.last + '</div><div class="s">' + c.ago + '</div></div>' +
+      '</div><div class="ad">Manzil: <b>' + esc(c.ad) + '</b></div></div>';
+  }
+  function t6() {
+    var st = S[6];
+    var noVat = st.pay === "cash" || (st.pay === "credit" && !st.cvat), span = noVat ? 5 : 7;
+    var line = function (q, p, v) { v = v && !noVat; var sm = (Number(q) || 0) * (Number(p) || 0), vat = v ? Math.round(sm * 0.12) : 0; return { s: sm, vat: vat, t: sm + vat }; };
+    var lines = st.rows.map(function (r) { return line(r.q, r.p, r.v); });
+    var fl = st.deliv ? line(st.fq, st.fp, st.fv) : { s: 0, vat: 0, t: 0 };
+    var qty = st.rows.reduce(function (a, r) { return a + (Number(r.q) || 0); }, 0);
+    var sum = lines.reduce(function (a, l) { return a + l.t; }, 0), fee = fl.t, total = sum + fee, adv = st.dep ? Math.min(st.avans, total) : 0, rest = Math.max(0, total - adv);
+    var seg = function (key, opts, cls) { return '<span class="seg' + (cls ? ' ' + cls : '') + '">' + opts.map(function (o) { return '<button type="button" data-k="' + key + '" data-val="' + o[0] + '" aria-pressed="' + (String(st[key]) === String(o[0])) + '"' + (o[2] ? ' class="' + o[2] + '"' : '') + '>' + o[1] + '</button>'; }).join("") + '</span>'; };
+    var body = st.rows.map(function (r, i) {
+      var l = lines[i];
+      return '<tr><td class="c">' + (i + 1) + '</td><td><input class="l" data-r="' + i + '" data-f="n" value="' + esc(r.n) + '" aria-label="Mahsulot nomi"></td><td class="c">' + r.u + '</td>' +
+        '<td class="n"><input data-r="' + i + '" data-f="q" inputmode="numeric" value="' + r.q + '" aria-label="Soni"></td>' +
+        '<td class="n"><input data-r="' + i + '" data-f="p" inputmode="numeric" value="' + fmt(r.p) + '" aria-label="Narxi"></td>' +
+        '<td class="n">' + fmt(l.s) + '</td>' +
+        (noVat ? '' : '<td class="n"><button type="button" class="vat' + (r.v ? '' : ' off') + '" data-v="' + i + '" title="QQS 12% qo\'shish / olib tashlash">' + (r.v ? fmt(l.vat) : 'QQSsiz') + '</button></td>' +
+        '<td class="n">' + fmt(l.t) + '</td>') + '</tr>';
+    }).join("");
+    var h = '<div class="paper">' +
+      '<div class="brand"><b>INSOF</b><span>Temir-Beton Mahsulotlari</span></div>' +
+      '<div class="req">' + ART + '<div class="lines">Toshkent viloyati, Yangiyo\'l tumani<br>Eski Qovunchi MFY, Qirsadoq mahallasi<br>H/r № 2020 8000 8005 2907 6008<br>ATIB «Ipoteka Bank» Zangiota filiali<br>MFO: 01130 · INN: 200 588 569 · OKED: 23610<br>QQS ro\'yxat № 327150004640<br>Telefon: (+99897) 883-60-00</div></div>' +
+      '<p class="intro">Kompaniyamiz taklif qilayotgan mahsulotlar sifati standartlarga muvofiq dastlabki sertifikatlashdan o\'tgan. Biz uchun har bir mijoz muhim — inshootingiz mustahkam va ishonchli bo\'ladi.</p>' +
+      '<div class="meta"><div><h3>Zayavka</h3><div class="dt">№ saqlanganda beriladi · 24.10.2026</div>' +
+        '<div class="flags"><span>Nasos ' + seg("pump", [[true, "Kerak"], [false, "Yo\'q"]]) + '</span><span>Ustuvorlik ' + seg("urgent", [[true, "Zarur", "hot"], [false, "Oddiy"]], "warn") + '</span></div></div>' +
+      '<div class="cl"><label for="d-f">' + (st.pay === "cash" ? "Mijoz ismi:" : "Firma:") + '</label><input class="ul" id="d-f" list="d-cl" autocomplete="off" placeholder="mijozni qidiring" value="' + esc(st.cust != null ? CUST[st.cust].n : (st.custText || "")) + '"><datalist id="d-cl">' + CUST.map(function (c) { return '<option value="' + esc(c.n) + '"></option>'; }).join("") + '</datalist><label for="d-t">Telefon:</label><input class="ul" id="d-t" value="' + esc(st.cust != null ? CUST[st.cust].ph : "") + '"><label for="d-o">Obyekt:</label><div class="obj"><input class="ul" id="d-o" value="' + esc(st.addr) + '" placeholder="xaritadan tanlang"><span class="paren">(<input class="ul" id="d-on" value="' + esc(st.onote) + '" placeholder="izoh: mo\'ljal, darvoza, qavat…" aria-label="Obyekt izohi">)</span></div><label for="d-s">Yetkazish sanasi:</label><div class="mrow">' + (st.dateKnown ? '<input class="ul" id="d-s" type="date" value="' + st.date + '">' : '<span class="soft">kelishilmoqda</span>') + seg("dateKnown", [[true, "Aniq"], [false, "Aniq emas"]]) + '</div><label for="d-m">Menejer:</label><input class="ul" id="d-m" value="Sardor Mirzakarimov"></div></div>' +
+      custCard(st) +
+      mapHtml(st) +
+      '<div class="tw"><table><thead><tr><th style="width:34px">№</th><th>Mahsulot nomi, turi</th><th style="width:70px">O\'lchov birligi</th><th style="width:60px">Soni</th><th style="width:100px">Narxi</th><th style="width:110px">Summa</th>' + (noVat ? '' : '<th style="width:100px">QQS 12%</th><th style="width:120px">Umumiy summa QQS bilan</th>') + '</tr></thead><tbody>' + body +
+      (st.deliv
+        ? '<tr class="fee"><td class="c">' + (st.rows.length + 1) + '</td><td><label class="chk"><input type="checkbox" id="d-dv" checked> Dastavka</label></td><td class="c">reys</td>' +
+          '<td class="n"><input id="d-fq" inputmode="numeric" value="' + st.fq + '" aria-label="Reyslar soni"></td>' +
+          '<td class="n"><input id="d-fp" inputmode="numeric" value="' + fmt(st.fp) + '" aria-label="Bitta reys narxi"></td>' +
+          '<td class="n">' + fmt(fl.s) + '</td>' +
+          (noVat ? '' : '<td class="n"><button type="button" class="vat' + (st.fv ? '' : ' off') + '" id="d-fv" title="QQS 12% qo\'shish / olib tashlash">' + (st.fv ? fmt(fl.vat) : 'QQSsiz') + '</button></td>' +
+          '<td class="n">' + fmt(fl.t) + '</td>') + '</tr>'
+        : '<tr class="fee off"><td class="c">' + (st.rows.length + 1) + '</td><td colspan="' + span + '"><label class="chk"><input type="checkbox" id="d-dv"> Dastavka kerak <small>— belgilanmagan: mijoz o\'zi olib ketadi</small></label></td></tr>') +
+      '<tr><td class="c">' + (st.rows.length + 2) + '</td><td colspan="' + span + '"><button type="button" class="addrow" id="d-add">+ mahsulot qo\'shish</button></td></tr>' +
+      '<tr class="tot"><td></td><td></td><td class="c">Jami</td><td class="n">' + qty + '</td><td></td><td class="n">' + fmt(lines.reduce(function (a, l) { return a + l.s; }, 0) + fl.s) + '</td>' + (noVat ? '' : '<td class="n">' + fmt(lines.reduce(function (a, l) { return a + l.vat; }, 0) + fl.vat) + '</td><td class="n">' + fmt(total) + '</td>') + '</tr>' +
+      '</tbody></table></div>' +
+      '<div class="pfoot"><div><span class="lbl2">To\'lov</span>' + seg("pay", [["cash", "Naqd"], ["bank", "Perechisleniye"], ["credit", "Qarzga"]]) +
+        (st.pay === "credit" ? ' <span class="seg"><button type="button" id="d-cvat" aria-pressed="' + st.cvat + '" title="Qarzga zayavkaga QQS qo\'shish / olib tashlash">QQS 12%</button></span>' : '') +
+        '<div class="note">' + (st.pay === "cash" ? "Naqd to\'lovda QQS hisoblanmaydi — QQS ustunlari olib tashlandi." : st.pay === "bank" ? "Perechisleniyeda barcha qatorlarga QQS 12% qo\'shildi." : (st.cvat ? "Qarzga, QQS 12% bilan. Kafolat xati chiqadi, mijoz imzolaydi." : "Qarzga, QQSsiz. QQS kerak bo\'lsa «QQS 12%» tugmasini bosing. Kafolat xati chiqadi.")) + '</div></div>' +
+        '<div class="sumbox"><span>Bosh to\'lov</span><span class="r">' + seg("dep", [[false, "Yo\'q"], [true, "Bor"]]) + '</span>' +
+        (st.dep ? '<span>Summasi</span><input id="d-av" inputmode="numeric" placeholder="0" value="' + (st.avans ? fmt(st.avans) : '') + '" aria-label="Bosh to\'lov summasi"><div class="pct"><button type="button" data-pc="30">30%</button><button type="button" data-pc="50">50%</button><button type="button" data-pc="100">100%</button></div>' : '') +
+        '<span class="big">' + (st.pay === "credit" ? "Qarzga qoladi" : "Qoldiq") + '</span><b class="big">' + fmt(rest) + '</b></div></div>' +
+      '</div>' +
+      '<div class="doc-actions"><span class="hint">Shartnoma va izoh — saqlash tugmasi yonida, kerak bo\'lganda ochiladi.</span><div style="display:flex;gap:8px"><button class="btn ghost" type="button">Chop etish ko\'rinishi</button><button class="btn primary" type="button">Saqlash (qoralama)</button></div></div>';
+    render(6, h);
+    var b = document.getElementById("body");
+    b.querySelectorAll("input[data-r]").forEach(function (inp) {
+      inp.addEventListener("change", function () { var r = st.rows[+inp.dataset.r], f = inp.dataset.f; if (f === "n") r.n = inp.value; else r[f] = Math.max(0, num(inp.value)); t6(); });
+    });
+    b.querySelectorAll("[data-v]").forEach(function (x) { x.addEventListener("click", function () { var r = st.rows[+x.dataset.v]; r.v = !r.v; t6(); }); });
+    document.getElementById("d-add").addEventListener("click", function () { st.rows.push({ n: "2ПК 42-12-8 A400", u: "dona", q: 1, p: 1050000, v: true }); t6(); });
+    document.getElementById("d-dv").addEventListener("change", function (e) { st.deliv = e.target.checked; t6(); document.getElementById("d-dv").focus(); });
+    var fq = document.getElementById("d-fq"); if (fq) fq.addEventListener("change", function () { st.fq = Math.max(0, num(fq.value)); t6(); });
+    var fp = document.getElementById("d-fp"); if (fp) fp.addEventListener("change", function () { st.fp = Math.max(0, num(fp.value)); t6(); });
+    bindMap(st);
+    var cf = document.getElementById("d-f"); if (cf) cf.addEventListener("change", function () {
+      var v = cf.value.trim(), i = CUST.findIndex(function (c) { return c.n.toLowerCase() === v.toLowerCase(); });
+      st.cust = i >= 0 ? i : null; st.custText = v; t6();
+    });
+    var cv = document.getElementById("d-cvat"); if (cv) cv.addEventListener("click", function () { st.cvat = !st.cvat; st.rows.forEach(function (r) { r.v = st.cvat; }); st.fv = st.cvat; t6(); var n = document.getElementById("d-cvat"); if (n) n.focus(); });
+    var fv = document.getElementById("d-fv"); if (fv) fv.addEventListener("click", function () { st.fv = !st.fv; t6(); });
+    var av = document.getElementById("d-av"); if (av) av.addEventListener("change", function () { st.avans = num(av.value); t6(); });
+    var ds = document.getElementById("d-s"); if (ds) ds.addEventListener("change", function () { st.date = ds.value; });
+    b.querySelectorAll("[data-pc]").forEach(function (x) { x.addEventListener("click", function () { st.avans = Math.round(total * +x.dataset.pc / 100); t6(); }); });
+    b.querySelectorAll(".seg [data-k]").forEach(function (x) { x.addEventListener("click", function () {
+      var k = x.dataset.k, v = x.dataset.val, val = v === "true" ? true : v === "false" ? false : v;
+      st[k] = val;
+      // To'lov turi: perechisleniyeda QQS hammaga, naqdda olib tashlanadi (haqiqiy formadagidek), qarzga — o'zgarmaydi
+      if (k === "pay") { var on = val === "bank"; if (val === "credit") st.cvat = false; st.rows.forEach(function (r) { r.v = on; }); st.fv = on; }
+      t6();
+      var again = document.querySelector('.seg [data-k="' + k + '"][data-val="' + v + '"]'); if (again) again.focus();
+    }); });
+  }
+
+  var cur = 1, R = { 1: t1, 2: t2, 3: t3, 4: t4, 5: t5, 6: t6 };
+  function render(n, html) {
+    if (panel.dataset.n === String(n) && document.getElementById("body")) { document.getElementById("body").innerHTML = html; return; }
+    panel.innerHTML = shell(n, html); panel.dataset.n = String(n);
+  }
+  function show(n) {
+    cur = n;
+    document.querySelectorAll("nav.list button").forEach(function (b) { b.setAttribute("aria-selected", String(+b.dataset.t === n)); });
+    panel.setAttribute("aria-labelledby", "tab-" + n);
+    panel.dataset.n = ""; R[n]();
+    try { localStorage.setItem("zayavka-tpl", String(n)); } catch (e) {}
+  }
+  document.querySelectorAll("nav.list button").forEach(function (b) { b.addEventListener("click", function () { show(+b.dataset.t); }); });
+  var start = 6;
+  var h = (location.hash || "").replace("#", ""); if (/^t[1-6]$/.test(h)) start = +h[1];
+
+  show(start);
+})();
+</script>
