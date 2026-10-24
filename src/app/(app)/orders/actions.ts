@@ -44,6 +44,8 @@ const schema = z.object({
   note: zOpt,
   // Obyekt manzili yonidagi qavs ichidagi izoh (mo'ljal, darvoza…) — zayavka izohining boshiga yoziladi
   addressNote: zOpt,
+  // Firma zayavkasida mas'ul shaxs ismi (Firma qatori ostida) — izohning boshiga yoziladi
+  contactName: zOpt,
   amoDealId: zOpt,
   productId: z.array(z.string()).min(1, "Kamida bitta mahsulot"),
   qtyM3: z.array(z.coerce.number({ message: "Miqdor raqam bo'lsin" }).positive("Miqdor 0 dan katta bo'lsin").max(100_000, "Miqdor juda katta (100 000 dan oshmasin)")),
@@ -107,7 +109,7 @@ export async function createOrder(_prev: ActionState, fd: FormData): Promise<Act
         prepay: d.prepayAmount > 0 ? { amount: d.prepayAmount } : undefined,
         payMethod: d.payMethod,
         contractAmount,
-        note: [d.addressNote && `Obyekt: ${d.addressNote}`, d.note].filter(Boolean).join("\n") || undefined,
+        note: [d.contactName && `Mas'ul shaxs: ${d.contactName}`, d.addressNote && `Obyekt: ${d.addressNote}`, d.note].filter(Boolean).join("\n") || undefined,
         // Kelishuvda mijoz bo'lmasa (webhook usuli) — yangi mijoz bilan ham bog'lanadi; boshqa mijoz bo'lsa linkOrderTx rad etadi
         amoDealId: d.amoDealId ?? null,
       },

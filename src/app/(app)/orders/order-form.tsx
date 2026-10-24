@@ -277,7 +277,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         {docHeader}
 
         {/* ── Sarlavha va mijoz bloki ── */}
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:items-start">
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-start">
           <div>
             <div className="font-serif text-base font-bold italic text-slate-900">Zayavka</div>
             <div className="font-serif text-[13px] font-bold italic text-slate-700">№ saqlanganda beriladi · {fmtDate(new Date())}</div>
@@ -287,7 +287,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+          <div className="grid w-full max-w-[460px] grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center lg:justify-self-end">
             <span className={lbl}>{kind === "cash" ? "Mijoz ismi:" : "Firma:"}</span>
             <div className="min-w-0">
               <div className="mb-1 flex justify-end gap-3 text-[11px] font-medium">
@@ -304,6 +304,11 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                 <Input name="newName" placeholder={kind === "cash" ? "Mijozning ismi" : "Firma nomi"} required aria-label="Yangi mijoz nomi" />
               )}
             </div>
+
+            {kind !== "cash" && (<>
+              <span className={lbl}>Ism:</span>
+              <Input name="contactName" placeholder="Mas'ul shaxs ismi" aria-label="Mas'ul shaxs ismi" className="h-9" />
+            </>)}
 
             <span className={lbl}>Telefon:</span>
             {mode === "existing"
