@@ -21,7 +21,7 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
   if (!canDo(s, "stock", "issue")) redirect("/stock/rasxod");
   const sp = await searchParams;
 
-  const [warehouses, targets, hints, materials, groups, sums, avg, holdings] = await Promise.all([
+  const [warehouses, allTargets, hints, materials, groups, sums, avg, holdings] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }], select: { id: true, name: true } }),
     issueTargetOptions(),
     issueHints(),
@@ -46,6 +46,8 @@ export default async function NewRasxodPage({ searchParams }: { searchParams: Pr
     else if (x.type === "ISSUE" || x.type === "BRIGADE_ISSUE" || x.type === "BRIGADE_RETURN") f.issued = r3(f.issued - q);
   }
   for (const b of Object.values(balances)) for (const [id, q] of Object.entries(b)) if (Math.abs(q) < 0.0005) delete b[id];
+  // «Kimga» ro'yxatida xodimlar ko'rsatilmaydi — faqat brigadalar va oluvchilar (Tez tanlash va ?to=e: ham tushib qoladi)
+  const targets = { ...allTargets, employees: [] };
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const min = new Date(today); min.setDate(min.getDate() - ISSUE_BACK_DAYS);
   // ?to=b:<id> | e:<id> | r:<id> (oluvchi kartasidan «Shu oluvchiga chiqim») — faqat ro'yxatda bor bo'lsa
