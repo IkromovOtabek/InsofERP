@@ -91,7 +91,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   // Ta'minot zayavkalari: vebda ro'yxat sklad/snabjeniye/ishlab chiqarishga, hujjatning o'zi esa
   // zanjirdagi hammaga ochiq (`/taminot/[id]`). Ilovada ro'yxat ham zanjirdagi hammaga — sotuvchi
   // tasdiq kutayotganlarni, moliya pul kutayotganlarni shu yerdan ochadi (vebdagi tasdiq kartalari o'rnida).
-  supply: { title: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"] },
+  // Mexanik — o'zi yuborgan so'rov holatini kuzatadi (Nazorat ekranidagi «Snabjeniyega zayavka»)
+  supply: { title: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"] },
   receipts: { title: "Kirimlar", roles: ["PROCUREMENT", "WAREHOUSE", "SALES"] },
   suppliers: { title: "Yetkazuvchilar", roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"] },
   // Sklad jurnallari — vebdagi Sklad → «Kirim», «Chiqim», «Qoldiqlar» (foydalanuvchi Excel'idagi ustunlar bilan; `skladList`)
@@ -147,7 +148,7 @@ export const DETAIL_KEY: Record<string, string> = { sales: "orders", snabjeniye:
 /** Ta'minot ro'yxatida rol qaysi bosqichni birinchi ko'radi — vebdagi tasdiq kartalari bilan bir xil. */
 const SUPPLY_DEFAULT: Partial<Record<Role, string>> = {
   SALES: "PRICED", FINANCE: "APPROVED", ACCOUNTING: "APPROVED", CASHIER: "APPROVED",
-  PROCUREMENT: "NEW", WAREHOUSE: "open", PRODUCTION: "open",
+  PROCUREMENT: "NEW", WAREHOUSE: "open", PRODUCTION: "open", MECHANIC: "open",
 };
 
 const LEAD_LABEL: Record<LeadStatus, string> = { NEW: "Yangi", IN_PROGRESS: "Bog'lanildi", CONVERTED: "Mijoz bo'ldi", REJECTED: "Bekor" };

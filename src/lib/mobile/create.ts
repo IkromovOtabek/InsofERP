@@ -111,8 +111,9 @@ export const CREATE_ROLES: Record<string, { roles: Role[]; title: string; label:
   // AGENT ham zayavka ochadi, lekin faqat o'z mijoziga (ownership `mobileCreate` da tekshiriladi)
   orders: { roles: ["SALES", "AGENT"], title: "Yangi zayavka", label: "Zayavka ochish" },
   trips: { roles: ["LOGISTICS", "PRODUCTION"], title: "Yangi reys", label: "Reys ochish" },
-  // Ta'minot so'rovi — sklad kerakli mahsulotlar jadvalini tuzadi (veb `/stock/supply/new`)
-  supply: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], title: "Ta'minot so'rovi", label: "Ta'minot so'rash" },
+  // Ta'minot so'rovi — sklad kerakli mahsulotlar jadvalini tuzadi (veb `/stock/supply/new`); mexanik ham
+  // texnika uchun kerakli narsani snabjeniyega shu forma bilan so'raydi (bo'lim — «Texnika»)
+  supply: { roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"], title: "Ta'minot so'rovi", label: "Ta'minot so'rash" },
   // Buxgalteriya kabinetida Mijozlar bo'limi yo'q — mijozni Sotuv qo'shadi
   customers: { roles: ["SALES", "FINANCE"], title: "Yangi mijoz", label: "Mijoz qo'shish" },
   suppliers: { roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], title: "Yangi yetkazuvchi", label: "Yetkazuvchi qo'shish" },
@@ -540,7 +541,7 @@ async function supplyForm(user: MobileUser): Promise<CreateForm> {
     key: "supply", title: "Ta'minot so'rovi", submitLabel: "Snabjeniyega yuborish",
     fields: [
       { name: "warehouseId", label: "Sklad", type: "select", required: true, value: warehouses[0]?.id, options: warehouses.map((w) => ({ value: w.id, label: w.name })) },
-      { name: "department", label: "Bo'lim (kim so'rayapti)", type: "select", options: DEPARTMENTS.map((d) => ({ value: d, label: d })), value: user.role === "PRODUCTION" ? "Ishlab chiqarish" : user.role === "WAREHOUSE" ? "Sklad" : undefined },
+      { name: "department", label: "Bo'lim (kim so'rayapti)", type: "select", options: DEPARTMENTS.map((d) => ({ value: d, label: d })), value: user.role === "PRODUCTION" ? "Ishlab chiqarish" : user.role === "WAREHOUSE" ? "Sklad" : user.role === "MECHANIC" ? "Texnika" : undefined },
       { name: "priority", label: "Ustuvorlik", type: "select", required: true, value: "NORMAL", options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] })), hint: "Kritik — ishlab chiqarish to'xtab qolishi mumkin" },
       { name: "needBy", label: "Qachongacha kerak", type: "date" },
       {
