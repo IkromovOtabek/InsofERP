@@ -288,7 +288,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           </div>
 
           <div className="grid w-full max-w-[460px] grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center lg:justify-self-end">
-            <span className={lbl}>{kind === "cash" ? "Mijoz ismi:" : "Firma:"}</span>
+            <span className={lbl}>{kind === "cash" ? "Mijoz:" : "Firma:"}</span>
             <div className="min-w-0">
               <div className="mb-1 flex justify-end gap-3 text-[11px] font-medium">
                 <button type="button" onClick={() => setMode("existing")} className={cn("inline-flex items-center gap-1", mode === "existing" ? "text-slate-900 underline" : "text-slate-500 hover:text-slate-800")}><Users size={12} /> Mavjud mijoz</button>
@@ -301,13 +301,14 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
                   if (c?.blacklisted) { if (kind === "credit") pickPayment("cash"); setHasDeposit(true); }
                 }} />
               ) : (
-                <Input name="newName" placeholder={kind === "cash" ? "Mijozning ismi" : "Firma nomi"} required aria-label="Yangi mijoz nomi" />
+                <Input name="newName" placeholder={kind === "cash" ? "Mijoz nomi" : "Firma nomi"} required aria-label="Yangi mijoz nomi" />
               )}
             </div>
 
-            {kind !== "cash" && (<>
+            {/* Naqd to'lovda — kim olib ketishi / to'laydigan odamning ismi; perechisleniye va qarzga — firma, ism shart emas */}
+            {kind === "cash" && (<>
               <span className={lbl}>Ism:</span>
-              <Input name="contactName" placeholder="Mas'ul shaxs ismi" aria-label="Mas'ul shaxs ismi" className="h-9" />
+              <Input name="contactName" placeholder="Mijozning ismi" aria-label="Mijozning ismi" className="h-9" />
             </>)}
 
             <span className={lbl}>Telefon:</span>
