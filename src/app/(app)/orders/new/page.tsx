@@ -13,6 +13,40 @@ import { geoSearchEnabled } from "@/lib/geo";
 import { CONTRACT_ACCEPT } from "@/lib/uploads";
 import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
+import { getCompany } from "@/lib/company";
+import { OFFER_DEFAULT_INTRO } from "@/lib/offers";
+import { PrintHeaderArt, brandTitle } from "@/components/print-header-art";
+
+/** Blanka sarlavhasi — chop etiladigan zayavka (`orders/[id]/print`) bilan bir xil: nom, kran-bino rasmi, rekvizitlar. */
+async function DocHeader() {
+  const c = await getCompany();
+  const phones = [c.phone, c.phone2].filter(Boolean) as string[];
+  const intro = c.offerIntro ?? OFFER_DEFAULT_INTRO;
+  return (
+    <div>
+      <div className="text-center font-serif italic text-[#2f6fc9]">
+        <div className="text-[30px] font-bold leading-none tracking-wide">{brandTitle(c)}</div>
+        <div className="mt-1 text-[17px] font-semibold">Temir-beton mahsulotlari</div>
+      </div>
+      <div className="mt-2 grid grid-cols-1 items-center gap-4 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <PrintHeaderArt className="mx-auto h-auto w-full max-w-[300px]" />
+        <div className="text-center font-serif text-[13px] italic leading-relaxed text-slate-900">
+          {c.address && <div>{c.address}</div>}
+          {c.bankAccount && <div>H/r № {c.bankAccount}</div>}
+          {c.bankName && <div>{c.bankName}</div>}
+          <div className="flex flex-wrap justify-center gap-x-4">
+            {c.mfo && <span>MFO: {c.mfo}</span>}
+            {c.inn && <span>INN: {c.inn}</span>}
+            {c.oked && <span>OKED: {c.oked}</span>}
+          </div>
+          {c.vatRegNo && <div>QQS ro&apos;yxat № {c.vatRegNo}</div>}
+          {phones.map((ph) => <div key={ph}>Telefon: {ph}</div>)}
+        </div>
+      </div>
+      {intro && <p className="mx-auto mt-3 max-w-[70ch] border-t-2 border-slate-900 pt-2 text-center font-serif text-xs italic leading-relaxed text-slate-600">{intro}</p>}
+    </div>
+  );
+}
 
 /**
  * Yangi zayavka ikki xil bo'ladi:
@@ -83,17 +117,18 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
           ? "Mijoz uchun — sotuv zayavkasi; Sklad uchun — zaxiraga ishlab chiqarish. Saqlangandan keyin “Qabul qilish” bosiladi."
           : "Sklad zayavkasi: zaxiraga ishlab chiqarish. Saqlangandan keyin “Qabul qilish” bosiladi va ishlab chiqarishga tushadi."}
       />
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
-        <div className="xl:col-span-3">
+      {/* Blanka keng (QQS ustunli jadval) — to'liq kenglikda; sklad qoldig'i pastda */}
+      <div className="space-y-5">
+        <div>
           <NewOrderMode
             initial={tur === "sklad" || !canSale ? "stock" : "sale"}
             sale={canSale ? (
-              <OrderForm customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
+              <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
             ) : null}
             stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} /> : null}
           />
         </div>
-        <div className="xl:col-span-2">
+        <div>
           {/* Uzun jadval formani siqib qo'ymasligi uchun bo'limlar yig'iladi */}
           <StockSnapshotCard compact collapsible />
         </div>
