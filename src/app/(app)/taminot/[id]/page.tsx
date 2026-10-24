@@ -20,7 +20,7 @@ import { isoDate } from "@/lib/format";
  */
 export default async function SupplyRequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"]);
+  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER", "MECHANIC"]);
   const r = await supplyRequest(id);
   if (!r) notFound();
   // "O'zimiz" bo'lsa — o'z haydovchimiz va mashinasi tanlanadi (haydovchi lavozimlari otdel kadrdan)
@@ -71,7 +71,8 @@ export default async function SupplyRequestPage({ params }: { params: Promise<{ 
   const role = s.role;
   // Bosqichlar mas'ul bo'limlarda (narx — snabjeniye, tasdiq — sotuv, pul — moliya); direktor hammasini qila oladi
   const canProcure = ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"].includes(role);
-  const canEditItems = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(role);
+  // Mexanik — faqat o'zi yuborgan zayavkaning miqdorlarini (narx qo'yilgunicha)
+  const canEditItems = ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "DIRECTOR"].includes(role) || (role === "MECHANIC" && r.createdById === s.userId);
   // Tasdiqlash tugmalari bu sahifada yo'q: Sotuv bo'limi — Zayavkalar oynasida, moliya — Kirim-Chiqimda tasdiqlaydi
   const canApprove = ["SALES", "DIRECTOR"].includes(role);
   const canFund = ["FINANCE", "ACCOUNTING", "CASHIER", "DIRECTOR"].includes(role);

@@ -112,6 +112,24 @@ check(!!r.error && n1(`select count(*) from "SupplyRequestItem" where "requestId
 r = await snab.action(`${SA}#setPrices`, [sid3, undefined, fd({ supplierId: "yoq-yetkazuvchi", [`price_${it3}`]: 100, [`qty_${it3}`]: 500 })], `/taminot/${sid3}`);
 check(/Yetkazuvchi topilmadi/.test(r.error ?? ""), "mavjud bo'lmagan yetkazuvchi — aniq xato", r.error);
 
+// 6c) Mexanik ham snabjenetsga zayavka yuboradi (bo'limi «Texnika»): o'zinikini tuzatadi va bekor qiladi, boshqanikini — yo'q
+const mex = await as("mexanik");
+r = await mex.action(`${SA}#createRequest`, [undefined, fd({ warehouseId: wh, department: "Texnika", rows: JSON.stringify([{ materialId: null, name: "Moy filtri QA", unit: "dona", qty: 4 }]) })], "/stock/supply/new");
+const mid = idFrom(r.redirect);
+check(!!mid && q1(`select department from "SupplyRequest" where id='${mid}'`) === "Texnika", "mexanik zayavka yubordi (Texnika)", r.error);
+if (mid) {
+  const mit = q1(`select id from "SupplyRequestItem" where "requestId"='${mid}'`);
+  r = await mex.action(`${SA}#editItems`, [mid, undefined, fd({ [`qty_${mit}`]: 6 })], `/taminot/${mid}`);
+  check(r.ok && n1(`select qty from "SupplyRequestItem" where id='${mit}'`) === 6, "mexanik o'z zayavkasini tuzatdi", r.error);
+  r = await mex.action(`${SA}#editItems`, [sid3, undefined, fd({ [`qty_${it3}`]: 1 })], `/taminot/${sid3}`);
+  check(/o'zingiz/.test(r.error ?? ""), "mexanik boshqa bo'lim zayavkasini tuzata olmaydi", r.error);
+  for (const pg of ["/dashboard", "/taminot", `/taminot/${mid}`, "/stock/supply/new"]) {
+    const g = await mex.get(pg); check(g.status === 200, `mexanik ${pg} → ${g.status}`);
+  }
+  r = await mex.action(`${SA}#reject`, [mid, undefined, fd({ reason: "QA kerak emas" })], `/taminot/${mid}`);
+  check(r.ok && q1(`select status from "SupplyRequest" where id='${mid}'`) === "REJECTED", "mexanik o'z zayavkasini bekor qildi", r.error);
+}
+
 // 7) Sahifalar
 for (const [c, p] of [[snab, `/taminot/${sid}`], [dir, `/taminot/${sid}`], [fin, `/taminot/${sid2}`], [snab, "/snabjeniye/hisobot"], [sklad, `/receipts/${sreq[1]}`]]) {
   const g = await c.get(p); check(g.status === 200, `${p} → ${g.status}`);

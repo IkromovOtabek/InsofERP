@@ -183,6 +183,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* Kerakli mahsulotlar jadvali — snabjeniye zanjirining boshi */}
             <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Kerakli mahsulotlar</LinkButton>
             </>}
+            {/* Mexanik skladdan faqat snabjenetsga zayavka yuboradi (texnika ehtiyoji) — qolgan sklad amallari unga yopiq */}
+            {s?.role === "MECHANIC" && <LinkButton href="/stock/supply/new"><ClipboardList size={16} /> Snabjenetsga zayavka</LinkButton>}
           </div>
         } />
       {/* Sklad kabinetida faqat «Qoldiqlar». «Ishlab chiqarish imkoni», «Brigadalar» va harakatlar ko'rinishi tab sifatida

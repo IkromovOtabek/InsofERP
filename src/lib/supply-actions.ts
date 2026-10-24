@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireModuleWrite, requireSession } from "@/lib/auth";
+import { db } from "@/lib/db";
 import type { ActionState } from "@/lib/action";
 import {
   createSupplyRequest, editSupplyItems, priceSupplyRequest, approveSupplyRequest,
@@ -40,6 +41,8 @@ const num = (fd: FormData, key: string) => {
   return Number.isFinite(n) ? n : 0;
 };
 const text = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
+/** Zayavkani shu xodim yuborganmi (mexanik faqat o'zinikini tuzatadi). */
+const ownSupply = async (id: string, userId: string) => (await db.supplyRequest.count({ where: { id, createdById: userId } })) > 0;
 /** `prefix_<itemId>` ko'rinishidagi maydonlardan qator id'larini yig'adi. */
 const itemIds = (fd: FormData, prefix: string) =>
   [...fd.keys()].filter((k) => k.startsWith(`${prefix}_`)).map((k) => k.slice(prefix.length + 1));
@@ -47,7 +50,8 @@ const itemIds = (fd: FormData, prefix: string) =>
 // ───────────── 1. Sklad: kerakli mahsulotlar jadvali ─────────────
 
 export async function createRequest(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("taminot", ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  // Mexanik ham so'raydi (texnika ehtiyojlari, bo'limi «Texnika») — mobil ilovadagi `CREATE_ROLES.supply` bilan bir xil
+  const s = await requireModuleWrite("taminot", ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"]);
   let items: NewItem[];
   try { items = JSON.parse(String(fd.get("rows") ?? "[]")); } catch { return { error: "Jadval o'qilmadi" }; }
   const pr = text(fd, "priority");
@@ -64,7 +68,9 @@ export async function createRequest(_prev: ActionState, fd: FormData): Promise<A
 }
 
 export async function editItems(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("taminot", ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  const s = await requireModuleWrite("taminot", ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"]);
+  // Mexanik faqat o'zi yuborgan zayavka miqdorini tuzatadi
+  if (s.role === "MECHANIC" && !(await ownSupply(id, s.userId))) return { error: "Faqat o'zingiz yuborgan zayavkani tuzata olasiz" };
   const rows = itemIds(fd, "qty").map((itemId) => ({ itemId, qty: num(fd, `qty_${itemId}`), note: text(fd, `note_${itemId}`) || null }));
   const r = await editSupplyItems(id, rows, s.userId);
   if (r.error) return { error: r.error };
@@ -152,7 +158,8 @@ export async function financeDecide(id: string, prev: ActionState, fd: FormData)
 // Kim qaysi bosqichda bekor qila olishi — `canRejectSupply` (lib/supply.ts): pul bosqichida faqat moliya/direktor.
 
 export async function reject(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireModuleWrite("taminot", ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", ...APPROVERS, ...FINANCE]);
+  // Mexanik — faqat o'zi yuborganini, pul ajratilgunicha (`canRejectSupply`)
+  const s = await requireModuleWrite("taminot", ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC", ...APPROVERS, ...FINANCE]);
   const r = await rejectSupplyRequest(id, { id: s.userId, role: s.role }, text(fd, "reason"));
   if (r.error) return { error: r.error };
   refresh(id);

@@ -508,6 +508,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
 
     // ── Ta'minot zanjiri — qoida `lib/supply.ts` da, veb bilan bir xil ──
     case "supply.items": {
+      // Mexanik faqat o'zi yuborgan zayavkani tuzatadi (veb `editItems` bilan bir xil)
+      if (user.role === "MECHANIC" && !(await db.supplyRequest.count({ where: { id, createdById: user.id } }))) fail("Faqat o'zingiz yuborgan zayavkani tuzata olasiz", 403);
       const rows = itemIds(payload, "qty").map((itemId) => ({ itemId, qty: numOf(payload, `qty_${itemId}`), note: null }));
       const r = await editSupplyItems(id, rows, user.id);
       if (r.error) fail(r.error);

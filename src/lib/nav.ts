@@ -85,9 +85,10 @@ export const NAV: NavItem[] = [
   { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"] },
   // Ta'minot zayavkalari — ma'sul (zayavka) xodim tasdiqlaydi; zanjirdagi boshqa bo'limlar holatini ko'radi.
   // Sklad menyusida yo'q — u so'rovni Sklad → «Kerakli mahsulotlar» dan jo'natadi, hujjatga bildirishnoma/havoladan kiradi
-  { href: "/taminot",     label: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"], group: "Sklad", menuFor: ["PROCUREMENT", "PRODUCTION", "DIRECTOR"] },
+  // Mexanik ham texnika ehtiyojini snabjenetsga shu zanjir orqali so'raydi (menyusida — o'z zayavkalari holatini kuzatish uchun)
+  { href: "/taminot",     label: "Ta'minot zayavkalari", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"], group: "Sklad", menuFor: ["PROCUREMENT", "PRODUCTION", "MECHANIC", "DIRECTOR"] },
   // Hujjatning o'zi zanjirdagi hamma bo'limga ochiq (Zayavkalar va Kirim-Chiqimdagi "To'liq hujjat" havolasi)
-  { href: "/taminot/",    label: "Ta'minot hujjati",     roles: ["SALES", "WAREHOUSE", "PROCUREMENT", "PRODUCTION", "FINANCE", "ACCOUNTING", "CASHIER"], group: "Sklad", hidden: true },
+  { href: "/taminot/",    label: "Ta'minot hujjati",     roles: ["SALES", "WAREHOUSE", "PROCUREMENT", "PRODUCTION", "FINANCE", "ACCOUNTING", "CASHIER", "MECHANIC"], group: "Sklad", hidden: true },
   { href: "/receipts",    label: "Kirim",              roles: ["WAREHOUSE", "PROCUREMENT", "SALES"], group: "Sklad" }, // SALES — faqat ko'radi (kim, nima, qancha kiritgan)
   { href: "/suppliers",   label: "Yetkazuvchilar",     roles: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"], group: "Sklad" },
   // Schyotlar menyudan olib tashlandi — sahifa va eski schyotlar joyida (to'lovlar shularga bog'langan)

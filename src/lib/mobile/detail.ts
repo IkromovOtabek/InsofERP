@@ -343,7 +343,8 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   // Ta'minot zanjiri — `lib/supply-actions.ts` dagi bilan bir xil bo'linish:
   // sklad so'raydi → snabjeniye narxlaydi → sotuv tasdiqlaydi → moliya pul ajratadi → snabjeniye qabul qiladi.
   // Zavodda alohida snabjeniye logini bo'lmasligi mumkin — snabjeniye amallarini WAREHOUSE ham bajaradi.
-  "supply.items": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION"],
+  // Mexanik — faqat o'zi yuborganini (`actions.ts` tekshiradi)
+  "supply.items": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"],
   "supply.price": ["PROCUREMENT", "WAREHOUSE"],
   // Direktor "Tasdiqlar" tabidagi ta'minot: tasdiqlash va pul ajratish (veb `approve`/`fund` — `requireModuleWrite`
   // direktorni har doim o'tkazadi). Ilgari bu yerda direktor yo'q edi — kartochkada faqat "Bekor qilish" qolardi.
@@ -352,7 +353,7 @@ export const ACTION_ROLES: Record<string, Role[]> = {
   "supply.fact": ["PROCUREMENT", "WAREHOUSE"],
   "supply.receive": ["PROCUREMENT", "WAREHOUSE"],
   // Aniq qoida bosqich va yaratuvchiga bog'liq — `canRejectSupply` (pul bosqichida faqat moliya/direktor)
-  "supply.reject": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "DIRECTOR"],
+  "supply.reject": ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC", "SALES", "FINANCE", "ACCOUNTING", "DIRECTOR"],
   // Snabjeniye TZ (`lib/procurement.ts`): rekvizit, taklif, yetkazish — snabjeniye; katta xarid — direktor;
   // muammoni so'rovchi bo'lim ham yozadi; hujjatni buxgalteriya/moliya ham biriktiradi
   "supply.meta": ["PROCUREMENT", "WAREHOUSE"],
@@ -1516,7 +1517,7 @@ async function supplyDetail(user: MobileUser, id: string): Promise<MobileDetail>
 
   const actions: DetailAction[] = [];
   // 1. Sklad: jadvalni tuzatish (hali narx qo'yilmagan)
-  if (st === "NEW" && can(user, "supply.items")) {
+  if (st === "NEW" && can(user, "supply.items") && (user.role !== "MECHANIC" || r.createdById === user.id)) {
     actions.push({
       id: "supply.items", label: "Miqdorlarni tuzatish", tone: "brand",
       form: r.items.map((i) => ({ name: `qty_${i.id}`, label: `${i.name} (${i.unit})`, type: "number" as const, required: true, value: num(sum(i.qty)) })),

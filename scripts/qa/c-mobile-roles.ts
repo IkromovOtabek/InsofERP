@@ -21,7 +21,7 @@ const LISTS: Record<string, string[]> = {
   drivers: ["LOGISTICS", "HR", "DISPATCHER"],
   stock: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"],
   snabjeniye: ["PROCUREMENT", "WAREHOUSE"], // sklad ham snabjeniye amallarini bajaradi (2026-10-16 foydalanuvchi so'rovi)
-  supply: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER"],
+  supply: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SALES", "FINANCE", "ACCOUNTING", "CASHIER", "MECHANIC"], // mexanik — texnika zayavkalari (2026-10-24)
   receipts: ["PROCUREMENT", "WAREHOUSE", "SALES"],
   suppliers: ["WAREHOUSE", "PROCUREMENT", "ACCOUNTING"],
   cashflow: ["CASHIER", "ACCOUNTING", "FINANCE"],

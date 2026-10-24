@@ -5,11 +5,12 @@ import { Card, PageHeader } from "@/components/ui";
 import { SupplyForm, type SupplyOpt } from "../supply-form";
 
 /**
- * Sklad → «Kerakli mahsulotlar». Jadval tuziladi va bitta hujjat bo'lib zanjirga tushadi:
+ * Sklad → «Kerakli mahsulotlar» (mexanik ham — texnika uchun ehtiyot qism, moy; bo'limi «Texnika»). Jadval tuziladi va bitta hujjat bo'lib zanjirga tushadi:
  * snabjeniye narx qo'yadi → ma'sul xodim tasdiqlaydi → moliya pul ajratadi → mol kelgach sklad kirimi.
  */
 export default async function NewSupplyRequestPage() {
-  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION"]);
+  const s = await requireRoles(["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "MECHANIC"]);
+  const mechanic = s.role === "MECHANIC";
   const [warehouses, materials, groups, sums] = await Promise.all([
     db.warehouse.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true, unit: true, minStock: true, groupId: true } }),
@@ -25,10 +26,13 @@ export default async function NewSupplyRequestPage() {
 
   return (
     <div>
-      <PageHeader back={{ href: "/stock", label: "Sklad" }} title="Kerakli mahsulotlar jadvali"
-        subtitle="Skladga nima kerakligini yozasiz — jadval snabjeniyega ketadi, u narx qo'yadi va jami summa chiqadi." />
+      <PageHeader back={mechanic ? { href: "/dashboard", label: "Bosh sahifa" } : { href: "/stock", label: "Sklad" }}
+        title={mechanic ? "Snabjenetsga zayavka" : "Kerakli mahsulotlar jadvali"}
+        subtitle={mechanic
+          ? "Texnikaga nima kerakligini yozasiz (ehtiyot qism, moy, shina…) — jadval snabjeniyega ketadi, u narx qo'yadi va sotib oladi."
+          : "Skladga nima kerakligini yozasiz — jadval snabjeniyega ketadi, u narx qo'yadi va jami summa chiqadi."} />
       <Card><SupplyForm options={options} low={low} groups={groups} canCreate={canEditMaterials(s.role)} warehouses={warehouses}
-        department={s.role === "PRODUCTION" ? "Ishlab chiqarish" : s.role === "WAREHOUSE" ? "Sklad" : undefined} /></Card>
+        department={s.role === "PRODUCTION" ? "Ishlab chiqarish" : s.role === "WAREHOUSE" ? "Sklad" : mechanic ? "Texnika" : undefined} /></Card>
     </div>
   );
 }
