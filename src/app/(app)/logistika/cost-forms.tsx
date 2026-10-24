@@ -35,7 +35,7 @@ export function FuelForm({ vehicles, drivers, trips, lastPrice, vehicleId }: {
       </Field>
       <Field label="Sana"><Input name="date" type="date" defaultValue={today()} /></Field>
       <Field label="Yoqilg'i turi">
-        <Select name="fuelType" key={`f${vid}`} defaultValue={v?.fuelType ?? "DIESEL"}><option value="DIESEL">Dizel</option><option value="PETROL">Benzin</option><option value="METHANE">Metan</option><option value="PROPANE">Propan</option></Select>
+        <Select name="fuelType" key={`f${vid}`} defaultValue={v ? v.fuelType ?? "" : "DIESEL"} required><option value="">— tanlang (dizel yoki metan) —</option><option value="DIESEL">Dizel</option><option value="PETROL">Benzin</option><option value="METHANE">Metan</option><option value="PROPANE">Propan</option></Select>
       </Field>
       <Field label="Miqdor, litr *"><Input name="liters" inputMode="decimal" value={liters} onChange={(e) => setLiters(e.target.value)} required /></Field>
       <Field label="1 litr narxi *"><Input name="pricePerL" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required /></Field>

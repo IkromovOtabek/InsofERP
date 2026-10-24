@@ -45,7 +45,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
   return (
     <div>
       <PageHeader back={{ href: "/trips", label: "Reyslar" }} title="Yangi reys" subtitle="Faqat brigada tayyorlab bergan miqdor reysga beriladi · nakladnoy raqami avtomatik" />
-      <TripForm orders={opts} waiting={waiting.map((o) => ({ id: o.id, orderNo: o.orderNo, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 && v.capacityUnit === "M3" ? Number(v.capacityM3) : null, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))} drivers={driverList} initialOrderId={orderId} />
+      <TripForm orders={opts} waiting={waiting.map((o) => ({ id: o.id, orderNo: o.orderNo, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 && v.capacityUnit === "M3" ? Number(v.capacityM3) : null, mainDriverId: v.mainDriverId, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))} drivers={driverList} initialOrderId={orderId} />
     </div>
   );
 }

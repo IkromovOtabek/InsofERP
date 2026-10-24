@@ -188,6 +188,34 @@ if (piece) {
   }
 } else console.log("   info: tayyor dona zayavka topilmadi — dona reys o'tkazib yuborildi");
 
+// Transport: smenali haydovchilar (asosiy + smenadosh) va «Dizel + metan» (ikki norma, zapravkada tur tanlanadi)
+const shiftPair = q(`select id from "Employee" where "isActive" and position ilike '%haydovchi%' and id<>'${driver}' order by "fullName" limit 2`).map((x) => x[0]);
+if (shiftPair.length === 2) {
+  const [d1, d2] = shiftPair as [string, string];
+  const plate = `QA ${Date.now() % 1000000} DM`;
+  r = await logist.action(`${LA}#saveVehicle`, [null, undefined, fd({ plate, type: "MIXER", capacityM3: "10", fuelType: "DIESEL_METHANE", fuelNormL100: "20", idleNormPerHour: "2", gasNormPer100: "45", gasIdlePerHour: "4", driverId: d1, "shiftDriverIds[]": ["", d2, d1] })], "/logistika/transport/new");
+  const dm = q1(`select id from "Vehicle" where plate='${plate}'`);
+  check((r.ok || !!r.redirect) && !!dm, "«Dizel + metan» transport qo'shildi", r.error);
+  if (dm) {
+    const row2 = q(`select "fuelType", "gasNormPer100", "gasIdlePerHour", "mainDriverId" from "Vehicle" where id='${dm}'`)[0]!;
+    check(row2[0] === "DIESEL_METHANE" && Number(row2[1]) === 45 && Number(row2[2]) === 4 && row2[3] === d1, "ikki norma va asosiy haydovchi saqlandi", row2.join(","));
+    check(n1(`select count(*) from "Employee" where "vehicleId"='${dm}'`) === 2, "asosiy + smenadosh biriktirildi (takror yozilmadi)");
+    r = await logist.action(`${LA}#addFuel`, [undefined, fd({ vehicleId: dm, liters: "30", pricePerL: "5000" })], "/logistika/yoqilgi");
+    check(/dizel va metan/.test(r.error ?? ""), "ikki yoqilg'ili transportda zapravka turi so'raladi", r.error);
+    r = await logist.action(`${LA}#addFuel`, [undefined, fd({ vehicleId: dm, fuelType: "METHANE", liters: "30", pricePerL: "5000" })], "/logistika/yoqilgi");
+    check(r.ok && q1(`select "fuelType" from "FuelLog" where "vehicleId"='${dm}' order by "createdAt" desc limit 1`) === "METHANE", "metan zapravka yozildi", r.error);
+    r = await logist.action(`${LA}#addFuel`, [undefined, fd({ vehicleId: dm, fuelType: "DIESEL_METHANE", liters: "30", pricePerL: "5000" })], "/logistika/yoqilgi");
+    check(!r.ok, "zapravkada «Dizel + metan» turi rad etildi", r.error);
+    for (const pg of [`/logistika/transport/${dm}`, "/logistika/yoqilgi", "/logistika/tabel", "/trips/new"]) {
+      const g = await logist.get(pg);
+      check(g.status === 200, `logistika ${pg} → ${g.status}`);
+    }
+    // Smenadosh olib tashlandi — faqat asosiy qoladi; metan transportga o'tsa metan normalari tozalanadi
+    r = await logist.action(`${LA}#saveVehicle`, [dm, undefined, fd({ plate, type: "MIXER", capacityM3: "10", fuelType: "METHANE", gasNormPer100: "45", driverId: d1, "shiftDriverIds[]": [""] })], `/logistika/transport/${dm}`);
+    check(r.ok && n1(`select count(*) from "Employee" where "vehicleId"='${dm}'`) === 1 && !q1(`select "gasNormPer100" from "Vehicle" where id='${dm}'`), "smenadosh olib tashlandi, metan normasi tozalandi", r.error);
+  }
+} else console.log("   info: ikkita qo'shimcha haydovchi topilmadi — smena/dizel+metan tekshiruvi o'tkazib yuborildi");
+
 // Logistika sahifalari (logistika, direktor, mexanik, buxgalteriya)
 for (const p of ["/trips", `/trips/${t1}`, "/logistika/analitika", "/logistika/hisobotlar", "/logistika/nakladnoylar", "/logistika/yoqilgi", "/logistika/xarajatlar", "/logistika/kalendar", "/logistika/monitoring", "/logistika/yetkazish", "/logistika/buyurtmalar", `/logistika/transport/${mixer}`, `/logistika/haydovchilar/${driver}`]) {
   for (const [name, c] of [["logistika", logist], ["direktor", dir]] as const) {

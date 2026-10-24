@@ -11,7 +11,8 @@ import { orderConfirm, orderUnblock } from "@/lib/orders";
 import { runSotuvAction } from "./sotuv-extra";
 import { reportTripIssue, resolveTripIssue, tripArrival, tripArrived, tripCancelled, tripClosed, tripDelivered, tripLoaded, tripOnRoad, tripReturned, tripUnloading } from "@/lib/trips";
 import { addFuelLog } from "@/lib/logistics-costs";
-import type { TripIssueKind } from "@/generated/prisma";
+import type { FuelType, TripIssueKind } from "@/generated/prisma";
+import { REFUEL_TYPES } from "@/lib/logistics";
 import { addPayment } from "@/lib/payments";
 import { taskCancel, taskProgress } from "@/lib/tasks";
 import { clearBrigadeLeader, setBrigadeLeader } from "@/lib/brigades";
@@ -341,6 +342,8 @@ export async function runMobileAction(user: MobileUser, action: string, rawId: s
       try {
         await addFuelLog({
           vehicleId: t.vehicleId, driverId: t.driverId, tripId: id,
+          // «Dizel + metan» transportda forma turini so'raydi; boshqalarida bo'sh — kartadagi tur
+          fuelType: (REFUEL_TYPES as readonly string[]).includes(textOf(payload, "fuelType")) ? (textOf(payload, "fuelType") as FuelType) : null,
           liters: numOf(payload, "liters"), pricePerL: numOf(payload, "pricePerL"),
           odometerKm: optNum(payload, "odometerKm") != null ? Math.round(optNum(payload, "odometerKm")!) : null, station: textOf(payload, "station"),
         }, user.id);

@@ -470,6 +470,9 @@ model Vehicle {
   fuelType         FuelType? // yoqilg'i turi
   fuelNormL100     Decimal?  @db.Decimal(6, 2) // yoqilg'i normasi 100 km ga: dizel — litr, metan — m³ (nom eski)
   idleNormPerHour  Decimal?  @db.Decimal(6, 2) // turib ishlash (mikser aylantirish) sarfi, soatiga — metan: m³
+  // «Dizel + metan» transport: yuqoridagi ikki norma — dizel (l), bu ikkisi — metan (m³)
+  gasNormPer100    Decimal?  @db.Decimal(6, 2) // metan normasi 100 km ga, m³
+  gasIdlePerHour   Decimal?  @db.Decimal(6, 2) // turib ishlash, metan m³ / soat
   odometerKm       Int? // oxirgi ma'lum probeg (zapravkada yoziladi)
   hasGps           Boolean   @default(false) // doimiy GPS-treker o'rnatilgan (telefon GPS'idan tashqari)
   inspectionUntil  DateTime? // texnik ko'rik muddati
@@ -478,12 +481,15 @@ model Vehicle {
   insuranceUntil   DateTime? // sug'urta muddati
   note             String?
 
-  trips    Trip[]
-  drivers  Employee[]         @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar
-  fuelLogs FuelLog[]
-  expenses TransportExpense[]
-  services VehicleService[]
-  requests MechanicRequest[]
+  trips        Trip[]
+  drivers      Employee[]         @relation("DriverVehicle") // shu texnikaga biriktirilgan haydovchilar (smena bo'yicha bir nechta)
+  // Asosiy haydovchi — reys ochilganda o'zi tanlanadi; qolganlari smenadosh. `drivers` ichida bo'lmasa hisobga olinmaydi
+  mainDriverId String?
+  mainDriver   Employee?          @relation("VehicleMainDriver", fields: [mainDriverId], references: [id], onDelete: SetNull)
+  fuelLogs     FuelLog[]
+  expenses     TransportExpense[]
+  services     VehicleService[]
+  requests     MechanicRequest[]
 }
 
 /// Texnik xizmat jurnali (mexanik): moy almashtirish, ta'mir, shina, ko'rik — keyingi xizmat muddati bilan
@@ -514,6 +520,7 @@ enum FuelType {
   DIESEL // dizel
   PETROL // benzin — yangi transportga tanlanmaydi (eski yozuvlar uchun qoladi)
   METHANE // metan
+  DIESEL_METHANE // dizel + metan (ikki yoqilg'ida) — faqat transport kartasi uchun; zapravka yozuvi dizel yoki metan
   PROPANE // propan — yangi transportga tanlanmaydi (eski yozuvlar uchun qoladi)
 }
 
@@ -576,6 +583,7 @@ model Employee {
 
   user             User?                    @relation(fields: [userId], references: [id])
   vehicle          Vehicle?                 @relation("DriverVehicle", fields: [vehicleId], references: [id])
+  mainOfVehicles   Vehicle[]                @relation("VehicleMainDriver")
   brigade          Brigade?                 @relation("BrigadeMembers", fields: [brigadeId], references: [id], onDelete: SetNull)
   trips            Trip[]                   @relation("TripDriver")
   brigades         Brigade[]                @relation("BrigadeLeader")

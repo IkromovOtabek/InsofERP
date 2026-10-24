@@ -6,7 +6,7 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { payTrips } from "@/lib/driver-trip-pay";
+import { fuelNormText, payTrips } from "@/lib/driver-trip-pay";
 import { PriceForm } from "../../logistika/tabel/tabel-forms";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
@@ -210,7 +210,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
             <div><div className="text-xs text-slate-500">Obyektda kutish</div><div className="font-medium tabular">{pay.waitMin != null ? `${pay.waitMin} daq` : "—"}</div></div>
             <div><div className="text-xs text-slate-500">Mikser aylantirildi</div><div className="font-medium tabular">{pay.drumTurns ?? "—"}</div></div>
             <div><div className="text-xs text-slate-500">Ishlagan soat</div><div className="font-medium tabular">{pay.workHours ?? "—"}</div></div>
-            <div><div className="text-xs text-slate-500">Yoqilg&apos;i normasi</div><div className="font-medium tabular">{pay.fuelNorm != null ? `${pay.fuelNorm} ${pay.fuelUnit}` : "—"}</div></div>
+            <div><div className="text-xs text-slate-500">Yoqilg&apos;i normasi</div><div className="font-medium tabular">{fuelNormText(pay) ?? "—"}</div></div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="text-slate-500">Taklif: {money(pay.suggested)} · {pay.suggestText}{pay.note ? ` · ${pay.note}` : ""}</span>
@@ -228,7 +228,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
               {costs.map((c) => <li key={c.id} className={`flex justify-between py-1.5 ${c.cancel ? "text-slate-400" : ""}`}><span>{c.label}{c.note ? <span className="text-slate-500"> · {c.note}</span> : null}<span className="ml-2 text-xs text-slate-400">{date(c.date)}</span>{c.cancel && <span className="mt-0.5 block"><Badge color="red">Bekor qilingan</Badge> <span className="text-xs text-slate-500">{c.cancel}</span></span>}</span><span className={`tabular ${c.cancel ? "line-through" : ""}`}>{money(c.amount)}</span></li>)}
             </ul>
           )}
-          {(canLog || s.role === "ACCOUNTING") && <TripCostForm tripId={id} lastPrice={price} />}
+          {(canLog || s.role === "ACCOUNTING") && <TripCostForm tripId={id} lastPrice={price} dualFuel={t.vehicle.fuelType === "DIESEL_METHANE"} />}
         </Card>
       )}
 

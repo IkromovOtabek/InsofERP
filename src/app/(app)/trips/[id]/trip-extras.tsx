@@ -55,8 +55,8 @@ export function CloseTripForm({ tripId, loaded, accepted, returned }: { tripId: 
 
 const COST_OPTS: [string, string][] = [["FUEL", "Yoqilg'i"], ["DRIVER_PAY", "Haydovchi haqi"], ["ROAD", "Yo'l to'lovi"], ["REPAIR", "Ta'mirlash"], ["PARTS", "Ehtiyot qism / moy"], ["PARKING", "Turargoh"], ["FINE", "Jarima"], ["WASH", "Yuvish"], ["OTHER", "Boshqa"]];
 
-/** Reys xarajati — transport va haydovchi reysdan olinadi. */
-export function TripCostForm({ tripId, lastPrice }: { tripId: string; lastPrice: number | null }) {
+/** Reys xarajati — transport va haydovchi reysdan olinadi. «Dizel + metan» transportda yoqilg'i turi tanlanadi. */
+export function TripCostForm({ tripId, lastPrice, dualFuel = false }: { tripId: string; lastPrice: number | null; dualFuel?: boolean }) {
   const [state, action, pending] = useActionState(addTripCost.bind(null, tripId), undefined);
   const [what, setWhat] = useState("FUEL");
   const ref = useRef<HTMLFormElement>(null);
@@ -66,6 +66,11 @@ export function TripCostForm({ tripId, lastPrice }: { tripId: string; lastPrice:
       <Select name="what" value={what} onChange={(e) => setWhat(e.target.value)} className="h-9 w-44 text-sm">{COST_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
       {what === "FUEL" ? (
         <>
+          {dualFuel && (
+            <Select name="fuelType" defaultValue="" required className="h-9 w-28 text-sm">
+              <option value="">— turi —</option><option value="DIESEL">Dizel</option><option value="METHANE">Metan</option>
+            </Select>
+          )}
           <Input name="liters" inputMode="decimal" placeholder="litr" className="h-9 w-20 text-sm" required />
           <Input name="pricePerL" inputMode="decimal" placeholder="narx/l" defaultValue={lastPrice ?? ""} className="h-9 w-24 text-sm" required />
           <Input name="odometerKm" inputMode="numeric" placeholder="probeg" className="h-9 w-24 text-sm" />

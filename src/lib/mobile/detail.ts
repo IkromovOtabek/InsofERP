@@ -256,8 +256,9 @@ export const ISSUE_FORM: FormField[] = [
   { name: "note", label: "Tafsilot", type: "text", placeholder: "Qayerda, qancha kutish kerak…" },
 ];
 
-/** Zapravka formasi — transport va haydovchi reysdan olinadi. */
-export const fuelForm = (price: number | null): FormField[] => [
+/** Zapravka formasi — transport va haydovchi reysdan olinadi. «Dizel + metan» transportda tur tanlanadi. */
+export const fuelForm = (price: number | null, dualFuel = false): FormField[] => [
+  ...(dualFuel ? [{ name: "fuelType", label: "Yoqilg'i turi", type: "select" as const, required: true, options: [{ value: "DIESEL", label: "Dizel" }, { value: "METHANE", label: "Metan" }] }] : []),
   { name: "liters", label: "Necha litr", type: "number", required: true },
   { name: "pricePerL", label: "1 litr narxi, so'm", type: "number", required: true, value: price ? String(price) : undefined },
   { name: "odometerKm", label: "Probeg (spidometr), km", type: "number" },
@@ -773,7 +774,7 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const planned = tripPlannedAt(t, t.order);
   const openIssues = t.issues.filter((i) => !i.resolvedAt);
   const recent = t.status === "DELIVERED" && t.deliveredAt && Date.now() - t.deliveredAt.getTime() < 12 * 3600_000;
-  const fuel = fuelForm(await lastFuelPrice(t.vehicle.fuelType));
+  const fuel = fuelForm(await lastFuelPrice(t.vehicle.fuelType), t.vehicle.fuelType === "DIESEL_METHANE");
   // Ro'yxatda haydovchiga faqat o'z reyslari chiqadi (`lib/mobile/list.ts`), lekin kartochka
   // id bo'yicha ochiladi — begona id qo'lda yuborilsa shu yerda to'xtaydi. "Topilmadi" deymiz:
   // "ruxsat yo'q" desak, boshqa reys mavjudligini tasdiqlagan bo'lardik.

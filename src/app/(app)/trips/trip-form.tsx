@@ -14,7 +14,7 @@ type Order = { id: string; orderNo: string; customer: string; address: string; r
 /** Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavka — ro'yxatga kirmaydi, sababi ko'rsatiladi. */
 type Waiting = { id: string; orderNo: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
 /** type — MIXER (beton) yoki TRUCK (dona mahsulot: plita, blok). */
-type Vehicle = { id: string; plate: string; type: string; capacityM3: number | null; state?: string };
+type Vehicle = { id: string; plate: string; type: string; capacityM3: number | null; state?: string; mainDriverId?: string | null };
 const TYPE_LABEL: Record<string, string> = { MIXER: "mikser", TRUCK: "yuk mashina", PUMP: "nasos" };
 /** vehicleId — xodim kartasida biriktirilgan mikser; phoneOk — ECO topa oladigan +998… raqami bormi. */
 type Driver = { id: string; fullName: string; vehicleId: string | null; phoneOk: boolean };
@@ -30,8 +30,12 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, initialOrder
   const fits = (o?: Order, v?: Vehicle) => !o || !v || (o.mixed ? v.type === "MIXER" || v.type === "TRUCK" : v.type === wantType(o));
   const firstOfType = (t: string) => vehicles.find((v) => v.type === t) ?? vehicles[0];
   const [vehicleId, setVehicleId] = useState(firstOfType(wantType(orders[0]))?.id ?? "");
-  // Texnikaga biriktirilgan haydovchi — Xodimlar kartasidagi "biriktirilgan texnika"
-  const driverOfVehicle = (vid: string) => drivers.find((d) => d.vehicleId === vid);
+  // Texnikaga biriktirilgan haydovchi — Xodimlar kartasidagi "biriktirilgan texnika". Smenali transportda bir nechta:
+  // avval kartadagi asosiy haydovchi, u bo'lmasa birinchisi (smenadoshni dispetcher ro'yxatdan tanlaydi)
+  const driverOfVehicle = (vid: string) => {
+    const main = vehicles.find((v) => v.id === vid)?.mainDriverId;
+    return drivers.find((d) => d.vehicleId === vid && d.id === main) ?? drivers.find((d) => d.vehicleId === vid);
+  };
   const [driverId, setDriverId] = useState(driverOfVehicle(firstOfType(wantType(orders[0]))?.id ?? "")?.id ?? drivers[0]?.id ?? "");
   const order = orders.find((o) => o.id === orderId);
   const vehicle = vehicles.find((v) => v.id === vehicleId);
@@ -121,7 +125,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, initialOrder
             {driverList.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.fullName}
-                {d.vehicleId === vehicleId ? " · shu texnika" : d.vehicleId ? "" : " · texnikasiz"}
+                {d.vehicleId === vehicleId ? (d.id === vehicle?.mainDriverId ? " · shu texnika (asosiy)" : " · shu texnika") : d.vehicleId ? "" : " · texnikasiz"}
                 {d.phoneOk ? "" : " · telefon yo'q"}
               </option>
             ))}

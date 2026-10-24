@@ -248,9 +248,19 @@ export const ISSUE_KIND: Record<TripIssueKind, string> = {
 /** Transport muammosi — dispetcher xabar oladi va hal qiladi (reys muammolarining qolgani — logistikada). */
 export const VEHICLE_ISSUE_KINDS: TripIssueKind[] = ["BREAKDOWN", "ACCIDENT"];
 
-export const FUEL_TYPE: Record<FuelType, string> = { DIESEL: "Dizel", PETROL: "Benzin", METHANE: "Metan", PROPANE: "Propan" };
-/** Transport kartasida tanlanadigan yoqilg'i: dizel va metan. Benzin/propan — faqat eski yozuvlarda (tanlanmaydi). */
-export const VEHICLE_FUELS = ["DIESEL", "METHANE"] as const;
+export const FUEL_TYPE: Record<FuelType, string> = { DIESEL: "Dizel", PETROL: "Benzin", METHANE: "Metan", PROPANE: "Propan", DIESEL_METHANE: "Dizel + metan" };
+/** Transport kartasida tanlanadigan yoqilg'i: dizel, metan yoki ikkalasi. Benzin/propan — faqat eski yozuvlarda (tanlanmaydi). */
+export const VEHICLE_FUELS = ["DIESEL", "METHANE", "DIESEL_METHANE"] as const;
+/** Zapravka yozuvidagi yoqilg'i — bitta tur («Dizel + metan» bo'lmaydi). */
+export const REFUEL_TYPES = ["DIESEL", "PETROL", "METHANE", "PROPANE"] as const satisfies readonly FuelType[];
+/**
+ * Transport kartasidagi turdan zapravka uchun odatiy tur: ikki yoqilg'ilida — null (haydovchi/logist tanlaydi).
+ */
+export const refuelDefault = (vehicleFuel: FuelType | string | null | undefined): FuelType | null =>
+  vehicleFuel === "DIESEL_METHANE" ? null : ((vehicleFuel ?? null) as FuelType | null);
+/** Transportning asosiy haydovchisi: belgilangani hali shu transportda bo'lsa — u, aks holda birinchi biriktirilgani. */
+export const mainDriverOf = <T extends { id: string }>(v: { mainDriverId: string | null; drivers: T[] }): T | undefined =>
+  v.drivers.find((d) => d.id === v.mainDriverId) ?? v.drivers[0];
 /** Metanli transportning odatiy normasi: yurish — 100 km ga 50 m³, turib ishlash (mikser aylantirish) — soatiga 5 m³. */
 export const METHANE_NORM = { per100km: 50, perHour: 5 } as const;
 /** Sig'im birligi: mikser/nasos — m³, yuk mashina — tonna yoki dona. */
@@ -335,6 +345,13 @@ export async function driverEmployees(opts: { activeOnly?: boolean } = {}) {
   const names = (await driverPositionNames()).map((n) => n.trim().toLowerCase());
   const all = await db.employee.findMany({ where: opts.activeOnly ? { isActive: true } : {}, orderBy: [{ isActive: "desc" }, { fullName: "asc" }] });
   return all.filter((e) => names.includes(e.position.trim().toLowerCase()));
+}
+
+/** Transport formasi uchun haydovchilar: boshqa transportga biriktirilgani «hozir: <raqam>» bilan (tanlansa o'sha transportdan chiqadi). */
+export async function vehicleFormDrivers(vehicleId?: string): Promise<{ id: string; name: string; busyWith: string | null }[]> {
+  const [drivers, plates] = await Promise.all([driverEmployees({ activeOnly: true }), db.vehicle.findMany({ select: { id: true, plate: true } })]);
+  const plate = new Map(plates.map((p) => [p.id, p.plate]));
+  return drivers.map((d) => ({ id: d.id, name: d.fullName, busyWith: d.vehicleId && d.vehicleId !== vehicleId ? plate.get(d.vehicleId) ?? null : null }));
 }
 
 // ───────────────────────── Texnik xizmat muddati (mexanik) ─────────────────────────

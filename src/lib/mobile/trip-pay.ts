@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { payTrips, priceTrip, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
+import { fuelNormText, payTrips, priceTrip, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
 import { dateTime, fmtNum, money } from "@/lib/format";
 import type { MobileUser } from "./auth";
 import type { MobileDetail } from "./detail";
@@ -62,7 +62,7 @@ export async function tripPayDetail(user: MobileUser, id: string): Promise<Mobil
       { label: "Km (borib-kelish)", value: `${fmtNum(r.km, 0)} km` },
       ...(isMixer ? [{ label: "Obyektda kutish", value: r.waitMin != null ? `${r.waitMin} daq` : "—" }, { label: "Mikser aylantirildi", value: r.drumTurns != null ? `${r.drumTurns} marta` : "kiritilmagan" }] : []),
       { label: "Ishlagan soat", value: r.workHours != null ? `${fmtNum(r.workHours, 1)} soat` : "kiritilmagan" },
-      ...(r.fuelNorm != null ? [{ label: "Yoqilg'i normasi", value: `${fmtNum(r.fuelNorm, 1)} ${r.fuelUnit}` }] : []),
+      ...(fuelNormText(r) ? [{ label: "Yoqilg'i normasi", value: fuelNormText(r)! }] : []),
       { label: "Tarif bo'yicha taklif", value: `${money(r.suggested)} (${r.suggestText})` },
       ...(r.amount != null ? [{ label: "Belgilangan narx", value: money(r.amount), tone: "success" as const }] : []),
       ...(r.note ? [{ label: "Izoh", value: r.note }] : []),

@@ -24,7 +24,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
   const [logs, opts, price] = await Promise.all([
     db.fuelLog.findMany({
       where: { date: { gte: r.from, lt: r.to }, ...(sp.vehicleId ? { vehicleId: sp.vehicleId } : {}) },
-      include: { vehicle: { select: { plate: true, fuelNormL100: true } }, driver: { select: { fullName: true } }, trip: { select: { id: true, deliveryNoteNo: true } } },
+      include: { vehicle: { select: { plate: true, fuelType: true, fuelNormL100: true, gasNormPer100: true } }, driver: { select: { fullName: true } }, trip: { select: { id: true, deliveryNoteNo: true } } },
       orderBy: { date: "desc" },
     }),
     costOptions(),
@@ -36,12 +36,17 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
   const liters = active.reduce((a, f) => a + Number(f.liters), 0);
   const sum = active.reduce((a, f) => a + Number(f.amount), 0);
   // Transport kesimida: litr, summa va probeg oralig'idan sarf
-  const byV = new Map<string, { plate: string; liters: number; sum: number; logs: { liters: unknown; odometerKm: number | null }[]; norm: number | null; count: number }>();
+  // «Dizel + metan» transport ikki qator: dizel (l, dizel normasi) va metan (m³, metan normasi) — aralashsa sarf noto'g'ri chiqadi
+  const byV = new Map<string, { vehicleId: string; plate: string; liters: number; sum: number; logs: { liters: unknown; odometerKm: number | null }[]; norm: number | null; count: number }>();
   for (const f of active) {
-    const x = byV.get(f.vehicleId) ?? { plate: f.vehicle.plate, liters: 0, sum: 0, logs: [], norm: f.vehicle.fuelNormL100 ? Number(f.vehicle.fuelNormL100) : null, count: 0 };
+    const dual = f.vehicle.fuelType === "DIESEL_METHANE";
+    const gas = dual && f.fuelType === "METHANE";
+    const key = dual ? `${f.vehicleId}:${f.fuelType}` : f.vehicleId;
+    const norm = gas ? f.vehicle.gasNormPer100 : f.vehicle.fuelNormL100;
+    const x = byV.get(key) ?? { vehicleId: f.vehicleId, plate: dual ? `${f.vehicle.plate} · ${FUEL_TYPE[f.fuelType].toLowerCase()}` : f.vehicle.plate, liters: 0, sum: 0, logs: [], norm: norm ? Number(norm) : null, count: 0 };
     x.liters += Number(f.liters); x.sum += Number(f.amount); x.count++;
     x.logs.push({ liters: f.liters, odometerKm: f.odometerKm });
-    byV.set(f.vehicleId, x);
+    byV.set(key, x);
   }
   return (
     <div>
@@ -67,7 +72,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
                 const per = fuelConsumption(x.logs).per100;
                 return (
                   <Tr key={id}>
-                    <Td><Link href={`/logistika/transport/${id}`} className="font-medium tabular hover:underline">{x.plate}</Link></Td>
+                    <Td><Link href={`/logistika/transport/${x.vehicleId}`} className="font-medium tabular hover:underline">{x.plate}</Link></Td>
                     <Td right className="tabular">{fmtNum(x.liters, 0)}</Td>
                     <Td right className="tabular">{moneyShort(x.sum)}</Td>
                     <Td right className={`tabular ${per != null && x.norm && per > x.norm * 1.1 ? "font-medium text-red-700" : ""}`}>{per != null ? fmtNum(per, 1) : "—"}{x.norm ? <span className="text-xs text-slate-400"> / {fmtNum(x.norm, 1)}</span> : null}</Td>

@@ -40,13 +40,14 @@ check(j.status === 200 && j.text.includes(empName) && j.text.includes(`/oluvchi/
 const jAll = await sklad.get(`/stock/rasxod?komu=e`);
 check(jAll.status === 200 && jAll.text.includes(empName), "2.2 «Barcha xodimlar» filtri", String(jAll.status));
 const nf = await sklad.get("/stock/rasxod/new");
-check(nf.status === 200 && has(nf.text, "Tez tanlash") && has(nf.text, "Qo'lda kiritish"), "2.3 forma: tez tanlash bloki va «Qo'lda kiritish» bandi", String(nf.status));
+// Yangi chiqimda «Kimga» ro'yxatida xodimlar yo'q (2026-10-24) — na select'da, na «Tez tanlash» tugmalarida
+check(nf.status === 200 && has(nf.text, "Qo'lda kiritish") && !nf.text.includes(`value="e:`), "2.3 forma: «Qo'lda kiritish» bor, xodim tanlovi yo'q", String(nf.status));
 // Select guruhlari (menyudagi «Xodimlar» havolasi emas — optgroup label'lari) ketma-ketligi; «Boshqa oluvchilar» guruhi
-// test bazasida oluvchi bo'lmasa chiqmaydi — bo'lsa, xodimlardan keyin va «Qo'lda kiritish» dan oldin turishi kerak
+// test bazasida oluvchi bo'lmasa chiqmaydi — bo'lsa, brigadalardan keyin va «Qo'lda kiritish» dan oldin turishi kerak
 const grp = (l: string) => nf.text.indexOf(`label="${l.replace(/'/g, "&#x27;")}"`);
 const gB = grp("Bizning brigadalar"), gE = grp("Xodimlar"), gR = grp("Boshqa oluvchilar"), gN = grp("Ro'yxatda yo'q");
-check(gB >= 0 && gB < gE && gE < gN && (gR === -1 || (gE < gR && gR < gN)),
-  "2.4 «Kimga» tartibi: brigadalar → xodimlar → boshqa oluvchilar → qo'lda kiritish", [gB, gE, gR, gN].join(","));
+check(gB >= 0 && gE === -1 && gB < gN && (gR === -1 || (gB < gR && gR < gN)),
+  "2.4 «Kimga» tartibi: brigadalar → boshqa oluvchilar → qo'lda kiritish (xodimlarsiz)", [gB, gE, gR, gN].join(","));
 
 // ── 3. Oluvchi kartasi ──
 const ce = await sklad.get(`/oluvchi/e/${emp}`);

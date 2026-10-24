@@ -24,7 +24,10 @@ export async function addFuelLog(input: FuelInput, userId: string): Promise<{ id
   if (!(input.pricePerL > 0)) throw new Error("1 litr narxini kiriting");
   const v = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!v) throw new Error("Transport topilmadi");
-  const fuelType = input.fuelType ?? v.fuelType ?? "DIESEL";
+  // Ikki yoqilg'ili («Dizel + metan») transportda tur kartadan olinmaydi — har zapravkada tanlanadi
+  if (input.fuelType === "DIESEL_METHANE") throw new Error("Zapravkada bitta tur yoziladi: dizel yoki metan");
+  const fuelType = input.fuelType ?? (v.fuelType === "DIESEL_METHANE" ? null : v.fuelType ?? "DIESEL");
+  if (!fuelType) throw new Error("Bu transport dizel va metanda yuradi — yoqilg'i turini tanlang (dizel yoki metan)");
   // Bitta yozuvda aql bovar qilmaydigan raqam (1 000 000 km yoki 5000 l) keyingi hamma yozuvlarni
   // to'sib qo'yardi (probeg orqaga ketmaydi) — chegara qo'yamiz, katta bo'lsa texnika kartasida tuzatiladi
   if (input.liters > MAX_LITERS) throw new Error(`Bir yozuvda ${MAX_LITERS} litrdan ko'p bo'lmaydi — raqamni tekshiring`);
@@ -91,6 +94,8 @@ export async function addTransportExpense(input: ExpenseInput, userId: string): 
 
 /** Oxirgi zapravkadagi narx — forma uchun taklif (har safar qo'lda yozmaslik uchun). */
 export async function lastFuelPrice(fuelType?: FuelType | null): Promise<number | null> {
+  // «Dizel + metan» transportda zapravka yozuvi alohida turda — oxirgi narx tursiz olinadi
+  if (fuelType === "DIESEL_METHANE") fuelType = null;
   const f = await db.fuelLog.findFirst({ where: fuelType ? { fuelType, cancelledAt: null } : { cancelledAt: null }, orderBy: { date: "desc" }, select: { pricePerL: true } });
   return f ? Number(f.pricePerL) : null;
 }

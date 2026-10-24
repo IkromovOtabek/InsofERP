@@ -3,7 +3,7 @@ import type { Role } from "@/generated/prisma";
 import { audit } from "@/lib/audit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import { tripPayKm } from "@/lib/trip-summary";
-import { money } from "@/lib/format";
+import { fmtNum, money } from "@/lib/format";
 
 /**
  * Haydovchi tabeli va reys haqi (dispetcher).
@@ -64,8 +64,14 @@ export function tripFuelNorm(v: { fuelNormL100: unknown; idleNormPerHour: unknow
   return Math.round(((km * per100) / 100 + (workHours ?? 0) * idle) * 10) / 10;
 }
 
-/** Yoqilg'i birligi: metan — m³, qolgani — litr. */
+/** Yoqilg'i birligi: metan — m³, qolgani — litr («Dizel + metan» da bu dizel qismi; metan — `gasNorm`). */
 export const fuelUnit = (fuelType: string | null | undefined) => (fuelType === "METHANE" ? "m³" : "l");
+
+/** Reys normasi matni: «120 l», «60 m³» yoki «Dizel + metan» transportda «40 l + 50 m³». Norma yo'q — null. */
+export function fuelNormText(r: { fuelNorm: number | null; fuelUnit: string; gasNorm: number | null }): string | null {
+  const parts = [r.fuelNorm != null ? `${fmtNum(r.fuelNorm, 1)} ${r.fuelUnit}` : null, r.gasNorm != null ? `${fmtNum(r.gasNorm, 1)} m³` : null].filter(Boolean);
+  return parts.length ? parts.join(" + ") : null;
+}
 
 const TRIP_PAY_SELECT = {
   id: true, deliveryNoteNo: true, status: true, deliveredAt: true, arrivedAt: true, unloadingAt: true, distanceKm: true, summaryAt: true,
@@ -109,6 +115,8 @@ export type PayTripRow = {
   customer: string; km: number; waitMin: number | null; drumTurns: number | null; workHours: number | null;
   suggested: number; suggestText: string; amount: number | null; pricedAt: Date | null; note: string | null;
   fuelNorm: number | null; fuelUnit: string;
+  /** «Dizel + metan» transportda metan normasi, m³ (boshqalarida null) */
+  gasNorm: number | null;
 };
 
 /** Reyslar ro'yxati tabel uchun. Taklif yozilmagan (eski yoki ECO orqali yopilgan) reysga hozir hisoblanadi. */
@@ -118,7 +126,7 @@ export async function payTrips(where: object, take = 500): Promise<PayTripRow[]>
     select: {
       ...TRIP_PAY_SELECT, payKm: true, waitMin: true, paySuggested: true, payAmount: true, payNote: true, drumTurns: true, workHours: true,
       driver: { select: { fullName: true } },
-      vehicle: { select: { plate: true, type: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true } },
+      vehicle: { select: { plate: true, type: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } },
       order: { select: { distanceKm: true, customer: { select: { name: true } } } },
     },
   });
@@ -136,6 +144,7 @@ export async function payTrips(where: object, take = 500): Promise<PayTripRow[]>
       suggestText: suggestText(tariff, km, wait, isMixer),
       amount: r.payAmount != null ? Number(r.payAmount) : null, pricedAt: r.pricedAt, note: r.payNote,
       fuelNorm: tripFuelNorm(r.vehicle, km, hours), fuelUnit: fuelUnit(r.vehicle.fuelType),
+      gasNorm: r.vehicle.fuelType === "DIESEL_METHANE" ? tripFuelNorm({ fuelNormL100: r.vehicle.gasNormPer100, idleNormPerHour: r.vehicle.gasIdlePerHour }, km, hours) : null,
     };
   });
 }

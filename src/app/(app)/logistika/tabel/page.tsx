@@ -4,7 +4,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { normMonth } from "@/lib/attendance-report";
 import { monthTitle, shiftMonth, today } from "@/lib/davomat";
-import { driverTariff, payTrips, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
+import { driverTariff, fuelNormText, payTrips, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { PriceAllButton, PriceForm, TariffForm } from "./tabel-forms";
@@ -34,7 +34,7 @@ function TripRows({ rows, canPrice, showDriver }: { rows: PayTripRow[]; canPrice
             <Td right className="tabular">{r.vehicleType === "MIXER" ? hours(r.waitMin) : "—"}</Td>
             <Td right className="tabular">{r.drumTurns ?? "—"}</Td>
             <Td right className="tabular">{r.workHours != null ? `${fmtNum(r.workHours, 1)} soat` : <span className="text-amber-700">kiritilmagan</span>}</Td>
-            <Td right className="tabular">{r.fuelNorm != null ? `${fmtNum(r.fuelNorm, 1)} ${r.fuelUnit}` : "—"}</Td>
+            <Td right className="tabular">{fuelNormText(r) ?? "—"}</Td>
             <Td right className="tabular"><span title={r.suggestText}>{money(r.suggested)}</span><div className="text-[11px] text-slate-400">{r.suggestText}</div></Td>
             <Td right>
               {r.amount != null && <div className="font-semibold tabular">{money(r.amount)}</div>}
@@ -67,10 +67,13 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   ]);
 
   // Haydovchilar bo'yicha oy jami
-  const byDriver = new Map<string, { id: string; name: string; trips: number; km: number; wait: number; hours: number; turns: number; fuel: number; sum: number; unpriced: number }>();
+  const byDriver = new Map<string, { id: string; name: string; trips: number; km: number; wait: number; hours: number; turns: number; fuelL: number; fuelM3: number; sum: number; unpriced: number }>();
   for (const r of monthTrips) {
-    const d = byDriver.get(r.driverId) ?? { id: r.driverId, name: r.driver, trips: 0, km: 0, wait: 0, hours: 0, turns: 0, fuel: 0, sum: 0, unpriced: 0 };
-    d.trips++; d.km += r.km; d.wait += r.vehicleType === "MIXER" ? r.waitMin ?? 0 : 0; d.hours += r.workHours ?? 0; d.turns += r.drumTurns ?? 0; d.fuel += r.fuelNorm ?? 0;
+    const d = byDriver.get(r.driverId) ?? { id: r.driverId, name: r.driver, trips: 0, km: 0, wait: 0, hours: 0, turns: 0, fuelL: 0, fuelM3: 0, sum: 0, unpriced: 0 };
+    d.trips++; d.km += r.km; d.wait += r.vehicleType === "MIXER" ? r.waitMin ?? 0 : 0; d.hours += r.workHours ?? 0; d.turns += r.drumTurns ?? 0;
+    // Norma birligi bo'yicha alohida: dizel — l, metan — m³ («Dizel + metan» reysda ikkalasi)
+    if (r.fuelUnit === "m³") d.fuelM3 += r.fuelNorm ?? 0; else d.fuelL += r.fuelNorm ?? 0;
+    d.fuelM3 += r.gasNorm ?? 0;
     if (r.amount != null) d.sum += r.amount; else d.unpriced++;
     byDriver.set(r.driverId, d);
   }
@@ -131,7 +134,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                     <Td right className="tabular">{hours(d.wait)}</Td>
                     <Td right className="tabular">{fmtNum(d.hours, 1)}</Td>
                     <Td right className="tabular">{d.turns || "—"}</Td>
-                    <Td right className="tabular">{d.fuel ? fmtNum(d.fuel, 0) : "—"}</Td>
+                    <Td right className="tabular">{[d.fuelL ? `${fmtNum(d.fuelL, 0)} l` : null, d.fuelM3 ? `${fmtNum(d.fuelM3, 0)} m³` : null].filter(Boolean).join(" + ") || "—"}</Td>
                     <Td right>{d.unpriced ? <Badge color="amber">{d.unpriced}</Badge> : <span className="text-slate-400">0</span>}</Td>
                     <Td right className="font-semibold tabular">{money(d.sum)}</Td>
                   </Tr>

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import {
-  ACTIVE_TRIP, capText, DRUM_MAX_MIN, EXPENSE_KIND, FUEL_TYPE, METHANE_NORM, VEHICLE_FUELS, ORDER_LOGI, SERVICE_KINDS, TRIP_PHASE, VEHICLE_LIVE, VEHICLE_TYPE,
+  ACTIVE_TRIP, capText, DRUM_MAX_MIN, EXPENSE_KIND, FUEL_TYPE, mainDriverOf, METHANE_NORM, REFUEL_TYPES, refuelDefault, VEHICLE_FUELS, ORDER_LOGI, SERVICE_KINDS, TRIP_PHASE, VEHICLE_LIVE, VEHICLE_TYPE,
   dayRange, delayLevel, driverEmployees, expiryLevel, isConcreteTrip, logisticsSettings, minutesLabel, orderLogistics, orderPlannedAt,
   serviceDueLevel, tripDelayMin, tripPhase, tripPlannedAt, vehicleLive, vehicleServiceDue,
   type OrderLogiStatus, type VehicleLive,
@@ -689,7 +689,7 @@ export async function tripExtras(user: MobileUser, tripId: string): Promise<Trip
   return out;
 }
 
-const fuelTypeOptions: FormOption[] = (Object.keys(FUEL_TYPE) as FuelType[]).map((k) => ({ value: k, label: FUEL_TYPE[k] }));
+const fuelTypeOptions: FormOption[] = REFUEL_TYPES.map((k) => ({ value: k, label: FUEL_TYPE[k] }));
 /** Transport kartasi: dizel va metan; eski kartadagi benzin/propan o'zgartirilmaguncha ro'yxatda qoladi. */
 const vehicleFuelOptions = (cur?: string | null): FormOption[] => [
   ...VEHICLE_FUELS.map((k) => ({ value: k, label: FUEL_TYPE[k] })),
@@ -786,14 +786,20 @@ export async function logiDetail(user: MobileUser, key: string, id: string): Pro
 const STATUS_LABEL: Record<string, string> = { ACTIVE: "Saflda", REPAIR: "Ta'mirda", IDLE: "Bekor turibdi" };
 const expiryTone = (d: Date | null): Tone | undefined => { const l = expiryLevel(d); return l === "crit" ? "danger" : l === "warn" ? "warning" : undefined; };
 
+const SHIFT_DRIVER_FIELDS = ["shiftDriver1Id", "shiftDriver2Id", "shiftDriver3Id"] as const;
+/** Ilova formasidagi smenadosh maydonlari → `vehicleSchema.shiftDriverIds` (maydonlar kelmasa — o'zgartirilmaydi). */
+const withShiftDrivers = (p: Record<string, unknown>) =>
+  SHIFT_DRIVER_FIELDS.some((k) => k in p) ? { ...p, shiftDriverIds: SHIFT_DRIVER_FIELDS.map((k) => String(p[k] ?? "")) } : p;
+
 /** Transport tahrirlash / qo'shish maydonlari (veb `transport/vehicle-form.tsx`). */
 async function vehicleFields(v?: {
   plate: string; type: string; brand: string | null; model: string | null; year: number | null; capacityM3: unknown; capacityUnit: string; fuelType: string | null;
-  fuelNormL100: unknown; idleNormPerHour: unknown; odometerKm: number | null; hasGps: boolean; inspectionUntil: Date | null; insuranceCompany: string | null;
-  insurancePolicy: string | null; insuranceUntil: Date | null; isActive: boolean; note: string | null; driverId: string | null;
+  fuelNormL100: unknown; idleNormPerHour: unknown; gasNormPer100: unknown; gasIdlePerHour: unknown; odometerKm: number | null; hasGps: boolean; inspectionUntil: Date | null; insuranceCompany: string | null;
+  insurancePolicy: string | null; insuranceUntil: Date | null; isActive: boolean; note: string | null; driverId: string | null; shiftDriverIds: string[];
 }): Promise<FormField[]> {
   const drivers = await driverEmployees({ activeOnly: true });
   const s = (x: unknown) => (x == null || x === "" ? undefined : String(Number.isFinite(Number(x)) ? Number(x) : x));
+  const driverOpts = [{ value: "", label: "Biriktirilmagan" }, ...drivers.map((d) => ({ value: d.id, label: d.fullName }))];
   return [
     { name: "plate", label: "Davlat raqami", type: "text", required: true, value: v?.plate, placeholder: "01 A 123 BC" },
     { name: "type", label: "Turi", type: "select", required: true, value: v?.type ?? "MIXER", options: Object.entries(VEHICLE_TYPE).map(([value, label]) => ({ value, label })) },
@@ -802,10 +808,14 @@ async function vehicleFields(v?: {
     { name: "brand", label: "Marka", type: "text", value: v?.brand ?? undefined, placeholder: "Howo, Shacman, Kamaz" },
     { name: "model", label: "Modeli", type: "text", value: v?.model ?? undefined },
     { name: "year", label: "Yili", type: "number", value: s(v?.year) },
-    { name: "driverId", label: "Biriktirilgan haydovchi", type: "select", value: v?.driverId ?? "", options: [{ value: "", label: "Biriktirilmagan" }, ...drivers.map((d) => ({ value: d.id, label: d.fullName }))], hint: "Reys ochilganda o'zi tanlanadi" },
+    { name: "driverId", label: "Asosiy haydovchi", type: "select", value: v?.driverId ?? "", options: driverOpts, hint: "Reys ochilganda o'zi tanlanadi" },
+    // Smenali ish: ilovada ko'p tanlov yo'q — 3 ta alohida maydon (saqlashda `shiftDriverIds` ga yig'iladi)
+    ...SHIFT_DRIVER_FIELDS.map((name, i) => ({ name, label: `Smenadosh haydovchi ${i + 1}`, type: "select" as const, value: v?.shiftDriverIds[i] ?? "", options: driverOpts })),
     { name: "fuelType", label: "Yoqilg'i turi", type: "select", value: v?.fuelType ?? "DIESEL", options: vehicleFuelOptions(v?.fuelType) },
-    { name: "fuelNormL100", label: "Sarf normasi 100 km ga (dizel — l, metan — m³)", type: "number", value: s(v?.fuelNormL100), hint: `Metan bo'sh qolsa — ${METHANE_NORM.per100km} m³` },
-    { name: "idleNormPerHour", label: "Turib ishlash (mikser aylantirish), soatiga", type: "number", value: s(v?.idleNormPerHour), hint: `Metan bo'sh qolsa — ${METHANE_NORM.perHour} m³` },
+    { name: "fuelNormL100", label: "Sarf normasi 100 km ga (dizel — l, metan — m³)", type: "number", value: s(v?.fuelNormL100), hint: `Metan bo'sh qolsa — ${METHANE_NORM.per100km} m³. «Dizel + metan» da — dizel, l` },
+    { name: "idleNormPerHour", label: "Turib ishlash (mikser aylantirish), soatiga", type: "number", value: s(v?.idleNormPerHour), hint: `Metan bo'sh qolsa — ${METHANE_NORM.perHour} m³. «Dizel + metan» da — dizel, l` },
+    { name: "gasNormPer100", label: "Metan normasi, m³ / 100 km", type: "number", value: s(v?.gasNormPer100), showIf: { field: "fuelType", equals: "DIESEL_METHANE" } },
+    { name: "gasIdlePerHour", label: "Metan, turib ishlash, m³ / soat", type: "number", value: s(v?.gasIdlePerHour), showIf: { field: "fuelType", equals: "DIESEL_METHANE" } },
     { name: "odometerKm", label: "Probeg, km", type: "number", value: s(v?.odometerKm), hint: v?.odometerKm != null ? "Kamaytirib bo'lmaydi — faqat xatoni tuzatish (sababi bilan)" : undefined },
     ...(v?.odometerKm != null ? [{ name: "odometerReason", label: "Probegni kamaytirish sababi", type: "text" as const, hint: "Faqat probeg avvalgisidan kam kiritilsa kerak (auditga yoziladi)" }] : []),
     { name: "hasGps", label: "Doimiy GPS-treker o'rnatilgan", type: "switch", value: v?.hasGps ? "true" : "false" },
@@ -833,17 +843,17 @@ const serviceFields = (odometerKm: number | null): FormField[] => [
 async function fuelFields(vehicleId?: string): Promise<FormField[]> {
   const since = new Date(); since.setDate(since.getDate() - 7);
   const [vehicles, drivers, trips, price] = await Promise.all([
-    db.vehicle.findMany({ where: { isActive: true, ...(vehicleId ? { id: vehicleId } : {}) }, orderBy: { plate: "asc" }, include: { drivers: { where: { isActive: true }, select: { id: true }, take: 1 } } }),
+    db.vehicle.findMany({ where: { isActive: true, ...(vehicleId ? { id: vehicleId } : {}) }, orderBy: { plate: "asc" }, include: { drivers: { where: { isActive: true }, select: { id: true } } } }),
     driverEmployees({ activeOnly: true }),
     db.trip.findMany({ where: { createdAt: { gte: since }, status: { not: "CANCELLED" }, ...(vehicleId ? { vehicleId } : {}) }, orderBy: { createdAt: "desc" }, select: { id: true, deliveryNoteNo: true, vehicleId: true, order: { select: { customer: { select: { name: true } } } } } }),
     lastFuelPrice(),
   ]);
   const own = vehicleId ? vehicles[0] : undefined;
   return [
-    ...(vehicleId ? [] : [{ name: "vehicleId", label: "Transport", type: "select" as const, required: true, options: vehicles.map((v) => ({ value: v.id, label: v.plate, extra: { ...(v.drivers[0] ? { driverId: v.drivers[0].id } : {}), ...(v.fuelType ? { fuelType: v.fuelType } : {}) } })) }]),
-    { name: "driverId", label: "Haydovchi", type: "select", value: own?.drivers[0]?.id, options: [{ value: "", label: "—" }, ...drivers.map((d) => ({ value: d.id, label: d.fullName }))] },
+    ...(vehicleId ? [] : [{ name: "vehicleId", label: "Transport", type: "select" as const, required: true, options: vehicles.map((v) => ({ value: v.id, label: v.plate, extra: { ...(mainDriverOf(v) ? { driverId: mainDriverOf(v)!.id } : {}), ...(refuelDefault(v.fuelType) ? { fuelType: refuelDefault(v.fuelType)! } : {}) } })) }]),
+    { name: "driverId", label: "Haydovchi", type: "select", value: own ? mainDriverOf(own)?.id : undefined, options: [{ value: "", label: "—" }, ...drivers.map((d) => ({ value: d.id, label: d.fullName }))] },
     { name: "tripId", label: "Reys (oxirgi 7 kun)", type: "select", options: [{ value: "", label: "—" }, ...trips.map((t) => ({ value: t.id, label: `${t.deliveryNoteNo} · ${t.order.customer.name}`, extra: { vehicleId: t.vehicleId } }))], ...(vehicleId ? {} : { dependsOn: "vehicleId" }) },
-    { name: "fuelType", label: "Yoqilg'i turi", type: "select", value: own?.fuelType ?? undefined, options: fuelTypeOptions, hint: "Bo'sh — transport kartasidagi tur" },
+    { name: "fuelType", label: "Yoqilg'i turi", type: "select", value: refuelDefault(own?.fuelType) ?? undefined, options: fuelTypeOptions, hint: "Bo'sh — transport kartasidagi tur («Dizel + metan» transportda tanlash shart)" },
     { name: "liters", label: "Litr", type: "number", required: true },
     { name: "pricePerL", label: "1 litr narxi, so'm", type: "number", required: true, value: price ? String(price) : undefined },
     { name: "odometerKm", label: "Probeg (spidometr), km", type: "number", hint: own?.odometerKm != null ? `Oxirgi: ${fmtNum(own.odometerKm)} km` : undefined },
@@ -900,8 +910,14 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
   // Bekor qilingan yozuvlar ro'yxatda «Bekor qilingan» bo'lib qoladi, lekin sarf, xarajat va muddatga kirmaydi
   const fuelOk = v.fuelLogs.filter((f) => !f.cancelledAt);
   const cNames = await cancellerNames([...v.fuelLogs, ...v.expenses, ...v.services]);
-  const per100 = fuelConsumption(fuelOk).per100;
+  // «Dizel + metan»: har yoqilg'i o'z zapravkalari va normasi bilan alohida (veb kartadagi kabi)
+  const dual = v.fuelType === "DIESEL_METHANE";
+  const unit = v.fuelType === "METHANE" ? "m³" : "l";
+  const per100 = fuelConsumption(dual ? fuelOk.filter((f) => f.fuelType === "DIESEL") : fuelOk).per100;
   const norm = v.fuelNormL100 ? n(v.fuelNormL100) : null;
+  const gasPer100 = dual ? fuelConsumption(fuelOk.filter((f) => f.fuelType === "METHANE")).per100 : null;
+  const gasNorm = v.gasNormPer100 ? n(v.gasNormPer100) : null;
+  const overTone = (fact: number | null, nrm: number | null): Tone | undefined => (fact != null && nrm ? (fact > nrm * 1.1 ? "danger" : "success") : undefined);
   const monthTrips = v.trips.filter((t) => t.createdAt >= monthFrom && t.status !== "CANCELLED");
   const monthCost = fuelOk.filter((f) => f.date >= monthFrom).reduce((a, f) => a + n(f.amount), 0) + v.expenses.filter((e) => !e.cancelledAt && e.date >= monthFrom).reduce((a, e) => a + n(e.amount), 0);
   const current = v.trips.find((t) => ACTIVE_TRIP.includes(t.status));
@@ -919,7 +935,7 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
   if (v.isActive && can(user, "vehicle.fuel")) actions.push({ id: "vehicle.fuel", label: "Zapravka qo'shish", tone: "warning", form: await fuelFields(v.id) });
   if (can(user, "vehicle.expense")) actions.push({ id: "vehicle.expense", label: "Xarajat qo'shish", tone: "warning", form: await expenseFields(user.role, v.id) });
   if (can(user, "vehicle.edit")) {
-    actions.push({ id: "vehicle.edit", label: "Kartani tahrirlash", form: await vehicleFields({ ...v, driverId: v.drivers[0]?.id ?? null }) });
+    actions.push({ id: "vehicle.edit", label: "Kartani tahrirlash", form: await vehicleFields({ ...v, driverId: mainDriverOf(v)?.id ?? null, shiftDriverIds: v.drivers.filter((d) => d.id !== mainDriverOf(v)?.id).map((d) => d.id) }) });
   }
   const liveServices = v.services.filter((x) => !x.cancelledAt);
   if (liveServices.length && can(user, "vehicle.service.cancel")) {
@@ -939,10 +955,16 @@ async function vehicleDetail(user: MobileUser, id: string): Promise<MobileDetail
     fields: [
       { label: "Joriy holat", value: `${VEHICLE_LIVE[live].label}${v.statusNote ? ` · ${v.statusNote}` : ""}`, tone: COLOR_TONE[VEHICLE_LIVE[live].color] },
       ...(current ? [{ label: "Hozirgi reys", value: current.deliveryNoteNo }] : []),
-      { label: "Haydovchi", value: v.drivers.map((d) => d.fullName).join(", ") || "biriktirilmagan", tone: v.drivers.length ? undefined : "warning" },
+      { label: v.drivers.length > 1 ? "Haydovchilar (smena)" : "Haydovchi", value: v.drivers.map((d) => `${d.fullName}${v.drivers.length > 1 && d.id === mainDriverOf(v)?.id ? " (asosiy)" : ""}`).join(", ") || "biriktirilmagan", tone: v.drivers.length ? undefined : "warning" },
       ...(capText(v) ? [{ label: "Sig'im", value: capText(v) }] : []),
-      { label: "Yoqilg'i", value: `${v.fuelType ? FUEL_TYPE[v.fuelType] : "—"}${norm ? ` · norma ${fmtNum(norm, 1)} l/100` : ""}` },
-      { label: "Haqiqiy sarf", value: per100 != null ? `${fmtNum(per100, 1)} l/100 km` : "—", tone: per100 != null && norm ? (per100 > norm * 1.1 ? "danger" : "success") : undefined },
+      ...(dual ? [
+        { label: "Yoqilg'i", value: `${FUEL_TYPE.DIESEL_METHANE} · norma: dizel ${norm ? `${fmtNum(norm, 1)} l` : "—"}, metan ${gasNorm ? `${fmtNum(gasNorm, 1)} m³` : "—"} (100 km)` },
+        { label: "Haqiqiy sarf: dizel", value: per100 != null ? `${fmtNum(per100, 1)} l/100 km` : "—", tone: overTone(per100, norm) },
+        { label: "Haqiqiy sarf: metan", value: gasPer100 != null ? `${fmtNum(gasPer100, 1)} m³/100 km` : "—", tone: overTone(gasPer100, gasNorm) },
+      ] : [
+        { label: "Yoqilg'i", value: `${v.fuelType ? FUEL_TYPE[v.fuelType] : "—"}${norm ? ` · norma ${fmtNum(norm, 1)} ${unit}/100` : ""}` },
+        { label: "Haqiqiy sarf", value: per100 != null ? `${fmtNum(per100, 1)} ${unit}/100 km` : "—", tone: overTone(per100, norm) },
+      ]),
       { label: "Probeg", value: v.odometerKm != null ? `${fmtNum(v.odometerKm)} km` : "—" },
       { label: "GPS", value: v.hasGps ? "Treker o'rnatilgan" : "Telefon GPS'i" },
       { label: "Texnik ko'rik", value: v.inspectionUntil ? date(v.inspectionUntil) : "—", tone: expiryTone(v.inspectionUntil) },
@@ -1245,7 +1267,7 @@ export async function logiCreate(user: MobileUser, key: string, payload: unknown
   const p = (payload ?? {}) as Record<string, unknown>;
   switch (key) {
     case "vehicles": {
-      const id = done(await saveVehicleRecord(null, parse(vehicleSchema, { isActive: true, ...p }), user.id));
+      const id = done(await saveVehicleRecord(null, parse(vehicleSchema, withShiftDrivers({ isActive: true, ...p })), user.id));
       return { key: "vehicles", id, message: "Transport qo'shildi" };
     }
     case "fuel": {
@@ -1346,7 +1368,7 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       return `${r.deliveryNoteNo} ochildi va haydovchi ilovasiga yuborildi`;
     }
     case "vehicle.edit": {
-      done(await saveVehicleRecord(id, parse(vehicleSchema, payload), user.id));
+      done(await saveVehicleRecord(id, parse(vehicleSchema, withShiftDrivers((payload ?? {}) as Record<string, unknown>)), user.id));
       return "Transport kartasi saqlandi";
     }
     case "vehicle.status": {

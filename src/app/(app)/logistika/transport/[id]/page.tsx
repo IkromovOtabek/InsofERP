@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
-import { ACTIVE_TRIP, driverEmployees, EXPENSE_KIND, FUEL_TYPE, SERVICE_KINDS, serviceDueLevel, tripPhase, VEHICLE_TYPE, vehicleLive, vehicleServiceDue } from "@/lib/logistics";
+import { ACTIVE_TRIP, mainDriverOf, vehicleFormDrivers, EXPENSE_KIND, FUEL_TYPE, SERVICE_KINDS, serviceDueLevel, tripPhase, VEHICLE_TYPE, vehicleLive, vehicleServiceDue } from "@/lib/logistics";
 import { fuelConsumption } from "@/lib/logistics-costs";
 import { date, dateTime, fmtNum, isoDate, money, moneyShort, qty } from "@/lib/format";
 import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -35,14 +35,19 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
     },
   });
   if (!v) notFound();
-  const drivers = await driverEmployees({ activeOnly: true });
+  const drivers = await vehicleFormDrivers(v.id);
   const live = vehicleLive(v, v.trips);
 
   // Bekor qilingan yozuvlar jadvalda belgisi bilan qoladi, lekin sarf, xarajat va xizmat muddatiga kirmaydi
   const fuelOk = v.fuelLogs.filter((f) => !f.cancelledAt);
   const names = await cancellerNames([...v.fuelLogs, ...v.expenses, ...v.services]);
   // Haqiqiy sarf: yoqilg'i sahifasi bilan bitta funksiya (to'liq bak usuli, birinchi quyish litrisiz)
-  const per100 = fuelConsumption(fuelOk).per100;
+  // «Dizel + metan»: har yoqilg'i o'z zapravkalari va o'z normasi bilan alohida solishtiriladi
+  const dual = v.fuelType === "DIESEL_METHANE";
+  const unit = v.fuelType === "METHANE" ? "m³" : "l";
+  const per100 = fuelConsumption(dual ? fuelOk.filter((f) => f.fuelType === "DIESEL") : fuelOk).per100;
+  const gasPer100 = dual ? fuelConsumption(fuelOk.filter((f) => f.fuelType === "METHANE")).per100 : null;
+  const gasNorm = v.gasNormPer100 ? Number(v.gasNormPer100) : null;
   const due = await vehicleServiceDue({ vehicleId: v.id });
   const norm = v.fuelNormL100 ? Number(v.fuelNormL100) : null;
   const monthFuel = fuelOk.filter((f) => f.date >= monthFrom);
@@ -74,8 +79,15 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         <StatCard label="Shu oy reyslar" value={monthTrips.length} hint={`${qty(monthQty)} yetkazildi/yuklandi`} icon={Route} tone="brand" />
         <StatCard label="Shu oy xarajat" value={moneyShort(monthCost)} hint={monthTrips.length ? `reysga ${moneyShort(monthCost / monthTrips.length)}` : undefined} icon={Coins} />
-        <StatCard label="Yoqilg'i sarfi" value={per100 != null ? `${fmtNum(per100, 1)} l/100` : "—"} hint={norm ? `norma ${fmtNum(norm, 1)} l/100` : "norma kiritilmagan"} icon={Fuel}
-          tone={per100 != null && norm ? (per100 > norm * 1.1 ? "danger" : "success") : "default"} />
+        {dual ? (
+          <StatCard label="Yoqilg'i sarfi, 100 km ga" icon={Fuel}
+            value={`${per100 != null ? fmtNum(per100, 1) : "—"} l · ${gasPer100 != null ? fmtNum(gasPer100, 1) : "—"} m³`}
+            hint={`norma: dizel ${norm ? `${fmtNum(norm, 1)} l` : "—"}, metan ${gasNorm ? `${fmtNum(gasNorm, 1)} m³` : "—"}`}
+            tone={(per100 != null && norm && per100 > norm * 1.1) || (gasPer100 != null && gasNorm && gasPer100 > gasNorm * 1.1) ? "danger" : (per100 != null && norm) || (gasPer100 != null && gasNorm) ? "success" : "default"} />
+        ) : (
+          <StatCard label="Yoqilg'i sarfi" value={per100 != null ? `${fmtNum(per100, 1)} ${unit}/100` : "—"} hint={norm ? `norma ${fmtNum(norm, 1)} ${unit}/100` : "norma kiritilmagan"} icon={Fuel}
+            tone={per100 != null && norm ? (per100 > norm * 1.1 ? "danger" : "success") : "default"} />
+        )}
         <StatCard label="Probeg" value={v.odometerKm != null ? `${fmtNum(v.odometerKm)} km` : "—"} hint="oxirgi zapravkada yozilgan" icon={Gauge} />
       </div>
 
@@ -84,13 +96,15 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
           <CardHeader title="Transport kartasi" icon={Truck}
             action={canService && v.isActive ? <VehicleStatusForm vehicleId={v.id} status={v.status} note={v.statusNote} /> : undefined} />
           {canEdit ? (
-            <VehicleForm drivers={drivers.map((d) => ({ id: d.id, name: d.fullName }))} v={{
+            <VehicleForm drivers={drivers} v={{
               id: v.id, plate: v.plate, type: v.type, brand: v.brand, model: v.model, year: v.year,
               capacityM3: v.capacityM3 ? Number(v.capacityM3) : null, capacityUnit: v.capacityUnit, fuelType: v.fuelType, fuelNormL100: v.fuelNormL100 ? Number(v.fuelNormL100) : null,
               idleNormPerHour: v.idleNormPerHour ? Number(v.idleNormPerHour) : null,
+              gasNormPer100: v.gasNormPer100 ? Number(v.gasNormPer100) : null, gasIdlePerHour: v.gasIdlePerHour ? Number(v.gasIdlePerHour) : null,
               odometerKm: v.odometerKm, hasGps: v.hasGps, inspectionUntil: v.inspectionUntil ? isoDate(v.inspectionUntil) : "",
               insuranceCompany: v.insuranceCompany, insurancePolicy: v.insurancePolicy, insuranceUntil: v.insuranceUntil ? isoDate(v.insuranceUntil) : "",
-              isActive: v.isActive, note: v.note, driverId: v.drivers[0]?.id ?? "",
+              isActive: v.isActive, note: v.note, driverId: mainDriverOf(v)?.id ?? "",
+              shiftDriverIds: v.drivers.filter((d) => d.id !== mainDriverOf(v)?.id).map((d) => d.id),
             }} />
           ) : <p className="text-sm text-slate-500">Karta ma&apos;lumotini logistika tahrirlaydi. Ta&apos;mir / bekor turish holati — yuqoridagi belgidan.</p>}
         </Card>
