@@ -44,7 +44,8 @@ export default async function NewPrixodPage({ searchParams }: { searchParams: Pr
         groups={groups}
         canCreate={canEditMaterials(s.role)}
         canAddSupplier={canDo(s, "stock", "suppliers")}
-        targets={targets}
+        // «Kimga» ro'yxatida xodimlar ko'rsatilmaydi — faqat brigadalar va oluvchilar
+        targets={{ ...targets, employees: [] }}
         holdings={holdings}
         // «Ta'minotchi» (xaridni qilgan snabjenets) — formada alohida maydon yo'q: Snabjeniye kiritsa o'zi yoziladi
         defaultBuyerId={s.role === "PROCUREMENT" ? s.userId : ""}
