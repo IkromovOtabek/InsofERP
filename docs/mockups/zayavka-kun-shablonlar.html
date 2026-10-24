@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunlik zayavka — 5 shablon</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: { brand: { 50:"#fff8e0",100:"#ffefb8",200:"#ffe17a",300:"#ffd042",400:"#ffbb0f",500:"#ffa300",600:"#c76f00",700:"#9a5a00" } } } } };
+</script>
+<style>
+  body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .scrim { background: rgba(15,23,42,.45); backdrop-filter: blur(2px); }
+  .thin::-webkit-scrollbar { height: 8px; width: 8px } .thin::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius: 8px }
+  @keyframes up { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform:none } }
+  .anim { animation: up .25s ease-out }
+  @keyframes slide { from { transform: translateX(40px); opacity:0 } to { transform:none; opacity:1 } }
+  .slide { animation: slide .25s ease-out }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- Shablon tanlash paneli -->
+<div class="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+  <div class="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2 px-4 py-3">
+    <div class="mr-3">
+      <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Zayavka · kunlik ko'rinish</div>
+      <div class="text-sm font-semibold text-slate-900">Shamchani 2 marta bosganda ochiladigan oyna — 5 variant</div>
+    </div>
+    <div id="switcher" class="flex flex-wrap gap-1.5"></div>
+  </div>
+  <div id="desc" class="mx-auto max-w-[1400px] px-4 pb-3 text-[13px] text-slate-500"></div>
+</div>
+
+<!-- Fon: mavjud «10 kunlik ish tartibi» kartasi (soddalashtirilgan) -->
+<div class="mx-auto max-w-[1400px] p-4">
+  <div class="rounded-2xl p-5 shadow-sm" style="background:#1e2636">
+    <div class="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+      <div class="text-[15px] font-semibold text-white">Haftalik ish tartibi</div>
+      <div class="text-[12px] text-slate-400">Kartani <b class="text-slate-200">2 marta bosing</b> — kunlik zayavka varag'i ochiladi</div>
+    </div>
+    <div id="candles" class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(118px,1fr))"></div>
+    <div class="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-slate-400">
+      <span class="inline-flex items-center gap-1.5"><i class="h-3 w-3 rounded" style="background:#6ad49b"></i>bo'sh</span>
+      <span class="inline-flex items-center gap-1.5"><i class="h-3 w-3 rounded" style="background:#f5c242"></i>70%+ band</span>
+      <span class="inline-flex items-center gap-1.5"><i class="h-3 w-3 rounded" style="background:#ec7474"></i>90%+ — to'lgan</span>
+    </div>
+  </div>
+</div>
+
+<div id="stage"></div>
+
+<script>
+/* ───────── Ma'lumot (rasmdagi zayavka, tanlangan kun 26.10.2026) ───────── */
+const DATE = "26.10.2026", WEEKDAY = "Dushanba";
+const GROUPS = [
+  { key: "BANK", title: "Perechisleniye", short: "Bank", tone: "sky", rows: [
+    { to: "Eco Build", item: "Beton M250", unit: "m³", qty: 72, price: 550000, deliv: 0, net: 39600000, vat: 4752000, total: 44352000, rcv: "Nekruz", phone: "77 301 06 96", obj: "Yangiyo'l", time: "10:00" },
+    { to: "Eco Karton", item: "Beton M350", unit: "m³", qty: 90, price: 571429, deliv: 0, net: 51428571, vat: 6171429, total: 57600000, rcv: "Xurshid", phone: "99 494 76 76", obj: "Mixaylovka", time: "10:00" },
+    { to: "Eco Karton", item: "Beton M250", unit: "m³", qty: 40, price: 530000, deliv: 0, net: 21200000, vat: 2544000, total: 23744000, rcv: "Xurshid", phone: "99 494 76 76", obj: "Mixaylovka", time: "10:00" },
+    { to: "Suvmaxsus ta'mir", item: "Beton M200", unit: "m³", qty: 10, price: 520000, deliv: 0, net: 5200000, vat: 624000, total: 5824000, rcv: "Alom", phone: "94 353 00 40", obj: "Zangi Ota", time: "08:00" },
+  ]},
+  { key: "CASH", title: "Naqd", short: "Naqd", tone: "emerald", rows: [
+    ["PK 51-12-8",6,1150000,1500000,8400000],["PK 51-10-8",1,1100000,0,1100000],["PK 49-12-8",6,1050000,1500000,7800000],
+    ["PK 49-10-8",4,1000000,0,4000000],["PK 45-12-8",5,970000,0,4850000],["PK 45-10-8",1,950000,1500000,2450000],
+    ["PK 41-12-8",11,950000,0,10450000],["PK 41-10-8",1,900000,1500000,2400000],["PK 38-12-8",2,900000,0,1800000],
+    ["PK 23-12-8",6,800000,0,4800000],["PK 23-10-8",2,750000,0,1500000],
+  ].map(([item,qty,price,deliv,net]) => ({ to: "Dombirobod", toPhone: "99 886 50 55", item, unit: "dona", qty, price, deliv, net, vat: 0, total: net, rcv: "Bobur", phone: "99 886 50 55", obj: "Dombirobod", time: "10:00" })) },
+  { key: "DEBT", title: "Qarz (tekin)", short: "Qarz", tone: "rose", rows: [] },
+];
+const PRODUCTS = [ ["Plita","dona",45,"layers"], ["Beton","m³",212,"truck"], ["FBS","dona",0,"box"], ["Ustun","dona",0,"columns-3"], ["Boshqa","dona",0,"package"] ];
+const CAP = 300;
+
+/* ───────── Yordamchilar ───────── */
+const fmt = (n) => n ? String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ") : "0";
+const dash = (n) => n ? fmt(n) : '<span class="text-slate-300">—</span>';
+const sum = (rows, k) => rows.reduce((s, r) => s + r[k], 0);
+const ALL = GROUPS.flatMap(g => g.rows.map(r => ({ ...r, g })));
+const TOT = { deliv: sum(ALL,"deliv"), net: sum(ALL,"net"), vat: sum(ALL,"vat"), total: sum(ALL,"total") };
+const m3 = sum(ALL.filter(r => r.unit === "m³"), "qty"), pcs = sum(ALL.filter(r => r.unit === "dona"), "qty");
+const TONE = {
+  sky:     { chip: "bg-sky-100 text-sky-800", bar: "bg-sky-500", soft: "bg-sky-50", ring: "ring-sky-200", text: "text-sky-700", border: "border-sky-200" },
+  emerald: { chip: "bg-emerald-100 text-emerald-800", bar: "bg-emerald-500", soft: "bg-emerald-50", ring: "ring-emerald-200", text: "text-emerald-700", border: "border-emerald-200" },
+  rose:    { chip: "bg-rose-100 text-rose-800", bar: "bg-rose-500", soft: "bg-rose-50", ring: "ring-rose-200", text: "text-rose-700", border: "border-rose-200" },
+};
+const ic = (n, s = 16, c = "") => `<i data-lucide="${n}" class="${c}" style="width:${s}px;height:${s}px"></i>`;
+const btn = (icon, label, primary) => `<button class="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium ${primary ? "bg-slate-900 text-white hover:bg-slate-800" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}">${ic(icon,15)}${label ? `<span class="hidden sm:inline">${label}</span>` : ""}</button>`;
+const dayNav = () => `<div class="inline-flex items-center rounded-lg border border-slate-200 bg-white">
+  <button class="grid h-9 w-9 place-items-center text-slate-500 hover:bg-slate-50">${ic("chevron-left",16)}</button>
+  <span class="border-x border-slate-200 px-3 text-[13px] font-semibold tabular text-slate-900">${DATE}</span>
+  <button class="grid h-9 w-9 place-items-center text-slate-500 hover:bg-slate-50">${ic("chevron-right",16)}</button></div>`;
+const stat = (label, value, hint, icon, cls = "") => `<div class="rounded-xl border border-slate-200 bg-white p-3.5 ${cls}">
+  <div class="flex items-center justify-between text-[12px] text-slate-500">${label}${ic(icon,15,"text-slate-400")}</div>
+  <div class="mt-1 text-lg font-semibold tabular text-slate-900">${value}</div>${hint ? `<div class="text-[11px] text-slate-400">${hint}</div>` : ""}</div>`;
+const closeBtn = `<button onclick="closeAll()" class="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100">${ic("x",18)}</button>`;
+
+/* Excel uslubidagi jadval (1 va 2-variantda ishlatiladi) */
+function sheet(g, opts = {}) {
+  const t = TONE[g.tone];
+  const head = ["Kimga","Mahsulot","Birlik","Soni","Narx","Dastavka","QQSsiz summa","QQS 12%","Jami","Qabul qiluvchi","Telefon","Obyekt","Vaqt"];
+  const right = new Set([3,4,5,6,7,8]);
+  const body = g.rows.length ? g.rows.map((r, i) => `<tr class="border-t border-slate-100 hover:bg-brand-50/60">
+      <td class="px-3 py-2 font-medium text-slate-900">${(opts.merge && i && g.rows[i-1].to === r.to) ? '<span class="text-slate-300">〃</span>' : r.to}</td>
+      <td class="px-3 py-2">${r.item}</td><td class="px-3 py-2 text-slate-500">${r.unit}</td>
+      <td class="px-3 py-2 text-right font-semibold tabular">${r.qty}</td>
+      <td class="px-3 py-2 text-right tabular">${fmt(r.price)}</td>
+      <td class="px-3 py-2 text-right tabular">${dash(r.deliv)}</td>
+      <td class="px-3 py-2 text-right tabular">${fmt(r.net)}</td>
+      <td class="px-3 py-2 text-right tabular text-slate-500">${dash(r.vat)}</td>
+      <td class="px-3 py-2 text-right font-semibold tabular text-slate-900">${fmt(r.total)}</td>
+      <td class="bg-amber-50/50 px-3 py-2">${r.rcv}</td><td class="bg-amber-50/50 px-3 py-2 tabular text-slate-600">${r.phone}</td>
+      <td class="bg-amber-50/50 px-3 py-2">${r.obj}</td><td class="bg-amber-50/50 px-3 py-2 tabular font-medium">${r.time}</td></tr>`).join("")
+    : `<tr class="border-t border-slate-100"><td colspan="13" class="px-3 py-5 text-center text-[13px] text-slate-400">Bu turda zayavka yo'q</td></tr>`;
+  return `<div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    ${opts.noTitle ? "" : `<div class="flex items-center justify-between gap-2 ${t.soft} px-3 py-2">
+      <span class="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-900"><i class="h-2.5 w-2.5 rounded-full ${t.bar}"></i>${g.title}</span>
+      <span class="text-[12px] text-slate-500">${g.rows.length} qator · <b class="tabular text-slate-800">${fmt(sum(g.rows,"total"))}</b> so'm</span></div>`}
+    <div class="thin overflow-x-auto"><table class="w-full min-w-[1150px] whitespace-nowrap text-[12.5px]">
+      <thead><tr class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">${head.map((h,i)=>`<th class="whitespace-nowrap px-3 py-2 font-semibold ${right.has(i)?"text-right":"text-left"} ${i>=9?"bg-amber-100/60 text-amber-800":""}">${h}</th>`).join("")}</tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr class="border-t-2 border-slate-200 bg-brand-50 font-semibold text-slate-900">
+        <td class="px-3 py-2" colspan="3">Jami: ${g.title}</td>
+        <td class="px-3 py-2 text-right tabular">${sum(g.rows,"qty")}</td><td></td>
+        <td class="px-3 py-2 text-right tabular">${fmt(sum(g.rows,"deliv"))}</td>
+        <td class="px-3 py-2 text-right tabular">${fmt(sum(g.rows,"net"))}</td>
+        <td class="px-3 py-2 text-right tabular">${fmt(sum(g.rows,"vat"))}</td>
+        <td class="px-3 py-2 text-right tabular">${fmt(sum(g.rows,"total"))}</td><td colspan="4"></td></tr></tfoot>
+    </table></div></div>`;
+}
+const productStrip = (cls = "") => `<div class="grid grid-cols-5 gap-2 ${cls}">${PRODUCTS.map(([n,u,v,i]) => `
+  <div class="rounded-xl border ${v ? "border-slate-200 bg-white" : "border-dashed border-slate-200 bg-slate-50/60"} px-3 py-2.5">
+    <div class="flex items-center gap-1.5 text-[12px] text-slate-500">${ic(i,14)} ${n}</div>
+    <div class="mt-0.5 text-base font-semibold tabular ${v ? "text-slate-900" : "text-slate-300"}">${v} <span class="text-[11px] font-normal text-slate-400">${u}</span></div></div>`).join("")}</div>`;
+const grandBar = `<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-900 px-4 py-3 text-white">
+  <span class="text-[13px] font-semibold">JAMI (barcha to'lov turlari)</span>
+  <div class="flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-slate-300">
+    <span>Dastavka <b class="tabular text-white">${fmt(TOT.deliv)}</b></span>
+    <span>QQSsiz <b class="tabular text-white">${fmt(TOT.net)}</b></span>
+    <span>QQS <b class="tabular text-white">${fmt(TOT.vat)}</b></span>
+    <span class="text-brand-300">Jami <b class="tabular text-base text-brand-300">${fmt(TOT.total)}</b> so'm</span></div></div>`;
+
+/* ───────── 5 variant ───────── */
+const VARIANTS = [
+  { name: "Excel varag'i", icon: "sheet",
+    desc: "Rasmdagi jadvalning o'zi, faqat toza: to'lov turlari bo'yicha 3 blok, har birida «Jami», pastda mahsulot bo'yicha va umumiy JAMI. Excel'ga o'rganganlar uchun eng tanish; ‹ › bilan kunlar orasida yuriladi.",
+    render: () => `<div class="fixed inset-0 z-[60] scrim" onclick="closeAll()"></div>
+    <div class="fixed inset-3 z-[61] flex flex-col overflow-hidden rounded-2xl bg-slate-50 shadow-2xl anim md:inset-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
+        <div><div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Realizatsiya zayavkasi</div>
+          <div class="text-lg font-semibold text-slate-900">${DATE} · ${WEEKDAY}</div></div>
+        <div class="flex flex-wrap items-center gap-2">${dayNav()}${btn("file-spreadsheet","Excel")}${btn("printer","Chop etish")}${btn("plus","Zayavka",true)}${closeBtn}</div>
+      </div>
+      <div class="thin flex-1 space-y-4 overflow-auto p-5">
+        ${GROUPS.map(g => sheet(g, { merge: true })).join("")}
+        <div class="grid gap-4 lg:grid-cols-[1fr_auto]"><div><div class="mb-2 text-[13px] font-semibold text-slate-700">Mahsulot bo'yicha</div>${productStrip()}</div></div>
+        ${grandBar}
+      </div></div>` },
+
+  { name: "Tablar + ko'rsatkichlar", icon: "layout-dashboard",
+    desc: "Tepada 4 ta asosiy raqam (m³, dona, summa, QQS) va mahsulot bo'yicha mini-ustunlar. Pastda to'lov turi tablari — bir vaqtda faqat bitta jadval ko'rinadi, ekran yuklanmaydi.",
+    render: () => {
+      const tabs = GROUPS.map((g,i) => `<button onclick="v2tab(${i})" data-t="${i}" class="v2t inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-[13px] font-medium ${i===0?"border-slate-900 text-slate-900":"border-transparent text-slate-500 hover:text-slate-800"}">
+        <i class="h-2 w-2 rounded-full ${TONE[g.tone].bar}"></i>${g.title}<span class="rounded-full ${TONE[g.tone].chip} px-1.5 text-[11px] tabular">${g.rows.length}</span></button>`).join("");
+      const maxP = Math.max(...PRODUCTS.map(p=>p[2]));
+      return `<div class="fixed inset-0 z-[60] scrim" onclick="closeAll()"></div>
+      <div class="pointer-events-none fixed inset-0 z-[61] flex items-center justify-center p-3"><div class="pointer-events-auto flex max-h-[92vh] w-[min(1240px,96vw)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl anim">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+          <div class="flex items-center gap-3"><div class="grid h-11 w-11 place-items-center rounded-xl bg-brand-100 text-brand-700">${ic("calendar-days",20)}</div>
+            <div><div class="text-lg font-semibold text-slate-900">${DATE}</div><div class="text-[12px] text-slate-500">${WEEKDAY} · ${ALL.length} ta qator · quvvatning ${Math.round(m3/CAP*100)}%</div></div></div>
+          <div class="flex items-center gap-2">${dayNav()}${btn("download","")}${btn("printer","")}${closeBtn}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 px-5 pt-4 md:grid-cols-4">
+          ${stat("Beton", `${m3} m³`, `kunlik quvvat ${CAP} m³`, "truck")}
+          ${stat("Dona mahsulot", `${pcs} dona`, "plita", "layers")}
+          ${stat("QQSsiz summa", fmt(TOT.net), `dastavka ${fmt(TOT.deliv)}`, "receipt")}
+          ${stat("Jami", fmt(TOT.total), `QQS ${fmt(TOT.vat)}`, "wallet", "!border-brand-300 !bg-brand-50")}
+        </div>
+        <div class="mx-5 mt-3 flex items-end gap-3 rounded-xl border border-slate-200 px-4 py-3">
+          ${PRODUCTS.map(([n,u,v]) => `<div class="flex flex-1 flex-col items-center gap-1"><span class="text-[12px] font-semibold tabular ${v?"text-slate-900":"text-slate-300"}">${v}</span>
+            <div class="flex h-14 w-full max-w-[60px] items-end rounded-md bg-slate-100"><div class="w-full rounded-md bg-brand-400" style="height:${v?Math.max(8,v/maxP*100):0}%"></div></div>
+            <span class="text-[11px] text-slate-500">${n} <span class="text-slate-400">${u}</span></span></div>`).join("")}
+        </div>
+        <div class="mt-2 flex gap-1 border-b border-slate-200 px-5">${tabs}</div>
+        <div id="v2body" class="thin flex-1 overflow-auto p-5">${sheet(GROUPS[0],{noTitle:true, merge:true})}</div>
+      </div></div>`; } },
+
+  { name: "Yon panel", icon: "panel-right",
+    desc: "O'ngdan chiqadigan panel — shamchalar ko'rinib turadi, boshqa kunni 2 marta bossangiz panel o'sha kunga o'tadi. Bir mijozning ko'p qatori (Dombirobod — 11 xil plita) bitta yig'iladigan blokka jamlanadi.",
+    render: () => {
+      const byClient = {};
+      ALL.forEach(r => { const k = r.g.key + "|" + r.to + "|" + r.obj; (byClient[k] ??= { ...r, items: [] }).items.push(r); });
+      const cards = Object.values(byClient).map((c, i) => {
+        const t = TONE[c.g.tone]; const q = sum(c.items,"qty"), tot = sum(c.items,"total"), dl = sum(c.items,"deliv");
+        return `<details class="group rounded-xl border border-slate-200 bg-white open:shadow-sm" ${i===0?"open":""}>
+          <summary class="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3">
+            <div class="w-1 self-stretch rounded-full ${t.bar}"></div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2"><span class="truncate text-[14px] font-semibold text-slate-900">${c.to}</span><span class="rounded-full ${t.chip} px-1.5 text-[10.5px] font-medium">${c.g.short}</span></div>
+              <div class="mt-0.5 flex flex-wrap gap-x-3 text-[12px] text-slate-500"><span class="inline-flex items-center gap-1">${ic("map-pin",12)}${c.obj}</span><span class="inline-flex items-center gap-1">${ic("clock",12)}${c.time}</span><span class="inline-flex items-center gap-1">${ic("user",12)}${c.rcv}</span></div>
+            </div>
+            <div class="text-right"><div class="text-[14px] font-semibold tabular text-slate-900">${fmt(tot)}</div><div class="text-[11.5px] tabular text-slate-500">${q} ${c.unit} · ${c.items.length} xil</div></div>
+            ${ic("chevron-down",16,"text-slate-400 transition group-open:rotate-180")}
+          </summary>
+          <div class="border-t border-slate-100 px-3.5 pb-3 pt-1">
+            <table class="w-full text-[12.5px]"><thead><tr class="text-[11px] text-slate-400"><th class="py-1.5 text-left font-medium">Mahsulot</th><th class="text-right font-medium">Soni</th><th class="text-right font-medium">Narx</th><th class="text-right font-medium">Jami</th></tr></thead>
+            <tbody>${c.items.map(r => `<tr class="border-t border-slate-50"><td class="py-1.5">${r.item}${r.deliv?` <span class="ml-1 rounded bg-slate-100 px-1 text-[10.5px] text-slate-500">+dastavka ${fmt(r.deliv)}</span>`:""}</td><td class="text-right tabular">${r.qty} ${r.unit}</td><td class="text-right tabular text-slate-500">${fmt(r.price)}</td><td class="text-right font-medium tabular">${fmt(r.total)}</td></tr>`).join("")}</tbody></table>
+            <div class="mt-2 flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] text-slate-500"><span>${ic("phone",12,"inline mr-1")}${c.phone}</span><span>${dl?`Dastavka ${fmt(dl)} · `:""}QQS ${fmt(sum(c.items,"vat"))}</span></div>
+          </div></details>`; }).join("");
+      return `<div class="fixed inset-0 z-[60] bg-slate-900/20" onclick="closeAll()"></div>
+      <aside class="slide fixed inset-y-0 right-0 z-[61] flex w-[min(560px,100vw)] flex-col border-l border-slate-200 bg-slate-50 shadow-2xl">
+        <div class="border-b border-slate-200 bg-white px-4 py-3">
+          <div class="flex items-center justify-between gap-2"><div><div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">${WEEKDAY}</div><div class="text-lg font-semibold text-slate-900">${DATE}</div></div>
+            <div class="flex items-center gap-1.5">${dayNav()}${closeBtn}</div></div>
+          <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-lg bg-slate-50 py-2"><div class="text-[11px] text-slate-500">Beton</div><div class="font-semibold tabular">${m3} m³</div></div>
+            <div class="rounded-lg bg-slate-50 py-2"><div class="text-[11px] text-slate-500">Plita</div><div class="font-semibold tabular">${pcs} dona</div></div>
+            <div class="rounded-lg bg-brand-50 py-2"><div class="text-[11px] text-brand-700">Jami</div><div class="font-semibold tabular text-slate-900">${fmt(TOT.total)}</div></div></div>
+          <div class="mt-3 flex gap-1.5 text-[12px]">${["Hammasi",...GROUPS.map(g=>g.title)].map((x,i)=>`<span class="rounded-full ${i===0?"bg-slate-900 text-white":"bg-slate-100 text-slate-600"} px-2.5 py-1">${x}</span>`).join("")}</div>
+        </div>
+        <div class="thin flex-1 space-y-2.5 overflow-auto p-4">${cards}
+          <div class="rounded-xl border border-dashed border-rose-200 bg-rose-50/50 px-3.5 py-3 text-[12.5px] text-rose-700">Qarz (tekin) — bu kunga zayavka yo'q</div></div>
+        <div class="flex items-center gap-2 border-t border-slate-200 bg-white p-3">${btn("file-spreadsheet","Excel")}${btn("printer","Chop")}<div class="flex-1"></div>${btn("plus","Zayavka qo'shish",true)}</div>
+      </aside>`; } },
+
+  { name: "To'lov ustunlari", icon: "columns-3",
+    desc: "Kanban uslubi: 3 ta ustun — Perechisleniye / Naqd / Qarz. Har zayavka — kartochka (mijoz, obyekt, vaqt, qabul qiluvchi, mahsulotlar). Qaysi to'lov turida qancha pul borligi bir qarashda ko'rinadi.",
+    render: () => {
+      const col = (g) => { const t = TONE[g.tone];
+        const byC = {}; g.rows.forEach(r => (byC[r.to+"|"+r.obj] ??= { ...r, items: [] }).items.push(r));
+        const cards = Object.values(byC).map(c => `<div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div class="flex items-start justify-between gap-2"><div class="min-w-0"><div class="truncate text-[14px] font-semibold text-slate-900">${c.to}</div>
+              <div class="text-[12px] text-slate-500">${ic("map-pin",11,"inline -mt-0.5")} ${c.obj}</div></div>
+              <span class="shrink-0 rounded-md bg-slate-900 px-1.5 py-0.5 text-[11px] font-semibold tabular text-white">${c.time}</span></div>
+            <div class="mt-2 flex flex-wrap gap-1">${c.items.map(r=>`<span class="rounded-md ${t.soft} px-1.5 py-0.5 text-[11.5px] ${t.text}">${r.item} <b class="tabular">×${r.qty}</b></span>`).join("")}</div>
+            <div class="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-[12px]">
+              <span class="text-slate-500">${ic("user",12,"inline -mt-0.5")} ${c.rcv} · <span class="tabular">${c.phone}</span></span>
+              <b class="tabular text-slate-900">${fmt(sum(c.items,"total"))}</b></div></div>`).join("")
+          || `<div class="grid h-32 place-items-center rounded-xl border-2 border-dashed border-slate-200 text-[13px] text-slate-400">Zayavka yo'q</div>`;
+        return `<div class="flex min-w-[300px] flex-1 flex-col rounded-2xl bg-slate-100/80 p-2.5">
+          <div class="mb-2 flex items-center justify-between px-1"><span class="inline-flex items-center gap-2 text-[13.5px] font-semibold text-slate-800"><i class="h-2.5 w-2.5 rounded-full ${t.bar}"></i>${g.title}</span>
+            <span class="rounded-full ${t.chip} px-2 text-[11px] font-medium tabular">${sum(g.rows,"qty")} ${g.rows[0]?.unit ?? ""}</span></div>
+          <div class="thin flex-1 space-y-2 overflow-auto">${cards}</div>
+          <div class="mt-2 rounded-xl bg-white px-3 py-2 text-[12px] text-slate-500">
+            <div class="flex justify-between"><span>QQSsiz</span><span class="tabular">${fmt(sum(g.rows,"net"))}</span></div>
+            <div class="flex justify-between"><span>QQS</span><span class="tabular">${fmt(sum(g.rows,"vat"))}</span></div>
+            <div class="mt-1 flex justify-between border-t border-slate-100 pt-1 text-[13px] font-semibold text-slate-900"><span>Jami</span><span class="tabular">${fmt(sum(g.rows,"total"))}</span></div></div></div>`; };
+      return `<div class="fixed inset-0 z-[60] scrim" onclick="closeAll()"></div>
+      <div class="fixed inset-3 z-[61] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl anim md:inset-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div class="flex items-center gap-3"><div class="text-lg font-semibold text-slate-900">Zayavkalar · ${DATE}</div><span class="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600">${WEEKDAY}</span></div>
+          <div class="flex items-center gap-2">${dayNav()}${btn("file-spreadsheet","Excel")}${closeBtn}</div></div>
+        <div class="thin flex flex-1 gap-3 overflow-auto p-4">${GROUPS.map(col).join("")}</div>
+        <div class="border-t border-slate-200 p-3">${grandBar}</div>
+      </div>`; } },
+
+  { name: "Soat bo'yicha (dispetcher)", icon: "clock",
+    desc: "Kreativ variant: kun soatlar chizig'ida — 08:00 da kim, 10:00 da kim. Har yetkazish uchun obyekt, qabul qiluvchi, telefon (bosib qo'ng'iroq), hajm. Chap tomonda kun xulosasi: quvvat halqasi, mahsulotlar, to'lov turlari ulushi.",
+    render: () => {
+      const byTime = {}; ALL.forEach(r => (byTime[r.time] ??= []).push(r));
+      const times = Object.keys(byTime).sort();
+      const pct = Math.round(m3 / CAP * 100), C = 2 * Math.PI * 42;
+      const slot = (tm) => { const byC = {}; byTime[tm].forEach(r => (byC[r.to+"|"+r.obj] ??= { ...r, items: [] }).items.push(r));
+        return `<div class="relative pl-16">
+          <div class="absolute left-0 top-0 w-12 text-right"><div class="text-[15px] font-semibold tabular text-slate-900">${tm}</div><div class="text-[11px] text-slate-400">${Object.keys(byC).length} ta</div></div>
+          <div class="absolute bottom-0 left-[58px] top-2 w-px bg-slate-200"></div><div class="absolute left-[54px] top-1.5 h-[9px] w-[9px] rounded-full border-2 border-white bg-brand-500 ring-2 ring-brand-200"></div>
+          <div class="grid gap-2.5 pb-6 pl-4 md:grid-cols-2">${Object.values(byC).map(c => { const t = TONE[c.g.tone];
+            return `<div class="rounded-xl border ${t.border} bg-white p-3">
+              <div class="flex items-start justify-between gap-2"><div class="min-w-0"><div class="truncate text-[14px] font-semibold text-slate-900">${c.obj}</div><div class="text-[12px] text-slate-500">${c.to} · <span class="${t.text}">${c.g.title}</span></div></div>
+                <div class="text-right"><div class="text-[15px] font-semibold tabular text-slate-900">${sum(c.items,"qty")} <span class="text-[11px] font-normal text-slate-400">${c.unit}</span></div></div></div>
+              <div class="mt-2 text-[12px] text-slate-600">${c.items.map(r=>r.item+" ×"+r.qty).join(", ")}</div>
+              <div class="mt-2.5 flex items-center justify-between gap-2"><a class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2 py-1 text-[12px] text-slate-700 hover:bg-slate-200">${ic("phone",12)} ${c.rcv} · <span class="tabular">${c.phone}</span></a><b class="text-[12.5px] tabular">${fmt(sum(c.items,"total"))}</b></div></div>`; }).join("")}</div></div>`; };
+      const share = GROUPS.map(g => ({ g, v: sum(g.rows,"total") }));
+      return `<div class="fixed inset-0 z-[60] scrim" onclick="closeAll()"></div>
+      <div class="fixed inset-3 z-[61] flex overflow-hidden rounded-2xl bg-white shadow-2xl anim md:inset-6">
+        <div class="thin hidden w-72 shrink-0 flex-col gap-4 overflow-auto border-r border-slate-200 bg-slate-50 p-5 md:flex">
+          <div><div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">${WEEKDAY}</div><div class="text-2xl font-semibold text-slate-900">${DATE}</div></div>
+          <div class="flex items-center gap-4 rounded-xl bg-white p-3 ring-1 ring-slate-200">
+            <svg width="96" height="96" viewBox="0 0 100 100" class="-rotate-90"><circle cx="50" cy="50" r="42" fill="none" stroke="#e2e8f0" stroke-width="10"/><circle cx="50" cy="50" r="42" fill="none" stroke="#84cc16" stroke-width="10" stroke-linecap="round" stroke-dasharray="${C*pct/100} ${C}"/></svg>
+            <div><div class="text-2xl font-semibold tabular">${pct}%</div><div class="text-[12px] text-slate-500">${m3} / ${CAP} m³<br/>quvvat band</div></div></div>
+          <div class="rounded-xl bg-white p-3 ring-1 ring-slate-200"><div class="mb-2 text-[12px] font-semibold text-slate-600">Mahsulot bo'yicha</div>
+            ${PRODUCTS.map(([n,u,v,i])=>`<div class="flex items-center justify-between py-1 text-[13px] ${v?"":"text-slate-300"}"><span class="inline-flex items-center gap-2">${ic(i,14)}${n}</span><b class="tabular">${v} ${u}</b></div>`).join("")}</div>
+          <div class="rounded-xl bg-white p-3 ring-1 ring-slate-200"><div class="mb-2 text-[12px] font-semibold text-slate-600">To'lov turlari</div>
+            <div class="mb-2 flex h-2.5 overflow-hidden rounded-full bg-slate-100">${share.map(s=>`<div class="${TONE[s.g.tone].bar}" style="width:${s.v/TOT.total*100}%"></div>`).join("")}</div>
+            ${share.map(s=>`<div class="flex items-center justify-between py-0.5 text-[12.5px]"><span class="inline-flex items-center gap-1.5"><i class="h-2 w-2 rounded-full ${TONE[s.g.tone].bar}"></i>${s.g.title}</span><span class="tabular">${fmt(s.v)}</span></div>`).join("")}
+            <div class="mt-2 border-t border-slate-100 pt-2 text-[12px] text-slate-500">QQS <span class="float-right tabular">${fmt(TOT.vat)}</span><br/>Dastavka <span class="float-right tabular">${fmt(TOT.deliv)}</span></div>
+            <div class="mt-1 flex justify-between text-[14px] font-semibold"><span>Jami</span><span class="tabular">${fmt(TOT.total)}</span></div></div>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-3">
+            <div class="text-[15px] font-semibold text-slate-900">Yetkazish jadvali</div>
+            <div class="flex items-center gap-2">${dayNav()}${btn("table","Jadval ko'rinishi")}${btn("printer","")}${closeBtn}</div></div>
+          <div class="thin flex-1 overflow-auto p-5">${times.map(slot).join("")}</div>
+        </div></div>`; } },
+];
+
+/* ───────── Boshqaruv ───────── */
+let cur = 0;
+window.v2tab = (i) => {
+  document.querySelectorAll(".v2t").forEach(b => { const on = +b.dataset.t === i;
+    b.classList.toggle("border-slate-900", on); b.classList.toggle("text-slate-900", on);
+    b.classList.toggle("border-transparent", !on); b.classList.toggle("text-slate-500", !on); });
+  document.getElementById("v2body").innerHTML = sheet(GROUPS[i], { noTitle: true, merge: true });
+};
+window.closeAll = () => { document.getElementById("stage").innerHTML = ""; };
+function show(i) { cur = i; document.getElementById("stage").innerHTML = VARIANTS[i].render(); drawSwitcher(); lucide.createIcons(); }
+function drawSwitcher() {
+  document.getElementById("switcher").innerHTML = VARIANTS.map((v,i) => `<button onclick="show(${i})" class="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] font-medium ${i===cur?"bg-slate-900 text-white":"border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}">
+    <span class="grid h-5 w-5 place-items-center rounded ${i===cur?"bg-brand-400 text-slate-900":"bg-slate-100 text-slate-500"} text-[11px] font-bold">${i+1}</span>${v.name}</button>`).join("");
+  document.getElementById("desc").textContent = VARIANTS[cur].desc;
+}
+
+// Fon: haftalik kun kartalari (bo'sh — yashil, 70%+ — sariq, 90%+ — qizil)
+const days = [["Shan","24 okt",180],["Yak","25 okt",40],["Dush","26 okt",212],["Sesh","27 okt",292],["Chor","28 okt",150],["Pay","29 okt",260],["Jum","30 okt",90]];
+const SEL = "26 okt";
+const col = (p) => p >= 90 ? "#ec7474" : p >= 70 ? "#f5c242" : "#6ad49b";
+document.getElementById("candles").innerHTML = days.map(([w,d,v]) => { const p = Math.min(100, Math.round(v/CAP*100)), sel = d === SEL;
+  return `<button ondblclick="show(cur)" title="${w} ${d}: quvvatning ${p}%"
+    class="flex min-w-0 flex-col items-start gap-2 rounded-2xl px-4 py-4 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+    style="border:${sel?"3px solid #fff":"1.5px solid #374151"};background:${sel?"#232c3d":"transparent"}">
+    <span class="text-[12px] font-semibold uppercase tracking-[.08em] text-slate-400">${w}</span>
+    <span class="text-[22px] font-bold leading-none tracking-tight text-white">${d}</span>
+    <span class="mt-1 block h-2 w-full overflow-hidden rounded-full" style="background:#334155"><span class="block h-full rounded-full" style="width:${Math.max(v?6:0,p)}%;background:${col(p)}"></span></span>
+    <span class="text-[13px] tabular text-slate-400">${v} / ${CAP} m³</span></button>`; }).join("");
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeAll(); if (e.key >= "1" && e.key <= "5") show(+e.key - 1); });
+show(0);
+</script>
+</body>
+</html>

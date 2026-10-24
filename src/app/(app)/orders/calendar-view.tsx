@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CalendarRange, Clock, X, Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CalendarRange, Clock, FileSpreadsheet, X, Zap } from "lucide-react";
 import { qty as q, fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -11,17 +12,13 @@ export type DayOrder = { id: string; orderNo: string; customer: string; time: st
 export type DayCell = { key: string; label: string; weekday: string; list: DayOrder[]; m3: number; pct: number; count: number; urgent: number; state: "free" | "busy" | "full"; isToday: boolean };
 
 /**
- * Kun ustuni (shamcha) telefon quvvati kabi o'lchanadi: bo'sh kun — qizil,
- * quvvat to'lgani sari sariqdan yashilga o'tadi. Ichki to'ldirish, ramka, «N ta»
- * nishoni va tepadagi izoh — hammasi shu bitta jadvaldan rang oladi, shuning uchun
- * ular hech qachon bir-biriga zid tushmaydi. To'ldirish gradienti ikki bosqichli
- * (pastda to'qroq, tepada och) — ustun tekis rangdan jonliroq ko'rinadi.
+ * Kun kartasi: bandlik chizig'i kunlik quvvatga nisbatan. Joy ko'p — yashil, 70% dan — sariq,
+ * 90% dan (to'lgan) — qizil. Chiziq, izoh nuqtasi va tepadagi foiz shu bitta jadvaldan rang oladi.
  */
 const CANDLE_LEVELS = [
-  { upto: 25, label: "Bo'sh — joy ko'p", fill: "linear-gradient(to top, var(--color-red-600), var(--color-red-500))", border: "border-red-300", badge: "bg-red-100 text-red-700", text: "text-red-600", dot: "bg-red-500" },
-  { upto: 50, label: "Yarmigacha to'ldi", fill: "linear-gradient(to top, var(--color-amber-600), var(--color-amber-500))", border: "border-amber-300", badge: "bg-amber-100 text-amber-800", text: "text-amber-700", dot: "bg-amber-500" },
-  { upto: 75, label: "To'lib bormoqda", fill: "linear-gradient(to top, var(--color-lime-500), var(--color-lime-400))", border: "border-lime-300", badge: "bg-lime-100 text-lime-800", text: "text-lime-700", dot: "bg-lime-500" },
-  { upto: Infinity, label: "To'ldi — joy yo'q", fill: "linear-gradient(to top, var(--color-emerald-600), var(--color-emerald-500))", border: "border-emerald-300", badge: "bg-emerald-100 text-emerald-700", text: "text-emerald-700", dot: "bg-emerald-500" },
+  { upto: 70, label: "bo'sh", bar: "bg-emerald-400", text: "text-emerald-600", dot: "bg-emerald-400" },
+  { upto: 90, label: "70%+ band", bar: "bg-amber-400", text: "text-amber-600", dot: "bg-amber-400" },
+  { upto: Infinity, label: "90%+ — to'lgan", bar: "bg-red-400", text: "text-red-600", dot: "bg-red-400" },
 ];
 
 function candle(pct: number) {
@@ -33,6 +30,7 @@ function candle(pct: number) {
  * o'sha kundagi zayavkalar shu yerning o'zida, taqvim ostida ochiladi (ma'lumot allaqachon serverdan kelgan).
  */
 export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: number }) {
+  const router = useRouter();
   const [openKey, setOpenKey] = useState<string | null>(null);
   const open = cells.find((c) => c.key === openKey) ?? null;
   const busiest = cells.reduce((m, c) => (c.m3 > m.m3 ? c : m), cells[0]);
@@ -41,44 +39,34 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
     <div className="mb-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="inline-flex items-center gap-2 text-[15px] font-semibold text-slate-900"><CalendarRange size={16} className="text-slate-400" /> 10 kunlik ish tartibi</h2>
-          <p className="text-xs text-slate-500">Kunlik quvvat {fmtNum(capacity)} m³ · ustun to&apos;lgani — shu kunga olingan hajm (telefon quvvati kabi: kam — qizil, to&apos;lsa — yashil). Kunni bosing — zayavkalar shu yerda ochiladi (sahifa yangilanmaydi).</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-          {CANDLE_LEVELS.map((l) => (
-            <span key={l.label} className="inline-flex items-center gap-1"><i className={cn("h-2.5 w-2.5 rounded-full", l.dot)} /> {l.label}</span>
-          ))}
+          <h2 className="inline-flex items-center gap-2 text-[15px] font-semibold text-slate-900"><CalendarRange size={16} className="text-slate-400" /> Haftalik ish tartibi</h2>
+          <p className="text-xs text-slate-500">Kunlik quvvat {fmtNum(capacity)} m³. Kunni bosing — zayavkalar shu yerda ochiladi; 2 marta bosing — kunlik realizatsiya varag&apos;i (Excel ko&apos;rinishi).</p>
         </div>
       </div>
 
-      <div className="flex items-end justify-center gap-1.5">
+      <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))" }}>
         {cells.map((c, i) => {
           const active = openKey === c.key;
           const lvl = candle(c.pct);
-          // Tooltip ustun markaziga tayanadi. Chetdagi ikki ustunda markazlash uni
-          // kartadan tashqariga — chapda yon menyu ustiga, o'ngda ekrandan tashqariga —
-          // chiqarib yuboradi, shuning uchun u o'z ustunining chetiga tiraladi.
+          // Tooltip karta markaziga tayanadi; chetdagi ikki kartada kartadan tashqariga chiqmasin deb chetga tiraladi
           const tipAlign = i <= 1 ? "left-0 translate-x-0"
             : i >= cells.length - 2 ? "right-0 left-auto translate-x-0"
             : "left-1/2 -translate-x-1/2";
           return (
-            <div key={c.key} className="group relative flex-1 basis-0">
-              <button type="button" onClick={() => setOpenKey(active ? null : c.key)}
-                className={cn("flex w-full flex-col items-center gap-1 rounded-lg px-0.5 py-1.5 transition", active ? "bg-slate-900/5 ring-2 ring-slate-900" : "hover:bg-slate-50")}>
-                <span className={cn("text-[10.5px] font-medium", c.isToday ? "text-slate-900" : "text-slate-400")}>{c.weekday}</span>
-                {/* Ustun: cho'zinchoq va tor — pastdan to'ladi, rangi telefon quvvati kabi qizildan yashilga o'tadi */}
-                <div className={cn("relative flex h-40 w-full max-w-[46px] items-end overflow-hidden rounded-lg border-2 bg-slate-50", lvl.border)}>
-                  <div className="w-full transition-[height] duration-700"
-                    style={{ height: `${Math.max(c.count > 0 ? 8 : 0, c.pct)}%`, background: lvl.fill }} />
-                  <span className="absolute inset-x-0 top-1.5 px-0.5 text-center text-[10px] leading-tight font-semibold text-slate-700">
-                    {c.count > 0 ? <>{q(c.m3)}<br />m³</> : "bo'sh"}
-                  </span>
-                  {c.urgent > 0 && <span className="absolute top-0.5 right-0.5 rounded bg-red-600 px-1 text-[8px] font-bold text-white">!</span>}
-                </div>
-                <span className={cn("text-[10.5px] tabular", c.isToday ? "font-semibold text-slate-900" : "text-slate-500")}>{c.label}</span>
-                <span className={cn("rounded-full px-1.5 text-[10px] font-medium tabular", lvl.badge)}>
-                  {c.count} ta
+            <div key={c.key} className="group relative min-w-0">
+              <button type="button" onClick={() => setOpenKey(active ? null : c.key)} onDoubleClick={() => router.push(`/orders/kun/${c.key}`)}
+                title="2 marta bosing — kunlik realizatsiya varag'i"
+                className={cn("flex w-full min-w-0 flex-col items-start gap-1.5 rounded-2xl border bg-white px-3.5 py-3 text-left transition hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-brand-500",
+                  active ? "border-slate-900 ring-2 ring-slate-900" : "border-slate-200 hover:border-slate-300")}>
+                <span className="flex w-full items-center justify-between gap-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                  {c.weekday}
+                  {c.urgent > 0 && <span className="rounded bg-red-600 px-1 text-[9px] font-bold text-white normal-case" title={`${c.urgent} ta zarur zayavka`}>!</span>}
                 </span>
+                <span className={cn("text-xl leading-none font-bold tracking-tight text-slate-900", c.isToday && "underline decoration-brand-500 decoration-2 underline-offset-4")}>{c.label}</span>
+                <span className="mt-1 block h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
+                  <span className={cn("block h-full rounded-full transition-[width] duration-700", lvl.bar)} style={{ width: `${Math.max(c.count > 0 ? 6 : 0, c.pct)}%` }} />
+                </span>
+                <span className="text-[12px] tabular text-slate-500">{q(c.m3)} / {fmtNum(capacity)} m³</span>
               </button>
 
               {/* Sichqoncha olib borilganda — qisqa ro'yxat */}
@@ -109,7 +97,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                       {c.list.length > 7 && <li className="text-[11px] text-slate-500">…yana {c.list.length - 7} ta zayavka</li>}
                     </ul>
                   )}
-                  <p className="mt-2 border-t border-slate-100 pt-1.5 text-[11px] text-slate-400">Bosing — to&apos;liq ro&apos;yxat shu yerda ochiladi</p>
+                  <p className="mt-2 border-t border-slate-100 pt-1.5 text-[11px] text-slate-400">Bosing — ro&apos;yxat shu yerda; 2 marta bosing — realizatsiya varag&apos;i</p>
                 </div>
               )}
             </div>
@@ -122,14 +110,19 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-semibold text-slate-900">
-              {open.isToday ? "Bugun" : `${open.weekday} · ${open.label}`} — {open.count} ta zayavka · {q(open.m3)} m³
+              {`${open.weekday} · ${open.label}`} — {open.count} ta zayavka · {q(open.m3)} m³
               <span className={cn("ml-2 text-xs font-medium", candle(open.pct).text)}>
                 quvvatning {fmtNum(open.pct, 0)}%
               </span>
             </span>
-            <button type="button" onClick={() => setOpenKey(null)} className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">
-              <X size={13} /> Yopish
-            </button>
+            <span className="flex items-center gap-3">
+              <Link href={`/orders/kun/${open.key}`} className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 hover:text-slate-900 hover:underline">
+                <FileSpreadsheet size={13} /> Realizatsiya varag&apos;i
+              </Link>
+              <button type="button" onClick={() => setOpenKey(null)} className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900">
+                <X size={13} /> Yopish
+              </button>
+            </span>
           </div>
           {open.list.length === 0 ? (
             <p className="text-sm text-slate-500">Bu kunga zayavka yo&apos;q — bemalol qabul qilsangiz bo&apos;ladi.</p>
@@ -163,7 +156,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
       {busiest.count > 0 && (
         <p className="mt-2 text-xs text-slate-500">
           Eng band kun: <b className="text-slate-700">{busiest.isToday ? "bugun" : busiest.label}</b> — {q(busiest.m3)} m³ ({fmtNum(busiest.pct, 0)}%).
-          {cells.some((c) => c.state === "full") && " Yashil kunlarda quvvat to'lgan — yangi zayavka olishdan oldin ishlab chiqarish bilan kelishing."}
+          {cells.some((c) => c.state === "full") && " Qizil kunlarda quvvat to'lgan — yangi zayavka olishdan oldin ishlab chiqarish bilan kelishing."}
         </p>
       )}
     </div>

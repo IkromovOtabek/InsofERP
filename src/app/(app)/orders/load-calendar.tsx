@@ -6,13 +6,14 @@ import { fmtUnitTotals } from "@/lib/unit";
 import { orderTotal } from "@/lib/order-total";
 
 /**
- * 10 kunlik ish tartibi uchun ma'lumot: qaysi kunga qancha hajm olingan va qanday zayavkalar bor.
+ * Haftalik ish tartibi uchun ma'lumot: qaysi kunga qancha hajm olingan va qanday zayavkalar bor.
  * Ko'rinish — `calendar-view.tsx` (klient): kun tanlanganda sahifa yangilanmaydi.
  * Kunlik quvvat: Sozlamalar → Limitlar → «Kunlik quvvat (m³)» (sukut 200).
  */
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
+const MONTHS = ["yan", "fev", "mar", "apr", "may", "iyun", "iyul", "avg", "sen", "okt", "noy", "dek"];
 
-export async function OrderLoadCalendar({ days = 10 }: { days?: number }) {
+export async function OrderLoadCalendar({ days = 7 }: { days?: number }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const until = new Date(today); until.setDate(until.getDate() + days);
 
@@ -51,10 +52,10 @@ export async function OrderLoadCalendar({ days = 10 }: { days?: number }) {
     const m3 = list.reduce((s, o) => s + o.m3, 0);
     const pct = Math.min(100, (m3 / capacity) * 100);
     return {
-      key, label: n === 0 ? "Bugun" : `${d.getDate()}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+      key, label: `${d.getDate()} ${MONTHS[d.getMonth()]}`,
       weekday: WEEKDAYS[d.getDay()], list, m3, pct, count: list.length,
       urgent: list.filter((o) => o.urgent).length,
-      state: list.length === 0 ? "free" : pct >= 95 ? "full" : "busy",
+      state: list.length === 0 ? "free" : pct >= 90 ? "full" : "busy",
       isToday: n === 0,
     };
   });
