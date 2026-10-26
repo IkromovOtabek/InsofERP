@@ -215,12 +215,12 @@ const FINANCE_STEPS: TourStep[] = [
   openPage("/payments", "Kassa / bank", "Tushum va to'lovlar bo'yicha kunlik manzara."),
   openPage("/cashflow", "Kirim-Chiqim", "Pul oqimi, ta'minot hujjatlarini to'lovga tasdiqlash."),
   openGroup("Tahlil"),
-  openPage("/bi-tahlil", "BI tahlil", "Sotuv, mijoz, ombor va moliya bo'yicha tahliliy panellar. Har bir bo'lim uchun alohida sahifa bor."),
+  openPage("/dashboard", "Bosh sahifa", "Bosh sahifada BI tahlil: sotuv, mijoz, ombor va moliya bo'yicha umumiy manzara. Har bir bo'lim uchun Tahlil guruhida alohida sahifa bor."),
 ];
 
 const DIRECTOR_STEPS: TourStep[] = [
   openGroup("Tahlil"),
-  openPage("/bi-tahlil", "BI tahlil", "Korxonaning umumiy manzarasi: sotuv, agentlar, mijozlar, ombor, ishlab chiqarish, moliya va ML tahlillari."),
+  openPage("/dashboard", "Bosh sahifa", "Bosh sahifada BI tahlil — korxonaning umumiy manzarasi: sotuv, agentlar, mijozlar, ombor, ishlab chiqarish, moliya va ML tahlillari."),
   {
     id: "ai",
     title: "Insof AI",

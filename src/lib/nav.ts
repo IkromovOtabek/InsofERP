@@ -137,7 +137,7 @@ export const NAV: NavItem[] = [
   // Logistika uchun — Haydovchilar tabida. Otdel kadr kabinetida Logistika guruhi yo'q: ruxsat ECO ilovasi uchun qoladi
   { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR", "DISPATCHER"], group: "Logistika", menuFor: [] },
   // ── Tahlil (Team24 BI tuzilmasi) ──
-  // Umumiy BI sahifasi menyuda yo'q — uning o'rnida «Bosh sahifa» turadi (app-shell). Ichki sahifalarning «orqaga» havolasi ochadi
+  // Umumiy BI ko'rinishi Bosh sahifaga ko'chdi (/bi-tahlil → /dashboard), menyuda band yo'q. Ruxsat ichki sahifalar uchun qoladi
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
   { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil" },

@@ -30,6 +30,9 @@ import { pathAllowed } from "@/lib/nav";
 import { MECHANIC_HOME_ROLES } from "@/lib/sklad-logistika";
 import { parseDay } from "@/lib/logistics";
 import { faceScope } from "@/lib/face-id";
+import { parseRange } from "@/lib/bi/core";
+import { BI_ROLES } from "../bi-tahlil/shell";
+import { OverviewTab } from "../bi-tahlil/tabs/overview";
 
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
@@ -53,10 +56,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const hrView = !!s && (s.role === "HR" || (isDirector && view === "hr"));
   // Dispetcher — haydovchilar va transport holati, muddati o'tayotgan hujjat va texnik xizmat
   const dispatcherView = !!s && (s.role === "DISPATCHER" || (isDirector && view === "dispatcher"));
-  const ownerView = isDirector && !productionView && !procurementView && !logisticsView && !mechanicView && !hrView && !dispatcherView && view !== "operations";
-  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "" : "operations";
+  const ownerView = isDirector && view === "owner";
+  // Tahlil ko'radigan rollar (direktor, moliya, buxgalteriya) uchun bosh sahifa — BI tahlil ko'rinishi;
+  // /bi-tahlil shu yerga yo'naltiriladi. Boshqa ko'rinishlar tabda (?view=…)
+  const biView = !!s && !view && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
+  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "owner" : biView ? "" : "operations";
+  const biTabs = !!s && !isDirector && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
   // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri
   const faceAttendance = !!s && !!faceScope(s);
+  const davomat = faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>;
+  const nav = (
+    <>
+      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Tahlil", href: "/dashboard" }, { key: "owner", label: "Egasi", href: "/dashboard?view=owner" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {biTabs && <Tabs current={tabKey} items={[{ key: "", label: "Tahlil", href: "/dashboard" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
+    </>
+  );
   const header = (
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
@@ -64,12 +79,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : dispatcherView ? "Dispetcher · haydovchilar va transport" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
         </div>
-        {faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>}
+        {davomat}
       </div>
-      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Egasi", href: "/dashboard" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
-      {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
+      {nav}
     </>
   );
+  // BI ko'rinishida salomlashuv BI blokining o'zida — sarlavha takrorlanmaydi
+  if (biView && s) return <div>{davomat && <div className="mb-3 flex justify-end">{davomat}</div>}{nav}<OverviewTab range={parseRange(sp)} name={s.fullName} /></div>;
   if (productionView && s) return <div>{header}<ProductionHome s={s} /></div>;
   if (procurementView) return <div>{header}<ProcurementHome filters={sp} base={isDirector ? "/dashboard?view=procurement" : "/dashboard"} /></div>;
   if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} /></div>;

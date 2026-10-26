@@ -22,6 +22,8 @@ const EVERY_MS = 30_000;
  * band qiladi, tahlil raqamlari esa daqiqada bir marta o'zgarsa ham yetarli.
  */
 const SLOW = { prefix: "/bi-tahlil", everyMs: 180_000 };
+/** Bosh sahifaning sukut ko'rinishi (tabsiz) ham BI tahlil — tab `?view=` bilan almashadi, yo'l o'zgarmaydi. */
+const isSlow = (pathname: string) => pathname.startsWith(SLOW.prefix) || (pathname === "/dashboard" && !new URLSearchParams(window.location.search).has("view"));
 /** Taqdimot — statik matn, yangilanishi shart emas (va slayd holatini buzmaslik kerak). */
 const SKIP = ["/taqdimot", "/qollanma"];
 
@@ -31,7 +33,7 @@ export function LiveRefresh() {
 
   useEffect(() => {
     if (SKIP.some((p) => pathname.startsWith(p))) return;
-    const everyMs = pathname.startsWith(SLOW.prefix) ? SLOW.everyMs : EVERY_MS;
+    let last = Date.now();
 
     /**
      * Foydalanuvchi yozayotgan bo'lsa tegmaymiz. `router.refresh()` klient holatini
@@ -45,10 +47,11 @@ export function LiveRefresh() {
     };
     const refresh = () => {
       if (document.visibilityState !== "visible" || busy()) return;
+      last = Date.now();
       router.refresh();
     };
 
-    const id = setInterval(refresh, everyMs);
+    const id = setInterval(() => { if (!isSlow(pathname) || Date.now() - last >= SLOW.everyMs) refresh(); }, EVERY_MS);
     // Boshqa oynada ishlab kelgan bo'lsa — qaytishi bilan darhol yangilansin
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
