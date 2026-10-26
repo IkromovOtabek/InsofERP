@@ -142,6 +142,17 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
   const capOf = (productId: string, brigadeId: string) => capacity[productId]?.[brigadeId] ?? null;
   const sorted = (productId: string) => [...brigades].sort((a, b) => (capOf(productId, b.id)?.canMake ?? 0) - (capOf(productId, a.id)?.canMake ?? 0));
   const num = (v: string | undefined, d: number) => { const n = Number(String(v ?? "").replace(/\s+/g, "").replace(",", ".")); return v === undefined || v === "" || !Number.isFinite(n) ? d : n; };
+  // Brigada tanlangan qatorda miqdor: bo'sh / 0 / tayinlanmagan qismidan ko'p / dona uchun kasr — yuborib bo'lmaydi
+  const amountErr = (i: Item): string | null => {
+    if (!picked[i.id]) return null;
+    const raw = String(amount[i.id] ?? +i.left.toFixed(3)).replace(/\s+/g, "").replace(",", ".");
+    const n = raw === "" ? NaN : Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return "Miqdorni kiriting — 0 dan katta son";
+    if (n > i.left + 0.0005) return `Ko'pi bilan ${fmtNum(i.left, 3)} ${i.unit} — tayinlanmagan qismidan ko'p berib bo'lmaydi`;
+    if (i.unit !== "m³" && !Number.isInteger(n)) return "Dona mahsulot miqdori butun son bo'lsin";
+    return null;
+  };
+  const hasErr = items.some((i) => amountErr(i) !== null);
 
   return (
     <form action={action}>
@@ -185,14 +196,14 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
                         <span className="sr-only">Miqdor</span>
                         <Input name={`qty_${i.id}`} inputMode="decimal" value={amount[i.id] ?? String(+i.left.toFixed(3))} disabled={!sel}
                           onChange={(e) => setAmount((a) => ({ ...a, [i.id]: e.target.value }))}
-                          aria-label={`${i.product} — brigadaga beriladigan miqdor`} className="h-9 w-32 pr-12 text-right tabular" />
+                          aria-label={`${i.product} — brigadaga beriladigan miqdor`} aria-invalid={amountErr(i) ? true : undefined} className="h-9 w-32 pr-12 text-right tabular" />
                         <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-xs text-slate-400">{i.unit}</span>
                       </label>
                       <Button type="button" variant="secondary" size="sm" title="Brigadalar imkonini ko'rish" onClick={() => setModalFor(i)}>
                         <Gauge size={15} /> Imkoni
                       </Button>
-                      {sel && num(amount[i.id], i.left) > i.left + 0.0005 && <span className="w-full text-xs font-medium text-red-600">Tayinlanmagan qismi {fmtNum(i.left, 3)} {i.unit} — undan ko&apos;p berib bo&apos;lmaydi</span>}
-                      {sel && give < i.left - 0.0005 && give > 0 && <span className="w-full text-xs text-slate-500">Qolgan {fmtNum(i.left - give, 3)} {i.unit} keyin boshqa brigadaga beriladi</span>}
+                      {amountErr(i) && <span role="alert" className="w-full text-xs font-medium text-red-600">{amountErr(i)}</span>}
+                      {sel && !amountErr(i) && give < i.left - 0.0005 && give > 0 && <span className="w-full text-xs text-slate-500">Qolgan {fmtNum(i.left - give, 3)} {i.unit} keyin boshqa brigadaga beriladi</span>}
                     </div>
                   )}
                 </Td>
@@ -225,7 +236,8 @@ export function AssignForm({ orderId, items, brigades, capacity, focus }: { orde
       {open.length > 0 && (
         <div className="flex flex-wrap items-center justify-end gap-3 px-5 py-4">
           <span className="text-xs text-slate-500">Xomashyo yetmasa ham tayinlash mumkin — skladdan <b>Sklad → Brigadalar</b> bo&apos;limi orqali berasiz</span>
-          <Button disabled={pending || brigades.length === 0} variant="success"><Send size={16} /> {pending ? "Yuborilmoqda…" : "Tasdiqlash — brigadalarga yuborish"}</Button>
+          {hasErr && <span className="text-xs font-medium text-red-600">Miqdorni tuzating — keyin yuborish mumkin</span>}
+          <Button disabled={pending || brigades.length === 0 || hasErr} variant="success"><Send size={16} /> {pending ? "Yuborilmoqda…" : "Tasdiqlash — brigadalarga yuborish"}</Button>
         </div>
       )}
       <CapacityModal open={!!modalFor} item={modalFor} brigades={brigades} capacity={capacity}
