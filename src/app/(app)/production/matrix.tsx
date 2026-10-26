@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock } from "lucide-react";
+import { Grid3x3, Search, Check, X, HardHat, Boxes, Factory, ClipboardList, KanbanSquare, AlarmClock, ChevronsUpDown } from "lucide-react";
 import { Card, CardHeader, Checkbox, Input, Sheet, SheetFoot, SheetHead, SheetTd, SheetTh, SheetTr, StatCard, type SheetTone } from "@/components/ui";
 import { date, fmtNum } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
@@ -56,6 +56,8 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
   const [onlyDef, setOnlyDef] = useState(false);
   // Sukut bo'yicha hamma mahsulot ko'rinadi — matritsa o'z qutisida tepa-pastga aylanadi
   const [hideEmpty, setHideEmpty] = useState(false);
+  // Ixcham — qat'iy balandlik (~10 qator), jadval ichida tepa-pastga aylanadi; «To'liq ochish» — hamma qator birdaniga
+  const [full, setFull] = useState(false);
   // Bugungi kun boshi — kechikkanlarni belgilash uchun (render paytida bir marta)
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime(); });
 
@@ -112,7 +114,7 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
 
         <div className="p-5 pt-3">
           {/* Tepa-pastga aylantirish sahifaga o'tsin: matritsa ekranning katta qismini egallaydi, `contain` g'ildirakni yutib qo'yardi */}
-          <Sheet lang="uz" maxHeight="66vh" className="overscroll-auto overscroll-x-contain">
+          <Sheet lang="uz" maxHeight={full ? "none" : "min(60vh, 440px)"} className="overscroll-auto overscroll-x-contain">
             <SheetHead>
               <tr>
                 <SheetTh tone="plain" className={C_NO}><span className="sr-only">№</span></SheetTh>
@@ -188,6 +190,11 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
             <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-100 ring-1 ring-amber-200" /> qisman (−qolgani)</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-100 ring-1 ring-emerald-200" /> brigada tayinlangan</span>
             <span>Sonni bosing — brigada va miqdor tanlanadi.</span>
+            {rows.length > 10 && (
+              <button type="button" onClick={() => setFull((x) => !x)} className="ml-auto inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-900">
+                <ChevronsUpDown size={13} /> {full ? "Ixcham (aylantirib ko'rish)" : `To'liq ochish (${rows.length} qator)`}
+              </button>
+            )}
           </div>
         </div>
       </Card>
