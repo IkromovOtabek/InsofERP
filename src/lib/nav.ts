@@ -102,6 +102,9 @@ export const NAV: NavItem[] = [
   // Arenda (do'konlar ijarasi): oylik hisob jadvali + arenda kassasi kirim-chiqimi. Sekretar uchun yagona sahifa (OWN_PAGE_ONLY)
   { href: "/arenda",      label: "Arenda",             roles: ["SECRETARY"], group: "Moliya" },
   { href: "/kirim-qqs",   label: "Kirim QQS",          roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
+  // Moliyaviy hisobotlar: PNL, pul oqimi (DDS), balans + asosiy vositalar, kreditlar, kassa kategoriyalari daraxti (`lib/fin-report`).
+  // Ko'rish — direktor, moliya, buxgalteriya; vosita/kredit/kategoriya kiritish — buxgalteriya (FIN_REPORT_WRITERS)
+  { href: "/moliya",      label: "Moliyaviy hisobotlar", roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — kiritish direktor va buxgalteriya;
   // Finance ko'radi va yetkazuvchining boshlang'ich qarzini to'laydi ("Yetkazuvchiga to'lash" huquqi — shu sahifada).
   // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha shu rollarga ochiq, qolgan sozlamalar yopiq.
@@ -258,6 +261,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
   { key: "arenda",    label: "Arenda",                prefixes: ["/arenda"] },
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
+  { key: "moliya",    label: "Moliyaviy hisobotlar",  prefixes: ["/moliya"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
   { key: "payroll",   label: "Ish haqi",              prefixes: ["/ish-haqi"] },
   { key: "vazifalar", label: "Vazifalar",             prefixes: ["/vazifalar"] },

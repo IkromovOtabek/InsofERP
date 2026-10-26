@@ -15,7 +15,7 @@ import { ADVANCE_ORDER_STATUSES, accountBalances, addPayment, expectedAdvance } 
 import { createCashEntry } from "@/lib/cash-entry";
 import { createTransfer } from "@/lib/cash-transfer";
 import { TRANSFER_REF } from "@/lib/cash-tx";
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/cash-categories";
+import { categoryOptions } from "@/lib/fin-report/categories";
 import { unpaidReceipts } from "@/lib/receipt-payables";
 import { MAX_AMOUNT } from "@/lib/action";
 import { date as day } from "@/lib/format";
@@ -364,10 +364,13 @@ async function paymentForm(): Promise<CreateForm> {
 
 /** Kirim / chiqim — veb `/cashflow` formasi: kategoriya, yetkazuvchi va to'lanmagan kirim hujjatiga bog'lash. */
 async function cashForm(): Promise<CreateForm> {
-  const [acc, suppliers, unpaid] = await Promise.all([
+  const [acc, suppliers, unpaid, inCats, outCats] = await Promise.all([
     cashAccountOptions(),
     db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     unpaidReceipts(),
+    // Kategoriyalar — veb bilan bitta daraxt (`CashCategory`, faqat manbalar); loyiha/kredit tanlovi hozircha vebda
+    categoryOptions("INCOME").then((c) => c.map((x) => x.name)),
+    categoryOptions("EXPENSE").then((c) => c.map((x) => x.name)),
   ]);
   const expense = { field: "type", equals: "EXPENSE" }, income = { field: "type", equals: "INCOME" };
   return {
@@ -376,8 +379,8 @@ async function cashForm(): Promise<CreateForm> {
       { name: "type", label: "Turi", type: "select", required: true, value: "EXPENSE", options: [{ value: "EXPENSE", label: "Chiqim (pul chiqdi)" }, { value: "INCOME", label: "Kirim (pul kirdi)" }] },
       { name: "cashAccountId", label: "Kassa / hisob", type: "select", required: true, options: acc.options, value: acc.cash, hint: "Naqd kassa qoldiqdan oshib chiqim qilmaydi" },
       { name: "amount", label: "Summa (so'm)", type: "number", required: true, placeholder: "0" },
-      { name: "categoryExpense", label: "Kategoriya", type: "select", required: true, value: EXPENSE_CATEGORIES[0], options: EXPENSE_CATEGORIES.map((c) => ({ value: c, label: c })), showIf: expense },
-      { name: "categoryIncome", label: "Kategoriya", type: "select", required: true, value: INCOME_CATEGORIES[0], options: INCOME_CATEGORIES.map((c) => ({ value: c, label: c })), showIf: income },
+      { name: "categoryExpense", label: "Kategoriya", type: "select", required: true, value: outCats[0], options: outCats.map((c) => ({ value: c, label: c })), showIf: expense },
+      { name: "categoryIncome", label: "Kategoriya", type: "select", required: true, value: inCats[0], options: inCats.map((c) => ({ value: c, label: c })), showIf: income },
       { name: "supplierId", label: "Yetkazuvchi", type: "select", options: suppliers.map((s) => ({ value: s.id, label: s.name })), showIf: expense, hint: "Xomashyo uchun to'lov bo'lsa" },
       {
         name: "receiptId", label: "Kirim hujjati (ixtiyoriy)", type: "select", dependsOn: "supplierId", showIf: expense,
@@ -1274,7 +1277,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
       const d = p.data;
       const expense = d.type === "EXPENSE";
       const category = (expense ? d.categoryExpense : d.categoryIncome) || d.category;
-      if (!category || !(expense ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).includes(category)) throw new Error("Kategoriya tanlanmagan");
+      if (!category || !(await categoryOptions(expense ? "EXPENSE" : "INCOME")).some((c) => c.name === category)) throw new Error("Kategoriya tanlanmagan");
       // Qoidalar (qulf, kirim hujjati qoldig'i, kassa minusi/overdraft, dublikat) — veb bilan bitta joyda
       const r = await createCashEntry({
         type: d.type, date: cashDate(d.date), cashAccountId: d.cashAccountId, amount: d.amount, category,

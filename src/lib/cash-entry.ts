@@ -5,6 +5,7 @@ import { cashOutflowError } from "@/lib/payments";
 import { lockReceipt, receiptPayState } from "@/lib/receipt-payables";
 import { PEREKIT_CATEGORY } from "@/lib/cash-categories";
 import { MAX_AMOUNT } from "@/lib/action";
+import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
 
 /**
  * Qo'lda kirim/chiqim yozish — yagona joy: veb "Kirim-Chiqim" formasi ham (`cashflow/actions.ts`),
@@ -28,6 +29,12 @@ export type CashEntryInput = {
   /** Chiqim qaysi kirim hujjati (yetkazuvchidan olingan mol) uchun. */
   receiptId?: string | null;
   note?: string | null;
+  /** Sub manba — `category` manbasining bolasi bo'lishi shart (`lib/fin-report/categories`). */
+  subCategory?: string | null;
+  /** Kategoriya loyiha so'rasa (Loyihalar) — qaysi loyiha. */
+  projectId?: string | null;
+  /** Kategoriya kredit so'rasa — qaysi kredit; asosiy qarz / foiz kategoriyadan olinadi. */
+  loanId?: string | null;
 };
 
 class CashError extends Error {}
@@ -37,14 +44,44 @@ const DUPLICATE_WINDOW_MS = 60_000;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * Kategoriya daraxti bo'yicha tekshiruv (`CashCategory`): manba yozuv turiga mos, sub manba shu manbaniki,
+ * loyiha / kredit kategoriya so'raganda faol bo'lsin. Kategoriya daraxtda bo'lmasa — eski erkin nom, o'tkaziladi
+ * (avtomatik yozuvlar va eski mobil ilova); hisobotda «Manbasi aniqlanmagan» bo'lib ko'rinadi.
+ */
+async function categoryLinks(d: { type: "INCOME" | "EXPENSE"; category: string; subCategory?: string | null; projectId?: string | null; loanId?: string | null }) {
+  const resolve = makeResolver(await loadCategories());
+  const base = resolve(d.category);
+  if (!base) return { data: { subCategory: null, projectId: null, loanId: null, loanPart: null } };
+  if (base.top.type !== d.type) return { error: `«${base.top.name}» — ${base.top.type === "INCOME" ? "kirim" : "chiqim"} kategoriyasi` };
+  // Sub manba aynan shu manbaniki bo'lsin (boshqa manbaning bolasi yozuvni jimgina boshqa manbaga o'tkazib yubormasin)
+  const r = d.subCategory ? resolve(d.category, d.subCategory) : base;
+  if (d.subCategory && (!r?.sub || r.top.id !== base.top.id)) return { error: `«${d.subCategory}» — «${base.top.name}» ichida bunday sub manba yo'q` };
+  if (!r) return { data: { subCategory: null, projectId: null, loanId: null, loanPart: null } };
+  let projectId: string | null = null, loanId: string | null = null;
+  if (r.top.needs === "PROJECT" && d.projectId) {
+    const p = await db.project.findFirst({ where: { id: d.projectId, isActive: true }, select: { id: true } });
+    if (!p) return { error: "Loyiha topilmadi yoki yopilgan" };
+    projectId = p.id;
+  }
+  if (r.top.needs === "LOAN" && d.loanId) {
+    const l = await db.loan.findFirst({ where: { id: d.loanId, cancelledAt: null, closedAt: null }, select: { id: true } });
+    if (!l) return { error: "Kredit topilmadi yoki yopilgan" };
+    loanId = l.id;
+  }
+  return { data: { category: r.top.name, subCategory: r.sub?.name ?? null, projectId, loanId, loanPart: loanId ? r.top.loanPart ?? "PRINCIPAL" : null } };
+}
+
 export async function createCashEntry(input: CashEntryInput, userId: string): Promise<{ id?: string; error?: string }> {
-  const { receiptId, ...d } = { ...input, amount: r2(input.amount) };
+  const { receiptId, subCategory, projectId, loanId, ...d } = { ...input, amount: r2(input.amount) };
   if (!(d.amount > 0)) return { error: "Summa 0 dan katta bo'lsin" };
   if (receiptId && d.type !== "EXPENSE") return { error: "Kirim hujjatiga faqat chiqim (to'lov) bog'lanadi" };
   // Perekit — o'tkazma hujjati (`lib/cash-transfer.ts`), oddiy chiqim bo'lib yozilmaydi
   if (d.category === PEREKIT_CATEGORY) return { error: "Perekit — hisoblararo o'tkazma: «Kassa ⇄ bank» orqali yozing" };
   const acc = await db.cashAccount.findFirst({ where: { id: d.cashAccountId, isActive: true }, select: { id: true } });
   if (!acc) return { error: "Kassa/hisob topilmadi yoki yopilgan" };
+  const links = await categoryLinks({ type: d.type, category: d.category, subCategory, projectId, loanId });
+  if ("error" in links) return { error: links.error };
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashtx:" + d.cashAccountId}))`;
     // Kirim hujjatiga bog'langan to'lov: kirim qulfi ostida qolgan summa tekshiriladi — "To'lash" tugmasi
@@ -75,7 +112,7 @@ export async function createCashEntry(input: CashEntryInput, userId: string): Pr
       data: {
         type: d.type, date: d.date, cashAccountId: d.cashAccountId, amount: d.amount, category: d.category,
         counterparty: d.counterparty ?? null, supplierId: d.supplierId ?? null, note: d.note ?? null,
-        ...(link ?? {}), createdById: userId,
+        ...links.data, ...(link ?? {}), createdById: userId,
       },
     });
     await audit(tx, userId, "CREATE", "CashTransaction", t.id, undefined, t);

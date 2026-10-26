@@ -15,7 +15,7 @@ import { TxForm } from "./tx-form";
 import { cancelCashTx } from "./actions";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { unpaidReceipts } from "@/lib/receipt-payables";
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./categories";
+import { categoryOptions } from "@/lib/fin-report/categories";
 import { TransferForm } from "./transfer-form";
 import { cancelTransferAction } from "./transfer-actions";
 import { listTransfers, transferKind } from "@/lib/cash-transfer";
@@ -67,11 +67,16 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const canStorno = canDo(s, "cashflow", "transfer_storno");
 
   const canPay = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
-  const [marks, unpaid, supplyTx] = await Promise.all([
+  const [marks, unpaid, supplyTx, incomeCats, expenseCats, projects, loans] = await Promise.all([
     customerMarks(payments.map((p) => p.customerId)),
     unpaidReceipts(),
     // Ta'minot zanjirining chiqimlari kirimga bog'langan bo'lsa ham bu yerdan o'chirilmaydi
     db.supplyRequest.findMany({ where: { cashTxId: { in: txs.filter((t) => t.refType === "GoodsReceipt").map((t) => t.id) } }, select: { cashTxId: true } }),
+    // Kategoriya daraxti (Manba → Sub manba), loyihalar va kreditlar — formadagi tanlovlar uchun (`lib/fin-report`)
+    categoryOptions("INCOME"),
+    categoryOptions("EXPENSE"),
+    db.project.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.loan.findMany({ where: { cancelledAt: null, closedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true, kind: true } }),
   ]);
   // Bekor qilingan yozuv jurnalda «Bekor qilingan» belgisi bilan qoladi, lekin kirim/chiqim jamiga kirmaydi
   const cNames = await cancellerNames(txs);
@@ -149,7 +154,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <h2 className="mb-3 font-semibold">Yangi kirim / chiqim</h2>
-          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={INCOME_CATEGORIES} expenseCats={EXPENSE_CATEGORIES} />
+          <TxForm accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))} canPerekit={canTransfer} clientToken={crypto.randomUUID()} suppliers={suppliers} receipts={unpaid.map((r) => ({ id: r.id, supplierId: r.supplierId, label: `${r.docNo} · ${r.supplier} · qolgan ${money(r.left)}` }))} incomeCats={incomeCats} expenseCats={expenseCats} projects={projects} loans={loans} />
         </Card>
         <Card className="lg:col-span-2">
           <h2 className="mb-3 font-semibold">Chiqimlar kategoriya bo&apos;yicha</h2>

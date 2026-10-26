@@ -8,6 +8,7 @@ import { Button, Field, FormError, FormSuccess, Input, Select, FormActions } fro
 import { MoneyInput } from "@/components/money-input";
 import { cn } from "@/lib/utils";
 import { CASH_METHOD_LABEL, PEREKIT_CATEGORY, type CashMethod } from "@/lib/cash-categories";
+import type { CategoryOption } from "@/lib/fin-report/categories";
 
 type Opt = { id: string; name: string };
 type Acc = Opt & { type?: CashMethod };
@@ -16,8 +17,12 @@ type Acc = Opt & { type?: CashMethod };
  * `receipts` — to'lanmagan kirim hujjatlari: chiqim shulardan biriga bog'lansa, kirimning "to'langan" summasiga qo'shiladi.
  * `canPerekit` — Chiqim kategoriyalarida «Perekit»: o'z hisoblarimiz orasida o'tkazma (chiqim emas, `lib/cash-transfer.ts`).
  * «Naqd / Bank» — to'lov usuli: hisob ro'yxatini shu turdagi hisoblarga toraytiradi (usul hisob turidan olinadi).
+ * Kategoriya — «Manba → Sub manba» daraxti (`CashCategory`); manba loyiha yoki kredit so'rasa, qo'shimcha tanlov chiqadi.
  */
-export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, canPerekit = false, clientToken = "" }: { accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: string[]; expenseCats: string[]; canPerekit?: boolean; clientToken?: string }) {
+export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expenseCats, projects = [], loans = [], canPerekit = false, clientToken = "" }: {
+  accounts: Acc[]; suppliers: Opt[]; receipts?: { id: string; supplierId: string; label: string }[]; incomeCats: CategoryOption[]; expenseCats: CategoryOption[];
+  projects?: Opt[]; loans?: (Opt & { kind: "BANK" | "BORROWED" | "LENT" })[]; canPerekit?: boolean; clientToken?: string;
+}) {
   const [state, action, pending] = useActionState(createCashTx, undefined);
   const [type, setType] = useState<"INCOME" | "EXPENSE">("EXPENSE");
   // Saqlangandan keyin maydonlar qayta mount qilinadi — summa (MoneyInput) ham, tanlovlar ham to'liq tozalanadi
@@ -29,14 +34,19 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
   // Perekit uchun bir martalik kalit: ikki marta bosilgan «Saqlash» ikkinchi o'tkazma ochmaydi; saqlangach yangilanadi
   const [token, setToken] = useState(clientToken);
   useEffect(() => { if (state?.ok) { setFormKey((k) => k + 1); setSupplierId(""); setCategory(""); setToken(crypto.randomUUID()); } }, [state]);
-  const cats = type === "INCOME" ? incomeCats : canPerekit && accounts.length >= 2 ? [...expenseCats, PEREKIT_CATEGORY] : expenseCats;
-  const cat = cats.includes(category) ? category : cats[0];
+  const perekitOpt: CategoryOption = { name: PEREKIT_CATEGORY, needs: null, loanPart: null, subs: [] };
+  const cats = type === "INCOME" ? incomeCats : canPerekit && accounts.length >= 2 ? [...expenseCats, perekitOpt] : expenseCats;
+  const cur = cats.find((c) => c.name === category) ?? cats[0];
+  const cat = cur?.name ?? "";
   const perekit = type === "EXPENSE" && cat === PEREKIT_CATEGORY;
   // Perekitda hamma hisob (kassa ⇄ bank); oddiy kirim/chiqimda — tanlangan usuldagi hisoblar
   const shownAccounts = perekit ? accounts : accounts.filter((a) => !a.type || a.type === method);
   const accId = shownAccounts.some((a) => a.id === fromId) ? fromId : shownAccounts[0]?.id ?? "";
   const accLabel = (a: Acc) => `${a.name}${a.type ? ` (${a.type === "CASH" ? "naqd" : "bank"})` : ""}`;
   const shownReceipts = supplierId ? receipts.filter((r) => r.supplierId === supplierId) : receipts;
+  // Kredit kategoriyasi: «Qarz berildi / qaytdi» — biz bergan qarzlar, qolganlari — kreditlar va olingan qarzlar
+  const lentCat = /qarz berildi|berilgan qarz/i.test(cat);
+  const shownLoans = loans.filter((l) => (l.kind === "LENT") === lentCat);
 
   return (
     <form action={action} className="space-y-4">
@@ -63,21 +73,36 @@ export function TxForm({ accounts, suppliers, receipts = [], incomeCats, expense
         <Field label="Sana *"><Input name="date" type="date" defaultValue={isoDate()} required /></Field>
         <Field label={perekit ? "Qayerdan (hisob) *" : "Kassa / hisob *"}><Select name="cashAccountId" value={accId} onChange={(e) => setFromId(e.target.value)} required>{shownAccounts.map((a) => <option key={a.id} value={a.id}>{perekit ? accLabel(a) : a.name}</option>)}</Select></Field>
         <Field label="Summa *"><MoneyInput name="amount" required /></Field>
-        <Field label="Kategoriya *"><Select name="category" value={cat} onChange={(e) => setCategory(e.target.value)}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</Select></Field>
+        <Field label="Manba (kategoriya) *"><Select name="category" value={cat} onChange={(e) => setCategory(e.target.value)}>{cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</Select></Field>
+        {!perekit && cur && cur.subs.length > 0 && (
+          <Field label="Sub manba" hint="tafsilot — hisobotda manba ichida ko'rinadi">
+            <Select key={cat} name="subCategory" defaultValue=""><option value="">— umumiy —</option>{cur.subs.map((s) => <option key={s} value={s}>{s}</option>)}</Select>
+          </Field>
+        )}
+        {!perekit && cur?.needs === "PROJECT" && (
+          <Field label="Loyiha *" hint={projects.length ? "zavod foydasiga kirmaydi" : "Moliya → Kategoriyalar sahifasida loyiha qo'shing"}>
+            <Select key={cat} name="projectId" required defaultValue=""><option value="" disabled>— loyiha —</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+          </Field>
+        )}
+        {!perekit && cur?.needs === "LOAN" && (
+          <Field label="Kredit / qarz *" hint={shownLoans.length ? (cur.loanPart === "INTEREST" ? "foiz — PNL xarajati" : "asosiy qarz — qoldiqni o'zgartiradi") : "Moliya → Kreditlar sahifasida qo'shing"}>
+            <Select key={cat} name="loanId" required defaultValue=""><option value="" disabled>— tanlang —</option>{shownLoans.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>
+          </Field>
+        )}
         {perekit ? (
           <Field label="Qayerga (hisob) *" hint="Pul o'z hisobimizga o'tadi — chiqim emas, ikkala hisob tarixida ko'rinadi" className="sm:col-span-2">
             <Select name="toAccountId" defaultValue="" required><option value="" disabled>Hisobni tanlang…</option>{accounts.filter((a) => a.id !== accId).map((a) => <option key={a.id} value={a.id}>{accLabel(a)}</option>)}</Select>
           </Field>
         ) : type === "EXPENSE" ? (
           <Field label="Yetkazuvchi" hint="Xomashyo uchun"><Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}><option value="">—</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
-        ) : <div />}
+        ) : null}
         {type === "EXPENSE" && !perekit && shownReceipts.length > 0 && (
           <Field label="Kirim hujjati" hint="Tanlansa — shu kirimga to'lov (qisman ham), qolgandan oshmaydi" className="sm:col-span-2">
             <Select name="receiptId" defaultValue=""><option value="">— bog&apos;lanmagan —</option>{shownReceipts.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</Select>
           </Field>
         )}
         {!perekit && <Field label={type === "INCOME" ? "Kimdan" : "Kimga"}><Input name="counterparty" placeholder="Nomi / F.I.O." /></Field>}
-        <Field label="Izoh" className="sm:col-span-3"><Input name="note" placeholder="Nima uchun" /></Field>
+        <Field label="Izoh" className="sm:col-span-3"><Input name="note" placeholder={cur?.needs === "ASSET" ? "Qanday vosita (kartochka shu nom bilan ochiladi)" : "Nima uchun"} /></Field>
       </div>
       <FormActions>
         {perekit

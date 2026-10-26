@@ -1964,17 +1964,160 @@ model CashTransaction {
   cancelledAt   DateTime?
   cancelledById String?
   cancelReason  String?
+  /// Sub manba — `CashCategory` daraxtidagi bola nomi (masalan «Yoqilg'i xarajatlari»); bo'sh bo'lishi mumkin
+  subCategory   String?
+  /// Loyiha (zavod foydasiga kirmaydi) — kategoriya `needs = PROJECT` bo'lsa
+  projectId     String?
+  /// Kredit / qarz — kategoriya `needs = LOAN` bo'lsa; `loanPart` asosiy qarz yoki foizni ajratadi
+  loanId        String?
+  loanPart      LoanPart?
 
   cashAccount CashAccount     @relation(fields: [cashAccountId], references: [id])
   supplier    Supplier?       @relation(fields: [supplierId], references: [id])
   createdBy   User            @relation("CashTxCreatedBy", fields: [createdById], references: [id])
   opening     OpeningBalance?
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  loan        Loan?           @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  fixedAsset  FixedAsset?
 
   @@index([date, type])
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([cashAccountId])
   @@index([refType, refId])
   @@index([supplierId])
+  @@index([cancelledAt])
+  @@index([projectId])
+  @@index([loanId])
+}
+
+/// Pul oqimi turi (DDS): joriy, moliyaviy, investitsion.
+enum CashFlowKind {
+  OPERATING
+  FINANCING
+  INVESTING
+}
+
+/// Kassa kategoriyasining PNL'dagi qatori. NONE — foyda-zararga kirmaydi (kredit tanasi, asosiy vosita, qarz berish…).
+enum PnlLine {
+  OTHER_INCOME // boshqa tushumlar
+  MATERIALS // xom-ashyo to'lovi: hisoblangan PNL'da tannarx retseptdan olinadi, bu qator faqat pul asosida
+  PRODUCTION // ishlab chiqarish (zavod) xarajatlari
+  PAYROLL // ish haqi: tasdiqlangan vedomost bo'lsa hisoblangan summa olinadi
+  TRANSPORT // avtotransport
+  ADMIN // ma'muriy (ofis, bank, HR)
+  COMMERCIAL // tijoriy (marketing, xayriya)
+  TAX // soliqlar
+  INTEREST // kredit foizi
+  PROJECT // loyihalar — zavod foydasidan keyin, alohida
+  DIVIDEND // egasiga olingan pul — taqsimlanmagan foydadan oldin
+  NONE
+}
+
+/// Kategoriya qo'shimcha nimani so'raydi: loyiha, kredit yoki asosiy vosita kartochkasi.
+enum CashCategoryNeeds {
+  PROJECT
+  LOAN
+  ASSET
+}
+
+/// Kirim-Chiqim kategoriyalari daraxti (Manba → Sub manba). `CashTransaction.category` / `subCategory` shu yerdagi
+/// `name` bilan NOM orqali bog'lanadi (FK emas): avtomatik yozadigan joylar va eski yozuvlar o'zgarmaydi.
+/// Eski/erkin nomlar `aliases` orqali topiladi; hech qaysiga tushmagani hisobotda «Manbasi aniqlanmagan».
+model CashCategory {
+  id        String             @id @default(cuid())
+  name      String             @unique
+  type      CashTxType // INCOME yoki EXPENSE
+  parentId  String?
+  flow      CashFlowKind       @default(OPERATING)
+  pnlLine   PnlLine            @default(NONE)
+  needs     CashCategoryNeeds?
+  /// Kredit kategoriyasida qaysi qism: asosiy qarz yoki foiz (formada o'zi qo'yiladi)
+  loanPart  LoanPart?
+  aliases   String[]           @default([])
+  /// Tizim kategoriyasi — kod unga nom bo'yicha tayanadi (Xomashyo, Ish haqi, Bank xizmati…): o'chirib/qayta nomlab bo'lmaydi
+  isSystem  Boolean            @default(false)
+  isActive  Boolean            @default(true)
+  sort      Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  parent   CashCategory?  @relation("CashCategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children CashCategory[] @relation("CashCategoryTree")
+
+  @@index([parentId])
+}
+
+/// Loyiha — zavoddan tashqari yo'nalish (Nazira Servis, Future Stone, PB sex…). Xarajati PNL'da zavod foydasidan keyin.
+model Project {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  isActive    Boolean  @default(true)
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  transactions CashTransaction[]
+}
+
+enum LoanKind {
+  BANK // bank krediti
+  BORROWED // boshqadan qarz olindi
+  LENT // biz qarz berdik (aktiv)
+}
+
+enum LoanPart {
+  PRINCIPAL // asosiy qarz (tanasi) — balansda, PNL'ga kirmaydi
+  INTEREST // foiz — PNL xarajati
+}
+
+/// Kredit va qarzlar reyestri. Qoldiq = boshlang'ich + kassadagi asosiy qarz harakatlari
+/// (BANK/BORROWED: kirim oshiradi, chiqim kamaytiradi; LENT: chiqim oshiradi, kirim kamaytiradi).
+model Loan {
+  id             String    @id @default(cuid())
+  kind           LoanKind
+  name           String // "Aloqabank — 2025 kredit"
+  counterparty   String
+  /// Tizimga o'tish sanasidagi qoldiq (asosiy qarz)
+  openingBalance Decimal   @default(0) @db.Decimal(18, 2)
+  openingDate    DateTime
+  /// Yillik foiz (ma'lumot uchun)
+  rate           Decimal?  @db.Decimal(6, 2)
+  note           String?
+  closedAt       DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancelReason   String?
+
+  transactions CashTransaction[]
+
+  @@index([kind, cancelledAt])
+}
+
+/// Asosiy vosita: bino, uskuna, mashina. Amortizatsiya teng ulushda — olingan oydan keyingi oydan boshlab
+/// `cost / lifeMonths` har oy; balansda qoldiq qiymati. Kassadagi «Asosiy vosita xaridi» yozuviga `cashTxId` bilan bog'lanadi.
+model FixedAsset {
+  id            String    @id @default(cuid())
+  name          String
+  group         String // "Bino va yer", "Uskuna", "Transport", "Ofis jihozlari"
+  acquiredAt    DateTime
+  cost          Decimal   @db.Decimal(18, 2)
+  lifeMonths    Int
+  cashTxId      String?   @unique
+  note          String?
+  /// Sotilgan / hisobdan chiqarilgan sana — shu oydan keyin amortizatsiya va balans qiymati yo'q
+  disposedAt    DateTime?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  cashTx CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: Restrict)
+
   @@index([cancelledAt])
 }
 

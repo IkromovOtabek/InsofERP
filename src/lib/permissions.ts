@@ -124,6 +124,12 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
   // direktor modulni "yo'q" / "ko'rish" / "yozish" qilib cheklaydi yoki beradi (`requireModuleWrite`)
   mexanik: [],
   "kirim-qqs": [], // faqat ko'rish (hisobot)
+  // Moliyaviy hisobotlar o'zi faqat ko'rish; ma'lumotnomalarni buxgalteriya yuritadi (`lib/fin-report`)
+  moliya: [
+    { key: "assets",     label: "Asosiy vositalar va amortizatsiya", roles: ["ACCOUNTING"] },
+    { key: "loans",      label: "Kreditlar va qarzlar reyestri",     roles: ["ACCOUNTING"] },
+    { key: "categories", label: "Kassa kategoriyalari va loyihalar", roles: ["ACCOUNTING"], hint: "Manba / Sub manba, PNL qatori va pul oqimi turi" },
+  ],
   arenda: [
     { key: "create", label: "Arenda kirim-chiqimini yozish",       roles: ["SECRETARY"] },
     { key: "shops",  label: "Do'konlar va oylik hisobni tahrirlash", roles: ["SECRETARY"] },

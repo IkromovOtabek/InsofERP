@@ -6,6 +6,8 @@ import { lossChannels } from "@/lib/bi/finance";
 import { materialOverview } from "@/lib/bi/stock";
 import { MONTHS_SHORT } from "@/lib/bi/plans";
 import { EXPENSE_CATEGORIES } from "@/app/(app)/cashflow/categories";
+import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
+import type { PnlLine } from "@/generated/prisma";
 import { ROLE_LABELS } from "@/lib/nav";
 import { customersCredit, type CustomerCredit } from "@/lib/finance";
 import { receivablesReport, OWNER_EDGES } from "@/lib/receivables";
@@ -37,6 +39,8 @@ const cat = (name: string) => {
 };
 /** Xomashyo kategoriyasi — tannarxga kiradi, operatsion xarajatga qo'shilmaydi (ikki marta hisoblanmasin). */
 export const COGS_CATEGORY = cat("Xomashyo");
+/** Operatsion xarajatga kirmaydigan PNL qatorlari (`lib/fin-report`): kredit tanasi / asosiy vosita / qarz (NONE), loyihalar, divident. */
+const NON_OPEX = new Set<PnlLine>(["NONE", "PROJECT", "DIVIDEND"]);
 /** Transport (yoqilg'i shu toifada) — transport blokidagi "fakt / norma". */
 const FUEL_CATEGORY = cat("Transport");
 const REPAIR_CATEGORY = cat("Ta'mirlash / ehtiyot qism");
@@ -121,7 +125,7 @@ export async function ownerDashboard() {
     db.salesPlan.findMany({ where: { year: y, month: m + 1 } }),
     db.expenseBudget.findMany({ where: { year: y, month: m + 1 } }),
     db.cashTransaction.findMany({ where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: monthStart, lt: tomorrow } }, include: { cashAccount: { select: { name: true, type: true } }, supplier: { select: { name: true } }, createdBy: { select: { fullName: true, role: true } } }, orderBy: { amount: "desc" } }),
-    db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: new Date(y, m - 3, 1), lt: monthStart } }, select: { category: true, amount: true, date: true } }),
+    db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: new Date(y, m - 3, 1), lt: monthStart } }, select: { category: true, subCategory: true, amount: true, date: true } }),
     db.payment.findMany({ where: { date: { gte: monthStart, lt: tomorrow } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true, type: true } } }, orderBy: { amount: "desc" } }),
     db.payment.findMany({ where: { date: { gte: addDays(today, -30), lt: tomorrow } }, select: { amount: true } }),
     db.payment.groupBy({ by: ["cashAccountId"], _sum: { amount: true } }),
@@ -178,14 +182,18 @@ export async function ownerDashboard() {
 
   /* ───────────────────────── Xarajatlar va byudjet ───────────────────────── */
   // Toifalar kanonik nomga keltiriladi (eski "Yoqilg'i", "Avans"… → EXPENSE_CATEGORIES); bir toifaga tushgan bir nechta byudjet qo'shiladi
-  const expMonth = txMonth.filter((t) => t.type === "EXPENSE").map((t) => ({ ...t, category: expenseCategoryOf(t.category) }));
+  // Foyda-zararga kirmaydigan chiqimlar (kredit tanasi, asosiy vosita, qarz berish), loyihalar va divident — operatsion xarajat
+  // emas (`CashCategory.pnlLine`, Moliyaviy hisobotlar bilan bir xil); ular «Xarajat» va sof natijani buzmasin
+  const resolveCat = makeResolver(await loadCategories());
+  const isOpex = (t: { category: string; subCategory?: string | null }) => { const r = resolveCat(t.category, t.subCategory); return !r || !NON_OPEX.has(r.top.pnlLine); };
+  const expMonth = txMonth.filter((t) => t.type === "EXPENSE" && isOpex(t)).map((t) => ({ ...t, category: expenseCategoryOf(t.category) }));
   const budgetOf = new Map<string, { amount: number; limit: number }>();
   for (const b of budgets) {
     const k = expenseCategoryOf(b.category), cur = budgetOf.get(k) ?? { amount: 0, limit: 0 };
     budgetOf.set(k, { amount: cur.amount + Number(b.amount), limit: cur.limit + Number(b.limit ?? b.amount) });
   }
   const prev3ByCat = new Map<string, Sum>(); // kategoriya → oy → summa (anomaliya uchun tarixiy norma)
-  for (const t of txPrev3) { const k = expenseCategoryOf(t.category); const mm = prev3ByCat.get(k) ?? new Map(); add(mm, monthKey(t.date), Number(t.amount)); prev3ByCat.set(k, mm); }
+  for (const t of txPrev3.filter(isOpex)) { const k = expenseCategoryOf(t.category); const mm = prev3ByCat.get(k) ?? new Map(); add(mm, monthKey(t.date), Number(t.amount)); prev3ByCat.set(k, mm); }
   const categories = [...new Set([...EXPENSE_CATEGORIES, ...expMonth.map((t) => t.category), ...budgetOf.keys()])].map((cat) => {
     const rows = expMonth.filter((t) => t.category === cat);
     const month = sum(rows.map((t) => Number(t.amount))), day = sum(rows.filter((t) => t.date >= today).map((t) => Number(t.amount)));
@@ -366,7 +374,7 @@ export async function ownerDashboard() {
   const trend = months.map(({ key, label, s, e }) => {
     const rows = sales90.filter((r) => r.date >= s && r.date < e);
     const r = rev(rows), c = cogsOf(rows);
-    const opex = key === monthKey(monthStart) ? opexMonth : sum(txPrev3.filter((t) => t.date >= s && t.date < e && t.category !== COGS_CATEGORY).map((t) => Number(t.amount)));
+    const opex = key === monthKey(monthStart) ? opexMonth : sum(txPrev3.filter((t) => t.date >= s && t.date < e && t.category !== COGS_CATEGORY && isOpex(t)).map((t) => Number(t.amount)));
     return { key, label, revenue: r, profit: r - c - opex, expenses: c + opex, production: sum(batchesMonth.filter((b) => b.date >= s && b.date < e && b.product.unit === "m3").map((b) => Number(b.qtyM3))) };
   });
   const dyn = [30, 60, 90].map((d) => { const cur = rev(sales90.filter((r) => r.date >= addDays(today, -d))); const prev = rev(sales90.filter((r) => r.date >= addDays(today, -2 * d) && r.date < addDays(today, -d))); return { days: d, revenue: cur, delta: prev > 0 ? ((cur - prev) / prev) * 100 : null }; });

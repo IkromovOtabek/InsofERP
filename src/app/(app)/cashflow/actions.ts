@@ -19,6 +19,10 @@ const schema = z.object({
   // Chiqim qaysi kirim hujjati (yetkazuvchidan olingan mol) uchun — bog'lansa kirim "to'langan" summasiga qo'shiladi
   receiptId: zOpt,
   note: zOpt,
+  // Kategoriya daraxti: sub manba, loyiha, kredit (`lib/fin-report/categories`)
+  subCategory: zOpt,
+  projectId: zOpt,
+  loanId: zOpt,
   // «Perekit» tanlanganda: pul qaysi o'z hisobimizga o'tadi
   toAccountId: zOpt,
   clientToken: zOpt,
@@ -41,9 +45,12 @@ export async function createCashTx(_prev: ActionState, fd: FormData): Promise<Ac
   // Qoida `lib/cash-entry.ts` da — mobil ilovadagi kassa ham shuni chaqiradi
   const res = await createCashEntry({ ...r.data, date: new Date(r.data.date) }, s.userId);
   if (res.error) return { error: res.error };
-  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/");
-  return { ok: true };
+  revalidatePath("/cashflow"); revalidatePath("/payments"); revalidatePath("/"); revalidatePath("/moliya", "layout");
+  return { ok: true, note: r.data.category === ASSET_PURCHASE_CATEGORY ? "Saqlandi. Endi Moliya → Asosiy vositalar sahifasida shu xarid uchun kartochka oching (amortizatsiya shundan hisoblanadi)" : undefined };
 }
+
+/** Asosiy vosita xaridi — saqlangach kartochka ochishni eslatamiz (migratsiyadagi tizim kategoriyasi nomi). */
+const ASSET_PURCHASE_CATEGORY = "Asosiy vosita xaridi";
 
 /**
  * Qo'lda yozilgan kirim/chiqimni bekor qilish — sabab bilan (`ConfirmButton reason="required"`). Yozuv o'chirilmaydi,
