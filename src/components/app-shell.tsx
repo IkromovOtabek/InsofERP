@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { LayoutDashboard, UserPlus, GraduationCap, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, UserPlus, GraduationCap, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
 import { Avatar } from "@/components/ui";
@@ -65,21 +65,34 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
   // Guruhlar akkordeon: bir vaqtda faqat bittasi ochiq. Sarlavha bosilsa o'sha guruh ochiladi, oldingisi yopiladi.
   // Sukut bo'yicha (null) joriy sahifa turgan guruh ochiq.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const groups = GROUP_ORDER.map((g) => ({ g, items: items.filter((i) => i.group === g) })).filter((x) => x.items.length);
+  const [tahlilOpen, setTahlilOpen] = useState(true);
+  const [moreOpenState, setMoreOpen] = useState<boolean | null>(null);
+  let groups = GROUP_ORDER.map((g) => ({ g, items: items.filter((i) => i.group === g) })).filter((x) => x.items.length);
+  // Tahlil ko'radigan rollarda menyuda faqat Tahlil turadi: «Bosh sahifa» uning boshiga o'tadi,
+  // qolgan guruhlar bitta «Boshqa bo'limlar» tugmasi ichida (sukut bo'yicha yopiq, joriy sahifa o'sha yerda bo'lsa ochiq).
+  const tahlilMode = groups.some((x) => x.g === "Tahlil");
+  if (tahlilMode) {
+    const home = groups.find((x) => x.g === "Asosiy")?.items ?? [];
+    groups = groups.filter((x) => x.g !== "Asosiy").map((x) => (x.g === "Tahlil" ? { g: x.g, items: [...home, ...x.items] } : x));
+  }
+  const isGroupActive = (gi: NavItem[]) => gi.some((i) => active === i.href || (i.children ?? []).some((c) => active === c.href));
+  const mainGroups = tahlilMode ? groups.filter((x) => x.g === "Tahlil") : groups;
+  const moreGroups = tahlilMode ? groups.filter((x) => x.g !== "Tahlil") : [];
+  const moreOpen = moreOpenState ?? moreGroups.some((x) => isGroupActive(x.items));
   // Har bir yozuv (guruh sarlavhasi, band, ichki band) ketma-ket paydo bo'ladi — --i tartib raqami CSS'da kechikishga aylanadi
   let seq = 0;
   const stagger = (j: number) => ({ "--i": seq++, "--j": j } as React.CSSProperties);
-  return (
-    <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-2">
-      {groups.map(({ g, items }) => {
+  const renderGroup = ({ g, items }: { g: string; items: NavItem[] }) => {
         const hasHeader = g !== "Asosiy";
-        const groupActive = items.some((i) => active === i.href || (i.children ?? []).some((c) => active === c.href));
-        const groupOpen = !hasHeader || (openGroup === null ? groupActive : openGroup === g);
+        const groupActive = isGroupActive(items);
+        // Tahlil rejimida Tahlil guruhi akkordeonga kirmaydi — boshqa guruh ochilganda yopilib qolmasin
+        const own = tahlilMode && g === "Tahlil";
+        const groupOpen = !hasHeader || (own ? tahlilOpen : openGroup === null ? groupActive : openGroup === g);
         return (
           <div key={g}>
             {hasHeader && (
               <button type="button" style={stagger(0)} aria-expanded={groupOpen} data-tour={`group:${g}`}
-                onClick={() => setOpenGroup(groupOpen ? "" : g)}
+                onClick={() => (own ? setTahlilOpen(!groupOpen) : setOpenGroup(groupOpen ? "" : g))}
                 className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[12.5px] font-bold uppercase tracking-[0.1em] transition-colors hover:bg-slate-50 hover:text-slate-700 pointer-coarse:py-2.5 pointer-coarse:text-[13.5px]",
                   groupActive ? "text-slate-700" : "text-slate-500")}>
                 <span className="flex items-center gap-2">
@@ -143,7 +156,29 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
             </div>
           </div>
         );
-      })}
+  };
+  return (
+    <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-2">
+      {mainGroups.map(renderGroup)}
+      {moreGroups.length > 0 && (
+        <div>
+          <button type="button" style={stagger(0)} aria-expanded={moreOpen} data-tour="group:Boshqa bo'limlar"
+            onClick={() => setMoreOpen(!moreOpen)}
+            className={cn("sb-item sb-group sb-ghead flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-[14px] font-semibold transition-colors hover:bg-slate-50 hover:text-slate-900 pointer-coarse:py-3 pointer-coarse:text-[15px]",
+              moreOpen ? "bg-slate-50 text-slate-900" : "text-slate-600")}>
+            <span className="flex items-center gap-2.5">
+              <LayoutGrid size={17} className="shrink-0 text-slate-400" />
+              <span className="sb-fade">Boshqa bo&apos;limlar</span>
+            </span>
+            <ChevronDown size={14} className={cn("sb-fade sb-gcaret transition-transform duration-300", moreOpen ? "rotate-180" : "")} />
+          </button>
+          <div className="sb-gbody sb-more" data-open={moreOpen}>
+            <div className="min-h-0 overflow-hidden">
+              <div className="mt-2 space-y-3">{moreGroups.map(renderGroup)}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

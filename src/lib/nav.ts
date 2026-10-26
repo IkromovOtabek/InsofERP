@@ -19,7 +19,8 @@ const LOGI: Role[] = ["LOGISTICS"];
 export const NAV: NavItem[] = [
   { href: "/dashboard",   label: "Bosh sahifa",        roles: "all", group: "Asosiy" },
   // Umumiy vazifalar — har bir xodim (o'ziga / rahbar beradi), `lib/hr/tasks.ts`
-  { href: "/vazifalar",   label: "Vazifalar",          roles: "all", group: "Asosiy" },
+  // Menyuda ko'rinmaydi — sahifa ruxsati qoladi, havola orqali ochiladi
+  { href: "/vazifalar",   label: "Vazifalar",          roles: "all", group: "Asosiy", hidden: true },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
@@ -136,8 +137,10 @@ export const NAV: NavItem[] = [
   // Logistika uchun — Haydovchilar tabida. Otdel kadr kabinetida Logistika guruhi yo'q: ruxsat ECO ilovasi uchun qoladi
   { href: "/drivers",     label: "Haydovchi ilovasi (ECO)", roles: ["LOGISTICS", "HR", "DISPATCHER"], group: "Logistika", menuFor: [] },
   // ── Tahlil (Team24 BI tuzilmasi) ──
-  { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil" },
+  // Umumiy BI sahifasi menyuda yo'q — uning o'rnida «Bosh sahifa» turadi (app-shell). Ichki sahifalarning «orqaga» havolasi ochadi
+  { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
+  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil" },
@@ -145,7 +148,6 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },
   { href: "/bi-tahlil/reja",             label: "Reja nazorati",    roles: BI_ROLES, group: "Tahlil" },
-  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ml",               label: "ML tahlil",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ml/anomaliyalar", label: "Anomaliyalar" }, { href: "/bi-tahlil/ml/churn", label: "Churn tahlili" }, { href: "/bi-tahlil/ml/klasterlar", label: "Klasterlar" }] },
   { href: "/bi-tahlil/ai",               label: "Insof AI",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ai/chat", label: "AI Chat" }, { href: "/bi-tahlil/ai/telegram", label: "Telegram bot" }] },
   // Insof ECO ilovasida ro'yxatdan o'tgan hamma (tadbirkor, quruvchi, haydovchi) — faqat direktor

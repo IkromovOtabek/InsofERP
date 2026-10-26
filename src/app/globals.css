@@ -613,6 +613,9 @@ table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="numbe
   .sb-collapsed .sb-gbody { grid-template-rows: 1fr; }
   .sb-collapsed .sb-gbody > div { visibility: visible; }
   .sb-collapsed .sb-gbody .sb-item { opacity: 1; transform: none; }
+  /* «Boshqa bo'limlar» yig'ilgan menyuda ham o'z tugmasi bilan ochiladi */
+  .sb-collapsed .sb-more:not([data-open="true"]) { grid-template-rows: 0fr; }
+  .sb-collapsed .sb-more:not([data-open="true"]) > div { visibility: hidden; }
   .sb-collapsed .sb-group { text-align: center; }
 
   /* Ichki bandlar va ularning strelkasi — yig'ilganda ko'rinmaydi.
