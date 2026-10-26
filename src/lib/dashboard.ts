@@ -18,7 +18,7 @@ export async function materialOutlook(opts: { until?: Date } = {}) {
     db.stockMove.groupBy({ by: ["materialId"], where: { type: "PRODUCTION_CONSUME", date: { gte: since } }, _sum: { qty: true } }),
     db.order.findMany({
       where: { status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, ...(opts.until ? { deliveryDate: { lt: opts.until } } : {}) },
-      include: { customer: { select: { name: true } }, items: { include: { task: { select: { doneQty: true } }, product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } },
+      include: { customer: { select: { name: true } }, items: { include: { tasks: { select: { doneQty: true } }, product: { include: { recipes: { where: { isActive: true }, include: { items: true } } } } } }, batches: { where: { cancelledAt: null } } },
     }),
   ]);
   const bal = new Map(sums.map((x) => [x.materialId, Number(x._sum.qty ?? 0)]));
@@ -36,7 +36,7 @@ export async function materialOutlook(opts: { until?: Date } = {}) {
     for (const i of o.items) {
       const left = i.product.unit === "m3"
         ? (m3Total > 0 ? m3Left * (Number(i.qtyM3) / m3Total) : 0)
-        : Math.max(0, Number(i.qtyM3) - Number(i.task?.doneQty ?? 0));
+        : Math.max(0, Number(i.qtyM3) - i.tasks.reduce((s, t) => s + Number(t.doneQty), 0));
       if (left <= 0) continue;
       // Xomashyo dashboardida faqat xomashyo-ingredientlar hisoblanadi — mahsulot-ingredient o'tkazib yuboriladi
       for (const ri of i.product.recipes[0]?.items ?? []) { if (!ri.materialId) continue; perMat.set(ri.materialId, (perMat.get(ri.materialId) ?? 0) + left * Number(ri.qtyPerM3)); }

@@ -72,7 +72,7 @@ export default async function PublicOrderPage({ params, searchParams }: { params
     include: {
       customer: { select: { name: true } },
       createdBy: { select: { fullName: true, employee: { select: { phone: true } } } },
-      items: { include: { product: { select: { name: true, unit: true } }, task: { select: { doneQty: true } } } },
+      items: { include: { product: { select: { name: true, unit: true } }, tasks: { select: { doneQty: true } } } },
       batches: { select: { qtyM3: true, product: { select: { unit: true } } } },
       trips: { where: { status: { not: "CANCELLED" } }, orderBy: { createdAt: "asc" }, select: { deliveryNoteNo: true, verifyToken: true, status: true, qtyM3: true, acceptedQty: true, loadedAt: true, deliveredAt: true, createdAt: true } },
       invoices: { where: { status: { not: "CANCELLED" } }, select: { payments: { select: { id: true, amount: true } } } },
@@ -95,7 +95,7 @@ export default async function PublicOrderPage({ params, searchParams }: { params
 
   // Ishlab chiqarilgani: dona mahsulot — brigada topshirig'i, beton — zames (zayavka sahifasidagi bilan bir xil qoida)
   const producedRows = [
-    ...o.items.filter((i) => i.product.unit !== "m3" && i.task).map((i) => ({ unit: i.product.unit, qty: Number(i.task!.doneQty) })),
+    ...o.items.filter((i) => i.product.unit !== "m3" && i.tasks.length).map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) })),
     ...o.batches.filter((b) => b.product.unit === "m3").map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })),
   ];
   const totalQty = itemRows.reduce((s, r) => s + Number(r.qty), 0);

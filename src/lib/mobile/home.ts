@@ -581,7 +581,7 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
         db.brigadeTask.count({ where: { status: { in: ["NEW", "IN_PROGRESS"] } } }),
         db.brigadeTask.findMany({ where: { status: { in: ["NEW", "IN_PROGRESS"] } }, orderBy: { dueDate: "asc" }, take: 10, include: { brigade: true, order: { include: { customer: true } }, orderItem: { include: { product: true } } } }),
         // "Zayavkalar" ro'yxatidagi filtrlar bilan bir xil sanoq — `lib/production.ts`
-        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { deliveryDate: "asc" }, take: 400, select: { status: true, deliveryDate: true, dateUnknown: true, isUrgent: true, items: { select: { task: { select: { status: true } } } } } }),
+        db.order.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { deliveryDate: "asc" }, take: 400, select: { status: true, deliveryDate: true, dateUnknown: true, isUrgent: true, items: { select: { qtyM3: true, tasks: { select: { status: true, qty: true, doneQty: true } } } } } }),
       ]);
       const count = (key: string) => prodOrders.filter(prodFilter(key).test).length;
       const waiting = count("unassigned");

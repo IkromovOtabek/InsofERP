@@ -1285,7 +1285,8 @@ model OrderItem {
   order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product      @relation(fields: [productId], references: [id])
   brigade Brigade?     @relation(fields: [brigadeId], references: [id])
-  task    BrigadeTask?
+  /// Bir qatorni bir nechta brigadaga bo'lib berish mumkin: har biriga o'z miqdori (jami ≤ qator miqdori)
+  tasks   BrigadeTask[]
 
   // audit 2026-09-30: qarz/limit, kassa va ro'yxatlar shu ustunlar bo'yicha filtrlaydi
   @@index([orderId])
@@ -1322,12 +1323,12 @@ enum TaskStatus {
   CANCELLED
 }
 
-/// Zayavka qatori brigadaga topshiriq sifatida yuboriladi. qoldiq = qty − doneQty.
+/// Zayavka qatori (yoki uning bir qismi) brigadaga topshiriq sifatida yuboriladi. qoldiq = qty − doneQty.
 model BrigadeTask {
   id          String     @id @default(cuid())
   taskNo      String     @unique
   orderId     String
-  orderItemId String     @unique
+  orderItemId String
   brigadeId   String
   qty         Decimal    @db.Decimal(18, 3)
   doneQty     Decimal    @default(0) @db.Decimal(18, 3)
@@ -1350,6 +1351,7 @@ model BrigadeTask {
 
   @@index([brigadeId, status])
   @@index([orderId])
+  @@index([orderItemId])
 }
 
 /// Brigada smenasi — brigadir ilovada ochadi va yopadi (kuniga bitta). Yopilganda yakuniy hisobot

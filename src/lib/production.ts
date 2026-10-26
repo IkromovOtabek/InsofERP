@@ -28,16 +28,37 @@ export type ProdOrder = {
   /** Sana aniq emas (qoralama) — muddat hisoblanmaydi */
   dateUnknown?: boolean;
   isUrgent: boolean;
-  items: { task: { status: string } | null }[];
+  items: { qtyM3: unknown; tasks: { status: string; qty: unknown; doneQty: unknown }[] }[];
 };
 
-/** Hamma qatorga brigada topshirig'i yuborilganmi. */
-export const assigned = (o: ProdOrder) => o.items.length > 0 && o.items.every((i) => !!i.task);
-/** Bir qismiga topshiriq yuborilgan. */
-export const partlyAssigned = (o: ProdOrder) => !assigned(o) && o.items.some((i) => !!i.task);
+export type ItemTask = { status: string; qty?: unknown; doneQty?: unknown };
+
+/**
+ * Zayavka qatorining topshiriqlari bo'yicha holat. Qator bir nechta brigadaga bo'lib berilishi mumkin:
+ * tayinlangan = faol topshiriqlar miqdori + bekor qilinganlarda bajarib ulgurilgani (u hovlida turibdi).
+ * `left` — hali hech bir brigadaga berilmagan qism, «Brigada tayinlash» shuni taklif qiladi.
+ */
+export function itemTasks(itemQty: unknown, tasks: ItemTask[]) {
+  const qty = Number(itemQty);
+  const live = tasks.filter((t) => t.status !== "CANCELLED");
+  const given = live.reduce((s, t) => s + Number(t.qty ?? 0), 0) + tasks.filter((t) => t.status === "CANCELLED").reduce((s, t) => s + Number(t.doneQty ?? 0), 0);
+  const full = given >= qty - 0.0005;
+  return {
+    given, left: Math.max(0, qty - given), full, any: live.length > 0,
+    /** Hammasi brigadalarga berilgan va hamma faol topshiriq bajarilgan */
+    done: full && live.length > 0 && live.every((t) => t.status === "DONE"),
+    /** Faol topshiriqlarda bajarilgani (bekor qilinganlar hisobga olinmaydi — avvalgi qoida) */
+    doneQty: live.reduce((s, t) => s + Number(t.doneQty ?? 0), 0),
+  };
+}
+
+/** Hamma qatorning to'liq miqdori brigadalarga berilgan (bir qator bir nechta brigadaga bo'lingan bo'lishi mumkin). */
+export const assigned = (o: ProdOrder) => o.items.length > 0 && o.items.every((i) => itemTasks(i.qtyM3, i.tasks).full);
+/** Bir qismi brigadaga berilgan. */
+export const partlyAssigned = (o: ProdOrder) => !assigned(o) && o.items.some((i) => itemTasks(i.qtyM3, i.tasks).given > 0);
 export const isOpen = (o: ProdOrder) => OPEN.includes(o.status);
-/** Yopilgan: yetkazilgan/yopilgan yoki barcha topshiriqlari bajarilgan. */
-export const isDone = (o: ProdOrder) => o.status === "DELIVERED" || o.status === "CLOSED" || (assigned(o) && o.items.every((i) => i.task?.status === "DONE"));
+/** Yopilgan: yetkazilgan/yopilgan yoki hammasi brigadalarga berilib, barcha topshiriqlari bajarilgan. */
+export const isDone = (o: ProdOrder) => o.status === "DELIVERED" || o.status === "CLOSED" || (o.items.length > 0 && o.items.every((i) => itemTasks(i.qtyM3, i.tasks).done));
 /** Muddati yaqin — ochiq va yetkazishgacha 2 kundan kam qolgan (kechikkanlar ham). */
 export const isSoon = (o: ProdOrder) => isOpen(o) && !o.dateUnknown && daysLeft(o.deliveryDate) <= 2;
 

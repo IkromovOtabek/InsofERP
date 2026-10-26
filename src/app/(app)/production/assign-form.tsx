@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useActionState } from "react";
+import { useEffect, useRef, useState, useActionState } from "react";
 import { createPortal } from "react-dom";
 import { Gauge, Send, TriangleAlert, X } from "lucide-react";
 import { assignBrigades } from "./assign-actions";
-import { Button, FormError, FormSuccess, Select, Td, Th, Tr } from "@/components/ui";
+import { Button, FormError, FormSuccess, Input, Select, Td, Th, Tr } from "@/components/ui";
 import { fmtNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Item = { id: string; product: string; productId: string; qty: string; qtyNum: number; unit: string; taskNo: string | null; brigade: string | null };
+/** `left` — hali hech bir brigadaga berilmagan qismi; `tasks` — shu qatorga berilgan topshiriqlar (bir nechta brigada bo'lishi mumkin). */
+type Item = { id: string; product: string; productId: string; qty: string; qtyNum: number; unit: string; left: number; tasks: { taskNo: string; brigade: string; qty: string; status: string }[] };
 type Brigade = { id: string; name: string; leader: string | null };
 export type BrigadeCap = {
   canMake: number;
@@ -47,7 +48,7 @@ function CapacityModal({ open, onClose, item, brigades, capacity, onPick }: {
   }, [open, onClose]);
   if (!open || !mounted || !item) return null;
 
-  const need = item.qtyNum;
+  const need = item.left;
   const rows = brigades
     .map((b) => ({ b, cap: capacity[item.productId]?.[b.id] ?? null }))
     .sort((x, y) => (y.cap?.canMake ?? 0) - (x.cap?.canMake ?? 0));
@@ -59,7 +60,7 @@ function CapacityModal({ open, onClose, item, brigades, capacity, onPick }: {
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <div>
             <h2 className="text-base font-semibold tracking-tight">Brigadalar imkoni</h2>
-            <p className="text-sm text-slate-500">{item.product} · kerak {item.qty} {item.unit}</p>
+            <p className="text-sm text-slate-500">{item.product} · tayinlanmagan {fmtNum(item.left, 3)} {item.unit} (jami {item.qty})</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Yopish" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900"><X size={18} /></button>
         </div>
@@ -81,7 +82,7 @@ function CapacityModal({ open, onClose, item, brigades, capacity, onPick }: {
                     <div className={cn("text-sm font-semibold", enough ? "text-emerald-700" : can > 0 ? "text-amber-700" : "text-red-600")}>
                       {fmtNum(can, 2)} {item.unit} chiqara oladi
                     </div>
-                    <div className="text-xs text-slate-500">{fmtNum(Math.min(100, pct), 0)}% · kerak {item.qty} {item.unit}</div>
+                    <div className="text-xs text-slate-500">{fmtNum(Math.min(100, pct), 0)}% · kerak {fmtNum(need, 3)} {item.unit}</div>
                   </div>
                 </div>
                 <Bar pct={pct} className="mb-3 h-2.5" />
@@ -126,15 +127,21 @@ function CapacityModal({ open, onClose, item, brigades, capacity, onPick }: {
 /**
  * Brigada tayinlash. Har qatorda brigadalar "qancha ishlab chiqara oladi" bo'yicha tartiblanadi;
  * «Imkonini ko'rish» tugmasi butun ro'yxatni to'lish chiziqlari bilan ochadi.
+ * Qatorning hammasini yoki bir qismini (miqdor maydoni) bir brigadaga berish mumkin — qolgani keyin boshqa brigadaga.
+ * `focus` — matritsada bosilgan qator: ajratib ko'rsatiladi va ko'rinadigan joyga suriladi.
  */
-export function AssignForm({ orderId, items, brigades, capacity }: { orderId: string; items: Item[]; brigades: Brigade[]; capacity: Capacity }) {
+export function AssignForm({ orderId, items, brigades, capacity, focus }: { orderId: string; items: Item[]; brigades: Brigade[]; capacity: Capacity; focus?: string }) {
   const [state, action, pending] = useActionState(assignBrigades.bind(null, orderId), undefined);
   const [picked, setPicked] = useState<Record<string, string>>({});
+  const [amount, setAmount] = useState<Record<string, string>>({});
   const [modalFor, setModalFor] = useState<Item | null>(null);
-  const open = items.filter((i) => !i.taskNo);
+  const focusRow = useRef<HTMLSpanElement>(null);
+  useEffect(() => { focusRow.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [focus]);
+  const open = items.filter((i) => i.left > 0.0005);
 
   const capOf = (productId: string, brigadeId: string) => capacity[productId]?.[brigadeId] ?? null;
   const sorted = (productId: string) => [...brigades].sort((a, b) => (capOf(productId, b.id)?.canMake ?? 0) - (capOf(productId, a.id)?.canMake ?? 0));
+  const num = (v: string | undefined, d: number) => { const n = Number(String(v ?? "").replace(/\s+/g, "").replace(",", ".")); return v === undefined || v === "" || !Number.isFinite(n) ? d : n; };
 
   return (
     <form action={action}>
@@ -142,24 +149,30 @@ export function AssignForm({ orderId, items, brigades, capacity }: { orderId: st
       {state?.ok && <FormSuccess text="Topshiriqlar brigadalarga yuborildi" />}
       {/* Telefonda (390px) jadval sahifani kengaytirmasin — o'zi yonga suriladi */}
       <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Brigada</Th><Th>Brigada imkoni</Th></tr></thead>
+      <table className="w-full min-w-[720px] text-sm">
+        <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Brigada va miqdor</Th><Th>Brigada imkoni</Th></tr></thead>
         <tbody>
           {items.map((i) => {
             const sel = picked[i.id] ?? "";
+            const give = Math.min(i.left, Math.max(0, num(amount[i.id], i.left)));
             const cap = sel ? capOf(i.productId, sel) : null;
-            const enough = cap ? cap.canMake >= i.qtyNum - 0.0005 : null;
-            const pct = cap && i.qtyNum > 0 ? (cap.canMake / i.qtyNum) * 100 : 0;
+            const enough = cap ? cap.canMake >= give - 0.0005 : null;
+            const pct = cap && give > 0 ? (cap.canMake / give) * 100 : 0;
+            const isFocus = focus === i.id;
             return (
-              <Tr key={i.id}>
-                <Td className="font-medium">{i.product}</Td>
-                <Td right>{i.qty} {i.unit}</Td>
+              <Tr key={i.id} className={cn(isFocus && "bg-brand-50/70 ring-2 ring-brand-400 ring-inset")}>
+                <Td className="font-medium">{isFocus && <span ref={focusRow} />}{i.product}</Td>
+                <Td right className="whitespace-nowrap">
+                  {i.qty} {i.unit}
+                  {i.tasks.length > 0 && <div className={cn("text-[11px]", i.left > 0.0005 ? "font-medium text-amber-700" : "text-emerald-700")}>{i.left > 0.0005 ? `tayinlanmagan ${fmtNum(i.left, 3)}` : "hammasi berilgan"}</div>}
+                </Td>
                 <Td>
-                  {i.taskNo ? (
-                    <span className="text-xs text-slate-500">{i.brigade} · topshiriq {i.taskNo} yuborilgan</span>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <Select name={`brigade_${i.id}`} value={sel} className="h-9 max-w-xs text-sm"
+                  {i.tasks.map((t) => (
+                    <div key={t.taskNo} className="mb-1 text-xs text-slate-600"><span className="font-medium text-slate-800">{t.brigade}</span> · {t.qty} {i.unit} · {t.taskNo}{t.status === "DONE" ? " · bajarildi" : ""}</div>
+                  ))}
+                  {i.left > 0.0005 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Select name={`brigade_${i.id}`} value={sel} className="h-9 max-w-60 text-sm"
                         onChange={(e) => setPicked((p) => ({ ...p, [i.id]: e.target.value }))}>
                         <option value="">Tanlang…</option>
                         {sorted(i.productId).map((b) => {
@@ -168,14 +181,23 @@ export function AssignForm({ orderId, items, brigades, capacity }: { orderId: st
                           return <option key={b.id} value={b.id}>{b.name}{b.leader ? ` · ${b.leader}` : ""} — {can > 0 ? `${fmtNum(can, 2)} ${i.unit} chiqara oladi` : "xomashyosi yo'q"}</option>;
                         })}
                       </Select>
+                      <label className="relative">
+                        <span className="sr-only">Miqdor</span>
+                        <Input name={`qty_${i.id}`} inputMode="decimal" value={amount[i.id] ?? String(+i.left.toFixed(3))} disabled={!sel}
+                          onChange={(e) => setAmount((a) => ({ ...a, [i.id]: e.target.value }))}
+                          aria-label={`${i.product} — brigadaga beriladigan miqdor`} className="h-9 w-32 pr-12 text-right tabular" />
+                        <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-xs text-slate-400">{i.unit}</span>
+                      </label>
                       <Button type="button" variant="secondary" size="sm" title="Brigadalar imkonini ko'rish" onClick={() => setModalFor(i)}>
                         <Gauge size={15} /> Imkoni
                       </Button>
+                      {sel && num(amount[i.id], i.left) > i.left + 0.0005 && <span className="w-full text-xs font-medium text-red-600">Tayinlanmagan qismi {fmtNum(i.left, 3)} {i.unit} — undan ko&apos;p berib bo&apos;lmaydi</span>}
+                      {sel && give < i.left - 0.0005 && give > 0 && <span className="w-full text-xs text-slate-500">Qolgan {fmtNum(i.left - give, 3)} {i.unit} keyin boshqa brigadaga beriladi</span>}
                     </div>
                   )}
                 </Td>
                 <Td className="min-w-48 text-xs">
-                  {i.taskNo ? <span className="text-slate-400">—</span>
+                  {i.left <= 0.0005 ? <span className="text-slate-400">—</span>
                     : !sel ? <span className="text-slate-400">Brigada tanlang yoki «Imkoni» tugmasini bosing</span>
                     : (
                       <div className="space-y-1">
@@ -186,7 +208,7 @@ export function AssignForm({ orderId, items, brigades, capacity }: { orderId: st
                             <span className="inline-flex items-start gap-1 font-medium text-amber-700">
                               <TriangleAlert size={13} className="mt-0.5 shrink-0" />
                               <span>
-                                Faqat {fmtNum(cap?.canMake ?? 0, 2)} {i.unit} chiqadi ({fmtNum(Math.max(0, i.qtyNum - (cap?.canMake ?? 0)), 2)} {i.unit} yetmaydi)
+                                Faqat {fmtNum(cap?.canMake ?? 0, 2)} {i.unit} chiqadi ({fmtNum(Math.max(0, give - (cap?.canMake ?? 0)), 2)} {i.unit} yetmaydi)
                                 {cap?.limiting ? <span className="block font-normal text-slate-500">Cheklovchi: {cap.limiting}</span> : null}
                               </span>
                             </span>

@@ -6,6 +6,7 @@ import { unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import type { Role } from "@/generated/prisma";
 import { defaultWarehouse } from "@/lib/warehouse";
+import { itemTasks } from "@/lib/production";
 
 /**
  * Topshiriq va brigada amallari — yagona rol matritsasi (veb sahifa, server action va mobil
@@ -100,8 +101,8 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     // Sklad zaxirasi: hamma qatorga topshiriq berilgan va hammasi bajarilgan bo'lsa — zayavka yopiladi
     let closed = false;
     if (t.order.kind === "STOCK" && status === "DONE") {
-      const items = await tx.orderItem.findMany({ where: { orderId: t.orderId }, select: { task: { select: { status: true } } } });
-      if (items.length > 0 && items.every((i) => i.task?.status === "DONE")) {
+      const items = await tx.orderItem.findMany({ where: { orderId: t.orderId }, select: { qtyM3: true, tasks: { select: { status: true, qty: true, doneQty: true } } } });
+      if (items.length > 0 && items.every((i) => itemTasks(i.qtyM3, i.tasks).done)) {
         await tx.order.update({ where: { id: t.orderId }, data: { status: "CLOSED" } });
         closed = true;
       }
@@ -140,13 +141,6 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
   return { changed: true, orderId: t.orderId, status, note: hints.length ? hints.join(" · ") : undefined };
 }
 
-/**
- * Bekor qilingan va hech narsa bajarilmagan topshiriq — zayavka qatori qayta brigadaga berilishi mumkin
- * (`BrigadeTask.orderItemId` yagona: aks holda bekor qilingan topshiriq qatorni abadiy band qiladi).
- */
-export function reassignable(t: { status: string; doneQty: unknown } | null | undefined): boolean {
-  return !!t && t.status === "CANCELLED" && Number(t.doneQty) === 0;
-}
 
 export async function taskCancel(taskId: string, userId: string): Promise<TaskResult> {
   const t = await db.brigadeTask.findUniqueOrThrow({ where: { id: taskId } });

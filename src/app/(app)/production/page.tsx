@@ -1,36 +1,34 @@
 import Link from "next/link";
-import { Plus, HardHat, CheckCircle2, XCircle, Zap, Truck, Factory, ClipboardList, AlarmClock, CalendarDays, ListTodo, CheckCheck, Layers } from "lucide-react";
+import { Plus, HardHat, Zap, Truck, Factory, AlarmClock, CalendarDays, ListTodo, CheckCheck, Layers } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
-import { BlacklistMark, ContractMark, CustomerName } from "@/components/customer-name";
+import { BlacklistMark, ContractMark } from "@/components/customer-name";
 import { date, qty, deliveryAt } from "@/lib/format";
-import { unitLabel, fmtUnitTotals } from "@/lib/unit";
+import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, PageHeader, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { cn } from "@/lib/utils";
 // Filtrlar va "muddati yaqin" qoidasi mobil ilova bilan bitta joyda — `lib/production.ts`
-import { PRODUCTION_FILTERS, assigned, dueLabel, isOpen, isSoon, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
-import { OrderStatusBadge } from "../orders/status";
+import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTasks, partlyAssigned, prodFilter, prodSort } from "@/lib/production";
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { requirePage } from "@/lib/page-guard";
-import { reassignable } from "@/lib/tasks";
 import { productionMatrix } from "@/lib/production-matrix";
-import { ProductionMatrixView } from "./matrix";
+import { ProductionMatrixView, type BoardOrder } from "./matrix";
 
 /**
  * Ishlab chiqarish oynasi: saqlangan zayavkalar (qoralama, tasdiqlangan, ishlab chiqarilmoqda) shu yerga tushadi.
- * Har zayavkada brigada holati: yashil "Brigada tayinlangan" yoki qizil "Tayinlanmagan".
+ * Matritsa (sklad × zayavka) va uning ostida filtrli «Zayavkalar doskasi» — har kartada brigada holati
+ * (tayinlangan / qisman / tayinlanmagan).
  * Tayinlash formasi shu oynaning o'zida ochiladi; "Tasdiqlash" bosilganda topshiriq brigadaga yuboriladi.
  */
-export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string }> }) {
+export default async function ProductionPage({ searchParams }: { searchParams: Promise<{ order?: string; tab?: string; item?: string }> }) {
   const session = await requirePage("/production");
   const canBatch = session.role === "PRODUCTION" || session.role === "DIRECTOR";
-  const { order: selectedId, tab = "open" } = await searchParams;
+  const { order: selectedId, tab = "open", item: focusItem } = await searchParams;
   const [allOrders, brigades, batches, matrix] = await Promise.all([
     db.order.findMany({
       where: { status: { not: "CANCELLED" } },
       orderBy: [{ deliveryDate: "asc" }],
-      include: { customer: true, items: { include: { product: true, brigade: true, task: true } } },
+      include: { customer: true, items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } } },
       take: 400,
     }),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true } }),
@@ -46,6 +44,19 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const unassignedCount = allOrders.filter((o) => isOpen(o) && !assigned(o)).length;
   const soonCount = allOrders.filter(isSoon).length;
   const selected = selectedId ? allOrders.find((o) => o.id === selectedId) : undefined;
+  // «Zayavkalar doskasi» — tanlangan filtr bo'yicha (avvalgi jadval o'rniga): ustun topshiriqlardan, brigada holati — qatorlardan
+  const board: BoardOrder[] = orders.map((o) => {
+    const st = o.items.map((i) => itemTasks(i.qtyM3, i.tasks));
+    return {
+      id: o.id, customer: o.customer.name, deliveryDate: o.deliveryDate.toISOString(), deliveryTime: o.deliveryTime, dateUnknown: o.dateUnknown, isUrgent: o.isUrgent,
+      draft: o.status === "DRAFT", pickup: !o.needsDelivery, blacklisted: marks.black.has(o.customerId), soon: isSoon(o),
+      due: isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : null,
+      col: isDone(o) ? "ready" : st.some((x) => x.any) ? "pour" : "queue",
+      assign: assigned(o) ? "full" : partlyAssigned(o) ? "part" : "none",
+      brigades: [...new Set(o.items.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))],
+      items: o.items.map((i, n) => ({ itemId: i.id, productId: i.productId, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3), left: st[n]!.left })),
+    };
+  });
   const bOpts = brigades.map((b) => ({ id: b.id, name: b.name, leader: b.leader?.fullName ?? null }));
   // Brigada tayinlashda kerak: qaysi brigada qo'lidagi xomashyo bilan qanchasini chiqara oladi
   const capacity: Capacity = {};
@@ -79,46 +90,17 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {/* Qoralama zayavka ishlab chiqarishga berilmaydi — avval sotuv tasdiqlaydi (server ham rad etadi) */}
           {selected.status === "DRAFT" && <p className="px-5 pb-5 text-sm text-amber-700">Zayavka hali tasdiqlanmagan (qoralama). Sotuv bo&apos;limi qabul qilgach brigada tayinlanadi.</p>}
           {selected.status !== "DRAFT" && <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
-            items={selected.items.map((i) => ({ id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit), taskNo: reassignable(i.task) ? null : i.task?.taskNo ?? null, brigade: i.brigade?.name ?? null }))} />}
+            focus={focusItem}
+            items={selected.items.map((i) => ({
+              id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit),
+              left: itemTasks(i.qtyM3, i.tasks).left,
+              tasks: i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => ({ taskNo: t.taskNo, brigade: t.brigade.name, qty: qty(t.qty), status: t.status })),
+            }))} />}
         </Card>
       )}
 
-      <ProductionMatrixView data={matrix} />
-
-      <h2 className="mb-3 inline-flex items-center gap-2 font-semibold"><ClipboardList size={16} className="text-slate-400" /> Zayavkalar</h2>
-      <Tabs current={filter.key} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />
-      <Table className="mb-8">
-        <thead><tr><Th>№</Th><Th>Yetkazish</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th>Holat</Th><Th>Brigada</Th><Th></Th></tr></thead>
-        <tbody>
-          {orders.length === 0 && <Empty text={`"${filter.label}" bo'yicha zayavka yo'q`} icon={ClipboardList} />}
-          {orders.map((o) => {
-            const ok = assigned(o);
-            const partial = partlyAssigned(o);
-            const isSel = o.id === selectedId;
-            const soon = isSoon(o);
-            const due = dueLabel(o.deliveryDate);
-            return (
-              <Tr key={o.id} className={cn(soon && "bg-red-50/70 [&>td]:text-red-900", isSel && !soon && "bg-brand-50/60")}>
-                <Td><Link href={`/orders/${o.id}`} className={cn("font-medium hover:underline", soon && "text-red-700")}>{o.orderNo}</Link>{o.isUrgent && <span className="ml-1 rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}</Td>
-                <Td>{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : <span className={soon ? "font-semibold text-red-700" : ""}>{date(o.deliveryDate)}</span>}{o.deliveryTime && <span className={cn("ml-1.5 rounded px-1.5 py-0.5 text-[12px] font-semibold tabular-nums", soon ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-700")}>{o.deliveryTime}</span>}{isOpen(o) && !o.dateUnknown && (soon ? <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-red-700"><AlarmClock size={12} /> {due}</div> : <div className="mt-0.5 text-[11px] text-slate-500">{due}</div>)}</Td>
-                <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} /></Td>
-                <Td className="text-slate-600">{o.items.map((i) => i.product.code).join(", ")}{!o.needsDelivery && " · o'zi oladi"}</Td>
-                <Td right className="whitespace-nowrap">{fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })))}</Td>
-                <Td><OrderStatusBadge status={o.status} /></Td>
-                <Td>
-                  {ok ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"><CheckCircle2 size={14} /> Brigada tayinlangan</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200"><XCircle size={14} /> {partial ? "Qisman tayinlangan" : "Brigada tayinlanmagan"}</span>
-                  )}
-                  {ok && <div className="mt-1 text-[11px] text-slate-500">{[...new Set(o.items.map((i) => i.brigade?.name).filter(Boolean))].join(", ")}</div>}
-                </Td>
-                <Td>{ok ? <Link href="/tasks" className="text-sm text-slate-500 hover:text-slate-900">Topshiriqlar</Link> : <Link href={`/production?order=${o.id}${filter.key !== "open" ? `&tab=${filter.key}` : ""}`} className="inline-flex items-center gap-1 text-sm font-medium text-slate-900 hover:underline"><HardHat size={14} /> Tayinlash</Link>}</Td>
-              </Tr>
-            );
-          })}
-        </tbody>
-      </Table>
+      <ProductionMatrixView data={matrix} board={board} tab={filter.key}
+        filters={<Tabs current={filter.key} className="mb-3" items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />} />
 
       <h2 className="mb-3 inline-flex items-center gap-2 font-semibold"><Factory size={16} className="text-slate-400" /> Zameslar</h2>
       <Table>

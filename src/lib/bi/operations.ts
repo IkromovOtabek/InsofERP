@@ -19,7 +19,7 @@ export async function operationsTab(r: Range, gran: Gran) {
     db.trip.findMany({ where: { createdAt: { gte: r.prevFrom, lt: r.prevTo } }, select: { qtyM3: true, status: true, loadedAt: true, deliveredAt: true, vehicle: { select: { type: true } } } }),
     db.vehicle.findMany({ where: { isActive: true }, include: { trips: { where: { createdAt: { gte: addDays(today, -7) } }, select: { id: true } } } }),
     db.employee.findMany({ where: { isActive: true, trips: { some: {} } }, select: { id: true, fullName: true } }),
-    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: { select: { unit: true } }, task: { select: { doneQty: true } } } }, batches: { where: { cancelledAt: null } }, trips: { where: { status: { not: "CANCELLED" } }, include: { vehicle: { select: { type: true } } } } }, orderBy: { deliveryDate: "asc" } }),
+    db.order.findMany({ where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } }, include: { customer: true, items: { include: { product: { select: { unit: true } }, tasks: { select: { doneQty: true } } } }, batches: { where: { cancelledAt: null } }, trips: { where: { status: { not: "CANCELLED" } }, include: { vehicle: { select: { type: true } } } } }, orderBy: { deliveryDate: "asc" } }),
   ]);
   const pieceOut = (from: Date, to: Date) => db.stockMove.findMany({ where: { type: "PRODUCTION_OUTPUT", product: { unit: { not: "m3" } }, date: { gte: from, lt: to } }, select: { qty: true, product: { select: { unit: true } } } });
   const [pieces, prevPieces] = await Promise.all([pieceOut(r.from, r.to), pieceOut(r.prevFrom, r.prevTo)]);
@@ -88,7 +88,7 @@ export async function operationsTab(r: Range, gran: Gran) {
     const need: UnitRow[] = o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }));
     const done: UnitRow[] = [
       ...o.batches.map((b) => ({ unit: "m3", qty: b.qtyM3 })),
-      ...o.items.filter((i) => i.product.unit !== "m3").map((i) => ({ unit: i.product.unit, qty: i.task?.doneQty ?? 0 })),
+      ...o.items.filter((i) => i.product.unit !== "m3").map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) })),
     ];
     const shipped: UnitRow[] = o.trips.map((t) => { const l = tripLine(o.items, t.vehicle.type); return { unit: "error" in l ? (isMixerTrip(t) ? "m3" : "dona") : l.unit, qty: t.qtyM3 }; });
     const doneT = new Map(unitTotals(done).map((x) => [x.unit, x.qty]));

@@ -9,6 +9,7 @@ import { stockSnapshot } from "@/lib/stock";
 import { money, date, qty, deliveryAt, isoDate } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, Empty, LinkButton, PageHeader, Progress, StatCard, StatusSteps, Td, Th, Tr } from "@/components/ui";
 import { TaskStatusBadge } from "../../tasks/status";
+import { itemTasks } from "@/lib/production";
 import { unitLabel, fmtUnitTotals, soleUnit, donePercent } from "@/lib/unit";
 import { OrderStatusBadge, SALES_STATUSES } from "../status";
 import { TripStatusBadge } from "../../trips/status";
@@ -47,7 +48,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     where: { id },
     include: {
       customer: true, createdBy: true,
-      items: { include: { product: true, brigade: true, task: true } },
+      items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } }, orderBy: { createdAt: "asc" } } } },
       batches: { include: { product: true }, orderBy: { date: "desc" } },
       trips: { include: { vehicle: true, driver: true }, orderBy: { createdAt: "desc" } },
       invoices: { where: { status: { not: "CANCELLED" } }, include: { payments: true } },
@@ -64,7 +65,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   // Ishlab chiqarilgani: dona mahsulotni brigada chiqaradi (topshiriq qaydi — o'shanda hovliga kirim
   // bo'ladi), betonni esa zames. Shuning uchun ikki manba aralashtirilmaydi.
   const producedRows = [
-    ...o.items.filter((i) => i.product.unit !== "m3" && i.task).map((i) => ({ unit: i.product.unit, qty: Number(i.task!.doneQty) })),
+    ...o.items.filter((i) => i.product.unit !== "m3" && i.tasks.length).map((i) => ({ unit: i.product.unit, qty: i.tasks.reduce((s, t) => s + Number(t.doneQty), 0) })),
     ...o.batches.filter((b) => b.product.unit === "m3").map((b) => ({ unit: b.product.unit, qty: b.qtyM3 })),
   ];
   const orderUnit = soleUnit(itemRows); // aralash birlikli zayavkada — null
@@ -107,7 +108,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const canCancel = ["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status) && (isStock ? canStock : can("cancel")) && o.batches.length === 0 && o.trips.length === 0;
   const stepKey = o.status === "BLOCKED" ? "CONFIRMED" : o.status === "CANCELLED" ? "DRAFT" : o.status;
   const isProduction = ["PRODUCTION", "DIRECTOR"].includes(s.role);
-  const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !i.task);
+  const unassigned = ["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status) && o.items.some((i) => !itemTasks(i.qtyM3, i.tasks).full);
   // Brigada faqat qabul qilingan zayavkaga tayinlanadi (server ham DRAFT ni rad etadi) — qoralamada tugma yo'q
   const needsAssign = unassigned && o.status !== "DRAFT";
   // Yetkazish sanasi qoralamada tahrirlanadi; "Sana aniq emas" bo'lsa belgilanmaguncha qabul qilinmaydi
@@ -383,13 +384,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <thead><tr><Th>Mahsulot</Th><Th right>Miqdor</Th>{!isStock && <><Th right>Narx</Th><Th right>Summa</Th></>}<Th>Brigada</Th><Th right>Bajarildi / qoldiq</Th></tr></thead>
             <tbody>
               {o.items.map((i) => {
-                const t = i.task, tq = t ? Number(t.qty) : 0, td = t ? Number(t.doneQty) : 0;
+                // Qator bir nechta brigadaga bo'lingan bo'lishi mumkin — har brigada alohida qatorcha
+                const live = i.tasks.filter((t) => t.status !== "CANCELLED"), st = itemTasks(i.qtyM3, i.tasks);
+                const tq = live.reduce((s, t) => s + Number(t.qty), 0), td = live.reduce((s, t) => s + Number(t.doneQty), 0);
                 return (
                   <Tr key={i.id}>
                     <Td>{i.product.name}</Td><Td right>{qty(i.qtyM3)} {unitLabel(i.product.unit)}</Td>
                     {!isStock && <><Td right>{money(i.price)}{i.nds && <span className="ml-1 text-[11px] font-medium text-slate-500">{NDS_LABEL}</span>}</Td><Td right className="font-semibold">{money(Number(i.qtyM3) * Number(i.price))}</Td></>}
-                    <Td>{i.brigade?.name ?? <span className="text-slate-400">—</span>}{t && <div className="mt-0.5"><TaskStatusBadge status={t.status} /></div>}</Td>
-                    <Td right>{t ? <><span className="text-emerald-700">{qty(td)}</span> / <span className={tq - td > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(Math.max(0, tq - td))}</span><div className="mt-1 ml-auto w-20"><Progress value={td} max={tq} tone={td >= tq ? "success" : "default"} /></div></> : <span className="text-slate-400">—</span>}</Td>
+                    <Td>{live.length ? live.map((t) => <div key={t.id} className="flex flex-wrap items-center gap-1.5 py-0.5"><span>{t.brigade.name}</span>{live.length > 1 && <span className="text-xs tabular text-slate-500">{qty(t.qty)}</span>}<TaskStatusBadge status={t.status} /></div>) : <span className="text-slate-400">—</span>}{live.length > 0 && st.left > 0.0005 && <div className="mt-0.5 text-xs font-medium text-amber-700">Tayinlanmagan: {qty(st.left)} {unitLabel(i.product.unit)}</div>}</Td>
+                    <Td right>{live.length ? <><span className="text-emerald-700">{qty(td)}</span> / <span className={tq - td > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(Math.max(0, tq - td))}</span><div className="mt-1 ml-auto w-20"><Progress value={td} max={tq} tone={td >= tq ? "success" : "default"} /></div></> : <span className="text-slate-400">—</span>}</Td>
                   </Tr>
                 );
               })}

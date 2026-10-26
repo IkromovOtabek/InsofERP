@@ -628,7 +628,7 @@ export type OrderReadiness = {
 
 /** `orderReadiness` uchun kerakli include — veb forma, mobil forma va `createTrip` bir xil yuklaydi. */
 export const READINESS_INCLUDE = {
-  items: { include: { product: { select: { unit: true, name: true } }, task: { select: { doneQty: true, status: true } } } },
+  items: { include: { product: { select: { unit: true, name: true } }, tasks: { select: { doneQty: true, status: true } } } },
   trips: { select: { status: true, qtyM3: true, acceptedQty: true, returnedQty: true } },
   // Storno qilingan zames tayyor hisoblanmaydi
   batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
@@ -648,7 +648,7 @@ export function tripCoveredQty(t: { status: string; qtyM3: unknown; acceptedQty?
 }
 
 type ReadinessOrder = {
-  items: { productId: string; qtyM3: unknown; product: { unit: string }; task: { doneQty: unknown; status: string } | null }[];
+  items: { productId: string; qtyM3: unknown; product: { unit: string }; tasks: { doneQty: unknown; status: string }[] }[];
   trips: { status: string; qtyM3: unknown; acceptedQty?: unknown; returnedQty?: unknown }[];
   batches: { productId: string; qtyM3: unknown }[];
 };
@@ -661,7 +661,8 @@ export function orderReadiness(o: ReadinessOrder): OrderReadiness {
     const q = Number(i.qtyM3);
     total += q;
     let r = 0;
-    if (i.task) { hasTasks = true; r = i.task.status === "CANCELLED" ? 0 : Number(i.task.doneQty); }
+    // Qator bir nechta brigadaga bo'lingan bo'lishi mumkin; bekor qilingan topshiriq tayyor hisoblanmaydi (avvalgidek)
+    if (i.tasks.length) { hasTasks = true; r = i.tasks.reduce((s, t) => s + (t.status === "CANCELLED" ? 0 : Number(t.doneQty)), 0); }
     // Beton uchun zames ham ishlab chiqarish tasdig'i — brigada qayd qilmagan bo'lsa ham quyilgani jo'natiladi
     if (i.product.unit === "m3") r = Math.max(r, o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0));
     ready += Math.min(q, r);

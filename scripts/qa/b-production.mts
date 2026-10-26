@@ -107,6 +107,36 @@ if (ord) {
   }
 }
 
+// ── 2b) Bitta qatorni ikki brigadaga bo'lib berish (miqdor bilan) ──
+// 3-bo'lim bazadagi tayinlanmagan qatorni oladi — bu yerda o'z qatorimizni qo'shamiz (10 dona), bir-biriga xalal bermaydi
+{
+  const split = `qa_split_${Date.now()}`;
+  q(`insert into "OrderItem" (id, "orderId", "productId", "qtyM3", price) select '${split}', o.id, p.id, 10, 0 from "Order" o, "Product" p where o.status in ('CONFIRMED','IN_PRODUCTION') and p.unit<>'m3' and p."isActive" order by o."createdAt", p.code limit 1`);
+  const row = q(`select "orderId", id, "qtyM3" from "OrderItem" where id='${split}'`)[0];
+  const [b1, b2] = q(`select id from "Brigade" where "isActive" order by name limit 2`).map((x) => x[0]);
+  if (!row || !b2) console.log("  · bo'lib berish testi o'tkazib yuborildi: mos qator yoki ikkinchi brigada yo'q");
+  else {
+    const [oid, itemId, total] = row; const half = Math.floor(Number(total) / 2), rest = Number(total) - half;
+    const A = "(app)/production/assign-actions#assignBrigades";
+    r = await ishlab.action(A, [oid, undefined, fd({ [`brigade_${itemId}`]: b1, [`qty_${itemId}`]: 0 })], "/production");
+    check(!r.ok && /0 dan katta/.test(r.error ?? ""), "miqdor 0 — rad etildi", r.error);
+    r = await ishlab.action(A, [oid, undefined, fd({ [`brigade_${itemId}`]: b1, [`qty_${itemId}`]: half })], "/production");
+    check(r.ok, `1-brigadaga ${half} / ${total}`, r.error);
+    r = await ishlab.action(A, [oid, undefined, fd({ [`brigade_${itemId}`]: b2, [`qty_${itemId}`]: rest + 1 })], "/production");
+    check(!r.ok && /berilmagan qismi/.test(r.error ?? ""), "qolganidan ko'p — rad etildi", r.error);
+    r = await ishlab.action(A, [oid, undefined, fd({ [`brigade_${itemId}`]: b2, [`qty_${itemId}`]: rest })], "/production");
+    check(r.ok, `2-brigadaga qolgan ${rest}`, r.error);
+    const sum = Number(q1(`select coalesce(sum(qty),0) from "BrigadeTask" where "orderItemId"='${itemId}' and status<>'CANCELLED'`));
+    const n = Number(q1(`select count(*) from "BrigadeTask" where "orderItemId"='${itemId}'`));
+    check(n === 2 && Math.abs(sum - Number(total)) < 0.001, `qatorda 2 topshiriq, jami ${sum} = ${total}`);
+    r = await ishlab.action(A, [oid, undefined, fd({ [`brigade_${itemId}`]: b1 })], "/production");
+    check(!r.ok && /allaqachon/.test(r.error ?? ""), "hammasi berilgan qatorga yana tayinlash — rad etildi", r.error);
+  }
+  // Sinov qatori keyingi testlarga (logistika, schyot) ta'sir qilmasin
+  q(`delete from "BrigadeTask" where "orderItemId"='${split}'`);
+  q(`delete from "OrderItem" where id='${split}'`);
+}
+
 // ── 3) Brigada topshirig'i ──
 const ord3 = q(`select o.id, i.id, p.id, i."qtyM3", p.code from "Order" o join "OrderItem" i on i."orderId"=o.id join "Product" p on p.id=i."productId" left join "BrigadeTask" t on t."orderItemId"=i.id where o.status in ('CONFIRMED','IN_PRODUCTION') and p.unit<>'m3' and t.id is null limit 1`)[0];
 const brigadeId = q1(`select id from "Brigade" where name like 'Test brigada%'`)!;

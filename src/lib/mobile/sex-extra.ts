@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { reassignable } from "@/lib/tasks";
+import { itemTasks } from "@/lib/production";
 import { brigadeStocks } from "@/lib/brigade-stock";
-import { assignOrderBrigades } from "@/lib/production-assign";
+import { assignOrderBrigades, type AssignPick } from "@/lib/production-assign";
 import { batchSchema, createProductionBatch } from "@/lib/production-batch";
 import { cancelBatch } from "@/lib/storno";
 import { createRecipeVersion, type RecipeRowInput } from "@/lib/recipes";
@@ -60,9 +60,9 @@ const NONE = "__none__";
  */
 export async function withOrderActions(user: MobileUser, d: MobileDetail): Promise<MobileDetail> {
   if (!can(user, "order.assign")) return d;
-  const o = await db.order.findUnique({ where: { id: d.id }, select: { status: true, items: { select: { id: true, productId: true, qtyM3: true, product: { select: { name: true, unit: true } }, task: { select: { status: true, doneQty: true } } } } } });
+  const o = await db.order.findUnique({ where: { id: d.id }, select: { status: true, items: { select: { id: true, productId: true, qtyM3: true, product: { select: { name: true, unit: true } }, tasks: { select: { status: true, qty: true, doneQty: true } } } } } });
   if (!o) return d;
-  const open = o.items.filter((i) => !i.task || reassignable(i.task));
+  const open = o.items.map((i) => ({ ...i, left: itemTasks(i.qtyM3, i.tasks).left })).filter((i) => i.left > 0.0005);
   if (!open.length || !["DRAFT", "CONFIRMED", "IN_PRODUCTION"].includes(o.status)) return d;
   const base = { id: "order.assign", label: "Brigada tayinlash", tone: "brand" as const };
   if (o.status === "DRAFT") return { ...d, actions: [{ ...base, disabled: true, hint: "Zayavka hali tasdiqlanmagan (qoralama) — sotuv bo'limi qabul qilgach brigada tayinlanadi" }, ...d.actions] };
@@ -74,20 +74,26 @@ export async function withOrderActions(user: MobileUser, d: MobileDetail): Promi
   // Mahsulot → brigada → shu brigada qo'lidagi xomashyo bilan qancha chiqara oladi (veb «Brigadalar imkoni»)
   const cap = new Map<string, Map<string, number>>();
   for (const b of stocks) for (const m of b.makes) (cap.get(m.productId) ?? cap.set(m.productId, new Map()).get(m.productId)!).set(b.id, m.canMake);
-  const form: FormField[] = open.map((i, n) => {
+  // Har qator: brigada + miqdor (bir qatorni bir nechta brigadaga bo'lish uchun). Eski ilova miqdor maydonini
+  // chizmasa ham bo'ladi — server berilmagan qismning hammasini oladi
+  const form: FormField[] = open.flatMap((i, n) => {
     const unit = unitLabel(i.product.unit);
     const capOf = (bid: string) => cap.get(i.productId)?.get(bid) ?? 0;
+    const need = i.left, part = need < sum(i.qtyM3) - 0.0005;
     const options: FormOption[] = [...brigades].sort((a, b) => capOf(b.id) - capOf(a.id)).map((b) => {
-      const c = capOf(b.id), need = sum(i.qtyM3);
+      const c = capOf(b.id);
       return {
         value: b.id, label: `${b.name}${b.leader ? ` · ${b.leader.fullName}` : ""}`,
         hint: c > 0 ? `${fmtNum(c, 2)} ${unit} chiqara oladi${c >= need - 0.0005 ? " — yetadi" : ` — ${fmtNum(Math.max(0, need - c), 2)} ${unit} yetmaydi`}` : "xomashyosi yo'q",
       };
     });
-    return {
-      name: `brigade_${i.id}`, label: `${i.product.name} — ${inUnit(sum(i.qtyM3), i.product.unit)}`, type: "select", options,
-      ...(n === 0 ? { hint: "Tanlanmagan qatorlar keyinga qoladi. Xomashyo yetmasa ham tayinlash mumkin — skladdan brigadaga berasiz" } : {}),
-    };
+    return [
+      {
+        name: `brigade_${i.id}`, label: `${i.product.name} — ${part ? `berilmagan ${inUnit(need, i.product.unit)} (jami ${inUnit(sum(i.qtyM3), i.product.unit)})` : inUnit(need, i.product.unit)}`, type: "select" as const, options,
+        ...(n === 0 ? { hint: "Tanlanmagan qatorlar keyinga qoladi. Xomashyo yetmasa ham tayinlash mumkin — skladdan brigadaga berasiz" } : {}),
+      },
+      { name: `qty_${i.id}`, label: `Miqdor, ${unit}`, type: "number" as const, value: String(+need.toFixed(3)), hint: "Qolganini keyin boshqa brigadaga berish mumkin" },
+    ];
   });
   return { ...d, actions: [{ ...base, form }, ...d.actions] };
 }
@@ -319,8 +325,12 @@ export async function defectCard(user: MobileUser, id: string): Promise<MobileDe
 export async function sexExtraAction(user: MobileUser, action: string, id: string, payload: Record<string, unknown>): Promise<string> {
   switch (action) {
     case "order.assign": {
-      const picks: Record<string, string> = {};
-      for (const [k, v] of Object.entries(payload)) if (k.startsWith("brigade_") && typeof v === "string") picks[k.slice(8)] = v;
+      const picks: Record<string, AssignPick> = {};
+      for (const [k, v] of Object.entries(payload)) {
+        if (!k.startsWith("brigade_") || typeof v !== "string") continue;
+        const id = k.slice(8), raw = String(payload[`qty_${id}`] ?? "").replace(/\s+/g, "").replace(",", ".");
+        picks[id] = { brigadeId: v, qty: raw ? Number(raw) : null };
+      }
       const r = await assignOrderBrigades(id, picks, user.id);
       if ("error" in r) fail(r.error);
       clearDashCache();

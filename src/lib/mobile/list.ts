@@ -303,13 +303,13 @@ async function productionOrders(title: string, q?: string, filter?: string): Pro
       ...(q ? { OR: [{ orderNo: { contains: q, mode: "insensitive" } }, { customer: { name: { contains: q, mode: "insensitive" } } }, { deliveryAddress: { contains: q, mode: "insensitive" } }] } : {}),
     },
     orderBy: { deliveryDate: "asc" }, take: 400,
-    include: { customer: true, items: { include: { product: true, brigade: true, task: true } } },
+    include: { customer: true, items: { include: { product: true, tasks: { include: { brigade: { select: { name: true } } } } } } },
   });
   const f = prodFilter(filter);
   const rows = prodSort(all.filter(f.test)).slice(0, TAKE).map((o) => {
     const ok = assigned(o);
     const done = isDone(o);
-    const brigades = [...new Set(o.items.map((i) => i.brigade?.name).filter(Boolean))].join(", ");
+    const brigades = [...new Set(o.items.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))].join(", ");
     return {
       id: o.id,
       title: `${o.orderNo} · ${o.customer.name}${o.isUrgent ? " · zarur" : ""}`,
