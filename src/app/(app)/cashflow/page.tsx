@@ -3,6 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Wallet, Landmark, Undo2 } 
 import { accountBalances } from "@/lib/payments";
 import { ConfirmButton } from "../payments/confirm-button";
 import { PayReceiptForm } from "./pay-receipt-form";
+import { CollapsibleRows } from "./collapsible-rows";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -123,9 +124,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         <Card className="mb-6">
           <h2 className="mb-1 font-semibold">To&apos;lanmagan kirimlar <Badge color="amber">{unpaid.length}</Badge></h2>
           <p className="mb-3 text-sm text-slate-500">Xomashyo skladga kirim qilingan, yetkazuvchiga hali to&apos;liq pul to&apos;lanmagan. Qolgan jami {money(unpaid.reduce((x, r) => x + r.left, 0))}. Summa bo&apos;sh qolsa — qolgani to&apos;liq to&apos;lanadi; qisman to&apos;lash uchun summani yozing.</p>
-          <Table>
-            <thead><tr><Th>Sana</Th><Th>Kirim</Th><Th>Yetkazuvchi</Th><Th right>Summa</Th><Th></Th></tr></thead>
-            <tbody>
+          <CollapsibleRows head={<tr><Th>Sana</Th><Th>Kirim</Th><Th>Yetkazuvchi</Th><Th right>Summa</Th><Th></Th></tr>}>
               {unpaid.map((r) => (
                 <Tr key={r.id}>
                   <Td>{date(r.date)}</Td>
@@ -139,8 +138,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
                   </Td>
                 </Tr>
               ))}
-            </tbody>
-          </Table>
+          </CollapsibleRows>
         </Card>
       )}
 
