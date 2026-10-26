@@ -20,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <BiPage title="Insof AI — tahlil" subtitle="Bu sahifa savolni kutmaydi: tizim butun biznesni o'zi ko'rib chiqadi va bugun nima qilish kerakligini pul bo'yicha tartiblab beradi. Savol berish uchun — AI Chat." eyebrow="Insof AI" tab="ai" range={range} keep={{ report: type }}>
       <div className="space-y-6">
         {/* AI Direktor */}
-        <div className="rounded-(--radius-card) bg-gradient-to-br from-ink-950 via-ink-900 to-slate-800 px-6 py-5 text-white shadow-(--shadow-pop)">
+        <div className="on-dark rounded-(--radius-card) bg-gradient-to-br from-ink-950 via-ink-900 to-slate-800 px-6 py-5 text-white shadow-(--shadow-pop)">
           <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-brand-400"><Bot size={14} /> AI Direktor</div>
           <h2 className="mt-1.5 text-2xl font-semibold tracking-tight">Bugun nima qilish kerakligini tizim o'zi aytadi</h2>
           <p className="mt-1 max-w-3xl text-[14px] text-slate-300">Savol berish shart emas. Butun biznes ko'rib chiqildi va bajariladigan {d.tasks.length} ta ish pul bo'yicha tartiblandi — har biriga aniq ro'yxat va bir bosishli harakat bilan.</p>

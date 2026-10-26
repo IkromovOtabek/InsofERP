@@ -72,7 +72,7 @@ export function Chat({ chatId: initialId, agent, initial, labels, canUse }: { ch
       <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
         {msgs.length === 0 ? (
           <div className="mx-auto max-w-xl py-8 text-center">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-brand-400"><Sparkles size={22} /></span>
+            <span className="on-dark mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-brand-400"><Sparkles size={22} /></span>
             <h2 className="mt-4 text-lg font-semibold">{agent.label}</h2>
             <p className="mt-1.5 text-sm text-slate-500">{agent.about}. Agent yaratgan hamma narsa qoralama — tasdiqlash va nashr sizda.</p>
             {canUse ? (

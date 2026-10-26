@@ -339,6 +339,17 @@ html[data-palette="safir"] .bg-brand-500.text-slate-950 { color: #fff; }
   --color-slate-400: #7c8799; --color-slate-500: #5b6880; --color-slate-600: #475569; --color-slate-700: #334155;
   --color-slate-800: #1e293b; --color-slate-900: #0f172a; --color-slate-950: #020617;
 }
+/* Qora blok ichida xira kulrang va to'q rangli matn yorug'roq bo'ladi (kontrast ≥4.5:1, fon #0d1013–#1e293b).
+   SVG ham shunday: ScoreRing raqami oq, halqa izi shaffof oq. */
+.on-dark .text-slate-400 { color: #a9b2c0; }
+.on-dark .text-slate-500 { color: #9ca6b5; }
+.on-dark .text-emerald-600 { color: #34d399; }
+.on-dark .text-red-600 { color: #fb7185; }
+.on-dark .text-amber-600 { color: #fbbf24; }
+.on-dark .text-blue-600 { color: #7aa7ff; }
+.on-dark .fill-slate-900 { fill: #fff; }
+.on-dark .fill-slate-500 { fill: #a9b2c0; }
+.on-dark .stroke-slate-200 { stroke: rgb(255 255 255 / 0.14); }
 
 /* ───────── Qog'oz (nakladnoy, schyot chop etish ko'rinishi) ─────────
    Ekranda dark rejim bo'lsa ham hujjat oq qog'oz bo'lib qoladi — QR va imzo joylari
