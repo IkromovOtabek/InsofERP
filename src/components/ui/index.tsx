@@ -33,7 +33,7 @@ export function PageHeader({ title, subtitle, eyebrow, action, back }: {
       <div className="min-w-0">
         {back && <BackLink href={back.href} label={back.label} className="mb-1" />}
         {eyebrow && !back && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
-        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-[22px] font-bold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-[28px]">{title}</h1>
+        <h1 data-tour="page-title" className="flex flex-wrap items-center gap-2 text-[24px] font-bold tracking-tight text-slate-900 [overflow-wrap:anywhere] sm:text-[32px]">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {/* `data-tour` — instruksiya (onboarding) shu belgilarga strelka qo'yadi */}
@@ -54,7 +54,7 @@ export function CardHeader({ title, description, action, icon: Icon, help }: { t
       <div className="flex min-w-0 flex-1 basis-64 items-start gap-2.5">
         {Icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon size={16} /></div>}
         <div className="min-w-0">
-          <h2 className="text-[17px] font-semibold leading-snug text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}</h2>
+          <h2 className="text-[19px] font-semibold leading-snug text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}</h2>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
         </div>
       </div>
@@ -95,7 +95,7 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "default", hre
     <div className={cn("flex items-start justify-between gap-3 rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition", tone === "danger" ? "border-red-200" : "border-slate-200/80", href && "hover:border-slate-300 hover:shadow-md active:scale-[.99]")}>
       <div className="min-w-0">
         <div className="text-[13px] font-medium leading-snug text-slate-500">{label}</div>
-        <div className={cn("mt-1.5 break-words text-[22px] leading-tight font-semibold tracking-tight tabular sm:text-[26px]", t.value)}>{value}</div>
+        <div className={cn("mt-1.5 break-words text-[24px] leading-tight font-bold tracking-tight tabular sm:text-[30px]", t.value)}>{value}</div>
         {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
       </div>
       {Icon && <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={19} /></div>}

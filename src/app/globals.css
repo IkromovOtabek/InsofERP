@@ -480,48 +480,55 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; }
 
 /* ───────── ERP tipografik shkalasi ─────────
    Avval asosiy matn 14px, karta sarlavhasi 15px, izoh 12px edi — hammasi bir xil
-   ko'rinardi. Endi ERP ekranida (`.app-main` bor sahifalar) shkala bir pog'ona
-   katta: izoh 13 · asosiy matn 15 · karta sarlavhasi 17 · bo'lim 19 · sahifa 28.
+   ko'rinardi. Endi ERP ekranida (`.app-main` bor sahifalar) shkala ikki pog'ona
+   katta: izoh 14 · asosiy matn 16 · karta sarlavhasi 19 · bo'lim 20 · sahifa 32.
+   Qalinlik ham bir pog'ona yuqori: oddiy matn 500, medium 600, semibold 700.
    Tailwind sinflari `var(--text-*)` dan o'qiydi, shuning uchun tokenni almashtirish
    barcha sahifalarga birdan tegadi. Sayt (`.site`), qog'oz hujjat (`.paper`) va
    chop etish asl o'lchamda qoladi — A4 maketi siljimasin. */
 @media screen {
   :root:has(.app-main) {
-    --text-xs: 0.8125rem;   /* 13px — izoh, badge, yordamchi matn */
-    --text-sm: 0.9375rem;   /* 15px — asosiy matn, jadval, input */
-    --text-base: 1.0625rem; /* 17px */
-    --text-lg: 1.1875rem;   /* 19px */
-    --text-xl: 1.375rem;    /* 22px */
-    --text-2xl: 1.75rem;    /* 28px — sahifa sarlavhasi */
+    --text-xs: 0.875rem;    /* 14px — izoh, badge, yordamchi matn */
+    --text-sm: 1rem;        /* 16px — asosiy matn, jadval, input */
+    --text-base: 1.125rem;  /* 18px */
+    --text-lg: 1.25rem;     /* 20px */
+    --text-xl: 1.5rem;      /* 24px */
+    --text-2xl: 1.875rem;   /* 30px */
+    --font-weight-medium: 600;
+    --font-weight-semibold: 700;
+    --font-weight-bold: 800;
   }
+  :root:has(.app-main) body { font-weight: 500; }
   .site, .paper {
     --text-xs: 0.75rem; --text-sm: 0.875rem; --text-base: 1rem;
     --text-lg: 1.125rem; --text-xl: 1.25rem; --text-2xl: 1.5rem;
+    --font-weight-medium: 500; --font-weight-semibold: 600; --font-weight-bold: 700;
+    font-weight: 400;
   }
 
   /* Sahifalarda qat'iy piksel bilan yozilgan mayda o'lchamlar (text-[11px] va h.k.,
-     400 dan ortiq joy) ham shkala bilan birga 1px ko'tariladi. Responsiv yoki
+     400 dan ortiq joy) ham shkala bilan birga 2px ko'tariladi. Responsiv yoki
      sensor varianti bor element (`sm:text-sm`, `pointer-coarse:text-[15px]`)
      chetlab o'tiladi: unda o'lchamni variant boshqaradi, qatlamsiz qoida esa
      uni bosib ketardi. */
   :root:has(.app-main) :not(.site *, .paper *):not([class*=":text-xs"], [class*=":text-sm"], [class*=":text-base"], [class*=":text-lg"], [class*=":text-xl"], [class*=":text-2xl"], [class*=":text-["]) {
-    &.text-\[9px\] { font-size: 10px; }
-    &.text-\[10px\] { font-size: 11px; }
-    &.text-\[10\.5px\] { font-size: 11.5px; }
-    &.text-\[11px\] { font-size: 12px; }
-    &.text-\[11\.5px\] { font-size: 12.5px; }
-    &.text-\[12px\] { font-size: 13px; }
-    &.text-\[12\.5px\] { font-size: 13.5px; }
-    &.text-\[13px\] { font-size: 14px; }
-    &.text-\[13\.5px\] { font-size: 14.5px; }
-    &.text-\[14px\] { font-size: 15px; }
-    &.text-\[15px\] { font-size: 16px; }
+    &.text-\[9px\] { font-size: 11px; }
+    &.text-\[10px\] { font-size: 12px; }
+    &.text-\[10\.5px\] { font-size: 12.5px; }
+    &.text-\[11px\] { font-size: 13px; }
+    &.text-\[11\.5px\] { font-size: 13.5px; }
+    &.text-\[12px\] { font-size: 14px; }
+    &.text-\[12\.5px\] { font-size: 14.5px; }
+    &.text-\[13px\] { font-size: 15px; }
+    &.text-\[13\.5px\] { font-size: 15.5px; }
+    &.text-\[14px\] { font-size: 16px; }
+    &.text-\[15px\] { font-size: 17px; }
 
     /* Sahifalardagi o'z karta sarlavhalari ko'pincha `<h2 class="text-sm">` — asosiy
        matn bilan bir xil o'lchamda edi. Sarlavha tegida ular matndan ajraladi:
-       h2 = karta sarlavhasi (CardHeader bilan bir xil 17px), h3 = ichki blok. */
-    &:is(h2, h3):is(.text-sm, .text-\[13px\], .text-\[13\.5px\], .text-\[14px\], .text-\[14\.5px\], .text-\[15px\]) { font-size: 17px; line-height: 1.35; }
-    &:is(h3):is(.text-sm, .text-\[13px\], .text-\[13\.5px\], .text-\[14px\], .text-\[14\.5px\], .text-\[15px\]) { font-size: 16px; }
+       h2 = karta sarlavhasi (CardHeader bilan bir xil 19px), h3 = ichki blok. */
+    &:is(h2, h3):is(.text-sm, .text-\[13px\], .text-\[13\.5px\], .text-\[14px\], .text-\[14\.5px\], .text-\[15px\]) { font-size: 19px; line-height: 1.35; }
+    &:is(h3):is(.text-sm, .text-\[13px\], .text-\[13\.5px\], .text-\[14px\], .text-\[14\.5px\], .text-\[15px\]) { font-size: 17px; }
   }
 }
 
@@ -594,7 +601,7 @@ table, input[inputmode="numeric"], input[inputmode="decimal"], input[type="numbe
    <html class="sb-collapsed"> — holat birinchi bo'yoqdan oldin qo'llanadi (layout.tsx skripti),
    shuning uchun sahifa yangilanganda menyu kengaydan torga sakramaydi.
    Faqat ish stoli uchun: telefonda menyu baribir chekka panel (drawer) sifatida ochiladi. */
-:root { --sb-w: 17rem; }
+:root { --sb-w: 18rem; }
 
 @media (min-width: 1024px) {
   .sb-collapsed { --sb-w: 4.75rem; }
