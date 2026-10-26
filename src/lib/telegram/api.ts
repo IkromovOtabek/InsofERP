@@ -136,6 +136,12 @@ export async function downloadFile(fileId: string): Promise<{ bytes: Uint8Array;
 export type BotInfo = { id: number; username?: string; first_name?: string };
 export const getMe = () => call<BotInfo>("getMe");
 
+/** Kanal/guruh ma'lumoti va botning undagi huquqi — kanalni ulashda tekshiruv uchun (`./channel.ts`). */
+export type TgChatInfo = { id: number; type: string; title?: string; username?: string };
+export const getChat = (chatId: number | string) => call<TgChatInfo>("getChat", { chat_id: chatId });
+export const getChatMember = (chatId: number | string, userId: number) =>
+  call<{ status: string; can_post_messages?: boolean }>("getChatMember", { chat_id: chatId, user_id: userId });
+
 /**
  * Bot nomi (`t.me/...` havolasi uchun). Natija jarayon xotirasida saqlanadi —
  * bot nomi o'zgarmaydi, har sahifada Telegram'ga so'rov yuborish shart emas.

@@ -62,7 +62,7 @@ const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 /**
  * 10 kunlik ish tartibi — veb `orders/load-calendar.tsx` bilan bir xil hisob, faqat
  * ro'yxatsiz (mobilda kartochka ochilmaydi, faqat rang va hajm — sana tanlashda yo'l ko'rsatadi).
- * Kunlik quvvat: Sozlamalar → Limitlar → «Kunlik quvvat, m³» (sukut 200).
+ * Kunlik limit: m³ (sukut 200) va dona — Zayavkalar taqvimi (direktor) yoki Sozlamalar → Limitlar.
  */
 async function dayCells(days = 10): Promise<DayCell[]> {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -72,24 +72,30 @@ async function dayCells(days = 10): Promise<DayCell[]> {
       where: { status: { not: "CANCELLED" }, deliveryDate: { gte: today, lt: until } },
       select: { deliveryDate: true, items: { select: { qtyM3: true, product: { select: { unit: true } } } } },
     }),
-    db.companySettings.findUnique({ where: { id: "main" }, select: { dailyCapacityM3: true } }),
+    db.companySettings.findUnique({ where: { id: "main" }, select: { dailyCapacityM3: true, dailyCapacityPcs: true } }),
   ]);
   const capacity = Math.max(1, Number(settings?.dailyCapacityM3 ?? 200));
-  const byDay = new Map<string, { m3: number; count: number }>();
+  // Dona limiti ixtiyoriy: belgilanmagan bo'lsa rangga ta'sir qilmaydi, faqat jami dona yuboriladi
+  const capPcs = settings?.dailyCapacityPcs && settings.dailyCapacityPcs > 0 ? settings.dailyCapacityPcs : null;
+  const byDay = new Map<string, { m3: number; pcs: number; count: number }>();
   for (const o of orders) {
     const key = isoDate(o.deliveryDate);
-    // Faqat beton (m³) — ustun/donali mahsulot kunlik ishlab chiqarish quvvatini band qilmaydi
+    // Beton (m³) va dona mahsulot (ustun, blok) — har biri o'z kunlik limitiga nisbatan
     const m3 = o.items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0);
-    const cur = byDay.get(key) ?? { m3: 0, count: 0 };
-    byDay.set(key, { m3: cur.m3 + m3, count: cur.count + 1 });
+    const pcs = o.items.reduce((s, i) => s + (i.product.unit === "dona" ? Number(i.qtyM3) : 0), 0);
+    const cur = byDay.get(key) ?? { m3: 0, pcs: 0, count: 0 };
+    byDay.set(key, { m3: cur.m3 + m3, pcs: cur.pcs + pcs, count: cur.count + 1 });
   }
   return Array.from({ length: days }, (_, n) => {
     const d = new Date(today); d.setDate(d.getDate() + n);
     const key = isoDate(d);
-    const day = byDay.get(key) ?? { m3: 0, count: 0 };
+    const day = byDay.get(key) ?? { m3: 0, pcs: 0, count: 0 };
+    const pctM3 = Math.min(100, (day.m3 / capacity) * 100);
+    const pctPcs = capPcs ? Math.min(100, (day.pcs / capPcs) * 100) : 0;
     return {
       key, label: n === 0 ? "Bugun" : n === 1 ? "Ertaga" : `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}`,
-      weekday: WEEKDAYS[d.getDay()], m3: day.m3, pct: Math.min(100, (day.m3 / capacity) * 100), count: day.count, isToday: n === 0,
+      // pct — ikkala limitdan qaysi biri ko'proq to'lgan bo'lsa (veb taqvim bilan bir xil); eski ilova faqat shuni ko'radi
+      weekday: WEEKDAYS[d.getDay()], m3: day.m3, pcs: day.pcs, capM3: capacity, capPcs, pct: Math.max(pctM3, pctPcs), count: day.count, isToday: n === 0,
     };
   });
 }
@@ -698,7 +704,7 @@ async function orderForm(user: MobileUser, defaults: Record<string, string> = {}
       { name: "newName", label: "Yangi mijoz nomi", type: "text", required: true, showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "newPhone", label: "Telefon", type: "text", placeholder: "+998 90 123 45 67", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
       { name: "newInn", label: "INN", type: "text", placeholder: "9 raqam", showIf: { field: "customerId", equals: NEW_CUSTOMER } },
-      { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: ymd(tomorrow), cells, hint: "Ustun rangi shu kunga qancha beton olinganini ko'rsatadi" },
+      { name: "deliveryDate", label: "Yetkazish sanasi", type: "date", required: true, value: ymd(tomorrow), cells, hint: "Rang shu kunga olingan beton (m³) va dona kunlik limitga nisbatan qanchaligini ko'rsatadi" },
       { name: "deliveryAddress", label: "Obyekt manzili", type: "text", required: true, value: lead?.address, placeholder: "Tuman, ko'cha, mo'ljal" },
       {
         name: "items", label: "Mahsulot", type: "items", required: true,

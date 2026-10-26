@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Check, Copy, KeyRound, RotateCcw, Save, UserPlus } from "lucide-react";
-import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, saveVatPayer, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
+import { Check, Copy, KeyRound, RotateCcw, Save, ShieldCheck, UserPlus } from "lucide-react";
+import { createUser, resetPassword, saveSupplyDirectorLimit, savePayablesSince, saveVatPayer, saveProductionChannel, saveUserPerms, copyUserPerms, toggleUser, updateUser, applyPermTemplate, bulkSaveUserPerms } from "./actions";
 import { MoneyInput } from "@/components/money-input";
 import { Button, Field, FormError, FormSuccess, Input, PasswordInput, Select } from "@/components/ui";
 import { BULK_FORM_ID, type PermModule } from "@/lib/perm-modules";
@@ -107,6 +107,27 @@ export function VatPayerForm({ value }: { value: boolean }) {
   );
 }
 
+/**
+ * Ishlab chiqarish Telegram kanali. Maydon boshqariladigan: server action tugagach forma tozalanganda kiritilgan
+ * manzil o'chib ketmasin. Ikki tugma bitta action'ga `intent` bilan boradi — «Tekshirish» saqlamaydi.
+ */
+export function ProductionChannelForm({ value }: { value: string | null }) {
+  const [state, action, pending] = useActionState(saveProductionChannel, undefined);
+  const [chat, setChat] = useState(value ?? "");
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <Field label="Kanal manzili" hint="@kanal_nomi yoki -100… raqami; bo'sh — o'chiq">
+        <Input name="productionTgChat" value={chat} onChange={(e) => setChat(e.target.value)} placeholder="@insof_ishlab_chiqarish" autoComplete="off" className="w-72" />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2 pb-5">
+        <Button type="submit" name="intent" value="check" variant="secondary" disabled={pending || !chat.trim()}><ShieldCheck size={16} /> Tekshirish</Button>
+        <Button type="submit" name="intent" value="save" disabled={pending}>{state?.ok ? <Check size={16} /> : <Save size={16} />} Saqlash</Button>
+        {state?.note && <FormSuccess text={state.note} />}
+      </div>
+      <div className="basis-full"><FormError error={state?.error} /></div>
+    </form>
+  );
+}
 
 export type { PermModule };
 

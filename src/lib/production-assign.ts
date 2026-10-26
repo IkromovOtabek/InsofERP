@@ -3,6 +3,9 @@ import { audit } from "@/lib/audit";
 import { nextNo } from "@/lib/numbering";
 import { itemTasks } from "@/lib/production";
 import { notifyAfter, notifyEmployees } from "@/lib/notify";
+import { postToProductionChannel } from "@/lib/telegram/channel";
+import { date, qty } from "@/lib/format";
+import { unitLabel } from "@/lib/unit";
 
 /**
  * Zayavka qatorlarini brigadalarga taqsimlash — yagona joy (veb «Ishlab chiqarish» → «Tayinlash» va matritsa,
@@ -89,6 +92,29 @@ export async function assignOrderBrigades(orderId: string, picks: Record<string,
         link: { key: "tasks", id: r.taskId },
       });
     }
+  });
+  // Ishlab chiqarish Telegram kanali (Sozlamalar → Zavod rekvizitlari): sex rahbarlari bitta joyda ko'radi.
+  // Kanal ulanmagan bo'lsa jim o'tadi; Telegram xatosi tayinlashni buzmaydi (`notifyAfter` jurnalga yozadi).
+  notifyAfter(async () => {
+    const [tasks, by] = await Promise.all([
+      db.brigadeTask.findMany({
+        where: { id: { in: made.map((r) => r.taskId) } }, orderBy: { taskNo: "asc" },
+        select: { taskNo: true, qty: true, brigade: { select: { name: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } },
+      }),
+      db.user.findUnique({ where: { id: userId }, select: { fullName: true } }),
+    ]);
+    const customer = o.kind === "STOCK" ? "Sklad zaxirasi" : (await db.customer.findUnique({ where: { id: o.customerId }, select: { name: true } }))?.name ?? "—";
+    await postToProductionChannel([
+      `${o.isUrgent ? "SHOSHILINCH — " : ""}Brigadaga topshiriq berildi`,
+      "",
+      `Mijoz: ${customer}`,
+      ...(o.kind === "STOCK" ? [] : [`Obyekt: ${o.deliveryAddress}`]),
+      `Muddat: ${date(o.deliveryDate)}${o.deliveryTime ? ` · ${o.deliveryTime}` : ""}`,
+      "",
+      ...tasks.map((t) => `${t.taskNo} · ${t.brigade.name}: ${t.orderItem.product.name} — ${qty(t.qty)} ${unitLabel(t.orderItem.product.unit)}`),
+      "",
+      `Tayinladi: ${by?.fullName ?? "—"}`,
+    ].join("\n"));
   });
   return { ok: true, made };
 }

@@ -15,6 +15,7 @@ import { applyAccess, applyAccessMany, permsFromForm, positionTemplates, templat
 import type { Role } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
 import { fmtNum } from "@/lib/format";
+import { verifyChannel } from "@/lib/telegram/channel";
 
 const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "SECRETARY"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
@@ -333,6 +334,33 @@ export async function saveVatPayer(_prev: ActionState, fd: FormData): Promise<Ac
   return { ok: true, note: "Saqlandi" };
 }
 
+/**
+ * Ishlab chiqarish Telegram kanali: brigada tayinlanganda ERP boti shu kanalga yozadi (`lib/telegram/channel.ts`).
+ * «Tekshirish» — faqat tekshiradi; «Saqlash» — tekshirib, to'g'ri bo'lsa saqlaydi. Bo'sh saqlansa — xabar yuborish o'chadi.
+ */
+export async function saveProductionChannel(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const raw = String(fd.get("productionTgChat") ?? "").trim();
+  const checkOnly = fd.get("intent") === "check";
+  const before = await db.companySettings.findUnique({ where: { id: "main" }, select: { productionTgChat: true } });
+  let next: string | null = null;
+  let title = "";
+  if (raw) {
+    const r = await verifyChannel(raw);
+    if (!r.ok) return { error: r.error };
+    next = r.chatId;
+    title = r.title;
+  } else if (checkOnly) {
+    return { error: "Kanal manzilini kiriting" };
+  }
+  if (checkOnly) return { ok: true, note: `Ulandi: «${title}» — bot xabar yoza oladi` };
+  if ((before?.productionTgChat ?? null) === next) return { ok: true, note: "O'zgarish yo'q" };
+  await db.companySettings.upsert({ where: { id: "main" }, update: { productionTgChat: next }, create: { id: "main", productionTgChat: next } });
+  await audit(db, s.userId, "UPDATE", "CompanySettings", "main", { productionTgChat: before?.productionTgChat ?? null }, { productionTgChat: next });
+  refresh();
+  return { ok: true, note: next ? `Saqlandi: «${title}»` : "Kanal o'chirildi" };
+}
+
 /* ───────── Limitlar (direktor): kunlik zayavka va quvvat, standart va mijozlar kredit limiti, davomat radiusi ───────── */
 
 /** Bo'sh yoki 0 — cheklov yo'q (`undefined`). Probel/vergul bilan yozilgan son ham qabul qilinadi. */
@@ -350,6 +378,7 @@ const zLimit = (max: number, label: string, int = false) =>
 
 const dailyLimitSchema = z.object({
   dailyCapacityM3: zLimit(100_000, "Kunlik quvvat"),
+  dailyCapacityPcs: zLimit(1_000_000, "Kunlik quvvat (dona)", true),
   dailyOrderMaxM3: zLimit(1_000_000, "Kunlik hajm chegarasi"),
   dailyOrderMaxCount: zLimit(100_000, "Kunlik zayavka soni", true),
 });
@@ -363,7 +392,7 @@ export async function saveDailyOrderLimits(_prev: ActionState, fd: FormData): Pr
   const r = parseForm(dailyLimitSchema, fd);
   if ("error" in r) return { error: r.error };
   const changed = await saveDailyOrderLimitsDb(s.userId, {
-    capacityM3: r.data.dailyCapacityM3 ?? null, maxM3: r.data.dailyOrderMaxM3 ?? null, maxCount: r.data.dailyOrderMaxCount ?? null,
+    capacityM3: r.data.dailyCapacityM3 ?? null, capacityPcs: r.data.dailyCapacityPcs ?? null, maxM3: r.data.dailyOrderMaxM3 ?? null, maxCount: r.data.dailyOrderMaxCount ?? null,
   });
   if (!changed) return { ok: true, note: "O'zgarish yo'q" };
   refresh(); revalidatePath("/orders"); revalidatePath("/orders/tarix"); revalidatePath("/orders/new");

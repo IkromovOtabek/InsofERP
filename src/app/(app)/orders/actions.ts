@@ -4,7 +4,8 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireAction } from "@/lib/auth";
+import { requireAction, requireSession } from "@/lib/auth";
+import { saveDailyOrderLimits } from "@/lib/company";
 import { createOrder as createOrderDomain, orderConfirm, orderSetDate, orderUnblock } from "@/lib/orders";
 import { cancelOrderWithReason, closeStockOrderLib, setGuarantee, setOrderContract } from "@/lib/order-docs";
 import { createStockOrder as createStockOrderDomain } from "@/lib/stock-orders";
@@ -12,6 +13,7 @@ import { importOrders, type ImportOrderRow } from "@/lib/import-orders";
 import { parseForm, zStr, zOpt, MAX_AMOUNT, type ActionState } from "@/lib/action";
 import { saveContractFile } from "@/lib/uploads";
 import { withNds } from "@/lib/nds";
+import { fmtNum } from "@/lib/format";
 
 const schema = z.object({
   // Mijoz: mavjudini tanlash ("existing") yoki shu yerning o'zida yangi ochish ("new")
@@ -295,4 +297,36 @@ export async function importOrdersFromExcel(_prev: ActionState, fd: FormData): P
       res.failed.length ? `${res.failed.length} ta zayavka ochilmadi: ${res.failed.slice(0, 3).map((f) => `${f.customer} (${f.date}) — ${f.error}`).join("; ")}` : "",
     ].filter(Boolean).join(" · "),
   };
+}
+
+/** Bo'sh yoki 0 — belgilanmagan (`null`). Probel/vergul bilan yozilgan son ham qabul qilinadi. */
+const zCapacity = (max: number, label: string, int: boolean) =>
+  z.string().optional().transform((v, ctx) => {
+    const t = (v ?? "").trim().replace(/\s/g, "").replace(",", ".");
+    if (!t) return null;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > max || (int && !Number.isInteger(n))) {
+      ctx.addIssue({ code: "custom", message: `${label}: 0 dan ${fmtNum(max)} gacha ${int ? "butun " : ""}son kiriting` });
+      return z.NEVER;
+    }
+    return n > 0 ? Math.round(n * 100) / 100 : null;
+  });
+
+const capacitySchema = z.object({
+  capacityM3: zCapacity(100_000, "Kunlik limit (m³)", false),
+  capacityPcs: zCapacity(1_000_000, "Kunlik limit (dona)", true),
+});
+
+/**
+ * Haftalik ish tartibidagi kunlik limit (quvvat) — m³ va dona. Faqat direktor; Sozlamalar → Limitlar'dagi
+ * «Kunlik quvvat» bilan bir maydon. Yumshoq ko'rsatkich: zayavkani bloklamaydi, faqat taqvim rangi.
+ */
+export async function saveDailyCapacity(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireSession(["DIRECTOR"]);
+  const r = parseForm(capacitySchema, fd);
+  if ("error" in r) return { error: r.error };
+  const changed = await saveDailyOrderLimits(s.userId, r.data);
+  if (!changed) return { ok: true, note: "O'zgarish yo'q" };
+  revalidatePath("/orders"); revalidatePath("/settings");
+  return { ok: true, note: "Saqlandi" };
 }

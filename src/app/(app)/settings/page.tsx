@@ -19,7 +19,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { deleteCatalogProduct } from "@/lib/catalog-actions";
 import { deleteCatalogMaterial } from "@/lib/material-actions";
 import { PlantLocation } from "./plant-location";
-import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, PayablesSinceForm, VatPayerForm, UserPermsForm, CopyPermsForm, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
+import { UserForm, ResetPasswordForm, UserEditForm, ToggleUserButton, SupplyLimitForm, PayablesSinceForm, VatPayerForm, ProductionChannelForm, UserPermsForm, CopyPermsForm, BulkPermsBar, type PermTemplateOpt } from "./user-forms";
 import { AttendanceRadiusForm, CustomerLimitsTable, DailyLimitsForm, DefaultCreditLimitForm, type CustomerLimitRow } from "./limits-forms";
 import { ThresholdForm } from "../dashboard/byudjet/budget-form";
 import { SettingsForm as LogisticsSettingsForm } from "../logistika/sozlamalar/settings-form";
@@ -34,6 +34,7 @@ import { DEFAULT_PAYABLES_SINCE } from "@/lib/receipt-payables";
 import { fineText, getLateFine } from "@/lib/hr/late-fine";
 import { saveCompany, saveProduct, saveMaterial, saveWarehouse, saveCashAccount } from "./actions";
 import { txSign } from "@/lib/cash-tx";
+import { botEnabled } from "@/lib/telegram/api";
 
 const TABS = [
   ["account", "Mening hisobim", UserRound],
@@ -150,7 +151,7 @@ async function LimitsTab() {
       <Card>
         <CardHeader icon={ClipboardList} title="Kunlik zayavka limiti va quvvat"
           description="Kunlik quvvat — yumshoq ko'rsatkich, hech narsani bloklamaydi: Zayavkalar taqvimining rangi (unga bekor qilinmagan barcha zayavkalar, sklad zayavkalari ham kiradi), egasi dashbordidagi quvvat foizi va ommaviy saytdagi «Kunlik ishlab chiqarish quvvati». Hajm va son chegarasi — qattiq: bir yetkazish kuniga tasdiqlangan mijoz zayavkalari (sklad, qoralama va bloklanganlar kirmaydi) shundan oshsa, zayavka qabul qilinmaydi va blokdan chiqarilmaydi. 0 yoki bo'sh — cheklov yo'q." />
-        <DailyLimitsForm capacity={c.dailyCapacityM3 != null ? Number(c.dailyCapacityM3) : null} m3={maxM3} count={c.dailyOrderMaxCount} />
+        <DailyLimitsForm capacity={c.dailyCapacityM3 != null ? Number(c.dailyCapacityM3) : null} pcs={c.dailyCapacityPcs} m3={maxM3} count={c.dailyOrderMaxCount} />
       </Card>
 
       <Card>
@@ -245,6 +246,15 @@ async function CompanyTab() {
         <h2 className="mb-1 font-semibold">QQS (NDS 12%) — kirim</h2>
         <p className="mb-3 text-sm text-slate-500">Kirimda narx QQS&apos;siz kiritiladi, QQS to&apos;lovchisi yetkazuvchidan 12% QQS qo&apos;shiladi — yetkazuvchi qarzi va to&apos;lov QQS bilan. Korxona QQS to&apos;lovchisi bo&apos;lsa xomashyo tannarxi <b>QQS&apos;siz</b> (kirim QQS&apos;i byudjetdan qaytariladi, «Kirim QQS» reyestrida), aks holda QQS tannarxga qo&apos;shiladi. O&apos;zgartirish faqat yangi kirimlarga ta&apos;sir qiladi. Hozir: <b>{c.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas"}</b>.</p>
         <VatPayerForm value={c.vatPayer} />
+      </Card>
+      <Card>
+        <h2 className="mb-1 font-semibold">Ishlab chiqarish Telegram kanali</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Zayavka brigadaga tayinlanganda ERP boti shu kanalga xabar yozadi: topshiriq raqami, brigada, mijoz va obyekt, mahsulot va miqdor, muddat.
+          Botni kanalga <b>administrator</b> qilib qo&apos;shing va «Xabar joylash» huquqini bering, keyin «Tekshirish» ni bosing.
+          {!botEnabled() && <span className="mt-1 block text-amber-700">Serverda ERP boti ulanmagan (TELEGRAM_BOT_TOKEN yo&apos;q) — kanalga xabar ketmaydi.</span>}
+        </p>
+        <ProductionChannelForm value={c.productionTgChat} />
       </Card>
     </div>
   );

@@ -13,12 +13,15 @@ import { fmtNum, money } from "@/lib/format";
 const numStr = (n: number | null) => (n && n > 0 ? String(n) : "");
 
 /** Kunlik ishlab chiqarish quvvati (taqvim rangi) va qattiq kunlik zayavka limiti — bitta forma, bitta audit. */
-export function DailyLimitsForm({ capacity, m3, count }: { capacity: number | null; m3: number | null; count: number | null }) {
+export function DailyLimitsForm({ capacity, pcs, m3, count }: { capacity: number | null; pcs: number | null; m3: number | null; count: number | null }) {
   const [state, action, pending] = useActionState(saveDailyOrderLimits, undefined);
   return (
     <form action={action} className="flex flex-wrap items-end gap-3">
       <Field label="Kunlik quvvat, m³" hint="taqvim, dashbord, sayt — bloklamaydi">
         <Input name="dailyCapacityM3" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={numStr(capacity)} placeholder="200" className="w-40" />
+      </Field>
+      <Field label="Kunlik quvvat, dona" hint="ustun, blok — taqvimda ko'rinadi">
+        <Input name="dailyCapacityPcs" type="number" min={0} step="1" inputMode="numeric" defaultValue={numStr(pcs)} placeholder="belgilanmagan" className="w-40" />
       </Field>
       <Field label="Kunlik hajm chegarasi, m³" hint="oshsa qabul qilinmaydi">
         <Input name="dailyOrderMaxM3" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={numStr(m3)} placeholder="cheklov yo'q" className="w-44" />

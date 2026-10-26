@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarRange, Clock, FileSpreadsheet, X, Zap } from "lucide-react";
+import { CalendarRange, Clock, FileSpreadsheet, Gauge, Save, X, Zap } from "lucide-react";
 import { qty as q, fmtNum, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Button, Field, FormError, FormSuccess, Input } from "@/components/ui";
+import { saveDailyCapacity } from "./actions";
 
-/** m3 — beton hajmi (kunlik quvvat uchun); vol — zayavkaning to'liq hajmi birligi bilan. */
-export type DayOrder = { id: string; orderNo: string; customer: string; time: string | null; m3: number; vol: string; sum: number; status: string; statusLabel: string; urgent: boolean };
-export type DayCell = { key: string; label: string; weekday: string; list: DayOrder[]; m3: number; pct: number; count: number; urgent: number; state: "free" | "busy" | "full"; isToday: boolean };
+/** m3 / pcs — beton hajmi va dona mahsulot (kunlik limit uchun); vol — zayavkaning to'liq hajmi birligi bilan. */
+export type DayOrder = { id: string; orderNo: string; customer: string; time: string | null; m3: number; pcs: number; vol: string; sum: number; status: string; statusLabel: string; urgent: boolean };
+/** pctM3 / pctPcs — har limitga nisbatan bandlik; pct — ikkalasining kattasi (kun rangi). */
+export type DayCell = { key: string; label: string; weekday: string; list: DayOrder[]; m3: number; pcs: number; pctM3: number; pctPcs: number; pct: number; count: number; urgent: number; state: "free" | "busy" | "full"; isToday: boolean };
 
 /**
  * Kun kartasi: bandlik chizig'i kunlik quvvatga nisbatan. Joy ko'p — yashil, 70% dan — sariq,
@@ -25,24 +28,72 @@ function candle(pct: number) {
   return CANDLE_LEVELS.find((l) => pct < l.upto) ?? CANDLE_LEVELS[CANDLE_LEVELS.length - 1];
 }
 
+/** Kun yuklamasi bir qatorda: "12 m³ · 300 dona" (dona bo'lmasa faqat m³). */
+const loadText = (c: DayCell) => `${q(c.m3)} m³${c.pcs > 0 ? ` · ${fmtNum(c.pcs)} dona` : ""}`;
+
+/** Bitta limit chizig'i: bandlik chizig'i + "olingan / limit". Limit belgilanmagan bo'lsa — faqat jami. */
+function LoadBar({ value, cap, pct, unit, show }: { value: number; cap: number | null; pct: number; unit: string; show: boolean }) {
+  return (
+    <span className="block w-full">
+      {cap != null && (
+        <span className="block h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80">
+          <span className={cn("block h-full rounded-full transition-[width] duration-700", candle(pct).bar)} style={{ width: `${Math.max(show ? 6 : 0, pct)}%` }} />
+        </span>
+      )}
+      <span className="mt-0.5 block text-[12px] tabular text-slate-500">
+        {unit === "m³" ? q(value) : fmtNum(value)}{cap != null ? ` / ${fmtNum(cap)}` : ""} {unit}
+      </span>
+    </span>
+  );
+}
+
+/** Kunlik limit (m³ va dona) — direktor taqvimning o'zida o'zgartiradi. Bo'sh — dona limiti belgilanmagan. */
+function CapacityForm({ capacity, capacityPcs, onDone }: { capacity: number; capacityPcs: number | null; onDone: () => void }) {
+  const [state, action, pending] = useActionState(saveDailyCapacity, undefined);
+  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
+  return (
+    <form action={action} className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+      <Field label="Kunlik limit, m³" hint="beton">
+        <Input name="capacityM3" type="number" min={0} step="0.01" inputMode="decimal" defaultValue={capacity} placeholder="200" className="w-36" />
+      </Field>
+      <Field label="Kunlik limit, dona" hint="ustun, blok">
+        <Input name="capacityPcs" type="number" min={0} step="1" inputMode="numeric" defaultValue={capacityPcs ?? ""} placeholder="belgilanmagan" className="w-36" />
+      </Field>
+      <div className="flex items-center gap-2 pb-5">
+        <Button disabled={pending}><Save size={16} /> Saqlash</Button>
+        <Button type="button" variant="ghost" onClick={onDone}>Bekor qilish</Button>
+        {state?.note && <FormSuccess text={state.note} />}
+      </div>
+      <div className="basis-full"><FormError error={state?.error} /></div>
+    </form>
+  );
+}
+
 /**
  * Taqvim ustunlari. Kun tanlanganda sahifa yangilanmaydi va tepaga ko'tarilmaydi —
  * o'sha kundagi zayavkalar shu yerning o'zida, taqvim ostida ochiladi (ma'lumot allaqachon serverdan kelgan).
  */
-export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: number }) {
+export function CalendarView({ cells, capacity, capacityPcs, canEdit }: { cells: DayCell[]; capacity: number; capacityPcs: number | null; canEdit: boolean }) {
   const router = useRouter();
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const open = cells.find((c) => c.key === openKey) ?? null;
-  const busiest = cells.reduce((m, c) => (c.m3 > m.m3 ? c : m), cells[0]);
+  const busiest = cells.reduce((m, c) => (c.pct > m.pct ? c : m), cells[0]);
+  const limitText = `${fmtNum(capacity)} m³${capacityPcs ? ` · ${fmtNum(capacityPcs)} dona` : ""}`;
 
   return (
     <div className="mb-5 rounded-(--radius-card) border border-slate-200/80 bg-white p-4 shadow-(--shadow-card)">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="inline-flex items-center gap-2 text-[15px] font-semibold text-slate-900"><CalendarRange size={16} className="text-slate-400" /> Haftalik ish tartibi</h2>
-          <p className="text-xs text-slate-500">Kunlik quvvat {fmtNum(capacity)} m³. Kunni bosing — zayavkalar shu yerda ochiladi; 2 marta bosing — kunlik realizatsiya varag&apos;i (Excel ko&apos;rinishi).</p>
+          <p className="text-xs text-slate-500">Kunlik limit: <b className="font-semibold text-slate-700">{limitText}</b>. Kunni bosing — zayavkalar shu yerda ochiladi; 2 marta bosing — kunlik realizatsiya varag&apos;i (Excel ko&apos;rinishi).</p>
         </div>
+        {canEdit && !editing && (
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}><Gauge size={14} /> Kunlik limit</Button>
+        )}
       </div>
+
+      {editing && <CapacityForm capacity={capacity} capacityPcs={capacityPcs} onDone={() => setEditing(false)} />}
 
       <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))" }}>
         {cells.map((c, i) => {
@@ -63,10 +114,10 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                   {c.urgent > 0 && <span className="rounded bg-red-600 px-1 text-[9px] font-bold text-white normal-case" title={`${c.urgent} ta zarur zayavka`}>!</span>}
                 </span>
                 <span className={cn("text-xl leading-none font-bold tracking-tight text-slate-900", c.isToday && "underline decoration-brand-500 decoration-2 underline-offset-4")}>{c.label}</span>
-                <span className="mt-1 block h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
-                  <span className={cn("block h-full rounded-full transition-[width] duration-700", lvl.bar)} style={{ width: `${Math.max(c.count > 0 ? 6 : 0, c.pct)}%` }} />
+                <span className="mt-1 flex w-full flex-col gap-1.5">
+                  <LoadBar value={c.m3} cap={capacity} pct={c.pctM3} unit="m³" show={c.m3 > 0} />
+                  {(capacityPcs != null || c.pcs > 0) && <LoadBar value={c.pcs} cap={capacityPcs} pct={c.pctPcs} unit="dona" show={c.pcs > 0} />}
                 </span>
-                <span className="text-[12px] tabular text-slate-500">{q(c.m3)} / {fmtNum(capacity)} m³</span>
               </button>
 
               {/* Sichqoncha olib borilganda — qisqa ro'yxat */}
@@ -75,7 +126,7 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
                   <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
                     <span className="text-[13px] font-semibold text-slate-900">{c.isToday ? "Bugun" : `${c.weekday} · ${c.label}`}</span>
                     <span className={cn("text-[11px] font-medium", lvl.text)}>
-                      {q(c.m3)} m³ · quvvatning {fmtNum(c.pct, 0)}%
+                      {loadText(c)} · limitning {fmtNum(c.pct, 0)}%
                     </span>
                   </div>
                   {c.list.length === 0 ? (
@@ -110,9 +161,9 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-semibold text-slate-900">
-              {`${open.weekday} · ${open.label}`} — {open.count} ta zayavka · {q(open.m3)} m³
+              {`${open.weekday} · ${open.label}`} — {open.count} ta zayavka · {loadText(open)}
               <span className={cn("ml-2 text-xs font-medium", candle(open.pct).text)}>
-                quvvatning {fmtNum(open.pct, 0)}%
+                limitning {fmtNum(open.pct, 0)}%
               </span>
             </span>
             <span className="flex items-center gap-3">
@@ -155,8 +206,8 @@ export function CalendarView({ cells, capacity }: { cells: DayCell[]; capacity: 
 
       {busiest.count > 0 && (
         <p className="mt-2 text-xs text-slate-500">
-          Eng band kun: <b className="text-slate-700">{busiest.isToday ? "bugun" : busiest.label}</b> — {q(busiest.m3)} m³ ({fmtNum(busiest.pct, 0)}%).
-          {cells.some((c) => c.state === "full") && " Qizil kunlarda quvvat to'lgan — yangi zayavka olishdan oldin ishlab chiqarish bilan kelishing."}
+          Eng band kun: <b className="text-slate-700">{busiest.isToday ? "bugun" : busiest.label}</b> — {loadText(busiest)} ({fmtNum(busiest.pct, 0)}%).
+          {cells.some((c) => c.state === "full") && " Qizil kunlarda limit to'lgan — yangi zayavka olishdan oldin ishlab chiqarish bilan kelishing."}
         </p>
       )}
     </div>

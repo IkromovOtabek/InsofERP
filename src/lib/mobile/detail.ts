@@ -120,8 +120,11 @@ export type FormField = {
   /** `date` maydoni uchun — veb "10 kunlik ish tartibi" bilan bir xil kunlik yuklama (`lib/mobile/create.ts` `dayCells`). */
   cells?: DayCell[];
 };
-/** Bitta kun — sana tanlovida kunlik quvvat rangi va hajmi (veb `orders/load-calendar.tsx` bilan bir xil hisob). */
-export type DayCell = { key: string; label: string; weekday: string; m3: number; pct: number; count: number; isToday: boolean };
+/**
+ * Bitta kun — sana tanlovida kunlik limit rangi va hajmi (veb `orders/load-calendar.tsx` bilan bir xil hisob).
+ * `pcs` — dona mahsulot; `capM3`/`capPcs` — kunlik limit (`capPcs` null — belgilanmagan). Eski ilova bularni bilmaydi.
+ */
+export type DayCell = { key: string; label: string; weekday: string; m3: number; pcs: number; capM3: number; capPcs: number | null; pct: number; count: number; isToday: boolean };
 /**
  * Amal muvaffaqiyatli bajarilgandan KEYIN ilova nima qilishi.
  *
