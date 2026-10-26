@@ -54,7 +54,8 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
   const [q, setQ] = useState("");
   const [asf, setAsf] = useState<Record<MatrixAssign, boolean>>({ none: true, part: true, full: true });
   const [onlyDef, setOnlyDef] = useState(false);
-  const [hideEmpty, setHideEmpty] = useState(true);
+  // Sukut bo'yicha hamma mahsulot ko'rinadi — matritsa o'z qutisida tepa-pastga aylanadi
+  const [hideEmpty, setHideEmpty] = useState(false);
   // Bugungi kun boshi — kechikkanlarni belgilash uchun (render paytida bir marta)
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime(); });
 
@@ -66,7 +67,9 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
 
   const cols = data.orders.filter((o) => asf[o.assign] && ordMatch(o))
     .sort((a, b) => ASSIGNS.indexOf(a.assign) - ASSIGNS.indexOf(b.assign) || a.deliveryDate.localeCompare(b.deliveryDate));
-  const rows = data.products.filter((p) => prodMatch(p) && !(hideEmpty && p.stock <= 0 && p.band <= 0) && !(onlyDef && net(p) >= 0));
+  const isEmpty = (p: MatrixProduct) => p.stock <= 0 && p.band <= 0;
+  const rows = data.products.filter((p) => prodMatch(p) && !(hideEmpty && isEmpty(p)) && !(onlyDef && net(p) >= 0));
+  const hiddenEmpty = hideEmpty ? data.products.filter((p) => prodMatch(p) && isEmpty(p) && !(onlyDef && net(p) >= 0)).length : 0;
   const groups = ASSIGNS.map((s) => ({ s, n: cols.filter((o) => o.assign === s).length })).filter((g) => g.n);
   const maxDef = Math.max(1, ...data.products.map((p) => -net(p)));
 
@@ -120,7 +123,10 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
               </tr>
               <tr>
                 <SheetTh tone="plain" className={C_NO}>№</SheetTh>
-                <SheetTh tone="plain" className={cn(C_NAME, "text-left font-medium text-slate-500")}>{rows.length} / {data.products.length} qator</SheetTh>
+                <SheetTh tone="plain" className={cn(C_NAME, "text-left font-medium whitespace-normal text-slate-500")}>
+                  {rows.length} / {data.products.length} qator
+                  {hiddenEmpty > 0 && <button type="button" onClick={() => setHideEmpty(false)} className="block text-[11px] font-medium text-slate-900 underline-offset-2 hover:underline">{hiddenEmpty} ta bo&apos;sh qator yashirilgan — ko&apos;rsatish</button>}
+                </SheetTh>
                 <SheetTh tone="plain" className={cn(C_ST, "font-medium text-slate-500")}>qoldiq</SheetTh>
                 {cols.map((o) => (
                   <SheetTh key={o.id} tone={ASSIGN_TONE[o.assign]} className="w-[72px] min-w-[72px] max-w-[72px] px-1 align-bottom whitespace-normal" title={`${o.customer} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${ASSIGN_LABEL[o.assign]}`}>
