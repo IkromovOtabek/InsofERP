@@ -37,8 +37,8 @@ const cat = (name: string) => {
 };
 /** Xomashyo kategoriyasi — tannarxga kiradi, operatsion xarajatga qo'shilmaydi (ikki marta hisoblanmasin). */
 export const COGS_CATEGORY = cat("Xomashyo");
-/** Yoqilg'i kategoriyasi — transport blokidagi "fakt / norma". */
-const FUEL_CATEGORY = cat("Transport / yoqilg'i");
+/** Transport (yoqilg'i shu toifada) — transport blokidagi "fakt / norma". */
+const FUEL_CATEGORY = cat("Transport");
 const REPAIR_CATEGORY = cat("Ta'mirlash / ehtiyot qism");
 
 /**
@@ -54,11 +54,12 @@ export const MONTHLY_ONE_OFF_CATEGORIES: readonly string[] = [cat("Ish haqi"), c
  * Kalit — kichik harf, apostrof turlari bir xil (`normCat`).
  */
 const CATEGORY_ALIAS: Record<string, string> = {
-  "yoqilg'i": FUEL_CATEGORY, "yoqilgi": FUEL_CATEGORY, "transport": FUEL_CATEGORY, "benzin": FUEL_CATEGORY, "dizel": FUEL_CATEGORY, "solyarka": FUEL_CATEGORY,
+  "transport / yoqilg'i": FUEL_CATEGORY, "yoqilg'i": FUEL_CATEGORY, "yoqilgi": FUEL_CATEGORY, "benzin": FUEL_CATEGORY, "dizel": FUEL_CATEGORY, "solyarka": FUEL_CATEGORY,
   "ta'mir": REPAIR_CATEGORY, "ta'mirlash": REPAIR_CATEGORY, "ehtiyot qism": REPAIR_CATEGORY, "zapchast": REPAIR_CATEGORY,
   "avans": cat("Ish haqi"), "oylik": cat("Ish haqi"), "maosh": cat("Ish haqi"),
   "elektr": cat("Kommunal (elektr, suv, gaz)"), "elektr energiya": cat("Kommunal (elektr, suv, gaz)"), "gaz": cat("Kommunal (elektr, suv, gaz)"), "suv": cat("Kommunal (elektr, suv, gaz)"), "kommunal": cat("Kommunal (elektr, suv, gaz)"),
   "soliq": cat("Soliq va to'lovlar"), "soliqlar": cat("Soliq va to'lovlar"),
+  "ovqat": cat("Pitaniya"), "ovqatlanish": cat("Pitaniya"), "pitanie": cat("Pitaniya"), "obed": cat("Pitaniya"),
   "ofis": cat("Ofis / xo'jalik"), "xo'jalik": cat("Ofis / xo'jalik"), "reklama": cat("Marketing"),
 };
 const normCat = (s: string) => s.trim().toLowerCase().replace(/[ʻʼ’‘`]/g, "'").replace(/\s+/g, " ");

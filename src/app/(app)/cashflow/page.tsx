@@ -21,10 +21,12 @@ import { cancelTransferAction } from "./transfer-actions";
 import { listTransfers, transferKind } from "@/lib/cash-transfer";
 import { JOURNAL_ONLY, TRANSFER_REF, txSign } from "@/lib/cash-tx";
 import { canDo } from "@/lib/permissions";
+import { CASH_METHOD_LABEL, type CashMethod } from "@/lib/cash-categories";
 
 // TRANSFER — hisoblararo o'tkazma: kirim ham, chiqim ham emas (Kirim/Chiqim jamiga kirmaydi), faqat qoldiqni o'zgartiradi.
 // `sign` — hisob ko'chirmasida (hisob tanlanganda) shu hisobga ta'siri: +1 kirdi, −1 chiqdi; 0 — umumiy ko'rinish.
-type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
+// `method` — to'lov usuli, hisob turidan (naqd kassa / bank); o'tkazmada — qatordagi hisob tomoni.
+type Row = { id: string; date: Date; kind: "INCOME" | "EXPENSE" | "TRANSFER"; sign?: number; account: string; method: CashMethod; category: string; who: string; note: string | null; amount: number; href?: string; deletable: boolean; blacklisted?: boolean; contracted?: boolean; cancelled?: string | null };
 
 /** Hisob qoldig'i berilgan sanagacha: mijoz to'lovlari + barcha yozuvlar (kirim, chiqim, boshlang'ich, o'tkazma) ishorasi bilan. */
 async function statementBalance(cashAccountId: string, date: { lt: Date } | { lte: Date }) {
@@ -36,7 +38,7 @@ async function statementBalance(cashAccountId: string, date: { lt: Date } | { lt
 }
 
 /** Kirim-Chiqim: mijoz to'lovlari (Payment) + boshqa kirimlar va barcha chiqimlar (CashTransaction) bitta jurnalda. */
-export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string; category?: string }> }) {
+export default async function CashflowPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; account?: string; category?: string; method?: string }> }) {
   const s = await requireRoles(["CASHIER", "ACCOUNTING", "FINANCE"], { module: "cashflow" });
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(s.role);
   const sp = await searchParams;
@@ -46,6 +48,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const to = new Date(sp.to ?? isoDate(now)); to.setHours(23, 59, 59, 999);
   const acc = sp.account || undefined;
   const cat = sp.category || undefined; // egasi dashbordidan "kategoriya → detalizatsiya" havolasi
+  const method = sp.method === "CASH" || sp.method === "BANK" ? sp.method : undefined;
 
   const [accounts, suppliers, payments, txs, balance, transfers, openingBal] = await Promise.all([
     db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -75,14 +78,14 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const supplyTxIds = new Set(supplyTx.map((x) => x.cashTxId));
 
   const rows: Row[] = [
-    ...payments.map((p): Row => ({ id: p.id, date: p.date, kind: "INCOME", account: p.cashAccount.name, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
+    ...payments.map((p): Row => ({ id: p.id, date: p.date, kind: "INCOME", account: p.cashAccount.name, method: p.cashAccount.type, category: p.invoice ? `Mijoz to'lovi · ${p.invoice.invoiceNo}` : "Mijoz avansi", who: p.customer.name, note: [p.note, p.createdBy ? `kiritdi: ${p.createdBy.fullName}` : null].filter(Boolean).join(" · ") || null, amount: Number(p.amount), href: `/customers/${p.customerId}`, deletable: false, blacklisted: marks.black.has(p.customerId), contracted: marks.contract.has(p.customerId) })),
     // Hujjatdan avtomatik yozilgan chiqim (kirim hujjati / sklad kirimi) — ustiga bosilsa batafsili ochiladi
     // O'tkazma: umumiy ko'rinishda bitta qator (chiqish tomoni "Kassa → Bank"); hisob tanlansa — shu hisob tomoni (+/−)
     ...txs.filter((t) => acc || t.type !== "TRANSFER_IN").map((t): Row => t.type === "TRANSFER_OUT" || t.type === "TRANSFER_IN" ? {
-      id: t.id, date: t.date, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(),
+      id: t.id, date: t.date, kind: "TRANSFER", sign: acc ? txSign(t.type) : 0, account: `${t.cashAccount.name} ${t.counterparty ?? ""}`.trim(), method: t.cashAccount.type,
       category: acc ? (t.type === "TRANSFER_OUT" ? "Perekit · chiqdi" : "Perekit · kirdi") : "Perekit (hisoblararo)", who: "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), deletable: false,
     } : {
-      id: t.id, date: t.date, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name,
+      id: t.id, date: t.date, kind: t.type === "EXPENSE" ? "EXPENSE" : "INCOME", account: t.cashAccount.name, method: t.cashAccount.type,
       category: t.refType && t.refType !== TRANSFER_REF ? `Kirim · ${t.category}` : t.category,
       who: t.supplier?.name ?? t.counterparty ?? "—", note: [t.note, `kiritdi: ${t.createdBy.fullName}`].filter(Boolean).join(" · "), amount: Number(t.amount), cancelled: cancelNote(t, cNames),
       href: t.refType === "GoodsReceipt" && t.refId ? `/receipts/${t.refId}`
@@ -93,13 +96,13 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
       // to'lov (bekor qilinsa kirim yana "to'lanmagan" bo'ladi), ta'minot zanjirinikidan tashqari. Bekor qilingani — tugmasiz
       deletable: !t.cancelledAt && (!t.refType || (t.refType === "GoodsReceipt" && !supplyTxIds.has(t.id))),
     }),
-  ].filter((r) => (tab === "all" || r.kind === tab || (r.kind === "TRANSFER" && (tab === "EXPENSE" ? r.sign !== 1 : tab === "INCOME" && r.sign === 1))) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`))).sort((a, b) => b.date.getTime() - a.date.getTime());
+  ].filter((r) => (tab === "all" || r.kind === tab || (r.kind === "TRANSFER" && (tab === "EXPENSE" ? r.sign !== 1 : tab === "INCOME" && r.sign === 1))) && (!cat || r.category === cat || r.category.endsWith(`· ${cat}`)) && (!method || r.method === method)).sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const inc = rows.filter((r) => r.kind === "INCOME" && !r.cancelled).reduce((x, r) => x + r.amount, 0);
   const exp = rows.filter((r) => r.kind === "EXPENSE" && !r.cancelled).reduce((x, r) => x + r.amount, 0);
   const byCat = new Map<string, number>();
   for (const r of rows.filter((r) => r.kind === "EXPENSE" && !r.cancelled)) byCat.set(r.category, (byCat.get(r.category) ?? 0) + r.amount);
-  const qs = (t: string) => `/cashflow?tab=${t}&from=${isoDate(from)}&to=${isoDate(to)}${acc ? `&account=${acc}` : ""}${cat ? `&category=${encodeURIComponent(cat)}` : ""}`;
+  const qs = (t: string) => `/cashflow?tab=${t}&from=${isoDate(from)}&to=${isoDate(to)}${acc ? `&account=${acc}` : ""}${cat ? `&category=${encodeURIComponent(cat)}` : ""}${method ? `&method=${method}` : ""}`;
 
   return (
     <div>
@@ -199,6 +202,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
           <span className="text-slate-400">—</span>
           <Input name="to" type="date" aria-label="Tugash sanasi" defaultValue={isoDate(to)} className="h-9 w-40" />
           <select name="account" aria-label="Kassa / hisob" defaultValue={acc ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Barcha hisoblar</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+          <select name="method" aria-label="To'lov usuli" defaultValue={method ?? ""} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"><option value="">Naqd va bank</option>{(["CASH", "BANK"] as const).map((m) => <option key={m} value={m}>{CASH_METHOD_LABEL[m]}</option>)}</select>
           <Button variant="secondary" className="h-9 text-sm">Ko&apos;rsatish</Button>
         </form>
       </div>
@@ -212,7 +216,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
               <Td>{r.kind === "TRANSFER" ? <Badge color="blue">Perekit</Badge> : r.kind === "INCOME" ? <Badge color="green">Kirim</Badge> : <Badge color="red">Chiqim</Badge>}{r.cancelled && <span className="mt-1 block"><Badge color="slate">Bekor qilingan</Badge></span>}</Td>
               <Td>{r.href ? <Link href={r.href} className="font-medium text-slate-800 hover:underline">{r.category} →</Link> : r.category}</Td>
               <Td><CustomerName name={r.who} blacklisted={!!r.blacklisted} contracted={!!r.contracted} href={r.href} /></Td>
-              <Td className="text-slate-500">{r.account}</Td>
+              <Td className="text-slate-500">{r.account}{r.kind !== "TRANSFER" && <span className="mt-1 block"><Badge color={r.method === "CASH" ? "amber" : "slate"} dot={false}>{CASH_METHOD_LABEL[r.method]}</Badge></span>}</Td>
               {r.kind === "TRANSFER"
                 ? <Td right className="font-medium text-sky-700">{r.sign === 1 ? "+" : r.sign === -1 ? "−" : "⇄ "}{money(r.amount)}</Td>
                 : <Td right className={r.cancelled ? "font-medium text-slate-400 line-through" : r.kind === "INCOME" ? "font-medium text-emerald-700" : "font-medium text-red-600"}>{r.kind === "INCOME" ? "+" : "−"}{money(r.amount)}</Td>}

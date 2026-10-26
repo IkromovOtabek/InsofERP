@@ -72,7 +72,7 @@ export const MECH_ROLES = {
   view: ["MECHANIC", "SUPERVISOR", "CASHIER"],
 } as const satisfies Record<string, readonly Role[]>;
 
-/** Kirim-Chiqimdagi chiqim toifasi — `EXPENSE_CATEGORIES` dagi mavjud nomlar ("Transport" alias'i yoqilg'iga tushadi). */
+/** Kirim-Chiqimdagi chiqim toifasi — `EXPENSE_CATEGORIES` dagi mavjud nomlar ("Transport" — yoqilg'i ham shu toifada). */
 export const MECH_CATEGORY: Record<MechanicTarget, string> = { TRANSPORT: "Ta'mirlash / ehtiyot qism", FACTORY: "Ta'mirlash / ehtiyot qism", OTHER: "Boshqa chiqim" };
 /** `CashTransaction.refType` — Kirim-Chiqimdan so'rovga o'tish uchun. */
 export const MECH_REF = "MechanicRequest";

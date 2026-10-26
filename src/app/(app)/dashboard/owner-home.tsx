@@ -378,7 +378,7 @@ export async function OwnerHome() {
 
       {/* ── 11. Transport | 12. Pul oqib ketishi ── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
-        <Panel className="min-w-0" title="Transport va texnika" info="Holat (ta'mirda / bekor) — logistika Haydovchilar sahifasida belgilaydi. Bekor turish — texnika-kun (ta'mirda yoki bekor holatda turgan kunlar yig'indisi); so'mga aylantirilmaydi. Yoqilg'i normasi — byudjetdagi «Transport / yoqilg'i»." action={more("/drivers", "Haydovchilar")}>
+        <Panel className="min-w-0" title="Transport va texnika" info="Holat (ta'mirda / bekor) — logistika Haydovchilar sahifasida belgilaydi. Bekor turish — texnika-kun (ta'mirda yoki bekor holatda turgan kunlar yig'indisi); so'mga aylantirilmaydi. Yoqilg'i normasi — byudjetdagi «Transport»." action={more("/drivers", "Haydovchilar")}>
           <div className="grid grid-cols-4 gap-2 text-center">
             {[["Jami", d.transport.total, "ok"], ["Ishda", d.transport.working, "ok"], ["Ta'mirda", d.transport.repair.length, d.transport.repair.length ? "warn" : "ok"], ["Bekor", d.transport.idle.length, d.transport.idle.length ? "warn" : "ok"]].map(([k, v, lv]) => <div key={k as string} className={cn("rounded-lg border py-2", LV[lv as Level].bg)}><div className="text-[11px] text-slate-500">{k as string}</div><div className="text-base font-semibold tabular">{v as number}</div></div>)}
           </div>
