@@ -9,6 +9,7 @@ import { unitLabel } from "@/lib/unit";
 import { cn } from "@/lib/utils";
 // Faqat tiplar: lib fayli Prisma (db) ni import qiladi — qiymat olinsa brauzer bundle'iga tushib qoladi
 import type { MatrixAssign, MatrixOrder, MatrixProduct, MatrixStatus, ProductionMatrix } from "@/lib/production-matrix";
+import type { UnitTotal } from "@/lib/unit";
 
 /**
  * Ishlab chiqarish «Matritsa»si — zavodning Excel jadvali: mahsulot × zayavka, oxirida natija (qoldiq − band).
@@ -39,9 +40,9 @@ const coverage = (o: MatrixOrder) => { const t = sumItems(o); return t ? Object.
 
 // Qotib turadigan ustunlar: chapda №, mahsulot, qoldiq; o'ngda natija. Kengliklar qat'iy — `left` shu yig'indidan.
 const W_NO = "left-0 w-10 min-w-10 max-w-10";
-const W_NAME = "left-10 w-[190px] min-w-[190px] max-w-[190px]";
-const W_ST = "left-[230px] w-[76px] min-w-[76px] shadow-[inset_-2px_0_0_var(--color-slate-300)]";
-const W_TT = "right-0 w-[104px] min-w-[104px] shadow-[inset_2px_0_0_var(--color-slate-300)]";
+const W_NAME = "left-10 w-[180px] min-w-[180px] max-w-[180px] xl:w-[240px] xl:min-w-[240px] xl:max-w-[240px]";
+const W_ST = "left-[220px] xl:left-[280px] w-[84px] min-w-[84px] xl:w-[92px] xl:min-w-[92px] shadow-[inset_-2px_0_0_var(--color-slate-300)]";
+const W_TT = "right-0 w-[104px] min-w-[104px] xl:w-[124px] xl:min-w-[124px] shadow-[inset_2px_0_0_var(--color-slate-300)]";
 const C_NO = cn("sticky z-20", W_NO), C_NAME = cn("sticky z-20", W_NAME), C_ST = cn("sticky z-20", W_ST), C_TT = cn("sticky z-20", W_TT);
 const B_NO = cn("sticky z-[1]", W_NO), B_NAME = cn("sticky z-[1]", W_NAME), B_ST = cn("sticky z-[1]", W_ST), B_TT = cn("sticky z-[1]", W_TT);
 
@@ -75,8 +76,13 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
   const groups = ASSIGNS.map((s) => ({ s, n: cols.filter((o) => o.assign === s).length })).filter((g) => g.n);
   const maxDef = Math.max(1, ...data.products.map((p) => -net(p)));
 
-  const totals = data.products.reduce((a, p) => { const n = net(p); a.stock += Math.max(0, p.stock); a.band += p.band; if (n < 0) { a.need -= n; a.kinds++; } return a; }, { stock: 0, band: 0, need: 0, kinds: 0 });
-  const lateN = data.orders.filter((o) => isLate(o, today)).length;
+  // Kartalar — serverdagi birlik bo'yicha yig'indi (dona, m², beton m³ alohida)
+  const sm = data.summary;
+  // Har birlik alohida qatorda: avval hovlidagi (dona, m²), keyin beton m³ — tor kartada ham o'qiladi
+  const ut = (t: UnitTotal[]) => (t.length
+    ? [...t].sort((a, b) => Number(a.unit === "m3") - Number(b.unit === "m3")).map((x, k) => <span key={x.unit} className={cn("block whitespace-nowrap", k > 0 && "text-base font-medium sm:text-lg")}>{n0(x.qty)} {unitLabel(x.unit)}</span>)
+    : "0");
+  const needAny = sm.need.length > 0;
   const cnt = ASSIGNS.reduce((a, s) => ({ ...a, [s]: data.orders.filter((o) => o.assign === s).length }), {} as Record<MatrixAssign, number>);
   const selP = sel ? byId.get(sel) : undefined;
   const pick = (id: string) => setSel((cur) => (cur === id ? null : id));
@@ -89,10 +95,10 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
           <CardHeader icon={Grid3x3} title="Sklad va zayavkalar" description="Natija = skladdagi qoldiq − zayavkalarda band. Manfiy son — shuncha quyish kerak. Sonni bossangiz — shu qatorga brigada tayinlaysiz (hammasini yoki bir qismini). Mahsulot nomini bossangiz — pastdagi doskada uni olayotgan zayavkalar chiqadi." />
         </div>
         <div className="grid grid-cols-2 gap-3 px-5 lg:grid-cols-4">
-          <StatCard label="Skladda tayyor" value={`${n0(totals.stock)} dona`} hint={`${data.products.filter((p) => p.stock > 0).length} turdagi mahsulot`} icon={Boxes} />
-          <StatCard label="Zayavkalarda band" value={`${n0(totals.band)} dona`} hint={`${data.orders.length} ta ochiq zayavka`} icon={ClipboardList} />
-          <StatCard label="Quyish kerak" value={`${n0(totals.need)} dona`} hint={`${totals.kinds} turda kamomad`} icon={Factory} tone={totals.need > 0 ? "danger" : "success"} />
-          <StatCard label="Muddati o'tgan" value={lateN} hint="tayyor bo'lmagan zayavkalar" icon={AlarmClock} tone={lateN ? "warning" : "default"} />
+          <StatCard label="Skladda tayyor" value={ut(sm.stock)} hint={`${sm.stockKinds} turdagi mahsulot · beton saqlanmaydi`} icon={Boxes} />
+          <StatCard label="Zayavkalarda band" value={ut(sm.band)} hint={`${sm.orders} ta ochiq zayavka`} icon={ClipboardList} />
+          <StatCard label="Quyish kerak" value={ut(sm.need)} hint={needAny ? `${sm.needKinds} turda kamomad` : "hammasi yetarli"} icon={Factory} tone={needAny ? "danger" : "success"} />
+          <StatCard label="Muddati o'tgan" value={`${sm.late} ta`} hint={sm.lateBeton ? `tayyor bo'lmagan · shundan ${sm.lateBeton} tasi beton` : "tayyor bo'lmagan zayavkalar"} icon={AlarmClock} tone={sm.late ? "warning" : "default"} />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
@@ -114,7 +120,7 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
 
         <div className="p-5 pt-3">
           {/* Tepa-pastga aylantirish sahifaga o'tsin: matritsa ekranning katta qismini egallaydi, `contain` g'ildirakni yutib qo'yardi */}
-          <Sheet lang="uz" maxHeight={full ? "none" : "min(60vh, 440px)"} className="overscroll-auto overscroll-x-contain">
+          <Sheet lang="uz" maxHeight={full ? "none" : "min(65vh, 560px)"} className="overscroll-auto overscroll-x-contain [&_table]:text-[15px] [&_tbody_td]:py-2.5 [&_tfoot_td]:py-2.5">
             <SheetHead>
               <tr>
                 <SheetTh tone="plain" className={C_NO}><span className="sr-only">№</span></SheetTh>
@@ -131,9 +137,9 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
                 </SheetTh>
                 <SheetTh tone="plain" className={cn(C_ST, "font-medium text-slate-500")}>qoldiq</SheetTh>
                 {cols.map((o) => (
-                  <SheetTh key={o.id} tone={ASSIGN_TONE[o.assign]} className="w-[72px] min-w-[72px] max-w-[72px] px-1 align-bottom whitespace-normal" title={`${o.customer} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${ASSIGN_LABEL[o.assign]}`}>
-                    <Link href={`/orders/${o.id}`} className="line-clamp-2 text-[11.5px] leading-tight hover:underline">{o.customer}</Link>
-                    <span className={cn("mt-0.5 block text-[11px] font-medium", isLate(o, today) ? "text-red-700" : "text-slate-600")}>{short(o)}{o.isUrgent && " · zarur"}</span>
+                  <SheetTh key={o.id} tone={ASSIGN_TONE[o.assign]} className="w-[104px] min-w-[104px] max-w-[104px] px-1.5 align-bottom whitespace-normal" title={`${o.customer} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${ASSIGN_LABEL[o.assign]}`}>
+                    <Link href={`/orders/${o.id}`} className="line-clamp-2 text-[13px] leading-tight hover:underline">{o.customer}</Link>
+                    <span className={cn("mt-1 block text-[12px] font-medium", isLate(o, today) ? "text-red-700" : "text-slate-600")}>{short(o)}{o.isUrgent && " · zarur"}</span>
                   </SheetTh>
                 ))}
                 <SheetTh tone="plain" className={cn(C_TT, "font-medium text-slate-500")}>qoldiq − band</SheetTh>
@@ -157,10 +163,10 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
                         <SheetTd key={o.id} center className="p-1">
                           <Link href={`/production?order=${o.id}&item=${c.itemId}`}
                             title={`${o.customer} · ${p.name}\n${st === "full" ? "Tayinlangan" : st === "part" ? `Tayinlangan ${n0(c.given)} / ${n0(c.qty)}, qolgan ${n0(left)}` : "Brigada tayinlanmagan"}${c.brigades.length ? ` · ${c.brigades.join(", ")}` : ""}\nBosing — brigada tayinlash`}
-                            className={cn("inline-flex min-w-9 flex-col items-center rounded px-1.5 py-0.5 font-semibold tabular ring-1 ring-inset transition hover:ring-2",
+                            className={cn("inline-flex min-w-12 flex-col items-center rounded-md px-2 py-1 text-[15px] font-semibold tabular ring-1 ring-inset transition hover:ring-2",
                               st === "full" ? "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:ring-emerald-400" : st === "part" ? "bg-amber-50 text-amber-700 ring-amber-200 hover:ring-amber-400" : "bg-red-50 text-red-700 ring-red-200 hover:ring-red-400")}>
                             {n0(v)}
-                            {st === "part" && <span className="text-[10px] leading-none font-medium">−{n0(left)}</span>}
+                            {st === "part" && <span className="text-[11px] leading-none font-medium">−{n0(left)}</span>}
                           </Link>
                         </SheetTd>
                       );

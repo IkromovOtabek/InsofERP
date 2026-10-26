@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { itemTasks } from "./production";
+import { unitTotals, type UnitTotal } from "./unit";
 
 /**
  * Ishlab chiqarish oynasidagi «Matritsa» (zavodning Excel jadvali o'rniga): qatorlar — dona mahsulot,
@@ -33,20 +34,33 @@ export type MatrixOrder = {
   /** mahsulot id → zayavka qatori va uning brigadalarga berilgani (qator miqdori, jo'natilganidan qat'i nazar) */
   cells: Record<string, MatrixCell>;
 };
-export type ProductionMatrix = { products: MatrixProduct[]; orders: MatrixOrder[] };
+/**
+ * Yuqoridagi kartalar — birlik bo'yicha (dona, m², m³ bir songa qo'shilmaydi). Beton (m³) matritsaga kirmaydi,
+ * lekin bu yerda hisoblanadi: band = jo'natilmagani, quyish kerak = jo'natilmagani − zamesda quyilgani (beton saqlanmaydi).
+ */
+export type MatrixSummary = {
+  stock: UnitTotal[]; stockKinds: number;
+  band: UnitTotal[]; orders: number;
+  need: UnitTotal[]; needKinds: number;
+  /** Muddati o'tgan, hali to'liq ishlab chiqarilmagan zayavkalar; shundan beton qatori borlari */
+  late: number; lateBeton: number;
+};
+export type ProductionMatrix = { products: MatrixProduct[]; orders: MatrixOrder[]; summary: MatrixSummary };
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 export async function productionMatrix(): Promise<ProductionMatrix> {
   const [products, sums, orders] = await Promise.all([
-    db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, select: { id: true, code: true, name: true, unit: true } }),
+    db.product.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, unit: true } }),
     db.stockMove.groupBy({ by: ["productId"], where: { productId: { not: null } }, _sum: { qty: true } }),
     db.order.findMany({
-      where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, items: { some: { product: { unit: { not: "m3" } } } } },
+      where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] } },
       select: {
         id: true, deliveryDate: true, dateUnknown: true, isUrgent: true, customer: { select: { name: true } },
         items: { select: { id: true, productId: true, qtyM3: true, product: { select: { unit: true } }, tasks: { select: { status: true, qty: true, doneQty: true, brigade: { select: { name: true } } } } } },
         trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true } },
+        // Beton uchun: zamesda quyilgani (storno qilinmagan)
+        batches: { where: { cancelledAt: null }, select: { productId: true, qtyM3: true } },
       },
       take: 300,
     }),
@@ -54,11 +68,25 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
   const stock = new Map(sums.map((s) => [s.productId!, Number(s._sum.qty ?? 0)]));
 
   const rows: MatrixOrder[] = [];
+  const betonBand: { unit: string; qty: number }[] = [], betonNeed = new Map<string, number>();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let late = 0, lateBeton = 0;
   for (const o of orders) {
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const shipped = o.trips.reduce((s, t) => s + Number(t.qtyM3), 0);
     const left = total > 0 ? Math.max(0, 1 - shipped / total) : 0;
+    // Beton qatorlari: jo'natilmagani band, undan zamesda quyilgani (jo'natilgandan ortig'i) ayiriladi
+    let betonShort = 0;
+    for (const i of o.items.filter((x) => x.product.unit === "m3")) {
+      const q = Number(i.qtyM3), sent = q * (1 - left);
+      const poured = o.batches.filter((b) => b.productId === i.productId).reduce((s, b) => s + Number(b.qtyM3), 0);
+      const need = Math.max(0, q - Math.max(sent, poured));
+      betonBand.push({ unit: "m3", qty: q * left }); betonNeed.set(i.productId, (betonNeed.get(i.productId) ?? 0) + need);
+      betonShort += need;
+    }
     const dona = o.items.filter((i) => i.product.unit !== "m3");
+    const donaOpen = dona.some((i) => !itemTasks(i.qtyM3, i.tasks).done);
+    if (!o.dateUnknown && o.deliveryDate < today && left > 0 && (donaOpen || betonShort > 0.0005)) { late++; if (betonShort > 0.0005) lateBeton++; }
     const items: Record<string, number> = {};
     for (const i of dona) {
       const q = round3(Number(i.qtyM3) * left);
@@ -92,10 +120,20 @@ export async function productionMatrix(): Promise<ProductionMatrix> {
     }
   }
 
-  return {
-    products: products
-      .map((p) => ({ ...p, stock: round3(stock.get(p.id) ?? 0), band: round3(band.get(p.id) ?? 0) }))
-      .sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true })),
-    orders: rows,
+  const list = products
+    .filter((p) => p.unit !== "m3")
+    .map((p) => ({ ...p, stock: round3(stock.get(p.id) ?? 0), band: round3(band.get(p.id) ?? 0) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "uz", { numeric: true }));
+  const round = (t: UnitTotal[]) => t.map((x) => ({ unit: x.unit, qty: round3(x.qty) })).filter((x) => x.qty > 0.0005);
+  const needRows = list.map((p) => ({ unit: p.unit, qty: Math.max(0, p.band - Math.max(0, p.stock)) }));
+  const summary: MatrixSummary = {
+    stock: round(unitTotals(list.map((p) => ({ unit: p.unit, qty: Math.max(0, p.stock) })))),
+    stockKinds: list.filter((p) => p.stock > 0).length,
+    band: round(unitTotals([...list.map((p) => ({ unit: p.unit, qty: p.band })), ...betonBand])),
+    orders: orders.filter((o) => o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) < o.items.reduce((s, i) => s + Number(i.qtyM3), 0) - 0.0005).length,
+    need: round(unitTotals([...needRows, ...[...betonNeed.values()].map((qty) => ({ unit: "m3", qty }))])),
+    needKinds: needRows.filter((x) => x.qty > 0.0005).length + [...betonNeed.values()].filter((q) => q > 0.0005).length,
+    late, lateBeton,
   };
+  return { products: list, orders: rows, summary };
 }
