@@ -1,0 +1,683 @@
+<title>Ishlab chiqarish shablonlari</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: chap — 5 shablon yorlig'i, o'ng — "Ishlab chiqarish" oynasining jonli maketi (KPI, asboblar paneli, asosiy ko'rinish, tafsilot paneli) + kimga mos / afzallik.
+   Insof ERP dizayn tizimi tokenlari (zayavka-shablonlar.html bilan bir xil). Holat ranglari Excel'dagi kabi: sariq — tayyor, qizil — quyilmoqda, yashil — navbatda. */
+:root {
+  --bg-app:#f5f6f8; --bg-surface:#ffffff; --bg-subtle:#f8fafc; --bg-muted:#f1f5f9;
+  --border:#e2e8f0; --border-strong:#cad5e2; --border-subtle:#eef2f6;
+  --text-strong:#0f172b; --text-body:#314158; --text-muted:#5f7088; --text-faint:#7f8da5; --text-inverse:#ffffff;
+  --brand:#f59e0b; --brand-600:#d97706; --brand-50:#fffbeb; --brand-100:#fef3c7; --brand-700:#b45309; --on-brand:#0f172b; --ring:#f59e0b80;
+  --ink:#0f172b;
+  --ok-fg:#007a55; --ok-bg:#ecfdf5; --ok-solid:#009966;
+  --warn-fg:#bb4d00; --warn-bg:#fffbeb; --warn-solid:#e8a100;
+  --bad-fg:#c10007; --bad-bg:#fef2f2; --bad-mid:#fecaca; --bad-solid:#e7000b;
+  --info-fg:#1447e6; --info-bg:#eff6ff;
+  --hl:#fef3c780;
+  --track:#f1f5f9;
+  --shadow-card:0 1px 2px 0 #0f172a0a, 0 1px 3px 0 #0f172a0f;
+  --shadow-pop:0 10px 30px -12px #0f172a40;
+  --sans:"Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --r-sm:6px; --r-md:8px; --r-lg:12px; --r-card:14px; --r-xl:16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg-app:#0f172a; --bg-surface:#1e293b; --bg-subtle:#243044; --bg-muted:#2c3a50;
+  --border:#334155; --border-strong:#42536c; --border-subtle:#2a3649;
+  --text-strong:#f1f5f9; --text-body:#cbd5e1; --text-muted:#94a3b8; --text-faint:#8794a9; --text-inverse:#0f172b;
+  --brand-50:#f59e0b1a; --brand-100:#f59e0b2e; --brand-700:#fcd34d; --ink:#f1f5f9;
+  --ok-fg:#6ee7b7; --ok-bg:#10b9811f; --ok-solid:#34d399;
+  --warn-fg:#fcd34d; --warn-bg:#f59e0b1f; --warn-solid:#fbbf24;
+  --bad-fg:#fca5a5; --bad-bg:#ef44441f; --bad-mid:#ef444452; --bad-solid:#f87171;
+  --info-fg:#93c5fd; --info-bg:#3b82f61f;
+  --hl:#f59e0b1c;
+  --track:#2c3a50;
+  --shadow-card:0 1px 2px 0 #00000040, 0 1px 3px 0 #0000004d; --shadow-pop:0 10px 30px -12px #00000099;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"] {
+  --bg-app:#0f172a; --bg-surface:#1e293b; --bg-subtle:#243044; --bg-muted:#2c3a50;
+  --border:#334155; --border-strong:#42536c; --border-subtle:#2a3649;
+  --text-strong:#f1f5f9; --text-body:#cbd5e1; --text-muted:#94a3b8; --text-faint:#8794a9; --text-inverse:#0f172b;
+  --brand-50:#f59e0b1a; --brand-100:#f59e0b2e; --brand-700:#fcd34d; --ink:#f1f5f9;
+  --ok-fg:#6ee7b7; --ok-bg:#10b9811f; --ok-solid:#34d399;
+  --warn-fg:#fcd34d; --warn-bg:#f59e0b1f; --warn-solid:#fbbf24;
+  --bad-fg:#fca5a5; --bad-bg:#ef44441f; --bad-mid:#ef444452; --bad-solid:#f87171;
+  --info-fg:#93c5fd; --info-bg:#3b82f61f;
+  --hl:#f59e0b1c;
+  --track:#2c3a50;
+  --shadow-card:0 1px 2px 0 #00000040, 0 1px 3px 0 #0000004d; --shadow-pop:0 10px 30px -12px #00000099;
+  color-scheme:dark;
+}
+* { box-sizing:border-box; }
+body { background:var(--bg-app); color:var(--text-body); font-family:var(--sans); font-size:14px; line-height:20px; }
+.wrap { max-width:1320px; margin:0 auto; padding-block:28px 48px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+h1,h2,h3,h4 { color:var(--text-strong); margin:0; text-wrap:balance; }
+.eyebrow { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+header.top h1 { font-size:24px; line-height:32px; font-weight:600; letter-spacing:-.02em; margin-top:4px; }
+header.top p { margin:6px 0 0; max-width:74ch; color:var(--text-muted); }
+.rec { display:inline-flex; align-items:center; gap:6px; margin-top:14px; padding:6px 10px; border-radius:999px; background:var(--brand-50); color:var(--brand-700); font-size:12px; font-weight:600; border:1px solid var(--brand-100); }
+
+.layout { display:grid; grid-template-columns:240px minmax(0,1fr); gap:24px; margin-top:24px; align-items:start; }
+@media (max-width: 960px) { .layout { grid-template-columns:minmax(0,1fr); } }
+nav.list { display:flex; flex-direction:column; gap:6px; position:sticky; top:calc(env(safe-area-inset-top, 0px) + 16px); }
+@media (max-width: 960px) { nav.list { position:static; flex-direction:row; overflow-x:auto; padding-bottom:4px; } nav.list button { min-width:210px; } }
+nav.list button { all:unset; cursor:pointer; display:grid; grid-template-columns:28px 1fr; gap:10px; align-items:start; padding:10px 12px; border-radius:var(--r-lg); border:1px solid transparent; }
+nav.list button:hover { background:var(--bg-muted); }
+nav.list button:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+nav.list button[aria-selected="true"] { background:var(--bg-surface); border-color:var(--border); box-shadow:var(--shadow-card); }
+nav.list .ix { width:28px; height:28px; border-radius:8px; background:var(--bg-muted); display:grid; place-items:center; color:var(--text-muted); }
+nav.list button[aria-selected="true"] .ix { background:var(--ink); color:var(--text-inverse); }
+nav.list .t { font-weight:600; color:var(--text-strong); font-size:14px; }
+nav.list .s { font-size:12px; line-height:16px; color:var(--text-muted); }
+nav.list .tag { display:inline-block; margin-top:4px; font-size:11px; font-weight:600; color:var(--ok-fg); background:var(--ok-bg); padding:1px 7px; border-radius:999px; }
+
+.panel { min-width:0; display:flex; flex-direction:column; gap:16px; }
+.phead h2 { font-size:18px; line-height:26px; letter-spacing:-.015em; }
+.phead p { margin:2px 0 0; color:var(--text-muted); max-width:72ch; }
+
+/* ── maket qobig'i ── */
+.stage { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-xl); box-shadow:var(--shadow-card); overflow:hidden; min-width:0; }
+.stage-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg-subtle); font-size:12px; color:var(--text-muted); }
+.stage-bar b { color:var(--text-strong); font-weight:600; }
+.stage-bar .crumb { margin-left:auto; }
+.stage-body { padding:18px; display:flex; flex-direction:column; gap:14px; min-width:0; }
+@media (max-width:520px){ .stage-body { padding:12px; } }
+.win-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; }
+.win-head h3 { font-size:20px; line-height:28px; letter-spacing:-.02em; font-weight:600; }
+.win-head .sub { font-size:12px; color:var(--text-muted); }
+.win-actions { display:flex; flex-wrap:wrap; gap:8px; }
+
+.kpis { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+@media (max-width:760px){ .kpis { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+.kpi { border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 12px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.kpi .k { font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+.kpi .v { font-size:22px; line-height:28px; font-weight:600; color:var(--text-strong); letter-spacing:-.025em; font-variant-numeric:tabular-nums; }
+.kpi .v small { font-size:12px; font-weight:500; color:var(--text-muted); letter-spacing:0; }
+.kpi .h { font-size:12px; color:var(--text-faint); }
+.kpi.bad { background:var(--bad-bg); border-color:transparent; }
+.kpi.bad .v, .kpi.bad .k { color:var(--bad-fg); }
+
+.toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.search { position:relative; flex:1 1 220px; max-width:300px; }
+.search .ico { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-faint); }
+.search input { width:100%; height:34px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--bg-surface); color:var(--text-strong); padding:0 10px 0 32px; font:inherit; font-size:13px; }
+.search input:focus { outline:2px solid var(--ring); outline-offset:0; border-color:var(--brand); }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 10px; border-radius:var(--r-md); border:1px solid var(--border-strong); background:var(--bg-surface); color:var(--text-body); font-size:13px; font-weight:500; }
+.chip:hover { background:var(--bg-muted); }
+.chip:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.chip[aria-pressed="true"] { background:var(--ink); border-color:var(--ink); color:var(--text-inverse); }
+.chip .n { font-size:11px; font-variant-numeric:tabular-nums; opacity:.75; }
+.dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.dot.ready { background:var(--warn-solid); } .dot.pour { background:var(--bad-solid); } .dot.queue { background:var(--ok-solid); }
+.sep { width:1px; height:22px; background:var(--border); }
+.switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; font-size:13px; font-weight:500; color:var(--text-body); }
+.switch input { appearance:none; width:32px; height:18px; border-radius:999px; background:var(--border-strong); position:relative; cursor:pointer; flex-shrink:0; margin:0; transition:background .15s; }
+.switch input::after { content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--bg-surface); transition:transform .15s; }
+.switch input:checked { background:var(--ok-solid); }
+.switch input:checked::after { transform:translateX(14px); }
+.switch input:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+
+.btn { all:unset; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; height:36px; padding:0 14px; border-radius:var(--r-md); font-weight:600; font-size:13px; white-space:nowrap; }
+.btn:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.btn.primary { background:var(--brand); color:var(--on-brand); }
+.btn.primary:hover { background:var(--brand-600); }
+.btn.ghost { border:1px solid var(--border-strong); color:var(--text-body); background:var(--bg-surface); }
+.btn.ghost:hover { background:var(--bg-muted); }
+.btn.sm { height:30px; padding:0 10px; font-size:12px; }
+.btn.xs { height:26px; padding:0 8px; font-size:12px; font-weight:500; }
+.btn[disabled] { opacity:.45; cursor:default; }
+.ico { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+.badge { display:inline-flex; align-items:center; gap:4px; padding:1px 8px; border-radius:999px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+.badge.ok { background:var(--ok-bg); color:var(--ok-fg); } .badge.warn { background:var(--warn-bg); color:var(--warn-fg); } .badge.bad { background:var(--bad-bg); color:var(--bad-fg); } .badge.mute { background:var(--bg-muted); color:var(--text-muted); }
+.num { font-variant-numeric:tabular-nums; }
+.muted { color:var(--text-muted); }
+.neg { color:var(--bad-fg); font-weight:700; } .pos { color:var(--ok-fg); font-weight:600; } .zero { color:var(--text-faint); }
+
+/* asosiy + tafsilot */
+.work { display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:14px; align-items:start; }
+.work.stack { grid-template-columns:minmax(0,1fr); }
+@media (max-width:1180px){ .work { grid-template-columns:minmax(0,1fr); } }
+.aside { border:1px solid var(--border); border-radius:var(--r-card); background:var(--bg-subtle); padding:14px; display:flex; flex-direction:column; gap:12px; min-width:0; }
+.aside h4 { font-size:15px; line-height:22px; }
+.aside .ttl { display:flex; justify-content:space-between; gap:8px; align-items:start; }
+.trio { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+.trio div { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-md); padding:8px; }
+.trio span { display:block; font-size:11px; color:var(--text-muted); }
+.trio b { font-size:18px; line-height:24px; font-variant-numeric:tabular-nums; color:var(--text-strong); }
+.olist { display:flex; flex-direction:column; gap:6px; }
+.orow { display:grid; grid-template-columns:8px minmax(0,1fr) auto; gap:8px; align-items:center; font-size:13px; padding:6px 8px; border-radius:var(--r-md); background:var(--bg-surface); border:1px solid var(--border-subtle); }
+.orow .c { min-width:0; }
+.orow .c b { display:block; font-weight:600; color:var(--text-strong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.orow .c small { font-size:11.5px; color:var(--text-muted); }
+.orow .q { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; color:var(--text-strong); }
+.orow .q small { display:block; font-weight:500; font-size:11px; }
+.aside .acts { display:flex; flex-wrap:wrap; gap:6px; }
+.aside .empty { font-size:13px; color:var(--text-muted); text-align:center; padding:18px 8px; }
+
+/* legenda */
+.legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--text-muted); align-items:center; }
+.legend i { display:inline-block; width:14px; height:14px; border-radius:4px; vertical-align:-3px; margin-right:5px; border:1px solid var(--border); }
+
+/* ── 1. Matritsa ── */
+.mx-wrap { overflow:auto; max-height:560px; border:1px solid var(--border); border-radius:var(--r-lg); background:var(--bg-surface); }
+table.mx { border-collapse:separate; border-spacing:0; font-size:13px; font-variant-numeric:tabular-nums; }
+.mx th, .mx td { border-right:1px solid var(--border-subtle); border-bottom:1px solid var(--border-subtle); padding:0 6px; height:30px; text-align:center; background:var(--bg-surface); white-space:nowrap; }
+.mx thead th { position:sticky; z-index:2; background:var(--bg-subtle); color:var(--text-muted); font-weight:600; }
+.mx thead tr.g th { top:0; height:26px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; }
+.mx thead tr.h th { top:26px; height:62px; vertical-align:bottom; padding:6px 4px; }
+.mx thead tr.g th.gr { border-top:3px solid var(--warn-solid); } .mx thead tr.g th.gp { border-top:3px solid var(--bad-solid); } .mx thead tr.g th.gq { border-top:3px solid var(--ok-solid); }
+.mx .oc { width:64px; min-width:64px; max-width:64px; cursor:pointer; }
+.mx .oc .cl { display:block; font-size:11.5px; line-height:14px; color:var(--text-strong); white-space:normal; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.mx .oc .dt { display:block; font-size:11px; color:var(--text-muted); font-weight:500; margin-top:2px; }
+.mx .oc .dt.late { color:var(--bad-fg); font-weight:600; }
+.mx .sx { position:sticky; z-index:1; }
+.mx thead .sx { z-index:3; }
+.mx .c-no { left:0; width:34px; min-width:34px; color:var(--text-faint); font-size:12px; }
+.mx .c-nm { left:34px; width:150px; min-width:150px; text-align:left; font-weight:600; color:var(--text-strong); }
+.mx .c-st { left:184px; width:62px; min-width:62px; font-weight:600; color:var(--text-strong); box-shadow:inset -2px 0 0 var(--border); }
+.mx .c-tt { right:0; width:96px; min-width:96px; box-shadow:inset 2px 0 0 var(--border); }
+.mx tbody tr:hover td { background:var(--hl); }
+.mx tbody tr.sel td { background:var(--brand-50); }
+.mx td.v { cursor:pointer; }
+.mx td.v span { display:inline-block; min-width:30px; padding:2px 5px; border-radius:5px; font-weight:600; color:var(--text-strong); }
+.mx td.v.full span { background:var(--ok-bg); color:var(--ok-fg); }
+.mx td.v.part span { background:var(--warn-bg); color:var(--warn-fg); }
+.mx td.v.none span { background:var(--bad-bg); color:var(--bad-fg); }
+.mx tfoot td { position:sticky; bottom:0; z-index:1; background:var(--bg-subtle); font-weight:600; color:var(--text-strong); border-top:1px solid var(--border); }
+.mx tfoot td.sx { z-index:3; }
+.tt { display:flex; align-items:center; gap:6px; justify-content:flex-end; }
+.tt .b { width:34px; height:6px; border-radius:3px; background:var(--track); overflow:hidden; display:flex; justify-content:flex-end; }
+.tt .b i { display:block; height:100%; background:var(--bad-solid); }
+.mx-colhl { }
+
+/* ── 2. Quyish rejasi ── */
+.plan-list { display:flex; flex-direction:column; gap:8px; }
+.prow { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--bg-surface); }
+.prow.sel { border-color:var(--brand); box-shadow:0 0 0 1px var(--brand); }
+.prow .top { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) 92px auto; gap:14px; align-items:center; padding:10px 12px; cursor:pointer; }
+@media (max-width:760px){ .prow .top { grid-template-columns:minmax(0,1fr) auto; } .prow .top .bar-cell { grid-column:1 / -1; order:3; } }
+.prow .nm b { display:block; color:var(--text-strong); font-weight:600; }
+.prow .nm small { font-size:12px; color:var(--text-muted); }
+.sbar { height:10px; border-radius:5px; background:var(--track); display:flex; overflow:hidden; }
+.sbar i { display:block; height:100%; }
+.sbar .have { background:var(--ok-solid); }
+.sbar .miss { background:repeating-linear-gradient(135deg, var(--bad-solid) 0 4px, var(--bad-mid) 4px 8px); }
+.bar-cell small { display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+.need { text-align:right; }
+.need b { display:block; font-size:22px; line-height:26px; letter-spacing:-.02em; color:var(--bad-fg); font-variant-numeric:tabular-nums; }
+.need small { font-size:11px; color:var(--text-muted); }
+.prow .more { border-top:1px dashed var(--border); padding:10px 12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.ochip { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); font-size:12px; background:var(--bg-subtle); }
+.ochip b { font-variant-numeric:tabular-nums; color:var(--text-strong); }
+.ochip.late { border-color:var(--bad-mid); }
+.ok-strip { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:10px 12px; border:1px dashed var(--border-strong); border-radius:var(--r-lg); font-size:12.5px; color:var(--text-muted); }
+.step-inp { width:64px; height:30px; border:1px solid var(--border-strong); border-radius:var(--r-md); background:var(--bg-surface); color:var(--text-strong); text-align:center; font:inherit; font-weight:600; font-variant-numeric:tabular-nums; }
+.step-inp:focus { outline:2px solid var(--ring); outline-offset:0; }
+.plan-tot { display:flex; justify-content:space-between; align-items:baseline; border-top:1px solid var(--border); padding-top:8px; }
+.plan-tot b { font-size:20px; color:var(--text-strong); font-variant-numeric:tabular-nums; }
+
+/* ── 3. Doska ── */
+.board { display:grid; grid-template-columns:repeat(3, minmax(250px,1fr)); gap:12px; overflow-x:auto; padding-bottom:4px; }
+.col { background:var(--bg-subtle); border:1px solid var(--border); border-radius:var(--r-card); padding:10px; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.col-h { display:flex; align-items:center; gap:8px; font-weight:600; color:var(--text-strong); padding:2px 2px 6px; border-bottom:2px solid var(--border); }
+.col-h.ready { border-color:var(--warn-solid); } .col-h.pour { border-color:var(--bad-solid); } .col-h.queue { border-color:var(--ok-solid); }
+.col-h .n { margin-left:auto; font-size:12px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.kcard { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:10px; display:flex; flex-direction:column; gap:8px; }
+.kcard .hd { display:flex; justify-content:space-between; gap:8px; align-items:start; }
+.kcard .hd b { color:var(--text-strong); font-weight:600; }
+.kcard .hd small { display:block; font-size:12px; color:var(--text-muted); }
+.kitems { display:flex; flex-direction:column; gap:3px; font-size:12.5px; }
+.kitems div { display:grid; grid-template-columns:minmax(0,1fr) 40px 18px; gap:6px; align-items:center; cursor:pointer; border-radius:4px; padding:1px 4px; }
+.kitems div:hover { background:var(--bg-muted); }
+.kitems span.q { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; color:var(--text-strong); }
+.cov { height:6px; border-radius:3px; background:var(--bad-mid); overflow:hidden; }
+.cov i { display:block; height:100%; background:var(--ok-solid); }
+.kfoot { display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+.kfoot .mv { display:flex; gap:4px; }
+
+/* ── 4. Kalendar ── */
+.cal { display:grid; grid-template-columns:repeat(9, minmax(150px,1fr)); gap:8px; overflow-x:auto; padding-bottom:4px; }
+.day { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--bg-surface); display:flex; flex-direction:column; min-width:0; }
+.day.today { border-color:var(--brand); box-shadow:0 0 0 1px var(--brand); }
+.day.past { background:var(--bad-bg); border-color:transparent; }
+.day.wk { background:var(--bg-subtle); }
+.day-h { padding:8px 10px 6px; border-bottom:1px solid var(--border-subtle); }
+.day-h .w { font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); font-weight:600; }
+.day-h .d { font-size:15px; font-weight:600; color:var(--text-strong); display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
+.day.past .day-h .d, .day.past .day-h .w { color:var(--bad-fg); }
+.load { height:5px; border-radius:3px; background:var(--track); margin-top:6px; overflow:hidden; }
+.load i { display:block; height:100%; background:var(--text-faint); }
+.day-b { padding:8px; display:flex; flex-direction:column; gap:6px; }
+.dcard { border:1px solid var(--border); border-radius:var(--r-md); padding:6px 8px; background:var(--bg-surface); font-size:12px; display:flex; flex-direction:column; gap:3px; cursor:pointer; }
+.dcard:hover { border-color:var(--border-strong); }
+.dcard .r1 { display:flex; align-items:center; gap:6px; }
+.dcard .r1 b { color:var(--text-strong); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+.dcard .r2 { display:flex; justify-content:space-between; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.dcard.open { box-shadow:0 0 0 1px var(--ink); }
+.dcard .its { border-top:1px dashed var(--border); padding-top:4px; margin-top:2px; display:flex; flex-direction:column; gap:2px; }
+.dcard .its div { display:flex; justify-content:space-between; gap:6px; }
+.day-f { margin-top:auto; padding:6px 10px; border-top:1px solid var(--border-subtle); font-size:11.5px; color:var(--text-muted); display:flex; justify-content:space-between; }
+
+/* ── 5. Xarita ── */
+.hm { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:8px; }
+.hcard { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--bg-surface); overflow:hidden; }
+.hcard .ln { font-size:12px; font-weight:600; color:var(--text-muted); padding:6px 10px 4px; display:flex; justify-content:space-between; }
+.hcard .ln b { color:var(--text-strong); font-size:13px; }
+.hcells { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border-subtle); border-top:1px solid var(--border-subtle); }
+.hcell { all:unset; cursor:pointer; padding:8px 8px 7px; background:var(--bg-surface); display:flex; flex-direction:column; gap:1px; }
+.hcell:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.hcell .w { font-size:10.5px; color:var(--text-muted); font-weight:600; letter-spacing:.03em; }
+.hcell .v { font-size:20px; line-height:24px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; color:var(--text-faint); }
+.hcell .s { font-size:10.5px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.hcell.l1 { background:var(--bad-bg); } .hcell.l1 .v { color:var(--bad-fg); }
+.hcell.l2 { background:var(--bad-mid); } .hcell.l2 .v { color:var(--bad-fg); }
+.hcell.l3 { background:var(--bad-solid); } .hcell.l3 .v, .hcell.l3 .w, .hcell.l3 .s { color:var(--text-inverse); }
+.hcell.okc .v { color:var(--ok-fg); }
+.hcell.dim { opacity:.35; }
+.hcell.sel { box-shadow:inset 0 0 0 2px var(--ink); }
+.hsum { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+@media (max-width:600px){ .hsum { grid-template-columns:minmax(0,1fr); } }
+.hsum div { border:1px solid var(--border); border-radius:var(--r-md); padding:8px 10px; font-size:12.5px; }
+.hsum b { display:block; font-size:16px; color:var(--text-strong); font-variant-numeric:tabular-nums; }
+
+/* faktlar */
+.facts { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+@media (max-width:760px){ .facts { grid-template-columns:minmax(0,1fr); } }
+.fact { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-card); padding:14px 16px; }
+.fact h3 { font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+.fact ul { margin:8px 0 0; padding-left:18px; }
+.fact li { margin:3px 0; }
+
+.toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); background:var(--ink); color:var(--text-inverse); padding:10px 14px; border-radius:var(--r-lg); font-size:13px; font-weight:500; box-shadow:var(--shadow-pop); z-index:50; max-width:calc(100% - 32px); }
+@media (prefers-reduced-motion: no-preference) { .toast { animation:tin .18s ease-out; } @keyframes tin { from { opacity:0; transform:translate(-50%, 6px); } } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></symbol>
+  <symbol id="i-kanban" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-factory" viewBox="0 0 24 24"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1M12 18h1M7 18h1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-sheet" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M8 13h2M14 13h2M8 17h2M14 17h2"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></symbol>
+</svg>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Insof ERP · Ishlab chiqarish oynasi</div>
+    <h1>Excel jadvalining 5 xil qulay ko'rinishi</h1>
+    <p>Excel'dagi jadval bitta savolga javob beradi: «skladda nima bor, zayavkalar qancha oladi, qancha quyish kerak». Har shablon shu savolga boshqa tomondan javob beradi. Ma'lumotlar siz yuborgan jadvaldan olingan (misol), beshala shablon bitta ma'lumot bilan ishlaydi: bittasida holatni o'zgartirsangiz, qolganlarida ham o'zgaradi.</p>
+    <div class="rec"><svg class="ico"><use href="#i-check"/></svg>Tavsiya: 1-shablon asosiy ko'rinish, 2- va 5-shablon shu oynada yorliq sifatida</div>
+  </header>
+
+  <div class="layout">
+    <nav class="list" id="nav" role="tablist" aria-label="Shablonlar"></nav>
+    <section class="panel" id="panel"></section>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ── Namuna ma'lumotlar: siz yuborgan Excel jadvalidan (misol) ──
+  var TODAY = 26; // 26-oktabr, dushanba. Kun raqami: oktabr = 1..31, noyabr = 31 + kun
+  var STOCK = [["71-12",12],["71-10",7],["70-12",0],["70-10",0],["69-12",0],["69-10",0],["68-12",4],["68-10",10],["67-12",0],["67-10",1],["66-12",0],["66-10",0],["65-12",0],["65-10",2],["64-12",0],["64-10",0],["63-12",3],["63-10",14],["62-12",68],["62-10",52],["61-12",4],["61-10",6],["60-12",1],["60-10",9],["59-12",62],["59-10",83],["58-12",1],["58-10",18],["57-12",22],["57-10",25],["56-12",0],["56-10",6],["55-12",6],["55-10",10],["54-12",0]];
+  var P = STOCK.map(function (r, i) { return { i: i + 1, code: r[0], name: "ПК " + r[0] + "-8 A400", len: r[0].slice(0, 2), w: r[0].slice(3), stock: r[1] }; });
+  var O = [
+    { id: 1, c: "Eco Karton", dl: "23 okt", d: 23, st: "ready", it: { "59-12": 2, "59-10": 6 } },
+    { id: 2, c: "Eco Karton", dl: "17 okt", d: 17, st: "queue", it: { "59-12": 16, "59-10": 40 } },
+    { id: 3, c: "Eco Karton", dl: "17 okt", d: 17, st: "queue", it: { "59-12": 16, "59-10": 16 } },
+    { id: 4, c: "Eco Karton", dl: "20 okt", d: 20, st: "queue", it: { "59-12": 32, "59-10": 80 } },
+    { id: 5, c: "MPMK", dl: "25 okt", d: 25, st: "pour", it: { "68-12": 44, "68-10": 68 } },
+    { id: 6, c: "Azizbek Daryo", dl: "28 okt", d: 28, st: "pour", it: { "62-12": 26, "62-10": 16 } },
+    { id: 7, c: "Xovos 0066", dl: "22–24 okt", d: 24, st: "queue", it: { "62-12": 49, "62-10": 37 } },
+    { id: 8, c: "Kirpich Dom A Blok", dl: "29 okt", d: 29, st: "ready", it: { "59-12": 12, "59-10": 4, "57-12": 2, "57-10": 14, "55-12": 6, "55-10": 10 } },
+    { id: 9, c: "Kirpich Dom A Blok", dl: "2 noy", d: 33, st: "queue", it: { "57-12": 16, "57-10": 38, "55-12": 12, "55-10": 6 } },
+    { id: 10, c: "Magnit 7000", dl: "3 iyun", d: -115, st: "ready", it: { "61-12": 4, "57-12": 9, "57-10": 10 } },
+    { id: 11, c: "Yakka 8172", dl: "27 okt", d: 27, st: "queue", it: { "63-12": 2, "63-10": 14 } },
+    { id: 12, c: "Keles 8554", dl: "1 noy", d: 32, st: "queue", it: { "59-10": 6 } },
+    { id: 13, c: "Chinoz 0707", dl: "23 okt", d: 23, st: "ready", it: { "59-12": 12, "59-10": 5 } },
+    { id: 14, c: "Chinoz 0777", dl: "23 okt", d: 23, st: "ready", it: { "59-12": 6, "59-10": 9 } },
+    { id: 15, c: "Yunusobod 1111", dl: "4 noy", d: 35, st: "queue", it: { "65-12": 9, "59-12": 9 } },
+    { id: 16, c: "Eshonguzar 8554", dl: "12–13 okt", d: 13, st: "pour", it: { "59-12": 64, "59-10": 46, "57-12": 4 } },
+    { id: 17, c: "Eshonguzar 8554", dl: "16–17 okt", d: 17, st: "queue", it: { "59-12": 64, "59-10": 46, "57-12": 4 } },
+    { id: 18, c: "Yangiyo'l 2345", dl: "22 okt", d: 22, st: "ready", it: { "59-10": 3 } },
+    { id: 19, c: "Shoxrux Guliston", dl: "27 okt", d: 27, st: "ready", it: { "71-12": 12, "71-10": 7, "59-12": 10, "59-10": 3 } }
+  ];
+  var ST = { ready: "Tayyor", pour: "Quyilmoqda", queue: "Navbatda" };
+  var ST_ORDER = ["ready", "pour", "queue"];
+  var PRI = { ready: 0, pour: 1, queue: 2 };
+  var BRIG = ["1-brigada (Sardor)", "2-brigada (Ulug'bek)", "3-brigada (Jasur)"];
+
+  var TPL = [
+    { id: 1, icon: "i-table", t: "Matritsa", s: "Excel kabi, lekin aqlli", tag: "Tavsiya" },
+    { id: 2, icon: "i-list", t: "Quyish rejasi", s: "Faqat yetmaydiganlar", tag: "Smena uchun" },
+    { id: 3, icon: "i-kanban", t: "Zayavkalar doskasi", s: "Holat bo'yicha ustunlar" },
+    { id: 4, icon: "i-cal", t: "Haftalik kalendar", s: "Qaysi kuni qancha ketadi" },
+    { id: 5, icon: "i-grid", t: "Mahsulot xaritasi", s: "Bir qarashda butun sklad", tag: "Telefonda qulay" }
+  ];
+  var INFO = {
+    1: { h: "Matritsa — Excel jadvali, lekin o'zi hisoblaydi", p: "Qatorlar — mahsulot, ustunlar — zayavka. Ustunlar holat bo'yicha guruhlangan, mahsulot, qoldiq va «Natija» ustunlari aylantirganda joyida qoladi. Katak rangi skladdan yetadimi-yo'qmi shuni bildiradi.",
+      f: [["Kimga mos", ["Zavod boshlig'i, ertalabki yig'ilish", "Excel'ga o'rganib qolgan xodimlar — qayta o'rganish shart emas"]],
+          ["Excel'dan qulayligi", ["Natija o'zi hisoblanadi, formula buzilmaydi", "Bo'sh qatorlar va kerakmas holatlar bitta tugmada yashiriladi", "Katakni bossangiz — o'ng tomonda tafsilot va «Brigadaga berish»"]],
+          ["E'tibor bering", ["Telefonda tor, gorizontal aylantiriladi", "30+ zayavkada ustunlar ko'payadi — holat filtri shart"]]] },
+    2: { h: "Quyish rejasi — «bugun nimani quyamiz?»", p: "Faqat skladda yetmaydigan mahsulotlar, eng katta kamomad birinchi. Har qatorda: skladda bor qism (yashil) va yetmaydigan qism (chiziqli qizil). Bitta tugma bilan smena rejasiga qo'shiladi.",
+      f: [["Kimga mos", ["Smena ustasi va brigadirlar", "Ertalab 5 daqiqada reja tuzish uchun"]],
+          ["Excel'dan qulayligi", ["Minus raqamlarni qidirish shart emas — ro'yxat shu", "Kamomad qaysi zayavkalardan kelayotgani ochiladi", "Reja → brigadaga topshiriq, qog'ozsiz"]],
+          ["E'tibor bering", ["Yetarli mahsulotlar yig'ilgan holda turadi", "Umumiy sklad manzarasi uchun 1- yoki 5-shablon kerak"]]] },
+    3: { h: "Zayavkalar doskasi — har zayavka qaysi bosqichda", p: "Excel'dagi ustun ranglari endi alohida ustunlar: Navbatda → Quyilmoqda → Tayyor. Har kartada zayavka tarkibi va skladdan qancha qismi yopilishi. Holat bir bosishda o'zgaradi.",
+      f: [["Kimga mos", ["Dispetcher va sotuv bo'limi", "Mijoz qo'ng'iroq qilganda «zayavkam qachon?» savoliga"]],
+          ["Excel'dan qulayligi", ["Rangni qo'lda bo'yash o'rniga tugma", "«Skladdan 70% yopiladi» — mijozga qisman berish mumkinmi, darhol ko'rinadi", "Sklad avval tayyor, keyin eski sanali zayavkalarga taqsimlanadi"]],
+          ["E'tibor bering", ["Mahsulot bo'yicha jami ko'rinmaydi", "Zayavka ko'p bo'lsa ustun uzun bo'ladi"]]] },
+    4: { h: "Haftalik kalendar — yuk kunlar bo'yicha", p: "Zayavkalar yetkazish sanasiga qo'yilgan. Har kun ustida yuk chizig'i (necha dona), muddati o'tganlar chapda alohida qizil ustunda. Kartani bossangiz tarkibi ochiladi.",
+      f: [["Kimga mos", ["Rejalashtiruvchi va logistika", "Kranlar va transportni oldindan band qilish uchun"]],
+          ["Excel'dan qulayligi", ["Sana sarlavhada emas, kalendarda — tartiblash shart emas", "Muddati o'tgan 12 zayavka darhol ko'zga tashlanadi", "Haftaning eng og'ir kuni ko'rinadi"]],
+          ["E'tibor bering", ["Mahsulot bo'yicha kamomad faqat kartada", "Sanasi yo'q zayavka «Sanasiz» guruhiga tushadi"]]] },
+    5: { h: "Mahsulot xaritasi — 35 mahsulot bitta ekranda", p: "Har karta — bitta uzunlik (71 … 54), ichida 12-8 va 10-8 eni. Katta raqam — natija (qoldiq minus band). Rang qanchalik to'q bo'lsa, kamomad shuncha katta.",
+      f: [["Kimga mos", ["Direktor — 5 soniyada umumiy holat", "Telefonda ham to'liq sig'adi"]],
+          ["Excel'dan qulayligi", ["35 qatorni o'qish shart emas — rang aytadi", "Qaysi o'lcham bo'yicha muammo borligi guruhlab ko'rinadi", "Bossangiz — qaysi zayavkalar olayotgani"]],
+          ["E'tibor bering", ["Zayavka tafsiloti faqat bosilganda", "Kunlik reja tuzish uchun 2-shablon qulayroq"]]] }
+  };
+
+  var S = { tpl: 1, sel: "59-12", stf: { ready: true, pour: true, queue: true }, q: "", onlyDef: false, hideEmpty: true, plan: {}, openDay: null, openOrd: null, exp: { "59-12": true } };
+  try { var saved = localStorage.getItem("ich-tpl"); if (saved) S.tpl = Number(saved) || 1; } catch (e) {}
+
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var fmt = function (n) { var s = String(Math.abs(Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, " "); return (n < 0 ? "−" : "") + s; };
+  var sg = function (n) { return n > 0 ? "+" + fmt(n) : fmt(n); };
+  var ico = function (id) { return '<svg class="ico"><use href="#' + id + '"/></svg>'; };
+  var byCode = {}; P.forEach(function (p) { byCode[p.code] = p; });
+
+  // ── Hisob: band, natija va skladni zayavkalarga taqsimlash (avval Tayyor, keyin eski sana) ──
+  function calc() {
+    var band = {}, alloc = {};
+    O.forEach(function (o) { alloc[o.id] = {}; });
+    P.forEach(function (p) {
+      var left = p.stock, b = 0;
+      O.filter(function (o) { return o.it[p.code]; })
+        .sort(function (a, z) { return PRI[a.st] - PRI[z.st] || a.d - z.d || a.id - z.id; })
+        .forEach(function (o) { var q = o.it[p.code]; b += q; var g = Math.min(q, Math.max(0, left)); left -= g; alloc[o.id][p.code] = g; });
+      band[p.code] = b;
+    });
+    return { band: band, alloc: alloc, net: function (code) { return byCode[code].stock - band[code]; } };
+  }
+  function ordersOf(code) { return O.filter(function (o) { return o.it[code]; }).sort(function (a, z) { return a.d - z.d; }); }
+  function ordTotal(o) { var s = 0; for (var k in o.it) s += o.it[k]; return s; }
+  function ordCov(o, C) { var t = 0, g = 0; for (var k in o.it) { t += o.it[k]; g += C.alloc[o.id][k] || 0; } return t ? g / t : 1; }
+  function visOrders() {
+    var q = S.q.trim().toLowerCase();
+    return O.filter(function (o) { return S.stf[o.st]; })
+      .filter(function (o) { if (!q) return true; if (o.c.toLowerCase().indexOf(q) >= 0) return true; for (var k in o.it) if (byCode[k].name.toLowerCase().indexOf(q) >= 0) return true; return false; });
+  }
+  function prodMatch(p) { var q = S.q.trim().toLowerCase(); return !q || p.name.toLowerCase().indexOf(q) >= 0 || p.code.indexOf(q) >= 0; }
+  function dayLabel(d) { return d > 31 ? (d - 31) + " noy" : d + " okt"; }
+  function late(o) { return o.d < TODAY; }
+
+  // ── Umumiy qismlar ──
+  function nav() {
+    document.getElementById("nav").innerHTML = TPL.map(function (t) {
+      return '<button role="tab" id="tab-' + t.id + '" aria-selected="' + (S.tpl === t.id) + '" data-tpl="' + t.id + '"><span class="ix">' + ico(t.icon) + '</span><span><span class="t">' + t.id + '. ' + t.t + '</span><br><span class="s">' + t.s + '</span>' + (t.tag ? '<br><span class="tag">' + t.tag + '</span>' : '') + '</span></button>';
+    }).join("");
+  }
+  function kpis(C) {
+    var stock = 0, band = 0, need = 0, kinds = 0;
+    P.forEach(function (p) { stock += p.stock; band += C.band[p.code]; var n = C.net(p.code); if (n < 0) { need -= n; kinds++; } });
+    var lateN = O.filter(function (o) { return late(o) && o.st !== "ready"; }).length;
+    var oldReady = O.filter(function (o) { return o.st === "ready" && TODAY - o.d > 30; }).length;
+    return '<div class="kpis">' +
+      '<div class="kpi"><span class="k">' + ico("i-box") + 'Skladda tayyor</span><span class="v">' + fmt(stock) + ' <small>dona</small></span><span class="h">35 turdagi plita</span></div>' +
+      '<div class="kpi"><span class="k">' + ico("i-sheet") + 'Zayavkalarda band</span><span class="v">' + fmt(band) + ' <small>dona</small></span><span class="h">' + O.length + ' ta ochiq zayavka</span></div>' +
+      '<div class="kpi bad"><span class="k">' + ico("i-factory") + 'Quyish kerak</span><span class="v">' + fmt(need) + ' <small>dona</small></span><span class="h">' + kinds + ' turda kamomad</span></div>' +
+      '<div class="kpi"><span class="k">' + ico("i-alert") + 'Diqqat</span><span class="v">' + lateN + ' <small>muddati o\'tgan</small></span><span class="h">' + oldReady + ' ta tayyor zayavka 1 oydan beri olinmagan</span></div>' +
+      '</div>';
+  }
+  function toolbar() {
+    var cnt = { ready: 0, pour: 0, queue: 0 }; O.forEach(function (o) { cnt[o.st]++; });
+    var planN = Object.keys(S.plan).length, planQ = 0; for (var k in S.plan) planQ += S.plan[k];
+    return '<div class="toolbar">' +
+      '<label class="search">' + ico("i-search") + '<input id="q" type="search" placeholder="Mahsulot yoki mijoz…" value="' + esc(S.q) + '" aria-label="Qidirish"></label>' +
+      '<div class="chips" role="group" aria-label="Holat">' + ST_ORDER.map(function (k) {
+        return '<button class="chip" data-st="' + k + '" aria-pressed="' + !!S.stf[k] + '"><span class="dot ' + k + '"></span>' + ST[k] + ' <span class="n">' + cnt[k] + '</span></button>';
+      }).join("") + '</div>' +
+      '<span class="sep" aria-hidden="true"></span>' +
+      '<label class="switch"><input type="checkbox" id="onlydef" ' + (S.onlyDef ? "checked" : "") + '>Faqat kamomad</label>' +
+      (planN ? '<span class="badge warn" style="margin-left:auto">Reja: ' + planN + ' tur · ' + fmt(planQ) + ' dona</span>' : '') +
+      '</div>';
+  }
+  function aside(C) {
+    var p = byCode[S.sel];
+    if (!p) return '<aside class="aside"><div class="empty">Mahsulotni tanlang — qaysi zayavkalar olayotgani shu yerda chiqadi.</div></aside>';
+    var n = C.net(p.code), os = ordersOf(p.code);
+    return '<aside class="aside" aria-label="Mahsulot tafsiloti">' +
+      '<div class="ttl"><div><div class="eyebrow">Mahsulot</div><h4>' + esc(p.name) + '</h4></div><button class="btn ghost xs" data-act="unsel" aria-label="Yopish">' + ico("i-x") + '</button></div>' +
+      '<div class="trio"><div><span>Skladda</span><b>' + fmt(p.stock) + '</b></div><div><span>Band</span><b>' + fmt(C.band[p.code]) + '</b></div><div><span>Natija</span><b class="' + (n < 0 ? "neg" : n > 0 ? "pos" : "zero") + '">' + sg(n) + '</b></div></div>' +
+      (os.length ? '<div class="olist">' + os.map(function (o) {
+        var q = o.it[p.code], g = C.alloc[o.id][p.code];
+        return '<div class="orow"><span class="dot ' + o.st + '" title="' + ST[o.st] + '"></span><span class="c"><b>' + esc(o.c) + '</b><small>' + ST[o.st] + ' · ' + o.dl + (late(o) && o.st !== "ready" ? ' · <span class="neg">muddati o\'tgan</span>' : '') + '</small></span><span class="q">' + q + '<small class="' + (g >= q ? "pos" : "neg") + '">' + (g >= q ? "skladdan bor" : "yetmaydi " + (q - g)) + '</small></span></div>';
+      }).join("") + '</div>' : '<div class="empty">Bu mahsulotga ochiq zayavka yo\'q.</div>') +
+      '<div class="acts">' +
+        (n < 0 ? '<button class="btn primary sm" data-act="plan" data-code="' + p.code + '">' + ico("i-plus") + (S.plan[p.code] ? 'Rejada: ' + S.plan[p.code] : 'Rejaga ' + (-n) + ' dona') + '</button>' : '') +
+        '<button class="btn ghost sm" data-act="brig" data-code="' + p.code + '">' + ico("i-users") + 'Brigadaga berish</button>' +
+      '</div></aside>';
+  }
+
+  // ── 1. Matritsa ──
+  function tpl1(C) {
+    var os = visOrders().slice().sort(function (a, z) { return PRI[a.st] - PRI[z.st] || a.d - z.d; });
+    var rows = P.filter(prodMatch).filter(function (p) {
+      if (S.onlyDef && C.net(p.code) >= 0) return false;
+      if (S.hideEmpty && p.stock === 0 && !C.band[p.code]) return false;
+      return true;
+    });
+    var groups = ST_ORDER.map(function (k) { return { k: k, n: os.filter(function (o) { return o.st === k; }).length }; }).filter(function (g) { return g.n; });
+    var maxDef = 1; P.forEach(function (p) { var n = C.net(p.code); if (-n > maxDef) maxDef = -n; });
+    var h = '<div class="mx-wrap"><table class="mx" id="mx"><thead>' +
+      '<tr class="g"><th class="sx c-no" rowspan="1"></th><th class="sx c-nm">Mahsulot</th><th class="sx c-st">Skladda</th>' +
+      groups.map(function (g) { return '<th colspan="' + g.n + '" class="g' + g.k[0] + '">' + ST[g.k] + '</th>'; }).join("") +
+      '<th class="sx c-tt">Natija</th></tr>' +
+      '<tr class="h"><th class="sx c-no">№</th><th class="sx c-nm" style="text-align:left;vertical-align:bottom">' + rows.length + ' / 35 qator</th><th class="sx c-st">26 okt</th>' +
+      os.map(function (o, j) { return '<th class="oc" data-c="' + j + '" title="' + esc(o.c) + ' · ' + o.dl + ' · ' + ST[o.st] + '"><span class="cl">' + esc(o.c) + '</span><span class="dt' + (late(o) && o.st !== "ready" ? " late" : "") + '">' + o.dl + '</span></th>'; }).join("") +
+      '<th class="sx c-tt">qoldiq − band</th></tr></thead><tbody>';
+    rows.forEach(function (p) {
+      var n = C.net(p.code);
+      h += '<tr data-code="' + p.code + '"' + (S.sel === p.code ? ' class="sel"' : '') + '><td class="sx c-no">' + p.i + '</td><td class="sx c-nm">' + esc(p.name) + '</td><td class="sx c-st">' + p.stock + '</td>';
+      os.forEach(function (o, j) {
+        var q = o.it[p.code];
+        if (!q) { h += '<td data-c="' + j + '"></td>'; return; }
+        var g = C.alloc[o.id][p.code], cls = g >= q ? "full" : g > 0 ? "part" : "none";
+        h += '<td class="v ' + cls + '" data-c="' + j + '" title="Skladdan: ' + g + ' / ' + q + '"><span>' + q + '</span></td>';
+      });
+      h += '<td class="sx c-tt"><span class="tt"><span class="' + (n < 0 ? "neg" : n > 0 ? "pos" : "zero") + '">' + sg(n) + '</span><span class="b">' + (n < 0 ? '<i style="width:' + Math.max(8, Math.round(-n / maxDef * 100)) + '%"></i>' : '') + '</span></span></td></tr>';
+    });
+    if (!rows.length) h += '<tr><td colspan="' + (os.length + 4) + '" style="height:80px;color:var(--text-muted)">Filtrga mos mahsulot yo\'q</td></tr>';
+    h += '</tbody><tfoot><tr><td class="sx c-no"></td><td class="sx c-nm">Jami, dona</td><td class="sx c-st">' + fmt(rows.reduce(function (s, p) { return s + p.stock; }, 0)) + '</td>' +
+      os.map(function (o, j) { return '<td data-c="' + j + '">' + ordTotal(o) + '</td>'; }).join("") +
+      '<td class="sx c-tt"><span class="neg">' + fmt(rows.reduce(function (s, p) { return s + Math.min(0, C.net(p.code)); }, 0)) + '</span></td></tr></tfoot></table></div>';
+    h += '<div class="legend"><span><i style="background:var(--ok-bg)"></i>skladdan yopiladi</span><span><i style="background:var(--warn-bg)"></i>qisman</span><span><i style="background:var(--bad-bg)"></i>yetmaydi</span>' +
+      '<label class="switch" style="margin-left:auto"><input type="checkbox" id="hideempty" ' + (S.hideEmpty ? "checked" : "") + '>Bo\'sh qatorlarni yashirish</label></div>';
+    return '<div class="work stack"><div style="min-width:0;display:flex;flex-direction:column;gap:10px">' + h + '</div>' + aside(C) + '</div>';
+  }
+
+  // ── 2. Quyish rejasi ──
+  function tpl2(C) {
+    var def = P.filter(prodMatch).filter(function (p) { return C.net(p.code) < 0; }).sort(function (a, z) { return C.net(a.code) - C.net(z.code); });
+    var okN = P.filter(function (p) { return C.net(p.code) >= 0 && (p.stock || C.band[p.code]); }).length;
+    var h = '<div class="plan-list">';
+    def.forEach(function (p) {
+      var n = -C.net(p.code), b = C.band[p.code], have = Math.min(p.stock, b);
+      var os = ordersOf(p.code), first = os.filter(function (o) { return (C.alloc[o.id][p.code] || 0) < o.it[p.code]; })[0];
+      var inPlan = S.plan[p.code];
+      h += '<div class="prow' + (S.sel === p.code ? " sel" : "") + '">' +
+        '<div class="top" data-sel="' + p.code + '">' +
+          '<div class="nm"><b>' + esc(p.name) + '</b><small>' + os.length + ' zayavka' + (first ? ' · eng yaqini: ' + esc(first.c) + ', ' + first.dl : '') + '</small></div>' +
+          '<div class="bar-cell"><div class="sbar" role="img" aria-label="Skladda ' + p.stock + ', band ' + b + '"><i class="have" style="width:' + (have / b * 100) + '%"></i><i class="miss" style="width:' + (n / b * 100) + '%"></i></div><small><span>skladda ' + p.stock + '</span><span>band ' + b + '</span></small></div>' +
+          '<div class="need"><b>' + fmt(n) + '</b><small>quyish kerak</small></div>' +
+          '<div style="display:flex;gap:6px;align-items:center" data-stop="1">' +
+            (inPlan ? '<input class="step-inp" id="pl-' + p.code + '" data-plan="' + p.code + '" inputmode="numeric" value="' + inPlan + '" aria-label="Rejadagi miqdor"><button class="btn ghost xs" data-act="unplan" data-code="' + p.code + '" aria-label="Rejadan olish">' + ico("i-x") + '</button>'
+                    : '<button class="btn primary sm" data-act="plan" data-code="' + p.code + '">' + ico("i-plus") + 'Rejaga</button>') +
+          '</div>' +
+        '</div>' +
+        (S.exp[p.code] ? '<div class="more">' + os.map(function (o) {
+          var q = o.it[p.code], g = C.alloc[o.id][p.code];
+          return '<span class="ochip' + (late(o) && o.st !== "ready" ? " late" : "") + '"><span class="dot ' + o.st + '"></span>' + esc(o.c) + ' · ' + o.dl + ' · <b>' + q + '</b>' + (g < q ? ' <span class="neg">−' + (q - g) + '</span>' : ' ' + ico("i-check")) + '</span>';
+        }).join("") + '</div>' : '') +
+      '</div>';
+    });
+    if (!def.length) h += '<div class="ok-strip">' + ico("i-check") + 'Filtrga mos kamomad yo\'q.</div>';
+    h += '<div class="ok-strip">' + ico("i-check") + '<b>' + okN + '</b> turdagi mahsulot skladda yetarli — ular bu ro\'yxatda ko\'rsatilmaydi.</div></div>';
+    // o'ng panel: smena rejasi
+    var keys = Object.keys(S.plan), tot = 0; keys.forEach(function (k) { tot += S.plan[k]; });
+    var side = '<aside class="aside" aria-label="Smena rejasi"><div><div class="eyebrow">Smena rejasi · 27 okt</div><h4>Quyiladigan plitalar</h4></div>' +
+      (keys.length ? '<div class="olist">' + keys.map(function (k) { return '<div class="orow"><span class="dot queue"></span><span class="c"><b>' + esc(byCode[k].name) + '</b><small>kamomad ' + fmt(-C.net(k)) + '</small></span><span class="q">' + S.plan[k] + '</span></div>'; }).join("") + '</div>' +
+        '<div class="plan-tot"><span class="muted">Jami</span><b>' + fmt(tot) + ' dona</b></div>' +
+        '<label class="lbl" for="brig" style="font-size:12px;color:var(--text-muted)">Brigada</label><select id="brig" class="step-inp" style="width:100%;text-align:left;padding:0 8px">' + BRIG.map(function (b) { return '<option>' + b + '</option>'; }).join("") + '</select>' +
+        '<button class="btn primary" data-act="send">' + ico("i-users") + 'Brigadaga yuborish</button>'
+        : '<div class="empty">Chapdagi «Rejaga» tugmasini bosing — mahsulot kamomad miqdori bilan shu yerga tushadi, keyin sonini o\'zgartirish mumkin.</div>') +
+      '</aside>';
+    return '<div class="work"><div style="min-width:0">' + h + '</div>' + side + '</div>';
+  }
+
+  // ── 3. Doska ──
+  function tpl3(C) {
+    var os = visOrders();
+    var flow = ["queue", "pour", "ready"];
+    var h = '<div class="board">' + flow.map(function (k) {
+      var list = os.filter(function (o) { return o.st === k; }).sort(function (a, z) { return a.d - z.d; });
+      return '<div class="col"><div class="col-h ' + k + '"><span class="dot ' + k + '"></span>' + ST[k] + '<span class="n">' + list.length + ' ta · ' + fmt(list.reduce(function (s, o) { return s + ordTotal(o); }, 0)) + ' dona</span></div>' +
+        (list.length ? list.map(function (o) {
+          var cov = ordCov(o, C), i = flow.indexOf(k);
+          var old = o.st === "ready" && TODAY - o.d > 30;
+          return '<div class="kcard"><div class="hd"><div><b>' + esc(o.c) + '</b><small>' + o.dl + ' · ' + ordTotal(o) + ' dona</small></div>' +
+            (late(o) && o.st !== "ready" ? '<span class="badge bad">Kechikmoqda</span>' : old ? '<span class="badge warn">Olib ketilmagan</span>' : '') + '</div>' +
+            '<div class="kitems">' + Object.keys(o.it).map(function (c) {
+              var q = o.it[c], g = C.alloc[o.id][c];
+              return '<div data-sel="' + c + '" title="Skladdan ' + g + ' / ' + q + '"><span>' + esc(byCode[c].name) + '</span><span class="q">' + q + '</span>' + (g >= q ? '<span class="pos">' + ico("i-check") + '</span>' : '<span class="neg" style="font-size:11px">−' + (q - g) + '</span>') + '</div>';
+            }).join("") + '</div>' +
+            '<div><div class="cov"><i style="width:' + Math.round(cov * 100) + '%"></i></div></div>' +
+            '<div class="kfoot"><span>Skladdan ' + Math.round(cov * 100) + '% yopiladi</span><span class="mv">' +
+              (i > 0 ? '<button class="btn ghost xs" data-move="' + o.id + '" data-to="' + flow[i - 1] + '" aria-label="Orqaga: ' + ST[flow[i - 1]] + '">' + ico("i-left") + '</button>' : '') +
+              (i < 2 ? '<button class="btn ghost xs" data-move="' + o.id + '" data-to="' + flow[i + 1] + '">' + ST[flow[i + 1]] + ico("i-right") + '</button>' : '') +
+            '</span></div></div>';
+        }).join("") : '<div class="aside empty" style="border-style:dashed">Bo\'sh</div>') + '</div>';
+    }).join("") + '</div>';
+    return '<div class="work"><div style="min-width:0">' + h + '</div>' + aside(C) + '</div>';
+  }
+
+  // ── 4. Kalendar ──
+  function tpl4(C) {
+    var os = visOrders();
+    var W = ["Dush", "Sesh", "Chor", "Pay", "Juma", "Shan", "Yak"];
+    var cols = [{ k: "past", w: "Muddati o'tgan", d: "26 okt gacha", f: function (o) { return o.d < TODAY; } }];
+    for (var d = 26; d <= 32; d++) (function (d) { cols.push({ k: d === TODAY ? "today" : (d >= 31 ? "wk" : ""), w: W[d - 26] + (d === TODAY ? " · bugun" : ""), d: dayLabel(d), f: function (o) { return o.d === d; } }); })(d);
+    cols.push({ k: "", w: "Keyingi hafta", d: "2 noy dan", f: function (o) { return o.d > 32; } });
+    var data = cols.map(function (c) { var l = os.filter(c.f).sort(function (a, z) { return a.d - z.d || PRI[a.st] - PRI[z.st]; }); return { c: c, l: l, q: l.reduce(function (s, o) { return s + ordTotal(o); }, 0) }; });
+    var maxQ = Math.max.apply(null, data.map(function (x) { return x.q; }).concat([1]));
+    var h = '<div class="cal">' + data.map(function (x) {
+      var short = 0; x.l.forEach(function (o) { for (var k in o.it) short += o.it[k] - (C.alloc[o.id][k] || 0); });
+      return '<div class="day ' + x.c.k + '"><div class="day-h"><div class="w">' + x.c.w + '</div><div class="d"><span>' + x.c.d + '</span><span class="num" style="font-size:12px;font-weight:500">' + fmt(x.q) + ' dona</span></div><div class="load"><i style="width:' + (x.q / maxQ * 100) + '%"></i></div></div>' +
+        '<div class="day-b">' + (x.l.length ? x.l.map(function (o) {
+          var cov = ordCov(o, C), open = S.openOrd === o.id;
+          return '<div class="dcard' + (open ? " open" : "") + '" data-ord="' + o.id + '" role="button" tabindex="0"><div class="r1"><span class="dot ' + o.st + '"></span><b>' + esc(o.c) + '</b></div>' +
+            '<div class="r2"><span>' + (x.c.k === "past" || x.c.d.indexOf("dan") > 0 ? o.dl + ' · ' : '') + ordTotal(o) + ' dona</span><span class="' + (cov >= 1 ? "pos" : "neg") + '">' + (cov >= 1 ? "bor" : Math.round(cov * 100) + "%") + '</span></div>' +
+            (open ? '<div class="its">' + Object.keys(o.it).map(function (c) { var q = o.it[c], g = C.alloc[o.id][c]; return '<div data-sel="' + c + '"><span>' + c + '</span><span class="num">' + q + (g < q ? ' <span class="neg">−' + (q - g) + '</span>' : '') + '</span></div>'; }).join("") + '</div>' : '') +
+            '</div>';
+        }).join("") : '<div class="muted" style="font-size:12px;text-align:center;padding:10px 0">Zayavka yo\'q</div>') + '</div>' +
+        '<div class="day-f"><span>' + x.l.length + ' zayavka</span>' + (short ? '<span class="neg">yetmaydi ' + fmt(short) + '</span>' : '<span>' + (x.l.length ? "hammasi bor" : "") + '</span>') + '</div></div>';
+    }).join("") + '</div>';
+    h += '<div class="legend"><span><span class="dot ready"></span> tayyor</span><span><span class="dot pour"></span> quyilmoqda</span><span><span class="dot queue"></span> navbatda</span><span>Foiz — zayavkaning skladdan yopiladigan qismi. Kartani bosing — tarkibi ochiladi.</span></div>';
+    return '<div class="work stack"><div style="min-width:0;display:flex;flex-direction:column;gap:10px">' + h + '</div>' + aside(C) + '</div>';
+  }
+
+  // ── 5. Xarita ──
+  function tpl5(C) {
+    var lens = []; P.forEach(function (p) { if (lens.indexOf(p.len) < 0) lens.push(p.len); });
+    var defT = 0, defK = 0, okK = 0, zeroK = 0;
+    P.forEach(function (p) { var n = C.net(p.code); if (n < 0) { defT -= n; defK++; } else if (n > 0) okK++; else zeroK++; });
+    var worst = P.slice().sort(function (a, z) { return C.net(a.code) - C.net(z.code); })[0];
+    var h = '<div class="hsum"><div><span class="muted">Kamomad</span><b class="neg">' + defK + ' tur · ' + fmt(defT) + ' dona</b></div><div><span class="muted">Eng og\'ir</span><b>' + esc(worst.name) + ' <span class="neg">' + sg(C.net(worst.code)) + '</span></b></div><div><span class="muted">Ortiqcha / nol</span><b>' + okK + ' tur / ' + zeroK + ' tur</b></div></div>';
+    h += '<div class="hm">' + lens.map(function (L) {
+      var cells = ["12", "10"].map(function (w) {
+        var p = byCode[L + "-" + w];
+        if (!p) return '<span class="hcell" style="cursor:default" aria-hidden="true"><span class="w">' + w + '-8</span><span class="v">·</span><span class="s">ishlab chiqarilmaydi</span></span>';
+        var n = C.net(p.code), lv = n >= 0 ? (n > 0 ? "okc" : "") : (-n >= 100 ? "l3" : -n >= 20 ? "l2" : "l1");
+        var dim = (S.onlyDef && n >= 0) || !prodMatch(p);
+        return '<button class="hcell ' + lv + (dim ? " dim" : "") + (S.sel === p.code ? " sel" : "") + '" data-sel="' + p.code + '" aria-label="' + esc(p.name) + ', natija ' + n + '"><span class="w">' + w + '-8</span><span class="v">' + sg(n) + '</span><span class="s">' + p.stock + ' bor · ' + C.band[p.code] + ' band</span></button>';
+      }).join("");
+      return '<div class="hcard"><div class="ln"><span>uzunlik</span><b>' + (Number(L) / 10).toFixed(1).replace(".", ",") + ' m</b></div><div class="hcells">' + cells + '</div></div>';
+    }).join("") + '</div>';
+    h += '<div class="legend"><span><i style="background:var(--bad-bg)"></i>1–19 kam</span><span><i style="background:var(--bad-mid)"></i>20–99 kam</span><span><i style="background:var(--bad-solid)"></i>100+ kam</span><span><i></i>0 — teng</span><span class="pos">+ ortiqcha</span></div>';
+    return '<div class="work"><div style="min-width:0;display:flex;flex-direction:column;gap:10px">' + h + '</div>' + aside(C) + '</div>';
+  }
+
+  function render() {
+    nav();
+    var C = calc(), info = INFO[S.tpl], body = [null, tpl1, tpl2, tpl3, tpl4, tpl5][S.tpl](C);
+    var act = document.activeElement, actId = act && act.id, caret = act && act.selectionStart;
+    document.getElementById("panel").innerHTML =
+      '<div class="phead"><h2>' + info.h + '</h2><p>' + info.p + '</p></div>' +
+      '<div class="stage" role="tabpanel" aria-labelledby="tab-' + S.tpl + '"><div class="stage-bar"><b>Ishlab chiqarish</b><span>Zayavkalar · Quyish · Brigadalar</span><span class="crumb">Qoldiq: 26 okt, 08:00 holatiga · misol ma\'lumot</span></div>' +
+        '<div class="stage-body">' +
+          '<div class="win-head"><div><h3>Ishlab chiqarish</h3><div class="sub">ПК plitalar · dona · sklad va ochiq zayavkalar</div></div>' +
+          '<div class="win-actions"><button class="btn ghost sm" data-act="xls">' + ico("i-sheet") + 'Excel\'ga yuklash</button><button class="btn primary sm" data-act="batch">' + ico("i-plus") + 'Yangi partiya</button></div></div>' +
+          kpis(C) + toolbar() + body +
+        '</div></div>' +
+      '<div class="facts">' + info.f.map(function (f) { return '<div class="fact"><h3>' + f[0] + '</h3><ul>' + f[1].map(function (x) { return '<li>' + x + '</li>'; }).join("") + '</ul></div>'; }).join("") + '</div>';
+    if (actId) { var el = document.getElementById(actId); if (el) { el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} } }
+  }
+
+  var tt;
+  function toast(m) { var t = document.querySelector(".toast"); if (t) t.remove(); t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m; document.body.appendChild(t); clearTimeout(tt); tt = setTimeout(function () { t.remove(); }, 2600); }
+
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-tpl],[data-st],[data-act],[data-move],[data-sel],[data-ord],tr[data-code],th.oc");
+    if (!t) return;
+    if (t.dataset.tpl) { S.tpl = Number(t.dataset.tpl); try { localStorage.setItem("ich-tpl", S.tpl); } catch (x) {} render(); document.getElementById("tab-" + S.tpl).focus(); return; }
+    if (t.dataset.st) { S.stf[t.dataset.st] = !S.stf[t.dataset.st]; render(); return; }
+    if (t.dataset.move) { var o = O.filter(function (x) { return x.id === Number(t.dataset.move); })[0]; o.st = t.dataset.to; render(); toast(o.c + " → " + ST[o.st] + " (namuna)"); return; }
+    var a = t.dataset.act;
+    if (a) {
+      var C = calc();
+      if (a === "plan") { var c = t.dataset.code; S.plan[c] = S.plan[c] || -C.net(c); render(); toast(byCode[c].name + " rejaga qo'shildi: " + S.plan[c] + " dona"); }
+      else if (a === "unplan") { delete S.plan[t.dataset.code]; render(); }
+      else if (a === "unsel") { S.sel = null; render(); }
+      else if (a === "brig") toast("Topshiriq oynasi ochiladi: brigada tanlanadi, xomashyo yetishi tekshiriladi (namuna)");
+      else if (a === "send") { var b = document.getElementById("brig"); toast("Smena rejasi " + (b ? b.value : "brigada") + "ga yuborildi (namuna)"); }
+      else if (a === "xls") toast("Shu ko'rinish Excel faylga yuklanadi — rangi va formulasi bilan (namuna)");
+      else if (a === "batch") toast("Yangi partiya formasi ochiladi (namuna)");
+      return;
+    }
+    if (e.target.closest("[data-stop]")) return;
+    if (t.dataset.ord) { var id = Number(t.dataset.ord); if (e.target.closest("[data-sel]")) { S.sel = e.target.closest("[data-sel]").dataset.sel; } else S.openOrd = S.openOrd === id ? null : id; render(); return; }
+    if (t.dataset.sel) { var s = t.dataset.sel; if (S.tpl === 2) { S.exp[s] = !S.exp[s]; S.sel = s; } else S.sel = s; render(); return; }
+    if (t.matches("tr[data-code]")) { S.sel = t.dataset.code; render(); }
+  });
+  document.addEventListener("keydown", function (e) { if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-ord]")) { e.preventDefault(); e.target.click(); } });
+  document.addEventListener("input", function (e) {
+    if (e.target.id === "q") { S.q = e.target.value; render(); }
+    else if (e.target.dataset.plan) { var v = Math.max(0, parseInt(e.target.value.replace(/\D/g, ""), 10) || 0); S.plan[e.target.dataset.plan] = v; }
+  });
+  document.addEventListener("change", function (e) {
+    if (e.target.id === "onlydef") { S.onlyDef = e.target.checked; render(); }
+    else if (e.target.id === "hideempty") { S.hideEmpty = e.target.checked; render(); }
+    else if (e.target.dataset.plan) render();
+  });
+  // Matritsada ustunni ham yoritish (qator yoritilishi CSS'da)
+  var hl = document.createElement("style"); document.head.appendChild(hl);
+  document.addEventListener("mouseover", function (e) { var c = e.target.closest && e.target.closest("#mx [data-c]"); hl.textContent = c ? '#mx [data-c="' + c.dataset.c + '"]{background:var(--hl)}' : ''; });
+
+  render();
+})();
+</script>

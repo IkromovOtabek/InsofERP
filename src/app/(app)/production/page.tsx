@@ -14,6 +14,8 @@ import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { requirePage } from "@/lib/page-guard";
 import { reassignable } from "@/lib/tasks";
+import { productionMatrix } from "@/lib/production-matrix";
+import { ProductionMatrixView } from "./matrix";
 
 /**
  * Ishlab chiqarish oynasi: saqlangan zayavkalar (qoralama, tasdiqlangan, ishlab chiqarilmoqda) shu yerga tushadi.
@@ -24,7 +26,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const session = await requirePage("/production");
   const canBatch = session.role === "PRODUCTION" || session.role === "DIRECTOR";
   const { order: selectedId, tab = "open" } = await searchParams;
-  const [allOrders, brigades, batches] = await Promise.all([
+  const [allOrders, brigades, batches, matrix] = await Promise.all([
     db.order.findMany({
       where: { status: { not: "CANCELLED" } },
       orderBy: [{ deliveryDate: "asc" }],
@@ -33,6 +35,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
     }),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, include: { leader: true } }),
     db.productionBatch.findMany({ orderBy: { createdAt: "desc" }, take: 200, include: { product: true, order: { include: { customer: true } }, createdBy: true } }),
+    productionMatrix(),
   ]);
   const marks = await customerMarks([...allOrders.map((o) => o.customerId), ...batches.map((b) => b.order?.customerId).filter((x): x is string => !!x)]);
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -79,6 +82,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
             items={selected.items.map((i) => ({ id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit), taskNo: reassignable(i.task) ? null : i.task?.taskNo ?? null, brigade: i.brigade?.name ?? null }))} />}
         </Card>
       )}
+
+      <ProductionMatrixView data={matrix} />
 
       <h2 className="mb-3 inline-flex items-center gap-2 font-semibold"><ClipboardList size={16} className="text-slate-400" /> Zayavkalar</h2>
       <Tabs current={filter.key} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />
