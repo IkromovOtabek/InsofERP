@@ -210,13 +210,14 @@ export function Badge({ color = "slate", children, dot = true }: { color?: Badge
 
 /* ═══════════════════════ Tabs (URL-based) ═══════════════════════ */
 
-export function Tabs({ items, current, className }: { items: { key: string; label: React.ReactNode; href: string; count?: number; icon?: LucideIcon }[]; current: string; className?: string }) {
+/** `scroll={false}` — bosilganda sahifa tepaga sakramaydi (sahifa o'rtasidagi filtrlar uchun, masalan zayavkalar doskasi). */
+export function Tabs({ items, current, className, scroll }: { items: { key: string; label: React.ReactNode; href: string; count?: number; icon?: LucideIcon }[]; current: string; className?: string; scroll?: boolean }) {
   return (
     <nav className={cn("mb-4 flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-xl border border-slate-200/80 bg-white p-1 shadow-(--shadow-card)", className)}>
       {items.map((t) => {
         const active = t.key === current;
         return (
-          <Link key={t.key} href={t.href} aria-current={active ? "page" : undefined} className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition pointer-coarse:py-2.5", active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")}>
+          <Link key={t.key} href={t.href} scroll={scroll} aria-current={active ? "page" : undefined} className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition pointer-coarse:py-2.5", active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")}>
             {t.icon && <t.icon size={14} />}
             {t.label}
             {t.count !== undefined && <span className={cn("rounded-full px-1.5 text-[11px] tabular", active ? "bg-white/20" : "bg-slate-100 text-slate-500")}>{t.count}</span>}

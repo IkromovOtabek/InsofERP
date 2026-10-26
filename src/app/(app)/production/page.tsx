@@ -102,7 +102,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       )}
 
       <ProductionMatrixView data={matrix} board={board} tab={filter.key}
-        filters={<Tabs current={filter.key} className="mb-3" items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />} />
+        filters={<Tabs current={filter.key} className="mb-3" scroll={false} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />} />
 
       <h2 className="mb-3 inline-flex items-center gap-2 font-semibold"><Factory size={16} className="text-slate-400" /> Zameslar</h2>
       <Table>
