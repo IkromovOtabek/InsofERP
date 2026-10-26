@@ -137,6 +137,36 @@ if (ord) {
   q(`delete from "OrderItem" where id='${split}'`);
 }
 
+// ── 2c) «Qolganini boshqa o'lchamda bajardim» → O'tkazish: topshiriq va zayavka qatori bo'linadi, narx o'zgarmaydi ──
+{
+  const sub = `qa_sub_${Date.now()}`;
+  q(`insert into "OrderItem" (id, "orderId", "productId", "qtyM3", price) select '${sub}', o.id, p.id, 10, 7000 from "Order" o, "Product" p where o.status in ('CONFIRMED','IN_PRODUCTION') and p.unit='dona' and p."isActive" order by o."createdAt", p.code limit 1`);
+  const [oid, pid] = q(`select "orderId", "productId" from "OrderItem" where id='${sub}'`)[0] ?? [];
+  const other = q1(`select id from "Product" where unit='dona' and "isActive" and id<>'${pid}' order by code limit 1`);
+  const bid = q1(`select id from "Brigade" where "isActive" order by name limit 1`);
+  if (!oid || !other || !bid) console.log("  · o'tkazish testi o'tkazib yuborildi: mos zayavka/mahsulot/brigada yo'q");
+  else {
+    r = await ishlab.action("(app)/production/assign-actions#assignBrigades", [oid, undefined, fd({ [`brigade_${sub}`]: bid })], "/production");
+    check(r.ok, "o'tkazish uchun topshiriq ochildi (10)", r.error);
+    const tid = q1(`select id from "BrigadeTask" where "orderItemId"='${sub}'`)!;
+    const S = "(app)/tasks/actions#substituteTask";
+    r = await ishlab.action(S, [tid, undefined, fd({ productId: other, qty: 11 })], "/tasks");
+    check(!r.ok && /qolgani/.test(r.error ?? ""), "qolganidan ko'p o'tkazish — rad etildi", r.error);
+    r = await ishlab.action(S, [tid, undefined, fd({ productId: pid, qty: 2 })], "/tasks");
+    check(!r.ok && /farq qilsin/.test(r.error ?? ""), "o'sha mahsulotning o'ziga — rad etildi", r.error);
+    r = await ishlab.action(S, [tid, undefined, fd({ productId: other, qty: 3, reason: "QA" })], "/tasks");
+    check(r.ok, "3 dona boshqa o'lchamga o'tkazildi", r.error);
+    check(Number(q1(`select qty from "BrigadeTask" where id='${tid}'`)) === 7, "asl topshiriq 10 → 7");
+    check(Number(q1(`select "qtyM3" from "OrderItem" where id='${sub}'`)) === 7, "asl zayavka qatori 10 → 7");
+    const ni = q(`select i.id, i."qtyM3", i.price, t.qty, t.status from "OrderItem" i join "BrigadeTask" t on t."orderItemId"=i.id where i."orderId"='${oid}' and i."productId"='${other}' and i.id<>'${sub}' order by t."createdAt" desc limit 1`)[0];
+    check(!!ni && Number(ni[1]) === 3 && Number(ni[2]) === 7000 && Number(ni[3]) === 3 && ni[4] === "NEW", "yangi qator 3 dona asl narxda (7000), yangi topshiriq 3", ni?.join(" "));
+    // Sinov qatorlari keyingi testlarga ta'sir qilmasin
+    if (ni) { q(`delete from "BrigadeTask" where "orderItemId"='${ni[0]}'`); q(`delete from "OrderItem" where id='${ni[0]}'`); }
+  }
+  q(`delete from "BrigadeTask" where "orderItemId"='${sub}'`);
+  q(`delete from "OrderItem" where id='${sub}'`);
+}
+
 // ── 3) Brigada topshirig'i ──
 const ord3 = q(`select o.id, i.id, p.id, i."qtyM3", p.code from "Order" o join "OrderItem" i on i."orderId"=o.id join "Product" p on p.id=i."productId" left join "BrigadeTask" t on t."orderItemId"=i.id where o.status in ('CONFIRMED','IN_PRODUCTION') and p.unit<>'m3' and t.id is null limit 1`)[0];
 const brigadeId = q1(`select id from "Brigade" where name like 'Test brigada%'`)!;

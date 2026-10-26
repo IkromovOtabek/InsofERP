@@ -7,6 +7,7 @@ import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import type { Role } from "@/generated/prisma";
 import { defaultWarehouse } from "@/lib/warehouse";
 import { itemTasks } from "@/lib/production";
+import { nextNo } from "@/lib/numbering";
 
 /**
  * Topshiriq va brigada amallari — yagona rol matritsasi (veb sahifa, server action va mobil
@@ -156,4 +157,76 @@ export async function taskCancel(taskId: string, userId: string): Promise<TaskRe
     await notifyEmployees([b?.leaderId], { type: "TASK_CANCELLED", title: `Topshiriq bekor qilindi — ${t.taskNo}`, body: "Ishni to'xtating", link: { key: "tasks", id: taskId } });
   });
   return { changed: true, orderId: t.orderId, status: "CANCELLED" };
+}
+
+/**
+ * Qoldiqni boshqa o'lchamga o'tkazish («Qolganini boshqa o'lchamda bajardim»): masalan ПК 59 × 60 topshirig'ida
+ * 58 tasi quyilib, ПК 59 qolmasa — qolgan 2 tasi ПК 60 dan. Bitta tranzaksiyada:
+ *  1) topshiriq miqdori o'tkazilgancha kamayadi (bajarilgani yetsa — DONE, hech narsa bajarilmagan bo'lsa — CANCELLED);
+ *  2) zayavkadagi asl qator shuncha kamayadi, o'rinbosar mahsulotga yangi qator qo'shiladi — ASL NARXDA
+ *     (mijoz 59 so'ragan: zayavka summasi, limit va schyot o'zgarmaydi);
+ *  3) yangi qatorga topshiriq ochiladi (tanlangan brigada).
+ * `done` — o'rinbosar allaqachon quyilgan: yangi topshiriq darhol qayd qilinadi (`taskProgress` — hovliga kirim,
+ * xomashyo o'rinbosar retsepti bo'yicha yechiladi). Faqat dona mahsulot; beton (m³) zames orqali yuritiladi.
+ */
+export type SubstituteInput = { productId: string; qty: number; brigadeId?: string | null; done: boolean; reason?: string | null };
+class SubstituteError extends Error {}
+
+export async function taskSubstitute(taskId: string, input: SubstituteInput, userId: string): Promise<TaskResult & { newTaskNo?: string }> {
+  const t = await db.brigadeTask.findUnique({ where: { id: taskId }, include: { orderItem: { include: { product: true } }, order: { select: { status: true } } } });
+  if (!t) return { changed: false, orderId: "", error: "Topshiriq topilmadi" };
+  if (!["NEW", "IN_PROGRESS"].includes(t.status)) return { changed: false, orderId: t.orderId, error: "Topshiriq yopilgan" };
+  if (!["CONFIRMED", "IN_PRODUCTION"].includes(t.order.status)) return { changed: false, orderId: t.orderId, error: "Zayavka ishlab chiqarishda emas — o'lchamni almashtirib bo'lmaydi" };
+  const from = t.orderItem.product;
+  if (from.unit === "m3") return { changed: false, orderId: t.orderId, error: "Beton topshirig'ida o'lcham almashtirilmaydi" };
+  const qty = input.qty;
+  if (!Number.isInteger(qty) || qty <= 0) return { changed: false, orderId: t.orderId, error: "Miqdor butun son va 0 dan katta bo'lsin" };
+  const to = await db.product.findFirst({ where: { id: input.productId, isActive: true } });
+  if (!to) return { changed: false, orderId: t.orderId, error: "O'rinbosar mahsulot topilmadi" };
+  if (to.id === from.id) return { changed: false, orderId: t.orderId, error: "O'rinbosar asl mahsulotdan farq qilsin" };
+  if (to.unit !== from.unit) return { changed: false, orderId: t.orderId, error: `O'rinbosar ham ${unitLabel(from.unit)} bilan o'lchansin` };
+  const brigadeId = input.brigadeId || t.brigadeId;
+  if (!(await db.brigade.count({ where: { id: brigadeId, isActive: true } }))) return { changed: false, orderId: t.orderId, error: "Brigada topilmadi yoki yopilgan" };
+  const reason = input.reason?.trim().slice(0, 200) || null;
+
+  const res = await db.$transaction(async (tx) => {
+    // Topshiriq va qator qulflanadi: qoldiq qulf ostida qayta o'qiladi (bir vaqtda qayd yoki ikkinchi o'tkazish)
+    await tx.$queryRaw`SELECT id FROM "BrigadeTask" WHERE id = ${taskId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM "OrderItem" WHERE id = ${t.orderItemId} FOR UPDATE`;
+    const cur = await tx.brigadeTask.findUniqueOrThrow({ where: { id: taskId } });
+    if (!["NEW", "IN_PROGRESS"].includes(cur.status)) throw new SubstituteError("Topshiriq shu payt yopildi — sahifani yangilang");
+    const rest = Number(cur.qty) - Number(cur.doneQty);
+    if (qty > rest + 0.0005) throw new SubstituteError(`Topshiriqda qolgani ${fq(rest)} ${unitLabel(from.unit)} — undan ko'p o'tkazib bo'lmaydi`);
+    const item = await tx.orderItem.findUniqueOrThrow({ where: { id: t.orderItemId } });
+    const newQty = Number(cur.qty) - qty, done = Number(cur.doneQty);
+    const status = done >= newQty - 0.0005 ? (done > 0 ? "DONE" : "CANCELLED") : cur.status;
+    await tx.brigadeTask.update({ where: { id: taskId }, data: { qty: newQty, status } });
+    await tx.orderItem.update({ where: { id: item.id }, data: { qtyM3: Number(item.qtyM3) - qty } });
+    const ni = await tx.orderItem.create({ data: { orderId: t.orderId, productId: to.id, qtyM3: qty, price: item.price, nds: item.nds, brigadeId } });
+    const nt = await tx.brigadeTask.create({
+      data: { taskNo: await nextNo(tx, "brigadeTask", "T"), orderId: t.orderId, orderItemId: ni.id, brigadeId, qty, dueDate: cur.dueDate, note: `${cur.taskNo} dan o'tkazildi: ${from.name} o'rniga${reason ? ` · ${reason}` : ""}`, createdById: userId },
+    });
+    const meta = { from: from.code, to: to.code, qty, reason, fromTask: cur.taskNo, toTask: nt.taskNo, price: Number(item.price) };
+    await audit(tx, userId, "UPDATE", "BrigadeTask", taskId, { qty: Number(cur.qty), status: cur.status }, { qty: newQty, status, substitute: meta });
+    await audit(tx, userId, "UPDATE", "OrderItem", item.id, { qtyM3: Number(item.qtyM3) }, { qtyM3: Number(item.qtyM3) - qty, substitute: meta });
+    await audit(tx, userId, "CREATE", "OrderItem", ni.id, undefined, { ...ni, substitute: meta });
+    await audit(tx, userId, "CREATE", "BrigadeTask", nt.id, undefined, { ...nt, substitute: meta });
+    return { newTaskId: nt.id, newTaskNo: nt.taskNo, status };
+  }).catch((e: Error) => { if (e instanceof SubstituteError) return { error: e.message }; throw e; });
+  if ("error" in res) return { changed: false, orderId: t.orderId, error: res.error };
+
+  // Allaqachon quyilgan bo'lsa — oddiy qayd: hovliga kirim va xomashyo yechish bir joyda (`taskProgress`)
+  let note = `${qty} ${unitLabel(from.unit)} ${to.name} ga o'tkazildi · ${res.newTaskNo}`;
+  if (input.done) {
+    const p = await taskProgress(res.newTaskId, qty, userId, reason ? `O'rinbosar: ${reason}` : "O'rinbosar o'lcham");
+    note = p.error ? `${note} · qayd qilinmadi: ${p.error}` : `${note} · bajarildi${p.note ? ` · ${p.note}` : ""}`;
+  }
+  // Mijozga boshqa o'lcham ketadi — sotuv bilishi kerak (narx o'zgarmaydi)
+  notifyAfter(() => notifyRoles(["SALES", "PRODUCTION", "SUPERVISOR"], {
+    type: "TASK_DONE",
+    title: `O'lcham almashtirildi — ${t.taskNo}`,
+    body: `${qty} ${unitLabel(from.unit)}: ${from.name} o'rniga ${to.name} (narx o'zgarmaydi)${reason ? ` · ${reason}` : ""}`,
+    link: { key: "orders", id: t.orderId },
+  }, { except: userId }));
+  return { changed: true, orderId: t.orderId, status: res.status, note, newTaskNo: res.newTaskNo };
 }

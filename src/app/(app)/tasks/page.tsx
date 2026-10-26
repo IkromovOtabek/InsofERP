@@ -31,6 +31,9 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     }),
     db.brigade.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
+  // «Qolganini boshqa o'lchamda bajardim» — o'rinbosar uchun dona mahsulotlar (beton zames orqali yuritiladi)
+  const subProducts = canProgress ? await db.product.findMany({ where: { isActive: true, unit: { not: "m3" } }, select: { id: true, name: true, unit: true }, orderBy: { name: "asc" } }) : [];
+  const subBrigades = brigades.map((b) => ({ id: b.id, name: b.name }));
   const [marks, defects] = await Promise.all([customerMarks(tasks.map((t) => t.order.customerId)), taskDefectTotals(tasks.map((t) => t.id))]);
   const q = (k: string) => `${k}${brigade ? `${k.includes("?") ? "&" : "?"}brigade=${brigade}` : ""}`;
   const tabs = [{ key: "", label: "Ochiq", href: q("/tasks") }, ...(Object.keys(TASK_STATUS) as TaskStatus[]).map((k) => ({ key: k, label: TASK_STATUS[k].label, href: q(`/tasks?status=${k}`) }))];
@@ -70,8 +73,8 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <Td right className={rem > 0 ? "font-semibold text-amber-700" : "text-slate-400"}>{qty(rem)}<div className="mt-1 w-20"><Progress value={done} max={total} tone={rem === 0 ? "success" : "default"} /></div></Td>
                 <Td><TaskStatusBadge status={t.status} /></Td>
                 <Td>
-                  <div className="flex items-center gap-2">
-                    {open && canProgress && <ProgressForm taskId={t.id} remaining={rem} unit={unit} />}
+                  <div className="flex items-start gap-2">
+                    {open && canProgress && <ProgressForm taskId={t.id} remaining={rem} unit={unit} product={t.orderItem.product.name} productId={t.orderItem.productId} brigadeId={t.brigadeId} products={subProducts} brigades={subBrigades} />}
                     {open && canCancel && <CancelTaskButton action={cancelTask.bind(null, t.id)} />}
                   </div>
                 </Td>
