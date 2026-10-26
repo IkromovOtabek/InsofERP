@@ -6,7 +6,6 @@ import { CustomerName } from "@/components/customer-name";
 import { money, date, deliveryAt } from "@/lib/format";
 import { fmtUnitTotals } from "@/lib/unit";
 import { Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Tabs } from "@/components/ui";
-import { StockSnapshotCard } from "@/components/stock-snapshot";
 import { OrderLoadCalendar } from "./load-calendar";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { requirePage } from "@/lib/page-guard";
@@ -83,11 +82,6 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       )}
       {/* 10 kunlik ish tartibi: qaysi kunga zayavka ko'p, qaysi kun bo'sh */}
       <OrderLoadCalendar />
-      {/* Zayavka qabul qilayotgan xodim korxonada nima borligini shu yerda ko'radi:
-          Hovlidagi dona mahsulot, beton va Skladdagi xomashyo. */}
-      <div className="mb-5">
-        <StockSnapshotCard layout="grid" title="Korxona qoldig'i — zayavka qabul qilishdan oldin" />
-      </div>
       {canApproveSupply && <SupplyApprovals mode="sales" />}
       {day ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm">
