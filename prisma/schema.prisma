@@ -174,6 +174,13 @@ model CompanySettings {
   supplyDirectorLimit Decimal   @default(50000000) @db.Decimal(18, 2)
   /// "To'lanmagan kirimlar" shu sanadan keyingi kirimlarni ko'rsatadi (bo'sh — 2026-09-30); eski chiqimsiz kirimlar to'lov kutmaydi
   payablesSince       DateTime?
+  // ── To'lov kalendari (`lib/fin-report/calendar.ts`, Moliya → To'lov rejasi) ──
+  /// Ta'minotchiga odatiy to'lov muddati — tovar kelgandan keyin necha kun (ta'minotchida alohida berilmasa)
+  supplierPaymentDays Int       @default(7)
+  /// Reja koeffitsiyenti: 1 — o'tgan 30 kundek; tushum prognozi shunga ko'paytiriladi
+  cashPlanFactor      Decimal   @default(1) @db.Decimal(5, 2)
+  /// Oy foydasining necha foizi divident sifatida olinishi mumkin (limit)
+  dividendPct         Decimal   @default(100) @db.Decimal(5, 2)
   /// QQS (NDS 12%) to'lovchisi. true — kirimdagi QQS hisobga olinadi (qaytariladi): xomashyo tannarxi QQS'siz;
   /// false — QQS qaytarilmaydi, tannarxga QQS qo'shiladi. Direktor Sozlamalarda o'zgartiradi.
   vatPayer            Boolean   @default(true)
@@ -248,6 +255,8 @@ model Supplier {
   vatPayer      Boolean  @default(true)
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
+  /// To'lov muddati — tovar kelgandan keyin necha kun (bo'sh — `CompanySettings.supplierPaymentDays`)
+  paymentTermDays Int?
 
   receipts       GoodsReceipt[]
   openings       OpeningBalance[]
@@ -2119,6 +2128,54 @@ model FixedAsset {
   cashTx CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: Restrict)
 
   @@index([cancelledAt])
+}
+
+/// Doimiy oylik to'lov (oylik, avans, kredit, soliqlar, svet) — to'lov kalendari har oy shu kunda chiqim kutadi.
+/// Kun oyning oxiridan katta bo'lsa (31 → fevral) — oyning oxirgi kuniga tushadi. O'chirilmaydi: nofaol yoki bekor.
+model RecurringPayment {
+  id            String    @id @default(cuid())
+  name          String
+  /// Kirim-Chiqim kategoriyasi (`CashCategory.name`) — kalendarda turi va kundalik xarajatdan ajratish uchun
+  category      String
+  dayOfMonth    Int
+  amount        Decimal   @db.Decimal(18, 2)
+  isActive      Boolean   @default(true)
+  /// Kredit to'lovi bo'lsa — qaysi kredit (ma'lumot uchun)
+  loanId        String?
+  note          String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  @@index([isActive, cancelledAt])
+}
+
+enum PlannedFlowStatus {
+  PLANNED // kutilmoqda — kalendarga kiradi
+  DONE // bajarildi (pul keldi / to'landi) — kalendardan chiqadi
+  CANCELLED
+}
+
+/// Bir martalik rejalashtirilgan to'lov yoki va'da qilingan tushum (qo'lda). Sana o'tib ketgan PLANNED — bugungi kunga tushadi.
+model PlannedFlow {
+  id           String            @id @default(cuid())
+  date         DateTime
+  type         CashTxType // INCOME — kutilayotgan tushum, EXPENSE — rejalashtirilgan to'lov
+  amount       Decimal           @db.Decimal(18, 2)
+  counterparty String
+  category     String?
+  note         String?
+  status       PlannedFlowStatus @default(PLANNED)
+  createdById  String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  closedAt     DateTime?
+  closedById   String?
+
+  @@index([status, date])
 }
 
 enum OpeningKind {

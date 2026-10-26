@@ -17,6 +17,7 @@ import { OrderStatusBadge } from "../orders/status";
 import { PRODUCTION_HOME_ROLES } from "@/lib/production-day";
 import { ProductionHome } from "./production-home";
 import { OwnerHome } from "./owner-home";
+import { TodayHome } from "./today-home";
 import { PROCUREMENT_HOME_ROLES, type ProcFilters } from "@/lib/procurement-home";
 import { ProcurementHome } from "./procurement-home";
 import { LogisticsHome } from "./logistics-home";
@@ -57,17 +58,21 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // Dispetcher — haydovchilar va transport holati, muddati o'tayotgan hujjat va texnik xizmat
   const dispatcherView = !!s && (s.role === "DISPATCHER" || (isDirector && view === "dispatcher"));
   const ownerView = isDirector && view === "owner";
+  // Direktor bosh sahifasi — «Bugun» (pul, sotuv, qarzlar, 30 kunlik kassa prognozi); BI tahlil «Tahlil» tabida (?view=tahlil)
+  // BI davr paneli (period/from/to) havolasi `?view` siz keladi — direktorda ham Tahlil ochilsin
+  const biParams = ["period", "from", "to"].some((k) => !!(sp as Record<string, unknown>)[k]);
+  const todayView = isDirector && !view && !biParams;
   // Tahlil ko'radigan rollar (direktor, moliya, buxgalteriya) uchun bosh sahifa — BI tahlil ko'rinishi;
   // /bi-tahlil shu yerga yo'naltiriladi. Boshqa ko'rinishlar tabda (?view=…)
-  const biView = !!s && !view && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
-  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "owner" : biView ? "" : "operations";
+  const biView = !!s && (isDirector ? view === "tahlil" || (!view && biParams) : !view) && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
+  const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "owner" : todayView ? "today" : biView ? "" : "operations";
   const biTabs = !!s && !isDirector && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
   // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri
   const faceAttendance = !!s && !!faceScope(s);
   const davomat = faceAttendance && <LinkButton href="/dashboard/davomat" variant="brand"><ScanFace size={17} /> Davomat</LinkButton>;
   const nav = (
     <>
-      {isDirector && <Tabs current={tabKey} items={[{ key: "", label: "Tahlil", href: "/dashboard" }, { key: "owner", label: "Egasi", href: "/dashboard?view=owner" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
+      {isDirector && <Tabs current={tabKey} items={[{ key: "today", label: "Bugun", href: "/dashboard" }, { key: "", label: "Tahlil", href: "/dashboard?view=tahlil" }, { key: "owner", label: "Egasi", href: "/dashboard?view=owner" }, { key: "production", label: "Ishlab chiqarish", href: "/dashboard?view=production" }, { key: "procurement", label: "Snabjeniye", href: "/dashboard?view=procurement" }, { key: "logistics", label: "Logistika", href: "/dashboard?view=logistics" }, { key: "mechanic", label: "Mexanik", href: "/dashboard?view=mechanic" }, { key: "dispatcher", label: "Dispetcher", href: "/dashboard?view=dispatcher" }, { key: "hr", label: "Kadrlar", href: "/dashboard?view=hr" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {biTabs && <Tabs current={tabKey} items={[{ key: "", label: "Tahlil", href: "/dashboard" }, { key: "operations", label: "Operatsion", href: "/dashboard?view=operations" }]} />}
       {denied && <Callout tone="warning">Bu sahifa sizning bo'limingizga tegishli emas.</Callout>}
     </>
@@ -76,7 +81,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : dispatcherView ? "Dispetcher · haydovchilar va transport" : ownerView ? "Owner dashboard · boshqaruv ekrani" : "Bosh sahifa"}</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{productionView ? "Ishlab chiqarish · bosh sahifa" : procurementView ? "Snabjeniye · ta'minot kabineti" : logisticsView ? "Logistika · dispetcher paneli" : mechanicView ? "Mexanik · sklad va logistika nazorati" : hrView ? "Otdel kadr · bosh sahifa" : dispatcherView ? "Dispetcher · haydovchilar va transport" : ownerView ? "Owner dashboard · boshqaruv ekrani" : todayView ? "Bugun · direktor kabineti" : "Bosh sahifa"}</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{greeting()}, {s?.fullName.split(" ")[0]}</h1>
         </div>
         {davomat}
@@ -93,6 +98,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (hrView) return <div>{header}<HrHome /></div>;
   if (dispatcherView) return <div>{header}<DispatcherHome /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
+  if (todayView) return <div>{header}<TodayHome /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 
   const [ordersToday, producedToday, receivableRows, blocked, materials, mixers, trips, upcoming, company] = await Promise.all([
