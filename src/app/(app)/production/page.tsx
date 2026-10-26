@@ -44,6 +44,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const unassignedCount = allOrders.filter((o) => isOpen(o) && !assigned(o)).length;
   const soonCount = allOrders.filter(isSoon).length;
   const selected = selectedId ? allOrders.find((o) => o.id === selectedId) : undefined;
+  // Matritsadan bosilgan katak — faqat shu mahsulot qatori ochiladi; «Barcha qatorlar» qolganlarini ham ko'rsatadi
+  const onlyItem = selected && focusItem && selected.items.some((i) => i.id === focusItem) ? focusItem : null;
   // «Zayavkalar doskasi» — tanlangan filtr bo'yicha (avvalgi jadval o'rniga): ustun topshiriqlardan, brigada holati — qatorlardan
   const board: BoardOrder[] = orders.map((o) => {
     const st = o.items.map((i) => itemTasks(i.qtyM3, i.tasks));
@@ -83,7 +85,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
               icon={HardHat}
               title={`Brigada tayinlash · ${selected.orderNo} · ${selected.customer.name}`}
               description={`Yetkazish ${selected.dateUnknown ? "sanasi aniq emas" : deliveryAt(selected.deliveryDate, selected.deliveryTime)} · ${selected.deliveryAddress}`}
-              action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{!selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
+              action={<span className="inline-flex items-center gap-2">{marks.black.has(selected.customerId) && <BlacklistMark />}{marks.contract.has(selected.customerId) && <ContractMark />}{selected.isUrgent && <Badge color="red"><Zap size={11} /> Zarur</Badge>}{!selected.needsDelivery && <Badge color="slate"><Truck size={11} /> O&apos;zi oladi</Badge>}{onlyItem && selected.items.length > 1 && <Link href={`/production?order=${selected.id}${filter.key !== "open" ? `&tab=${filter.key}` : ""}`} className="text-sm text-slate-500 hover:text-slate-900">Barcha qatorlar ({selected.items.length})</Link>}<Link href={`/orders/${selected.id}`} className="text-sm text-slate-500 hover:text-slate-900">Zayavka</Link><Link href={filter.key !== "open" ? `/production?tab=${filter.key}` : "/production"} className="text-sm text-slate-500 hover:text-slate-900">Yopish</Link></span>}
             />
           </div>
           {brigades.length === 0 && <p className="px-5 pb-3 text-sm text-red-600">Brigadalar yo&apos;q — avval <Link href="/brigades" className="underline">Brigadalar</Link> sahifasida qo&apos;shing.</p>}
@@ -91,7 +93,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
           {selected.status === "DRAFT" && <p className="px-5 pb-5 text-sm text-amber-700">Zayavka hali tasdiqlanmagan (qoralama). Sotuv bo&apos;limi qabul qilgach brigada tayinlanadi.</p>}
           {selected.status !== "DRAFT" && <AssignForm orderId={selected.id} brigades={bOpts} capacity={capacity}
             focus={focusItem}
-            items={selected.items.map((i) => ({
+            items={selected.items.filter((i) => !onlyItem || i.id === onlyItem).map((i) => ({
               id: i.id, product: i.product.name, productId: i.productId, qty: qty(i.qtyM3), qtyNum: Number(i.qtyM3), unit: unitLabel(i.product.unit),
               left: itemTasks(i.qtyM3, i.tasks).left,
               tasks: i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => ({ taskNo: t.taskNo, brigade: t.brigade.name, qty: qty(t.qty), status: t.status })),
