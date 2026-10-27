@@ -143,7 +143,8 @@ export const NAV: NavItem[] = [
   // Umumiy BI ko'rinishi Bosh sahifaga ko'chdi (/bi-tahlil → /dashboard), menyuda band yo'q. Ruxsat ichki sahifalar uchun qoladi
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
-  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil" },
+  // Moliya: tahlil + «Insof 2026» jadvalidagi rasmiy hisobotlar (`bi-tahlil/moliya/report-page.tsx`)
+  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }] },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil" },

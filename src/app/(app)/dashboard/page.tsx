@@ -100,7 +100,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (hrView) return <div>{header}<HrHome /></div>;
   if (dispatcherView) return <div>{header}<DispatcherHome /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
-  if (todayView) return <div>{header}<TodayHome /></div>;
+  if (todayView) return <div>{header}<TodayHome date={dayParam} /></div>;
   if (nazoratView) return <div>{header}<NazoratHome date={dayParam} /></div>;
   const today = startOfToday(), tomorrow = endOfToday();
 

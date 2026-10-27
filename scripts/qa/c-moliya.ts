@@ -110,14 +110,19 @@ async function main() {
 
   section("6. Balans — o'zgarish");
   const bal1 = await balanceReport(months);
-  const db_ = (k: string, i = 0) => val(bal1.rows, k, i) - val(bal0.rows, k, i);
-  check("asosiy vositalar: mart +1 200 000, aprel +1 100 000", near(db_("fixed"), 1_200_000) && near(db_("fixed", 1), 1_100_000), [db_("fixed"), db_("fixed", 1)]);
+  // Balansda birinchi ustun — davr boshi (01.03), keyin oy oxirlari: mart = 1, aprel = 2
+  const db_ = (k: string, i = 1) => val(bal1.rows, k, i) - val(bal0.rows, k, i);
+  check("asosiy vositalar: mart +1 200 000, aprel +1 100 000", near(db_("fixed"), 1_200_000) && near(db_("fixed", 2), 1_100_000) && near(db_("fixed", 0), 0), [db_("fixed", 0), db_("fixed"), db_("fixed", 2)]);
   check("bank kreditlari +4 700 000", near(db_("liab:bank"), 4_700_000), db_("liab:bank"));
   check("pul +3 440 000 (yangi hisob)", near(db_("cash"), 3_440_000), db_("cash"));
   check("aktiv = passiv", bal1.rows.find((r) => r.key === "a:total")!.values.every((v, i) => near(v ?? 0, bal1.rows.find((r) => r.key === "p:total")!.values[i] ?? 0)));
   const diff0 = bal0.capitalRows.find((r) => r.key === "cap:diff")!.values, diff1 = bal1.capitalRows.find((r) => r.key === "cap:diff")!.values;
   // Mart: kapital −60 000 (= PNL natijasi). Kredit va hisob fevraldagi boshlang'ich qoldiq — fevral oxiri kapitaliga kiradi
-  check("kapital tekshiruvi: martda yozuvlarimiz farq qo'shmadi", near((diff1[0] ?? 0) - (diff0[0] ?? 0), 0), [diff0, diff1]);
+  check("kapital tekshiruvi: martda yozuvlarimiz farq qo'shmadi", near((diff1[1] ?? 0) - (diff0[1] ?? 0), 0), [diff0, diff1]);
+  check("balans ustunlari: 01.03.2020, 31.03.2020, 30.04.2020", bal1.labels.join(",") === "01.03.2020,31.03.2020,30.04.2020", bal1.labels);
+  check("PNL: jadval atamalari (Xodimlar maoshlari, Amortizatsiya…) nol bo'lsa ham turadi", ["prod:Xodimlar maoshlari", "prod:Amortizatsiya (bino, uskuna, mashinalar eskirishi)", "admin:Kurs farqi", "comm:Xayriya"].every((k) => pnl1.rows.some((r) => r.key === k)));
+  check("PNL: yoqilg'i «Avtotransport» qatorida", near((pnl1.rows.find((r) => r.key === "prod:Avtotransport")?.values[0] ?? 0) - (pnl0.rows.find((r) => r.key === "prod:Avtotransport")?.values[0] ?? 0), -50_000));
+  check("DDS: kredit «Kridit va kridit foizi», divident «Divident» qatorida", near(val(dds1.rows, "FINANCING:Kridit va kridit foizi") - val(dds0.rows, "FINANCING:Kridit va kridit foizi"), -340_000) && near(val(dds1.rows, "FINANCING:Divident") - val(dds0.rows, "FINANCING:Divident"), -100_000));
 
   done();
 }

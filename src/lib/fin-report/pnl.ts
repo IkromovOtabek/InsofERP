@@ -6,6 +6,7 @@ import { loadCategories, makeResolver, UNKNOWN_CATEGORY } from "./categories";
 import { activeAssets, depreciationIn } from "./assets";
 import { type MonthKey, monthStart, monthEnd, monthKeyOf } from "./period";
 import { type FinRow, row, pctRow, zeros, addInto, neg, plus } from "./rows";
+import { DEPRECIATION_LINE, PNL_FIXED, sheetLine } from "./sheet-lines";
 
 /**
  * Foyda va zarar (PNL) — oylar ustunda. Ikki rejim («Insof 2026» jadvalidagi «Foyda-Zarar» varag'idek):
@@ -26,7 +27,7 @@ import { type FinRow, row, pctRow, zeros, addInto, neg, plus } from "./rows";
 export type PnlMode = "accrual" | "cash";
 export type PnlReport = { months: MonthKey[]; mode: PnlMode; rows: FinRow[]; retained: number[]; notes: string[] };
 
-/** Kunbay ishchilar sub manbasi — vedomostga kirmaydi, hisoblangan rejimda ham kassadan olinadi. */
+/** Kunbay ishchilar sub manbasi — vedomostga kirmaydi, hisoblangan rejimda ham kassadan olinadi («Xodimlar maoshlari» qatoriga). */
 const DAY_WORKERS_SUB = "Yollanma (kunbay) ishchilar";
 
 /** Mahsulotning yuqori guruhi nomi (Plita, Stolba, Beton…); guruhsiz — «Boshqa mahsulotlar». */
@@ -68,21 +69,23 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
   const notes: string[] = [];
 
   // ── Daromad ──
-  const sales = new Map<string, number[]>(); // guruh → oylar
+  const sales = new Map<string, number[]>(); // guruh → oylar (so'm)
+  const qty = new Map<string, number[]>(); // guruh → oylar (dona, m³) — «Jami sotuv (dona, m3)»
   const cogs = zeros(n), uncosted = zeros(n);
   for (const r of revenue) {
     const i = at(r.date);
     if (i === undefined) continue;
     const g = groups.get(r.productId) ?? "Boshqa mahsulotlar";
-    if (!sales.has(g)) sales.set(g, zeros(n));
+    if (!sales.has(g)) { sales.set(g, zeros(n)); qty.set(g, zeros(n)); }
     addInto(sales.get(g)!, i, r.net);
+    addInto(qty.get(g)!, i, r.qty);
     if (r.costKnown) addInto(cogs, i, r.cost);
     else addInto(uncosted, i, r.net);
   }
   if (mode === "cash") {
     const s = zeros(n);
     for (const p of payments) { const i = at(p.date); if (i !== undefined) addInto(s, i, Number(p.amount)); }
-    sales.set("Savdo tushumi (mijozlar to'lovi)", s);
+    sales.set("Savdo tushumi", s);
   }
 
   // ── Kassa: PNL qatori → manba → oylar (xarajat musbat; teskari yozuv — qaytgan pul — ayiriladi) ──
@@ -106,15 +109,16 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     if (line === "PAYROLL" && mode === "accrual" && accruedMonths.has(months[i]!) && r.sub?.name !== DAY_WORKERS_SUB) continue;
     // Kategoriya turiga ko'ra ishora: kirim kategoriyasida kirim (+), xarajat kategoriyasida chiqim (+)
     const v = (r.top.type === "INCOME") === (t.type === "INCOME") ? a : -a;
-    const name = line === "PROJECT" ? (t.project?.name ?? "Loyiha tanlanmagan") : line === "PAYROLL" && r.sub ? r.sub.name : r.top.name;
+    // Qator nomi — jadvaldagi atama («Xodimlar maoshlari», «Zavod xarajatlari»…), loyihada — loyiha nomi
+    const name = line === "PROJECT" ? (t.project?.name ?? "Loyiha tanlanmagan") : sheetLine(r.top.name, r.sub?.name);
     put(line, name, i, v);
   }
   if (mode === "accrual") {
     for (const p of payroll) {
       const i = idx.get(p.month);
-      if (i !== undefined) put("PAYROLL", "Ish haqi (hisoblangan vedomost)", i, Number(p.gross) + Number(p.employerTax));
+      if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, Number(p.gross) + Number(p.employerTax));
     }
-    for (const a of assets) for (const m of months) { const v = depreciationIn(a, m); if (v) put("PRODUCTION", "Amortizatsiya", idx.get(m)!, v); }
+    for (const a of assets) for (const m of months) { const v = depreciationIn(a, m); if (v) put("PRODUCTION", DEPRECIATION_LINE, idx.get(m)!, v); }
     if (uncosted.some((v) => v > 0)) notes.push("Ba'zi mahsulotlarning retsepti yoki xomashyo narxi yo'q — ularning tushumi tannarxsiz kirdi («Tannarxi noma'lum tushum» qatori).");
     notes.push("Daromad — yetkazilgan mahsulot, QQS'siz; dostavka summasi kirmaydi. Tannarx retsept bo'yicha (haqiqiy ÷ me'yor koeffitsiyenti keyingi bosqichda).");
   } else {
@@ -123,8 +127,17 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
 
   const lineMap = (l: PnlLine | "UNKNOWN") => byLine.get(l) ?? new Map<string, number[]>();
   const lineSum = (...ls: (PnlLine | "UNKNOWN")[]) => plus(zeros(n), ...ls.flatMap((l) => [...lineMap(l).values()]));
-  const subRows = (l: PnlLine, keyPrefix: string, sign = -1) =>
-    [...lineMap(l).entries()].sort((a, b) => b[1].reduce((s, v) => s + v, 0) - a[1].reduce((s, v) => s + v, 0)).map(([name, v]) => row(`${keyPrefix}:${name}`, name, "sub", sign < 0 ? neg(v) : v));
+  const sortDesc = (e: [string, number[]][]) => e.sort((a, b) => b[1].reduce((s, v) => s + v, 0) - a[1].reduce((s, v) => s + v, 0));
+  const subRows = (l: PnlLine, keyPrefix: string) => sortDesc([...lineMap(l).entries()]).map(([name, v]) => row(`${keyPrefix}:${name}`, name, "sub", neg(v)));
+  /** Jadvaldagi qat'iy qatorlar (nol bo'lsa ham) + xaritada yo'q qo'shimchalar — bir nechta PNL qatoridan yig'iladi. */
+  const fixed = new Set<string>();
+  const sheetRows = (lines: PnlLine[], keyPrefix: string, order: readonly string[]) => {
+    const m = new Map<string, number[]>();
+    for (const l of lines) for (const [name, v] of lineMap(l)) m.set(name, plus(m.get(name) ?? zeros(n), v));
+    const out = order.map((name) => row(`${keyPrefix}:${name}`, name, "sub", neg(m.get(name) ?? zeros(n))));
+    for (const r of out) fixed.add(r.key);
+    return [...out, ...sortDesc([...m.entries()].filter(([name]) => !order.includes(name))).map(([name, v]) => row(`${keyPrefix}:${name}`, name, "sub", neg(v)))];
+  };
 
   const salesTotal = plus(zeros(n), ...sales.values());
   const otherIncome = lineSum("OTHER_INCOME");
@@ -141,27 +154,35 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
   const dividend = lineSum("DIVIDEND");
   const retained = plus(result, neg(dividend));
 
+  const qtyTotal = plus(zeros(n), ...qty.values());
+  const groupOrder = sortDesc([...sales.entries()]).map(([g]) => g);
   const rows: FinRow[] = [
+    ...(mode === "accrual" ? [
+      row("qty", "Jami sotuv (dona, m3)", "total", qtyTotal),
+      ...groupOrder.map((g) => { fixed.add(`qty:${g}`); return row(`qty:${g}`, g, "sub", qty.get(g) ?? zeros(n)); }),
+    ] : []),
     row("income", "Daromad", "total", income),
-    ...[...sales.entries()].sort((a, b) => b[1].reduce((s, v) => s + v, 0) - a[1].reduce((s, v) => s + v, 0)).map(([g, v]) => row(`sales:${g}`, g, "sub", v)),
+    ...groupOrder.map((g) => { fixed.add(`sales:${g}`); return row(`sales:${g}`, g, "sub", sales.get(g)!); }),
     row("other-income", "Boshqa tushumlar", "sub", otherIncome),
     ...(mode === "accrual" && uncosted.some((v) => v > 0) ? [row("uncosted", "shundan tannarxi noma'lum tushum", "sub", uncosted, { hint: "Retsepti yoki xomashyo narxi yo'q mahsulotlar" })] : []),
-    row("cogs", mode === "accrual" ? "Sotuv tannarxi (retsept bo'yicha)" : "Xom-ashyoga to'langan", "line", neg(cogsTotal)),
+    row("cogs", mode === "accrual" ? "Sotuv tannarxi (xom-ashyo)" : "Sotuv tannarxi (xom-ashyoga to'langan)", "line", neg(cogsTotal), { hint: mode === "accrual" ? "Retsept bo'yicha xom-ashyo × o'rtacha narx (QQSsiz)" : undefined }),
     pctRow("cogs-pct", "Tannarx ulushi, %", cogsTotal, income),
     row("gross", "YALPI FOYDA", "total", gross),
     pctRow("gross-pct", "Yalpi marja, %", gross, income),
     row("prod", "Ishlab chiqarish xarajatlari", "line", neg(prod)),
-    ...prodLines.flatMap((l) => subRows(l, l)),
+    ...sheetRows(prodLines, "prod", PNL_FIXED.production),
     pctRow("prod-pct", "Ishlab chiqarish xarajatlari ulushi, %", prod, income),
     row("admin", "Ma'muriy xarajatlar", "line", neg(admin)),
-    ...subRows("ADMIN", "ADMIN"),
+    ...sheetRows(["ADMIN"], "admin", PNL_FIXED.admin),
+    pctRow("admin-pct", "Ma'muriy xarajatlar ulushi, %", admin, income),
     row("comm", "Tijoriy xarajatlar", "line", neg(comm)),
-    ...subRows("COMMERCIAL", "COMMERCIAL"),
-    row("unknown", "Manbasi aniqlanmagan pul (0 bo'lishi kerak)", "check", neg(unknown), { hint: "Kategoriyasi daraxtda topilmagan kassa yozuvlari — Moliya → Kategoriyalar" }),
+    ...sheetRows(["COMMERCIAL"], "comm", PNL_FIXED.commercial),
+    pctRow("comm-pct", "Tijoriy xarajatlar ulushi, %", comm, income),
+    row("unknown", "Manbasi yozilmagan pul (0 bo'lishi kerak)", "check", neg(unknown), { hint: "Kategoriyasi daraxtda topilmagan kassa yozuvlari — Moliya → Kategoriyalar" }),
     row("operating", "OPERATSION FOYDA", "total", operating),
     pctRow("operating-pct", "Operatsion foyda rentabelligi, %", operating, income),
     row("tax", "Soliqlar", "line", neg(tax)),
-    row("interest", "Kredit foizi (asosiy qarz to'lovi xarajat emas — balansda)", "line", neg(interest)),
+    row("interest", "Kredit foizi (asosiy qarz to'lovi xarajat emas — balansda kreditni kamaytiradi)", "line", neg(interest)),
     row("net", "ZAVOD SOF FOYDASI", "total", net),
     pctRow("net-pct", "Sof foyda rentabelligi, %", net, income),
     row("projects", "Loyihalar (zavod foydasiga kirmaydi)", "line", neg(projects)),
@@ -170,7 +191,7 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     row("dividend", "Divident (egasiga olingan pul)", "line", neg(dividend)),
     row("retained", "TAQSIMLANMAGAN FOYDA", "total", retained),
   ];
-  // Bo'sh ichki qatorlarni chiqarmaymiz (0 summali sub), asosiy qatorlar doim turadi
-  const visible = rows.filter((r) => r.kind !== "sub" || r.values.some((v) => (v ?? 0) !== 0));
+  // Bo'sh ichki qatorlarni chiqarmaymiz (0 summali sub), jadvaldagi qat'iy qatorlar va asosiy qatorlar doim turadi
+  const visible = rows.filter((r) => r.kind !== "sub" || fixed.has(r.key) || r.values.some((v) => (v ?? 0) !== 0));
   return { months, mode, rows: visible, retained, notes };
 }

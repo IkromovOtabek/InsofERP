@@ -8,7 +8,8 @@
  */
 export type RowKind = "head" | "total" | "line" | "sub" | "pct" | "check";
 
-export type FinRow = { key: string; label: string; kind: RowKind; values: (number | null)[]; total: number | null; hint?: string };
+/** `sign` — jadvaldagi belgi ustuni (+ kirim, − chiqim, ± ikki tomonlama, = jami), DDS da ishlatiladi. */
+export type FinRow = { key: string; label: string; kind: RowKind; values: (number | null)[]; total: number | null; hint?: string; sign?: "+" | "−" | "±" | "=" };
 
 export const r2 = (n: number) => Math.round(n * 100) / 100;
 export const zeros = (n: number) => Array.from({ length: n }, () => 0);
@@ -17,8 +18,8 @@ export const addInto = (acc: number[], i: number, v: number) => { acc[i] = (acc[
 export const neg = (a: number[]) => a.map((v) => (v === 0 ? 0 : -v));
 export const plus = (...arrs: number[][]) => arrs[0]!.map((_, i) => r2(arrs.reduce((s, a) => s + (a[i] ?? 0), 0)));
 
-export function row(key: string, label: string, kind: RowKind, values: (number | null)[], opts: { total?: number | null; hint?: string } = {}): FinRow {
-  return { key, label, kind, values: values.map((v) => (v === null ? null : r2(v))), total: opts.total !== undefined ? opts.total : sumArr(values), ...(opts.hint ? { hint: opts.hint } : {}) };
+export function row(key: string, label: string, kind: RowKind, values: (number | null)[], opts: { total?: number | null; hint?: string; sign?: FinRow["sign"] } = {}): FinRow {
+  return { key, label, kind, values: values.map((v) => (v === null ? null : r2(v))), total: opts.total !== undefined ? opts.total : sumArr(values), ...(opts.hint ? { hint: opts.hint } : {}), ...(opts.sign ? { sign: opts.sign } : {}) };
 }
 
 export const head = (key: string, label: string, n: number): FinRow => ({ key, label, kind: "head", values: Array.from({ length: n }, () => null), total: null });
