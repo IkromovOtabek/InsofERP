@@ -1,6 +1,7 @@
 import { biContext, BiPage } from "../shell";
 import { CustomersTab } from "../tabs/customers";
 import { requirePage } from "@/lib/page-guard";
+import { mijozlarSubtabs } from "./qarz";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   await requirePage("/bi-tahlil/mijozlar");
   const { sp, range } = await biContext(searchParams);
   return (
-    <BiPage title="Mijozlar" subtitle="Kim ketyapti, kimni qaytarish mumkin va nima qilish kerak — RFM segmentlar, Next Best Action, LTV, qarz aging." tab="customers" range={range}>
+    <BiPage title="Mijozlar" subtitle="Kim ketyapti, kimni qaytarish mumkin va nima qilish kerak — RFM segmentlar, Next Best Action, LTV, qarz aging." tab="customers" range={range} subtabs={mijozlarSubtabs(sp)} current="tahlil">
       <CustomersTab range={range} sp={sp} />
     </BiPage>
   );

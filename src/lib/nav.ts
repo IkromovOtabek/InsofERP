@@ -146,7 +146,7 @@ export const NAV: NavItem[] = [
   // Moliya: tahlil + «Insof 2026» jadvalidagi rasmiy hisobotlar (`bi-tahlil/moliya/report-page.tsx`)
   { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }] },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
-  { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil" },
+  { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/qarz-yoshi", label: "Mijozlar qarzi" }, { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Xaridorlar qarzdorligi" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchilar qarzdorligi" }] },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },

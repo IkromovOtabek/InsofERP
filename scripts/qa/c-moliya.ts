@@ -17,6 +17,7 @@ import { balanceReport } from "@/lib/fin-report/balance";
 import { loanBalances } from "@/lib/fin-report/loans";
 import { activeAssets, assetStateAt, depreciationIn } from "@/lib/fin-report/assets";
 import type { FinRow } from "@/lib/fin-report/rows";
+import { customerDebtSheet, debtAgeReport, parseDebtDay, supplierDebtSheet } from "@/lib/fin-report/debts";
 
 const M = "2020-03", N = "2020-04";
 const val = (rows: FinRow[], key: string, i = 0) => rows.find((r) => r.key === key)?.values[i] ?? 0;
@@ -123,6 +124,17 @@ async function main() {
   check("PNL: jadval atamalari (Xodimlar maoshlari, Amortizatsiya…) nol bo'lsa ham turadi", ["prod:Xodimlar maoshlari", "prod:Amortizatsiya (bino, uskuna, mashinalar eskirishi)", "admin:Kurs farqi", "comm:Xayriya"].every((k) => pnl1.rows.some((r) => r.key === k)));
   check("PNL: yoqilg'i «Avtotransport» qatorida", near((pnl1.rows.find((r) => r.key === "prod:Avtotransport")?.values[0] ?? 0) - (pnl0.rows.find((r) => r.key === "prod:Avtotransport")?.values[0] ?? 0), -50_000));
   check("DDS: kredit «Kridit va kridit foizi», divident «Divident» qatorida", near(val(dds1.rows, "FINANCING:Kridit va kridit foizi") - val(dds0.rows, "FINANCING:Kridit va kridit foizi"), -340_000) && near(val(dds1.rows, "FINANCING:Divident") - val(dds0.rows, "FINANCING:Divident"), -100_000));
+
+  section("Qarz varaqlari (Tahlil → Mijozlar)");
+  const today = parseDebtDay();
+  const [age, cust, cash, bank, sup] = await Promise.all([debtAgeReport(today), customerDebtSheet(today), customerDebtSheet(today, "CASH"), customerDebtSheet(today, "BANK"), supplierDebtSheet(today)]);
+  check("qarz yoshi: oraliqlar yig'indisi = jami qarz", near(age.buckets.reduce((a, b) => a + b, 0), age.total), [age.buckets, age.total]);
+  check("qarz yoshi jami = xaridorlar varag'idagi bugungi qarz", near(age.total, cust.total.now.debt), [age.total, cust.total.now.debt]);
+  check("qarz yoshi: 60 kundan eski ≤ 30 kundan eski ≤ jami", age.over60 <= age.over30 + 0.01 && age.over30 <= age.total + 0.01);
+  check("Mijoz turi: naqd + perechisleniye = hammasi", cash.rows.length + bank.rows.length === cust.rows.length && near(cash.total.now.debt + bank.total.now.debt, cust.total.now.debt));
+  check("xaridorlar: oy boshi ustuni 1-sana", cust.monthStart.getDate() === 1 && cust.monthStart.getMonth() === today.getMonth());
+  check("ta'minotchilar: o'zgarish = bugungi sof − oy boshidagi sof", sup.rows.every((r) => near(r.change, (r.now.debt - r.now.advance) - (r.open.debt - r.open.advance))));
+  check("kelajak sanasi bugunga tushadi", parseDebtDay("2999-01-01").getTime() === today.getTime());
 
   done();
 }
