@@ -26,16 +26,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <BiPage title="Sotuvlar / Bekor qilingan zayavkalar" subtitle="Beton qaytarilmaydi — yo'qotish bekor qilingan zayavkalarda. Qancha tushum va foyda yo'qoldi, qaysi marka, qaysi sabab, qaysi sotuvchi va mijoz." tab="returns" range={range} keep={keep}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Kpi label="Bekor qilingan summa" value={moneyShort(k.total.cur)} delta={k.total.delta} invert icon={Undo2} tone={k.total.cur ? "danger" : "success"} hint={`${qty(k.volume)} m³ · ${k.lines} satr`} />
-          <Kpi label="Bekor qilish ulushi" value={`${fmtNum(k.rate.cur, 2)}%`} delta={k.rateDelta} deltaLabel="p.p." invert icon={Percent} tone={k.rate.cur > 5 ? "danger" : k.rate.cur > 2 ? "warning" : "success"} hint="bekor / (bekor + sotuv)" />
-          <Kpi label="Yo'qotilgan foyda" value={moneyShort(k.lostMargin.cur)} delta={k.lostMargin.delta} invert icon={Wallet} tone="warning" hint={k.total.cur ? `summaning ${fmtNum((k.lostMargin.cur / k.total.cur) * 100, 0)}%i (marja)` : "—"} />
-          <Kpi label="Bekor qilish soni" value={String(k.count.cur)} delta={k.count.delta} invert icon={Hash} hint={`${k.lines} mahsulot satri`} />
-          <Kpi label="O'rtacha bekor" value={moneyShort(k.avg.cur)} delta={k.avg.delta} invert icon={Receipt} hint="bitta zayavkaga" />
-          <Kpi label="Bekor qilgan mijozlar" value={String(k.customers)} icon={Users} tone="violet" hint={`${k.products} ta marka bo'yicha`} />
+          <Kpi label="Bekor qilingan summa" value={moneyShort(k.total.cur)} delta={k.total.delta} invert icon={Undo2} tone={k.total.cur ? "danger" : "success"} hint={`${qty(k.volume)} m³ · ${k.lines} satr`} href="#batafsil" />
+          <Kpi label="Bekor qilish ulushi" value={`${fmtNum(k.rate.cur, 2)}%`} delta={k.rateDelta} deltaLabel="p.p." invert icon={Percent} tone={k.rate.cur > 5 ? "danger" : k.rate.cur > 2 ? "warning" : "success"} hint="bekor / (bekor + sotuv)" href="#dinamika" />
+          <Kpi label="Yo'qotilgan foyda" value={moneyShort(k.lostMargin.cur)} delta={k.lostMargin.delta} invert icon={Wallet} tone="warning" hint={k.total.cur ? `summaning ${fmtNum((k.lostMargin.cur / k.total.cur) * 100, 0)}%i (marja)` : "—"} href="#markalar" />
+          <Kpi label="Bekor qilish soni" value={String(k.count.cur)} delta={k.count.delta} invert icon={Hash} hint={`${k.lines} mahsulot satri`} href="#batafsil" />
+          <Kpi label="O'rtacha bekor" value={moneyShort(k.avg.cur)} delta={k.avg.delta} invert icon={Receipt} hint="bitta zayavkaga" href="#batafsil" />
+          <Kpi label="Bekor qilgan mijozlar" value={String(k.customers)} icon={Users} tone="violet" hint={`${k.products} ta marka bo'yicha`} href="#mijozlar" />
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Panel className="xl:col-span-2" title="Bekor qilish dinamikasi" info="Ustunlar — bekor qilingan summa; pastda — soni." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={href({ gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
+          <Panel id="dinamika" className="xl:col-span-2" title="Bekor qilish dinamikasi" info="Ustunlar — bekor qilingan summa; pastda — soni." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={href({ gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
             {d.dyn.some((x) => x.value > 0) ? <BarChart data={d.dyn.map((x) => ({ label: x.label, value: x.value }))} tone="danger" formatValue={(v) => `${moneyShort(v)} so'm`} labelEvery={labelEvery} height={180} /> : <Note>Bu davrda bekor qilingan zayavka yo'q.</Note>}
             <div className="mt-3 border-t border-slate-100 pt-3"><div className="mb-1 text-xs font-medium text-slate-500">Soni</div><BarChart data={d.dynCount.map((x) => ({ label: x.label, value: x.value }))} tone="slate" formatValue={(v) => `${v} ta`} labelEvery={labelEvery} height={70} /></div>
           </Panel>
@@ -62,13 +62,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <Panel title="Eng ko'p bekor qilingan markalar" padded={false}>
+          <Panel id="markalar" title="Eng ko'p bekor qilingan markalar" padded={false}>
             <Table className="rounded-none border-0 shadow-none">
               <thead><tr><Th>#</Th><Th>Marka</Th><Th right>Summa</Th><Th right>Hajm</Th><Th right>Soni</Th><Th right>Ulush</Th></tr></thead>
               <tbody>{d.byProduct.length === 0 && <Empty text="Ma'lumot yo'q" />}{d.byProduct.slice(0, 10).map((p, i) => <Tr key={p.key}><Td className="text-slate-400">{i + 1}</Td><Td>{p.name}</Td><Td right>{moneyShort(p.value)}</Td><Td right>{qty(p.qty)} {p.unit}</Td><Td right>{p.count}</Td><Td right>{fmtNum(p.share, 1)}%</Td></Tr>)}</tbody>
             </Table>
           </Panel>
-          <Panel title="Eng ko'p bekor qiladigan mijozlar" padded={false}>
+          <Panel id="mijozlar" title="Eng ko'p bekor qiladigan mijozlar" padded={false}>
             <Table className="rounded-none border-0 shadow-none">
               <thead><tr><Th>#</Th><Th>Mijoz</Th><Th right>Summa</Th><Th right>Hajm</Th><Th right>Soni</Th></tr></thead>
               <tbody>{d.byCustomer.length === 0 && <Empty text="Ma'lumot yo'q" />}{d.byCustomer.slice(0, 10).map((c, i) => <Tr key={c.key}><Td className="text-slate-400">{i + 1}</Td><Td><Link href={`/customers/${c.key}`} className="hover:underline">{c.name}</Link></Td><Td right>{moneyShort(c.value)}</Td><Td right>{qty(c.qty)} {c.unit}</Td><Td right>{c.count}</Td></Tr>)}</tbody>
@@ -76,7 +76,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
 
-        <Panel title="Batafsil bekor qilishlar" info="Bekor qilingan zayavka pozitsiyalari — davr bo'yicha." padded={false} action={<><span>{d.list.total} satr</span><ExportLink type="returns" range={range} /></>}>
+        <Panel id="batafsil" title="Batafsil bekor qilishlar" info="Bekor qilingan zayavka pozitsiyalari — davr bo'yicha." padded={false} action={<><span>{d.list.total} satr</span><ExportLink type="returns" range={range} /></>}>
           <form method="get" action={ROUTES.returns} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
             {range.period === "custom" ? <><input type="hidden" name="from" value={isoDate(range.from)} /><input type="hidden" name="to" value={isoDate(addDays(range.to, -1))} /></> : <input type="hidden" name="period" value={range.period} />}
             <Select name="product" defaultValue={sp.product ?? ""} className="h-8 w-52"><option value="">Barcha markalar</option>{d.productOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>

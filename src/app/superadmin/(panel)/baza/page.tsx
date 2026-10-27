@@ -54,12 +54,12 @@ export default async function DbPage() {
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard label="Ulanishlar" icon={Activity} value={<>{d.connections.total}<span className="text-sm font-normal text-slate-500"> / {d.connections.max}</span></>}
-              hint={pctTxt(d.connections.pct)} tone={(d.connections.pct ?? 0) >= 80 ? "danger" : "default"} />
+              hint={pctTxt(d.connections.pct)} tone={(d.connections.pct ?? 0) >= 80 ? "danger" : "default"} href="#ulanishlar" />
             <StatCard label="Cache hit" icon={Zap} value={d.cacheHit == null ? "—" : pctTxt(d.cacheHit * 100, 2)} hint="shared_buffers dan o'qilgan ulush"
-              tone={d.cacheHit != null && d.cacheHit < DBT_THRESHOLDS.cacheHitWarn ? "warning" : "default"} />
-            <StatCard label="Qulf kutayotganlar" icon={Lock} value={d.lockWaits} tone={d.lockWaits > 0 ? "warning" : "default"} />
-            <StatCard label="Uzoq tranzaksiyalar (>1 daq)" icon={Clock} value={d.longXacts.length} hint={d.idleInXactLong ? `${d.idleInXactLong} tasi 10+ daq idle` : undefined} tone={d.idleInXactLong ? "warning" : "default"} />
-            <StatCard label="Jami hajm" icon={HardDrive} value={bytes(d.databases.reduce((s, x) => s + (x.sizeBytes ?? 0), 0))} hint={`${d.databases.length} baza`} />
+              tone={d.cacheHit != null && d.cacheHit < DBT_THRESHOLDS.cacheHitWarn ? "warning" : "default"} href="#bazalar" />
+            <StatCard label="Qulf kutayotganlar" icon={Lock} value={d.lockWaits} tone={d.lockWaits > 0 ? "warning" : "default"} href="#qulflar" />
+            <StatCard label="Uzoq tranzaksiyalar (>1 daq)" icon={Clock} value={d.longXacts.length} hint={d.idleInXactLong ? `${d.idleInXactLong} tasi 10+ daq idle` : undefined} tone={d.idleInXactLong ? "warning" : "default"} href="#uzoq-tranzaksiyalar" />
+            <StatCard label="Jami hajm" icon={HardDrive} value={bytes(d.databases.reduce((s, x) => s + (x.sizeBytes ?? 0), 0))} hint={`${d.databases.length} baza`} href="#bazalar" />
           </div>
 
           <p className="text-xs text-slate-500" data-no-translit>
@@ -69,7 +69,7 @@ export default async function DbPage() {
 
           {/* ── Bazalar ── */}
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="Bazalar" help={<HelpButton topic="db:databases" />} description="Hajm va kunlik o'sish (agent har kuni yozadi), ulanishlar, cache hit, o'lik qatorlar" icon={Database} /></div>
+            <div id="bazalar" className="scroll-mt-20 p-5 pb-0"><CardHeader title="Bazalar" help={<HelpButton topic="db:databases" />} description="Hajm va kunlik o'sish (agent har kuni yozadi), ulanishlar, cache hit, o'lik qatorlar" icon={Database} /></div>
             <Table className="rounded-none border-0 shadow-none">
               <thead><tr><Th>Baza</Th><Th right>Hajm</Th><Th right>1 kun</Th><Th right>7 kun</Th><Th right>Ulanish</Th><Th right>Cache hit</Th><Th right>O&apos;lik qator</Th><Th right>Deadlock</Th><Th /></tr></thead>
               <tbody>
@@ -93,6 +93,7 @@ export default async function DbPage() {
           {/* ── Ulanishlar ── */}
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
+              <div id="ulanishlar" className="scroll-mt-20" />
               <CardHeader title="Ulanishlar holat bo'yicha" help={<HelpButton topic="db:connections" />} description={`Mijoz ulanishlari; fon jarayonlari (autovacuum, wal…): ${d.connections.background}`} icon={Activity} />
               <ul className="divide-y divide-slate-100 text-sm">
                 {Object.entries(d.connections.byState).sort((a, b) => b[1] - a[1]).map(([s, n]) => (
@@ -111,8 +112,8 @@ export default async function DbPage() {
           </div>
 
           <SessionList title="Uzoq so'rovlar (> 30 s)" icon={Gauge} empty="Hozir 30 soniyadan uzoq bajarilayotgan so'rov yo'q." list={d.longQueries} />
-          <SessionList title="Uzoq tranzaksiyalar (> 1 daq)" icon={Clock} empty="1 daqiqadan uzoq ochiq tranzaksiya yo'q." list={d.longXacts} />
-          <SessionList title="Qulf kutayotganlar" icon={Lock} empty="Qulf kutayotgan so'rov yo'q." list={d.lockWaiters} showBlockers />
+          <SessionList id="uzoq-tranzaksiyalar" title="Uzoq tranzaksiyalar (> 1 daq)" icon={Clock} empty="1 daqiqadan uzoq ochiq tranzaksiya yo'q." list={d.longXacts} />
+          <SessionList id="qulflar" title="Qulf kutayotganlar" icon={Lock} empty="Qulf kutayotgan so'rov yo'q." list={d.lockWaiters} showBlockers />
 
           {/* ── Jadvallar ── */}
           <section aria-labelledby="tables-h" className="space-y-3">
@@ -150,9 +151,10 @@ export default async function DbPage() {
   );
 }
 
-function SessionList({ title, icon, empty, list, showBlockers }: { title: string; icon: typeof Clock; empty: string; list: PgSession[]; showBlockers?: boolean }) {
+function SessionList({ id, title, icon, empty, list, showBlockers }: { id?: string; title: string; icon: typeof Clock; empty: string; list: PgSession[]; showBlockers?: boolean }) {
   return (
     <Card>
+      {id && <div id={id} className="scroll-mt-20" />}
       <CardHeader title={title} icon={icon} help={<HelpButton topic="db:long" />} description={list.length ? "So'rov matnidagi qiymatlar (satr, son) yashirilgan" : undefined} />
       {list.length === 0 ? <p className="text-sm text-slate-500">{empty}</p> : (
         <ul className="divide-y divide-slate-100">

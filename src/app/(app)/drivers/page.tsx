@@ -85,14 +85,14 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
           <StatCard label="Ulanish" value={<span className="text-base">{ping?.organization.name}</span>} hint={`${ping?.client} · ${ecoUrl()}`} icon={Plug} tone="success" />
-          <StatCard label="ECO haydovchilari" value={ecoDrivers.length} hint={`${ecoDrivers.filter((d) => d.isActive).length} tasdiqlangan · ${ecoDrivers.filter((d) => d.activeDelivery).length} reysda`} icon={Users} />
-          <StatCard label="ECO mashinalari" value={ecoVehicles.length} hint={`ERP'da ${vehicles.length} ta faol texnika`} icon={Truck} />
-          <StatCard label="Bugungi reyslar (ECO)" value={ecoTrips.length} hint={pending.length ? `${pending.length} ta reys yuborilmagan/xatoli` : "hammasi sinxron"} icon={Route} tone={pending.length ? "warning" : "default"} />
+          <StatCard label="ECO haydovchilari" value={ecoDrivers.length} hint={`${ecoDrivers.filter((d) => d.isActive).length} tasdiqlangan · ${ecoDrivers.filter((d) => d.activeDelivery).length} reysda`} icon={Users} href="#erp-haydovchilar" />
+          <StatCard label="ECO mashinalari" value={ecoVehicles.length} hint={`ERP'da ${vehicles.length} ta faol texnika`} icon={Truck} href="#texnika" />
+          <StatCard label="Bugungi reyslar (ECO)" value={ecoTrips.length} hint={pending.length ? `${pending.length} ta reys yuborilmagan/xatoli` : "hammasi sinxron"} icon={Route} tone={pending.length ? "warning" : "default"} href="#eco-reyslar" />
         </div>
       )}
 
       <Card className="mt-5" padded={false}>
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-5 pt-5">
+        <div id="erp-haydovchilar" className="flex min-w-0 scroll-mt-20 flex-wrap items-center justify-between gap-2 px-5 pt-5">
           <CardHeader title="ERP haydovchilari" description="Xodimlar sahifasidagi 'Haydovchi' lavozimli xodimlar. Ulash uchun telefon +998… formatida bo'lsin." icon={Smartphone} />
           {enabled && canManage && employees.some((e) => e.isActive && !e.ecoUserId) && <LinkAllButton />}
         </div>
@@ -161,7 +161,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Texnika" description="Davlat raqami bo'yicha moslanadi. Reys yuborilganda mashina ECO'da avtomatik yaratiladi." icon={Truck} /></div>
+          <div id="texnika" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Texnika" description="Davlat raqami bo'yicha moslanadi. Reys yuborilganda mashina ECO'da avtomatik yaratiladi." icon={Truck} /></div>
           <Table>
             <thead><tr><Th>Raqam</Th><Th right>Sig'im</Th><Th>Holat</Th><Th>ECO</Th></tr></thead>
             <tbody>
@@ -177,7 +177,7 @@ ECO_WEBHOOK_SECRET="…"`}</pre>
         </Card>
 
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Faol reyslar — ECO holati" description="Haydovchi ilovasidagi jonli holat. Xatolik bo'lsa reys sahifasida 'ECO'ga yuborish'." icon={Route} /></div>
+          <div id="eco-reyslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Faol reyslar — ECO holati" description="Haydovchi ilovasidagi jonli holat. Xatolik bo'lsa reys sahifasida 'ECO'ga yuborish'." icon={Route} /></div>
           <Table>
             <thead><tr><Th>Nakladnoy</Th><Th>Haydovchi</Th><Th>ERP</Th><Th>ECO</Th><Th>Sinxron</Th></tr></thead>
             <tbody>

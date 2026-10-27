@@ -53,20 +53,20 @@ export default async function DavomatSettingsPage({ searchParams }: { searchPara
       <PageHeader back={back} eyebrow="Sozlamalar" title="Davomat sozlamalari" subtitle="Kechikish jarimasi — otdel kadr yoki direktor belgilaydi; tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi." />
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Joriy qoida" value={active ? (active.perMinute ? `${money(active.amount)} / daqiqa` : `${money(active.amount)} / kun`) : "Jarima yo'q"} hint={fineText(fine)} icon={AlarmClock} tone={active ? "default" : "warning"} />
-        <StatCard label={`Kechikkanlar · ${monthTitle(month)}`} value={`${rows.length} xodim`} hint={grand.days ? `${grand.days} kun · ${lateText(grand.minutes)}` : "kechikish yo'q"} icon={Users} tone={rows.length ? "warning" : "success"} />
-        <StatCard label="Oylik jarima jami" value={active ? money(grand.total) : "—"} hint={active ? "faol qoida bo'yicha" : "qoida faol emas"} icon={Wallet} />
+        <StatCard label="Joriy qoida" value={active ? (active.perMinute ? `${money(active.amount)} / daqiqa` : `${money(active.amount)} / kun`) : "Jarima yo'q"} hint={fineText(fine)} icon={AlarmClock} tone={active ? "default" : "warning"} href="#jarima-qoidasi" />
+        <StatCard label={`Kechikkanlar · ${monthTitle(month)}`} value={`${rows.length} xodim`} hint={grand.days ? `${grand.days} kun · ${lateText(grand.minutes)}` : "kechikish yo'q"} icon={Users} tone={rows.length ? "warning" : "success"} href="#kechikkanlar" />
+        <StatCard label="Oylik jarima jami" value={active ? money(grand.total) : "—"} hint={active ? "faol qoida bo'yicha" : "qoida faol emas"} icon={Wallet} href="#kechikkanlar" />
       </div>
 
       <div className="space-y-4">
-        <Card>
+        <div id="jarima-qoidasi" className="scroll-mt-20"><Card>
           <CardHeader icon={AlarmClock} title="Kechikish jarimasi"
             description="Kechikish xodim smenasi boshlanishidan hisoblanadi (smena grafigi, bo'lmasa xodim kartasidagi ish vaqti). Qoida hamma xodimga bir xil; o'zgarish audit jurnaliga tushadi va faqat keyingi hisob-kitobga ta'sir qiladi." />
           <LateFineForm value={fine} />
           {!active && <Callout tone="info" title="Qoida faol emas">Jarima hisoblanmaydi — tabelda faqat kechikish daqiqalari ko&apos;rinadi. Summani kiritib «Qoida faol» ni belgilang.</Callout>}
-        </Card>
+        </Card></div>
 
-        <Card>
+        <div id="kechikkanlar" className="scroll-mt-20"><Card>
           <CardHeader icon={Users} title="Kechikkanlar"
             description="Tanlangan oyda kechikib kelgan xodimlar — tabeldagi saqlangan kechikish bo'yicha. Jarima joriy qoida bilan hisoblanadi."
             action={
@@ -99,7 +99,7 @@ export default async function DavomatSettingsPage({ searchParams }: { searchPara
               </tbody>
             </Table>
           )}
-        </Card>
+        </Card></div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarRange, CircleAlert, CircleCheck, HandCoins, Landmark, Receipt, Scale, ShoppingCart, TrendingUp, Wallet } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CircleAlert, CircleCheck, HandCoins, Landmark, Receipt, Scale, ShoppingCart, TrendingUp, Wallet } from "lucide-react";
 import { todayData } from "@/lib/fin-report/today";
 import { boshqaruvPaneli } from "@/lib/fin-report/panel";
 import { CAL_KIND_LABEL } from "@/lib/fin-report/calendar";
@@ -7,14 +7,13 @@ import { getCompany } from "@/lib/company";
 import { date, dateTime, fmtNum, moneyShort, pct } from "@/lib/format";
 import { Badge, Card, CardHeader, Input, StatCard } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { ForecastChart } from "../moliya/forecast-chart";
 import { FoydaZararBlock, IshlabChiqarishBlock, KunlikBlock, KunlikChart, PulQoldiqlari, QarzlarBlock, SotuvBlock, XomAshyoBlock } from "./boshqaruv-paneli";
 
 /**
  * Direktor «Bugun» ekrani — bosh sahifada direktor uchun sukut («Insof 2026» → «INSOF MCHJ — BOSHQARUV PANELI»):
  * sana tanlanadi (sukut — bugun); 8 ta asosiy raqam, pul qoldiqlari, sotuv, ishlab chiqarish va tayyor mahsulot,
  * xom-ashyo skladi, qarzlar, oy foyda-zarari, kunlik sotuv va tushum — `lib/fin-report/panel.ts`.
- * Bugun ko'rilganda yana: 30 kunlik kassa prognozi, «E'tibor bering» (Nazorat bilan) va yaqin to'lovlar — `today.ts`.
+ * Bugun ko'rilganda yana: kunlik sotuv diagrammasi, «E'tibor bering» (Nazorat bilan) va yaqin to'lovlar — `today.ts`.
  */
 export async function TodayHome({ date: dayParam }: { date?: string }) {
   const picked = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? new Date(`${dayParam}T00:00:00`) : undefined;
@@ -53,17 +52,10 @@ export async function TodayHome({ date: dayParam }: { date?: string }) {
         <StatCard label="Bizning qarzimiz" value={moneyShort(k.payable)} hint={`shundan bank kreditlari ${moneyShort(p.debts.bankLoans)}`} icon={Landmark} tone={k.payable > k.cash ? "danger" : "default"} href="/moliya/kreditlar" />
       </div>
 
-      {d && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
-            <CardHeader title="Kassa prognozi, 30 kun" icon={CalendarRange} description="Tushum − ta'minotchilar − majburiy va kundalik to'lovlar" action={<Link href="/moliya/kalendar" className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-600 hover:text-slate-900">Kalendar <ArrowRight size={14} /></Link>} />
-            <div className="overflow-x-auto"><div className="min-w-[560px]"><ForecastChart days={d.cal.days} height={200} /></div></div>
-            <div className="mt-3 grid grid-cols-1 gap-2 text-[13px] sm:grid-cols-3">
-              <div className={cn("rounded-lg px-3 py-2", d.cal.min.balance < 0 ? "bg-red-50 text-red-800" : "bg-slate-50 text-slate-700")}>Eng past qoldiq: <b className="tabular">{moneyShort(d.cal.min.balance)}</b> · {date(d.cal.min.date)}</div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-700">30 kun oxirida: <b className="tabular">{moneyShort(d.cal.days[d.cal.days.length - 1]?.balance ?? d.cal.start)}</b></div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-700">Divident limiti qoldig&apos;i: <b className={cn("tabular", d.cal.dividend.left < 0 && "text-red-700")}>{moneyShort(d.cal.dividend.left)}</b></div>
-            </div>
-          </Card>
+      {/* Kassa prognozi o'rniga — kunlik sotuv va tushum diagrammasi (prognoz: Moliya → To'lov kalendari) */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className={d ? "min-w-0 xl:col-span-2" : "min-w-0 xl:col-span-3"}><KunlikChart p={p} /></div>
+        {d && (
           <Card>
             <CardHeader title="Bugun e'tibor bering" icon={CircleAlert} action={<Link href="/dashboard?view=nazorat" className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">Nazorat</Link>} />
             <ul className="space-y-2">
@@ -80,8 +72,8 @@ export async function TodayHome({ date: dayParam }: { date?: string }) {
               ))}
             </ul>
           </Card>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-3">
         <div className={d ? "2xl:col-span-2" : "2xl:col-span-3"}><PulQoldiqlari p={p} /></div>
@@ -113,10 +105,7 @@ export async function TodayHome({ date: dayParam }: { date?: string }) {
         <div className="2xl:col-span-3"><QarzlarBlock p={p} /></div>
         <div className="2xl:col-span-2"><FoydaZararBlock p={p} /></div>
       </div>
-      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-5">
-        <div className="2xl:col-span-3"><KunlikChart p={p} /></div>
-        <div className="2xl:col-span-2"><KunlikBlock p={p} /></div>
-      </div>
+      <KunlikBlock p={p} />
     </div>
   );
 }

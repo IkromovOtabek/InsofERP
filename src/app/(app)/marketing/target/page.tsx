@@ -32,15 +32,15 @@ export default async function TargetPage() {
     <div>
       <PageHeader title="Target" subtitle="Instagram'da chiqqan postni reklama qilish. Sotuvchi so'rov yuboradi, direktor tasdiqlagach Meta'da ishga tushadi — limitdan oshib bo'lmaydi." />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Sarflandi" value={`${fmtNum(spend, 2)} ${cur}`} icon={Crosshair} />
-        <StatCard label="Qamrov" value={fmtNum(reach)} hint={`Natija (xabar/ariza): ${fmtNum(results)}`} />
-        <StatCard label="Natija narxi" value={results ? `${fmtNum(spend / results, 2)} ${cur}` : "—"} />
-        <StatCard label="Tasdiq kutmoqda" value={fmtNum(pending)} tone={pending ? "warning" : "default"} />
+        <StatCard label="Sarflandi" value={`${fmtNum(spend, 2)} ${cur}`} icon={Crosshair} href="#reklamalar" />
+        <StatCard label="Qamrov" value={fmtNum(reach)} hint={`Natija (xabar/ariza): ${fmtNum(results)}`} href="#reklamalar" />
+        <StatCard label="Natija narxi" value={results ? `${fmtNum(spend / results, 2)} ${cur}` : "—"} href="#reklamalar" />
+        <StatCard label="Tasdiq kutmoqda" value={fmtNum(pending)} tone={pending ? "warning" : "default"} href="#reklamalar" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <Card padded={false}>
-          <div className="p-4 pb-2"><CardHeader title="Reklamalar" description="Yangi so'rov — post sahifasidan («Target qilish»)" /></div>
+          <div id="reklamalar" className="scroll-mt-20 p-4 pb-2"><CardHeader title="Reklamalar" description="Yangi so'rov — post sahifasidan («Target qilish»)" /></div>
           {boosts.length === 0 ? <EmptyState title="Reklama yo'q" text="Kontent rejada Instagram'da chiqqan postni oching va «Target qilish» formasini to'ldiring." /> : (
             <ul className="divide-y divide-slate-100">
               {boosts.map((b) => {

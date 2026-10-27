@@ -2,7 +2,6 @@ import { db } from "@/lib/db";
 import { VEHICLE_TYPE } from "@/lib/logistics";
 import { tripFuelNorm } from "@/lib/driver-trip-pay";
 import { tripPayKm } from "@/lib/trip-summary";
-import { type MonthKey, monthKeyOf } from "./period";
 
 /**
  * «Insof 2026» → «AVTOTRANSPORT TAHLILI — har bir mashina va kunlik solishtirish» (Tahlil → Mexanik).
@@ -32,13 +31,13 @@ export type AvtoDay = {
   date: Date; trips: number; km: number; dtGiven: number; gasGiven: number; fuelSum: number;
   pay: number; repair: number; mechanic: number; cash: number; cashDiff: number; revenue: number; profit: number;
 };
-export type AvtoReport = { month: MonthKey; from: Date; to: Date; rows: AvtoRow[]; total: AvtoRow; days: AvtoDay[] };
+/** `to` — oraliq oxiri (kirmaydi). */
+export type AvtoReport = { from: Date; to: Date; rows: AvtoRow[]; total: AvtoRow; days: AvtoDay[] };
 
 const REPAIR_KINDS = new Set(["REPAIR", "PARTS"]);
 
-export async function avtoReport(month: MonthKey): Promise<AvtoReport> {
-  const from = new Date(Number(month.slice(0, 4)), Number(month.slice(5)) - 1, 1);
-  const to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
+/** Ixtiyoriy kunlar oralig'i: `from` (kun boshi) dan `to` gacha (kirmaydi). */
+export async function avtoReport(from: Date, to: Date): Promise<AvtoReport> {
   const inMonth = { gte: from, lt: to };
 
   const [vehicles, trips, fuel, expenses, mech, cashTx, receipts] = await Promise.all([
@@ -169,13 +168,13 @@ export async function avtoReport(month: MonthKey): Promise<AvtoReport> {
     total: 0, revenue: sum((r) => r.revenue), profit: 0, perKm: null, cash: sum((r) => r.cash), mechanic: sum((r) => r.mechanic), cashDiff: 0, supplyTrips: sum((r) => r.supplyTrips),
   });
 
-  // Kunlar: oy boshidan bugungacha (yoki oy oxirigacha), har kun alohida qator
-  const last = monthKeyOf(new Date()) === month ? new Date() : new Date(to.getTime() - 1);
+  // Kunlar: oraliq boshidan bugungacha (yoki oraliq oxirigacha), har kun alohida qator
+  const last = new Date(Math.min(Date.now(), to.getTime() - 1));
   const dayList: AvtoDay[] = [];
   for (let d = new Date(from); d <= last; d.setDate(d.getDate() + 1)) {
     const x = day(d);
     // Kun foydasi: daromad − (yoqilg'i + ish haqi + remont); boshqa xarajatlar kun bo'yicha ajratilmaydi
     dayList.push({ ...x, km: r1(x.km), dtGiven: r1(x.dtGiven), gasGiven: r1(x.gasGiven), fuelSum: r2(x.fuelSum), pay: r2(x.pay), repair: r2(x.repair), mechanic: r2(x.mechanic), cash: r2(x.cash), cashDiff: r2(x.cash - x.mechanic), revenue: r2(x.revenue), profit: r2(x.revenue - x.fuelSum - x.pay - x.repair) });
   }
-  return { month, from, to, rows: list, total, days: dayList };
+  return { from, to, rows: list, total, days: dayList };
 }

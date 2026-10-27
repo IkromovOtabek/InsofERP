@@ -17,15 +17,15 @@ export async function ProductsTab({ range }: { range: Range }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Jami SKU" value={String(c.sku)} icon={Package} hint="faol markalar" />
-        <Kpi label="AX-sinf" value={String(c.aaa)} icon={Award} tone="brand" hint="yuqori tushum + barqaror talab" />
-        <Kpi label="O'rt. marja" value={`${fmtNum(c.avgMargin, 1)}%`} icon={Percent} tone={c.avgMargin >= 20 ? "success" : c.avgMargin >= 10 ? "warning" : "danger"} hint={`${c.lowMargin} ta marka <10%`} />
+        <Kpi label="Jami SKU" value={String(c.sku)} icon={Package} hint="faol markalar" href="#mahsulotlar-royxati" />
+        <Kpi label="AX-sinf" value={String(c.aaa)} icon={Award} tone="brand" hint="yuqori tushum + barqaror talab" href="#abc-xyz" />
+        <Kpi label="O'rt. marja" value={`${fmtNum(c.avgMargin, 1)}%`} icon={Percent} tone={c.avgMargin >= 20 ? "success" : c.avgMargin >= 10 ? "warning" : "danger"} hint={`${c.lowMargin} ta marka <10%`} href="#foydalilik" />
         <Kpi label="Tannarxsiz" value={String(c.noRecipe)} icon={FlaskConical} tone={c.noRecipe ? "warning" : "default"} hint="retsept yoki xomashyo narxi yo'q — marjaga kirmaydi" href="/recipes" />
         <Kpi label="Muzlagan mablag'" value={moneyShort(c.frozen)} icon={Snowflake} tone={c.frozen ? "info" : "default"} hint="band qilinmagan tayyor mahsulot, tannarxda" href="/stock?tab=capacity" />
-        <Kpi label="O'sish trendida" value={String(c.growing)} icon={TrendingUp} tone="success" hint="oxirgi 3 oy vs oldingi 3 oy" />
+        <Kpi label="O'sish trendida" value={String(c.growing)} icon={TrendingUp} tone="success" hint="oxirgi 3 oy vs oldingi 3 oy" href="#klasterlar" />
       </div>
 
-      <Panel title="ABC × XYZ matritsa" info="ABC — tushum ulushi (A: 80%, B: 95%, C: qolgan). XYZ — oylik talab beqarorligi (X: CV≤0.5 barqaror, Y: ≤1, Z: beqaror, N: ma'lumot yetarli emas). Yuqori chap (AX) — barqaror va qimmatli; pastki o'ng (CZ) — beqaror va kam qiymat.">
+      <Panel id="abc-xyz" title="ABC × XYZ matritsa" info="ABC — tushum ulushi (A: 80%, B: 95%, C: qolgan). XYZ — oylik talab beqarorligi (X: CV≤0.5 barqaror, Y: ≤1, Z: beqaror, N: ma'lumot yetarli emas). Yuqori chap (AX) — barqaror va qimmatli; pastki o'ng (CZ) — beqaror va kam qiymat.">
         <div className="overflow-x-auto">
           <table className="w-full border-separate border-spacing-1 text-xs">
             <thead><tr><th /><th className="py-1 text-center font-medium text-slate-500">X · barqaror</th><th className="py-1 text-center font-medium text-slate-500">Y · o'zgaruvchan</th><th className="py-1 text-center font-medium text-slate-500">Z · beqaror</th><th className="py-1 text-center font-medium text-slate-500">N · ma'lumot kam</th></tr></thead>
@@ -43,7 +43,7 @@ export async function ProductsTab({ range }: { range: Range }) {
       </Panel>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Foydalilik tahlili" info="Pufak o'lchami — sotilgan miqdor. Uzuq chiziqlar — median daromad va median marja; kvadrantlar shu yerdan bo'linadi.">
+        <Panel id="foydalilik" title="Foydalilik tahlili" info="Pufak o'lchami — sotilgan miqdor. Uzuq chiziqlar — median daromad va median marja; kvadrantlar shu yerdan bo'linadi.">
           {d.scatter.length ? <Scatter points={d.scatter} xLabel="Tushum" yLabel="Marja, %" formatX={moneyShort} formatY={(v) => `${fmtNum(v, 1)}%`} xMedian={d.medRev} yMedian={d.medMargin} quadrants={["Yulduzlar", "Ixtisoslashgan", "Kam samarali", "Barqaror daromad"]} /> : <Note>Bu davrda sotuv yo'q.</Note>}
           <div className="mt-2 flex flex-wrap gap-2 text-[11px]">{Object.entries(Q_COLOR).map(([k, v]) => <span key={k} className={cn("rounded-full px-2 py-0.5 font-medium", v)}>{k}: {d.rows.filter((x) => x.quadrant === k).length}</span>)}</div>
         </Panel>
@@ -52,7 +52,7 @@ export async function ProductsTab({ range }: { range: Range }) {
         </Panel>
       </div>
 
-      <Panel title="Mahsulot klasterlari — strategiya" info="Tezlik (ABC) × o'sish trendi × barqarorlik (XYZ) bo'yicha qoida asosida guruhlangan. Kartada — nima qilish kerak.">
+      <Panel id="klasterlar" title="Mahsulot klasterlari — strategiya" info="Tezlik (ABC) × o'sish trendi × barqarorlik (XYZ) bo'yicha qoida asosida guruhlangan. Kartada — nima qilish kerak.">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {d.clusters.map((cl) => (
             <div key={cl.key} className="rounded-lg border border-slate-200 p-4" style={{ borderTopColor: cl.color, borderTopWidth: 3 }}>
@@ -69,7 +69,7 @@ export async function ProductsTab({ range }: { range: Range }) {
         {monthRows.length ? <Heatmap rows={monthRows.map((x) => x.code)} cols={d.monthLabels} cells={monthRows.map((x) => x.monthly)} formatValue={(v) => fmtNum(v, 0)} tone="info" rowLabel="Marka" /> : <Note>Ma'lumot yo'q.</Note>}
       </Panel>
 
-      <Panel title="Mahsulotlar ro'yxati" info="Tannarx — faol retsept × xomashyo o'rtacha kirim narxi. CM/birlik — o'rtacha sotuv narxi − tannarx." padded={false}>
+      <Panel id="mahsulotlar-royxati" title="Mahsulotlar ro'yxati" info="Tannarx — faol retsept × xomashyo o'rtacha kirim narxi. CM/birlik — o'rtacha sotuv narxi − tannarx." padded={false}>
         <Table className="rounded-none border-0 shadow-none">
           <thead><tr><Th>Marka</Th><Th>Klaster</Th><Th>ABC</Th><Th>XYZ</Th><Th right>Sotuv</Th><Th right>Hajm</Th><Th right>Ulush</Th><Th right>Narx</Th><Th right>Tannarx</Th><Th right>CM/birlik</Th><Th right>Marja</Th><Th right>Trend</Th></tr></thead>
           <tbody>

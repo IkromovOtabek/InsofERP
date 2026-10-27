@@ -76,18 +76,18 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8 [&>*]:min-w-0">
-        <Kpi label="Jami sotuv tushumi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" />
-        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%${k.uncosted > 0 ? ` · tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : ""}`} />
-        <Kpi label="Foyda*" value={moneyShort(k.profit)} icon={PiggyBank} tone={k.profit >= 0 ? "success" : "danger"} hint="brakdan keyin" />
-        <Kpi label="Kassa tushumi" value={moneyShort(k.cashIn.cur)} delta={k.cashIn.delta} icon={Landmark} tone="success" hint={k.otherIn > 0 ? `shundan boshqa kirimlar ${moneyShort(k.otherIn)}` : "mijoz to'lovlari + boshqa kirimlar"} />
-        <Kpi label="Xomashyo xaridi" value={moneyShort(k.purchases.cur)} delta={k.purchases.delta} invert icon={ShoppingCart} tone="info" />
+        <Kpi label="Jami sotuv tushumi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" href={tabHref(range, "sales")} />
+        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={`Marja ${fmtNum(k.margin, 1)}%${k.uncosted > 0 ? ` · tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : ""}`} href="#pnl" />
+        <Kpi label="Foyda*" value={moneyShort(k.profit)} icon={PiggyBank} tone={k.profit >= 0 ? "success" : "danger"} hint="brakdan keyin" href="#pnl" />
+        <Kpi label="Kassa tushumi" value={moneyShort(k.cashIn.cur)} delta={k.cashIn.delta} icon={Landmark} tone="success" hint={k.otherIn > 0 ? `shundan boshqa kirimlar ${moneyShort(k.otherIn)}` : "mijoz to'lovlari + boshqa kirimlar"} href="#tranzaksiyalar" />
+        <Kpi label="Xomashyo xaridi" value={moneyShort(k.purchases.cur)} delta={k.purchases.delta} invert icon={ShoppingCart} tone="info" href="#xarajatlar" />
         <Kpi label="Debitorka" value={moneyShort(k.receivable)} icon={FileWarning} tone={k.receivable ? "warning" : "default"} hint={`${k.debtors} qarzdor`} href={tabHref(range, "customers", { debt: "yes" })} />
-        <Kpi label="Kassalardagi pul" value={moneyShort(k.cashTotal)} icon={Percent} hint="hisoblardagi hozirgi qoldiq" />
-        <Kpi label="Faol mijozlar" value={`${k.activeCustomers} / ${k.totalCustomers}`} icon={Users} tone="violet" hint={`Faollik ${fmtNum(d.activeRate, 0)}%`} />
+        <Kpi label="Kassalardagi pul" value={moneyShort(k.cashTotal)} icon={Percent} hint="hisoblardagi hozirgi qoldiq" href="#kassalar" />
+        <Kpi label="Faol mijozlar" value={`${k.activeCustomers} / ${k.totalCustomers}`} icon={Users} tone="violet" hint={`Faollik ${fmtNum(d.activeRate, 0)}%`} href={tabHref(range, "customers")} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-        <Panel title="Xarajat tuzilmasi" info="Davr ichidagi xomashyo xaridlari yetkazuvchi bo'yicha + brak. Boshqa xarajatlar (ish haqi, yoqilg'i…) — Kirim-Chiqim va Egasi panelida.">
+        <Panel id="xarajatlar" title="Xarajat tuzilmasi" info="Davr ichidagi xomashyo xaridlari yetkazuvchi bo'yicha + brak. Boshqa xarajatlar (ish haqi, yoqilg'i…) — Kirim-Chiqim va Egasi panelida.">
           {d.expenses.length ? <DonutChart data={d.expenses.slice(0, 8)} formatValue={moneyShort} center={{ value: moneyShort(d.expenseTotal), label: "jami" }} /> : <Note>Davrda xarid yo'q.</Note>}
         </Panel>
         <Panel className="xl:col-span-2" title="CashFlow trendi" info="Kassa/bank tushumlari va kumulyativ." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "finance", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
@@ -111,7 +111,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-        <Panel title="Kassa balanslari" info="Har kassa/hisob bo'yicha: davr ichidagi mijoz to'lovlari va hozirgi qoldiq." padded={false}>
+        <Panel id="kassalar" title="Kassa balanslari" info="Har kassa/hisob bo'yicha: davr ichidagi mijoz to'lovlari va hozirgi qoldiq." padded={false}>
           <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Kassa / hisob</Th><Th right>Davr</Th><Th right>Jami</Th></tr></thead><tbody>{d.accountRows.length === 0 && <Empty text="Kassa yo'q" />}{d.accountRows.map((a) => <Tr key={a.id}><Td>{a.name} <span className="text-xs text-slate-400">{a.type === "CASH" ? "naqd" : "bank"}</span></Td><Td right>{moneyShort(a.period)}</Td><Td right className="font-semibold">{moneyShort(a.total)}</Td></Tr>)}</tbody></Table>
         </Panel>
         <Panel title="Top 10 to'lov" info="Davr ichidagi eng katta tranzaksiyalar." padded={false}>

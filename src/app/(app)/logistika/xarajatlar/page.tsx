@@ -49,15 +49,16 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       <PeriodTabs base="/logistika/xarajatlar" current={r.period} />
       <RangeForm base="/logistika/xarajatlar" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Jami tannarx" value={moneyShort(costs.total)} icon={Coins} tone="brand" />
+        <StatCard label="Jami tannarx" value={moneyShort(costs.total)} icon={Coins} tone="brand" href="#turlar" />
         <StatCard label="Yoqilg'i" value={moneyShort(costs.fuel)} hint={costs.total ? `${Math.round((costs.fuel / costs.total) * 100)}%` : undefined} icon={Fuel} href="/logistika/yoqilgi" />
-        <StatCard label="Boshqa xarajat" value={moneyShort(costs.other)} icon={Truck} />
-        <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} />
+        <StatCard label="Boshqa xarajat" value={moneyShort(costs.other)} icon={Truck} href="#xarajatlar" />
+        <StatCard label="1 m³ ga" value={m3 ? money(costs.total / m3) : "—"} hint={`${qty(m3)} m³ yetkazildi`} icon={Route} href="#transport-boyicha" />
       </div>
       <Card className="mb-5"><CardHeader title="Xarajat qo'shish" description="Yoqilg'i — alohida bo'limda" icon={Coins} /><ExpenseForm vehicles={opts.vehicles} drivers={opts.drivers} trips={opts.trips} vehicleId={sp.vehicleId} /></Card>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <div className="space-y-5 xl:col-span-2">
           <Card>
+            <div id="turlar" className="scroll-mt-20" />
             <CardHeader title="Turlar bo'yicha" icon={Coins} />
             <ul className="space-y-1.5 text-sm">
               <li className="flex justify-between"><span>Yoqilg'i</span><span className="tabular">{money(costs.fuel)}</span></li>
@@ -65,7 +66,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             </ul>
           </Card>
           <Card padded={false}>
-            <div className="px-5 pt-5"><CardHeader title="Transport bo'yicha" icon={Truck} /></div>
+            <div id="transport-boyicha" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Transport bo'yicha" icon={Truck} /></div>
             <Table>
               <thead><tr><Th>Transport</Th><Th right>Yoqilg'i</Th><Th right>Boshqa</Th><Th right>1 m³ ga</Th></tr></thead>
               <tbody>
@@ -79,7 +80,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           </Card>
         </div>
         <Card padded={false} className="xl:col-span-3">
-          <div className="px-5 pt-5"><CardHeader title="Xarajatlar" icon={Coins} /></div>
+          <div id="xarajatlar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Xarajatlar" icon={Coins} /></div>
           <Table>
             <thead><tr><Th>Sana</Th><Th>Turi</Th><Th>Transport / haydovchi / reys</Th><Th right>Summa</Th><Th /></tr></thead>
             <tbody>

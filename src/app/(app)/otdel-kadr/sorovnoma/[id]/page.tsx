@@ -24,10 +24,11 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
         action={<Badge color={sv.status === "OPEN" ? "green" : "slate"}>{sv.status === "OPEN" ? "Ochiq" : sv.status === "DRAFT" ? "Qoralama" : "Yopilgan"}</Badge>} />
       {editable && <SurveyStatusButtons id={sv.id} status={sv.status} />}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="Javob berdi" value={`${r.total} / ${target}`} hint={target ? `${Math.round((r.total / target) * 100)}%` : undefined} />
+        <StatCard label="Javob berdi" value={`${r.total} / ${target}`} hint={target ? `${Math.round((r.total / target) * 100)}%` : undefined} href="#natijalar" />
         <StatCard label="Ochilgan" value={sv.openedAt ? dateTime(sv.openedAt) : "—"} />
         <StatCard label="Yopiladi" value={sv.closesAt ? dateTime(sv.closesAt) : "—"} />
       </div>
+      <div id="natijalar" className="scroll-mt-20 space-y-4">
       {r.results.map((x) => (
         <Card key={x.q.key}>
           <CardHeader title={x.q.text} description={`${x.count} javob`} />
@@ -42,6 +43,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
           {"texts" in x && (x.texts!.length === 0 ? <Empty text="Javob yo'q" /> : <ul className="space-y-2">{x.texts!.map((t, i) => <li key={i} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">{t.text}{t.who && <div className="text-xs text-slate-500">{t.who}</div>}</li>)}</ul>)}
         </Card>
       ))}
+      </div>
       {editable && r.total === 0 && sv.status !== "CLOSED" && (
         <Card><CardHeader title="Tahrirlash" /><SurveyForm positions={positions} s={{ id: sv.id, title: sv.title, description: sv.description, anonymous: sv.anonymous, position: sv.position, text: surveyToText(sv.questions), closesAt: sv.closesAt ? sv.closesAt.toISOString().slice(0, 10) : null }} /></Card>
       )}

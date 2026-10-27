@@ -55,15 +55,15 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
       <PeriodTabs base="/logistika/yoqilgi" current={r.period} />
       <RangeForm base="/logistika/yoqilgi" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${active.length} zapravka`} icon={Droplets} tone="brand" />
-        <StatCard label="Summa" value={moneyShort(sum)} icon={Coins} />
-        <StatCard label="O'rtacha narx" value={liters ? `${fmtNum(sum / liters, 0)} so'm/l` : "—"} icon={Fuel} />
-        <StatCard label="Transport soni" value={byV.size} icon={Gauge} />
+        <StatCard label="Quyildi" value={`${fmtNum(liters, 0)} l`} hint={`${active.length} zapravka`} icon={Droplets} tone="brand" href="#zapravkalar" />
+        <StatCard label="Summa" value={moneyShort(sum)} icon={Coins} href="#zapravkalar" />
+        <StatCard label="O'rtacha narx" value={liters ? `${fmtNum(sum / liters, 0)} so'm/l` : "—"} icon={Fuel} href="#zapravkalar" />
+        <StatCard label="Transport soni" value={byV.size} icon={Gauge} href="#transport-kesimida" />
       </div>
       <Card className="mb-5 min-w-0"><CardHeader title="Zapravka qo'shish" icon={Fuel} /><FuelForm {...opts} lastPrice={price} vehicleId={sp.vehicleId} /></Card>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card padded={false} className="xl:col-span-2">
-          <div className="px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} /></div>
+          <div id="transport-kesimida" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Transport kesimida" icon={Gauge} /></div>
           <Table>
             <thead><tr><Th>Transport</Th><Th right>Litr</Th><Th right>Summa</Th><Th right>l/100 km</Th></tr></thead>
             <tbody>
@@ -84,7 +84,7 @@ export default async function FuelPage({ searchParams }: { searchParams: Promise
           <p className="px-5 pb-4 pt-2 text-xs text-slate-500">Sarf — probegi yozilgan quyishlar bo'yicha, "to'liq bak" usuli: birinchi quyishning litri hisobga kirmaydi (u oldingi yo'l uchun).</p>
         </Card>
         <Card padded={false} className="xl:col-span-3">
-          <div className="px-5 pt-5"><CardHeader title="Zapravkalar" icon={Fuel} /></div>
+          <div id="zapravkalar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Zapravkalar" icon={Fuel} /></div>
           <Table>
             <thead><tr><Th>Sana</Th><Th>Transport / haydovchi</Th><Th right>Litr</Th><Th right>Narx</Th><Th right>Summa</Th><Th right>Probeg</Th><Th /></tr></thead>
             <tbody>

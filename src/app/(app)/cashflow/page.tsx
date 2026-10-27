@@ -127,10 +127,10 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader title="Kirim-Chiqim" subtitle={cat ? `Detalizatsiya: «${cat}» — sana, summa, kontragent, hisob, kim kiritgan. ` : "Pul oqimi jurnali: mijoz to'lovlari (Kassa/bank'dan avtomatik), boshqa kirimlar va barcha chiqimlar."} action={cat ? <Link href={`/cashflow?tab=${tab}&from=${isoDate(from)}&to=${isoDate(to)}`} className="text-sm text-slate-500 hover:text-slate-900">✕ Filtrni olib tashlash</Link> : undefined} />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Kirim (davr)" value={money(inc)} icon={ArrowDownLeft} tone="success" />
-        <StatCard label="Chiqim (davr)" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} />
-        <StatCard label="Sof oqim" value={money(inc - exp)} icon={Wallet} tone={inc - exp >= 0 ? "success" : "danger"} />
-        <StatCard label="Hisoblar qoldig'i" value={money([...balance.values()].reduce((a, b) => a + b, 0))} icon={Landmark} hint={accounts.map((a) => `${a.name}: ${money(balance.get(a.id) ?? 0)}`).join(" · ")} />
+        <StatCard label="Kirim (davr)" value={money(inc)} icon={ArrowDownLeft} tone="success" href={`${qs("INCOME")}#jurnal`} />
+        <StatCard label="Chiqim (davr)" value={money(exp)} icon={ArrowUpRight} tone={exp > 0 ? "danger" : "default"} href={`${qs("EXPENSE")}#jurnal`} />
+        <StatCard label="Sof oqim" value={money(inc - exp)} icon={Wallet} tone={inc - exp >= 0 ? "success" : "danger"} href={`${qs("all")}#jurnal`} />
+        <StatCard label="Hisoblar qoldig'i" value={money([...balance.values()].reduce((a, b) => a + b, 0))} icon={Landmark} hint={accounts.map((a) => `${a.name}: ${money(balance.get(a.id) ?? 0)}`).join(" · ")} href="/payments" />
       </div>
       {openingBal && (
         <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
@@ -220,7 +220,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
         </div>
       </Card>
 
-      <div className="mb-3 flex flex-wrap items-center gap-3">
+      <div id="jurnal" className="mb-3 flex scroll-mt-20 flex-wrap items-center gap-3">
         <Tabs current={tab} className="mb-0" items={[{ key: "all", label: "Hammasi", href: qs("all") }, { key: "INCOME", label: "Kirim", href: qs("INCOME") }, { key: "EXPENSE", label: "Chiqim", href: qs("EXPENSE") }, { key: "TRANSFER", label: "Perekit", href: qs("TRANSFER") }]} />
         <form className="flex flex-wrap items-center gap-2 text-sm">
           <input type="hidden" name="tab" value={tab} />

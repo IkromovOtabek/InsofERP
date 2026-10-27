@@ -6,7 +6,7 @@ import { canDo } from "@/lib/permissions";
 import { canSeeRasxod } from "@/lib/stock-journal-access";
 import { CARD_KIND_LABEL, cardHref, cardKey, isCardKind, recipientCard, type RecipientCard } from "@/lib/recipient-card";
 import { stockPeriod, StockPeriodBar } from "@/components/stock-period";
-import { dateRu, fmtNum } from "@/lib/format";
+import { dateRu, fmtNum, isoDate } from "@/lib/format";
 import { unitLabel, unitShort } from "@/lib/unit";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,9 @@ export default async function OluvchiPage({ params, searchParams }: {
   const Icon = ICON[kind];
   const b = card.brigade;
   const base = cardHref(kind, id);
+  // «Barcha vaqt» — shu kartaning o'zi, birinchi chiqimdan oxirgisigacha (davr 400 kun bilan cheklanadi)
+  const allTimeHref = card.allTime.firstAt && card.allTime.lastAt ? `${base}?from=${isoDate(card.allTime.firstAt)}&to=${isoDate(card.allTime.lastAt)}#chiqim-tarixi` : undefined;
+  const prodHref = b && (b.produced.length > 0 || b.defects.length > 0) ? "#ishlab-chiqarish" : undefined;
 
   return (
     <div>
@@ -60,22 +63,22 @@ export default async function OluvchiPage({ params, searchParams }: {
       <div className="mb-4"><StockPeriodBar base={base} period={period} /></div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Davrda berilgan" value={money(card.totals.sum)} hint={`${fmtNum(card.totals.count)} qator · ${period.label}`} tone="brand" />
-        <StatCard label="Barcha vaqt" value={money(card.allTime.sum)} hint={card.allTime.lastAt ? `${fmtNum(card.allTime.docs)} chiqim · oxirgisi ${dateRu(card.allTime.lastAt)}` : "hali berilmagan"} />
+        <StatCard label="Davrda berilgan" value={money(card.totals.sum)} hint={`${fmtNum(card.totals.count)} qator · ${period.label}`} tone="brand" href="#chiqim-tarixi" />
+        <StatCard label="Barcha vaqt" value={money(card.allTime.sum)} hint={card.allTime.lastAt ? `${fmtNum(card.allTime.docs)} chiqim · oxirgisi ${dateRu(card.allTime.lastAt)}` : "hali berilmagan"} href={allTimeHref} />
         {b ? (
           <>
-            <StatCard label="Qo'lida hozir" value={money(b.handValue)} hint={b.hand.length ? `${b.hand.length} xil xomashyo` : "xomashyo yo'q"} />
+            <StatCard label="Qo'lida hozir" value={money(b.handValue)} hint={b.hand.length ? `${b.hand.length} xil xomashyo` : "xomashyo yo'q"} href="#qolida" />
             <StatCard label="Ishlab chiqarildi (davr)" value={b.produced.length ? b.produced.map((p) => `${fmtNum(p.qty, 3)} ${unitLabel(p.unit)}`).join(" · ") : "0"}
-              hint={`${fmtNum(b.doneTasks)} topshiriq yopildi · ${fmtNum(b.openTasks)} ochiq`} />
+              hint={`${fmtNum(b.doneTasks)} topshiriq yopildi · ${fmtNum(b.openTasks)} ochiq`} href={prodHref} />
             <StatCard label="1 birlikka sarf" value={b.perUnit ? `${money(b.perUnit.value)} / ${unitShort(b.perUnit.unit)}` : "—"}
-              hint={b.perUnit ? (b.perUnit.basis === "consumed" ? `retsept bo'yicha sarf ${money(b.consumedValue)} ÷ ${fmtNum(b.perUnit.producedQty, 3)} ${unitShort(b.perUnit.unit)}` : `taxminiy: berilgan ${money(card.totals.sum)} ÷ ${fmtNum(b.perUnit.producedQty, 3)} ${unitShort(b.perUnit.unit)}`) : "davrda mahsulot chiqarilmagan"} />
+              hint={b.perUnit ? (b.perUnit.basis === "consumed" ? `retsept bo'yicha sarf ${money(b.consumedValue)} ÷ ${fmtNum(b.perUnit.producedQty, 3)} ${unitShort(b.perUnit.unit)}` : `taxminiy: berilgan ${money(card.totals.sum)} ÷ ${fmtNum(b.perUnit.producedQty, 3)} ${unitShort(b.perUnit.unit)}`) : "davrda mahsulot chiqarilmagan"} href="#tovarlar" />
             <StatCard label="Brak (davr)" value={b.defects.length ? b.defects.map((p) => `${fmtNum(p.qty, 3)} ${unitLabel(p.unit)}`).join(" · ") : "0"}
-              hint={b.defects.length ? b.defects.map((d) => d.product).join(", ") : "brak qayd etilmagan"} tone={b.defects.length ? "warning" : "default"} />
+              hint={b.defects.length ? b.defects.map((d) => d.product).join(", ") : "brak qayd etilmagan"} tone={b.defects.length ? "warning" : "default"} href={prodHref} />
           </>
         ) : (
           <>
-            <StatCard label="Tovarlar (davr)" value={fmtNum(card.byMaterial.length)} hint="xil tovar" />
-            <StatCard label="QQS bilan (davr)" value={money(card.totals.total)} hint={card.totals.vat ? `QQS ${money(card.totals.vat)}` : "QQS 0"} />
+            <StatCard label="Tovarlar (davr)" value={fmtNum(card.byMaterial.length)} hint="xil tovar" href="#tovarlar" />
+            <StatCard label="QQS bilan (davr)" value={money(card.totals.total)} hint={card.totals.vat ? `QQS ${money(card.totals.vat)}` : "QQS 0"} href="#tovarlar" />
           </>
         )}
       </div>
@@ -83,6 +86,7 @@ export default async function OluvchiPage({ params, searchParams }: {
       {b && (
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <Card>
+            <div id="qolida" className="scroll-mt-20" />
             <CardHeader title="Qo'lidagi xomashyo" description="Brigadaga berilgan, hali sarflanmagan yoki qaytarilmagan xomashyo (o'rtacha tannarxda)." />
             {b.hand.length === 0 ? <p className="text-sm text-slate-500">Brigada qo&apos;lida xomashyo yo&apos;q.</p> : (
               <Table>
@@ -118,6 +122,7 @@ export default async function OluvchiPage({ params, searchParams }: {
           </Card>
           {(b.produced.length > 0 || b.defects.length > 0) && (
             <Card className="lg:col-span-2">
+              <div id="ishlab-chiqarish" className="scroll-mt-20" />
               <CardHeader title="Ishlab chiqarish (davr)" description="Topshiriq fakti va brak — mahsulot bo'yicha." />
               <Table>
                 <thead><tr><Th>Mahsulot</Th><Th right>Ishlab chiqarildi</Th><Th right>Brak</Th><Th right>Brak %</Th></tr></thead>
@@ -143,6 +148,7 @@ export default async function OluvchiPage({ params, searchParams }: {
       )}
 
       <Card className="mb-6">
+        <div id="tovarlar" className="scroll-mt-20" />
         <CardHeader title="Davrda berilgan tovarlar" description="Tovar bo'yicha jami: bekor qilinganlar va qaytarishlar ayirilgan. Narx — chiqim paytidagi «Dona narxi»." />
         {card.byMaterial.length === 0 ? <p className="text-sm text-slate-500">Tanlangan davrda chiqim yo&apos;q.</p> : (
           <Table>
@@ -165,6 +171,7 @@ export default async function OluvchiPage({ params, searchParams }: {
       </Card>
 
       <Card>
+        <div id="chiqim-tarixi" className="scroll-mt-20" />
         <CardHeader title="Chiqim tarixi" description={`${period.label} · ${fmtNum(card.rows.length)} qator. To'liq jurnal — Sklad → Chiqim.`} />
         {card.rows.length === 0 ? <p className="text-sm text-slate-500">Tanlangan davrda chiqim yo&apos;q.</p> : (
           <Table>

@@ -41,15 +41,15 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
       <PageHeader back={{ href: "/logistika/obyektlar", label: "Obyektlar" }} title={s.name}
         subtitle={<><Link href={`/customers/${s.customer.id}`} className="hover:underline">{s.customer.name}</Link> · {s.address}</>} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Zayavkalar" value={s.orders.length} icon={History} />
-        <StatCard label="Yetkazilgan" value={qty(delivered.reduce((a, t) => a + Number(t.qtyM3), 0))} hint={`${delivered.length} reys`} icon={Package} tone="success" />
-        <StatCard label="O'rtacha yo'l" value={minutesLabel(avg(durations))} hint="yuklashdan topshirishgacha" icon={Timer} />
-        <StatCard label="O'rtacha tushirish" value={minutesLabel(avg(unload))} hint="yetib kelgandan topshirishgacha" icon={MapPin} />
+        <StatCard label="Zayavkalar" value={s.orders.length} icon={History} href="#buyurtmalar" />
+        <StatCard label="Yetkazilgan" value={qty(delivered.reduce((a, t) => a + Number(t.qtyM3), 0))} hint={`${delivered.length} reys`} icon={Package} tone="success" href="#tarix" />
+        <StatCard label="O'rtacha yo'l" value={minutesLabel(avg(durations))} hint="yuklashdan topshirishgacha" icon={Timer} href="#tarix" />
+        <StatCard label="O'rtacha tushirish" value={minutesLabel(avg(unload))} hint="yetib kelgandan topshirishgacha" icon={MapPin} href="#tarix" />
       </div>
       <Card className="mb-5"><CardHeader title="Obyekt kartasi" icon={MapPin} /><SiteForm customers={customers} searchEnabled={geoSearchEnabled()} s={{ id: s.id, customerId: s.customerId, name: s.name, address: s.address, lat: s.lat, lng: s.lng, contactName: s.contactName, contactPhone: s.contactPhone, deliveryHours: s.deliveryHours, instructions: s.instructions, isActive: s.isActive }} /></Card>
 
       <Card padded={false} className="mb-5">
-        <div className="px-5 pt-5"><CardHeader title="Buyurtmalar" icon={History} /></div>
+        <div id="buyurtmalar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Buyurtmalar" icon={History} /></div>
         <Table>
           <thead><tr><Th>Zayavka</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th>Yetkazish</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -62,7 +62,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
       </Card>
 
       <Card padded={false}>
-        <div className="px-5 pt-5"><CardHeader title="Yetkazib berish tarixi" icon={Package} /></div>
+        <div id="tarix" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Yetkazib berish tarixi" icon={Package} /></div>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Transport</Th><Th right>Hajm</Th><Th right>Qabul</Th><Th>Bosqich</Th><Th>Yetkazildi</Th><Th>Qabul qildi</Th></tr></thead>
           <tbody>

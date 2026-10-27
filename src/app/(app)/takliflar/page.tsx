@@ -53,7 +53,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         <StatCard label="Amaldagi takliflar" value={String(nActive)} icon={FileBadge2} href={keep("ACTIVE")} />
         <StatCard label="Shu oy qabul qilingan" value={money(acceptedSum)} hint={`${accepted.length} ta taklif`} icon={CheckCircle2} tone="success" href={keep("ACCEPTED")} />
         <StatCard label="Muddati o'tgan" value={String(nExpired)} hint="Yangilangan narx bilan qayta yuboring" icon={Hourglass} tone={nExpired ? "warning" : "default"} href={keep("EXPIRED")} />
-        <StatCard label="Mijoz hali ochmagan" value={String(unseen)} hint="Amaldagi, QR skanerlanmagan" icon={Clock} />
+        <StatCard label="Mijoz hali ochmagan" value={String(unseen)} hint="Amaldagi, QR skanerlanmagan" icon={Clock} href={keep("ACTIVE")} />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

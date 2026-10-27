@@ -37,13 +37,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <BiPage title="Klasterlar" subtitle="Mahsulotlar tezlik × o'sish × barqarorlik bo'yicha 5 klasterga bo'lingan (qoida asosida: ABC, trend, XYZ). Har klaster — o'z strategiyasi." eyebrow="ML tahlil" tab="clusters" range={range}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Kpi label="Klasterlar" value={String(cl.filter((c) => c.key !== "Sotilmagan").length)} icon={Layers} tone="brand" hint={`${sold.length} mahsulot guruhlangan`} />
-          <Kpi label="Eng qimmatli klaster" value={most?.title ?? "—"} icon={Star} tone="success" hint={most ? `${moneyShort(most.revenue)} so'm · portfelning ${fmtNum(most.share, 1)}%i` : "—"} />
-          <Kpi label="Eng samarali" value={fastest?.title ?? "—"} icon={TrendingUp} tone="info" hint={fastest ? `samaradorlik indeksi ${fmtNum(eff(fastest), 0)} · ${fastest.count} mahsulot → ${fmtNum(fastest.share, 1)}% daromad` : "—"} />
-          <Kpi label="Portfel jami" value={moneyShort(total)} icon={Package} hint={`yalpi foyda ${moneyShort(gross)} · marja ${fmtNum(safeDiv(gross, total) * 100, 1)}%`} />
+          <Kpi label="Klasterlar" value={String(cl.filter((c) => c.key !== "Sotilmagan").length)} icon={Layers} tone="brand" hint={`${sold.length} mahsulot guruhlangan`} href="#strategiyalar" />
+          <Kpi label="Eng qimmatli klaster" value={most?.title ?? "—"} icon={Star} tone="success" hint={most ? `${moneyShort(most.revenue)} so'm · portfelning ${fmtNum(most.share, 1)}%i` : "—"} href={most ? `${href({ cluster: most.key })}#mahsulotlar` : undefined} />
+          <Kpi label="Eng samarali" value={fastest?.title ?? "—"} icon={TrendingUp} tone="info" hint={fastest ? `samaradorlik indeksi ${fmtNum(eff(fastest), 0)} · ${fastest.count} mahsulot → ${fmtNum(fastest.share, 1)}% daromad` : "—"} href={fastest ? `${href({ cluster: fastest.key })}#mahsulotlar` : undefined} />
+          <Kpi label="Portfel jami" value={moneyShort(total)} icon={Package} hint={`yalpi foyda ${moneyShort(gross)} · marja ${fmtNum(safeDiv(gross, total) * 100, 1)}%`} href="#mahsulotlar" />
         </div>
 
-        <Panel title="Klaster strategiyalari" info="Kartani bosing — sahifa shu klaster bo'yicha filtrlanadi. Samaradorlik indeksi = daromad ulushi / mahsulot ulushi × 100 (100 = o'z og'irligicha).">
+        <Panel id="strategiyalar" title="Klaster strategiyalari" info="Kartani bosing — sahifa shu klaster bo'yicha filtrlanadi. Samaradorlik indeksi = daromad ulushi / mahsulot ulushi × 100 (100 = o'z og'irligicha).">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {cl.map((c) => { const I = ICON[c.key] ?? Package; const list = d.rows.filter((x) => x.cluster === c.key); const margin = safeDiv(sum(list.map((x) => x.gross)), sum(list.map((x) => x.revenue))) * 100; return (
               <Link key={c.key} href={href({ cluster: sp.cluster === c.key ? undefined : c.key })} className={cn("rounded-lg border border-slate-200 p-4 transition hover:border-slate-300", sp.cluster === c.key && "ring-2 ring-slate-900")} style={{ borderTopColor: c.color, borderTopWidth: 3 }}>
@@ -78,7 +78,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <HBarList data={cl.map((c) => ({ label: `${c.title} · ${c.count} ta (${fmtNum((c.count / Math.max(1, d.rows.length)) * 100, 0)}% mahsulot)`, value: c.share, hint: `${moneyShort(c.revenue)} so'm`, tone: c.key === "Dogs" ? ("danger" as const) : c.key === "Stars" ? ("success" as const) : ("info" as const) }))} formatValue={(v) => `${fmtNum(v, 1)}% daromad`} max={100} />
         </Panel>
 
-        <Panel title="Mahsulotlar va klasterlar" padded={false}>
+        <Panel id="mahsulotlar" title="Mahsulotlar va klasterlar" padded={false}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Marka</Th><Th>Klaster</Th><Th>ABC</Th><Th>XYZ</Th><Th right>Tushum</Th><Th right>Hajm</Th><Th right>Marja</Th><Th right>Trend</Th><Th>Strategiya</Th></tr></thead>
             <tbody>{list.length === 0 && <Empty text="Mahsulot topilmadi" />}{list.map((x) => { const c = d.clusters.find((k) => k.key === x.cluster); return <Tr key={x.id}><Td><span className="font-semibold">{x.code}</span> <span className="text-xs text-slate-500">{x.name}</span></Td><Td><span className="inline-flex items-center gap-1.5 text-xs"><span className="h-2 w-2 rounded-full" style={{ background: c?.color }} />{x.cluster}</span></Td><Td><Tag>{x.abc}</Tag></Td><Td><Tag>{x.xyz}</Tag></Td><Td right className="font-medium">{moneyShort(x.revenue)}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.margin < 10 ? "text-red-600" : x.margin >= 20 ? "text-emerald-700" : ""}>{x.revenue ? `${fmtNum(x.margin, 1)}%` : "—"}</Td><Td right className={x.trend > 10 ? "text-emerald-600" : x.trend < -10 ? "text-red-600" : "text-slate-500"}>{x.trend > 10 ? "▲" : x.trend < -10 ? "▼" : "▬"} {fmtNum(Math.abs(x.trend), 0)}%</Td><Td className="max-w-64 truncate text-xs text-slate-500">{c?.advice}</Td></Tr>; })}</tbody>

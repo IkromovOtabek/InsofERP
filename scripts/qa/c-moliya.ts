@@ -19,7 +19,7 @@ import { activeAssets, assetStateAt, depreciationIn } from "@/lib/fin-report/ass
 import type { FinRow } from "@/lib/fin-report/rows";
 import { customerDebtSheet, debtAgeReport, parseDebtDay, supplierDebtSheet } from "@/lib/fin-report/debts";
 import { avtoReport } from "@/lib/fin-report/avto";
-import { finishedReport, rawBalance } from "@/lib/fin-report/sklad";
+import { finishedReport, monthBounds, rawBalance } from "@/lib/fin-report/sklad";
 import { vedomost } from "@/lib/fin-report/vedomost";
 import { cashCalendar } from "@/lib/fin-report/calendar";
 import { monthKeyOf } from "@/lib/fin-report/period";
@@ -192,7 +192,7 @@ async function main() {
 
   section("Oylik varaqlar: Avtotransport, Xom-ashyo, Tayyor mahsulot, Ish haqi");
   const cur = monthKeyOf(new Date());
-  const [avto, raw, fin, ved] = await Promise.all([avtoReport(cur), rawBalance(cur), finishedReport(cur), vedomost(cur)]);
+  const [avto, raw, fin, ved] = await Promise.all([avtoReport(monthBounds(cur).from, monthBounds(cur).to), rawBalance(cur), finishedReport(cur), vedomost(cur)]);
   check("avto: jami reys = mashinalar yig'indisi = kunlar yig'indisi", avto.total.trips === avto.rows.reduce((a, r) => a + r.trips, 0) && avto.total.trips === avto.days.reduce((a, d) => a + d.trips, 0), [avto.total.trips, avto.days.length]);
   check("avto: jami xarajat = yoqilg'i + ish haqi + remont + boshqa", avto.rows.every((r) => near(r.total, r.fuelSum + r.pay + r.repair + r.other)) && avto.rows.every((r) => near(r.profit, r.revenue - r.total)));
   check("avto: farq = kassa − mexanik", avto.rows.every((r) => near(r.cashDiff, r.cash - r.mechanic)));

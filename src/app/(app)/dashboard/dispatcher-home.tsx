@@ -90,9 +90,9 @@ export async function DispatcherHome() {
       <Section title="Haydovchilar" className="mt-0" action={more("/logistika/haydovchilar", "Haydovchilar")}>
         <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
           <StatCard label="Faol haydovchi" value={drivers.length} icon={Users} tone="info" href="/logistika/haydovchilar" />
-          <StatCard label="Bo'sh" value={Math.max(0, free)} hint="reysga tayyor" icon={UserCheck} tone="success" />
-          <StatCard label="Reysda" value={onTrip.size} icon={Truck} tone="brand" />
-          <StatCard label="Kelmagan / ta'tilda" value={absent.size} hint="bugungi davomat" icon={UserX} tone={absent.size ? "warning" : "default"} />
+          <StatCard label="Bo'sh" value={Math.max(0, free)} hint="reysga tayyor" icon={UserCheck} tone="success" href="/logistika/haydovchilar" />
+          <StatCard label="Reysda" value={onTrip.size} icon={Truck} tone="brand" href="/logistika/haydovchilar" />
+          <StatCard label="Kelmagan / ta'tilda" value={absent.size} hint="bugungi davomat" icon={UserX} tone={absent.size ? "warning" : "default"} href="/logistika/haydovchilar" />
         </div>
       </Section>
 

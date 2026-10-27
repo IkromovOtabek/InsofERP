@@ -115,17 +115,17 @@ export async function HisobotTab({ oy }: { oy?: string }) {
         <span className="ml-auto"><LinkButton href={`/otdel-kadr/hisobot-excel?oy=${month}`} variant="secondary" size="sm"><FileSpreadsheet size={14} /> Excel</LinkButton></span>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Xodimlar" value={String(r.headcount)} icon={BarChart3} hint={r.avgTenure != null ? `o'rtacha staj ${r.avgTenure} yil` : undefined} />
-        <StatCard label="Aylanma (12 oy)" value={`${r.yearTurnover}%`} tone={r.yearTurnover > 30 ? "danger" : r.yearTurnover > 15 ? "warning" : "success"} hint={`+${r.yearHires} qabul · −${r.yearFires} bo'shatish`} />
-        <StatCard label={`Davomat — ${monthTitle(month)}`} value={r.attendance.rate != null ? `${r.attendance.rate}%` : "—"} hint={`kechikish ${Math.round(r.attendance.lateMinutes / 60)} soat · sababsiz ${r.attendance.absent} kun`} tone={(r.attendance.rate ?? 100) < 90 ? "warning" : "default"} />
-        <StatCard label="Ish haqi fondi (oy)" value={money(r.series.at(-1)?.payroll ?? 0)} hint={`+ ijtimoiy soliq ${money(r.series.at(-1)?.employerTax ?? 0)}`} />
-        <StatCard label="Ochiq vakansiya" value={String(r.recruiting.openVacancies)} hint={`${r.recruiting.openSeats} o'rin · qabulgacha ~${r.recruiting.daysToHire ?? "—"} kun`} />
-        <StatCard label="Kurslar" value={`${r.training.passed} o'tdi`} hint={`${r.training.assigned} topshirmagan · ${r.training.failed} o'tmagan`} />
+        <StatCard label="Xodimlar" value={String(r.headcount)} icon={BarChart3} hint={r.avgTenure != null ? `o'rtacha staj ${r.avgTenure} yil` : undefined} href="/otdel-kadr?tab=xodimlar" />
+        <StatCard label="Aylanma (12 oy)" value={`${r.yearTurnover}%`} tone={r.yearTurnover > 30 ? "danger" : r.yearTurnover > 15 ? "warning" : "success"} hint={`+${r.yearHires} qabul · −${r.yearFires} bo'shatish`} href="#hisobot-12oy" />
+        <StatCard label={`Davomat — ${monthTitle(month)}`} value={r.attendance.rate != null ? `${r.attendance.rate}%` : "—"} hint={`kechikish ${Math.round(r.attendance.lateMinutes / 60)} soat · sababsiz ${r.attendance.absent} kun`} tone={(r.attendance.rate ?? 100) < 90 ? "warning" : "default"} href={`/otdel-kadr?tab=davomat&oy=${month}`} />
+        <StatCard label="Ish haqi fondi (oy)" value={money(r.series.at(-1)?.payroll ?? 0)} hint={`+ ijtimoiy soliq ${money(r.series.at(-1)?.employerTax ?? 0)}`} href="/ish-haqi" />
+        <StatCard label="Ochiq vakansiya" value={String(r.recruiting.openVacancies)} hint={`${r.recruiting.openSeats} o'rin · qabulgacha ~${r.recruiting.daysToHire ?? "—"} kun`} href="/otdel-kadr?tab=yollash#vakansiyalar" />
+        <StatCard label="Kurslar" value={`${r.training.passed} o'tdi`} hint={`${r.training.assigned} topshirmagan · ${r.training.failed} o'tmagan`} href="/otdel-kadr?tab=oqitish" />
         <StatCard label="Kutilayotgan arizalar" value={String(r.pendingRequests)} tone={r.pendingRequests ? "warning" : "default"} href="/otdel-kadr?tab=arizalar" />
         <StatCard label="Ochiq murojaatlar" value={String(r.openFeedback)} tone={r.openFeedback ? "warning" : "default"} href="/otdel-kadr?tab=murojaatlar" />
       </div>
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">12 oy: xodimlar, qabul, bo&apos;shatish, ish haqi fondi</h2></div>
+        <div id="hisobot-12oy" className="scroll-mt-20 border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">12 oy: xodimlar, qabul, bo&apos;shatish, ish haqi fondi</h2></div>
         <Table>
           <thead><tr><Th>Oy</Th><Th>Xodimlar</Th><Th right>Qabul</Th><Th right>Bo&apos;shatish</Th><Th right>Aylanma</Th><Th right>Ish haqi fondi</Th></tr></thead>
           <tbody>

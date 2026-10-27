@@ -67,10 +67,10 @@ export default async function AppUsersPage({ searchParams }: { searchParams: Pro
       ) : (
         <>
           <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <StatCard label="Jami" value={users.length} hint={`oxirgi ${NEW_DAYS} kunda ${users.filter(isNew).length} ta yangi · ${withAccess} tasi ERP'ga kira oladi`} icon={Users} />
-            <StatCard label="Tadbirkorlar" value={count("TADBIRKOR")} icon={Briefcase} />
-            <StatCard label="Quruvchilar" value={count("QURUVCHI")} hint={`${users.filter((u) => u.memberships.some((m) => m.role === "QURUVCHI" && m.org.externalRef)).length} tasi ERP mijoziga ulangan`} icon={HardHat} />
-            <StatCard label="Haydovchilar" value={count("HAYDOVCHI")} hint={`${users.filter((u) => u.memberships.some((m) => m.role === "HAYDOVCHI" && m.ownPlant)).length} tasi bizning zavodda`} icon={Truck} />
+            <StatCard label="Jami" value={users.length} hint={`oxirgi ${NEW_DAYS} kunda ${users.filter(isNew).length} ta yangi · ${withAccess} tasi ERP'ga kira oladi`} icon={Users} href={href("all")} />
+            <StatCard label="Tadbirkorlar" value={count("TADBIRKOR")} icon={Briefcase} href={href("TADBIRKOR")} />
+            <StatCard label="Quruvchilar" value={count("QURUVCHI")} hint={`${users.filter((u) => u.memberships.some((m) => m.role === "QURUVCHI" && m.org.externalRef)).length} tasi ERP mijoziga ulangan`} icon={HardHat} href={href("QURUVCHI")} />
+            <StatCard label="Haydovchilar" value={count("HAYDOVCHI")} hint={`${users.filter((u) => u.memberships.some((m) => m.role === "HAYDOVCHI" && m.ownPlant)).length} tasi bizning zavodda`} icon={Truck} href={href("HAYDOVCHI")} />
           </div>
 
           <form className="relative mb-4 max-w-md">

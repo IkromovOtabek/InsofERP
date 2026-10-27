@@ -29,17 +29,17 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
       </Panel>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Ombor qiymati" value={moneyShort(c.value)} icon={Warehouse} tone="brand" hint="xomashyo × o'rt. kirim narxi" />
-        <Kpi label="Xomashyo turlari" value={String(c.sku)} icon={Layers} hint="faol pozitsiya" />
-        <Kpi label="Aylanma" value={c.turnoverDays === null ? "—" : `${fmtNum(c.turnoverDays, 0)} kun`} icon={RefreshCw} tone="info" hint="o'rtacha omborda turish" />
-        <Kpi label="Stockout xavfi" value={String(c.stockout)} icon={AlertTriangle} tone={c.stockout ? "danger" : "success"} hint="xomashyo <20 kun" />
-        <Kpi label="Overstock" value={String(c.overstock)} icon={Snowflake} tone={c.overstock ? "warning" : "default"} hint="90+ kunlik zaxira" />
-        <Kpi label="Write-off" value={moneyShort(c.writeOff)} icon={Trash2} tone={c.writeOff ? "danger" : "default"} hint={`${c.writeOffCount} ta yozuv · davr`} />
+        <Kpi label="Ombor qiymati" value={moneyShort(c.value)} icon={Warehouse} tone="brand" hint="xomashyo × o'rt. kirim narxi" href="#ombor-holati" />
+        <Kpi label="Xomashyo turlari" value={String(c.sku)} icon={Layers} hint="faol pozitsiya" href="#ombor-holati" />
+        <Kpi label="Aylanma" value={c.turnoverDays === null ? "—" : `${fmtNum(c.turnoverDays, 0)} kun`} icon={RefreshCw} tone="info" hint="o'rtacha omborda turish" href="#ombor-holati" />
+        <Kpi label="Stockout xavfi" value={String(c.stockout)} icon={AlertTriangle} tone={c.stockout ? "danger" : "success"} hint="xomashyo <20 kun" href="#stockout-timeline" />
+        <Kpi label="Overstock" value={String(c.overstock)} icon={Snowflake} tone={c.overstock ? "warning" : "default"} hint="90+ kunlik zaxira" href="#muzlagan" />
+        <Kpi label="Write-off" value={moneyShort(c.writeOff)} icon={Trash2} tone={c.writeOff ? "danger" : "default"} hint={`${c.writeOffCount} ta yozuv · davr`} href="/stock/spisanie" />
       </div>
       <Note>Ombor ko'rsatkichlari — joriy holat snapshot'i. Davr filtri Write-off, kirim/chiqim va yetkazuvchilar kartalariga ta'sir qiladi.</Note>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Panel className="xl:col-span-2" title="Ombor holati" info="Qoldiq, kunlik sarf (30 kun o'rtachasi), necha kunga yetadi, rejadagi ehtiyoj (tasdiqlangan zayavkalar × retsept)." padded={false} action={<ExportLink type="materials" range={range} />}>
+        <Panel id="ombor-holati" className="xl:col-span-2" title="Ombor holati" info="Qoldiq, kunlik sarf (30 kun o'rtachasi), necha kunga yetadi, rejadagi ehtiyoj (tasdiqlangan zayavkalar × retsept)." padded={false} action={<ExportLink type="materials" range={range} />}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Xomashyo</Th><Th>ABC</Th><Th right>Qoldiq</Th><Th right>Qiymat</Th><Th right>Sarf/kun</Th><Th className="w-40">Yetadi</Th><Th right>Ehtiyoj</Th><Th>Holat</Th></tr></thead>
             <tbody>{d.materials.length === 0 && <Empty text="Xomashyo kiritilmagan" />}{d.materials.map((m) => (
@@ -49,7 +49,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
             ))}</tbody>
           </Table>
         </Panel>
-        <Panel title="Bashoratli stockout timeline" info="Joriy qoldiq / kunlik sarf — eng xavfli 15 xomashyo. Kritik <7, Xavfli 7–20, Yaxshi >20 kun.">
+        <Panel id="stockout-timeline" title="Bashoratli stockout timeline" info="Joriy qoldiq / kunlik sarf — eng xavfli 15 xomashyo. Kritik <7, Xavfli 7–20, Yaxshi >20 kun.">
           <div className="mb-3 grid grid-cols-4 gap-1.5 text-center text-xs">{[["Hammasi", d.materials.length, "slate"], ["Kritik", d.zones.critical, "red"], ["Xavfli", d.zones.risky, "amber"], ["Yaxshi", d.zones.good, "emerald"]].map(([l, n, col]) => <div key={l as string} className={`rounded-lg bg-${col}-50 py-1.5`}><div className={`text-lg font-bold tabular text-${col}-700`}>{n as number}</div><div className="text-[10px] text-slate-500">{l as string}</div></div>)}</div>
           {timeline.length ? <HBarList data={timeline.map((m) => ({ label: m.name, value: Math.min(60, m.days ?? 0), hint: m.days !== null && m.days > 60 ? ">60 kun" : undefined, tone: zoneTone[m.zone] === "slate" ? "slate" : zoneTone[m.zone] }))} formatValue={(v) => `${fmtNum(v, 0)} kun`} max={60} /> : <Note>Sarf ma'lumoti yo'q.</Note>}
         </Panel>
@@ -81,7 +81,7 @@ export async function StockTab({ range, sp }: { range: Range; sp: SP }) {
           <DonutChart data={d.abcStock.map((a) => ({ label: `${a.abc}-sinf (${a.items.length})`, value: a.value }))} formatValue={moneyShort} />
           <Why>{d.abcStock.map((a) => <p key={a.abc}><b>{a.abc}:</b> {a.items.map((m) => m.name).join(", ") || "—"}</p>)}</Why>
         </Panel>
-        <Panel title="Omborda muzlagan kapital" info="90 kun ishlatilmagan xomashyo + hovlidagi zayavkaga band qilinmagan tayyor mahsulot (tannarx bo'yicha).">
+        <Panel id="muzlagan" title="Omborda muzlagan kapital" info="90 kun ishlatilmagan xomashyo + hovlidagi zayavkaga band qilinmagan tayyor mahsulot (tannarx bo'yicha).">
           <div className="text-2xl font-bold tabular text-violet-600">{moneyShort(d.deadValue)} <span className="text-sm font-normal text-slate-400">so'm</span></div>
           <div className="mt-2 space-y-1 text-[13px]">
             {d.dead.map((m) => <div key={m.id} className="flex justify-between"><span>{m.name} <span className="text-xs text-slate-400">{qty(m.balance)} {m.unit}</span></span><span className="tabular">{moneyShort(m.value)}</span></div>)}

@@ -45,10 +45,10 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
       <MoliyaTabs current="/moliya/asosiy-vositalar" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Vositalar" value={String(live.length)} hint={`${assets.length - live.length} ta chiqarilgan`} icon={Building2} />
-        <StatCard label="Boshlang'ich qiymat" value={money(cost)} icon={Coins} tone="info" />
-        <StatCard label="Qoldiq qiymat (balansda)" value={money(net)} hint={`${monthLabel(now)} oxiriga`} icon={TrendingDown} tone="brand" />
-        <StatCard label="Oylik amortizatsiya" value={money(monthly)} hint="PNL'da ishlab chiqarish xarajati" icon={CalendarClock} />
+        <StatCard label="Vositalar" value={String(live.length)} hint={`${assets.length - live.length} ta chiqarilgan`} icon={Building2} href="#royxat" />
+        <StatCard label="Boshlang'ich qiymat" value={money(cost)} icon={Coins} tone="info" href="#royxat" />
+        <StatCard label="Qoldiq qiymat (balansda)" value={money(net)} hint={`${monthLabel(now)} oxiriga`} icon={TrendingDown} tone="brand" href="#royxat" />
+        <StatCard label="Oylik amortizatsiya" value={money(monthly)} hint="PNL'da ishlab chiqarish xarajati" icon={CalendarClock} href={assets.length ? "#oylar" : "#royxat"} />
       </div>
 
       {unlinked.length > 0 && (
@@ -70,7 +70,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
         </Section>
       )}
 
-      <Section title="Ro'yxat">
+      <Section id="royxat" title="Ro'yxat">
         <Table>
           <thead><tr><Th>Nomi</Th><Th>Guruh</Th><Th>Olingan</Th><Th right>Qiymati</Th><Th right>Muddat</Th><Th right>Oylik</Th><Th right>Yig'ilgan</Th><Th right>Qoldiq qiymat</Th>{canWrite && <Th />}</tr></thead>
           <tbody>
@@ -96,7 +96,7 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
       </Section>
 
       {assets.length > 0 && (
-        <Section title="Oylar bo'yicha">
+        <Section id="oylar" title="Oylar bo'yicha">
           <Table>
             <thead><tr><Th>Oy</Th><Th right>Amortizatsiya (PNL)</Th><Th right>Qoldiq qiymat oy oxirida (balans)</Th></tr></thead>
             <tbody>

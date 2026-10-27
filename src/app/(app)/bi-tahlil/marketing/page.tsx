@@ -5,7 +5,7 @@ import { marketingTab, type Verdict } from "@/lib/bi/marketing";
 import { money, moneyShort, fmtNum } from "@/lib/format";
 import { Table, Th, Td, Tr, Badge, type BadgeColor } from "@/components/ui";
 import { BarChart, HBarList, LineChart } from "@/components/ui/charts";
-import { Kpi, Panel, Why, Insight, Action, Note, ProgressBar } from "../ui";
+import { Kpi, Panel, Why, Insight, Action, Note, ProgressBar, tabHref } from "../ui";
 import { cn } from "@/lib/utils";
 import { requirePage } from "@/lib/page-guard";
 
@@ -47,7 +47,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </Panel>
 
         {/* Byudjet hukmi */}
-        <Panel title="Byudjet hukmi — nimani kesish, nimani ko'paytirish" eyebrow="hukm kanal bo'yicha" info="Mediana ROAS bo'yicha: <1x — to'xtating; mediananing 60% dan past — kamaytiring; 130% dan yuqori — ko'paytiring. Qayta taqsimlashda kanal samaradorligining 70% i saqlanadi deb olinadi.">
+        <Panel id="hukm" title="Byudjet hukmi — nimani kesish, nimani ko'paytirish" eyebrow="hukm kanal bo'yicha" info="Mediana ROAS bo'yicha: <1x — to'xtating; mediananing 60% dan past — kamaytiring; 130% dan yuqori — ko'paytiring. Qayta taqsimlashda kanal samaradorligining 70% i saqlanadi deb olinadi.">
           {d.stop.length > 0 && <div className="mb-4 rounded-lg border-l-4 border-red-500 bg-red-50/70 p-3.5 text-[13px]">
             <div className="font-semibold text-red-900"><Ban size={14} className="mr-1 inline" /> Shu {d.stop.length} ta kanalni to'xtating — ular sarflangan puldan kam qaytaryapti. Zarar {moneyShort(d.stopLoss)} so'm</div>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">{d.stop.map((c) => <div key={c.channel} className="rounded-md bg-white p-2.5"><div className="font-semibold">{c.channel}</div><div className="text-xs text-slate-600">{moneyShort(c.spend)} sarflandi → {moneyShort(c.revenue)} qaytdi · ROAS {x(c.roas)}</div><div className="text-sm font-semibold tabular text-red-600">−{moneyShort(c.spend - c.revenue)} so'm</div></div>)}</div>
@@ -67,27 +67,27 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Panel title="Nima e'tibor talab qiladi">{d.signals.length ? <ul className="space-y-2.5 text-[13px]">{d.signals.map((s, i) => <li key={i} className="flex items-start gap-2"><span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", { success: "bg-emerald-500", warning: "bg-amber-500", danger: "bg-red-500", info: "bg-blue-500" }[s.level])} /><div><div className="font-semibold">{s.title}</div><div className="text-xs text-slate-500">{s.text}</div></div></li>)}</ul> : <Note>Signal yo'q.</Note>}</Panel>
           <div className="grid grid-cols-2 gap-3 xl:col-span-2 md:grid-cols-3">
-            <Kpi label="Marketing xarajati" value={moneyShort(t.spend)} delta={d.deltas.spend} invert icon={Wallet} hint={`byudjet ${moneyShort(t.budget)}`} />
-            <Kpi label="Leadlar" value={String(t.leads)} delta={d.deltas.leads} icon={Megaphone} tone="info" hint={`konversiya ${fmtNum(d.conversion, 0)}%`} />
-            <Kpi label="Yangi mijozlar" value={String(t.customers)} delta={d.deltas.customers} icon={Users} tone="violet" hint={d.erpComparable ? `ERP: ${d.erpNew} ta birinchi buyurtma` : "ERP: tizimgacha ma'lumot yo'q"} />
-            <Kpi label="Marketing daromadi" value={moneyShort(t.revenue)} delta={d.deltas.revenue} icon={TrendingUp} tone="brand" />
-            <Kpi label="ROAS" value={x(t.roas)} delta={d.deltas.roas} icon={Percent} tone={t.roas !== null && t.roas >= 1 ? "success" : "danger"} />
-            <Kpi label="CAC" value={t.cac !== null ? moneyShort(t.cac) : "—"} delta={d.deltas.cac} invert icon={Coins} />
+            <Kpi label="Marketing xarajati" value={moneyShort(t.spend)} delta={d.deltas.spend} invert icon={Wallet} hint={`byudjet ${moneyShort(t.budget)}`} href="#kanallar" />
+            <Kpi label="Leadlar" value={String(t.leads)} delta={d.deltas.leads} icon={Megaphone} tone="info" hint={`konversiya ${fmtNum(d.conversion, 0)}%`} href="#voronka" />
+            <Kpi label="Yangi mijozlar" value={String(t.customers)} delta={d.deltas.customers} icon={Users} tone="violet" hint={d.erpComparable ? `ERP: ${d.erpNew} ta birinchi buyurtma` : "ERP: tizimgacha ma'lumot yo'q"} href={tabHref(range, "customers")} />
+            <Kpi label="Marketing daromadi" value={moneyShort(t.revenue)} delta={d.deltas.revenue} icon={TrendingUp} tone="brand" href="#trend" />
+            <Kpi label="ROAS" value={x(t.roas)} delta={d.deltas.roas} icon={Percent} tone={t.roas !== null && t.roas >= 1 ? "success" : "danger"} href="#hukm" />
+            <Kpi label="CAC" value={t.cac !== null ? moneyShort(t.cac) : "—"} delta={d.deltas.cac} invert icon={Coins} href="#kanallar" />
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <Panel title="Marketing voronkasi" info="Ko'rsatish → bosish → lead → mijoz. Har bosqichda o'tish ulushi va bitta birlik narxi.">
+          <Panel id="voronka" title="Marketing voronkasi" info="Ko'rsatish → bosish → lead → mijoz. Har bosqichda o'tish ulushi va bitta birlik narxi.">
             {t.impressions || t.leads ? <div className="space-y-2">{d.funnel.map((f, i, arr) => { const prev = i ? arr[i - 1].value : 0; const conv = prev ? (f.value / prev) * 100 : null; return <div key={f.label}><div className="flex justify-between text-[13px]"><span className="font-medium">{f.label}</span><span className="tabular">{fmtNum(f.value, 0)}{conv !== null && <span className="ml-2 text-xs text-slate-500">{fmtNum(conv, 2)}% o'tdi</span>}<span className="ml-2 text-xs text-slate-400">{f.cost ? `${moneyShort(f.cost)}/dona` : ""}</span></span></div><ProgressBar value={f.value} max={arr[0].value || f.value || 1} tone={(["slate", "info", "warning", "success"] as const)[i]} /></div>; })}<div className="mt-3 flex justify-between rounded-lg bg-slate-50 p-3 text-[13px]"><span className="font-semibold">Yakuniy natija</span><span className="font-bold tabular">{moneyShort(t.revenue)} so'm · ROAS {x(t.roas)}</span></div></div> : <Note>Voronka uchun ko'rsatish/bosish/lead ma'lumotlari kiritilmagan.</Note>}
             <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><div className="rounded-lg bg-slate-50 p-2"><div className="text-slate-400">CTR</div><div className="font-semibold">{fmtNum(d.ctr, 2)}%</div></div><div className="rounded-lg bg-slate-50 p-2"><div className="text-slate-400">CPM</div><div className="font-semibold">{moneyShort(d.cpm)}</div></div><div className="rounded-lg bg-slate-50 p-2"><div className="text-slate-400">CPC</div><div className="font-semibold">{moneyShort(d.cpc)}</div></div></div>
           </Panel>
-          <Panel title="Trend — oy bo'yicha" info="Davr ichidagi oylar: xarajat vs daromad, leadlar.">
+          <Panel id="trend" title="Trend — oy bo'yicha" info="Davr ichidagi oylar: xarajat vs daromad, leadlar.">
             {d.trend.length > 1 ? <LineChart labels={d.trend.map((m) => m.label)} series={[{ name: "Daromad", values: d.trend.map((m) => m.revenue), color: "#ffa800" }, { name: "Xarajat", values: d.trend.map((m) => m.spend), color: "#fa1636" }]} formatValue={(v) => `${moneyShort(v)} so'm`} height={180} /> : <BarChart data={d.trend.map((m) => ({ label: m.label, value: m.revenue }))} compare={d.trend.map((m) => m.spend)} formatValue={(v) => `${moneyShort(v)} so'm`} height={160} />}
             <div className="mt-3"><HBarList data={d.verdicts.slice(0, 8).map((c) => ({ label: c.channel, value: c.spend, hint: `ROAS ${x(c.roas)}`, tone: c.verdict === "TO'XTATING" ? ("danger" as const) : c.verdict === "KO'PAYTIRING" ? ("success" as const) : ("info" as const) }))} formatValue={moneyShort} /></div>
           </Panel>
         </div>
 
-        <Panel title="Kanallar jadvali" padded={false}>
+        <Panel id="kanallar" title="Kanallar jadvali" padded={false}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>Kanal</Th><Th>Hukm</Th><Th right>Byudjet</Th><Th right>Xarajat</Th><Th right>Leadlar</Th><Th right>Mijozlar</Th><Th right>Daromad</Th><Th right>Foyda</Th><Th right>ROAS</Th><Th right>CAC</Th><Th right>CPL</Th></tr></thead>
             <tbody>{d.verdicts.map((c) => <Tr key={c.channel}><Td className="font-medium">{c.channel}</Td><Td><Badge color={V[c.verdict].color} dot={false}>{c.verdict}</Badge></Td><Td right>{moneyShort(c.budget)}</Td><Td right>{moneyShort(c.spend)}</Td><Td right>{c.leads}</Td><Td right>{c.customers}</Td><Td right>{moneyShort(c.revenue)}</Td><Td right className={c.profit < 0 ? "text-red-600" : "text-emerald-700"}>{moneyShort(c.profit)}</Td><Td right className="font-semibold">{x(c.roas)}</Td><Td right>{c.cac !== null ? moneyShort(c.cac) : "—"}</Td><Td right>{c.cpl !== null ? moneyShort(c.cpl) : "—"}</Td></Tr>)}</tbody>

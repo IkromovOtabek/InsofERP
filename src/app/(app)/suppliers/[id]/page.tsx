@@ -50,11 +50,11 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
         subtitle={[sup.inn ? `INN ${sup.inn}` : null, sup.vatPayer ? "QQS to'lovchisi" : "QQS to'lovchisi emas", sup.phone, `qo'shilgan ${date(sup.createdAt)}`].filter(Boolean).join(" · ")} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-        <StatCard label="Jami olingan mol (QQS bilan)" value={money(ledger.received)} icon={PackageCheck} tone="brand" />
-        <StatCard label="Jami to'langan" value={money(ledger.paid)} icon={Wallet} tone="info" />
-        <StatCard label="Qarzimiz (to'lanmagan kirim)" value={money(ledger.debt)} hint={`${ledger.unpaid.length} ta kirim${ledger.opening > 0.005 ? ` + boshlang'ich qoldiq ${money(ledger.opening)}` : ""}`} icon={Banknote} tone={ledger.debt > 0 ? "danger" : "success"} />
-        <StatCard label="Avans (mol kutilmoqda)" value={money(ledger.advance)} icon={Scale} tone={ledger.advance > 0 ? "warning" : "default"} />
-        <StatCard label="Qaytarilishi kerak" value={money(ledger.refundDue)} hint="bekor qilingan ta'minot" icon={Undo2} tone={ledger.refundDue > 0 ? "danger" : "default"} />
+        <StatCard label="Jami olingan mol (QQS bilan)" value={money(ledger.received)} icon={PackageCheck} tone="brand" href="#kirimlar" />
+        <StatCard label="Jami to'langan" value={money(ledger.paid)} icon={Wallet} tone="info" href="#kirimlar" />
+        <StatCard label="Qarzimiz (to'lanmagan kirim)" value={money(ledger.debt)} hint={`${ledger.unpaid.length} ta kirim${ledger.opening > 0.005 ? ` + boshlang'ich qoldiq ${money(ledger.opening)}` : ""}`} icon={Banknote} tone={ledger.debt > 0 ? "danger" : "success"} href={ledger.unpaid.length > 0 ? "#tolanmagan" : "#kirimlar"} />
+        <StatCard label="Avans (mol kutilmoqda)" value={money(ledger.advance)} icon={Scale} tone={ledger.advance > 0 ? "warning" : "default"} href="#taminot" />
+        <StatCard label="Qaytarilishi kerak" value={money(ledger.refundDue)} hint="bekor qilingan ta'minot" icon={Undo2} tone={ledger.refundDue > 0 ? "danger" : "default"} href="#taminot" />
       </div>
 
       {canEdit && (
@@ -80,7 +80,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
 
       {ledger.unpaid.length > 0 && (
         <div className="mt-6">
-          <h2 className="mb-2 font-semibold">To&apos;lanmagan kirimlar</h2>
+          <h2 id="tolanmagan" className="mb-2 scroll-mt-20 font-semibold">To&apos;lanmagan kirimlar</h2>
           <Table>
             <thead><tr><Th>Kirim</Th><Th>Sana</Th><Th right>Qator</Th><Th right>Summa</Th></tr></thead>
             <tbody>
@@ -122,7 +122,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div>
-          <h2 className="mb-2 font-semibold">Oxirgi kirimlar</h2>
+          <h2 id="kirimlar" className="mb-2 scroll-mt-20 font-semibold">Oxirgi kirimlar</h2>
           <Table>
             <thead><tr><Th>Kirim</Th><Th>Sana</Th><Th>Sklad</Th><Th right>Summa (QQS bilan)</Th></tr></thead>
             <tbody>
@@ -139,7 +139,7 @@ export default async function SupplierCard({ params }: { params: Promise<{ id: s
           </Table>
         </div>
         <div>
-          <h2 className="mb-2 font-semibold">Ta&apos;minot zayavkalari</h2>
+          <h2 id="taminot" className="mb-2 scroll-mt-20 font-semibold">Ta&apos;minot zayavkalari</h2>
           <Table>
             <thead><tr><Th>Zayavka</Th><Th>Sana</Th><Th>Holat</Th><Th right>Reja</Th></tr></thead>
             <tbody>

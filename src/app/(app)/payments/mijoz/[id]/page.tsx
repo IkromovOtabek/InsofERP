@@ -59,15 +59,15 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Qatorlar" value={fmtNum(count)} hint={from || to ? "tanlangan davrda" : "butun jurnal"} icon={Receipt} />
-        <StatCard label="Miqdor (jami)" value={fmtNum(Number(totals._sum.qty ?? 0), 3)} hint={byProduct.map((p) => p.unit).filter((u, i, a) => a.indexOf(u) === i).join(", ")} icon={Truck} />
-        <StatCard label="Summa + NDS" value={money(Number(totals._sum.sum ?? 0))} hint={`NDS ${money(Number(totals._sum.nds ?? 0))} · dostavka ${money(Number(totals._sum.deliveryFee ?? 0))}`} icon={Receipt} />
-        <StatCard label="Itogo summa" value={money(sumTotal)} tone="success" icon={Wallet} hint={[...byPay.entries()].map(([k, v]) => `${k}: ${money(v.total)}`).join(" · ") || undefined} />
+        <StatCard label="Qatorlar" value={fmtNum(count)} hint={from || to ? "tanlangan davrda" : "butun jurnal"} icon={Receipt} href="#qatorlar" />
+        <StatCard label="Miqdor (jami)" value={fmtNum(Number(totals._sum.qty ?? 0), 3)} hint={byProduct.map((p) => p.unit).filter((u, i, a) => a.indexOf(u) === i).join(", ")} icon={Truck} href="#mahsulot-boyicha" />
+        <StatCard label="Summa + NDS" value={money(Number(totals._sum.sum ?? 0))} hint={`NDS ${money(Number(totals._sum.nds ?? 0))} · dostavka ${money(Number(totals._sum.deliveryFee ?? 0))}`} icon={Receipt} href="#qatorlar" />
+        <StatCard label="Itogo summa" value={money(sumTotal)} tone="success" icon={Wallet} hint={[...byPay.entries()].map(([k, v]) => `${k}: ${money(v.total)}`).join(" · ") || undefined} href="#qatorlar" />
       </div>
 
       <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <h2 className="mb-3 font-semibold">Mahsulot bo&apos;yicha</h2>
+          <h2 id="mahsulot-boyicha" className="mb-3 scroll-mt-20 font-semibold">Mahsulot bo&apos;yicha</h2>
           {byProduct.length === 0 ? <p className="text-sm text-slate-500">Qator yo&apos;q</p> : (
             <ul className="space-y-1.5 text-sm">
               {byProduct.map((p) => (
@@ -96,7 +96,7 @@ export default async function CustomerRegisterPage({ params, searchParams }: {
         </Card>
       </div>
 
-      <h2 className="mb-3 font-semibold">Qatorlar <span className="text-sm font-normal text-slate-500">· {count} ta</span></h2>
+      <h2 id="qatorlar" className="mb-3 scroll-mt-20 font-semibold">Qatorlar <span className="text-sm font-normal text-slate-500">· {count} ta</span></h2>
       <RegisterTable rows={rows.map(toView)} showCustomer={false} />
     </div>
   );

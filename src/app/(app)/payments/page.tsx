@@ -201,10 +201,10 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Qatorlar" value={fmtNum(totals.rows)} hint={`${cust.length} ta mijoz`} icon={Receipt} />
-        <StatCard label="Miqdor (jami)" value={fmtNum(totals.qty, 3)} icon={Wallet} />
-        <StatCard label="Summa (NDS'siz)" value={money(totals.sum)} hint={`NDS ${money(totals.nds)} alohida`} icon={Receipt} />
-        <StatCard label="Itogo (NDS bilan)" value={money(totals.total)} tone="success" icon={Wallet} />
+        <StatCard label="Qatorlar" value={fmtNum(totals.rows)} hint={`${cust.length} ta mijoz`} icon={Receipt} href="#jurnal-qatorlar" />
+        <StatCard label="Miqdor (jami)" value={fmtNum(totals.qty, 3)} icon={Wallet} href="#jurnal-qatorlar" />
+        <StatCard label="Summa (NDS'siz)" value={money(totals.sum)} hint={`NDS ${money(totals.nds)} alohida`} icon={Receipt} href="#jurnal-qatorlar" />
+        <StatCard label="Itogo (NDS bilan)" value={money(totals.total)} tone="success" icon={Wallet} href="#jurnal-qatorlar" />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -261,7 +261,7 @@ async function JurnalTab({ where, batch, skipped = 0, unknown = 0, paid = null, 
         </Card>
       </div>
 
-      <h2 className="mb-3 font-semibold">Jurnal {rows.length < totals.rows && <span className="text-sm font-normal text-slate-500">· oxirgi {rows.length} ta qator ({totals.rows} tadan)</span>}</h2>
+      <h2 id="jurnal-qatorlar" className="mb-3 scroll-mt-20 font-semibold">Jurnal {rows.length < totals.rows && <span className="text-sm font-normal text-slate-500">· oxirgi {rows.length} ta qator ({totals.rows} tadan)</span>}</h2>
       <RegisterTable rows={rows.map(toView)} marks={marks} />
     </>
   );

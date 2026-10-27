@@ -54,7 +54,7 @@ export function SheetTh({ children, tone = "head", colSpan, rowSpan, right, clas
   return (
     <th scope="col" colSpan={colSpan} rowSpan={rowSpan} title={title}
       style={{ background: HEAD_BG[tone] }}
-      className={cn("border-r border-b border-slate-300/90 px-2.5 py-2 text-center align-middle text-[12.5px] font-semibold leading-tight whitespace-nowrap text-slate-900 last:border-r-0", right && "text-right", className)}>
+      className={cn("border-r border-b border-slate-300/90 px-2.5 py-2 text-center align-middle text-[13px] font-bold leading-tight whitespace-nowrap text-slate-900 last:border-r-0", right && "text-right", className)}>
       {children}
     </th>
   );

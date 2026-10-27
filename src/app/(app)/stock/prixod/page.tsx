@@ -133,10 +133,10 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Qatorlar" value={fmtNum(tot.rows)} icon={Rows3} hint={`${new Set(rows.map((r) => r.receiptId)).size} ta hujjat`} />
-        <StatCard label="Umumiy summa" value={soum(tot.sum)} icon={Wallet} hint={tot.delivery > 0 ? `shu jumladan yetkazib berish ${soum(tot.delivery)}` : "QQS'siz"} />
-        <StatCard label="QQS" value={soum(tot.vat)} icon={Percent} tone="info" />
-        <StatCard label="Jami summa" value={soum(tot.total)} icon={Sigma} tone="success" hint="QQS va yetkazib berish bilan" />
+        <StatCard label="Qatorlar" value={fmtNum(tot.rows)} icon={Rows3} hint={`${new Set(rows.map((r) => r.receiptId)).size} ta hujjat`} href="#jurnal" />
+        <StatCard label="Umumiy summa" value={soum(tot.sum)} icon={Wallet} hint={tot.delivery > 0 ? `shu jumladan yetkazib berish ${soum(tot.delivery)}` : "QQS'siz"} href="#jurnal" />
+        <StatCard label="QQS" value={soum(tot.vat)} icon={Percent} tone="info" href="#jurnal" />
+        <StatCard label="Jami summa" value={soum(tot.total)} icon={Sigma} tone="success" hint="QQS va yetkazib berish bilan" href="#jurnal" />
       </div>
 
       {/* Ro'yxat bo'shab qolsa ham joyida turadi — natija xabari yo'qolmasin (kirim bo'lmasa o'zi hech narsa chizmaydi) */}
@@ -158,6 +158,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
         <Callout tone="warning">{`${fmtNum(rows.length)} ta qatordan birinchi ${fmtNum(shown.length)} tasi ko'rsatildi — davr yoki qidiruvni toraytiring. Jamilar va Excel — barcha qatorlar bo'yicha.`}</Callout>
       )}
 
+      <div id="jurnal" className="scroll-mt-20" />
       <Sheet>
         <SheetHead>
           <tr>

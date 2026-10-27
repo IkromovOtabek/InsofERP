@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Tahlil → Mijozlar: tahlil va «Insof 2026» jadvalidagi qarz varaqlari. Sidebar'da «Mijozlar» ostida ham shu havolalar (`lib/nav.ts`).
- * URL: `sana` (YYYY-MM-DD, sukut — bugun), `q` (nom bo'yicha qidiruv), `tur` (CASH / BANK), `holat` (0–3).
+ * URL: `sana` (YYYY-MM-DD, sukut — bugun), `q` (nom bo'yicha qidiruv), `tur` (CASH / BANK), `holat` (0–3),
+ * `qism` (debitor / kreditor — kim kimga qarz).
  */
 
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
@@ -59,16 +60,27 @@ const filterName = <T extends { name: string }>(rows: T[], q?: string) => {
 export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; linkable?: boolean }) {
   const sup = who === "supplier";
   const kind = sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : undefined;
-  const rows = filterName(s.rows, sp.q);
+  // Debitorka — bizga qarzdorlar (mijoz qarzi, ta'minotchiga bergan avansimiz);
+  // kreditorka — biz qarzmiz (mijozdan olingan avans, ta'minotchiga qarzimiz)
+  const qism = sp.qism === "debitor" || sp.qism === "kreditor" ? sp.qism : undefined;
+  const isDebitor = (r: DebtSheet["rows"][number]) => (sup ? r.now.advance : r.now.debt) >= 1;
+  const isKreditor = (r: DebtSheet["rows"][number]) => (sup ? r.now.debt : r.now.advance) >= 1;
+  const named = filterName(s.rows, sp.q);
+  const rows = named.filter((r) => !qism || (qism === "debitor" ? isDebitor(r) : isKreditor(r)));
   const d1 = dm(s.monthStart), d2 = dm(s.day);
   const t = s.total;
-  const title = sup ? "Ta'minotchilar oldidagi qarzdorlik" : "Xaridorlar qarzdorligi";
-  const legend = sup ? "Qarz — biz ularga qarzmiz; Avans — biz oldindan to'laganmiz" : "Qarz — mijoz bizga qarz; Avans — mijoz oldindan to'lagan";
+  const sumRows = (f: (r: DebtSheet["rows"][number]) => number) => rows.reduce((a, r) => a + f(r), 0);
+  const ft = { open: { debt: sumRows((r) => r.open.debt), advance: sumRows((r) => r.open.advance) }, now: { debt: sumRows((r) => r.now.debt), advance: sumRows((r) => r.now.advance) } };
+  const debitorSum = sup ? t.now.advance : t.now.debt, kreditorSum = sup ? t.now.debt : t.now.advance;
+  const qismHref = (v?: string) => `${base}${qs({ sana: sp.sana, q: sp.q, tur: kind, qism: v })}`;
+  const title = sup ? "Ta'minotchilar: kreditorka va debitorka" : "Xaridorlar: debitorka va kreditorka";
+  const legend = sup ? "Kreditorka (qarz) — biz ularga qarzmiz; Debitorka (avans) — biz oldindan to'laganmiz" : "Debitorka (qarz) — mijoz bizga qarz; Kreditorka (avans) — mijoz oldindan to'lagan";
   const delta = (a: number, b: number) => (Math.abs(b - a) < 1 ? "oy boshidagidek" : `oy boshiga nisbatan ${b > a ? "+" : "−"}${moneyShort(Math.abs(b - a))}`);
   const col = sup ? "Ta'minotchi" : "Xaridor";
   const excelRows = rows.map((r) => ({
     [col]: r.name, ...(sup ? {} : { "Mijoz turi": r.kind ? CUSTOMER_KIND_LABEL[r.kind] : "" }),
-    [`Qarz ${d1}`]: r.open.debt || null, [`Avans ${d1}`]: r.open.advance || null, [`Qarz ${d2}`]: r.now.debt || null, [`Avans ${d2}`]: r.now.advance || null, "O'zgarish": r.change || null,
+    [`${sup ? "Kreditorka" : "Debitorka"} ${d1}`]: r.open.debt || null, [`${sup ? "Debitorka" : "Kreditorka"} ${d1}`]: r.open.advance || null,
+    [`${sup ? "Kreditorka" : "Debitorka"} ${d2}`]: r.now.debt || null, [`${sup ? "Debitorka" : "Kreditorka"} ${d2}`]: r.now.advance || null, "O'zgarish": r.change || null,
   }));
   const tint = "bg-emerald-50/60";
 
@@ -78,22 +90,29 @@ export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "sup
         <h2 className="text-[17px] font-bold text-slate-900">{title} — {monthName(s.day)}</h2>
         <span className="text-[13px] text-slate-500">{legend}</span>
       </div>
-      <Toolbar base={base} day={s.day} sp={sp} keep={{ tur: kind }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
+      <Toolbar base={base} day={s.day} sp={sp} keep={{ tur: kind, qism }} placeholder={sup ? "Ta'minotchi nomi…" : "Xaridor nomi…"}
         excel={<ExcelButton file={`${title} ${isoDate(s.day)}`} sheets={[{ name: sup ? "Ta'minotchilar" : "Xaridorlar", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label={sup ? `Bizning qarzimiz, ${d2}` : `Mijozlar qarzi, ${d2}`} value={moneyShort(t.now.debt)} hint={delta(t.open.debt, t.now.debt)} icon={sup ? Truck : HandCoins} tone={t.now.debt > t.open.debt ? "danger" : "success"} />
-        <StatCard label={sup ? `Bergan avansimiz, ${d2}` : `Olingan avans, ${d2}`} value={moneyShort(t.now.advance)} hint={delta(t.open.advance, t.now.advance)} icon={Wallet} tone="info" />
-        <StatCard label={`Sof holat, ${d2}`} value={moneyShort(t.now.debt - t.now.advance)} hint={sup ? "qarz − avans: + bo'lsa biz qarzmiz" : "qarz − avans: + bo'lsa ular qarz"} icon={Scale} tone="brand" />
-        <StatCard label={sup ? "Ta'minotchilar" : "Xaridorlar"} value={fmtNum(rows.length)} hint={`qarzi bor: ${rows.filter((r) => r.now.debt > 0).length} · avansi bor: ${rows.filter((r) => r.now.advance > 0).length}`} icon={sup ? Truck : UserRound} />
+        <StatCard label={sup ? `Kreditorka (qarzimiz), ${d2}` : `Debitorka (mijozlar qarzi), ${d2}`} value={moneyShort(t.now.debt)} hint={delta(t.open.debt, t.now.debt)} icon={sup ? Truck : HandCoins} tone={t.now.debt > t.open.debt ? "danger" : "success"} href={qismHref(sup ? "kreditor" : "debitor")} />
+        <StatCard label={sup ? `Debitorka (bergan avansimiz), ${d2}` : `Kreditorka (olingan avans), ${d2}`} value={moneyShort(t.now.advance)} hint={delta(t.open.advance, t.now.advance)} icon={Wallet} tone="info" href={qismHref(sup ? "debitor" : "kreditor")} />
+        <StatCard label={`Sof holat, ${d2}`} value={moneyShort(t.now.debt - t.now.advance)} hint={sup ? "kreditorka − debitorka: + bo'lsa biz qarzmiz" : "debitorka − kreditorka: + bo'lsa ular qarz"} icon={Scale} tone="brand" href={qismHref()} />
+        <StatCard label={sup ? "Ta'minotchilar" : "Xaridorlar"} value={fmtNum(named.length)} hint={`debitor: ${named.filter(isDebitor).length} · kreditor: ${named.filter(isKreditor).length}`} icon={sup ? Truck : UserRound} href={qismHref()} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-xs font-medium text-slate-500">Ko&apos;rinish:</span>
+        <Chip href={qismHref()} on={!qism} count={named.length}>Hammasi</Chip>
+        <Chip href={qismHref("debitor")} on={qism === "debitor"} count={named.filter(isDebitor).length}>Debitorka · {sup ? "bizga qarz (avans)" : "bizga qarz"} · {moneyShort(debitorSum)}</Chip>
+        <Chip href={qismHref("kreditor")} on={qism === "kreditor"} count={named.filter(isKreditor).length}>Kreditorka · {sup ? "biz qarzmiz" : "biz qarzmiz (avans)"} · {moneyShort(kreditorSum)}</Chip>
       </div>
 
       {!sup && s.kinds && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs font-medium text-slate-500">Mijoz turi:</span>
-          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q })}`} on={!kind} count={s.kinds.ALL}>Hammasi</Chip>
-          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, tur: "CASH" })}`} on={kind === "CASH"} count={s.kinds.CASH}>Naqd</Chip>
-          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, tur: "BANK" })}`} on={kind === "BANK"} count={s.kinds.BANK}>Perechisleniye</Chip>
+          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, qism })}`} on={!kind} count={s.kinds.ALL}>Hammasi</Chip>
+          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, qism, tur: "CASH" })}`} on={kind === "CASH"} count={s.kinds.CASH}>Naqd</Chip>
+          <Chip href={`${base}${qs({ sana: sp.sana, q: sp.q, qism, tur: "BANK" })}`} on={kind === "BANK"} count={s.kinds.BANK}>Perechisleniye</Chip>
         </div>
       )}
 
@@ -101,15 +120,15 @@ export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "sup
         <thead>
           <tr>
             <Th>{col}</Th>
-            <Th right>Qarz · {d1}</Th>
-            <Th right>Avans · {d1}</Th>
-            <Th right className="text-emerald-700">Qarz · {d2}</Th>
-            <Th right className="text-emerald-700">Avans · {d2}</Th>
+            <Th right>{sup ? "Kreditorka" : "Debitorka"} · {d1}</Th>
+            <Th right>{sup ? "Debitorka" : "Kreditorka"} · {d1}</Th>
+            <Th right className="text-emerald-700">{sup ? "Kreditorka" : "Debitorka"} · {d2}</Th>
+            <Th right className="text-emerald-700">{sup ? "Debitorka" : "Kreditorka"} · {d2}</Th>
             <Th right>O&apos;zgarish</Th>
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">{sp.q ? "Qidiruv bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">{sp.q || qism ? "Filtr bo'yicha hech narsa topilmadi" : "Bu davrda hisob-kitob yo'q"}</td></tr>}
           {rows.map((r) => (
             <Tr key={r.id}>
               <Td className="min-w-52">
@@ -134,9 +153,9 @@ export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "sup
           <tfoot>
             <tr className="bg-slate-50 font-bold text-slate-900">
               <td className="border-t-2 border-slate-200 px-4 py-3">Jami</td>
-              {[t.open.debt, t.open.advance].map((v, i) => <td key={i} className="whitespace-nowrap border-t-2 border-slate-200 px-4 py-3 text-right tabular">{fmtNum(v)}</td>)}
-              {[t.now.debt, t.now.advance].map((v, i) => <td key={i} className="whitespace-nowrap border-t-2 border-slate-200 bg-emerald-50 px-4 py-3 text-right tabular">{fmtNum(v)}</td>)}
-              <td className="whitespace-nowrap border-t-2 border-slate-200 px-4 py-3 text-right tabular">{fmtNum((t.now.debt - t.now.advance) - (t.open.debt - t.open.advance))}</td>
+              {[ft.open.debt, ft.open.advance].map((v, i) => <td key={i} className="whitespace-nowrap border-t-2 border-slate-200 px-4 py-3 text-right tabular">{fmtNum(v)}</td>)}
+              {[ft.now.debt, ft.now.advance].map((v, i) => <td key={i} className="whitespace-nowrap border-t-2 border-slate-200 bg-emerald-50 px-4 py-3 text-right tabular">{fmtNum(v)}</td>)}
+              <td className="whitespace-nowrap border-t-2 border-slate-200 px-4 py-3 text-right tabular">{fmtNum((ft.now.debt - ft.now.advance) - (ft.open.debt - ft.open.advance))}</td>
             </tr>
           </tfoot>
         )}
@@ -179,11 +198,11 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
         excel={<ExcelButton file={`Mijozlar qarzi ${isoDate(r.day)}`} sheets={[{ name: "Qarz yoshi", rows: excelRows }]} />} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-5">
-        <StatCard label="Jami qarz (bizga)" value={moneyShort(r.total)} hint={fmtNum(r.total)} icon={HandCoins} tone="brand" />
-        <StatCard label="30 kundan eski" value={moneyShort(r.over30)} hint={r.total ? `${fmtNum((r.over30 / r.total) * 100, 0)}% qarz` : undefined} icon={Hourglass} tone={r.over30 ? "warning" : "success"} />
-        <StatCard label="60 kundan eski" value={moneyShort(r.over60)} hint={r.total ? `${fmtNum((r.over60 / r.total) * 100, 0)}% qarz` : undefined} icon={Hourglass} tone={r.over60 ? "danger" : "success"} />
-        <StatCard label="Qarzdorlar soni" value={fmtNum(r.debtors)} hint={`60 kundan eski: ${r.levels[3]}`} icon={Users} />
-        <StatCard label="Eng katta qarzdor" value={r.top ? moneyShort(r.top.debt) : "—"} hint={r.top?.name} icon={Crown} tone={r.top ? "warning" : "default"} />
+        <StatCard label="Jami qarz (bizga)" value={moneyShort(r.total)} hint={fmtNum(r.total)} icon={HandCoins} tone="brand" href={`${base}${qs({ sana: sp.sana, q: sp.q })}`} />
+        <StatCard label="30 kundan eski" value={moneyShort(r.over30)} hint={r.total ? `${fmtNum((r.over30 / r.total) * 100, 0)}% qarz` : undefined} icon={Hourglass} tone={r.over30 ? "warning" : "success"} href={`${base}${qs({ sana: sp.sana, q: sp.q, holat: "2" })}`} />
+        <StatCard label="60 kundan eski" value={moneyShort(r.over60)} hint={r.total ? `${fmtNum((r.over60 / r.total) * 100, 0)}% qarz` : undefined} icon={Hourglass} tone={r.over60 ? "danger" : "success"} href={`${base}${qs({ sana: sp.sana, q: sp.q, holat: "3" })}`} />
+        <StatCard label="Qarzdorlar soni" value={fmtNum(r.debtors)} hint={`60 kundan eski: ${r.levels[3]}`} icon={Users} href={`${base}${qs({ sana: sp.sana })}`} />
+        <StatCard label="Eng katta qarzdor" value={r.top ? moneyShort(r.top.debt) : "—"} hint={r.top?.name} icon={Crown} tone={r.top ? "warning" : "default"} href={r.top ? `${base}${qs({ sana: sp.sana, q: r.top.name })}` : undefined} />
       </div>
 
       {r.total > 0 && (

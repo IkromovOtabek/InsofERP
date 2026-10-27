@@ -80,10 +80,10 @@ export default async function ContentPlanPage({ searchParams }: { searchParams: 
         ) : undefined}
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Chiqdi" value={`${pub.length} / ${active.length}`} hint="nashr / rejada" />
-        <StatCard label="Tasdiq kutmoqda" value={fmtNum(pendingApproval)} tone={pendingApproval ? "warning" : "default"} />
-        <StatCard label="Ko'rishlar" value={fmtNum(sum("views"))} hint={`Layk: ${fmtNum(sum("likes"))}`} />
-        <StatCard label="Kontentdan lid" value={fmtNum(sum("leads"))} />
+        <StatCard label="Chiqdi" value={`${pub.length} / ${active.length}`} hint="nashr / rejada" href="/marketing/kontent?v=kanban" />
+        <StatCard label="Tasdiq kutmoqda" value={fmtNum(pendingApproval)} tone={pendingApproval ? "warning" : "default"} href="/marketing/kontent?v=kanban" />
+        <StatCard label="Ko'rishlar" value={fmtNum(sum("views"))} hint={`Layk: ${fmtNum(sum("likes"))}`} href="/marketing" />
+        <StatCard label="Kontentdan lid" value={fmtNum(sum("leads"))} href="/leads" />
       </div>
 
       {(ideas.length > 0 || goodDays.size > 0) && (

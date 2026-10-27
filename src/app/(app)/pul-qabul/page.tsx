@@ -84,7 +84,7 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Ochiq so'rovlar" value={`${summary.open.n} ta`} hint={`kutilmoqda ${money(summary.open.left)}`} icon={HandCoins} tone={summary.open.n > 0 ? "warning" : "default"} href={href("open")} />
         <StatCard label="Muddati o'tgan" value={`${summary.overdue.n} ta`} hint={summary.overdue.n > 0 ? `${money(summary.overdue.left)} hali tushmagan` : "yo'q"} icon={AlarmClock} tone={summary.overdue.n > 0 ? "danger" : "default"} href={href("overdue")} />
-        <StatCard label="Bugun qabul qilingan" value={money(summary.today.sum)} hint={`${summary.today.n} ta to'lov`} icon={CheckCheck} tone="success" />
+        <StatCard label="Bugun qabul qilingan" value={money(summary.today.sum)} hint={`${summary.today.n} ta to'lov`} icon={CheckCheck} tone="success" href={`/pul-qabul?tab=history&from=${isoDate(new Date())}&to=${isoDate(new Date())}`} />
       </div>
 
       {!can.length && <Callout tone="info">Bu bo&apos;limda sizda faqat ko&apos;rish huquqi bor: pulni qabul qilish tugmasi Kassa xodimi va Buxgalterda chiqadi.</Callout>}

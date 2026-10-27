@@ -63,12 +63,12 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
       {negative && <Callout tone="danger" title={`${date(negative.date)} da pul yetmaydi`}>Prognoz bo&apos;yicha qoldiq {money(negative.balance)} ga tushadi. Tushumni tezlashtiring (qarzdorlar), to&apos;lovlarni surish yoki kredit liniyasini ko&apos;rib chiqing.</Callout>}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatCard label={`${CAL_DAYS} kunda kutilayotgan kirim`} value={moneyShort(t.inForecast + t.inPromised)} hint={fmtNum(t.inForecast + t.inPromised)} icon={ArrowDownLeft} tone="success" />
-        <StatCard label={`${CAL_DAYS} kunda chiqim`} value={moneyShort(outTotal)} hint={fmtNum(outTotal)} icon={ArrowUpRight} tone="danger" />
-        <StatCard label="Eng past pul qoldig'i" value={moneyShort(c.min.balance)} hint={fmtNum(c.min.balance)} icon={TriangleAlert} tone={c.min.balance < 0 ? "danger" : "warning"} />
-        <StatCard label="O'sha kun" value={dm(c.min.date)} hint={`${WD[c.min.date.getDay()]}, ${c.min.date.getFullYear()}`} icon={CalendarClock} />
-        <StatCard label="Muddati o'tgan to'lovlarimiz" value={moneyShort(c.overdueOut)} hint={fmtNum(c.overdueOut)} icon={Clock} tone={c.overdueOut > 0 ? "danger" : "default"} />
-        <StatCard label="Yaqin 7 kunda to'lanadi" value={moneyShort(c.next7Out)} hint={fmtNum(c.next7Out)} icon={Wallet} />
+        <StatCard label={`${CAL_DAYS} kunda kutilayotgan kirim`} value={moneyShort(t.inForecast + t.inPromised)} hint={fmtNum(t.inForecast + t.inPromised)} icon={ArrowDownLeft} tone="success" href="#kunma-kun" />
+        <StatCard label={`${CAL_DAYS} kunda chiqim`} value={moneyShort(outTotal)} hint={fmtNum(outTotal)} icon={ArrowUpRight} tone="danger" href="#kunma-kun" />
+        <StatCard label="Eng past pul qoldig'i" value={moneyShort(c.min.balance)} hint={fmtNum(c.min.balance)} icon={TriangleAlert} tone={c.min.balance < 0 ? "danger" : "warning"} href="#kunma-kun" />
+        <StatCard label="O'sha kun" value={dm(c.min.date)} hint={`${WD[c.min.date.getDay()]}, ${c.min.date.getFullYear()}`} icon={CalendarClock} href="#kunma-kun" />
+        <StatCard label="Muddati o'tgan to'lovlarimiz" value={moneyShort(c.overdueOut)} hint={fmtNum(c.overdueOut)} icon={Clock} tone={c.overdueOut > 0 ? "danger" : "default"} href="#tolovlar-royxati" />
+        <StatCard label="Yaqin 7 kunda to'lanadi" value={moneyShort(c.next7Out)} hint={fmtNum(c.next7Out)} icon={Wallet} href="#tolovlar-royxati" />
       </div>
 
       <Card className="mt-6">
@@ -76,7 +76,7 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
         <ForecastChart days={c.days} />
       </Card>
 
-      <Section title={`Kunma-kun (${CAL_DAYS} kun)`}>
+      <Section id="kunma-kun" title={`Kunma-kun (${CAL_DAYS} kun)`}>
         <Table maxHeight="75vh">
           <thead>
             <tr>
@@ -118,7 +118,7 @@ export async function CalendarView({ base, qoldiq }: { base: string; qoldiq?: st
 
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-5">
         <div className="2xl:col-span-3">
-          <Section title="Kimga, qachon, qancha — to'lovlar va tushumlar ro'yxati" action={<span className="text-sm text-slate-500">Jami chiqim: <b className="tabular text-slate-800">{fmtNum(c.items.filter((i) => isOutKind(i.kind)).reduce((s, i) => s + i.amount, 0))}</b></span>}>
+          <Section id="tolovlar-royxati" title="Kimga, qachon, qancha — to'lovlar va tushumlar ro'yxati" action={<span className="text-sm text-slate-500">Jami chiqim: <b className="tabular text-slate-800">{fmtNum(c.items.filter((i) => isOutKind(i.kind)).reduce((s, i) => s + i.amount, 0))}</b></span>}>
             <Table maxHeight="70vh">
               <thead><tr><Th>Sana</Th><Th>Kimga / kimdan</Th><Th>Nima uchun</Th><Th>Turi</Th><Th right>Chiqim, so&apos;m</Th><Th right>Kirim, so&apos;m</Th><Th>Izoh</Th></tr></thead>
               <tbody>

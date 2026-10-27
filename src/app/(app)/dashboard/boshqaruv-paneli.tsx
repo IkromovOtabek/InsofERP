@@ -1,5 +1,5 @@
 import type { Panel } from "@/lib/fin-report/panel";
-import { fmtNum, pct } from "@/lib/format";
+import { fmtNum, moneyShort, pct } from "@/lib/format";
 import { Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -175,7 +175,7 @@ export function KunlikChart({ p }: { p: Panel }) {
       </div>
       <div className="overflow-x-auto"><svg viewBox={`0 0 ${W} ${H}`} width="100%" className="min-w-[560px]" role="img" aria-label="Kunlik sotuv va kassaga savdo tushumi">
         {ticks.map((t) => (
-          <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="stroke-slate-200" /><text x={L - 6} y={y(t) + 4} textAnchor="end" className="fill-slate-400 text-[10px]">{fmtNum(t)}</text></g>
+          <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="stroke-slate-200" /><text x={L - 6} y={y(t) + 4} textAnchor="end" className="fill-slate-400 text-[10px]">{moneyShort(t)}</text></g>
         ))}
         {p.daily.map((d, i) => {
           const x = L + i * step + 1;

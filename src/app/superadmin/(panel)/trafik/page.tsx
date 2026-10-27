@@ -71,14 +71,15 @@ export default async function TrafficPage() {
           {d.source.truncated && <Callout tone="info">Log juda katta — oynaning bir qismi o&apos;qildi (512 MB chegarasi).</Callout>}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            <StatCard label="So'rov/daq (5 daq)" icon={Globe} value={d.w5.perMin} hint={`60 daq: ${d.w60.perMin}/daq · ${d.w60.total} jami`} />
-            <StatCard label="4xx ulushi" icon={AlertTriangle} value={pctTxt(d.w5.pct4xx)} hint={`60 daq: ${pctTxt(d.w60.pct4xx)}`} />
-            <StatCard label="5xx ulushi" icon={ServerCrash} value={pctTxt(d.w5.pct5xx)} hint={`60 daq: ${pctTxt(d.w60.pct5xx)} · ${d.w60.s5} ta`} tone={(d.w5.pct5xx ?? 0) >= 5 ? "danger" : "default"} />
-            <StatCard label="429 (limit_req)" icon={ShieldAlert} value={d.w5.s429} hint={`60 daq: ${d.w60.s429}`} tone={d.w5.s429 > 0 ? "warning" : "default"} />
-            <StatCard label="Upstream xatolari" icon={Network} value={d.upstream.reduce((s, u) => s + u.n5, 0)} hint={`60 daq: ${d.upstream.reduce((s, u) => s + u.n60, 0)}`} tone={d.upstream.some((u) => u.n5 > 0) ? "danger" : "default"} />
+            <StatCard label="So'rov/daq (5 daq)" icon={Globe} value={d.w5.perMin} hint={`60 daq: ${d.w60.perMin}/daq · ${d.w60.total} jami`} href="#daqiqalar" />
+            <StatCard label="4xx ulushi" icon={AlertTriangle} value={pctTxt(d.w5.pct4xx)} hint={`60 daq: ${pctTxt(d.w60.pct4xx)}`} href="#domenlar" />
+            <StatCard label="5xx ulushi" icon={ServerCrash} value={pctTxt(d.w5.pct5xx)} hint={`60 daq: ${pctTxt(d.w60.pct5xx)} · ${d.w60.s5} ta`} tone={(d.w5.pct5xx ?? 0) >= 5 ? "danger" : "default"} href="#domenlar" />
+            <StatCard label="429 (limit_req)" icon={ShieldAlert} value={d.w5.s429} hint={`60 daq: ${d.w60.s429}`} tone={d.w5.s429 > 0 ? "warning" : "default"} href={d.limitZones.length > 0 ? "#limit" : "#domenlar"} />
+            <StatCard label="Upstream xatolari" icon={Network} value={d.upstream.reduce((s, u) => s + u.n5, 0)} hint={`60 daq: ${d.upstream.reduce((s, u) => s + u.n60, 0)}`} tone={d.upstream.some((u) => u.n5 > 0) ? "danger" : "default"} href="#upstream" />
           </div>
 
           <Card>
+            <div id="daqiqalar" className="scroll-mt-20" />
             <CardHeader title="So'nggi 60 daqiqa" help={<HelpButton topic="tr:minutes" />} description="Daqiqalik so'rovlar va 5xx javoblar" icon={Globe} />
             <div className="grid gap-4 sm:grid-cols-2">
               <div><div className="mb-1 text-xs text-slate-500">So&apos;rovlar / daq</div><PerMinute label="So'rovlar" values={d.perMinute.map((p) => p.n)} times={d.perMinute.map((p) => p.t)} /></div>
@@ -88,6 +89,7 @@ export default async function TrafficPage() {
 
           {/* ── Upstream xatolari ── */}
           <Card>
+            <div id="upstream" className="scroll-mt-20" />
             <CardHeader title="Upstream xatolari (error.log)" help={<HelpButton topic="tr:upstream" />} description="nginx orqadagi xizmatga ulana olmagan so'rovlar — domen bo'yicha" icon={Network} />
             {upRows.length === 0 && d.upstream.length === 0 ? <p className="text-sm text-slate-500">Oxirgi 60 daqiqada upstream xatosi yo&apos;q.</p> : (
               <ul className="divide-y divide-slate-100">
@@ -117,7 +119,7 @@ export default async function TrafficPage() {
 
           {/* ── Domenlar ── */}
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title="Domenlar" help={<HelpButton topic="tr:domains" />} description={d.format.hasHost ? "So'rovlar/daq (5 va 60 daq), xato ulushlari — 60 daqiqa" : "Log formatida $host yo'q — barcha so'rovlar bitta guruhda"} icon={Globe} /></div>
+            <div id="domenlar" className="scroll-mt-20 p-5 pb-0"><CardHeader title="Domenlar" help={<HelpButton topic="tr:domains" />} description={d.format.hasHost ? "So'rovlar/daq (5 va 60 daq), xato ulushlari — 60 daqiqa" : "Log formatida $host yo'q — barcha so'rovlar bitta guruhda"} icon={Globe} /></div>
             <Table className="rounded-none border-0 shadow-none">
               <thead><tr><Th>Domen</Th><Th right>/daq (5)</Th><Th right>/daq (60)</Th><Th right>Jami (60)</Th><Th right>4xx</Th><Th right>5xx</Th><Th right>429</Th><Th right>O&apos;rtacha javob</Th></tr></thead>
               <tbody>
@@ -182,6 +184,7 @@ export default async function TrafficPage() {
 
           {d.limitZones.length > 0 && (
             <Card>
+              <div id="limit" className="scroll-mt-20" />
               <CardHeader title="Tezlik cheklovi (limit_req) — error.log" help={<HelpButton topic="tr:limit" />} description="Zona bo'yicha cheklangan so'rovlar (insof_auth — login, insof_pub — ochiq API, insof_ai — AI)" icon={ShieldAlert} />
               <ul className="divide-y divide-slate-100 text-sm">
                 {d.limitZones.map((z) => <li key={z.zone} className="flex justify-between py-1.5"><code data-no-translit>{z.zone}</code><span>5 daq: <b>{z.n5}</b> · 60 daq: <b>{z.n60}</b></span></li>)}

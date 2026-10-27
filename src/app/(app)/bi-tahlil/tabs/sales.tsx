@@ -32,13 +32,13 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
-        <Kpi label="Jami sotuv" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" hint={money(k.revenue.cur)} />
-        <Kpi label="Hajm" value={`${qty(k.volume.cur)} m³`} delta={k.volume.delta} icon={Boxes} tone="info" />
-        <Kpi label="O'rtacha chek" value={moneyShort(k.avgCheck.cur)} delta={k.avgCheck.delta} icon={Receipt} />
-        <Kpi label="Zayavkalar" value={String(k.orders.cur)} delta={k.orders.delta} icon={ClipboardList} tone="info" />
-        <Kpi label="Faol mijozlar" value={String(k.customers.cur)} delta={k.customers.delta} icon={Users} tone="violet" />
-        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={k.uncosted > 0 ? `tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : undefined} />
-        <Kpi label="Marja" value={`${fmtNum(k.margin.cur, 1)}%`} delta={k.gross.prev ? k.margin.cur - k.margin.prev : null} deltaLabel="p.p." icon={Percent} tone={k.margin.cur >= 20 ? "success" : k.margin.cur >= 10 ? "warning" : "danger"} />
+        <Kpi label="Jami sotuv" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={TrendingUp} tone="brand" hint={money(k.revenue.cur)} href="#dinamika" />
+        <Kpi label="Hajm" value={`${qty(k.volume.cur)} m³`} delta={k.volume.delta} icon={Boxes} tone="info" href="#markalar" />
+        <Kpi label="O'rtacha chek" value={moneyShort(k.avgCheck.cur)} delta={k.avgCheck.delta} icon={Receipt} href="#tranzaksiyalar" />
+        <Kpi label="Zayavkalar" value={String(k.orders.cur)} delta={k.orders.delta} icon={ClipboardList} tone="info" href="#tranzaksiyalar" />
+        <Kpi label="Faol mijozlar" value={String(k.customers.cur)} delta={k.customers.delta} icon={Users} tone="violet" href="#top-mijozlar" />
+        <Kpi label="Yalpi foyda" value={moneyShort(k.gross.cur)} delta={k.gross.delta} icon={Wallet} tone={k.gross.cur >= 0 ? "success" : "danger"} hint={k.uncosted > 0 ? `tannarxsiz ${moneyShort(k.uncosted)} hisobga kirmadi` : undefined} href="#imkoniyat" />
+        <Kpi label="Marja" value={`${fmtNum(k.margin.cur, 1)}%`} delta={k.gross.prev ? k.margin.cur - k.margin.prev : null} deltaLabel="p.p." icon={Percent} tone={k.margin.cur >= 20 ? "success" : k.margin.cur >= 10 ? "warning" : "danger"} href="#imkoniyat" />
       </div>
 
       <Panel title="Sotuv dinamikasi" info="Ustunlar — joriy davr, och kulrang — oldingi davr (bir xil uzunlikdagi). Ustun ustiga kursor olib boring." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={href({ gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
@@ -47,10 +47,10 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
       </Panel>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Marka bo'yicha sotuv" info="Tushum ulushi — beton markasi (mahsulot) kesimida.">
+        <Panel id="markalar" title="Marka bo'yicha sotuv" info="Tushum ulushi — beton markasi (mahsulot) kesimida.">
           {d.productRows.length ? <DonutChart data={d.productRows.slice(0, 8).map((p) => ({ label: p.code, value: p.revenue }))} formatValue={(v) => moneyShort(v)} center={{ value: String(d.productRows.length), label: "marka" }} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
-        <Panel title="Top mijozlar" info="Davr ichidagi tushum bo'yicha." action={<Link href={tabHref(range, "customers")} className="font-medium text-blue-600 hover:underline">Barchasini ko'rish →</Link>}>
+        <Panel id="top-mijozlar" title="Top mijozlar" info="Davr ichidagi tushum bo'yicha." action={<Link href={tabHref(range, "customers")} className="font-medium text-blue-600 hover:underline">Barchasini ko'rish →</Link>}>
           {d.byCustomer.length ? <HBarList data={d.byCustomer.slice(0, 8).map((c) => ({ label: c.name, value: c.revenue, hint: `${c.orders} zayavka`, sub: c.qty ? `${qty(c.qty)} m³ beton` : undefined }))} formatValue={(v) => moneyShort(v)} /> : <Note>Ma'lumot yo'q.</Note>}
         </Panel>
       </div>
@@ -108,7 +108,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
             {d.lost.blockedRows.length > 0 && <ul className="mt-3 space-y-1 text-[13px]">{d.lost.blockedRows.map((o) => <li key={o.orderId} className="flex justify-between gap-2"><Link href={`/orders/${o.orderId}`} className="truncate hover:underline">{o.orderNo} · {o.customer}</Link><span className="shrink-0 tabular">{moneyShort(o.revenue)}</span></li>)}</ul>}
             <div className="mt-3"><Action href="/orders?status=BLOCKED">Bloklangan zayavkalarni ko'rib chiqing — direktor limitni ochsin yoki mijoz oldindan to'lasin</Action></div>
           </Panel>
-          <Panel title="Sales Opportunity — qaysi markani sotish foydali" info="Marja × tushum bo'yicha eng foydali markalar. Chegirma — bazaviy narxdan past sotilgan summa.">
+          <Panel id="imkoniyat" title="Sales Opportunity — qaysi markani sotish foydali" info="Marja × tushum bo'yicha eng foydali markalar. Chegirma — bazaviy narxdan past sotilgan summa.">
             {d.opportunity.length ? <HBarList data={d.opportunity.map((p) => ({ label: `${p.code} — ${p.name}`, value: p.margin, hint: `marja · ${moneyShort(p.revenue)} sotuv`, tone: "success" as const }))} formatValue={(v) => `${fmtNum(v, 1)}%`} max={100} /> : <Note>Retsept tannarxi kiritilmagan — marja hisoblanmaydi.</Note>}
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">Chegirma: <b>{moneyShort(d.discount)} so'm</b> ({d.discountCount} ta pozitsiya bazaviy narxdan past). O'lchanmagan chegirma — nazorat qilinmaydigan foyda teshigi.</div>
           </Panel>

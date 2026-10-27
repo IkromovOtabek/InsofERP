@@ -61,15 +61,15 @@ export default async function MarketingStats({ searchParams }: { searchParams: P
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={`Ko'rishlar (${days} kun)`} value={fmtNum(a.totals.views)} icon={Eye}
-          hint={vDelta === null ? "oldingi davr bilan solishtirish yo'q" : `${vDelta >= 0 ? "+" : ""}${pct(vDelta)} oldingi davrga`} tone={vDelta !== null && vDelta < 0 ? "warning" : "default"} />
-        <StatCard label="Qamrov" value={fmtNum(a.totals.reach)} hint={`Profilga kirish: ${fmtNum(a.totals.profileViews)}`} icon={Users} />
+          hint={vDelta === null ? "oldingi davr bilan solishtirish yo'q" : `${vDelta >= 0 ? "+" : ""}${pct(vDelta)} oldingi davrga`} tone={vDelta !== null && vDelta < 0 ? "warning" : "default"} href="#kunlik" />
+        <StatCard label="Qamrov" value={fmtNum(a.totals.reach)} hint={`Profilga kirish: ${fmtNum(a.totals.profileViews)}`} icon={Users} href="#kunlik" />
         <StatCard label="Obunachilar" value={a.account?.followers != null ? fmtNum(a.account.followers) : "—"} icon={UserPlus}
-          hint={a.totals.followersDelta != null ? `${a.totals.followersDelta >= 0 ? "+" : ""}${fmtNum(a.totals.followersDelta)} davrda` : a.account?.username ? `@${a.account.username}` : undefined} />
+          hint={a.totals.followersDelta != null ? `${a.totals.followersDelta >= 0 ? "+" : ""}${fmtNum(a.totals.followersDelta)} davrda` : a.account?.username ? `@${a.account.username}` : undefined} href="#raqobatchilar" />
         <StatCard label={seeLeads ? "Arizalar" : "Saytga o'tish"} value={fmtNum(seeLeads ? totalLeads : a.totals.websiteClicks)} icon={seeLeads ? Inbox : MousePointerClick}
           hint={seeLeads ? `Saytga o'tish: ${fmtNum(a.totals.websiteClicks)}` : undefined} href={seeLeads ? "/leads" : undefined} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+      <div id="kunlik" className="mt-6 grid scroll-mt-20 gap-6 lg:grid-cols-[1.6fr_1fr]">
         <Card>
           <CardHeader title="Kunlik ko'rishlar" description="Instagram profili bo'yicha" />
           {a.series.length === 0 ? <Empty text="Hali ma'lumot yo'q" /> : (
@@ -142,7 +142,7 @@ export default async function MarketingStats({ searchParams }: { searchParams: P
         </Card>
 
         <Card padded={false}>
-          <div className="p-4 pb-2"><CardHeader title="Raqobatchilar" action={<Link href="/marketing/sozlamalar" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">Ro&apos;yxat <ArrowRight size={14} /></Link>} /></div>
+          <div id="raqobatchilar" className="scroll-mt-20 p-4 pb-2"><CardHeader title="Raqobatchilar" action={<Link href="/marketing/sozlamalar" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">Ro&apos;yxat <ArrowRight size={14} /></Link>} /></div>
           {competitors.length === 0 ? <Empty text="Sozlamalar'da raqobatchi profillarini qo'shing" /> : (
             <Table>
               <thead><tr><Th>Profil</Th><Th className="text-right">Obunachi</Th><Th className="text-right">O&apos;rt. layk</Th><Th className="text-right">O&apos;rt. izoh</Th></tr></thead>

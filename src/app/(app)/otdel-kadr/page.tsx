@@ -188,10 +188,10 @@ export default async function OtdelKadrPage({ searchParams }: {
       )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Jami xodim" value={employees.length} hint={`${active.length} faol`} icon={Users} tone="brand" />
+        <StatCard label="Jami xodim" value={employees.length} hint={`${active.length} faol`} icon={Users} tone="brand" href="/otdel-kadr?tab=xodimlar" />
         <StatCard label="Tizimga kiradi" value={withLogin} hint="login berilgan" icon={IdCard} tone="info" href="/employees" />
-        <StatCard label="Ishchi lavozim" value={positions.filter((p) => p.isActive).length} hint={`${positions.length} tadan faol`} icon={BriefcaseBusiness} />
-        <StatCard label="Oxirgi oyda qabul" value={newHires} hint="ishga kirgan" icon={UserCheck} tone="success" />
+        <StatCard label="Ishchi lavozim" value={positions.filter((p) => p.isActive).length} hint={`${positions.length} tadan faol`} icon={BriefcaseBusiness} href="/otdel-kadr?tab=lavozimlar" />
+        <StatCard label="Oxirgi oyda qabul" value={newHires} hint="ishga kirgan" icon={UserCheck} tone="success" href="/otdel-kadr?tab=hisobotlar#hisobot-12oy" />
       </div>
 
       <Tabs current={tab} items={TABS.map(([k, label, icon]) => ({ key: k, label, href: `/otdel-kadr?tab=${k}`, icon }))} />

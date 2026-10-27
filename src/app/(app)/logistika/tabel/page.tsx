@@ -91,7 +91,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 
       {/* ── Narx belgilanmagan reyslar — «propushenniy»: hal bo'lmaguncha shu yerda va eslatmada ── */}
       <Card padded={false} className={unpriced.length ? "border-amber-300 ring-2 ring-amber-100" : undefined}>
-        <div className="px-5 pt-5">
+        <div id="narxsiz" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title={`Narx belgilanmagan reyslar${unpriced.length ? ` (${unpriced.length})` : ""}`} icon={BellRing}
             description="Narx qo'yilgach reys haydovchi tabeliga va oylikka qo'shiladi"
             action={canPrice && unpriced.length > 1 ? <PriceAllButton ids={unpriced.map((r) => r.id)} /> : undefined} />
@@ -110,12 +110,13 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           </div>
         }>
         <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-          <StatCard label="Reyslar" value={picked ? picked.trips : total.trips} icon={Route} tone="info" />
-          <StatCard label="Km" value={fmtNum(picked ? picked.km : total.km, 0)} hint="zavod → obyekt → zavod" icon={Users} />
-          <StatCard label="Narxlangan summa" value={money(picked ? picked.sum : total.sum)} hint="oylikka tushadi" icon={Coins} tone="success" />
-          <StatCard label="Narxsiz" value={picked ? picked.unpriced : total.unpriced} icon={Timer} tone={(picked ? picked.unpriced : total.unpriced) ? "warning" : "default"} />
+          <StatCard label="Reyslar" value={picked ? picked.trips : total.trips} icon={Route} tone="info" href="#oy-jadval" />
+          <StatCard label="Km" value={fmtNum(picked ? picked.km : total.km, 0)} hint="zavod → obyekt → zavod" icon={Users} href="#oy-jadval" />
+          <StatCard label="Narxlangan summa" value={money(picked ? picked.sum : total.sum)} hint="oylikka tushadi" icon={Coins} tone="success" href="#oy-jadval" />
+          <StatCard label="Narxsiz" value={picked ? picked.unpriced : total.unpriced} icon={Timer} tone={(picked ? picked.unpriced : total.unpriced) ? "warning" : "default"} href="#narxsiz" />
         </div>
 
+        <div id="oy-jadval" className="scroll-mt-20" />
         {picked ? (
           <Card padded={false}>
             {monthTrips.length === 0 ? <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /> : <TripRows rows={[...monthTrips].reverse()} canPrice={canPrice} showDriver={false} />}

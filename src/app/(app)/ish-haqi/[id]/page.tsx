@@ -33,22 +33,24 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
       {run.status === "CANCELLED" && <Callout tone="danger" title="Bekor qilingan">{run.cancelReason}{run.cancelledAt ? ` · ${dateTime(run.cancelledAt)}` : ""}</Callout>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Hisoblangan" value={money(n(run.gross))} />
-        <StatCard label="Ushlanma (soliq, jarima, avans)" value={money(n(run.deductions))} />
-        <StatCard label="Qo'lga" value={money(n(run.net))} tone="brand" />
-        <StatCard label="To'langan" value={money(n(run.paid))} tone={n(run.paid) >= n(run.net) && n(run.net) > 0 ? "success" : "default"} hint={final ? `Ijtimoiy soliq (ish beruvchi): ${money(n(run.employerTax))}` : undefined} />
+        <StatCard label="Hisoblangan" value={money(n(run.gross))} href="#qatorlar" />
+        <StatCard label="Ushlanma (soliq, jarima, avans)" value={money(n(run.deductions))} href="#qatorlar" />
+        <StatCard label="Qo'lga" value={money(n(run.net))} tone="brand" href="#qatorlar" />
+        <StatCard label="To'langan" value={money(n(run.paid))} tone={n(run.paid) >= n(run.net) && n(run.net) > 0 ? "success" : "default"} hint={final ? `Ijtimoiy soliq (ish beruvchi): ${money(n(run.employerTax))}` : undefined} href={canPay && unpaid.length > 0 ? "#tolash" : "#qatorlar"} />
       </div>
 
       <RunActions id={run.id} status={run.status} kind={run.kind} net={n(run.net) - n(run.paid)} canCalc={canPayroll(s, "calc")} canApprove={canPayroll(s, "approve")} />
 
       {canPay && unpaid.length > 0 && (
         <Card>
+          <div id="tolash" className="scroll-mt-20" />
           <CardHeader title="Kassadan to'lash" description="Har to'lov Kirim-Chiqimda «Ish haqi» chiqimi bo'lib yoziladi; kassa qoldig'i tekshiriladi" />
           <PayForm id={run.id} accounts={accounts} lines={unpaid.map((l) => ({ id: l.id, fullName: l.employee.fullName, net: n(l.net) }))} />
         </Card>
       )}
 
       <Card padded={false}>
+        <div id="qatorlar" className="scroll-mt-20" />
         <Table>
           <thead>
             <tr>

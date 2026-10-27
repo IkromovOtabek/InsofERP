@@ -55,6 +55,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const hours = Array.from({ length: 24 }, () => 0);
   for (const x of delivered) if (x.deliveredAt) hours[x.deliveredAt.getHours()]++;
   const hMax = Math.max(1, ...hours);
+  // Kartochkalardan Hisobotlarga o'tganda shu davr saqlansin
+  const qs = `period=${r.period}${sp.from ? `&from=${sp.from}&to=${sp.to}` : ""}`;
   // Haydovchi reytingi: o'z vaqtida % (60%), hajm (30%), muammosizlik (10%)
   const maxM3 = Math.max(1, ...rep.byDriver.map((d) => d.m3 + d.pieces));
   const ranked = rep.byDriver.filter((d) => d.delivered > 0).map((d) => ({
@@ -68,16 +70,17 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <PeriodTabs base="/logistika/analitika" current={r.period} />
       <RangeForm base="/logistika/analitika" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-6 [&>*]:min-w-0">
-        <StatCard label="O'z vaqtida" value={onTimePct(t) != null ? `${onTimePct(t)}%` : "—"} hint={`${t.judged} ta baholandi`} icon={Clock} tone={(onTimePct(t) ?? 100) < 80 ? "warning" : "success"} />
-        <StatCard label="O'rt. yetkazish" value={minutesLabel(avgMin(t))} hint="yuklash → topshirish" icon={Timer} />
-        <StatCard label="Transportdan foydalanish" value={avgUtil != null ? `${avgUtil}%` : "—"} hint="o'rtacha, nasossiz" icon={Gauge} />
-        <StatCard label="1 m³ tannarxi" value={t.m3 ? money(cost(t) / t.m3) : "—"} icon={Coins} />
-        <StatCard label="Bekor qilingan" value={t.trips ? `${Math.round((t.cancelled / t.trips) * 100)}%` : "—"} hint={`${t.cancelled} reys`} icon={Truck} />
-        <StatCard label="Muammolar" value={t.issues} icon={AlertTriangle} tone={t.issues ? "warning" : "default"} />
+        <StatCard label="O'z vaqtida" value={onTimePct(t) != null ? `${onTimePct(t)}%` : "—"} hint={`${t.judged} ta baholandi`} icon={Clock} tone={(onTimePct(t) ?? 100) < 80 ? "warning" : "success"} href="#kechikish" />
+        <StatCard label="O'rt. yetkazish" value={minutesLabel(avgMin(t))} hint="yuklash → topshirish" icon={Timer} href={`/logistika/hisobotlar?${qs}`} />
+        <StatCard label="Transportdan foydalanish" value={avgUtil != null ? `${avgUtil}%` : "—"} hint="o'rtacha, nasossiz" icon={Gauge} href="#foydalanish" />
+        <StatCard label="1 m³ tannarxi" value={t.m3 ? money(cost(t) / t.m3) : "—"} icon={Coins} href="#xarajat-m3" />
+        <StatCard label="Bekor qilingan" value={t.trips ? `${Math.round((t.cancelled / t.trips) * 100)}%` : "—"} hint={`${t.cancelled} reys`} icon={Truck} href={`/logistika/hisobotlar?${qs}`} />
+        <StatCard label="Muammolar" value={t.issues} icon={AlertTriangle} tone={t.issues ? "warning" : "default"} href="#muammo-turlari" />
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 [&>*]:min-w-0">
         <Card>
+          <div id="foydalanish" className="scroll-mt-20" />
           <CardHeader title="Transportdan foydalanish" description="Band vaqt / ish vaqti" icon={Gauge} />
           <Bars rows={util.slice().sort((a, b) => b.utilization - a.utilization).map((v) => ({ label: <Link href={`/logistika/transport/${v.id}`} className="tabular hover:underline">{v.plate} <span className="text-xs text-slate-500">{VEHICLE_TYPE[v.type]}</span></Link>, value: v.utilization, hint: `${v.trips} reys, ${qty(v.m3)} m³` }))} fmt={(n) => `${n}%`} />
         </Card>
@@ -86,6 +89,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           <Bars rows={ranked.map((d) => ({ label: <Link href={`/logistika/haydovchilar/${d.id}`} className="hover:underline">{d.name}</Link>, value: d.score, hint: `${d.delivered} reys, ${qty(d.m3)} m³, o'z vaqtida ${onTimePct(d) ?? "—"}%` }))} fmt={(n) => `${n} ball`} tone="bg-emerald-600" />
         </Card>
         <Card>
+          <div id="xarajat-m3" className="scroll-mt-20" />
           <CardHeader title="Transport bo'yicha xarajat, 1 m³ ga" icon={Coins} />
           <Bars rows={rep.byVehicle.filter((v) => v.m3 > 0 && cost(v) > 0).map((v) => ({ label: v.plate, value: Math.round(cost(v) / v.m3), hint: moneyShort(cost(v)) })).sort((a, b) => b.value - a.value)} fmt={(n) => moneyShort(n)} tone="bg-amber-500" />
         </Card>
@@ -94,12 +98,14 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           <Bars rows={rep.bySite.slice(0, 10).map((s) => ({ label: <span title={s.customer}>{s.name}</span>, value: Math.round(s.m3 + s.pieces), hint: s.customer }))} fmt={(n) => qty(n)} />
         </Card>
         <Card>
+          <div id="kechikish" className="scroll-mt-20" />
           <CardHeader title="Kechikish taqsimoti" description={`E'tibor ≥ ${rep.settings.lateWarnMin} daq, kritik ≥ ${rep.settings.lateCritMin} daq`} icon={Clock} />
           <Bars rows={[
             { label: "O'z vaqtida", value: buckets.onTime }, { label: "Kechikdi", value: buckets.warn }, { label: "Kritik kechikdi", value: buckets.crit }, { label: "Soatsiz zayavka", value: buckets.unknown },
           ]} />
         </Card>
         <Card>
+          <div id="muammo-turlari" className="scroll-mt-20" />
           <CardHeader title="Muammo turlari" icon={AlertTriangle} />
           <Bars rows={issues.sort((a, b) => b._count - a._count).map((i) => ({ label: ISSUE_KIND[i.kind], value: i._count }))} tone="bg-red-500" />
         </Card>

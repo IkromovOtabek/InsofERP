@@ -99,10 +99,10 @@ export default async function EcommercePage({ searchParams }: { searchParams: Pr
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Do'konda" value={String(published.length)} icon={Store} hint={`${rows.length} ta mahsulotdan`} tone={published.length ? "success" : "warning"} />
-        <StatCard label="Yashirin" value={String(hidden.length)} icon={ShoppingBag} hint="chiqarilmagan" />
+        <StatCard label="Do'konda" value={String(published.length)} icon={Store} hint={`${rows.length} ta mahsulotdan`} tone={published.length ? "success" : "warning"} href="/e-commerce?tab=vitrina" />
+        <StatCard label="Yashirin" value={String(hidden.length)} icon={ShoppingBag} hint="chiqarilmagan" href="/e-commerce?tab=vitrina" />
         <StatCard label="Yangi buyurtma" value={String(newLeads)} icon={Inbox} tone={newLeads ? "warning" : "default"} href="/e-commerce?tab=buyurtmalar" hint="ilovadan, ishlanmagan" />
-        <StatCard label="Oxirgi 24 soat" value={String(todayLeads)} icon={Smartphone} hint="ilovadan buyurtma" />
+        <StatCard label="Oxirgi 24 soat" value={String(todayLeads)} icon={Smartphone} hint="ilovadan buyurtma" href="/e-commerce?tab=buyurtmalar" />
       </div>
 
       <Tabs current={tab} className="mb-6" items={[

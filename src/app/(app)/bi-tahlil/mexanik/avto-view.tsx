@@ -5,7 +5,7 @@ import { date, fmtNum, moneyShort } from "@/lib/format";
 import { Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
-import { MonthBar, monthTitle } from "../month-bar";
+import { type DayRange, DayRangeBar } from "../month-bar";
 
 /** «AVTOTRANSPORT TAHLILI — har bir mashina va kunlik solishtirish» (`lib/fin-report/avto.ts`). */
 const N = ({ v, frac = 0, className }: { v: number | null; frac?: number; className?: string }) =>
@@ -13,7 +13,8 @@ const N = ({ v, frac = 0, className }: { v: number | null; frac?: number; classN
 const diffCls = (v: number | null) => (v == null ? "" : v > 0.5 ? "font-semibold text-red-600" : v < -0.5 ? "text-emerald-700" : "");
 const sticky = "sticky left-0 z-[1] bg-white";
 
-export function AvtoView({ r, base }: { r: AvtoReport; base: string }) {
+export function AvtoView({ r, period, base }: { r: AvtoReport; period: DayRange; base: string }) {
+  const file = `Avtotransport tahlili ${period.label.replace(/[:/]/g, "")}`;
   const t = r.total;
   const hasDt = r.rows.some((x) => x.dtNorm != null || x.dtGiven), hasGas = r.rows.some((x) => x.gasNorm != null || x.gasGiven);
   const dtDiff = (x: AvtoRow) => (x.dtNorm != null ? x.dtGiven - x.dtNorm : null);
@@ -32,24 +33,24 @@ export function AvtoView({ r, base }: { r: AvtoReport; base: string }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-bold text-slate-900">Avtotransport tahlili — {monthTitle(r.month)}</h2>
+        <h2 className="text-[17px] font-bold text-slate-900">Avtotransport tahlili — {period.label}</h2>
         <span className="text-[13px] text-slate-500">Har bir mashina va kunlik solishtirish</span>
       </div>
-      <MonthBar base={base} month={r.month}>
-        <ExcelButton file={`Avtotransport tahlili ${r.month}`} sheets={[
+      <DayRangeBar base={base} range={period}>
+        <ExcelButton file={file} sheets={[
           { name: "Har bir mashina", rows: [...r.rows, t].map(sheet) },
           { name: "Kunlik", rows: r.days.map((d) => ({ Sana: date(d.date), Reys: d.trips, "Probeg (km)": d.km, "DT berilgan (l)": d.dtGiven, "Gaz zapravka (m3)": d.gasGiven, "Yoqilg'i summasi": d.fuelSum, "Ish haqi": d.pay, "Remont + zapchast": d.repair, "Mexanik naqd": d.mechanic, Kassa: d.cash, "Farq: kassa − mexanik": d.cashDiff, Daromad: d.revenue, Foyda: d.profit })) },
         ]} />
-      </MonthBar>
+      </DayRangeBar>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Reyslar" value={fmtNum(t.trips)} hint={`${fmtNum(t.km)} km · ${active.length} mashina ishladi`} icon={Truck} />
-        <StatCard label="Yoqilg'i (berilgan)" value={moneyShort(t.fuelSum)} hint={normSum != null ? `norma ${moneyShort(normSum)}${overFuel != null && Math.abs(overFuel) >= 1 ? ` · ${overFuel > 0 ? "ortiqcha" : "tejaldi"} ${moneyShort(Math.abs(t.fuelSum - normSum))}` : ""}` : "norma kiritilmagan"} icon={Fuel} tone={normSum != null && t.fuelSum > normSum * 1.05 ? "danger" : "default"} />
-        <StatCard label="Jami xarajat" value={moneyShort(t.total)} hint={t.perKm != null ? `1 km ga ${fmtNum(t.perKm)} so'm` : "yoqilg'i + ish haqi + remont"} icon={Gauge} />
-        <StatCard label="Foyda (dastavka)" value={moneyShort(t.profit)} hint={`daromad ${moneyShort(t.revenue)}`} icon={Wallet} tone={t.profit < 0 ? "danger" : "success"} />
+        <StatCard label="Reyslar" value={fmtNum(t.trips)} hint={`${fmtNum(t.km)} km · ${active.length} mashina ishladi`} icon={Truck} href="#mashinalar" />
+        <StatCard label="Yoqilg'i (berilgan)" value={moneyShort(t.fuelSum)} hint={normSum != null ? `norma ${moneyShort(normSum)}${overFuel != null && Math.abs(overFuel) >= 1 ? ` · ${overFuel > 0 ? "ortiqcha" : "tejaldi"} ${moneyShort(Math.abs(t.fuelSum - normSum))}` : ""}` : "norma kiritilmagan"} icon={Fuel} tone={normSum != null && t.fuelSum > normSum * 1.05 ? "danger" : "default"} href="#mashinalar" />
+        <StatCard label="Jami xarajat" value={moneyShort(t.total)} hint={t.perKm != null ? `1 km ga ${fmtNum(t.perKm)} so'm` : "yoqilg'i + ish haqi + remont"} icon={Gauge} href="#mashinalar" />
+        <StatCard label="Foyda (dastavka)" value={moneyShort(t.profit)} hint={`daromad ${moneyShort(t.revenue)}`} icon={Wallet} tone={t.profit < 0 ? "danger" : "success"} href="#mashinalar" />
       </div>
 
-      <Section title="1. Har bir mashina bo'yicha (oy boshidan)" className="mt-2">
+      <Section id="mashinalar" title="1. Har bir mashina bo'yicha (tanlangan davr)" className="mt-2">
         <Table maxHeight="70vh">
           <thead>
             <tr>
@@ -82,7 +83,7 @@ export function AvtoView({ r, base }: { r: AvtoReport; base: string }) {
                 <Td right><N v={x.supplyTrips} /></Td>
               </Tr>
             ))}
-            {active.length === 0 && <tr><td colSpan={24} className="px-4 py-10 text-center text-sm text-slate-500">Bu oyda transport harakati yo&apos;q</td></tr>}
+            {active.length === 0 && <tr><td colSpan={24} className="px-4 py-10 text-center text-sm text-slate-500">Bu davrda transport harakati yo&apos;q</td></tr>}
           </tbody>
           {active.length > 0 && (
             <tfoot>
@@ -98,7 +99,7 @@ export function AvtoView({ r, base }: { r: AvtoReport; base: string }) {
             </tfoot>
           )}
         </Table>
-        {idle > 0 && <p className="mt-2 text-[13px] text-slate-500">Bu oyda harakati bo&apos;lmagan {idle} ta faol mashina jadvalda ko&apos;rsatilmadi (Excel faylida bor).</p>}
+        {idle > 0 && <p className="mt-2 text-[13px] text-slate-500">Bu davrda harakati bo&apos;lmagan {idle} ta faol mashina jadvalda ko&apos;rsatilmadi (Excel faylida bor).</p>}
       </Section>
 
       <Section title="2. Kunlik: mexanik hisoboti ↔ kassa">

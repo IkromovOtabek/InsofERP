@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { SUPPLY_COLOR, SUPPLY_LABEL, SUPPLY_OWNER } from "@/lib/supply";
 import { skladLogistika, type SlTone } from "@/lib/sklad-logistika";
 import { vehicleServiceDue } from "@/lib/logistics";
+import { TRIP_STEP } from "@/lib/trips";
 import { date, fmtNum, isoDate } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -59,21 +60,22 @@ export async function MechanicHome({ day, base = "/dashboard" }: { day?: string;
       {/* ── 1. Bugungi nazorat ── */}
       <Section title={`1. ${dayName} nazorat`} className="mt-0" action={more("/trips", "Reyslar")}>
         <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <StatCard label="Kunlik zayavka" value={`${t.orders} ta`} hint={t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : "bekor qilinganlarsiz"} icon={ClipboardList} tone="info" />
-          <StatCard label="Zayavka bo'yicha mahsulot" value={t.volume} hint="bugun yetkaziladigan" icon={Package} tone="brand" href="/stock" />
+          {/* Kunlik zayavka — son emas, hajm (m³ · dona); bosilsa pastdagi batafsil jadvalga o'tadi */}
+          <StatCard label="Kunlik zayavka" value={t.volume} hint={`${t.orders} ta zayavka · batafsil ko'rish`} icon={ClipboardList} tone="info" href="#kunlik-zayavka" />
+          <StatCard label="Zayavkalar soni" value={`${t.orders} ta`} hint={t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : "bekor qilinganlarsiz"} icon={Package} tone="brand" href="#kunlik-zayavka" />
           <StatCard label="Jo'natilgan" value={`${t.shipped} ta`} hint={t.shippedVolume} icon={Send} tone={t.shipped ? "success" : "default"} href="/trips" />
-          <StatCard label="Qolgan zayavka" value={`${t.left} ta`} hint={t.leftVolume} icon={CalendarClock} tone={t.left ? "warning" : "success"} />
-          <StatCard label="Muammoli / kechikkan" value={`${t.problem} ta`} hint={t.overdue ? `${t.overdue} tasi oldingi kunlardan` : "kechikish, blok, reys muammosi"} icon={AlertTriangle} tone={t.problem ? "danger" : "success"} />
+          <StatCard label="Qolgan zayavka" value={`${t.left} ta`} hint={t.leftVolume} icon={CalendarClock} tone={t.left ? "warning" : "success"} href="#kunlik-zayavka" />
+          <StatCard label="Muammoli / kechikkan" value={`${t.problem} ta`} hint={t.overdue ? `${t.overdue} tasi oldingi kunlardan` : "kechikish, blok, reys muammosi"} icon={AlertTriangle} tone={t.problem ? "danger" : "success"} href="#kunlik-zayavka" />
         </div>
       </Section>
 
       {/* ── 2. Ertangi kun ── */}
       <Section title={`2. ${nextName} kun nazorati`} action={more("/logistika/transport", "Transport")}>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <StatCard label="Ertangi zayavka" value={`${n.orders} ta`} hint={n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : date(d.next)} icon={ClipboardList} tone="info" />
-          <StatCard label="Kerak bo'ladigan mahsulot" value={n.need} icon={Package} tone="brand" />
+          <StatCard label="Ertangi zayavka" value={`${n.orders} ta`} hint={n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : date(d.next)} icon={ClipboardList} tone="info" href={`${link(d.next)}#kunlik-zayavka`} />
+          <StatCard label="Kerak bo'ladigan mahsulot" value={n.need} icon={Package} tone="brand" href="#mahsulot" />
           <StatCard label="Skladda mavjud" value={n.available} hint="bugungi jo'natishdan keyin" icon={Warehouse} tone="default" href="/stock" />
-          <StatCard label="Yetishmaydigan mahsulot" value={n.short} hint={n.shortCount ? `${n.shortCount} xil mahsulot` : "hammasi yetarli"} icon={n.shortCount ? PackageX : PackageCheck} tone={n.shortCount ? "danger" : "success"} />
+          <StatCard label="Yetishmaydigan mahsulot" value={n.short} hint={n.shortCount ? `${n.shortCount} xil mahsulot` : "hammasi yetarli"} icon={n.shortCount ? PackageX : PackageCheck} tone={n.shortCount ? "danger" : "success"} href="#mahsulot" />
           <StatCard
             label="Ertangi transport ehtiyoji" value={`${n.trips} ta mashina`}
             hint={[n.mixerTrips && `${n.mixerTrips} mikser`, n.truckTrips && `${n.truckTrips} yuk`, n.pumps && `${n.pumps} nasos`, `saflda ${n.vehicles.mixer + n.vehicles.truck}`].filter(Boolean).join(" · ")}
@@ -88,7 +90,7 @@ export async function MechanicHome({ day, base = "/dashboard" }: { day?: string;
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* ── 3. Mahsulot bo'yicha ── */}
-        <Section title="3. Mahsulot bo'yicha nazorat" className="mt-0 xl:col-span-2" action={more("/stock", "Sklad")}>
+        <Section id="mahsulot" title="3. Mahsulot bo'yicha nazorat" className="mt-0 xl:col-span-2" action={more("/stock", "Sklad")}>
           <Table>
             <thead><tr><Th>Mahsulot</Th><Th right>Bugun</Th><Th right>Ertaga</Th><Th right>Skladda</Th><Th right>Holat</Th></tr></thead>
             <tbody>
@@ -200,17 +202,37 @@ export async function MechanicHome({ day, base = "/dashboard" }: { day?: string;
         </div>
       </Section>
 
-      <Section title="Bugungi va kechikkan zayavkalar" action={more("/trips", "Reyslar")}>
+      <Section id="kunlik-zayavka" title={`Kunlik va kechikkan zayavkalar — batafsil (bugun: ${t.volume})`} action={more("/trips", "Reyslar")}>
         <Table>
-          <thead><tr><Th>№</Th><Th>Mijoz</Th><Th>Vaqt</Th><Th>Mahsulot</Th><Th right>Jo&apos;natildi</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Mijoz</Th><Th>Vaqt</Th><Th>Mahsulot — necha m³ / dona</Th><Th>Qayerga</Th><Th>Kimdan (kiritgan)</Th><Th>Reyslar</Th><Th right>Jo&apos;natildi</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.orders.length === 0 && <Empty text="Zayavka yo'q" icon={ClipboardList} />}
             {d.orders.map((o) => (
-              <Tr key={o.id}>
-                <Td className="font-medium">{o.orderNo}</Td>
-                <Td className="max-w-56 truncate">{o.customer}</Td>
+              <Tr key={o.id} className="align-top">
+                <Td className="min-w-44">
+                  <div className="font-semibold text-slate-900">{o.customer}</div>
+                  {o.phone && <div className="text-xs font-normal text-slate-500">{o.phone}</div>}
+                </Td>
                 <Td className="tabular">{o.time ?? "—"}</Td>
-                <Td>{o.products}</Td>
+                <Td className="min-w-52">
+                  <ul className="space-y-0.5">
+                    {o.items.map((i, k) => (
+                      <li key={k} className="flex justify-between gap-3">
+                        <span className="truncate" title={i.name}><b className="text-slate-900">{i.code}</b> <span className="text-slate-500">{i.name !== i.code ? i.name : ""}</span></span>
+                        <span className="shrink-0 font-semibold tabular text-slate-900">{q(i.qty, i.unit)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {o.items.length > 1 && <div className="mt-1 border-t border-slate-100 pt-1 text-right text-xs font-semibold text-slate-600">Jami: {o.volume}</div>}
+                  {o.pump && <div className="mt-1"><Badge color="violet">Nasos kerak</Badge></div>}
+                </Td>
+                <Td className="min-w-48 text-[13px]">{o.address || "—"}{o.note && <div className="mt-0.5 text-xs text-slate-500">{o.note}</div>}</Td>
+                <Td className="whitespace-nowrap text-[13px]">{o.createdBy}</Td>
+                <Td className="min-w-40 text-[13px]">
+                  {o.trips.length === 0 ? <span className="text-slate-400">biriktirilmagan</span> : (
+                    <ul className="space-y-0.5">{o.trips.map((r, k) => <li key={k}><b className="tabular">{r.plate}</b> · {r.driver} <span className="text-slate-500">· {fmtNum(r.qty, 2)} · {TRIP_STEP[r.status] ?? r.status}</span></li>)}</ul>
+                  )}
+                </Td>
                 <Td right className="tabular">{fmtNum(o.shipped, 2)} / {fmtNum(o.total, 2)}{o.unit ? ` ${unitLabel(o.unit)}` : ""}</Td>
                 <Td>
                   <div className="flex flex-wrap gap-1">

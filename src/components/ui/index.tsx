@@ -52,9 +52,9 @@ export function CardHeader({ title, description, action, icon: Icon, help }: { t
       {/* basis-64: sarlavha uchun mo'ljallangan en. Amal tugmalari shu enga sig'masa
           butun blok keyingi qatorga tushadi — tor ekranda ikkisi bir-birini siqmaydi. */}
       <div className="flex min-w-0 flex-1 basis-64 items-start gap-2.5">
-        {Icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><Icon size={16} /></div>}
+        {Icon && <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-700"><Icon size={16} /></div>}
         <div className="min-w-0">
-          <h2 className="text-[19px] font-semibold leading-snug text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}</h2>
+          <h2 className="text-[19px] font-bold leading-snug text-slate-900">{title}{help && <span className="ml-1 inline-flex align-middle">{help}</span>}</h2>
           {description && <p className="mt-0.5 text-sm text-slate-500">{description}</p>}
         </div>
       </div>
@@ -63,11 +63,11 @@ export function CardHeader({ title, description, action, icon: Icon, help }: { t
   );
 }
 
-export function Section({ title, action, children, className }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function Section({ title, action, children, className, id }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string; id?: string }) {
   return (
-    <section className={cn("mt-8", className)}>
+    <section id={id} className={cn("mt-8 scroll-mt-20", className)}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h2 className="min-w-0 text-lg font-semibold text-slate-900">{title}</h2>
+        <h2 className="min-w-0 border-l-4 border-brand-400 pl-2.5 text-lg font-bold text-slate-900">{title}</h2>
         {action}
       </div>
       {children}
@@ -270,7 +270,7 @@ export function Table({ children, className, maxHeight }: { children: React.Reac
   );
 }
 export function Th({ children, right, className }: { children?: React.ReactNode; right?: boolean; className?: string }) {
-  return <th scope="col" className={cn("sticky top-0 z-[1] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500", right && "text-right", className)}>{children}</th>;
+  return <th scope="col" className={cn("sticky top-0 z-[1] whitespace-nowrap border-b-2 border-brand-300 bg-brand-100 px-4 py-3 text-left text-[12.5px] font-bold uppercase tracking-wide text-slate-900", right && "text-right", className)}>{children}</th>;
 }
 export function Td({ children, right, className, colSpan }: { children?: React.ReactNode; right?: boolean; className?: string; colSpan?: number }) {
   return <td colSpan={colSpan} className={cn("border-t border-slate-100 px-4 py-3 text-slate-700 first:font-medium first:text-slate-900", right && "whitespace-nowrap text-right tabular", className)}>{children}</td>;

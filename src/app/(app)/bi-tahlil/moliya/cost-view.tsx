@@ -68,13 +68,13 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
       </p>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Kelgan xom-ashyo (QQSsiz)" value={moneyShort(s.arrivedNet)} hint={fmtNum(s.arrivedNet)} icon={Truck} />
-        <StatCard label="Tannarxga kirgan xom-ashyo" value={moneyShort(s.consumed)} hint={fmtNum(s.consumed)} icon={Factory} />
-        <StatCard label="Koeffitsiyent (haqiqiy ÷ norma)" value={coefStr(s.coefTotal)} hint={overPct !== null ? `normadan ${over < 0 ? "kam" : "ortiq"} ${pct(Math.abs(overPct))}` : "sotuv yo'q"} icon={Scale} tone={s.coefTotal !== null && s.coefTotal > 1.05 ? "warning" : "default"} />
-        <StatCard label="Ishlab chiqarish xarajatlari stavkasi" value={pct(s.overheadPct)} hint={`${fmtNum(s.overheadTotal)} xom-ashyoga nisbatan`} icon={Percent} />
+        <StatCard label="Kelgan xom-ashyo (QQSsiz)" value={moneyShort(s.arrivedNet)} hint={fmtNum(s.arrivedNet)} icon={Truck} href="#kelgan" />
+        <StatCard label="Tannarxga kirgan xom-ashyo" value={moneyShort(s.consumed)} hint={fmtNum(s.consumed)} icon={Factory} href="#sarf" />
+        <StatCard label="Koeffitsiyent (haqiqiy ÷ norma)" value={coefStr(s.coefTotal)} hint={overPct !== null ? `normadan ${over < 0 ? "kam" : "ortiq"} ${pct(Math.abs(overPct))}` : "sotuv yo'q"} icon={Scale} tone={s.coefTotal !== null && s.coefTotal > 1.05 ? "warning" : "default"} href="#guruhlar" />
+        <StatCard label="Ishlab chiqarish xarajatlari stavkasi" value={pct(s.overheadPct)} hint={`${fmtNum(s.overheadTotal)} xom-ashyoga nisbatan`} icon={Percent} href="#xarajatlar" />
       </div>
 
-      <Section title={`1. ${monthTitle(s.month)}da kelgan xom-ashyo`}>
+      <Section id="kelgan" title={`1. ${monthTitle(s.month)}da kelgan xom-ashyo`}>
         <Table maxHeight="60vh">
           <thead><tr><Th>Guruh</Th><Th>Ta&apos;minotchi</Th><Th right>Keldi (QQS bilan)</Th><Th>QQS bor?</Th><Th right>{s.vatPayer ? "QQSsiz" : "Tannarxga"}</Th><Th>Manba</Th></tr></thead>
           <tbody>
@@ -94,7 +94,7 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
         </Table>
       </Section>
 
-      <Section title="Guruhlar bo'yicha">
+      <Section id="guruhlar" title="Guruhlar bo'yicha">
         <Table>
           <thead><tr><Th>Guruh</Th><Th right>Keldi ({s.vatPayer ? "QQSsiz" : "QQS bilan"})</Th><Th right>Norma bo&apos;yicha kerak edi</Th><Th right>Farq</Th><Th right>Koeffitsiyent</Th></tr></thead>
           <tbody>
@@ -114,7 +114,7 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
       </Section>
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
-        <Section title="2. Tannarxga kirgan xom-ashyo">
+        <Section id="sarf" title="2. Tannarxga kirgan xom-ashyo">
           <Card>
             <dl className="divide-y divide-slate-100 text-sm">
               {([
@@ -134,7 +134,7 @@ export async function CostSheetView({ s, base, canWrite }: { s: CostSheet; base:
           </Card>
         </Section>
 
-        <Section title="3. Ishlab chiqarish xarajatlari (buyumlarga taqsimlanadi)">
+        <Section id="xarajatlar" title="3. Ishlab chiqarish xarajatlari (buyumlarga taqsimlanadi)">
           <Card>
             <dl className="divide-y divide-slate-100 text-sm">
               {s.overhead.length === 0 && <div className="py-2 text-slate-400">Tannarxga kiradigan xarajat yo&apos;q</div>}
@@ -221,15 +221,15 @@ export function ProductProfitView({ p, base, canWrite }: { p: ProductProfit; bas
       </p>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Tushum (mahsulot, QQSsiz)" value={moneyShort(p.revenue)} hint={fmtNum(p.revenue)} icon={Wallet} />
-        <StatCard label="Tannarx" value={moneyShort(p.cost)} hint={fmtNum(p.cost)} icon={Calculator} />
-        <StatCard label="Yalpi foyda" value={moneyShort(p.profit)} hint={fmtNum(p.profit)} icon={TrendingUp} tone={p.profit < 0 ? "danger" : "success"} />
-        <StatCard label="O'rtacha marja" value={p.margin !== null ? pct(p.margin) : "—"} icon={Percent} />
-        <StatCard label="Dostavka tushumi" value={moneyShort(p.delivery)} hint="zayavkadagi «Доставка», tushumga kirmagan" icon={Truck} />
+        <StatCard label="Tushum (mahsulot, QQSsiz)" value={moneyShort(p.revenue)} hint={fmtNum(p.revenue)} icon={Wallet} href="#mahsulotlar" />
+        <StatCard label="Tannarx" value={moneyShort(p.cost)} hint={fmtNum(p.cost)} icon={Calculator} href="#mahsulotlar" />
+        <StatCard label="Yalpi foyda" value={moneyShort(p.profit)} hint={fmtNum(p.profit)} icon={TrendingUp} tone={p.profit < 0 ? "danger" : "success"} href="#mahsulotlar" />
+        <StatCard label="O'rtacha marja" value={p.margin !== null ? pct(p.margin) : "—"} icon={Percent} href="#mahsulotlar" />
+        <StatCard label="Dostavka tushumi" value={moneyShort(p.delivery)} hint="zayavkadagi «Доставка», tushumga kirmagan" icon={Truck} href={`/bi-tahlil/mexanik/avtotransport?oy=${p.month}#mashinalar`} />
       </div>
       {p.uncostedRevenue > 0 && <p className="mt-2 text-[13px] text-amber-700">Retsepti yoki xom-ashyo narxi yo&apos;q mahsulotlar tushumi ({fmtNum(p.uncostedRevenue)}) jamiga kirmadi.</p>}
 
-      <div className="mt-6">
+      <div id="mahsulotlar" className="mt-6 scroll-mt-20">
           <Table maxHeight="80vh">
             <thead>
               <tr>

@@ -48,19 +48,19 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <div className="mb-4"><Callout tone="danger" title="Mijoz qora ro'yxatda">Limit {money(limit)} to'liq ishlatilgan: qarz {money(debt)} + ochiq zayavkalar {money(open)}. Yangi zayavka ochilmaydi. Qarz to'langach mijoz avtomatik ro'yxatdan chiqadi; direktor, Finance yoki Buxgalteriya limitni oshirishi mumkin.</Callout></div>
       )}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Kredit limit" value={money(limit)} icon={CreditCard} hint={limit > 0 ? undefined : "0 — faqat naqd / avans"} />
+        <StatCard label="Kredit limit" value={money(limit)} icon={CreditCard} hint={limit > 0 ? undefined : "0 — faqat naqd / avans"} href="#malumotlar" />
         {advance > 0.005
-          ? <StatCard label="Avans (oldindan to'langan)" value={money(advance)} icon={Wallet} tone="success" hint="schyotlardan ortiq to'lov" />
-          : <StatCard label="Qarz (debitorka)" value={money(debt)} icon={Wallet} tone={debt > 0 ? "danger" : "success"} hint={aged && aged.overdue > 0 ? `muddati o'tgan ${money(aged.overdue)} · ${aged.oldestDays} kun` : debt > 0 ? "schyotlar − barcha to'lovlar" : undefined} />}
-        <StatCard label="Ochiq zayavkalar" value={money(open)} icon={ClipboardList} hint="schyot yozilmagan" />
-        <StatCard label="Bo'sh limit" value={money(free)} icon={CreditCard} tone={free <= 0 ? "danger" : "info"} hint={`ishlatilgan ${money(used)}`} />
+          ? <StatCard label="Avans (oldindan to'langan)" value={money(advance)} icon={Wallet} tone="success" hint="schyotlardan ortiq to'lov" href={`/customers/${id}/akt`} />
+          : <StatCard label="Qarz (debitorka)" value={money(debt)} icon={Wallet} tone={debt > 0 ? "danger" : "success"} hint={aged && aged.overdue > 0 ? `muddati o'tgan ${money(aged.overdue)} · ${aged.oldestDays} kun` : debt > 0 ? "schyotlar − barcha to'lovlar" : undefined} href={`/customers/${id}/akt`} />}
+        <StatCard label="Ochiq zayavkalar" value={money(open)} icon={ClipboardList} hint="schyot yozilmagan" href={`/orders?customer=${id}`} />
+        <StatCard label="Bo'sh limit" value={money(free)} icon={CreditCard} tone={free <= 0 ? "danger" : "info"} hint={`ishlatilgan ${money(used)}`} href="#malumotlar" />
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card>
+        <div id="malumotlar" className="scroll-mt-20"><Card>
           <CardHeader title="Ma'lumotlar" />
           <CustomerForm customer={{ ...c, creditLimit: c.creditLimit.toString() }} canEditLimit={["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role)} />
-        </Card>
+        </Card></div>
         <div className="space-y-5">
         {appStatus && (
           <Card>

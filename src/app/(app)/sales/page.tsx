@@ -68,6 +68,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const paid = Number(paidAgg._sum.amount ?? 0);
   const receivable = recv.total;
   const canInvoice = ["ACCOUNTING", "SALES", "DIRECTOR"].includes(s?.role ?? "");
+  const canSeeDebt = ["ACCOUNTING", "FINANCE", "SALES", "DIRECTOR"].includes(s?.role ?? ""); // Mijozlar bo'limi ruxsati
   const period = (k: string) => `${k ? `status=${k}&` : ""}from=${isoDate(from)}&to=${isoDate(to)}${customer ? `&customer=${customer}` : ""}`;
 
   const tabs = [{ key: "", label: "Hammasi", href: `/sales?${period("")}` }, ...SALES_STATUSES.map((k) => ({ key: k, label: ORDER_STATUS[k].label, href: `/sales?${period(k)}` }))];
@@ -76,12 +77,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     <div>
       <PageHeader title="Sotuv" subtitle="Qabul qilingan zayavkalar. Yangi zayavka Zayavkalar bo'limida yaratiladi va qabul qilingach shu yerga o'tadi." />
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Sotuv summasi (davr)" value={money(total)} icon={Wallet} hint={`${count} ta zayavka`} />
-        <StatCard label="To'langan" value={money(paid)} icon={CheckCircle2} tone="success" hint="schyot to'lovlari + avanslar" />
-        <StatCard label="Debitorka (joriy)" value={money(receivable)} icon={Clock} tone={receivable > 0 ? "danger" : "success"} hint={[recv.overdue > 0 ? `muddati o'tgan ${money(recv.overdue)}` : `${recv.debtors} ta qarzdor`, recv.advance > 0.005 ? `avans ${money(recv.advance)}` : ""].filter(Boolean).join(" · ")} />
+        <StatCard label="Sotuv summasi (davr)" value={money(total)} icon={Wallet} hint={`${count} ta zayavka`} href="#sotuv-royxati" />
+        <StatCard label="To'langan" value={money(paid)} icon={CheckCircle2} tone="success" hint="schyot to'lovlari + avanslar" href="#sotuv-royxati" />
+        <StatCard label="Debitorka (joriy)" value={money(receivable)} icon={Clock} tone={receivable > 0 ? "danger" : "success"} hint={[recv.overdue > 0 ? `muddati o'tgan ${money(recv.overdue)}` : `${recv.debtors} ta qarzdor`, recv.advance > 0.005 ? `avans ${money(recv.advance)}` : ""].filter(Boolean).join(" · ")} href={canSeeDebt ? (customer ? `/customers/${customer}/akt` : "/customers") : undefined} />
         <StatCard label="Schyot yozilmagan" value={String(noInvoice)} icon={FileText} tone={noInvoice > 0 ? "warning" : "default"} hint="tasdiqlangan, schyotsiz" href={canInvoice ? "/invoices/new" : undefined} />
       </div>
-      <form className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+      <form id="sotuv-royxati" className="mb-3 flex scroll-mt-20 flex-wrap items-center gap-2 text-sm">
         {st && <input type="hidden" name="status" value={st} />}
         {customer && <input type="hidden" name="customer" value={customer} />}
         <Input name="from" type="date" defaultValue={isoDate(from)} className="h-9 w-40" aria-label="Davr boshi" />

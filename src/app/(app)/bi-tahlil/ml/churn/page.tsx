@@ -6,7 +6,7 @@ import { sum, safeDiv, addDays, startOfDay, goLiveDate } from "@/lib/bi/core";
 import { money, moneyShort, fmtNum, date as fmtDate } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty, Select, Input, Badge } from "@/components/ui";
 import { BarChart, HBarList, Scatter } from "@/components/ui/charts";
-import { Kpi, Panel, Why, Insight, Action, Note, Tag, Chip, Pager } from "../../ui";
+import { Kpi, Panel, Why, Insight, Action, Note, Tag, Chip, Pager, tabHref } from "../../ui";
 import { cn } from "@/lib/utils";
 import { requirePage } from "@/lib/page-guard";
 
@@ -77,12 +77,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Kpi label="Ketish xavfida" value={String(inRisk.length)} icon={ShieldAlert} tone={inRisk.length ? "danger" : "success"} hint={`bazaning ${fmtNum(baseRate, 1)}%i · jami ${base.length}`} />
-          <Kpi label="Kutilayotgan yo'qotish" value={moneyShort(expected)} icon={Wallet} tone="warning" hint={`yillik aylanmaning ${fmtNum(safeDiv(expected, annual) * 100, 1)}%i`} />
-          <Kpi label="Saqlab qolish imkoniyati" value={moneyShort(recoverable)} icon={PiggyBank} tone="success" hint="90 kundan kam sukut" />
-          <Kpi label="O'rtacha xavf bali" value={fmtNum(avgScore, 0)} icon={Gauge} hint={`o'rtacha ${fmtNum(avgRecency, 0)} kun oldin xarid`} />
-          <Kpi label="Yangi mijozlar" value={String(newC.length)} icon={UserPlus} tone="info" hint={`faol (30 kun): ${active.length}`} />
-          <Kpi label="Qaytgan mijozlar" value={String(reactivated.length)} icon={Users} tone="violet" hint="uzoq tanaffusdan keyin yana xarid" />
+          <Kpi label="Ketish xavfida" value={String(inRisk.length)} icon={ShieldAlert} tone={inRisk.length ? "danger" : "success"} hint={`bazaning ${fmtNum(baseRate, 1)}%i · jami ${base.length}`} href="#zonalar" />
+          <Kpi label="Kutilayotgan yo'qotish" value={moneyShort(expected)} icon={Wallet} tone="warning" hint={`yillik aylanmaning ${fmtNum(safeDiv(expected, annual) * 100, 1)}%i`} href="#royxat" />
+          <Kpi label="Saqlab qolish imkoniyati" value={moneyShort(recoverable)} icon={PiggyBank} tone="success" hint="90 kundan kam sukut" href={`${href({ zone: "Yuqori" })}#royxat`} />
+          <Kpi label="O'rtacha xavf bali" value={fmtNum(avgScore, 0)} icon={Gauge} hint={`o'rtacha ${fmtNum(avgRecency, 0)} kun oldin xarid`} href="#taqsimot" />
+          <Kpi label="Yangi mijozlar" value={String(newC.length)} icon={UserPlus} tone="info" hint={`faol (30 kun): ${active.length}`} href={`${tabHref(range, "customers", { segment: "New" })}#mijozlar-royxati`} />
+          <Kpi label="Qaytgan mijozlar" value={String(reactivated.length)} icon={Users} tone="violet" hint="uzoq tanaffusdan keyin yana xarid" href="#harakat" />
         </div>
 
         <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-[13px] text-blue-950"><b>Bu sahifa nimaga tayanadi.</b> Xavf bali — gibrid: recency (oxirgi buyurtmadan beri kunlar, 60 ballgacha) + qarz (15) + muddati o'tgan qarz (15) + chastota pasayishi (10). ML modeli o'rniga qoida — chunki mijoz xatti-harakati ERP da to'liq ko'rinadi. Kutilayotgan yo'qotish = o'rtacha oylik × 12 × bal/100. Har mijozning bali jadvalda.</div>
@@ -95,9 +95,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <Panel title="Xavf zonalari" info="Segmentni bosing — filtrlanadi."><HBarList data={ZONES.map((z) => ({ label: z, value: base.filter((c) => c.risk === z).length, hint: moneyShort(sum(base.filter((c) => c.risk === z).map((c) => c.expectedLoss))), tone: ({ Kritik: "danger", Yuqori: "warning", "O'rta": "info", Past: "slate", Xavfsiz: "success" } as const)[z] }))} formatValue={(v) => `${v} ta`} /></Panel>
-          <Panel title="Xavf bali taqsimoti" info="Ustun — mijoz soni; pastda — kutilayotgan yo'qotish."><BarChart data={dist.map((d) => ({ label: d.label, value: d.value, tone: Number(d.label.split("–")[0]) >= 80 ? ("danger" as const) : Number(d.label.split("–")[0]) >= 60 ? ("warning" as const) : ("info" as const) }))} formatValue={(v) => `${v} mijoz`} height={140} /><div className="mt-2"><BarChart data={dist.map((d) => ({ label: d.label, value: d.loss }))} tone="slate" formatValue={(v) => `${moneyShort(v)} so'm`} height={70} /></div></Panel>
-          <Panel title="Mijoz bazasi harakati" info="Oy bo'yicha faol mijozlar (taxminiy — oxirgi va birinchi xarid sanalari bo'yicha). Tizimga o'tgan oydan boshlab."><BarChart data={flow} tone="brand" formatValue={(v) => `${v} mijoz`} height={140} /></Panel>
+          <Panel id="zonalar" title="Xavf zonalari" info="Segmentni bosing — filtrlanadi."><HBarList data={ZONES.map((z) => ({ label: z, value: base.filter((c) => c.risk === z).length, hint: moneyShort(sum(base.filter((c) => c.risk === z).map((c) => c.expectedLoss))), tone: ({ Kritik: "danger", Yuqori: "warning", "O'rta": "info", Past: "slate", Xavfsiz: "success" } as const)[z] }))} formatValue={(v) => `${v} ta`} /></Panel>
+          <Panel id="taqsimot" title="Xavf bali taqsimoti" info="Ustun — mijoz soni; pastda — kutilayotgan yo'qotish."><BarChart data={dist.map((d) => ({ label: d.label, value: d.value, tone: Number(d.label.split("–")[0]) >= 80 ? ("danger" as const) : Number(d.label.split("–")[0]) >= 60 ? ("warning" as const) : ("info" as const) }))} formatValue={(v) => `${v} mijoz`} height={140} /><div className="mt-2"><BarChart data={dist.map((d) => ({ label: d.label, value: d.loss }))} tone="slate" formatValue={(v) => `${moneyShort(v)} so'm`} height={70} /></div></Panel>
+          <Panel id="harakat" title="Mijoz bazasi harakati" info="Oy bo'yicha faol mijozlar (taxminiy — oxirgi va birinchi xarid sanalari bo'yicha). Tizimga o'tgan oydan boshlab."><BarChart data={flow} tone="brand" formatValue={(v) => `${v} mijoz`} height={140} /></Panel>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -120,7 +120,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
 
-        <Panel title="Mijozlar ro'yxati" info="Kutilayotgan yo'qotish bo'yicha saralangan. Qatorni bosing — mijoz kartasi." padded={false} action={<span>{list.length} mijoz</span>}>
+        <Panel id="royxat" title="Mijozlar ro'yxati" info="Kutilayotgan yo'qotish bo'yicha saralangan. Qatorni bosing — mijoz kartasi." padded={false} action={<span>{list.length} mijoz</span>}>
           <form method="get" action="/bi-tahlil/ml/churn" className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
             {sp.zone && <input type="hidden" name="zone" value={sp.zone} />}{sp.abc && <input type="hidden" name="abc" value={sp.abc} />}{sp.debt && <input type="hidden" name="debt" value={sp.debt} />}{sp.once && <input type="hidden" name="once" value={sp.once} />}
             <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{SEGMENT_ORDER.filter((s) => s !== "Yangi (xaridsiz)").map((s) => <option key={s} value={s}>{s}</option>)}</Select>

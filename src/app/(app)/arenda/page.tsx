@@ -74,9 +74,9 @@ export default async function ArendaPage({ searchParams }: { searchParams: Promi
 
       {/* Umumiy summa — Kirim/Chiqim tugmalari tepasida */}
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Arenda kassasi — umumiy summa" value={money(balance.total)} icon={Wallet} tone={balance.total < 0 ? "danger" : "success"} hint="Barcha kirimlar − chiqimlar (bekor qilinganlar hisobga kirmaydi)" />
-        <StatCard label="Naqd" value={money(balance.cash)} icon={Banknote} />
-        <StatCard label="Perechisleniye" value={money(balance.bank)} icon={Landmark} />
+        <StatCard label="Arenda kassasi — umumiy summa" value={money(balance.total)} icon={Wallet} tone={balance.total < 0 ? "danger" : "success"} hint="Barcha kirimlar − chiqimlar (bekor qilinganlar hisobga kirmaydi)" href={href({ tab: "jurnal" })} />
+        <StatCard label="Naqd" value={money(balance.cash)} icon={Banknote} href={href({ tab: "jurnal" })} />
+        <StatCard label="Perechisleniye" value={money(balance.bank)} icon={Landmark} href={href({ tab: "jurnal" })} />
       </div>
       <RentTxPanel shops={activeShops.map((x) => ({ id: x.id, name: x.name, location: x.location, daily: x.period === "DAILY" }))} month={key} months={months} expenseCats={RENT_EXPENSE_CATEGORIES} canCreate={canCreate} />
 
@@ -246,13 +246,13 @@ async function DebtorsTab({ canShops, canCreate }: { canShops: boolean; canCreat
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Qarzdor ijarachilar" value={debtors.length} icon={Users} tone={debtors.length ? "danger" : "success"} />
-        <StatCard label="Jami ijara qarzi" value={money(total)} icon={Wallet} tone={total > 1 ? "danger" : "success"} hint={elecTotal > 1 ? `svet qarzi alohida: ${money(elecTotal)}` : undefined} />
-        <StatCard label="Telegram'ga ulanmagan" value={notLinked} icon={MessageCircle} hint={former.length ? `sobiq ijarachilar: ${former.length} ta, qarzi ${money(former.reduce((a, d) => a + d.debt, 0))}` : "ularga eslatmani kartadan nusxalab yuborasiz"} />
+        <StatCard label="Qarzdor ijarachilar" value={debtors.length} icon={Users} tone={debtors.length ? "danger" : "success"} href="#qarzdorlar-royxati" />
+        <StatCard label="Jami ijara qarzi" value={money(total)} icon={Wallet} tone={total > 1 ? "danger" : "success"} hint={elecTotal > 1 ? `svet qarzi alohida: ${money(elecTotal)}` : undefined} href="#qarzdorlar-royxati" />
+        <StatCard label="Telegram'ga ulanmagan" value={notLinked} icon={MessageCircle} hint={former.length ? `sobiq ijarachilar: ${former.length} ta, qarzi ${money(former.reduce((a, d) => a + d.debt, 0))}` : "ularga eslatmani kartadan nusxalab yuborasiz"} href="#qarzdorlar-royxati" />
       </div>
       {canShops && <Card><RemindDayForm day={company.rentRemindDay} /></Card>}
       {debtors.length === 0 ? <EmptyState icon={Store} title="Qarzdor yo'q" text="Barcha ijarachilar hisobini to'lagan." /> : (
-        <Card padded={false}>
+        <div id="qarzdorlar-royxati" className="scroll-mt-20"><Card padded={false}>
           <Table>
             <thead><tr><Th>Do&apos;kon</Th><Th>Ijarachi</Th><Th>To&apos;lanmagan oylar</Th><Th right>Ijara qarzi</Th><Th right>Svet qarzi</Th><Th>Oxirgi to&apos;lov</Th><Th>Telegram</Th><Th>Oxirgi eslatma</Th><Th></Th></tr></thead>
             <tbody>
@@ -277,7 +277,7 @@ async function DebtorsTab({ canShops, canCreate }: { canShops: boolean; canCreat
               ))}
             </tbody>
           </Table>
-        </Card>
+        </Card></div>
       )}
     </div>
   );
@@ -493,12 +493,12 @@ async function AnalyticsTab() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Bandlik (joylar)" value={pct(total.on, total.total)} icon={Store} hint={`${total.on} ta ijarada, ${total.off} ta bo'sh`} />
-        <StatCard label="Bandlik (maydon)" value={total.area > 0 ? pct(total.areaOn, total.area) : "—"} icon={Ruler} hint={total.area > 0 ? `${m2(total.areaOn)} / ${m2(total.area)} m²${total.noArea ? ` · ${total.noArea} ta joyda m² yo'q` : ""}` : "do'konlarga m² kiriting"} />
-        <StatCard label="Oylik daromad (andoza)" value={money(total.monthly)} icon={Wallet} hint={total.perM2 !== null ? `o'rtacha 1 m² — ${money(total.perM2)}` : "kunlik ijara × 30 kun"} />
-        <StatCard label="Bo'sh joylar sababli yo'qotish" value={total.lost !== null ? money(total.lost) : "—"} icon={TrendingDown} tone={total.lost ? "warning" : "default"} hint={total.lost !== null ? `oyiga · bo'sh ${m2(total.areaOff)} m² bozor narxida` : "bo'sh joylarga m² kiriting"} />
+        <StatCard label="Bandlik (joylar)" value={pct(total.on, total.total)} icon={Store} hint={`${total.on} ta ijarada, ${total.off} ta bo'sh`} href="/arenda?tab=filter&holat=ijarada" />
+        <StatCard label="Bandlik (maydon)" value={total.area > 0 ? pct(total.areaOn, total.area) : "—"} icon={Ruler} hint={total.area > 0 ? `${m2(total.areaOn)} / ${m2(total.area)} m²${total.noArea ? ` · ${total.noArea} ta joyda m² yo'q` : ""}` : "do'konlarga m² kiriting"} href="#bozorlar-bandligi" />
+        <StatCard label="Oylik daromad (andoza)" value={money(total.monthly)} icon={Wallet} hint={total.perM2 !== null ? `o'rtacha 1 m² — ${money(total.perM2)}` : "kunlik ijara × 30 kun"} href="#bozorlar-bandligi" />
+        <StatCard label="Bo'sh joylar sababli yo'qotish" value={total.lost !== null ? money(total.lost) : "—"} icon={TrendingDown} tone={total.lost ? "warning" : "default"} hint={total.lost !== null ? `oyiga · bo'sh ${m2(total.areaOff)} m² bozor narxida` : "bo'sh joylarga m² kiriting"} href="/arenda?tab=filter&holat=bosh" />
       </div>
-      <Card padded={false}>
+      <div id="bozorlar-bandligi" className="scroll-mt-20"><Card padded={false}>
         <div className="p-5 pb-0"><CardHeader title="Bozorlar bo'yicha" description="Daromad — ijaradagi joylarning andoza summasi (kunlik ijara × 30). Yo'qotish — bo'sh maydon shu bozorning 1 m² o'rtacha narxida ijaraga berilsa oyiga qancha tushardi." /></div>
         <Table>
           <thead><tr><Th>Joy (bozor)</Th><Th right>Joylar</Th><Th right>Ijarada</Th><Th right>Bo&apos;sh</Th><Th right>Maydon, m²</Th><Th right>Bo&apos;sh m²</Th><Th>Bandlik (m²)</Th><Th right>Oylik daromad</Th><Th right>1 m² narx</Th><Th right>Yo&apos;qotish / oy</Th></tr></thead>
@@ -519,7 +519,7 @@ async function AnalyticsTab() {
             ))}
           </tbody>
         </Table>
-      </Card>
+      </Card></div>
       <Card padded={false}>
         <div className="p-5 pb-0"><CardHeader title="Oylar bo'yicha yig'im" icon={FileClock} description="Hisoblangan (oy hisobi) va shu oy uchun yozilgan kirimlar. Joriy oy hali tugamagan." /></div>
         <Table>
@@ -563,10 +563,10 @@ async function ElecTab({ month, monthName, canShops, shopsHref }: { month: Date;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label={`Svet summasi — ${monthName}`} value={money(total.sum)} icon={Zap} hint={`${fmtNum(total.kwh, 1)} kVt · ${groups.reduce((a, g) => a + g.rows.length, 0)} ta joy`} />
-        <StatCard label="Ijarachilardan olindi" value={money(total.paid)} icon={Wallet} tone="success" hint="kassaga svet to'lovi + litsevoyga" />
-        <StatCard label="Qoldiq" value={money(total.left)} icon={AlertTriangle} tone={total.left > 1 ? "danger" : "success"} hint="manfiy — ortiqcha to'langan" />
-        <StatCard label="To'lashimiz kerak" value={bill ? money(bill) : "—"} icon={Landmark} tone={bill && total.paid < bill ? "warning" : "default"} hint={bill ? `farq (olingan − to'lanadigan) ${money(total.paid - bill)}` : "joy bo'yicha jadvalda kiriting"} />
+        <StatCard label={`Svet summasi — ${monthName}`} value={money(total.sum)} icon={Zap} hint={`${fmtNum(total.kwh, 1)} kVt · ${groups.reduce((a, g) => a + g.rows.length, 0)} ta joy`} href="#svet-varaq" />
+        <StatCard label="Ijarachilardan olindi" value={money(total.paid)} icon={Wallet} tone="success" hint="kassaga svet to'lovi + litsevoyga" href={`/arenda?oy=${key}&tab=jurnal`} />
+        <StatCard label="Qoldiq" value={money(total.left)} icon={AlertTriangle} tone={total.left > 1 ? "danger" : "success"} hint="manfiy — ortiqcha to'langan" href="#svet-varaq" />
+        <StatCard label="To'lashimiz kerak" value={bill ? money(bill) : "—"} icon={Landmark} tone={bill && total.paid < bill ? "warning" : "default"} hint={bill ? `farq (olingan − to'lanadigan) ${money(total.paid - bill)}` : "joy bo'yicha jadvalda kiriting"} href="#svet-varaq" />
       </div>
       {canShops && <Card><KwhPriceForm price={settings.kwhPrice} markup={settings.markup} /></Card>}
       {groups.length === 0 ? (
@@ -575,7 +575,7 @@ async function ElecTab({ month, monthName, canShops, shopsHref }: { month: Date;
           action={canShops ? <Link href={shopsHref} className="text-sm font-medium text-brand-700 hover:underline">Do&apos;konlarga o&apos;tish →</Link> : undefined} />
       ) : (
         <>
-          <div className="flex justify-end"><ExcelButton file={`Svet ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} /></div>
+          <div id="svet-varaq" className="flex scroll-mt-20 justify-end"><ExcelButton file={`Svet ${monthName}`} sheets={[{ name: monthName, rows: excelRows }]} /></div>
           <Sheet lang="uz" maxHeight="75vh">
             <SheetHead>
               <tr>{head.map((h, i) => <SheetTh key={h} tone={i === 7 ? "yellow" : i === 9 ? "green" : i === 10 ? "red" : "plain"} className={i === 1 ? "sticky left-0 z-20 min-w-60 text-left" : "whitespace-normal"}>{h}</SheetTh>)}</tr>

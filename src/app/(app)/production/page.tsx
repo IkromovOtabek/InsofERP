@@ -11,6 +11,7 @@ import { PRODUCTION_FILTERS, assigned, dueLabel, isDone, isOpen, isSoon, itemTas
 import { AssignForm, type Capacity } from "./assign-form";
 import { brigadeStocks } from "@/lib/brigade-stock";
 import { requirePage } from "@/lib/page-guard";
+import { pathAllowed } from "@/lib/nav";
 import { productionMatrix } from "@/lib/production-matrix";
 import { ProductionMatrixView, type BoardOrder } from "./matrix";
 
@@ -102,6 +103,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
       )}
 
       <ProductionMatrixView data={matrix} board={board} tab={filter.key}
+        stockHref={pathAllowed("/stock", session.role, session.perms) ? "/stock?tab=capacity" : undefined}
         filters={<Tabs current={filter.key} className="mb-3" scroll={false} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />} />
 
       <h2 className="mb-3 inline-flex items-center gap-2 font-semibold"><Factory size={16} className="text-slate-400" /> Zameslar</h2>

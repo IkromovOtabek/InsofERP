@@ -30,14 +30,14 @@ export async function YollashTab({ s, positions, vakansiya }: { s: Session; posi
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Ochiq vakansiya" value={String(open.length)} icon={Briefcase} hint={`${open.reduce((x, v) => x + v.headcount - v.candidates.length, 0)} o'rin bo'sh`} />
-        <StatCard label="Jarayondagi nomzod" value={String(candidates.filter((c) => PIPELINE.includes(c.stage)).length)} icon={Users} />
-        <StatCard label="Zaxira kadr" value={String(by("RESERVE").length)} />
-        <StatCard label="Qabul qilingan" value={String(by("HIRED").length)} tone="success" />
+        <StatCard label="Ochiq vakansiya" value={String(open.length)} icon={Briefcase} hint={`${open.reduce((x, v) => x + v.headcount - v.candidates.length, 0)} o'rin bo'sh`} href="#vakansiyalar" />
+        <StatCard label="Jarayondagi nomzod" value={String(candidates.filter((c) => PIPELINE.includes(c.stage)).length)} icon={Users} href="#nomzodlar" />
+        <StatCard label="Zaxira kadr" value={String(by("RESERVE").length)} href="#nomzod-reserve" />
+        <StatCard label="Qabul qilingan" value={String(by("HIRED").length)} tone="success" href="#nomzod-hired" />
       </div>
 
       <Card padded={false}>
-        <div className="border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Vakansiyalar</h2></div>
+        <div id="vakansiyalar" className="scroll-mt-20 border-b border-slate-100 px-4 py-3"><h2 className="text-sm font-semibold">Vakansiyalar</h2></div>
         <Table>
           <thead><tr><Th>Vakansiya</Th><Th>Lavozim</Th><Th right>Kerak / qabul</Th><Th right>Maosh</Th><Th>Holat</Th><Th right /></tr></thead>
           <tbody>
@@ -64,7 +64,7 @@ export async function YollashTab({ s, positions, vakansiya }: { s: Session; posi
           <Link key={v.id} href={href(v.id)} className={cn("rounded-md px-2.5 py-1", vakansiya === v.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>{v.title}</Link>
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div id="nomzodlar" className="grid scroll-mt-20 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {PIPELINE.map((st) => (
           <div key={st} className="rounded-(--radius-card) border border-slate-200 bg-slate-50/60 p-2">
             <div className="mb-2 flex justify-between px-1 text-sm font-semibold text-slate-700">{STAGE_LABEL[st]}<span className="text-xs font-normal text-slate-500">{by(st).length}</span></div>
@@ -87,7 +87,7 @@ export async function YollashTab({ s, positions, vakansiya }: { s: Session; posi
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {(["RESERVE", "HIRED", "REJECTED"] as const).map((st) => (
           <Card key={st} padded={false}>
-            <div className="border-b border-slate-100 px-4 py-2 text-sm font-semibold">{STAGE_LABEL[st]} ({by(st).length})</div>
+            <div id={`nomzod-${st.toLowerCase()}`} className="scroll-mt-20 border-b border-slate-100 px-4 py-2 text-sm font-semibold">{STAGE_LABEL[st]} ({by(st).length})</div>
             <ul className="divide-y divide-slate-100 text-sm">
               {by(st).slice(0, 15).map((c) => (
                 <li key={c.id} className="flex justify-between gap-2 px-4 py-2">

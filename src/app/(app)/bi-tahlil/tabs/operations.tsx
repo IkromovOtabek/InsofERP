@@ -27,19 +27,18 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <Kpi label="Beton ishlab chiqarildi" value={`${qty(k.produced.cur)} m³`} delta={k.produced.delta} icon={Factory} tone="brand" hint={`${fmtNum(k.perDay, 1)} m³/kun`} />
-        <Kpi label="Dona mahsulot" value={k.hasPieces ? k.pieces : "0"} icon={Layers} hint={`oldingi davr: ${k.piecesPrev}`} />
-        <Kpi label="Beton zameslari" value={String(k.batches.cur)} delta={k.batches.delta} icon={Layers} hint={`${d.noOrderCount} ta zayavkasiz`} />
-        <Kpi label="Reyslar" value={String(k.trips.cur)} delta={k.trips.delta} icon={Truck} tone="info" hint={`${k.cancelled} ta bekor`} />
-        <Kpi label="Beton yetkazildi" value={`${qty(k.deliveredM3.cur)} m³`} delta={k.deliveredM3.delta} icon={PackageCheck} tone="success" />
-        <Kpi label="Yetkazish darajasi" value={`${fmtNum(k.deliveryRate.cur, 0)}%`} delta={k.deliveryRate.cur - k.deliveryRate.prev} deltaLabel="p.p." icon={CheckCircle2} tone={k.deliveryRate.cur >= 90 ? "success" : "warning"} />
-        <Kpi label="O'rtacha reys vaqti" value={k.avgMinutes.cur ? `${fmtNum(k.avgMinutes.cur, 0)} daq` : "—"} delta={k.avgMinutes.delta} invert icon={Timer} hint="yuklashdan topshirishgacha" />
-        <Kpi label="O'z vaqtida" value={`${fmtNum(k.onTime.cur, 0)}%`} icon={Target} tone={k.onTime.cur >= 90 ? "success" : "danger"} hint={`${d.late} ta kechikkan`} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <Kpi label="Beton ishlab chiqarildi" value={`${qty(k.produced.cur)} m³`} delta={k.produced.delta} icon={Factory} tone="brand" hint={`${fmtNum(k.perDay, 1)} m³/kun`} href="/production" />
+        <Kpi label="Plita mahsulot" value={k.hasPieces ? k.pieces : "0"} icon={Layers} hint={`oldingi davr: ${k.piecesPrev}`} href="/bi-tahlil/ombor/tayyor-mahsulot" />
+        <Kpi label="Reyslar" value={String(k.trips.cur)} delta={k.trips.delta} icon={Truck} tone="info" hint={`${k.cancelled} ta bekor`} href="/trips" />
+        <Kpi label="Beton yetkazildi" value={`${qty(k.deliveredM3.cur)} m³`} delta={k.deliveredM3.delta} icon={PackageCheck} tone="success" href="/trips" />
+        <Kpi label="Yetkazish darajasi" value={`${fmtNum(k.deliveryRate.cur, 0)}%`} delta={k.deliveryRate.cur - k.deliveryRate.prev} deltaLabel="p.p." icon={CheckCircle2} tone={k.deliveryRate.cur >= 90 ? "success" : "warning"} href="/orders" />
+        <Kpi label="O'rtacha reys vaqti" value={k.avgMinutes.cur ? `${fmtNum(k.avgMinutes.cur, 0)} daq` : "—"} delta={k.avgMinutes.delta} invert icon={Timer} hint="yuklashdan topshirishgacha" href="/trips" />
+        <Kpi label="O'z vaqtida" value={`${fmtNum(k.onTime.cur, 0)}%`} icon={Target} tone={k.onTime.cur >= 90 ? "success" : "danger"} hint={`${d.late} ta kechikkan`} href="/orders" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Panel className="xl:col-span-2" title="Ishlab chiqarish va yetkazish dinamikasi" info="Beton: zames hajmi (m³) va mikserda yetkazilgan hajm — davr bo'yicha. Dona mahsulot bu grafikka kirmaydi." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "operations", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
+        <Panel className="xl:col-span-2" title="Ishlab chiqarish va yetkazish dinamikasi" info="Beton: zames hajmi (m³) va mikserda yetkazilgan hajm — davr bo'yicha. Plita mahsulot bu grafikka kirmaydi." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={tabHref(range, "operations", { gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
           <LineChart labels={d.prodDyn.map((x) => x.label)} series={[{ name: "Ishlab chiqarildi", values: d.prodDyn.map((x) => x.value), color: "#ffa800" }, { name: "Yetkazildi", values: d.shipDyn.map((x) => x.value), color: "#00cb80" }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={Math.max(1, Math.ceil(d.prodDyn.length / 12))} height={200} />
         </Panel>
         <Panel title="Smena va marka bo'yicha" info="Beton zameslari hajmi taqsimoti (m³).">
@@ -81,7 +80,7 @@ export async function OperationsTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       </div>
 
-      <Insight>Davrda {qty(k.produced.cur)} m³ beton ishlab chiqarildi ({k.batches.cur} zames){k.hasPieces ? `, dona mahsulot: ${k.pieces}` : ""}, {qty(k.deliveredM3.cur)} m³ beton yetkazildi. Yetkazish darajasi {fmtNum(k.deliveryRate.cur, 0)}%, o'z vaqtida {fmtNum(k.onTime.cur, 0)}%. {d.mixers.filter((m) => m.idle).length ? `${d.mixers.filter((m) => m.idle).length} ta mikser bo'sh turibdi — quvvat ishlatilmayapti.` : "Barcha mikserlar ishlamoqda."} {d.overdue.length ? `${d.overdue.length} ta zayavka muddati o'tgan — mijozga xabar bering.` : ""}</Insight>
+      <Insight>Davrda {qty(k.produced.cur)} m³ beton ishlab chiqarildi ({k.batches.cur} zames){k.hasPieces ? `, plita mahsulot: ${k.pieces}` : ""}, {qty(k.deliveredM3.cur)} m³ beton yetkazildi. Yetkazish darajasi {fmtNum(k.deliveryRate.cur, 0)}%, o'z vaqtida {fmtNum(k.onTime.cur, 0)}%. {d.mixers.filter((m) => m.idle).length ? `${d.mixers.filter((m) => m.idle).length} ta mikser bo'sh turibdi — quvvat ishlatilmayapti.` : "Barcha mikserlar ishlamoqda."} {d.overdue.length ? `${d.overdue.length} ta zayavka muddati o'tgan — mijozga xabar bering.` : ""}</Insight>
       <Why label="Kim sekinlashdi va nega?">
         {bottom5.slice(0, 3).map((x) => <p key={x.id}><b>{x.name}</b>: {x.trips} reys, bajarish {fmtNum(x.rate, 0)}%{x.late ? `, ${x.late} ta kechikish` : ""}{x.cancelled ? `, ${x.cancelled} ta bekor` : ""}. {x.rate < 70 ? "Reyslar yopilmayapti — nakladnoy holatini o'z vaqtida yangilashni tekshiring." : x.avgMinutes > (k.avgMinutes.cur || 0) * 1.3 ? "Reys vaqti o'rtachadan uzoq — marshrut yoki obyektda kutish." : "Hajm past — mikser sig'imi yoki reys soni kam."}</p>)}
         {!bottom5.length && <p>Ma'lumot yo'q.</p>}

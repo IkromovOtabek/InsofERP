@@ -43,9 +43,9 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
       <PeriodTabs base="/logistika/yetkazish" current={r.period} />
       <RangeForm base="/logistika/yetkazish" from={r.from} to={r.to} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Yuklangan" value={qty(loaded)} hint={`${trips.length} reys`} icon={PackageCheck} tone="brand" />
-        <StatCard label="Qabul qilingan" value={qty(acc)} hint={loaded ? `${((acc / loaded) * 100).toFixed(1)}%` : undefined} icon={Scale} tone="success" />
-        <StatCard label="Qaytarilgan" value={qty(ret)} hint={`${diff.length} reysda farq`} icon={Undo2} tone={ret ? "warning" : "default"} />
+        <StatCard label="Yuklangan" value={qty(loaded)} hint={`${trips.length} reys`} icon={PackageCheck} tone="brand" href={`/logistika/yetkazish?${extra}`} />
+        <StatCard label="Qabul qilingan" value={qty(acc)} hint={loaded ? `${((acc / loaded) * 100).toFixed(1)}%` : undefined} icon={Scale} tone="success" href={`/logistika/yetkazish?${extra}`} />
+        <StatCard label="Qaytarilgan" value={qty(ret)} hint={`${diff.length} reysda farq`} icon={Undo2} tone={ret ? "warning" : "default"} href={`/logistika/yetkazish?${extra}&tab=diff`} />
         <StatCard label="Yopilmagan" value={open.length} hint="qabul tasdig'i kutilmoqda" icon={PackageX} tone={open.length ? "warning" : "default"} href={`/logistika/yetkazish?${extra}&tab=open`} />
       </div>
       <Tabs current={tab} items={[

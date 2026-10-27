@@ -123,9 +123,9 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
       <Callout tone="info" title="Hisobotlarga qanday tushadi">{HELP[kind]}</Callout>
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Kiritilgan yozuvlar" value={String(active.length)} icon={Icon} hint={lastDate ? `oxirgisi ${date(lastDate)} holatiga` : "hali yo'q"} />
-        <StatCard label={kind === "STOCK" ? "Ombor qiymati (tannarx)" : kind === "CASH" ? "Jami qoldiq" : kind === "CUSTOMER" ? "Mijozlar qarzi (+)" : "Qarzimiz (+)"} value={money(kind === "STOCK" || kind === "CASH" ? total : plus)} tone="info" />
-        {kind !== "STOCK" && kind !== "CASH" && <StatCard label={kind === "CUSTOMER" ? "Mijozlar avansi (−)" : "Bergan avansimiz (−)"} value={money(-minus)} tone={minus < 0 ? "warning" : "default"} />}
+        <StatCard label="Kiritilgan yozuvlar" value={String(active.length)} icon={Icon} hint={lastDate ? `oxirgisi ${date(lastDate)} holatiga` : "hali yo'q"} href="#kiritilganlar" />
+        <StatCard label={kind === "STOCK" ? "Ombor qiymati (tannarx)" : kind === "CASH" ? "Jami qoldiq" : kind === "CUSTOMER" ? "Mijozlar qarzi (+)" : "Qarzimiz (+)"} value={money(kind === "STOCK" || kind === "CASH" ? total : plus)} tone="info" href="#kiritilganlar" />
+        {kind !== "STOCK" && kind !== "CASH" && <StatCard label={kind === "CUSTOMER" ? "Mijozlar avansi (−)" : "Bergan avansimiz (−)"} value={money(-minus)} tone={minus < 0 ? "warning" : "default"} href="#kiritilganlar" />}
       </div>
 
       {canEdit && <>
@@ -160,7 +160,7 @@ export default async function OpeningBalancesPage({ searchParams }: { searchPara
       </Card>
       </>}
 
-      <div className="mt-6 mb-2 flex items-center justify-between gap-3">
+      <div id="kiritilganlar" className="mt-6 mb-2 flex scroll-mt-20 items-center justify-between gap-3">
         <h2 className="font-semibold">Kiritilgan qoldiqlar</h2>
         <Link href={qs(kind, !showCancelled)} className="text-sm text-slate-500 hover:underline">{showCancelled ? "Faqat faollari" : "Bekor qilinganlarini ham ko'rsatish"}</Link>
       </div>

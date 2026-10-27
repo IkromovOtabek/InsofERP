@@ -82,11 +82,11 @@ export default async function RentShopPage({ params, searchParams }: { params: P
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {daily
-          ? <StatCard label="Muddati o'tgan qarz" value={money(state.overdue)} icon={Wallet} tone={state.overdue > 1 ? "danger" : "success"} hint={`${RENT_PAY_STATUS_LABEL[state.status]} · oy oxirigacha hisob ${money(Math.max(0, debt))}`} />
-          : <StatCard label="Jami qarz" value={debt < -1 ? `avans ${money(-debt)}` : money(Math.max(0, debt))} icon={Wallet} tone={debt > 1 ? "danger" : "success"} hint={`${RENT_PAY_STATUS_LABEL[state.status]} · ${ledger.unpaid.length} ta oy to'liq to'lanmagan${shop.payDay ? ` · to'lov kuni ${shop.payDay}-sana` : ""}`} />}
-        <StatCard label={`Shu oy (${monthLabel(currentMonth())}) qoldig'i`} value={cur ? money(Math.max(0, cur.left)) : "hisob ochilmagan"} icon={CalendarClock} hint={cur ? `hisob ${money(cur.due)}, tushgan ${money(cur.paid)}` : undefined} />
-        <StatCard label="Oxirgi to'lov" value={lastPay ? money(lastPay.amount) : "—"} hint={lastPay ? `${date(lastPay.date)} · ${RENT_METHOD_LABEL[lastPay.method]}` : "to'lov yozilmagan"} />
-        <StatCard label={daily ? "Kunlik summa (andoza)" : "Oylik summa (andoza)"} value={money(Number(shop.bankAmount) + Number(shop.cashAmount))} hint={`perechisleniye ${fmtNum(shop.bankAmount)}, naqd ${fmtNum(shop.cashAmount)}`} />
+          ? <StatCard label="Muddati o'tgan qarz" value={money(state.overdue)} icon={Wallet} tone={state.overdue > 1 ? "danger" : "success"} hint={`${RENT_PAY_STATUS_LABEL[state.status]} · oy oxirigacha hisob ${money(Math.max(0, debt))}`} href="#hisob" />
+          : <StatCard label="Jami qarz" value={debt < -1 ? `avans ${money(-debt)}` : money(Math.max(0, debt))} icon={Wallet} tone={debt > 1 ? "danger" : "success"} hint={`${RENT_PAY_STATUS_LABEL[state.status]} · ${ledger.unpaid.length} ta oy to'liq to'lanmagan${shop.payDay ? ` · to'lov kuni ${shop.payDay}-sana` : ""}`} href="#hisob" />}
+        <StatCard label={`Shu oy (${monthLabel(currentMonth())}) qoldig'i`} value={cur ? money(Math.max(0, cur.left)) : "hisob ochilmagan"} icon={CalendarClock} hint={cur ? `hisob ${money(cur.due)}, tushgan ${money(cur.paid)}` : undefined} href="#hisob" />
+        <StatCard label="Oxirgi to'lov" value={lastPay ? money(lastPay.amount) : "—"} hint={lastPay ? `${date(lastPay.date)} · ${RENT_METHOD_LABEL[lastPay.method]}` : "to'lov yozilmagan"} href="#tolovlar" />
+        <StatCard label={daily ? "Kunlik summa (andoza)" : "Oylik summa (andoza)"} value={money(Number(shop.bankAmount) + Number(shop.cashAmount))} hint={`perechisleniye ${fmtNum(shop.bankAmount)}, naqd ${fmtNum(shop.cashAmount)}`} href="#shartnoma" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -98,7 +98,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
             </Card>
           )}
           {daily && days.length > 0 && <DaysCalendar id={id} month={calMonth} days={days} />}
-          <Card padded={false}>
+          <div id="hisob" className="scroll-mt-20"><Card padded={false}>
             <div className="p-5 pb-0"><CardHeader title={`Oyma-oy hisob${curLease?.tenantName ? ` — ${curLease.tenantName}` : ""}`} description={`Har oy: to'lashi kerak (perechisleniye + naqd), shu oy uchun tushgan va qoldiq. Ortiqcha to'lov — avans.${former.length ? " Oldingi ijarachilar hisobi — pastda alohida." : ""}`} /></div>
             {ledger.months.length === 0 ? <div className="p-5 pt-0"><EmptyState title="Hisob yo'q" text="Oy varag'i ochilganda yoki Excel'dan import qilinganda shu yerda chiqadi." /></div> : (
               <Table>
@@ -123,7 +123,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                 </tbody>
               </Table>
             )}
-          </Card>
+          </Card></div>
 
           {showElec && (
             <Card padded={false}>
@@ -149,7 +149,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
             </Card>
           )}
 
-          <Card padded={false}>
+          <div id="tolovlar" className="scroll-mt-20"><Card padded={false}>
             <div className="p-5 pb-0"><CardHeader title="To'lovlar tarixi" description="Ijarachidan arenda kassasiga tushgan pul. Bekor qilingan yozuv chizilgan holda qoladi." /></div>
             {txs.length === 0 ? <div className="p-5 pt-0"><EmptyState title="To'lov yo'q" text="Arenda sahifasidagi «Kirim» tugmasi bilan yoziladi." /></div> : (
               <Table>
@@ -168,7 +168,7 @@ export default async function RentShopPage({ params, searchParams }: { params: P
                 </tbody>
               </Table>
             )}
-          </Card>
+          </Card></div>
         </div>
 
         <div className="space-y-4">

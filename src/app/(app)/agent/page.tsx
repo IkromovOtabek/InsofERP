@@ -34,9 +34,9 @@ async function AgentCabinet({ userId, fullName }: { userId: string; fullName: st
       <PageHeader title="Mening mijozlarim" subtitle={fullName} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3 [&>*]:min-w-0">
-        <StatCard label="Olib kelgan mijozlar" value={`${customers.length} ta`} hint={`${activeCustomers.length} faol`} icon={Users} tone="brand" />
-        <StatCard label="Umumiy qarz" value={money(totalDebt)} icon={HandCoins} tone={totalDebt > 0 ? "warning" : "success"} />
-        <StatCard label="Qarzdor mijoz" value={`${[...credit.values()].filter((c) => c.debt > 0).length} ta`} icon={Wallet} tone="default" />
+        <StatCard label="Olib kelgan mijozlar" value={`${customers.length} ta`} hint={`${activeCustomers.length} faol`} icon={Users} tone="brand" href="#mijozlar" />
+        <StatCard label="Umumiy qarz" value={money(totalDebt)} icon={HandCoins} tone={totalDebt > 0 ? "warning" : "success"} href="#mijozlar" />
+        <StatCard label="Qarzdor mijoz" value={`${[...credit.values()].filter((c) => c.debt > 0).length} ta`} icon={Wallet} tone="default" href="#mijozlar" />
       </div>
 
       <Card className="mb-5">
@@ -45,7 +45,7 @@ async function AgentCabinet({ userId, fullName }: { userId: string; fullName: st
       </Card>
 
       <Card padded={false}>
-        <div className="p-5"><CardHeader icon={Users} title="Mijozlar va qarz" description="Har mijozning zavoddan joriy qarzi" /></div>
+        <div id="mijozlar" className="scroll-mt-20 p-5"><CardHeader icon={Users} title="Mijozlar va qarz" description="Har mijozning zavoddan joriy qarzi" /></div>
         <Table>
           <thead><tr><Th>Mijoz</Th><Th>Telefon</Th><Th right>Qarz</Th><Th right>Limitda qolgan</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -97,17 +97,17 @@ async function AgentManage() {
       <PageHeader title="Sotuv agentlari" subtitle="Mijozni agentga biriktiring — agent o'z mijozlariga zayavka ochadi va qarzini ko'radi" />
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3 [&>*]:min-w-0">
-        <StatCard label="Agentlar" value={`${agents.length} ta`} icon={Users} tone="brand" />
-        <StatCard label="Biriktirilmagan mijoz" value={`${unassigned} ta`} icon={UserPlus} tone={unassigned ? "warning" : "success"} />
+        <StatCard label="Agentlar" value={`${agents.length} ta`} icon={Users} tone="brand" href="#agentlar" />
+        <StatCard label="Biriktirilmagan mijoz" value={`${unassigned} ta`} icon={UserPlus} tone={unassigned ? "warning" : "success"} href="#biriktirish" />
       </div>
 
       <Card className="mb-5">
         <CardHeader icon={UserPlus} title="Mijozni agentga biriktirish" />
-        <div className="mt-3"><AssignAgentForm agents={agents} customers={customers} /></div>
+        <div id="biriktirish" className="mt-3 scroll-mt-28"><AssignAgentForm agents={agents} customers={customers} /></div>
       </Card>
 
       <Card padded={false}>
-        <div className="p-5"><CardHeader icon={Users} title="Agentlar bo'yicha" description="Har agentning mijozlari va umumiy qarzi" /></div>
+        <div id="agentlar" className="scroll-mt-20 p-5"><CardHeader icon={Users} title="Agentlar bo'yicha" description="Har agentning mijozlari va umumiy qarzi" /></div>
         <Table>
           <thead><tr><Th>Agent</Th><Th right>Mijozlar</Th><Th right>Umumiy qarz</Th></tr></thead>
           <tbody>

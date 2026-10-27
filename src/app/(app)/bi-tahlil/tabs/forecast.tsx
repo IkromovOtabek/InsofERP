@@ -22,27 +22,27 @@ export async function ForecastTab({ sp }: { sp: SP }) {
         {f.enough ? <Kpi label="Stockout xavfi" value={String(f.zones.critical)} icon={PackageSearch} tone={f.zones.critical ? "danger" : "success"} badge={<Badge color={f.zones.critical ? "red" : "green"} dot={false}>{f.zones.critical ? "KRITIK" : "OK"}</Badge>} hint={`${f.matForecast.length} xomashyodan ${f.zones.critical} tasi 7 kun ichida tugaydi`} href="#stockout" /> : <Kpi label="Stockout xavfi" value="—" icon={PackageSearch} hint={short} href="#stockout" />}
         <Kpi label="Yuqori anomaliya" value={String(a.cards.high)} icon={AlertTriangle} tone={a.cards.high ? "danger" : "default"} badge={<Badge color={a.cards.high ? "red" : "slate"} dot={false}>HIGH</Badge>} hint={`jami ${a.cards.total} anomaliyaning ${a.cards.total ? fmtNum((a.cards.high / a.cards.total) * 100, 0) : 0}%i`} href="#anomalies" />
         <Kpi label="Churn xavfi" value="→" icon={UserX} tone="warning" hint="Mijozlar bo'limida — xavf zonalari va harakat markazi" href="/bi-tahlil/ml/churn" />
-        {w === null ? <Kpi label="Model aniqligi" value="—" icon={Gauge} hint={wapeNote} /> : <Kpi label="Model aniqligi" value={`WAPE ${fmtNum(w, 1)}%`} icon={Gauge} tone={w < 30 ? "success" : w < 60 ? "warning" : "danger"} badge={<Badge color={w < 30 ? "green" : w < 60 ? "amber" : "red"} dot={false}>{accuracy}</Badge>} hint={`MAE ${fmtNum(f.mae, 1)} m³/kun · bias ${f.bias >= 0 ? "+" : ""}${fmtNum(f.bias, 0)}%`} />}
+        {w === null ? <Kpi label="Model aniqligi" value="—" icon={Gauge} hint={wapeNote} href="#bashorat" /> : <Kpi label="Model aniqligi" value={`WAPE ${fmtNum(w, 1)}%`} icon={Gauge} tone={w < 30 ? "success" : w < 60 ? "warning" : "danger"} badge={<Badge color={w < 30 ? "green" : w < 60 ? "amber" : "red"} dot={false}>{accuracy}</Badge>} hint={`MAE ${fmtNum(f.mae, 1)} m³/kun · bias ${f.bias >= 0 ? "+" : ""}${fmtNum(f.bias, 0)}%`} href="#bashorat" />}
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {f.enough ? <>
-        <Kpi label="7 kunlik bashorat" value={`${fmtNum(f.next7, 1)} m³`} icon={CalendarDays} tone="brand" hint={`≈ ${moneyShort(f.next7Revenue)} so'm · keyingi hafta`} />
-        <Kpi label="30 kunlik bashorat" value={`${fmtNum(f.next30, 1)} m³`} icon={CalendarRange} tone="info" hint={`≈ ${moneyShort(f.next30Revenue)} so'm · keyingi oy`} />
-        <Kpi label="Kerakli quvvat" value={`${fmtNum(f.capacity.needPerDay, 1)} m³/kun`} icon={Activity} tone={f.capacity.needPerDay > f.capacity.peak ? "danger" : "success"} hint={`O'rtacha ${fmtNum(f.capacity.avg, 1)} · eng yuqori ${fmtNum(f.capacity.peak, 1)} m³/kun`} />
-        <Kpi label="Trend" value={f.slope > 0.05 ? "▲ O'smoqda" : f.slope < -0.05 ? "▼ Pasaymoqda" : "→ Barqaror"} icon={Clock} tone={f.slope > 0.05 ? "success" : f.slope < -0.05 ? "danger" : "default"} hint={`${f.slope >= 0 ? "+" : ""}${fmtNum(f.slope, 2)} m³/kun har kuni · ${f.histDays} kun tarix`} />
+        <Kpi label="7 kunlik bashorat" value={`${fmtNum(f.next7, 1)} m³`} icon={CalendarDays} tone="brand" hint={`≈ ${moneyShort(f.next7Revenue)} so'm · keyingi hafta`} href="#bashorat" />
+        <Kpi label="30 kunlik bashorat" value={`${fmtNum(f.next30, 1)} m³`} icon={CalendarRange} tone="info" hint={`≈ ${moneyShort(f.next30Revenue)} so'm · keyingi oy`} href="#bashorat" />
+        <Kpi label="Kerakli quvvat" value={`${fmtNum(f.capacity.needPerDay, 1)} m³/kun`} icon={Activity} tone={f.capacity.needPerDay > f.capacity.peak ? "danger" : "success"} hint={`O'rtacha ${fmtNum(f.capacity.avg, 1)} · eng yuqori ${fmtNum(f.capacity.peak, 1)} m³/kun`} href="/bi-tahlil/ishlab-chiqarish" />
+        <Kpi label="Trend" value={f.slope > 0.05 ? "▲ O'smoqda" : f.slope < -0.05 ? "▼ Pasaymoqda" : "→ Barqaror"} icon={Clock} tone={f.slope > 0.05 ? "success" : f.slope < -0.05 ? "danger" : "default"} hint={`${f.slope >= 0 ? "+" : ""}${fmtNum(f.slope, 2)} m³/kun har kuni · ${f.histDays} kun tarix`} href="#bashorat" />
         </> : <>
-        <Kpi label="7 kunlik bashorat" value="—" icon={CalendarDays} hint={short} />
-        <Kpi label="30 kunlik bashorat" value="—" icon={CalendarRange} hint={short} />
-        <Kpi label="Kerakli quvvat" value="—" icon={Activity} hint={`O'rtacha ${fmtNum(f.capacity.avg, 1)} · eng yuqori ${fmtNum(f.capacity.peak, 1)} m³/kun`} />
-        <Kpi label="Trend" value="—" icon={Clock} hint={short} />
+        <Kpi label="7 kunlik bashorat" value="—" icon={CalendarDays} hint={short} href="#bashorat" />
+        <Kpi label="30 kunlik bashorat" value="—" icon={CalendarRange} hint={short} href="#bashorat" />
+        <Kpi label="Kerakli quvvat" value="—" icon={Activity} hint={`O'rtacha ${fmtNum(f.capacity.avg, 1)} · eng yuqori ${fmtNum(f.capacity.peak, 1)} m³/kun`} href="/bi-tahlil/ishlab-chiqarish" />
+        <Kpi label="Trend" value="—" icon={Clock} hint={short} href="#bashorat" />
         </>}
       </div>
 
       {!f.enough && <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700"><b>{short}.</b> Tarix tizimga o'tilgan sanadan hisoblanadi — undan oldingi kunlar ERP'da yozilmagan. Bashorat, trend va zaxira zonalari {f.minDays} kunlik tarix yig'ilgach ko'rsatiladi; hozircha xomashyo uchun qoldiq va haqiqiy sarf tezligiga tayaning.</div>}
       {w !== null && w >= 50 && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900"><b>Bashoratni ehtiyot bilan o'qing.</b> Model xatoligi WAPE = {fmtNum(w, 1)}% (MAE {fmtNum(f.mae, 1)} m³), bias {fmtNum(f.bias, 0)}% — ya'ni bashorat haqiqiy sotuvdan tizimli ravishda {f.bias < 0 ? "PAST" : "YUQORI"}. Bu raqamlarni yo'nalish sifatida ishlating; buyurtma hajmini to'g'ridan-to'g'ri ularga bog'lamang — kritik xomashyo uchun qoldiq + haqiqiy sarf tezligiga tayaning.</div>}
 
-      <Panel title="Bashorat vs haqiqiy sotuv" info={`Kunlik sotuv, m³. Uzluksiz — tarix (30 kun), uzuq — bashorat (14 kun). Model: chiziqli trend × hafta kuni indeksi (yakshanba — dam olish), ${f.histDays} kunlik tarixda (60 kungacha, tizimga o'tilgan sanadan) o'qitilgan, oxirgi 14 kunda tekshirilgan.`}>
+      <Panel id="bashorat" title="Bashorat vs haqiqiy sotuv" info={`Kunlik sotuv, m³. Uzluksiz — tarix (30 kun), uzuq — bashorat (14 kun). Model: chiziqli trend × hafta kuni indeksi (yakshanba — dam olish), ${f.histDays} kunlik tarixda (60 kungacha, tizimga o'tilgan sanadan) o'qitilgan, oxirgi 14 kunda tekshirilgan.`}>
         {!f.enough && <Note>{short} — grafikda faqat tarix.</Note>}
         <LineChart labels={f.labels} series={[{ name: "Haqiqiy", values: f.histVals, color: "#ffa800" }, { name: "Bashorat", values: f.fcVals, color: "#0d78ff", dashed: true }]} formatValue={(v) => `${qty(v)} m³`} labelEvery={4} height={220} />
         <Why label="Model qanday ishlaydi?"><p>1. Har hafta kuni uchun mavsumiylik indeksi hisoblanadi (masalan, dushanba o'rtachadan {fmtNum(f.weekday[1].value, 0)}%).</p><p>2. Mavsumiylikdan tozalangan qatorga chiziqli trend o'tkaziladi.</p><p>3. Kelajak kun = trend × shu kunning indeksi.</p><p>Aniqlik: WAPE = Σ|xato| / Σ haqiqiy. Bias manfiy bo'lsa model kam baholaydi.</p></Why>

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Boxes, Factory, Package, Recycle, Scale, TriangleAlert } from "lucide-react";
+import { Boxes, Factory, Package, Recycle, Scale, Search, TriangleAlert } from "lucide-react";
 import type { FinishedReport, RawBalance, RawRow } from "@/lib/fin-report/sklad";
 import type { SP } from "../shell";
-import { fmtNum, moneyShort, pct } from "@/lib/format";
+import { fmtNum, isoDate, moneyShort, pct } from "@/lib/format";
 import { Badge, Card, CardHeader, Input, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { cn } from "@/lib/utils";
@@ -12,11 +12,23 @@ import { MonthBar, monthTitle } from "../month-bar";
 const N = ({ v, frac = 0, className }: { v: number | null; frac?: number; className?: string }) =>
   v == null || Math.abs(v) < (frac ? 0.0005 : 0.5) ? <span className="text-slate-300">—</span> : <span className={className}>{fmtNum(v, frac)}</span>;
 const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+/** «YYYY-MM» oyining oxirgi kuni (YYYY-MM-DD). */
+const monthEnd = (m: string) => isoDate(new Date(Number(m.slice(0, 4)), Number(m.slice(5)), 0));
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
 
 // ───────────────────── Xom-ashyo balansi ─────────────────────
 
 const diffCls = (r: Pick<RawRow, "diff" | "diffPct">) => (r.diffPct == null || Math.abs(r.diffPct) < 2 ? "" : r.diff > 0 ? "font-semibold text-red-600" : "font-semibold text-amber-700");
+/** Holat filtri (`holat`): normadan ortiq / kam sarf (±2% — `diffCls` bilan bir xil chegara). */
+const RAW_STATE = { ortiq: "Normadan ortiq", kam: "Normadan kam", norma: "Normada" } as const;
+type RawState = keyof typeof RAW_STATE;
+const rawState = (x: RawRow): RawState => (x.diffPct == null || Math.abs(x.diffPct) < 2 ? "norma" : x.diff > 0 ? "ortiq" : "kam");
+
+const filterChip = (on: boolean, href: string, label: string, count?: number) => (
+  <Link key={label} href={href} className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-medium", on ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
+    {label}{count != null && <span className={cn("tabular text-xs", on ? "text-white/70" : "text-slate-400")}>{count}</span>}
+  </Link>
+);
 
 export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: string }) {
   const close = new Date(r.to.getTime() - 1);
@@ -27,7 +39,19 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
   const st = scrapGroup?.total ?? null;
   const scrapPrice = scrapGroup ? (() => { const ps = scrapGroup.rows.map((x) => x.price).filter((p): p is number => p != null); return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : null; })() : null;
   const unexplainedKg = st ? st.diff - scrapKg : 0;
-  const worst = [...r.rows].filter((x) => x.diffSum != null && Math.abs(x.diffSum) >= 1).sort((a, b) => Math.abs(b.diffSum!) - Math.abs(a.diffSum!))[0];
+  // Filtrlar: guruh va holat (Tayyor mahsulot sahifasidagi kabi chiplar)
+  const groupNames = r.groups.map((g) => g.group);
+  const group = sp.guruh && groupNames.includes(sp.guruh) ? sp.guruh : undefined;
+  const state = sp.holat && sp.holat in RAW_STATE ? (sp.holat as RawState) : undefined;
+  const q = sp.q?.trim().toLowerCase();
+  const keepRow = (x: RawRow) => (!group || x.group === group) && (!state || rawState(x) === state) && (!q || x.name.toLowerCase().includes(q));
+  const groups = r.groups.filter((g) => !group || g.group === group).map((g) => ({ ...g, rows: g.rows.filter(keepRow), total: state || q ? null : g.total })).filter((g) => g.rows.length > 0);
+  const rows = groups.flatMap((g) => g.rows);
+  const filtered = !!(group || state || q);
+  const diffSum = filtered ? rows.reduce((a, x) => a + (x.diffSum ?? 0), 0) : r.diffSum;
+  const inGroup = r.rows.filter((x) => !group || x.group === group);
+  const href = (o: Record<string, string | undefined>) => `${base}${qs({ oy: sp.oy, otxod: sp.otxod, guruh: group, holat: state, q: sp.q, ...o })}`;
+  const worst = [...rows].filter((x) => x.diffSum != null && Math.abs(x.diffSum) >= 1).sort((a, b) => Math.abs(b.diffSum!) - Math.abs(a.diffSum!))[0];
   const sheet = (x: Omit<RawRow, "id" | "price"> & { price: number | null }) => ({
     Material: x.name, Birlik: x.unit, [`Oy boshi qoldiq (${d1})`]: x.open, "Kirim (oy davomida)": x.received, [`Oy oxiri qoldiq (${d2})`]: x.close, "Haqiqiy sarf": x.fact,
     "Norma: sotilganga": x.normSold, "Norma: omborda qolgan": x.normStock, "Norma jami": x.norm, "Qolishi kerak edi": x.shouldRemain,
@@ -58,15 +82,32 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
         <h2 className="text-[17px] font-bold text-slate-900">Xom-ashyo balansi — {monthTitle(r.month)}</h2>
         <span className="text-[13px] text-slate-500">Haqiqiy sarf = oy boshi + kirim − oy oxiri · Norma = retsept bo&apos;yicha</span>
       </div>
-      <MonthBar base={base} month={r.month} keep={{ otxod: sp.otxod }}>
-        <ExcelButton file={`Xom-ashyo balansi ${r.month}`} sheets={[{ name: "Xom-ashyo balansi", rows: r.groups.flatMap((g) => [...g.rows.map(sheet), ...(g.total ? [sheet(g.total)] : [])]) }]} />
+      <MonthBar base={base} month={r.month} keep={{ otxod: sp.otxod, guruh: group, holat: state, q: sp.q }}>
+        <ExcelButton file={`Xom-ashyo balansi ${r.month}`} sheets={[{ name: "Xom-ashyo balansi", rows: groups.flatMap((g) => [...g.rows.map(sheet), ...(g.total ? [sheet(g.total)] : [])]) }]} />
       </MonthBar>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Normadan farq, so'm" value={moneyShort(r.diffSum)} hint={r.diffSum > 0 ? "normadan ortiq sarflangan" : "normadan kam sarflangan"} icon={TriangleAlert} tone={r.diffSum > 0 ? "danger" : "success"} />
-        <StatCard label="Eng katta farq" value={worst ? moneyShort(worst.diffSum!) : "—"} hint={worst ? `${worst.name} · ${worst.diffPct != null ? pct(worst.diffPct) : "—"}` : undefined} icon={Scale} tone={worst && worst.diffSum! > 0 ? "warning" : "default"} />
-        <StatCard label="Materiallar" value={fmtNum(r.rows.length)} hint={`normadan 5% dan ortiq: ${r.rows.filter((x) => (x.diffPct ?? 0) > 5).length}`} icon={Boxes} />
-        <StatCard label="Metallom sotuvidan tushum" value={moneyShort(r.scrap.income)} hint={r.scrap.incomeCount ? `${r.scrap.incomeCount} ta kirim («metallom» yozilgan)` : "izohida «metallom» deb yozilgan kirim yo'q"} icon={Recycle} tone="info" />
+        <StatCard label="Normadan farq, so'm" value={moneyShort(diffSum)} hint={diffSum > 0 ? "normadan ortiq sarflangan" : "normadan kam sarflangan"} icon={TriangleAlert} tone={diffSum > 0 ? "danger" : "success"} href={href({ holat: diffSum > 0 ? "ortiq" : "kam" })} />
+        <StatCard label="Eng katta farq" value={worst ? moneyShort(worst.diffSum!) : "—"} hint={worst ? `${worst.name} · ${worst.diffPct != null ? pct(worst.diffPct) : "—"}` : undefined} icon={Scale} tone={worst && worst.diffSum! > 0 ? "warning" : "default"} href={worst ? `/stock?tab=moves&material=${worst.id}` : undefined} />
+        <StatCard label="Materiallar" value={fmtNum(rows.length)} hint={`normadan 5% dan ortiq: ${rows.filter((x) => (x.diffPct ?? 0) > 5).length}`} icon={Boxes} href="/stock?tab=balance" />
+        <StatCard label="Metallom sotuvidan tushum" value={moneyShort(r.scrap.income)} hint={r.scrap.incomeCount ? `${r.scrap.incomeCount} ta kirim («metallom» yozilgan)` : "izohida «metallom» deb yozilgan kirim yo'q"} icon={Recycle} tone="info" href={`/cashflow?tab=INCOME&from=${r.month}-01&to=${monthEnd(r.month)}`} />
+      </div>
+
+      <div className="space-y-2">
+        <form method="get" action={base} className="flex flex-wrap items-center gap-2">
+          {Object.entries({ oy: sp.oy, otxod: sp.otxod, guruh: group, holat: state }).map(([k, v]) => v && <input key={k} type="hidden" name={k} value={v} />)}
+          <label className="relative min-w-52 flex-1 sm:max-w-72">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Input name="q" defaultValue={sp.q ?? ""} placeholder="Material nomi…" className="h-9 pl-9" />
+          </label>
+          {filtered && <Link href={`${base}${qs({ oy: sp.oy, otxod: sp.otxod })}`} className="text-[13px] font-medium text-slate-600 underline">Filtrni tozalash</Link>}
+        </form>
+        {groupNames.length > 1 && <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 text-xs font-medium text-slate-500">Guruh:</span>{filterChip(!group, href({ guruh: undefined }), "Hammasi", r.rows.length)}{r.groups.map((g) => filterChip(group === g.group, href({ guruh: g.group }), g.group, g.rows.length))}</div>}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs font-medium text-slate-500">Holat:</span>
+          {filterChip(!state, href({ holat: undefined }), "Hammasi", inGroup.length)}
+          {(Object.keys(RAW_STATE) as RawState[]).map((k) => filterChip(state === k, href({ holat: k }), RAW_STATE[k], inGroup.filter((x) => rawState(x) === k).length))}
+        </div>
       </div>
 
       <Table maxHeight="70vh">
@@ -78,8 +119,8 @@ export function RawBalanceView({ r, sp, base }: { r: RawBalance; sp: SP; base: s
           </tr>
         </thead>
         <tbody>
-          {r.groups.map((g) => [...g.rows.map((x) => line(x)), ...(g.total ? [line(g.total, true)] : [])])}
-          {r.rows.length === 0 && <tr><td colSpan={14} className="px-4 py-10 text-center text-sm text-slate-500">Retseptdagi materiallar bo&apos;yicha harakat yo&apos;q</td></tr>}
+          {groups.map((g) => [...g.rows.map((x) => line(x)), ...(g.total ? [line(g.total, true)] : [])])}
+          {rows.length === 0 && <tr><td colSpan={14} className="px-4 py-10 text-center text-sm text-slate-500">{filtered ? "Filtr bo'yicha material topilmadi" : "Retseptdagi materiallar bo'yicha harakat yo'q"}</td></tr>}
         </tbody>
       </Table>
 
@@ -145,10 +186,10 @@ export function FinishedView({ r, sp, base }: { r: FinishedReport; sp: SP; base:
       </MonthBar>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Oy oxiri qoldiq" value={`${fmtNum(t.close)} dona`} hint={`oy boshida ${fmtNum(t.open)} dona`} icon={Package} />
-        <StatCard label="Ishlab chiqarildi / jo'natildi" value={`${fmtNum(t.produced)} / ${fmtNum(t.shipped)}`} hint="dona, oy davomida" icon={Factory} tone="brand" />
-        <StatCard label="Qiymati (tannarxda)" value={moneyShort(t.valueCost)} hint={fmtNum(t.valueCost)} icon={Boxes} />
-        <StatCard label="Qiymati (sotuv narxida)" value={moneyShort(t.valuePrice)} hint={t.valueCost ? `ustama ${moneyShort(t.valuePrice - t.valueCost)}` : fmtNum(t.valuePrice)} icon={Boxes} tone="success" />
+        <StatCard label="Oy oxiri qoldiq" value={`${fmtNum(t.close)} dona`} hint={`oy boshida ${fmtNum(t.open)} dona`} icon={Package} href="#tayyor" />
+        <StatCard label="Ishlab chiqarildi / jo'natildi" value={`${fmtNum(t.produced)} / ${fmtNum(t.shipped)}`} hint="dona, oy davomida" icon={Factory} tone="brand" href={`/bi-tahlil/ishlab-chiqarish?from=${r.month}-01&to=${monthEnd(r.month)}`} />
+        <StatCard label="Qiymati (tannarxda)" value={moneyShort(t.valueCost)} hint={fmtNum(t.valueCost)} icon={Boxes} href="#tayyor" />
+        <StatCard label="Qiymati (sotuv narxida)" value={moneyShort(t.valuePrice)} hint={t.valueCost ? `ustama ${moneyShort(t.valuePrice - t.valueCost)}` : fmtNum(t.valuePrice)} icon={Boxes} tone="success" href="#tayyor" />
       </div>
 
       {(r.groups.length > 1 || r.brigades.length > 0) && (
@@ -158,44 +199,46 @@ export function FinishedView({ r, sp, base }: { r: FinishedReport; sp: SP; base:
         </div>
       )}
 
-      <Table maxHeight="70vh">
-        <thead>
-          <tr>
-            <Th>Mahsulot</Th><Th>Brigada</Th><Th>Guruh</Th><Th right>Oy boshi qoldiq</Th><Th right className="text-emerald-700">Ishlab chiqarildi</Th><Th right className="text-sky-700">Jo&apos;natildi</Th>
-            {hasOther && <Th right>Brak / tuzatish</Th>}
-            <Th right>Oy oxiri qoldiq</Th><Th right>Tannarx (1 dona)</Th><Th right>Sotuv narxi (1 dona)</Th><Th right>Qiymati (tannarxda)</Th><Th right>Qiymati (sotuv narxida)</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((x) => (
-            <Tr key={x.id}>
-              <Td className="min-w-44"><Link href={`/stock/products/${x.id}`} className="hover:underline">{x.name}</Link></Td>
-              <Td>{x.brigades.length ? <div className="flex flex-wrap gap-1">{x.brigades.map((b) => <Badge key={b.name} color="slate" dot={false}>{b.name} · {fmtNum(b.qty)}</Badge>)}</div> : <span className="text-slate-300">—</span>}</Td>
-              <Td className="whitespace-nowrap text-slate-600">{x.group}</Td>
-              <Td right><N v={x.open} /></Td>
-              <Td right className="bg-emerald-50/50"><N v={x.produced} /></Td>
-              <Td right className="bg-sky-50/50"><N v={x.shipped} /></Td>
-              {hasOther && <Td right><N v={x.other} className="text-amber-700" /></Td>}
-              <Td right className={cn("font-semibold", x.close < 0 ? "text-red-600" : "text-slate-900")}><N v={x.close} /></Td>
-              <Td right>{x.cost != null ? fmtNum(x.cost) : <span className="text-xs text-amber-700">tannarx yo&apos;q</span>}</Td>
-              <Td right><N v={x.price} /></Td>
-              <Td right><N v={x.valueCost} /></Td>
-              <Td right><N v={x.valuePrice} /></Td>
-            </Tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-500">Tayyor mahsulot harakati yo&apos;q</td></tr>}
-        </tbody>
-        {rows.length > 0 && (
-          <tfoot>
-            <tr className="bg-slate-50 font-bold text-slate-900 [&>td]:whitespace-nowrap [&>td]:border-t-2 [&>td]:border-slate-200 [&>td]:px-4 [&>td]:py-3 [&>td]:tabular">
-              <td colSpan={3}>Jami</td>
-              <td className="text-right">{fmtNum(t.open)}</td><td className="text-right">{fmtNum(t.produced)}</td><td className="text-right">{fmtNum(t.shipped)}</td>
-              {hasOther && <td className="text-right">{fmtNum(t.other)}</td>}
-              <td className="text-right">{fmtNum(t.close)}</td><td /><td /><td className="text-right">{fmtNum(t.valueCost)}</td><td className="text-right">{fmtNum(t.valuePrice)}</td>
+      <div id="tayyor" className="scroll-mt-20">
+        <Table maxHeight="70vh">
+          <thead>
+            <tr>
+              <Th>Mahsulot</Th><Th>Brigada</Th><Th>Guruh</Th><Th right>Oy boshi qoldiq</Th><Th right className="text-emerald-700">Ishlab chiqarildi</Th><Th right className="text-sky-700">Jo&apos;natildi</Th>
+              {hasOther && <Th right>Brak / tuzatish</Th>}
+              <Th right>Oy oxiri qoldiq</Th><Th right>Tannarx (1 dona)</Th><Th right>Sotuv narxi (1 dona)</Th><Th right>Qiymati (tannarxda)</Th><Th right>Qiymati (sotuv narxida)</Th>
             </tr>
-          </tfoot>
-        )}
-      </Table>
+          </thead>
+          <tbody>
+            {rows.map((x) => (
+              <Tr key={x.id}>
+                <Td className="min-w-44"><Link href={`/stock/products/${x.id}`} className="hover:underline">{x.name}</Link></Td>
+                <Td>{x.brigades.length ? <div className="flex flex-wrap gap-1">{x.brigades.map((b) => <Badge key={b.name} color="slate" dot={false}>{b.name} · {fmtNum(b.qty)}</Badge>)}</div> : <span className="text-slate-300">—</span>}</Td>
+                <Td className="whitespace-nowrap text-slate-600">{x.group}</Td>
+                <Td right><N v={x.open} /></Td>
+                <Td right className="bg-emerald-50/50"><N v={x.produced} /></Td>
+                <Td right className="bg-sky-50/50"><N v={x.shipped} /></Td>
+                {hasOther && <Td right><N v={x.other} className="text-amber-700" /></Td>}
+                <Td right className={cn("font-semibold", x.close < 0 ? "text-red-600" : "text-slate-900")}><N v={x.close} /></Td>
+                <Td right>{x.cost != null ? fmtNum(x.cost) : <span className="text-xs text-amber-700">tannarx yo&apos;q</span>}</Td>
+                <Td right><N v={x.price} /></Td>
+                <Td right><N v={x.valueCost} /></Td>
+                <Td right><N v={x.valuePrice} /></Td>
+              </Tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-500">Tayyor mahsulot harakati yo&apos;q</td></tr>}
+          </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr className="bg-slate-50 font-bold text-slate-900 [&>td]:whitespace-nowrap [&>td]:border-t-2 [&>td]:border-slate-200 [&>td]:px-4 [&>td]:py-3 [&>td]:tabular">
+                <td colSpan={3}>Jami</td>
+                <td className="text-right">{fmtNum(t.open)}</td><td className="text-right">{fmtNum(t.produced)}</td><td className="text-right">{fmtNum(t.shipped)}</td>
+                {hasOther && <td className="text-right">{fmtNum(t.other)}</td>}
+                <td className="text-right">{fmtNum(t.close)}</td><td /><td /><td className="text-right">{fmtNum(t.valueCost)}</td><td className="text-right">{fmtNum(t.valuePrice)}</td>
+              </tr>
+            </tfoot>
+          )}
+        </Table>
+      </div>
       <p className="text-[13px] text-slate-500">Dona mahsulot (beton omborda turmaydi). Brigada — oy davomida shu mahsulot bo&apos;yicha bajarilgan topshiriqlar (miqdori bilan). Tannarx — kirim narxi, bo&apos;lmasa retsept tannarxi.</p>
     </div>
   );

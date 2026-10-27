@@ -47,10 +47,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <StatCard label="Hisoblangan (brutto)" value={moneyShort(t.gross)} hint={`${fmtNum(t.people)} xodim`} icon={Users} tone="brand" />
-              <StatCard label="Daromad solig'i" value={moneyShort(t.tax)} hint={`qo'lga ${moneyShort(t.hand)}`} icon={Receipt} />
-              <StatCard label="Avans berilgan" value={moneyShort(t.advance)} hint={t.deductions ? `ushlanmalar ${moneyShort(t.deductions)}` : "oy davomida"} icon={HandCoins} />
-              <StatCard label="To'lanishi kerak (qoldiq)" value={moneyShort(t.toPay)} hint={t.paid ? `to'langan ${moneyShort(t.paid)}` : "hali to'lanmagan"} icon={Banknote} tone={t.toPay > 0 ? "warning" : "success"} />
+              <StatCard label="Hisoblangan (brutto)" value={moneyShort(t.gross)} hint={`${fmtNum(t.people)} xodim`} icon={Users} tone="brand" href={`/ish-haqi/${v.run.id}`} />
+              <StatCard label="Daromad solig'i" value={moneyShort(t.tax)} hint={`qo'lga ${moneyShort(t.hand)}`} icon={Receipt} href={`/ish-haqi/${v.run.id}`} />
+              <StatCard label="Avans berilgan" value={moneyShort(t.advance)} hint={t.deductions ? `ushlanmalar ${moneyShort(t.deductions)}` : "oy davomida"} icon={HandCoins} href={`/ish-haqi/${v.run.id}`} />
+              <StatCard label="To'lanishi kerak (qoldiq)" value={moneyShort(t.toPay)} hint={t.paid ? `to'langan ${moneyShort(t.paid)}` : "hali to'lanmagan"} icon={Banknote} tone={t.toPay > 0 ? "warning" : "success"} href={`/ish-haqi/${v.run.id}`} />
             </div>
             <Table>
               <thead>

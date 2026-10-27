@@ -23,14 +23,14 @@ export default async function StockProductDetail({ params }: { params: Promise<{
       {d.shortage > 0 && <Callout tone="danger" title="Zayavkalarga tayyor mahsulot yetishmaydi">Band qilingan miqdor qoldiqdan {qty(d.shortage)} {u} ko'p — ishlab chiqarish rejalashtiring.</Callout>}
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Jami tayyor" value={`${qty(d.total)} ${u}`} icon={Boxes} tone="brand" />
-        <StatCard label="Egasi bor" value={`${qty(d.owned)} ${u}`} hint={`${d.owners.length} ta zayavka`} icon={UserCheck} tone="info" />
-        <StatCard label="Egasi yo'q" value={`${qty(d.free)} ${u}`} hint="sotuvga tayyor" icon={PackageOpen} tone="success" />
-        <StatCard label="Yetishmaydi" value={`${qty(d.shortage)} ${u}`} icon={AlertTriangle} tone={d.shortage ? "danger" : "default"} />
+        <StatCard label="Jami tayyor" value={`${qty(d.total)} ${u}`} icon={Boxes} tone="brand" href="#kimniki" />
+        <StatCard label="Egasi bor" value={`${qty(d.owned)} ${u}`} hint={`${d.owners.length} ta zayavka`} icon={UserCheck} tone="info" href="#kimniki" />
+        <StatCard label="Egasi yo'q" value={`${qty(d.free)} ${u}`} hint="sotuvga tayyor" icon={PackageOpen} tone="success" href="#kimniki" />
+        <StatCard label="Yetishmaydi" value={`${qty(d.shortage)} ${u}`} icon={AlertTriangle} tone={d.shortage ? "danger" : "default"} href="#kimniki" />
       </div>
 
       <Card padded={false} className="mt-5">
-        <div className="px-5 pt-5"><CardHeader title="Kimniki" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — egasi yo'q (erkin) qoldiq." icon={UserCheck} /></div>
+        <div id="kimniki" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Kimniki" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — egasi yo'q (erkin) qoldiq." icon={UserCheck} /></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
           <thead><tr><Th>Egasi</Th><Th>Zayavka</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
           <tbody>

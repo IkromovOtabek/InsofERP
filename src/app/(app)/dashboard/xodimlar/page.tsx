@@ -27,12 +27,13 @@ export default async function StaffAssignPage({ searchParams }: { searchParams: 
     <div>
       <PageHeader back={{ href: "/dashboard?view=production", label: "Ishlab chiqarish" }} title="Xodimlarni taqsimlash" subtitle="Brigada tanlansa darhol saqlanadi. Sex boshlig'i davomatni shu tarkib bo'yicha belgilaydi." />
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Sexda jami" value={String(staff.total)} icon={Users} />
-        <StatCard label="Bugun keldi" value={`${staff.present} / ${staff.total}`} hint={staff.notMarked ? `${staff.notMarked} belgilanmagan` : "hammasi belgilangan"} icon={Users} tone="success" />
-        <StatCard label="Taqsimlanmagan" value={String(staff.unassigned)} icon={HardHat} tone={staff.unassigned ? "warning" : "default"} />
+        <StatCard label="Sexda jami" value={String(staff.total)} icon={Users} href="#sex-tarkibi" />
+        <StatCard label="Bugun keldi" value={`${staff.present} / ${staff.total}`} hint={staff.notMarked ? `${staff.notMarked} belgilanmagan` : "hammasi belgilangan"} icon={Users} tone="success" href="#sex-tarkibi" />
+        <StatCard label="Taqsimlanmagan" value={String(staff.unassigned)} icon={HardHat} tone={staff.unassigned ? "warning" : "default"} href="#sex-tarkibi" />
         <StatCard label="Brigadalar" value={String(staff.brigades.length)} hint={staff.groups.filter((g) => g.id).map((g) => `${g.name.split(" ")[0]} ${g.total}`).join(" · ")} icon={HardHat} href="/brigades" />
       </div>
 
+      <div id="sex-tarkibi" className="scroll-mt-20" />
       <Table>
         <thead><tr><Th>Xodim</Th><Th>Lavozim</Th><Th>Bugun</Th><Th className="w-72">Brigada</Th></tr></thead>
         <tbody>

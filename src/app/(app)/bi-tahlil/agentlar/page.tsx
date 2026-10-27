@@ -5,7 +5,7 @@ import { agentsTab } from "@/lib/bi/agents";
 import { money, moneyShort, fmtNum, qty } from "@/lib/format";
 import { Table, Th, Td, Tr, Empty } from "@/components/ui";
 import { Heatmap } from "@/components/ui/charts";
-import { Kpi, Panel, Why, Insight, Action, Note, Tag, ProgressBar, ExportLink } from "../ui";
+import { Kpi, Panel, Why, Insight, Action, Note, Tag, ProgressBar, ExportLink, tabHref } from "../ui";
 import { cn } from "@/lib/utils";
 import { requirePage } from "@/lib/page-guard";
 
@@ -47,11 +47,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Kpi label="Faol sotuvchilar" value={String(k.active.cur)} delta={k.active.delta} icon={Users} hint={`${d.sellers.length} ta ro'yxatda`} />
-          <Kpi label="Kiritilgan zayavkalar" value={String(k.created)} icon={ClipboardCheck} tone="info" hint={`${k.converted} tasi sotuvga aylandi`} />
-          <Kpi label="Davr sotuvi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={Wallet} tone="brand" hint="so'm" />
-          <Kpi label="O'rtacha / sotuvchi" value={moneyShort(k.perAgent.cur)} delta={k.perAgent.delta} icon={BarChart3} hint="so'm / faol sotuvchi" />
-          <Kpi label="Bugungi sotuv" value={moneyShort(k.todayRevenue)} icon={TrendingDown} tone="success" hint={`${k.todayOrders} zayavka`} />
+          <Kpi label="Faol sotuvchilar" value={String(k.active.cur)} delta={k.active.delta} icon={Users} hint={`${d.sellers.length} ta ro'yxatda`} href="#scorecard" />
+          <Kpi label="Kiritilgan zayavkalar" value={String(k.created)} icon={ClipboardCheck} tone="info" hint={`${k.converted} tasi sotuvga aylandi`} href="#sifat" />
+          <Kpi label="Davr sotuvi" value={moneyShort(k.revenue.cur)} delta={k.revenue.delta} icon={Wallet} tone="brand" hint="so'm" href={tabHref(range, "sales")} />
+          <Kpi label="O'rtacha / sotuvchi" value={moneyShort(k.perAgent.cur)} delta={k.perAgent.delta} icon={BarChart3} hint="so'm / faol sotuvchi" href="#scorecard" />
+          <Kpi label="Bugungi sotuv" value={moneyShort(k.todayRevenue)} icon={TrendingDown} tone="success" hint={`${k.todayOrders} zayavka`} href="/bi-tahlil/sotuvlar?period=day" />
           <Kpi label="Bekor qilingan" value={moneyShort(k.cancelledRevenue)} icon={Ban} tone={k.cancelledRevenue ? "danger" : "default"} hint="sotuvchilar kiritgan, bekor bo'lgan" href="/bi-tahlil/sotuvlar/bekor" />
         </div>
 
@@ -73,7 +73,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </Panel>
 
         {/* Zayavka sifati */}
-        <Panel title="Zayavka sifati — kiritilgan zayavka sotuvga aylandimi?" eyebrow="«kiritdim» emas — «sotdimmi»" info="Konversiya = (kiritilgan − bekor − qoralama − bloklangan) / kiritilgan. Mediana — kamida 3 zayavka kiritganlar bo'yicha.">
+        <Panel id="sifat" title="Zayavka sifati — kiritilgan zayavka sotuvga aylandimi?" eyebrow="«kiritdim» emas — «sotdimmi»" info="Konversiya = (kiritilgan − bekor − qoralama − bloklangan) / kiritilgan. Mediana — kamida 3 zayavka kiritganlar bo'yicha.">
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <div>
               <div className="text-[30px] font-bold leading-none tabular text-slate-900">{pct(d.quality.pct)}</div>
@@ -87,7 +87,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </Panel>
 
         {/* Scorecard */}
-        <Panel title="Sotuvchilar scorecard" info="Ball = 45% sotuv (eng yuqoriga nisbatan) + 25% konversiya + 15% bekor qilish (kam bo'lsa yaxshi) + 15% o'sish. TOP ≥75, YAXSHI ≥55, O'RTA ≥35. Direktor kiritgan zayavkalar reytingga kirmaydi (zavod jamida bor)." padded={false} action={<ExportLink type="agents" range={range} />}>
+        <Panel id="scorecard" title="Sotuvchilar scorecard" info="Ball = 45% sotuv (eng yuqoriga nisbatan) + 25% konversiya + 15% bekor qilish (kam bo'lsa yaxshi) + 15% o'sish. TOP ≥75, YAXSHI ≥55, O'RTA ≥35. Direktor kiritgan zayavkalar reytingga kirmaydi (zavod jamida bor)." padded={false} action={<ExportLink type="agents" range={range} />}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>#</Th><Th>Sotuvchi</Th><Th>Daraja</Th><Th right>Sotuv</Th><Th right>Δ oldingi</Th><Th right>Zayavka</Th><Th right>Hajm</Th><Th right>Mijoz</Th><Th right>O'rt. chek</Th><Th right>Konversiya</Th><Th right>Bekor</Th><Th right>Reja %</Th><Th right>Ball</Th></tr></thead>
             <tbody>

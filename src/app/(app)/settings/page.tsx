@@ -13,6 +13,7 @@ import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
 import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
+import { refWeight } from "@/lib/trip-plan";
 import { ProductExcelPanel } from "@/components/product-excel-import";
 import { ProductMatrixPanel } from "@/components/product-matrix-add";
 import { DeleteButton } from "@/components/delete-button";
@@ -127,13 +128,13 @@ async function LimitsTab() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Yangi mijozga standart limit" value={money(defLimit)} hint={defLimit > 0 ? "shu summagacha qarzga oladi" : "yangi mijoz faqat naqd / avans"} icon={Wallet} />
+        <StatCard label="Yangi mijozga standart limit" value={money(defLimit)} hint={defLimit > 0 ? "shu summagacha qarzga oladi" : "yangi mijoz faqat naqd / avans"} icon={Wallet} href="#kredit-limit" />
         <StatCard label="Qora ro'yxatda" value={`${blackTotal} ta mijoz`} icon={Users} tone={blackTotal ? "danger" : "default"} href="/customers?tab=black" />
         <StatCard label="Limit tufayli bloklangan" value={`${blockedTotal} ta zayavka`} icon={ClipboardList} tone={blockedTotal ? "warning" : "default"} href="/orders?status=BLOCKED" />
-        <StatCard label="Kunlik zayavka limiti" value={dailyText} icon={Gauge} />
+        <StatCard label="Kunlik zayavka limiti" value={dailyText} icon={Gauge} href="#kunlik-limit" />
       </div>
 
-      <Card>
+      <div id="kredit-limit" className="scroll-mt-20"><Card>
         <CardHeader icon={Wallet} title="Mijozlar kredit limiti"
           description="Limit — mijoz qarzga ola oladigan eng ko'p summa. Ishlatilgan = qarz + schyot yozilmagan ochiq zayavkalar. Limit to'lsa mijoz qora ro'yxatga tushadi: yangi zayavka faqat oldindan to'lov bilan, qarzga zayavka qabul qilishda bloklanadi. 0 — faqat naqd/avans." />
         <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
@@ -146,13 +147,13 @@ async function LimitsTab() {
           Limit oshirilganda bloklangan zayavka o&apos;zi ochilmaydi: uni zayavka kartasida «Blokdan chiqarish» bilan ochasiz. Bu huquqni boshqa xodimga{" "}
           <Link href="/settings?tab=permissions" className="underline">Ruxsatlar</Link> → Zayavkalar → «Limitdan oshgan zayavka blokini ochish» orqali berish mumkin.
         </p>
-      </Card>
+      </Card></div>
 
-      <Card>
+      <div id="kunlik-limit" className="scroll-mt-20"><Card>
         <CardHeader icon={ClipboardList} title="Kunlik zayavka limiti va quvvat"
           description="Kunlik quvvat — yumshoq ko'rsatkich, hech narsani bloklamaydi: Zayavkalar taqvimining rangi (unga bekor qilinmagan barcha zayavkalar, sklad zayavkalari ham kiradi), egasi dashbordidagi quvvat foizi va ommaviy saytdagi «Kunlik ishlab chiqarish quvvati». Hajm va son chegarasi — qattiq: bir yetkazish kuniga tasdiqlangan mijoz zayavkalari (sklad, qoralama va bloklanganlar kirmaydi) shundan oshsa, zayavka qabul qilinmaydi va blokdan chiqarilmaydi. 0 yoki bo'sh — cheklov yo'q." />
         <DailyLimitsForm capacity={c.dailyCapacityM3 != null ? Number(c.dailyCapacityM3) : null} pcs={c.dailyCapacityPcs} m3={maxM3} count={c.dailyOrderMaxCount} />
-      </Card>
+      </Card></div>
 
       <Card>
         <CardHeader icon={ShoppingCart} title="Katta xarid — direktor tasdig'i"
@@ -366,6 +367,13 @@ async function PermissionsTab({ f }: { f: PermFilter }) {
   );
 }
 
+/** Og'irlik kiritilmagan dona mahsulot — maydonda GOST bo'yicha taxminiy qiymat ko'rinsin. */
+const weightHint = (p: { code: string; name: string; unit: string }) => {
+  if (p.unit === "m3") return "beton — kerak emas";
+  const w = refWeight(p.code, p.name);
+  return w ? `≈ ${w.kg} (GOST)` : "masalan 1300";
+};
+
 async function ProductsTab() {
   const products = await db.product.findMany({ orderBy: { code: "asc" }, include: { recipes: { where: { isActive: true }, select: { version: true } } } });
   const fields = (p?: (typeof products)[number]) => [
@@ -374,6 +382,9 @@ async function ProductsTab() {
     { name: "strengthClass", label: "Klass", defaultValue: p?.strengthClass, placeholder: "B22.5" },
     { name: "unit", label: "Birlik", type: "select" as const, defaultValue: p?.unit ?? "m3", options: PRODUCT_UNITS },
     { name: "price", label: "Narx, so'm/birlik", type: "money" as const, defaultValue: p ? Number(p.price) : "" },
+    // Dona mahsulot: zayavkadagi reys hisobi — bort mashinaga nechtasi sig'adi
+    { name: "weightKg", label: "1 dona og'irligi, kg", type: "number" as const, step: "0.01", defaultValue: p?.weightKg != null ? Number(p.weightKg) : "", placeholder: p ? weightHint(p) : "1300" },
+    { name: "perTrip", label: "Bir reysga max, dona", type: "number" as const, step: "1", defaultValue: p?.perTrip ?? "", placeholder: "cheklovsiz" },
     ...(p ? [{ name: "isActive", label: "Faol", type: "checkbox" as const, defaultValue: p.isActive }] : []),
   ];
   return (
@@ -384,7 +395,8 @@ async function ProductsTab() {
           {/* Ko'p mahsulotni bittalab yozmay: tayyor Excel ro'yxatdan yoki qator × ustun matritsasidan */}
           <div className="flex flex-wrap items-center gap-2"><ProductExcelPanel /><ProductMatrixPanel /></div>
         </div>
-        <p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo'limida hisoblanadi.</p>
+        <p className="mb-3 text-xs text-slate-500">Birligi m³ — tayyor beton (saqlanmaydi). Dona/m² — hovlida turadigan tayyor mahsulot, Sklad → Ishlab chiqarish imkoni bo'limida hisoblanadi.
+          Og&apos;irlik va «bir reysga max» — zayavkadagi reys hisobi uchun (bort mashinaga nechtasi sig&apos;adi); og&apos;irlik bo&apos;sh bo&apos;lsa GOST bo&apos;yicha taxminiy olinadi (maydonda kulrang ko&apos;rinadi).</p>
         <RowForm action={saveProduct.bind(null, null)} mode="create" cols={6} fields={fields()} />
       </Card>
       <Card>

@@ -45,18 +45,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         <div>
           <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Executive summary</div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7 [&>*]:min-w-0">
-            <Kpi label="Jami reja" value={d.companyPlan ? moneyShort(d.companyPlan) : "—"} icon={Target} tone="brand" hint={d.hasCompanyPlan ? "zavod rejasi" : d.companyPlan ? "sotuvchilar rejalari yig'indisi" : "reja kiritilmagan"} />
-            <Kpi label="Jami fakt" value={moneyShort(d.fact)} icon={Wallet} hint={`${d.wdPassed} ish kunida`} />
-            <Kpi label="Reja bajarilishi" value={pct(d.pct, 1)} icon={Percent} tone={d.pct === null ? "default" : d.pct >= 100 ? "success" : d.pct >= 70 ? "warning" : "danger"} badge={d.pct !== null && <Badge color={SIG[d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"]} dot={false}>{d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"}</Badge>} />
-            <Kpi label="Plan gap" value={d.companyPlan ? `${d.gap >= 0 ? "+" : "−"}${moneyShort(Math.abs(d.gap))}` : "—"} icon={Gauge} tone={d.gap >= 0 ? "success" : "danger"} hint="oy oxiridagi kutilma" />
-            <Kpi label="Oy oxiri prognoz" value={pct(d.fpct, 1)} icon={Gauge} tone={d.fpct === null ? "default" : d.fpct >= 100 ? "success" : d.fpct >= 70 ? "warning" : "danger"} hint={moneyShort(d.forecast)} />
-            <Kpi label="Risk sotuvchilar" value={String(d.dist.risk)} icon={AlertTriangle} tone={d.dist.risk ? "danger" : "default"} hint="prognoz < 70%" />
-            <Kpi label="Bonus sotuvchilar" value={String(d.dist.bonus)} icon={Award} tone={d.dist.bonus ? "success" : "default"} hint="prognoz ≥ 110%" />
+            <Kpi label="Jami reja" value={d.companyPlan ? moneyShort(d.companyPlan) : "—"} icon={Target} tone="brand" hint={d.hasCompanyPlan ? "zavod rejasi" : d.companyPlan ? "sotuvchilar rejalari yig'indisi" : "reja kiritilmagan"} href="#sotuvchilar" />
+            <Kpi label="Jami fakt" value={moneyShort(d.fact)} icon={Wallet} hint={`${d.wdPassed} ish kunida`} href="#sotuvchilar" />
+            <Kpi label="Reja bajarilishi" value={pct(d.pct, 1)} icon={Percent} tone={d.pct === null ? "default" : d.pct >= 100 ? "success" : d.pct >= 70 ? "warning" : "danger"} badge={d.pct !== null && <Badge color={SIG[d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"]} dot={false}>{d.pct >= 110 ? "BONUS" : d.pct >= 90 ? "NORMAL" : d.pct >= 70 ? "OGOHLANTIRISH" : "XAVF"}</Badge>} href="#forecast" />
+            <Kpi label="Plan gap" value={d.companyPlan ? `${d.gap >= 0 ? "+" : "−"}${moneyShort(Math.abs(d.gap))}` : "—"} icon={Gauge} tone={d.gap >= 0 ? "success" : "danger"} hint="oy oxiridagi kutilma" href="#forecast" />
+            <Kpi label="Oy oxiri prognoz" value={pct(d.fpct, 1)} icon={Gauge} tone={d.fpct === null ? "default" : d.fpct >= 100 ? "success" : d.fpct >= 70 ? "warning" : "danger"} hint={moneyShort(d.forecast)} href="#forecast" />
+            <Kpi label="Risk sotuvchilar" value={String(d.dist.risk)} icon={AlertTriangle} tone={d.dist.risk ? "danger" : "default"} hint="prognoz < 70%" href="#risk" />
+            <Kpi label="Bonus sotuvchilar" value={String(d.dist.bonus)} icon={Award} tone={d.dist.bonus ? "success" : "default"} hint="prognoz ≥ 110%" href="#risk" />
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-          <Panel className="xl:col-span-2" title="Forecast engine" eyebrow="oylik ko'rsatkich" info="Kumulyativ fakt (uzluksiz) + prognoz (uzuq, hozirgi ish kuni tempi bilan) + reja chizig'i (ish kunlariga teng taqsimlangan).">
+          <Panel id="forecast" className="xl:col-span-2" title="Forecast engine" eyebrow="oylik ko'rsatkich" info="Kumulyativ fakt (uzluksiz) + prognoz (uzuq, hozirgi ish kuni tempi bilan) + reja chizig'i (ish kunlariga teng taqsimlangan).">
             <LineChart labels={d.engine.labels} series={[{ name: "Fakt (kumulyativ)", values: d.engine.cumVals, color: "#ffa800" }, { name: "Prognoz", values: d.engine.fcVals, color: "#0d78ff", dashed: true }, { name: "Reja", values: d.engine.planVals, color: "#93a3bd", dashed: true }]} formatValue={(v) => `${moneyShort(v)} so'm`} labelEvery={3} height={220} />
             <div className="mt-4 grid grid-cols-2 gap-3 text-[13px] md:grid-cols-5">
               <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs text-slate-500">Qolgan reja</div><div className="font-semibold tabular">{d.companyPlan ? moneyShort(Math.max(0, d.companyPlan - d.fact)) : "—"}</div></div>
@@ -73,7 +73,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
 
-        <Panel title="Sotuvchilar performance" eyebrow="signal = prognoz asosida" info="Reja — SalesPlan (sotuvchi kesimida). Fakt — sotuvchi kiritgan tasdiqlangan zayavkalar. Prognoz = fakt / o'tgan ish kunlari × jami ish kunlari (oy o'rtasida tizimga o'tilgan bo'lsa — o'tish sanasidan). Trend — oxirgi 7 kun vs oldingi 7 kun. Direktor kiritgan zayavkalar zavod faktida, sotuvchilar ro'yxatida emas." padded={false}>
+        <Panel id="sotuvchilar" title="Sotuvchilar performance" eyebrow="signal = prognoz asosida" info="Reja — SalesPlan (sotuvchi kesimida). Fakt — sotuvchi kiritgan tasdiqlangan zayavkalar. Prognoz = fakt / o'tgan ish kunlari × jami ish kunlari (oy o'rtasida tizimga o'tilgan bo'lsa — o'tish sanasidan). Trend — oxirgi 7 kun vs oldingi 7 kun. Direktor kiritgan zayavkalar zavod faktida, sotuvchilar ro'yxatida emas." padded={false}>
           <Table className="rounded-none border-0 shadow-none">
             <thead><tr><Th>#</Th><Th>Sotuvchi</Th><Th right>Reja</Th><Th right>Fakt</Th><Th right>Reja %</Th><Th right>Prognoz</Th><Th right>Fcst %</Th><Th right>Gap</Th><Th right>Kerak/kun</Th><Th>Signal</Th><Th right>Trend</Th><Th>6 oy</Th></tr></thead>
             <tbody>
@@ -84,7 +84,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
         </Panel>
 
         {/* Risk & action center */}
-        <div>
+        <div id="risk" className="scroll-mt-20">
           <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Risk & action center</div>
           {d.noPlan.length > 0 && <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900"><AlertTriangle size={14} className="mr-1 inline" /> <b>{d.noPlan.length} ta sotuvchi rejasiz:</b> {d.noPlan.slice(0, 5).map((x) => x.name).join(", ")}{d.noPlan.length > 5 ? ` va yana ${d.noPlan.length - 5} ta` : ""} — rejani kiriting, usiz bajarilish foizi hisoblanmaydi.</div>}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 [&>*]:min-w-0">

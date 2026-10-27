@@ -37,13 +37,13 @@ export default async function LoansPage() {
       <MoliyaTabs current="/moliya/kreditlar" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Bank kreditlari" value={money(bank)} hint="balans passivi" icon={Landmark} tone={bank > 0 ? "warning" : "default"} />
-        <StatCard label="Olingan qarzlar" value={money(borrowed)} icon={Wallet} />
-        <StatCard label="Biz bergan qarzlar" value={money(lent)} hint="balans aktivi" icon={HandCoins} tone="info" />
-        <StatCard label="To'langan foiz (jami)" value={money(interest)} hint="PNL: «Kredit foizi»" icon={Percent} />
+        <StatCard label="Bank kreditlari" value={money(bank)} hint="balans passivi" icon={Landmark} tone={bank > 0 ? "warning" : "default"} href="#reyestr" />
+        <StatCard label="Olingan qarzlar" value={money(borrowed)} icon={Wallet} href="#reyestr" />
+        <StatCard label="Biz bergan qarzlar" value={money(lent)} hint="balans aktivi" icon={HandCoins} tone="info" href="#reyestr" />
+        <StatCard label="To'langan foiz (jami)" value={money(interest)} hint="PNL: «Kredit foizi»" icon={Percent} href="#reyestr" />
       </div>
 
-      <Section title="Reyestr">
+      <Section id="reyestr" title="Reyestr">
         <Table>
           <thead><tr><Th>Nomi</Th><Th>Turi</Th><Th>Qoldiq sanasi</Th><Th right>Boshlang&apos;ich</Th><Th right>Olindi / berildi</Th><Th right>Qaytarildi</Th><Th right>Foiz to&apos;landi</Th><Th right>Qoldiq</Th>{canWrite && <Th />}</tr></thead>
           <tbody>

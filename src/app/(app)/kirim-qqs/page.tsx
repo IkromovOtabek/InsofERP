@@ -41,13 +41,13 @@ export default async function InputVatPage({ searchParams }: { searchParams: Pro
       </form>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="QQS'siz summa" value={money(t.base)} hint={`${t.docs} ta kirim hujjati`} icon={Receipt} tone="info" />
-        <StatCard label="Kirim QQS" value={money(t.vat)} hint={vatPayer ? "hisobga olinadi (qaytariladi)" : "korxona QQS to'lovchisi emas — tannarxda"} icon={Landmark} tone="brand" />
-        <StatCard label="Jami (QQS bilan)" value={money(t.total)} hint="yetkazuvchilarga to'lanadigan" icon={Store} tone="default" />
-        <StatCard label="Davr" value={`${date(from)} — ${date(tashkent(toS))}`} icon={CalendarDays} tone="default" />
+        <StatCard label="QQS'siz summa" value={money(t.base)} hint={`${t.docs} ta kirim hujjati`} icon={Receipt} tone="info" href="#hujjatlar" />
+        <StatCard label="Kirim QQS" value={money(t.vat)} hint={vatPayer ? "hisobga olinadi (qaytariladi)" : "korxona QQS to'lovchisi emas — tannarxda"} icon={Landmark} tone="brand" href="#oylar" />
+        <StatCard label="Jami (QQS bilan)" value={money(t.total)} hint="yetkazuvchilarga to'lanadigan" icon={Store} tone="default" href="#yetkazuvchilar" />
+        <StatCard label="Davr" value={`${date(from)} — ${date(tashkent(toS))}`} icon={CalendarDays} tone="default" href="#oylar" />
       </div>
 
-      <Section title="Oylar bo'yicha">
+      <Section id="oylar" title="Oylar bo'yicha">
         <Table>
           <thead><tr><Th>Oy</Th><Th right>Hujjatlar</Th><Th right>QQS&apos;siz</Th><Th right>QQS</Th><Th right>Jami</Th></tr></thead>
           <tbody>
@@ -68,7 +68,7 @@ export default async function InputVatPage({ searchParams }: { searchParams: Pro
         </Table>
       </Section>
 
-      <Section title="Yetkazuvchilar bo'yicha">
+      <Section id="yetkazuvchilar" title="Yetkazuvchilar bo'yicha">
         <Table>
           <thead><tr><Th>Yetkazuvchi</Th><Th>INN</Th><Th right>Hujjatlar</Th><Th right>QQS&apos;siz</Th><Th right>QQS</Th><Th right>Jami</Th></tr></thead>
           <tbody>
@@ -87,7 +87,7 @@ export default async function InputVatPage({ searchParams }: { searchParams: Pro
         </Table>
       </Section>
 
-      <Section title="Kirim hujjatlari">
+      <Section id="hujjatlar" title="Kirim hujjatlari">
         <Table>
           <thead><tr><Th>Kirim</Th><Th>Sana</Th><Th>Yetkazuvchi</Th><Th right>QQS&apos;siz</Th><Th right>QQS</Th><Th right>Jami</Th></tr></thead>
           <tbody>

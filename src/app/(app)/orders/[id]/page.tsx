@@ -265,16 +265,16 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         {isStock ? (
           <>
             {/* Sklad zayavkasida summa yo'q — o'rniga muddat va zaxira holati */}
-            <StatCard label="So'ralgan zaxira" value={fmtUnitTotals(itemRows)} icon={Boxes} hint={o.items.map((i) => i.product.code).join(", ")} />
-            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
-            <StatCard label="Tayyor bo'lish muddati" value={dateText} icon={CalendarDays} hint={o.isUrgent ? "zarur — birinchi navbatda" : undefined} />
+            <StatCard label="So'ralgan zaxira" value={fmtUnitTotals(itemRows)} icon={Boxes} hint={o.items.map((i) => i.product.code).join(", ")} href="#mahsulotlar" />
+            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} href="#zameslar" />
+            <StatCard label="Tayyor bo'lish muddati" value={dateText} icon={CalendarDays} hint={o.isUrgent ? "zarur — birinchi navbatda" : undefined} href={noDate ? undefined : `/orders/kun/${isoDate(o.deliveryDate)}`} />
           </>
         ) : (
           <>
-            <StatCard label="Summa" value={money(total)} icon={Wallet} hint={paid > 0 ? `to'landi ${money(paid)}` : undefined} />
-            <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} />
-            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} />
-            <StatCard label="Jo'natildi" value={orderUnit ? `${qty(shippedM3)} ${unitLabel(orderUnit)}` : qty(shippedM3)} icon={Truck} tone={shippedPct >= 100 ? "success" : "default"} hint={<Progress value={shippedPct} max={100} tone="success" />} />
+            <StatCard label="Summa" value={money(total)} icon={Wallet} hint={paid > 0 ? `to'landi ${money(paid)}` : undefined} href="#mahsulotlar" />
+            <StatCard label="Hajm" value={fmtUnitTotals(itemRows)} icon={Package} hint={o.items.map((i) => i.product.code).join(", ")} href="#mahsulotlar" />
+            <StatCard label="Ishlab chiqarildi" value={fmtUnitTotals(producedRows)} icon={Factory} tone={producedPct >= 100 ? "success" : "default"} hint={<Progress value={producedPct} max={100} />} href="#zameslar" />
+            <StatCard label="Jo'natildi" value={orderUnit ? `${qty(shippedM3)} ${unitLabel(orderUnit)}` : qty(shippedM3)} icon={Truck} tone={shippedPct >= 100 ? "success" : "default"} hint={<Progress value={shippedPct} max={100} tone="success" />} href="#reyslar" />
           </>
         )}
       </div>
@@ -377,7 +377,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </Card>
         )}
         <Card padded={false} className="lg:col-span-3">
-          <div className="px-5 pt-5"><CardHeader title={isStock ? "Ishlab chiqariladi" : "Mahsulotlar"} /></div>
+          <div id="mahsulotlar" className="scroll-mt-20 px-5 pt-5"><CardHeader title={isStock ? "Ishlab chiqariladi" : "Mahsulotlar"} /></div>
           <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             {/* Sklad zayavkasida narx yo'q — narx/summa ustunlari ham chiqmaydi */}
@@ -409,7 +409,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       <div className={`mt-5 grid grid-cols-1 gap-5 ${isStock ? "" : "lg:grid-cols-2"}`}>
         {(!isStock || o.batches.length > 0) && (
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Zameslar" icon={Factory} description={isStock ? "Zaxiraga qilingan zameslar — har biri hovlidagi erkin qoldiqni oshiradi" : undefined} /></div>
+          <div id="zameslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Zameslar" icon={Factory} description={isStock ? "Zaxiraga qilingan zameslar — har biri hovlidagi erkin qoldiqni oshiradi" : undefined} /></div>
           <div className="overflow-x-auto">
           <table className="w-full min-w-[420px] text-sm">
             <thead><tr><Th>№</Th><Th>Sana</Th><Th>Smena</Th><Th right>Miqdor</Th></tr></thead>
@@ -423,7 +423,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         )}
         {!isStock && (
         <Card padded={false}>
-          <div className="px-5 pt-5"><CardHeader title="Reyslar" icon={Truck} /></div>
+          <div id="reyslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Reyslar" icon={Truck} /></div>
           {/* Yo'ldagi mashina — sotuvchi mijozga "qayerda?" degan savolga o'zi javob bersin.
               Faol reys bo'lmasa blok o'zini ko'rsatmaydi. */}
           {ecoEnabled() && (

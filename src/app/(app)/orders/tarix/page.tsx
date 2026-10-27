@@ -89,11 +89,11 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
       </form>
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5">
-        <StatCard label="Zayavkalar" value={`${totals.count} ta`} hint={`kuniga o'rtacha ${fmtNum(totals.count / workDays, 1)} ta`} icon={ClipboardList} />
-        <StatCard label="Hajm" value={`${q(totals.m3)} m³`} hint={`kuniga ${fmtNum(totals.m3 / workDays, 1)} m³ · quvvat ${fmtNum(capacity)} m³`} icon={Layers} />
-        <StatCard label="Summa" value={moneyShort(totals.sum)} hint={money(totals.sum)} icon={TrendingUp} tone="success" />
-        <StatCard label="Yopilgan / yetkazilgan" value={`${totals.closed} ta`} hint={pct(totals.count ? (totals.closed / totals.count) * 100 : 0)} icon={Percent} tone="brand" />
-        <StatCard label="Bekor qilingan" value={`${totals.cancelled} ta`} hint={pct(totals.count ? (totals.cancelled / totals.count) * 100 : 0)} icon={XCircle} tone={totals.cancelled ? "danger" : "default"} />
+        <StatCard label="Zayavkalar" value={`${totals.count} ta`} hint={`kuniga o'rtacha ${fmtNum(totals.count / workDays, 1)} ta`} icon={ClipboardList} href="#kunlar" />
+        <StatCard label="Hajm" value={`${q(totals.m3)} m³`} hint={`kuniga ${fmtNum(totals.m3 / workDays, 1)} m³ · quvvat ${fmtNum(capacity)} m³`} icon={Layers} href="#kunlar" />
+        <StatCard label="Summa" value={moneyShort(totals.sum)} hint={money(totals.sum)} icon={TrendingUp} tone="success" href="#kunlar" />
+        <StatCard label="Yopilgan / yetkazilgan" value={`${totals.closed} ta`} hint={pct(totals.count ? (totals.closed / totals.count) * 100 : 0)} icon={Percent} tone="brand" href="#kunlar" />
+        <StatCard label="Bekor qilingan" value={`${totals.cancelled} ta`} hint={pct(totals.count ? (totals.cancelled / totals.count) * 100 : 0)} icon={XCircle} tone={totals.cancelled ? "danger" : "default"} href="#kunlar" />
       </div>
 
       <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -140,7 +140,7 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
         </Card>
       </div>
 
-      <Table>
+      <div id="kunlar" className="scroll-mt-20"><Table>
         <thead><tr><Th>Sana</Th><Th right>Zayavka</Th><Th right>Hajm</Th><Th right>Summa</Th><Th right>Yopilgan</Th><Th right>Jarayonda</Th><Th right>Bekor</Th><Th>Bandlik</Th></tr></thead>
         <tbody>
           {list.filter((d) => d.count > 0).length === 0 && <Empty text="Davrda zayavka yo'q" icon={ClipboardList} />}
@@ -165,7 +165,7 @@ export default async function OrdersHistoryPage({ searchParams }: { searchParams
             );
           })}
         </tbody>
-      </Table>
+      </Table></div>
       <p className="mt-2 text-xs text-slate-500">Bandlik — kunlik quvvatga nisbatan hajm (Sozlamalar → Limitlar → kunlik quvvat: {fmtNum(capacity)} m³). Sanani bosib, o&apos;sha kungi zayavkalarni ko&apos;rasiz.</p>
     </div>
   );

@@ -51,7 +51,7 @@ export async function ProductionHome({ s }: { s: Session }) {
         <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
         <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
-        <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} />
+        <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="#brak" />
       </div>
 
       {/* ── 5. Bugun yuklanadigan mahsulot ── */}
@@ -81,7 +81,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                     <Tr key={o.id}>
                       <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td>
                       <Td className="tabular">{o.time ?? "—"}</Td>
-                      <Td><CustomerName name={o.customer} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td>
+                      <Td><CustomerName name={o.customer} href={`/orders/${o.id}`} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td>
                       <Td>{o.items.map((i) => `${i.code} ${qty(i.qty)} ${unitLabel(i.unit)}`).join(", ")}{o.pickup && <span className="text-slate-400"> · o&apos;zi oladi</span>}</Td>
                       <Td right className="tabular">{qty(o.shipped)} {one}</Td>
                       <Td right className={o.left > 0 ? "font-semibold text-amber-700" : "text-emerald-700"}>{o.left > 0 ? `${qty(o.left)} ${one}` : "✓"}</Td>
@@ -242,7 +242,7 @@ export async function ProductionHome({ s }: { s: Session }) {
       </Section>
 
       {/* ── 7. Brak ── */}
-      <Section title="Brak" action={<span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv</span>}>
+      <Section id="brak" title="Brak" action={<span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv</span>}>
         <MobileFold label="Brak yozuvlari">
         <Card padded={false}>
           <div className="px-5 py-4">

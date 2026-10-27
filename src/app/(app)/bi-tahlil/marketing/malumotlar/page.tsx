@@ -25,10 +25,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <BiPage title="Marketing ma'lumotlari" subtitle="Oy × kanal bo'yicha byudjet, reja va fakt yozuvlari. Marketing va Reja nazorati sahifalari shu yozuvlardan hisoblanadi." tab="marketingData" range={range} period={false}>
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Kpi label="Rejalashtirilgan byudjet" value={moneyShort(S.budget)} icon={Wallet} tone="info" hint={`${S.year}-yil`} />
-          <Kpi label="Haqiqiy sarflangan" value={moneyShort(S.spent)} icon={Coins} tone="brand" hint={S.budget ? `${S.spent <= S.budget ? "▼" : "▲"} ${fmtNum(Math.abs(((S.spent - S.budget) / S.budget) * 100), 1)}% byudjetdan ${S.spent <= S.budget ? "kam" : "ko'p"}` : "byudjet kiritilmagan"} />
-          <Kpi label="Kiritilgan yozuvlar" value={String(S.count)} icon={ListChecks} hint="oy × kanal bo'yicha" />
-          <Kpi label="Qaytim (ROAS)" value={S.roas !== null ? `${fmtNum(S.roas, 2)}x` : "—"} icon={Percent} tone={S.roas !== null && S.roas >= 1 ? "success" : "default"} hint="daromad / fakt xarajat" />
+          <Kpi label="Rejalashtirilgan byudjet" value={moneyShort(S.budget)} icon={Wallet} tone="info" hint={`${S.year}-yil`} href={`/bi-tahlil/marketing/malumotlar?year=${S.year}&kind=BUDGET#yozuvlar`} />
+          <Kpi label="Haqiqiy sarflangan" value={moneyShort(S.spent)} icon={Coins} tone="brand" hint={S.budget ? `${S.spent <= S.budget ? "▼" : "▲"} ${fmtNum(Math.abs(((S.spent - S.budget) / S.budget) * 100), 1)}% byudjetdan ${S.spent <= S.budget ? "kam" : "ko'p"}` : "byudjet kiritilmagan"} href={`/bi-tahlil/marketing/malumotlar?year=${S.year}&kind=FACT#yozuvlar`} />
+          <Kpi label="Kiritilgan yozuvlar" value={String(S.count)} icon={ListChecks} hint="oy × kanal bo'yicha" href="#yozuvlar" />
+          <Kpi label="Qaytim (ROAS)" value={S.roas !== null ? `${fmtNum(S.roas, 2)}x` : "—"} icon={Percent} tone={S.roas !== null && S.roas >= 1 ? "success" : "default"} hint="daromad / fakt xarajat" href="/bi-tahlil/marketing" />
         </div>
 
         <Panel title="Yangi yozuv qo'shish" info="Byudjet — oy boshida kanalga ajratilgan pul. Reja — natija maqsadlari (xarajat, lead, mijoz, daromad). Fakt — haqiqiy to'langan xarajat va olingan natija.">
@@ -48,7 +48,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <Note>Reja va Fakt uchun daromad, lead va mijoz maydonlarini to'ldiring — ular ROAS, CAC va reja bajarilishini beradi. Byudjet uchun faqat summa kifoya.</Note>
         </Panel>
 
-        <Panel title="Kiritilgan ma'lumotlar" padded={false} action={<span>{d.rows.length} yozuv</span>}>
+        <Panel id="yozuvlar" title="Kiritilgan ma'lumotlar" padded={false} action={<span>{d.rows.length} yozuv</span>}>
           <form method="get" action="/bi-tahlil/marketing/malumotlar" className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
             <Select name="year" defaultValue={sp.year ?? String(now.getFullYear())} className="h-8 w-32"><option value="">Barcha yillar</option>{[...new Set([now.getFullYear(), ...d.years])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}</Select>
             <Select name="month" defaultValue={sp.month ?? ""} className="h-8 w-36"><option value="">Barcha oylar</option>{MONTHS_UZ.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</Select>

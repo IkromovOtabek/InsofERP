@@ -64,14 +64,14 @@ export default async function MyTripsPage() {
         subtitle={`${me.fullName}${me.vehicle ? ` · ${me.vehicle.plate}` : " · mashina biriktirilmagan"}`} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Ochiq reyslar" value={`${open.length} ta`} icon={Bus} tone={open.length ? "brand" : "success"} />
-        <StatCard label="Bugun yetkazdim" value={fmtUnitTotals(todayAgg.map((t) => ({ unit: tripUnit(t) ?? "m3", qty: String(t.qtyM3) })))} hint={`${todayAgg.length} reys`} icon={CheckCheck} tone="success" />
+        <StatCard label="Ochiq reyslar" value={`${open.length} ta`} icon={Bus} tone={open.length ? "brand" : "success"} href="#bajarilishi-kerak" />
+        <StatCard label="Bugun yetkazdim" value={fmtUnitTotals(todayAgg.map((t) => ({ unit: tripUnit(t) ?? "m3", qty: String(t.qtyM3) })))} hint={`${todayAgg.length} reys`} icon={CheckCheck} tone="success" href="#tarix" />
         <StatCard label="Mashina" value={me.vehicle?.plate ?? "—"} hint={me.vehicle?.capacityM3 ? `${q(me.vehicle.capacityM3)} m³` : undefined} icon={Truck} />
         <StatCard label="Telefon" value={me.phone ?? "—"} hint="ilovaga kirish kaliti" icon={Phone} />
       </div>
 
       <Card className="mb-5" padded={false}>
-        <div className="p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Yuklash va yetkazish shu ro'yxat bo'yicha" /></div>
+        <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Yuklash va yetkazish shu ro'yxat bo'yicha" /></div>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Manzil</Th><Th>Yetkazish</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
           <tbody>
@@ -93,7 +93,7 @@ export default async function MyTripsPage() {
         </Table>
       </Card>
 
-      <h2 className="mb-3 font-semibold">Tarix</h2>
+      <h2 id="tarix" className="mb-3 scroll-mt-20 font-semibold">Tarix</h2>
       <Table>
         <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Sana</Th><Th>Yetkazildi</Th><Th right>Miqdor</Th><Th>Holat</Th></tr></thead>
         <tbody>

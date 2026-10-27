@@ -29,11 +29,12 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
     <div className="space-y-4">
       <PageHeader back={{ href: "/otdel-kadr?tab=oqitish", label: "O'qitish" }} eyebrow="Kurs" title={c.title} subtitle={`${questionsOf(c.questions).length} savol · o'tish ${c.passScore}%${c.validMonths ? ` · sertifikat ${c.validMonths} oy` : ""}${c.isActive ? "" : " · o'chirilgan"}`} />
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Topshirmagan" value={String(rows.filter((r) => r.status === "ASSIGNED").length)} tone="warning" />
-        <StatCard label="O'tdi" value={String(rows.filter((r) => r.status === "PASSED").length)} tone="success" />
-        <StatCard label="O'tmadi" value={String(rows.filter((r) => r.status === "FAILED").length)} tone="danger" />
+        <StatCard label="Topshirmagan" value={String(rows.filter((r) => r.status === "ASSIGNED").length)} tone="warning" href="#natijalar" />
+        <StatCard label="O'tdi" value={String(rows.filter((r) => r.status === "PASSED").length)} tone="success" href="#natijalar" />
+        <StatCard label="O'tmadi" value={String(rows.filter((r) => r.status === "FAILED").length)} tone="danger" href="#natijalar" />
       </div>
       <Card padded={false}>
+        <div id="natijalar" className="scroll-mt-20" />
         <Table>
           <thead><tr><Th>Xodim</Th><Th>Holat</Th><Th right>Eng yaxshi ball</Th><Th right>Urinish</Th><Th>Sertifikat</Th><Th>Muddat</Th></tr></thead>
           <tbody>

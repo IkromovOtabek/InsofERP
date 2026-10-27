@@ -70,18 +70,19 @@ export default async function BackupPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Oxirgi nusxa" icon={DatabaseBackup} tone={ageTone(latest?.at ?? null, 26)}
               value={latest?.at ? <Ago iso={latest.at} /> : "yo'q"}
-              hint={latest ? <>{latest.name} · {bytes(latest.bytes)} · {latest.sha256sums ? "SHA256SUMS ✓" : "SHA256SUMS yo'q"}</> : undefined} />
+              hint={latest ? <>{latest.name} · {bytes(latest.bytes)} · {latest.sha256sums ? "SHA256SUMS ✓" : "SHA256SUMS yo'q"}</> : undefined} href="#nusxalar" />
             <StatCard label="Oxirgi zaxira jarayoni" icon={DatabaseBackup} tone={inv.lastBackup.status === "FAILED" ? "danger" : inv.lastBackup.status === "OK" ? "success" : "default"}
-              value={<RunBadge r={inv.lastBackup} />} hint={inv.lastBackup.at ? <>{dt(inv.lastBackup.at)} (<Ago iso={inv.lastBackup.at} />)</> : "log topilmadi"} />
+              value={<RunBadge r={inv.lastBackup} />} hint={inv.lastBackup.at ? <>{dt(inv.lastBackup.at)} (<Ago iso={inv.lastBackup.at} />)</> : "log topilmadi"} href="#zaxira-log" />
             <StatCard label="Tiklash sinovi" icon={FlaskConical} tone={inv.lastRestoreTest.status === "FAILED" ? "danger" : inv.lastRestoreTest.status === "OK" ? ageTone(inv.lastRestoreTest.at, 8 * 24) : "warning"}
-              value={<RunBadge r={inv.lastRestoreTest} />} hint={inv.lastRestoreTest.at ? <>{dt(inv.lastRestoreTest.at)} (<Ago iso={inv.lastRestoreTest.at} />)</> : "hali o'tkazilmagan"} />
+              value={<RunBadge r={inv.lastRestoreTest} />} hint={inv.lastRestoreTest.at ? <>{dt(inv.lastRestoreTest.at)} (<Ago iso={inv.lastRestoreTest.at} />)</> : "hali o'tkazilmagan"} href="#tiklash-log" />
             <StatCard label="Masofadagi nusxa" icon={remote?.ok ? CloudUpload : CloudOff} tone={remote?.ok ? (latest && latest.remote === false ? "warning" : "success") : remote?.ok === false ? "danger" : "default"}
               value={remote?.ok ? `${remote.copies.length} ta` : remote?.ok === false ? "Xato" : "—"}
-              hint={<span className="[overflow-wrap:anywhere]">{remote?.target ?? remote?.kind ?? ""}{remote?.latest ? ` · oxirgisi ${remote.latest}` : ""}</span>} />
+              hint={<span className="[overflow-wrap:anywhere]">{remote?.target ?? remote?.kind ?? ""}{remote?.latest ? ` · oxirgisi ${remote.latest}` : ""}</span>} href="#masofa" />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
+              <div id="masofa" className="scroll-mt-20" />
               <CardHeader title="Masofadagi nusxa (server tashqarisida)" help={<HelpButton topic="zx:remote" />} icon={CloudUpload}
                 description="rclone lsf / rclone about — 30 daqiqada bir tekshiriladi" />
               {remote ? (
@@ -123,7 +124,7 @@ export default async function BackupPage() {
           </div>
 
           <Card padded={false}>
-            <div className="p-5 pb-0"><CardHeader title={`Mahalliy nusxalar (${inv.copies.length})`} help={<HelpButton topic="zx:copies" />} description={inv.dir} icon={DatabaseBackup} /></div>
+            <div id="nusxalar" className="scroll-mt-20 p-5 pb-0"><CardHeader title={`Mahalliy nusxalar (${inv.copies.length})`} help={<HelpButton topic="zx:copies" />} description={inv.dir} icon={DatabaseBackup} /></div>
             {inv.copies.length === 0 ? <div className="p-5"><Empty text="Hali birorta nusxa yo'q" /></div> : (
               <Table>
                 <thead><tr><Th>Sana</Th><Th right>Hajm</Th><Th>Fayllar</Th><Th>SHA256SUMS</Th><Th>Masofada</Th></tr></thead>
@@ -150,11 +151,13 @@ export default async function BackupPage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
+              <div id="zaxira-log" className="scroll-mt-20" />
               <CardHeader title="Oxirgi zaxira jarayoni" help={<HelpButton topic="zx:runs" />} description="/var/log/insof-backup.log" action={<RunBadge r={inv.lastBackup} />} />
               <p className="mb-2 text-sm text-slate-600 [overflow-wrap:anywhere]">{inv.lastBackup.summary ?? "—"}</p>
               <LogTail lines={inv.lastBackup.tail} label="Log" />
             </Card>
             <Card>
+              <div id="tiklash-log" className="scroll-mt-20" />
               <CardHeader title="Oxirgi tiklash sinovi" help={<HelpButton topic="zx:runs" />} description="/var/log/insof-restore-test.log" action={<RunBadge r={inv.lastRestoreTest} />} />
               <p className="mb-2 text-sm text-slate-600 [overflow-wrap:anywhere]">{inv.lastRestoreTest.summary ?? "—"}</p>
               <LogTail lines={inv.lastRestoreTest.tail} label="Log" />

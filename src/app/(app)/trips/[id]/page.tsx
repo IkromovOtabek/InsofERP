@@ -6,6 +6,7 @@ import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
+import { pathAllowed } from "@/lib/nav";
 import { fuelNormText, payTrips } from "@/lib/driver-trip-pay";
 import { PriceForm } from "../../logistika/tabel/tabel-forms";
 import { qty, date, dateTime } from "@/lib/format";
@@ -118,10 +119,10 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       </Card>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Hajm" value={tripUnit ? `${qty(t.qtyM3)} ${unitLabel(tripUnit)}` : qty(t.qtyM3)} hint={tripProduct} icon={Package} tone="brand" />
-        <StatCard label={VEHICLE_TYPE[t.vehicle.type] ?? "Transport"} value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} />
-        <StatCard label="Yuklandi" value={<span className="text-base">{dt(t.loadedAt)}</span>} icon={Clock} />
-        <StatCard label="Yetkazildi" value={<span className="text-base">{dt(t.deliveredAt)}</span>} hint={t.receiverName ? `qabul qildi: ${t.receiverName}` : undefined} icon={Clock} tone={t.deliveredAt ? "success" : "default"} />
+        <StatCard label="Hajm" value={tripUnit ? `${qty(t.qtyM3)} ${unitLabel(tripUnit)}` : qty(t.qtyM3)} hint={tripProduct} icon={Package} tone="brand" href={pathAllowed("/orders", s.role, s.perms) ? `/orders/${t.orderId}` : undefined} />
+        <StatCard label={VEHICLE_TYPE[t.vehicle.type] ?? "Transport"} value={<span className="tabular">{t.vehicle.plate}</span>} hint={t.driver.fullName} icon={Truck} href={pathAllowed("/logistika/transport", s.role, s.perms) ? `/logistika/transport/${t.vehicle.id}` : undefined} />
+        <StatCard label="Yuklandi" value={<span className="text-base">{dt(t.loadedAt)}</span>} icon={Clock} href="#reys-vaqtlari" />
+        <StatCard label="Yetkazildi" value={<span className="text-base">{dt(t.deliveredAt)}</span>} hint={t.receiverName ? `qabul qildi: ${t.receiverName}` : undefined} icon={Clock} tone={t.deliveredAt ? "success" : "default"} href="#reys-vaqtlari" />
       </div>
 
       {t.status === "LOADED" && canPlan && (
@@ -146,6 +147,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       )}
 
       {/* ── Vaqtlar (TZ: yuklash / jo'nash / yetib borish / topshirish) ── */}
+      <div id="reys-vaqtlari" className="scroll-mt-20" />
       <Card className="mt-5">
         <CardHeader title="Reys vaqtlari" description={planned ? `Reja: ${dateTime(planned)}` : "Rejadagi vaqt yo'q (zayavkada soat ko'rsatilmagan)"} icon={Clock}
           action={t.status !== "CANCELLED" && planned ? <span className="text-sm">Kechikish: <DelayText min={delay} level={delayLevel(delay, settings)} /></span> : undefined} />

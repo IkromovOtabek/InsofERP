@@ -40,8 +40,8 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
   });
   const rows = vehicles.map((v) => ({ v, live: vehicleLive(v, v.trips) }));
   const count = (l: VehicleLive[]) => rows.filter((r) => l.includes(r.live)).length;
-  const shown = state ? rows.filter((r) => r.live === state) : rows;
-  const docsBad = rows.filter((r) => r.v.isActive && [expiryLevel(r.v.inspectionUntil), expiryLevel(r.v.insuranceUntil)].some((l) => l === "crit" || l === "warn")).length;
+  const docsWarn = (r: (typeof rows)[number]) => r.v.isActive && [expiryLevel(r.v.inspectionUntil), expiryLevel(r.v.insuranceUntil)].some((l) => l === "crit" || l === "warn");
+  const docsBad = rows.filter(docsWarn).length;
   const canManage = canDo(s, "logistika", "vehicle");
   // Holatni (ta'mir / bekor) mexanik va dispetcher ham belgilaydi
   const canStatus = canManage || canDo(s, "logistika", "service");
@@ -49,6 +49,8 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
   const due = await vehicleServiceDue();
   const dueBy = new Map<string, typeof due>();
   for (const d of due) dueBy.set(d.vehicleId, [...(dueBy.get(d.vehicleId) ?? []), d]);
+  // ?state= — joriy holat (FREE, ON_TRIP…) yoki kartochkadan: DOCS (hujjat muddati), SERVICE (texnik xizmat)
+  const shown = state === "DOCS" ? rows.filter(docsWarn) : state === "SERVICE" ? rows.filter((r) => dueBy.has(r.v.id)) : state ? rows.filter((r) => r.live === state) : rows;
 
   return (
     <div>
@@ -61,8 +63,8 @@ export default async function TransportPage({ searchParams }: { searchParams: Pr
         <StatCard label="Reysda / yuklanmoqda" value={count(["ON_TRIP", "LOADING", "ASSIGNED", "RETURNING"])} icon={Truck} tone="brand" href="/logistika/transport?state=ON_TRIP" />
         <StatCard label="Ta'mirda" value={count(["REPAIR"])} icon={Wrench} tone={count(["REPAIR"]) ? "danger" : "default"} href="/logistika/transport?state=REPAIR" />
         <StatCard label="Faol emas / bekor" value={count(["INACTIVE", "IDLE"])} icon={CircleOff} href="/logistika/transport?state=IDLE" />
-        <StatCard label="Hujjat muddati" value={docsBad} hint="ko'rik yoki sug'urta ≤ 30 kun" icon={ShieldAlert} tone={docsBad ? "warning" : "default"} />
-        <StatCard label="Texnik xizmat" value={dueBy.size} hint={due.some((d) => d.level === "crit") ? `${due.filter((d) => d.level === "crit").length} ta muddati o'tgan` : "muddati yaqin / o'tgan"} icon={Wrench} tone={due.some((d) => d.level === "crit") ? "danger" : due.length ? "warning" : "default"} />
+        <StatCard label="Hujjat muddati" value={docsBad} hint="ko'rik yoki sug'urta ≤ 30 kun" icon={ShieldAlert} tone={docsBad ? "warning" : "default"} href="/logistika/transport?state=DOCS" />
+        <StatCard label="Texnik xizmat" value={dueBy.size} hint={due.some((d) => d.level === "crit") ? `${due.filter((d) => d.level === "crit").length} ta muddati o'tgan` : "muddati yaqin / o'tgan"} icon={Wrench} tone={due.some((d) => d.level === "crit") ? "danger" : due.length ? "warning" : "default"} href="/logistika/transport?state=SERVICE" />
       </div>
 
       <Tabs current={type ?? ""} items={[

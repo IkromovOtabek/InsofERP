@@ -77,18 +77,18 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
       )}
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Shu oy reyslar" value={monthTrips.length} hint={`${qty(monthQty)} yetkazildi/yuklandi`} icon={Route} tone="brand" />
-        <StatCard label="Shu oy xarajat" value={moneyShort(monthCost)} hint={monthTrips.length ? `reysga ${moneyShort(monthCost / monthTrips.length)}` : undefined} icon={Coins} />
+        <StatCard label="Shu oy reyslar" value={monthTrips.length} hint={`${qty(monthQty)} yetkazildi/yuklandi`} icon={Route} tone="brand" href="#oxirgi-reyslar" />
+        <StatCard label="Shu oy xarajat" value={moneyShort(monthCost)} hint={monthTrips.length ? `reysga ${moneyShort(monthCost / monthTrips.length)}` : undefined} icon={Coins} href="#yoqilgi" />
         {dual ? (
-          <StatCard label="Yoqilg'i sarfi, 100 km ga" icon={Fuel}
+          <StatCard label="Yoqilg'i sarfi, 100 km ga" icon={Fuel} href="#yoqilgi"
             value={`${per100 != null ? fmtNum(per100, 1) : "—"} l · ${gasPer100 != null ? fmtNum(gasPer100, 1) : "—"} m³`}
             hint={`norma: dizel ${norm ? `${fmtNum(norm, 1)} l` : "—"}, metan ${gasNorm ? `${fmtNum(gasNorm, 1)} m³` : "—"}`}
             tone={(per100 != null && norm && per100 > norm * 1.1) || (gasPer100 != null && gasNorm && gasPer100 > gasNorm * 1.1) ? "danger" : (per100 != null && norm) || (gasPer100 != null && gasNorm) ? "success" : "default"} />
         ) : (
-          <StatCard label="Yoqilg'i sarfi" value={per100 != null ? `${fmtNum(per100, 1)} ${unit}/100` : "—"} hint={norm ? `norma ${fmtNum(norm, 1)} ${unit}/100` : "norma kiritilmagan"} icon={Fuel}
+          <StatCard label="Yoqilg'i sarfi" value={per100 != null ? `${fmtNum(per100, 1)} ${unit}/100` : "—"} hint={norm ? `norma ${fmtNum(norm, 1)} ${unit}/100` : "norma kiritilmagan"} icon={Fuel} href="#yoqilgi"
             tone={per100 != null && norm ? (per100 > norm * 1.1 ? "danger" : "success") : "default"} />
         )}
-        <StatCard label="Probeg" value={v.odometerKm != null ? `${fmtNum(v.odometerKm)} km` : "—"} hint="oxirgi zapravkada yozilgan" icon={Gauge} />
+        <StatCard label="Probeg" value={v.odometerKm != null ? `${fmtNum(v.odometerKm)} km` : "—"} hint="oxirgi zapravkada yozilgan" icon={Gauge} href="#yoqilgi" />
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
@@ -111,7 +111,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
 
         <div className="space-y-5 xl:col-span-2">
           <Card padded={false}>
-            <div className="px-5 pt-5"><CardHeader title="Yoqilg'i" icon={Fuel} action={!fuelOpen ? undefined : <Link href={`/logistika/yoqilgi?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
+            <div id="yoqilgi" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Yoqilg'i" icon={Fuel} action={!fuelOpen ? undefined : <Link href={`/logistika/yoqilgi?vehicleId=${v.id}`} className="text-sm text-slate-500 hover:text-slate-900">Qo'shish →</Link>} /></div>
             <Table>
               <thead><tr><Th>Sana</Th><Th right>Litr</Th><Th right>Summa</Th><Th right>Probeg</Th></tr></thead>
               <tbody>
@@ -164,7 +164,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
       </Card>
 
       <Card padded={false} className="mt-5">
-        <div className="px-5 pt-5"><CardHeader title="Oxirgi reyslar" icon={Route} /></div>
+        <div id="oxirgi-reyslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Oxirgi reyslar" icon={Route} /></div>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Mijoz / manzil</Th><Th>Haydovchi</Th><Th right>Hajm</Th><Th>Bosqich</Th><Th>Yuklandi</Th><Th>Yetkazildi</Th></tr></thead>
           <tbody>

@@ -83,10 +83,10 @@ export async function ArizalarTab({ s, employees, holat }: { s: Session; employe
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Ko'rib chiqilmoqda" value={String(counts.PENDING ?? 0)} icon={Inbox} tone={counts.PENDING ? "warning" : "default"} />
-        <StatCard label="Tasdiqlangan" value={String(counts.APPROVED ?? 0)} />
-        <StatCard label="Rad etilgan" value={String(counts.REJECTED ?? 0)} />
-        <StatCard label="Qaytarib olingan" value={String(counts.CANCELLED ?? 0)} />
+        <StatCard label="Ko'rib chiqilmoqda" value={String(counts.PENDING ?? 0)} icon={Inbox} tone={counts.PENDING ? "warning" : "default"} href="/otdel-kadr?tab=arizalar&holat=PENDING" />
+        <StatCard label="Tasdiqlangan" value={String(counts.APPROVED ?? 0)} href="/otdel-kadr?tab=arizalar&holat=APPROVED" />
+        <StatCard label="Rad etilgan" value={String(counts.REJECTED ?? 0)} href="/otdel-kadr?tab=arizalar&holat=REJECTED" />
+        <StatCard label="Qaytarib olingan" value={String(counts.CANCELLED ?? 0)} href="/otdel-kadr?tab=arizalar&holat=ALL" />
       </div>
       <Card padded={false}>
         <div className="flex flex-wrap gap-1 border-b border-slate-100 px-3 py-2">

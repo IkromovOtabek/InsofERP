@@ -68,14 +68,14 @@ export default async function MyTasksPage() {
         subtitle={`${me.fullName} · ${brigades.map((b) => b.name).join(", ")}`} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <StatCard label="Ochiq topshiriq" value={`${open.length} ta`} icon={ListChecks} tone={open.length ? "brand" : "success"} />
-        <StatCard label="Qolgan hajm" value={q(left)} hint="bajarilishi kerak" icon={Package} tone={left > 0 ? "warning" : "success"} />
-        <StatCard label="Kechikkan" value={`${overdue} ta`} hint={overdue ? "muddati o'tgan" : "muddat buzilmagan"} icon={Zap} tone={overdue ? "danger" : "success"} />
-        <StatCard label="Bugun bajarildi" value={q(doneToday)} hint={`${todayProgress.length} qayd`} icon={CheckCheck} tone="success" />
+        <StatCard label="Ochiq topshiriq" value={`${open.length} ta`} icon={ListChecks} tone={open.length ? "brand" : "success"} href="#bajarilishi-kerak" />
+        <StatCard label="Qolgan hajm" value={q(left)} hint="bajarilishi kerak" icon={Package} tone={left > 0 ? "warning" : "success"} href="#bajarilishi-kerak" />
+        <StatCard label="Kechikkan" value={`${overdue} ta`} hint={overdue ? "muddati o'tgan" : "muddat buzilmagan"} icon={Zap} tone={overdue ? "danger" : "success"} href="#bajarilishi-kerak" />
+        <StatCard label="Bugun bajarildi" value={q(doneToday)} hint={`${todayProgress.length} qayd`} icon={CheckCheck} tone="success" href="#bajarilishi-kerak" />
       </div>
 
       <Card className="mb-5" padded={false}>
-        <div className="p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Ishlab chiqarish brigadangizga tayinlagan topshiriqlar" /></div>
+        <div id="bajarilishi-kerak" className="scroll-mt-20 p-5"><CardHeader icon={Package} title="Bajarilishi kerak" description="Ishlab chiqarish brigadangizga tayinlagan topshiriqlar" /></div>
         <Table>
           <thead><tr><Th>№</Th><Th>Muddat</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th></tr></thead>
           <tbody>

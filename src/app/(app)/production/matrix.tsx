@@ -50,7 +50,7 @@ function Dot({ s }: { s: MatrixStatus }) {
   return <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[s])} />;
 }
 
-export function ProductionMatrixView({ data, board, filters, tab }: { data: ProductionMatrix; board: BoardOrder[]; filters: React.ReactNode; tab: string }) {
+export function ProductionMatrixView({ data, board, filters, tab, stockHref }: { data: ProductionMatrix; board: BoardOrder[]; filters: React.ReactNode; tab: string; stockHref?: string }) {
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [asf, setAsf] = useState<Record<MatrixAssign, boolean>>({ none: true, part: true, full: true });
@@ -95,10 +95,10 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
           <CardHeader icon={Grid3x3} title="Sklad va zayavkalar" description="Natija = skladdagi qoldiq − zayavkalarda band. Manfiy son — shuncha quyish kerak. Sonni bossangiz — shu qatorga brigada tayinlaysiz (hammasini yoki bir qismini). Mahsulot nomini bossangiz — pastdagi doskada uni olayotgan zayavkalar chiqadi." />
         </div>
         <div className="grid grid-cols-2 gap-3 px-5 lg:grid-cols-4">
-          <StatCard label="Skladda tayyor" value={ut(sm.stock)} hint={`${sm.stockKinds} turdagi mahsulot · beton saqlanmaydi`} icon={Boxes} />
-          <StatCard label="Zayavkalarda band" value={ut(sm.band)} hint={`${sm.orders} ta ochiq zayavka`} icon={ClipboardList} />
-          <StatCard label="Quyish kerak" value={ut(sm.need)} hint={needAny ? `${sm.needKinds} turda kamomad` : "hammasi yetarli"} icon={Factory} tone={needAny ? "danger" : "success"} />
-          <StatCard label="Muddati o'tgan" value={`${sm.late} ta`} hint={sm.lateBeton ? `tayyor bo'lmagan · shundan ${sm.lateBeton} tasi beton` : "tayyor bo'lmagan zayavkalar"} icon={AlarmClock} tone={sm.late ? "warning" : "default"} />
+          <StatCard label="Skladda tayyor" value={ut(sm.stock)} hint={`${sm.stockKinds} turdagi mahsulot · beton saqlanmaydi`} icon={Boxes} href={stockHref} />
+          <StatCard label="Zayavkalarda band" value={ut(sm.band)} hint={`${sm.orders} ta ochiq zayavka`} icon={ClipboardList} href="/production#doska" />
+          <StatCard label="Quyish kerak" value={ut(sm.need)} hint={needAny ? `${sm.needKinds} turda kamomad` : "hammasi yetarli"} icon={Factory} tone={needAny ? "danger" : "success"} href="#matritsa" />
+          <StatCard label="Muddati o'tgan" value={`${sm.late} ta`} hint={sm.lateBeton ? `tayyor bo'lmagan · shundan ${sm.lateBeton} tasi beton` : "tayyor bo'lmagan zayavkalar"} icon={AlarmClock} tone={sm.late ? "warning" : "default"} href="/production?tab=soon#doska" />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
@@ -118,7 +118,7 @@ export function ProductionMatrixView({ data, board, filters, tab }: { data: Prod
           <Checkbox label="Bo'sh qatorlarni yashirish" checked={hideEmpty} onChange={(e) => setHideEmpty(e.target.checked)} />
         </div>
 
-        <div className="p-5 pt-3">
+        <div id="matritsa" className="scroll-mt-20 p-5 pt-3">
           {/* Tepa-pastga aylantirish sahifaga o'tsin: matritsa ekranning katta qismini egallaydi, `contain` g'ildirakni yutib qo'yardi */}
           <Sheet lang="uz" maxHeight={full ? "none" : "min(65vh, 560px)"} className="overscroll-auto overscroll-x-contain [&_table]:text-[15px] [&_tbody_td]:py-2.5 [&_tfoot_td]:py-2.5">
             <SheetHead>
@@ -231,7 +231,7 @@ function Board({ orders, filters, tab, data, sel, net, today, onClear, onPick }:
   const tabQ = tab !== "open" ? `&tab=${tab}` : "";
   return (
     <Card padded={false}>
-      <div className="px-5 pt-5">
+      <div id="doska" className="scroll-mt-20 px-5 pt-5">
         <CardHeader icon={KanbanSquare}
           title={sel ? `Zayavkalar doskasi · ${sel.name}` : "Zayavkalar doskasi"}
           description={sel ? "Shu mahsulotni olayotgan zayavkalar. Boshqa mahsulotni tanlash uchun jadvaldagi mahsulot nomini bosing." : "Mahsulotni tanlang — qaysi zayavkalar olayotgani shu yerda chiqadi. Filtr bo'yicha barcha zayavkalar (beton ham)."}

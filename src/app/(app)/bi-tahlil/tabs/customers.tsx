@@ -42,12 +42,12 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Jami mijozlar" value={String(c.total)} icon={Users} hint={`Faollik ${fmtNum(c.activityRate, 0)}%`} />
-        <Kpi label="Faol mijozlar" value={String(c.active)} icon={CheckCircle2} tone="success" hint="30 kunda buyurtma" />
-        <Kpi label="VIP mijozlar" value={String(c.vip)} icon={Star} tone="brand" hint="top 20% tushum" />
-        <Kpi label="Xavf ostida" value={String(c.atRisk)} icon={AlertTriangle} tone={c.atRisk ? "danger" : "default"} hint="At Risk + Lost" />
-        <Kpi label="O'rtacha chek" value={moneyShort(c.avgCheck)} icon={Receipt} hint="so'm / zayavka" />
-        <Kpi label="Jami qarz" value={moneyShort(c.debt)} icon={FileWarning} tone={c.debt ? "warning" : "default"} hint={`${c.debtors} ta qarzdor`} />
+        <Kpi label="Jami mijozlar" value={String(c.total)} icon={Users} hint={`Faollik ${fmtNum(c.activityRate, 0)}%`} href={`${tabHref(range, "customers")}#mijozlar-royxati`} />
+        <Kpi label="Faol mijozlar" value={String(c.active)} icon={CheckCircle2} tone="success" hint="30 kunda buyurtma" href="#rfm" />
+        <Kpi label="VIP mijozlar" value={String(c.vip)} icon={Star} tone="brand" hint="top 20% tushum" href={`${tabHref(range, "customers", { segment: "VIP" })}#mijozlar-royxati`} />
+        <Kpi label="Xavf ostida" value={String(c.atRisk)} icon={AlertTriangle} tone={c.atRisk ? "danger" : "default"} hint="At Risk + Lost" href={tabHref(range, "churn")} />
+        <Kpi label="O'rtacha chek" value={moneyShort(c.avgCheck)} icon={Receipt} hint="so'm / zayavka" href={tabHref(range, "sales")} />
+        <Kpi label="Jami qarz" value={moneyShort(c.debt)} icon={FileWarning} tone={c.debt ? "warning" : "default"} hint={`${c.debtors} ta qarzdor`} href="#qarzdorlar" />
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
@@ -62,7 +62,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="RFM segmentatsiya" info="Recency (oxirgi buyurtmadan beri kunlar), Frequency (180 kunda buyurtmalar), Monetary (180 kun tushum). VIP — top 20% tushum, Loyal — 3+ buyurtma, At Risk — 45–89 kun, Lost — 90+ kun. Eski qarzdor — ERP'da zayavkasi yo'q, tizimgacha (boshlang'ich) qarzi bor.">
+        <Panel id="rfm" title="RFM segmentatsiya" info="Recency (oxirgi buyurtmadan beri kunlar), Frequency (180 kunda buyurtmalar), Monetary (180 kun tushum). VIP — top 20% tushum, Loyal — 3+ buyurtma, At Risk — 45–89 kun, Lost — 90+ kun. Eski qarzdor — ERP'da zayavkasi yo'q, tizimgacha (boshlang'ich) qarzi bor.">
           <DonutChart data={d.segments.filter((s) => s.count).map((s) => ({ label: s.segment, value: s.count, color: s.color }))} formatValue={(v) => `${v} ta`} center={{ value: String(c.total), label: "mijoz" }} />
           <div className="mt-3 overflow-x-auto"><table className="w-full text-xs"><thead><tr><Th>Segment</Th><Th right>Mijoz</Th><Th right>180 kun tushum</Th><Th right>Qarz</Th></tr></thead><tbody>{d.segments.filter((s) => s.count).map((s) => <Tr key={s.segment}><Td><Link href={tabHref(range, "customers", { segment: s.segment })} className="hover:underline">{s.segment}</Link></Td><Td right>{s.count}</Td><Td right>{moneyShort(s.revenue)}</Td><Td right className={s.debt ? "text-red-600" : ""}>{moneyShort(s.debt)}</Td></Tr>)}</tbody></table></div>
         </Panel>

@@ -57,17 +57,17 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
         <>
           <div className="flex flex-wrap items-center gap-2 text-sm"><HelpButton topic="tenant:check" /><Health up={s.web.up} label={`ERP ${s.web.ms ?? "—"}ms`} /><Health up={s.db.ok} label={`Baza ${s.db.sizeMb ?? "—"} MB`} /><Health up={s.eco.configured ? s.eco.up : null} label={`ECO ${s.eco.ms ?? "—"}ms`} /><span className="text-slate-500">tekshirildi {ago(s.at)} · oxirgi faollik {ago(s.lastActivityAt)}</span></div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Foydalanuvchilar" value={s.users.active} hint={`24 soatda: ${s.users.active24h} · jami ${s.users.total}`} />
+            <StatCard label="Foydalanuvchilar" value={s.users.active} hint={`24 soatda: ${s.users.active24h} · jami ${s.users.total}`} href="#rollar" />
             <StatCard label="Xodimlar / mijozlar" value={`${s.employees} / ${s.customers}`} />
-            <StatCard label="Zayavka bugun / oy" value={`${s.orders.today} / ${s.orders.month}`} hint={`qoralama ${s.orders.draft} · bloklangan ${s.orders.blocked}`} />
-            <StatCard label="Aylanma / to'lov (oy)" value={moneyShort(s.orders.revenueMonth)} hint={`to'lovlar ${moneyShort(s.payments.month)}`} tone="success" />
+            <StatCard label="Zayavka bugun / oy" value={`${s.orders.today} / ${s.orders.month}`} hint={`qoralama ${s.orders.draft} · bloklangan ${s.orders.blocked}`} href={history.length > 1 ? "#tarix" : undefined} />
+            <StatCard label="Aylanma / to'lov (oy)" value={moneyShort(s.orders.revenueMonth)} hint={`to'lovlar ${moneyShort(s.payments.month)}`} tone="success" href={history.length > 1 ? "#tarix" : undefined} />
             <StatCard label="Reyslar" value={`${s.trips.today} bugun`} hint={`yo'lda: ${s.trips.onRoad}`} />
             <StatCard label="Mobil / ECO" value={`${s.users.mobileDevices} qurilma`} hint={`ECO hisobi bog'langan: ${s.users.ecoLinked}`} />
             <StatCard label="AI so'rovlar (30 kun)" value={fmtNum(s.usage.ai30d)} hint={`bildirishnoma: ${fmtNum(s.usage.notifications30d)}`} />
             <StatCard label="Amallar (24 soat)" value={fmtNum(s.usage.audit24h)} hint="audit jurnalidagi yozuvlar" />
           </div>
           <Card>
-            <div className="mb-2 text-sm font-semibold">Rollar bo&apos;yicha faol foydalanuvchilar</div>
+            <div id="rollar" className="mb-2 scroll-mt-20 text-sm font-semibold">Rollar bo&apos;yicha faol foydalanuvchilar</div>
             <div className="flex flex-wrap gap-2 text-sm">{Object.entries(s.users.byRole).map(([r, c]) => <span key={r} className="rounded-md bg-slate-100 px-2 py-0.5">{ROLE_LABELS[r as Role] ?? r}: <b>{c}</b></span>)}</div>
           </Card>
         </>
@@ -75,7 +75,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
 
       {history.length > 1 && (
         <Card>
-          <div className="mb-2 text-sm font-semibold">Oxirgi {history.length} kun</div>
+          <div id="tarix" className="mb-2 scroll-mt-20 text-sm font-semibold">Oxirgi {history.length} kun</div>
           <Table>
             <thead><tr><Th>Kun</Th><Th right>Faol (24s)</Th><Th right>Zayavka (kun)</Th><Th right>Aylanma (oy)</Th><Th right>Baza</Th><Th>ERP</Th></tr></thead>
             <tbody>{history.map((h) => { const x = h.stats as TenantStats; return (

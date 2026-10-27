@@ -41,10 +41,10 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
       <PageHeader back={{ href: "/logistika/haydovchilar", label: "Haydovchilar" }} title={d.fullName}
         subtitle={<>{d.position}{d.phone ? ` · ${d.phone}` : ""}{d.vehicle ? <> · <Link href={`/logistika/transport/${d.vehicle.id}`} className="hover:underline">{d.vehicle.plate}</Link></> : ""}{!d.isActive && " · ishdan ketgan"}</>} />
       <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Reyslar (oxirgi 60)" value={total.length} hint={`${done.length} yetkazilgan`} icon={Route} tone="brand" />
-        <StatCard label="Yetkazilgan hajm" value={qty(done.reduce((a, t) => a + Number(t.qtyM3), 0))} icon={Package} tone="success" />
-        <StatCard label="O'rtacha yetkazish" value={minutesLabel(durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : null)} icon={Timer} />
-        <StatCard label="Kechikish / muammo" value={`${late} / ${issues.length}`} hint={delays.length ? `o'z vaqtida ${Math.round(((delays.length - late) / delays.length) * 100)}%` : undefined} icon={AlertTriangle} tone={late || issues.length ? "warning" : "default"} />
+        <StatCard label="Reyslar (oxirgi 60)" value={total.length} hint={`${done.length} yetkazilgan`} icon={Route} tone="brand" href="#reyslar" />
+        <StatCard label="Yetkazilgan hajm" value={qty(done.reduce((a, t) => a + Number(t.qtyM3), 0))} icon={Package} tone="success" href="#reyslar" />
+        <StatCard label="O'rtacha yetkazish" value={minutesLabel(durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : null)} icon={Timer} href="#reyslar" />
+        <StatCard label="Kechikish / muammo" value={`${late} / ${issues.length}`} hint={delays.length ? `o'z vaqtida ${Math.round(((delays.length - late) / delays.length) * 100)}%` : undefined} icon={AlertTriangle} tone={late || issues.length ? "warning" : "default"} href="#muammolar" />
       </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5 [&>*]:min-w-0">
         <Card className="xl:col-span-2">
@@ -52,7 +52,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
           <DriverCardForm id={d.id} vehicles={vehicles} v={{ workSchedule: d.workSchedule, licenseNo: d.licenseNo, licenseCategory: d.licenseCategory, licenseExpiry: d.licenseExpiry ? isoDate(d.licenseExpiry) : "", vehicleId: d.vehicleId }} />
         </Card>
         <Card padded={false} className="xl:col-span-3">
-          <div className="px-5 pt-5"><CardHeader title="Kechikish va muammolar tarixi" icon={AlertTriangle} /></div>
+          <div id="muammolar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Kechikish va muammolar tarixi" icon={AlertTriangle} /></div>
           <Table>
             <thead><tr><Th>Sana</Th><Th>Nakladnoy</Th><Th>Muammo</Th><Th>Holat</Th></tr></thead>
             <tbody>
@@ -65,7 +65,7 @@ export default async function DriverPage({ params }: { params: Promise<{ id: str
         </Card>
       </div>
       <Card padded={false} className="mt-5">
-        <div className="px-5 pt-5"><CardHeader title="Reyslar" icon={Route} /></div>
+        <div id="reyslar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Reyslar" icon={Route} /></div>
         <Table>
           <thead><tr><Th>Nakladnoy</Th><Th>Mijoz / manzil</Th><Th>Transport</Th><Th right>Hajm</Th><Th>Bosqich</Th><Th>Reja</Th><Th>Kechikish</Th></tr></thead>
           <tbody>

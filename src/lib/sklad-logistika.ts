@@ -48,6 +48,10 @@ export type SlProduct = {
 export type SlOrder = {
   id: string; orderNo: string; customer: string; time: string | null; products: string;
   total: number; shipped: number; unit: string | null; statusLabel: string;
+  /** Batafsil ko'rinish (Mexanik → Kunlik zayavka): manzil, telefon, kim kiritgan, qatorlar, reyslar. */
+  address: string; phone: string | null; createdBy: string; volume: string; pump: boolean; note: string | null;
+  items: { code: string; name: string; qty: number; unit: string }[];
+  trips: { plate: string; driver: string; qty: number; status: string }[];
   late: boolean; problem: boolean; blocked: boolean; done: boolean;
 };
 
@@ -81,9 +85,10 @@ function loadOrders(where: object) {
     where,
     orderBy: [{ deliveryDate: "asc" }, { deliveryTime: "asc" }],
     include: {
-      customer: { select: { name: true } },
+      customer: { select: { name: true, phone: true } },
+      createdBy: { select: { fullName: true } },
       items: { include: { product: { select: { id: true, code: true, name: true, unit: true } } } },
-      trips: { select: { status: true, qtyM3: true, plannedAt: true, deliveredAt: true, closedAt: true, issues: { select: { resolvedAt: true } } } },
+      trips: { select: { status: true, qtyM3: true, plannedAt: true, deliveredAt: true, closedAt: true, issues: { select: { resolvedAt: true } }, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } } } },
     },
   });
 }
@@ -177,6 +182,9 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
       time: overdue ? `${String(o.deliveryDate.getDate()).padStart(2, "0")}.${String(o.deliveryDate.getMonth() + 1).padStart(2, "0")}` : o.deliveryTime,
       products: o.items.map((i) => i.product.code).join(", "),
       total: s.total, shipped: s.shipped, unit: units.length === 1 ? units[0]!.unit : null,
+      address: o.deliveryAddress, phone: o.customer.phone, createdBy: o.createdBy.fullName, volume: fmtUnitTotals(units), pump: o.needsPump, note: o.note,
+      items: o.items.map((i) => ({ code: i.product.code, name: i.product.name, qty: Number(i.qtyM3), unit: i.product.unit })),
+      trips: o.trips.filter((t) => t.status !== "CANCELLED").map((t) => ({ plate: t.vehicle.plate, driver: t.driver.fullName, qty: Number(t.qtyM3), status: t.status })),
       statusLabel: overdue ? "Muddati o'tgan" : o.status === "BLOCKED" ? "Bloklangan" : o.status === "DRAFT" ? "Tasdiqlanmagan" : s.done ? "Jo'natildi" : logi.status === "ON_ROAD" ? "Yo'lda" : logi.status === "LOADING" ? "Yuklanmoqda" : logi.status === "ASSIGNED" ? "Transport biriktirilgan" : "Kutilmoqda",
       late: !s.done && (overdue || logi.late), problem: logi.problem, blocked: o.status === "BLOCKED", done: s.done,
     };

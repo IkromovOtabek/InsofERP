@@ -11,6 +11,8 @@ import { Badge, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/c
 import { TripStatusBadge } from "./status";
 import { ecoEnabled } from "@/lib/eco/client";
 import { ecoLabel } from "@/lib/eco/labels";
+import { getSession } from "@/lib/auth";
+import { pathAllowed } from "@/lib/nav";
 
 /** Haydovchi ro'yxati uchun bitta qatorning yig'ma raqamlari. */
 type Totals = { all: number; delivered: number; cancelled: number; m3: number; last: Date | null };
@@ -101,24 +103,29 @@ export async function DriverTrips({ driverId }: { driverId: string }) {
   const delivered = trips.filter((t) => t.status === "DELIVERED");
   const m3 = delivered.reduce((s, t) => s + Number(t.qtyM3), 0);
   const expiry = driver.licenseExpiry ? licenseDaysLeft(driver.licenseExpiry) : null;
+  // Kartochkalar haydovchi / transport kartasiga olib boradi — faqat shu bo'lim ochiq rollarga
+  const s = await getSession();
+  const driverHref = s && pathAllowed("/logistika/haydovchilar", s.role, s.perms) ? `/logistika/haydovchilar/${driver.id}` : undefined;
+  const vehicleHref = s && driver.vehicleId && pathAllowed("/logistika/transport", s.role, s.perms) ? `/logistika/transport/${driver.vehicleId}` : undefined;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Haydovchi" value={<span className="text-base">{driver.fullName}</span>} hint={driver.phone ?? driver.position} icon={Phone} />
-        <StatCard label="Texnikasi" value={<span className="text-base">{driver.vehicle?.plate ?? "—"}</span>} hint={driver.vehicle?.capacityM3 ? `${qty(driver.vehicle.capacityM3)} m³` : "biriktirilmagan"} icon={Truck} />
-        <StatCard label="Jami reys" value={trips.length} hint={`${delivered.length} yetkazilgan · ${trips.filter((t) => t.status === "CANCELLED").length} bekor`} icon={Route} />
+        <StatCard label="Haydovchi" value={<span className="text-base">{driver.fullName}</span>} hint={driver.phone ?? driver.position} icon={Phone} href={driverHref} />
+        <StatCard label="Texnikasi" value={<span className="text-base">{driver.vehicle?.plate ?? "—"}</span>} hint={driver.vehicle?.capacityM3 ? `${qty(driver.vehicle.capacityM3)} m³` : "biriktirilmagan"} icon={Truck} href={vehicleHref} />
+        <StatCard label="Jami reys" value={trips.length} hint={`${delivered.length} yetkazilgan · ${trips.filter((t) => t.status === "CANCELLED").length} bekor`} icon={Route} href="#nakladnoylar" />
         <StatCard
           label="Guvohnoma"
           value={<span className="text-base">{driver.licenseNo ?? "—"}</span>}
           hint={driver.licenseExpiry ? `${driver.licenseCategory ? driver.licenseCategory + " · " : ""}${date(driver.licenseExpiry)} gacha` : driver.licenseCategory ?? "kiritilmagan"}
           icon={AlertTriangle}
           tone={expiry !== null && expiry < 30 ? "danger" : "default"}
+          href={driverHref}
         />
       </div>
 
       <Card padded={false}>
-        <div className="px-5 pt-5">
+        <div id="nakladnoylar" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title="Nakladnoylar" description={`Yetkazilgan jami ${qty(m3)} m³. Eng yangisi tepada.`} icon={Route} />
         </div>
         <Table>

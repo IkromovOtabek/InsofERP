@@ -121,12 +121,13 @@ export default async function RasxodPage({ searchParams }: { searchParams: Promi
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Qatorlar" value={fmtNum(t.count)} hint={period.label} />
-        <StatCard label="Summa" value={money(t.sum)} hint="Miqdor × Narx" />
-        <StatCard label="QQS" value={money(t.vat)} hint={vatPayer ? "oxirgi kirim stavkasi bo'yicha" : "0 — QQS to'lovchisi emas, narx QQS bilan"} />
-        <StatCard label="Jami" value={money(t.total)} tone="brand" hint="Summa + QQS" />
+        <StatCard label="Qatorlar" value={fmtNum(t.count)} hint={period.label} href="#jurnal" />
+        <StatCard label="Summa" value={money(t.sum)} hint="Miqdor × Narx" href="#jurnal" />
+        <StatCard label="QQS" value={money(t.vat)} hint={vatPayer ? "oxirgi kirim stavkasi bo'yicha" : "0 — QQS to'lovchisi emas, narx QQS bilan"} href="#jurnal" />
+        <StatCard label="Jami" value={money(t.total)} tone="brand" hint="Summa + QQS" href="#jurnal" />
       </div>
 
+      <div id="jurnal" className="scroll-mt-20" />
       <Sheet>
         <SheetHead>
           <tr>

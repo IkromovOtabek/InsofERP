@@ -52,7 +52,7 @@ export async function HrHome() {
         <StatCard label="Bugun keldi" value={String(present)} hint={active ? `${Math.round((present / active) * 100)}% xodim` : "—"} icon={UserCheck} tone="success" href="/otdel-kadr?tab=davomat" />
         <StatCard label="Kelmadi (sababsiz)" value={String(absent)} hint={`ta'til/kasal/dam: ${marked - present - absent}`} icon={UserX} tone={absent ? "danger" : "default"} href="/otdel-kadr?tab=davomat" />
         <StatCard label="Belgilanmagan" value={String(unmarked)} hint="davomat hali qo'yilmagan" icon={CalendarCheck} tone={unmarked ? "warning" : "default"} href="/otdel-kadr?tab=davomat" />
-        <StatCard label="Muddati yaqin hujjat" value={String(licenses.length + ending.length)} hint={`${licenses.length} guvohnoma · ${ending.length} shartnoma`} icon={AlertTriangle} tone={licenses.length + ending.length ? "warning" : "default"} />
+        <StatCard label="Muddati yaqin hujjat" value={String(licenses.length + ending.length)} hint={`${licenses.length} guvohnoma · ${ending.length} shartnoma`} icon={AlertTriangle} tone={licenses.length + ending.length ? "warning" : "default"} href={licenses.length || !ending.length ? "#guvohnomalar" : "#shartnomalar"} />
       </div>
 
       <Card className="py-3">
@@ -80,7 +80,7 @@ export async function HrHome() {
           </Card>
         </Section>
 
-        <Section title="Haydovchilik guvohnomalari" className="mt-0">
+        <Section id="guvohnomalar" title="Haydovchilik guvohnomalari" className="mt-0">
           <Card>
             {licenses.length === 0 ? <div className="text-sm text-emerald-700">30 kun ichida muddati tugaydigan guvohnoma yo&apos;q.</div> : (
               <ul className="space-y-2 text-sm">
@@ -95,7 +95,7 @@ export async function HrHome() {
           </Card>
         </Section>
 
-        <Section title="Muddatli shartnomalar" className="mt-0">
+        <Section id="shartnomalar" title="Muddatli shartnomalar" className="mt-0">
           <Card>
             {ending.length === 0 ? <div className="text-sm text-emerald-700">30 kun ichida tugaydigan muddatli shartnoma yo&apos;q.</div> : (
               <ul className="space-y-2 text-sm">

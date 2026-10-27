@@ -26,14 +26,14 @@ export default async function ProcurementReportPage({ searchParams }: { searchPa
       </form>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-5">
-        <StatCard label="Xarid summasi" value={`${moneyShort(t.purchase)} so'm`} hint="kirim hujjatlari bo'yicha" icon={ShoppingCart} tone="brand" />
-        <StatCard label="Talablar" value={`${t.requests} ta`} hint={`${t.done} bajarildi · ${t.rejected} bekor`} icon={PackageCheck} tone="info" />
-        <StatCard label="O'rtacha yetkazish" value={t.avgLead == null ? "—" : `${fmtNum(t.avgLead, 1)} kun`} hint="talabdan kirimgacha" icon={Clock} tone={t.avgLead != null && t.avgLead > 5 ? "warning" : "success"} />
-        <StatCard label="Kechikkan xaridlar" value={`${t.lateCount} ta`} hint="kerak sana / ETA dan keyin keldi" icon={AlertTriangle} tone={t.lateCount ? "danger" : "success"} />
-        <StatCard label="Muammolar" value={`${t.incidents} ta`} hint="davrda qayd qilingan" icon={XCircle} tone={t.incidents ? "warning" : "success"} />
+        <StatCard label="Xarid summasi" value={`${moneyShort(t.purchase)} so'm`} hint="kirim hujjatlari bo'yicha" icon={ShoppingCart} tone="brand" href="#yetkazib-beruvchilar" />
+        <StatCard label="Talablar" value={`${t.requests} ta`} hint={`${t.done} bajarildi · ${t.rejected} bekor`} icon={PackageCheck} tone="info" href="/snabjeniye" />
+        <StatCard label="O'rtacha yetkazish" value={t.avgLead == null ? "—" : `${fmtNum(t.avgLead, 1)} kun`} hint="talabdan kirimgacha" icon={Clock} tone={t.avgLead != null && t.avgLead > 5 ? "warning" : "success"} href="#yetkazib-beruvchilar" />
+        <StatCard label="Kechikkan xaridlar" value={`${t.lateCount} ta`} hint="kerak sana / ETA dan keyin keldi" icon={AlertTriangle} tone={t.lateCount ? "danger" : "success"} href="#yetkazib-beruvchilar" />
+        <StatCard label="Muammolar" value={`${t.incidents} ta`} hint="davrda qayd qilingan" icon={XCircle} tone={t.incidents ? "warning" : "success"} href="#yetkazib-beruvchilar" />
       </div>
 
-      <Section title="Yetkazib beruvchilar">
+      <Section id="yetkazib-beruvchilar" title="Yetkazib beruvchilar">
         <Table>
           <thead><tr><Th>Yetkazuvchi</Th><Th right>Xarid summasi</Th><Th right>Kirimlar</Th><Th right>Ta&apos;minot buyurtmalari</Th><Th right>O&apos;rtacha muddat</Th><Th right>Kechikish</Th><Th right>Muammo</Th></tr></thead>
           <tbody>
