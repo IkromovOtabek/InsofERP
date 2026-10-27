@@ -237,12 +237,15 @@ case "$OFFSITE" in
   rclone)
     CURRENT_STEP="rclone"
     [ -n "${RCLONE_REMOTE:-}" ] || { fail "RCLONE_REMOTE berilmagan"; exit 1; }
+    # Masofadagi eskilar (standart 30 kun) YUKLASHDAN OLDIN o'chiriladi: joy to'lsa yuklash yiqiladi va keyin tozalash
+    # hech qachon ishlamay qoladi (2026-10-25 da Google Drive kvotasi shunday qotib qolgan). Mahalliy nusxalar baribir bor.
+    # --drive-use-trash=false: Drive'da o'chirilgani savatga tushib, kvotani band qilib turmasin (boshqa remote'larga ta'sirsiz).
+    rclone delete "$RCLONE_REMOTE" --min-age "${RCLONE_KEEP_DAYS:-30}d" --drive-use-trash=false \
+      && rclone rmdirs "$RCLONE_REMOTE" --leave-root --drive-use-trash=false || log "⚠ rclone: eskilarni tozalashda xato"
     log "→ rclone: $RCLONE_REMOTE/$STAMP"
     if rclone copy "$DEST" "$RCLONE_REMOTE/$STAMP" --transfers 2 --retries 3 \
       && rclone check "$DEST" "$RCLONE_REMOTE/$STAMP" --one-way; then
       log "  ok"
-      # Masofadagi eskilar (standart 30 kun) — faqat muvaffaqiyatli yuklashdan keyin
-      rclone delete "$RCLONE_REMOTE" --min-age "${RCLONE_KEEP_DAYS:-30}d" && rclone rmdirs "$RCLONE_REMOTE" --leave-root || log "⚠ rclone: eskilarni tozalashda xato"
     else
       fail "rclone: yuklash yoki tekshiruv xato"
     fi
@@ -269,8 +272,11 @@ fi
 
 # ── 4. Mahalliy eskilarini tozalash (faqat to'liq nusxalar, joriy saqlanadi) ──
 CURRENT_STEP="tozalash"
-find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' -mtime "+$KEEP_DAYS" -exec rm -rf {} +
-find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.partial' -mtime +1 -exec rm -rf {} +
+# O'chira olmasa (masalan, qo'lda `sudo` bilan olingan root nusxa) — skript shu yerda uzilmasin, sababi xato ro'yxatiga tushsin
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' -mtime "+$KEEP_DAYS" -exec rm -rf {} + \
+  || fail "tozalash: ba'zi eski nusxalarni o'chirib bo'lmadi (egasini tekshiring: ls -la $OUT_DIR)"
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.partial' -mtime +1 -exec rm -rf {} + \
+  || fail "tozalash: eski .partial papkalarni o'chirib bo'lmadi"
 log "→ $KEEP_DAYS kundan eskilari tozalandi. Jami: $(find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??_????*' ! -name '*.partial' | wc -l) ta"
 
 if [ "${#FAILURES[@]}" -gt 0 ]; then
