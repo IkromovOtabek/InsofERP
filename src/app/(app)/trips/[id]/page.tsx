@@ -91,7 +91,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       <PageHeader
         back={{ href: "/trips", label: "Reyslar" }}
         title={`Nakladnoy ${t.deliveryNoteNo}`}
-        subtitle={<>Zayavka {t.order.orderNo} · <CustomerName name={t.order.customer.name} blacklisted={blacklisted} contracted={marks.contract.has(t.order.customerId)} href={`/customers/${t.order.customerId}`} /></>}
+        subtitle={<><CustomerName name={t.order.customer.name} blacklisted={blacklisted} contracted={marks.contract.has(t.order.customerId)} href={`/customers/${t.order.customerId}`} /></>}
         action={
           <>
             <LinkButton href={`/trips/${id}/print`} variant="secondary"><Printer size={16} /> Chop etish</LinkButton>

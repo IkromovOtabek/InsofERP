@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { InvoiceForm } from "../invoice-form";
 import { unitLabel, soleUnit } from "@/lib/unit";
 import { orderTotal } from "@/lib/order-total";
+import { orderLabel } from "@/lib/format";
 
 export default async function NewInvoice({ searchParams }: { searchParams: Promise<{ orderId?: string }> }) {
   await requireRoles(["ACCOUNTING", "SALES"], { module: "sales", actions: ["invoice"] });
@@ -26,7 +27,7 @@ export default async function NewInvoice({ searchParams }: { searchParams: Promi
     const deliveredSum = prices.length === 1 ? Math.min(totalSum, deliveredM3 * prices[0]) : null;
     // Hajm zayavkadagi mahsulot birligida ko'rsatiladi (beton m³, ustun/blok dona)
     const u = soleUnit(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 })));
-    return { id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), totalM3, deliveredM3, deliveredSum, totalSum, unit: unitLabel(u ?? "m3"), mixed: prices.length > 1 };
+    return { id: o.id, label: orderLabel(markedName(o.customer.name, o.customerId, marks), o.deliveryDate), totalM3, deliveredM3, deliveredSum, totalSum, unit: unitLabel(u ?? "m3"), mixed: prices.length > 1 };
   });
   return (
     <div>

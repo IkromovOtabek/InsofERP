@@ -111,7 +111,7 @@ async function produced(r: DashRange, byShift = false): Promise<MobileDetail> {
       ...(byDay.length ? [section("Kunlar bo'yicha", byDay.map(([iso, list]) => ({ id: `d-${iso}`, title: iso.split("-").reverse().join("."), subtitle: `${list.length} zames`, right: total(list) })), { icon: "calendar" })] : []),
       section("Zameslar", batches.slice(0, 40).map((b) => ({
         id: b.id, title: `${b.batchNo} · ${b.product.name}`,
-        subtitle: `${day(b.date)} ${hhmm(b.date)} · ${b.shift}-smena · ${b.order ? `${b.order.orderNo} ${b.order.customer.name}` : "Omborga"} · ${b.createdBy.fullName}`,
+        subtitle: `${day(b.date)} ${hhmm(b.date)} · ${b.shift}-smena · ${b.order ? b.order.customer.name : "Omborga"} · ${b.createdBy.fullName}`,
         right: inUnit(sum(b.qtyM3), b.product.unit),
       })), { target: "production", empty: "Bu davrda zames qayd qilinmagan" }),
     ],
@@ -447,7 +447,7 @@ async function stock(r: DashRange | null = null): Promise<MobileDetail> {
     status: gap.length ? "Zayavkaga yetmaydi" : low.length ? "Kam qolgan" : "Yetarli",
     fields: [
       f("Zayavkalarga yetmaydi", gap.length ? listText(gap, (m) => m.orderGap) : "hammasi yetadi", gap.length ? "danger" : "success"),
-      ...(orderRows.length ? [f("Ta'sir qiladigan zayavkalar", `${orderRows.length} ta: ${orderRows.slice(0, 5).map((o) => o.orderNo).join(", ")}${orderRows.length > 5 ? "…" : ""}`, "danger" as Tone)] : []),
+      ...(orderRows.length ? [f("Ta'sir qiladigan zayavkalar", `${orderRows.length} ta: ${orderRows.slice(0, 5).map((o) => o.customer).join(", ")}${orderRows.length > 5 ? "…" : ""}`, "danger" as Tone)] : []),
       f("Minimal qoldiqdan kam / tez tugaydi", low.length ? low.map((m) => (m.need > 0 ? `${m.name} ${u(m.need, m.unit)} kam` : `${m.name} ${days(m.days)}`)).join(", ") : "yo'q", low.length ? "warning" : "success"),
       f("Olib kelish kerak (jami)", list.some((m) => m.need > 0) ? listText(list.filter((m) => m.need > 0), (m) => m.need) : "hech narsa", list.some((m) => m.need > 0) ? "warning" : "success"),
       f("Hisob", "«zayavkalarga» — tasdiqlangan zayavkalarning hali qilinmagan qismi × retsept; «kam» — zayavkaga va minimal qoldiqqa yetishi uchun yetmayotgani; kunlik sarf — 30 kun o'rtachasi"),
@@ -455,7 +455,7 @@ async function stock(r: DashRange | null = null): Promise<MobileDetail> {
     sections: [
       section(`Zayavkaga yetmaydi · ${gap.length}`, gap.map((m) => ({ ...row(m), right: `${u(m.orderGap, m.unit)} kam`, tone: "danger" as Tone })), { target: "stock", empty: "Hamma zayavkaga xomashyo yetadi", icon: "triangle-alert" }),
       section(`Zayavkalar bo'yicha · ${orderRows.length}`, orderRows.map((o) => ({
-        id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `kerak: ${o.items.join(", ")}`, right: day(o.date), tone: "danger" as Tone,
+        id: o.id, title: o.customer, subtitle: `kerak: ${o.items.join(", ")}`, right: day(o.date), tone: "danger" as Tone,
       })), { target: "orders", empty: "Xomashyo yetmaydigan zayavka yo'q", icon: "clipboard-list" }),
       section(`Minimal qoldiqdan kam / tez tugaydi · ${low.length}`, low.map(row), { target: "stock", empty: "Yo'q", icon: "layers" }),
       section(rest > 0 ? `Yetarli (yana ${rest} ta Skladda)` : "Yetarli", ok.map(row), { target: "stock", empty: "—", icon: "layers" }),
@@ -498,7 +498,7 @@ function reportSections(r: ReportSnapshot): HomeSection[] {
         right: x.resolved ? "hal qilindi" : "ochiq", tone: (x.resolved ? "success" : "danger") as Tone,
       })), opts("Muammo belgilanmagan", "triangle-alert")),
     ] : []),
-    section("Yuklash", r.load.orders.map((o) => ({ id: o.id ? `orders:${o.id}` : none(`o${o.orderNo}`), title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.time ?? "—"} · ${o.items}`, right: o.left > 0 ? `qoldi ${num(o.left)}` : "✓", tone: o.left > 0 ? "warning" : "success" })), opts("Bugunga zayavka yo'q", "truck")),
+    section("Yuklash", r.load.orders.map((o) => ({ id: o.id ? `orders:${o.id}` : none(`o${o.orderNo}`), title: o.customer, subtitle: `${o.time ?? "—"} · ${o.items}`, right: o.left > 0 ? `qoldi ${num(o.left)}` : "✓", tone: o.left > 0 ? "warning" : "success" })), opts("Bugunga zayavka yo'q", "truck")),
     section("Brigadalar", r.brigades.map((b, i) => ({ id: b.id ? repId.brigade(r.iso, b.id, cut) : none(`b${i}`), title: b.name, subtitle: b.today || "qayd yo'q", right: b.overdue ? `${b.overdue} kechikkan` : `${b.open} ochiq`, tone: b.overdue ? "danger" : b.today ? "success" : undefined })), opts("Faol brigada yo'q", "hard-hat")),
     section("Brak", r.defects.map((d, i) => ({ id: d.id ? repId.defect(d.id) : none(`d${i}`), title: `${d.code} · ${d.reason}`, subtitle: `${d.time} · ${d.brigade ?? "—"} · ${d.by}`, right: `${num(d.qty)} ${unitLabel(d.unit)}`, tone: "danger" as Tone })), opts("Brak yo'q", "triangle-alert")),
     section("Davomat", [

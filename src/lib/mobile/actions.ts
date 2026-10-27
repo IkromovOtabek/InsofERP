@@ -888,7 +888,6 @@ export async function orderReceipt(id: string, blocked: boolean): Promise<Receip
   const stock = o.kind === "STOCK";
   const extras = [o.needsDelivery ? "dastavka" : "o'zi olib ketadi", o.needsPump ? "nasos" : null, o.isUrgent ? "shoshilinch" : null].filter(Boolean).join(" · ");
   const rows: Receipt["rows"] = [
-    { label: "Zayavka", value: o.orderNo, copy: true },
     ...(stock ? [] : [{ label: "Mijoz", value: o.customer.name }]),
     { label: "Mahsulot", value: o.items.map((i) => `${i.product.code} · ${fmtNum(Number(i.qtyM3), 1)} m³`).join(", ") || "—" },
     { label: "Yetkazish", value: deliveryAt(o.deliveryDate, o.deliveryTime) },

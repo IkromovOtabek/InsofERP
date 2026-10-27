@@ -184,13 +184,13 @@ export async function cancelPaymentRequestTx(tx: Tx, orderId: string, userId: st
 /** Yangi so'rov: naqd — kassirga, perechisleniye — buxgalterga (ECO push + veb kabinetdagi ro'yxat). */
 export function notifyNewPaymentRequest(id: string, exceptUserId?: string) {
   notifyAfter(async () => {
-    const r = await db.paymentRequest.findUnique({ where: { id }, include: { order: { select: { orderNo: true } }, customer: { select: { name: true } } } });
+    const r = await db.paymentRequest.findUnique({ where: { id }, include: { customer: { select: { name: true } } } });
     if (!r) return;
     const sum = money(Number(r.amount));
     const due = date(r.dueDate);
     const n = r.method === "CASH"
-      ? { title: `Kassaga pul keladi — ${sum}`, body: `${r.order.orderNo} · ${r.customer.name} naqd bosh to'lov olib keladi (yetkazish ${due}). Pul qo'lingizga tekkach «Pul qabul qilish»da bir bosishda qabul qiling.` }
-      : { title: `Bankka tushum kutilmoqda — ${sum}`, body: `${r.order.orderNo} · ${r.customer.name} perechisleniye qiladi (yetkazish ${due}). Hisob raqamga tushgach «Pul qabul qilish»da tasdiqlang — bank qoldig'i va mijoz qarzi o'zi yangilanadi.` };
+      ? { title: `Kassaga pul keladi — ${sum}`, body: `${r.customer.name} naqd bosh to'lov olib keladi (yetkazish ${due}). Pul qo'lingizga tekkach «Pul qabul qilish»da bir bosishda qabul qiling.` }
+      : { title: `Bankka tushum kutilmoqda — ${sum}`, body: `${r.customer.name} perechisleniye qiladi (yetkazish ${due}). Hisob raqamga tushgach «Pul qabul qilish»da tasdiqlang — bank qoldig'i va mijoz qarzi o'zi yangilanadi.` };
     await notifyRoles([METHOD_ROLE[r.method]], { type: "PAYMENT_REQUEST", ...n, link: { key: "payreq", id: r.id } }, { except: exceptUserId });
   });
 }
@@ -207,7 +207,7 @@ export type ReceiveInput = { requestId: string; cashAccountId: string; amount: n
 export async function receivePaymentRequest(input: ReceiveInput, s: { userId: string; role: Role; perms?: Perms | null }): Promise<{ error?: string; status?: PaymentRequestStatus | null; docNo?: string }> {
   const r = await db.paymentRequest.findUnique({
     where: { id: input.requestId },
-    include: { order: { select: { id: true, orderNo: true, createdById: true, invoices: { where: { status: { in: ["OPEN", "PARTIAL"] } }, orderBy: { date: "asc" }, select: { id: true } } } }, customer: { select: { name: true } } },
+    include: { order: { select: { id: true, createdById: true, invoices: { where: { status: { in: ["OPEN", "PARTIAL"] } }, orderBy: { date: "asc" }, select: { id: true } } } }, customer: { select: { name: true } } },
   });
   if (!r) return { error: "So'rov topilmadi" };
   if (!methodsFor(s).includes(r.method)) return { error: r.method === "CASH" ? "Naqd pulni Kassa xodimi qabul qiladi" : "Perechisleniyeni Buxgalter tasdiqlaydi" };
@@ -227,14 +227,14 @@ export async function receivePaymentRequest(input: ReceiveInput, s: { userId: st
     await notifyUsers([r.order.createdById].filter((u) => u !== s.userId), {
       type: "PAYMENT_REQUEST_RECEIVED",
       title: `Pul qabul qilindi — ${money(r2(input.amount))}`,
-      body: `${r.order.orderNo} · ${r.customer.name} · ${r.method === "CASH" ? "kassaga naqd" : "bankka perechisleniye"} · ${after?.status === "RECEIVED" ? "bosh to'lov to'liq yopildi, reys ochish mumkin" : `qolgan bosh to'lov ${money(left)}`}`,
+      body: `${r.customer.name} · ${r.method === "CASH" ? "kassaga naqd" : "bankka perechisleniye"} · ${after?.status === "RECEIVED" ? "bosh to'lov to'liq yopildi, reys ochish mumkin" : `qolgan bosh to'lov ${money(left)}`}`,
       link: { key: "orders", id: r.orderId },
     });
     // Bosh to'lov to'liq yopildi — reys ochish mumkin; reysni logistika ochadi, u ham bilsin
     if (after?.status === "RECEIVED") {
       await notifyRoles(["LOGISTICS"], {
         type: "PAYMENT_REQUEST_RECEIVED",
-        title: `Bosh to'lov yopildi — ${r.order.orderNo}`,
+        title: "Bosh to'lov yopildi",
         body: `${r.customer.name} · reys ochish mumkin`,
         link: { key: "orders", id: r.orderId },
       }, { except: s.userId });

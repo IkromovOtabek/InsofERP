@@ -28,7 +28,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
     where: { id },
     include: {
       drivers: { where: { isActive: true }, select: { id: true, fullName: true } },
-      trips: { orderBy: { createdAt: "desc" }, take: 30, include: { order: { select: { orderNo: true, deliveryAddress: true, customer: { select: { name: true } } } }, driver: { select: { fullName: true } } } },
+      trips: { orderBy: { createdAt: "desc" }, take: 30, include: { order: { select: { deliveryAddress: true, customer: { select: { name: true } } } }, driver: { select: { fullName: true } } } },
       fuelLogs: { orderBy: { date: "desc" }, take: 30, include: { driver: { select: { fullName: true } } } },
       expenses: { orderBy: { date: "desc" }, take: 30 },
       services: { orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 50, include: { createdBy: { select: { fullName: true } } } },
@@ -171,7 +171,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
             {v.trips.length === 0 && <Empty text="Reys yo'q" />}
             {v.trips.map((t) => (
               <Tr key={t.id}>
-                <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} plain={tripsClosed} /><div className="text-xs text-slate-500">{t.order.orderNo}</div></Td>
+                <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} plain={tripsClosed} /></Td>
                 <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-xs truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                 <Td className="text-sm">{t.driver.fullName}</Td>
                 <Td right className="tabular">{qty(t.qtyM3)}</Td>

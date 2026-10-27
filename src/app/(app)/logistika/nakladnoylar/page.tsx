@@ -27,7 +27,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
       ...(sp.q ? { OR: [{ deliveryNoteNo: { contains: sp.q, mode: "insensitive" } }, { order: { customer: { name: { contains: sp.q, mode: "insensitive" } } } }, { vehicle: { plate: { contains: sp.q, mode: "insensitive" } } }] } : {}),
     },
     include: {
-      order: { select: { orderNo: true, deliveryAddress: true, customer: { select: { name: true } }, items: { select: { product: { select: { name: true, code: true, unit: true } } } } } },
+      order: { select: { deliveryAddress: true, customer: { select: { name: true } }, items: { select: { product: { select: { name: true, code: true, unit: true } } } } } },
       vehicle: { select: { plate: true } }, driver: { select: { fullName: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -50,7 +50,7 @@ export default async function WaybillsPage({ searchParams }: { searchParams: Pro
               const phase = tripPhase(t);
               return (
                 <Tr key={t.id} className={t.status === "CANCELLED" ? "opacity-50" : ""}>
-                  <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link><div className="text-xs text-slate-500">{t.order.orderNo}</div></Td>
+                  <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link></Td>
                   <Td><div className="text-sm">{t.order.customer.name}</div><div className="max-w-[14rem] truncate text-xs text-slate-500">{t.order.deliveryAddress}</div></Td>
                   <Td className="text-sm"><span className="tabular">{t.vehicle.plate}</span><div className="text-xs text-slate-500">{t.driver.fullName}</div></Td>
                   <Td className="text-sm">{p?.code ?? p?.name ?? "—"}</Td>

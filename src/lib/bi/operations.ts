@@ -102,7 +102,7 @@ export async function operationsTab(r: Range, gran: Gran) {
 
   // Ogohlantirishlar
   const signals: { level: "danger" | "warning" | "info"; title: string; text: string; href?: string }[] = [];
-  if (overdue.length) signals.push({ level: "danger", title: `${overdue.length} ta zayavka muddati o'tgan`, text: overdue.slice(0, 3).map((o) => `${o.orderNo} (${o.customer})`).join(", "), href: "/orders" });
+  if (overdue.length) signals.push({ level: "danger", title: `${overdue.length} ta zayavka muddati o'tgan`, text: overdue.slice(0, 3).map((o) => o.customer).join(", "), href: "/orders" });
   const idleMixers = mixers.filter((m) => m.idle);
   if (idleMixers.length) signals.push({ level: "warning", title: `${idleMixers.length} ta mikser 7 kundan beri reys qilmagan`, text: idleMixers.map((m) => m.plate).join(", "), href: "/drivers" });
   if (late.length) signals.push({ level: "warning", title: `${late.length} ta reys kechikib yetkazilgan`, text: "Yetkazish sanasidan keyin topshirilgan", href: "/trips" });

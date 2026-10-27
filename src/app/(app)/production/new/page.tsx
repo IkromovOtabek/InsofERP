@@ -7,6 +7,7 @@ import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
 import { BatchForm, type OpenTask } from "../batch-form";
 import { unitLabel } from "@/lib/unit";
+import { orderLabel } from "@/lib/format";
 
 export default async function NewBatch() {
   const s = await requirePage("/production");
@@ -25,14 +26,14 @@ export default async function NewBatch() {
     // Beton (m³) bunga kirmaydi — uning yagona kirim yo'li shu zames.
     db.brigadeTask.findMany({
       where: { status: { in: ["NEW", "IN_PROGRESS"] }, orderItem: { product: { unit: { not: "m3" } } } },
-      include: { brigade: { select: { name: true } }, order: { select: { orderNo: true } }, orderItem: { select: { productId: true, product: { select: { unit: true } } } } },
+      include: { brigade: { select: { name: true } }, order: { select: { deliveryDate: true, dateUnknown: true, customer: { select: { name: true } } } }, orderItem: { select: { productId: true, product: { select: { unit: true } } } } },
       orderBy: { createdAt: "desc" },
     }),
   ]);
   const openTasks: Record<string, OpenTask[]> = {};
   for (const t of tasks) {
     (openTasks[t.orderItem.productId] ??= []).push({
-      taskNo: t.taskNo, brigade: t.brigade.name, orderNo: t.order.orderNo,
+      taskNo: t.taskNo, brigade: t.brigade.name, order: orderLabel(t.order.customer.name, t.order.dateUnknown ? null : t.order.deliveryDate),
       qty: Number(t.qty), doneQty: Number(t.doneQty), unit: unitLabel(t.orderItem.product.unit),
     });
   }
@@ -52,7 +53,7 @@ export default async function NewBatch() {
     return [...byProduct].map(([productId, x]) => {
       const done = o.batches.filter((b) => b.productId === productId).reduce((s, b) => s + Number(b.qtyM3), 0);
       return {
-        key: `${o.id}~${productId}`, id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks),
+        key: `${o.id}~${productId}`, id: o.id, label: orderLabel(markedName(o.customer.name, o.customerId, marks), o.dateUnknown ? null : o.deliveryDate),
         productId, product: x.name, remainingM3: Math.max(0, Math.round((x.total - done) * 1000) / 1000), unit: unitLabel(x.unit),
       };
     });

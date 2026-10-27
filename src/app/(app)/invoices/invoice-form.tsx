@@ -11,7 +11,7 @@ import { MoneyInput } from "@/components/money-input";
  * unit — zayavkadagi mahsulot birligi ("m³", "dona"…); aralash birlikda m³ olinadi.
  * deliveredSum — null: turli narxli ko'p mahsulotli zayavka, yetkazilgan summani aniqlab bo'lmaydi.
  */
-type Order = { id: string; orderNo: string; customer: string; deliveredM3: number; totalM3: number; deliveredSum: number | null; totalSum: number; unit: string; mixed: boolean };
+type Order = { id: string; label: string; deliveredM3: number; totalM3: number; deliveredSum: number | null; totalSum: number; unit: string; mixed: boolean };
 
 /** Taklif qilinadigan summa: yetkazilgani bo'lsa shu, aks holda zayavka jami. */
 const suggest = (o: Order) => String(o.deliveredSum || o.totalSum);
@@ -28,7 +28,7 @@ export function InvoiceForm({ orders, preselect }: { orders: Order[]; preselect?
       <FormError error={state?.error} />
       <Field label="Zayavka *">
         <Select name="orderId" value={orderId} onChange={(e) => { setOrderId(e.target.value); const x = orders.find((y) => y.id === e.target.value); if (x) setAmount(suggest(x)); }}>
-          {orders.map((x) => <option key={x.id} value={x.id}>{x.orderNo} · {x.customer}</option>)}
+          {orders.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
         </Select>
       </Field>
       {o && (

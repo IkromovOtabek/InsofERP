@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
 
   if (sp.type === "sales") {
     name = "sotuv";
-    rows = [["Sana", "Zayavka", "Holat", "Mijoz", "Marka", "Mahsulot", "Miqdor", "Birlik", "Narx", "Bazaviy narx", "Summa", "Tannarx", "Foyda"],
-      ...(await salesExport(r)).map((x) => [dateTime(x.date), x.orderNo, x.status, x.customer, x.code, x.product, x.qty, x.unit, x.price, x.basePrice, x.revenue, x.cost, x.revenue - x.cost])];
+    rows = [["Sana", "Holat", "Mijoz", "Marka", "Mahsulot", "Miqdor", "Birlik", "Narx", "Bazaviy narx", "Summa", "Tannarx", "Foyda"],
+      ...(await salesExport(r)).map((x) => [dateTime(x.date), x.status, x.customer, x.code, x.product, x.qty, x.unit, x.price, x.basePrice, x.revenue, x.cost, x.revenue - x.cost])];
   } else if (sp.type === "customers") {
     name = "mijozlar";
     rows = [["Mijoz", "Telefon", "Segment", "Xavf", "Xavf bali", "Oxirgi buyurtma", "Necha kun", "Buyurtmalar (180 kun)", "Sotuv (180 kun)", "Umumiy sotuv", "Qarz", "Muddati o'tgan", "Kutilayotgan yo'qotish", "ABC", "Harakat"],
@@ -51,8 +51,8 @@ export async function GET(req: NextRequest) {
   } else if (sp.type === "returns") {
     name = "bekor";
     const d = await returnsTab(r, "day", { page: 1, size: 100000 });
-    rows = [["Sana", "Zayavka", "Mijoz", "Sotuvchi", "Marka", "Miqdor", "Birlik", "Narx", "Summa", "Yo'qotilgan foyda", "Sabab"],
-      ...d.list.rows.map((x) => [dateTime(x.date), x.orderNo, x.customer, x.seller, x.code, x.qty, x.unit, x.price, x.revenue, Math.round(x.margin), x.reason])];
+    rows = [["Sana", "Mijoz", "Sotuvchi", "Marka", "Miqdor", "Birlik", "Narx", "Summa", "Yo'qotilgan foyda", "Sabab"],
+      ...d.list.rows.map((x) => [dateTime(x.date), x.customer, x.seller, x.code, x.qty, x.unit, x.price, x.revenue, Math.round(x.margin), x.reason])];
   } else if (sp.type === "agents") {
     name = "sotuvchilar";
     const d = await agentsTab(r);

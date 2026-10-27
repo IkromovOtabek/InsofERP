@@ -49,8 +49,7 @@ function Timeline({ orders, now, isToday }: { orders: DashOrder[]; now: Date; is
           {orders.map((o) => (
             <div key={o.id} className="flex items-center gap-2 py-1.5">
               <div className="w-54 shrink-0 truncate pr-2 text-xs">
-                <Link href={`/orders/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.orderNo}</Link>
-                <span className="text-slate-500"> · {o.customer}</span>
+                <Link href={`/orders/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.customer}</Link>
                 <div className="flex items-center gap-1 text-[11px] text-slate-500">
                   {o.deliveryTime ?? "soat yo'q"} · {qty(o.delivered)}/{qty(o.total)} {unitShort(o.unit)}
                   {o.isUrgent && <span className="font-semibold text-red-600">· shoshilinch</span>}
@@ -235,7 +234,7 @@ export async function LogisticsHome({ day }: { day?: Date }) {
             <ul className="space-y-2 text-sm">
               {d.pumps.map((p) => (
                 <li key={p.orderId} className="flex items-center justify-between gap-2">
-                  <span><Link href={`/orders/${p.orderId}`} className="font-medium hover:underline">{p.orderNo}</Link> <span className="text-slate-500">· {p.customer}</span></span>
+                  <Link href={`/orders/${p.orderId}`} className="font-medium hover:underline">{p.customer}</Link>
                   <span className="tabular text-slate-600">{p.time ?? "—"}</span>
                 </li>
               ))}

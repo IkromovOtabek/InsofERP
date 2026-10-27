@@ -60,20 +60,19 @@ export default async function LogisticsOrdersPage({ searchParams }: { searchPara
     <div>
       <PageHeader title="Buyurtmalar" subtitle="Dastavkali zayavkalar: yetkazish holati, biriktirilgan va yetkazilgan hajm"
         action={<LinkButton href="/trips/new"><Plus size={16} /> Reys</LinkButton>} />
-      <form className="mb-3"><input type="hidden" name="filter" value={filter} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Zayavka, mijoz yoki manzil…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
+      <form className="mb-3"><input type="hidden" name="filter" value={filter} /><input name="q" aria-label="Qidirish" defaultValue={sp.q} placeholder="Mijoz yoki manzil…" className="h-9 w-72 rounded-lg border border-slate-200 px-3 text-sm" /></form>
       <Tabs current={filter} items={[tab("open", "Ochiq"), tab("waiting", "Transport kutmoqda"), tab("onroad", "Yo'lda"), tab("late", "Kechikmoqda"), tab("problem", "Muammo"), tab("done", "Yetkazilgan"), tab("all", "Hammasi")]} />
       <Card padded={false}>
         <Table>
-          <thead><tr><Th>Zayavka</Th><Th>Mijoz / obyekt</Th><Th>Marka</Th><Th right>Hajm</Th><Th right>Biriktirildi</Th><Th right>Yetkazildi</Th><Th>Yetkazish</Th><Th>Holat</Th><Th>Mas'ul</Th><Th /></tr></thead>
+          <thead><tr><Th>Mijoz / obyekt</Th><Th>Marka</Th><Th right>Hajm</Th><Th right>Biriktirildi</Th><Th right>Yetkazildi</Th><Th>Yetkazish</Th><Th>Holat</Th><Th>Mas'ul</Th><Th /></tr></thead>
           <tbody>
             {shown.length === 0 && <Empty text="Bu filtrda zayavka yo'q" />}
             {shown.map(({ o, l }) => {
               const unit = o.items.every((i) => i.product.unit === "m3") ? "m3" : o.items[0]?.product.unit ?? "m3";
               return (
                 <Tr key={o.id}>
-                  <Td><Link href={`/orders/${o.id}`} className="font-medium tabular hover:underline">{o.orderNo}</Link>{o.isUrgent && <div className="text-xs font-semibold text-red-600">shoshilinch</div>}</Td>
                   <Td>
-                    <div className="font-medium">{o.customer.name}</div>
+                    <Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link>{o.isUrgent && <span className="ml-1.5 text-xs font-semibold text-red-600">shoshilinch</span>}
                     {o.site ? <Link href={`/logistika/obyektlar/${o.site.id}`} className="block max-w-[16rem] truncate text-xs text-slate-500 hover:underline">{o.deliveryAddress}</Link> : <div className="max-w-[16rem] truncate text-xs text-slate-500">{o.deliveryAddress}</div>}
                     {o.lat == null && <div className="text-xs text-amber-700">xaritada nuqta yo'q</div>}
                   </Td>

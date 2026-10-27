@@ -9,7 +9,7 @@ import { pathAllowed } from "@/lib/nav";
 import { eco, ecoEnabled, ecoUrl, normalizePhone, type EcoDriver, type EcoDelivery, type EcoVehicle, type EcoMileage } from "@/lib/eco/client";
 import { ECO_STATUS } from "@/lib/eco/labels";
 import { qty, dateTime } from "@/lib/format";
-import { Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { BackLink, Badge, Callout, Card, CardHeader, Empty, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { ApproveDriverButton, ImportDriverButton, LinkAllButton, LinkDriverButton, ResendTripsButton, SyncAllButton, SyncVehiclesButton } from "./buttons";
 import { VehicleStatusBadge, VehicleStatusForm } from "./vehicle-status-form";
 import { TripStatusBadge } from "../trips/status";
@@ -59,6 +59,7 @@ export default async function DriversPage() {
       <SectionTabs section="haydovchi" current="/drivers" />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
+          <BackLink href="/dashboard" label="Bosh sahifa" className="mb-3" />
           <h1 className="text-2xl font-semibold tracking-tight">Haydovchilar (Insof ECO)</h1>
           <p className="mt-1 text-sm text-slate-500">Nakladnoy yaratilganda haydovchi telefoniga tushadi; u qabul qiladi, yo'lda GPS yuboradi, obyektda mijoz imzolaydi — holat ERP'ga qaytadi.</p>
         </div>

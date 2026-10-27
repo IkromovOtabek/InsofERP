@@ -721,7 +721,7 @@ async function mechanic(r: DashRange): Promise<RoleDashboard> {
     tone: (s.key === "need" ? (s.count ? "danger" : "success") : s.count >= flowTotal ? "success" : s.count ? "warning" : "info") as Tone,
   })) };
   const orders: HomeRow[] = d.orders.filter((o) => !o.done).slice(0, 10).map((o) => ({
-    id: o.id, title: `${o.orderNo} · ${o.customer}`,
+    id: o.id, title: o.customer,
     subtitle: `${o.time ?? "soatsiz"} · ${o.products}`,
     right: `${num(o.shipped)}/${num(o.total)}${o.unit ? ` ${unitLabel(o.unit)}` : ""}`,
     status: o.statusLabel, tone: o.blocked || o.problem ? "danger" : o.late ? "warning" : "brand",

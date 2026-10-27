@@ -4,6 +4,7 @@ import { productCatalog } from "@/lib/product-catalog";
 import { canEditProducts } from "@/lib/catalog";
 import { offerDefaults } from "@/lib/offers";
 import { withoutNds } from "@/lib/nds";
+import { date } from "@/lib/format";
 import { PageHeader, Card } from "@/components/ui";
 import { OfferForm, type OfferCustomerOpt, type OfferPrefill } from "../offer-form";
 
@@ -31,7 +32,7 @@ export default async function NewOfferPage({ searchParams }: { searchParams: Pro
     if (o && o.kind === "SALE") {
       prefill = {
         customerId: o.customerId, clientName: o.customer.name, clientPhone: o.customer.phone, clientInn: o.customer.inn,
-        objectName: o.deliveryAddress, orderId: o.id, note: `Zayavka ${o.orderNo} asosida`,
+        objectName: o.deliveryAddress, orderId: o.id, note: `${date(o.deliveryDate)} sanali zayavka asosida`,
         items: o.items.map((i) => ({ productId: i.productId, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3), price: netPrice(i.price, i.nds) })),
       };
     }

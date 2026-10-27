@@ -247,7 +247,7 @@ async function productCard(productId: string): Promise<MobileDetail> {
       {
         title: "Kimniki (band qilingan)", empty: "Band qilingan zayavka yo'q — hammasi erkin", target: "orders", icon: "users",
         rows: d.owners.map((o) => ({
-          id: o.orderId, title: `${o.orderNo} · ${o.customer}`,
+          id: o.orderId, title: o.customer,
           subtitle: `yetkazish ${dateRu(o.deliveryDate)} · buyurtma ${fmtNum(o.qty, 3)} · jo'natildi ${fmtNum(o.shipped, 3)}${o.phone ? ` · ${o.phone}` : ""}`,
           right: `band ${pq(o.reserved, u)}`, status: ORDER_LABEL[o.status] ?? o.status, tone: "brand" as Tone,
         })),
@@ -256,7 +256,7 @@ async function productCard(productId: string): Promise<MobileDetail> {
         title: "Ishlab chiqarilgan partiyalar", empty: "Hali ishlab chiqarilmagan", target: "production", icon: "factory",
         rows: d.batches.map((b) => ({
           id: b.id, title: b.batchNo,
-          subtitle: `${dateRu(b.date)} · ${b.order ? b.order.orderNo : "sklad uchun"} · ${b.createdBy.fullName}`,
+          subtitle: `${dateRu(b.date)} · ${b.order ? b.order.customer.name : "sklad uchun"} · ${b.createdBy.fullName}`,
           right: pq(sum(b.qtyM3), u), ...(b.cancelledAt ? { status: "Bekor qilingan", tone: "danger" as Tone } : {}),
         })),
       },

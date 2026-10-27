@@ -46,7 +46,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
         <div>
           <div className="text-xl font-bold">TOVAR-TRANSPORT NAKLADNOYI</div>
           <div className="text-lg font-semibold">№ {t.deliveryNoteNo}</div>
-          <div className="mt-1">Sana: {date(t.loadedAt ?? t.createdAt)} · Zayavka {t.order.orderNo}</div>
+          <div className="mt-1">Sana: {date(t.loadedAt ?? t.createdAt)}</div>
           <div>Yuklash vaqti: <b>{t.loadedAt ? dateTime(t.loadedAt) : "—"}</b>{item?.product.unit === "m3" && <> · Zames №: <b>{batch?.batchNo ?? "—"}</b></>}</div>
         </div>
         <div className="flex flex-col items-center">

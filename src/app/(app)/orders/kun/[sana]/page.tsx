@@ -18,7 +18,7 @@ const WEEKDAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba"
 const GROUP_TONE: Record<string, SheetTone> = { BANK: "blue", CASH: "green", DEBT: "red" };
 
 /** Uch blokning ustunlari bir-birining tagida tursin (Excel'dagidek) — bir xil kenglik, matn bo'linmaydi. */
-const COL_W = [116, 200, 190, 64, 80, 100, 100, 130, 110, 130, 130, 140, 220, 70];
+const COL_W = [200, 190, 64, 80, 100, 100, 130, 110, 130, 130, 140, 220, 70];
 
 const n0 = (v: number) => (v ? fmtNum(v, 0) : "");
 const nq = (v: number) => fmtNum(v, 3);
@@ -36,7 +36,7 @@ export default async function OrderDayPage({ params }: { params: Promise<{ sana:
 
   // Excel: varaqdagi ustunlar bilan bir xil, blok nomi alohida ustunda
   const excelRows = sheet.groups.flatMap((g) => g.rows.map((r) => ({
-    "To'lov turi": g.label, "Zayavka": r.orderNo, "Kimga": r.customer, "Mahsulot": r.product, "Birlik": r.unit,
+    "To'lov turi": g.label, "Kimga": r.customer, "Mahsulot": r.product, "Birlik": r.unit,
     "Soni": r.qty, "Narx": r.price, "Dastavka": r.delivery || null, "QQSsiz summa": r.net, "QQS 12%": r.vat || null,
     "Jami": r.total, "Qabul qiluvchi": r.receiver, "Telefon": r.phone, "Obyekt": r.site, "Vaqt": r.time,
   })));
@@ -92,13 +92,13 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
       <colgroup>{COL_W.map((w, i) => <col key={i} style={{ width: w, minWidth: w }} />)}</colgroup>
       <SheetHead>
         <tr>
-          <SheetTh tone={tone} colSpan={14} className="text-left">
+          <SheetTh tone={tone} colSpan={13} className="text-left">
             {g.label}
             <span className="ml-2 font-normal text-slate-600">· {g.rows.length} qator{g.qtyText && ` · ${g.qtyText}`}</span>
           </SheetTh>
         </tr>
         <tr>
-          <SheetTh tone="plain">№</SheetTh><SheetTh tone="plain">Kimga</SheetTh><SheetTh tone="plain">Mahsulot</SheetTh><SheetTh tone="plain">Birlik</SheetTh>
+          <SheetTh tone="plain">Kimga</SheetTh><SheetTh tone="plain">Mahsulot</SheetTh><SheetTh tone="plain">Birlik</SheetTh>
           <SheetTh tone="plain" right>Soni</SheetTh><SheetTh tone="plain" right>Narx</SheetTh><SheetTh tone="plain" right>Dastavka</SheetTh>
           <SheetTh tone="plain" right>QQSsiz summa</SheetTh><SheetTh tone="plain" right>QQS 12%</SheetTh><SheetTh tone="plain" right>Jami</SheetTh>
           <SheetTh tone="yellow">Qabul qiluvchi</SheetTh><SheetTh tone="yellow">Telefon</SheetTh><SheetTh tone="yellow">Obyekt</SheetTh><SheetTh tone="yellow">Vaqt</SheetTh>
@@ -106,14 +106,13 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
       </SheetHead>
       <tbody>
         {g.rows.length === 0 ? (
-          <SheetTr><SheetTd colSpan={14} center muted>zayavka yo&apos;q</SheetTd></SheetTr>
+          <SheetTr><SheetTd colSpan={13} center muted>zayavka yo&apos;q</SheetTd></SheetTr>
         ) : g.rows.map((r, i) => {
-          // Bir zayavkaning keyingi qatorlarida № va mijoz takrorlanmaydi (Excel'dagi birlashgan katak kabi)
+          // Bir zayavkaning keyingi qatorlarida mijoz takrorlanmaydi (Excel'dagi birlashgan katak kabi)
           const same = i > 0 && g.rows[i - 1].orderId === r.orderId;
           return (
             <SheetTr key={`${r.orderId}-${i}`}>
-              <SheetTd className="whitespace-nowrap">{same ? "" : <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.orderNo}</Link>}</SheetTd>
-              <SheetTd className={cn(!same && "font-medium text-slate-900")}>{same ? "" : r.customer}</SheetTd>
+              <SheetTd>{same ? "" : <Link href={`/orders/${r.orderId}`} className="font-medium text-slate-900 hover:underline">{r.customer}</Link>}</SheetTd>
               <SheetTd>{r.product}</SheetTd>
               <SheetTd center>{r.unit}</SheetTd>
               <SheetTd right strong>{r.qty ? nq(r.qty) : ""}</SheetTd>
@@ -132,7 +131,7 @@ function GroupSheet({ g }: { g: DaySheetGroup }) {
       </tbody>
       <SheetFoot>
         <tr>
-          <SheetTd colSpan={4}>Jami: {g.label}</SheetTd>
+          <SheetTd colSpan={3}>Jami: {g.label}</SheetTd>
           <SheetTd right>{g.qtyText || "0"}</SheetTd>
           <SheetTd />
           <SheetTd right>{fmtNum(g.totals.delivery, 0)}</SheetTd>

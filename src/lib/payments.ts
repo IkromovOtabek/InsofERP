@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { money } from "@/lib/format";
+import { date, money, orderLabel } from "@/lib/format";
 import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import type { PayMethod, Prisma } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
@@ -112,12 +112,12 @@ export async function addPayment(input: PaymentInput, userId: string): Promise<{
       // Avans: zayavka shu mijozniki, bekor/yopilmagan va schyoti hali yo'q (bo'lsa — to'lov schyotga yoziladi)
       const o = await tx.order.findUnique({
         where: { id: input.orderId },
-        select: { customerId: true, kind: true, status: true, orderNo: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+        select: { customerId: true, kind: true, status: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
       });
       if (!o || o.kind !== "SALE") throw new PaymentError("Zayavka topilmadi");
       if (o.customerId !== input.customerId) throw new PaymentError("Zayavka boshqa mijozniki");
       if (!(ADVANCE_ORDER_STATUSES as readonly string[]).includes(o.status)) throw new PaymentError("Bu zayavka yopilgan yoki bekor qilingan");
-      if (o.invoices.length) throw new PaymentError(`${o.orderNo} ga schyot yozilgan (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — to'lovni schyotga yozing`);
+      if (o.invoices.length) throw new PaymentError(`Bu zayavkaga schyot yozilgan (${o.invoices.map((i) => i.invoiceNo).join(", ")}) — to'lovni schyotga yozing`);
       const total = orderTotal(o);
       const left = total - o.payments.reduce((x, p) => x + Number(p.amount), 0);
       if (input.amount > left + 0.005) throw new PaymentError(`Avans zayavka qoldig'idan ko'p: ${money(Math.max(0, left))}`);
@@ -187,8 +187,8 @@ export async function linkPaymentToInvoice(paymentId: string, invoiceId: string,
     if (!["OPEN", "PARTIAL"].includes(inv.status)) throw new PaymentError("Bu schyot yopilgan yoki bekor qilingan");
     // Boshqa zayavkaning avansi bu schyotga o'tib ketmasin (o'sha zayavkaga schyot yozilganda o'zi ulanadi)
     if (p.orderId && inv.orderId && p.orderId !== inv.orderId) {
-      const other = await tx.order.findUnique({ where: { id: p.orderId }, select: { status: true, orderNo: true } });
-      if (other && other.status !== "CANCELLED") throw new PaymentError(`Bu to'lov ${other.orderNo} zayavkasining avansi — o'sha zayavka schyotiga ulanadi`);
+      const other = await tx.order.findUnique({ where: { id: p.orderId }, select: { status: true, deliveryDate: true } });
+      if (other && other.status !== "CANCELLED") throw new PaymentError(`Bu to'lov boshqa zayavkaning (${date(other.deliveryDate)}) avansi — o'sha zayavka schyotiga ulanadi`);
     }
     const left = r2(Number(inv.amount) - inv.payments.reduce((x, y) => x + Number(y.amount), 0));
     if (!(left > 0.005)) throw new PaymentError("Schyot qoldig'i yo'q");
@@ -243,8 +243,8 @@ export async function reversePayment(paymentId: string, reason: string, userId: 
     // Kassadagi pul va mijoz qarzi o'zgardi — kassir hisobni, sotuvchi mijoz bilan gaplashishni bilsin
     notifyAfter(async () => {
       const c = await db.customer.findUnique({ where: { id: r.customerId }, select: { name: true } });
-      const o = r.orderId ? await db.order.findUnique({ where: { id: r.orderId }, select: { orderNo: true, createdById: true } }) : null;
-      const n = { type: "PAYMENT_REVERSED", title: `To'lov bekor qilindi — ${money(r.amount)}`, body: `${c?.name ?? ""}${o ? ` · ${o.orderNo}` : ""} · sabab: ${reason.trim()}`, link: o && r.orderId ? { key: "orders", id: r.orderId } : undefined };
+      const o = r.orderId ? await db.order.findUnique({ where: { id: r.orderId }, select: { deliveryDate: true, createdById: true } }) : null;
+      const n = { type: "PAYMENT_REVERSED", title: `To'lov bekor qilindi — ${money(r.amount)}`, body: `${c?.name ?? ""}${o ? ` · zayavka ${date(o.deliveryDate)}` : ""} · sabab: ${reason.trim()}`, link: o && r.orderId ? { key: "orders", id: r.orderId } : undefined };
       await notifyRoles(["CASHIER", "ACCOUNTING"], n, { except: userId });
       if (o?.createdById && o.createdById !== userId) await notifyUsers([o.createdById], n);
     });
@@ -268,14 +268,14 @@ export const expectedAdvance = (o: { prepayAmount?: unknown }): number => Math.m
  * Qaytaradi: xato matni yoki null.
  */
 export async function prepayShortError(client: Tx | typeof db, orderId: string): Promise<string | null> {
-  const o = await client.order.findUnique({ where: { id: orderId }, select: { kind: true, onCredit: true, prepayAmount: true, orderNo: true } });
+  const o = await client.order.findUnique({ where: { id: orderId }, select: { kind: true, onCredit: true, prepayAmount: true, deliveryDate: true, customer: { select: { name: true } } } });
   if (!o || o.kind !== "SALE" || o.onCredit) return null;
   const required = expectedAdvance(o);
   if (!(required > 0.005)) return null;
   const agg = await client.payment.aggregate({ where: { OR: [{ orderId }, { invoice: { orderId } }] }, _sum: { amount: true } });
   const paid = Number(agg._sum.amount ?? 0);
   if (paid + 0.005 >= required) return null;
-  return `${o.orderNo}: bosh to'lov ${money(required)} kerak, to'langan ${money(paid)} — qolgan ${money(required - paid)} kassaga tushmaguncha reys ochilmaydi va yuklanmaydi`;
+  return `${orderLabel(o.customer.name, o.deliveryDate)}: bosh to'lov ${money(required)} kerak, to'langan ${money(paid)} — qolgan ${money(required - paid)} kassaga tushmaguncha reys ochilmaydi va yuklanmaydi`;
 }
 
 // ───────────────────────── Hisob qoldiqlari ─────────────────────────

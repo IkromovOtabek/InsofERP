@@ -69,7 +69,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900"><b>Agar hech narsa qilmasangiz:</b> kunlik o'rtacha tushum {moneyShort(cf.perDay)} so'm (σ = {moneyShort(cf.sigma)}). Ochiq debitorka {moneyShort(cf.receivable)} so'm — shu tempda {cf.coverDays === null ? "—" : `${fmtNum(cf.coverDays, 0)} kunda`} undiriladi. {cf.risk === "Yuqori" ? "Tushum juda notekis — yirik chiqimni kutilayotgan to'lov kelgandan keyin rejalashtiring." : "Zaxira barqaror."}</div>
           <Why label="Prognoz qanday hisoblangan (3 ta taxmin)"><p>1. Kelajak tushum va chiqim — so'nggi {cf.histDays} kun o'rtachasi bilan bir xil.</p><p>2. Tushum ochiq debitorkadan oshmaydi.</p><p>3. Tarqoqlik (σ) tarixiy kunlik tushumlardan olingan.</p>{cf.histDays < 14 && <p className="text-amber-700">Tarix {cf.histDays} kun — prognoz hali ishonchli emas.</p>}</Why>
         </Panel>
-        <Panel title="P&L Waterfall" info="Bazaviy tushumdan foydagacha. Tushum — yetkazilgan reyslar bo'yicha (mijoz qabul qilgan miqdor × narx, yetkazilgan kuni). Tannarx — retsept × xomashyo o'rtacha kirim narxi (miqdorga tortilgan). * Ish haqi, energiya, transport xarajatlari bu yerda yo'q — bu yalpi foyda darajasi (to'liq sof foyda — Egasi dashbordida).">
+        <Panel id="pnl" title="P&L Waterfall" info="Bazaviy tushumdan foydagacha. Tushum — yetkazilgan reyslar bo'yicha (mijoz qabul qilgan miqdor × narx, yetkazilgan kuni). Tannarx — retsept × xomashyo o'rtacha kirim narxi (miqdorga tortilgan). * Ish haqi, energiya, transport xarajatlari bu yerda yo'q — bu yalpi foyda darajasi (to'liq sof foyda — Egasi dashbordida).">
           <div className="overflow-x-auto"><div className="min-w-[420px]"><Waterfall steps={d.waterfall} formatValue={moneyShort} /></div></div>
           <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Yalpi marja</div><div className="text-base font-semibold tabular">{fmtNum(k.margin, 1)}%</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Chegirma</div><div className="text-base font-semibold tabular text-amber-600">{moneyShort(k.discount)}</div></div><div className="rounded-lg bg-slate-50 py-2"><div className="text-slate-400">Brak</div><div className="text-base font-semibold tabular text-red-600">{moneyShort(k.writeOff)}</div></div></div>
         </Panel>
@@ -122,7 +122,7 @@ export async function FinanceTab({ range, sp }: { range: Range; sp: SP }) {
         </Panel>
       </div>
 
-      <Panel title="Tranzaksiyalar" info="Kassa/bank tushumlari — davr bo'yicha." padded={false} action={<ExportLink type="payments" range={range} />}>
+      <Panel id="tranzaksiyalar" title="Tranzaksiyalar" info="Kassa/bank tushumlari — davr bo'yicha." padded={false} action={<ExportLink type="payments" range={range} />}>
         <form method="get" action={ROUTES.finance} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           <input type="hidden" name="period" value={range.period === "custom" ? "month" : range.period} />
           <Select name="account" aria-label="Kassa / hisob" defaultValue={sp.account ?? ""} className="h-8 w-52"><option value="">Barcha kassa</option>{d.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>

@@ -63,7 +63,7 @@ function claimed(r: { count: number }) { if (r.count !== 1) throw new AlreadyCha
 
 const tripWithOrder = (id: string) => db.trip.findUniqueOrThrow({
   where: { id },
-  include: { vehicle: { select: { type: true } }, order: { include: { items: { include: { product: { select: { unit: true, name: true } } } }, trips: true } } },
+  include: { vehicle: { select: { type: true } }, order: { include: { customer: { select: { name: true } }, items: { include: { product: { select: { unit: true, name: true } } } }, trips: true } } },
 });
 
 // ───────────────────────── Reysning mahsulot qatori ─────────────────────────
@@ -268,14 +268,14 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
   notifyAfter(async () => {
     await notifyUsers([t.order.createdById], {
       type: done ? "ORDER_DELIVERED" : "TRIP_DELIVERED",
-      title: done ? `Zayavka yopildi — ${t.order.orderNo}` : `Reys yetkazildi — ${t.deliveryNoteNo}`,
+      title: done ? `Zayavka yopildi — ${t.order.customer.name}` : `Reys yetkazildi — ${t.deliveryNoteNo}`,
       body: `Qabul qildi: ${receiverName}`,
       link: { key: done ? "orders" : "trips", id: done ? t.orderId : id },
     });
     await notifyRoles(["LOGISTICS"], {
       type: "TRIP_DELIVERED",
       title: `Reys yetkazildi — ${t.deliveryNoteNo}`,
-      body: `${t.order.orderNo} · qabul qildi: ${receiverName}`,
+      body: `${t.order.customer.name} · qabul qildi: ${receiverName}`,
       link: { key: "trips", id },
       channel: "oddiy",
     }, { except: userId });
@@ -285,7 +285,7 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
       if (invoiced === 0) {
         await notifyRoles(["ACCOUNTING"], {
           type: "ORDER_DELIVERED",
-          title: `Yetkazildi, schyot kerak — ${t.order.orderNo}`,
+          title: `Yetkazildi, schyot kerak — ${t.order.customer.name}`,
           body: `Zayavka to'liq yetkazildi · qabul qildi: ${receiverName}`,
           link: { key: "orders", id: t.orderId },
         }, { except: userId });
@@ -361,7 +361,7 @@ export async function tripReturned(id: string, userId: string): Promise<TripResu
 export async function tripClosed(id: string, userId: string, q?: DeliveryQty): Promise<TripResult & { warning?: string }> {
   const t = await db.trip.findUniqueOrThrow({
     where: { id },
-    include: { vehicle: { select: { type: true } }, order: { include: { items: { include: { product: { select: { unit: true, name: true } } } } } }, issues: { where: { resolvedAt: null }, select: { id: true } } },
+    include: { vehicle: { select: { type: true } }, order: { include: { customer: { select: { name: true } }, items: { include: { product: { select: { unit: true, name: true } } } } } }, issues: { where: { resolvedAt: null }, select: { id: true } } },
   });
   if (t.status !== "DELIVERED") return { changed: false, orderId: t.orderId, error: "Faqat yetkazilgan reys yopiladi" };
   if (t.closedAt) return { changed: false, orderId: t.orderId };
@@ -407,7 +407,7 @@ export async function tripClosed(id: string, userId: string, q?: DeliveryQty): P
   if (ok) await saveTripSummarySafe(id);
   if (ok?.warning && ok.warning.startsWith("Diqqat")) {
     const w = ok.warning;
-    notifyAfter(() => notifyRoles(["SALES", "ACCOUNTING"], { type: "TRIP_DELIVERED", title: `Zayavka ${t.order.orderNo}: qabul kamaydi`, body: w, link: { key: "orders", id: t.orderId } }, { except: userId }));
+    notifyAfter(() => notifyRoles(["SALES", "ACCOUNTING"], { type: "TRIP_DELIVERED", title: `${t.order.customer.name}: zayavka qabuli kamaydi`, body: w, link: { key: "orders", id: t.orderId } }, { except: userId }));
   }
   return { changed: !!ok, orderId: t.orderId, warning: ok?.warning };
 }

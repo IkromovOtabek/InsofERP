@@ -77,7 +77,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
           <HBarList data={Object.entries(d.aging).map(([k, v], i) => ({ label: `${k} kun`, value: v, tone: (["success", "info", "warning", "danger"] as const)[i] }))} formatValue={moneyShort} />
           <div className="mt-3 text-xs text-slate-500">Jami: <b className="text-slate-800">{money(Object.values(d.aging).reduce((a, b) => a + b, 0))}</b></div>
         </Panel>
-        <Panel className="xl:col-span-2" title="Eng katta qarzdorlar — aging bo'yicha" padded={false}>
+        <Panel id="qarzdorlar" className="xl:col-span-2" title="Eng katta qarzdorlar — aging bo'yicha" padded={false}>
           <Table className="rounded-none border-0 shadow-none"><thead><tr><Th>Mijoz</Th><Th right>0–30</Th><Th right>31–60</Th><Th right>61–90</Th><Th right>90+</Th><Th right>Jami</Th></tr></thead><tbody>{d.agingTop.length === 0 && <Empty text="Qarzdor yo'q" />}{d.agingTop.map((x) => <Tr key={x.id}><Td><Link href={`/customers/${x.id}`} className="hover:underline">{x.name}</Link></Td>{x.b.map((v, i) => <Td key={i} right className={i === 3 && v ? "text-red-600" : ""}>{v ? moneyShort(v) : "·"}</Td>)}<Td right className="font-semibold">{moneyShort(x.total)}</Td></Tr>)}</tbody></Table>
         </Panel>
       </div>
@@ -99,7 +99,7 @@ export async function CustomersTab({ range, sp }: { range: Range; sp: SP }) {
       </div>
 
       {/* Harakat markazi */}
-      <Panel title="Harakat markazi — mijozlar ro'yxati" info="Pul bo'yicha saralangan (kutilayotgan yo'qotish + qarz). Filtrlang va eksport qiling." padded={false} action={<ExportLink type="customers" range={range} />}>
+      <Panel id="mijozlar-royxati" title="Harakat markazi — mijozlar ro'yxati" info="Pul bo'yicha saralangan (kutilayotgan yo'qotish + qarz). Filtrlang va eksport qiling." padded={false} action={<ExportLink type="customers" range={range} />}>
         <form method="get" action={ROUTES.customers} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           <input type="hidden" name="period" value={range.period === "custom" ? "month" : range.period} />
           <Select name="segment" aria-label="Segment" defaultValue={sp.segment ?? ""} className="h-8 w-44"><option value="">Barcha segmentlar</option>{SEGMENT_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}</Select>

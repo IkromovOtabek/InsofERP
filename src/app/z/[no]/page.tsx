@@ -20,14 +20,14 @@ const UZ = {
   pendingHint: "Zayavka ro'yxatga olingan, korxona uni ko'rib chiqmoqda. Tasdiqlangach ishlab chiqarishga tushadi.",
   cancelled: "Zayavka bekor qilingan",
   cancelledHint: "Bu hujjat amal qilmaydi. Savol bo'lsa menejerga qo'ng'iroq qiling.",
-  title: "Zayavka",
+  title: "Zayavka", date: "Sana",
   status: { DRAFT: "Ko'rib chiqilmoqda", BLOCKED: "Ko'rib chiqilmoqda", CONFIRMED: "Qabul qilingan", IN_PRODUCTION: "Ishlab chiqarilmoqda", DELIVERED: "Yetkazib berilgan", CLOSED: "Yakunlangan", CANCELLED: "Bekor qilingan" } as Record<string, string>,
   steps: ["Qabul qilindi", "Ishlab chiqarish", "Yetkazib berish", "Yakunlandi"],
   client: "Mijoz", object: "Obyekt", delivery: "Yetkazish sanasi", unknown: "Kelishilmoqda", manager: "Menejer",
   items: "Mahsulotlar", qty: "Soni", sum: "Summa", total: "Jami", paid: "To'langan", rest: "Qoldiq", som: "so'm", deliveryFee: "Dastavka",
   trips: "Yetkazib berishlar", tripStatus: { PLANNED: "Rejada", LOADED: "Yuklangan", ON_ROAD: "Yo'lda", DELIVERED: "Yetkazildi" } as Record<string, string>,
   noTrips: "Hali jo'natma yo'q",
-  check: "Qog'ozdagi zayavka raqami va jami summa shu sahifadagi bilan bir xil bo'lishi kerak. Farq bo'lsa — hujjat o'zgartirilgan bo'lishi mumkin, menejerga qo'ng'iroq qiling.",
+  check: "Qog'ozdagi mijoz, sana va jami summa shu sahifadagi bilan bir xil bo'lishi kerak. Farq bo'lsa — hujjat o'zgartirilgan bo'lishi mumkin, menejerga qo'ng'iroq qiling.",
   contact: "Bog'lanish", call: "Qo'ng'iroq qilish", telegram: "Telegram'da yozish", map: "Zavod xaritada",
   staff: "Korxona xodimimisiz? ERP'da ochish",
   checked: "Tekshirilgan vaqt",
@@ -41,14 +41,14 @@ const RU: typeof UZ = {
   pendingHint: "Заявка зарегистрирована, предприятие её рассматривает. После подтверждения она уйдёт в производство.",
   cancelled: "Заявка отменена",
   cancelledHint: "Документ недействителен. По вопросам звоните менеджеру.",
-  title: "Заявка",
+  title: "Заявка", date: "Дата",
   status: { DRAFT: "На рассмотрении", BLOCKED: "На рассмотрении", CONFIRMED: "Принята", IN_PRODUCTION: "В производстве", DELIVERED: "Доставлена", CLOSED: "Завершена", CANCELLED: "Отменена" },
   steps: ["Принята", "Производство", "Доставка", "Завершена"],
   client: "Клиент", object: "Объект", delivery: "Дата доставки", unknown: "Согласовывается", manager: "Менеджер",
   items: "Товары", qty: "Кол-во", sum: "Сумма", total: "Итого", paid: "Оплачено", rest: "Остаток", som: "сум", deliveryFee: "Доставка",
   trips: "Отгрузки", tripStatus: { PLANNED: "Запланирован", LOADED: "Загружен", ON_ROAD: "В пути", DELIVERED: "Доставлен" },
   noTrips: "Отгрузок пока нет",
-  check: "Номер заявки и итоговая сумма на бумаге должны совпадать с этой страницей. Если есть разница — документ мог быть изменён, позвоните менеджеру.",
+  check: "Клиент, дата и итоговая сумма на бумаге должны совпадать с этой страницей. Если есть разница — документ мог быть изменён, позвоните менеджеру.",
   contact: "Связаться", call: "Позвонить", telegram: "Написать в Telegram", map: "Завод на карте",
   staff: "Вы сотрудник? Открыть в ERP",
   checked: "Время проверки",
@@ -151,7 +151,7 @@ export default async function PublicOrderPage({ params, searchParams }: { params
         {!cancelled && (
           <section className="rounded-2xl bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h1 className="text-xl font-bold tracking-tight">{T.title} {o.orderNo}</h1>
+              <h1 className="text-xl font-bold tracking-tight">{T.title}</h1>
               <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">{T.status[o.status]}</span>
             </div>
             <ol className="mt-4 grid grid-cols-4 gap-2">
@@ -171,9 +171,9 @@ export default async function PublicOrderPage({ params, searchParams }: { params
 
         {/* Hujjat: qog'oz bilan solishtirish uchun */}
         <section className="rounded-2xl bg-white p-5 shadow-sm">
-          {cancelled && <h1 className="mb-3 text-xl font-bold tracking-tight">{T.title} {o.orderNo}</h1>}
+          {cancelled && <h1 className="mb-3 text-xl font-bold tracking-tight">{T.title}</h1>}
           <dl className="grid gap-x-6 text-sm sm:grid-cols-2">
-            <div className={row}><dt className="text-slate-500">№</dt><dd className="font-semibold">{o.orderNo} · {date(o.date)}</dd></div>
+            <div className={row}><dt className="text-slate-500">{T.date}</dt><dd className="font-semibold">{date(o.date)}</dd></div>
             <div className={row}><dt className="text-slate-500">{T.client}</dt><dd className="text-right font-medium">{o.customer.name}</dd></div>
             <div className={row}><dt className="text-slate-500">{T.delivery}</dt><dd>{o.dateUnknown ? T.unknown : `${date(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`}</dd></div>
             {o.deliveryAddress && <div className={row}><dt className="text-slate-500">{T.object}</dt><dd className="text-right">{o.deliveryAddress}</dd></div>}

@@ -312,7 +312,7 @@ async function productionOrders(title: string, q?: string, filter?: string): Pro
     const brigades = [...new Set(o.items.flatMap((i) => i.tasks.filter((t) => t.status !== "CANCELLED").map((t) => t.brigade.name)))].join(", ");
     return {
       id: o.id,
-      title: `${o.orderNo} · ${o.customer.name}${o.isUrgent ? " · zarur" : ""}`,
+      title: `${o.customer.name}${o.isUrgent ? " · zarur" : ""}`,
       subtitle: `${o.dateUnknown ? "Sana aniq emas" : `${day(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`} · ${isOpen(o) && !o.dateUnknown ? dueLabel(o.deliveryDate) : o.deliveryAddress}${brigades ? ` · ${brigades}` : ""}`,
       right: m3(o.items.reduce((s, i) => s + sum(i.qtyM3), 0)),
       status: done ? "Tugallandi" : ok ? "Brigada tayinlangan" : partlyAssigned(o) ? "Qisman tayinlangan" : "Brigada kutmoqda",
@@ -408,7 +408,7 @@ export const payreqRow = (r: PayReqRow): HomeRow => {
   return {
     id: r.id,
     title: `${r.docNo} · ${r.customer.name}`,
-    subtitle: `${r.order.orderNo} · ${PAYREQ_METHOD_SHORT[r.method]} · muddat ${day(r.dueDate)}${r.overdue ? " · muddati o'tdi" : ""}`,
+    subtitle: `${PAYREQ_METHOD_SHORT[r.method]} · muddat ${day(r.dueDate)}${r.overdue ? " · muddati o'tdi" : ""}`,
     right: money(open ? r.left : r.status === "RECEIVED" ? r.received : r.amount),
     status: PAYREQ_STATUS_LABEL[r.status],
     tone: r.overdue ? "danger" : PAYREQ_STATUS_TONE[r.status],

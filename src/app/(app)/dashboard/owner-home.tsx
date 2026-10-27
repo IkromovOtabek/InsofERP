@@ -320,11 +320,11 @@ export async function OwnerHome() {
           <div className="mt-4 grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400"><AlertTriangle size={12} className="text-amber-500" /> Muddati o&apos;tgan zayavkalar ({d.funnel.stuck.length})</div>
-              {d.funnel.stuck.length === 0 ? <div className="text-xs text-emerald-700">yo&apos;q</div> : <ul className="space-y-1">{d.funnel.stuck.slice(0, 6).map((o) => <li key={o.id} className="flex justify-between gap-2"><Link href={`/orders/${o.id}`} className="truncate hover:underline">{o.orderNo} · {o.customer}</Link><span className="shrink-0 text-red-600">{o.days} kun · {moneyShort(o.sum)}</span></li>)}</ul>}
+              {d.funnel.stuck.length === 0 ? <div className="text-xs text-emerald-700">yo&apos;q</div> : <ul className="space-y-1">{d.funnel.stuck.slice(0, 6).map((o) => <li key={o.id} className="flex justify-between gap-2"><Link href={`/orders/${o.id}`} className="truncate hover:underline">{o.customer}</Link><span className="shrink-0 text-red-600">{o.days} kun · {moneyShort(o.sum)}</span></li>)}</ul>}
             </div>
             <div>
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">To&apos;lanmagan otgruzka ({d.funnel.unpaidShipments.length})</div>
-              {d.funnel.unpaidShipments.length === 0 ? <div className="text-xs text-emerald-700">yo&apos;q</div> : <ul className="space-y-1">{d.funnel.unpaidShipments.slice(0, 6).map((o) => <li key={o.id} className="flex justify-between gap-2"><Link href={`/customers/${o.customerId}`} className="truncate hover:underline">{o.orderNo} · {o.customer}</Link><span className="shrink-0 tabular text-amber-700">{moneyShort(o.left)}</span></li>)}</ul>}
+              {d.funnel.unpaidShipments.length === 0 ? <div className="text-xs text-emerald-700">yo&apos;q</div> : <ul className="space-y-1">{d.funnel.unpaidShipments.slice(0, 6).map((o) => <li key={o.id} className="flex justify-between gap-2"><Link href={`/customers/${o.customerId}`} className="truncate hover:underline">{o.customer}</Link><span className="shrink-0 tabular text-amber-700">{moneyShort(o.left)}</span></li>)}</ul>}
             </div>
           </div>
         </Panel>
@@ -490,7 +490,7 @@ function ApprovalQueue({ q }: { q: DirectorQueue }) {
               {q.orders.slice(0, 8).map((o) => (
                 <li key={o.id} className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link> <span className="text-slate-600">· <Link href={`/customers/${o.customerId}`} className="hover:underline">{o.customer}</Link></span>
+                    <Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.customer}</Link>
                     <div className="text-[11px] text-slate-500">
                       limit {moneyShort(o.limit)} · band {moneyShort(o.used)} · bo&apos;sh <span className={o.free >= o.amount ? "text-emerald-700" : "text-red-600"}>{moneyShort(Math.max(0, o.free))}</span> · {o.seller} · yetkazish {date(o.deliveryDate)}
                     </div>

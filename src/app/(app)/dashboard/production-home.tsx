@@ -6,7 +6,7 @@ import { customerMarks } from "@/lib/finance";
 import { db } from "@/lib/db";
 import { CustomerName } from "@/components/customer-name";
 import { StockSnapshotCard } from "@/components/stock-snapshot";
-import { qty, pct, dateTime, fmtNum } from "@/lib/format";
+import { qty, pct, dateTime, fmtNum, orderLabel } from "@/lib/format";
 import { reportHistory, stockHighlights, stockStatus, STOCK_LEVEL_LABEL } from "@/lib/production-report";
 import { unitLabel, fmtUnitTotals } from "@/lib/unit";
 import { Badge, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
@@ -73,13 +73,12 @@ export async function ProductionHome({ s }: { s: Session }) {
               </tbody>
             </Table>
             <Table>
-              <thead><tr><Th>№</Th><Th>Vaqt</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Jo&apos;natildi</Th><Th right>Qoldi</Th><Th>Holat</Th></tr></thead>
+              <thead><tr><Th>Vaqt</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Jo&apos;natildi</Th><Th right>Qoldi</Th><Th>Holat</Th></tr></thead>
               <tbody>
                 {d.load.orders.map((o) => {
                   const one = o.items.length === 1 ? unitLabel(o.items[0].unit) : "";
                   return (
                     <Tr key={o.id}>
-                      <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td>
                       <Td className="tabular">{o.time ?? "—"}</Td>
                       <Td><CustomerName name={o.customer} href={`/orders/${o.id}`} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td>
                       <Td>{o.items.map((i) => `${i.code} ${qty(i.qty)} ${unitLabel(i.unit)}`).join(", ")}{o.pickup && <span className="text-slate-400"> · o&apos;zi oladi</span>}</Td>
@@ -304,7 +303,7 @@ export async function ProductionHome({ s }: { s: Session }) {
                   <b className="text-red-700">{m.name} — {qty(m.orderGap)} {m.unit} kam</b>
                   <span className="text-slate-500"> (skladda {qty(m.balance)}, zayavkalarga {qty(m.planned)} {m.unit}): </span>
                   {m.orders.map((o, i) => (
-                    <span key={o.id}>{i > 0 && ", "}<Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link> <span className="text-slate-500">{qty(o.qty)}</span></span>
+                    <span key={o.id}>{i > 0 && ", "}<Link href={`/orders/${o.id}`} className="hover:underline">{orderLabel(o.customer, o.date)}</Link> <span className="text-slate-500">{qty(o.qty)}</span></span>
                   ))}
                 </div>
               ))}

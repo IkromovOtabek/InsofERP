@@ -43,7 +43,7 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
       include: {
         trips: {
           where: { status: { not: "CANCELLED" }, OR: [{ plannedAt: { gte: from, lt: to } }, { loadedAt: { gte: from, lt: to } }, { createdAt: { gte: from, lt: to } }, { status: { in: ACTIVE_TRIP } }] },
-          include: { order: { select: { orderNo: true, deliveryDate: true, deliveryTime: true, customer: { select: { name: true } } } } },
+          include: { order: { select: { deliveryDate: true, deliveryTime: true, customer: { select: { name: true } } } } },
         },
       },
     }),
@@ -65,7 +65,7 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
       const start = t.loadedAt ?? (tripPlannedAt(t, t.order) ? new Date(tripPlannedAt(t, t.order)!.getTime() - 45 * 60000) : null);
       if (!start) return null;
       const end = t.returnedAt ?? (t.deliveredAt ? new Date(t.deliveredAt.getTime() + 40 * 60000) : new Date(start.getTime() + DEFAULT_TURN_MIN * 60000));
-      return { a: minOf(start), b: minOf(end), label: `${t.order.orderNo} · ${t.order.customer.name}`, phase: tripPhase(t), id: t.id };
+      return { a: minOf(start), b: minOf(end), label: t.order.customer.name, phase: tripPhase(t), id: t.id };
     }).filter((x): x is NonNullable<typeof x> => !!x),
   }));
   const mixers = busy.filter((b) => b.v.type === "MIXER");
@@ -124,7 +124,7 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
               const left = ((minOf(p) - H0 * 60) / ((H1 - H0) * 60)) * 100;
               return (
                 <div key={o.id} className="mt-1 flex items-center">
-                  <div className="w-40 shrink-0 truncate pr-2 text-xs"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link> <span className="text-slate-500">{o.customer.name}</span></div>
+                  <div className="w-40 shrink-0 truncate pr-2 text-xs"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link></div>
                   <div className="relative h-6 flex-1 rounded bg-slate-50">
                     <Link href={l.remaining > 0.001 ? `/trips/new?orderId=${o.id}` : `/orders/${o.id}`}
                       className={`absolute top-0.5 flex h-5 items-center whitespace-nowrap rounded px-1.5 text-[11px] font-medium ${l.remaining > 0.001 ? "border border-dashed border-red-400 bg-red-50 text-red-800" : "bg-emerald-100 text-emerald-800"}`}
@@ -155,7 +155,7 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
       {noTime.length > 0 && (
         <Card>
           <CardHeader title="Soati ko'rsatilmagan zayavkalar" description="Kalendarga tushmaydi — reys ochishda rejadagi vaqtni belgilang" />
-          <ul className="space-y-1 text-sm">{noTime.map((o) => <li key={o.id}><Link href={`/trips/new?orderId=${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link> · {o.customer.name} · {qty(orderLogistics(o).remaining)} qoldi</li>)}</ul>
+          <ul className="space-y-1 text-sm">{noTime.map((o) => <li key={o.id}><Link href={`/trips/new?orderId=${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link> · {qty(orderLogistics(o).remaining)} qoldi</li>)}</ul>
         </Card>
       )}
       {backlog.length > 0 && (
@@ -163,7 +163,7 @@ export default async function DispatchCalendar({ searchParams }: { searchParams:
           <CardHeader title="Oldingi kunlardan qolgan" description="Yetkazish sanasi o'tgan, hali to'liq biriktirilmagan zayavkalar — bugungi rejaga qo'shing" />
           <ul className="space-y-1 text-sm">
             {backlog.map((o) => ({ o, l: orderLogistics({ ...o, items: o.items, trips: o.trips }) })).filter((x) => x.l.remaining > 0.001).map(({ o, l }) => (
-              <li key={o.id}><Link href={`/trips/new?orderId=${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link> · {o.customer.name} · {date(o.deliveryDate)}{o.deliveryTime ? ` ${o.deliveryTime}` : ""} · <span className="text-amber-700">{qty(l.remaining)} qoldi</span></li>
+              <li key={o.id}><Link href={`/trips/new?orderId=${o.id}`} className="font-medium hover:underline">{o.customer.name}</Link> · {date(o.deliveryDate)}{o.deliveryTime ? ` ${o.deliveryTime}` : ""} · <span className="text-amber-700">{qty(l.remaining)} qoldi</span></li>
             ))}
           </ul>
         </Card>

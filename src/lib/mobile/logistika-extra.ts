@@ -136,7 +136,7 @@ const logiRow = (o: { id: string; orderNo: string; isUrgent: boolean; needsPump:
   const u = unitShort(orderUnit(o.items));
   return {
     id: o.id,
-    title: `${o.orderNo} · ${o.customer.name}${o.isUrgent ? " · shoshilinch" : ""}`,
+    title: `${o.customer.name}${o.isUrgent ? " · shoshilinch" : ""}`,
     subtitle: `${deliveryAt(o.deliveryDate, o.deliveryTime)} · ${o.deliveryAddress}${o.needsPump ? " · nasos" : ""}${o.lat == null ? " · nuqta yo'q" : ""}`,
     right: `${fmtNum(l.delivered, 1)} / ${fmtNum(l.total, 1)} ${u}`,
     status: l.problem ? "Muammo" : l.late ? "Kechikmoqda" : ORDER_LOGI[l.status].label,
@@ -203,7 +203,7 @@ async function dayList(title: string, filter?: string): Promise<MobileList> {
     const left = l.remaining > 0.001 ? `qoldi ${fmtNum(l.remaining, 1)} ${u}` : `${fmtNum(l.delivered, 1)} / ${fmtNum(l.total, 1)} ${u}`;
     return {
       id: o.id,
-      title: `${kind === "timed" ? `${o.deliveryTime} · ` : ""}${o.orderNo} · ${o.customer.name}${o.isUrgent ? " · shoshilinch" : ""}`,
+      title: `${kind === "timed" ? `${o.deliveryTime} · ` : ""}${o.customer.name}${o.isUrgent ? " · shoshilinch" : ""}`,
       subtitle: `${kind === "backlog" ? `${date(o.deliveryDate)} · ` : ""}${o.deliveryAddress}${o.needsPump ? " · nasos" : ""}`,
       right: left,
       status: kind === "backlog" ? "Oldingi kundan" : kind === "untimed" ? "Soat yo'q" : l.late ? "Kechikmoqda" : ORDER_LOGI[l.status].label,
@@ -1096,7 +1096,7 @@ async function siteDetail(user: MobileUser, id: string): Promise<MobileDetail> {
     },
   });
   if (!s) throw new ListError("NOT_FOUND", "Obyekt topilmadi", 404);
-  const trips = s.orders.flatMap((o) => o.trips.map((t) => ({ ...t, orderNo: o.orderNo })));
+  const trips = s.orders.flatMap((o) => o.trips);
   const delivered = trips.filter((t) => t.status === "DELIVERED");
   const avg = (a: number[]) => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null);
   const road = avg(delivered.filter((t) => t.loadedAt && t.deliveredAt).map((t) => (t.deliveredAt!.getTime() - t.loadedAt!.getTime()) / 60000));
@@ -1116,8 +1116,8 @@ async function siteDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "O'rtacha tushirish", value: minutesLabel(unload) },
     ],
     sections: [
-      { title: "Buyurtmalar", empty: "Zayavka yo'q", target: "orders", rows: s.orders.slice(0, 20).map((o) => { const l = orderLogistics(o); return { id: o.id, title: o.orderNo, subtitle: `${deliveryAt(o.deliveryDate, o.deliveryTime)} · ${o.items.map((i) => i.product.name).join(", ")}`, right: fmtNum(l.total, 1), status: ORDER_LOGI[l.status].label, tone: l.problem || l.late ? "danger" as Tone : COLOR_TONE[ORDER_LOGI[l.status].color] }; }) },
-      { title: "Yetkazib berish tarixi", empty: "Reys yo'q", target: "trips", rows: trips.slice(0, 20).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: [t.orderNo, t.driver.fullName, t.receiverName ? `qabul: ${t.receiverName}` : null, t.deliveredAt ? dateTime(t.deliveredAt) : null].filter(Boolean).join(" · "), right: `${t.acceptedQty != null ? `${fmtNum(n(t.acceptedQty), 1)} / ` : ""}${fmtNum(n(t.qtyM3), 1)}`, status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
+      { title: "Buyurtmalar", empty: "Zayavka yo'q", target: "orders", rows: s.orders.slice(0, 20).map((o) => { const l = orderLogistics(o); return { id: o.id, title: deliveryAt(o.deliveryDate, o.deliveryTime), subtitle: o.items.map((i) => i.product.name).join(", "), right: fmtNum(l.total, 1), status: ORDER_LOGI[l.status].label, tone: l.problem || l.late ? "danger" as Tone : COLOR_TONE[ORDER_LOGI[l.status].color] }; }) },
+      { title: "Yetkazib berish tarixi", empty: "Reys yo'q", target: "trips", rows: trips.slice(0, 20).map((t) => ({ id: t.id, title: `${t.deliveryNoteNo} · ${t.vehicle.plate}`, subtitle: [t.driver.fullName, t.receiverName ? `qabul: ${t.receiverName}` : null, t.deliveredAt ? dateTime(t.deliveredAt) : null].filter(Boolean).join(" · "), right: `${t.acceptedQty != null ? `${fmtNum(n(t.acceptedQty), 1)} / ` : ""}${fmtNum(n(t.qtyM3), 1)}`, status: TRIP_PHASE[tripPhase(t)].label, tone: tripTone(t) })) },
     ],
     actions: can(user, "site.save") ? [{ id: "site.save", label: "Obyekt kartasini tahrirlash", tone: "brand", form: await siteFormFields(s) }] : [],
   };
@@ -1229,7 +1229,7 @@ export function logisticsHomeSections(d: LogisticsDashboard): HomeSection[] {
     },
     {
       title: `Nasoslar · ${freePumps} bo'sh / ${pumpFleet.length}`, empty: "Nasos kerak bo'lgan ochiq zayavka yo'q", target: "orders", icon: "truck",
-      rows: d.pumps.map((x) => ({ id: x.orderId, title: `${x.orderNo} · ${x.customer}`, right: x.time ?? "—", tone: (d.pumps.length > freePumps ? "warning" : "info") as Tone })),
+      rows: d.pumps.map((x) => ({ id: x.orderId, title: x.customer, right: x.time ?? "—", tone: (d.pumps.length > freePumps ? "warning" : "info") as Tone })),
     },
     {
       title: "Kun rejasi", empty: "", icon: "calendar-days",

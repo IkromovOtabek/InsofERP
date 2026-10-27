@@ -94,13 +94,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       <Tabs current={st ?? ""} items={tabs} />
       {count > rows.length && <p className="mb-2 text-xs text-slate-500">Ro&apos;yxatda oxirgi {rows.length} ta zayavka (davrda {count} ta) — ko&apos;rsatkichlar butun davr bo&apos;yicha.</p>}
       <Table>
-        <thead><tr><Th>№</Th><Th>Yetkazish</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th right>To'langan</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Yetkazish</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th right>To'langan</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {rows.length === 0 && <Empty text="Qabul qilingan zayavkalar yo'q" />}
           {rows.map(({ o, vol, sum, paid }) => (
             <Tr key={o.id}>
-              <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td>
-              <Td className="whitespace-nowrap">{deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
+              <Td className="whitespace-nowrap"><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{deliveryAt(o.deliveryDate, o.deliveryTime)}</Link></Td>
               <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} href={`/customers/${o.customerId}`} /></Td>
               <Td>{o.items.map((i) => i.product.code).join(", ")}{o.needsPump && " · nasos"}{!o.needsDelivery && " · o'zi oladi"}{o.isUrgent && <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">zarur</span>}{o.onCredit && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">qarzga</span>}</Td>
               <Td right className="whitespace-nowrap">{vol}</Td>

@@ -39,7 +39,7 @@ export async function ostatkaDetail(productId: string) {
       include: { customer: true, items: { where: { productId } }, trips: { where: { status: { not: "CANCELLED" } } } },
       orderBy: { deliveryDate: "asc" },
     }),
-    db.productionBatch.findMany({ where: { productId }, orderBy: { date: "desc" }, take: 30, include: { createdBy: true, order: true } }),
+    db.productionBatch.findMany({ where: { productId }, orderBy: { date: "desc" }, take: 30, include: { createdBy: true, order: { include: { customer: { select: { name: true } } } } } }),
     db.stockMove.findMany({ where: { productId }, orderBy: { createdAt: "desc" }, take: 50, include: { createdBy: true } }),
   ]);
   if (!product) return null;

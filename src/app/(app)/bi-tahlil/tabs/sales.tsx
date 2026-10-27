@@ -41,7 +41,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
         <Kpi label="Marja" value={`${fmtNum(k.margin.cur, 1)}%`} delta={k.gross.prev ? k.margin.cur - k.margin.prev : null} deltaLabel="p.p." icon={Percent} tone={k.margin.cur >= 20 ? "success" : k.margin.cur >= 10 ? "warning" : "danger"} href="#imkoniyat" />
       </div>
 
-      <Panel title="Sotuv dinamikasi" info="Ustunlar — joriy davr, och kulrang — oldingi davr (bir xil uzunlikdagi). Ustun ustiga kursor olib boring." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={href({ gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
+      <Panel id="dinamika" title="Sotuv dinamikasi" info="Ustunlar — joriy davr, och kulrang — oldingi davr (bir xil uzunlikdagi). Ustun ustiga kursor olib boring." action={<div className="flex gap-1">{(["day", "week", "month"] as const).map((g) => <Chip key={g} active={gran === g} href={href({ gran: g })}>{{ day: "Kunlik", week: "Haftalik", month: "Oylik" }[g]}</Chip>)}</div>}>
         {d.dyn.some((x) => x.value > 0) ? <BarChart data={d.dyn.map((x) => ({ label: x.label, value: x.value }))} compare={d.dynPrev.map((x) => x.value)} formatValue={(v) => `${moneyShort(v)} so'm`} labelEvery={labelEvery} height={200} /> : <Note>Bu davrda sotuv yo'q.</Note>}
         <div className="mt-4 border-t border-slate-100 pt-3"><div className="mb-1 text-xs font-medium text-slate-500">Hajm, m³</div><BarChart data={d.dynVol.map((x) => ({ label: x.label, value: x.value }))} tone="info" formatValue={(v) => `${qty(v)} m³`} labelEvery={labelEvery} height={90} /></div>
       </Panel>
@@ -105,7 +105,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
               <div className="rounded-lg bg-red-50 p-3"><div className="text-xs text-red-700">Bloklangan (hozir)</div><div className="text-xl font-bold tabular text-red-700">{moneyShort(d.lost.blocked)}</div><div className="text-xs text-red-600">{d.lost.blockedOrders} ta zayavka</div></div>
               <div className="rounded-lg bg-slate-50 p-3"><div className="text-xs text-slate-500">Bekor qilingan (davr)</div><div className="text-xl font-bold tabular text-slate-800">{moneyShort(d.lost.cancelled)}</div><div className="text-xs text-slate-500">{d.lost.cancelledOrders} ta zayavka</div></div>
             </div>
-            {d.lost.blockedRows.length > 0 && <ul className="mt-3 space-y-1 text-[13px]">{d.lost.blockedRows.map((o) => <li key={o.orderId} className="flex justify-between gap-2"><Link href={`/orders/${o.orderId}`} className="truncate hover:underline">{o.orderNo} · {o.customer}</Link><span className="shrink-0 tabular">{moneyShort(o.revenue)}</span></li>)}</ul>}
+            {d.lost.blockedRows.length > 0 && <ul className="mt-3 space-y-1 text-[13px]">{d.lost.blockedRows.map((o) => <li key={o.orderId} className="flex justify-between gap-2"><Link href={`/orders/${o.orderId}`} className="truncate hover:underline">{o.customer}</Link><span className="shrink-0 tabular">{moneyShort(o.revenue)}</span></li>)}</ul>}
             <div className="mt-3"><Action href="/orders?status=BLOCKED">Bloklangan zayavkalarni ko'rib chiqing — direktor limitni ochsin yoki mijoz oldindan to'lasin</Action></div>
           </Panel>
           <Panel id="imkoniyat" title="Sales Opportunity — qaysi markani sotish foydali" info="Marja × tushum bo'yicha eng foydali markalar. Chegirma — bazaviy narxdan past sotilgan summa.">
@@ -125,7 +125,7 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
       </Panel>
 
       {/* Batafsil tranzaksiyalar */}
-      <Panel title="Batafsil tranzaksiyalar" info="Zayavka pozitsiyalari — davr bo'yicha. Filtrlash va eksport." padded={false} action={<ExportLink type="sales" range={range} />}>
+      <Panel id="tranzaksiyalar" title="Batafsil tranzaksiyalar" info="Zayavka pozitsiyalari — davr bo'yicha. Filtrlash va eksport." padded={false} action={<ExportLink type="sales" range={range} />}>
         <form method="get" action={ROUTES.sales} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 text-[13px]">
           {range.period === "custom" ? <><input type="hidden" name="from" value={isoDate(range.from)} /><input type="hidden" name="to" value={isoDate(addDays(range.to, -1))} /></> : <input type="hidden" name="period" value={range.period} />}{sp.gran && <input type="hidden" name="gran" value={sp.gran} />}
           <Select name="customer" aria-label="Mijoz" defaultValue={sp.customer ?? ""} className="h-8 w-56"><option value="">Barcha mijozlar</option>{d.customerOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
@@ -135,10 +135,10 @@ export async function SalesTab({ range, sp }: { range: Range; sp: SP }) {
           {(sp.customer || sp.product) && <Link href={tabHref(range, "sales")} className="text-xs text-slate-500 hover:underline">Tozalash</Link>}
         </form>
         <Table className="rounded-none border-0 shadow-none">
-          <thead><tr><Th>Sana</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Marka</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th right>Foyda</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Sana</Th><Th>Mijoz</Th><Th>Marka</Th><Th right>Miqdor</Th><Th right>Narx</Th><Th right>Summa</Th><Th right>Foyda</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.detail.rows.length === 0 && <Empty text="Tranzaksiya topilmadi" />}
-            {d.detail.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.orderNo}</Link></Td><Td>{x.customer}</Td><Td>{x.code}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.price < x.basePrice ? "text-amber-600" : ""}>{moneyShort(x.price)}</Td><Td right className="font-medium">{money(x.revenue)}</Td><Td right className={x.revenue - x.cost < 0 ? "text-red-600" : "text-emerald-700"}>{x.cost ? moneyShort(x.revenue - x.cost) : "—"}</Td><Td><Tag>{x.status}</Tag></Td></Tr>)}
+            {d.detail.rows.map((x, i) => <Tr key={`${x.orderId}-${x.productId}-${i}`}><Td className="whitespace-nowrap text-slate-500">{dateTime(x.date)}</Td><Td><Link href={`/orders/${x.orderId}`} className="hover:underline">{x.customer}</Link></Td><Td>{x.code}</Td><Td right>{qty(x.qty)} {x.unit}</Td><Td right className={x.price < x.basePrice ? "text-amber-600" : ""}>{moneyShort(x.price)}</Td><Td right className="font-medium">{money(x.revenue)}</Td><Td right className={x.revenue - x.cost < 0 ? "text-red-600" : "text-emerald-700"}>{x.cost ? moneyShort(x.revenue - x.cost) : "—"}</Td><Td><Tag>{x.status}</Tag></Td></Tr>)}
           </tbody>
         </Table>
         <Pager total={d.detail.total} page={d.detail.page} size={d.detail.size} href={(p) => href({ page: String(p), size: String(size) })} />

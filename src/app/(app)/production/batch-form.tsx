@@ -10,7 +10,7 @@ import type { CatalogGroup, CatalogProduct } from "@/components/product-picker";
  * Zayavka qatori (zayavka + mahsulot): key — `${orderId}~${productId}`, unit — mahsulot birligi ("m³"),
  * remainingM3 — shu mahsulot bo'yicha zayavkada qolgan miqdor.
  */
-type Order = { key: string; id: string; orderNo: string; customer: string; productId: string; product: string; remainingM3: number; unit: string };
+type Order = { key: string; id: string; label: string; productId: string; product: string; remainingM3: number; unit: string };
 /** Spravochnikdagi mahsulot + retsepti bormi (retseptsiz zames yozib bo'lmaydi). */
 type Product = CatalogProduct & { hasRecipe: boolean };
 type Wh = { id: string; name: string };
@@ -19,7 +19,7 @@ type Wh = { id: string; name: string };
  * tayyor mahsulot hovliga o'zi kirim bo'ladi. Shu ustiga zames ham yozilsa, bitta ish
  * ikki marta hisoblanadi — shuning uchun mahsulot tanlanganda ogohlantirish chiqadi.
  */
-export type OpenTask = { taskNo: string; brigade: string; orderNo: string; qty: number; doneQty: number; unit: string };
+export type OpenTask = { taskNo: string; brigade: string; order: string; qty: number; doneQty: number; unit: string };
 
 export function BatchForm({ orders, products, groups, canCreateProduct, warehouses, openTasks = {} }: { orders: Order[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; warehouses: Wh[]; openTasks?: Record<string, OpenTask[]> }) {
   const [state, action, pending] = useActionState(createBatch, undefined);
@@ -46,7 +46,7 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
         <input type="hidden" name="orderId" value={order?.id ?? ""} />
         <Select value={orderKey} onChange={(e) => pickOrder(e.target.value)}>
           <option value="">— zayavkasiz —</option>
-          {orders.map((o) => <option key={o.key} value={o.key}>{o.orderNo} · {o.customer} · {o.product} · qoldi {o.remainingM3} {o.unit}</option>)}
+          {orders.map((o) => <option key={o.key} value={o.key}>{o.label} · {o.product} · qoldi {o.remainingM3} {o.unit}</option>)}
         </Select>
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -75,7 +75,7 @@ export function BatchForm({ orders, products, groups, canCreateProduct, warehous
           <ul className="ml-4 list-disc space-y-0.5">
             {brigadeTasks.map((t) => (
               <li key={t.taskNo}>
-                <b>{t.brigade}</b> · topshiriq {t.taskNo} ({t.orderNo}) — {t.qty} {t.unit} dan <b>{t.doneQty}</b> tasi bajarilgan
+                <b>{t.brigade}</b> · topshiriq {t.taskNo} ({t.order}) — {t.qty} {t.unit} dan <b>{t.doneQty}</b> tasi bajarilgan
               </li>
             ))}
           </ul>

@@ -130,7 +130,7 @@ export async function DriverTrips({ driverId }: { driverId: string }) {
         </div>
         <Table>
           <thead>
-            <tr><Th>Nakladnoy</Th><Th>Sana</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Texnika</Th><Th right>Miqdor</Th><Th>Holat</Th><Th>Yetkazilgan</Th>{eco && <Th>ECO</Th>}</tr>
+            <tr><Th>Nakladnoy</Th><Th>Sana</Th><Th>Mijoz</Th><Th>Texnika</Th><Th right>Miqdor</Th><Th>Holat</Th><Th>Yetkazilgan</Th>{eco && <Th>ECO</Th>}</tr>
           </thead>
           <tbody>
             {trips.length === 0 && <Empty text="Bu haydovchida hali reys yo'q" />}
@@ -138,8 +138,7 @@ export async function DriverTrips({ driverId }: { driverId: string }) {
               <Tr key={t.id}>
                 <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link></Td>
                 <Td>{dateTime(t.createdAt)}</Td>
-                <Td><Link href={`/orders/${t.orderId}`} className="hover:underline">{t.order.orderNo}</Link></Td>
-                <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} /></Td>
+                <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} href={`/orders/${t.orderId}`} /></Td>
                 <Td>{t.vehicle.plate}</Td>
                 <Td right>{qty(t.qtyM3)}</Td>
                 <Td><TripStatusBadge status={t.status} /></Td>

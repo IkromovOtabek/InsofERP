@@ -22,7 +22,7 @@ export async function OrderLoadCalendar({ days = 7, canEdit = false }: { days?: 
       where: { status: { not: "CANCELLED" }, dateUnknown: false, deliveryDate: { gte: today, lt: until } },
       orderBy: [{ deliveryTime: "asc" }],
       select: {
-        id: true, orderNo: true, deliveryDate: true, deliveryTime: true, isUrgent: true, status: true,
+        id: true, deliveryDate: true, deliveryTime: true, isUrgent: true, status: true,
         customer: { select: { name: true } },
         deliveryFee: true, items: { select: { qtyM3: true, price: true, product: { select: { unit: true } } } },
       },
@@ -37,7 +37,7 @@ export async function OrderLoadCalendar({ days = 7, canEdit = false }: { days?: 
   for (const o of orders) {
     const key = isoDate(o.deliveryDate);
     byDay.set(key, [...(byDay.get(key) ?? []), {
-      id: o.id, orderNo: o.orderNo, customer: o.customer.name, time: o.deliveryTime,
+      id: o.id, customer: o.customer.name, time: o.deliveryTime,
       status: o.status, statusLabel: ORDER_STATUS[o.status].label, urgent: o.isUrgent,
       // m3 — faqat beton: ustun balandligi kunlik beton quvvatiga nisbatan o'lchanadi
       m3: o.items.reduce((s, i) => s + (i.product.unit === "m3" ? Number(i.qtyM3) : 0), 0),

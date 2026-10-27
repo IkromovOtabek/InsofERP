@@ -10,9 +10,9 @@ import Link from "next/link";
  * remainingM3 — hozir reysga berish mumkin bo'lgan miqdor: brigada tayyorlagani − jo'natilgani.
  * inProduction — hali sexda (brigada tasdiqlamagan). unit — zayavkadagi mahsulot birligi ("m³", "dona"…).
  */
-type Order = { id: string; orderNo: string; customer: string; address: string; remainingM3: number; inProduction: number; unit: string; plannedAt: string; mixed?: boolean; pieceUnit?: string };
+type Order = { id: string; date: string; customer: string; address: string; remainingM3: number; inProduction: number; unit: string; plannedAt: string; mixed?: boolean; pieceUnit?: string };
 /** Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavka — ro'yxatga kirmaydi, sababi ko'rsatiladi. */
-type Waiting = { id: string; orderNo: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
+type Waiting = { id: string; date: string; customer: string; inProduction: number; unit: string; hasTasks: boolean };
 /** type — MIXER (beton) yoki TRUCK (dona mahsulot: plita, blok). */
 type Vehicle = { id: string; plate: string; type: string; capacityM3: number | null; state?: string; mainDriverId?: string | null };
 const TYPE_LABEL: Record<string, string> = { MIXER: "mikser", TRUCK: "yuk mashina", PUMP: "nasos" };
@@ -92,7 +92,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, initialOrder
       <FormError error={state?.error} />
       <Field label="Zayavka *">
         <Select name="orderId" value={orderId} onChange={(e) => pickOrder(e.target.value)}>
-          {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNo} · {o.customer} · tayyor {o.remainingM3} {o.unit}{o.inProduction > 0 ? ` · sexda ${o.inProduction} ${o.unit}` : ""}{o.mixed ? " · aralash" : ""}</option>)}
+          {orders.map((o) => <option key={o.id} value={o.id}>{o.customer} · {o.date} · tayyor {o.remainingM3} {o.unit}{o.inProduction > 0 ? ` · sexda ${o.inProduction} ${o.unit}` : ""}{o.mixed ? " · aralash" : ""}</option>)}
         </Select>
       </Field>
       {order && (
@@ -151,7 +151,7 @@ export function TripForm({ orders, waiting = [], vehicles, drivers, initialOrder
           <ul className="mt-1 space-y-0.5">
             {waiting.map((w) => (
               <li key={w.id}>
-                <Link href={`/orders/${w.id}`} className="font-medium hover:underline">{w.orderNo}</Link> · {w.customer} —{" "}
+                <Link href={`/orders/${w.id}`} className="font-medium hover:underline">{w.customer}</Link> · {w.date} —{" "}
                 {w.hasTasks ? `${w.inProduction} ${w.unit} ishlab chiqarilmoqda` : "brigada tayinlanmagan"}
               </li>
             ))}

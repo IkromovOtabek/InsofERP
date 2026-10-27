@@ -30,7 +30,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
   });
   if (!s) notFound();
   const customers = await db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } });
-  const trips = s.orders.flatMap((o) => o.trips.map((t) => ({ ...t, orderNo: o.orderNo })));
+  const trips = s.orders.flatMap((o) => o.trips);
   const delivered = trips.filter((t) => t.status === "DELIVERED");
   const durations = delivered.filter((t) => t.loadedAt && t.deliveredAt).map((t) => (t.deliveredAt!.getTime() - t.loadedAt!.getTime()) / 60000);
   const unload = delivered.filter((t) => t.arrivedAt && t.deliveredAt).map((t) => (t.deliveredAt!.getTime() - t.arrivedAt!.getTime()) / 60000);
@@ -51,11 +51,11 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
       <Card padded={false} className="mb-5">
         <div id="buyurtmalar" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Buyurtmalar" icon={History} /></div>
         <Table>
-          <thead><tr><Th>Zayavka</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th>Yetkazish</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Yetkazish</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {s.orders.length === 0 && <Empty text="Zayavka yo'q" />}
             {s.orders.map((o) => { const l = orderLogistics(o); return (
-              <Tr key={o.id}><Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td><Td className="text-sm">{o.items.map((i) => i.product.name).join(", ")}</Td><Td right className="tabular">{qty(l.total)}</Td><Td className="text-sm tabular">{deliveryAt(o.deliveryDate, o.deliveryTime)}</Td><Td><OrderLogiBadge status={l.status} late={l.late} problem={l.problem} /></Td></Tr>
+              <Tr key={o.id}><Td><Link href={`/orders/${o.id}`} className="font-medium tabular hover:underline">{deliveryAt(o.deliveryDate, o.deliveryTime)}</Link></Td><Td className="text-sm">{o.items.map((i) => i.product.name).join(", ")}</Td><Td right className="tabular">{qty(l.total)}</Td><Td><OrderLogiBadge status={l.status} late={l.late} problem={l.problem} /></Td></Tr>
             ); })}
           </tbody>
         </Table>
@@ -69,7 +69,7 @@ export default async function SitePage({ params }: { params: Promise<{ id: strin
             {trips.length === 0 && <Empty text="Reys yo'q" />}
             {trips.map((t) => (
               <Tr key={t.id}>
-                <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} /><div className="text-xs text-slate-500">{t.orderNo}</div></Td>
+                <Td><TripLink id={t.id} noteNo={t.deliveryNoteNo} /></Td>
                 <Td className="text-sm"><span className="tabular">{t.vehicle.plate}</span><div className="text-xs text-slate-500">{t.driver.fullName}</div></Td>
                 <Td right className="tabular">{qty(t.qtyM3)}</Td>
                 <Td right className="tabular">{t.acceptedQty != null ? qty(t.acceptedQty) : "—"}</Td>

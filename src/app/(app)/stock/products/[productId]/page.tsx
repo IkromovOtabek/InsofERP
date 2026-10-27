@@ -32,12 +32,11 @@ export default async function StockProductDetail({ params }: { params: Promise<{
       <Card padded={false} className="mt-5">
         <div id="kimniki" className="scroll-mt-20 px-5 pt-5"><CardHeader title="Kimniki" description="Har bir qator — zayavkaga band qilingan mahsulot. Oxirgi qator — egasi yo'q (erkin) qoldiq." icon={UserCheck} /></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-sm">
-          <thead><tr><Th>Egasi</Th><Th>Zayavka</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
+          <thead><tr><Th>Egasi</Th><Th>Telefon</Th><Th>Yetkazish</Th><Th right>Buyurtma</Th><Th right>Jo'natildi</Th><Th right>Band</Th><Th>Holat</Th></tr></thead>
           <tbody>
             {d.owners.map((o) => (
               <Tr key={o.orderId}>
-                <Td className="whitespace-nowrap">{o.customer}</Td>
-                <Td><Link href={`/orders/${o.orderId}`} className="whitespace-nowrap hover:underline">{o.orderNo}</Link></Td>
+                <Td className="whitespace-nowrap"><Link href={`/orders/${o.orderId}`} className="hover:underline">{o.customer}</Link></Td>
                 <Td>{o.phone ?? "—"}</Td><Td>{date(o.deliveryDate)}</Td>
                 <Td right>{qty(o.qty)}</Td><Td right className="text-slate-500">{qty(o.shipped)}</Td>
                 <Td right className="font-semibold text-blue-700">{qty(o.reserved)}</Td>
@@ -45,11 +44,11 @@ export default async function StockProductDetail({ params }: { params: Promise<{
               </Tr>
             ))}
             <tr className="bg-emerald-50/60">
-              <Td className="font-semibold text-emerald-800">Egasi yo'q</Td><Td colSpan={5} className="text-emerald-700">Erkin — istalgan mijozga sotish mumkin</Td>
+              <Td className="font-semibold text-emerald-800">Egasi yo'q</Td><Td colSpan={4} className="text-emerald-700">Erkin — istalgan mijozga sotish mumkin</Td>
               <Td right className="font-semibold text-emerald-700">{qty(d.free)}</Td><Td><Badge color="green">Erkin</Badge></Td>
             </tr>
             <tr className="bg-slate-50/70">
-              <Td className="font-semibold">Jami</Td><Td colSpan={5} />
+              <Td className="font-semibold">Jami</Td><Td colSpan={4} />
               <Td right className="whitespace-nowrap font-semibold">{qty(d.total)} {u}</Td><Td />
             </tr>
           </tbody>
@@ -63,7 +62,7 @@ export default async function StockProductDetail({ params }: { params: Promise<{
             <thead><tr><Th>№</Th><Th>Sana</Th><Th right>Miqdor</Th><Th>Zayavka</Th><Th>Kim</Th></tr></thead>
             <tbody>
               {d.batches.length === 0 && <Empty text="Hali ishlab chiqarilmagan" icon={Factory} />}
-              {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td><Td>{date(b.date)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.orderNo}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
+              {d.batches.map((b) => <Tr key={b.id}><Td><Link href={`/production/${b.id}`} className="hover:underline">{b.batchNo}</Link>{b.cancelledAt && <> <Badge color="red">Bekor qilingan</Badge></>}</Td><Td>{date(b.date)}</Td><Td right>{qty(b.qtyM3)}</Td><Td>{b.order ? <Link href={`/orders/${b.order.id}`} className="hover:underline">{b.order.customer.name}</Link> : <span className="text-slate-400">sklad uchun</span>}</Td><Td>{b.createdBy.fullName}</Td></Tr>)}
             </tbody>
           </table></div>
         </Card>

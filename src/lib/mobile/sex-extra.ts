@@ -132,7 +132,7 @@ export async function batchForm(): Promise<CreateForm> {
     return [...byProduct].map(([productId, x]) => {
       const done = o.batches.filter((b) => b.productId === productId).reduce((s, b) => s + Number(b.qtyM3), 0);
       const left = Math.max(0, Math.round((x.total - done) * 1000) / 1000);
-      return { left, opt: { value: `${o.id}~${productId}`, label: `${o.orderNo} · ${markedName(o.customer.name, o.customerId, marks)} · ${x.name}`, hint: `qoldi ${fmtNum(left, 3)} m³ · ${day(o.deliveryDate)}`, extra: { productId, qtyM3: String(left) } } };
+      return { left, opt: { value: `${o.id}~${productId}`, label: `${markedName(o.customer.name, o.customerId, marks)} · ${x.name}`, hint: `qoldi ${fmtNum(left, 3)} m³ · ${day(o.deliveryDate)}`, extra: { productId, qtyM3: String(left) } } };
     });
   }).filter((x) => x.left > 0).map((x) => x.opt);
   return {
@@ -449,7 +449,7 @@ export async function todayLoadSections(): Promise<HomeSection[]> {
       rows: load.orders.map((o) => {
         const one = o.items.length === 1 ? o.items[0]!.unit : null;
         return {
-          id: o.id, title: `${o.orderNo} · ${o.customer}`,
+          id: o.id, title: o.customer,
           subtitle: `${o.time ?? "vaqtsiz"} · ${o.items.map((i) => `${i.code} ${inUnit(i.qty, i.unit)}`).join(", ")}${o.pickup ? " · o'zi oladi" : ""}`,
           right: o.left > 0 ? `qoldi ${inUnit(o.left, one)}` : "jo'natildi",
           tone: (o.left > 0 ? "warning" : "success") as Tone,

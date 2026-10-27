@@ -93,7 +93,7 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
 
       <form className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         {tab !== "open" && <input type="hidden" name="tab" value={tab} />}
-        <Input name="q" defaultValue={q ?? ""} placeholder="PS №, zayavka № yoki mijoz…" className="h-9 w-full sm:w-64" />
+        <Input name="q" defaultValue={q ?? ""} placeholder="PS № yoki mijoz…" className="h-9 w-full sm:w-64" />
         {tab === "history" && (
           <>
             <Input name="from" type="date" defaultValue={from ? isoDate(from) : ""} className="h-9 w-40" aria-label="Davr boshi" />
@@ -123,8 +123,7 @@ export default async function PulQabulPage({ searchParams }: { searchParams: Pro
               <Tr key={r.id} className={cn(r.overdue && "bg-red-50/60", isOpenRow && !r.overdue && "bg-brand-50/60")}>
                 <Td><Link href={isOpenRow ? href(tab) : href(tab, r.id)} className="font-medium hover:underline">{r.docNo}</Link></Td>
                 <Td>
-                  {canOrders ? <Link href={`/orders/${r.order.id}`} className="font-medium hover:underline">{r.order.orderNo}</Link> : <span className="font-medium">{r.order.orderNo}</span>}
-                  <div className="text-xs text-slate-500">{r.order.products || "—"}</div>
+                  {canOrders ? <Link href={`/orders/${r.order.id}`} className="font-medium hover:underline">{r.order.products || "Zayavka"}</Link> : <span className="font-medium">{r.order.products || "—"}</span>}
                   <div className="text-xs text-slate-500">summa {money(r.order.total)}</div>
                 </Td>
                 <Td>

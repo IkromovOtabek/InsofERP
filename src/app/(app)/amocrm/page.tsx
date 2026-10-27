@@ -4,7 +4,7 @@ import type { AmoDealState } from "@/generated/prisma";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
-import { dateTime, money } from "@/lib/format";
+import { date, dateTime, money } from "@/lib/format";
 import { formatPhone } from "@/lib/phone";
 import { AMO_ID, baseUrl, dealUrl, isActive, isReady, oauthRedirectUri, webhookUrl } from "@/lib/amocrm/store";
 import { pipelinesSafe } from "@/lib/amocrm/connect";
@@ -56,7 +56,7 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
         where: { state: { in: filter[tab] } },
         orderBy: tab === "kutmoqda" ? { readyAt: "asc" } : { updatedAt: "desc" },
         take: 200,
-        include: { customer: { select: { id: true, name: true } }, orders: { select: { id: true, orderNo: true, status: true }, orderBy: { createdAt: "asc" } }, lead: { select: { id: true, createdAt: true } } },
+        include: { customer: { select: { id: true, name: true } }, orders: { select: { id: true, deliveryDate: true, status: true }, orderBy: { createdAt: "asc" } }, lead: { select: { id: true, createdAt: true } } },
       })
     : [];
 
@@ -128,7 +128,7 @@ export default async function AmoPage({ searchParams }: { searchParams: Promise<
                     <Badge color={STATE[d.state].color}>{STATE[d.state].label}</Badge>
                     {d.orders.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
-                        {d.orders.map((o) => <Link key={o.id} href={`/orders/${o.id}`} className="font-mono hover:underline">{o.orderNo}</Link>)}
+                        {d.orders.map((o) => <Link key={o.id} href={`/orders/${o.id}`} className="hover:underline">{`Zayavka ${date(o.deliveryDate)}`}</Link>)}
                       </div>
                     )}
                     {(d.state === "PUSHING" ? d.pushError : d.syncError) && <div className="mt-1 max-w-64 text-xs text-red-600">{d.state === "PUSHING" ? d.pushError : d.syncError}</div>}

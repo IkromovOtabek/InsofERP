@@ -220,8 +220,8 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
       if (left <= settings.assignLeadMin * 2) {
         alerts.push({
           level: left <= settings.assignLeadMin ? "crit" : "warn",
-          title: `${o.orderNo}: transport biriktirilmagan`,
-          text: `${o.customer} · ${o.remaining} ${o.unit === "m3" ? "m³" : o.unit} qoldi · ${left >= 0 ? `${minutesLabel(left)} qoldi` : `${minutesLabel(-left)} o'tdi`}`,
+          title: `${o.customer}: transport biriktirilmagan`,
+          text: `${o.remaining} ${o.unit === "m3" ? "m³" : o.unit} qoldi · ${left >= 0 ? `${minutesLabel(left)} qoldi` : `${minutesLabel(-left)} o'tdi`}`,
           href: `/trips/new?orderId=${o.id}`,
         });
       }
@@ -257,7 +257,7 @@ export async function logisticsDashboard(dayInput?: Date): Promise<LogisticsDash
     for (const o of dashOrders) {
       if (o.status === "CANCELLED" || o.status === "DELIVERED" || o.status === "CLOSED") continue;
       const raw = rawOrders.get(o.id);
-      if (raw && raw.lat == null) alerts.push({ level: "warn", title: `${o.orderNo}: obyekt nuqtasi yo'q`, text: `${o.customer} — navigatsiya va ETA ishlamaydi`, href: `/orders/${o.id}` });
+      if (raw && raw.lat == null) alerts.push({ level: "warn", title: `${o.customer}: obyekt nuqtasi yo'q`, text: "navigatsiya va ETA ishlamaydi", href: `/orders/${o.id}` });
     }
     for (const t of trips) {
       if (ACTIVE_TRIP.includes(t.status) && t.ecoError) alerts.push({ level: "warn", title: `${t.deliveryNoteNo}: haydovchi ilovasi`, text: t.ecoError, href: `/trips/${t.id}` });

@@ -22,7 +22,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   const trips = await db.trip.findMany({
     where: { status: "DELIVERED", deliveredAt: { gte: r.from, lt: r.to } },
     include: {
-      order: { select: { orderNo: true, customer: { select: { name: true } }, items: { select: { product: { select: { unit: true } } } } } },
+      order: { select: { customer: { select: { name: true } }, items: { select: { product: { select: { unit: true } } } } } },
       vehicle: { select: { plate: true } }, driver: { select: { fullName: true } }, issues: true,
     },
     orderBy: { deliveredAt: "desc" },
@@ -64,7 +64,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
               const short = Number(t.qtyM3) - a > 0.001;
               return (
                 <Tr key={t.id}>
-                  <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link><div className="text-xs text-slate-500">{t.order.orderNo}</div></Td>
+                  <Td><Link href={`/trips/${t.id}`} className="font-medium tabular hover:underline">{t.deliveryNoteNo}</Link></Td>
                   <Td className="text-sm">{t.order.customer.name}</Td>
                   <Td className="text-sm"><span className="tabular">{t.vehicle.plate}</span><div className="text-xs text-slate-500">{t.driver.fullName}</div></Td>
                   <Td right className="tabular">{qty(t.qtyM3)}</Td>

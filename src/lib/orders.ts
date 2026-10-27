@@ -153,13 +153,13 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   notifyAfter(() => status === "BLOCKED"
     ? notifyRoles(["DIRECTOR"], {
         type: "ORDER_BLOCKED",
-        title: `Limit oshdi — ${o.orderNo}`,
+        title: "Limit oshdi",
         body: `${o.customer.name} · ${money(total)}. Blokni oching yoki to'lov kutiladi`,
         link,
       })
     : notifyRoles(["PRODUCTION", "LOGISTICS"], {
         type: "ORDER_CONFIRMED",
-        title: `Yangi zayavka — ${o.orderNo}`,
+        title: "Yangi zayavka",
         body: `${o.customer.name} · ${o.deliveryAddress}`,
         link,
       }, { except: userId }));
@@ -167,7 +167,7 @@ export async function orderConfirm(id: string, userId: string): Promise<OrderRes
   if (o.createdById !== userId) {
     notifyAfter(() => notifyUsers([o.createdById], {
       type: status === "BLOCKED" ? "ORDER_BLOCKED" : "ORDER_CONFIRMED",
-      title: status === "BLOCKED" ? `Zayavka bloklandi — ${o.orderNo}` : `Zayavka qabul qilindi — ${o.orderNo}`,
+      title: status === "BLOCKED" ? `Zayavka bloklandi — ${o.customer.name}` : "Zayavka qabul qilindi",
       body: status === "BLOCKED" ? "Kredit limiti oshgan — direktor qarorini kutmoqda" : `${o.customer.name} · ishlab chiqarishga o'tdi`,
       link,
     }));
@@ -208,7 +208,7 @@ export async function orderSetDate(id: string, deliveryDate: Date, userId: strin
  * Sklad (STOCK) zayavkasi kunlik limitga kirmaydi (limit faqat SALE).
  */
 export async function orderUnblock(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { select: { qtyM3: true, product: { select: { unit: true } } } } } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { items: { select: { qtyM3: true, product: { select: { unit: true } } } }, customer: { select: { name: true } } } });
   if (o.status !== "BLOCKED") return { changed: false, error: "Zayavka bloklanmagan" };
   const res = await db.$transaction(async (tx) => {
     if (o.kind === "SALE") {
@@ -232,15 +232,15 @@ export async function orderUnblock(id: string, userId: string): Promise<OrderRes
   if ("error" in res) return { changed: false, error: res.error };
   // Zayavkani kiritgan sotuvchi kutib turibdi — javobni o'zi so'ramasin
   notifyAfter(async () => {
-    await notifyUsers([o.createdById], { type: "ORDER_UNBLOCKED", title: `Blok ochildi — ${o.orderNo}`, body: "Direktor zayavkani tasdiqladi", link: { key: "orders", id } });
-    await notifyRoles(["PRODUCTION", "LOGISTICS"], { type: "ORDER_CONFIRMED", title: `Yangi zayavka — ${o.orderNo}`, body: "Blok ochildi, ishga tushiring", link: { key: "orders", id } });
+    await notifyUsers([o.createdById], { type: "ORDER_UNBLOCKED", title: `Blok ochildi — ${o.customer.name}`, body: "Direktor zayavkani tasdiqladi", link: { key: "orders", id } });
+    await notifyRoles(["PRODUCTION", "LOGISTICS"], { type: "ORDER_CONFIRMED", title: `Yangi zayavka — ${o.customer.name}`, body: "Blok ochildi, ishga tushiring", link: { key: "orders", id } });
   });
   return { changed: true, status: "CONFIRMED" };
 }
 
 /** Bekor qilish. Zames yoki reys boshlangan bo'lsa — mumkin emas. */
 export async function orderCancel(id: string, userId: string): Promise<OrderResult> {
-  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: { where: { cancelledAt: null } }, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } } } });
+  const o = await db.order.findUniqueOrThrow({ where: { id }, include: { batches: { where: { cancelledAt: null } }, trips: true, invoices: { where: { status: { not: "CANCELLED" } }, select: { invoiceNo: true } }, customer: { select: { name: true } } } });
   if (o.batches.length || o.trips.length) return { changed: false, error: "Zames yoki reys bor — bekor qilib bo'lmaydi" };
   if (!["DRAFT", "BLOCKED", "CONFIRMED"].includes(o.status)) return { changed: false, error: "Bu holatdagi zayavka bekor qilinmaydi" };
   // Schyot qolib ketsa mijoz yetkazilmagan mahsulot uchun qarzdor bo'lib turardi — avval schyot bekor qilinadi.
@@ -260,11 +260,11 @@ export async function orderCancel(id: string, userId: string): Promise<OrderResu
   if (!done) return { changed: false, error: "Zayavka shu payt o'zgardi — sahifani yangilang" };
   // Tasdiqlangan zayavkani sex va logistika rejalashtirgan bo'lishi mumkin — bekor qilingani darhol bilinsin
   notifyAfter(async () => {
-    const n = { type: "ORDER_CANCELLED", title: `Zayavka bekor qilindi — ${o.orderNo}`, body: o.status === "CONFIRMED" ? "Ishlab chiqarish va reys rejalashtirmang" : "Qoralama bekor qilindi", link: { key: "orders", id } };
+    const n = { type: "ORDER_CANCELLED", title: `Zayavka bekor qilindi — ${o.customer.name}`, body: o.status === "CONFIRMED" ? "Ishlab chiqarish va reys rejalashtirmang" : "Qoralama bekor qilindi", link: { key: "orders", id } };
     if (o.status === "CONFIRMED") await notifyRoles(["PRODUCTION", "LOGISTICS"], n, { except: userId });
     await notifyUsers([o.createdById].filter((u) => u !== userId), n);
     const leaders = openTasks.map((t) => t.brigade.leaderId);
-    if (leaders.length) await notifyEmployees(leaders, { ...n, title: `Topshiriq bekor qilindi — ${o.orderNo}`, body: "Zayavka bekor qilindi, ishni to'xtating" });
+    if (leaders.length) await notifyEmployees(leaders, { ...n, title: `Topshiriq bekor qilindi — ${o.customer.name}`, body: "Zayavka bekor qilindi, ishni to'xtating" });
   });
   return { changed: true, status: "CANCELLED" };
 }
@@ -463,7 +463,7 @@ export async function createOrder(
       if (!u || u.role === "SALES" || u.role === "DIRECTOR" || u.role === "SUPERADMIN") return;
       await notifyRoles(["SALES"], {
         type: "ORDER_NEW",
-        title: `Yangi zayavka ${res.orderNo} — qabul qilish kerak`,
+        title: "Yangi zayavka — qabul qilish kerak",
         body: `${c?.name ?? "Mijoz"} · ochdi: ${u.fullName}`,
         link: { key: "orders", id: res.id },
       }, { except: userId });

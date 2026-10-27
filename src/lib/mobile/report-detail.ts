@@ -75,12 +75,12 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
   const [progress, batches, defects, issues, shifts, started, staff] = await Promise.all([
     db.taskProgress.findMany({
       where: { date: range, task: taskWhere }, orderBy: { date: "asc" },
-      select: { id: true, qty: true, date: true, note: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, taskNo: true, brigade: { select: { name: true } }, order: { select: { orderNo: true } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },
+      select: { id: true, qty: true, date: true, note: true, createdBy: { select: { fullName: true } }, task: { select: { id: true, taskNo: true, brigade: { select: { name: true } }, order: { select: { customer: { select: { name: true } } } }, orderItem: { select: { product: { select: { name: true, unit: true } } } } } } },
     }),
     // Zames brigadaga bog'lanmaydi — brigada kartasida chiqmaydi
     s.brigadeId ? Promise.resolve([]) : db.productionBatch.findMany({
       where: { cancelledAt: null, date: range, ...(s.productId ? { productId: s.productId } : {}) }, orderBy: { date: "asc" },
-      select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, note: true, product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
+      select: { id: true, batchNo: true, date: true, shift: true, qtyM3: true, note: true, product: { select: { name: true, unit: true } }, order: { select: { customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
     }),
     db.productDefect.findMany({
       where: { date: range, ...(s.brigadeId ? { brigadeId: s.brigadeId } : {}), ...(s.productId ? { productId: s.productId } : {}) }, orderBy: { date: "asc" },
@@ -139,12 +139,12 @@ async function activity(s: Scope): Promise<{ sections: HomeSection[]; counts: { 
   const sections: HomeSection[] = [
     sec(`Brigada qaydlari (bajarildi) · ${progress.length}`, progress.map((p) => ({
       id: `tasks:${p.task.id}`, title: `${p.task.taskNo} · ${p.task.orderItem.product.name}`,
-      subtitle: [time(p.date), p.task.brigade.name, p.createdBy.fullName, p.task.order.orderNo, p.note ? `izoh: ${p.note}` : null].filter(Boolean).join(" · "),
+      subtitle: [time(p.date), p.task.brigade.name, p.createdBy.fullName, p.task.order.customer.name, p.note ? `izoh: ${p.note}` : null].filter(Boolean).join(" · "),
       right: inUnit(sum(p.qty), p.task.orderItem.product.unit), tone: "success" as Tone,
     })), "Bu vaqtda brigada qaydi yo'q", "square-check"),
     ...(s.brigadeId ? [] : [sec(`Zameslar · ${batches.length}`, batches.map((b) => ({
       id: `production:${b.id}`, title: `${b.batchNo} · ${b.product.name}`,
-      subtitle: [time(b.date), `${b.shift}-smena`, b.order ? `${b.order.orderNo} ${b.order.customer.name}` : "omborga", b.createdBy.fullName, b.note ? `izoh: ${b.note}` : null].filter(Boolean).join(" · "),
+      subtitle: [time(b.date), `${b.shift}-smena`, b.order ? b.order.customer.name : "omborga", b.createdBy.fullName, b.note ? `izoh: ${b.note}` : null].filter(Boolean).join(" · "),
       right: inUnit(sum(b.qtyM3), b.product.unit), tone: "success" as Tone,
     })), "Bu vaqtda zames yo'q", "factory")]),
     sec(`Brak · ${defects.length}`, defects.map((d) => ({
@@ -245,12 +245,12 @@ async function defectDetail(id: string): Promise<MobileDetail> {
     select: {
       qty: true, date: true, reason: true, note: true, taskId: true, brigadeId: true,
       product: { select: { name: true, unit: true } }, brigade: { select: { name: true } }, createdBy: { select: { fullName: true } },
-      task: { select: { taskNo: true, doneQty: true, order: { select: { orderNo: true } } } },
+      task: { select: { taskNo: true, doneQty: true, order: { select: { customer: { select: { name: true } } } } } },
     },
   });
   if (!d) throw new ListError("NOT_FOUND", "Brak yozuvi topilmadi", 404);
   const links: HomeRow[] = [
-    ...(d.taskId && d.task ? [{ id: `tasks:${d.taskId}`, title: `Topshiriq ${d.task.taskNo}`, subtitle: `${d.task.order.orderNo} · bajarilgan ${inUnit(sum(d.task.doneQty), d.product.unit)}` }] : []),
+    ...(d.taskId && d.task ? [{ id: `tasks:${d.taskId}`, title: `Topshiriq ${d.task.taskNo}`, subtitle: `${d.task.order.customer.name} · bajarilgan ${inUnit(sum(d.task.doneQty), d.product.unit)}` }] : []),
     ...(d.brigadeId && d.brigade ? [{ id: `brigades:${d.brigadeId}`, title: d.brigade.name, subtitle: "brigada kartochkasi" }] : []),
   ];
   return {

@@ -103,7 +103,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         </>
       )}
       <Table className="[&_td]:py-2 [&_th]:py-2">
-        <thead><tr><Th>№</Th><Th>Kiritildi</Th><Th>Yetkazish</Th><Th>Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
+        <thead><tr><Th>Kiritildi</Th><Th>Yetkazish</Th><Th>Mijoz / obyekt</Th><Th>Mahsulot</Th><Th right>Hajm</Th><Th right>Summa</Th><Th>Kim</Th><Th>Holat</Th></tr></thead>
         <tbody>
           {orders.length === 0 && <Empty text="Kutayotgan zayavkalar yo'q" />}
           {groups.flatMap((g) => g.map((o, idx) => {
@@ -115,8 +115,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             const first = idx === 0;
             return (
               <Tr key={o.id} className={first && g.length > 1 ? "[&>td]:border-t-2 [&>td]:border-t-slate-200" : ""}>
-                <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{o.orderNo}</Link></Td>
-                <Td>{date(o.date)}</Td>
+                <Td><Link href={`/orders/${o.id}`} className="font-medium hover:underline">{date(o.date)}</Link></Td>
                 <Td>{o.dateUnknown ? <span className="text-amber-700">Sana aniq emas</span> : deliveryAt(o.deliveryDate, o.deliveryTime)}</Td>
                 <Td>
                   {o.kind === "STOCK" ? (

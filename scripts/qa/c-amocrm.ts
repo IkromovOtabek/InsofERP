@@ -23,6 +23,7 @@ import { amo } from "@/lib/amocrm/client";
 import { amoTick, dealStage, dismissDeal, pullDeal, pullStageDeals, pushPendingLeads, syncOrderStages } from "@/lib/amocrm/sync";
 import { createLead } from "@/lib/leads";
 import { createOrder } from "@/lib/orders";
+import { date } from "@/lib/format";
 
 const TAG = `qa-amo-${Date.now()}`;
 const TOKEN = "qa-long-lived-token-0123456789abcdefghijklmnopqrstuvwxyz";
@@ -290,7 +291,7 @@ async function main() {
     await syncOrderStages(c!, { full: true });
     const p2 = st.patches.find((x) => x.id === deal1!.amoLeadId && x.body.status_id != null);
     check("qabul qilindi → «Ishlab chiqarishda»", p2?.body.status_id === S_PROD && st.leads.get(deal1!.amoLeadId!)?.status_id === S_PROD, p2);
-    check("sdelkaga eslatma (zayavka raqami bilan)", st.notes.some((n) => n.leadId === deal1!.amoLeadId && n.text.includes(o.orderNo)));
+    check("sdelkaga eslatma (yetkazish sanasi bilan, raqamsiz)", st.notes.some((n) => n.leadId === deal1!.amoLeadId && n.text.includes(date(linked.deliveryDate)) && !n.text.includes(linked.orderNo)));
     st.patches.length = 0;
     await syncOrderStages(c!, { full: true });
     check("o'zgarmasa — so'rov ketmaydi", st.patches.length === 0, st.patches);

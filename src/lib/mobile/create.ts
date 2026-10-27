@@ -315,7 +315,7 @@ async function paymentForm(): Promise<CreateForm> {
     db.order.findMany({
       where: { kind: "SALE", status: { in: [...ADVANCE_ORDER_STATUSES] }, invoices: { none: { status: { not: "CANCELLED" } } }, customer: { isInternal: false } },
       orderBy: { date: "asc" },
-      select: { id: true, orderNo: true, customerId: true, prepayAmount: true, customer: { select: { name: true } }, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+      select: { id: true, deliveryDate: true, customerId: true, prepayAmount: true, customer: { select: { name: true } }, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
     }),
     cashAccountOptions(),
   ]);
@@ -337,7 +337,7 @@ async function paymentForm(): Promise<CreateForm> {
     // Veb bilan bir xil taklif: sotuvchi yozgan kutilayotgan avans (olinganidan tashqari), aks holda zayavka qoldig'i
     const suggest = Math.max(0, Math.round(((expected > paid ? expected : total) - paid) * 100) / 100);
     return {
-      value: `ord:${o.id}`, label: `${o.orderNo} · ${o.customer.name} — avans`,
+      value: `ord:${o.id}`, label: `${o.customer.name} · ${day(o.deliveryDate)} — avans`,
       hint: `zayavka ${money(total)}${expected > 0 ? ` · kutilmoqda ${money(expected)}` : ""}${paid > 0 ? ` · olingan ${money(paid)}` : ""}`,
       extra: { customerId: o.customerId, amount: String(suggest) },
     };
@@ -765,7 +765,7 @@ async function tripForm(): Promise<CreateForm> {
     fields: [
       {
         name: "orderId", label: "Zayavka", type: "select", required: true,
-        options: open.map(({ o, left, sexda, unit }) => ({ value: o.id, label: `${o.orderNo} · ${o.customer.name} · tayyor ${left}${unit ? ` ${unitLabel(unit)}` : ""}${sexda > 0 ? ` · sexda ${sexda}` : ""}`, extra: { qtyM3: String(left), ...plannedExtra(o) } })),
+        options: open.map(({ o, left, sexda, unit }) => ({ value: o.id, label: `${o.customer.name} · ${day(o.deliveryDate)} · tayyor ${left}${unit ? ` ${unitLabel(unit)}` : ""}${sexda > 0 ? ` · sexda ${sexda}` : ""}`, extra: { qtyM3: String(left), ...plannedExtra(o) } })),
         hint: open.length ? "Faqat brigada tayyorlab bergan miqdor reysga beriladi; sexdagisi brigada tasdiqidan keyin" : "Brigada tayyorlagan mahsuloti bor zayavka yo'q — brigada tasdiqini kuting",
       },
       {
@@ -1177,7 +1177,7 @@ export async function mobileCreate(user: MobileUser, key: string, payload: unkno
         payMethod: isAgent ? undefined : !d.onCredit || d.prepayAmount ? d.payMethod : undefined,
         note: d.note,
       }, user.id, isAgent ? { viaAgent: true } : { id: orderId, contractFile });
-      return { key: "orders", id: r.id, message: `${r.orderNo} ochildi — qoralama holatida, qabul qilishni unutmang` };
+      return { key: "orders", id: r.id, message: `Zayavka ochildi — qoralama holatida, qabul qilishni unutmang` };
     }
 
     if (key === "supply") {

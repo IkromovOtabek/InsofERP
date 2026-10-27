@@ -41,7 +41,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
   if (!o || o.kind === "STOCK") notFound();
   const lang = asOfferLang(sp.lang);
   const T = offerT(lang);
-  // QR — ommaviy `/z/<№>?k=` sahifasi: kim skanerlasa ham hujjat haqiqiyligi va zayavka holatini ko'radi
+  // QR — ommaviy `/z/<raqam>?k=` sahifasi (raqam faqat havolada, hujjat matnida ko'rsatilmaydi): kim skanerlasa ham hujjat haqiqiyligi va zayavka holatini ko'radi
   const url = `${origin}${orderPublicPath(o.orderNo, lang)}`;
   const qr = await QRCode.toString(url, { type: "svg", margin: 2, width: 120, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });
 
@@ -77,7 +77,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
       <AutoPrint enabled={sp.print === "1"} />
       <style>{`@media print { @page { size: A4 portrait; margin: 12mm } aside, nav, header { display: none } body { background: #fff } }`}</style>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <BackLink href={`/orders/${id}`} label={`Zayavka ${o.orderNo}`} />
+        <BackLink href={`/orders/${id}`} label="Zayavka" />
         <div className="flex items-center gap-2">
           <a href={`/orders/${id}/print?lang=${lang === "ru" ? "uz" : "ru"}`} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">{lang === "ru" ? "O'zbekcha ko'rinish" : "Русская версия"}</a>
           <PrintButton />
@@ -118,7 +118,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
       <div className="mt-4 flex items-end justify-between gap-6">
         <div>
           <div className="text-[15px] font-bold uppercase tracking-wide">{T.orderTitle}</div>
-          <div className="text-[13px] font-semibold">{T.no} {o.orderNo} · {date(o.date)}</div>
+          <div className="text-[13px] font-semibold">{date(o.date)}</div>
         </div>
         <table className="text-[11.5px]">
           <tbody>
@@ -196,7 +196,7 @@ export default async function OrderPrintPage({ params, searchParams }: { params:
         <div>{T.signManager}: <span className="inline-block w-40 border-b border-slate-800 align-baseline" /> {o.createdBy.fullName}</div>
         <div className="text-slate-500">{T.stamp}</div>
       </div>
-      <div className="mt-3 border-t border-slate-300 pt-1 text-[9px] text-slate-500">{T.registered} · {o.orderNo} · {url.replace(/^https?:\/\//, "").replace(/\?.*$/, "")}</div>
+      <div className="mt-3 border-t border-slate-300 pt-1 text-[9px] text-slate-500">{T.registered} · {origin.replace(/^https?:\/\//, "")}</div>
     </div>
   );
 }

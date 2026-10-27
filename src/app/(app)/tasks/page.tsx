@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { CalendarDays, ListChecks, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
@@ -105,7 +104,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         </div>
       )}
       <Table>
-        <thead><tr><Th>№</Th>{isDone && <Th>Tugatildi</Th>}<Th>Muddat</Th><Th>Brigada</Th><Th>Zayavka / mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th><Th></Th></tr></thead>
+        <thead><tr><Th>№</Th>{isDone && <Th>Tugatildi</Th>}<Th>Muddat</Th><Th>Brigada</Th><Th>Mijoz</Th><Th>Mahsulot</Th><Th right>Topshiriq</Th><Th right>Bajarildi</Th><Th right>Brak</Th><Th right>Qoldiq</Th><Th>Holat</Th><Th></Th></tr></thead>
         <tbody>
           {tasks.length === 0 && <Empty text={isDone && range ? "Bu davrda tugatilgan topshiriq yo'q" : "Topshiriqlar yo'q"} icon={ListChecks} />}
           {tasks.map((t) => {
@@ -118,7 +117,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 {isDone && <Td className="whitespace-nowrap">{date(t.updatedAt)} <span className="text-slate-500">{hhmm(t.updatedAt)}</span></Td>}
                 <Td>{deliveryAt(t.dueDate, t.order.deliveryTime)}{t.order.isUrgent && <div><Badge color="red"><Zap size={11} /> Zarur</Badge></div>}</Td>
                 <Td>{t.brigade.name}</Td>
-                <Td><Link href={`/orders/${t.orderId}`} className="hover:underline">{t.order.orderNo}</Link><div className="text-xs text-slate-500"><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} short /></div></Td>
+                <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} href={`/orders/${t.orderId}`} short /></Td>
                 <Td>{t.orderItem.product.name}</Td>
                 <Td right>{qty(total)} {unit}</Td>
                 <Td right className="text-emerald-700">{qty(done)}</Td>

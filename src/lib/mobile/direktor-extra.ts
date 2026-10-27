@@ -438,7 +438,7 @@ async function biSales({ r }: BiCtx): Promise<Part> {
       up.length > 0 && sec("Ko'p o'sgan mijozlar", up.map((x) => ({ id: x.id, title: x.name, subtitle: `oldin ${short(x.prev)} → hozir ${short(x.cur)}`, right: `+${short(x.diff)}`, tone: "success" as Tone })), { target: "customers" }),
       down.length > 0 && sec("Ko'p pasaygan mijozlar", down.map((x) => ({ id: x.id, title: x.name, subtitle: `oldin ${short(x.prev)} → hozir ${short(x.cur)}`, right: shortSigned(x.diff), tone: "danger" as Tone })), { target: "customers" }),
       sec("Hafta kunlari", monFirst(d.weekday).map((w, i) => ({ id: `w${i}`, title: w.label, right: short(w.value) })), { icon: "calendar-days", chart: barsOf("Sotuv", monFirst(d.weekday)) }),
-      d.lost.blockedRows.length > 0 && sec("Bloklangan zayavkalar", d.lost.blockedRows.map((o) => ({ id: o.orderId, title: `${o.orderNo} · ${o.customer}`, right: short(o.revenue), tone: "danger" as Tone })), { target: "orders" }),
+      d.lost.blockedRows.length > 0 && sec("Bloklangan zayavkalar", d.lost.blockedRows.map((o) => ({ id: o.orderId, title: o.customer, right: short(o.revenue), tone: "danger" as Tone })), { target: "orders" }),
     ),
   };
 }
@@ -490,7 +490,7 @@ async function biAgents({ r }: BiCtx): Promise<Part> {
       })), { icon: "users", chart: donutOf(d.sellers.map((s) => ({ label: s.name, value: s.revenue }))), empty: "Bu davrda sotuv yo'q" }),
       d.slow.length > 0 && sec("Sekinlashganlar", d.slow.slice(0, 10).map((s) => ({ id: `s-${s.id}`, title: s.name, subtitle: `${s.slowReason} · ${s.slowDays} kun · odatiy ${short(s.usualPerDay)}/kun → ${short(s.nowPerDay)}/kun`, right: `−${short(s.usualPerDay - s.nowPerDay)}`, tone: "warning" as Tone })), { icon: "trending-down" }),
       d.offline.length > 0 && sec("Faol emas (3+ kun)", d.offline.map((s) => ({ id: `o-${s.id}`, title: s.name, subtitle: `oxirgi zayavka ${s.lastOrderAt ? day(s.lastOrderAt) : "—"}`, right: `${s.offlineDays} kun`, tone: "danger" as Tone })), { icon: "clock" }),
-      d.route.length > 0 && sec(`Ertangi yetkazish · ${num(d.routeTotal)} m³ · ${d.routeTrips} reys`, d.route.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.address}${o.pump ? " · nasos" : ""}`, right: `${num(o.m3)} m³ · ${o.trips} reys` })), { target: "orders" }),
+      d.route.length > 0 && sec(`Ertangi yetkazish · ${num(d.routeTotal)} m³ · ${d.routeTrips} reys`, d.route.map((o) => ({ id: o.id, title: o.customer, subtitle: `${o.address}${o.pump ? " · nasos" : ""}`, right: `${num(o.m3)} m³ · ${o.trips} reys` })), { target: "orders" }),
     ),
   };
 }
@@ -583,7 +583,7 @@ async function biOperations({ r }: BiCtx): Promise<Part> {
       sec("Mahsulotlar", d.byProduct.map((p) => ({ id: p.id, title: p.label, subtitle: `${p.batches} zames`, right: `${num(p.value)} m³` })), { icon: "package", chart: d.byShift.length > 1 ? donutOf(d.byShift, (v) => `${num(v)} m³`, "smenalar") : undefined }),
       sec("Mikserlar", d.mixers.map((m) => ({ id: m.id, title: m.plate, subtitle: `${m.trips} reys · ${m.delivered} yetkazildi${m.fill !== null ? ` · to'lish ${fx(m.fill, 0)}%` : ""}${m.idle ? " · 7 kun bo'sh" : ""}`, right: `${num(m.m3)} m³`, tone: (m.idle ? "warning" : "info") as Tone })), { icon: "truck", empty: "Mikser yo'q" }),
       sec("Haydovchilar reytingi", d.drivers.slice(0, 15).map((x) => ({ id: x.id, title: x.name, subtitle: `${x.tier} · ball ${x.score} · ${x.trips} reys · ${fx(x.rate, 0)}% yetkazildi${x.late ? ` · ${x.late} kech` : ""}`, right: `${num(x.m3)} m³`, tone: TIER_TONE[x.tier] })), { icon: "users", empty: "Reys yo'q" }),
-      d.overdue.length > 0 && sec("Muddati o'tgan zayavkalar", d.overdue.slice(0, 15).map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${day(o.deliveryDate)} · jo'natildi ${o.shipped} / ${o.total}`, right: `${Math.round(o.shippedPct)}%`, tone: "danger" as Tone })), { target: "orders" }),
+      d.overdue.length > 0 && sec("Muddati o'tgan zayavkalar", d.overdue.slice(0, 15).map((o) => ({ id: o.id, title: o.customer, subtitle: `${day(o.deliveryDate)} · jo'natildi ${o.shipped} / ${o.total}`, right: `${Math.round(o.shippedPct)}%`, tone: "danger" as Tone })), { target: "orders" }),
     ),
   };
 }
@@ -880,8 +880,8 @@ async function ownerDetail(id: string): Promise<MobileDetail> {
         fields: F.stages.map((s) => f(s.label, `${s.count} ta · ${short(s.sum)}`)),
         sections: [
           sec("Bosqichlar", F.stages.map((s) => ({ id: s.key, title: s.label, subtitle: `${s.count} ta`, right: short(s.sum) })), { icon: "chart-column", chart: { kind: "progress", items: F.stages.map((s) => ({ label: s.label, pct: Math.round((s.sum / base0) * 100), fact: `${s.count} ta · ${short(s.sum)}`, plan: null, tone: "brand" as Tone })) } }),
-          sec(`Muddati o'tgan zayavkalar (${F.stuck.length})`, F.stuck.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${day(o.deliveryDate)} · ${o.days} kun kech`, right: short(o.sum), tone: "danger" as Tone })), { target: "orders", empty: "Yo'q" }),
-          sec(`To'lanmagan otgruzka (${F.unpaidShipments.length})`, F.unpaidShipments.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, right: short(o.left), tone: "warning" as Tone })), { target: "orders", empty: "Yo'q" }),
+          sec(`Muddati o'tgan zayavkalar (${F.stuck.length})`, F.stuck.map((o) => ({ id: o.id, title: o.customer, subtitle: `${day(o.deliveryDate)} · ${o.days} kun kech`, right: short(o.sum), tone: "danger" as Tone })), { target: "orders", empty: "Yo'q" }),
+          sec(`To'lanmagan otgruzka (${F.unpaidShipments.length})`, F.unpaidShipments.map((o) => ({ id: o.id, title: o.customer, right: short(o.left), tone: "warning" as Tone })), { target: "orders", empty: "Yo'q" }),
         ],
       };
     }

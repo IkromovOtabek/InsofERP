@@ -737,7 +737,7 @@ async function orderDetail(user: MobileUser, id: string): Promise<MobileDetail> 
   }
 
   return {
-    key: "orders", id: o.id, title: o.orderNo, subtitle: o.customer.name, status: o.status,
+    key: "orders", id: o.id, title: o.kind === "STOCK" ? "Sklad zaxirasi" : o.customer.name, subtitle: `Zayavka · ${day(o.date)}`, status: o.status,
     fields: [
       { label: "Yetkazish", value: o.dateUnknown ? "Sana aniq emas (vebda belgilanadi)" : `${day(o.deliveryDate)}${o.deliveryTime ? ` · ${o.deliveryTime}` : ""}` },
       { label: "Manzil", value: o.deliveryAddress },
@@ -855,7 +855,6 @@ async function tripDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       ...(t.order.site?.deliveryHours ? [{ label: "Qabul vaqti", value: t.order.site.deliveryHours }] : []),
       ...(t.order.site?.instructions ? [{ label: "Ko'rsatma", value: t.order.site.instructions, tone: "warning" as Tone }] : []),
       ...(planned ? [{ label: "Reja", value: dt(planned) }] : []),
-      { label: "Zayavka", value: t.order.orderNo },
       ...(track ? [{ label: "Yurilgan yo'l", value: `${distanceLabel(track.meters)}${track.minutes > 0 ? ` · ${track.minutes} daq` : ""}`, tone: "brand" as Tone }] : []),
       ...(arrival?.remainingM != null ? [{ label: "Obyektgacha", value: distanceLabel(arrival.remainingM), tone: (arrival.near ? "success" : "info") as Tone }] : []),
       ...(t.loadedAt ? [{ label: "Yuklandi", value: dt(t.loadedAt) }] : []),
@@ -931,7 +930,7 @@ async function invoiceDetail(user: MobileUser, id: string): Promise<MobileDetail
     { label: "Jami", value: money(sum(inv.amount)) },
     { label: "To'landi", value: money(paid), tone: "success" },
     { label: "Qoldiq", value: money(left), tone: left > 0 ? "danger" : "success" },
-    ...(inv.order ? [{ label: "Zayavka", value: inv.order.orderNo }] : []),
+    ...(inv.order ? [{ label: "Zayavka", value: day(inv.order.deliveryDate) }] : []),
   ];
   // Chek holati — schyot holatining o'zi: to'langan yashil, qisman/ochiq sariq, bekor qizil
   const st = inv.status === "PAID" ? { label: "To'langan", tone: "success" as const }
@@ -961,7 +960,7 @@ async function paymentDetail(user: MobileUser, id: string): Promise<MobileDetail
     { label: "Mijoz", value: p.customer.name },
     { label: "Hisob", value: p.cashAccount.name },
     ...(p.invoice ? [{ label: "Schyot", value: p.invoice.invoiceNo }] : []),
-    ...(p.order ? [{ label: "Zayavka", value: p.order.orderNo }] : []),
+    ...(p.order ? [{ label: "Zayavka", value: day(p.order.deliveryDate) }] : []),
     ...(p.createdBy ? [{ label: "Kim kiritdi", value: p.createdBy.fullName }] : []),
     ...(p.note ? [{ label: "Izoh", value: p.note }] : []),
   ];
@@ -1102,7 +1101,6 @@ async function taskDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Muddat", value: day(t.dueDate), tone: ph.late ? "danger" : undefined },
       ...(t.startedAt ? [{ label: "Boshlandi", value: dt(t.startedAt) }] : []),
       ...(t.order.isUrgent ? [{ label: "Shoshilinch", value: "ha", tone: "danger" as Tone }] : []),
-      { label: "Zayavka", value: t.order.orderNo },
       ...(t.note ? [{ label: "Izoh", value: t.note }] : []),
     ],
     sections: [
@@ -1135,7 +1133,7 @@ async function batchDetail(id: string): Promise<MobileDetail> {
       { label: "Sana", value: dt(b.date) },
       { label: "Smena", value: `${b.shift}-smena` },
       { label: "Hajm", value: inUnit(sum(b.qtyM3), b.product.unit) },
-      { label: "Zayavka", value: b.order ? `${b.order.orderNo} · ${b.order.customer.name}` : "Omborga" },
+      { label: "Zayavka", value: b.order ? b.order.customer.name : "Omborga" },
       { label: "Retsept", value: `${b.product.name} · v${b.recipe.version}` },
       { label: "Kim kiritdi", value: b.createdBy.fullName },
     ],
@@ -1240,7 +1238,7 @@ async function materialDetail(user: MobileUser, id: string): Promise<MobileDetai
         let left = balance;
         return o.orders.map((x) => {
           left -= x.qty;
-          return { id: x.id, title: `${x.orderNo} · ${x.customer}`, subtitle: `${day(x.date)} · ${left >= 0 ? "qoldiq yetadi" : `yetmaydi: ${n(Math.min(x.qty, -left))} kam`}`, right: n(x.qty), tone: (left >= 0 ? "success" : "danger") as Tone };
+          return { id: x.id, title: x.customer, subtitle: `${day(x.date)} · ${left >= 0 ? "qoldiq yetadi" : `yetmaydi: ${n(Math.min(x.qty, -left))} kam`}`, right: n(x.qty), tone: (left >= 0 ? "success" : "danger") as Tone };
         });
       })(),
     }] : []), {
@@ -1861,7 +1859,7 @@ async function payreqDetail(user: MobileUser, id: string): Promise<MobileDetail>
     { label: "Tushgan", value: money(r.received), tone: r.received > 0 ? "success" : undefined },
     ...(st !== "CANCELLED" ? [{ label: "Qolgan", value: money(r.left), tone: (r.left > 0.005 ? "danger" : "success") as Tone }] : []),
     { label: "Muddat (yetkazish)", value: r.overdue ? `${due} · muddati o'tdi` : due, tone: r.overdue ? "danger" : undefined },
-    { label: "Zayavka", value: `${r.order.orderNo} · ${r.order.products || "—"} · ${money(r.order.total)}` },
+    { label: "Zayavka", value: `${r.order.products || "—"} · ${money(r.order.total)}` },
     { label: "Mijoz", value: r.customer.name },
     ...(r.customer.phone ? [{ label: "Telefon", value: r.customer.phone }] : []),
     { label: "Kim ochgan", value: `${r.createdBy} · ${dt(r.createdAt)}` },
@@ -1875,12 +1873,12 @@ async function payreqDetail(user: MobileUser, id: string): Promise<MobileDetail>
       title: "To'lovlar tarixi", empty: "Hali to'lov tushmagan", target: "payments", icon: "banknote",
       rows: [...r.payments].reverse().map((p) => ({ id: p.id, title: `+${money(p.amount)}`, subtitle: [shortDt(p.date), p.account, p.by].filter(Boolean).join(" · "), right: `+${money(p.amount)}`, tone: "success" as Tone })),
     },
-    ...(!moduleClosed(user, "orders") ? [{ title: "Zayavka", empty: "", target: "orders", rows: [{ id: r.order.id, title: `${r.order.orderNo} · ${r.customer.name}`, subtitle: `${r.order.products || "—"} · yetkazish ${due}`, right: money(r.order.total), tone: "brand" as Tone }] }] : []),
+    ...(!moduleClosed(user, "orders") ? [{ title: "Zayavka", empty: "", target: "orders", rows: [{ id: r.order.id, title: r.customer.name, subtitle: `${r.order.products || "—"} · yetkazish ${due}`, right: money(r.order.total), tone: "brand" as Tone }] }] : []),
     ...(custOk ? [{ title: "Mijoz", empty: "", target: "customers", rows: [{ id: r.customer.id, title: r.customer.name, subtitle: r.customer.phone ?? undefined }] }] : []),
   ];
 
   return {
-    key: "payreq", id: r.id, title: `${r.docNo} · ${r.customer.name}`, subtitle: `${r.order.orderNo} · ${PAY_METHOD_LABEL[r.method]}`, status: PAYREQ_STATUS_LABEL[st],
+    key: "payreq", id: r.id, title: `${r.docNo} · ${r.customer.name}`, subtitle: PAY_METHOD_LABEL[r.method], status: PAYREQ_STATUS_LABEL[st],
     fields, sections, actions,
   };
 }
@@ -1927,7 +1925,7 @@ async function customerDetail(user: MobileUser, id: string): Promise<MobileDetai
     sections: [
       ...extra.sections.filter((x) => x.target === "new"),
       { title: "Ochiq schyotlar", empty: "Ochiq schyot yo'q", target: "invoices", rows: c.invoices.map((i) => { const left = sum(i.amount) - i.payments.reduce((p, x) => p + sum(x.amount), 0); return { id: i.id, title: i.invoiceNo, subtitle: `${day(i.date)} · jami ${money(sum(i.amount))}`, right: money(left), status: i.status, tone: (i.status === "PARTIAL" ? "warning" : "danger") as Tone }; }) },
-      { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: c.orders.map((o) => ({ id: o.id, title: o.orderNo, subtitle: `${day(o.deliveryDate)} · ${o.deliveryAddress}`, right: money(o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
+      { title: "So'nggi zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: c.orders.map((o) => ({ id: o.id, title: day(o.deliveryDate), subtitle: o.deliveryAddress, right: money(o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
       ...extra.sections.filter((x) => x.target !== "new"),
     ],
     actions: extra.actions,

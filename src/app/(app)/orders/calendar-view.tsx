@@ -10,7 +10,7 @@ import { Button, Field, FormError, FormSuccess, Input } from "@/components/ui";
 import { saveDailyCapacity } from "./actions";
 
 /** m3 / pcs — beton hajmi va dona mahsulot (kunlik limit uchun); vol — zayavkaning to'liq hajmi birligi bilan. */
-export type DayOrder = { id: string; orderNo: string; customer: string; time: string | null; m3: number; pcs: number; vol: string; sum: number; status: string; statusLabel: string; urgent: boolean };
+export type DayOrder = { id: string; customer: string; time: string | null; m3: number; pcs: number; vol: string; sum: number; status: string; statusLabel: string; urgent: boolean };
 /** pctM3 / pctPcs — har limitga nisbatan bandlik; pct — ikkalasining kattasi (kun rangi). */
 export type DayCell = { key: string; label: string; weekday: string; list: DayOrder[]; m3: number; pcs: number; pctM3: number; pctPcs: number; pct: number; count: number; urgent: number; state: "free" | "busy" | "full"; isToday: boolean };
 
@@ -137,7 +137,7 @@ export function CalendarView({ cells, capacity, capacityPcs, canEdit }: { cells:
                         <li key={o.id} className="flex items-start justify-between gap-2 text-xs">
                           <span className="min-w-0">
                             <span className="block truncate font-medium text-slate-900">{o.urgent && <Zap size={10} className="mr-0.5 inline text-red-600" />}{o.customer}</span>
-                            <span className="block text-[11px] text-slate-500">{o.orderNo}{o.time && <><Clock size={9} className="mx-1 inline" />{o.time}</>} · {o.statusLabel}</span>
+                            <span className="block text-[11px] text-slate-500">{o.time && <><Clock size={9} className="mr-1 inline" />{o.time} · </>}{o.statusLabel}</span>
                           </span>
                           <span className="shrink-0 text-right">
                             <span className="block font-semibold tabular text-slate-800">{o.vol}</span>
@@ -182,15 +182,14 @@ export function CalendarView({ cells, capacity, capacityPcs, canEdit }: { cells:
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[11px] tracking-wider text-slate-500 uppercase">
-                    <th className="px-2 py-1.5">№</th><th className="px-2 py-1.5">Mijoz</th><th className="px-2 py-1.5">Soat</th>
+                    <th className="px-2 py-1.5">Mijoz</th><th className="px-2 py-1.5">Soat</th>
                     <th className="px-2 py-1.5 text-right">Hajm</th><th className="px-2 py-1.5 text-right">Summa</th><th className="px-2 py-1.5">Holat</th>
                   </tr>
                 </thead>
                 <tbody>
                   {open.list.map((o) => (
                     <tr key={o.id} className="border-t border-slate-200/70">
-                      <td className="px-2 py-1.5"><Link href={`/orders/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.orderNo}</Link></td>
-                      <td className="px-2 py-1.5">{o.urgent && <Zap size={11} className="mr-1 inline text-red-600" />}{o.customer}</td>
+                      <td className="px-2 py-1.5">{o.urgent && <Zap size={11} className="mr-1 inline text-red-600" />}<Link href={`/orders/${o.id}`} className="font-medium text-slate-900 hover:underline">{o.customer}</Link></td>
                       <td className="px-2 py-1.5 text-slate-600">{o.time ?? "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular whitespace-nowrap">{o.vol}</td>
                       <td className="px-2 py-1.5 text-right tabular whitespace-nowrap">{money(o.sum)}</td>

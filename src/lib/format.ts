@@ -35,3 +35,7 @@ export const dateRu = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}
 
 /** Yetkazish sanasi + soati: "18/09/2026 · 14:00" (soat kiritilmagan bo'lsa faqat sana). */
 export const deliveryAt = (d: Date, t?: string | null) => (t ? `${date(d)} · ${t}` : date(d));
+
+/** Zayavka nomi (raqam UI'da ko'rsatilmaydi): "Mijoz · 18/09/2026". */
+export const orderLabel = (customer?: string | null, d?: Date | null) =>
+  [customer || "Zayavka", d ? date(d) : null].filter(Boolean).join(" · ");

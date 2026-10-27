@@ -99,13 +99,13 @@ export async function anomaliesTab(filter: { level?: string; source?: string; pa
   const today = startOfDay(new Date()), since = addDays(today, -Math.max(7, filter.days));
   const [items, payments, batches, adjustments, trips, vatPayer] = await Promise.all([
     // Faqat sotuv: STOCK zayavka (narxi 0) va bekor/qoralama sotuv emas
-    db.orderItem.findMany({ where: { order: { kind: "SALE", date: { gte: since }, status: { in: ACTIVE_ORDER } } }, include: { product: { select: { code: true, price: true, unit: true } }, order: { select: { id: true, orderNo: true, date: true, status: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } } } } } }),
+    db.orderItem.findMany({ where: { order: { kind: "SALE", date: { gte: since }, status: { in: ACTIVE_ORDER } } }, include: { product: { select: { code: true, price: true, unit: true } }, order: { select: { id: true, date: true, status: true, customer: { select: { name: true } }, createdBy: { select: { fullName: true } } } } } }),
     db.payment.findMany({ where: { date: { gte: since } }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } } } }),
     db.productionBatch.findMany({ where: { cancelledAt: null, date: { gte: since } }, include: { product: { select: { code: true } }, createdBy: { select: { fullName: true } } } }),
     // Inventarizatsiya farqi emas: boshlang'ich qoldiq (OpeningBalance, Sklad → Xomashyo qo'shish = StockIn,
     // dona mahsulot qo'lda kirimi = Manual), obyektdan qaytgan beton (Trip), bekor qilingan brak (ProductDefect)
     db.stockMove.findMany({ where: { date: { gte: since }, OR: [{ type: "WRITE_OFF" }, { type: "ADJUSTMENT", OR: [{ refType: null }, { refType: { notIn: ["OpeningBalance", "StockIn", "Manual", "Trip", "ProductDefect"] } }] }] }, include: { material: { select: { name: true } }, product: { select: { code: true } }, createdBy: { select: { fullName: true } } } }),
-    db.trip.findMany({ where: { createdAt: { gte: since }, status: "CANCELLED" }, include: { vehicle: true, driver: true, order: { select: { orderNo: true } } } }),
+    db.trip.findMany({ where: { createdAt: { gte: since }, status: "CANCELLED" }, include: { vehicle: true, driver: true, order: { select: { customer: { select: { name: true } } } } } }),
     companyVatPayer(),
   ]);
   const out: Anomaly[] = [];
@@ -115,8 +115,8 @@ export async function anomaliesTab(filter: { level?: string; source?: string; pa
     // Bazaviy narx QQS'siz — NDS qatorida narxdan QQS ajratib solishtiriladi
     const gross = Number(i.price), price = vatPayer && i.nds ? withoutNds(gross) : gross, base = Number(i.product.price), qty = Number(i.qtyM3);
     const { m: qMean, s: qStd } = qStat.get(i.product.unit)!;
-    if (base > 0 && Math.abs(price - base) / base > 0.2) out.push({ id: `p-${i.id}`, date: i.order.date, level: Math.abs(price - base) / base > 0.4 ? "High" : "Medium", score: Math.min(99, Math.round(50 + (Math.abs(price - base) / base) * 100)), source: "Sotuv", pattern: "Narx chetlanishi", title: `${i.product.code}: ${price < base ? "arzon" : "qimmat"} narx (${Math.round(((price - base) / base) * 100)}%)`, detail: `${i.order.orderNo} · ${i.order.customer.name} · bazaviy ${base.toLocaleString("ru")} → ${price.toLocaleString("ru")} so'm${price !== gross ? " (QQS'siz)" : ""}`, amount: Math.abs(price - base) * qty, href: `/orders/${i.order.id}`, who: i.order.createdBy.fullName });
-    if (qStd > 0 && qty > qMean + 3 * qStd) out.push({ id: `q-${i.id}`, date: i.order.date, level: "Medium", score: 70, source: "Sotuv", pattern: "G'ayrioddiy hajm", title: `${i.product.code}: ${qty} ${i.product.unit === "m3" ? "m³" : i.product.unit} — o'rtachadan ${((qty - qMean) / qStd).toFixed(1)}σ yuqori`, detail: `${i.order.orderNo} · ${i.order.customer.name}`, amount: qty * gross, href: `/orders/${i.order.id}`, who: i.order.createdBy.fullName });
+    if (base > 0 && Math.abs(price - base) / base > 0.2) out.push({ id: `p-${i.id}`, date: i.order.date, level: Math.abs(price - base) / base > 0.4 ? "High" : "Medium", score: Math.min(99, Math.round(50 + (Math.abs(price - base) / base) * 100)), source: "Sotuv", pattern: "Narx chetlanishi", title: `${i.product.code}: ${price < base ? "arzon" : "qimmat"} narx (${Math.round(((price - base) / base) * 100)}%)`, detail: `${i.order.customer.name} · bazaviy ${base.toLocaleString("ru")} → ${price.toLocaleString("ru")} so'm${price !== gross ? " (QQS'siz)" : ""}`, amount: Math.abs(price - base) * qty, href: `/orders/${i.order.id}`, who: i.order.createdBy.fullName });
+    if (qStd > 0 && qty > qMean + 3 * qStd) out.push({ id: `q-${i.id}`, date: i.order.date, level: "Medium", score: 70, source: "Sotuv", pattern: "G'ayrioddiy hajm", title: `${i.product.code}: ${qty} ${i.product.unit === "m3" ? "m³" : i.product.unit} — o'rtachadan ${((qty - qMean) / qStd).toFixed(1)}σ yuqori`, detail: i.order.customer.name, amount: qty * gross, href: `/orders/${i.order.id}`, who: i.order.createdBy.fullName });
   }
   const amounts = payments.map((p) => Number(p.amount)); const aMean = mean(amounts), aStd = std(amounts);
   const dupKey = new Map<string, typeof payments>();
@@ -138,7 +138,7 @@ export async function anomaliesTab(filter: { level?: string; source?: string; pa
     const h = b.date.getHours(); if (h >= 22 || h < 5) out.push({ id: `bh-${b.id}`, date: b.date, level: "Low", score: 30, source: "Ishlab chiqarish", pattern: "Ish vaqtidan tashqari", title: `${b.batchNo}: soat ${String(h).padStart(2, "0")}:00 da zames`, detail: b.product.code, amount: 0, href: "/production", who: b.createdBy.fullName });
   }
   for (const m of adjustments) out.push({ id: `s-${m.id}`, date: m.date, level: m.type === "WRITE_OFF" ? "Medium" : Math.abs(Number(m.qty)) > 100 ? "High" : "Medium", score: m.type === "WRITE_OFF" ? 60 : 75, source: "Sklad", pattern: m.type === "WRITE_OFF" ? "Hisobdan chiqarish" : "Inventarizatsiya farqi", title: `${m.material?.name ?? m.product?.code ?? "?"}: ${Number(m.qty) > 0 ? "+" : ""}${Number(m.qty)}`, detail: m.note ?? "—", amount: 0, href: "/stock", who: m.createdBy.fullName });
-  for (const t of trips) out.push({ id: `c-${t.id}`, date: t.createdAt, level: "Low", score: 40, source: "Logistika", pattern: "Bekor qilingan reys", title: `${t.deliveryNoteNo}: ${Number(t.qtyM3)} m³ bekor qilindi`, detail: `${t.vehicle.plate} · ${t.driver.fullName} · ${t.order.orderNo}`, amount: 0, href: `/trips/${t.id}` });
+  for (const t of trips) out.push({ id: `c-${t.id}`, date: t.createdAt, level: "Low", score: 40, source: "Logistika", pattern: "Bekor qilingan reys", title: `${t.deliveryNoteNo}: ${Number(t.qtyM3)} m³ bekor qilindi`, detail: `${t.vehicle.plate} · ${t.driver.fullName} · ${t.order.customer.name}`, amount: 0, href: `/trips/${t.id}` });
 
   const all = out.sort((a, b) => b.score - a.score || b.date.getTime() - a.date.getTime());
   let list = all;

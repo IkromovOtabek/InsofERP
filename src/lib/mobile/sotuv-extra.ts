@@ -104,7 +104,7 @@ async function ordersList(user: MobileUser, title: string, q?: string, filter?: 
     key: "orders", title: isAgent ? "Zayavkalarim" : title,
     rows: list.map((o) => ({
       id: o.id,
-      title: `${o.orderNo} · ${o.kind === "STOCK" ? "Sklad zaxirasi" : o.customer.name}`,
+      title: o.kind === "STOCK" ? "Sklad zaxirasi" : o.customer.name,
       subtitle: `${o.dateUnknown ? "Sana aniq emas" : `${dm(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`} · ${o.deliveryAddress}`,
       right: fmtUnitTotals(o.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))),
       status: o.status, tone: ORDER_TONE[o.status],
@@ -155,7 +155,7 @@ async function salesList(title: string, q?: string, filter?: string): Promise<Mo
       const total = o.items.reduce((s, i) => s + sum(i.qtyM3) * sum(i.price), 0);
       const paid = o.invoices.reduce((s, i) => s + i.payments.reduce((x, y) => x + sum(y.amount), 0), 0);
       return {
-        id: o.id, title: `${o.orderNo} · ${o.customer.name}`,
+        id: o.id, title: o.customer.name,
         subtitle: `${dm(o.deliveryDate)} · ${o.items.map((i) => i.product.code).join(", ")}${o.invoices.length ? ` · to'langan ${money(paid)}` : " · schyot yo'q"}`,
         right: money(total), status: ORDER_LABEL[o.status] ?? o.status, tone: ORDER_TONE[o.status],
       };
@@ -421,7 +421,7 @@ async function offerUrl(o: { offerNo: string; verifyToken: string }) {
 async function offerDetail(user: MobileUser, id: string): Promise<MobileDetail> {
   const o = await db.commercialOffer.findUnique({
     where: { id },
-    include: { items: { orderBy: { sort: "asc" } }, manager: { select: { fullName: true } }, customer: { select: { id: true, name: true, isActive: true } }, order: { select: { id: true, orderNo: true } } },
+    include: { items: { orderBy: { sort: "asc" } }, manager: { select: { fullName: true } }, customer: { select: { id: true, name: true, isActive: true } }, order: { select: { id: true, deliveryDate: true } } },
   });
   if (!o) throw new ListError("NOT_FOUND", "Taklif topilmadi", 404);
   const st = offerState(o);
@@ -452,7 +452,6 @@ async function offerDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     { label: "Mijoz ochdi", value: o.viewCount ? `${o.viewCount} marta${o.lastViewedAt ? ` · oxirgi ${hm(o.lastViewedAt)}` : ""}` : "hali ochmagan", tone: o.viewCount ? "success" : "warning" },
     ...(st === "ACCEPTED" ? [{ label: "Qabul qildi", value: `${o.acceptedBy ?? "—"}${o.acceptedAt ? ` · ${hm(o.acceptedAt)}` : ""}${o.acceptedNote ? ` · «${o.acceptedNote}»` : ""}`, tone: "success" as Tone }] : []),
     ...(st === "CANCELLED" ? [{ label: "Bekor qilindi", value: `${o.cancelReason ?? ""}${o.cancelledAt ? ` · ${hm(o.cancelledAt)}` : ""}`, tone: "danger" as Tone }] : []),
-    ...(o.order ? [{ label: "Zayavka", value: o.order.orderNo }] : []),
     ...(o.note ? [{ label: "Ichki izoh", value: o.note }] : []),
     { label: "QR havola", value: url },
   ];
@@ -465,7 +464,7 @@ async function offerDetail(user: MobileUser, id: string): Promise<MobileDetail> 
     fields,
     sections: [
       { title: "Qatorlar", empty: "Qator yo'q", icon: "file-text", rows: t.lines.map((l, i) => ({ id: `${o.id}~${i}`, title: l.name, subtitle: `${fmtNum(l.qty, 3)} ${offerUnitLabel(l.unit)} × ${money(l.grossUnit)}`, right: money(l.gross) })) },
-      ...(o.order ? [{ title: "Zayavka", empty: "", target: "orders", rows: [{ id: o.order.id, title: o.order.orderNo, tone: "brand" as Tone }] }] : []),
+      ...(o.order ? [{ title: "Zayavka", empty: "", target: "orders", rows: [{ id: o.order.id, title: `${o.customer?.name ?? o.clientName} · ${dateRu(o.order.deliveryDate)}`, tone: "brand" as Tone }] }] : []),
       ...quickSection(next),
     ],
     actions,
@@ -597,7 +596,7 @@ async function siteDetail(user: MobileUser, id: string): Promise<MobileDetail> {
       { label: "Holat", value: s.isActive ? "Faol" : "Nofaol", tone: s.isActive ? "success" : "danger" },
     ],
     sections: [
-      { title: "Zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: orders.map((o) => ({ id: o.id, title: o.orderNo, subtitle: dateRu(o.deliveryDate), right: money(o.items.reduce((a, i) => a + sum(i.qtyM3) * sum(i.price), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
+      { title: "Zayavkalar", empty: "Zayavka yo'q", target: "orders", rows: orders.map((o) => ({ id: o.id, title: `${dateRu(o.deliveryDate)}${o.deliveryTime ? ` ${o.deliveryTime}` : ""}`, right: money(o.items.reduce((a, i) => a + sum(i.qtyM3) * sum(i.price), 0)), status: o.status, tone: ORDER_TONE[o.status] })) },
       { title: "Mijoz", empty: "", target: "customers", rows: [{ id: s.customer.id, title: s.customer.name, tone: "brand" }] },
     ],
     actions,
@@ -703,7 +702,7 @@ export async function customerExtras(user: MobileUser, c: CustomerLite, blacklis
   const [agent, sites, payments, app] = await Promise.all([
     c.agentId ? db.user.findUnique({ where: { id: c.agentId }, select: { fullName: true } }) : null,
     office ? siteDebts(c.id) : Promise.resolve([]),
-    isDirectorOr(user, payRoles) ? db.payment.findMany({ where: { customerId: c.id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15, include: { invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, cashAccount: { select: { name: true } }, register: { select: { id: true } } } }) : Promise.resolve([]),
+    isDirectorOr(user, payRoles) ? db.payment.findMany({ where: { customerId: c.id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15, include: { invoice: { select: { invoiceNo: true } }, order: { select: { deliveryDate: true } }, cashAccount: { select: { name: true } }, register: { select: { id: true } } } }) : Promise.resolve([]),
     canApp ? customerAppStatus(c.id) : Promise.resolve(null),
   ]);
 
@@ -734,7 +733,7 @@ export async function customerExtras(user: MobileUser, c: CustomerLite, blacklis
       title: "To'lovlar", empty: "To'lov yo'q", target: "payments",
       rows: payments.map((p) => ({
         id: p.id, title: `+${money(sum(p.amount))}`,
-        subtitle: `${dateRu(p.date)} · ${p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.register ? "realizatsiya" : p.order ? `avans ${p.order.orderNo}` : "taqsimlanmagan"} · ${p.cashAccount.name}`,
+        subtitle: `${dateRu(p.date)} · ${p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.register ? "realizatsiya" : p.order ? `avans · zayavka ${dateRu(p.order.deliveryDate)}` : "taqsimlanmagan"} · ${p.cashAccount.name}`,
         tone: "success" as Tone,
       })),
     });
@@ -1132,7 +1131,7 @@ async function offerPrefill(d: Record<string, string>): Promise<OfferPrefill | n
     const net = (price: unknown, nds: boolean) => (nds ? Math.round((Number(price) / 1.12) * 100) / 100 : Number(price));
     return {
       customerId: o.customerId, clientName: o.customer.name, clientPhone: o.customer.phone, clientInn: o.customer.inn, objectName: o.deliveryAddress,
-      note: `Zayavka ${o.orderNo} asosida`, basis: { value: `order:${o.id}`, label: `Zayavka ${o.orderNo} asosida` },
+      note: `Zayavka asosida (${dateRu(o.deliveryDate)})`, basis: { value: `order:${o.id}`, label: `Zayavka asosida · ${o.customer.name} · ${dateRu(o.deliveryDate)}` },
       items: o.items.map((i) => ({ productId: i.productId, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3), price: net(i.price, i.nds) })),
     };
   }
@@ -1227,7 +1226,7 @@ export async function sotuvCreate(user: MobileUser, key: string, raw: unknown): 
     const items = rowsOf(p).map((r) => ({ productId: cell(r, "productId"), qtyM3: cellNum(r, "qty") }));
     if (items.some((i) => i.productId && !(i.qtyM3 > 0))) throw new Error("Miqdor 0 dan katta bo'lsin");
     const r = await createStockOrder({ dueDate: new Date(`${due}T00:00:00`), items: items.filter((i) => i.productId && i.qtyM3 > 0), isUrgent: boolOf(p, "isUrgent", false), note: textOf(p, "note") || null }, user.id);
-    return { key: "orders", id: r.id, message: `${r.orderNo} ochildi — qoralama, «Qabul qilish» bilan ishlab chiqarishga yuboring` };
+    return { key: "orders", id: r.id, message: `Sklad zayavkasi ochildi — qoralama, «Qabul qilish» bilan ishlab chiqarishga yuboring` };
   }
   if (key === "offers") {
     const validUntil = textOf(p, "validUntil");

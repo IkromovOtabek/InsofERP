@@ -149,11 +149,11 @@ export function ReportSheet({ r, company, stamp }: { r: ReportSnapshot; company:
         <>
           <p className="mb-2"><b>Jami:</b> {r.load.total}</p>
           <div className="overflow-x-auto print:overflow-visible"><table className="w-full min-w-[520px] border-collapse print:min-w-0">
-            <thead><tr><th className={th}>№</th><th className={th}>Vaqt</th><th className={th}>Mijoz</th><th className={th}>Mahsulot</th><th className={th}>Jo&apos;natildi</th><th className={th}>Qoldi</th></tr></thead>
+            <thead><tr><th className={th}>Vaqt</th><th className={th}>Mijoz</th><th className={th}>Mahsulot</th><th className={th}>Jo&apos;natildi</th><th className={th}>Qoldi</th></tr></thead>
             <tbody>
               {r.load.orders.map((o) => (
                 <tr key={o.orderNo}>
-                  <td className={td}>{o.orderNo}</td><td className={td}>{o.time ?? "—"}</td><td className={td}>{o.customer}</td>
+                  <td className={td}>{o.time ?? "—"}</td><td className={td}>{o.customer}</td>
                   <td className={td}>{o.items}</td>
                   <td className={tdr}>{qty(o.shipped)}</td>
                   <td className={`${tdr} ${o.left > 0 ? "font-semibold" : ""}`}>{o.left > 0 ? qty(o.left) : "✓"}</td>

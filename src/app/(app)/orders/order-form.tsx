@@ -284,7 +284,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-start">
           <div>
             <div className="font-serif text-base font-bold italic text-slate-900">Zayavka</div>
-            <div className="font-serif text-[13px] font-bold italic text-slate-700">№ saqlanganda beriladi · {fmtDate(new Date())}</div>
+            <div className="font-serif text-[13px] font-bold italic text-slate-700">{fmtDate(new Date())}</div>
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
               <span className="inline-flex items-center gap-1.5">Nasos <Seg label="Nasos" value={needsPump} onChange={setNeedsPump} options={[{ v: true, l: "Kerak" }, { v: false, l: "Yo'q" }]} /></span>
               <span className="inline-flex items-center gap-1.5">Ustuvorlik <Seg label="Ustuvorlik" value={isUrgent} onChange={setIsUrgent} options={[{ v: true, l: "Zarur", danger: true }, { v: false, l: "Oddiy" }]} /></span>

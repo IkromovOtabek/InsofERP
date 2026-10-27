@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { audit } from "./audit";
-import { money } from "./format";
+import { date, money } from "./format";
 import { notifyAfter, notifyRoles } from "./notify";
 import { nextNo } from "./numbering";
 import { customerBalance } from "./receivables";
@@ -45,10 +45,10 @@ export async function createInvoice(input: { orderId: string; amount: number; da
   const { id, invoiceNo } = res;
   if (id && res.status !== "PAID") {
     notifyAfter(async () => {
-      const o = await db.order.findUnique({ where: { id: input.orderId }, select: { orderNo: true, customer: { select: { name: true } } } });
+      const o = await db.order.findUnique({ where: { id: input.orderId }, select: { deliveryDate: true, customer: { select: { name: true } } } });
       await notifyRoles(["ACCOUNTING", "CASHIER"], {
         type: "INVOICE_NEW", title: `Yangi schyot — ${invoiceNo}`,
-        body: `${o?.customer.name ?? ""} · ${o?.orderNo ?? ""} · ${money(input.amount)}`, link: { key: "invoices", id }, channel: "oddiy",
+        body: `${o?.customer.name ?? ""}${o ? ` · zayavka ${date(o.deliveryDate)}` : ""} · ${money(input.amount)}`, link: { key: "invoices", id }, channel: "oddiy",
       }, { except: userId });
     });
   }
@@ -89,8 +89,8 @@ export async function customerStatement(customerId: string, from: Date, to: Date
   const [before, invoices, payments] = await Promise.all([
     // Davr boshidagi qoldiq — yagona mijoz balansi (receivables.ts) o'sha paytga
     customerBalance(customerId, { asOf: from }),
-    db.invoice.findMany({ where: { ...invWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { order: { select: { orderNo: true } } } }),
-    db.payment.findMany({ where: { ...payWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, cashAccount: { select: { name: true } } } }),
+    db.invoice.findMany({ where: { ...invWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { order: { select: { deliveryDate: true } } } }),
+    db.payment.findMany({ where: { ...payWhere, date: { gte: from, lte: to } }, orderBy: { date: "asc" }, include: { invoice: { select: { invoiceNo: true } }, order: { select: { deliveryDate: true } }, cashAccount: { select: { name: true } } } }),
   ]);
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const opening = before.balance;
@@ -98,8 +98,8 @@ export async function customerStatement(customerId: string, from: Date, to: Date
     ...invoices.map((i): StatementLine => i.isOpening
       // Boshlang'ich qoldiq: musbat — mijoz qarzi (debet), manfiy — mijoz avansi (kredit)
       ? { date: i.date, doc: `Boshlang'ich qoldiq ${i.invoiceNo}`, kind: "INVOICE", debit: Math.max(0, Number(i.amount)), credit: Math.max(0, -Number(i.amount)), note: "tizimga o'tish sanasidagi qoldiq", href: undefined }
-      : { date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${i.order.orderNo}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined }),
-    ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans ${p.order.orderNo}` : p.note, href: undefined })),
+      : { date: i.date, doc: `Schyot ${i.invoiceNo}`, kind: "INVOICE", debit: Number(i.amount), credit: 0, note: i.order ? `zayavka ${date(i.order.deliveryDate)}` : null, href: i.orderId ? `/orders/${i.orderId}` : undefined }),
+    ...payments.map((p): StatementLine => ({ date: p.date, doc: `To'lov · ${p.cashAccount.name}`, kind: "PAYMENT", debit: 0, credit: Number(p.amount), note: p.invoice ? `schyot ${p.invoice.invoiceNo}` : p.order ? `avans · zayavka ${date(p.order.deliveryDate)}` : p.note, href: undefined })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.kind === b.kind ? 0 : a.kind === "INVOICE" ? -1 : 1));
   const debit = r2(lines.reduce((s, l) => s + l.debit, 0));
   const credit = r2(lines.reduce((s, l) => s + l.credit, 0));

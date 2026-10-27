@@ -82,12 +82,12 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
     db.productionBatch.findMany({
       where: { date: range },
       orderBy: { date: "asc" },
-      include: { product: { select: { name: true, unit: true } }, order: { select: { orderNo: true, customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
+      include: { product: { select: { name: true, unit: true } }, order: { select: { customer: { select: { name: true } } } }, createdBy: { select: { fullName: true } } },
     }),
     db.trip.findMany({
       where: { OR: [{ createdAt: range }, { loadedAt: range }, { deliveredAt: range }] },
       orderBy: { createdAt: "asc" },
-      include: { order: { select: { orderNo: true, deliveryAddress: true, customer: { select: { name: true } }, items: { select: { product: { select: { unit: true } } } } } }, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } } },
+      include: { order: { select: { deliveryAddress: true, customer: { select: { name: true } }, items: { select: { product: { select: { unit: true } } } } } }, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } } },
     }),
     db.payment.findMany({ where: { date: range }, orderBy: { date: "asc" }, include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } }, invoice: { select: { invoiceNo: true } }, createdBy: { select: { fullName: true } } } }),
     db.cashTransaction.findMany({ where: { date: range, type: { not: "OPENING" }, cancelledAt: null }, orderBy: { date: "asc" }, include: { cashAccount: { select: { name: true } }, createdBy: { select: { fullName: true } } } }),
@@ -100,13 +100,13 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
   // ── Sotuv ──
   const live = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "DRAFT");
   const salesRows: Cell[][] = orders.flatMap((o) => o.items.map((i) => [
-    o.orderNo, hm(o.date), o.customer.name, i.product.name, n(i.qtyM3), unitLabel(i.product.unit), n(i.price), n(i.qtyM3) * n(i.price), ORDER_LABEL[o.status] ?? o.status, o.createdBy.fullName,
+    dmy(o.deliveryDate), hm(o.date), o.customer.name, i.product.name, n(i.qtyM3), unitLabel(i.product.unit), n(i.price), n(i.qtyM3) * n(i.price), ORDER_LABEL[o.status] ?? o.status, o.createdBy.fullName,
   ]));
   const salesSum = live.reduce((s, o) => s + o.items.reduce((x, i) => x + n(i.qtyM3) * n(i.price), 0), 0);
 
   // ── Ishlab chiqarish ──
   const madeRows: Cell[][] = batches.map((b) => [
-    b.batchNo, hm(b.date), b.shift, b.product.name, n(b.qtyM3), unitLabel(b.product.unit), b.order ? `${b.order.orderNo} · ${b.order.customer.name}` : "Omborga", b.createdBy.fullName, b.cancelledAt ? `Bekor: ${b.cancelReason ?? ""}` : "Faol",
+    b.batchNo, hm(b.date), b.shift, b.product.name, n(b.qtyM3), unitLabel(b.product.unit), b.order ? b.order.customer.name : "Omborga", b.createdBy.fullName, b.cancelledAt ? `Bekor: ${b.cancelReason ?? ""}` : "Faol",
   ]);
   const madeByUnit = new Map<string, number>();
   for (const b of batches) if (!b.cancelledAt) madeByUnit.set(b.product.unit, (madeByUnit.get(b.product.unit) ?? 0) + n(b.qtyM3));
@@ -115,7 +115,7 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
   const tripRows: Cell[][] = trips.map((t) => {
     const unit = t.order.items.every((i) => i.product.unit === "m3") ? "m3" : t.order.items[0]?.product.unit ?? "m3";
     return [
-      t.deliveryNoteNo, t.order.orderNo, t.order.customer.name, t.order.deliveryAddress, t.vehicle.plate, t.driver.fullName,
+      t.deliveryNoteNo, t.order.customer.name, t.order.deliveryAddress, t.vehicle.plate, t.driver.fullName,
       n(t.qtyM3), unitLabel(unit), t.status === "CANCELLED" ? "Bekor qilindi" : TRIP_PHASE[tripPhase(t)].label, hm(t.loadedAt), hm(t.departedAt), hm(t.deliveredAt),
     ];
   });
@@ -163,15 +163,15 @@ export async function dailyReportXlsx(user: MobileUser, rawDate?: string | null)
   ]), "Xulosa");
 
   XLSX.utils.book_append_sheet(wb, sheet(title("Sotuv (zayavkalar)"), [
-    { h: "Zayavka" }, { h: "Vaqt" }, { h: "Mijoz" }, { h: "Mahsulot" }, { h: "Miqdor", z: F_QTY }, { h: "Birlik" }, { h: "Narx, so'm", z: F_MONEY }, { h: "Summa, so'm", z: F_MONEY }, { h: "Holat" }, { h: "Kiritdi" },
+    { h: "Yetkazish" }, { h: "Vaqt" }, { h: "Mijoz" }, { h: "Mahsulot" }, { h: "Miqdor", z: F_QTY }, { h: "Birlik" }, { h: "Narx, so'm", z: F_MONEY }, { h: "Summa, so'm", z: F_MONEY }, { h: "Holat" }, { h: "Kiritdi" },
   ], salesRows, ["Jami (faol)", null, null, null, null, null, null, Math.round(salesSum), null, null]), "Sotuv");
 
   XLSX.utils.book_append_sheet(wb, sheet(title("Ishlab chiqarish (zameslar)"), [
-    { h: "Zames" }, { h: "Vaqt" }, { h: "Smena", z: F_INT }, { h: "Mahsulot" }, { h: "Miqdor", z: F_QTY }, { h: "Birlik" }, { h: "Zayavka / mijoz" }, { h: "Kiritdi" }, { h: "Holat" },
+    { h: "Zames" }, { h: "Vaqt" }, { h: "Smena", z: F_INT }, { h: "Mahsulot" }, { h: "Miqdor", z: F_QTY }, { h: "Birlik" }, { h: "Mijoz" }, { h: "Kiritdi" }, { h: "Holat" },
   ], madeRows), "Ishlab chiqarish");
 
   XLSX.utils.book_append_sheet(wb, sheet(title("Otgruzka va reyslar"), [
-    { h: "Nakladnoy" }, { h: "Zayavka" }, { h: "Mijoz" }, { h: "Manzil", w: 36 }, { h: "Mashina" }, { h: "Haydovchi" }, { h: "Miqdor", z: F_QTY }, { h: "Birlik" }, { h: "Bosqich" }, { h: "Yuklandi" }, { h: "Yo'lga chiqdi" }, { h: "Yetkazildi" },
+    { h: "Nakladnoy" }, { h: "Mijoz" }, { h: "Manzil", w: 36 }, { h: "Mashina" }, { h: "Haydovchi" }, { h: "Miqdor", z: F_QTY }, { h: "Birlik" }, { h: "Bosqich" }, { h: "Yuklandi" }, { h: "Yo'lga chiqdi" }, { h: "Yetkazildi" },
   ], tripRows), "Reyslar");
 
   XLSX.utils.book_append_sheet(wb, sheet(title("Mijoz to'lovlari"), [

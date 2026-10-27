@@ -41,15 +41,15 @@ const RULES: Rule[] = [
     type: "REMIND_ORDER_DRAFT",
     find: async (now) => (await db.order.findMany({
       where: { status: "DRAFT", kind: "SALE", createdAt: { lt: ago(now, 2) } }, take: 50,
-      select: { id: true, orderNo: true, createdAt: true, customer: { select: { name: true } } },
-    })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["SALES"] as Role[], title: `Qabul qilinmagan zayavka — ${o.orderNo}`, body: `${o.customer?.name ?? ""} · ${hrs(o.createdAt, now)} soatdan beri qoralamada` })),
+      select: { id: true, createdAt: true, customer: { select: { name: true } } },
+    })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["SALES"] as Role[], title: "Qabul qilinmagan zayavka", body: `${o.customer?.name ?? ""} · ${hrs(o.createdAt, now)} soatdan beri qoralamada` })),
   },
   {
     type: "REMIND_ORDER_BLOCKED",
     find: async (now) => (await db.order.findMany({
       where: { status: "BLOCKED", updatedAt: { lt: ago(now, 4) } }, take: 50,
-      select: { id: true, orderNo: true, updatedAt: true, customer: { select: { name: true } } },
-    })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["DIRECTOR"], title: `Bloklangan zayavka kutmoqda — ${o.orderNo}`, body: `${o.customer?.name ?? ""} · ${hrs(o.updatedAt, now)} soatdan beri direktor qarorini kutmoqda` })),
+      select: { id: true, updatedAt: true, customer: { select: { name: true } } },
+    })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["DIRECTOR"], title: "Bloklangan zayavka kutmoqda", body: `${o.customer?.name ?? ""} · ${hrs(o.updatedAt, now)} soatdan beri direktor qarorini kutmoqda` })),
   },
   {
     // Tasdiqlangan, yetkazish kuni ertaga yoki o'tgan, lekin bitta ham reys yo'q
@@ -58,16 +58,16 @@ const RULES: Rule[] = [
       const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
       return (await db.order.findMany({
         where: { kind: "SALE", status: { in: ["CONFIRMED", "IN_PRODUCTION"] }, deliveryDate: { lt: tomorrow }, trips: { none: {} } }, take: 50,
-        select: { id: true, orderNo: true, deliveryDate: true, customer: { select: { name: true } } },
-      })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["LOGISTICS"], title: `Reys rejalashtirilmagan — ${o.orderNo}`, body: `${o.customer?.name ?? ""} · yetkazish ${o.deliveryDate.toLocaleDateString("ru-RU")}` }));
+        select: { id: true, deliveryDate: true, customer: { select: { name: true } } },
+      })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["LOGISTICS"], title: "Reys rejalashtirilmagan", body: `${o.customer?.name ?? ""} · yetkazish ${o.deliveryDate.toLocaleDateString("ru-RU")}` }));
     },
   },
   {
     type: "REMIND_ORDER_NO_INVOICE",
     find: async (now) => (await db.order.findMany({
       where: { kind: "SALE", status: "DELIVERED", updatedAt: { lt: ago(now, 24) }, invoices: { none: { status: { not: "CANCELLED" } } } }, take: 50,
-      select: { id: true, orderNo: true, customer: { select: { name: true } } },
-    })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["ACCOUNTING"], title: `Schyot yozilmagan — ${o.orderNo}`, body: `${o.customer?.name ?? ""} · yetkazilgan, lekin schyot yo'q` })),
+      select: { id: true, customer: { select: { name: true } } },
+    })).map((o) => ({ id: o.id, link: { key: "orders", id: o.id }, roles: ["ACCOUNTING"], title: "Schyot yozilmagan", body: `${o.customer?.name ?? ""} · yetkazilgan, lekin schyot yo'q` })),
   },
   {
     type: "REMIND_SUPPLY",

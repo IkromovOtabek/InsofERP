@@ -1,6 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card, Badge, Callout, Field, Input, Select, Checkbox, Button, Table, Th, Td, Tr, StatusSteps, DL } from "@/components/ui";
+import { BackLink, Card, Badge, Callout, Field, Input, Select, Checkbox, Button, Table, Th, Td, Tr, StatusSteps, DL } from "@/components/ui";
 
 /* ═══════════════════════ Yordamchi bloklar ═══════════════════════ */
 
@@ -126,6 +126,7 @@ export default function QollanmaPage() {
   return (
     <div className="max-w-5xl">
       <div className="mb-8 animate-fade-up">
+        <BackLink href="/dashboard" label="Bosh sahifa" className="mb-3" />
         <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Yangi xodimlar uchun</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Foydalanuvchi qo'llanmasi</h1>
         <p className="mt-1.5 max-w-2xl text-sm text-slate-500">
@@ -248,7 +249,7 @@ export default function QollanmaPage() {
           <Shot title="Ishlab chiqarish → Yangi zames">
             <Mark n={1}>
               <Field label="Zayavka" hint="Tanlansa — marka va miqdor avtomatik to'ladi">
-                <Select disabled defaultValue=""><option>Z-2026-00011 · Qurilish Servis MChJ · qoldi 24 m³</option></Select>
+                <Select disabled defaultValue=""><option>Qurilish Servis MChJ · 18/09/2026 · qoldi 24 m³</option></Select>
               </Field>
             </Mark>
             <div className="grid grid-cols-2 gap-3">
@@ -327,7 +328,7 @@ export default function QollanmaPage() {
         shot={
           <Shot title="Reyslar → Yangi reys">
             <Mark n={1}>
-              <Field label="Zayavka *"><Select disabled defaultValue=""><option>Z-2026-00011 · qoldi 24 m³</option></Select></Field>
+              <Field label="Zayavka *"><Select disabled defaultValue=""><option>Qurilish Servis MChJ · 18/09/2026 · qoldi 24 m³</option></Select></Field>
             </Mark>
             <Mark n={2}>
               <div className="grid grid-cols-2 gap-3">
@@ -359,7 +360,7 @@ export default function QollanmaPage() {
             <div className="space-y-5">
               <Shot title="Schyotlar → Yangi schyot">
                 <Mark n={1}>
-                  <Field label="Zayavka *"><Select disabled defaultValue=""><option>Z-2026-00011 · Qurilish Servis MChJ</option></Select></Field>
+                  <Field label="Zayavka *"><Select disabled defaultValue=""><option>Qurilish Servis MChJ · 18/09/2026</option></Select></Field>
                 </Mark>
                 <div className="rounded-lg bg-slate-50 p-2.5 text-[12.5px]">
                   <div className="flex justify-between"><span>Yetkazilgan</span><b>24 / 24 m³ — 15 600 000 so'm</b></div>

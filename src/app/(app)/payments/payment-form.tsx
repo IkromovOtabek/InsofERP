@@ -9,7 +9,7 @@ import { MoneyInput } from "@/components/money-input";
 
 export type InvOpt = { id: string; invoiceNo: string; customerId: string; remaining: number; date: string };
 /** Avans qabul qilinadigan zayavka: schyoti hali yo'q. `expected` — sotuvchi yozgan kutilayotgan avans. */
-export type OrderOpt = { id: string; orderNo: string; customerId: string; total: number; paid: number; expected: number };
+export type OrderOpt = { id: string; customerId: string; date: string; total: number; paid: number; expected: number };
 type Opt = { id: string; name: string };
 /** Kassa/bank hisobi: tanlovda turi ham ko'rinadi — «Asosiy hisob (bank)», «Kassa (naqd)». */
 type AccOpt = Opt & { type: "CASH" | "BANK" };
@@ -62,7 +62,7 @@ export function PaymentForm({ customers, invoices, orders, accounts }: { custome
             <option value="">— zayavkasiz (taqsimlanmagan) —</option>
             {custOrders.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.orderNo} · {fmt(o.total)}{o.expected > 0 ? ` · avans kutilmoqda ${fmt(o.expected)}` : ""}{o.paid > 0 ? ` · olingan ${fmt(o.paid)}` : ""}
+                {o.date} · {fmt(o.total)}{o.expected > 0 ? ` · avans kutilmoqda ${fmt(o.expected)}` : ""}{o.paid > 0 ? ` · olingan ${fmt(o.paid)}` : ""}
               </option>
             ))}
           </Select>

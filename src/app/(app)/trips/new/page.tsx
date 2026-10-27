@@ -6,6 +6,7 @@ import { requireRoles } from "@/lib/page-guard";
 import { PageHeader } from "@/components/ui";
 import { TripForm } from "../trip-form";
 import { unitLabel } from "@/lib/unit";
+import { date } from "@/lib/format";
 import { READINESS_INCLUDE, orderReadiness } from "@/lib/trips";
 import { ACTIVE_TRIP, VEHICLE_LIVE, orderPlannedAt, vehicleLive } from "@/lib/logistics";
 
@@ -37,7 +38,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
     // Aralash zayavka (beton + dona): birlik texnika turidan — mikserda m³, yuk mashinada dona birligi
     const mixed = new Set(o.items.map((i) => i.product.unit === "m3")).size > 1;
     const pieceUnit = o.items.find((i) => i.product.unit !== "m3")?.product.unit ?? "dona";
-    return { plannedAt: plan ? localInput(plan) : "", id: o.id, orderNo: o.orderNo, customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress, remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks, unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit) };
+    return { plannedAt: plan ? localInput(plan) : "", id: o.id, date: date(o.deliveryDate), customer: markedName(o.customer.name, o.customerId, marks), address: o.deliveryAddress, remainingM3: rd.available, inProduction: rd.inProduction, total: rd.total, shipped: rd.shipped, hasTasks: rd.hasTasks, unit: mixed ? "birlik" : unitLabel(rd.unit ?? "m3"), mixed, pieceUnit: unitLabel(pieceUnit) };
   });
   const opts = all.filter((o) => o.remainingM3 > 0);
   // Qoldig'i bor, lekin tayyor mahsuloti yo'q zayavkalar — logist nima uchun ro'yxatda yo'qligini bilsin
@@ -45,7 +46,7 @@ export default async function NewTrip({ searchParams }: { searchParams: Promise<
   return (
     <div>
       <PageHeader back={{ href: "/trips", label: "Reyslar" }} title="Yangi reys" subtitle="Faqat brigada tayyorlab bergan miqdor reysga beriladi · nakladnoy raqami avtomatik" />
-      <TripForm orders={opts} waiting={waiting.map((o) => ({ id: o.id, orderNo: o.orderNo, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 && v.capacityUnit === "M3" ? Number(v.capacityM3) : null, mainDriverId: v.mainDriverId, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))} drivers={driverList} initialOrderId={orderId} />
+      <TripForm orders={opts} waiting={waiting.map((o) => ({ id: o.id, date: o.date, customer: o.customer, inProduction: o.inProduction, unit: o.unit, hasTasks: o.hasTasks }))} vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, type: v.type, capacityM3: v.capacityM3 && v.capacityUnit === "M3" ? Number(v.capacityM3) : null, mainDriverId: v.mainDriverId, state: v.trips.length ? VEHICLE_LIVE[vehicleLive(v, v.trips)].label.toLowerCase() : undefined }))} drivers={driverList} initialOrderId={orderId} />
     </div>
   );
 }

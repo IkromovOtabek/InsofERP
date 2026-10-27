@@ -22,7 +22,7 @@ export const PAY_GROUPS: { key: PayGroupKey; label: string }[] = [
 ];
 
 export type DaySheetRow = {
-  orderId: string; orderNo: string; customer: string; product: string; unit: string;
+  orderId: string; customer: string; product: string; unit: string;
   qty: number; price: number; delivery: number; net: number; vat: number; total: number;
   receiver: string | null; phone: string | null; site: string; time: string | null;
 };
@@ -56,7 +56,7 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
       where: { kind: "SALE", status: { not: "CANCELLED" }, dateUnknown: false, deliveryDate: { gte: from, lt: to } },
       orderBy: [{ deliveryTime: "asc" }, { orderNo: "asc" }],
       select: {
-        id: true, orderNo: true, deliveryTime: true, deliveryAddress: true, deliveryFee: true, payMethod: true, onCredit: true,
+        id: true, deliveryTime: true, deliveryAddress: true, deliveryFee: true, payMethod: true, onCredit: true,
         customer: { select: { name: true, phone: true, contactPerson: true } },
         site: { select: { name: true, contactName: true, contactPhone: true } },
         items: { orderBy: { id: "asc" }, select: { qtyM3: true, price: true, nds: true, product: { select: { name: true, unit: true, groupId: true } } } },
@@ -87,7 +87,7 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
       const delivery = n === 0 ? fee : 0;
       const unit = unitLabel(i.product.unit);
       rowsBy[key].push({
-        orderId: o.id, orderNo: o.orderNo, customer: o.customer.name, product: i.product.name, unit,
+        orderId: o.id, customer: o.customer.name, product: i.product.name, unit,
         qty, price: i.nds ? withoutNds(price) : price, delivery,
         net: r2(line - vat + delivery), vat, total: r2(line + delivery),
         receiver: o.site?.contactName || o.customer.contactPerson || null,
@@ -101,7 +101,7 @@ export async function orderDaySheet(day: Date): Promise<DaySheet> {
     // Mahsulot qatorisiz zayavka (faqat dastavka) ham varaqda ko'rinsin — summasi jamiga kiradi
     if (o.items.length === 0 && fee > 0) {
       rowsBy[key].push({
-        orderId: o.id, orderNo: o.orderNo, customer: o.customer.name, product: "Dastavka", unit: "", qty: 0, price: 0, delivery: fee,
+        orderId: o.id, customer: o.customer.name, product: "Dastavka", unit: "", qty: 0, price: 0, delivery: fee,
         net: fee, vat: 0, total: fee, receiver: o.site?.contactName || o.customer.contactPerson || null,
         phone: o.site?.contactPhone || o.customer.phone || null, site: o.site?.name || o.deliveryAddress, time: o.deliveryTime,
       });

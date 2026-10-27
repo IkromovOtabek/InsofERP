@@ -119,12 +119,12 @@ export async function createProductionBatch(d: BatchInput, userId: string): Prom
   if (d.orderId) {
     const orderId = d.orderId, qtyM3 = d.qtyM3;
     notifyAfter(async () => {
-      const o = await db.order.findUnique({ where: { id: orderId }, select: { orderNo: true, kind: true, customer: { select: { name: true } } } });
+      const o = await db.order.findUnique({ where: { id: orderId }, select: { kind: true, customer: { select: { name: true } } } });
       if (!o || o.kind !== "SALE") return;
       await notifyRoles(["LOGISTICS"], {
         type: "BATCH_READY",
-        title: `Beton tayyor — ${o.orderNo}`,
-        body: `${fq(qtyM3)} m³${o.customer ? ` · ${o.customer.name}` : ""} · reys ochish mumkin`,
+        title: `Beton tayyor — ${o.customer.name}`,
+        body: `${fq(qtyM3)} m³ · reys ochish mumkin`,
         link: { key: "orders", id: orderId },
       }, { except: userId });
     });

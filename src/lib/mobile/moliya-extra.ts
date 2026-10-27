@@ -77,7 +77,7 @@ export async function paymentsList(title: string, q?: string, filter?: string): 
   const [rows, counts] = await Promise.all([
     db.payment.findMany({
       where: { AND: [tab.where, search] }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: TAKE,
-      include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } }, invoice: { select: { invoiceNo: true } }, order: { select: { orderNo: true } }, register: { select: { id: true } } },
+      include: { customer: { select: { name: true } }, cashAccount: { select: { name: true } }, invoice: { select: { invoiceNo: true } }, order: { select: { deliveryDate: true } }, register: { select: { id: true } } },
     }),
     Promise.all(tabs.map((t) => db.payment.count({ where: { AND: [t.where, search] } }))),
   ]);
@@ -85,7 +85,7 @@ export async function paymentsList(title: string, q?: string, filter?: string): 
     key: "payments", title,
     rows: rows.map((p) => {
       const free = !p.invoiceId && !p.register;
-      const link = p.invoice?.invoiceNo ?? (p.register ? "realizatsiya" : p.order ? `avans · ${p.order.orderNo}` : null);
+      const link = p.invoice?.invoiceNo ?? (p.register ? "realizatsiya" : p.order ? `avans · zayavka ${dateRu(p.order.deliveryDate)}` : null);
       return {
         id: p.id, title: p.customer.name,
         subtitle: [dateRu(p.date), p.cashAccount.name, link].filter(Boolean).join(" · "),

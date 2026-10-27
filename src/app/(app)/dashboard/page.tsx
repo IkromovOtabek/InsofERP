@@ -198,7 +198,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
         <Section title="Navbatdagi zayavkalar" className="mt-0" action={<Link href="/orders" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">Hammasi <ArrowRight size={14} /></Link>}>
           <Table>
-            <thead><tr><Th>№</Th><Th>Mijoz</Th><Th>Marka</Th><Th className="w-40">Bajarilishi</Th><Th>Holat</Th></tr></thead>
+            <thead><tr><Th>Mijoz</Th><Th>Marka</Th><Th className="w-40">Bajarilishi</Th><Th>Holat</Th></tr></thead>
             <tbody>
               {upcoming.length === 0 && <Empty text="Tasdiqlangan zayavka yo'q" icon={ClipboardList} />}
               {upcoming.map((o) => {
@@ -212,8 +212,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 const shipPct = needQty > 0 ? Math.min(100, (shipped / needQty) * 100) : 0;
                 return (
                   <Tr key={o.id}>
-                    <Td><Link href={`/orders/${o.id}`} className="hover:underline">{o.orderNo}</Link></Td>
-                    <Td><CustomerName name={o.customer.name} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td><Td>{o.items.map((i) => i.product.code).join(", ")}</Td>
+                    <Td><CustomerName name={o.customer.name} href={`/orders/${o.id}`} blacklisted={marks.black.has(o.customerId)} contracted={marks.contract.has(o.customerId)} short /></Td><Td>{o.items.map((i) => i.product.code).join(", ")}</Td>
                     <Td>
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-[11px] text-slate-500"><span>Ishlab ch.</span><span className="tabular">{u ? `${qty(madeQty)}/${qty(needQty)} ${unitLabel(u)}` : pct(madePct, 0)}</span></div><Progress value={madePct} max={100} tone="default" />

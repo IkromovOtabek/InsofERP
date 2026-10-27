@@ -115,7 +115,7 @@ async function salesRevenue(r: DashRange, sellerId?: string, title = "Sotuv"): P
       !sellerId && breakdown("Sotuvchilar bo'yicha", cur, (x) => x.seller, (x) => x.revenue, short, { icon: "user" }),
       byDays(r, cur, (x) => x.date, rev, (l) => cnt(new Set(l.map((x) => x.orderId)).size, "zayavka")),
       sec("Zayavkalar", orders.slice(0, 40).map(([id, list]) => ({
-        id, title: `${list[0]!.orderNo} · ${list[0]!.customer}`,
+        id, title: list[0]!.customer,
         subtitle: `${day(list[0]!.date)} · ${[...new Set(list.map((x) => x.product))].slice(0, 3).join(", ")} · ${totalsText(unitRows(list))}`,
         right: rev(list), status: ORDER_LABEL[list[0]!.status] ?? list[0]!.status, tone: ORDER_TONE[list[0]!.status],
       })), { target: "orders", empty: "Bu davrda zayavka yo'q" }),
@@ -137,7 +137,7 @@ async function salesVolume({ r }: Ctx): Promise<Part> {
       sec("Mijozlar bo'yicha", groupBy(cur, (x) => x.customerId).map(([id, list]) => ({ id, list })).sort((a, b) => sumBy(b.list, (x) => x.qty) - sumBy(a.list, (x) => x.qty)).slice(0, 12)
         .map((g) => ({ id: g.id, title: g.list[0]!.customer, subtitle: cnt(new Set(g.list.map((x) => x.orderId)).size, "zayavka"), right: qtyIn(g.list) })), { icon: "users", target: "customers" }),
       byDays(r, cur, (x) => x.date, qtyIn),
-      sec("Zayavkalar", orders.slice(0, 40).map(([id, list]) => ({ id, title: `${list[0]!.orderNo} · ${list[0]!.customer}`, subtitle: `${day(list[0]!.date)} · ${[...new Set(list.map((x) => x.product))].slice(0, 3).join(", ")}`, right: qtyIn(list), status: ORDER_LABEL[list[0]!.status], tone: ORDER_TONE[list[0]!.status] })), { target: "orders" }),
+      sec("Zayavkalar", orders.slice(0, 40).map(([id, list]) => ({ id, title: list[0]!.customer, subtitle: `${day(list[0]!.date)} · ${[...new Set(list.map((x) => x.product))].slice(0, 3).join(", ")}`, right: qtyIn(list), status: ORDER_LABEL[list[0]!.status], tone: ORDER_TONE[list[0]!.status] })), { target: "orders" }),
     ),
   };
 }
@@ -190,7 +190,7 @@ const taskRow = (t: TaskRow, right?: string): HomeRow => {
   const u = t.orderItem.product.unit;
   return {
     id: t.id, title: `${t.taskNo} · ${t.orderItem.product.name}`,
-    subtitle: `${t.brigade.name} · ${t.order.orderNo} ${t.order.customer.name} · muddat ${day(t.dueDate)}`,
+    subtitle: `${t.brigade.name} · ${t.order.customer.name} · muddat ${day(t.dueDate)}`,
     right: right ?? `${inUnit(sum(t.doneQty), u)} / ${inUnit(sum(t.qty), u)}`, status: ph.label, tone: ph.tone,
   };
 };
@@ -698,7 +698,7 @@ async function procAvgDays({ r }: Ctx): Promise<Part> {
 
 type SlOrderRow = Awaited<ReturnType<typeof skladLogistika>>["orders"][number];
 const slOrderRow = (o: SlOrderRow): HomeRow => ({
-  id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: `${o.time ?? "soatsiz"} · ${o.products}`,
+  id: o.id, title: o.customer, subtitle: `${o.time ?? "soatsiz"} · ${o.products}`,
   right: `${num(o.shipped)}/${num(o.total)}${o.unit ? ` ${unitLabel(o.unit)}` : ""}`, status: o.statusLabel, tone: o.blocked || o.problem ? "danger" : o.late ? "warning" : o.done ? "success" : "brand",
 });
 type SlProductRow = Awaited<ReturnType<typeof skladLogistika>>["products"][number];
@@ -755,7 +755,7 @@ async function mechTomorrow(kind: "orders" | "trucks", r?: DashRange): Promise<P
     select: { id: true, orderNo: true, status: true, deliveryTime: true, needsPump: true, needsDelivery: true, customer: { select: { name: true } }, items: { select: { qtyM3: true, product: { select: { name: true, unit: true } } } } },
   });
   const rows: HomeRow[] = orders.map((o) => ({
-    id: o.id, title: `${o.orderNo} · ${o.customer.name}`,
+    id: o.id, title: o.customer.name,
     subtitle: [o.deliveryTime ?? "soatsiz", o.items.map((i) => i.product.name).slice(0, 3).join(", "), o.needsPump ? "nasos" : null, o.needsDelivery === false ? "o'zi olib ketadi" : null].filter(Boolean).join(" · "),
     right: totalsText(o.items.map((i) => ({ unit: i.product.unit, qty: sum(i.qtyM3) }))), status: ORDER_LABEL[o.status] ?? o.status, tone: o.status === "DRAFT" ? "warning" : o.status === "BLOCKED" ? "danger" : "brand",
   }));
@@ -894,7 +894,7 @@ async function balances({ r }: Ctx): Promise<Part> {
 }
 
 async function invoicesIssued({ r }: Ctx): Promise<Part> {
-  const rows = await db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, amount: true, status: true, customer: { select: { id: true, name: true } }, order: { select: { orderNo: true } }, payments: { select: { amount: true } } } });
+  const rows = await db.invoice.findMany({ where: { isOpening: false, date: { gte: r.from, lt: r.to } }, orderBy: { date: "desc" }, select: { id: true, invoiceNo: true, date: true, amount: true, status: true, customer: { select: { id: true, name: true } }, payments: { select: { amount: true } } } });
   const total = sumBy(rows, (i) => sum(i.amount));
   const paid = sumBy(rows, (i) => sumBy(i.payments, (p) => sum(p.amount)));
   const TONE: Record<string, Tone> = { OPEN: "warning", PARTIAL: "warning", PAID: "success", CANCELLED: "danger" };
@@ -905,7 +905,7 @@ async function invoicesIssued({ r }: Ctx): Promise<Part> {
       breakdown("Holat bo'yicha", rows, (i) => INVOICE_LABEL[i.status] ?? i.status, (i) => sum(i.amount), short, { icon: "receipt", unitWord: "schyot" }),
       breakdown("Mijozlar bo'yicha", rows, (i) => i.customer.name, (i) => sum(i.amount), short, { icon: "users", unitWord: "schyot", target: "customers", id: (l) => l[0]!.customer.id, limit: 10 }),
       byDays(r, rows, (i) => i.date, (l) => short(sumBy(l, (i) => sum(i.amount))), (l) => cnt(l.length, "schyot")),
-      sec("Schyotlar", rows.slice(0, 60).map((i) => ({ id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: [day(i.date), i.order?.orderNo, `to'landi ${short(sumBy(i.payments, (p) => sum(p.amount)))}`].filter(Boolean).join(" · "), right: short(sum(i.amount)), status: INVOICE_LABEL[i.status], tone: TONE[i.status] })), { target: "invoices", empty: "Bu davrda schyot yozilmagan" }),
+      sec("Schyotlar", rows.slice(0, 60).map((i) => ({ id: i.id, title: `${i.invoiceNo} · ${i.customer.name}`, subtitle: [day(i.date), `to'landi ${short(sumBy(i.payments, (p) => sum(p.amount)))}`].filter(Boolean).join(" · "), right: short(sum(i.amount)), status: INVOICE_LABEL[i.status], tone: TONE[i.status] })), { target: "invoices", empty: "Bu davrda schyot yozilmagan" }),
     ),
   };
 }
@@ -1159,7 +1159,7 @@ async function ownerProduction(): Promise<Part> {
     fields: [f("Beton (oy)", `${num(S.concreteMonth)} m³${S.concretePlan ? ` / ${num(S.concretePlan)} m³ · ${share(S.concreteMonth, S.concretePlan)}` : ""}`, tone(d.levels.production)), f("Bugun", `${num(S.concreteToday)} m³ · ${cnt(batches.length, "zames")}`), f("Quvvat yuklanishi", pctText(S.capacityPct)), f("Plan qatorlari", cnt(P.rows.length, "mahsulot"))],
     sections: [
       sec("Mahsulotlar (plan / fakt)", P.rows.map((x) => ({ id: x.id, title: `${x.code} · ${x.name}`, subtitle: `plan ${inUnit(x.plan, x.unit)} · fakt ${inUnit(x.fact, x.unit)} · bugun ${inUnit(x.factDay, x.unit)}${x.behind > 0 ? ` · ortda ${inUnit(x.behind, x.unit)}` : ""}`, right: pctText(x.pct), tone: tone(x.level) })), { icon: "factory", empty: "Bu oyga plan belgilanmagan" }),
-      sec("Bugungi zameslar", batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${time(b.date)} · ${b.shift}-smena · ${b.order ? `${b.order.orderNo} ${b.order.customer.name}` : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit) })), { target: "production", empty: "Bugun zames yo'q" }),
+      sec("Bugungi zameslar", batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: `${time(b.date)} · ${b.shift}-smena · ${b.order ? b.order.customer.name : "Omborga"}`, right: inUnit(sum(b.qtyM3), b.product.unit) })), { target: "production", empty: "Bugun zames yo'q" }),
     ],
   };
 }
@@ -1193,7 +1193,7 @@ async function blockedOrders(): Promise<Part> {
   return {
     title: "Bloklangan zayavkalar", subtitle: "Limit yoki qarz sababli to'xtatilgan — direktor ochadi",
     fields: [f("Jami", cnt(rows.length, "ta"), rows.length ? "danger" : "success"), f("Summa", money(sumBy(rows, total))), f("Mijozlar", cnt(new Set(rows.map((o) => o.customer.id)).size, "ta"))],
-    sections: [sec("Zayavkalar", rows.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer.name}`, subtitle: `${day(o.deliveryDate)} · ${o.items.map((i) => i.product.name).slice(0, 3).join(", ")} · ${o.createdBy.fullName}${o.onCredit ? " · nasiyaga" : ""}`, right: short(total(o)), status: ORDER_LABEL.BLOCKED, tone: "danger" })), { target: "orders", empty: "Bloklangan zayavka yo'q" })],
+    sections: [sec("Zayavkalar", rows.map((o) => ({ id: o.id, title: o.customer.name, subtitle: `${day(o.deliveryDate)} · ${o.items.map((i) => i.product.name).slice(0, 3).join(", ")} · ${o.createdBy.fullName}${o.onCredit ? " · nasiyaga" : ""}`, right: short(total(o)), status: ORDER_LABEL.BLOCKED, tone: "danger" })), { target: "orders", empty: "Bloklangan zayavka yo'q" })],
   };
 }
 
@@ -1214,7 +1214,7 @@ async function logiToday(kind: "today" | "onroad" | "waiting"): Promise<Part> {
     return {
       title: "Kutayotgan buyurtmalar", subtitle: "Bugun · transport biriktirilmagan yoki qoldig'i bor",
       fields: [f("Buyurtmalar", cnt(k.waitingOrders, "ta"), k.waitingOrders ? "warning" : "success"), f("Biriktirilmagan hajm", `${num(k.waitingQty)}`), f("Bo'sh transport", `${k.freeVehicles} / ${k.totalVehicles}`)],
-      sections: [sec("Buyurtmalar", rows.map((o) => ({ id: o.id, title: `${o.orderNo} · ${o.customer}`, subtitle: [o.deliveryTime ?? "soatsiz", o.address, o.needsPump ? "nasos" : null, o.isUrgent ? "shoshilinch" : null].filter(Boolean).join(" · "), right: `qoldi ${inUnit(o.remaining, o.unit)} / ${inUnit(o.total, o.unit)}`, status: ORDER_LOGI[o.status]?.label ?? o.status, tone: o.problem ? "danger" : o.late ? "warning" : "info" })), { target: "orders", empty: "Kutayotgan buyurtma yo'q" })],
+      sections: [sec("Buyurtmalar", rows.map((o) => ({ id: o.id, title: o.customer, subtitle: [o.deliveryTime ?? "soatsiz", o.address, o.needsPump ? "nasos" : null, o.isUrgent ? "shoshilinch" : null].filter(Boolean).join(" · "), right: `qoldi ${inUnit(o.remaining, o.unit)} / ${inUnit(o.total, o.unit)}`, status: ORDER_LOGI[o.status]?.label ?? o.status, tone: o.problem ? "danger" : o.late ? "warning" : "info" })), { target: "orders", empty: "Kutayotgan buyurtma yo'q" })],
     };
   }
   if (kind === "onroad") {

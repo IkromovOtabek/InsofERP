@@ -54,11 +54,11 @@ export default async function GuaranteePage({ params }: { params: Promise<{ id: 
       </div>
 
       <h1 className="mt-8 text-center text-xl font-bold uppercase tracking-wide">Kafolat xati</h1>
-      <div className="text-center text-[12px] text-slate-600">(Гарантийное письмо) · Zayavka {o.orderNo} dan {date(o.date)}</div>
+      <div className="text-center text-[12px] text-slate-600">(Гарантийное письмо) · {date(o.date)} sanadagi zayavka</div>
 
       <p className="mt-6 text-justify">
         Biz, <b>{c.name}</b>{c.inn ? ` (INN ${c.inn})` : ""}, <b>{company.legalName ?? company.name}</b> tomonidan
-        {" "}{o.orderNo}-sonli zayavka bo&apos;yicha yetkazib beriladigan quyidagi mahsulotlar uchun jami
+        {" "}{date(o.date)} sanadagi zayavka bo&apos;yicha yetkazib beriladigan quyidagi mahsulotlar uchun jami
         {" "}<b>{money(total)}</b> ({fmtNum(total)} so&apos;m) miqdoridagi to&apos;lovni
         {" "}«<Blank w="w-8" />» <Blank w="w-24" /> 20<Blank w="w-8" /> yilgacha
         {" "}to&apos;liq amalga oshirishga kafolat beramiz.

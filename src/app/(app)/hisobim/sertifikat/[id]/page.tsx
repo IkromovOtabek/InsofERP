@@ -4,6 +4,7 @@ import { canDo } from "@/lib/permissions";
 import { certificate } from "@/lib/hr/training";
 import { getCompany } from "@/lib/company";
 import { date } from "@/lib/format";
+import { BackLink } from "@/components/ui";
 
 /** Sertifikat (chop etish) — egasi yoki otdel kadr ko'radi. */
 export default async function CertificatePage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,6 +14,8 @@ export default async function CertificatePage({ params }: { params: Promise<{ id
   if (!c || (c.employee.userId !== s.userId && !canDo(s, "employees", "training", ["HR"]))) notFound();
   const company = await getCompany();
   return (
+    <>
+    <div className="mx-auto mb-4 max-w-3xl"><BackLink href="/hisobim" label="Hisobim" /></div>
     <div className="mx-auto max-w-3xl rounded-2xl border-4 border-double border-slate-300 bg-white p-10 text-center shadow-sm print:border-slate-400 print:shadow-none">
       <div className="text-sm uppercase tracking-[0.3em] text-slate-500">{company.legalName ?? company.name}</div>
       <h1 className="mt-6 text-4xl font-bold tracking-tight text-slate-900">Sertifikat</h1>
@@ -27,5 +30,6 @@ export default async function CertificatePage({ params }: { params: Promise<{ id
       </div>
       <div className="mt-10 border-t border-slate-200 pt-4 text-sm text-slate-500">Rahbar: {company.directorName ?? "________________"}</div>
     </div>
+    </>
   );
 }

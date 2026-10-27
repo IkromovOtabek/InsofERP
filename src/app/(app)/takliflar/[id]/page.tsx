@@ -18,7 +18,7 @@ export default async function OfferPage({ params, searchParams }: { params: Prom
   const { yangi } = await searchParams;
   const o = await db.commercialOffer.findUnique({
     where: { id },
-    include: { items: { orderBy: { sort: "asc" } }, manager: { select: { fullName: true } }, customer: { select: { id: true, name: true } }, order: { select: { id: true, orderNo: true } }, lead: { select: { id: true, name: true } } },
+    include: { items: { orderBy: { sort: "asc" } }, manager: { select: { fullName: true } }, customer: { select: { id: true, name: true } }, order: { select: { id: true, deliveryDate: true } }, lead: { select: { id: true, name: true } } },
   });
   if (!o) notFound();
   const st = offerState(o);
@@ -89,7 +89,7 @@ export default async function OfferPage({ params, searchParams }: { params: Prom
               { k: "INN", v: o.clientInn ?? "—" },
               { k: "Obyekt", v: o.objectName ?? "—" },
               { k: "Muddat", v: o.deadline ?? "—" },
-              ...(o.order ? [{ k: "Zayavka", v: <Link href={`/orders/${o.order.id}`} className="hover:underline">{o.order.orderNo}</Link> }] : []),
+              ...(o.order ? [{ k: "Zayavka", v: <Link href={`/orders/${o.order.id}`} className="hover:underline">{date(o.order.deliveryDate)}</Link> }] : []),
               ...(o.lead ? [{ k: "Sayt arizasi", v: <Link href="/leads" className="inline-flex items-center gap-1 hover:underline"><Inbox size={13} /> {o.lead.name}</Link> }] : []),
               ...(o.note ? [{ k: "Ichki izoh", v: o.note }] : []),
             ]} />

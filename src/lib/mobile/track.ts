@@ -134,7 +134,7 @@ export async function recordTrack(user: MobileUser, body: unknown): Promise<Trac
     select: {
       driverId: true, status: true, loadedAt: true, departedAt: true, deliveredAt: true, closedAt: true, lastAt: true, lastSeenAt: true, gpsPlatform: true,
       arrivedAt: true, arrivalNotifiedAt: true, deliveryNoteNo: true, pickupLat: true, pickupLng: true,
-      order: { select: { lat: true, lng: true, orderNo: true, site: { select: { lat: true, lng: true } } } },
+      order: { select: { lat: true, lng: true, customer: { select: { name: true } }, site: { select: { lat: true, lng: true } } } },
       vehicle: { select: { plate: true } }, driver: { select: { fullName: true } },
     },
   });
@@ -254,7 +254,7 @@ export async function recordTrack(user: MobileUser, body: unknown): Promise<Trac
  */
 async function checkArrival(
   userId: string, tripId: string,
-  trip: { status: string; arrivedAt: Date | null; arrivalNotifiedAt: Date | null; deliveryNoteNo: string; order: { lat: number | null; lng: number | null; orderNo: string; site: { lat: number | null; lng: number | null } | null }; vehicle: { plate: string }; driver: { fullName: string } },
+  trip: { status: string; arrivedAt: Date | null; arrivalNotifiedAt: Date | null; deliveryNoteNo: string; order: { lat: number | null; lng: number | null; customer: { name: string }; site: { lat: number | null; lng: number | null } | null }; vehicle: { plate: string }; driver: { fullName: string } },
   rows: Row[],
 ) {
   if (trip.arrivalNotifiedAt || !["LOADED", "ON_ROAD"].includes(trip.status)) return;
@@ -273,7 +273,7 @@ async function checkArrival(
   notifyAfter(() => notifyRoles(["LOGISTICS"], {
     type: "TRIP_ARRIVED",
     title: `Obyektga yetib keldi — ${trip.deliveryNoteNo}`,
-    body: `${trip.vehicle.plate} · ${trip.driver.fullName} · ${trip.order.orderNo} · ${hhmm}`,
+    body: `${trip.vehicle.plate} · ${trip.driver.fullName} · ${trip.order.customer.name} · ${hhmm}`,
     link: { key: "trips", id: tripId },
     channel: "oddiy",
   }));

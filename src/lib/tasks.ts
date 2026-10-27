@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { consumeForTask } from "@/lib/brigade-stock";
-import { qty as fq } from "@/lib/format";
+import { orderLabel, qty as fq } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyEmployees, notifyRoles } from "@/lib/notify";
 import type { Role } from "@/generated/prisma";
@@ -129,12 +129,12 @@ export async function taskProgress(taskId: string, qty: number, userId: string, 
     }, { except: userId }));
     // Mijoz zayavkasi tayyor — reysni logistika ochadi; xabarsiz tayyor mahsulot reyssiz turib qolardi
     notifyAfter(async () => {
-      const o = await db.order.findUnique({ where: { id: t.orderId }, select: { kind: true, orderNo: true, status: true, customer: { select: { name: true } } } });
+      const o = await db.order.findUnique({ where: { id: t.orderId }, select: { kind: true, deliveryDate: true, status: true, customer: { select: { name: true } } } });
       if (!o || o.kind !== "SALE" || o.status === "CANCELLED" || o.status === "CLOSED") return;
       await notifyRoles(["LOGISTICS"], {
         type: "TASK_DONE",
-        title: `Mahsulot tayyor — ${o.orderNo}`,
-        body: `${fq(Number(t.qty))} ${unitLabel(product.unit)} ${product.name}${o.customer ? ` · ${o.customer.name}` : ""} · reys ochish mumkin`,
+        title: `Mahsulot tayyor — ${orderLabel(o.customer?.name, o.deliveryDate)}`,
+        body: `${fq(Number(t.qty))} ${unitLabel(product.unit)} ${product.name} · reys ochish mumkin`,
         link: { key: "orders", id: t.orderId },
       }, { except: userId });
     });

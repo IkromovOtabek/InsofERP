@@ -46,7 +46,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
               <Tr key={i.id}>
                 <Td className="font-medium">{i.invoiceNo}</Td><Td>{date(i.date)}</Td>
                 <Td><CustomerName name={i.customer.name} blacklisted={marks.black.has(i.customerId)} contracted={marks.contract.has(i.customerId)} href={`/customers/${i.customerId}`} /></Td>
-                <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{i.order.orderNo}</Link> : i.isOpening ? <Badge color="blue" dot={false}>Boshlang&apos;ich qoldiq</Badge> : "—"}</Td>
+                <Td>{i.order ? <Link href={`/orders/${i.order.id}`} className="hover:underline">{date(i.order.deliveryDate)}</Link> : i.isOpening ? <Badge color="blue" dot={false}>Boshlang&apos;ich qoldiq</Badge> : "—"}</Td>
                 <Td right>{money(i.amount)}</Td><Td right>{money(paid)}</Td>
                 <Td right className={Number(i.amount) - paid > 0 && i.status !== "CANCELLED" ? "text-red-600" : ""}>{i.status === "CANCELLED" ? "—" : money(Number(i.amount) - paid)}</Td>
                 <Td><InvoiceStatusBadge status={i.status} /></Td>

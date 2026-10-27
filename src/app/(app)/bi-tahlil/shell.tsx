@@ -2,8 +2,9 @@ import { requireSession, type Session } from "@/lib/auth";
 import { AccessDenied } from "@/lib/access-denied";
 import { pathAllowed } from "@/lib/nav";
 import { parseRange, type Range } from "@/lib/bi/core";
-import { PageHeader } from "@/components/ui";
+import { BackLink, PageHeader } from "@/components/ui";
 import { PeriodBar, routeOf } from "./ui";
+import { HashFocus } from "./hash-focus";
 
 export type SP = Record<string, string | undefined>;
 export const BI_ROLES = ["DIRECTOR", "FINANCE", "ACCOUNTING"] as const;
@@ -24,9 +25,10 @@ export function BiPage({ title, subtitle, eyebrow = "Tahlil", tab, range, keep, 
 }) {
   return (
     <div className="min-w-0">
-      {title && <PageHeader eyebrow={eyebrow} title={title} subtitle={subtitle} />}
+      {title ? <PageHeader back={tab === "overview" ? undefined : { href: "/dashboard", label: "Bosh sahifa" }} eyebrow={eyebrow} title={title} subtitle={subtitle} /> : <BackLink href="/dashboard" label="Bosh sahifa" className="mb-4" />}
       {period && <PeriodBar range={range} tab={tab} keep={keep} />}
       {children}
+      <HashFocus />
     </div>
   );
 }

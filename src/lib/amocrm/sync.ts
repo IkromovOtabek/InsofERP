@@ -17,7 +17,7 @@ import { normalizePhone } from "@/lib/phone";
 import { phoneTail, samePhone } from "@/lib/phone-lookup";
 import { defaultCreditLimit } from "@/lib/finance";
 import { syncCustomerLater } from "@/lib/eco/customers";
-import { fmtNum, money } from "@/lib/format";
+import { date, fmtNum, money } from "@/lib/format";
 import { unitLabel } from "@/lib/unit";
 import { notifyAfter, notifyRoles } from "@/lib/notify";
 import {
@@ -291,7 +291,7 @@ export async function pullStageDeals(c: AmoConnection): Promise<number> {
 // ───────────────────────── 3. Zayavka → sdelka bosqichi ─────────────────────────
 
 type Stage = "CONFIRMED" | "DELIVERED" | "CLOSED" | "CANCELLED";
-type OrderLite = { orderNo: string; status: OrderStatus; deliveryFee: Prisma.Decimal; items: { qtyM3: Prisma.Decimal; price: Prisma.Decimal }[] };
+type OrderLite = { status: OrderStatus; deliveryFee: Prisma.Decimal; items: { qtyM3: Prisma.Decimal; price: Prisma.Decimal }[] };
 
 /** Kelishuvning bir nechta zayavkasi bo'lishi mumkin (beton bo'lib-bo'lib): eng orqada qolgani hal qiladi */
 export function dealStage(orders: OrderLite[]): { stage: Stage | null; price: number } {
@@ -335,7 +335,7 @@ async function syncOrderStagesNow(c: AmoConnection, opts?: { full?: boolean }): 
   const since = new Date((full ? 0 : lastCheck) - 5 * 60_000);
   const deals = await db.amoDeal.findMany({
     where: { amoLeadId: { not: null }, state: "ORDERED", orders: { some: full ? {} : { updatedAt: { gte: since } } } },
-    include: { orders: { where: { kind: "SALE" }, select: { orderNo: true, status: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } } } } },
+    include: { orders: { where: { kind: "SALE" }, select: { deliveryDate: true, status: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } } } } },
     take: 500,
   });
   if (full) lastFull = now;
@@ -352,7 +352,7 @@ async function syncOrderStagesNow(c: AmoConnection, opts?: { full?: boolean }): 
       await updateLead(d.amoLeadId!, { ...(stageChanged ? { status_id: sid!, ...(c.pipelineId ? { pipeline_id: c.pipelineId } : {}) } : {}), price: priceRounded }, c);
       await db.amoDeal.update({ where: { id: d.id }, data: { syncedStage: stageChanged ? sid : d.syncedStage, syncedPrice: priceRounded, syncError: null } });
       if (stageChanged && stage) {
-        await addLeadNote(d.amoLeadId!, `Insof ERP: ${STAGE_TEXT[stage]}.\nZayavkalar: ${d.orders.map((o) => o.orderNo).join(", ")}\nSumma: ${money(priceRounded)}`, c).catch(() => undefined);
+        await addLeadNote(d.amoLeadId!, `Insof ERP: ${STAGE_TEXT[stage]}.\nZayavkalar (yetkazish): ${d.orders.map((o) => date(o.deliveryDate)).join(", ")}\nSumma: ${money(priceRounded)}`, c).catch(() => undefined);
       }
       n++;
     } catch (e) {

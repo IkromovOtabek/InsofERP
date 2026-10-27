@@ -233,11 +233,11 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
     });
   }
   const lateOrders = orders.filter((o) => o.late && !o.done);
-  if (lateOrders.length) alerts.push({ key: "late", tone: "warning", href: "/trips", title: `${lateOrders.length} ta zayavka kechikmoqda`, text: lateOrders.slice(0, 5).map((o) => o.orderNo).join(", ") });
+  if (lateOrders.length) alerts.push({ key: "late", tone: "warning", href: "/trips", title: `${lateOrders.length} ta zayavka kechikmoqda`, text: lateOrders.slice(0, 5).map((o) => o.customer).join(", ") });
   const blocked = orders.filter((o) => o.blocked);
   if (blocked.length) alerts.push({ key: "blocked", tone: "warning", href: "/trips", title: `${blocked.length} ta zayavka bloklangan`, text: "Kredit limit — direktor ochmaguncha jo'natilmaydi" });
   const problems = orders.filter((o) => o.problem && !o.done);
-  if (problems.length) alerts.push({ key: "issues", tone: "warning", href: "/trips", title: `${problems.length} ta zayavkada reys muammosi`, text: problems.slice(0, 5).map((o) => o.orderNo).join(", ") });
+  if (problems.length) alerts.push({ key: "issues", tone: "warning", href: "/trips", title: `${problems.length} ta zayavkada reys muammosi`, text: problems.slice(0, 5).map((o) => o.customer).join(", ") });
   if (mixerTrips > 0 && fleet.mixer === 0) alerts.push({ key: "no-mixer", tone: "danger", href: "/logistika/transport", title: `${dayWord} ${mixerTrips} ta mikser reysi kerak`, text: "Saflda mikser yo'q — ta'mirdagi texnikani tekshiring" });
   if (truckTrips > 0 && fleet.truck === 0) alerts.push({ key: "no-truck", tone: "warning", href: "/logistika/transport", title: `${dayWord} ${truckTrips} ta yuk mashina qatnovi kerak`, text: "Saflda yuk mashina yo'q" });
   if (pumps > fleet.pump) alerts.push({ key: "pump", tone: "warning", href: "/logistika/transport", title: `${dayWord} ${pumps} ta zayavkaga nasos kerak`, text: `Saflda ${fleet.pump} ta nasos` });

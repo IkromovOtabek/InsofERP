@@ -120,7 +120,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     <div>
       <PageHeader
         back={isStock ? { href: "/orders?tur=sklad", label: "Zayavkalar" } : accepted && pathAllowed("/sales", s.role, s.perms) ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
-        title={`${isStock ? "Sklad zayavkasi" : "Zayavka"} ${o.orderNo}`}
+        title={isStock ? "Sklad zayavkasi" : "Zayavka"}
         subtitle={<>{date(o.date)} · {o.createdBy.fullName} · {isStock ? <Badge color="slate"><Boxes size={11} /> Zaxiraga ishlab chiqarish</Badge> : <CustomerName name={o.customer.name} blacklisted={credit.blacklisted} contracted={contracted} />}</>}
         action={
           <>
@@ -134,7 +134,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {!isStock && canDo(s, "offers", "create") && <LinkButton href={`/takliflar/new?order=${id}`} variant="secondary"><FileBadge2 size={16} /> Tijorat taklifi</LinkButton>}
             {o.onCredit && o.status !== "CANCELLED" && <LinkButton href={`/orders/${id}/guarantee`} variant={o.guaranteeAt ? "secondary" : "primary"}><FileSignature size={16} /> Kafolat xati</LinkButton>}
             {hasContract && hasFile && <a href={fileHref} target="_blank" rel="noopener" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><ScrollText size={16} /> Shartnoma {o.contractNo}</a>}
-            {canCancel && <ConfirmButton action={cancelOrder.bind(null, id)} label="Bekor qilish" icon={<XCircle size={16} />} question={`${o.orderNo} bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-10 px-4" />}
+            {canCancel && <ConfirmButton action={cancelOrder.bind(null, id)} label="Bekor qilish" icon={<XCircle size={16} />} question={`${isStock ? "Sklad zayavkasi" : `Zayavka (${o.customer.name})`} bekor qilinsinmi?`} reason="required" okText="Bekor qilindi" className="h-10 px-4" />}
           </>
         }
       />

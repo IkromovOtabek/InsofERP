@@ -69,14 +69,13 @@ export default async function TripsPage({ searchParams }: { searchParams: Promis
       {eco && <LiveDrivers />}
       <Tabs current={status ?? ""} items={tabItems} />
       <Table>
-        <thead><tr><Th>Nakladnoy</Th><Th>Zayavka</Th><Th>Mijoz</Th><Th>Texnika</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Bosqich</Th>{eco && <Th>ECO</Th>}</tr></thead>
+        <thead><tr><Th>Nakladnoy</Th><Th>Mijoz</Th><Th>Texnika</Th><Th>Haydovchi</Th><Th right>Miqdor</Th><Th>Bosqich</Th>{eco && <Th>ECO</Th>}</tr></thead>
         <tbody>
           {trips.length === 0 && <Empty text="Reyslar yo'q" />}
           {trips.map((t) => (
             <Tr key={t.id}>
               <Td><Link href={`/trips/${t.id}`} className="font-medium hover:underline">{t.deliveryNoteNo}</Link></Td>
-              <Td><Link href={`/orders/${t.orderId}`} className="hover:underline">{t.order.orderNo}</Link></Td>
-              <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} /></Td><Td className="whitespace-nowrap">{t.vehicle.plate}<div className="text-xs text-slate-500">{VEHICLE_TYPE[t.vehicle.type] ?? t.vehicle.type}</div></Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{(() => { const l = tripLine(t.order.items, t.vehicle.type); const u = "error" in l ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) : l.unit; return u ? `${qty(t.qtyM3)} ${unitLabel(u)}` : qty(t.qtyM3); })()}</Td>
+              <Td><CustomerName name={t.order.customer.name} blacklisted={marks.black.has(t.order.customerId)} contracted={marks.contract.has(t.order.customerId)} href={`/orders/${t.orderId}`} /></Td><Td className="whitespace-nowrap">{t.vehicle.plate}<div className="text-xs text-slate-500">{VEHICLE_TYPE[t.vehicle.type] ?? t.vehicle.type}</div></Td><Td>{t.driver.fullName}</Td><Td right className="whitespace-nowrap">{(() => { const l = tripLine(t.order.items, t.vehicle.type); const u = "error" in l ? soleUnit(t.order.items.map((i) => ({ unit: i.product.unit, qty: i.qtyM3 }))) : l.unit; return u ? `${qty(t.qtyM3)} ${unitLabel(u)}` : qty(t.qtyM3); })()}</Td>
               {/* TZ bosqichi (obyektga keldi / tushirilmoqda / yopildi — vaqt belgilaridan) */}
               <Td><PhaseBadge phase={tripPhase(t)} />{t.issues.length > 0 && <div><Badge color="red">muammo</Badge></div>}</Td>
               {eco && <Td>{(() => { const st = ecoLabel(t.ecoStatus); return st ? <Badge color={st.color}>{st.label}</Badge> : t.ecoError ? <Badge color="red">xato</Badge> : <span className="text-xs text-slate-400">—</span>; })()}</Td>}

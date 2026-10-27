@@ -63,7 +63,7 @@ export async function approvalsList(title: string, q?: string, filter?: string):
   ]);
 
   const orderRows: HomeRow[] = blocked.map((o) => ({
-    id: `orders:${o.id}`, title: `${o.orderNo} · ${o.customer.name}`,
+    id: `orders:${o.id}`, title: o.customer.name,
     subtitle: `Kredit limiti oshgan · ${dayLabel(o.date)}`,
     right: money(orderTotal(o)),
     status: "Bloklangan", tone: "danger",
@@ -133,10 +133,10 @@ const STATUS_WORD: Record<string, string> = {
 
 type AuditRow = { action: string; entity: string; after: Prisma.JsonValue; before: Prisma.JsonValue; createdAt: Date };
 
-/** Audit yozuvi → odam o'qiydigan bir qator: "Zayavka Z-2026-00031 ochdi", "Reys N-… yetkazildi". */
+/** Audit yozuvi → odam o'qiydigan bir qator: "Yangi zayavka · 1 200 000", "Reys N-… yetkazildi" (zayavka raqami ko'rsatilmaydi). */
 function describe(a: AuditRow): string {
   const x = (a.after ?? {}) as Record<string, unknown>;
-  const ref = String(x.orderNo ?? x.deliveryNoteNo ?? x.docNo ?? x.invoiceNo ?? x.batchNo ?? x.taskNo ?? x.name ?? x.fullName ?? x.plate ?? x.title ?? x.product ?? "");
+  const ref = String(x.deliveryNoteNo ?? x.docNo ?? x.invoiceNo ?? x.batchNo ?? x.taskNo ?? x.name ?? x.fullName ?? x.plate ?? x.title ?? x.product ?? "");
   const what = ENTITY[a.entity] ?? a.entity;
   const amount = typeof x.amount === "number" || typeof x.amount === "string" ? ` · ${money(Number(x.amount))}` : "";
   const refTxt = ref ? ` ${ref}` : "";

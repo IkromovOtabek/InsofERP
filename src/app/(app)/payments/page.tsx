@@ -86,7 +86,7 @@ async function PaymentsTab({ role }: { role: string }) {
   const [payments, accounts, customers, openInvoices, advOrders] = await Promise.all([
     db.payment.findMany({
       orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 200,
-      include: { customer: true, invoice: true, cashAccount: true, order: { select: { orderNo: true } }, createdBy: { select: { fullName: true } }, register: { select: { id: true } } },
+      include: { customer: true, invoice: true, cashAccount: true, order: { select: { deliveryDate: true } }, createdBy: { select: { fullName: true } }, register: { select: { id: true } } },
     }),
     db.cashAccount.findMany({ where: { isActive: true }, select: { id: true, name: true, type: true } }),
     db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -96,7 +96,7 @@ async function PaymentsTab({ role }: { role: string }) {
       ? db.order.findMany({
           where: { kind: "SALE", status: { in: [...ADVANCE_ORDER_STATUSES] }, invoices: { none: { status: { not: "CANCELLED" } } }, customer: { isInternal: false } },
           orderBy: { date: "asc" },
-          select: { id: true, orderNo: true, customerId: true, prepayAmount: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
+          select: { id: true, customerId: true, deliveryDate: true, prepayAmount: true, deliveryFee: true, items: { select: { qtyM3: true, price: true } }, payments: { where: { invoiceId: null }, select: { amount: true } } },
         })
       : [],
   ]);
@@ -105,7 +105,7 @@ async function PaymentsTab({ role }: { role: string }) {
   const custOpts = customers.map((c) => ({ id: c.id, name: markedName(c.name, c.id, marks) }));
   const invOpts: InvOpt[] = openInvoices.map((i) => ({ id: i.id, invoiceNo: i.invoiceNo, customerId: i.customerId, date: date(i.date), remaining: Number(i.amount) - i.payments.reduce((s, p) => s + Number(p.amount), 0) }));
   const orderOpts: OrderOpt[] = advOrders.map((o) => ({
-    id: o.id, orderNo: o.orderNo, customerId: o.customerId,
+    id: o.id, customerId: o.customerId, date: date(o.deliveryDate),
     total: orderTotal(o),
     paid: o.payments.reduce((s, p) => s + Number(p.amount), 0),
     expected: expectedAdvance(o),
@@ -120,7 +120,7 @@ async function PaymentsTab({ role }: { role: string }) {
         <Callout tone="warning" title={`Avans kutilmoqda — ${waiting.length} ta zayavka`}>
           <ul className="space-y-0.5">
             {waiting.slice(0, 8).map((o) => (
-              <li key={o.id}><Link href={`/pul-qabul?tab=all&q=${encodeURIComponent(o.orderNo)}`} className="font-medium underline">{o.orderNo}</Link> · {custName.get(o.customerId) ?? "—"} · {money(o.expected - o.paid)}</li>
+              <li key={o.id}><Link href={`/pul-qabul?tab=all&q=${encodeURIComponent(custName.get(o.customerId) ?? "")}`} className="font-medium underline">{custName.get(o.customerId) ?? "—"}</Link> · {o.date} · {money(o.expected - o.paid)}</li>
             ))}
           </ul>
           {/* Kassir zayavka sahifasini ocha olmaydi — bosh to'lov so'rovlari «Pul qabul qilish» bo'limida */}
@@ -142,7 +142,7 @@ async function PaymentsTab({ role }: { role: string }) {
                 <Td className="whitespace-nowrap">{date(p.date)}</Td>
                 <Td><CustomerName name={p.customer.name} blacklisted={marks.black.has(p.customerId)} contracted={marks.contract.has(p.customerId)} href={`/customers/${p.customerId}`} /></Td>
                 <Td>
-                  {p.invoice?.invoiceNo ?? (p.register ? <span className="text-slate-400">realizatsiya</span> : p.order ? <span className="text-slate-500">avans · <Link href={`/orders/${p.orderId}`} className="hover:underline">{p.order.orderNo}</Link></span> : <Badge color="amber">taqsimlanmagan</Badge>)}
+                  {p.invoice?.invoiceNo ?? (p.register ? <span className="text-slate-400">realizatsiya</span> : p.order ? <span className="text-slate-500">avans · <Link href={`/orders/${p.orderId}`} className="hover:underline">{date(p.order.deliveryDate)}</Link></span> : <Badge color="amber">taqsimlanmagan</Badge>)}
                   {unallocated && canPay && <div className="mt-1"><LinkPaymentForm paymentId={p.id} invoices={invOpts.filter((i) => i.customerId === p.customerId)} /></div>}
                 </Td>
                 <Td>{p.cashAccount.name}</Td>

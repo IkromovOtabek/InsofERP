@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { LayoutDashboard, UserPlus, GraduationCap, ClipboardList, Users, BriefcaseBusiness, Building2, CakeSlice, Factory, FlaskConical, Truck, Warehouse, PackagePlus, Handshake, Receipt, Landmark, Contact, Settings, LogOut, Menu, X, BookOpen, Clock, BarChart3, ChevronDown, ChevronLeft, TrendingUp, UserRoundCheck, Package, Megaphone, Target, BrainCircuit, Sparkles, ShoppingCart, HardHat, ListChecks, ArrowLeftRight, Smartphone, ShoppingBasket, ClipboardCheck, Download, Inbox, Store, CalendarCheck, Route, ListTodo, Briefcase, PackageCheck, CalendarClock, Container, IdCard, MapPin, Radar, FileText, Fuel, Wallet, FileChartColumn, ChartPie, SlidersHorizontal, Percent, Scale, Ban, CalendarRange, Database, TriangleAlert, UserMinus, Boxes, MessageSquare, Send, Wrench, HandCoins, Bot, Gauge, Images, Crosshair, SquareKanban, FileBadge2, PackageOpen, ChartLine, BadgeDollarSign, ShieldCheck, TableProperties, LayoutGrid, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/nav";
-import { Avatar } from "@/components/ui";
+import { Avatar, NavHistoryTracker } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ScriptToggle } from "@/components/script-toggle";
 import { LogoMark } from "@/components/logo";
@@ -324,6 +324,7 @@ export function AppShell({ items, user, brand, ai = false, apk = null, ios = nul
 
   return (
     <div className="flex min-h-screen">
+      <NavHistoryTracker />
       {/* Desktop sidebar */}
       <aside data-tour="sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sb-w)] transition-[width] duration-200 lg:block">
         <SidebarInner items={items} user={user} brand={brand} apk={apk} ios={ios} collapsed={collapsed} onToggle={toggleSidebar} />
