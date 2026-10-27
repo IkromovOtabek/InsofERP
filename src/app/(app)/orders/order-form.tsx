@@ -5,6 +5,7 @@ import { AddressPicker } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState, type ReactNode } from "react";
 import { createOrder } from "./actions";
+import { TripPlanPanel } from "./trip-plan-panel";
 import { lookupAppByPhone } from "../customers/app-actions";
 import { Badge, Button, Callout, Field, FormError, Input, LinkButton, Textarea, FormActions } from "@/components/ui";
 import { ProductPicker, type CatalogGroup, type CatalogProduct } from "@/components/product-picker";
@@ -186,6 +187,9 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
   const [prepay, setPrepay] = useState("");
   const [hasDeposit, setHasDeposit] = useState(false);
   const [dateKnown, setDateKnown] = useState(true); // «Aniq emas» — qoralamada keyin belgilanadi
+  // Reys va transport hisobi uchun: tanlangan sana va zavoddan masofa (AddressPicker hisoblaydi)
+  const [deliveryDay, setDeliveryDay] = useState(() => isoDate(new Date(Date.now() + 86400000)));
+  const [distance, setDistance] = useState<{ km: number; source: "ROUTE" | "LINE" } | null>(null);
   const [contract, setContract] = useState(false); // "Shartnoma qilish" belgilanganmi
   const [contractAmount, setContractAmount] = useState("");
   const [needsPump, setNeedsPump] = useState(false);
@@ -324,7 +328,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
             <span className={lbl}>Yetkazish sanasi:</span>
             <div className="flex flex-wrap items-center gap-2">
               {dateKnown
-                ? <Input name="deliveryDate" type="date" defaultValue={tomorrow} min={minDate} required aria-label="Yetkazish sanasi" className="w-auto min-w-0 flex-1" />
+                ? <Input name="deliveryDate" type="date" defaultValue={tomorrow} min={minDate} required aria-label="Yetkazish sanasi" className="w-auto min-w-0 flex-1" onChange={(e) => setDeliveryDay(e.target.value)} />
                 : <><input type="hidden" name="dateUnknown" value="1" /><span className="flex-1 font-serif text-sm italic text-slate-500">kelishilmoqda — sanani keyin belgilaysiz</span></>}
               <Seg label="Sana aniqmi" value={dateKnown} onChange={setDateKnown} options={[{ v: true, l: "Aniq" }, { v: false, l: "Aniq emas" }]} />
             </div>
@@ -392,7 +396,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
         {/* ── Obyekt: manzil, (izoh) va xarita ── */}
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <AddressPicker searchEnabled={geoSearch} required defaultAddress={prefill?.address ?? ""} label="Obyekt" />
+          <AddressPicker searchEnabled={geoSearch} required defaultAddress={prefill?.address ?? ""} label="Obyekt" onDistance={setDistance} />
           <div className="col-span-2 flex items-center gap-1 font-serif italic text-slate-600">
             (<Input name="addressNote" placeholder="izoh: mo'ljal, darvoza, qavat…" aria-label="Obyekt izohi" className="h-8 text-sm" />)
           </div>
@@ -519,6 +523,16 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
           onPick={(id) => { if (pickFor !== null) onProduct(pickFor, id); }}
           hint={stockHint}
         />
+
+        {/* ── Reys va transport hisobi: necha reys, nechta mikser/bort mashina, o'zimiznikidan qaysilari bo'sh ── */}
+        {needsDelivery && (
+          <div className="mt-4">
+            <TripPlanPanel
+              rows={rows.map((r) => { const p = products.find((x) => x.id === r.productId); return { code: p?.code ?? "", name: p?.name ?? "", unit: p?.unit ?? "m³", qty: Number(r.qtyM3) || 0 }; })}
+              km={distance?.km ?? null} kmSource={distance?.source ?? null} pump={needsPump}
+              day={dateKnown ? deliveryDay : null} onApplyTrips={(n) => setTrips(String(n))} />
+          </div>
+        )}
 
         {/* ── To'lov va bosh to'lov ── */}
         <div className="mt-4 grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
