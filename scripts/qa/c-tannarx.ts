@@ -119,6 +119,19 @@ async function main() {
   const sm = await supplierMonth(c);
   check("ta'minotchilar: hozirgi = oy boshi + kelgan − to'langan", sm.every((r) => near(r.now, r.open + r.arrived - r.paid, 2)), sm.filter((r) => !near(r.now, r.open + r.arrived - r.paid, 2)).slice(0, 3));
 
+  section("5. Kalendar: ta'minotchiga bog'lanmagan to'lov (avans) qarzdan ayiriladi");
+  const sup2 = await db.supplier.create({ data: { name: `QA avans ta'minotchi ${tag}` } });
+  await db.goodsReceipt.create({ data: { docNo: `QA-AV-${tag}`, date: new Date(Date.now() - 20 * 86_400_000), supplierId: sup2.id, warehouseId: wh.id, items: { create: [{ materialId: sem.id, qty: 1_000, price: 1_000 }] } } });
+  const sd2 = async () => { const k = await cashCalendar(); return { due: k.suppliers.find((x) => x.supplierId === sup2.id), items: k.items.filter((i) => i.who === sup2.name) }; };
+  const a0 = await sd2();
+  check("bog'lanmagan to'lovsiz: qarz 1 000 000, muddati o'tgan", near(a0.due?.debt, 1_000_000) && near(a0.due?.overdue, 1_000_000), a0.due);
+  await db.cashTransaction.create({ data: { type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: 400_000, category: "Xomashyo", supplierId: sup2.id, createdById: U } });
+  const a1 = await sd2();
+  check("400 000 bog'lanmagan to'lov — qarz va kalendar qatori 600 000", near(a1.due?.debt, 600_000) && a1.items.length === 1 && near(a1.items[0]!.amount, 600_000), [a1.due, a1.items]);
+  await db.cashTransaction.create({ data: { type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: 700_000, category: "Xomashyo", supplierId: sup2.id, createdById: U } });
+  const a2 = await sd2();
+  check("to'lov qarzdan oshsa (avans) — kalendarda bu ta'minotchiga to'lov yo'q", !a2.due && a2.items.length === 0, [a2.due, a2.items]);
+
   done();
 }
 

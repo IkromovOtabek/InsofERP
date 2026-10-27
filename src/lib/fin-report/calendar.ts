@@ -86,7 +86,7 @@ export async function cashCalendar(now: Date = new Date(), opts: { start?: numbe
   const histDays = Math.max(1, Math.round((today.getTime() - histFrom.getTime()) / DAY));
   const curMonth = monthKeyOf(today), prevMonth = addMonths(curMonth, -1);
 
-  const [settings, nodes, txBal, payBal, histTx, histPay, todayTx, todayPay, recurring, planned, prepay, unpaid, openings, supply, suppliers, prevPnl, divTx, histRec] = await Promise.all([
+  const [settings, nodes, txBal, payBal, histTx, histPay, todayTx, todayPay, recurring, planned, prepay, unpaidDocs, openingDocs, supply, suppliers, prevPnl, divTx, histRec, positions] = await Promise.all([
     db.companySettings.findUnique({ where: { id: "main" }, select: { supplierPaymentDays: true, cashPlanFactor: true, dividendPct: true, cashDailyFlags: true } }),
     loadCategories(),
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } }),
@@ -105,8 +105,12 @@ export async function cashCalendar(now: Date = new Date(), opts: { start?: numbe
     pnlReport([prevMonth], "accrual"),
     db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: new Date(today.getFullYear(), today.getMonth() - 1, 1), lt: tomorrow } }, select: { date: true, amount: true, category: true, subCategory: true } }),
     db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: histFrom, lt: today } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
+    supplierPositions(tomorrow),
   ]);
   const resolve = makeResolver(nodes);
+  // Ta'minotchi qarzi — Balans bilan bir ta'rif: hujjatlar (boshlang'ich qarz + to'lanmagan kirimlar) yig'indisi sof qoldiqdan
+  // (`supplierPositions`) oshmaydi. Kirimga bog'lanmagan to'lov / avans eng eski hujjatlardan (FIFO) yopiladi.
+  const { unpaid, openings } = capByPosition(unpaidDocs, openingDocs, positions);
   const defTerm = settings?.supplierPaymentDays ?? 7;
   const factor = Number(settings?.cashPlanFactor ?? 1);
   const recurringCats = new Set(recurring.map((r) => resolve(r.category)?.top.id).filter(Boolean));
@@ -228,6 +232,23 @@ export async function cashCalendar(now: Date = new Date(), opts: { start?: numbe
 }
 
 export const isOutKind = (k: CalKind) => OUT_KINDS.includes(k);
+
+/** Hujjat bo'yicha qoldiqlarni ta'minotchining sof qarzigacha kamaytiradi (eng eskisidan). Avansdagi ta'minotchida qarz qolmaydi. */
+function capByPosition<R extends { supplierId: string; date: Date; left: number }, O extends { supplierId: string; date: Date; left: number }>(
+  receipts: R[], openings: O[], positions: Map<string, number>,
+): { unpaid: R[]; openings: O[] } {
+  const docs = new Map<string, { date: Date; ref: { left: number } }[]>();
+  const add = (d: { supplierId: string; date: Date; left: number }) => { if (d.left > 0.004) { const l = docs.get(d.supplierId) ?? []; l.push({ date: d.date, ref: d }); docs.set(d.supplierId, l); } };
+  const unpaid = receipts.map((r) => ({ ...r })), ops = openings.map((o) => ({ ...o }));
+  ops.forEach(add); unpaid.forEach(add);
+  for (const [id, list] of docs) {
+    let extra = r2(list.reduce((s, d) => s + d.ref.left, 0) - Math.max(0, positions.get(id) ?? 0));
+    if (extra <= 0.004) continue;
+    list.sort((a, b) => a.date.getTime() - b.date.getTime());
+    for (const d of list) { if (extra <= 0.004) break; const take = Math.min(d.ref.left, extra); d.ref.left = r2(d.ref.left - take); extra = r2(extra - take); }
+  }
+  return { unpaid: unpaid.filter((r) => r.left > 0.004), openings: ops };
+}
 
 /**
  * «TA'MINOTCHILAR — shu oy: qarz, to'langan, kelgan»: oy boshidagi va hozirgi qarzimiz (Balans bilan bir manbadan),
