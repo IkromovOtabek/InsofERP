@@ -38,7 +38,7 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
   const sheets = pnl
     ? [{ name: mode === "cash" ? "PNL (pul asosida)" : "PNL", rows: finSheetRows(cols, pnl.rows) }]
     : dds
-      ? [{ name: "Cash Flow", rows: finSheetRows(cols, dds.rows) }, { name: "Hisoblar", rows: finSheetRows(cols, dds.accountRows, "Davr") }]
+      ? [{ name: "Pul oqimi (DDS)", rows: finSheetRows(cols, dds.rows) }, { name: "Hisoblar", rows: finSheetRows(cols, dds.accountRows, "Davr") }]
       : bal
         ? [{ name: "BSH", rows: finSheetRows(bal.labels, bal.rows, null) }, { name: "Kapitalni tekshirish", rows: finSheetRows(bal.labels, bal.capitalRows, null) }]
         : [];
@@ -75,7 +75,7 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
             {Array.from({ length: 12 }, (_, i) => i + 1).map((k) => <option key={k} value={k}>{k} oy</option>)}
           </Select>
           <button className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800">Ko&apos;rsatish</button>
-          <ExcelButton file={`${tab === "pnl" ? "PNL" : tab === "dds" ? "Cash Flow" : "BSH"} ${from}`} sheets={sheets} />
+          <ExcelButton file={`${tab === "pnl" ? "Foyda va zarar (PNL)" : tab === "dds" ? "Pul oqimi (DDS)" : "Balans (BSH)"} ${from}`} sheets={sheets} />
         </form>
       </div>
       <div className="mb-4 flex flex-wrap gap-1.5">

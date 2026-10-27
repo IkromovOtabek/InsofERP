@@ -144,10 +144,11 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true },
   { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
   // Moliya: tahlil + «Insof 2026» jadvalidagi rasmiy hisobotlar (`bi-tahlil/moliya/report-page.tsx`)
-  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }] },
+  { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }, { href: "/bi-tahlil/moliya/ish-haqi", label: "Ish haqi vedomosti" }] },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/qarz-yoshi", label: "Mijozlar qarzi" }, { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Xaridorlar qarzdorligi" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchilar qarzdorligi" }] },
-  { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil" },
+  { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" }, { href: "/bi-tahlil/ombor/tayyor-mahsulot", label: "Tayyor mahsulot" }] },
+  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mexanik/avtotransport", label: "Avtotransport tahlili" }] },
   { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },

@@ -111,7 +111,9 @@ export async function balanceReport(months: MonthKey[]): Promise<BalanceReport> 
   ]);
   const ctx = { matCost, prodCost, since, assets };
   // Oldingi oy oxiri ham kerak — birinchi oyning «kapital oy boshida» qatori uchun
-  const snaps = await Promise.all([prev, ...months].map((m) => snapshot(monthEnd(m), ctx)));
+  // Ketma-ket: har snapshot 6 ta og'ir so'rov — 13 tasi birdan ulanish pulini (connection_limit) to'ldirib, P2024 beradi
+  const snaps: Snapshot[] = [];
+  for (const m of [prev, ...months]) snaps.push(await snapshot(monthEnd(m), ctx));
 
   // Ustunlar (jadvaldagidek): birinchi — davr boshi (01.MM.YYYY), keyin har oy oxiri (30.09.2026 …)
   const pick = (f: (s: Snapshot) => number) => snaps.map(f);

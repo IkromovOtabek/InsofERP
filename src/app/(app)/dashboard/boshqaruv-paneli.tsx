@@ -54,7 +54,7 @@ export function SotuvBlock({ p }: { p: Panel }) {
           {p.sales.map((s) => (
             <Tr key={s.group}><Td>{s.group}</Td><Td right>{n1(s.qtyToday)}</Td><Td right>{n0(s.sumToday)}</Td><Td right>{n1(s.qtyMonth)}</Td><Td right>{n0(s.sumMonth)}</Td><Td right>{pct(s.share)}</Td><Td right>{n0(s.avgPrice)}</Td></Tr>
           ))}
-          <TotalTr><td>JAMI</td><td className="text-right">{n1(t.qtyToday)}</td><td className="text-right">{n0(t.sumToday)}</td><td className="text-right">{n1(t.qtyMonth)}</td><td className="text-right">{n0(t.sumMonth)}</td><td className="text-right">{t.sumMonth ? "100,0%" : "–"}</td><td /></TotalTr>
+          <TotalTr><td>JAMI</td><td className="text-right">{n1(t.qtyToday)}</td><td className="text-right">{n0(t.sumToday)}</td><td className="text-right">{n1(t.qtyMonth)}</td><td className="text-right">{n0(t.sumMonth)}</td><td className="text-right">{t.sumMonth ? pct(100) : "–"}</td><td /></TotalTr>
           <tr className="text-[13px] italic text-slate-500 [&>td]:border-t [&>td]:border-slate-100 [&>td]:px-4 [&>td]:py-2">
             <td colSpan={2}>Naqd sotuv / kassaga «Savdo tushumi» (oy)</td>
             <td className="text-right">{n0(p.cashSales.sales)}</td><td /><td className="text-right">{n0(p.cashSales.cashIn)}</td><td className="text-right">Farq:</td>
@@ -173,7 +173,7 @@ export function KunlikChart({ p }: { p: Panel }) {
         <h3 className="text-[15px] font-semibold text-slate-800">Kunlik sotuv va kassaga savdo tushumi</h3>
         <div className="flex gap-3 text-[12px] text-slate-600"><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500" />Sotuv (QQS bilan)</span><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Kassaga savdo tushumi</span></div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Kunlik sotuv va kassaga savdo tushumi">
+      <div className="overflow-x-auto"><svg viewBox={`0 0 ${W} ${H}`} width="100%" className="min-w-[560px]" role="img" aria-label="Kunlik sotuv va kassaga savdo tushumi">
         {ticks.map((t) => (
           <g key={t}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className="stroke-slate-200" /><text x={L - 6} y={y(t) + 4} textAnchor="end" className="fill-slate-400 text-[10px]">{fmtNum(t)}</text></g>
         ))}
@@ -187,7 +187,7 @@ export function KunlikChart({ p }: { p: Panel }) {
             </g>
           );
         })}
-      </svg>
+      </svg></div>
     </section>
   );
 }

@@ -42,13 +42,13 @@ export async function TodayHome({ date: dayParam }: { date?: string }) {
         </form>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label={p.isToday ? "Jami pul (hozir)" : "Jami pul (kun oxiri)"} value={moneyShort(k.cash)} hint={fmtNum(k.cash)} icon={Wallet} href="/moliya?tab=dds" />
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard label={p.isToday ? "Jami pul (hozir)" : "Jami pul (kun oxiri)"} value={moneyShort(k.cash)} hint={fmtNum(k.cash)} icon={Wallet} href="/bi-tahlil/moliya/dds" />
         <StatCard label="Bugun kirim" value={moneyShort(k.inToday)} hint={fmtNum(k.inToday)} icon={ArrowDownLeft} tone="success" href="/cashflow" />
         <StatCard label="Bugun chiqim" value={moneyShort(k.outToday)} hint={fmtNum(k.outToday)} icon={ArrowUpRight} tone="danger" href="/cashflow" />
         <StatCard label="Bugun sotuv" value={moneyShort(k.salesToday)} hint={fmtNum(k.salesToday)} icon={ShoppingCart} href="/bi-tahlil/sotuvlar" />
         <StatCard label="Oy sotuvi" value={moneyShort(k.salesMonth)} hint={d?.sales.plan ? `reja ${moneyShort(d.sales.plan)} · ${pct(d.sales.pct ?? 0, 0)}` : fmtNum(k.salesMonth)} icon={TrendingUp} tone={d?.sales.pct != null && d.sales.pct < 50 ? "warning" : "success"} href="/bi-tahlil/sotuvlar" />
-        <StatCard label="Oy zavod sof foydasi" value={moneyShort(k.netMonth)} hint="hisoblangan PNL" icon={Scale} tone={k.netMonth < 0 ? "danger" : "brand"} href="/bi-tahlil/moliya/pnl" />
+        <StatCard label="Oy zavod sof foydasi" value={moneyShort(k.netMonth)} hint={p.isToday ? "hisoblangan PNL" : "butun oy, hisoblangan PNL"} icon={Scale} tone={k.netMonth < 0 ? "danger" : "brand"} href="/bi-tahlil/moliya/pnl" />
         <StatCard label="Bizga qarzlar (haqdorlik)" value={moneyShort(k.receivable)} hint={d?.receivable.over60 ? `60+ kun: ${moneyShort(d.receivable.over60)}` : fmtNum(k.receivable)} icon={HandCoins} tone={d?.receivable.over60 ? "warning" : "default"} href="/bi-tahlil/mijozlar" />
         <StatCard label="Bizning qarzimiz" value={moneyShort(k.payable)} hint={`shundan bank kreditlari ${moneyShort(p.debts.bankLoans)}`} icon={Landmark} tone={k.payable > k.cash ? "danger" : "default"} href="/moliya/kreditlar" />
       </div>
@@ -57,7 +57,7 @@ export async function TodayHome({ date: dayParam }: { date?: string }) {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <Card className="xl:col-span-2">
             <CardHeader title="Kassa prognozi, 30 kun" icon={CalendarRange} description="Tushum − ta'minotchilar − majburiy va kundalik to'lovlar" action={<Link href="/moliya/kalendar" className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-600 hover:text-slate-900">Kalendar <ArrowRight size={14} /></Link>} />
-            <ForecastChart days={d.cal.days} height={200} />
+            <div className="overflow-x-auto"><div className="min-w-[560px]"><ForecastChart days={d.cal.days} height={200} /></div></div>
             <div className="mt-3 grid grid-cols-1 gap-2 text-[13px] sm:grid-cols-3">
               <div className={cn("rounded-lg px-3 py-2", d.cal.min.balance < 0 ? "bg-red-50 text-red-800" : "bg-slate-50 text-slate-700")}>Eng past qoldiq: <b className="tabular">{moneyShort(d.cal.min.balance)}</b> · {date(d.cal.min.date)}</div>
               <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-700">30 kun oxirida: <b className="tabular">{moneyShort(d.cal.days[d.cal.days.length - 1]?.balance ?? d.cal.start)}</b></div>

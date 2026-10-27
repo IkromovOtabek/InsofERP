@@ -20,14 +20,14 @@ export function FinTable({ months, rows, labels, totalLabel = "JAMI", firstHeade
   };
   const width = cols.length + 1 + (signs ? 1 : 0) + (totalLabel ? 1 : 0);
   return (
-    <div className="relative max-w-full overflow-x-auto overscroll-x-contain rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)">
+    <div className="relative max-h-[75vh] max-w-full overflow-auto overscroll-x-contain rounded-(--radius-card) border border-slate-200/80 bg-white shadow-(--shadow-card)">
       <table className="w-full text-sm tabular">
         <thead>
           <tr>
-            <th scope="col" className="sticky left-0 top-0 z-[2] min-w-56 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">{firstHeader}</th>
-            {signs && <th scope="col" className="w-8 border-b border-slate-200 bg-slate-50" />}
-            {cols.map((c) => <th key={c} scope="col" className="whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">{c}</th>)}
-            {totalLabel && <th scope="col" className="whitespace-nowrap border-b border-l border-slate-200 bg-slate-100 px-3 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">{totalLabel}</th>}
+            <th scope="col" className="sticky left-0 top-0 z-[3] min-w-40 border-b sm:min-w-56 border-slate-200 bg-slate-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">{firstHeader}</th>
+            {signs && <th scope="col" className="sticky top-0 z-[2] w-8 border-b border-slate-200 bg-slate-50" />}
+            {cols.map((c) => <th key={c} scope="col" className="sticky top-0 z-[2] whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">{c}</th>)}
+            {totalLabel && <th scope="col" className="sticky top-0 z-[2] whitespace-nowrap border-b border-l border-slate-200 bg-slate-100 px-3 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">{totalLabel}</th>}
           </tr>
         </thead>
         <tbody>

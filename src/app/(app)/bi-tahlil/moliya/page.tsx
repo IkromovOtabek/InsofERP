@@ -3,7 +3,7 @@ import { biContext, BiPage } from "../shell";
 import { FinanceTab } from "../tabs/finance";
 import { requirePage } from "@/lib/page-guard";
 import { isReportTab } from "../../moliya/report-view";
-import { MOLIYA_LINKS, moliyaSubtabs } from "./report-page";
+import { MOLIYA_LINKS } from "./report-page";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     redirect(`${MOLIYA_LINKS.find((l) => l.key === tab)!.href}${q ? `?${q}` : ""}`);
   }
   return (
-    <BiPage title="Moliya" subtitle="Pul qayerdan oqyapti va kassada nima bo'ladi — yo'qotish kanallari, cash forecast, profit leakage, P&L, debitorka aging." tab="finance" range={range} subtabs={moliyaSubtabs(sp)} current="tahlil">
+    <BiPage title="Moliya" subtitle="Pul qayerdan oqyapti va kassada nima bo'ladi — yo'qotish kanallari, kassa prognozi, foyda yo'qotishlari, foyda-zarar, qarz yoshi." tab="finance" range={range}>
       <FinanceTab range={range} sp={sp} />
     </BiPage>
   );

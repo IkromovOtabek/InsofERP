@@ -18,6 +18,10 @@ import { loanBalances } from "@/lib/fin-report/loans";
 import { activeAssets, assetStateAt, depreciationIn } from "@/lib/fin-report/assets";
 import type { FinRow } from "@/lib/fin-report/rows";
 import { customerDebtSheet, debtAgeReport, parseDebtDay, supplierDebtSheet } from "@/lib/fin-report/debts";
+import { avtoReport } from "@/lib/fin-report/avto";
+import { finishedReport, rawBalance } from "@/lib/fin-report/sklad";
+import { vedomost } from "@/lib/fin-report/vedomost";
+import { monthKeyOf } from "@/lib/fin-report/period";
 
 const M = "2020-03", N = "2020-04";
 const val = (rows: FinRow[], key: string, i = 0) => rows.find((r) => r.key === key)?.values[i] ?? 0;
@@ -135,6 +139,17 @@ async function main() {
   check("xaridorlar: oy boshi ustuni 1-sana", cust.monthStart.getDate() === 1 && cust.monthStart.getMonth() === today.getMonth());
   check("ta'minotchilar: o'zgarish = bugungi sof − oy boshidagi sof", sup.rows.every((r) => near(r.change, (r.now.debt - r.now.advance) - (r.open.debt - r.open.advance))));
   check("kelajak sanasi bugunga tushadi", parseDebtDay("2999-01-01").getTime() === today.getTime());
+
+  section("Oylik varaqlar: Avtotransport, Xom-ashyo, Tayyor mahsulot, Ish haqi");
+  const cur = monthKeyOf(new Date());
+  const [avto, raw, fin, ved] = await Promise.all([avtoReport(cur), rawBalance(cur), finishedReport(cur), vedomost(cur)]);
+  check("avto: jami reys = mashinalar yig'indisi = kunlar yig'indisi", avto.total.trips === avto.rows.reduce((a, r) => a + r.trips, 0) && avto.total.trips === avto.days.reduce((a, d) => a + d.trips, 0), [avto.total.trips, avto.days.length]);
+  check("avto: jami xarajat = yoqilg'i + ish haqi + remont + boshqa", avto.rows.every((r) => near(r.total, r.fuelSum + r.pay + r.repair + r.other)) && avto.rows.every((r) => near(r.profit, r.revenue - r.total)));
+  check("avto: farq = kassa − mexanik", avto.rows.every((r) => near(r.cashDiff, r.cash - r.mechanic)));
+  check("xom-ashyo: haqiqiy sarf = oy boshi + kirim − oy oxiri, farq = sarf − norma", raw.rows.every((r) => Math.abs(r.fact - (r.open + r.received - r.close)) < 0.01 && Math.abs(r.diff - (r.fact - r.norm)) < 0.01));
+  check("xom-ashyo: guruh jami = qatorlar yig'indisi", raw.groups.every((g) => !g.total || Math.abs(g.total.fact - g.rows.reduce((a, r) => a + r.fact, 0)) < 0.01));
+  check("tayyor mahsulot: oy oxiri = boshi + ishlab chiqarildi − jo'natildi ± boshqa", fin.rows.every((r) => Math.abs(r.close - (r.open + r.produced - r.shipped + r.other)) < 0.01));
+  check("ish haqi: vedomost yo'q bo'lsa qatorlar bo'sh, bor bo'lsa jami = qatorlar", ved.run ? near(ved.total.gross, ved.rows.reduce((a, r) => a + r.gross, 0)) : ved.rows.length === 0);
 
   done();
 }

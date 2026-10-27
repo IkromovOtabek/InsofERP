@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ClipboardList, Factory, Truck, Wallet, ShieldAlert, ArrowRight, Layers, ScanFace } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
@@ -44,6 +45,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const { denied, view, date: dayParam } = sp;
   const s = await getSession();
+  // Sessiya yo'q (bloklangan / paroli o'zgargan) — RSC navigatsiyada layout o'tkazib yuborilishi mumkin, ma'lumot o'qilmasin
+  if (!s) redirect("/api/logout");
   // Ishlab chiqarish bo'limi bosh sahifada o'z ko'rinishini ko'radi; direktor ikkalasi orasida almashadi
   const isDirector = s?.role === "DIRECTOR";
   const productionView = !!s && ((PRODUCTION_HOME_ROLES as readonly string[]).includes(s.role) || (isDirector && view === "production"));
@@ -66,7 +69,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const todayView = isDirector && !view && !biParams;
   // Tahlil ko'radigan rollar (direktor, moliya, buxgalteriya) uchun bosh sahifa — BI tahlil ko'rinishi;
   // /bi-tahlil shu yerga yo'naltiriladi. Boshqa ko'rinishlar tabda (?view=…)
-  const biView = !!s && (isDirector ? view === "tahlil" || (!view && biParams) : !view) && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
+  const biView = !!s && (isDirector ? view === "tahlil" || (!view && biParams) : !view || view === "tahlil") && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
   const tabKey = productionView ? "production" : procurementView ? "procurement" : logisticsView ? "logistics" : mechanicView ? "mechanic" : hrView ? "hr" : dispatcherView ? "dispatcher" : ownerView ? "owner" : nazoratView ? "nazorat" : todayView ? "today" : biView ? "" : "operations";
   const biTabs = !!s && !isDirector && (BI_ROLES as readonly string[]).includes(s.role) && pathAllowed("/bi-tahlil", s.role, s.perms);
   // Xodimlarga mas'ul lavozimlar (otdel kadr, direktor, sex boshliqlari) — Face ID davomat skaneri

@@ -12,20 +12,9 @@ import { cn } from "@/lib/utils";
  * Tahlil → Mijozlar: tahlil va «Insof 2026» jadvalidagi qarz varaqlari. Sidebar'da «Mijozlar» ostida ham shu havolalar (`lib/nav.ts`).
  * URL: `sana` (YYYY-MM-DD, sukut — bugun), `q` (nom bo'yicha qidiruv), `tur` (CASH / BANK), `holat` (0–3).
  */
-const BASE = "/bi-tahlil/mijozlar";
-export const MIJOZLAR_LINKS: { key: string; label: string; href: string; icon: LucideIcon }[] = [
-  { key: "tahlil", label: "Tahlil", href: BASE, icon: Users },
-  { key: "qarz-yoshi", label: "Mijozlar qarzi", href: `${BASE}/qarz-yoshi`, icon: Hourglass },
-  { key: "xaridorlar", label: "Xaridorlar qarzdorligi", href: `${BASE}/xaridorlar`, icon: HandCoins },
-  { key: "taminotchilar", label: "Ta'minotchilar qarzdorligi", href: `${BASE}/taminotchilar`, icon: Truck },
-];
 
 const qs = (o: Record<string, string | undefined>) => { const s = new URLSearchParams(Object.entries(o).filter((kv): kv is [string, string] => !!kv[1])).toString(); return s ? `?${s}` : ""; };
 
-/** Hisobotlar orasida o'tganda tanlangan sana saqlanadi. */
-export function mijozlarSubtabs(sp: SP) {
-  return MIJOZLAR_LINKS.map((l) => ({ key: l.key, label: l.label, icon: l.icon, href: l.key === "tahlil" ? l.href : `${l.href}${qs({ sana: sp.sana })}` }));
-}
 
 const monthName = (d: Date) => `${MONTHS_UZ[d.getMonth()]} ${d.getFullYear()} y.`;
 const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -67,7 +56,7 @@ const filterName = <T extends { name: string }>(rows: T[], q?: string) => {
 // ───────────────────── Qarz / Avans: oy boshi → tanlangan kun ─────────────────────
 
 /** «Ta'minotchilar oldidagi qarzdorlik» va «Xaridorlar qarzdorligi» — bir xil ko'rinish. */
-export function DebtSheetView({ who, s, sp, base }: { who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string }) {
+export function DebtSheetView({ who, s, sp, base, linkable = true }: { who: "supplier" | "customer"; s: DebtSheet; sp: SP; base: string; linkable?: boolean }) {
   const sup = who === "supplier";
   const kind = sp.tur === "CASH" || sp.tur === "BANK" ? sp.tur : undefined;
   const rows = filterName(s.rows, sp.q);
@@ -114,8 +103,8 @@ export function DebtSheetView({ who, s, sp, base }: { who: "supplier" | "custome
             <Th>{col}</Th>
             <Th right>Qarz · {d1}</Th>
             <Th right>Avans · {d1}</Th>
-            <Th right className="bg-emerald-50 text-emerald-800">Qarz · {d2}</Th>
-            <Th right className="bg-emerald-50 text-emerald-800">Avans · {d2}</Th>
+            <Th right className="text-emerald-700">Qarz · {d2}</Th>
+            <Th right className="text-emerald-700">Avans · {d2}</Th>
             <Th right>O&apos;zgarish</Th>
           </tr>
         </thead>
@@ -124,7 +113,7 @@ export function DebtSheetView({ who, s, sp, base }: { who: "supplier" | "custome
           {rows.map((r) => (
             <Tr key={r.id}>
               <Td className="min-w-52">
-                <Link href={sup ? `/suppliers/${r.id}` : `/customers/${r.id}`} className="hover:underline">{r.name}</Link>
+                {linkable ? <Link href={sup ? `/suppliers/${r.id}` : `/customers/${r.id}`} className="hover:underline">{r.name}</Link> : r.name}
                 {!sup && !kind && r.kind === "CASH" && <span className="ml-2 align-middle"><Badge color="green" dot={false}>naqd</Badge></span>}
               </Td>
               <Td right><Num v={r.open.debt} /></Td>
@@ -189,7 +178,7 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
       <Toolbar base={base} day={r.day} sp={sp} keep={{ holat: sp.holat }} placeholder="Mijoz nomi…"
         excel={<ExcelButton file={`Mijozlar qarzi ${isoDate(r.day)}`} sheets={[{ name: "Qarz yoshi", rows: excelRows }]} />} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-5">
         <StatCard label="Jami qarz (bizga)" value={moneyShort(r.total)} hint={fmtNum(r.total)} icon={HandCoins} tone="brand" />
         <StatCard label="30 kundan eski" value={moneyShort(r.over30)} hint={r.total ? `${fmtNum((r.over30 / r.total) * 100, 0)}% qarz` : undefined} icon={Hourglass} tone={r.over30 ? "warning" : "success"} />
         <StatCard label="60 kundan eski" value={moneyShort(r.over60)} hint={r.total ? `${fmtNum((r.over60 / r.total) * 100, 0)}% qarz` : undefined} icon={Hourglass} tone={r.over60 ? "danger" : "success"} />
@@ -200,7 +189,7 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
       {r.total > 0 && (
         <Card>
           <div className="mb-3 flex items-baseline justify-between gap-2">
-            <div className="text-[14px] font-semibold text-slate-900">Qarz yoshi bo&apos;yicha taqsimot <span className="font-normal text-slate-400">· bosib saralang</span></div>
+            <div className="text-[14px] font-semibold text-slate-900">Qarz yoshi bo&apos;yicha taqsimot <span className="font-normal text-slate-400">· bosib filtrlang</span></div>
             <div className="text-xs text-slate-500">{date(r.day)} holatiga</div>
           </div>
           <div className="flex h-4 w-full overflow-hidden rounded-full bg-slate-100">
@@ -246,7 +235,7 @@ export function DebtAgeView({ r, sp, base }: { r: AgeReport; sp: SP; base: strin
           {rows.length === 0 && <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">{r.debtors ? "Filtr bo'yicha mijoz yo'q" : "Qarzdor mijoz yo'q"}</td></tr>}
           {rows.map((x) => (
             <Tr key={x.id}>
-              <Td className="max-w-64 truncate"><Link href={`/customers/${x.id}`} className="hover:underline" title={x.name}>{x.name}</Link></Td>
+              <Td><Link href={`/customers/${x.id}`} className="block max-w-64 truncate hover:underline" title={x.name}>{x.name}</Link></Td>
               <Td right className="font-semibold text-slate-900">{fmtNum(x.debt)}</Td>
               {x.buckets.map((v, i) => <Td key={i} right className={cn(v >= 1 && LEVEL[i]!.cell)}><Num v={v} /></Td>)}
               <Td className="whitespace-nowrap">{x.lastSale ? date(x.lastSale) : <span className="text-slate-300">—</span>}</Td>

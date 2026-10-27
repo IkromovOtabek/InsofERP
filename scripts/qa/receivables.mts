@@ -144,7 +144,9 @@ async function main() {
   check("/sales: Debitorka = jami", salesAll.status === 200 && hasMoney(salesAll.html, exp.total), salesAll.status);
   const inv = await page("/invoices");
   check("/invoices: Jami debitorka = jami", inv.status === 200 && hasMoney(inv.html, exp.total), inv.status);
-  for (const p of ["/dashboard", "/bi-tahlil", "/bi-tahlil/mijozlar", "/bi-tahlil/moliya", `/customers/${c.id}/akt`]) {
+  const biRoot = await api("GET", "/bi-tahlil", { cookie });
+  check("/bi-tahlil → Bosh sahifa «Tahlil» tabiga yo'naltiradi", [303, 307, 308].includes(biRoot.status) && (biRoot.headers.get("location") ?? "").includes("/dashboard?view=tahlil"), biRoot.status);
+  for (const p of ["/dashboard", "/dashboard?view=tahlil", "/bi-tahlil/mijozlar", "/bi-tahlil/moliya", `/customers/${c.id}/akt`]) {
     const r = await page(p);
     check(`${p} → 200`, r.status === 200, r.status);
   }

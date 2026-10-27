@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { goLiveDate } from "@/lib/bi/core";
+import { goLiveDate, sellerOf } from "@/lib/bi/core";
 import { ageDays, customerBalances, receivablesReport } from "@/lib/receivables";
 import { supplierPositions } from "./balance";
 
@@ -127,12 +127,12 @@ export async function debtAgeReport(day: Date): Promise<AgeReport> {
     ? await Promise.all([
       db.invoice.groupBy({ by: ["customerId"], where: { customerId: { in: ids }, status: { not: "CANCELLED" }, isOpening: false, date: { lt: asOf } }, _max: { date: true } }),
       db.payment.groupBy({ by: ["customerId"], where: { customerId: { in: ids }, register: { is: null }, date: { lt: asOf } }, _max: { date: true } }),
-      db.order.findMany({ where: { customerId: { in: ids }, status: { not: "CANCELLED" }, date: { lt: asOf } }, orderBy: { date: "desc" }, distinct: ["customerId"], select: { customerId: true, createdBy: { select: { fullName: true } } } }),
+      db.order.findMany({ where: { customerId: { in: ids }, status: { not: "CANCELLED" }, date: { lt: asOf } }, orderBy: { date: "desc" }, distinct: ["customerId"], select: { customerId: true, createdById: true, createdBy: { select: { fullName: true } }, customer: { select: { name: true, agentId: true, agent: { select: { fullName: true } } } } } }),
     ])
     : [[], [], []];
   const saleOf = new Map(sales.map((s) => [s.customerId, s._max.date]));
   const payOf = new Map(pays.map((p) => [p.customerId, p._max.date]));
-  const sellerOf = new Map(sellers.map((o) => [o.customerId, o.createdBy.fullName]));
+  const sellerName = new Map(sellers.map((o) => [o.customerId, sellerOf(o).seller]));
 
   const rows: AgeRow[] = rep.rows.map((r) => {
     const level = r.buckets.reduce((acc, v, i) => (v > 0 ? i : acc), 0);
@@ -140,7 +140,7 @@ export async function debtAgeReport(day: Date): Promise<AgeReport> {
     return {
       id: r.customerId, name: r.name, debt: r.debt, buckets: r.buckets, level,
       lastSale: saleOf.get(r.customerId) ?? null, lastPay,
-      daysNoPay: lastPay ? ageDays(lastPay, day) : null, seller: sellerOf.get(r.customerId) ?? null,
+      daysNoPay: lastPay ? ageDays(lastPay, day) : null, seller: sellerName.get(r.customerId) ?? null,
     };
   });
   rows.sort((a, b) => b.level - a.level || b.buckets[b.level]! - a.buckets[a.level]! || b.debt - a.debt);
