@@ -12,6 +12,8 @@ import { money, date, isoDate } from "@/lib/format";
 import { Badge, Button, Card, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr, Input } from "@/components/ui";
 import { SupplyApprovals } from "@/components/supply-approvals";
 import { TxForm } from "./tx-form";
+import { CashCloseRow, type CloseRow } from "./cash-close";
+import { accountBalance, tashkentDay } from "@/lib/nazorat/checks";
 import { cancelCashTx } from "./actions";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { unpaidReceipts } from "@/lib/receipt-payables";
@@ -64,6 +66,18 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
     acc ? Promise.all([statementBalance(acc, { lt: from }), statementBalance(acc, { lte: to })]).then(([open, close]) => ({ open, close })) : Promise.resolve(null),
   ]);
   const canTransfer = canDo(s, "cashflow", "transfer");
+  // Kassani yopish (Nazorat): naqd kassalar, tizimdagi qoldiq va bugungi sanoq
+  const canClose = canDo(s, "cashflow", "close");
+  const closeDay = tashkentDay();
+  const [cashAccs, todayCounts] = await Promise.all([
+    db.cashAccount.findMany({ where: { type: "CASH", isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.cashCount.findMany({ where: { day: closeDay }, select: { cashAccountId: true, counted: true, diff: true, updatedAt: true } }),
+  ]);
+  const countOf = new Map(todayCounts.map((c) => [c.cashAccountId, c]));
+  const closeRows: CloseRow[] = await Promise.all(cashAccs.map(async (a) => {
+    const c = countOf.get(a.id);
+    return { id: a.id, name: a.name, system: await accountBalance(a.id), counted: c ? Number(c.counted) : null, diff: c ? Number(c.diff) : null, at: c ? `${String(c.updatedAt.getHours()).padStart(2, "0")}:${String(c.updatedAt.getMinutes()).padStart(2, "0")}` : null };
+  }));
   const canStorno = canDo(s, "cashflow", "transfer_storno");
 
   const canPay = ["FINANCE", "ACCOUNTING", "DIRECTOR"].includes(s.role);
@@ -149,6 +163,14 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
               ))}
           </CollapsibleRows>
         </Card>
+      )}
+
+      {closeRows.length > 0 && (
+        <div id="kassa-yopish" className="scroll-mt-20"><Card className="mb-6">
+          <h2 className="mb-1 font-semibold">Kassani yopish</h2>
+          <p className="mb-2 text-[13px] text-slate-500">Kun oxirida naqdni sanab kiriting — farq Nazoratda (direktorga 19:00 dagi hisobotda) ko&apos;rinadi.</p>
+          {closeRows.map((r) => <CashCloseRow key={r.id} row={r} canClose={canClose} />)}
+        </Card></div>
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-5">

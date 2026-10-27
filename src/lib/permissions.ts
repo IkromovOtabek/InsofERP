@@ -150,6 +150,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "pay",    label: "Yetkazuvchiga to'lash",            roles: ["FINANCE", "ACCOUNTING"] },
     { key: "transfer", label: "Hisoblararo o'tkazma (kassa ⇄ bank)", roles: ["CASHIER", "ACCOUNTING", "FINANCE"], hint: "Inkassatsiya, naqdlashtirish; kassa qoldig'idan oshmaydi" },
     { key: "transfer_storno", label: "O'tkazmani bekor qilish",  roles: [], delegable: false },
+    { key: "close",  label: "Kassani yopish (kun oxiri sanog'i)", roles: ["CASHIER"], hint: "Nazorat: sanalgan naqd tizimdagi qoldiq bilan solishtiriladi" },
   ],
   employees: [
     { key: "create", label: "Xodim qo'shish",                    roles: ["HR", "LOGISTICS"] },

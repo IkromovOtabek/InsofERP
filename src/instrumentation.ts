@@ -16,6 +16,7 @@ export async function register() {
   startSmmWatch(isTestMode());
   startReminderWatch(isTestMode());
   startAmoWatch(isTestMode());
+  startNazoratWatch(isTestMode());
   if (!isTestMode()) return;
   try {
     assertSafeTestEnv();
@@ -70,5 +71,19 @@ function startAmoWatch(test: boolean) {
   if (flag === "off" || (test && flag !== "on")) return;
   if (process.env.NEXT_RUNTIME === "nodejs") {
     void import("./lib/amocrm/watch").then((m) => m.startAmoWatch()).catch((e) => console.error("[amocrm-watch] ishga tushmadi", e));
+  }
+}
+
+/**
+ * Kunlik Nazorat (`lib/nazorat/watch.ts`): belgilangan soatda (sukut 19:00, Toshkent) direktorga va mas'ullarga Telegram hisobot.
+ * `NAZORAT_WATCH=off` — o'chirish. Test rejimida va lokal dev'da (NODE_ENV ≠ production) sukut bo'yicha o'chiq —
+ * dev bazadagi ulangan chatlarga haqiqiy xabar ketmasin (`NAZORAT_WATCH=on` — yoqish).
+ */
+function startNazoratWatch(test: boolean) {
+  if (process.env.INSOF_MODE === "control" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const flag = (process.env.NAZORAT_WATCH ?? "").trim().toLowerCase();
+  if (flag === "off" || ((test || process.env.NODE_ENV !== "production") && flag !== "on")) return;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    void import("./lib/nazorat/watch").then((m) => m.startNazoratWatch()).catch((e) => console.error("[nazorat] ishga tushmadi", e));
   }
 }

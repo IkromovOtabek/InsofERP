@@ -181,6 +181,14 @@ model CompanySettings {
   cashPlanFactor      Decimal   @default(1) @db.Decimal(5, 2)
   /// Oy foydasining necha foizi divident sifatida olinishi mumkin (limit)
   dividendPct         Decimal   @default(100) @db.Decimal(5, 2)
+  // ── Nazorat (`lib/nazorat`): kunlik 14 tekshiruv va Telegram hisobot ──
+  /// Har kuni belgilangan soatda (Toshkent vaqti) direktorga va mas'ullarga Telegram hisobot yuboriladi
+  controlReportEnabled Boolean  @default(true)
+  controlReportHour    Int      @default(19)
+  /// Mas'ul rollar xodimlariga ham faqat o'z bandlari yuboriladi
+  controlNotifyOwners  Boolean  @default(true)
+  /// Salyarka nazorati: qaysi xomashyo — dizel (sklad kirimi mashinalarga quyilgan bilan solishtiriladi)
+  fuelMaterialId       String?
   /// QQS (NDS 12%) to'lovchisi. true — kirimdagi QQS hisobga olinadi (qaytariladi): xomashyo tannarxi QQS'siz;
   /// false — QQS qaytarilmaydi, tannarxga QQS qo'shiladi. Direktor Sozlamalarda o'zgartiradi.
   vatPayer            Boolean   @default(true)
@@ -1903,6 +1911,7 @@ model CashAccount {
   openings       OpeningBalance[]
   transfersOut   CashTransfer[]    @relation("CashTransferFrom")
   transfersIn    CashTransfer[]    @relation("CashTransferTo")
+  counts         CashCount[]
 
   // Bir xil nomli hisob ikki marta ochilmasin (seed qayta ishga tushsa ham)
   @@unique([name, type])
@@ -2128,6 +2137,38 @@ model FixedAsset {
   cashTx CashTransaction? @relation(fields: [cashTxId], references: [id], onDelete: Restrict)
 
   @@index([cancelledAt])
+}
+
+/// Kassani yopish — kassir kun oxirida naqd pulni sanab kiritadi; tizimdagi qoldiq bilan farqi Nazoratda chiqadi.
+/// Bir hisob uchun kuniga bitta yozuv (qayta sanalsa yangilanadi, AuditLog'da). `day` — Toshkent kuni boshi.
+model CashCount {
+  id            String   @id @default(cuid())
+  cashAccountId String
+  day           DateTime
+  counted       Decimal  @db.Decimal(18, 2)
+  system        Decimal  @db.Decimal(18, 2)
+  diff          Decimal  @db.Decimal(18, 2) // counted − system
+  note          String?
+  createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  cashAccount CashAccount @relation(fields: [cashAccountId], references: [id])
+
+  @@unique([cashAccountId, day])
+  @@index([day])
+}
+
+/// Kunlik Nazorat hisoboti — yuborilganini qayd qiladi (bir kunda bir marta: server qayta ishga tushsa ham, bir nechta jarayonda ham).
+model ControlReport {
+  id         String   @id @default(cuid())
+  day        DateTime @unique // Toshkent kuni boshi
+  sentAt     DateTime @default(now())
+  /// Xabar yetkazilgan chatlar soni (bot yo'q yoki hech kim ulanmagan bo'lsa 0)
+  recipients Int      @default(0)
+  /// Qisqa natija: holatlar soni va qizil/sariq bandlar
+  summary    Json
+  manual     Boolean  @default(false)
 }
 
 /// Doimiy oylik to'lov (oylik, avans, kredit, soliqlar, svet) — to'lov kalendari har oy shu kunda chiqim kutadi.

@@ -9,6 +9,7 @@ import { loanBalances } from "./loans";
 import { pnlReport } from "./pnl";
 import { monthKeyOf } from "./period";
 import { r2 } from "./rows";
+import { runChecks } from "@/lib/nazorat/checks";
 
 /**
  * Direktor «Bugun» ekrani («Insof 2026» → Dashboard): 5 ta asosiy raqam, 30 kunlik kassa prognozi, e'tibor talab
@@ -94,6 +95,10 @@ export async function todayData(now: Date = new Date()): Promise<TodayData> {
   if (unknown.length) attention.push({ key: "unknown", level: "warn", title: UNKNOWN_CATEGORY, text: `${unknown.reduce((s, c) => s + c._count._all, 0)} ta kassa yozuvi hisobotga to'g'ri tushmayapti`, href: "/moliya/kategoriyalar" });
   if (loanUnlinked) attention.push({ key: "loan", level: "warn", title: "Kreditga bog'lanmagan to'lovlar", text: `${loanUnlinked} ta yozuv — kredit qoldig'i noto'g'ri chiqadi`, href: "/moliya/kreditlar" });
   if (assetUnlinked) attention.push({ key: "asset", level: "warn", title: "Asosiy vosita kartochkasi ochilmagan", text: `${assetUnlinked} ta xarid — amortizatsiya hisoblanmayapti`, href: "/moliya/asosiy-vositalar" });
+  // Nazoratning qizil bandlari (kassa yopilmagan, sklad sanalmagan…) — batafsili «Nazorat» tabida
+  for (const c of (await runChecks({ now })).filter((x) => x.status === "crit")) {
+    attention.push({ key: `nazorat-${c.key}`, level: "crit", title: c.title, text: `${c.value} — ${c.owner}`, href: "/dashboard?view=nazorat" });
+  }
   if (!attention.length) attention.push({ key: "ok", level: "ok", title: "Moliyada shoshilinch masala yo'q", text: "30 kun ichida pul yetadi, muddati o'tgan to'lov yo'q", href: "/moliya/kalendar" });
 
   return {
