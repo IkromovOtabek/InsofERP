@@ -130,6 +130,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "loans",      label: "Kreditlar va qarzlar reyestri",     roles: ["ACCOUNTING"] },
     { key: "categories", label: "Kassa kategoriyalari va loyihalar", roles: ["ACCOUNTING"], hint: "Manba / Sub manba, PNL qatori va pul oqimi turi" },
     { key: "plan",       label: "To'lov rejasi (doimiy va bir martalik to'lovlar, muddatlar)", roles: ["FINANCE"], hint: "To'lov kalendari shundan hisoblanadi" },
+    { key: "cost",       label: "Tannarx sozlamalari (koeffitsiyent, ishlab chiqarish xarajatlari, brigada ish haqi)", roles: ["ACCOUNTING"], hint: "Tahlil → Moliya → Tannarx hisobi va Mahsulot foydasi" },
   ],
   arenda: [
     { key: "create", label: "Arenda kirim-chiqimini yozish",       roles: ["SECRETARY"] },

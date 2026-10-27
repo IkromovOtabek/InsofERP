@@ -1,11 +1,14 @@
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import { goLiveDate } from "@/lib/bi/core";
-import { unpaidReceipts } from "@/lib/receipt-payables";
+import { PAID_IMPORT_TOKEN, payablesSince, unpaidReceipts } from "@/lib/receipt-payables";
+import { receiptTotal } from "@/lib/receipt-vat";
 import { supplierOpeningDues } from "@/lib/opening-balances";
 import type { PnlLine } from "@/generated/prisma";
 import { loadCategories, makeResolver } from "./categories";
 import { pnlReport } from "./pnl";
+import { supplierPositions } from "./balance";
+import { sheetLine } from "./sheet-lines";
 import { addMonths, monthKeyOf, monthLabel } from "./period";
 import { r2 } from "./rows";
 
@@ -19,7 +22,11 @@ import { r2 } from "./rows";
  *           moliya tasdig'ini kutayotgan ta'minot zayavkalari (kerak bo'lgan sana)
  *           majburiy = doimiy oylik to'lovlar (o'z kunida) + qo'lda kiritilgan bir martalik chiqimlar
  *           kundalik = oxirgi 30 kun o'rtacha kunlik xarajat (zavod, transport, ofis…): xom-ashyo, soliq, kredit,
- *           divident, loyiha va doimiy to'lovlar kategoriyalari kirmaydi (ular yuqorida alohida)
+ *           divident, loyiha va doimiy to'lovlar kategoriyalari kirmaydi (ular yuqorida alohida). Har qatorni
+ *           «hisobga olinmasin» yoki «rejaga qarab o'zgaradi» (× reja koeffitsiyenti) qilish mumkin (`cashDailyFlags`)
+ *           yangi xom-ashyo = oxirgi 30 kun kelgan mol (kirim hujjatlari, QQS bilan) o'rtachasi × reja koeffitsiyenti —
+ *           bugun kelgan mol to'lov muddatidan keyin to'lanadi, shuning uchun muddat o'tgan kundan boshlab
+ *           divident = shu oy limiti qoldig'i oy oxirigacha teng bo'lib; keyingi oydan — oylik limit ÷ oy kunlari
  * Muddati o'tgan narsa bugungi kunga tushadi. Bugungi kun prognozidan bugun allaqachon tushgan/chiqqani ayiriladi.
  */
 export const CAL_DAYS = 30;
@@ -31,15 +38,26 @@ export const CAL_KIND_LABEL: Record<CalKind, string> = {
 };
 const OUT_KINDS: CalKind[] = ["SUPPLIER", "SUPPLY", "RECURRING", "PLANNED_OUT"];
 
-export type CalItem = { day: number; date: Date; kind: CalKind; who: string; what: string; amount: number; overdue: boolean; href?: string };
-export type CalDay = { date: Date; inForecast: number; inPromised: number; outSupplier: number; outMandatory: number; outDaily: number; net: number; balance: number };
+/** `date` — kalendardagi kuni (muddati o'tgani bugunga qo'yiladi), `due` — asl muddati. */
+export type CalItem = { day: number; date: Date; due: Date; kind: CalKind; who: string; what: string; amount: number; overdue: boolean; href?: string };
+export type CalDay = { date: Date; inForecast: number; inPromised: number; outSupplier: number; outMandatory: number; outDaily: number; outMaterials: number; outDividend: number; net: number; balance: number };
 export type SupplierDue = { supplierId: string; name: string; termDays: number; debt: number; overdue: number; due30: number; later: number };
-export type DailyRow = { category: string; sum: number; perDay: number };
+/** Kundalik xarajat qatori: `perDay` — kalendarga tushadigani (o'chirilgan bo'lsa 0, «rejaga qarab» bo'lsa × koeffitsiyent). */
+export type DailyRow = { category: string; sum: number; avg: number; perDay: number; off: boolean; scaled: boolean };
+export type DailyFlags = Record<string, { off?: boolean; scaled?: boolean }>;
+/** «Rejaga qarab o'zgaradi» — sukut bo'yicha ishlab chiqarish hajmiga bog'liq qatorlar (jadvaldagidek). */
+export const SCALED_BY_DEFAULT = new Set(["Zavod xarajatlari", "Avtotransport"]);
+/** Ta'minotchi shu oy: oy boshidagi qarz, to'langani, kelgan mol, hozirgi qarz (manfiy — avans), muddati o'tgan. */
+export type SupplierMonthRow = { supplierId: string; name: string; open: number; paid: number; arrived: number; now: number; overdue: number };
 
 export type CashCalendar = {
   today: Date; start: number; days: CalDay[]; items: CalItem[];
-  min: { balance: number; date: Date }; totals: { inForecast: number; inPromised: number; outSupplier: number; outMandatory: number; outDaily: number; net: number };
-  perDayIn: number; perDayOut: number; histDays: number; factor: number; dailyRows: DailyRow[]; suppliers: SupplierDue[];
+  /** `journal` — kassa va bank jurnali bo'yicha; `start` undan farq qilsa — foydalanuvchi haqiqiy qoldiqni yozgan */
+  journal: number;
+  min: { balance: number; date: Date }; totals: { inForecast: number; inPromised: number; outSupplier: number; outMandatory: number; outDaily: number; outMaterials: number; outDividend: number; net: number };
+  perDayIn: number; perDayOut: number; perDayMaterials: number; histDays: number; factor: number; termDays: number; dailyRows: DailyRow[]; suppliers: SupplierDue[];
+  /** Muddati o'tgan to'lovlarimiz va yaqin 7 kunda to'lanadigani (ta'minotchi + majburiy) */
+  overdueOut: number; next7Out: number;
   dividend: { month: string; profit: number; pct: number; limit: number; taken: number; left: number; prevTaken: number };
 };
 
@@ -61,15 +79,15 @@ export function recurringDates(dayOfMonth: number, from: Date, to: Date): Date[]
 /** Kundalik xarajatga kiradigan PNL qatorlari — qolganlari (xom-ashyo, soliq, kredit, divident, loyiha) alohida yoki prognozga kirmaydi. */
 const DAILY_LINES = new Set<PnlLine>(["PRODUCTION", "PAYROLL", "TRANSPORT", "ADMIN", "COMMERCIAL"]);
 
-export async function cashCalendar(now: Date = new Date()): Promise<CashCalendar> {
+export async function cashCalendar(now: Date = new Date(), opts: { start?: number } = {}): Promise<CashCalendar> {
   const today = startOfDay(now), end = addDays(today, CAL_DAYS), tomorrow = addDays(today, 1);
   const live = await goLiveDate();
   const histFrom = live && live > addDays(today, -30) ? live : addDays(today, -30);
   const histDays = Math.max(1, Math.round((today.getTime() - histFrom.getTime()) / DAY));
   const curMonth = monthKeyOf(today), prevMonth = addMonths(curMonth, -1);
 
-  const [settings, nodes, txBal, payBal, histTx, histPay, todayTx, todayPay, recurring, planned, prepay, unpaid, openings, supply, suppliers, prevPnl, divTx] = await Promise.all([
-    db.companySettings.findUnique({ where: { id: "main" }, select: { supplierPaymentDays: true, cashPlanFactor: true, dividendPct: true } }),
+  const [settings, nodes, txBal, payBal, histTx, histPay, todayTx, todayPay, recurring, planned, prepay, unpaid, openings, supply, suppliers, prevPnl, divTx, histRec] = await Promise.all([
+    db.companySettings.findUnique({ where: { id: "main" }, select: { supplierPaymentDays: true, cashPlanFactor: true, dividendPct: true, cashDailyFlags: true } }),
     loadCategories(),
     db.cashTransaction.groupBy({ by: ["cashAccountId", "type"], where: { cancelledAt: null }, _sum: { amount: true } }),
     db.payment.aggregate({ _sum: { amount: true } }),
@@ -86,14 +104,17 @@ export async function cashCalendar(now: Date = new Date()): Promise<CashCalendar
     db.supplier.findMany({ select: { id: true, name: true, paymentTermDays: true } }),
     pnlReport([prevMonth], "accrual"),
     db.cashTransaction.findMany({ where: { type: "EXPENSE", cancelledAt: null, date: { gte: new Date(today.getFullYear(), today.getMonth() - 1, 1), lt: tomorrow } }, select: { date: true, amount: true, category: true, subCategory: true } }),
+    db.goodsReceiptItem.findMany({ where: { receipt: { cancelledAt: null, date: { gte: histFrom, lt: today } } }, select: { qty: true, price: true, vatAmount: true, deliveryCost: true } }),
   ]);
   const resolve = makeResolver(nodes);
   const defTerm = settings?.supplierPaymentDays ?? 7;
   const factor = Number(settings?.cashPlanFactor ?? 1);
   const recurringCats = new Set(recurring.map((r) => resolve(r.category)?.top.id).filter(Boolean));
+  const flags = (settings?.cashDailyFlags ?? {}) as DailyFlags;
 
-  // ── Hozirgi pul (barcha hisoblar) ──
-  const start = r2(txBal.reduce((s, g) => s + txSign(g.type) * Number(g._sum.amount ?? 0), 0) + Number(payBal._sum.amount ?? 0));
+  // ── Hozirgi pul (barcha hisoblar); foydalanuvchi haqiqiy qoldiqni yozsa — o'sha ──
+  const journal = r2(txBal.reduce((s, g) => s + txSign(g.type) * Number(g._sum.amount ?? 0), 0) + Number(payBal._sum.amount ?? 0));
+  const start = opts.start !== undefined && Number.isFinite(opts.start) ? r2(opts.start) : journal;
 
   // ── O'rtacha kunlik tushum va kundalik xarajat ──
   const isOperatingIn = (t: { category: string; subCategory: string | null }) => { const r = resolve(t.category, t.subCategory); return !r || r.top.flow === "OPERATING"; };
@@ -102,16 +123,22 @@ export async function cashCalendar(now: Date = new Date()): Promise<CashCalendar
     const r = resolve(t.category, t.subCategory);
     if (!r) return t.category; // aniqlanmagan — ehtiyot uchun kundalikka
     if (!DAILY_LINES.has(r.top.pnlLine) || recurringCats.has(r.top.id)) return null;
-    return r.top.name;
+    return sheetLine(r.top.name, r.sub?.name);
   };
   const sumIn = (rows: typeof histTx) => rows.filter((t) => t.type === "INCOME" && isOperatingIn(t)).reduce((s, t) => s + Number(t.amount), 0);
   const perDayIn = r2(((Number(histPay._sum.amount ?? 0) + sumIn(histTx)) / histDays) * factor);
   const dailyMap = new Map<string, number>();
   for (const t of histTx) { if (t.type !== "EXPENSE") continue; const c = dailyCat(t); if (c) dailyMap.set(c, (dailyMap.get(c) ?? 0) + Number(t.amount)); }
-  const dailyRows: DailyRow[] = [...dailyMap.entries()].map(([category, s]) => ({ category, sum: r2(s), perDay: r2(s / histDays) })).sort((a, b) => b.sum - a.sum);
+  const dailyRows: DailyRow[] = [...dailyMap.entries()].map(([category, s]) => {
+    const f = flags[category] ?? {};
+    const off = !!f.off, scaled = f.scaled ?? SCALED_BY_DEFAULT.has(category), avg = r2(s / histDays);
+    return { category, sum: r2(s), avg, perDay: off ? 0 : r2(scaled ? avg * factor : avg), off, scaled };
+  }).sort((a, b) => b.sum - a.sum);
   const perDayOut = r2(dailyRows.reduce((s, r) => s + r.perDay, 0));
+  const offDaily = new Set(dailyRows.filter((r) => r.off).map((r) => r.category));
   const inToday = Number(todayPay._sum.amount ?? 0) + sumIn(todayTx);
-  const outTodayDaily = todayTx.filter((t) => t.type === "EXPENSE" && dailyCat(t)).reduce((s, t) => s + Number(t.amount), 0);
+  const outTodayDaily = todayTx.filter((t) => { if (t.type !== "EXPENSE") return false; const c = dailyCat(t); return !!c && !offDaily.has(c); }).reduce((s, t) => s + Number(t.amount), 0);
+  const perDayMaterials = r2((receiptTotal(histRec) / histDays) * factor);
 
   // ── Ro'yxat: kunlarga taqsimlanadigan aniq summalar ──
   const items: CalItem[] = [];
@@ -121,7 +148,7 @@ export async function cashCalendar(now: Date = new Date()): Promise<CashCalendar
     const overdue = startOfDay(date) < today;
     const d = overdue ? today : startOfDay(date);
     if (d >= end) return;
-    items.push({ day: dayIdx(d), date: d, kind, who, what, amount: r2(amount), overdue, href });
+    items.push({ day: dayIdx(d), date: d, due: startOfDay(date), kind, who, what, amount: r2(amount), overdue, href });
   };
   const termOf = new Map(suppliers.map((s) => [s.id, s.paymentTermDays ?? defTerm]));
   const supName = new Map(suppliers.map((s) => [s.id, s.name]));
@@ -153,6 +180,20 @@ export async function cashCalendar(now: Date = new Date()): Promise<CashCalendar
   for (const q of prepay) push(q.dueDate, "PREPAY", q.customer.name, `${q.docNo} · zayavka bosh to'lovi`, Number(q.amount) - Number(q.received), "/pul-qabul");
   items.sort((a, b) => a.day - b.day || b.amount - a.amount);
 
+  // ── Divident limiti: o'tgan oy zavod sof foydasi × foiz − shu oy olingan divident ──
+  const profit = prevPnl.rows.find((r) => r.key === "net")?.values[0] ?? 0;
+  const pct = Number(settings?.dividendPct ?? 100);
+  const limit = r2(Math.max(0, profit) * pct / 100);
+  const isDiv = (t: { category: string; subCategory: string | null }) => resolve(t.category, t.subCategory)?.top.pnlLine === "DIVIDEND";
+  const curStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const taken = r2(divTx.filter((t) => t.date >= curStart && isDiv(t)).reduce((s, t) => s + Number(t.amount), 0));
+  const prevTaken = r2(divTx.filter((t) => t.date >= new Date(today.getFullYear(), today.getMonth() - 1, 1) && t.date < curStart && isDiv(t)).reduce((s, t) => s + Number(t.amount), 0));
+  const daysLeft = daysInMonth(today.getFullYear(), today.getMonth()) - today.getDate() + 1;
+  const dividendOn = (d: Date) => (d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
+    ? Math.max(0, limit - taken) / daysLeft
+    : limit / daysInMonth(d.getFullYear(), d.getMonth()));
+  const termDays = defTerm;
+
   // ── Kunlar ──
   const days: CalDay[] = [];
   let bal = start;
@@ -162,30 +203,59 @@ export async function cashCalendar(now: Date = new Date()): Promise<CashCalendar
     const inForecast = i === 0 ? Math.max(0, perDayIn - inToday) : perDayIn;
     const outDaily = i === 0 ? Math.max(0, perDayOut - outTodayDaily) : perDayOut;
     const inPromised = sumK(["PLANNED_IN", "PREPAY"]), outSupplier = sumK(["SUPPLIER", "SUPPLY"]), outMandatory = sumK(["RECURRING", "PLANNED_OUT"]);
-    const net = inForecast + inPromised - outSupplier - outMandatory - outDaily;
+    const date = addDays(today, i);
+    const outMaterials = i >= termDays ? perDayMaterials : 0;
+    const outDividend = dividendOn(date);
+    const net = inForecast + inPromised - outSupplier - outMandatory - outDaily - outMaterials - outDividend;
     bal += net;
-    days.push({ date: addDays(today, i), inForecast: r2(inForecast), inPromised: r2(inPromised), outSupplier: r2(outSupplier), outMandatory: r2(outMandatory), outDaily: r2(outDaily), net: r2(net), balance: r2(bal) });
+    days.push({ date, inForecast: r2(inForecast), inPromised: r2(inPromised), outSupplier: r2(outSupplier), outMandatory: r2(outMandatory), outDaily: r2(outDaily), outMaterials: r2(outMaterials), outDividend: r2(outDividend), net: r2(net), balance: r2(bal) });
   }
   const minDay = days.reduce((m, d) => (d.balance < m.balance ? d : m), days[0]!);
   const tot = (f: (d: CalDay) => number) => r2(days.reduce((s, d) => s + f(d), 0));
 
-  // ── Divident limiti: o'tgan oy zavod sof foydasi × foiz − shu oy olingan divident ──
-  const profit = prevPnl.rows.find((r) => r.key === "net")?.values[0] ?? 0;
-  const pct = Number(settings?.dividendPct ?? 100);
-  const limit = r2(Math.max(0, profit) * pct / 100);
-  const isDiv = (t: { category: string; subCategory: string | null }) => resolve(t.category, t.subCategory)?.top.pnlLine === "DIVIDEND";
-  const curStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const taken = r2(divTx.filter((t) => t.date >= curStart && isDiv(t)).reduce((s, t) => s + Number(t.amount), 0));
-  const prevTaken = r2(divTx.filter((t) => t.date < curStart && isDiv(t)).reduce((s, t) => s + Number(t.amount), 0));
+  const outItems = items.filter((x) => isOutKind(x.kind));
 
   return {
-    today, start, days, items,
+    today, start, journal, days, items,
     min: { balance: minDay.balance, date: minDay.date },
-    totals: { inForecast: tot((d) => d.inForecast), inPromised: tot((d) => d.inPromised), outSupplier: tot((d) => d.outSupplier), outMandatory: tot((d) => d.outMandatory), outDaily: tot((d) => d.outDaily), net: tot((d) => d.net) },
-    perDayIn, perDayOut, histDays, factor, dailyRows,
+    totals: { inForecast: tot((d) => d.inForecast), inPromised: tot((d) => d.inPromised), outSupplier: tot((d) => d.outSupplier), outMandatory: tot((d) => d.outMandatory), outDaily: tot((d) => d.outDaily), outMaterials: tot((d) => d.outMaterials), outDividend: tot((d) => d.outDividend), net: tot((d) => d.net) },
+    perDayIn, perDayOut, perDayMaterials, histDays, factor, termDays, dailyRows,
+    overdueOut: r2(outItems.filter((x) => x.overdue).reduce((s, x) => s + x.amount, 0)),
+    next7Out: r2(outItems.filter((x) => !x.overdue && x.day < 7).reduce((s, x) => s + x.amount, 0)),
     suppliers: [...supDue.values()].map((x) => ({ ...x, debt: r2(x.debt), overdue: r2(x.overdue), due30: r2(x.due30), later: r2(x.later) })).sort((a, b) => b.overdue + b.due30 - (a.overdue + a.due30)),
     dividend: { month: monthLabel(prevMonth), profit: r2(profit), pct, limit, taken, left: r2(limit - taken), prevTaken },
   };
 }
 
 export const isOutKind = (k: CalKind) => OUT_KINDS.includes(k);
+
+/**
+ * «TA'MINOTCHILAR — shu oy: qarz, to'langan, kelgan»: oy boshidagi va hozirgi qarzimiz (Balans bilan bir manbadan),
+ * shu oy to'langan (kassa, ta'minotchiga bog'langan) va kelgan mol (kirim hujjati, QQS bilan) — hozirgi = oy boshi + kelgan − to'langan.
+ * Muddati o'tgani — kalendardan.
+ */
+export async function supplierMonth(cal: Pick<CashCalendar, "today" | "suppliers">): Promise<SupplierMonthRow[]> {
+  const today = cal.today, mStart = new Date(today.getFullYear(), today.getMonth(), 1), tomorrow = addDays(today, 1);
+  const since = await payablesSince();
+  const [open, now, paid, rec] = await Promise.all([
+    supplierPositions(mStart),
+    supplierPositions(tomorrow),
+    db.cashTransaction.groupBy({ by: ["supplierId", "type"], where: { supplierId: { not: null }, cancelledAt: null, type: { in: ["INCOME", "EXPENSE"] }, date: { gte: mStart, lt: tomorrow } }, _sum: { amount: true } }),
+    // Qarz bilan bir xil filtr: to'langan holda import qilingan va hisob boshlanishidan oldingi kirimlar kirmaydi
+    db.goodsReceiptItem.findMany({
+      where: { receipt: { cancelledAt: null, date: { gte: mStart, lt: tomorrow }, createdAt: { gte: since }, OR: [{ clientToken: null }, { NOT: { clientToken: { startsWith: PAID_IMPORT_TOKEN } } }] } },
+      select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { supplierId: true } } },
+    }),
+  ]);
+  const paidBy = new Map<string, number>();
+  for (const p of paid) paidBy.set(p.supplierId!, (paidBy.get(p.supplierId!) ?? 0) + (p.type === "EXPENSE" ? 1 : -1) * Number(p._sum.amount ?? 0));
+  const recBy = new Map<string, typeof rec>();
+  for (const i of rec) { const k = i.receipt.supplierId; if (!recBy.has(k)) recBy.set(k, []); recBy.get(k)!.push(i); }
+  const overdue = new Map(cal.suppliers.map((x) => [x.supplierId, x.overdue]));
+  const ids = [...new Set([...open.keys(), ...now.keys(), ...paidBy.keys(), ...recBy.keys()])];
+  const names = new Map((await db.supplier.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((x) => [x.id, x.name]));
+  return ids
+    .map((id) => ({ supplierId: id, name: names.get(id) ?? "—", open: r2(open.get(id) ?? 0), paid: r2(paidBy.get(id) ?? 0), arrived: r2(receiptTotal(recBy.get(id) ?? [])), now: r2(now.get(id) ?? 0), overdue: r2(overdue.get(id) ?? 0) }))
+    .filter((x) => [x.open, x.paid, x.arrived, x.now].some((v) => Math.abs(v) >= 1))
+    .sort((a, b) => b.overdue - a.overdue || b.now - a.now);
+}

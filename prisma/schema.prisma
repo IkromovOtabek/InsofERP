@@ -181,6 +181,10 @@ model CompanySettings {
   cashPlanFactor      Decimal   @default(1) @db.Decimal(5, 2)
   /// Oy foydasining necha foizi divident sifatida olinishi mumkin (limit)
   dividendPct         Decimal   @default(100) @db.Decimal(5, 2)
+  /// To'lov rejasi → Oylik reja: mahsulot guruhi (yuqori papka nomi) → oyiga reja miqdori { "Beton": 5500, … }
+  cashSalesPlan       Json?
+  /// To'lov rejasi → Kundalik xarajatlar: qator nomi → { off: hisobga olinmaydi, scaled: reja koeffitsiyentiga ko'paytiriladi }
+  cashDailyFlags      Json?
   // ── Nazorat (`lib/nazorat`): kunlik 14 tekshiruv va Telegram hisobot ──
   /// Har kuni belgilangan soatda (Toshkent vaqti) direktorga va mas'ullarga Telegram hisobot yuboriladi
   controlReportEnabled Boolean  @default(true)
@@ -330,6 +334,8 @@ model ProductGroup {
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+  /// Brigada ish haqi 1 dona uchun, so'm — mahsulotda `pieceRate` bo'lmasa tannarxga shu olinadi (yaqin ota papkadan)
+  pieceRate Decimal? @db.Decimal(18, 2)
 
   parent   ProductGroup?  @relation("GroupTree", fields: [parentId], references: [id])
   children ProductGroup[] @relation("GroupTree")
@@ -2054,6 +2060,9 @@ model CashCategory {
   aliases   String[]           @default([])
   /// Tizim kategoriyasi — kod unga nom bo'yicha tayanadi (Xomashyo, Ish haqi, Bank xizmati…): o'chirib/qayta nomlab bo'lmaydi
   isSystem  Boolean            @default(false)
+  /// Tannarxga kiradi: shu kategoriya chiqimi — ishlab chiqarish xarajati, buyumlarga xom-ashyo qiymatiga qarab taqsimlanadi
+  /// (Tahlil → Moliya → Tannarx hisobi). Sub manbada belgilansa faqat o'sha sub, manbada — hammasi
+  inCost    Boolean            @default(false)
   isActive  Boolean            @default(true)
   sort      Int                @default(0)
   createdAt DateTime           @default(now())
@@ -2173,6 +2182,17 @@ model ControlReport {
 
 /// Doimiy oylik to'lov (oylik, avans, kredit, soliqlar, svet) — to'lov kalendari har oy shu kunda chiqim kutadi.
 /// Kun oyning oxiridan katta bo'lsa (31 → fevral) — oyning oxirgi kuniga tushadi. O'chirilmaydi: nofaol yoki bekor.
+/// Tannarx hisobi — oyning qo'lda o'zgartirilgan sozlamalari (bo'sh — avtomatik, `lib/fin-report/cost.ts`):
+/// xom-ashyo guruhi koeffitsiyenti (haqiqiy / norma) va ishlab chiqarish xarajatlari stavkasi (% xom-ashyoga)
+model CostMonth {
+  id          String   @id // YYYY-MM
+  /// { "Sement": 1.018, "Armatura, metall": 1.45 } — faqat o'zgartirilganlari
+  coefs       Json?
+  overheadPct Decimal? @db.Decimal(6, 2)
+  updatedById String
+  updatedAt   DateTime @updatedAt
+}
+
 model RecurringPayment {
   id            String    @id @default(cuid())
   name          String

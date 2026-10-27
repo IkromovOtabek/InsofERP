@@ -5,7 +5,8 @@ import { Ban, Check, Pause, Play, Plus, Save, X } from "lucide-react";
 import { Button, Field, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 import {
-  cancelRecurringAction, closePlannedAction, createPlannedAction, createRecurringAction, saveCashPlanSettingsAction, saveSupplierTermAction, toggleRecurringAction,
+  cancelRecurringAction, closePlannedAction, createPlannedAction, createRecurringAction, saveCashPlanSettingsAction, saveDailyFlagAction, saveSalesPlanAction,
+  saveSupplierTermAction, toggleRecurringAction,
 } from "./actions";
 
 type Opt = { id: string; name: string };
@@ -115,6 +116,39 @@ export function SupplierTermForm({ supplierId, days, placeholder }: { supplierId
       <input type="hidden" name="supplierId" value={supplierId} />
       <Input name="days" type="number" min={0} max={365} defaultValue={days ?? ""} placeholder={String(placeholder)} className="h-8 w-20 text-right" aria-label="To'lov muddati, kun" />
       <Button size="sm" variant="secondary" disabled={pending} title="Saqlash"><Save size={14} /></Button>
+      {state?.error && <span className="text-[13px] text-red-600">{state.error}</span>}
+    </form>
+  );
+}
+
+/** «Oylik reja» jadvalidagi sariq kataklar — har guruh uchun oyiga reja miqdori; bitta «Saqlash» bilan. */
+export function SalesPlanForm({ id, children }: { id: string; children: React.ReactNode }) {
+  const [state, action, pending] = useActionState(saveSalesPlanAction, undefined);
+  return (
+    <form id={id} action={action} className="space-y-2">
+      {children}
+      <div className="flex items-center gap-3">
+        <Button size="sm" disabled={pending}><Save size={14} /> Rejani saqlash</Button>
+        <FormError error={state?.error} />
+        <FormSuccess text={state?.ok ? "Saqlandi" : undefined} />
+      </div>
+    </form>
+  );
+}
+
+/** Kundalik xarajat qatoridagi Ha / Yo'q almashtirgich. */
+export function DailyFlagToggle({ line, field, on }: { line: string; field: "off" | "scaled"; on: boolean }) {
+  const [state, action, pending] = useActionState(saveDailyFlagAction, undefined);
+  // «Hisobga olinsinmi»: Ha = off yo'q
+  const yes = field === "off" ? !on : on;
+  return (
+    <form action={action} className="inline-flex items-center gap-1">
+      <input type="hidden" name="line" value={line} />
+      <input type="hidden" name="field" value={field} />
+      <input type="hidden" name="value" value={on ? "0" : "1"} />
+      <button disabled={pending} title="O'zgartirish" className={yes ? "rounded-md bg-emerald-50 px-2 py-0.5 text-[13px] font-semibold text-emerald-700 hover:bg-emerald-100" : "rounded-md bg-slate-100 px-2 py-0.5 text-[13px] font-semibold text-slate-500 hover:bg-slate-200"}>
+        {yes ? "Ha" : "Yo'q"}
+      </button>
       {state?.error && <span className="text-[13px] text-red-600">{state.error}</span>}
     </form>
   );

@@ -11,6 +11,8 @@ export { FLOW_LABEL, PNL_LINE_LABEL, NEEDS_LABEL } from "./labels";
 export type CatNode = {
   id: string; name: string; type: CashTxType; parentId: string | null; flow: CashFlowKind; pnlLine: PnlLine;
   needs: CashCategoryNeeds | null; loanPart: LoanPart | null; aliases: string[]; isSystem: boolean; isActive: boolean; sort: number;
+  /** Tannarxga kiradi — ishlab chiqarish xarajati (`lib/fin-report/cost.ts`) */
+  inCost: boolean;
 };
 
 /** Hisobotdagi «Manbasi aniqlanmagan» qatori — daraxtdan topilmagan kategoriya nomlari shu yerga yig'iladi. */

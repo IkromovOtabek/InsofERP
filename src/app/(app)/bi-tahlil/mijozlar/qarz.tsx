@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, Crown, Hourglass, HandCoins, Scale, Search, Truck, UserRound, Users, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Crown, Hourglass, HandCoins, Scale, Search, Truck, UserRound, Users, Wallet } from "lucide-react";
 import { type SP } from "../shell";
 import { type AgeReport, type DebtSheet, AGE_LABELS, AGE_STATUS, CUSTOMER_KIND_LABEL } from "@/lib/fin-report/debts";
 import { MONTHS_UZ } from "@/lib/bi/plans";

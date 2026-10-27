@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Boxes, Factory, Package, Recycle, Scale, TriangleAlert, Warehouse } from "lucide-react";
+import { Boxes, Factory, Package, Recycle, Scale, TriangleAlert } from "lucide-react";
 import type { FinishedReport, RawBalance, RawRow } from "@/lib/fin-report/sklad";
 import type { SP } from "../shell";
 import { fmtNum, moneyShort, pct } from "@/lib/format";

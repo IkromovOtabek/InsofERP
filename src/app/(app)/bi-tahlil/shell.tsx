@@ -1,7 +1,6 @@
-import type { LucideIcon } from "lucide-react";
 import { requireSession, type Session } from "@/lib/auth";
 import { parseRange, type Range } from "@/lib/bi/core";
-import { PageHeader, Tabs } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { PeriodBar, routeOf } from "./ui";
 
 export type SP = Record<string, string | undefined>;
@@ -14,16 +13,15 @@ export async function biContext(searchParams: Promise<SP>): Promise<{ s: Session
   return { s, sp, range: parseRange(sp) };
 }
 
-/** Sahifa qobig'i: sarlavha + davr paneli + (ixtiyoriy) ichki tablar. */
-export function BiPage({ title, subtitle, eyebrow = "Tahlil", tab, range, keep, period = true, subtabs, current, children }: {
+/** Sahifa qobig'i: sarlavha + davr paneli. Bo'lim ichidagi sahifalar — sidebar'da (`lib/nav.ts` children), sahifada tab qatori yo'q. */
+export function BiPage({ title, subtitle, eyebrow = "Tahlil", tab, range, keep, period = true, children }: {
   title?: string; subtitle?: string; eyebrow?: string; tab: string; range: Range; keep?: Record<string, string | undefined>; period?: boolean;
-  subtabs?: { key: string; label: string; href: string; icon?: LucideIcon }[]; current?: string; children: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <div className="min-w-0">
       {title && <PageHeader eyebrow={eyebrow} title={title} subtitle={subtitle} />}
       {period && <PeriodBar range={range} tab={tab} keep={keep} />}
-      {subtabs && <Tabs current={current ?? subtabs[0].key} className="mb-6" items={subtabs} />}
       {children}
     </div>
   );

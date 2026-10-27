@@ -10,7 +10,7 @@ import { loadCategories, makeResolver } from "@/lib/fin-report/categories";
 
 /** To'lov rejasi — moliya (`moliya.plan`), direktor doim. Yozuvlar o'chirilmaydi: nofaol / bekor / bajarildi. */
 const writer = () => requireAction("moliya", "plan");
-const refresh = () => { for (const p of ["/moliya/tolov-rejasi", "/moliya/kalendar", "/dashboard"]) revalidatePath(p); };
+const refresh = () => { for (const p of ["/moliya/tolov-rejasi", "/moliya/kalendar", "/bi-tahlil/moliya/tolov-rejasi", "/bi-tahlil/moliya/kalendar", "/dashboard"]) revalidatePath(p); };
 
 const settingsSchema = z.object({
   supplierPaymentDays: z.coerce.number({ message: "Muddat raqam bo'lsin" }).int("Butun son bo'lsin").min(0, "Manfiy bo'lmasin").max(365, "Juda katta"),
@@ -140,6 +140,45 @@ export async function saveSupplierTermAction(_p: ActionState, fd: FormData): Pro
   await db.$transaction(async (tx) => {
     await tx.supplier.update({ where: { id: sup.id }, data: { paymentTermDays: days } });
     await audit(tx, s.userId, "UPDATE", "Supplier", sup.id, { paymentTermDays: sup.paymentTermDays }, { paymentTermDays: days });
+  });
+  refresh();
+  return { ok: true };
+}
+
+/** «Oylik reja»: mahsulot guruhi (yuqori papka) → oyiga reja miqdori. Bo'sh — reja yo'q. Forma maydoni `plan:<guruh>`. */
+export async function saveSalesPlanAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const plan: Record<string, number> = {};
+  for (const [k, v] of fd.entries()) {
+    if (!k.startsWith("plan:") || typeof v !== "string") continue;
+    const raw = v.replace(/[\s\u00a0]/g, "").replace(",", ".");
+    if (!raw) continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return { error: `«${k.slice(5)}» uchun reja noto'g'ri` };
+    if (n > 0) plan[k.slice(5).slice(0, 80)] = n;
+  }
+  await db.$transaction(async (tx) => {
+    const before = await tx.companySettings.findUnique({ where: { id: "main" }, select: { cashSalesPlan: true } });
+    await tx.companySettings.upsert({ where: { id: "main" }, update: { cashSalesPlan: plan }, create: { id: "main", cashSalesPlan: plan } });
+    await audit(tx, s.userId, "UPDATE", "CompanySettings", "main", before, { cashSalesPlan: plan });
+  });
+  refresh();
+  return { ok: true };
+}
+
+const flagSchema = z.object({ line: zStr().pipe(z.string().max(120)), field: z.enum(["off", "scaled"]), value: z.enum(["1", "0"]) });
+
+/** Kundalik xarajat qatori: «Hisobga olinsinmi» (off) yoki «Rejaga qarab o'zgaradi» (scaled). */
+export async function saveDailyFlagAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await writer();
+  const r = parseForm(flagSchema, fd);
+  if ("error" in r) return { error: r.error };
+  await db.$transaction(async (tx) => {
+    const cur = await tx.companySettings.findUnique({ where: { id: "main" }, select: { cashDailyFlags: true } });
+    const flags = { ...((cur?.cashDailyFlags ?? {}) as Record<string, { off?: boolean; scaled?: boolean }>) };
+    flags[r.data.line] = { ...flags[r.data.line], [r.data.field]: r.data.value === "1" };
+    await tx.companySettings.upsert({ where: { id: "main" }, update: { cashDailyFlags: flags }, create: { id: "main", cashDailyFlags: flags } });
+    await audit(tx, s.userId, "UPDATE", "CompanySettings", "main", { cashDailyFlags: cur?.cashDailyFlags ?? null }, { cashDailyFlags: flags });
   });
   refresh();
   return { ok: true };
