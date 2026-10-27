@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import { loadRevenue } from "@/lib/bi/core";
+import { avgUnitCosts } from "@/lib/stock";
+import { moneyShort } from "@/lib/format";
 import { FLOW_ONLY } from "@/lib/cash-tx";
 import type { PnlLine } from "@/generated/prisma";
 import { loadCategories, makeResolver, UNKNOWN_CATEGORY } from "./categories";
@@ -18,6 +20,8 @@ import { DEPRECIATION_LINE, PNL_FIXED, sheetLine } from "./sheet-lines";
  *   - ish haqi = shu oy uchun tasdiqlangan yakuniy vedomost (hisoblangan + ish beruvchi solig'i); vedomost
  *     bo'lmasa — kassadan to'langani. Kunbay ishchilar har doim kassadan.
  *   - amortizatsiya — asosiy vositalardan
+ *   - retseptda yo'q materiallar (yoqilg'i, ehtiyot qism…) — skladdan chiqqanda «Sklad sarfi: <papka>» (`nonRecipeUse`);
+ *     kirim hujjati / ta'minot zayavkasiga bog'langan kassa to'lovi bu rejimda PNL'ga kirmaydi
  *  PUL ASOSIDA (cash): daromad = mijozlar to'lovi + boshqa tushumlar; tannarx = kassadagi xom-ashyo to'lovi;
  *   xarajatlar kassadan; amortizatsiya yo'q.
  *
@@ -29,6 +33,52 @@ export type PnlReport = { months: MonthKey[]; mode: PnlMode; rows: FinRow[]; ret
 
 /** Kunbay ishchilar sub manbasi — vedomostga kirmaydi, hisoblangan rejimda ham kassadan olinadi («Xodimlar maoshlari» qatoriga). */
 const DAY_WORKERS_SUB = "Yollanma (kunbay) ishchilar";
+
+/** Hisoblangan rejimda PNL'ga kirmaydigan kassa to'lovlari: kirim hujjati va ta'minot zayavkasi puli (sklad qoldig'iga aylanadi). */
+const STOCK_PAY_REFS = new Set(["GoodsReceipt", "SupplyRequest"]);
+/** Retseptdan tashqari materiallar sarfi qatori: «Sklad sarfi: <material papkasi>». */
+const STOCK_USE_PREFIX = "Sklad sarfi: ";
+/** Sarf harakatlari (kirim, kirim stornosi va musbat inventarizatsiya — sarf emas). */
+const USE_TYPES = ["PRODUCTION_CONSUME", "BRIGADE_ISSUE", "BRIGADE_RETURN", "ISSUE", "WRITE_OFF", "ADJUSTMENT"] as const;
+
+/**
+ * Retseptda yo'q materiallarning skladdan chiqimi (yoqilg'i, moy, ehtiyot qism, elektrod…) — hisoblangan PNL'da xarajat.
+ * Retsept materiallari tannarxga retsept × o'rtacha narx bilan kiradi, bular esa haqiqiy sarf bilan. Baho — sklad aylanmasidagidek:
+ * harakat narxi, bo'lmasa «Дона сўм», bo'lmasa o'rtacha kirim tannarxi. Brigadadan qaytgani sarfni kamaytiradi.
+ * `twins` — retseptga ulanmagan, lekin retsept materiali bilan bir xil boshlanadigan material (dublikat: «SEMENT» ↔ «Sement M400»).
+ */
+async function nonRecipeUse(from: Date, to: Date) {
+  const recipeItems = await db.recipeItem.findMany({ where: { recipe: { isActive: true }, materialId: { not: null } }, select: { materialId: true } });
+  const recipeIds = [...new Set(recipeItems.map((r) => r.materialId!))];
+  const [moves, avg, mats, groups] = await Promise.all([
+    db.stockMove.findMany({
+      where: { materialId: { not: null, notIn: recipeIds }, type: { in: [...USE_TYPES] }, date: { gte: from, lt: to } },
+      select: { date: true, type: true, qty: true, unitCost: true, materialId: true },
+    }),
+    avgUnitCosts(),
+    db.material.findMany({ select: { id: true, name: true, unitPrice: true, groupId: true } }),
+    db.materialGroup.findMany({ select: { id: true, name: true, parentId: true } }),
+  ]);
+  const gById = new Map(groups.map((g) => [g.id, g]));
+  const topGroup = (id: string | null) => { let g = id ? gById.get(id) : undefined; for (let i = 0; g?.parentId && i < 10; i++) g = gById.get(g.parentId) ?? g; return g?.name ?? "boshqa materiallar"; };
+  const mat = new Map(mats.map((m) => [m.id, m]));
+  const byMat = new Map<string, number>();
+  const out: { date: Date; group: string; value: number }[] = [];
+  for (const mv of moves) {
+    const q = Number(mv.qty);
+    if (mv.type === "ADJUSTMENT" && q > 0) continue;
+    const m = mat.get(mv.materialId!);
+    const price = mv.unitCost != null ? Number(mv.unitCost) : m?.unitPrice != null ? Number(m.unitPrice) : avg.get(mv.materialId!) ?? 0;
+    const value = Math.round(-q * price * 100) / 100;
+    out.push({ date: mv.date, group: topGroup(m?.groupId ?? null), value });
+    byMat.set(mv.materialId!, (byMat.get(mv.materialId!) ?? 0) + value);
+  }
+  const top = [...byMat.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, v]) => `${mat.get(id)?.name ?? "—"} ${moneyShort(v)}`);
+  const word = (s: string) => s.toLowerCase().replace(/[^a-zа-яё'ʻ‘’ ]/gi, " ").trim().split(/\s+/)[0] ?? "";
+  const recipeWords = new Map(recipeIds.map((id): [string, string] => [word(mat.get(id)?.name ?? ""), mat.get(id)?.name ?? ""]).filter(([w]) => w.length >= 4));
+  const twins = [...byMat.keys()].map((id) => mat.get(id)?.name ?? "").filter((n) => recipeWords.has(word(n))).map((n) => `«${n}» ↔ «${recipeWords.get(word(n))}»`);
+  return { moves: out, top, twins: [...new Set(twins)].slice(0, 5) };
+}
 
 /** Mahsulotning yuqori guruhi nomi (Plita, Stolba, Beton…); guruhsiz — «Boshqa mahsulotlar». */
 async function productGroupNames(): Promise<Map<string, string>> {
@@ -51,11 +101,11 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
   const idx = new Map(months.map((m, i) => [m, i]));
   const at = (d: Date) => idx.get(monthKeyOf(d));
 
-  const [nodes, txs, revenue, payments, groups, payroll, assets] = await Promise.all([
+  const [nodes, txs, revenue, payments, groups, payroll, assets, stockUse] = await Promise.all([
     loadCategories(),
     db.cashTransaction.findMany({
       where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: from, lt: to } },
-      select: { date: true, type: true, amount: true, category: true, subCategory: true, project: { select: { name: true } } },
+      select: { date: true, type: true, amount: true, category: true, subCategory: true, refType: true, project: { select: { name: true } } },
     }),
     mode === "accrual" ? loadRevenue(from, to) : Promise.resolve([]),
     mode === "cash" ? db.payment.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true } }) : Promise.resolve([]),
@@ -64,6 +114,7 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
       ? db.payrollRun.findMany({ where: { month: { in: months }, kind: "FINAL", status: { in: ["APPROVED", "PAID"] } }, select: { month: true, gross: true, employerTax: true } })
       : Promise.resolve([]),
     mode === "accrual" ? activeAssets() : Promise.resolve([]),
+    mode === "accrual" ? nonRecipeUse(from, to) : Promise.resolve(null),
   ]);
   const resolve = makeResolver(nodes);
   const notes: string[] = [];
@@ -106,6 +157,8 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     const line = r.top.pnlLine;
     if (line === "NONE") continue;
     if (line === "MATERIALS" && mode === "accrual") continue;
+    // Kirim hujjati / ta'minot zayavkasi puli — sklad qoldig'iga aylanadi, xarajat skladdan chiqqanda (tannarx yoki «Sklad sarfi»)
+    if (mode === "accrual" && t.refType && STOCK_PAY_REFS.has(t.refType)) continue;
     if (line === "PAYROLL" && mode === "accrual" && accruedMonths.has(months[i]!) && r.sub?.name !== DAY_WORKERS_SUB) continue;
     // Kategoriya turiga ko'ra ishora: kirim kategoriyasida kirim (+), xarajat kategoriyasida chiqim (+)
     const v = (r.top.type === "INCOME") === (t.type === "INCOME") ? a : -a;
@@ -119,6 +172,11 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
       if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, Number(p.gross) + Number(p.employerTax));
     }
     for (const a of assets) for (const m of months) { const v = depreciationIn(a, m); if (v) put("PRODUCTION", DEPRECIATION_LINE, idx.get(m)!, v); }
+    if (stockUse) {
+      for (const u of stockUse.moves) { const i = at(u.date); if (i !== undefined && u.value) put("PRODUCTION", `${STOCK_USE_PREFIX}${u.group}`, i, u.value); }
+      if (stockUse.top.length) notes.push(`Retseptda yo'q materiallar (yoqilg'i, ehtiyot qism…) skladdan chiqqanda xarajat — «${STOCK_USE_PREFIX}…» qatorlari. Eng kattalari: ${stockUse.top.join(", ")}.`);
+      if (stockUse.twins.length) notes.push(`Retsept materialiga o'xshash, lekin retseptga ulanmagan: ${stockUse.twins.join(", ")} — Sklad'da birlashtiring, aks holda ular tannarxga emas, «Sklad sarfi»ga tushadi.`);
+    }
     if (uncosted.some((v) => v > 0)) notes.push("Ba'zi mahsulotlarning retsepti yoki xomashyo narxi yo'q — ularning tushumi tannarxsiz kirdi («Tannarxi noma'lum tushum» qatori).");
     notes.push("Daromad — yetkazilgan mahsulot, QQS'siz; dostavka summasi kirmaydi. Tannarx retsept bo'yicha (haqiqiy ÷ me'yor koeffitsiyenti keyingi bosqichda).");
   } else {

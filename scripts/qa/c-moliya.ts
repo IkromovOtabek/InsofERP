@@ -129,6 +129,28 @@ async function main() {
   check("PNL: yoqilg'i «Avtotransport» qatorida", near((pnl1.rows.find((r) => r.key === "prod:Avtotransport")?.values[0] ?? 0) - (pnl0.rows.find((r) => r.key === "prod:Avtotransport")?.values[0] ?? 0), -50_000));
   check("DDS: kredit «Kridit va kridit foizi», divident «Divident» qatorida", near(val(dds1.rows, "FINANCING:Kridit va kridit foizi") - val(dds0.rows, "FINANCING:Kridit va kridit foizi"), -340_000) && near(val(dds1.rows, "FINANCING:Divident") - val(dds0.rows, "FINANCING:Divident"), -100_000));
 
+  section("Retseptdan tashqari material sarfi (hisoblangan PNL)");
+  // 2020-05: boshqa yozuvlarga tegmaydigan oy. Kirim 10 × 1 000, berildi 4, brigadadan qaytdi 1, inventarizatsiya ortig'i 2 (sarf emas);
+  // kirimga bog'langan «Yoqilg'i» to'lovi 10 000 — hisoblangan PNL'ga kirmasligi kerak (xarajat skladdan chiqqanda)
+  const O = "2020-05", od = (day: number) => new Date(2020, 4, day, 12);
+  const wh = await db.warehouse.findFirst({ select: { id: true } }) ?? await db.warehouse.create({ data: { name: `QA sklad ${tag}` } });
+  const mat = await db.material.create({ data: { code: `QA-SARF-${tag}`, name: `QA moy ${tag}`, unit: "l" } });
+  const [pnlA, balA] = await Promise.all([pnlReport([O]), balanceReport([O])]);
+  const mv = (type: "RECEIPT" | "ISSUE" | "BRIGADE_RETURN" | "ADJUSTMENT", qty: number, day: number) =>
+    db.stockMove.create({ data: { type, warehouseId: wh.id, materialId: mat.id, qty, unitCost: 1_000, date: od(day), createdById: U } });
+  await mv("RECEIPT", 10, 2); await mv("ISSUE", -4, 3); await mv("BRIGADE_RETURN", 1, 4); await mv("ADJUSTMENT", 2, 5);
+  await db.cashTransaction.create({ data: { type: "EXPENSE", date: od(2), cashAccountId: acc.id, amount: 10_000, category: "Transport", subCategory: "Yoqilg'i", refType: "GoodsReceipt", refId: `qa-${tag}`, createdById: U } });
+  const [pnlB, balB] = await Promise.all([pnlReport([O]), balanceReport([O])]);
+  const dq = (k: string) => val(pnlB.rows, k) - val(pnlA.rows, k);
+  check("sklad sarfi −3 000 (berildi 4 − qaytdi 1; kirim va ortiqcha sarf emas)", near(dq("prod:Sklad sarfi: boshqa materiallar"), -3_000), dq("prod:Sklad sarfi: boshqa materiallar"));
+  check("kirimga bog'langan to'lov hisoblangan PNL'ga kirmadi (faqat sklad sarfi)", near(dq("prod"), -3_000) && near(dq("prod:Avtotransport"), 0), [dq("prod"), dq("prod:Avtotransport")]);
+  const pnlCash = await pnlReport([O], "cash");
+  check("pul asosida — kassadagi to'lov o'z qatorida, sklad sarfi yo'q", !pnlCash.rows.some((r) => r.key.startsWith("prod:Sklad sarfi")));
+  const capA = balA.capitalRows.find((r) => r.key === "cap:diff")!.values, capB = balB.capitalRows.find((r) => r.key === "cap:diff")!.values;
+  // Sklad +9 000 (10 − 4 + 1 + 2), pul −10 000, foyda −3 000 → farq faqat inventarizatsiya ortig'i +2 000 (u PNL'ga kirmaydi:
+  // musbat tuzatish boshlang'ich qoldiq ham bo'lishi mumkin — kapital); kirim to'lovi ham, sarf ham farq qo'shmadi
+  check("balans: kapital farqi faqat inventarizatsiya ortig'i (+2 000)", near((capB[1] ?? 0) - (capA[1] ?? 0), 2_000), [capA, capB]);
+
   section("Qarz varaqlari (Tahlil → Mijozlar)");
   const today = parseDebtDay();
   const [age, cust, cash, bank, sup] = await Promise.all([debtAgeReport(today), customerDebtSheet(today), customerDebtSheet(today, "CASH"), customerDebtSheet(today, "BANK"), supplierDebtSheet(today)]);
