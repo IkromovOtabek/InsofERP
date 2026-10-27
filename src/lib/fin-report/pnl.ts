@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { loadRevenue } from "@/lib/bi/core";
 import { avgUnitCosts } from "@/lib/stock";
 import { moneyShort } from "@/lib/format";
+import { PAYROLL_REF } from "@/lib/hr/payroll";
 import { FLOW_ONLY } from "@/lib/cash-tx";
 import type { PnlLine } from "@/generated/prisma";
 import { loadCategories, makeResolver, UNKNOWN_CATEGORY } from "./categories";
@@ -33,6 +34,14 @@ export type PnlReport = { months: MonthKey[]; mode: PnlMode; rows: FinRow[]; ret
 
 /** Kunbay ishchilar sub manbasi — vedomostga kirmaydi, hisoblangan rejimda ham kassadan olinadi («Xodimlar maoshlari» qatoriga). */
 const DAY_WORKERS_SUB = "Yollanma (kunbay) ishchilar";
+
+/** Vedomost to'lovlari qaysi oyniki (refId → PayrollRun.month) va ulardan qaysilari hisoblangan (yakuniy vedomost tasdiqlangan). */
+async function payrollRunMonths(runIds: string[], months: MonthKey[]): Promise<{ month: Map<string, string>; accrued: string[] }> {
+  const runs = runIds.length ? await db.payrollRun.findMany({ where: { id: { in: [...new Set(runIds)] } }, select: { id: true, month: true } }) : [];
+  const all = [...new Set([...runs.map((r) => r.month), ...months])];
+  const finals = await db.payrollRun.findMany({ where: { month: { in: all }, kind: "FINAL", status: { in: ["APPROVED", "PAID"] } }, select: { month: true } });
+  return { month: new Map(runs.map((r) => [r.id, r.month])), accrued: finals.map((f) => f.month) };
+}
 
 /** Hisoblangan rejimda PNL'ga kirmaydigan kassa to'lovlari: kirim hujjati va ta'minot zayavkasi puli (sklad qoldig'iga aylanadi). */
 const STOCK_PAY_REFS = new Set(["GoodsReceipt", "SupplyRequest"]);
@@ -105,7 +114,7 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     loadCategories(),
     db.cashTransaction.findMany({
       where: { ...FLOW_ONLY, cancelledAt: null, date: { gte: from, lt: to } },
-      select: { date: true, type: true, amount: true, category: true, subCategory: true, refType: true, project: { select: { name: true } } },
+      select: { date: true, type: true, amount: true, category: true, subCategory: true, refType: true, refId: true, project: { select: { name: true } } },
     }),
     mode === "accrual" ? loadRevenue(from, to) : Promise.resolve([]),
     mode === "cash" ? db.payment.findMany({ where: { date: { gte: from, lt: to } }, select: { date: true, amount: true } }) : Promise.resolve([]),
@@ -147,9 +156,14 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     if (!m.has(name)) m.set(name, zeros(n));
     addInto(m.get(name)!, i, v);
   };
-  const accruedMonths = new Set(payroll.map((p) => p.month));
+  // Ish haqi vedomosti orqali to'langan pul (refType «Payroll») — o'z oyiga (vedomost oyi) tegishli. O'sha oy hisoblangan bo'lsa,
+  // to'lov qachon bo'lmasin PNL'ga qayta kirmaydi (oktyabr maoshi 5-noyabrda to'lansa, noyabr xarajati bo'lmaydi);
+  // hisoblanmagan bo'lsa — vedomost oyiga yoziladi. Qo'lda kiritilgan «Ish haqi» chiqimi — sana oyiga (oy hisoblangan bo'lsa kirmaydi).
+  const payRuns = mode === "accrual" ? await payrollRunMonths(txs.filter((t) => t.refType === PAYROLL_REF && t.refId).map((t) => t.refId!), months) : null;
+  const accruedMonths = new Set([...payroll.map((p) => p.month), ...(payRuns?.accrued ?? [])]);
+  const unaccruedPaid = new Set<string>();
   for (const t of txs) {
-    const i = at(t.date);
+    let i = at(t.date);
     if (i === undefined) continue;
     const a = Number(t.amount);
     const r = resolve(t.category, t.subCategory);
@@ -159,7 +173,18 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
     if (line === "MATERIALS" && mode === "accrual") continue;
     // Kirim hujjati / ta'minot zayavkasi puli — sklad qoldig'iga aylanadi, xarajat skladdan chiqqanda (tannarx yoki «Sklad sarfi»)
     if (mode === "accrual" && t.refType && STOCK_PAY_REFS.has(t.refType)) continue;
-    if (line === "PAYROLL" && mode === "accrual" && accruedMonths.has(months[i]!) && r.sub?.name !== DAY_WORKERS_SUB) continue;
+    if (line === "PAYROLL" && mode === "accrual") {
+      const runMonth = t.refType === PAYROLL_REF && t.refId ? payRuns?.month.get(t.refId) : undefined;
+      if (runMonth) {
+        if (accruedMonths.has(runMonth)) continue;
+        i = idx.get(runMonth);
+        if (i === undefined) continue; // hisobot davridan tashqari oyning maoshi
+        unaccruedPaid.add(runMonth);
+      } else if (r.sub?.name !== DAY_WORKERS_SUB) {
+        if (accruedMonths.has(months[i]!)) continue;
+        unaccruedPaid.add(months[i]!);
+      }
+    }
     // Kategoriya turiga ko'ra ishora: kirim kategoriyasida kirim (+), xarajat kategoriyasida chiqim (+)
     const v = (r.top.type === "INCOME") === (t.type === "INCOME") ? a : -a;
     // Qator nomi — jadvaldagi atama («Xodimlar maoshlari», «Zavod xarajatlari»…), loyihada — loyiha nomi
@@ -172,6 +197,8 @@ export async function pnlReport(months: MonthKey[], mode: PnlMode = "accrual"): 
       if (i !== undefined) put("PAYROLL", sheetLine("Ish haqi"), i, Number(p.gross) + Number(p.employerTax));
     }
     for (const a of assets) for (const m of months) { const v = depreciationIn(a, m); if (v) put("PRODUCTION", DEPRECIATION_LINE, idx.get(m)!, v); }
+    const open = months.filter((m) => unaccruedPaid.has(m));
+    if (open.length) notes.push(`${open.map((m) => `${m.slice(5)}.${m.slice(0, 4)}`).join(", ")}: oy yakuni ish haqi vedomosti hali tasdiqlanmagan — «Xodimlar maoshlari» qatorida faqat shu oy uchun to'langan pul (avans); tasdiqlangach hisoblangani bilan almashadi.`);
     if (stockUse) {
       for (const u of stockUse.moves) { const i = at(u.date); if (i !== undefined && u.value) put("PRODUCTION", `${STOCK_USE_PREFIX}${u.group}`, i, u.value); }
       if (stockUse.top.length) notes.push(`Retseptda yo'q materiallar (yoqilg'i, ehtiyot qism…) skladdan chiqqanda xarajat — «${STOCK_USE_PREFIX}…» qatorlari. Eng kattalari: ${stockUse.top.join(", ")}.`);

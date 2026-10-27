@@ -1,4 +1,6 @@
 import { requireSession, type Session } from "@/lib/auth";
+import { AccessDenied } from "@/lib/access-denied";
+import { pathAllowed } from "@/lib/nav";
 import { parseRange, type Range } from "@/lib/bi/core";
 import { PageHeader } from "@/components/ui";
 import { PeriodBar, routeOf } from "./ui";
@@ -8,7 +10,9 @@ export const BI_ROLES = ["DIRECTOR", "FINANCE", "ACCOUNTING"] as const;
 
 /** Barcha BI sahifalari uchun umumiy tayyorgarlik: sessiya + davr. */
 export async function biContext(searchParams: Promise<SP>): Promise<{ s: Session; sp: SP; range: Range }> {
-  const s = await requireSession([...BI_ROLES]);
+  const s = await requireSession();
+  // Rol emas, modul ruxsati (perms) hal qiladi: direktor «BI tahlil»ni ochib bergan xodim ham kiradi, «yo'q» qilingan rol kirmaydi
+  if (!pathAllowed("/bi-tahlil", s.role, s.perms)) throw new AccessDenied();
   const sp = await searchParams;
   return { s, sp, range: parseRange(sp) };
 }

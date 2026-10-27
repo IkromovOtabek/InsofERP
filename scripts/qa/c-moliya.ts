@@ -21,6 +21,7 @@ import { customerDebtSheet, debtAgeReport, parseDebtDay, supplierDebtSheet } fro
 import { avtoReport } from "@/lib/fin-report/avto";
 import { finishedReport, rawBalance } from "@/lib/fin-report/sklad";
 import { vedomost } from "@/lib/fin-report/vedomost";
+import { cashCalendar } from "@/lib/fin-report/calendar";
 import { monthKeyOf } from "@/lib/fin-report/period";
 
 const M = "2020-03", N = "2020-04";
@@ -150,6 +151,33 @@ async function main() {
   // Sklad +9 000 (10 − 4 + 1 + 2), pul −10 000, foyda −3 000 → farq faqat inventarizatsiya ortig'i +2 000 (u PNL'ga kirmaydi:
   // musbat tuzatish boshlang'ich qoldiq ham bo'lishi mumkin — kapital); kirim to'lovi ham, sarf ham farq qo'shmadi
   check("balans: kapital farqi faqat inventarizatsiya ortig'i (+2 000)", near((capB[1] ?? 0) - (capA[1] ?? 0), 2_000), [capA, capB]);
+
+  section("Ish haqi: vedomost to'lovi o'z oyiga (ikki marta sanalmaydi)");
+  // 2020-06 yakuniy vedomost tasdiqlangan (1 000 000), puli 2020-07-05 da to'landi; 2020-08 da faqat avans (300 000), yakuniy yo'q
+  const pr = (month: string, kind: "FINAL" | "ADVANCE", status: "APPROVED" | "PAID", gross: number) =>
+    db.payrollRun.create({ data: { docNo: `QA-IH-${tag}-${month}-${kind}`, month, kind, status, gross, net: gross, createdById: U } });
+  const [pnlP0] = await Promise.all([pnlReport(["2020-06", "2020-07", "2020-08"])]);
+  const runJun = await pr("2020-06", "FINAL", "APPROVED", 1_000_000);
+  const runAug = await pr("2020-08", "ADVANCE", "PAID", 300_000);
+  const payTx = (runId: string, date: Date, amount: number) => db.cashTransaction.create({ data: { type: "EXPENSE", date, cashAccountId: acc.id, amount, category: "Ish haqi", refType: "Payroll", refId: runId, createdById: U } });
+  await payTx(runJun.id, new Date(2020, 6, 5, 12), 1_000_000);
+  await payTx(runAug.id, new Date(2020, 7, 15, 12), 300_000);
+  const pnlP1 = await pnlReport(["2020-06", "2020-07", "2020-08"]);
+  const dpp = (k: string, i: number) => val(pnlP1.rows, k, i) - val(pnlP0.rows, k, i);
+  check("iyun: vedomost hisoblangani −1 000 000", near(dpp("prod", 0), -1_000_000), dpp("prod", 0));
+  check("iyul: iyun maoshining to'lovi PNL'ga qayta kirmadi", near(dpp("prod", 1), 0), dpp("prod", 1));
+  check("avgust: yakuniy yo'q — to'langan avans −300 000 va izoh", near(dpp("prod", 2), -300_000) && pnlP1.notes.some((t) => t.includes("08.2020")), [dpp("prod", 2), pnlP1.notes]);
+  const pnlJul = await pnlReport(["2020-07"]);
+  check("faqat iyul hisoboti ham iyun to'lovini olmaydi", !pnlJul.notes.some((t) => t.includes("07.2020")));
+
+  section("Ta'minotchi qarzi: kalendar = Balans ta'rifi");
+  // Boshlang'ich qarz 1 000 000, unga bog'lanmagan to'lov 400 000 → kalendarda 600 000 (oldin 1 000 000 qolardi)
+  const supQ = await db.supplier.create({ data: { name: `QA ta'minotchi ${tag}` } });
+  await db.openingBalance.create({ data: { kind: "SUPPLIER", supplierId: supQ.id, date: new Date(Date.now() - 86_400_000), amount: 1_000_000, createdById: U } });
+  await db.cashTransaction.create({ data: { type: "EXPENSE", date: new Date(), cashAccountId: acc.id, amount: 400_000, category: "Xomashyo", supplierId: supQ.id, createdById: U } });
+  const calS = await cashCalendar();
+  const due = calS.suppliers.find((x) => x.supplierId === supQ.id);
+  check("kalendar: bog'lanmagan to'lov eng eski qarzni yopdi — 600 000", near(due?.debt ?? 0, 600_000), due);
 
   section("Qarz varaqlari (Tahlil → Mijozlar)");
   const today = parseDebtDay();

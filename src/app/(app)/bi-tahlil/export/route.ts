@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth";
+import { pathAllowed } from "@/lib/nav";
 import { db } from "@/lib/db";
 import { parseRange } from "@/lib/bi/core";
 import { salesExport } from "@/lib/bi/sales";
@@ -25,7 +26,8 @@ const csv = (rows: (string | number | null | undefined)[][]) =>
 
 export async function GET(req: NextRequest) {
   const s = await getSession();
-  if (!s || !["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)) return new NextResponse("Forbidden", { status: 403 });
+  // Mijozlar telefoni, qarzlar — modul ruxsati (perms) bo'yicha: «BI tahlil» yopilgan xodim yuklab ololmaydi
+  if (!s || !pathAllowed("/bi-tahlil/export", s.role, s.perms)) return new NextResponse("Forbidden", { status: 403 });
   const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
   const r = parseRange(sp);
   let rows: (string | number | null | undefined)[][] = [], name = "export";
