@@ -27,7 +27,7 @@ const ICONS: Record<string, LucideIcon> = {
   // Ichki bandlar (BI)
   "/bi-tahlil/sotuvlar/bekor": Ban, "/bi-tahlil/marketing/reja": CalendarRange, "/bi-tahlil/marketing/malumotlar": Database,
   "/bi-tahlil/ml/anomaliyalar": TriangleAlert, "/bi-tahlil/ml/churn": UserMinus, "/bi-tahlil/ml/klasterlar": Boxes, "/bi-tahlil/ai/chat": MessageSquare, "/bi-tahlil/ai/telegram": Send,
-  "/bi-tahlil/sotuvlar": TrendingUp, "/bi-tahlil/agentlar": UserRoundCheck, "/bi-tahlil/mijozlar": Users, "/bi-tahlil/ombor": Warehouse, "/bi-tahlil/mahsulotlar": Package, "/bi-tahlil/ishlab-chiqarish": Factory,
+  "/bi-tahlil/sotuvlar": TrendingUp, "/bi-tahlil/agentlar": UserRoundCheck, "/bi-tahlil/mijozlar": Users, "/bi-tahlil/ombor": Warehouse, "/bi-tahlil/mexanik": Wrench, "/bi-tahlil/mahsulotlar": Package, "/bi-tahlil/ishlab-chiqarish": Factory,
   "/bi-tahlil/marketing": Megaphone, "/bi-tahlil/reja": Target, "/bi-tahlil/moliya": Landmark, "/bi-tahlil/ml": BrainCircuit, "/bi-tahlil/ai": Sparkles,
 };
 // Tartib: Bosh sahifa → Tahlil (BI) → operatsion modullar (Sotuv … Moliya) → Otdel kadr → Boshqaruv (Xodimlar, Sozlamalar).
