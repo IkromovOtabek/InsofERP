@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { Sparkles, Zap, Info, Download, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtNum, isoDate } from "@/lib/format";
-import { Badge, type BadgeColor } from "@/components/ui";
+import { Badge, type BadgeColor, valueLength } from "@/components/ui";
 import { Sparkline } from "@/components/ui/charts";
 import { type Range, rangeQuery, addDays } from "@/lib/bi/core";
 
@@ -56,6 +56,9 @@ export function Delta({ value, suffix = "%", invert = false, frac = 1, label }: 
 const kpiTone = {
   default: "bg-slate-100 text-slate-600", brand: "bg-brand-100 text-brand-700", success: "bg-emerald-50 text-emerald-700", warning: "bg-amber-50 text-amber-700", danger: "bg-red-50 text-red-700", info: "bg-blue-50 text-blue-700", violet: "bg-violet-50 text-violet-700",
 };
+/** Uzun qiymat kichikroq shriftda — kesilmasdan to'liq ko'rinsin. */
+const kpiValueSize = (n: number | null) => (n == null || n <= 8 ? "text-[21px]" : n <= 12 ? "text-[19px]" : n <= 16 ? "text-[17px]" : "text-[15px]");
+
 export function Kpi({ label, value, delta, deltaLabel, invert, hint, icon: Icon, tone = "default", spark, href, badge, valueClass }: {
   label: string; value: React.ReactNode; delta?: number | null; deltaLabel?: string; invert?: boolean; hint?: React.ReactNode; icon?: LucideIcon; tone?: keyof typeof kpiTone; spark?: number[]; href?: string; badge?: React.ReactNode; valueClass?: string;
 }) {
@@ -65,7 +68,7 @@ export function Kpi({ label, value, delta, deltaLabel, invert, hint, icon: Icon,
         <div className="text-[12.5px] font-medium text-slate-500">{label}</div>
         {Icon && <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", kpiTone[tone])}><Icon size={16} /></div>}
       </div>
-      <div className={cn("mt-1 break-words text-[21px] font-semibold leading-tight tracking-tight tabular text-slate-900", valueClass)}>{value}</div>
+      <div className={cn("mt-1 break-words font-semibold leading-tight tracking-tight tabular text-slate-900", kpiValueSize(valueLength(value)), valueClass)}>{value}</div>
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         {delta !== undefined && <Delta value={delta} invert={invert} label={deltaLabel} />}
         {badge}

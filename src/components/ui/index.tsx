@@ -87,21 +87,28 @@ const tones = {
 };
 export type Tone = keyof typeof tones;
 
+/** Karta qiymati uzunligi (matn/son bo'lsa) — uzun qiymat kichikroq shriftda, kesilmasdan bir qatorga sig'sin. */
+export const valueLength = (v: React.ReactNode) => (typeof v === "string" || typeof v === "number" ? String(v).length : null);
+const statValueSize = (n: number | null) =>
+  n == null || n <= 7 ? "text-[24px] sm:text-[30px]" : n <= 10 ? "text-[22px] sm:text-[26px]" : n <= 14 ? "text-[19px] sm:text-[22px]" : "text-[16px] sm:text-[19px]";
+
 export function StatCard({ label, value, hint, icon: Icon, tone = "default", href }: {
   label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: LucideIcon; tone?: Tone; href?: string;
 }) {
   const t = tones[tone];
+  // h-full — bir qatordagi kartalar bir xil balandlikda (grid qatori bo'yicha cho'ziladi)
   const body = (
-    <div className={cn("flex items-start justify-between gap-3 rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition", tone === "danger" ? "border-red-200" : "border-slate-200/80", href && "hover:border-slate-300 hover:shadow-md active:scale-[.99]")}>
-      <div className="min-w-0">
-        <div className="text-[13px] font-medium leading-snug text-slate-500">{label}</div>
-        <div className={cn("mt-1.5 break-words text-[24px] leading-tight font-bold tracking-tight tabular sm:text-[30px]", t.value)}>{value}</div>
-        {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+    <div className={cn("flex h-full min-w-0 flex-col rounded-(--radius-card) border bg-white p-4 shadow-(--shadow-card) transition", tone === "danger" ? "border-red-200" : "border-slate-200/80", href && "hover:border-slate-300 hover:shadow-md active:scale-[.99]")}>
+      {/* Ikonka yorliq qatorida — qiymat kartaning to'liq enini oladi va bo'linmaydi */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 text-[13px] font-medium leading-snug text-slate-500">{label}</div>
+        {Icon && <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={18} /></div>}
       </div>
-      {Icon && <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", t.icon)}><Icon size={19} /></div>}
+      <div className={cn("mt-1 break-words leading-tight font-bold tracking-tight tabular", statValueSize(valueLength(value)), t.value)}>{value}</div>
+      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
     </div>
   );
-  return href ? <Link href={href} className="block rounded-(--radius-card)">{body}</Link> : body;
+  return href ? <Link href={href} className="block h-full rounded-(--radius-card)">{body}</Link> : body;
 }
 
 /* ═══════════════════════ Buttons ═══════════════════════ */

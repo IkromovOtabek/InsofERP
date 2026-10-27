@@ -85,7 +85,7 @@ export async function FinReportView({ base, sp, keep = {}, tabs = true }: { base
         })}
       </div>
 
-      <h2 className="mb-3 text-[15px] font-semibold text-slate-800">{title}</h2>
+      <h2 className="mb-3 border-l-4 border-brand-400 pl-2.5 text-[17px] font-bold text-slate-900">{title}</h2>
 
       {pnl && (
         <>
