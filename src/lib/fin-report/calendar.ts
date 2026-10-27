@@ -253,12 +253,13 @@ function capByPosition<R extends { supplierId: string; date: Date; left: number 
 /**
  * «TA'MINOTCHILAR — shu oy: qarz, to'langan, kelgan»: oy boshidagi va hozirgi qarzimiz (Balans bilan bir manbadan),
  * shu oy to'langan (kassa, ta'minotchiga bog'langan) va kelgan mol (kirim hujjati, QQS bilan) — hozirgi = oy boshi + kelgan − to'langan.
+ * Shu oy sanasi bilan kiritilgan boshlang'ich qarz ham «kelgan»ga qo'shiladi: u hozirgi qarzda bor, oy boshida esa yo'q.
  * Muddati o'tgani — kalendardan.
  */
 export async function supplierMonth(cal: Pick<CashCalendar, "today" | "suppliers">): Promise<SupplierMonthRow[]> {
   const today = cal.today, mStart = new Date(today.getFullYear(), today.getMonth(), 1), tomorrow = addDays(today, 1);
   const since = await payablesSince();
-  const [open, now, paid, rec] = await Promise.all([
+  const [open, now, paid, rec, ops] = await Promise.all([
     supplierPositions(mStart),
     supplierPositions(tomorrow),
     db.cashTransaction.groupBy({ by: ["supplierId", "type"], where: { supplierId: { not: null }, cancelledAt: null, type: { in: ["INCOME", "EXPENSE"] }, date: { gte: mStart, lt: tomorrow } }, _sum: { amount: true } }),
@@ -267,16 +268,18 @@ export async function supplierMonth(cal: Pick<CashCalendar, "today" | "suppliers
       where: { receipt: { cancelledAt: null, date: { gte: mStart, lt: tomorrow }, createdAt: { gte: since }, OR: [{ clientToken: null }, { NOT: { clientToken: { startsWith: PAID_IMPORT_TOKEN } } }] } },
       select: { qty: true, price: true, vatAmount: true, deliveryCost: true, receipt: { select: { supplierId: true } } },
     }),
+    db.openingBalance.groupBy({ by: ["supplierId"], where: { kind: "SUPPLIER", cancelledAt: null, supplierId: { not: null }, date: { gte: mStart, lt: tomorrow } }, _sum: { amount: true } }),
   ]);
+  const opBy = new Map(ops.map((o) => [o.supplierId!, Number(o._sum.amount ?? 0)]));
   const paidBy = new Map<string, number>();
   for (const p of paid) paidBy.set(p.supplierId!, (paidBy.get(p.supplierId!) ?? 0) + (p.type === "EXPENSE" ? 1 : -1) * Number(p._sum.amount ?? 0));
   const recBy = new Map<string, typeof rec>();
   for (const i of rec) { const k = i.receipt.supplierId; if (!recBy.has(k)) recBy.set(k, []); recBy.get(k)!.push(i); }
   const overdue = new Map(cal.suppliers.map((x) => [x.supplierId, x.overdue]));
-  const ids = [...new Set([...open.keys(), ...now.keys(), ...paidBy.keys(), ...recBy.keys()])];
+  const ids = [...new Set([...open.keys(), ...now.keys(), ...paidBy.keys(), ...recBy.keys(), ...opBy.keys()])];
   const names = new Map((await db.supplier.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((x) => [x.id, x.name]));
   return ids
-    .map((id) => ({ supplierId: id, name: names.get(id) ?? "—", open: r2(open.get(id) ?? 0), paid: r2(paidBy.get(id) ?? 0), arrived: r2(receiptTotal(recBy.get(id) ?? [])), now: r2(now.get(id) ?? 0), overdue: r2(overdue.get(id) ?? 0) }))
+    .map((id) => ({ supplierId: id, name: names.get(id) ?? "—", open: r2(open.get(id) ?? 0), paid: r2(paidBy.get(id) ?? 0), arrived: r2(receiptTotal(recBy.get(id) ?? []) + (opBy.get(id) ?? 0)), now: r2(now.get(id) ?? 0), overdue: r2(overdue.get(id) ?? 0) }))
     .filter((x) => [x.open, x.paid, x.arrived, x.now].some((v) => Math.abs(v) >= 1))
     .sort((a, b) => b.overdue - a.overdue || b.now - a.now);
 }
