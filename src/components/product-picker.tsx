@@ -9,7 +9,11 @@ import { ProductPanelBody, ProductTools, duplicateNames, type ProductPanel } fro
 
 export { duplicateNames };
 
-export type CatalogProduct = { id: string; code: string; name: string; kind: string | null; unit: string; price: string; groupId: string | null };
+export type CatalogProduct = {
+  id: string; code: string; name: string; kind: string | null; unit: string; price: string; groupId: string | null;
+  /** Reys hisobi (zayavka formasi): 1 dona og'irligi, kg va bir reysga max dona — kartada kiritilgan bo'lsa. */
+  weightKg?: number | null; perTrip?: number | null;
+};
 export type CatalogGroup = { id: string; code: string; name: string; parentId: string | null };
 
 /**

@@ -55,9 +55,17 @@ export async function saveCompany(_prev: ActionState, fd: FormData): Promise<Act
 
 /* ───────── Beton markalari ───────── */
 
+/** Bo'sh — null (qiymat o'chadi); aks holda musbat son (`int` — butun). */
+const optPositive = (msg: string, max: number, int = false) =>
+  zOpt.refine((v) => v == null || (Number(v) > 0 && Number(v) <= max && (!int || Number.isInteger(Number(v)))), msg)
+    .transform((v) => (v == null ? null : Number(v)));
+
 const productSchema = z.object({
   code: zStr("Kod kerak").transform((v) => v.toUpperCase()),
   name: zStr("Nomi kerak"), strengthClass: zOpt, unit: z.enum(["m3", "dona", "m2", "m", "t"]), price: zDec(0), isActive: zBool,
+  // Reys hisobi (zayavka formasi): bo'sh qoldirilsa — GOST jadvalidan taxminiy
+  weightKg: optPositive("Og'irlik 0 dan katta raqam bo'lsin", 99_999_999),
+  perTrip: optPositive("Bir reysga max — 1 dan katta butun son", 100_000, true),
 });
 
 export async function saveProduct(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {

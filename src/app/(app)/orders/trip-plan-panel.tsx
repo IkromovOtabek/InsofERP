@@ -7,7 +7,7 @@ import { fmtNum, isoDate, date as fmtDate } from "@/lib/format";
 import { concretePlan, piecePlan, PLAN, type DayFleet, type PlanWarn, type VehicleUse } from "@/lib/trip-plan";
 import { loadDayFleet } from "./plan-actions";
 
-export type PlanRow = { code: string; name: string; unit: string; qty: number };
+export type PlanRow = { code: string; name: string; unit: string; qty: number; weightKg?: number | null; perTrip?: number | null };
 
 const STATE: Record<VehicleUse["state"], { l: string; c: BadgeColor }> = {
   use: { l: "Ishlaydi", c: "green" },
@@ -113,7 +113,7 @@ export function TripPlanPanel({ rows, km, kmSource, pump, day, onApplyTrips }: {
         <section className={concrete ? "mt-6 space-y-3 border-t border-slate-100 pt-5" : "space-y-3"}>
           <h4 className="text-sm font-semibold text-slate-900">Dona mahsulot · {pieces.length} xil</h4>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <StatCard icon={Weight} label="Yuk og'irligi" value={`${n1(piece.tons)} t`} hint={piece.unknown.length ? `${piece.unknown.length} xil hisobga kirmadi` : "taxminiy, GOST bo'yicha"} />
+            <StatCard icon={Weight} label="Yuk og'irligi" value={`${n1(piece.tons)} t`} hint={piece.unknown.length ? `${piece.unknown.length} xil hisobga kirmadi` : piece.approx ? `${piece.approx} xili GOST bo'yicha taxminiy` : "mahsulot kartasidan"} />
             <StatCard icon={Route} label="Reys" value={piece.trips} />
             <StatCard icon={Truck} label="Bort mashina kerak" value={piece.ownUsed + piece.hired} tone={piece.hired ? "warning" : "success"}
               hint={piece.hired ? `${piece.ownUsed} o'zimizniki + ${piece.hired} yollanma (${PLAN.hiredTruckT} t)` : "hammasi o'zimizniki"} />

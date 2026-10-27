@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { dayRange, logisticsSettings, parseDay, tripPlannedAt } from "./logistics";
-import { concretePlan, piecePlan, refWeight, type DayFleet, type FleetVehicle } from "./trip-plan";
+import { concretePlan, piecePlan, type DayFleet, type FleetVehicle } from "./trip-plan";
 
 /**
  * Tanlangan kun uchun transport holati — zayavka formasidagi «Reys va transport hisobi» paneli shu yerdan oladi:
@@ -33,7 +33,7 @@ export async function dayFleet(day: string, excludeOrderId?: string): Promise<Da
       where: { kind: "SALE", needsDelivery: true, status: { notIn: ["CANCELLED", "DRAFT"] }, deliveryDate: { gte: from, lt: to }, ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}) },
       select: {
         distanceKm: true, needsPump: true,
-        items: { select: { qtyM3: true, product: { select: { code: true, name: true, unit: true } } } },
+        items: { select: { qtyM3: true, product: { select: { code: true, name: true, unit: true, weightKg: true, perTrip: true } } } },
         trips: { where: { status: { not: "CANCELLED" } }, select: { qtyM3: true, vehicle: { select: { type: true } } } },
       },
     }),
@@ -73,8 +73,9 @@ export async function dayFleet(day: string, excludeOrderId?: string): Promise<Da
     }
     const pieces = o.items.filter((i) => i.product.unit !== "m3");
     if (pieces.length && !o.trips.some((t) => t.vehicle.type === "TRUCK")) {
-      other.tons += pieces.reduce((s, i) => s + (refWeight(i.product.code, i.product.name)?.kg ?? 0) * Number(i.qtyM3), 0) / 1000;
-      const p = piecePlan({ items: pieces.map((i) => ({ code: i.product.code, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3) })), km, fleet: noFleet });
+      const items = pieces.map((i) => ({ code: i.product.code, name: i.product.name, unit: i.product.unit, qty: Number(i.qtyM3), weightKg: i.product.weightKg != null ? Number(i.product.weightKg) : null, perTrip: i.product.perTrip }));
+      const p = piecePlan({ items, km, fleet: noFleet });
+      other.tons += p.tons;
       other.truckMin += p.trips * p.cycleMin;
     }
   }

@@ -528,7 +528,7 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
         {needsDelivery && (
           <div className="mt-4">
             <TripPlanPanel
-              rows={rows.map((r) => { const p = products.find((x) => x.id === r.productId); return { code: p?.code ?? "", name: p?.name ?? "", unit: p?.unit ?? "m³", qty: Number(r.qtyM3) || 0 }; })}
+              rows={rows.map((r) => { const p = products.find((x) => x.id === r.productId); return { code: p?.code ?? "", name: p?.name ?? "", unit: p?.unit ?? "m³", qty: Number(r.qtyM3) || 0, weightKg: p?.weightKg, perTrip: p?.perTrip }; })}
               km={distance?.km ?? null} kmSource={distance?.source ?? null} pump={needsPump}
               day={dateKnown ? deliveryDay : null} onApplyTrips={(n) => setTrips(String(n))} />
           </div>

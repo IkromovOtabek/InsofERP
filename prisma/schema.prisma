@@ -353,6 +353,11 @@ model Product {
   price         Decimal  @default(0) @db.Decimal(18, 2) // bazaviy narx (1 m3)
   /// Sdelka (ishbay) narxi — brigada shu mahsulotning 1 birligini ishlab chiqarsa ish haqi fondiga qo'shiladi, so'm
   pieceRate     Decimal? @db.Decimal(18, 2)
+  /// 1 dona (m² mahsulotda — 1 m²) og'irligi, kg — zayavkadagi reys hisobi: bort mashinaga nechtasi sig'adi.
+  /// Bo'sh bo'lsa `lib/trip-plan.ts` dagi GOST jadvalidan taxminiy olinadi
+  weightKg      Decimal? @db.Decimal(10, 2)
+  /// Bir reysga eng ko'pi bilan necha dona (taxlash qoidasi, uzun yuk) — og'irlikdan qat'i nazar
+  perTrip       Int?
   kind          String? // "Tovar turi": Tayyor mahsulot, Tovar, Yarim tayyor...
   groupId       String? // papka; bo'sh bo'lsa ro'yxat ildizida turadi
   note          String?

@@ -27,6 +27,7 @@ export async function productCatalog(opts: { pieceOnly?: boolean; exclude?: stri
     products: rows.map((p) => ({
       id: p.id, code: p.code, name: p.name, kind: p.kind, groupId: p.groupId,
       price: p.price.toString(), unit: unitLabel(p.unit), rawUnit: p.unit, hasRecipe: p.recipes.length > 0,
+      weightKg: p.weightKg != null ? Number(p.weightKg) : null, perTrip: p.perTrip,
     })),
     groups,
   };

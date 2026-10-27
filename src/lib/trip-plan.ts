@@ -218,10 +218,16 @@ export function refWeight(code: string, name: string): { kg: number; perLift: nu
   return hit ? { kg: hit.kg, perLift: hit.perLift ?? 1, longM: hit.longM ?? null } : null;
 }
 
-export type PieceItem = { code: string; name: string; unit: string; qty: number };
+/**
+ * `weightKg` / `perTrip` — mahsulot kartasidagi qiymatlar (Sozlamalar → Mahsulotlar). Og'irlik bo'sh bo'lsa — GOST jadvali.
+ * `perTrip` — bir reysga eng ko'pi necha dona: aralash yukda har mahsulot reysning `1/perTrip` ulushini egallaydi.
+ */
+export type PieceItem = { code: string; name: string; unit: string; qty: number; weightKg?: number | null; perTrip?: number | null };
 export type PieceLoad = { plate: string; hired: boolean; kg: number; capKg: number; lines: { name: string; qty: number; unit: string }[] };
 export type PiecePlan = {
   tons: number; unknown: string[]; km: number; kmAssumed: boolean;
+  /** Og'irligi GOST jadvalidan taxminiy olingan mahsulotlar soni (kartada kiritilmagan). */
+  approx: number;
   trips: number; loads: PieceLoad[];
   own: VehicleUse[]; ownUsed: number; ownTrips: number;
   hired: number; hiredTrips: number; tripsPerHired: number;
@@ -236,12 +242,19 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
   const warns: PlanWarn[] = [];
   const shiftMin = (input.fleet?.shiftMin ?? 600) - PLAN.truckReserveMin;
   const unknown: string[] = [];
-  const goods: { name: string; unit: string; kg: number; perLift: number; left: number; longM: number | null }[] = [];
+  const noWeight: string[] = [];
+  let approx = 0;
+  const goods: { name: string; unit: string; kg: number; perLift: number; left: number; longM: number | null; space: number }[] = [];
   for (const it of input.items) {
     if (!(it.qty > 0)) continue;
-    const w = refWeight(it.code, it.name);
-    if (!w) { unknown.push(it.name); continue; }
-    goods.push({ name: it.name, unit: it.unit, kg: w.kg, perLift: w.perLift, left: Math.ceil(it.qty - 1e-9), longM: w.longM });
+    const ref = refWeight(it.code, it.name);
+    const own = it.weightKg != null && it.weightKg > 0 ? it.weightKg : null;
+    const space = it.perTrip && it.perTrip > 0 ? 1 / it.perTrip : 0;
+    if (!own && !ref && !space) { unknown.push(it.name); continue; }
+    if (!own && ref) approx++;
+    if (!own && !ref) noWeight.push(it.name);
+    const kg = own ?? ref?.kg ?? 0;
+    goods.push({ name: it.name, unit: it.unit, kg, perLift: ref?.perLift ?? (kg > 0 && kg < 150 ? 10 : 1), left: Math.ceil(it.qty - 1e-9), longM: ref?.longM ?? null, space });
   }
   goods.sort((a, b) => (b.longM ?? 0) - (a.longM ?? 0) || b.kg - a.kg); // uzun va og'iri — avval, polga
   const totalKg = goods.reduce((s, g) => s + g.kg * g.left, 0);
@@ -263,13 +276,14 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
   /** Bitta reysni to'ldiradi: og'ir/uzun yukdan boshlab, sig'guncha. */
   const fill = (capKg: number, capPcs: number) => {
     const lines: PieceLoad["lines"] = [];
-    let kg = 0, pcs = 0;
+    let kg = 0, pcs = 0, space = 0;
     for (const g of goods) {
       if (!g.left) continue;
-      const byKg = Number.isFinite(capKg) ? Math.floor((capKg - kg) / g.kg + 1e-9) : Infinity;
-      const take = Math.min(g.left, byKg, capPcs - pcs);
+      const byKg = Number.isFinite(capKg) && g.kg > 0 ? Math.floor((capKg - kg) / g.kg + 1e-9) : Infinity;
+      const bySpace = g.space > 0 ? Math.floor((1 - space) / g.space + 1e-9) : Infinity;
+      const take = Math.min(g.left, byKg, bySpace, capPcs - pcs);
       if (take <= 0) continue;
-      g.left -= take; kg += take * g.kg; pcs += take;
+      g.left -= take; kg += take * g.kg; pcs += take; space += take * g.space;
       lines.push({ name: g.name, qty: take, unit: g.unit });
     }
     return { kg, lines };
@@ -324,14 +338,15 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
 
   const heavy = goods.some((g) => g.kg >= PLAN.craneKg);
   if (input.km == null && goods.length) warns.push({ tone: "info", text: `Obyekt xaritada belgilanmagan — masofa ${PLAN.defaultKm} km deb olindi.` });
-  if (unknown.length) warns.push({ tone: "warning", text: `Og'irligi noma'lum, hisobga kirmadi: ${unknown.join(", ")}.` });
+  if (unknown.length) warns.push({ tone: "warning", text: `Og'irligi noma'lum, hisobga kirmadi: ${unknown.join(", ")}. Sozlamalar → Mahsulotlar'da og'irlikni kiriting.` });
+  if (noWeight.length) warns.push({ tone: "info", text: `Og'irligi kiritilmagan, faqat «bir reysga max» bo'yicha hisoblandi: ${noWeight.join(", ")}.` });
   if (heavy) warns.push({ tone: "warning", text: `Dona og'irligi ${PLAN.craneKg} kg dan oshadi — obyektda tushirish uchun avtokran yoki manipulyator kerak.` });
   const long = goods.find((g) => g.longM);
   if (long) warns.push({ tone: "info", text: `Uzun yuk (${long.name}, ${fmt(long.longM!)} m) — kuzov uzunligi kamida ${fmt(long.longM! + 0.5)} m bo'lsin.` });
   if (hired && ownDays > 1) warns.push({ tone: "info", text: `Yollanmasiz faqat o'z mashinalarimiz bilan ${ownDays} kunda tashib bo'linadi.` });
 
   return {
-    tons: totalKg / 1000, unknown, km, kmAssumed: input.km == null, trips, loads,
+    tons: totalKg / 1000, unknown, approx, km, kmAssumed: input.km == null, trips, loads,
     own, ownUsed, ownTrips, hired, hiredTrips, tripsPerHired, ownDays,
     cycleMin: cycleFor(ownSorted[0] ? (Number.isFinite(capKgOf(ownSorted[0])) ? capKgOf(ownSorted[0]) : totalKg) : hiredCap),
     crane: heavy, warns,
