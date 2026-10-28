@@ -3,6 +3,7 @@ import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { withoutNds } from "@/lib/nds";
+import { countWorkDays, type WorkCalendar } from "@/lib/work-calendar";
 
 /* ───────────── Davr ───────────── */
 
@@ -262,20 +263,20 @@ export async function loadRevenue(from: Date, to: Date): Promise<SaleRow[]> {
 
 /* ───────────── Oy prognozi (bitta formula: Owner dashboard, BI, AI chat) ───────────── */
 
-/** Ish kunlari — Dushanba–Shanba (zavod jadvali). */
-export function workingDays(from: Date, to: Date) { let n = 0; for (let d = new Date(from); d < to; d = addDays(d, 1)) if (d.getDay() !== 0) n++; return n; }
+/** Ish kunlari — zavod ish kalendari bo'yicha (haftalik dam olish + bayramlar, `lib/work-calendar.ts`). */
+export function workingDays(from: Date, to: Date, cal: WorkCalendar) { return countWorkDays(cal, from, to); }
 
 /**
  * Joriy oy oxirigacha prognoz: shu kungacha bo'lgan fakt / o'tgan ish kunlari × oydagi ish kunlari.
  * `today` — hisob kuni (bugun kiradi). O'tgan oy uchun fakt o'zi qaytadi.
  */
-export function monthForecast(fact: number, today: Date = startOfDay(new Date()), since: Date | null = null) {
+export function monthForecast(fact: number, cal: WorkCalendar, today: Date = startOfDay(new Date()), since: Date | null = null) {
   const mStart = new Date(today.getFullYear(), today.getMonth(), 1), mEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   // Oy o'rtasida tizimga o'tilgan bo'lsa (`since` — goLiveDate) sur'at o'tish sanasidan beri hisoblanadi:
   // aks holda 10-sanada boshlangan sotuv 9 ta "bo'sh" ish kuniga bo'linib, prognoz uch baravar past chiqardi.
   // Prognoz esa faqat qolgan oy uchun — o'tishdan oldingi kunlar sotuvi ERP'da yo'q.
   const from = since && since > mStart && since < mEnd ? startOfDay(since) : mStart;
-  const wdTotal = workingDays(from, mEnd), wdPassed = workingDays(from, addDays(startOfDay(today), 1));
+  const wdTotal = workingDays(from, mEnd, cal), wdPassed = workingDays(from, addDays(startOfDay(today), 1), cal);
   return wdPassed > 0 ? (fact / wdPassed) * wdTotal : 0;
 }
 

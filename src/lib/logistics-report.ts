@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { tripKmMap } from "@/lib/trip-summary";
 import { delayLevel, logisticsSettings, tripDelayMin } from "@/lib/logistics";
+import { isWorkDay, workCalendar } from "@/lib/work-calendar";
 
 /**
  * Logistika hisobotlari va analitikasi (TZ 14) — davr bo'yicha bitta hisob.
@@ -86,9 +87,10 @@ export async function logisticsReport(from: Date, to: Date) {
     if (e.driverId) { const dr = byDriver.get(e.driverId); if (dr) dr.other += Number(e.amount); }
   }
 
-  // Utilization: band vaqt / (ish kunlari × smena). Ish kunlari — davrdagi yakshanbadan boshqa kunlar.
+  // Utilization: band vaqt / (ish kunlari × smena). Ish kunlari — zavod ish kalendari bo'yicha (`lib/work-calendar.ts`).
+  const cal = await workCalendar();
   let workDays = 0;
-  for (let d = new Date(from); d < to; d.setDate(d.getDate() + 1)) if (d.getDay() !== 0 && d <= new Date()) workDays++;
+  for (let d = new Date(from); d < to; d.setDate(d.getDate() + 1)) if (isWorkDay(cal, d) && d <= new Date()) workDays++;
   const shiftMin = Math.max(60, (settings.shiftEndHour - settings.shiftStartHour) * 60) * Math.max(1, workDays);
 
   return {

@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
 import { addDays, goLiveDate, loadRevenue, sum, workingDays } from "@/lib/bi/core";
+import { isoDate } from "@/lib/format";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { unitLabel } from "@/lib/unit";
+import { workCalendar, weekLabel, type WorkCalendar } from "@/lib/work-calendar";
 import { groupsOf } from "./panel";
 import { r2 } from "./rows";
 
@@ -23,13 +25,15 @@ export type RzPay = { key: PayGroupKey; label: string; net: number; delivery: nu
 export type RzGroup = {
   group: string; unit: string; today: number; month: number;
   record: { qty: number; label: string; workDays: number; fromErp: boolean } | null;
-  manual: { qty: number; year: number; month: number; workDays: number | null } | null;
+  manual: { qty: number; year: number; month: number; workDays: number | null; autoWorkDays: number } | null;
   recordPct: number | null; forecast: number; dayPlan: number | null; dayPct: number | null;
 };
 export type RzSeller = { id: string; name: string; today: number; month: number; plan: number | null; pct: number | null };
 
 export type Realizatsiya = {
   day: Date; isToday: boolean; wdPassed: number; wdTotal: number;
+  /** Ish tartibi: "6/1" va shu oydagi bayramlar */
+  week: string; holidays: { date: string; name: string }[];
   pay: RzPay[]; payTotal: Omit<RzPay, "key" | "label">; unset: { today: number; month: number; orders: number };
   groups: RzGroup[];
   /** Rekord kiritish uchun barcha yuqori guruhlar (shu oy sotilmaganlari ham) */
@@ -41,7 +45,7 @@ export type Realizatsiya = {
 
 export const MONTHS = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 const monthLabel = (y: number, m: number) => `${MONTHS[m - 1]} ${y}`;
-const monthWd = (y: number, m: number) => workingDays(new Date(y, m - 1, 1), new Date(y, m, 1));
+const monthWd = (cal: WorkCalendar, y: number, m: number) => workingDays(new Date(y, m - 1, 1), new Date(y, m, 1), cal);
 
 export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const nowDay = new Date(); nowDay.setHours(0, 0, 0, 0);
@@ -49,7 +53,9 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const next = addDays(day, 1);
   const y = day.getFullYear(), mo = day.getMonth() + 1;
   const monthStart = new Date(y, mo - 1, 1), monthEnd = new Date(y, mo, 1);
-  const wdPassed = workingDays(monthStart, next), wdTotal = workingDays(monthStart, monthEnd);
+  const cal = await workCalendar();
+  const wdPassed = workingDays(monthStart, next, cal), wdTotal = workingDays(monthStart, monthEnd, cal);
+  const holidays = [...cal.holidays].filter(([k]) => k >= isoDate(monthStart) && k < isoDate(monthEnd)).map(([k, name]) => ({ date: k, name }));
   const live = await goLiveDate();
   // Rekord uchun ERP tarixi — tizimga o'tilgan oydan (bo'lmasa bir yil oldin) tanlangan kungacha
   const histFrom = live ? new Date(live.getFullYear(), live.getMonth(), 1) : new Date(y - 1, mo - 1, 1);
@@ -110,12 +116,12 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const groupNames = [...records.map((r) => r.group), ...[...new Set(all.map((x) => x.group))].filter((g) => !records.some((r) => r.group === g)).sort((a, b) => sum(all.filter((x) => x.group === b).map((x) => x.src.qty)) - sum(all.filter((x) => x.group === a).map((x) => x.src.qty)))];
   const groups: RzGroup[] = groupNames.map((g) => {
     const rec = records.find((r) => r.group === g);
-    const manual = rec ? { qty: Number(rec.qty), year: rec.year, month: rec.month, workDays: rec.workDays } : null;
+    const manual = rec ? { qty: Number(rec.qty), year: rec.year, month: rec.month, workDays: rec.workDays, autoWorkDays: monthWd(cal, rec.year, rec.month) } : null;
     const erpTop = [...(erpMonths.get(g) ?? new Map<string, number>())].sort((a, b) => b[1] - a[1])[0];
-    let record: RzGroup["record"] = manual ? { qty: manual.qty, label: monthLabel(manual.year, manual.month), workDays: manual.workDays ?? monthWd(manual.year, manual.month), fromErp: false } : null;
+    let record: RzGroup["record"] = manual ? { qty: manual.qty, label: monthLabel(manual.year, manual.month), workDays: manual.workDays ?? monthWd(cal, manual.year, manual.month), fromErp: false } : null;
     if (erpTop && erpTop[1] > (record?.qty ?? 0)) {
       const [ey, em] = erpTop[0].split("-").map(Number) as [number, number];
-      record = { qty: r2(erpTop[1]), label: monthLabel(ey, em), workDays: monthWd(ey, em), fromErp: true };
+      record = { qty: r2(erpTop[1]), label: monthLabel(ey, em), workDays: monthWd(cal, ey, em), fromErp: true };
     }
     const todayQ = r2(sum(today.filter((x) => x.group === g).map((x) => x.src.qty))), monthQ = r2(sum(all.filter((x) => x.group === g).map((x) => x.src.qty)));
     const dayPlan = record && record.workDays > 0 ? record.qty / record.workDays : null;
@@ -156,5 +162,5 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const rows = today.map((x) => x.row).sort((a, b) => (order.get(a.pay)! - order.get(b.pay)!) || a.seller.localeCompare(b.seller) || a.customer.localeCompare(b.customer));
 
   const allGroups = [...new Set([...groupNames, ...[...prods.values()].map((p) => p.group).sort((a, b) => a.localeCompare(b))])].map((g) => ({ group: g, unit: unitOf(g) }));
-  return { day, isToday: day.getTime() === nowDay.getTime(), wdPassed, wdTotal, pay, payTotal, unset, groups, allGroups, plan, sellers, sellersTotal, rows };
+  return { day, isToday: day.getTime() === nowDay.getTime(), wdPassed, wdTotal, week: weekLabel(cal.restDays), holidays, pay, payTotal, unset, groups, allGroups, plan, sellers, sellersTotal, rows };
 }

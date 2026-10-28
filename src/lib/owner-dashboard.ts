@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { lineTotal } from "@/lib/receipt-vat";
 import { getCompany } from "@/lib/company";
+import { workCalendar } from "@/lib/work-calendar";
 import { loadRevenue, productCosts, materialCosts, sum, safeDiv, addDays, startOfDay, monthForecast, workingDays, goLiveDate, grossOf, marginOf, type Range, type SaleRow } from "@/lib/bi/core";
 import { lossChannels } from "@/lib/bi/finance";
 import { materialOverview } from "@/lib/bi/stock";
@@ -109,9 +110,10 @@ export async function ownerDashboard() {
   const from90 = addDays(today, -90);
   const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86400000);
   const daysPassed = Math.round((today.getTime() - monthStart.getTime()) / 86400000) + 1;
-  const wdTotal = workingDays(monthStart, monthEnd), wdPassed = workingDays(monthStart, tomorrow);
+  const cal = await workCalendar();
+  const wdTotal = workingDays(monthStart, monthEnd, cal), wdPassed = workingDays(monthStart, tomorrow, cal);
   const since = await goLiveDate(); // oy o'rtasida tizimga o'tilgan bo'lsa sur'at o'tish sanasidan
-  const project = (fact: number) => monthForecast(fact, today, since); // oy oxirigacha prognoz — BI va AI chat bilan bitta formula
+  const project = (fact: number) => monthForecast(fact, cal, today, since); // oy oxirigacha prognoz — BI va AI chat bilan bitta formula
   const range: Range = { period: "month", from: monthStart, to: tomorrow, prevFrom: prevMonthStart, prevTo: monthStart, days: daysPassed, label: "Joriy oy", prevLabel: "O'tgan oy" };
 
   const [

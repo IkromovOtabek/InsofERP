@@ -3,6 +3,7 @@ import { type Range, loadSales, sum, safeDiv, mean, kpi, addDays, startOfDay, WE
 import { NOT_SELLER, SELLER_ROLES } from "./plans";
 import { operationsTab } from "./operations";
 import { orderTotal } from "@/lib/order-total";
+import { workCalendar } from "@/lib/work-calendar";
 
 /**
  * Agentlar — Team24 "Agentlar" sahifasining beton zavodi ekvivalenti.
@@ -31,6 +32,7 @@ export async function agentsTab(r: Range) {
     db.vehicle.findMany({ where: { isActive: true, type: "MIXER" }, select: { capacityM3: true } }),
     goLiveDate(),
   ]);
+  const cal = await workCalendar();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const monthSales = last35.filter((x) => x.date >= monthStart);
   const rev = (rows: SaleRow[]) => sum(rows.map((x) => x.revenue));
@@ -70,7 +72,7 @@ export async function agentsTab(r: Range) {
       prevRevenue: rev(prows), delta: rev(prows) === 0 ? (revenue ? null : 0) : ((revenue - rev(prows)) / rev(prows)) * 100,
       usualPerDay, nowPerDay, slowdown, slowReason, slowDays, usualOrdersPerDay, nowOrdersPerDay, usualCheck, nowCheck,
       today: rev(todayRows), todayOrders: new Set(todayRows.map((x) => x.orderId)).size, lastOrderAt, offlineDays,
-      plan: plan ? planAmt : null, planPct: planAmt > 0 ? (monthRev / planAmt) * 100 : null, planFcPct: planAmt > 0 ? (monthForecast(monthRev, today, live) / planAmt) * 100 : null, score: 0, tier: "O'RTA" as SellerRow["tier"], weekday,
+      plan: plan ? planAmt : null, planPct: planAmt > 0 ? (monthRev / planAmt) * 100 : null, planFcPct: planAmt > 0 ? (monthForecast(monthRev, cal, today, live) / planAmt) * 100 : null, score: 0, tier: "O'RTA" as SellerRow["tier"], weekday,
     };
   }).filter((s) => s.created > 0 || s.orders > 0 || SELLER_ROLES.has(s.role));
   const sellers = staff.filter((s) => isSeller(s.id));

@@ -159,6 +159,13 @@ model CompanySettings {
   assignLeadMin       Int       @default(60) // yetkazishga shuncha daqiqa qolganda reyssiz zayavka — kritik
   shiftStartHour      Int       @default(8) // transport smenasi boshlanishi (bandlik foizi uchun)
   shiftEndHour        Int       @default(20) // smena tugashi
+  // ── Zavod ish tartibi (Otdel kadr → Ish tartibi va bayramlar, `lib/work-calendar.ts`) — hisobotlardagi ish kunlari va prognozlar.
+  // Davomat va ish haqi bunga bog'lanmagan: ular xodim grafigi (`workSchedule`, smena grafigi) bo'yicha ishlaydi.
+  restDays            Int[]     @default([0]) // haftalik dam olish kunlari: 0 — yakshanba, 1 — dushanba … 6 — shanba (6/1 → [0])
+  workStart           String    @default("08:00") // ish boshlanishi "HH:MM"
+  workEnd             String    @default("18:00") // ish tugashi
+  lunchStart          String? // tushlik "HH:MM" (bo'sh — tushliksiz)
+  lunchEnd            String?
   avgSpeedKmh         Int       @default(35) // shahar ichida o'rtacha tezlik — GPS bo'lmaganda ETA taxmini
   stopAlertMin        Int       @default(20) // yo'ldagi mashina bir joyda shuncha daqiqa tursa — dispetcherga xabar
   offRouteM           Int       @default(500) // rejadagi yo'ldan shuncha metr chetga chiqsa — dispetcherga xabar
@@ -2411,6 +2418,22 @@ model SalesPlan {
 
   @@unique([year, month, sellerId])
   @@index([year, month])
+}
+
+/// Ish kalendari istisnolari: bayram (dam olish) kuni yoki dam olish kunidan ko'chirilgan ish kuni.
+/// Qolgan kunlar `CompanySettings.restDays` haftalik tartibi bo'yicha (`lib/work-calendar.ts`).
+model WorkCalendarDay {
+  id        String          @id @default(cuid())
+  date      DateTime        @unique @db.Date
+  kind      CalendarDayKind @default(HOLIDAY)
+  name      String? // "Navro'z", "Ko'chirilgan ish kuni"
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+enum CalendarDayKind {
+  HOLIDAY // bayram / qo'shimcha dam olish kuni — ish kuni emas
+  WORKDAY // dam olish kuni bo'lsa ham ishlanadi (ko'chirilgan ish kuni)
 }
 
 /// Mahsulot guruhi (yuqori `ProductGroup` nomi: Plita, Beton…) bo'yicha rekord oy sotuv hajmi — «Kunlik realizatsiya hisoboti».

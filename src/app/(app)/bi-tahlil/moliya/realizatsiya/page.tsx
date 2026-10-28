@@ -2,7 +2,6 @@ import Link from "next/link";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { realizatsiyaReport, MONTHS } from "@/lib/fin-report/realizatsiya";
-import { workingDays } from "@/lib/bi/core";
 import { date, fmtNum, isoDate, pct } from "@/lib/format";
 import { Card, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -50,6 +49,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
               <span>Hisobot sanasi: <b className="text-slate-800">{date(r.day)}</b></span>
               <span>Bugungi ish kuni: <b className="text-slate-800">{r.wdPassed}</b></span>
               <span>Oydagi ish kuni: <b className="text-slate-800">{r.wdTotal}</b></span>
+              <span>Ish tartibi: <b className="text-slate-800">{r.week}</b>{r.holidays.length > 0 && <> · bayramlar: {r.holidays.map((h) => `${h.date.slice(8)}.${h.date.slice(5, 7)} ${h.name}`).join(", ")}</>}</span>
             </div>
           </div>
           <form method="get" className="flex items-center gap-2">
@@ -96,7 +96,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
               <div className="space-y-2">
                 {r.allGroups.map((g) => {
                   const m = r.groups.find((x) => x.group === g.group)?.manual;
-                  return <SalesRecordForm key={g.group} group={g.group} unit={g.unit} qty={m?.qty ?? null} ym={m ? `${m.year}-${String(m.month).padStart(2, "0")}` : ""} workDays={m?.workDays ?? null} autoWd={m ? workingDays(new Date(m.year, m.month - 1, 1), new Date(m.year, m.month, 1)) : null} />;
+                  return <SalesRecordForm key={g.group} group={g.group} unit={g.unit} qty={m?.qty ?? null} ym={m ? `${m.year}-${String(m.month).padStart(2, "0")}` : ""} workDays={m?.workDays ?? null} autoWd={m?.autoWorkDays ?? null} />;
                 })}
               </div>
               <p className="mt-3 text-[12px] text-slate-400">ERP&apos;dagi biror oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi. Ish kuni bo&apos;sh — Dushanba–Shanba bo&apos;yicha.</p>

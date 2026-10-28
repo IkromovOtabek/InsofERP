@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound, Gauge, Wallet, ClipboardList, Truck, MapPin, ShoppingCart, BarChart3, ArrowRight, AlarmClock } from "lucide-react";
+import { Building2, Package, Layers, Warehouse, Landmark, Users, ScrollText, UserX, ShieldCheck, UserRound, Gauge, Wallet, ClipboardList, Truck, MapPin, ShoppingCart, BarChart3, ArrowRight, AlarmClock, CalendarDays } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { getCompany } from "@/lib/company";
@@ -196,6 +196,12 @@ async function LimitsTab() {
           description="Kechikkan xodimdan ushlanadigan summa — otdel kadr yoki direktor belgilaydi (Sozlamalar → Davomat). Tabel, xodimning o'z davomati va ish haqi hisobi shu qoidadan oladi."
           action={<LinkButton href="/settings/davomat" variant="secondary" size="sm">Sozlash <ArrowRight size={14} /></LinkButton>} />
         <p className="text-sm text-slate-700">Joriy qoida: <b>{fineText(lateFine)}</b></p>
+      </Card>
+
+      <Card>
+        <CardHeader icon={CalendarDays} title="Ish tartibi va bayramlar"
+          description="Zavod ish haftasi (6/1, 5/2), ish vaqti, bayramlar va ko'chirilgan ish kunlari — otdel kadr belgilaydi. Hisobot va prognozlardagi ish kunlari shundan."
+          action={<LinkButton href="/settings/ish-tartibi" variant="secondary" size="sm">Sozlash <ArrowRight size={14} /></LinkButton>} />
       </Card>
     </div>
   );

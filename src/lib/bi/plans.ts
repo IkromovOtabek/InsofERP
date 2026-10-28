@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { loadSales, sum, addDays, startOfDay, series, mean, workingDays, monthForecast, goLiveDate, delta, type SaleRow } from "./core";
+import { isWorkDay, workCalendar } from "@/lib/work-calendar";
 
 export const MONTHS_UZ = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 export const MONTHS_SHORT = ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"];
@@ -30,11 +31,12 @@ export async function plansTab(year: number, month: number) {
     db.user.findMany({ where: { isActive: true }, select: { id: true, fullName: true, role: true } }),
     goLiveDate(),
   ]);
+  const cal = await workCalendar();
   const rev = (rows: SaleRow[]) => sum(rows.map((x) => x.revenue));
   // Oy o'rtasida tizimga o'tilgan bo'lsa ish kunlari o'tish sanasidan sanaladi (monthForecast bilan bir xil)
   const pStart = live && live > mStart && live < mEnd ? startOfDay(live) : mStart;
-  const wdTotal = workingDays(pStart, mEnd), wdPassed = isPast ? wdTotal : isCurrent ? workingDays(pStart, tomorrow) : 0, wdLeft = wdTotal - wdPassed;
-  const project = (fact: number) => (isPast ? fact : isCurrent ? monthForecast(fact, today, live) : 0);
+  const wdTotal = workingDays(pStart, mEnd, cal), wdPassed = isPast ? wdTotal : isCurrent ? workingDays(pStart, tomorrow, cal) : 0, wdLeft = wdTotal - wdPassed;
+  const project = (fact: number) => (isPast ? fact : isCurrent ? monthForecast(fact, cal, today, live) : 0);
 
   const companyPlanRow = plans.find((p) => p.sellerId === null);
   const sellerPlans = plans.filter((p) => p.sellerId !== null);
@@ -68,10 +70,10 @@ export async function plansTab(year: number, month: number) {
   const perWd = wdPassed > 0 ? fact / wdPassed : 0; let fcAcc = fact, wdCount = 0;
   for (let d = new Date(mStart), i = 0; d < mEnd; d = addDays(d, 1), i++) {
     labels.push(String(d.getDate()).padStart(2, "0"));
-    if (d >= pStart && d.getDay() !== 0) wdCount++;
+    if (d >= pStart && isWorkDay(cal, d)) wdCount++;
     planVals.push(companyPlan * (wdCount / wdTotal));
     if (i < cum.length) { cumVals.push(cum[i]); fcVals.push(i === cum.length - 1 ? cum[i] : null); }
-    else { cumVals.push(null); if (d.getDay() !== 0) fcAcc += perWd; fcVals.push(fcAcc); }
+    else { cumVals.push(null); if (isWorkDay(cal, d)) fcAcc += perWd; fcVals.push(fcAcc); }
   }
   const needPerDay = wdLeft > 0 ? Math.max(0, companyPlan - fact) / wdLeft : null, bonusPerDay = wdLeft > 0 ? Math.max(0, companyPlan * 1.1 - fact) / wdLeft : null;
 

@@ -132,6 +132,7 @@ export const NAV: NavItem[] = [
   { href: "/ish-haqi",                  label: "Ish haqi",          roles: ["HR", "ACCOUNTING", "FINANCE", "CASHIER"], group: "Moliya" },
   // Davomat sozlamalari (kechikish jarimasi) — /settings ostida, lekin otdel kadrga ham ochiq (eng uzun prefiks qoidasi)
   { href: "/settings/davomat",          label: "Davomat sozlamalari", roles: ["HR"], group: "Otdel kadr" },
+  { href: "/settings/ish-tartibi",      label: "Ish tartibi va bayramlar", roles: ["HR"], group: "Otdel kadr" },
   { href: "/employees",   label: "Xodimlar",           roles: ["HR", "LOGISTICS"], group: "Boshqaruv" },
   // Haydovchi ERP'ga kirsa faqat shu sahifani ko'radi — o'zining reyslari (qolgan bo'limlar yopiq)
   { href: "/mening-reyslarim", label: "Mening reyslarim", roles: ["DRIVER"], group: "Logistika", menuFor: ["DRIVER"] },

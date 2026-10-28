@@ -3,6 +3,7 @@ import { loadSales, sum, safeDiv, delta, kpi, series, addDays, startOfDay, month
 import { lossChannels } from "./finance";
 import { customerBase } from "./customers";
 import { materialOverview } from "./stock";
+import { workCalendar } from "@/lib/work-calendar";
 import { orderTotal } from "@/lib/order-total";
 
 export type Task = { n: number; money: number; title: string; text: string; href: string; tone: "danger" | "warning" | "info" };
@@ -33,7 +34,7 @@ export async function overviewTab(r: Range) {
   const prevSameEnd = new Date(Math.min(addDays(prevMonthStart, daysPassed).getTime(), monthStart.getTime()));
   const prevSameRevenue = rev(prevMonthS.filter((x) => x.date < prevSameEnd));
   // Prognoz — Egasi dashbordi bilan bitta funksiya (ish kunlari sur'ati)
-  const monthForecastValue = monthForecast(monthRevenue, today, await goLiveDate());
+  const monthForecastValue = monthForecast(monthRevenue, await workCalendar(), today, await goLiveDate());
 
   const revenue = rev(cur), prevRevenue = rev(prev);
   // Yalpi foyda/marja — faqat tannarxi ma'lum mahsulotlar bo'yicha (retseptsizlari 100% foyda bo'lib ko'rinmasin)

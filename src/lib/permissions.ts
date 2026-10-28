@@ -158,6 +158,7 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "edit",   label: "Xodimni tahrirlash / bo'shatish",   roles: ["HR"] },
     { key: "login",  label: "Login berish, parol, rol",          roles: ["HR"], hint: "Rol berish — muhim huquq" },
     { key: "requests", label: "Arizalarni tasdiqlash (ta'til, kasallik, avans)", roles: ["HR"], hint: "Tasdiqlangan ta'til/kasallik davomatga tushadi, avans — direktor tasdig'iga" },
+    { key: "calendar", label: "Zavod ish tartibi va bayramlar", roles: ["HR"], hint: "Hisobot va prognozlardagi ish kunlari shundan; davomat va ish haqiga ta'sir qilmaydi" },
     { key: "schedule", label: "Smena grafigini tuzish",          roles: ["HR"] },
     { key: "payrules", label: "Jarima va bonuslar",              roles: ["HR"], hint: "Qoidalar (hamma uchun bir xil) va qo'lda jarima/bonus" },
     { key: "checklists", label: "Kundalik cheklistlar (lavozim majburiyatlari)", roles: ["HR"] },
