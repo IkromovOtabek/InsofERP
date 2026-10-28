@@ -276,7 +276,9 @@ O'rnatish — «Birinchi o'rnatish» 3-qadam (`/etc/insof/backup.env`) va 9-qada
 
 `server-backup.sh`: control + har korxona bazasi (`pg_dump -Fc`), har korxona fayllari (tar.gz), SHA256SUMS,
 14 kun mahalliy, server tashqarisiga `OFFSITE`: `rclone` | `restic` | `local` (`OFFSITE_DIR` — boshqa disk/mount, nazorat
-yig'indisi bilan) | `none`. Vosita o'rnatilmagan yoki sozlanmagan bo'lsa ham mahalliy nusxa olinadi, lekin skript **exit 1**
+yig'indisi bilan) | `none`. `rclone` da masofaga sanali papkada faqat dump'lar + SHA256SUMS ketadi, fayllar esa
+`uploads/<slug>/` oynasiga (`rclone sync`, har kuni faqat yangi/o'zgargani); oynadan o'chirilgan/ustidan yozilgan fayllar
+`uploads-old/<sana>/<slug>/` da `RCLONE_KEEP_DAYS` kun turadi. Eskilar papka nomidagi sana bo'yicha, yuklashdan oldin o'chiriladi. Vosita o'rnatilmagan yoki sozlanmagan bo'lsa ham mahalliy nusxa olinadi, lekin skript **exit 1**
 va ogohlantirish beradi (jim «muvaffaqiyat» yo'q). Biror baza olinmasa — qolganlari olinadi, xabarda ro'yxat.
 Telegram sozlanmagan bo'lsa ogohlantirish matni logga `(ALERT)` bilan yoziladi. Bir vaqtda ikki nusxa ishlamaydi (qulf).
 `restore-test.sh`: oxirgi nusxaning SHA256SUMS ini tekshiradi, har dump'ni vaqtinchalik bazaga (`insof_restore_*`,
@@ -295,6 +297,8 @@ Eski `erp-backup` cron qatorini (`/usr/local/bin/erp-backup`, `/var/log/erp-back
 
 Tiklash (haqiqiy): `pg_restore --clean --if-exists --no-owner -d "<korxona DATABASE_URL, ?schema siz>" /var/backups/insof/<sana>/<slug>.dump`,
 fayllar: `tar -xzf <slug>-uploads.tar.gz -C <UPLOADS_DIR ning ota papkasi>`.
+Masofadan (server yo'qolganda): `rclone copy <RCLONE_REMOTE>/<sana> .` → `sha256sum -c --ignore-missing SHA256SUMS` → `pg_restore` (yuqoridagidek);
+fayllar: `rclone copy <RCLONE_REMOTE>/uploads/<slug> <UPLOADS_DIR>` (o'chirilgan fayl kerak bo'lsa — `uploads-old/<sana>/<slug>`).
 
 ## Kuzatuv
 

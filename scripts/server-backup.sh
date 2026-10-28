@@ -237,17 +237,48 @@ case "$OFFSITE" in
   rclone)
     CURRENT_STEP="rclone"
     [ -n "${RCLONE_REMOTE:-}" ] || { fail "RCLONE_REMOTE berilmagan"; exit 1; }
-    # Masofadagi eskilar (standart 30 kun) YUKLASHDAN OLDIN o'chiriladi: joy to'lsa yuklash yiqiladi va keyin tozalash
-    # hech qachon ishlamay qoladi (2026-10-25 da Google Drive kvotasi shunday qotib qolgan). Mahalliy nusxalar baribir bor.
+    # Masofadagi tuzilma:
+    #   <sana>/                 — baza dump'lari va SHA256SUMS (bir necha MB; fayllar arxivi yuklanmaydi)
+    #   uploads/<slug>/         — korxona fayllarining oynasi (rclone sync: har kuni faqat yangi/o'zgargani ko'chadi)
+    #   uploads-old/<sana>/<slug>/ — shu kuni oynadan o'chirilgan yoki ustidan yozilgan fayllar
+    # Ilgari har kuni ~0.5 GB uploads tar.gz yuklanardi: 30 kun × 0.5 GB 15 GB Drive'ga sig'madi (2026-10-25 dan kvota to'ldi).
+    # Masofadagi SHA256SUMS da uploads tar.gz ham bor (u faqat mahalliy) — masofadan tekshirishda `sha256sum -c --ignore-missing`.
+    KEEP_R="${RCLONE_KEEP_DAYS:-30}"
+    CUTOFF="$(date -d "-$KEEP_R days" +%F 2>/dev/null || date -v"-${KEEP_R}d" +%F)"
+    # Eskilar YUKLASHDAN OLDIN o'chiriladi: joy to'lsa yuklash yiqiladi va keyin tozalash hech qachon ishlamay qoladi.
+    # Papka NOMIDAGI sana bo'yicha: oynadagi fayllar asl vaqtini saqlaydi — `--min-age` ularni ham o'chirib yuborardi.
     # --drive-use-trash=false: Drive'da o'chirilgani savatga tushib, kvotani band qilib turmasin (boshqa remote'larga ta'sirsiz).
-    rclone delete "$RCLONE_REMOTE" --min-age "${RCLONE_KEEP_DAYS:-30}d" --drive-use-trash=false \
-      && rclone rmdirs "$RCLONE_REMOTE" --leave-root --drive-use-trash=false || log "⚠ rclone: eskilarni tozalashda xato"
+    prune_dated() { # prune_dated <masofa papka> — nomi CUTOFF dan eski sanali papkalarni o'chiradi
+      local d
+      rclone lsf --dirs-only "$1" 2>/dev/null | sed 's:/$::' | grep -E '^20[0-9]{2}-[0-9]{2}-[0-9]{2}_' | while read -r d; do
+        [[ "${d:0:10}" < "$CUTOFF" ]] || continue
+        rclone purge "$1/$d" --drive-use-trash=false && log "  masofadan o'chirildi: $1/$d" || log "⚠ rclone: $1/$d ni o'chirib bo'lmadi"
+      done
+    }
+    # `||` — funksiya ichida errexit o'chadi: masofada hali `uploads-old` yo'qligi yoki bo'sh ro'yxat skriptni uzmasin
+    prune_dated "$RCLONE_REMOTE" || true
+    prune_dated "$RCLONE_REMOTE/uploads-old" || true
     log "→ rclone: $RCLONE_REMOTE/$STAMP"
-    if rclone copy "$DEST" "$RCLONE_REMOTE/$STAMP" --transfers 2 --retries 3 \
-      && rclone check "$DEST" "$RCLONE_REMOTE/$STAMP" --one-way; then
+    if rclone copy "$DEST" "$RCLONE_REMOTE/$STAMP" --exclude '*-uploads.tar.gz' --transfers 2 --retries 3 \
+      && rclone check "$DEST" "$RCLONE_REMOTE/$STAMP" --exclude '*-uploads.tar.gz' --one-way; then
       log "  ok"
     else
       fail "rclone: yuklash yoki tekshiruv xato"
+    fi
+    if [ "$BACKUP_UPLOADS" = "1" ]; then
+      for u in ${UPLOAD_DIRS[@]+"${UPLOAD_DIRS[@]}"}; do
+        name="${u%%|*}"; dir="${u#*|}"
+        [ -d "$dir" ] || continue
+        CURRENT_STEP="rclone uploads $name"
+        log "→ rclone: $RCLONE_REMOTE/uploads/$name (oyna)"
+        if rclone sync "$dir" "$RCLONE_REMOTE/uploads/$name" --backup-dir "$RCLONE_REMOTE/uploads-old/$STAMP/$name" \
+             --transfers 4 --retries 3 --drive-use-trash=false \
+          && rclone check "$dir" "$RCLONE_REMOTE/uploads/$name" --one-way; then
+          log "  ok"
+        else
+          fail "rclone: $name fayllar oynasi xato"
+        fi
+      done
     fi
     ;;
   restic)

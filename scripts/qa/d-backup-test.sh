@@ -62,8 +62,28 @@ backup local-nodir OFFSITE=local; code=$?
 
 # 5. rclone bor bo'lsa — lokal papka «masofa» sifatida
 if command -v rclone >/dev/null; then
-  backup rclone-local OFFSITE=rclone RCLONE_REMOTE="$D_ROOT/rclone-remote"; code=$?
-  [ "$code" = 0 ] && pass "rclone (lokal papka masofa) → exit 0" || fail "rclone lokal exit $code"
+  RR="$D_ROOT/rclone-remote"
+  # Eski (40 kunlik) sanali papkalar — nomi bo'yicha tozalanishi kerak; oynadagi eski vaqtli fayl esa qolishi kerak
+  mkdir -p "$RR/2020-01-01_0230" "$RR/uploads-old/2020-01-01_0230/alfa"
+  echo eski > "$RR/2020-01-01_0230/alfa.dump"; echo eski > "$RR/uploads-old/2020-01-01_0230/alfa/x.txt"
+  echo "eski rasm" > "$D_DATA/alfa/uploads/contracts/old.txt"; touch -t 202001010000 "$D_DATA/alfa/uploads/contracts/old.txt"
+  backup rclone-local OFFSITE=rclone RCLONE_REMOTE="$RR"; code=$?
+  [ "$code" = 0 ] && pass "rclone (lokal papka masofa) → exit 0" || { fail "rclone lokal exit $code"; tail -5 "$LOGS/rclone-local.log"; }
+  RL="$RR/$(basename "$(latest)")"
+  [ -s "$RL/alfa.dump" ] && [ -s "$RL/control.dump" ] && [ -s "$RL/SHA256SUMS" ] && [ ! -e "$RL/alfa-uploads.tar.gz" ] \
+    && pass "masofa: sanali papkada faqat dump'lar + SHA256SUMS (uploads tar.gz yuklanmadi)" || fail "masofa sanali papka: $(ls "$RL" 2>&1 | tr '\n' ' ')"
+  ( cd "$RL" && { sha256sum -c --ignore-missing SHA256SUMS 2>/dev/null || shasum -a 256 -c --ignore-missing SHA256SUMS; } >/dev/null ) \
+    && pass "masofa: SHA256SUMS --ignore-missing bilan mos" || fail "masofa: SHA256SUMS mos emas"
+  cmp -s "$RR/uploads/alfa/contracts/qa.txt" "$D_DATA/alfa/uploads/contracts/qa.txt" && [ -f "$RR/uploads/alfa/contracts/old.txt" ] \
+    && pass "masofa: uploads/alfa oynasi (eski vaqtli fayl ham bor)" || fail "masofa: uploads/alfa oynasi yo'q yoki noto'g'ri"
+  [ ! -e "$RR/2020-01-01_0230" ] && [ ! -e "$RR/uploads-old/2020-01-01_0230" ] \
+    && pass "masofa: RCLONE_KEEP_DAYS dan eski sanali papkalar nomi bo'yicha o'chirildi" || fail "masofa: eski sanali papkalar qoldi"
+  # Fayl o'chirilsa — oynadan ketadi, lekin uploads-old/<sana>/alfa ga suriladi
+  rm "$D_DATA/alfa/uploads/contracts/old.txt"
+  backup rclone-local2 OFFSITE=rclone RCLONE_REMOTE="$RR"; code=$?
+  moved="$(find "$RR/uploads-old" -path '*/alfa/contracts/old.txt' | head -n1)"
+  [ "$code" = 0 ] && [ ! -e "$RR/uploads/alfa/contracts/old.txt" ] && [ -n "$moved" ] \
+    && pass "masofa: o'chirilgan fayl oynadan ketdi va uploads-old ga surildi (${moved#"$RR/"})" || fail "masofa: o'chirilgan fayl (exit $code, moved='$moved')"
 else
   echo "  SKIP rclone lokal masofa — rclone o'rnatilmagan (OFFSITE=local sinovi o'rnini bosadi)"
 fi
