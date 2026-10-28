@@ -93,7 +93,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
             {hasHeader && (
               <button type="button" style={stagger(0)} aria-expanded={groupOpen} data-tour={`group:${g}`}
                 onClick={() => (own ? setTahlilOpen(!groupOpen) : setOpenGroup(groupOpen ? "" : g))}
-                className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[12.5px] font-bold uppercase tracking-[0.1em] transition-colors hover:bg-slate-50 hover:text-slate-700 pointer-coarse:py-2.5 pointer-coarse:text-[13.5px]",
+                className={cn("sb-item sb-group sb-fade sb-ghead mb-0.5 flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[14px] font-bold uppercase tracking-[0.1em] transition-colors hover:bg-slate-50 hover:text-slate-700 pointer-coarse:py-2.5 pointer-coarse:text-[15px]",
                   groupActive ? "text-slate-700" : "text-slate-500")}>
                 <span className="flex items-center gap-2">
                   {(() => { const GIcon = GROUP_ICONS[g]; return GIcon && <GIcon size={13} className="shrink-0" />; })()}
@@ -116,7 +116,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                   <div className="relative flex items-center">
                     {/* Yig'ilganda yozuv ko'rinmaydi, shuning uchun nomni sichqoncha ostida ko'rsatamiz */}
                     <Link href={i.href} onClick={onNavigate} title={collapsed ? i.label : undefined} data-tour={`nav:${i.href}`}
-                      className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[16px] pointer-coarse:py-3 pointer-coarse:text-[17px]",
+                      className={cn("sb-row sb-link group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-[17px] pointer-coarse:py-3 pointer-coarse:text-[18px]",
                         isActive ? "bg-slate-100 font-medium text-slate-900" : childActive ? "text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900")}>
                       {isActive && <span className="sb-active absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-brand-500" />}
                       {Icon && <Icon size={19} className={cn("sb-icon shrink-0", isActive || childActive ? "text-brand-600 dark:text-brand-400" : "text-slate-400 group-hover:text-slate-600")} />}
@@ -135,7 +135,7 @@ function NavList({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigat
                         const ca = active === c.href;
                         return (
                           <Link key={c.href} href={c.href} onClick={onNavigate} style={{ "--i": ci, "--j": j + ci + 1 } as React.CSSProperties}
-                            className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[15px] pointer-coarse:py-2.5 pointer-coarse:text-[16px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
+                            className={cn("sb-item sb-link group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[16px] pointer-coarse:py-2.5 pointer-coarse:text-[17px]", ca ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900")}>
                             {(() => {
                               const CIcon = ICONS[c.href];
                               return CIcon
