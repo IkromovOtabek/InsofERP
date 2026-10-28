@@ -3,7 +3,7 @@ import { isoDate } from "@/lib/format";
 import { avgUnitCosts } from "@/lib/stock";
 import { companyVatPayer } from "@/lib/receipt-vat";
 import { withoutNds } from "@/lib/nds";
-import { countWorkDays, type WorkCalendar } from "@/lib/work-calendar";
+import { countWorkDays, monthWorkDays, type WorkCalendar } from "@/lib/work-calendar";
 
 /* ───────────── Davr ───────────── */
 
@@ -276,7 +276,9 @@ export function monthForecast(fact: number, cal: WorkCalendar, today: Date = sta
   // aks holda 10-sanada boshlangan sotuv 9 ta "bo'sh" ish kuniga bo'linib, prognoz uch baravar past chiqardi.
   // Prognoz esa faqat qolgan oy uchun — o'tishdan oldingi kunlar sotuvi ERP'da yo'q.
   const from = since && since > mStart && since < mEnd ? startOfDay(since) : mStart;
-  const wdTotal = workingDays(from, mEnd, cal), wdPassed = workingDays(from, addDays(startOfDay(today), 1), cal);
+  // Butun oy bo'lsa — oydagi ish kuni (qo'lda kiritilgan bo'lishi mumkin), aks holda o'tish sanasidan kalendar bo'yicha
+  const wdTotal = from.getTime() === mStart.getTime() ? monthWorkDays(cal, mStart.getFullYear(), mStart.getMonth() + 1) : workingDays(from, mEnd, cal);
+  const wdPassed = workingDays(from, addDays(startOfDay(today), 1), cal);
   return wdPassed > 0 ? (fact / wdPassed) * wdTotal : 0;
 }
 

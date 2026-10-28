@@ -6,7 +6,7 @@ import { date, fmtNum, isoDate, pct } from "@/lib/format";
 import { Card, Input, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { biContext, BiPage, type SP } from "../../shell";
-import { SalesRecordForm } from "./forms";
+import { MonthPlanForm, SalesRecordForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
             <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-slate-500">
               <span>Hisobot sanasi: <b className="text-slate-800">{date(r.day)}</b></span>
               <span>Bugungi ish kuni: <b className="text-slate-800">{r.wdPassed}</b></span>
-              <span>Oydagi ish kuni: <b className="text-slate-800">{r.wdTotal}</b></span>
+              <span>Oydagi ish kuni: <b className="text-slate-800">{r.wdTotal}</b>{r.wdManual && <span className="ml-1 text-amber-700" title={`Qo'lda kiritilgan; kalendar bo'yicha ${r.wdAuto}`}>(qo&apos;lda)</span>}</span>
               <span>Ish tartibi: <b className="text-slate-800">{r.week}</b>{r.holidays.length > 0 && <> · bayramlar: {r.holidays.map((h) => `${h.date.slice(8)}.${h.date.slice(5, 7)} ${h.name}`).join(", ")}</>}</span>
             </div>
           </div>
@@ -99,7 +99,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                   return <SalesRecordForm key={g.group} group={g.group} unit={g.unit} qty={m?.qty ?? null} ym={m ? `${m.year}-${String(m.month).padStart(2, "0")}` : ""} workDays={m?.workDays ?? null} autoWd={m?.autoWorkDays ?? null} />;
                 })}
               </div>
-              <p className="mt-3 text-[12px] text-slate-400">ERP&apos;dagi biror oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi. Ish kuni bo&apos;sh — Dushanba–Shanba bo&apos;yicha.</p>
+              <p className="mt-3 text-[12px] text-slate-400">ERP&apos;dagi biror oy shu rekorddan oshsa, hisobotda o&apos;sha oy rekord bo&apos;lib ko&apos;rinadi. Ish kuni bo&apos;sh — ish kalendaridan (dam olish va bayramlarsiz).</p>
             </Card>
           )}
         </Block>
@@ -117,7 +117,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                 <Tr><Td>O&apos;rtacha kunlik fakt</Td><Td right>{n0(r.plan.avgDay)}</Td><Td /></Tr>
               </tbody>
             </Table>
-            <p className="mt-2 text-[12.5px] text-slate-500">Reja — <Link href="/bi-tahlil/reja" className="font-medium text-blue-600 hover:underline">Reja nazorati</Link>da ({MONTHS[r.day.getMonth()]} {r.day.getFullYear()}). Fakt — yetkazilgan mahsulot, dastavkasiz.</p>
+            {canEdit && (
+              <Card className="mt-3">
+                <MonthPlanForm year={r.plan.year} month={r.plan.mon} amount={r.plan.companySet ? r.plan.month : null} workDays={r.wdManual ? r.wdTotal : null} autoWd={r.wdAuto} />
+              </Card>
+            )}
+            <p className="mt-2 text-[12.5px] text-slate-500">{MONTHS[r.day.getMonth()]} {r.day.getFullYear()}: bugungi reja = oylik reja ÷ {r.wdTotal} ish kuni. Ish kuni bo&apos;sh qolsa — kalendardan ({r.wdAuto}, dam olish va bayramlarsiz, <Link href="/settings/ish-tartibi" className="font-medium text-blue-600 hover:underline">Ish tartibi</Link>). Sotuvchilar rejasi — <Link href="/bi-tahlil/reja" className="font-medium text-blue-600 hover:underline">Reja nazorati</Link>da. Fakt — yetkazilgan mahsulot, dastavkasiz.</p>
           </Block>
 
           <Block title="4. Sotuvchilar (so'm, QQS bilan)">

@@ -2431,6 +2431,19 @@ model WorkCalendarDay {
   updatedAt DateTime        @updatedAt
 }
 
+/// Oydagi ish kuni — qo'lda kiritilgan (Kunlik realizatsiya hisoboti → Reja). Bo'lmasa — ish kalendaridan
+/// (haftalik dam olish va bayramlarsiz, `lib/work-calendar.ts`). Kunlik reja va oy prognozi shu songa bo'linadi.
+model WorkMonth {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int
+  workDays  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
+}
+
 enum CalendarDayKind {
   HOLIDAY // bayram / qo'shimcha dam olish kuni — ish kuni emas
   WORKDAY // dam olish kuni bo'lsa ham ishlanadi (ko'chirilgan ish kuni)

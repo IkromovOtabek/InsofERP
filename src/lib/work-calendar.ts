@@ -13,6 +13,8 @@ export type WorkCalendar = {
   restDays: ReadonlySet<number>;
   holidays: ReadonlyMap<string, string>; // "YYYY-MM-DD" → nomi
   workdays: ReadonlySet<string>;
+  /** Qo'lda kiritilgan oydagi ish kuni: "YYYY-MM" → son (`WorkMonth`) */
+  monthDays: ReadonlyMap<string, number>;
   workStart: string; workEnd: string; lunchStart: string | null; lunchEnd: string | null;
 };
 
@@ -37,14 +39,16 @@ export const dbDate = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 /** Bir so'rov ichida bir marta o'qiladi. */
 export const workCalendar = cache(async (): Promise<WorkCalendar> => {
-  const [c, days] = await Promise.all([
+  const [c, days, months] = await Promise.all([
     db.companySettings.findUnique({ where: { id: "main" }, select: { restDays: true, workStart: true, workEnd: true, lunchStart: true, lunchEnd: true } }),
     db.workCalendarDay.findMany({ select: { date: true, kind: true, name: true } }),
+    db.workMonth.findMany({ select: { year: true, month: true, workDays: true } }),
   ]);
   return {
     restDays: new Set(c?.restDays ?? [0]),
     holidays: new Map(days.filter((d) => d.kind === "HOLIDAY").map((d) => [dbDateKey(d.date), d.name ?? "Bayram"])),
     workdays: new Set(days.filter((d) => d.kind === "WORKDAY").map((d) => dbDateKey(d.date))),
+    monthDays: new Map(months.map((m) => [monthKey(m.year, m.month), m.workDays])),
     workStart: c?.workStart ?? "08:00", workEnd: c?.workEnd ?? "18:00", lunchStart: c?.lunchStart ?? null, lunchEnd: c?.lunchEnd ?? null,
   };
 });
@@ -62,6 +66,13 @@ export function countWorkDays(cal: WorkCalendar, from: Date, to: Date): number {
   let n = 0;
   for (let d = new Date(from); d < to; d.setDate(d.getDate() + 1)) if (isWorkDay(cal, d)) n++;
   return n;
+}
+
+export const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}`;
+
+/** Oydagi ish kuni (`month` 1–12): qo'lda kiritilgani, bo'lmasa kalendardan (dam olish va bayramlarsiz). */
+export function monthWorkDays(cal: WorkCalendar, year: number, month: number): number {
+  return cal.monthDays.get(monthKey(year, month)) ?? countWorkDays(cal, new Date(year, month - 1, 1), new Date(year, month, 1));
 }
 
 const mins = (t: string) => { const [h, m] = t.split(":").map(Number); return (h ?? 0) * 60 + (m ?? 0); };

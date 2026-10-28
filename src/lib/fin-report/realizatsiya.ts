@@ -3,7 +3,7 @@ import { addDays, goLiveDate, loadRevenue, sum, workingDays } from "@/lib/bi/cor
 import { isoDate } from "@/lib/format";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
 import { unitLabel } from "@/lib/unit";
-import { workCalendar, weekLabel, type WorkCalendar } from "@/lib/work-calendar";
+import { countWorkDays, monthWorkDays, workCalendar, weekLabel, type WorkCalendar } from "@/lib/work-calendar";
 import { groupsOf } from "./panel";
 import { r2 } from "./rows";
 
@@ -34,18 +34,20 @@ export type Realizatsiya = {
   day: Date; isToday: boolean; wdPassed: number; wdTotal: number;
   /** Ish tartibi: "6/1" va shu oydagi bayramlar */
   week: string; holidays: { date: string; name: string }[];
+  /** Oydagi ish kuni qo'lda kiritilganmi va kalendar bo'yicha qancha */
+  wdManual: boolean; wdAuto: number;
   pay: RzPay[]; payTotal: Omit<RzPay, "key" | "label">; unset: { today: number; month: number; orders: number };
   groups: RzGroup[];
   /** Rekord kiritish uchun barcha yuqori guruhlar (shu oy sotilmaganlari ham) */
   allGroups: { group: string; unit: string }[];
-  plan: { month: number; day: number; factMonth: number; factDay: number; pctMonth: number | null; pctDay: number | null; forecast: number; forecastPct: number | null; avgDay: number };
+  plan: { year: number; mon: number; companySet: boolean; month: number; day: number; factMonth: number; factDay: number; pctMonth: number | null; pctDay: number | null; forecast: number; forecastPct: number | null; avgDay: number };
   sellers: RzSeller[]; sellersTotal: { today: number; month: number; plan: number };
   rows: RzRow[];
 };
 
 export const MONTHS = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 const monthLabel = (y: number, m: number) => `${MONTHS[m - 1]} ${y}`;
-const monthWd = (cal: WorkCalendar, y: number, m: number) => workingDays(new Date(y, m - 1, 1), new Date(y, m, 1), cal);
+const monthWd = (cal: WorkCalendar, y: number, m: number) => monthWorkDays(cal, y, m);
 
 export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const nowDay = new Date(); nowDay.setHours(0, 0, 0, 0);
@@ -54,7 +56,8 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const y = day.getFullYear(), mo = day.getMonth() + 1;
   const monthStart = new Date(y, mo - 1, 1), monthEnd = new Date(y, mo, 1);
   const cal = await workCalendar();
-  const wdPassed = workingDays(monthStart, next, cal), wdTotal = workingDays(monthStart, monthEnd, cal);
+  const wdPassed = workingDays(monthStart, next, cal), wdTotal = monthWorkDays(cal, y, mo);
+  const wdAuto = countWorkDays(cal, monthStart, monthEnd), wdManual = cal.monthDays.has(`${y}-${String(mo).padStart(2, "0")}`);
   const holidays = [...cal.holidays].filter(([k]) => k >= isoDate(monthStart) && k < isoDate(monthEnd)).map(([k, name]) => ({ date: k, name }));
   const live = await goLiveDate();
   // Rekord uchun ERP tarixi — tizimga o'tilgan oydan (bo'lmasa bir yil oldin) tanlangan kungacha
@@ -141,7 +144,7 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const planDay = wdTotal > 0 ? planMonth / wdTotal : 0;
   const forecast = wdPassed > 0 ? (factMonth / wdPassed) * wdTotal : 0;
   const plan = {
-    month: planMonth, day: r2(planDay), factMonth, factDay,
+    year: y, mon: mo, companySet: !!companyRow, month: planMonth, day: r2(planDay), factMonth, factDay,
     pctMonth: planMonth > 0 ? (factMonth / planMonth) * 100 : null, pctDay: planDay > 0 ? (factDay / planDay) * 100 : null,
     forecast: r2(forecast), forecastPct: planMonth > 0 ? (forecast / planMonth) * 100 : null, avgDay: wdPassed > 0 ? r2(factMonth / wdPassed) : 0,
   };
@@ -162,5 +165,5 @@ export async function realizatsiyaReport(dayIn?: Date): Promise<Realizatsiya> {
   const rows = today.map((x) => x.row).sort((a, b) => (order.get(a.pay)! - order.get(b.pay)!) || a.seller.localeCompare(b.seller) || a.customer.localeCompare(b.customer));
 
   const allGroups = [...new Set([...groupNames, ...[...prods.values()].map((p) => p.group).sort((a, b) => a.localeCompare(b))])].map((g) => ({ group: g, unit: unitOf(g) }));
-  return { day, isToday: day.getTime() === nowDay.getTime(), wdPassed, wdTotal, week: weekLabel(cal.restDays), holidays, pay, payTotal, unset, groups, allGroups, plan, sellers, sellersTotal, rows };
+  return { day, isToday: day.getTime() === nowDay.getTime(), wdPassed, wdTotal, wdManual, wdAuto, week: weekLabel(cal.restDays), holidays, pay, payTotal, unset, groups, allGroups, plan, sellers, sellersTotal, rows };
 }

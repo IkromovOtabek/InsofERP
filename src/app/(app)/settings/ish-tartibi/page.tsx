@@ -7,7 +7,7 @@ import { pathAllowed } from "@/lib/nav";
 import { canDo } from "@/lib/permissions";
 import { fmtNum } from "@/lib/format";
 import { MONTHS } from "@/lib/fin-report/realizatsiya";
-import { WEEKDAY_NAMES, countWorkDays, dayHours, dbDate, dbDateKey, weekLabel, workCalendar } from "@/lib/work-calendar";
+import { WEEKDAY_NAMES, countWorkDays, dayHours, dbDate, dbDateKey, monthKey, monthWorkDays, weekLabel, workCalendar } from "@/lib/work-calendar";
 import { Badge, Card, CardHeader, Empty, PageHeader, Table, Td, Th, Tr } from "@/components/ui";
 import { deleteCalendarDayAction } from "./actions";
 import { CalendarDayForm, UzHolidaysButton, WorkWeekForm } from "./forms";
@@ -35,7 +35,7 @@ export default async function IshTartibiPage({ searchParams }: { searchParams: P
     const from = new Date(year, i, 1), to = new Date(year, i + 1, 1);
     const key = `${year}-${String(i + 1).padStart(2, "0")}`;
     const hol = days.filter((d) => d.kind === "HOLIDAY" && dbDateKey(d.date).startsWith(key)).length;
-    return { name, work: countWorkDays(cal, from, to), total: Math.round((to.getTime() - from.getTime()) / 86400000), hol };
+    return { name, work: monthWorkDays(cal, year, i + 1), auto: countWorkDays(cal, from, to), manual: cal.monthDays.has(monthKey(year, i + 1)), total: Math.round((to.getTime() - from.getTime()) / 86400000), hol };
   });
   const yearWork = months.reduce((a, m) => a + m.work, 0);
   const hours = dayHours(cal);
@@ -89,7 +89,7 @@ export default async function IshTartibiPage({ searchParams }: { searchParams: P
         <Table>
           <thead><tr><Th>Oy</Th><Th right>Kalendar kun</Th><Th right>Ish kuni</Th><Th right>Bayram</Th><Th right>Ish soati</Th></tr></thead>
           <tbody>
-            {months.map((m) => <Tr key={m.name}><Td>{m.name}</Td><Td right>{m.total}</Td><Td right className="font-semibold">{m.work}</Td><Td right>{m.hol || "–"}</Td><Td right>{fmtNum(m.work * hours, 0)}</Td></Tr>)}
+            {months.map((m) => <Tr key={m.name}><Td>{m.name}</Td><Td right>{m.total}</Td><Td right className="font-semibold">{m.work}{m.manual && <span className="ml-1 text-[11px] font-normal text-amber-700" title={`Qo'lda kiritilgan (Kunlik realizatsiya hisoboti → Reja); kalendar bo'yicha ${m.auto}`}>qo&apos;lda</span>}</Td><Td right>{m.hol || "–"}</Td><Td right>{fmtNum(m.work * hours, 0)}</Td></Tr>)}
           </tbody>
         </Table>
       </Card>

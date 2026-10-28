@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { loadSales, sum, addDays, startOfDay, series, mean, workingDays, monthForecast, goLiveDate, delta, type SaleRow } from "./core";
-import { isWorkDay, workCalendar } from "@/lib/work-calendar";
+import { isWorkDay, monthWorkDays, workCalendar } from "@/lib/work-calendar";
 
 export const MONTHS_UZ = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 export const MONTHS_SHORT = ["Yan", "Fev", "Mar", "Apr", "May", "Iyn", "Iyl", "Avg", "Sen", "Okt", "Noy", "Dek"];
@@ -35,7 +35,8 @@ export async function plansTab(year: number, month: number) {
   const rev = (rows: SaleRow[]) => sum(rows.map((x) => x.revenue));
   // Oy o'rtasida tizimga o'tilgan bo'lsa ish kunlari o'tish sanasidan sanaladi (monthForecast bilan bir xil)
   const pStart = live && live > mStart && live < mEnd ? startOfDay(live) : mStart;
-  const wdTotal = workingDays(pStart, mEnd, cal), wdPassed = isPast ? wdTotal : isCurrent ? workingDays(pStart, tomorrow, cal) : 0, wdLeft = wdTotal - wdPassed;
+  // Oydagi ish kuni qo'lda kiritilgan bo'lishi mumkin (Kunlik realizatsiya hisoboti); oy o'rtasida o'tilgan bo'lsa — kalendardan
+  const wdTotal = pStart.getTime() === mStart.getTime() ? monthWorkDays(cal, year, month) : workingDays(pStart, mEnd, cal), wdPassed = isPast ? wdTotal : isCurrent ? workingDays(pStart, tomorrow, cal) : 0, wdLeft = wdTotal - wdPassed;
   const project = (fact: number) => (isPast ? fact : isCurrent ? monthForecast(fact, cal, today, live) : 0);
 
   const companyPlanRow = plans.find((p) => p.sellerId === null);
@@ -67,11 +68,13 @@ export async function plansTab(year: number, month: number) {
   const daily = series(sales, mStart, isPast ? mEnd : tomorrow, "day", (x) => x.date, (x) => x.revenue);
   let acc = 0; const cum = daily.map((d) => (acc += d.value));
   const labels: string[] = [], cumVals: (number | null)[] = [], fcVals: (number | null)[] = [], planVals: number[] = [];
+  // Reja chizig'i kalendar kunlari bo'yicha taqsimlanadi (qo'lda ish kuni boshqacha bo'lsa ham oy oxirida 100%)
+  const wdCal = Math.max(1, workingDays(pStart, mEnd, cal));
   const perWd = wdPassed > 0 ? fact / wdPassed : 0; let fcAcc = fact, wdCount = 0;
   for (let d = new Date(mStart), i = 0; d < mEnd; d = addDays(d, 1), i++) {
     labels.push(String(d.getDate()).padStart(2, "0"));
     if (d >= pStart && isWorkDay(cal, d)) wdCount++;
-    planVals.push(companyPlan * (wdCount / wdTotal));
+    planVals.push(companyPlan * (wdCount / wdCal));
     if (i < cum.length) { cumVals.push(cum[i]); fcVals.push(i === cum.length - 1 ? cum[i] : null); }
     else { cumVals.push(null); if (isWorkDay(cal, d)) fcAcc += perWd; fcVals.push(fcAcc); }
   }
