@@ -143,7 +143,7 @@ export const NAV: NavItem[] = [
   // ── Tahlil (Team24 BI tuzilmasi) ──
   // Umumiy BI ko'rinishi Bosh sahifaga ko'chdi (/bi-tahlil → /dashboard), menyuda band yo'q. Ruxsat ichki sahifalar uchun qoladi
   { href: "/bi-tahlil",                  label: "BI tahlil",        roles: BI_ROLES, group: "Tahlil", hidden: true },
-  { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/sotuvlar/bekor", label: "Bekor qilinganlar" }] },
+  { href: "/bi-tahlil/sotuvlar",         label: "Sotuvlar",         roles: BI_ROLES, group: "Tahlil" },
   // Moliya: tahlil + «Insof 2026» jadvalidagi rasmiy hisobotlar (`bi-tahlil/moliya/report-page.tsx`)
   { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/realizatsiya", label: "Kunlik realizatsiya hisoboti" }, { href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }, { href: "/bi-tahlil/moliya/ish-haqi", label: "Ish haqi vedomosti" }, { href: "/bi-tahlil/moliya/kalendar", label: "To'lov kalendari" }, { href: "/bi-tahlil/moliya/tolov-rejasi", label: "To'lov rejasi" }, { href: "/bi-tahlil/moliya/mahsulot-foydasi", label: "Mahsulot foydasi" }, { href: "/bi-tahlil/moliya/tannarx", label: "Tannarx hisobi" }] },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
