@@ -2413,6 +2413,20 @@ model SalesPlan {
   @@index([year, month])
 }
 
+/// Mahsulot guruhi (yuqori `ProductGroup` nomi: Plita, Beton…) bo'yicha rekord oy sotuv hajmi — «Kunlik realizatsiya hisoboti».
+/// ERP'gacha bo'lgan rekordlar qo'lda kiritiladi; ERP'dagi oy bundan oshsa hisobotda o'sha oy rekord bo'lib ko'rinadi.
+model SalesRecord {
+  id        String   @id @default(cuid())
+  group     String   @unique
+  qty       Decimal  @db.Decimal(18, 3)
+  year      Int
+  month     Int
+  /// Rekord oyning ish kunlari (bayramlar bilan); bo'sh — Dushanba–Shanba bo'yicha hisoblanadi
+  workDays  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 enum MarketingEntryKind {
   BUDGET // ajratilgan pul
   PLAN // natija maqsadlari

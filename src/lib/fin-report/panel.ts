@@ -35,7 +35,7 @@ export type Panel = {
 };
 
 /** Mahsulot → yuqori guruh nomi (Plita, Stalba, Beton…); guruhsiz — «Boshqalar». */
-async function groupsOf(): Promise<Map<string, { group: string; unit: string; price: number }>> {
+export async function groupsOf(): Promise<Map<string, { group: string; unit: string; price: number }>> {
   const [products, groups] = await Promise.all([
     db.product.findMany({ select: { id: true, groupId: true, unit: true, price: true } }),
     db.productGroup.findMany({ select: { id: true, name: true, parentId: true } }),
