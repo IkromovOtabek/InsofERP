@@ -4,6 +4,7 @@ import { audit } from "@/lib/audit";
 import { defaultCreditLimit } from "@/lib/finance";
 import { parseInn } from "@/lib/inn";
 import { money } from "@/lib/format";
+import { flatName } from "@/lib/excel";
 
 /**
  * Mijoz kartasini saqlash va agentga biriktirish — veb (`customers/actions.ts`, `employees/agent-actions.ts`)
@@ -22,7 +23,22 @@ export type CustomerInput = {
   contactPerson: string | null;
   creditLimit: number;
   isActive: boolean;
+  /** Boshqa nomlari; berilmasa (mobil forma) o'zgarmaydi */
+  aliases?: string[];
 };
+
+/** Boshqa nomlari: bo'shliqlar tozalanadi, asosiy nom va takrorlar tashlanadi. */
+export function cleanAliases(list: string[], name: string): string[] {
+  const seen = new Set([flatName(name)]);
+  const out: string[] = [];
+  for (const raw of list) {
+    const a = raw.replace(/\s+/g, " ").trim().slice(0, 160);
+    const k = flatName(a);
+    if (!k || seen.has(k)) continue;
+    seen.add(k); out.push(a);
+  }
+  return out.slice(0, 200);
+}
 
 export type SaveCustomerResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -32,6 +48,7 @@ export type SaveCustomerResult = { ok: true; id: string } | { ok: false; error: 
  */
 export async function saveCustomerLib(id: string | null, input: CustomerInput, who: { userId: string; role: Role }, creditLimitWas: string | null): Promise<SaveCustomerResult> {
   const d = { ...input };
+  if (d.aliases) d.aliases = cleanAliases(d.aliases, d.name);
   const cur = id ? await db.customer.findUnique({ where: { id } }) : null;
   if (id && !cur) return { ok: false, error: "Mijoz topilmadi" };
 

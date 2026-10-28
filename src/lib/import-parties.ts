@@ -61,9 +61,9 @@ export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { u
   return db.$transaction(async (tx) => {
     // Standart limit (Sozlamalar → Limitlar) bir marta o'qiladi — limitsiz yoki huquqsiz qatordagi yangi mijozga
     const defLimit = kind === "customer" ? await defaultCreditLimit(tx) : 0;
-    type Found = { id: string; name: string; inn: string | null; phone: string | null };
+    type Found = { id: string; name: string; inn: string | null; phone: string | null; aliases?: string[] };
     const all: Found[] = kind === "customer"
-      ? await tx.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, inn: true, phone: true } })
+      ? await tx.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, inn: true, phone: true, aliases: true } })
       : await tx.supplier.findMany({ select: { id: true, name: true, inn: true, phone: true } });
     const byInn = new Map<string, Found>(), byPhone = new Map<string, Found>(), byName = new Map<string, Found>();
     const index = (f: Found) => {
@@ -73,6 +73,8 @@ export async function importParties(kind: PartyKind, rows: PartyRow[], opts: { u
       if (!byName.has(flatName(f.name))) byName.set(flatName(f.name), f);
     };
     all.forEach(index);
+    // Mijozning boshqa nomlari — asosiy nomlardan keyin, ularni egallamaydi
+    for (const f of all) for (const a of f.aliases ?? []) if (!byName.has(flatName(a))) byName.set(flatName(a), f);
 
     let created = 0, updated = 0, skipped = 0, dupInFile = 0;
     const touched = new Set<string>();

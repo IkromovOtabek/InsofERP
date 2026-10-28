@@ -10,10 +10,14 @@ import { requirePage } from "@/lib/page-guard";
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string }> }) {
   await requirePage("/customers");
   const { q, tab = "all" } = await searchParams;
+  // Boshqa nomlari bo'yicha ham (kassada «Dumbirabod 998865055» deb yozilgan mijoz) — massiv ichida qisman moslik
+  const aliasIds = q
+    ? (await db.$queryRaw<{ id: string }[]>`SELECT id FROM "Customer" WHERE EXISTS (SELECT 1 FROM unnest(aliases) a WHERE a ILIKE ${`%${q}%`})`).map((r) => r.id)
+    : [];
   const [customers, credit, contracted, defLimit] = await Promise.all([
     db.customer.findMany({
       // Ichki "Sklad" kartochkasi mijoz emas — ro'yxatda ko'rinmaydi
-      where: { isInternal: false, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { inn: { contains: q } }, { phone: { contains: q } }] } : {}) },
+      where: { isInternal: false, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { inn: { contains: q } }, { phone: { contains: q } }, { id: { in: aliasIds } }] } : {}) },
       orderBy: { name: "asc" },
     }),
     customersCredit(),

@@ -156,6 +156,17 @@ export function codeFromName(name: string) {
 /** Nomlarni taqqoslash uchun soddalashtirish: «"BODOMZOR SEMENT" MCHJ» → bodomzorsementmchj */
 export const flatName = (s: string) => s.toLowerCase().replace(/[^a-z0-9а-яёўқғҳ]+/gi, "");
 
+/**
+ * Nom → yozuv xaritasi (`flatName` bo'yicha) importlarda qidirish uchun. Avval asosiy nomlar, keyin boshqa nomlari
+ * (`aliases`): alias boshqa yozuvning asosiy nomini egallamaydi, bir xil nom bo'lsa birinchisi qoladi.
+ */
+export function nameIndex<T extends { name: string; aliases?: string[] }>(list: T[]): Map<string, T> {
+  const m = new Map<string, T>();
+  for (const x of list) { const k = flatName(x.name); if (k && !m.has(k)) m.set(k, x); }
+  for (const x of list) for (const a of x.aliases ?? []) { const k = flatName(a); if (k && !m.has(k)) m.set(k, x); }
+  return m;
+}
+
 // ───────────────────────── Sana kataklari ─────────────────────────
 
 const MONTHS: Record<string, number> = {

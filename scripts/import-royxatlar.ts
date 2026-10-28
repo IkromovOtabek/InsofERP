@@ -97,6 +97,7 @@ async function main() {
   const { normalizeUnit, UNIT_FALLBACK } = await import("@/lib/unit");
   const { resolveMaterials } = await import("@/lib/import-materials");
   const { defaultCreditLimit } = await import("@/lib/finance");
+  const { cleanAliases } = await import("@/lib/customer-admin");
   const { normCat } = await import("@/lib/fin-report/categories");
 
   /** «"BAO XIN METALL" MCHJ QK» = «Bao Xin Metall»: kirill → lotin, yuridik shakl va belgilarsiz. */
@@ -113,9 +114,10 @@ async function main() {
 
   // Alias: kassadagi nom → spravkadagi asosiy nom (zanjir bo'lsa oxirigacha)
   const alias = new Map<string, string>();
+  const aliasPairs: [string, string][] = [];
   for (const l of read("aliases.txt")) {
     const [from, to] = l.split("=>").map((s) => s.trim());
-    if (from && to && norm(from) !== norm(to)) alias.set(norm(from), to);
+    if (from && to && norm(from) !== norm(to)) { alias.set(norm(from), to); aliasPairs.push([from, to]); }
   }
   const canon = (name: string) => {
     let n = name.trim();
@@ -265,7 +267,8 @@ async function main() {
     for (let i = 0; i < result.size - created.length; i++) bump("Xom-ashyo", "existing");
 
     // ── 6. Ta'minotchilar va mijozlar (aliaslar bo'yicha birlashtiriladi)
-    type Party = { name: string; phone: string | null };
+    /** `names` — shu yozuvga tushgan barcha yozilishlar (mijozning «Boshqa nomlari» bo'ladi) */
+    type Party = { name: string; phone: string | null; names: string[] };
     const collect = (flag: "X" | "T") => {
       const out = new Map<string, Party>();
       const byPhone = new Map<string, string>();
@@ -277,14 +280,17 @@ async function main() {
         const k = (!out.has(norm(name)) && phone && byPhone.get(phone)) || norm(name);
         if (phone && !byPhone.has(phone)) byPhone.set(phone, k);
         const cur = out.get(k);
-        if (!cur) out.set(k, { name, phone });
+        if (!cur) out.set(k, { name, phone, names: [raw] });
         else {
+          cur.names.push(raw);
           if (cyr(cur.name) && !cyr(name)) cur.name = name; // «Алибек драбилка» va «Alibek Drabilka» — lotinchasi qoladi
           if (!cur.phone && phone) cur.phone = phone;
         }
       };
       // Kassadagi nom spravkadagi asosiy nomga almashtiriladi — bir mijoz bitta yozuv bo'ladi
       for (const r of kontr) if (r.flags.includes(flag)) add(r.name);
+      // Spravkadagi juftlar: kassadagi yozilishi ro'yxatda bo'lmasa ham asosiy nomga bog'lanadi
+      for (const [from, to] of aliasPairs) out.get(norm(canon(to)))?.names.push(from);
       return out;
     };
 
@@ -301,7 +307,7 @@ async function main() {
     }
 
     const customerList = collect("X");
-    const customers = await tx.customer.findMany({ select: { id: true, name: true, phone: true } });
+    const customers = await tx.customer.findMany({ select: { id: true, name: true, phone: true, aliases: true } });
     const custKeys = new Map<string, (typeof customers)[number]>();
     const custByPhone = new Map<string, (typeof customers)[number]>();
     for (const c of customers) {
@@ -313,12 +319,18 @@ async function main() {
     for (const [k, p] of customerList) {
       const ex = custKeys.get(k) ?? custKeys.get(norm(p.name)) ?? (p.phone ? custByPhone.get(p.phone) : undefined);
       if (ex) {
-        if (!ex.phone && p.phone) { await tx.customer.update({ where: { id: ex.id }, data: { phone: p.phone } }); bump("Mijoz", "updated"); }
-        else bump("Mijoz", "existing");
+        const aliases = cleanAliases([...ex.aliases, ...p.names], ex.name);
+        const patch = { ...(!ex.phone && p.phone ? { phone: p.phone } : {}), ...(aliases.length > ex.aliases.length ? { aliases } : {}) };
+        if (Object.keys(patch).length) {
+          await tx.customer.update({ where: { id: ex.id }, data: patch });
+          await audit(tx, uid, "UPDATE", "Customer", ex.id, { phone: ex.phone, aliases: ex.aliases }, patch);
+          Object.assign(ex, patch); bump("Mijoz", "updated");
+        } else bump("Mijoz", "existing");
         continue;
       }
-      const c = await tx.customer.create({ data: { name: p.name, phone: p.phone, creditLimit: limit } });
-      await audit(tx, uid, "CREATE", "Customer", c.id, undefined, { name: p.name, phone: p.phone });
+      const aliases = cleanAliases(p.names, p.name);
+      const c = await tx.customer.create({ data: { name: p.name, phone: p.phone, aliases, creditLimit: limit } });
+      await audit(tx, uid, "CREATE", "Customer", c.id, undefined, { name: p.name, phone: p.phone, aliases });
       custKeys.set(k, c); if (p.phone) custByPhone.set(p.phone, c); plan.push(`Mijoz + «${p.name}»${p.phone ? ` ${p.phone}` : ""}`); bump("Mijoz", "created");
     }
 

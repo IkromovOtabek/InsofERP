@@ -17,6 +17,8 @@ const schema = z.object({
   contactPerson: zOpt,
   creditLimit: zDec(0),
   isActive: z.string().optional().transform((v) => v === "on"),
+  // Har qatorda bitta nom (nuqtali vergul ham ajratadi; vergul — nom ichida bo'lishi mumkin)
+  aliases: z.string().optional().transform((v) => (v ?? "").split(/[\n;]+/)),
 });
 
 export async function saveCustomer(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {

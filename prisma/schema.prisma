@@ -237,6 +237,9 @@ model Customer {
   address       String?
   /// Mas'ul shaxs (F.I.O., lavozimi) — Excel importi va karta uchun
   contactPerson String?
+  /// Boshqa nomlari — kassa / sotuv / Excel'da shunday yozilgan («Dumbirabod 998865055» → «Dombirobod(99 886 50 55)»).
+  /// Importlar mijozni asosiy nom bilan birga shular bo'yicha ham topadi.
+  aliases       String[] @default([])
   creditLimit   Decimal  @default(0) @db.Decimal(18, 2) // yangi mijozga 0 (direktor/moliya oshiradi); ishlatilgan qismi = qarz + ochiq zayavkalar; to'liq ishlatilsa — qora ro'yxat
   /// Ichki "mijoz" — haqiqiy mijoz emas, tizimning o'zi ishlatadi (sklad zaxirasi zayavkasi shu nomga ochiladi).
   /// Mijozlar ro'yxati, limit, reyting va ECO sinxronidan chiqarib tashlanadi.

@@ -2,7 +2,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { defaultCreditLimit } from "./finance";
 import { createOrder } from "./orders";
-import { flatName, num, str } from "./excel";
+import { flatName, nameIndex, num, str } from "./excel";
 
 /**
  * Excel'dan zayavkalar: bitta qator — bitta mijoz × mahsulot × miqdor.
@@ -67,9 +67,9 @@ export async function importOrders(input: ImportOrdersInput, userId: string): Pr
   if (unknownProducts.length) throw new Error(`Bunday mahsulot ro'yxatda yo'q: ${cut(unknownProducts)}. Avval Mahsulotlar bo'limiga qo'shing (yoki fayldagi nomini to'g'rilang).`);
 
   // ── Mijozlar: nomi bo'yicha (tinish belgilari va harf katta-kichikligi hisobga olinmaydi)
-  const customers = await db.customer.findMany({ where: { isActive: true, isInternal: false }, select: { id: true, name: true, address: true } });
-  const byCustomer = new Map<string, (typeof customers)[number]>();
-  for (const c of customers) byCustomer.set(flatName(c.name), c);
+  const customers = await db.customer.findMany({ where: { isActive: true, isInternal: false }, select: { id: true, name: true, address: true, aliases: true } });
+  // Asosiy nom va boshqa nomlari bo'yicha
+  const byCustomer = nameIndex(customers);
   const unknownCustomers = [...new Set(rows.filter((r) => !byCustomer.get(flatName(r.customer))).map((r) => r.customer))];
   if (unknownCustomers.length && !input.createCustomers) {
     throw new Error(`Bunday mijoz yo'q: ${cut(unknownCustomers)}. "Ro'yxatda yo'q mijozlarni yaratish" ni belgilang yoki nomini to'g'rilang.`);
@@ -79,7 +79,7 @@ export async function importOrders(input: ImportOrdersInput, userId: string): Pr
   const defLimit = unknownCustomers.length ? await defaultCreditLimit() : 0;
   for (const name of unknownCustomers) {
     const c = await db.$transaction(async (tx) => {
-      const created = await tx.customer.create({ data: { name, creditLimit: defLimit }, select: { id: true, name: true, address: true } });
+      const created = await tx.customer.create({ data: { name, creditLimit: defLimit }, select: { id: true, name: true, address: true, aliases: true } });
       await audit(tx, userId, "CREATE", "Customer", created.id, undefined, { ...created, via: "excel-import" });
       return created;
     });

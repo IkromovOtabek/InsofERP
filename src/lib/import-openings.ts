@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { audit } from "./audit";
-import { flatName, num, numMoney, str } from "./excel";
+import { flatName, nameIndex, num, numMoney, str } from "./excel";
 import { defaultCreditLimit } from "./finance";
 import { INN_ERROR, parseInn } from "./inn";
 import { createOpeningTx, activeKeyOf, OpeningError, type OpeningInput } from "./opening-balances";
@@ -34,7 +34,7 @@ export async function importOpenings(
 
   // Spravochniklar bir marta o'qiladi
   const [customers, suppliers, accounts, products, warehouses] = await Promise.all([
-    kind === "CUSTOMER" ? db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, inn: true } }) : [],
+    kind === "CUSTOMER" ? db.customer.findMany({ where: { isInternal: false }, select: { id: true, name: true, inn: true, aliases: true } }) : [],
     kind === "SUPPLIER" ? db.supplier.findMany({ select: { id: true, name: true, inn: true } }) : [],
     kind === "CASH" ? db.cashAccount.findMany({ select: { id: true, name: true, type: true, allowOverdraft: true } }) : [],
     kind === "STOCK" ? db.product.findMany({ select: { id: true, code: true, name: true } }) : [],
@@ -42,7 +42,7 @@ export async function importOpenings(
   ]);
   const party = kind === "CUSTOMER" ? customers : suppliers;
   const byInn = new Map(party.filter((p) => p.inn).map((p) => [p.inn!.replace(/\D+/g, ""), p]));
-  const byName = new Map(party.map((p) => [flatName(p.name), p]));
+  const byName = nameIndex<(typeof party)[number]>(party);
   const accByName = new Map(accounts.map((a) => [flatName(a.name), a]));
   const prodByCode = new Map(products.map((p) => [p.code.toLowerCase(), p]));
   const prodByName = new Map(products.map((p) => [flatName(p.name), p]));

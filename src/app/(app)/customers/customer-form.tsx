@@ -5,7 +5,7 @@ import { saveCustomer } from "./actions";
 import { Button, Field, FormError, Input, LinkButton, Textarea, FormActions, Checkbox } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
 
-type C = { id: string; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson?: string | null; creditLimit: string; isActive: boolean } | null;
+type C = { id: string; name: string; inn: string | null; phone: string | null; address: string | null; contactPerson?: string | null; aliases?: string[]; creditLimit: string; isActive: boolean } | null;
 
 /** `defaultLimit` — yangi mijoz formasidagi boshlang'ich limit (Sozlamalar → Limitlar, sahifa server'da o'qiydi). */
 export function CustomerForm({ customer, canEditLimit, defaultLimit = 0 }: { customer: C; canEditLimit: boolean; defaultLimit?: number }) {
@@ -24,6 +24,9 @@ export function CustomerForm({ customer, canEditLimit, defaultLimit = 0 }: { cus
       </div>
       <Field label="Manzil"><Textarea name="address" defaultValue={customer?.address ?? ""} /></Field>
       <Field label="Mas'ul shaxs" hint="F.I.O., lavozimi — kim bilan gaplashiladi"><Input name="contactPerson" defaultValue={customer?.contactPerson ?? ""} /></Field>
+      <Field label="Boshqa nomlari" hint="Har qatorda bitta nom — kassa, sotuv yoki Excel'da shunday yozilgan bo'lsa ham importlar shu mijozni topadi">
+        <Textarea name="aliases" rows={3} defaultValue={customer?.aliases?.join("\n") ?? ""} placeholder={"Dumbirabod 998865055\nДумбиробод"} />
+      </Field>
       <Field label="Kredit limit" hint={limitHint}>
         {/* decimals=2: kasrli limit (Excel'dan 1 250 000,50) tahrirda kesilmasin — aks holda sotuvchiga «faqat Buxgalteriya…» xatosi chiqardi */}
         <MoneyInput name="creditLimit" defaultValue={customer?.creditLimit ?? String(defaultLimit)} readOnly={!canEditLimit} decimals={2} />

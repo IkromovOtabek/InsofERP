@@ -3,6 +3,7 @@ import { audit } from "./audit";
 import type { Prisma } from "@/generated/prisma";
 import { cashOutflowError } from "./payments";
 import { defaultCreditLimit } from "./finance";
+import { nameIndex } from "./excel";
 
 /**
  * Realizatsiya jurnali — buxgalteriya Excel'da yuritadigan kunlik jo'natma jadvali
@@ -40,8 +41,9 @@ export const payKindLabel = (v: string | null) => {
  * aks holda `missing` ro'yxatida qaytadi va import to'xtaydi.
  */
 export async function resolveCustomers(tx: Tx, names: string[], createMissing: boolean) {
-  const all = await tx.customer.findMany({ select: { id: true, name: true } });
-  const byKey = new Map(all.map((c) => [flat(c.name), c]));
+  const all = await tx.customer.findMany({ select: { id: true, name: true, aliases: true } });
+  // Asosiy nom va boshqa nomlari (kassa / sotuvda boshqacha yozilgan) bo'yicha
+  const byKey = new Map<string, { id: string; name: string }>(nameIndex(all));
   const result = new Map<string, { id: string; name: string }>();
   const missing: string[] = [];
   const created: string[] = [];
