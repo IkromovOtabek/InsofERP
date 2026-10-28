@@ -17,7 +17,8 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const s = await requirePage("/invoices");
   const [invoices, recv] = await Promise.all([
     db.invoice.findMany({
-      where: status && status in INVOICE_STATUS ? { status: status as InvoiceStatus } : undefined,
+      // «Hammasi» — bekor qilinganlarsiz; ular faqat «Bekor» tabida
+      where: status && status in INVOICE_STATUS ? { status: status as InvoiceStatus } : { status: { not: "CANCELLED" } },
       orderBy: { date: "desc" }, take: 300,
       include: { customer: true, order: true, payments: true },
     }),

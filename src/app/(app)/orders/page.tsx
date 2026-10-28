@@ -23,7 +23,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   // Ta'minot zayavkasini tasdiqlash shu oynada: narx qo'yilgach ma'sul (sotuv) xodim ko'radi
   const canApproveSupply = ["SALES", "DIRECTOR"].includes(s.role); // ta'minot tasdig'i — sotuv xodimi yoki direktor
   const st = status && PENDING.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
-  // Taqvimdan kun tanlansa — o'sha kunga yetkazilishi kerak bo'lgan barcha zayavkalar (holatidan qat'i nazar)
+  // Bekor qilinganlar ro'yxatda faqat «Bekor» tabida ko'rinadi (hujjat o'chirilmaydi, faqat yashiriladi)
+  const openStatuses = PENDING.filter((k) => k !== "CANCELLED");
+  // Taqvimdan kun tanlansa — o'sha kunga yetkazilishi kerak bo'lgan barcha zayavkalar (bekor qilinganlardan tashqari)
   const day = kun && /^\d{4}-\d{2}-\d{2}$/.test(kun) ? new Date(`${kun}T00:00:00`) : null;
   const dayEnd = day ? new Date(day.getTime() + 864e5) : null;
   // Turi bo'yicha: mijoz zayavkalari yoki sklad zaxirasi zayavkalari (ikkalasi bitta ro'yxatda turadi)
@@ -32,8 +34,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     where: {
       ...(kind ? { kind } : {}),
       ...(day
-        ? { deliveryDate: { gte: day, lt: dayEnd! }, dateUnknown: false, ...(customer ? { customerId: customer } : {}) }
-        : { status: st ?? { in: PENDING }, ...(customer ? { customerId: customer } : {}) }),
+        ? { deliveryDate: { gte: day, lt: dayEnd! }, dateUnknown: false, status: { not: "CANCELLED" as const }, ...(customer ? { customerId: customer } : {}) }
+        : { status: st ?? { in: openStatuses }, ...(customer ? { customerId: customer } : {}) }),
     },
     orderBy: [{ createdAt: "desc" }],
     include: { customer: true, createdBy: true, items: { include: { product: true } } },

@@ -21,7 +21,8 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const canSettings = canDo(s, "offers", "settings");
 
   const where: Prisma.CommercialOfferWhereInput = {
-    ...offerStateWhere(state),
+    // «Hammasi» — bekor qilinganlarsiz; ular faqat «Bekor qilingan» tabida
+    ...(state ? offerStateWhere(state) : { status: { not: "CANCELLED" as const } }),
     ...(customer ? { customerId: customer } : {}),
     ...(q?.trim() ? { OR: [{ offerNo: { contains: q.trim(), mode: "insensitive" } }, { clientName: { contains: q.trim(), mode: "insensitive" } }, { objectName: { contains: q.trim(), mode: "insensitive" } }] } : {}),
   };
