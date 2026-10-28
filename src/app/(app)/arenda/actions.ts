@@ -129,13 +129,13 @@ const leaseShape = {
 };
 
 /** Telefon va INN tekshiruvi — do'kon va shartnoma formalari uchun bitta qoida. */
-function tenantCheck<T extends { phone: string | null; inn: string | null }>(d: T): { error: string } | T {
+function tenantCheck<T extends { phone: string | null; inn: string | null }>(d: T): { error: string; field: string } | T {
   if (d.phone) {
     const p = normalizePhone(d.phone);
-    if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67" };
+    if (!p) return { error: "Telefon raqami noto'g'ri — masalan +998 90 123 45 67", field: "phone" };
     d.phone = p;
   }
-  if (d.inn && !/^\d{9}$|^\d{14}$/.test(d.inn.replace(/\s+/g, ""))) return { error: "INN 9 xonali (JShShIR — 14 xonali) bo'lsin" };
+  if (d.inn && !/^\d{9}$|^\d{14}$/.test(d.inn.replace(/\s+/g, ""))) return { error: "INN 9 xonali (JShShIR — 14 xonali) bo'lsin", field: "inn" };
   if (d.inn) d.inn = d.inn.replace(/\s+/g, "");
   return d;
 }
@@ -155,7 +155,8 @@ const shopSchema = z.object({
   inn: zOpt,
   ...leaseShape,
   electricityBilled: z.string().optional().transform((v) => v === "on"),
-  elecFixed: zDec(),
+  // «Svet hisobida» belgilanmasa maydon formada yo'q — 0 deb olinadi («Raqam bo'lishi kerak» chiqmasin)
+  elecFixed: zDec().default(0),
   address: zOpt, cadastre: zOpt,
   // Qo'shilganda shu oy hisobi ochilgan bo'lsa — yangi do'kon ham shu oyga tushadi
   month: zOpt,
@@ -166,17 +167,17 @@ const shopSchema = z.object({
 export async function saveRentShop(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireAction("arenda", "shops");
   const r = parseForm(shopSchema, fd);
-  if ("error" in r) return { error: r.error };
+  if ("error" in r) return r;
   const { id, month: key, vacant, contractNo, ...rest } = r.data;
   const data = { ...(id ? rest : { ...rest, isActive: !vacant }), no: contractNo };
   if (data.period === "DAILY") data.payDay = null; // kunlikda har kuni to'lanadi
-  if (!id && !data.area) return { error: "Do'kon maydonini (m²) kiriting" };
+  if (!id && !data.area) return { error: "Do'kon maydonini (m²) kiriting", field: "area" };
   // Ijaradagi joyda telefon va (oylikda) to'lov kuni shart — eslatma va «Bugun / Muddati o'tgan» filtrlari shunga tayanadi
   const active = id ? ((await db.rentShop.findUnique({ where: { id }, select: { isActive: true } }))?.isActive ?? true) : !vacant;
-  if (active && !data.phone) return { error: "Ijaradagi joy uchun ijarachi telefonini kiriting" };
-  if (active && data.period === "MONTHLY" && !data.payDay) return { error: "To'lov kunini tanlang — har oyning nechanchi sanasigacha to'laydi" };
+  if (active && !data.phone) return { error: "Ijaradagi joy uchun ijarachi telefonini kiriting", field: "phone" };
+  if (active && data.period === "MONTHLY" && !data.payDay) return { error: "To'lov kunini tanlang — har oyning nechanchi sanasigacha to'laydi", field: "payDay" };
   const chk = tenantCheck(data);
-  if ("error" in chk) return { error: chk.error };
+  if ("error" in chk) return chk;
   // Qoida `lib/rent.ts` da — mobil do'kon kartochkasi ham shuni chaqiradi
   const res = await saveRentShopData(id, data, id ? null : parseMonth(key), s.userId);
   if (res.error) return { error: res.error };

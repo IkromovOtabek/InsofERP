@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { ArrowDownLeft, ArrowUpRight, Check, Pencil, Printer, X } from "lucide-react";
 import { Button, Checkbox, Field, FormActions, FormError, FormSuccess, Input, Select, Card, SheetTd, SheetTr } from "@/components/ui";
 import { MoneyInput } from "@/components/money-input";
@@ -271,6 +271,8 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
   locations: string[]; month: string; onDoneHref?: string;
 }) {
   const [state, action, pending] = useActionState(saveRentShop, undefined);
+  const [, start] = useTransition();
+  const formRef = useRef<HTMLFormElement>(null);
   const [formKey, setFormKey] = useState(0);
   const [period, setPeriod] = useState(shop?.period ?? "MONTHLY");
   const [vacant, setVacant] = useState(false);
@@ -278,24 +280,45 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
   // Shartnoma maydonlari: yangi joyda (bo'sh bo'lmasa) va amaldagi shartnomasi bor joyni tahrirlashda
   const withLease = shop ? !!shop.lease : !vacant;
   const per = period === "DAILY" ? "kunlik" : "oylik";
+  // Xato qaysi katakda bo'lsa — matni o'sha katak ostida (`Field error`), katak qizil va fokusda
+  const err = (f: string) => (state?.field === f ? state.error : undefined);
   useEffect(() => {
     if (!state?.ok) return;
     if (shop && onDoneHref) window.location.assign(onDoneHref);
     else setFormKey((k) => k + 1);
   }, [state, shop, onDoneHref]);
+  useEffect(() => {
+    const form = formRef.current;
+    form?.querySelectorAll("[aria-invalid]").forEach((el) => el.removeAttribute("aria-invalid"));
+    if (!form || !state?.field) return;
+    // MoneyInput'da `name` yashirin maydonda — ko'rinadigan katak uning yonida
+    let el = form.querySelector<HTMLElement>(`[name="${state.field}"]`);
+    if (el instanceof HTMLInputElement && el.type === "hidden") el = el.nextElementSibling as HTMLElement | null;
+    if (!el) return;
+    el.setAttribute("aria-invalid", "true");
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.focus({ preventScroll: true });
+  }, [state]);
+  // `<form action>` emas: React 19 action tugagach formani tozalaydi — xato bo'lsa terilgan kataklar o'chib ketardi.
+  // Muvaffaqiyatda tozalash `formKey` orqali (yuqorida).
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    start(() => action(fd));
+  };
   return (
-    <form action={action} className="space-y-4">
-      <FormError error={state?.error} />
+    <form ref={formRef} onSubmit={submit} className="space-y-4">
+      <FormError error={state?.error && (state.field ? `${state.error} — qizil bilan belgilangan katakni tekshiring` : state.error)} />
       {state?.ok && <FormSuccess text={state.note ?? "Saqlandi"} />}
       {shop && <input type="hidden" name="id" value={shop.id} />}
       <input type="hidden" name="month" value={month} />
       <div key={formKey} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <Field label="Do'kon nomi *" className="sm:col-span-2"><Input name="name" defaultValue={shop?.name} placeholder="Masalan: Xitoy kiyim do'kon" required /></Field>
-        <Field label="Joy (bozor) *" hint="Jadvalda shu nom bo'yicha guruhlanadi">
+        <Field label="Do'kon nomi *" className="sm:col-span-2" error={err("name")}><Input name="name" defaultValue={shop?.name} placeholder="Masalan: Xitoy kiyim do'kon" required /></Field>
+        <Field label="Joy (bozor) *" hint="Jadvalda shu nom bo'yicha guruhlanadi" error={err("location")}>
           <Input name="location" list="rent-locations" defaultValue={shop?.location} placeholder="Texno siti bozor" required />
           <datalist id="rent-locations">{locations.map((l) => <option key={l} value={l} />)}</datalist>
         </Field>
-        <Field label={shop ? "Maydoni, m²" : "Maydoni, m² *"} hint="1 m² narxi shundan hisoblanadi">
+        <Field label={shop ? "Maydoni, m²" : "Maydoni, m² *"} hint="1 m² narxi shundan hisoblanadi" error={err("area")}>
           <Input name="area" type="number" inputMode="decimal" min="0.01" step="0.01" defaultValue={shop?.area ?? ""} placeholder="Masalan: 24" required={!shop} />
         </Field>
         <Field label="Ijara turi" hint={period === "DAILY" ? "Oy hisobi = kunlik summa × kunlar; kirimda kun so'raladi" : "Har oy bir summa"}>
@@ -303,44 +326,44 @@ export function ShopForm({ shop, locations, month, onDoneHref }: {
             <option value="MONTHLY">Oylik</option><option value="DAILY">Kunlik</option>
           </Select>
         </Field>
-        <Field label={`Perechisleniye (${per})`}><MoneyInput name="bankAmount" defaultValue={num(shop?.bankAmount ?? 0)} /></Field>
-        <Field label={`Naqd (${per})`}><MoneyInput name="cashAmount" defaultValue={num(shop?.cashAmount ?? 0)} /></Field>
+        <Field label={`Perechisleniye (${per})`} error={err("bankAmount")}><MoneyInput name="bankAmount" defaultValue={num(shop?.bankAmount ?? 0)} /></Field>
+        <Field label={`Naqd (${per})`} error={err("cashAmount")}><MoneyInput name="cashAmount" defaultValue={num(shop?.cashAmount ?? 0)} /></Field>
         {period === "DAILY" ? <div className="hidden sm:block" /> : (
-          <Field label="To'lov kuni *" hint="har oyning shu sanasigacha">
+          <Field label="To'lov kuni *" hint="har oyning shu sanasigacha" error={err("payDay")}>
             <Select name="payDay" defaultValue={shop?.payDay ? String(shop.payDay) : ""}>
               <option value="">Tanlang…</option>
               {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}-sana{i >= 28 ? " (qisqa oyda — oxirgi kun)" : ""}</option>)}
             </Select>
           </Field>
         )}
-        <Field label="Svet" hint={billed ? "svet hisobida — «Svet» varag'ida" : "ma'lumot uchun"}><MoneyInput name="electricity" defaultValue={num(shop?.electricity ?? 0)} disabled={billed} /></Field>
-        <Field label="Biz to'laydigan soliq"><MoneyInput name="tax" defaultValue={num(shop?.tax ?? 0)} /></Field>
+        <Field label="Svet" hint={billed ? "svet hisobida — «Svet» varag'ida" : "ma'lumot uchun"} error={err("electricity")}><MoneyInput name="electricity" defaultValue={num(shop?.electricity ?? 0)} disabled={billed} /></Field>
+        <Field label="Biz to'laydigan soliq" error={err("tax")}><MoneyInput name="tax" defaultValue={num(shop?.tax ?? 0)} /></Field>
         {withLease && (
           <>
-            <Field label="Ijarachi (F.I.O. / mas'ul)" className="sm:col-span-2"><Input name="tenantName" defaultValue={shop?.tenantName ?? ""} placeholder="Masalan: Vaxabjanova Nigora" /></Field>
-            <Field label="Telefon *" hint="ijaradagi joy uchun shart"><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
-            <Field label="INN / JShShIR"><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
+            <Field label="Ijarachi (F.I.O. / mas'ul)" className="sm:col-span-2" error={err("tenantName")}><Input name="tenantName" defaultValue={shop?.tenantName ?? ""} placeholder="Masalan: Vaxabjanova Nigora" /></Field>
+            <Field label="Telefon *" hint="ijaradagi joy uchun shart" error={err("phone")}><Input name="phone" type="tel" defaultValue={shop?.phone ?? ""} placeholder="+998 90 123 45 67" /></Field>
+            <Field label="INN / JShShIR" error={err("inn")}><Input name="inn" inputMode="numeric" defaultValue={shop?.inn ?? ""} placeholder="200588569" /></Field>
           </>
         )}
         {withLease && (
           <>
-            <Field label="Shartnoma №" hint="bo'sh qoldirilsa — avtomatik"><Input name="contractNo" defaultValue={shop?.lease?.no ?? ""} placeholder="IJ-2026-00001" /></Field>
-            <Field label="Ijara boshlanishi"><Input name="startDate" type="date" defaultValue={shop?.lease?.startDate ?? isoDate()} /></Field>
-            <Field label="Shartnoma tugashi" hint="bo'sh — muddatsiz"><Input name="endDate" type="date" defaultValue={shop?.lease?.endDate ?? ""} /></Field>
-            <Field label="Zaklad (garov)" hint="ma'lumot uchun"><MoneyInput name="deposit" defaultValue={num(shop?.lease?.deposit ?? 0)} /></Field>
-            <Field label="Ijarachi vakili / asos" className="sm:col-span-2" hint="shartnomada: «в лице директора …, Устав» yoki pasport ma'lumoti">
+            <Field label="Shartnoma №" hint="bo'sh qoldirilsa — avtomatik" error={err("contractNo")}><Input name="contractNo" defaultValue={shop?.lease?.no ?? ""} placeholder="IJ-2026-00001" /></Field>
+            <Field label="Ijara boshlanishi" error={err("startDate")}><Input name="startDate" type="date" defaultValue={shop?.lease?.startDate ?? isoDate()} /></Field>
+            <Field label="Shartnoma tugashi" hint="bo'sh — muddatsiz" error={err("endDate")}><Input name="endDate" type="date" defaultValue={shop?.lease?.endDate ?? ""} /></Field>
+            <Field label="Zaklad (garov)" hint="ma'lumot uchun" error={err("deposit")}><MoneyInput name="deposit" defaultValue={num(shop?.lease?.deposit ?? 0)} /></Field>
+            <Field label="Ijarachi vakili / asos" className="sm:col-span-2" hint="shartnomada: «в лице директора …, Устав» yoki pasport ma'lumoti" error={err("tenantRep")}>
               <Input name="tenantRep" defaultValue={shop?.lease?.tenantRep ?? ""} placeholder="в лице директора Иванова И.И., действующего на основании Устава" />
             </Field>
-            <Field label="Ijarachi manzili" className="sm:col-span-2"><Input name="tenantAddress" defaultValue={shop?.lease?.tenantAddress ?? ""} /></Field>
-            <Field label="Ijarachi h/r" className="sm:col-span-2"><Input name="tenantAccount" inputMode="numeric" defaultValue={shop?.lease?.tenantAccount ?? ""} placeholder="20208000…" /></Field>
-            <Field label="Ijarachi MFO"><Input name="tenantMfo" inputMode="numeric" defaultValue={shop?.lease?.tenantMfo ?? ""} /></Field>
+            <Field label="Ijarachi manzili" className="sm:col-span-2" error={err("tenantAddress")}><Input name="tenantAddress" defaultValue={shop?.lease?.tenantAddress ?? ""} /></Field>
+            <Field label="Ijarachi h/r" className="sm:col-span-2" error={err("tenantAccount")}><Input name="tenantAccount" inputMode="numeric" defaultValue={shop?.lease?.tenantAccount ?? ""} placeholder="20208000…" /></Field>
+            <Field label="Ijarachi MFO" error={err("tenantMfo")}><Input name="tenantMfo" inputMode="numeric" defaultValue={shop?.lease?.tenantMfo ?? ""} /></Field>
           </>
         )}
-        <Field label="Joy manzili (shartnoma uchun)" className="sm:col-span-2"><Input name="address" defaultValue={shop?.address ?? ""} placeholder="г. Янгиюль, ул. Самарканд, 113" /></Field>
-        <Field label="Kadastr raqami"><Input name="cadastre" defaultValue={shop?.cadastre ?? ""} placeholder="11:22:01:01:05:1507" /></Field>
-        <Field label="Izoh" className="sm:col-span-4"><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Kelishuv, joy haqida…" /></Field>
+        <Field label="Joy manzili (shartnoma uchun)" className="sm:col-span-2" error={err("address")}><Input name="address" defaultValue={shop?.address ?? ""} placeholder="г. Янгиюль, ул. Самарканд, 113" /></Field>
+        <Field label="Kadastr raqami" error={err("cadastre")}><Input name="cadastre" defaultValue={shop?.cadastre ?? ""} placeholder="11:22:01:01:05:1507" /></Field>
+        <Field label="Izoh" className="sm:col-span-4" error={err("note")}><Input name="note" defaultValue={shop?.note ?? ""} placeholder="Kelishuv, joy haqida…" /></Field>
         <Checkbox name="electricityBilled" checked={billed} onChange={(e) => setBilled(e.target.checked)} label="Svet hisobida — ijarachi svetni alohida to'laydi (hisoblagich, «Svet» varag'i)" className="sm:col-span-3" />
-        {billed && <Field label="Shartnoma bo'yicha svet (oylik)" hint="hisoblagichsiz joyda svet summasi shu"><MoneyInput name="elecFixed" defaultValue={num(shop?.elecFixed ?? 0)} /></Field>}
+        {billed && <Field label="Shartnoma bo'yicha svet (oylik)" hint="hisoblagichsiz joyda svet summasi shu" error={err("elecFixed")}><MoneyInput name="elecFixed" defaultValue={num(shop?.elecFixed ?? 0)} /></Field>}
         {!shop && <Checkbox name="vacant" checked={vacant} onChange={(e) => setVacant(e.target.checked)} label="Bo'sh joy — hali ijaraga berilmagan (oylik hisobga tushmaydi)" className="sm:col-span-4" />}
       </div>
       <FormActions>

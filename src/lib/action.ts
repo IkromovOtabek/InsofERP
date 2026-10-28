@@ -1,14 +1,15 @@
 import { z } from "zod";
 
 /** `note` — amal bajarildi, lekin yonidagi ish haqida aytadigan gap bor
- *  (masalan: parol almashdi — uni xodimga kadr o'zi yetkazadi). */
-export type ActionState = { error?: string; ok?: boolean; note?: string } | undefined;
+ *  (masalan: parol almashdi — uni xodimga kadr o'zi yetkazadi).
+ *  `field` — xato qaysi maydonda (forma `name`i): forma xatoni o'sha katak ostida ko'rsatadi. */
+export type ActionState = { error?: string; ok?: boolean; note?: string; field?: string } | undefined;
 
 /** Zod'ning standart (inglizcha) xabarlari — bular uchun maydon kaliti ko'rsatiladi. */
 const ZOD_DEFAULT = /^(required|invalid|expected|too (small|big)|string must|number must|array must|unrecognized)/i;
 
-/** FormData → zod. Xatoni o'zbekcha bitta satrda qaytaradi. */
-export function parseForm<T extends z.ZodTypeAny>(schema: T, fd: FormData): { data: z.infer<T> } | { error: string } {
+/** FormData → zod. Xatoni o'zbekcha bitta satrda va qaysi maydonda ekanini (`field`) qaytaradi. */
+export function parseForm<T extends z.ZodTypeAny>(schema: T, fd: FormData): { data: z.infer<T> } | { error: string; field?: string } {
   const obj: Record<string, unknown> = {};
   for (const [k, v] of fd.entries()) {
     if (k.endsWith("[]")) {
@@ -20,10 +21,11 @@ export function parseForm<T extends z.ZodTypeAny>(schema: T, fd: FormData): { da
   const r = schema.safeParse(obj);
   if (!r.success) {
     const i = r.error.issues[0];
+    const field = typeof i.path[0] === "string" ? i.path[0] : undefined;
     // O'zbekcha (biz yozgan) xabar foydalanuvchiga o'zicha ko'rinadi — "price:", "qtyM3.0:" kabi texnik kalitsiz.
     // Zod'ning standart inglizcha xabarida esa qaysi maydon ekanini bilish uchun kalit qoladi.
-    if (!ZOD_DEFAULT.test(i.message)) return { error: i.message.charAt(0).toUpperCase() + i.message.slice(1) };
-    return { error: `${i.path.join(".") || "Forma"}: ${i.message}` };
+    if (!ZOD_DEFAULT.test(i.message)) return { error: i.message.charAt(0).toUpperCase() + i.message.slice(1), field };
+    return { error: `${i.path.join(".") || "Forma"}: ${i.message}`, field };
   }
   return { data: r.data };
 }
