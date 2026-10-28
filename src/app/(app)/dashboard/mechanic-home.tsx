@@ -23,22 +23,77 @@ const ALERT_CLS: Record<SlTone, string> = {
 };
 const q = (v: number, unit: string) => `${fmtNum(v, 2)} ${unitLabel(unit)}`;
 
-/**
- * Mexanik bosh sahifasi — "ERP — Sklad & Logistika Dashboard" PDF bo'limlari tartibida:
- * bugungi nazorat → ertangi kun → mahsulot bo'yicha → avtomatik ogohlantirish → ish jarayoni.
- * Hamma raqam `skladLogistika()` dan — UI o'zi hisoblamaydi.
- */
+/** Mexanik bosh sahifasi: sklad va logistika nazorati, o'rtasida — texnika bloki (ehtiyot qism zayavkalari, texnik xizmat). */
 export async function MechanicHome({ day, base = "/dashboard" }: { day?: string; base?: string }) {
+  return <SkladLogistika day={day} base={base} middle={<MechanicTech />} />;
+}
+
+/**
+ * Texnika bloki — faqat mexanik ishi: snabjenetsga ehtiyot qism zayavkalari va texnik xizmat muddati.
+ * Tahlil → Mexanik sahifasida ham shu blok (logistika nazoratisiz) ko'rsatiladi.
+ */
+export async function MechanicTech() {
   // Texnik xizmat muddati — logistika moduli hisoblaydi (`vehicleServiceDue`), bu yerda faqat ko'rsatiladi
   // Snabjenetsga zayavkalar (texnika ehtiyoji): bo'limi «Texnika» yoki mexanik yuborgani — hali yopilmaganlari
-  const [d, service, supply] = await Promise.all([
-    skladLogistika(day), vehicleServiceDue(),
+  const [service, supply] = await Promise.all([
+    vehicleServiceDue(),
     db.supplyRequest.findMany({
       where: { status: { in: ["NEW", "PRICED", "APPROVED", "FUNDED"] }, OR: [{ department: "Texnika" }, { createdBy: { role: "MECHANIC" } }] },
       orderBy: { date: "desc" }, take: 10,
       select: { id: true, docNo: true, date: true, status: true, needBy: true, items: { select: { name: true }, orderBy: { sortOrder: "asc" } }, createdBy: { select: { fullName: true } } },
     }),
   ]);
+  return (
+    <>
+      {/* ── Snabjenetsga zayavka: ehtiyot qism, moy, shina — sklad kabi «Kerakli mahsulotlar» jadvali ── */}
+      <Section title="Snabjenetsga zayavkalar"
+        action={<div className="flex items-center gap-3">{more("/taminot", "Hammasi")}<LinkButton href="/stock/supply/new" size="sm"><ShoppingBasket size={15} /> Zayavka yuborish</LinkButton></div>}>
+        <Table>
+          <thead><tr><Th>Hujjat</Th><Th>Nima kerak</Th><Th>Kerak sana</Th><Th>Holat</Th></tr></thead>
+          <tbody>
+            {supply.length === 0 && <Empty text="Ochiq zayavka yo'q — texnikaga kerakli narsani «Zayavka yuborish» orqali so'rang" icon={ShoppingBasket} />}
+            {supply.map((r) => (
+              <Tr key={r.id}>
+                <Td>
+                  <Link href={`/taminot/${r.id}`} className="font-medium tabular hover:underline">{r.docNo}</Link>
+                  <div className="text-xs text-slate-500">{date(r.date)} · {r.createdBy.fullName}</div>
+                </Td>
+                <Td className="max-w-72 truncate text-sm">{r.items.map((i) => i.name).join(", ")}</Td>
+                <Td className="tabular text-sm">{r.needBy ? date(r.needBy) : "—"}</Td>
+                <Td><Badge color={SUPPLY_COLOR[r.status]}>{SUPPLY_LABEL[r.status]}</Badge><div className="mt-0.5 text-xs text-slate-500">{SUPPLY_OWNER[r.status]}</div></Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      </Section>
+
+      {/* ── Texnik xizmat muddati (moy, filtr, ko'rik…) ── */}
+      <Section title="Texnik xizmat muddati" action={more("/logistika/transport", "Transport")}>
+        {service.length === 0 ? (
+          <Card className="flex items-center gap-2 text-sm text-emerald-800"><CheckCircle2 size={16} /> Muddati o&apos;tgan yoki 14 kun / 1000 km ichida keladigan texnik xizmat yo&apos;q</Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3 [&>*]:min-w-0">
+            {service.map((x) => (
+              <Link key={x.serviceId} href={`/logistika/transport/${x.vehicleId}`} className={cn("block rounded-lg border p-3 text-sm transition hover:brightness-95", ALERT_CLS[x.level === "crit" ? "danger" : "warning"])}>
+                <div className="flex items-center justify-between gap-2 font-semibold"><span className="tabular">{x.plate}</span><Badge color={x.level === "crit" ? "red" : "amber"}>{x.level === "crit" ? "Muddati o'tgan" : "Yaqinlashdi"}</Badge></div>
+                <div className="mt-0.5 text-[13px] opacity-90">{x.text}</div>
+                {(x.dueAt || x.dueKm != null) && <div className="mt-0.5 text-xs opacity-75">{x.dueAt ? `muddat ${date(x.dueAt)}` : ""}{x.dueAt && x.dueKm != null ? " · " : ""}{x.dueKm != null ? `${fmtNum(x.dueKm, 0)} km da` : ""}</div>}
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
+    </>
+  );
+}
+
+/**
+ * Sklad va logistika nazorati — "ERP — Sklad & Logistika Dashboard" PDF bo'limlari tartibida:
+ * bugungi nazorat → ertangi kun → mahsulot bo'yicha → avtomatik ogohlantirish → ish jarayoni.
+ * Hamma raqam `skladLogistika()` dan — UI o'zi hisoblamaydi. `middle` — 4-bo'limdan keyin qo'shiladigan blok.
+ */
+export async function SkladLogistika({ day, base = "/dashboard", middle }: { day?: string; base?: string; middle?: React.ReactNode }) {
+  const d = await skladLogistika(day);
   const alerts = d.alerts;
   const t = d.today, n = d.tomorrow;
   const prev = new Date(d.day); prev.setDate(prev.getDate() - 1);
@@ -145,44 +200,7 @@ export async function MechanicHome({ day, base = "/dashboard" }: { day?: string;
         </Section>
       </div>
 
-      {/* ── Snabjenetsga zayavka: ehtiyot qism, moy, shina — sklad kabi «Kerakli mahsulotlar» jadvali ── */}
-      <Section title="Snabjenetsga zayavkalar"
-        action={<div className="flex items-center gap-3">{more("/taminot", "Hammasi")}<LinkButton href="/stock/supply/new" size="sm"><ShoppingBasket size={15} /> Zayavka yuborish</LinkButton></div>}>
-        <Table>
-          <thead><tr><Th>Hujjat</Th><Th>Nima kerak</Th><Th>Kerak sana</Th><Th>Holat</Th></tr></thead>
-          <tbody>
-            {supply.length === 0 && <Empty text="Ochiq zayavka yo'q — texnikaga kerakli narsani «Zayavka yuborish» orqali so'rang" icon={ShoppingBasket} />}
-            {supply.map((r) => (
-              <Tr key={r.id}>
-                <Td>
-                  <Link href={`/taminot/${r.id}`} className="font-medium tabular hover:underline">{r.docNo}</Link>
-                  <div className="text-xs text-slate-500">{date(r.date)} · {r.createdBy.fullName}</div>
-                </Td>
-                <Td className="max-w-72 truncate text-sm">{r.items.map((i) => i.name).join(", ")}</Td>
-                <Td className="tabular text-sm">{r.needBy ? date(r.needBy) : "—"}</Td>
-                <Td><Badge color={SUPPLY_COLOR[r.status]}>{SUPPLY_LABEL[r.status]}</Badge><div className="mt-0.5 text-xs text-slate-500">{SUPPLY_OWNER[r.status]}</div></Td>
-              </Tr>
-            ))}
-          </tbody>
-        </Table>
-      </Section>
-
-      {/* ── Texnik xizmat muddati (moy, filtr, ko'rik…) ── */}
-      <Section title="Texnik xizmat muddati" action={more("/logistika/transport", "Transport")}>
-        {service.length === 0 ? (
-          <Card className="flex items-center gap-2 text-sm text-emerald-800"><CheckCircle2 size={16} /> Muddati o&apos;tgan yoki 14 kun / 1000 km ichida keladigan texnik xizmat yo&apos;q</Card>
-        ) : (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3 [&>*]:min-w-0">
-            {service.map((x) => (
-              <Link key={x.serviceId} href={`/logistika/transport/${x.vehicleId}`} className={cn("block rounded-lg border p-3 text-sm transition hover:brightness-95", ALERT_CLS[x.level === "crit" ? "danger" : "warning"])}>
-                <div className="flex items-center justify-between gap-2 font-semibold"><span className="tabular">{x.plate}</span><Badge color={x.level === "crit" ? "red" : "amber"}>{x.level === "crit" ? "Muddati o'tgan" : "Yaqinlashdi"}</Badge></div>
-                <div className="mt-0.5 text-[13px] opacity-90">{x.text}</div>
-                {(x.dueAt || x.dueKm != null) && <div className="mt-0.5 text-xs opacity-75">{x.dueAt ? `muddat ${date(x.dueAt)}` : ""}{x.dueAt && x.dueKm != null ? " · " : ""}{x.dueKm != null ? `${fmtNum(x.dueKm, 0)} km da` : ""}</div>}
-              </Link>
-            ))}
-          </div>
-        )}
-      </Section>
+      {middle}
 
       {/* ── 5. Asosiy ish jarayoni ── */}
       <Section title={`5. Ish jarayoni (${d.isToday ? "bugun" : date(d.day)})`}>
