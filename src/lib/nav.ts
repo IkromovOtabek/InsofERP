@@ -150,8 +150,8 @@ export const NAV: NavItem[] = [
   { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/qarz-yoshi", label: "Mijozlar qarzi" }, { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" }, { href: "/bi-tahlil/ombor/tayyor-mahsulot", label: "Tayyor mahsulot" }] },
   // Logistika (zayavka, jo'natish, transport ehtiyoji) va Mexanik (texnika: ta'mir, ehtiyot qism, texnik xizmat) — alohida bandlar
-  { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: BI_ROLES, group: "Tahlil" },
-  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mexanik/avtotransport", label: "Avtotransport tahlili" }] },
+  { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }] },
+  { href: "/bi-tahlil/mexanik",          label: "Mexanik",          roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/mahsulotlar",      label: "Mahsulotlar",      roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/ishlab-chiqarish", label: "Ishlab chiqarish", roles: BI_ROLES, group: "Tahlil" },
   { href: "/bi-tahlil/marketing",        label: "Marketing",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/marketing/reja", label: "Marketing reja nazorati" }, { href: "/bi-tahlil/marketing/malumotlar", label: "Marketing ma'lumotlari" }] },

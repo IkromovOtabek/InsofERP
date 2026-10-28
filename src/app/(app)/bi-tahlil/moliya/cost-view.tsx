@@ -225,7 +225,7 @@ export function ProductProfitView({ p, base, canWrite }: { p: ProductProfit; bas
         <StatCard label="Tannarx" value={moneyShort(p.cost)} hint={fmtNum(p.cost)} icon={Calculator} href="#mahsulotlar" />
         <StatCard label="Yalpi foyda" value={moneyShort(p.profit)} hint={fmtNum(p.profit)} icon={TrendingUp} tone={p.profit < 0 ? "danger" : "success"} href="#mahsulotlar" />
         <StatCard label="O'rtacha marja" value={p.margin !== null ? pct(p.margin) : "—"} icon={Percent} href="#mahsulotlar" />
-        <StatCard label="Dostavka tushumi" value={moneyShort(p.delivery)} hint="zayavkadagi «Доставка», tushumga kirmagan" icon={Truck} href={`/bi-tahlil/mexanik/avtotransport?oy=${p.month}#mashinalar`} />
+        <StatCard label="Dostavka tushumi" value={moneyShort(p.delivery)} hint="zayavkadagi «Доставка», tushumga kirmagan" icon={Truck} href={`/bi-tahlil/logistika/avtotransport?oy=${p.month}#mashinalar`} />
       </div>
       {p.uncostedRevenue > 0 && <p className="mt-2 text-[13px] text-amber-700">Retsepti yoki xom-ashyo narxi yo&apos;q mahsulotlar tushumi ({fmtNum(p.uncostedRevenue)}) jamiga kirmadi.</p>}
 
