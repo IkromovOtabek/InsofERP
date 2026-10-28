@@ -1,7 +1,7 @@
 "use client";
 
 import { X, Plus, Search, UserPlus, Users, ShieldAlert, ChevronDown, FileSignature, Truck, Star, Wallet, FileText, Upload, Check, Smartphone } from "lucide-react";
-import { AddressPicker } from "@/components/address-picker";
+import { AddressPicker, type SavedPlace } from "@/components/address-picker";
 import { fmtNum, isoDate, moneyShort, date as fmtDate } from "@/lib/format";
 import { useActionState, useMemo, useState, type ReactNode } from "react";
 import { createOrder } from "./actions";
@@ -26,7 +26,16 @@ export type CustomerOpt = {
   lastOrderAt: number | null; // so'nggi zayavka sanasi (ms)
   stars: 0 | 1 | 2 | 3 | 4 | 5; // ishonch reytingi, 0 — yangi mijoz
   label: string;
+  sites: SavedPlace[]; // faol obyektlari — oxirgi zayavka ochilgani birinchi
 };
+
+/** Mijoz tanlanganda «Obyekt»ga tushadigan manzil: so'ralgan obyekt → oxirgi ishlatilgan obyekt → mijoz manzili. */
+function defaultSite(c: CustomerOpt | null, siteId?: string): { address: string; lat: number | null; lng: number | null } | null {
+  if (!c) return null;
+  const s = c.sites.find((x) => x.id === siteId) ?? c.sites[0];
+  if (s) return s;
+  return c.address ? { address: c.address, lat: null, lng: null } : null;
+}
 /**
  * Har bir mahsulot bo'yicha joriy qoldiq (sklad xodimi ma'lumoti):
  * kind="piece" — hovlidagi dona mahsulot (Sklad → Ishlab chiqarish imkoni; erkin/band), kind="concrete" — beton (zakaz olingach tayyorlanadi,
@@ -166,7 +175,7 @@ function StockNote({ st, need, unit }: { st?: ProductStock[string]; need: number
  * (rekvizitlar, mijoz bloki, QQS ustunli jadval, dastavka qatori, to'lov va bosh to'lov). Dizayn manbasi:
  * `docs/design/zayavka-shablonlar.html`; oldingi forma — `git tag zayavka-forma-eski`.
  */
-export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
+export function OrderForm({ customers, products, groups, canCreateProduct, stock, preselectCustomer, preselectSite, contractAccept, geoSearch, prefill, newCustomerLimit = 0, docHeader, managerName }: { customers: CustomerOpt[]; products: Product[]; groups: CatalogGroup[]; canCreateProduct: boolean; stock: ProductStock; cashAccounts?: CashAccountOpt[]; preselectCustomer?: string; /** Mijoz kartasidagi obyektdan ochilgan zayavka (`?site=`) */ preselectSite?: string; contractAccept: string; geoSearch: boolean; prefill?: OrderPrefill; /** Yangi mijozga standart kredit limiti (Sozlamalar → Limitlar) */ newCustomerLimit?: number; /** Blanka sarlavhasi: nom, rasm, rekvizitlar (serverda yig'iladi) */ docHeader?: ReactNode; /** Zayavkani ochayotgan xodim — «Menejer» */ managerName: string }) {
   const [state, action, pending] = useActionState(createOrder, undefined);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   // "Yangi mijoz" telefoni ilovada ro'yxatdan o'tganmi — saqlanganda hisob o'zi ulanadi, sotuvchi buni oldindan ko'radi
@@ -177,6 +186,10 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
     void lookupAppByPhone(phone).then((r) => setAppHint(r && r.registered ? r : null)).catch(() => setAppHint(null));
   };
   const [customer, setCustomer] = useState<CustomerOpt | null>(customers.find((c) => c.id === preselectCustomer) ?? null);
+  // «Obyekt» katagi mijoz almashganda qayta ochiladi (key) va uning obyekti bilan to'ladi;
+  // obyekti ham, manzili ham yo'q mijozda yozilgan manzil o'chmaydi. Birinchi ochilishda ariza/amoCRM manzili (prefill) ustun.
+  const [site, setSite] = useState(() => (prefill?.address ? { address: prefill.address, lat: null, lng: null } : defaultSite(customer, preselectSite)));
+  const [siteKey, setSiteKey] = useState(0);
   // To'lov turi: naqd (kassa) / perechisleniye (bank) — oldindan to'lov (`payment=prepay`), qarzga — kredit limitdan
   const [kind, setKind] = useState<"cash" | "bank" | "credit">("cash");
   const payment: "prepay" | "credit" = kind === "credit" ? "credit" : "prepay";
@@ -301,6 +314,8 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
               {mode === "existing" ? (
                 <CustomerPicker customers={customers} value={customer} onChange={(c) => {
                   setCustomer(c);
+                  const d = c && c.id !== customer?.id ? defaultSite(c) : null;
+                  if (d) { setSite(d); setSiteKey((k) => k + 1); }
                   // Kredit limiti yo'q mijoz: to'lov turi darhol "naqd" va bosh to'lov ochiq — sotuvchi summani kiritadi
                   if (c?.blacklisted) { if (kind === "credit") pickPayment("cash"); setHasDeposit(true); }
                 }} />
@@ -396,7 +411,13 @@ export function OrderForm({ customers, products, groups, canCreateProduct, stock
 
         {/* ── Obyekt: manzil, (izoh) va xarita ── */}
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <AddressPicker searchEnabled={geoSearch} required defaultAddress={prefill?.address ?? ""} label="Obyekt" onDistance={setDistance} />
+          <AddressPicker
+            key={mode === "existing" ? `c${siteKey}` : "new"}
+            searchEnabled={geoSearch} required label="Obyekt" onDistance={setDistance}
+            defaultAddress={mode === "existing" ? site?.address ?? "" : ""}
+            defaultLat={mode === "existing" ? site?.lat : null} defaultLng={mode === "existing" ? site?.lng : null}
+            saved={mode === "existing" ? customer?.sites ?? [] : []}
+          />
           <div className="col-span-2 flex items-center gap-1 font-serif italic text-slate-600">
             (<Input name="addressNote" placeholder="izoh: mo'ljal, darvoza, qavat…" aria-label="Obyekt izohi" className="h-8 text-sm" />)
           </div>

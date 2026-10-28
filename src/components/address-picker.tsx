@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, MapPin, Route, Search, TriangleAlert } from "lucide-react";
+import { Building2, Loader2, MapPin, Route, Search, TriangleAlert } from "lucide-react";
 import { inputCls } from "@/components/ui";
 import { MapLocateButton } from "@/components/map-locate-button";
 import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap, type LMarker } from "@/lib/leaflet";
@@ -24,6 +24,8 @@ import { addTiles, loadLeaflet, TASHKENT, type LLayer, type LMap, type LMarker }
 type Place = { name: string; address: string; lat: number | null; lng: number | null; uri?: string };
 type Point = { lat: number; lng: number };
 type Distance = { km: number; source: "ROUTE" | "LINE" };
+/** Mijozning saqlangan obyekti — katak bosilganda ro'yxatda birinchi chiqadi. */
+export type SavedPlace = { id: string; name: string; address: string; lat: number | null; lng: number | null };
 
 export function AddressPicker({
   defaultAddress = "",
@@ -39,6 +41,7 @@ export function AddressPicker({
   showDistance = true,
   className = "col-span-2",
   onDistance,
+  saved = [],
 }: {
   defaultAddress?: string;
   defaultLat?: number | null;
@@ -56,6 +59,8 @@ export function AddressPicker({
   className?: string;
   /** Masofa o'zgarganda (nuqta tanlandi/olib tashlandi) — zayavka formasi reys hisobi uchun oladi. */
   onDistance?: (d: Distance | null) => void;
+  /** Mijozning mavjud obyektlari — katak bosilganda tanlash uchun (zayavka formasi beradi). */
+  saved?: SavedPlace[];
 }) {
   const [address, setAddress] = useState(defaultAddress);
   const [point, setPoint] = useState<Point | null>(
@@ -67,17 +72,35 @@ export function AddressPicker({
   const [resolving, setResolving] = useState(false);
   const [unresolved, setUnresolved] = useState(false);
   const [open, setOpen] = useState(false);
+  /** Saqlangan obyektlar ro'yxati ochiqmi (katak bosilganda). */
+  const [savedOpen, setSavedOpen] = useState(false);
   const [distance, setDistance] = useState<Distance | null>(null);
   const [plantUnset, setPlantUnset] = useState(false);
   useEffect(() => { onDistance?.(distance); }, [distance, onDistance]);
 
   const el = useRef<HTMLDivElement | null>(null);
+  const input = useRef<HTMLInputElement | null>(null);
   const map = useRef<LMap | null>(null);
   const marker = useRef<LMarker | null>(null);
   /** Qidiruv natijalarining xaritadagi belgilari — yozgan sayin yangilanadi. */
   const hints = useRef<LLayer[]>([]);
-  /** Taklif tanlangach qidiruv qayta ishga tushmasin. */
-  const skipSearch = useRef(false);
+  /** Taklif tanlangach qidiruv qayta ishga tushmasin. Oldindan to'ldirilgan manzil ham ochilishda qidirilmaydi. */
+  const skipSearch = useRef(!!defaultAddress);
+
+  // Yozilgan matnga mos saqlangan obyektlar; tanlangan obyekt manzili turgan bo'lsa — hammasi (boshqasini tanlash uchun)
+  const q = address.trim().toLowerCase();
+  const savedShown = !q || saved.some((p) => p.address.trim().toLowerCase() === q)
+    ? saved
+    : saved.filter((p) => p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q));
+
+  const chooseSaved = (p: SavedPlace) => {
+    skipSearch.current = true;
+    setAddress(p.address);
+    setOpen(false);
+    setSavedOpen(false);
+    setUnresolved(false);
+    setPoint(p.lat != null && p.lng != null ? { lat: p.lat, lng: p.lng } : null);
+  };
 
   const choose = async (p: Place) => {
     skipSearch.current = true;
@@ -196,11 +219,13 @@ export function AddressPicker({
           z-index yetarli — modal oynalar (z-50) ustiga chiqib ketmaydi. */}
       <div className="relative z-10">
         <input
+          ref={input}
           name={name}
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          onFocus={() => places.length > 0 && setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onFocus={() => { setSavedOpen(saved.length > 0); if (places.length > 0) setOpen(true); }}
+          onClick={() => setSavedOpen(saved.length > 0)}
+          onBlur={() => setTimeout(() => { setOpen(false); setSavedOpen(false); }, 150)}
           placeholder={placeholder ?? (searchEnabled ? "Ko'cha, mo'ljal yoki obyekt nomini yozing…" : "Ko'cha, mo'ljal, obyekt nomi")}
           required={required}
           autoComplete="off"
@@ -211,9 +236,30 @@ export function AddressPicker({
           {searching || resolving ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
         </span>
 
-        {open && places.length > 0 && (
-          <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-            {places.map((p, i) => (
+        {((open && places.length > 0) || (savedOpen && savedShown.length > 0)) && (
+          <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+            {savedOpen && savedShown.length > 0 && (<>
+              <li className="px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">Mijoz obyektlari</li>
+              {savedShown.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => chooseSaved(p)}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-slate-50"
+                  >
+                    <Building2 size={14} className="mt-0.5 shrink-0 text-brand-500" />
+                    <span className="min-w-0">
+                      <span className="block text-sm text-slate-900">{p.name}</span>
+                      {p.address !== p.name && <span className="block text-xs text-slate-500">{p.address}</span>}
+                    </span>
+                    {p.lat == null && <span className="ml-auto shrink-0 text-[11px] text-slate-400">nuqtasiz</span>}
+                  </button>
+                </li>
+              ))}
+              {open && places.length > 0 && <li className="mt-1 border-t border-slate-100 px-3 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">Xaritadan topilganlar</li>}
+            </>)}
+            {open && places.map((p, i) => (
               <li key={`${p.lat}-${p.lng}-${i}`}>
                 <button
                   type="button"
@@ -246,6 +292,11 @@ export function AddressPicker({
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        {saved.length > 1 && (
+          <button type="button" onClick={() => { input.current?.focus(); setSavedOpen(true); }} className="inline-flex items-center gap-1 text-brand-700 underline hover:text-brand-900">
+            <Building2 size={12} /> Mijozning {saved.length} ta obyekti
+          </button>
+        )}
         {resolving ? (
           <span className="text-slate-400">nuqta aniqlanmoqda…</span>
         ) : point ? (

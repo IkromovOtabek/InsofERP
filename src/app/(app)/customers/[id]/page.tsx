@@ -17,6 +17,7 @@ import { customerAppStatus } from "@/lib/eco/customers";
 import { AppAccount } from "../app-account";
 import { receivablesReport } from "@/lib/receivables";
 import { orderTotal } from "@/lib/order-total";
+import { geoSearchEnabled } from "@/lib/geo";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -93,7 +94,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <Card>
           <CardHeader title="Obyektlar" icon={Building2} description="Mijozning obyektlari va har obyekt bo'yicha qarz (yozilgan schyot − to'langan + schyotsiz ochiq zayavka)" />
           <div className="mt-4">
-            <SitesPanel customerId={id} sites={sites} canEdit={canEditSites} />
+            <SitesPanel customerId={id} sites={sites} canEdit={canEditSites} canOrder={canOrder} geoSearch={geoSearchEnabled()} />
           </div>
         </Card>
       </div>

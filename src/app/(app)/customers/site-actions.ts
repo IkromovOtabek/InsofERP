@@ -5,12 +5,15 @@ import { revalidatePath } from "next/cache";
 import { requireAction } from "@/lib/auth";
 import { deleteCustomerSite, saveCustomerSite } from "@/lib/customer-sites";
 import { parseForm, zStr, zOpt, type ActionState } from "@/lib/action";
+import { numIn } from "@/lib/logistics-admin";
 
 /** Obyekt (Site) qo'shish/tahrirlash — mijoz kartasidagi kabi rol: SALES, ACCOUNTING, FINANCE (+DIRECTOR). */
 
 const schema = z.object({
   name: zStr("Obyekt nomi to'ldirilishi shart"),
   address: zStr("Manzil to'ldirilishi shart"),
+  lat: numIn(-90, 90),
+  lng: numIn(-180, 180),
   contactName: zOpt,
   contactPhone: zOpt,
   deliveryHours: zOpt,

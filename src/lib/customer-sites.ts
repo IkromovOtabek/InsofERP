@@ -26,6 +26,8 @@ export type SiteDebt = {
     id: string;
     name: string;
     address: string;
+    lat: number | null;
+    lng: number | null;
     contactName: string | null;
     contactPhone: string | null;
     deliveryHours: string | null;
@@ -48,7 +50,7 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
     db.site.findMany({
       where: { customerId },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
-      select: { id: true, name: true, address: true, contactName: true, contactPhone: true, deliveryHours: true, instructions: true, isActive: true },
+      select: { id: true, name: true, address: true, lat: true, lng: true, contactName: true, contactPhone: true, deliveryHours: true, instructions: true, isActive: true },
     }),
     // Mijozning barcha sotuv zayavkalari: obyekti, holati, mahsulot summasi va bekor qilinmagan schyotlari
     db.order.findMany({
@@ -111,6 +113,9 @@ export async function siteDebts(customerId: string): Promise<SiteDebt[]> {
 export type SiteInput = {
   name: string;
   address: string;
+  /** Xaritadagi nuqta: veb forma doim yuboradi (null — olib tashlandi), mobil yubormaydi — o'zgarmaydi. */
+  lat?: number | null;
+  lng?: number | null;
   contactName: string | null;
   contactPhone: string | null;
   deliveryHours: string | null;
@@ -133,6 +138,10 @@ export async function saveCustomerSite(customerId: string, id: string | null, d:
         if (!before || before.customerId !== customerId) throw new Error("NOT_OWNER");
         const after = await tx.site.update({ where: { id }, data: d });
         await audit(tx, userId, "UPDATE", "Site", id, before, after);
+        // Nuqta qo'yilsa — shu obyektning nuqtasiz ochiq zayavkalari ham to'ladi (Logistika → Obyektlar bilan bir xil)
+        if (d.lat != null && d.lng != null) {
+          await tx.order.updateMany({ where: { siteId: id, lat: null, status: { in: ["DRAFT", "BLOCKED", "CONFIRMED", "IN_PRODUCTION"] } }, data: { lat: d.lat, lng: d.lng } });
+        }
       } else {
         const c = await tx.site.create({ data: { ...d, customerId } });
         await audit(tx, userId, "CREATE", "Site", c.id, undefined, c);

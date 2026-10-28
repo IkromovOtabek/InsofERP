@@ -56,10 +56,10 @@ async function DocHeader() {
  * `?tur=sklad` bilan to'g'ridan-to'g'ri sklad formasi ochiladi.
  * Sotuvdan tashqari rollar (sklad, ishlab chiqarish) faqat sklad zayavkasini ocha oladi.
  */
-export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; tur?: string; lead?: string; amo?: string }> }) {
+export default async function NewOrder({ searchParams }: { searchParams: Promise<{ customer?: string; site?: string; tur?: string; lead?: string; amo?: string }> }) {
   // Direktor "create" yoki "stock" ruxsatini bergan xodim ham kiradi (rol ro'yxatida bo'lmasa ham)
   const s = await requireRoles([...STOCK_ORDER_ROLES], { module: "orders", actions: ["create", "stock"] });
-  const { customer: customerParam, tur, lead: leadId, amo: amoId } = await searchParams;
+  const { customer: customerParam, site: siteParam, tur, lead: leadId, amo: amoId } = await searchParams;
   const canSale = canDo(s, "orders", "create");
   const canStockOrder = canDo(s, "orders", "stock");
 
@@ -88,11 +88,21 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
   let opts: CustomerOpt[] = [];
   if (canSale) {
     const credit = await customersCredit();
-    const [customers, history, contracted] = await Promise.all([
+    const [customers, history, contracted, sites, siteLast] = await Promise.all([
       db.customer.findMany({ where: { isActive: true, isInternal: false }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true, inn: true, address: true, createdAt: true } }),
       customersHistory(undefined, credit),
       contractedIds(),
+      // «Obyekt» katagi uchun: mijozning faol obyektlari, oxirgi zayavka ochilgani birinchi
+      db.site.findMany({ where: { isActive: true, customer: { isActive: true, isInternal: false } }, orderBy: { name: "asc" }, select: { id: true, customerId: true, name: true, address: true, lat: true, lng: true } }),
+      db.order.groupBy({ by: ["siteId"], where: { siteId: { not: null } }, _max: { createdAt: true } }),
     ]);
+    const lastAt = new Map(siteLast.map((r) => [r.siteId, r._max.createdAt?.getTime() ?? 0]));
+    const sitesBy = new Map<string, CustomerOpt["sites"]>();
+    for (const x of [...sites].sort((a, b) => (lastAt.get(b.id) ?? 0) - (lastAt.get(a.id) ?? 0))) {
+      const list = sitesBy.get(x.customerId) ?? [];
+      list.push({ id: x.id, name: x.name, address: x.address, lat: x.lat, lng: x.lng });
+      sitesBy.set(x.customerId, list);
+    }
     opts = customers.map((c) => {
       const cr = credit.get(c.id);
       const h = history.get(c.id);
@@ -101,6 +111,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
         limit: cr?.limit ?? 0, used: cr?.used ?? 0, free: cr?.free ?? 0, debt: cr?.debt ?? 0, blacklisted: cr?.blacklisted ?? false, contracted: contracted.has(c.id),
         bought: h?.bought ?? 0, orders: h?.orders ?? 0, paid: h?.paid ?? 0, lastOrderAt: h?.lastOrderAt?.getTime() ?? null,
         stars: h?.stars ?? 0, label: h?.label ?? "Yangi mijoz",
+        sites: sitesBy.get(c.id) ?? [],
       };
     });
   }
@@ -123,7 +134,7 @@ export default async function NewOrder({ searchParams }: { searchParams: Promise
           <NewOrderMode
             initial={tur === "sklad" || !canSale ? "stock" : "sale"}
             sale={canSale ? (
-              <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
+              <OrderForm docHeader={<DocHeader />} managerName={s.fullName} customers={opts} products={catalog.products} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} preselectCustomer={customer} preselectSite={siteParam} prefill={prefill} contractAccept={CONTRACT_ACCEPT} geoSearch={geoSearchEnabled()} newCustomerLimit={await defaultCreditLimit()} />
             ) : null}
             stock={canStockOrder ? <StockOrderForm products={pieceProducts} groups={catalog.groups} canCreateProduct={canEditProducts(s.role)} stock={productStock} /> : null}
           />

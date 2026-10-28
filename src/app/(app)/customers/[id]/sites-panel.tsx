@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition } from "react";
-import { Building2, Plus, Pencil, Trash2, MapPin, Phone, Clock, Wallet } from "lucide-react";
-import { Badge, Button, Field, FormError, Input, Textarea, Checkbox, Empty } from "@/components/ui";
+import { Building2, Plus, Pencil, Trash2, MapPin, Phone, Clock, Wallet, ClipboardList } from "lucide-react";
+import { Badge, Button, Field, FormError, Input, LinkButton, Textarea, Checkbox, Empty } from "@/components/ui";
+import { AddressPicker } from "@/components/address-picker";
 import { money } from "@/lib/format";
 import type { SiteDebt } from "@/lib/customer-sites";
 import { saveSite, deleteSite } from "../site-actions";
@@ -10,8 +11,9 @@ import { saveSite, deleteSite } from "../site-actions";
 /**
  * Mijoz kartasidagi "Obyektlar" bo'limi: mijozning obyektlari ro'yxati, har biriga qo'shish/tahrirlash,
  * va har obyekt bo'yicha qarz (yozilgan schyot − to'langan + schyotsiz ochiq zayavka).
+ * Kiritilgan obyektlar yangi zayavkaning «Obyekt» katagida tanlanadi; obyektdan to'g'ridan-to'g'ri zayavka ochsa ham bo'ladi.
  */
-export function SitesPanel({ customerId, sites, canEdit }: { customerId: string; sites: SiteDebt[]; canEdit: boolean }) {
+export function SitesPanel({ customerId, sites, canEdit, canOrder, geoSearch }: { customerId: string; sites: SiteDebt[]; canEdit: boolean; canOrder: boolean; geoSearch: boolean }) {
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const totalDebt = sites.reduce((s, x) => s + x.debt, 0);
@@ -28,7 +30,7 @@ export function SitesPanel({ customerId, sites, canEdit }: { customerId: string;
       </div>
 
       {adding && canEdit && (
-        <SiteForm customerId={customerId} site={null} onDone={() => setAdding(false)} />
+        <SiteForm customerId={customerId} site={null} geoSearch={geoSearch} onDone={() => setAdding(false)} />
       )}
 
       {sites.length === 0 && !adding && <Empty text="Obyekt kiritilmagan" icon={Building2} />}
@@ -36,9 +38,9 @@ export function SitesPanel({ customerId, sites, canEdit }: { customerId: string;
       <div className="space-y-3">
         {sites.map((s) =>
           editId && s.site?.id === editId ? (
-            <SiteForm key={s.site.id} customerId={customerId} site={s} onDone={() => setEditId(null)} />
+            <SiteForm key={s.site.id} customerId={customerId} site={s} geoSearch={geoSearch} onDone={() => setEditId(null)} />
           ) : (
-            <SiteRow key={s.site?.id ?? "no-site"} row={s} customerId={customerId} canEdit={canEdit} onEdit={() => { setEditId(s.site!.id); setAdding(false); }} />
+            <SiteRow key={s.site?.id ?? "no-site"} row={s} customerId={customerId} canEdit={canEdit} canOrder={canOrder} onEdit={() => { setEditId(s.site!.id); setAdding(false); }} />
           ),
         )}
       </div>
@@ -46,7 +48,7 @@ export function SitesPanel({ customerId, sites, canEdit }: { customerId: string;
   );
 }
 
-function SiteRow({ row, customerId, canEdit, onEdit }: { row: SiteDebt; customerId: string; canEdit: boolean; onEdit: () => void }) {
+function SiteRow({ row, customerId, canEdit, canOrder, onEdit }: { row: SiteDebt; customerId: string; canEdit: boolean; canOrder: boolean; onEdit: () => void }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const noSite = row.site === null;
@@ -74,7 +76,7 @@ function SiteRow({ row, customerId, canEdit, onEdit }: { row: SiteDebt; customer
             <div className="text-sm text-slate-500">Obyektga bog'lanmagan zayavka va to'lovlar</div>
           ) : (
             <div className="space-y-0.5 text-sm text-slate-500">
-              {row.site!.address && <div className="flex items-center gap-1.5"><MapPin size={13} className="shrink-0 text-slate-400" /> {row.site!.address}</div>}
+              {row.site!.address && <div className="flex items-center gap-1.5"><MapPin size={13} className="shrink-0 text-slate-400" /> {row.site!.address}{row.site!.lat == null && <span className="text-xs text-amber-600">· xaritada nuqta yo&apos;q</span>}</div>}
               {(row.site!.contactName || row.site!.contactPhone) && <div className="flex items-center gap-1.5"><Phone size={13} className="shrink-0 text-slate-400" /> {[row.site!.contactName, row.site!.contactPhone].filter(Boolean).join(" · ")}</div>}
               {row.site!.deliveryHours && <div className="flex items-center gap-1.5"><Clock size={13} className="shrink-0 text-slate-400" /> {row.site!.deliveryHours}</div>}
               {row.site!.instructions && <div className="text-slate-400">{row.site!.instructions}</div>}
@@ -96,14 +98,17 @@ function SiteRow({ row, customerId, canEdit, onEdit }: { row: SiteDebt; customer
         <div><div className="text-xs text-slate-400">Ochiq (schyotsiz)</div><div className="font-medium text-slate-700">{money(row.open)}</div></div>
       </div>
 
-      {!noSite && canEdit && (
-        <div className="mt-3 flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={onEdit}><Pencil size={14} /> Tahrirlash</Button>
-          {row.canDelete ? (
-            <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50" disabled={pending} onClick={onDelete}><Trash2 size={14} /> O'chirish</Button>
-          ) : (
-            <span className="text-xs text-slate-400">{row.orders} ta zayavka — o'chirib bo'lmaydi</span>
-          )}
+      {!noSite && (canEdit || (canOrder && row.site!.isActive)) && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {canOrder && row.site!.isActive && <LinkButton size="sm" variant="secondary" href={`/orders/new?customer=${customerId}&site=${row.site!.id}`}><ClipboardList size={14} /> Zayavka</LinkButton>}
+          {canEdit && <>
+            <Button size="sm" variant="ghost" onClick={onEdit}><Pencil size={14} /> Tahrirlash</Button>
+            {row.canDelete ? (
+              <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50" disabled={pending} onClick={onDelete}><Trash2 size={14} /> O'chirish</Button>
+            ) : (
+              <span className="text-xs text-slate-400">{row.orders} ta zayavka — o'chirib bo'lmaydi</span>
+            )}
+          </>}
         </div>
       )}
       {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
@@ -111,7 +116,7 @@ function SiteRow({ row, customerId, canEdit, onEdit }: { row: SiteDebt; customer
   );
 }
 
-function SiteForm({ customerId, site, onDone }: { customerId: string; site: SiteDebt | null; onDone: () => void }) {
+function SiteForm({ customerId, site, geoSearch, onDone }: { customerId: string; site: SiteDebt | null; geoSearch: boolean; onDone: () => void }) {
   const s = site?.site ?? null;
   const [state, action, pending] = useActionState(saveSite.bind(null, customerId, s?.id ?? null), undefined);
   useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
@@ -124,7 +129,8 @@ function SiteForm({ customerId, site, onDone }: { customerId: string; site: Site
         <Field label="Obyekt nomi *"><Input name="name" defaultValue={s?.name} required placeholder="Masalan: Chilonzor 15-uy qurilishi" /></Field>
         <Field label="Aloqa shaxsi"><Input name="contactName" defaultValue={s?.contactName ?? ""} /></Field>
       </div>
-      <Field label="Manzil *"><Textarea name="address" defaultValue={s?.address} required /></Field>
+      {/* Nuqta zayavkaga ham o'tadi: obyekt tanlanganda haydovchi navigatsiyasi va masofa darhol ishlaydi */}
+      <AddressPicker name="address" label="Manzil" className="" required searchEnabled={geoSearch} showDistance={false} defaultAddress={s?.address} defaultLat={s?.lat} defaultLng={s?.lng} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Telefon"><Input name="contactPhone" defaultValue={s?.contactPhone ?? ""} /></Field>
         <Field label="Ish vaqti" hint="qabul qilish vaqti, masalan 08:00–18:00"><Input name="deliveryHours" defaultValue={s?.deliveryHours ?? ""} /></Field>
