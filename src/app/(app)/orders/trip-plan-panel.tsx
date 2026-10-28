@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Boxes, Clock, Container, Gauge, Route, Truck, Weight } from "lucide-react";
 import { Badge, Button, Callout, Card, CardHeader, StatCard, Table, Td, Th, Tr, type BadgeColor } from "@/components/ui";
 import { fmtNum, isoDate, date as fmtDate } from "@/lib/format";
-import { concretePlan, piecePlan, PLAN, type DayFleet, type PlanWarn, type VehicleUse } from "@/lib/trip-plan";
+import { concretePlan, piecePlan, PLAN, type DayFleet, type PieceFit, type PlanWarn, type VehicleUse } from "@/lib/trip-plan";
 import { loadDayFleet } from "./plan-actions";
 
 export type PlanRow = { code: string; name: string; unit: string; qty: number; weightKg?: number | null; perTrip?: number | null };
@@ -120,6 +120,8 @@ export function TripPlanPanel({ rows, km, kmSource, pump, day, onApplyTrips }: {
             <StatCard icon={Clock} label="Bitta reys" value={dur(piece.cycleMin)} hint="yuklash, yo'l, tushirish, qaytish" />
           </div>
 
+          {piece.fit.rows.length > 0 && <FitTable fit={piece.fit} />}
+
           <VehicleTable rows={piece.own} unit="t" hired={piece.hired ? { count: piece.hired, trips: piece.hiredTrips, amount: piece.loads.filter((l) => l.hired).reduce((s, l) => s + l.kg, 0) / 1000, cap: `${PLAN.hiredTruckT} t` } : null}
             days={1} empty="O'zimizda faol bort mashina yo'q" />
 
@@ -180,6 +182,43 @@ function VehicleTable({ rows, unit, hired, days, empty }: {
           )}
         </tbody>
     </Table>
+  );
+}
+
+const FIT_BY = { kg: "og'irlik bo'yicha", max: "kartadagi «bir reysga max»", pcs: "mashina sig'imi (dona)" } as const;
+
+/** Har mahsulotdan bitta mashinaga necha dona sig'adi (mashina faqat shu mahsulot bilan yuklansa). */
+function FitTable({ fit }: { fit: PieceFit }) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600"><Container size={14} /> Bitta mashinaga necha dona sig&apos;adi</div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Mahsulot</Th>
+            {fit.cols.map((c, i) => (
+              <Th key={i} right><span className="normal-case">{c.label}</span><div className="text-[10px] font-normal normal-case text-slate-400">{c.sub}</div></Th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {fit.rows.map((r) => (
+            <Tr key={r.name}>
+              <Td>
+                <span className="font-medium">{r.name}</span>
+                {r.kg > 0 && <span className="block text-xs text-slate-500">1 dona ≈ {fmtNum(r.kg)} kg{r.src === "gost" ? " (GOST)" : ""}</span>}
+              </Td>
+              {r.cells.map((c, i) => (
+                <Td key={i} right className={fit.cols[i]!.hired ? "bg-amber-50/50" : undefined}>
+                  {c.pcs > 0 ? <span className="font-semibold tabular" title={FIT_BY[c.by]}>{fmtNum(c.pcs)} {r.unit}</span> : <span className="text-slate-400">—</span>}
+                  {c.pcs > 0 && c.by !== "kg" && <span className="block text-[10px] text-slate-400">{c.by === "max" ? "karta limiti" : "sig'im (dona)"}</span>}
+                </Td>
+              ))}
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </div>
   );
 }
 

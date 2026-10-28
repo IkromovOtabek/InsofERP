@@ -233,8 +233,15 @@ export type PiecePlan = {
   hired: number; hiredTrips: number; tripsPerHired: number;
   /** Faqat o'z mashinalarimiz bilan necha kunda tashib bo'linadi (0 — o'z mashina yo'q). */
   ownDays: number;
+  /** Bitta mashinaga (faqat shu mahsulot bilan to'liq yuklansa) necha dona sig'adi — sig'im turlari bo'yicha. */
+  fit: PieceFit;
   cycleMin: number; crane: boolean;
   warns: PlanWarn[];
+};
+
+export type PieceFit = {
+  cols: { label: string; sub: string; hired: boolean }[];
+  rows: { name: string; unit: string; kg: number; src: "card" | "gost" | null; cells: { pcs: number; by: "kg" | "max" | "pcs" }[] }[];
 };
 
 export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet: DayFleet | null }): PiecePlan {
@@ -244,7 +251,7 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
   const unknown: string[] = [];
   const noWeight: string[] = [];
   let approx = 0;
-  const goods: { name: string; unit: string; kg: number; perLift: number; left: number; longM: number | null; space: number }[] = [];
+  const goods: { name: string; unit: string; kg: number; src: "card" | "gost" | null; perTrip: number | null; perLift: number; left: number; longM: number | null; space: number }[] = [];
   for (const it of input.items) {
     if (!(it.qty > 0)) continue;
     const ref = refWeight(it.code, it.name);
@@ -254,7 +261,7 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
     if (!own && ref) approx++;
     if (!own && !ref) noWeight.push(it.name);
     const kg = own ?? ref?.kg ?? 0;
-    goods.push({ name: it.name, unit: it.unit, kg, perLift: ref?.perLift ?? (kg > 0 && kg < 150 ? 10 : 1), left: Math.ceil(it.qty - 1e-9), longM: ref?.longM ?? null, space });
+    goods.push({ name: it.name, unit: it.unit, kg, src: own ? "card" : ref ? "gost" : null, perTrip: space ? it.perTrip! : null, perLift: ref?.perLift ?? (kg > 0 && kg < 150 ? 10 : 1), left: Math.ceil(it.qty - 1e-9), longM: ref?.longM ?? null, space });
   }
   goods.sort((a, b) => (b.longM ?? 0) - (a.longM ?? 0) || b.kg - a.kg); // uzun va og'iri — avval, polga
   const totalKg = goods.reduce((s, g) => s + g.kg * g.left, 0);
@@ -272,6 +279,31 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
   // Yuk ko'tarishi: TON — tonna; PIECE — dona soni (og'irlik cheklanmaydi); kiritilmagan — taxminiy
   const capKgOf = (v: FleetVehicle) => (v.unit === "TON" && v.cap ? v.cap * 1000 : v.unit === "PIECE" ? Infinity : PLAN.defaultTruckT * 1000);
   const free = freeMinutes(working, shiftMin, input.fleet?.other.truckMin ?? 0, (v) => (Number.isFinite(capKgOf(v)) ? capKgOf(v) : 1e9));
+
+  // Sig'im jadvali: bir xil sig'imli mashinalar bitta ustun, oxirida yollanma treyler
+  const fitCols: { capKg: number; capPcs: number; label: string; plates: string[]; hired: boolean }[] = [];
+  for (const v of trucks) {
+    const capKg = capKgOf(v);
+    const capPcs = v.unit === "PIECE" && v.cap ? Math.floor(v.cap) : Infinity;
+    const label = v.unit === "PIECE" && v.cap ? `${fmt(v.cap)} dona` : !Number.isFinite(capKg) ? "sig'imi kiritilmagan" : `${fmt(r1(capKg / 1000))} t${v.unit === "TON" && v.cap ? "" : " (taxminiy)"}`;
+    const col = fitCols.find((c) => c.label === label);
+    if (col) col.plates.push(v.plate); else fitCols.push({ capKg, capPcs, label, plates: [v.plate], hired: false });
+  }
+  fitCols.sort((a, b) => b.capKg - a.capKg);
+  fitCols.push({ capKg: PLAN.hiredTruckT * 1000, capPcs: Infinity, label: `${PLAN.hiredTruckT} t`, plates: [], hired: true });
+  const fit: PieceFit = {
+    cols: fitCols.map((c) => ({ label: c.label, hired: c.hired,
+      sub: c.hired ? "yollanma treyler" : c.plates.length > 2 ? `${c.plates.slice(0, 2).join(", ")} +${c.plates.length - 2}` : c.plates.join(", ") })),
+    rows: goods.map((g) => ({
+      name: g.name, unit: g.unit, kg: g.kg, src: g.src,
+      cells: fitCols.map((c) => {
+        const byKg = Number.isFinite(c.capKg) && g.kg > 0 ? Math.floor(c.capKg / g.kg + 1e-9) : Infinity;
+        const byMax = g.perTrip ?? Infinity;
+        const pcs = Math.min(byKg, byMax, c.capPcs);
+        return { pcs: Number.isFinite(pcs) ? pcs : 0, by: pcs === c.capPcs ? "pcs" : pcs === byMax ? "max" : "kg" };
+      }),
+    })),
+  };
 
   /** Bitta reysni to'ldiradi: og'ir/uzun yukdan boshlab, sig'guncha. */
   const fill = (capKg: number, capPcs: number) => {
@@ -347,7 +379,7 @@ export function piecePlan(input: { items: PieceItem[]; km: number | null; fleet:
 
   return {
     tons: totalKg / 1000, unknown, approx, km, kmAssumed: input.km == null, trips, loads,
-    own, ownUsed, ownTrips, hired, hiredTrips, tripsPerHired, ownDays,
+    own, ownUsed, ownTrips, hired, hiredTrips, tripsPerHired, ownDays, fit,
     cycleMin: cycleFor(ownSorted[0] ? (Number.isFinite(capKgOf(ownSorted[0])) ? capKgOf(ownSorted[0]) : totalKg) : hiredCap),
     crane: heavy, warns,
   };
