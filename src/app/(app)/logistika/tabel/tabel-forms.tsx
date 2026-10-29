@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useActionState, useContext, useState, useTransition } from "react";
+import { createContext, useActionState, useContext, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Check, ChevronDown, ChevronUp, Clock, HandCoins, Pencil, X } from "lucide-react";
 import { approveTripPaysAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectTripPayAction, saveDriverTariff } from "../actions";
 import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
@@ -17,10 +18,17 @@ function PayTypeSelect({ value, className }: { value?: string | null; className?
   );
 }
 
-/** Bitta reysga narx: taklif oldindan yozilgan, dispetcher tasdiqlaydi yoki o'zgartiradi. Narxlangan reysni tuzatish — sabab bilan. */
-export function PriceForm({ tripId, suggested, amount, payType }: { tripId: string; suggested: number; amount: number | null; payType?: string | null }) {
+/**
+ * Bitta reysga narx: taklif oldindan yozilgan, dispetcher tasdiqlaydi yoki o'zgartiradi. Narxlangan reysni tuzatish — sabab bilan.
+ * «Narxlangan» — `priced` (narx qo'yilgan vaqt bor) bo'yicha: summasi yozilgan, lekin narxi qo'yilmagan reys hali narxsiz.
+ * Saqlangach darhol «yuborildi» ko'rinadi va ro'yxat yangilanadi (reys narxsizlardan tasdiqqa o'tadi).
+ */
+export function PriceForm({ tripId, suggested, amount, payType, priced }: { tripId: string; suggested: number; amount: number | null; payType?: string | null; priced: boolean }) {
   const [state, action, pending] = useActionState(priceTripAction.bind(null, tripId), undefined);
-  const [edit, setEdit] = useState(amount == null);
+  const [edit, setEdit] = useState(!priced);
+  const router = useRouter();
+  useEffect(() => { if (state?.ok) router.refresh(); }, [state, router]);
+  if (state?.ok) return <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><Check size={12} /> Tasdiqqa yuborildi</span>;
   if (!edit) {
     return (
       <button type="button" onClick={() => setEdit(true)} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900">
@@ -32,7 +40,7 @@ export function PriceForm({ tripId, suggested, amount, payType }: { tripId: stri
     <form action={action} className="flex flex-wrap items-center justify-end gap-1.5">
       <Input name="amount" type="number" min="0" step="1000" defaultValue={amount ?? suggested} className="h-8 w-28 text-right tabular" aria-label="Reys haqi" required />
       <PayTypeSelect value={payType} className="h-8 w-28 py-0 text-sm" />
-      {amount != null && <Input name="note" placeholder="Sabab" className="h-8 w-32" required />}
+      {priced && <Input name="note" placeholder="Sabab" className="h-8 w-32" required />}
       <Button size="sm" variant="success" disabled={pending} title="Narxni tasdiqlash"><Check size={14} /></Button>
       {state?.error && <div className="w-full text-right text-xs text-red-700">{state.error}</div>}
     </form>

@@ -86,7 +86,7 @@ export async function tripPayDetail(user: MobileUser, id: string): Promise<Mobil
       { label: "Ishlagan soat", value: r.workHours != null ? `${fmtNum(r.workHours, 1)} soat` : "kiritilmagan" },
       ...(fuelNormText(r) ? [{ label: "Yoqilg'i normasi", value: fuelNormText(r)! }] : []),
       { label: "Tarif bo'yicha taklif", value: `${money(r.suggested)} (${r.suggestText})` },
-      ...(r.amount != null ? [{ label: "Belgilangan narx", value: money(r.amount), tone: "success" as const }] : []),
+      ...(r.pricedAt && r.amount != null ? [{ label: "Belgilangan narx", value: money(r.amount), tone: "success" as const }] : []),
       ...(r.note ? [{ label: "Izoh", value: r.note }] : []),
       ...(r.pricedAt ? [{ label: "Kim belgiladi", value: `${pricedBy?.fullName ?? "—"} · ${dateTime(r.pricedAt)}` }] : []),
       ...(r.payType ? [{ label: "To'lov turi", value: PAY_TYPE_LABEL[r.payType] }] : []),
@@ -98,11 +98,11 @@ export async function tripPayDetail(user: MobileUser, id: string): Promise<Mobil
       { id: "trip.pay.approve", label: r.payType === "CASH" ? "Tasdiqlash — kassaga" : "Tasdiqlash — oylikka", tone: "success", confirm: `${money(r.amount ?? 0)} reys haqi tasdiqlansinmi?` },
       { id: "trip.pay.reject", label: "Rad etish", tone: "danger", form: [{ name: "reason", label: "Rad etish sababi", type: "text", required: true }] },
     ] : can(user, "trip.price") && !(r.payType === "CASH" && r.approvedAt) ? [{
-      id: "trip.price", label: r.amount == null ? "Narxni tasdiqlash" : "Narxni tuzatish", tone: r.amount == null ? "success" : "brand",
+      id: "trip.price", label: !r.pricedAt ? "Narxni tasdiqlash" : "Narxni tuzatish", tone: !r.pricedAt ? "success" : "brand",
       form: [
         { name: "amount", label: "Reys haqi, so'm", type: "number", required: true, value: String(r.amount ?? r.suggested), hint: "Taklif tarif bo'yicha — o'zgartirish mumkin" },
         { name: "payType", label: "To'lov turi", type: "select", required: true, value: r.payType ?? "PAYROLL", options: PAY_TYPES.map((v) => ({ value: v, label: PAY_TYPE_LABEL[v] })), hint: "Ish boshqaruvchi tasdiqlaydi: naqd — kassa beradi, oylik — vedomostga tushadi" },
-        { name: "note", label: r.amount == null ? "Izoh" : "O'zgartirish sababi", type: "text", required: r.amount != null },
+        { name: "note", label: !r.pricedAt ? "Izoh" : "O'zgartirish sababi", type: "text", required: !!r.pricedAt },
       ],
     }] : [],
   };

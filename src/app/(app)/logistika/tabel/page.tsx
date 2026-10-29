@@ -24,7 +24,7 @@ type BalMap = Map<string, { after: number; unit: string }>;
 
 /** Reys haqi holati: to'lov turi va tasdiq / kassa bosqichi; rad etilgani — sababi bilan. */
 function PayStatus({ r }: { r: PayTripRow }) {
-  if (r.amount == null) return r.rejectReason ? <div className="text-[11px] text-red-600">Rad etildi: {r.rejectReason}</div> : null;
+  if (!r.pricedAt) return r.rejectReason ? <div className="text-[11px] text-red-600">Rad etildi: {r.rejectReason}</div> : null;
   if (!r.payType) return null;
   const [color, text] = !r.approvedAt ? ["amber", "Tasdiq kutilmoqda"] as const
     : r.payType === "PAYROLL" ? ["green", "Oylikka tasdiqlangan"] as const
@@ -59,12 +59,12 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
             <Td right className="tabular">{(() => { const b = bal.get(r.id); return b ? <Bal v={b.after} unit={b.unit} /> : "—"; })()}</Td>
             <Td right className="tabular"><span title={r.suggestText}>{money(r.suggested)}</span><div className="text-[11px] text-slate-400">{r.suggestText}</div></Td>
             <Td right>
-              {r.amount != null && <div className="font-semibold tabular">{money(r.amount)}</div>}
+              {r.pricedAt && r.amount != null && <div className="font-semibold tabular">{money(r.amount)}</div>}
               {r.note && <div className="text-[11px] text-slate-500">{r.note}</div>}
               <PayStatus r={r} />
               {/* Naqdi kassaga o'tgan reys narxi o'zgarmaydi */}
-              {canPrice && !(r.payType === "CASH" && r.approvedAt) ? <PriceForm tripId={r.id} suggested={r.suggested} amount={r.amount} payType={r.payType} />
-                : !canPrice && r.amount == null && <Badge color="amber">Narxsiz</Badge>}
+              {canPrice && !(r.payType === "CASH" && r.approvedAt) ? <PriceForm tripId={r.id} suggested={r.suggested} amount={r.amount} payType={r.payType} priced={!!r.pricedAt} />
+                : !canPrice && !r.pricedAt && <Badge color="amber">Narxsiz</Badge>}
             </Td>
           </Tr>
         ))}
@@ -427,7 +427,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                     const cell = (v: number, cls = "") => <Td right className={`tabular ${cls}`}>{v ? money(v) : <span className="text-slate-300">—</span>}</Td>;
                     return (
                       <Tr key={r.id || "jami"} className={isTotal ? "bg-slate-50 font-semibold" : undefined}>
-                        <Td>{isTotal ? "Jami" : <Link href={qs({ bolim: "reyslar", driver: r.id })} className="font-medium hover:underline">{r.name}</Link>}</Td>
+                        <Td>{isTotal ? "Jami" : <Link href={qs({ bolim: "oylik", driver: r.id })} scroll={false} className="font-medium hover:underline">{r.name}</Link>}</Td>
                         <Td right className="tabular">{r.trips}</Td>
                         {cell(r.payroll, "font-semibold text-emerald-700")}
                         {cell(r.payrollWait, "text-amber-700")}
@@ -442,6 +442,38 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                 </tbody>
               </Table>
             </Card>
+            {/* Haydovchi tanlangan: har reys — summa, to'lov turi (oylik / naqd) va holati */}
+            {picked && (
+              <Card padded={false} className="mt-4">
+                <div className="px-5 pt-5">
+                  <CardHeader title={`${picked.name} — reyslar va to'lov turi`} icon={Route}
+                    description="Oylik — tasdiqlangach oy yakuni vedomostiga tushadi; naqd — tasdiqlangach kassa beradi"
+                    action={<Link href={qs({ driver: null })} scroll={false} className="text-sm text-blue-700 hover:underline">Hamma haydovchilar</Link>} />
+                </div>
+                <Table>
+                  <thead><tr><Th>Sana · nakladnoy</Th><Th>Obyekt</Th><Th right>Km</Th><Th right>Reys haqi</Th><Th>To&apos;lov turi</Th><Th>Holat</Th></tr></thead>
+                  <tbody>
+                    {[...monthTrips].reverse().map((r) => {
+                      const [color, text] = !r.pricedAt ? ["amber", "Narxsiz"] as const
+                        : !r.payType ? ["green", "Oylikka (eski tartib)"] as const
+                        : !r.approvedAt ? ["amber", "Tasdiq kutilmoqda"] as const
+                        : r.payType === "PAYROLL" ? ["green", "Oylikka tasdiqlangan"] as const
+                        : r.cashStatus === "PAID" ? ["green", "Kassa berdi"] as const : ["blue", "Kassa kutilmoqda"] as const;
+                      return (
+                        <Tr key={r.id}>
+                          <Td className="text-sm"><Link href={`/trips/${r.id}`} className="font-medium tabular hover:underline">{r.no}</Link><div className="text-xs text-slate-500">{dateTime(r.deliveredAt)} · {r.plate}</div></Td>
+                          <Td className="max-w-56 truncate text-sm">{r.customer}</Td>
+                          <Td right className="tabular">{fmtNum(r.km, 0)}</Td>
+                          <Td right className="tabular">{r.pricedAt ? <span className="font-semibold">{money(r.amount ?? 0)}</span> : <span className="text-slate-400" title="Tarif bo'yicha taklif">{money(r.suggested)}</span>}</Td>
+                          <Td>{r.pricedAt ? <Badge color={r.payType === "CASH" ? "amber" : "blue"} dot={false}>{r.payType ? PAY_TYPE_LABEL[r.payType] : "Oylik"}</Badge> : <span className="text-slate-300">—</span>}</Td>
+                          <Td><Badge color={color}>{text}</Badge>{r.rejectReason && !r.pricedAt && <div className="mt-0.5 text-[11px] text-red-600">Rad etildi: {r.rejectReason}</div>}</Td>
+                        </Tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </Card>
+            )}
           </>
         )}
       </Section>}

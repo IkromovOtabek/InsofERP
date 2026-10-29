@@ -7,7 +7,7 @@ import { CustomerName } from "@/components/customer-name";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { pathAllowed } from "@/lib/nav";
-import { fuelNormText, payTrips } from "@/lib/driver-trip-pay";
+import { fuelNormText, PAY_TYPE_LABEL, payTrips } from "@/lib/driver-trip-pay";
 import { PriceForm } from "../../logistika/tabel/tabel-forms";
 import { qty, date, dateTime } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, DL, LinkButton, PageHeader, StatCard, StatusSteps } from "@/components/ui";
@@ -205,8 +205,11 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
       {pay && (
         <Card className="mt-5">
           <CardHeader title="Haydovchi tabeli" icon={Clock}
-            description={pay.amount == null ? "Narx belgilanmagan — reys haydovchi oyligiga hali tushmagan" : "Narxlangan — oy yakunida Ish haqiga tushadi"}
-            action={pay.amount == null ? <Badge color="amber">Narxsiz</Badge> : <Badge color="green">{money(pay.amount)}</Badge>} />
+            description={!pay.pricedAt ? "Narx belgilanmagan — reys haydovchi oyligiga hali tushmagan"
+              : !pay.payType ? "Narxlangan — oy yakunida Ish haqiga tushadi"
+              : !pay.approvedAt ? `${PAY_TYPE_LABEL[pay.payType]} — ish boshqaruvchi tasdig'ini kutmoqda`
+              : pay.payType === "CASH" ? "Naqd — tasdiqlangan, kassa beradi" : "Oylik — tasdiqlangan, oy yakunida Ish haqiga tushadi"}
+            action={!pay.pricedAt ? <Badge color="amber">Narxsiz</Badge> : <Badge color={pay.approvedAt || !pay.payType ? "green" : "amber"}>{money(pay.amount ?? 0)}</Badge>} />
           <div className="mb-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
             <div><div className="text-xs text-slate-500">Km (borib-kelish)</div><div className="font-medium tabular">{Math.round(pay.km)}</div></div>
             <div><div className="text-xs text-slate-500">Obyektda kutish</div><div className="font-medium tabular">{pay.waitMin != null ? `${pay.waitMin} daq` : "—"}</div></div>
@@ -216,7 +219,7 @@ export default async function TripPage({ params }: { params: Promise<{ id: strin
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="text-slate-500">Taklif: {money(pay.suggested)} · {pay.suggestText}{pay.note ? ` · ${pay.note}` : ""}</span>
-            {canDo(s, "logistika", "pay") && <PriceForm tripId={id} suggested={pay.suggested} amount={pay.amount} />}
+            {canDo(s, "logistika", "pay") && !(pay.payType === "CASH" && pay.approvedAt) && <PriceForm tripId={id} suggested={pay.suggested} amount={pay.amount} payType={pay.payType} priced={!!pay.pricedAt} />}
           </div>
         </Card>
       )}
