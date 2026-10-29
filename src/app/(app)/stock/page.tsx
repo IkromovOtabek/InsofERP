@@ -11,7 +11,7 @@ import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { Badge, Callout, Empty, LinkButton, PageHeader, Table, Td, Th, Tr, Sheet, SheetHead, SheetTh, SheetTd, SheetTr, SheetFoot } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Warehouse } from "lucide-react";
+import { Boxes, Factory, PackagePlus, ChevronRight, ClipboardList, HardHat, ScanLine, ScanText, PackageMinus, ArrowDownToLine, ArrowUpFromLine, Truck, Warehouse } from "lucide-react";
 import { visionEnabled } from "@/lib/ai/vision";
 import { brigadeStocks, undistributedMaterials } from "@/lib/brigade-stock";
 import { StockPeriodBar, stockPeriod } from "@/components/stock-period";
@@ -26,6 +26,7 @@ import { HoldingsPanel } from "@/components/holdings-panel";
 import { holdingsOverview } from "@/lib/holdings";
 import { CATEGORY_SLUG, MATERIAL_CATEGORY_LABEL, MATERIAL_CATEGORY_OPTIONS, categoriesFor, categoryFromSlug } from "@/lib/material-category";
 import { avtoPartsFeed } from "@/lib/avto-parts";
+import { pendingShipments } from "@/lib/shipments";
 import { ForYouParts } from "./for-you-parts";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -57,6 +58,9 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const toIncl = new Date(period.to); toIncl.setDate(toIncl.getDate() - 1);
   // «Kimda nima bor» — brigadalar qo'lida va xodim/oluvchilar shu oy olgani (Qoldiqlar oynasida, yig'ilgan holda)
   const holdings = tab === "balance" ? await holdingsOverview() : null;
+  // Snabjeniye jo'natmalari — sklad xodimi shu oynadagi tugmadan ochib qabul qiladi (menyuda faqat snabjenetsda)
+  const shipAccept = canDo(s, "stock", "shipment_accept");
+  const shipPending = shipAccept ? (await pendingShipments(1)).count : 0;
   const [materials, mSums, whSums, allWarehouses] = await Promise.all([
     tab === "brigades" ? db.material.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }) : [],
     tab === "balance" ? db.stockMove.groupBy({ by: ["materialId"], where: { materialId: { not: null } }, _sum: { qty: true } }) : [],
@@ -180,6 +184,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             {/* «Kirim» / «Chiqim» jurnallari (Excel'dagidek) — xarid narxlari bor: faqat `lib/stock-journal-access` rollariga */}
             {canSeePrixod(s) && <LinkButton href="/stock/prixod" variant="success" size="lg"><ArrowDownToLine size={18} /> <span>Kirim</span></LinkButton>}
             {canSeeRasxod(s) && <LinkButton href="/stock/rasxod" variant="danger" size="lg"><ArrowUpFromLine size={18} /> <span>Chiqim</span></LinkButton>}
+            {shipAccept && (
+              <LinkButton href="/jonatma" variant={shipPending ? "primary" : "secondary"} size="lg">
+                <Truck size={18} /> <span>Jo&apos;natmalar</span>
+                {shipPending > 0 && <span className="ml-0.5 rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-900 tabular" title="Qabul kutayotgan jo'natmalar">{shipPending}</span>}
+              </LinkButton>
+            )}
             {/* Kelgan xomashyoni brigadalarga taqsimlash — sklad xodimining kundalik ishi, menyuda tab yo'q */}
             {canDo(s, "stock", "brigade") && <LinkButton href="/stock?tab=brigades" variant="secondary" size="lg"><HardHat size={18} /> <span>Brigadalarga berish</span></LinkButton>}
             {/* Nakladnoy rasmi → Kirim formasi o'zi to'ladi (AI kaliti bo'lsa) */}

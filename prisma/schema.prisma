@@ -56,6 +56,8 @@ model User {
   stockMoves             StockMove[]              @relation("MoveCreatedBy")
   receipts               GoodsReceipt[]           @relation("ReceiptCreatedBy")
   receiptsBought         GoodsReceipt[]           @relation("ReceiptBuyer")
+  shipments              SupplyShipment[]         @relation("ShipmentCreatedBy")
+  shipmentDecisions      SupplyShipmentItem[]     @relation("ShipmentItemDecidedBy")
   materialPrices         Material[]               @relation("MaterialPriceBy")
   tasks                  BrigadeTask[]            @relation("TaskCreatedBy")
   taskProgress           TaskProgress[]           @relation("ProgressCreatedBy")
@@ -285,6 +287,7 @@ model Supplier {
   transactions   CashTransaction[]
   supplyRequests SupplyRequest[]
   supplyQuotes   SupplyQuote[]
+  shipments      SupplyShipment[]
 }
 
 /// Xomashyo: sement, qum, shag'al (fraksiya bo'yicha), plastifikator, suv
@@ -313,6 +316,7 @@ model Material {
   receiptItems GoodsReceiptItem[]
   supplyItems  SupplyRequestItem[]
   brigadeMoves BrigadeMove[]
+  shipmentItems SupplyShipmentItem[]
 
   @@index([groupId])
   @@index([category])
@@ -485,6 +489,7 @@ model Warehouse {
   receipts       GoodsReceipt[]
   supplyRequests SupplyRequest[]
   openings       OpeningBalance[]
+  shipments      SupplyShipment[]
 }
 
 enum VehicleType {
@@ -985,6 +990,7 @@ model GoodsReceipt {
   buyer             User?              @relation("ReceiptBuyer", fields: [buyerId], references: [id])
   items             GoodsReceiptItem[]
   supply            SupplyRequest? // shu kirim ta'minot zayavkasidan tug'ilgan bo'lsa
+  shipmentItems     SupplyShipmentItem[]
 }
 
 model GoodsReceiptItem {
@@ -1197,6 +1203,82 @@ model SupplyDocument {
   createdBy User          @relation("SupplyDocBy", fields: [createdById], references: [id])
 
   @@index([requestId])
+}
+
+// ───────────────────────── Snabjeniye → Sklad jo'natmasi ─────────────────────────
+
+/// Jo'natma holati. Qoralamani snabjenets tahrirlaydi; jo'natilgach sklad qatorlarni qabul qiladi yoki rad etadi.
+enum ShipmentStatus {
+  DRAFT // snabjenets kiritmoqda — skladga hali ko'rinmaydi
+  SENT // skladga jo'natildi — qatorlar hali ko'rilmagan
+  PARTIAL // bir qismi qabul qilindi / rad etildi, qolgani kutilmoqda
+  DONE // barcha qatorlar ko'rib chiqildi
+  CANCELLED // snabjenets qaytarib oldi (birorta qator qabul qilinmagan bo'lsa)
+}
+
+enum ShipmentItemStatus {
+  PENDING // sklad hali ko'rmagan
+  ACCEPTED // qabul qilindi — kirim (GoodsReceipt) bo'lib skladga tushdi
+  REJECTED // rad etildi (sabab bilan) — snabjenetsga qaytadi
+}
+
+/// Snabjenets olib kelgan mol nakladnoyi: skladga jo'natiladi, sklad tekshirib qabul qiladi.
+/// Qabul qilingan qatorlar kirim bo'lib skladga tushadi. Bir jo'natmadan bir necha kirim bo'lishi mumkin —
+/// sklad bir qismini bugun, qolganini keyinroq qabul qilsa (`lib/shipments.ts`).
+model SupplyShipment {
+  id          String          @id @default(cuid())
+  docNo       String          @unique // JN-YYYY-00001
+  /// Nakladnoy sanasi — kirim ham shu sana bilan yoziladi
+  date        DateTime
+  status      ShipmentStatus  @default(DRAFT)
+  warehouseId String
+  supplierId  String
+  waybillNo   String? // nakladnoy (ТТН) raqami
+  payment     ReceiptPayment? // П-р (BANK) / Н-к (CASH)
+  carrier     String? // kim olib keldi: mashina raqami, haydovchi
+  note        String?
+  createdById String
+  sentAt      DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  warehouse Warehouse            @relation(fields: [warehouseId], references: [id])
+  supplier  Supplier             @relation(fields: [supplierId], references: [id])
+  createdBy User                 @relation("ShipmentCreatedBy", fields: [createdById], references: [id])
+  items     SupplyShipmentItem[]
+
+  @@index([status, date])
+  @@index([createdById, createdAt])
+}
+
+/// Jo'natma qatori. Spravochnikda yo'q mahsulot ham yoziladi (`materialId` bo'sh, `name` + kategoriya bor) —
+/// qabul qilinganda shu nom va kategoriya bilan xomashyo ochiladi.
+model SupplyShipmentItem {
+  id           String             @id @default(cuid())
+  shipmentId   String
+  materialId   String?
+  /// Kategoriya (Xomashyo / Zavod zapchast / Avto zapchast) — mavjud mahsulotda uniki, yangisida snabjenets tanlaydi
+  category     MaterialCategory   @default(XOMASHYO)
+  name         String
+  unit         String
+  qty          Decimal            @db.Decimal(18, 3) // snabjenets yozgan miqdor
+  price        Decimal            @db.Decimal(18, 2) // birlik narxi, QQS'siz
+  status       ShipmentItemStatus @default(PENDING)
+  acceptedQty  Decimal?           @db.Decimal(18, 3) // sklad haqiqatda sanab qabul qilgan miqdor
+  rejectReason String?
+  receiptId    String? // qabulda yaralgan kirim
+  decidedById  String?
+  decidedAt    DateTime?
+  sortOrder    Int                @default(0)
+
+  shipment  SupplyShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  material  Material?      @relation(fields: [materialId], references: [id])
+  receipt   GoodsReceipt?  @relation(fields: [receiptId], references: [id])
+  decidedBy User?          @relation("ShipmentItemDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([shipmentId])
+  @@index([receiptId])
 }
 
 // ───────────────────────── Brigada qoldig'i ─────────────────────────

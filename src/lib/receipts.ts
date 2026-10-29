@@ -119,8 +119,10 @@ export function receiptNote(
 export async function createGoodsReceipt(
   input: ReceiptInput,
   actor: { userId: string; role: Role },
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- eski chaqiruvlar (`{ lang: "ru" }`) buzilmasin
-  opts: { lang?: ReceiptLang } = {},
+  // `lang` e'tiborsiz — eski chaqiruvlar (`{ lang: "ru" }`) buzilmasin.
+  // `within` — kirim bilan BIR tranzaksiyada bajariladigan qo'shimcha yozuv (jo'natma qatorlarini band qilish):
+  // u xato tashlasa kirim ham yozilmaydi
+  opts: { lang?: ReceiptLang; within?: (tx: Prisma.TransactionClient, rec: { id: string; docNo: string }) => Promise<void> } = {},
 ): Promise<{ id: string; docNo: string; existed: boolean }> {
   function fail(msg: string): never { throw new Error(msg); }
 
@@ -260,6 +262,7 @@ export async function createGoodsReceipt(
         });
         await audit(tx, actor.userId, "CREATE", "CashTransaction", cashTx.id, undefined, cashTx);
       }
+      if (opts.within) await opts.within(tx, { id: rec.id, docNo: rec.docNo });
       await audit(tx, actor.userId, "CREATE", "GoodsReceipt", rec.id, undefined, { ...rec, items });
       return { id: rec.id, docNo: rec.docNo, existed: false };
     });

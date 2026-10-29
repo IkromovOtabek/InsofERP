@@ -85,6 +85,9 @@ export const NAV: NavItem[] = [
   // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi.
   // Sklad kabinetida ham menyuda: sklad xodimi ba'zi mollarni o'zi olib keladi (narx qo'yadi, sotib oladi, qabul qiladi)
   { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"] },
+  // Jo'natmalar: snabjenets olib kelgan molni nakladnoy qilib skladga jo'natadi, sklad tekshirib qabul qiladi (`lib/shipments.ts`).
+  // Menyuda (Snabjeniye ostida) — faqat snabjenetsda; sklad xodimi Sklad oynasidagi «Jo'natmalar» tugmasidan kirib qabul qiladi
+  { href: "/jonatma",     label: "Jo'natmalar",        roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT"] },
   // Ta'minot zayavkalari — ma'sul (zayavka) xodim tasdiqlaydi; zanjirdagi boshqa bo'limlar holatini ko'radi.
   // Sklad menyusida yo'q — u so'rovni Sklad → «Kerakli mahsulotlar» dan jo'natadi, hujjatga bildirishnoma/havoladan kiradi
   // Mexanik ham texnika ehtiyojini snabjenetsga shu zanjir orqali so'raydi (menyusida — o'z zayavkalari holatini kuzatish uchun)
@@ -260,7 +263,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "tasks",     label: "Topshiriq / brigada",   prefixes: ["/tasks", "/brigades"] },
   { key: "trips",     label: "Reyslar / haydovchi",   prefixes: ["/trips", "/drivers"] },
   { key: "logistika", label: "Logistika",             prefixes: ["/logistika"] },
-  { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers", "/oluvchi"] },
+  { key: "stock",     label: "Sklad",                 prefixes: ["/stock", "/snabjeniye", "/receipts", "/suppliers", "/oluvchi", "/jonatma"] },
   { key: "taminot",   label: "Ta'minot zayavkalari",  prefixes: ["/taminot"] },
   { key: "mexanik",   label: "Mexanik so'rovlari",    prefixes: ["/mexanik-sorovlar"] },
   { key: "payments",  label: "Kassa / schyot",        prefixes: ["/payments", "/invoices", "/pul-qabul"] },

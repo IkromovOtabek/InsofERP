@@ -10,6 +10,9 @@ import { InputMemory } from "@/components/input-memory";
 import { tourFor, TOUR_COOKIE } from "@/lib/tour";
 import { isControlMode } from "@/lib/tenant";
 import { AvtoPartsBanner } from "@/components/avto-parts-banner";
+import { canDo } from "@/lib/permissions";
+import { pendingShipments } from "@/lib/shipments";
+import { ShipmentBanner } from "@/components/shipment-banner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Markaziy panel jarayonida korxona sahifalari yo'q (middleware ham yo'naltiradi — ikkinchi himoya)
@@ -21,6 +24,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Instruksiyaning joriy bosqichi (yoki "done") — cookie sessiya bilan birga o'chadi
   const tourRaw = (await cookies()).get(TOUR_COOKIE)?.value;
   const tourStart = tourRaw ? decodeURIComponent(tourRaw) : null;
+  // Snabjeniye jo'natmasi — qabul qiladigan sklad xodimiga tepada banner (direktor qabul qilmaydi — unga ko'rsatilmaydi)
+  const shipments = s.role !== "DIRECTOR" && canDo(s, "stock", "shipment_accept") ? await pendingShipments() : null;
   return (
     <AppShell items={navFor(s.role, s.perms)} user={{ fullName: s.fullName, roleLabel: s.superadmin ? ROLE_LABELS.SUPERADMIN : ROLE_LABELS[s.role] }} brand={company.name} ai={["DIRECTOR", "FINANCE", "ACCOUNTING"].includes(s.role)} apk={apk.exists ? apkSize(apk.size) : null} ios={iosAppUrl()} tour={{ steps: s.superadmin ? [] : tourFor(s.role), start: tourStart }}>
       {/* Ma'lumot o'zi yangilanib turadi — sahifani qo'lda yangilash shart emas */}
@@ -32,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           IT superadmin rejimi — direktor huquqi bilan ishlayapsiz. Har amal korxonaning audit jurnaliga yoziladi.
         </div>
       )}
+      {shipments && <ShipmentBanner count={shipments.count} rows={shipments.rows.map((r) => ({ id: r.id, docNo: r.docNo, by: r.by, supplier: r.supplier, pending: r.pending }))} />}
       {/* Mexanik: yangi qo'shilgan / skladga kelgan avto zapchastlar — «Ko'rish» bilan to'liq ro'yxat */}
       {s.role === "MECHANIC" && !s.superadmin && <AvtoPartsBanner userId={s.userId} />}
       {children}
