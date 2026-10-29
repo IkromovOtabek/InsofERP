@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { Check, Clock, HandCoins, Pencil, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Clock, HandCoins, Pencil, X } from "lucide-react";
 import { approveTripPaysAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectTripPayAction, saveDriverTariff } from "../actions";
 import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
@@ -128,5 +128,25 @@ export function MasterPayForm({ vehicles, payees, problems }: { vehicles: { id: 
         <div className="basis-full"><FormError error={state?.error} />{state?.ok && <FormSuccess text={state.note ?? "Yuborildi — ish boshqaruvchi tasdig'ini kutmoqda"} />}</div>
       </div>
     </form>
+  );
+}
+
+/**
+ * Uzun jadvalni yig'ib turish: yopiqda faqat birinchi 5 qator (eskisi oldin), tugma bilan hammasi.
+ * Qatorlar serverda bir marta chiziladi — yashirish CSS bilan, narx formalari holatini yo'qotmaydi.
+ */
+export function TopRows({ total, children }: { total: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const top = 5; // CSS dagi nth-child(n+6) bilan bir xil
+  if (total <= top) return <>{children}</>;
+  return (
+    <div>
+      <div data-open={open} className="[&[data-open=false]_tbody>tr:nth-child(n+6)]:hidden">{children}</div>
+      <div className="border-t border-slate-100 px-5 py-2.5 text-center">
+        <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
+          {open ? <><ChevronUp size={14} /> Yig&apos;ish (birinchi {top} tasi)</> : <><ChevronDown size={14} /> Barchasini ochish ({total} ta, yana {total - top})</>}
+        </Button>
+      </div>
+    </div>
   );
 }
