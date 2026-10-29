@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { BellRing, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Route, Settings2, ShieldCheck, Timer, Users, Wrench } from "lucide-react";
+import { BellRing, Calculator, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Route, Settings2, ShieldCheck, Timer, Users, Wrench } from "lucide-react";
+import { ExcelButton } from "@/app/(app)/logistika/excel-button";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -79,7 +80,7 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
  * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i: gaz qoldig'i/zapravka/sarf, xarajatlar, dastavka daromadi, foyda.
  */
 /** Sahifa bo'limlari — sarlavha ostidagi bar. Eski havolalar (`?view=hisob`) ham ishlaydi. */
-const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "tarif"] as const;
+const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "oylik", "tarif"] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string }> }) {
@@ -137,7 +138,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     // Norma birligi bo'yicha alohida: dizel — l, metan — m³ («Dizel + metan» reysda ikkalasi)
     if (r.fuelUnit === "m³") d.fuelM3 += r.fuelNorm ?? 0; else d.fuelL += r.fuelNorm ?? 0;
     d.fuelM3 += r.gasNorm ?? 0;
-    if (r.amount != null) d.sum += r.amount; else d.unpriced++;
+    if (r.pricedAt) d.sum += r.amount ?? 0; else d.unpriced++;
     byDriver.set(r.driverId, d);
   }
   const drivers = [...byDriver.values()].sort((a, b) => b.sum - a.sum || a.name.localeCompare(b.name));
@@ -152,6 +153,24 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
     if (b === "hisob" && tr) p.set("transport", tr);
     return `/logistika/tabel?${p}`;
   };
+  // Oylik hisoblash: haydovchi bo'yicha reys haqi — oylikka (vedomost), naqd (kassa) va hali hal bo'lmagani
+  type PayRow = { id: string; name: string; trips: number; payroll: number; payrollWait: number; cashPaid: number; cashDesk: number; cashWait: number; unpriced: number; unpricedSum: number };
+  const payMap = new Map<string, PayRow>();
+  for (const r of monthTrips) {
+    const d = payMap.get(r.driverId) ?? { id: r.driverId, name: r.driver, trips: 0, payroll: 0, payrollWait: 0, cashPaid: 0, cashDesk: 0, cashWait: 0, unpriced: 0, unpricedSum: 0 };
+    d.trips++;
+    const a = r.amount ?? 0;
+    // Narxsiz — `pricedAt` bo'yicha (narxsizlar ro'yxati bilan bir xil qoida)
+    if (!r.pricedAt) { d.unpriced++; d.unpricedSum += r.suggested; }
+    else if (r.payType === "CASH") { if (!r.approvedAt) d.cashWait += a; else if (r.cashStatus === "PAID") d.cashPaid += a; else d.cashDesk += a; }
+    // Oylik yoki turi yo'q (funksiyadan oldin narxlangan — oylikka tasdiqsiz tushadi)
+    else if (r.payType === "PAYROLL" && !r.approvedAt) d.payrollWait += a;
+    else d.payroll += a;
+    payMap.set(r.driverId, d);
+  }
+  const payRows = [...payMap.values()].sort((a, b) => b.payroll + b.cashPaid - (a.payroll + a.cashPaid) || a.name.localeCompare(b.name));
+  const payTotal = payRows.reduce((t, r) => ({ ...t, trips: t.trips + r.trips, payroll: t.payroll + r.payroll, payrollWait: t.payrollWait + r.payrollWait, cashPaid: t.cashPaid + r.cashPaid, cashDesk: t.cashDesk + r.cashDesk, cashWait: t.cashWait + r.cashWait, unpriced: t.unpriced + r.unpriced, unpricedSum: t.unpricedSum + r.unpricedSum }),
+    { id: "", name: "Jami", trips: 0, payroll: 0, payrollWait: 0, cashPaid: 0, cashDesk: 0, cashWait: 0, unpriced: 0, unpricedSum: 0 } as PayRow);
   const openMasters = masters.filter((m) => m.status === "DEFERRED" || m.status === "NEW" || m.status === "APPROVED").length;
   // Oy tanlash — oyga bog'liq bo'limlarda (oy jami, reyslar, hisob varag'i)
   const monthNav = (
@@ -175,6 +194,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         { key: "oy", label: `Oy bo'yicha: ${monthTitle(month)}`, href: qs({ bolim: "oy" }), icon: Coins },
         { key: "reyslar", label: "Reyslar va narx", href: qs({ bolim: "reyslar" }), icon: Route },
         { key: "hisob", label: "Hisob varag'i", href: qs({ bolim: "hisob" }), icon: FileSpreadsheet },
+        { key: "oylik", label: "Oylik hisoblash", href: qs({ bolim: "oylik" }), icon: Calculator },
         { key: "tarif", label: "Tarif", href: qs({ bolim: "tarif" }), icon: Settings2 },
       ]} />
 
@@ -377,6 +397,53 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           </Card>
         )}
         <p className="mt-2 text-xs text-slate-500">Yoqilg&apos;i normasi: km × 100 km normasi + ishlagan soat × turib ishlash normasi (metan — m³, dizel — l). Oylik {date(new Date(y!, m!, 0))} gacha yetkazilgan reyslardan.</p>
+      </Section>}
+
+      {/* ── Oylik hisoblash: reys haqi haydovchi bo'yicha — oylikka (Ish haqi vedomosti) va naqd (kassa) ── */}
+      {bolim === "oylik" && <Section title={`Oylik hisoblash: ${picked ? `${picked.name} — ` : ""}${monthTitle(month)}`} className="mt-0" action={monthNav}>
+        <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
+          <StatCard label="Oylikka (tasdiqlangan)" value={money(payTotal.payroll)} hint="oy yakuni vedomostiga tushadi" icon={Calculator} tone="success" />
+          <StatCard label="Naqd berildi" value={money(payTotal.cashPaid)} hint={payTotal.cashDesk ? `kassada kutmoqda ${money(payTotal.cashDesk)}` : "kassadan"} icon={Coins} tone="info" />
+          <StatCard label="Tasdiq kutmoqda" value={money(payTotal.payrollWait + payTotal.cashWait)} hint={`oylik ${money(payTotal.payrollWait)} · naqd ${money(payTotal.cashWait)}`} icon={ShieldCheck} tone={payTotal.payrollWait + payTotal.cashWait ? "warning" : "default"} href={qs({ bolim: "tasdiq" })} />
+          <StatCard label="Narxsiz" value={payTotal.unpriced} hint={payTotal.unpriced ? `taklif bo'yicha ${money(payTotal.unpricedSum)}` : "hammasi narxlangan"} icon={Timer} tone={payTotal.unpriced ? "warning" : "default"} href={qs({ bolim: "narxsiz" })} />
+        </div>
+        {payRows.length === 0 ? <Card><Empty text="Bu oyda yetkazilgan reys yo'q" icon={Users} /></Card> : (
+          <>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">Faqat reys haqi. Oklad, avans va ushlanmalar bilan to&apos;liq oylik — Ish haqi bo&apos;limida (oy yakuni vedomosti).</p>
+              <ExcelButton file={`Haydovchilar oyligi ${month}`} sheets={[{ name: "Oylik hisoblash", rows: [...payRows, payTotal].map((r) => ({
+                Haydovchi: r.name, Reys: r.trips, "Oylikka (tasdiqlangan)": r.payroll, "Oylik — tasdiq kutmoqda": r.payrollWait,
+                "Naqd berildi": r.cashPaid, "Naqd — kassada": r.cashDesk, "Naqd — tasdiq kutmoqda": r.cashWait, "Narxsiz reys": r.unpriced, "Narxsiz, taklif": r.unpricedSum,
+                "Jami hisoblangan": r.payroll + r.payrollWait + r.cashPaid + r.cashDesk + r.cashWait,
+              })) }]} />
+            </div>
+            <Card padded={false}>
+              <Table>
+                <thead><tr><Th>Haydovchi</Th><Th right>Reys</Th><Th right>Oylikka</Th><Th right>Oylik — tasdiqda</Th><Th right>Naqd berildi</Th><Th right>Naqd — kassada</Th><Th right>Naqd — tasdiqda</Th><Th right>Narxsiz</Th><Th right>Jami hisoblangan</Th></tr></thead>
+                <tbody>
+                  {[...payRows, payTotal].map((r) => {
+                    const sum = r.payroll + r.payrollWait + r.cashPaid + r.cashDesk + r.cashWait;
+                    const isTotal = r === payTotal;
+                    const cell = (v: number, cls = "") => <Td right className={`tabular ${cls}`}>{v ? money(v) : <span className="text-slate-300">—</span>}</Td>;
+                    return (
+                      <Tr key={r.id || "jami"} className={isTotal ? "bg-slate-50 font-semibold" : undefined}>
+                        <Td>{isTotal ? "Jami" : <Link href={qs({ bolim: "reyslar", driver: r.id })} className="font-medium hover:underline">{r.name}</Link>}</Td>
+                        <Td right className="tabular">{r.trips}</Td>
+                        {cell(r.payroll, "font-semibold text-emerald-700")}
+                        {cell(r.payrollWait, "text-amber-700")}
+                        {cell(r.cashPaid)}
+                        {cell(r.cashDesk, "text-blue-700")}
+                        {cell(r.cashWait, "text-amber-700")}
+                        <Td right className="tabular">{r.unpriced ? <span className="text-amber-700">{r.unpriced} ta · {money(r.unpricedSum)}</span> : <span className="text-slate-300">—</span>}</Td>
+                        <Td right className="font-semibold tabular">{money(sum)}</Td>
+                      </Tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            </Card>
+          </>
+        )}
       </Section>}
 
       {bolim === "tarif" && <Section title="Tarif" className="mt-0">
