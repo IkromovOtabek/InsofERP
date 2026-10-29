@@ -12,7 +12,7 @@ import { driverPositionNames } from "@/lib/positions";
 import { defaultWarehouse, pickProductWarehouse } from "@/lib/warehouse";
 import { prepayShortError } from "@/lib/payments";
 import { decodePolyline, summarizeTrack } from "@/lib/trip-track";
-import { saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
+import { saveEcoTrackSummarySafe, saveTripSummarySafe, tripStats } from "@/lib/trip-summary";
 import { snapshotTripPay } from "@/lib/driver-trip-pay";
 
 /**
@@ -260,6 +260,8 @@ export async function tripDelivered(id: string, userId: string, receiverName: st
   await checkFastDelivery(id, userId);
   // Reys yakuni (km, vaqt, iz). Kech kelgan bufer nuqtalari bo'lsa `recordTrack` qayta hisoblaydi
   await saveTripSummarySafe(id);
+  // ECO ilovasi orqali yurgan reys — iz ECO'da: km shundan (ERP'ning o'z izi bo'lmasa)
+  await saveEcoTrackSummarySafe(id);
   // Haydovchi tabeli: km, kutish, tarif bo'yicha taklif + dispetcherga «narx belgilanmagan» xabari
   await snapshotTripPay(id).catch((e) => console.error("[trip-pay] snapshot", id, e));
 

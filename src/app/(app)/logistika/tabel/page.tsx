@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { BellRing, ChevronLeft, ChevronRight, Coins, Route, Settings2, Timer, Users } from "lucide-react";
+import { BellRing, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Route, Settings2, Timer, Users } from "lucide-react";
+import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { normMonth } from "@/lib/attendance-report";
 import { monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { driverTariff, fuelNormText, payTrips, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
+import { driverLedger } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
-import { Badge, Callout, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Button, Callout, Card, CardHeader, Empty, PageHeader, Section, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { PriceAllButton, PriceForm, TariffForm } from "./tabel-forms";
+import { LedgerSheet } from "./ledger-sheet";
 
 export const dynamic = "force-dynamic";
 
@@ -52,18 +55,25 @@ function TripRows({ rows, canPrice, showDriver }: { rows: PayTripRow[]; canPrice
  * Haydovchilar tabeli (dispetcher): yetkazilgan har reys o'zi tushadi — km, obyektda kutish, mikser aylantirish,
  * ishlagan soat, yoqilg'i normasi va tarif bo'yicha taklif. Dispetcher narx qo'yadi; narxsizlari tepada alohida
  * (har 12 soatda eslatma). Narxlangan reyslar oy yakunida Ish haqi vedomostiga «Reyslar» bo'lib tushadi.
+ * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i: gaz qoldig'i/zapravka/sarf, xarajatlar, dastavka daromadi, foyda.
  */
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string }> }) {
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; transport?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER"], { module: "logistika" });
   const sp = await searchParams;
   const month = normMonth(sp.oy);
   const [y, m] = month.split("-").map(Number);
   const from = new Date(y!, m! - 1, 1), to = new Date(y!, m!, 1);
   const canPrice = canDo(s, "logistika", "pay");
-  const [unpriced, monthTrips, tariff] = await Promise.all([
+  const view = sp.view === "hisob" ? "hisob" : "tabel";
+  const [unpriced, monthTrips, tariff, ledger, monthVehicles] = await Promise.all([
     payTrips(unpricedWhere()),
     payTrips({ status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) }, 3000),
     driverTariff(),
+    view === "hisob" ? driverLedger(from, to, { driverId: sp.driver, vehicleId: sp.transport }) : null,
+    view === "hisob"
+      ? db.trip.groupBy({ by: ["vehicleId"], where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) } })
+        .then((g) => db.vehicle.findMany({ where: { id: { in: g.map((x) => x.vehicleId) } }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }))
+      : [],
   ]);
 
   // Haydovchilar bo'yicha oy jami
@@ -81,7 +91,14 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const total = { trips: monthTrips.length, km: drivers.reduce((a, d) => a + d.km, 0), sum: drivers.reduce((a, d) => a + d.sum, 0), unpriced: drivers.reduce((a, d) => a + d.unpriced, 0) };
   const picked = sp.driver ? drivers.find((d) => d.id === sp.driver) ?? null : null;
   const cur = today().slice(0, 7);
-  const link = (oy: string) => `/logistika/tabel?oy=${oy}${sp.driver ? `&driver=${sp.driver}` : ""}`;
+  const qs = (o: { oy?: string; driver?: string | null; view?: string; transport?: string | null }) => {
+    const p = new URLSearchParams({ oy: o.oy ?? month });
+    const driver = o.driver === undefined ? sp.driver : o.driver, v = o.view ?? view, tr = o.transport === undefined ? sp.transport : o.transport;
+    if (driver) p.set("driver", driver);
+    if (v === "hisob") { p.set("view", "hisob"); if (tr) p.set("transport", tr); }
+    return `/logistika/tabel?${p}`;
+  };
+  const link = (oy: string) => qs({ oy });
 
   return (
     <div>
@@ -103,7 +120,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       <Section title={picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`}
         action={
           <div className="flex items-center gap-1 text-sm">
-            {picked && <Link href={`/logistika/tabel?oy=${month}`} className="mr-2 text-blue-700 hover:underline">Hamma haydovchilar</Link>}
+            {picked && <Link href={qs({ driver: null })} className="mr-2 text-blue-700 hover:underline">Hamma haydovchilar</Link>}
             <Link href={link(shiftMonth(month, -1))} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Oldingi oy"><ChevronLeft size={16} /></Link>
             <span className="font-medium">{monthTitle(month)}</span>
             {month < cur && <Link href={link(shiftMonth(month, 1))} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Keyingi oy"><ChevronRight size={16} /></Link>}
@@ -117,7 +134,27 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         </div>
 
         <div id="oy-jadval" className="scroll-mt-20" />
-        {picked ? (
+        <Tabs className="mb-3" current={view} items={[
+          { key: "tabel", label: "Reyslar va narx", href: qs({ view: "tabel" }), icon: Route },
+          { key: "hisob", label: "Hisob varag'i", href: qs({ view: "hisob" }), icon: FileSpreadsheet },
+        ]} />
+        {ledger ? (
+          <>
+            <form method="get" action="/logistika/tabel" className="mb-3 flex flex-wrap items-center gap-2">
+              <input type="hidden" name="oy" value={month} />
+              <input type="hidden" name="view" value="hisob" />
+              {sp.driver && <input type="hidden" name="driver" value={sp.driver} />}
+              <Select name="transport" defaultValue={sp.transport ?? ""} className="w-56" aria-label="Transport">
+                <option value="">Hamma transport</option>
+                {monthVehicles.map((v) => <option key={v.id} value={v.id}>{v.plate}</option>)}
+              </Select>
+              <Button type="submit" variant="secondary">Ko&apos;rsatish</Button>
+            </form>
+            {ledger.rows.length === 0 ? <Card><Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /></Card>
+              : <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked}
+                file={`Haydovchi tabeli ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${monthVehicles.find((v) => v.id === sp.transport)?.plate ?? ""}` : ""}`} />}
+          </>
+        ) : picked ? (
           <Card padded={false}>
             {monthTrips.length === 0 ? <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /> : <TripRows rows={[...monthTrips].reverse()} canPrice={canPrice} showDriver={false} />}
           </Card>
@@ -129,7 +166,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                 {drivers.length === 0 && <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Users} />}
                 {drivers.map((d) => (
                   <Tr key={d.id}>
-                    <Td><Link href={`/logistika/tabel?oy=${month}&driver=${d.id}`} className="font-medium hover:underline">{d.name}</Link></Td>
+                    <Td><Link href={qs({ driver: d.id })} className="font-medium hover:underline">{d.name}</Link></Td>
                     <Td right className="tabular">{d.trips}</Td>
                     <Td right className="tabular">{fmtNum(d.km, 0)}</Td>
                     <Td right className="tabular">{hours(d.wait)}</Td>

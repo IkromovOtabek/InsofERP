@@ -54,6 +54,17 @@ export function waitMinutes(t: { arrivedAt: Date | null; unloadingAt: Date | nul
 }
 
 /**
+ * Mikser baraban soati haydovchi yozmagan bo'lsa (ECO ilovasida bu maydon yo'q) — reys vaqtlaridan:
+ * yuklangandan (bo'lmasa yo'lga chiqqandan) yetkazilguncha, 0.1 soatga yaxlitlab. Faqat mikser; 24 soatdan oshsa — null.
+ */
+export function autoDrumHours(t: { loadedAt: Date | null; departedAt: Date | null; deliveredAt: Date | null }, vehicleType: string): number | null {
+  const start = t.loadedAt ?? t.departedAt;
+  if (vehicleType !== "MIXER" || !start || !t.deliveredAt) return null;
+  const h = (t.deliveredAt.getTime() - start.getTime()) / 3_600_000;
+  return h > 0 && h <= 24 ? Math.round(h * 10) / 10 : null;
+}
+
+/**
  * Gaz/yoqilg'i normasi bo'yicha reys sarfi: km × norma/100 + ishlagan soat × turib ishlash normasi.
  * Metanda birlik m³, dizelda litr. Norma kiritilmagan bo'lsa — null.
  */
@@ -75,22 +86,24 @@ export function fuelNormText(r: { fuelNorm: number | null; fuelUnit: string; gas
 
 const TRIP_PAY_SELECT = {
   id: true, deliveryNoteNo: true, status: true, deliveredAt: true, arrivedAt: true, unloadingAt: true, distanceKm: true, summaryAt: true,
-  pricedAt: true, driverId: true, vehicle: { select: { type: true } }, order: { select: { distanceKm: true } },
+  loadedAt: true, departedAt: true, pricedAt: true, driverId: true, vehicle: { select: { type: true } }, order: { select: { distanceKm: true } },
 } as const;
 
 /**
- * Yetkazilgan reysni tabelga yozish: km, kutish, taklif. Narx allaqachon belgilangan bo'lsa tegmaydi.
+ * Yetkazilgan reysni tabelga yozish: km, kutish, taklif; mikser baraban soati yozilmagan bo'lsa — reys vaqtlaridan
+ * (`autoDrumHours`, gaz normasi shundan). Narx allaqachon belgilangan bo'lsa tegmaydi.
  * `tripDelivered` dan keyin chaqiriladi (xato yetkazishni buzmaydi).
  */
 export async function snapshotTripPay(tripId: string, opts: { notify?: boolean } = {}): Promise<void> {
-  const t = await db.trip.findUnique({ where: { id: tripId }, select: { ...TRIP_PAY_SELECT, driver: { select: { fullName: true } } } });
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: { ...TRIP_PAY_SELECT, workHours: true, driver: { select: { fullName: true } } } });
   if (!t || t.status !== "DELIVERED" || t.pricedAt) return;
   const [kmMap, tariff] = await Promise.all([tripPayKm([t]), driverTariff()]);
   const km = Math.round((kmMap.get(t.id) ?? 0) * 10) / 10;
   const wait = waitMinutes(t);
   const isMixer = t.vehicle.type === "MIXER";
   const suggested = suggestPay(tariff, km, wait, isMixer);
-  await db.trip.updateMany({ where: { id: tripId, pricedAt: null }, data: { payKm: km, waitMin: wait, paySuggested: suggested } });
+  const drum = t.workHours == null ? autoDrumHours(t, t.vehicle.type) : null;
+  await db.trip.updateMany({ where: { id: tripId, pricedAt: null }, data: { payKm: km, waitMin: wait, paySuggested: suggested, ...(drum != null ? { workHours: drum } : {}) } });
   if (opts.notify !== false && t.deliveredAt && t.deliveredAt >= PAY_SINCE) {
     notifyAfter(() => notifyRoles(PRICER_ROLES, {
       type: "TRIP_UNPRICED",
@@ -136,7 +149,7 @@ export async function payTrips(where: object, take = 500): Promise<PayTripRow[]>
     const km = r.payKm != null ? Number(r.payKm) : Math.round((kmMap.get(r.id) ?? 0) * 10) / 10;
     const wait = r.waitMin ?? waitMinutes(r);
     const isMixer = r.vehicle.type === "MIXER";
-    const hours = r.workHours != null ? Number(r.workHours) : null;
+    const hours = r.workHours != null ? Number(r.workHours) : autoDrumHours(r, r.vehicle.type);
     return {
       id: r.id, no: r.deliveryNoteNo, deliveredAt: r.deliveredAt!, driverId: r.driverId, driver: r.driver.fullName, plate: r.vehicle.plate, vehicleType: r.vehicle.type,
       customer: r.order.customer.name, km, waitMin: wait, drumTurns: r.drumTurns, workHours: hours,

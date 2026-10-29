@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { db } from "@/lib/db";
+import { eco, ecoEnabled } from "@/lib/eco/client";
 import {
   decodePolyline, encodePolyline, LINE_TOLERANCE_M, simplifyLine, summarizeTrack, TrackAccumulator,
   type GpsPoint, type LatLng, type TrackSummary,
@@ -126,29 +127,67 @@ export function buildSummary(points: GpsPoint[]): StoredSummary {
 
 /**
  * Reys yakunini hisoblab saqlash — yetkazilganda, yopilganda, kech kelgan nuqtalardan keyin va
- * tozalashdan oldin. Iz bo'lmasa ham `summaryAt` qo'yiladi (distanceKm = null) — qayta-qayta hisoblanmasin.
+ * tozalashdan oldin. Iz bo'lmasa ham `summaryAt` qo'yiladi (km bo'sh qoladi yoki ECO izidan) — qayta-qayta hisoblanmasin.
  */
 export async function saveTripSummary(tripId: string): Promise<StoredSummary | null> {
   const pts = await db.tripPosition.findMany({ where: { tripId }, orderBy: { at: "asc" }, select: { lat: true, lng: true, at: true, speedKmh: true, heading: true } });
+  // Nuqta yo'q — mavjud yakun saqlanadi: ECO izidan olingan (`saveEcoTrackSummary`) yoki 90 kundan keyin
+  // nuqtalari o'chirilgan reysni qayta yopish km'ni o'chirib yubormasin
+  if (!pts.length) {
+    await db.trip.update({ where: { id: tripId }, data: { summaryAt: new Date() } });
+    forgetTrack(tripId);
+    return null;
+  }
   const s = buildSummary(pts);
   const last = pts[pts.length - 1];
   await db.trip.update({
     where: { id: tripId },
     data: {
-      distanceKm: pts.length ? s.distanceKm : null,
-      movingSec: pts.length ? s.movingSec : null,
-      totalSec: pts.length ? s.totalSec : null,
+      distanceKm: s.distanceKm,
+      movingSec: s.movingSec,
+      totalSec: s.totalSec,
       trackFirstAt: s.firstAt,
       maxSpeedKmh: s.maxSpeedKmh,
       avgSpeedKmh: s.avgSpeedKmh,
-      trackLine: pts.length ? s.polyline : null,
+      trackLine: s.polyline,
       trackPoints: pts.length,
       summaryAt: new Date(),
       ...(last ? { lastLat: last.lat, lastLng: last.lng, lastAt: last.at, lastSpeedKmh: last.speedKmh, lastHeading: last.heading } : {}),
     },
   });
   forgetTrack(tripId);
-  return pts.length ? s : null;
+  return s;
+}
+
+/**
+ * ECO (haydovchi ilovasi) orqali yurgan reys: GPS izi ECO'da, ERP'ga nuqta kelmaydi. Yetkazilganda iz ECO'dan olinib
+ * shu yerdagi hisob bilan (`buildSummary`) km, vaqt va iz saqlanadi — haydovchi tabeli va yoqilg'i normasi shundan.
+ * ERP'ning o'z izi bo'lsa, ECO ulanmagan yoki izda nuqta yo'q bo'lsa — tegilmaydi (km zayavka masofasidan).
+ */
+export async function saveEcoTrackSummary(tripId: string): Promise<boolean> {
+  if (!ecoEnabled()) return false;
+  const t = await db.trip.findUnique({ where: { id: tripId }, select: { deliveryNoteNo: true, ecoDeliveryId: true, ecoStatus: true, trackPoints: true } });
+  if (!t || (!t.ecoDeliveryId && !t.ecoStatus) || (t.trackPoints ?? 0) > 0) return false;
+  if (await db.tripPosition.count({ where: { tripId } })) return false;
+  const track = await eco.track(t.deliveryNoteNo);
+  const pts: GpsPoint[] = track.points.filter((p) => p.at).map((p) => ({ lat: p.lat, lng: p.lng, at: new Date(p.at!), speedKmh: p.speedKmh }));
+  if (pts.length < 2) return false;
+  pts.sort((a, b) => a.at.getTime() - b.at.getTime());
+  const s = buildSummary(pts);
+  await db.trip.update({
+    where: { id: tripId },
+    data: {
+      distanceKm: s.distanceKm, movingSec: s.movingSec, totalSec: s.totalSec, trackFirstAt: s.firstAt,
+      maxSpeedKmh: s.maxSpeedKmh, avgSpeedKmh: s.avgSpeedKmh, trackLine: s.polyline, trackPoints: pts.length, summaryAt: new Date(),
+    },
+  });
+  forgetTrack(tripId);
+  return true;
+}
+
+/** ECO izi olinmasa ham yetkazish to'xtamasin — km zayavka masofasidan olinadi. */
+export async function saveEcoTrackSummarySafe(tripId: string) {
+  try { await saveEcoTrackSummary(tripId); } catch (e) { console.error("[trip-summary] ECO izi", tripId, e); }
 }
 
 /** Xato yakun hisobini to'xtatmasin — holat o'tishi (yetkazildi/yopildi) muhimroq. */
