@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { BellRing, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Route, Settings2, Timer, Users } from "lucide-react";
+import { BellRing, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Route, Settings2, Timer, Users } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { normMonth } from "@/lib/attendance-report";
 import { monthTitle, shiftMonth, today } from "@/lib/davomat";
 import { driverTariff, fuelNormText, payTrips, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
-import { driverLedger } from "@/lib/driver-ledger";
+import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, Empty, PageHeader, Section, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
 import { PriceAllButton, PriceForm, TariffForm } from "./tabel-forms";
@@ -16,15 +16,19 @@ export const dynamic = "force-dynamic";
 
 const hours = (min: number | null) => (min == null ? "—" : min < 60 ? `${min} daq` : `${fmtNum(min / 60, 1)} soat`);
 
+/** Yoqilg'i qoldig'i: «66,2 m³», manfiy — qizil (norma bo'yicha zapravkadan ko'p sarflangan). */
+const Bal = ({ v, unit }: { v: number; unit: string }) => <span className={v < 0 ? "font-semibold text-red-600" : undefined}>{fmtNum(v, 1)} {unit}</span>;
+type BalMap = Map<string, { after: number; unit: string }>;
+
 /** Reys qatori — narxsizlar ro'yxati va haydovchi oyi uchun bir xil. */
-function TripRows({ rows, canPrice, showDriver }: { rows: PayTripRow[]; canPrice: boolean; showDriver: boolean }) {
+function TripRows({ rows, canPrice, showDriver, bal }: { rows: PayTripRow[]; canPrice: boolean; showDriver: boolean; bal: BalMap }) {
   return (
     <Table>
       <thead>
         <tr>
           <Th>Sana · nakladnoy</Th>{showDriver && <Th>Haydovchi</Th>}<Th>Obyekt</Th>
           <Th right>Km</Th><Th right>Kutish</Th><Th right>Aylantirish</Th><Th right>Ishladi</Th><Th right>Norma (yoqilg&apos;i)</Th>
-          <Th right>Taklif</Th><Th right>Narx</Th>
+          <Th right>Qoldiq (yoqilg&apos;i)</Th><Th right>Taklif</Th><Th right>Narx</Th>
         </tr>
       </thead>
       <tbody>
@@ -38,6 +42,7 @@ function TripRows({ rows, canPrice, showDriver }: { rows: PayTripRow[]; canPrice
             <Td right className="tabular">{r.drumTurns ?? "—"}</Td>
             <Td right className="tabular">{r.workHours != null ? `${fmtNum(r.workHours, 1)} soat` : <span className="text-amber-700">kiritilmagan</span>}</Td>
             <Td right className="tabular">{fuelNormText(r) ?? "—"}</Td>
+            <Td right className="tabular">{(() => { const b = bal.get(r.id); return b ? <Bal v={b.after} unit={b.unit} /> : "—"; })()}</Td>
             <Td right className="tabular"><span title={r.suggestText}>{money(r.suggested)}</span><div className="text-[11px] text-slate-400">{r.suggestText}</div></Td>
             <Td right>
               {r.amount != null && <div className="font-semibold tabular">{money(r.amount)}</div>}
@@ -65,16 +70,31 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const from = new Date(y!, m! - 1, 1), to = new Date(y!, m!, 1);
   const canPrice = canDo(s, "logistika", "pay");
   const view = sp.view === "hisob" ? "hisob" : "tabel";
-  const [unpriced, monthTrips, tariff, ledger, monthVehicles] = await Promise.all([
+  const filtered = !!(sp.driver || sp.transport);
+  const [unpriced, monthTrips, tariff, full, filteredLedger, monthVehicles] = await Promise.all([
     payTrips(unpricedWhere()),
     payTrips({ status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) }, 3000),
     driverTariff(),
-    view === "hisob" ? driverLedger(from, to, { driverId: sp.driver, vehicleId: sp.transport }) : null,
+    // Yoqilg'i qoldig'i mashina bo'yicha — oyning hamma reysidan (haydovchi filtri qoldiqni buzmasin)
+    driverLedger(from, to),
+    view === "hisob" && filtered ? driverLedger(from, to, { driverId: sp.driver, vehicleId: sp.transport }) : null,
     view === "hisob"
       ? db.trip.groupBy({ by: ["vehicleId"], where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) } })
         .then((g) => db.vehicle.findMany({ where: { id: { in: g.map((x) => x.vehicleId) } }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }))
       : [],
   ]);
+
+  const ledger = view === "hisob" ? filteredLedger ?? full : null;
+  const balOf: BalMap = new Map(full.rows.map((r) => [r.id, { after: r.balAfter, unit: r.unit }]));
+  const balances = fuelBalances(full.rows);
+  const balById = new Map(balances.map((b) => [b.vehicleId, b]));
+  // Haydovchi oxirgi yurgan mashinalari (yangisi oldin) — jadvaldagi qoldiq ustuni uchun
+  const driverVehicles = new Map<string, string[]>();
+  for (const r of [...full.rows].reverse()) {
+    const list = driverVehicles.get(r.driverId) ?? [];
+    if (!list.includes(r.vehicleId)) list.push(r.vehicleId);
+    driverVehicles.set(r.driverId, list);
+  }
 
   // Haydovchilar bo'yicha oy jami
   const byDriver = new Map<string, { id: string; name: string; trips: number; km: number; wait: number; hours: number; turns: number; fuelL: number; fuelM3: number; sum: number; unpriced: number }>();
@@ -114,7 +134,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             action={canPrice && unpriced.length > 1 ? <PriceAllButton ids={unpriced.map((r) => r.id)} /> : undefined} />
         </div>
         {unpriced.length === 0 ? <div className="px-5 pb-5 text-sm text-emerald-700">Hamma yetkazilgan reysga narx qo&apos;yilgan</div>
-          : <TripRows rows={unpriced} canPrice={canPrice} showDriver />}
+          : <TripRows rows={unpriced} canPrice={canPrice} showDriver bal={balOf} />}
       </Card>
 
       <Section title={picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`}
@@ -132,6 +152,36 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           <StatCard label="Narxlangan summa" value={money(picked ? picked.sum : total.sum)} hint="oylikka tushadi" icon={Coins} tone="success" href="#oy-jadval" />
           <StatCard label="Narxsiz" value={picked ? picked.unpriced : total.unpriced} icon={Timer} tone={(picked ? picked.unpriced : total.unpriced) ? "warning" : "default"} href="#narxsiz" />
         </div>
+
+        {(() => {
+          // Haydovchi tanlangan bo'lsa — faqat u yurgan mashinalar (qoldiq baribir butun mashina bo'yicha)
+          const list = picked ? balances.filter((b) => driverVehicles.get(picked.id)?.includes(b.vehicleId)) : balances;
+          if (!list.length) return null;
+          return (
+            <Card padded={false} className="mb-4">
+              <div className="px-5 pt-5">
+                <CardHeader title="Yoqilg'i qoldig'i" icon={Fuel}
+                  description="Transport bo'yicha: oy boshidagi qoldiq + zapravka − norma sarfi (km × 100 km normasi + baraban soati × soat normasi)" />
+              </div>
+              <Table>
+                <thead><tr><Th>Transport</Th><Th>Haydovchilar</Th><Th right>Reys</Th><Th right>Oy boshida</Th><Th right>Zapravka</Th><Th right>Sarf (norma)</Th><Th right>Qoldiq</Th></tr></thead>
+                <tbody>
+                  {list.map((b) => (
+                    <Tr key={b.vehicleId}>
+                      <Td className="font-medium"><Link href={qs({ view: "hisob", transport: b.vehicleId })} className="hover:underline">{b.plate}</Link></Td>
+                      <Td className="text-sm text-slate-600">{b.drivers.join(", ")}</Td>
+                      <Td right className="tabular">{b.trips}</Td>
+                      <Td right className="tabular"><Bal v={b.opening} unit={b.unit} /></Td>
+                      <Td right className="tabular">{fmtNum(b.refuel, 1)} {b.unit}</Td>
+                      <Td right className="tabular">{fmtNum(b.use, 1)} {b.unit}</Td>
+                      <Td right className="font-semibold tabular"><Bal v={b.closing} unit={b.unit} /></Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </Card>
+          );
+        })()}
 
         <div id="oy-jadval" className="scroll-mt-20" />
         <Tabs className="mb-3" current={view} items={[
@@ -156,12 +206,12 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           </>
         ) : picked ? (
           <Card padded={false}>
-            {monthTrips.length === 0 ? <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /> : <TripRows rows={[...monthTrips].reverse()} canPrice={canPrice} showDriver={false} />}
+            {monthTrips.length === 0 ? <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /> : <TripRows rows={[...monthTrips].reverse()} canPrice={canPrice} showDriver={false} bal={balOf} />}
           </Card>
         ) : (
           <Card padded={false}>
             <Table>
-              <thead><tr><Th>Haydovchi</Th><Th right>Reys</Th><Th right>Km</Th><Th right>Kutish</Th><Th right>Ishlagan soat</Th><Th right>Aylantirish</Th><Th right>Yoqilg&apos;i normasi</Th><Th right>Narxsiz</Th><Th right>Summa</Th></tr></thead>
+              <thead><tr><Th>Haydovchi</Th><Th right>Reys</Th><Th right>Km</Th><Th right>Kutish</Th><Th right>Ishlagan soat</Th><Th right>Aylantirish</Th><Th right>Yoqilg&apos;i normasi</Th><Th right>Yoqilg&apos;i qoldig&apos;i</Th><Th right>Narxsiz</Th><Th right>Summa</Th></tr></thead>
               <tbody>
                 {drivers.length === 0 && <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Users} />}
                 {drivers.map((d) => (
@@ -173,6 +223,11 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                     <Td right className="tabular">{fmtNum(d.hours, 1)}</Td>
                     <Td right className="tabular">{d.turns || "—"}</Td>
                     <Td right className="tabular">{[d.fuelL ? `${fmtNum(d.fuelL, 0)} l` : null, d.fuelM3 ? `${fmtNum(d.fuelM3, 0)} m³` : null].filter(Boolean).join(" + ") || "—"}</Td>
+                    <Td right className="tabular text-sm">
+                      {(driverVehicles.get(d.id) ?? []).map((vid) => balById.get(vid)).filter((b) => !!b).map((b) => (
+                        <div key={b.vehicleId} className="whitespace-nowrap"><span className="text-xs text-slate-500">{b.plate}</span> <Bal v={b.closing} unit={b.unit} /></div>
+                      ))}
+                    </Td>
                     <Td right>{d.unpriced ? <Badge color="amber">{d.unpriced}</Badge> : <span className="text-slate-400">0</span>}</Td>
                     <Td right className="font-semibold tabular">{money(d.sum)}</Td>
                   </Tr>

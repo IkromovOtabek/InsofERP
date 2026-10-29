@@ -199,3 +199,18 @@ export async function driverLedger(from: Date, to: Date, opts: { driverId?: stri
   }
   return { rows, total };
 }
+
+/** Transport bo'yicha yoqilg'i qoldig'i davrda: oy boshidagi, zapravka, norma sarfi, oxirgi reysdan keyingi. */
+export type FuelBalance = { vehicleId: string; plate: string; unit: string; drivers: string[]; trips: number; opening: number; refuel: number; use: number; closing: number };
+
+/** `driverLedger` qatorlaridan (filtrsiz — qoldiq butun mashina bo'yicha) transport kesimi. */
+export function fuelBalances(rows: LedgerRow[]): FuelBalance[] {
+  const out = new Map<string, FuelBalance>();
+  for (const r of rows) {
+    let b = out.get(r.vehicleId);
+    if (!b) { b = { vehicleId: r.vehicleId, plate: r.plate, unit: r.unit, drivers: [], trips: 0, opening: r.balBefore, refuel: 0, use: 0, closing: r.balBefore }; out.set(r.vehicleId, b); }
+    b.trips++; b.refuel = r1(b.refuel + r.refuel); b.use = r1(b.use + (r.use ?? 0)); b.closing = r.balAfter;
+    if (!b.drivers.includes(r.driver)) b.drivers.push(r.driver);
+  }
+  return [...out.values()].sort((a, b) => a.plate.localeCompare(b.plate));
+}
