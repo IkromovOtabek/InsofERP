@@ -7,6 +7,7 @@ import { money, moneyShort, date, isoDate } from "@/lib/format";
 import { Badge, Button, Empty, Input, Select, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { JOURNAL_ONLY, isTransfer, txSign } from "@/lib/cash-tx";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
+import { ExcelButton } from "../logistika/excel-button";
 
 type Account = { id: string; name: string; type: "CASH" | "BANK" };
 
@@ -176,6 +177,15 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
   const inc = live.reduce((s, r) => s + r.inc, 0);
   const exp = live.reduce((s, r) => s + r.exp, 0);
   const shown = rows.slice(0, MAX_ROWS);
+  // Excel — joriy filtrdagi BARCHA qatorlar (ekrandagi 1000 cheklovisiz), oxirida jami (perekit va bekor qilinganlarsiz)
+  const sheet = [
+    ...rows.map((r) => ({
+      Sana: date(r.date), Hisob: r.account, Usul: r.method === "CASH" ? "naqd" : "bank",
+      Kirim: r.inc || null, Chiqim: r.exp || null, Manba: r.manba, "Sub manba": r.sub || null, Kontragent: r.who || null,
+      Izoh: r.note, Kiritdi: r.by, Holat: r.cancelled ? `Bekor qilingan: ${r.cancelled}` : null,
+    })),
+    { Sana: "Jami", Hisob: "", Usul: "", Kirim: inc, Chiqim: exp, Manba: "perekit va bekor qilinganlarsiz", "Sub manba": null, Kontragent: null, Izoh: null, Kiritdi: null, Holat: null },
+  ];
 
   return (
     <>
@@ -206,9 +216,12 @@ export async function KassaJurnalTab({ accounts, sp }: { accounts: Account[]; sp
         <StatCard label="Sof oqim" value={money(inc - exp)} icon={Wallet} tone={inc - exp >= 0 ? "success" : "danger"} hint="perekit va bekor qilinganlarsiz" />
       </div>
 
-      <h2 className="mb-3 font-semibold">
-        Kassa jurnali <span className="text-sm font-normal text-slate-500">· {rows.length} ta yozuv{rows.length > shown.length ? ` (oxirgi ${shown.length} tasi ko'rsatilgan — davrni toraytiring)` : ""}</span>
-      </h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-semibold">
+          Kassa jurnali <span className="text-sm font-normal text-slate-500">· {rows.length} ta yozuv{rows.length > shown.length ? ` (oxirgi ${shown.length} tasi ko'rsatilgan — Excel'da hammasi)` : ""}</span>
+        </h2>
+        <ExcelButton file={`Kassa jurnali ${isoDate(from)} — ${isoDate(to)}`} sheets={[{ name: "Kassa jurnali", rows: sheet }]} />
+      </div>
       <Table maxHeight="75vh">
         <thead>
           <tr><Th>Sana</Th><Th>Hisob</Th><Th right>Kirim</Th><Th right>Chiqim</Th><Th>Manba</Th><Th>Sub manba</Th><Th>Kontragent</Th><Th className="min-w-80">Izoh</Th></tr>
