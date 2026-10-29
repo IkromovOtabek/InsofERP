@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, CalendarCheck, ClipboardList, Factory, FileText, HardHat, Layers, ScanFace, Target, TriangleAlert, Truck, Users, UserCog } from "lucide-react";
+import { ArrowRight, CalendarCheck, ClipboardList, Factory, FileText, HardHat, Layers, ScanFace, ShieldCheck, Target, TriangleAlert, Truck, Users, UserCog } from "lucide-react";
+import { canDo } from "@/lib/permissions";
+import { pendingApprovalWhere } from "@/lib/driver-trip-pay";
 import { productionDay, DEFECT_REASONS } from "@/lib/production-day";
 import { markOf, monthTitle, dayTitle, today as todayIso } from "@/lib/davomat";
 import { customerMarks } from "@/lib/finance";
@@ -26,11 +28,16 @@ const time = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
  */
 export async function ProductionHome({ s }: { s: Session }) {
   const iso = todayIso();
-  const [d, brigades, stock, reports] = await Promise.all([
+  // Ish boshqaruvchi: tasdiq kutayotgan reys haqi va mexanik / usta puli so'rovlari — vebda bildirishnoma markazi yo'q,
+  // xabar faqat ilovaga boradi; bosh sahifada ko'rinib tursin
+  const approver = canDo(s, "logistika", "pay_approve");
+  const [d, brigades, stock, reports, payWait, mechWait] = await Promise.all([
     productionDay(iso),
     db.brigade.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     stockStatus(),
     reportHistory(5),
+    approver ? db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }) : null,
+    approver ? db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }) : null,
   ]);
   const { low: lowStock, ok: okStock, rest: restStock } = stockHighlights(stock, 8);
   const orderGap = stock.filter((m) => m.orderGap > 0);
@@ -46,6 +53,22 @@ export async function ProductionHome({ s }: { s: Session }) {
 
   return (
     <div className="min-w-0 space-y-8">
+      {(payWait?._count || mechWait?._count) ? (
+        <div className="space-y-2">
+          {payWait?._count ? (
+            <Link href="/logistika/tabel?bolim=tasdiq" className="flex items-center justify-between gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900 hover:bg-blue-100">
+              <span className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Reys haqi tasdig&apos;i kutmoqda: {payWait._count} ta · {fmtNum(Number(payWait._sum.payAmount ?? 0))} so&apos;m</span>
+              <span className="inline-flex items-center gap-1">Tasdiqlash <ArrowRight size={14} /></span>
+            </Link>
+          ) : null}
+          {mechWait?._count ? (
+            <Link href="/mexanik-sorovlar?tab=NEW" className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100">
+              <span className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Mexanik va usta puli so&apos;rovlari: {mechWait._count} ta · {fmtNum(Number(mechWait._sum.amount ?? 0))} so&apos;m</span>
+              <span className="inline-flex items-center gap-1">Tasdiqlash <ArrowRight size={14} /></span>
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
       <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
         <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={isDirector ? "/dashboard/xodimlar" : "#davomat"} />
         <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />

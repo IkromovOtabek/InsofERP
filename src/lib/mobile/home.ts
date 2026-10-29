@@ -43,7 +43,7 @@ import { DIREKTOR_LIST_ICON, direktorHomeSections } from "./direktor-extra";
 import { KADR_ICON } from "./kadr-access";
 import { kadrHome } from "./kadr-extra";
 import { logisticsHomeSections, mechanicServiceSection } from "./logistika-extra";
-import { tripPaySection } from "./trip-pay";
+import { tripPayApproveSection, tripPaySection } from "./trip-pay";
 
 /**
  * Mobil ilova bosh ekrani — rolga qarab. Server nimani ko'rsatishni hal qiladi,
@@ -623,6 +623,8 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       );
       // Mexanik pul so'rovlari — tasdig'ingizni kutmoqda (bo'lsa — ro'yxatlar boshida)
       if (listAllowed(user, "kirim") && (await db.mechanicRequest.count({ where: { status: "NEW" } }))) sections.push(await kirimSection("Mexanik so'rovlari — tasdiq kutilmoqda", "", ["NEW"]));
+      // Reys haqi tasdig'i (naqd — kassaga, oylik — vedomostga) — bildirishnoma shu kartochkani ochadi
+      if (listAllowed(user, "trip-pay")) { const tp = await tripPayApproveSection(); if (tp) sections.unshift(tp); }
       sections.push(
         { title: "Ochiq topshiriqlar", empty: "Topshiriq yo'q", target: "tasks", rows: openTasks.map((t) => ({ id: t.id, title: `${t.taskNo} · ${t.brigade.name}`, subtitle: `${t.order.customer.name} · muddat ${day(t.dueDate)}`, right: inUnit(sum(t.qty) - sum(t.doneQty), t.orderItem.product.unit), status: t.status, tone: t.dueDate < today ? "danger" as Tone : t.status === "NEW" ? "info" as Tone : "warning" as Tone })) },
         { title: "Bugungi zameslar", empty: "Bugun zames yo'q", target: "production", rows: batches.map((b) => ({ id: b.id, title: `${b.batchNo} · ${b.product.name}`, subtitle: b.order ? b.order.customer.name : "Omborga", right: inUnit(sum(b.qtyM3), b.product.unit), status: `${b.shift}-smena` })) },

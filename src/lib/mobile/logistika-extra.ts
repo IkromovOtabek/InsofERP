@@ -35,7 +35,7 @@ import type { HomeRow, HomeSection, SectionChart, Tone } from "./home";
 import { ListError, type ListFilter, type MobileList } from "./list";
 import type { CreateForm, CreateResult } from "./create";
 import { LOGI_ACTION_ROLES, LOGI_CREATE, LOGI_DETAIL_ROLES } from "./logistika-access";
-import { runTripPrice, tripPayDetail, tripPayList } from "./trip-pay";
+import { runTripPayApprove, runTripPayReject, runTripPrice, tripPayDetail, tripPayList } from "./trip-pay";
 
 /**
  * Logistika kabineti — ilovadagi qismi (veb `app/(app)/logistika/*`, `trips/[id]`, `dashboard/logistics-home.tsx`).
@@ -110,7 +110,7 @@ export async function logiList(user: MobileUser, key: string, title: string, q?:
     case "deliveries": return deliveriesList(title, q, filter);
     case "logi-report": return reportList(title);
     case "sites": return sitesList(title, q, filter);
-    case "trip-pay": return tripPayList(title, filter);
+    case "trip-pay": return tripPayList(user, title, filter);
     default: throw new ListError("UNKNOWN_LIST", "Bunday ro'yxat yo'q", 404);
   }
 }
@@ -1397,6 +1397,8 @@ export async function runLogiAction(user: MobileUser, action: string, id: string
       return "Xarajat yozildi";
     }
     case "trip.price": return runTripPrice(user, id, payload);
+    case "trip.pay.approve": return runTripPayApprove(user, id);
+    case "trip.pay.reject": return runTripPayReject(user, id, payload);
     case "fuel.cancel": {
       done(await cancelFuelRecord(id, textOf(payload, "reason"), user.id));
       return "Zapravka bekor qilindi";
