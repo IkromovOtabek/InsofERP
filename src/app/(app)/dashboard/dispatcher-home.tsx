@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, BellRing, CheckCircle2, CircleOff, Gauge, IdCard, ShieldAlert, Truck, UserCheck, UserX, Users, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, BellRing, CheckCircle2, CircleOff, Fuel, Gauge, IdCard, ShieldAlert, Truck, UserCheck, UserX, Users, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { ACTIVE_TRIP, dayRange, driverEmployees, expiryLevel, ISSUE_KIND, VEHICLE_ISSUE_KINDS, vehicleLive, vehicleServiceDue, type VehicleLive } from "@/lib/logistics";
 import { unpricedWhere } from "@/lib/driver-trip-pay";
+import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum } from "@/lib/format";
 import { Badge, Card, Empty, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 
@@ -15,13 +16,15 @@ type Due = { key: string; href: string; who: string; what: string; until: Date; 
 /**
  * Dispetcher bosh sahifasi — kabineti faqat haydovchilar va transport: kim bo'sh / reysda / kelmagan,
  * qaysi texnika saflda / ta'mirda, muddati o'tayotgan guvohnoma, texosmotr, sug'urta va texnik xizmat.
- * Hisob-kitob `lib/logistics.ts` dan (Haydovchilar va Transport sahifalari bilan bir xil qoida).
+ * Hisob-kitob `lib/logistics.ts` dan (Haydovchilar va Transport sahifalari bilan bir xil qoida); yoqilg'i qoldig'i —
+ * `lib/driver-ledger.ts` (Haydovchilar tabeli bilan bir xil).
  */
 export async function DispatcherHome() {
   const { from: today } = dayRange();
   const drivers = await driverEmployees({ activeOnly: true });
   const ids = drivers.map((d) => d.id);
-  const [busy, att, vehicles, service, unpriced, issues] = await Promise.all([
+  const now = new Date();
+  const [busy, att, vehicles, service, unpriced, issues, ledger] = await Promise.all([
     db.trip.findMany({ where: { driverId: { in: ids }, status: { in: ACTIVE_TRIP } }, select: { driverId: true } }),
     db.attendance.findMany({ where: { employeeId: { in: ids }, date: today, status: { not: "PRESENT" } }, select: { employeeId: true } }),
     db.vehicle.findMany({
@@ -38,7 +41,13 @@ export async function DispatcherHome() {
       where: { resolvedAt: null, kind: { in: VEHICLE_ISSUE_KINDS } }, orderBy: { createdAt: "desc" }, take: 20,
       select: { id: true, kind: true, note: true, createdAt: true, trip: { select: { id: true, deliveryNoteNo: true, driver: { select: { fullName: true } }, vehicle: { select: { id: true, plate: true } } } } },
     }),
+    // Yoqilg'i qoldig'i — Haydovchilar tabeli bilan bir manba (joriy oy, mashina bo'yicha oxirgi reysdan keyin)
+    driverLedger(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 1)),
   ]);
+  const fuel = fuelBalances(ledger.rows);
+  const gas = fuel.filter((b) => b.unit === "m³").reduce((a, b) => a + b.closing, 0);
+  const dt = fuel.filter((b) => b.unit !== "m³").reduce((a, b) => a + b.closing, 0);
+  const negative = fuel.filter((b) => b.closing < 0);
 
   const onTrip = new Set(busy.map((t) => t.driverId));
   const absent = new Set(att.map((a) => a.employeeId).filter((id) => !onTrip.has(id)));
@@ -97,12 +106,24 @@ export async function DispatcherHome() {
       </Section>
 
       <Section title="Transport" action={more("/logistika/transport", "Transport")}>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5 [&>*]:min-w-0">
           <StatCard label="Bo'sh" value={count(["FREE"])} hint="reysga tayyor" icon={Gauge} tone="success" href="/logistika/transport?state=FREE" />
           <StatCard label="Reysda / yuklanmoqda" value={count(["ON_TRIP", "LOADING", "ASSIGNED", "RETURNING"])} icon={Truck} tone="brand" href="/logistika/transport?state=ON_TRIP" />
           <StatCard label="Ta'mirda" value={count(["REPAIR"])} icon={Wrench} tone={count(["REPAIR"]) ? "danger" : "default"} href="/logistika/transport?state=REPAIR" />
           <StatCard label="Faol emas / bekor" value={count(["INACTIVE", "IDLE"])} icon={CircleOff} href="/logistika/transport?state=IDLE" />
+          <StatCard label="Yoqilg'i qoldig'i" icon={Fuel} href="/logistika/tabel?bolim=oy" tone={negative.length ? "warning" : "default"}
+            value={fuel.length ? [fuel.some((b) => b.unit === "m³") ? `${fmtNum(gas, 0)} m³` : null, fuel.some((b) => b.unit !== "m³") ? `${fmtNum(dt, 0)} l` : null].filter(Boolean).join(" · ") : "—"}
+            hint={fuel.length ? (negative.length ? `${negative.length} mashinada manfiy: ${negative.map((b) => b.plate).join(", ")}` : `${fuel.length} mashina · zapravka − norma sarfi`) : "bu oyda reys yo'q"} />
         </div>
+        {fuel.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {fuel.map((b) => (
+              <Link key={b.vehicleId} href={`/logistika/tabel?bolim=hisob&transport=${b.vehicleId}`} className="hover:opacity-80" title="Mashina hisob varag'i">
+                <Badge color={b.closing < 0 ? "red" : "slate"} dot={false}><span className="tabular">{b.plate} · {fmtNum(b.closing, 1)} {b.unit}</span></Badge>
+              </Link>
+            ))}
+          </div>
+        )}
       </Section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">

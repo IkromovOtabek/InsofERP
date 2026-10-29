@@ -48,7 +48,7 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
           <Tr key={r.id}>
             {select && <Td><RowCheck id={r.id} /></Td>}
             <Td className="text-sm"><span className="font-medium tabular">{r.no}</span><div className="text-xs text-slate-500">{dateTime(r.deliveredAt)} · {r.plate}</div></Td>
-            {showDriver && <Td className="text-sm"><Link href={`/logistika/tabel?driver=${r.driverId}&oy=${isoDate(r.deliveredAt).slice(0, 7)}`} className="hover:underline">{r.driver}</Link></Td>}
+            {showDriver && <Td className="text-sm"><Link href={`/logistika/tabel?bolim=reyslar&driver=${r.driverId}&oy=${isoDate(r.deliveredAt).slice(0, 7)}`} className="hover:underline">{r.driver}</Link></Td>}
             <Td className="max-w-48 truncate text-sm">{r.customer}</Td>
             <Td right className="tabular">{fmtNum(r.km, 0)}</Td>
             <Td right className="tabular">{r.vehicleType === "MIXER" ? hours(r.waitMin) : "—"}</Td>
@@ -78,7 +78,11 @@ function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRo
  * (har 12 soatda eslatma). Narxlangan reyslar oy yakunida Ish haqi vedomostiga «Reyslar» bo'lib tushadi.
  * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i: gaz qoldig'i/zapravka/sarf, xarajatlar, dastavka daromadi, foyda.
  */
-export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; transport?: string }> }) {
+/** Sahifa bo'limlari — sarlavha ostidagi bar. Eski havolalar (`?view=hisob`) ham ishlaydi. */
+const SECTIONS = ["narxsiz", "tasdiq", "usta", "oy", "reyslar", "hisob", "tarif"] as const;
+type SectionKey = (typeof SECTIONS)[number];
+
+export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; bolim?: string; transport?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const month = normMonth(sp.oy);
@@ -87,7 +91,9 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const canPrice = canDo(s, "logistika", "pay");
   const canApprove = canDo(s, "logistika", "pay_approve");
   const monthAgo = new Date(Date.now() - 30 * 86_400_000);
-  const view = sp.view === "hisob" ? "hisob" : "tabel";
+  const bolim: SectionKey = (SECTIONS as readonly string[]).includes(sp.bolim ?? "") ? (sp.bolim as SectionKey)
+    : sp.view === "hisob" ? "hisob" : sp.driver ? "reyslar" : "narxsiz";
+  const view = bolim === "hisob" ? "hisob" : "tabel";
   const filtered = !!(sp.driver || sp.transport);
   const [unpriced, monthTrips, tariff, full, filteredLedger, monthVehicles, pending, masters, vehicles, payees] = await Promise.all([
     payTrips(unpricedWhere()),
@@ -138,23 +144,44 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
   const total = { trips: monthTrips.length, km: drivers.reduce((a, d) => a + d.km, 0), sum: drivers.reduce((a, d) => a + d.sum, 0), unpriced: drivers.reduce((a, d) => a + d.unpriced, 0) };
   const picked = sp.driver ? drivers.find((d) => d.id === sp.driver) ?? null : null;
   const cur = today().slice(0, 7);
-  const qs = (o: { oy?: string; driver?: string | null; view?: string; transport?: string | null }) => {
-    const p = new URLSearchParams({ oy: o.oy ?? month });
-    const driver = o.driver === undefined ? sp.driver : o.driver, v = o.view ?? view, tr = o.transport === undefined ? sp.transport : o.transport;
+  const qs = (o: { oy?: string; driver?: string | null; bolim?: SectionKey; transport?: string | null }) => {
+    const b = o.bolim ?? bolim;
+    const p = new URLSearchParams({ bolim: b, oy: o.oy ?? month });
+    const driver = o.driver === undefined ? sp.driver : o.driver, tr = o.transport === undefined ? sp.transport : o.transport;
     if (driver) p.set("driver", driver);
-    if (v === "hisob") { p.set("view", "hisob"); if (tr) p.set("transport", tr); }
+    if (b === "hisob" && tr) p.set("transport", tr);
     return `/logistika/tabel?${p}`;
   };
-  const link = (oy: string) => qs({ oy });
+  const openMasters = masters.filter((m) => m.status === "DEFERRED" || m.status === "NEW" || m.status === "APPROVED").length;
+  // Oy tanlash — oyga bog'liq bo'limlarda (oy jami, reyslar, hisob varag'i)
+  const monthNav = (
+    <div className="flex items-center gap-1 text-sm">
+      {picked && <Link href={qs({ driver: null })} className="mr-2 text-blue-700 hover:underline">Hamma haydovchilar</Link>}
+      <Link href={qs({ oy: shiftMonth(month, -1) })} scroll={false} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Oldingi oy"><ChevronLeft size={16} /></Link>
+      <span className="font-medium">{monthTitle(month)}</span>
+      {month < cur && <Link href={qs({ oy: shiftMonth(month, 1) })} scroll={false} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Keyingi oy"><ChevronRight size={16} /></Link>}
+    </div>
+  );
+  const monthTitleText = picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`;
 
   return (
     <div>
       <PageHeader title="Haydovchilar tabeli" subtitle="Yetkazilgan reyslar o'zi tushadi · narx va to'lov turini dispetcher qo'yadi · ish boshqaruvchi tasdiqlaydi: naqd — kassa, oylik — Ish haqi" />
 
-      {!tariffSet(tariff) && <Callout tone="warning" title="Tarif kiritilmagan">Taklif narx 0 chiqadi — pastdagi «Tarif» bo&apos;limida km va kutish narxini kiriting.</Callout>}
+      <Tabs scroll={false} current={bolim} items={[
+        { key: "narxsiz", label: "Narx belgilanmagan", href: qs({ bolim: "narxsiz" }), icon: BellRing, count: unpriced.length },
+        { key: "tasdiq", label: "Reys haqi tasdig'i", href: qs({ bolim: "tasdiq" }), icon: ShieldCheck, count: pending.length },
+        { key: "usta", label: "Remont usta puli", href: qs({ bolim: "usta" }), icon: Wrench, ...(openMasters ? { count: openMasters } : {}) },
+        { key: "oy", label: `Oy bo'yicha: ${monthTitle(month)}`, href: qs({ bolim: "oy" }), icon: Coins },
+        { key: "reyslar", label: "Reyslar va narx", href: qs({ bolim: "reyslar" }), icon: Route },
+        { key: "hisob", label: "Hisob varag'i", href: qs({ bolim: "hisob" }), icon: FileSpreadsheet },
+        { key: "tarif", label: "Tarif", href: qs({ bolim: "tarif" }), icon: Settings2 },
+      ]} />
+
+      {!tariffSet(tariff) && bolim !== "tarif" && <Callout tone="warning" title="Tarif kiritilmagan">Taklif narx 0 chiqadi — <Link href={qs({ bolim: "tarif" })} className="font-medium underline">«Tarif»</Link> bo&apos;limida km va kutish narxini kiriting.</Callout>}
 
       {/* ── Narx belgilanmagan reyslar — «propushenniy»: hal bo'lmaguncha shu yerda va eslatmada ── */}
-      <Card padded={false} className={unpriced.length ? "border-amber-300 ring-2 ring-amber-100" : undefined}>
+      {bolim === "narxsiz" && <Card padded={false} className={unpriced.length ? "border-amber-300 ring-2 ring-amber-100" : undefined}>
         <div id="narxsiz" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title={`Narx belgilanmagan reyslar${unpriced.length ? ` (${unpriced.length})` : ""}`} icon={BellRing}
             description="Narx va to'lov turi (naqd / oylik) qo'yilgach reys ish boshqaruvchi tasdig'iga o'tadi"
@@ -164,10 +191,10 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           : canPrice
             ? <Selectable ids={unpriced.map((r) => r.id)} mode="price"><TopRows total={unpriced.length}><TripRows rows={unpriced} canPrice showDriver bal={balOf} select /></TopRows></Selectable>
             : <TopRows total={unpriced.length}><TripRows rows={unpriced} canPrice={false} showDriver bal={balOf} /></TopRows>}
-      </Card>
+      </Card>}
 
       {/* ── Reys haqi tasdig'i (ish boshqaruvchi): naqd — kassaga, oylik — vedomostga ── */}
-      <Card padded={false} className={pending.length && canApprove ? "mt-4 border-blue-300 ring-2 ring-blue-100" : "mt-4"}>
+      {bolim === "tasdiq" && <Card padded={false} className={pending.length && canApprove ? "border-blue-300 ring-2 ring-blue-100" : undefined}>
         <div id="tasdiq" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title={`Reys haqi tasdig'i${pending.length ? ` (${pending.length})` : ""}`} icon={ShieldCheck}
             description="Ish boshqaruvchi tasdiqlaydi: naqd — kassaga o'tadi va kassir beradi (kassa chiqimi), oylik — oy yakuni vedomostiga tushadi (buxgalter ko'radi)"
@@ -198,10 +225,10 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             </div>
           </Selectable>
         )}
-      </Card>
+      </Card>}
 
       {/* ── Remont usta puli: joyida (tasdiq → kassa) yoki N kunda (muddat kuni eslatma va tasdiq) ── */}
-      <Card padded={false} className="mt-4">
+      {bolim === "usta" && <Card padded={false}>
         <div id="usta" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title="Remont usta puli" icon={Wrench}
             description="Ta'mir, vulkanizatsiya, zapchast. Joyida berish — ish boshqaruvchi tasdiqlaydi, kassa beradi. N kunda berish — muddat kuni «… ga remont puli berish vaqti keldi» eslatmasi keladi va tasdiqqa o'tadi"
@@ -253,22 +280,15 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             </>
           );
         })()}
-      </Card>
+      </Card>}
 
-      <Section title={picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`}
-        action={
-          <div className="flex items-center gap-1 text-sm">
-            {picked && <Link href={qs({ driver: null })} className="mr-2 text-blue-700 hover:underline">Hamma haydovchilar</Link>}
-            <Link href={link(shiftMonth(month, -1))} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Oldingi oy"><ChevronLeft size={16} /></Link>
-            <span className="font-medium">{monthTitle(month)}</span>
-            {month < cur && <Link href={link(shiftMonth(month, 1))} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Keyingi oy"><ChevronRight size={16} /></Link>}
-          </div>
-        }>
+      {/* ── Oy jami: ko'rsatkichlar va yoqilg'i qoldig'i ── */}
+      {bolim === "oy" && <Section title={monthTitleText} className="mt-0" action={monthNav}>
         <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4 [&>*]:min-w-0">
-          <StatCard label="Reyslar" value={picked ? picked.trips : total.trips} icon={Route} tone="info" href="#oy-jadval" />
-          <StatCard label="Km" value={fmtNum(picked ? picked.km : total.km, 0)} hint="zavod → obyekt → zavod" icon={Users} href="#oy-jadval" />
-          <StatCard label="Narxlangan summa" value={money(picked ? picked.sum : total.sum)} hint="oylikka tushadi" icon={Coins} tone="success" href="#oy-jadval" />
-          <StatCard label="Narxsiz" value={picked ? picked.unpriced : total.unpriced} icon={Timer} tone={(picked ? picked.unpriced : total.unpriced) ? "warning" : "default"} href="#narxsiz" />
+          <StatCard label="Reyslar" value={picked ? picked.trips : total.trips} icon={Route} tone="info" href={qs({ bolim: "reyslar" })} />
+          <StatCard label="Km" value={fmtNum(picked ? picked.km : total.km, 0)} hint="zavod → obyekt → zavod" icon={Users} href={qs({ bolim: "reyslar" })} />
+          <StatCard label="Narxlangan summa" value={money(picked ? picked.sum : total.sum)} hint="oylikka tushadi" icon={Coins} tone="success" href={qs({ bolim: "reyslar" })} />
+          <StatCard label="Narxsiz" value={picked ? picked.unpriced : total.unpriced} icon={Timer} tone={(picked ? picked.unpriced : total.unpriced) ? "warning" : "default"} href={qs({ bolim: "narxsiz" })} />
         </div>
 
         {(() => {
@@ -286,7 +306,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
                 <tbody>
                   {list.map((b) => (
                     <Tr key={b.vehicleId}>
-                      <Td className="font-medium"><Link href={qs({ view: "hisob", transport: b.vehicleId })} className="hover:underline">{b.plate}</Link></Td>
+                      <Td className="font-medium"><Link href={qs({ bolim: "hisob", transport: b.vehicleId })} className="hover:underline">{b.plate}</Link></Td>
                       <Td className="text-sm text-slate-600">{b.drivers.join(", ")}</Td>
                       <Td right className="tabular">{b.trips}</Td>
                       <Td right className="tabular"><Bal v={b.opening} unit={b.unit} /></Td>
@@ -300,17 +320,15 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             </Card>
           );
         })()}
+        {balances.length === 0 && <Card><Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /></Card>}
+      </Section>}
 
-        <div id="oy-jadval" className="scroll-mt-20" />
-        <Tabs className="mb-3" scroll={false} current={view} items={[
-          { key: "tabel", label: "Reyslar va narx", href: qs({ view: "tabel" }), icon: Route },
-          { key: "hisob", label: "Hisob varag'i", href: qs({ view: "hisob" }), icon: FileSpreadsheet },
-        ]} />
-        {ledger ? (
+      {/* ── Hisob varag'i (dispetcher Excel'i ko'rinishida) ── */}
+      {bolim === "hisob" && ledger && <Section title={monthTitleText} className="mt-0" action={monthNav}>
           <>
             <form method="get" action="/logistika/tabel" className="mb-3 flex flex-wrap items-center gap-2">
               <input type="hidden" name="oy" value={month} />
-              <input type="hidden" name="view" value="hisob" />
+              <input type="hidden" name="bolim" value="hisob" />
               {sp.driver && <input type="hidden" name="driver" value={sp.driver} />}
               <Select name="transport" defaultValue={sp.transport ?? ""} className="w-56" aria-label="Transport">
                 <option value="">Hamma transport</option>
@@ -322,7 +340,11 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
               : <LedgerSheet rows={ledger.rows} total={ledger.total} month={month} showDriver={!picked}
                 file={`Haydovchi tabeli ${month}${picked ? ` ${picked.name}` : ""}${sp.transport ? ` ${monthVehicles.find((v) => v.id === sp.transport)?.plate ?? ""}` : ""}`} />}
           </>
-        ) : picked ? (
+      </Section>}
+
+      {/* ── Reyslar va narx: haydovchilar bo'yicha oy, haydovchi tanlansa — uning reyslari ── */}
+      {bolim === "reyslar" && <Section title={monthTitleText} className="mt-0" action={monthNav}>
+        {picked ? (
           <Card padded={false}>
             {monthTrips.length === 0 ? <Empty text="Bu oyda yetkazilgan reys yo'q" icon={Route} /> : <TripRows rows={[...monthTrips].reverse()} canPrice={canPrice} showDriver={false} bal={balOf} />}
           </Card>
@@ -355,15 +377,15 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
           </Card>
         )}
         <p className="mt-2 text-xs text-slate-500">Yoqilg&apos;i normasi: km × 100 km normasi + ishlagan soat × turib ishlash normasi (metan — m³, dizel — l). Oylik {date(new Date(y!, m!, 0))} gacha yetkazilgan reyslardan.</p>
-      </Section>
+      </Section>}
 
-      <Section title="Tarif">
+      {bolim === "tarif" && <Section title="Tarif" className="mt-0">
         <Card>
           <CardHeader title="Reys haqi tarifi" icon={Settings2} description="Taklif = reys + km × tarif + mikser kutish soati × tarif (1000 so'mga yaxlitlanadi)" />
           {canPrice ? <TariffForm v={{ drvTripRate: tariff.trip, drvKmRate: tariff.km, drvWaitHourRate: tariff.waitHour }} />
             : <p className="text-sm text-slate-600">Reys: {money(tariff.trip)} · 1 km: {money(tariff.km)} · kutish: {money(tariff.waitHour)} / soat. Tarifni dispetcher o&apos;zgartiradi.</p>}
         </Card>
-      </Section>
+      </Section>}
     </div>
   );
 }

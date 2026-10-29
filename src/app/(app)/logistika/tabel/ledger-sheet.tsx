@@ -69,7 +69,7 @@ export function LedgerSheet({ rows, total, month, file, showDriver }: { rows: Le
                 <Link href={`/trips/${r.id}`} className="hover:underline">{date(r.deliveredAt)}</Link>
                 <div className="text-[11px] text-slate-500">{r.plate}</div>
               </SheetTd>
-              {showDriver && <SheetTd className="whitespace-nowrap"><Link href={`/logistika/tabel?oy=${month}&driver=${r.driverId}&view=hisob`} className="hover:underline">{r.driver}</Link></SheetTd>}
+              {showDriver && <SheetTd className="whitespace-nowrap"><Link href={`/logistika/tabel?bolim=hisob&oy=${month}&driver=${r.driverId}`} className="hover:underline">{r.driver}</Link></SheetTd>}
               <SheetTd className="max-w-40 truncate" >{r.pickup}</SheetTd>
               <SheetTd className="max-w-52"><div className="truncate font-medium">{r.dropoff}</div>{r.address && <div className="truncate text-[11px] text-slate-500">{r.address}</div>}</SheetTd>
               <SheetTd className="whitespace-nowrap">{r.cargo}</SheetTd>
