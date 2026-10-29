@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileSpreadsheet, Trash2, Users, Receipt, Wallet } from "lucide-react";
+import { FileSpreadsheet, Trash2, Users, Receipt, Wallet, BookOpen } from "lucide-react";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { customerMarks, markedName } from "@/lib/finance";
@@ -11,22 +11,25 @@ import { LinkPaymentForm, PaymentForm, type InvOpt, type OrderOpt } from "./paym
 import { RegisterTable, toView } from "./register-table";
 import { deleteImportBatch, stornoPayment } from "./actions";
 import { ConfirmButton } from "./confirm-button";
+import { AccountMatrix, KassaJurnalTab } from "./kassa-jurnal";
 import { accountBalances, ADVANCE_ORDER_STATUSES, expectedAdvance } from "@/lib/payments";
 import { orderTotal } from "@/lib/order-total";
 
 /**
- * Kassa / bank — ikki ko'rinish:
+ * Kassa / bank — tepada hisoblar matritsasi (qoldiq, bugun, shu oy), ostida uch ko'rinish:
+ *  · Kassa jurnali — kassa va bank hisoblari bo'yicha barcha kirim/chiqim (Google jadvalidagi «Kassa» varag'i kabi);
  *  · To'lovlar — qo'lda qayd etilgan mijoz to'lovlari;
  *  · Realizatsiya jurnali — Excel'dan yuklangan kunlik jo'natma jadvali (mijoz nomi bosilsa uning sahifasi).
  */
-export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string; skipped?: string; unknown?: string; paid?: string }> }) {
+export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; to?: string; batch?: string; skipped?: string; unknown?: string; paid?: string; account?: string; kind?: string; manba?: string; q?: string }> }) {
   const sp = await searchParams;
   const s = await requirePage("/payments");
   const role = s?.role ?? "";
   // Ruxsatlar server action'lariga mos: kim nima qila olmasa, tugmasi ham ko'rinmaydi
   const canDelete = ["ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
   const canImport = ["CASHIER", "ACCOUNTING", "FINANCE", "DIRECTOR"].includes(role);
-  const tab = sp.tab === "jurnal" ? "jurnal" : "tolovlar";
+  // Excel importidan qaytganda (batch) — realizatsiya jurnali; aks holda sukut bo'yicha kassa jurnali
+  const tab = sp.tab === "jurnal" || (!sp.tab && sp.batch) ? "jurnal" : sp.tab === "tolovlar" ? "tolovlar" : "kassa";
   const batch = sp.batch || undefined;
   // Jurnal sanasi bo'yicha filtr — ko'rsatilmasa butun jurnal (oxirgi 500 qator)
   const from = sp.from ? new Date(sp.from) : undefined;
@@ -35,7 +38,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const regWhere: Prisma.SalesRegisterWhereInput = { ...(batch ? { batch } : {}), ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) };
 
   const [accounts, balances] = await Promise.all([
-    db.cashAccount.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.cashAccount.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
     accountBalances(), // Kirim-Chiqim sahifasi bilan bir manba: to'lovlar + kirim − chiqim
   ]);
   const [regCount, regTotals] = await Promise.all([
@@ -52,24 +55,16 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         action={canImport ? <LinkButton href="/payments/import" variant="secondary"><FileSpreadsheet size={15} /> Excel orqali qo&apos;shish</LinkButton> : undefined}
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {accounts.map((a) => (
-          <Card key={a.id}>
-            <div className="text-sm text-slate-500">{a.name} <span className="text-xs">({a.type === "CASH" ? "naqd" : "bank"})</span></div>
-            <div className={`mt-1 text-xl font-semibold ${(balances.get(a.id) ?? 0) < 0 ? "text-red-600" : ""}`}>{money(balances.get(a.id) ?? 0)}</div>
-            <div className="text-xs text-slate-500">qoldiq (kirim − chiqim ± perekit)</div>
-            {/* Hisob tarixi: shu hisobning barcha kirim, chiqim va perekitlari (+ kirdi / − chiqdi), davr boshi-oxiri qoldig'i */}
-            <Link href={`/cashflow?account=${a.id}`} className="mt-2 inline-block text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline">Hisob tarixi →</Link>
-          </Card>
-        ))}
-      </div>
+      {/* Hisob ustuni nomi bosilsa — kassa jurnali shu hisob bo'yicha; to'liq hisob ko'chirmasi (davr boshi-oxiri qoldig'i) — Kirim-Chiqimda */}
+      <AccountMatrix accounts={accounts} balances={balances} />
 
       <Tabs current={tab} items={[
+        { key: "kassa", label: "Kassa jurnali", href: "/payments?tab=kassa", icon: BookOpen },
         { key: "tolovlar", label: "To'lovlar", href: qs("tolovlar"), icon: Wallet },
         { key: "jurnal", label: "Realizatsiya jurnali", href: qs("jurnal"), icon: Receipt, count: regCount },
       ]} />
 
-      {tab === "tolovlar" ? <PaymentsTab role={role} /> : (
+      {tab === "kassa" ? <KassaJurnalTab accounts={accounts} sp={sp} /> : tab === "tolovlar" ? <PaymentsTab role={role} /> : (
         <JurnalTab where={regWhere} batch={batch} skipped={Number(sp.skipped) || 0} unknown={Number(sp.unknown) || 0} paid={sp.paid != null ? Number(sp.paid) || 0 : null} canDelete={canDelete} userId={s?.userId ?? ""} isCashier={role === "CASHIER"} from={from} to={to}
           totals={{ rows: regTotals._count._all, qty: Number(regTotals._sum.qty ?? 0), sum: Number(regTotals._sum.sum ?? 0), nds: Number(regTotals._sum.nds ?? 0), total: Number(regTotals._sum.total ?? 0) }} />
       )}
