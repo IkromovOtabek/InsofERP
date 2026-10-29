@@ -1,7 +1,8 @@
 import { db } from "./db";
 import { productionCapacity } from "./production-capacity";
 import { dayRange, orderLogistics, parseDay } from "./logistics";
-import { fmtUnitTotals, unitLabel, unitTotals, type UnitRow } from "./unit";
+import { fmtUnitTotals, loadKind, unitLabel, unitTotals, type LoadKind, type UnitRow } from "./unit";
+import { itemTons } from "./trip-plan";
 import { fmtNum } from "./format";
 
 /**
@@ -52,8 +53,16 @@ export type SlOrder = {
   address: string; phone: string | null; createdBy: string; volume: string; pump: boolean; note: string | null;
   items: { code: string; name: string; qty: number; unit: string }[];
   trips: { plate: string; driver: string; qty: number; status: string }[];
+  /** Zayavkadagi yuk turlari (kartadan filtr: `?birlik=m3|dona|t`) va dona/t yukining og'irligi, tonna. */
+  kinds: LoadKind[]; tons: number | null;
   late: boolean; problem: boolean; blocked: boolean; done: boolean;
 };
+
+/**
+ * Kunlik zayavka — yuk turi bo'yicha: necha m³ / dona / tonna va shu yuk bor zayavkalar soni.
+ * Tonna — «t» mahsulot + dona yukining og'irligi (kartadagi yoki GOST bo'yicha taxminiy).
+ */
+export type SlLoad = { kind: LoadKind; qty: number; orders: number; left: number; extra: string; approx: boolean };
 
 export type SlStage = { key: string; label: string; count: number; hint: string };
 
@@ -62,6 +71,7 @@ export type SkladLogistika = {
   today: {
     orders: number; drafts: number; volume: string; shipped: number; left: number; problem: number;
     shippedVolume: string; leftVolume: string; overdue: number;
+    loads: SlLoad[];
   };
   tomorrow: {
     orders: number; drafts: number; need: string; available: string; short: string; shortCount: number;
@@ -73,6 +83,12 @@ export type SkladLogistika = {
   flow: SlStage[];
   orders: SlOrder[];
 };
+
+/** Zayavka dona / t yukining og'irligi, tonna (og'irligi noma'lum qatorlar hisobga kirmaydi); bunday yuk yo'q — `null`. */
+function orderTons(rows: { p: { code: string; name: string; unit: string; weightKg?: unknown }; qty: number }[]): number | null {
+  const w = rows.map((r) => itemTons(r.p, r.qty)).filter((x) => x != null);
+  return w.length ? w.reduce((s, x) => s + x.t, 0) : null;
+}
 
 const joinHint = (...p: (string | number | false | null | undefined)[]) => p.filter(Boolean).join(" · ");
 const q = (v: number) => fmtNum(v, 2);
@@ -87,7 +103,7 @@ function loadOrders(where: object) {
     include: {
       customer: { select: { name: true, phone: true } },
       createdBy: { select: { fullName: true } },
-      items: { include: { product: { select: { id: true, code: true, name: true, unit: true } } } },
+      items: { include: { product: { select: { id: true, code: true, name: true, unit: true, weightKg: true } } } },
       trips: { select: { status: true, qtyM3: true, plannedAt: true, deliveredAt: true, closedAt: true, issues: { select: { resolvedAt: true } }, vehicle: { select: { plate: true } }, driver: { select: { fullName: true } } } },
     },
   });
@@ -185,6 +201,8 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
       address: o.deliveryAddress, phone: o.customer.phone, createdBy: o.createdBy.fullName, volume: fmtUnitTotals(units), pump: o.needsPump, note: o.note,
       items: o.items.map((i) => ({ code: i.product.code, name: i.product.name, qty: Number(i.qtyM3), unit: i.product.unit })),
       trips: o.trips.filter((t) => t.status !== "CANCELLED").map((t) => ({ plate: t.vehicle.plate, driver: t.driver.fullName, qty: Number(t.qtyM3), status: t.status })),
+      kinds: [...new Set(o.items.map((i) => loadKind(i.product.unit)))],
+      tons: orderTons(o.items.map((i) => ({ p: i.product, qty: Number(i.qtyM3) }))),
       statusLabel: overdue ? "Muddati o'tgan" : o.status === "BLOCKED" ? "Bloklangan" : o.status === "DRAFT" ? "Tasdiqlanmagan" : s.done ? "Jo'natildi" : logi.status === "ON_ROAD" ? "Yo'lda" : logi.status === "LOADING" ? "Yuklanmoqda" : logi.status === "ASSIGNED" ? "Transport biriktirilgan" : "Kutilmoqda",
       late: !s.done && (overdue || logi.late), problem: logi.problem, blocked: o.status === "BLOCKED", done: s.done,
     };
@@ -196,6 +214,29 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
   const problemCount = orders.filter((o) => !o.done && (o.late || o.blocked || o.problem)).length;
   const volumeRows = (pick: (s: ReturnType<typeof itemSplit>["items"][number]) => number): UnitRow[] =>
     todaySplit.flatMap(({ s }) => s.items.map((i) => ({ unit: i.product.unit, qty: pick(i) })));
+
+  // Yuk turi bo'yicha (bugungi zayavkalar): m³, dona (m², m ham shu guruhda — «extra» da alohida), tonna
+  const loads: SlLoad[] = (["m3", "dona", "t"] as const).map((kind) => {
+    let qty = 0, left = 0, orders = 0, approx = false;
+    const extra: UnitRow[] = [];
+    for (const { s } of todaySplit) {
+      let hit = false;
+      for (const i of s.items) {
+        const u = i.product.unit;
+        if (kind === "t") {
+          const w = itemTons(i.product, i.need);
+          if (!w) continue;
+          hit = true; qty += w.t; left += i.need > 0 ? (w.t * i.left) / i.need : 0; approx ||= w.approx;
+        } else if (loadKind(u) === kind) {
+          hit = true;
+          if (kind === "dona" && u !== "dona") { extra.push({ unit: u, qty: i.need }); continue; }
+          qty += i.need; left += i.left;
+        }
+      }
+      if (hit) orders++;
+    }
+    return { kind, qty, left, orders, extra: extra.length ? fmtUnitTotals(extra) : "", approx };
+  });
 
   // ── Ertangi kun ──
   const tomorrowNeed = products.filter((p) => p.tomorrow > 0);
@@ -275,6 +316,7 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
       shippedVolume: fmtUnitTotals(volumeRows((i) => i.need - i.left)),
       leftVolume: fmtUnitTotals(volumeRows((i) => i.left)),
       overdue: overdueOrders.length,
+      loads,
     },
     tomorrow: {
       orders: tomorrowOrders.length,

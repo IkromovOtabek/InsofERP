@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Fuel, Route, Coins, Gauge, Truck, Undo2, Wrench } from "lucide-react";
+import { Activity, Coins, Fuel, Route, Gauge, Truck, Undo2, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -8,7 +8,10 @@ import { pathAllowed } from "@/lib/nav";
 import { ACTIVE_TRIP, mainDriverOf, vehicleFormDrivers, EXPENSE_KIND, FUEL_TYPE, SERVICE_KINDS, serviceDueLevel, tripPhase, VEHICLE_TYPE, vehicleLive, vehicleServiceDue } from "@/lib/logistics";
 import { fuelConsumption } from "@/lib/logistics-costs";
 import { date, dateTime, fmtNum, isoDate, money, moneyShort, qty } from "@/lib/format";
-import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Table, Td, Th, Tr } from "@/components/ui";
+import { Badge, Callout, Card, CardHeader, Empty, PageHeader, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
+import { vehicleReport } from "@/lib/vehicle-report";
+import { parseDayRange } from "@/app/(app)/bi-tahlil/month-bar";
+import { VehicleActivity } from "./activity";
 import { ConfirmButton } from "../../../payments/confirm-button";
 import { cancelNote, cancellerNames } from "@/lib/cancelled";
 import { VehicleForm } from "../vehicle-form";
@@ -19,11 +22,16 @@ import { ServiceForm, VehicleExpenseForm } from "./service-forms";
 
 export const dynamic = "force-dynamic";
 
-/** Transport kartasi: ma'lumot, oxirgi reyslar, yoqilg'i (haqiqiy sarf vs norma), xarajatlar. */
-export default async function VehiclePage({ params }: { params: Promise<{ id: string }> }) {
+/**
+ * Transport kartasi, ikki tab:
+ *  · «Faoliyat va xarajat» (sukut) — tanlangan davrda reys, zayavka, yuk (m³ / dona / t), qayerga, xarajat, daromad, foyda;
+ *  · «Karta va texnik xizmat» — ma'lumot, yoqilg'i (haqiqiy sarf vs norma), xarajatlar, texnik xizmat jurnali, oxirgi reyslar.
+ */
+export default async function VehiclePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; davr?: string; dan?: string; gacha?: string }> }) {
   const s = await requireRoles(["LOGISTICS", "MECHANIC", "DISPATCHER"], { module: "logistika" });
   const { id } = await params;
-  const monthFrom = new Date(); monthFrom.setDate(1); monthFrom.setHours(0, 0, 0, 0);
+  const sp = await searchParams;
+  const tab = sp.tab === "karta" ? "karta" : "faoliyat";
   const v = await db.vehicle.findUnique({
     where: { id },
     include: {
@@ -35,6 +43,9 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
     },
   });
   if (!v) notFound();
+  const base = `/logistika/transport/${v.id}`;
+  const period = parseDayRange(sp);
+  const report = tab === "faoliyat" ? await vehicleReport(v.id, period.from, period.to) : null;
   const drivers = await vehicleFormDrivers(v.id);
   const live = vehicleLive(v, v.trips);
 
@@ -50,11 +61,6 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
   const gasNorm = v.gasNormPer100 ? Number(v.gasNormPer100) : null;
   const due = await vehicleServiceDue({ vehicleId: v.id });
   const norm = v.fuelNormL100 ? Number(v.fuelNormL100) : null;
-  const monthFuel = fuelOk.filter((f) => f.date >= monthFrom);
-  const monthExp = v.expenses.filter((e) => !e.cancelledAt && e.date >= monthFrom);
-  const monthTrips = v.trips.filter((t) => t.createdAt >= monthFrom && t.status !== "CANCELLED");
-  const monthQty = monthTrips.reduce((a, t) => a + Number(t.qtyM3), 0);
-  const monthCost = monthFuel.reduce((a, f) => a + Number(f.amount), 0) + monthExp.reduce((a, e) => a + Number(e.amount), 0);
   const current = v.trips.find((t) => ACTIVE_TRIP.includes(t.status));
   const canEdit = canDo(s, "logistika", "vehicle");
   // Mexanik: holat (ta'mir/bekor), texnik xizmat jurnali va ta'mir xarajati. Yoqilg'i/xarajat sahifalari unga yopiq.
@@ -76,9 +82,15 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
         </Callout>
       )}
 
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        <StatCard label="Shu oy reyslar" value={monthTrips.length} hint={`${qty(monthQty)} yetkazildi/yuklandi`} icon={Route} tone="brand" href="#oxirgi-reyslar" />
-        <StatCard label="Shu oy xarajat" value={moneyShort(monthCost)} hint={monthTrips.length ? `reysga ${moneyShort(monthCost / monthTrips.length)}` : undefined} icon={Coins} href="#yoqilgi" />
+      <Tabs current={tab} items={[
+        { key: "faoliyat", label: "Faoliyat va xarajat", href: base, icon: Activity },
+        { key: "karta", label: "Karta va texnik xizmat", href: `${base}?tab=karta`, icon: Wrench },
+      ]} />
+
+      {report ? (
+        <VehicleActivity r={report} period={period} base={base} plate={v.plate} tripsClosed={tripsClosed} ordersOpen={pathAllowed("/orders", s.role, s.perms)} />
+      ) : <>
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
         {dual ? (
           <StatCard label="Yoqilg'i sarfi, 100 km ga" icon={Fuel} href="#yoqilgi"
             value={`${per100 != null ? fmtNum(per100, 1) : "—"} l · ${gasPer100 != null ? fmtNum(gasPer100, 1) : "—"} m³`}
@@ -183,6 +195,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
           </tbody>
         </Table>
       </Card>
+      </>}
     </div>
   );
 }

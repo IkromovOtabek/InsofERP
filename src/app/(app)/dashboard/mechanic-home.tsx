@@ -1,14 +1,15 @@
 import Link from "next/link";
 import {
-  AlertTriangle, ArrowRight, Bell, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Package, PackageCheck, PackageX, Send, ShoppingBasket, Truck, Warehouse,
+  AlertTriangle, ArrowRight, Bell, Blocks, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Container, Package, PackageCheck, PackageX, Send, ShoppingBasket, Truck, Warehouse, Weight,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { SUPPLY_COLOR, SUPPLY_LABEL, SUPPLY_OWNER } from "@/lib/supply";
-import { skladLogistika, type SlTone } from "@/lib/sklad-logistika";
-import { vehicleServiceDue } from "@/lib/logistics";
+import { skladLogistika, type SlLoad, type SlTone } from "@/lib/sklad-logistika";
+import { VEHICLE_TYPE, vehicleServiceDue } from "@/lib/logistics";
+import { fleetPeriod, fmtLoad } from "@/lib/vehicle-report";
 import { TRIP_STEP } from "@/lib/trips";
-import { date, fmtNum, isoDate } from "@/lib/format";
-import { unitLabel } from "@/lib/unit";
+import { date, fmtNum, isoDate, moneyShort } from "@/lib/format";
+import { unitLabel, type LoadKind } from "@/lib/unit";
 import { Badge, Card, CardHeader, Empty, LinkButton, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -23,28 +24,90 @@ const ALERT_CLS: Record<SlTone, string> = {
 };
 const q = (v: number, unit: string) => `${fmtNum(v, 2)} ${unitLabel(unit)}`;
 
+/** Kunlik zayavka kartalari — yuk turi bo'yicha; bosilsa batafsil jadval shu turdagi zayavkalar bilan ochiladi (`?birlik=`). */
+const LOAD_CARD: Record<LoadKind, { label: string; unit: string; icon: typeof Package; tone: "info" | "brand" | "default" }> = {
+  m3: { label: "Beton (kub)", unit: "m³", icon: Container, tone: "info" },
+  dona: { label: "Dona mahsulot", unit: "dona", icon: Blocks, tone: "brand" },
+  t: { label: "Tonna (yuk og'irligi)", unit: "t", icon: Weight, tone: "default" },
+};
+const LOAD_FILTER: Record<LoadKind, string> = { m3: "beton (m³)", dona: "dona mahsulot", t: "og'irligi bor (t) yuk" };
+export const isLoadKind = (v?: string): v is LoadKind => v === "m3" || v === "dona" || v === "t";
+function loadHint(l: SlLoad) {
+  if (!l.orders) return "bu kun zayavka yo'q";
+  const parts = [`${l.orders} ta zayavka`];
+  if (l.extra) parts.push(`+ ${l.extra}`);
+  if (l.left > 0.001) parts.push(`qoldi ${fmtNum(l.left, l.kind === "dona" ? 0 : 2)}`);
+  if (l.kind === "t" && l.approx) parts.push("taxminiy");
+  return parts.join(" · ");
+}
+
 /** Mexanik bosh sahifasi: sklad va logistika nazorati, o'rtasida — texnika bloki (ehtiyot qism zayavkalari, texnik xizmat). */
-export async function MechanicHome({ day, base = "/dashboard" }: { day?: string; base?: string }) {
-  return <SkladLogistika day={day} base={base} middle={<MechanicTech />} />;
+export async function MechanicHome({ day, unit, base = "/dashboard" }: { day?: string; unit?: string; base?: string }) {
+  return <SkladLogistika day={day} unit={unit} base={base} middle={<MechanicTech />} />;
 }
 
 /**
- * Texnika bloki — faqat mexanik ishi: snabjenetsga ehtiyot qism zayavkalari va texnik xizmat muddati.
- * Tahlil → Mexanik sahifasida ham shu blok (logistika nazoratisiz) ko'rsatiladi.
+ * Texnika bloki — faqat mexanik ishi: transportlar (davr faoliyati), snabjenetsga ehtiyot qism zayavkalari va texnik xizmat muddati.
+ * Tahlil → Mexanik sahifasida ham shu blok (logistika nazoratisiz, tanlangan davr bilan) ko'rsatiladi.
+ * `period` berilmasa — shu oy boshidan bugungacha.
  */
-export async function MechanicTech() {
+export async function MechanicTech({ period }: { period?: { from: Date; to: Date; label: string; qs: string } } = {}) {
+  const now = new Date();
+  const p = period ?? { from: new Date(now.getFullYear(), now.getMonth(), 1), to: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), label: "Shu oy", qs: "" };
+  const cardHref = (id: string) => `/logistika/transport/${id}${p.qs ? `?${p.qs}` : ""}`;
   // Texnik xizmat muddati — logistika moduli hisoblaydi (`vehicleServiceDue`), bu yerda faqat ko'rsatiladi
   // Snabjenetsga zayavkalar (texnika ehtiyoji): bo'limi «Texnika» yoki mexanik yuborgani — hali yopilmaganlari
-  const [service, supply] = await Promise.all([
+  const [service, supply, vehicles, stats] = await Promise.all([
     vehicleServiceDue(),
     db.supplyRequest.findMany({
       where: { status: { in: ["NEW", "PRICED", "APPROVED", "FUNDED"] }, OR: [{ department: "Texnika" }, { createdBy: { role: "MECHANIC" } }] },
       orderBy: { date: "desc" }, take: 10,
       select: { id: true, docNo: true, date: true, status: true, needBy: true, items: { select: { name: true }, orderBy: { sortOrder: "asc" } }, createdBy: { select: { fullName: true } } },
     }),
+    db.vehicle.findMany({ where: { isActive: true }, orderBy: [{ type: "asc" }, { plate: "asc" }], select: { id: true, plate: true, type: true, brand: true, model: true, status: true, statusNote: true } }),
+    fleetPeriod(p.from, p.to),
   ]);
+  const fleet = vehicles.map((v) => ({ v, x: stats.get(v.id) })).sort((a, b) => (b.x?.trips ?? 0) - (a.x?.trips ?? 0) || a.v.plate.localeCompare(b.v.plate));
+  const sum = (f: (x: NonNullable<(typeof fleet)[number]["x"]>) => number) => fleet.reduce((s, r) => s + (r.x ? f(r.x) : 0), 0);
   return (
     <>
+      {/* ── Transportlar: raqam bosilsa — transport kartasi (xarajatlar, qayerga qatnagani, daromad, foyda) shu davr bilan ── */}
+      <Section id="transportlar" title={`Transportlar — ${p.label}`} action={more(`/logistika/transport${p.qs ? `?${p.qs}` : ""}`, "Transport ro'yxati")}>
+        <Table maxHeight="60vh">
+          <thead><tr><Th>Transport</Th><Th>Holat</Th><Th right>Reys / zayavka</Th><Th>Tashilgan yuk</Th><Th right>Probeg</Th><Th right>Xarajat</Th><Th right>Daromad</Th><Th right>Foyda</Th></tr></thead>
+          <tbody>
+            {fleet.length === 0 && <Empty text="Faol transport yo'q" icon={Truck} />}
+            {fleet.map(({ v, x }) => (
+              <Tr key={v.id}>
+                <Td>
+                  <Link href={cardHref(v.id)} className="font-semibold tabular hover:underline">{v.plate}</Link>
+                  <div className="text-xs text-slate-500">{VEHICLE_TYPE[v.type]}{v.brand ? ` · ${v.brand}${v.model ? ` ${v.model}` : ""}` : ""}</div>
+                </Td>
+                <Td>{v.status === "REPAIR" ? <Badge color="red">Ta&apos;mirda</Badge> : v.status === "IDLE" ? <Badge color="amber">Bekor turibdi</Badge> : <Badge color="green">Saflda</Badge>}
+                  {v.status !== "ACTIVE" && v.statusNote && <div className="mt-0.5 max-w-40 truncate text-xs text-slate-500">{v.statusNote}</div>}</Td>
+                <Td right className="tabular">{x?.trips ? <>{x.trips}<div className="text-xs text-slate-500">{x.orders} zayavka · {x.days} kun</div></> : "—"}</Td>
+                <Td className="whitespace-nowrap text-sm tabular">{x?.trips ? fmtLoad(x.load) : "—"}</Td>
+                <Td right className="tabular">{x?.km ? `${fmtNum(x.km)} km` : "—"}</Td>
+                <Td right className="tabular">{x?.total ? moneyShort(x.total) : "—"}</Td>
+                <Td right className="tabular">{x?.revenue ? moneyShort(x.revenue) : "—"}</Td>
+                <Td right className={cn("tabular font-medium", x && x.profit < 0 ? "text-red-600" : x?.profit ? "text-emerald-700" : "")}>{x && (x.total || x.revenue) ? moneyShort(x.profit) : "—"}</Td>
+              </Tr>
+            ))}
+            {fleet.length > 1 && (
+              <tr className="bg-slate-50 font-semibold text-slate-900">
+                <Td>Jami</Td><Td />
+                <Td right className="tabular">{fmtNum(sum((x) => x.trips))}</Td><Td />
+                <Td right className="tabular">{fmtNum(sum((x) => x.km))} km</Td>
+                <Td right className="tabular">{moneyShort(sum((x) => x.total))}</Td>
+                <Td right className="tabular">{moneyShort(sum((x) => x.revenue))}</Td>
+                <Td right className={cn("tabular", sum((x) => x.profit) < 0 && "text-red-600")}>{moneyShort(sum((x) => x.profit))}</Td>
+              </tr>
+            )}
+          </tbody>
+        </Table>
+        <p className="mt-2 text-xs text-slate-500">Transport raqamini bosing — qanday xarajat yozilgani, qayerga necha reys qilgani, necha m³ / dona / tonna tashigani, daromad va foyda batafsil.</p>
+      </Section>
+
       {/* ── Snabjenetsga zayavka: ehtiyot qism, moy, shina — sklad kabi «Kerakli mahsulotlar» jadvali ── */}
       <Section title="Snabjenetsga zayavkalar"
         action={<div className="flex items-center gap-3">{more("/taminot", "Hammasi")}<LinkButton href="/stock/supply/new" size="sm"><ShoppingBasket size={15} /> Zayavka yuborish</LinkButton></div>}>
@@ -92,12 +155,16 @@ export async function MechanicTech() {
  * bugungi nazorat → ertangi kun → mahsulot bo'yicha → avtomatik ogohlantirish → ish jarayoni.
  * Hamma raqam `skladLogistika()` dan — UI o'zi hisoblamaydi. `middle` — 4-bo'limdan keyin qo'shiladigan blok.
  */
-export async function SkladLogistika({ day, base = "/dashboard", middle }: { day?: string; base?: string; middle?: React.ReactNode }) {
+export async function SkladLogistika({ day, unit, base = "/dashboard", middle }: { day?: string; unit?: string; base?: string; middle?: React.ReactNode }) {
   const d = await skladLogistika(day);
+  const kind = isLoadKind(unit) ? unit : null;
   const alerts = d.alerts;
   const t = d.today, n = d.tomorrow;
   const prev = new Date(d.day); prev.setDate(prev.getDate() - 1);
   const link = (x: Date) => `${base}${base.includes("?") ? "&" : "?"}date=${isoDate(x)}`;
+  // Kartadan filtr: kun saqlanadi, `birlik` almashadi (yana bosilsa — filtr olinadi)
+  const unitLink = (k: LoadKind | null) => `${base}${base.includes("?") ? "&" : "?"}${new URLSearchParams({ ...(d.isToday ? {} : { date: isoDate(d.day) }), ...(k ? { birlik: k } : {}) })}#kunlik-zayavka`;
+  const shown = kind ? d.orders.filter((o) => (kind === "t" ? o.tons != null : o.kinds.includes(kind))) : d.orders;
   const dayName = d.isToday ? "Bugungi" : `${date(d.day)} —`;
   const nextName = d.isToday ? "Ertangi" : `${date(d.next)} —`;
   const flowMax = Math.max(1, d.flow[0]?.count ?? 0);
@@ -114,13 +181,17 @@ export async function SkladLogistika({ day, base = "/dashboard", middle }: { day
 
       {/* ── 1. Bugungi nazorat ── */}
       <Section title={`1. ${dayName} nazorat`} className="mt-0" action={more("/trips", "Reyslar")}>
-        <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          {/* Kunlik zayavka — son emas, hajm (m³ · dona); bosilsa pastdagi batafsil jadvalga o'tadi */}
-          <StatCard label="Kunlik zayavka" value={t.volume} hint={`${t.orders} ta zayavka · batafsil ko'rish`} icon={ClipboardList} tone="info" href="#kunlik-zayavka" />
-          <StatCard label="Zayavkalar soni" value={`${t.orders} ta`} hint={t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : "bekor qilinganlarsiz"} icon={Package} tone="brand" href="#kunlik-zayavka" />
+        <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {/* Kunlik zayavka — yuk turi bo'yicha (m³ · dona · tonna); bosilsa pastdagi batafsil jadval shu turdagi zayavkalar bilan */}
+          {t.loads.map((l) => {
+            const c = LOAD_CARD[l.kind];
+            return <StatCard key={l.kind} label={`Kunlik zayavka — ${c.label}`} value={`${fmtNum(l.qty, l.kind === "dona" ? 0 : 2)} ${c.unit}`} hint={loadHint(l)} icon={c.icon} tone={l.orders ? c.tone : "default"} href={unitLink(kind === l.kind ? null : l.kind)} />;
+          })}
+          <StatCard label="Zayavkalar soni" value={`${t.orders} ta`} hint={t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : "bekor qilinganlarsiz"} icon={Package} tone="brand" href={unitLink(null)} />
           <StatCard label="Jo'natilgan" value={`${t.shipped} ta`} hint={t.shippedVolume} icon={Send} tone={t.shipped ? "success" : "default"} href="/trips" />
           <StatCard label="Qolgan zayavka" value={`${t.left} ta`} hint={t.leftVolume} icon={CalendarClock} tone={t.left ? "warning" : "success"} href="#kunlik-zayavka" />
           <StatCard label="Muammoli / kechikkan" value={`${t.problem} ta`} hint={t.overdue ? `${t.overdue} tasi oldingi kunlardan` : "kechikish, blok, reys muammosi"} icon={AlertTriangle} tone={t.problem ? "danger" : "success"} href="#kunlik-zayavka" />
+          <StatCard label="Jami hajm" value={t.volume} hint="bugungi zayavkalar, birlik bo'yicha" icon={ClipboardList} tone="default" href={unitLink(null)} />
         </div>
       </Section>
 
@@ -221,11 +292,23 @@ export async function SkladLogistika({ day, base = "/dashboard", middle }: { day
       </Section>
 
       <Section id="kunlik-zayavka" title={`Kunlik va kechikkan zayavkalar — batafsil (bugun: ${t.volume})`} action={more("/trips", "Reyslar")}>
+        <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[13px]">
+          {([null, "m3", "dona", "t"] as const).map((k) => {
+            const n = k ? d.orders.filter((o) => (k === "t" ? o.tons != null : o.kinds.includes(k))).length : d.orders.length;
+            return (
+              <Link key={k ?? "all"} href={unitLink(k)} scroll={false}
+                className={cn("rounded-full border px-3 py-1 font-medium transition", kind === k ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
+                {k ? LOAD_CARD[k].label : "Hammasi"} <span className="tabular opacity-70">{n}</span>
+              </Link>
+            );
+          })}
+          {kind && <span className="ml-1 text-slate-500">Faqat {LOAD_FILTER[kind]} bor zayavkalar: {shown.length} ta</span>}
+        </div>
         <Table>
           <thead><tr><Th>Mijoz</Th><Th>Vaqt</Th><Th>Mahsulot — necha m³ / dona</Th><Th>Qayerga</Th><Th>Kimdan (kiritgan)</Th><Th>Reyslar</Th><Th right>Jo&apos;natildi</Th><Th>Holat</Th></tr></thead>
           <tbody>
-            {d.orders.length === 0 && <Empty text="Zayavka yo'q" icon={ClipboardList} />}
-            {d.orders.map((o) => (
+            {shown.length === 0 && <Empty text={kind ? `Bu kunda ${LOAD_FILTER[kind]} zayavkasi yo'q` : "Zayavka yo'q"} icon={ClipboardList} />}
+            {shown.map((o) => (
               <Tr key={o.id} className="align-top">
                 <Td className="min-w-44">
                   <div className="font-semibold text-slate-900">{o.customer}</div>
@@ -242,6 +325,7 @@ export async function SkladLogistika({ day, base = "/dashboard", middle }: { day
                     ))}
                   </ul>
                   {o.items.length > 1 && <div className="mt-1 border-t border-slate-100 pt-1 text-right text-xs font-semibold text-slate-600">Jami: {o.volume}</div>}
+                  {o.tons != null && <div className="mt-0.5 text-right text-xs text-slate-500">≈ {fmtNum(o.tons, 2)} t</div>}
                   {o.pump && <div className="mt-1"><Badge color="violet">Nasos kerak</Badge></div>}
                 </Td>
                 <Td className="min-w-48 text-[13px]">{o.address || "—"}{o.note && <div className="mt-0.5 text-xs text-slate-500">{o.note}</div>}</Td>

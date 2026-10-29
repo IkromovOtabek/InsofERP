@@ -219,6 +219,19 @@ export function refWeight(code: string, name: string): { kg: number; perLift: nu
 }
 
 /**
+ * Qator og'irligi, tonna: «t» birlikdagi mahsulot — o'zi; dona / m² — kartadagi og'irlik, bo'lmasa GOST jadvali (taxminiy).
+ * Beton (m³) va og'irligi noma'lum mahsulot — `null`.
+ */
+export function itemTons(p: { code: string; name: string; unit: string; weightKg?: unknown }, qty: number): { t: number; approx: boolean } | null {
+  if (p.unit === "m3") return null;
+  if (p.unit === "t") return { t: qty, approx: false };
+  const own = p.weightKg != null ? Number(p.weightKg) : 0;
+  if (own > 0) return { t: (qty * own) / 1000, approx: false };
+  const ref = refWeight(p.code, p.name);
+  return ref ? { t: (qty * ref.kg) / 1000, approx: true } : null;
+}
+
+/**
  * `weightKg` / `perTrip` — mahsulot kartasidagi qiymatlar (Sozlamalar → Mahsulotlar). Og'irlik bo'sh bo'lsa — GOST jadvali.
  * `perTrip` — bir reysga eng ko'pi necha dona: aralash yukda har mahsulot reysning `1/perTrip` ulushini egallaydi.
  */

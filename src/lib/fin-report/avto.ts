@@ -36,19 +36,20 @@ export type AvtoReport = { from: Date; to: Date; rows: AvtoRow[]; total: AvtoRow
 
 const REPAIR_KINDS = new Set(["REPAIR", "PARTS"]);
 
-/** Ixtiyoriy kunlar oralig'i: `from` (kun boshi) dan `to` gacha (kirmaydi). */
-export async function avtoReport(from: Date, to: Date): Promise<AvtoReport> {
+/** Ixtiyoriy kunlar oralig'i: `from` (kun boshi) dan `to` gacha (kirmaydi). `vehicleId` — faqat bitta mashina (transport kartasi). */
+export async function avtoReport(from: Date, to: Date, opts: { vehicleId?: string } = {}): Promise<AvtoReport> {
   const inMonth = { gte: from, lt: to };
+  const vid = opts.vehicleId;
 
   const [vehicles, trips, fuel, expenses, mech, cashTx, receipts] = await Promise.all([
-    db.vehicle.findMany({ select: { id: true, plate: true, type: true, brand: true, model: true, isActive: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } }),
+    db.vehicle.findMany({ where: vid ? { id: vid } : {}, select: { id: true, plate: true, type: true, brand: true, model: true, isActive: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } }),
     db.trip.findMany({
-      where: { status: { not: "CANCELLED" }, OR: [{ deliveredAt: inMonth }, { deliveredAt: null, createdAt: inMonth }] },
+      where: { status: { not: "CANCELLED" }, ...(vid ? { vehicleId: vid } : {}), OR: [{ deliveredAt: inMonth }, { deliveredAt: null, createdAt: inMonth }] },
       select: { id: true, vehicleId: true, orderId: true, qtyM3: true, workHours: true, payAmount: true, deliveredAt: true, createdAt: true, distanceKm: true, summaryAt: true, order: { select: { distanceKm: true, deliveryFee: true } } },
     }),
-    db.fuelLog.findMany({ where: { cancelledAt: null, date: inMonth }, select: { vehicleId: true, date: true, fuelType: true, liters: true, amount: true } }),
-    db.transportExpense.findMany({ where: { cancelledAt: null, date: inMonth, vehicleId: { not: null } }, select: { vehicleId: true, date: true, kind: true, amount: true } }),
-    db.mechanicRequest.findMany({ where: { status: "PAID", paidAt: inMonth, vehicleId: { not: null } }, select: { vehicleId: true, paidAt: true, amount: true } }),
+    db.fuelLog.findMany({ where: { cancelledAt: null, date: inMonth, ...(vid ? { vehicleId: vid } : {}) }, select: { vehicleId: true, date: true, fuelType: true, liters: true, amount: true } }),
+    db.transportExpense.findMany({ where: { cancelledAt: null, date: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, date: true, kind: true, amount: true } }),
+    db.mechanicRequest.findMany({ where: { status: "PAID", paidAt: inMonth, vehicleId: vid ?? { not: null } }, select: { vehicleId: true, paidAt: true, amount: true } }),
     db.cashTransaction.findMany({ where: { cancelledAt: null, type: "EXPENSE", date: inMonth }, select: { date: true, amount: true, note: true, counterparty: true, subCategory: true } }),
     db.goodsReceipt.findMany({ where: { cancelledAt: null, date: inMonth, carrier: { not: null } }, select: { carrier: true } }),
   ]);

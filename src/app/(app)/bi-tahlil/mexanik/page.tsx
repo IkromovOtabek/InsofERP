@@ -126,7 +126,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </Table>
         </div>
       </Section>
-      <MechanicTech />
+      <MechanicTech period={{ from: period.from, to: period.to, label: period.label, qs: new URLSearchParams(Object.entries({ davr: sp.davr, dan: sp.dan, gacha: sp.gacha }).filter((kv): kv is [string, string] => !!kv[1])).toString() }} />
     </BiPage>
   );
 }

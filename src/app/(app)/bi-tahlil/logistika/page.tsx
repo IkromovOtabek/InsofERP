@@ -113,7 +113,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       )}
 
       <div className="mt-10">
-        <SkladLogistika day={sp.date} base={withPeriod("/bi-tahlil/logistika")} />
+        <SkladLogistika day={sp.date} unit={sp.birlik} base={withPeriod("/bi-tahlil/logistika")} />
       </div>
     </BiPage>
   );

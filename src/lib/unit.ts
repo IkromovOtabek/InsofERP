@@ -11,6 +11,13 @@ export const isStocked = (u: string) => u !== "m3";
 const UNIT_SHORT: Record<string, string> = { m3: "m³", m2: "m²", t: "tn" }; // «t» — Рус lug'ati 1 harfli matnni o'girmaydi
 export const unitShort = (u: string) => UNIT_SHORT[u] ?? u;
 
+/**
+ * Yuk turi — Mexanik bosh sahifasi va transport faoliyati kartalari: beton (m³), dona mahsulot, tonna.
+ * m², m (pogon) kabi boshqa sanaladigan birliklar dona guruhiga kiradi; tonna — `itemTons` (trip-plan.ts) bilan.
+ */
+export type LoadKind = "m3" | "dona" | "t";
+export const loadKind = (u: string): LoadKind => (u === "m3" ? "m3" : u === "t" ? "t" : "dona");
+
 /** Mahsulot birliklari (Sozlamalar → Beton markalari, zayavkadagi mahsulot tanlagichi). */
 export const PRODUCT_UNITS: [string, string][] = [
   ["m3", "m³ — tayyor beton"],

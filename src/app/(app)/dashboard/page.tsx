@@ -41,7 +41,7 @@ function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d
 function endOfToday() { const d = startOfToday(); d.setDate(d.getDate() + 1); return d; }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Xayrli tong" : h < 18 ? "Xayrli kun" : "Xayrli kech"; };
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string; date?: string } & ProcFilters> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string; view?: string; date?: string; birlik?: string } & ProcFilters> }) {
   const sp = await searchParams;
   const { denied, view, date: dayParam } = sp;
   const s = await getSession();
@@ -99,7 +99,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (productionView && s) return <div>{header}<ProductionHome s={s} /></div>;
   if (procurementView) return <div>{header}<ProcurementHome filters={sp} base={isDirector ? "/dashboard?view=procurement" : "/dashboard"} /></div>;
   if (logisticsView) return <div>{header}<LogisticsHome day={dayParam ? parseDay(dayParam) : undefined} /></div>;
-  if (mechanicView) return <div>{header}<MechanicHome day={dayParam} base={isDirector ? "/dashboard?view=mechanic" : "/dashboard"} /></div>;
+  if (mechanicView) return <div>{header}<MechanicHome day={dayParam} unit={sp.birlik} base={isDirector ? "/dashboard?view=mechanic" : "/dashboard"} /></div>;
   if (hrView) return <div>{header}<HrHome /></div>;
   if (dispatcherView) return <div>{header}<DispatcherHome /></div>;
   if (ownerView) return <div>{header}<OwnerHome /></div>;
