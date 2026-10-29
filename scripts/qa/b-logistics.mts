@@ -146,7 +146,8 @@ r = await mex.action(`${LA}#addVehicleService`, [mixer, undefined, fd({ kind: sv
 const svc = q1(`select id from "VehicleService" where kind='${svcKind}'`);
 check(r.ok && !!svc && (await mex.get(`/logistika/transport/${mixer}`)).text.includes(`${svcKind}: `), "mexanik xizmat yozdi — muddat ogohlantirishi chiqdi", r.error);
 r = await mex.action(`${LA}#cancelVehicleService`, [svc!, "QA: xato yozuv"], `/logistika/transport/${mixer}`);
-const vt0 = (await mex.get(`/logistika/transport/${mixer}`)).text;
+// Xizmat jurnali — transport kartasining «Karta va texnik xizmat» tabida (sukut tab — «Faoliyat va xarajat»)
+const vt0 = (await mex.get(`/logistika/transport/${mixer}?tab=karta`)).text;
 check(r.ok && n1(`select count(*) from "VehicleService" where id='${svc}' and "cancelledAt" is not null`) === 1 && !vt0.includes(`${svcKind}: `) && vt0.includes(svcKind), "xizmat yozuvi bekor qilindi — jurnalda qoldi, muddat ogohlantirishi yo'qoldi", r.error);
 
 // Nakladnoy: chop etish va QR /verify
