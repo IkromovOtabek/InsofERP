@@ -9,6 +9,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { InputMemory } from "@/components/input-memory";
 import { tourFor, TOUR_COOKIE } from "@/lib/tour";
 import { isControlMode } from "@/lib/tenant";
+import { AvtoPartsBanner } from "@/components/avto-parts-banner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Markaziy panel jarayonida korxona sahifalari yo'q (middleware ham yo'naltiradi — ikkinchi himoya)
@@ -31,6 +32,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           IT superadmin rejimi — direktor huquqi bilan ishlayapsiz. Har amal korxonaning audit jurnaliga yoziladi.
         </div>
       )}
+      {/* Mexanik: yangi qo'shilgan / skladga kelgan avto zapchastlar — «Ko'rish» bilan to'liq ro'yxat */}
+      {s.role === "MECHANIC" && !s.superadmin && <AvtoPartsBanner userId={s.userId} />}
       {children}
     </AppShell>
   );

@@ -9,6 +9,7 @@ import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 import { getCompany } from "./company";
 import { cashOutflowError } from "./payments";
 import { companyVatPayer, supplierVatRate, vatLine } from "./receipt-vat";
+import { queueAvtoReceipt } from "./avto-parts";
 
 /**
  * Ta'minot zayavkasi — bitta hujjat besh bo'limdan o'tadi:
@@ -548,6 +549,7 @@ export async function receiveSupplyRequest(
   }).catch((e: Error) => ({ error: e.message }));
 
   if ("error" in out) return { error: out.error };
+  queueAvtoReceipt(out.receiptId, userId);
   // So'rovni ochgan xodim (sex, sklad) mol kelganini bilsin — u shu xomashyoni kutyapti
   notifyAfter(() => notifyUsers([req.createdById].filter((u) => u !== userId), {
     type: "SUPPLY_RECEIVED", title: `Mol keldi — ${req.docNo}`, body: `Kirim ${out.docNo} skladga yozildi`, link: { key: "supply", id }, channel: "oddiy",

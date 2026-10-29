@@ -63,6 +63,7 @@ import { brigadeStockLink, materialExtraActions, ostatkiExtraActions, parseSklad
 import { defectCard, withBatchActions, withBrigadeActions, withDefectActions, withOrderActions, withRecipeActions } from "./sex-extra";
 import { SOTUV_ACTION_ROLES, SOTUV_DETAIL_ROLES, SOTUV_PERM_EXACT } from "./sotuv-access";
 import { REASON_FORM, boostExtras, customerExtras, leadExtras, orderExtras, smmExtras, sotuvDetail } from "./sotuv-extra";
+import { avtoDetail } from "./avto-zapchast";
 
 /**
  * Bitta hujjat kartochkasi — ro'yxatdagi qator bosilganda ochiladi.
@@ -585,6 +586,7 @@ const DETAIL_ROLES: Partial<Record<string, Role[]>> = {
   boost: ["SALES"],
   // Mexanik so'rovi — mexanikka faqat o'zinikini (`kirimDetail`)
   kirim: ["MECHANIC", "SUPERVISOR", "CASHIER"],
+  "avto-zapchast": ["MECHANIC", "WAREHOUSE", "PROCUREMENT"],
   // Pul qabul qilish so'rovi — ro'yxati bilan bir xil (`list.ts` ACCESS); usul bo'yicha cheklov `payreqDetail` da
   payreq: ["CASHIER", "ACCOUNTING", "FINANCE"],
   // Arenda (do'konlar ijarasi) — sekretar (`./arenda.ts`)
@@ -644,6 +646,7 @@ export async function mobileDetail(user: MobileUser, key: string, id: string): P
     case "invoices": return invoiceDetail(user, id);
     case "payments": return paymentDetail(user, id);
     case "receipts": return receiptDetail(user, baseId(id));
+    case "avto-zapchast": return avtoDetail(user, id);
     case "tasks": return taskDetail(user, id);
     case "production": return withBatchActions(user, await batchDetail(id));
     case "stock": return materialDetail(user, baseId(id));

@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import { FileSpreadsheet, FolderPlus, Grid3x3, Plus } from "lucide-react";
 import { createCatalogProduct, createProductGroup } from "@/lib/catalog-actions";
 import { createCatalogMaterial, createMaterialGroup } from "@/lib/material-actions";
+import { MATERIAL_CATEGORY_OPTIONS } from "@/lib/material-category";
 import type { PickerCtx } from "@/components/folder-picker";
 import type { CatalogProduct } from "@/components/product-picker";
 import { ProductExcelImport } from "@/components/product-excel-import";
@@ -189,7 +190,10 @@ export function NewMaterialForm({ ctx, onDone, onCancel }: { ctx: PickerCtx; onD
           <Select name="unit" defaultValue="kg">{MATERIAL_UNITS.map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}</Select>
         </Field>
         <Field label="Minimal qoldiq" hint="kam qolsa signal"><Input name="minStock" type="number" step="0.001" min="0" placeholder="0" /></Field>
-        <Field label="Papka" className="sm:col-span-2"><Input value={ctx.groupName ?? "Ro'yxat ildizi"} readOnly /></Field>
+        <Field label="Kategoriya">
+          <Select name="category" defaultValue="XOMASHYO">{MATERIAL_CATEGORY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+        </Field>
+        <Field label="Papka"><Input value={ctx.groupName ?? "Ro'yxat ildizi"} readOnly /></Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={pending}><Plus size={15} /> Saqlash</Button>

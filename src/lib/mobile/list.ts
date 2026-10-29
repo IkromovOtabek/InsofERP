@@ -37,6 +37,7 @@ import { tasksList } from "./sex-extra";
 import { cashflowList, kirimQqsList, openingsList, paymentsList, realizatsiyaList, unpaidReceiptsList } from "./moliya-extra";
 import { SOTUV_ACCESS, SOTUV_DETAIL_KEY, SOTUV_KEY_MODULE } from "./sotuv-access";
 import { sotuvList } from "./sotuv-extra";
+import { avtoList } from "./avto-zapchast";
 
 /**
  * Mobil ilovaning "ish" tabi — rolning asosiy ro'yxati.
@@ -84,6 +85,8 @@ const ACCESS: Record<string, { title: string; roles: Role[]; menuHide?: Role[] }
   drivers: { title: "Haydovchilar", roles: ["LOGISTICS", "HR", "DISPATCHER"] },
   // ── Sklad ──
   stock: { title: "Sklad", roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"] },
+  // Yangi kelgan avto zapchastlar (`./avto-zapchast.ts`) — mexanik bannerdan ochadi; sklad va snabjeniye ham ko'radi
+  "avto-zapchast": { title: "Avto zapchastlar", roles: ["MECHANIC", "WAREHOUSE", "PROCUREMENT"] },
   // Snabjeniye oynasi: narx kutayotgan va qabul kutayotgan so'rovlar (vebdagi `/snabjeniye`).
   // Sklad ham snabjeniye amallarini bajaradi (narx, yetkazish, qabul — `supply.*` ruxsatlari), vebda ham /snabjeniye ochiq;
   // 2026-10-13 da olib tashlangan edi, 2026-10-16 foydalanuvchi qaytarishni so'radi
@@ -166,7 +169,7 @@ const KEY_MODULE: Record<string, string> = {
   tasks: "tasks", brigades: "tasks",
   trips: "trips", drivers: "trips",
   stock: "stock", snabjeniye: "stock", receipts: "stock", suppliers: "stock",
-  prixod: "stock", rasxod: "stock", ostatki: "stock",
+  prixod: "stock", rasxod: "stock", ostatki: "stock", "avto-zapchast": "stock",
   supply: "taminot", employees: "employees", kirim: "mexanik", payreq: "payments",
   "arenda-jurnal": "arenda", "arenda-shops": "arenda", "arenda-tx": "arenda", "arenda-shop": "arenda", "arenda-debtors": "arenda", "arenda-svet": "arenda",
   "unpaid-receipts": "cashflow", "kirim-qqs": "kirim-qqs", openings: "opening", realizatsiya: "payments",
@@ -253,6 +256,7 @@ export async function mobileList(user: MobileUser, key: string, q?: string, filt
   // Filtr chipli ro'yxatlar — bosqich bo'yicha
   if (key === "supply") return supplyRequests(meta.title, s, filter ?? SUPPLY_DEFAULT[user.role] ?? "open");
   if (key === "kirim") return kirimList(user, s, filter);
+  if (key === "avto-zapchast") return avtoList(user, meta.title, s);
   if (key === "arenda-jurnal") return arendaJurnalList(s, filter);
   if (key === "arenda-shops") return arendaShopsList(s, filter);
   if (key === "arenda-debtors") return arendaDebtorsList(s, filter);

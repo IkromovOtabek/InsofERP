@@ -16,6 +16,8 @@ import type { Role } from "@/generated/prisma";
 import { txSign } from "@/lib/cash-tx";
 import { fmtNum } from "@/lib/format";
 import { verifyChannel } from "@/lib/telegram/channel";
+import { MATERIAL_CATEGORIES } from "@/lib/material-category";
+import { notifyNewAvtoParts } from "@/lib/avto-parts";
 
 const ROLES = ["DIRECTOR", "AGENT", "SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "WAREHOUSE", "PROCUREMENT", "ACCOUNTING", "FINANCE", "HR", "CASHIER", "MECHANIC", "DISPATCHER", "SECRETARY"] as const;
 const zBool = z.string().optional().transform((v) => v === "on");
@@ -91,6 +93,7 @@ export async function saveProduct(id: string | null, _prev: ActionState, fd: For
 const materialSchema = z.object({
   code: zStr("Kod kerak").transform((v) => v.toUpperCase()),
   name: zStr("Nomi kerak"), unit: zStr("Birlik kerak"), minStock: zDec(0), isActive: zBool,
+  category: z.enum(MATERIAL_CATEGORIES).default("XOMASHYO"),
 });
 
 export async function saveMaterial(id: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -111,9 +114,11 @@ export async function saveMaterial(id: string | null, _prev: ActionState, fd: Fo
       }
       const after = await db.material.update({ where: { id }, data: r.data });
       await audit(db, s.userId, "UPDATE", "Material", id, before, after);
+      if (after.category === "AVTO_ZAPCHAST" && before.category !== "AVTO_ZAPCHAST") notifyNewAvtoParts([id], s.userId);
     } else {
       const m = await db.material.create({ data: { ...r.data, isActive: true } });
       await audit(db, s.userId, "CREATE", "Material", m.id, undefined, m);
+      notifyNewAvtoParts([m.id], s.userId);
     }
   } catch (e) { return uniq(e, "Bu kod bilan xomashyo bor") ?? (() => { throw e; })(); }
   refresh(); revalidatePath("/stock"); revalidatePath("/receipts/new");

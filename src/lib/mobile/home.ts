@@ -1,6 +1,7 @@
 import { selfAttendance, type SelfAttendance } from "@/lib/self-attendance";
 import { faceKioskAccess } from "./face-kiosk";
 import { attendanceAccess, type AttendanceAccess } from "./staff-attendance";
+import { avtoNotice, type HomeNotice } from "./avto-zapchast";
 import { db } from "@/lib/db";
 import { txSign } from "@/lib/cash-tx";
 import { receivablesReport } from "@/lib/receivables";
@@ -157,6 +158,11 @@ export type MobileHome = {
    * faqat otdel kadr va direktorga; ruxsat bo'lsa Skaner / Yuzlar. `faceAttendance` eski ilova uchun o'zgarishsiz qoladi (u Davomat ekranida skanerni ochadi).
    */
   attendance?: AttendanceAccess;
+  /**
+   * Bosh ekran tepasidagi banner (mexanik: yangi avto zapchastlar) — «Ko'rish» `/erp/list/<open.key>` ni ochadi.
+   * Eski ilova bilmaydi — u shu xabarni «Avtomatik ogohlantirish» qatoridan ko'radi.
+   */
+  notice?: HomeNotice;
 };
 
 /** Logistika xaritasidagi bitta reys — GPS bo'lmasa `gps` null, lekin qator ro'yxatda turadi. */
@@ -251,7 +257,7 @@ const LIST_ICON: Record<string, string> = {
   production: "cube", recipes: "droplets", tasks: "checkbox", brigades: "hard-hat", "brig-issues": "triangle-alert", "brig-shifts": "clipboard-check",
   trips: "bus", drivers: "id-card",
   stock: "layers", snabjeniye: "shopping-cart", supply: "clipboard-list", receipts: "download", suppliers: "store",
-  prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse",
+  prixod: "circle-arrow-down", rasxod: "circle-arrow-up", ostatki: "warehouse", "avto-zapchast": "car",
   cashflow: "swap-vertical", payments: "cash", employees: "people",
   approvals: "circle-check", activity: "activity", kirim: "wrench", payreq: "hand-coins",
   "arenda-jurnal": "swap-vertical", "arenda-shops": "store",
@@ -909,8 +915,16 @@ export async function mobileHome(user: MobileUser, opts: HomeOpts = {}): Promise
       else sections.unshift(...dash.charts);
     }
   }
+  // Mexanik: yangi qo'shilgan / skladga kelgan avto zapchastlar — yangi ilova tepada `notice`, eskisi «E'tibor talab qiladi» qatori
+  const notice = user.role === "MECHANIC" ? await avtoNotice(user.id).catch((e) => { console.error("[mobile-home] avto", e); return null; }) : null;
+  if (notice) {
+    const row: HomeRow = { id: "avto:new", title: notice.title, subtitle: notice.lines.join(" · "), tone: "info", status: "Yangi", open: notice.open.key };
+    const alerts = sections.find((x) => /^Avtomatik ogohlantirish/.test(x.title));
+    if (alerts) alerts.rows.unshift(row);
+    else sections.unshift({ title: "Avtomatik ogohlantirish", empty: "", icon: "bell", rows: [row] });
+  }
   const [selfAtt, manage, settings] = await Promise.all([selfAttendance(user).catch(() => null), attendanceManage(user).catch(() => null), logisticsSettings().catch(() => null)]);
-  return { ...base, cards, sections, live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user), attendance: attendanceAccess(user, !!selfAtt) };
+  return { ...base, cards, sections, ...(notice ? { notice } : {}), live: live ?? await liveTrucks(user), ...(settings ? { staleMin: settings.gpsSilentMin } : {}), ...(fleet ? { fleet } : {}), selfAttendance: selfAtt, attendanceManage: manage, faceAttendance: faceKioskAccess(user), attendance: attendanceAccess(user, !!selfAtt) };
 }
 
 /**

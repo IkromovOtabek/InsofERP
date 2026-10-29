@@ -1,4 +1,4 @@
-import type { Prisma } from "@/generated/prisma";
+import type { MaterialCategory, Prisma } from "@/generated/prisma";
 import { db } from "./db";
 import { avgUnitCosts } from "./stock";
 
@@ -22,6 +22,7 @@ import { avgUnitCosts } from "./stock";
  */
 export type TurnoverRow = {
   id: string; name: string; code: string; unit: string; isActive: boolean;
+  category: MaterialCategory;
   minStock: number;
   /** «Дона сўм» (Snabjeniye belgilagan), yo'q bo'lsa null */
   unitPrice: number | null;
@@ -38,7 +39,7 @@ export type TurnoverRow = {
 
 type Num = Prisma.Decimal | number | string | null;
 type Raw = {
-  id: string; name: string; code: string; unit: string; isActive: boolean; minStock: Num; unitPrice: Num;
+  id: string; name: string; code: string; unit: string; isActive: boolean; category: MaterialCategory; minStock: Num; unitPrice: Num;
   oq: Num; osk: Num; osn: Num; iq: Num; isk: Num; isn: Num; xq: Num; xsk: Num; xsn: Num; pn: bigint | number | null;
 };
 
@@ -53,7 +54,7 @@ export async function materialTurnover(p: { from: Date; to: Date; warehouseId?: 
   const wh = p.warehouseId || null;
   const [rows, avg] = await Promise.all([
     db.$queryRaw<Raw[]>`
-      SELECT m."id", m."name", m."code", m."unit", m."isActive", m."minStock", m."unitPrice",
+      SELECT m."id", m."name", m."code", m."unit", m."isActive", m."category"::text AS "category", m."minStock", m."unitPrice",
         a."oq", a."osk", a."osn", a."iq", a."isk", a."isn", a."xq", a."xsk", a."xsn", a."pn"
       FROM "Material" m
       LEFT JOIN (
@@ -95,7 +96,7 @@ export async function materialTurnover(p: { from: Date; to: Date; warehouseId?: 
     // Arxivdagi xomashyo — faqat davrda harakati yoki qoldig'i bo'lsa (o'chirilgan ro'yxatni to'ldirib yubormasin)
     if (!r.isActive && n(r.pn) === 0 && Math.abs(close.q) < EPS) continue;
     out.push({
-      id: r.id, name: r.name, code: r.code, unit: r.unit, isActive: r.isActive,
+      id: r.id, name: r.name, code: r.code, unit: r.unit, isActive: r.isActive, category: r.category,
       minStock: n(r.minStock), unitPrice, avgCost,
       open, in: inc, out: dec, close,
       approx: Math.abs(n(r.osn)) > EPS || Math.abs(n(r.isn)) > EPS || Math.abs(n(r.xsn)) > EPS,

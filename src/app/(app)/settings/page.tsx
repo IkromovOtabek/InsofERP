@@ -11,6 +11,7 @@ import type { Role } from "@/generated/prisma";
 import { parsePerms } from "@/lib/auth";
 import { dateTime, isoDate, money } from "@/lib/format";
 import { PRODUCT_UNITS } from "@/lib/unit";
+import { MATERIAL_CATEGORY_OPTIONS } from "@/lib/material-category";
 import { Badge, Button, Callout, Card, CardHeader, Empty, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Tr, Tabs } from "@/components/ui";
 import { RowForm } from "@/components/row-form";
 import { refWeight } from "@/lib/trip-plan";
@@ -429,6 +430,7 @@ async function MaterialsTab() {
     { name: "code", label: "Kod", defaultValue: m?.code, placeholder: "CEM", required: true },
     { name: "name", label: "Nomi", defaultValue: m?.name, placeholder: "Sement M400", required: true, className: "sm:col-span-2" },
     { name: "unit", label: "Birlik", type: "select" as const, defaultValue: m?.unit ?? "kg", options: UNITS },
+    { name: "category", label: "Kategoriya", type: "select" as const, defaultValue: m?.category ?? "XOMASHYO", options: MATERIAL_CATEGORY_OPTIONS },
     { name: "minStock", label: "Minimal qoldiq", type: "number" as const, step: "0.001", defaultValue: m ? Number(m.minStock) : "" },
     ...(m ? [{ name: "isActive", label: "Faol", type: "checkbox" as const, defaultValue: m.isActive }] : []),
   ];

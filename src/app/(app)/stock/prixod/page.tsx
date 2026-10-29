@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileUp, HardHat, Plus, Rows3, Wallet, Percent, Sigma, Search, ScanText } from "lucide-react";
+import { ArrowUpFromLine, FileUp, HardHat, Plus, Rows3, Wallet, Percent, Sigma, Search, ScanText } from "lucide-react";
 import { db } from "@/lib/db";
 import { requirePage } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
@@ -84,11 +84,11 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
   const excel = [
     ...rows.map((r) => ({
       "Sana": dateRu(r.date), "Hujjat": docLabel(r), "Tovar": r.material, "TTN №": r.waybillNo ?? "", "O'lchov": unitShort(r.unit), "Miqdor": r.qty,
-      "Ta'minotchi": r.supplier, "Kimga": r.recipient, "To'lov": r.payment ? PAY_EXCEL[r.payment] : "Ko'rsatilmagan", "Dostavka": r.delivery, "Narx (QQSsiz)": r.price,
+      "Ta'minotchi": r.supplier, "Kimga": r.recipient, "Darhol chiqim": r.autoIssueTo ?? "", "To'lov": r.payment ? PAY_EXCEL[r.payment] : "Ko'rsatilmagan", "Dostavka": r.delivery, "Narx (QQSsiz)": r.price,
       "Summa (QQSsiz)": r.sum, "QQS stavkasi": `${r.vatRate}%`, "QQS 12%": r.vat, "Jami (QQS bilan)": r.total, "Manzil": r.address ?? "", "Snabjenets": r.buyer ?? "", "Izoh": noteText(r) ?? "",
       "Mashina (kim olib keldi)": r.carrier ?? "", "Qayerdan yuklandi": r.loadedFrom ?? "",
     })),
-    ...(rows.length ? [{ "Sana": "Jami", "Hujjat": "", "Tovar": "", "TTN №": "", "O'lchov": "", "Miqdor": null, "Ta'minotchi": "", "Kimga": "", "To'lov": "", "Dostavka": tot.delivery, "Narx (QQSsiz)": null, "Summa (QQSsiz)": tot.sum, "QQS stavkasi": "", "QQS 12%": tot.vat, "Jami (QQS bilan)": tot.total, "Manzil": "", "Snabjenets": "", "Izoh": "", "Mashina (kim olib keldi)": "", "Qayerdan yuklandi": "" }] : []),
+    ...(rows.length ? [{ "Sana": "Jami", "Hujjat": "", "Tovar": "", "TTN №": "", "O'lchov": "", "Miqdor": null, "Ta'minotchi": "", "Kimga": "", "Darhol chiqim": "", "To'lov": "", "Dostavka": tot.delivery, "Narx (QQSsiz)": null, "Summa (QQSsiz)": tot.sum, "QQS stavkasi": "", "QQS 12%": tot.vat, "Jami (QQS bilan)": tot.total, "Manzil": "", "Snabjenets": "", "Izoh": "", "Mashina (kim olib keldi)": "", "Qayerdan yuklandi": "" }] : []),
   ];
 
   return (
@@ -169,6 +169,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
             <SheetTh right>Miqdor</SheetTh>
             <SheetTh>Ta'minotchi</SheetTh>
             <SheetTh>Kimga</SheetTh>
+            <SheetTh title="Kirim bilan birga shu oluvchiga chiqim yozilgan — mol skladda qolmagan (Kirim formasidagi «Kimga (darhol chiqim)»)">Darhol chiqim</SheetTh>
             <SheetTh>To'lov</SheetTh>
             <SheetTh right>Dostavka</SheetTh>
             <SheetTh right>Narx (QQSsiz)</SheetTh>
@@ -189,7 +190,7 @@ export default async function PrixodPage({ searchParams }: { searchParams: Promi
         {rows.length > 0 && (
           <SheetFoot>
             <tr>
-              <SheetTd colSpan={8}>{`Jami · ${fmtNum(tot.rows)} ta qator`}</SheetTd>
+              <SheetTd colSpan={9}>{`Jami · ${fmtNum(tot.rows)} ta qator`}</SheetTd>
               <SheetTd right>{money(tot.delivery)}</SheetTd>
               <SheetTd />
               <SheetTd right>{money(tot.sum)}</SheetTd>
@@ -222,6 +223,9 @@ function Row({ r, canOpen }: { r: PrixodRow; canOpen: boolean }) {
       <SheetTd tone={tone} right>{fmtNum(r.qty, 3)}</SheetTd>
       <SheetTd tone={tone} className="whitespace-nowrap">{r.supplier}</SheetTd>
       <SheetTd tone={tone} className="whitespace-nowrap">{r.recipient}</SheetTd>
+      <SheetTd tone={tone} className="whitespace-nowrap">{r.autoIssueTo
+        ? <span className="inline-flex items-center gap-1 font-medium text-red-700"><ArrowUpFromLine size={13} aria-hidden />{r.autoIssueTo}</span>
+        : <span className="text-slate-400">—</span>}</SheetTd>
       <SheetTd tone={tone} center><PayChip p={r.payment} /></SheetTd>
       <SheetTd tone={tone} right muted={!r.delivery}>{r.delivery ? money(r.delivery) : "—"}</SheetTd>
       <SheetTd tone={tone} right>{money(r.price)}</SheetTd>

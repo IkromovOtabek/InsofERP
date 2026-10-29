@@ -10,7 +10,9 @@ import { codeFromName, flatName } from "@/lib/excel";
 import { nextMaterialGroupCode } from "@/lib/material-groups";
 import { normalizeUnit, UNIT_FALLBACK } from "@/lib/unit";
 import { MATERIAL_CATALOG_ROLES } from "@/lib/catalog";
-import type { Prisma } from "@/generated/prisma";
+import type { MaterialCategory, Prisma } from "@/generated/prisma";
+import { MATERIAL_CATEGORIES, MATERIAL_CATEGORY_LABEL } from "@/lib/material-category";
+import { notifyNewAvtoParts } from "@/lib/avto-parts";
 // Bitta xomashyoni o'chirish qoidasi — `lib/material-remove.ts` (mobil ilova ham shundan chaqiradi)
 import { removeMaterial } from "@/lib/material-remove";
 
@@ -56,6 +58,7 @@ const materialSchema = z.object({
   unit: zStr("O'lchov birligi kerak"),
   minStock: z.coerce.number().min(0, "manfiy bo'lmasin").default(0),
   groupId: zOpt,
+  category: z.enum(MATERIAL_CATEGORIES).default("XOMASHYO"),
 });
 
 /**
@@ -69,6 +72,8 @@ export async function createCatalogMaterial(_prev: ActionState, fd: FormData): P
   const d = r.data;
   const unit = normalizeUnit(d.unit) ?? UNIT_FALLBACK;
   let merged = false;
+  // Avto zapchast bo'lib qo'shilgan (yoki shu kategoriyaga o'tgan) karta — mexaniklarga xabar
+  let avtoId: string | null = null;
   await db.$transaction(async (tx) => {
     const all = await tx.material.findMany({ select: { id: true, code: true, name: true } });
     const found = all.find((m) => flatName(m.name) === flatName(d.name))
@@ -77,17 +82,20 @@ export async function createCatalogMaterial(_prev: ActionState, fd: FormData): P
       const before = await tx.material.findUniqueOrThrow({ where: { id: found.id } });
       const after = await tx.material.update({
         where: { id: found.id },
-        data: { name: d.name, isActive: true, minStock: d.minStock, ...(d.groupId ? { groupId: d.groupId } : {}) },
+        data: { name: d.name, isActive: true, minStock: d.minStock, category: d.category, ...(d.groupId ? { groupId: d.groupId } : {}) },
       });
       await audit(tx, s.userId, "UPDATE", "Material", found.id, before, after);
+      if (d.category === "AVTO_ZAPCHAST" && before.category !== "AVTO_ZAPCHAST") avtoId = found.id;
       merged = true;
       return;
     }
     const m = await tx.material.create({
-      data: { code: await freeCode(tx, d.code ?? "", d.name), name: d.name, unit, minStock: d.minStock, groupId: d.groupId },
+      data: { code: await freeCode(tx, d.code ?? "", d.name), name: d.name, unit, minStock: d.minStock, groupId: d.groupId, category: d.category },
     });
     await audit(tx, s.userId, "CREATE", "Material", m.id, undefined, m);
+    if (d.category === "AVTO_ZAPCHAST") avtoId = m.id;
   });
+  if (avtoId) notifyNewAvtoParts([avtoId], s.userId);
   refresh();
   return merged
     ? { ok: true, note: `«${d.name}» ro'yxatda bor edi — yangisi ochilmadi, mavjudi yangilandi.` }
@@ -105,6 +113,32 @@ export async function deleteCatalogMaterial(id: string): Promise<ActionState> {
   if (r.kind === "deleted") return { ok: true, note: `«${r.name}» o'chirildi${r.opening ? " (boshlang'ich qoldig'i bilan)" : ""}.` };
   if (r.kind === "kept") return { error: `«${r.name}» o'chirilmadi: ${r.why}` };
   return { ok: true, note: `«${r.name}» o'chirilmadi — ${r.why}. Ro'yxatdan olib tashlandi (hujjatlar joyida).` };
+}
+
+const categorySchema = z.object({ category: z.enum(MATERIAL_CATEGORIES, { message: "Kategoriyani tanlang" }) });
+
+/**
+ * Belgilangan xomashyolarni boshqa kategoriyaga o'tkazish — Sklad → Qoldiqlar jadvalidagi belgilar.
+ * Avto zapchastga o'tganlari mexaniklarga «yangi avto zapchast» bo'lib boradi (bitta xabar).
+ */
+export async function setMaterialsCategory(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireModuleWrite("stock", MATERIAL_ROLES);
+  const ids = idsSchema.safeParse([...new Set(fd.getAll("ids").map(String))]);
+  if (!ids.success) return { error: ids.error.issues[0]?.message ?? "Xomashyo belgilanmagan" };
+  const c = categorySchema.safeParse({ category: fd.get("category") || undefined });
+  if (!c.success) return { error: c.error.issues[0]?.message ?? "Kategoriyani tanlang" };
+  const category: MaterialCategory = c.data.category;
+  const moved = await db.$transaction(async (tx) => {
+    const before = await tx.material.findMany({ where: { id: { in: ids.data }, category: { not: category } }, select: { id: true, name: true, category: true } });
+    if (before.length === 0) return [];
+    await tx.material.updateMany({ where: { id: { in: before.map((m) => m.id) } }, data: { category } });
+    await audit(tx, s.userId, "UPDATE", "Material", before[0].id, { bulk: before.map((m) => ({ id: m.id, category: m.category })) }, { bulk: before.length, category });
+    return before.map((m) => m.id);
+  });
+  if (category === "AVTO_ZAPCHAST") notifyNewAvtoParts(moved, s.userId);
+  refresh();
+  const same = ids.data.length - moved.length;
+  return { ok: true, note: `${moved.length} ta xomashyo «${MATERIAL_CATEGORY_LABEL[category]}» kategoriyasiga o'tkazildi${same ? ` (${same} tasi allaqachon shu kategoriyada edi)` : ""}.` };
 }
 
 const idsSchema = z.array(z.string().min(1).max(64)).min(1, "Xomashyo belgilanmagan").max(2000, "Bir martada ko'pi bilan 2000 ta");

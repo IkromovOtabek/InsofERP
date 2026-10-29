@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { notifyRoles } from "@/lib/notify";
+import { queueAvtoReceipt } from "@/lib/avto-parts";
 import { audit } from "./audit";
 import { upsertRecipient } from "./stock-recipients";
 import { nextNo } from "./numbering";
@@ -265,6 +266,8 @@ export async function createGoodsReceipt(
     // To'lanmagan kirim — yetkazuvchiga pulni moliya/buxgalteriya to'laydi; xabarsiz u faqat ro'yxatda turardi.
     // Ta'minot zanjiridan kelgan kirim (pul allaqachon ajratilgan) bu yerdan o'tmaydi (`lib/supply.ts`).
     if (!created.existed) queueUnpaidNotice(created.id, actor.userId);
+    // Avto zapchast kelgan bo'lsa — mexaniklarga (ECO push + ERP/ECO banner)
+    if (!created.existed) queueAvtoReceipt(created.id, actor.userId);
     return created;
   } catch (e) {
     // Bir vaqtda kelgan ikki bir xil yuborish: ikkinchisi unique kalitga urildi — birinchisining kirimi qaytariladi

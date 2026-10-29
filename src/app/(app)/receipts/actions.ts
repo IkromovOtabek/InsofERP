@@ -16,6 +16,7 @@ import { cancelReceipt } from "@/lib/storno";
 import { Prisma } from "@/generated/prisma";
 import { companyVatPayer, supplierVatRate, vatLine, type VatRate } from "@/lib/receipt-vat";
 import { createGoodsReceipt, receiptTokenOf } from "@/lib/receipts";
+import { queueAvtoReceipt } from "@/lib/avto-parts";
 
 /** Formadagi bir martalik kalit (brauzer yaratadi): bo'sh yoki g'alati bo'lsa — e'tiborga olinmaydi. */
 const tokenOf = (v: FormDataEntryValue | null) => receiptTokenOf(v);
@@ -166,6 +167,7 @@ export async function importReceiptFromExcel(_prev: ActionState, fd: FormData): 
     return { error: e.message };
   });
   if (typeof out === "object") return out;
+  queueAvtoReceipt(out, s.userId);
   revalidatePath("/receipts"); revalidatePath("/stock"); revalidatePath("/stock/prixod"); revalidatePath("/settings"); revalidatePath("/sales"); revalidatePath("/orders/new"); revalidatePath("/cashflow"); revalidatePath("/suppliers");
   // Sklad → Kirim → «Excel orqali» dan kelgan bo'lsa — qo'lda kirimdagidek jurnalga «Kirim saqlandi» bilan qaytadi
   if (fd.get("back") === "prixod") {

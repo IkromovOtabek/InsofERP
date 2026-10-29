@@ -295,6 +295,9 @@ model Material {
   unit          String // kg, t, l, m3
   minStock      Decimal   @default(0) @db.Decimal(18, 3) // shu miqdordan kam qolsa — signal
   groupId       String? // papka; bo'sh bo'lsa ro'yxat ildizida turadi
+  /// Kategoriya: Xomashyo / Zavod zapchast / Avto zapchast. Mexanik skladda Avto zapchast va Xomashyoni ko'radi,
+  /// Avto zapchast qo'shilsa yoki kirim bo'lsa mexanikka xabar ketadi (`lib/avto-parts.ts`)
+  category      MaterialCategory @default(XOMASHYO)
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
   /// «Дона сўм» — birlik narxi, Snabjeniye belgilaydi. Skladdan chiqimda (Расход, brigada, spisanie, zames) shu narx
@@ -312,6 +315,13 @@ model Material {
   brigadeMoves BrigadeMove[]
 
   @@index([groupId])
+  @@index([category])
+}
+
+enum MaterialCategory {
+  XOMASHYO
+  ZAVOD_ZAPCHAST
+  AVTO_ZAPCHAST
 }
 
 /// Xomashyo papkasi (mahsulot papkasining aynan o'zi, faqat xomashyo uchun):
