@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { createContext, useActionState, useContext, useState, useTransition } from "react";
 import { Check, ChevronDown, ChevronUp, Clock, HandCoins, Pencil, X } from "lucide-react";
 import { approveTripPaysAction, createMasterPayAction, priceSuggestedAction, priceTripAction, rejectTripPayAction, saveDriverTariff } from "../actions";
 import { Button, Field, FormActions, FormError, FormSuccess, Input, Select } from "@/components/ui";
@@ -147,6 +147,83 @@ export function TopRows({ total, children }: { total: number; children: React.Re
           {open ? <><ChevronUp size={14} /> Yig&apos;ish (birinchi {top} tasi)</> : <><ChevronDown size={14} /> Barchasini ochish ({total} ta, yana {total - top})</>}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ───────────────────────── Bir nechta qatorni belgilab amal qilish ─────────────────────────
+
+type Sel = { ids: string[]; sel: Set<string>; toggle: (id: string) => void; setAll: (on: boolean) => void; clear: () => void };
+const SelCtx = createContext<Sel | null>(null);
+
+/**
+ * Jadval qatorlarini belgilash: chapdagi checkbox (`RowCheck`), sarlavhada «hammasi» (`AllCheck`), belgilanganda tepada
+ * amallar paneli — narxsizlarda taklif narxini qo'yish (to'lov turi bilan), tasdiqda tasdiqlash.
+ */
+export function Selectable({ ids, mode, children }: { ids: string[]; mode: "price" | "approve"; children: React.ReactNode }) {
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const ctx: Sel = {
+    ids, sel,
+    toggle: (id) => setSel((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
+    setAll: (on) => setSel(on ? new Set(ids) : new Set()),
+    clear: () => setSel(new Set()),
+  };
+  return (
+    <SelCtx.Provider value={ctx}>
+      {sel.size > 0 && <SelectionBar mode={mode} />}
+      {children}
+    </SelCtx.Provider>
+  );
+}
+
+const boxCls = "h-4 w-4 cursor-pointer rounded border-slate-300 accent-slate-900 pointer-coarse:h-5 pointer-coarse:w-5";
+
+export function RowCheck({ id }: { id: string }) {
+  const c = useContext(SelCtx);
+  if (!c) return null;
+  return <input type="checkbox" className={boxCls} checked={c.sel.has(id)} onChange={() => c.toggle(id)} aria-label="Belgilash" />;
+}
+
+export function AllCheck() {
+  const c = useContext(SelCtx);
+  if (!c) return null;
+  const all = c.ids.length > 0 && c.sel.size === c.ids.length;
+  return (
+    <input type="checkbox" className={boxCls} checked={all} aria-label="Hammasini belgilash" title="Hammasini belgilash"
+      ref={(el) => { if (el) el.indeterminate = c.sel.size > 0 && !all; }} onChange={() => c.setAll(!all)} />
+  );
+}
+
+function SelectionBar({ mode }: { mode: "price" | "approve" }) {
+  const c = useContext(SelCtx)!;
+  const [pending, start] = useTransition();
+  const [res, setRes] = useState<ActionState>(undefined);
+  const [type, setType] = useState("");
+  const ids = [...c.sel];
+  const run = (fn: () => Promise<ActionState>) => start(async () => { const r = await fn(); setRes(r); if (!r?.error) c.clear(); });
+  return (
+    <div className="sticky top-14 z-[5] mx-5 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+      <span className="font-medium">{ids.length} ta belgilandi</span>
+      <Button size="sm" variant="ghost" onClick={c.clear}>Bekor qilish</Button>
+      <span className="flex-1" />
+      {mode === "price" ? (
+        <>
+          <Select value={type} onChange={(e) => setType(e.target.value)} className="h-8 w-32 py-0 text-sm" aria-label="To'lov turi">
+            <option value="" disabled>To&apos;lov turi</option>
+            <option value="PAYROLL">Oylik</option>
+            <option value="CASH">Naqd</option>
+          </Select>
+          <Button size="sm" disabled={pending || !type} onClick={() => run(() => priceSuggestedAction(ids, type))}>
+            <Check size={14} /> Belgilanganlarga taklif narxini qo&apos;yish
+          </Button>
+        </>
+      ) : (
+        <Button size="sm" variant="success" disabled={pending}
+          onClick={() => { if (confirm(`${ids.length} ta reys haqi tasdiqlansinmi? Naqdlari kassaga, oyliklari vedomostga o'tadi.`)) run(() => approveTripPaysAction(ids)); }}>
+          <Check size={14} /> Belgilanganlarni tasdiqlash
+        </Button>
+      )}
+      {res?.error && <span className="basis-full text-xs text-red-700">{res.error}</span>}
     </div>
   );
 }

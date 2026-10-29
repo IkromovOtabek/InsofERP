@@ -10,7 +10,7 @@ import { MASTER_PROBLEMS, MECH_STATUS_COLOR, MECH_STATUS_LABEL } from "@/lib/mec
 import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, Empty, PageHeader, Section, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { ApproveButton, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, TariffForm, TopRows } from "./tabel-forms";
+import { AllCheck, ApproveButton, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, RowCheck, Selectable, TariffForm, TopRows } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +32,12 @@ function PayStatus({ r }: { r: PayTripRow }) {
 }
 
 /** Reys qatori — narxsizlar ro'yxati va haydovchi oyi uchun bir xil. */
-function TripRows({ rows, canPrice, showDriver, bal }: { rows: PayTripRow[]; canPrice: boolean; showDriver: boolean; bal: BalMap }) {
+function TripRows({ rows, canPrice, showDriver, bal, select }: { rows: PayTripRow[]; canPrice: boolean; showDriver: boolean; bal: BalMap; select?: boolean }) {
   return (
     <Table>
       <thead>
         <tr>
+          {select && <Th className="w-10"><AllCheck /></Th>}
           <Th>Sana · nakladnoy</Th>{showDriver && <Th>Haydovchi</Th>}<Th>Obyekt</Th>
           <Th right>Km</Th><Th right>Kutish</Th><Th right>Aylantirish</Th><Th right>Ishladi</Th><Th right>Norma (yoqilg&apos;i)</Th>
           <Th right>Qoldiq (yoqilg&apos;i)</Th><Th right>Taklif</Th><Th right>Narx</Th>
@@ -45,6 +46,7 @@ function TripRows({ rows, canPrice, showDriver, bal }: { rows: PayTripRow[]; can
       <tbody>
         {rows.map((r) => (
           <Tr key={r.id}>
+            {select && <Td><RowCheck id={r.id} /></Td>}
             <Td className="text-sm"><span className="font-medium tabular">{r.no}</span><div className="text-xs text-slate-500">{dateTime(r.deliveredAt)} · {r.plate}</div></Td>
             {showDriver && <Td className="text-sm"><Link href={`/logistika/tabel?driver=${r.driverId}&oy=${isoDate(r.deliveredAt).slice(0, 7)}`} className="hover:underline">{r.driver}</Link></Td>}
             <Td className="max-w-48 truncate text-sm">{r.customer}</Td>
@@ -159,7 +161,9 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             action={canPrice && unpriced.length > 1 ? <PriceAllButton ids={unpriced.map((r) => r.id)} /> : undefined} />
         </div>
         {unpriced.length === 0 ? <div className="px-5 pb-5 text-sm text-emerald-700">Hamma yetkazilgan reysga narx qo&apos;yilgan</div>
-          : <TopRows total={unpriced.length}><TripRows rows={unpriced} canPrice={canPrice} showDriver bal={balOf} /></TopRows>}
+          : canPrice
+            ? <Selectable ids={unpriced.map((r) => r.id)} mode="price"><TopRows total={unpriced.length}><TripRows rows={unpriced} canPrice showDriver bal={balOf} select /></TopRows></Selectable>
+            : <TopRows total={unpriced.length}><TripRows rows={unpriced} canPrice={false} showDriver bal={balOf} /></TopRows>}
       </Card>
 
       {/* ── Reys haqi tasdig'i (ish boshqaruvchi): naqd — kassaga, oylik — vedomostga ── */}
@@ -170,12 +174,13 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
             action={canApprove && pending.length > 1 ? <ApproveButton ids={pending.map((r) => r.id)} label="Hammasini tasdiqlash" /> : undefined} />
         </div>
         {pending.length === 0 ? <div className="px-5 pb-5 text-sm text-slate-500">Tasdiq kutayotgan reys haqi yo&apos;q</div> : (
-          <>
+          <Selectable ids={canApprove ? pending.map((r) => r.id) : []} mode="approve">
             <Table>
-              <thead><tr><Th>Sana · nakladnoy</Th><Th>Haydovchi</Th><Th>Obyekt</Th><Th right>Km</Th><Th right>Reys haqi</Th><Th>To&apos;lov turi</Th>{canApprove && <Th right>Qaror</Th>}</tr></thead>
+              <thead><tr>{canApprove && <Th className="w-10"><AllCheck /></Th>}<Th>Sana · nakladnoy</Th><Th>Haydovchi</Th><Th>Obyekt</Th><Th right>Km</Th><Th right>Reys haqi</Th><Th>To&apos;lov turi</Th>{canApprove && <Th right>Qaror</Th>}</tr></thead>
               <tbody>
                 {pending.map((r) => (
                   <Tr key={r.id}>
+                    {canApprove && <Td><RowCheck id={r.id} /></Td>}
                     <Td className="text-sm"><span className="font-medium tabular">{r.no}</span><div className="text-xs text-slate-500">{dateTime(r.deliveredAt)} · {r.plate}</div></Td>
                     <Td className="text-sm">{r.driver}</Td>
                     <Td className="max-w-48 truncate text-sm">{r.customer}</Td>
@@ -191,7 +196,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
               Naqd: {money(pending.filter((r) => r.payType === "CASH").reduce((a, r) => a + (r.amount ?? 0), 0))} ·
               Oylik: {money(pending.filter((r) => r.payType === "PAYROLL").reduce((a, r) => a + (r.amount ?? 0), 0))}
             </div>
-          </>
+          </Selectable>
         )}
       </Card>
 
