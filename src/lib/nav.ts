@@ -61,7 +61,8 @@ export const NAV: NavItem[] = [
   { href: "/mexanik-sorovlar",      label: "Mexanik so'rovlari", roles: ["MECHANIC", "SUPERVISOR", "CASHIER"], group: "Logistika" },
   { href: "/logistika/haydovchilar", label: "Haydovchilar",      roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
   // Haydovchilar tabeli: yetkazilgan reyslar o'zi tushadi, dispetcher narx qo'yadi → Ish haqi (`lib/driver-trip-pay.ts`)
-  { href: "/logistika/tabel",       label: "Haydovchilar tabeli", roles: [...LOGI, "DISPATCHER"], group: "Logistika" },
+  // Ish boshqaruvchi reys haqini tasdiqlaydi, buxgalter oylikka tushadiganini ko'radi
+  { href: "/logistika/tabel",       label: "Haydovchilar tabeli", roles: [...LOGI, "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], group: "Logistika" },
   // Sotuvda mijoz obyekti mijoz kartasidan ochiladi; GPS — logistika ishi (sex Reyslar'dagi jonli xaritani ko'radi)
   { href: "/logistika/obyektlar",   label: "Obyektlar",          roles: [...LOGI, "SALES"], group: "Logistika", menuHide: ["SALES"] },
   { href: "/logistika/monitoring",  label: "GPS / Monitoring",   roles: [...LOGI, "PRODUCTION", "SUPERVISOR"], group: "Logistika", menuHide: ["PRODUCTION", "SUPERVISOR"] },

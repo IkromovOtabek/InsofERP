@@ -1683,6 +1683,12 @@ model Trip {
   pricedAt     DateTime? // null — narx belgilanmagan (dispetcherga eslatma boradi)
   pricedById   String?
   payNote      String?
+  // To'lov turi (narx qo'yilganda dispetcher tanlaydi) va ish boshqaruvchi tasdig'i. Tasdiqsiz reys haqi
+  // oylikka tushmaydi va kassaga o'tmaydi; naqd — tasdiqda kassaga mexanik so'rovi (`MechanicRequest.tripId`) ochiladi
+  payType         DriverPayType?
+  payApprovedAt   DateTime?
+  payApprovedById String?
+  payRejectReason String? // rad etilsa — narx olib tashlanadi, reys yana «narx belgilanmagan»ga qaytadi
 
   order     Order              @relation(fields: [orderId], references: [id])
   vehicle   Vehicle            @relation(fields: [vehicleId], references: [id])
@@ -2806,6 +2812,9 @@ model MechanicRequest {
   cashAccountId      String?
   cashTxId           String?               @unique
   transportExpenseId String?               @unique
+  payee              String? // pul kimga: usta ismi (ta'mir, vulkanizatsiya) yoki haydovchi (naqd reys haqi)
+  dueAt              DateTime? // DEFERRED: shu kuni tasdiqqa o'tadi va eslatma ketadi («N kunda berish»)
+  tripId             String?               @unique // naqd reys haqi — qaysi reys (`lib/driver-trip-pay.ts`)
 
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
   createdBy User     @relation("MechReqBy", fields: [createdById], references: [id])
@@ -2813,6 +2822,13 @@ model MechanicRequest {
   @@index([status, createdAt])
   @@index([createdById, createdAt])
   @@index([vehicleId])
+  @@index([status, dueAt])
+}
+
+/// Haydovchi reys haqi qanday beriladi.
+enum DriverPayType {
+  CASH // naqd — tasdiqdan keyin kassa beradi (kassa chiqimi)
+  PAYROLL // oylik — tasdiqdan keyin oy yakuni vedomostiga tushadi
 }
 
 enum MechanicTarget {
@@ -2822,6 +2838,7 @@ enum MechanicTarget {
 }
 
 enum MechanicRequestStatus {
+  DEFERRED // «N kunda berish»: muddat kelguncha kutadi, keyin NEW ga o'tadi (`releaseDueRequests`)
   NEW // ish boshqaruvchi tasdig'ini kutmoqda
   APPROVED // tasdiqlandi — endi kassa pul beradi
   PAID // pul berildi

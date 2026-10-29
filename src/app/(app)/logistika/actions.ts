@@ -11,7 +11,8 @@ import {
   addExpenseRecord, addFuelRecord, addVehicleServiceRecord, cancelExpenseRecord, cancelFuelRecord, cancelVehicleServiceRecord,
   driverCardSchema, expenseSchema, fuelSchema, saveDriverCardRecord, saveSiteRecord, saveVehicleRecord, serviceSchema, siteSchema, vehicleSchema,
 } from "@/lib/logistics-admin";
-import { priceTrip, priceTripsBySuggestion } from "@/lib/driver-trip-pay";
+import { approveTripPays, PAY_TYPES, priceTrip, priceTripsBySuggestion, rejectTripPay } from "@/lib/driver-trip-pay";
+import { createMechanicRequest, MASTER_PROBLEMS } from "@/lib/mechanic-requests";
 
 /**
  * Logistika kabineti amallari: transport, obyekt, haydovchi kartasi, yoqilg'i, xarajat, sozlamalar.
@@ -153,6 +154,7 @@ export async function saveLogisticsSettings(_prev: ActionState, fd: FormData): P
 const priceSchema = z.object({
   amount: z.coerce.number({ message: "Summani kiriting" }).min(0, "Summa manfiy bo'lmaydi").max(100_000_000, "Summa juda katta"),
   note: z.string().trim().max(300).optional().transform((v) => v || null),
+  payType: z.enum(PAY_TYPES, { message: "To'lov turini tanlang: naqd yoki oylik" }),
 });
 
 /** Reys haqini belgilash / tuzatish — `lib/driver-trip-pay.ts` (narxlangandan keyin oylikka tushadi). */
@@ -160,19 +162,67 @@ export async function priceTripAction(tripId: string, _prev: ActionState, fd: Fo
   const s = await requireAction("logistika", "pay");
   const r = parseForm(priceSchema, fd);
   if ("error" in r) return { error: r.error };
-  const res = await priceTrip(tripId, r.data.amount, r.data.note, s.userId);
+  const res = await priceTrip(tripId, r.data.amount, r.data.note, s.userId, r.data.payType);
   if ("error" in res) return { error: res.error };
   refresh();
   return { ok: true };
 }
 
 /** Tanlangan narxsiz reyslarga tarif bo'yicha taklifni birdan qo'yish. */
-export async function priceSuggestedAction(tripIds: string[]): Promise<ActionState> {
+export async function priceSuggestedAction(tripIds: string[], payType: string): Promise<ActionState> {
   const s = await requireAction("logistika", "pay");
   if (!tripIds.length) return { error: "Reys tanlanmagan" };
-  const r = await priceTripsBySuggestion(tripIds.slice(0, 500), s.userId);
+  if (payType !== "CASH" && payType !== "PAYROLL") return { error: "To'lov turini tanlang" };
+  const r = await priceTripsBySuggestion(tripIds.slice(0, 500), s.userId, payType);
   refresh();
   return r.failed ? { error: `${r.done} ta narxlandi, ${r.failed} tasi o'tmadi (vedomost tasdiqlangan yoki reys o'zgargan)` } : { ok: true };
+}
+
+/** Ish boshqaruvchi: reys haqini tasdiqlash (naqd — kassaga, oylik — vedomostga). */
+export async function approveTripPaysAction(tripIds: string[]): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay_approve");
+  if (!tripIds.length) return { error: "Reys tanlanmagan" };
+  const r = await approveTripPays(tripIds, s.userId);
+  refresh();
+  return r.failed ? { error: `${r.done} ta tasdiqlandi, ${r.failed} tasi o'tmadi (boshqa joyda o'zgargan) — sahifani yangilang` } : { ok: true };
+}
+
+/** Ish boshqaruvchi: rad etish — reys yana narxsizlar ro'yxatiga qaytadi. */
+export async function rejectTripPayAction(tripId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay_approve");
+  const res = await rejectTripPay(tripId, String(fd.get("reason") ?? ""), s.userId);
+  if ("error" in res) return { error: res.error };
+  refresh();
+  return { ok: true };
+}
+
+const masterSchema = z.object({
+  vehicleId: z.string().min(1, "Transportni tanlang"),
+  problem: z.enum(MASTER_PROBLEMS, { message: "Turini tanlang" }),
+  payee: z.string().trim().min(2, "Usta ismini yozing").max(120),
+  amount: z.coerce.number({ message: "Summani kiriting" }).positive("Summa 0 dan katta bo'lsin").max(100_000_000, "Summa juda katta"),
+  note: z.string().trim().max(300).optional().transform((v) => v || null),
+  mode: z.enum(["now", "later"]),
+  days: z.coerce.number().int().min(0).max(365).optional(),
+});
+
+/**
+ * Dispetcher: remont usta puli (ta'mir, vulkanizatsiya, zapchast). «Joyida berish» — ish boshqaruvchi tasdig'i → kassa;
+ * «N kunda berish» — muddat kuni tasdiqqa o'tadi va eslatma keladi (`lib/mechanic-requests.ts`).
+ */
+export async function createMasterPayAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireAction("logistika", "pay");
+  const r = parseForm(masterSchema, fd);
+  if ("error" in r) return { error: r.error };
+  const d = r.data;
+  if (d.mode === "later" && !(d.days && d.days > 0)) return { error: "Necha kunda berilishini kiriting" };
+  const res = await createMechanicRequest({
+    target: "TRANSPORT", vehicleId: d.vehicleId, problem: d.problem, amount: d.amount, payee: d.payee,
+    note: [`Usta: ${d.payee}`, d.note].filter(Boolean).join(" · "), dueDays: d.mode === "later" ? d.days : null,
+  }, s.userId);
+  if (res.error) return { error: res.error };
+  refresh();
+  return { ok: true, note: res.note };
 }
 
 const money0 = z.coerce.number({ message: "Raqam kiriting" }).min(0, "Manfiy bo'lmaydi").max(100_000_000, "Juda katta");

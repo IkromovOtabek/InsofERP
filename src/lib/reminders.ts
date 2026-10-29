@@ -12,7 +12,8 @@ import { db } from "@/lib/db";
 import { notifyRoles, notifyUsers, type NotifyLink } from "@/lib/notify";
 import { runRentReminders } from "@/lib/rent-tenant";
 import { runLeaseExpiry } from "@/lib/rent-contract";
-import { PAY_SINCE, PRICER_ROLES, unpricedWhere } from "@/lib/driver-trip-pay";
+import { PAY_APPROVER_ROLES, PAY_SINCE, PRICER_ROLES, pendingApprovalWhere, unpricedWhere } from "@/lib/driver-trip-pay";
+import { releaseDueRequests } from "@/lib/mechanic-requests";
 
 const H = 3_600_000;
 const REPEAT_H = 12;
@@ -35,6 +36,19 @@ const RULES: Rule[] = [
       ]);
       if (!n || !oldest) return [];
       return [{ id: oldest.id, link: { key: "trip-pay", id: oldest.id }, roles: PRICER_ROLES, title: `Narx belgilanmagan reyslar: ${n} ta`, body: `Eng eskisi ${hrs(oldest.deliveredAt!, now)} soatdan beri kutmoqda — narx qo'yilmaguncha haydovchi tabeli va oyligiga tushmaydi` }];
+    },
+  },
+  {
+    // Narxlangan, lekin ish boshqaruvchi tasdiqlamagan reys haqi — oylikka ham, kassaga ham o'tmaydi
+    type: "REMIND_TRIP_PAY_APPROVE",
+    find: async (now) => {
+      const where = { ...pendingApprovalWhere(), pricedAt: { lt: ago(now, 4) } };
+      const [n, oldest] = await Promise.all([
+        db.trip.count({ where }),
+        db.trip.findFirst({ where, orderBy: { pricedAt: "asc" }, select: { id: true, pricedAt: true } }),
+      ]);
+      if (!n || !oldest) return [];
+      return [{ id: oldest.id, link: { key: "trip-pay", id: oldest.id }, roles: PAY_APPROVER_ROLES, title: `Reys haqi tasdig'i kutilmoqda: ${n} ta`, body: `Eng eskisi ${hrs(oldest.pricedAt!, now)} soatdan beri — Haydovchilar tabelida tasdiqlang (naqd — kassaga, oylik — vedomostga o'tadi)` }];
     },
   },
   {
@@ -186,6 +200,8 @@ export async function runReminders(now = new Date()): Promise<number> {
       sent++;
     }
   }
+  // Muddatli usta puli: muddat kelganlari tasdiqqa o'tadi, «… ga remont puli berish vaqti keldi» — `lib/mechanic-requests.ts`
+  try { sent += await releaseDueRequests(now); } catch (e) { console.error("[reminders] usta puli", e instanceof Error ? e.message : e); }
   // Arenda: oyning belgilangan sanasidan qarzdor ijarachilarga Telegram eslatma (oyda bir marta) — `lib/rent-tenant.ts`
   try { sent += await runRentReminders(now); } catch (e) { console.error("[reminders] arenda", e instanceof Error ? e.message : e); }
   // Arenda: ijara shartnomasi muddati tugashiga 30 / 7 kun qolganda va tugaganda — sekretarga (`lib/rent-contract.ts`)

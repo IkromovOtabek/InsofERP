@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
-import type { Role } from "@/generated/prisma";
+import type { DriverPayType, MechanicRequestStatus, Role } from "@/generated/prisma";
 import { audit } from "@/lib/audit";
-import { notifyAfter, notifyRoles } from "@/lib/notify";
+import { nextNo } from "@/lib/numbering";
+import { notifyAfter, notifyRoles, notifyUsers } from "@/lib/notify";
 import { tripPayKm } from "@/lib/trip-summary";
 import { fmtNum, money } from "@/lib/format";
 
@@ -11,7 +12,8 @@ import { fmtNum, money } from "@/lib/format";
  * Reys yetkazilganda (`tripDelivered`) tabelga o'zi tushadi: haq km (zavod → obyekt → zavod, `tripPayKm`),
  * obyektda kutish (kelgan → tushirish boshlangan, bo'lmasa → yetkazilgan) va tarif bo'yicha taklif yoziladi,
  * dispetcherga «narx belgilanmagan reys» xabari ketadi. Dispetcher taklifni qabul qiladi yoki o'zgartiradi
- * (`pricedAt`) — shundan keyingina reys haqi oylikka (Ish haqi → oy yakuni, «Reyslar» qatori) tushadi.
+ * (`pricedAt`) va to'lov turini tanlaydi: naqd yoki oylik. Ish boshqaruvchi tasdiqlaydi (`approveTripPays`):
+ * oylik — oy yakuni vedomostiga («Reyslar» qatori) tushadi, naqd — kassaga o'tadi va kassir beradi (kassa chiqimi).
  * Narxsiz reyslar alohida ro'yxatda turadi va eslatma takrorlanadi (`lib/reminders.ts`).
  *
  * Taklif = reys tarifi + km × km tarifi + (faqat mikser) kutish soati × soat tarifi. Tariflar — `CompanySettings`.
@@ -21,6 +23,18 @@ import { fmtNum, money } from "@/lib/format";
 export const PAY_SINCE = new Date(2026, 9, 1);
 /** Narx belgilaydiganlar (rol bo'yicha; direktor ruxsati bilan boshqalar ham) — `permissions.ts` → logistika.pay. */
 export const PRICER_ROLES: Role[] = ["DISPATCHER"];
+/** Reys haqini tasdiqlaydi (naqd ham, oylik ham) — `permissions.ts` → logistika.pay_approve. */
+export const PAY_APPROVER_ROLES: Role[] = ["SUPERVISOR"];
+
+/**
+ * To'lov turi: naqd — tasdiqdan keyin kassa beradi (kassada chiqim, oylikka kirmaydi);
+ * oylik — tasdiqdan keyin oy yakuni vedomostiga tushadi (buxgalter ko'radi).
+ * Turi yo'q narxlangan reys — funksiyadan oldingi (oylikka tasdiqsiz tushadi, avvalgidek).
+ */
+export const PAY_TYPE_LABEL: Record<DriverPayType, string> = { CASH: "Naqd", PAYROLL: "Oylik" };
+export const PAY_TYPES = ["PAYROLL", "CASH"] as const satisfies readonly DriverPayType[];
+/** Naqd reys haqi kassaga mexanik so'rovi bo'lib o'tadi — muammo turi shu (`lib/mechanic-requests.ts`). */
+export const TRIP_PAY_PROBLEM = "Reys haqi";
 
 export type DriverTariff = { trip: number; km: number; waitHour: number };
 
@@ -119,6 +133,14 @@ export function unpricedWhere(driverId?: string) {
   return { status: "DELIVERED" as const, pricedAt: null, deliveredAt: { gte: PAY_SINCE }, ...(driverId ? { driverId } : {}) };
 }
 
+/** Narxlangan, lekin ish boshqaruvchi hali tasdiqlamagan reyslar. */
+export function pendingApprovalWhere() {
+  return { status: "DELIVERED" as const, pricedAt: { not: null }, payApprovedAt: null, payType: { not: null }, deliveredAt: { gte: PAY_SINCE } };
+}
+
+/** Oylikka tushadigan reys: turi yo'q (eski) yoki oylik va tasdiqlangan. Naqd — kassadan beriladi, oylikka kirmaydi. */
+export const payrollTripWhere = { pricedAt: { not: null }, OR: [{ payType: null }, { payType: "PAYROLL" as const, payApprovedAt: { not: null } }] };
+
 export async function unpricedCount(): Promise<number> {
   return db.trip.count({ where: unpricedWhere() });
 }
@@ -127,6 +149,9 @@ export type PayTripRow = {
   id: string; no: string; deliveredAt: Date; driverId: string; driver: string; plate: string; vehicleType: string;
   customer: string; km: number; waitMin: number | null; drumTurns: number | null; workHours: number | null;
   suggested: number; suggestText: string; amount: number | null; pricedAt: Date | null; note: string | null;
+  payType: DriverPayType | null; approvedAt: Date | null; rejectReason: string | null;
+  /** Naqd reys haqi kassada qaysi holatda (tasdiqdan keyin ochiladi) */
+  cashStatus: MechanicRequestStatus | null;
   fuelNorm: number | null; fuelUnit: string;
   /** «Dizel + metan» transportda metan normasi, m³ (boshqalarida null) */
   gasNorm: number | null;
@@ -138,12 +163,17 @@ export async function payTrips(where: object, take = 500): Promise<PayTripRow[]>
     where, orderBy: { deliveredAt: "asc" }, take,
     select: {
       ...TRIP_PAY_SELECT, payKm: true, waitMin: true, paySuggested: true, payAmount: true, payNote: true, drumTurns: true, workHours: true,
+      payType: true, payApprovedAt: true, payRejectReason: true,
       driver: { select: { fullName: true } },
       vehicle: { select: { plate: true, type: true, fuelType: true, fuelNormL100: true, idleNormPerHour: true, gasNormPer100: true, gasIdlePerHour: true } },
       order: { select: { distanceKm: true, customer: { select: { name: true } } } },
     },
   });
   const missing = rows.filter((r) => r.payKm == null);
+  const cashIds = rows.filter((r) => r.payType === "CASH" && r.payApprovedAt).map((r) => r.id);
+  const cash = new Map(cashIds.length
+    ? (await db.mechanicRequest.findMany({ where: { tripId: { in: cashIds } }, select: { tripId: true, status: true } })).map((m) => [m.tripId!, m.status])
+    : []);
   const [kmMap, tariff] = await Promise.all([missing.length ? tripPayKm(missing) : Promise.resolve(new Map<string, number>()), driverTariff()]);
   return rows.map((r) => {
     const km = r.payKm != null ? Number(r.payKm) : Math.round((kmMap.get(r.id) ?? 0) * 10) / 10;
@@ -156,6 +186,7 @@ export async function payTrips(where: object, take = 500): Promise<PayTripRow[]>
       suggested: r.paySuggested != null ? Number(r.paySuggested) : suggestPay(tariff, km, wait, isMixer),
       suggestText: suggestText(tariff, km, wait, isMixer),
       amount: r.payAmount != null ? Number(r.payAmount) : null, pricedAt: r.pricedAt, note: r.payNote,
+      payType: r.payType, approvedAt: r.payApprovedAt, rejectReason: r.payRejectReason, cashStatus: cash.get(r.id) ?? null,
       fuelNorm: tripFuelNorm(r.vehicle, km, hours), fuelUnit: fuelUnit(r.vehicle.fuelType),
       gasNorm: r.vehicle.fuelType === "DIESEL_METHANE" ? tripFuelNorm({ fuelNormL100: r.vehicle.gasNormPer100, idleNormPerHour: r.vehicle.gasIdlePerHour }, km, hours) : null,
     };
@@ -168,36 +199,115 @@ async function monthLocked(d: Date): Promise<boolean> {
   return (await db.payrollRun.count({ where: { month, kind: "FINAL", status: { in: ["APPROVED", "PAID"] } } })) > 0;
 }
 
-/** Dispetcher reys haqini belgilaydi (yoki tuzatadi). Birinchi narxdan keyin reys oylikka tushadi. */
-export async function priceTrip(tripId: string, amount: number, note: string | null, userId: string): Promise<{ ok: true } | { error: string }> {
+/**
+ * Dispetcher reys haqini belgilaydi (yoki tuzatadi) va to'lov turini tanlaydi. Har narx — ish boshqaruvchi
+ * tasdig'iga (oldingi tasdiq bekor bo'ladi). Naqd to'lov kassaga o'tib bo'lgan bo'lsa — o'zgartirilmaydi.
+ */
+export async function priceTrip(tripId: string, amount: number, note: string | null, userId: string, payType: DriverPayType = "PAYROLL", opts: { silent?: boolean } = {}): Promise<{ ok: true } | { error: string }> {
   if (!(amount >= 0) || amount > 100_000_000) return { error: "Summa noto'g'ri" };
-  const t = await db.trip.findUnique({ where: { id: tripId }, select: { status: true, deliveredAt: true, payAmount: true, pricedAt: true, payNote: true } });
+  if (!(PAY_TYPES as readonly string[]).includes(payType)) return { error: "To'lov turini tanlang: naqd yoki oylik" };
+  const t = await db.trip.findUnique({
+    where: { id: tripId },
+    select: { status: true, deliveredAt: true, payAmount: true, pricedAt: true, payNote: true, payType: true, payApprovedAt: true, deliveryNoteNo: true, driver: { select: { fullName: true } } },
+  });
   if (!t) return { error: "Reys topilmadi" };
   if (t.status !== "DELIVERED" || !t.deliveredAt) return { error: "Narx faqat yetkazilgan reysga qo'yiladi" };
   if (await monthLocked(t.deliveredAt)) return { error: "Shu oyning ish haqi vedomosti tasdiqlangan — narxni o'zgartirib bo'lmaydi" };
   if (t.pricedAt && !note) return { error: "Narxni o'zgartirish sababini yozing" };
+  if (await db.mechanicRequest.count({ where: { tripId, status: { in: ["APPROVED", "PAID"] } } })) return { error: "Naqd reys haqi kassaga o'tgan — narxni o'zgartirib bo'lmaydi" };
   const r = await db.trip.updateMany({
     where: { id: tripId, status: "DELIVERED", pricedAt: t.pricedAt },
-    data: { payAmount: amount, payNote: note, pricedAt: new Date(), pricedById: userId },
+    data: { payAmount: amount, payNote: note, pricedAt: new Date(), pricedById: userId, payType, payApprovedAt: null, payApprovedById: null, payRejectReason: null },
   });
   if (!r.count) return { error: "Reys boshqa joyda o'zgartirildi — sahifani yangilang" };
-  await audit(db, userId, "UPDATE", "Trip", tripId, { payAmount: t.payAmount, pricedAt: t.pricedAt, payNote: t.payNote }, { payAmount: amount, payNote: note });
+  await audit(db, userId, "UPDATE", "Trip", tripId,
+    { payAmount: t.payAmount, pricedAt: t.pricedAt, payNote: t.payNote, payType: t.payType, payApprovedAt: t.payApprovedAt },
+    { payAmount: amount, payNote: note, payType });
+  if (!opts.silent) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
+    type: "TRIP_PAY_APPROVE", title: `Reys haqi tasdig'i: ${t.deliveryNoteNo}`,
+    body: `${t.driver.fullName} · ${money(amount)} · ${PAY_TYPE_LABEL[payType].toLowerCase()} — tasdiqlang yoki rad eting`,
+    link: { key: "trip-pay", id: tripId },
+  }, { except: userId }));
   return { ok: true };
 }
 
-/** Bir nechta reysga taklif narxini birdan qo'yish. */
-export async function priceTripsBySuggestion(tripIds: string[], userId: string): Promise<{ done: number; failed: number }> {
+/** Bir nechta reysga taklif narxini birdan qo'yish (bitta to'lov turi bilan) — ish boshqaruvchiga bitta xabar. */
+export async function priceTripsBySuggestion(tripIds: string[], userId: string, payType: DriverPayType = "PAYROLL"): Promise<{ done: number; failed: number }> {
   const rows = await payTrips({ id: { in: tripIds }, ...unpricedWhere() });
-  let done = 0;
-  for (const r of rows) if ("ok" in (await priceTrip(r.id, r.suggested, null, userId))) done++;
+  let done = 0, sum = 0;
+  for (const r of rows) if ("ok" in (await priceTrip(r.id, r.suggested, null, userId, payType, { silent: true }))) { done++; sum += r.suggested; }
+  if (done) notifyAfter(() => notifyRoles(PAY_APPROVER_ROLES, {
+    type: "TRIP_PAY_APPROVE", title: `Reys haqi tasdig'i: ${done} ta reys`,
+    body: `Jami ${money(sum)} · ${PAY_TYPE_LABEL[payType].toLowerCase()} — Haydovchilar tabelida tasdiqlang`,
+    link: { key: "trip-pay", id: rows[0]!.id },
+  }, { except: userId }));
   return { done, failed: tripIds.length - done };
 }
 
-/** Oylik uchun: haydovchi bo'yicha narxlangan reyslar (oy yakuni vedomosti, `lib/hr/payroll.ts`). */
+/**
+ * Ish boshqaruvchi reys haqini tasdiqlaydi. Oylik — oy yakuni vedomostiga tushadi (buxgalterga xabar);
+ * naqd — shu tranzaksiyada kassaga tasdiqlangan mexanik so'rovi (`TRIP_PAY_PROBLEM`) ochiladi, kassa pulni beradi.
+ */
+export async function approveTripPays(tripIds: string[], userId: string): Promise<{ done: number; failed: number }> {
+  const trips = await db.trip.findMany({
+    where: { id: { in: tripIds.slice(0, 500) }, ...pendingApprovalWhere() },
+    select: { id: true, deliveryNoteNo: true, payAmount: true, payType: true, pricedById: true, pricedAt: true, vehicleId: true, driver: { select: { fullName: true } } },
+  });
+  const now = new Date();
+  let done = 0, cashSum = 0, cashN = 0, payrollSum = 0, payrollN = 0;
+  for (const t of trips) {
+    const amount = Number(t.payAmount ?? 0);
+    const ok = await db.$transaction(async (tx) => {
+      const u = await tx.trip.updateMany({ where: { id: t.id, pricedAt: t.pricedAt, payApprovedAt: null }, data: { payApprovedAt: now, payApprovedById: userId } });
+      if (u.count !== 1) return false;
+      if (t.payType === "CASH" && amount > 0) {
+        const m = await tx.mechanicRequest.create({
+          data: {
+            docNo: await nextNo(tx, "mechanicRequest", "MX"), target: "TRANSPORT", vehicleId: t.vehicleId, problem: TRIP_PAY_PROBLEM, amount,
+            note: `Reys ${t.deliveryNoteNo} · haydovchi ${t.driver.fullName} · naqd reys haqi`, payee: t.driver.fullName, tripId: t.id,
+            status: "APPROVED", decidedById: userId, decidedAt: now, createdById: t.pricedById ?? userId,
+          },
+        });
+        await audit(tx, userId, "CREATE", "MechanicRequest", m.id, undefined, m);
+      }
+      await audit(tx, userId, "STATUS_CHANGE", "Trip", t.id, { payApprovedAt: null }, { payApprovedAt: now, payType: t.payType, payAmount: amount });
+      return true;
+    });
+    if (!ok) continue;
+    done++;
+    if (t.payType === "CASH") { cashN++; cashSum += amount; } else { payrollN++; payrollSum += amount; }
+  }
+  notifyAfter(async () => {
+    if (cashN) await notifyRoles(["CASHIER"], { type: "KIRIM_APPROVED", title: `Haydovchiga naqd reys haqi: ${cashN} ta`, body: `Jami ${money(cashSum)} — ish boshqaruvchi tasdiqladi, Mexanik so'rovlari → «Tasdiqlangan»`, link: { key: "trip-pay", id: trips[0]!.id } }, { except: userId });
+    if (payrollN) await notifyRoles(["ACCOUNTING"], { type: "TRIP_PAY_PAYROLL", title: `Oylikka reys haqi: ${payrollN} ta`, body: `Jami ${money(payrollSum)} — tasdiqlandi, oy yakuni vedomostiga tushadi`, link: { key: "trip-pay", id: trips[0]!.id }, channel: "oddiy" }, { except: userId });
+  });
+  return { done, failed: tripIds.length - done };
+}
+
+/** Ish boshqaruvchi rad etadi: narx olib tashlanadi, reys yana «narx belgilanmagan»ga qaytadi (sababi bilan). */
+export async function rejectTripPay(tripId: string, reason: string, userId: string): Promise<{ ok: true } | { error: string }> {
+  const why = reason.trim().slice(0, 300);
+  if (why.length < 3) return { error: "Rad etish sababini yozing" };
+  const t = await db.trip.findFirst({ where: { id: tripId, ...pendingApprovalWhere() }, select: { payAmount: true, payType: true, pricedAt: true, pricedById: true, deliveryNoteNo: true } });
+  if (!t) return { error: "Reys tasdiq kutayotganlar ichida yo'q — sahifani yangilang" };
+  const r = await db.trip.updateMany({
+    where: { id: tripId, pricedAt: t.pricedAt, payApprovedAt: null },
+    data: { pricedAt: null, pricedById: null, payAmount: null, payType: null, payRejectReason: why },
+  });
+  if (!r.count) return { error: "Reys boshqa joyda o'zgartirildi — sahifani yangilang" };
+  await audit(db, userId, "STATUS_CHANGE", "Trip", tripId, { payAmount: t.payAmount, payType: t.payType, pricedAt: t.pricedAt }, { pricedAt: null, payRejectReason: why });
+  notifyAfter(() => notifyUsers([t.pricedById === userId ? null : t.pricedById], {
+    type: "TRIP_PAY_REJECTED", title: `Reys haqi rad etildi: ${t.deliveryNoteNo}`, body: `${money(Number(t.payAmount ?? 0))} — sabab: ${why}. Narxni qayta qo'ying`, link: { key: "trip-pay", id: tripId },
+  }));
+  return { ok: true };
+}
+
+/** Oylik uchun: haydovchi bo'yicha oylikka tasdiqlangan reyslar (oy yakuni vedomosti, `lib/hr/payroll.ts`). Naqd berilganlari kirmaydi. */
 export async function tripPayByDriver(from: Date, to: Date, employeeIds: string[]): Promise<Map<string, { trips: number; km: number; sum: number; unpriced: number }>> {
   const [priced, unpriced] = await Promise.all([
-    db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, status: "DELIVERED", deliveredAt: { gte: from, lt: to }, pricedAt: { not: null } }, _count: true, _sum: { payAmount: true, payKm: true } }),
-    db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, ...unpricedWhere(), deliveredAt: { gte: from > PAY_SINCE ? from : PAY_SINCE, lt: to } }, _count: true }),
+    db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...payrollTripWhere }, _count: true, _sum: { payAmount: true, payKm: true } }),
+    // Narxsiz va oylikka tasdiq kutayotganlar — vedomostda «hali tushmagan» bo'lib ogohlantiriladi
+    db.trip.groupBy({ by: ["driverId"], where: { driverId: { in: employeeIds }, deliveredAt: { gte: from > PAY_SINCE ? from : PAY_SINCE, lt: to }, OR: [unpricedWhere(), { ...pendingApprovalWhere(), payType: "PAYROLL" as const }] }, _count: true }),
   ]);
   const out = new Map<string, { trips: number; km: number; sum: number; unpriced: number }>();
   for (const p of priced) out.set(p.driverId, { trips: p._count, km: Math.round(Number(p._sum.payKm ?? 0)), sum: Number(p._sum.payAmount ?? 0), unpriced: 0 });

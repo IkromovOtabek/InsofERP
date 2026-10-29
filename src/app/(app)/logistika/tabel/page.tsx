@@ -1,15 +1,16 @@
 import Link from "next/link";
-import { BellRing, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Route, Settings2, Timer, Users } from "lucide-react";
+import { BellRing, ChevronLeft, ChevronRight, Coins, FileSpreadsheet, Fuel, Route, Settings2, ShieldCheck, Timer, Users, Wrench } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRoles } from "@/lib/page-guard";
 import { canDo } from "@/lib/permissions";
 import { normMonth } from "@/lib/attendance-report";
 import { monthTitle, shiftMonth, today } from "@/lib/davomat";
-import { driverTariff, fuelNormText, payTrips, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
+import { driverTariff, fuelNormText, PAY_TYPE_LABEL, payTrips, pendingApprovalWhere, tariffSet, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
+import { MASTER_PROBLEMS, MECH_STATUS_COLOR, MECH_STATUS_LABEL } from "@/lib/mechanic-requests";
 import { driverLedger, fuelBalances } from "@/lib/driver-ledger";
 import { date, dateTime, fmtNum, isoDate, money } from "@/lib/format";
 import { Badge, Button, Callout, Card, CardHeader, Empty, PageHeader, Section, Select, StatCard, Table, Tabs, Td, Th, Tr } from "@/components/ui";
-import { PriceAllButton, PriceForm, TariffForm } from "./tabel-forms";
+import { ApproveButton, MasterPayForm, PriceAllButton, PriceForm, RejectPayForm, TariffForm } from "./tabel-forms";
 import { LedgerSheet } from "./ledger-sheet";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,16 @@ const hours = (min: number | null) => (min == null ? "—" : min < 60 ? `${min} 
 /** Yoqilg'i qoldig'i: «66,2 m³», manfiy — qizil (norma bo'yicha zapravkadan ko'p sarflangan). */
 const Bal = ({ v, unit }: { v: number; unit: string }) => <span className={v < 0 ? "font-semibold text-red-600" : undefined}>{fmtNum(v, 1)} {unit}</span>;
 type BalMap = Map<string, { after: number; unit: string }>;
+
+/** Reys haqi holati: to'lov turi va tasdiq / kassa bosqichi; rad etilgani — sababi bilan. */
+function PayStatus({ r }: { r: PayTripRow }) {
+  if (r.amount == null) return r.rejectReason ? <div className="text-[11px] text-red-600">Rad etildi: {r.rejectReason}</div> : null;
+  if (!r.payType) return null;
+  const [color, text] = !r.approvedAt ? ["amber", "Tasdiq kutilmoqda"] as const
+    : r.payType === "PAYROLL" ? ["green", "Oylikka tasdiqlangan"] as const
+    : r.cashStatus === "PAID" ? ["green", "Kassa berdi"] as const : ["blue", "Kassa kutilmoqda"] as const;
+  return <div className="mt-0.5 flex flex-wrap justify-end gap-1"><Badge color="slate" dot={false}>{PAY_TYPE_LABEL[r.payType]}</Badge><Badge color={color}>{text}</Badge></div>;
+}
 
 /** Reys qatori — narxsizlar ro'yxati va haydovchi oyi uchun bir xil. */
 function TripRows({ rows, canPrice, showDriver, bal }: { rows: PayTripRow[]; canPrice: boolean; showDriver: boolean; bal: BalMap }) {
@@ -47,7 +58,10 @@ function TripRows({ rows, canPrice, showDriver, bal }: { rows: PayTripRow[]; can
             <Td right>
               {r.amount != null && <div className="font-semibold tabular">{money(r.amount)}</div>}
               {r.note && <div className="text-[11px] text-slate-500">{r.note}</div>}
-              {canPrice ? <PriceForm tripId={r.id} suggested={r.suggested} amount={r.amount} /> : r.amount == null && <Badge color="amber">Narxsiz</Badge>}
+              <PayStatus r={r} />
+              {/* Naqdi kassaga o'tgan reys narxi o'zgarmaydi */}
+              {canPrice && !(r.payType === "CASH" && r.approvedAt) ? <PriceForm tripId={r.id} suggested={r.suggested} amount={r.amount} payType={r.payType} />
+                : !canPrice && r.amount == null && <Badge color="amber">Narxsiz</Badge>}
             </Td>
           </Tr>
         ))}
@@ -63,15 +77,17 @@ function TripRows({ rows, canPrice, showDriver, bal }: { rows: PayTripRow[]; can
  * «Hisob varag'i» (`?view=hisob`) — dispetcher Excel'i: gaz qoldig'i/zapravka/sarf, xarajatlar, dastavka daromadi, foyda.
  */
 export default async function DriverTabelPage({ searchParams }: { searchParams: Promise<{ oy?: string; driver?: string; view?: string; transport?: string }> }) {
-  const s = await requireRoles(["LOGISTICS", "DISPATCHER"], { module: "logistika" });
+  const s = await requireRoles(["LOGISTICS", "DISPATCHER", "SUPERVISOR", "ACCOUNTING"], { module: "logistika" });
   const sp = await searchParams;
   const month = normMonth(sp.oy);
   const [y, m] = month.split("-").map(Number);
   const from = new Date(y!, m! - 1, 1), to = new Date(y!, m!, 1);
   const canPrice = canDo(s, "logistika", "pay");
+  const canApprove = canDo(s, "logistika", "pay_approve");
+  const monthAgo = new Date(Date.now() - 30 * 86_400_000);
   const view = sp.view === "hisob" ? "hisob" : "tabel";
   const filtered = !!(sp.driver || sp.transport);
-  const [unpriced, monthTrips, tariff, full, filteredLedger, monthVehicles] = await Promise.all([
+  const [unpriced, monthTrips, tariff, full, filteredLedger, monthVehicles, pending, masters, vehicles, payees] = await Promise.all([
     payTrips(unpricedWhere()),
     payTrips({ status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) }, 3000),
     driverTariff(),
@@ -82,6 +98,15 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       ? db.trip.groupBy({ by: ["vehicleId"], where: { status: "DELIVERED", deliveredAt: { gte: from, lt: to }, ...(sp.driver ? { driverId: sp.driver } : {}) } })
         .then((g) => db.vehicle.findMany({ where: { id: { in: g.map((x) => x.vehicleId) } }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }))
       : [],
+    payTrips(pendingApprovalWhere()),
+    // Usta puli: muddatlilari va ochiqlari hammasi, yopilganlari — oxirgi 30 kun
+    db.mechanicRequest.findMany({
+      where: { payee: { not: null }, tripId: null, problem: { in: [...MASTER_PROBLEMS] }, OR: [{ status: { in: ["DEFERRED", "NEW", "APPROVED"] } }, { createdAt: { gte: monthAgo } }] },
+      orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }], take: 60,
+      select: { id: true, docNo: true, createdAt: true, payee: true, problem: true, amount: true, status: true, dueAt: true, note: true, vehicle: { select: { plate: true } } },
+    }),
+    db.vehicle.findMany({ where: { isActive: true }, select: { id: true, plate: true }, orderBy: { plate: "asc" } }),
+    db.mechanicRequest.findMany({ where: { payee: { not: null }, tripId: null }, distinct: ["payee"], select: { payee: true }, orderBy: { payee: "asc" }, take: 200 }),
   ]);
 
   const ledger = view === "hisob" ? filteredLedger ?? full : null;
@@ -122,7 +147,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
 
   return (
     <div>
-      <PageHeader title="Haydovchilar tabeli" subtitle="Yetkazilgan reyslar o'zi tushadi · narxni dispetcher qo'yadi · narxlangani oylikka (Ish haqi) kiradi" />
+      <PageHeader title="Haydovchilar tabeli" subtitle="Yetkazilgan reyslar o'zi tushadi · narx va to'lov turini dispetcher qo'yadi · ish boshqaruvchi tasdiqlaydi: naqd — kassa, oylik — Ish haqi" />
 
       {!tariffSet(tariff) && <Callout tone="warning" title="Tarif kiritilmagan">Taklif narx 0 chiqadi — pastdagi «Tarif» bo&apos;limida km va kutish narxini kiriting.</Callout>}
 
@@ -130,11 +155,99 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
       <Card padded={false} className={unpriced.length ? "border-amber-300 ring-2 ring-amber-100" : undefined}>
         <div id="narxsiz" className="scroll-mt-20 px-5 pt-5">
           <CardHeader title={`Narx belgilanmagan reyslar${unpriced.length ? ` (${unpriced.length})` : ""}`} icon={BellRing}
-            description="Narx qo'yilgach reys haydovchi tabeliga va oylikka qo'shiladi"
+            description="Narx va to'lov turi (naqd / oylik) qo'yilgach reys ish boshqaruvchi tasdig'iga o'tadi"
             action={canPrice && unpriced.length > 1 ? <PriceAllButton ids={unpriced.map((r) => r.id)} /> : undefined} />
         </div>
         {unpriced.length === 0 ? <div className="px-5 pb-5 text-sm text-emerald-700">Hamma yetkazilgan reysga narx qo&apos;yilgan</div>
           : <TripRows rows={unpriced} canPrice={canPrice} showDriver bal={balOf} />}
+      </Card>
+
+      {/* ── Reys haqi tasdig'i (ish boshqaruvchi): naqd — kassaga, oylik — vedomostga ── */}
+      <Card padded={false} className={pending.length && canApprove ? "mt-4 border-blue-300 ring-2 ring-blue-100" : "mt-4"}>
+        <div id="tasdiq" className="scroll-mt-20 px-5 pt-5">
+          <CardHeader title={`Reys haqi tasdig'i${pending.length ? ` (${pending.length})` : ""}`} icon={ShieldCheck}
+            description="Ish boshqaruvchi tasdiqlaydi: naqd — kassaga o'tadi va kassir beradi (kassa chiqimi), oylik — oy yakuni vedomostiga tushadi (buxgalter ko'radi)"
+            action={canApprove && pending.length > 1 ? <ApproveButton ids={pending.map((r) => r.id)} label="Hammasini tasdiqlash" /> : undefined} />
+        </div>
+        {pending.length === 0 ? <div className="px-5 pb-5 text-sm text-slate-500">Tasdiq kutayotgan reys haqi yo&apos;q</div> : (
+          <>
+            <Table>
+              <thead><tr><Th>Sana · nakladnoy</Th><Th>Haydovchi</Th><Th>Obyekt</Th><Th right>Km</Th><Th right>Reys haqi</Th><Th>To&apos;lov turi</Th>{canApprove && <Th right>Qaror</Th>}</tr></thead>
+              <tbody>
+                {pending.map((r) => (
+                  <Tr key={r.id}>
+                    <Td className="text-sm"><span className="font-medium tabular">{r.no}</span><div className="text-xs text-slate-500">{dateTime(r.deliveredAt)} · {r.plate}</div></Td>
+                    <Td className="text-sm">{r.driver}</Td>
+                    <Td className="max-w-48 truncate text-sm">{r.customer}</Td>
+                    <Td right className="tabular">{fmtNum(r.km, 0)}</Td>
+                    <Td right><div className="font-semibold tabular">{money(r.amount ?? 0)}</div>{r.note && <div className="text-[11px] text-slate-500">{r.note}</div>}</Td>
+                    <Td><Badge color={r.payType === "CASH" ? "amber" : "blue"}>{r.payType ? PAY_TYPE_LABEL[r.payType] : "—"}</Badge></Td>
+                    {canApprove && <Td right><div className="flex flex-wrap items-center justify-end gap-1"><ApproveButton ids={[r.id]} label="Tasdiqlash" /><RejectPayForm tripId={r.id} /></div></Td>}
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+            <div className="px-5 py-3 text-xs text-slate-500">
+              Naqd: {money(pending.filter((r) => r.payType === "CASH").reduce((a, r) => a + (r.amount ?? 0), 0))} ·
+              Oylik: {money(pending.filter((r) => r.payType === "PAYROLL").reduce((a, r) => a + (r.amount ?? 0), 0))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* ── Remont usta puli: joyida (tasdiq → kassa) yoki N kunda (muddat kuni eslatma va tasdiq) ── */}
+      <Card padded={false} className="mt-4">
+        <div id="usta" className="scroll-mt-20 px-5 pt-5">
+          <CardHeader title="Remont usta puli" icon={Wrench}
+            description="Ta'mir, vulkanizatsiya, zapchast. Joyida berish — ish boshqaruvchi tasdiqlaydi, kassa beradi. N kunda berish — muddat kuni «… ga remont puli berish vaqti keldi» eslatmasi keladi va tasdiqqa o'tadi"
+            action={canApprove ? <Link href="/mexanik-sorovlar?tab=NEW" className="text-sm text-blue-700 hover:underline">Tasdiqlash — Mexanik so&apos;rovlari</Link> : undefined} />
+          {canPrice && <div className="pb-4"><MasterPayForm vehicles={vehicles} payees={payees.map((p) => p.payee!).filter(Boolean)} problems={MASTER_PROBLEMS} /></div>}
+        </div>
+        {(() => {
+          // Muddatli qarzlar usta bo'yicha: soni, jami, eng yaqin muddat
+          const due = new Map<string, { n: number; sum: number; dueAt: Date }>();
+          for (const m of masters.filter((x) => x.status === "DEFERRED" && x.dueAt)) {
+            const g = due.get(m.payee!) ?? { n: 0, sum: 0, dueAt: m.dueAt! };
+            g.n++; g.sum += Number(m.amount); if (m.dueAt! < g.dueAt) g.dueAt = m.dueAt!;
+            due.set(m.payee!, g);
+          }
+          const days = (d: Date) => Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86_400_000));
+          return (
+            <>
+              {due.size > 0 && (
+                <div className="flex flex-wrap gap-2 px-5 pb-3">
+                  {[...due].map(([payee, g]) => (
+                    <div key={payee} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                      <div className="font-medium">{payee}</div>
+                      <div className="text-xs text-slate-500">{g.n} ta xarajat · <span className="font-semibold tabular text-slate-800">{money(g.sum)}</span> · {date(g.dueAt)} ({days(g.dueAt)} kun qoldi)</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {masters.length === 0 ? <div className="px-5 pb-5 text-sm text-slate-500">Usta puli yozuvlari yo&apos;q</div> : (
+                <Table>
+                  <thead><tr><Th>Sana</Th><Th>Usta</Th><Th>Transport</Th><Th>Turi</Th><Th right>Summa</Th><Th>Holat</Th><Th>Izoh</Th></tr></thead>
+                  <tbody>
+                    {masters.map((m) => (
+                      <Tr key={m.id}>
+                        <Td className="text-sm"><span className="tabular">{date(m.createdAt)}</span><div className="text-xs text-slate-500">{m.docNo}</div></Td>
+                        <Td className="text-sm font-medium">{m.payee}</Td>
+                        <Td className="text-sm">{m.vehicle?.plate ?? "—"}</Td>
+                        <Td className="text-sm">{m.problem}</Td>
+                        <Td right className="font-semibold tabular">{money(Number(m.amount))}</Td>
+                        <Td>
+                          <Badge color={MECH_STATUS_COLOR[m.status]}>{MECH_STATUS_LABEL[m.status]}</Badge>
+                          {m.status === "DEFERRED" && m.dueAt && <div className="mt-0.5 text-[11px] text-slate-500">muddat {date(m.dueAt)}</div>}
+                        </Td>
+                        <Td className="max-w-56 truncate text-sm text-slate-600">{m.note}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </>
+          );
+        })()}
       </Card>
 
       <Section title={picked ? `${picked.name} — ${monthTitle(month)}` : `Oy bo'yicha: ${monthTitle(month)}`}
@@ -184,7 +297,7 @@ export default async function DriverTabelPage({ searchParams }: { searchParams: 
         })()}
 
         <div id="oy-jadval" className="scroll-mt-20" />
-        <Tabs className="mb-3" current={view} items={[
+        <Tabs className="mb-3" scroll={false} current={view} items={[
           { key: "tabel", label: "Reyslar va narx", href: qs({ view: "tabel" }), icon: Route },
           { key: "hisob", label: "Hisob varag'i", href: qs({ view: "hisob" }), icon: FileSpreadsheet },
         ]} />

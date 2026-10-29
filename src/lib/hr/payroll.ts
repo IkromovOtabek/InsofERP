@@ -167,7 +167,7 @@ export async function calculate(month: string, kind: Exclude<PayrollKind, "EXTRA
     }
     const tp = tripPay.get(e.id);
     if (rate <= 0 && e.payType !== "PIECE" && !tp?.trips) warnings.push("Tarif stavka kiritilmagan — kartada «Tarif stavka» ni to'ldiring");
-    if (tp?.unpriced) warnings.push(`${tp.unpriced} ta reysga dispetcher narx qo'ymagan — ular oylikka kirmadi`);
+    if (tp?.unpriced) warnings.push(`${tp.unpriced} ta reys narxsiz yoki ish boshqaruvchi tasdig'ini kutmoqda — ular oylikka kirmadi`);
 
     // Asosiy
     let base = 0, units = 0;

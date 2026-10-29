@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { fuelNormText, payTrips, priceTrip, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
+import { fuelNormText, PAY_TYPE_LABEL, PAY_TYPES, payTrips, priceTrip, unpricedWhere, type PayTripRow } from "@/lib/driver-trip-pay";
 import { dateTime, fmtNum, money } from "@/lib/format";
 import type { MobileUser } from "./auth";
 import type { MobileDetail } from "./detail";
@@ -73,6 +73,7 @@ export async function tripPayDetail(user: MobileUser, id: string): Promise<Mobil
       id: "trip.price", label: r.amount == null ? "Narxni tasdiqlash" : "Narxni tuzatish", tone: r.amount == null ? "success" : "brand",
       form: [
         { name: "amount", label: "Reys haqi, so'm", type: "number", required: true, value: String(r.amount ?? r.suggested), hint: "Taklif tarif bo'yicha — o'zgartirish mumkin" },
+        { name: "payType", label: "To'lov turi", type: "select", required: true, value: r.payType ?? "PAYROLL", options: PAY_TYPES.map((v) => ({ value: v, label: PAY_TYPE_LABEL[v] })), hint: "Ish boshqaruvchi tasdiqlaydi: naqd — kassa beradi, oylik — vedomostga tushadi" },
         { name: "note", label: r.amount == null ? "Izoh" : "O'zgartirish sababi", type: "text", required: r.amount != null },
       ],
     }] : [],
@@ -83,7 +84,8 @@ export async function runTripPrice(user: MobileUser, id: string, payload: Record
   const amount = Number(String(payload.amount ?? "").replace(/\s/g, "").replace(",", "."));
   if (!Number.isFinite(amount)) throw new ListError("ACTION_FAILED", "Summani kiriting", 400);
   const note = typeof payload.note === "string" && payload.note.trim() ? payload.note.trim().slice(0, 300) : null;
-  const r = await priceTrip(id, amount, note, user.id);
+  const payType = payload.payType === "CASH" ? "CASH" : "PAYROLL";
+  const r = await priceTrip(id, amount, note, user.id, payType);
   if ("error" in r) throw new ListError("ACTION_FAILED", r.error, 400);
-  return "Narx belgilandi — reys haydovchi tabeliga tushdi";
+  return "Narx belgilandi — ish boshqaruvchi tasdig'iga yuborildi";
 }

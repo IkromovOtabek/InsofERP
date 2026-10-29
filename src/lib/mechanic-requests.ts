@@ -4,7 +4,7 @@ import { db } from "./db";
 import { audit } from "./audit";
 import { nextNo } from "./numbering";
 import { MAX_AMOUNT } from "./action";
-import { money } from "./format";
+import { date, money } from "./format";
 import { accountBalances, cashOutflowError } from "./payments";
 import { notifyAfter, notifyRoles, notifyUsers } from "./notify";
 import { removeRequestPhoto, saveRequestPhoto } from "./uploads";
@@ -15,6 +15,10 @@ import { removeRequestPhoto, saveRequestPhoto } from "./uploads";
  *   Mexanik so'raydi (NEW)  →  Ish boshqaruvchi tasdiqlaydi (APPROVED) yoki rad etadi (REJECTED)
  *   →  Kassa pul beradi (PAID): Kirim-Chiqimga chiqim, transport bo'lsa — transport xarajati ham.
  *
+ * Dispetcher ham shu oqim bilan usta pulini (ta'mir, vulkanizatsiya) so'raydi (Haydovchilar tabeli): «Joyida berish» — NEW;
+ * «N kunda berish» — DEFERRED, muddat kuni NEW ga o'tadi va eslatma ketadi (`releaseDueRequests`).
+ * Naqd reys haqi — ish boshqaruvchi tabelda tasdiqlaganda shu yerga darhol APPROVED bo'lib tushadi (`tripId`).
+ *
  * Tasdiqsiz kassa pul bermaydi: to'lov faqat APPROVED holatdan, shartli `updateMany` bilan.
  * Mexanik o'z so'rovini tasdiqdan oldin bekor qila oladi (CANCELLED). Hujjat o'chirilmaydi — har qadam auditda.
  * Veb (`app/(app)/mexanik-sorovlar`) ham, mobil ilova (`lib/mobile/*`, kalit `kirim`) ham shu funksiyalarni chaqiradi.
@@ -23,7 +27,11 @@ import { removeRequestPhoto, saveRequestPhoto } from "./uploads";
 // ───────────────────────── Spravochniklar ─────────────────────────
 
 /** Transport uchun muammo turlari. */
-export const PROBLEMS = ["Ta'mir", "Ehtiyot qism", "Shina", "Moy almashtirish", "Akkumulyator", "Elektr", "Yuvish", "Boshqa"] as const;
+export const PROBLEMS = ["Ta'mir", "Ehtiyot qism", "Shina", "Vulkanizatsiya", "Moy almashtirish", "Akkumulyator", "Elektr", "Yuvish", "Boshqa"] as const;
+/** Usta puli (dispetcher, Haydovchilar tabeli) — muammo turlari. */
+export const MASTER_PROBLEMS = ["Ta'mir", "Vulkanizatsiya", "Ehtiyot qism"] as const;
+/** Naqd reys haqi so'rovi (`lib/driver-trip-pay.ts` → `TRIP_PAY_PROBLEM`). */
+const TRIP_PAY = "Reys haqi";
 /** Zavod uchun muammo turlari (shina, yuvish — mashinaniki, bu yerda yo'q). */
 export const FACTORY_PROBLEMS = ["Ta'mir", "Ehtiyot qism", "Elektr", "Moy almashtirish", "Boshqa"] as const;
 /** Zavoddagi obyektlar (uskuna, tarmoq, bino). "Boshqa" — izoh bilan. */
@@ -34,6 +42,7 @@ export const OTHER_PROBLEM = "Boshqa";
 export const TARGET_LABEL: Record<MechanicTarget, string> = { TRANSPORT: "Transport", FACTORY: "Zavod", OTHER: "Boshqa xarajat" };
 
 export const MECH_STATUS_LABEL: Record<MechanicRequestStatus, string> = {
+  DEFERRED: "Muddat kutilmoqda",
   NEW: "Tasdiq kutilmoqda",
   APPROVED: "Tasdiqlangan — kassa kutilmoqda",
   PAID: "Pul berildi",
@@ -42,15 +51,15 @@ export const MECH_STATUS_LABEL: Record<MechanicRequestStatus, string> = {
 };
 /** Qisqa yorliq — ro'yxat va chiplar uchun. */
 export const MECH_STATUS_SHORT: Record<MechanicRequestStatus, string> = {
-  NEW: "Kutilmoqda", APPROVED: "Tasdiqlangan", PAID: "Berilgan", REJECTED: "Rad etilgan", CANCELLED: "Bekor qilingan",
+  DEFERRED: "Muddatli", NEW: "Kutilmoqda", APPROVED: "Tasdiqlangan", PAID: "Berilgan", REJECTED: "Rad etilgan", CANCELLED: "Bekor qilingan",
 };
 /** Veb `Badge` rangi. */
 export const MECH_STATUS_COLOR: Record<MechanicRequestStatus, "slate" | "amber" | "blue" | "green" | "red"> = {
-  NEW: "amber", APPROVED: "blue", PAID: "green", REJECTED: "red", CANCELLED: "slate",
+  DEFERRED: "slate", NEW: "amber", APPROVED: "blue", PAID: "green", REJECTED: "red", CANCELLED: "slate",
 };
 /** Mobil ilova ohangi (`lib/mobile/home.ts` Tone). */
 export const MECH_STATUS_TONE: Record<MechanicRequestStatus, "brand" | "success" | "warning" | "danger" | "info"> = {
-  NEW: "warning", APPROVED: "brand", PAID: "success", REJECTED: "danger", CANCELLED: "info",
+  DEFERRED: "info", NEW: "warning", APPROVED: "brand", PAID: "success", REJECTED: "danger", CANCELLED: "info",
 };
 
 /** Ro'yxat filtrlari — veb tablari va ilova chiplari bir xil. Sukut — hammasi, yangisi tepada. */
@@ -59,6 +68,7 @@ export const MECH_TABS: { key: string; label: string; status: MechanicRequestSta
   { key: "NEW", label: "Kutilmoqda", status: ["NEW"] },
   { key: "APPROVED", label: "Tasdiqlangan", status: ["APPROVED"] },
   { key: "PAID", label: "Berilgan", status: ["PAID"] },
+  { key: "DEFERRED", label: "Muddatli", status: ["DEFERRED"] },
   { key: "REJECTED", label: "Rad etilgan", status: ["REJECTED", "CANCELLED"] },
 ];
 export const mechTab = (key?: string | null) => MECH_TABS.find((t) => t.key === key) ?? MECH_TABS[0];
@@ -91,8 +101,8 @@ export const mechToken = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9-
 const STALE = "So'rov boshqa joyda o'zgartirildi — sahifani yangilang";
 
 /** So'rov nomi bildirishnoma va ro'yxatlar uchun: mashina raqami yoki obyekt. */
-export const mechSubject = (r: { target: MechanicTarget; object: string | null; vehicle?: { plate: string } | null }) =>
-  r.target === "TRANSPORT" ? (r.vehicle?.plate ?? "Transport") : (r.object ?? TARGET_LABEL[r.target]);
+export const mechSubject = (r: { target: MechanicTarget; object: string | null; vehicle?: { plate: string } | null; payee?: string | null }) =>
+  `${r.target === "TRANSPORT" ? (r.vehicle?.plate ?? "Transport") : (r.object ?? TARGET_LABEL[r.target])}${r.payee ? ` · ${r.payee}` : ""}`;
 
 function guard(r: { status: MechanicRequestStatus } | null, expect: MechanicRequestStatus[]): string | null {
   if (!r) return "So'rov topilmadi";
@@ -140,7 +150,7 @@ export async function mechanicList(opts: { status?: MechanicRequestStatus[] | nu
 export async function mechanicCounts(createdById?: string | null) {
   const g = await db.mechanicRequest.groupBy({ by: ["status"], where: createdById ? { createdById } : {}, _count: { _all: true }, _sum: { amount: true } });
   const by = (s: MechanicRequestStatus) => g.find((x) => x.status === s);
-  const counts = Object.fromEntries((["NEW", "APPROVED", "PAID", "REJECTED", "CANCELLED"] as const).map((s) => [s, by(s)?._count._all ?? 0])) as Record<MechanicRequestStatus, number>;
+  const counts = Object.fromEntries((["DEFERRED", "NEW", "APPROVED", "PAID", "REJECTED", "CANCELLED"] as const).map((s) => [s, by(s)?._count._all ?? 0])) as Record<MechanicRequestStatus, number>;
   const sums = Object.fromEntries((["NEW", "APPROVED", "PAID"] as const).map((s) => [s, Number(by(s)?._sum.amount ?? 0)])) as Record<"NEW" | "APPROVED" | "PAID", number>;
   return { counts, sums, total: g.reduce((n, x) => n + x._count._all, 0) };
 }
@@ -160,7 +170,16 @@ export type MechInput = {
   /** Muammo / chek surati (mobil data-URL `dataUrlFile` bilan `File` ga keltiriladi) */
   photo?: File | null;
   clientToken?: string | null;
+  /** Pul kimga — usta ismi (dispetcher usta puli) */
+  payee?: string | null;
+  /** «N kunda berish»: shuncha kundan keyin tasdiqqa o'tadi (DEFERRED). 0 / bo'sh — darhol (NEW) */
+  dueDays?: number | null;
 };
+
+/** «N kunda berish» muddati: bugundan N kun keyin, ertalab 09:00 (eslatmalar kunduzi ishlaydi). */
+export function dueDate(days: number, now = new Date()) {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 9, 0, 0, 0);
+}
 
 export async function createMechanicRequest(input: MechInput, userId: string): Promise<MechResult> {
   const token = mechToken(input.clientToken);
@@ -174,6 +193,11 @@ export async function createMechanicRequest(input: MechInput, userId: string): P
   if (amount > MAX_AMOUNT) return { error: "Summa juda katta" };
   const note = clean(input.note);
   if (!note || note.length < 3) return { error: "Muammo tavsifini yozing — nima buzildi, nima kerak" };
+  const payee = clean(input.payee, 120);
+  const days = input.dueDays != null && Number(input.dueDays) > 0 ? Math.round(Number(input.dueDays)) : 0;
+  if (days > 365) return { error: "Muddat 365 kundan oshmasin" };
+  if (days && !payee) return { error: "Muddatli to'lovda usta ismini yozing" };
+  const dueAt = days ? dueDate(days) : null;
 
   let vehicleId: string | null = null, object: string | null = null, problem: string;
   let subject: string;
@@ -205,6 +229,7 @@ export async function createMechanicRequest(input: MechInput, userId: string): P
         data: {
           docNo: await nextNo(tx, "mechanicRequest", "MX"), target: input.target, vehicleId, object, problem, amount, note,
           photo, urgent: !!input.urgent, clientToken: token, createdById: userId,
+          payee, dueAt, status: dueAt ? "DEFERRED" : "NEW",
         },
       });
       await audit(tx, userId, "CREATE", "MechanicRequest", x.id, undefined, x);
@@ -219,6 +244,9 @@ export async function createMechanicRequest(input: MechInput, userId: string): P
     }
     throw e;
   }
+  // Muddatli — hozir hech kimga xabar yo'q: muddat kuni `releaseDueRequests` tasdiqqa o'tkazadi va xabar beradi
+  if (dueAt) return { id: r.id, docNo: r.docNo, note: `Muddatli: ${payee} — ${date(dueAt)} kuni tasdiqqa o'tadi` };
+  if (payee) subject = `${subject} · ${payee}`;
   // Ish boshqaruvchi tasdiqlaydi; kassa oldindan biladi ("tasdiq kutilmoqda" — hali pul bermaydi)
   const body = `${subject} · ${problem} · ${money(amount)}${input.urgent ? " · SHOSHILINCH" : ""}`;
   notifyAfter(async () => {
@@ -297,15 +325,16 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
     if (cashErr) throw new MechError(cashErr);
     const ct = await tx.cashTransaction.create({
       data: {
-        type: "EXPENSE", date: now, cashAccountId: acc.id, amount, category: MECH_CATEGORY[r.target],
-        counterparty: r.createdBy.fullName, refType: MECH_REF, refId: id, createdById: userId,
+        type: "EXPENSE", date: now, cashAccountId: acc.id, amount, category: r.tripId ? "Ish haqi" : MECH_CATEGORY[r.target],
+        counterparty: r.payee ?? r.createdBy.fullName, refType: MECH_REF, refId: id, createdById: userId,
         note: [`Mexanik so'rovi ${r.docNo}`, `${subject} · ${r.problem}`, extra].filter(Boolean).join(" · "),
       },
     });
     let teId: string | null = null;
-    if (r.target === "TRANSPORT" && r.vehicleId) {
+    // Naqd reys haqi transport xarajati emas: u reys haqi (`Trip.payAmount`) sifatida hisobotlarda bor — ikki marta sanalmasin
+    if (r.target === "TRANSPORT" && r.vehicleId && !r.tripId && r.problem !== TRIP_PAY) {
       const te = await tx.transportExpense.create({
-        data: { date: now, kind: EXPENSE_KIND_OF[r.problem] ?? "OTHER", vehicleId: r.vehicleId, amount, note: `${r.docNo} · ${r.problem}${r.note ? ` · ${r.note}` : ""}`.slice(0, 500), createdById: userId },
+        data: { date: now, kind: EXPENSE_KIND_OF[r.problem] ?? "OTHER", vehicleId: r.vehicleId, amount, note: `${r.docNo} · ${r.problem}${r.payee ? ` · ${r.payee}` : ""}${r.note ? ` · ${r.note}` : ""}`.slice(0, 500), createdById: userId },
       });
       await audit(tx, userId, "CREATE", "TransportExpense", te.id, undefined, te);
       teId = te.id;
@@ -330,11 +359,11 @@ export async function payMechanicRequest(id: string, input: { cashAccountId: str
 /** Faqat o'z so'rovi va faqat tasdiqdan oldin (NEW). */
 export async function cancelMechanicRequest(id: string, userId: string): Promise<MechResult> {
   const r = await db.mechanicRequest.findUnique({ where: { id }, include: { vehicle: { select: { plate: true } } } });
-  const err = guard(r, ["NEW"]);
+  const err = guard(r, ["NEW", "DEFERRED"]);
   if (err || !r) return { error: err ?? "Topilmadi" };
   if (r.createdById !== userId) return { error: "Faqat o'z so'rovingizni bekor qila olasiz" };
   const res = await db.$transaction(async (tx) => {
-    const u = await tx.mechanicRequest.updateMany({ where: { id, status: "NEW", createdById: userId }, data: { status: "CANCELLED", decidedAt: new Date() } });
+    const u = await tx.mechanicRequest.updateMany({ where: { id, status: r.status, createdById: userId }, data: { status: "CANCELLED", decidedAt: new Date() } });
     if (u.count !== 1) throw new MechError(STALE);
     await audit(tx, userId, "STATUS_CHANGE", "MechanicRequest", id, { status: r.status }, { status: "CANCELLED", docNo: r.docNo });
   }).catch((e: Error) => { if (e instanceof MechError) return { error: e.message }; throw e; });
@@ -355,4 +384,39 @@ export async function payAccounts() {
     accountBalances(),
   ]);
   return accounts.map((a) => ({ ...a, balance: bal.get(a.id) ?? 0 }));
+}
+
+// ───────────────────────── 5. Muddatli usta puli: muddat keldi ─────────────────────────
+
+/** Muddat kelganda xabar oladiganlar (foydalanuvchi qarori, 2026-10-29). */
+const DUE_ROLES: Role[] = ["DISPATCHER", "SUPERVISOR", "CASHIER", "MECHANIC"];
+
+/**
+ * Muddati kelgan DEFERRED so'rovlar NEW ga o'tadi (ish boshqaruvchi tasdig'i → kassa) va har usta bo'yicha bitta xabar:
+ * «<usta> ga remont puli berish vaqti keldi» — muddatgacha yig'ilgan xarajatlar soni va jami summasi bilan.
+ * Eslatmalar rejalashtiruvchisi chaqiradi (`lib/reminders.ts`); har so'rov shartli `updateMany` bilan bir marta o'tadi.
+ */
+export async function releaseDueRequests(now = new Date()): Promise<number> {
+  const due = await db.mechanicRequest.findMany({
+    where: { status: "DEFERRED", dueAt: { lte: now } }, orderBy: { createdAt: "asc" }, take: 500,
+    select: { id: true, docNo: true, amount: true, payee: true, problem: true, createdById: true, vehicle: { select: { plate: true } } },
+  });
+  const groups = new Map<string, { ids: string[]; sum: number; plates: Set<string>; problems: Set<string> }>();
+  for (const r of due) {
+    const u = await db.mechanicRequest.updateMany({ where: { id: r.id, status: "DEFERRED" }, data: { status: "NEW" } });
+    if (u.count !== 1) continue;
+    await audit(db, r.createdById, "STATUS_CHANGE", "MechanicRequest", r.id, { status: "DEFERRED" }, { status: "NEW", reason: "muddat keldi" });
+    const key = r.payee ?? "Usta";
+    const g = groups.get(key) ?? { ids: [], sum: 0, plates: new Set<string>(), problems: new Set<string>() };
+    g.ids.push(r.id); g.sum += Number(r.amount); if (r.vehicle) g.plates.add(r.vehicle.plate); g.problems.add(r.problem);
+    groups.set(key, g);
+  }
+  for (const [payee, g] of groups) {
+    await notifyRoles(DUE_ROLES, {
+      type: "KIRIM_DUE", title: `${payee} ga remont puli berish vaqti keldi`,
+      body: `${g.ids.length} ta xarajat (${[...g.problems].join(", ")}${g.plates.size ? ` · ${[...g.plates].join(", ")}` : ""}) · jami ${money(g.sum)} — ish boshqaruvchi tasdiqlaydi, keyin kassa beradi`,
+      link: { key: "kirim", id: g.ids[0]! },
+    });
+  }
+  return due.length;
 }

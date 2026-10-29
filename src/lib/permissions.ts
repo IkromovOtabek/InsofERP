@@ -104,7 +104,8 @@ export const MODULE_ACTIONS: Record<string, ActionDef[]> = {
     { key: "expense",  label: "Transport xarajati kiritish",     roles: ["LOGISTICS", "ACCOUNTING", "MECHANIC"] },
     { key: "sites",    label: "Obyektlar",                       roles: ["LOGISTICS", "SALES"] },
     { key: "drivers",  label: "Haydovchi kartochkasi",           roles: ["LOGISTICS", "DISPATCHER"] },
-    { key: "pay",      label: "Reys narxi va haydovchi tarifi (tabel)", roles: ["DISPATCHER"], hint: "Narxlangan reys oylikka (Ish haqi) tushadi" },
+    { key: "pay",      label: "Reys narxi, to'lov turi, haydovchi tarifi va usta puli (tabel)", roles: ["DISPATCHER"], hint: "Narx va usta puli ish boshqaruvchi tasdig'iga boradi" },
+    { key: "pay_approve", label: "Reys haqini tasdiqlash (naqd → kassa, oylik → vedomost)", roles: ["SUPERVISOR"] },
     { key: "settings", label: "Logistika sozlamalari",           roles: ["LOGISTICS"] },
   ],
   stock: [
