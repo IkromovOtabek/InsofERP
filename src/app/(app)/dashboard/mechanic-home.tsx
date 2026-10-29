@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { SUPPLY_COLOR, SUPPLY_LABEL, SUPPLY_OWNER } from "@/lib/supply";
-import { skladLogistika, type SlLoad, type SlTone } from "@/lib/sklad-logistika";
+import { skladLogistika, type SlLoad, type SlOrder, type SlTone } from "@/lib/sklad-logistika";
 import { VEHICLE_TYPE, vehicleServiceDue } from "@/lib/logistics";
 import { fleetPeriod, fmtLoad } from "@/lib/vehicle-report";
 import { TRIP_STEP } from "@/lib/trips";
@@ -25,14 +25,40 @@ const ALERT_CLS: Record<SlTone, string> = {
 const q = (v: number, unit: string) => `${fmtNum(v, 2)} ${unitLabel(unit)}`;
 
 /** Kunlik zayavka kartalari — yuk turi bo'yicha; bosilsa batafsil jadval shu turdagi zayavkalar bilan ochiladi (`?birlik=`). */
-const LOAD_CARD: Record<LoadKind, { label: string; unit: string; icon: typeof Package; tone: "info" | "brand" | "default" }> = {
+export const LOAD_CARD: Record<LoadKind, { label: string; unit: string; icon: typeof Package; tone: "info" | "brand" | "default" }> = {
   m3: { label: "Beton (kub)", unit: "m³", icon: Container, tone: "info" },
   dona: { label: "Dona mahsulot", unit: "dona", icon: Blocks, tone: "brand" },
   t: { label: "Tonna (yuk og'irligi)", unit: "t", icon: Weight, tone: "default" },
 };
-const LOAD_FILTER: Record<LoadKind, string> = { m3: "beton (m³)", dona: "dona mahsulot", t: "og'irligi bor (t) yuk" };
+export const LOAD_FILTER: Record<LoadKind, string> = { m3: "beton (m³)", dona: "dona mahsulot", t: "og'irligi bor (t) yuk" };
 export const isLoadKind = (v?: string): v is LoadKind => v === "m3" || v === "dona" || v === "t";
-function loadHint(l: SlLoad) {
+/** Kunlik zayavka holati bo'yicha filtr (`?holat=`) — «Kunlik zayavkalar» sahifasi. */
+export const HOLAT = {
+  jonatilgan: { label: "Jo'natilgan", test: (o: SlOrder) => o.done },
+  qolgan: { label: "Qolgan", test: (o: SlOrder) => !o.done },
+  muammoli: { label: "Muammoli / kechikkan", test: (o: SlOrder) => !o.done && (o.late || o.blocked || o.problem) },
+  kechikkan: { label: "Oldingi kunlardan", test: (o: SlOrder) => o.overdue },
+} as const;
+export type Holat = keyof typeof HOLAT;
+export const isHolat = (v?: string): v is Holat => !!v && v in HOLAT;
+export const byLoad = (o: SlOrder, k: LoadKind) => (k === "t" ? o.tons != null : o.kinds.includes(k));
+
+/** Karta bosilganda ochiladigan sahifa: shu kun zayavkalari, yuk turi / holat filtri bilan. */
+export function zayavkaHref(p: { day?: Date; birlik?: LoadKind | null; holat?: Holat | null }) {
+  const q = new URLSearchParams();
+  if (p.day) q.set("date", isoDate(p.day));
+  if (p.birlik) q.set("birlik", p.birlik);
+  if (p.holat) q.set("holat", p.holat);
+  const s = q.toString();
+  return `/dashboard/zayavkalar${s ? `?${s}` : ""}`;
+}
+/** "54,5 m³ · 243 dona · ≈ 156,99 t" — kunlik yuk turlari bir qatorda. */
+export function loadsText(loads: SlLoad[]) {
+  const p = loads.filter((l) => l.orders).map((l) => `${l.kind === "t" && l.approx ? "≈ " : ""}${fmtNum(l.qty, l.kind === "dona" ? 0 : 2)} ${LOAD_CARD[l.kind].unit}`);
+  return p.length ? p.join(" · ") : "zayavka yo'q";
+}
+
+export function loadHint(l: SlLoad) {
   if (!l.orders) return "bu kun zayavka yo'q";
   const parts = [`${l.orders} ta zayavka`];
   if (l.extra) parts.push(`+ ${l.extra}`);
@@ -165,6 +191,9 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
   // Kartadan filtr: kun saqlanadi, `birlik` almashadi (yana bosilsa — filtr olinadi)
   const unitLink = (k: LoadKind | null) => `${base}${base.includes("?") ? "&" : "?"}${new URLSearchParams({ ...(d.isToday ? {} : { date: isoDate(d.day) }), ...(k ? { birlik: k } : {}) })}#kunlik-zayavka`;
   const shown = kind ? d.orders.filter((o) => (kind === "t" ? o.tons != null : o.kinds.includes(kind))) : d.orders;
+  // Kartalar alohida «Kunlik zayavkalar» sahifasini ochadi (shu kun, filtr bilan)
+  const dayArg = d.isToday ? undefined : d.day;
+  const page = (birlik: LoadKind | null, holat: Holat | null = null) => zayavkaHref({ day: dayArg, birlik, holat });
   const dayName = d.isToday ? "Bugungi" : `${date(d.day)} —`;
   const nextName = d.isToday ? "Ertangi" : `${date(d.next)} —`;
   const flowMax = Math.max(1, d.flow[0]?.count ?? 0);
@@ -182,23 +211,23 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
       {/* ── 1. Bugungi nazorat ── */}
       <Section title={`1. ${dayName} nazorat`} className="mt-0" action={more("/trips", "Reyslar")}>
         <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          {/* Kunlik zayavka — yuk turi bo'yicha (m³ · dona · tonna); bosilsa pastdagi batafsil jadval shu turdagi zayavkalar bilan */}
+          {/* Kunlik zayavka — yuk turi bo'yicha (m³ · dona · tonna); bosilsa «Kunlik zayavkalar» sahifasi shu turdagi zayavkalar bilan */}
           {t.loads.map((l) => {
             const c = LOAD_CARD[l.kind];
-            return <StatCard key={l.kind} label={`Kunlik zayavka — ${c.label}`} value={`${fmtNum(l.qty, l.kind === "dona" ? 0 : 2)} ${c.unit}`} hint={loadHint(l)} icon={c.icon} tone={l.orders ? c.tone : "default"} href={unitLink(kind === l.kind ? null : l.kind)} />;
+            return <StatCard key={l.kind} label={`Kunlik zayavka — ${c.label}`} value={`${fmtNum(l.qty, l.kind === "dona" ? 0 : 2)} ${c.unit}`} hint={loadHint(l)} icon={c.icon} tone={l.orders ? c.tone : "default"} href={page(l.kind)} />;
           })}
-          <StatCard label="Zayavkalar soni" value={`${t.orders} ta`} hint={t.drafts ? `${t.drafts} tasi tasdiqlanmagan` : "bekor qilinganlarsiz"} icon={Package} tone="brand" href={unitLink(null)} />
-          <StatCard label="Jo'natilgan" value={`${t.shipped} ta`} hint={t.shippedVolume} icon={Send} tone={t.shipped ? "success" : "default"} href="/trips" />
-          <StatCard label="Qolgan zayavka" value={`${t.left} ta`} hint={t.leftVolume} icon={CalendarClock} tone={t.left ? "warning" : "success"} href="#kunlik-zayavka" />
-          <StatCard label="Muammoli / kechikkan" value={`${t.problem} ta`} hint={t.overdue ? `${t.overdue} tasi oldingi kunlardan` : "kechikish, blok, reys muammosi"} icon={AlertTriangle} tone={t.problem ? "danger" : "success"} href="#kunlik-zayavka" />
-          <StatCard label="Jami hajm" value={t.volume} hint="bugungi zayavkalar, birlik bo'yicha" icon={ClipboardList} tone="default" href={unitLink(null)} />
+          <StatCard label="Zayavkalar soni" value={`${t.orders} ta`} hint={`${loadsText(t.loads)}${t.drafts ? ` · ${t.drafts} tasi tasdiqlanmagan` : ""}`} icon={Package} tone="brand" href={page(null)} />
+          <StatCard label="Jo'natilgan" value={`${t.shipped} ta`} hint={t.shippedVolume} icon={Send} tone={t.shipped ? "success" : "default"} href={page(null, "jonatilgan")} />
+          <StatCard label="Qolgan zayavka" value={`${t.left} ta`} hint={t.leftVolume} icon={CalendarClock} tone={t.left ? "warning" : "success"} href={page(null, "qolgan")} />
+          <StatCard label="Muammoli / kechikkan" value={`${t.problem} ta`} hint={t.overdue ? `${t.overdue} tasi oldingi kunlardan` : "kechikish, blok, reys muammosi"} icon={AlertTriangle} tone={t.problem ? "danger" : "success"} href={page(null, "muammoli")} />
+          <StatCard label="Jami hajm" value={t.volume} hint={t.loads.find((l) => l.kind === "t")?.orders ? `og'irligi ${loadsText(t.loads.filter((l) => l.kind === "t"))}` : "bugungi zayavkalar, birlik bo'yicha"} icon={ClipboardList} tone="default" href={page(null)} />
         </div>
       </Section>
 
       {/* ── 2. Ertangi kun ── */}
       <Section title={`2. ${nextName} kun nazorati`} action={more("/logistika/transport", "Transport")}>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <StatCard label="Ertangi zayavka" value={`${n.orders} ta`} hint={n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : date(d.next)} icon={ClipboardList} tone="info" href={`${link(d.next)}#kunlik-zayavka`} />
+          <StatCard label="Ertangi zayavka" value={`${n.orders} ta`} hint={n.drafts ? `${n.drafts} tasi tasdiqlanmagan` : date(d.next)} icon={ClipboardList} tone="info" href={zayavkaHref({ day: d.next })} />
           <StatCard label="Kerak bo'ladigan mahsulot" value={n.need} icon={Package} tone="brand" href="#mahsulot" />
           <StatCard label="Skladda mavjud" value={n.available} hint="bugungi jo'natishdan keyin" icon={Warehouse} tone="default" href="/stock" />
           <StatCard label="Yetishmaydigan mahsulot" value={n.short} hint={n.shortCount ? `${n.shortCount} xil mahsulot` : "hammasi yetarli"} icon={n.shortCount ? PackageX : PackageCheck} tone={n.shortCount ? "danger" : "success"} href="#mahsulot" />
@@ -304,50 +333,58 @@ export async function SkladLogistika({ day, unit, base = "/dashboard", middle }:
           })}
           {kind && <span className="ml-1 text-slate-500">Faqat {LOAD_FILTER[kind]} bor zayavkalar: {shown.length} ta</span>}
         </div>
-        <Table>
-          <thead><tr><Th>Mijoz</Th><Th>Vaqt</Th><Th>Mahsulot — necha m³ / dona</Th><Th>Qayerga</Th><Th>Kimdan (kiritgan)</Th><Th>Reyslar</Th><Th right>Jo&apos;natildi</Th><Th>Holat</Th></tr></thead>
-          <tbody>
-            {shown.length === 0 && <Empty text={kind ? `Bu kunda ${LOAD_FILTER[kind]} zayavkasi yo'q` : "Zayavka yo'q"} icon={ClipboardList} />}
-            {shown.map((o) => (
-              <Tr key={o.id} className="align-top">
-                <Td className="min-w-44">
-                  <div className="font-semibold text-slate-900">{o.customer}</div>
-                  {o.phone && <div className="text-xs font-normal text-slate-500">{o.phone}</div>}
-                </Td>
-                <Td className="tabular">{o.time ?? "—"}</Td>
-                <Td className="min-w-52">
-                  <ul className="space-y-0.5">
-                    {o.items.map((i, k) => (
-                      <li key={k} className="flex justify-between gap-3">
-                        <span className="truncate" title={i.name}><b className="text-slate-900">{i.code}</b> <span className="text-slate-500">{i.name !== i.code ? i.name : ""}</span></span>
-                        <span className="shrink-0 font-semibold tabular text-slate-900">{q(i.qty, i.unit)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {o.items.length > 1 && <div className="mt-1 border-t border-slate-100 pt-1 text-right text-xs font-semibold text-slate-600">Jami: {o.volume}</div>}
-                  {o.tons != null && <div className="mt-0.5 text-right text-xs text-slate-500">≈ {fmtNum(o.tons, 2)} t</div>}
-                  {o.pump && <div className="mt-1"><Badge color="violet">Nasos kerak</Badge></div>}
-                </Td>
-                <Td className="min-w-48 text-[13px]">{o.address || "—"}{o.note && <div className="mt-0.5 text-xs text-slate-500">{o.note}</div>}</Td>
-                <Td className="whitespace-nowrap text-[13px]">{o.createdBy}</Td>
-                <Td className="min-w-40 text-[13px]">
-                  {o.trips.length === 0 ? <span className="text-slate-400">biriktirilmagan</span> : (
-                    <ul className="space-y-0.5">{o.trips.map((r, k) => <li key={k}><b className="tabular">{r.plate}</b> · {r.driver} <span className="text-slate-500">· {fmtNum(r.qty, 2)} · {TRIP_STEP[r.status] ?? r.status}</span></li>)}</ul>
-                  )}
-                </Td>
-                <Td right className="tabular">{fmtNum(o.shipped, 2)} / {fmtNum(o.total, 2)}{o.unit ? ` ${unitLabel(o.unit)}` : ""}</Td>
-                <Td>
-                  <div className="flex flex-wrap gap-1">
-                    <Badge color={o.done ? "green" : o.blocked ? "red" : o.late ? "amber" : "blue"}>{o.statusLabel}</Badge>
-                    {o.late && !o.done && o.statusLabel !== "Muddati o'tgan" && <Badge color="amber">Kechikmoqda</Badge>}
-                    {o.problem && <Badge color="red">Muammo</Badge>}
-                  </div>
-                </Td>
-              </Tr>
-            ))}
-          </tbody>
-        </Table>
+        <ZayavkaTable orders={shown} empty={kind ? `Bu kunda ${LOAD_FILTER[kind]} zayavkasi yo'q` : "Zayavka yo'q"} />
       </Section>
     </div>
+  );
+}
+
+/** Kunlik zayavkalar jadvali — bosh sahifadagi batafsil bo'lim va «Kunlik zayavkalar» sahifasi (`/dashboard/zayavkalar`). */
+export function ZayavkaTable({ orders, empty, orderHref }: { orders: SlOrder[]; empty: string; orderHref?: boolean }) {
+  return (
+    <Table>
+      <thead><tr><Th>Mijoz</Th><Th>Vaqt</Th><Th>Mahsulot — necha m³ / dona</Th><Th>Qayerga</Th><Th>Kimdan (kiritgan)</Th><Th>Reyslar</Th><Th right>Jo&apos;natildi</Th><Th>Holat</Th></tr></thead>
+      <tbody>
+        {orders.length === 0 && <Empty text={empty} icon={ClipboardList} />}
+        {orders.map((o) => (
+          <Tr key={o.id} className="align-top">
+            <Td className="min-w-44">
+              {orderHref ? <Link href={`/orders/${o.id}`} className="font-semibold text-slate-900 hover:underline">{o.customer}</Link> : <div className="font-semibold text-slate-900">{o.customer}</div>}
+              <div className="text-xs font-normal tabular text-slate-500">{o.orderNo}</div>
+              {o.phone && <div className="text-xs font-normal text-slate-500">{o.phone}</div>}
+            </Td>
+            <Td className="tabular">{o.time ?? "—"}</Td>
+            <Td className="min-w-52">
+              <ul className="space-y-0.5">
+                {o.items.map((i, k) => (
+                  <li key={k} className="flex justify-between gap-3">
+                    <span className="truncate" title={i.name}><b className="text-slate-900">{i.code}</b> <span className="text-slate-500">{i.name !== i.code ? i.name : ""}</span></span>
+                    <span className="shrink-0 font-semibold tabular text-slate-900">{q(i.qty, i.unit)}</span>
+                  </li>
+                ))}
+              </ul>
+              {o.items.length > 1 && <div className="mt-1 border-t border-slate-100 pt-1 text-right text-xs font-semibold text-slate-600">Jami: {o.volume}</div>}
+              {o.tons != null && <div className="mt-0.5 text-right text-xs text-slate-500">≈ {fmtNum(o.tons, 2)} t</div>}
+              {o.pump && <div className="mt-1"><Badge color="violet">Nasos kerak</Badge></div>}
+            </Td>
+            <Td className="min-w-48 text-[13px]">{o.address || "—"}{o.note && <div className="mt-0.5 text-xs text-slate-500">{o.note}</div>}</Td>
+            <Td className="whitespace-nowrap text-[13px]">{o.createdBy}</Td>
+            <Td className="min-w-40 text-[13px]">
+              {o.trips.length === 0 ? <span className="text-slate-400">biriktirilmagan</span> : (
+                <ul className="space-y-0.5">{o.trips.map((r, k) => <li key={k}><b className="tabular">{r.plate}</b> · {r.driver} <span className="text-slate-500">· {fmtNum(r.qty, 2)} · {TRIP_STEP[r.status] ?? r.status}</span></li>)}</ul>
+              )}
+            </Td>
+            <Td right className="tabular">{fmtNum(o.shipped, 2)} / {fmtNum(o.total, 2)}{o.unit ? ` ${unitLabel(o.unit)}` : ""}</Td>
+            <Td>
+              <div className="flex flex-wrap gap-1">
+                <Badge color={o.done ? "green" : o.blocked ? "red" : o.late ? "amber" : "blue"}>{o.statusLabel}</Badge>
+                {o.late && !o.done && o.statusLabel !== "Muddati o'tgan" && <Badge color="amber">Kechikmoqda</Badge>}
+                {o.problem && <Badge color="red">Muammo</Badge>}
+              </div>
+            </Td>
+          </Tr>
+        ))}
+      </tbody>
+    </Table>
   );
 }

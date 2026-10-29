@@ -55,6 +55,8 @@ export type SlOrder = {
   trips: { plate: string; driver: string; qty: number; status: string }[];
   /** Zayavkadagi yuk turlari (kartadan filtr: `?birlik=m3|dona|t`) va dona/t yukining og'irligi, tonna. */
   kinds: LoadKind[]; tons: number | null;
+  /** Oldingi kunlardan qolgan (sanasi o'tgan, to'liq jo'natilmagan) zayavka. */
+  overdue: boolean;
   late: boolean; problem: boolean; blocked: boolean; done: boolean;
 };
 
@@ -203,6 +205,7 @@ export async function skladLogistika(dayParam?: string, range?: { from: Date; to
       trips: o.trips.filter((t) => t.status !== "CANCELLED").map((t) => ({ plate: t.vehicle.plate, driver: t.driver.fullName, qty: Number(t.qtyM3), status: t.status })),
       kinds: [...new Set(o.items.map((i) => loadKind(i.product.unit)))],
       tons: orderTons(o.items.map((i) => ({ p: i.product, qty: Number(i.qtyM3) }))),
+      overdue,
       statusLabel: overdue ? "Muddati o'tgan" : o.status === "BLOCKED" ? "Bloklangan" : o.status === "DRAFT" ? "Tasdiqlanmagan" : s.done ? "Jo'natildi" : logi.status === "ON_ROAD" ? "Yo'lda" : logi.status === "LOADING" ? "Yuklanmoqda" : logi.status === "ASSIGNED" ? "Transport biriktirilgan" : "Kutilmoqda",
       late: !s.done && (overdue || logi.late), problem: logi.problem, blocked: o.status === "BLOCKED", done: s.done,
     };
