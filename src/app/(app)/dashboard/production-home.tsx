@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, Boxes, CalendarCheck, ClipboardList, Factory, FileText, HardHat, ScanFace, ShieldCheck, Target, TriangleAlert, Truck, Users, UserCog } from "lucide-react";
+import { ArrowRight, Boxes, CalendarCheck, ClipboardList, Factory, FileText, HardHat, ShieldCheck, Target, TriangleAlert, Truck } from "lucide-react";
 import { canDo } from "@/lib/permissions";
 import { pendingApprovalWhere } from "@/lib/driver-trip-pay";
 import { productionDay, DEFECT_REASONS } from "@/lib/production-day";
-import { markOf, monthTitle, dayTitle, today as todayIso } from "@/lib/davomat";
+import { monthTitle, dayTitle, today as todayIso } from "@/lib/davomat";
 import { customerMarks } from "@/lib/finance";
 import { db } from "@/lib/db";
 import { CustomerName } from "@/components/customer-name";
@@ -16,7 +16,7 @@ import { BrigadeProductsView } from "../brigades/brigade-products";
 import { Badge, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { MobileFold } from "./mobile-fold";
 import { OrderStatusBadge } from "../orders/status";
-import { DefectForm, DeleteDefectButton, DeletePlanButton, MarkAllButton, PlanForm, SaveReportForm, StaffMark } from "./production-forms";
+import { DefectForm, DeleteDefectButton, DeletePlanButton, PlanForm, SaveReportForm } from "./production-forms";
 import type { Session } from "@/lib/auth";
 
 const more = (href: string, text: string) => (
@@ -49,9 +49,8 @@ export async function ProductionHome({ s }: { s: Session }) {
   const todayReports = reports.filter((r) => r.iso === iso);
   const marks = await customerMarks(d.load.orders.map((o) => o.customerId));
   const isDirector = s.role === "DIRECTOR";
-  // Plan va xodimlarni taqsimlash — odatda direktor; Ruxsatlarda «Ishlab chiqarish → plan / staff» bilan boshqaga beriladi
+  // Plan — odatda direktor; Ruxsatlarda «Ishlab chiqarish → plan» bilan boshqaga beriladi
   const canPlan = canDo(s, "production", "plan");
-  const canStaff = canDo(s, "production", "staff");
 
   const producedToday = fmtUnitTotals(d.produced.filter((r) => r.day > 0).map((r) => ({ unit: r.product.unit, qty: r.day })));
   const defectToday = fmtUnitTotals(d.defects.today.map((r) => ({ unit: r.product.unit, qty: r.qty })));
@@ -80,7 +79,7 @@ export async function ProductionHome({ s }: { s: Session }) {
         {/* Sex xodimlari kartasi o'rniga — ishlab chiqarish kerak (davomat sex boshlig'ida «Ishga keldi» bilan qoladi) */}
         <StatCard label="Quyish kerak — beton" value={needBeton.length ? fmtUnitTotals(needBeton) : "—"} hint={`${matrix.needList.filter((x) => x.unit === "m3").length} xil marka`} icon={Factory} tone={needBeton.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
         <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.filter((x) => x.unit !== "m3").length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
-        {!isSupervisor && <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />}
+        {!isSupervisor && <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="/dashboard/sex" />}
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
         <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
         <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="#brak" />
@@ -242,71 +241,6 @@ export async function ProductionHome({ s }: { s: Session }) {
         </Section>
       )}
 
-      {/* ── 1–2. Sex xodimlari va davomat (ish boshqaruvchida yo'q) ── */}
-      {!isSupervisor && <>
-      <div id="davomat" className="scroll-mt-20" />
-      <Section title="Sex xodimlari va davomat" action={<div className="flex flex-wrap gap-2">{canStaff && <LinkButton href="/dashboard/xodimlar" variant="secondary" size="sm"><UserCog size={14} /> Xodimlarni taqsimlash</LinkButton>}{!isDirector && <MarkAllButton left={d.attendance.notMarked.length} />}</div>}>
-        <MobileFold label="Davomat jadvali">
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 [&>*]:min-w-0">
-          <Card>
-            <div className="flex items-center gap-2 text-sm font-medium"><HardHat size={15} className="text-slate-400" /> Brigadalar bo&apos;yicha · keldi / jami</div>
-            <ul className="mt-3 space-y-2 text-sm">
-              {d.staff.groups.map((g) => (
-                <li key={g.id ?? "none"}>
-                  <div className="flex justify-between"><span className={g.id ? "text-slate-600" : "text-amber-700"}>{g.name}</span><span className="font-medium tabular">{g.present} / {g.total}</span></div>
-                  <Progress value={g.present} max={Math.max(g.total, 1)} tone={g.total && g.present === g.total ? "success" : "default"} />
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex justify-between border-t border-slate-100 pt-2 text-sm font-semibold"><span>Jami sexda</span><span className="tabular">{presentCount} / {d.staff.total}</span></div>
-            {d.staff.unassigned > 0 && (
-              <p className="mt-2 text-xs text-amber-700">{d.staff.unassigned} kishi brigadaga taqsimlanmagan{canStaff ? " — «Xodimlarni taqsimlash» dan biriktiring." : " — direktor taqsimlaydi."}</p>
-            )}
-            <div className="mt-4 border-t border-slate-100 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Lavozim bo&apos;yicha</div>
-            <ul className="mt-2 space-y-1 text-sm">
-              {d.staff.byPosition.map(([pos, n]) => (
-                <li key={pos} className="flex justify-between"><span className="text-slate-600">{pos}</span><span className="tabular">{n}</span></li>
-              ))}
-            </ul>
-          </Card>
-          <Card className="xl:col-span-2" padded={false}>
-            <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
-              <div className="flex items-center gap-2 text-sm font-medium"><ScanFace size={15} className="text-slate-400" /> Bugungi davomat · {dayTitle(iso)}</div>
-              <div className="flex flex-wrap gap-1.5">
-                <Badge color="green">Keldi {presentCount}</Badge>
-                {d.attendance.absent > 0 && <Badge color="red">Kelmadi {d.attendance.absent}</Badge>}
-                {d.attendance.sick > 0 && <Badge color="amber">Kasal {d.attendance.sick}</Badge>}
-                {d.attendance.leave > 0 && <Badge color="blue">Ta&apos;til {d.attendance.leave}</Badge>}
-                {d.attendance.notMarked.length > 0 && <Badge color="slate">Belgilanmagan {d.attendance.notMarked.length}</Badge>}
-              </div>
-            </div>
-            <p className="px-5 pt-1 text-xs text-slate-400">{isDirector ? "Davomatni sex boshlig'i belgilaydi — otdel kadr tabeliga ham shu yozuv tushadi." : "Belgi bosilsa darhol saqlanadi (Keldi — hozirgi soat bilan). Otdel kadr tabeliga ham tushadi."}</p>
-            <div className="mt-2 max-h-[28rem] overflow-auto">
-              <table className="w-full min-w-[560px] text-sm">
-                <thead><tr><Th>Xodim</Th><Th>Brigada</Th><Th>Holat</Th><Th right>Keldi</Th><Th right>Ketdi</Th>{!isDirector && <Th right>Belgilash</Th>}</tr></thead>
-                <tbody>
-                  {[...d.attendance.notMarked, ...d.attendance.present, ...d.attendance.away].map((e) => {
-                    const m = e.status ? markOf(e.status) : null;
-                    return (
-                      <Tr key={e.id}>
-                        <Td className={m ? "font-medium" : "text-slate-500"}>{e.fullName}<div className="text-xs font-normal text-slate-400">{e.position}</div></Td>
-                        <Td className={e.brigade ? "text-slate-500" : "text-amber-700"}>{e.brigade ?? "taqsimlanmagan"}</Td>
-                        <Td>{m ? <Badge color={m.color}>{m.label}</Badge> : <span className="text-xs text-slate-400">belgilanmagan</span>}</Td>
-                        <Td right className="tabular">{e.checkIn ?? "—"}</Td>
-                        <Td right className="tabular text-slate-500">{e.checkOut ?? "—"}</Td>
-                        {!isDirector && <Td right><StaffMark employeeId={e.id} status={e.status} checkedOut={!!e.checkOut} /></Td>}
-                      </Tr>
-                    );
-                  })}
-                  {d.staff.total === 0 && <Empty text={canStaff ? "Sexga xodim taqsimlanmagan — «Xodimlarni taqsimlash» ni oching" : "Sexga xodim taqsimlanmagan — direktorga ayting"} icon={Users} />}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
-        </MobileFold>
-      </Section>
-      </>}
 
       {/* ── 7. Brak ── */}
       <Section id="brak" title="Brak" action={<span className="flex flex-wrap items-center gap-3"><span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv · {fmtNum(d.defects.month.reduce((x, r) => x + r.amount, 0))} so&apos;m</span>{more("/brigades?tab=brak", "Kunlik, brigada bo'yicha")}</span>}>

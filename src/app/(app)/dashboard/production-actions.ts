@@ -11,7 +11,7 @@ import { assignEmployeeBrigade, markAllPresent, markProductionAttendance, markPr
 import { submitReport } from "@/lib/production-report";
 import { addProductDefect, deleteProductDefect } from "@/lib/defects";
 
-const done = () => { revalidatePath("/dashboard"); return { ok: true } as const; };
+const done = () => { revalidatePath("/dashboard"); revalidatePath("/dashboard/sex"); return { ok: true } as const; };
 
 /* ───────────────────────── Plan (direktor yoki u «production → plan» bergan xodim) ───────────────────────── */
 
