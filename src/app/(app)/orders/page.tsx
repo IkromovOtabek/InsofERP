@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDownRight, Boxes } from "lucide-react";
+import { Plus, ArrowRight, History, X, FileSpreadsheet, CheckCircle2, CornerDownRight, Boxes, ScrollText } from "lucide-react";
 import { db } from "@/lib/db";
 import { customerMarks } from "@/lib/finance";
 import { CustomerName } from "@/components/customer-name";
@@ -74,7 +74,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Zayavkalar"
         subtitle="Yangi kiritilgan va qabul qilinmagan zayavkalar. Qabul qilingach zayavka Sotuv bo'limiga o'tadi."
-        action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton>{pathAllowed("/sales", s.role, s.perms) && <LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton>}{can("import") && <LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}{can("stock") && <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Boxes size={16} /> Sklad zayavkasi</LinkButton>}{can("create") && <LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton>}</div>}
+        action={<div className="flex flex-wrap gap-2"><LinkButton href="/orders/tarix" variant="ghost"><History size={16} /> Tarix</LinkButton>{pathAllowed("/sales/realizatsiya", s.role, s.perms) && <LinkButton href="/sales/realizatsiya" variant="secondary"><ScrollText size={16} /> Realizatsiya</LinkButton>}{pathAllowed("/sales", s.role, s.perms) && <LinkButton href="/sales" variant="secondary">Sotuv <ArrowRight size={16} /></LinkButton>}{can("import") && <LinkButton href="/orders/import" variant="secondary"><FileSpreadsheet size={16} /> Excel orqali</LinkButton>}{can("stock") && <LinkButton href="/orders/new?tur=sklad" variant="secondary"><Boxes size={16} /> Sklad zayavkasi</LinkButton>}{can("create") && <LinkButton href="/orders/new"><Plus size={16} /> Yangi zayavka</LinkButton>}</div>}
       />
       {/* Excel importidan keyin: nechta zayavka ochilgani — hammasi qoralama, quyidagi ro'yxatda turadi */}
       {imported && /^\d+$/.test(imported) && (

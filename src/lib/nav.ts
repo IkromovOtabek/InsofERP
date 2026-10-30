@@ -42,6 +42,8 @@ export const NAV: NavItem[] = [
   { href: "/vazifalar",   label: "Vazifalar",          roles: "all", group: "Asosiy", hidden: true },
   { href: "/orders",      label: "Zayavkalar",         roles: ["SALES", "PRODUCTION", "SUPERVISOR", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv" },
   { href: "/sales",       label: "Sotuv",              roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["PRODUCTION", "LOGISTICS"] },
+  // Realizatsiya reestri (reys/TTN bo'yicha): Sotuv va Zayavkalar sahifasidagi tugmadan; ish boshqaruvchi menyusida ham (Sotuv sahifasi unga yopiq)
+  { href: "/sales/realizatsiya", label: "Realizatsiya",  roles: ["SALES", "PRODUCTION", "LOGISTICS", "ACCOUNTING", "FINANCE", "SUPERVISOR"], group: "Sotuv", menuFor: ["SUPERVISOR"] },
   // Buxgalteriya kabinetida Mijozlar bandi yo'q (veb va ECO) — ruxsat qoladi: schyot, to'lov, qarzdorlar havolalaridan ochiladi
   { href: "/customers",   label: "Mijozlar",           roles: ["SALES", "ACCOUNTING", "FINANCE"], group: "Sotuv", menuHide: ["ACCOUNTING"] },
   // Sotuv agenti — o'z mijozlari, ularning qarzi va o'z mijoziga zayavka. AGENT uchun yagona sahifa

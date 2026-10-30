@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Search, Truck, Wallet, Receipt, FileWarning } from "lucide-react";
 import { requirePage } from "@/lib/page-guard";
+import { pathAllowed } from "@/lib/nav";
 import { dateRu, fmtNum, isoDate } from "@/lib/format";
 import { realizationRows, type RealizationRow } from "@/lib/realization";
 import { PAY_GROUPS, type PayGroupKey } from "@/lib/order-day-sheet";
@@ -28,7 +29,7 @@ const shortTtn = (v: string | null) => (v ? v.replace(/^.*-0*(?=\d)/, "") : "");
 const parse = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00`) : null);
 
 export default async function RealizatsiyaPage({ searchParams }: { searchParams: Promise<SP> }) {
-  await requirePage("/sales/realizatsiya");
+  const s = await requirePage("/sales/realizatsiya");
   const sp = await searchParams;
   const now = new Date();
   let from = parse(sp.from) ?? new Date(now.getFullYear(), now.getMonth(), 1);
@@ -73,7 +74,7 @@ export default async function RealizatsiyaPage({ searchParams }: { searchParams:
   return (
     <div>
       <PageHeader
-        back={{ href: "/sales", label: "Sotuv" }}
+        back={pathAllowed("/sales", s.role, s.perms) ? { href: "/sales", label: "Sotuv" } : { href: "/orders", label: "Zayavkalar" }}
         title="Realizatsiya"
         subtitle={`${period} · ${trips} ta reys (TTN) · ${rows.length} qator`}
         action={<ExcelButton file={`Realizatsiya ${period}`} sheets={[{ name: "Realizatsiya", rows: excelRows }]} />}
