@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Boxes, CalendarCheck, ClipboardList, Factory, FileText, HardHat, ShieldCheck, Target, TriangleAlert, Truck } from "lucide-react";
 import { canDo } from "@/lib/permissions";
 import { pendingApprovalWhere } from "@/lib/driver-trip-pay";
-import { productionDay, DEFECT_REASONS } from "@/lib/production-day";
+import { productionDay } from "@/lib/production-day";
 import { monthTitle, dayTitle, today as todayIso } from "@/lib/davomat";
 import { customerMarks } from "@/lib/finance";
 import { db } from "@/lib/db";
@@ -16,7 +16,7 @@ import { BrigadeProductsView } from "../brigades/brigade-products";
 import { Badge, Card, Empty, LinkButton, Progress, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
 import { MobileFold } from "./mobile-fold";
 import { OrderStatusBadge } from "../orders/status";
-import { DefectForm, DeleteDefectButton, DeletePlanButton, PlanForm, SaveReportForm } from "./production-forms";
+import { DeletePlanButton, PlanForm, SaveReportForm } from "./production-forms";
 import type { Session } from "@/lib/auth";
 
 const more = (href: string, text: string) => (
@@ -35,9 +35,8 @@ export async function ProductionHome({ s }: { s: Session }) {
   // xabar faqat ilovaga boradi; bosh sahifada ko'rinib tursin
   const approver = canDo(s, "logistika", "pay_approve");
   const isSupervisor = s.role === "SUPERVISOR";
-  const [d, brigades, reports, payWait, mechWait, matrix, brigadeWork] = await Promise.all([
+  const [d, reports, payWait, mechWait, matrix, brigadeWork] = await Promise.all([
     productionDay(iso),
-    db.brigade.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     reportHistory(5),
     approver ? db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }) : null,
     approver ? db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }) : null,
@@ -82,7 +81,7 @@ export async function ProductionHome({ s }: { s: Session }) {
         {!isSupervisor && <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="/dashboard/sex" />}
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
         <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
-        <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="#brak" />
+        <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="/dashboard/brak" />
       </div>
 
       {/* ── 5. Bugun yuklanadigan mahsulot ── */}
@@ -242,57 +241,6 @@ export async function ProductionHome({ s }: { s: Session }) {
       )}
 
 
-      {/* ── 7. Brak ── */}
-      <Section id="brak" title="Brak" action={<span className="flex flex-wrap items-center gap-3"><span className="text-xs text-slate-500">oyda {d.defects.month.length} ta yozuv · {fmtNum(d.defects.month.reduce((x, r) => x + r.amount, 0))} so&apos;m</span>{more("/brigades?tab=brak", "Kunlik, brigada bo'yicha")}</span>}>
-        <MobileFold label="Brak yozuvlari">
-        <Card padded={false}>
-          <div className="px-5 py-4">
-            <DefectForm products={d.products} brigades={brigades} reasons={DEFECT_REASONS} />
-          </div>
-          {d.defects.month.length > 0 && (
-            <div className="grid grid-cols-1 border-t border-slate-100 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:divide-x xl:divide-slate-100 [&>*]:min-w-0">
-              <div className="max-h-80 overflow-auto">
-                <table className="w-full min-w-[680px] text-sm">
-                  <thead><tr><Th>Vaqt</Th><Th>Mahsulot</Th><Th right>Miqdor</Th><Th right>Summa</Th><Th>Sabab</Th><Th>Brigada</Th><Th>Kim</Th><Th /></tr></thead>
-                  <tbody>
-                    {d.defects.month.map((r) => {
-                      const canDelete = isDirector || (r.createdById === s.userId && r.date >= d.from);
-                      return (
-                        <Tr key={r.id}>
-                          <Td className="whitespace-nowrap tabular text-slate-500">{dateTime(r.date)}</Td>
-                          <Td><span className="font-medium">{r.product.code}</span></Td>
-                          <Td right className="font-medium text-red-600">{qty(r.qty)} {unitLabel(r.product.unit)}</Td>
-                          <Td right className="whitespace-nowrap tabular text-slate-600">{fmtNum(r.amount)}</Td>
-                          <Td>{r.reason}{r.note && <div className="text-xs text-slate-400">{r.note}</div>}</Td>
-                          <Td className="text-slate-500">{r.brigade ?? "—"}</Td>
-                          <Td className="text-slate-500">{r.by}</Td>
-                          <Td right>{canDelete && <DeleteDefectButton id={r.id} />}</Td>
-                        </Tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-5 py-4 text-sm">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Oy bo&apos;yicha brak ulushi</div>
-                <ul className="space-y-1.5">
-                  {d.produced.filter((r) => r.defectMonth > 0).map((r) => (
-                    <li key={r.product.id} className="flex justify-between gap-2">
-                      <span>{r.product.code}</span>
-                      <span className="tabular"><span className="text-red-600">{qty(r.defectMonth)}</span> / {qty(r.month)} {unitLabel(r.product.unit)} · <b>{r.month > 0 ? pct((r.defectMonth / r.month) * 100) : "—"}</b></span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Sabablar</div>
-                <ul className="space-y-1">
-                  {d.defects.byReason.map(([r, n]) => <li key={r} className="flex justify-between"><span className="text-slate-600">{r}</span><span className="tabular">{n}</span></li>)}
-                </ul>
-              </div>
-            </div>
-          )}
-        </Card>
-        </MobileFold>
-      </Section>
 
 
       {/* ── 8. Direktorga kunlik hisobot: ko'rish → "Qayd etish" → direktor kabineti ── */}
