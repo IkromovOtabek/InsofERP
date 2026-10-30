@@ -146,7 +146,7 @@ export function ProductionMatrixView({ data, board, all, filters, tab, stockHref
                       <Link href={`/orders/${o.id}`} className="line-clamp-2 text-[13px] leading-tight hover:underline">{o.customer}</Link>
                       <span className="mt-1 block">
                         {canMove && (allById.get(o.id)?.movable ?? true)
-                          ? <DateMove o={o} label={`${short(o)}${o.isUrgent ? " · zarur" : ""}`} className={dateCls} />
+                          ? <DateMove o={o} name={o.customer} label={`${short(o)}${o.isUrgent ? " · zarur" : ""}`} className={dateCls} />
                           : <span className={dateCls}>{short(o)}{o.isUrgent && " · zarur"}</span>}
                       </span>
                     </SheetTh>
@@ -299,7 +299,7 @@ function Board({ orders, filters, tab, data, sel, net, today, canMove, onClear, 
                       <div className="min-w-0">
                         <Link href={`/orders/${o.id}`} className="block truncate font-semibold text-slate-900 hover:underline" title={o.customer}>{o.customer}</Link>
                         <div className={cn("flex flex-wrap gap-x-1.5 text-xs", o.soon && s !== "ready" ? "font-medium text-red-700" : "text-slate-500")}>
-                          {canMove && o.movable ? <DateMove o={o} label={when} /> : <span className="whitespace-nowrap">{when}</span>}
+                          {canMove && o.movable ? <DateMove o={o} name={o.customer} label={when} /> : <span className="whitespace-nowrap">{when}</span>}
                           {o.due && s !== "ready" && <span className="whitespace-nowrap">· {o.due}</span>}
                           {o.pickup && <span className="whitespace-nowrap text-slate-500">· o&apos;zi oladi</span>}
                         </div>
