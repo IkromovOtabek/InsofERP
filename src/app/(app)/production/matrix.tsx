@@ -15,7 +15,8 @@ import type { UnitTotal } from "@/lib/unit";
 
 /**
  * Ishlab chiqarish «Matritsa»si — zavodning Excel jadvali: mahsulot × zayavka, oxirida natija (qoldiq − band).
- * Ustunlar brigada holati bo'yicha guruhlangan; son bosilsa shu zayavka qatori «Brigada tayinlash» formasida ochiladi
+ * Ustunlar tayyorlik bo'yicha guruhlangan (Tayyor emas / Qisman tayyor / Tayyor), sarlavhadagi sanani bosib zayavka boshqa kunga
+ * ko'chiriladi; son rangi — brigada holati, son bosilsa shu zayavka qatori «Brigada tayinlash» formasida ochiladi
  * (`/production?order=…&item=…`), u yerda brigada va miqdor tanlanadi.
  * Ostida «Zayavkalar doskasi»: holat bo'yicha ustunlar. Mahsulot tanlansa, doska shu mahsulotni olayotgan zayavkalarga toraytiriladi.
  * Ma'lumot `lib/production-matrix.ts` dan; bu yerda faqat filtr va ko'rinish.
@@ -26,11 +27,9 @@ type ReadyCol = "none" | "part" | "ready";
 const READY_LABEL: Record<ReadyCol, string> = { none: "Tayyor emas", part: "Qisman tayyor", ready: "Tayyor" };
 const DOT: Record<ReadyCol, string> = { none: "bg-red-500", part: "bg-amber-500", ready: "bg-emerald-500" };
 const BORDER: Record<ReadyCol, string> = { none: "border-red-400", part: "border-amber-400", ready: "border-emerald-400" };
-/** Matritsa: brigada tayinlash holati */
-const ASSIGNS: MatrixAssign[] = ["none", "part", "full"];
+const READY_TONE: Record<ReadyCol, SheetTone> = { none: "red", part: "yellow", ready: "green" };
+/** Brigada tayinlash holati — doska kartasi pastida va matritsadagi son rangi */
 const ASSIGN_LABEL: Record<MatrixAssign, string> = { none: "Brigada tayinlanmagan", part: "Qisman tayinlangan", full: "Brigada tayinlangan" };
-const ASSIGN_SHORT: Record<MatrixAssign, string> = { none: "Tayinlanmagan", part: "Qisman", full: "Tayinlangan" };
-const ASSIGN_TONE: Record<MatrixAssign, SheetTone> = { none: "red", part: "yellow", full: "green" };
 const ASSIGN_DOT: Record<MatrixAssign, string> = { none: "bg-red-500", part: "bg-amber-500", full: "bg-emerald-500" };
 /** Doska tayyorlik tartibida: tayyor emas → qisman → tayyor */
 const FLOW: ReadyCol[] = ["none", "part", "ready"];
@@ -52,10 +51,10 @@ function Dot({ s }: { s: ReadyCol }) {
   return <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[s])} />;
 }
 
-export function ProductionMatrixView({ data, board, filters, tab, stockHref, canMove }: { data: ProductionMatrix; board: BoardOrder[]; filters: React.ReactNode; tab: string; stockHref?: string; canMove: boolean }) {
+export function ProductionMatrixView({ data, board, all, filters, tab, stockHref, canMove }: { data: ProductionMatrix; board: BoardOrder[]; all: BoardOrder[]; filters: React.ReactNode; tab: string; stockHref?: string; canMove: boolean }) {
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [asf, setAsf] = useState<Record<MatrixAssign, boolean>>({ none: true, part: true, full: true });
+  const [asf, setAsf] = useState<Record<ReadyCol, boolean>>({ none: true, part: true, ready: true });
   const [onlyDef, setOnlyDef] = useState(false);
   // Sukut bo'yicha hamma mahsulot ko'rinadi — matritsa o'z qutisida tepa-pastga aylanadi
   const [hideEmpty, setHideEmpty] = useState(false);
@@ -65,17 +64,20 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime(); });
 
   const byId = useMemo(() => new Map(data.products.map((p) => [p.id, p])), [data.products]);
+  // Matritsa ustunlari doskadagidek tayyorlik bo'yicha guruhlanadi (Tayyor emas / Qisman tayyor / Tayyor)
+  const allById = useMemo(() => new Map(all.map((o) => [o.id, o])), [all]);
+  const readyOf = (o: MatrixOrder): ReadyCol => { const b = allById.get(o.id); return b ? readiness(b, o.alloc).col : "none"; };
   const net = (p: MatrixProduct) => p.stock - p.band;
   const needle = q.trim().toLowerCase();
   const prodMatch = (p: MatrixProduct) => !needle || p.name.toLowerCase().includes(needle) || p.code.toLowerCase().includes(needle);
   const ordMatch = (o: MatrixOrder) => !needle || o.customer.toLowerCase().includes(needle) || Object.keys(o.items).some((id) => { const p = byId.get(id); return !!p && prodMatch(p); });
 
-  const cols = data.orders.filter((o) => asf[o.assign] && ordMatch(o))
-    .sort((a, b) => ASSIGNS.indexOf(a.assign) - ASSIGNS.indexOf(b.assign) || a.deliveryDate.localeCompare(b.deliveryDate));
+  const cols = data.orders.filter((o) => asf[readyOf(o)] && ordMatch(o))
+    .sort((a, b) => FLOW.indexOf(readyOf(a)) - FLOW.indexOf(readyOf(b)) || a.deliveryDate.localeCompare(b.deliveryDate));
   const isEmpty = (p: MatrixProduct) => p.stock <= 0 && p.band <= 0;
   const rows = data.products.filter((p) => prodMatch(p) && !(hideEmpty && isEmpty(p)) && !(onlyDef && net(p) >= 0));
   const hiddenEmpty = hideEmpty ? data.products.filter((p) => prodMatch(p) && isEmpty(p) && !(onlyDef && net(p) >= 0)).length : 0;
-  const groups = ASSIGNS.map((s) => ({ s, n: cols.filter((o) => o.assign === s).length })).filter((g) => g.n);
+  const groups = FLOW.map((s) => ({ s, n: cols.filter((o) => readyOf(o) === s).length })).filter((g) => g.n);
   const maxDef = Math.max(1, ...data.products.map((p) => -net(p)));
 
   // Kartalar — serverdagi birlik bo'yicha yig'indi (dona, m², beton m³ alohida)
@@ -85,7 +87,7 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
     ? [...t].sort((a, b) => Number(a.unit === "m3") - Number(b.unit === "m3")).map((x, k) => <span key={x.unit} className={cn("block whitespace-nowrap", k > 0 && "text-base font-medium sm:text-lg")}>{n0(x.qty)} {unitLabel(x.unit)}</span>)
     : "0");
   const needAny = sm.need.length > 0;
-  const cnt = ASSIGNS.reduce((a, s) => ({ ...a, [s]: data.orders.filter((o) => o.assign === s).length }), {} as Record<MatrixAssign, number>);
+  const cnt = FLOW.reduce((a, s) => ({ ...a, [s]: data.orders.filter((o) => readyOf(o) === s).length }), {} as Record<ReadyCol, number>);
   const selP = sel ? byId.get(sel) : undefined;
   const pick = (id: string) => setSel((cur) => (cur === id ? null : id));
 
@@ -108,11 +110,11 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
             <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mahsulot yoki mijoz…" aria-label="Qidirish" className="h-9 pl-9" />
           </label>
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Brigada holati">
-            {ASSIGNS.map((s) => (
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tayyorlik">
+            {FLOW.map((s) => (
               <button key={s} type="button" aria-pressed={asf[s]} onClick={() => setAsf((x) => ({ ...x, [s]: !x[s] }))}
                 className={cn("inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition pointer-coarse:h-11", asf[s] ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50")}>
-                <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", ASSIGN_DOT[s])} /> {ASSIGN_SHORT[s]} <span className="tabular text-[11px] opacity-70">{cnt[s]}</span>
+                <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[s])} /> {READY_LABEL[s]} <span className="tabular text-[11px] opacity-70">{cnt[s]}</span>
               </button>
             ))}
           </div>
@@ -128,7 +130,7 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
                 <SheetTh tone="plain" className={C_NO}><span className="sr-only">№</span></SheetTh>
                 <SheetTh tone="plain" className={cn(C_NAME, "text-left")}>Mahsulot</SheetTh>
                 <SheetTh tone="plain" className={C_ST}>Skladda</SheetTh>
-                {groups.map((g) => <SheetTh key={g.s} tone={ASSIGN_TONE[g.s]} colSpan={g.n}>{g.n > 1 ? ASSIGN_LABEL[g.s] : ASSIGN_SHORT[g.s]}</SheetTh>)}
+                {groups.map((g) => <SheetTh key={g.s} tone={READY_TONE[g.s]} colSpan={g.n} className={g.n === 1 ? "whitespace-normal" : undefined}>{READY_LABEL[g.s]}</SheetTh>)}
                 <SheetTh tone="plain" className={C_TT}>Natija</SheetTh>
               </tr>
               <tr>
@@ -138,12 +140,19 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
                   {hiddenEmpty > 0 && <button type="button" onClick={() => setHideEmpty(false)} className="block text-[11px] font-medium text-slate-900 underline-offset-2 hover:underline">{hiddenEmpty} ta bo&apos;sh qator yashirilgan — ko&apos;rsatish</button>}
                 </SheetTh>
                 <SheetTh tone="plain" className={cn(C_ST, "font-medium text-slate-500")}>qoldiq</SheetTh>
-                {cols.map((o) => (
-                  <SheetTh key={o.id} tone={ASSIGN_TONE[o.assign]} className="w-[104px] min-w-[104px] max-w-[104px] px-1.5 align-bottom whitespace-normal" title={`${o.customer} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${ASSIGN_LABEL[o.assign]}`}>
-                    <Link href={`/orders/${o.id}`} className="line-clamp-2 text-[13px] leading-tight hover:underline">{o.customer}</Link>
-                    <span className={cn("mt-1 block text-[12px] font-medium", isLate(o, today) ? "text-red-700" : "text-slate-600")}>{short(o)}{o.isUrgent && " · zarur"}</span>
-                  </SheetTh>
-                ))}
+                {cols.map((o) => {
+                  const r = readyOf(o), dateCls = cn("text-[12px] font-medium", isLate(o, today) ? "text-red-700" : "text-slate-600");
+                  return (
+                    <SheetTh key={o.id} tone={READY_TONE[r]} className="w-[104px] min-w-[104px] max-w-[104px] px-1.5 align-bottom whitespace-normal" title={`${o.customer} · ${o.dateUnknown ? "sana aniq emas" : date(new Date(o.deliveryDate))} · ${READY_LABEL[r]} · ${ASSIGN_LABEL[o.assign].toLowerCase()}`}>
+                      <Link href={`/orders/${o.id}`} className="line-clamp-2 text-[13px] leading-tight hover:underline">{o.customer}</Link>
+                      <span className="mt-1 block">
+                        {canMove && (allById.get(o.id)?.movable ?? true)
+                          ? <DateMove o={o} label={`${short(o)}${o.isUrgent ? " · zarur" : ""}`} className={dateCls} />
+                          : <span className={dateCls}>{short(o)}{o.isUrgent && " · zarur"}</span>}
+                      </span>
+                    </SheetTh>
+                  );
+                })}
                 <SheetTh tone="plain" className={cn(C_TT, "font-medium text-slate-500")}>qoldiq − band</SheetTh>
               </tr>
             </SheetHead>
@@ -159,7 +168,7 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
                     <SheetTd right strong className={cn(B_ST, bg)}>{n0(p.stock)}</SheetTd>
                     {cols.map((o) => {
                       const v = o.items[p.id], c = o.cells[p.id];
-                      if (!v || !c) return <SheetTd key={o.id} tone={ASSIGN_TONE[o.assign]} />;
+                      if (!v || !c) return <SheetTd key={o.id} tone={READY_TONE[readyOf(o)]} />;
                       const left = Math.max(0, c.qty - c.given), st: MatrixAssign = left <= 0.0005 ? "full" : c.given > 0 ? "part" : "none";
                       return (
                         <SheetTd key={o.id} center className="p-1">
@@ -194,10 +203,11 @@ export function ProductionMatrixView({ data, board, filters, tab, stockHref, can
             </SheetFoot>
           </Sheet>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 ring-1 ring-red-200" /> brigada tayinlanmagan</span>
+            <span>Ustun rangi — tayyorlik. Son rangi — brigada:</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 ring-1 ring-red-200" /> tayinlanmagan</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-100 ring-1 ring-amber-200" /> qisman (−qolgani)</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-100 ring-1 ring-emerald-200" /> brigada tayinlangan</span>
-            <span>Sonni bosing — brigada va miqdor tanlanadi.</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-100 ring-1 ring-emerald-200" /> tayinlangan</span>
+            <span>Sonni bosing — brigada va miqdor tanlanadi. Sanani bosing — boshqa kunga ko&apos;chirish.</span>
             {rows.length > 10 && (
               <button type="button" onClick={() => setFull((x) => !x)} className="ml-auto inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-900">
                 <ChevronsUpDown size={13} /> {full ? "Ixcham (aylantirib ko'rish)" : `To'liq ochish (${rows.length} qator)`}
@@ -246,7 +256,7 @@ function readiness(o: BoardOrder, alloc: Record<string, number> | undefined): { 
 }
 
 /** Kartadagi yetkazish sanasi — bosilsa kalendar ochiladi, tanlangan kunga zayavka ko'chiriladi (`rescheduleOrder`). */
-function DateMove({ o, label, className }: { o: BoardOrder; label: string; className?: string }) {
+function DateMove({ o, label, className }: { o: { id: string; deliveryDate: string; dateUnknown: boolean }; label: string; className?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -269,7 +279,12 @@ function DateMove({ o, label, className }: { o: BoardOrder; label: string; class
       </button>
       <input ref={ref} type="date" min={today} defaultValue={o.dateUnknown ? "" : isoDate(new Date(o.deliveryDate))} onChange={(e) => pickDay(e.target.value)}
         tabIndex={-1} aria-label="Yangi yetkazish sanasi" className="pointer-events-none absolute bottom-0 left-0 h-0 w-0 opacity-0" />
-      {err && <span role="alert" className="mt-1 max-w-[230px] text-[11px] leading-snug font-medium whitespace-normal text-red-700">{err}</span>}
+      {err && (
+        <span role="alert" className="absolute top-full left-0 z-40 mt-1 flex w-60 items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-left text-[11px] leading-snug font-medium whitespace-normal text-red-700 shadow-md">
+          <span className="min-w-0 flex-1">{err}</span>
+          <button type="button" onClick={() => setErr(null)} aria-label="Yopish" className="shrink-0 text-red-500 hover:text-red-800"><X size={12} /></button>
+        </span>
+      )}
     </span>
   );
 }

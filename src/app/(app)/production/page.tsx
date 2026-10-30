@@ -56,7 +56,8 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
   const canMove = canDo(session, "production", "reschedule");
   // «Zayavkalar doskasi» — tanlangan filtr bo'yicha: ustun tayyorlikdan (Tayyor emas / Qisman / Tayyor), brigada holati — qatorlardan.
   // Qator bo'yicha tayyor = max(brigada bajargani, jo'natilgan ulushi, zamesda quyilgani); dona qatorlarga hovlidagi qoldiq doskada qo'shiladi
-  const board: BoardOrder[] = orders.map((o) => {
+  // Barcha zayavkalar uchun (matritsa ustunlari ham tayyorlik bo'yicha guruhlanadi), doska — filtrdagilari
+  const toBoard = (o: (typeof allOrders)[number]): BoardOrder => {
     const st = o.items.map((i) => itemTasks(i.qtyM3, i.tasks));
     const total = o.items.reduce((s, i) => s + Number(i.qtyM3), 0);
     const share = total > 0 ? Math.min(1, o.trips.reduce((s, t) => s + Number(t.qtyM3), 0) / total) : 0;
@@ -74,7 +75,10 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         return { itemId: i.id, productId: i.productId, name: i.product.name, unit: i.product.unit, qty: q, left: st[n]!.left, shipped: q * share, done: Math.min(q, Math.max(st[n]!.doneQty + cancelledDone, q * share, poured)) };
       }),
     };
-  });
+  };
+  const all = allOrders.map(toBoard);
+  const byId = new Map(all.map((b) => [b.id, b]));
+  const board = orders.map((o) => byId.get(o.id)!); // filtr tartibida (muddati yaqinlar tepada)
   const bOpts = brigades.map((b) => ({ id: b.id, name: b.name, leader: b.leader?.fullName ?? null }));
   // Brigada tayinlashda kerak: qaysi brigada qo'lidagi xomashyo bilan qanchasini chiqara oladi
   const capacity: Capacity = {};
@@ -117,7 +121,7 @@ export default async function ProductionPage({ searchParams }: { searchParams: P
         </Card>
       )}
 
-      <ProductionMatrixView data={matrix} board={board} tab={filter.key} canMove={canMove}
+      <ProductionMatrixView data={matrix} board={board} all={all} tab={filter.key} canMove={canMove}
         stockHref={pathAllowed("/stock", session.role, session.perms) ? "/stock?tab=capacity" : undefined}
         filters={<Tabs current={filter.key} className="mb-3" scroll={false} items={PRODUCTION_FILTERS.map((f) => ({ key: f.key, label: f.label, icon: FILTER_ICON[f.key] ?? Layers, href: f.key === "open" ? "/production" : `/production?tab=${f.key}`, count: allOrders.filter(f.test).length }))} />} />
 
