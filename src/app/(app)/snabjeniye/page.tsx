@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ClipboardList, Clock, FileBarChart, PackageCheck, ShoppingCart, Truck } from "lucide-react";
+import { ClipboardList, Clock, FileBarChart, PackageCheck, Send, ShoppingCart, Truck } from "lucide-react";
 import { requireRoles } from "@/lib/page-guard";
+import { canDo } from "@/lib/permissions";
 import { supplyList, supplyTab, supplyCounts, SUPPLY_TABS, plannedSum } from "@/lib/supply";
 import { money } from "@/lib/format";
 import { Callout, LinkButton, PageHeader, StatCard, Tabs } from "@/components/ui";
@@ -11,7 +12,7 @@ import { SupplyTable } from "../taminot/supply-table";
  * sotib olinadi va kelgan mol tekshirilib qabul qilinadi (shundan keyin sklad kirimi bo'ladi).
  */
 export default async function SnabjeniyePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock" });
+  const s = await requireRoles(["PROCUREMENT", "WAREHOUSE"], { module: "stock" });
   const { tab } = await searchParams;
   const t = supplyTab(tab);
   const [rows, counts] = await Promise.all([supplyList(t.status), supplyCounts()]);
@@ -20,7 +21,12 @@ export default async function SnabjeniyePage({ searchParams }: { searchParams: P
   return (
     <div>
       <PageHeader title="Snabjeniye" subtitle="Skladdan kelgan kerakli mahsulotlar jadvaliga narx qo'yasiz, tasdiqdan o'tganini sotib olasiz va kelgan molni tekshirib qabul qilasiz."
-        action={<LinkButton href="/snabjeniye/hisobot" variant="secondary"><FileBarChart size={16} /> Hisobot</LinkButton>} />
+        action={
+          <div className="flex flex-wrap gap-2">
+            {canDo(s, "stock", "shipment") && <LinkButton href="/jonatma/new"><Send size={16} /> Skladga jo&apos;natish</LinkButton>}
+            <LinkButton href="/snabjeniye/hisobot" variant="secondary"><FileBarChart size={16} /> Hisobot</LinkButton>
+          </div>
+        } />
 
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Narx kutmoqda" value={`${counts.NEW} ta`} hint="Skladdan kelgan yangi so'rov" icon={ClipboardList} tone={counts.NEW ? "warning" : "default"} href="/snabjeniye?tab=NEW" />

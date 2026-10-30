@@ -87,7 +87,7 @@ export const NAV: NavItem[] = [
   { href: "/snabjeniye",  label: "Snabjeniye",         roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"] },
   // Jo'natmalar: snabjenets olib kelgan molni nakladnoy qilib skladga jo'natadi, sklad tekshirib qabul qiladi (`lib/shipments.ts`).
   // Menyuda (Snabjeniye ostida) — faqat snabjenetsda; sklad xodimi Sklad oynasidagi «Jo'natmalar» tugmasidan kirib qabul qiladi
-  { href: "/jonatma",     label: "Jo'natmalar",        roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT"] },
+  { href: "/jonatma",     label: "Jo'natmalar",        roles: ["WAREHOUSE", "PROCUREMENT"], group: "Sklad", menuFor: ["PROCUREMENT", "WAREHOUSE", "DIRECTOR"] },
   // Ta'minot zayavkalari — ma'sul (zayavka) xodim tasdiqlaydi; zanjirdagi boshqa bo'limlar holatini ko'radi.
   // Sklad menyusida yo'q — u so'rovni Sklad → «Kerakli mahsulotlar» dan jo'natadi, hujjatga bildirishnoma/havoladan kiradi
   // Mexanik ham texnika ehtiyojini snabjenetsga shu zanjir orqali so'raydi (menyusida — o'z zayavkalari holatini kuzatish uchun)
