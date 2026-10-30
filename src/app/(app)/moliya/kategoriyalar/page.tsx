@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import { fmtNum } from "@/lib/format";
 import { loadCategories, makeResolver, toTree, FLOW_LABEL, NEEDS_LABEL, PNL_LINE_LABEL } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, Table, Td, Th, Tr } from "@/components/ui";
-import { MoliyaTabs } from "../moliya-tabs";
 import { AliasForm, CategoryCreateForm, CategoryEditForm, ProjectCreateForm, ProjectToggle, type CatView } from "./forms";
 
 /**
@@ -64,7 +63,6 @@ export default async function CategoriesPage() {
   return (
     <div>
       <PageHeader eyebrow="Moliya" title="Kategoriyalar va loyihalar" subtitle="Kirim-Chiqim manbalari: qaysi biri PNL'ning qaysi qatoriga va pul oqimining qaysi turiga tushadi" />
-      <MoliyaTabs current="/moliya/kategoriyalar" />
 
       {unknown.length > 0 && (
         <Section title="Topilmagan nomlar">

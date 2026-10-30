@@ -106,9 +106,10 @@ export const NAV: NavItem[] = [
   // Arenda (do'konlar ijarasi): oylik hisob jadvali + arenda kassasi kirim-chiqimi. Sekretar uchun yagona sahifa (OWN_PAGE_ONLY)
   { href: "/arenda",      label: "Arenda",             roles: ["SECRETARY"], group: "Moliya" },
   { href: "/kirim-qqs",   label: "Kirim QQS",          roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
-  // Moliyaviy hisobotlar: PNL, pul oqimi (DDS), balans + asosiy vositalar, kreditlar, kassa kategoriyalari daraxti (`lib/fin-report`).
-  // Ko'rish — direktor, moliya, buxgalteriya; vosita/kredit/kategoriya kiritish — buxgalteriya (FIN_REPORT_WRITERS)
-  { href: "/moliya",      label: "Moliyaviy hisobotlar", roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
+  // Kreditlar va qarzlar (`/moliya` → `/moliya/kreditlar`). Bo'limning boshqa sahifalari (kalendar, to'lov rejasi, asosiy vositalar,
+  // kategoriyalar) menyuda yo'q — bosh sahifa va Nazorat havolalaridan ochiladi; ruxsat shu `/moliya` prefiksidan.
+  // Ko'rish — direktor, moliya, buxgalteriya; kiritish — buxgalteriya (FIN_REPORT_WRITERS)
+  { href: "/moliya",      label: "Kreditlar va qarzlar", roles: ["ACCOUNTING", "FINANCE"], group: "Moliya" },
   // Tizimga o'tish sanasidagi qoldiqlar (mijoz/yetkazuvchi qarzi, kassa, tayyor mahsulot) — kiritish direktor va buxgalteriya;
   // Finance ko'radi va yetkazuvchining boshlang'ich qarzini to'laydi ("Yetkazuvchiga to'lash" huquqi — shu sahifada).
   // /settings ostida bo'lsa ham alohida band: eng uzun prefiks qoidasi bo'yicha shu rollarga ochiq, qolgan sozlamalar yopiq.
@@ -151,7 +152,7 @@ export const NAV: NavItem[] = [
   // Moliya: tahlil + «Insof 2026» jadvalidagi rasmiy hisobotlar (`bi-tahlil/moliya/report-page.tsx`)
   { href: "/bi-tahlil/moliya",           label: "Moliya",           roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/moliya/realizatsiya", label: "Kunlik realizatsiya hisoboti" }, { href: "/bi-tahlil/moliya/pnl", label: "Foyda va zarar (PNL)" }, { href: "/bi-tahlil/moliya/dds", label: "Pul oqimi (DDS)" }, { href: "/bi-tahlil/moliya/balans", label: "Balans (BSH)" }, { href: "/bi-tahlil/moliya/ish-haqi", label: "Ish haqi vedomosti" }, { href: "/bi-tahlil/moliya/kalendar", label: "To'lov kalendari" }, { href: "/bi-tahlil/moliya/tolov-rejasi", label: "To'lov rejasi" }, { href: "/bi-tahlil/moliya/mahsulot-foydasi", label: "Mahsulot foydasi" }, { href: "/bi-tahlil/moliya/tannarx", label: "Tannarx hisobi" }] },
   { href: "/bi-tahlil/agentlar",         label: "Agentlar",         roles: BI_ROLES, group: "Tahlil" },
-  { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/qarz-yoshi", label: "Mijozlar qarzi" }, { href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
+  { href: "/bi-tahlil/mijozlar",         label: "Mijozlar",         roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/mijozlar/xaridorlar", label: "Mijoz debitorka / kreditorka" }, { href: "/bi-tahlil/mijozlar/taminotchilar", label: "Ta'minotchi kreditorka / debitorka" }] },
   { href: "/bi-tahlil/ombor",            label: "Ombor",            roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/ombor/xomashyo", label: "Xom-ashyo balansi" }, { href: "/bi-tahlil/ombor/tayyor-mahsulot", label: "Tayyor mahsulot" }] },
   // Logistika (zayavka, jo'natish, transport ehtiyoji) va Mexanik (texnika: ta'mir, ehtiyot qism, texnik xizmat) — alohida bandlar
   { href: "/bi-tahlil/logistika",        label: "Logistika",        roles: BI_ROLES, group: "Tahlil", children: [{ href: "/bi-tahlil/logistika/avtotransport", label: "Avtotransport tahlili" }] },
@@ -270,7 +271,7 @@ export const MODULES: { key: string; label: string; prefixes: string[] }[] = [
   { key: "cashflow",  label: "Kirim-chiqim",          prefixes: ["/cashflow"] },
   { key: "arenda",    label: "Arenda",                prefixes: ["/arenda"] },
   { key: "kirim-qqs", label: "Kirim QQS reyestri",    prefixes: ["/kirim-qqs"] },
-  { key: "moliya",    label: "Moliyaviy hisobotlar",  prefixes: ["/moliya"] },
+  { key: "moliya",    label: "Kreditlar va qarzlar",  prefixes: ["/moliya"] },
   { key: "employees", label: "Xodimlar / kadr",       prefixes: ["/employees", "/otdel-kadr"] },
   { key: "payroll",   label: "Ish haqi",              prefixes: ["/ish-haqi"] },
   { key: "vazifalar", label: "Vazifalar",             prefixes: ["/vazifalar"] },

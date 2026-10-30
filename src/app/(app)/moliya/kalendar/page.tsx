@@ -1,7 +1,6 @@
 import { requirePage } from "@/lib/page-guard";
 import { CAL_DAYS } from "@/lib/fin-report/calendar";
 import { PageHeader } from "@/components/ui";
-import { MoliyaTabs } from "../moliya-tabs";
 import { CalendarView } from "./view";
 
 /**
@@ -14,7 +13,6 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <PageHeader eyebrow="Moliya" title="To'lov kalendari" subtitle={`Kelgusi ${CAL_DAYS} kun: kimga, qachon, qancha — pul yetadimi va qaysi kuni eng kam qoladi`} />
-      <MoliyaTabs current="/moliya/kalendar" />
       <CalendarView base="/moliya/kalendar" qoldiq={sp.qoldiq} />
     </div>
   );

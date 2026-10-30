@@ -15,7 +15,7 @@ export const isReportTab = (v: unknown): v is ReportTab => (REPORT_TABS as reado
 
 /**
  * Moliyaviy hisobotlar — «Insof 2026» jadvalidagi PNL, Cash Flow (DDS) va BSH (Balans) varaqlari bir xil ko'rinishda.
- * Ikki joyda ishlatiladi: «Moliya → Moliyaviy hisobotlar» (`/moliya`) va direktorning «Tahlil → Moliya» bo'limi.
+ * Direktorning «Tahlil → Moliya» bo'limida ishlatiladi (`/moliya` endi Kreditlar va qarzlarga yo'naltiradi).
  * URL: `base` + `tab` (pnl / dds / balans), `oy` (boshlanish oyi), `n` (oylar soni, ≤ 12), `mode` (PNL: cash),
  * `keep` — sahifaning o'z parametrlari; `tabs = false` — PNL / DDS / Balans tanlovi sahifaning o'zida (Tahlil → Moliya).
  */

@@ -6,7 +6,6 @@ import { date, fmtNum, isoDate, money } from "@/lib/format";
 import { loanBalances, LOAN_KIND_LABEL } from "@/lib/fin-report/loans";
 import { loadCategories } from "@/lib/fin-report/categories";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { MoliyaTabs } from "../moliya-tabs";
 import { LinkTxForm, LoanCreateForm, LoanRowActions } from "./forms";
 
 /**
@@ -34,7 +33,6 @@ export default async function LoansPage() {
   return (
     <div>
       <PageHeader eyebrow="Moliya" title="Kreditlar va qarzlar" subtitle="Bank kreditlari, olingan va berilgan qarzlar: qoldiq, to'langan asosiy qarz va foiz" />
-      <MoliyaTabs current="/moliya/kreditlar" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Bank kreditlari" value={money(bank)} hint="balans passivi" icon={Landmark} tone={bank > 0 ? "warning" : "default"} href="#reyestr" />

@@ -8,7 +8,6 @@ import { activeAssets, assetStateAt, depreciationIn, monthlyDepreciation } from 
 import { loadCategories } from "@/lib/fin-report/categories";
 import { addMonths, monthKeyOf, monthLabel, monthRange } from "@/lib/fin-report/period";
 import { Badge, Card, CardHeader, Empty, PageHeader, Section, StatCard, Table, Td, Th, Tr } from "@/components/ui";
-import { MoliyaTabs } from "../moliya-tabs";
 import { AssetCreateForm, AssetRowActions, type AssetPrefill } from "./forms";
 
 /**
@@ -42,7 +41,6 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
   return (
     <div>
       <PageHeader eyebrow="Moliya" title="Asosiy vositalar" subtitle="Bino, uskuna va mashinalar: qiymati, amortizatsiyasi va balansdagi qoldiq qiymati" />
-      <MoliyaTabs current="/moliya/asosiy-vositalar" />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Vositalar" value={String(live.length)} hint={`${assets.length - live.length} ta chiqarilgan`} icon={Building2} href="#royxat" />
