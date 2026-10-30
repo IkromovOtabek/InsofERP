@@ -97,10 +97,11 @@ export const NAV: NavItem[] = [
   { href: "/logistika/hisobotlar",  label: "Hisobotlar",         roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuHide: ["ACCOUNTING"] },
   { href: "/logistika/analitika",   label: "Analitika",          roles: [...LOGI, "ACCOUNTING"], group: "Logistika", menuFor: [] },
   { href: "/logistika/sozlamalar",  label: "Logistika sozlamalari", roles: LOGI, group: "Logistika" },
-  // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi)
-  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC"], group: "Sklad", menuHide: ["LOGISTICS"] },
+  // Sklad: xomashyo qoldig'i + "Ishlab chiqarish imkoni" ichida hovlidagi dona mahsulot va tayyor beton (eski Astatka shu yerga ko'chdi).
+  // Ish boshqaruvchi — ko'rish uchun: «Sklad holati — xomashyo» va hovli bosh sahifadan shu yerga ko'chgan; amallar o'z ruxsatlari bilan yopiq
+  { href: "/stock",       label: "Sklad",              roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "ACCOUNTING", "SALES", "LOGISTICS", "MECHANIC", "SUPERVISOR"], group: "Sklad", menuHide: ["LOGISTICS"] },
   // Oluvchi kartasi (brigada / xodim / erkin oluvchi): skladdan nima olgan, qo'lida nima bor, samaradorlik. Menyuda yo'q —
-  // Chiqim jurnalidagi «Kimga» nomidan ochiladi. Ish boshqaruvchi ham ko'radi (sklad bo'limining o'zi unga yopiq)
+  // Chiqim jurnalidagi «Kimga» nomidan ochiladi. Ish boshqaruvchi ham ko'radi
   { href: "/oluvchi",     label: "Oluvchi kartasi",    roles: ["WAREHOUSE", "PROCUREMENT", "PRODUCTION", "SUPERVISOR", "ACCOUNTING"], group: "Sklad", hidden: true },
   // Snabjeniye oynasi — Sklad bandining ostida: sklad so'roviga narx qo'yiladi, kelgan mol qabul qilinadi.
   // Sklad kabinetida ham menyuda: sklad xodimi ba'zi mollarni o'zi olib keladi (narx qo'yadi, sotib oladi, qabul qiladi)
