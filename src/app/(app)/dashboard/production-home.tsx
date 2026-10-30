@@ -28,7 +28,7 @@ const time = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.g
 /**
  * Ishlab chiqarish bo'limining bosh sahifasi: xodimlar, davomat, sklad, brigadalar ishi,
  * bugungi yuklash, plan, brak va direktorga kunlik hisobot — bir ekranda.
- * Ish boshqaruvchida sex xodimlari va davomat o'rniga «Ishlab chiqarish kerak» (m³ / dona) turadi — davomatni sex boshlig'i yuritadi.
+ * Yuqorida sex xodimlari kartasi o'rniga «Ishlab chiqarish kerak» (m³ / dona); ish boshqaruvchida davomat bo'limi ham yo'q — uni sex boshlig'i yuritadi.
  */
 export async function ProductionHome({ s }: { s: Session }) {
   const iso = todayIso();
@@ -43,11 +43,11 @@ export async function ProductionHome({ s }: { s: Session }) {
     reportHistory(5),
     approver ? db.trip.aggregate({ where: pendingApprovalWhere(), _count: true, _sum: { payAmount: true } }) : null,
     approver ? db.mechanicRequest.aggregate({ where: { status: "NEW" }, _count: true, _sum: { amount: true } }) : null,
-    isSupervisor ? productionMatrix() : null,
+    productionMatrix(),
     brigadeProducts({ activeOnly: true }),
   ]);
-  const needBeton = matrix?.summary.need.filter((u) => u.unit === "m3") ?? [];
-  const needDona = matrix?.summary.need.filter((u) => u.unit !== "m3") ?? [];
+  const needBeton = matrix.summary.need.filter((u) => u.unit === "m3");
+  const needDona = matrix.summary.need.filter((u) => u.unit !== "m3");
   const { low: lowStock, ok: okStock, rest: restStock } = stockHighlights(stock, 8);
   const orderGap = stock.filter((m) => m.orderGap > 0);
   const stockNeed = stock.filter((m) => m.need > 0).sort((a, b) => b.orderGap - a.orderGap);
@@ -81,18 +81,11 @@ export async function ProductionHome({ s }: { s: Session }) {
           ) : null}
         </div>
       ) : null}
-      <div data-tour="stats" className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*]:min-w-0">
-        {matrix ? (
-          <>
-            <StatCard label="Quyish kerak — beton" value={needBeton.length ? fmtUnitTotals(needBeton) : "—"} hint={`${matrix.needList.filter((x) => x.unit === "m3").length} xil marka`} icon={Factory} tone={needBeton.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
-            <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.filter((x) => x.unit !== "m3").length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
-          </>
-        ) : (
-          <>
-            <StatCard label="Sex xodimlari" value={String(d.staff.total)} hint={d.staff.unassigned ? `${d.staff.unassigned} kishi taqsimlanmagan` : `${d.staff.groups.filter((g) => g.id).length} brigadaga taqsimlangan`} icon={Users} tone={d.staff.unassigned ? "warning" : "default"} href={canStaff ? "/dashboard/xodimlar" : "#davomat"} />
-            <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />
-          </>
-        )}
+      <div data-tour="stats" className={`grid grid-cols-2 gap-3 ${isSupervisor ? "xl:grid-cols-5" : "xl:grid-cols-6"} [&>*]:min-w-0`}>
+        {/* Sex xodimlari kartasi o'rniga — ishlab chiqarish kerak (davomat sex boshlig'ida «Ishga keldi» bilan qoladi) */}
+        <StatCard label="Quyish kerak — beton" value={needBeton.length ? fmtUnitTotals(needBeton) : "—"} hint={`${matrix.needList.filter((x) => x.unit === "m3").length} xil marka`} icon={Factory} tone={needBeton.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
+        <StatCard label="Ishlab chiqarish kerak — dona" value={needDona.length ? fmtUnitTotals(needDona) : "—"} hint={`${matrix.needList.filter((x) => x.unit !== "m3").length} xil mahsulot · ${matrix.summary.orders} zayavka`} icon={Boxes} tone={needDona.length ? "warning" : "success"} href="#ishlab-chiqarish-kerak" />
+        {!isSupervisor && <StatCard label="Ishga keldi" value={`${presentCount} / ${d.staff.total}`} hint={d.attendance.notMarked.length ? `${d.attendance.notMarked.length} kishi belgilanmagan` : "hammasi belgilangan"} icon={CalendarCheck} tone={d.attendance.notMarked.length ? "warning" : "success"} href="#davomat" />}
         <StatCard label="Bugun yuklash" value={`${d.load.orders.length} zayavka`} hint={d.load.orders.length ? loadNeed : "yuklash yo'q"} icon={Truck} tone="info" href="/trips" />
         <StatCard label="Ishlab chiqarildi" value={producedToday === "0" ? "—" : producedToday} hint="bugun" icon={Factory} tone="brand" href="/production" />
         <StatCard label="Brak" value={d.defects.today.length ? defectToday : "0"} hint={`bugun · oyda ${d.defects.month.length} ta yozuv`} icon={TriangleAlert} tone={d.defects.today.length ? "danger" : "default"} href="#brak" />
@@ -227,8 +220,8 @@ export async function ProductionHome({ s }: { s: Session }) {
         </MobileFold>
       </Section>
 
-      {/* ── Ish boshqaruvchi: ishlab chiqarilishi kerak (sex xodimlari o'rniga) ── */}
-      {matrix && (
+      {/* ── Ishlab chiqarilishi kerak (sex xodimlari kartasi o'rniga) ── */}
+      {(
         <Section id="ishlab-chiqarish-kerak" title="Ishlab chiqarilishi kerak" action={more("/production", "Matritsa")}>
           <MobileFold label="Ishlab chiqarish kerak jadvali">
             <Card padded={false}>
